@@ -51,16 +51,16 @@
 //! | C# block | Range | Status here |
 //! | --- | --- | --- |
 //! | `checkDead` dissolve intercept + `PrepareForDeathAnimation` | `NPC.cs:78080-78086`, `:78032-78038` | PORTED (`check_dead_pillar_intercept`) |
-//! | ai[2]==1 dissolve arm (velocity clamp, opacity, 180 death) | `:38970-39067` | PORTED (dust bodies deferred, gate draws kept) |
+//! | ai[2]==1 dissolve arm (velocity clamp, opacity, 180 death) | `:38970-39067` | PORTED (W4-e2: body ring 39007 + plume 39022 armed; the 6-burst 39039 + 241 tail 39052 stay deferred) |
 //! | ai[3] shield-break flash cycle | `:39069-39100` | PORTED (sounds as effect flags) |
 //! | per-type `dontTakeDamage = Shield != 0` gate | `:39101-39115` | PORTED (`pillar_shield`) |
 //! | TargetClosest + localAI[0] regen + sine bob | `:39116-39131`, `:39190-39195` | PORTED (the regen's inert-counter quirk kept, see below) |
 //! | ground hover Down(10)/Down(20)/Down(30) | `:39132-39153` | PORTED (`find_down_solid`, `Conditions.IsSolid`) |
 //! | edge clamps incl. the `maxTilesX*16` Y-axis quirk + surface floor | `:39154-39189` | PORTED (quirk copied, not "fixed") |
 //! | 517 Solar arm → SolarGoop 519 spawn | `:39347-39382` | PORTED FULLY (the one complete spawn arm) |
-//! | 493 Stardust arm → `SpawnStardustMark_StardustTower` | `:39196-39224`, `:43821-43907` | DEFERRED body; ambient gate draws + ai[1] cooldown kept |
-//! | 507 Nebula arm (dust only — no attack in C# either) | `:39226-39247` | gate draws kept; nothing else exists to port |
-//! | 422 Vortex arms (3240-px no-LOS + 1080-px window pick) | `:39249-39345` | DEFERRED bodies; ambient gate draws + ai[1] cooldown kept |
+//! | 493 Stardust arm → `SpawnStardustMark_StardustTower` | `:39196-39224`, `:43821-43907` | DEFERRED body; W4-e2 ambient dust 39200/39209 armed + ai[1] cooldown kept |
+//! | 507 Nebula arm (dust only — no attack in C# either) | `:39226-39247` | W4-e2 ambient dust 39230/39239 armed; nothing else exists to port |
+//! | 422 Vortex arms (3240-px no-LOS + 1080-px window pick) | `:39249-39345` | DEFERRED bodies; W4-e2 ambient dust 39253/39262 armed + ai[1] cooldown kept |
 //! | 629 shield-chip loop (spawn sites + −1 spend) | `:79279-79320`, `Projectile.cs:72944-72979` | SEAMS ONLY (`bolt_host_pillar`, `bolt_shield_spend`) — R72 wires |
 //! | death → apocalypse chain | `:79321-79345` | already FAITHFUL (`world_sim/npcs.rs:3360-3406`) — untouched |
 //!
@@ -101,15 +101,16 @@
 //!   `NextDouble`), `RotatedByRandom(π/4)` two `NextDouble`
 //!   (`Utils.cs:1697-1700`), the speed `NextFloat` (`:39377`).
 //!
-//! Documented stream deviations (ANALYSIS "The pillar machine re-port"):
-//! the dust BODIES are unmodelled, so the rolls INSIDE a passed gate
-//! (`Dust.NewDust` internals + the explicit `NextFloat`/`RotatedByRandom`
-//! dust jitter) are skipped — the gate draws themselves are kept in order
-//! (the audit §2.5 recommendation, the `npc_ai_style31` precedent). The
-//! deferred 493/422 attack bodies take their rearm/window/BFS draws with
-//! them until the wiring wave ports them. The witness tests pin the kept
-//! draws by comparing full `UnifiedRandom` state against a mirrored
-//! manual draw sequence.
+//! W4-e2 (the dust-sites batch): the ambient per-type bodies (sites
+//! 39200/39209/39230/39239/39253/39262/39353/39362) and the dissolve's
+//! body ring + plume (39007/39022) now ride the live `DustPool`
+//! (`new_dust`) on the SAME stream — the gate draws stay in C# order and
+//! a passed gate rolls the pool internals + the explicit
+//! `NextFloat`/`RotatedByRandom` jitter. The witnesses below replay them
+//! through mirrored pool calls. STILL deferred (their draws stay skipped
+//! with the bodies): the dissolve's 6-dust burst + SelectRandom(1,18)
+//! sound (39039) and the 241 tail (39052), and the 493/422 attack bodies'
+//! rearm/window/BFS draws until the wiring wave ports them.
 //!
 //! # Faithful quirks kept (do not "fix")
 //!
@@ -134,6 +135,8 @@
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{session_candidate, target_closest};
 use crate::player::Player;
+use glam::Vec2;
+use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::{UnifiedRandom, World};
 
 /// The four pillar kinds' vanilla type ids (`ID/NPCID.cs:11659-11711`).
@@ -337,17 +340,76 @@ fn tile_coord(v: f32) -> i32 {
     (v as i32) >> 4
 }
 
-/// The ambient per-type dust gates, shared shape (`:39198-39216` /
-/// `:39228-39246` / `:39251-39269` / `:39351-39368`): one `Next(5)` gate
-/// (the 241 body dust) then three `Next(5)` gates (the top plume). The
-/// dust bodies are the documented skip; the gate draws stay in order.
-fn ambient_dust_gates(rng: &mut UnifiedRandom) {
+/// `Vector2.UnitY.RotatedByRandom(max)` (`Utils.cs:1697-1700` +
+/// `:1675-1684`): TWO `NextDouble` draws (+max then −max), then the
+/// double cos/sin rotation of (0, 1) → (−sin, cos).
+fn rotated_unit_y_random(rng: &mut UnifiedRandom, max_radians: f64) -> (f32, f32) {
+    let angle = rng.next_double() * max_radians - rng.next_double() * max_radians;
+    (-(angle.sin() as f32), angle.cos() as f32)
+}
+
+/// The ambient per-type dust, shared shape — W4-e2 sites 39200/39209
+/// (493, plume 135), 39230/39239 (507, plume 242, Color.Black),
+/// 39253/39262 (422, plume 229, Color.Black), 39353/39362 (517, plume 6):
+/// one `Next(5)` gate (the 241 body dust) then three `Next(5)` gates (the
+/// top plume). The bodies now ride the live pool; the gate draws stay in
+/// C# order. `plume_black` is the Nebula/Vortex `color = Color.Black`
+/// write (`:39244`/`:39267`); Stardust/Solar leave the spawn colour.
+fn ambient_dust(
+    npc: &Npc,
+    world: &World,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    plume_type: i32,
+    plume_black: bool,
+) {
+    let (w, h) = npc.size();
+    let (cx, cy) = npc.center();
+    // `:39198-39204` etc — the 241 body dust at Left, box (width,
+    // INTEGER height/2), default speeds/alpha/colour/scale. Post-writes:
+    // position = Center + UnitY.RotatedByRandom(2π/3) * (width/2,
+    // height/2) * (0.8 + NextFloat·0.2) — INTEGER halves; velocity.X = 0,
+    // velocity.Y = |velocity.Y|·0.25. NO noGravity/fadeIn/scale writes.
     if rng.next_max(5) == 0 {
-        // dust 241 body deferred (the RotatedByRandom + NextFloat jitter).
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, Vec2::new(npc.x, npc.y + h / 2.0),
+            w as i32, h as i32 / 2, 241, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let (rx, ry) = rotated_unit_y_random(rng, 2.094395160675049);
+        let k = 0.8 + rng.next_float() * 0.2;
+        let d = dust.slot_mut(idx);
+        d.position = Vec2::new(
+            cx + rx * (w as i32 / 2) as f32 * k,
+            cy + ry * (h as i32 / 2) as f32 * k,
+        );
+        d.velocity.x = 0.0;
+        d.velocity.y = d.velocity.y.abs() * 0.25;
     }
-    for _ in 0..3 {
+    // `:39205-39216` etc — the three top-plume gates. Per i: the spawn at
+    // Top + (−width·(0.33 − 0.11·i), −20), box ((int)(width·(0.66 −
+    // 0.22·i)), 20), plume type, defaults. Post-writes: velocity.X = 0,
+    // velocity.Y = −|velocity.Y − i + vy − 4|·1, noGravity, fadeIn 1,
+    // (Nebula/Vortex: color Black), scale = 1 + NextFloat + i·0.3.
+    for i in 0..3 {
         if rng.next_max(5) == 0 {
-            // per-type plume dust deferred (135/242/229/6).
+            let fi = i as f32;
+            let px = npc.x + w * 0.5 + (-w) * (0.33 - 0.11 * fi);
+            let py = npc.y - 20.0;
+            let bw = (w * (0.66 - 0.22 * fi)) as i32;
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, Vec2::new(px, py), bw, 20,
+                plume_type, 0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity.x = 0.0;
+            d.velocity.y = (0.0 - (d.velocity.y - fi + npc.vy - 4.0).abs()) * 1.0;
+            d.no_gravity = true;
+            d.fade_in = 1.0;
+            if plume_black {
+                d.color = Color::new(0, 0, 0, 255); // Color.Black (alpha 255)
+            }
+            d.scale = 1.0 + rng.next_float() + fi * 0.3;
         }
     }
 }
@@ -364,6 +426,8 @@ pub fn pillar_ai_step(
     rng: &mut UnifiedRandom,
     ctx: &PillarCtx,
     fx: &mut PillarEffects,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
 ) {
     let (w, h) = npc.size();
     // ---- the ai[2] == 1 dissolve arm (:38970-39067) ----
@@ -390,16 +454,67 @@ pub fn pillar_ai_step(
             npc.alpha = ((1.0 - opacity) * 255.0).clamp(0.0, 255.0) as u8;
         }
         // :38987-39002 — the per-type dissolve dust id (517→127, 422→229,
-        // 507→242, 493→135, default 6): unmodelled with the dust bodies.
-        // :39003 — the gate draw happens even at ai[1] >= 120.
+        // 507→242, 493→135, default 6). W4-e2 arms the bodies.
+        let num1290 = match npc.kind {
+            NpcKind::SolarTower => 127,
+            NpcKind::VortexTower => 229,
+            NpcKind::NebulaTower => 242,
+            NpcKind::StardustTower => 135,
+            _ => 6,
+        };
+        let (dw, dh) = npc.size();
+        let (dcx, dcy) = npc.center();
+        // :39003 — the gate draw happens even at ai[1] >= 120 (left
+        // operand first). W4-e2 site 39007: the 3-dust body ring.
         if rng.next_max(5) == 0 && npc.ai[1] < 120.0 {
-            // 3× body dust deferred.
+            for num1291 in 0..3 {
+                let fi = num1291 as f32;
+                // NewDust(Left, width, INTEGER height/2, num1290), defaults.
+                let idx = dust.new_dust(
+                    rng, dust_ctx, world, Vec2::new(npc.x, npc.y + dh / 2.0),
+                    dw as i32, dh as i32 / 2, num1290,
+                    0.0, 0.0, 0, Color::default(), 1.0,
+                );
+                // position = Center + UnitY.RotatedByRandom(4π/3) *
+                // (width·1.5, height·1.1) · 0.8 · (0.8 + NextFloat·0.2).
+                let (rx, ry) = rotated_unit_y_random(rng, 4.188790321350098);
+                let k = 0.8 * (0.8 + rng.next_float() * 0.2);
+                let d = dust.slot_mut(idx);
+                d.position = Vec2::new(
+                    dcx + rx * (dw * 1.5) * k,
+                    dcy + ry * (dh * 1.1) * k,
+                );
+                d.velocity.x = 0.0;
+                d.velocity.y =
+                    (0.0 - (d.velocity.y - fi + npc.vy - 4.0).abs()) * 3.0;
+                d.no_gravity = true;
+                d.fade_in = 1.0;
+                d.scale = 1.0 + rng.next_float() + fi * 0.3;
+            }
         }
         // :39016-39030 — three Next(4) gates, only while ai[1] < 150.
+        // W4-e2 site 39022: the top plume (same shape as the ambient one,
+        // but the velocity multiplier is (1 + ai[1]/180·0.5) and the
+        // colour stays the spawn default).
         if npc.ai[1] < 150.0 {
-            for _ in 0..3 {
+            for num1292 in 0..3 {
                 if rng.next_max(4) == 0 {
-                    // plume dust deferred.
+                    let fi = num1292 as f32;
+                    let px = npc.x + dw * 0.5 + (-dw) * (0.33 - 0.11 * fi);
+                    let py = npc.y - 20.0;
+                    let bw = (dw * (0.66 - 0.22 * fi)) as i32;
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world, Vec2::new(px, py), bw, 20,
+                        num1290, 0.0, 0.0, 0, Color::default(), 1.0,
+                    );
+                    let d = dust.slot_mut(idx);
+                    d.velocity.x = 0.0;
+                    d.velocity.y = (0.0
+                        - (d.velocity.y - fi + npc.vy - 4.0).abs())
+                        * (1.0 + npc.ai[1] / 180.0 * 0.5);
+                    d.no_gravity = true;
+                    d.fade_in = 1.0;
+                    d.scale = 1.0 + rng.next_float() + fi * 0.3;
                 }
             }
         }
@@ -536,8 +651,9 @@ pub fn pillar_ai_step(
     // ---- the per-type arms ----
     match npc.kind {
         NpcKind::StardustTower => {
-            // :39196-39224 — the ambient gates + the ai[1] cooldown.
-            ambient_dust_gates(rng);
+            // :39196-39224 — the ambient dust (W4-e2 sites 39200/39209,
+            // plume 135, spawn colour) + the ai[1] cooldown.
+            ambient_dust(npc, world, rng, dust, dust_ctx, 135, false);
             if npc.ai[1] > 0.0 {
                 npc.ai[1] -= 1.0;
             }
@@ -549,13 +665,15 @@ pub fn pillar_ai_step(
             // (the module doc's exact-range census).
         }
         NpcKind::NebulaTower => {
-            // :39226-39247 — dust only; the C# has NO attack arm here
-            // (nebula mobs come from the zone spawn pool).
-            ambient_dust_gates(rng);
+            // :39226-39247 — dust only (W4-e2 sites 39230/39239, plume
+            // 242, Color.Black); the C# has NO attack arm here (nebula
+            // mobs come from the zone spawn pool).
+            ambient_dust(npc, world, rng, dust, dust_ctx, 242, true);
         }
         NpcKind::VortexTower => {
-            // :39249-39274 — the ambient gates + the ai[1] cooldown.
-            ambient_dust_gates(rng);
+            // :39249-39274 — the ambient dust (W4-e2 sites 39253/39262,
+            // plume 229, Color.Black) + the ai[1] cooldown.
+            ambient_dust(npc, world, rng, dust, dust_ctx, 229, true);
             if npc.ai[1] > 0.0 {
                 npc.ai[1] -= 1.0;
             }
@@ -567,8 +685,9 @@ pub fn pillar_ai_step(
             // every-tick 579 spam is NOT reproduced here.
         }
         NpcKind::SolarTower => {
-            // :39347-39382 — the FULL solar arm.
-            ambient_dust_gates(rng);
+            // :39347-39382 — the FULL solar arm. W4-e2 sites 39353/39362:
+            // the ambient dust, plume 6, spawn colour.
+            ambient_dust(npc, world, rng, dust, dust_ctx, 6, false);
             if npc.ai[1] > 0.0 {
                 npc.ai[1] -= 1.0;
             }
@@ -640,6 +759,55 @@ mod tests {
         p
     }
 
+    /// W4-e2: the permissive dust ctx for the witnesses — the whole world
+    /// on-screen, the full 6000 budget (the `npc::permissive_dust_ctx`
+    /// shape, local so the module keeps no npc.rs test dependency).
+    fn permissive_ctx(w: &World) -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// W4-e2 mirror: replay ONE ambient body-dust hit's draws
+    /// (`NPC.cs:39198-39204` etc) — the NewDust(Left, width, height/2,
+    /// 241) internals, then RotatedByRandom(2π/3)'s two NextDouble, then
+    /// the (0.8 + NextFloat·0.2) scale float. The permissive empty pool
+    /// never culls, so the spawn always lands.
+    fn mirror_ambient_body(
+        mpool: &mut DustPool, mirror: &mut UnifiedRandom, dc: &SpawnCtx,
+        w: &World, x: f32, y: f32, wi: i32, hi: i32,
+    ) {
+        mpool.new_dust(
+            mirror, dc, w, Vec2::new(x, y + hi as f32 / 2.0), wi, hi / 2,
+            241, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        mirror.next_double(); // RotatedByRandom +
+        mirror.next_double(); // RotatedByRandom −
+        mirror.next_float(); // the 0.8 + ·0.2 scale
+    }
+
+    /// W4-e2 mirror: replay ONE ambient top-plume hit's draws
+    /// (`NPC.cs:39205-39216` etc) — the NewDust(Top + offset, box, 20,
+    /// plume) internals, then the (1 + NextFloat + i·0.3) scale float.
+    fn mirror_ambient_plume(
+        mpool: &mut DustPool, mirror: &mut UnifiedRandom, dc: &SpawnCtx,
+        w: &World, x: f32, y: f32, wi: f32, i: usize, plume: i32,
+    ) {
+        let fi = i as f32;
+        let px = x + wi * 0.5 + (-wi) * (0.33 - 0.11 * fi);
+        let bw = (wi * (0.66 - 0.22 * fi)) as i32;
+        mpool.new_dust(
+            mirror, dc, w, Vec2::new(px, y - 20.0), bw, 20,
+            plume, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        mirror.next_float(); // the 1 + NextFloat + i·0.3 scale
+    }
+
     #[test]
     fn b6a_the_intercept_keeps_the_tower_alive_and_arms_the_dissolve() {
         // NPC.cs:78080-78086 + PrepareForDeathAnimation :78032-78038.
@@ -673,14 +841,14 @@ mod tests {
         n.vy = 0.24;
         let mut rng = UnifiedRandom::new(7);
         let mut fx = PillarEffects::default();
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         assert!((n.vy - 0.24).abs() < 1e-5, "the double-if quirk: {}", n.vy);
         assert_eq!(n.vx, 0.0);
         assert_eq!(n.ai[1], 1.0);
         assert!(n.dont_take_damage);
         // A fast fall decays 0.02/tick toward 0.25 (:38977-38980).
         n.vy = 3.0;
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         assert!((n.vy - 2.98).abs() < 1e-5);
     }
 
@@ -694,12 +862,12 @@ mod tests {
         n.ai[1] = 149.0; // the step makes it 150
         let mut rng = UnifiedRandom::new(7);
         let mut fx = PillarEffects::default();
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         // opacity = 1 - 30/60 = 0.5 → alpha = (int)(0.5*255) = 127.
         assert_eq!(n.alpha, 127);
         assert!(!fx.dissolve_finished);
         n.ai[1] = 179.0;
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[1], 180.0);
         assert_eq!(n.hp, 0);
         assert!(fx.dissolve_finished);
@@ -709,29 +877,66 @@ mod tests {
 
     #[test]
     fn b6a_the_dissolve_gate_draws_ride_in_csharp_order() {
-        // :39003 Next(5); :39020 3×Next(4) (ai[1]<150); :39031 Next(5);
-        // :39050 Next(3). Six draws per early dissolve tick.
+        // W4-e2: :39003 Next(5) (+ the 3-dust body ring on a pass while
+        // ai[1]<120); :39020 3×Next(4) (+ plume bodies, ai[1]<150);
+        // :39031 Next(5); :39050 Next(3) (the last two bodies still
+        // deferred). The mirror replays gate + armed bodies through the
+        // same pool calls and compares full stream state.
         let w = air_world();
+        let dc = permissive_ctx(&w);
         let p = far_player(&w);
         let mut n = tower(NpcKind::StardustTower, 1535.0, 1330.0);
         n.ai[2] = 1.0;
+        let (wi, hi) = (130i32, 270i32);
         let mut rng = UnifiedRandom::new(99);
         let mut mirror = UnifiedRandom::new(99);
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
         let mut fx = PillarEffects::default();
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
-        mirror.next_max(5);
-        for _ in 0..3 {
-            mirror.next_max(4);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut pool, &dc);
+        // The dissolve clamps vy to 0.25 before the dust (:38972-38980);
+        // the position is unchanged (the arm returns before integration).
+        // The post-writes (position/velocity/scale) draw NOTHING beyond the
+        // RotatedByRandom pair + the two NextFloat scales mirrored below.
+        let (dx, dy) = (1535.0f32, 1330.0f32);
+        // :39003 — the body gate; on a pass + ai[1]<120 the 3-dust ring.
+        let ai1_after = 1.0f32; // the step incremented ai[1] 0 → 1
+        if mirror.next_max(5) == 0 && ai1_after < 120.0 {
+            for _ in 0..3 {
+                mpool.new_dust(
+                    &mut mirror, &dc, &w, Vec2::new(dx, dy + hi as f32 / 2.0),
+                    wi, hi / 2, 135, 0.0, 0.0, 0, Color::default(), 1.0,
+                );
+                mirror.next_double(); // RotatedByRandom +
+                mirror.next_double(); // RotatedByRandom −
+                mirror.next_float(); // the 0.8·(0.8 + ·0.2) position scale
+                mirror.next_float(); // the 1 + NextFloat + i·0.3 scale
+            }
         }
-        mirror.next_max(5);
-        mirror.next_max(3);
-        assert_eq!(rng, mirror, "the dissolve tick draws exactly six rolls");
-        // At ai[1] >= 150 the three Next(4) gates stop; the two outer
-        // gates still draw (left operand first): 3 draws.
+        // :39016-39030 — the three Next(4) plume gates (ai[1]<150).
+        if ai1_after < 150.0 {
+            for num1292 in 0..3 {
+                if mirror.next_max(4) == 0 {
+                    let fi = num1292 as f32;
+                    let px = dx + wi as f32 * 0.5 + (-wi as f32) * (0.33 - 0.11 * fi);
+                    let bw = (wi as f32 * (0.66 - 0.22 * fi)) as i32;
+                    mpool.new_dust(
+                        &mut mirror, &dc, &w, Vec2::new(px, dy - 20.0), bw, 20,
+                        135, 0.0, 0.0, 0, Color::default(), 1.0,
+                    );
+                    mirror.next_float(); // the scale
+                }
+            }
+        }
+        mirror.next_max(5); // :39031 (body deferred)
+        mirror.next_max(3); // :39050 (body deferred)
+        assert_eq!(rng, mirror, "the dissolve tick's gates + armed bodies");
+        // At ai[1] >= 150 the body ring AND the three Next(4) gates stop;
+        // the two outer gates still draw (left operand first): 3 draws.
         n.ai[1] = 160.0;
         let mut rng2 = UnifiedRandom::new(5);
         let mut mirror2 = UnifiedRandom::new(5);
-        pillar_ai_step(&mut n, &w, &p, &mut rng2, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng2, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &dc);
         mirror2.next_max(5);
         mirror2.next_max(5);
         mirror2.next_max(3);
@@ -747,14 +952,14 @@ mod tests {
         w.tower_shield_solar = 100;
         let mut rng = UnifiedRandom::new(1);
         let mut fx = PillarEffects::default();
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         assert!(n.dont_take_damage, "the shield protects");
         w.tower_shield_solar = 0;
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         assert!(!n.dont_take_damage, "the broken shield exposes the tower");
         // The other pillars' shields do not protect the solar tower.
         w.tower_shield_vortex = 100;
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         assert!(!n.dont_take_damage);
     }
 
@@ -770,7 +975,7 @@ mod tests {
         w.tower_shield_vortex = 0; // and just broke
         let mut rng = UnifiedRandom::new(1);
         let mut fx = PillarEffects::default();
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         assert!(fx.shield_break_sound);
         assert!(!fx.shield_hit_sound);
         assert_eq!(n.ai[3], 2.0);
@@ -779,14 +984,14 @@ mod tests {
         n2.ai[3] = 1.0;
         n2.dont_take_damage = false;
         let mut fx2 = PillarEffects::default();
-        pillar_ai_step(&mut n2, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx2);
+        pillar_ai_step(&mut n2, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx2, &mut DustPool::new(), &permissive_ctx(&w));
         assert!(fx2.shield_hit_sound);
         assert!(!fx2.shield_break_sound);
         // The wrap: 120 → 121 → 0.
         let mut n3 = tower(NpcKind::VortexTower, 1535.0, 1330.0);
         n3.ai[3] = 120.0;
         let mut fx3 = PillarEffects::default();
-        pillar_ai_step(&mut n3, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx3);
+        pillar_ai_step(&mut n3, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx3, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n3.ai[3], 0.0);
     }
 
@@ -805,13 +1010,13 @@ mod tests {
         let mut rng = UnifiedRandom::new(1);
         let mut fx = PillarEffects::default();
         for _ in 0..120 {
-            pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+            pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
             assert_eq!(n.local_ai[0], 0.0, "the vanilla counter never accumulates");
         }
         // Externally seeded 59 → the increment reaches 60 → the +200 heal.
         n.hp = 1000;
         n.local_ai[0] = 59.0;
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.hp, 1200);
         assert_eq!(n.local_ai[0], 0.0);
     }
@@ -837,6 +1042,8 @@ mod tests {
             &mut rng,
             &PillarCtx { has_world_surface: false, remix_world: false, get_good_world: false, ticker: 0 },
             &mut fx,
+            &mut DustPool::new(),
+            &permissive_ctx(&w),
         );
         assert!((n.y - 1329.25).abs() < 1e-3, "the lift: {}", n.y);
     }
@@ -857,6 +1064,8 @@ mod tests {
             &mut rng,
             &PillarCtx { has_world_surface: false, remix_world: false, get_good_world: false, ticker: 0 },
             &mut fx,
+            &mut DustPool::new(),
+            &permissive_ctx(&w),
         );
         // center.Y clamps to 3200-960-80 = 2160 → y = 2160-135 = 2025.
         assert!((n.y - 2025.0).abs() < 1e-3, "the quirk clamp: {}", n.y);
@@ -880,7 +1089,7 @@ mod tests {
         let mut n = tower(NpcKind::SolarTower, 1535.0, 1330.0);
         let mut rng = UnifiedRandom::new(42);
         let mut fx = PillarEffects::default();
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &no_surface_ctx(), &mut fx);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &no_surface_ctx(), &mut fx, &mut DustPool::new(), &permissive_ctx(&w));
         let goop = fx.solar_goop.expect("the goop spawn request");
         let speed = (goop.vx * goop.vx + goop.vy * goop.vy).sqrt();
         assert!((7.0..12.0).contains(&speed), "the launch speed: {speed}");
@@ -895,53 +1104,83 @@ mod tests {
         assert!(goop.bottom_y as f32 >= 1311.0 && goop.bottom_y as f32 <= 1332.0);
         // The cooldown blocks the next tick.
         let mut fx2 = PillarEffects::default();
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &no_surface_ctx(), &mut fx2);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &no_surface_ctx(), &mut fx2, &mut DustPool::new(), &permissive_ctx(&w));
         assert!(fx2.solar_goop.is_none());
         assert_eq!(n.ai[1], 59.0);
     }
 
     #[test]
     fn b6a_the_solar_tick_draws_nine_rolls_in_order() {
-        // The RNG census: 4 ambient Next(5) gates (:39351/:39360) + the
-        // spawn's RandomVector2 pair (:39376, Utils.cs:2433) + the
-        // RotatedByRandom pair (:39377, Utils.cs:1699) + the speed float.
+        // W4-e2: the 4 ambient Next(5) gates (:39351/:39360) + (on a pass)
+        // the armed body/plume internals, then the spawn's RandomVector2
+        // pair (:39376) + RotatedByRandom pair (:39377) + the speed float.
+        // The mirror replays every draw through the same pool calls.
         let w = air_world();
+        let dc = permissive_ctx(&w);
         let mut p = Player::spawn(&w);
         p.x = 1700.0;
         p.y = 1400.0;
         let mut n = tower(NpcKind::SolarTower, 1535.0, 1330.0);
+        let (wi, hi) = (130i32, 270i32);
         let mut rng = UnifiedRandom::new(42);
         let mut mirror = UnifiedRandom::new(42);
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
         let mut fx = PillarEffects::default();
-        pillar_ai_step(&mut n, &w, &p, &mut rng, &no_surface_ctx(), &mut fx);
-        for _ in 0..4 {
-            mirror.next_max(5);
+        pillar_ai_step(&mut n, &w, &p, &mut rng, &no_surface_ctx(), &mut fx, &mut pool, &dc);
+        // The ambient dust reads the POST-hover position (the no-surface
+        // fold keeps the spawn height; the air-world hover sinks 1.5 px).
+        let (ax, ay) = (1535.0f32, n.y);
+        if mirror.next_max(5) == 0 {
+            mirror_ambient_body(&mut mpool, &mut mirror, &dc, &w, ax, ay, wi, hi);
+        }
+        for i in 0..3 {
+            if mirror.next_max(5) == 0 {
+                mirror_ambient_plume(&mut mpool, &mut mirror, &dc, &w, ax, ay, wi as f32, i, 6);
+            }
         }
         mirror.next_float(); // RandomVector2 X
         mirror.next_float(); // RandomVector2 Y
         mirror.next_double(); // RotatedByRandom +
         mirror.next_double(); // RotatedByRandom −
         mirror.next_float(); // the speed
-        assert_eq!(rng, mirror, "the solar spawn tick draws exactly nine rolls");
+        assert_eq!(rng, mirror, "the solar spawn tick's gates + bodies + launch");
     }
 
     #[test]
     fn b6a_the_idle_towers_draw_only_the_four_ambient_gates() {
-        // 493/507/422 with the attack bodies deferred: 4 Next(5) draws,
-        // nothing else (the deferred arms' rearms take their draws with
-        // them — the documented deviation).
+        // W4-e2: 493/507/422 with the attack bodies deferred — the four
+        // ambient Next(5) gates, plus (on a pass) the armed dust bodies'
+        // pool internals + jitter. The mirror replays gate + body through
+        // the same pool calls; the deferred rearms take their draws with
+        // them (the documented deviation).
         let w = air_world();
+        let dc = permissive_ctx(&w);
         let p = far_player(&w);
-        for kind in [NpcKind::StardustTower, NpcKind::NebulaTower, NpcKind::VortexTower] {
+        for (kind, plume) in [
+            (NpcKind::StardustTower, 135),
+            (NpcKind::NebulaTower, 242),
+            (NpcKind::VortexTower, 229),
+        ] {
             let mut n = tower(kind, 1535.0, 1330.0);
+            let (wi, hi) = (130i32, 270i32);
             let mut rng = UnifiedRandom::new(3);
             let mut mirror = UnifiedRandom::new(3);
+            let mut pool = DustPool::new();
+            let mut mpool = DustPool::new();
             let mut fx = PillarEffects::default();
-            pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx);
-            for _ in 0..4 {
-                mirror.next_max(5);
+            pillar_ai_step(&mut n, &w, &p, &mut rng, &PillarCtx::classic(0), &mut fx, &mut pool, &dc);
+            // The body gate (+ internals on a pass). The tower's hover
+            // sink does not move X; the body reads position (1535, y).
+            if mirror.next_max(5) == 0 {
+                mirror_ambient_body(&mut mpool, &mut mirror, &dc, &w, 1535.0, n.y, wi, hi);
             }
-            assert_eq!(rng, mirror, "{kind:?} draws four ambient gates");
+            for i in 0..3 {
+                if mirror.next_max(5) == 0 {
+                    mirror_ambient_plume(&mut mpool, &mut mirror, &dc, &w, 1535.0, n.y, wi as f32, i, plume);
+                }
+            }
+            assert_eq!(rng, mirror, "{kind:?} draws the ambient gates + bodies");
         }
     }
 
