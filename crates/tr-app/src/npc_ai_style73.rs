@@ -15,12 +15,12 @@
 //! "Wiring engine (M7-WIRE-2)", ride that style). No dynamic
 //! `aiStyle` reassignment to 73 exists; no second NPC kind rides it.
 //!
-//! The port's roster has no `NpcKind::MartianTurret` (the saucer's
-//! `MartianSaucerTurret` 393 is a different kind on aiStyle 76), and
-//! `update_rng`'s aiStyle axis has no style-73 arm — the module lands
-//! UNWIRED (the ForceBubble `npc_ai_style72.rs` / BlazingWheel
-//! `npc_ai_style21.rs` precedent). The machine keys on the vanilla
-//! `npc_type` until the roster wave.
+//! WIRED by W4-c11: the roster carries `NpcKind::MartianTurret` (387,
+//! the wire id 214) and `update_rng`'s aiStyle axis claims style 73
+//! (`npc.rs::ai_073_martian_turret` — the session candidate, netMode 0,
+//! classic difficulty, the one-tick `just_hit` flag; the shot queues on
+//! `wants_hostile_shot` and the sim's drain spawns the 435 row). The
+//! machine still keys on the vanilla `npc_type` (the module's seam).
 //!
 //! ## The machine
 //!
@@ -99,7 +99,7 @@
 //!
 //! See docs/ANALYSIS.md "The Martian Turret (S1-D-3 aiStyle-73,
 //! code-only)".
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+#![allow(dead_code)] // WIRED by W4-c11 (the axis' 73 arm + the gravity/collision tail); the defaults row + the dust plan stay as the audit cross-check (the ring itself is the deferred dust draw — module docs)
 
 use crate::npc::Npc;
 use crate::npc_ai_caster::global_firing_distance_check;
