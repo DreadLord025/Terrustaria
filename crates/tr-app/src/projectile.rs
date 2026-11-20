@@ -22975,15 +22975,21 @@ impl ProjectilePool {
             // `armorPenetration` (the firing item's prefix `arpen` row,
             // `ApplyStatsFromSource` `:11128`); `:13630-13633` adds
             // `checkArmorPenetration(num5, 0f)` to the rolled damage for
-            // every owned non-hostile shot BEFORE the strike. The melee
-            // flag folds to `is_whip` — the whip is the melee projectile
-            // family this seam identifies (the flail/yoyo/boomerang
-            // `melee = true` rows have no slot flag yet; their Sharpened
-            // +12 stays missed, recorded in ANALYSIS). The debuff bonuses
-            // (ichor/broken armor/Betsy's curse) ride the melee hit's
-            // convention (false until the NPC debuff scan lands here).
+            // every owned non-hostile shot BEFORE the strike. W4-a3: the
+            // melee flag is the SLOT's `Projectile.melee` — the
+            // `SetDefaults`/`DefaultTo*` census flag the data-carrying
+            // spawn copies (`data.rs`'s melee row: flail `:10759`, yoyo
+            // `:10770`, boomerangs `:871`/`:1352`/`:2019`), so the
+            // Sharpened 159 +12 (`Player.cs:9929`) now reaches those
+            // families. The whip sets NO class flag (`DefaultToWhip`
+            // `:10704-10718`), so it correctly drops out of the melee
+            // fold (the old `is_whip` stand-in over-applied it). The
+            // debuff bonuses (ichor/broken armor/Betsy's curse) ride the
+            // melee hit's convention (false until the NPC debuff scan
+            // lands here).
             if let Some(pl) = player.as_deref() {
-                let num5 = pl.get_armor_penetration(is_whip) + self.slots[slot].armor_penetration;
+                let num5 = pl.get_armor_penetration(self.slots[slot].melee)
+                    + self.slots[slot].armor_penetration;
                 dmg += tr_core::damage::check_armor_penetration(
                     num5,
                     0.0,
@@ -24881,6 +24887,101 @@ mod tests {
             &mut rng2,
         );
         assert_eq!(npc2.hp, 499, "the ownerless shot keeps the floor of 1");
+    }
+
+    /// W4-a3 — one owned PVE strike against a defense-24 dummy at damage 40
+    /// (±15% DamageVar → 34..46, so both the plain and the lifted strike
+    /// stay above the floor of 1). `melee_pen` stands in for the owner's
+    /// `meleeArmorPenetration` (the Sharpened 159 grant, `Player.cs:9929`);
+    /// the crit chances are zeroed by the caller so the same-seed runs
+    /// draw identically and the pen lift is the ONLY difference.
+    fn w4_a3_strike(
+        kind: u16,
+        w: &World,
+        pl: &mut crate::player::Player,
+        melee_pen: i32,
+    ) -> i32 {
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 500;
+        npc.max_hp = 500;
+        npc.defense_override = Some(24);
+        let slot = pool
+            .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 40, 5.0, 0.0, 0.0)
+            .unwrap();
+        // The spawn copies the `SetDefaults`/`DefaultTo*` melee census flag
+        // onto the slot (`Projectile.melee`, the `ApplyStatsFromSource`
+        // spawn-stamp convention) — the fold reads THAT, not the item.
+        assert_eq!(pool.slots()[slot].melee, proj_data(kind).unwrap().melee);
+        pl.melee_armor_penetration = melee_pen;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            Some(pl.center()),
+            Some(pl),
+            &mut rng,
+        );
+        500 - npc.hp
+    }
+
+    /// W4-a3 half 1 — the Sharpened (159) +12 melee penetration reaches the
+    /// flail and boomerang PVE strikes: `Damage_PVE_Inner`'s `num5` reads
+    /// `GetArmorPenetration(this.melee)` (`Projectile.cs:12831`) and the
+    /// slot's melee flag is the `DefaultToFlail` (`:10759`) / boomerang
+    /// (`:871`) census row the data-carrying spawn copies. The old
+    /// `is_whip` fold missed both families (the recorded ANALYSIS
+    /// deviation). `checkArmorPenetration(12, 0, 24)` = 6 (`NPC.cs:81148`),
+    /// so the same-seed sharpened run deals exactly 6 more.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_a3_sharpened_pen_reaches_the_flail_and_boomerang() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        // The real grant chain: buff 159 → `UpdateBuffs`' +12
+        // (`Player.cs:10015-10017`, the port's `player.rs` arm).
+        player.buffs.add_buff(159, 3600);
+        player.update(&w, crate::player::PlayerInput::default());
+        assert_eq!(player.get_armor_penetration(true), 12);
+        assert_eq!(player.get_armor_penetration(false), 0);
+        // Zero the crit chances: the per-hit roll still draws, but never
+        // crits — the two runs stay draw-identical.
+        player.melee_crit = 0;
+        player.ranged_crit = 0;
+        player.magic_crit = 0;
+        for kind in [BALL_O_HURT, ENCHANTED_BOOMERANG] {
+            let plain = w4_a3_strike(kind, &w, &mut player, 0);
+            let sharp = w4_a3_strike(kind, &w, &mut player, 12);
+            assert_eq!(
+                sharp - plain,
+                6,
+                "kind {kind}: the Sharpened +12 folds as 12/2 = 6 pre-defense"
+            );
+        }
+    }
+
+    /// W4-a3 half 1 — the yoyo (`DefaultToYoyo` `:10770` melee) takes the
+    /// same +6 lift, while a ranged shot (the shuriken, `Projectile.cs:835`
+    /// ranged / no melee flag) does NOT: `GetArmorPenetration(false)`
+    /// drops the melee-only row (`Player.cs:4365-4373`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_a3_sharpened_pen_reaches_the_yoyo_not_the_ranged_shot() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.melee_crit = 0;
+        player.ranged_crit = 0;
+        player.magic_crit = 0;
+        let plain = w4_a3_strike(WOOD_YOYO, &w, &mut player, 0);
+        let sharp = w4_a3_strike(WOOD_YOYO, &w, &mut player, 12);
+        assert_eq!(sharp - plain, 6, "the yoyo is melee — the +12 folds");
+        let plain = w4_a3_strike(SHURIKEN, &w, &mut player, 0);
+        let sharp = w4_a3_strike(SHURIKEN, &w, &mut player, 12);
+        assert_eq!(sharp - plain, 0, "the shuriken is ranged — no melee row");
     }
 
     /// S1-C-8: `Damage_GetHitbox()` (`Projectile.cs:14959-15023`) — the base

@@ -38531,10 +38531,15 @@ accessory damage row with tagdmg 0 — so its `want` was 0 and the assertion
 passed vacuously; it now uses the Focused (88, tagdmg +3) summon row.
 
 Deviations (deliberate, recorded):
-* The PVE strike's melee flag folds to `is_whip`: the flail/yoyo/boomerang
-  `melee = true` rows have no slot flag yet, so their Sharpened +12
-  (`GetArmorPenetration(melee)`) stays missed on those families (the
-  melee HIT path already reads `get_armor_penetration(true)`).
+* ~~The PVE strike's melee flag folds to `is_whip`~~ — FIXED (W4-a3): the
+  fold now reads the slot's `Projectile.melee` census flag (the
+  `SetDefaults`/`DefaultTo*` row the data-carrying spawn copies,
+  `Projectile.cs:12831`), so the Sharpened 159 +12 reaches the
+  flail/yoyo/boomerang families; the whip sets NO class flag
+  (`DefaultToWhip` `:10704-10718`) and correctly drops out of the melee
+  fold (the old `is_whip` stand-in over-applied it). Witnesses:
+  `w4_a3_sharpened_pen_reaches_the_flail_and_boomerang`,
+  `w4_a3_sharpened_pen_reaches_the_yoyo_not_the_ranged_shot`.
 * The PVE strike's debuff bonuses (ichor +15 / broken armor +20 / Betsy's
   curse +40, `NPC.cs:81148`) pass false — the NPC debuff scan has not
   landed on this seam (the melee hit's convention).
