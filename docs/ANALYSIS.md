@@ -39318,3 +39318,139 @@ despawn tail (the C# arm has none — the generic despawn pass owns it),
 the Brain swarm's float-scatter stand-in (`update_brain_state`), the
 52/53 pool-pass one-tick lag for freshly spawned minions (the worm-pass
 precedent), the 56 spirit's dust pre-pass slot-turn order.
+
+## The aiStyle-60 re-verification (W4-d29, 2026-11-20, code-only mode)
+The research/25 row for aiStyle 60 ("MISSING") was stale (the audit dates
+2026-11-12, before S1-F-13c landed). This round ran the census + a
+distrust-verbatim re-read of the WHOLE arm (`NPC.cs:33374-33680`) against
+`crates/tr-app/src/npc_ai_frost_boss.rs::ice_queen_ai` on the merged tree:
+* Census: whole-tree `aiStyle = 60` grep finds exactly ONE NPC row —
+  IceQueen 345 (`:13373`; `NPCID.cs:11367`); the other hits are
+  `Projectile.cs:4491/:4872/:9852` (the projectile style space). No
+  per-type branch; the axis census test
+  (`npc.rs::w4_d29_census_tests::w4_d29_the_styles_60_63_census_is_four_kinds`)
+  pins the four-kind mapping 60→345/61→346/62→347/63→352.
+* Verdict **faithful**: the day flee (±0.25 X / −0.1 Y / 0.05 tilt, NO
+  EncourageDespawn), the phase-0 side pick + 800px turn-around, the
+  hp-tiered accel/cap table (0.45/7 → 0.55/8 → 0.7/10 → 0.8/11, f64
+  compares), the ±8 hover band (150/200), the FrostWave cadence (13+1 →
+  12+1 → 11+1 → 10+1 with the negative-ai[3] wrap, the 7-tick lead on the
+  UPDATED vx, hp-tiered shot speed 6/7/8/9, Type 348 dmg 42, no shot
+  draws), the phase-1 centre-seek (0.98 counter-drift / 0.95 over-cap,
+  −0.05/−1 reductions), the shard drop (15+3/14+3/12+3/10+3/8+3 cadence,
+  the SolidTile gate at the truncated `(int)(x/16)`, SpeedY floored at 0
+  then +3, ai0 = Next(5) drawn ONLY when the gate passes), the phase-2
+  spin (the two Next(-1000,1001) EVERY tick BEFORE the 0.95 brake, 15f
+  normalise, 4× offset, rotation += 0.2, the 7−1−2−3−4 hp cadence) and
+  the SIBLING `ai[0] == -1` re-pick (Next(3) drawn even when the >1000px
+  check forces 0, same-tick after a phase flip, runs by day too).
+* RNG census (per phase, per tick): phase 0 = Next(1,4); phase 1 =
+  [Next(5) on a gated drop] + Next(1,4); phase 2 = Next(-1000,1001)×2 +
+  Next(1,4); re-pick = Next(3); day = 0 unless ai[0]==-1. The module's
+  same-seeded probe witnesses pin each order (7 tests); the wiring
+  witnesses (`npc.rs::s1_f_13c_wire_tests`) pin the axis claim, the shot
+  lanes and the stream advance.
+* Wiring: `npc.rs` style axis `60 if IceQueen => ice_queen_step` (the
+  kind arm is `unreachable!`-guarded); one pre-pass `target_closest`
+  covers the five C# TargetClosest sites (single session player, no
+  rand); noTileCollide integration `:90495-90498`. No new code needed.
+No compiler invoked; no tests run (code-only mode).
+
+## The aiStyle-61 re-verification (W4-d29, 2026-11-20, code-only mode)
+The research/25 row for aiStyle 61 ("MISSING") was stale (2026-11-12,
+pre-S1-F-13c). Census: whole-tree `aiStyle = 61` grep → exactly ONE NPC
+row, SantaNK1 346 (`NPC.cs:13390`; the other hits `Projectile.cs:4512/
+:9426` are the projectile style space). The S1-D-3 census
+(`## The aiStyle-61 census`, 2026-11-19) already audited the machine;
+this round re-read the WHOLE arm (`NPC.cs:33681-33921`) against
+`npc_ai_frost_boss_b.rs::santa_nk1_ai` on the merged tree and confirms
+**faithful**, with the 2026-11-19 census's three merger gaps now CLOSED:
+* The UNWIRED finding is resolved: the style axis claims
+  `61 if SantaNK1 => frost_boss_b_step` (`npc.rs`, the kind arm
+  `unreachable!`-guarded); the wrapper runs `target_closest` at the
+  `:33688` night site + the `:33725` idle→volley flip pre-pass (draw-free,
+  order exact), copies `direction`/`local_ai`/`time_left` in/out, maps
+  EncourageDespawn(10) onto `despawn_timer` and drains the shots
+  (180/350/351/352 all zero-ai → the plain lane).
+* Projectile rows 350/351/352 are ported (`projectile_frost_shots.rs`,
+  the S1-F-13c wiring; `the_boss_shot_rows_resolve` pins 345-352).
+* The machine itself: the f64 hp bands (2/3/4/5), flag64
+  (`active && !dead && dist <= 2000`), the kept InWorld/SolidTile light
+  probe (the no-rand AddLight drop documented), the day arm
+  (EncourageDespawn(10), speed 8, the 0→0.1 nudge), the 300-tick idle →
+  240-tick volley (hp-tiered else-if cadence 16/14/11/8, origin-Y
+  Next(15,36) FIRST inside the ctor, ±40 aim jitters, 15f, ×0.015), the
+  three UNCONDITIONAL per-tick rolls Next(600/1200/2700) with the
+  ×0.5/×0.75/×0.9 f64 truncations, the same-tick window increments
+  (Missile %12 flag64-gated, Present %9 ungated), the shared
+  `floater_movement` tail (the f64 ±0.1/−0.2/0.1 snaps kept).
+* RNG census per tick: [volley: Next(15,36) + Next(-40,41)×2 +
+  Next(-20,21)×2 when flag64 && cadence] → Next(d1) [+Next(1,100) on 0]
+  → Next(d2) [+Missile: Next(-50,51)×2 + Next(-20,21)×2 when the window
+  fires] → Next(d3) [+Present: Next(-100,101) + Next(-20,21)×2 when %9].
+  The module's 8 santa_* probe witnesses + the axis-level
+  `s1_f_13c_wire_tests` pin the order.
+* Residual (pre-existing, shared): `Player::solid_collision` misses
+  `!inActive()` (`Collision.cs:2715`) — the floater probe reads an
+  actuated-off tile as solid; recorded in the 57/61 censuses, helper-scope.
+No compiler invoked; no tests run (code-only mode).
+
+## The aiStyle-62 re-verification (W4-d29, 2026-11-20, code-only mode)
+The research/25 row for aiStyle 62 ("MISSING") was stale (2026-11-12,
+pre-S1-F-13c/W-6). Census: whole-tree `aiStyle = 62` grep → exactly ONE
+NPC row, ElfCopter 347 (`NPC.cs:13404`; the DesertDjinn 533 is aiStyle 8
+— the many `Projectile.cs` hits are the minion style space). Re-read the
+WHOLE arm (`NPC.cs:33922-33969`) against
+`npc_ai_frost_mob.rs::elf_copter_ai`: **faithful** —
+the rotation `|vx| * direction * 0.1` + sprite flip BEFORE the velocity
+update (`:33925-33926`), the 7f aim from `Center + (direction*20, 6)`
+with the chase Y at the player's TOP (`position.Y`, `:33930`), the 1×1
+centre `Collision.CanHit` walk (`projectile::can_hit`,
+`Collision.cs:381-479`), the day flee (59/60 lerp AWAY + the
+EncourageDespawn(10) that only lowers), the >600px / no-LOS approach
+(59/60 lerp TOWARD, early return), the 0.98 hover brake, the 15-tick
+cadence under `|vx|<1 && |vy|<1` and the shot's re-aim at the player's
+CENTRE.Y (`:33959`, unlike the chase).
+RNG census: exactly SIX draws on a firing tick, in order —
+Next(-35,36)×2 (aim jitter) → Next(-20,21)×2 (aim scale ×0.015) →
+10f normalise → Next(-20,21)×2 (speed scale ×0.0125, the named-arg
+SpeedX/SpeedY textual order); Type 180 dmg 32 constant, no ai args;
+ZERO draws on every other path (day, approach, sub-cadence hover).
+**New witnesses this round** (`npc.rs::w4_d29_census_tests`): the
+four-kind style census (60→345/61→346/62→347/63→352 over ALL_KINDS — the
+audit's "no test enumerates the aiStyle→kind mapping" gap, closed for
+this range) + the FULL `update_rng` axis-level stream witnesses for
+style 62 (the firing tick pays exactly the six-draw census; 14 hover
+ticks + the day flee pay zero) — the prior witnesses ran the pure
+machine / the `frost_mob_step` seam, never the axis entry.
+Wiring: axis `62 if ElfCopter => frost_mob_step` (kind arm
+`unreachable!`-guarded), `retarget_state` at the `:33924` site, the 180
+request rides `wants_hostile_shot` (`PIRATE_ARROW` = the BulletDeadeye
+row, `projectile/data.rs:340`), noTileCollide integration.
+No compiler invoked; witnesses written not run (code-only mode).
+
+## The aiStyle-63 re-verification (W4-d29, 2026-11-20, code-only mode)
+The research/25 row for aiStyle 63 ("MISSING") was stale (2026-11-12).
+Census: whole-tree `aiStyle = 63` grep → exactly ONE NPC row, Flocko 352
+(`NPC.cs:13475`; `Projectile.cs:4639` is type 379's own style). The
+S1-D-3 census (`## The aiStyle-63 census`, 2026-11-18) audited the
+then-in-flight sibling; this round re-read the WHOLE arm
+(`NPC.cs:33971-34018`) against `npc_ai_frost_mob.rs::flocko_ai` on the
+merged tree and confirms **faithful**: the 11f aim from
+`Center + (direction*20, 6)` at the player's CENTRE (`:33977`), the day
+reversal (`0f - x` literals), the `ai[0]--` BEFORE the latch test, the
+<200px re-arm to 20 / the direction-from-vx-sign (zero → +1) / the
+`rotation += direction * 0.3` early return, the THREE SEQUENTIAL lerp
+tiers each re-reading the just-written velocity (50/51 always, 10/11
+inside 350, 7/8 inside 300), the `rotation = vx * 0.15` assignment.
+RNG census: ZERO draws on every path — the machine takes no rng
+parameter (`TargetClosest` is the deterministic Manhattan scan).
+**New witness this round**
+(`npc.rs::w4_d29_census_tests::w4_d29_style63_axis_spins_draw_free_and_integrates`):
+the FULL `update_rng` axis tick pins the spin latch + the untouched
+velocity + the raw noTileCollide integration AND the chase path's
+decrement/tilt, with a same-seeded stream equality on both — the prior
+witnesses ran the pure machine / the `frost_mob_step` seam only.
+Wiring: axis `63 if Flocko => frost_mob_step` (kind arm
+`unreachable!`-guarded), `retarget_state` at the `:33973` site.
+No compiler invoked; witnesses written not run (code-only mode).

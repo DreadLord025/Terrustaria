@@ -34343,3 +34343,155 @@ mod w4_d28_axis_census_tests {
         n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut UnifiedRandom::new(0));
     }
 }
+
+// W4-d29 (aiStyles 60-63 re-verification): the axis-level census witnesses.
+// The machines' own witnesses live in npc_ai_frost_boss(_b).rs /
+// npc_ai_frost_mob.rs; these pin the FULL `update_rng` tick (the style-axis
+// claim + the stream census) for the mob flyers and the family identity.
+#[cfg(test)]
+mod w4_d29_census_tests {
+    use super::tests::ALL_KINDS;
+    use super::*;
+
+    fn night_world() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        w.day_time = false;
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    /// The census (whole-tree `aiStyle = 6x` grep): exactly four kinds ride
+    /// aiStyles 60-63 - IceQueen 345 (`NPC.cs:13373`), SantaNK1 346
+    /// (`:13390`), ElfCopter 347 (`:13404`), Flocko 352 (`:13475`). A kind
+    /// silently falling onto (or off) one of these styles fails here.
+    #[test]
+    fn w4_d29_the_styles_60_63_census_is_four_kinds() {
+        let mut seen = Vec::new();
+        for &k in ALL_KINDS.iter() {
+            let s = k.ai_style();
+            if (60..=63).contains(&s) {
+                seen.push((s, k.to_u16()));
+            }
+        }
+        seen.sort();
+        assert_eq!(seen, vec![(60, 345), (61, 346), (62, 347), (63, 352)]);
+    }
+
+    /// aiStyle 62 through the FULL `update_rng` axis (`npc.rs`'s
+    /// `62 if ElfCopter` claim, `NPC.cs:33922-33969`): at the 15th slow
+    /// hover tick the six draws fire in the C# order, ONE 180 request
+    /// (32 dmg) lands on `wants_hostile_shot`, and the stream afterwards
+    /// aligns with a same-seeded replay. The player is far from the copter
+    /// so the `contact` pass adds no draws; `find_frame` is rng-free.
+    #[test]
+    fn w4_d29_style62_axis_firing_tick_pays_the_six_draw_census() {
+        let w = night_world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 1300.0;
+        p.y = 600.0;
+        let mut n = Npc::new(NpcKind::ElfCopter, 0.0, 0.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.x = 1000.0;
+        n.y = 600.0;
+        n.local_ai[0] = 14.0; // the next slow hover tick fires (`:33955`)
+        let mut rng = UnifiedRandom::new(12345);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.local_ai[0], 0.0, "the cadence resets (`:33957`)");
+        assert_eq!(n.wants_hostile_shot.len(), 1);
+        let (kind, _x, _y, _vx, _vy, dmg) = n.wants_hostile_shot[0];
+        assert_eq!(kind, 180, "BulletDeadeye (`:33967`)");
+        assert_eq!(dmg, 32);
+        // The witness: exactly the six draws, in the C# order.
+        let mut probe = UnifiedRandom::new(12345);
+        for (lo, hi) in [(-35, 36), (-35, 36), (-20, 21), (-20, 21), (-20, 21), (-20, 21)] {
+            probe.next_range(lo, hi);
+        }
+        assert_eq!(rng, probe, "the axis tick paid exactly the six census draws");
+    }
+
+    /// The other half of the aiStyle-62 census: the non-firing hover ticks
+    /// (day flee, far approach, sub-cadence hover) consume ZERO draws
+    /// through the full axis tick.
+    #[test]
+    fn w4_d29_style62_axis_non_firing_ticks_are_draw_free() {
+        let mut w = night_world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 1300.0;
+        p.y = 600.0;
+        let mut n = Npc::new(NpcKind::ElfCopter, 0.0, 0.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(999);
+        for _ in 0..14 {
+            // Re-anchor in the hover window: dist ≈ 300 < 600, LOS clear,
+            // velocity 0 → the cadence counts without firing.
+            n.x = 1000.0;
+            n.y = 600.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.local_ai[0], 14.0);
+        assert!(n.wants_hostile_shot.is_empty());
+        assert_eq!(rng, UnifiedRandom::new(999), "zero draws on the hover ticks");
+        // The day flee (`:33936-33943`) draws nothing either.
+        w.day_time = true;
+        n.despawn_timer = 600;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.despawn_timer, 10, "EncourageDespawn(10) (`:33941`)");
+        assert_eq!(rng, UnifiedRandom::new(999));
+    }
+
+    /// aiStyle 63 through the FULL `update_rng` axis (`63 if Flocko`,
+    /// `NPC.cs:33971-34018`): the <200px spin latch re-arms ai[0]=20,
+    /// sets the direction from vx's sign, adds direction*0.3 to the
+    /// rotation and leaves the velocity untouched — then the
+    /// noTileCollide integration moves the position by it. The whole
+    /// arm draws NOTHING (`flocko_ai` takes no rng).
+    #[test]
+    fn w4_d29_style63_axis_spins_draw_free_and_integrates() {
+        let w = night_world();
+        let mut p = crate::player::Player::spawn(&w);
+        // The player's centre (1110, 981) sits ~104px from the Flocko's
+        // aim point (1007, 993) → the <200px latch fires; the boxes do
+        // NOT overlap (the 54-wide Flocko ends at x=1014 < 1100), so the
+        // `contact` pass adds no damage-variance draws.
+        p.x = 1100.0;
+        p.y = 960.0;
+        let mut n = Npc::new(NpcKind::Flocko, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.vx = -2.0;
+        n.vy = 1.0;
+        n.ai[0] = 5.0;
+        let (x0, y0) = (n.x, n.y);
+        let mut rng = UnifiedRandom::new(9);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 20.0, "the <200px latch re-arms (`:33990-33993`)");
+        assert_eq!(n.facing, -1, "the direction follows vx's sign (`:33994-34001`)");
+        assert_eq!(n.vx, -2.0, "the spin early-return leaves the velocity");
+        assert_eq!(n.vy, 1.0);
+        assert_eq!((n.x, n.y), (x0 - 2.0, y0 + 1.0), "the raw integration");
+        assert_eq!(rng, UnifiedRandom::new(9), "aiStyle 63 draws nothing");
+        // The chase path (outside 200px, ai[0] spent) is draw-free too:
+        // the three sequential lerp tiers and the 0.15 tilt (`:34005-34017`).
+        p.x = 2000.0;
+        p.y = 600.0;
+        n.x = 1000.0;
+        n.y = 600.0;
+        n.ai[0] = 0.0;
+        let vx0 = n.vx;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], -1.0, "the decrement runs before the latch (`:33987`)");
+        assert!(n.vx > vx0, "the 50/51 tier chases the aim");
+        assert_eq!(n.rotation, n.vx * 0.15, "the tilt (`:34017`)");
+        assert_eq!(rng, UnifiedRandom::new(9));
+    }
+}
