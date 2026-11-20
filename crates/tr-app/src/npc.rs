@@ -4855,10 +4855,32 @@ impl Npc {
             // the arm is RNG-free by construction (the FungiSpore light's
             // one `Next(28,42)` is the documented draw-pass skip).
             50 => self.ai_050_spore_family(world, player),
+            // `else if (this.aiStyle == 51)` (`NPC.cs:31717-32075`) — the
+            // Plantera (262), the style's only user. W4-d28 axis census:
+            // the faithful machine (`npc_ai_plantera::step`, ba8159fc)
+            // already ran through the kind arm; the axis claims the style
+            // now (the S1-D-2 convention), the kind arm becomes the
+            // unreachable marker. The wrapper keeps the hook-anchor seam
+            // (the sim's centroid pre-pass) + the documented world-bottom
+            // despawn tail.
+            51 => self.update_plantera(world, player, rng),
             // aiStyles 52/53 (the hook 263 / the tentacle 264) need the
             // whole NPC pool (the boss slot + the sibling scan), so they
             // ride the sim's `update_plantera_minions` pass (the worm
-            // precedent) - the kind arms below stay empty on purpose.
+            // precedent). W4-d28 axis census: the styles are CLAIMED here
+            // as empty arms — the pool pass owns the AI + the
+            // noTileCollide integration (`NPC.cs:90490-90498`); the kind
+            // arms below stay empty on purpose (the exhaustive match).
+            52 | 53 => {}
+            // `else if (this.aiStyle == 54)` (`NPC.cs:32370-32656`) — the
+            // Brain of Cthulhu (266), the style's only user. W4-d28
+            // verify-only census: the landed S1-D-3e machine
+            // (`update_brain`) is faithful (the 6000-px Manhattan despawn,
+            // the reciprocal-first drift, the blink/retreat states, the
+            // despawn ramp); the axis claims the style, the kind arm
+            // becomes the unreachable marker. The swarm init + the
+            // Creeper count ride the sim's `update_brain_state` pre-pass.
+            54 => self.update_brain(world, player, rng),
             // S1-F-13b2 slice B: the Pumpkin Moon bosses' named machines
             // (`NPC.cs:32761-33043` / `:33044-33197`) - claimed for these
             // two kinds only (the aiStyle-26/22 kinds ride another slice).
@@ -5810,13 +5832,19 @@ impl Npc {
                 rng,
                 &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
             ),
-            NpcKind::Plantera => self.update_plantera(world, player, rng),
+            // W4-d28 axis census: the Plantera (aiStyle 51) rides the style
+            // axis above (`51 => update_plantera`) — this arm is unreachable
+            // through `update_rng` (the S1-D-2 axis precedent).
+            NpcKind::Plantera => {
+                unreachable!("aiStyle 51 rides the style axis (W4-d28)")
+            }
             // The Plantera minions (S1-D-3-wire-plantera-minions): the
             // hook (52) and the tentacle (53) run in the sim's pool pass
             // `world_sim/npcs.rs::update_plantera_minions` (the C# arms
             // read `NPC.plantBoss` + the sibling slots, `NPC.cs:32080`/
-            // `:32129`/`:32260`); these kind arms keep the match exhaustive
-            // and route nowhere - the pool pass owns the AI + integration.
+            // `:32129`/`:32260`); the axis claims 52/53 as empty arms
+            // (W4-d28) — these kind arms keep the match exhaustive and
+            // route nowhere - the pool pass owns the AI + integration.
             NpcKind::PlanterasHook | NpcKind::PlanterasTentacle => {}
             // The spore pair rides the aiStyle-50 axis above
             // (`ai_050_spore_family`); these arms are unreachable through
@@ -5824,7 +5852,13 @@ impl Npc {
             NpcKind::FungiSpore | NpcKind::Spore => {
                 unreachable!("aiStyle 50 rides the style axis (S1-D-3-wire-plantera-minions)")
             }
-            NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
+            // W4-d28 axis census: the Brain of Cthulhu (aiStyle 54) rides
+            // the style axis above (`54 => update_brain`) — this arm is
+            // unreachable through `update_rng` (the S1-D-3e machine is
+            // unchanged, the verify-only census).
+            NpcKind::BrainOfCthulhu => {
+                unreachable!("aiStyle 54 rides the style axis (W4-d28)")
+            }
             // S1-D-3 W-2: the Creeper (aiStyle 55) rides the style axis
             // (`ai_055_creeper_family`) — this arm is unreachable through
             // `update_rng` (the axis claims style 55 first). The
