@@ -34,6 +34,7 @@ use super::biomes::{self, BiomeSpans};
 use super::caves;
 use super::desert;
 use super::desert_dunes;
+use super::dither_snake;
 use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
@@ -366,6 +367,14 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.CurrentDungeonGenVars.dungeonDitherSnake` per dungeon
+    /// (`DitherSnakePass.cs:26`/`:29` — the pass stores each calculated
+    /// snake before painting it). W4-c30: written by the dither-snake step
+    /// on a `dualDungeons` world (index = `GenVars.CurrentDungeon`); empty
+    /// on a classic world (the pass never registers). The dual-dungeon
+    /// crawler's border/room queries are the consumers (W4-c32+).
+    #[allow(dead_code)] // written by the snake step; the crawler consumes it later
+    pub(crate) dither_snakes: Vec<dither_snake::DitherSnake>,
 }
 
 impl Default for GenVars {
@@ -426,6 +435,10 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // `dungeonDitherSnake` is null until the DitherSnakePass stores
+            // one (`DitherSnakePass.cs:26`); the port's empty vec carries
+            // the same not-yet-generated semantics.
+            dither_snakes: Vec::new(),
         }
     }
 }
@@ -1185,6 +1198,21 @@ pub(crate) fn pass_disabled_by_special_seeds(
         && DUAL_DUNGEON_DISABLED_PASSES.contains(&vanilla)
 }
 
+/// The conditional-registration gate (`WorldGen.cs:14753-14755`): the
+/// `DitherSnakePass` is only `AddGenerationPass`ed when
+/// `SecretSeed.dualDungeons.Enabled` (and `!Skyblock.denyAllGeneration` — the
+/// port has no skyblock step, so that arm is vacuous). A classic world never
+/// registers the pass: no tiles, no draws, no progress weight. Every other
+/// executed step is unconditionally registered (the skyblock pair has no
+/// executed step yet).
+pub(crate) fn pass_registration_gate_closed(
+    vanilla: &str,
+    flags: crate::seeds::MicroSeedFlags,
+) -> bool {
+    vanilla == "Dual Dungeons Dither Snake"
+        && !flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+}
+
 // --- the executed pipeline (today's order, verbatim call sites) -------------
 
 type StepFn = fn(&mut World, &mut GenVars, &mut Streams, &GenOptions, &Noise, &ConfigSection);
@@ -1272,6 +1300,18 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `mushroom patches`).
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
+    // The vanilla DitherSnakePass slot (`WorldGen.cs:14753-14755`): after
+    // Slush (`:14697`), before Dungeon (`:14757`) — W4-c30's dual-dungeons
+    // dither snake, conditionally registered: a classic world's gate is
+    // closed (`pass_registration_gate_closed`), no tiles and no draws.
+    // The step name IS the vanilla `GenPassNameID.DualDungeonsDitherSnake`
+    // string (`GenPassNameID.cs:256`) so `pass_rng` mixes the same name the
+    // vanilla pass carries.
+    step!(
+        "Dual Dungeons Dither Snake",
+        "Dual Dungeons Dither Snake",
+        step_dither_snake
+    ),
     step!("dungeon", "Dungeon", step_dungeon),
     // The vanilla Dungeon tail (`WorldGen.cs:14867`): the Constant's
     // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
@@ -1961,6 +2001,84 @@ fn step_liquids(
         }
     };
     liquids::place_liquids(world, &mut streams.rng, gv.map_mut(), &layers, width);
+}
+
+/// The vanilla `DitherSnakePass` slot (`WorldGen.cs:14753-14755`,
+/// `DitherSnakePass.cs:22-31`): on a `dualDungeons` world, calculate +
+/// paint dungeon 0's snake, then dungeon 1's. The gate
+/// (`pass_registration_gate_closed`) keeps classic worlds out entirely.
+///
+/// The setup the C# draws before the pass — the Reset dual block
+/// (`WorldGen.cs:11441-11466`: the two dungeon-location rolls + the safe
+/// constant) and the Dunes-slot style setup (`:11519-11524`:
+/// `SetupDungeonGenVarVariables` per dungeon, the colour roll
+/// `DungeonCrawler.cs:56` + the dual style lists `:111-127`) — rides this
+/// step's own `pass_rng("Dual Dungeons Dither Snake")` stream (the port's
+/// recorded per-pass isolation; the port's dungeon side is fixed Right —
+/// M5-BIOME — so dungeon 0 draws the right-side location and dungeon 1 the
+/// left, `:11447`/`:11456`). The bounds come from
+/// `DungeonUtils.CreatePotentialDungeonBounds` (`:2067-2087`) with the
+/// crawler's call args (`DungeonCrawler.cs:109`).
+fn step_dither_snake(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let mut rng = streams.pass_rng("Dual Dungeons Dither Snake");
+    let (width, height) = (world.width, world.height);
+    // The sub-vanilla guard (the house convention — the evil pass's
+    // centre-draw skip): on a narrow world the location bands collapse
+    // (`Next(leftBeachEnd+50, 0.2·width)` / `Next(0.8·width,
+    // rightBeachStart−50)` invert); the C# throws there, the port skips the
+    // pass body before any draw.
+    let left_lo = gv.left_beach_end + 50;
+    let left_hi = (width as f64 * 0.2) as i32;
+    let right_lo = (width as f64 * 0.8) as i32;
+    let right_hi = gv.right_beach_start - 50;
+    if left_hi < left_lo || right_hi < right_lo {
+        log::debug!("dither snake skipped (sub-vanilla location bands)");
+        return;
+    }
+    let safe = dither_snake::normalized_distance_safe_from_dither(height);
+    let world_surface = gv.layers().world_surface;
+    // The C# draw order on the shared `genRand`: the Reset dual block draws
+    // dungeon 0's location (`:11443`/`:11447`) then dungeon 1's
+    // (`:11456`/`:11460`); the Dunes slot rolls the colours afterwards,
+    // dungeon 0 then dungeon 1 (`:11519-11524`). The port keeps that
+    // relative order on the isolated pass stream. The port's dungeon side
+    // is fixed Right for dungeon 0 (M5-BIOME); the dual block flips it for
+    // dungeon 1 (`WorldGen.cs:11454`).
+    let locations = [
+        dither_snake::roll_dungeon_location(
+            &mut rng,
+            width,
+            gv.left_beach_end,
+            gv.right_beach_start,
+            false,
+        ),
+        dither_snake::roll_dungeon_location(
+            &mut rng,
+            width,
+            gv.left_beach_end,
+            gv.right_beach_start,
+            true,
+        ),
+    ];
+    let mut dungeons = Vec::new();
+    for current_dungeon in 0..2 {
+        // `SetupDungeonGenVarVariables`'s colour roll (`DungeonCrawler.cs:56`
+        // — `genRand.Next(3)`; the remix/drunk arms are classic-only here).
+        let color = dungeon::DungeonColor::roll(&mut |n| rng.range(0, n as i32) as u32);
+        let styles = dither_snake::dual_style_list(current_dungeon, opts.crimson, color);
+        let side_left = current_dungeon == 1;
+        let (bounds, hitbox) =
+            dither_snake::create_potential_dungeon_bounds(width, height, world_surface, side_left);
+        dungeons.push((styles, bounds, hitbox, side_left, locations[current_dungeon as usize]));
+    }
+    gv.dither_snakes = dither_snake::apply_dither_snake_pass(world, &mut rng, width, &dungeons, safe);
 }
 
 fn step_dungeon(
@@ -2860,7 +2978,10 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
 fn total_weight(opts: &GenOptions) -> f64 {
     EXECUTED_PIPELINE
         .iter()
-        .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags))
+        .filter(|s| {
+            !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags)
+                && !pass_registration_gate_closed(s.vanilla, opts.micro_flags)
+        })
         .map(|s| {
             VANILLA_CHAIN
                 .iter()
@@ -2891,6 +3012,13 @@ fn apply_step(
     // skipped step is simply not called.
     if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags) {
         log::debug!("worldgen pass '{}' skipped (dualDungeons)", step.name);
+        return false;
+    }
+    // The conditional registration (`WorldGen.cs:14753`): a pass that was
+    // never `AddGenerationPass`ed does not exist in the loop — same Skipped
+    // semantics, no tiles and no draws (the dither snake on a classic world).
+    if pass_registration_gate_closed(step.vanilla, opts.micro_flags) {
+        log::debug!("worldgen pass '{}' not registered (gate)", step.name);
         return false;
     }
     // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
@@ -3043,12 +3171,16 @@ impl GenerationRunner {
             return GenStep::Aborted;
         }
         // Skip disabled passes without consuming a frame (the C#'s Skipped
-        // arm applies no tiles and draws no RNG, `:488-495`).
+        // arm applies no tiles and draws no RNG, `:488-495`); a
+        // gate-closed pass was never registered at all (`:14753`).
         while self.cursor < EXECUTED_PIPELINE.len()
-            && pass_disabled_by_special_seeds(
+            && (pass_disabled_by_special_seeds(
                 EXECUTED_PIPELINE[self.cursor].vanilla,
                 self.opts.micro_flags,
-            )
+            ) || pass_registration_gate_closed(
+                EXECUTED_PIPELINE[self.cursor].vanilla,
+                self.opts.micro_flags,
+            ))
         {
             log::debug!(
                 "worldgen pass '{}' skipped (dualDungeons)",
@@ -3140,7 +3272,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-c30: + `Dual Dungeons Dither Snake` (vanilla `:14755`,
+        // gate-closed on a classic world) between `liquids` and `dungeon`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3193,6 +3327,9 @@ mod tests {
                 "ores and gems",
                 "evil",
                 "liquids",
+                // W4-c30: the conditional DitherSnakePass slot
+                // (`WorldGen.cs:14755`) — gate-closed on a classic world.
+                "Dual Dungeons Dither Snake",
                 "dungeon",
                 "constant lava layer",
                 "beaches",
@@ -3337,7 +3474,11 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("evil"), pos("ores and gems") + 1);
+        // W4-c30: the DitherSnakePass slot sits between Lakes (`:14556`,
+        // the port's `liquids`) and Dungeon (`:14757`) — `:14755`.
         assert_eq!(names[pos("evil") + 1], "liquids");
+        assert_eq!(pos("Dual Dungeons Dither Snake"), pos("liquids") + 1);
+        assert_eq!(pos("dungeon"), pos("Dual Dungeons Dither Snake") + 1);
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3441,17 +3582,16 @@ mod tests {
 
     #[test]
     fn every_executed_step_maps_into_the_chain() {
-        let classic_names: std::collections::HashSet<&str> = VANILLA_CHAIN
-            .iter()
-            .filter(|p| p.gate.is_empty())
-            .map(|p| p.name)
-            .collect();
+        // All chain names, not just the classic ones: W4-c30's dither-snake
+        // step maps to a gate-carrying declaration (`WorldGen.cs:14755`).
+        let chain_names: std::collections::HashSet<&str> =
+            VANILLA_CHAIN.iter().map(|p| p.name).collect();
         for step in EXECUTED_PIPELINE {
             if step.vanilla.is_empty() {
                 continue; // the span planner, slopes and the tail are not passes
             }
             assert!(
-                classic_names.contains(step.vanilla),
+                chain_names.contains(step.vanilla),
                 "step {:?} cites unknown vanilla pass {:?}",
                 step.name,
                 step.vanilla
@@ -3810,5 +3950,90 @@ mod tests {
             PassMessage::Key("WorldGeneration.LivingTrees").resolve(&text),
             "<WorldGeneration.LivingTrees>"
         );
+        // W4-c30: the DitherSnakePass message (DitherSnakePass.cs:24 —
+        // `Language.GetTextValue("WorldGeneration.DualDungeonsDitherSnake")`).
+        assert!(matches!(
+            step_message("Dual Dungeons Dither Snake"),
+            Some(PassMessage::Key("WorldGeneration.DualDungeonsDitherSnake"))
+        ));
+    }
+
+    // --- W4-c30: the dual-dungeons dither snake ------------------------------
+
+    /// The registration gate (`WorldGen.cs:14753-14755`): the pass exists
+    /// only on a `dualDungeons` world; every other pass is unconditional.
+    #[test]
+    fn w4_c30_the_registration_gate_reads_the_dual_dungeons_micro_seed() {
+        use crate::seeds::MicroSeedFlags;
+        let classic = MicroSeedFlags::none();
+        let dual = MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS);
+        assert!(pass_registration_gate_closed("Dual Dungeons Dither Snake", classic));
+        assert!(!pass_registration_gate_closed("Dual Dungeons Dither Snake", dual));
+        // No other pass is conditionally registered in the executed chain.
+        for step in EXECUTED_PIPELINE {
+            if step.vanilla != "Dual Dungeons Dither Snake" {
+                assert!(!pass_registration_gate_closed(step.vanilla, classic));
+                assert!(!pass_registration_gate_closed(step.vanilla, dual));
+            }
+        }
+        // The weight sum: a classic world banks no snake weight, a dual
+        // world banks the pass's 1.0 (`DitherSnakePass.cs:18`) — tolerance
+        // for the f64 sum-order (the 1.0 lands mid-chain, not appended).
+        let base = GenOptions { width: 1024, height: 512, seed: 42, ..Default::default() };
+        let dual_opts = GenOptions {
+            micro_flags: dual,
+            ..base.clone()
+        };
+        assert!((total_weight(&dual_opts) - total_weight(&base) - 1.0).abs() < 1e-9);
+    }
+
+    /// End to end: a `dualDungeons` world paints both snakes (the wall-350
+    /// unbreakable band is the observable — no classic pass writes it), the
+    /// two runs are byte-identical (the a == b determinism invariant), and
+    /// the classic control world carries no snake tiles at all. The world
+    /// is 2400 wide so both location bands are non-empty (the sub-vanilla
+    /// guard: `0.2·width ≥ leftBeachEnd+50`).
+    #[test]
+    fn w4_c30_a_dual_dungeons_world_paints_the_snakes_deterministically() {
+        use crate::seeds::MicroSeedFlags;
+        use super::super::world_hash::world_hash;
+        let base = GenOptions {
+            width: 2400,
+            height: 800,
+            seed: 42,
+            ..Default::default()
+        };
+        let dual_opts = GenOptions {
+            micro_flags: MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS),
+            ..base.clone()
+        };
+        let a = super::super::generate(&dual_opts);
+        let b = super::super::generate(&dual_opts);
+        assert_eq!(world_hash(&a), world_hash(&b), "a == b for the dual world");
+        assert_eq!(a.tiles, b.tiles);
+        // The unbreakable-wall band (`DungeonControlLine.cs:152`): wall 350
+        // only the snake paints. The Dungeon0/Cavern bands span both halves.
+        let band = a.tiles.iter().filter(|t| t.wall == 350).count();
+        assert!(band > 1000, "the snakes paint the 350 band ({band})");
+        // The style bricks: the Snow band's ice-brick 161 + wall-71 pair is
+        // the snake's Snow style signature (`DungeonGenerationStyles.cs:356
+        // -359`) — the terrain snow band carries no wall 71.
+        let snow_bricks = a.tiles.iter().filter(|t| t.kind == 161 && t.wall == 71 && t.active()).count();
+        assert!(snow_bricks > 100, "the Snow band paints ({snow_bricks})");
+        // The classic control world has no snake output.
+        let classic = super::super::generate(&base);
+        assert_eq!(classic.tiles.iter().filter(|t| t.wall == 350).count(), 0);
+        // The runner path replays the same world (the resumable twin of
+        // `run` — the gate and the skip loop must agree between the two).
+        let mut runner = GenerationRunner::new(&dual_opts);
+        let mut result = GenStep::Running;
+        let mut guard = 0;
+        while result == GenStep::Running {
+            result = runner.advance(None, None);
+            guard += 1;
+            assert!(guard < 1000, "the runner must terminate");
+        }
+        assert_eq!(result, GenStep::Completed);
+        assert_eq!(runner.world().tiles, a.tiles, "the runner matches the one-shot");
     }
 }

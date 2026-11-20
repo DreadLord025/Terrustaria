@@ -281,6 +281,18 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-c30 (2026-11-21, code-only): the dual-dungeons dither snake
+    // (`worldgen/dither_snake.rs`, the `Dual Dungeons Dither Snake` step at
+    // the vanilla `:14755` slot) lands behind the `dualDungeons` micro-seed
+    // registration gate (`WorldGen.cs:14753`). BOTH classic pins are
+    // UNCHANGED by construction: the gate keeps the step out of a classic
+    // world entirely — no tiles, no draws, no progress weight — and the
+    // pass draws only from its own fresh `pass_rng("Dual Dungeons Dither
+    // Snake")` stream, so no existing stream shifts. The dual-world
+    // determinism witness (a == b over `world_hash` + the tile grid) is
+    // `pipeline.rs`'s
+    // `w4_c30_a_dual_dungeons_world_paints_the_snakes_deterministically`
+    // (written NOT run — code-only mode; the gate runs it).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
