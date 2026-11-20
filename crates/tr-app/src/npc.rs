@@ -4683,6 +4683,8 @@ impl Npc {
             // The returned light is the draw-side feed's
             // (`npc_lights::npc_light` reads `App.mouse_text_color`); the
             // tile move is the wheel's own 12x12 `noSlopeCollision` box.
+            // W4-d24 verify-only census: the machine is unchanged (the
+            // S1-D-3-wire-smallkinds landing already faithful).
             21 => {
                 // The session player as slot 0 (the shared S1-D-3p
                 // candidate, `npc_target::session_candidate`).
@@ -33712,5 +33714,65 @@ mod w4_d24_style16_census_tests {
             "the flop vy + gravity ({})", n.vy);
         let _ = want_vx; // consumed by the same triple (order pinned below)
         assert_eq!(rng, mirror, "exactly the flop triple, in C# order");
+    }
+}
+
+// =====================================================================
+// W4-d24 — the aiStyles 15-22 axis census witnesses (style 21 slice).
+// WRITTEN, NOT RUN (code-only mode). 21 BlazingWheel LANDED + WIRED
+// (S1-D-3-wire-smallkinds, the axis claim + the light feed) ->
+// verify-only; the module's own witnesses stay the machine pins.
+// =====================================================================
+#[cfg(test)]
+mod w4_d24_style21_census_tests {
+    use super::*;
+
+    /// The axis claims style 21 exactly once (the small-kinds landing);
+    /// the BlazingWheel kind arm is the unreachable marker.
+    #[test]
+    fn w4_d24_the_axis_claims_style_21_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "21" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 21 claimed once");
+        assert!(src.contains("aiStyle 21 rides the style axis (S1-D-3-wire-smallkinds)"));
+    }
+
+    /// The 21 claim is LIVE and draw-free: a full `update_rng` tick on
+    /// the wheel runs the ricochet machine + the 12×12 noSlopeCollision
+    /// move — the init TargetClosest, the ±0.13 spin, the ±6 velocity —
+    /// and consumes NO rand (the module's RNG-free-by-construction
+    /// census, `NPC.cs:24615-24665` + `:92775-92783`).
+    #[test]
+    fn w4_d24_the_wheel_rides_the_21_axis_draw_free() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 110.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::BlazingWheel, 100.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(21);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 1.0, "the init armed (:24617-24622)");
+        assert_eq!(n.direction_y, 1, "the directionY pin (:24620)");
+        assert!((n.rotation - 0.13).abs() < 1e-5, "the first spin (:24626)");
+        assert_eq!(rng, witness, "the wheel tick draws nothing");
     }
 }
