@@ -213,6 +213,15 @@ pub mod id {
     /// and relays (`:3178`, the only live send site), the client stores a
     /// peer's counts when `id != myPlayer || ServerSideCharacter`.
     pub const QUESTS_COUNT_SYNC: u8 = 76;
+    /// `67 Unknown67` (`MessageID.cs:147`) — no writer arm, no body; the
+    /// reader ignore group (`MessageBuffer.cs:4483-4490`). Note the accept
+    /// gate (`:165`) does NOT whitelist it pre-spawn (93 is whitelisted
+    /// there but still ignored by the reader group).
+    pub const UNKNOWN_67: u8 = 67;
+    /// `83 Unused83` (`MessageID.cs:179-180`, `[Old("Deprecated.")]`) — no
+    /// writer arm, no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`).
+    pub const UNUSED_83: u8 = 83;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1979,6 +1988,12 @@ pub enum S2c {
     /// `44 Unknown44` — deprecated (`MessageID.cs:99-100`), no body; the same
     /// reader ignore group (`MessageBuffer.cs:4483-4490`).
     Unknown44,
+    /// `67 Unknown67` — no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`).
+    Unknown67,
+    /// `83 Unused83` — deprecated (`MessageID.cs:179-180`), no body; the
+    /// same reader ignore group (`MessageBuffer.cs:4483-4490`).
+    Unused83,
     /// `39 ReleaseItemOwnership` — the host's release notice to one client
     /// (`WorldItem.cs:264`'s `SendData(39, num, …)`; the reader's
     /// `netMode == 1` arm re-runs `FindOwner(forceAssignToServer: true)`,
@@ -2454,6 +2469,8 @@ impl S2c {
             Self::Unused25 => id::UNUSED_25,
             Self::Unused26 => id::UNUSED_26,
             Self::Unknown44 => id::UNKNOWN_44,
+            Self::Unknown67 => id::UNKNOWN_67,
+            Self::Unused83 => id::UNUSED_83,
             Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
             Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
             Self::WorldEvilBytes(_) => id::WORLD_EVIL_BYTES,
@@ -2601,9 +2618,11 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
-            // `25/26/44` have no writer arm; bare frames mirror the reader's
-            // ignore group (`MessageBuffer.cs:4483-4490`).
-            Self::Unused25 | Self::Unused26 | Self::Unknown44 => w,
+            // `25/26/44/67/83` have no writer arm; bare frames mirror the
+            // reader's ignore group (`MessageBuffer.cs:4483-4490`).
+            Self::Unused25 | Self::Unused26 | Self::Unknown44 | Self::Unknown67 | Self::Unused83 => {
+                w
+            }
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -2817,11 +2836,13 @@ impl S2c {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
-            // `25/26/44` — the reader's ignore group reads nothing
+            // `25/26/44/67/83` — the reader's ignore group reads nothing
             // (`MessageBuffer.cs:4483-4490`); bare frames decode.
             id::UNUSED_25 => Self::Unused25,
             id::UNUSED_26 => Self::Unused26,
             id::UNKNOWN_44 => Self::Unknown44,
+            id::UNKNOWN_67 => Self::Unknown67,
+            id::UNUSED_83 => Self::Unused83,
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
             id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
@@ -5255,12 +5276,18 @@ mod tests {
     }
 
     #[test]
-    fn w4_f21_deprecated_ignore_group_26_44_are_bare_frames() {
-        // `26 Unused26` (`MessageID.cs:62-63`) and `44 Unknown44`
-        // (`MessageID.cs:99-100`) share the reader's ignore group with 25
-        // (`MessageBuffer.cs:4483-4490`): no writer arm, no body, accepted
-        // and dropped.
-        for (msg, expect_id) in [(S2c::Unused26, 26u8), (S2c::Unknown44, 44u8)] {
+    fn w4_f21_deprecated_ignore_group_26_44_67_83_are_bare_frames() {
+        // `26 Unused26` (`MessageID.cs:62-63`), `44 Unknown44`
+        // (`MessageID.cs:99-100`), `67 Unknown67` (`MessageID.cs:147`) and
+        // `83 Unused83` (`MessageID.cs:179-180`) share the reader's ignore
+        // group with 15/25/93 (`MessageBuffer.cs:4483-4490`): no writer arm,
+        // no body, accepted and dropped.
+        for (msg, expect_id) in [
+            (S2c::Unused26, 26u8),
+            (S2c::Unknown44, 44u8),
+            (S2c::Unknown67, 67u8),
+            (S2c::Unused83, 83u8),
+        ] {
             let f = msg.encode();
             assert_eq!(f[2], expect_id);
             assert_eq!(f.len(), 3);
