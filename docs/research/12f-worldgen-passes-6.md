@@ -74,7 +74,7 @@ every sibling's *stated* range except the Grass Wall orphan it adopts.
 
 - [x] Range claim documented (this doc)
 - [x] R1 Grass Wall — `surface.rs::grass_wall` + `spread_wall`/`count_dirt_tiles`/`spread_dirt_grass`, `pipeline.rs::step_grass_wall` (between `living trees` and `trees`), `pass_rng("Grass Wall")`; witnesses written NOT run; hash pins expected unchanged (wall-0 grass tops), re-pin deferred
-- [ ] R2 Settle Liquids Again
+- [x] R2 Settle Liquids Again — `liquids.rs::settle_liquids_again` + the shared `quick_water`/`settle_liquids_body`/`liquid_interactions_cleanup`/`shimmer_remove_water` machinery, `liquid.rs::settle_water_at`/`water_check`/`attempt_to_move` + the `quick_settle`/`gen_ignore_water`/`generating` toggles, `tileobject.rs::get_tile_data_for_tile`/`check_lava_death`/`check_water_death`, `tile.rs::any_shimmer`/`left_slope`/`right_slope`, `pipeline.rs::step_settle_liquids_again` (before `cacti`), `GenVars.shimmer_position`; draws no RNG; witnesses written NOT run; pins move by design (liquid settles), re-pin deferred
 - [ ] R3 Tile Cleanup
 - [ ] R4 Stalac
 - [ ] R5 Remove Broken Traps

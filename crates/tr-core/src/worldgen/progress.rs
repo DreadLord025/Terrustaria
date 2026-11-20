@@ -137,6 +137,10 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.
         "surface flora" => PassMessage::Gen(42),
+        // WorldGen.cs:21254 — `Lang.gen[27]` (the settle message; the
+        // extraLiquid seed overrides it to "WorldGeneration.WaterFeatures",
+        // `:21257` — the classic feed is Gen(27)).
+        "settle liquids again" => PassMessage::Gen(27),
         // WorldGen.cs:21314.
         "cacti" => PassMessage::Gen(38),
         // WorldGen.cs:21977.

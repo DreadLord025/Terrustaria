@@ -688,6 +688,114 @@ pub fn tile_cut(kind: u16) -> bool {
     TILE_CUT.contains(&kind)
 }
 
+/// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
+/// frame-based def resolution: the (frameX, frameY) cell indexes the style
+/// grid, the `GetStyleOverride` tags short-circuit to their sub-tiles
+/// (`:5294-5327`), `StyleLineSkip` re-splits multi-row styles, then the
+/// sub-tile/alternate walk picks the final def. The wave-B consumer seam
+/// (W4-d106 R2/R3: `CheckLavaDeath`/`CheckWaterDeath` read it).
+pub fn get_tile_data_for_tile(tile: &Tile) -> Option<&'static TileObjectDef> {
+    // :5198-5211 — inactive tiles and unregistered kinds answer null.
+    if !tile.active() {
+        return None;
+    }
+    let mut def = def_for_tile(tile.kind)?;
+    // :5212-5221 — the style grid. C# int division truncates toward zero;
+    // the port's -1 "must be computed" frames divide to 0, same as C#'s
+    // fresh-tile -1 default.
+    let num = tile.frame_x as i32 / def.coordinate_full_width().max(1);
+    let num2 = tile.frame_y as i32 / def.coordinate_full_height().max(1);
+    let num3 = if def.style_wrap_limit == 0 { 1 } else { def.style_wrap_limit };
+    let num4 = if !def.style_horizontal {
+        num * num3 + num2
+    } else {
+        num2 * num3 + num
+    };
+    let multiplier = def.style_multiplier.max(1);
+    let mut num5 = num4 / multiplier;
+    let mut num6 = num4 % multiplier;
+    // :5222-5226 — the GetStyleOverride tags (`:5294-5327`).
+    match def.get_style_override {
+        GetStyleOverride::None => {}
+        GetStyleOverride::Detritus => {
+            if tile.frame_y >= 36 {
+                return def.subtiles.first().map(|(_, d)| *d);
+            }
+            return Some(def);
+        }
+        GetStyleOverride::SmallPiles => {
+            if tile.frame_y >= 18 {
+                return def.subtiles.first().map(|(_, d)| *d);
+            }
+            return Some(def);
+        }
+        GetStyleOverride::Stalactite => {
+            let idx = if tile.frame_y >= 90 {
+                2
+            } else if tile.frame_y >= 72 {
+                1
+            } else if tile.frame_y >= 36 {
+                0
+            } else {
+                return Some(def);
+            };
+            return def
+                .subtiles
+                .iter()
+                .find(|(s, _)| *s as usize == idx)
+                .map(|(_, d)| *d)
+                .or_else(|| def.subtiles.get(idx).map(|(_, d)| *d));
+        }
+    }
+    // :5227-5240 — StyleLineSkip re-splits the style/alternate pair.
+    if def.style_line_skip > 1 {
+        if def.style_horizontal {
+            num5 = num2 / def.style_line_skip * num3 + num;
+            num6 = num2 % def.style_line_skip;
+        } else {
+            num5 = num / def.style_line_skip * num3 + num2;
+            num6 = num % def.style_line_skip;
+        }
+    }
+    // :5241-5248 — the sub-tile pick (null entries keep the base def).
+    if num5 >= 0 {
+        if let Some((_, sub)) = def.subtiles.iter().find(|(s, _)| *s as i32 == num5) {
+            def = sub;
+        }
+    }
+    // :5249-5259 — the first alternate whose style window covers num6.
+    for alt in def.alternates {
+        if num6 >= alt.style && num6 <= alt.style + alt.random_style_range {
+            return Some(alt);
+        }
+    }
+    Some(def)
+}
+
+/// `TileObjectData.CheckLavaDeath(Tile)` (`TileObjectData.cs:5107-5119`):
+/// inactive tiles never die; a def with global liquid checks (or no def)
+/// answers through `Main.tileLavaDeath`, otherwise the def's own flag.
+pub fn check_lava_death(tile: &Tile) -> bool {
+    if !tile.active() {
+        return false;
+    }
+    match get_tile_data_for_tile(tile) {
+        Some(def) if !def.uses_global_liquid_checks => def.lava_death,
+        _ => crate::tiledata::TILE_LAVA_DEATH.has(tile.kind),
+    }
+}
+
+/// `TileObjectData.CheckWaterDeath(Tile)` (`TileObjectData.cs:5083-5095`).
+pub fn check_water_death(tile: &Tile) -> bool {
+    if !tile.active() {
+        return false;
+    }
+    match get_tile_data_for_tile(tile) {
+        Some(def) if !def.uses_global_liquid_checks => def.water_death,
+        _ => TILE_WATER_DEATH.contains(&tile.kind),
+    }
+}
+
 /// `Player.PlaceThing_IsReplaceableBlock` (`Player.cs:39753-39760`): a
 /// `tileCut` target is replaceable EXCEPT the two named exemptions (484,
 /// 711); the drip-tile band 373-375 plus 461/709 is always replaceable;

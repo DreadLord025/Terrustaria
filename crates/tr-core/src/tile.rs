@@ -115,9 +115,27 @@ impl Tile {
         matches!(self.slope(), 3 | 4)
     }
 
+    /// `Tile.leftSlope` (`Tile.cs:310-318`): slope 2 or 4.
+    #[inline]
+    pub fn left_slope(&self) -> bool {
+        matches!(self.slope(), 2 | 4)
+    }
+
+    /// `Tile.rightSlope` (`Tile.cs:320-328`): slope 1 or 3.
+    #[inline]
+    pub fn right_slope(&self) -> bool {
+        matches!(self.slope(), 1 | 3)
+    }
+
     #[inline]
     pub fn has_any_liquid(&self) -> bool {
         self.liquid > 0
+    }
+
+    /// `Tile.anyShimmer` (`Tile.cs:428-435`): liquid present AND shimmer-typed.
+    #[inline]
+    pub fn any_shimmer(&self) -> bool {
+        self.liquid > 0 && self.liquid_kind() == LiquidKind::Shimmer
     }
 
     #[inline]

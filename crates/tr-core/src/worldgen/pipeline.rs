@@ -366,6 +366,14 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`) — the Shimmer pass's
+    /// biome centre, read by `ShimmerRemoveWater`/`ShimmerCleanUp`
+    /// (`WorldGen.cs:34823`/`:34716`). `None` until the `Shimmer` pass lands
+    /// (d102's lane, `:15195`); the settle/cleanup helpers treat `None` as
+    /// "no shimmer placed" and skip (the C# static is `(0,0)` until Shimmer
+    /// writes it, and `ShimmerCleanUp` guards on exactly that — W4-d106 R2/R6
+    /// stand-in, documented).
+    pub(crate) shimmer_position: Option<(i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -403,6 +411,9 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            // `GenVars.shimmerPosition` is `(0,0)` until the Shimmer pass
+            // writes it (`GenVars.cs:282`); the port's `None` is that state.
+            shimmer_position: None,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1379,6 +1390,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("grass wall", "Grass Wall", step_grass_wall),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
+    // The vanilla Settle Liquids Again slot (`WorldGen.cs:21246`): after the
+    // Micro Biomes family (`:20901`) and immediately before Cactus (`:21310`)
+    // — W4-d106 R2. The port slots it right before the cacti step (the Cactus
+    // pass, the nearest executed vanilla neighbour). The settle engine is
+    // deterministic over the tile state (no RNG draw), so the insertion shifts
+    // no other step's ledger.
+    step!("settle liquids again", "Settle Liquids Again", step_settle_liquids_again),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
     // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
     // vegetation family, before the world tail — the M5-OCEAN phase-4
@@ -2686,6 +2704,20 @@ fn step_water_plants(
     ocean::water_plants(world, &layers, &mut streams.pass_rng("Water Plants"));
 }
 
+/// The vanilla Settle Liquids Again slot (`WorldGen.cs:21246-21309`) —
+/// W4-d106 R2: the second liquid settle, on the shared `QuickWater` /
+/// `WaterCheck` / quick-settle-loop machinery. Draws no RNG.
+fn step_settle_liquids_again(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    liquids::settle_liquids_again(world, gv, opts);
+}
+
 fn step_cacti(
     world: &mut World,
     gv: &mut GenVars,
@@ -3166,7 +3198,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-d106 R1: + `grass wall` (vanilla "Grass Wall",
         // `WorldGen.cs:19589`) between `living trees` and `trees`.
-        assert_eq!(names.len(), 67);
+        // W4-d106 R2: + `settle liquids again` (vanilla "Settle Liquids
+        // Again", `WorldGen.cs:21246`) before `cacti`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3260,6 +3294,7 @@ mod tests {
                 "grass wall",
                 "trees",
                 "surface flora",
+                "settle liquids again",
                 "cacti",
                 "lihzahrd altar",
                 "water plants",

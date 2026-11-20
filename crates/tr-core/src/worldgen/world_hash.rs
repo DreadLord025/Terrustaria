@@ -250,6 +250,14 @@ mod tests {
     // grass-with-wall cell does exist on some seed, the pin moves BY
     // DESIGN; the re-pin is DEFERRED to the merge gate (no compiler on
     // this branch). The a == b determinism asserts stay in place.
+    // W4-d106 R2 (2026-11-21, code-only): the `Settle Liquids Again` pass
+    // (`WorldGen.cs:21246-21309`) lands before `cacti` — the shared
+    // `QuickWater`/`WaterCheck`/quick-settle machinery drains the liquids
+    // the late passes disturbed. It draws NO RNG (the settle engine is
+    // deterministic over the tile state), so no other step's stream moves;
+    // the pin moves BY DESIGN wherever a liquid cell settles/re-types/
+    // merges (the lake, the ocean shelves, the lava puddles, the honey).
+    // Re-pin DEFERRED to the merge gate; a == b stays green.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -298,6 +306,11 @@ mod tests {
     // 4200-wide default world; any grass-with-wall seed cell would move it
     // BY DESIGN. Re-pin DEFERRED to the merge gate; a == b stays green
     // (the pass draws only its own fresh stream).
+    // W4-d106 R2 (code-only): `Settle Liquids Again` (see SEED42_512 above)
+    // — the settle engine re-types/drops/merges liquid cells across the
+    // lake, ocean shelves and lava puddles, so this pin moves BY DESIGN.
+    // No RNG draw is added (the engine is deterministic over tile state),
+    // so a == b stays green. Re-pin DEFERRED to the merge gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
