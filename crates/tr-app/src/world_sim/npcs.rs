@@ -9686,6 +9686,79 @@ mod drone_tests {
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(!app.npcs.iter().any(|m| m.kind == NpcKind::MartianDrone));
     }
+
+    /// W4-c12 — the STAND-IN RETIREMENT witness: the 388 rides the wired
+    /// aiStyle-74 axis (`npc_ai_style74::style74_step` through
+    /// `ai_074_hover_charge`). Only the faithful arm runs `TargetClosest`
+    /// (`NPC.cs:35220`), writes the difficulty-scaled kb (`:35310`, the
+    /// `kb_resist_override` seam) and rolls the trail `NewDust` 226 into
+    /// the LIVE pool (`:35276-35290`) — the retired `update_martian_drone`
+    /// did none of the three. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c12_the_drone_rides_the_wired_axis() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = UnifiedRandom::new(7);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(
+                world.width as f32 * TILE_PX,
+                world.height as f32 * TILE_PX,
+            ),
+            max_dust_to_draw: 6000,
+        };
+        let mut n = Npc::new(NpcKind::MartianDrone, 150.0 * TILE_PX, 1760.0, 0, 0.0);
+        n.hp = n.max_hp;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        n.update_rng_dust(&world, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(n.target, 0, "TargetClosest scanned (`:35220`)");
+        assert_eq!(n.kb_resist_override, Some(0.4), "the state-0 kb write (`:35310`)");
+        assert_eq!(n.ai[0], 1.0, "the in-line sight latches the charge (`:35350`)");
+        assert!(
+            dust.slots().iter().any(|d| d.active && d.dust_type == 226),
+            "the trail NewDust 226 landed in the live pool (`:35276-35290`)"
+        );
+    }
+
+    /// W4-c12 — the WIRED RNG census: the 418's state-4 cooldown tick draws
+    /// EXACTLY the two `Next(3)` ember gates (`NPC.cs:35291-35307`, every
+    /// state incl. 4) — the menu ctx refuses `NewDust` BEFORE any draw
+    /// (`Dust.cs:77`), isolating the explicit gates on the caller's
+    /// stream. The retired `update_solar_corite` drew NOTHING. WRITTEN
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_c12_the_wired_corite_ember_gate_census() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = UnifiedRandom::new(11);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: true,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(
+                world.width as f32 * TILE_PX,
+                world.height as f32 * TILE_PX,
+            ),
+            max_dust_to_draw: 6000,
+        };
+        let mut n = Npc::new(NpcKind::SolarCorite, 150.0 * TILE_PX, 1760.0, 0, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 4.0; // the cooldown — the ember dust still runs
+        n.ai[1] = 30.0;
+        let mut witness = rng.clone();
+        let _g1 = witness.next_max(3);
+        let _g2 = witness.next_max(3);
+        n.update_rng_dust(&world, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(rng, witness, "exactly two Next(3) ember gates, no other draw");
+        assert_eq!(n.ai[1], 27.0, "the state-4 cooldown ran (`:35432-35442`)");
+    }
 }
 
 #[cfg(test)]
@@ -14503,8 +14576,12 @@ mod tower_mob_tests {
 
     #[test]
     fn the_corite_implodes_on_contact() {
-        // `:35447-35497`'s implosion: the 3-tick delay then the death (with
-        // the 80-damage blast request).
+        // W4-c12 reconcile onto the faithful aiStyle-74 arm
+        // (`NPC.cs:35455-35499`): the implosion swells the box to 192×192
+        // about the OLD centre, the scaled 80 damage + alpha 255 land on
+        // the FIRST state-3 tick, and the 3-tick fuse kills it. The C#
+        // arm has NO blast projectile — the retired stand-in's
+        // `wants_blast` was an invention (ANALYSIS).
         let (_app, mut player) = {
             let mut a = flow_app(None, vec![], vec![]);
             let p = Player::spawn(&a.world);
@@ -14520,20 +14597,23 @@ mod tower_mob_tests {
         );
         n.hp = n.max_hp;
         n.ai[0] = 3.0; // the implosion state
+        let (old_cx, old_cy) = n.center();
         player.x = 170.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
-        let mut blasted = false;
-        for _ in 0..8 {
-            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-            if n.wants_blast {
-                blasted = true;
-                break;
-            }
-        }
-        assert!(blasted, "the implosion blast");
-        assert!(n.hp <= 0, "the corite dies with it");
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.size_override, Some((192.0, 192.0)), "the 192-box swell");
+        let (cx, cy) = n.center();
+        assert_eq!((cx, cy), (old_cx, old_cy), "the centre holds");
         assert_eq!(n.damage_override, Some(80), "the implosion's hit");
+        assert_eq!(n.alpha, 255, "`:35461`'s alpha");
+        assert!(!n.wants_blast, "no blast projectile in the C# arm");
+        // Ticks 2 and 3 burn the fuse; the death tick's damage zero
+        // mirrors the mid-update deactivation (the adapter).
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert!(n.hp > 0, "the fuse ticks");
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "the 3-tick fuse kills the corite");
     }
 }
 

@@ -1,6 +1,6 @@
 //! The aiStyle-74 family — the Martian Drone / Solar Corite hover-charge-
 //! dash machine (`NPC.AI()`'s `else if (this.aiStyle == 74)` arm,
-//! `NPC.cs:35218-35500`). S1-D-3, aiStyle-74 round, CODE-ONLY MODE (no
+//! `NPC.cs:35218-35500`). S1-D-3 port; W4-c12 WIRED (code-only mode: no
 //! compiler invoked; the witness tests below are written, not run).
 //!
 //! Census: `this.aiStyle = 74;` appears exactly TWICE in `SetDefaults` —
@@ -9,12 +9,15 @@
 //! npcSlots 1.5, canGhostHeal false, `NPCID.cs:11453`) and the SolarCorite
 //! 418 (`NPC.cs:15372`, row `:15368-15381`: 38×38, dmg 70, def 26, lifeMax
 //! 600, kb 0.2, noTileCollide/noGravity, `NPCID.cs:11513`). Both kinds
-//! exist in the roster (`npc/data.rs:1992` maps them to style 74), but the
-//! live routing runs the kind-keyed stand-ins `update_martian_drone`
-//! (`npc.rs:8700`) / `update_solar_corite` (`npc.rs:11597`) — this module
-//! is the faithful UNWIRED port (the `npc_ai_style56.rs` precedent); the
-//! defect catalogue against the stand-ins is in ANALYSIS "The Martian
-//! Drone / Solar Corite machine (S1-D-3 aiStyle-74, code-only)".
+//! exist in the roster (`npc/data.rs` maps them to style 74). W4-c12
+//! wired the axis: `npc.rs::update_rng_dust`'s `74` arm rides the
+//! `ai_074_hover_charge` adapter (the live `DustPool` + `SpawnCtx` on the
+//! caller's `UpdateNPCs` stream); the kind-keyed stand-ins
+//! `update_martian_drone` / `update_solar_corite` are RETIRED (the
+//! `unreachable!` arms, the saucer-trio precedent) and the `FindFrame`
+//! arms ride the twins below. The defect catalogue against the retired
+//! stand-ins is in ANALYSIS "The Martian Drone / Solar Corite machine
+//! (S1-D-3 aiStyle-74, code-only)".
 //!
 //! The machine (one parameter table, four states):
 //! * Head (`:35220-35237`): `TargetClosest(faceTarget: false)` FIRST;
@@ -119,7 +122,9 @@
 //! * `life = 0` + `active = false` (`:35496-35498`) — the port sets
 //!   `hp = 0` and returns `died`; the caller owes the `HitEffect()` +
 //!   deactivation pair. There is NO blast projectile in the C# arm —
-//!   the live corite stand-in's `wants_blast` is an invention (ANALYSIS).
+//!   the retired corite stand-in's `wants_blast` was an invention
+//!   (ANALYSIS); W4-c12's death feed (`world_sim/npcs.rs`) draws the
+//!   388/418 death dust/gore arms on the `UpdateNPCs` stream.
 //! * The arm does NOT integrate position: both kinds are
 //!   noTileCollide/noGravity (`SetDefaults`), so `UpdateNPC`'s raw
 //!   integration (`NPC.cs:90494-90498`) runs after `AI()` — the caller's
@@ -139,7 +144,7 @@
 //!
 //! See docs/ANALYSIS.md "The Martian Drone / Solar Corite machine
 //! (S1-D-3 aiStyle-74, code-only)".
-#![allow(dead_code)] // wiring deferred — the stand-in swap is the merge step
+#![allow(dead_code)] // W4-c12 wired; the hit-plan helpers feed the death pass
 
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::npc::{Npc, NpcKind};
