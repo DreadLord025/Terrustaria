@@ -15,9 +15,10 @@
 //!   replaces both; the *order* of the draws is the original one, so a seed
 //!   fully determines the history.
 //! * This module is the single-player/server branch. Client sync, the menu
-//!   pause, the creative-power freeze and Lantern Night are folded into
-//!   [`Wind::frozen`]; when frozen only the current speed still eases towards
-//!   the target, exactly as in `UpdateWeather`.
+//!   pause and the creative-power freeze fold into [`Wind::frozen`]; the
+//!   Lantern Night early-out has its own [`Wind::lanterns_up`] gate
+//!   (`Main.cs:58856-58859`). When either holds only the current speed still
+//!   eases towards the target, exactly as in `UpdateWeather`.
 //! * [`Wind::update_rain`] takes the real 0..1 `Main.maxRaining` intensity
 //!   (`Main.cs:58832`); the world tick feeds it per dayRate iteration.
 //! * `world_surface` defaults to +infinity, which is treated as "not
@@ -73,8 +74,14 @@ pub struct Wind {
     /// Player with `statLifeMax >= 120` exists (`flag`, `Main.cs:58863-58871`).
     /// While false the walk caps `|speed_target|` at 0.35.
     pub any_player_120_life: bool,
-    /// Creative wind freeze, Lantern Night, client/menu: skip the target walk.
+    /// Creative wind freeze, client/menu: skip the target walk
+    /// (`Main.cs:58850-58854`).
     pub frozen: bool,
+    /// `LanternNight.LanternsUp` (`Main.cs:58856-58859`): the lantern-night
+    /// early-out — its own return AFTER the creative-freeze gate, so the
+    /// drift still eases but the target walk (and the ±0.8 clamp behind it)
+    /// skips. Written per world tick from `WorldEvents` (W4-d130).
+    pub lanterns_up: bool,
     /// `Main._shouldUseWindyDayMusic` (`Main.cs:2903`, `Main.IsItAHappyWindyDay`):
     /// the sticky windy-day flag. The ambience gates for the Airship, Slime
     /// Balloons and the Lost Kite read it (`AmbienceServer.cs:62-66`).
@@ -111,6 +118,7 @@ impl Wind {
             sway_enabled: true,
             any_player_120_life: true,
             frozen: false,
+            lanterns_up: false,
             happy_windy_day: false,
             storming: false,
             wind_grid: WindGrid::new(),
@@ -192,8 +200,15 @@ impl Wind {
         }
 
         // `if (Main.netMode == 1 || (Main.netMode != 2 && Main.gameMenu)) return;`
-        // `if (!CreativePower...Enabled) { if (LanternNight.LanternsUp) return; ... }`
+        // `if (!CreativePower...Enabled) { ... }` — the port's client/menu and
+        // creative-freeze fold.
         if self.frozen {
+            return;
+        }
+        // `if (LanternNight.LanternsUp) return;` (`Main.cs:58856-58859`): the
+        // lantern night's OWN early-out inside the creative gate — the drift
+        // above ran, the target walk below (and its ±0.8 clamp) skips.
+        if self.lanterns_up {
             return;
         }
 
