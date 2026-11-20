@@ -1146,3 +1146,14 @@ WRITTEN NOT RUN; verification = whole-block C# re-reads + hand arithmetic.
   ai1=0) — flagged by the audit as "not fully traced", left for B-6b's
   wiring wave to resolve with the spawn sites.
 
+
+---
+
+## S1-P-i22 - magic guns + tomes use (Player.ItemCheck_Shoot census)
+
+| Status | Task | Description | Size | Seev | Research | Deps | Verify |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| DONE 2026-11-19 (code-only) | task/S1-P-i22-magic-guns-tomes | The 14 listed magic guns + tomes' use arms vs the port: census first, WRONGs fixed + missing ported verbatim with C# cites. WRONG fixed: LaserRifle 514 (PurpleLaser ai0 = Next(3,6), Player.cs:49379-49382), PoisonStaff 1308 (3-or-4 fang volley :48115-48134), MagicalHarp 494 (note arm :47392-47423), SparkleGuitar 4715 (guitar arm :47994-48025), Starfury 65 (projToShoot==9 block :47251-47266 + type-65 arm :49095-49108), SkyFracture 3787 (ring RNG order - the pre-loop radial draw :48813 was dropped - and the SafeNormalize lerp fallbacks :48817/:48824-48825), ElectrosphereLauncher 2796 (projToShoot=442 force :47169-47172 + tileTarget ai0/ai1 :49388-49392). MISSING ported: the 17 projectile rows (9/76/77/78/150/151/152/260/265/442/443/459/460/461/521/856/955) + their AI arms (aiStyle 5 falling star, 21 music note, 4 NettleBurst chain, 48 HeatRay delay, 1 riders 442/459/265, 77 Electrosphere, 29 CrystalPulse, 75 ChargedBlaster holder, 84 ChargedBlaster beam, 167 SparkleGuitar arc) + the 442->443 death hook. OK already: LeafBlower 1178 (jitter :49426-49429), SpiritFlame 3779 (retry arm :48793-48807), CrystalSerpent 3209 + NettleBurst 788 + HeatRay 1295 + ChargedBlasterCannon 2882 generic spawns (rows were the gap), StarCannon 197 ammo path (row 955 was the gap). RNG: use-pass draws ride UpdatePlayers in C# order (witnesses replay them); projectile AI dust/sound RNG skipped pool-wide (the S1-D-5 precedent). | M | B | research/56 | - | witnesses WRITTEN NOT RUN (code-only: no cargo/rustc); editing.rs 6 use-arm witnesses + projectile.rs 7 row/AI witnesses |
+
+Census + verdicts + C# cites: docs/research/56-magic-guns-tomes-census.md.
+Deviations: ANALYSIS "The magic guns + tomes use arms (S1-P-i22)" - the dust-RNG skip, the spawn-time crit fold, the unported hit-time multipliers (265/76-78/9), the SmallerScaledAxis derivation.

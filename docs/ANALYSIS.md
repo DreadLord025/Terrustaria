@@ -33305,3 +33305,52 @@ read/grep (the `Player` field additions, the `update_survival` feed, the
 (`regen.rs` ×6, `player.rs` ×3, `world_sim/editing.rs` ×6, the rewritten
 `projectile.rs` Last Prism pair) are WRITTEN, NOT RUN — **no compiler
 invoked**.
+
+## The magic guns + tomes use arms (S1-P-i22)
+
+`Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:
+`docs/research/56-magic-guns-tomes-census.md`). The use-pass arms live in
+`world_sim/editing.rs` (the if/else chain beside the gem-staff/blaze arms);
+the 17 projectile rows + AI arms in `projectile/data.rs` + `projectile.rs`.
+
+Deliberate deviations (the port's established conventions, not new gaps):
+
+1. **Dust/sound RNG skipped pool-wide.** The C# projectile AI arms draw
+   `Main.rand` for dust/gore/sound only (AI_005's :23883/:23973/:23983/
+   :24035/:24039, AI_021's :25594, the 459 orb's :54678, the 442 Kill's
+   :73531 Next(3,7)). The port's pool keeps ZERO RNG (the S1-D-5 slice-A
+   precedent, `projectile_ai001_a.rs` module doc), so these draws are NOT
+   consumed - the `UpdateProjectiles` stream stays untouched BY
+   CONSTRUCTION. The ONE exception is the NettleBurst head's `Next(2)` type
+   flip (`Projectile.cs:23709-23713`), which changes STATE (the kind), so it
+   IS consumed on the pool's rng (the `ai_style4` arm takes the rng arg).
+   The use-pass draws (the harp/guitar/poison/starfury/sky-fracture rolls)
+   ride `UpdatePlayers` in C# order - the witnesses replay them.
+2. **Crit at spawn.** The port rolls crit at spawn (the existing use-pass
+   convention, `tr_core::damage::crit_roll` = Next(1,101)); the C# rolls at
+   hit (`Projectile.cs:12890-12898`). Same stream, same count per shot.
+3. **Hit-time multipliers NOT applied.** The 265 PoisonFang x0.75
+   (`Projectile.cs:13414-13416`, a `this.damage` mutation that COMPOUNDS per
+   hit), the 76/77/78 notes x0.95 (:13432-13436) and the 9 Starfury star
+   x0.75 (:14502-14504) are HIT-time folds in `Damage_PVE_Inner` /
+   `Damage_GetProjectileSpecificDamageMultiplier`, not the use path. The
+   port's `damage_pve` applies no per-kind hit multiplier today (only the
+   flail family), so they are left unported and recorded as a gap in the
+   census (research/56). The spawn carries the raw weapon damage. The
+   Starfury's x1.5 USE-time damage (`Player.cs:47265`) IS applied at spawn
+   (it is a use-pass fold, not a hit-time one).
+4. **`SmallerScaledAxis`** (`Camera.cs:29-40`) computed from the port's
+   screen + zoom via the `GameViewMatrix.Translation` formula
+   (`app/frame/draw.rs:735-746`): min(screen - 2*translation). The harp's
+   distance scale reads it (`Player.cs:47395`).
+5. **ChargedBlasterCannon 460/461 + Electrosphere 443**: the channel charge
+   machine (`AI_075` :66360-66538) + the sphere pulse (aiStyle 77
+   :30671-30761) are ported; the dust/sound/light visuals skip (no pool
+   layer). The 460's `GetSlowMagicUseRate` = 1 (no ManaV2,
+   `Player.cs:47028-47035`). The 461 beam's LaserScan uses the width-0 fold
+   (one tile ray, `laser_ray_len`) at the 0.5 lerp.
+6. **The Starfury `base.Left/Right`** reads the port's `Player.x` +
+   `WIDTH` (20); the mounted centre Y folds to `center().1` (no mount
+   offsets, the `mounted_center` accessor convention).
+
+Witnesses WRITTEN, NOT RUN (code-only mode: no cargo/rustc invoked).
