@@ -160,6 +160,7 @@ mod npc_target;
 mod npc_ai_style21;
 mod npc_ai_style23;
 mod npc_ai_style25;
+mod npc_ai_style26;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;

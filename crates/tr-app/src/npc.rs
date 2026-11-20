@@ -4677,6 +4677,27 @@ impl Npc {
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
             9 => self.ai_009_sphere_family(world, player, rng),
+            // `else if (this.aiStyle == 26) { this.AI_026_Unicorns(); }`
+            // (`NPC.cs:25631-25634` → the machine `:62366-62924`) — the
+            // unicorn/galloper family (SEVEN vanilla members). W4-d25
+            // census: the FOUR ported kinds ride their landed machines
+            // here (verify-only — the S1-F-13b2/S1-D-4 W-10 unicorn
+            // machine and the M4-EVENT-9 410/423 stand-ins are
+            // unchanged, their deviation notes ride those fns); the
+            // THREE unported members (Unicorn 86 / Wolf 155 /
+            // Tumbleweed 546) are ported verbatim in
+            // `npc_ai_style26.rs`, UNWIRED until their kinds land. The
+            // kind arms below become unreachable markers.
+            26 => match self.kind {
+                NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
+                    crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+                }
+                NpcKind::StardustSpiderSmall => {
+                    self.update_stardust_spider_small(world, player, rng)
+                }
+                NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
+                _ => unreachable!("only the ported aiStyle-26 kinds reach the axis arm"),
+            },
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -6024,7 +6045,12 @@ impl Npc {
             // the drakomire mount + its rider, the sroller, the corite and
             // the selenian.
             NpcKind::StardustSpiderBig => self.update_stardust_spider_big(world, player, rng),
-            NpcKind::StardustSpiderSmall => self.update_stardust_spider_small(world, player, rng),
+            // W4-d25: aiStyle 26 rides the style axis (the M4-EVENT-9
+            // stand-in routes unchanged through the 26 arm) — this arm
+            // is an unreachable marker (the S1-D-3 W-1 precedent).
+            NpcKind::StardustSpiderSmall => {
+                unreachable!("aiStyle 26 rides the style axis (W4-d25)")
+            }
             NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
             NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
             // The drakomire's rider: aiStyle 75 rides the style axis
@@ -6052,7 +6078,12 @@ impl Npc {
             NpcKind::StardustCellSmall => self.update_stardust_cell(world, player),
             NpcKind::StardustJellyfishBig => self.update_stardust_jellyfish(world, player, rng),
             NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
-            NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
+            // W4-d25: aiStyle 26 rides the style axis (the M4-EVENT-9
+            // stand-in routes unchanged through the 26 arm) — this arm
+            // is an unreachable marker (the S1-D-3 W-1 precedent).
+            NpcKind::NebulaBeast => {
+                unreachable!("aiStyle 26 rides the style axis (W4-d25)")
+            }
             NpcKind::VortexRifleman => self.update_vortex_rifleman(world, player, rng),
             // `:57681`: the soldier's walk speed is the 4-px cap.
             NpcKind::VortexSoldier => {
@@ -6187,12 +6218,14 @@ impl Npc {
             // `:25631-25634`) — S1-F-13b2 slice A: the named machine in
             // `npc_ai_unicorn.rs` (the stuck windows, the Horseman's
             // 480-tick pumpkin lob, the hop/walk/step-up/jump core). The
-            // other aiStyle-26 kinds keep their own routings below — this
-            // arm is kind-scoped, not a style-axis claim. The gallop dust
-            // (with its draws), the FindFrame 315/329 arms and the
-            // AddLight ride slice B (module docs + ANALYSIS).
+            // gallop dust (with its draws), the FindFrame 315/329 arms and
+            // the AddLight ride slice B (module docs + ANALYSIS).
+            // W4-d25: the style axis claims 26 for the whole family (the
+            // machine routes UNCHANGED through the axis arm — verify-only
+            // census), so this arm is an unreachable marker (the S1-D-3
+            // W-1 precedent).
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
-                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+                unreachable!("aiStyle 26 rides the style axis (W4-d25)")
             }
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
@@ -33613,5 +33646,166 @@ mod w4_d25_style25_census_tests {
         assert_eq!(n.ai[3], 1.0, "the 341 override (:25558-25561)");
         assert_eq!(n.ai[0], 0.0, "the far untouched present stays disguised");
         assert_eq!(rng, witness, "the mimic tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 26 slice).
+// WRITTEN, NOT RUN (code-only mode). 26 unicorn/galloper family
+// (`NPC.cs:25631-25634` → `AI_026_Unicorns` `:62366-62924`), SEVEN
+// vanilla members: the FOUR ported kinds (HeadlessHorseman 315 /
+// Hellhound 329 on `npc_ai_unicorn::unicorn_step`, StardustSpiderSmall
+// 410 / NebulaBeast 423 on their M4-EVENT-9 stand-ins) now ride the
+// axis claim UNCHANGED (verify-only); the THREE missing members
+// (Unicorn 86 / Wolf 155 / Tumbleweed 546) are ported verbatim in
+// `npc_ai_style26.rs` (UNWIRED, the module's own witnesses).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style26_census_tests {
+    use super::*;
+
+    /// A flat stone floor at row 100 (the `npc_ai_unicorn` tests' shape).
+    fn ground26() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.pumpkin_moon = true;
+        w
+    }
+
+    /// The axis claims style 26 exactly once; the four kind arms are
+    /// the unreachable markers (the S1-D-3 W-1 precedent).
+    #[test]
+    fn w4_d25_the_axis_claims_style_26_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "26" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 26 claimed once");
+        // The four kind arms carry the retirement marker.
+        assert_eq!(
+            src.matches("aiStyle 26 rides the style axis (W4-d25)").count(),
+            4,
+            "315/329 + 410 + 423 kind arms are unreachable markers"
+        );
+    }
+
+    /// The kind-match arms are retired: calling `update_kind_ai`
+    /// directly on a style-26 kind panics (the Everscream precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d25_the_horseman_kind_arm_is_retired() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::HeadlessHorseman, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// Verify-only A/B: the axis routing is behaviour-identical to the
+    /// retired kind-arm routing — a Hellhound tick through `update_rng`
+    /// matches the same preamble + `unicorn_step` + tail run directly
+    /// (state AND stream), so the census moved the dispatch, not the
+    /// machine (S1-F-13b2/S1-D-4 W-10 unchanged).
+    #[test]
+    fn w4_d25_the_hellhound_rides_the_26_axis_unchanged() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut a = Npc::new(NpcKind::Hellhound, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
+        a.hp = a.max_hp;
+        let mut b = a.clone();
+        let mut rng_a = UnifiedRandom::new(26);
+        let mut rng_b = rng_a.clone();
+        // The axis path.
+        a.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng_a);
+        // The retired kind-arm path, spelled out (the `update_rng_dust`
+        // preamble + the gfxOffY decay + the machine + the tail).
+        b.update_preamble(1.0 / 60.0);
+        b.gfx_off_y =
+            crate::npc_ai_unicorn_b::gfx_off_y_decay(b.gfx_off_y, b.vx, b.step_speed);
+        crate::npc_ai_unicorn::unicorn_step(&mut b, &w, &p, &mut rng_b);
+        b.just_hit = false;
+        b.find_frame();
+        b.contact(&mut p, &mut rng_b);
+        assert_eq!((a.x, a.y, a.vx, a.vy), (b.x, b.y, b.vx, b.vy));
+        assert_eq!(a.ai, b.ai);
+        assert_eq!((a.facing, a.sprite_dir, a.frame), (b.facing, b.sprite_dir, b.frame));
+        assert_eq!(a.unicorn_stuck_x, b.unicorn_stuck_x);
+        assert_eq!(rng_a, rng_b, "the routing moves no draw");
+    }
+
+    /// The 410 stand-in rides the axis unchanged: the 240-tick fuse
+    /// fires the three-538 burst + the self-destruct with exactly SIX
+    /// `NextFloat` draws in the C# order (`NPC.cs:62489`, vx then vy
+    /// per shot) — the stream mirror pins the draw count/order.
+    #[test]
+    fn w4_d25_the_spider_burst_rides_the_26_axis_with_six_draws() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 20.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::StardustSpiderSmall, 60.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 239.0; // this tick increments to 240 → armed
+        let mut rng = UnifiedRandom::new(26);
+        let mut probe = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "the self-destruct (:62491-62493)");
+        assert_eq!(n.wants_hostile_shot.len(), 3, "the three-538 burst");
+        for s in &n.wants_hostile_shot {
+            assert_eq!(s.0, 538);
+            assert_eq!(s.5, 50);
+        }
+        // The mirror: (NextFloat-0.5)*2 then -4-10*NextFloat, x3.
+        for _ in 0..3 {
+            let _vx = (probe.next_float() - 0.5) * 2.0;
+            let _vy = -4.0 - 10.0 * probe.next_float();
+        }
+        assert_eq!(rng, probe, "exactly the six burst draws, in order");
+    }
+
+    /// The 423 stand-in rides the axis unchanged and draw-free on the
+    /// idle tick: `ai[1]` climbs, no charge inside the 180-tick gate,
+    /// the walker is RNG-free — the stream is untouched.
+    #[test]
+    fn w4_d25_the_nebula_beast_idle_rides_the_26_axis_draw_free() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::NebulaBeast, 60.0 * TILE_PX, 100.0 * TILE_PX - 44.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[1], 1.0, "the idle counter (:62544)");
+        assert_eq!(n.ai[2], 0.0, "no charge before the 180-tick gate");
+        assert!(n.wants_hostile_shot.is_empty());
+        assert_eq!(rng, witness, "the idle tick draws nothing");
     }
 }
