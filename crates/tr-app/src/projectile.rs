@@ -491,6 +491,10 @@ pub struct Projectile {
     /// `usesIDStaticNPCImmunity` + `idStaticNPCHitCooldown` (default −1, `:466`).
     pub uses_id_static_immunity: bool,
     pub id_static_hit_cooldown: i32,
+    /// `Projectile.immunityIdentity` (`:782`, reset to `type`) — the id-static
+    /// table's key. `UseGroupStaticImmunity` (`:10676-10681`) overrides it to a
+    /// shared group id (the bees 181/566 both carry 181). `0` = use `kind`.
+    pub immunity_identity: u16,
     /// `extraUpdates`: the AI runs `1 + extraUpdates` times per tick (`:16668`).
     pub extra_updates: u32,
     /// The C# `ai[0..2]` scratch array — the aiStyle-1 flight counter lives
@@ -703,6 +707,7 @@ impl Default for Projectile {
             local_hit_cooldown: -2,
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
+            immunity_identity: 0,
             extra_updates: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
@@ -2049,6 +2054,18 @@ impl Projectile {
     /// the swept curve, not from this).
     pub fn center(&self) -> (f32, f32) {
         (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5)
+    }
+
+    /// The id-static immunity table's key (`Projectile.cs:13972`,
+    /// `perIDStaticNPCImmunity[immunityIdentity, npc]`): the slot's
+    /// `immunityIdentity` when `UseGroupStaticImmunity` set one (the bees
+    /// 181/566 share 181), else the kind itself (the `:782` reset).
+    pub fn id_static_key(&self) -> u16 {
+        if self.immunity_identity != 0 {
+            self.immunity_identity
+        } else {
+            self.kind
+        }
     }
 
     /// `Projectile.IsDamageDodgeable` (`Projectile.cs:15064-15071`): the
@@ -5956,6 +5973,208 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s aiStyle-12 arm (`Projectile.cs:24501-24635`) — the Aqua
+    /// Scepter's water stream (type 22). The 280/288 obsidian-skin arms
+    /// (`:24508-24547`) are unported kinds. The type-22 constants
+    /// (`:24550-24553`): the scale decay 0.01/tick and the gravity 0.15 from
+    /// `ai[0] > 3f`; the lava bounce (`:24561-24589`) seeds an `LCG32Random`
+    /// off the spawn `ai[2]` (`Player.cs:49409-49411`'s `Next(0, 20000)`),
+    /// reverses the fall and marks `ai[1] = 1f`, which halves the gravity and
+    /// stops the scale decay (`:24554-24560`). The dust/gore spawns are
+    /// SKIPPED (no dust layer); the `Main.rand.Next(2)`/`Next(8)` dust gates
+    /// (`:24599`/`:24604`/`:24622`) draw on the pass's stream in the C#'s
+    /// order — the `ai[1] != 0f && Next(2) != 0` early-return (`:24604-24607`)
+    /// is kept (it skips the trailing dust, not the movement).
+    fn ai_aqua_scepter(&mut self, world: &World, rng: &mut dyn DropRng) {
+        // `:24548-24553`: the type-22 constants.
+        let mut scale_decay = 0.01f32;
+        let mut gravity = 0.15f32;
+        // `:24554-24560`: the bounced state — no scale decay, half gravity,
+        // `extraUpdates = 0`, `penetrate = -1`.
+        if self.ai[1] == 1.0 {
+            gravity /= 2.0;
+            scale_decay = 0.0;
+            self.extra_updates = 0;
+            self.penetrate = -1;
+        }
+        // `:24561-24589`: the lava bounce — a falling stream whose centre cell
+        // is lava reverses the fall off the seeded LCG and marks `ai[1] = 1f`.
+        if self.vel.y > 0.0 && self.ai[1] == 0.0 {
+            let cx = ((self.pos.x + self.w * 0.5) / TILE_PX) as i32;
+            let cy = ((self.pos.y + self.h * 0.5) / TILE_PX) as i32;
+            let in_lava = world
+                .tile(cx, cy)
+                .is_some_and(|t| t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
+            if in_lava {
+                let mut lcg = Lcg32Random::new(self.ai[2] as u32);
+                self.vel.y = lcg.next_float() * -4.0 - 4.0;
+                self.vel.x = (lcg.next_float() - 0.5) * 5.0;
+                self.ai[1] = 1.0;
+                // The bounce's dust/gore (`:24575-24587`) are SKIPPED; the
+                // `Main.rand.Next(3)` gore gate (`:24581`) still draws, and
+                // the taken branch's `Gore.NewGore` type roll `Next(61, 64)`
+                // (`:24583`) stays on the stream (the gore-type-roll
+                // convention, `ai_freaking_pirates`' `Next(580,583)`).
+                if rng.next_range(0, 3) == 0 {
+                    let _ = rng.next_range(61, 64);
+                }
+            }
+        }
+        // `:24591-24595`: the scale decay and the zero-scale kill. The C#
+        // `Kill()` does NOT return from `AI()` — the gravity arm below still
+        // runs on the dying sub-step (its dust gates still draw on the pass's
+        // stream); only the post-movement tail skips the dead (`:17027-17030`).
+        // The port marks the slot dead and falls through to keep the draws.
+        self.scale -= scale_decay;
+        if self.scale <= 0.0 {
+            self.active = false;
+            self.time_left = 0;
+        }
+        // `:24596-24634`: the gravity arm (`ai[0] > 3f`) or the counter.
+        if self.ai[0] > 3.0 {
+            self.vel.y += gravity;
+            // `:24599-24603`: the bounced stream's 1-in-2 dust gate.
+            if self.ai[1] == 1.0 && rng.next_range(0, 2) == 0 {
+                // dust 31 SKIPPED.
+            }
+            // `:24604-24607`: `ai[1] != 0f && Next(2) != 0` returns early
+            // (the trailing dust is skipped, the movement below still runs —
+            // the C# `return` leaves AI(), not Update(), and HandleMovement
+            // runs at `:17015` regardless of `active`).
+            if self.ai[1] != 0.0 && rng.next_range(0, 2) != 0 {
+                self.kill_step(world);
+                return;
+            }
+            // `:24608-24629`: the trail dust (3× dust 172 + the 1-in-8 extra)
+            // is SKIPPED; the `Next(8)` gate (`:24622`) still draws.
+            let _ = rng.next_range(0, 8);
+        } else {
+            // `:24631-24634`: the launch counter.
+            self.ai[0] += 1.0;
+        }
+        // `HandleMovement`'s default arm (`:19851-19852`): the stream dies on
+        // the first solid tile (no aiStyle-12 bounce branch). Runs even on the
+        // scale-killed slot — C# HandleMovement has no `active` guard and
+        // `Kill()` is idempotent (`:17015`, `:70644-70648`).
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-36 arm (`Projectile.cs:27292-27471`) — the Bee Gun's
+    /// bees (181/566). The wet kill (`:27294-27297`), the alpha fade-in
+    /// (`:27298-27309`, `extraUpdates = 0` once opaque), the sprite facing and
+    /// the 3-frame flap (`:27347-27365`), the 30-tick launch counter and the
+    /// Manhattan-800 target scan (`:27371-27391`), then the steering at the
+    /// per-kind speed/accel (`:27401-27470`: 6/0.1 for 181, 6.8/0.14 for 566).
+    /// The 307/316/189 per-type arms are unported kinds. The dust spawns are
+    /// SKIPPED (no dust layer, no RNG in this arm).
+    fn ai_bee(&mut self, world: &World, npcs: &[Npc]) {
+        // `:27294-27297`: the wet kill — the port's slots carry no liquid-wet
+        // flags (ANALYSIS), so `base.wet` folds to false and the kill never
+        // fires; the gate is kept for shape.
+        // `:27298-27309`: the fade-in; once opaque the sub-steps stop.
+        if self.alpha > 0 {
+            self.alpha -= 50;
+        } else {
+            self.extra_updates = 0;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:27347-27355`: the sprite faces the flight, the rotation is the
+        // velocity's X scaled (the bee's tilt).
+        if self.vel.x > 0.0 {
+            self.sprite_direction = 1;
+        } else if self.vel.x < 0.0 {
+            self.sprite_direction = -1;
+        }
+        self.rot = self.vel.x * 0.1;
+        // `:27356-27365`: the 3-frame flap at rate 3.
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame += 1;
+            self.frame_counter = 0;
+        }
+        if self.frame >= 3 {
+            self.frame = 0;
+        }
+        // `:27367-27391`: the target scan — the launch counter caps at 30,
+        // then the nearest chaseable NPC inside the Manhattan 800 with a clear
+        // line wins. The wet-NPC exclusion (`!npc.wet || type == 370`) keeps
+        // Duke Fishron targetable while wet.
+        let mut target = Vec2::new(self.pos.x, self.pos.y);
+        let mut best = 100000.0f32;
+        let mut has_target = false;
+        self.ai[0] += 1.0;
+        if self.ai[0] > 30.0 {
+            self.ai[0] = 30.0;
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            for n in npcs {
+                if !chaseable(n) {
+                    continue;
+                }
+                if n.wet && n.kind != NpcKind::DukeFishron {
+                    continue;
+                }
+                let (nw, nh) = n.size();
+                let aim = Vec2::new(n.x + nw * 0.5, n.y + nh * 0.5);
+                let d = (center.x - aim.x).abs() + (center.y - aim.y).abs();
+                if d < 800.0
+                    && d < best
+                    && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                {
+                    best = d;
+                    target = aim;
+                    has_target = true;
+                }
+            }
+        }
+        // `:27392-27396`: no target — aim 100 velocity-steps ahead.
+        if !has_target {
+            target = Vec2::new(
+                self.pos.x + self.w * 0.5 + self.vel.x * 100.0,
+                self.pos.y + self.h * 0.5 + self.vel.y * 100.0,
+            );
+        }
+        // `:27401-27430`: the per-kind speed/accel (181: 6/0.1, 566: 6.8/0.14).
+        let (speed, accel) = if self.kind == GIANT_BEE {
+            (6.8f32, 0.14f32)
+        } else {
+            (6.0f32, 0.1f32)
+        };
+        // `:27431-27438`: the approach vector normalized to the speed.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let mut delta = target - center;
+        let len = (delta.x * delta.x + delta.y * delta.y).sqrt();
+        let scale = speed / len;
+        delta *= scale;
+        // `:27439-27470`: the per-axis approach with the overshoot double-step.
+        if self.vel.x < delta.x {
+            self.vel.x += accel;
+            if self.vel.x < 0.0 && delta.x > 0.0 {
+                self.vel.x += accel * 2.0;
+            }
+        } else if self.vel.x > delta.x {
+            self.vel.x -= accel;
+            if self.vel.x > 0.0 && delta.x < 0.0 {
+                self.vel.x -= accel * 2.0;
+            }
+        }
+        if self.vel.y < delta.y {
+            self.vel.y += accel;
+            if self.vel.y < 0.0 && delta.y > 0.0 {
+                self.vel.y += accel * 2.0;
+            }
+        } else if self.vel.y > delta.y {
+            self.vel.y -= accel;
+            if self.vel.y > 0.0 && delta.y < 0.0 {
+                self.vel.y -= accel * 2.0;
+            }
+        }
+        // `HandleMovement`'s default arm (`:19851-19852`): the bee dies on the
+        // first solid tile (no aiStyle-36 bounce branch).
+        self.kill_step(world);
+    }
+
     /// `AI()`'s aiStyle-22 arm (`Projectile.cs:25607-25860`): the Ice Rod
     /// block's three phases on the `ai` signs, all dust SKIPPED.
     ///
@@ -6387,8 +6606,11 @@ impl Projectile {
             if self.ai[0] >= 0.0 {
                 if let Some(p) = player {
                     // `:43239-43249`: hold — keep the aim only while the
-                    // channel is open and the held item shoots this kind.
-                    if p.channel && p.channel_item == self.kind {
+                    // channel is open and the held item SHOOTS this kind
+                    // (`HeldItem.shoot == this.type`, `:43241`). The port
+                    // carries the held item's shoot id in `channel_shoot`
+                    // (S1-P-i20 — the pre-fix port compared the item id).
+                    if p.channel && p.channel_shoot == self.kind {
                         if self.ai[0] != p.channel_target.x || self.ai[1] != p.channel_target.y {
                             // The C# writes `pointPosition.Y + num2 * num3`;
                             // when the 34 block above just armed the flag it
@@ -11420,6 +11642,31 @@ fn uses_wind_physics(ai_style: u8) -> bool {
     matches!(ai_style, 2 | 8 | 24 | 28 | 29)
 }
 
+/// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
+/// 32-bit linear congruential generator the Aqua Scepter's lava bounce seeds
+/// off the spawn `ai[2]` (`Projectile.cs:24567-24569`). `Advance` is
+/// `state = state * -1856014347 + 1` (wrapping u32); `NextDouble` advances
+/// then reads `state / 2^32`, and `NextFloat` casts it to f32. The port keeps
+/// the struct's exact arithmetic — the bounce's two floats are the first two
+/// `NextFloat` draws, in the C#'s Y-then-X order.
+struct Lcg32Random {
+    state: u32,
+}
+
+impl Lcg32Random {
+    fn new(seed: u32) -> Self {
+        Self { state: seed }
+    }
+
+    /// `NextDouble` (`:34-38`): advance, then `state / 4294967296.0`.
+    fn next_float(&mut self) -> f32 {
+        // `Advance` (`:9-12`): `(uint)((int)state * -1856014347 + 1)` — the
+        // int multiply wraps, so the u32 wrapping multiply is identical.
+        self.state = self.state.wrapping_mul(-1856014347i32 as u32).wrapping_add(1);
+        (self.state as f64 / 4294967296.0) as f32
+    }
+}
+
 /// The `!tile.inActive() && tile.active() && tileSolid[type] &&
 /// !tileSolidTop[type] && tile.slope() == 0 && !tile.halfBrick()`
 /// conjunction `WorldGen.SolidTile` (`WorldGen.cs:70119-70127`) and
@@ -12596,6 +12843,15 @@ impl ProjectilePool {
         }
     }
 
+    /// The spawn-site `ai[2]` payload setter — the Aqua Scepter's lava-bounce
+    /// LCG seed (`Player.cs:49409-49411`'s `ai9 = Main.rand.Next(0, 20000)`,
+    /// S1-P-i20); the `set_ai1` convention.
+    pub fn set_ai2(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.ai[2] = value;
+        }
+    }
+
     /// S1-D-3 W-9 — the spawn-site `localAI[0]` payload setter: the
     /// aimed sharknado bolt's enrage flag (`NPC.cs:49505`'s third
     /// `NewProjectile` arg, `flag6 ? 1 : 0`; the `set_ai1` convention).
@@ -13129,6 +13385,7 @@ impl ProjectilePool {
             local_hit_cooldown: data.local_hit_cooldown,
             uses_id_static_immunity: data.uses_id_static_immunity,
             id_static_hit_cooldown: data.id_static_hit_cooldown,
+            immunity_identity: data.immunity_identity,
             extra_updates: data.extra_updates,
             ai: [ai0, ai1, 0.0, 0.0],
             // `SetDefaults` zeroes both scratch arrays (`:736-740`) — only the
@@ -13387,7 +13644,7 @@ impl ProjectilePool {
                         0.0,
                     );
                     if let Some(s) = spawned {
-                        let k = self.slots[s].kind;
+                        let k = self.slots[s].id_static_key();
                         self.id_static.insert((k, npc_idx), self.update_count + 20);
                     }
                 }
@@ -13938,6 +14195,17 @@ impl ProjectilePool {
                         }
                         16 => self.slots[i].ai_bomb(world),
                         18 => self.slots[i].ai_demon_scythe(world),
+                        // `AI()`'s `else if (this.aiStyle == 12)`
+                        // (`Projectile.cs:24501-24635`) — the Aqua Scepter's
+                        // water stream (22): the scale decay, the gravity and
+                        // the LCG-seeded lava bounce. The dust gates draw the
+                        // pass's threaded stream (`UpdateProjectiles`).
+                        12 => self.slots[i].ai_aqua_scepter(world, rng),
+                        // `AI()`'s `else if (this.aiStyle == 36)`
+                        // (`Projectile.cs:27292-27471`) — the Bee Gun's bees
+                        // (181/566): the fade-in, the flap, the Manhattan-800
+                        // target scan and the per-kind steering. No RNG.
+                        36 => self.slots[i].ai_bee(world, npcs),
                         // S1-D-4 unarmed styles (census §3c): the four
                         // data-rowed styles with no arm. The bodies live
                         // in `projectile_ai_misc` (the slice-module
@@ -16882,7 +17150,7 @@ impl ProjectilePool {
         if p.uses_local_immunity {
             return self.local_immunity[slot * 256 + npc as usize] == 0;
         }
-        match self.id_static.get(&(p.kind, npc)) {
+        match self.id_static.get(&(p.id_static_key(), npc)) {
             Some(stamp) => *stamp <= self.update_count,
             None => true,
         }
@@ -17287,7 +17555,7 @@ impl ProjectilePool {
             } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
                 npcs[idx].immune[owner_idx] = 0;
                 self.id_static.insert(
-                    (self.slots[slot].kind, idx as u16),
+                    (self.slots[slot].id_static_key(), idx as u16),
                     self.update_count + self.slots[slot].id_static_hit_cooldown as u64,
                 );
             } else if max_penetrate != 1 {
@@ -17436,7 +17704,7 @@ impl ProjectilePool {
                 // the 644 shard burst's stock pair).
                 npcs[idx].immune[owner] = 0;
                 self.id_static.insert(
-                    (self.slots[slot].kind, idx as u16),
+                    (self.slots[slot].id_static_key(), idx as u16),
                     self.update_count.wrapping_add(self.slots[slot].id_static_hit_cooldown as u32 as u64),
                 );
             } else if max_penetrate != 1 {
@@ -23513,6 +23781,7 @@ mod widened_state_tests {
         let p = crate::player::Player::spawn(&w);
         assert!(!p.channel);
         assert_eq!(p.channel_item, 0, "no item is being channelled");
+        assert_eq!(p.channel_shoot, 0, "no shoot id is being channelled");
         assert_eq!(p.channel_target, Vec2::ZERO);
     }
 }
@@ -25620,10 +25889,13 @@ mod magic_ai_tests {
         let mut rng = tr_core::tile_light::FastRandom::new(7);
 
         // `:43239-43249`: the channel keeps `ai[0..1]` on the clamped
-        // `MouseWorld` while the held item shoots this kind.
+        // `MouseWorld` while the held item shoots this kind. The fixture
+        // carries the held item's shoot id in `channel_shoot` (S1-P-i20 —
+        // the C# compares `HeldItem.shoot`, not the item id).
         let mut p = crate::player::Player::spawn(&world());
         p.channel = true;
-        p.channel_item = MAGIC_MISSILE;
+        p.channel_item = 113; // the Magic Missile item
+        p.channel_shoot = MAGIC_MISSILE; // its shoot (proj 16)
         p.channel_target = Vec2::new(500.0, 400.0);
         let mut pool = ProjectilePool::new();
         let slot = pool
@@ -27590,6 +27862,164 @@ mod magic_ai_tests {
             (still[0].rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6,
             "the zero vector's rotation"
         );
+    }
+
+    // ---- S1-P-i20: the Aqua Scepter (aiStyle 12) and the bees (aiStyle 36) --
+    // Tests-as-code: WRITTEN NOT RUN (the task's code-only mode).
+
+    /// The Aqua Scepter's data row (`Projectile.cs:1040-1056`): 18x18, aiStyle
+    /// 12, alpha 255, penetrate 5, extraUpdates 2, ignoreWater.
+    #[test]
+    fn s1_p_i20_the_aqua_scepter_row_is_verbatim() {
+        let d = proj_data(AQUA_SCEPTER).expect("the 22 row landed");
+        assert_eq!((d.w, d.h), (18.0, 18.0), "`:1042-1043`");
+        assert_eq!(d.ai_style, 12, "`:1044`");
+        assert_eq!(d.alpha, 255, "`:1046`");
+        assert_eq!(d.penetrate, 5, "`:1047`");
+        assert_eq!(d.extra_updates, 2, "`:1048`");
+        assert!(d.ignore_water, "`:1049`");
+        assert!(d.tile_collide, "the stock `:775`");
+    }
+
+    /// The Aqua Scepter's launch counter and scale decay (`:24591-24634`):
+    /// `ai[0]++` through 3, then `velocity.Y += 0.15` from `ai[0] > 3`, and
+    /// `scale -= 0.01` every tick. The stream flies straight (no gravity)
+    /// while the counter runs.
+    #[test]
+    fn s1_p_i20_the_aqua_scepter_decays_and_falls_from_ai_0_4() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(AQUA_SCEPTER, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 27, 7.0)
+            .expect("the 22 row");
+        let mut w = world();
+        // The row's extraUpdates is 2, so 1+2 = 3 sub-steps per update. After
+        // one update ai[0] = 3 (the counter), scale = 1 - 3*0.01 = 0.97.
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 3.0, "the launch counter (3 sub-steps)");
+        assert!((p.scale - 0.97).abs() < 1e-4, "scale -= 0.01 per sub-step ({})", p.scale);
+        assert_eq!(p.vel.y, 0.0, "no gravity through ai[0] = 3");
+        // The next update's first sub-step pushes ai[0] to 4, then gravity.
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.ai[0] > 3.0, "the counter past 3");
+        assert!(p.vel.y > 0.0, "gravity from ai[0] > 3 (vy={})", p.vel.y);
+    }
+
+    /// The Aqua Scepter's lava bounce (`:24561-24589`): a falling stream whose
+    /// centre cell is lava reverses the fall off the `LCG32Random(ai[2])` and
+    /// marks `ai[1] = 1`, which halves the gravity and stops the scale decay.
+    /// The two floats are the LCG's first two `NextFloat` draws (Y then X).
+    #[test]
+    fn s1_p_i20_the_aqua_scepter_bounces_off_lava_with_the_lcg() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(AQUA_SCEPTER, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 3.0, 27, 7.0, 0.0, 0.0)
+            .expect("the 22 row");
+        pool.set_ai2(slot, 12345.0);
+        let mut w = world();
+        // Lava under the stream's centre cell.
+        let cx = ((10.0 * TILE_PX + 9.0) / TILE_PX) as i32;
+        let cy = ((10.0 * TILE_PX + 9.0) / TILE_PX) as i32;
+        let i = w.index(cx, cy);
+        w.tiles[i].liquid = 255;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "the bounce marks ai[1] = 1");
+        // The LCG's first two NextFloat draws off seed 12345.
+        let mut lcg = Lcg32Random::new(12345);
+        let want_y = lcg.next_float() * -4.0 - 4.0;
+        let want_x = (lcg.next_float() - 0.5) * 5.0;
+        assert!((p.vel.y - want_y).abs() < 1e-3, "the LCG Y bounce ({} vs {want_y})", p.vel.y);
+        assert!((p.vel.x - want_x).abs() < 1e-3, "the LCG X bounce ({} vs {want_x})", p.vel.x);
+        assert_eq!(p.extra_updates, 0, "the bounced state drops extraUpdates");
+        assert_eq!(p.penetrate, -1, "the bounced state sets penetrate -1");
+    }
+
+    /// The bees' data rows (`Projectile.cs:2673-2685`, `:6172-6184`): the bee
+    /// 181 is 8x8/aiStyle 36/penetrate 3/timeLeft 600/extraUpdates 3, the giant
+    /// bee 566 is 16x16/penetrate 4/timeLeft 660. Both carry the
+    /// `UseGroupStaticImmunity(181)` id-static pair (true, 10) and share the
+    /// immunity identity 181.
+    #[test]
+    fn s1_p_i20_the_bee_rows_are_verbatim_and_share_the_immunity() {
+        let bee = proj_data(BEE).expect("the 181 row landed");
+        assert_eq!((bee.w, bee.h), (8.0, 8.0), "`:2675-2676`");
+        assert_eq!(bee.ai_style, 36, "`:2677`");
+        assert_eq!(bee.penetrate, 3, "`:2679`");
+        assert_eq!(bee.time_left, 600, "`:2681`");
+        assert_eq!(bee.extra_updates, 3, "`:2682`");
+        assert_eq!(bee.alpha, 255, "`:2680`");
+        assert!(bee.uses_id_static_immunity, "`UseGroupStaticImmunity(181)`");
+        assert_eq!(bee.id_static_hit_cooldown, 10, "`:10679`");
+        assert_eq!(bee.immunity_identity, BEE, "`:10680` immunityIdentity = 181");
+        let giant = proj_data(GIANT_BEE).expect("the 566 row landed");
+        assert_eq!((giant.w, giant.h), (16.0, 16.0), "`:6174-6175`");
+        assert_eq!(giant.ai_style, 36, "`:6176`");
+        assert_eq!(giant.penetrate, 4, "`:6178`");
+        assert_eq!(giant.time_left, 660, "`:6180`");
+        assert_eq!(giant.extra_updates, 3, "`:6181`");
+        assert!(giant.uses_id_static_immunity, "the same group helper");
+        assert_eq!(giant.id_static_hit_cooldown, 10, "`:10679`");
+        assert_eq!(giant.immunity_identity, BEE, "the giant bee shares identity 181");
+        // The id-static key folds both kinds onto 181.
+        let mut pool = ProjectilePool::new();
+        let a = pool.spawn_with_data(BEE, 32.0, 32.0, 0.0, 0.0, 9, 0.25).unwrap();
+        let b = pool.spawn_with_data(GIANT_BEE, 64.0, 32.0, 0.0, 0.0, 9, 0.25).unwrap();
+        assert_eq!(pool.slots()[a].id_static_key(), BEE, "the bee keys 181");
+        assert_eq!(pool.slots()[b].id_static_key(), BEE, "the giant bee keys 181 too");
+    }
+
+    /// The bee's fade-in and flap (`:27298-27365`): alpha -= 50 per sub-step
+    /// until opaque (then extraUpdates = 0), the sprite faces the flight, the
+    /// rotation is velocity.X * 0.1, and the 3-frame flap cycles at rate 3.
+    #[test]
+    fn s1_p_i20_the_bee_fades_in_and_flaps() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(BEE, 10.0 * TILE_PX, 10.0 * TILE_PX, 3.0, 0.0, 9, 0.25)
+            .expect("the 181 row");
+        let mut w = world();
+        // extraUpdates 3 → 4 sub-steps on the first update: alpha 255 → 55
+        // (255 - 4*50), still fading. The flap counter cycles 4 times.
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.alpha, 55, "255 - 4*50 (4 sub-steps)");
+        assert_eq!(p.sprite_direction, 1, "the +X flight faces right");
+        assert!((p.rot - 0.3).abs() < 1e-4, "rotation = velocity.X * 0.1 ({})", p.rot);
+        // The next update: alpha 55 → 5 → 0 (the third sub-step hits 0 and
+        // drops extraUpdates), so the fade completes and the sub-steps stop.
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.alpha, 0, "the fade completes");
+        assert_eq!(p.extra_updates, 0, "opaque drops extraUpdates (`:27304`)");
+    }
+
+    /// The bee's target scan and steering (`:27371-27470`): after the 30-tick
+    /// launch counter the bee homes the nearest chaseable NPC inside the
+    /// Manhattan 800 with a clear line, steering at speed 6 / accel 0.1 (the
+    /// giant bee 6.8 / 0.14). With no target it aims 100 velocity-steps ahead.
+    #[test]
+    fn s1_p_i20_the_bee_steers_toward_a_target_after_the_launch() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(BEE, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 9, 0.25)
+            .expect("the 181 row");
+        let mut w = world();
+        // A chaseable slime to the right, within the Manhattan 800.
+        let mut npc = Npc::spawn_slime_sky(10.0 * TILE_PX + 200.0, 10.0 * TILE_PX, SlimeVariant::Blue);
+        npc.hp = npc.max_hp;
+        // Park the launch counter at 30 so the scan runs on the next sub-step.
+        pool.slots_mut()[slot].ai[0] = 30.0;
+        pool.slots_mut()[slot].alpha = 0; // opaque: one sub-step per update
+        pool.slots_mut()[slot].extra_updates = 0;
+        tick(&mut w, &mut pool, &mut npc);
+        let p = &pool.slots()[slot];
+        // The bee accelerates toward the target (+X): velocity.X grows past
+        // the spawn 1.0 toward the speed 6.
+        assert!(p.vel.x > 1.0, "the bee steers toward the +X target (vx={})", p.vel.x);
+        assert!(p.vel.x <= 6.0 + 0.1, "the speed caps at 6 (+ one accel step)");
     }
 }
 #[cfg(test)]

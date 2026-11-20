@@ -1441,10 +1441,18 @@ pub struct Player {
     /// Written by the item-use path (M4-PROJ-6 Phase 5), read by the arm
     /// (Phase 4); default off.
     pub channel: bool,
-    /// The shooting item's kind while `channel` — the C# block only holds the
-    /// aim while `HeldItem.shoot == type` (`AI_009_MagicMissiles`'s owner
-    /// block, `Projectile.cs:43239-43249`); 0 = no item.
+    /// The shooting item's kind while `channel` — the held item's id, read by
+    /// the Last Prism holder's keep-alive (`registry::item(channel_item)`,
+    /// `Projectile.cs:66540-66546`); 0 = no item.
     pub channel_item: u16,
+    /// The held item's `shoot` (projectile id) while `channel` — the C# block
+    /// holds the aim only while `HeldItem.shoot == this.type`
+    /// (`AI_009_MagicMissiles`'s owner block, `Projectile.cs:43241`), so the
+    /// aiStyle-9 spells compare THIS against their own kind, not the item id.
+    /// 0 = no item. (S1-P-i20: the pre-fix port compared `channel_item` — the
+    /// item id — against the projectile kind, so the Magic Missile / Flamelash
+    /// channel hold never fired in the real use path.)
+    pub channel_shoot: u16,
     /// The aim target the channel feeds the spell: `MouseWorld` clamped by
     /// `LimitPointToPlayerReachableArea` (`Projectile.cs:43241-43249`'s
     /// `ai[0..1] = LimitPointToPlayerReachableArea(MouseWorld)`), in world
@@ -2217,6 +2225,7 @@ impl Player {
             // (`Player.cs:52958-52968`).
             channel: false,
             channel_item: 0,
+            channel_shoot: 0,
             channel_target: Vec2::ZERO,
             magic_quiver: false,
             minion_kb: 0.0,

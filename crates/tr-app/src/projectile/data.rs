@@ -568,6 +568,10 @@ pub const BALL_OF_FIRE: u16 = 15;
 pub const MAGIC_MISSILE: u16 = 16;
 /// `ProjectileID.GreenLaser` (20) — the Space Gun's aiStyle-1 rider.
 pub const GREEN_LASER: u16 = 20;
+/// `ProjectileID.AquaScepter` (22) — the Aqua Scepter's water stream
+/// (aiStyle 12, `Projectile.cs:1040-1056`); the lava bounce seeds an
+/// `LCG32Random` off the spawn `ai[2]` (`Player.cs:49409-49411`).
+pub const AQUA_SCEPTER: u16 = 22;
 /// `ProjectileID.WaterBolt` (27) — the Water Bolt spell.
 pub const WATER_BOLT: u16 = 27;
 /// `ProjectileID.Flamelash` (34) — the channeled aimed spell.
@@ -578,6 +582,14 @@ pub const FLAMELASH: u16 = 34;
 pub const DEMON_SICKLE: u16 = 44;
 /// `ProjectileID.DemonScythe` (45) — the Demon Scythe's shot.
 pub const DEMON_SCYTHE: u16 = 45;
+/// `ProjectileID.Bee` (181) — the Bee Gun's bee (aiStyle 36,
+/// `Projectile.cs:2673-2685`); `UseGroupStaticImmunity(181)` shares the
+/// id-static cooldown with the giant bee 566.
+pub const BEE: u16 = 181;
+/// `ProjectileID.GiantBee` (566) — the strong bee the Bee Gun rolls with
+/// the Hive Pack (`Player.beeType`, `Player.cs:12417-12426`); aiStyle 36,
+/// `Projectile.cs:6172-6184`, the same `UseGroupStaticImmunity(181)`.
+pub const GIANT_BEE: u16 = 566;
 /// `ProjectileID.RainbowRodBullet` (79) — the Rainbow Rod's channeled shot.
 pub const RAINBOW_ROD_BULLET: u16 = 79;
 /// `ProjectileID.IceBlock` (80) — the Ice Rod's placed-block projectile.
@@ -747,6 +759,12 @@ pub struct ProjData {
     /// `idStaticNPCHitCooldown` (default −1, `:466`).
     pub uses_id_static_immunity: bool,
     pub id_static_hit_cooldown: i32,
+    /// `Projectile.immunityIdentity` (`:782`, reset to `type`) — the key the
+    /// id-static immunity table is indexed by. `UseGroupStaticImmunity(Type)`
+    /// (`:10676-10681`) overrides it to a shared group id: the Bee Gun's bee
+    /// 181 and giant bee 566 both carry 181, so one cooldown covers both.
+    /// `0` = "use the kind" (every row that does not call the group helper).
+    pub immunity_identity: u16,
     /// `Projectile.alpha` (`:779`) — the draw-time fade, which the AI arms
     /// also read as a state marker (the magic families, Phase 3).
     pub alpha: i32,
@@ -1882,6 +1900,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // hook), `penetrate = 3`, `extraUpdates = 2`, `scale = 0.65f`,
             // `timeLeft = 600`.
             GREEN_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, (false, -2, false, -1, 0, 0.65)),
+            // `:1040-1056` — the Aqua Scepter's stream: 18x18, aiStyle 12,
+            // alpha 255, `penetrate = 5`, `extraUpdates = 2`, `ignoreWater`.
+            // The remix-world local-immunity arm (`:1051-1055`) is unported
+            // (no remix seed flag — ANALYSIS); the stock immunity reset holds.
+            AQUA_SCEPTER => (18.0, 18.0, 12, 5, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:1095-1105` — the water bolt: 16x16, aiStyle 8, alpha 255,
             // `penetrate = 10` and `timeLeft /= 2` off the 3600 reset
             // (`:787`) — 1800.
@@ -1897,6 +1920,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:1283-1294` — the demon scythe: 48x48, aiStyle 18, alpha 100,
             // `penetrate = 5`, `scale = 0.9f`.
             DEMON_SCYTHE => (48.0, 48.0, 18, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 100, 0.9)),
+            // `:2673-2685` — the Bee Gun's bee: 8x8, aiStyle 36, alpha 255,
+            // `penetrate = 3`, `timeLeft = 600`, `extraUpdates = 3`;
+            // `UseGroupStaticImmunity(181)` (`:10676-10681`) sets the id-static
+            // pair (true, 10) with `immunityIdentity = 181` — the giant bee 566
+            // shares the same identity, so the two kinds share one cooldown.
+            BEE => (8.0, 8.0, 36, 3, 600, 3, true, false, false, (false, -2, true, 10, 255, 1.0)),
+            // `:6172-6184` — the giant bee (the Hive Pack's strong bee): 16x16,
+            // aiStyle 36, alpha 255, `penetrate = 4`, `timeLeft = 660`,
+            // `extraUpdates = 3`, the same `UseGroupStaticImmunity(181)`.
+            GIANT_BEE => (16.0, 16.0, 36, 4, 660, 3, true, false, false, (false, -2, true, 10, 255, 1.0)),
             // `:1594-1606` — the rainbow rod's bullet: 32x32, aiStyle 9,
             // `penetrate = 3`, the local immunity with the 12-tick cooldown.
             RAINBOW_ROD_BULLET => (32.0, 32.0, 9, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
@@ -2857,6 +2890,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         } else {
             -1
         },
+        // `UseGroupStaticImmunity(181)` (`Projectile.cs:10676-10681`) — the
+        // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
+        // id-static table keys both under one cooldown. Every other row keeps
+        // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
+        immunity_identity: if matches!(kind, BEE | GIANT_BEE) { BEE } else { 0 },
         alpha,
         // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
         // other row carries its own scale in the state group.

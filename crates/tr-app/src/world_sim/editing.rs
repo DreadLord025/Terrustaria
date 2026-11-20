@@ -243,6 +243,12 @@ const GEM_STAFF_BOLTS: [u16; 7] = [121, 122, 123, 124, 125, 126, 597];
 
 use crate::projectile::GemStaffFeatures;
 
+/// `Item.shootsEveryUse` (`Item.cs:3729/4595/5695/9297/9316/10229/15126/20230/
+/// 42675`): these fire only on `ItemAnimationJustStarted` (`Player.cs:43560-43562`),
+/// never the mid-swing volley. All have `useTime == useAnimation`, so the exclusion
+/// is belt-and-suspenders, but it keeps the gate faithful to the C# `flag4` override.
+const SHOOTS_EVERY_USE: [u16; 9] = [190, 273, 368, 674, 675, 757, 1226, 1826, 5382];
+
 /// `Utils.Remap` (`Utils.cs`): the value's position in [from_min, from_max]
 /// mapped onto [to_min, to_max] - the gem-staff spread's speed curve.
 fn remap_gem(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
@@ -668,10 +674,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 );
                 p.channel = true;
                 p.channel_item = held.kind;
+                // `HeldItem.shoot` (`Projectile.cs:43241`): the aiStyle-9
+                // spells compare the held item's PROJECTILE id against their
+                // own kind — not the item id (S1-P-i20).
+                p.channel_shoot = registry::projectile(held.kind).unwrap_or(0);
                 p.channel_target = target;
             } else if p.channel {
                 p.channel = false;
                 p.channel_item = 0;
+                p.channel_shoot = 0;
                 p.channel_target = Vec2::ZERO;
             }
         }
@@ -764,6 +775,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             if base_mana > 0 && p.silence {
                 return;
             }
+            // `Player.ItemCheck_CheckCanUse_Inner` (`Player.cs:52112-52115`): a wet
+            // (non-lava) player refuses the fire spells — the Flamelash (shoot 34)
+            // among the listed staves; the 85/15/1122 kinds keep the verbatim set.
+            // `base.wet` is `WetCollision` (ANY liquid, `Collision.cs:1605-1645`); the
+            // port splits the kinds (`player.rs:4315-4358`), so the water/honey/
+            // shimmer union stands in, and `!lavaWet` is the lava flag itself.
+            if (p.wet || p.honey_wet || p.shimmer_wet)
+                && !p.lava_wet
+                && matches!(registry::projectile(held.kind), Some(85 | 15 | 34 | 1122))
+            {
+                return;
+            }
             // S1-C-12 wave D — `ItemCheck_PayMana_ShouldSkipManaUse`'s
             // spaceGun arm (`Player.cs:52695-52698`): the Meteor set makes
             // the four laser weapons cost no mana; the same ids skip the
@@ -824,348 +847,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // projectile id, never the item type.
                     app.projectiles.free_up_pets_and_minions(p, proj, app.local_id as u8);
                 }
-                let (pcx, pcy) = p.center();
-                let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
-                if dir != Vec2::ZERO {
-                    let class = def.class;
-                    let (fx_dmg, fx_spd, fx_kb) = held_fx
-                        .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
-                            (s.damage, s.shoot_speed, s.knock_back)
-                        });
-                    // `if (sItem.melee && !ProjectileID.Sets
-                    // .NoMeleeSpeedVelocityScaling[projToShoot]) speed /=
-                    // this.meleeSpeed` (`:47060-47063`) — no ported kind rides
-                    // the exception set (`ProjectileID.cs:547`), so every melee
-                    // shot divides (×1 at the default 1f bonus).
-                    let fx_spd = if class == registry::DamageClass::Melee {
-                        fx_spd / p.melee_speed()
-                    } else {
-                        fx_spd
-                    };
-                    // `if (sItem.type == 2611 || sItem.type == 5526)
-                    // pointPosition += vector2` (`:47239-47245`): the 1-px
-                    // spawn shift along the aim (the Flairon's arm).
-                    let spawn = if held.kind == 2611 || held.kind == 5526 {
-                        Vec2::new(pcx, pcy) + dir * 10.0 + dir
-                    } else {
-                        Vec2::new(pcx, pcy) + dir * 10.0
-                    };
-                    let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
-                    // The crit rolls at throw time (the class crit + the
-                    // item's crit; `Projectile.Damage` consumes it on hit) —
-                    // the throw runs in `Player.ItemCheck` under the
-                    // `UpdatePlayers` swap (`Main.cs:17754`), so the roll
-                    // rides `stream(UpdatePlayers)`.
-                    let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    let crit =
-                        tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit);
-                    // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
-                    // 20% roll upgrades the bolt (634→635) at triple damage —
-                    // `Damage *= 3` on the weapon-damage int (`:42653`'s
-                    // `GetWeaponDamage` truncation, so the port triples the
-                    // truncated value) — and the miss decrements the shoot
-                    // speed BEFORE the aim vector is built.
-                    let mut proj = proj;
-                    let mut shot_speed = fx_spd;
-                    let mut blaze_damage = None;
-                    if held.kind == 3542 {
-                        if loot_rng.next_range(0, 100) < 20 {
-                            proj += 1;
-                            blaze_damage = Some((raw as i32) * 3);
-                        } else {
-                            shot_speed -= 1.0;
-                        }
-                    }
-                    // `Player.ItemCheck_Shoot`'s per-item spawn arms - the
-                    // magic staves replace the generic `Item.shoot` firing,
-                    // each `return`ing in the C#; the port folds them into
-                    // one if/else chain before the shared swing tail. The
-                    // base velocity is the aim normalized to `shootSpeed`.
-                    let shot = Vec2::new(dir.x * shot_speed, dir.y * shot_speed);
-                    if GEM_STAFF_BOLTS.contains(&proj) {
-                        // `Player.cs:49262-49375` - the gem-staff shoot.
-                        // `PackGemStaffFeatures` (`:49470-49489`): the bits
-                        // from the bolt kind and the matching body robe
-                        // (`GetEffectiveArmor(1)` - the port's `equipped[1]`,
-                        // the robe slot 1282/1285/4256/1284/1283/1286/1287).
-                        let mut features = GemStaffFeatures::from_ai(0.0);
-                        let robe = p.equipped[1];
-                        features.set_bit(GemStaffFeatures::HOMING, proj == 121 || robe == 1282);
-                        features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, proj == 124 || robe == 1285);
-                        features.set_bit(GemStaffFeatures::CAN_BOUNCE, proj == 597 || robe == 4256);
-                        features.set_bit(GemStaffFeatures::SWIRL_TWINS, proj == 123 || robe == 1284);
-                        features.set_bit(GemStaffFeatures::AOE_EXPLOSION, proj == 122 || robe == 1283);
-                        features.set_bit(GemStaffFeatures::AR_PEN_SPREAD, proj == 125 || robe == 1286);
-                        features.set_bit(GemStaffFeatures::BIGGER_HITBOX, proj == 126 || robe == 1287);
-                        features.set_bit(GemStaffFeatures::ALL_GEMS, held.kind == 6171);
-                        if !features.all_gems() {
-                            features.set_bit(
-                                GemStaffFeatures::REPEATS_GEM,
-                                (proj == 121 && robe == 1282)
-                                    || (proj == 124 && robe == 1285)
-                                    || (proj == 597 && robe == 4256)
-                                    || (proj == 123 && robe == 1284)
-                                    || (proj == 122 && robe == 1283)
-                                    || (proj == 125 && robe == 1286)
-                                    || (proj == 126 && robe == 1287),
-                            );
-                        }
-                        if features.all_gems() {
-                            // `:49266-49273`: the gembag head forces the four.
-                            features.set_bit(GemStaffFeatures::HOMING, true);
-                            features.set_bit(GemStaffFeatures::CAN_BOUNCE, true);
-                            features.set_bit(GemStaffFeatures::AOE_EXPLOSION, true);
-                            features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, true);
-                        }
-                        let features = features;
-                        // `:49286-49295`: the velocity multipliers.
-                        let (mut vx, mut vy) = (shot.x, shot.y);
-                        if features.fast_then_slow() {
-                            vx *= 5.0;
-                            vy *= 5.0;
-                        }
-                        if features.can_bounce() {
-                            vx *= 1.25;
-                            vy *= 1.25;
-                        }
-                        let (mut sx, mut sy) = (spawn.x, spawn.y);
-                        if features.ar_pen_spread() {
-                            // `Main.rand.NextVector2CircularEdge(12, 12)`
-                            // (`Utils.cs:1271-1274`) - a unit vector scaled by
-                            // the half-widths.
-                            let angle = loot_rng.next_float() * std::f32::consts::TAU;
-                            let off = Vec2::from_angle(angle) * 12.0;
-                            sx += off.x;
-                            sy += off.y;
-                        }
-                        // `:49296-49304`: the damage multiplier and the
-                        // RepeatsGem bonus.
-                        let mut damage = (raw * features.damage_multiplier()) as i32;
-                        let mut kb = fx_kb;
-                        if features.repeats_gem() {
-                            damage += 4;
-                            kb += 1.0;
-                        }
-                        let bits = features.ai_state();
-                        let spin = p.facing == -1;
-                        if features.all_gems2() {
-                            // `:49307-49349`: seven bolts, the per-index kind
-                            // (the loop's initial `NextFromList` pick is
-                            // overwritten by the switch, so it is skipped).
-                            for n in 1..=7i32 {
-                                let slot_index = if spin { 8 - n } else { n };
-                                let kind = match slot_index {
-                                    1 => 121,
-                                    2 => 122,
-                                    3 => 123,
-                                    4 => 126,
-                                    5 => 124,
-                                    6 => 597,
-                                    _ => 125,
-                                };
-                                let offset = (n - 4) as f32;
-                                let mut v = Vec2::new(vx, vy).rotate(Vec2::from_angle(
-                                    offset * (std::f32::consts::PI / 4.0) / 10.0,
-                                ));
-                                v *= remap_gem(offset.abs(), 0.0, 3.0, 1.3, 1.0);
-                                let slot = app.projectiles.spawn_with_data_ai(
-                                    kind, sx, sy, v.x, v.y, damage, kb, bits, n as f32,
-                                );
-                                if let Some(slot) = slot {
-                                    app.projectiles.set_crit(slot, crit);
-                                }
-                            }
-                        } else if features.all_gems() {
-                            // `:49350-49364`: three bolts of one random gem
-                            // kind (the `NextFromList` pick, `:49354`).
-                            let pick = loot_rng.next_range(0, 7);
-                            let kind = [121u16, 122, 123, 124, 597, 125, 126][pick as usize];
-                            for n in 1..=3i32 {
-                                let offset = (n - 2) as f32;
-                                let mut v = Vec2::new(vx, vy).rotate(Vec2::from_angle(
-                                    offset * (std::f32::consts::PI / 4.0) / 10.0,
-                                ));
-                                v *= remap_gem(offset.abs(), 0.0, 1.0, 1.1, 1.0);
-                                let slot = app.projectiles.spawn_with_data_ai(
-                                    kind, sx, sy, v.x, v.y, damage, kb, bits, n as f32,
-                                );
-                                if let Some(slot) = slot {
-                                    app.projectiles.set_crit(slot, crit);
-                                }
-                            }
-                        } else {
-                            // `:49365-49372`: the single bolt, the SwirlTwins
-                            // twin with `ai1 = 1f`.
-                            let slot = app.projectiles.spawn_with_data_ai(
-                                proj, sx, sy, vx, vy, damage, kb, bits, 0.0,
-                            );
-                            if let Some(slot) = slot {
-                                app.projectiles.set_crit(slot, crit);
-                            }
-                            if features.swirl_twins() {
-                                let slot = app.projectiles.spawn_with_data_ai(
-                                    proj, sx, sy, vx, vy, damage, kb, bits, 1.0,
-                                );
-                                if let Some(slot) = slot {
-                                    app.projectiles.set_crit(slot, crit);
-                                }
-                            }
-                        }
-                    } else if held.kind == 3779 {
-                        // `Player.cs:48793-48807` - the Spirit Flame's spawn:
-                        // up to 10 aim retries against the line of sight, the
-                        // bolt at the player centre + direction * 30 with
-                        // zero velocity, `ai0 = -2`.
-                        let mut angle = loot_rng.next_float() * std::f32::consts::TAU;
-                        for _ in 0..10 {
-                            let probe = spawn + shot.rotate(Vec2::from_angle(angle)) * 100.0;
-                            if crate::projectile::can_hit_line(
-                                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
-                            ) {
-                                break;
-                            }
-                            angle = loot_rng.next_float() * std::f32::consts::TAU;
-                        }
-                        let speed = 0.95 + loot_rng.next_float() * 0.3;
-                        let v = shot.rotate(Vec2::from_angle(angle)) * speed;
-                        let slot = app.projectiles.spawn_with_data_ai(
-                            proj,
-                            spawn.x + v.x * 30.0,
-                            spawn.y + v.y * 30.0,
-                            0.0,
-                            0.0,
-                            raw as i32,
-                            fx_kb,
-                            -2.0,
-                            0.0,
-                        );
-                        if let Some(slot) = slot {
-                            app.projectiles.set_crit(slot, crit);
-                        }
-                    } else if held.kind == 3787 {
-                        // `Player.cs:48808-48827` - the Sky Fracture's spawn:
-                        // a ring point 20-60 px out (up to 50 retries with an
-                        // 8 px line probe), the velocity lerped 25% toward the
-                        // cursor direction.
-                        let mut face = loot_rng.next_float() * std::f32::consts::TAU;
-                        let mut ring = spawn;
-                        for _ in 0..50 {
-                            let radius = 20.0 + (60.0 - 20.0) * loot_rng.next_float();
-                            ring = spawn + Vec2::from_angle(face) * radius;
-                            let probe = ring + (ring - spawn).normalize_or_zero() * 8.0;
-                            if crate::projectile::can_hit_line(
-                                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
-                            ) {
-                                break;
-                            }
-                            face = loot_rng.next_float() * std::f32::consts::TAU;
-                        }
-                        let toward = (world_pos - ring).normalize_or_zero() * fx_spd;
-                        let along = shot.normalize_or_zero() * fx_spd;
-                        let v = toward + (along - toward) * 0.25;
-                        let slot = app.projectiles.spawn_with_data_ai(
-                            proj, ring.x, ring.y, v.x, v.y, raw as i32, fx_kb, 0.0, 0.0,
-                        );
-                        if let Some(slot) = slot {
-                            app.projectiles.set_crit(slot, crit);
-                        }
-                    } else if held.kind == 3542 {
-                        // `Player.cs:48778-48792` - the Nebula Blaze's spawn:
-                        // the aim angle within ±(π/4 · 0.7), up to 10 retries
-                        // against the line of sight (the angle draw precedes
-                        // the loop, each failed probe re-rolls), then the
-                        // velocity at one multiplier draw `0.95 + rand·0.3`
-                        // AFTER the loop.
-                        let mut angle = (loot_rng.next_float() - 0.5)
-                            * (std::f32::consts::PI / 4.0)
-                            * 0.7;
-                        for _ in 0..10 {
-                            let probe = spawn + shot.rotate(Vec2::from_angle(angle)) * 100.0;
-                            if crate::projectile::can_hit_line(
-                                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
-                            ) {
-                                break;
-                            }
-                            angle = (loot_rng.next_float() - 0.5)
-                                * (std::f32::consts::PI / 4.0)
-                                * 0.7;
-                        }
-                        let v = shot.rotate(Vec2::from_angle(angle))
-                            * (0.95 + loot_rng.next_float() * 0.3);
-                        let damage = blaze_damage.unwrap_or(raw as i32);
-                        let slot = app.projectiles.spawn_with_data_ai(
-                            proj, spawn.x, spawn.y, v.x, v.y, damage, fx_kb, 0.0, 0.0,
-                        );
-                        if let Some(slot) = slot {
-                            app.projectiles.set_crit(slot, crit);
-                        }
-                    } else {
-                        // The generic `Item.shoot` firing, with the two
-                        // per-item tweaks: the Crystal Storm's +/-0.04 spread
-                        // (`Player.cs:47821-47827`) and the Ice Rod's tile
-                        // target in `ai0/ai1` (`:49383-49387`).
-                        let (mut vx, mut vy) = (shot.x, shot.y);
-                        if held.kind == 518 {
-                            vx += loot_rng.next_range(-40, 41) as f32 * 0.04;
-                            vy += loot_rng.next_range(-40, 41) as f32 * 0.04;
-                        }
-                        let (ai0, ai1) = if proj == crate::projectile::MAGICAL_ICE_BLOCK {
-                            (
-                                (world_pos.x / 16.0) as i32 as f32,
-                                (world_pos.y / 16.0) as i32 as f32,
-                            )
-                        } else {
-                            (0.0, 0.0)
-                        };
-                        // `Player.cs:49426-49429` - the Leaf Blower's spawn
-                        // jitter rides the generic shot: the point takes
-                        // `NextVector2Circular(12, 12)` minus the full
-                        // velocity vector. `Utils.cs:1266-1269`: the unit
-                        // vector of one angle draw times the half-widths times
-                        // a second radial draw — two draws, in that order.
-                        let mut leaf_spawn = spawn;
-                        if proj == crate::projectile::LEAF {
-                            let angle = loot_rng.next_float() * std::f32::consts::TAU;
-                            let off = Vec2::from_angle(angle) * 12.0 * loot_rng.next_float();
-                            leaf_spawn += off - Vec2::new(vx, vy);
-                        }
-                        let slot = app.projectiles.spawn_with_data_ai(
-                            proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
-                        );
-                        if let Some(slot) = slot {
-                            app.projectiles.set_crit(slot, crit);
-                            // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
-                            // the whip's tag row off the firing item + the
-                            // prefix's `bonusTagDamage`, plus `AI_165_Whip`'s
-                            // `timeToFlyOut` inputs (the prefixed
-                            // `itemAnimationMax`).
-                            let tag_type = if tr_core::whip::tag_effect(held.kind).is_some() {
-                                held.kind
-                            } else {
-                                0
-                            };
-                            let bonus_tag = held_fx.map_or(0, |s| s.tag_damage);
-                            let animation_max =
-                                held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
-                            app.projectiles
-                                .set_whip_params(slot, tag_type, bonus_tag, animation_max);
-                        }
-                    }
-                    // `Player.cs:48210` — the sentry spawns run the turret
-                    // sweep right after (the base cap of 1 would otherwise
-                    // accumulate unbounded sentries; the budget-change sweep
-                    // in the player tick only catches cap drops).
-                    if crate::projectile::proj_data(proj).is_some_and(|d| d.sentry) {
-                        app.projectiles.update_max_turrets(
-                            p.max_turrets,
-                            app.local_id as u8,
-                            tr_core::dd2::event_ongoing(),
-                        );
-                    }
-                    if def.consumable {
-                        app.inventory[app.selected].count =
-                            app.inventory[app.selected].count.saturating_sub(1);
-                    }
+                // S1-P-i20 — the shot body lives in `fire_non_ammo_shot` (the
+                // shared use-start + mid-swing volley seam). It returns whether the
+                // aim was non-zero; the swing tail below rides the USE START only —
+                // the C# `ApplyItemAnimation` rides `ItemCheck_StartActualUse`
+                // (`:51680`), not `ItemCheck_Shoot`, so a mid-swing volley shot must
+                // NOT restart the swing.
+                if fire_non_ammo_shot(app, held, held_fx, item_crit, world_pos, proj, def) {
                     // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
                     // swing lasts the item's `useAnimation` ticks; `attack_cd`
                     // matches so the throw repeats only when the swing is over.
@@ -1188,6 +876,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
+                    // S1-P-i20 — `ApplyItemTime` (`Player.cs:47185-47194` →
+                    // `SetItemTime(useTime)`, `:4416-4419`): the FIRST shot fired on
+                    // the press tick (the `ItemTimeIsZero` gate, `:43544`), and the
+                    // shot re-arms the action cadence to `useTime` — the mid-swing
+                    // volley gate below reads it. A `useTime < useAnimation` staff
+                    // (the Aqua Scepter 8 < 16) fires its whole volley in this swing.
+                    app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
                 }
             }
         }
@@ -1203,6 +898,430 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if app.reuse_delay > 0.0 {
         app.reuse_delay = (app.reuse_delay - dt).max(0.0);
     }
+/// `Player.ItemCheck_Shoot` (`Player.cs:47056-49468`) — the non-ammo shot:
+/// the aim normalized to `shootSpeed` (`:47277-47307`), the spawn at the player
+/// centre + aim*10 (`RotatedRelativePoint(MountedCenter)`, `:47196`), the
+/// per-item spawn arms (the gem staves, the Spirit Flame, the Sky Fracture, the
+/// Nebula Blaze, the Bee Gun's multi-bee volley, the generic tail) and the
+/// sentry/consumable tail. Runs on the use-start tick AND on every mid-swing
+/// `ItemTimeIsZero` tick (the volley gate below): the C# fires the shot from the
+/// `itemAnimation > 0 && ItemTimeIsZero` gate (`:43544-43570`), and
+/// `ApplyItemTime` (`:47185-47194`) re-arms `itemTime = useTime` after EACH shot
+/// — a `useTime < useAnimation` staff (the Aqua Scepter 8 < 16,
+/// `Item.cs:3252-3268`) fires its whole volley inside one swing, not one shot per
+/// swing (the i01 census item). The mana pay, the buff grant and
+/// `FreeUpPetsAndMinions` ride the USE START (`ItemCheck_TryStartUse` /
+/// `:42760-42780`), not the shot — they stay in the start block. Returns whether
+/// the aim was non-zero (the port's `dir != ZERO` gate) so the caller keeps the
+/// swing tail gated the same way. `p` is re-borrowed here (read-only) rather than
+/// passed in: the chain touches only `app` fields disjoint from `app.player`
+/// (projectiles/rngs/inventory/world/local_id), so the split borrow compiles.
+fn fire_non_ammo_shot(
+    app: &mut App,
+    held: ItemSlot,
+    held_fx: Option<crate::prefix::PrefixedStats>,
+    item_crit: i32,
+    world_pos: Vec2,
+    proj: u16,
+    def: &'static registry::ItemDef,
+) -> bool {
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let (pcx, pcy) = p.center();
+    let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
+    if dir == Vec2::ZERO {
+        return false;
+    }
+    let class = def.class;
+    let (fx_dmg, fx_spd, fx_kb) = held_fx
+        .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
+            (s.damage, s.shoot_speed, s.knock_back)
+        });
+    // `if (sItem.melee && !ProjectileID.Sets
+    // .NoMeleeSpeedVelocityScaling[projToShoot]) speed /=
+    // this.meleeSpeed` (`:47060-47063`) — no ported kind rides
+    // the exception set (`ProjectileID.cs:547`), so every melee
+    // shot divides (×1 at the default 1f bonus).
+    let fx_spd = if class == registry::DamageClass::Melee {
+        fx_spd / p.melee_speed()
+    } else {
+        fx_spd
+    };
+    // `if (sItem.type == 2611 || sItem.type == 5526)
+    // pointPosition += vector2` (`:47239-47245`): the 1-px
+    // spawn shift along the aim (the Flairon's arm).
+    let spawn = if held.kind == 2611 || held.kind == 5526 {
+        Vec2::new(pcx, pcy) + dir * 10.0 + dir
+    } else {
+        Vec2::new(pcx, pcy) + dir * 10.0
+    };
+    let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
+    // The crit rolls at throw time (the class crit + the
+    // item's crit; `Projectile.Damage` consumes it on hit) —
+    // the throw runs in `Player.ItemCheck` under the
+    // `UpdatePlayers` swap (`Main.cs:17754`), so the roll
+    // rides `stream(UpdatePlayers)`.
+    let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let crit =
+        tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit);
+    // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
+    // 20% roll upgrades the bolt (634→635) at triple damage —
+    // `Damage *= 3` on the weapon-damage int (`:42653`'s
+    // `GetWeaponDamage` truncation, so the port triples the
+    // truncated value) — and the miss decrements the shoot
+    // speed BEFORE the aim vector is built.
+    let mut proj = proj;
+    let mut shot_speed = fx_spd;
+    let mut blaze_damage = None;
+    if held.kind == 3542 {
+        if loot_rng.next_range(0, 100) < 20 {
+            proj += 1;
+            blaze_damage = Some((raw as i32) * 3);
+        } else {
+            shot_speed -= 1.0;
+        }
+    }
+    // `Player.ItemCheck_Shoot`'s per-item spawn arms - the
+    // magic staves replace the generic `Item.shoot` firing,
+    // each `return`ing in the C#; the port folds them into
+    // one if/else chain before the shared swing tail. The
+    // base velocity is the aim normalized to `shootSpeed`.
+    let shot = Vec2::new(dir.x * shot_speed, dir.y * shot_speed);
+    if GEM_STAFF_BOLTS.contains(&proj) {
+        // `Player.cs:49262-49375` - the gem-staff shoot.
+        // `PackGemStaffFeatures` (`:49470-49489`): the bits
+        // from the bolt kind and the matching body robe
+        // (`GetEffectiveArmor(1)` - the port's `equipped[1]`,
+        // the robe slot 1282/1285/4256/1284/1283/1286/1287).
+        let mut features = GemStaffFeatures::from_ai(0.0);
+        let robe = p.equipped[1];
+        features.set_bit(GemStaffFeatures::HOMING, proj == 121 || robe == 1282);
+        features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, proj == 124 || robe == 1285);
+        features.set_bit(GemStaffFeatures::CAN_BOUNCE, proj == 597 || robe == 4256);
+        features.set_bit(GemStaffFeatures::SWIRL_TWINS, proj == 123 || robe == 1284);
+        features.set_bit(GemStaffFeatures::AOE_EXPLOSION, proj == 122 || robe == 1283);
+        features.set_bit(GemStaffFeatures::AR_PEN_SPREAD, proj == 125 || robe == 1286);
+        features.set_bit(GemStaffFeatures::BIGGER_HITBOX, proj == 126 || robe == 1287);
+        features.set_bit(GemStaffFeatures::ALL_GEMS, held.kind == 6171);
+        if !features.all_gems() {
+            features.set_bit(
+                GemStaffFeatures::REPEATS_GEM,
+                (proj == 121 && robe == 1282)
+                    || (proj == 124 && robe == 1285)
+                    || (proj == 597 && robe == 4256)
+                    || (proj == 123 && robe == 1284)
+                    || (proj == 122 && robe == 1283)
+                    || (proj == 125 && robe == 1286)
+                    || (proj == 126 && robe == 1287),
+            );
+        }
+        if features.all_gems() {
+            // `:49266-49273`: the gembag head forces the four.
+            features.set_bit(GemStaffFeatures::HOMING, true);
+            features.set_bit(GemStaffFeatures::CAN_BOUNCE, true);
+            features.set_bit(GemStaffFeatures::AOE_EXPLOSION, true);
+            features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, true);
+        }
+        let features = features;
+        // `:49286-49295`: the velocity multipliers.
+        let (mut vx, mut vy) = (shot.x, shot.y);
+        if features.fast_then_slow() {
+            vx *= 5.0;
+            vy *= 5.0;
+        }
+        if features.can_bounce() {
+            vx *= 1.25;
+            vy *= 1.25;
+        }
+        let (mut sx, mut sy) = (spawn.x, spawn.y);
+        if features.ar_pen_spread() {
+            // `Main.rand.NextVector2CircularEdge(12, 12)`
+            // (`Utils.cs:1271-1274`) - a unit vector scaled by
+            // the half-widths.
+            let angle = loot_rng.next_float() * std::f32::consts::TAU;
+            let off = Vec2::from_angle(angle) * 12.0;
+            sx += off.x;
+            sy += off.y;
+        }
+        // `:49296-49304`: the damage multiplier and the
+        // RepeatsGem bonus.
+        let mut damage = (raw * features.damage_multiplier()) as i32;
+        let mut kb = fx_kb;
+        if features.repeats_gem() {
+            damage += 4;
+            kb += 1.0;
+        }
+        let bits = features.ai_state();
+        let spin = p.facing == -1;
+        if features.all_gems2() {
+            // `:49307-49349`: seven bolts, the per-index kind
+            // (the loop's initial `NextFromList` pick is
+            // overwritten by the switch, so it is skipped).
+            for n in 1..=7i32 {
+                let slot_index = if spin { 8 - n } else { n };
+                let kind = match slot_index {
+                    1 => 121,
+                    2 => 122,
+                    3 => 123,
+                    4 => 126,
+                    5 => 124,
+                    6 => 597,
+                    _ => 125,
+                };
+                let offset = (n - 4) as f32;
+                let mut v = Vec2::new(vx, vy).rotate(Vec2::from_angle(
+                    offset * (std::f32::consts::PI / 4.0) / 10.0,
+                ));
+                v *= remap_gem(offset.abs(), 0.0, 3.0, 1.3, 1.0);
+                let slot = app.projectiles.spawn_with_data_ai(
+                    kind, sx, sy, v.x, v.y, damage, kb, bits, n as f32,
+                );
+                if let Some(slot) = slot {
+                    app.projectiles.set_crit(slot, crit);
+                }
+            }
+        } else if features.all_gems() {
+            // `:49350-49364`: three bolts of one random gem
+            // kind (the `NextFromList` pick, `:49354`).
+            let pick = loot_rng.next_range(0, 7);
+            let kind = [121u16, 122, 123, 124, 597, 125, 126][pick as usize];
+            for n in 1..=3i32 {
+                let offset = (n - 2) as f32;
+                let mut v = Vec2::new(vx, vy).rotate(Vec2::from_angle(
+                    offset * (std::f32::consts::PI / 4.0) / 10.0,
+                ));
+                v *= remap_gem(offset.abs(), 0.0, 1.0, 1.1, 1.0);
+                let slot = app.projectiles.spawn_with_data_ai(
+                    kind, sx, sy, v.x, v.y, damage, kb, bits, n as f32,
+                );
+                if let Some(slot) = slot {
+                    app.projectiles.set_crit(slot, crit);
+                }
+            }
+        } else {
+            // `:49365-49372`: the single bolt, the SwirlTwins
+            // twin with `ai1 = 1f`.
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, sx, sy, vx, vy, damage, kb, bits, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_crit(slot, crit);
+            }
+            if features.swirl_twins() {
+                let slot = app.projectiles.spawn_with_data_ai(
+                    proj, sx, sy, vx, vy, damage, kb, bits, 1.0,
+                );
+                if let Some(slot) = slot {
+                    app.projectiles.set_crit(slot, crit);
+                }
+            }
+        }
+    } else if held.kind == 3779 {
+        // `Player.cs:48793-48807` - the Spirit Flame's spawn:
+        // up to 10 aim retries against the line of sight, the
+        // bolt at the player centre + direction * 30 with
+        // zero velocity, `ai0 = -2`.
+        let mut angle = loot_rng.next_float() * std::f32::consts::TAU;
+        for _ in 0..10 {
+            let probe = spawn + shot.rotate(Vec2::from_angle(angle)) * 100.0;
+            if crate::projectile::can_hit_line(
+                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
+            ) {
+                break;
+            }
+            angle = loot_rng.next_float() * std::f32::consts::TAU;
+        }
+        let speed = 0.95 + loot_rng.next_float() * 0.3;
+        let v = shot.rotate(Vec2::from_angle(angle)) * speed;
+        let slot = app.projectiles.spawn_with_data_ai(
+            proj,
+            spawn.x + v.x * 30.0,
+            spawn.y + v.y * 30.0,
+            0.0,
+            0.0,
+            raw as i32,
+            fx_kb,
+            -2.0,
+            0.0,
+        );
+        if let Some(slot) = slot {
+            app.projectiles.set_crit(slot, crit);
+        }
+    } else if held.kind == 3787 {
+        // `Player.cs:48808-48827` - the Sky Fracture's spawn:
+        // a ring point 20-60 px out (up to 50 retries with an
+        // 8 px line probe), the velocity lerped 25% toward the
+        // cursor direction.
+        let mut face = loot_rng.next_float() * std::f32::consts::TAU;
+        let mut ring = spawn;
+        for _ in 0..50 {
+            let radius = 20.0 + (60.0 - 20.0) * loot_rng.next_float();
+            ring = spawn + Vec2::from_angle(face) * radius;
+            let probe = ring + (ring - spawn).normalize_or_zero() * 8.0;
+            if crate::projectile::can_hit_line(
+                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
+            ) {
+                break;
+            }
+            face = loot_rng.next_float() * std::f32::consts::TAU;
+        }
+        let toward = (world_pos - ring).normalize_or_zero() * fx_spd;
+        let along = shot.normalize_or_zero() * fx_spd;
+        let v = toward + (along - toward) * 0.25;
+        let slot = app.projectiles.spawn_with_data_ai(
+            proj, ring.x, ring.y, v.x, v.y, raw as i32, fx_kb, 0.0, 0.0,
+        );
+        if let Some(slot) = slot {
+            app.projectiles.set_crit(slot, crit);
+        }
+    } else if held.kind == 3542 {
+        // `Player.cs:48778-48792` - the Nebula Blaze's spawn:
+        // the aim angle within ±(π/4 · 0.7), up to 10 retries
+        // against the line of sight (the angle draw precedes
+        // the loop, each failed probe re-rolls), then the
+        // velocity at one multiplier draw `0.95 + rand·0.3`
+        // AFTER the loop.
+        let mut angle = (loot_rng.next_float() - 0.5)
+            * (std::f32::consts::PI / 4.0)
+            * 0.7;
+        for _ in 0..10 {
+            let probe = spawn + shot.rotate(Vec2::from_angle(angle)) * 100.0;
+            if crate::projectile::can_hit_line(
+                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
+            ) {
+                break;
+            }
+            angle = (loot_rng.next_float() - 0.5)
+                * (std::f32::consts::PI / 4.0)
+                * 0.7;
+        }
+        let v = shot.rotate(Vec2::from_angle(angle))
+            * (0.95 + loot_rng.next_float() * 0.3);
+        let damage = blaze_damage.unwrap_or(raw as i32);
+        let slot = app.projectiles.spawn_with_data_ai(
+            proj, spawn.x, spawn.y, v.x, v.y, damage, fx_kb, 0.0, 0.0,
+        );
+        if let Some(slot) = slot {
+            app.projectiles.set_crit(slot, crit);
+        }
+    } else if held.kind == 1121 {
+        // `Player.cs:48309-48332` — the Bee Gun's multi-bee
+        // spawn. The count: `Next(1, 4)` base, +1 per
+        // `Next(6) == 0` (two rolls), +1 more only while
+        // `strongBees` and a third `Next(3) == 0` (the Hive
+        // Pack). Each bee: the aim velocity jittered by
+        // `Next(-35, 36) * 0.02` per axis, the kind/damage/
+        // knockback off `beeType`/`beeDamage`/`beeKB`
+        // (`Player.cs:12417-12444`), and `magic = true`.
+        // The named-argument evaluation order is SpeedX,
+        // SpeedY, Type, Damage, KnockBack — the two velocity
+        // draws precede the bee-type coin flip.
+        let mut count = loot_rng.next_range(1, 4);
+        if loot_rng.next_range(0, 6) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 6) == 0 {
+            count += 1;
+        }
+        if p.strong_bees && loot_rng.next_range(0, 3) == 0 {
+            count += 1;
+        }
+        for _ in 0..count {
+            let vx = shot.x + loot_rng.next_range(-35, 36) as f32 * 0.02;
+            let vy = shot.y + loot_rng.next_range(-35, 36) as f32 * 0.02;
+            let (bee_kind, strong) = crate::hurt_modifiers::bee_type(p, loot_rng);
+            let bee_dmg = crate::hurt_modifiers::bee_damage(strong, raw as i32, loot_rng);
+            let bee_kb = crate::hurt_modifiers::bee_kb(strong, fx_kb);
+            let slot = app.projectiles.spawn_with_data_ai(
+                bee_kind, spawn.x, spawn.y, vx, vy, bee_dmg, bee_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_crit(slot, crit);
+            }
+        }
+    } else {
+        // The generic `Item.shoot` firing, with the two
+        // per-item tweaks: the Crystal Storm's +/-0.04 spread
+        // (`Player.cs:47821-47827`) and the Ice Rod's tile
+        // target in `ai0/ai1` (`:49383-49387`).
+        let (mut vx, mut vy) = (shot.x, shot.y);
+        if held.kind == 518 {
+            vx += loot_rng.next_range(-40, 41) as f32 * 0.04;
+            vy += loot_rng.next_range(-40, 41) as f32 * 0.04;
+        }
+        let (ai0, ai1) = if proj == crate::projectile::MAGICAL_ICE_BLOCK {
+            (
+                (world_pos.x / 16.0) as i32 as f32,
+                (world_pos.y / 16.0) as i32 as f32,
+            )
+        } else {
+            (0.0, 0.0)
+        };
+        // `Player.cs:49426-49429` - the Leaf Blower's spawn
+        // jitter rides the generic shot: the point takes
+        // `NextVector2Circular(12, 12)` minus the full
+        // velocity vector. `Utils.cs:1266-1269`: the unit
+        // vector of one angle draw times the half-widths times
+        // a second radial draw — two draws, in that order.
+        let mut leaf_spawn = spawn;
+        if proj == crate::projectile::LEAF {
+            let angle = loot_rng.next_float() * std::f32::consts::TAU;
+            let off = Vec2::from_angle(angle) * 12.0 * loot_rng.next_float();
+            leaf_spawn += off - Vec2::new(vx, vy);
+        }
+        // `Player.cs:49409-49411` — the Aqua Scepter's spawn
+        // `ai[2]` seeds the lava-bounce LCG (`Next(0, 20000)`);
+        // the draw rides the generic tail's ai-payload block,
+        // after the leaf jitter and before the spawn.
+        let aqua_seed = if proj == crate::projectile::AQUA_SCEPTER {
+            Some(loot_rng.next_range(0, 20000) as f32)
+        } else {
+            None
+        };
+        let slot = app.projectiles.spawn_with_data_ai(
+            proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
+        );
+        if let Some(slot) = slot {
+            app.projectiles.set_crit(slot, crit);
+            if let Some(seed) = aqua_seed {
+                app.projectiles.set_ai2(slot, seed);
+            }
+            // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
+            // the whip's tag row off the firing item + the
+            // prefix's `bonusTagDamage`, plus `AI_165_Whip`'s
+            // `timeToFlyOut` inputs (the prefixed
+            // `itemAnimationMax`).
+            let tag_type = if tr_core::whip::tag_effect(held.kind).is_some() {
+                held.kind
+            } else {
+                0
+            };
+            let bonus_tag = held_fx.map_or(0, |s| s.tag_damage);
+            let animation_max =
+                held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
+            app.projectiles
+                .set_whip_params(slot, tag_type, bonus_tag, animation_max);
+        }
+    }
+    // `Player.cs:48210` — the sentry spawns run the turret
+    // sweep right after (the base cap of 1 would otherwise
+    // accumulate unbounded sentries; the budget-change sweep
+    // in the player tick only catches cap drops).
+    if crate::projectile::proj_data(proj).is_some_and(|d| d.sentry) {
+        app.projectiles.update_max_turrets(
+            p.max_turrets,
+            app.local_id as u8,
+            tr_core::dd2::event_ongoing(),
+        );
+    }
+    if def.consumable {
+        app.inventory[app.selected].count =
+            app.inventory[app.selected].count.saturating_sub(1);
+    }
+    true
+}
+
 /// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
 /// minable/chopable tile the held tool can work, and the vanilla checks the
 /// tile against the tool before the NPC boxes — `ItemCheck_UseMiningTools`
@@ -2061,6 +2180,58 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         // This is the whole difference between a one-shot-per-swing port and
         // the vanilla's volley.
         app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
+    }
+    // S1-P-i20 — the non-ammo volley tick (`Player.cs:43544-43570`): the
+    // `itemAnimation > 0 && ItemTimeIsZero` gate fires the shot on EVERY tick the
+    // action timer hits zero mid-swing, and `ItemCheck_Shoot`'s `ApplyItemTime`
+    // (`:47185-47194` → `SetItemTime(useTime)`, `:4416-4419`) re-arms the cadence
+    // after each shot. A `useTime < useAnimation` staff (the Aqua Scepter 8 < 16)
+    // fires its whole volley inside one swing — the i01 census item: the pre-fix
+    // port fired once per swing. The use-start block above fired the first shot on
+    // the press tick and re-armed `item_time = useTime`, so this gate catches only
+    // the MID-SWING re-fires (`item_time` is still positive on the press tick). The
+    // tick semantics mirror the ammo fire block: integer counts off the 60 Hz-
+    // rounded timers, never a raw float compare. The mana pay rides the use start
+    // (`ItemCheck_TryStartUse`), NOT each shot — a volley shot spends no extra mana.
+    if held_weapon
+        && held_use_ammo == 0
+        && item_time_ticks <= 0
+        && app.swing_max > 0.0
+        && remaining_anim_ticks > 0
+        // `sItem.IsACoin` → `canShoot = false` (`Player.cs:47103-47106`): coins
+        // never fire, so they take no volley.
+        && !registry::is_coin(held.kind)
+        // `sItem.shootsEveryUse` → `flag4 = ItemAnimationJustStarted`
+        // (`Player.cs:43560-43562`): these fire once per use, never mid-swing.
+        && !SHOOTS_EVERY_USE.contains(&held.kind)
+        // Channel items (the drills/chainsaws, the aimed spells, the Last Prism)
+        // fire once per use and then the channel holds the projectile — the C#
+        // keeps their `itemTime` armed via the channel/mining cadence, so they
+        // never reach a mid-swing re-fire. The port skips them here.
+        && !registry::get(held.kind).is_some_and(|d| d.channel)
+    {
+        // The per-item animation-window limits (`Player.cs:43491`/`:43502`/
+        // `:43506`/`:43514`): the shot fires only while the swing is inside
+        // `useTime*N` of its start (`flag = false` beyond). The Zenith / True
+        // Copper Shortsword use `*3` (their `useTime = useAnimation/3`, so the
+        // window spans the whole swing — all three shots fire); the Fairy Queen
+        // magic item, the Book Staff and the Daybloom Staff use `*4`. The 4953
+        // limit (`:43510`) is the ammo path's, handled by its own fire block.
+        let window_blocked = match held.kind {
+            4956 | 5669 => remaining_anim_ticks < anim_max_ticks - use_time_ticks * 3,
+            4952 | 3852 | 6152 => remaining_anim_ticks < anim_max_ticks - use_time_ticks * 4,
+            _ => false,
+        };
+        if !window_blocked {
+            if let (Some(proj), Some(def)) = (registry::projectile(held.kind), registry::get(held.kind)) {
+                if fire_non_ammo_shot(app, held, held_fx, item_crit, world_pos, proj, def) {
+                    // `ApplyItemTime` (`Player.cs:47185-47194`): re-arm the cadence
+                    // after EACH shot — the next volley shot fires `useTime` ticks
+                    // later, for as long as the swing runs.
+                    app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
+                }
+            }
+        }
     }
     if app.place_down && !app.inventory_open && (starting || inside_swing) {
         // The extractinator arm first (`PlaceThing`'s order, `Player.cs:39586-39597`:
@@ -7555,6 +7726,461 @@ mod tests {
             draws_after(seed, 1),
             "the crit's draw only"
         );
+    }
+
+    // ---- S1-P-i20: the early magic staves (ManageShoot census) -------------
+    // Tests-as-code: WRITTEN NOT RUN (the task's code-only mode). Each pins
+    // the C# `ItemCheck_Shoot` arm it ports, with the `Player.cs` citation.
+
+    /// The Vilethorn (item 64) fires its base segment 7 through the generic
+    /// spawn — `shootSpeed 32`, the magic class damage, no special arm
+    /// (`Player.cs:49437`'s generic tail; the aiStyle-4 chain is the
+    /// projectile's own, pinned in `projectile_ai_tests`).
+    #[test]
+    fn s1_p_i20_the_vilethorn_fires_its_base_segment() {
+        let mut app = staff_app(64, "Vilethorn");
+        fire_once(&mut app);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 1, "one base segment");
+        assert_eq!(bolts[0].kind, crate::projectile::VILE_BASE, "Item.shoot 7");
+        assert!(
+            (bolts[0].vel.length() - 32.0).abs() < 0.05,
+            "shootSpeed 32 (|v|={})",
+            bolts[0].vel.length()
+        );
+        assert_eq!(bolts[0].damage, 10, "the magic damage 10");
+        // The generic tail spends only the crit's draw.
+        let seed = 0x57A2;
+        let mut app = staff_app(64, "Vilethorn");
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(stream_of(&mut app), draws_after(seed, 1), "the crit only");
+    }
+
+    /// The Band of Starpower (item 111) is an ACCESSORY (`Item.cs:2692-2699`:
+    /// `accessory = true`, no shoot/damage/mana) — it is not a weapon, so the
+    /// use path never fires it (`registry::is_weapon` is false: no projectile).
+    #[test]
+    fn s1_p_i20_the_band_of_starpower_is_not_a_weapon() {
+        assert!(!crate::registry::is_weapon(111), "no Item.shoot");
+        assert_eq!(crate::registry::projectile(111), None, "no projectile");
+        let mut app = staff_app(111, "Band of Starpower");
+        fire_once(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            0,
+            "an accessory fires nothing"
+        );
+    }
+
+    /// The Aqua Scepter (item 157) fires proj 22 with the lava-bounce LCG seed
+    /// in `ai[2]` (`Player.cs:49409-49411`'s `Next(0, 20000)`), `shootSpeed
+    /// 12.5`, the magic damage 27. The seed draw rides the generic tail after
+    /// the crit.
+    #[test]
+    fn s1_p_i20_the_aqua_scepter_fires_with_the_lava_seed() {
+        let mut app = staff_app(157, "Aqua Scepter");
+        fire_once(&mut app);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 1, "one stream");
+        assert_eq!(bolts[0].kind, crate::projectile::AQUA_SCEPTER, "Item.shoot 22");
+        assert!(
+            (bolts[0].vel.length() - 12.5).abs() < 0.05,
+            "shootSpeed 12.5 (|v|={})",
+            bolts[0].vel.length()
+        );
+        assert_eq!(bolts[0].damage, 27, "the magic damage 27");
+        assert!(
+            (0.0..20000.0).contains(&bolts[0].ai[2]),
+            "the LCG seed is a Next(0, 20000) draw ({})",
+            bolts[0].ai[2]
+        );
+        // The seed is the stream's second draw (after the crit), and the same
+        // seed twice gives the same ai[2].
+        let seed = 0xA9A5i32;
+        let run = || {
+            let mut app = staff_app(157, "Aqua Scepter");
+            seed_stream(&mut app, seed);
+            fire_once(&mut app);
+            let b = app.projectiles.slots().iter().find(|p| p.active).unwrap();
+            (b.ai[2], stream_of(&mut app))
+        };
+        let (a_seed, a_stream) = run();
+        let (b_seed, b_stream) = run();
+        assert_eq!(a_seed, b_seed, "the seed is seed-stable");
+        assert_eq!(a_stream, draws_after(seed, 2), "crit, then the LCG seed");
+        assert_eq!(a_stream, b_stream, "the stream is seed-stable");
+    }
+
+    /// The Bee Gun (item 1121) fires 1-5 bees (`Player.cs:48309-48332`):
+    /// `Next(1, 4)` base (1-3), +1 per `Next(6) == 0` (two rolls), +1 more only
+    /// while `strongBees` and a third `Next(3) == 0`. Each bee is kind 181 (or
+    /// 566 with the Hive Pack), the aim jittered by `Next(-35, 36) * 0.02`, the
+    /// damage `beeDamage` (base + `Next(2)`), `magic = true`.
+    #[test]
+    fn s1_p_i20_the_bee_gun_fires_a_multi_bee_volley() {
+        // Without the Hive Pack: 1-5 bees, all kind 181.
+        let mut app = staff_app(1121, "Bee Gun");
+        fire_once(&mut app);
+        let bees: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert!(
+            (1..=5).contains(&bees.len()),
+            "Next(1,4) + two Next(6) bonuses, no strongBees ({} bees)",
+            bees.len()
+        );
+        for b in &bees {
+            assert_eq!(b.kind, crate::projectile::BEE, "the plain bee 181");
+            // The damage is the base 9 + Next(2) (0 or 1).
+            assert!(
+                (9..=10).contains(&b.damage),
+                "beeDamage: 9 + Next(2) ({})",
+                b.damage
+            );
+            // The velocity is the aim (shootSpeed 8) jittered by ±0.7.
+            let aim = staff_aim(&app);
+            let (cx, cy) = app.player.as_ref().unwrap().center();
+            let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+            let base = dir * 8.0;
+            assert!(
+                (b.vel.x - base.x).abs() <= 0.7 + 1e-3
+                    && (b.vel.y - base.y).abs() <= 0.7 + 1e-3,
+                "the aim jitter is Next(-35,36)*0.02 (v={:?})",
+                b.vel
+            );
+        }
+    }
+
+    /// The Bee Gun's Hive Pack arm (`strongBees`): the third `Next(3) == 0`
+    /// bonus and `beeType`'s `Next(2) == 0` coin flip (`Player.cs:12417-12426`).
+    /// A full RNG replay predicts the count and every bee's kind/damage/
+    /// knockback; the actual spawns must match draw-for-draw. The draw order
+    /// (`Player.cs:48311-48328`): crit, count base `Next(1,4)`, two `Next(6)`
+    /// bonuses, the `strongBees` `Next(3)` bonus, then per bee the two
+    /// `Next(-35,36)` velocity jitters, `beeType`'s `Next(2)`, `beeDamage`'s
+    /// `Next(1,4)` (strong) / `Next(2)` (plain). `beeKB` draws nothing.
+    #[test]
+    fn s1_p_i20_the_bee_gun_hive_pack_rolls_the_giant_bee() {
+        let mut saw_giant = false;
+        let mut saw_third_bonus = false;
+        for seed in 0..60u64 {
+            let s = (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) as i32;
+            // The replay: predict the count and each bee off the same stream.
+            let mut rng = tr_core::UnifiedRandom::new(s);
+            let _crit = rng.next_range(1, 101);
+            let mut count = rng.next_range(1, 4);
+            if rng.next_range(0, 6) == 0 {
+                count += 1;
+            }
+            if rng.next_range(0, 6) == 0 {
+                count += 1;
+            }
+            if rng.next_range(0, 3) == 0 {
+                count += 1;
+                saw_third_bonus = true;
+            }
+            let mut predicted: Vec<(u16, i32, f32)> = Vec::new();
+            for _ in 0..count {
+                let _vx = rng.next_range(-35, 36);
+                let _vy = rng.next_range(-35, 36);
+                // beeType: strongBees && Next(2) == 0 → giant 566.
+                let strong = rng.next_range(0, 2) == 0;
+                let kind = if strong { crate::projectile::GIANT_BEE } else { crate::projectile::BEE };
+                // beeDamage: strong → 9 + Next(1,4); plain → 9 + Next(2).
+                let dmg = if strong { 9 + rng.next_range(1, 4) } else { 9 + rng.next_range(0, 2) };
+                // beeKB: strong → 0.5 + 0.25*1.1; plain → 0.25.
+                let kb = if strong { 0.5 + 0.25 * 1.1 } else { 0.25 };
+                predicted.push((kind, dmg, kb));
+            }
+            // The actual fire.
+            let mut app = staff_app(1121, "Bee Gun");
+            app.player.as_mut().unwrap().strong_bees = true;
+            seed_stream(&mut app, s);
+            fire_once(&mut app);
+            let bees: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .collect();
+            assert_eq!(bees.len(), predicted.len(), "seed {seed}: the count matches the replay");
+            for (b, &(kind, dmg, kb)) in bees.iter().zip(predicted.iter()) {
+                assert_eq!(b.kind, kind, "seed {seed}: beeType's coin flip");
+                assert_eq!(b.damage, dmg, "seed {seed}: beeDamage");
+                assert!(
+                    (b.knock_back - kb).abs() < 1e-3,
+                    "seed {seed}: beeKB ({} vs {kb})",
+                    b.knock_back
+                );
+                if kind == crate::projectile::GIANT_BEE {
+                    saw_giant = true;
+                }
+            }
+            // The whole volley's stream matches the replay's draw count.
+            assert_eq!(stream_of(&mut app), rng, "seed {seed}: the stream is draw-exact");
+        }
+        assert!(saw_giant, "the Hive Pack rolls giant bees across seeds");
+        assert!(saw_third_bonus, "the strongBees Next(3) bonus fires across seeds");
+    }
+
+    /// The Bee Gun's volley is seed-deterministic: the same seed twice gives
+    /// byte-equal spawns (the count rolls, the per-bee velocity jitter, the
+    /// beeType coin flip and the beeDamage draw all ride one stream).
+    #[test]
+    fn s1_p_i20_the_bee_gun_volley_is_seed_deterministic() {
+        let run = || {
+            let mut app = staff_app(1121, "Bee Gun");
+            app.player.as_mut().unwrap().strong_bees = true;
+            seed_stream(&mut app, 0xBEE5);
+            fire_once(&mut app);
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .map(|p| (p.kind, p.pos, p.vel, p.damage, p.knock_back))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(run(), run(), "the volley is seed-stable");
+    }
+
+    /// The Magic Missile (item 113) channel holds the aim in the REAL use path:
+    /// `channel_shoot` carries the held item's shoot id (16), so the aiStyle-9
+    /// arm's `HeldItem.shoot == this.type` gate (`Projectile.cs:43241`) passes
+    /// and the spell keeps the clamped cursor. (S1-P-i20: the pre-fix port
+    /// compared the item id 113 against the proj id 16, so the hold failed.)
+    #[test]
+    fn s1_p_i20_the_magic_missile_channel_holds_in_the_use_path() {
+        let mut app = staff_app(113, "Magic Missile");
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the channel item arms the channel");
+        assert_eq!(p.channel_item, 113, "the held item's kind");
+        assert_eq!(p.channel_shoot, 16, "the held item's shoot id (proj 16)");
+        // The fired spell carries the aim in ai[0..1] (the generic spawn's
+        // velocity is the aim; the channel hold keeps it on the cursor).
+        let spell = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::MAGIC_MISSILE)
+            .expect("the Magic Missile fired");
+        assert_eq!(spell.kind, 16, "Item.shoot 16");
+        // The release clears both channel fields.
+        app.mine_down = false;
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.channel, "the release clears the channel");
+        assert_eq!(p.channel_shoot, 0, "no shoot id is being channelled");
+    }
+
+    /// The Flamelash (item 218) channel carries its shoot id 34 the same way.
+    #[test]
+    fn s1_p_i20_the_flamelash_channel_carries_its_shoot_id() {
+        let mut app = staff_app(218, "Flamelash");
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the channel item arms the channel");
+        assert_eq!(p.channel_item, 218, "the held item's kind");
+        assert_eq!(p.channel_shoot, 34, "the held item's shoot id (proj 34)");
+        let spell = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::FLAMELASH)
+            .expect("the Flamelash fired");
+        assert_eq!(spell.kind, 34, "Item.shoot 34");
+    }
+
+    /// The Water Bolt (item 165), Demon Scythe (item 272) and Space Gun
+    /// (item 127) fire their own projectiles through the generic spawn —
+    /// `shootSpeed` 4.5 / 0.2 / 10, the magic damage 19 / 35 / 20.
+    #[test]
+    fn s1_p_i20_the_water_bolt_demon_scythe_space_gun_fire_their_shoot() {
+        for (item, name, proj, speed, damage) in [
+            (165u16, "Water Bolt", crate::projectile::WATER_BOLT, 4.5f32, 19i32),
+            (272, "Demon Scythe", crate::projectile::DEMON_SCYTHE, 0.2, 35),
+            (127, "Space Gun", crate::projectile::GREEN_LASER, 10.0, 20),
+        ] {
+            let mut app = staff_app(item, name);
+            fire_once(&mut app);
+            let bolts: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .collect();
+            assert_eq!(bolts.len(), 1, "{name}: one shot");
+            assert_eq!(bolts[0].kind, proj, "{name}: Item.shoot {proj}");
+            assert!(
+                (bolts[0].vel.length() - speed).abs() < 0.05,
+                "{name}: shootSpeed {speed} (|v|={})",
+                bolts[0].vel.length()
+            );
+            assert_eq!(bolts[0].damage, damage, "{name}: the magic damage {damage}");
+        }
+    }
+
+    /// The Space Gun's Meteor-set mana skip (`Player.cs:52695-52698`): with
+    /// `spaceGun` armed the shot costs no mana and fires even at zero mana.
+    #[test]
+    fn s1_p_i20_the_space_gun_meteor_set_skips_mana() {
+        let mut app = staff_app(127, "Space Gun");
+        app.player.as_mut().unwrap().space_gun = true;
+        app.player.as_mut().unwrap().mana = 0;
+        fire_once(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the Meteor set fires the Space Gun at zero mana"
+        );
+        assert_eq!(app.player.as_ref().unwrap().mana, 0, "no mana paid");
+    }
+
+    // ---- S1-P-i20: the ItemTimeIsZero volley tick + the wet gate -----------
+    // Tests-as-code: WRITTEN NOT RUN (the task's code-only mode).
+
+    /// The Aqua Scepter (item 157, `useTime 8 < useAnimation 16`,
+    /// `Item.cs:3252-3268`) fires its whole volley inside ONE swing — the i01
+    /// census item. The C# `itemAnimation > 0 && ItemTimeIsZero` gate
+    /// (`Player.cs:43544`) fires the first shot on the press tick, then
+    /// `ApplyItemTime` (`:47185-47194`) re-arms `itemTime = useTime = 8`, so the
+    /// second shot lands 8 ticks later while the 16-tick swing still runs. The
+    /// pre-fix port fired once per swing. Mana is paid ONCE per swing
+    /// (`ItemCheck_TryStartUse`, `:52021`), not per volley shot.
+    #[test]
+    fn s1_p_i20_the_aqua_scepter_fires_a_two_shot_volley_per_swing() {
+        let mut app = staff_app(157, "Aqua Scepter");
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mut log = Vec::new();
+        // Hold past the 16-tick swing: the volley is 2 shots (press tick + 8).
+        hold(&mut app, screen, 20, &mut log);
+        assert_eq!(log.len(), 2, "two shots per swing (the volley)");
+        // The press-frame arming puts the first shot at swing == max (16); the
+        // re-arm fires the second 8 ticks later at swing == 8.
+        assert_eq!(shot_ticks(&log), vec![16, 8], "the volley's shot ticks");
+        assert_eq!(shots(&app), 2, "two water streams spawned");
+        assert!(
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .all(|p| p.kind == crate::projectile::AQUA_SCEPTER),
+            "both are Item.shoot 22"
+        );
+        // One mana pay per swing (7), not per shot.
+        assert_eq!(app.player.as_ref().unwrap().mana, 20 - 7, "one mana pay");
+    }
+
+    /// Each volley shot re-rolls the crit (`Next(1,101)`) AND the Aqua Scepter's
+    /// lava-bounce LCG seed (`Next(0,20000)`, `Player.cs:49409-49411`) — the
+    /// generic tail's per-shot draw order. Two shots spend exactly four draws,
+    /// and the two `ai[2]` seeds differ (the stream advanced between them).
+    #[test]
+    fn s1_p_i20_the_aqua_volley_rolls_crit_and_seed_per_shot() {
+        let seed = 0xA9A5i32;
+        let mut app = staff_app(157, "Aqua Scepter");
+        seed_stream(&mut app, seed);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mut log = Vec::new();
+        hold(&mut app, screen, 20, &mut log);
+        assert_eq!(log.len(), 2, "the volley fired");
+        // The replay: crit, seed, crit, seed — the per-shot generic-tail order.
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        let _crit1 = rng.next_range(1, 101);
+        let seed1 = rng.next_range(0, 20000);
+        let _crit2 = rng.next_range(1, 101);
+        let seed2 = rng.next_range(0, 20000);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bolts.len(), 2, "two streams");
+        assert_eq!(bolts[0].ai[2], seed1 as f32, "the first shot's LCG seed");
+        assert_eq!(bolts[1].ai[2], seed2 as f32, "the second shot's LCG seed");
+        assert_ne!(seed1, seed2, "the stream advanced between the shots");
+        assert_eq!(stream_of(&mut app), rng, "the stream is draw-exact");
+    }
+
+    /// The Flamelash (item 218, shoot 34) refuses the use while wet (non-lava):
+    /// `ItemCheck_CheckCanUse_Inner` (`Player.cs:52112-52115`) blocks the fire
+    /// spells `{85, 15, 34, 1122}`. No shot, no mana pay, no swing. `base.wet`
+    /// is ANY liquid (`WetCollision`, `Collision.cs:1605-1645`); the port's
+    /// water/honey/shimmer union stands in (`player.rs:4315-4358`).
+    #[test]
+    fn s1_p_i20_the_wet_flamelash_refuses_the_use() {
+        for wet_kind in ["water", "honey", "shimmer"] {
+            let mut app = staff_app(218, "Flamelash");
+            let p = app.player.as_mut().unwrap();
+            match wet_kind {
+                "water" => p.wet = true,
+                "honey" => p.honey_wet = true,
+                _ => p.shimmer_wet = true,
+            }
+            let mana_before = p.mana;
+            fire_once(&mut app);
+            assert_eq!(
+                app.projectiles.slots().iter().filter(|p| p.active).count(),
+                0,
+                "{wet_kind}: the wet Flamelash fires nothing"
+            );
+            assert_eq!(
+                app.player.as_ref().unwrap().mana,
+                mana_before,
+                "{wet_kind}: no mana paid on the refused use"
+            );
+            assert!(app.swing <= 0.0, "{wet_kind}: no swing started");
+        }
+    }
+
+    /// The lava exclusion (`!base.lavaWet`, `Player.cs:52112`): a player in lava
+    /// is NOT refused — the Flamelash fires normally.
+    #[test]
+    fn s1_p_i20_the_lava_wet_flamelash_still_fires() {
+        let mut app = staff_app(218, "Flamelash");
+        let p = app.player.as_mut().unwrap();
+        p.lava_wet = true;
+        p.mana = 30; // the Flamelash costs 21; the stock 20 would refuse the pay
+        fire_once(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the lava-wet Flamelash fires (the !lavaWet exclusion)"
+        );
+    }
+
+    /// The dry Flamelash fires and channels its shoot id 34 (the wet gate is
+    /// vacuous when dry) — the control for the wet-refusal witnesses.
+    #[test]
+    fn s1_p_i20_the_dry_flamelash_fires_and_channels() {
+        let mut app = staff_app(218, "Flamelash");
+        app.player.as_mut().unwrap().mana = 30; // the Flamelash costs 21
+        fire_once(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the dry Flamelash fires"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the channel item arms the channel");
+        assert_eq!(p.channel_shoot, 34, "the held item's shoot id");
     }
 }
 

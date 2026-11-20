@@ -12536,6 +12536,176 @@ The batch review's three spell-arm findings (the missing
 default and the retarget's closest-wins loop) were fixed forward against the
 decompilation and pinned with tests.
 
+## The early magic staves (S1-P-i20, 2026-11-19, code-only mode)
+
+**Code-only mode**: written without invoking any compiler (no
+cargo/rustc/rustfmt/tests/dotnet/graphify). The witness tests in
+`world_sim/editing.rs` (the `s1_p_i20_*` block) and `projectile.rs`
+(`magic_ai_tests`' `s1_p_i20_*` block) are WRITTEN, NOT RUN — each expected
+value was verified by re-reading the cited C# and hand arithmetic. A
+follow-up build must run `cargo test -p tr-app s1_p_i20` before merging.
+
+**Census** — `Player.ItemCheck_Shoot` (`Player.cs:47056+`, the decompile's
+name for the task's "ManageShoot magic arm") vs the port's generic shoot in
+`world_sim/editing.rs`, for the nine listed early staves:
+
+| Item | Shoot | C# arm | Port verdict |
+| --- | --- | --- | --- |
+| Vilethorn 64 | 7 | generic tail `:49437` (aiStyle-4 chain is the proj's own) | OK — rowed + armed |
+| Band of Starpower 111 | — | **accessory** (`Item.cs:2692-2699`, no shoot/damage/mana) | OK — not a weapon, never fires |
+| Magic Missile 113 | 16 | generic tail + channel (`Projectile.cs:43241`) | **WRONG → fixed** (channel id) |
+| Flamelash 218 | 34 | generic tail + channel | **WRONG → fixed** (channel id) |
+| Aqua Scepter 157 | 22 | generic tail + `ai[2] = Next(0,20000)` `:49409-49411` | **MISSING → ported** (row 22, aiStyle 12, the seed) |
+| Water Bolt 165 | 27 | generic tail (aiStyle 8) | OK — rowed + armed |
+| Demon Scythe 272 | 45 | generic tail (aiStyle 18) | OK — rowed + armed |
+| Space Gun 127 | 20 | generic tail (aiStyle-1 rider) + Meteor mana skip `:52695-52698` | OK — rowed + armed + skip |
+| Bee Gun 1121 | 181 | multi-bee arm `:48309-48332` | **MISSING → ported** (volley, rows 181/566, aiStyle 36) |
+
+**The channel-id fix (the WRONG):** the aiStyle-9 owner block holds the aim
+only while `player.channel && player.HeldItem.shoot == this.type`
+(`Projectile.cs:43241`) — the held item's **projectile** id vs the spell's own
+kind. The pre-fix port stored the held **item** id in `channel_item` and
+compared it to the projectile kind (`p.channel_item == self.kind`), so for the
+Magic Missile (item 113, proj 16) and Flamelash (item 218, proj 34) the compare
+was `113 == 16` / `218 == 34` — always false, the channel hold never fired in
+the real use path (the unit fixture masked it by setting `channel_item` to the
+proj id). The fix adds `Player.channel_shoot` (the held item's `shoot`, written
+by the channel block in `update_editing`) and compares THAT in
+`ai_magic_missile`; `channel_item` stays the item id for the Last Prism
+holder's `registry::item(channel_item)` keep-alive (`Projectile.cs:66540`).
+
+**The two missing arms (ported verbatim):**
+- **Aqua Scepter** — the proj-22 row (`Projectile.cs:1040-1056`: 18×18,
+  aiStyle 12, alpha 255, penetrate 5, extraUpdates 2, ignoreWater), the
+  aiStyle-12 arm (`:24501-24635`: the 0.01/tick scale decay, the 0.15 gravity
+  from `ai[0] > 3`, the lava bounce seeding `LCG32Random(ai[2])` —
+  `Utilities/LCG32Random.cs:5-44`, `state = state * -1856014347 + 1`,
+  `NextFloat = state / 2^32` — Y then X), and the spawn `ai[2] =
+  Main.rand.Next(0, 20000)` (`Player.cs:49409-49411`) via the new `set_ai2`
+  seam. The bounced state (`ai[1] == 1`) halves the gravity, stops the scale
+  decay, drops `extraUpdates` to 0 and sets `penetrate = -1` (`:24554-24560`).
+- **Bee Gun** — the multi-bee volley (`Player.cs:48309-48332`): count
+  `Next(1,4)` + two `Next(6) == 0` bonuses + a `strongBees && Next(3) == 0`
+  third; per bee the two `Next(-35,36) * 0.02` velocity jitters precede
+  `beeType`'s `Next(2)` coin flip (the Hive Pack's giant bee 566), then
+  `beeDamage` (`Next(1,4)` strong / `Next(2)` plain) and `beeKB`
+  (`0.5 + KB*1.1` strong). The helpers are the S1-C-7 `hurt_modifiers` ones,
+  now `pub(crate)`. The proj-181/566 rows (`:2673-2685`/`:6172-6184`) and the
+  aiStyle-36 arm (`:27292-27471`: the alpha fade-in → `extraUpdates = 0`, the
+  sprite facing + `velocity.X * 0.1` tilt + 3-frame flap, the 30-tick launch
+  counter, the Manhattan-800 `CanBeChasedBy` + `CanHit` scan with the
+  `!npc.wet || type == 370` exclusion, the per-kind steering 6/0.1 vs
+  6.8/0.14). Both bees carry `UseGroupStaticImmunity(181)`
+  (`:10676-10681`) — the new `immunity_identity` ProjData/slot field folds the
+  id-static table key onto 181 for both kinds (`id_static_key`), so one
+  cooldown covers the pair.
+
+**RNG order** (the `UpdatePlayers` stream, `Main.cs:17754`): the generic tail
+rolls the crit first (`Next(1,101)`), then the per-item arm. The Aqua Scepter's
+LCG seed is the tail's second draw; the Bee Gun's count rolls (base + two
+`Next(6)` + the `strongBees` `Next(3)`) precede the per-bee velocity/type/damage
+draws, in the C#'s named-argument order (SpeedX, SpeedY, Type, Damage,
+KnockBack). The witnesses replay the exact draw sequence.
+
+**Deliberate deviations / skips:**
+- **Dust/gore skipped** in both new arms (no dust layer), but their
+  `Main.rand` gates still draw on the pass's `UpdateProjectiles` stream in the
+  C#'s order (the Aqua Scepter's `Next(3)` gore gate, the `Next(2)`/`Next(8)`
+  dust gates; the bee arm draws nothing — its C# block has no rand).
+- **The remix-world Aqua Scepter immunity arm** (`Projectile.cs:1051-1055`,
+  `usesLocalNPCImmunity` + cooldown 12 under `Main.remixWorld`) is unported —
+  no remix seed flag in the port (the standing ANALYSIS deviation); the stock
+  immunity reset holds.
+- **The bee wet-kill** (`:27294-27297`, `base.wet && !honeyWet && !shimmerWet`)
+  folds to false — the port's slots carry no liquid-wet flags (the standing
+  deviation); the gate is kept for shape.
+- **The Aqua Scepter's `ai[1] != 0 && Next(2) != 0` early-return**
+  (`:24604-24607`) skips the trailing dust, not the movement — the port runs
+  `kill_step` on both paths.
+- **The Band of Starpower is an accessory**, not a staff — the task's list
+  includes it, but `Item.cs:2692-2699` gives it no shoot/damage/mana, so the
+  use path never fires it (`registry::is_weapon` is false). No ManageShoot arm
+  exists to port; the witness pins that it fires nothing.
+
+**The ItemTimeIsZero volley tick (the i01 census item, 2026-11-20):** the
+pre-fix port fired every non-ammo shooter ONCE per swing — the spawn chain ran
+only in the use-start block. The C# fires the shot from the `itemAnimation > 0
+&& ItemTimeIsZero` gate (`Player.cs:43544-43570`) on EVERY tick the action timer
+hits zero mid-swing, and `ItemCheck_Shoot`'s `ApplyItemTime` (`:47185-47194` →
+`SetItemTime(useTime)`, `:4416-4419`) re-arms `itemTime = useTime` after EACH
+shot. A `useTime < useAnimation` staff therefore fires its whole volley inside
+one swing: the **Aqua Scepter** (`useTime 8 < useAnimation 16`,
+`Item.cs:3252-3268`) fires 2 shots/swing (press tick + 8 ticks later), not 1.
+
+The fix extracts the non-ammo spawn chain into a shared nested helper
+`fire_non_ammo_shot` (called from the use-start block AND a new mid-swing volley
+gate that mirrors the ammo fire block's tick semantics — integer counts off the
+60 Hz-rounded timers via `ticks_of`, never a raw float compare). The helper
+re-borrows `p = app.player.as_ref()` inside (read-only) rather than taking it as
+a parameter: the chain touches only `app` fields disjoint from `app.player`
+(projectiles/rngs/inventory/world/local_id), so the split borrow compiles where
+a passed-in `&Player` alongside `&mut App` would be E0502. It returns whether the
+aim was non-zero (the port's `dir != ZERO` gate) so the caller keeps the swing
+tail gated; the swing tail (`ApplyItemAnimation`, `:51680`) stays on the
+use-start path only — a mid-swing volley shot must NOT restart the swing. The
+press path re-arms `item_time = useTime` after the first shot (`ApplyItemTime`);
+the volley gate re-arms after each subsequent shot. Mana is paid ONCE per swing
+(`ItemCheck_TryStartUse` / `ActuallyPayMana`, `:52021-52040`/`:52638`), NOT per
+volley shot — the pay stays in the start block.
+
+The volley gate carries the C# `flag`/`flag4` exclusions verbatim:
+- **Coins** (`sItem.IsACoin` → `canShoot = false`, `:47103-47106`): never fire.
+- **`shootsEveryUse`** (`:43560-43562`, `flag4 = ItemAnimationJustStarted`): the
+  set {190, 273, 368, 674, 675, 757, 1226, 1826, 5382} fires once per use. All
+  have `useTime == useAnimation`, so the exclusion is belt-and-suspenders.
+- **Channel items** (the drills/chainsaws, the aimed spells, the Last Prism):
+  fire once per use, then the channel holds the projectile; the C# keeps their
+  `itemTime` armed via the channel/mining cadence (`toolTime`, `:43576-43587`),
+  so they never reach a mid-swing re-fire. The port skips them (`d.channel`).
+  None of the nine listed staves is a channel item, so this excludes no target.
+- **The animation-window limits** (`:43491`/`:43502`/`:43506`/`:43514`): the
+  Zenith 4956 / True Copper 5669 fire inside `useTime*3` (their `useTime =
+  useAnimation/3`, so the window spans the whole swing — all 3 shots fire); the
+  Fairy Queen magic 4952 / Book Staff 3852 / Daybloom 6152 inside `useTime*4`.
+  The 4953 limit is the ammo path's.
+
+**Blast radius:** among the ported `useTime < useAnimation` non-ammo shooters,
+the general gate gives the Leaf Blower 1178 (5<15) and Sky Fracture 3787 (4<12)
+faithful volleys they lacked. The existing Leaf Blower witnesses are all
+single-tick (`fire_once`), so they are unaffected; no Sky Fracture volley test
+existed. The drills/chainsaws are channel items (excluded). The gem staves,
+whips and Last Prism have `useTime == useAnimation` (no mid-swing re-fire).
+
+**The Flamelash wet gate (`Player.cs:52112-52115`):** a wet (non-lava) player
+refuses the fire spells `{85, 15, 34, 1122}` — the Flamelash (shoot 34) among the
+listed staves. `base.wet` is `WetCollision` (ANY liquid, `Collision.cs:1605-1645`
+returns true for water/honey/shimmer); the port splits the kinds
+(`player.rs:4315-4358`), so the gate reads the water/honey/shimmer union
+`(p.wet || p.honey_wet || p.shimmer_wet) && !p.lava_wet`. It sits at the USE START
+(`ItemCheck_CheckCanUse_Inner` via `TryStartUse`, `:52023`), after the silence
+check — the mid-swing shot gate (`:43544`) does NOT re-check wet, so a player who
+enters water mid-swing keeps firing until the swing ends (faithful). The refusal
+returns before the mana pay and the swing start: no shot, no mana, no swing.
+
+**The Aqua Scepter aiStyle-12 RNG-order fixes (2026-11-20):** two defects in the
+new arm were corrected against `Projectile.cs:24501-24635`:
+1. The scale-death early `return` was removed — the C# `Kill()` (`:24594`) does
+   NOT return from `AI()`; the gravity arm (`:24596-24634`) still runs on the
+   dying sub-step and its dust gates still draw. The port marks the slot dead
+   and falls through (the `kill_step` movement tail runs regardless — C#
+   `HandleMovement` has no `active` guard, `:17015`).
+2. The lava-bounce taken branch now draws the gore-type roll `Next(61, 64)`
+   (`:24583`) after the `Next(3) == 0` gate (`:24581`) — the house
+   gore-type-roll convention (`ai_freaking_pirates`' `Next(580,583)`). The
+   pre-fix port drew only the gate, dropping the taken branch's draw.
+
+**Volley witnesses (WRITTEN NOT RUN):** `s1_p_i20_the_aqua_scepter_fires_a_two_shot_volley_per_swing`
+(2 shots at swing ticks 16/8, one mana pay), `s1_p_i20_the_aqua_volley_rolls_crit_and_seed_per_shot`
+(per-shot crit `Next(1,101)` + LCG seed `Next(0,20000)`, draw-exact stream),
+`s1_p_i20_the_wet_flamelash_refuses_the_use` (water/honey/shimmer each: no shot,
+no mana, no swing), `s1_p_i20_the_lava_wet_flamelash_still_fires` (the `!lavaWet`
+exclusion), `s1_p_i20_the_dry_flamelash_fires_and_channels` (the control).
+
 ## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
 
 **Code-only mode**: this slice was written without invoking any compiler
