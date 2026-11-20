@@ -1205,6 +1205,9 @@ pub const DD2_PET_GATO: u16 = 703;
 /// `ProjectileID.DD2ApprenticeStorm` (704) — the Tome of Infinite
 /// Wisdom's twister, aiStyle 145 (`Projectile.cs:7447-7460`).
 pub const DD2_APPRENTICE_STORM: u16 = 704;
+/// `ProjectileID.DD2Win` (713) — the DD2 victory banner, aiStyle 146
+/// (an empty AI body, `Projectile.cs:53960-53962`; the row `:7560-7571`).
+pub const DD2_VICTORY: u16 = 713;
 /// `ProjectileID.UpbeatStar` (764) — the Upbeat Star pet, aiStyle 144
 /// (`Projectile.cs:7866-7878`).
 pub const UPBEAT_STAR: u16 = 764;
@@ -4063,6 +4066,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 60.0, 210.0, 145, -1, 600, 0, false, false, false,
                 (true, -1, false, -1, 0, 1.0),
             ),
+            // `Projectile.cs:7560-7571`: the DD2 victory banner (713):
+            // 10x10, aiStyle 146 (the empty body), alpha 255, tileCollide
+            // false, ignoreWater (the overlay), timeLeft 900, penetrate
+            // -1. `hostile = true` (`:7569`) rides the `spawn_hostile`
+            // seam (the port's hostile convention — no data field).
+            DD2_VICTORY => (
+                10.0, 10.0, 146, -1, 900, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4326,8 +4338,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 kind,
                 DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET
             )
-            // W4-d15 — the Book Staff twister (`Projectile.cs:7459`).
-            || kind == DD2_APPRENTICE_STORM,
+            // W4-d15 — the Book Staff twister (`Projectile.cs:7459`) and
+            // the victory banner (`:7567`).
+            || matches!(kind, DD2_APPRENTICE_STORM | DD2_VICTORY),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

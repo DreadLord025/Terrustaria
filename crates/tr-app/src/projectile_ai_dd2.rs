@@ -935,6 +935,16 @@ fn gore_1007_1008(rng: &mut dyn DropRng) {
     let _ = rng.next_range(-20, 21); // the NewGore X kick
 }
 
+/// `AI_146_DD2Victory` (`Projectile.cs:53960-53962`) — an EMPTY C# body:
+/// the DD2 victory banner 713 (`:7560-7571`) drifts on its spawn velocity
+/// until the 900-tick life drains. The port keeps the arm a documented
+/// no-op (the dispatch's free integrate is the whole behaviour); the fn
+/// exists so the census pin sees a live arm and the mapping stays
+/// discoverable.
+pub(crate) fn ai_dd2_victory(_p: &mut Projectile) {
+    // `:53960-53962` — `{ }`. No state writes, no draws.
+}
+
 // Witnesses (W4-d15 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1563,5 +1573,25 @@ mod tests {
         assert!(p.active, "299 stays live");
         ai_book_staff_storm(&mut p, &w, &mut rng);
         assert!(!p.active, ":70349-70352 — the 300 kill");
+    }
+
+    /// The 713 row is verbatim `SetDefaults` (`Projectile.cs:7560-7571`);
+    /// the AI body is empty (`:53960-53962`) — the arm writes nothing.
+    #[test]
+    fn the_713_row_and_the_empty_body() {
+        use crate::projectile::DD2_VICTORY;
+        let d = proj_data(DD2_VICTORY).expect("the 713 row");
+        assert_eq!((d.w, d.h, d.ai_style), (10.0, 10.0, 146), ":7562-7564");
+        assert_eq!(d.alpha, 255, ":7565");
+        assert!(!d.tile_collide && d.ignore_water, ":7566-7567");
+        assert_eq!(d.time_left, 900, ":7568");
+        assert_eq!(d.penetrate, -1, ":7570");
+        let mut p = proj(DD2_VICTORY);
+        p.vel = Vec2::new(1.0, -2.0);
+        p.ai = [3.0, 4.0, 0.0, 0.0];
+        let before = (p.pos, p.vel, p.ai, p.alpha, p.time_left);
+        ai_dd2_victory(&mut p);
+        assert_eq!((p.pos, p.vel, p.ai, p.alpha, p.time_left), before,
+            "the empty body writes nothing");
     }
 }

@@ -17442,6 +17442,17 @@ impl ProjectilePool {
                             // row keeps tileCollide = false (`:7454`).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d15 — aiStyle 146: the DD2 victory banner 713
+                        // (`AI_146_DD2Victory`, `Projectile.cs:53960-53962`
+                        // — an EMPTY C# body). The documented no-op arm;
+                        // the free integrate + the 900-tick life are the
+                        // whole behaviour.
+                        146 => {
+                            crate::projectile_ai_dd2::ai_dd2_victory(&mut self.slots[i]);
+                            // HandleMovement after the AI (`:17015`); the
+                            // row keeps tileCollide = false (`:7566`).
+                            self.slots[i].kill_step(world);
+                        }
                         // aiStyle 147 — the Celebration Mk2 rockets
                         // (`AI_147_Celeb2Rocket` `:52881-53092`): the
                         // seven-state machine; the death resize + Damage
