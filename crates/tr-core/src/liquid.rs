@@ -733,6 +733,17 @@ impl LiquidSystem {
                         + set_level(world, self, x + 2, y, avg, kind)
                         + set_level(world, self, x - 3, y, avg, kind)
                         + set_level(world, self, x + 3, y, avg, kind);
+                    // `Liquid.cs:748-771` — the extra wake pass, run BEFORE the
+                    // conditional centre write: re-queue each neighbour when
+                    // its (post-`set_level`) level OR the centre's level differs
+                    // from the average. The neighbours all hold `avg` now, so
+                    // the clause reduces to the centre-diff test; the centre
+                    // still holds `own` here (the C# reads the pre-write tile5).
+                    if own as i32 != avg {
+                        for nx in [x - 1, x + 1, x - 2, x + 2, x - 3, x + 3] {
+                            self.add_water(world, nx, y);
+                        }
+                    }
                     if equal < 6 || !above_full {
                         new_own = avg;
                     }
@@ -742,6 +753,13 @@ impl LiquidSystem {
                         + set_level(world, self, x + 1, y, avg, kind)
                         + set_level(world, self, x - 2, y, avg, kind)
                         + set_level(world, self, x + 2, y, avg, kind);
+                    // `Liquid.cs:821-836` — the 5-neighbour extra wake pass,
+                    // the same centre-diff reduction as the 7-arm above.
+                    if own as i32 != avg {
+                        for nx in [x - 1, x + 1, x - 2, x + 2] {
+                            self.add_water(world, nx, y);
+                        }
+                    }
                     if equal < 4 || !above_full {
                         new_own = avg;
                     }
@@ -758,7 +776,17 @@ impl LiquidSystem {
                     set_level(world, self, x + 2, y, avg, kind);
                     new_own = avg;
                 } else {
-                    let avg = round_level(l + r + own as f32 + bias, 3);
+                    let mut avg = round_level(l + r + own as f32 + bias, 3);
+                    // `Liquid.cs:892-895` — the 254→255 nudge: a settled 254
+                    // surface rolls `WorldGen.genRand.Next(30)` and promotes
+                    // to 255 on a zero. The draw rides the port's `genRand`
+                    // stand-in (`World.frame_rng`, the same stream the
+                    // SquareTileFrame centre re-roll consumes — ANALYSIS
+                    // "The liquid delay machinery", W4-g45); it advances the
+                    // shared stream exactly when the C# does (only on a 254).
+                    if avg == 254 && world.frame_rng.next_max(30) == 0 {
+                        avg = 255;
+                    }
                     set_level(world, self, x - 1, y, avg, kind);
                     set_level(world, self, x + 1, y, avg, kind);
                     new_own = avg;
@@ -2437,6 +2465,108 @@ mod liquid_delwater {
         assert_eq!(sys.active_len(), 0, "the force-clear drained the list");
         assert_eq!(sys.stuck_count, 0, "the force-clear reset the counter");
         assert!(!sys.stuck, "stuck lowered after the clear");
+    }
+}
+
+/// W4-g45 phase 2 — the 3-neighbour `genRand` 254→255 nudge
+/// (`Liquid.cs:892-895`) and the 7/5-neighbour extra wake passes
+/// (`:748-771`/`:821-836`). The nudge rides the port's `genRand` stand-in
+/// (`World.frame_rng`); the RNG census pins the exact draw. Written, NOT
+/// run (code-only mode).
+#[cfg(test)]
+mod liquid_nudge_wakes {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    fn floor_world(width: i32, height: i32, floor_y: i32) -> World {
+        let mut w = World::new("nudge".into(), width, height);
+        for x in 0..width {
+            let i = w.index(x, floor_y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn the_254_nudge_promotes_on_a_zero_genrand_draw() {
+        // `Liquid.cs:892-895`: a 3-neighbour average of 254 rolls
+        // `genRand.Next(30)` and promotes to 255 on a zero. Seed 35's first
+        // `UnifiedRandom` draw is 0 (the RNG census, below), so the settled
+        // 254 row promotes. Three equal 254 cells average to 254.
+        let mut w = floor_world(15, 120, 8);
+        w.frame_rng = crate::unified_random::UnifiedRandom::new(35);
+        put_as(&mut w, 6, 7, 254, 0);
+        put_as(&mut w, 7, 7, 254, 0);
+        put_as(&mut w, 8, 7, 254, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 7, 7);
+        sys.update(&mut w);
+        assert_eq!(w.tiles[w.index(7, 7)].liquid, 255, "the zero draw promoted 254");
+    }
+
+    #[test]
+    fn the_254_nudge_keeps_254_on_a_nonzero_draw() {
+        // Seed 0's first `Next(30)` draw is 21 (the census), so the 254 row
+        // stays 254 — the nudge only fires on a zero.
+        let mut w = floor_world(15, 120, 8);
+        w.frame_rng = crate::unified_random::UnifiedRandom::new(0);
+        put_as(&mut w, 6, 7, 254, 0);
+        put_as(&mut w, 7, 7, 254, 0);
+        put_as(&mut w, 8, 7, 254, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 7, 7);
+        sys.update(&mut w);
+        assert_eq!(w.tiles[w.index(7, 7)].liquid, 254, "the nonzero draw kept 254");
+    }
+
+    #[test]
+    fn the_nudge_draw_only_advances_the_stream_on_a_254() {
+        // The C# consumes the shared `genRand` draw ONLY when the average is
+        // 254 (`:892`'s `num == 254f` guard). A non-254 settle leaves the
+        // stream untouched; a 254 settle advances it by exactly one draw.
+        let mut w = floor_world(15, 120, 8);
+        w.frame_rng = crate::unified_random::UnifiedRandom::new(0);
+        put_as(&mut w, 6, 7, 100, 0);
+        put_as(&mut w, 7, 7, 100, 0);
+        put_as(&mut w, 8, 7, 100, 0);
+        let before = w.frame_rng.peek();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 7, 7);
+        sys.update(&mut w);
+        assert_eq!(w.frame_rng.peek(), before, "a non-254 settle drew nothing");
+    }
+
+    #[test]
+    fn the_extra_wake_requeues_an_unqueued_neighbour_on_a_centre_change() {
+        // `Liquid.cs:748-771`/`:821-836`: the extra wake re-queues a neighbour
+        // when the CENTRE differs from the average, EVEN IF that neighbour's
+        // own level already equals the average (so `set_level` did not wake
+        // it). Only the centre is active here; the right neighbour holds the
+        // average level but is unqueued. The centre changes (20 -> 10), so the
+        // extra wake pulls the right neighbour into the list — without it the
+        // neighbour stays unqueued (`set_level` saw no change).
+        let mut w = floor_world(15, 120, 8);
+        put_as(&mut w, 7, 7, 20, 0);
+        put_as(&mut w, 8, 7, 10, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 7, 7);
+        assert_eq!(sys.active_len(), 1, "only the centre is queued");
+        assert!(!sys.is_checking(8, 7), "the right neighbour starts unqueued");
+        sys.update(&mut w);
+        // The 3-arm average (0 + 10 + 20)/3 = 10 differs from the centre's 20;
+        // the right neighbour already held 10, so only the extra wake queues it.
+        assert!(sys.is_checking(8, 7), "the extra wake re-queued the neighbour");
     }
 }
 
