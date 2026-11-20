@@ -1052,6 +1052,44 @@ pub const NEBULA_ARCANUM: u16 = 617;
 /// `ProjectileID.NebulaArcanumSubshot` (618) — the Arcanum's arm (aiStyle
 /// 119, 18x30, `timeLeft = 420`, local-immunity 20).
 pub const NEBULA_ARCANUM_SUBSHOT: u16 = 618;
+// W4-d8 — the aiStyle-72/73/74/76 census (the Bubble Gun, the firework
+// fountains, the Scutlix mount's laser and the two mount crosshairs). Every
+// id is the verbatim `ProjectileID` value; the `SetDefaults` arms are cited
+// per row in [`proj_data`].
+/// `ProjectileID.Bubble` (410) — the Bubble Gun's bubble (aiStyle 72,
+/// `Projectile.cs:4917-4932`: 14x14, penetrate 1, alpha 255, timeLeft 100).
+pub const BUBBLE: u16 = 410;
+/// `ProjectileID.FireworkFountainYellow` (419) — the first firework fountain
+/// (aiStyle 73, `Projectile.cs:4951-4959`); the tile-interaction spawn rolls
+/// `419 + Next(4)` (`Player.cs:32374`).
+pub const FIREWORK_FOUNTAIN_YELLOW: u16 = 419;
+/// `ProjectileID.FireworkFountainRed` (420).
+pub const FIREWORK_FOUNTAIN_RED: u16 = 420;
+/// `ProjectileID.FireworkFountainBlue` (421).
+pub const FIREWORK_FOUNTAIN_BLUE: u16 = 421;
+/// `ProjectileID.FireworkFountainRainbow` (422).
+pub const FIREWORK_FOUNTAIN_RAINBOW: u16 = 422;
+/// The four firework fountains (419-422) — the aiStyle-73 family.
+pub const FIREWORK_FOUNTAINS: [u16; 4] = [
+    FIREWORK_FOUNTAIN_YELLOW,
+    FIREWORK_FOUNTAIN_RED,
+    FIREWORK_FOUNTAIN_BLUE,
+    FIREWORK_FOUNTAIN_RAINBOW,
+];
+/// `ProjectileID.ScutlixLaserFriendly` (434) — the Scutlix mount's laser
+/// (aiStyle 74, `Projectile.cs:5047-5055`: 1x1, extraUpdates 100, penetrate
+/// −1). The Update-tail charge latch (`:17079-17086`) flips extraUpdates to 1.
+pub const SCUTLIX_LASER_FRIENDLY: u16 = 434;
+/// `ProjectileID.ScutlixLaserCrosshair` (441) — the Scutlix mount's aim
+/// crosshair (aiStyle 76, `Projectile.cs:5117-5125`: 1x1, hide, ignoreWater,
+/// tileCollide false).
+pub const SCUTLIX_LASER_CROSSHAIR: u16 = 441;
+/// `ProjectileID.DrillMountCrosshair` (453) — the Drill Containment Unit's
+/// aim crosshair (aiStyle 76, `Projectile.cs:5250-5258`).
+pub const DRILL_MOUNT_CROSSHAIR: u16 = 453;
+/// The two mount crosshairs (441/453) — the aiStyle-76 family. Both are
+/// stock `friendly = false` (`:788`), so they damage nothing.
+pub const MOUNT_CROSSHAIRS: [u16; 2] = [SCUTLIX_LASER_CROSSHAIR, DRILL_MOUNT_CROSSHAIR];
 // S1-P-i22 — the magic guns + tomes' shots (`Player.ItemCheck_Shoot` census,
 // `Player.cs:47056-49468`). Every id is the verbatim `ProjectileID` value;
 // the `SetDefaults` arms are cited per row in [`proj_data`].
@@ -1653,6 +1691,78 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 (false, -2, false, -1, 75, 1.0),
+            ),
+            // W4-d8 — the aiStyle-72 Bubble (410, `Projectile.cs:4917-4932`):
+            // 14x14, friendly, penetrate 1, alpha 255, timeLeft 100, magic,
+            // ignoreWater. The remix-world `armorPenetration = 20` arm
+            // (`:4928-4931`) is unported (no remix seed flag — the 27 row's
+            // precedent below); the stock 0 stands.
+            BUBBLE => (
+                14.0,
+                14.0,
+                72,
+                1,
+                100,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d8 — the firework fountains (419-422,
+            // `Projectile.cs:4951-4959`): 4x4, aiStyle 73, friendly,
+            // usesIDStaticNPCImmunity with cooldown 3. The stock penetrate 1
+            // / timeLeft 3600 / tileCollide true stand; the arm pins
+            // `friendly = false` per tick (the C# never damages — the
+            // ai_dungeon_debris precedent). The spawn
+            // (`Player.cs:32374`) passes ai0 = tileX, ai1 = tileY.
+            FIREWORK_FOUNTAIN_YELLOW | FIREWORK_FOUNTAIN_RED
+            | FIREWORK_FOUNTAIN_BLUE | FIREWORK_FOUNTAIN_RAINBOW => (
+                4.0,
+                4.0,
+                73,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, true, 3, 0, 1.0),
+            ),
+            // W4-d8 — the Scutlix laser (434, `Projectile.cs:5047-5055`):
+            // 1x1, aiStyle 74, friendly, extraUpdates 100, penetrate −1.
+            // The Update-tail charge latch (`:17079-17086`) flips
+            // extraUpdates to 1 on the wire's last sub-step.
+            SCUTLIX_LASER_FRIENDLY => (
+                1.0,
+                1.0,
+                74,
+                -1,
+                TIME_LEFT_DEFAULT,
+                100,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // W4-d8 — the mount crosshairs (441 Scutlix / 453 Drill,
+            // `Projectile.cs:5117-5125`/`:5250-5258`): 1x1, aiStyle 76,
+            // hide, ignoreWater, tileCollide false. The stock friendly
+            // false (`:788`) — the port's slot default is true, so the arm
+            // pins it per tick (the ai_dungeon_debris precedent). `hide`
+            // has no slot field (the crosshair draws through the mount
+            // layer, unported).
+            SCUTLIX_LASER_CROSSHAIR | DRILL_MOUNT_CROSSHAIR => (
+                1.0,
+                1.0,
+                76,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
             ),
             // `Projectile.cs:5485-5495` — the spelunker glowstick (473): 8x8,
             // `timeLeft *= 2` (3600 → 7200), the same alpha/light.
@@ -4209,6 +4319,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
             || kind == HIGH_VELOCITY_BULLET
+            // W4-d8 — the aiStyle-72 Bubble (410, `Projectile.cs:4927`) and
+            // the two aiStyle-76 mount crosshairs (441/453,
+            // `:5123`/`:5256`) set `ignoreWater = true`.
+            || matches!(kind, BUBBLE | SCUTLIX_LASER_CROSSHAIR | DRILL_MOUNT_CROSSHAIR)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
@@ -4308,6 +4422,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+                // W4-d8 — the aiStyle-72 Bubble (410, `Projectile.cs:4926`).
+                | BUBBLE
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4792,5 +4908,63 @@ mod tests {
         assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
+    }
+
+    /// W4-d8 — the aiStyle-72/73/74/76 rows keep their verbatim `SetDefaults`
+    /// slices (the data half of the census). Every value is hand-derived from
+    /// the cited `Projectile.cs` lines; the stock defaults (`:714-715`,
+    /// `:764`, `:774-775`, `:779`, `:785`, `:787`) stand where the arm writes
+    /// nothing. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d8_the_proj_ai_71_80_missing_rows_match_set_defaults() {
+        // The aiStyle-72 Bubble (410, `:4917-4932`): 14x14, penetrate 1,
+        // timeLeft 100, alpha 255, magic, ignoreWater; the stock tileCollide
+        // true (`:775`) and extraUpdates 0 stand. The remix `armorPenetration
+        // = 20` arm (`:4928-4931`) is unported (no remix flag).
+        let b = proj_data(BUBBLE).unwrap();
+        assert_eq!((b.w, b.h), (14.0, 14.0));
+        assert_eq!(b.ai_style, 72);
+        assert_eq!(b.penetrate, 1);
+        assert_eq!(b.time_left, 100);
+        assert_eq!(b.alpha, 255);
+        assert_eq!(b.extra_updates, 0);
+        assert!(b.tile_collide);
+        assert!(b.magic);
+        assert!(b.ignore_water);
+        // The aiStyle-73 firework fountains (419-422, `:4951-4959`): 4x4,
+        // the idStatic-3 pair, the stock penetrate 1 / timeLeft 3600 /
+        // tileCollide true. NO class flag (`:4951-4959` sets none).
+        for k in FIREWORK_FOUNTAINS {
+            let d = proj_data(k).unwrap();
+            assert_eq!((d.w, d.h), (4.0, 4.0), "kind {k}");
+            assert_eq!(d.ai_style, 73, "kind {k}");
+            assert_eq!(d.penetrate, 1, "kind {k}");
+            assert_eq!(d.time_left, 3600, "kind {k}");
+            assert!(d.tile_collide, "kind {k}");
+            assert!(d.uses_id_static_immunity, "kind {k}");
+            assert_eq!(d.id_static_hit_cooldown, 3, "kind {k}");
+            assert_eq!((d.melee, d.ranged, d.magic), (false, false, false), "kind {k}");
+        }
+        // The aiStyle-74 Scutlix laser (434, `:5047-5055`): 1x1, extraUpdates
+        // 100, penetrate −1, the stock timeLeft 3600 / tileCollide true.
+        let s = proj_data(SCUTLIX_LASER_FRIENDLY).unwrap();
+        assert_eq!((s.w, s.h), (1.0, 1.0));
+        assert_eq!(s.ai_style, 74);
+        assert_eq!(s.extra_updates, 100);
+        assert_eq!(s.penetrate, -1);
+        assert_eq!(s.time_left, 3600);
+        assert!(s.tile_collide);
+        // The aiStyle-76 mount crosshairs (441/453, `:5117-5125`/`:5250-5258`):
+        // 1x1, tileCollide false, ignoreWater; the stock penetrate 1 /
+        // timeLeft 3600 / friendly false (`:788`, held by the arm).
+        for k in MOUNT_CROSSHAIRS {
+            let d = proj_data(k).unwrap();
+            assert_eq!((d.w, d.h), (1.0, 1.0), "kind {k}");
+            assert_eq!(d.ai_style, 76, "kind {k}");
+            assert!(!d.tile_collide, "kind {k}");
+            assert!(d.ignore_water, "kind {k}");
+            assert_eq!(d.penetrate, 1, "kind {k}");
+            assert_eq!(d.time_left, 3600, "kind {k}");
+        }
     }
 }
