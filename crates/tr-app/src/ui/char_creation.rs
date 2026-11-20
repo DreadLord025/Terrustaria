@@ -612,6 +612,58 @@ pub fn trim_display_to_fit(
     s
 }
 
+// --- UIClothStyleButton's missing halves (W4-d81 census row 19) -----------------
+//
+// The 44x80 lattice, the spliced base / inset-3 selected rim / hovered border
+// are pre-landed (`Layout::cloth_buttons`, `draw_cloth_styles_menu` below);
+// these port the ctor's preview child, the Draw skin-variant swap and the
+// hover animation toggle. The DrawSelf hover-sound latch (`:67-78`) is the
+// shared `elements::GroupOptionButtonState::hover_sound_tick` (batch 3).
+
+/// The ctor size (`UIClothStyleButton.cs:37-38`): 44x80.
+#[allow(dead_code)] // the layout resolves the same pair in cloth_buttons
+pub const CLOTH_STYLE_SIZE: [f32; 2] = [44.0, 80.0];
+
+/// The inner `UICharacter`'s rect (`UIClothStyleButton.cs:42-46`): a 59x58
+/// child (`UICharacter.cs:43-44`) at `HAlign 0.5, VAlign 0.5` of the 44x80
+/// button — it overhangs 7.5 px each side horizontally and sits 11 px down.
+/// `hasBackPanel: false` (`:42`) so no `PlayerBackground` draws behind it.
+#[allow(dead_code)] // the menu draws no per-variant bodies (documented)
+pub fn cloth_style_preview_rect(button: [f32; 4]) -> [f32; 4] {
+    [
+        button[0] + (button[2] - UI_CHARACTER_SIZE[0]) * 0.5,
+        button[1] + (button[3] - UI_CHARACTER_SIZE[1]) * 0.5,
+        UI_CHARACTER_SIZE[0],
+        UI_CHARACTER_SIZE[1],
+    ]
+}
+
+/// The `Draw` override's variant swap (`UIClothStyleButton.cs:50-63`): save
+/// `_realSkinVariant = player.skinVariant` (`:52`), draw as `ClothStyleId`
+/// (`:53`), restore both `skinVariant` and `hair` after (`:61-62` — the
+/// `PrepareAction` may re-roll the hair, `:54-58`). Pure form:
+/// `(variant to draw as, variant to restore)`.
+#[allow(dead_code)] // the menu draws no per-variant bodies (documented)
+pub fn cloth_style_draw_variant(real_skin_variant: i32, cloth_style_id: i32) -> (i32, i32) {
+    (cloth_style_id, real_skin_variant) // `:53` in, `:61` restore
+}
+
+/// The selected-rim gate (`UIClothStyleButton.cs:81-84`): the inset-3
+/// `CategoryPanelHighlight` draws when `_realSkinVariant == ClothStyleId` —
+/// the player's ACTUAL variant, not the drawn-as one.
+pub fn cloth_style_is_selected(real_skin_variant: i32, cloth_style_id: i32) -> bool {
+    real_skin_variant == cloth_style_id // `:81`
+}
+
+/// `MouseOver`/`MouseOut`'s preview animation toggle
+/// (`UIClothStyleButton.cs:96-108`): hovering sets the inner `UICharacter`
+/// animated (`:100`), leaving freezes it back to row 0 (`:107`,
+/// `UICharacter.cs:89`).
+#[allow(dead_code)] // the menu draws no per-variant bodies (documented)
+pub fn cloth_style_preview_animated(hovered: bool) -> bool {
+    hovered // `:100` / `:107`
+}
+
 /// `layout(screen, name_w)` — the whole page through the shared pass, in the
 /// source's construction order. `name_w` only feeds the name plate's value
 /// offset (the draw), not a rect, so every returned rect is font-free.
@@ -3103,6 +3155,30 @@ mod tests {
         // The seed plate's 40 padding (`UIWorldCreation.cs:746`): limit 60,
         // "abcdefg" (70) -> "abcdef" (60 <= 60) -> "abcde…".
         assert_eq!(trim_display_to_fit("abcdefg", 100.0, 0.0, 40.0, measure), "abcde…");
+    }
+
+    // --- W4-d81 batch 8: UIClothStyleButton (census row 19) ---------------------
+    // Written in code-only mode — NOT RUN here. Hand-derived from
+    // `UIClothStyleButton.cs:37-108`, `UICharacter.cs:43-44`.
+
+    #[test]
+    fn the_cloth_style_button_centres_its_preview_and_swaps_the_variant() {
+        // The ctor size (`:37-38`).
+        assert_eq!(CLOTH_STYLE_SIZE, [44.0, 80.0]);
+        // The 59x58 preview at HAlign/VAlign 0.5 (`:42-46`): over the first
+        // button (560, 335, 44, 80) it overhangs to (552.5, 346).
+        assert_eq!(
+            cloth_style_preview_rect([560.0, 335.0, 44.0, 80.0]),
+            [552.5, 346.0, 59.0, 58.0]
+        );
+        // The Draw swap (`:52-62`): draw as the style id, restore the real one.
+        assert_eq!(cloth_style_draw_variant(4, 0), (0, 4));
+        // The selected rim compares the REAL variant (`:81`).
+        assert!(cloth_style_is_selected(4, 4));
+        assert!(!cloth_style_is_selected(4, 0));
+        // Hover animates the preview, mouse-out freezes it (`:100`, `:107`).
+        assert!(cloth_style_preview_animated(true));
+        assert!(!cloth_style_preview_animated(false));
     }
 
     #[test]
