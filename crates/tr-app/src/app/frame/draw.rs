@@ -805,12 +805,11 @@ impl App {
                         let consumed = export.map(|e| (e.changed, e.update_map));
                         if let Some((changed, update_map)) = consumed {
                             if let Some(m) = map.as_mut() {
-                                // `MapUpdateQueue`'s changed tiles queue
-                                // through `QueueChange` (the threshold
-                                // arms `refreshMap`), then upload.
-                                for (x, y) in &changed {
-                                    m.queue_change(*x, *y);
-                                }
+                                // The legacy export's changed tiles upload
+                                // directly (`LegacyLighting.cs:429` calls
+                                // `UpdateLighting`, NOT `QueueChange` — only
+                                // `MapUpdateQueue` queues, `:82`/`:97`); the
+                                // IsChanged bit rides the next DrawToMap walk.
                                 m.push_dirty(changed);
                                 // `LegacyLighting.cs:432`: `Main.updateMap =
                                 // rect` — the consume arm (`Main.cs:61886-61894`)
@@ -1892,7 +1891,7 @@ impl App {
                     // is computed above, where the minimap branch consumes it.
                     if settings.map_enabled {
                         if let Some(m) = map.as_mut() {
-                            m.prepare(renderer, gpu, world, screen, view_center);
+                            m.prepare(renderer, gpu, world, screen, view_center, settings.map_enabled);
                         }
                     }
                     if let Some(map) = map.as_ref() {

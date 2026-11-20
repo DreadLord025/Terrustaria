@@ -787,7 +787,9 @@ impl WorldMap {
     ///
     /// `center_tile` is the **view-centre** tile (`[camera.x / TILE_PX,
     /// camera.y / TILE_PX]`, i.e. `(screenPosition + screenSize/2)/16`); it is only
-    /// read when a recentre is armed.
+    /// read when a recentre is armed. `map_enabled` is `Main.mapEnabled` — the
+    /// `DrawToMap` gate (`MapRenderer.cs:130-133`) the staged `.map` upload's
+    /// consume rides (`Main.cs:61746-61750`).
     pub fn prepare(
         &mut self,
         r: &mut SpriteRenderer,
@@ -795,6 +797,7 @@ impl WorldMap {
         world: &World,
         screen: Vec2,
         center_tile: [f32; 2],
+        map_enabled: bool,
     ) {
         // `Main.cs:55387-55395`.
         self.scale = map_scale_clamp(screen.x, world.width, self.scale);
@@ -832,9 +835,14 @@ impl WorldMap {
             // `refreshMap = false; DrawToMap(default)` — whose tail
             // (`MapRenderer.cs:196-199`) clears `loadMap`/`loadMapLock`
             // once the staged upload draws. The port's bulk write IS
-            // that draw, so the gate lifts here.
-            self.refresh_map = false;
-            self.draw_to_map_queues();
+            // that draw, so the gate lifts here. `DrawToMap`'s first gate
+            // is `Main.mapEnabled` (`MapRenderer.cs:130-133`): with the
+            // map disabled the consume is skipped and `loadMap` stays
+            // armed until an enabled frame draws it.
+            if map_enabled {
+                self.refresh_map = false;
+                self.draw_to_map_queues();
+            }
         }
         // `MapRenderer.DrawChangesToMap`: one texel per revealed map tile.
         for (x, y) in self.take_dirty() {

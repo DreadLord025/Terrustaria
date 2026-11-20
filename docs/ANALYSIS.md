@@ -19051,10 +19051,10 @@ staged-upload counters are unmodelled (the port uploads in one bulk write).
 Witnesses: 8 `map_sections::tests::w4_e18_*` (grid dims, first-draw centre,
 spiral coverage/exhaustion, restart-on-move, ClearMapDraw, refresh
 double-count, truncating TileLoaded, quadrant pick), 3 `map::tests::w4_e18_*`
-(update_map arming, QueueChange threshold, load gate), 5
-`frame/world.rs::w4_e18_reveal_driver_tests::*` (sweep reveal + option reset,
-pending-refresh hold, refresh consume, paused skip, load gate) — all written
-not run (code-only mode).
+(update_map arming, QueueChange threshold, load gate), 6
+`frame/world.rs::w4_e18_reveal_driver_tests::*` (sweep reveal + option reset
+on the empty pass, pending-refresh hold, refresh consume, paused skip, load
+gate, mapEnabled drain gate) — all written not run (code-only mode).
 
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
