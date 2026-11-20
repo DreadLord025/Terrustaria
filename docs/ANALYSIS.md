@@ -13435,8 +13435,9 @@ Deviations recorded here:
 2. **The whip never self-crits.** `DefaultToWhip` sets no melee/ranged/magic
    flag, so `Projectile.Damage`'s crit block (`:12892-12899`) never fires for a
    whip вЂ” the vanilla whip crits only through a tag's `CritChance` (4679: 10,
-   5478: 5, 5479: 15, 4914: 10, 5480: 10). The generic throw path rolls crit at
-   spawn for every other shot; the whip branch passes `crit = false` so a
+   5478: 5, 5479: 15, 4914: 10, 5480: 10). Since S1-P-i11 every shot's crit
+   rolls PER-HIT on the `UpdateProjectiles` stream (`:12883-12917`), not at
+   spawn; the whip's unset class flags mean its roll consumes no draws, so a
    proc-less tag cannot force the variance.
 3. **The local-immunity decay.** C#'s `DecrementLocalImmuneTimeCounters` decays
    only **positive** counters (`:17274-17277`), so the whip's
@@ -13469,6 +13470,172 @@ Deviations recorded here:
    `CanRunHitEffects` admits nothing in-game until M4-PROJ-8; the
    `is_summon_shot` slot flag carries the gate and the tests set it directly,
    so the math is proven end-to-end (`a_tagged_summon_shot_takes_the_damage_bonus`).
+
+## The player→NPC strike mechanics (S1-P-i11, code-only mode)
+
+The census of `NPC.StrikeNPC_Inner` (`NPC.cs:81235-81563`),
+`Player.ProcessHitAgainstNPC` (`Player.cs:44262-44421`) and
+`Projectile.Damage_PVE_Inner` (`Projectile.cs:12598-14199`) against the port.
+Code-only: no compiler invoked, tests written NOT run.
+
+**Verdicts.**
+
+- `Main.DamageVar` (`damage.rs::damage_var`, `Main.cs:66118-66134`) — CORRECT,
+  unchanged: the ±15% `Next(-15,16)` band, the luck rerolls (positive keeps the
+  higher, negative the lower), the banker's round.
+- `strike_npc_damage` (`NPC.cs:81239`) — CORRECT, unchanged: the crit ×2 lands
+  AFTER the defense term, floored at 1.
+- The melee crit (`editing.rs`, `ProcessHitAgainstNPC` `Player.cs:44296-44301`)
+  — CORRECT, unchanged: `class_crit + item_crit` on the `UpdatePlayers` stream.
+  The C# folds the held item's crit into all three class crits per tick
+  (`Player.cs:25515-25517`), so `GetWeaponCrit` (`:53371`) returns the folded
+  value; the port's `class_crit(class) + item_crit` is the same sum.
+
+**Knockback (`damage.rs::knock_back_npc`, `NPC.cs:81387-81475`).** The old port
+ran the Y-pop unconditionally and had no weak-hit branch. The fix ports the
+full block: the `onFire2` ×1.1 BEFORE the soft caps (`:81390-81393`, buff 39 via
+`NpcBuffs::find_buff_index`), the crit ×1.4 after the caps (`:81414`), the
+`num4 = damage * 10 > lifeMax` gate (expert ×15, `:81418-81422`). STRONG hit:
+the X push-away AND the Y-pop (`-num3 * 0.75`, no-gravity `* 0.5`) both INSIDE
+the gate (`:81423-81462`). WEAK hit (else): the velocity is SET outright —
+`Y = -num3 * 0.75 * knockBackResist` (no-gravity `* 0.5 * resist`),
+`X = num3 * hitDirection * resist` — the resist multiplies a SECOND time
+(`:81463-81474`, verbatim). The type-185 ×1.5 (`:81449-81452`) is skipped: no
+ported `NpcKind` is SnowFlinx (`NPCID.cs:11047`).
+
+**`knock_back_resist` (`npc.rs`).** The dead/duplicate arms purged: Deerclops
+50000.0 (copied the buyPrice copper, `:17463`) → 0 (`:17459`); WoF Eye 80000.0
+(copied the `value`, `:10376`) → 0 (`:10374`); the Hungry was lumped with the
+leeches at 0 → 1.1 (`:10391`); the EoC's dead 1.0 duplicate purged (the live
+0.0 arm wins, `:8713`); the identical-value unreachable duplicates (the
+pillar-worm block ×5, the nebula trio ×3, VortexTower, the Prime twins,
+ForceBubble) removed. The catch-all `_ => 0.4` stays (a recorded deviation —
+the C# class default is 1f, `:8533`; the unlisted kinds keep the port's 0.4).
+Round-2 census fixes (verbatim SetDefaults rows): the DD2 bombers 555/556/557
+were lumped at 0.1 → 0.2/0.2/0.15 (`:16166`/`:16183`/`:16200`); the javelineers
+561/562/563 0.2 → 0.1/0.1/0.05 (`:16115`/`:16132`/`:16149`); DD2SkeletonT3 567
+0.3 → 0.2 (`:16370`); the Scutlix Rider 390 had no row (fell to 0.4) → 1.0 (the
+class default, `:13966-13978` sets none + `:8533`); the StardustCellBig 405 row
+added at 0.3 (`:15032`); the DD2LanePortal 549 row added at 0.0 (`:16044`).
+
+**`no_gravity` (`NpcKind::no_gravity`, `npc/data.rs`).** The strike-time flag
+the Y-pop's 0.5-vs-0.75 selector reads. The port models the two AI-head writes
+that reach a knockback-relevant kind: `AI_002_FloatingEye` sets it for every
+eye (`NPC.cs:52280`), the aiStyle-14 bat block for the bats + Voodoo Demon
+(`:22851`); plus the SetDefaults flyers (the aiStyle-5 family, the Creeper,
+Probe, Martian Drone, Drippler, Poltergeist, Dungeon Spirit, Piranha, Shark,
+Hungry). The Pumpkin/Frost tables carry their own rows. The grounded walkers
+keep false. The three strike paths (`hurt`/`hurt_from_projectile`/
+`strike_pooled`) thread it + `expert` (the player's `BuffSlots.expert_mode`,
+the world-mode stand-in) + `on_fire2`.
+Round-2 census completion — the 16 missing knockback-relevant flyers
+(`knockBackResist > 0` + a steady `noGravity = true`): Goldfish 55 (`:9462`),
+Brain of Cthulhu 266 (`:12450`), Plantera's Hook/Tentacle 263/264
+(`:12399`/`:12420`), StardustCellBig/Small 405/406 (`:15033`/`:15047`),
+StardustJellyfishBig 407 (`:15097`), SolarCorite 418 (`:15378`), NebulaFloater
+420 (`:15169`), BrainSuckler 421 (`:15141`), DD2WyvernT1/T2/T3 558/559/560
+(`:16217`/`:16235`/`:16253`), DD2KoboldFlyerT2/T3 574/575
+(`:16491`/`:16509`), AngryNimbus 250 (the aiStyle-49 head, `:31589`). The table
+is STATIC per kind while the C# flag is live per tick — a recorded deviation:
+only the steady SetDefaults/AI-head writes are modelled. The CONDITIONAL
+writes are deliberately NOT modelled: the aiStyle-107 DD2 charge's
+phase-gated flips (`NPC.cs:63016`/`:63797`/`:63956`) and the Goblin Summoner's
+ghost-phase flag (`:56497`, which also zeroes `knockBackResist` while ghosted)
+— the port has no charge/ghost phase state to read. The moon bosses'
+every-tick AI-head writes are likewise unmodelled: MourningWood 325 /
+Everscream 344 (the aiStyle-57 head, `:32764-32765`) and SantaNK1 346 (the
+aiStyle-61 head, `:33684-33685`) — all three write `knockBackResist = 0`
+(`:13125`/`:13365`/`:13396`), so the knockback gate refuses them and the
+Y-pop selector never reads their flag; the Pumpkin/Frost tables stay
+SetDefaults-verbatim (the DW-1.1 census tests pin them).
+
+**Crit moved spawn→hit (the RNG-order fix).** The C# rolls crit PER-HIT inside
+`Damage_PVE_Inner` (`Projectile.cs:12829` `bool crit = false`, `:12883-12917`):
+each set class flag rolls an independent `Next(1,101) <= classCrit +
+bonusCritChance` on the `UpdateProjectiles` stream, BEFORE the tag math and
+`DamageVar` (`:12938`). The port rolled at SPAWN on `UpdatePlayers`
+(`editing.rs` throw + shooter) — a documented deviation now FIXED.
+`tr_core::damage::projectile_hit_crit` ports the block; the spawn-time rolls
+and `set_crit` calls are removed. The class flags (`melee`/`ranged`/`magic`,
+`Projectile.cs:751-753` reset false) + `appliesImmunityTimeOnSingleHits`
+(`:717`) + `bonusCritChance` (`:803`) join `ProjData`/`Projectile`, populated
+from the SetDefaults census (the yoyo/flail/spear/drill/shortsword families are
+melee via their `DefaultTo*` helpers; the whip sets NONE, `:10704-10718`; the
+bombs 28/29/37/519 set none). Round-2 completed the RANGED census — the
+player-fired rows the first pass missed (the per-hit ranged crit silently
+never fired for them): the Sandgun balls 42/65/68/354
+(`:1254`/`:1456`/`:1484`/`:4447`), the Flamethrower's Flames 85 (`:1669`), the
+special arrows 117/469/485/495/819 (`:2066`/`:5443`/`:5611`/`:5688`/`:8003`),
+the launcher rockets 133-144 (`:2229-2336`), 338-341 (`:4315`) and the
+776-801/803-810 group (`:7946`, 779/783 row-less), the gunProj rockets
+615/630/705/714 (`:6629`/`:6776`/`:7581`), the Celebration rockets 715-718
+(`:7592`/`:7604`) and the Empress shot 932 (`:8844`); the hostile snowmen's
+109/110 (`:1976`/`:1989`) carry the flag verbatim (owner 255 keeps it moot).
+The Clentaminator spray 145 (`:2338-2349`) and the acorn 1088
+(`:10145-10152`) set NO class flag — verified, left false. The Vilethorn pair
+7/8 shares ONE C# arm (`:874-885`, `magic = true` at `:884`) — the port's
+`VILE_TIP` magic flag is CORRECT (a resume-worker gap report misread the arm
+boundary). The 1130 force-false (`:12934`) is applied after
+the tag math. `TryConsumingTimerCrit` (`:12902`), the monk-set Next(4)/Next(6)
+(`:12903-12916`) and the sentry-backpack Next(10) (`:12930`) are unported
+accessories — no port state, no draws. The `ownedBySomeone` gate (`:12557` →
+`:578-588`, `!npcProj && !trap`) folds to `owner < 255 && !trap` (no `npcProj`
+field). The four spawn-crit draw-count tests re-pinned: the cycler 1/2→0/1, the
+leaf blower 3→2, the nebula blaze 4→3, the last prism 1→0.
+
+**Immunity (`projectile.rs::damage_pve`/`damage_pve_boxed`,
+`Projectile.cs:13967-14119`).** The C# if/else order restored: id-static FIRST
+(`:13967`), then the per-type arms, then local (`:14111`), then the stock
+window (`:14116`). The id-static gate reads the CURRENT `penetrate` (not
+`maxPenetrate`) with the `appliesImmunityTimeOnSingleHits` override (`:13969`);
+the old plain-walk `cooldown > 0` gate skipped the −1 block-forever sentinel —
+now `GameUpdateCount + (uint)cooldown` wraps −1 to u32::MAX (`:13972`, the 644
+shard burst's stock pair). The per-type arms added for the ported kinds:
+632 (Last Prism laser) → `immune[owner] = GetSlowMagicUseTime(5)` = 5
+(`:13992-13995`; the `slowMagicUse` state is unported —
+`Player.cs:47019-47026` returns the original time when the flag is false —
+so the window is the constant 5; both walks, in the C# if/else position
+between id-static and the 634 arm), 634/635/659 → `immune[owner] = 5`
+(`:14016-14023`), 16 → 8 (`:14032`), 409 → 6
+(`:14036`). The stock window gate also reads the current penetrate + override
+(`:14116`). The single-hit bypass (`maxPenetrate == 1 && !usesLocal &&
+!usesIDStatic`, `:12615`) is unchanged (CORRECT). The 644 block-forever
+witness's fixture was corrected to mirror the burst window: `friendly = true`
+(`:34345`/`:72160`) and `penetrate = maxPenetrate = −1`
+(`:34351-34352`/`:72167-72168`) BEFORE `Damage()` — the old fixture left
+`penetrate = 1`, so the id-static gate refused the stamp and the assert
+could never pass.
+
+**Deviations / skips.** The melee `hurt_cd = 0.18` stand-in stays (the C# uses
+per-owner `immune[]` + `meleeNPCHitCooldown[npc]` + `attackCD`,
+`Player.cs:44231-44239` — recorded at ANALYSIS:7099-7104). The held-item crit
+is NOT folded into the class crits in the port: the C# folds it per tick
+(`Player.cs:25515-25517`), so the per-hit roll reads the folded value, while
+the port's per-hit block (`projectile.rs`, `pl.melee_crit`/`ranged_crit`/
+`magic_crit`) reads the UNFOLDED class crits — the melee strike compensates
+with `class_crit + item_crit`, but a projectile's per-hit crit misses the
+held item's bonus. The proper fix needs held-item plumbing into `damage_pve`
+(the port's `Player` carries no inventory) — out of this task's surgical
+scope, recorded for the inventory-port task. The boxed walk has
+no player reference, so its per-hit crit reads class crits 0 (the death-burst
+callers pass no player); the roll still consumes its draws in the C# order.
+The `crit` slot field stays as a retained seam: the plain `spawn`'s crit
+argument and `set_crit` still write it, but no production caller passes a
+non-false flag today and the damage walks no longer read it — only the whip
+"never self-crits" witness reads it (the field-doc records this).
+The type-185 knockback ×1.5, the monk/sentry/timer crit accessories, and the
+unported per-type immunity arms (434/598/636/614/514/595/735/927/443/1110/
+424-426/246/249/582/902/451/864/866/611/612) wait for their kinds/state.
+The expert/master knockback-resist scaling is unmodelled: the C# multiplies
+`knockBackResist` by `GameDifficultyData.KnockbackToEnemiesMultiplier` at
+spawn (`NPC.cs:18179` → `:7031-7034`), and the multiplayer
+`ScaleStats_ByPlayerCount` (`:18560`) re-scales it for the Brain/Creeper
+pair (`:18573-18584`, ×0.8 per 0.34 balance step, floored to 0 below 0.1) —
+the port's `knock_back_resist` reads the normal-mode SetDefaults value (the
+`expert` flag threads only the `num4` gate's ×15). The `bonusCritChance`
+writers beyond the monk staff (`:11131` the revolver bonus, `:11139` the
+item-source copy) are unported state — the field stays 0.
+
 ## The lunar chain (M4-EVENT-15)
 
 The apocalypse is a state chain, not a machine: the cultist's death в†’

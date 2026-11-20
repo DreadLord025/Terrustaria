@@ -3195,9 +3195,11 @@ impl Npc {
             NpcKind::MartianDrone => 0.4,
             // The shooters: 0.35 (`NPC.cs`'s 381/382 grouped row).
             NpcKind::BrainScrambler | NpcKind::RayGunner => 0.35,
-            // The rider: the field default 0.4 (case 390 sets nothing);
-            // the carrier 0.1 (case 391).
-            NpcKind::ScutlixRider => 0.4,
+            // The rider (390): `SetDefaults` writes NO knockBackResist row
+            // (`NPC.cs:13966-13978`), so the class default 1f stands
+            // (`:8533`) — the old 0.4 was wrong; the carrier 0.1 (case 391,
+            // `:13991`).
+            NpcKind::ScutlixRider => 1.0,
             NpcKind::Scutlix => 0.1,
             // The saucer family: kb 0 (`NPC.cs`'s cases 392-395).
             NpcKind::MartianSaucer => 0.0,
@@ -3214,13 +3216,18 @@ impl Npc {
             // The DD2 goblins: kb 0.2/0.2/0.15 (`NPC.cs`'s cases 552-554).
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 => 0.2,
             NpcKind::DD2GoblinT3 => 0.15,
-            // The support's kb: the bombers 0.1, the javelineers 0.2, the
-            // skeletons 0.5 (`NPC.cs`'s rows).
-            NpcKind::DD2GoblinBomberT1
-            | NpcKind::DD2GoblinBomberT2
-            | NpcKind::DD2GoblinBomberT3 => 0.1,
-            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => 0.2,
-            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => 0.3,
+            // The support's kb (W3-i11 census fix): the bombers 555/556/557
+            // write 0.2/0.2/0.15 (`NPC.cs:16166`/`:16183`/`:16200`) — the old
+            // 0.1 group row was wrong; the javelineers 561/562/563 write
+            // 0.1/0.1/0.05 (`:16115`/`:16132`/`:16149`) — the old 0.2 was
+            // wrong; the skeletons 566/567 write 0.3/0.2 (`:16353`/`:16370`)
+            // — the old T3=0.3 was wrong.
+            NpcKind::DD2GoblinBomberT1 | NpcKind::DD2GoblinBomberT2 => 0.2,
+            NpcKind::DD2GoblinBomberT3 => 0.15,
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 => 0.1,
+            NpcKind::DD2JavelinT3 => 0.05,
+            NpcKind::DD2SkeletonT1 => 0.3,
+            NpcKind::DD2SkeletonT3 => 0.2,
             // The Dark Mage: kb 0 (case 564 sets nothing).
             NpcKind::DD2DarkMage => 0.0,
             // Betsy: kb 0 (case 551 sets nothing).
@@ -3246,7 +3253,6 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
-            NpcKind::VortexTower => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
             NpcKind::MoonLordHead
@@ -3254,6 +3260,9 @@ impl Npc {
             | NpcKind::MoonLordCore
             | NpcKind::MoonLordFreeEye
             | NpcKind::MoonLordLeechBlob => 0.0,
+            // W3-i11: the Cell Big (405) writes kb 0.3 (`NPC.cs:15032`) — the
+            // old catch-all 0.4 was wrong.
+            NpcKind::StardustCellBig => 0.3,
             NpcKind::StardustCellSmall => 0.4,
             NpcKind::StardustJellyfishBig => 0.03,
             NpcKind::NebulaBeast => 0.2,
@@ -3271,48 +3280,21 @@ impl Npc {
             | NpcKind::SolarCrawltipedeBody
             | NpcKind::SolarCrawltipedeTail => 0.0,
             NpcKind::StardustWormHead => 0.0,
-            NpcKind::SolarSpearman => 0.4,
-            NpcKind::SolarCrawltipedeHead
-            | NpcKind::SolarCrawltipedeBody
-            | NpcKind::SolarCrawltipedeTail => 0.0,
-            NpcKind::StardustWormHead => 0.0,
-            NpcKind::SolarSpearman => 0.4,
-            NpcKind::SolarCrawltipedeHead
-            | NpcKind::SolarCrawltipedeBody
-            | NpcKind::SolarCrawltipedeTail => 0.0,
-            NpcKind::StardustWormHead => 0.0,
-            NpcKind::SolarSpearman => 0.4,
-            NpcKind::SolarCrawltipedeHead
-            | NpcKind::SolarCrawltipedeBody
-            | NpcKind::SolarCrawltipedeTail => 0.0,
-            NpcKind::StardustWormHead => 0.0,
-            NpcKind::SolarSpearman => 0.4,
-            NpcKind::SolarCrawltipedeHead
-            | NpcKind::SolarCrawltipedeBody
-            | NpcKind::SolarCrawltipedeTail => 0.0,
-            NpcKind::StardustWormHead => 0.0,
             NpcKind::SolarSelenian => 0.4,
             NpcKind::NebulaFloater => 0.5,
             NpcKind::BrainSuckler => 0.5,
             NpcKind::Predictor => 0.6,
-            NpcKind::NebulaFloater => 0.5,
-            NpcKind::BrainSuckler => 0.5,
-            NpcKind::Predictor => 0.6,
             NpcKind::VortexHunter => 0.3,
-            NpcKind::NebulaFloater => 0.5,
-            NpcKind::BrainSuckler => 0.5,
-            NpcKind::Predictor => 0.6,
             NpcKind::VortexAlien => 0.5,
             NpcKind::VortexHeadcrab => 1.0,
             NpcKind::VortexRifleman => 0.4,
             NpcKind::VortexSoldier => 0.6,
-            NpcKind::SolarCrawltipedeHead
-            | NpcKind::SolarCrawltipedeBody
-            | NpcKind::SolarCrawltipedeTail => 0.0,
-            NpcKind::StardustWormHead => 0.0,
             // The tavernkeeper 0.5, the crystal 0.
             NpcKind::DD2Bartender => 0.5,
             NpcKind::DD2EterniaCrystal => 0.0,
+            // W3-i11: the lane portal (549) writes knockBackResist 0
+            // (`NPC.cs:16044`) — the old catch-all 0.4 was wrong.
+            NpcKind::DD2LanePortal => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -3325,15 +3307,13 @@ impl Npc {
             | NpcKind::GolemFistLeft
             | NpcKind::GolemFistRight
             | NpcKind::GolemHeadFree => 0.0,
-            // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
-            NpcKind::Deerclops => 50000.0,
-            NpcKind::SkeletronHand => 0.0,
-            NpcKind::WallOfFleshEye => 80000.0,
-            NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
-                0.0
-            }
+            // `SetDefaults` 668 (`NPC.cs:17459`): knockBackResist 0. The old
+            // 50000.0 arm copied the buyPrice copper value (`:17463`) — a
+            // shadowed duplicate of the correct 0.0 row below; purged.
             NpcKind::Deerclops => 0.0,
             NpcKind::SkeletronHand => 0.0,
+            // `SetDefaults` 114 (`NPC.cs:10374`): knockBackResist 0. The old
+            // 80000.0 arm copied the `value` field (`:10376`) — purged.
             NpcKind::WallOfFleshEye => 0.0,
             NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
                 0.0
@@ -3424,15 +3404,16 @@ impl Npc {
             NpcKind::Creeper => 0.8,
             NpcKind::BoundGoblin => 0.5,
             NpcKind::GoblinTinkerer => 0.5,
-            NpcKind::SkeletronPrime => 0.0,
-            NpcKind::Retinazer => 0.0,
-            NpcKind::Spazmatism => 0.0,
             NpcKind::KingSlime => 0.0,
-            // 115/117-119: knockBackResist 0 (`NPC.cs:10448` — the tail).
-            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => 0.0,
-            // The eye/servant blocks set no knockBackResist — the
-            // SetDefaults head's default applies.
-            NpcKind::EyeOfCthulhu => 1.0,
+            // The Hungry (115): knockBackResist 1.1 (`NPC.cs:10391`) — NOT 0;
+            // the old group row lumped it with the leeches. The leech family
+            // 117-119 writes 0 (`NPC.cs:10418`/`:10434`/`:10450`).
+            NpcKind::Hungry => 1.1,
+            NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => 0.0,
+            // The Eye of Cthulhu (4) writes knockBackResist 0 (`NPC.cs:8713`)
+            // — the live 0.0 arm above wins; the dead 1.0 duplicate that
+            // claimed "the head default applies" is purged. The Servant (5)
+            // writes none, so the class default 1f stands (`NPC.cs:8533`).
             NpcKind::ServantOfCthulhu => 1.0,
             // S1-D-3 W-9 fishron wiring — all four rows write
             // `knockBackResist = 0f` (`NPC.cs:13708`/`:13731`/`:13744`/
@@ -3442,12 +3423,6 @@ impl Npc {
             | NpcKind::Sharkron
             | NpcKind::Sharkron2 => 0.0,
             NpcKind::Slime => unreachable!(),
-            // The pillar worms: kb 0 across the chain (`NPC.cs`'s rows
-            // 412-414) and the stardust worm head.
-            NpcKind::SolarCrawltipedeHead
-            | NpcKind::SolarCrawltipedeBody
-            | NpcKind::SolarCrawltipedeTail => 0.0,
-            NpcKind::StardustWormHead => 0.0,
             // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's five
             // pair rows (`NPC.cs:12929-12977` — 0.4/0.2/0.25/0.35/0.5), 315
             // and 327's 0 (`:12978`/`:13142`), 326 0.2 (`:13129`), 325 0
@@ -3527,7 +3502,6 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
-            NpcKind::ForceBubble => 1.0,
             _ => 0.4,
         }
     }
@@ -4346,11 +4320,21 @@ impl Npc {
         self.kind.shares_carrier_life() && self.worm_id != 0 && self.seg_index > 0
     }
 
-    /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81389-81458`): the
+    /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81387-81475`): the
     /// soft-capped impulse applied by `tr_core::damage::knock_back_npc`.
     /// `hit_direction` is the knockback side (+1 = pushed right) and
-    /// `knock_back` the weapon's `Item.knockBack`.
-    pub fn hurt(&mut self, amount: i32, from_x: f32, knock_back: f32, crit: bool) -> bool {
+    /// `knock_back` the weapon's `Item.knockBack`. `expert` is
+    /// `Main.expertMode` (the `num4` gate's ×15, `NPC.cs:81419-81422`); the
+    /// no-list contact callers pass false (the single-player classic
+    /// default — the world-mode state is not persisted yet, DropCtx's note).
+    pub fn hurt(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+        expert: bool,
+    ) -> bool {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
@@ -4378,13 +4362,16 @@ impl Npc {
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             self.knock_back_resist(),
+            // `NPC.onFire2` (`NPC.cs:81390`) — the Cursed Inferno buff 39
+            // (`UpdateNPC_BuffSetFlags`, `NPC.cs:92033-92036`).
+            self.buffs.find_buff_index(39).is_some(),
             crit,
             amount,
             self.max_hp,
             (self.vx, self.vy),
             dir,
-            false,
-            false,
+            self.kind.no_gravity(),
+            expert,
         );
         self.vx = vx;
         self.vy = vy;
@@ -4410,6 +4397,7 @@ impl Npc {
         from_x: f32,
         knock_back: f32,
         crit: bool,
+        expert: bool,
     ) -> bool {
         if self.hp <= 0 {
             return false;
@@ -4427,13 +4415,14 @@ impl Npc {
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             self.knock_back_resist(),
+            self.buffs.find_buff_index(39).is_some(),
             crit,
             amount,
             self.max_hp,
             (self.vx, self.vy),
             dir,
-            false,
-            false,
+            self.kind.no_gravity(),
+            expert,
         );
         self.vx = vx;
         self.vy = vy;
@@ -4457,6 +4446,7 @@ impl Npc {
         knock_back: f32,
         crit: bool,
         owner: Option<u8>,
+        expert: bool,
     ) -> bool {
         {
             let n = &npcs[idx];
@@ -4464,7 +4454,7 @@ impl Npc {
                 return false;
             }
         }
-        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit, owner)
+        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit, owner, expert)
     }
 
     /// `NPC.StrikeNPC` from a projectile: the same pool arm, without the
@@ -4478,11 +4468,12 @@ impl Npc {
         knock_back: f32,
         crit: bool,
         owner: Option<u8>,
+        expert: bool,
     ) -> bool {
         if npcs[idx].hp <= 0 {
             return false;
         }
-        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit, owner)
+        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit, owner, expert)
     }
 
     /// `NPC.StrikeNPC_Inner` (`NPC.cs:81235-81458`) with the `realLife`
@@ -4499,6 +4490,7 @@ impl Npc {
         knock_back: f32,
         crit: bool,
         owner: Option<u8>,
+        expert: bool,
     ) -> bool {
         // `NPC.takenDamageMultiplier` (`NPC.cs:81244-81246`): the solar
         // crawltipede's tail (414) takes ten times the damage
@@ -4534,13 +4526,14 @@ impl Npc {
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             n.knock_back_resist(),
+            n.buffs.find_buff_index(39).is_some(),
             crit,
             amount,
             n.max_hp,
             (n.vx, n.vy),
             dir,
-            false,
-            false,
+            n.kind.no_gravity(),
+            expert,
         );
         n.vx = vx;
         n.vy = vy;
@@ -18153,7 +18146,7 @@ impl Npc {
             // the crit roll (4% base) waits for the combat rng pass.
             if player.dash == 2 && player.eoc_dash > 0 {
                 let dmg = (30.0 * player.melee_damage) as i32;
-                self.hurt(dmg, cx, 9.0, false);
+                self.hurt(dmg, cx, 9.0, false, player.buffs.expert_mode);
                 player.eoc_dash = 10;
                 player.dash_delay = 30;
                 let dir = if player.vx != 0.0 {
@@ -18241,7 +18234,7 @@ impl Npc {
                         };
                         // The C# knocks the NPC away from the player
                         // (`-num2`, knockback 10).
-                        self.hurt(reflect, ncx, 10.0 * dir, false);
+                        self.hurt(reflect, ncx, 10.0 * dir, false, player.buffs.expert_mode);
                     }
                 }
                 // `Player.cs:31423` — `Hurt(damageSource: ByNPC(i), Damage:
@@ -20325,7 +20318,7 @@ mod tests {
         let w = ground();
         let mut s = Npc::spawn_slime(&w, 20).unwrap();
         for _ in 0..3 {
-            assert!(s.hurt(10, 0.0, 5.5, false));
+            assert!(s.hurt(10, 0.0, 5.5, false, false));
             s.hurt_cd = 0.0;
         }
         // Vanilla keeps `life` as the raw remainder and dies on
@@ -21055,6 +21048,98 @@ mod tests {
     }
 
     #[test]
+    fn knock_back_resist_rows_match_the_set_defaults_census() {
+        // W3-i11 — the dead/duplicate arms purged and the wrong rows fixed:
+        // Deerclops 668 kb 0 (`NPC.cs:17459`, the old 50000.0 copied the
+        // buyPrice), WoF Eye 114 kb 0 (`:10374`, the old 80000.0 copied the
+        // value), Hungry 115 kb 1.1 (`:10391`, the old group row lumped it
+        // with the leeches at 0), EoC 4 kb 0 (`:8713`, the dead 1.0 duplicate
+        // purged), the leech family 117-119 kb 0 (`:10418`/`:10434`/`:10450`).
+        let kb = |k: NpcKind| Npc::new(k, 0.0, 0.0, 1, 0.0).knock_back_resist();
+        assert_eq!(kb(NpcKind::Deerclops), 0.0);
+        assert_eq!(kb(NpcKind::WallOfFleshEye), 0.0);
+        assert_eq!(kb(NpcKind::WallOfFlesh), 0.0);
+        assert_eq!(kb(NpcKind::Hungry), 1.1);
+        assert_eq!(kb(NpcKind::LeechHead), 0.0);
+        assert_eq!(kb(NpcKind::LeechBody), 0.0);
+        assert_eq!(kb(NpcKind::LeechTail), 0.0);
+        assert_eq!(kb(NpcKind::EyeOfCthulhu), 0.0);
+        assert_eq!(kb(NpcKind::ServantOfCthulhu), 1.0);
+        assert_eq!(kb(NpcKind::SkeletronHand), 0.0);
+        // W3-i11 round 2 — the support rows fixed: the bombers 555/556/557
+        // 0.2/0.2/0.15 (`NPC.cs:16166`/`:16183`/`:16200`), the javelineers
+        // 561/562/563 0.1/0.1/0.05 (`:16115`/`:16132`/`:16149`), the
+        // skeletons 566/567 0.3/0.2 (`:16353`/`:16370`), the ScutlixRider
+        // 390 the class default 1f (no row, `:13966-13978` + `:8533`), the
+        // Cell Big 405 0.3 (`:15032`), the lane portal 549 0 (`:16044`).
+        assert_eq!(kb(NpcKind::DD2GoblinBomberT1), 0.2);
+        assert_eq!(kb(NpcKind::DD2GoblinBomberT2), 0.2);
+        assert_eq!(kb(NpcKind::DD2GoblinBomberT3), 0.15);
+        assert_eq!(kb(NpcKind::DD2JavelinT1), 0.1);
+        assert_eq!(kb(NpcKind::DD2JavelinT2), 0.1);
+        assert_eq!(kb(NpcKind::DD2JavelinT3), 0.05);
+        assert_eq!(kb(NpcKind::DD2SkeletonT1), 0.3);
+        assert_eq!(kb(NpcKind::DD2SkeletonT3), 0.2);
+        assert_eq!(kb(NpcKind::ScutlixRider), 1.0);
+        assert_eq!(kb(NpcKind::Scutlix), 0.1);
+        assert_eq!(kb(NpcKind::StardustCellBig), 0.3);
+        assert_eq!(kb(NpcKind::StardustCellSmall), 0.4);
+        assert_eq!(kb(NpcKind::DD2LanePortal), 0.0);
+    }
+
+    #[test]
+    fn no_gravity_reads_the_live_flag_for_the_knockback() {
+        // W3-i11 — `NpcKind::no_gravity` is the strike-time flag the Y-pop's
+        // 0.5-vs-0.75 selector reads (`NPC.cs:81453`/`:81465`): the AI-head
+        // writes (the eyes `:52280`, the bats `:22851`) plus the SetDefaults
+        // flyers. The grounded walkers keep false.
+        assert!(NpcKind::DemonEye.no_gravity());
+        assert!(NpcKind::WanderingEye.no_gravity());
+        assert!(NpcKind::CaveBat.no_gravity());
+        assert!(NpcKind::VoodooDemon.no_gravity());
+        assert!(NpcKind::EaterOfSouls.no_gravity());
+        assert!(NpcKind::Hornet.no_gravity());
+        assert!(NpcKind::MeteorHead.no_gravity());
+        assert!(NpcKind::ServantOfCthulhu.no_gravity());
+        assert!(NpcKind::Bee.no_gravity());
+        assert!(NpcKind::Creeper.no_gravity());
+        assert!(NpcKind::Hungry.no_gravity());
+        assert!(NpcKind::Piranha.no_gravity());
+        assert!(NpcKind::Shark.no_gravity());
+        // W3-i11 round 2 — the census completion: every ported kb>0 flyer
+        // whose C# writes noGravity true (the Y-pop's 0.5 selector).
+        assert!(NpcKind::Goldfish.no_gravity()); // 55 `:9462`
+        assert!(NpcKind::BrainOfCthulhu.no_gravity()); // 266 `:12450`
+        assert!(NpcKind::PlanterasHook.no_gravity()); // 263 `:12399`
+        assert!(NpcKind::PlanterasTentacle.no_gravity()); // 264 `:12420`
+        assert!(NpcKind::StardustCellBig.no_gravity()); // 405 `:15033`
+        assert!(NpcKind::StardustCellSmall.no_gravity()); // 406 `:15047`
+        assert!(NpcKind::StardustJellyfishBig.no_gravity()); // 407 `:15097`
+        assert!(NpcKind::SolarCorite.no_gravity()); // 418 `:15378`
+        assert!(NpcKind::NebulaFloater.no_gravity()); // 420 `:15169`
+        assert!(NpcKind::BrainSuckler.no_gravity()); // 421 `:15141`
+        assert!(NpcKind::DD2WyvernT1.no_gravity()); // 558 `:16217`
+        assert!(NpcKind::DD2WyvernT2.no_gravity()); // 559 `:16235`
+        assert!(NpcKind::DD2WyvernT3.no_gravity()); // 560 `:16253`
+        assert!(NpcKind::DD2KoboldFlyerT2.no_gravity()); // 574 `:16491`
+        assert!(NpcKind::DD2KoboldFlyerT3.no_gravity()); // 575 `:16509`
+        assert!(NpcKind::AngryNimbus.no_gravity()); // 250 AI-49 `:31589`
+        // The grounded walkers and the town NPCs keep the false default.
+        assert!(!NpcKind::Zombie.no_gravity());
+        assert!(!NpcKind::Skeleton.no_gravity());
+        assert!(!NpcKind::Guide.no_gravity());
+        assert!(!NpcKind::Slime.no_gravity());
+        assert!(!NpcKind::GoblinPeon.no_gravity());
+        // The resist-0 hazards and the grounded DD2 walkers stay false even
+        // where the C# writes noGravity (the knockback gate refuses them):
+        // the FungiSpore/Spore write kb 0 (`:12376`/`:12435`), the DD2
+        // goblins/javelineers/skeletons are aiStyle-107 walkers (no flag).
+        assert!(!NpcKind::DD2GoblinT1.no_gravity());
+        assert!(!NpcKind::DD2JavelinT1.no_gravity());
+        assert!(!NpcKind::DD2SkeletonT1.no_gravity());
+    }
+
+    #[test]
     fn the_worm_chain_assembles_and_trails() {
         // `AI_006` (`NPC.cs:51305-51368`): the head rolls the budget and
         // spawns the chain front to back; the followers ride the rigid
@@ -21148,18 +21233,18 @@ mod tests {
         // A strike on a body link: the head's life takes the damage, the
         // body mirrors it.
         let body_x = npcs[1].x;
-        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None));
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None, false));
         assert_eq!(npcs[0].hp, pool - 25, "the carrier's life took the hit");
         assert_eq!(npcs[1].hp, pool - 25, "the segment mirrors the carrier");
         assert_eq!(npcs[1].max_hp, pool, "the segment's lifeMax is the carrier's");
         // The tail is a segment too: its hit lands on the same pool.
         let last = npcs.len() - 1;
         let tail_x = npcs[last].x;
-        assert!(Npc::strike_melee(&mut npcs, last, 10, tail_x, 5.0, false, None));
+        assert!(Npc::strike_melee(&mut npcs, last, 10, tail_x, 5.0, false, None, false));
         assert_eq!(npcs[0].hp, pool - 35, "the tail hits the same pool");
         // The head's own hit: its life IS the pool (`realLife = whoAmI`).
         let head_x = npcs[0].x;
-        assert!(Npc::strike_melee(&mut npcs, 0, 5, head_x, 5.0, false, None));
+        assert!(Npc::strike_melee(&mut npcs, 0, 5, head_x, 5.0, false, None, false));
         assert_eq!(npcs[0].hp, pool - 40, "the head's own life is the pool");
         // The worm pass keeps the mirror: the segments read the carrier's
         // life (`NPC.cs:81377-81378`).
@@ -21184,7 +21269,7 @@ mod tests {
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the EoW assembled ({})", npcs.len());
         let body_x = npcs[1].x;
-        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None));
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None, false));
         assert_eq!(npcs[1].hp, npcs[1].max_hp - 25, "the segment owns its life");
         assert_eq!(npcs[0].hp, npcs[0].max_hp, "the head's pool is untouched");
     }
@@ -22850,7 +22935,7 @@ mod tests {
         assert_eq!(c.ai[0], 1.0, "the lunge holds");
         // The hit sends it back to the orbit — the ONE-TICK flag
         // (`NPC.cs:81274`), not the `hurt_cd` cooldown.
-        assert!(c.hurt(10, c.x - 5.0, 5.0, false));
+        assert!(c.hurt(10, c.x - 5.0, 5.0, false, false));
         assert!(c.just_hit, "the strike arms the one-tick flag");
         c.ai_055_creeper_family(&w, &player, &mut rng);
         assert_eq!(c.ai[0], 0.0, "the justHit returns to the orbit");
@@ -22871,7 +22956,7 @@ mod tests {
         assert!(fired, "a re-lunge seed exists");
         // The cooldown has elapsed by now (the fixture compresses time).
         c.hurt_cd = 0.0;
-        assert!(c.hurt(1, c.x - 5.0, 5.0, false));
+        assert!(c.hurt(1, c.x - 5.0, 5.0, false, false));
         // ai[0] == 1 here, so the update's AI runs the state-1 recoil
         // tail (no roll, no re-lunge). Park the player far away so the
         // folded-in contact pass cannot interfere.
@@ -25721,7 +25806,7 @@ mod tests {
             Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
         a2.ai[2] = 1.0;
         a2.ai[1] = 100.0;
-        a2.hurt(10, a2.x - 5.0, 5.0, false);
+        a2.hurt(10, a2.x - 5.0, 5.0, false, false);
         a2.update_archer(&w, &mut player, &mut rng);
         assert_eq!(a2.ai[2], 0.0, "the hit staggers");
         assert_eq!(a2.ai[1], 30.0, "the 30-tick stagger");
@@ -32584,7 +32669,7 @@ mod s1_d_3_s76_audit_tests {
         let w = air();
         let (mut n, p) = rig(&w);
         assert!(n.dont_take_damage, "the SetDefaults shield (:14060)");
-        assert!(!n.hurt(10, 0.0, 0.0, false), "the shielded core takes nothing");
+        assert!(!n.hurt(10, 0.0, 0.0, false, false), "the shielded core takes nothing");
         n.ai[0] = 1.0;
         n.ai[1] = 19.0; // ++ → 20, the <40 band
         let mut rng = UnifiedRandom::new(7);

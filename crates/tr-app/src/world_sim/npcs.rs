@@ -10894,7 +10894,7 @@ mod wof_wire_tests {
         // The strike tick: hurt() arms just_hit; the next update reads it
         // (ai[1] = 10) then the tail clears the flag.
         let from_x = app.npcs[idx].x + 100.0;
-        assert!(app.npcs[idx].hurt(5, from_x, 0.0, false));
+        assert!(app.npcs[idx].hurt(5, from_x, 0.0, false, false));
         assert!(app.npcs[idx].just_hit, "the strike arms the flag");
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.npcs[idx].ai[1], 9.0, "the recoil pause armed then ticked");
@@ -13023,7 +13023,7 @@ mod pillar_shield_loop_tests {
         assert!(app.npcs[ti].dont_take_damage, "the shield stands");
         let hp = app.npcs[ti].hp;
         assert!(
-            !app.npcs[ti].hurt(500, 0.0, 0.0, false),
+            !app.npcs[ti].hurt(500, 0.0, 0.0, false, false),
             "the shielded pillar refuses the hit"
         );
         assert_eq!(app.npcs[ti].hp, hp);
@@ -13034,7 +13034,7 @@ mod pillar_shield_loop_tests {
         assert_eq!(app.world.tower_shield_solar, 0);
         apply_tower_shield_gates(&mut app);
         assert!(!app.npcs[ti].dont_take_damage, "the broken shield opens");
-        assert!(app.npcs[ti].hurt(500, 0.0, 0.0, false), "the bare pillar takes the hit");
+        assert!(app.npcs[ti].hurt(500, 0.0, 0.0, false, false), "the bare pillar takes the hit");
         assert_eq!(app.npcs[ti].hp, hp - 500);
         // The other pillars stay gated on their own shields.
         let ni = live_tower(&mut app, NpcKind::NebulaTower);
@@ -13490,7 +13490,7 @@ mod worm_tests {
         assert_eq!(npcs[tail].kind, NpcKind::SolarCrawltipedeTail);
         let tail_x = npcs[tail].x;
         assert!(Npc::strike_melee(
-            &mut npcs, tail, 7, tail_x, 0.0, false, None
+            &mut npcs, tail, 7, tail_x, 0.0, false, None, false
         ));
         assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
     }
@@ -14084,7 +14084,7 @@ mod worm_tests {
         let tail = npcs.len() - 1;
         let tail_x = npcs[tail].x;
         assert!(Npc::strike_melee(
-            &mut npcs, tail, 9, tail_x, 0.0, false, None
+            &mut npcs, tail, 9, tail_x, 0.0, false, None, false
         ));
         assert_eq!(npcs[0].hp, pool - 9, "the tail hits the head's pool");
         assert_eq!(npcs[tail].hp, pool - 9, "the tail mirrors the carrier");
@@ -17727,7 +17727,7 @@ mod fishron_wiring_tests {
         bubble.target = 0;
         bubble.ai[3] = 1.0;
         let mut npcs = vec![bubble];
-        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0)));
+        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0), false));
         assert_eq!(npcs[0].hp, npcs[0].max_hp, "life restored");
         assert_eq!(npcs[0].ai[0], 1.0);
         assert_eq!(npcs[0].ai[1], 4.0);

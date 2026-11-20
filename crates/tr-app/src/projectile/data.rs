@@ -777,6 +777,22 @@ pub struct ProjData {
     /// per-type ladder (`:17583-17586`); the aiStyle-67 summon rows set it
     /// (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`/`:8980`).
     pub decides_manual_fall_through: bool,
+    /// `Projectile.melee` (`:434`, reset false `:751`) — the damage-class
+    /// flag `Damage_PVE_Inner`'s per-hit crit block reads (`:12890`). The
+    /// yoyo/flail/spear/drill/shortsword families set it via their
+    /// `DefaultTo*` helpers; the whip does NOT (`DefaultToWhip` `:10704`).
+    pub melee: bool,
+    /// `Projectile.ranged` (`:436`, reset false `:752`) — the crit block's
+    /// ranged arm (`:12894`).
+    pub ranged: bool,
+    /// `Projectile.magic` (`:438`, reset false `:753`) — the crit block's
+    /// magic arm (`:12898`).
+    pub magic: bool,
+    /// `Projectile.appliesImmunityTimeOnSingleHits` (`:717`, reset false) —
+    /// the id-static immunity gate's single-hit override (`:13969`/`:14116`).
+    /// The ported 1134 crystal shard sets it (`:10643`); the 167-170/286
+    /// setters (`:2568`/`:3754`) are unported kinds.
+    pub applies_immunity_time_on_single_hits: bool,
 }
 
 /// The `(uses_local_immunity, local_hit_cooldown, uses_id_static_immunity,
@@ -2288,8 +2304,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false, RESET_STATE),
             // The ammo-resolution rows (M3-ITEM-6 Phase 2): `friendly` is the
-            // pool default for every one of them and `ranged` has no consumer,
-            // so neither rides the tuple. The launcher rockets
+            // pool default for every one of them; the class flags ride the
+            // census below the tuple (W3-i11 round 2 gave the player-fired
+            // rows their `ranged` write back). The launcher rockets
             // (`Projectile.cs:2222-2338`) — 14x14, aiStyle 16 (the bomb
             // family), `penetrate = -1`; 133/136/139/142 add the
             // local-immunity pair (the overlay below).
@@ -2944,6 +2961,95 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
                 | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3
         ),
+        // The damage-class flags (`Projectile.cs:751-753` reset false) the
+        // per-hit crit block reads (`:12890-12898`). The census is the
+        // `SetDefaults` `this.melee/ranged/magic = true` writes plus the
+        // `DefaultTo*` helpers: yoyo/flail/spear/drill/shortsword are melee,
+        // the whip sets NONE (`DefaultToWhip` `:10704-10718`). The bombs
+        // (28/29/37/519) and the Crystal Storm item 518's proj set none.
+        melee: YOYO_KINDS.contains(&kind)
+            || FLAIL_KINDS.contains(&kind)
+            || matches!(
+                kind,
+                // The explicit melee rows: the boomerangs (6/52/113,
+                // `:871`/`:1352`/`:2019`), the sword beams (116/132/156/157/173,
+                // `:2052`/`:2214`/`:2439`/`:2452`/`:2596`), the Light's Bane
+                // slash (974, `:9245`), the Terrarian beam (604, `:6079`), the
+                // yoyo on-hit shots (1125/1130/1134/1135,
+                // `:10535`/`:10605`/`:10648`/`:10661`), the flail helpers
+                // (248/405/928, `:3312`/`:4866`/`:8801`).
+                ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG
+                    | SWORD_BEAM | TERRA_BEAM | LIGHT_BEAM | NIGHT_BEAM | ENCHANTED_BEAM
+                    | LIGHTS_BANE | TERRARIAN_BEAM
+                    | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
+                    | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+            ),
+        ranged: matches!(
+            kind,
+            // The arrows/bullets (1/2/14, `:814`/`:825`/`:961`), the thrown
+            // kinds (3/48/166, `:835`/`:1317`/`:2555`), the moon-lord drop
+            // shots (638/639/640, `:6867`/`:6880`/`:6895`), the DD2 kobold
+            // bomb (681, `:7270`).
+            WOODEN_ARROW | FLAME_ARROW | MUSKET_BALL
+                | SHURIKEN | THROWING_KNIFE | SNOWBALL
+                | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL
+                | DD2_BOMB
+            // W3-i11 round 2 — the ranged census completion (the player-fired
+            // rows the first pass missed; the per-hit ranged crit never fired
+            // for them). The Sandgun balls (42/65/68/354,
+            // `:1254`/`:1456`/`:1484`/`:4447`), the Flamethrower's Flames (85,
+            // `:1669`), the special arrows (117/469/485/495/819,
+            // `:2066`/`:5443`/`:5611`/`:5688`/`:8003`), the launcher rockets
+            // (133-144 `:2229-2336`, 338-341 `:4315`, the 776-801/803-810
+            // group `:7946` — 779/783 are row-less, the guard above), the
+            // gunProj rockets (615/630/705/714,
+            // `:6629`/`:6776`/`:7581`), the Celebration rockets (715-718,
+            // `:7592`/`:7604`) and the Empress shot (932, `:8844`).
+                | 42 | 65 | 68 | 354 | 85 | 117 | 469 | 485 | 495 | 819
+                | 133..=144 | 338..=341 | 615 | 630 | 705 | 714 | 715..=718 | 932
+                | 776..=801 | 803..=810
+            // The hostile snowmen's shots (109/110, `:1976`/`:1989`) — the
+            // C# writes ranged on them too; the owner-255 gate keeps the
+            // flags moot, the census stays verbatim.
+                | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+        ),
+        magic: matches!(
+            kind,
+            // The Vilethorn pair (7/8, `:884`), the magic spells
+            // (15/16/20/27/34/45/79/80/88/94/95,
+            // `:972`/`:982`/`:1029`/`:1104`/`:1170`/`:1294`/`:1601`/`:1613`/
+            // `:1713`/`:1788`/`:1800`), the gem bolts (121-126/597,
+            // `:2111`+`ApplyGemStaffStats`), the Unholy Trident pair
+            // (114/115, `:2028`/`:2042`), the frost/flower shots
+            // (253/254/255, `:3366`/`:3374`/`:3384`), the Inferno Fork
+            // (295/296, `:3856`/`:3866`), the Spectre pair (297/356,
+            // `:3877`/`:4470`), the Poison Staff / Frost Staff (355/359,
+            // `:4458`/`:4503`), the Typhoon (409, `:4914`), the Leaf (206,
+            // `:2946`), the Nebula Arcanum pair (617/618,
+            // `:6653`/`:6666`), the Last Prism pair (632/633,
+            // `:6811`/`:6802`), the Nebula Blaze pair (634/635,
+            // `:6825`/`:6836`), the Lunar Flare (645, `:6959`), the Spirit
+            // Flame / Sky Fracture (659/660, `:7089`/`:7104`), the Book of
+            // Skulls (837, `:8131`), the Wand of Sparking spark (954,
+            // `:9008`).
+            VILE_BASE | VILE_TIP
+                | BALL_OF_FIRE | MAGIC_MISSILE | GREEN_LASER | WATER_BOLT | FLAMELASH
+                | DEMON_SCYTHE | RAINBOW_ROD_BULLET | ICE_BLOCK | PURPLE_LASER
+                | CRYSTAL_STORM | CURSED_FLAME_FRIENDLY
+                | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD
+                | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND | GEM_BOLT_AMBER
+                | UNHOLY_TRIDENT | UNHOLY_TRIDENT_HOSTILE
+                | BALL_OF_FROST | MAGNET_SPHERE_BALL | MAGNET_SPHERE_BOLT
+                | INFERNO_FORK_BOLT | INFERNO_BLAST | LOST_SOUL | SPECTRE_WRATH
+                | VENOM_FANG | FROST_BOLT | TYPHOON | LEAF
+                | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
+                | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
+                | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+        ),
+        // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the only
+        // ported setter is the 1134 crystal shard (`:10643`); the 167-170
+        // and 286 setters (`:2568`/`:3754`) are unported kinds.
+        applies_immunity_time_on_single_hits: kind == CRYSTAL_SHARD_MELEE,
     })
 }
 
@@ -3234,5 +3340,93 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         ORNAMENT_HOSTILE => 2,
         ORNAMENT_SHRAPNEL => 2,
         _ => 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_damage_class_flags_match_the_set_defaults_census() {
+        // W3-i11 — the per-hit crit block's class flags (`Projectile.cs:751-
+        // 753` reset false, the per-type `this.melee/ranged/magic = true`
+        // writes + the DefaultTo* helpers). The whip sets NONE.
+        let flags = |k: u16| {
+            let d = proj_data(k).expect("a row");
+            (d.melee, d.ranged, d.magic)
+        };
+        // The ranged shots: arrows/bullets, the thrown kinds, the moon-lord
+        // drop shots.
+        assert_eq!(flags(WOODEN_ARROW), (false, true, false));
+        assert_eq!(flags(FLAME_ARROW), (false, true, false));
+        assert_eq!(flags(MUSKET_BALL), (false, true, false));
+        assert_eq!(flags(SHURIKEN), (false, true, false));
+        assert_eq!(flags(THROWING_KNIFE), (false, true, false));
+        assert_eq!(flags(SNOWBALL), (false, true, false));
+        assert_eq!(flags(MOONLORD_BULLET), (false, true, false));
+        // W3-i11 round 2 — the ranged census completion: the sand balls, the
+        // Flames, the special arrows, the rockets and the Empress shot.
+        for k in [42, 65, 68, 354, 85, 117, 469, 485, 495, 819, 615, 630, 705, 714, 932] {
+            assert_eq!(flags(k), (false, true, false), "kind {k}");
+        }
+        for k in (133..=144).chain(338..=341).chain(715..=718) {
+            assert_eq!(flags(k), (false, true, false), "kind {k}");
+        }
+        for k in (776..=801).chain(803..=810) {
+            if k == 779 || k == 783 {
+                continue; // row-less (no launcher resolves to them)
+            }
+            assert_eq!(flags(k), (false, true, false), "kind {k}");
+        }
+        // The hostile snowmen's shots carry the flag verbatim (owner 255
+        // keeps it moot).
+        assert_eq!(flags(SNOW_BALL_HOSTILE), (false, true, false));
+        assert_eq!(flags(BULLET_SNOWMAN), (false, true, false));
+        // The Clentaminator spray (145) and the acorn (1088) set NO class
+        // flag (`:2338-2349`/`:10145-10152`) — the census stays exact.
+        assert_eq!(flags(145), (false, false, false));
+        assert_eq!(flags(1088), (false, false, false));
+        // The magic spells.
+        assert_eq!(flags(CRYSTAL_STORM), (false, false, true));
+        assert_eq!(flags(SPARK), (false, false, true));
+        assert_eq!(flags(GEM_BOLT_AMETHYST), (false, false, true));
+        assert_eq!(flags(GEM_BOLT_AMBER), (false, false, true));
+        assert_eq!(flags(NEBULA_BLAZE_1), (false, false, true));
+        assert_eq!(flags(NEBULA_BLAZE_2), (false, false, true));
+        assert_eq!(flags(SPIRIT_FLAME), (false, false, true));
+        assert_eq!(flags(SKY_FRACTURE), (false, false, true));
+        assert_eq!(flags(LAST_PRISM), (false, false, true));
+        assert_eq!(flags(LEAF), (false, false, true));
+        // The melee families: yoyos (DefaultToYoyo), flails (DefaultToFlail),
+        // the boomerangs, the sword beams, the yoyo on-hit shots.
+        assert_eq!(flags(WOOD_YOYO), (true, false, false));
+        assert_eq!(flags(TERRARIAN_YOYO), (true, false, false));
+        assert_eq!(flags(BALL_O_HURT), (true, false, false));
+        assert_eq!(flags(ENCHANTED_BOOMERANG), (true, false, false));
+        assert_eq!(flags(SWORD_BEAM), (true, false, false));
+        assert_eq!(flags(TERRARIAN_BEAM), (true, false, false));
+        assert_eq!(flags(CRYSTAL_SHARD_MELEE), (true, false, false));
+        assert_eq!(flags(EYE_OF_CTHULHU_DASH), (true, false, false));
+        // The whip sets NO class flag (DefaultToWhip `:10704-10718`).
+        assert_eq!(flags(BLAND_WHIP), (false, false, false));
+        assert_eq!(flags(SWORD_WHIP), (false, false, false));
+        // The bombs set none (`:1106-1121`/`:1198-1206`/`:5889-5897`).
+        assert_eq!(flags(BOMB), (false, false, false));
+        assert_eq!(flags(DYNAMITE), (false, false, false));
+        assert_eq!(flags(STICKY_BOMB), (false, false, false));
+        assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    #[test]
+    fn the_single_hit_immunity_override_is_the_crystal_shard_only() {
+        // W3-i11 — `appliesImmunityTimeOnSingleHits` (`:717` reset false):
+        // the only ported setter is the 1134 crystal shard (`:10643`).
+        assert!(proj_data(CRYSTAL_SHARD_MELEE).unwrap().applies_immunity_time_on_single_hits);
+        // The 644 shard burst keeps the stock false (its idStatic pair rides
+        // the −1 cooldown, not the override).
+        assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
+        assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
+        assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
     }
 }
