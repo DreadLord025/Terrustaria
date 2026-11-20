@@ -58,8 +58,16 @@ pub(crate) fn use_extractinator(app: &mut App, tx: i32, ty: i32, world_pos: Vec2
     if is_chlorophyte {
         if let Some((giving, taking)) = extract::chlorophyte_trade(held.kind, held.count) {
             let mut secs = apply_item_time_secs(app, true);
-            app.audio
-                .play_at("Grab", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+            // `Player.cs:41681` — `SoundEngine.PlaySound(7)`: UNPOSITIONED
+            // (the int overload's x/y default -1), one case-7
+            // `Next(-10, 11) * 0.01` pitch on `UpdatePlayers`
+            // (`PlaceThing_ItemInExtractinator` runs in `Player.ItemCheck`
+            // under the `Main.cs:17754` swap), the Grab voice Stop/re-create.
+            app.audio.play_grab_sound(
+                -1.0,
+                -1.0,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
             // `context.SkipItemConsumption = true` (`:41683`) + the trader's
             // own decrement (`:41684-41688`) — the standard consumable path is
             // skipped so it cannot double-spend.

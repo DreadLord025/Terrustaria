@@ -1939,9 +1939,12 @@ pub(crate) fn update_destroyers(app: &mut App) {
             ));
         }
         if ev.roar {
-            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, pos)` (Roar_0).
+            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, pos)`: the int
+            // overload's default Style 1 → `Roar_1` (case 15 draws
+            // NOTHING; the null-or-Stopped slot guard rides
+            // `Audio::play_roar`, research/32 D4).
             let (nx, ny) = (app.npcs[i].x, app.npcs[i].y);
-            app.audio.play_at("Roar_0", nx, ny, 1.0);
+            app.audio.play_roar(1, nx, ny);
         }
         if ev.wants_death {
             // The orphan death wrote life = 0 in place; the death pass
@@ -4718,11 +4721,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 .into_iter()
                 .flatten()
             {
-                // The shared pinned cue map (`world_sim/editing.rs`'s
-                // `kill_cue`): the door/gate dig family pins Dig_1.
-                if let Some((name, volume)) = crate::world_sim::editing::kill_cue(cue) {
-                    app.audio.play_at(name, px, py, volume);
-                }
+                // W4-d79 — the faithful per-case path (research/32 D1/D4):
+                // the door/gate dig family draws the case-0 variation +
+                // pitch on `UpdateNPCs` (the bash runs in `NPC.UpdateNPC`,
+                // `Main.cs:17767`), the Dig slot Stop/re-creates.
+                app.audio.play_kill_cue(
+                    cue,
+                    px,
+                    py,
+                    app.rngs.stream(RngKey::UpdateNpcs),
+                );
             }
         }
         if !open {

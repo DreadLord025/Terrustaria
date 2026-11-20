@@ -1503,7 +1503,9 @@ impl Audio {
         // Center via `:83-85`) — truncate here.
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
+            1 => "NPC_Killed_1",
             6 => "NPC_Killed_6",
+            11 => "NPC_Killed_11",
             22 => "NPC_Killed_22",
             _ => return None,
         };
@@ -2148,6 +2150,9 @@ impl Audio {
     /// - 3 style 25 (`SoundID.NPCHit25`, `SoundID.cs:1281`): wave C's style
     ///   façade — the audio-only `GetRandomPitch` NextFloat, the ×0.5 volume
     ///   arm and the one `Next(-10, 11)` pitch draw (`:670`).
+    /// - 4 (the death arms, `WorldGen.cs:66486`/:66517/:66526 + `CheckPot`
+    ///   `:56861`): the INT overload — no NextFloat, the case-4 pitch draw
+    ///   only ([`Audio::play_npc_death_int`]).
     /// - 0 (Dig, `:440-452`): wave B's case-0 path — the `Next(3)` variation
     ///   pick + the `Next(-10, 11) * 0.01` pitch.
     ///
@@ -2398,8 +2403,11 @@ impl Audio {
                 self.play_npc_hit_sound(cue, x, y, rng)
             }
             4 => {
-                let cue = kill_npc_cue("NPC_Killed_", style)?;
-                self.play_npc_death_sound(cue, x, y, rng)
+                // The int overload (`WorldGen.cs:66486`/:66517/:66526/:56861
+                // — `PlaySound(4, i * 16, j * 16[, 11])`): NO GetRandomPitch
+                // NextFloat — the case-4 pitch draw only.
+                kill_npc_cue("NPC_Killed_", style)?;
+                self.play_npc_death_int(i32::from(style), x, y, rng)
             }
             6 => self.play_wall_break_sound((6, 1), x, y, rng),
             13 => self.play_wall_break_sound((13, 1), x, y, rng),
