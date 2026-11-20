@@ -958,10 +958,14 @@ mod tests {
         // A row change also breaks: flush the lone (14, 5).
         let s2 = h.draw_black(14, 6, sp).unwrap();
         assert_eq!(s2.size, [16.0, 16.0]);
-        // EndStrip does NOT reset (:30-38 leaves the fields): the same
-        // strip re-emits; the driver's single :728 call is the norm.
+        // EndStrip does NOT reset (:30-38 leaves the fields): the
+        // pending (14, 6) run re-emits identically; the driver's single
+        // :728 call is the norm.
         let s3 = h.end_strip(sp).unwrap();
-        assert_eq!(s3, s2);
+        assert_eq!(s3.size, [16.0, 16.0]);
+        assert_eq!(s3.position, [14.0 * 16.0 - 320.0 + 192.0, 6.0 * 16.0 - 320.0 + 192.0]);
+        let s4 = h.end_strip(sp).unwrap();
+        assert_eq!(s4, s3);
     }
 
     /// Witness: `ClearLegacyCachedDraws`'s exact 7-step order
@@ -1128,7 +1132,10 @@ mod tests {
             r.log,
             vec![
                 "critterCage",
-                "wind 0x0",
+                // firstX = 7 (no upper clamp on the near edge), lastX
+                // clamps to maxTiles-4 = 4 -> SetSize(-3, -3), the C#
+                // quirk on a sub-border world (WindGrid guards it).
+                "wind -3x-3",
                 "legacy ChestPositions",
                 "legacy TrainingDummyTileEntityPositions",
                 "legacy FoodPlatterTileEntityPositions",
