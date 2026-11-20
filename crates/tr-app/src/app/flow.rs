@@ -3958,6 +3958,9 @@ pub(crate) mod front_flow_tests {
     fn w4_g57_the_world_step_ticks_the_reveal() {
         let mut app = reforge_app();
         app.player = Some(crate::player::Player::spawn(&app.world));
+        // Pin dt to 1/60 (the TR_SHOT convention) so exactly one world step
+        // runs — the wall-clock dt would make the tick count nondeterministic.
+        app.shot_path = Some(std::path::PathBuf::from("w4-g57-witness.png"));
         app.reforge_click();
         let y0 = app.popup_texts.texts[0].position[1];
         app.frame();
