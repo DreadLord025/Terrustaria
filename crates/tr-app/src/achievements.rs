@@ -166,8 +166,10 @@ impl Condition {
 }
 
 /// `Achievement` (`Achievement.cs:11-120`): complete when every condition is
-/// (`IsCompleted => _completedCount == _conditions.Count` — so the zero-condition
-/// `STAR_DESTROYER` row is complete from the start, exactly as vanilla).
+/// (`IsCompleted => _completedCount == _conditions.Count`). W4-e22: every
+/// shipped row carries at least one condition — the initializer's four
+/// `CreateMany` rows are expanded 1:1 (`AchievementInitializer.cs:97/131/
+/// 188-190/288-291`), so no row is born complete.
 #[derive(Clone, Debug)]
 pub struct Achievement {
     pub name: &'static str,

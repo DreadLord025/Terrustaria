@@ -200,9 +200,13 @@ and one persistent store per world (the `.wld` section 10 triple).
 - `crates/tr-core/src/wld/sections/bestiary.rs::tests` (17): the `.wld` section-10
   codec, the version gates at 210/220, the hostile-input and round-trip tests
   (210-512).
-- No test covers: the per-row condition count against `AchievementInitializer.cs`,
-  the `notify` sites' reachability, the achievement save being called, or the
-  bestiary's drop lines.
+- `crates/tr-app/src/achievements_data.rs::tests` (2, W4-e22):
+  `every_rows_conditions_match_the_initializer_verbatim` (a second verbatim
+  transcription of `AchievementInitializer.cs:16-443` compared entry-by-entry:
+  row order, per-row count, kind + arguments; 137 rows / 180 conditions) and
+  `the_create_many_rows_stay_expanded` (the 3/4/24/15 shapes, no empty row).
+- No test covers: the `notify` sites' reachability, the achievement save being
+  called, or the bestiary's drop lines.
 
 ## Deviations & risks
 
@@ -225,7 +229,7 @@ and one persistent store per world (the `.wld` section 10 triple).
 | 15 | `banner_to_item` keeps only 3 bands (276+/88+/default); the C# has the 292/291/290/289/273/251 specials and the 186-275 bands. It agrees on the port's 11 banners but is wrong on extension. | behavioural (latent) | Partly — `tr-core/src/bestiary.rs:286-287` |
 | 16 | ~~No MP sync of the bestiary kill counts (NetBestiaryModule).~~ **PORTED (S1-I-5)** - module 4 carries the kill count, the 97/98 wires carry the credit and the progression id; the Sight/Chat halves are still open. | behavioural (MP) | Yes - pp/netmodules.rs::BestiaryKill, pp/netglue.rs |
 | 17 | `Player.HasAchievement`, `Main.achievementTracker` and a `BossAchievement` type **do not exist** in the 1.4.5.8 decompile. The boss kill requirement is the bestiary's banner→`KillsToBanner` chain, and the achievement query is `Main.Achievements.GetAchievement(name).IsCompleted`. | n/a | n/a |
-| 18 | `Achievement.completed` (flag) vs `is_completed()` (derived) disagree for a zero-condition row before and after a load. | behavioural (minor) | **No** |
+| 18 | ~~`Achievement.completed` (flag) vs `is_completed()` (derived) disagree for a zero-condition row before and after a load.~~ Moot after S1-E-18/W4-e22: no shipped row has zero conditions (`the_create_many_rows_stay_expanded` pins it); the flag/derived skew is unreachable through the registry. | behavioural (minor) | Resolved (W4-e22 re-verification) |
 | 19 | `CustomFloat` sub-unit progress (`Condition.frac`) is in-memory only; `load_pairs` resets it because the text save stores the whole `value` only. | behavioural (minor) | **No** (documented, S1-E-18) |
 | 20 | Altar hammer smash is routed through `break_tile` + `smash_altar` in the active-tile branch (`app.ore_tiers` updated), firing BEGONE_EVIL; `tile_drop(26)=None` (C# empty drop group). Self-hurt/wraith halves of the C# refusal are follow-ups. | behavioural (partial) | Partly (S1-E-18) |
 | 21 | `StopSlimeRain` sets the negative cooldown clock (`Main.cs:64787-64820`); `stopMoonEvent` does not clear `bloodMoon` (cleared in `UpdateTime_StartDay`). | behavioural (closer) | Yes (S1-E-18) |
@@ -262,6 +266,15 @@ and one persistent store per world (the `.wld` section 10 triple).
   `SerializeKillCount` on a kill (`NPCKillsTracker.cs:23-33`) and syncs the counts on
   player join (`:98-107`), with the `97`/`98` achievement wires
   (`MessageBuffer.cs:3558-3569`). Fixes #16. The `Sight`/`Chat` halves remain open.
-- **S** — Add a data test that pins every Rust row's condition count against
+- ~~**S** — Add a data test that pins every Rust row's condition count against
   `AchievementInitializer.cs` (137 rows / 180 conditions) so the `CreateMany`
-  class of bug cannot return. Dep: the first S task.
+  class of bug cannot return. Dep: the first S task.~~ **DONE (W4-e22,
+  2026-11-20)** — `achievements_data.rs::tests::every_rows_conditions_match_the_initializer_verbatim`
+  compares `ROWS` against a second verbatim transcription
+  (`CONDITION_COUNTS`) of `AchievementInitializer.cs:16-443`: row order,
+  per-row count, and every condition's kind + arguments (137 rows / 180
+  conditions). An independent C#-vs-Rust diff (kinds, ids, condition names,
+  trackers, icons, categories) found **0 mismatches** — the table itself
+  needed no porting; S1-E-18's `b93459de` had already landed the expansion.
+  `the_create_many_rows_stay_expanded` pins the four `CreateMany` shapes
+  (3/4/24/15) and that no row is born complete.
