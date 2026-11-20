@@ -1836,13 +1836,81 @@ position is not inside a solid tile.
 `WallID.UnbreakableBlockWall` (350) is faithful too: `Player.CanPlayerSmashWall` refuses
 it, `WorldGen.ReplaceWall` cannot overwrite it, and `CanKillTile`/`IsTileReplaceable` make
 any tile in front of it unbreakable and unplaceable. `edit::WALL_UNBREAKABLE` guards
-`break_wall`, `break_tile` (`remove_tile`) and `place_tile`; the dungeon's pre-Skeletron
-wall rule is not needed because the dungeon is not generated.
+`break_wall`, `break_tile` (`remove_tile`) and `place_tile`. (The dungeon's pre-Skeletron
+wall rule landed with S1-P-i33 — the dungeon IS generated now; see below.)
 
 Not ported: the full `Item.cs` use logic, item sprite sheet lookup, inventory
 windows/crafting/chests, paint, actuators/wiring, and liquid re-simulation after
-an edit. (The tool requirements and the mining speed landed since вЂ” `tr_core::tool`'s
+an edit. (The tool requirements and the mining speed landed since — `tr_core::tool`'s
 pick gates + the pacing in the mining branch; the full `Item.cs` use logic stays out.)
+
+### Wall placement/removal (S1-P-i33)
+
+The wall-edit census (2026-11-20, code-only — tests written NOT run) fixed the
+placement/removal arms against `Player.PlaceThing_Walls` (`Player.cs:39600-39715`),
+`WorldGen.PlaceWall`/`KillWall`/`ReplaceWall` and `Player.CanPlayerSmashWall`/`PickWall`.
+The verdicts, each with its C# cite:
+
+* **WRONG — the adjacency gate.** `can_place_wall` required a neighbouring WALL or
+  the cell's OWN solid tile. The C# (`Player.cs:39607`) reads only the four
+  neighbours and accepts `active() || wall > 0` on any of them — an active wall-less
+  block supports a wall, the cell's own tile never does. Fixed; the same-wall refusal
+  (`wall == createWall`) kept, a DIFFERENT wall now passes on to the replacement arm.
+* **WRONG — the hammer smash gate.** The hammer branch gated on `hammer > 0` alone.
+  `ItemCheck_UseMiningTools_TryHittingWall` (`Player.cs:45910`) also requires
+  `CanPlayerSmashWall` (`:45917-45940`): 350 refuses, and a non-house (unsafe) wall
+  refuses while fully enclosed by unsafe walls (any open/house-wall 3×3 neighbour
+  opens it). Ported as `edit::can_player_smash_wall` over the FULL `Main.wallHouse`
+  table (`edit::wall_house`, 279 members — `Main.cs:9741-9789`/`:10353-10577` incl.
+  the 153..166 loop). The smart-cursor hammer beam (`hit_wall_substep`,
+  `Collision.cs:1317`) now reads the same full table, not the housing subset.
+* **WRONG — the hammer cadence.** The old `wall == 1 ? 0.7 : 0.35` seconds split was
+  an invention. `PickWall` (`Player.cs:45912`/`:45945`) adds `(int)(hammer * 1.5f)`
+  per hit and breaks at `>= 100`, paced by `itemTime = useTime / 2` (`:45913`) —
+  uniform for every wall. The port now counts integer hits (`App::mine_wall_hits`):
+  break at `ceil(100 / (hammer * 1.5))` hits, `useTime / 2` ticks apart.
+* **WRONG — the break drop.** `break_wall` dropped `registry::by_wall(wall)` (a
+  reverse `createWall` lookup), which misses the unsafe→safe conversions and the
+  natural unsafe walls. `KillWall_GetItemDrops` (`WorldGen.cs:60452-61343`) is now
+  ported verbatim as `edit::kill_wall_drop`: dungeon 7→135 / 94→1378, stone 1→26,
+  glass 21→392, dirt-unsafe 2 / mud-unsafe 15 → nothing.
+* **WRONG — the placement boundary.** `edit::place_wall` had no boundary guard;
+  `WorldGen.PlaceWall` (`WorldGen.cs:75127`) refuses the outer two-cell ring
+  (`i <= 1 || j <= 1 || i >= maxTilesX - 2 || j >= maxTilesY - 2`). Added.
+* **WRONG — the wall-framing mask.** `Framing.WallFrame`'s neighbour test
+  (`Framing.cs:345-376`) joins an active `TruncatesWalls` tile (54/328/459/748,
+  `TileID.cs:595`) and drops an echo-coated invisible wall; the port read only
+  `wall != 0`. Fixed (`wall_mask_neighbour`). This moves the generated `wall_frame`
+  cells (glass beside a wall), so the `SEED42_512`/`DEFAULT_WORLD` pins are
+  stale-by-design and re-pin at the merge gate (no RNG draw added — `a == b`
+  determinism stays green).
+* **MISSING — the unsafe→safe replacement.** `PlaceThing_TryReplacingWalls`
+  (`Player.cs:39816-39829`) + `WorldGen.ReplaceWall` (`:62530-62556`) were unported:
+  placing a safe wall onto an unsafe wall now converts it (`edit::replace_wall`),
+  gated by `PlaceThing_ValidWallForReplacement` (`:39831-39839`) + `NearFriendlyWall`
+  (`WorldGen.cs:52258-52291`), dropping the OLD wall's converted item and playing its
+  break cue (not the placement Dig). The progression refusals (`KillWall_CheckFailure`,
+  `:60410-60421`: dungeon walls pre-Skeletron, temple 87 pre-Golem) gate both
+  `break_wall` and `replace_wall`.
+* **MISSING — the fill-empty-space tail.** `PlaceThing_Walls_FillEmptySpace`
+  (`Player.cs:39636-39715`): after a placement with `stack > 1`, each empty neighbour
+  whose four sides ALL carry the same wall is filled too (one item each). Ported as
+  `fill_empty_wall_space`.
+* **MISSING — the paint/coating clear.** `KillWall`/`ReplaceWall` run
+  `Tile.ClearWallPaintAndCoating` (`Tile.cs:911-916`); the port left the old wall's
+  paint/echo/glow bits to leak onto the next placement. Both now clear them.
+
+Deliberate deviations (recorded, not forced): the replacement toggle
+(`builderAccStatus[10]`, `TileReplacementEnabled` `Player.cs:3373`) defaults ON like
+vanilla's and has no UI yet; the `wallSpeed`/`tileSpeed` multipliers (`Player.cs:25920-25922`,
+the Builder potion/accessory chain) and the `tileBoost + blockRange` reach extension are
+not modelled (the placement uses the base `useTime`/reach); the hammer's 2×2 mouse-half
+scan (`ItemCheck_UseMiningTools_TryFindingWallToHammer`, `Player.cs:45832-45906`) is
+simplified to the cursor cell (the port's single-target mining model); the
+`ShouldShowInvisibleBlocksAndWalls` override (EchoMonolith/4409 accessory) reads false
+(the `render/tile_cracks.rs` precedent). RNG order: the replacement plays the old wall's
+break cue then drops its item (the `KillWall` sound-before-drop order), the fill plays one
+Dig 0 per filled cell — all on the `UpdatePlayers` stream, no new draw sites.
 
 ### Torch attachment (`WorldGen.CheckTorch`)
 

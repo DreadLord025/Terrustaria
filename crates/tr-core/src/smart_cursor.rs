@@ -2726,9 +2726,11 @@ pub fn step_pickaxe_mine_solids(
 // ------------------------------------------------------- wall beam helpers --
 
 /// `Collision.HitWallSubstep` (`Collision.cs:1310-1357`): the wall cell a
-/// hammer's beam may remove — a wall that is not a house wall (or borders
-/// an open cell), and, when the cell also holds a tile, that tile is a
-/// full solid surrounded by full solids (the wall is behind it).
+/// hammer's beam may remove — a house wall (`Main.wallHouse`, the FULL table
+/// via `edit::wall_house`, not the housing subset), or an unsafe wall that
+/// borders an open cell; when the cell also holds a tile, that tile must NOT
+/// be a full solid surrounded by full solids (the wall buried behind it
+/// refuses the beam).
 pub fn hit_wall_substep(w: &crate::World, x: i32, y: i32) -> bool {
     let Some(t) = w.tile(x, y) else {
         return false;
@@ -2736,7 +2738,7 @@ pub fn hit_wall_substep(w: &crate::World, x: i32, y: i32) -> bool {
     if t.wall == 0 {
         return false;
     }
-    let mut flag = crate::housing::is_house_wall(t.wall);
+    let mut flag = crate::edit::wall_house(t.wall);
     if !flag {
         for i in -1..=1 {
             for j in -1..=1 {

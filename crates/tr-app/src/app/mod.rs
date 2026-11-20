@@ -637,6 +637,12 @@ pub(crate) struct App {
     /// denominator the tile-crack overlay maps onto the C# `HitTile`
     /// 0..100 damage (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
     pub(crate) mine_hardness: f32,
+    /// S1-P-i33 — the wall-hammer hit counter (`Player.PickWall`'s `hitTile`
+    /// damage book, `Player.cs:45944-45945`): the number of `useTime / 2`-tick
+    /// hits landed on the current wall target. The break fires at
+    /// `ceil(100 / (hammer * 1.5))` hits — an integer count, so the cadence is
+    /// exact (the float `mine_timer` still feeds the crack overlay).
+    pub(crate) mine_wall_hits: i32,
     /// `HitTile.lastCrack` (`HitTile.cs:80`, static, default 0): the last
     /// rolled crack style the no-repeat reroll compares against.
     pub(crate) mine_crack_style: i32,
@@ -3584,6 +3590,7 @@ impl App {
             mine_target: None,
             mine_timer: 0.0,
             mine_hardness: 0.0,
+            mine_wall_hits: 0,
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),

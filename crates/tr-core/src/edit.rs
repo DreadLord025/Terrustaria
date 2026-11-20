@@ -10,11 +10,19 @@ use crate::world::World;
 mod place;
 pub use place::{place_alch, place_item_tile, place_tile};
 mod wall;
-pub use wall::{break_wall, kill_wall_sound, place_wall};
+// S1-P-i33 — the wall-edit table (drop conversions, the FULL Main.wallHouse,
+// the smash gate, the unsafe→safe replacement). `can_player_smash_wall` lives
+// HERE (one copy — the i31 duplicate was folded into this one at the gate;
+// the i33 copy reads the full 279-wall Main.wallHouse, the C# table the
+// Player.cs:45924 gate actually reads, not the housing room-check subset).
+pub use wall::{
+    break_wall, can_player_smash_wall, kill_wall_drop, kill_wall_sound, near_friendly_wall,
+    place_wall, replace_wall, wall_house, WALL_COUNT,
+};
 mod hammer;
 pub use hammer::{
-    can_player_smash_wall, can_pound_tile, forbids_sloping, is_a_hammer_target, is_tile_poundable,
-    pound_damage, pound_tile, slope_tile, try_finding_wall_to_hammer, try_pound_tile, PoundOutcome,
+    can_pound_tile, forbids_sloping, is_a_hammer_target, is_tile_poundable, pound_damage,
+    pound_tile, slope_tile, try_finding_wall_to_hammer, try_pound_tile, PoundOutcome,
 };
 mod kill;
 pub use kill::{

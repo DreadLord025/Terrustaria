@@ -154,34 +154,12 @@ pub fn is_a_hammer_target(kind: u16) -> bool {
     crate::tileobject::tile_hammer(kind) || is_tile_poundable(kind)
 }
 
-/// `Player.CanPlayerSmashWall` (`Player.cs:45917-45940`): wall 350
-/// (`WallID.UnbreakableBlockWall`) never breaks; a house wall always does;
-/// an unsafe wall breaks only when any cell of its 3×3 (itself included)
-/// carries no wall or a house wall — the exposed-edge rule. Out-of-world
-/// neighbours read as wall 0 (the C# array would throw at the world edge;
-/// walls never generate there — the port's open-cell reading keeps the
-/// edge breakable, documented in ANALYSIS).
-pub fn can_player_smash_wall(world: &World, x: i32, y: i32) -> bool {
-    let Some(t) = world.tile(x, y) else {
-        return false;
-    };
-    if t.wall == super::WALL_UNBREAKABLE {
-        return false;
-    }
-    if crate::housing::is_house_wall(t.wall) {
-        return true;
-    }
-    // `:45927-45937` — the 3×3 open/house scan.
-    for i in x - 1..x + 2 {
-        for j in y - 1..y + 2 {
-            let w = world.tile(i, j).map(|n| n.wall).unwrap_or(0);
-            if w == 0 || crate::housing::is_house_wall(w) {
-                return true;
-            }
-        }
-    }
-    false
-}
+// Gate merge (i31 ⨉ i33): `can_player_smash_wall` lives ONCE, in
+// `edit::wall` (the i33 copy) — it reads the FULL `Main.wallHouse` table
+// (`wall_house`, 279 members, `Main.cs:9741-9789`/`:10353-10577`), which is
+// the table `Player.cs:45924` actually reads; the i31 copy used the narrower
+// `housing::is_house_wall` room-check subset (recorded deviation, corrected
+// at the gate). The finder below rides the same full table.
 
 /// `Player.ItemCheck_UseMiningTools_TryFindingWallToHammer`
 /// (`Player.cs:45832-45906`): the wall cell the hammer's wall pass targets.
@@ -202,7 +180,9 @@ pub fn try_finding_wall_to_hammer(world: &World, tx: i32, ty: i32, mouse: (f32, 
     let mut flag = true;
     let wall = world.tile(wx, wy).map(|t| t.wall).unwrap_or(0);
     if wall > 0 {
-        if !crate::housing::is_house_wall(wall) {
+        // `:45839` — `Main.wallHouse` is the FULL 279-wall table
+        // (`edit::wall_house`, S1-P-i33), not the housing room-check subset.
+        if !super::wall_house(wall) {
             // `:45841-45851` — the same-wall 3×3 census.
             for i in wx - 1..wx + 2 {
                 for j in wy - 1..wy + 2 {
@@ -247,7 +227,7 @@ pub fn try_finding_wall_to_hammer(world: &World, tx: i32, ty: i32, mouse: (f32, 
             if w == 0 {
                 continue;
             }
-            if !crate::housing::is_house_wall(w) {
+            if !super::wall_house(w) {
                 for m in wx - 1..wx + 2 {
                     for n in wy - 1..wy + 2 {
                         if world.tile(m, n).map(|t| t.wall).unwrap_or(0) != w {
@@ -650,6 +630,8 @@ fn framed_pressure_pad(world: &mut World, x: i32, y: i32) {
 mod tests {
     #![allow(non_snake_case)]
     use super::*;
+    // Gate merge: the one `can_player_smash_wall` lives in `edit::wall`.
+    use crate::edit::can_player_smash_wall;
     use crate::edit::tests::{ground_world, set_active};
     use crate::tile::FLAG_ACTIVE;
 
