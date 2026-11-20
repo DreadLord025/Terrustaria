@@ -427,9 +427,11 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
     if rate.max_spawns > DEFAULT_MAX_SPAWNS * 3 {
         rate.max_spawns = DEFAULT_MAX_SPAWNS * 3;
     }
-    // The invasion overrides (`:792-801`) — the moon events force the raid
-    // pacing; the pre-Skeletron dungeon crawls at rate 10 (`:806-809`).
-    if f.moon_event {
+    // The moon-event raid pacing (`NPC.cs:771-775`): gated on the PLAYER
+    // being above the surface line (`player.position.Y < worldSurface * 16`;
+    // `Main.remixWorld` has no port counterpart) — an underground player
+    // during a moon event keeps the un-paced rate (research 24, errata).
+    if f.moon_event && pos_y < ctx.world.world_surface * 16.0 {
         rate.max_spawns = (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32;
         rate.spawn_rate = 20;
     }
@@ -1955,11 +1957,17 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
         }),
         5 => moon_chain(ctx, rng, &[(10, Some(1), 315)], |_| Some(329)),
         4 => {
-            // Verbatim quirk (`:3511-3513`): the roll gates on `!AnyNPCs(325)`
-            // but the arm spawns 330.
-            moon_chain(ctx, rng, &[(8, Some(1), 330), (2, None, 326)], |r| {
-                Some(305 + r.next_max(10) as u16)
-            })
+            // Verbatim quirk (`NPC.cs:3511-3513`): the roll gates on
+            // `!AnyNPCs(325)` but the arm spawns 330 — the cap must count the
+            // GATE kind 325, not the spawned 330 (`moon_chain`'s generic
+            // count-by-kind would count the wrong family).
+            let mut picked = None;
+            let gate_count = ctx.moon_npc_counts.iter().filter(|&&t| t == 325).count() as i32;
+            moon_arm_count(&mut picked, rng, 8, Some(1), 330, gate_count);
+            if picked.is_some() {
+                return picked;
+            }
+            moon_chain(ctx, rng, &[(2, None, 326)], |r| Some(305 + r.next_max(10) as u16))
         }
         3 => moon_chain(ctx, rng, &[(3, None, 329)], |_| Some(326)),
         2 => moon_chain(ctx, rng, &[(3, None, 326)], |r| Some(305 + r.next_max(10) as u16)),
