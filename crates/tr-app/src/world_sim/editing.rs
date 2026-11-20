@@ -1653,11 +1653,11 @@ fn held_use_time_ticks(held: ItemSlot) -> i32 {
     registry::get(held.kind).map_or(0, |d| i32::from(d.use_time))
 }
 
-/// Refresh the crack overlay's `mine_timer`/`mine_hardness` from the
-/// `HitTile` book's damage at the cell — the port's projection of the C#
-/// `HitTile` damage onto the 0..100 crack ladder (`render/tile_cracks.rs`,
-/// `Main.cs:61533-61626`). The book is the source of truth now; the timer
-/// is the damage fraction and the hardness is 1.0 (the full break).
+/// Refresh `mine_timer`/`mine_hardness` from the `HitTile` book's damage
+/// at the cell — the mining-state mirror the mining witnesses read. The
+/// crack overlay itself reads the book directly (W4-g77,
+/// `render/tile_cracks.rs` over `Main.cs:61533-61626`); the timer is the
+/// damage fraction and the hardness is 1.0 (the full break).
 fn sync_mine_crack_state(app: &mut App, tx: i32, ty: i32) {
     let damage = app
         .hit_tile
@@ -12502,6 +12502,91 @@ mod tests {
         assert!(app.world.tile(20, 20).unwrap().active(), "tile intact");
         assert_eq!(app.mine_target, None);
         assert_eq!(app.mine_timer, 0.0);
+    }
+
+    /// W4-g77 — the crack draw reads the LIVE i29 book, not the mining
+    /// accumulator: mid-dig the book's damage drives the crack plan, and
+    /// after the release (`mine_target = None`) the abandoned hit KEEPS
+    /// drawing its crack stage from the book (`Main.cs:61541` walks every
+    /// slot; the old single-accumulator projection drew nothing here).
+    #[test]
+    fn w4_g77_the_crack_draw_reads_the_live_book_after_the_release() {
+        use crate::render::tile_cracks::{CRACK_TILE, crack_draw_plan};
+        let w = object_world();
+        let mut app = mining_app(w, 20, 20);
+        mine_frames(&mut app, 10);
+        // The book holds the dig's accumulated damage at the cell.
+        let id = app
+            .hit_tile
+            .try_finding(20, 20, tr_core::hit_tile::TILE)
+            .expect("the dig landed hits in the book");
+        assert!(app.hit_tile.data[id].damage > 0);
+        let recs = app
+            .mine_crack_styles
+            .records(&app.hit_tile, &mut app.mine_crack_rng);
+        assert_eq!(recs.len(), 1);
+        assert_eq!((recs[0].x, recs[0].y), (20, 20));
+        assert_eq!(recs[0].damage, app.hit_tile.data[id].damage);
+        let style = recs[0].crack_style;
+        // Release: the mining state resets but the book keeps the hit —
+        // the crack still draws (the C#'s TTL decay owns the fade-out).
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        assert_eq!(app.mine_target, None);
+        assert_eq!(app.mine_timer, 0.0);
+        let recs = app
+            .mine_crack_styles
+            .records(&app.hit_tile, &mut app.mine_crack_rng);
+        assert_eq!(recs.len(), 1, "the abandoned hit stays in the book");
+        assert_eq!(recs[0].crack_style, style, "no reroll without a Clear");
+        assert!(app.world.tile(20, 20).unwrap().active());
+        // The Iron Pickaxe (pick 40) lands 40 damage per hit on stone, so
+        // the abandoned hit is above the 20 floor — the crack stage draws
+        // from the book alone (the old projection drew nothing here).
+        assert!(recs[0].damage >= 20);
+        assert!(
+            crack_draw_plan(&app.world, &recs[0], CRACK_TILE, false).is_some(),
+            "the crack stage draws from the book alone"
+        );
+    }
+
+    /// W4-g77 — two damaged cells draw TWO crack records with distinct
+    /// per-slot styles (the C#'s per-slot `crackStyle`, `HitTile.cs:23`):
+    /// the single-style projection could only ever show one.
+    #[test]
+    fn w4_g77_two_damaged_cells_keep_distinct_crack_styles() {
+        let w = object_world();
+        let mut app = mining_app(w, 20, 20);
+        // An earlier abandoned hit at a second cell (the book keeps it).
+        let old = app.hit_tile.hit_object(21, 20, tr_core::hit_tile::TILE);
+        app.hit_tile.add_damage(old, 60, true);
+        mine_frames(&mut app, 10);
+        let recs = app
+            .mine_crack_styles
+            .records(&app.hit_tile, &mut app.mine_crack_rng);
+        assert_eq!(recs.len(), 2, "both damaged cells draw");
+        assert_ne!(
+            recs[0].crack_style, recs[1].crack_style,
+            "the no-repeat chain gives each slot its own style"
+        );
+        // Determinism: a fresh app with the same seed + the same hit
+        // sequence rolls the same styles (the world-seeded deviation).
+        let w2 = object_world();
+        let mut app2 = mining_app(w2, 20, 20);
+        let old2 = app2.hit_tile.hit_object(21, 20, tr_core::hit_tile::TILE);
+        app2.hit_tile.add_damage(old2, 60, true);
+        mine_frames(&mut app2, 10);
+        app.mine_crack_rng = tr_core::UnifiedRandom::new(0);
+        app2.mine_crack_rng = tr_core::UnifiedRandom::new(0);
+        app.mine_crack_styles = crate::render::tile_cracks::CrackStyles::new();
+        app2.mine_crack_styles = crate::render::tile_cracks::CrackStyles::new();
+        let r1 = app
+            .mine_crack_styles
+            .records(&app.hit_tile, &mut app.mine_crack_rng);
+        let r2 = app2
+            .mine_crack_styles
+            .records(&app2.hit_tile, &mut app2.mine_crack_rng);
+        assert_eq!(r1, r2);
     }
 
     /// A frame_important kind without a registry entry (torch 4) breaks as a
