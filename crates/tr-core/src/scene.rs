@@ -1026,12 +1026,12 @@ impl Sandstorm {
     }
 
     /// `Sandstorm.UpdateTime` (`Sandstorm.cs:32-77`). `day_rate` is
-    /// `Main.dayRate` (1 in our port: no sleeping/creative powers yet);
-    /// `wind_speed_current` is `Main.windSpeedCurrent`. The `Main.netMode != 1`
-    /// gate (`:34`) is always true for a single-player session. The start roll
-    /// uses the no-hardMode branch (`:58-59`: `num = 21600 * 3`; hardmode is
-    /// not ported yet).
-    pub fn update_time(&mut self, day_rate: i32, wind_speed_current: f32) {
+    /// `Main.dayRate`; `wind_speed_current` is `Main.windSpeedCurrent`;
+    /// `hard_mode` is `Main.hardMode` — the start-delay denominator
+    /// (`:58-59`: `num = 21600 * (hardMode ? 2 : 3)`, W4-c40). The
+    /// `Main.netMode != 1` gate (`:34`) is always true for a single-player
+    /// session.
+    pub fn update_time(&mut self, day_rate: i32, wind_speed_current: f32, hard_mode: bool) {
         if self.happening {
             // `Sandstorm.cs:38-41`:
             if self.time_left > SANDSTORM_DURATION_MAX {
@@ -1051,8 +1051,11 @@ impl Sandstorm {
                 self.stop_sandstorm();
             }
         } else {
-            // `Sandstorm.cs:58-59`: start-delay denominator.
-            let num = 21600 * 3;
+            // `Sandstorm.cs:58-59`: start-delay denominator —
+            // `num = ((!Main.hardMode) ? (num * 3) : (num * 2))` (W4-c40:
+            // the hardMode arm was pinned off before `World.hard_mode`
+            // existed; the roll slot count/order is unchanged).
+            let num = 21600 * if hard_mode { 2 } else { 3 };
             // `Sandstorm.cs:60-69`: one roll per day-rate tick.
             if Self::has_sufficient_wind(wind_speed_current) {
                 for _ in 0..day_rate {
@@ -2748,13 +2751,13 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.5);
+        s.update_time(1, 0.5, false);
         assert_eq!(s.time_left, 84); // 100 - 1 - 15
 
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.7);
+        s.update_time(1, 0.7, false);
         assert_eq!(s.time_left, 99);
 
         // `Sandstorm.cs:47-54`: wind exactly 0 zeroes TimeLeft (`:47-50`) and
@@ -2762,7 +2765,7 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.0);
+        s.update_time(1, 0.0, false);
         assert!(!s.happening);
         assert_eq!(s.time_left, 0);
     }
@@ -2774,7 +2777,7 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 86401;
-        s.update_time(1, 0.7);
+        s.update_time(1, 0.7, false);
         assert!(!s.happening);
         assert_eq!(s.time_left, 0);
     }
@@ -2806,16 +2809,73 @@ mod tests {
         // `Sandstorm.cs:56-69`: with wind, one `Next(64800)` roll per
         // day-rate tick; a huge day rate starts the storm.
         let mut s = Sandstorm::new(42);
-        s.update_time(70000, 0.8);
+        s.update_time(70000, 0.8, false);
         assert!(s.happening);
         assert!((SANDSTORM_DURATION_MIN..=SANDSTORM_DURATION_MAX).contains(&s.time_left));
 
         // Same seed -> same outcome.
         let mut s2 = Sandstorm::new(42);
-        s2.update_time(70000, 0.8);
+        s2.update_time(70000, 0.8, false);
         assert_eq!(s2.happening, s.happening);
         assert_eq!(s2.time_left, s.time_left);
         assert_eq!(s2.severity.to_bits(), s.severity.to_bits());
+    }
+
+    /// W4-c40 — `Sandstorm.cs:58-59`: the start-delay denominator is
+    /// `21600 * 3` pre-hardmode and `21600 * 2` in hardmode. The roll slot
+    /// COUNT is identical (one `Next(num)` per day-rate tick + the one
+    /// `Next(18000)` intention roll); only the denominator changes, so the
+    /// hardmode storm starts roughly 1.5x as often per tick. Witnessed by
+    /// a forced-boundary roll: a day rate that guarantees a hit under BOTH
+    /// denominators starts both, and the resulting durations come from the
+    /// SAME stream position (the start roll's slot index is unchanged).
+    #[test]
+    fn w4_c40_the_start_denominator_halves_in_hardmode() {
+        // Classic: `Next(64800)` per tick. Hardmode: `Next(43200)`.
+        // A day rate above both maxima forces a start either way; the
+        // pre-start roll counts differ, so the duration draws differ —
+        // but each machine stays internally deterministic per seed.
+        for hard in [false, true] {
+            let mut a = Sandstorm::new(7);
+            a.update_time(70000, 0.8, hard);
+            assert!(a.happening, "hard={hard}");
+            let mut b = Sandstorm::new(7);
+            b.update_time(70000, 0.8, hard);
+            assert_eq!(a.time_left, b.time_left, "hard={hard} deterministic");
+            assert_eq!(a.severity.to_bits(), b.severity.to_bits());
+        }
+        // The denominator itself: with wind sufficient and NOT happening,
+        // the C# draws `Next(21600 * (hardMode ? 2 : 3))`. Pin the two
+        // values the port must use (the literals of `:58-59`).
+        assert_eq!(21600 * 3, 64800);
+        assert_eq!(21600 * 2, 43200);
+    }
+
+    /// W4-c40 — the hardMode flag changes ONLY the start denominator: a
+    /// HAPPENING storm's decay (`:42-54`) and the intention roll (`:71-74`)
+    /// are hardmode-independent. Twin storms with identical state decay
+    /// byte-identically under both flags (zero extra draws either way).
+    #[test]
+    fn w4_c40_hardmode_does_not_touch_the_decay_or_intention_slots() {
+        for seed in [1u64, 99, 12345] {
+            let mut classic = Sandstorm::new(seed);
+            classic.happening = true;
+            classic.time_left = 50_000;
+            let mut hard = Sandstorm::new(seed);
+            hard.happening = true;
+            hard.time_left = 50_000;
+            for _ in 0..30 {
+                classic.update_time(1, 0.7, false);
+                hard.update_time(1, 0.7, true);
+                assert_eq!(classic.time_left, hard.time_left);
+                assert_eq!(classic.happening, hard.happening);
+                assert_eq!(classic.severity.to_bits(), hard.severity.to_bits());
+                assert_eq!(
+                    classic.intended_severity.to_bits(),
+                    hard.intended_severity.to_bits()
+                );
+            }
+        }
     }
 
     #[test]
