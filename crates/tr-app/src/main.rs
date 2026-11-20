@@ -56,6 +56,7 @@ mod loot_db;
 mod loot_db_gen;
 mod map;
 mod map_layers;
+mod map_sections;
 mod melee_swing;
 mod menu;
 mod minecart;
