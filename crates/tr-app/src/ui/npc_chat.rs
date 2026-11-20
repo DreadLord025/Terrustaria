@@ -64,36 +64,97 @@ pub(crate) fn panel_lines(lookups: &Lookups, chat_text: &str) -> Vec<String> {
     rows
 }
 
-/// The interaction row count the port renders: only `CloseChat`
-/// (`NPCInteractions.cs:271-287`, `Condition() => true`) — the shop /
-/// happiness / housing / … buttons are deferred (module header), so
-/// `_neededInteractionLines = ceil(1 / 4) = 1` (`NPCChatPanel.cs:174`,
-/// `AllowedInteractionsPerLine = 4` `:30`).
-const INTERACTION_LINES: usize = 1;
+/// The interaction rows the port renders (`NPCInteractions.Initialize`
+/// registration order, `NPCInteractions.cs:513-530`): `CloseChat` (`:515`)
+/// always, then `ReportHappiness` (`:529`) when its Condition holds
+/// (`:291-298`: `!NPC.CanShowHomelessText(talkNPC)` AND
+/// `currentShoppingSettings.HappinessReport != ""`). The other buttons
+/// (shop/housing/reforge/…) stay deferred (module header).
+/// `_neededInteractionLines = ceil(count / 4)` (`NPCChatPanel.cs:174`,
+/// `AllowedInteractionsPerLine = 4` `:30`) — 1 line for either count.
+fn interaction_lines(happiness: bool) -> usize {
+    let count = 1 + usize::from(happiness);
+    count.div_ceil(4)
+}
+
+/// The Happiness button's label (`ReportHappiness.GetText`,
+/// `NPCInteractions.cs:300-303`): `Language.GetTextValue("UI.NPCCheckHappiness")`.
+pub(crate) fn happiness_label() -> String {
+    crate::lang::text("UI.NPCCheckHappiness")
+}
 
 /// The panel's box (`NPCChatPanel.cs:65-68` via the selection half's
 /// `chat_box_rect`/`chat_box_height`): `[x, y, w, h]` in UI pixels.
-pub(crate) fn panel_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
+pub(crate) fn panel_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    happiness: bool,
+) -> [f32; 4] {
     let base = chat_box_rect(screen.x as i32, screen.y as i32);
     let lines = panel_lines(lookups, chat_text).len();
-    let h = chat_box_height(lines, INTERACTION_LINES);
+    let h = chat_box_height(lines, interaction_lines(happiness));
     [base.x as f32, base.y as f32, base.w as f32, h as f32]
 }
 
-/// The Close button's hit rect (`NPCChatPanel.cs:93-117`): the row origin
-/// is `panelArea.BottomLeft() + (30, -22·lines + max(0, 2·(lines−1)) − 4)`,
-/// the rect 22 tall and as wide as the label measured at scale 0.9
-/// (shrunk to fit 260 px, `:113-117`).
-pub(crate) fn close_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
-    let panel = panel_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52); // `CloseChat.GetText` (`NPCInteractions.cs:280`)
-    let w0 = text::ui_font_width(lookups, &label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
-    let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
-    let il = INTERACTION_LINES as f32;
-    let x = panel[0] + 30.0;
-    let y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
-    // `:117` — `rectangle.Width = (int)(stringSize.X * num4)`.
-    [x, y, (w0 * shrink).trunc(), 22.0]
+/// One interaction button's hit rect (`NPCChatPanel.cs:93-117`): the row
+/// origin is `panelArea.BottomLeft() + (30, -22·lines + max(0, 2·(lines−1))
+/// − 4)`, each rect 22 tall and as wide as its label measured at scale 0.9
+/// (shrunk to fit 260 px, `:113-117`); the next button starts at
+/// `x + width + 30` (`:135`), wrapping every 4 (`:103-107`).
+fn button_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    happiness: bool,
+    index: usize,
+) -> [f32; 4] {
+    let panel = panel_rect(lookups, screen, chat_text, happiness);
+    let il = interaction_lines(happiness) as f32;
+    let row_x = panel[0] + 30.0;
+    let row_y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
+    let labels = [crate::lang::inter(52), happiness_label()];
+    let count = 1 + usize::from(happiness);
+    let mut x = row_x;
+    let mut y = row_y;
+    let mut rect = [x, y, 100.0, 22.0];
+    for (i, label) in labels.iter().enumerate().take(count) {
+        if i % 4 == 0 {
+            x = row_x;
+            y = (i / 4) as f32 * 22.0 + row_y;
+        }
+        let w0 =
+            text::ui_font_width(lookups, label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+        let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
+        // `:117` — `rectangle.Width = (int)(stringSize.X * num4)`.
+        rect = [x, y, (w0 * shrink).trunc(), 22.0];
+        if i == index {
+            return rect;
+        }
+        x += rect[2] + 30.0; // `:135`
+    }
+    rect
+}
+
+/// The Close button's hit rect — interaction index 0.
+pub(crate) fn close_button_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    happiness: bool,
+) -> [f32; 4] {
+    button_rect(lookups, screen, chat_text, happiness, 0)
+}
+
+/// The Happiness button's hit rect — interaction index 1 (`None` when the
+/// button's Condition is off).
+pub(crate) fn happiness_button_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    happiness: bool,
+) -> Option<[f32; 4]> {
+    happiness.then(|| button_rect(lookups, screen, chat_text, happiness, 1))
 }
 
 /// One crop of a sheet pushed at 1:1 — the panel's `ChatBack` splices draw
@@ -129,11 +190,12 @@ pub(crate) fn draw_panel(
     lookups: &Lookups,
     screen: Vec2,
     chat_text: &str,
+    happiness: bool,
     pulse: UiPulse,
     mouse: Vec2,
 ) -> bool {
     let lines = panel_lines(lookups, chat_text);
-    let panel = panel_rect(lookups, screen, chat_text);
+    let panel = panel_rect(lookups, screen, chat_text, happiness);
     let (x, y, _w, h) = (panel[0], panel[1], panel[2], panel[3]);
     // `:71-72` — the top splice (source `(0, 0, ChatBack.Width(), h−30)`)
     // and the bottom 30 px (`(0, Height−30, Width, 30)`), both at scale 1:
@@ -173,26 +235,35 @@ pub(crate) fn draw_panel(
             line,
         );
     }
-    draw_close_button(r, lookups, screen, chat_text, pulse, mouse);
+    draw_interaction_button(r, lookups, screen, chat_text, happiness, 0, pulse, mouse);
+    if happiness {
+        draw_interaction_button(r, lookups, screen, chat_text, happiness, 1, pulse, mouse);
+    }
     super::in_rect(mouse, panel)
 }
 
-/// The Close button (`DrawButtons`, `NPCChatPanel.cs:88-162`, one
-/// interaction): idle scale 0.9 / hover 1.2 (`:96`, `:119`), the label
-/// colour `(b, b/1.1, b/2, b)` (`:102`), the shadow Black idle / Brown
-/// hovered (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
+/// One interaction button (`DrawButtons`, `NPCChatPanel.cs:88-162`): idle
+/// scale 0.9 / hover 1.2 (`:96`, `:119`), the label colour
+/// `(b, b/1.1, b/2, b)` (`:102`), the shadow Black idle / Brown hovered
+/// (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
 /// left/centre-Y (`:120-122`) with the hover x-shift
 /// `−(1.2−0.9)·width·0.5` (`:125`).
-fn draw_close_button(
+fn draw_interaction_button(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
     chat_text: &str,
+    happiness: bool,
+    index: usize,
     pulse: UiPulse,
     mouse: Vec2,
 ) {
-    let rect = close_button_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52);
+    let rect = button_rect(lookups, screen, chat_text, happiness, index);
+    let label = if index == 0 {
+        crate::lang::inter(52)
+    } else {
+        happiness_label()
+    };
     let hovered = super::in_rect(mouse, rect);
     let b = (pulse.text * 255.0) as i32;
     let chat_color = [
@@ -363,11 +434,11 @@ mod tests {
     fn the_close_row_rides_the_panel_bottom() {
         let lookups = assets::Lookups::default();
         let screen = Vec2::new(1920.0, 1080.0);
-        let panel = panel_rect(&lookups, screen, "Hello there");
+        let panel = panel_rect(&lookups, screen, "Hello there", false);
         // One text line (no font sheet: the 8 px/char estimate keeps
         // "Hello there" well under 460), one interaction line.
         assert_eq!(panel, [710.0, 100.0, 500.0, 90.0], "30 + 30·1 + 30·1");
-        let rect = close_button_rect(&lookups, screen, "Hello there");
+        let rect = close_button_rect(&lookups, screen, "Hello there", false);
         assert_eq!(rect[0], 740.0, "panel left + 30 (`:93`)");
         assert_eq!(rect[1], 100.0 + 90.0 - 22.0 - 4.0, "bottom − 22·1 − 4 (`:93`)");
         assert_eq!(rect[3], 22.0, "the 22 px row (`:97`)");
@@ -425,7 +496,7 @@ mod tests {
         app.talk_npc = Some(0);
         app.npc_chat_text = "Hello there".to_string();
         let (sw, sh) = app.screen_size();
-        let rect = close_button_rect(&app.lookups, Vec2::new(sw, sh), &app.npc_chat_text);
+        let rect = close_button_rect(&app.lookups, Vec2::new(sw, sh), &app.npc_chat_text, false);
         app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
         app.ui_left_press = true;
         app.handle_npc_chat_clicks();
@@ -433,5 +504,96 @@ mod tests {
         assert!(app.npc_chat_text.is_empty(), "npcChatText = \"\" (`:40685`)");
         assert!(!app.ui_left_press, "the press is consumed (`NPCChatPanel.cs:152`)");
         assert_eq!(app.npc_chat_last_hovered, -1, "Close resets _lastHovered (`:267`)");
+    }
+
+    /// W4-g58: `ReportHappiness` (`NPCInteractions.cs:289-312`) — the
+    /// button's rect rides the Close button's right edge + 30
+    /// (`NPCChatPanel.cs:135`), and its click replaces the chat line with
+    /// the latched report while the talk latch stays.
+    #[test]
+    fn the_happiness_button_replaces_the_chat_text() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // A housed Guide with a non-empty report — the Condition holds.
+        let mut guide = Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = Some((6, 6));
+        app.npcs.push(guide);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0));
+        assert!(
+            !app.shopping_settings.happiness_report.is_empty(),
+            "GetShoppingSettings latched a report (`Player.cs:4389`)"
+        );
+        let report = app.shopping_settings.happiness_report.clone();
+        app.npc_chat_text = "Hello there".to_string();
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let close = close_button_rect(&app.lookups, screen, &app.npc_chat_text, true);
+        let happy = happiness_button_rect(&app.lookups, screen, &app.npc_chat_text, true)
+            .expect("the Condition holds");
+        // `:135` — the next button starts at Close's right edge + 30.
+        assert_eq!(happy[0], close[0] + close[2] + 30.0);
+        assert_eq!(happy[1], close[1], "the same row (`:103-107`)");
+        app.mouse_pos = Vec2::new(happy[0] + 2.0, happy[1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_npc_chat_clicks();
+        assert_eq!(app.talk_npc, Some(0), "the talk latch stays (`:305-311`)");
+        assert_eq!(app.npc_chat_text, report, "npcChatText = HappinessReport (`:309`)");
+        assert!(!app.ui_left_press, "the press is consumed (`:152`)");
+        // The report ends with a trailing space — `string.Concat(…, " ")`
+        // (`ShopHelper.cs:195`).
+        assert!(app.npc_chat_text.ends_with(' '));
+    }
+
+    /// `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`): a
+    /// homeless NPC shows the Housing text instead — no Happiness button.
+    #[test]
+    fn the_homeless_npc_hides_the_happiness_button() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut guide = Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = None; // homeless
+        app.npcs.push(guide);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0));
+        assert!(crate::happiness::can_show_homeless_text(app.npcs.get(0)));
+        // The Condition's first arm fails — the button never draws/hits.
+        let (sw, sh) = app.screen_size();
+        let cond = !crate::happiness::can_show_homeless_text(app.npcs.get(0))
+            && !app.shopping_settings.happiness_report.is_empty();
+        assert!(!cond);
+        assert!(
+            happiness_button_rect(&app.lookups, Vec2::new(sw, sh), &app.npc_chat_text, cond)
+                .is_none()
+        );
+        // The Travelling Merchant is excluded from the homeless text
+        // (`NPC.cs:94836-94838`) but his report is empty (`ProcessMood`'s
+        // early return) — the second arm hides the button.
+        let mut tm = Npc::new(crate::npc::NpcKind::TravellingMerchant, 100.0, 100.0, 1, 0.0);
+        tm.hp = tm.max_hp;
+        assert!(!crate::happiness::can_show_homeless_text(Some(&tm)));
+    }
+
+    /// `SetTalkNPC(-1)` resets `currentShoppingSettings` to `NotInShop`
+    /// (`Player.cs:4383-4386`, `ShoppingSettings.cs:9-13`).
+    #[test]
+    fn the_talk_close_resets_the_shopping_settings() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut guide = Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = Some((6, 6));
+        app.npcs.push(guide);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0));
+        assert!(!app.shopping_settings.happiness_report.is_empty());
+        app.set_talk_npc(None);
+        assert_eq!(app.shopping_settings.price_adjustment, 1.0);
+        assert!(app.shopping_settings.happiness_report.is_empty());
     }
 }

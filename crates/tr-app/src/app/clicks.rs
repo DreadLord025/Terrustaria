@@ -1065,13 +1065,16 @@ impl App {
 
     /// The town-chatter panel's clicks (`NPCChatPanel.DrawButtons`,
     /// `NPCChatPanel.cs:88-162`): the hover edge plays sound 12
-    /// (`:157-160`) and the Close button's press (`:150-154`) runs
-    /// `CloseChat.Interact` → `Main.CloseNPCChatOrSign`
-    /// (`NPCInteractions.cs:283-286`, `Main.cs:40680-40692`) — the talk
+    /// (`:157-160`) and a button's press (`:150-154`) runs its
+    /// `Interact` — Close → `Main.CloseNPCChatOrSign`
+    /// (`NPCInteractions.cs:283-286`, `Main.cs:40680-40692`): the talk
     /// latch clears, `npcChatText` empties, sound 11 plays and
-    /// `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`). The other
-    /// interaction buttons (shop/happiness/housing/…) are deferred —
-    /// docs/ANALYSIS.md "Town chatter UI (S1-E-10b)".
+    /// `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`);
+    /// Happiness → `ReportHappiness.Interact` (`NPCInteractions.cs:
+    /// 305-311`): sound 12 + `npcChatText = HappinessReport` (the
+    /// portrait hop / corner item are unported). The other interaction
+    /// buttons (shop/housing/…) are deferred — docs/ANALYSIS.md "Town
+    /// chatter UI (S1-E-10b)".
     pub(crate) fn handle_npc_chat_clicks(&mut self) {
         if self.talk_npc.is_none() {
             // `DrawButtons` only runs while the panel draws — `_lastHovered`
@@ -1081,8 +1084,21 @@ impl App {
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
-        let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        let hovered = if ui::in_rect(self.mouse_pos, rect) { 0 } else { -1 };
+        // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`).
+        let happiness = !crate::happiness::can_show_homeless_text(
+            self.talk_npc.and_then(|i| self.npcs.get(i)),
+        ) && !self.shopping_settings.happiness_report.is_empty();
+        let close =
+            ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text, happiness);
+        let happy =
+            ui::npc_chat::happiness_button_rect(&self.lookups, screen, &self.npc_chat_text, happiness);
+        let hovered = if ui::in_rect(self.mouse_pos, close) {
+            0
+        } else if happy.is_some_and(|r| ui::in_rect(self.mouse_pos, r)) {
+            1
+        } else {
+            -1
+        };
         // `:157-160` — the hover-change tick (no gamepad in the port, so
         // the `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
@@ -1094,10 +1110,19 @@ impl App {
             // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
             // half is unported; `SetTalkNPC(-1)` + the text clear + sound
             // 11 + the panel's `Close` reset.
-            self.talk_npc = None;
+            self.set_talk_npc(None);
             self.npc_chat_text.clear();
             crate::chest::play_menu_sound(self, 11);
             self.npc_chat_last_hovered = -1;
+        } else if hovered == 1 && self.ui_left_press {
+            self.ui_left_press = false;
+            // `ReportHappiness.Interact` (`NPCInteractions.cs:305-311`):
+            // `npcChatCornerItem = 0` (unported) + sound 12 +
+            // `npcChatText = currentShoppingSettings.HappinessReport`
+            // (the report REPLACES the chat line — the talk latch stays).
+            crate::chest::play_menu_sound(self, 12);
+            self.npc_chat_text = self.shopping_settings.happiness_report.clone();
+            // `Main.DoNPCPortraitHop` (`:310`) — the portrait is unported.
         }
     }
 

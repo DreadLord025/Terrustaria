@@ -179,7 +179,7 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
             if app.open_container() == -1 {
                 crate::chest::play_menu_sound(app, 11);
             }
-            app.talk_npc = None;
+            app.set_talk_npc(None); // `SetTalkNPC(-1)` — the settings reset rides it
             app.npc_chat_text.clear();
         }
     }
@@ -207,7 +207,7 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     if app.talk_npc == Some(i) {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
-    app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    app.set_talk_npc(Some(i)); // `:43081` — `player.SetTalkNPC(i)` (the settings latch)
     // The context off the live state. The world flags the port does not
     // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
     // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)

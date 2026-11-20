@@ -1780,6 +1780,11 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // `ReportHappiness.Condition`
+                            // (`NPCInteractions.cs:291-298`).
+                            !crate::happiness::can_show_homeless_text(
+                                self.talk_npc.and_then(|i| self.npcs.get(i)),
+                            ) && !self.shopping_settings.happiness_report.is_empty(),
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

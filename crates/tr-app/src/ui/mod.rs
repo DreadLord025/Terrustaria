@@ -716,6 +716,11 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`): the
+    // Happiness button draws when the talked NPC is not homeless
+    // (`NPC.CanShowHomelessText`, `NPC.cs:94828-94841`) and the latched
+    // `currentShoppingSettings.HappinessReport` is non-empty.
+    happiness_button: bool,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -789,7 +794,17 @@ pub fn draw_hud(
     // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
     // `:276-283`; the sign half is unported).
     if talk_npc.is_some() {
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+        // `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`) rides
+        // the caller's `happiness_button` gate (the App resolves it).
+        npc_chat::draw_panel(
+            r,
+            lookups,
+            screen,
+            npc_chat_text,
+            happiness_button,
+            pulse,
+            mouse_pos,
+        );
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides

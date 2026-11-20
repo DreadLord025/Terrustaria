@@ -534,6 +534,18 @@ pub fn npc_full_name(all_npcs: &[crate::npc::Npc], kind: NpcKind) -> String {
     crate::lang::npc_name(kind.cs_id() as i32)
 }
 
+/// `NPC.CanShowHomelessText` (`NPC.cs:94828-94841`): the homeless NPC
+/// that is not the Old Man (37) / Travelling Merchant (368) / Skeleton
+/// Merchant (453). The port's homeless stand-in is `home == None` (the
+/// `Npc.homeless` field); the Old Man / Skeleton Merchant kinds are
+/// unported, the Travelling Merchant is.
+pub fn can_show_homeless_text(npc: Option<&crate::npc::Npc>) -> bool {
+    match npc {
+        Some(n) => n.home.is_none() && n.kind != NpcKind::TravellingMerchant,
+        None => false,
+    }
+}
+
 /// `ShopHelper.AddHappinessReportText` (`ShopHelper.cs:188-196`): the
 /// category is `TownNPCMood_{NPCID.Search.GetName(netID)}` (the Zoologist's
 /// `altTexture == 2` shapeshift suffix `:191-194` is constants-off — no
@@ -1015,6 +1027,90 @@ mod tests {
             assert_eq!(biome_name_key(BiomeKind::Underground), "NormalUnderground");
             assert_eq!(biome_name_key(BiomeKind::Mushroom), "Mushroom");
             assert_eq!(biome_name_key(BiomeKind::Forest), "Forest");
+        }
+
+        /// `AddHappinessReportText` (`ShopHelper.cs:188-196`): each row
+        /// PREPENDS `text + report + " "` — the LAST flag reads first, and
+        /// the substitutes land (`{BiomeName}`/`{NPCName}`).
+        #[test]
+        fn the_report_prepends_in_flag_order() {
+            let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+            crate::lang::init(tr_core::localization::GameCulture::English);
+            // The Guide's rows (`TownNPCMood_Guide`, en-US.Town.json
+            // `:1854-1870`): LoveSpace then the Forest Like — the Like
+            // reads FIRST (it was added last).
+            let flags = [
+                MoodFlag::LoveSpace,
+                MoodFlag::BiomeAffection(AffectionLevel::Like, BiomeKind::Forest),
+            ];
+            let report = happiness_report(NpcKind::Guide, &flags, &[]);
+            let like = crate::lang::text_format_with(
+                "TownNPCMood_Guide.LikeBiome",
+                &[(
+                    "BiomeName",
+                    tr_core::localization::Substitution::Text("the Forest".into()),
+                )],
+            );
+            let space = crate::lang::text("TownNPCMood_Guide.LoveSpace");
+            assert_eq!(report, format!("{like}{space} "));
+            assert!(report.ends_with(' '), "the trailing space (`:195`)");
+        }
+
+        /// The neighbor row substitutes `NPC.GetFullnameByID` (`NPC.cs:
+        /// 7010-7020`): a live resident answers `Game.NPCTitle` with the
+        /// given name; nobody → the plain type name.
+        #[test]
+        fn the_report_names_the_neighbor() {
+            let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+            crate::lang::init(tr_core::localization::GameCulture::English);
+            let mut clothier =
+                crate::npc::Npc::new(NpcKind::Clothier, 0.0, 0.0, 1, 0.0);
+            clothier.hp = clothier.max_hp;
+            clothier.given_name = "Isaac".into();
+            let flags = [MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Clothier)];
+            let report = happiness_report(NpcKind::Guide, &flags, &[clothier]);
+            let full = crate::lang::text_args(
+                "Game.NPCTitle",
+                &["Isaac".to_string(), crate::lang::npc_name(54)],
+            );
+            assert!(report.contains(&full), "the given-name title: {report}");
+            // No resident → the type name alone.
+            let bare = happiness_report(NpcKind::Guide, &flags, &[]);
+            assert!(bare.contains(&crate::lang::npc_name(54)));
+            assert!(!bare.contains("Isaac"));
+        }
+
+        /// The LikePrincess row's dedicated key (`ShopHelper.cs:252-259`,
+        /// `TownNPCMood_Guide.LikeNPC_Princess` — en-US.Town.json `:1869`).
+        #[test]
+        fn the_princess_row_uses_its_own_key() {
+            let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+            crate::lang::init(tr_core::localization::GameCulture::English);
+            let flags = [MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Princess)];
+            let report = happiness_report(NpcKind::Guide, &flags, &[]);
+            let expected = crate::lang::text_format_with(
+                "TownNPCMood_Guide.LikeNPC_Princess",
+                &[(
+                    "NPCName",
+                    tr_core::localization::Substitution::Text(crate::lang::npc_name(663)),
+                )],
+            );
+            assert_eq!(report, format!("{expected} "));
+        }
+
+        /// `CanShowHomelessText` (`NPC.cs:94828-94841`): homeless + not
+        /// 37/368/453; a housed NPC never shows it.
+        #[test]
+        fn the_homeless_text_gate() {
+            let mut g = crate::npc::Npc::new(NpcKind::Guide, 0.0, 0.0, 1, 0.0);
+            g.home = None;
+            assert!(can_show_homeless_text(Some(&g)));
+            g.home = Some((10, 10));
+            assert!(!can_show_homeless_text(Some(&g)));
+            let mut tm = crate::npc::Npc::new(NpcKind::TravellingMerchant, 0.0, 0.0, 1, 0.0);
+            tm.home = None;
+            assert!(!can_show_homeless_text(Some(&tm)), "368 excluded (`:94836`)");
+            assert!(!can_show_homeless_text(None), "npcIndex < 0 (`:94831`)");
         }
     }
 }

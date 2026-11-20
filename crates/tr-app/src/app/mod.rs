@@ -167,6 +167,11 @@ pub(crate) struct App {
     /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
     /// and `Close` resets it to −1 (`:267`).
     pub(crate) npc_chat_last_hovered: i32,
+    /// `Player.currentShoppingSettings` (`Player.cs:2916`) — latched by
+    /// `SetTalkNPC` (`Player.cs:4383-4390`): the talk open runs
+    /// `ShopHelper.GetShoppingSettings`, the close resets to `NotInShop`
+    /// (`{1f, ""}`). The happiness button + the shop chrome read it.
+    pub(crate) shopping_settings: crate::happiness::ShoppingSettings,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -1944,6 +1949,30 @@ impl App {
         std::mem::swap(&mut self.equip.trash, &mut self.mouse_item);
     }
 
+    /// `Player.SetTalkNPC` (`Player.cs:4375-4394`): the latch write plus
+    /// the `currentShoppingSettings` refresh — `-1` resets to `NotInShop`
+    /// (`:4383-4386`), a live index runs `ShopHelper.GetShoppingSettings`
+    /// (`:4389`). The bestiary chat tracker (`:4381`), the ≤0.82
+    /// achievement (`:4391-4394`) and the portrait reset (`:4397+`) ride
+    /// their own lanes.
+    pub(crate) fn set_talk_npc(&mut self, idx: Option<usize>) {
+        self.talk_npc = idx;
+        self.shopping_settings = match idx {
+            None => crate::happiness::ShoppingSettings::default(),
+            Some(i) => {
+                let pc = self.player.as_ref().map(|p| p.center()).unwrap_or((0.0, 0.0));
+                let raining = self.world.raining;
+                crate::happiness::shopping_settings(
+                    &self.world,
+                    &self.npcs,
+                    &self.npcs[i],
+                    pc,
+                    raining,
+                )
+            }
+        };
+    }
+
     /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-
     /// closes with the shop (`Main.cs:41574-41578`'s talk/chest change
     /// `dropItemCheck`); the slot item returns to the inventory through
@@ -3540,6 +3569,7 @@ impl App {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            shopping_settings: crate::happiness::ShoppingSettings::default(),
             gpu: None,
             renderer: None,
             post: None,
