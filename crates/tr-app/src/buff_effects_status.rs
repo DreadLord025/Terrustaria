@@ -360,3 +360,364 @@ pub fn run_status_buff_chain(
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx<'a>(
+        owned: &'a [i32],
+        solid: &'a dyn Fn(i32, i32) -> bool,
+    ) -> StatusEffectContext<'a> {
+        StatusEffectContext {
+            owned_projectile_counts: owned,
+            day_time: false,
+            wolf_acc: true,
+            merman: false,
+            shimmer_wet: false,
+            x: 320.0,
+            y: 160.0,
+            width: 20,
+            height: 42,
+            underworld_layer: 2000.0,
+            solid3: solid,
+        }
+    }
+
+    fn run(buff: i32, c: &StatusEffectContext) -> StatusEffects {
+        let mut e = StatusEffects::default();
+        assert!(apply_status_effect_arm(&mut e, c, buff, 600), "id {buff}");
+        e
+    }
+
+    const NO_SOLID: fn(i32, i32) -> bool = |_, _| false;
+
+    #[test]
+    fn s1_e_7e_every_late_pet_row_pins_sets_and_spawns() {
+        // One assertion set per id — the 20 rows of `Player.cs:11406-11706`.
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        assert_eq!(STATUS_PET_ARMS.len(), 20);
+        for arm in STATUS_PET_ARMS {
+            let e = run(arm.buff, &c);
+            assert_eq!(e.buff_time_set, Some(18000), "buff {}", arm.buff);
+            assert_eq!(e.pet_flags, vec![arm.flag], "buff {}", arm.buff);
+            assert_eq!(e.pet_spawns, vec![arm.proj], "buff {}", arm.buff);
+            assert!(!e.crystal_leaf_dedupe);
+        }
+    }
+
+    #[test]
+    fn s1_e_7e_the_pet_spawn_gate_is_the_owned_count() {
+        // `:11410-11414`: owned > 0 → flag + pin still run, NO spawn.
+        let mut owned = vec![0i32; 1000];
+        owned[319] = 1;
+        let c = ctx(&owned, &NO_SOLID);
+        let e = run(84, &c);
+        assert_eq!(e.buff_time_set, Some(18000));
+        assert_eq!(e.pet_flags, vec!["blackCat"]);
+        assert!(e.pet_spawns.is_empty());
+    }
+
+    #[test]
+    fn s1_e_7e_crystal_leaf_spawns_at_zero_dedupes_past_one() {
+        // `Player.cs:11658-11678`: the pool walk keeps the first owned 226.
+        let mut owned = vec![0i32; 1000];
+        let c0 = ctx(&owned, &NO_SOLID);
+        let e = run(60, &c0);
+        assert_eq!(e.buff_time_set, Some(18000));
+        assert_eq!(e.pet_flags, vec!["crystalLeaf"]);
+        assert_eq!(e.pet_spawns, vec![226]);
+        assert!(!e.crystal_leaf_dedupe);
+        owned[226] = 1;
+        let c1 = ctx(&owned, &NO_SOLID);
+        let e = run(60, &c1);
+        assert!(e.pet_spawns.is_empty());
+        assert!(!e.crystal_leaf_dedupe);
+        owned[226] = 3;
+        let c3 = ctx(&owned, &NO_SOLID);
+        let e = run(60, &c3);
+        assert!(e.pet_spawns.is_empty());
+        assert!(e.crystal_leaf_dedupe);
+    }
+
+    #[test]
+    fn s1_e_7e_the_bare_status_flag_arms() {
+        // One assertion per bare-flag id (`Player.cs:11727-11885`).
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        assert!(run(80, &c).blackout); // `:11729`
+        assert!(run(320, &c).dripping_sparkle_slime); // `:11758`
+        let e = run(163, &c); // `:11828-11829` — BOTH fields
+        assert!(e.headcovered && e.bleed);
+        assert!(run(164, &c).vortex_debuff); // `:11833`
+        assert!(run(194, &c).wind_pushed); // `:11837`
+        assert!(run(195, &c).withered_armor); // `:11841`
+        assert!(run(196, &c).withered_weapon); // `:11849`
+        assert!(run(197, &c).slow_ogre_spit); // `:11853`
+        assert!(run(198, &c).parry_damage_buff); // `:11857`
+        assert!(run(145, &c).moon_leech); // `:11861`
+        assert!(run(43, &c).defended_by_paladin); // `:11884`
+        assert!(run(336, &c).hearty_meal); // `:12011` — flag ONLY
+        let e = run(336, &c);
+        assert_eq!(e.stat_defense, 0);
+        assert_eq!(e.move_speed, 0.0);
+    }
+
+    #[test]
+    fn s1_e_7e_shimmering_pins_state_and_fall_start() {
+        // `Player.cs:11786-11788`: shimmering + frozen + fallStart, always.
+        let owned = vec![0i32; 1000];
+        let solid: fn(i32, i32) -> bool = |_, _| true;
+        let c = ctx(&owned, &solid);
+        let e = run(353, &c);
+        assert!(e.shimmering && e.frozen);
+        assert_eq!(e.fall_start_set, Some(10)); // (int)(160 / 16)
+        assert_eq!(e.buff_time_set, Some(6)); // solid overlap
+        assert!(!e.delete_buff && !e.rescan_slot);
+    }
+
+    #[test]
+    fn s1_e_7e_shimmering_dies_below_the_underworld_layer() {
+        // `:11793-11800`: position.Y / 16 > UnderworldLayer → DelBuff.
+        let owned = vec![0i32; 1000];
+        let mut c = ctx(&owned, &NO_SOLID);
+        c.y = 32_016.0; // 2001 tiles > 2000
+        let e = run(353, &c);
+        assert!(e.delete_buff);
+        assert!(!e.rescan_slot); // the C# `continue` — NO j--
+        assert_eq!(e.buff_time_set, None);
+        assert!(e.shimmering); // the state writes ran BEFORE the delete
+    }
+
+    #[test]
+    fn s1_e_7e_shimmering_holds_sixty_in_shimmer() {
+        // `:11801-11805`: shimmerWet → buffTime = 60, no tile scan.
+        let owned = vec![0i32; 1000];
+        let mut c = ctx(&owned, &NO_SOLID);
+        c.shimmer_wet = true;
+        let e = run(353, &c);
+        assert_eq!(e.buff_time_set, Some(60));
+        assert!(!e.delete_buff);
+    }
+
+    #[test]
+    fn s1_e_7e_shimmering_dies_without_a_solid_tile() {
+        // `:11806-11824`: no SolidTile3 in the box → DelBuff (no rescan).
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        let e = run(353, &c);
+        assert!(e.delete_buff);
+        assert!(!e.rescan_slot);
+        assert_eq!(e.buff_time_set, None);
+    }
+
+    #[test]
+    fn s1_e_7e_shimmering_scan_bounds_are_inclusive_floats() {
+        // `:11807-11809`: `(float)num <= (pos + size) / 16f` — the far-edge
+        // tile counts. Box 320..340 x 160..202 → x tiles 20..=21, y 10..=12.
+        let owned = vec![0i32; 1000];
+        let solid = |x: i32, y: i32| x == 21 && y == 12;
+        let c = ctx(&owned, &solid);
+        let e = run(353, &c);
+        assert_eq!(e.buff_time_set, Some(6));
+        // One tile past the far edge must NOT count.
+        let solid_out = |x: i32, y: i32| x == 22 || y == 13;
+        let c = ctx(&owned, &solid_out);
+        let e = run(353, &c);
+        assert!(e.delete_buff);
+    }
+
+    #[test]
+    fn s1_e_7e_werewolf_grants_the_night_stat_block() {
+        // `Player.cs:11895-11904`: 0.051f damage AND speed (not 0.05).
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        let e = run(28, &c);
+        assert!(e.were_wolf);
+        assert_eq!(e.life_regen, 1);
+        assert_eq!(e.melee_crit, 2);
+        assert_eq!(e.melee_damage, 0.051);
+        assert_eq!(e.melee_speed, 0.051);
+        assert_eq!(e.stat_defense, 3);
+        assert_eq!(e.move_speed, 0.05);
+        assert!(!e.delete_buff);
+    }
+
+    #[test]
+    fn s1_e_7e_werewolf_dies_by_day_charmless_or_merman() {
+        // `:11905-11909`: each gate failure → DelBuff + the j-- rescan.
+        let owned = vec![0i32; 1000];
+        let mut c = ctx(&owned, &NO_SOLID);
+        c.day_time = true;
+        let e = run(28, &c);
+        assert!(e.delete_buff && e.rescan_slot);
+        assert!(!e.were_wolf);
+        let mut c = ctx(&owned, &NO_SOLID);
+        c.wolf_acc = false;
+        assert!(run(28, &c).delete_buff);
+        let mut c = ctx(&owned, &NO_SOLID);
+        c.merman = true;
+        assert!(run(28, &c).delete_buff);
+    }
+
+    #[test]
+    fn s1_e_7e_hungry_subtracts_the_tier_one_block() {
+        // `Player.cs:11979-11993` — no moveSpeed line in the C# arm.
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        let e = run(333, &c);
+        assert!(e.hungry && !e.starving);
+        assert_eq!(e.stat_defense, -2);
+        assert_eq!(e.melee_crit, -2);
+        assert_eq!(e.magic_crit, -2);
+        assert_eq!(e.ranged_crit, -2);
+        assert_eq!(e.melee_damage, -0.05);
+        assert_eq!(e.melee_speed, -0.05);
+        assert_eq!(e.magic_damage, -0.05);
+        assert_eq!(e.ranged_damage, -0.05);
+        assert_eq!(e.minion_damage, -0.05);
+        assert_eq!(e.minion_kb, -0.5);
+        assert_eq!(e.pick_speed, 0.05); // ADDS — mines slower
+        assert_eq!(e.move_speed, 0.0);
+    }
+
+    #[test]
+    fn s1_e_7e_starving_subtracts_the_tier_two_block() {
+        // `Player.cs:11994-12008`.
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        let e = run(334, &c);
+        assert!(e.starving && !e.hungry);
+        assert_eq!(e.stat_defense, -4);
+        assert_eq!(e.melee_crit, -4);
+        assert_eq!(e.melee_damage, -0.1);
+        assert_eq!(e.melee_speed, -0.1);
+        assert_eq!(e.minion_kb, -1.0);
+        assert_eq!(e.pick_speed, 0.15);
+        assert_eq!(e.move_speed, 0.0);
+    }
+
+    #[test]
+    fn s1_e_7e_two_hunger_slots_stack_like_the_chain() {
+        // The C# `for j` runs the arm per slot — sequential adds. (Raw
+        // slots: `AddBuff`'s IsFedState cleanup would evict the first.)
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        let mut slots = BuffSlots::default();
+        slots.buff_type[0] = 333;
+        slots.buff_time[0] = 600;
+        slots.buff_type[1] = 333;
+        slots.buff_time[1] = 600;
+        let out = run_status_buff_chain(&mut slots, &c);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].stat_defense, -2);
+        assert_eq!(out[1].stat_defense, -2);
+        let mut sum = StatusEffects::default();
+        for e in &out {
+            sum.stat_defense += e.stat_defense;
+            sum.melee_damage += e.melee_damage;
+            sum.pick_speed += e.pick_speed;
+        }
+        assert_eq!(sum.stat_defense, -4);
+        assert_eq!(sum.melee_damage, -(0.05f32 + 0.05f32));
+        assert_eq!(sum.pick_speed, 0.05f32 + 0.05f32);
+    }
+
+    #[test]
+    fn s1_e_7e_ids_outside_the_block_return_false() {
+        // The neighbours stay with their owners: wave A (1/3/104), wave B
+        // (46/144), c17 (94/396), c18 (62/49), live tail (205/149/29/33/
+        // 25/26/206/207), the DoT flags (70/20/24/103), the imbues (71).
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        for id in [
+            1, 3, 104, 46, 144, 94, 396, 62, 49, 205, 149, 29, 33, 25, 26, 206, 207, 70, 20,
+            24, 103, 71, 0, -1, 401,
+        ] {
+            let mut e = StatusEffects::default();
+            assert!(!apply_status_effect_arm(&mut e, &c, id, 600), "id {id}");
+            assert_eq!(e, StatusEffects::default(), "id {id} wrote");
+        }
+    }
+
+    #[test]
+    fn s1_e_7e_the_driver_runs_slots_in_order_and_pins_pet_times() {
+        // Raw slots: `AddBuff` would evict the earlier vanity pet.
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        let mut slots = BuffSlots::default();
+        for (j, (id, t)) in [(80, 300), (84, 7), (136, 9)].into_iter().enumerate() {
+            slots.buff_type[j] = id;
+            slots.buff_time[j] = t;
+        }
+        let out = run_status_buff_chain(&mut slots, &c);
+        assert_eq!(out.len(), 3);
+        assert!(out[0].blackout);
+        assert_eq!(out[1].pet_flags, vec!["blackCat"]);
+        assert_eq!(out[2].pet_flags, vec!["miniMinotaur"]);
+        // The 18000 pin landed on the live slots (`:11408`/`:11695`).
+        assert_eq!(slots.buff_time[1], 18000);
+        assert_eq!(slots.buff_time[2], 18000);
+        // Blackout's timer is untouched (no assignment in its arm).
+        assert_eq!(slots.buff_time[0], 300);
+    }
+
+    #[test]
+    fn s1_e_7e_werewolf_delete_rescans_the_compacted_slot() {
+        // `:11907-11908`: DelBuff(j); j-- — the buff compacted into the
+        // slot RUNS this pass (day-time Werewolf ahead of Blackout).
+        let owned = vec![0i32; 1000];
+        let mut c = ctx(&owned, &NO_SOLID);
+        c.day_time = true;
+        let mut slots = BuffSlots::default();
+        slots.add_buff(28, 300);
+        slots.add_buff(80, 300);
+        let out = run_status_buff_chain(&mut slots, &c);
+        assert_eq!(out.len(), 2);
+        assert!(out[0].delete_buff && out[0].rescan_slot);
+        assert!(out[1].blackout); // the compacted buff was NOT skipped
+        assert!(slots.find_buff_index(28).is_none());
+        assert!(slots.find_buff_index(80).is_some());
+    }
+
+    #[test]
+    fn s1_e_7e_shimmering_delete_does_not_rescan() {
+        // `:11823` DelBuff WITHOUT j-- then `continue`: the compacted
+        // buff is SKIPPED this pass (the C# loop's j++ moves past it).
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID); // no solid tiles → the buff dies
+        let mut slots = BuffSlots::default();
+        slots.add_buff(353, 300);
+        slots.add_buff(80, 300);
+        let out = run_status_buff_chain(&mut slots, &c);
+        assert_eq!(out.len(), 1); // Blackout compacted into slot 0, skipped
+        assert!(out[0].delete_buff && !out[0].rescan_slot);
+        assert!(slots.find_buff_index(353).is_none());
+        assert!(slots.find_buff_index(80).is_some());
+    }
+
+    #[test]
+    fn s1_e_7e_the_block_draws_no_rng() {
+        // RNG census witness: the whole chain runs WITHOUT a random
+        // source — the signature carries no `UnifiedRandom` (zero direct
+        // draws in `Player.cs:11406-12012`); the pet spawns are REQUESTS
+        // (`pet_spawns`), so the pool's init rolls never fire here. A
+        // mirrored stream stays byte-identical across the pass.
+        use tr_core::unified_random::UnifiedRandom;
+        let owned = vec![0i32; 1000];
+        let c = ctx(&owned, &NO_SOLID);
+        let mut a = UnifiedRandom::new(12345);
+        let mut b = UnifiedRandom::new(12345);
+        let mut slots = BuffSlots::default();
+        for (j, id) in [84, 61, 60, 80, 353, 28, 333, 334, 336]
+            .into_iter()
+            .enumerate()
+        {
+            slots.buff_type[j] = id;
+            slots.buff_time[j] = 600;
+        }
+        let _ = run_status_buff_chain(&mut slots, &c);
+        assert_eq!(a.next_max(1_000_000), b.next_max(1_000_000));
+    }
+}
