@@ -1183,6 +1183,61 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player::update_summon_buff_arms`): the recount
             p.update_projectile_caches(&app.projectiles);
             p.update_summon_buff_arms(&mut app.projectiles, &app.inventory);
+            // W4-f12 — the `UpdateBuffs` frame WIRING: one slot-ordered pass
+            // over the buff bar in the exact C# `else if` chain order, driving
+            // the gathered wave modules + the canonical g27 orb module
+            // (keep-one) and folding their accumulators onto the live fields.
+            // Runs AFTER the summon pass (which owns the keep-alives + the
+            // 110/150/348 cap rows) and BEFORE the accessory pass (which owns
+            // the pets/imbues); the wiring skips those ids (no double grant).
+            // The frame head/tails (`:9857-9864`, `:12046-12067`) ride along.
+            {
+                let dont_starve = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+                let remix = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+                let held_item_type = app.inventory[app.selected].kind as i32;
+                let day_time = app.world.day_time;
+                // `WorldGen.SolidTile3` (`WorldGen.cs:70465-70483`) — the
+                // LOOSEST solid test (actuated tiles stay solid); the 1-tile
+                // border refusal maps to the out-of-bounds `None`.
+                let solid3 = |x: i32, y: i32| -> bool {
+                    if x < 1 || x >= app.world.width - 1 || y < 1 || y >= app.world.height - 1 {
+                        return false;
+                    }
+                    let Some(t) = app.world.tile(x, y) else {
+                        return false;
+                    };
+                    t.active()
+                        && !t.inactive()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                };
+                let inputs = crate::buff_frame_wiring::BuffFrameInputs {
+                    day_time,
+                    dont_starve,
+                    remix,
+                    solid3: &solid3,
+                    held_item_type,
+                };
+                crate::buff_frame_wiring::update_buff_frame(
+                    p,
+                    &mut app.projectiles,
+                    &app.world,
+                    &inputs,
+                );
+                // Drain the frame's emote / Hungry-sound requests onto the
+                // live seams (`EmoteBubble.MakeLocalPlayerEmote`,
+                // `SoundEngine.PlaySound(SoundID.Hungry)`).
+                for emote in p.pending_frame_emotes.drain(..) {
+                    app.emotes.new_bubble(emote);
+                }
+                for _ in 0..p.pending_hungry_sounds {
+                    app.audio.play("hungry");
+                }
+                p.pending_hungry_sounds = 0;
+            }
             // S1-E-7 wave C: the accessory/set-bonus buff arms
             // (`Player.cs:10800-11400` + the imbues `:12013-12044`) — the
             // same `UpdateBuffs` slot chain, in its own module so waves A/B

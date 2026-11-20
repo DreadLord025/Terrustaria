@@ -28,6 +28,7 @@ mod buffs;
 mod buff_effects_accessory;
 mod buff_effects_boosters;
 mod buff_effects_tail;
+mod buff_frame_wiring;
 mod bug_net;
 mod chat;
 mod chest;

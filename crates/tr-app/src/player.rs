@@ -2032,6 +2032,104 @@ pub struct Player {
     /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
     /// sets the 881 and 934 flags shared with buffs 284/317).
     pub pet_flags: [bool; PROJ_COUNT],
+    // ---- W4-f12: the buff-frame wiring's persistent state (the C# `Player`
+    // fields the orb scan / ice barrier / frame read-write across ticks).
+    /// The lunar-orb scan counters (`beetleOrbs`/`solarShields`/`nebulaLevel*`,
+    /// `Player.cs:18501`/`:18505`/`:18755` zero them every frame) — the
+    /// canonical `buff_effects_orbs.rs` module owns them; `reset_effects()`
+    /// runs once per frame before the scan (the g27 merger contract).
+    pub orb_scan: crate::buff_effects_orbs::OrbScanState,
+    /// `Player.beetleBuff` (`Player.cs:18502`'s clear, `:10374`/`:10441`'s
+    /// grant) — the beetle-orb visual lane's flag (unported consumer).
+    pub beetle_buff: bool,
+    /// `Player.iceBarrier` (`Player.cs:18446`'s clear, `:10467`'s grant).
+    pub ice_barrier: bool,
+    /// `Player.iceBarrierFrameCounter`/`iceBarrierFrame` (`Player.cs:10469-
+    /// 10478`) — the 3-tick × 12-frame barrier animation pair; NOT reset per
+    /// tick (the barrier keeps its phase across ticks).
+    pub ice_barrier_frame_counter: i32,
+    pub ice_barrier_frame: i32,
+    /// The `UpdateBuffs` frame's persistent fields (`oldLuckPotion`
+    /// `Player.cs:1136`, `lavaOpacity` `:1534` `= 1f`) — neither is cleared by
+    /// `ResetEffects`; `buff_effects_frame.rs` owns the ladder.
+    pub frame_state: crate::buff_effects_frame::FrameState,
+    /// `Player.soulDrain` (`Player.cs:820`) — the Spirit Flame's drain
+    /// counter; the frame head grants buff 151 while it is positive
+    /// (`:9857`). The Spirit Flame producer is unported (the field stays 0).
+    pub soul_drain: i32,
+    /// `Player.infernoCounter` (`Player.cs:1104`) — the Inferno aura's 60-tick
+    /// damage cadence (`:10218`), incremented per tick (`:24595-24598`, cap
+    /// 180). The aura scan itself is deferred (needs the world roster).
+    pub inferno_counter: i32,
+    // ---- W4-f12: the wired debuff/status flag halves (the C# `Player` bools
+    // the wave-B/E arms set; `ResetEffects` clears them, the scan re-arms).
+    // The DoT flags (poisoned/venom/onFire/…) are NOT here — the regen lane
+    // reads them off the buff bar via `holding()` (derive_dot_inputs).
+    pub stoned: bool,            // 156, `:10057`
+    pub ichor: bool,             // 69, `:10061`
+    pub broken_armor: bool,      // 36, `:10066`
+    pub honey: bool,             // 48, `:10070`
+    pub palladium_regen: bool,   // 58, `:10082`
+    pub has_titanium_storm_buff: bool, // 306, `:10086`
+    pub chaos_state: bool,       // 88, `:10090`
+    pub accelerate_poisons: bool, // 398, `:10094`
+    pub blue_lightning: bool,    // 399, `:10098`
+    pub red_lightning: bool,     // 400, `:10102`
+    pub calmed: bool,            // 106, `:10142`
+    pub danger_sense: bool,      // 111, `:10189`
+    pub life_force: bool,        // 113, `:10197`
+    pub inferno: bool,           // 116, `:10212`
+    pub love_struck: bool,       // 119, `:10272`
+    pub dryad_ward: bool,        // 165, `:10303`
+    pub electrified: bool,       // 144, `:10313`
+    pub tipsy: bool,             // 25, `:11918`
+    pub blackout: bool,          // 80, `:11727`
+    pub dripping_sparkle_slime: bool, // 320, `:11756`
+    pub headcovered: bool,       // 163, `:11826`
+    pub bleed: bool,             // 163, `:11829`
+    pub wind_pushed: bool,       // 194, `:11835`
+    pub withered_armor: bool,    // 195, `:11839`
+    pub withered_weapon: bool,   // 196, `:11847`
+    pub slow_ogre_spit: bool,    // 197, `:11851`
+    pub parry_damage_buff: bool, // 198, `:11855`
+    pub moon_leech: bool,        // 145, `:11859`
+    pub defended_by_paladin: bool, // 43, `:11882`
+    pub were_wolf: bool,         // 28, `:11893`
+    pub hungry: bool,            // 333, `:11979`
+    pub starving: bool,          // 334, `:11994`
+    pub hearty_meal: bool,       // 336, `:12009`
+    // The DoT flag halves (the C# `Player` bools the wave-D misc arms set;
+    // the regen lane reads them off the buff bar via `holding()`, so these
+    // are the faithful record of the C# write, not the regen input).
+    pub venom: bool,             // 70, `:11707`
+    pub chlorophyte_spore: bool, // 397, `:11711`
+    pub poisoned: bool,          // 20, `:11715`
+    pub on_fire: bool,           // 24, `:11736`
+    pub dripping: bool,          // 103, `:11747`
+    pub dripping_slime: bool,    // 137, `:11752`
+    pub burned: bool,            // 67, `:11760`
+    pub suffocating: bool,       // 68, `:11764`
+    pub on_fire2: bool,          // 39, `:11768`
+    pub on_fire3: bool,          // 323, `:11772`
+    pub on_frost_burn: bool,     // 44, `:11776`
+    pub on_frost_burn2: bool,    // 324, `:11780`
+    /// `Player.blockRange` bonus (`:10162` Builder `blockRange++`).
+    pub block_range: i32,
+    /// `Player.statLifeMax2` (`:10200` Lifeforce add; the base is `max_hp`).
+    pub stat_life_max2: i32,
+    /// `Player.luckNeedsSync` (`:12049`) — the luck-tier change's net flag.
+    pub luck_needs_sync: bool,
+    /// W4-f12 — the buff arms' `lifeRegen` adds (the orb Nebula Life `:10451`,
+    /// the booster Nebula Life, the debuff Dryad's Ward `:10305`, the status
+    /// Werewolf `:11897`). A SEPARATE accumulator from `accessory_life_regen`
+    /// (which the equip pass resets AFTER the wiring seam); folded into
+    /// `RegenInputs::extra_regen` beside it. `ResetEffects` zeroes it.
+    pub buff_life_regen: i32,
+    /// The frame's emote requests (`EmoteBubble.MakeLocalPlayerEmote`,
+    /// `:12118`/`:12137`/`:12179`) — the world_sim seam drains them.
+    pub pending_frame_emotes: Vec<i32>,
+    /// The frame's `SoundID.Hungry` play count (`:12138`) — the seam drains it.
+    pub pending_hungry_sounds: u32,
     // `Player.shroomiteStealth` + `stealth` (`Player.cs`): the shroomite
     // armour's ranged knockback scale (`Main.cs:20342-20345`).
     pub shroomite_stealth: bool,
@@ -2906,6 +3004,65 @@ impl Player {
             rabid: false,
             melee_enchant: 0,
             pet_flags: [false; PROJ_COUNT],
+            orb_scan: crate::buff_effects_orbs::OrbScanState::default(),
+            beetle_buff: false,
+            ice_barrier: false,
+            ice_barrier_frame_counter: 0,
+            ice_barrier_frame: 0,
+            frame_state: crate::buff_effects_frame::FrameState::default(),
+            soul_drain: 0,
+            inferno_counter: 0,
+            stoned: false,
+            ichor: false,
+            broken_armor: false,
+            honey: false,
+            palladium_regen: false,
+            has_titanium_storm_buff: false,
+            chaos_state: false,
+            accelerate_poisons: false,
+            blue_lightning: false,
+            red_lightning: false,
+            calmed: false,
+            danger_sense: false,
+            life_force: false,
+            inferno: false,
+            love_struck: false,
+            dryad_ward: false,
+            electrified: false,
+            tipsy: false,
+            blackout: false,
+            dripping_sparkle_slime: false,
+            headcovered: false,
+            bleed: false,
+            wind_pushed: false,
+            withered_armor: false,
+            withered_weapon: false,
+            slow_ogre_spit: false,
+            parry_damage_buff: false,
+            moon_leech: false,
+            defended_by_paladin: false,
+            were_wolf: false,
+            hungry: false,
+            starving: false,
+            hearty_meal: false,
+            venom: false,
+            chlorophyte_spore: false,
+            poisoned: false,
+            on_fire: false,
+            dripping: false,
+            dripping_slime: false,
+            burned: false,
+            suffocating: false,
+            on_fire2: false,
+            on_fire3: false,
+            on_frost_burn: false,
+            on_frost_burn2: false,
+            block_range: 0,
+            stat_life_max2: 0,
+            luck_needs_sync: false,
+            buff_life_regen: 0,
+            pending_frame_emotes: Vec::new(),
+            pending_hungry_sounds: 0,
             shroomite_stealth: false,
             stealth: 0.0,
             space_gun: false,
@@ -5690,6 +5847,12 @@ impl Player {
         // `Player.cs:24591`: the tag stack's update right after the buff head —
         // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
         self.tag_effects.update_tick();
+        // `Player.cs:24595-24598`: the Inferno aura's cadence counter ticks
+        // and caps at 180 (the `:10218` `% 60 == 0` damage gate reads it).
+        self.inferno_counter += 1;
+        if self.inferno_counter >= 180 {
+            self.inferno_counter = 0;
+        }
         // `Player.cs:24600-24604`: the dash-age counter ticks and caps at 300
         // (the wings-45 run-slowdown ×6 reads it at >= 60).
         self.time_since_last_dash_started += 1;
@@ -5999,6 +6162,71 @@ impl Player {
         // is unported, `potions.rs`'s tail note).
         self.mana_sick = false;
         self.mana_heat = 1.0;
+        // W4-f12 — the orb-scan / ice-barrier `ResetEffects` clears: the
+        // canonical orb module's counters (`beetleOrbs` `:18501`,
+        // `solarShields` `:18505`, the nebula trio `:18755`) zero every frame
+        // via `reset_effects()` (the g27 merger contract — c17's correction
+        // over d73's persistence claim); `beetleBuff` `:18502` and
+        // `iceBarrier` `:18446` clear beside them. The ice frame pair is NOT
+        // reset (the barrier keeps its phase across ticks, `:10469-10478`).
+        self.orb_scan.reset_effects();
+        self.beetle_buff = false;
+        self.ice_barrier = false;
+        // W4-f12 — the pet/light-pet flag clear (`Player.cs:18413-18600`),
+        // moved here from the accessory pass so it precedes BOTH the wiring
+        // pass's late-pet grants and the accessory pass's pet grants.
+        self.pet_flags = [false; PROJ_COUNT];
+        // W4-f12 — the wired debuff/status flag clears (`ResetEffects`, the
+        // per-flag citations ride the field docs). The scan re-arms them.
+        self.stoned = false;
+        self.ichor = false;
+        self.broken_armor = false;
+        self.honey = false;
+        self.palladium_regen = false;
+        self.has_titanium_storm_buff = false;
+        self.chaos_state = false;
+        self.accelerate_poisons = false;
+        self.blue_lightning = false;
+        self.red_lightning = false;
+        self.calmed = false;
+        self.danger_sense = false;
+        self.life_force = false;
+        self.inferno = false;
+        self.love_struck = false;
+        self.dryad_ward = false;
+        self.electrified = false;
+        self.tipsy = false;
+        self.blackout = false;
+        self.dripping_sparkle_slime = false;
+        self.headcovered = false;
+        self.bleed = false;
+        self.wind_pushed = false;
+        self.withered_armor = false;
+        self.withered_weapon = false;
+        self.slow_ogre_spit = false;
+        self.parry_damage_buff = false;
+        self.moon_leech = false;
+        self.defended_by_paladin = false;
+        self.were_wolf = false;
+        self.hungry = false;
+        self.starving = false;
+        self.hearty_meal = false;
+        self.venom = false;
+        self.chlorophyte_spore = false;
+        self.poisoned = false;
+        self.on_fire = false;
+        self.dripping = false;
+        self.dripping_slime = false;
+        self.burned = false;
+        self.suffocating = false;
+        self.on_fire2 = false;
+        self.on_fire3 = false;
+        self.on_frost_burn = false;
+        self.on_frost_burn2 = false;
+        self.block_range = 0;
+        self.stat_life_max2 = self.max_hp; // the Lifeforce add stacks on the base
+        self.luck_needs_sync = false;
+        self.buff_life_regen = 0;
         // `:18338`/`:18396-18399` — the ranged effective-damage components.
         self.ranged_mult_damage = 1.0;
         self.arrow_damage = 1.0;
@@ -6521,13 +6749,14 @@ impl Player {
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
                 // +12 armor penetration.
                 159 => self.melee_armor_penetration += 12,
-                // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
-                // Shell): +25% while at or below half life.
-                62 => {
-                    if self.hp as f32 <= self.max_hp as f32 * 0.5 {
-                        self.endurance += 0.25;
-                    }
-                }
+                // W4-f12 keep-one: the Ice Barrier (62) arm moved WHOLESALE to
+                // the wiring pass (`buff_frame_wiring.rs` → d73
+                // `apply_booster_effect_arm`, `Player.cs:10462-10485`): the
+                // flag + the 3-tick × 12-frame counter + the above-half-life
+                // `DelBuff(j); j--` were the missing halves, and the endurance
+                // +0.25 rides the SAME arm now (the C# gate is `statLifeMax2`,
+                // the f64 compare). The inline endurance-only half is folded
+                // out so it is not applied twice (the g27/d73 merge contract).
                 // `:11887-11892` — `BuffID.MagicPower` (29): the crit, the
                 // damage, the 20 mana and the −0.02 cost.
                 29 => {
@@ -11164,7 +11393,7 @@ impl Player {
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting || self.sleeping,
-                extra_regen: self.accessory_life_regen,
+                extra_regen: self.accessory_life_regen + self.buff_life_regen,
                 // S1-C-12 wave D — the Crimson set's regen halves
                 // (`ArmorSetBonuses.cs:248-251` grants the flag):
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
