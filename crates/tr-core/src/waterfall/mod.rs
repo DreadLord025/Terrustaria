@@ -931,4 +931,98 @@ mod tests {
         let (_, scan_both) = mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, near, false);
         assert_eq!(scan_both, scan_single);
     }
+
+    /// `WaterfallManager.cs:358`: the lava fall animates on `32 * slowFrame`
+    /// (the 7-tick counter), not the 3-tick regular frame the water falls use.
+    #[test]
+    fn lava_frames_ride_the_slow_counter() {
+        let w = lava_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let screen = screen_at(0.0, 0.0);
+        let lava_x = |mgr: &mut WaterfallManager| -> i32 {
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+            mgr.take_quads()
+                .iter()
+                .find(|d| d.texture == 1)
+                .expect("the lava fall draws")
+                .source[0]
+        };
+        // Tick 0: slowFrame 0 — the sheet's first 32 px column.
+        assert_eq!(lava_x(&mut mgr), 0);
+        // 7 ticks advance slowFrame to 1 (`UpdateFrame`'s >6 gate).
+        for _ in 0..7 {
+            mgr.update_tick();
+        }
+        assert_eq!(lava_x(&mut mgr), 32);
+        // 7 more: slowFrame 2. The regular frame has advanced 4 times by now
+        // (ticks 3/6/9/12) — a regular-frame fall would sit at 128, not 64.
+        for _ in 0..7 {
+            mgr.update_tick();
+        }
+        assert_eq!(lava_x(&mut mgr), 64);
+    }
+
+    /// `WaterfallManager.StylizeColor` case 1 (`WaterfallManager.cs:995-1008`):
+    /// the lava tint floors every channel at `190 * alpha` — an unlit fall
+    /// still glows at 190/255, and `GetAlpha` keeps lava at alpha 1.0 even
+    /// below `worldSurface` (`:1034`).
+    #[test]
+    fn lava_quads_carry_the_190_self_glow_floor() {
+        let mut w = lava_spout_world();
+        // Push the spout below the surface: the water 0.6 dim must NOT apply.
+        w.world_surface = 5.0;
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new(); // unlit: GetColor returns black
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
+        );
+        let out = mgr.take_quads();
+        let lava: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 1).collect();
+        assert!(!lava.is_empty());
+        for q in &lava {
+            // (int)(190 * 1.0) / 255 on every channel, alpha 255.
+            assert_eq!(q.color, [190.0 / 255.0, 190.0 / 255.0, 190.0 / 255.0, 1.0]);
+        }
+        // The fade tail (`GetAlpha`'s last-10-steps ramp, `:1039-1042`) scales
+        // the floor with alpha: the final segment's channels drop below 190.
+        let last = lava.last().unwrap();
+        assert!(last.color[0] < 190.0 / 255.0);
+    }
+
+    /// `WaterfallManager.AddLight` case 1 (`WaterfallManager.cs:1071-1075`):
+    /// `(0.55 + (270 - mouseTextColor)/900) * 0.4` red-dominant, one row per
+    /// walked cell — the flicker rides the shared `mouseTextColor` pulse.
+    #[test]
+    fn lava_glow_flickers_with_mouse_text_color() {
+        let w = lava_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let screen = screen_at(0.0, 0.0);
+        let (dim, _) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+        let (bright, _) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false);
+        assert_eq!(dim.len(), bright.len());
+        assert!(!dim.is_empty());
+        let n_dim = (0.55 + (270.0 - 190.0) / 900.0) * 0.4;
+        let n_bright = (0.55 + (270.0 - 255.0) / 900.0) * 0.4;
+        assert!((dim[0].rgb[0] - n_dim).abs() < 1e-6);
+        assert!((bright[0].rgb[0] - n_bright).abs() < 1e-6);
+        assert!(bright[0].rgb[0] > dim[0].rgb[0]);
+        for l in dim.iter().chain(bright.iter()) {
+            assert!((l.rgb[1] - l.rgb[0] * 0.3).abs() < 1e-6);
+            assert!((l.rgb[2] - l.rgb[0] * 0.1).abs() < 1e-6);
+        }
+        // One light per walked cell, in walk order down column 10.
+        for (j, l) in dim.iter().enumerate() {
+            assert_eq!((l.x, l.y), (10, 10 + j as i32));
+        }
+    }
 }
