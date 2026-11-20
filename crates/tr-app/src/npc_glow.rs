@@ -138,6 +138,28 @@ pub const NPC_GLOW_RECORDS: &[NpcGlowRecord] = &[
     NpcGlowRecord { npc: 411, masks: &[136], line: 26109 },
     // :26112 — StardustSpiderBig 409, (255-alpha) grey a=255-alpha.
     NpcGlowRecord { npc: 409, masks: &[138], line: 26112 },
+    // :26115 — StardustSpiderSmall 410, (255-alpha) grey a=255-alpha.
+    NpcGlowRecord { npc: 410, masks: &[137], line: 26115 },
+    // :26118 — StardustJellyfishBig 407, same form.
+    NpcGlowRecord { npc: 407, masks: &[139], line: 26118 },
+    // :26121 — StardustCellBig 405, (128-alpha/2) grey a0.
+    NpcGlowRecord { npc: 405, masks: &[141], line: 26121 },
+    // :26124 — StardustCellSmall 406, same.
+    NpcGlowRecord { npc: 406, masks: &[142], line: 26124 },
+    // :26127 — NebulaSoldier 424, same.
+    NpcGlowRecord { npc: 424, masks: &[144], line: 26127 },
+    // :26130 — NebulaBeast 423, same.
+    NpcGlowRecord { npc: 423, masks: &[145], line: 26130 },
+    // :26133 — NebulaHeadcrab 421 body arm (the ai[0]==5 player-latch arm
+    // :25381 draws the same mask at the player anchor instead).
+    NpcGlowRecord { npc: 421, masks: &[146], line: 26133 },
+    // :26136 — NebulaBrain 420, (128-alpha/2) grey a0.
+    NpcGlowRecord { npc: 420, masks: &[147], line: 26136 },
+    // :26141 — VortexRifleman 425, same; the DrawPrettyStarSparkle at
+    // +27*-spriteDirection (:26144) is not a glow sheet.
+    NpcGlowRecord { npc: 425, masks: &[150], line: 26141 },
+    // :26148 — VortexSoldier 429, same.
+    NpcGlowRecord { npc: 429, masks: &[151], line: 26148 },
 ];
 
 #[cfg(test)]
@@ -151,5 +173,10 @@ mod tests {
         assert_eq!(r(426).masks, &[153]);
         assert_eq!(r(493).masks, &[132]);
         assert_eq!(r(568).masks, r(569).masks); // the shared WitherBeast arm
+        // 421 appears twice: the player-latch arm and the body arm.
+        let n421: Vec<_> = NPC_GLOW_RECORDS.iter().filter(|r| r.npc == 421).collect();
+        assert_eq!(n421.len(), 2);
+        assert_eq!(n421[0].line, 25381);
+        assert_eq!(n421[1].line, 26133);
     }
 }
