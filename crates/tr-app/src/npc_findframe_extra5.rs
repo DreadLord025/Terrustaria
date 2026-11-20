@@ -82,6 +82,21 @@ pub enum FindFrameExtra5Kind {
     /// `NPCID.MushiLadybug` = 258 (`NPCID.cs:11193`) — `case 258`
     /// (`NPC.cs:76225-76275`).
     MushiLadybug,
+    /// `NPCID.IchorSticker` = 268 (`NPCID.cs:11213`) — the 250/264
+    /// 6-tick strip group (`NPC.cs:72884-72897`).
+    IchorSticker,
+    /// `NPCID.RustyArmoredBonesAxe` = 269 (`NPCID.cs:11215`) — the
+    /// 269..280 Armored Bones group (`NPC.cs:75825-75882`).
+    RustyArmoredBonesAxe,
+    /// `NPCID.RustyArmoredBonesFlail` = 270 (`NPCID.cs:11217`) — the
+    /// same group.
+    RustyArmoredBonesFlail,
+    /// `NPCID.RustyArmoredBonesSword` = 271 (`NPCID.cs:11219`) — the
+    /// same group.
+    RustyArmoredBonesSword,
+    /// `NPCID.RustyArmoredBonesSwordNoArmor` = 272 (`NPCID.cs:11221`)
+    /// — the same group.
+    RustyArmoredBonesSwordNoArmor,
 }
 
 impl FindFrameExtra5Kind {
@@ -93,6 +108,11 @@ impl FindFrameExtra5Kind {
             Self::FungoFish => 256,
             Self::AnomuraFungus => 257,
             Self::MushiLadybug => 258,
+            Self::IchorSticker => 268,
+            Self::RustyArmoredBonesAxe => 269,
+            Self::RustyArmoredBonesFlail => 270,
+            Self::RustyArmoredBonesSword => 271,
+            Self::RustyArmoredBonesSwordNoArmor => 272,
         }
     }
 
@@ -107,6 +127,12 @@ impl FindFrameExtra5Kind {
             Self::FungoFish => 4,
             Self::AnomuraFungus => 5,
             Self::MushiLadybug => 6,
+            // Main.cs:67110 (268/269): 4, 15; :67111 (270/271/272): 15, 15, 15.
+            Self::IchorSticker => 4,
+            Self::RustyArmoredBonesAxe => 15,
+            Self::RustyArmoredBonesFlail => 15,
+            Self::RustyArmoredBonesSword => 15,
+            Self::RustyArmoredBonesSwordNoArmor => 15,
         }
     }
 }
@@ -120,6 +146,11 @@ pub fn find_frame_kind_extra5(vanilla_type: i16) -> Option<FindFrameExtra5Kind> 
         256 => FindFrameExtra5Kind::FungoFish,
         257 => FindFrameExtra5Kind::AnomuraFungus,
         258 => FindFrameExtra5Kind::MushiLadybug,
+        268 => FindFrameExtra5Kind::IchorSticker,
+        269 => FindFrameExtra5Kind::RustyArmoredBonesAxe,
+        270 => FindFrameExtra5Kind::RustyArmoredBonesFlail,
+        271 => FindFrameExtra5Kind::RustyArmoredBonesSword,
+        272 => FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor,
         _ => return None,
     })
 }
@@ -336,6 +367,76 @@ pub fn find_frame_extra5(kind: FindFrameExtra5Kind, s: &mut FrameState, i: &Fram
                 }
             }
         }
+        // `case 268` in the 250/264 strip group (`NPC.cs:72884-72897`
+        // — 250 is the port's AngryNimbus, 264 the PlanterasTentacle,
+        // both already carry the same machine in `npc.rs::find_frame`
+        // `:8354-8364`; keep-one at the merge): counter++ then >= 6
+        // steps a row + zeroes the counter, the row wraps at
+        // `npcFrameCount[268]` = 4 back to 0. No sprite/rotation
+        // write; velocity is ignored.
+        FindFrameExtra5Kind::IchorSticker => {
+            // `:72887-72896`.
+            s.counter += 1.0;
+            if s.counter >= 6.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= kind.frame_count() {
+                s.row = 0;
+            }
+        }
+        // `case 269/270/271/272` in the Armored Bones group (`NPC.cs:
+        // 75825-75882`, the 269..280 list — 273..277 ride batch 3,
+        // 278..280 the next slice): the grounded ±1 flip (`:75839-
+        // 75846`); the grounded idle snaps row 0 + zeroes the counter
+        // (`:75847-75859` — the `type == 140` row-1 branch is DEAD
+        // inside this case list, the header's skip); the walk lifts
+        // any row < 2 to 2 FIRST (`:75861-75864` — the first walk
+        // tick from idle jumps straight to row 2), then accumulates
+        // `|vx| * 2` PLUS 1 (`:75865-75866`), the > 6 counter steps a
+        // row (`:75867-75871`), wrapping at the sheet's full count
+        // back to row 2 (`:75872-75875` — rows 0/1 are idle/air-only
+        // on the walk); the AIR branch zeroes the counter and pins
+        // row 0 (`:75877-75881`). No rotation write.
+        FindFrameExtra5Kind::RustyArmoredBonesAxe
+        | FindFrameExtra5Kind::RustyArmoredBonesFlail
+        | FindFrameExtra5Kind::RustyArmoredBonesSword
+        | FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor => {
+            if i.vy == 0.0 {
+                // `:75839-75846`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                // `:75847-75859` — the dead 140 branch not carried.
+                if i.vx == 0.0 {
+                    s.row = 0;
+                    s.counter = 0.0;
+                    return;
+                }
+                // `:75861-75864`.
+                if s.row < 2 {
+                    s.row = 2;
+                }
+                // `:75865-75871`.
+                s.counter += i.vx.abs() * 2.0;
+                s.counter += 1.0;
+                if s.counter > 6.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                // `:75872-75875`.
+                if s.row >= kind.frame_count() {
+                    s.row = 2;
+                }
+            } else {
+                // `:75877-75881`.
+                s.counter = 0.0;
+                s.row = 0;
+            }
+        }
     }
 }
 
@@ -368,6 +469,11 @@ mod tests {
             FindFrameExtra5Kind::FungoFish,
             FindFrameExtra5Kind::AnomuraFungus,
             FindFrameExtra5Kind::MushiLadybug,
+            FindFrameExtra5Kind::IchorSticker,
+            FindFrameExtra5Kind::RustyArmoredBonesAxe,
+            FindFrameExtra5Kind::RustyArmoredBonesFlail,
+            FindFrameExtra5Kind::RustyArmoredBonesSword,
+            FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -448,13 +554,59 @@ mod tests {
         assert_eq!((s.row, s.counter), (0, 0.0));
     }
 
+    /// 268 the Ichor Sticker: the shared 6-tick strip over the FULL
+    /// 4 rows (`NPC.cs:72887-72896` — the 250/264 twins in `npc.rs`
+    /// are the same machine); velocity is ignored, no sprite write.
+    #[test]
+    fn f26s5_ichor_sticker_cycles_the_six_tick_strip() {
+        let rows = rows_over(FindFrameExtra5Kind::IchorSticker, input(3.0, -2.0), 24);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 0]
+        );
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        find_frame_extra5(FindFrameExtra5Kind::IchorSticker, &mut s, &input(-3.0, 0.0));
+        assert_eq!(s.sprite_dir, -1, "no sprite write");
+    }
+
+    /// 269..272 the rusty Armored Bones: the first walk tick lifts
+    /// row 0 to 2 THEN steps (`NPC.cs:75861-75871` — vx 4 gives
+    /// |vx|*2+1 = 9 > 6 every tick, so the walk strides a row per
+    /// tick from row 3); the wrap returns to row 2, not 0
+    /// (`:75872-75875`); the air pins row 0 (`:75877-75881`).
+    #[test]
+    fn f26s5_rusty_armored_bones_stride_from_row_two() {
+        for k in [
+            FindFrameExtra5Kind::RustyArmoredBonesAxe,
+            FindFrameExtra5Kind::RustyArmoredBonesFlail,
+            FindFrameExtra5Kind::RustyArmoredBonesSword,
+            FindFrameExtra5Kind::RustyArmoredBonesSwordNoArmor,
+        ] {
+            let rows = rows_over(k, input(4.0, 0.0), 13);
+            assert_eq!(rows, vec![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 2]);
+            // The slow walk: vx 0.5 gives 2.0/tick — the lift to 2
+            // holds three ticks, the 4th steps (counter 8 > 6).
+            let rows = rows_over(k, input(0.5, 0.0), 8);
+            assert_eq!(rows, vec![2, 2, 2, 3, 3, 3, 3, 4]);
+            // The air pin.
+            let mut s = FrameState { row: 7, counter: 3.0, ..Default::default() };
+            find_frame_extra5(k, &mut s, &input(4.0, -1.0));
+            assert_eq!((s.row, s.counter), (0, 0.0), "the air pin row 0");
+            // The grounded idle snaps row 0 (the dead 140 branch is
+            // not carried).
+            let mut s = FrameState { row: 5, counter: 3.0, ..Default::default() };
+            find_frame_extra5(k, &mut s, &input(0.0, 0.0));
+            assert_eq!((s.row, s.counter), (0, 0.0), "the idle row 0");
+        }
+    }
+
     /// The seam maps exactly the batch's vanilla types and nothing
     /// else.
     #[test]
     fn f26s5_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra5(t);
-            let claimed = [254, 255, 256, 257, 258];
+            let claimed = [254, 255, 256, 257, 258, 268, 269, 270, 271, 272];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
