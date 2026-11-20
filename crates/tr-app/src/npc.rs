@@ -4676,7 +4676,7 @@ impl Npc {
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
-            9 => self.ai_009_sphere_family(world, player, rng),
+            9 => self.ai_009_sphere_family(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -5155,10 +5155,16 @@ impl Npc {
     /// `if (this.aiStyle == 9)` block (`NPC.cs:21377-21571`). The ported
     /// sphere kinds (25/30+665/33) ride `npc_ai_style9::sphere_family_step`
     /// (the one-shot `TargetClosest` launch, the ftw rows, the
-    /// `EncourageDespawn(100)`, the alpha/spin writes); the dust bursts
-    /// are the documented skip (the module header pins the exact rand
-    /// order — the ported arm consumes zero draws).
-    fn ai_009_sphere_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    /// `EncourageDespawn(100)`, the alpha/spin writes); W4-d52 wires the
+    /// dust loop through the live pool on the caller's stream.
+    fn ai_009_sphere_family(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let flags = crate::npc_ai_style9::Style9Flags {
             // `Main.getGoodWorld` has no runtime flag in the port yet
             // (the seed only rides worldgen) — the ftw rows stay parked.
@@ -5170,7 +5176,7 @@ impl Npc {
             wall_of_flesh_alive: false,
             red_hat: self.red_hat_skeletron_adjustments_enabled(),
         };
-        crate::npc_ai_style9::sphere_family_step(self, world, player, flags, rng);
+        crate::npc_ai_style9::sphere_family_step(self, world, player, flags, rng, dust, dust_ctx);
     }
 
     /// S1-D-3 W-2: the aiStyle-55 family arm — `NPC.AI()`'s

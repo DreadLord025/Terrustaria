@@ -24,11 +24,12 @@
 //!    per-type `NewDust` rolls; type 33 adds `Main.rand.Next(5)` AFTER its
 //!    3 `NewDust` calls (`:21545`) and a conditional 4th `NewDust`.
 //!
-//! The dust bursts are a documented skip (the S1-D-3e/f precedent — the
-//! port has no NPC-side dust feed yet), so for the ported sphere kinds
-//! this arm consumes ZERO draws: the `UpdateNpcs` stream is byte-identical
-//! to the pre-axis `sphere_step`. The 516 helper keeps the exact 3-draw
-//! order for its future wiring (witnessed by
+//! The dust bursts are WIRED (W4-d52) through the live `DustPool` on the
+//! caller's `UpdateNPCs` stream: the 112/666 `ai[0] == 2` burst stays an
+//! unported-kind skip, the two-iteration dust loop emits for the ported
+//! sphere kinds (30/665 type 27, 33 type 172 + the Next(5) gate, 25 the
+//! else group's type 6). The 516 helper keeps the exact 3-draw order for
+//! its future wiring (witnessed by
 //! `solar_flare_launch_draws_two_doubles_then_a_float`).
 
 use crate::npc::{Npc, NpcKind};
@@ -207,8 +208,9 @@ pub fn solar_flare_steer(
 /// One fixed step of the aiStyle-9 arm for the ported sphere kinds
 /// (25/30+665/33) — `NPC.cs:21377-21571` minus the unported per-type
 /// branches (516's homing `:21380-21406`/`:21497-21515`, the 112/666
-/// counter/damage `:21465-21495`) and the dust/light emissions (the
-/// documented skips — see the module header for the exact rand order).
+/// counter/damage `:21465-21495`); W4-d52 wires the dust loop through the
+/// live pool (the `:21561` light stays the visual lane's cited skip — see
+/// the module header for the exact rand order).
 ///
 /// The seam: `TargetClosest` rides `npc_target::target_closest` (the
 /// `EverLastingTicker` is not plumbed into `Npc::update` yet — the 0
@@ -221,7 +223,9 @@ pub fn sphere_family_step(
     world: &World,
     player: &Player,
     flags: Style9Flags,
-    _rng: &mut UnifiedRandom,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
     // The C# arm keys on the VANILLA type (`this.type`, NPCID: BurningSphere
     // 25 / ChaosBall 30 / WaterSphere 33) - `net_id()` carries it; `to_u16`
@@ -275,15 +279,16 @@ pub fn sphere_family_step(
     // `:21496` — `EncourageDespawn(100)` (`NPC.cs:7249-7256`): the port's
     // `encourage_despawn` keeps the -1 sentinel semantics.
     npc.encourage_despawn(100);
-    // `:21516-21567` — the dust loop. The emissions (and their rand
-    // draws, incl. type 33's `Next(5)` at `:21545`) are the documented
-    // skip; the loop's only STATE write is the Chaos Ball's `alpha = 255`
-    // (`:21519-21521`, types 30/665 — idempotent across the 2 iterations,
-    // so one write is exact). The `netOffset` add/subtract pair
-    // (`:21516`/`:21569`) brackets only the dust and nets to zero.
-    if npc.kind == NpcKind::ChaosBall {
-        npc.alpha = 255;
-    }
+    // `:21516-21567` — the dust loop. W4-d52 wires the ported kinds'
+    // emissions through the live pool on the caller's stream: 30/665 the
+    // alpha write + 2×2 type-27 dusts (`:21519-21529`, site 21524), 33 the
+    // 2×(3 type-172 dusts + the Next(5) gate + the conditional 4th)
+    // (`:21531-21551`, site 21538), 25 the else group's 2 type-6 dusts
+    // (`:21559-21566`; the `:21561` centre AddLight(1, 0.3, 0.1) is the
+    // visual lane's cited skip — `npc_lights` covers only the aiStyle-8
+    // tail, and the light draws no RNG). The netOffset add/subtract pair
+    // (`:21516`/`:21569`) nets to zero single-player.
+    sphere_dust_loop(npc, rng, dust, dust_ctx, world);
     // `:21568` — the spin rides `base.direction` (the facing the
     // TargetClosest launch wrote; the C# never re-faces afterwards).
     npc.rotation += 0.4 * npc.facing as f32;
@@ -294,6 +299,107 @@ pub fn sphere_family_step(
     // The port's world-edge stop (the pre-axis `sphere_step` guard).
     if npc.y > world.height as f32 * TILE_PX + 200.0 {
         npc.hp = 0;
+    }
+}
+
+/// W4-d52 — the sphere family's two-iteration dust loop (`NPC.cs:21516-
+/// 21567`): per iteration, the Chaos Ball (30/665) writes alpha 255 and
+/// spawns 2 type-27 dusts (`:21519-21529`, site 21524); the Water Sphere
+/// (33) spawns 3 type-172 dusts with the velocity/3 × iteration position
+/// offset, then the `Next(5)==0` gate opens a 4th (`:21531-21551`, site
+/// 21538); the else group (25) spawns one type-6 dust (`:21559-21566`;
+/// the `:21561` centre light is the visual lane's cited skip, zero RNG).
+/// The 112/666 arm (`:21553-21558`) is an unported-kind skip.
+fn sphere_dust_loop(
+    npc: &mut Npc,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+) {
+    use tr_core::particles::Color;
+    let (w, h) = npc.size();
+    let (wi, hi) = (w as i32, h as i32);
+    let pos = glam::Vec2::new(npc.x, npc.y + 2.0);
+    for num128 in 0..2 {
+        if npc.kind == NpcKind::ChaosBall {
+            // `:21519-21521` — alpha = 255 (idempotent across iterations).
+            npc.alpha = 255;
+            // `:21522-21529` — the two type-27 dusts.
+            for _ in 0..2 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, wi, hi, 27, npc.vx * 0.2, npc.vy * 0.2, 100,
+                    Color::default(), 1.3,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 0.3;
+                d.velocity.x -= npc.vx * 0.2;
+                d.velocity.y -= npc.vy * 0.2;
+            }
+        } else if npc.kind == NpcKind::WaterSphere {
+            // `:21533-21544` — the three type-172 dusts with the
+            // velocity/3 × iteration position offset.
+            for _num131 in 0..3 {
+                let num132 = npc.vx / 3.0 * num128 as f32;
+                let num133 = npc.vy / 3.0 * num128 as f32;
+                let num134 = 2;
+                let idx = dust.new_dust(
+                    rng,
+                    ctx,
+                    world,
+                    glam::Vec2::new(npc.x + num134 as f32, npc.y + num134 as f32),
+                    wi - num134 * 2,
+                    hi - num134 * 2,
+                    172,
+                    0.0,
+                    0.0,
+                    100,
+                    Color::default(),
+                    1.2,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 0.1;
+                d.velocity += glam::Vec2::new(npc.vx * 0.5, npc.vy * 0.5);
+                d.position.x -= num132;
+                d.position.y -= num133;
+            }
+            // `:21545-21551` — the Next(5) gate + the conditional 4th.
+            if rng.next_max(5) == 0 {
+                let num136 = 2;
+                let idx = dust.new_dust(
+                    rng,
+                    ctx,
+                    world,
+                    glam::Vec2::new(npc.x + num136 as f32, npc.y + num136 as f32),
+                    wi - num136 * 2,
+                    hi - num136 * 2,
+                    172,
+                    0.0,
+                    0.0,
+                    100,
+                    Color::default(),
+                    0.6,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 0.25;
+                d.velocity += glam::Vec2::new(npc.vx * 0.5, npc.vy * 0.5);
+            }
+        } else {
+            // `:21559-21566` — the else group (25): the `:21561` centre
+            // AddLight is the visual lane's cited skip (npc_lights covers
+            // only the aiStyle-8 tail; zero RNG); the type-6 dust rides
+            // the pool.
+            let idx = dust.new_dust(
+                rng, ctx, world, pos, wi, hi, 6, npc.vx * 0.2, npc.vy * 0.2, 100,
+                Color::default(), 2.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.velocity.x *= 0.3;
+            d.velocity.y *= 0.3;
+        }
     }
 }
 
@@ -326,6 +432,22 @@ mod tests {
         p.y = y;
         p.dead = false;
         p
+    }
+
+    /// W4-d52 — the solo-test entry: a fresh scratch pool + the permissive
+    /// whole-world ctx (the `update_rng` house pattern). The live sim
+    /// threads the real pool through the 7-arg step.
+    fn step_solo(npc: &mut Npc, w: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        sphere_family_step(npc, w, player, Style9Flags::default(), rng, &mut dust, &ctx);
     }
 
     /// `NPC.cs:21410-21437` — the full speed table, classic and ftw.
@@ -463,7 +585,7 @@ mod tests {
         let mut ball = Npc::new(NpcKind::ChaosBall, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         assert_eq!(ball.target, 255);
         let mut rng = UnifiedRandom::new(0);
-        sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng);
+        step_solo(&mut ball, &w, &player, &mut rng);
         assert_eq!(ball.target, 0, "TargetClosest committed the slot");
         let speed = (ball.vx * ball.vx + ball.vy * ball.vy).sqrt();
         assert!((speed - 6.0).abs() < 0.01, "speed {speed}");
@@ -472,12 +594,12 @@ mod tests {
         // Move the player: the launched ball never re-aims.
         player.x = 60.0 * 16.0;
         for _ in 0..50 {
-            sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng);
+            step_solo(&mut ball, &w, &player, &mut rng);
         }
         assert_eq!((ball.vx, ball.vy), v);
         // The Burning Sphere's 5 (`:21411-21414`).
         let mut sphere = Npc::new(NpcKind::BurningSphere, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
-        sphere_family_step(&mut sphere, &w, &player, Style9Flags::default(), &mut rng);
+        step_solo(&mut sphere, &w, &player, &mut rng);
         let speed = (sphere.vx * sphere.vx + sphere.vy * sphere.vy).sqrt();
         assert!((speed - 5.0).abs() < 0.01, "burning speed {speed}");
     }
@@ -498,7 +620,7 @@ mod tests {
         player.dead = false;
         let mut ball = Npc::new(NpcKind::ChaosBall, ball_x, ball_y, 1, 0.0);
         let mut rng = UnifiedRandom::new(0);
-        sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng);
+        step_solo(&mut ball, &w, &player, &mut rng);
         assert_eq!(ball.vx, 0.0);
         assert_eq!(ball.vy, 0.0);
     }
@@ -511,37 +633,156 @@ mod tests {
         let player = player_at(&w, 100.0 * 16.0, 110.0 * 16.0);
         let mut ball = Npc::new(NpcKind::ChaosBall, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         let mut rng = UnifiedRandom::new(0);
-        sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng);
+        step_solo(&mut ball, &w, &player, &mut rng);
         assert_eq!(ball.despawn_timer, 100, "EncourageDespawn(100)");
         assert_eq!(ball.alpha, 255, "the 30/665 dust-loop alpha write");
         let rot = ball.rotation;
         assert!((rot - 0.4 * ball.facing as f32).abs() < 1e-6);
-        sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng);
+        step_solo(&mut ball, &w, &player, &mut rng);
         assert!((ball.rotation - 2.0 * rot).abs() < 1e-6, "the spin accumulates");
         // The Burning Sphere keeps its SetDefaults alpha 100.
         let mut sphere = Npc::new(NpcKind::BurningSphere, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         let alpha0 = sphere.alpha;
-        sphere_family_step(&mut sphere, &w, &player, Style9Flags::default(), &mut rng);
+        step_solo(&mut sphere, &w, &player, &mut rng);
         assert_eq!(sphere.alpha, alpha0);
     }
 
-    /// The RNG-order witness: for the ported sphere kinds the arm draws
-    /// NOTHING (the dust skips) — the stream after 100 steps equals a
-    /// fresh same-seed stream.
+    /// The RNG-order witness (W4-d52 re-derivation): the dust-wired arm
+    /// draws through the live pool. The oracle replays the EXACT draw
+    /// sequence from the same seed: per tick, per dust, `NewDust`'s six
+    /// default-block rolls (`Dust.cs:170-175,190` — the empty/low pool
+    /// takes no pressure-band draws, ChildSafety is disabled), plus the
+    /// type-6 tweak's one `Next(-10,6)` (`Dust.cs:214-220`) and the Water
+    /// Sphere's `Next(5)` gate + conditional 4th dust. Any extra or
+    /// reordered draw desynchronizes the probe.
     #[test]
-    fn s1_d_3_s9_the_sphere_arm_consumes_no_rand_draws() {
+    fn s1_d_3_s9_the_sphere_arm_draws_match_the_oracle() {
         let w = arena();
         let player = player_at(&w, 100.0 * 16.0, 110.0 * 16.0);
-        let mut rng = UnifiedRandom::new(123);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        // One NewDust's six default-block draws (the pool stays under the
+        // 50% pressure band for 100 ticks: <= 800 active slots). The
+        // sphere boxes are 16x16 (`data.rs`); the Water Sphere's inset
+        // dusts ride 12x12 (`:21538`'s width - 2*2).
+        let new_dust_draws = |r: &mut UnifiedRandom, dust_type: i32, box_px: i32| {
+            let n = box_px.max(5) - 4;
+            r.next_max(n); // position X (`Dust.cs:170`)
+            r.next_max(n); // position Y (`:171`)
+            r.next_range(-20, 21);
+            r.next_range(-20, 21);
+            r.next_max(3);
+            r.next_range(-20, 21);
+            if dust_type == 6 {
+                r.next_range(-10, 6); // the type-6 tweak (`Dust.cs:214-220`)
+            }
+        };
+        for kind in [NpcKind::ChaosBall, NpcKind::BurningSphere, NpcKind::WaterSphere] {
+            let mut rng = UnifiedRandom::new(123);
+            let mut probe = UnifiedRandom::new(123);
+            let mut dust = tr_core::particles::DustPool::new();
+            let mut ball = Npc::new(kind, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+            for tick in 0..100 {
+                sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng, &mut dust, &ctx);
+                // The oracle: the C#'s per-tick draw census.
+                for _iter in 0..2 {
+                    match kind {
+                        NpcKind::ChaosBall => {
+                            for _ in 0..2 {
+                                new_dust_draws(&mut probe, 27, 16);
+                            }
+                        }
+                        NpcKind::WaterSphere => {
+                            for _ in 0..3 {
+                                new_dust_draws(&mut probe, 172, 12);
+                            }
+                            if probe.next_max(5) == 0 {
+                                new_dust_draws(&mut probe, 172, 12);
+                            }
+                        }
+                        _ => new_dust_draws(&mut probe, 6, 16),
+                    }
+                }
+                assert_eq!(rng.peek(), probe.peek(), "{kind:?} stream @{tick}");
+            }
+            assert_ne!(rng.peek(), UnifiedRandom::new(123).peek(), "{kind:?} the dust drew");
+        }
+    }
+
+    /// W4-d52 — the post-spawn field mirror: replay the first tick's rolls
+    /// from the same seed and assert slot 0's exact writes — the Chaos
+    /// Ball's `:21525-21528` noGravity + *0.3 - v*0.2, the Water Sphere's
+    /// `:21539-21541` inset box + *0.1 + v*0.5, the Burning Sphere's
+    /// `:21563-21565` noGravity + per-axis *0.3 on top of the type-6
+    /// tweak's Y overwrite (`Dust.cs:214-218`).
+    #[test]
+    fn w4_d52_sphere_dust_writes_the_post_fields() {
+        let w = arena();
+        let player = player_at(&w, 100.0 * 16.0, 110.0 * 16.0);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
         for kind in [NpcKind::ChaosBall, NpcKind::BurningSphere, NpcKind::WaterSphere] {
             let mut ball = Npc::new(kind, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
-            for _ in 0..100 {
-                sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng);
+            let mut rng = UnifiedRandom::new(7);
+            let mut probe = UnifiedRandom::new(7);
+            let mut dust = tr_core::particles::DustPool::new();
+            sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng, &mut dust, &ctx);
+            // The launch velocity is dust-loop-constant; the integration
+            // moved the NPC AFTER the loop, so undo it for the spawn box.
+            let (vx, vy) = (ball.vx, ball.vy);
+            let (pre_x, pre_y) = (ball.x - vx, ball.y - vy);
+            let (n, ty) = match kind {
+                NpcKind::ChaosBall => (12, 27),
+                NpcKind::WaterSphere => (8, 172),
+                _ => (12, 6),
+            };
+            let px = probe.next_max(n);
+            let py = probe.next_max(n);
+            let rvx = probe.next_range(-20, 21) as f32;
+            let rvy = probe.next_range(-20, 21) as f32;
+            let _frame = probe.next_max(3);
+            let rs = probe.next_range(-20, 21) as f32;
+            let d = dust.slot(0);
+            assert!(d.active, "{kind:?} slot 0 spawned");
+            assert_eq!(d.dust_type, ty);
+            match kind {
+                NpcKind::ChaosBall => {
+                    assert!(d.no_gravity);
+                    assert_eq!(d.position.x, pre_x + px as f32 + 4.0);
+                    assert_eq!(d.position.y, pre_y + 2.0 + py as f32 + 4.0);
+                    assert_eq!(d.velocity.x, (rvx * 0.1 + vx * 0.2) * 0.3 - vx * 0.2);
+                    assert_eq!(d.velocity.y, (rvy * 0.1 + vy * 0.2) * 0.3 - vy * 0.2);
+                    assert_eq!(d.scale, (1.0 + rs * 0.01) * 1.3);
+                }
+                NpcKind::WaterSphere => {
+                    assert!(d.no_gravity);
+                    // Iteration 0: the num132/num133 offsets are zero.
+                    assert_eq!(d.position.x, pre_x + 2.0 + px as f32 + 4.0);
+                    assert_eq!(d.position.y, pre_y + 2.0 + py as f32 + 4.0);
+                    assert_eq!(d.velocity.x, rvx * 0.1 * 0.1 + vx * 0.5);
+                    assert_eq!(d.velocity.y, rvy * 0.1 * 0.1 + vy * 0.5);
+                    assert_eq!(d.scale, (1.0 + rs * 0.01) * 1.2);
+                }
+                _ => {
+                    let rt = probe.next_range(-10, 6) as f32;
+                    assert!(d.no_gravity);
+                    assert_eq!(d.velocity.x, (rvx * 0.1 + vx * 0.2) * 0.3 * 0.3);
+                    assert_eq!(d.velocity.y, rt * 0.1 * 0.3, "the tweak's Y overwrite");
+                    assert_eq!(d.scale, (1.0 + rs * 0.01) * 2.0 * 0.7);
+                }
             }
-        }
-        let mut fresh = UnifiedRandom::new(123);
-        for _ in 0..8 {
-            assert_eq!(rng.next_double(), fresh.next_double());
         }
     }
 }
