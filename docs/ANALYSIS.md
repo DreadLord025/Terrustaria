@@ -26055,7 +26055,7 @@ hang, the sway ladder + anchor walk, the blocking-wall freeze, the remix
 gate, the grid push subtract/bounce, the gap/bottom-bound break, the Echo
 hide-not-break.
 
-## The post-debuff buff tail (S1-E-7 wave H, 2026-11-20, code-only, IN FLIGHT)
+## The post-debuff buff tail (S1-E-7 wave H, 2026-11-20, code-only)
 
 **Claimed range** (`task/W4-d74-buff-effects-wave-h`, disjoint from the landed
 waves A `:9875-10048` / B `:10049-10317` / C `:10800-11400` / D
@@ -26094,6 +26094,36 @@ rides the waves' merge step. RNG census: the block draws NO `Main.rand` (the
 orb ladders, nebula step and ice frames are deterministic); the only RNG
 nearby is the beetle-orb VISUAL drift in `UpdateArmorSets_Always_Beetle`
 (`:16466-16467`, outside this range, unported draw family).
+
+Landed shape + wiring contract (tests written, NOT run — code-only mode):
+
+- `TailEffects` carries the slot mutations the wave-D pattern established:
+  `delete_buff` + `rescan_slot` (every delete in this block rescans),
+  `clear_buff_range` (the lower-tier purge loop's inclusive id range — the
+  wiring walks the slots `DelBuff(m); m--`), `buff_time_set` (the 5-pin and
+  the nebula 480), `buff_type_decrement` (the nebula step's `buffType[b]--`).
+- The tier/level fields are ASSIGNMENTS (`beetle_orbs_set`,
+  `solar_shields_set`, `nebula_level_*`), not adds — `ResetEffects` zeroes
+  them per tick (`:18501/:18505/:18755`), last live slot wins like the C#
+  `ref`/field writes. The ladder/gate ORDER is pinned per arm: pin → ladder
+  → count assignment → (Might: stat adds) → gate; the gate failure zeroes
+  the count AFTER the adds ran (the C# adds before the gate, `:10431-10435`).
+- `latest_mana_potion_duration_fix` records the 396 arm's real field
+  assignment (`duration == 0 → 1`, `:10331-10334`) — the wiring copies it
+  back, it is not just a local guard.
+- 62's split: the inline `player.rs` arm keeps the endurance +0.25; this
+  table adds the flag/frames/light/DelBuff. The wiring must NOT re-add
+  endurance from the accumulator (there is no endurance field here).
+- The 40-id `TAIL_CENSUS` (`(id, TailOwner)` in chain order) is the per-id
+  witness map: `PlayerScan` (94), `SummonArms` (the 19 keep-alives),
+  `SplitIceBarrier` (62), `Tail` (the 20 missing ids). The dispatch returns
+  `false` for every non-`Tail` id — the census test pins that a second
+  effect path can never double-apply.
+- 15 `s1_e_7h_*` tests: the census sweep, 396 decay + zero-duration guard,
+  the three ladder arms per tier + ladder directions + gate failures, the
+  three nebula families incl. the time-2 step-down (level AND stat add
+  lower), the ice frame 3-tick/12-frame wrap + the `<=` half-life boundary,
+  the 94/summon witness declines, and the RNG-free reproducibility sweep.
 
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 

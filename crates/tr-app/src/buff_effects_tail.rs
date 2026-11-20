@@ -16,7 +16,7 @@
 //!   mirror `:10320-10323` stays constants-off).
 //! - The 19 summon keep-alives 49…386 (`:10486-10808`) —
 //!   `player.rs::SUMMON_BUFF_ARMS` + `run_baby_bird_arm`; the
-//!   `SUMMON_TAIL_WITNESS` table below pins the census per id.
+//!   `TAIL_CENSUS` table below pins the census per id.
 //! - 62 Ice Barrier's `endurance += 0.25` half (`:10468`) — the `player.rs`
 //!   scan arm; this table adds only the MISSING halves (the `iceBarrier`
 //!   flag, the frame counter pair, the light request and the
