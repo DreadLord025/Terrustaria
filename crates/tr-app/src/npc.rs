@@ -4857,6 +4857,33 @@ impl Npc {
             // `npc/data.rs`'s ai_style rows); the head (127, style 32)
             // keeps its kind-match arm.
             34 | 35 | 36 => self.ai_prime_limb_family(world, player, rng),
+            // `else if (this.aiStyle == 41)` (`NPC.cs:29899-30159`) — the
+            // jungle hoppers (Herpling 174 / Derpling 177 / Chattering
+            // Teeth Bomb 378). The faithful `npc_ai_style41::style41_step`
+            // claims the axis: the AI body PLUS the generic post-AI
+            // gravity/wet/collision integration on every path (the module
+            // folds `UpdateNPC`'s tail, the frost-legion shape). The step
+            // is keyed on the C# type id — the wiring passes
+            // `kind.to_u16()` (the module doc). RNG-free by construction
+            // (the dust/gore/audio draws are the module's cited skips).
+            // No `NpcKind` carries ai_style 41 yet — the arm is dormant
+            // until the kind rows land (the S1-D-5 types work).
+            41 => {
+                let npc_type = self.kind.to_u16() as i32;
+                crate::npc_ai_style41::style41_step(self, world, player, npc_type);
+            }
+            // `else if (this.aiStyle == 42)` (`NPC.cs:30160-30189`) — the
+            // Lost Girl (195), the style's only user. The faithful
+            // `npc_ai_style42::lost_girl_ai` claims the axis; the
+            // `Transform(196)` maths (life share, hitbox, ai/target/frame
+            // resets) is applied INSIDE via `transform_to(&NYMPH)`. The
+            // `NpcKind::Nymph` kind swap + the private `frame_counter`
+            // reset ride the kind-table wiring (the module doc — no
+            // LostGirl/Nymph rows exist yet, so the arm is dormant).
+            // RNG-free by construction (the module's 600-tick witness).
+            42 => {
+                let _ = crate::npc_ai_style42::lost_girl_ai(self, world, player);
+            }
             // `else if (this.aiStyle == 43)` (`NPC.cs:30190-30860`) —
             // the Queen Bee (222), the style's only user. S1-D-3 W-3:
             // the faithful `npc_ai_style43::queen_bee_ai` machine claims
@@ -4894,6 +4921,50 @@ impl Npc {
                     ));
                 }
                 self.integrate_no_tile_collide();
+            }
+            // `else if (this.aiStyle == 44)` (`NPC.cs:30861-31124`) — the
+            // flying-fish / flying-antlion swimmers (224/509/581/587).
+            // The faithful `npc_ai_style44::style44_step` claims the axis
+            // (the bat-wrapper shape, `update_cave_bat`): the wet stamp,
+            // the session-player candidate + wet flag, the shared dust
+            // pool on the caller's stream, then the no-gravity
+            // `UpdateCollision` integration (`noGravity = true`,
+            // `:30863` — the module latches `wants_no_gravity`, consumed
+            // here). SOLO path: a one-slot sibling pool (the style-75
+            // solo precedent) — the separation loop skips `whoAmI`, so
+            // the scan reads absent until the sim threads the roster.
+            // No `NpcKind` carries ai_style 44 yet — the arm is dormant
+            // until the kind rows land.
+            44 => {
+                let (w, h) = self.size();
+                self.wet = is_wet(world, self.x, self.y, w, h);
+                let npc_type = self.kind.to_u16();
+                let cand = crate::npc_target::session_candidate(player);
+                let players = [cand];
+                let players_wet = [player.wet];
+                let siblings = [crate::npc_ai_style44::Style44Sibling {
+                    active: true,
+                    npc_type,
+                    x: self.x,
+                    y: self.y,
+                }];
+                let mut env = crate::npc_ai_style44::Style44Env {
+                    npc_type,
+                    self_index: 0,
+                    siblings: &siblings,
+                    world,
+                    players: &players,
+                    player_wet: &players_wet,
+                    // The ticker stand-in (0 — the `update_cave_bat`
+                    // convention).
+                    ticker: 0,
+                    dust,
+                    dust_ctx,
+                    rng,
+                    wants_no_gravity: false,
+                };
+                crate::npc_ai_style44::style44_step(self, &mut env);
+                self.integrate_flyer_collision(world);
             }
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
             // (`NPC.cs:31347-31350`) - the Golem's fists. The three-way
