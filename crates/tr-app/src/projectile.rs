@@ -12501,6 +12501,21 @@ fn find_target_with_line_of_sight(
     result
 }
 
+/// `Projectile.FindTargetWithLineOfSight` — the public wrapper for the
+/// per-type AI modules (`special_arrows`' Chlorophyte retarget,
+/// `Projectile.cs:18553`); the body is [`find_target_with_line_of_sight`].
+pub(crate) fn find_target_with_line_of_sight_pub(
+    world: &World,
+    npcs: &[Npc],
+    pos: Vec2,
+    w: f32,
+    h: f32,
+    max_range: f32,
+    immune: &[i32],
+) -> i32 {
+    find_target_with_line_of_sight(world, npcs, pos, w, h, max_range, immune)
+}
+
 /// `Utils.GetLerpValue(from, to, t, clamped: true)` (`Utils.cs:315-340`):
 /// the clamped ramp — 0/1 outside the from-range, linear inside. The branches
 /// are the C#'s, since it treats a descending range (`from > to`) as clamped
@@ -14413,6 +14428,11 @@ impl ProjectilePool {
                 }
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
+            // S1-P-i17 — `base.oldVelocity = base.velocity`
+            // (`Projectile.cs:16766`): captured at the START of every
+            // sub-step; the Bee Arrow's death swarm (`:76417-76423`)
+            // reads the last sub-step's start velocity.
+            let mut old_velocity = self.slots[i].vel;
             // `Projectile.cs:16768-16771` — the per-slot cue cooldown ticks
             // down once per update, ahead of the AI sub-steps, and only
             // while positive: a `-1` latch stays down (S1-E-21h — the
@@ -14421,6 +14441,9 @@ impl ProjectilePool {
                 self.slots[i].sound_delay -= 1;
             }
             for sub in 0..sub_steps {
+                // `Projectile.cs:16766` — the sub-step's start velocity
+                // (the bee swarm's `oldVelocity` read, S1-P-i17).
+                old_velocity = self.slots[i].vel;
                 // `Projectile.cs:16679-16683` — the 640 MoonlordArrowTrail's
                 // spawn-delay countdown: while `ai[1] > 0` the WHOLE
                 // sub-step is skipped (ahead of the out-of-world guard, the
@@ -14645,6 +14668,34 @@ impl ProjectilePool {
                                     local_owner,
                                 )
                             }
+                            // S1-P-i17 — the special arrows' per-type
+                            // `AI_001` arms (`Projectile.cs:54002-57798`),
+                            // gated to `special_arrows::ARROW_KINDS` ONLY
+                            // (15 kinds, disjoint from A/B/C, the riders,
+                            // the frost/empress sets and the moon-lord
+                            // shots): the per-kind gravity pins, the
+                            // Jester/Bee resting counters, the Shimmer's
+                            // inverted gravity, the Chlorophyte bounce.
+                            // The 469's water kill (`:54012-54015`) runs
+                            // HERE (the world's liquid probe) before the
+                            // arm — `bee_water_kill` reads the tile liquid
+                            // flags (`wet && !honeyWet && !shimmerWet`).
+                            kind if crate::special_arrows::covers(kind) => {
+                                if crate::special_arrows::bee_water_kill(
+                                    &self.slots[i],
+                                    world,
+                                ) {
+                                    self.slots[i].kill_time_left = self.slots[i].time_left;
+                                    self.slots[i].active = false;
+                                    self.slots[i].time_left = 0;
+                                } else {
+                                    crate::special_arrows::step(
+                                        &mut self.slots[i],
+                                        world,
+                                        npcs,
+                                    )
+                                }
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => {
@@ -14660,6 +14711,22 @@ impl ProjectilePool {
                                 flail_inputs.melee_speed,
                                 catch_allowed,
                             );
+                        }
+                        // S1-P-i17 — `AI()`'s `else if (this.aiStyle == 5)`
+                        // (`Projectile.cs:23830-24065`): the falling star
+                        // 92 (the Holy Arrow's death spawn) — the ai[1]
+                        // floor arms tileCollide, the alpha pulse, the
+                        // spin, the light. The other aiStyle-5 kinds
+                        // (9/12/503/723-726/955/1037/1049/1133) have no
+                        // rows yet — the arm is kind-gated so they keep
+                        // the no-op fall-through when they land.
+                        5 => {
+                            if self.slots[i].kind == FALLING_STAR {
+                                crate::special_arrows::falling_star_step(
+                                    &mut self.slots[i],
+                                    world,
+                                );
+                            }
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
                         // (`Projectile.cs:24367-24370`) -> `AI_010`. The
@@ -17215,6 +17282,14 @@ impl ProjectilePool {
                 // ABOVE the 478's `:75578`; the fireworks aiStyle-34 arm
                 // `:76464` follows both).
                 self.dart_electro_firework_kill(i, rng, local_owner);
+                // S1-P-i17 — `Kill()`'s special-arrow arms, in the C#'s
+                // body order: the Hellfire blast (`:76308-76341`, the
+                // resize + box Damage), the Holy Arrow's star / the
+                // star's own chain (`:75212-75248` — the 75212 arm sits
+                // ABOVE the 76308 arm in the C#, but the two kinds are
+                // disjoint so the order between them is unobservable),
+                // then the Bee Arrow's swarm (`:76407-76429`).
+                self.special_arrow_kill(i, npcs, old_velocity, player.as_deref(), rng, luck);
             }
             // S1-P-i16 — the dart split / cluster ring spawn requests the
             // AI arms parked mid-iteration (the `wants_mark_spawn`
@@ -17747,6 +17822,89 @@ impl ProjectilePool {
             }
             // `:73451` — the ai1 payload rides after the slot-order bump.
             self.slots[new_slot].ai[1] = delay as f32;
+        }
+    }
+
+    /// S1-P-i17 — `Kill()`'s special-arrow arms (the death-hook block):
+    /// - the Hellfire Arrow (41, `Projectile.cs:76308-76341`): the box
+    ///   grows to 64×64 centred, `penetrate = -1`, then `Damage()` walks
+    ///   the resized box (the gem-bolt AoE precedent — the C# leaves the
+    ///   resize on the dead slot; the port keeps it too, nothing reads a
+    ///   dead slot's box afterwards).
+    /// - the Holy Arrow (91) / the falling star (92, `ai[0] > 0`)
+    ///   (`:75212-75248`): the star spawn — 2 draws, the 22-speed aim,
+    ///   damage/3 for the arrow / full for the star's own chain, ai1 =
+    ///   the death Y, ai0 = 1 only for the arrow's star.
+    /// - the Bee Arrow (469, `:76407-76429`): the 6-slot swarm with the
+    ///   odd gates, the trail positions off `oldVelocity`, the
+    ///   beeType/beeDamage/beeKB rolls; each bee gets `penetrate = 2`
+    ///   (`:76426`) and `ranged = true`/`magic = false` (`:76424-76425`
+    ///   — the port carries no class flags on slots, recorded).
+    /// The `owner == Main.myPlayer` gates fold to the simulated-slot set
+    /// (the pool only updates local-owned slots). A dead slot never
+    /// returns to active, so each hook fires at most once per death.
+    fn special_arrow_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        old_velocity: Vec2,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let kind = self.slots[slot].kind;
+        // The Hellfire blast: resize + the box walk through the dying
+        // slot (the `gem_bolt_aoe` shape).
+        if crate::special_arrows::hellfire_kill_resize(&mut self.slots[slot]) {
+            self.damage_pve_boxed(slot, npcs, doll_flags(player), rng, luck);
+        }
+        // The Holy Arrow's star / the star's own one-deep chain.
+        let star = crate::special_arrows::holy_arrow_kill(&self.slots[slot], rng)
+            .or_else(|| crate::special_arrows::falling_star_kill(&self.slots[slot], rng));
+        if let Some((x, y, vx, vy, damage, ai0, ai1)) = star {
+            let (owner, kb) = {
+                let p = &self.slots[slot];
+                (p.owner, p.knock_back)
+            };
+            // The corpse-flag lift (the moonlord-trail precedent): the
+            // C# `GetNextSlot` ran while the arrow was STILL active.
+            self.slots[slot].active = true;
+            let _ = self.spawn_with_data_ai_owned(
+                FALLING_STAR, owner, x, y, vx, vy, damage, kb, ai0, ai1,
+            );
+            self.slots[slot].active = false;
+        }
+        // The Bee Arrow's swarm.
+        if kind == BEE_ARROW {
+            let strong = player.is_some_and(|p| p.strong_bees);
+            let mut bees = Vec::new();
+            crate::special_arrows::bee_arrow_kill(
+                &self.slots[slot],
+                old_velocity,
+                strong,
+                rng,
+                &mut bees,
+            );
+            let owner = self.slots[slot].owner;
+            // The corpse-flag lift (the moonlord-trail precedent): the C#
+            // `Kill()` runs the 469 arm while the arrow is STILL active
+            // (`active = false` lands at `:77262`, after), so `GetNextSlot`
+            // skips the dying slot. Lift it for the scan, then restore.
+            self.slots[slot].active = true;
+            for b in bees {
+                let spawned = self.spawn_with_data_owned(
+                    b.kind, owner, b.x, b.y, b.vx, b.vy, b.damage, b.kb, 0.0, 0.0,
+                );
+                if let Some(s) = spawned {
+                    // `:76426` — `penetrate = 2` (the row's 3/4 overridden).
+                    // `maxPenetrate` stays the row's (the C# writes only
+                    // `penetrate`); the `single_hit` immunity gate reads
+                    // `maxPenetrate`, so the bee keeps the group-static
+                    // pair's behaviour.
+                    self.slots[s].penetrate = 2;
+                }
+            }
+            self.slots[slot].active = false;
         }
     }
 
@@ -18820,6 +18978,11 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // S1-P-i17 — `Damage_PVE_Inner`'s Hellfire clamp
+            // (`Projectile.cs:13252-13255`): the 41's contact pins
+            // `timeLeft = 1` (the C# site sits between DamageVar `:12938`
+            // and the yoyo doublings `:13389`, ABOVE the strike).
+            crate::special_arrows::hellfire_hit_clamp(&mut self.slots[slot]);
             // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
             // 13300`, S1-P-i09): the dropped twin squashes its velocity to
             // len/5 and takes the `Next(50, 81) * 0.1` upward lift (clamped
@@ -18944,6 +19107,18 @@ impl ProjectilePool {
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
+            // S1-P-i17 — `StatusNPC(victimIndex)` (`Projectile.cs:13580`):
+            // the per-type debuff arms run BEFORE the strike (`:13649`)
+            // and unconditionally on the contact path — a statue/dodge
+            // refusal still applies the debuff. The ported arrow-family
+            // arms: the FlameArrow's 1/3 OnFire, the Frostburn's 1/3
+            // Frostburn, the Cursed/Ichor/Venom fixed durations and the
+            // Shadowflame roll (`special_arrows::status_npc`; the draws
+            // ride this pass's `UpdateProjectiles` stream in the C#'s
+            // order). The accessory chains (`accPoisonBarb`/`meleeEnchant`
+            // /`frostBurn`/`magmaStone`) are unported player flags — the
+            // melee-only ones never fire for an arrow by construction.
+            crate::special_arrows::status_npc(self.slots[slot].kind, &mut npcs[idx], rng);
             let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
             let landed = Npc::strike_projectile(
                 npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
@@ -19666,7 +19841,12 @@ mod tests {
         // 31/147/181/193 left with the unarmed-styles slice
         // (projectile_ai_misc). 120 stays: StardustGuardian rowed but arm
         // UNOWNED (R62's kinds are 872/873/874/919/923 — next-wave item).
-        const UNARMED_ROWED: [u8; 1] = [120];
+        // 36 joins with S1-P-i17: the Bee/GiantBee (181/566) rows let the
+        // Bee Arrow's death swarm land; the aiStyle-36 bee flight
+        // (`AI()`'s `:27292` block) is the follow-up — the rows ride the
+        // `_ => {}` no-op until it lands (the same shape the honeycomb's
+        // retaliate bees already use via the base spawn).
+        const UNARMED_ROWED: [u8; 2] = [120, 36];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -25699,10 +25879,13 @@ mod ammo_proj_tests {
             assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
         }
         // The arrow overrides: 117 (`:2058-2068`, extraUpdates 2), 469
-        // (`:5429-5441`), 495 (`:5681-5692`, penetrate 3), 819
-        // (`:7993-8002`, extraUpdates 1) — 10x10 aiStyle-1 arrows with
-        // timeLeft 1200.
-        for (kind, pen, extra) in [(117u16, 1, 2), (469, 1, 0), (495, 3, 0), (819, 1, 1)] {
+        // (`:5435-5445`), 495 (`:5681-5692`, penetrate 3) — 10x10
+        // aiStyle-1 arrows with timeLeft 1200. S1-P-i17: the 819 Blood
+        // Arrow (`:7993-8002`, extraUpdates 1) writes NO timeLeft
+        // override — the stock 3600 stands (the old 1200 was a row
+        // deviation), and the 469's `alpha = 255` (`:5437`) now rides
+        // the row.
+        for (kind, pen, extra) in [(117u16, 1, 2), (469, 1, 0), (495, 3, 0)] {
             let d = proj_data(kind).unwrap();
             assert_eq!((d.w, d.h), (10.0, 10.0), "kind {kind}");
             assert_eq!(d.ai_style, 1, "kind {kind}");
@@ -25712,6 +25895,11 @@ mod ammo_proj_tests {
             assert!(d.arrow, "kind {kind}");
             assert!(d.tile_collide, "kind {kind}");
         }
+        let blood = proj_data(819).unwrap();
+        assert_eq!(blood.time_left, TIME_LEFT_DEFAULT, "the 819 stock life");
+        assert_eq!(blood.extra_updates, 1);
+        assert_eq!(blood.alpha, 255, "`:7999`");
+        assert_eq!(proj_data(469).unwrap().alpha, 255, "`:5437`");
         // The Hellwing 485 (`:5604-5615`): the 24x24 box, penetrate -1.
         let hellwing = proj_data(485).unwrap();
         assert_eq!((hellwing.w, hellwing.h), (24.0, 24.0));
@@ -25823,7 +26011,7 @@ mod ammo_proj_tests {
             (469, 10.0, 10.0, 1, 0, 1200, false, -2),
             (485, 24.0, 24.0, -1, 0, 1200, false, -2),
             (495, 10.0, 10.0, 3, 0, 1200, false, -2),
-            (819, 10.0, 10.0, 1, 1, 1200, false, -2),
+            (819, 10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, false, -2),
             (932, 10.0, 10.0, 5, 0, 120, true, 60),
         ];
         let mut pool = ProjectilePool::new();

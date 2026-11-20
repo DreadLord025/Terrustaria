@@ -25345,6 +25345,158 @@ ai_arrow` / `3 => ai_boomerang` (origin/main :11332-11333, after the
 :11053/:11060 first arms). The first arm wins, so the slice-B gate is
 effective; the duplicates are dead code for a future cleanup task.
 
+## The special arrows (S1-P-i17, task/S1-P-i17-special-arrows, 2026-11-20, code-only mode)
+
+Branch `task/S1-P-i17-special-arrows` (worktree TR-i17). CODE-ONLY: no
+cargo/rustc/rustfmt/tests invoked — the witness tests in
+`crates/tr-app/src/special_arrows.rs::tests` (16) and the three
+`s1_p_i17_*` shoot-wire tests in `world_sim/editing.rs` are WRITTEN NOT
+RUN; each expected value is hand-derived from the cited C# lines. Run
+`cargo test -p tr-app special_arrows` and
+`cargo test -p tr-app s1_p_i17` when a compiler pass is allowed.
+
+**Census verdicts (the arrow special effects on shoot/hit):**
+
+- **MISSING → ported (rows):** the 12 special-arrow kinds had NO
+  `proj_data` rows — 4 Unholy (`Projectile.cs:837-848`, pen 5), 5
+  Jester's (`:849-863`, pen −1, alpha 100, ignoreWater, extraUpdates 1,
+  **timeLeft 120**), 41 Hellfire (`:1237-1247`, pen −1, stock 3600),
+  91 Holy (`:1743-1752`), 103 Cursed (`:1904-1914`), 120 Frost
+  (`:2093-2104`, extraUpdates 1), 172 Frostburn (`:2579-2590`), 225
+  Chlorophyte (`:3100-3110`, extraUpdates 1), 278 Ichor (`:3638-3649`,
+  extraUpdates 1), 282 Venom (`:3688-3698`, extraUpdates 1), 474
+  merchant Bone (`:5474-5484`, pen 2), 1006 Shimmer (`:9570-9579`) —
+  plus the 92 falling star (`:1753-1764`, aiStyle 5, 24×24, alpha 50,
+  scale 0.8, tileCollide false) the Holy Arrow spawns. The lights ride
+  `set_defaults_light` (4: 0.35, 5: 0.4, 41: 0.3, 103/172/278: 1.0).
+- **WRONG → fixed (rows):** the 819 Blood Arrow carried `timeLeft =
+  1200` — the C# arm (`:7993-8002`) writes NO override, the stock 3600
+  stands; its `alpha = 255` (`:7999`) was dropped. The 469 Bee Arrow's
+  `alpha = 255` (`:5437`) was dropped — its AI_001 fade (`:55197-55208`)
+  reads it. Both fixed; the two row pins in `projectile.rs` updated.
+- **MISSING → ported (AI):** the per-type `AI_001` arms — the Jester's/
+  Bee's resting counters (`flag3 = false`, `:55949`/`:56002`), the Holy
+  Arrow's soft 20-tick/+0.07 gravity (it shares the 81 arm,
+  `:56888-56895`), the Frostburn 17/+0.085 (`:57233-57240`), the Bone
+  35/+0.06 (`:57241-57248` — the 474 is NOT named there, it takes the
+  generic 15/+0.1), the Frost 30/+0.05 (`:57249-57259`), the
+  Shadowflame 30/+0.04 (`:57479-57489`), the Shimmer's INVERTED gravity
+  (`flag4`, `:56034-56036` + `:57571-57574`) with the −16 clamp
+  (`:57760`), the Bee's fade + spriteDirection tail (`:57671-57683`),
+  the Bee's water kill (`:54012-54015` — the tile-liquid probe keeps
+  the `!honeyWet && !shimmerWet` exclusions via the port's liquid
+  flags), the Chlorophyte bounce (`HandleMovement` `:18539-18561`:
+  ai[1] counter, ×0.66 first-bounce damage, 4-bounce kill, the
+  reversal + `FindTargetWithLineOfSight` retarget with the
+  `Lerp(h*0.1, h*0.5, GetLerpValue(0, 300, dist))` lead). The falling
+  star's aiStyle-5 slice (`:23858-23864` floor, `:23928-23945` alpha
+  pulse, `:23952` spin, `:24053` light).
+- **MISSING → ported (hit):** `StatusNPC`'s arrow arms — the
+  FlameArrow's 1/3 OnFire 24/180 (`:11552-11555`), the Frostburn's 1/3
+  Frostburn 44/180 (`:11556-11562`), the Cursed group's CursedInferno
+  39/420 (`:11665-11668`), the Ichor group's Ichor 69/600
+  (`:11669-11672`), the Venom group's Venom 70/600 + PotentAcid
+  395/120 (`:11673-11677`), the Shadowflame's roll 153/`Next(120,300)`
+  (`:11458-11461`). The Hellfire's on-contact `timeLeft = 1` clamp
+  (`:13252-13255`). Wired into `damage_pve` at the C#'s sites: the
+  clamp after DamageVar, `status_npc` BEFORE the strike (`:13580`
+  precedes `:13649` — a refused strike still applies the debuff).
+- **MISSING → ported (death):** the Holy Arrow's star spawn
+  (`Kill()` `:75212-75248`: `Next(-400,400)`/`Next(600,900)`, the
+  22-speed aim at the centre, damage/3, ai0 = 1, ai1 = death Y; the
+  star's OWN `ai[0] > 0` re-spawn at full damage chains exactly two
+  deep), the Hellfire's 64×64 blast (`:76308-76341`: the centred
+  resize, pen −1, the box `Damage()` walk — the gem-bolt AoE seam),
+  the Bee Arrow's 6-slot swarm (`:76407-76429`: the odd `Next(3)`
+  gates, the `position − normalize(oldVelocity)*8*i` trail, the
+  `Next(-35,36)*0.01 + oldVelocity/6` velocities, `beeType`/
+  `beeDamage(damage/3)`/`beeKB(0f)`, `penetrate = 2`). The pool's
+  death hook (`special_arrow_kill`) resolves them; `old_velocity`
+  captures `base.oldVelocity` at each sub-step start (`:16766`).
+- **MISSING → ported (shoot):** the post-PickAmmo bow conversions
+  (`Player.cs:47157-47168`): the Molten Fury 120 burns wooden arrows
+  (1 → 2, gated), the Marrow 682 → 117 and the Ice Bow 725 → 120
+  (unconditional). Placed AFTER the not-consume rolls (the C# rolls
+  key on the PRE-conversion projectile). The Daedalus Stormbow's
+  arrow-type volley (`:47424-47465`): 3 arrows, the 91/4/5/41 branch
+  rolls `Next(3)` to DROP one, every other kind to ADD one; the
+  6-draw per-arrow rain (spread/blend/jitters/scale/shift). The Blood
+  Rain Bow's volley (`:47466-47499`): `Next(1,3)` + the 1/3 bonus,
+  the 7-draw per-arrow rain.
+- **Already faithful (untouched):** the PickAmmo per-weapon overrides
+  (`ammo.rs`: Hellwing 3019 → 485, Shadowflame Bow 3052 → 495, Fairy
+  Queen 4953 → 932, Blood Rain 4381 → 819, Skeleton Bow 4058's
+  474 → 117, Bees' Knees 2888 → 469, Molten Quiver 1 → 2), the plain
+  1/2 arrows' generic flight (their C# arm IS the generic tail), the
+  81/82 hostile twins (slice A), the 639/640 Moonlord pair
+  (`projectile_ai_moonlord`), the 485 Hellwing bat (its own
+  `:57708-57735` homing tail is a separate follow-up — the row exists,
+  the generic flight serves it today, unchanged).
+
+**RNG order (the task's core risk):**
+
+- The FLIGHT module takes no rng — every `Main.rand` in the ported
+  AI blocks feeds dust/gore only (cited per kind in the module
+  header), skipped with the layer (the ai001_a/b/c convention). The
+  `UpdateProjectiles` stream is untouched BY CONSTRUCTION for flight.
+- The HIT draws ride `damage_pve`'s stream in the C#'s statement
+  order: Shadowflame `Next(120,300)` → FlameArrow `Next(3)` →
+  Frostburn `Next(3)`; the Cursed/Ichor/Venom arms are draw-free (the
+  else-if chain's earlier tests are kind comparisons). One draw per
+  landed contact, before the strike.
+- The DEATH draws ride the pool's death-hook stream: the star's
+  `Next(-400,400)` then `Next(600,900)`; the bee swarm's per-slot odd
+  gate `Next(3)` (only i = 1/3/5), then per spawned bee
+  `Next(-35,36)` ×2 → `beeType`'s `Next(2)` (only when strongBees) →
+  `beeDamage`'s `Next(1,4)`/`Next(2)` — the C#'s named-argument
+  evaluation order (`:76423`). The Hellfire blast draws nothing (its
+  gore/dust census is skipped with the layer).
+- The SHOOT draws ride `UpdatePlayers` (the ItemCheck swap): the
+  Stormbow's count roll FIRST (the arrow-type branch), then 6 draws
+  per arrow in the C#'s line order; the Blood Rain's `Next(1,3)` +
+  `Next(3)` then 7 per arrow. The volley reuses the shot's ONE
+  throw-time crit roll (the port's crit-at-throw convention — the C#
+  rolls crit per hit; no extra draws).
+
+**Deliberate deviations (recorded):**
+
+- The Chlorophyte bounce's blocked-axis detection is the port's
+  per-axis destination probe (the `kill_step` stand-in for the swept
+  `TileCollision`). The bounce tick integrates the POST-bounce
+  reversed/retargeted velocity: the C# `UpdatePosition(wetVelocity)`
+  (`:19858` → `:20433-20446`) reads `wetVelocity` only on its
+  `base.wet` arm (`:20439-20441`); an arrow in open air is dry, so the
+  dry arm (`:20443-20445`) steps `base.velocity` — the reversed /
+  retargeted value — immediately. (Retry fix: the first pass wrongly
+  integrated the pre-collision velocity forward, mis-reading
+  `wetVelocity` as the dry-path integrand.)
+- The bee water kill probes the tile liquid flags instantaneously;
+  the C#'s `honeyWet`/`shimmerWet` are per-tick sticky — a bee leaving
+  honey into water kills a tick earlier than the C#'s flag decay.
+- The star's `soundDelay` arm (`:23881-23885`, `20 + Next(40)`) and
+  the dust/gore gates are skipped with the sound/dust layers (the
+  pool-wide convention); the `noDropItem = true` writes
+  (`Player.cs:47462`/`:47497`) have no port field (the projectile
+  item-drop layer is unported).
+- The accessory StatusNPC chains (`accPoisonBarb` `:11180`,
+  `catalystBand` `:11188`, `meleeEnchant` `:11192`, the
+  `frostBurn`/`magmaStone` set bonuses `:11518-11536`) are unported
+  player flags — the melee-only ones never fire for an arrow by
+  construction; the arrow-relevant `accPoisonBarb`/`frostBurn` are
+  follow-ups with the accessory layer.
+- The 469's `Shimmer()` velocity kick (`:22372-22378`) and the
+  arrow-family shimmer float (`:22380-22383`) are unported (the
+  projectile shimmer layer is a separate system).
+- The 819 Blood Arrow's own `AI_001` arm (`:56388-56422`: the
+  first-tick 8-dust burst, the per-tick `alpha -= 20` fade, the
+  5-dust trail + the 1/2 red-dust gate, the red `AddLight`) keeps the
+  generic flight — its effects are the dust/alpha/light layers and the
+  SHOOT-side Blood Rain volley (ported); the fade is cosmetic (the
+  row's alpha 255 now seeds it correctly for the follow-up).
+- The Phantasm's `phantasmTime` extra-arrow spawns (`:13870-13878`)
+  and the `accHoneyedBarb` swarm (`:13879-13902`) are unported player
+  flags — follow-ups.
+
 ## aiStyle-1 per-type arms, slice C (S1-D-5, 2026-11-19, code-only mode)
 
 Branch `task/S1-D-5-aistyle1-types-c` (worktree TR-D5a3). CODE-ONLY: no

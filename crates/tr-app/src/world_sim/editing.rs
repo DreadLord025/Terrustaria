@@ -2298,6 +2298,10 @@ fn thrust_stab_tick(
             app.inventory = inv;
             app.equip = equip;
         }
+        // The post-PickAmmo bow conversions (`Player.cs:47157-47176`) ride
+        // `bow_launch::post_pick_overrides` at the launch (S1-P-i13/i17
+        // keep-one — the wire's not-consume rolls above key on the
+        // PRE-conversion projectile, the C#'s order).
         // The shot's stats. `Player.cs:53541-53568` fuses the ammo's own damage
         // (through the weapon's class multiplier) and shootSpeed onto the
         // weapon's; `Player.cs:47073-47078` then discards the whole fuse for the
@@ -5550,6 +5554,141 @@ mod tests {
         app.reuse_delay = 0.0;
     }
 
+    /// S1-P-i17 — the post-PickAmmo bow conversions (`Player.cs:47157-
+    /// 47168`): the Molten Fury burns ONLY the wooden arrow, the Marrow
+    /// and the Ice Bow convert EVERY ammo unconditionally.
+    #[test]
+    fn s1_p_i17_the_bow_conversions_fire_after_the_pick() {
+        // The Molten Fury (120) + the Wooden Arrow (40) → the FlameArrow 2.
+        let mut app = shooter_rig(120, "Molten Fury", &[(0, 40, 99)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 30, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert!(!fired.is_empty(), "the Fury fired");
+        assert!(fired.iter().all(|p| p.kind == 2), "the wooden arrow burns");
+        // The Molten Fury + the Flaming Arrow (41) → stays 2 (the ammo's
+        // own shoot — the conversion gates on projToShoot == 1).
+        let mut app = shooter_rig(120, "Molten Fury", &[(0, 41, 99)]);
+        let mut log = Vec::new();
+        hold(&mut app, screen, 30, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert!(fired.iter().all(|p| p.kind == 2), "the Flaming Arrow's own 2");
+        // The Marrow (682) + the Wooden Arrow → the Bone Arrow 117
+        // (UNCONDITIONAL — `:47161-47164` has no projToShoot gate).
+        let mut app = shooter_rig(682, "Marrow", &[(0, 40, 99)]);
+        let mut log = Vec::new();
+        hold(&mut app, screen, 30, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert!(!fired.is_empty());
+        assert!(fired.iter().all(|p| p.kind == 117), "the Marrow fletches bone");
+        // The Ice Bow (725) + the Wooden Arrow → the Frost Arrow 120.
+        let mut app = shooter_rig(725, "Ice Bow", &[(0, 40, 99)]);
+        let mut log = Vec::new();
+        hold(&mut app, screen, 30, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert!(!fired.is_empty());
+        assert!(fired.iter().all(|p| p.kind == 120), "the Ice Bow frosts");
+    }
+
+    /// S1-P-i17 — the Daedalus Stormbow's arrow-type volley branch
+    /// (`Player.cs:47424-47437`): the heavy arrows (91/4/5/41) roll to
+    /// DROP one (2-3 per volley), every other kind rolls to ADD one
+    /// (3-4). ONE ammo drains per volley (the pick runs once). The count
+    /// roll is seed-dependent, so the witness observes SEVERAL volleys
+    /// and asserts every one lands in its band.
+    #[test]
+    fn s1_p_i17_the_stormbow_volley_is_arrow_type_gated() {
+        // The wooden arrow: every volley is 3 or 4, never 2.
+        let mut app = shooter_rig(3029, "Daedalus Stormbow", &[(0, 40, 99)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        let mut volleys = Vec::new();
+        for _ in 0..6 {
+            let before = shots(&app);
+            hold(&mut app, screen, 25, &mut log);
+            let n = shots(&app);
+            if n > before {
+                volleys.push(n - before);
+            }
+            repress(&mut app);
+        }
+        assert!(volleys.len() >= 3, "several volleys fired");
+        for v in &volleys {
+            assert!((3..=4).contains(v), "the wooden volley is 3-4, got {v}");
+        }
+        assert_eq!(
+            app.equip.ammo[0].count as usize,
+            99 - volleys.len(),
+            "one ammo per volley"
+        );
+        assert!(
+            app.projectiles.slots().iter().filter(|p| p.active).all(|p| p.kind == 1),
+            "the volley carries the ammo's kind"
+        );
+        // The volley rains from ABOVE: every spawn Y sits above the
+        // player, every velocity Y points down (the aim-Y fold).
+        let py = app.player.as_ref().unwrap().y;
+        for p in app.projectiles.slots().iter().filter(|p| p.active) {
+            assert!(p.pos.y < py, "the arrow spawns above the player");
+            assert!(p.vel.y > 0.0, "the arrow rains down");
+        }
+        // The Holy Arrow (516 → 91): every volley is 2 or 3, never 4.
+        let mut app = shooter_rig(3029, "Daedalus Stormbow", &[(0, 516, 99)]);
+        let mut log = Vec::new();
+        let mut volleys = Vec::new();
+        for _ in 0..6 {
+            let before = shots(&app);
+            hold(&mut app, screen, 25, &mut log);
+            let n = shots(&app);
+            if n > before {
+                volleys.push(n - before);
+            }
+            repress(&mut app);
+        }
+        assert!(volleys.len() >= 3, "several volleys fired");
+        for v in &volleys {
+            assert!((2..=3).contains(v), "the Holy volley is 2-3, got {v}");
+        }
+        assert!(
+            app.projectiles.slots().iter().filter(|p| p.active).all(|p| p.kind == 91),
+            "the Holy Arrow's own 91"
+        );
+    }
+
+    /// S1-P-i17 — the Blood Rain Bow (`Player.cs:47466-47499`): 1-3
+    /// arrows per volley (`Next(1,3)` + the 1/3 bonus), all the 819
+    /// Blood Arrow, raining from above.
+    #[test]
+    fn s1_p_i17_the_blood_rain_bow_volley() {
+        let mut app = shooter_rig(4381, "Blood Rain Bow", &[(0, 40, 99)]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        let mut volleys = Vec::new();
+        for _ in 0..6 {
+            let before = shots(&app);
+            hold(&mut app, screen, 25, &mut log);
+            let n = shots(&app);
+            if n > before {
+                volleys.push(n - before);
+            }
+            repress(&mut app);
+        }
+        assert!(volleys.len() >= 3, "several volleys fired");
+        for v in &volleys {
+            assert!((1..=3).contains(v), "the Blood volley is 1-3, got {v}");
+        }
+        assert!(
+            app.projectiles.slots().iter().filter(|p| p.active).all(|p| p.kind == 819),
+            "the bow's unconditional 819 (`Player.cs:53507-53510`)"
+        );
+        assert_eq!(
+            app.equip.ammo[0].count as usize,
+            99 - volleys.len(),
+            "one ammo per volley"
+        );
+    }
+
     #[test]
     fn test_DW_4_1_the_clockwork_swing_drains_one_ammo_of_three_shots() {
         // `Player.cs:53631` + `:4066`: the Clockwork's `useTime 4 < useAnimation
@@ -6246,17 +6385,20 @@ mod tests {
     #[test]
     fn test_dirty_a_resolved_kind_without_a_proj_data_row_refuses_the_shot() {
         // The `proj_data` trap `projectile.rs` documents: a kind with no row
-        // makes `spawn_with_data` decline silently. The Cobalt Repeater with
-        // the Frostburn Arrow (988) resolves to projectile 172, which has no
-        // row yet — its AI is M4-PROJ's — and the wire must refuse the shot
-        // without panicking, while the ammo it already picked still drains (the
-        // drain runs before the spawn, `Player.cs:53675` before the spawn).
-        let mut app = shooter_rig(435, "Cobalt Repeater", &[(0, 988, 9)]);
+        // makes `spawn_with_data` decline silently. The original rig (the
+        // Cobalt Repeater + the Frostburn Arrow 988 → 172) LEFT this test
+        // with S1-P-i17 — the 172 now rows and the shot fires. The trap
+        // moves to the bullet family: the Clockwork Assault Rifle (434,
+        // useAmmo 97) with the Venom Bullet (1342 → projectile 283, the
+        // dart family, still rowless). The wire must refuse the shot
+        // without panicking, while the ammo it already picked still drains
+        // (the drain runs before the spawn, `Player.cs:53675`).
+        let mut app = shooter_rig(434, "Clockwork Assault Rifle", &[(0, 1342, 9)]);
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         hold(&mut app, screen, 26, &mut log);
         assert_eq!(shots(&app), 0, "the spawn declined the unknown kind");
-        assert_eq!(app.equip.ammo[0].count, 8, "the picked arrow still drained");
+        assert_eq!(app.equip.ammo[0].count, 8, "the picked bullet still drained");
     }
 
     #[test]
