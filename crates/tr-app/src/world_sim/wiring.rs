@@ -229,10 +229,26 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     npc.x = x as f32 - w * 0.5;
                     npc.y = y as f32 - h - 1.0;
                 }
-                // The boulder statue's projectile 99 (aiStyle 25) has no ported
-                // family — dropped with the ANALYSIS note, like the other
-                // not-yet-ported projectile families.
-                tr_core::wiring::StatueSpawn::Boulder { .. } => {}
+                // The boulder statue's projectile 99 (`Wiring.cs:2002-2010`:
+                // `NewProjectile(..., 99, 70, 10f)` at the anchor, velocity
+                // (0, 0)) rides the shared device-shot seam — collected here
+                // and spawned after the step (the closure holds only disjoint
+                // field borrows). It spawns once the boulder family (aiStyle
+                // 25) carries a `proj_data` row, and drops with the ANALYSIS
+                // note until then (the not-yet-ported-family path).
+                tr_core::wiring::StatueSpawn::Boulder { x, y } => {
+                    device_shots.push(tr_core::wiring::DeviceShot {
+                        kind: 99,
+                        x: x as f32,
+                        y: y as f32,
+                        vx: 0.0,
+                        vy: 0.0,
+                        damage: 70,
+                        knock_back: 10.0,
+                        ai0: 0.0,
+                        ai1: 0.0,
+                    });
+                }
             }
         }
         // The actuation cascade's object drops (`SquareTileFrame(resetFrame:
