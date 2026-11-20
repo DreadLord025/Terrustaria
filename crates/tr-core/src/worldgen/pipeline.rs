@@ -1320,6 +1320,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // Buried Chests (`:16971`) — W4-g37 B1. Own `pass_rng("Statues")` stream.
     step!("statues", "Statues", step_statues),
     step!("cave houses", "Buried Chests", step_cave_houses),
+    // The vanilla Surface Chests slot (`WorldGen.cs:17130`): after Buried
+    // Chests (`:16971`), before Jungle Chests Placement (`:17211`) — W4-g37
+    // B2. Own `pass_rng("Surface Chests")` stream.
+    step!("surface chests", "Surface Chests", step_surface_chests),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2342,6 +2346,35 @@ fn step_statues(
     passes_b::pass_statues(world, world_surface, rock_layer, no_traps_for_real, &mut rng);
 }
 
+/// The vanilla Surface Chests slot (`WorldGen.cs:17130-17210`) — W4-g37 B2:
+/// the width-scaled surface-chest search with the wall-2/59/244 gate and the
+/// ±50 living-tree scan. Own `pass_rng("Surface Chests")` stream.
+fn step_surface_chests(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let surface_low = gv.layers().surface_low;
+    let rock_layer = gv.layers().rock_layer;
+    let no_surface = opts
+        .micro_flags
+        .contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
+    let mut rng = streams.pass_rng("Surface Chests");
+    passes_b::pass_surface_chests(
+        world,
+        world_surface,
+        surface_low,
+        rock_layer,
+        no_surface,
+        &mut rng,
+        streams.chest_stock.as_deref_mut(),
+    );
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -3176,8 +3209,9 @@ mod tests {
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-g37 B1: + `statues` (vanilla "Statues", `WorldGen.cs:16853`)
-        // before `cave houses`.
-        assert_eq!(names.len(), 67);
+        // before `cave houses`. B2: + `surface chests` (vanilla "Surface
+        // Chests", `:17130`) after `cave houses`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3255,6 +3289,9 @@ mod tests {
                 // precedes Buried Chests (`:16971`).
                 "statues",
                 "cave houses",
+                // W4-g37 B2: the vanilla Surface Chests slot
+                // (`WorldGen.cs:17130`) follows Buried Chests (`:16971`).
+                "surface chests",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3496,6 +3533,25 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Statues") < cpos("Buried Chests"));
         assert!(cpos("Life Crystals") < cpos("Statues"));
+    }
+
+    /// W4-g37 B2: `surface chests` sits in its vanilla slot — after
+    /// `cave houses` (Buried Chests, `WorldGen.cs:16971`) and before `chests`
+    /// (Jungle Chests Placement, `:17211`).
+    #[test]
+    fn w4_g37_the_surface_chests_step_follows_the_cave_houses() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("surface chests"), pos("cave houses") + 1);
+        assert!(pos("surface chests") < pos("chests"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Buried Chests") < cpos("Surface Chests"));
+        assert!(cpos("Surface Chests") < cpos("Jungle Chests Placement"));
     }
 
     #[test]

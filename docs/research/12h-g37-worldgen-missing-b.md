@@ -144,14 +144,46 @@ Traps, Final Cleanup.
   written (the pipeline count/order tests + the positional witness), not
   run; the gate runs them.
 
+## B2 Surface Chests — landing notes (this commit)
+
+- **Pass body** `WorldGen.cs:17130-17210` → `passes_b.rs::pass_surface_chests`.
+  The `noSurface` gate (`:17132`) reads the micro flag; the skyblock budget
+  (`:17136-17139`) is deferred. Count `(int)(maxTilesX*0.005)`; the 2000
+  give-up budget; the y band `(int)worldSurfaceLow .. (int)worldSurface`; the
+  **unbounded** `oceanDepths` re-roll (`:17155-17159`, the remix arm deferred);
+  the wall-2/59/244 surface gate (`:17163-17173`); the ±50 `j+=2`/`k+=2`
+  wall-244 scan with the `Next(num8)==0` acceptance + `num8++` tightening
+  (`:17176-17193`); `AddBuriedChest(num3, num4, 0, notNear:true, flag2?12:-1,
+  trySlope:false, 0)` (`:17195`).
+- **Shared placement core** (new, B2/B3/B5): `place_chest_at` = `PlaceChest`
+  (`:57813-57846`, the boulder-floor veto + the near-chest exclusion + the
+  `TileObject.CanPlace`/`Place` route — the temple.rs:1981 precedent);
+  `add_buried_chest` = `AddBuriedChest`'s placement half (`:35877-37568`):
+  the floor scan, the shimmer/larva-231 aborts, the style-17 ±30 chest box +
+  the trySlope top-slope flatten/restore, the ±2 boulder/altar box (fluff
+  100), the `SolidTile` floor gate, the `num9` style resolution (`flag15`
+  default 1, the caller override), the desert/ice/hell family arms (kept 1:1;
+  a surface chest never reaches them in a classic world), the style-12
+  living-tree wall gate, then `PlaceChest(i-1, k-1)`. The stocking block
+  (`:36218-37551`) rides the `chest_stock` hook (S1-A-4) with the layer-anchor
+  save/restore (the mini_biomes.rs:1144 precedent).
+- **Pipeline**: `step!("surface chests", …)` after `cave houses`, before
+  `chests`; count 67→68; witness
+  `w4_g37_the_surface_chests_step_follows_the_cave_houses`; progress `Gen(31)`
+  (`:17134`).
+- **Hash notes**: BOTH pins move BY DESIGN (the surface band sits above
+  oceanLevel, so the 512-world's 2 chests place); re-pins deferred; `a == b`
+  untouched.
+- **Verification**: code-only — witnesses written, not run.
+
 ## Landing ledger
 
 | pass | commit | status |
 | --- | --- | --- |
 | range claim (this doc) | 8ef3e111 | claimed |
 | census re-probe + claim confirmation (this doc) | 30f605c7 | confirmed — all nine UNLANDED on every pushed branch |
-| B1 Statues | (this commit) | ported — witnesses written not run |
-| B2 Surface Chests | — | pending |
+| B1 Statues | a0bf6174 | ported — witnesses written not run |
+| B2 Surface Chests | (this commit) | ported — witnesses written not run |
 | B3 Water Chests | — | pending |
 | B4 Cave Walls | — | pending |
 | B5 Floating Island Houses | — | pending |

@@ -246,6 +246,13 @@ mod tests {
     // isolated `pass_rng("Statues")` stream shifts no other ledger). The
     // DEFAULT_WORLD pin below moves BY DESIGN; deferred to the gate. The
     // a == b halves stay untouched.
+    // W4-g37 B2 (code-only): the Surface Chests pass
+    // (`WorldGen.cs:17130-17210`, `passes_b.rs::pass_surface_chests`) lands
+    // after `cave houses` — the count `(int)(512*0.005) = 2` surface chests
+    // place on their own `pass_rng("Surface Chests")` stream (the y band sits
+    // above the oceanLevel line, so oceanDepths never re-rolls them), moving
+    // this pin BY DESIGN; deferred to the gate. The a == b halves stay
+    // untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -293,6 +300,9 @@ mod tests {
     // its 73-style cycle on the default 4200-wide world — the statue bodies,
     // the four trap plates and their red wires move this pin BY DESIGN;
     // deferred to the gate.
+    // W4-g37 B2 (code-only): the Surface Chests pass (see SEED42_512 above)
+    // places its ~21 surface chests + the AddBuriedChest floor scans on the
+    // default world — this pin moves BY DESIGN; deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

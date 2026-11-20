@@ -671,6 +671,296 @@ fn wire_line(world: &mut World, start: (i32, i32), end: (i32, i32)) {
     }
 }
 
+// --- the buried-chest placement core (B2/B3/B5) ------------------------------
+
+/// `Chest.NearOtherChests(x, y)` (`Chest.cs:543-558`): a `BasicChest` tile
+/// ({21, 467}) within the ±25 × ±8 window.
+fn near_other_chests(world: &World, x: i32, y: i32) -> bool {
+    for i in (x - 25)..(x + 25) {
+        for j in (y - 8)..(y + 8) {
+            if world
+                .tile(i, j)
+                .is_some_and(|t| t.active() && (t.kind == 21 || t.kind == 467))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.PlaceChest(x, y, type, notNearOtherChests, style)`
+/// (`WorldGen.cs:57813-57846`): the boulder-floor veto, the near-chest
+/// exclusion, the `TileObject.CanPlace`/`Place` route, then `Chest.CreateChest`
+/// (the port's chest record rides the `chest_stock` hook, S1-A-4). Returns the
+/// placed anchor on success.
+fn place_chest_at(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    kind: u16,
+    not_near: bool,
+    style: i32,
+) -> Option<(i32, i32)> {
+    // `:57816-57819`: the boulder-floor veto.
+    let boulder_below = |px: i32| {
+        world
+            .tile(px, y + 1)
+            .is_some_and(|t| td::SET_BOULDERS.has(t.kind))
+    };
+    if boulder_below(x) || boulder_below(x + 1) {
+        return None;
+    }
+    if not_near && near_other_chests(world, x - 1, y - 1) {
+        return None;
+    }
+    let Some(def) = crate::tileobject::def_for_tile(kind) else {
+        return None;
+    };
+    // The placement stream is taken out for the read-only `can_place` call and
+    // restored after (chest 21/467 have RandomStyleRange 0, so this draws
+    // nothing — the pass stream stays aligned; the temple.rs:1988 precedent).
+    let mut rand = std::mem::take(&mut world.place_rng);
+    let instance = crate::tileobject::can_place(
+        world,
+        x,
+        y,
+        def,
+        style,
+        1,
+        None,
+        &mut rand,
+        world.tile_object_random_cache,
+    );
+    world.place_rng = rand;
+    let instance = instance?;
+    if crate::tileobject::place(world, &instance) {
+        Some((instance.x_coord, instance.y_coord))
+    } else {
+        None
+    }
+}
+
+/// `WorldGen.IsUndergroundDesert(x, y)` (`WorldGen.cs:35755-35781`): the
+/// surface/15-85 % band gates, then the ±15 wall-187/216 scan.
+fn is_underground_desert(world: &World, x: i32, y: i32, world_surface: f64) -> bool {
+    if (y as f64) < world_surface {
+        return false;
+    }
+    if (x as f64) < world.width as f64 * 0.15 || (x as f64) > world.width as f64 * 0.85 {
+        return false;
+    }
+    for i in (x - 15)..=(x + 15) {
+        for j in (y - 15)..=(y + 15) {
+            if world.tile(i, j).is_some_and(|t| t.wall == 187 || t.wall == 216) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.IsDungeon(x, y)` (`WorldGen.cs:35783-35798`): below the surface,
+/// in bounds, and a `Main.wallDungeon` wall.
+fn is_dungeon_at(world: &World, x: i32, y: i32, world_surface: f64) -> bool {
+    if (y as f64) < world_surface || y >= world.height {
+        return false;
+    }
+    if x < 0 || x >= world.width {
+        return false;
+    }
+    world
+        .tile(x, y)
+        .is_some_and(|t| crate::scene::is_dungeon_wall(t.wall))
+}
+
+/// `WorldGen.IsLockedDungeonBiomeChest(chestType, chestStyle)`
+/// (`WorldGen.cs:35850-35869`): the 21 styles 23-27 and the 467 style 13.
+fn is_locked_dungeon_biome_chest(kind: u16, style: i32) -> bool {
+    match kind {
+        21 => (23..=27).contains(&style),
+        467 => style == 13,
+        _ => false,
+    }
+}
+
+/// `WorldGen.AddBuriedChest(i, j, mainItemInChest, notNearOtherChests,
+/// chestStyle, trySlope, chestTileType)` (`WorldGen.cs:35877-37568`), the
+/// placement half. The downward floor scan with the per-row rejections
+/// (shimmer / larva 231 / the ±2 boulder-altar box), the `trySlope` top-slope
+/// flatten + restore, the style resolution (`num9`) and the family dispatch,
+/// then `PlaceChest(i-1, k-1)`. The stocking block (`:36218-37551`) rides the
+/// `chest_stock` hook (S1-A-4). Returns the placed anchor.
+///
+/// The B callers pass `chestTileType 0` (→ 21) and styles {-1, 12, 17, 13, 2};
+/// the desert/ice/hell kind-overrides require depth bands + tile probes a
+/// surface/water/sky chest never reaches in a classic world, so the kind stays
+/// 21 and the style is the caller's (the `flag15` default for −1). The
+/// special-seed arms (errorWorld, getGood, notTheBees, remix, drunk, tenth,
+/// dualDungeons, noTraps) are deferred — a classic world reads none.
+#[allow(clippy::too_many_arguments)]
+fn add_buried_chest(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    main_item: u16,
+    not_near: bool,
+    chest_style: i32,
+    try_slope: bool,
+    world_surface: f64,
+    rock_layer: f64,
+    rng: &mut Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> Option<(i32, i32)> {
+    let mut chest_kind: u16 = 21; // `:35880-35883`: chestTileType 0 → 21.
+    for k in j..(world.height - 10) {
+        // `:35906-35913`: a shimmer cell or the larva 231 aborts the scan.
+        if world.tile(i, k).is_some_and(|t| any_shimmer(t)) {
+            return None;
+        }
+        if world.tile(i, k).is_some_and(|t| t.active() && t.kind == 231) {
+            return None;
+        }
+        // `:35914-35944`: the trySlope top-slope flatten (the style-17 ±30
+        // chest-exclusion box runs first).
+        let mut slope_left: i32 = -1;
+        let mut slope_here: i32 = -1;
+        if try_slope
+            && world.tile(i, k).is_some_and(|t| {
+                t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
+            })
+        {
+            if chest_style == 17 {
+                for l in (i - 30)..=(i + 30) {
+                    for m in (k - 30)..=(k + 30) {
+                        if !in_world(world, l, m, 5) {
+                            return None;
+                        }
+                        if world
+                            .tile(l, m)
+                            .is_some_and(|t| t.active() && (t.kind == 21 || t.kind == 467))
+                        {
+                            return None;
+                        }
+                    }
+                }
+            }
+            if world.tile(i - 1, k).is_some_and(|t| t.top_slope()) {
+                slope_left = world.tile(i - 1, k).map(|t| t.slope() as i32).unwrap_or(0);
+                if let Some(t) = world.tile_mut(i - 1, k) {
+                    t.set_slope(0);
+                }
+            }
+            if world.tile(i, k).is_some_and(|t| t.top_slope()) {
+                slope_here = world.tile(i, k).map(|t| t.slope() as i32).unwrap_or(0);
+                if let Some(t) = world.tile_mut(i, k) {
+                    t.set_slope(0);
+                }
+            }
+        }
+        // `:35945-35948`: the remix centre-band abort (special seed — deferred).
+        // `:35949-35959`: the ±2 boulder/altar box (InWorld fluff 100).
+        for n in (i - 2)..=(i + 2) {
+            for m in (k - 2)..=(k + 2) {
+                if in_world(world, n, m, 100)
+                    && world.tile(n, m).is_some_and(|t| {
+                        t.active()
+                            && (td::SET_BOULDERS.has(t.kind) || t.kind == 26 || t.kind == 237)
+                    })
+                {
+                    return None;
+                }
+            }
+        }
+        // `:35960-35963`: the floor gate.
+        if !crate::edit::solid_tile(world, i, k) {
+            continue;
+        }
+        // `:35964-35985`: the style resolution. `flag15` = below
+        // worldSurface+25 → num9 = 1; the caller's chestStyle overrides.
+        let flag15 = (k as f64) >= world_surface + 25.0;
+        let mut num9 = if flag15 { 1 } else { 0 };
+        if chest_style >= 0 {
+            num9 = chest_style;
+        }
+        let mut num10: u16 = main_item;
+        // `:36023-36048`: flag3 — the underground-desert arm (the num10 == 0 +
+        // depth + wall probe). The desert main roll rides the stocking hook.
+        if num10 == 0
+            && k <= world.height - 205
+            && is_underground_desert(world, i, k, world_surface)
+        {
+            num9 = 10;
+            chest_kind = 467;
+        }
+        // `:36064-36088`: flag2 — the ice arm (the 147/161/162/197 tile probe
+        // below worldSurface+25, above maxTilesY-205).
+        let ice_floor = world
+            .tile(i, k)
+            .is_some_and(|t| matches!(t.kind, 147 | 161 | 162 | 197));
+        if num10 == 0
+            && (k as f64) >= world_surface + 25.0
+            && k <= world.height - 205
+            && ice_floor
+        {
+            num9 = 11;
+        }
+        // `:36115-36125`: flag8 — the hell arm (below maxTilesY-205, num10 == 0).
+        if k > world.height - 205 && num10 == 0 {
+            num9 = 4;
+        }
+        // `:36134-36150`: the style-12 living-tree wall gate.
+        if chest_kind == 21 && num9 == 12 {
+            if world.tile(i - 1, k - 1).map(|t| t.wall).unwrap_or(0) != 244 {
+                num9 = 0;
+                num10 = 0;
+            }
+        }
+        // `:36163-36170`: the dungeon / locked-biome flags (stocking-side).
+        let _dungeon = num9 != 0 && is_dungeon_at(world, i, k, world_surface);
+        let _locked = is_locked_dungeon_biome_chest(chest_kind, num9);
+        // `:36206`: PlaceChest(i-1, k-1, chestTileType, notNearOtherChests, num9).
+        if let Some(anchor) = place_chest_at(world, i - 1, k - 1, chest_kind, not_near, num9) {
+            // The stocking block (`:36218-37551`) — the chest_stock hook. The
+            // band/context reads ride the pass's layer anchors (world_surface
+            // is only published by the world tail, after this step).
+            let saved_surface = world.world_surface;
+            let saved_rock = world.rock_layer;
+            world.world_surface = world_surface;
+            world.rock_layer = rock_layer;
+            super::chest_stock::stock_placed_chest(
+                world,
+                stock.as_deref_mut(),
+                rng,
+                anchor.0,
+                anchor.1,
+                num9,
+                chest_kind,
+                num10,
+                not_near,
+            );
+            world.world_surface = saved_surface;
+            world.rock_layer = saved_rock;
+            return Some(anchor);
+        }
+        // `:37554-37564`: the trySlope restore on a failed place.
+        if try_slope {
+            if slope_left > -1 {
+                if let Some(t) = world.tile_mut(i - 1, k) {
+                    t.set_slope(slope_left as u8);
+                }
+            }
+            if slope_here > -1 {
+                if let Some(t) = world.tile_mut(i, k) {
+                    t.set_slope(slope_here as u8);
+                }
+            }
+        }
+        return None;
+    }
+    None
+}
+
 /// The `Statues` pass (`WorldGen.cs:16853-16970`): the width-scaled statue
 /// count, the per-statue rejection search (the ocean-depths re-roll budget, the
 /// fall-to-floor, the frame-important / shimmer veto), the forced `PlaceTile`,
@@ -764,6 +1054,119 @@ pub(crate) fn pass_statues(
                             flag = true;
                         }
                     }
+                }
+            }
+        }
+    }
+    placed
+}
+
+// --- B2: Surface Chests ------------------------------------------------------
+
+/// The `Surface Chests` pass (`WorldGen.cs:17130-17210`): the width-scaled
+/// surface-chest count, the per-chest rejection search (the ocean-depths
+/// re-roll, the wall-2/59/244 surface gate, the ±50 wall-244 living-tree scan),
+/// then `AddBuriedChest` with the living-tree style 12 / the default −1.
+/// Returns the number placed.
+pub(crate) fn pass_surface_chests(
+    world: &mut World,
+    world_surface: f64,
+    surface_low: f64,
+    rock_layer: f64,
+    no_surface: bool,
+    rng: &mut Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> u32 {
+    // `:17132`: the noSurface gate (a classic world reads false).
+    if no_surface {
+        return 0;
+    }
+    // `:17140`: the count `(int)(maxTilesX * 0.005)`.
+    let count = (world.width as f64 * 0.005) as i32;
+    let num = 2000; // `:17135`: the give-up budget.
+    // `:17148`: the y band `(int)worldSurfaceLow .. (int)worldSurface`.
+    let y_lo = surface_low as i32;
+    let y_hi = world_surface as i32;
+    // The sub-vanilla guard: the C# Next(lo, hi) throws on a collapsed band.
+    if y_hi <= y_lo || world.width <= 400 || count <= 0 {
+        return 0;
+    }
+    let mut placed = 0u32;
+    for _i in 0..count {
+        let mut flag = false;
+        let mut num2 = 0;
+        while !flag {
+            let mut num3 = rng.range(200, world.width - 200);
+            let mut num4 = rng.range(y_lo, y_hi);
+            // `:17155-17159`: the ocean-depths re-roll (the remix arm deferred).
+            while ocean_depths(world, num3, num4, world_surface, rock_layer) {
+                num3 = rng.range(300, world.width - 300);
+                num4 = rng.range(y_lo, y_hi);
+            }
+            // `:17161-17194`: the surface gate. flag2 = the living-tree style
+            // (wall 244), flag3 = a valid surface site.
+            let mut flag2 = false;
+            let mut flag3 = false;
+            let cell = world.tile(num3, num4).copied().unwrap_or_default();
+            if !cell.active() {
+                // `:17165-17172`: wall 2 / 59 / 244 (the remix disjunct deferred).
+                if cell.wall == 2 || cell.wall == 59 || cell.wall == 244 {
+                    if cell.wall == 244 {
+                        flag2 = true;
+                    }
+                    flag3 = true;
+                }
+            } else {
+                // `:17176-17193`: the ±50 wall-244 scan (the `j += 2` / `k += 2`
+                // stride from num6-50 / num7-50, the Next(num8) == 0 acceptance
+                // with the num8++ tightening).
+                let mut num8 = 1;
+                let mut j = num3 - 50;
+                while j <= num3 + 50 {
+                    let mut k = num4 - 50;
+                    while k <= num4 + 50 {
+                        if (k as f64) < world_surface
+                            && world
+                                .tile(j, k)
+                                .is_some_and(|t| !t.active() && t.wall == 244)
+                            && rng.range(0, num8) == 0
+                        {
+                            flag2 = true;
+                            num8 += 1;
+                            flag3 = true;
+                            num3 = j;
+                            num4 = k;
+                        }
+                        k += 2;
+                    }
+                    j += 2;
+                }
+            }
+            // `:17195-17206`: the AddBuriedChest call (style 12 for the
+            // living-tree site, else −1) + the give-up budget.
+            let style = if flag2 { 12 } else { -1 };
+            if flag3
+                && add_buried_chest(
+                    world,
+                    num3,
+                    num4,
+                    0,
+                    true,
+                    style,
+                    false,
+                    world_surface,
+                    rock_layer,
+                    rng,
+                    stock.as_deref_mut(),
+                )
+                .is_some()
+            {
+                flag = true;
+                placed += 1;
+            } else {
+                num2 += 1;
+                if num2 >= num {
+                    flag = true;
                 }
             }
         }
