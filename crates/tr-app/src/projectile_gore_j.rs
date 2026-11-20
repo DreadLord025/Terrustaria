@@ -132,6 +132,19 @@ pub fn corner_gores(
     }
 }
 
+/// Site 105b (the gap fill) — `Kill()`'s 240 corner four (`Projectile.cs:
+/// 75871-75886`, between the 162 corners and the 284 confetti in source
+/// order): the SAME row as the 281 corners (magnitude 1.0) — keep-one onto
+/// [`corner_gores`]. The caller ran the dust loops first.
+pub fn kill240_corner_gores(
+    p: &Projectile,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    corner_gores(p, 1.0, gore, rng, world);
+}
+
 // ---- witness tests (WRITTEN, NOT RUN — code-only mode, no compiler) ----
 #[cfg(test)]
 mod tests {

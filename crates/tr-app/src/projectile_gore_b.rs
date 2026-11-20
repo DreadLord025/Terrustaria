@@ -200,6 +200,41 @@ pub fn tile_collision_burst(
     }
 }
 
+/// Site 15b (the gap fill) — the aiStyle-132 crystal-destruction burst
+/// (`Projectile.cs:36326-36342`, between the 1025 burst and the volcano in
+/// source order): the caller gates on `localAI[1] == 0 && localAI[0] ==
+/// 105`; 20 gores, per gore the angle `i/20 * -PI + NextFloat*0.1 - 0.05`
+/// (ONE float) and the radius `NextFloat*10` (ONE float), vector =
+/// `(radius, 0).RotatedBy(angle)`; `NewGoreDirect(Center + vector*3,
+/// vector, SelectRandom(1027,1028,1029,1030))` = Next(4); post the Y-flip
+/// chain (`> 0 → *= -0.5`, `< -5 → Y *= 0.8`, then `Y *= 1.1`, `X *= 0.88`).
+pub fn crystal_destruction_gores(
+    p: &Projectile,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let c = center(p);
+    for i in 0..20 {
+        // `:36330` — the angle draw then the radius draw (argument order).
+        let angle = i as f32 / 20.0 * -std::f32::consts::PI + rng.next_float() * 0.1 - 0.05;
+        let radius = rng.next_float() * 10.0;
+        let vector = rotated_by(Vec2::new(radius, 0.0), angle as f64);
+        let ty = [1027, 1028, 1029, 1030][rng.next_max(4) as usize];
+        let idx = gore.new_gore_direct(rng, world, c + vector * 3.0, vector, ty, 1.0);
+        let g = gore.slot_mut(idx);
+        // `:36332-36341` — the flip chain, in order.
+        if g.velocity.y > 0.0 {
+            g.velocity *= -0.5;
+        }
+        if g.velocity.y < -5.0 {
+            g.velocity.y *= 0.8;
+        }
+        g.velocity.y *= 1.1;
+        g.velocity.x *= 0.88;
+    }
+}
+
 /// Site 18 — `AI_189_Volcano`'s `ai[0]==1` gore loop (`Projectile.cs:42323-
 /// 42331`): `num7` gores (the caller draws `Next(3, 7)` at `:42311` between
 /// the two dust loops; the 1125 flag divides it by 3). Per gore:
@@ -418,6 +453,29 @@ mod tests {
         assert_eq!(gore.slot(2).gore_type, 1146);
         assert_eq!(gore.slot(5).gore_type, 1146);
         assert_eq!(gore.slot(8).gore_type, 1146);
+    }
+
+    /// `Projectile.cs:36326-36342` — the crystal burst (the gap fill):
+    /// 20 gores, per gore the angle float + the radius float + Next(4) +
+    /// kicks; the flip chain draws nothing.
+    #[test]
+    fn w4_g16_the_crystal_burst_draws_angle_then_radius() {
+        let w = air();
+        let p = proj();
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(83);
+        crystal_destruction_gores(&p, &mut gore, &mut rng, &w);
+        let mut twin = UnifiedRandom::new(83);
+        for _ in 0..20 {
+            let _ = twin.next_float(); // the angle jitter
+            let _ = twin.next_float(); // the radius
+            let _ = twin.next_max(4); // SelectRandom
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek());
+        let active = gore.slots()[..20].iter().filter(|g| g.active).count();
+        assert_eq!(active, 20);
     }
 
     /// `Projectile.cs:45303-45310` — the fire explosion: 2 gores, each the
