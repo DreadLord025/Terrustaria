@@ -125,6 +125,11 @@ mod npc_ai_style52;
 mod npc_ai_style53;
 mod npc_ai_style55;
 mod npc_ai_style56;
+// W4-g61: UNWIRED NPC spawn/teleport-in dust (PoofOfSmoke, the
+// BigMimicSpawnSmoke, TransformVisuals, Main.TeleportEffect +
+// UpdateNPC_TeleportVisuals) - the wiring round drains them at the
+// bug-net/statue/transform/teleport seams (see the module doc).
+mod npc_spawn_visuals;
 mod npc_ai_style59;
 // S1-D-3 (aiStyle-67): UNWIRED snail wall-crawler machine (359/360/655) -
 // no NpcKind yet; the kind-wave wiring is the S1-D-3 merge step.
