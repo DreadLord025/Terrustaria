@@ -158,9 +158,32 @@ pub(crate) fn fire(
         } else {
             None
         };
-    let Some((frame, _misc_counter)) = launch_frame(app, world_pos, speed, jitter) else {
+    let Some((mut frame, _misc_counter)) = launch_frame(app, world_pos, speed, jitter) else {
         return;
     };
+    // `:47229-47232` — the Pew-matic Horn 5117 spawns from the entity's upper
+    // third (`pointPosition.Y = position.Y + (float)(height / 3)`), AFTER the
+    // facing flip and BEFORE the aim delta (`:47277-47278`) — so the aim also
+    // re-derives from the shifted anchor. The V5 gate found the arm missing;
+    // draw-free geometry, the aim keeps |speed|. (The 3094/3378/3543 thrown
+    // siblings at `:47225-47228` are i28/i16's lanes.)
+    if kind == 5117 {
+        let p = app.player.as_ref().expect("launch_frame returned Some");
+        frame.spawn.y = p.y + (crate::player::HEIGHT as i32 / 3) as f32;
+        let mut num4 = world_pos.x - frame.spawn.x;
+        let mut num5 = world_pos.y - frame.spawn.y;
+        let mut num6 = (num4 * num4 + num5 * num5).sqrt();
+        if (num4.is_nan() && num5.is_nan()) || (num4 == 0.0 && num5 == 0.0) {
+            num4 = frame.direction as f32;
+            num5 = 0.0;
+            num6 = speed;
+        } else {
+            num6 = speed / num6;
+        }
+        num4 *= num6;
+        num5 *= num6;
+        frame.vel = Vec2::new(num4, num5);
+    }
 
     // The per-gun dispatch, in the C#'s code order. Each arm `return`s in the
     // source; the port folds them into one match. The generic single-shot tail
@@ -815,6 +838,18 @@ mod tests {
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 968, "the post-pick override");
         assert_eq!(shots[0].ai[1], frame as f32);
+        // `:47229-47232` — the horn spawns from the entity's upper third
+        // (position.Y + height/3 = +14), NOT the mounted centre (the V5
+        // fidelity fix); the aim re-derives from the shifted anchor.
+        let py = app.player.as_ref().unwrap().y;
+        assert!(
+            (shots[0].pos.y - (py + 14.0)).abs() < 1e-3,
+            "the upper-third anchor (`:47231`)"
+        );
+        assert!(
+            (shots[0].vel.length() - 14.0).abs() < 1e-3,
+            "the re-derived aim keeps |speed|"
+        );
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 3));
     }
 
