@@ -52,6 +52,7 @@ use super::structures;
 use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
+use super::wall_variety;
 use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
@@ -1394,6 +1395,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // Smooth World), so the step lands after the living wood exists — the
     // sweep's `tileSolid[191] = false` window has its vanilla consumer.
     step!("waterfalls", "Waterfalls", step_waterfalls),
+    // The vanilla Wall Variety slot (`WorldGen.cs:16697`): after Waterfalls
+    // (`:16610`) and Ice (`:16667`), before Life Crystals (`:16755`) —
+    // W4-d103 pass 21. The executed chain's `fragile ice` sits earlier (the
+    // pre-scaffold order), so the relative Waterfalls < Wall Variety and
+    // Ice < Wall Variety pairs both hold with the step after `waterfalls`.
+    step!("wall variety", "Wall Variety", step_wall_variety),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2635,6 +2642,37 @@ fn step_waterfalls(
     liquids::pass_waterfalls(world, &mut streams.pass_rng("Waterfalls"));
 }
 
+/// The vanilla Wall Variety slot (`WorldGen.cs:16697`): the unsafe
+/// natural-wall retexture over enclosed cave pockets on a fresh
+/// `pass_rng("Wall Variety")` stream. The `Skyblock.denyAllGeneration` gate
+/// (`:16699`, `:3131` — plain skyblock) rides the skyblock flag. The shimmer
+/// safety loop reads `GenVars.shimmerPosition` — zero until the unported
+/// `Shimmer` pass (`:15195`) writes it (`WorldGen.cs:7039`/`:15241`), so the
+/// port passes the C# zero-init pair (the loop is inert at the origin, far
+/// below the surface band).
+fn step_wall_variety(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    wall_variety::pass_wall_variety(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        gv.lava_line,
+        (0.0, 0.0),
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        &mut streams.pass_rng("Wall Variety"),
+    );
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3211,8 +3249,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-d103: + `oasis` (vanilla "Oasis", `WorldGen.cs:16243`) between
         // `remove water` and `shell piles`; + `waterfalls` (vanilla
-        // "Waterfalls", `:16610`) after `living trees`.
-        assert_eq!(names.len(), 68);
+        // "Waterfalls", `:16610`) after `living trees`; + `wall variety`
+        // (vanilla "Wall Variety", `:16697`) after `waterfalls`.
+        assert_eq!(names.len(), 69);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3305,6 +3344,7 @@ mod tests {
                 "slopes",
                 "living trees",
                 "waterfalls",
+                "wall variety",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3396,7 +3436,8 @@ mod tests {
         // `slopes`) and before Planting Trees (`:20179`); the vanilla
         // Smooth World (`:16419`) < Waterfalls pair holds too.
         assert_eq!(names[pos("living trees") + 1], "waterfalls");
-        assert_eq!(names[pos("waterfalls") + 1], "trees");
+        assert_eq!(names[pos("waterfalls") + 1], "wall variety");
+        assert_eq!(names[pos("wall variety") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3415,6 +3456,13 @@ mod tests {
         assert!(cpos("Smooth World") < cpos("Waterfalls"));
         assert!(cpos("Living Trees") < cpos("Waterfalls"));
         assert!(cpos("Waterfalls") < cpos("Ice"));
+        // W4-d103 pass 21: the vanilla Wall Variety pairs (`:16610`
+        // Waterfalls / `:16667` Ice → `:16697` Wall Variety → `:16755` Life
+        // Crystals — the Life Crystals step is unported, the chain pair is
+        // the witness).
+        assert!(cpos("Waterfalls") < cpos("Wall Variety"));
+        assert!(cpos("Ice") < cpos("Wall Variety"));
+        assert!(cpos("Wall Variety") < cpos("Life Crystals"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 

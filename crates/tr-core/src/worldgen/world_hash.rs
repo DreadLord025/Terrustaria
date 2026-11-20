@@ -258,6 +258,14 @@ mod tests {
     // shore) — unmeasured, no compiler on this branch. The gate re-pins
     // whichever pin moved; the a == b determinism asserts stay in place
     // (the pass draws only its own fresh stream).
+    // W4-d103 pass 21 (2026-11-20, code-only): the `Wall Variety` pass
+    // (`WorldGen.cs:16697-16754`) lands on a fresh `pass_rng("Wall Variety")`
+    // stream after `waterfalls`. The count is `(int)(300 * 512*512/5040000)`
+    // = 15 placements; the point band `Next(surface, 512-190)` is non-empty
+    // on the 512 fixture, so the pass RUNS there — whether a qualifying
+    // stone-floor pocket (>50 cells, drained, clean) exists is unmeasured
+    // (no compiler on this branch). Stale-by-design if one does; the gate
+    // re-pins. a == b stays (the pass draws only its own fresh stream).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -314,6 +322,13 @@ mod tests {
     // The re-pin is DEFERRED to the merge gate (no compiler on this
     // branch); a == b stays green — the pass draws only its own fresh
     // stream, and the half-brick flag rides the existing tile hash mix.
+    // W4-d103 pass 21 (code-only): the Wall Variety pocket retexture (the
+    // 196-215 unsafe-wall families over the drained >50-cell cave pockets,
+    // `(int)(300 * 4200*1200/5040000)` = 300 placements on the default
+    // world) moves this pin BY DESIGN — the cave fields qualify. The
+    // re-pin is DEFERRED to the merge gate (no compiler on this branch);
+    // a == b stays green — the pass draws only its own fresh stream, and
+    // the wall field rides the hash mix.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

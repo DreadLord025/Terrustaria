@@ -160,7 +160,7 @@ rather than a port of all 45k lines".
 | Shimmer (`Shimmer` `:15195`) | MISSING | — | Not a worldgen liquid in the port (admitted in ANALYSIS M5-STRUCT-5's list) |
 | Spawn selection (`SpawnPoint` `:19460-19588`) | PARTIAL | `pipeline.rs::step_world_tail` `:2355-2401` | Classic: `map.spawn_center` and `heights[center]-6`; the vanilla pass scans for a valid cell (and the remix arm). No `randomSpawn`/`teamBasedSpawns` |
 | Starter NPC (`Guide` `:19850`) | MISSING | — | No spawn-starter-NPC step (spawning is module 24) |
-| Wall polish (`Cave Walls` `:17711`, `Wall Variety` `:16950`) | MISSING | — | The passes that re-texture cave walls are not ported |
+| Wall polish (`Cave Walls` `:17711`, `Wall Variety` `:16697`) | PARTIAL | `wall_variety.rs::pass_wall_variety` (W4-d103 pass 21) | The `Wall Variety` pocket retexture landed 2026-11-20 (code-only, `:16697-16754` — the flood-fill/outline framework inline); `Cave Walls` is still missing |
 | Cleanup (`Quick Cleanup` `:17949`, `Tile Cleanup` `:21200`, `Remove Broken Traps` `:22130`, `Final Cleanup` `:22141`) | MISSING | — | No steps; the port relies on its framing pass |
 | Special seeds (9 classic + 37 micro) | PARTIAL | `seeds.rs`, `finish_seeds.rs`, `micro_*.rs` | Framework (option table, BCrypt `to_secret`, flags on `World`/`GenOptions`, TRWLD v7) plus the ported arms; `noSurface`, `roundLandmasses`, `errorWorld`, `extraLiquid`, `dualDungeons`, `teamBasedSpawns`, `randomSpawn`, `addTeleporters`, `graveyardBloodmoonStart` deferred (admitted in ROADMAP M5-SEED-1/2) |
 | Skyblock world gen (`WorldGen.skyblockWorldGen` gate, the duplicated `Jungle` registration `WorldGen.cs:11509`) | MISSING | `VANILLA_CHAIN` gate text only | The gate is never read at runtime, so a skyblock seed runs the classic pipeline (behavioural) |
@@ -344,6 +344,7 @@ faithful `GraniteBiome` port) and `Surface Caves` (executed, WORLDGEN-CAVES)
 25 Water Chests :17245 · 26 Cave Walls :17711 · 27 Floating Island Houses
 :17859 — **d103 range (19-27, this branch)**.
 Landed: 19 Oasis (90b7eee6), 20 Waterfalls (`liquids.rs::pass_waterfalls`,
+2026-11-20, code-only), 21 Wall Variety (`wall_variety.rs::pass_wall_variety`,
 2026-11-20, code-only — pin re-pins deferred to the merge gate).
 28 Quick Cleanup :17875 · 29 Hellforge :18187 · 30 Spreading Grass :18237 ·
 31 Surface Ore and Stone :18447 · 32 Place Fallen Log :18513 · 33 Traps :18657 ·
