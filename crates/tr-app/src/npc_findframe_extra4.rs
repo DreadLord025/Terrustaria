@@ -76,6 +76,22 @@ pub enum FindFrameExtra4Kind {
     /// `NPCID.BloodCrawler` = 239 (`NPCID.cs:11155`) — the same
     /// creeper group (`NPC.cs:73085`).
     BloodCrawler,
+    /// `NPCID.JungleCreeperWall` = 237 (`NPCID.cs:11151`) — the
+    /// 165/531 wall-crawler group (`NPC.cs:73112-73116`).
+    JungleCreeperWall,
+    /// `NPCID.BlackRecluseWall` = 238 (`NPCID.cs:11153`) — the same
+    /// wall-crawler group (`NPC.cs:73114`; d46's 165 BlackRecluse
+    /// is the walking twin, NOT this arm).
+    BlackRecluseWall,
+    /// `NPCID.BloodCrawlerWall` = 240 (`NPCID.cs:11157`) — the same
+    /// wall-crawler group (`NPC.cs:73115`).
+    BloodCrawlerWall,
+    /// `NPCID.BloodFeeder` = 241 (`NPCID.cs:11159`) — the
+    /// 55/57/58/102/465/592/607 fish group (`NPC.cs:74181-74188`).
+    BloodFeeder,
+    /// `NPCID.BloodJelly` = 242 (`NPCID.cs:11161`) — the
+    /// 63/64/103/256 jellyfish group (`NPC.cs:73916-73920`).
+    BloodJelly,
 }
 
 impl FindFrameExtra4Kind {
@@ -87,6 +103,11 @@ impl FindFrameExtra4Kind {
             Self::HornetStingy => 235,
             Self::JungleCreeper => 236,
             Self::BloodCrawler => 239,
+            Self::JungleCreeperWall => 237,
+            Self::BlackRecluseWall => 238,
+            Self::BloodCrawlerWall => 240,
+            Self::BloodFeeder => 241,
+            Self::BloodJelly => 242,
         }
     }
 
@@ -101,6 +122,12 @@ impl FindFrameExtra4Kind {
             Self::HornetStingy => 3,
             Self::JungleCreeper => 5,
             Self::BloodCrawler => 5,
+            // Main.cs:67107 (237/238): 4, 4; :67108 (240/241/242): 4, 6, 7.
+            Self::JungleCreeperWall => 4,
+            Self::BlackRecluseWall => 4,
+            Self::BloodCrawlerWall => 4,
+            Self::BloodFeeder => 6,
+            Self::BloodJelly => 7,
         }
     }
 }
@@ -114,6 +141,11 @@ pub fn find_frame_kind_extra4(vanilla_type: i16) -> Option<FindFrameExtra4Kind> 
         235 => FindFrameExtra4Kind::HornetStingy,
         236 => FindFrameExtra4Kind::JungleCreeper,
         239 => FindFrameExtra4Kind::BloodCrawler,
+        237 => FindFrameExtra4Kind::JungleCreeperWall,
+        238 => FindFrameExtra4Kind::BlackRecluseWall,
+        240 => FindFrameExtra4Kind::BloodCrawlerWall,
+        241 => FindFrameExtra4Kind::BloodFeeder,
+        242 => FindFrameExtra4Kind::BloodJelly,
         _ => return None,
     })
 }
@@ -213,6 +245,113 @@ pub fn find_frame_extra4(kind: FindFrameExtra4Kind, s: &mut FrameState, i: &Fram
                 }
             }
         }
+        // `case 237/238/240` in the wall-crawler group (`NPC.cs:73112-
+        // 73145`, shared with 165/531 — d46's 165 WallCreeperWall is
+        // the same machine, keep-one at the merge): the
+        // `(|vx| + |vy|) * 0.5` accumulator (the 531-only 0.4 override
+        // `:73119-73122` is a later wave's) rides the <6/<12/<18/<24
+        // bands over rows 0/1/2/3; the >= 24 tail zeroes the counter
+        // and HOLDS the row (`:73140-73143` writes no frame). No
+        // sprite/rotation write, no air split — the walls crawl in
+        // every direction.
+        FindFrameExtra4Kind::JungleCreeperWall
+        | FindFrameExtra4Kind::BlackRecluseWall
+        | FindFrameExtra4Kind::BloodCrawlerWall => {
+            // `:73118-73123` — num194 = 0.5 for all three.
+            s.counter += (i.vx.abs() + i.vy.abs()) * 0.5;
+            // `:73124-73143`.
+            if s.counter < 6.0 {
+                s.row = 0;
+            } else if s.counter < 12.0 {
+                s.row = 1;
+            } else if s.counter < 18.0 {
+                s.row = 2;
+            } else if s.counter < 24.0 {
+                s.row = 3;
+            } else {
+                s.counter = 0.0;
+            }
+        }
+        // `case 241` in the fish group (`NPC.cs:74181-74226`, shared
+        // with 55/57/58/102/465/592/607 — d44's goldfish arm and
+        // e14/d45's 102 AnglerFish are the same machine, keep-one at
+        // the merge): `spriteDirection = direction` UNCONDITIONALLY
+        // (0 included, `:74189`), then the wet/dry split — wet rides
+        // <6/<12/<18/<24 over rows 0/1/2/3 (`:74193-74212`), dry
+        // <6/<12 over rows 4/5 (`:74214-74221`); BOTH tails zero the
+        // counter and HOLD the row (the row-hold quirk, `:74211`/
+        // `:74224`).
+        FindFrameExtra4Kind::BloodFeeder => {
+            // `:74189-74190`.
+            s.sprite_dir = i.direction;
+            s.counter += 1.0;
+            if i.wet {
+                // `:74193-74212`.
+                if s.counter < 6.0 {
+                    s.row = 0;
+                } else if s.counter < 12.0 {
+                    s.row = 1;
+                } else if s.counter < 18.0 {
+                    s.row = 2;
+                } else if s.counter < 24.0 {
+                    s.row = 3;
+                } else {
+                    s.counter = 0.0;
+                }
+            } else if s.counter < 6.0 {
+                // `:74214-74225`.
+                s.row = 4;
+            } else if s.counter < 12.0 {
+                s.row = 5;
+            } else {
+                s.counter = 0.0;
+            }
+        }
+        // `case 242` in the jellyfish group (`NPC.cs:73916-73960`,
+        // shared with 63/64/103/256 — d44's 63/64 and e14/d45's 103
+        // are the same machine, keep-one at the merge): the pulse
+        // gate (`:73921` — 242 IS in the 63/64/103/242 list, 256 is
+        // not) fires on `ai[1] == 1` — the >4 counter cycles rows
+        // 4..6 with BOTH clamps (the first pulse tick lifts any row
+        // into the band) and RETURNS early (`:73923-73937`); else
+        // the idle <6/<12/<18 bands over rows 0/1/2 with the row-3
+        // tail resetting at >= 23 (`:73939-73959`). No sprite/
+        // rotation write.
+        FindFrameExtra4Kind::BloodJelly => {
+            // `:73921-73938`.
+            if i.ai[1] == 1.0 {
+                s.counter += 1.0;
+                if s.counter > 4.0 {
+                    s.counter = 0.0;
+                    s.row += 1;
+                }
+                if s.row > 6 {
+                    s.row = 4;
+                }
+                if s.row < 4 {
+                    s.row = 4;
+                }
+                return;
+            }
+            // `:73939-73959`.
+            s.counter += 1.0;
+            if s.counter < 6.0 {
+                s.row = 0;
+                return;
+            }
+            if s.counter < 12.0 {
+                s.row = 1;
+                return;
+            }
+            if s.counter < 18.0 {
+                s.row = 2;
+                return;
+            }
+            s.row = 3;
+            if s.counter >= 23.0 {
+                s.counter = 0.0;
+            }
+        }
     }
 }
 
@@ -245,6 +384,11 @@ mod tests {
             FindFrameExtra4Kind::HornetStingy,
             FindFrameExtra4Kind::JungleCreeper,
             FindFrameExtra4Kind::BloodCrawler,
+            FindFrameExtra4Kind::JungleCreeperWall,
+            FindFrameExtra4Kind::BlackRecluseWall,
+            FindFrameExtra4Kind::BloodCrawlerWall,
+            FindFrameExtra4Kind::BloodFeeder,
+            FindFrameExtra4Kind::BloodJelly,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -315,13 +459,76 @@ mod tests {
         }
     }
 
+    /// 237/238/240 the wall crawlers: the (|vx|+|vy|)*0.5 accumulator
+    /// over the <6/<12/<18/<24 bands (`NPC.cs:73123-73143`) — vx 4 +
+    /// vy 2 steps 3/tick, the >= 24 tail zeroes the counter and HOLDS
+    /// row 3 for one tick. No sprite/rotation write.
+    #[test]
+    fn f27_wall_crawlers_ride_the_half_speed_bands() {
+        for k in [
+            FindFrameExtra4Kind::JungleCreeperWall,
+            FindFrameExtra4Kind::BlackRecluseWall,
+            FindFrameExtra4Kind::BloodCrawlerWall,
+        ] {
+            let rows = rows_over(k, input(4.0, 2.0), 14);
+            assert_eq!(rows, vec![0, 1, 1, 2, 2, 3, 3, 3, 0, 1, 1, 2, 2, 3]);
+            let mut s = FrameState { row: 3, counter: 21.0, sprite_dir: -1, rotation: 0.5 };
+            find_frame_extra4(k, &mut s, &input(4.0, 2.0));
+            assert_eq!((s.row, s.counter), (3, 0.0), "the tail holds row 3");
+            assert_eq!(s.sprite_dir, -1, "no sprite write");
+            assert_eq!(s.rotation, 0.5, "no rotation write");
+            // Still water-crawling: vx 0 vy 0 never leaves row 0.
+            assert_eq!(rows_over(k, input(0.0, 0.0), 5), vec![0, 0, 0, 0, 0]);
+        }
+    }
+
+    /// 241 BloodFeeder: the fish wet/dry split (`NPC.cs:74189-74225`)
+    /// — wet rows 0..3 at 6 ticks a band, dry rows 4/5; BOTH tails
+    /// zero the counter and HOLD the row; the direction copy carries
+    /// 0. Expectation re-derived by mechanical replay.
+    #[test]
+    fn f27_blood_feeder_wet_dry_hold_tails() {
+        let wet_i = FrameInput { vx: 1.0, wet: true, ..Default::default() };
+        let rows = rows_over(FindFrameExtra4Kind::BloodFeeder, wet_i, 26);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 0, 0]
+        );
+        let dry = rows_over(FindFrameExtra4Kind::BloodFeeder, input(1.0, 0.0), 14);
+        assert_eq!(dry, vec![4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 4, 4]);
+        let mut s = FrameState { sprite_dir: 1, ..Default::default() };
+        let i = FrameInput { direction: 0, wet: true, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::BloodFeeder, &mut s, &i);
+        assert_eq!(s.sprite_dir, 0, "the unconditional copy carries 0");
+    }
+
+    /// 242 BloodJelly: the ai[1]==1 pulse gate cycles rows 4..6 on
+    /// the >4 counter with BOTH clamps (`NPC.cs:73921-73937` — the
+    /// first pulse tick lifts row 0 into the band); the idle bands
+    /// ride rows 0..3 with the >= 23 reset (`:73939-73959`).
+    #[test]
+    fn f27_blood_jelly_pulse_and_idle_bands() {
+        let pulse_i = FrameInput { ai: [0.0, 1.0, 0.0, 0.0], ..Default::default() };
+        let rows = rows_over(FindFrameExtra4Kind::BloodJelly, pulse_i, 16);
+        assert_eq!(rows, vec![4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 4, 4]);
+        let idle = rows_over(FindFrameExtra4Kind::BloodJelly, input(0.0, 0.0), 24);
+        assert_eq!(
+            idle,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 0]
+        );
+        // The upper clamp: a stray row 6+ wraps to 4 on the step.
+        let mut s = FrameState { row: 6, counter: 4.0, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::BloodJelly, &mut s, &pulse_i);
+        assert_eq!((s.row, s.counter), (4, 0.0));
+    }
+
     /// The seam maps exactly the batch's vanilla types and nothing
     /// else.
     #[test]
     fn f27_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra4(t);
-            let claimed = [233, 234, 235, 236, 239];
+            let claimed = [233, 234, 235, 236, 237, 238, 239, 240, 241, 242];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
