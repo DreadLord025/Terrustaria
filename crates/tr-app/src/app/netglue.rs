@@ -911,6 +911,88 @@ impl App {
                 };
                 self.broadcast_tile_entity(server, id);
             }
+            // `case 89` — a client placed an item into a frame (W4-g50,
+            // `MessageBuffer.cs:3377-3393` → `TEItemFrame.TryPlacing`,
+            // `TEItemFrame.cs:69-86`): no frame at the cell drops the item
+            // back; a held frame drops its old contents first, then takes
+            // the new item and shares the entity with an `86`.
+            C2s::ItemFrameTryPlacing(p) => {
+                let (x, y) = (p.x as i32, p.y as i32);
+                // `WorldGen.RangeFrame(x, y, x+2, y+2)` — the framing
+                // refresh rides the port's edit chain; the entity books
+                // are the state the message changes.
+                let frame = self
+                    .world
+                    .tile_entities
+                    .get_at(p.x, p.y)
+                    .filter(|e| e.kind == tr_core::tile_entities::TeKind::ItemFrame)
+                    .map(|e| e.id);
+                let Some(frame_id) = frame else {
+                    // `Item.NewItem(… type, stack, … prefix)` — the refused
+                    // placement drops the item at the cell with the exact
+                    // prefix (`Item.cs:49730`'s `Prefix(exact)` applies it
+                    // directly, no fresh roll).
+                    let mut drop = item::ItemDrop::new(
+                        p.kind.max(0) as u16,
+                        (p.stack.max(0) as u32).max(1),
+                        p.prefix as u16,
+                        x as f32 * TILE_PX,
+                        y as f32 * TILE_PX,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                    // The spawn scatter rides the port's pinned triplet on
+                    // the bare stream (the message handler runs outside
+                    // every swap, S1-E-21i).
+                    let rng = self.rngs.global();
+                    drop.vel = Vec2::new(
+                        (rng.next_float() * 2.0 - 1.0) * 1.4,
+                        -2.2 - rng.next_float() * 1.2,
+                    );
+                    drop.phase = rng.next_float() * std::f32::consts::TAU;
+                    self.items.push(drop);
+                    return;
+                };
+                // `result.item.stack > 0` → `DropItem` (`TEItemFrame.cs:60-67`):
+                // the old contents drop at the frame's cell (count 1, the
+                // C# `DropItem` passes no stack — `Item.NewItem`'s default),
+                // keeping the stored prefix.
+                if let Some(Some(old)) = self.world.tile_entities.item(frame_id).copied() {
+                    if old.stack > 0 {
+                        let mut drop = item::ItemDrop::new(
+                            old.kind,
+                            1,
+                            old.prefix as u16,
+                            x as f32 * TILE_PX,
+                            y as f32 * TILE_PX,
+                            0.0,
+                            0.0,
+                            0.0,
+                        );
+                        let rng = self.rngs.global();
+                        drop.vel = Vec2::new(
+                            (rng.next_float() * 2.0 - 1.0) * 1.4,
+                            -2.2 - rng.next_float() * 1.2,
+                        );
+                        drop.phase = rng.next_float() * std::f32::consts::TAU;
+                        self.items.push(drop);
+                    }
+                }
+                // `result.item = new Item(); SetDefaults(type); Prefix(prefix);
+                // stack = stack` — the exact prefix applies directly (the
+                // wire byte is the rolled id, not a -1 natural-roll marker).
+                self.world.tile_entities.set_item(
+                    frame_id,
+                    Some(tr_core::tile_entities::TeItem {
+                        kind: p.kind.max(0) as u16,
+                        prefix: p.prefix,
+                        stack: p.stack.max(0) as u16,
+                    }),
+                );
+                // `NetMessage.SendData(86, -1, -1, null, result.ID, x, y)`.
+                self.broadcast_tile_entity(server, frame_id);
+            }
         }
     }
 
@@ -2114,6 +2196,14 @@ impl App {
                     self.world_key = None;
                 }
             }
+            // `case 88` — ItemTweaker (W4-g50, `MessageBuffer.cs:3306-3376`):
+            // the C# applies the gated writes to `Main.item[slot].inner`
+            // (the mutable per-instance stats). The port's world drops
+            // (`item::ItemDrop`) carry no inner-stat fields — the tweak
+            // system is unported, so the apply is parked; the codec is
+            // byte-verbatim (`net.rs`) for the census. The `0..=400` slot
+            // gate (`:3313`) is the reader's only other behaviour.
+            S2c::ItemTweaker(_) => {}
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -5682,5 +5772,73 @@ mod message_family_tests {
         pump(&mut host_app, &mut client_app, 10);
         assert!(client_app.world.tile_entities.get_at(10, 4).is_none());
         assert_eq!(client_app.world.tile_entities.live_entities().count(), 0);
+    }
+
+    /// `case 89` (`MessageBuffer.cs:3377-3393`, `TEItemFrame.cs:69-86`): the
+    /// host stores the item in the frame and shares it; a second placement
+    /// drops the old contents first.
+    #[test]
+    fn w4_g50_the_89_frame_placement_stores_and_drops_the_old_item() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(10, 4);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 395,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        // Place the frame entity first (the 87 path).
+        let id = host_app
+            .world
+            .tile_entities
+            .place_unchecked(tr_core::tile_entities::TeKind::ItemFrame, 10, 4);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ItemFrameTryPlacing(net::ItemFrameTryPlacing {
+                x: 10,
+                y: 4,
+                kind: 29,
+                prefix: 81,
+                stack: 1,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            host_app.world.tile_entities.item(id).copied().flatten(),
+            Some(tr_core::tile_entities::TeItem {
+                kind: 29,
+                prefix: 81,
+                stack: 1
+            }),
+            "the host stored the exact prefix"
+        );
+        assert_eq!(
+            client_app.world.tile_entities.item(id).copied().flatten(),
+            Some(tr_core::tile_entities::TeItem {
+                kind: 29,
+                prefix: 81,
+                stack: 1
+            }),
+            "the 86 share carried the item to the client"
+        );
+        // A second placement drops the old item (count 1) and takes the new.
+        let drops_before = host_app.items.len();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ItemFrameTryPlacing(net::ItemFrameTryPlacing {
+                x: 10,
+                y: 4,
+                kind: 7,
+                prefix: 0,
+                stack: 5,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(host_app.items.len(), drops_before + 1, "the old item dropped");
+        assert_eq!(host_app.items.last().unwrap().kind, 29);
+        assert_eq!(
+            host_app.world.tile_entities.item(id).copied().flatten().map(|i| i.kind),
+            Some(7),
+            "the new item took the frame"
+        );
     }
 }

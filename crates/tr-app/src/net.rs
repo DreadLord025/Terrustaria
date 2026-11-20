@@ -125,6 +125,16 @@ pub mod id {
     /// (byte)type` (`MessageID.cs:188`, `NetMessage.cs:1227-1231`,
     /// `MessageBuffer.cs:3294-3305`, client→host only).
     pub const TILE_ENTITY_PLACEMENT: u8 = 87;
+    /// `88 ItemTweaker` (W4-g50, S1-I-4): `(short)` item slot + two
+    /// BitsBytes gating the `Item.inner` stat writes
+    /// (`MessageID.cs:190`, `NetMessage.cs:1232-1296`,
+    /// `MessageBuffer.cs:3306-3376`, host→client only).
+    pub const ITEM_TWEAKER: u8 = 88;
+    /// `89 ItemFrameTryPlacing` (W4-g50, S1-I-4): `(short)x, (short)y,
+    /// (short)type, (byte)prefix, (short)stack` (`MessageID.cs:192`,
+    /// `NetMessage.cs:1297-1306`, `MessageBuffer.cs:3377-3393`,
+    /// client→host only).
+    pub const ITEM_FRAME_TRY_PLACING: u8 = 89;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -1680,6 +1690,170 @@ pub struct TileEntityPlacement {
     pub kind: u8,
 }
 
+/// `msg 88 ItemTweaker`'s body (`NetMessage.cs:1232-1296`, W4-g50): the
+/// `(short)` item slot, a BitsByte gating seven `Item.inner` stat writes,
+/// then — on bit 7 — a second BitsByte gating six more. The fields ride
+/// only when their flag is set (the C# `if (bitsByte[i])` arms); an unset
+/// field keeps its default and is not written. The reader applies them to
+/// `Main.item[slot].inner` (`MessageBuffer.cs:3306-3376`) — the port's world
+/// drops carry no mutable inner stats, so the apply is parked (the codec is
+/// byte-verbatim for the census). Width/height are `(ushort)`-written but
+/// `ReadInt16`-read (`:1272`/`:3352`); the two bytes are identical.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ItemTweaker {
+    pub slot: i16,
+    pub flags: BitsByte,
+    /// bit 0 — `inner.color.PackedValue` (`uint`).
+    pub color: u32,
+    /// bit 1 — `inner.damage` (`ushort`).
+    pub damage: u16,
+    /// bit 2 — `inner.knockBack` (`float`).
+    pub knockback: f32,
+    /// bit 3 — `inner.useAnimation` (`ushort`).
+    pub use_animation: u16,
+    /// bit 4 — `inner.useTime` (`ushort`).
+    pub use_time: u16,
+    /// bit 5 — `inner.shoot` (`short`).
+    pub shoot: i16,
+    /// bit 6 — `inner.shootSpeed` (`float`).
+    pub shoot_speed: f32,
+    /// bit 7 — the second BitsByte is present.
+    pub flags2: BitsByte,
+    /// flags2 bit 0 — `inner.width` (`ushort` write / `short` read).
+    pub width: i16,
+    /// flags2 bit 1 — `inner.height`.
+    pub height: i16,
+    /// flags2 bit 2 — `inner.scale` (`float`).
+    pub scale: f32,
+    /// flags2 bit 3 — `inner.ammo` (`short`).
+    pub ammo: i16,
+    /// flags2 bit 4 — `inner.useAmmo` (`short`).
+    pub use_ammo: i16,
+    /// flags2 bit 5 — `inner.notAmmo` (`bool`).
+    pub not_ammo: bool,
+}
+
+impl ItemTweaker {
+    /// `NetMessage.cs:1236-1294`: the slot, the first BitsByte, the gated
+    /// fields in bit order, then — on bit 7 — the second BitsByte and its
+    /// gated fields.
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut w = w.i16(self.slot).bitsbyte(self.flags);
+        if self.flags.get(0) {
+            w = w.u32(self.color);
+        }
+        if self.flags.get(1) {
+            w = w.u16(self.damage);
+        }
+        if self.flags.get(2) {
+            w = w.f32(self.knockback);
+        }
+        if self.flags.get(3) {
+            w = w.u16(self.use_animation);
+        }
+        if self.flags.get(4) {
+            w = w.u16(self.use_time);
+        }
+        if self.flags.get(5) {
+            w = w.i16(self.shoot);
+        }
+        if self.flags.get(6) {
+            w = w.f32(self.shoot_speed);
+        }
+        if self.flags.get(7) {
+            w = w.bitsbyte(self.flags2);
+            if self.flags2.get(0) {
+                w = w.u16(self.width as u16);
+            }
+            if self.flags2.get(1) {
+                w = w.u16(self.height as u16);
+            }
+            if self.flags2.get(2) {
+                w = w.f32(self.scale);
+            }
+            if self.flags2.get(3) {
+                w = w.i16(self.ammo);
+            }
+            if self.flags2.get(4) {
+                w = w.i16(self.use_ammo);
+            }
+            if self.flags2.get(5) {
+                w = w.bool(self.not_ammo);
+            }
+        }
+        w
+    }
+
+    /// `MessageBuffer.cs:3312-3374`: the slot, the BitsByte, the gated
+    /// reads; absent fields keep the default (the C# leaves `inner` alone).
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let slot = r.i16()?;
+        let flags = r.bitsbyte()?;
+        let mut t = Self {
+            slot,
+            flags,
+            ..Default::default()
+        };
+        if flags.get(0) {
+            t.color = r.u32()?;
+        }
+        if flags.get(1) {
+            t.damage = r.u16()?;
+        }
+        if flags.get(2) {
+            t.knockback = r.f32()?;
+        }
+        if flags.get(3) {
+            t.use_animation = r.u16()?;
+        }
+        if flags.get(4) {
+            t.use_time = r.u16()?;
+        }
+        if flags.get(5) {
+            t.shoot = r.i16()?;
+        }
+        if flags.get(6) {
+            t.shoot_speed = r.f32()?;
+        }
+        if flags.get(7) {
+            t.flags2 = r.bitsbyte()?;
+            if t.flags2.get(0) {
+                t.width = r.i16()?;
+            }
+            if t.flags2.get(1) {
+                t.height = r.i16()?;
+            }
+            if t.flags2.get(2) {
+                t.scale = r.f32()?;
+            }
+            if t.flags2.get(3) {
+                t.ammo = r.i16()?;
+            }
+            if t.flags2.get(4) {
+                t.use_ammo = r.i16()?;
+            }
+            if t.flags2.get(5) {
+                t.not_ammo = r.bool()?;
+            }
+        }
+        Some(t)
+    }
+}
+
+/// `msg 89 ItemFrameTryPlacing`'s body (`NetMessage.cs:1297-1306`, W4-g50):
+/// `(short)` x, `(short)` y, `(short)` the item type, `(byte)` prefix,
+/// `(short)` stack. The host runs `TEItemFrame.TryPlacing` under
+/// `Item.DefaultAssignNewItemsToPlayer(whoAmI)` (`MessageBuffer.cs:3377-
+/// 3393`): place the item in the frame at (x, y), dropping any old contents.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ItemFrameTryPlacing {
+    pub x: i16,
+    pub y: i16,
+    pub kind: i16,
+    pub prefix: u8,
+    pub stack: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1802,6 +1976,10 @@ pub enum C2s {
     /// (`TETrainingDummy.Hook_AfterPlacement` etc.;
     /// `MessageBuffer.cs:3294-3305` places it and answers with 86; W4-g50).
     TileEntityPlacement(TileEntityPlacement),
+    /// `89 ItemFrameTryPlacing` - a client placed an item into a frame
+    /// (`TEItemFrame.PlaceItemInFrame`, `TEItemFrame.cs:154`;
+    /// `MessageBuffer.cs:3377-3393`; W4-g50).
+    ItemFrameTryPlacing(ItemFrameTryPlacing),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1941,6 +2119,11 @@ pub enum S2c {
     /// (`TileEntity.Write(networkSend: true)`, `NetMessage.cs:1216-1225`;
     /// W4-g50).
     TileEntitySharing(TileEntitySharing),
+    /// `88 ItemTweaker` - a world item's inner-stat tweak
+    /// (`NetMessage.cs:1232-1296`; the port's drops carry no mutable inner
+    /// stats, so the client apply is parked — the codec is byte-verbatim;
+    /// W4-g50).
+    ItemTweaker(ItemTweaker),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2032,6 +2215,7 @@ impl C2s {
             Self::PlayerStealth(_) => id::PLAYER_STEALTH,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
             Self::TileEntityPlacement(_) => id::TILE_ENTITY_PLACEMENT,
+            Self::ItemFrameTryPlacing(_) => id::ITEM_FRAME_TRY_PLACING,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2106,6 +2290,11 @@ impl C2s {
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             // `NetMessage.cs:1227-1231` — short x, short y, byte type.
             Self::TileEntityPlacement(p) => w.i16(p.x).i16(p.y).u8(p.kind),
+            // `NetMessage.cs:1297-1306` — short x, short y, short type,
+            // byte prefix, short stack.
+            Self::ItemFrameTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2246,6 +2435,15 @@ impl C2s {
                 x: r.i16()?,
                 y: r.i16()?,
                 kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3383-3387` — short x, short y, short type,
+            // byte prefix, short stack.
+            id::ITEM_FRAME_TRY_PLACING => Self::ItemFrameTryPlacing(ItemFrameTryPlacing {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2412,6 +2610,7 @@ impl S2c {
             Self::PlayerStealth(_) => id::PLAYER_STEALTH,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
             Self::TileEntitySharing(_) => id::TILE_ENTITY_SHARING,
+            Self::ItemTweaker(_) => id::ITEM_TWEAKER,
         }
     }
 
@@ -2571,6 +2770,8 @@ impl S2c {
                 let w = w.i32(t.id).bool(!t.record.is_empty());
                 w.raw(&t.record)
             }
+            // `NetMessage.cs:1232-1296` — the gated inner-stat writes.
+            Self::ItemTweaker(t) => t.write_to(w),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2808,6 +3009,8 @@ impl S2c {
                 let record = if present { r.rest()?.to_vec() } else { Vec::new() };
                 Self::TileEntitySharing(TileEntitySharing { id, record })
             }
+            // `MessageBuffer.cs:3306-3376` — the gated inner-stat reads.
+            id::ITEM_TWEAKER => Self::ItemTweaker(ItemTweaker::read_from(r)?),
             _ => return None,
         })
     }
@@ -5173,6 +5376,110 @@ mod tests {
         match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
             C2s::TileEntityPlacement(d) => assert_eq!(d, p),
             other => panic!("expected 87, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `88 ItemTweaker` (`NetMessage.cs:1232-1296`): short slot, BitsByte,
+    /// the gated fields in bit order; bit 7 opens the second BitsByte.
+    /// Host→client only (`MessageBuffer.cs:3306-3376`).
+    #[test]
+    fn w4_g50_item_tweaker_round_trips() {
+        // A full tweak: every flag set, both BitsBytes.
+        let mut flags = BitsByte::new();
+        for i in 0..8 {
+            flags.set(i, true);
+        }
+        let mut flags2 = BitsByte::new();
+        for i in 0..6 {
+            flags2.set(i, true);
+        }
+        let t = ItemTweaker {
+            slot: 12,
+            flags,
+            color: 0xFF804020,
+            damage: 35,
+            knockback: 6.5,
+            use_animation: 20,
+            use_time: 15,
+            shoot: 29,
+            shoot_speed: 12.0,
+            flags2,
+            width: 24,
+            height: 24,
+            scale: 1.25,
+            ammo: 4,
+            use_ammo: 5,
+            not_ammo: true,
+        };
+        let f = S2c::ItemTweaker(t).encode();
+        assert_eq!(f[2], 88);
+        let mut body = Vec::new();
+        body.extend_from_slice(&12i16.to_le_bytes());
+        body.push(0xFF); // flags
+        body.extend_from_slice(&0xFF804020u32.to_le_bytes());
+        body.extend_from_slice(&35u16.to_le_bytes());
+        body.extend_from_slice(&6.5f32.to_le_bytes());
+        body.extend_from_slice(&20u16.to_le_bytes());
+        body.extend_from_slice(&15u16.to_le_bytes());
+        body.extend_from_slice(&29i16.to_le_bytes());
+        body.extend_from_slice(&12.0f32.to_le_bytes());
+        body.push(0x3F); // flags2 (bits 0-5)
+        body.extend_from_slice(&24u16.to_le_bytes());
+        body.extend_from_slice(&24u16.to_le_bytes());
+        body.extend_from_slice(&1.25f32.to_le_bytes());
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.push(1); // not_ammo
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemTweaker(d) => assert_eq!(d, t),
+            other => panic!("expected 88, got {:?}", other.msg_id()),
+        }
+        // A minimal tweak: only the damage flag — no second BitsByte.
+        let mut flags = BitsByte::new();
+        flags.set(1, true);
+        let t = ItemTweaker {
+            slot: 0,
+            flags,
+            damage: 10,
+            ..Default::default()
+        };
+        let f = S2c::ItemTweaker(t).encode();
+        let mut body = Vec::new();
+        body.extend_from_slice(&0i16.to_le_bytes());
+        body.push(0x02);
+        body.extend_from_slice(&10u16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemTweaker(d) => assert_eq!(d, t),
+            other => panic!("expected 88, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `89 ItemFrameTryPlacing` (`NetMessage.cs:1297-1306`): short x, short
+    /// y, short type, byte prefix, short stack. Client→host only
+    /// (`MessageBuffer.cs:3377-3393`).
+    #[test]
+    fn w4_g50_item_frame_try_placing_round_trips() {
+        let p = ItemFrameTryPlacing {
+            x: 120,
+            y: 340,
+            kind: 29,
+            prefix: 81,
+            stack: 1,
+        };
+        let c = C2s::ItemFrameTryPlacing(p).encode();
+        assert_eq!(c[2], 89);
+        let mut body = Vec::new();
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&340i16.to_le_bytes());
+        body.extend_from_slice(&29i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&1i16.to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ItemFrameTryPlacing(d) => assert_eq!(d, p),
+            other => panic!("expected 89, got {:?}", other.msg_id()),
         }
     }
 }
