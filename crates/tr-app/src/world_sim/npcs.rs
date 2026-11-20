@@ -1000,6 +1000,9 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // W4-d122 shop 2: the Arms Dealer's ore-tier split
         // (`Chest.cs:1489`) — the world's rolled silver tier.
         silver_ore_tier: app.world.ore_tiers.silver,
+        // W4-d122 shop 4: the Demolitionist's Land Mine triple conjunct
+        // (`Chest.cs:1766`).
+        downed_pirates: app.world.downed_pirates,
     };
     let inv_ids: Vec<u16> = app
         .inventory

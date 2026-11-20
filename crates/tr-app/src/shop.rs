@@ -112,6 +112,10 @@ pub struct ShopFlags {
     /// W4-d122 shop 3: `Main.player[Main.myPlayer].ZoneGlowshroom`
     /// (`Chest.cs:1651`) — the Mushroom set 194 under the else-if.
     pub zone_glowshroom: bool,
+    /// W4-d122 shop 4: `NPC.downedPirates` (`Chest.cs:1766`) — the
+    /// Demolitionist's Holy Hand Grenade 937 triple conjunct. Fed from
+    /// `World.downed_pirates`.
+    pub downed_pirates: bool,
 }
 
 impl Default for ShopFlags {
@@ -160,6 +164,7 @@ impl Default for ShopFlags {
             silver_ore_tier: 9,
             zone_underworld: false,
             zone_glowshroom: false,
+            downed_pirates: false,
         }
     }
 }
@@ -208,6 +213,8 @@ impl ShopFlags {
             // W4-d122 shop 2: the rolled silver tier (`WorldGen.cs:11268`/
             // `:11290`) — the port's persisted `ore_tiers`.
             silver_ore_tier: world.ore_tiers.silver,
+            // W4-d122 shop 4: `NPC.downedPirates` — the world's latch.
+            downed_pirates: world.downed_pirates,
             ..Self::default()
         }
     }
@@ -396,6 +403,15 @@ pub enum StockWhen {
     /// NOT-blood-moon else branch (the infected-seed disjunct is the
     /// difference from [`StockWhen::NotRemixOrAnniversary`]).
     NotRemixOrInfectedOrAnniversary,
+    /// W4-d122 shop 4: `(NPC.downedBoss1 || NPC.downedSlimeKing) &&
+    /// !Main.dayTime` (`Chest.cs:1752`) — the Land Mine 5542 BETWEEN the
+    /// Bomb 166 and the Dynamite 167 rows.
+    Boss1OrSlimeKingNight,
+    /// W4-d122 shop 4: `NPC.downedPirates` (`Chest.cs:1766`'s third
+    /// conjunct — the Holy Hand Grenade gate reads it with hardmode +
+    /// Plantera). The port's `World.downed_pirates` feeds it; no other
+    /// shop case reads the flag alone yet.
+    DownedPirates,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -508,14 +524,31 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(1098, StockWhen::Always),
             row(1966, StockWhen::Always),
         ],
-        // The Demolitionist (`Chest.cs:1746-1814`): the Grenade 168/the
-        // Bomb 166/the Dynamite 167 always; the Land Mine 5542 rides the
-        // downedBoss1/slimeKing night gate (constants-off); the hardmode
-        // 265/5481/5464/1347 and the holy-arrow 937 rows constants-off.
+        // The Demolitionist (`Chest.cs:1746-1813`, the registry
+        // `NPCInteractions.Shop(38, 4)`, `NPCInteractions.cs:491` —
+        // `NPCID.Demolitionist = 38`): the night-gated Freeze Bomb BETWEEN
+        // the Bomb and the Dynamite, the always-on Portable Kiln/Mitey
+        // Titey pair, the hardmode rows and the four 58-slot bomb scans.
         4 => vec![
-            row(168, StockWhen::Always),
-            row(166, StockWhen::Always),
-            row(167, StockWhen::Always),
+            row(168, StockWhen::Always), // `:1748` the Grenade
+            row(166, StockWhen::Always), // `:1750` the Bomb
+            // `:1752-1756`: `(downedBoss1 || downedSlimeKing) && !dayTime`
+            // — the Freeze Bomb 5542 (`ItemID.cs:12767`).
+            row(5542, StockWhen::Boss1OrSlimeKingNight),
+            row(167, StockWhen::Always),   // `:1757` the Dynamite
+            row(265, StockWhen::HardMode), // `:1759-1763` the Hellfire Arrow
+            row(5481, StockWhen::Always),  // `:1764` the Portable Kiln
+            row(5464, StockWhen::Always),  // `:1765` the Mitey Titey
+            // `:1766-1770`: `hardMode && downedPlantBoss && downedPirates`
+            // — the Land Mine 937 (`ItemID.cs:3557`).
+            row(937, DEMO_LAND_MINE),
+            row(1347, StockWhen::HardMode), // `:1771-1775` the Explosive Powder
+            // `:1776-1811`: the four 58-slot scans, in the C#'s order —
+            // the Dry 4827, Wet 4824, Lava 4825 and Honey 4826 bombs.
+            row(4827, StockWhen::PlayerHasItem(4827)),
+            row(4824, StockWhen::PlayerHasItem(4824)),
+            row(4825, StockWhen::PlayerHasItem(4825)),
+            row(4826, StockWhen::PlayerHasItem(4826)),
         ],
         // The Witch Doctor (`Chest.cs:2615-2672`): the Blowgun 1430 and the
         // Flask 986 always; the conditionals (the Queen Bee 2999, the
@@ -1166,6 +1199,16 @@ const DRYAD_FLOWER_TRIPLE2: StockWhen =
     StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(2)]);
 const DRYAD_FLOWER_TRIPLE3: StockWhen =
     StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(3)]);
+
+// — W4-d122: the Demolitionist's compound gate (`Chest.cs:1766`). —
+
+/// `Chest.cs:1766`: `Main.hardMode && NPC.downedPlantBoss &&
+/// NPC.downedPirates` — the Land Mine 937.
+const DEMO_LAND_MINE: StockWhen = StockWhen::All(&[
+    StockWhen::HardMode,
+    StockWhen::DownedPlantBoss,
+    StockWhen::DownedPirates,
+]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -1897,6 +1940,11 @@ fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_p
                     || flags.infected_seed
                     || (flags.anniversary_world && !flags.get_good_world)
             }
+            // `Chest.cs:1752` verbatim.
+            StockWhen::Boss1OrSlimeKingNight => {
+                (flags.downed_boss1 || flags.downed_slime_king) && flags.night
+            }
+            StockWhen::DownedPirates => flags.downed_pirates,
             // The combinators are handled above — unreachable here.
             StockWhen::All(_) | StockWhen::Any(_) | StockWhen::Not(_) => unreachable!(),
         },
@@ -2692,6 +2740,80 @@ mod tests {
                 4241, 4048, 4436, 4437, 4438
             ],
             "the exact num order (`:1569-1731`; the halloween pair stays off)"
+        );
+    }
+
+    /// W4-d122 shop 4 — the Demolitionist (`Chest.cs:1746-1813`, the
+    /// registry `NPCInteractions.Shop(38, 4)`, `NPCInteractions.cs:491`):
+    /// the Freeze Bomb's boss-or-slime-king night gate BETWEEN 166/167,
+    /// the always-on Kiln/Mitey Titey pair, the Land Mine triple conjunct
+    /// and the four bomb scans — verbatim. Written, not run (code-only).
+    #[test]
+    fn the_demolitionist_stock_gates_the_freeze_bomb_and_the_land_mine() {
+        // Classic day: the five always rows.
+        let base = resolve_stock(4, &ShopFlags::default(), &[]);
+        assert_eq!(base, vec![168, 166, 167, 5481, 5464]);
+        // `:1752`: boss1 + NIGHT opens the Freeze Bomb between 166 and 167;
+        // the slime king is the other disjunct; day kills both.
+        let b1n = ShopFlags {
+            downed_boss1: true,
+            night: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(4, &b1n, &[]),
+            vec![168, 166, 5542, 167, 5481, 5464]
+        );
+        let skn = ShopFlags {
+            downed_slime_king: true,
+            night: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock(4, &skn, &[]).contains(&5542));
+        let b1d = ShopFlags {
+            downed_boss1: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock(4, &b1d, &[]).contains(&5542));
+        // `:1766`: the Land Mine needs ALL THREE — hardmode alone or
+        // hardmode+Plantera do not open it.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let h = resolve_stock(4, &hm, &[]);
+        assert_eq!(h, vec![168, 166, 167, 265, 5481, 5464, 1347]);
+        let hmp = ShopFlags {
+            downed_plant_boss: true,
+            ..hm
+        };
+        assert!(!resolve_stock(4, &hmp, &[]).contains(&937));
+        let full = ShopFlags {
+            downed_pirates: true,
+            ..hmp
+        };
+        let f = resolve_stock(4, &full, &[]);
+        let i5464 = f.iter().position(|v| *v == 5464).unwrap();
+        assert_eq!(f[i5464 + 1], 937, "the Land Mine follows the Mitey Titey");
+        // The four scans ride the carried bombs in the C#'s order
+        // (`:1776-1811`: 4827 first, then 4824/4825/4826).
+        let scans = resolve_stock(4, &ShopFlags::default(), &[4826, 4824, 4827, 4825]);
+        assert_eq!(
+            &scans[scans.len() - 4..],
+            &[4827, 4824, 4825, 4826],
+            "the scan order is the C#'s, not the inventory's"
+        );
+        // The FULL pin: hardmode + plant + pirates + night + boss1 + every
+        // carried bomb.
+        let loud = ShopFlags {
+            night: true,
+            downed_boss1: true,
+            ..full
+        };
+        assert_eq!(
+            resolve_stock(4, &loud, &[4827, 4824, 4825, 4826]),
+            vec![168, 166, 5542, 167, 265, 5481, 5464, 937, 1347, 4827, 4824, 4825, 4826],
+            "the exact num order (`:1748-1811`)"
         );
     }
 
