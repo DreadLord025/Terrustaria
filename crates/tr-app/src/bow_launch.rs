@@ -76,7 +76,7 @@ pub(crate) fn is_arrow_shooter(use_ammo: i32) -> bool {
 /// `Utils.RotatedBy(this Vector2, double radians)` (`Utils.cs:1675-1684`):
 /// the float cos/sin of the double angle, the centre-relative spin (the
 /// centre is the origin for every launch use).
-fn rotated_by(v: Vec2, radians: f64) -> Vec2 {
+pub(crate) fn rotated_by(v: Vec2, radians: f64) -> Vec2 {
     let num = radians.cos() as f32;
     let num2 = radians.sin() as f32;
     Vec2::new(v.x * num - v.y * num2, v.x * num2 + v.y * num)
@@ -92,7 +92,7 @@ fn rotated_by_random(v: Vec2, max_radians: f64, rng: &mut UnifiedRandom) -> Vec2
 
 /// `Vector2.SafeNormalize(defaultValue)` (`Utils.cs:1837-1844`): the zero /
 /// NaN vector returns the default, else the unit vector.
-fn safe_normalize(v: Vec2, default: Vec2) -> Vec2 {
+pub(crate) fn safe_normalize(v: Vec2, default: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.x.is_nan() || v.y.is_nan() {
         default
     } else {
@@ -165,56 +165,57 @@ struct Shot {
 /// The shared launch frame the bow arms read: the spawn anchor, the aim
 /// velocity (`num4/num5`), the player centre and the facing. Built once by
 /// [`fire`] from the C#'s `:47196-47307` geometry.
-struct Frame {
+pub(crate) struct Frame {
     /// `pointPosition` (`Player.cs:47196`) — `RotatedRelativePoint(MountedCenter)`.
-    spawn: Vec2,
+    pub(crate) spawn: Vec2,
     /// `num4/num5` (`:47306-47307`) — the aim normalized to `speed`.
-    vel: Vec2,
+    pub(crate) vel: Vec2,
     /// `Main.MouseWorld` — the cursor world point the rain-bow spawn X base
     /// and the Fairy Queen's aim read (`:47440`, `:47929`).
-    cursor: Vec2,
+    pub(crate) cursor: Vec2,
     /// `base.Center` — the Tsunami/Fairy-Queen pull-back anchor.
-    center: Vec2,
+    pub(crate) center: Vec2,
     /// `MountedCenter` — the `CanHitLine` anchor (`:47801`).
-    mounted_center: Vec2,
+    pub(crate) mounted_center: Vec2,
     /// `base.direction` after the facing flip.
-    direction: i32,
+    pub(crate) direction: i32,
     /// `base.position` + `base.width`/`base.height` — the rain-bow spawn X base.
-    pos: Vec2,
-    width: f32,
+    pub(crate) pos: Vec2,
+    pub(crate) width: f32,
 }
 
-/// The bow launch entry — `Player.ItemCheck_Shoot`'s bow half. The wire
-/// calls it for arrow/stake shooters AFTER the stat fuse and the crit roll;
-/// it applies the post-pick overrides, builds the launch frame (flipping the
-/// facing), dispatches the per-bow arm and spawns the arrows. The two arrow
-/// `gunProj` BOWS (the Phantasm 3540, the DD2 Phoenix Bow 3854) reach here
-/// with their fixed bolt id (`proj = g.projectile`, the M3-ITEM-6 reset):
-/// the overrides are non-matching for them and neither has a per-bow arm, so
-/// they take the generic single tail at the rotated anchor — their C# launch
-/// (`:48996-48999` / `:49014-49017`). The bullet/rocket `gunProj` two keep
-/// the wire's generic spawn.
+/// The shared shooter launch frame — `Player.ItemCheck_Shoot`'s geometry
+/// (`Player.cs:47196-47307`) that runs for EVERY shooter (bow AND gun) before
+/// the per-item arms: the `RotatedRelativePoint(MountedCenter)` spawn anchor
+/// (`:47196`), the `Dot(UnitX.RotatedBy(fullRotation), normalize(MouseWorld -
+/// pointPosition))` facing flip → `ChangeDir(±1)` (`:47202-47224`), and the aim
+/// `num4/num5 = MouseWorld - pointPosition` normalized to `speed` with the
+/// zero/NaN fallback to `(direction, 0)` (`:47277-47307`).
 ///
-/// `anim_max_ticks`/`remaining_anim_ticks` are the integer `itemAnimationMax`
-/// / `itemAnimation` the Fairy Queen's fan index reads (`Player.cs:47918`).
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn fire(
+/// S1-P-i13 built this for the bow half; S1-P-i14 extracts it verbatim so the
+/// gun launch ([`crate::gun_launch`]) INHERITS the same anchor/facing/aim — the
+/// shared defects i13 fixed are not re-fixed, only reused. The `flag` (type
+/// 3611 Wire Kite) facing-flip exclusion and the reverse-gravity aim arm
+/// (`gravDir = -1`) are the documented folds (module doc); neither is a gun.
+/// Returns `None` when there is no player. The `misc_counter` out-value is the
+/// Fairy Queen's fan-index input (`:47918`), unused by the gun arms.
+///
+/// `aim_jitter` is the C#'s per-item aim perturbation that runs AFTER the
+/// `num6` zero/NaN fallback (`:47291-47300`) and BEFORE the `num4 *= num6; num5
+/// *= num6` normalization (`:47306-47307`) — the Chain Gun 1929 / Gatligator
+/// 2270 arm (`:47301-47305`) adds `Next(-50, 51) * 0.03f / num6` to each axis.
+/// The closure receives `(num4, num5, num6)` (the raw aim delta + the speed
+/// ratio) and the RNG, and returns the perturbed `(num4, num5)`; the bows pass
+/// `None` (no bow has this arm). Placing it here keeps the draw in the C#'s
+/// exact stream slot — ahead of the per-gun spread arms' draws.
+pub(crate) fn launch_frame(
     app: &mut App,
-    kind: u16,
-    proj: u16,
-    speed: f32,
-    mut damage: i32,
-    knock_back: f32,
-    crit: bool,
     world_pos: Vec2,
-    anim_max_ticks: i32,
-    remaining_anim_ticks: i32,
-) {
-    let proj = post_pick_overrides(kind, proj);
+    speed: f32,
+    aim_jitter: Option<&mut dyn FnMut(f32, f32, f32, &mut UnifiedRandom) -> (f32, f32)>,
+) -> Option<(Frame, u32)> {
     // The launch frame needs the player geometry; the facing flip writes it.
-    let Some(p) = app.player.as_mut() else {
-        return;
-    };
+    let p = app.player.as_mut()?;
     let (mcx, mcy) = p.mounted_center();
     let mounted_center = Vec2::new(mcx, mcy);
     // `pointPosition = RotatedRelativePoint(MountedCenter)` (`:47196`).
@@ -224,7 +225,7 @@ pub(crate) fn fire(
     // The facing flip (`:47202-47224`): `value = UnitX.RotatedBy(fullRotation)`,
     // `vector = normalize(MouseWorld - pointPosition)`, `num = Dot(value,
     // vector)`; `num > 0` → ChangeDir(1) else ChangeDir(-1). The `flag`
-    // (type 3611) exclusion is not a bow.
+    // (type 3611) exclusion is neither a bow nor a gun.
     let value = rotated_by(Vec2::X, p.full_rotation as f64);
     let mut vector = world_pos - spawn;
     if vector != Vec2::ZERO {
@@ -258,20 +259,67 @@ pub(crate) fn fire(
     } else {
         num6 = speed / num6;
     }
+    // The per-item aim jitter slot (`:47301-47305`): after the `num6` fallback,
+    // before the normalization. The bows pass `None`.
+    if let Some(jitter) = aim_jitter {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let (j4, j5) = jitter(num4, num5, num6, rng);
+        num4 = j4;
+        num5 = j5;
+    }
     num4 *= num6;
     num5 *= num6;
     let vel = Vec2::new(num4, num5);
 
-    let frame = Frame {
-        spawn,
-        vel,
-        cursor: world_pos,
-        center,
-        mounted_center,
-        direction,
-        pos,
-        width,
+    Some((
+        Frame {
+            spawn,
+            vel,
+            cursor: world_pos,
+            center,
+            mounted_center,
+            direction,
+            pos,
+            width,
+        },
+        misc_counter,
+    ))
+}
+
+/// The bow launch entry — `Player.ItemCheck_Shoot`'s bow half. The wire
+/// calls it for arrow/stake shooters AFTER the stat fuse and the crit roll;
+/// it applies the post-pick overrides, builds the launch frame (flipping the
+/// facing), dispatches the per-bow arm and spawns the arrows. The two arrow
+/// `gunProj` BOWS (the Phantasm 3540, the DD2 Phoenix Bow 3854) reach here
+/// with their fixed bolt id (`proj = g.projectile`, the M3-ITEM-6 reset):
+/// the overrides are non-matching for them and neither has a per-bow arm, so
+/// they take the generic single tail at the rotated anchor — their C# launch
+/// (`:48996-48999` / `:49014-49017`). The bullet/rocket `gunProj` two keep
+/// the wire's generic spawn.
+///
+/// `anim_max_ticks`/`remaining_anim_ticks` are the integer `itemAnimationMax`
+/// / `itemAnimation` the Fairy Queen's fan index reads (`Player.cs:47918`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fire(
+    app: &mut App,
+    kind: u16,
+    proj: u16,
+    speed: f32,
+    mut damage: i32,
+    knock_back: f32,
+    crit: bool,
+    world_pos: Vec2,
+    anim_max_ticks: i32,
+    remaining_anim_ticks: i32,
+) {
+    let proj = post_pick_overrides(kind, proj);
+    // The shared launch frame (S1-P-i14 extraction — the gun launch inherits
+    // the identical geometry): the rotated anchor, the facing flip and the
+    // aim normalized to `speed`, verbatim from `:47196-47307`.
+    let Some((frame, misc_counter)) = launch_frame(app, world_pos, speed, None) else {
+        return;
     };
+    let center = frame.center;
 
     // The per-bow dispatch, in the C#'s code order. Each arm `return`s in the
     // source; the port folds them into one match. The generic single-shot

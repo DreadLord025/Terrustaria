@@ -12620,6 +12620,17 @@ impl ProjectilePool {
         }
     }
 
+    /// S1-P-i14 — the spawn-site `localAI[1]` payload setter: the Xenopopper
+    /// bubble's deferred fused speed (`Player.cs:47623`,
+    /// `Main.projectile[num26].localAI[1] = speed`; the `set_local_ai0`
+    /// convention). The bubble's AI_078 releases the resolved bullet
+    /// (`localAI[0]`) at this speed.
+    pub fn set_local_ai1(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.local_ai[1] = value;
+        }
+    }
+
     pub fn slots(&self) -> &[Projectile] {
         &self.slots
     }

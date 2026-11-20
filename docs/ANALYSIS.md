@@ -33007,3 +33007,153 @@ call sites checked by read/grep (`can_hit`/`can_hit_line`'s 9-arg shape,
 `UnifiedRandom`'s `next_max`/`next_range`/`next_float`/`next_double`,
 `ProjectilePool::spawn_with_data_owned`/`set_crit`/`set_no_drop_item`). The
 24 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The gun launch (S1-P-i14)
+
+**Mode.** Code-only: no `cargo`/`rustc`/`rustfmt`/test runs, no dotnet, no
+graphify — file reads/writes + git only. The C# arms were re-read whole and
+compared line-by-line against the landed Rust; the 18 witness tests are
+WRITTEN, NOT RUN. **No compiler invoked.**
+
+**Assignment.** The gun use (`useAmmo == AmmoID.Bullet` 97) — the
+`Player.ItemCheck_Shoot` bullet launch arms vs the port, PLUS the CRITICAL
+Revolver 2269 per-tick `Next(3)` crit charge/decay draw (`Player.cs:42677-42703`,
+the i01 census's determinism P0 — MISSING from the port). Scope: the gun LAUNCH
+only. The bullet flight (aiStyle 1/2/78) is the projectile-AI task's; the ammo
+consumption (`HasAmmo`/consumable-drain/Nanite-single-scale) is i15's; the
+special-bullet rows/AI are i18's; the rocket/dart launchers (and the Celebration
+Mk2 3930, `useAmmo` Rocket) are i16's.
+
+**Census (the MISSING).** The pre-i14 shooter wire fired every bullet shooter
+through the generic non-arrow spawn (`center + dir*10`, no per-gun arm, a wrong
+`Item_1` launch cue). Against `Player.cs:47056-49468` the whole per-gun arm
+family was MISSING, and the shared geometry the bow half landed in i13 had not
+reached the guns. The 24 bullet guns (`use_ammo: 97` + Ranged in the generated
+item table): 95 Flintlock, 96 Musket, 98 Minishark, 164 Handgun, 219 Phoenix
+Blaster, 434 Clockwork, 533 Megashark, 534 Shotgun, 679 Tactical Shotgun, 800
+Undertaker, 964 Boomstick, 1254 Sniper, 1255 Venus Magnum, 1265 Uzi, 1553 SDMG,
+1870 Red Ryder, 1929 Chain Gun, 2269 Revolver, 2270 Gatligator, 2797 Xenopopper,
+3475 Vortex Beater (gunProj), 3788 Onyx Blaster, 4703 Quad-Barrel, 5117 Pew-matic
+Horn. (1319 Snowball Cannon ends `useAmmo` Snowball 949; 3107 Nail Gun is
+`useAmmo` Nail — neither is a bullet gun.)
+
+**The shared geometry INHERITED, not re-fixed.** i13 fixed the shooter-spawn
+anchor (`RotatedRelativePoint(MountedCenter)` `:47196`), the facing flip
+(`Dot`→`ChangeDir` `:47202-47224`) and the aim-origin normalization
+(`MouseWorld − pointPosition`, fused speed, zero/NaN fallback `:47277-47307`)
+for the bow half. `ItemCheck_Shoot` runs that SAME frame for EVERY shooter before
+the per-item arms, so the gun half inherits it verbatim: the frame construction
+was extracted from `bow_launch::fire` into `bow_launch::launch_frame`
+(`pub(crate)`, returning the `Frame` + the Fairy Queen's `misc_counter`), and
+`gun_launch::fire` calls it. The `Frame`/`rotated_by`/`safe_normalize` seams went
+`pub(crate)` for the reuse. No anchor/facing/aim re-fix — the i13 work is the
+single source.
+
+**The per-gun arms (verbatim, C# cites).** Minishark 98/Megashark 533 ±40×0.01
+(`:47501-47504`); Chain Gun 1929 ±40×0.03 (`:47810-47813`); SDMG 1553 ±40×0.005
+(`:47815-47818`); Uzi 1265 ±30×0.03 (`:47827-47832`); Gatligator 2270 ±40×0.05
+then a 1/3 `Next(3)` roll scaling both axes ×(1+Next(-30,31)×0.02)
+(`:47627-47637`); the Chain Gun 1929 / Gatligator 2270 ALSO carry the
+pre-normalization aim jitter `num4/num5 += Next(-50,51)×0.03/num6`
+(`:47301-47305`, applied after the `num6` fallback and before `num4 *= num6` —
+ported via the `launch_frame` jitter hook, two draws in the frame's stream slot
+ahead of the spread arms); Shotgun 534 `Next(4,6)` shots ±40×0.05 (`:47958-47967`);
+Quad-Barrel 4703 one straight + 7 perpendicular-jitter shots
+(`RotatedBy(π/2×NextFloat)×NextFloatDirection×5`, renormalized to |v|, then
+±40×0.05, `:47969-47982`); Boomstick 964 `Next(3,5)` ±35×0.04 (`:48146-48155`);
+Tactical 679 six shots ±40×0.05 (`:48355-48363`); Clockwork 434 the
+animation-window spread — `itemAnimation<5` ±40×0.01 then ×1.1, `<10` ±20×0.01
+then ×1.05, else plain (`:48415-48434`); Xenopopper 2797 the muzzle advance
+`Normalize(aim)×40×sItem.scale` when `CanHit`, `Next(4,5)`+`Next(4)==0` bubbles
+(type 444) each `RotatedBy(2π/3×(NextDouble−0.5))×(NextDouble×0.2+0.05)`,
+`ai[0]=aim.ToRotation()`, `localAI[0]=projToShoot`, `localAI[1]=speed`
+(`:47603-47625`); Onyx Blaster 3788 two ±π/4 jitter pairs (4 bullets) + one 661
+black bolt at `SafeNormalize(v, UnitX×direction)×speed×1.3` with ×2 damage
+(`:48828-48838`); Vortex Beater 3475 the fixed 615 + `ai[0]=5×Next(0,20)`
+(`:48986-48989`); Pew-matic Horn 5117 ±15×0.075 + `ai[1]=Next(projFrames[968]=24)`
+(`:47639-47645`), the post-pick override →968 (`:47177-47180`); the Sniper
+1254/Venus 1255/Uzi 1265 `projToShoot==14→242` conversion (`:47107-47118`); the
+generic single tail (`:49437`) for the plain guns (95/96/164/219/800/1870/2269).
+
+**The 3-round burst.** The Clockwork's burst is the `useTime 4 < useAnimation 12`
+volley the shooter wire ALREADY ports (`ApplyItemTime` re-arm, `Player.cs:47184-
+47193`): three shots per swing at animation ticks 11/7/3, pinned by the existing
+`test_DW_4_1_the_clockwork_swing_drains_one_ammo_of_three_shots`. i14 adds the
+per-shot animation-window spread arm (`:48415`) so the three shots tighten
+(plain → ×1.05 → ×1.1) as the swing progresses — the burst's cadence was already
+correct, its per-shot spread was missing.
+
+**The Revolver per-tick draw (determinism P0).** `Player.ItemCheck`
+(`Player.cs:42677-42703`) runs EVERY tick for EVERY held item: holding the
+Revolver 2269 with the button released mid-swing (`itemAnimation>0 &&
+!controlUseItem`) charges `revolverCritChanceBonus` +1 and cancels one extra
+animation/action tick (NO draw); otherwise a 1/3 `Main.rand.Next(3)` roll decays
+the bonus −2 — the non-2269 else arm (`:42700-42703`) draws UNCONDITIONALLY, so
+the draw fires even for an empty hand. The Revolver then clamps `item.crit +
+bonus` to `[crt, 20+crt]` (`:42697-42698`, `crt` = the prefix's additive crit).
+This draw was MISSING from the port — every downstream `UpdatePlayers` draw sat
+one roll early. It now lands in `world_sim/player.rs`'s fixed-step tick closure
+at the `ItemCheck` slot (after the movement/hurt/buff draws, matching the C#'s
+`:31827` `ItemCheck` call after the update body), gated on `!CCed`
+(`Player.cs:42598-42602`) and alive-only (the dead path returns earlier). The
+shot reads the bonus through the throw-time crit roll
+(`Projectile.ApplyStatsFromSource` `Projectile.cs:11129-11132` → the port's
+crit-at-throw convention). New seams: `Player.revolver_crit_chance_bonus`
+(`Player.cs:2456`), `prefix::prefix_crit_bonus` (the `crt` out-param). The spike
+test's exact-stream pin was updated to carry the new `Next(3)` (it was asserting
+the pre-fix, one-draw-short stream).
+
+**useSound per gun — already correct, the wrong launch cue removed.** The per-gun
+`UseSound` plays at the USE START (`ItemCheck_StartActualUse`,
+`Player.cs:51681-51698`), not per shot — the wire's `start_swing_extras` →
+`item::initial_use_sound` already plays the registry's per-gun `use_sound` row.
+Verified the generated rows against `Item.cs`/`SoundID.cs`: 95→Item184,
+96→Item183, 98/533/800/1265/1870→Item11, 164/219/1255/1929/2269/2270→Item41,
+434→Item31, 534/964/3788/4703→Item36, 679→Item38, 1254/1553→Item40,
+2797→Item95, 5117→Item61, 3475/3930→null. The generic launch's `play_at("Item_1")`
+was WRONG for guns (a second, incorrect cue) — removed from the bullet path; the
+launch arms are silent.
+
+**GetWeaponKnockback.** `Player.cs:47151` → `:53346-53369`: the `kbBuff` ×1.5
+(every item) and the shroomite-stealth ×(1+(1−stealth)×0.5) (ranged) arms added
+to the shooter fuse. The `setVortex` twin (`:53364-53367`) reads a field the port
+has not granted yet (the Vortex set's stealth half) — inert until the armor-set
+grant lands. The summon/melee-glove arms are not ranged shooters.
+
+**The bullet proj_data rows.** The gun-specific projectiles the arms fire were
+MISSING (a kind without a row makes `spawn_with_data` decline silently): 242
+HighVelocityBullet (`Projectile.cs:3238-3254`, aiStyle 1, penetrate 3,
+extraUpdates 7, scale 1.18, local immunity −1), 444 Xenopopper bubble
+(`:5150-5161`, aiStyle 78), 661 Onyx black bolt (`:7108-7121`, aiStyle 1,
+timeLeft 40, local immunity −1), 968 Pew-matic shot (`:9160-9168`, aiStyle 2,
+the 24-frame sheet). Added field-cited with the `ignoreWater`/light overlays;
+`ProjectilePool::set_local_ai1` carries the Xenopopper's deferred speed. The
+special-bullet AMMO rows (89/104/279/283/284/285/286/287/207/180/302/638) are
+i18's, NOT added here. The base bullet 14 (`MUSKET_BALL`) already existed.
+
+**Competing-writer incident (recorded for the Lead).** Mid-session, the newly
+created `gun_launch.rs` was overwritten by a DIFFERENT, partial implementation
+(a CandyCorn-scoped variant with an unwired `revolver_tick` seam, only the 3475
+arm, the wrong `Item_1` cue kept, and an 8-arg `fire` incompatible with this
+task's 10-arg dispatch). Detected by reading the file back (foreign symbols
+`tick_rig`/`revolver_tick`/`.peek()`). Per the endanger-other protocol, three
+mtime probes over ~5 minutes showed NO growth, no new commits, no other file
+touched — a single stale overwrite, not an active writer (the abort criterion,
+mtime growing <2 min, was NOT met). All eight of this task's other edited files
+survived intact. The foreign content was preserved as
+`I14-FOREIGN-GUN_LAUNCH.rs.bak` (SHA256
+3A74E974807E824B589ECF48838C9F25193ACF22464E0354CA9155193115B75B) and superseded
+by this task's complete implementation. The Lead should reconcile whether a
+sibling i14 worker is still dispatched; this branch carries the full port.
+
+**Verification.** Code-only: every gun arm re-read whole against
+`Player.cs:47501-47514`/`:47603-47645`/`:47810-47832`/`:47958-47982`/`:48146-
+48155`/`:48355-48363`/`:48415-48434`/`:48828-48838`/`:48986-48989`/`:49437`, the
+shared geometry against `:47196-47307`, the Revolver block against
+`:42677-42703`, the knockback against `:53346-53369`, the projectile rows against
+`Projectile.cs`; the seam call sites checked by read/grep (`launch_frame`'s
+`(Frame, u32)` return, `can_hit`'s 9-arg shape, `proj_frames(968)=24`,
+`UnifiedRandom`'s `next_max`/`next_range`/`next_float`/`next_float_direction`/
+`next_double` each advancing one `internal_sample`, `spawn_with_data_owned`/
+`set_crit`/`set_local_ai0`/`set_local_ai1`, `Player.cced()`). The 18 witness
+tests are WRITTEN, NOT RUN — **no compiler invoked**.

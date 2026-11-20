@@ -364,6 +364,18 @@ pub const BOMB_SKELETRON: u16 = 102;
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
 pub const MUSKET_BALL: u16 = 14;
+/// `ProjectileID.BulletHighVelocity` (242, `Projectile.cs:3238-3254`) — the
+/// Sniper/Venus Magnum/Uzi conversion bullet (S1-P-i14).
+pub const BULLET_HIGH_VELOCITY: u16 = 242;
+/// `ProjectileID.Xenopopper` (444, `Projectile.cs:5150-5161`) — the Xenopopper
+/// gun's bubble projectile (S1-P-i14).
+pub const XENOPOPPER_BUBBLE: u16 = 444;
+/// `ProjectileID.BlackBolt` (661, `Projectile.cs:7108-7121`) — the Onyx
+/// Blaster's dark shot (S1-P-i14).
+pub const ONYX_BLACK_BOLT: u16 = 661;
+/// `ProjectileID.PewMaticHornShot` (968, `Projectile.cs:9160-9168`) — the
+/// Pew-matic Horn's projectile (S1-P-i14).
+pub const PEW_MATIC_SHOT: u16 = 968;
 /// `ProjectileID.PoisonDartBlowgun`-family dart the Dart Trap fires
 /// (`Projectile.cs:1823-1832` — the Wiring emission uses 98, `Wiring.cs:1785`).
 pub const TRAP_DART: u16 = 98;
@@ -1027,6 +1039,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         FLAME_ARROW => 1.0,                    // `:824`
         ENCHANTED_BOOMERANG => 0.4,            // `:872`
         MUSKET_BALL => 0.5,                    // `:957`
+        BULLET_HIGH_VELOCITY => 0.5,           // `:3245` (S1-P-i14)
         BULLET_SNOWMAN => 0.5,                 // `:1985`
         BALL_OF_FIRE => 0.8,                   // `:970`
         MAGIC_MISSILE => 0.8,                  // `:980`
@@ -1457,6 +1470,40 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             BOMB_SKELETRON => (22.0, 22.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false, RESET_STATE),
+            // S1-P-i14 — the bullet-launch projectiles the gun arms fire.
+            // `Projectile.cs:3238-3254` — the HighVelocityBullet 242 (the
+            // Sniper 1254 / Venus Magnum 1255 / Uzi 1265 `projToShoot == 14 →
+            // 242` conversion, `Player.cs:47107-47118`): 4×4, aiStyle 1,
+            // `penetrate = 3`, `extraUpdates = 7`, `timeLeft = 600`,
+            // `scale = 1.18`, `alpha = 255`, `ignoreWater`, local immunity −1.
+            BULLET_HIGH_VELOCITY => (
+                4.0, 4.0, 1, 3, 600, 7, true, false, false,
+                (true, -1, false, -1, 255, 1.18),
+            ),
+            // `Projectile.cs:5150-5161` — the Xenopopper bubble 444 (the
+            // Xenopopper 2797's arm fires it, `Player.cs:47621`): 10×10,
+            // aiStyle 78, `alpha = 255`, `extraUpdates = 1`, `ignoreWater`;
+            // the stock `penetrate = 1` / `tileCollide = true` / life 3600.
+            XENOPOPPER_BUBBLE => (
+                10.0, 10.0, 78, 1, TIME_LEFT_DEFAULT, 1, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7108-7121` — the Onyx Blaster's black bolt 661
+            // (`Player.cs:48837`): 10×10, aiStyle 1, `alpha = 255`,
+            // `timeLeft = 40`, `extraUpdates = 1`, `ignoreWater`, local
+            // immunity −1; the stock `penetrate = 1` / `tileCollide = true`.
+            ONYX_BLACK_BOLT => (
+                10.0, 10.0, 1, 1, 40, 1, true, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:9160-9168` — the Pew-matic Horn's shot 968
+            // (`Player.cs:47644`): 14×14, aiStyle 2, `alpha = 255`; the stock
+            // `penetrate = 1` / `tileCollide = true` / life 3600. The 24-frame
+            // sheet's `frame = (int)ai[1]` pin reads `proj_frames(968)`.
+            PEW_MATIC_SHOT => (
+                14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts —
             // `penetrate = -1`, `trap = true`, aiStyle 1. (The spiky ball 185
             // left this group in S1-D-5/S1-D-4c: its own arm below carries
@@ -3008,6 +3055,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `SetDefaults` bodies: the JestersArrow 5 (`Projectile.cs:859`)
             // and the DD2BetsyArrow 710 (`:7529`).
             || matches!(kind, 5 | 710),
+            // S1-P-i14 — the bullet-launch projectiles that set `ignoreWater`:
+            // the HighVelocityBullet 242 (`Projectile.cs:3251`), the Xenopopper
+            // bubble 444 (`:5159`) and the Onyx black bolt 661 (`:7118`).
+            || matches!(kind, BULLET_HIGH_VELOCITY | XENOPOPPER_BUBBLE | ONYX_BLACK_BOLT),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

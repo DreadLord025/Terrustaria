@@ -1909,13 +1909,46 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 }
                 knock_back += resolved.knock_back;
             }
+            // `KnockBack = this.GetWeaponKnockback(sItem, KnockBack)`
+            // (`Player.cs:47151` → `:53346-53369`): the player-side knockback
+            // grants. The summon (`minionKB`) and melee-glove arms are not
+            // ranged shooters; the `kbBuff` ×1.5 (`:53356-53359`) applies to
+            // every item, the shroomite-stealth `×(1 + (1 - stealth) * 0.5)`
+            // (`:53360-53363`) to ranged ones. The `setVortex` twin
+            // (`:53364-53367`) reads a field the port has not granted yet (the
+            // Vortex set's stealth half) — inert until the armor-set grant
+            // lands (ANALYSIS).
+            let is_ranged = class == registry::DamageClass::Ranged;
+            if p.kb_buff {
+                knock_back *= 1.5;
+            }
+            if is_ranged && p.shroomite_stealth {
+                knock_back *= 1.0 + (1.0 - p.stealth) * 0.5;
+            }
             // The ranged shot rides the same `ItemCheck` → `UpdatePlayers`
             // stream as the rest of the pass (`Main.cs:17754`). The crit rolls
             // at throw time (the port's convention, ahead of the launch arms'
             // spread draws — the documented crit-at-throw deviation).
+            //
+            // The Revolver 2269's charge bonus rides the roll: the C# stamps it
+            // onto the projectile at spawn (`Projectile.ApplyStatsFromSource`,
+            // `Projectile.cs:11129-11132`: `bonusCritChance +=
+            // revolverCritChanceBonus`) and the hit-time roll adds it
+            // (`:12886-12894`); the port folds it into the throw-time crit
+            // (the same deviation the bow half documents). The per-tick
+            // charge/decay draw lives in `world_sim/player.rs`
+            // (`Player.cs:42677-42703`).
+            let revolver_bonus = if held.kind == 2269 {
+                p.revolver_crit_chance_bonus
+            } else {
+                0
+            };
             let crit = {
                 let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + w_crit)
+                tr_core::damage::crit_roll(
+                    loot_rng,
+                    p.class_crit(class) + w_crit + revolver_bonus,
+                )
             };
             Some((damage, speed, knock_back, crit))
         } else {
@@ -1957,12 +1990,44 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 anim_max_ticks,
                 remaining_anim_ticks,
             );
+        } else if crate::gun_launch::is_bullet_shooter(held_use_ammo) {
+            // S1-P-i14 — the gun launch: the SAME shared geometry the bow half
+            // uses (the `RotatedRelativePoint(MountedCenter)` anchor, the
+            // facing flip, the aim normalized to `speed` — `Player.cs:47196-
+            // 47307`, inherited from i13 through `bow_launch::launch_frame`),
+            // then the per-gun spread/burst arms (the Minishark/Megashark/Chain
+            // Gun/SDMG/Uzi/Gatligator spreads, the Shotgun/Boomstick/Tactical/
+            // Quad-Barrel fans, the Clockwork's animation-window tightening,
+            // the Xenopopper bubbles, the Onyx Blaster's bolt, the Vortex
+            // Beater's fixed 615 + ai0 roll, the Pew-matic Horn's frame roll).
+            // The per-gun UseSound plays at the USE START (`start_swing_extras`,
+            // `Player.cs:51681-51698`) — the launch itself is silent.
+            //
+            // The bullet `gunProj` item (the Vortex Beater 3475) rides here with
+            // its fixed projectile (`g.projectile`, the `:47077-47082` reset);
+            // the Celebration Mk2 3930 is `useAmmo` Rocket — the rocket task's.
+            let proj = gun_proj.map_or(resolved.projectile, |g| g.projectile);
+            // `sItem.scale` — the prefixed instance scale the Xenopopper's
+            // muzzle advance reads (`Player.cs:47605`, `Item.cs:582`).
+            let scale = held_fx.map_or(1.0, |s| s.scale);
+            crate::gun_launch::fire(
+                app,
+                held.kind,
+                proj,
+                speed,
+                damage as i32,
+                knock_back,
+                crit,
+                world_pos,
+                remaining_anim_ticks,
+                scale,
+            );
         } else {
-            // The non-arrow shooters (the bullet/rocket `gunProj` two — the
-            // Vortex Beater 3475, the Celebration Mk2 3930 — and the
-            // bullets/rockets/solutions) keep the generic spawn. The pre-i13
-            // centre + 10 px anchor stands for them (the bow geometry is the
-            // arrow half's; the bullet/rocket launch arms are their own tasks).
+            // The remaining non-arrow, non-bullet shooters (the rocket
+            // launchers + the Celebration Mk2 3930, the dart guns, the
+            // Clentaminators, the Snowball/Nail cannons) keep the generic
+            // spawn — the rocket/dart launch arms are i16's task. The pre-i13
+            // centre + 10 px anchor stands for them until then.
             let Some(p) = app.player.as_ref() else {
                 return;
             };
