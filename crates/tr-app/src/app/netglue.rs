@@ -1890,6 +1890,10 @@ impl App {
             // Main.ReportInvasionProgress) + 96's relay (`:3538-3557`
             // parity flip + style-4 teleport) — same wave, same parking.
             S2c::InvasionProgress(_) | S2c::PlayerPortalTeleport(_) => {}
+            // 103 Moon Lord countdown (`MessageBuffer.cs:3708-3714` stores
+            // both statics) + 112 SpecialFX (`:3815-3840` TreeGrowFX /
+            // FairyEffects) — same wave, same parking.
+            S2c::MoonlordCountdown(_) | S2c::SpecialFx(_) => {}
         }
     }
 

@@ -1707,6 +1707,36 @@ pub struct PlayerPortalTeleport {
     pub velocity_y: f32,
 }
 
+/// `msg 103 WorldFightMode`'s body (`NetMessage.cs:1383-1386`): the two
+/// `NPC` statics as raw ints — `MaxMoonLordCountdown` then `MoonLordCountdown`
+/// (`NPC.cs:6031-6033`). Sent by the apocalypse start (`WorldGen.cs:86755`)
+/// and the join push (`MessageBuffer.cs:868`); the client stores both
+/// (`:3708-3714`). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MoonlordCountdown {
+    pub max: i32,
+    pub countdown: i32,
+}
+
+/// `msg 112 SpecialFX`'s body (`NetMessage.cs:1424-1431`): `(byte)` effect
+/// kind, `(int)` x, `(int)` y, `(byte)` number4, `(short)` number5,
+/// `(byte)` number6. Kind 1 = tree-grow FX (number4 = treeHeight,
+/// number5 = passStyle, number6 = the shake flag — `WorldGen.cs:29375`,
+/// the shake variant `:63412`); kind 2 = fairy critter effects (number5 =
+/// `type - 583`, `NPC.cs:48584`). The reader tests number6 `== 1`
+/// (`MessageBuffer.cs:3822`) and relays kind 1 verbatim (`:3832`).
+/// Server→client only — every send site is a `netMode == 2` arm; the
+/// reader's relay branch covers a host receiving one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpecialFx {
+    pub effect: u8,
+    pub x: i32,
+    pub y: i32,
+    pub b4: u8,
+    pub s5: i16,
+    pub b6: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1975,6 +2005,12 @@ pub enum S2c {
     /// `96 TeleportPlayerThroughPortal` - the host's relay of a player's
     /// portal teleport (`MessageBuffer.cs:3554`; style 4 + parity flip).
     PlayerPortalTeleport(PlayerPortalTeleport),
+    /// `103 WorldFightMode` - the Moon Lord countdown statics
+    /// (`WorldGen.cs:86755`, join push `MessageBuffer.cs:868`).
+    MoonlordCountdown(MoonlordCountdown),
+    /// `112 SpecialFX` - tree-grow / fairy effects
+    /// (`WorldGen.cs:29375`, `NPC.cs:48584`; `MessageBuffer.cs:3815-3840`).
+    SpecialFx(SpecialFx),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2503,6 +2539,8 @@ impl S2c {
             Self::TemporaryAnimation(_) => id::TEMPORARY_ANIMATION,
             Self::InvasionProgress(_) => id::INVASION_PROGRESS,
             Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
+            Self::MoonlordCountdown(_) => id::MOONLORD_COUNTDOWN,
+            Self::SpecialFx(_) => id::SPECIAL_FX,
         }
     }
 
@@ -2685,6 +2723,18 @@ impl S2c {
                 .f32(p.y)
                 .f32(p.velocity_x)
                 .f32(p.velocity_y),
+            // `NetMessage.cs:1383-1386`: the two NPC statics as raw ints,
+            // MaxMoonLordCountdown first.
+            Self::MoonlordCountdown(m) => w.i32(m.max).i32(m.countdown),
+            // `NetMessage.cs:1424-1431`: (byte)effect + (int)x + (int)y +
+            // (byte)number4 + (short)number5 + (byte)number6.
+            Self::SpecialFx(f) => w
+                .u8(f.effect)
+                .i32(f.x)
+                .i32(f.y)
+                .u8(f.b4)
+                .i16(f.s5)
+                .u8(f.b6),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2911,6 +2961,18 @@ impl S2c {
                 y: r.f32()?,
                 velocity_x: r.f32()?,
                 velocity_y: r.f32()?,
+            }),
+            id::MOONLORD_COUNTDOWN => Self::MoonlordCountdown(MoonlordCountdown {
+                max: r.i32()?,
+                countdown: r.i32()?,
+            }),
+            id::SPECIAL_FX => Self::SpecialFx(SpecialFx {
+                effect: r.u8()?,
+                x: r.i32()?,
+                y: r.i32()?,
+                b4: r.u8()?,
+                s5: r.i16()?,
+                b6: r.u8()?,
             }),
             _ => return None,
         })
@@ -5325,6 +5387,70 @@ mod tests {
         match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
             S2c::PlayerPortalTeleport(d) => assert_eq!(d, p),
             other => panic!("expected 96, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_moonlord_countdown_round_trips() {
+        // `NetMessage.cs:1383-1386` (case 103), verbatim: the raw
+        // NPC.MaxMoonLordCountdown int THEN NPC.MoonLordCountdown —
+        // deliberately different values so a swapped pair cannot pass;
+        // the client stores them in that order (`MessageBuffer.cs:3711-3712`).
+        let m = MoonlordCountdown {
+            max: 600,
+            countdown: 360,
+        };
+        let f = S2c::MoonlordCountdown(m).encode();
+        assert_eq!(f[2], 103);
+        let mut body = Vec::new();
+        body.extend_from_slice(&600i32.to_le_bytes());
+        body.extend_from_slice(&360i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MoonlordCountdown(d) => assert_eq!(d, m),
+            other => panic!("expected 103, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_special_fx_round_trips() {
+        // `NetMessage.cs:1424-1431` (case 112), verbatim: (byte)number
+        // (effect), (int)number2 (x), (int)number3 (y), (byte)number4,
+        // (short)number5, (byte)number6. Kind 1 = the shaken-tree send
+        // (`WorldGen.cs:63412`: height 1, passStyle, shake flag 1); kind 2
+        // = fairy (`NPC.cs:48584`: number5 = type - 583). The reader tests
+        // number6 == 1 (`MessageBuffer.cs:3822`).
+        for f in [
+            SpecialFx {
+                effect: 1,
+                x: 1200,
+                y: 340,
+                b4: 1,
+                s5: 7,
+                b6: 1,
+            },
+            SpecialFx {
+                effect: 2,
+                x: -64,
+                y: 800,
+                b4: 0,
+                s5: 3, // fairyCritter type 586 - 583
+                b6: 0,
+            },
+        ] {
+            let frame = S2c::SpecialFx(f).encode();
+            assert_eq!(frame[2], 112);
+            let mut body = vec![f.effect];
+            body.extend_from_slice(&f.x.to_le_bytes());
+            body.extend_from_slice(&f.y.to_le_bytes());
+            body.push(f.b4);
+            body.extend_from_slice(&f.s5.to_le_bytes());
+            body.push(f.b6);
+            assert_eq!(&frame[3..], &body);
+            match S2c::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode") {
+                S2c::SpecialFx(d) => assert_eq!(d, f),
+                other => panic!("expected 112, got {:?}", other.msg_id()),
+            }
         }
     }
 }
