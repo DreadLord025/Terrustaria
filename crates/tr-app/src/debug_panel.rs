@@ -812,13 +812,20 @@ fn world_click(app: &mut App, row: usize) {
         }
         12 => {
             // The `/map pretty` chat command (`ToolkitDebugCommands.cs:480-494`):
-            // `DebugOptions.unlockMap = 2` then `Main.refreshMap = true`, which
-            // Main consumes by walking `sectionManager`'s draw queue and calling
-            // `Main.Map.UnlockMapSection` on every loaded section (`:61873-61877`).
-            // The port has no section manager (the whole world is resident), so
-            // the walk covers every section directly.
-            if let Some(m) = app.map.as_mut() {
-                m.unlock_map(&app.world, true);
+            // `DebugOptions.unlockMap = 2` then `Main.refreshMap = true`
+            // (`:486-487`). The reveal itself rides the section sweep
+            // (`Main.cs:61871-61879`): the `refreshMap` consume resets the
+            // sweep (`:61890-61891`), and the 5 ms-budget walk unlocks every
+            // loaded section over the following frames (`:61873-61876`),
+            // zeroing the option once exhausted (`:61880-61883`). The old
+            // direct `unlock_map` walk skipped the queue entirely.
+            if app.debug_unlock_map == 0 {
+                app.debug_unlock_map = 2; // `:486`, the "pretty" argument
+                if let Some(m) = app.map.as_mut() {
+                    m.refresh_map = true; // `:487`
+                }
+            } else {
+                app.debug_unlock_map = 0; // `:491`, the toggle-off arm
             }
         }
         13 => {
@@ -1132,7 +1139,10 @@ mod tests {
     }
 
     /// S1-L-3 — the tail row runs the `/map pretty` reveal
-    /// (`ToolkitDebugCommands.cs:480-494`).
+    /// (`ToolkitDebugCommands.cs:480-494`): it arms `DebugOptions.unlockMap
+    /// = 2` + `Main.refreshMap`, and the section sweep (`Main.cs:61871-61879`)
+    /// does the revealing over the following frames. W4-e18: the row no
+    /// longer walks every section directly — the queue drives it.
     #[test]
     fn s1_l_3_the_reveal_row_unlocks_the_map() {
         let mut app = flow_app();
@@ -1140,12 +1150,23 @@ mod tests {
         // too small to have an interior at all.
         app.world = tr_core::World::new("reveal".into(), 260, 200);
         app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.section_manager = crate::map_sections::MapSections::new(260, 200);
         click_world(&mut app, 12);
+        // The command arms the option + the refresh, not the pixels.
+        assert_eq!(app.debug_unlock_map, 2, "`:486`, the pretty mode");
+        assert!(app.map.as_ref().unwrap().refresh_map, "`:487`");
+        // The sweep's consume resets the walk, then the budget walk unlocks
+        // the loaded sections (`:61873-61876`). One section fits the 260x200
+        // grid (1x1), so a single sweep pass reveals it all.
+        app.map_reveal_sweep();
         let m = app.map.as_ref().unwrap();
         assert!(
             m.tiles.iter().any(|t| t.light > 0),
             "the reveal walked every section"
         );
+        // The second click is the toggle-off arm (`:491`).
+        click_world(&mut app, 12);
+        assert_eq!(app.debug_unlock_map, 0);
     }
 
     /// S1-E-37: the goblin row is `Main.StartInvasion(1)`

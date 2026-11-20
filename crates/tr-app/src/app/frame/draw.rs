@@ -802,10 +802,22 @@ impl App {
                         );
                         // Consume the seam (ending its tile/counter borrows)
                         // before re-borrowing the map for the dirty push.
-                        let changed = export.map(|e| e.changed);
-                        if let Some(changed) = changed {
+                        let consumed = export.map(|e| (e.changed, e.update_map));
+                        if let Some((changed, update_map)) = consumed {
                             if let Some(m) = map.as_mut() {
+                                // `MapUpdateQueue`'s changed tiles queue
+                                // through `QueueChange` (the threshold
+                                // arms `refreshMap`), then upload.
+                                for (x, y) in &changed {
+                                    m.queue_change(*x, *y);
+                                }
                                 m.push_dirty(changed);
+                                // `LegacyLighting.cs:432`: `Main.updateMap =
+                                // rect` — the consume arm (`Main.cs:61886-61894`)
+                                // reads it next frame.
+                                if let Some(rect) = update_map {
+                                    m.update_map = Some(rect);
+                                }
                             }
                         }
                         engine.present_into(light);

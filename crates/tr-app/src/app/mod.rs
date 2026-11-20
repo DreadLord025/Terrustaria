@@ -570,6 +570,16 @@ pub(crate) struct App {
     /// `Terraria.Map.MapUpdateQueue` (`MapUpdateQueue.cs`): the edit-side map
     /// refresh queues, drained per frame (`Main.cs:61862`).
     pub(crate) map_queue: map::MapUpdateQueue,
+    /// `Main.sectionManager` (`Main.cs:399`, `WorldSections.cs:6-358`): the
+    /// section grid the `Main.cs:61871-61879` reveal sweep walks under its
+    /// 5 ms budget. Constructed at `WorldGen.cs:7150`'s truncating dims;
+    /// the port's resident world arms every section loaded + framed.
+    pub(crate) section_manager: crate::map_sections::MapSections,
+    /// `DebugOptions.unlockMap` (`Testing/DebugOptions.cs:34`): 0 off,
+    /// 1 the flat-255 section reveal, 2 the pretty falloff. The sweep's
+    /// `:61873-61876` arm reads it; `:61880-61883` zeroes it once the
+    /// sweep is exhausted and no refresh is pending.
+    pub(crate) debug_unlock_map: i32,
     /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
     /// fullscreen-map drag (`Main.cs:55346-55354`).
     pub(crate) map_grab: Option<[f32; 2]>,
@@ -3508,6 +3518,10 @@ impl App {
         if crate::env::map_open() {
             world_map.set_open(true);
         }
+        // `WorldGen.cs:7150`: `new WorldSections(maxTilesX / 200,
+        // maxTilesY / 150)` — the truncating grid, resident-armed. The
+        // dims are captured before the struct literal moves `world`.
+        let section_manager = crate::map_sections::MapSections::new(world.width, world.height);
         // `TR_AMBIENCE=<SkyEntityType>[,seed]`: queue one forced spawn (the
         // `AmbienceServer.ForceEntitySpawn` path, `AmbienceServer.cs:139-142`)
         // with a pinned seed, so the creature skies stay screenshotable
@@ -3911,6 +3925,8 @@ impl App {
             join_target,
             map: Some(world_map),
             map_queue: map::MapUpdateQueue::default(),
+            section_manager,
+            debug_unlock_map: 0,
             map_grab: None,
             minimap_hover: None,
             // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects

@@ -2037,6 +2037,10 @@ impl App {
         self.world = world;
         self.liquids = LiquidSystem::new(&self.world);
         self.map = Some(map::WorldMap::new(&self.world));
+        // `WorldGen.cs:7150`: the fresh world's section grid replaces the
+        // previous one — the reveal sweep restarts from the new centre.
+        self.section_manager =
+            crate::map_sections::MapSections::new(self.world.width, self.world.height);
         self.npcs.clear();
         self.items.clear();
         self.world_key = None;

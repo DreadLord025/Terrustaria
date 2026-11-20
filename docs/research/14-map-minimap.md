@@ -121,10 +121,11 @@ full-screen zoom/pan view — with the colour of each tile derived from the orig
 | `MapHelper.LoadMapVersion2` | PORTED | `file.rs::read_map_prefix` (319), `decode_tiles` (410) | Header/seed/world-size validation, option-table remap, RLE body. |
 | `LoadMapVersion1` / `LoadMapVersionCompressed` / `DecompressChunk` | MISSING | — | Pre-2 formats never open (`MapHelper.cs:3347-3585`, `:3587-3747`); no error text for them. |
 | `WorldMap.Load` / `Save` / `TryGetMapPath` | PORTED | `map.rs::load_map_file` (622), `save_map_file` (597), `persist.rs:39` | `<world>.map` sidecar next to the `.trwld`; loaded at world start, written by `saveglue.rs:202-214`. |
-| `MapUpdateQueue` (area + tile queues) | MISSING | — | `MapUpdateQueue.cs:21-108`; no `WorldMap.UpdateType` refresh after worldgen/net edits (`WorldGen.cs:80347/80402/81334`, `NetMessage.cs:2456`, `MessageBuffer.cs:1153`). |
-| `WorldMap.UnlockMapSection` / `UnlockMapTilePretty` | MISSING | — | `WorldMap.cs:109-174`; the `DebugOptions.unlockMap` debug reveal is absent. |
-| `WorldMap.ClearEdges` | MISSING | — | `WorldMap.cs:260`; no blacking of the outer 40 tiles (`BlackEdgeWidth = 40`, `WorldMap.cs:16`). |
-| `MapRenderer.QueueChange` / refresh grid | MISSING | — | `MapRenderer.cs:288-304`; the port re-renders from `MapTile` each frame instead of caching into render targets — equivalent output, different cost. |
+| `MapUpdateQueue` (area + tile queues) | PORTED | `map.rs::MapUpdateQueue` | `MapUpdateQueue.cs:21-108` (W4-c35): the 262144 budget, `ClampToWorld` clamps, `RangeFrame`'s inverted rect + border-gated walk, the deterministic drain; net-5/10/20 hooks ride `netglue.rs`, the drain rides `frame/world.rs::map_phase`. |
+| `WorldMap.UnlockMapSection` / `UnlockMapTilePretty` | PORTED | `mod.rs::unlock_map_section`/`unlock_map_tile_pretty`, `map.rs::unlock_section`/`unlock_map` | `WorldMap.cs:109-174` (S1-L-3); the `DebugOptions.unlockMap` sweep driver landed W4-e18 (`frame/world.rs::map_reveal_sweep`, `Main.cs:61873-61883`). |
+| `WorldMap.ClearEdges` | PORTED | `mod.rs::clear_edges` | `WorldMap.cs:260-285` (S1-L-3): the 40-tile bands clear on `.map` load. |
+| `MapRenderer.QueueChange` / refresh grid | PORTED (semantics) | `map.rs::queue_change`/`changes_queued`/`draw_to_map_queues` | `MapRenderer.cs:288-304` (W4-e18): the 2048-per-target threshold arms `refreshMap`, the `refreshMap` no-op gate, the `DrawToMap` queue-clear; the port uploads through the dirty list instead of the 5x2 render-target grid — equivalent output, different cost. |
+| `WorldSections` / `Main.sectionManager` reveal sweep | PORTED | `map_sections.rs::MapSections`, `frame/world.rs::map_reveal_sweep`/`map_reveal_driver` | `WorldSections.cs:6-358` + `Main.cs:61863-61899` (W4-e18 first half): the truncating 200x150 grid, the player-centred spiral with cross-call resume, the 5 ms-budget sweep, the `DebugOptions.unlockMap` arm, the `refreshMap` → `ClearMapDraw` consume, the `updateMap` slot (`LightingEngine.cs:269` / `LegacyLighting.cs:432`), the `loadMap` staged-upload gate. |
 | `MapRenderer.CheckMapTargets` | PORTED (semantics) | `map.rs::prepare` (480, `uploaded`/`needs_full_upload`) | One texture per world instead of the target grid (`MapRenderer.cs:357-378`). |
 | `Main.DrawMap` fullscreen geometry | PORTED | `map.rs::map_scale_clamp` (20), `map_wheel_scale` (28), `map_key_scale` (33), `map_clamp_pos` (38), `map_drag_delta` (49), `map_full_quad` (88), `map_frame_rect` (107) | `Main.cs:55306-55431`, `55342-55359`, `55388-55412`. |
 | `Main.DrawMapFullscreenBackground` (`MapBG`) | PARTIAL | `map.rs::map_bg_index` (231) | Ported-later branch order, but the unevaluable zones take the `false` path: `ZoneDungeon`, `ZoneGlowshroom`, `ZoneCorrupt`, `ZoneCrimson`, `ZoneHallow`, `ZoneJungle`, `bloodMoon` (no doubling), `ZoneGraveyard` (`Main.cs:56342-56444`); ANALYSIS.md:1578-1582 admits it. |
@@ -283,8 +284,13 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   and only rebuilds when `MapTile.Equals` fails, a tile whose colour changed while its light is
   already high can also stay stale until the changed bit forces a rebuild.
 - **D15 — no `UnlockMapSection` / `UnlockMapTilePretty` / `DebugOptions.unlockMap`.** behavioural ·
-  *not admitted*. The debug "unlock map" reveal (`Main.cs:61873-61882`) and its near/full-bright
-  fade (`WorldMap.cs:140-174`) are absent.
+  *closed (S1-L-3 + W4-e18)*. The reveal primitives landed S1-L-3 (`mod.rs::unlock_map_section`/
+  `unlock_map_tile_pretty`, `WorldMap.cs:109-174`); W4-e18 first half landed the driver — the
+  `Main.cs:61871-61883` section sweep walks `MapSections::get_next_map_draw` under its 5 ms budget,
+  the `DebugOptions.unlockMap != 0 && SectionLoaded` arm reveals each section, and the exhausted
+  sweep zeroes the option unless a refresh is pending. The `/map` debug row now arms
+  `debug_unlock_map = 2` + `refresh_map` (`ToolkitDebugCommands.cs:486-487`) instead of walking
+  every section directly.
 - **D16 — `MapBG` unevaluable zones.** cosmetic · *admitted* (ANALYSIS.md:1578-1582). `ZoneDungeon`,
   `ZoneGlowshroom`, `ZoneCorrupt`, `ZoneCrimson`, `ZoneHallow`, `ZoneJungle`, `bloodMoon` and
   `ZoneGraveyard` all take the `false` path, so the fullscreen backdrop shows the wrong sheet in

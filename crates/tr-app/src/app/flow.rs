@@ -2131,6 +2131,7 @@ pub(crate) mod front_flow_tests {
     ) -> App {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
+        let section_manager = crate::map_sections::MapSections::new(world.width, world.height);
         App {
             ambient_waterfall: (0.0, 0.0, 0.0),
             ambient_lavafall: (0.0, 0.0, 0.0),
@@ -2300,6 +2301,8 @@ pub(crate) mod front_flow_tests {
             join_target: None,
             map: None,
             map_queue: crate::map::MapUpdateQueue::default(),
+            section_manager,
+            debug_unlock_map: 0,
             map_grab: None,
             minimap_hover: None,
             map_style: 1,

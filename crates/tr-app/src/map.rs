@@ -422,6 +422,33 @@ pub struct WorldMap {
     /// `Main.TriggerPing`'s MP half (`Main.cs:56546-56549`): the markers added
     /// this frame that still need the `NetPingModule` relay.
     pub ping_outbox: Vec<[f32; 2]>,
+    /// `Main.updateMap` (`Main.cs:799`, `Rectangle?`) — the area the last
+    /// `ExportToMiniMap` revealed (`LightingEngine.cs:269`; the legacy
+    /// engine's `:432` rect through the `MapLightExport` seam). The
+    /// `Main.cs:61886-61894` consume arm reads it: `Some` + unpaused draws
+    /// the area and nulls the slot; the `refreshMap` → `ClearMapDraw`
+    /// consume rides INSIDE that arm (`:61888-61892`).
+    pub update_map: Option<[i32; 4]>,
+    /// `Main.refreshMap` (`Main.cs:789`): a full map redraw is requested —
+    /// `MapRenderer.QueueChange`'s 2048-per-target threshold (`:295-298`)
+    /// and the `/map` command (`ToolkitDebugCommands.cs:487`) arm it; the
+    /// consume clears it and resets the section sweep (`:61890-61891`).
+    pub refresh_map: bool,
+    /// `MapRenderer.changeQueues` (`MapRenderer.cs:33`, `:70-77`): the
+    /// per-target pending-change lists, `[x / 2000, y / 1800]` over the
+    /// 5x2 target grid (`:62-65`). `QueueChange` (`:288-304`) appends
+    /// while under the threshold; at `ChangeRefreshThreshold = 2048`
+    /// (`:71`) it arms `refreshMap` instead (`:295-298`). The port's
+    /// single world-sized texture uploads the tiles directly (the dirty
+    /// list), so the lists' only live semantics are the threshold counter
+    /// and the `DrawToMap` refresh-clear (`:148-160`).
+    change_queues: Vec<Vec<(i32, i32)>>,
+    /// `Main.loadMap` (`Main.cs:795`): the `.map` load's staged-upload gate
+    /// (`WorldMap.cs:212`). The port's load uploads in one bulk write, so
+    /// the flag is armed for the record and the `!Main.loadMap` gate
+    /// (`Main.cs:61863`) reads it — cleared by the `DrawToMap` consume
+    /// (`MapRenderer.cs:198`).
+    pub load_map: bool,
 }
 
 impl WorldMap {
@@ -442,6 +469,11 @@ impl WorldMap {
             reset_pos: true,
             pings: Vec::new(),
             ping_outbox: Vec::new(),
+            update_map: None,
+            refresh_map: false,
+            // `MapRenderer.cs:62-77`: 5x2 targets, one change list each.
+            change_queues: vec![Vec::new(); 5 * 2],
+            load_map: false,
         }
     }
 
@@ -518,12 +550,18 @@ impl WorldMap {
         y0 = y0.max(cy - zh / 2);
         x1 = x1.min(cx - zw / 2 + zw);
         y1 = y1.min(cy - zh / 2 + zh);
-        // `Rectangle.Intersect`: an empty overlap has Left >= Right.
-        if x0 >= x1 || y0 >= y1 {
-            return;
+        // `Rectangle.Intersect`: an empty overlap has Left >= Right — the
+        // C# still assigns it (`:269` runs after the walk, unconditionally),
+        // so the slot arms with the empty rect and the consume nulls it.
+        if x0 < x1 && y0 < y1 {
+            let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
+            self.dirty.extend(changed);
         }
-        let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
-        self.dirty.extend(changed);
+        // `LightingEngine.cs:269`: `Main.updateMap = area` — the revealed
+        // rect rides the `Main.cs:61886-61894` consume arm (the port's
+        // texture sync already ran through `dirty`; the slot drives the
+        // `refreshMap` → `ClearMapDraw` consume and the null-out).
+        self.update_map = Some([x0, y0, x1 - x0, y1 - y0]);
     }
 
     /// `WorldMap.UpdateType` (`WorldMap.cs:65-93`) — see the tr-core free fn.
@@ -581,6 +619,55 @@ impl WorldMap {
                 self.unlock_section(world, x, y, pretty);
             }
         }
+    }
+
+    /// `MapRenderer.QueueChange` (`MapRenderer.cs:288-304`): the changed
+    /// tile queues into its target's list (`[x / 2000, y / 1800]`,
+    /// `textureMaxWidth/Height` `:62-63`); at `ChangeRefreshThreshold =
+    /// 2048` (`:71`) the entry is NOT added and `Main.refreshMap` arms
+    /// instead (`:295-298`). While `refreshMap` is already armed the whole
+    /// call is a no-op (`:290`). The port's single texture uploads the
+    /// changed tiles directly through the dirty list; the queues keep the
+    /// threshold semantics — the only producer of `refreshMap` besides
+    /// the `/map` command. Out-of-grid coords drop: the C# indexes
+    /// `changeQueues[num, num2]` unguarded (`:294`) but every producer
+    /// walks world-clamped rects, so the arm is unreachable there.
+    pub fn queue_change(&mut self, x: i32, y: i32) {
+        if self.refresh_map {
+            return; // `:290`
+        }
+        let (tx, ty) = (x / 2000, y / 1800); // `:292-293`
+        if !(0..5).contains(&tx) || !(0..2).contains(&ty) {
+            return; // the 5x2 target grid (`:64-65`)
+        }
+        let q = &mut self.change_queues[(ty * 5 + tx) as usize];
+        if q.len() >= 2048 {
+            self.refresh_map = true; // `:295-298`
+        } else {
+            q.push((x, y)); // `:301`
+        }
+    }
+
+    /// `MapRenderer.ChangesQueued` (`MapRenderer.cs:37-56`): any target's
+    /// change list is non-empty.
+    pub fn changes_queued(&self) -> bool {
+        self.change_queues.iter().any(|q| !q.is_empty())
+    }
+
+    /// `MapRenderer.DrawToMap`'s queue half (`MapRenderer.cs:148-160`,
+    /// `:229-245`): the `clearMap || refreshMap` head clears every change
+    /// list (`:148-160`); otherwise each target's list drains through the
+    /// draw and clears at its tail (`:245`). The port's texture writes
+    /// already ran through the dirty list (`prepare`), so both paths end
+    /// with empty lists. The `refreshMap` flag itself is consumed by the
+    /// `Main.cs:61888-61892` arm, not here — the C# never clears it inside
+    /// `DrawToMap`.
+    pub fn draw_to_map_queues(&mut self) {
+        for q in self.change_queues.iter_mut() {
+            q.clear();
+        }
+        // `:196-199`: the draw completes the staged `.map` upload.
+        self.load_map = false;
     }
 
     /// The edit-queue drain's push (the `MapRenderer.QueueChange` analog —
@@ -676,6 +763,12 @@ impl WorldMap {
         // Drop any pending single-tile writes; the full upload replaces them.
         self.dirty.clear();
         self.needs_full_upload = true;
+        // `WorldMap.cs:211-214`: `clearMap = true; loadMap = true;
+        // loadMapLock = true; refreshMap = false`. The staged-upload gate
+        // (`Main.cs:61863`'s `!Main.loadMap`) holds the reveal sweep until
+        // the bulk upload completes (`MapRenderer.cs:198` clears it).
+        self.load_map = true;
+        self.refresh_map = false;
         true
     }
 
@@ -735,6 +828,13 @@ impl WorldMap {
                 }
             }
             r.write_map_region(gpu, 0, 0, w, h, &rgba);
+            // `Main.cs:61746-61750`: the `loadMap` head consume —
+            // `refreshMap = false; DrawToMap(default)` — whose tail
+            // (`MapRenderer.cs:196-199`) clears `loadMap`/`loadMapLock`
+            // once the staged upload draws. The port's bulk write IS
+            // that draw, so the gate lifts here.
+            self.refresh_map = false;
+            self.draw_to_map_queues();
         }
         // `MapRenderer.DrawChangesToMap`: one texel per revealed map tile.
         for (x, y) in self.take_dirty() {
@@ -1589,6 +1689,107 @@ mod tests {
         assert!(dirty.contains(&(159, 87)));
         assert!(!dirty.contains(&(160, 87)), "x1 exclusive");
         assert!(!dirty.contains(&(159, 88)), "y1 exclusive");
+    }
+
+    /// W4-e18 first half (written, not run — code-only): `ExportToMiniMap`
+    /// arms `Main.updateMap = area` (`LightingEngine.cs:269`) on every
+    /// completed export — the revealed rect, half-open extents as [x, y,
+    /// w, h]. The consume arm (`Main.cs:61886-61894`) nulls it after the
+    /// draw; a second export re-arms it.
+    #[test]
+    fn w4_e18_the_export_arms_update_map_with_the_revealed_rect() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        let px = (p.x / TILE_PX) as i32;
+        let py = (p.y / TILE_PX) as i32;
+        let light = LightMap::compute(
+            &world,
+            px - 40,
+            py - 30,
+            px + 40,
+            py + 30,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        assert!(m.update_map.is_none(), "Main.cs:799 starts null");
+        m.update(&world, Some(&p), &light, true, 0.016);
+        let rect = m.update_map.expect("`LightingEngine.cs:269` arms the slot");
+        // The scene box ∩ the light rect ∩ the 40-inset world — the same
+        // fold `w4_e18_scene_box_is_the_centred_zone_scan_rect` pins.
+        let (zw, zh) = tr_core::scene::ZONE_SCAN_SIZE;
+        let cx = ((p.x + crate::player::WIDTH * 0.5) as i32) >> 4;
+        let cy = ((p.y + crate::player::HEIGHT * 0.5) as i32) >> 4;
+        let cx = cx.clamp(0, world.width - 1);
+        let cy = cy.clamp(0, world.width - 1);
+        let x0 = (px - 40 + 28).max(40).max(cx - zw / 2);
+        let y0 = (py - 30 + 28).max(40).max(cy - zh / 2);
+        let x1 = (px + 40 - 28).min(world.width - 40).min(cx - zw / 2 + zw);
+        let y1 = (py + 30 - 28).min(world.height - 40).min(cy - zh / 2 + zh);
+        assert_eq!(rect, [x0, y0, x1 - x0, y1 - y0]);
+        // The consume nulls the slot; the next export re-arms.
+        m.update_map = None;
+        m.map_time = 0;
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.update_map.is_some(), "the next export re-arms");
+    }
+
+    /// W4-e18 first half (written, not run — code-only): `QueueChange`
+    /// (`MapRenderer.cs:288-304`) queues under the threshold and arms
+    /// `refreshMap` AT it — the 2048th entry of one target's list is NOT
+    /// added (`:295-298`), and while `refreshMap` is armed every further
+    /// call is a no-op (`:290`). Targets split at 2000x1800 (`:62-63`).
+    #[test]
+    fn w4_e18_queue_change_arms_refresh_at_the_2048_threshold() {
+        let world = World::new("q".into(), 4200, 1200);
+        let mut m = WorldMap::new(&world);
+        // Target (0,0): x < 2000, y < 1800. Fill to the threshold.
+        for i in 0..2048 {
+            m.queue_change(i % 2000, i / 2000);
+        }
+        assert!(!m.refresh_map, "2048 entries fit under the cap");
+        assert!(m.changes_queued());
+        // The 2049th call arms the refresh instead of adding.
+        m.queue_change(5, 5);
+        assert!(m.refresh_map, "`:295-298`");
+        // While armed, further calls are no-ops (`:290`).
+        m.queue_change(6, 6);
+        // The DrawToMap refresh-clear empties every list (`:148-160`).
+        m.draw_to_map_queues();
+        assert!(!m.changes_queued());
+        assert!(!m.load_map, "`:198` completes the staged upload");
+        // The flag itself is consumed by the Main.cs:61890 arm, not here.
+        assert!(m.refresh_map);
+        m.refresh_map = false;
+        // A second target's list counts independently.
+        for i in 0..2048 {
+            m.queue_change(2000 + i % 2000, i / 2000);
+        }
+        assert!(!m.refresh_map, "target (1,0) has its own budget");
+        m.queue_change(2001, 1);
+        assert!(m.refresh_map);
+    }
+
+    /// W4-e18 first half (written, not run — code-only): the `.map` load
+    /// arms the staged-upload gate (`WorldMap.cs:211-214`: `loadMap = true`,
+    /// `refreshMap = false`); the bulk upload's `DrawToMap` tail
+    /// (`MapRenderer.cs:196-199`) clears it. While armed, the reveal driver
+    /// (`Main.cs:61863`'s `!Main.loadMap`) must not walk.
+    #[test]
+    fn w4_e18_the_map_load_arms_the_staged_upload_gate() {
+        let world = test_world();
+        let tiles = test_tiles(40, 40);
+        let dir = unique_dir("e18load");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("load.map");
+        save_map_file(&world, &tiles, &path).unwrap();
+        let mut m = WorldMap::new(&world);
+        assert!(!m.load_map);
+        assert!(m.load(&world, &path));
+        assert!(m.load_map, "`WorldMap.cs:212`");
+        assert!(!m.refresh_map, "`:214` clears any pending refresh");
+        assert!(m.needs_full_upload);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     // ---- Task 6b: fullscreen zoom / pan / minimap geometry ----
