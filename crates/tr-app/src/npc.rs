@@ -34076,3 +34076,74 @@ mod w4_d25_style29_census_tests {
         assert_eq!(rng, witness, "the whole census is draw-free");
     }
 }
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 30 slice).
+// WRITTEN, NOT RUN (code-only mode). 30 Retinazer: the style's ONLY
+// member (125, `NPC.cs:10526`) — LANDED + WIRED (S1-D-3
+// wire-retinazer, the faithful `npc_ai_style30::retinazer_ai`; the
+// mislabeled `update_retinazer` retired) -> VERIFY-ONLY: the machine is
+// unchanged. RNG census: the every-tick `Next(5)` dust gate
+// (`:26460`) fires BEFORE the day flee (`:26486-26491`), so even the
+// flee tick draws exactly once.
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style30_census_tests {
+    use super::*;
+
+    /// The axis claims style 30 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 wire-retinazer).
+    #[test]
+    fn w4_d25_the_axis_claims_style_30_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "30" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 30 claimed once");
+        assert!(src.contains("aiStyle 30 rides the style axis (S1-D-3)"));
+    }
+
+    /// Verify-only: the Retinazer's day flee rides the LIVE axis arm —
+    /// the rise 0.04/tick + `EncourageDespawn(10)` (`NPC.cs:26488-26489`)
+    /// and EXACTLY ONE `Next(5)` draw: the dust gate (`:26460`) runs
+    /// before the flee return, the machine's dash/laser draws never
+    /// fire on this path. The integration tail still runs (the C#'s
+    /// `return` leaves `AI()` only).
+    #[test]
+    fn w4_d25_the_retinazer_day_flee_rides_the_30_axis_with_one_draw() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.day_time = true;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 90.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Retinazer, 60.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.despawn_timer = 600;
+        let mut rng = UnifiedRandom::new(30);
+        let mut probe = rng.clone();
+        let (x0, y0) = (n.x, n.y);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let _gate = probe.next_max(5);
+        assert_eq!(rng, probe, "exactly the one dust-gate draw (:26460)");
+        assert_eq!(n.vy, -0.04, "the flee rise (:26488)");
+        assert_eq!(n.despawn_timer, 10, "EncourageDespawn(10) (:26489)");
+        assert_eq!(n.y, y0 - 0.04, "the noTileCollide integration tail");
+        assert_eq!(n.x, x0, "no horizontal steer on the flee");
+        assert!(n.wants_hostile_shot.is_empty(), "the flee fires nothing");
+    }
+}
