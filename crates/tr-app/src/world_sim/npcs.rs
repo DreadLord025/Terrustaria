@@ -1016,6 +1016,11 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // W4-d122 shop 8: the Mechanic's Rod Angler scan
         // (`Chest.cs:2085`'s `NPC.AnyNPCs(369)`).
         angler_present: app.npcs.iter().any(|n| n.hp > 0 && n.kind == NpcKind::Angler),
+        // W4-d122 remainder census, shop 23: the fairy-torch head gate
+        // (`Chest.cs:3266`/:3544-3559 — the three fairy-critter SIGHTS)
+        // and the Solar Pillar latch (`:3304`).
+        fairy_torch_available: crate::bestiary::fairy_torch_available(&app.bestiary),
+        downed_tower_solar: app.world.downed_tower_solar,
     };
     let inv_ids: Vec<u16> = app
         .inventory

@@ -2204,6 +2204,27 @@ pub fn completion_percent(kills: &KillTracker) -> f32 {
     seen as f32 / ENTRIES.len() as f32
 }
 
+/// `Chest.BestiaryGirl_IsFairyTorchAvailable` (`Chest.cs:3544-3559`): the
+/// Zoologist's Fairy Glowstick 4776 head row needs ALL THREE Fairy Critter
+/// entries discovered — `DidDiscoverBestiaryEntry(585)` then `(584)` then
+/// `(583)` (`:3561-3564`: `UnlockState > NotKnownAtAll_0`). The fairy
+/// critters are `CountsAsACritter` (`NPC.cs:6887-6897` — lifeMax 5, damage
+/// 0, `NPC.cs:16583-16607`), so the automated populator registers them
+/// with the CRITTER provider (`BestiaryDatabaseNPCsPopulator.cs:851-860`)
+/// whose unlock reads the SIGHTS tracker, not kills
+/// (`CritterUICollectionInfoProvider.cs:15-21`:
+/// `Sights.GetWasNearbyBefore(creditId)` → tier 4, else 0). The port has
+/// no fairy-critter NPC kinds yet, so the three credit ids
+/// (`NPCID.cs:11843-11847` = the `NPCID.Search` names) read the sights set
+/// directly; the gate stays closed until the critter-sighting wiring
+/// lands (the recorded deviation — the vanilla AI_112 nearby check,
+/// `NPC.cs:48642-48646`, is unported).
+pub fn fairy_torch_available(bestiary: &tr_core::bestiary::WorldBestiary) -> bool {
+    ["FairyCritterBlue", "FairyCritterGreen", "FairyCritterPink"]
+        .iter()
+        .all(|id| bestiary.was_seen_near_player(id))
+}
+
 /// `Main.cs:65944`'s flag9: every other town NPC present — the C#'s 24
 /// counters; the port folds them to its own town roster (the kinds the
 /// port lacks sit in their own tasks), and the debug override
@@ -2471,5 +2492,23 @@ mod tests {
             unlock_state(king, &kills),
             UnlockState::CanShowDropsWithDropRates
         );
+    }
+
+    /// W4-d122 remainder census — `Chest.BestiaryGirl_IsFairyTorchAvailable`
+    /// (`Chest.cs:3544-3559`): ALL THREE fairy-critter sightings needed,
+    /// and the critter provider reads SIGHTS not kills
+    /// (`CritterUICollectionInfoProvider.cs:15-21`). Written, not run.
+    #[test]
+    fn the_fairy_torch_needs_all_three_critter_sights() {
+        let mut b = tr_core::bestiary::WorldBestiary::new();
+        assert!(!fairy_torch_available(&b), "no sights, no torch");
+        b.set_was_seen_directly("FairyCritterBlue");
+        b.set_was_seen_directly("FairyCritterGreen");
+        assert!(!fairy_torch_available(&b), "two of three is not enough");
+        // Kills do NOT open a critter entry — the provider reads sights.
+        b.kills.register_kill("FairyCritterPink");
+        assert!(!fairy_torch_available(&b), "kills are not sights");
+        b.set_was_seen_directly("FairyCritterPink");
+        assert!(fairy_torch_available(&b), "all three sighted");
     }
 }

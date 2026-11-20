@@ -133,6 +133,16 @@ pub struct ShopFlags {
     /// W4-d122 shop 8: `NPC.AnyNPCs(369)` (`Chest.cs:2085`) — the Angler's
     /// presence gates the Mechanic's Rod with the odd moon phase.
     pub angler_present: bool,
+    /// W4-d122 remainder census, shop 23: `Chest.BestiaryGirl_IsFairyTorchAvailable`
+    /// (`Chest.cs:3544-3559`) — all three Fairy Critter entries (583/584/585)
+    /// discovered (`UnlockState > NotKnownAtAll_0`; the critter provider
+    /// reads the SIGHTS tracker, `CritterUICollectionInfoProvider.cs:15-21`).
+    /// The Fairy Glowstick 4776 head row (`:3266-3269`).
+    pub fairy_torch_available: bool,
+    /// W4-d122 remainder census, shop 23: `NPC.downedTowerSolar`
+    /// (`Chest.cs:3304`) — the Solar Monolith 4677. Fed from
+    /// `World.downed_tower_solar`.
+    pub downed_tower_solar: bool,
 }
 
 impl Default for ShopFlags {
@@ -187,6 +197,8 @@ impl Default for ShopFlags {
             downed_frost: false,
             tax_collector_present: false,
             angler_present: false,
+            fairy_torch_available: false,
+            downed_tower_solar: false,
         }
     }
 }
@@ -240,6 +252,9 @@ impl ShopFlags {
             // W4-d122 shop 5: the Clothier's cultist/frost latches.
             downed_cultist: world.downed_ancient_cultist,
             downed_frost: world.downed_frost,
+            // W4-d122 remainder census, shop 23: the Solar Pillar latch
+            // (`Chest.cs:3304`) — the world's own bit.
+            downed_tower_solar: world.downed_tower_solar,
             ..Self::default()
         }
     }
@@ -463,6 +478,13 @@ pub enum StockWhen {
     /// The resolve loop counts the accepted rows and checks this BEFORE
     /// the child gate (the C# evaluates `num < 38` first).
     NumBelow(u32, &'static StockWhen),
+    /// W4-d122 remainder census, shop 23: `Chest.BestiaryGirl_IsFairyTorchAvailable`
+    /// (`Chest.cs:3266`/:3544-3559`) — the Fairy Glowstick 4776 HEAD row
+    /// (all three fairy-critter sightings).
+    FairyTorchAvailable,
+    /// W4-d122 remainder census, shop 23: `NPC.downedTowerSolar`
+    /// (`Chest.cs:3304`) — the Solar Monolith 4677.
+    DownedTowerSolar,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The first half
@@ -1063,25 +1085,57 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3732, StockWhen::Always),
             row(3742, StockWhen::Always),
         ],
-        // The Zoologist's shop (index 23, `Chest.cs:3263-3340`): the
-        // bestiary tools — the progress-gated rows ride
-        /// `BestiaryUnlockProgressReport.CompletionPercent`
-        /// (`:3265`), the lumen/solar rows the flags they name. The case's
-        // vampirism tail (`Main.vampireSeed && !Main.infectedSeed` → one
-        /// Torch 8, `Chest.cs:3403-3406`) closes the list — the M5-SEED-2
-        /// arm, folded into this one arm so the match keeps one entry.
+        // The Zoologist's shop (index 23, `Chest.cs:3263-3407`, the registry
+        // `NPCInteractions.Shop(633, 23)`, `NPCInteractions.cs:510`): every
+        // row in the C#'s num order — the fairy-torch head, the bestiary
+        // completion tiers (the C# compares floats directly), the Solar
+        // Monolith, the hardmode blood-moon/Plantera rows, the party
+        // critter, the four moon-phase license pairs and the vampirism
+        // tail (`Main.vampireSeed && !Main.infectedSeed` → one Torch 8,
+        // `Chest.cs:3403-3406` — the M5-SEED-2 arm, folded into this one
+        // arm so the match keeps one entry). W4-d122 remainder census:
+        // the full case replaces the M4-TOWN-19 classic subset.
         23 => vec![
-            row(4767, StockWhen::Always),
-            row(5253, StockWhen::MoonPhaseNight0),
-            row(5635, StockWhen::BestiaryCompletion(0.45)),
-            row(4759, StockWhen::BestiaryCompletion(0.10)),
-            row(4672, StockWhen::BestiaryCompletion(0.03)),
-            row(4829, StockWhen::Always),
-            row(4830, StockWhen::BestiaryCompletion(0.25)),
-            row(4910, StockWhen::BestiaryCompletion(0.45)),
-            row(4871, StockWhen::BestiaryCompletion(0.30)),
-            row(4907, StockWhen::BestiaryCompletion(0.30)),
-            row(4676, StockWhen::BestiaryCompletion(0.10)),
+            row(4776, StockWhen::FairyTorchAvailable), // `:3266-3269` HEAD
+            row(4767, StockWhen::Always),              // `:3270`
+            row(5253, StockWhen::MoonPhaseNight0),     // `:3271-3274`
+            row(5635, StockWhen::BestiaryCompletion(0.45)), // `:3275`
+            row(4759, StockWhen::BestiaryCompletion(0.10)), // `:3279`
+            row(4672, StockWhen::BestiaryCompletion(0.03)), // `:3283`
+            row(4829, StockWhen::Always),              // `:3287`
+            row(4830, StockWhen::BestiaryCompletion(0.25)), // `:3288`
+            row(4910, StockWhen::BestiaryCompletion(0.45)), // `:3292`
+            row(4871, StockWhen::BestiaryCompletion(0.30)), // `:3296`
+            row(4907, StockWhen::BestiaryCompletion(0.30)), // `:3300`
+            row(4677, StockWhen::DownedTowerSolar),    // `:3304-3307`
+            row(4676, StockWhen::BestiaryCompletion(0.10)), // `:3308`
+            row(4762, StockWhen::BestiaryCompletion(0.30)), // `:3312`
+            row(4716, StockWhen::BestiaryCompletion(0.25)), // `:3316`
+            row(4785, StockWhen::BestiaryCompletion(0.30)), // `:3320`
+            row(4786, StockWhen::BestiaryCompletion(0.30)), // `:3324`
+            row(4787, StockWhen::BestiaryCompletion(0.30)), // `:3328`
+            row(4788, ZOO_HARD_BESTIARY_30),           // `:3332-3335`
+            row(4763, StockWhen::BestiaryCompletion(0.25)), // `:3336`
+            row(4955, StockWhen::BestiaryCompletion(0.40)), // `:3340`
+            row(4736, ZOO_HARD_BLOOD),                 // `:3344-3347`
+            row(4701, StockWhen::DownedPlantBoss),     // `:3348-3351`
+            row(4765, StockWhen::BestiaryCompletion(0.50)), // `:3352`
+            row(4766, StockWhen::BestiaryCompletion(0.50)), // `:3356`
+            row(5285, StockWhen::BestiaryCompletion(0.50)), // `:3360`
+            row(4777, StockWhen::BestiaryCompletion(0.50)), // `:3364`
+            row(4735, StockWhen::BestiaryCompletion(0.70)), // `:3368`
+            row(4951, StockWhen::BestiaryCompletion(1.0)), // `:3372`
+            row(5466, StockWhen::PartyIsUp),           // `:3376-3379`
+            // `:3380-3402`'s moon-phase license pairs — one pair per
+            // `moonPhase / 2`, the 6/7 arm carrying the 4560 head.
+            row(4768, StockWhen::MoonPhasePair(0)),
+            row(4769, StockWhen::MoonPhasePair(0)),
+            row(4770, StockWhen::MoonPhasePair(1)),
+            row(4771, StockWhen::MoonPhasePair(1)),
+            row(4772, StockWhen::MoonPhasePair(2)),
+            row(4773, StockWhen::MoonPhasePair(2)),
+            row(4560, StockWhen::MoonPhasePair(3)),
+            row(4775, StockWhen::MoonPhasePair(3)),
             // The vampirism tail (`Chest.cs:3403-3406`).
             row(8, StockWhen::VampirismNotInfected),
         ],
@@ -1414,6 +1468,17 @@ const MECHANIC_ROD: StockWhen =
 /// the outer `if`, the Skeletron latch the inner one).
 const GOLFER_CART: StockWhen =
     StockWhen::All(&[StockWhen::GolfScore(2000, false), StockWhen::DownedBoss3]);
+
+// — W4-d122 (remainder census): the Zoologist's compound gates
+// (`Chest.cs:3332`/`:3344`). —
+
+/// `Chest.cs:3332`: `CompletionPercent >= 0.3f && Main.hardMode` — the
+/// 4788 row (the only completion tier with the hardmode conjunct).
+const ZOO_HARD_BESTIARY_30: StockWhen =
+    StockWhen::All(&[StockWhen::BestiaryCompletion(0.30), StockWhen::HardMode]);
+/// `Chest.cs:3344`: `Main.hardMode && Main.bloodMoon` — the 4736 row.
+const ZOO_HARD_BLOOD: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::BloodMoon]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -2175,6 +2240,9 @@ fn stock_gate(
             StockWhen::TaxCollectorPresent => flags.tax_collector_present,
             StockWhen::AnglerPresent => flags.angler_present,
             StockWhen::MoonPhaseExact(n) => moon_phase == n,
+            // W4-d122 remainder census, shop 23 (`Chest.cs:3266`/:3304).
+            StockWhen::FairyTorchAvailable => flags.fairy_torch_available,
+            StockWhen::DownedTowerSolar => flags.downed_tower_solar,
             // The combinators + the num guard are handled above — unreachable.
             StockWhen::All(_)
             | StockWhen::Any(_)
@@ -4133,5 +4201,119 @@ mod w4_d122_golfer_tests {
         );
         assert!(p5.contains(&4660) && !p5.contains(&4658));
         assert_eq!(*p5.last().unwrap(), 4660, "the painting closes the list");
+    }
+}
+
+#[cfg(test)]
+mod w4_d122_zoologist_tests {
+    use super::*;
+
+    /// W4-d122 remainder census — shop 23 (`Chest.cs:3263-3407`): the full
+    /// case replaces the M4-TOWN-19 classic subset. The classic world at
+    /// phase 0/day resolves the four unconditioned/tier-0 rows plus the
+    /// pair-0 licenses — nothing else. Written, not run (code-only).
+    #[test]
+    fn the_zoologist_classic_stock_is_the_head_plus_the_pair0_tail() {
+        let s = resolve_stock_moon(23, &ShopFlags::default(), &[], 0);
+        assert_eq!(s, vec![4767, 4829, 4768, 4769], "the classic num order");
+        // Night + phase 0 inserts the 5253 BETWEEN the head and the tiers.
+        let n = resolve_stock_moon(
+            23,
+            &ShopFlags {
+                night: true,
+                ..Default::default()
+            },
+            &[],
+            0,
+        );
+        assert_eq!(n, vec![4767, 5253, 4829, 4768, 4769]);
+        // The fairy-torch head lands FIRST when all three sightings sit.
+        let f = resolve_stock_moon(
+            23,
+            &ShopFlags {
+                fairy_torch_available: true,
+                ..Default::default()
+            },
+            &[],
+            0,
+        );
+        assert_eq!(f, vec![4776, 4767, 4829, 4768, 4769]);
+    }
+
+    /// The completion ladder (`Chest.cs:3275-3374`): 0.03 → 4672, 0.10 →
+    /// 4759/4676, 0.25 → 4830/4716/4763, 0.30 → 4871/4907/4762/4785/4786/
+    /// 4787 (+4788 hardmode-only), 0.40 → 4955, 0.45 → 5635/4910, 0.50 →
+    /// 4765/4766/5285/4777, 0.70 → 4735, 1.0 → 4951. Written, not run.
+    #[test]
+    fn the_zoologist_completion_tiers_open_in_the_c_order() {
+        let at = |c: f32, hard: bool| {
+            resolve_stock_moon(
+                23,
+                &ShopFlags {
+                    bestiary_completion: c,
+                    hard_mode: hard,
+                    ..Default::default()
+                },
+                &[],
+                0,
+            )
+        };
+        let t03 = at(0.03, false);
+        assert!(t03.contains(&4672) && !t03.contains(&4759));
+        let t10 = at(0.10, false);
+        assert!(t10.contains(&4759) && t10.contains(&4676));
+        let t30 = at(0.30, false);
+        for id in [4871, 4907, 4762, 4785, 4786, 4787] {
+            assert!(t30.contains(&id), "the 0.30 row {id}");
+        }
+        assert!(!t30.contains(&4788), "4788 needs hardmode too (`:3332`)");
+        assert!(at(0.30, true).contains(&4788));
+        // The 0.30 block's num order: 4871/4907 before the solar slot,
+        // 4762..4787 after it (`:3296-3335`).
+        let i4871 = t30.iter().position(|v| *v == 4871).unwrap();
+        let i4762 = t30.iter().position(|v| *v == 4762).unwrap();
+        assert!(i4871 < i4762);
+        let full = at(1.0, true);
+        for id in [4955, 5635, 4910, 4765, 4766, 5285, 4777, 4735, 4951] {
+            assert!(full.contains(&id), "the full row {id}");
+        }
+        // 4951 (`>= 1f`) is the LAST tier row before the licenses.
+        let i4951 = full.iter().position(|v| *v == 4951).unwrap();
+        assert_eq!(full[i4951 + 1], 4768, "the pair-0 licenses follow");
+    }
+
+    /// The event/progression rows: the Solar Monolith 4677 between 4907
+    /// and 4676 (`:3304`), the hardmode blood-moon 4736 (`:3344`), the
+    /// Plantera 4701 (`:3348`), the party 5466 (`:3376`) — and the four
+    /// moon-pair license tails incl. the 6/7 arm's 4560 head. Written,
+    /// not run (code-only).
+    #[test]
+    fn the_zoologist_latches_and_the_license_pairs() {
+        let f = ShopFlags {
+            downed_tower_solar: true,
+            downed_plant_boss: true,
+            hard_mode: true,
+            blood_moon: true,
+            party_is_up: true,
+            bestiary_completion: 0.30,
+            ..Default::default()
+        };
+        let s = resolve_stock_moon(23, &f, &[], 2);
+        let i4907 = s.iter().position(|v| *v == 4907).unwrap();
+        assert_eq!(s[i4907 + 1], 4677, "the monolith rides after 4907");
+        assert_eq!(s[i4907 + 2], 4676);
+        assert!(s.contains(&4736) && s.contains(&4701) && s.contains(&5466));
+        // Phase 2/3 licenses: 4770/4771, and the party row precedes them.
+        let i5466 = s.iter().position(|v| *v == 5466).unwrap();
+        assert_eq!(&s[i5466 + 1..], &[4770, 4771]);
+        // Phase 6: the 4560 head + 4775 (`:3397-3400`), NOT the 4774 id.
+        let p6 = resolve_stock_moon(23, &ShopFlags::default(), &[], 6);
+        assert_eq!(&p6[p6.len() - 2..], &[4560, 4775]);
+        // Hardmode alone (no blood moon) keeps 4736 out.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock_moon(23, &hm, &[], 0).contains(&4736));
     }
 }
