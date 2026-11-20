@@ -263,6 +263,10 @@ pub const EYE_FIRE: u16 = 101;
 /// (`Projectile.cs:2752-2763`: 6x6, aiStyle 23, friendly + hostile, trap,
 /// penetrate -1, extraUpdates 2).
 pub const FLAMES_TRAP: u16 = 188;
+/// `ProjectileID.MartianTurretBolt` (435) — the Martian Turret's bolt
+/// (`Projectile.cs:5056-5063`: 10x10, aiStyle 1, hostile, ignoreWater;
+/// the aiStyle-73 shot request, `npc_ai_style73::TurretBolt`).
+pub const MARTIAN_TURRET_BOLT: u16 = 435;
 /// `ProjectileID.BrainScramblerBolt` (436) — the Scrambler's ray
 /// (`NPC.cs`'s `num412`/`:26640`).
 pub const BRAIN_SCRAMBLER: u16 = 436;
@@ -1911,6 +1915,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 true,
                 (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:5056-5063` — the Martian Turret's bolt (435):
+            // 10x10, aiStyle 1, hostile, ignoreWater (the overlay below);
+            // the stock penetrate 1 (`:774`), timeLeft 3600 (`:787`),
+            // tileCollide (`:775`) — the arm writes no override. The
+            // aiStyle-73 shot's carrier (W4-c11).
+            MARTIAN_TURRET_BOLT => (
+                10.0,
+                10.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
             ),
             // `Projectile.cs:5064-5071` — the Scrambler's bolt (436): 10x10,
             // aiStyle 1, hostile, ignoreWater. (`SCRAMBLER_SHOT` is the
@@ -4211,7 +4232,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-c11 — `Projectile.cs:5062`: the Martian Turret's bolt
+            // (435) sets `ignoreWater = true` (the aiStyle-73 shot's row).
+            || kind == MARTIAN_TURRET_BOLT,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4544,6 +4568,8 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         102 => 2,
         206 => 5,
         254 => 5,
+        // W4-c11 — `Main.cs:8532`: the Martian Turret bolt's 4-frame sheet.
+        435 => 4,
         436 => 4,
         447 => 4,
         448 => 3,
@@ -4792,5 +4818,31 @@ mod tests {
         assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
+    }
+
+    /// W4-c11 witness — `Projectile.cs:5056-5063`: the Martian Turret's
+    /// bolt (435) is 10x10, aiStyle 1, hostile, `ignoreWater = true`, with
+    /// the stock penetrate 1 (`:774`), tileCollide (`:775`), timeLeft 3600
+    /// (`:787`) and extraUpdates 0 — the arm writes no override. The
+    /// aiStyle-73 shot (`npc_ai_style73::TurretBolt`) spawns through
+    /// `spawn_hostile`, which reads exactly this row.
+    #[test]
+    fn the_martian_turret_bolt_row_matches_the_csharp() {
+        let d = proj_data(MARTIAN_TURRET_BOLT).expect("the 435 row");
+        assert_eq!((d.w, d.h), (10.0, 10.0), ":5058-5059");
+        assert_eq!(d.ai_style, 1, ":5060");
+        assert!(d.ignore_water, ":5062");
+        assert_eq!(d.penetrate, 1, ":774 stock");
+        assert!(d.tile_collide, ":775 stock");
+        assert_eq!(d.time_left, 3600, ":787 stock");
+        assert_eq!(d.extra_updates, 0);
+        assert!(!d.arrow && !d.trap, "the arm sets neither");
+        assert_eq!(d.alpha, 0, ":779 stock");
+        assert_eq!(d.scale, 1.0, ":785 stock");
+        // `Main.projFrames[435] = 4` (`Main.cs:8532`) — the sheet slices 4.
+        assert_eq!(proj_frames(MARTIAN_TURRET_BOLT), 4);
+        // The Scrambler twin (436) shares the shape but is a distinct row
+        // (its ignoreWater stays the documented S1-D-5 derivation gap).
+        assert_ne!(proj_data(MARTIAN_TURRET_BOLT), proj_data(BRAIN_SCRAMBLER));
     }
 }
