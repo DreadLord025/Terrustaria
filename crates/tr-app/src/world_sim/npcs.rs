@@ -4457,6 +4457,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         };
                         crate::npc_ai_style56::style56_step(&mut npcs[i], &mut env);
                     }
+                    // W4-e9 — `NPC.IdleSounds` (`NPC.cs:90422` →
+                    // `:90075-90208`): the ambient cry chain rolls BEFORE
+                    // `AI()` (`:90423`), on the same `UpdateNPCs` stream.
+                    // A matching type consumes its one Next(N) gate roll
+                    // even on failure (the style49 module's cited
+                    // obligation); the case-29 play (slot guard + one
+                    // pitch) rides `play_fighter_moan`, attenuation
+                    // BEFORE any case draw. The dead skip is `UpdateNPC`'s
+                    // `life <= 0` early return (`:90385-90392`), which
+                    // precedes the call.
+                    if npcs[i].hp > 0 {
+                        let (ix, iy) = (npcs[i].x, npcs[i].y);
+                        let mut idle_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
+                        let style = crate::ambient_sound::idle_sound_cue(
+                            npcs[i].kind.cs_id() as i32,
+                            npcs[i].wet,
+                            npcs[i].shimmer_transparency,
+                            &mut idle_roll,
+                        );
+                        if let Some(style) = style {
+                            audio.play_fighter_moan(29, style, ix, iy, npcs_rng);
+                        }
+                    }
                     // S1-D-3-wire-saucer: the aiStyle-75 mount family is a
                     // POOL step (the host/crew slot links read `App::npcs`
                     // live) — it runs here, in slot order, on the
@@ -17411,6 +17434,50 @@ mod dw3_tests {
         let before = app.audio.played_count();
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.audio.played_count() - before, 0, "one roar per charge");
+    }
+
+    /// W4-e9 — the IdleSounds wiring's stream contract (`NPC.cs:90422`,
+    /// the style49 module's cited obligation): the AngryNimbus's
+    /// `Next(700)` gate roll runs BEFORE the AI arm on the `UpdateNPCs`
+    /// stream — consumed even on failure; a hit adds the `Next(41, 44)`
+    /// slot pick and (the gate + slot guard passing) the case-29
+    /// `Next(-10, 11)` pitch. The cloud parks out of the rain window, so
+    /// the AI arm itself draws nothing (`nimbus_step`'s one draw is the
+    /// 9th qualifying shot tick).
+    #[test]
+    fn w4_e9_the_nimbus_idle_roll_rides_the_stream_before_the_ai() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // Inside the headless listener's radius, horizontally OFF the
+        // player's box (the rain window fails → zero AI draws).
+        let mut cloud = Npc::new(NpcKind::AngryNimbus, 1400.0, 1000.0, 1, 0.0);
+        cloud.hp = cloud.max_hp;
+        app.npcs.push(cloud);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The mirror stream: the gate roll always; a hit adds the slot
+        // pick (Next(3) ≡ Next(41, 44) on the sample) + the case-29 pitch.
+        let mut witness = UnifiedRandom::new(7);
+        let hit = witness.next_max(700) == 0;
+        if hit {
+            let _ = witness.next_max(3);
+            let _ = witness.next_range(-10, 11);
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the idle gate roll rides the stream before the (draw-free) AI"
+        );
+        assert_eq!(
+            app.audio.played_count() - before,
+            u64::from(hit),
+            "the cry plays exactly when the gate hits"
+        );
     }
 
     /// S1-E-21g — the drain's stream contract in isolation (the machines'

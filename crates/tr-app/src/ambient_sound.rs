@@ -298,6 +298,94 @@ pub fn critter_sound_cue(
     None
 }
 
+/// W4-e9 — `NPC.IdleSounds` (`NPC.cs:90075-90208`, called from
+/// `UpdateNPC` at `:90422` right BEFORE `AI()`): the per-type ambient
+/// cry chain. The shimmer gate wraps the WHOLE chain (`:90077`,
+/// `!(shimmerTransparency > 0f)` — the fighter-moan form); the arms are
+/// one if/else-if ladder, so a matching type consumes its ONE
+/// `Next(N)` roll even when the roll fails, and NO later arm rolls.
+/// Returns the case-29 Style argument (the slot) on a hit — the play is
+/// `PlaySound(29, (int)position.X, (int)position.Y, style)`, the int
+/// overload (`SoundEngine.cs:102-108`, NO NextFloat), riding the
+/// `UpdateNPCs` stream via [`crate::audio::Audio::play_fighter_moan`].
+/// The style-range arms draw their SECOND `Next(lo, hi)` only on a hit
+/// (the argument evaluates inside the winning branch); the pinned-style
+/// arms draw nothing more. `wet` gates the jellyfish arm (`:90099`);
+/// `roll(hi)` stands in for `Main.rand.Next(hi)`.
+///
+/// This slice ports arms 1-10 (`:90079-90117`: the blood crawlers,
+/// demon/red devil, derpling, flying snake, giant tortoise, jellyfish,
+/// lihzahrds, pigrons, angry nimbus); the remaining arms land with the
+/// next slice — an unported type draws NOTHING here (the pre-wiring
+/// behaviour for every kind outside the table).
+pub fn idle_sound_cue(
+    npc_type: i32,
+    wet: bool,
+    shimmer_transparency: f32,
+    roll: &mut dyn FnMut(u32) -> u32,
+) -> Option<i32> {
+    // `:90077` — the shimmer gate: any transparency silences the chain.
+    if shimmer_transparency > 0.0 {
+        return None;
+    }
+    // `:90079-90082` — the blood crawlers (239/240): Next(900), slot
+    // Next(24, 26).
+    if npc_type == 239 || npc_type == 240 {
+        return (roll(900) == 0).then(|| roll_range(roll, 24, 26));
+    }
+    // `:90083-90086` — the demon (62) / red devil (156): Next(700),
+    // slot Next(26, 30).
+    if npc_type == 62 || npc_type == 156 {
+        return (roll(700) == 0).then(|| roll_range(roll, 26, 30));
+    }
+    // `:90087-90090` — the derpling (177): Next(600), slot Next(30, 32).
+    if npc_type == 177 {
+        return (roll(600) == 0).then(|| roll_range(roll, 30, 32));
+    }
+    // `:90091-90094` — the flying snake (226): Next(800), slot 32 pinned.
+    if npc_type == 226 {
+        return (roll(800) == 0).then_some(32);
+    }
+    // `:90095-90098` — the giant tortoise (153): Next(1000), slot 33.
+    if npc_type == 153 {
+        return (roll(1000) == 0).then_some(33);
+    }
+    // `:90099-90102` — the wet jellyfish (63/64/103): Next(1000), slot
+    // Next(34, 36). The `base.wet` term precedes the roll — a dry
+    // jellyfish draws nothing and falls through the ladder.
+    if wet && (npc_type == 63 || npc_type == 64 || npc_type == 103) {
+        return (roll(1000) == 0).then(|| roll_range(roll, 34, 36));
+    }
+    // `:90103-90106` — the lihzahrds (198/199): Next(1000), slot
+    // Next(36, 38).
+    if npc_type == 198 || npc_type == 199 {
+        return (roll(1000) == 0).then(|| roll_range(roll, 36, 38));
+    }
+    // `:90107-90110` — the pigrons (170/180/171): Next(600), slot
+    // Next(38, 41).
+    if npc_type == 170 || npc_type == 180 || npc_type == 171 {
+        return (roll(600) == 0).then(|| roll_range(roll, 38, 41));
+    }
+    // `:90111-90114` — the angry nimbus (250): Next(700), slot
+    // Next(41, 44) (the style49 module's cited skip — it lands here,
+    // BEFORE the AI arm each tick).
+    if npc_type == 250 {
+        return (roll(700) == 0).then(|| roll_range(roll, 41, 44));
+    }
+    // `:90115-90118` — the walking antlion (580): Next(800), slot 44.
+    if npc_type == 580 {
+        return (roll(800) == 0).then_some(44);
+    }
+    None
+}
+
+/// The `Next(lo, hi)` slot draws through the `Next(hi)`-shaped roll
+/// closure: `Next(lo, hi)` ≡ `lo + Next(hi - lo)` on the same `Sample()`
+/// (`UnifiedRandom.cs:120-141` — both consume exactly one sample).
+fn roll_range(roll: &mut dyn FnMut(u32) -> u32, lo: i32, hi: i32) -> i32 {
+    lo + roll((hi - lo) as u32) as i32
+}
+
 /// The per-thunder-strike cue family (`LegacySoundPlayer.cs:454-476`'s case
 /// 43): the slot pick re-rolls while the picked instance is still playing —
 /// one initial `Next(6)` draw plus up to six re-rolls inside the loop — then
@@ -588,6 +676,30 @@ fn zombie_asset(slot: usize) -> &'static str {
         22 => "Zombie_22",
         23 => "Zombie_23",
         109 => "Zombie_109",
+        // W4-e9 — the IdleSounds chain's case-29 slots (`NPC.cs:90079+`,
+        // the Style-is-the-slot arms; the bank rows land in the same
+        // wave). Slots 24-44: arms 1-10.
+        24 => "Zombie_24",
+        25 => "Zombie_25",
+        26 => "Zombie_26",
+        27 => "Zombie_27",
+        28 => "Zombie_28",
+        29 => "Zombie_29",
+        30 => "Zombie_30",
+        31 => "Zombie_31",
+        32 => "Zombie_32",
+        33 => "Zombie_33",
+        34 => "Zombie_34",
+        35 => "Zombie_35",
+        36 => "Zombie_36",
+        37 => "Zombie_37",
+        38 => "Zombie_38",
+        39 => "Zombie_39",
+        40 => "Zombie_40",
+        41 => "Zombie_41",
+        42 => "Zombie_42",
+        43 => "Zombie_43",
+        44 => "Zombie_44",
         _ => "Zombie_0",
     }
 }
@@ -1026,6 +1138,78 @@ mod tests {
                 1 % hi.max(1)
             }
         }
+    }
+
+    /// W4-e9 — the IdleSounds ladder (arms 1-10, `NPC.cs:90079-90118`):
+    /// a matching type consumes exactly ONE gate roll on failure; a hit
+    /// adds the slot-range draw (or none for the pinned arms); the
+    /// shimmer gate and the dry-jellyfish gate draw NOTHING; an
+    /// unlisted type draws nothing (the later arms' pre-wiring form).
+    #[test]
+    fn w4_e9_the_idle_arms_roll_once_then_pick_the_slot() {
+        // Failure: the blood crawler's Next(900) fails (Rolls returns 1)
+        // — one draw, no play, and NO second arm rolls.
+        let mut rolls = Rolls::new();
+        assert_eq!(idle_sound_cue(239, false, 0.0, &mut roll(&mut rolls)), None);
+        assert_eq!(rolls.calls, 1, "one failed gate roll");
+        // Hit: gate 0 then the slot draw Next(24, 26) → 24 + 1 = 25.
+        let mut rolls = Rolls::with_zero(0);
+        assert_eq!(idle_sound_cue(240, false, 0.0, &mut roll(&mut rolls)), Some(25));
+        assert_eq!(rolls.calls, 2, "gate + slot");
+        // The pinned-style arms: one gate roll only (226 → 32, 153 → 33,
+        // 580 → 44).
+        for (ty, style) in [(226, 32), (153, 33), (580, 44)] {
+            let mut rolls = Rolls::with_zero(0);
+            assert_eq!(idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)), Some(style));
+            assert_eq!(rolls.calls, 1, "type {ty}: the pinned slot draws once");
+        }
+        // The range arms' slot windows (`:90083-90114`).
+        for (ty, lo, hi) in [(62, 26, 30), (156, 26, 30), (177, 30, 32), (198, 36, 38), (199, 36, 38), (170, 38, 41), (180, 38, 41), (171, 38, 41), (250, 41, 44)] {
+            let mut rolls = Rolls::with_zero(0);
+            let style = idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)).unwrap();
+            assert!((lo..hi).contains(&style), "type {ty}: slot {style}");
+            assert_eq!(rolls.calls, 2);
+        }
+        // The jellyfish arm needs `wet` — dry draws NOTHING (`:90099`).
+        let mut rolls = Rolls::new();
+        assert_eq!(idle_sound_cue(63, false, 0.0, &mut roll(&mut rolls)), None);
+        assert_eq!(rolls.calls, 0, "the wet term precedes the roll");
+        let mut rolls = Rolls::with_zero(0);
+        let style = idle_sound_cue(103, true, 0.0, &mut roll(&mut rolls)).unwrap();
+        assert!((34..36).contains(&style));
+        // The shimmer gate wraps the whole chain (`:90077`).
+        let mut rolls = Rolls::new();
+        assert_eq!(idle_sound_cue(250, false, 0.89, &mut roll(&mut rolls)), None);
+        assert_eq!(rolls.calls, 0);
+        // An unlisted type (the later arms are unported): no draws.
+        let mut rolls = Rolls::new();
+        assert_eq!(idle_sound_cue(3, false, 0.0, &mut roll(&mut rolls)), None);
+        assert_eq!(rolls.calls, 0);
+    }
+
+    /// W4-e9 — the idle slots resolve to registered bank assets and the
+    /// case-29 voice: slots 24-87 cut the volume ×0.5
+    /// (`LegacySoundPlayer.cs:1010-1013`), the playing guard refuses
+    /// BEFORE the pitch draw, one Next(-10, 11) pitch on success.
+    #[test]
+    fn w4_e9_the_idle_slots_resolve_through_case_29() {
+        let mut rolls = Rolls::new();
+        let mut signed = |lo: i32, hi: i32| {
+            let _ = roll(&mut rolls)((hi - lo) as u32) as i32;
+            lo + 1
+        };
+        for slot in [24u32, 25, 32, 33, 41, 43, 44] {
+            let voice = critter_legacy_voice(29, slot, &mut signed, &|_| false).unwrap();
+            assert_eq!(voice.slot, slot as usize);
+            assert_eq!(voice.asset, zombie_asset(slot as usize));
+            assert!(crate::audio::sfx_cue_registered(voice.asset), "slot {slot}");
+            assert_eq!(voice.volume_mult, 0.5, "the 24..=87 volume arm");
+        }
+        // The playing guard refuses before the pitch draw.
+        let mut called = false;
+        let mut guarded = |_: i32, _: i32| { called = true; 0 };
+        assert!(critter_legacy_voice(29, 25, &mut guarded, &|s| s == 25).is_none());
+        assert!(!called, "the guard precedes the draw");
     }
 
     #[test]

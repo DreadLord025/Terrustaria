@@ -422,6 +422,32 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_22", 14),
     ("Zombie_23", 14),
     ("Zombie_109", 45),
+    // W4-e9 — the IdleSounds chain's case-29 slots 24-44
+    // (`NPC.cs:90079-90118`, arms 1-10: the blood crawlers' 24/25 through
+    // the walking antlion's 44; `LegacySoundPlayer.cs:1008-1050` — the
+    // 24..=87 volume arm cuts ×0.5). The `Sounds/Zombie_24..44.xnb`
+    // assets all ship with the content (the 131-entry bank `:112`).
+    ("Zombie_24", 29),
+    ("Zombie_25", 29),
+    ("Zombie_26", 29),
+    ("Zombie_27", 29),
+    ("Zombie_28", 29),
+    ("Zombie_29", 29),
+    ("Zombie_30", 29),
+    ("Zombie_31", 29),
+    ("Zombie_32", 29),
+    ("Zombie_33", 29),
+    ("Zombie_34", 29),
+    ("Zombie_35", 29),
+    ("Zombie_36", 29),
+    ("Zombie_37", 29),
+    ("Zombie_38", 29),
+    ("Zombie_39", 29),
+    ("Zombie_40", 29),
+    ("Zombie_41", 29),
+    ("Zombie_42", 29),
+    ("Zombie_43", 29),
+    ("Zombie_44", 29),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
