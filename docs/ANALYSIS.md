@@ -39244,3 +39244,33 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile sound wave, part 4 (S1-E-21h f1, 2026-11-21, code-only mode)
+
+**The fourth batch's line-order range.** The 437-site `PlaySound` census in
+`Projectile.cs` (the S1-E-21h census above; 436 `SoundEngine.PlaySound` calls
++ the one `WorldGen.KillTile_PlaySounds` delegate at `:70219`) is worked in
+line-order batches. **d75** (`task/W4-d75-proj-sounds-1`) owns sites 1-120
+(`:14385`-`:41968`, in-flight code edits); **d76**
+(`task/W4-d76-proj-sounds-2`, pushed claim `3510bae6`) owns sites 121-240
+(`:41978`-`:70958`). **d77** (`task/W4-d77-proj-sounds-3`) is cherry-picking
+the portable sites of the `Kill()` tail (its in-flight probe selects 34
+specific sites across `:71266`-`:78505`); **f1** (this branch,
+`task/W4-f1-proj-sounds-4`) takes the **next ~120 UNCLAIMED sites in line
+order** after site 240, excluding d77's in-flight picks: **sites `:70978`-
+`:76243`** (120 sites — 48 ROWED + 9 PART + 63 NONE by the kind-row census).
+The 43 sites `:76252`-`:78505` (the `Kill_Bombs_DoUsualKillCode` explosion
+tail, the rocket/grenade/boulder families) remain for a fifth batch. All four
+branch from `a725acb0`. The already-landed S1-E-21h wave's 24 sites are KEPT
+untouched (the bomb blasts `:78331`/`:78386` fall in the fifth-batch tail).
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests/graphify invoked (the Lead's
+constraint); every witness test is WRITTEN NOT RUN. Audio seams follow the
+landed S1-E-21h conventions: the `wants_sound` intent (`Projectile.wants_sound`
+-> `pending_proj_sounds` -> the pass-tail drain on `UpdateProjectiles`),
+attenuation BEFORE any case draw, the drain after the wave-C hit drain on the
+same named stream (`Main.cs:17775`). The `Kill()` death cues fire at the
+pool's `!active` death hook (`projectile.rs`), the same seam the gem/bullet/
+arrow death arms use. RNG draws keep their exact slots on the C# statement
+order; the case-2 `Main.rand` pitch rides `UpdateProjectiles`, the int-id Dig
+variation+pitch ride the same stream through the `play_place_sound` id-0 arm.
