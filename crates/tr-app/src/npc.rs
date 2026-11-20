@@ -4694,6 +4694,18 @@ impl Npc {
             // writes); the census fix is the ctor's SetDefaults alpha
             // rows (25/30/665 → 100, 33 → 255), not the arm.
             9 => self.ai_009_sphere_family(world, player, rng),
+            // `if (this.aiStyle == 11)` (`NPC.cs:21919-22299`) — the
+            // Skeletron head (35), the style's only user (`SetDefaults`
+            // `:9166-9182`; the Dungeon Guardian 68 shares the arm in
+            // the C# but has no port kind). W4-d23 verify-only census:
+            // the landed B-1 machine (`update_skeletron`, the S1-S9/S11
+            // audit fixes — the hands-count World mirror, the red-hat
+            // ai[3] latch, the roar cues, the despawn EncourageDespawn)
+            // is unchanged; the axis claims the style now (the S1-D-2
+            // convention), the kind arm becomes the unreachable marker.
+            // `expert = false` keeps the live dispatch's classic solo
+            // seam (the style31 CLASSIC_SOLO precedent).
+            11 => self.update_skeletron(world, player, rng, false),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -5779,7 +5791,14 @@ impl Npc {
             // B-1: the expert seam — the port is single-difficulty (the
             // classic solo stand-in, the style31 CLASSIC_SOLO precedent);
             // hard_mode is NOT expertMode (research/51 S1).
-            NpcKind::SkeletronHead => self.update_skeletron(world, player, rng, false),
+            // W4-d23 axis census: the Skeletron head (aiStyle 11) rides
+            // the style axis above (`11 => update_skeletron`, classic
+            // solo) — this arm is unreachable through `update_rng` (the
+            // S1-D-2 axis precedent). The direct-call tests keep using
+            // the machine fn itself.
+            NpcKind::SkeletronHead => {
+                unreachable!("aiStyle 11 rides the style axis (W4-d23)")
+            }
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player, false),
             // S1-D-3 W-1: the WoF family's aiStyles 27/28/29 ride the
             // style axis above (the faithful modules); `ai_style()` maps
@@ -33673,5 +33692,97 @@ mod w4_d23_style9_census_tests {
         let speed = (water.vx * water.vx + water.vy * water.vy).sqrt();
         assert!((speed - 6.0).abs() < 0.01, "the default num120 6 (:21410)");
         assert_eq!(rng, UnifiedRandom::new(33), "both ticks draw nothing");
+    }
+}
+
+// =====================================================================
+// W4-d23 — the aiStyles 9-14 axis census witnesses (style 11 slice).
+// WRITTEN, NOT RUN (code-only mode). 11 Skeletron head LANDED (the B-1
+// audit machine `update_skeletron`, S1-S9/S11 fixes) -> verify-only
+// axis claim here; the machine is unchanged.
+// =====================================================================
+#[cfg(test)]
+mod w4_d23_style11_census_tests {
+    use super::*;
+
+    /// The axis claims style 11 exactly once, and the SkeletronHead
+    /// kind arm is the unreachable marker (the S1-D-2 convention).
+    #[test]
+    fn w4_d23_the_axis_claims_style_11_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "11" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 11 claimed once");
+        assert!(src.contains("aiStyle 11 rides the style axis (W4-d23)"));
+    }
+
+    /// The 11 claim is LIVE and draw-free on a classic night hover
+    /// tick: the init TargetClosest (`NPC.cs:21924-21927` — the hands
+    /// spawn itself rides the sim's pass, `:21930-21940`), the state-0
+    /// hover timer +1 (`:22025`), the rotation = vx/15 read BEFORE the
+    /// accel (`:22041`), the 0.02/0.05 hover accel toward the player
+    /// (`:22042-22115`, classic ladder). The expert block (`:21964-
+    /// 22017`, the 4-draw skull shot) is gated off — the live dispatch
+    /// passes expert=false; the red-hat taunt `Next(2,6)` (`:22038`)
+    /// needs ai[3]==1 + the 800-tick transition. The player sits clear
+    /// of the 80x102 contact box (no damage-variance draws).
+    #[test]
+    fn w4_d23_the_skeletron_head_rides_the_11_axis_draw_free() {
+        let mut w = World::new("t".into(), 300, 300);
+        w.day_time = false;
+        let mut p = Player::spawn(&w);
+        p.x = 140.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 100.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        sk.hp = sk.max_hp;
+        let mut rng = UnifiedRandom::new(11);
+        sk.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(sk.target, 0, "the init TargetClosest (:21926)");
+        assert_eq!(sk.ai[1], 0.0, "night keeps the hover state");
+        assert_eq!(sk.ai[2], 1.0, "the hover timer +1 (:22025)");
+        assert_eq!(sk.rotation, 0.0, "rotation reads the PRE-accel vx (:22041)");
+        assert!((sk.vx - 0.05).abs() < 1e-6, "the classic 0.05 X accel (:22044)");
+        assert!((sk.vy + 0.02).abs() < 1e-6, "the classic 0.02 Y accel (:22042)");
+        assert_eq!(sk.damage_override, None, "no red-hat damage row");
+        assert_eq!(rng, UnifiedRandom::new(11), "the classic hover tick draws nothing");
+    }
+
+    /// The daytime rage arm (`NPC.cs:21958-21962` + `:22256-22272`):
+    /// `Main.IsItDay()` latches ai[1]=2, the state writes the 9999
+    /// damage/defense and the 8-speed rush at the player. Draw-free
+    /// (the rage arm has no rand; the player stays clear of contact).
+    #[test]
+    fn w4_d23_the_day_rage_arm_is_draw_free() {
+        let mut w = World::new("t".into(), 300, 300);
+        w.day_time = true;
+        let mut p = Player::spawn(&w);
+        p.x = 140.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 100.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        sk.hp = sk.max_hp;
+        let mut rng = UnifiedRandom::new(12);
+        sk.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(sk.ai[1], 2.0, "the daytime rage latch (:21960)");
+        assert_eq!(sk.damage_override, Some(9999), "the rage damage (:22257)");
+        assert_eq!(sk.defense_override, Some(9999), "the rage defense (:22258)");
+        let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
+        assert!((speed - 8.0).abs() < 0.01, "the 8-speed rush (:22268)");
+        assert_eq!(rng, UnifiedRandom::new(12), "the rage tick draws nothing");
     }
 }
