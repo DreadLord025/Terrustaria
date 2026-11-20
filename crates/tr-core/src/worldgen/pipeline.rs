@@ -2793,6 +2793,10 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
+    // The stalactite 165 (`Main.cs:7407`) — W4-g41: the egg-sac validator
+    // (`spider_gem_moss.rs::check_stalactite`) writes/restyles the stored
+    // frames, so the framer must keep them instead of autotiling.
+    world.frame_important[165] = true;
     world.frame_important[380] = true;
     // The ocean tiles the ocean passes write — the palm trunk 323, the
     // coral 81, the beach piles 324, the shell piles 495, the sea oats 529

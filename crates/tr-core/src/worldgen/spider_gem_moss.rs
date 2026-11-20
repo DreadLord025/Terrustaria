@@ -59,6 +59,20 @@
 //!   `growth::spread_grass` (`growth.rs:601`, `WorldGen.cs:75146-75270`);
 //!   the C#'s bounded 3x3 recursion (`grassSpread < 1000`) is not modelled —
 //!   the sweeps call it per neighbour instead.
+//! - W4-g41 ports the egg-sac validator chain (`CheckStalactite`
+//!   `WorldGen.cs:38996-39175` → `UpdateStalagtiteStyle` `:38643-38718` →
+//!   `GetStalagtiteStyle`/`GetDesiredStalagtiteStyle` `:38823-38872`/
+//!   `:38720-38821` + `InvalidTileForPilesOrSpeleothems` `:38979-38994`)
+//!   verbatim, wired through `PlaceTight`'s tail (`:38320-38323`); the
+//!   `destroyObject` kills ride `edit::remove_tile` (the generation strip —
+//!   the guarded `Check*` re-entries early-return in the C#, so no cascade).
+//!   The missing `PlaceUncheckedStalactite` arms (hanging granite/marble,
+//!   rising hive), the `tileMoss[627]` member, the `PlacePot` halfBrick
+//!   clear, the `PlaceSmallPile` boulder-seat veto + `anyLava` guard, the
+//!   spider pass's `shroomCount > 1` retry veto + `ILied` tail dispatch +
+//!   remix y-bands, the webs pass's DST row-50 start + `ILied` honey arm and
+//!   `SpiderWallRemover` (`:77279-77344`, UNWIRED — its `FinishNotTheBees`
+//!   host is unported) land with it. Census: `docs/research/93-spider-cave-census.md`.
 //! - M5-SEED-1 ports the for-the-worthy arms of this file against the world's
 //!   own flags (`World::seeds`, the `generate` publication of
 //!   `GenOptions::flags` — a classic world reads no flag and stays
@@ -86,8 +100,8 @@ use super::{
     Rng, TILE_DIRT, TILE_SAND, TILE_SNOW, TILE_STONE, WALL_DIRT, WALL_SANDSTONE, WALL_STONE,
 };
 use crate::growth::spread_grass;
-use crate::tile::{Tile, FLAG_ACTIVE};
-use crate::tiledata::{TILE_SOLID, TILE_SOLID_TOP};
+use crate::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
+use crate::tiledata::{SET_BOULDERS, TILE_MOSS, TILE_SOLID, TILE_SOLID_TOP};
 use crate::world::World;
 
 // --- the ids these passes paint ----------------------------------------------
@@ -400,6 +414,246 @@ fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) 
     let prefer_small = rng.range(0, 2) == 0;
     let variation = rng.range(0, 3);
     place_unchecked_stalactite(world, x, y, prefer_small, variation, spiders);
+    // `:38320-38323` — the post-placement support validation (W4-g41): an
+    // unsupported sac pops, a mismatched style re-rolls (the chain's only
+    // RNG draw, `UpdateStalagtiteStyle` `:38665`).
+    if world.tile(x, y).is_some_and(|t| t.active() && t.kind == TILE_STALACTITE) {
+        check_stalactite(world, rng, x, y);
+    }
+}
+
+// --- the egg-sac validator chain (W4-g41) -------------------------------------
+//
+// `CheckStalactite` → `UpdateStalagtiteStyle` → `GetStalagtiteStyle` /
+// `GetDesiredStalagtiteStyle` (`WorldGen.cs:38996-39175` / `:38643-38872`):
+// the support check the C# runs after every `PlaceTight`. The kills ride the
+// `destroyObject = true` flag (`:39028`/`:39066`/`:39116`) — the guarded
+// `Check*` re-entries early-return, so the port's `edit::remove_tile` (the
+// generation strip, no cascade) is the faithful stand-in. The C# `KillTile`
+// keeps `tile.type` (`:63885-63890` clears active/frames/paint only), so the
+// pair's type comparisons read the ORIGINAL kind, captured before the kills.
+
+/// `WorldGen.InvalidTileForPilesOrSpeleothems` (`WorldGen.cs:38979-38994`):
+/// an active boulder (`TileID.Sets.Boulders`, `TileID.cs:504`) under the
+/// object's seat invalidates it; out-of-world / null reads false.
+fn invalid_tile_for_piles_or_speleothems(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 2) {
+        return false;
+    }
+    world.tile(x, y).is_some_and(|t| t.active() && SET_BOULDERS.has(t.kind))
+}
+
+/// `WorldGen.GetStalagtiteStyle` (`WorldGen.cs:38823-38872`): the
+/// `frameX / 54` → style decode; `None` is the C#'s `fail` (the default arm).
+fn get_stalagtite_style(frame_x: i16) -> Option<i32> {
+    match frame_x / 54 {
+        0 => Some(7),
+        1 => Some(0),
+        2 => Some(11),
+        3 => Some(12),
+        4 => Some(1),
+        5 => Some(2),
+        6 => Some(3),
+        7 => Some(4),
+        8 => Some(5),
+        9 => Some(6),
+        10 => Some(8),
+        11 => Some(9),
+        12 => Some(10),
+        _ => None,
+    }
+}
+
+/// `WorldGen.GetDesiredStalagtiteStyle` (`WorldGen.cs:38720-38821`): the
+/// frameY → (support side, height, top row) decode and the support-kind
+/// style table. Returns `(desired_style, height, y)`; `None` is `fail`.
+fn get_desired_stalagtite_style(world: &World, x: i32, j: i32) -> Option<(i32, i32, i32)> {
+    let tile = world.tile(x, j)?;
+    let mut y = j;
+    let (side, height, support) = if tile.frame_y == 72 {
+        // The small hanging sac: the support is the ceiling cell.
+        (0, 1, world.tile(x, y - 1).map(|t| t.kind).unwrap_or(0))
+    } else if tile.frame_y == 90 {
+        // The small rising sac: the support is the floor cell.
+        (1, 1, world.tile(x, y + 1).map(|t| t.kind).unwrap_or(0))
+    } else if tile.frame_y >= 36 {
+        // The tall rising pair (`54` is the bottom cell — step to the top).
+        if tile.frame_y == 54 {
+            y -= 1;
+        }
+        (4, 2, world.tile(x, y + 2).map(|t| t.kind).unwrap_or(0))
+    } else {
+        // The tall hanging pair (`18` is the bottom cell).
+        if tile.frame_y == 18 {
+            y -= 1;
+        }
+        (3, 2, world.tile(x, y - 1).map(|t| t.kind).unwrap_or(0))
+    };
+    // `:38763-38771` — stone/moss → style 0, with the spider override: a
+    // tall hanging pair (`side == 3`) over a spider wall is the egg-sac
+    // style 11.
+    if support == TILE_STONE || TILE_MOSS.has(support) {
+        let desired = if side == 3 && tile.wall == WALL_SPIDER { 11 } else { 0 };
+        return Some((desired, height, y));
+    }
+    let desired = match support {
+        200 => 10,
+        164 => 8,
+        163 => 9,
+        117 | 402 | 403 => 1,
+        25 | 398 | 400 => 2,
+        203 | 399 | 401 => 3,
+        396 | 397 => 4,
+        367 => 6,
+        368 => 5,
+        147 | 161 => 7,
+        // `:38813-38820` — the hive arm only serves the small sacs.
+        225 if side == 0 || side == 1 => 12,
+        _ => return None,
+    };
+    Some((desired, height, y))
+}
+
+/// `WorldGen.UpdateStalagtiteStyle` (`WorldGen.cs:38643-38718`): the
+/// current/desired style pair; on mismatch the `Next(3)*18` variation draw
+/// (`:38665`, the chain's ONLY RNG draw) plus the desired-style frame base
+/// rewritten over the object's height. The `netMode == 1` early-true
+/// (`:38645`) is the client skip — worldgen runs offline (netMode 0).
+fn update_stalagtite_style(world: &mut World, rng: &mut Rng, x: i32, j: i32) -> bool {
+    let Some(tile) = world.tile(x, j) else {
+        return true;
+    };
+    let Some(style) = get_stalagtite_style(tile.frame_x) else {
+        return false;
+    };
+    let Some((desired, height, y)) = get_desired_stalagtite_style(world, x, j) else {
+        return false;
+    };
+    if style != desired {
+        let mut num = rng.range(0, 3) * 18;
+        // `:38666-38707` — the 13-case desired-style base switch (case 7 is
+        // the identity `num = num`).
+        num += match desired {
+            0 => 54,
+            1 => 216,
+            2 => 270,
+            3 => 324,
+            4 => 378,
+            5 => 432,
+            6 => 486,
+            7 => 0,
+            8 => 540,
+            9 => 594,
+            10 => 648,
+            11 => 108,
+            12 => 162,
+            _ => 0,
+        };
+        for i in y..y + height {
+            if let Some(t) = world.tile_mut(x, i) {
+                t.frame_x = num as i16;
+            }
+        }
+    }
+    true
+}
+
+/// `WorldGen.CheckStalactite` (`WorldGen.cs:38996-39175`): the four frameY
+/// arms' support validation. A failed check kills the object's cells whose
+/// kind still matches the original (`destroyObject` kills — no cascade).
+fn check_stalactite(world: &mut World, rng: &mut Rng, x: i32, j: i32) {
+    let Some(tile) = world.tile(x, j) else {
+        return;
+    };
+    // The C# `KillTile` keeps `tile.type`, so the live `Main.tile[x, j].type`
+    // comparisons read the original kind even after the first kill.
+    let orig_kind = tile.kind;
+    let mut num = j;
+    if tile.frame_y == 72 {
+        // The small hanging sac (`:39003-39036`).
+        let mut flag = !solid_tile(world, x, num - 1);
+        if !flag && !update_stalagtite_style(world, rng, x, num) {
+            flag = true;
+        }
+        if flag && world.tile(x, num).is_some_and(|t| t.kind == orig_kind) {
+            crate::edit::remove_tile(world, x, num);
+        }
+        return;
+    }
+    if tile.frame_y == 90 {
+        // The small rising sac (`:39037-39074`) — the boulder-seat veto.
+        let mut flag = !solid_tile(world, x, num + 1);
+        if !flag && invalid_tile_for_piles_or_speleothems(world, x, num + 1) {
+            flag = true;
+        }
+        if !flag && !update_stalagtite_style(world, rng, x, num) {
+            flag = true;
+        }
+        if flag && world.tile(x, num).is_some_and(|t| t.kind == orig_kind) {
+            crate::edit::remove_tile(world, x, num);
+        }
+        return;
+    }
+    if tile.frame_y >= 36 {
+        // The tall rising pair (`:39075-39128`).
+        if tile.frame_y == 54 {
+            num -= 1;
+        }
+        let mut flag = !solid_tile(world, x, num + 2);
+        let top = world.tile(x, num);
+        let bot = world.tile(x, num + 1);
+        if !top.is_some_and(|t| t.active())
+            || !bot.is_some_and(|t| t.active())
+            || top.map(|t| t.kind) != bot.map(|t| t.kind)
+        {
+            flag = true;
+        }
+        if top.map(|t| t.frame_x) != bot.map(|t| t.frame_x) {
+            flag = true;
+        }
+        if !flag && invalid_tile_for_piles_or_speleothems(world, x, num + 2) {
+            flag = true;
+        }
+        if !flag && !update_stalagtite_style(world, rng, x, num) {
+            flag = true;
+        }
+        if flag {
+            if world.tile(x, num).is_some_and(|t| t.kind == orig_kind) {
+                crate::edit::remove_tile(world, x, num);
+            }
+            if world.tile(x, num + 1).is_some_and(|t| t.kind == orig_kind) {
+                crate::edit::remove_tile(world, x, num + 1);
+            }
+        }
+        return;
+    }
+    // The tall hanging pair (`:39129-39174`) — the egg sac's own arm.
+    if tile.frame_y == 18 {
+        num -= 1;
+    }
+    let mut flag = !solid_tile(world, x, num - 1);
+    let top = world.tile(x, num);
+    let bot = world.tile(x, num + 1);
+    if !top.is_some_and(|t| t.active())
+        || !bot.is_some_and(|t| t.active())
+        || top.map(|t| t.kind) != bot.map(|t| t.kind)
+    {
+        flag = true;
+    }
+    if top.map(|t| t.frame_x) != bot.map(|t| t.frame_x) {
+        flag = true;
+    }
+    if !flag && !update_stalagtite_style(world, rng, x, num) {
+        flag = true;
+    }
+    if flag {
+        if world.tile(x, num).is_some_and(|t| t.kind == orig_kind) {
+            crate::edit::remove_tile(world, x, num);
+        }
+        if world.tile(x, num + 1).is_some_and(|t| t.kind == orig_kind) {
+            crate::edit::remove_tile(world, x, num + 1);
+        }
+    }
 }
 
 /// `WorldGen.PlaceUncheckedStalactite` (`WorldGen.cs:38327-38641`) — the
@@ -420,7 +674,9 @@ fn place_unchecked_stalactite(
         && !world.tile(x, y + 1).is_some_and(|t| t.active());
     if hanging {
         let support = world.tile(x, y - 1).map(|t| t.kind).unwrap_or(0);
-        let is_moss = MOSS_TILES.contains(&support) || NEON_MOSS.contains(&support) || support == 381;
+        // `Main.tileMoss` (`Main.cs:7007-7047`) — the generated set carries
+        // the rainbow moss 627 (`:7031`) beside the five + neon + lava moss.
+        let is_moss = TILE_MOSS.has(support);
         if spiders {
             // `:38334-38350` — the spider stalactite, always two tiles tall.
             let frame = 108 + variation * 18;
@@ -456,6 +712,24 @@ fn place_unchecked_stalactite(
                 write_stalactite(world, x, y, frame, 0);
                 write_stalactite(world, x, y + 1, frame, 18);
             }
+        } else if support == TILE_GRANITE {
+            // `:38448-38476` — the hanging granite arm (W4-g41).
+            let frame = 432 + variation * 18;
+            if prefer_small {
+                write_stalactite(world, x, y, frame, 72);
+            } else {
+                write_stalactite(world, x, y, frame, 0);
+                write_stalactite(world, x, y + 1, frame, 18);
+            }
+        } else if support == TILE_MARBLE {
+            // `:38477-38505` — the hanging marble arm (W4-g41).
+            let frame = 486 + variation * 18;
+            if prefer_small {
+                write_stalactite(world, x, y, frame, 72);
+            } else {
+                write_stalactite(world, x, y, frame, 0);
+                write_stalactite(world, x, y + 1, frame, 18);
+            }
         }
         return;
     }
@@ -466,7 +740,13 @@ fn place_unchecked_stalactite(
         && !world.tile(x, y - 1).is_some_and(|t| t.active());
     if rising {
         let support = world.tile(x, y + 1).map(|t| t.kind).unwrap_or(0);
-        let is_moss = MOSS_TILES.contains(&support) || NEON_MOSS.contains(&support) || support == 381;
+        if support == TILE_HIVE {
+            // `:38543-38552` — the rising hive arm is always the small one
+            // (frameY 90, no tall variant) (W4-g41).
+            write_stalactite(world, x, y, 162 + variation * 18, 90);
+            return;
+        }
+        let is_moss = TILE_MOSS.has(support);
         let frame = if matches!(support, 396 | 397) {
             378 + variation * 18
         } else if support == TILE_GRANITE {
@@ -531,6 +811,8 @@ fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bo
                 t.flags |= FLAG_ACTIVE;
                 t.frame_x = (k * 18 + variant) as i16;
                 t.frame_y = ((l + 1) * 18 + style * 36) as i16;
+                // `:54108` — `halfBrick(halfBrick: false)` (W4-g41).
+                t.flags &= !FLAG_HALF_BRICK;
             }
         }
     }
@@ -541,7 +823,12 @@ fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bo
 fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_size: i32) -> bool {
     let frame_y = (pile_size * 18) as i16;
     let frame_x = (pile_style * 18) as i16;
-    if world.tile(x, y).is_some_and(|t| t.liquid_kind() == crate::tile::LiquidKind::Lava) {
+    // `Tile.anyLava` (`Tile.cs:410-415`) — a positive amount AND the lava
+    // kind (W4-g41: the old read tested the kind alone).
+    if world
+        .tile(x, y)
+        .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava)
+    {
         return false;
     }
     if pile_size == 1 {
@@ -551,6 +838,13 @@ fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_siz
             && !world.tile(x, y).is_some_and(|t| t.active())
             && !world.tile(x + 1, y).is_some_and(|t| t.active());
         if !seat {
+            return false;
+        }
+        // `:46847-46850` — the type-185 boulder-seat veto (W4-g41): a
+        // boulder under either seat cell refuses the pile.
+        if invalid_tile_for_piles_or_speleothems(world, x, y + 1)
+            || invalid_tile_for_piles_or_speleothems(world, x + 1, y + 1)
+        {
             return false;
         }
         for (i, fx) in [(x, frame_x), (x + 1, frame_x + 18)] {
@@ -970,26 +1264,65 @@ pub(crate) fn pass_spider_caves(
     let retries = world.width / 2;
     let attempts = spider_attempts(world);
     let (min_count, max_count) = (500, max_spider_count);
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX);
     for _ in 0..attempts {
         let mut tries = 0i32;
         let mut x = rng.range(200, world.width - 200);
-        let mut y = rng.range(
-            ((world_surface + rock_layer) / 2.0) as i32,
-            world.height - 230,
-        );
+        let mut y = if remix {
+            // `:17392-17395` — the remix first draw rides the surface→rock
+            // band (W4-g41; a classic world reads no flag and keeps the
+            // deep band).
+            rng.range(world_surface as i32, rock_layer as i32)
+        } else {
+            rng.range(
+                ((world_surface + rock_layer) / 2.0) as i32,
+                world.height - 230,
+            )
+        };
         let mut c = count_tiles(world, x, y, true, max_spider_count);
         while (c.tiles >= max_count || c.tiles < min_count) && tries < retries {
             tries += 1;
             x = rng.range(200, world.width - 200);
-            y = rng.range(rock_layer as i32 + 30, world.height - 230);
+            y = if remix {
+                // `:17402-17405` — the remix retry band.
+                rng.range(world_surface as i32, rock_layer as i32)
+            } else {
+                rng.range(rock_layer as i32 + 30, world.height - 230)
+            };
             c = count_tiles(world, x, y, true, max_spider_count);
+            // `:17407-17410` — a shroom-bearing pocket (count > 1) forces
+            // another retry: the C# zeroes the count INSIDE the loop, so
+            // the acceptance test re-fails (W4-g41).
+            if c.shroom > 1 {
+                c.tiles = 0;
+            }
         }
         if tries < retries {
             spread_spider(world, rng, x, y, hell_top, stock.as_deref_mut());
             placed += 1;
         }
     }
+    // `:17422-17425` — the `ILied` tail dispatch (W4-g41): a `noSpiderCaves`
+    // world with ≥ 4 secrets converts the evil/hive/jungle walls to spider
+    // walls instead of losing the caves. The sweep itself is
+    // `micro_finish::no_spider_caves_i_lied` (`WorldGen.cs:2618-2630`).
+    if no_spider_caves_i_lied_more_spider_caves(world) {
+        super::micro_finish::no_spider_caves_i_lied(world);
+    }
     placed
+}
+
+/// M5-SEED-2 `SecretSeed.Variations.noSpiderCavesILiedMoreSpiderCaves`
+/// (`WorldGen.cs:281-291`): the `noSpiderCaves` seed with ≥ 4 active secrets
+/// keeps its spider caves and converts the other biome walls instead.
+fn no_spider_caves_i_lied_more_spider_caves(world: &World) -> bool {
+    if !world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES)
+    {
+        return false;
+    }
+    crate::seeds::active_secret_seed_count(world.micro_seeds, world.seeds) >= 4
 }
 
 /// `Gem Caves` (`WorldGen.cs:17428-17471`).
@@ -1200,8 +1533,16 @@ pub(crate) fn pass_moss(
 /// in the spider caves and converts the hive liquid to honey + speleothems.
 pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surface: f64) -> u32 {
     let mut webs = 0u32;
+    // `:20002-20006` — the Don't Starve world starts the sweep at row 50
+    // instead of the surface line (W4-g41).
+    let start_row = if world.seeds.contains(crate::seeds::SeedFlags::DONT_STARVE) {
+        50
+    } else {
+        world.world_surface as i32
+    };
+    let i_lied = no_spider_caves_i_lied_more_spider_caves(world);
     for i in 100..world.width - 100 {
-        for j in (world.world_surface as i32)..world.height - 100 {
+        for j in start_row..world.height - 100 {
             let wall = world.tile(i, j).map(|t| t.wall).unwrap_or(0);
             if wall == WALL_HIVE {
                 let has_liquid = world.tile(i, j).is_some_and(|t| t.liquid > 0);
@@ -1215,7 +1556,16 @@ pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surfa
                 }
             }
             if wall == WALL_SPIDER {
-                if let Some(t) = world.tile_mut(i, j) {
+                if i_lied {
+                    // `:20022-20028` — the `ILied` arm honey-fills the
+                    // spider-wall liquid instead of clearing it (W4-g41).
+                    let has_liquid = world.tile(i, j).is_some_and(|t| t.liquid > 0);
+                    if has_liquid {
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.set_liquid_kind(crate::tile::LiquidKind::Honey);
+                        }
+                    }
+                } else if let Some(t) = world.tile_mut(i, j) {
                     t.liquid = 0;
                     t.clear_liquid_kind();
                 }
@@ -1241,6 +1591,85 @@ pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surfa
         }
     }
     webs
+}
+
+// --- the spider-wall eraser (W4-g41) ------------------------------------------
+
+/// `WorldGen.SpiderWallRemover` (`WorldGen.cs:77279-77344`) — the drifting
+/// diamond eraser: a `Next(8,21)`-wide / `Next(8,33)`-step blob walks a
+/// `Next(-10,11)*0.1` velocity, clearing wall 62 → 0 inside the shrinking
+/// `|dx|+|dy| < radius*0.5*(1+Next(-10,11)*0.015)` diamond each step, with
+/// the `Next(-10,11)*0.05` velocity jitter clamped to ±1.
+///
+/// UNWIRED by design (the c32 constants-off precedent): the C#'s only callers
+/// are `FinishNotTheBees`' two 10000-draw search loops (`:25409-25434`, the
+/// for-the-worthy + not-the-bees combo), and `FinishNotTheBees` (`:25388`)
+/// is itself unported — the wiring lands with that row. A classic world
+/// reads no flag and never reaches it.
+pub(crate) fn spider_wall_remover(world: &mut World, rng: &mut Rng, i: i32, j: i32) {
+    // `:77281` — the width budget; the C# never decrements `num` (only the
+    // `num3` life counter steps down), so the loop runs exactly `num2` times.
+    let num = rng.range(8, 21) as f64;
+    let num2 = rng.range(8, 33) as f64;
+    let mut num3 = num2;
+    let mut pos = (i as f64, j as f64);
+    let mut vel = (
+        rng.range(-10, 11) as f64 * 0.1,
+        rng.range(-10, 11) as f64 * 0.1,
+    );
+    while num > 0.0 && num3 > 0.0 {
+        let num4 = num * (num3 / num2);
+        num3 -= 1.0;
+        // `:77294-77313` — the diamond's bounding box, clamped to the world
+        // (the C# clamps to `maxTilesX`/`maxTilesY` exclusive).
+        let mut xmin = (pos.0 - num4 * 0.5) as i32;
+        let mut xmax = (pos.0 + num4 * 0.5) as i32;
+        let mut ymin = (pos.1 - num4 * 0.5) as i32;
+        let mut ymax = (pos.1 + num4 * 0.5) as i32;
+        if xmin < 0 {
+            xmin = 0;
+        }
+        if xmax > world.width {
+            xmax = world.width;
+        }
+        if ymin < 0 {
+            ymin = 0;
+        }
+        if ymax > world.height {
+            ymax = world.height;
+        }
+        for k in xmin..xmax {
+            for l in ymin..ymax {
+                // `:77318` — the jittered diamond test: the C# `&&` evaluates
+                // the distance FIRST, so the `Next(-10,11)` draw runs only
+                // for cells already inside the un-jittered radius (the port
+                // mirrors the short-circuit by scaling the base radius).
+                let dist = (k as f64 - pos.0).abs() + (l as f64 - pos.1).abs();
+                if dist < num * 0.5 * (1.0 + rng.range(-10, 11) as f64 * 0.015)
+                    && world.tile(k, l).is_some_and(|t| t.wall == WALL_SPIDER)
+                {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.wall = 0;
+                    }
+                }
+            }
+        }
+        pos = (pos.0 + vel.0, pos.1 + vel.1);
+        vel.0 += rng.range(-10, 11) as f64 * 0.05;
+        if vel.0 > 1.0 {
+            vel.0 = 1.0;
+        }
+        if vel.0 < -1.0 {
+            vel.0 = -1.0;
+        }
+        vel.1 += rng.range(-10, 11) as f64 * 0.05;
+        if vel.1 > 1.0 {
+            vel.1 = 1.0;
+        }
+        if vel.1 < -1.0 {
+            vel.1 = -1.0;
+        }
+    }
 }
 
 /// The dirt/stone ids the scatter arms read (kept for the const block to stay
