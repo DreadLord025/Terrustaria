@@ -492,6 +492,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_81", 29),
     ("Zombie_82", 29),
     ("Zombie_83", 29),
+    // W4-e9 slice 4 — the last two arms (`NPC.cs:90199-90206`): the
+    // sandpoor family 84/85, the scutlix 86.
+    ("Zombie_84", 29),
+    ("Zombie_85", 29),
+    ("Zombie_86", 29),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and

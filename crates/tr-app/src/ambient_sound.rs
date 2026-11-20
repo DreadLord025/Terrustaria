@@ -313,10 +313,8 @@ pub fn critter_sound_cue(
 /// arms draw nothing more. `wet` gates the jellyfish arm (`:90099`);
 /// `roll(hi)` stands in for `Main.rand.Next(hi)`.
 ///
-/// This slice ports arms 1-30 (`:90079-90198`); the last two arms
-/// (the 498-506 sandpoors and the scutlix) land with the next slice —
-/// an unported type draws NOTHING here (the pre-wiring behaviour for
-/// every kind outside the table).
+/// The full 32-arm ladder is ported (`:90079-90206`); an unlisted type
+/// draws NOTHING (the C#'s ladder falls through every arm).
 pub fn idle_sound_cue(
     npc_type: i32,
     wet: bool,
@@ -468,6 +466,16 @@ pub fn idle_sound_cue(
     // Next(81, 84).
     if npc_type == 253 || npc_type == 82 {
         return (roll(700) == 0).then(|| roll_range(roll, 81, 84));
+    }
+    // `:90199-90202` — the sandpoor family (498-506): Next(600), slot
+    // Next(84, 86).
+    if (498..=506).contains(&npc_type) {
+        return (roll(600) == 0).then(|| roll_range(roll, 84, 86));
+    }
+    // `:90203-90206` — the scutlix (391): Next(700), slot Next(86, 87)
+    // — the one-wide window (the draw still consumes one sample).
+    if npc_type == 391 {
+        return (roll(700) == 0).then(|| roll_range(roll, 86, 87));
     }
     None
 }
@@ -834,6 +842,10 @@ fn zombie_asset(slot: usize) -> &'static str {
         81 => "Zombie_81",
         82 => "Zombie_82",
         83 => "Zombie_83",
+        // W4-e9 slice 4 — the sandpoor/scutlix slots (`:90199-90206`).
+        84 => "Zombie_84",
+        85 => "Zombie_85",
+        86 => "Zombie_86",
         _ => "Zombie_0",
     }
 }
@@ -1337,6 +1349,17 @@ mod tests {
             assert_eq!(idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)), None);
             assert_eq!(rolls.calls, 1, "type {ty}: one failed gate roll");
         }
+        // Slice 4 (`:90199-90206`): the sandpoor range and the scutlix's
+        // ONE-WIDE window (Next(86, 87) pins 86 but still draws).
+        for ty in 498..=506 {
+            let mut rolls = Rolls::with_zero(0);
+            let style = idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)).unwrap();
+            assert!((84..86).contains(&style), "type {ty}: slot {style}");
+            assert_eq!(rolls.calls, 2);
+        }
+        let mut rolls = Rolls::with_zero(0);
+        assert_eq!(idle_sound_cue(391, false, 0.0, &mut roll(&mut rolls)), Some(86));
+        assert_eq!(rolls.calls, 2, "the one-wide window still draws");
         // The jellyfish arm needs `wet` — dry draws NOTHING (`:90099`).
         let mut rolls = Rolls::new();
         assert_eq!(idle_sound_cue(63, false, 0.0, &mut roll(&mut rolls)), None);
@@ -1365,7 +1388,7 @@ mod tests {
             let _ = roll(&mut rolls)((hi - lo) as u32) as i32;
             lo + 1
         };
-        for slot in [24u32, 25, 32, 33, 41, 43, 44, 47, 53, 54, 58, 59, 73, 78, 83] {
+        for slot in [24u32, 25, 32, 33, 41, 43, 44, 47, 53, 54, 58, 59, 73, 78, 83, 84, 86] {
             let voice = critter_legacy_voice(29, slot, &mut signed, &|_| false).unwrap();
             assert_eq!(voice.slot, slot as usize);
             assert_eq!(voice.asset, zombie_asset(slot as usize));
