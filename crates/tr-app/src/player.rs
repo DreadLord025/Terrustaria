@@ -650,6 +650,13 @@ pub struct Player {
     /// the Stardust armor set bonus flag; the down-hold rest-target clear
     /// gate (`KeyHoldDown` `:56903-56906`).
     pub set_stardust: bool,
+    /// `Player.setSolar` (`Player.cs:2816`, `ApplySetBonus_Solar`
+    /// `:16369`) — the Solar armor set bonus flag; the aiStyle-116
+    /// SolarFlareRay's `timeLeft = 2` keep-alive gate
+    /// (`Projectile.cs:34446-34449`). W4-d12 lands the flag-only wiring
+    /// (the `set_stardust` precedent); the endurance +0.12 / solarCounter
+    /// / solarShields halves are the shield lane's (deferred, ANALYSIS).
+    pub set_solar: bool,
     /// `Player.ownedProjectileCounts[ProjectileID.Count]` (`Player.cs:2992`)
     /// — recounted every tick from the live pool (`:25565`); the summon
     /// buff-arms and the keep-alive checks read exactly this.
@@ -2519,6 +2526,7 @@ impl Player {
             minion_rest_target_point: Vec2::ZERO,
             set_forbidden: false,
             set_stardust: false,
+            set_solar: false,
             tag_effects: crate::tag_effects::TagEffectStack::default(),
             whip_range_multiplier: 1.0,
             whip_use_time_multiplier: 1.0,
@@ -6148,6 +6156,13 @@ impl Player {
         // re-derives both per tick.
         self.set_stardust = false;
         self.set_forbidden = false;
+        // W4-d12 — the per-tick `setSolar = false` clear (`Player.cs:25620`,
+        // the `Player.Update` body ahead of `UpdateEquips` — the same
+        // pre-equip position as the C#): the Solar triple's armor-set arm
+        // below re-derives it per tick (the `set_stardust` flag-only
+        // precedent). The `ApplySetBonus_Solar` endurance +0.12 /
+        // solarCounter halves are the shield lane's (deferred, ANALYSIS).
+        self.set_solar = false;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -6388,6 +6403,16 @@ impl Player {
             // are the guardian's own lane (deferred, ANALYSIS).
             (3381, 3382, 3383) => {
                 self.set_stardust = true;
+            }
+            // W4-d12 — the Solar triple (`ArmorSetBonuses.cs:479`,
+            // `Benefits.Solar` `:37-40` → `ApplySetBonus_Solar`
+            // `Player.cs:16366-16369`): `setSolar` gates the aiStyle-116
+            // SolarFlareRay's keep-alive (`Projectile.cs:34446-34449`).
+            // The flag-only landing (the Stardust precedent); the
+            // endurance +0.12 / solarCounter++ / solarShields halves are
+            // the shield lane's (deferred, ANALYSIS).
+            (2763, 2764, 2765) => {
+                self.set_solar = true;
             }
             _ => {}
         }
@@ -21649,5 +21674,26 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    /// W4-d12 — the Solar triple's flag grant + the per-tick reset
+    /// (`ArmorSetBonuses.cs:479`, `ApplySetBonus_Solar` `Player.cs:16369`,
+    /// the `Player.Update` clear `:25620`): the 2763/2764/2765 triple arms
+    /// `setSolar`; taking the armor off clears it on the next tick (the
+    /// `set_stardust` flag-only precedent).
+    #[test]
+    fn w4_d12_the_solar_flag_grants_and_resets() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2763;
+        p.equipped[1] = 2764;
+        p.equipped[2] = 2765;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_solar, "the Solar triple (ArmorSetBonuses.cs:479)");
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_solar, "the per-tick clear (:25620)");
     }
 }

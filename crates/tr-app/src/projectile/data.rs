@@ -1055,6 +1055,9 @@ pub const TRUFFLE_SPORE: u16 = 590;
 /// `ProjectileID.PortalGunGate` (602, `ProjectileID.cs:1758`) — the Portal
 /// Gun's gate (aiStyle 114). W4-d12.
 pub const PORTAL_GUN_GATE: u16 = 602;
+/// `ProjectileID.SolarFlareRay` (607, `ProjectileID.cs:1768`) — the Solar
+/// armor's orbiting flare ray (aiStyle 116). W4-d12.
+pub const SOLAR_FLARE_RAY: u16 = 607;
 /// `ProjectileID.DandelionSeed` (836, `ProjectileID.cs:2226`) — the
 /// Dandelion's wind-borne seed (aiStyle 112's 836 sub-arm, hostile). W4-d12.
 pub const DANDELION_SEED: u16 = 836;
@@ -3603,6 +3606,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             PORTAL_GUN_GATE => {
                 (10.0, 10.0, 114, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
+            // W4-d12 — `Projectile.cs:6542-6553` SolarFlareRay (607): 10x10,
+            // aiStyle 116, friendly, `alpha = 255`, `timeLeft = 600`,
+            // `ignoreWater`, `tileCollide = false`, `penetrate = -1`.
+            SOLAR_FLARE_RAY => {
+                (10.0, 10.0, 116, -1, 600, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_3 => (28.0, 60.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
@@ -4213,6 +4222,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d12 — `Projectile.cs:6395`: the Truffle spore's
             // `ignoreWater = true` (the 836 seed keeps the stock false).
             || kind == TRUFFLE_SPORE
+            // W4-d12 — `Projectile.cs:6550`: the Solar flare ray's
+            // `ignoreWater = true`.
+            || kind == SOLAR_FLARE_RAY
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
             || kind == HORSEMAN_PUMPKIN
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`

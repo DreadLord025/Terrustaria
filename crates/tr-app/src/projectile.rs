@@ -10286,6 +10286,48 @@ impl Projectile {
         self.rot = self.ai[0] - std::f32::consts::FRAC_PI_2;
     }
 
+    /// `AI()`'s aiStyle-116 arm (`Projectile.cs:34438-34458`) — the Solar
+    /// armor's orbiting flare ray (607), the style's ONLY SetDefaults row
+    /// (`:6542-6553`). The ray orbits its owner: the rotation lerps 5%
+    /// toward `WrapAngle(miscCounter / 300 · 4π + ai[1])`, the velocity is
+    /// the rotation's unit vector ×100 minus the owner's velocity, and the
+    /// centre pins to `owner.Center − velocity` (so the post-AI
+    /// `UpdatePosition` integrate lands the ray exactly on the owner's
+    /// centre). The `setSolar` flag holds `timeLeft = 2` (the keep-alive).
+    ///
+    /// ZERO `Main.rand` draws. `owner` is the dispatch's snapshot of
+    /// `Main.player[owner]` — `(center, velocity, misc_counter, set_solar)`;
+    /// `None` (a foreign owner) reads the C#'s inactive-player zeros: the
+    /// ray orbits the origin with no keep-alive (the golf precedent).
+    fn ai_solar_flare_ray(&mut self, owner: Option<(Vec2, Vec2, u32, bool)>) {
+        // `:34440-34444` — the one-shot rotation latch.
+        if self.local_ai[0] == 0.0 {
+            self.rot = self.ai[1];
+            self.local_ai[0] = 1.0;
+        }
+        let (player_center, player_vel, misc_counter, set_solar) =
+            owner.unwrap_or((Vec2::ZERO, Vec2::ZERO, 0, false));
+        // `:34445-34449` — the Solar set's keep-alive.
+        if set_solar {
+            self.time_left = 2;
+        }
+        // `:34450` — the 5% angle lerp toward the miscCounter-driven orbit
+        // phase (`Utils.AngleLerp`, the wrapped short-way form).
+        let target = wrap_angle(misc_counter as f32 / 300.0 * (std::f32::consts::PI * 4.0) + self.ai[1]);
+        self.rot = angle_lerp(self.rot, target, 0.05);
+        // `:34451-34455` — the fade-in.
+        self.alpha -= 15;
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:34456-34457` — the orbit velocity + the centre pin. The C#
+        // `base.Center = player.Center - velocity` places the box so the
+        // `UpdatePosition` integrate (`:20445`) lands it on the owner.
+        self.vel = rotation_vector(self.rot) * 100.0 - player_vel;
+        let c = player_center - self.vel;
+        self.set_center(c);
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -18141,6 +18183,37 @@ impl ProjectilePool {
                             // `HandleMovement`: `tileCollide = false`
                             // (`:6518`) — `UpdatePosition` integrates the
                             // zero velocity (the gate holds its centre).
+                            if self.slots[i].active {
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
+                        }
+                        // W4-d12 — `AI()`'s `else if (this.aiStyle == 116)`
+                        // (`Projectile.cs:34438-34458`): the Solar armor's
+                        // orbiting flare ray (607), the style's ONLY
+                        // SetDefaults row (`:6542-6553`). The owner
+                        // snapshot reads the local player channel (a
+                        // foreign owner reads the inactive-player zeros —
+                        // the golf precedent).
+                        116 => {
+                            let owner_snap = if self.slots[i].owner == local_owner {
+                                player.as_deref().map(|pl| {
+                                    let (cx, cy) = pl.center();
+                                    (
+                                        Vec2::new(cx, cy),
+                                        Vec2::new(pl.vx, pl.vy),
+                                        pl.misc_counter,
+                                        pl.set_solar,
+                                    )
+                                })
+                            } else {
+                                None
+                            };
+                            self.slots[i].ai_solar_flare_ray(owner_snap);
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:6551`) — `UpdatePosition` integrates the
+                            // orbit velocity, landing the ray on the
+                            // owner's centre (the arm's pin).
                             if self.slots[i].active {
                                 let vel = self.slots[i].vel;
                                 self.slots[i].pos += vel;
@@ -45701,5 +45774,128 @@ mod w4_d12_portal_gate_tests {
         assert_eq!(p.frame, 0, "the projFrames[602] = 4 wrap (:34407-34409)");
         // The alpha floors at 0 (255 − 24·25 < 0).
         assert_eq!(p.alpha, 0, ":34396-34398");
+    }
+}
+
+/// W4-d12 — the Solar armor's orbiting flare ray (`AI()`'s aiStyle-116
+/// arm, `Projectile.cs:34438-34458`). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d12_solar_flare_ray_tests {
+    use super::*;
+
+    fn ray_at(cx: f32, cy: f32, ai1: f32) -> Projectile {
+        let d = proj_data(SOLAR_FLARE_RAY).unwrap();
+        Projectile {
+            active: true,
+            kind: SOLAR_FLARE_RAY,
+            owner: 0,
+            pos: Vec2::new(cx - d.w * 0.5, cy - d.h * 0.5),
+            w: d.w,
+            h: d.h,
+            time_left: d.time_left,
+            max_penetrate: d.penetrate,
+            penetrate: d.penetrate,
+            tile_collide: d.tile_collide,
+            ignore_water: d.ignore_water,
+            alpha: d.alpha,
+            ai: [0.0, ai1, 0.0, 0.0],
+            ..Default::default()
+        }
+    }
+
+    /// The row pin (`Projectile.cs:6542-6553`).
+    #[test]
+    fn w4_d12_the_607_row_matches_set_defaults() {
+        let d = proj_data(SOLAR_FLARE_RAY).unwrap();
+        assert_eq!((d.w, d.h), (10.0, 10.0), ":6544-6545");
+        assert_eq!(d.ai_style, 116, ":6546");
+        assert_eq!(d.alpha, 255, ":6548");
+        assert_eq!(d.time_left, 600, ":6549");
+        assert!(d.ignore_water, ":6550");
+        assert!(!d.tile_collide, ":6551");
+        assert_eq!(d.penetrate, -1, ":6552");
+        assert_eq!(proj_frames(SOLAR_FLARE_RAY), 1, "Main.cs:8441 init");
+    }
+
+    /// The one-shot rotation latch (`:34440-34444`): the first tick pins
+    /// `rotation = ai[1]` and flips `localAI[0]`; later ticks never re-pin.
+    #[test]
+    fn w4_d12_the_rotation_latches_once() {
+        let mut p = ray_at(400.0, 300.0, 1.0);
+        // miscCounter 0, setSolar false, owner at (400, 300), zero velocity.
+        let owner = Some((Vec2::new(400.0, 300.0), Vec2::ZERO, 0u32, false));
+        p.ai_solar_flare_ray(owner);
+        assert_eq!(p.local_ai[0], 1.0, ":34443");
+        // The lerp target is WrapAngle(0 + 1.0) = 1.0; the latch already
+        // put rotation at 1.0, so AngleLerp(1.0, 1.0, 0.05) = 1.0.
+        assert!((p.rot - 1.0).abs() < 1e-6, ":34442 + the equal-angle lerp");
+        // A second tick with a different ai[1] does NOT re-latch.
+        p.ai[1] = 2.0;
+        p.ai_solar_flare_ray(owner);
+        assert!((p.rot - 1.0).abs() < 1e-6, "the latch is one-shot (:34440)");
+    }
+
+    /// The setSolar keep-alive (`:34445-34449`): the flag pins timeLeft 2.
+    #[test]
+    fn w4_d12_the_solar_flag_holds_the_life() {
+        let mut p = ray_at(400.0, 300.0, 0.0);
+        let owner = Some((Vec2::new(400.0, 300.0), Vec2::ZERO, 0u32, true));
+        p.ai_solar_flare_ray(owner);
+        assert_eq!(p.time_left, 2, ":34448");
+        // Without the flag the life runs down from the row's 600.
+        let mut p2 = ray_at(400.0, 300.0, 0.0);
+        let owner2 = Some((Vec2::new(400.0, 300.0), Vec2::ZERO, 0u32, false));
+        p2.ai_solar_flare_ray(owner2);
+        assert_eq!(p2.time_left, 600, "no pin without setSolar");
+    }
+
+    /// The orbit velocity + centre pin (`:34456-34457`): velocity =
+    /// rotationVector ×100 − playerVelocity; centre = playerCenter −
+    /// velocity. With rotation 0 and a stationary owner the ray sits 100
+    /// px LEFT of the owner (the integrate lands it on the owner).
+    #[test]
+    fn w4_d12_the_orbit_pins_the_centre() {
+        let mut p = ray_at(0.0, 0.0, 0.0);
+        let owner = Some((Vec2::new(400.0, 300.0), Vec2::ZERO, 0u32, false));
+        p.ai_solar_flare_ray(owner);
+        // rotation latched to ai[1] = 0 → rotationVector (1, 0).
+        assert!((p.vel.x - 100.0).abs() < 1e-4, ":34456");
+        assert!(p.vel.y.abs() < 1e-4);
+        let c = Vec2::from(p.center());
+        assert!((c.x - 300.0).abs() < 1e-4, "400 − 100 (:34457)");
+        assert!((c.y - 300.0).abs() < 1e-4);
+        // The owner's velocity subtracts: a rightward owner at 5 px/tick
+        // drops the ray's velocity to 95.
+        let mut p2 = ray_at(0.0, 0.0, 0.0);
+        let owner2 = Some((Vec2::new(400.0, 300.0), Vec2::new(5.0, 0.0), 0u32, false));
+        p2.ai_solar_flare_ray(owner2);
+        assert!((p2.vel.x - 95.0).abs() < 1e-4, "100 − 5 (:34456)");
+    }
+
+    /// The fade-in (`:34451-34455`): alpha −15/tick, floored at 0.
+    #[test]
+    fn w4_d12_the_ray_fades_in() {
+        let mut p = ray_at(400.0, 300.0, 0.0);
+        let owner = Some((Vec2::new(400.0, 300.0), Vec2::ZERO, 0u32, false));
+        p.ai_solar_flare_ray(owner);
+        assert_eq!(p.alpha, 240, ":34451");
+        for _ in 0..16 {
+            p.ai_solar_flare_ray(owner);
+        }
+        assert_eq!(p.alpha, 0, "255 − 17·15 < 0 → 0 (:34452-34454)");
+    }
+
+    /// The miscCounter-driven orbit phase (`:34450`): the target angle is
+    /// WrapAngle(miscCounter/300·4π + ai[1]); the 5% lerp moves toward it.
+    #[test]
+    fn w4_d12_the_misc_counter_drives_the_orbit() {
+        let mut p = ray_at(400.0, 300.0, 0.0);
+        // miscCounter 75 → 75/300·4π = π. The latch pins rotation 0, then
+        // AngleLerp(0, π, 0.05) = 0.05π (the short way is ambiguous at π;
+        // the C# AngleLerp's target>cur branch picks +π).
+        let owner = Some((Vec2::new(400.0, 300.0), Vec2::ZERO, 75u32, false));
+        p.ai_solar_flare_ray(owner);
+        let expected = 0.05 * std::f32::consts::PI;
+        assert!((p.rot - expected).abs() < 1e-4, "the 5% lerp toward π (:34450)");
     }
 }
