@@ -2105,6 +2105,10 @@ impl App {
     /// → the life to full + the removable debuffs cleared. Returns false
     /// when the purse is short or there is nothing to heal.
     pub(crate) fn nurse_heal(&mut self, nurse_idx: usize) -> bool {
+        // `Main.cs:40105` — `NPCChatText_DoNurseHeal` plays sound 12 FIRST,
+        // before the `healCost > 0` / `BuyItem` gates (the port's collapse
+        // runs the cost gate inside; the cue plays on the button press).
+        crate::chest::play_menu_sound(self, 12);
         let cost = self.nurse_heal_cost(nurse_idx);
         if cost <= 0 || self.coins < cost as u64 {
             return false;
@@ -2118,10 +2122,26 @@ impl App {
         // !NurseCannotRemoveDebuff[b]`).
         player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
-        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40111`,
+        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40110`,
         // `AchievementsHelper.cs:407-410`): the paid amount rides
         // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
         let _ = self.achievements.notify_custom_float("Pay", cost as f32);
+        // `SoundEngine.PlaySound(SoundID.Item4)` (`Main.cs:40111`) — the
+        // coins cue AFTER `HandleNurseService`, BEFORE `HealEffect`
+        // (`:40112`). The legacy `PlaySound(SoundID)` façade
+        // (`SoundEngine.cs:93-99`) draws the `GetRandomPitch` NextFloat on
+        // the audio-only `sound_style_random` and case 2's ONE
+        // `Next(-6,7)` pitch roll on the bare-`Main.rand` stand-in (the
+        // click runs outside every swap, the S1-A-11 §4 convention).
+        if let Some(idx) = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == "Item4")
+        {
+            let mut rng = self.rngs.global().clone();
+            self.audio
+                .play_use_sound(idx as u16, -1.0, -1.0, 0.0, &mut rng);
+            *self.rngs.global() = rng;
+        }
         true
     }
 
@@ -5651,6 +5671,45 @@ mod s1_e_18_tests {
             .find(|a| a.name == "FREQUENT_FLYER")
             .and_then(|a| a.tracker_values())
             .map_or(0, |(v, _)| v)
+    }
+
+    /// W4-g21 — `NPCChatText_DoNurseHeal`'s two cues (`Main.cs:40105`,
+    /// `:40111`): sound 12 plays FIRST on every button press (even a refused
+    /// heal), sound `Item4` only inside the `BuyItem` success arm. The
+    /// Item4 case-2 pitch roll draws ONE `Next(-6,7)` on the bare-`Main.rand`
+    /// stand-in (the click runs outside every swap); the `GetRandomPitch`
+    /// NextFloat rides the audio-only `sound_style_random`.
+    #[test]
+    fn w4_g21_the_nurse_heal_plays_the_tick_then_the_coins_cue() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Nurse,
+            32.0,
+            100.0,
+            1,
+            0.0,
+        ));
+        let cost = app.nurse_heal_cost(0);
+        assert!(cost > 0);
+        // The refused heal: the `:40105` tick still plays, no Item4.
+        app.coins = cost as u64 - 1;
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.global().clone();
+        assert!(!app.nurse_heal(0));
+        assert_eq!(app.audio.played_count(), before + 1, "only the tick");
+        assert_eq!(*app.rngs.global(), rng_before, "no gameplay draw");
+        // The paid heal: tick + Item4, and the case-2 pitch roll advanced the
+        // bare stream by exactly one `Next(-6,7)` draw.
+        app.coins = cost as u64;
+        let before = app.audio.played_count();
+        let mut witness = app.rngs.global().clone();
+        witness.next_range(-6, 7); // `LegacySoundPlayer.cs:634`'s default arm
+        assert!(app.nurse_heal(0));
+        assert_eq!(app.audio.played_count(), before + 2, "tick + Item4");
+        assert_eq!(*app.rngs.global(), witness, "one pitch draw, in order");
     }
 }
 

@@ -1133,6 +1133,12 @@ impl App {
         // The inventory button (`DrawBestiaryIcon`'s click arm): open the
         // bestiary, close the inventory (`IngameFancyUI.OpenUIState`).
         if self.inventory_open && ui::bestiary::button_hit(self.mouse_pos) {
+            // `SoundEngine.PlaySound(12)` (`Main.cs:42458`) — AFTER the
+            // `SetTalkNPC(-1)`/`npcChatCornerItem = 0`/`npcChatText = ""`
+            // clears (no port state) + `mouseLeftRelease = false`, BEFORE
+            // `IngameFancyUI.OpenUIState` (`:42459`, which closes the
+            // inventory).
+            self.audio.play("Menu_Tick");
             self.inventory_open = false;
             self.bestiary_open = true;
             self.bestiary_selected = None;
@@ -1160,6 +1166,12 @@ impl App {
         // `DrawEmoteBubblesButton`'s click arm (`Main.cs:42400-42405`):
         // open the emotes wheel.
         if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
+            // `SoundEngine.PlaySound(12)` (`Main.cs:42403`) — AFTER the
+            // `SetTalkNPC(-1)`/`npcChatCornerItem = 0`/`npcChatText = ""`
+            // clears (no port state) + `mouseLeftRelease = false`, BEFORE
+            // `IngameFancyUI.OpenUIState(new UIEmotesMenu())` (`:42404`,
+            // which closes the inventory).
+            self.audio.play("Menu_Tick");
             self.inventory_open = false;
             // `UIEmotesMenu.OnActivate` rebuilds the page, so the wheel opens
             // with its scroll at 0 (`EmoteSystem::open`).
@@ -1533,8 +1545,10 @@ impl App {
         // inventory is open (their home is `DrawInventory`, `:41055`) and the
         // map system is enabled (`:41056`'s `Main.mapEnabled` wraps the row).
         // A hit consumes the press and returns before the slot handling.
-        // `PlaySound(10)/(12)` (`:41100,41109-41119`) is not ported — no UI cue
-        // is loaded (`audio.rs:22-31`).
+        // W4-g21: the row's `PlaySound(10)/(12)` (`:41100,41109-41119`) now
+        // play — k0 the fullscreen-map open is sound 10 (`Menu_Open`), k1/2/3
+        // the style switches are sound 12 (`Menu_Tick`), each AFTER its state
+        // write exactly like the C#.
         if left && self.inventory_open && self.settings.map_enabled {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
@@ -1554,13 +1568,19 @@ impl App {
                         // `SetTalkNPC(-1)` / `npcChatCornerItem = 0` have no
                         // port counterpart.
                         self.inventory_open = false;
+                        // `SoundEngine.PlaySound(10)` (`:41100`) — AFTER the
+                        // inventory close + `SetTalkNPC(-1)`, BEFORE the
+                        // fullscreen-map state writes.
+                        self.audio.play("Menu_Open");
                         if let Some(m) = self.map.as_mut() {
                             m.set_open(true);
                         }
                     } else {
                         // `Main.cs:41106-41120`: `k == 1/2/3` ->
-                        // `Main.mapStyle = 0/1/2`.
+                        // `Main.mapStyle = 0/1/2`, each followed by
+                        // `SoundEngine.PlaySound(12)` (`:41109/:41114/:41119`).
                         self.map_style = k as i32 - 1;
+                        self.audio.play("Menu_Tick");
                     }
                     return;
                 }
@@ -5982,5 +6002,91 @@ mod s1_p_i44_shop_click_tests {
         assert_eq!(app.shop_stock[0].stack, 2);
         // The buy price of a buyOnce torch row: 50/5 = 10 per unit.
         assert_eq!(app.coins, 1_000_000 - 100);
+    }
+}
+
+#[cfg(test)]
+mod w4_g21_sound_site_tests {
+    //! W4-g21 — the Main.cs PlaySound sites 1-90 batch: the map-icon row's
+    //! clicks (`:41100`/`:41109`/`:41114`/`:41119`), the emotes button
+    //! (`:42403`) and the bestiary button (`:42458`). WRITTEN NOT RUN
+    //! (the wave's code-only mode).
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    fn inv_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app
+    }
+
+    /// `Main.cs:41095-41104`: the k0 icon closes the inventory and opens the
+    /// fullscreen map with `SoundEngine.PlaySound(10)` (`:41100`).
+    #[test]
+    fn the_fullscreen_map_icon_plays_menu_open() {
+        let mut app = inv_app();
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        let (sw, sh) = app.screen_size();
+        let [x, y] = ui::chrome::map_icon_rect(0, Vec2::new(sw, sh));
+        app.mouse_pos = Vec2::new(x + 5.0, y + 5.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.inventory_open, "the inventory closed (`:41097`)");
+        assert!(app.map.as_ref().is_some_and(|m| m.open), "the map opened");
+        assert_eq!(app.audio.played_count(), before + 1, "one Menu_Open cue");
+    }
+
+    /// `Main.cs:41106-41120`: the k1/2/3 icons switch `mapStyle` and each
+    /// plays `SoundEngine.PlaySound(12)` AFTER the write.
+    #[test]
+    fn the_map_style_icons_tick_after_the_style_write() {
+        for k in 1..4usize {
+            let mut app = inv_app();
+            let (sw, sh) = app.screen_size();
+            let [x, y] = ui::chrome::map_icon_rect(k, Vec2::new(sw, sh));
+            app.mouse_pos = Vec2::new(x + 5.0, y + 5.0);
+            let before = app.audio.played_count();
+            app.ui_left_press = true;
+            app.handle_inventory_clicks();
+            assert_eq!(app.map_style, k as i32 - 1, "mapStyle = k-1");
+            assert_eq!(
+                app.audio.played_count(),
+                before + 1,
+                "one Menu_Tick cue (k={k})"
+            );
+            assert!(app.inventory_open, "the style switch keeps the inventory");
+        }
+    }
+
+    /// `Main.cs:42403`: the emotes button's click plays sound 12 BEFORE
+    /// `IngameFancyUI.OpenUIState` closes the inventory.
+    #[test]
+    fn the_emotes_button_click_ticks() {
+        let mut app = inv_app();
+        app.mouse_pos = Vec2::new(539.0, 283.0); // inside the (534,278) 30x30 box
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(app.emotes.menu_open, "the wheel opened");
+        assert!(!app.inventory_open, "the inventory closed");
+        assert_eq!(app.audio.played_count(), before + 1, "the `:42403` tick");
+        assert!(!app.ui_left_press, "the press was consumed");
+    }
+
+    /// `Main.cs:42458`: the bestiary button's click plays sound 12 BEFORE
+    /// `IngameFancyUI.OpenUIState(Main.BestiaryUI)`.
+    #[test]
+    fn the_bestiary_button_click_ticks() {
+        let mut app = inv_app();
+        app.mouse_pos = Vec2::new(503.0, 283.0); // inside the (498,278) 30x30 box
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(app.bestiary_open, "the bestiary opened");
+        assert!(!app.inventory_open, "the inventory closed");
+        assert_eq!(app.audio.played_count(), before + 1, "the `:42458` tick");
+        assert!(!app.ui_left_press, "the press was consumed");
     }
 }

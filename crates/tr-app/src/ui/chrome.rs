@@ -761,9 +761,10 @@ pub fn map_icon_appearance(k: usize, map_style: i32, hovered: bool) -> ([f32; 4]
 /// `if (Main.mapEnabled)` (`:41056`), which this signature cannot see — the
 /// port draws it whenever the inventory is open (the clicks, wired in
 /// `main.rs`, are still gated on the map being enabled); the hover's
-/// `Main.DoStatefulTickSound` (`:41126`) and the clicks' `PlaySound(10)/(12)`
-/// (`:41100,41109-41119`) are not ported — no UI cue is loaded
-/// (`audio.rs:22-31`), consistent with the silent menus.
+/// `Main.DoStatefulTickSound` (`:41126`) is not ported (the row's hover
+/// latch is a draw-side state the port does not carry); the clicks'
+/// `PlaySound(10)/(12)` (`:41100,41109-41119`) landed with W4-g21 in
+/// `app/clicks.rs`'s map-icon arm.
 pub fn draw_map_style_icons(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,

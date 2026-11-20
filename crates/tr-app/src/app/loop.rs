@@ -153,100 +153,12 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if event.state == ElementState::Pressed {
                         self.keys.insert(code);
-                        // `DoUpdate_HandleChat` (`Main.cs:18318-18372`): the
-                        // open chat eats the keyboard before the world
-                        // routes — Enter sends + closes (`inputTextEnter`),
-                        // Escape closes (`inputTextEscape`), Backspace
-                        // trims, printable text appends (`GetInputText`).
-                        // The world controls stay live like the source.
-                        if self.chat.open {
-                            match code {
-                                KeyCode::Enter | KeyCode::NumpadEnter => {
-                                    // `ChatHelper.SendChatMessageFromClient`
-                                    // (`ChatHelper.cs:72-79`): a joining client
-                                    // sends the line to the host, which runs
-                                    // the command processor and relays the
-                                    // result back as `82` text modules.
-                                    let text = self.chat.text.clone();
-                                    let is_client = self.is_client();
-                                    let before = self.chat.messages.len();
-                                    if is_client {
-                                        self.send_chat_message("", &text);
-                                    } else {
-                                        let name = self.player_name.clone();
-                                        // The chat commands draw the bare
-                                        // `Main.rand` stand-in (the C# chat
-                                        // path runs outside every swap); they
-                                        // also read the player state
-                                        // (`DeathCommand`'s counters).
-                                        self.chat.send_with(
-                                            &text,
-                                            &name,
-                                            self.rngs.global(),
-                                            &mut self.emotes,
-                                            self.player.as_ref(),
-                                        );
-                                    }
-                                    // The host relays the lines its own submit
-                                    // produced (slot 0 is the host's author).
-                                    // The borrow dance: the server handle
-                                    // borrows `self.net`, so the lines are
-                                    // collected first.
-                                    if !is_client {
-                                        let produced = self
-                                            .chat
-                                            .messages
-                                            .iter()
-                                            .take(self.chat.messages.len().saturating_sub(before))
-                                            .map(|l| (l.text.clone(), l.color))
-                                            .collect::<Vec<_>>();
-                                        if !produced.is_empty() {
-                                            if let crate::app::NetRole::Host(server) = &self.net {
-                                                use crate::app::netmodules::{
-                                                    module_id, ModuleBody, ServerMessage,
-                                                };
-                                                for (text, color) in produced {
-                                                    let sm = ServerMessage {
-                                                        author: 0,
-                                                        text,
-                                                        color: crate::net::Rgb(
-                                                            color[0], color[1], color[2],
-                                                        ),
-                                                    };
-                                                    server.broadcast(&crate::net::S2c::NetModule {
-                                                        module: module_id::TEXT,
-                                                        body: sm.encode(),
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-                                    self.chat.text.clear();
-                                    self.chat.open = false;
-                                }
-                                KeyCode::Escape => {
-                                    self.chat.text.clear();
-                                    self.chat.open = false;
-                                }
-                                KeyCode::Backspace => {
-                                    self.chat.text.pop();
-                                }
-                                _ => {}
-                            }
-                            if let Some(text) = event.text.as_ref() {
-                                for ch in text.chars() {
-                                    if !ch.is_control() {
-                                        self.chat.text.push(ch);
-                                    }
-                                }
-                            }
-                            return;
-                        }
-                        // `Main.chatRelease && !drawingPlayerChat` →
-                        // `OpenPlayerChat` (`Main.cs:18268-18287`): Enter
-                        // opens the chat.
-                        if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) {
-                            self.chat.open = true;
+                        // `DoUpdate_Enter_ToggleChat` + `DoUpdate_HandleChat`
+                        // (`Main.cs:18264-18372`): the chat open/close/edit
+                        // chain eats the keyboard before the world routes.
+                        // Extracted like `world_key` so the chain (and its
+                        // sound cues) is reachable headlessly.
+                        if self.chat_key(code, event.text.as_deref()) {
                             return;
                         }
                         // `UIAchievementsMenu`'s Back (`GoBackClick` sets
@@ -677,6 +589,128 @@ impl App {
         }
     }
 
+    /// The chat keyboard chain — `DoUpdate_Enter_ToggleChat` +
+    /// `DoUpdate_HandleChat` (`Main.cs:18264-18372`). Extracted from
+    /// `window_event`'s `KeyboardInput` arm like [`Self::world_key`] so the
+    /// chain (and its sound cues) is reachable headlessly. Returns `true`
+    /// when the key was consumed (the open chat eats every key; the closed
+    /// chat eats only Enter). The world controls stay live like the source.
+    ///
+    /// Sound sites (W4-g21): `:18270` the open plays 10 (`Menu_Open`) BEFORE
+    /// `OpenPlayerChat`; `:18349` any text change plays 12 (`Menu_Tick`);
+    /// `:18370` the submit tail plays 11 (`Menu_Close`) AFTER
+    /// `ClosePlayerChat`. The Escape close (`:18332-18335`) plays nothing.
+    pub(crate) fn chat_key(&mut self, code: KeyCode, text: Option<&str>) -> bool {
+        if self.chat.open {
+            match code {
+                KeyCode::Enter | KeyCode::NumpadEnter => {
+                    // `ChatHelper.SendChatMessageFromClient`
+                    // (`ChatHelper.cs:72-79`): a joining client sends the
+                    // line to the host, which runs the command processor
+                    // and relays the result back as `82` text modules.
+                    let text = self.chat.text.clone();
+                    let is_client = self.is_client();
+                    let before = self.chat.messages.len();
+                    if is_client {
+                        self.send_chat_message("", &text);
+                    } else {
+                        let name = self.player_name.clone();
+                        // The chat commands draw the bare `Main.rand`
+                        // stand-in (the C# chat path runs outside every
+                        // swap); they also read the player state
+                        // (`DeathCommand`'s counters).
+                        self.chat.send_with(
+                            &text,
+                            &name,
+                            self.rngs.global(),
+                            &mut self.emotes,
+                            self.player.as_ref(),
+                        );
+                    }
+                    // The host relays the lines its own submit produced
+                    // (slot 0 is the host's author). The borrow dance: the
+                    // server handle borrows `self.net`, so the lines are
+                    // collected first.
+                    if !is_client {
+                        let produced = self
+                            .chat
+                            .messages
+                            .iter()
+                            .take(self.chat.messages.len().saturating_sub(before))
+                            .map(|l| (l.text.clone(), l.color))
+                            .collect::<Vec<_>>();
+                        if !produced.is_empty() {
+                            if let crate::app::NetRole::Host(server) = &self.net {
+                                use crate::app::netmodules::{
+                                    module_id, ModuleBody, ServerMessage,
+                                };
+                                for (text, color) in produced {
+                                    let sm = ServerMessage {
+                                        author: 0,
+                                        text,
+                                        color: crate::net::Rgb(color[0], color[1], color[2]),
+                                    };
+                                    server.broadcast(&crate::net::S2c::NetModule {
+                                        module: module_id::TEXT,
+                                        body: sm.encode(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    self.chat.text.clear();
+                    self.chat.open = false;
+                    // `Main.cs:18370` — the send tail plays sound 11 AFTER
+                    // `ClosePlayerChat` + `chatRelease = false`.
+                    self.audio.play("Menu_Close");
+                }
+                KeyCode::Escape => {
+                    self.chat.text.clear();
+                    self.chat.open = false;
+                }
+                KeyCode::Backspace => {
+                    // The pre-edit line — the change tick
+                    // (`Main.cs:18336-18350`) reads it before
+                    // `GetInputText`'s trim/append.
+                    let before = self.chat.text.clone();
+                    self.chat.text.pop();
+                    // `:18347-18350` — `text != Main.chatText` plays the
+                    // MenuTick (sound 12).
+                    if self.chat.text != before {
+                        self.audio.play("Menu_Tick");
+                    }
+                }
+                _ => {}
+            }
+            if let Some(text) = text {
+                // The same change tick for the append half
+                // (`GetInputText`, `Main.cs:18337`).
+                let before = self.chat.text.clone();
+                for ch in text.chars() {
+                    if !ch.is_control() {
+                        self.chat.text.push(ch);
+                    }
+                }
+                // `:18347-18350` — sound 12 on any change.
+                if self.chat.text != before {
+                    self.audio.play("Menu_Tick");
+                }
+            }
+            return true;
+        }
+        // `Main.chatRelease && !drawingPlayerChat` → `OpenPlayerChat`
+        // (`Main.cs:18268-18287`): Enter opens the chat.
+        if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) {
+            // `DoUpdate_Enter_ToggleChat` (`Main.cs:18270`): sound 10 plays
+            // BEFORE `OpenPlayerChat` + the `chatText = ""` reset.
+            self.audio.play("Menu_Open");
+            self.chat.open = true;
+            self.chat.text.clear(); // `:18272`
+            return true;
+        }
+        false
+    }
+
     pub(crate) fn world_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Escape => {
@@ -715,6 +749,12 @@ impl App {
                 crate::debug_panel::handle_key(self, KeyCode::F3);
             }
             KeyCode::F2 => {
+                // `DoUpdate_F9_ToggleLighting` (`Main.cs:18481`): sound 12
+                // plays BEFORE `Lighting.NextLightMode()` (`:18482`). The
+                // port's key map binds the cycle to F2 (the help overlay's
+                // row, `render/debug.rs`; the vanilla Shift+F9 chord is not
+                // modelled — F9 is the port's save key).
+                self.audio.play("Menu_Tick");
                 self.light_mode = self.light_mode.next();
                 // `Lighting.NextLightMode` (`Lighting.cs:165-173`): the Mode
                 // setter resets `renderCount` and `Lighting.Clear()` zeroes
@@ -933,6 +973,80 @@ mod tests {
         app.keys.insert(KeyCode::KeyD);
         let input = crate::world_sim::player::player_input(&app, &binds, false, false, false);
         assert!(!input.right, "D is free after the rebind");
+    }
+
+    // -- W4-g21: the chat chain's sound cues (`Main.cs:18270/:18349/:18370`) --
+
+    /// `DoUpdate_Enter_ToggleChat` (`Main.cs:18270`): the closed chat's Enter
+    /// plays sound 10 (`Menu_Open`) BEFORE `OpenPlayerChat`, and resets
+    /// `chatText` (`:18272`).
+    #[test]
+    fn w4_g21_the_chat_open_plays_menu_open() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.chat.text = "stale".into();
+        let before = app.audio.played_count();
+        assert!(app.chat_key(KeyCode::Enter, None), "Enter opens the chat");
+        assert!(app.chat.open);
+        assert!(app.chat.text.is_empty(), "`chatText = \"\"` (`:18272`)");
+        assert_eq!(app.audio.played_count(), before + 1, "one Menu_Open cue");
+    }
+
+    /// `DoUpdate_HandleChat` (`Main.cs:18347-18350`): a text change (append
+    /// or trim) plays sound 12; an unchanged line plays nothing.
+    #[test]
+    fn w4_g21_the_chat_edit_ticks_only_on_a_change() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.chat.open = true;
+        let before = app.audio.played_count();
+        // The append half (`GetInputText`).
+        assert!(app.chat_key(KeyCode::KeyA, Some("a")));
+        assert_eq!(app.chat.text, "a");
+        assert_eq!(app.audio.played_count(), before + 1, "the append tick");
+        // A control-only input changes nothing — no cue.
+        assert!(app.chat_key(KeyCode::KeyB, Some("\u{1}")));
+        assert_eq!(app.audio.played_count(), before + 1, "no change, no cue");
+        // The trim half (Backspace).
+        assert!(app.chat_key(KeyCode::Backspace, None));
+        assert!(app.chat.text.is_empty());
+        assert_eq!(app.audio.played_count(), before + 2, "the trim tick");
+        // An empty-line Backspace changes nothing.
+        assert!(app.chat_key(KeyCode::Backspace, None));
+        assert_eq!(app.audio.played_count(), before + 2, "no change, no cue");
+    }
+
+    /// `DoUpdate_HandleChat` (`Main.cs:18370`): the submit tail plays sound
+    /// 11 (`Menu_Close`) AFTER the close; the Escape close (`:18332-18335`)
+    /// plays nothing.
+    #[test]
+    fn w4_g21_the_chat_submit_plays_menu_close_but_escape_is_silent() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.chat.open = true;
+        app.chat.text = "hello".into();
+        let before = app.audio.played_count();
+        assert!(app.chat_key(KeyCode::Enter, None), "the submit consumes");
+        assert!(!app.chat.open);
+        assert!(app.chat.text.is_empty());
+        assert_eq!(app.audio.played_count(), before + 1, "one Menu_Close cue");
+        // The Escape close is silent.
+        app.chat.open = true;
+        let before = app.audio.played_count();
+        assert!(app.chat_key(KeyCode::Escape, None));
+        assert!(!app.chat.open);
+        assert_eq!(app.audio.played_count(), before, "Escape plays nothing");
+    }
+
+    /// `DoUpdate_F9_ToggleLighting` (`Main.cs:18481`): the lighting cycle
+    /// plays sound 12 BEFORE `Lighting.NextLightMode()`. The port's key map
+    /// binds the cycle to F2 (the help overlay's row).
+    #[test]
+    fn w4_g21_the_lighting_cycle_ticks_before_the_mode_switch() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mode_before = app.light_mode;
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::F2);
+        assert_eq!(app.light_mode, mode_before.next(), "the mode cycled");
+        assert_eq!(app.audio.played_count(), before + 1, "one Menu_Tick cue");
     }
 }
 

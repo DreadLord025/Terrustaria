@@ -281,6 +281,9 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     };
     let text = crate::npc_chat::get_chat(&app.npcs[i], &mut ctx);
     app.npc_chat_text = text.clone(); // `:43082` — `Main.npcChatText = GetChat()`
+    // `:43083` — `SoundEngine.PlaySound(24)` (`SoundID.Chat`) AFTER the
+    // `GetChat` answer, inside the fresh-talk arm (`talkNPC != i`).
+    app.audio.play("Chat");
     Some(text)
 }
 
@@ -617,6 +620,9 @@ pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
 /// decrement, the `anglerQuestsFinished++` and the reward
 /// (`Player.GetAnglerReward`, `Player.cs:56302`).
 pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
+    // `:40229-40230` — `npcChatCornerItem = 0` (no port state) then sound 12
+    // FIRST, before the day gate / `FindItem` scan.
+    crate::chest::play_menu_sound(app, 12);
     let mut handed = false;
     // `:40232`'s gate: the day's quest is open and this player has not
     // already handed it in (`anglerWhoFinishedToday`'s single-player
@@ -633,6 +639,9 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
                 app.inventory[slot].kind = 0;
             }
             handed = true;
+            // `:40243` — sound 24 (`SoundID.Chat`) AFTER the stack drop,
+            // BEFORE `anglerQuestsFinished++` (`:40244`) and the reward.
+            app.audio.play("Chat");
             // `:40244`: the counter++ BEFORE the reward table reads it.
             if let Some(p) = app.player.as_mut() {
                 p.angler_quests_finished += 1;
@@ -7716,6 +7725,19 @@ mod tests {
         assert!(app.world.angler_quest_finished, "the day closes");
         assert!(app.world.angler_quest_turned_in, "the player's slot");
         assert!(app.items.len() > before, "the reward drops spawn");
+        // W4-g21 — the turn-in's two cues (`Main.cs:40230`, `:40243`): the
+        // sound-12 tick plays FIRST (before the day gate), the sound-24
+        // `Chat` cue only inside the hand-in arm. A second click on the same
+        // day still ticks (`:40230` runs unconditionally) but never chats.
+        let cues = app.audio.played_count();
+        assert!(cues >= 2, "the tick + the Chat cue played");
+        let before = app.audio.played_count();
+        assert!(angler_turn_in(&mut app, idx), "the repeat click is consumed");
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the repeat ticks only — no second Chat (`:40243` is gated)"
+        );
         // `AchievementsHelper.HandleAnglerService` (`Main.cs:40260`,
         // `AchievementsHelper.cs:411-418`): the flag and the four `Finish`
         // counters advance on the turn-in.
