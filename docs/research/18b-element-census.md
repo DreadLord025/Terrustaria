@@ -162,9 +162,9 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 42 | `UIKeybindingSimpleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingSimpleRow`, centred text X+W/2-strW/2 + shared chrome `:21-39`; DrawSettings2Panel = DrawSettingsPanel documented) |
 | 43 | `UIKeybindingSliderItem` | LANDED (`ui/keybinding_rows.rs::KeybindingSliderRow`, rightHover/rightLock grab machine + num2 bar state + flag overrides + keyboard/gamepad action gates `:42-99`; valuePosition +10; DrawValueBar pre-landed `sliders.rs`) |
 | 44 | `UIKeybindingToggleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingToggleRow`, (W-2)/2+2 integer toggle frame + right-edge White scale-1 draw `:28-47`; dead Gold arm + X-=17 documented) |
-| 45 | `UIParticleLayer` | pending |
-| 46 | `UIProgressBar` | pending |
-| 47 | `UIResourcePack` | pending |
+| 45 | `UIParticleLayer` | LANDED (`ui/particles.rs::ParticleLayer`, ToRectangle-truncated anchor + percents/pixels offsets `:28-33`, IgnoresMouseInteraction pin `:18`; ParticleRenderer unported, caller's seam) |
+| 46 | `UIProgressBar` | LANDED (`ui/progress.rs::ProgressBar`, 0.95/0.05 ease + snap-down SetProgress + Blue MagicPixel fill `UIProgressBar.cs:31-45`; distinct from row 31's UIGenProgressBar) |
+| 47 | `UIResourcePack` | LANDED (`ui/resource_packs.rs::ResourcePackCard` + `pack_child_layout`, static colour pairs *0.8 truncation `:135-141`, hover swap, icon/border stack + workshop badge geometry `:98-114`, BuildChildren top walk `:57-96`; planned home `ui/resources.rs` taken by the HUD module — renamed, no re-split) |
 | 48 | `UIResourcePackInfoButton` | pending |
 | 49 | `UISearchBar` | pending |
 | 50 | `UISelectableTextPanel` | pending |
