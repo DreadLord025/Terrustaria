@@ -800,6 +800,77 @@ Audit notes (R8):
 - 638 shares the vine arm here (index 126 audits its glow row :6080-6084);
   62/115/205/382/528/636 follow in R9. No other R8 id has a second-switch row.
 
+### R9 — vine tail, cacti, music boxes, jungle plants, tall gates: 62, 115, 205, 382, 528, 636, 638, 80, 142, 143, 139, 73, 74, 113, 388 (15 ids, indices 120-134)
+
+C# `TileDrawing.cs:5001-5051`. Verbatim (:5019-5051):
+
+```csharp
+		case 139:
+		{
+			tileTop = 2;
+			int num3 = tileFrameY / 2016;
+			addFrY -= 2016 * num3;
+			addFrX += 72 * num3;
+			break;
+		}
+		case 73:
+		case 74:
+		case 113:
+			tileTop = -12;
+			tileHeight = 32;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		case 388:
+		case 389:
+		{
+			int num42 = 94;
+			tileTop = -2;
+			if (tileFrameY == num42 - 20 || tileFrameY == num42 * 2 - 20 || tileFrameY == 0 || tileFrameY == num42)
+			{
+				tileHeight = 18;
+			}
+			if (tileFrameY != 0 && tileFrameY != num42)
+			{
+				tileTop = 0;
+			}
+			break;
+		}
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 62, 115, 205, 382, 528, 636 | vine arm: top −2 + parity flip | :5001-5013 | `drawdata.rs:438-441` | PORTED |
+| 638 | shares the vine arm | :5007 | :438; glow :6080-6084 → `cases_a.rs:327` (GlowMask 327, `rect_framed(height − halfBrickHeight)`, `lerp_white_75(color)`) | PORTED (glow unconsumed) |
+| 80 | `tileTop = 2;` (cacti) | :5014-5018 | :447-449 | PORTED |
+| 142 | shares (Pumps) | :5015 | :447 | PORTED |
+| 143 | shares | :5016 | :447 | PORTED |
+| 139 | top 2 + 2016 stride (`−2016*n`, `+72*n`) | :5019-5026 | :452-457 | PORTED |
+| 73 | jungle plants: top −12, 32 tall, parity flip | :5027-5036 | :460-464 | PORTED |
+| 74 | shares | :5028 | :460 | PORTED |
+| 113 | shares | :5029 | :460 | PORTED |
+| 388 | TallGates: the 94-grid seam rows + top reset | :5037-5051 | :467-476 (`N42 = 94`, both gates in C# order) | PORTED |
+
+Audit notes (R9):
+- 638's glow verbatim (:6080-6084): `GlowMask[327]`, rect
+  `(tileFrameX + addFrX, tileFrameY + addFrY, tileWidth, tileHeight -
+  halfBrickHeight)`, `Color.Lerp(Color.White, color, 0.75f)` — the port's
+  `rect_framed(height - half_brick_height)` + `lerp_white_75` match; the
+  half-brick cut is fed `if tile.half_brick() { 8 } else { 0 }`
+  (`cases_a.rs:658`), the C# `halfBrickHeight` out-param's only writer being
+  the halfBrick epilogue (:6045-6048). Test :906-913 pins the cut + lerp.
+- 388/389's two gates keep their C# ORDER: the height gate runs first, then
+  the top reset (`fy != 0 && fy != 94` → top 0) — so rows 74/168 get height 18
+  AND top 0, rows 0/94 keep top −2. The port reproduces both statements in
+  sequence (:470-475).
+- 80's `DrawSingleTile` ground-sand row shift (+54/108/162, :1132-1147) is a
+  draw-local correction, ported in `apply_world_corrections` (BUG-19, pinned
+  `drawdata.rs::bug19_the_cactus_shift_lands_on_the_flat_draw_rect`) — outside
+  the case-arm scope, verified present.
+- No other R9 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
