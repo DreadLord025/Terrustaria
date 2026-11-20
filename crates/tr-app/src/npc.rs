@@ -4944,6 +4944,18 @@ impl Npc {
                 NpcKind::BrainSuckler => self.update_brain_suckler(world, player, rng),
                 _ => unreachable!("no other ported kind carries aiStyle 85"),
             },
+            // W4-d32 axis census (research/25 row 93): the Flying
+            // Dutchman — `else if (this.aiStyle == 93)`
+            // (`NPC.cs:38858-38967`). The census's only kind is the
+            // FlyingDutchman 491 (`NPC.cs:14637`); its cannons 492
+            // ride aiStyle 75 (already claimed above). The ported
+            // machine claims the style here (the S1-D-2 migration
+            // step, machine UNCHANGED verify-only — the row-93
+            // verbatim audit stays open: the stand-in's init latch /
+            // crew count / ai[0] counter deviations are documented
+            // at `update_flying_dutchman`); the kind arm below is an
+            // `unreachable!` marker (the W4-d31 precedent).
+            93 => self.update_flying_dutchman(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5942,9 +5954,13 @@ impl Npc {
             // (`NPC.cs:59004-59030`) and the machine ride a LATER wave —
             // the stand-in holds still.
             NpcKind::MartianTurret => {}
-            // The pirate ship: aiStyle 93's crew-carrier machine; its
-            // cannons' aiStyle-75 ride claims the style axis.
-            NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
+            // The pirate ship: aiStyle 93 rides the style axis
+            // (W4-d32 — the `update_flying_dutchman` machine is
+            // UNCHANGED, the axis arm above calls it); its cannons'
+            // aiStyle-75 ride claims the style axis too.
+            NpcKind::FlyingDutchman => {
+                unreachable!("aiStyle 93 rides the style axis (W4-d32)")
+            }
             NpcKind::FlyingDutchmanCannon => {
                 unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
             }
@@ -33675,6 +33691,92 @@ mod w4_d32_style85_census_tests {
         let w = ground();
         let mut p = Player::spawn(&w);
         let mut n = Npc::new(NpcKind::BrainSuckler, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+}
+
+/// W4-d32 style 93 (research/25 row 93, code-only): the Flying
+/// Dutchman's axis claim — the S1-D-2 migration step. The ported
+/// machine (`update_flying_dutchman`, `NPC.cs:38858-38967`'s arm) is
+/// UNCHANGED verify-only; the row-93 verbatim audit stays open (the
+/// stand-in's documented deviations: the `wants_scutlix` init latch
+/// stands in for `localAI[0]`, `crew_cannons` for the ai-slot crew
+/// scan, `ai[0]` for `localAI[3]`'s 64-cycle, the missing sprite
+/// flip + the 228 wake dusts). These witnesses pin the SEAM, not the
+/// audit. WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d32_style93_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: `this.aiStyle = 93;` has exactly ONE assignment
+    /// (`NPC.cs:14637`, the type-491 row `:14632-14650`); the ported
+    /// FlyingDutchman carries it and no other kind does. The cannons
+    /// 492 ride aiStyle 75 (`NPC.cs:14655` region — the mount axis).
+    #[test]
+    fn w4_d32_s93_the_band_kind_carries_its_csharp_style() {
+        assert_eq!(NpcKind::FlyingDutchman.ai_style(), 93);
+        assert_eq!(NpcKind::FlyingDutchman.cs_id(), 491);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.cs_id(), 492);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+        assert!(
+            ALL_KINDS.iter().filter(|k| k.ai_style() == 93).count() == 1,
+            "exactly the ship rides aiStyle 93"
+        );
+    }
+
+    /// The frozen-behaviour A/B + stream parity (the
+    /// `w4_d32_s85_the_axis_claim_keeps_the_machine_behaviour_and_stream`
+    /// precedent): the axis-routed arm must produce the exact
+    /// pre-axis state sequence — the kind match's old body called
+    /// the SAME machine with the same args.
+    #[test]
+    fn w4_d32_s93_the_axis_claim_keeps_the_machine_behaviour_and_stream() {
+        let w = ground();
+        let mut player_a = Player::spawn(&w);
+        let mut player_b = Player::spawn(&w);
+        let mut axis = Npc::new(NpcKind::FlyingDutchman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        axis.hp = axis.max_hp;
+        axis.crew_cannons = 4; // the crew-alive stand-in (the sim links the real cannons)
+        let mut legacy = axis.clone();
+        let mut rng_a = UnifiedRandom::new(93);
+        let mut rng_b = UnifiedRandom::new(93);
+        for tick in 0..120 {
+            axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+            // The pre-axis arm, verbatim (the kind match's old body).
+            legacy.update_flying_dutchman(&w, &player_b, &mut rng_b);
+            legacy.find_frame();
+            legacy.contact(&mut player_b, &mut rng_b);
+            assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "x @{tick}");
+            assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "y @{tick}");
+            assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "vx @{tick}");
+            assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "vy @{tick}");
+            for i in 0..4 {
+                assert_eq!(axis.ai[i].to_bits(), legacy.ai[i].to_bits(), "ai[{i}] @{tick}");
+            }
+            assert_eq!(axis.hp, legacy.hp, "hp @{tick}");
+            assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "rot @{tick}");
+            assert_eq!(
+                axis.wants_dutchman_drop.is_some(),
+                legacy.wants_dutchman_drop.is_some(),
+                "drop @{tick}"
+            );
+            assert_eq!(rng_a.peek(), rng_b.peek(), "stream @{tick}");
+            // The drop request drains identically (the sim's seam).
+            axis.wants_dutchman_drop = None;
+            legacy.wants_dutchman_drop = None;
+        }
+    }
+
+    /// The kind-match stand-in is retired: calling `update_kind_ai`
+    /// directly on the ship panics (the W4-d31 guard precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d32_s93_the_ship_kind_arm_is_retired() {
+        let w = ground();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::FlyingDutchman, 0.0, 0.0, 1, 0.0);
         let mut rng = UnifiedRandom::new(0);
         n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
     }
