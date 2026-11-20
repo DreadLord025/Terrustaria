@@ -98,6 +98,22 @@ pub const NPC_GLOW_RECORDS: &[NpcGlowRecord] = &[
     NpcGlowRecord { npc: 643, masks: &[286], line: 25567 },
     NpcGlowRecord { npc: 644, masks: &[286], line: 25567 },
     NpcGlowRecord { npc: 645, masks: &[286], line: 25567 },
+    // :25571 — the gem bunnies 646..652, GetAlpha(White).
+    NpcGlowRecord { npc: 646, masks: &[287], line: 25571 },
+    NpcGlowRecord { npc: 647, masks: &[287], line: 25571 },
+    NpcGlowRecord { npc: 648, masks: &[287], line: 25571 },
+    NpcGlowRecord { npc: 649, masks: &[287], line: 25571 },
+    NpcGlowRecord { npc: 650, masks: &[287], line: 25571 },
+    NpcGlowRecord { npc: 651, masks: &[287], line: 25571 },
+    NpcGlowRecord { npc: 652, masks: &[287], line: 25571 },
+    // :25707 — Lavafly 654, (255,255,255,0) full-frame (the aiStyle-64
+    // family's draw twin; the Firefly/LightningBug use NAMED sheets).
+    NpcGlowRecord { npc: 654, masks: &[290], line: 25707 },
+    // :25711 — HellButterfly 653, (255,255,255,0), the +3f (not +4f) Y.
+    NpcGlowRecord { npc: 653, masks: &[288], line: 25711 },
+    // :25772 — MartianOfficer 383, (255,255,255,0); the ForceBubble 384
+    // companion copy (:25776) is Npc[384], not a glow sheet.
+    NpcGlowRecord { npc: 383, masks: &[11], line: 25772 },
 ];
 
 #[cfg(test)]
