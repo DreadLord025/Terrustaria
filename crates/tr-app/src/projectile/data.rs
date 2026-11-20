@@ -1058,6 +1058,24 @@ pub const PORTAL_GUN_GATE: u16 = 602;
 /// `ProjectileID.SolarFlareRay` (607, `ProjectileID.cs:1768`) — the Solar
 /// armor's orbiting flare ray (aiStyle 116). W4-d12.
 pub const SOLAR_FLARE_RAY: u16 = 607;
+/// `ProjectileID.SolarCounter` (608, `ProjectileID.cs:1770`) — the Solar
+/// shield's counter-explosion (aiStyle 117; the spawn sites `Kill()` it
+/// immediately, so its burst rides the Kill path `:72177-72225`). W4-d12.
+pub const SOLAR_COUNTER: u16 = 608;
+/// `ProjectileID.SolarWhipSwordExplosion` (612, `ProjectileID.cs:1778`) —
+/// the Solar whip's explosion (aiStyle 117). W4-d12.
+pub const SOLAR_WHIP_SWORD_EXPLOSION: u16 = 612;
+/// `ProjectileID.StardustGuardianExplosion` (624, `ProjectileID.cs:1802`) —
+/// the Stardust Guardian's dash explosion (aiStyle 117, the pet-shader
+/// dust family). W4-d12.
+pub const STARDUST_GUARDIAN_EXPLOSION: u16 = 624;
+/// `ProjectileID.DaybreakExplosion` (953, `ProjectileID.cs:2460`) — the
+/// Daybreak's explosion (aiStyle 117). W4-d12.
+pub const DAYBREAK_EXPLOSION: u16 = 953;
+/// `ProjectileID.DeadCellsMushroomBoiMinionExplosion` (1044,
+/// `ProjectileID.cs:2642`) — the Mushroom Boi's explosion (aiStyle 117,
+/// the ParticleOrchestrator family). W4-d12.
+pub const DEAD_CELLS_MUSHROOM_BOI_EXPLOSION: u16 = 1044;
 /// `ProjectileID.DandelionSeed` (836, `ProjectileID.cs:2226`) — the
 /// Dandelion's wind-borne seed (aiStyle 112's 836 sub-arm, hostile). W4-d12.
 pub const DANDELION_SEED: u16 = 836;
@@ -3612,6 +3630,45 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             SOLAR_FLARE_RAY => {
                 (10.0, 10.0, 116, -1, 600, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
+            // W4-d12 — `Projectile.cs:6554-6566` SolarCounter (608): 160x160,
+            // aiStyle 117, friendly, `alpha = 255`, `timeLeft = 3`,
+            // `ignoreWater`, `tileCollide = false`, `penetrate = -1`,
+            // `hide = true` (draw-only, no port field — F3). The spawn
+            // sites `Kill()` it immediately (`Player.cs:21171`/`:38318`),
+            // so the AI arm never runs in vanilla; the burst rides the
+            // Kill path (`:72177-72225`).
+            SOLAR_COUNTER => {
+                (160.0, 160.0, 117, -1, 3, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:6584-6597` SolarWhipSwordExplosion
+            // (612): 8x8, aiStyle 117, friendly, `alpha = 255`,
+            // `ignoreWater`, `timeLeft = 60`, `tileCollide = false`,
+            // `penetrate = -1`, local-immunity 6.
+            SOLAR_WHIP_SWORD_EXPLOSION => {
+                (8.0, 8.0, 117, -1, 60, 0, false, false, false, (true, 6, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:6717-6728` StardustGuardianExplosion
+            // (624): 8x8, aiStyle 117, friendly, `alpha = 255`,
+            // `ignoreWater`, `timeLeft = 60`, `tileCollide = false`,
+            // `penetrate = -1` (no immunity pair — the stock reset).
+            STARDUST_GUARDIAN_EXPLOSION => {
+                (8.0, 8.0, 117, -1, 60, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:8988-9001` DaybreakExplosion (953):
+            // 8x8, aiStyle 117, friendly, `alpha = 255`, `ignoreWater`,
+            // `timeLeft = 60`, `tileCollide = false`, `penetrate = -1`,
+            // local-immunity 80.
+            DAYBREAK_EXPLOSION => {
+                (8.0, 8.0, 117, -1, 60, 0, false, false, false, (true, 80, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:9875-9889` DeadCellsMushroomBoiMinion-
+            // Explosion (1044): 8x8, aiStyle 117, friendly, `alpha = 255`,
+            // `ignoreWater`, `timeLeft = 60`, `tileCollide = false`,
+            // `penetrate = -1`, `hide = true` (draw-only — F3),
+            // local-immunity −1 (one hit per NPC for the shot's life).
+            DEAD_CELLS_MUSHROOM_BOI_EXPLOSION => {
+                (8.0, 8.0, 117, -1, 60, 0, false, false, false, (true, -1, false, -1, 255, 1.0))
+            }
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_3 => (28.0, 60.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
@@ -4225,6 +4282,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d12 — `Projectile.cs:6550`: the Solar flare ray's
             // `ignoreWater = true`.
             || kind == SOLAR_FLARE_RAY
+            // W4-d12 — the aiStyle-117 explosion family's `ignoreWater`
+            // (`Projectile.cs:6562`/`:6591`/`:6724`/`:8995`/`:9882`).
+            || matches!(
+                kind,
+                SOLAR_COUNTER | SOLAR_WHIP_SWORD_EXPLOSION | STARDUST_GUARDIAN_EXPLOSION
+                    | DAYBREAK_EXPLOSION | DEAD_CELLS_MUSHROOM_BOI_EXPLOSION
+            )
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
             || kind == HORSEMAN_PUMPKIN
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
@@ -4713,6 +4777,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // aiStyle-114 arm's 6-tick machine wraps at `projFrames`
         // (`Projectile.cs:34404-34411`).
         PORTAL_GUN_GATE => 4,
+        // W4-d12 — the aiStyle-117 explosions' 5-frame sheets
+        // (`Main.cs:8492` 612, `:8509` 953) — the shared arm's 3-tick
+        // machine wraps at `projFrames` (`Projectile.cs:34472-34479`) and
+        // the `3 * projFrames` life cap reads it (`:34467`). The 608/624/
+        // 1044 keep the init 1 (no override — `Main.cs:8441`).
+        SOLAR_WHIP_SWORD_EXPLOSION | DAYBREAK_EXPLOSION => 5,
         // S1-D-3 W-9 fishron wiring — the sharknado family's strips
         // (`Main.cs:8512-8514`): the clouds 6 rows, the bolt 3.
         FORCE_BUBBLE | CTHULUNADO => 6,

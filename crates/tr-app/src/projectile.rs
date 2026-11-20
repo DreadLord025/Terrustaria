@@ -18219,6 +18219,50 @@ impl ProjectilePool {
                                 self.slots[i].pos += vel;
                             }
                         }
+                        // W4-d12 — `AI()`'s `else if (this.aiStyle == 117)`
+                        // (`Projectile.cs:34459-34637`): the explosion
+                        // family (612/624/953/1044; the 608 shares the row
+                        // but its spawn sites Kill() it immediately, so
+                        // its burst rides the death hook below). The shared
+                        // arm's scale/age/frame machine + the tick-1
+                        // resized-box Damage (the `damage_pve_boxed` seam,
+                        // the celeb2_death resize→walk→draws shape).
+                        117 => {
+                            let burst = crate::projectile_ai_explosions::ai_explosion(
+                                &mut self.slots[i],
+                            );
+                            if burst {
+                                // `:34501` — Damage() through the resized
+                                // box, THEN the dust census (`:34502+`).
+                                let dolls = doll_flags(player.as_deref());
+                                let luck = player
+                                    .as_deref()
+                                    .map(|p| p.luck_state.luck)
+                                    .unwrap_or(0.0);
+                                self.damage_pve_boxed(i, npcs, dolls, rng, luck);
+                                crate::projectile_ai_explosions::explosion_tick1_draws(
+                                    &self.slots[i],
+                                    rng,
+                                );
+                                // `:34504`/`:34539` — the Item14 cue (the
+                                // flag58/flag59 families; the 1044's
+                                // ParticleOrchestrator is the skip).
+                                if self.slots[i].kind != DEAD_CELLS_MUSHROOM_BOI_EXPLOSION {
+                                    let p = &self.slots[i];
+                                    self.pending_proj_sounds.push((
+                                        2, 14, p.pos.x, p.pos.y, 0.0,
+                                    ));
+                                }
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:6593`/`:6726`/`:8997`/`:9884`) —
+                            // `UpdatePosition` integrates the (zero)
+                            // velocity; the explosion holds its centre.
+                            if self.slots[i].active {
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
+                        }
                         // aiStyle 113: the Bone javelin (598)
                         // (`AI_113_TargetSticker` `:40562-40899`). The stick
                         // pin + Daybroken + the 6-javelin cap ride the on-hit
@@ -20661,6 +20705,19 @@ impl ProjectilePool {
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
                 self.floating_turret_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                // W4-d12 — `Kill()`'s type-608 arm (`Projectile.cs:72177-
+                // 72225`): the Solar Counter's death burst. The spawn
+                // sites Kill() it immediately (`Player.cs:21171`/`:38318`),
+                // so this is the ONLY path its damage takes — the 160×160
+                // box Damage + the dust/gore census (the celeb2_death
+                // resize→walk→draws shape).
+                if crate::projectile_ai_explosions::solar_counter_kill_resize(&mut self.slots[i]) {
+                    self.damage_pve_boxed(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                    crate::projectile_ai_explosions::solar_counter_kill_draws(&self.slots[i], rng);
+                    // `:72182` — the Item14 cue.
+                    let p = &self.slots[i];
+                    self.pending_proj_sounds.push((2, 14, p.pos.x, p.pos.y, 0.0));
+                }
                 // S1-D-4 unarmed styles: the 932's death-dust census
                 // (`:71109-71147`) and the Celebration rockets' Kill arm
                 // (`:73632-73645` resize + Damage + explosion, plus the
