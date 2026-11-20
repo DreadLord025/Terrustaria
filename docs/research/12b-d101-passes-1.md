@@ -82,6 +82,6 @@ stay in place untouched.
 | Clay | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Small Holes | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Dirt Layer Caves | (this commit) | landed (code-only; hash re-pin deferred to gate) |
-| Rock Layer Caves | — | pending |
+| Rock Layer Caves | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Generate Ice Biome | — | pending |
 | Granite (own row) | — | pending |

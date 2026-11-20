@@ -510,6 +510,84 @@ pub(crate) fn pass_dirt_layer_caves(
     }
 }
 
+/// The `Rock Layer Caves` pass (`WorldGen.cs:12107-12161`):
+/// `area * 0.00013` deep worms (remix ×1.1 count) below `rockLayerHigh`,
+/// strength `Next(6, 20)`, steps `Next(50, 300)` (remix ×0.7 both), the
+/// `Next(10) == 0` water lottery. NOTE the draw order: the C# rolls
+/// strength and steps BEFORE the runner's x/y (`:12127-12134` — they are
+/// computed into locals first, the coordinates are inline arguments).
+/// The remix-only second loop (`:12137-12159`, the paired horizontal
+/// `noYChange` diggers) ports with its verbatim five-draw head: type
+/// lottery → strength `Next(7, 26)` → steps `Next(50, 200)` → speedX
+/// `Next(100, 221) * 0.1` → speedY `Next(-10, 11) * 0.02` → x → y, then
+/// the mirrored runner pair.
+pub(crate) fn pass_rock_layer_caves(
+    world: &mut World,
+    rng: &mut Rng,
+    layers: &Layers,
+    gv: &GenVars,
+) {
+    let (width, height) = (world.width, world.height);
+    let remix = world.seeds.contains(SeedFlags::REMIX);
+    let rock_high = layers.rock_high;
+    let mut count = ((width * height) as f64 * 0.00013) as i32;
+    if remix {
+        count = (count as f64 * 1.1) as i32;
+    }
+    for _ in 0..count {
+        if rock_high > height as f64 {
+            continue; // `:12120` — the gate wraps the draws too
+        }
+        let kind = if rng.range(0, 10) == 0 { -2 } else { -1 };
+        // Strength/steps BEFORE the coordinates (`:12127-12134`).
+        let mut strength = rng.range(6, 20);
+        let mut steps = rng.range(50, 300);
+        if remix {
+            strength = (strength as f64 * 0.7) as i32;
+            steps = (steps as f64 * 0.7) as i32;
+        }
+        let x = rng.range(0, width);
+        let y = rng.range(rock_high as i32, height);
+        dig(world, rng, x, y, strength, steps, kind, layers, gv);
+    }
+    if remix {
+        // The paired horizontal diggers (`:12137-12159`).
+        let count2 = ((width * height) as f64 * 0.00013 * 0.4) as i32;
+        for _ in 0..count2 {
+            if rock_high > height as f64 {
+                continue;
+            }
+            let kind = if rng.range(0, 10) == 0 { -2 } else { -1 };
+            let strength = rng.range(7, 26);
+            let steps = rng.range(50, 200);
+            let speed_x = rng.range(100, 221) as f64 * 0.1;
+            let speed_y = rng.range(-10, 11) as f64 * 0.02;
+            let x = rng.range(0, width);
+            let y = rng.range(rock_high as i32, height);
+            for (sx, sy) in [(speed_x, speed_y), (-speed_x, -speed_y)] {
+                tile_runner(
+                    world,
+                    rng,
+                    x,
+                    y,
+                    strength as f64,
+                    steps,
+                    kind,
+                    layers.world_surface,
+                    &TileRunnerOpts {
+                        speed_x: sx,
+                        speed_y: sy,
+                        no_y_change: true,
+                        water_line: gv.water_line as f64,
+                        lava_line: gv.lava_line as f64,
+                        ..TileRunnerOpts::for_world(world)
+                    },
+                );
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -771,5 +849,31 @@ mod tests {
         assert_eq!(tiles, run());
         let air = tiles.iter().filter(|t| !t.active()).count();
         assert!(air > 100, "12 long worms open {air} cells");
+    }
+
+    /// Rock Layer Caves: the deep worms SEED below `rockLayerHigh`
+    /// (`WorldGen.cs:12134`) and are deterministic (a == b). The worms may
+    /// drift up to ±1 tile/step, so the assertion is on the deep air, not
+    /// an absolute ceiling. The 1200×600 canvas gives 93 worms.
+    #[test]
+    fn rock_layer_caves_open_deep_passages_deterministically() {
+        let run = || {
+            let mut world = flat_world(1200, 600, 100);
+            let mut gv = GenVars::default();
+            gv.water_line = 350;
+            gv.lava_line = 450;
+            pass_rock_layer_caves(&mut world, &mut Rng(0x20C7), &layers_for(100, 600), &gv);
+            world.tiles
+        };
+        let tiles = run();
+        assert_eq!(tiles, run());
+        // layers_for(100, 600): rock_high = 180 — deep air below it.
+        let w = 1200usize;
+        let deep_air = tiles
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| !t.active() && (i / w) >= 180)
+            .count();
+        assert!(deep_air > 100, "the deep worms open {deep_air} cells");
     }
 }
