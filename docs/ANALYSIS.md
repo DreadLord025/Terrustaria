@@ -15634,7 +15634,11 @@ spawn (`NPC.cs:18179` → `:7031-7034`), and the multiplayer
 `ScaleStats_ByPlayerCount` (`:18560`) re-scales it for the Brain/Creeper
 pair (`:18573-18584`, ×0.8 per 0.34 balance step, floored to 0 below 0.1) —
 the port's `knock_back_resist` reads the normal-mode SetDefaults value (the
-`expert` flag threads only the `num4` gate's ×15). The `bonusCritChance`
+`expert` flag threads only the `num4` gate's ×15). **W4-e25 update:** the
+MATHS now live verbatim in `npc_scaling.rs` (`knockback_scaled` +
+`scale_stats_by_player_count`'s kb loop, the exact f32 expert factor
+0.8999999761581421 pinned) — UNWIRED until the difficulty flip; the
+strike-time ×15 gate is unchanged (a different mechanism). The `bonusCritChance`
 writers beyond the monk staff (`:11131` the revolver bonus, `:11139` the
 item-source copy) are unported state — the field stays 0.
 
@@ -39244,3 +39248,63 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Expert/Master stat scaling (W4-e25, code-only mode)
+
+The census (`docs/research/64-expert-master-scaling-census.md`) maps the
+whole `NPC.ScaleStats` family (`NPC.cs:18146-18739`) against the port:
+there was NO port — the live NPC stats are the raw SetDefaults values,
+and the i11 deviation note (above) recorded the missing kb curve + the
+266/267 player-count kb loop. `crates/tr-app/src/npc_scaling.rs` now
+carries the family verbatim as pure fns over the `ScalingStats`/
+`ScalingEnv` seam, keyed on the RAW C# type id (the `npc_ai_style53.rs`
+unwired-module precedent).
+
+**What is pinned.** The four `GameDifficultyData` curves
+(`GameDifficultyData.cs:83-87`) incl. the previously-unported
+`EnemyMaxLifeMultiplier` (Journey 0.5 → Legendary 4, one span) and
+`EnemyMoneyDropMultiplier` (the expert money ×2.5); the i11 kb curve's
+expert sample is the exact f32 **0.8999999761581421**, not a rounded 0.9
+(`1 + (0.8−1)*0.5` in f32). The Tweaks table (`:18183-18475`) keeps the
+C# type mix: f64 table constants (`num`/`num2`/`num3`, the
+`CommonMasterBossLifeReduction` 0.85, the bee 0.6000000000000001
+literal) feeding f32 `Utils.Remap` products, then `(int)Math.Round`
+banker's (`tr_core::damage::round_bankers`) — the EoC master 1000-life
+pin lands on 552.5 EXACTLY in f32 and rounds to even (552). The
+expert-hardmode bump keeps the INT `num2 / num` division (`:18549` —
+num 41 gives num3 = 1, not 1.95) and the `(double)… * 1.1 / * 0.8`
+life/value casts. ByPlayerCount (`:18560-18720`) keeps the C#'s exact
+if/else-if structure (35/36 an else-if pair, 668 standalone, **522
+excluded** from the balance arm unlike its Tweaks arm), the f64 final
+round, the 266/267 `for (num2 = 1f; num2 < balance; num2 += 0.34f)`
+×0.8 kb loop with the <0.1 → 0 break, the 115/116 `>4 → 0 / >1 →
+×(1−boost)` arms, and the OOA `Lerp(1, balance, 0.8571428656578064)`
+(the f32 6/7 widened). `GetStatScalingFactors`' f32 ladder is pinned
+bit-exact (2p balance 1.350000023841858, boost 0.5666666626930237; the
+>8 soft cap, the 1000 hard cap).
+
+**RNG census.** The whole family draws ZERO `Main.rand` — pure
+arithmetic; no fn takes an rng parameter (determinism by construction,
+the `npc_ai_style28.rs` witness shape). The drop-rate side: there is NO
+generic expert drop-rate multiplier in the C# — the bonus is the
+per-rule `DropBasedOnExpertMode`/`MasterMode` trees + the moon wave
+gates (`Conditions.cs:55-122`, already in `tr_core::loot`) + the money
+`value` ×2.5 (this module's `scale_stats_by_difficulty`). The engine is
+ready; the live call sites pass `is_expert: false` (constants-off). The
+boss-heart 116-119 expert gate (`NPC.cs:79183`, `!expertMode ||
+Next(5) == 0`) adds ONE `Next(5)` draw per heart-eligible kill in expert
+— the heart-drop block itself is unported, recorded for the loot wave.
+
+**Deviations / wiring deferrals.** UNWIRED: the World carries no game
+mode (the recurring constants-off note — nurse `Main.cs:40086`, spawner
+`NPC.cs:853`, dd2 `DD2Event.cs:1123`); the live spawns keep the classic
+SetDefaults values byte-identical until the difficulty-flip task
+(M6-CREATIVE-1 / R-03-6). The `def*`/`statsAreScaledForThisManyPlayers`
+carriers live on the seam, not the `Npc` struct, until wiring. The
+getGood twin arms are ported behind `ScalingEnv.get_good_world`
+(constants-off today). `GetActivePlayerCount` takes the 255-slot
+`(active, ghost)` flags as a slice (single-player → 1). The
+`MOON_POINT_SCALAR` 1.0 constants-off (`tr_core::world.rs:882-885`) and
+the `HalloweenWeapons` caps (`loot.rs:149-151`) stay caller-supplied.
+11 witnesses (`w4_e25_scaling_tests`) WRITTEN NOT RUN — no compiler
+invoked.
