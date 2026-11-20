@@ -39244,3 +39244,93 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The critter-cage animator + lane-2 draw wiring (W4-g34, code-only mode, 2026-11-21)
+
+The d61-d64 DrawData case censuses found **0 missing case arms** across the
+371 `GetTileDrawData` ids; the gaps are wiring. The 92 PORTED-UNWIRED
+critter-cage ids (faithful `drawdata_furniture::cage_table` arms, no live
+caller, frozen at row 0) split into two wiring lanes: g33 wires the 42
+first-half ids (41 big cages + snail 285), **g34 wires the 50 second-half
+ids** (d64 batch 2 small-animal tail 21 + batch 3 water/jellyfish 29).
+Full census + per-id table: `docs/research/66-drawdata-unwired-second-half.md`.
+
+### The animator is ported WHOLE (shared RNG stream)
+
+`Main.AnimateTiles_CritterCages` (`Main.cs:13511-16596`) + the
+`UpdateOwlCageFrames`/`UpdateDragonflyJarFrames` helpers
+(`:16598-16727`) is ONE ordered sequence of 34 table machines drawing
+from `Main.rand` top-to-bottom. g33's first-half tables (bunny ... snail)
+draw RNG BEFORE g34's second-half tables (snail2 ... jellyfish), so porting
+only the second half would desynchronise every downstream draw. The
+animator (`crates/tr-core/src/critter_cage_anim.rs`) is therefore shared
+infrastructure ported whole; the DRAW wiring is what is halved
+(`is_lane2_cage_kind` gates the 50 ids at the `render/tiles.rs` seam).
+The mode bytes (`fishBowlFrameMode`, `butterflyCageMode`,
+`jellyfishCageMode`) and the 2-D tables (scorpion 2, slug 3, butterfly 9,
+dragonfly 7, jellyfish 3) ride the state. Faithful quirks pinned: penguin
+`:15166` `> 3` (not `> 11`), frog `:15711` `> 17` (not `> 23`),
+fish-bowl mode-0 `:16332` `Next(12)` (not `Next(20)`) + no mode clear,
+owl `:16623` `(counter+1)%40==39` reseed, the snail/snail2 double
+`== 1 && Next(3)` clauses, the butterfly `>= 10` backward walk.
+
+### The wiring
+
+- `App` gains `cage_anim` + `critter_cage` (both constructors + the
+  world-load reset). `animate_tiles_phase` ticks
+  `cage_anim.animate(critter_cage, rng)` beside `tile_anim.animate_tiles`
+  on the shared 60 Hz accumulator + `Main.rand` stream (the C# calls
+  `AnimateTiles_CritterCages` at the tail of `AnimateTiles`,
+  `Main.cs:19303`).
+- `draw_tiles` takes `cage_anim` + `critter_cage: &mut bool`; after
+  `apply_cases_a` it applies `cage_draw_data` (reading `frame_of`) for
+  `is_lane2_cage_kind` cells. `Main.critterCage` is cleared at the pass
+  head (`TileDrawing.cs:474`) and raised for EVERY cage cell
+  (`is_cage_kind`, `:5672` etc.) - the flag gates the whole animator.
+- G6 `WorldFrameKey::tile_anim` gains a cage-gated contribution: none of
+  the 50 lane-2 ids is in `TileAnimator::is_animated_kind`'s gate set (they
+  animate through the separate cage tables), so a lane-2 cage in view mixes
+  `cage_anim.anim_key()` into the key; a cage-free view keeps the
+  pre-wiring key bit-for-bit (the waterfall/vine-grid gate convention).
+
+### Deviations fixed (census-flagged draw-math)
+
+1. **case-4 solid probe** (d61/d64 R3): `render/tiles.rs` now feeds the
+   FULL `WorldGen.SolidTile` (`WorldGen.cs:70111-70132` - halfBrick /
+   slope / inactive / null-true clauses) via `drawdata_cases_a::solid_tile`
+   (made `pub`), not the old three-clause subset.
+2. **564 glow rect** (d63 batch 4 / d64 R15): the first switch keeps
+   `tileFrame*36`; the `addFrY = 0` clear (`TileDrawing.cs:6112`) rides
+   `drawdata_cases_a`'s `add_fr_y_delta` AFTER the rect reads the
+   pre-clear row (`:6109`) - the C# order. The old port folded the clear
+   into the first switch and the rect lost the animation row.
+3. **441/468 temp-frame probe** (d63/d64 R13): `drawdata_cases_b` gains the
+   first-switch `GetTemporaryFrame` arm (`38 * f + num44`
+   `frame_y_override`, the 349 pattern, `TileDrawing.cs:5342-5356`);
+   behaviour-neutral while the registry is empty. `OWNED_KINDS` 16 -> 18;
+   slice A keeps their second-switch glow rows.
+4. **stale comments** (d63 summary item 4): 455 "always false" / 428 "not
+   pressed" swept - the static table carries the party-down / not-pressed
+   state, the live `drawdata_cases_b` arm feeds the real flags.
+
+### Deliberate residual deviations
+
+- **Cage warm-up unwired**: `warm_up` ports `Initialize_TileAndNPCData2`'s
+  3600 forced ticks (`Main.cs:6802-6807`) but is NOT called at App init -
+  that init runs the cage ticks amid other RNG draws, so wiring it needs the
+  whole `Initialize_TileAndNPCData2` RNG-order census. Until then the cages
+  start at the zero state (vanilla t=0) and animate from the first tick: a
+  startup-phase deviation, not a steady-state one.
+- **Glow bind / 711 / 637 / 184 / 185-186 / martianLight / mouseTextColor /
+  temporary-animation registry**: unchanged, other lanes (TILE-DRAW-2/g35,
+  d62, sparkle lane, event/UI state, Animation registry). The 564 rect fix
+  is correct DATA; the bind is g35's.
+
+### Verification
+
+Code-only: **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The
+animator machines were ported against the C# verbatim in <=100-line windows;
+the seam call sites checked against the actual signatures by read/grep. The
+15 new witnesses (`critter_cage_anim.rs` 12 + `drawdata_furniture.rs` 1 +
+`render/tiles.rs` 1 + `drawdata_cases_a.rs` 1) plus the updated
+`drawdata.rs`/`drawdata_cases_b.rs` assertions are WRITTEN, NOT RUN.
