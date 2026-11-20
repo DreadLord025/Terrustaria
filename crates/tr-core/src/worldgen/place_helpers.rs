@@ -207,6 +207,101 @@ pub(crate) fn place_2x1(world: &mut World, x: i32, y: i32, kind: u16, style: i32
     }
 }
 
+/// `WorldGen.Place3x1` (`WorldGen.cs:52022-52064`): the three-wide,
+/// one-tall object centred on `x` — body `(x-1..=x+1, y)`,
+/// `frameX = 54 * style + col * 18`, `frameY = 0`. The 5-tile bounds gate
+/// (`:52024`), then per column: the body cell inactive AND `SolidTile2`
+/// under it (`:52029-52047`). The C# null-tile news are the fixed-grid
+/// stand-in (the bounds gate covers every read).
+pub(crate) fn place_3x1(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut flag = true;
+    for i in (x - 1)..(x + 2) {
+        if world.tile(i, y).is_some_and(|t| t.active()) {
+            flag = false;
+        }
+        if !solid_tile2(world, i, y + 1) {
+            flag = false;
+        }
+    }
+    if flag {
+        let num = (54 * style) as i16;
+        // `:52051-52062` — left, middle, right, C# write order.
+        for (col, frame_x) in [(x - 1, num), (x, num + 18), (x + 1, num + 36)] {
+            let i = world.index(col, y);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = 0;
+            t.frame_x = frame_x;
+            t.kind = kind;
+        }
+    }
+}
+
+/// `WorldGen.Place1x1` (`WorldGen.cs:45188-45235`): the general 1x1
+/// frame-important object. `InWorld(x, y, 2)` (`:45190`). Two arms:
+/// - the seashell (324, `:45204-45213`): a `SolidTile2` floor OR an active
+///   `tileTable` top; NO empty-cell gate (it overwrites); `frameX =
+///   22 * Next(3)` (the plain three-way roll — NOT
+///   `RollRandomSeaShellStyle`, which only the dead inner switch arm
+///   calls), `frameY = 22 * style`.
+/// - the general arm (`:45214-45233`): not a mechanism-on-boulder pair
+///   (`TileID.Sets.Wiring.IsAMechanism` / `Sets.Boulders`), a `SolidTile2`
+///   floor and an empty cell; `frameX` stays stored except the 36/144/239
+///   timers (`style * 18`, `frameY = 0`); the default writes
+///   `frameY = style * 18` only.
+///
+/// The C# inner `case 324` (`:45220-45223`) is DEAD — the outer
+/// `if (type == 324)` catches 324 first — so the port omits it (the
+/// `RollRandomSeaShellStyle` draw never fires from this wrapper).
+/// `tile2.type < 0` (`:45214`) is always false (`Tile.type` is `ushort`).
+pub(crate) fn place_1x1(world: &mut World, rng: &mut Rng, x: i32, y: i32, kind: i32, style: i32) {
+    if !in_world(world, x, y, 2) {
+        return;
+    }
+    let below = world.tile(x, y + 1);
+    if kind == 324 {
+        // `:45206` — the floor solid OR an active table top.
+        let table_top = below.is_some_and(|t| t.active() && tile_table(t.kind));
+        if solid_tile2(world, x, y + 1) || table_top {
+            // `:45208-45211` — the plain Next(3) variant roll.
+            let frame_x = (22 * rng.range(0, 3)) as i16;
+            let i = world.index(x, y);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = kind as u16;
+            t.frame_x = frame_x;
+            t.frame_y = (22 * style) as i16;
+        }
+    } else {
+        // `:45214` — the mechanism-on-boulder veto, the floor and the
+        // empty-cell gate.
+        let mechanism_on_boulder = kind >= 0
+            && crate::tiledata::SET_IS_A_MECHANISM.has(kind as u16)
+            && below.is_some_and(|t| crate::tiledata::SET_BOULDERS.has(t.kind));
+        let empty = !world.tile(x, y).is_some_and(|t| t.active());
+        if !mechanism_on_boulder && solid_tile2(world, x, y + 1) && empty {
+            let i = world.index(x, y);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = kind as u16;
+            match kind {
+                // `:45224-45229` — the timers: style into frameX, frameY 0.
+                36 | 144 | 239 => {
+                    t.frame_x = (style * 18) as i16;
+                    t.frame_y = 0;
+                }
+                // `:45230-45232` — the default: frameY only, frameX stored.
+                _ => {
+                    t.frame_y = (style * 18) as i16;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,5 +368,59 @@ mod tests {
         assert!(w2.tile(30, 19).unwrap().active());
         assert_eq!(w2.tile(30, 19).unwrap().frame_x, 36);
         assert_eq!(w2.tile(31, 19).unwrap().frame_x, 54);
+    }
+
+    /// `Place3x1` lays the three columns with the 54-px style stride and
+    /// refuses when any floor column is missing.
+    #[test]
+    fn place_3x1_lays_three_columns_over_the_floor() {
+        let mut w = floor_world();
+        place_3x1(&mut w, 10, 19, 79, 2);
+        for (col, fx) in [(9, 108), (10, 126), (11, 144)] {
+            let t = w.tile(col, 19).unwrap();
+            assert!(t.active());
+            assert_eq!(t.kind, 79);
+            assert_eq!(t.frame_x, fx);
+            assert_eq!(t.frame_y, 0);
+        }
+        // A gap in the floor refuses the whole placement.
+        let mut w2 = floor_world();
+        let i = w2.index(21, 20);
+        w2.tiles[i].flags &= !FLAG_ACTIVE;
+        place_3x1(&mut w2, 20, 19, 79, 0);
+        assert!(!w2.tile(20, 19).unwrap().active());
+    }
+
+    /// `Place1x1`: the seashell draws one plain Next(3) (22-px stride) and
+    /// overwrites an occupied cell; the general arm keeps frameX stored
+    /// and writes frameY = 18*style; the timer arm writes frameX instead.
+    #[test]
+    fn place_1x1_seashell_general_and_timer_arms() {
+        let mut w = floor_world();
+        let mut rng = Rng(11);
+        let mut probe = Rng(11);
+        let variant = probe.range(0, 3);
+        place_1x1(&mut w, &mut rng, 10, 19, 324, 1);
+        let t = w.tile(10, 19).unwrap();
+        assert!(t.active() && t.kind == 324);
+        assert_eq!(t.frame_x, (22 * variant) as i16);
+        assert_eq!(t.frame_y, 22);
+        assert_eq!(rng.0, probe.0); // exactly one draw
+        // The general arm: frameX keeps its stored value, frameY = style*18.
+        let i = w.index(12, 19);
+        w.tiles[i].frame_x = 7;
+        place_1x1(&mut w, &mut rng, 12, 19, 4, 3);
+        let t = w.tile(12, 19).unwrap();
+        assert!(t.active() && t.kind == 4);
+        assert_eq!(t.frame_x, 7);
+        assert_eq!(t.frame_y, 54);
+        // The timer arm (36): frameX = style*18, frameY = 0.
+        place_1x1(&mut w, &mut rng, 14, 19, 36, 2);
+        let t = w.tile(14, 19).unwrap();
+        assert_eq!(t.frame_x, 36);
+        assert_eq!(t.frame_y, 0);
+        // An occupied cell refuses the general arm (no overwrite).
+        place_1x1(&mut w, &mut rng, 12, 19, 4, 0);
+        assert_eq!(w.tile(12, 19).unwrap().frame_y, 54);
     }
 }

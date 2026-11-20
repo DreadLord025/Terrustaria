@@ -69,14 +69,14 @@ the C# call site), so no stream is invented.
 
 | # | C# helper | anchor | consumers (pending sibling passes) | commit |
 | --- | --- | --- | --- | --- |
-| H1 | `Place1x2` | `WorldGen.cs:46652-46679` | Herbs/Flowers (d105), temple-chair shape | (this slice) |
-| H2 | `Place2x1` | `:47368-47406` | Hellforge furniture (d104/g37), Guide | (this slice) |
-| H3 | `Place3x1` | `:52022-52065` | furniture passes | pending |
+| H1 | `Place1x2` | `WorldGen.cs:46652-46679` | Herbs/Flowers (d105), temple-chair shape | landed 578b94ef |
+| H2 | `Place2x1` | `:47368-47406` | Hellforge furniture (d104/g37), Guide | landed 578b94ef |
+| H3 | `Place3x1` | `:52022-52065` | furniture passes | (this slice) |
 | H4 | `Place2x2` (general) | `:51330-51423` | Piles/Traps (d104) — the 411-only slice exists (`mini_biomes.rs:1673`) | pending |
 | H5 | `Place2x2Style` | `:52198-52437` | furniture passes | pending |
 | H6 | `Place3x2` (general) | `:52066-52197` | the 26-altar slice exists (`evil.rs:1925`) | pending |
 | H7 | `Place3x3` | `:53534-53635` | Statues (g37), Hellforge | pending |
-| H8 | `Place1x1` (general) | `:45188-45235` | the 141-only slice exists (`mini_biomes.rs:1653`); 324 seashell arm | pending |
+| H8 | `Place1x1` (general) | `:45188-45235` | the 141-only slice exists (`mini_biomes.rs:1653`); 324 seashell arm | (this slice) |
 | H9 | `Place3x4` / `Place5x4` | `:51912-51962` / `:51963-52021` | Statues/large furniture | pending |
 | H10 | `Place4x2` / `Place6x3` | `:50514-50873` / `:50465-50513` | beds/benches (Floating Island Houses d103/d104) | pending |
 | H11 | `Place3x2Wall` / `Place3x3Wall` / `Place2x3Wall` / `Place4x3Wall` / `Place6x4Wall` | `:44725-44853` / `:44254-44567` / `:44568-44724` / `:44854-44945` / `:44946-45187` | paintings (Floating Island Houses, temple) | pending |
