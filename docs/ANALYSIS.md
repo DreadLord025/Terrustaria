@@ -39244,3 +39244,57 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC kind-axis wiring, lane 2 (W4-g9, the C# kinds 231-460 census, code-only mode, 2026-11-21)
+
+The axis (`npc.rs::update_rng_dust`'s `match self.kind.ai_style()`) gains
+the ten band kinds whose AI still ran ONLY through `update_kind_ai`'s
+kind match. Every claim is the S1-D-2 migration step — the arm calls the
+SAME landed machine the kind arm called, machines UNCHANGED
+(verify-only); the kind arms retire to `unreachable!` markers (the
+MourningWood/Everscream precedent), each kind keeping exactly one arm
+(the `s1_d_4c` coverage pin + `#[deny(unreachable_patterns)]` hold).
+
+| C# kind | port kind | aiStyle | SetDefaults cite | axis arm → machine |
+| --- | --- | --- | --- | --- |
+| 245 Golem | `Golem` | 45 | `NPC.cs:12163-12178` | `45 => update_golem_rng` (the S1-D-3 audit body arm, `npc_ai_golem` cores; `AI_045_Golem` `:19505-19780`, dispatch `:31125-31128`) |
+| 249 GolemHeadFree | `GolemHeadFree` | 48 | `NPC.cs:12207-12220` | `48 => update_golem_rng` (the R22/R23 free-head arm, `:31351-31586`) |
+| 315 HeadlessHorseman | `HeadlessHorseman` | 26 | `NPC.cs:12978-12990` | kind-gated `26` → `npc_ai_unicorn::unicorn_step` (S1-F-13b2 slice A, `AI_026_Unicorns` `:62366-62924`, dispatch `:25631-25634`) |
+| 329 Hellhound | `Hellhound` | 26 | `NPC.cs:13175-13187` | the same kind-gated `26` arm |
+| 406 StardustCellSmall | `StardustCellSmall` | 95 | `NPC.cs:15036-15048` | `95 => update_stardust_cell` (LIVE-INLINE, `:39384-39429` — the damping/scale ramp + the 300-tick Transform(405); RNG-free) |
+| 407 StardustJellyfishBig | `StardustJellyfishBig` | 96 | `NPC.cs:15087-15100` | `96 => update_stardust_jellyfish` (LIVE-INLINE, `:39430-39472` — the band steer + the 70-tick 539 ring) |
+| 410 StardustSpiderSmall | `StardustSpiderSmall` | 26 | `NPC.cs:15074-15086` | kind-gated `26` → `update_stardust_spider_small` (LIVE-INLINE, the `:62470-62495` burst + the walk tail) |
+| 417 SolarSroller | `SolarSroller` | 39 | `NPC.cs:15355-15367` | `39 => update_solar_sroller` (the S1-D-4 W-10 wrapper over the faithful `npc_ai_style39::style39_step`, `:29145-29665` + the `Collision_MoveSolarSroller` bounce tail `:92736-92757`) |
+| 420 NebulaFloater | `NebulaFloater` | 97 | `NPC.cs:15157-15171` | `97 => update_nebula_floater` (LIVE-INLINE, `:39473-39619` — the emission window + the teleport cycle) |
+| 423 NebulaBeast | `NebulaBeast` | 26 | `NPC.cs:15117-15129` | kind-gated `26` → `update_nebula_beast` (LIVE-INLINE, the `:62497-62556` charge + the walk tail) |
+
+**Why kind-gated 26:** aiStyle 26 has more users than the four ported
+kinds (the unicorns 155/259/260, the Sand Elemental 546 etc. are
+unported); a global `26` claim would misroute any future style-26 kind
+into `unicorn_step`. The three guards mirror the style-57
+MourningWood/Everscream precedent; the unicorn pair shares one arm.
+
+**Lane boundaries (probed in-flight, NOT touched):** the band's other
+rows already ride the axis at base (5/9/21/25/27-31/34-37/43/47/49/50/
+55-58/60-63/69-72/75/123) or belong to claimed lanes — b3 (7: 353/368/
+369/441), d24 (15/16/22: 330), d26 (32/33), d27 (41/42/44), d28 (51-54:
+261-267), c5 (46: 246), c6 (59: 328), c7 (64), c11 (73: 387), c12 (74:
+388/418), d31 (76-82: 395-401), d32 (85: 405/421; 93), c2 (94: 422),
+c1 (84: 439), d33 (95-127 census: the 105-110 DD2 band + 402). The
+style-3 fighter family (381/382/383/385/386/389/391/409/411/415/419/
+424/425/426/427/428/429) waits on W4-g4; the style-6 worm band
+(402/412-414) rides the sim's worm pass; 370/372/384 are already
+claimed; 250/288 ride the small-kinds wave. The remaining 231-460 C#
+ids have no `NpcKind` row (the roster lanes W4-d37/d38/d39/d40).
+
+**Witnesses** (`npc.rs::w4_g9_kind_axis_census_tests`, WRITTEN NOT RUN —
+code-only mode, no compiler invoked): the ten-row style/type/box/lifeMax
+census pin (+ the 246/247/405 lane-boundary rows; the free head's
+`cs_id()` folds to 245, the bestiary invariant), the 500-tick
+frozen-behaviour A/B + `UpdateNPCs` stream parity per kind (the legacy
+side replays the pre-axis wrapper verbatim — preamble, gfxOffY decay,
+the old kind body incl. the cell's post-Transform(405) hand-off, the
+justHit clear, find_frame, contact; covers the spider's 240-tick
+self-destruct, the Horseman's 481st-tick lob, the floater's 480-tick
+teleport), the style-95 zero-draw census through the transform, and the
+ten-arm retirement guard (`catch_unwind`, "rides the style axis").
