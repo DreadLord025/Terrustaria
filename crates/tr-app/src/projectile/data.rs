@@ -1102,6 +1102,35 @@ pub const SPARKLE_GUITAR: u16 = 856;
 /// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
 /// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
 pub const STAR_CANNON_STAR: u16 = 955;
+/// W4-d17 — the rapier-stab family (aiStyle 161, `AI_161_RapierStabs`
+/// `Projectile.cs:47612-47665`, the dispatch `:36607-36610`):
+/// `DefaultToShortsword` (`:10773-10787`) — 18x18, `penetrate = -1`,
+/// `tileCollide = false`, melee, `ownerHitCheck`, `extraUpdates = 1`,
+/// `usesOwnerLight`, drawLayer 7. The Gladius (802, `:7921-7924`) and the
+/// Ruler (842, `:8145-8148`) keep the stock 3600 life.
+pub const GLADIUS_STAB: u16 = 802;
+pub const RULER_STAB: u16 = 842;
+/// The eight ore shortswords' stabs (938-945, `Projectile.cs:8917-8921`):
+/// `DefaultToShortsword` + `timeLeft = 360`.
+pub const SHORTSWORD_STAB_FIRST: u16 = 938;
+pub const SHORTSWORD_STAB_LAST: u16 = 945;
+/// `ProjectileID.ChlorophyteSaberStab` (1127, `ProjectileID.cs:2808`) — the
+/// Chlorophyte Saber's stab (`Projectile.cs:10559-10564`):
+/// `DefaultToShortsword` + the LOCAL immunity pair (−1). The `ai[1]`
+/// melee-speed scale stretches the 16-tick machine (`:47621-47631`), the
+/// Oiled-397 on-hit grant is `StatusNPC` `:11721-11724`.
+pub const CHLOROPHYTE_SABER_STAB: u16 = 1127;
+
+/// W4-d17 — the aiStyle-161 kind set (the `DefaultToShortsword` callers:
+/// `Projectile.cs:7921`/`:8145`/`:8917`/`:10559`). The `Colliding` stab arm
+/// (`:15955`) and the `ownerHitCheck` gate (`:12637`) key on it.
+pub fn is_rapier_stab(kind: u16) -> bool {
+    matches!(
+        kind,
+        GLADIUS_STAB | RULER_STAB | SHORTSWORD_STAB_FIRST..=SHORTSWORD_STAB_LAST
+            | CHLOROPHYTE_SABER_STAB
+    )
+}
 /// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
 /// 14x18, `penetrate = -1`, `tileCollide = false`).
 pub const LAST_PRISM: u16 = 633;
@@ -3831,6 +3860,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
             // dropped).
             STAR_CANNON_STAR => (18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 50, 1.0)),
+            // W4-d17 — `DefaultToShortsword` (`Projectile.cs:10773-10787`):
+            // 18x18, aiStyle 161, `penetrate = -1`, `tileCollide = false`,
+            // `extraUpdates = 1`, melee, `ownerHitCheck` (the damage gate is
+            // keyed on the kind set in `damage_pve`, the spear precedent).
+            // The Gladius (802, `:7921-7924`) / Ruler (842, `:8145-8148`)
+            // keep the stock 3600 life and NO immunity slice.
+            GLADIUS_STAB | RULER_STAB => (18.0, 18.0, 161, -1, TIME_LEFT_DEFAULT, 1, false, false, false, RESET_STATE),
+            // `:8917-8921` — the eight ore shortswords (938-945):
+            // `DefaultToShortsword` + `timeLeft = 360`.
+            SHORTSWORD_STAB_FIRST..=SHORTSWORD_STAB_LAST => (18.0, 18.0, 161, -1, 360, 1, false, false, false, RESET_STATE),
+            // `:10559-10564` — the Chlorophyte Saber stab (1127):
+            // `DefaultToShortsword` + `usesLocalNPCImmunity` /
+            // `localNPCHitCooldown = -1`.
+            CHLOROPHYTE_SABER_STAB => (18.0, 18.0, 161, -1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, -1, false, -1, 0, 1.0)),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4232,6 +4275,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // (28/29/37/519) and the Crystal Storm item 518's proj set none.
         melee: YOYO_KINDS.contains(&kind)
             || FLAIL_KINDS.contains(&kind)
+            // W4-d17 — `DefaultToShortsword` sets melee (`Projectile.cs:10783`):
+            // the rapier-stab family (802/842/938-945/1127).
+            || matches!(kind, GLADIUS_STAB | RULER_STAB | SHORTSWORD_STAB_FIRST..=SHORTSWORD_STAB_LAST | CHLOROPHYTE_SABER_STAB)
             || matches!(
                 kind,
                 // The explicit melee rows: the boomerangs (6/52/113,

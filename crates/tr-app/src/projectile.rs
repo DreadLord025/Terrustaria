@@ -13835,6 +13835,47 @@ pub(crate) fn npc_center(n: &Npc) -> Vec2 {
     Vec2::new(n.x + w * 0.5, n.y + h * 0.5)
 }
 
+/// W4-d17 — `Projectile.CanHitWithMeleeWeapon` (`Projectile.cs:12400-12411`)
+/// for the rapier stabs' `ownerHitCheck` gate (`:12637`): the 1000-px stock
+/// distance (`ownerHitCheckDistance` default `:304` — `DefaultToShortsword`
+/// sets no override), then the box `CanHit` OR the three sight lines from
+/// the owner's flank. `proj_center` is the C#'s `base.Distance(ent.Center)`
+/// subject — the STAB's centre, not the owner's. `gravDir = 1` folds the Y
+/// terms (the port's standing convention).
+fn rapier_owner_can_hit(
+    world: &World,
+    pl: &crate::player::Player,
+    n: &Npc,
+    proj_center: Vec2,
+) -> bool {
+    let (nw, nh) = n.size();
+    let target = npc_center(n);
+    let (pcx, pcy) = pl.center();
+    let owner_center = Vec2::new(pcx, pcy);
+    // `:12402` — `base.Distance(ent.Center) > ownerHitCheckDistance`.
+    if proj_center.distance(target) > 1000.0 {
+        return false;
+    }
+    if can_hit(world, pl.x, pl.y, pl.width, pl.height, n.x, n.y, nw, nh) {
+        return true;
+    }
+    let ax = owner_center.x + ((pl.facing * pl.width as i32) / 2) as f32;
+    let ay = owner_center.y + (-pl.height) / 3.0;
+    can_hit_line(world, ax, ay, 0.0, 0.0, target.x, target.y + (-(nh as i32) / 3) as f32, 0.0, 0.0)
+        || can_hit_line(world, ax, ay, 0.0, 0.0, target.x, target.y, 0.0, 0.0)
+        || can_hit_line(
+            world,
+            ax,
+            owner_center.y,
+            0.0,
+            0.0,
+            target.x,
+            target.y + (nh as i32 / 3) as f32,
+            0.0,
+            0.0,
+        )
+}
+
 /// `Math.Sign(float)` — the C#'s float overload, which yields 0 for 0 rather
 /// than Rust's `signum` 1. The minion steering adds `(sign, sign) * k`, so the
 /// zero must stay zero.
@@ -17514,6 +17555,26 @@ impl ProjectilePool {
                         // (aiStyle 167): the 856's CatmullRom arc back to the
                         // owner. The light write SKIPPED (no pool layer).
                         167 => self.slots[i].ai_sparkle_guitar(owner),
+                        // W4-d17 — `AI()`'s `else if (this.aiStyle == 161)`
+                        // (`Projectile.cs:36607-36610`) -> `AI_161_RapierStabs`
+                        // (`:47612-47665`): the shortsword/rapier stabs
+                        // (802/842/938-945/1127). Pool-side — the mount anchor
+                        // and the heldProj/ChangeDir writes read the player.
+                        // The rows keep `tileCollide = false` and aiStyle 161
+                        // is not in `UpdatePosition`'s skip list (`:20435`),
+                        // so the free integrate runs every sub-step ON TOP of
+                        // the AI's centre pin (the C# order).
+                        161 => {
+                            self.rapier_stab_step(i, player.as_deref_mut(), rng);
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                            // `AutomaticallyChangesDirection` (`:17281-
+                            // 17288`): no row sets `manualDirectionChange`,
+                            // so the direction follows velocity.X's sign
+                            // after the move (`:17016-17026`).
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                        }
                         // S1-P-i16 — the aiStyle-34 fireworks rockets
                         // (`AI()` `Projectile.cs:27136-27188`): the
                         // velocity-pointing rotation + the ai[1] launch
@@ -21379,6 +21440,111 @@ impl ProjectilePool {
         );
     }
 
+    /// W4-d17 — `AI_161_RapierStabs` (`Projectile.cs:47612-47665`, the
+    /// dispatch `:36607-36610`): the shortsword/rapier stab machine — the
+    /// Gladius 802, the Ruler 842, the eight ore shortswords 938-945 and the
+    /// Chlorophyte Saber 1127 (`DefaultToShortsword` `:10773-10787`).
+    /// Pool-side — the arm reads `Main.player[owner]`'s rotated mount anchor
+    /// and writes `heldProj`/`ChangeDir` (the `storm_tiger_gem_step`
+    /// precedent). The 16-tick walk (1127: the `ai[1]` melee-speed stretch)
+    /// pins the centre along the velocity, the opacity ramps in over 7 ticks
+    /// and out over the last 4, and `ai[0] >= num` kills.
+    ///
+    /// RNG: the plain stabs draw NOTHING. The 1127's dust block (`:47654-
+    /// 47657`) is the documented body skip, but its TWO explicit
+    /// `Main.rand.NextFloat()` call-site draws (the velocity scale `:47656`,
+    /// the size scale `:47657`) stay on the stream per sub-step (the misc
+    /// module's G3 standard). The Item1 whoosh (`:47661`) rides
+    /// `wants_sound`; the `soundDelay--` here is the AI's OWN decrement, on
+    /// top of the pool head's once-per-update tick (`:16768-16771`).
+    ///
+    /// Skips (ANALYSIS): the 1127's `Lighting.AddLight` (`:47648-47649`) and
+    /// the dust body; `ChangeDir`'s pulley snap + composite-arm rotations +
+    /// `itemLocation` mirror (`Player.cs:42097-42115`) — the port keeps the
+    /// facing write + the `itemRotation *= -1` flip (the flail facing
+    /// precedent; no pulley camera/itemLocation state in the pool).
+    fn rapier_stab_step(
+        &mut self,
+        i: usize,
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:47614` — `Main.player[this.owner]`; an unresolved owner folds
+        // the machine away (the bat_of_light_step precedent) and the
+        // dispatch still integrates.
+        let Some(pl) = player else {
+            return;
+        };
+        let p = &mut self.slots[i];
+        // `:47615` — `rotation = velocity.ToRotation() + π/2`.
+        p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
+        // `:47616-47620` — the counter and the 16/12/7 ladder.
+        p.ai[0] += 1.0;
+        let mut num = 16;
+        let mut num2 = num - 4;
+        let mut num3 = 7;
+        let mut num4 = p.ai[0];
+        if p.kind == CHLOROPHYTE_SABER_STAB {
+            // `:47621-47631` — the melee-speed stretch: the (int) truncations
+            // are the C#'s float→int casts. `num` keeps the C# int's exact
+            // value (the `(int)(16f * ai[1])` product + 5).
+            num = (16.0 * p.ai[1]) as i32 + 5;
+            num4 = num4.min((16.0 * p.ai[1]) as i32 as f32);
+            num3 = (7.0 * p.ai[1]) as i32;
+            num2 = (12.0 * p.ai[1]) as i32;
+            if p.vel.x != 0.0 {
+                // `player.ChangeDir` (`Player.cs:42091-42116`): the facing
+                // write + the itemRotation flip; the pulley snap and the
+                // composite-arm/itemLocation mirrors are the recorded skip.
+                let dir = if p.vel.x > 0.0 { 1 } else { -1 };
+                if dir != pl.facing {
+                    pl.facing = dir;
+                    pl.item_rotation *= -1.0;
+                }
+            }
+        }
+        // `:47632` — the opacity ramp: in over num3, out from num to num2.
+        let opacity = get_lerp_value(0.0, num3 as f32, p.ai[0])
+            * get_lerp_value(num as f32, num2 as f32, p.ai[0]);
+        p.alpha = alpha_of(opacity);
+        // `:47633` — the centre pin on the rotated mount anchor.
+        let (mcx, mcy) = pl.mounted_center();
+        let anchor = pl.rotated_relative_point(Vec2::new(mcx, mcy), 0);
+        let mut center = anchor + p.vel * (num4 - 1.0);
+        if p.kind == CHLOROPHYTE_SABER_STAB {
+            // `:47634-47638` — the saber's 10-px reach along the aim.
+            let f = p.rot - std::f32::consts::FRAC_PI_2;
+            center += rotation_vector(f) * 10.0;
+        }
+        p.pos = center - Vec2::new(p.w * 0.5, p.h * 0.5);
+        // `:47639` — `spriteDirection = Dot(velocity, UnitX) < 0 ? -1 : 1`.
+        p.sprite_direction = if p.vel.x < 0.0 { -1 } else { 1 };
+        // `:47640-47644` — the end-of-walk kill (before the heldProj write).
+        if p.ai[0] >= num as f32 {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+            return;
+        }
+        // `:47645` — `player.heldProj = whoAmI`.
+        pl.held_proj = i as i32;
+        if p.kind == CHLOROPHYTE_SABER_STAB {
+            // `:47648-47657` — the light + dust body SKIP; the two explicit
+            // NextFloat call-site draws stay (the velocity scale `:47656`
+            // first, then the size scale `:47657` — module doc).
+            let _ = rng.next_float();
+            let _ = rng.next_float();
+            // `:47658-47663` — the whoosh cooldown: the AI's own decrement,
+            // the Item1 cue at the centre, the 12-tick re-arm.
+            p.sound_delay -= 1;
+            if p.sound_delay <= 0 {
+                let (cx, cy) = p.center();
+                p.wants_sound = Some((2, 1, cx, cy, 0.0));
+                p.sound_delay = 12;
+            }
+        }
+    }
+
     fn magnet_sphere_step(&mut self, slot: usize, world: &World, npcs: &[Npc]) {
         self.magnet_sphere_dedupe(slot);
         if self.slots[slot].owner != 0 {
@@ -22684,6 +22850,18 @@ impl ProjectilePool {
                     }
                 }
             }
+            // W4-d17 — the rapier stabs carry `ownerHitCheck` too
+            // (`DefaultToShortsword` `:10782`): the same `:12637` gate, the
+            // 1000-px stock distance (`:304`). The live player rides this
+            // seam (no snapshot needed — the gate reads only the body box).
+            if is_rapier_stab(p.kind) {
+                if let Some(pl) = player.as_deref() {
+                    let pc = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                    if !rapier_owner_can_hit(world, pl, n, pc) {
+                        continue;
+                    }
+                }
+            }
             // The flail family's hit gates — `Colliding` (`:15336-15356`,
             // the state-0 ellipse replaces the box test),
             // `Damage_CanDealDamage` (`:12448`, the hold's first 12 ticks),
@@ -22728,6 +22906,24 @@ impl ProjectilePool {
                 let target = tr_core::whip::Rect::new(n.x as i32, n.y as i32, nw as i32, nh as i32);
                 crate::projectile_ai_spear::spear_colliding(p, &self.spear_owner.unwrap(), target)
                     || proj_rect.intersects(target)
+            } else if is_rapier_stab(p.kind) {
+                // W4-d17 — `Colliding`'s stab arm (`Projectile.cs:15955-
+                // 15970`): the AABB-vs-line from the centre to
+                // `centre + velocity·6` (1127: ·28) at width `10·scale`.
+                // The arm's `num38` (10/18) local is computed but the call
+                // passes `10f·scale` for BOTH — a verbatim C# quirk, kept.
+                // The arm REPLACES the box test (it returns on hit or miss).
+                let (nw, nh) = n.size();
+                let c = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                let reach = if p.kind == CHLOROPHYTE_SABER_STAB { 28.0 } else { 6.0 };
+                let end = c + p.vel * reach;
+                crate::collision::check_aabb_v_line_collision(
+                    [n.x, n.y],
+                    [nw, nh],
+                    [c.x, c.y],
+                    [end.x, end.y],
+                    10.0 * p.scale,
+                )
             } else if p.kind == MOONLORD_TURRET_LASER {
                 // `Colliding`'s type-642 arm (`Projectile.cs:15942-15954`):
                 // the base-rect overlap above OR the beam line — the
@@ -23012,6 +23208,12 @@ impl ProjectilePool {
             // melee-only ones never fire for an arrow by construction.
             crate::special_arrows::status_npc(self.slots[slot].kind, &mut npcs[idx], rng);
             self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
+            // W4-d17 — `StatusNPC`'s 1127 arm (`Projectile.cs:11721-11724`):
+            // the Chlorophyte Saber stab grants Oiled 397 for 300 ticks.
+            // `NPC.AddBuff` is rand-free; the pre-strike order is the C#'s.
+            if self.slots[slot].kind == CHLOROPHYTE_SABER_STAB {
+                npcs[idx].buffs.add_buff(397, 300);
+            }
             let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
             let landed = Npc::strike_projectile(
                 npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
@@ -44382,5 +44584,141 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+#[cfg(test)]
+mod w4_d17_rapier_stab_tests {
+    //! W4-d17 — the aiStyle-161 machine (`AI_161_RapierStabs`,
+    //! `Projectile.cs:47612-47665`, the dispatch `:36607-36610`): the
+    //! Gladius 802 / Ruler 842 / ore shortswords 938-945 / Chlorophyte Saber
+    //! 1127. WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at centre (410, 321): x 400, y 300, the stock 20x42 body.
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p
+    }
+
+    /// The scripted stream: records every draw (the ZERO-draw census for
+    /// the plain stabs, the two-NextFloat census for the 1127).
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, rng: &mut CensusRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        let center = p.center();
+        pool.update(
+            w,
+            &mut npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// Witness 1 — the rows + the plain stab's 16-tick walk
+    /// (`DefaultToShortsword` `:10773-10787`, the machine `:47615-47645`):
+    /// a Gladius at velocity (4, 0) pins its centre on the owner anchor +
+    /// velocity·(ai0−1) each sub-step, then integrates one more velocity
+    /// step (the `UpdatePosition` free move). Two sub-steps per tick
+    /// (extraUpdates 1): after tick 1 ai0 = 2, the centre is anchor +
+    /// 4·(2−1) + 4 = anchor + 8 on X. The opacity ramp at ai0 = 2:
+    /// GetLerpValue(0,7,2)·GetLerpValue(16,12,2) = (2/7)·1 → alpha
+    /// (int)((1−2/7)·255) = 182. The plain stab draws NOTHING.
+    #[test]
+    fn w4_d17_the_gladius_walks_sixteen_ticks_and_draws_nothing() {
+        let d = proj_data(GLADIUS_STAB).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (18.0, 18.0, 161, -1));
+        assert_eq!((d.extra_updates, d.tile_collide, d.melee), (1, false, true));
+        assert_eq!(proj_data(SHORTSWORD_STAB_FIRST).unwrap().time_left, 360, ":8920");
+        assert!(proj_data(CHLOROPHYTE_SABER_STAB).unwrap().uses_local_immunity, ":10562");
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(GLADIUS_STAB, 0, 500.0, 400.0, 4.0, 0.0, 40, 2.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let s = &pool.slots()[slot];
+        assert!(s.active);
+        assert_eq!(s.ai[0], 2.0, "two sub-steps (:47616)");
+        // The anchor: mounted centre (410, 321), no rotation/mount offset.
+        // Sub-step 2 pins centre = anchor + 4·(2−1) = (414, 321), then the
+        // free integrate adds (4, 0) → pos = (414+4−9, 321−9) = (409, 312).
+        assert_eq!(s.pos, Vec2::new(409.0, 312.0), "the pin + the free move");
+        assert!((s.rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6, ":47615");
+        assert_eq!(s.sprite_direction, 1, ":47639");
+        assert_eq!(s.alpha, 182, "(int)((1-2/7)*255) (:47632)");
+        assert_eq!(p.held_proj, slot as i32, ":47645");
+        assert!(rng.draws.is_empty() && rng.floats == 0, "the plain stab draws NOTHING");
+        // The walk ends at ai0 >= 16: tick 8's second sub-step kills.
+        for _ in 0..7 {
+            tick(&mut pool, &mut w, &mut p, &mut rng);
+        }
+        assert!(!pool.slots()[slot].active, "ai0 16 >= num 16 (:47640-47643)");
+        assert_eq!(pool.slots()[slot].time_left, 0);
+    }
+
+    /// Witness 2 — the 1127's melee-speed stretch + the two-NextFloat census
+    /// (`:47621-47631`, `:47654-47663`): ai1 = 1 keeps num 21 (16·1+5),
+    /// num3 7, num2 12; the centre gains the 10-px aim reach; the facing
+    /// follows velocity.X (ChangeDir's ported half); each sub-step draws
+    /// exactly TWO NextFloats (the dust body skips) and the whoosh fires on
+    /// the first sub-step (soundDelay 0 → −1 ≤ 0), re-arming 12.
+    #[test]
+    fn w4_d17_the_saber_stretches_and_draws_two_floats_per_substep() {
+        let mut w = world();
+        let mut p = owner(&w);
+        p.facing = -1;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                CHLOROPHYTE_SABER_STAB, 0, 500.0, 400.0, 4.0, 0.0, 40, 2.0, 0.0, 1.0,
+            )
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let s = &pool.slots()[slot];
+        assert_eq!(s.ai[0], 2.0);
+        // num4 = min(2, (int)(16·1)) = 2; centre = anchor + 4·1 + aim·10
+        // = (410+4+10, 321) = (424, 321); + the free (4,0) → pos (419, 312).
+        assert_eq!(s.pos, Vec2::new(419.0, 312.0), "the 10-px reach (:47637)");
+        assert_eq!(p.facing, 1, "ChangeDir on velocity.X > 0 (:47629)");
+        assert_eq!(rng.floats, 4, "two NextFloats x two sub-steps (:47656-47657)");
+        assert!(rng.draws.is_empty(), "no Next draws");
+        // The whoosh: sub-step 1 fires (delay 0→−1→cue→12); sub-step 2's
+        // AI decrement takes 12→11 (the pool head ticks once per UPDATE,
+        // before the sub-steps, and saw 0).
+        assert_eq!(s.sound_delay, 11, "12 - 1 (:47658-47662)");
+        let cues = pool.drain_proj_sounds();
+        assert_eq!(cues.len(), 1, "one Item1 whoosh this tick");
+        assert_eq!((cues[0].0, cues[0].1), (2, 0), "SoundID.Item1, style 0");
     }
 }
