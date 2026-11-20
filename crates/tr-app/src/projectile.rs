@@ -9991,6 +9991,387 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI_120_StardustGuardian_FindTarget` (`Projectile.cs:44965-44982`):
+    /// the Guardian's target pick — the nearest `CanBeChasedBy` NPC to the
+    /// OWNER's centre (NOT the Guardian's, and NOT the rest-offset hover
+    /// point) inside `lookup_range`, shrinking the range on every pick.
+    /// No LOS test (unlike the sentry scans). The two `ref` outs map to the
+    /// returned pair; `distance_to_closest` seeds the out value exactly as
+    /// the call sites pass it (num2 for the acquire scans, −1 for the dash
+    /// retarget `:44895`). S1-P-i56.
+    fn ai_120_guardian_find_target(
+        npcs: &[Npc],
+        player_center: Vec2,
+        mut lookup_range: f32,
+        mut distance_to_closest: f32,
+    ) -> (i32, f32) {
+        let mut target: i32 = -1;
+        for (i, n) in npcs.iter().enumerate() {
+            if n.can_be_chased_by() {
+                let num = player_center.distance(npc_center(n));
+                if num < lookup_range {
+                    target = i as i32;
+                    distance_to_closest = num;
+                    lookup_range = num;
+                }
+            }
+        }
+        (target, distance_to_closest)
+    }
+
+    /// `AI_120_StardustGuardian` (`Projectile.cs:44634-44963`) — the Stardust
+    /// Guardian (623), the 0-slot summon pet's idle / rest-hover / attack-dash
+    /// / teleport-return machine (`ai[0]` 0/1/2/3). `who_am_i` is the pool
+    /// slot index (the C# `base.whoAmI` the tank-pet claim writes).
+    ///
+    /// RNG: ZERO draws by construction — every `Main.rand` roll in the C#
+    /// arm is a `Dust.NewDust` INTERNAL (`:44668`/`:44672`/`:44928`/`:44932`/
+    /// `:44943`/`:44948`, `Dust.cs:170-175`/`:190`/`:216`), and the pool has
+    /// no dust layer: the bodies and their pool-occupancy-dependent rolls
+    /// are the documented skip (the `ai_flying_minion`/`ai_stardust_mark`
+    /// precedent, ANALYSIS "The Stardust Guardian arm"). No gate draws exist
+    /// outside the dust calls, so the arm takes no rng.
+    ///
+    /// Skips (ANALYSIS): the dust bursts themselves, `Lighting.AddLight`
+    /// (`:44662`) and the armor-shader writes. The frame machines ARE ported
+    /// (the slot carries `frame`/`frame_counter`; the 19-frame sheet rides
+    /// `proj_frames`, `Main.cs:8497`). The rest states read
+    /// `Player.minion_rest_target_point` — ZERO until the Forbidden set's
+    /// `MinionRestTargetAim` writer lands, so states 1/3 revert to idle
+    /// exactly as the vanilla does without the set.
+    fn ai_stardust_guardian(
+        &mut self,
+        who_am_i: usize,
+        player: Option<&mut crate::player::Player>,
+        npcs: &[Npc],
+        local_owner: u8,
+    ) {
+        // `:44636-44641` — the owner-inactive kill (`active = false` only;
+        // the port's death convention zeroes `time_left` too, `kill()`).
+        let Some(pl) = player else {
+            self.kill();
+            return;
+        };
+        // `:44642-44648` — the parameter block. `flag` is the 623 gate (the
+        // style's only SetDefaults row, `:6699-6716`); `flag2` stays true.
+        let flag = self.kind == STARDUST_GUARDIAN;
+        let (pcx, pcy) = pl.center();
+        let player_center = Vec2::new(pcx, pcy);
+        let mut vector = player_center;
+        let mut num = 100.0f32;
+        let num2 = 500.0f32;
+        let num3 = 500.0f32;
+        let num4 = 100.0f32;
+        if flag {
+            // `:44651-44658` — death clears the summon flag (no pin); the
+            // live flag pins `timeLeft = 2`.
+            if pl.dead {
+                pl.stardust_guardian = false;
+            }
+            if pl.stardust_guardian {
+                self.time_left = 2;
+            }
+            // `:44659-44661` — the hover point: 150-px leash, behind the
+            // owner's facing (`(5 + width / 2)` is the C#'s INT arithmetic
+            // 5 + 20/2 = 15) and 25 px up.
+            num = 150.0;
+            vector.x -= (5.0 + crate::player::WIDTH * 0.5) * pl.facing as f32;
+            vector.y -= 25.0;
+            // `:44662` — the light cast: SKIPPED (no light layer).
+            // `:44663-44678` — the materialize flash: alpha 255 → 0 outside
+            // the teleport state; the 30×2 dust burst is the documented
+            // skip (its rolls are NewDust internals).
+            if self.ai[0] != 3.0 && self.alpha == 255 {
+                self.alpha = 0;
+            }
+        }
+        // `:44680-44684` — the tank-pet claim: every non-idle tick re-pins
+        // the slot and disarms the player-side one-tick decay
+        // (`Player.cs:24539-24548`, `Player::tank_pet_decay`).
+        if self.ai[0] != 0.0 {
+            pl.tank_pet = who_am_i as i32;
+            pl.tank_pet_reset = false;
+        }
+        if self.ai[0] == 0.0 {
+            // `:44687-44689` — the idle drift: 5% centre lerp toward the
+            // hover point, the velocity halves, the facing rides the owner.
+            let c = Vec2::from(self.center());
+            self.set_center(c.lerp(vector, 0.05));
+            self.vel *= 0.5;
+            self.direction = pl.facing;
+            self.sprite_direction = pl.facing;
+            // `:44690-44697` — the 9-tick idle frame machine, wrapping at 8.
+            if flag {
+                self.frame_counter += 1;
+                if self.frame_counter >= 9 {
+                    self.frame_counter = 0;
+                    self.frame += 1;
+                    if self.frame >= 8 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // `:44698-44708` — the acquire scan, gated on the hover-point
+            // distance (`flag3`): more than num + 20 px off the leash skips
+            // it entirely.
+            let mut target: i32 = -1;
+            let mut flag3 = true;
+            if flag && (self.center().0 - vector.x).abs() > num + 20.0 {
+                flag3 = false;
+            }
+            if flag3 {
+                (target, _) =
+                    Self::ai_120_guardian_find_target(npcs, player_center, num2, num2);
+            }
+            if target != -1 {
+                // `:44711-44739` — the attack posture: face the target, the
+                // leash-gated 0.1 accel / 0.7 damp pair per axis (the Y pair
+                // measures from the Guardian's BOTTOM, `:44716-44717`), and
+                // the owner-only commit to the dash state.
+                let n = &npcs[target as usize];
+                let nc = npc_center(n);
+                let c = Vec2::from(self.center());
+                let bottom_y = self.pos.y + self.h;
+                self.direction = if nc.x > c.x { 1 } else { -1 };
+                self.sprite_direction = self.direction;
+                let num6 = (vector.x - c.x).abs();
+                let num7 = (nc.x - c.x).abs();
+                let num8 = (vector.y - c.y).abs();
+                let num9 = (nc.y - bottom_y).abs();
+                let num10 = if nc.y > bottom_y { 1.0 } else { -1.0 };
+                if (num6 < num || (vector.x - c.x) * (self.direction as f32) < 0.0)
+                    && num7 > 20.0
+                    && num7 < num - num6 + 100.0
+                {
+                    self.vel.x += 0.1 * self.direction as f32;
+                } else {
+                    self.vel.x *= 0.7;
+                }
+                if (num8 < num4 || (vector.y - bottom_y) * num10 < 0.0)
+                    && num9 > 10.0
+                    && num9 < num4 - num8 + 10.0
+                {
+                    self.vel.y += 0.1 * num10;
+                } else {
+                    self.vel.y *= 0.7;
+                }
+                if self.owner == local_owner && num7 < num3 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = target as f32;
+                    self.net_update = true;
+                }
+            }
+        } else if self.ai[0] == 1.0 {
+            // `:44744-44752` — the rest hover: the rest point replaces the
+            // hover point; without one the state reverts to idle (the
+            // state-0 body does NOT run this tick — the C# chain is
+            // else-if).
+            if pl.minion_rest_target_point != Vec2::ZERO {
+                vector = pl.minion_rest_target_point;
+            } else {
+                self.ai[0] = 0.0;
+                self.net_update = true;
+            }
+            // `:44753-44763` — the same leash-gated acquire scan (the scan
+            // centre stays the OWNER's centre, not the rest point).
+            let mut target: i32 = -1;
+            let mut flag4 = true;
+            if flag && (self.center().0 - vector.x).abs() > num + 20.0 {
+                flag4 = false;
+            }
+            if flag4 {
+                (target, _) =
+                    Self::ai_120_guardian_find_target(npcs, player_center, num2, num2);
+            }
+            if target != -1 {
+                // `:44766-44794` — the state-0 attack posture verbatim.
+                let n = &npcs[target as usize];
+                let nc = npc_center(n);
+                let c = Vec2::from(self.center());
+                let bottom_y = self.pos.y + self.h;
+                self.direction = if nc.x > c.x { 1 } else { -1 };
+                self.sprite_direction = self.direction;
+                let num11 = (vector.x - c.x).abs();
+                let num12 = (nc.x - c.x).abs();
+                let num13 = (vector.y - c.y).abs();
+                let num14 = (nc.y - bottom_y).abs();
+                let num15 = if nc.y > bottom_y { 1.0 } else { -1.0 };
+                if (num11 < num || (vector.x - c.x) * (self.direction as f32) < 0.0)
+                    && num12 > 20.0
+                    && num12 < num - num11 + 100.0
+                {
+                    self.vel.x += 0.1 * self.direction as f32;
+                } else {
+                    self.vel.x *= 0.7;
+                }
+                if (num13 < num4 || (vector.y - bottom_y) * num15 < 0.0)
+                    && num14 > 10.0
+                    && num14 < num4 - num13 + 10.0
+                {
+                    self.vel.y += 0.1 * num15;
+                } else {
+                    self.vel.y *= 0.7;
+                }
+                if self.owner == local_owner && num12 < num3 {
+                    self.ai[0] = 2.0;
+                    self.ai[1] = target as f32;
+                    self.net_update = true;
+                }
+            } else {
+                // `:44798-44825` — the rest drift: beyond num + 40 px the
+                // teleport state arms (the tail below runs it THIS tick);
+                // inside, the 0.06 accel / 0.8 damp pair per axis. The
+                // settled X facing reads the OWNER's centre (`:44811`),
+                // not the rest point; the Y accel rides `Math.Sign`
+                // (`csign`, 0 for 0).
+                let c = Vec2::from(self.center());
+                if (vector.x - c.x).abs() > num + 40.0 {
+                    self.ai[0] = 3.0;
+                    self.net_update = true;
+                } else if (vector.x - c.x).abs() > 20.0 {
+                    self.direction = if vector.x > c.x { 1 } else { -1 };
+                    self.sprite_direction = self.direction;
+                    self.vel.x += 0.06 * self.direction as f32;
+                } else {
+                    self.vel.x *= 0.8;
+                    self.direction = if player_center.x < c.x { 1 } else { -1 };
+                    self.sprite_direction = self.direction;
+                }
+                if (vector.y - c.y).abs() > num4 {
+                    self.ai[0] = 3.0;
+                    self.net_update = true;
+                } else if (vector.y - c.y).abs() > 10.0 {
+                    self.vel.y += 0.06 * csign(vector.y - c.y);
+                } else {
+                    self.vel.y *= 0.8;
+                }
+            }
+            // `:44827-44834` — the 9-tick hover frame machine, wrapping at
+            // `projFrames[type] - 4` = 15 (`Main.cs:8497`).
+            if flag {
+                self.frame_counter += 1;
+                if self.frame_counter >= 9 {
+                    self.frame_counter = 0;
+                    self.frame += 1;
+                    if self.frame >= proj_frames(self.kind) as i32 - 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+        } else if self.ai[0] == 2.0 {
+            // `:44838-44857` — the dash frame machine: the floor at 12, the
+            // 8-tick rate on frames 12/13 (3 otherwise), the wrap 19 → 14.
+            if flag {
+                let mut num16 = 3;
+                if self.frame < 12 {
+                    self.frame = 12;
+                }
+                if self.frame == 12 || self.frame == 13 {
+                    num16 = 8;
+                }
+                self.frame_counter += 1;
+                if self.frame_counter >= num16 {
+                    self.frame_counter = 0;
+                    self.frame += 1;
+                    if self.frame >= 19 {
+                        self.frame = 14;
+                    }
+                }
+            }
+            // `:44858-44872` — the two validity gates: the Guardian itself
+            // inside 500 px of the OWNER (`flag5`, `flag2` true), and the
+            // held target chaseable + inside 500 px of the GUARDIAN. The
+            // `(int)ai[1]` truncation + `IndexInRange` map to the `as i32`
+            // cast + the `>= 0` slice probe.
+            let c = Vec2::from(self.center());
+            let flag5 = c.distance(player_center) < num2;
+            let num17 = self.ai[1] as i32;
+            let target = if num17 >= 0 {
+                npcs.get(num17 as usize).filter(|n| {
+                    n.can_be_chased_by() && c.distance(npc_center(n)) <= num3
+                })
+            } else {
+                None
+            };
+            if !flag5 || target.is_none() {
+                // `:44873-44882` — the abort: back to idle, the target
+                // cleared, the frame floored at 18 (the recover pose).
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+                self.net_update = true;
+                if self.frame < 18 {
+                    self.frame = 18;
+                }
+            } else {
+                // `:44885-44890` — the dash steering: stand off on the
+                // target's far side (`num18` from the OWNER-relative X, the
+                // half-width + 70 px offset, 10 px up), the distance-remapped
+                // 6·Remap(len, 50, 400, 1, 4) speed cap, and the double
+                // MoveTowards (the capped aim point, then the 32-px/tick
+                // velocity step toward it).
+                let n = target.unwrap();
+                let nc = npc_center(n);
+                let num18 = if nc.x - player_center.x > 1.0 { 1 } else { -1 };
+                let (nw, _) = n.size();
+                let target_position =
+                    nc + Vec2::new(-(num18 as f32) * (nw * 0.5 + 70.0), -10.0) - c;
+                let max_move = 6.0 * remap(target_position.length(), 50.0, 400.0, 1.0, 4.0);
+                self.vel = move_towards(
+                    self.vel,
+                    move_towards(Vec2::ZERO, target_position, max_move),
+                    32.0,
+                );
+                self.direction = num18;
+                self.sprite_direction = num18;
+                // `:44891-44902` — the 4-tick retarget: the POST-increment
+                // compare (`localAI[0]++ >= 3`) fires on the tick the old
+                // value reads 3, resets to 0, and re-scans from the OWNER's
+                // centre with the −1 distance seed.
+                let lai = self.local_ai[0];
+                self.local_ai[0] += 1.0;
+                if lai >= 3.0 {
+                    self.local_ai[0] = 0.0;
+                    let (t, _) =
+                        Self::ai_120_guardian_find_target(npcs, player_center, num2, -1.0);
+                    if t != -1 {
+                        self.ai[1] = t as f32;
+                        self.net_update = true;
+                    }
+                }
+            }
+        }
+        // `:44905-44909` — every other ai[0] value is a no-op (the C#'s
+        // discarded `_ =` arm).
+        // `:44910-44913` — the teleport tail: ONLY state 3, and states 1/2
+        // can arm it mid-tick (the chain above falls through here).
+        if self.ai[0] != 3.0 {
+            return;
+        }
+        // `:44914-44922` — the rest point or the idle revert (the lerp
+        // below still runs on the revert tick, exactly as the C#).
+        if pl.minion_rest_target_point != Vec2::ZERO {
+            vector = pl.minion_rest_target_point;
+        } else {
+            self.ai[0] = 0.0;
+            self.net_update = true;
+        }
+        // `:44923-44955` — the dematerialize flash (alpha 0 → 255, the 30×2
+        // burst) or the 2×2 trail burst — both dust bodies are the
+        // documented skip; the alpha flip is the state.
+        if self.alpha == 0 {
+            self.alpha = 255;
+        }
+        // `:44956-44962` — the 0.7 damp, the 20% centre lerp, and the
+        // arrival test (< 10 px) back to the rest hover.
+        self.vel *= 0.7;
+        let c = Vec2::from(self.center());
+        self.set_center(c.lerp(vector, 0.2));
+        if Vec2::from(self.center()).distance(vector) < 10.0 {
+            self.ai[0] = 1.0;
+            self.net_update = true;
+        }
+    }
+
     /// `AI_189_Volcano` (`Projectile.cs:42264-42371`) — the Volcano (978) and
     /// the Cascade Explosion (1125).
     ///
@@ -15387,6 +15768,36 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
+                        // (`Projectile.cs:34888-34891`) ->
+                        // `AI_120_StardustGuardian` (`:44634-44963`): the
+                        // Stardust Guardian (623), the style's ONLY
+                        // SetDefaults row (`:6699-6716`), so no kind gate.
+                        // The row was data-rowed but AI-INERT until this arm
+                        // (census §3c — UNARMED_ROWED's last entry). The
+                        // owner writes ride the mutable player channel (the
+                        // ai_flying_minion shape); `i` is the C# `whoAmI`
+                        // the tank-pet claim stamps.
+                        120 => {
+                            self.slots[i].ai_stardust_guardian(
+                                i,
+                                player.as_deref_mut(),
+                                &npcs[..],
+                                local_owner,
+                            );
+                            // `HandleMovement` (`:17015`): the row keeps
+                            // `tileCollide = false` (`:6711`) and aiStyle
+                            // 120 is not in `UpdatePosition`'s skip list
+                            // (`:20435`), so the free integrate runs every
+                            // sub-step — including the owner-inactive kill
+                            // tick (the C# moves the dead slot too; the
+                            // `if !active` return sits AFTER, `:17027`).
+                            // `manualDirectionChange = true` (`:6713`)
+                            // suppresses the velocity-sign facing rewrite
+                            // (`AutomaticallyChangesDirection`, `:17283`).
+                            let v = self.slots[i].vel;
+                    self.slots[i].pos += v;
+                        }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
@@ -19745,9 +20156,10 @@ mod tests {
         // armed, so the spiky ball is NOT in this list. 194 left the list
         // with S1-D-4 W-10 (the Horseman's pumpkin arm landed);
         // 31/147/181/193 left with the unarmed-styles slice
-        // (projectile_ai_misc). 120 stays: StardustGuardian rowed but arm
-        // UNOWNED (R62's kinds are 872/873/874/919/923 — next-wave item).
-        const UNARMED_ROWED: [u8; 1] = [120];
+        // (projectile_ai_misc); 120 left with S1-P-i56 (the
+        // ai_stardust_guardian arm — the list is EMPTY, every rowed style
+        // is armed or kind-gated).
+        const UNARMED_ROWED: [u8; 0] = [];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -30742,8 +31154,10 @@ mod summon_tests {
     /// DW-1.2's dirty variant (the plan's edge case): a summon row whose
     /// aiStyle has no ported arm dispatches nothing — the slot holds
     /// position while its `timeLeft` runs down. The aiStyle-62 family and the
-    /// Twins' 66 are ported, so the still-unported styles carry the check:
-    /// the Storm Tiger's 67 and the Guardian's 120.
+    /// Twins' 66 are ported, and the Guardian's 120 joined them with
+    /// S1-P-i56 (`ai_stardust_guardian`), so the still-unported style
+    /// carrying the check is the Storm Tiger's 67 (its rowed kinds ride
+    /// the 67 arm's pirate/pet gates and fall through untouched).
     #[test]
     fn test_edge_unported_ai_style_holds_position() {
         let mut pool = ProjectilePool::new();
@@ -30751,20 +31165,6 @@ mod summon_tests {
         let mut w = world();
         let tiger = pool
             .spawn_with_data_ai_owned(STORM_TIGER_1, 0, 320.0, 320.0, 1.5, 0.0, 0, 0.0, 0.0, 0.0)
-            .unwrap();
-        let guardian = pool
-            .spawn_with_data_ai_owned(
-                STARDUST_GUARDIAN,
-                0,
-                480.0,
-                320.0,
-                0.0,
-                -1.0,
-                0,
-                0.0,
-                0.0,
-                0.0,
-            )
             .unwrap();
         for _ in 0..5 {
             pool.update(
@@ -30789,10 +31189,6 @@ mod summon_tests {
         );
         assert_eq!(p.time_left, 18000 - 5, "the bookkeeping still runs");
         assert_eq!(p.minion_pos, 0);
-        let p = &pool.slots[guardian];
-        assert!(p.active);
-        assert_eq!((p.pos.x, p.pos.y), (480.0, 320.0));
-        assert_eq!(p.time_left, 18000 - 5);
     }
 
     /// DW-1.3: the two identification sets match the C# lists
@@ -37515,5 +37911,618 @@ mod channel_machinery_tests {
         tick(&mut pool, &mut w, &mut p);
         assert!(!pool.slots()[slot].active);
         assert!(!p.channel, "the untracked 0 default matches slot 0");
+    }
+}
+
+#[cfg(test)]
+mod s1_p_i56_guardian_tests {
+    //! S1-P-i56 — the Stardust Guardian arm (`AI_120_StardustGuardian`,
+    //! `Projectile.cs:44634-44963` + `AI_120_StardustGuardian_FindTarget`
+    //! `:44965-44982`, the dispatch `:34888-34891`). WRITTEN NOT RUN
+    //! (code-only mode). The witnesses mirror the C# state machine on the
+    //! port's seams: the idle drift + leash-gated acquire, the attack
+    //! posture's accel/damp pairs, the owner-only dash commit, the dash's
+    //! double MoveTowards steering + 4-tick retarget, the abort gates, the
+    //! rest-hover/teleport states (the rest point stays ZERO until the
+    //! Forbidden set writer lands — the revert arms are the live path),
+    //! the tank-pet claim + the player-side decay, and the ZERO-draw RNG
+    //! census (every roll in the C# arm is a NewDust internal).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at a fixed spot: centre (410, 321) — x 400 + WIDTH/2,
+    /// y 300 + height/2 (42). Facing 1 (the spawn default).
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.stardust_guardian = true;
+        p.max_minions = 1;
+        p
+    }
+
+    /// A Guardian slot placed by CENTRE (the C# witnesses reason in
+    /// centres; the spawn seam takes the position corner).
+    fn guardian_at(w: &World, cx: f32, cy: f32) -> Projectile {
+        let d = proj_data(STARDUST_GUARDIAN).unwrap();
+        Projectile {
+            active: true,
+            kind: STARDUST_GUARDIAN,
+            owner: 0,
+            pos: Vec2::new(cx - d.w * 0.5, cy - d.h * 0.5),
+            w: d.w,
+            h: d.h,
+            time_left: d.time_left,
+            max_penetrate: d.penetrate,
+            penetrate: d.penetrate,
+            uses_local_immunity: d.uses_local_immunity,
+            local_hit_cooldown: d.local_hit_cooldown,
+            tile_collide: d.tile_collide,
+            minion: d.minion,
+            minion_slots: d.minion_slots,
+            net_important: d.net_important,
+            ignore_water: d.ignore_water,
+            ..Default::default()
+        }
+    }
+
+    /// A chaseable NPC by CENTRE — the Zombie's 18x40 box
+    /// (`npc/data.rs:2522-2543`).
+    fn npc_centered(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (w, h) = n.size();
+        n.x = cx - w * 0.5;
+        n.y = cy - h * 0.5;
+        n
+    }
+
+    /// One AI tick on the bare slot (no pool bookkeeping) — the arm under
+    /// test, `whoAmI` 7 (a non-zero slot so the tank claim is observable).
+    fn ai_tick(p: &mut Projectile, pl: &mut Player, npcs: &[Npc]) {
+        p.ai_stardust_guardian(7, Some(pl), npcs, 0);
+    }
+
+    /// The scripted stream: records every draw (the `DebrisScript` shape).
+    /// The Guardian arm must draw NOTHING through the whole pool pass.
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    /// The row + sheet pins: the SetDefaults slice (`Projectile.cs:6699-
+    /// 6716`) and the 19-frame sheet (`Main.cs:8497`).
+    #[test]
+    fn s1_p_i56_the_row_and_sheet_match_set_defaults() {
+        let d = proj_data(STARDUST_GUARDIAN).unwrap();
+        assert_eq!((d.w, d.h), (50.0, 80.0), ":6702-6703");
+        assert_eq!(d.ai_style, 120, ":6704");
+        assert_eq!(d.penetrate, -1, ":6705");
+        assert_eq!(d.time_left, 18000, ":6706 — the *= 5 off 3600 (:787)");
+        assert!(d.minion && !d.sentry, ":6707");
+        assert_eq!(d.minion_slots, 0.0, ":6709 — the 0-slot pet");
+        assert!(d.ignore_water, ":6710");
+        assert!(!d.tile_collide, ":6711");
+        assert!(d.net_important, ":6701/:6712");
+        assert!(d.uses_local_immunity, ":6714");
+        assert_eq!(d.local_hit_cooldown, 5, ":6715");
+        assert_eq!(proj_frames(STARDUST_GUARDIAN), 19, "Main.cs:8497");
+    }
+
+    /// The owner-inactive kill (`:44636-44641`): no player → dead slot,
+    /// nothing else touched.
+    #[test]
+    fn s1_p_i56_the_inactive_owner_kills_the_guardian() {
+        let w = world();
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        p.ai_stardust_guardian(7, None, &[], 0);
+        assert!(!p.active, ":44639");
+        assert_eq!(p.time_left, 0, "the port's death convention (kill())");
+    }
+
+    /// The idle drift (`:44687-44697`): the 5% centre lerp toward the
+    /// hover point (owner centre − (15·facing, 25)), the velocity halves,
+    /// the facing rides the owner, the 9-tick frame machine wraps at 8.
+    #[test]
+    fn s1_p_i56_the_idle_drifts_to_the_hover_point() {
+        let w = world();
+        let mut pl = owner(&w);
+        // Centre (500, 400): the hover point is (395, 296) — 410−15, 321−25.
+        let mut p = guardian_at(&w, 500.0, 400.0);
+        p.vel = Vec2::new(4.0, -2.0);
+        p.alpha = 255; // the materialize flash arms
+        ai_tick(&mut p, &mut pl, &[]);
+        // Lerp((500,400), (395,296), 0.05) = (494.75, 394.8).
+        let c = Vec2::from(p.center());
+        assert!((c.x - 494.75).abs() < 1e-3, "the 5% x lerp: {}", c.x);
+        assert!((c.y - 394.8).abs() < 1e-3, "the 5% y lerp: {}", c.y);
+        assert_eq!(p.vel, Vec2::new(2.0, -1.0), ":44688 — the halves");
+        assert_eq!(p.direction, 1, ":44689 — the owner's facing");
+        assert_eq!(p.sprite_direction, 1);
+        assert_eq!(p.alpha, 0, ":44663-44665 — the materialize flash");
+        assert_eq!(p.frame_counter, 1, ":44690 — the first tick");
+        // The keep-alive pin (`:44655-44658`): the live flag pins 2.
+        assert_eq!(p.time_left, 2, ":44657");
+        // Eight more ticks: the counter wraps on the 9th, the frame steps.
+        for _ in 0..8 {
+            ai_tick(&mut p, &mut pl, &[]);
+        }
+        assert_eq!(p.frame_counter, 0, ":44691-44692 — the 9-tick wrap");
+        assert_eq!(p.frame, 1, ":44693");
+        // The idle state claims NO tank pet (`:44680`).
+        assert_eq!(pl.tank_pet, -1);
+    }
+
+    /// The dead owner clears the summon flag (`:44651-44654`) — no pin,
+    /// the life runs down.
+    #[test]
+    fn s1_p_i56_the_dead_owner_clears_the_flag() {
+        let w = world();
+        let mut pl = owner(&w);
+        pl.dead = true;
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        let tl = p.time_left;
+        ai_tick(&mut p, &mut pl, &[]);
+        assert!(!pl.stardust_guardian, ":44653");
+        assert_eq!(p.time_left, tl, "no pin on the dead owner");
+        assert!(p.active, "the slot lives until the life runs out");
+    }
+
+    /// The acquire scan (`:44698-44708` + `:44965-44982`): the nearest
+    /// chaseable NPC to the OWNER's centre inside 500 px; the posture
+    /// faces it, the X accel fires inside the leash band, and the
+    /// owner-only commit arms the dash (`:44734-44739`).
+    #[test]
+    fn s1_p_i56_the_idle_acquire_commits_the_dash() {
+        let w = world();
+        let mut pl = owner(&w);
+        // Guardian at the hover point (395, 296) — inside the leash, so
+        // the scan runs. NPC centre (475, 300): 65 px off the owner
+        // (inside 500), 80 px right of the Guardian.
+        let mut p = guardian_at(&w, 395.0, 296.0);
+        let npcs = vec![npc_centered(475.0, 300.0)];
+        ai_tick(&mut p, &mut pl, &npcs);
+        assert_eq!(p.ai[0], 2.0, ":44736 — the dash commit");
+        assert_eq!(p.ai[1], 0.0, ":44737 — the target index");
+        assert!(p.net_update, ":44738");
+        assert_eq!(p.direction, 1, ":44712 — face the target");
+        // The X accel (`:44718-44721`): num6 = |395−395| = 0 < 150,
+        // num7 = 80 ∈ (20, 250) → vx += 0.1 (the idle half ran first:
+        // 0 × 0.5 = 0). The lerp moved the centre 5% toward (395,296) —
+        // it was already there, so the distances hold exactly.
+        assert!((p.vel.x - 0.1).abs() < 1e-5, "the 0.1 accel: {}", p.vel.x);
+    }
+
+    /// The scan is the OWNER-centred nearest pick (`:44967-44979`), NOT
+    /// the Guardian's: a far-from-owner NPC inside the Guardian's own
+    /// reach is skipped; the closer-to-owner one wins even when farther
+    /// from the Guardian. The range shrinks per pick.
+    #[test]
+    fn s1_p_i56_the_scan_centres_on_the_owner() {
+        let npcs = vec![
+            npc_centered(1000.0, 321.0), // 590 off the owner — outside 500
+            npc_centered(700.0, 321.0),  // 290 off the owner
+            npc_centered(600.0, 321.0),  // 190 off the owner — the pick
+        ];
+        let (t, d) = Projectile::ai_120_guardian_find_target(
+            &npcs,
+            Vec2::new(410.0, 321.0),
+            500.0,
+            500.0,
+        );
+        assert_eq!(t, 2, "the nearest to the OWNER");
+        assert!((d - 190.0).abs() < 1e-3, "the returned distance: {d}");
+        // No chaseable NPC inside the range: −1, the seed passes through.
+        let dead = vec![{
+            let mut n = npc_centered(500.0, 321.0);
+            n.hp = 0;
+            n
+        }];
+        let (t, d) = Projectile::ai_120_guardian_find_target(
+            &dead,
+            Vec2::new(410.0, 321.0),
+            500.0,
+            -1.0,
+        );
+        assert_eq!(t, -1);
+        assert_eq!(d, -1.0, "the −1 seed of the dash retarget (:44895)");
+    }
+
+    /// The leash gate (`:44701-44704`): more than num + 20 = 170 px off
+    /// the hover point in X, the scan never runs — no dash commit even
+    /// with a target in range.
+    #[test]
+    fn s1_p_i56_the_far_guardian_skips_the_scan() {
+        let w = world();
+        let mut pl = owner(&w);
+        // Centre (600, 296): |600 − 395| = 205 > 170 → flag3 false.
+        let mut p = guardian_at(&w, 600.0, 296.0);
+        let npcs = vec![npc_centered(475.0, 300.0)];
+        ai_tick(&mut p, &mut pl, &npcs);
+        assert_eq!(p.ai[0], 0.0, "the scan was gated off");
+        assert!(!p.net_update);
+    }
+
+    /// The non-local owner never commits the dash (`:44734` — the
+    /// `owner == Main.myPlayer` gate); the posture still runs.
+    #[test]
+    fn s1_p_i56_the_foreign_owner_never_commits() {
+        let w = world();
+        let mut pl = owner(&w);
+        let mut p = guardian_at(&w, 395.0, 296.0);
+        p.owner = 3; // not the local player 0
+        let npcs = vec![npc_centered(475.0, 300.0)];
+        ai_tick(&mut p, &mut pl, &npcs);
+        assert_eq!(p.ai[0], 0.0, "no commit off-machine");
+        assert_eq!(p.direction, 1, "the posture still faces the target");
+        assert!((p.vel.x - 0.1).abs() < 1e-5, "the accel still runs");
+    }
+
+    /// The dash steering (`:44885-44890`): the stand-off point on the
+    /// target's far side from the owner, the 6·Remap(len, 50, 400, 1, 4)
+    /// cap, the double MoveTowards (aim capped, then the 32-px velocity
+    /// step). Hand-computed: owner (410,321), Guardian (410,321), NPC
+    /// centre (610,321) → num18 = 1, the Zombie's 18-px box gives the
+    /// offset (−(9+70), −10) = (−79,−10), target_position = (121,−10);
+    /// from rest the velocity IS the capped aim (len < 32).
+    #[test]
+    fn s1_p_i56_the_dash_steers_to_the_standoff_point() {
+        let w = world();
+        let mut pl = owner(&w);
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        p.ai[0] = 2.0;
+        p.ai[1] = 0.0;
+        let npcs = vec![npc_centered(610.0, 321.0)];
+        ai_tick(&mut p, &mut pl, &npcs);
+        assert_eq!(p.ai[0], 2.0, "the dash holds");
+        assert_eq!(p.direction, 1, ":44890 — num18");
+        assert_eq!(p.sprite_direction, 1);
+        // The C# float chain, mirrored: len = sqrt(121² + 10²).
+        let len = (121.0f32 * 121.0 + 10.0 * 10.0).sqrt();
+        let ramp = get_lerp_value(50.0, 400.0, len);
+        let cap = 6.0 * (1.0 + 3.0 * ramp);
+        let aim = Vec2::new(121.0, -10.0).normalize() * cap;
+        assert!((p.vel.x - aim.x).abs() < 1e-3, "vx {}: want {}", p.vel.x, aim.x);
+        assert!((p.vel.y - aim.y).abs() < 1e-3, "vy {}: want {}", p.vel.y, aim.y);
+        // The tank claim (`:44680-44684`): the non-idle tick pins it.
+        assert_eq!(pl.tank_pet, 7, "the whoAmI stamp");
+        assert!(!pl.tank_pet_reset, "the decay disarm");
+        // The retarget counter (`:44891`): the post-increment fires at
+        // the OLD value 3 — tick 1 reads 0, so localAI[0] is now 1.
+        assert_eq!(p.local_ai[0], 1.0);
+    }
+
+    /// The 4-tick retarget (`:44891-44902`): ticks 1-3 advance the
+    /// counter, tick 4 (old value 3) resets it and re-scans; a found
+    /// target rewrites ai[1] + netUpdate.
+    #[test]
+    fn s1_p_i56_the_dash_retargets_every_fourth_tick() {
+        let w = world();
+        let mut pl = owner(&w);
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        p.ai[0] = 2.0;
+        p.ai[1] = 0.0;
+        // Target 0 close (holds the dash), target 1 nearer the OWNER —
+        // the retarget must flip to it on tick 4.
+        let npcs = vec![
+            npc_centered(610.0, 321.0), // 200 off the owner
+            npc_centered(510.0, 321.0), // 100 off the owner
+        ];
+        for _ in 0..3 {
+            ai_tick(&mut p, &mut pl, &npcs);
+            assert_eq!(p.ai[1], 0.0, "no retarget before tick 4");
+        }
+        assert_eq!(p.local_ai[0], 3.0);
+        p.net_update = false;
+        ai_tick(&mut p, &mut pl, &npcs);
+        assert_eq!(p.local_ai[0], 0.0, ":44893 — the reset");
+        assert_eq!(p.ai[1], 1.0, ":44899 — the nearer pick");
+        assert!(p.net_update, ":44900");
+    }
+
+    /// The abort gates (`:44858-44882`): the Guardian beyond 500 px of
+    /// the OWNER, or the target unchaseable / beyond 500 px of the
+    /// Guardian, reverts to idle with ai[1] cleared and the frame floored
+    /// at 18.
+    #[test]
+    fn s1_p_i56_the_dash_aborts_on_the_two_gates() {
+        let w = world();
+        let mut pl = owner(&w);
+        // Gate 1: the Guardian itself out of the owner's 500-px reach.
+        let mut p = guardian_at(&w, 1010.0, 321.0); // 600 off the owner
+        p.ai[0] = 2.0;
+        p.ai[1] = 0.0;
+        p.frame = 5;
+        let npcs = vec![npc_centered(1010.0, 321.0)];
+        ai_tick(&mut p, &mut pl, &npcs);
+        assert_eq!(p.ai[0], 0.0, ":44876 — flag5 false");
+        assert_eq!(p.ai[1], 0.0, ":44875");
+        assert!(p.net_update);
+        assert_eq!(p.frame, 18, ":44878-44881 — the recover floor");
+        // Gate 2: the target dead (unchaseable) while the Guardian is home.
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        p.ai[0] = 2.0;
+        p.ai[1] = 0.0;
+        p.frame = 20; // above the floor — the max(18, frame) keeps it
+        let mut dead = npc_centered(500.0, 321.0);
+        dead.hp = 0;
+        ai_tick(&mut p, &mut pl, &[dead]);
+        assert_eq!(p.ai[0], 0.0, ":44868 — CanBeChasedBy false");
+        assert_eq!(p.frame, 20, "the floor only lifts");
+        // Gate 2b: the target beyond the Guardian's 500-px reach while
+        // the Guardian stays inside the owner's (gate 1 holds at 490 px;
+        // the target 550 px off the Guardian — the dash's held ai[1]
+        // never re-checks the owner side).
+        let mut p = guardian_at(&w, 900.0, 321.0); // 490 off the owner — gate 1 holds
+        p.ai[0] = 2.0;
+        p.ai[1] = 0.0;
+        let npcs = vec![npc_centered(350.0, 321.0)]; // 550 off the Guardian
+        ai_tick(&mut p, &mut pl, &npcs);
+        assert_eq!(p.ai[0], 0.0, ":44868 — the distance gate");
+        // The out-of-range index (`IndexInRange`, :44865): ai[1] = 99
+        // with one NPC — no panic, the abort fires.
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        p.ai[0] = 2.0;
+        p.ai[1] = 99.0;
+        ai_tick(&mut p, &mut pl, &[npc_centered(500.0, 321.0)]);
+        assert_eq!(p.ai[0], 0.0);
+    }
+
+    /// The dash frame machine (`:44838-44857`): the floor at 12, the
+    /// 8-tick rate on frames 12/13 (3 otherwise), the wrap 19 → 14. The
+    /// target sits 100 px off the owner so the flying Guardian stays
+    /// inside both 500-px gates for the whole 39-tick walk.
+    #[test]
+    fn s1_p_i56_the_dash_frame_machine() {
+        let w = world();
+        let mut pl = owner(&w);
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        p.ai[0] = 2.0;
+        p.ai[1] = 0.0;
+        p.frame = 3; // below the floor
+        let npcs = vec![npc_centered(510.0, 321.0)];
+        ai_tick(&mut p, &mut pl, &npcs);
+        assert_eq!(p.frame, 12, ":44841-44844 — the floor");
+        assert_eq!(p.frame_counter, 1);
+        // 7 more ticks at rate 8: the counter wraps on the 8th, 12 → 13.
+        for _ in 0..7 {
+            ai_tick(&mut p, &mut pl, &npcs);
+        }
+        assert_eq!(p.frame, 13);
+        assert_eq!(p.frame_counter, 0);
+        // 8 more: 13 → 14, then the rate drops to 3.
+        for _ in 0..8 {
+            ai_tick(&mut p, &mut pl, &npcs);
+        }
+        assert_eq!(p.frame, 14);
+        for _ in 0..3 {
+            ai_tick(&mut p, &mut pl, &npcs);
+        }
+        assert_eq!(p.frame, 15, "the 3-tick rate past frame 13");
+        // Walk to the wrap: frames 15 → 16 → 17 → 18 at 3 ticks each,
+        // then 18 → 19 wraps to 14 (`:44852-44855`) — 12 ticks, 4 wraps.
+        for _ in 0..12 {
+            ai_tick(&mut p, &mut pl, &npcs);
+        }
+        assert_eq!(p.frame, 14, ":44854 — the 19 → 14 wrap");
+    }
+
+    /// The rest-hover revert (`:44744-44752`): no rest point → ai[0] 0 +
+    /// netUpdate, but the C# CONTINUES into the scan/drift block with the
+    /// hover point (no early return) — near the hover point the drift
+    /// damps 0.8 and the state stays 0 (the teleport tail does not run).
+    #[test]
+    fn s1_p_i56_the_rest_state_reverts_without_a_point() {
+        let w = world();
+        let mut pl = owner(&w);
+        // Centre (400, 300): the hover point (395, 296) is 5/4 px off —
+        // inside both dead-bands, so the drift damps and nothing re-arms.
+        let mut p = guardian_at(&w, 400.0, 300.0);
+        p.ai[0] = 1.0;
+        p.vel = Vec2::new(3.0, 3.0);
+        ai_tick(&mut p, &mut pl, &[]);
+        assert_eq!(p.ai[0], 0.0, ":44750");
+        assert!(p.net_update, ":44751");
+        assert_eq!(p.vel, Vec2::new(2.4, 2.4), ":44810/:44824 — the 0.8 damp");
+        // The tank claim ran BEFORE the revert (ai[0] was 1, :44680).
+        assert_eq!(pl.tank_pet, 7);
+    }
+
+    /// The rest drift (`:44798-44825`) with a rest point: inside the
+    /// ±20/±10 dead-bands the velocity damps 0.8 and the X facing reads
+    /// the OWNER's centre; outside, the 0.06 accel toward the point.
+    #[test]
+    fn s1_p_i56_the_rest_drift_damps_and_steers() {
+        let w = world();
+        let mut pl = owner(&w);
+        pl.minion_rest_target_point = Vec2::new(400.0, 316.0);
+        // Guardian centre (410, 321): dx = −10 (inside 20), dy = −5
+        // (inside 10) → both damp; the facing reads the owner centre
+        // 410 < 410 false → −1 (`:44811`, ToDirectionInt).
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        p.ai[0] = 1.0;
+        p.vel = Vec2::new(2.0, 2.0);
+        ai_tick(&mut p, &mut pl, &[]);
+        assert_eq!(p.vel, Vec2::new(1.6, 1.6), "the 0.8 damp pair");
+        assert_eq!(p.direction, -1, ":44811 — the owner-relative facing");
+        assert_eq!(p.ai[0], 1.0, "the hover holds");
+        // Outside the X band: centre (450, 321), dx = −50 → face left,
+        // vx += −0.06. dy = −5 stays damped.
+        let mut p = guardian_at(&w, 450.0, 321.0);
+        p.ai[0] = 1.0;
+        ai_tick(&mut p, &mut pl, &[]);
+        assert_eq!(p.direction, -1, ":44805");
+        assert!((p.vel.x + 0.06).abs() < 1e-6, "the 0.06 accel");
+        assert_eq!(p.vel.y, 0.0);
+        // Beyond num + 40 = 190 px in X: the teleport state arms and the
+        // tail runs THIS tick (alpha flip + the 0.7 damp + the 20% lerp).
+        let mut p = guardian_at(&w, 650.0, 321.0); // dx = −250
+        p.ai[0] = 1.0;
+        p.vel = Vec2::new(10.0, 0.0);
+        p.alpha = 0;
+        ai_tick(&mut p, &mut pl, &[]);
+        assert_eq!(p.ai[0], 3.0, ":44800 — the teleport arm");
+        assert_eq!(p.alpha, 255, ":44923-44925 — the dematerialize flash");
+        assert!((p.vel.x - 7.0).abs() < 1e-4, ":44956 — the 0.7 damp");
+        // Lerp((650,321), (400,316), 0.2) = (600, 320).
+        let c = Vec2::from(p.center());
+        assert!((c.x - 600.0).abs() < 1e-3, "the 20% lerp: {}", c.x);
+        assert!((c.y - 320.0).abs() < 1e-3);
+    }
+
+    /// The teleport arrival (`:44958-44962`): inside 10 px of the rest
+    /// point the state flips to the hover (1) + netUpdate. Without a
+    /// rest point the state reverts to idle but the lerp still runs
+    /// (`:44918-44922` — no early return).
+    #[test]
+    fn s1_p_i56_the_teleport_arrives_and_reverts() {
+        let w = world();
+        let mut pl = owner(&w);
+        pl.minion_rest_target_point = Vec2::new(400.0, 316.0);
+        // Centre (405, 318): after the 20% lerp → (404, 317.6), 4.03 px
+        // off the point — inside 10.
+        let mut p = guardian_at(&w, 405.0, 318.0);
+        p.ai[0] = 3.0;
+        ai_tick(&mut p, &mut pl, &[]);
+        assert_eq!(p.ai[0], 1.0, ":44960 — the arrival");
+        assert!(p.net_update);
+        // No rest point: revert to 0, the lerp toward the HOVER point
+        // (395, 296) still runs this tick.
+        pl.minion_rest_target_point = Vec2::ZERO;
+        let mut p = guardian_at(&w, 500.0, 400.0);
+        p.ai[0] = 3.0;
+        p.vel = Vec2::new(2.0, 0.0);
+        ai_tick(&mut p, &mut pl, &[]);
+        assert_eq!(p.ai[0], 0.0, ":44920");
+        assert!(p.net_update);
+        let c = Vec2::from(p.center());
+        // Lerp((500,400), (395,296), 0.2) = (479, 379.2).
+        assert!((c.x - 479.0).abs() < 1e-3, "the revert-tick lerp: {}", c.x);
+        assert!((c.y - 379.2).abs() < 1e-3);
+        assert!((p.vel.x - 1.4).abs() < 1e-5, "the 0.7 damp");
+    }
+
+    /// The tank-pet decay (`Player.cs:24539-24548`): the first tick arms
+    /// the grace latch, the second drops an un-re-pinned claim; a live
+    /// Guardian's re-pin (the AI's `tankPetReset = false`) keeps it.
+    #[test]
+    fn s1_p_i56_the_tank_pet_decay_and_repin() {
+        let w = world();
+        let mut pl = owner(&w);
+        pl.tank_pet = 7;
+        pl.tank_pet_decay();
+        assert_eq!(pl.tank_pet, 7, "the grace tick keeps the claim");
+        assert!(pl.tank_pet_reset);
+        pl.tank_pet_decay();
+        assert_eq!(pl.tank_pet, -1, ":24547 — the second tick drops it");
+        // The re-pin cycle: claim → decay arms → the AI disarms → the
+        // decay arms again — the claim never drops while the dash runs.
+        pl.tank_pet = 7;
+        pl.tank_pet_reset = false;
+        let mut p = guardian_at(&w, 410.0, 321.0);
+        p.ai[0] = 2.0;
+        p.ai[1] = 0.0;
+        let npcs = vec![npc_centered(610.0, 321.0)];
+        for _ in 0..4 {
+            pl.tank_pet_decay();
+            ai_tick(&mut p, &mut pl, &npcs);
+            assert_eq!(pl.tank_pet, 7, "the live dash keeps its claim");
+            assert!(!pl.tank_pet_reset, "the AI re-disarms (:44683)");
+        }
+        // The idle state does NOT re-pin — two decays drop the claim.
+        p.ai[0] = 0.0;
+        pl.tank_pet_decay();
+        ai_tick(&mut p, &mut pl, &npcs);
+        pl.tank_pet_decay();
+        assert_eq!(pl.tank_pet, -1, "the idle Guardian lets it go");
+    }
+
+    /// The rest-point invalidation (`Player.cs:57005-57007`): a point
+    /// beyond 1000 px of the player's CENTRE zeroes; inside stays.
+    #[test]
+    fn s1_p_i56_the_far_rest_point_zeroes() {
+        let w = world();
+        let mut pl = owner(&w); // centre (410, 321)
+        pl.minion_rest_target_point = Vec2::new(1411.0, 321.0); // 1001 px
+        pl.invalidate_minion_target(&[]);
+        assert_eq!(pl.minion_rest_target_point, Vec2::ZERO, ">1000 drops");
+        pl.minion_rest_target_point = Vec2::new(1409.0, 321.0); // 999 px
+        pl.invalidate_minion_target(&[]);
+        assert_eq!(
+            pl.minion_rest_target_point,
+            Vec2::new(1409.0, 321.0),
+            "inside 1000 stays"
+        );
+    }
+
+    /// The dispatch wiring + the ZERO-draw RNG census: a pool-spawned
+    /// Guardian runs the arm (the idle drift moves it off the spawn
+    /// corner), the keep-alive pins the life, and the WHOLE pass draws
+    /// nothing on the UpdateProjectiles stream — every C# roll in the
+    /// arm is a NewDust internal (`:44668`/`:44672`/`:44928`/`:44932`/
+    /// `:44943`/`:44948`), the documented dust-pool skip.
+    #[test]
+    fn s1_p_i56_the_dispatch_runs_and_draws_nothing() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut pl = owner(&w);
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                STARDUST_GUARDIAN,
+                0,
+                475.0, // centre (500, 360) — off the hover point
+                320.0,
+                0.0,
+                0.0,
+                10,
+                1.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        for _ in 0..12 {
+            pl.num_minions = 0;
+            pl.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut [],
+                None,
+                None,
+                Some(&mut pl),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                true,
+            );
+        }
+        let p = &pool.slots()[slot];
+        assert!(p.active, "the 0-slot minion lives at cap 1");
+        // The idle lerp moved the centre toward (395, 296) — 12 ticks of
+        // 5% closing: 500 − 105·(1 − 0.95¹²) ≈ 451.7.
+        let cx = p.pos.x + p.w * 0.5;
+        assert!(cx < 470.0 && cx > 430.0, "the drift ran: {cx}");
+        assert_eq!(p.time_left, 1, "the pin 2 minus the tail decrement");
+        assert_eq!(p.frame, 1, "12 ticks: one 9-wrap + 3 counts");
+        assert_eq!(p.frame_counter, 3);
+        assert!(rng.draws.is_empty(), "the arm draws NO Next: {:?}", rng.draws);
+        assert_eq!(rng.floats, 0, "the arm draws NO NextFloat");
     }
 }

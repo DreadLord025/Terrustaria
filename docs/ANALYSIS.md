@@ -13886,13 +13886,16 @@ Apprentice T2/T3 set flags (`ArmorSetBonuses.cs:74-78`/`:99-104`, the triples
 - **The 131 shot's movement** rides the generic `kill_step` (the aiStyle-28 frost
   bolt precedent): the shot keeps `tileCollide = true`, integrates `pos += vel`
   and dies on a tile hit вЂ” the generic `HandleMovement` tail, not a per-type arm.
-- **Deferred вЂ” aiStyle 120 (Stardust Guardian, `:44634-44964`)**: the ~12-minute
+- **Deferred — aiStyle 120 (Stardust Guardian, `:44634-44964`)**: the ~12-minute
   scope took the tower style first. The Guardian needs unported player machinery
   (`tankPet`/`tankPetReset` `Player.cs:870-872`/`:24539-24547`,
-  `MinionRestTargetPoint`/`HasMinionRestTarget` `:4060` вЂ” the rest-hover states 1/3
+  `MinionRestTargetPoint`/`HasMinionRestTarget` `:4060` — the rest-hover states 1/3
   depend on them; without the rest target they revert to the idle state) plus its
   19-frame sheet (`Main.cs:8497`) and the teleport dust bursts. It stays on the
-  S1-D-4b-3 row.
+  S1-D-4b-3 row. **RESOLVED 2026-11-20 by S1-P-i56** — the arm landed with the
+  player machinery (`Player.tank_pet_reset` + `tank_pet_decay`,
+  `minion_rest_target_point` + the >1000-px invalidation) and the 19-frame row;
+  see "The Stardust Guardian arm (S1-P-i56)" below.
 - Tests (written, not run): `s1_d_4b_9_flame_burst_tests` вЂ” the row/frame pins,
   the dispatch + 300-wrap, the unclamped shot fire + muzzle centring + same-tick
   shot-arm run, the per-tier cycle wrap, the Apprentice cone/speed test, the
@@ -31055,6 +31058,8 @@ Census slice P-3 (`docs/research/50-entity-ai-census.md` §3c on
 NO dispatch arm. This round takes **31 / 147 / 181 / 193**; **194**
 (HorsemanPumpkin, R56 / TR-wire15) and **120** (StardustGuardian, R62 /
 TR-emproj) are other workers' in-flight claims and stay out.
+**(2026-11-20 update: 194 landed with S1-D-4 W-10 and 120 with S1-P-i56 —
+`UNARMED_ROWED` is now EMPTY, every rowed style is armed or kind-gated.)**
 
 **Per-style census + verdict** (kinds from `projectile/data.rs`, C# arms
 read WHOLE before porting):
@@ -33941,3 +33946,104 @@ seam checked by read/grep (`rect_distance`/`solid_tile_allow_bottom_slope`
 `pub(crate)`, the `tag_effects` scalar seams, `settings.reversed_armor_bonuses`,
 the `WhipCurveInputs` field, the registry's accessory rows). The 28
 witness tests are WRITTEN, NOT RUN — no compiler invoked.
+
+## The Stardust Guardian arm (S1-P-i56, 2026-11-20, code-only mode)
+
+**Scope.** The last `UNARMED_ROWED` entry: aiStyle **120**, the Stardust
+Guardian (623) — the 0-slot summon pet's idle / rest-hover / attack-dash /
+teleport-return machine. C# read WHOLE: `AI_120_StardustGuardian`
+(`Projectile.cs:44634-44963`), `AI_120_StardustGuardian_FindTarget`
+(`:44965-44982`), the dispatch arm (`:34888-34891`), the `SetDefaults` row
+(`:6699-6716`), the frame table (`Main.cs:8497` — 19 frames), the player
+machinery (`Player.cs:870-872` tankPet/tankPetReset, `:24539-24548` the
+decay, `:3006`/`:4060` MinionRestTargetPoint/HasMinionRestTarget,
+`:56999-57028` UpdateMinionTarget), `HandleMovement`/`UpdatePosition`
+(`:17469`/`:20433-20446` — 120 is NOT in the skip list),
+`AutomaticallyChangesDirection` (`:17281-17288` — the row's
+`manualDirectionChange = true` suppresses the velocity-sign rewrite),
+`Utils.MoveTowards`/`Remap`/`ToDirectionInt`
+(`Utils.cs:1772-1780`/`:345-348`/`:2010-2017`), `Entity.Distance`
+(`Entity.cs:195-198` — centre-based), `NPC.CanBeChasedBy`
+(`NPC.cs:90030-90041`).
+
+**The port.** `Projectile::ai_stardust_guardian` +
+`Projectile::ai_120_guardian_find_target` (`projectile.rs`, inline after
+`ai_horseman_pumpkin` — the `ai_floating_turrets` precedent), the `120 =>`
+dispatch arm (the mutable-player channel, `i` as the C# `whoAmI`), the
+free `pos += vel` integrate after the AI (the row keeps
+`tileCollide = false`; the owner-inactive kill tick still integrates —
+the C#'s `if !active` return sits AFTER `HandleMovement`, `:17027`).
+The state machine is verbatim: the parameter block (150-px leash behind
+the owner's facing — the C#'s INT `(5 + width/2)` = 15 — and 25 px up),
+the keep-alive pin (`timeLeft = 2` while the summon flag holds; death
+clears the flag), the materialize/dematerialize alpha flips, the tank
+claim (`tankPet = whoAmI`, `tankPetReset = false` every non-idle tick),
+the idle 5% lerp + 0.5 damp + 9-tick frame machine (wrap 8), the
+leash-gated acquire scan (owner-centred nearest, NO LOS — unlike the
+sentry scans), the attack posture's per-axis accel/damp pairs (the Y
+pair measures from the Guardian's BOTTOM), the owner-only dash commit,
+the dash's frame machine (floor 12, rate 8 on frames 12/13 else 3, wrap
+19 → 14), the two abort gates (Guardian inside 500 of the owner, target
+chaseable + inside 500 of the Guardian; abort floors the frame at 18),
+the stand-off steering (`num18` from the OWNER-relative X, half-width +
+70 px offset, 10 px up, `6·Remap(len, 50, 400, 1, 4)` cap, the double
+MoveTowards with the 32-px velocity step), the 4-tick POST-increment
+retarget (`localAI[0]++ >= 3`, the −1 distance seed), the rest-hover
+drift (0.06 accel / 0.8 damp, the settled X facing reads the OWNER's
+centre, `Math.Sign` on Y via `csign`), the teleport tail (0.7 damp, 20%
+lerp, <10 px arrival → state 1) — states 1/2 can arm state 3 mid-tick
+and the tail runs it the same tick, exactly as the C# falls through.
+
+**The player machinery** (the deferred prerequisite, now landed):
+`Player.tank_pet_reset` (the `:872` field) + `Player::tank_pet_decay`
+(the `:24539-24548` one-tick grace latch), called inside BOTH
+fixed-step branches of `world_sim::player::update_player` — the dead
+branch ahead of `update_dead` and the alive branch ahead of
+`invalidate_minion_target`, as the C# runs the block ahead of the
+dead-player early return (`:24749-24754`) and ahead of
+`UpdateMinionTarget` (`:24738`); the projectile pass runs after the
+player pass, so the previous tick's re-pin is what the decay reads
+(the vanilla order).
+`Player.minion_rest_target_point` (the `:3006` field, `Vec2::ZERO` =
+`HasMinionRestTarget` false) + the >1000-px centre-distance invalidation
+half of `UpdateMinionTarget` (`:57005-57007`) folded into
+`invalidate_minion_target`. The WRITER (`MinionRestTargetAim`
+`:56935-56997`, the Forbidden set's down double-tap `KeyDoubleTap`
+`:56779-56786`) is unported — the armor set has no port yet — so the
+rest point stays ZERO and states 1/3 revert to idle exactly as the
+vanilla does without the set. The rest-point dust ring (`:57013-57027`)
+is a documented visual skip behind the same gate. The 19-frame row
+landed in `proj_frames` (`data.rs`, `Main.cs:8497`).
+
+**RNG: ZERO draws by construction.** Every `Main.rand` roll in the C#
+arm is a `Dust.NewDust` INTERNAL (`:44668`/`:44672`/`:44928`/`:44932`/
+`:44943`/`:44948` — `Dust.cs:170-175`/`:190`/`:216`, pool-occupancy
+dependent); there are NO gate draws outside the dust calls. The pool
+has no dust layer, so the bodies and their rolls are the documented
+skip (the `ai_flying_minion`/`ai_stardust_mark` precedent) and the arm
+takes NO rng parameter. The dispatch witness
+(`s1_p_i56_the_dispatch_runs_and_draws_nothing`) runs 12 full pool ticks
+through a draw-census stream and pins zero `Next`/`NextFloat`.
+
+**Documented skips.** The dust bursts (the 30×2 materialize /
+dematerialize / 2×2 trail), `Lighting.AddLight` (`:44662`), the
+armor-shader writes (`GameShaders.Armor.GetSecondaryShader`), the
+`MinionRestTargetAim` writer + its dust ring (above). The frame machines
+ARE ported (the slot carries `frame`/`frame_counter`).
+
+**The pin updates.** `UNARMED_ROWED` is now `[u8; 0]` — every rowed
+style is armed or kind-gated (the coverage pin
+`s1_d_4c_every_rowed_style_has_exactly_one_live_arm` keeps guarding both
+directions). `test_edge_unported_ai_style_holds_position` drops its
+Guardian half (the 120 arm is live now); the Storm Tiger's 67 keeps the
+inert-row check.
+
+**Verification.** Code-only: the C# arm re-read whole and matched
+line-by-line (the else-if chain's fall-through into the state-3 tail,
+the post-increment retarget, the INT hover offset, the bottom-anchored Y
+posture, the owner-vs-Guardian scan centres, the two 500-px gates'
+different anchors); every seam checked by read/grep (`set_center`,
+`npc_center`, `csign`, `remap`, `move_towards`, `get_lerp_value`,
+`kill()`, `proj_frames`, the `Player` fields, the dispatch's arm-indent
+contract the coverage pin parses). The 18 witness tests in
+`s1_p_i56_guardian_tests` are WRITTEN, NOT RUN — **no compiler invoked**.

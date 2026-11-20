@@ -492,6 +492,7 @@ pub struct Player {
     /// Written by [`Player::minion_rest_target_aim`] and cleared by the
     /// set-bonus down-hold (`KeyHoldDown` `:56894-56912`) and the
     /// >1000-px invalidation (`UpdateMinionTarget` `:57005-57007`).
+    /// (S1-P-i27 landed the writer; i56's Guardian rest states 1/3 read it.)
     pub minion_rest_target_point: Vec2,
     /// `Player.setForbidden` (`ArmorSetBonuses.cs:61-66`) — the Forbidden
     /// armor set bonus flag; the double-tap-down rest aim + storm command
@@ -592,9 +593,20 @@ pub struct Player {
     /// penalty (`NPC.cs:77689`) and facing suppression (`:77740`).
     pub npc_type_no_aggro: Vec<bool>,
     /// `Player.tankPet` (`Player.cs:870`, default -1): the projectile
-    /// slot of the player's tank pet (the mount/pet system is unported —
-    /// stock -1; the target scan's steal arm reads it, `NPC.cs:77701`).
+    /// slot of the player's tank pet — AI_120's Guardian pins it every
+    /// non-idle tick (`Projectile.cs:44680-44684`, S1-P-i56); the target
+    /// scan's steal arm reads it (`NPC.cs:77701`).
     pub tank_pet: i32,
+    /// `Player.tankPetReset` (`Player.cs:872`, default false): the
+    /// one-tick grace latch — `Player.Update` (`:24539-24548`) sets it
+    /// on the first tick a tank pet is held and clears `tankPet` to -1
+    /// on the next tick the pet did NOT re-pin it. The Guardian's AI
+    /// writes false every non-idle tick (`Projectile.cs:44683`), so a
+    /// live Guardian keeps its claim; an idle/despawned one lets the
+    /// decay drop it. The player-side decay is ported as
+    /// `Player::tank_pet_decay`, called inside both fixed-step branches
+    /// of `world_sim::player::update_player` (S1-P-i56).
+    pub tank_pet_reset: bool,
     /// `Player.numberOfDeathsPVE` (`Player.cs:834`, `:38844`): the PVE death
     /// counter `/death` reads (`DeathCommand`).
     pub deaths_pve: u32,
@@ -1989,6 +2001,7 @@ impl Player {
             aggro: 0,
             npc_type_no_aggro: vec![false; crate::npc::NpcKind::CS_ID_COUNT],
             tank_pet: -1,
+            tank_pet_reset: false,
             composite_front: crate::player::CompositeArmState::DISABLED,
             composite_back: crate::player::CompositeArmState::DISABLED,
             deaths_pve: 0,
@@ -8820,6 +8833,24 @@ impl Player {
         }
     }
 
+    /// `Player.Update`'s tank-pet decay (`Player.cs:24539-24548`): while
+    /// `tankPet >= 0`, the first tick arms the one-tick grace latch
+    /// (`tankPetReset = true`); a tick where the pet did NOT re-pin the
+    /// claim (AI_120 writes `tankPetReset = false` every non-idle tick,
+    /// `Projectile.cs:44683`) drops it to -1. The callers run it inside
+    /// both fixed-step branches — the C# block sits ahead of the
+    /// dead-player early return (`:24749-24754`), so the dead player's
+    /// claim decays too. S1-P-i56.
+    pub fn tank_pet_decay(&mut self) {
+        if self.tank_pet >= 0 {
+            if !self.tank_pet_reset {
+                self.tank_pet_reset = true;
+            } else {
+                self.tank_pet = -1;
+            }
+        }
+    }
+
     /// `Player.UpdateMinionTarget` (`Player.cs:56999-57028`) — the per-tick
     /// minion-target maintenance (the `whoAmI == Main.myPlayer` gate,
     /// `:57001-57004`, folds to the local player: the port runs one).
@@ -8827,13 +8858,17 @@ impl Player {
     /// S1-P-i27 fixes (verbatim against the C#):
     /// * the rest target drops when the player drifts past 1000 px
     ///   (`base.Distance(MinionRestTargetPoint) > 1000f`, `:57005-57007`) —
-    ///   `base.Distance` is CENTRE-to-point (`Entity.cs:195-198`).
+    ///   `base.Distance` is CENTRE-to-point (`Entity.cs:195-198`); the C#
+    ///   runs the compare UNCONDITIONALLY (a ZERO point is >1000 px from
+    ///   any real player and re-zeroes — no `!= ZERO` gate).
     /// * the attack target drops when unchaseable OR its HITBOX is past
     ///   3000 px (`Main.npc[..].Hitbox.Distance(base.Center) > 3000f`,
     ///   `:57009-57011`) — rectangle-to-CENTRE, not centre-to-position.
     ///
     /// The stardust-guardian rest-spot dust ring (`:57013-57027`) is the
-    /// visual layer (deferred, ANALYSIS).
+    /// visual layer (deferred, ANALYSIS). Gate-merge: supersedes i56's
+    /// `invalidate_minion_target` (same halves; the i56 name stays as an
+    /// alias for its witnesses).
     pub fn update_minion_target(&mut self, npcs: &[Npc]) {
         let (cx, cy) = self.center();
         let player_center = Vec2::new(cx, cy);
@@ -8863,6 +8898,13 @@ impl Player {
                 self.minion_attack_target_npc = -1;
             }
         }
+    }
+
+    /// S1-P-i56's name for the same `UpdateMinionTarget` maintenance —
+    /// kept as an alias for the Guardian witnesses (the live tick calls
+    /// [`Player::update_minion_target`], S1-P-i27's canonical form).
+    pub fn invalidate_minion_target(&mut self, npcs: &[Npc]) {
+        self.update_minion_target(npcs);
     }
 
     /// `Player.HasMinionRestTarget` (`Player.cs:4060`): the rest spot is set
