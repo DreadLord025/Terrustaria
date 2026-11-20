@@ -1612,6 +1612,12 @@ fn portrait_data(
         (NpcKind::GiantBat, _) => (sheet_i, 20.0, 26.0, 20.0, white),
         (NpcKind::Corruptor, _) => (sheet_i, 44.0, 44.0, 44.0, white),
         (NpcKind::DiggerHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        // W4-d35 (D): the 96/97/98/99/100 portraits rest the SetDefaults box.
+        (NpcKind::DiggerBody, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::DiggerTail, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::SeekerHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::SeekerBody, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::SeekerTail, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

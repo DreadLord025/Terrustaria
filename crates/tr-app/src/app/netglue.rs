@@ -3605,6 +3605,16 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d35 (D): the 96/97/98/99/100 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::DiggerBody
+        | crate::npc::NpcKind::DiggerTail
+        | crate::npc::NpcKind::SeekerHead
+        | crate::npc::NpcKind::SeekerBody
+        | crate::npc::NpcKind::SeekerTail => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

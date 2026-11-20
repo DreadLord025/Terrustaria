@@ -500,6 +500,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Unicorn => &[],
         NpcKind::GiantBat => &[],
         NpcKind::Corruptor => &[31],
+        // W4-d35 (D): the 96/97/98/99/100 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::DiggerBody => &[31],
+        NpcKind::DiggerTail => &[31],
+        NpcKind::SeekerHead => &[31],
+        NpcKind::SeekerBody => &[31],
+        NpcKind::SeekerTail => &[31],
         NpcKind::DiggerHead => &[31],
         NpcKind::EnchantedSword => &[20, 24, 31, 323],
         NpcKind::Mummy => &[],

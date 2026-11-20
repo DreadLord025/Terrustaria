@@ -1112,6 +1112,12 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // Officer (Hide=true), but its DRAW sheet is its own NPC_384
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
+        // W4-d35 (D): the 96/97/99/100 Hide kinds' DRAW sheets are their
+        // own NPC_<id> (net_id() folds to the head; the fishron-hazard precedent).
+        NpcKind::DiggerBody => 96,
+        NpcKind::DiggerTail => 97,
+        NpcKind::SeekerBody => 99,
+        NpcKind::SeekerTail => 100,
         NpcKind::ForceBubble => 384,
         _ => kind.net_id() as u16,
     }
@@ -3194,6 +3200,15 @@ pub(crate) fn draw_npcs(
             NpcKind::GiantBat => generic_anchor(assets.npc_sheet(93), 4, n, w, h),
             NpcKind::Corruptor => generic_anchor(assets.npc_sheet(94), 3, n, w, h),
             NpcKind::DiggerHead => generic_anchor(assets.npc_sheet(95), 1, n, w, h),
+            // W4-d35 (D): the 96/97/98/99/100 draw arms. **Sheet deferral**:
+            // NPC_96/97/98/99/100 are NOT packed (the atlas stands at the 8192
+            // strict-GPU bound - the wyvern precedent); npc_sheet returns
+            // None and the draw skips. The packing rides the atlas-repack wave.
+            NpcKind::DiggerBody => generic_anchor(assets.npc_sheet(96), 1, n, w, h),
+            NpcKind::DiggerTail => generic_anchor(assets.npc_sheet(97), 1, n, w, h),
+            NpcKind::SeekerHead => generic_anchor(assets.npc_sheet(98), 1, n, w, h),
+            NpcKind::SeekerBody => generic_anchor(assets.npc_sheet(99), 1, n, w, h),
+            NpcKind::SeekerTail => generic_anchor(assets.npc_sheet(100), 1, n, w, h),
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3298,6 +3313,12 @@ pub(crate) fn draw_npcs(
                     | NpcKind::WyvernBody2
                     | NpcKind::WyvernBody3
                     | NpcKind::WyvernTail
+                    // W4-d35 (D): the 96/97/98/99/100 chain/spin rotations.
+                    | NpcKind::DiggerBody
+                    | NpcKind::DiggerTail
+                    | NpcKind::SeekerHead
+                    | NpcKind::SeekerBody
+                    | NpcKind::SeekerTail
                     // W4-d35 (C): the 95 chain/spin rotations.
                     | NpcKind::DiggerHead
                     // W4-d35 (B): the 83/84 chain/spin rotations.

@@ -2288,6 +2288,15 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::DiggerHead,
         variant: None,
         quick_unlock: false,
+    // W4-d35 (D): the 98 data-wave entries.
+    BestiaryEntryDef {
+        credit_id: "SeekerHead",
+        net_id: 98,
+        kind: NpcKind::SeekerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "World Feeder",
+    },
         name: "Digger",
     },
         name: "Enchanted Sword",
@@ -2404,6 +2413,13 @@ pub fn try_entry_for_npc(
         | NpcKind::WyvernBody2
         | NpcKind::WyvernBody3
         | NpcKind::WyvernTail => NpcKind::WyvernHead,
+        // W4-d35 (D): the 96/97/99/100 Hide=true kinds fold onto
+        // the head's entry (NPCID.cs DrawOffset Hide; the populator's
+        // GetExclusions skips them - the Wyvern-segment precedent).
+        NpcKind::DiggerBody => NpcKind::DiggerHead,
+        NpcKind::DiggerTail => NpcKind::DiggerHead,
+        NpcKind::SeekerBody => NpcKind::SeekerHead,
+        NpcKind::SeekerTail => NpcKind::SeekerHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -2449,6 +2465,13 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         | NpcKind::WyvernBody2
         | NpcKind::WyvernBody3
         | NpcKind::WyvernTail => NpcKind::WyvernHead,
+        // W4-d35 (D): the 96/97/99/100 Hide=true kinds fold onto
+        // the head's entry (NPCID.cs DrawOffset Hide; the populator's
+        // GetExclusions skips them - the Wyvern-segment precedent).
+        NpcKind::DiggerBody => NpcKind::DiggerHead,
+        NpcKind::DiggerTail => NpcKind::DiggerHead,
+        NpcKind::SeekerBody => NpcKind::SeekerHead,
+        NpcKind::SeekerTail => NpcKind::SeekerHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead

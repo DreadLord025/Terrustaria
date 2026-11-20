@@ -1146,6 +1146,26 @@ pub enum NpcKind {
     /// 22x22, aiStyle 6, dmg 45, def 10, 200 HP,
     /// kb 0.0, value 300, noGravity, noTileCollide, behindTiles, netAlways. UNWIRED (data-only; the AI lands with its wave).
     DiggerHead,
+    /// `NPCID.DiggerBody` (96) - W4-d35 data wave (`NPC.cs:10094-10112`):
+    /// 22x22, aiStyle 6, dmg 28, def 20, 200 HP,
+    /// kb 0.0, value 300, noGravity, noTileCollide, behindTiles, netAlways. UNWIRED (data-only; the AI lands with its wave). Bestiary folds onto DiggerHead (Hide=true).
+    DiggerBody,
+    /// `NPCID.DiggerTail` (97) - W4-d35 data wave (`NPC.cs:10113-10131`):
+    /// 22x22, aiStyle 6, dmg 26, def 30, 200 HP,
+    /// kb 0.0, value 300, noGravity, noTileCollide, behindTiles, netAlways. UNWIRED (data-only; the AI lands with its wave). Bestiary folds onto DiggerHead (Hide=true).
+    DiggerTail,
+    /// `NPCID.SeekerHead` (98) - W4-d35 data wave (`NPC.cs:10132-10149`):
+    /// 22x22, aiStyle 6, dmg 70, def 36, 500 HP,
+    /// kb 0.0, value 700, noGravity, noTileCollide, behindTiles, netAlways; npcSlots 3.5. UNWIRED (data-only; the AI lands with its wave).
+    SeekerHead,
+    /// `NPCID.SeekerBody` (99) - W4-d35 data wave (`NPC.cs:10150-10167`):
+    /// 22x22, aiStyle 6, dmg 55, def 40, 500 HP,
+    /// kb 0.0, value 700, noGravity, noTileCollide, behindTiles, netAlways. UNWIRED (data-only; the AI lands with its wave). Bestiary folds onto SeekerHead (Hide=true).
+    SeekerBody,
+    /// `NPCID.SeekerTail` (100) - W4-d35 data wave (`NPC.cs:10168-10185`):
+    /// 22x22, aiStyle 6, dmg 40, def 44, 500 HP,
+    /// kb 0.0, value 700, noGravity, noTileCollide, behindTiles, netAlways. UNWIRED (data-only; the AI lands with its wave). Bestiary folds onto SeekerHead (Hide=true).
+    SeekerTail,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3020,6 +3040,11 @@ impl Npc {
                     NpcKind::DiggerHead => Some(0.9),
                     _ => None,
                 })
+                .or_else(|| match kind {
+                    NpcKind::DiggerBody => Some(0.9),
+                    NpcKind::DiggerTail => Some(0.9),
+                    _ => None,
+                })
                 .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
@@ -3618,6 +3643,13 @@ impl Npc {
             NpcKind::GiantBat => 0.75,
             NpcKind::Corruptor => 0.55,
             NpcKind::DiggerHead => 0.0,
+            // W4-d35 (D): the 96/97/98/99/100 knockBackResist rows
+            // (the no-row kinds keep the head's 1f, NPC.cs:8533).
+            NpcKind::DiggerBody => 0.0,
+            NpcKind::DiggerTail => 0.0,
+            NpcKind::SeekerHead => 0.0,
+            NpcKind::SeekerBody => 0.0,
+            NpcKind::SeekerTail => 0.0,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4016,6 +4048,12 @@ impl Npc {
             NpcKind::GiantBat => 16,
             NpcKind::Corruptor => 32,
             NpcKind::DiggerHead => 10,
+            // W4-d35 (D): the 96/97/98/99/100 defense rows.
+            NpcKind::DiggerBody => 20,
+            NpcKind::DiggerTail => 30,
+            NpcKind::SeekerHead => 36,
+            NpcKind::SeekerBody => 40,
+            NpcKind::SeekerTail => 44,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4406,6 +4444,12 @@ impl Npc {
             NpcKind::GiantBat => 400.0,
             NpcKind::Corruptor => 500.0,
             NpcKind::DiggerHead => 300.0,
+            // W4-d35 (D): the 96/97/98/99/100 value rows (copper).
+            NpcKind::DiggerBody => 300.0,
+            NpcKind::DiggerTail => 300.0,
+            NpcKind::SeekerHead => 700.0,
+            NpcKind::SeekerBody => 700.0,
+            NpcKind::SeekerTail => 700.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6439,6 +6483,13 @@ impl Npc {
             | NpcKind::GiantBat
             | NpcKind::Corruptor
             | NpcKind::DiggerHead => {}
+            // W4-d35 (D): the 96/97/98/99/100 kinds are UNWIRED (data-only);
+            // the AI lands with its wave (the wyvern no-op precedent).
+            NpcKind::DiggerBody
+            | NpcKind::DiggerTail
+            | NpcKind::SeekerHead
+            | NpcKind::SeekerBody
+            | NpcKind::SeekerTail => {}
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
     }
@@ -9214,6 +9265,13 @@ impl Npc {
             | NpcKind::GiantBat
             | NpcKind::Corruptor
             | NpcKind::DiggerHead => {}
+            // W4-d35 (D): the 96/97/98/99/100 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::DiggerBody
+            | NpcKind::DiggerTail
+            | NpcKind::SeekerHead
+            | NpcKind::SeekerBody
+            | NpcKind::SeekerTail => {}
         }
     }
 
@@ -18792,6 +18850,12 @@ impl Npc {
             NpcKind::GiantBat => 441,
             NpcKind::Corruptor => 442,
             NpcKind::DiggerHead => 443,
+            // W4-d35 (D): the port-local band (to_u16's ids).
+            NpcKind::DiggerBody => 444,
+            NpcKind::DiggerTail => 445,
+            NpcKind::SeekerHead => 446,
+            NpcKind::SeekerBody => 447,
+            NpcKind::SeekerTail => 448,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23861,7 +23925,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 285] = [
+    pub(super) const ALL_KINDS: [NpcKind; 290] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24157,6 +24221,12 @@ mod tests {
         NpcKind::GiantBat,
         NpcKind::Corruptor,
         NpcKind::DiggerHead,
+        // W4-d35 (D): the 96/97/98/99/100 data-wave kinds.
+        NpcKind::DiggerBody,
+        NpcKind::DiggerTail,
+        NpcKind::SeekerHead,
+        NpcKind::SeekerBody,
+        NpcKind::SeekerTail,
         NpcKind::WyvernTail,
     ];
 
@@ -27769,7 +27839,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            285,
+            290,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31429,6 +31499,12 @@ mod s1_d_2_tests {
         (NpcKind::GiantBat, 14),
         (NpcKind::Corruptor, 5),
         (NpcKind::DiggerHead, 6),
+        // W4-d35 (D).
+        (NpcKind::DiggerBody, 6),
+        (NpcKind::DiggerTail, 6),
+        (NpcKind::SeekerHead, 6),
+        (NpcKind::SeekerBody, 6),
+        (NpcKind::SeekerTail, 6),
         (NpcKind::WyvernTail, 6),
     ];
 
@@ -34113,5 +34189,114 @@ mod w4_d35_c_tests {
         assert_eq!(e.credit_id, "DiggerHead", "DiggerHead credit");
         assert_eq!(e.name, "Digger", "DiggerHead name");
         assert_eq!(NpcKind::DiggerHead.cs_id(), 95, "DiggerHead cs_id");
+    }
+}
+
+#[cfg(test)]
+mod w4_d35_d_tests {
+    //! W4-d35 batch D (96/97/98/99/100) - the data-only SetDefaults wave.
+    //! Every row pins verbatim to the C# (`NPC.cs:10094-10112`, `NPC.cs:10113-10131`, `NPC.cs:10132-10149`, `NPC.cs:10150-10167`, `NPC.cs:10168-10185`). WRITTEN, NOT RUN
+    //! (code-only mode); the smallkinds-witness precedent.
+    use super::*;
+
+    #[test]
+    fn w4_d35_d_the_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value, scale, alpha)
+        let rows = [
+            (NpcKind::DiggerBody, 96u16, 6u8, 22.0, 22.0, 28, 20, 200, 0.0f32, 300.0f32, 0.9f32, 0u8),
+            (NpcKind::DiggerTail, 97u16, 6u8, 22.0, 22.0, 26, 30, 200, 0.0f32, 300.0f32, 0.9f32, 0u8),
+            (NpcKind::SeekerHead, 98u16, 6u8, 22.0, 22.0, 70, 36, 500, 0.0f32, 700.0f32, 1.0f32, 0u8),
+            (NpcKind::SeekerBody, 99u16, 6u8, 22.0, 22.0, 55, 40, 500, 0.0f32, 700.0f32, 1.0f32, 0u8),
+            (NpcKind::SeekerTail, 100u16, 6u8, 22.0, 22.0, 40, 44, 500, 0.0f32, 700.0f32, 1.0f32, 0u8),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value, scale, alpha) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // cs_id: visible kinds ride their own vanilla id; the Hide
+            // kinds fold to the head (the fallback reads the head entry).
+            if crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            }
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, scale, "{kind:?} scale");
+            assert_eq!(shell.alpha, alpha, "{kind:?} alpha");
+        }
+        // sounds
+        assert_eq!(NpcKind::DiggerBody.hit_sound(), Some("NPC_Hit_1"), "DiggerBody hit");
+        assert_eq!(NpcKind::DiggerBody.death_sound(), Some("NPC_Killed_1"), "DiggerBody death");
+        assert_eq!(NpcKind::DiggerTail.hit_sound(), Some("NPC_Hit_1"), "DiggerTail hit");
+        assert_eq!(NpcKind::DiggerTail.death_sound(), Some("NPC_Killed_1"), "DiggerTail death");
+        assert_eq!(NpcKind::SeekerHead.hit_sound(), Some("NPC_Hit_1"), "SeekerHead hit");
+        assert_eq!(NpcKind::SeekerHead.death_sound(), Some("NPC_Killed_1"), "SeekerHead death");
+        assert_eq!(NpcKind::SeekerBody.hit_sound(), Some("NPC_Hit_1"), "SeekerBody hit");
+        assert_eq!(NpcKind::SeekerBody.death_sound(), Some("NPC_Killed_1"), "SeekerBody death");
+        assert_eq!(NpcKind::SeekerTail.hit_sound(), Some("NPC_Hit_1"), "SeekerTail hit");
+        assert_eq!(NpcKind::SeekerTail.death_sound(), Some("NPC_Killed_1"), "SeekerTail death");
+        // protocol band (port-local 429..; the vanilla ids collide)
+        assert_eq!(NpcKind::DiggerBody.to_u16(), 444, "DiggerBody proto");
+        assert_eq!(NpcKind::from_u16(444), Some(NpcKind::DiggerBody), "DiggerBody decode");
+        assert_eq!(NpcKind::DiggerTail.to_u16(), 445, "DiggerTail proto");
+        assert_eq!(NpcKind::from_u16(445), Some(NpcKind::DiggerTail), "DiggerTail decode");
+        assert_eq!(NpcKind::SeekerHead.to_u16(), 446, "SeekerHead proto");
+        assert_eq!(NpcKind::from_u16(446), Some(NpcKind::SeekerHead), "SeekerHead decode");
+        assert_eq!(NpcKind::SeekerBody.to_u16(), 447, "SeekerBody proto");
+        assert_eq!(NpcKind::from_u16(447), Some(NpcKind::SeekerBody), "SeekerBody decode");
+        assert_eq!(NpcKind::SeekerTail.to_u16(), 448, "SeekerTail proto");
+        assert_eq!(NpcKind::from_u16(448), Some(NpcKind::SeekerTail), "SeekerTail decode");
+        // flags
+        assert_eq!(NpcKind::DiggerBody.behind_tiles(), true, "DiggerBody behindTiles");
+        assert_eq!(NpcKind::DiggerBody.no_gravity(), false, "DiggerBody noGravity");
+        assert_eq!(NpcKind::DiggerTail.behind_tiles(), true, "DiggerTail behindTiles");
+        assert_eq!(NpcKind::DiggerTail.no_gravity(), false, "DiggerTail noGravity");
+        assert_eq!(NpcKind::SeekerHead.behind_tiles(), true, "SeekerHead behindTiles");
+        assert_eq!(NpcKind::SeekerHead.no_gravity(), false, "SeekerHead noGravity");
+        assert_eq!(NpcKind::SeekerBody.behind_tiles(), true, "SeekerBody behindTiles");
+        assert_eq!(NpcKind::SeekerBody.no_gravity(), false, "SeekerBody noGravity");
+        assert_eq!(NpcKind::SeekerTail.behind_tiles(), true, "SeekerTail behindTiles");
+        assert_eq!(NpcKind::SeekerTail.no_gravity(), false, "SeekerTail noGravity");
+        // debuff immunities (NPCID.cs DebuffImmunitySets)
+        let b = NpcBuffs::for_kind(NpcKind::DiggerBody);
+        assert!(b.buff_immune[31], "DiggerBody immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::DiggerTail);
+        assert!(b.buff_immune[31], "DiggerTail immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::SeekerHead);
+        assert!(b.buff_immune[31], "SeekerHead immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::SeekerBody);
+        assert!(b.buff_immune[31], "SeekerBody immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::SeekerTail);
+        assert!(b.buff_immune[31], "SeekerTail immune 31");
+        // bestiary entries / Hide folds
+        let e = crate::bestiary::entry_for_npc(NpcKind::SeekerHead, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 98, "SeekerHead net");
+        assert_eq!(e.credit_id, "SeekerHead", "SeekerHead credit");
+        assert_eq!(e.name, "World Feeder", "SeekerHead name");
+        assert_eq!(NpcKind::SeekerHead.cs_id(), 98, "SeekerHead cs_id");
+        // DiggerBody is Hide=true: folds onto DiggerHead (no own entry/cs_id hand row).
+        let e = crate::bestiary::entry_for_npc(NpcKind::DiggerBody, SlimeVariant::Blue);
+        assert_eq!(e.kind, NpcKind::DiggerHead, "DiggerBody folds to DiggerHead");
+        assert_eq!(NpcKind::DiggerBody.net_id(), e.net_id, "DiggerBody net reads the fold");
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::DiggerBody), 96, "DiggerBody draw sheet stays own");
+        // DiggerTail is Hide=true: folds onto DiggerHead (no own entry/cs_id hand row).
+        let e = crate::bestiary::entry_for_npc(NpcKind::DiggerTail, SlimeVariant::Blue);
+        assert_eq!(e.kind, NpcKind::DiggerHead, "DiggerTail folds to DiggerHead");
+        assert_eq!(NpcKind::DiggerTail.net_id(), e.net_id, "DiggerTail net reads the fold");
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::DiggerTail), 97, "DiggerTail draw sheet stays own");
+        // SeekerBody is Hide=true: folds onto SeekerHead (no own entry/cs_id hand row).
+        let e = crate::bestiary::entry_for_npc(NpcKind::SeekerBody, SlimeVariant::Blue);
+        assert_eq!(e.kind, NpcKind::SeekerHead, "SeekerBody folds to SeekerHead");
+        assert_eq!(NpcKind::SeekerBody.net_id(), e.net_id, "SeekerBody net reads the fold");
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::SeekerBody), 99, "SeekerBody draw sheet stays own");
+        // SeekerTail is Hide=true: folds onto SeekerHead (no own entry/cs_id hand row).
+        let e = crate::bestiary::entry_for_npc(NpcKind::SeekerTail, SlimeVariant::Blue);
+        assert_eq!(e.kind, NpcKind::SeekerHead, "SeekerTail folds to SeekerHead");
+        assert_eq!(NpcKind::SeekerTail.net_id(), e.net_id, "SeekerTail net reads the fold");
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::SeekerTail), 100, "SeekerTail draw sheet stays own");
     }
 }
