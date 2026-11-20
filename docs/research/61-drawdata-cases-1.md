@@ -292,3 +292,63 @@ adds raw `frame_y`, matching the C#'s `tileCache` reads exactly (the rewritten
 frame, so raw == local. Same wiring-gap pattern as d63 batch 4's 564: the glow
 record is computed faithfully but rides `_glow` (`tiles.rs:731`) until TILE-DRAW-2
 binds the glow pass — a wiring gap, not a case gap.
+
+### Batch 5 — torch + the top-2 furniture group head: 4, 78, 85, 133, 134, 173, 210, 233, 254, 283 (10 ids)
+
+C# `TileDrawing.cs:4672-4696` (25-line window), verbatim:
+
+```csharp
+		case 4:
+			tileWidth = 20;
+			tileHeight = 20;
+			if (WorldGen.SolidTile(x, y - 1))
+			{
+				tileTop = 4;
+			}
+			break;
+		case 78:
+		case 85:
+		case 133:
+		case 134:
+		case 173:
+		case 210:
+		case 233:
+		case 254:
+		case 283:
+		case 378:
+		case 457:
+		case 466:
+		case 520:
+		case 651:
+		case 652:
+			tileTop = 2;
+			break;
+```
+
+`WorldGen.SolidTile` (`WorldGen.cs:70111-70132`), verbatim gate: null tile → true;
+else `active() && tileSolid && !tileSolidTop && !halfBrick() && slope() == 0 &&
+!inActive()` (the `noDoors` flag defaults false, unused here).
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 4 | 20x20, `tileTop = 4` on `WorldGen.SolidTile(x, y - 1)` | :4672-4679 | `drawdata.rs:245-251`; probe `tiles.rs:654-656` | PORTED (probe DEVIATION, below) |
+| 78 | `tileTop = 2` group (absolute assign) | :4680-4696 | `drawdata.rs:256-258` (15-label alternation, exact set) | PORTED |
+| 85 | shares the group | :4681 | :256-258 | PORTED |
+| 133 | shares the group | :4682 | :256-258 | PORTED |
+| 134 | shares the group | :4683 | :256-258 | PORTED |
+| 173 | shares the group | :4684 | :256-258 | PORTED |
+| 210 | shares the group | :4685 | :256-258 | PORTED |
+| 233 | shares the group | :4686 | :256-258 | PORTED |
+| 254 | shares the group | :4687 | :256-258 | PORTED |
+| 283 | shares the group | :4688 | :256-258 | PORTED |
+
+**Probe deviation (case 4, pre-existing, documented in the port):** the caller's
+`solid_above` (`tiles.rs:654-656`) checks only `active && TILE_SOLID &&
+!TILE_SOLID_TOP` — it omits the C#'s `!halfBrick() && slope() == 0 && !inActive()`
+clauses and the null-cell → true edge (`WorldGen.cs:70115-70119`). A torch under a
+half-brick, slope or actuated block therefore hangs (top 4) where vanilla stands it
+(top 0). The full-fidelity probe already exists in the codebase —
+`cases_a.rs:129-139` (`solid_tile`, ported for 518's clamp) — so this is a wiring
+gap: point `tiles.rs:654` at the same predicate (needs the null-edge decision for
+the top world row). The arm itself is verbatim; the group tail (378/457/466/520/
+651/652) is audited in batch 6 against this same body.
