@@ -281,6 +281,15 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-c32 (2026-11-20, code-only): the dungeon biome style tables land
+    // (`worldgen/dungeon_styles.rs` — DungeonGenerationStyles.cs's
+    // Snow/Desert/Crimson/Hallow statics + Crystal, GetCurrentDungeonStyle,
+    // GetStyleForTile/GetStyleForWall). UNWIRED data tables + pure lookups:
+    // no pipeline step consumes them, no RNG draw is added and no tile is
+    // written, so BOTH pins are UNCHANGED and the a == b determinism
+    // assertions stay green (the S1-K-2 wave B constants-off class). The
+    // wiring round (the dual-dungeon list arms + the per-style feature
+    // passes) re-pins when it lands.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

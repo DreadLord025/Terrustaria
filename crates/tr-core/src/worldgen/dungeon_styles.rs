@@ -731,8 +731,8 @@ mod tests {
     /// bricks are excluded (includeCracked: false), extras are included.
     #[test]
     fn w4_c32_the_lookups_walk_the_sub_styles() {
-        let styles = [&SNOW, &DESERT, &HALLOW, &CRIMSON];
-        let flat: Vec<DungeonStyleData> = styles.iter().map(|s| (*s).clone()).collect();
+        let flat: Vec<DungeonStyleData> =
+            vec![SNOW.clone(), DESERT.clone(), HALLOW.clone(), CRIMSON.clone()];
         assert_eq!(style_for_tile(&flat, 161).map(|s| s.style), Some(2));
         assert_eq!(style_for_tile(&flat, 147).map(|s| s.style), Some(2));
         assert_eq!(style_for_tile(&flat, 396).map(|s| s.style), Some(3));

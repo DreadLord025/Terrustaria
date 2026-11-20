@@ -39244,3 +39244,68 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The dungeon biome style tables (W4-c32, 2026-11-20, code-only mode)
+
+**Scope.** `crates/tr-core/src/worldgen/dungeon_styles.rs` ports
+`DungeonGenerationStyleData` (`DungeonGenerationStyleData.cs:9-169` —
+the field block :11-95, `TileIsInStyle` :108-129, `WallIsInStyle`
+:131-148, the `CanGenerateFeatureAt` base :97-100) and the four biome
+style statics the task names — Snow (`DungeonGenerationStyles.cs:352-392`),
+Desert (:393-433), Crimson (:474-513), Hallow (:553-593) — plus Crystal
+(:514-552), Hallow's only sub-style (:592, a `ShimmerStyleData` so its
+pit-trap/window refusal :13-20 rides along). The style-0 wrapper
+`GetCurrentDungeonStyle` (:95-135) reads the landed `DungeonColor`
+triple; the window walls/platform item rows (`DungeonCrawler.cs:63-92`:
+blue 91/96/8 + 1386, green 92/94/9 + 1385, pink 90/98/7 + 1384) gained
+`DungeonColor` accessors in `dungeon.rs`. The lookups
+`GetStyleForTile`/`GetStyleForWall` (:137-158/:160-185) keep the C#'s
+flag choices verbatim (`includeCracked: false, includeExtras: true` /
+`includeWindows: false, includeExtras: true`), the sub-style walk, and
+the style-0 arm's `Main.wallDungeon` test (`Main.cs:10598-10606` =
+`dungeon_features::DUNGEON_WALLS`) under `WallID.Count` 367
+(`WallID.cs:845`). `DualDungeonUnbreakableWallTiers`' 0..5 ladder and
+`DungeonRoomType`'s ordinals are ported as cited constants/enums.
+
+**Deliberate deviations / cited skips.**
+- The C#'s `int[]` furniture rows become `&'static [i32]`; the
+  null-vs-array distinction survives only where it is semantic:
+  `BannerItemTypes` (null = the `bannerStyles` fallback the landed
+  `dungeon_features::place_banners` reads; Desert's Some([790,791,789])
+  = its own banners) and `VaseOrStatueItemTypes` (null in all five).
+- `GetPlatformStyle`/`GetWindowPlatformStyle`
+  (`DungeonGenerationStyleData.cs:150-168`) are NOT ported: they read
+  `ItemID.Sets.DerivedPlacementDetails` (`ItemID.cs:304-325`), whose
+  port lives in tr-app's generated `itemdata.rs` — tr-core cannot reach
+  it; the item-data seam rides the wiring round (the landed
+  `DungeonLightStyles` resolved its chandelier styles the same way,
+  by hand: 27/28/29).
+- The other style statics (Shimmer/Spider/LivingWood/Cavern :189-351,
+  Corruption :434-473, GlowingMushroom/Beehive/LivingMahogany/Jungle/Temple
+  :594-797) stay out — the task's four + Crystal only. The
+  LivingWood/Beehive/Temple `CanGenerateFeatureAt`/bookshelf overrides
+  (:23-63) go with them; the Shimmer override is ported as the
+  `shimmer_feature_gate` flag (Crystal is its only in-scope user).
+- The dual-dungeon list arms (`DungeonCrawler.cs:111-128`: the
+  Cavern/evil/Jungle + Snow/Desert/Hallow/Temple quads) and the
+  `isDungeonTile`/`isCrackedBrick` set clones (:139-183) are out — the
+  port generates classic single-dungeon worlds (M5-SEED-2 defers
+  `dualDungeons`); `dungeon_style_list` ports the classic arm
+  (:129-132, one entry).
+- `LiquidType`/paint fields exist on the struct but no in-scope style
+  sets them (Shimmer's liquid 3 / LivingMahogany's wall paint 12 belong
+  to the skipped statics).
+
+**Determinism.** UNWIRED: data tables + pure lookups, no pipeline step
+consumes them — no RNG draw added, no tile written. BOTH world-hash pins
+(`SEED42_512`/`DEFAULT_WORLD`) are UNCHANGED and the a == b
+determinism assertions stay green (the S1-K-2 wave B constants-off
+class); the note rides `world_hash.rs`. The wiring round re-pins.
+
+**Verification.** Code-only: every row re-read against the cited C#
+windows (the static ctor :187-798 field-by-field, the lookup flag
+choices, the tier ladder, the room-type ordinals). 10 witness tests
+written NOT run (palettes, extras/chests, furniture rows, banner/dither
+flags, tile/wall membership flags, the sub-style lookups, the style-0
+wall arm, the colour wrapper, the Crystal gate). **No cargo/rustc/
+rustfmt/tests/dotnet invoked.**
