@@ -40,6 +40,19 @@
 //! reader walks the same span with the C# `Deserialize` version gates
 //! (`Player.cs:55134-55764`), consuming (and dropping) unmodelled fields.
 //!
+//! **W4-f44 phase 2: the equip/dye tails + the Journey unlocks.** The three
+//! equipment tails the reader used to drop are captured verbatim on BOTH
+//! models: `armor[20]`/`dye[10]` as `(type, prefix[, favorited >= 322])`
+//! pairs (`Serialize:54812-54823` / `Deserialize:55306-55340`), the
+//! interleaved `miscEquips[5]`/`miscDyes[5]` `(type, prefix)` pairs
+//! (`:54831-54837` / `:55420-55447`) and the accessory-hide tails —
+//! `hideVisibleAccessory[10]`'s two BitsBytes (`:54758-54769` /
+//! `:55171-55183`), `hideMisc` (`:54770` / `:55192-55195`) and `hideInfo[13]`
+//! (`:54890-54893` / `:55616-55623`). The Journey side gains the
+//! per-player creative powers `CreativePowerManager.SaveToPlayer` writes
+//! (`:54913` / `:55706-55709`, ids 5/11/14 — `CreativePowers.cs:705-707`/
+//! `:744-746`/`:1717-1719`), completing the research payload phase 1 started.
+//!
 //! **Backward compat.** The port's own pre-S1-J-5 files were a *subset* mirror
 //! stamped release 279 (truncated after the inventory, missing `team` /
 //! `hideMisc` / the 324 bool / the armour-dye favourites), and its
@@ -94,10 +107,10 @@ const ITEM_ID_COUNT: i32 = 6196;
 /// `skinVariant` clamp ceiling (`LoadPlayer_LastMinuteFixes`, `Player.cs:55830`).
 const PLAYER_VARIANT_COUNT: i32 = 12;
 
-/// The read `.plr` — the character-card state the port models. The reader
-/// walks `Deserialize` (`Player.cs:55134`) through `hideInfo`
-/// (`:55616-55623`) with the C# version gates, consuming and dropping every
-/// field the port does not model; the tail past `:55623` is a later round.
+/// The read `.plr` — the character-card state plus the per-player payloads
+/// the port models. The reader walks the full `Deserialize`
+/// (`Player.cs:55134-55762`) with the C# version gates, consuming and
+/// dropping every field the port does not model.
 pub struct PlayerFile {
     pub name: String,
     pub difficulty: u8,
@@ -119,8 +132,8 @@ pub struct PlayerFile {
     /// `Item.favorited`'s per-slot bits for the inventory — bit `i` is
     /// `inventory[i].favorited` (`Player.cs:54820-54824`'s write,
     /// `:55340-55362`'s read at release >= 114). The armour and dye
-    /// favourites ride the same shape at release >= 322 (`:55315`/`:55336`)
-    /// but have no port UI, so they are consumed and dropped.
+    /// favourites ride the per-slot bool at release >= 322
+    /// (`:55315`/`:55336`) — W4-f44 ph2 captures them on `armor`/`dye`.
     pub inv_favorites: u64,
     pub is_favorite: bool,
     pub revision: u32,
@@ -143,6 +156,78 @@ pub struct PlayerFile {
     /// (`ItemsSacrificedUnlocksTracker.cs:157-169`), the Journey research the
     /// `.plr` carries per-player (`:54911` save / `:55696-55699` load).
     pub research: Vec<(String, i32)>,
+    /// `Player.armor[20]` (`Player.cs:1488`) as `(type, prefix, favorited)` —
+    /// the write carries NO stack (`Serialize:54812-54817`); the favourited
+    /// bool is gated >= 322 on read (`Deserialize:55313-55316`). An
+    /// out-of-range type airs through `SetDefaults` (`Item.cs:48671-48674`)
+    /// and `Prefix` no-ops on air (`Item.cs:515-518`) — id+prefix air, the
+    /// favorited bit rides. Legacy ids -1..-48 (`Item.netDefaults`,
+    /// `:1213-1360`) ride verbatim so a re-save round-trips the bytes.
+    pub armor: [(i32, u8, bool); 20],
+    /// `Player.dye[10]`, the same `(type, prefix, favorited)` shape
+    /// (`Serialize:54818-54823` / `Deserialize:55330-55339`).
+    pub dye: [(i32, u8, bool); 10],
+    /// `Player.miscEquips[5]` + `Player.miscDyes[5]` interleaved per slot —
+    /// `(equip type, equip prefix, dye type, dye prefix)`
+    /// (`Serialize:54831-54837` / `Deserialize:55420-55447`, the >= 136 arm).
+    /// No stack, no favorited — the pet/light-pet/mount/cart/hook pairs.
+    pub misc: [(i32, u8, i32, u8); 5],
+    /// `Player.hideVisibleAccessory[10]` (`Player.cs:1708`) — the two
+    /// BitsBytes' bits flattened (`Serialize:54758-54769` /
+    /// `Deserialize:55171-55183`, gate 124): bits 0..7 then bits 8..9.
+    pub hide_visible_accessory: [bool; 10],
+    /// `Player.hideMisc` (`Player.cs:1710`, a BitsByte; the pet/light-pet
+    /// hide bits 0/1, `:17344`/`:17353`) — `Serialize:54770` /
+    /// `Deserialize:55192-55195`, gate 119.
+    pub hide_misc: u8,
+    /// `Player.hideInfo[13]` (`Player.cs:812`) — the info-accessory visibility
+    /// toggles (`Serialize:54890-54893` / `Deserialize:55616-55623`, gate 115).
+    pub hide_info: [bool; 13],
+    /// The Journey per-player creative powers (`CreativePowerManager
+    /// .LoadToPlayer`, `CreativePowerManager.cs:197-215`): Godmode (id 5)
+    /// and FarPlacementRange (id 11) toggles + the SpawnRate slider (id 14),
+    /// read at >= 220 (`Deserialize:55706-55709`). A fresh non-Journey player
+    /// has all three reset (`ResetPowersForPlayer`, `:211-214`).
+    pub powers: CreativePowersSave,
+}
+
+/// The three `IPersistentPerPlayerContent` powers the `.plr` carries
+/// (`CreativePowerManager.Initialize`, `CreativePowerManager.cs:86-105`):
+/// `GodmodePower` id 5 (`CreativePowers.cs:692-728`), `FarPlacementRangePower`
+/// id 11 (`:730-767`) and `SpawnRateSliderPerPlayerPower` id 14 (`:1573+`).
+/// Each Save writes one bool / one bool / one f32 (`:705-707`/`:744-746`/
+/// `:1717-1719`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CreativePowersSave {
+    pub godmode: bool,
+    pub far_placement: bool,
+    pub spawn_rate: f32,
+}
+
+impl Default for CreativePowersSave {
+    /// The reset defaults: Godmode `_defaultToggleState` false,
+    /// FarPlacementRange true (`CreativePowers.cs:736`), SpawnRate
+    /// `_sliderDefaultValue` 0.5 (`:1580`) — `ResetDataForNewPlayer`
+    /// (`:710-713`/`:749-752`/`:1722-1725`) seeds these before the Load.
+    /// The golden fixture's WRITTEN bytes are (false, false, 0f) — the
+    /// harness's non-Journey `ResetPowersForPlayer` state — so the
+    /// *writer's* default stays [`CreativePowersSave::written_fresh`].
+    fn default() -> Self {
+        CreativePowersSave { godmode: false, far_placement: true, spawn_rate: 0.5 }
+    }
+}
+
+impl CreativePowersSave {
+    /// The bytes a fresh non-Journey vanilla save writes: the harness pins
+    /// (false, false, 0f) in `golden.plr` — `SaveToPlayer` runs on the power
+    /// manager's live `_perPlayerIsEnabled`/`_sliderCurrentValueCache`
+    /// state (`CreativePowers.cs:707`/`:746`/`:1719`), which a Classic
+    /// character's session never touches (the toggles start disabled and
+    /// the slider cache starts 0f). The *saved-field* reset defaults
+    /// (false/true/0.5) are the read side's — see [`Default`].
+    pub fn written_fresh() -> Self {
+        CreativePowersSave { godmode: false, far_placement: false, spawn_rate: 0.0 }
+    }
 }
 
 /// One `EquipmentLoadout`'s persisted slots (`EquipmentLoadout.cs:8-18`):
@@ -352,11 +437,16 @@ fn read_player_fields(
     if version >= 283 {
         let _team = r.u8().ok_or(PlayerFileError::Truncated("team"))?; // `:55167-55170`
     }
-    // hideVisibleAccessory: two BitsBytes (`:55171-55183`, gate 124).
-    r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
-    r.u8().ok_or(PlayerFileError::Truncated("hide2"))?;
+    // hideVisibleAccessory: two BitsBytes (`:55171-55183`, gate 124) —
+    // W4-f44 ph2 captures the ten bits (`Serialize:54758-54769`'s order).
+    let hide1 = r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
+    let hide2 = r.u8().ok_or(PlayerFileError::Truncated("hide2"))?;
+    let mut hide_visible_accessory = [false; 10];
+    for (i, slot) in hide_visible_accessory.iter_mut().enumerate() {
+        *slot = if i < 8 { hide1 & (1 << i) != 0 } else { hide2 & (1 << (i - 8)) != 0 };
+    }
     // hideMisc (`:55192-55195`, gate 119) — the byte the old subset omitted.
-    let _hide_misc = r.u8().ok_or(PlayerFileError::Truncated("hideMisc"))?;
+    let hide_misc = r.u8().ok_or(PlayerFileError::Truncated("hideMisc"))?;
     let mut skin_variant = r.u8().ok_or(PlayerFileError::Truncated("skin"))?; // gate 107
     if version < 161 && skin_variant == 7 {
         skin_variant = 9; // `:55215-55218`
@@ -400,19 +490,42 @@ fn read_player_fields(
         }
     }
     // The armor: 20 slots x (id, prefix[, favorited >= 322]) (`:55306-55318`).
-    for _ in 0..20 {
-        r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+    // W4-f44 ph2: captured verbatim — an out-of-range type airs through
+    // `SetDefaults` (`Item.cs:48671-48674`); `Prefix` then no-ops on the air
+    // item (`CanHavePrefixes` false, `Item.cs:515-518`) so the prefix airs
+    // too, but favorited is set unconditionally (`:55315`) and rides.
+    let mut armor = [(0i32, 0u8, false); 20];
+    for slot in armor.iter_mut() {
+        let id = r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
+        let prefix = r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+        let mut fav = false;
         if version >= 322 {
-            r.boolean().ok_or(PlayerFileError::Truncated("armorFav"))?;
+            fav = r.boolean().ok_or(PlayerFileError::Truncated("armorFav"))?;
+        }
+        // The legacy negative ids -1..-48 map to real items (`Item
+        // .netDefaults`, `Item.cs:1213-1360`); the port keeps the id verbatim
+        // so a re-save round-trips the bytes (a legacy file's mapping needs
+        // the item-defaults tables the card model does not carry). Anything
+        // outside those bands airs like `SetDefaults` does.
+        if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+            *slot = (id, prefix, fav);
+        } else {
+            *slot = (0, 0, fav);
         }
     }
     // The dye: 10 slots x (id, prefix[, favorited >= 322]) (`:55319-55340`).
-    for _ in 0..10 {
-        r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+    let mut dye = [(0i32, 0u8, false); 10];
+    for slot in dye.iter_mut() {
+        let id = r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
+        let prefix = r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+        let mut fav = false;
         if version >= 322 {
-            r.boolean().ok_or(PlayerFileError::Truncated("dyeFav"))?;
+            fav = r.boolean().ok_or(PlayerFileError::Truncated("dyeFav"))?;
+        }
+        if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+            *slot = (id, prefix, fav);
+        } else {
+            *slot = (0, 0, fav);
         }
     }
     // The inventory: 58 slots (`:55341-55367`); a type at/above ItemID.Count
@@ -437,12 +550,22 @@ fn read_player_fields(
     }
     // --- the post-inventory tail the old subset never reached -------------
     // miscEquips + miscDyes: 5 x (equip id/prefix, dye id/prefix)
-    // (`:55420-55447`, gates 117/136 both true here).
-    for _ in 0..5 {
-        r.i32().ok_or(PlayerFileError::Truncated("miscEquip"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("miscEquipPrefix"))?;
-        r.i32().ok_or(PlayerFileError::Truncated("miscDye"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("miscDyePrefix"))?;
+    // (`:55420-55447`, gates 117/136 both true here) — W4-f44 ph2 captures
+    // the interleaved pairs verbatim (`Serialize:54831-54837`'s order).
+    let mut misc = [(0i32, 0u8, 0i32, 0u8); 5];
+    for slot in misc.iter_mut() {
+        let eq_id = r.i32().ok_or(PlayerFileError::Truncated("miscEquip"))?;
+        let eq_prefix = r.u8().ok_or(PlayerFileError::Truncated("miscEquipPrefix"))?;
+        let dye_id = r.i32().ok_or(PlayerFileError::Truncated("miscDye"))?;
+        let dye_prefix = r.u8().ok_or(PlayerFileError::Truncated("miscDyePrefix"))?;
+        let eq_ok = (eq_id >= 0 && eq_id < ITEM_ID_COUNT) || (-48..0).contains(&eq_id);
+        let dye_ok = (dye_id >= 0 && dye_id < ITEM_ID_COUNT) || (-48..0).contains(&dye_id);
+        *slot = (
+            if eq_ok { eq_id } else { 0 },
+            if eq_ok { eq_prefix } else { 0 },
+            if dye_ok { dye_id } else { 0 },
+            if dye_ok { dye_prefix } else { 0 },
+        );
     }
     // bank + bank2: 40 slots x (id, stack, prefix) each (`:55449-55462`, gate 58).
     for _ in 0..80 {
@@ -482,6 +605,11 @@ fn read_player_fields(
     let mut tail = PlayerTail {
         void_vault_info,
         bank4,
+        armor,
+        dye,
+        misc,
+        hide_visible_accessory,
+        hide_misc,
         ..PlayerTail::default()
     };
     if depth <= 1 {
@@ -540,8 +668,8 @@ fn read_player_fields(
         r.boolean().ok_or(PlayerFileError::Truncated("hbLocked"))?; // `:55612-55615`
     }
     if version >= 115 {
-        for _ in 0..13 {
-            r.boolean().ok_or(PlayerFileError::Truncated("hideInfo"))?; // `:55616-55623`
+        for hide in tail.hide_info.iter_mut() {
+            *hide = r.boolean().ok_or(PlayerFileError::Truncated("hideInfo"))?; // `:55616-55623`
         }
     }
     if depth <= 2 {
@@ -637,6 +765,9 @@ fn read_player_fields(
         // (`CreativePowers.cs:705-707`/`:744-746` shape), SpawnRate (14) one
         // f32 (`:1717-1719` shape). An unknown id BREAKS the loop in the C#
         // (`:203-206`) — mirror that instead of guessing a payload size.
+        // W4-f44 ph2: the loaded values ride the tail; the C# then resets
+        // them for non-Journey characters (`difficulty != 3`, `:211-214`)
+        // after the whole walk — mirrored in `finish_player_file`.
         loop {
             let more = r.boolean().ok_or(PlayerFileError::Truncated("powerFlag"))?;
             if !more {
@@ -644,11 +775,17 @@ fn read_player_fields(
             }
             let id = r.u16().ok_or(PlayerFileError::Truncated("powerId"))?;
             match id {
-                5 | 11 => {
-                    r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
+                5 => {
+                    tail.powers.godmode =
+                        r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
+                }
+                11 => {
+                    tail.powers.far_placement =
+                        r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
                 }
                 14 => {
-                    r.f32().ok_or(PlayerFileError::Truncated("powerSlider"))?;
+                    tail.powers.spawn_rate =
+                        r.f32().ok_or(PlayerFileError::Truncated("powerSlider"))?;
                 }
                 _ => break, // `CreativePowerManager.cs:203-206`
             }
@@ -731,15 +868,44 @@ fn read_player_fields(
 
 /// The per-player payloads the walk captures past the character-card state —
 /// the void vault (bank4 + the info byte), the Journey research pairs and the
-/// three equipment loadouts. Defaults for the sections a shallower port-only
-/// depth (or an older release gate) never reaches.
-#[derive(Default)]
+/// three equipment loadouts, plus (W4-f44 ph2) the armor/dye/misc equip tails,
+/// the hide flags and the creative powers. Defaults for the sections a
+/// shallower port-only depth (or an older release gate) never reaches.
 struct PlayerTail {
     current_loadout: i32,
     loadouts: [LoadoutData; 3],
     void_vault_info: u8,
     bank4: [(i32, i32, u8, bool); 40],
     research: Vec<(String, i32)>,
+    armor: [(i32, u8, bool); 20],
+    dye: [(i32, u8, bool); 10],
+    misc: [(i32, u8, i32, u8); 5],
+    hide_visible_accessory: [bool; 10],
+    hide_misc: u8,
+    hide_info: [bool; 13],
+    powers: CreativePowersSave,
+}
+
+impl Default for PlayerTail {
+    /// The fresh defaults — a manual impl because `bank4` is a 40-element
+    /// array and std's derived array `Default` stops at 32
+    /// (`core::array::array_impl_default!{32, ...}`).
+    fn default() -> Self {
+        PlayerTail {
+            current_loadout: 0,
+            loadouts: Default::default(),
+            void_vault_info: 0,
+            bank4: [(0, 0, 0, false); 40],
+            research: Vec::new(),
+            armor: [(0, 0, false); 20],
+            dye: [(0, 0, false); 10],
+            misc: [(0, 0, 0, 0); 5],
+            hide_visible_accessory: [false; 10],
+            hide_misc: 0,
+            hide_info: [false; 13],
+            powers: CreativePowersSave::default(),
+        }
+    }
 }
 
 /// The shared tail of both walk depths: the `LoadPlayer_LastMinuteFixes`
@@ -762,6 +928,12 @@ fn finish_player_file(
     tail: PlayerTail,
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
+    // CreativePowerManager.LoadToPlayer (`CreativePowerManager.cs:211-214`):
+    // a non-Journey character (difficulty != 3) has the loaded powers RESET
+    // after the walk — Godmode false / FarPlacement true / SpawnRate 0.5
+    // (`ResetDataForNewPlayer`, `CreativePowers.cs:710-713`/`:749-752`/
+    // `:1722-1725` -> the ctor defaults). Only Journey keeps the loaded state.
+    let powers = if difficulty != 3 { CreativePowersSave::default() } else { tail.powers };
     PlayerFile {
         name,
         difficulty,
@@ -787,6 +959,13 @@ fn finish_player_file(
         void_vault_info: tail.void_vault_info,
         bank4: tail.bank4,
         research: tail.research,
+        armor: tail.armor,
+        dye: tail.dye,
+        misc: tail.misc,
+        hide_visible_accessory: tail.hide_visible_accessory,
+        hide_misc: tail.hide_misc,
+        hide_info: tail.hide_info,
+        powers,
     }
 }
 
@@ -809,8 +988,13 @@ fn read_legacy_port_subset(
     }
     let _hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?;
     // The old writer emitted the two hide BitsBytes but no hideMisc.
-    r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
-    r.u8().ok_or(PlayerFileError::Truncated("hide2"))?;
+    // W4-f44 ph2: the ten hide bits ride (same order as the full walk).
+    let hide1 = r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
+    let hide2 = r.u8().ok_or(PlayerFileError::Truncated("hide2"))?;
+    let mut hide_visible_accessory = [false; 10];
+    for (i, slot) in hide_visible_accessory.iter_mut().enumerate() {
+        *slot = if i < 8 { hide1 & (1 << i) != 0 } else { hide2 & (1 << (i - 8)) != 0 };
+    }
     let mut skin_variant = r.u8().ok_or(PlayerFileError::Truncated("skin"))?;
     if skin_variant == 7 {
         skin_variant = 9; // release 279 < 161
@@ -836,13 +1020,23 @@ fn read_legacy_port_subset(
             *b = r.u8().ok_or(PlayerFileError::Truncated("color"))?;
         }
     }
-    for _ in 0..20 {
-        r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+    // The subset's armour/dye pairs (no favourited bool at 279) — W4-f44
+    // ph2 captures them with the same air policy as the full walk.
+    let mut armor = [(0i32, 0u8, false); 20];
+    for slot in armor.iter_mut() {
+        let id = r.i32().ok_or(PlayerFileError::Truncated("armor"))?;
+        let prefix = r.u8().ok_or(PlayerFileError::Truncated("armorPrefix"))?;
+        if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+            *slot = (id, prefix, false);
+        }
     }
-    for _ in 0..10 {
-        r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
-        r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+    let mut dye = [(0i32, 0u8, false); 10];
+    for slot in dye.iter_mut() {
+        let id = r.i32().ok_or(PlayerFileError::Truncated("dye"))?;
+        let prefix = r.u8().ok_or(PlayerFileError::Truncated("dyePrefix"))?;
+        if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+            *slot = (id, prefix, false);
+        }
     }
     let mut inventory = [(0i32, 0i32, 0u8); 58];
     let mut inv_favorites: u64 = 0;
@@ -889,6 +1083,15 @@ fn read_legacy_port_subset(
         void_vault_info: 0,
         bank4: [(0, 0, 0, false); 40],
         research: Vec::new(),
+        // W4-f44 ph2: the subset carries armour/dye + the hide BitsBytes;
+        // everything past the inventory is fresh defaults.
+        armor,
+        dye,
+        misc: [(0, 0, 0, 0); 5],
+        hide_visible_accessory,
+        hide_misc: 0,
+        hide_info: [false; 13],
+        powers: CreativePowersSave::default(),
     })
 }
 
@@ -934,6 +1137,25 @@ pub struct PlayerFileWrite {
     /// The Journey research pairs (`:54911` -> `ItemsSacrificedUnlocksTracker
     /// .Save`, `ItemsSacrificedUnlocksTracker.cs:157-169`).
     pub research: Vec<(String, i32)>,
+    /// `Player.armor[20]` as `(type, prefix, favorited)` (`:54812-54817`) —
+    /// no stack; the favourited bool is unconditional at 326.
+    pub armor: [(i32, u8, bool); 20],
+    /// `Player.dye[10]`, the same shape (`:54818-54823`).
+    pub dye: [(i32, u8, bool); 10],
+    /// `Player.miscEquips[5]` + `Player.miscDyes[5]` interleaved per slot —
+    /// `(equip type, equip prefix, dye type, dye prefix)` (`:54831-54837`).
+    pub misc: [(i32, u8, i32, u8); 5],
+    /// `Player.hideVisibleAccessory[10]` — the two BitsBytes (`:54758-54769`).
+    pub hide_visible_accessory: [bool; 10],
+    /// `Player.hideMisc` BitsByte (`:54770`).
+    pub hide_misc: u8,
+    /// `Player.hideInfo[13]` (`:54890-54893`).
+    pub hide_info: [bool; 13],
+    /// The Journey per-player creative powers (`:54913` ->
+    /// `CreativePowerManager.SaveToPlayer`, `CreativePowerManager.cs:183-195`).
+    /// Defaults to [`CreativePowersSave::written_fresh`] — the non-Journey
+    /// live state the golden fixture pinned.
+    pub powers: CreativePowersSave,
 }
 
 impl Default for PlayerFileWrite {
@@ -964,6 +1186,13 @@ impl Default for PlayerFileWrite {
             void_vault_info: 0,
             bank4: [(0, 0, 0, false); 40],
             research: Vec::new(),
+            armor: [(0, 0, false); 20],
+            dye: [(0, 0, false); 10],
+            misc: [(0, 0, 0, 0); 5],
+            hide_visible_accessory: [false; 10],
+            hide_misc: 0,
+            hide_info: [false; 13],
+            powers: CreativePowersSave::written_fresh(),
         }
     }
 }
@@ -1005,9 +1234,21 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(file.hair); // `:54755`
     w.u8(0); // `:54756` hairDye (default 0)
     w.u8(0); // `:54757` (byte)team (`Player.cs:1430`, default 0 = none)
-    w.u8(0); // `:54758-54763` hideVisibleAccessory[0..8] BitsByte
-    w.u8(0); // `:54764-54769` hideVisibleAccessory[8..10] BitsByte
-    w.u8(0); // `:54770` hideMisc BitsByte (`Player.cs:1710` = `(byte)0`)
+
+    // `:54758-54763` hideVisibleAccessory[0..8] BitsByte — the caller's bits
+    // (W4-f44 ph2); a fresh player's are all false.
+    let mut hide1 = 0u8;
+    for (i, hide) in file.hide_visible_accessory[..8].iter().enumerate() {
+        hide1 |= u8::from(*hide) << i;
+    }
+    w.u8(hide1);
+    // `:54764-54769` hideVisibleAccessory[8..10] BitsByte.
+    let mut hide2 = 0u8;
+    for (i, hide) in file.hide_visible_accessory[8..].iter().enumerate() {
+        hide2 |= u8::from(*hide) << i;
+    }
+    w.u8(hide2);
+    w.u8(file.hide_misc); // `:54770` hideMisc BitsByte (`Player.cs:1710` = 0 fresh)
     w.u8(file.skin_variant); // `:54771`
     w.i32(file.life); // `:54772`
     w.i32(file.life_max); // `:54773`
@@ -1044,16 +1285,17 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // armor[20]: type, prefix, favorited (`:54812-54817`) — no stack. Fresh
     // armor is all `new Item()` (type 0, prefix 0, favorited false); the
     // favourited bool is unconditional at 326 (reader gate >= 322, `:55313`).
-    for _ in 0..20 {
-        w.i32(0);
-        w.u8(0);
-        w.boolean(false);
+    // W4-f44 ph2: the caller's slots ride verbatim.
+    for (id, prefix, fav) in file.armor {
+        w.i32(id);
+        w.u8(prefix);
+        w.boolean(fav);
     }
     // dye[10]: type, prefix, favorited (`:54818-54823`).
-    for _ in 0..10 {
-        w.i32(0);
-        w.u8(0);
-        w.boolean(false);
+    for (id, prefix, fav) in file.dye {
+        w.i32(id);
+        w.u8(prefix);
+        w.boolean(fav);
     }
     // inventory[58]: type, stack, prefix, favorited (`:54824-54830`).
     for (i, (id, stack, prefix)) in file.inventory.iter().enumerate() {
@@ -1064,12 +1306,12 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     }
     // miscEquips[5] + miscDyes[5] interleaved: type, prefix each
     // (`:54831-54837`) — no stack, no favorited. Fresh `Item()`s are air
-    // (ctor `:56064-56071`).
-    for _ in 0..5 {
-        w.i32(0);
-        w.u8(0);
-        w.i32(0);
-        w.u8(0);
+    // (ctor `:56064-56071`). W4-f44 ph2: the caller's pairs ride verbatim.
+    for (eq_id, eq_prefix, dye_id, dye_prefix) in file.misc {
+        w.i32(eq_id);
+        w.u8(eq_prefix);
+        w.i32(dye_id);
+        w.u8(dye_prefix);
     }
     // bank / bank2 / bank3: 40 x (type, stack, prefix) each
     // (`:54838-54855`); `Chest.CreateBank`'s maxItems = 40 (`Chest.cs:142-144`,
@@ -1110,9 +1352,9 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // hbLocked (`:54889`): default false (`Player.cs:1436`).
     w.boolean(false);
     // hideInfo[13] (`:54890-54893`): a fresh `bool[13]` (`Player.cs:812`),
-    // all false.
-    for _ in 0..13 {
-        w.boolean(false);
+    // all false — W4-f44 ph2: the caller's toggles ride verbatim.
+    for hide in file.hide_info {
+        w.boolean(hide);
     }
     // --- S1-J-5 increment 3: the Serialize tail (`:54894-54933`) ----------
     w.i32(0); // `:54894` anglerQuestsFinished (`Player.cs:1910`, default 0)
@@ -1161,16 +1403,17 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // (`IsEnabledForPlayer(Main.myPlayer)`, `CreativePowers.cs:705-707` —
     // fresh false), FarPlacementRangePower id 11 (`:744-746` — fresh false),
     // SpawnRateSliderPerPlayerPower id 14 (`_sliderCurrentValueCache`,
-    // `:1717-1719` — fresh 0f). Then the `false` terminator.
+    // `:1717-1719` — fresh 0f). Then the `false` terminator. W4-f44 ph2:
+    // the caller's live power state rides (the default is `written_fresh`).
     w.boolean(true);
     w.u16(5);
-    w.boolean(false);
+    w.boolean(file.powers.godmode);
     w.boolean(true);
     w.u16(11);
-    w.boolean(false);
+    w.boolean(file.powers.far_placement);
     w.boolean(true);
     w.u16(14);
-    w.f32(0.0);
+    w.f32(file.powers.spawn_rate);
     w.boolean(false);
     // `:54914-54918` the super-cart BitsByte: bit0 unlockedSuperCart
     // (`Player.cs:2052`, default false), bit1 enabledSuperCart
@@ -1943,6 +2186,16 @@ mod tests {
         assert_eq!(file.void_vault_info, 0);
         assert_eq!(file.bank4, [(0, 0, 0, false); 40]);
         assert!(file.research.is_empty());
+        // W4-f44 ph2: the equip/dye/hide tails + the powers read fresh too.
+        assert_eq!(file.armor, [(0, 0, false); 20]);
+        assert_eq!(file.dye, [(0, 0, false); 10]);
+        assert_eq!(file.misc, [(0, 0, 0, 0); 5]);
+        assert_eq!(file.hide_visible_accessory, [false; 10]);
+        assert_eq!(file.hide_misc, 0);
+        assert_eq!(file.hide_info, [false; 13]);
+        // A Classic fixture (difficulty 0): the loaded (false, false, 0f)
+        // is RESET by `LoadToPlayer` (`CreativePowerManager.cs:211-214`).
+        assert_eq!(file.powers, CreativePowersSave::default());
     }
 
     /// Back-compat gates: the port-only shallow retries (inc1 at the vault
@@ -1956,6 +2209,8 @@ mod tests {
         file.bank4[7] = (8, 99, 0, true);
         file.research = vec![("Torch".into(), 100)];
         file.loadouts[1].armor[2] = (90, 1, 0, false);
+        file.armor[0] = (89, 81, true);
+        file.hide_info[2] = true;
         let plain = serialize_plaintext(&file);
         // inc1: cut after the voidVaultInfo byte (offset 2402).
         let inc1 = read_player_bytes(&plain[..2402]).expect("inc1 reads");
@@ -1963,12 +2218,22 @@ mod tests {
         assert_eq!(inc1.bank4[7], (8, 99, 0, true));
         assert!(inc1.research.is_empty(), "inc1 never reached the research");
         assert_eq!(inc1.loadouts, Default::default());
+        // W4-f44 ph2: the armor/hide BitsBytes sit BEFORE the cut — captured.
+        assert_eq!(inc1.armor[0], (89, 81, true));
+        assert_eq!(inc1.hide_info, [false; 13], "inc1 never reached hideInfo");
         // inc2: cut after hideInfo (offset 2772).
         let inc2 = read_player_bytes(&plain[..2772]).expect("inc2 reads");
         assert_eq!(inc2.void_vault_info, 1);
         assert_eq!(inc2.bank4[7], (8, 99, 0, true));
         assert!(inc2.research.is_empty());
         assert_eq!(inc2.loadouts, Default::default());
+        assert_eq!(inc2.armor[0], (89, 81, true));
+        assert!(inc2.hide_info[2], "inc2 reached hideInfo");
+        assert_eq!(
+            inc2.powers,
+            CreativePowersSave::default(),
+            "inc2 never reached the powers; the non-Journey reset stands"
+        );
     }
 
     /// An over-count item type in bank4/loadouts airs the slot after the full
@@ -1985,6 +2250,245 @@ mod tests {
         assert_eq!(read.bank4[0], (0, 0, 0, false));
         assert_eq!(read.loadouts[0].dye[9], (0, 0, 0, false));
         assert_eq!(read.loadouts[2].armor[19], (89, 1, 0, false));
-        assert_eq!(read.research, vec![("Torch".into(), 100)], "the tail past the loadouts still reads");
+        assert_eq!(
+            read.research,
+            vec![("Torch".into(), 100)],
+            "the tail past the loadouts still reads"
+        );
+    }
+
+    // --- W4-f44 phase 2: the equip/dye tails + the Journey powers -----------
+
+    /// The three equipment tails + the hide flags round-trip: armor[20] /
+    /// dye[10] `(type, prefix, favorited)` (`:54812-54823` / `:55306-55340`),
+    /// the interleaved misc pairs (`:54831-54837` / `:55420-55447`), the two
+    /// hide BitsBytes (`:54758-54769` / `:55171-55183`), hideMisc (`:54770`)
+    /// and hideInfo[13] (`:54890-54893` / `:55616-55623`).
+    #[test]
+    fn the_equip_and_hide_tails_round_trip() {
+        let mut file = sample();
+        file.armor[0] = (89, 81, true); // Gold Helmet, warding, starred
+        file.armor[19] = (2326, 0, false); // the last slot rides too
+        file.dye[0] = (1007, 0, true);
+        file.dye[9] = (3041, 0, false);
+        file.misc[0] = (3060, 0, 1121, 0); // pet + its dye
+        file.misc[4] = (3224, 0, 0, 0); // the hook slot, no dye
+        file.hide_visible_accessory =
+            [true, false, true, false, false, false, false, true, true, false];
+        file.hide_misc = 0b11; // pet + light-pet hidden (`:17344`/`:17353`)
+        file.hide_info[0] = true;
+        file.hide_info[12] = true;
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.armor[0], (89, 81, true));
+        assert_eq!(read.armor[19], (2326, 0, false));
+        assert_eq!(read.armor[1], (0, 0, false));
+        assert_eq!(read.dye[0], (1007, 0, true));
+        assert_eq!(read.dye[9], (3041, 0, false));
+        assert_eq!(read.misc[0], (3060, 0, 1121, 0));
+        assert_eq!(read.misc[4], (3224, 0, 0, 0));
+        assert_eq!(read.misc[1], (0, 0, 0, 0));
+        assert_eq!(read.hide_visible_accessory, file.hide_visible_accessory);
+        assert_eq!(read.hide_misc, 0b11);
+        assert!(read.hide_info[0] && read.hide_info[12] && !read.hide_info[1]);
+        // The card state + the phase-1 tail are unaffected.
+        assert_eq!(read.inventory, file.inventory);
+        assert_eq!(read.loadouts, Default::default());
+    }
+
+    /// The write side is byte-faithful: non-default equip/hide values move
+    /// ONLY their documented byte spans, and the fresh-default write still
+    /// reproduces the C# golden fixture byte-for-byte.
+    #[test]
+    fn the_equip_tail_write_is_byte_faithful() {
+        let fresh = serialize_plaintext(&sample());
+        let mut file = sample();
+        file.hide_visible_accessory[9] = true; // the second BitsByte, bit 1
+        let with_hide = serialize_plaintext(&file);
+        // Offset walk (golden-layout witness): 24 prologue + 7 name + 1 diff
+        // + 8 playtime + 4 hair + 1 hairDye + 1 team = 46, hide1 at 46,
+        // hide2 at 47.
+        let diffs: Vec<usize> = fresh
+            .iter()
+            .zip(with_hide.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(diffs, vec![47], "exactly hideVisibleAccessory[8..10]'s byte");
+        assert_eq!(with_hide[47], 0b10);
+        // hideMisc at 48.
+        file = sample();
+        file.hide_misc = 3;
+        let with_misc = serialize_plaintext(&file);
+        let diffs: Vec<usize> = fresh
+            .iter()
+            .zip(with_misc.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(diffs, vec![48]);
+        // The golden parity is untouched (the defaults emit the old bytes).
+        let golden = serialize_plaintext(&PlayerFileWrite {
+            name: "Golden".into(),
+            hair: 1,
+            hair_color: [215, 90, 55],
+            skin_color: [255, 125, 90],
+            eye_color: [105, 90, 75],
+            shirt_color: [175, 165, 140],
+            undershirt_color: [160, 180, 215],
+            pants_color: [255, 230, 175],
+            shoe_color: [160, 105, 60],
+            inventory: {
+                let mut inv = [(0, 0, 0); 58];
+                inv[0] = (3507, 1, 0);
+                inv[1] = (3509, 1, 0);
+                inv[2] = (3506, 1, 0);
+                inv[3] = (2, 50, 0);
+                inv
+            },
+            inv_favorites: 1 << 3,
+            last_saved_binary: 0x48DF_4506_E391_C000,
+            ..Default::default()
+        });
+        let fixture = cbc_decrypt(include_bytes!("../../../assets/test/golden.plr"));
+        assert_eq!(golden.as_slice(), &fixture[..3827]);
+    }
+
+    /// Out-of-range equip ids air WITHOUT desyncing: the C# `netDefaults`
+    /// airs the id, `Prefix` no-ops on air (`Item.cs:515-518`) but favorited
+    /// is set unconditionally (`:55315`); the misc `>= ItemID.Count` arm
+    /// drops the prefix byte (`:55425-55439`). The legacy -1..-48 ids ride
+    /// verbatim (`Item.netDefaults`, `Item.cs:1213-1360`).
+    #[test]
+    fn over_count_equip_items_air_without_desyncing() {
+        let mut file = sample();
+        file.armor[0] = (ITEM_ID_COUNT, 81, true); // id+prefix air, fav rides
+        file.armor[1] = (-48, 0, false); // the legacy band rides verbatim
+        file.armor[2] = (-49, 5, false); // below the band → air
+        file.dye[0] = (ITEM_ID_COUNT + 7, 0, false);
+        file.misc[0] = (ITEM_ID_COUNT, 9, 1121, 0); // equip airs, dye rides
+        file.armor[19] = (89, 0, false); // a real item AFTER the aired ones
+        file.research = vec![("Torch".into(), 100)];
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.armor[0], (0, 0, true), "air id+prefix, favorited rides");
+        assert_eq!(read.armor[1], (-48, 0, false));
+        assert_eq!(read.armor[2], (0, 0, false));
+        assert_eq!(read.dye[0], (0, 0, false));
+        assert_eq!(read.misc[0], (0, 0, 1121, 0), "the misc arm drops the aired prefix");
+        assert_eq!(read.armor[19], (89, 0, false));
+        assert_eq!(read.research, vec![("Torch".into(), 100)], "the walk stayed aligned");
+    }
+
+    /// The Journey powers: a Journey character (difficulty 3) keeps the
+    /// loaded Godmode/FarPlacement/SpawnRate (`CreativePowerManager.cs:197-210`);
+    /// a non-Journey one has them RESET to the ctor defaults after the load
+    /// (`:211-214` — `ResetDataForNewPlayer`, `CreativePowers.cs:710-713`/
+    /// `:749-752`/`:1722-1725`).
+    #[test]
+    fn the_creative_powers_load_and_reset_by_difficulty() {
+        let mut file = sample();
+        file.difficulty = 3; // Journey
+        file.powers = CreativePowersSave { godmode: true, far_placement: false, spawn_rate: 0.25 };
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.powers, file.powers, "Journey keeps the loaded powers");
+        file.difficulty = 0; // Classic — the same bytes reset on load
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.powers, CreativePowersSave::default());
+        assert_eq!(
+            read.powers,
+            CreativePowersSave { godmode: false, far_placement: true, spawn_rate: 0.5 }
+        );
+    }
+
+    /// An unknown power id BREAKS the load loop (`CreativePowerManager.cs:203-206`)
+    /// — the remaining bytes belong to the next section, so the super-cart
+    /// byte + loadouts still read at their own offsets.
+    #[test]
+    fn an_unknown_power_id_breaks_the_loop_like_the_csharp() {
+        // Hand-splice the powers span: (true, 99) then STOP — no payload for
+        // the unknown id; the next byte is the super-cart BitsByte (2).
+        let plain = serialize_plaintext(&sample());
+        // The powers span starts after the temp-slot byte. Offsets from the
+        // golden-layout witness: buffs at 2402, the inc3 tail 1425 bytes;
+        // powers sit 370+4+16+48+4+1+8+4+5+1 = 461 into it → 2863.
+        let powers_at = 2402 + 461;
+        let mut w = Writer::new();
+        w.bytes(&plain[..powers_at]);
+        w.boolean(true);
+        w.u16(99); // an id the manager never registered → break
+        w.bytes(&plain[powers_at + 16..]); // skip the old 16-byte span, keep superCart onward
+        let read = read_player_bytes(&w.into_inner()).expect("the break keeps the walk aligned");
+        assert_eq!(read.powers, CreativePowersSave::default(), "nothing loaded, the reset stands");
+        assert_eq!(read.current_loadout, 0);
+        assert_eq!(read.loadouts, Default::default());
+        assert_eq!(read.inventory, sample().inventory);
+    }
+
+    /// The legacy 279 subset shim captures the armour/dye pairs + the hide
+    /// BitsBytes it carries (W4-f44 ph2), with the fresh defaults for the
+    /// sections the subset never wrote.
+    #[test]
+    fn the_legacy_subset_keeps_its_equip_and_hide_state() {
+        let s = sample();
+        let mut w = Writer::new();
+        w.i32(279);
+        w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+        w.u32(0);
+        w.u64(0);
+        w.cs_string(&s.name);
+        w.u8(s.difficulty);
+        w.u64(0);
+        w.i32(s.hair);
+        w.u8(0);
+        w.bytes(&[0b101, 0b10]); // hide bits 0/2 + bit 9
+        w.u8(s.skin_variant);
+        w.i32(s.life);
+        w.i32(s.life_max);
+        w.i32(s.mana);
+        w.i32(s.mana_max);
+        for _ in 0..11 {
+            w.boolean(false);
+        }
+        w.i32(0);
+        w.i32(0);
+        w.i32(0);
+        for color in [
+            s.hair_color,
+            s.skin_color,
+            s.eye_color,
+            s.shirt_color,
+            s.undershirt_color,
+            s.pants_color,
+            s.shoe_color,
+        ] {
+            w.bytes(&color);
+        }
+        // armour[0] = (89, 81), the rest air; dye[3] = (1007, 0).
+        w.i32(89);
+        w.u8(81);
+        for _ in 0..19 {
+            w.i32(0);
+            w.u8(0);
+        }
+        for i in 0..10 {
+            w.i32(if i == 3 { 1007 } else { 0 });
+            w.u8(0);
+        }
+        for (i, (id, stack, prefix)) in s.inventory.iter().enumerate() {
+            w.i32(*id);
+            w.i32(*stack);
+            w.u8(*prefix);
+            w.boolean(s.inv_favorites & (1 << i) != 0);
+        }
+        let file = read_player_bytes(&w.into_inner()).expect("the legacy subset reads");
+        assert_eq!(file.armor[0], (89, 81, false), "no favourited bool at 279");
+        assert_eq!(file.dye[3], (1007, 0, false));
+        assert!(file.hide_visible_accessory[0] && file.hide_visible_accessory[2]);
+        assert!(file.hide_visible_accessory[9] && !file.hide_visible_accessory[8]);
+        assert_eq!(file.hide_misc, 0, "the subset never wrote hideMisc");
+        assert_eq!(file.hide_info, [false; 13]);
+        assert_eq!(file.powers, CreativePowersSave::default());
+        assert_eq!(file.inventory, s.inventory);
     }
 }

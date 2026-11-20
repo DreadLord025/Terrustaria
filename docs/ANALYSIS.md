@@ -18890,6 +18890,40 @@ byte-compares offsets 2402-3827 (timestamp spliced); `the_write_envelope_is_pkcs
 pins the pad rule incl. the aligned full-block case. No new dependency вЂ”
 the existing `aes` crate's raw block API carries the PKCS7 by hand (13 lines).
 
+**W4-f44 phase 2 (2026-11-21): the equip/dye tails + the Journey powers.**
+The three equipment tails the reader used to consume-and-drop now ride BOTH
+models: `armor[20]`/`dye[10]` as `(type, prefix, favorited)` (no stack —
+`Serialize:54812-54823` / `Deserialize:55306-55340`, the favourited bool gated
+>= 322), the interleaved `miscEquips[5]`/`miscDyes[5]` `(type, prefix)` pairs
+(`:54831-54837` / `:55420-55447`), `hideVisibleAccessory[10]`'s two BitsBytes
+(`:54758-54769` / `:55171-55183`), `hideMisc` (`:54770`) and `hideInfo[13]`
+(`:54890-54893` / `:55616-55623`). The Journey side gains the per-player
+creative powers `CreativePowerManager.SaveToPlayer`/`LoadToPlayer` carry
+(`:54913` / `:55706-55709`; ids 5/11/14, `CreativePowers.cs:705-707`/`:744-746`/
+`:1717-1719`). **Read semantics mirrored**: an out-of-range equip id airs
+through `SetDefaults` (`Item.cs:48671-48674`) and `Prefix` no-ops on air
+(`CanHavePrefixes` false, `Item.cs:515-518`) — id+prefix air, but favorited is
+set unconditionally (`:55315`) and rides; the misc `>= ItemID.Count` arm drops
+the prefix byte (`:55425-55439`). The legacy negative ids -1..-48
+(`Item.netDefaults`, `Item.cs:1213-1360`) ride VERBATIM (the card model carries
+no item-defaults tables, so the mapping is deferred; a re-save round-trips the
+bytes). The unknown-power-id BREAK stays (`CreativePowerManager.cs:203-206`);
+after the load the C# RESETS the powers for non-Journey characters
+(`difficulty != 3`, `:211-214` → `ResetDataForNewPlayer`, the ctor defaults
+false/true/0.5, `CreativePowers.cs:710-713`/`:749-752`/`:1722-1725`) — mirrored
+in `finish_player_file`. **Writer default split**: `CreativePowersSave::default`
+is the read-side reset state; `PlayerFileWrite`'s default is
+`written_fresh()` (false, false, 0f) — the live manager state a Classic session
+saves, which the golden fixture pinned. The legacy 279 subset shim now also
+captures its armour/dye pairs + hide BitsBytes. **Evidence**:
+`the_equip_and_hide_tails_round_trip`, `the_equip_tail_write_is_byte_faithful`
+(the hide BitsBytes move ONLY offsets 47/48; the golden parity re-pinned),
+`over_count_equip_items_air_without_desyncing`,
+`the_creative_powers_load_and_reset_by_difficulty`,
+`an_unknown_power_id_breaks_the_loop_like_the_csharp`,
+`the_legacy_subset_keeps_its_equip_and_hide_state`; the golden fixture's
+fresh-tail read + the inc1/inc2 shallow retries extended to the new fields.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
