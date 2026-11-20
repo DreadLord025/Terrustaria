@@ -778,10 +778,11 @@ fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
         return;
     }
     // `:2660`: the 192×192 grab box centred on `(ax*16+16, ay*16+16)`
-    // (`HopperGrabHitboxSize`, `Wiring.cs:3429`).
+    // (`HopperGrabHitboxSize`, `Wiring.cs:3429`; `Utils.CenteredRectangle`
+    // floors the top-left, `Utils.cs:947-950`).
     let cx = ax as f32 * 16.0 + 16.0;
     let cy = ay as f32 * 16.0 + 16.0;
-    let (gx0, gy0, gx1, gy1) = (cx - 96.0, cy - 96.0, cx + 96.0, cy + 96.0);
+    let (gx, gy) = ((cx - 96.0) as i32 as f32, (cy - 96.0) as i32 as f32);
     let max_items = app.world_chests[idx].max_items;
     let mut pulled = false;
     // `:2663-2673`: the 400-slot item scan — active, local-reserved, not banned,
@@ -791,9 +792,9 @@ fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
         if drop.count == 0 || HOPPER_BANNED.contains(&drop.kind) {
             continue;
         }
-        let (dx0, dy0) = (drop.pos.x, drop.pos.y);
-        let (dx1, dy1) = (dx0 + crate::item::SIZE, dy0 + crate::item::SIZE);
-        if dx1 < gx0 || dx0 > gx1 || dy1 < gy0 || dy0 > gy1 {
+        // `worldItem.Hitbox.Intersects(value)` — the strict-`<` rectangle test
+        // (edge-touching does not intersect, `Rectangle.Intersects`).
+        if !crate::item::rects_intersect(drop.pos.x, drop.pos.y, crate::item::SIZE, crate::item::SIZE, gx, gy, 192.0, 192.0) {
             continue;
         }
         let slots = crate::chest::chest_slots_mut(&mut app.world_chests, idx)
