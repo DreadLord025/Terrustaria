@@ -2073,21 +2073,22 @@ impl App {
     /// `Main.debuff[b] && buffTime > 60 && !NurseCannotRemoveDebuff[b]` —
     /// then the boss-progression ladder, the discount and the happiness
     /// adjustment. The expert x2 stays constants-off (the difficulty
-    /// plumbing rides R-03-6).
+    /// plumbing rides R-03-6). W4-f37: the adjustment is the CAPTURED
+    /// `currentShoppingSettings.PriceAdjustment` (`:40100`) — the App's
+    /// `shop_mood` latch from the shop/talk open, NOT a fresh re-scan (the
+    /// former per-call `process_mood` re-derived it every frame).
     pub(crate) fn nurse_heal_cost(&self, nurse_idx: usize) -> i32 {
         let Some(player) = self.player.as_ref() else {
             return 0;
         };
         let missing = player.max_hp - player.hp;
         let debuffs = player.remountable_debuff_count();
-        let npc = &self.npcs[nurse_idx];
-        let mood =
-            crate::happiness::process_mood(&self.world, &self.npcs, npc, player.center(), false);
+        let _npc = &self.npcs[nurse_idx];
         let w = &self.world;
         nurse_heal_cost_for(
             missing,
             debuffs,
-            mood.multiplier,
+            self.shop_mood,
             &NurseCostFlags {
                 downed_golem: w.downed_golem,
                 downed_plant_boss: w.downed_plant_boss,

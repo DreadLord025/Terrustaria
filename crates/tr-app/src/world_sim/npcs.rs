@@ -181,6 +181,10 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
             }
             app.talk_npc = None;
             app.npc_chat_text.clear();
+            // `Player.SetTalkNPC(-1)` (`Player.cs:4383-4386`):
+            // `currentShoppingSettings = NotInShop` — the mood latch resets
+            // to 1.0 (W4-f37; the shop-open latch rides the same field).
+            app.shop_mood = 1.0;
         }
     }
     // The open arm's gates: a fresh press, no inventory panel over the world.
@@ -208,6 +212,23 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    // W4-f37 — `SetTalkNPC`'s shopping-settings capture
+    // (`Player.cs:4387-4390`): `currentShoppingSettings =
+    // ShopHelper.GetShoppingSettings(this, npc)` on EVERY talk change —
+    // the Nurse's heal cost (`Main.cs:40100`) and the Stylist's prices
+    // read this latch, not a per-frame re-scan. The shop-open re-capture
+    // (`try_open_town_shop_at_cursor`) stays for the collapsed chat-button
+    // entry (the recorded #9 deviation).
+    let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((0.0, 0.0));
+    let mood = crate::happiness::process_mood(
+        &app.world,
+        &app.npcs,
+        &app.npcs[i],
+        (pcx, pcy),
+        app.world.raining,
+        app.rngs.global(),
+    );
+    app.shop_mood = mood.multiplier;
     // The context off the live state. The world flags the port does not
     // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
     // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
@@ -903,13 +924,28 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         return false;
     };
     let shop = shop_index_for_kind(app.npcs[idx].kind).unwrap_or(1);
-    let (pcx, pcy) = app
-        .player
-        .as_ref()
-        .map(|p| p.center())
-        .unwrap_or((0.0, 0.0));
-    let mood =
-        crate::happiness::process_mood(&app.world, &app.npcs, &app.npcs[idx], (pcx, pcy), false);
+    // W4-f37 — the mood latch: `currentShoppingSettings` is captured ONCE
+    // per `SetTalkNPC` (`Player.cs:4387-4390`); `Main.OpenShop`
+    // (`Main.cs:40459-40467`) does NOT recompute it. When the talk latch
+    // already names this NPC the capture stands (no second Princess
+    // random-love draw). The collapsed chat-button entry (the recorded #9
+    // deviation — the shop opens with `talk_npc = None`) captures here.
+    if app.talk_npc != Some(idx) {
+        let (pcx, pcy) = app
+            .player
+            .as_ref()
+            .map(|p| p.center())
+            .unwrap_or((0.0, 0.0));
+        let mood = crate::happiness::process_mood(
+            &app.world,
+            &app.npcs,
+            &app.npcs[idx],
+            (pcx, pcy),
+            app.world.raining,
+            app.rngs.global(),
+        );
+        app.shop_mood = mood.multiplier;
+    }
     let flags = crate::shop::ShopFlags {
         hard_mode: app.world.hard_mode,
         downed_slime_king: app.world.downed_slime_king,
@@ -989,7 +1025,6 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         &inv_ids,
         app.world.moon_phase as u32,
     );
-    app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
     if !same_shop {
         app.shop_sellback.clear();
@@ -18274,5 +18309,141 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+
+    /// W4-f37 — `SetTalkNPC`'s shopping-settings capture
+    /// (`Player.cs:4387-4390`): the talk open latches `shop_mood` from
+    /// `process_mood`; the close (`SetTalkNPC(-1)`, `:4383-4386`) resets it
+    /// to `NotInShop` = 1.0. The Nurse's heal cost reads the LATCH
+    /// (`Main.cs:40100`), not a per-call re-scan.
+    #[test]
+    fn the_talk_open_captures_the_mood_and_the_close_resets_it() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = World::new("mood".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        app.world.world_surface = 120.0;
+        app.world.rock_layer = 140.0;
+        app.world.compute_column_surface();
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 60.0 * 16.0;
+        p.y = 120.0 * 16.0 - crate::player::HEIGHT; // feet on the dirt top
+        app.player = Some(p);
+        let mut nurse = Npc::new(NpcKind::Nurse, 62.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        nurse.home = Some((62, 120));
+        nurse.hp = nurse.max_hp;
+        app.npcs.push(nurse);
+        assert_eq!(app.shop_mood, 1.0, "NotInShop before any talk");
+        // The right-press edge opens the talk: the capture lands. The
+        // Nurse alone in the forest: LoveSpace ×0.95 × Hallow-Like? The
+        // player is in the FOREST — the Nurse's rows are Hallow/Snow, no
+        // match → LoveSpace alone = 0.95.
+        app.place_down = true;
+        let text = talk_to_npc(&mut app, false);
+        assert!(text.is_some(), "the talk opened");
+        assert_eq!(app.talk_npc, Some(0));
+        assert!(
+            (app.shop_mood - 0.95).abs() < 0.001,
+            "the captured LoveSpace mood, got {}",
+            app.shop_mood
+        );
+        // The heal cost rides the latch: half life (max 400 rig? the spawn
+        // default 100) — pin the RATIO instead of the absolute: cost =
+        // (missing × 0.95) truncated (no boss ladder, no discount).
+        let player = app.player.as_mut().unwrap();
+        player.hp = player.max_hp - 40;
+        let cost = app.nurse_heal_cost(0);
+        assert_eq!(cost, (40.0f32 * app.shop_mood) as i32, "the latch rides the cost");
+        // The close resets to NotInShop.
+        app.player.as_mut().unwrap().x = 190.0 * 16.0; // walk out of range
+        let _ = talk_to_npc(&mut app, true);
+        assert_eq!(app.talk_npc, None);
+        assert_eq!(app.shop_mood, 1.0, "SetTalkNPC(-1) → NotInShop");
+    }
+
+    /// W4-f37 — the shop open does NOT re-capture when the talk latch
+    /// already names the NPC (`Main.OpenShop`, `Main.cs:40459-40467`, has
+    /// no settings call): the Princess's random-love draws fire ONCE per
+    /// talk, not again on the shop click. The collapsed entry
+    /// (`talk_npc = None`) captures at the open.
+    #[test]
+    fn the_shop_open_keeps_the_talk_capture_and_draws_once() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = World::new("princess".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        app.world.world_surface = 120.0;
+        app.world.rock_layer = 140.0;
+        app.world.compute_column_surface();
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 60.0 * 16.0;
+        p.y = 120.0 * 16.0 - crate::player::HEIGHT; // feet on the dirt top
+        app.player = Some(p);
+        let mut princess = Npc::new(NpcKind::Princess, 62.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        princess.home = Some((62, 120));
+        princess.hp = princess.max_hp;
+        app.npcs.push(princess);
+        let mut guide = Npc::new(NpcKind::Guide, 66.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        guide.home = Some((66, 120));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // A SECOND neighbor — one alone would trip HateLonely
+        // (`npcsWithinHouse < 2 && npcsWithinVillage < 2`, `:126`). Both
+        // Guides dedup to ONE type → one love draw ×0.88.
+        let mut guide2 = Npc::new(NpcKind::Guide, 58.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        guide2.home = Some((58, 120));
+        guide2.hp = guide2.max_hp;
+        app.npcs.push(guide2);
+        // The talk open: ONE love draw (the single nearby Guide type).
+        app.place_down = true;
+        assert!(talk_to_npc(&mut app, false).is_some());
+        let mood_after_talk = app.shop_mood;
+        assert!(
+            (mood_after_talk - 0.88).abs() < 0.001,
+            "one love ×0.88, got {mood_after_talk}"
+        );
+        let rng_after_talk = app.rngs.global().clone();
+        // The shop open on the SAME NPC: no re-capture, no second draw.
+        let opened = try_open_town_shop_at_cursor(&mut app, Vec2::new(62.5 * 16.0, 119.0 * 16.0));
+        assert!(opened, "the princess shop opened");
+        assert_eq!(app.shop_mood, mood_after_talk, "the latch stands");
+        assert_eq!(
+            *app.rngs.global(),
+            rng_after_talk,
+            "no second random-love draw"
+        );
+        // The collapsed entry: close everything, clear the talk latch,
+        // re-open the shop directly — the capture fires at the open.
+        app.close_shop();
+        app.talk_npc = None;
+        app.shop_mood = 1.0;
+        let opened = try_open_town_shop_at_cursor(&mut app, Vec2::new(62.5 * 16.0, 119.0 * 16.0));
+        assert!(opened);
+        assert!(
+            (app.shop_mood - 0.88).abs() < 0.001,
+            "the collapsed entry captures, got {}",
+            app.shop_mood
+        );
+        assert_ne!(
+            *app.rngs.global(),
+            rng_after_talk,
+            "the collapsed entry's capture drew again"
+        );
     }
 }
