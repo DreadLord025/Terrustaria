@@ -502,6 +502,18 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, 1225, range(rng, 20, 36));
             quick_spawn(rng, out, 3354, 1); // Mechanical Wheel Piece
         }
+        // Skeletron Prime (`Player.cs:7423-7432`).
+        3327 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2107, 1); // Skeletron Prime Mask
+            }
+            // `:7429-7430` — Souls of Fright Next(25, 41), Hallowed Bars
+            // Next(20, 36).
+            quick_spawn(rng, out, 547, range(rng, 25, 41));
+            quick_spawn(rng, out, 1225, range(rng, 20, 36));
+            quick_spawn(rng, out, 3356, 1); // Mechanical Battery Piece
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1234,6 +1246,45 @@ mod tests {
             spawn_replay(&mut r, &mut want, 1225, r.next_range(20, 36));
             spawn_replay(&mut r, &mut want, 3354, 1);
             money_replay_on(&mut r, 125, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_prime_bag_zero_script_grants_the_whole_arm() {
+        // The dev set leads, then the Prime Mask, Souls of Fright 25,
+        // Hallowed Bars 20, the Mechanical Battery Piece.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3327, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..9],
+            [666, 667, 668, 665, 3287, 2107, 547, 1225, 3356],
+            "{its:?}"
+        );
+        assert_eq!(out[6].stack, 25);
+        assert_eq!(out[7].stack, 20);
+        assert!(its[9..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_prime_bag_replays_the_csharp_draw_order() {
+        for seed in [37i32, 127127] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3327, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            dev_armor_replay(&mut r, &mut want, false);
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 2107, 1);
+            }
+            spawn_replay(&mut r, &mut want, 547, r.next_range(25, 41));
+            spawn_replay(&mut r, &mut want, 1225, r.next_range(20, 36));
+            spawn_replay(&mut r, &mut want, 3356, 1);
+            money_replay_on(&mut r, 127, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
         }
