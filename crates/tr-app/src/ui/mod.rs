@@ -30,6 +30,7 @@ pub mod resources;
 pub mod save_list;
 pub mod sliders;
 pub mod select_hit;
+pub(crate) mod shop_happiness;
 pub mod slot;
 pub mod text;
 pub mod tooltip;
@@ -904,10 +905,12 @@ pub fn draw_hud(
         // (73, invBottom=258), scale 0.755 — the same layout the chest
         // panel draws at (`ui::chest`). The ported stock resolves to ≤39
         // rows (`Chest.AddItemToShop`'s window); a cell past the stock's
-        // end draws air. The happiness label/icon at (504, invBottom)
-        // (`:41790-41797`) and the coin breakdown wait for the chrome
-        // pass (ANALYSIS).
-        if let Some((stock, _mood, _discount)) = shop {
+        // end draws air.
+        if let Some((stock, mood, _discount)) = shop {
+            // The happiness chrome (`:41790-41797`, W4-g58): the "Shop"
+            // label + the NPCHappiness icon band + the P0 percent — the
+            // DrawSavings coin pile (`:41791`) rides the coin-slot lane.
+            shop_happiness::draw(r, lookups, mood, pulse);
             for i in 0..inventory::SHOP_COLS {
                 for j in 0..inventory::SHOP_ROWS {
                     let idx = i + j * inventory::SHOP_COLS;

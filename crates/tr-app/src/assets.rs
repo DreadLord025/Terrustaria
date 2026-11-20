@@ -875,6 +875,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
         "Chat",
         "Chat_Back",
+        // W4-g58: the shop happiness icon strip (`TextureAssets.NPCHappiness`,
+        // `Main.cs:41792-41796` — `Images/UI/NPCHappiness`, 4 frames).
+        "UI/NPCHappiness",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -2150,6 +2153,11 @@ pub struct Lookups {
     /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
     /// splices (`NPCChatPanel.cs:71-72`).
     pub ui_chat_back: Option<tr_render::SheetRect>,
+    /// `Images/UI/NPCHappiness` (`TextureAssets.NPCHappiness`,
+    /// `Main.cs:41792`): the shop happiness icon strip — 4 horizontal
+    /// frames, the band rides `currentShoppingSettings.PriceAdjustment`
+    /// (`:41794`).
+    pub ui_npc_happiness: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2670,6 +2678,7 @@ impl Lookups {
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_chat_bubble: atlas.sheet("Chat").copied(),
             ui_chat_back: atlas.sheet("Chat_Back").copied(),
+            ui_npc_happiness: atlas.sheet("UI/NPCHappiness").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
