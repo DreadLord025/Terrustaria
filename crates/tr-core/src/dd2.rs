@@ -9,11 +9,14 @@
 
 /// `DD2Event._timeLeftUntilSpawningBegins` — the spawn hold's ticks; its
 /// being non-zero is `EnemySpawningIsOnHold` (`:113`).
-/// `DD2Event.Ongoing` — the Old One's Army event's live flag (the
-/// `Projectile.TurretShouldPersist` gate, `Projectile.cs:670-690`: the
-/// O'A sentries persist only while the event runs). The event itself is
-/// M4-EVENT-5's scope; until it lands the stub reports false — which makes the
-/// O'A sentries wipable like the rest (recorded in ANALYSIS).
+/// `DD2Event.Ongoing` — the Old One's Army event's live flag. The event's
+/// wave machinery is M4-EVENT-5's scope; this stub reports false. S1-P-i26:
+/// the sentry-summon path (the `TurretShouldPersist` gate
+/// `Projectile.cs:670-690`, the `UpdateMaxTurrets` sweep and the
+/// `IsADD2Turret` lifetime hold `:17197-17200`) reads the world's live
+/// `World::dd2_event_ongoing` flag directly instead of this stub, so the O'A
+/// sentries genuinely persist while the event runs. The remaining stub
+/// consumers (if any) keep the false stand-in until M4-EVENT-5.
 pub fn event_ongoing() -> bool {
     false
 }

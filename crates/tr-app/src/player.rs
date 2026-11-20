@@ -632,6 +632,24 @@ pub struct Player {
     /// `Player.MinionAttackTargetNPC = -1` (`Player.cs:3008`) — the
     /// right-click aim target; written by the use path (Phase 6).
     pub minion_attack_target_npc: i32,
+    /// `Player.MinionRestTargetPoint = Vector2.Zero` (`Player.cs:3006`) —
+    /// the armor-set-bonus rest spot the idle minions return to (the
+    /// Forbidden double-tap aim, `MinionRestTargetAim` `:56935-56997`;
+    /// `Vector2.Zero` = no rest target, `HasMinionRestTarget` `:4060`).
+    /// Written by [`Player::minion_rest_target_aim`] and cleared by the
+    /// set-bonus down-hold (`KeyHoldDown` `:56894-56912`) and the
+    /// >1000-px invalidation (`UpdateMinionTarget` `:57005-57007`).
+    /// (S1-P-i27 landed the writer; i56's Guardian rest states 1/3 read it.)
+    pub minion_rest_target_point: Vec2,
+    /// `Player.setForbidden` (`ArmorSetBonuses.cs:61-66`) — the Forbidden
+    /// armor set bonus flag; the double-tap-down rest aim + storm command
+    /// gate (`KeyDoubleTap` `Player.cs:56779-56786`). Re-derived every tick
+    /// by the armor-set pass (`ResetEffects` clears it, `:18663`-adjacent).
+    pub set_forbidden: bool,
+    /// `Player.setStardust` (`Player.cs:16341`, `ApplySetBonus_Stardust`) —
+    /// the Stardust armor set bonus flag; the down-hold rest-target clear
+    /// gate (`KeyHoldDown` `:56903-56906`).
+    pub set_stardust: bool,
     /// `Player.ownedProjectileCounts[ProjectileID.Count]` (`Player.cs:2992`)
     /// — recounted every tick from the live pool (`:25565`); the summon
     /// buff-arms and the keep-alive checks read exactly this.
@@ -653,6 +671,12 @@ pub struct Player {
     pub hornet_minion: bool,
     pub imp_minion: bool,
     pub spider_minion: bool,
+    /// `Player.nextCycledSpiderMinionType` (`Player.cs:1280`, int default 0):
+    /// the Spider Staff's spawn cycle (`:48478-48480`) — each use spawns
+    /// `shoot + nextCycledSpiderMinionType` (390/391/392) then increments mod
+    /// 3. Never reset by `ResetEffects` (no C# reset site), so it persists
+    /// across uses and lives.
+    pub next_cycled_spider_minion_type: i32,
     pub twins_minion: bool,
     pub pirate_minion: bool,
     pub vampire_frog: bool,
@@ -716,9 +740,20 @@ pub struct Player {
     /// penalty (`NPC.cs:77689`) and facing suppression (`:77740`).
     pub npc_type_no_aggro: Vec<bool>,
     /// `Player.tankPet` (`Player.cs:870`, default -1): the projectile
-    /// slot of the player's tank pet (the mount/pet system is unported —
-    /// stock -1; the target scan's steal arm reads it, `NPC.cs:77701`).
+    /// slot of the player's tank pet — AI_120's Guardian pins it every
+    /// non-idle tick (`Projectile.cs:44680-44684`, S1-P-i56); the target
+    /// scan's steal arm reads it (`NPC.cs:77701`).
     pub tank_pet: i32,
+    /// `Player.tankPetReset` (`Player.cs:872`, default false): the
+    /// one-tick grace latch — `Player.Update` (`:24539-24548`) sets it
+    /// on the first tick a tank pet is held and clears `tankPet` to -1
+    /// on the next tick the pet did NOT re-pin it. The Guardian's AI
+    /// writes false every non-idle tick (`Projectile.cs:44683`), so a
+    /// live Guardian keeps its claim; an idle/despawned one lets the
+    /// decay drop it. The player-side decay is ported as
+    /// `Player::tank_pet_decay`, called inside both fixed-step branches
+    /// of `world_sim::player::update_player` (S1-P-i56).
+    pub tank_pet_reset: bool,
     /// `Player.numberOfDeathsPVE` (`Player.cs:834`, `:38844`): the PVE death
     /// counter `/death` reads (`DeathCommand`).
     pub deaths_pve: u32,
@@ -753,6 +788,47 @@ pub struct Player {
     /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
     /// player applied (`tag_effects.rs`, M4-PROJ-7).
     pub tag_effects: crate::tag_effects::TagEffectStack,
+    /// `Player.whipRangeMultiplier` (`Player.cs:1140`, reset 1f `:18498`):
+    /// the whip curve's reach scale (`FillWhipControlPoints` `:48301`). The
+    /// Tiki head (+0.1 `:13854`), the Stardust body/legs (+0.15 `:13879`),
+    /// the Tiki set (+0.2 `ArmorSetBonuses.cs:15`), the Obsidian Outlaw set
+    /// (+0.3 `:123`) and the Mobius Strip (+0.1 `:12979`) add to it.
+    /// (S1-P-i24/i27 both declared it; gate-merged to one field.)
+    pub whip_range_multiplier: f32,
+    /// `Player.whipUseTimeMultiplier` (`Player.cs:1142`, reset 1f `:18499`):
+    /// the whip swing's use-time scale (`ApplyItemAnimation` `:4476`). The
+    /// Obsidian Outlaw set multiplies it by `1/1.15` (`ArmorSetBonuses.cs:124`).
+    pub whip_use_time_multiplier: f32,
+    /// `Player.summonerWeaponSpeedBonus` (`Player.cs:2460`, reset 0 `:18341`):
+    /// the whip-speed buff adds (Dark Harvest 311 +0.35, Sword Whip 308 +0.25,
+    /// Thorn Whip 314 +0.12, `:10110-10121`); `CapAttackSpeeds` (`:29025`)
+    /// converts `meleeSpeed + bonus` into the use-time multiplier the swing
+    /// reads. Stored as the RAW bonus until the cap fold.
+    pub summoner_weapon_speed_bonus: f32,
+    /// `Player.coolWhipBuff` / `cobWhipBuff` (`Player.cs:2108`/`:2110`, reset
+    /// `:18400-18401`): the Cool/Cob Whip's one-snowflake/one-spark latch
+    /// (`Projectile.cs:13918`/`:13929`) — the buff 312/365 arms re-affirm them.
+    pub cool_whip_buff: bool,
+    pub cob_whip_buff: bool,
+    /// `Player.accSnakeBand` / `accWickedArmlet` / `accMobiusStrip` /
+    /// `accSilverBracer` (`Player.cs:1208`/`:1214`/`:1210`/`:1212`, reset
+    /// `:18519-18522`): the whip accessory flags. The Snake Band repeats the
+    /// swing (`:42711-42731`), the Wicked Armlet adds +1 knockback per whip
+    /// throw (`:48663-48666`), the Mobius Strip / Silver Bracer / Wicked
+    /// Armlet raise `maxTagEffects` (`:12974-12984`). The i27 grant rows:
+    /// Silver Bracer 6156/Twilight Grasp 6163/Silver Shield 6183; Mobius
+    /// Strip 6158/Ouroboros Ring 6162; Wicked Armlet 6159/Twilight Grasp
+    /// 6163/Armlet of Ruin 6179/Fire Gauntlet-family 6182.
+    pub acc_snake_band: bool,
+    pub acc_wicked_armlet: bool,
+    pub acc_mobius_strip: bool,
+    pub acc_silver_bracer: bool,
+    /// `Player.repeatWhipSwings` (`Player.cs:1216`, default −1) and
+    /// `repeatWhipsResetCooldown` (`:1218`): the Snake Band's swing counter
+    /// (`++` per whip throw `:48686`, reset to −1 after 120 idle ticks
+    /// `Update_SnakeBand` `:28412-28418`).
+    pub repeat_whip_swings: i32,
+    pub repeat_whips_reset_cooldown: i32,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
     /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
@@ -779,15 +855,10 @@ pub struct Player {
     /// The WellFed melee speed add (`meleeSpeed +=`, `:11937`) — rides the
     /// swing pacing until the per-item meleeSpeed lands (M3-ITEM).
     pub melee_speed_bonus: f32,
-    /// `Player.summonerWeaponSpeedBonus` (`Player.cs:2460`, reset `:18341`):
-    /// the whip attack-speed buffs' sum (311 +0.35 / 308 +0.25 / 314 +0.12,
-    /// `:10110-10121`). `CapAttackSpeeds` (`:29025`) folds it with the melee
-    /// speed into the use-time multiplier — see
-    /// [`Self::summoner_weapon_speed_multiplier`].
-    pub summoner_weapon_speed_bonus: f32,
-    /// `Player.whipUseTimeMultiplier` (`Player.cs:1142`, reset 1f `:18499`):
-    /// the Obsidian Outlaw set's ×(1/1.15) (`ArmorSetBonuses.cs:124`).
-    pub whip_use_time_multiplier: f32,
+    /// (Resync keep-one: the i12 `summoner_weapon_speed_bonus` /
+    /// `whip_use_time_multiplier` declarations merged with the i24 pair
+    /// above — ONE field each, the read-only
+    /// [`Self::summoner_weapon_speed_multiplier`] accessor is canonical.)
     /// `Player.tileSpeed` / `Player.wallSpeed` (`Player.cs:2470`/`:2468`,
     /// reset 1f `:18532`/`:18531`): the Builder buff's +0.25 (`:10160-10161`)
     /// and the Brick Layer / Extendo Grip accessories' +0.5
@@ -1271,17 +1342,18 @@ pub struct Player {
     /// `Player.manaSick`/`manaSickReduction` (`Player.cs:974-976`): the Mana
     /// Sickness (buff 94) magic-damage penalty. `ResetEffects` clears
     /// `manaSick` (`:18592`); the buff-94 arm (`:10318-10327`) re-arms it
-    /// through `potions::apply_mana_sickness_arm`. NOTE: the magic-damage
-    /// TAIL (`:25900-25911`) is owned by the i19 mana worker — this branch
-    /// only carries the fields + the buff arm (`potions::apply_magic_damage_sickness_tail`
-    /// is the tail's port, wired by i19's `Update` fold).
+    /// through `potions::apply_mana_sickness_arm`; the magic-damage tail
+    /// (`:25900-25911`) rides `potions::apply_magic_damage_sickness_tail`
+    /// (the i37 canonical fns — the i19 resync take-one). ONLY mana potions
+    /// grant the sickness (`ApplyLifeAndOrMana` `:51933-51943`,
+    /// `manaSickTime = 300` `:57101`) — never a weapon.
     pub mana_sick: bool,
     pub mana_sick_reduction: f32,
     /// `Player.manaHeat` (`Player.cs:980`): reset to 1f every tick
     /// (`:18593`). `ApplyManaPotionManaHeat` (`:51968-52004`) has NO caller
     /// in the retail source (the only `TryApplyManaHeat` callers are the
-    /// mana-star pickups `:35071`/`:35087`, an unported lane) — drinking a
-    /// mana potion grants NO ManaHeat, so the field stays 1.
+    /// mana-star pickups `:35071`/`:35087` — the S1-P-i52 lane owns those);
+    /// drinking a mana potion grants NO ManaHeat, so the field stays 1.
     pub mana_heat: f32,
     /// `Player.pStone` (`Player.cs:2404`): the Philosopher's Stone family —
     /// 535 (`:15574-15577`), Charm of Myths 860 (`:15150-15153`), Catalyst
@@ -1297,6 +1369,28 @@ pub struct Player {
     /// Mana Crystal's +20 use-grant (`:45276-45281`, unported). The
     /// per-tick rebase reads it; nothing else writes it in play.
     pub mana_max_base: i32,
+    /// `Player.manaFlower` (`Player.cs:1876`-adjacent field, armed by the Mana
+    /// Flower 555 `:15591-15594`, Arcane Flower 3991 `:14405-14406`, Magnet
+    /// Flower 4000 `:14455-14457` and Mana Cloak 4001 `:14459-14460`). The
+    /// `manaCost -= 0.08f` row applies ONCE after the equip loop
+    /// (`UpdateEquips` `:12962-12965`) — a bool, so two flowers do not stack.
+    /// `ResetEffects` clears it (`:18721`). It also gates `CheckMana`'s
+    /// QuickMana lane (`:52588`), which under ManaV2 lands the same empty-bar
+    /// arm as the plain lane (the potion seam rides i37's `use_potion_item`).
+    pub mana_flower: bool,
+    /// `Player.slowMagicUse` (`Player.cs:978`): the ManaV2 out-of-mana cast
+    /// flag. `CheckMana` clears it on entry (`:52578`) and arms it when the
+    /// bar drains to 0 (`DoRunOutOfManaEffect` `:52619-52622`); while armed a
+    /// mana item's use animation/time stretch ×2.5 (`ApplyItemAnimation`
+    /// `:4478-4483`, `ItemCheck_Shoot` `:47187-47194`, `GetSlowMagicMultiplier`
+    /// `:47046-47049`). A mana potion drunk mid-swing undoes it
+    /// (`UndoSlowMagicUse` `:51954-51966`).
+    pub slow_magic_use: bool,
+    /// `Player.cs:19420`'s `flag = itemAnimation > 0 || reuseDelay > 0` —
+    /// the ManaV2 animation gate on the mana refill (`:19542-19545`). The
+    /// sim caller feeds the App's swing/reuse timers each tick (the
+    /// `frame_inputs` convention); the bare `update` callers keep false.
+    pub mana_regen_item_in_use: bool,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -1565,6 +1659,20 @@ pub struct Player {
     try_keeping_hovering_down: bool,
     try_keeping_hovering_up: bool,
     down_prev: bool,
+    /// `Player.doubleTapCardinalTimer[0]` (`Player.cs:25022-25062`) — the
+    /// down-key double-tap window (15 ticks). S1-P-i27: the Forbidden
+    /// set-bonus rest aim fires on the down double-tap (`KeyDoubleTap(0)`).
+    /// The port models the down cardinal only (the up/left/right cardinals
+    /// drive the dash / other set bonuses, unported here).
+    double_tap_down_timer: i32,
+    /// `Player.holdDownCardinalTimer[0]` (`Player.cs:25064-25072`) — the
+    /// down-key hold counter. S1-P-i27: the Stardust/Forbidden set-bonus
+    /// rest-target clear fires at holdTime >= 60 (`KeyHoldDown(0, ..)`).
+    hold_down_timer: i32,
+    /// `Player.releaseDown` (`Player.cs:25037`) — the down-key release latch
+    /// (true while the key is up). The double-tap edge is
+    /// `controlDown && releaseDown` (`Utils.JustBecameTrue`).
+    release_down: bool,
     /// `Player.hasJumpOption_*` / `canJumpAgain_*` / `isPerformingJump_*`
     /// (`Player.cs:2664-2716`), indexed by [`ExtraJump::index`]. The has
     /// flags re-derive per tick from the equipment; the can flags re-arm on
@@ -1858,15 +1966,35 @@ pub struct Player {
     /// Written by the item-use path (M4-PROJ-6 Phase 5), read by the arm
     /// (Phase 4); default off.
     pub channel: bool,
-    /// The shooting item's kind while `channel` — the C# block only holds the
-    /// aim while `HeldItem.shoot == type` (`AI_009_MagicMissiles`'s owner
-    /// block, `Projectile.cs:43239-43249`); 0 = no item.
+    /// The shooting item's kind while `channel` — the held item's id, read by
+    /// the Last Prism holder's keep-alive (`registry::item(channel_item)`,
+    /// `Projectile.cs:66540-66546`); 0 = no item.
     pub channel_item: u16,
+    /// The held item's `shoot` (projectile id) while `channel` — the C# block
+    /// holds the aim only while `HeldItem.shoot == this.type`
+    /// (`AI_009_MagicMissiles`'s owner block, `Projectile.cs:43241`), so the
+    /// aiStyle-9 spells compare THIS against their own kind, not the item id.
+    /// 0 = no item. (S1-P-i20: the pre-fix port compared `channel_item` — the
+    /// item id — against the projectile kind, so the Magic Missile / Flamelash
+    /// channel hold never fired in the real use path.)
+    pub channel_shoot: u16,
     /// The aim target the channel feeds the spell: `MouseWorld` clamped by
     /// `LimitPointToPlayerReachableArea` (`Projectile.cs:43241-43249`'s
     /// `ai[0..1] = LimitPointToPlayerReachableArea(MouseWorld)`), in world
     /// pixels. `Vec2::ZERO` while not channelling.
     pub channel_target: Vec2,
+    /// `Player._channelShotCache.ProjectileTypeExpected` (`Player.cs:117`,
+    /// `:52963-52966`): the held channel item's `shoot` — the projectile
+    /// type `TryUpdateChannel` tracks and `TryCancelChannel` matches
+    /// (`ChannelCancelKey` `:121-140`). 0 = no channel armed.
+    pub channel_proj_expected: u16,
+    /// `Player._channelShotCache.ProjectileIndexExpected` (`Player.cs:119`,
+    /// `:134-140`): the pool slot of the LAST spawned projectile of the
+    /// expected type (`NewProjectile`'s tail `Projectile.cs:11097-11100`).
+    /// The C# struct field defaults to 0 (`StartChanneling(Item)` news the
+    /// key with only `ProjectileTypeExpected` set, `:52963-52966`), so an
+    /// untracked cache matches slot 0 — the port keeps the same 0 default.
+    pub channel_index_expected: u16,
     /// `Player.heldProj` (`Player.cs:1516`, stock −1): the slot index of the
     /// held-channel projectile (the golf club helper writes it every tick,
     /// `Projectile.cs:52490`/`:52535`). The port's draw/pose consumers land
@@ -2372,6 +2500,7 @@ impl Player {
             aggro: 0,
             npc_type_no_aggro: vec![false; crate::npc::NpcKind::CS_ID_COUNT],
             tank_pet: -1,
+            tank_pet_reset: false,
             composite_front: crate::player::CompositeArmState::DISABLED,
             composite_back: crate::player::CompositeArmState::DISABLED,
             deaths_pve: 0,
@@ -2387,7 +2516,26 @@ impl Player {
             immune_time: 0,
             immune_no_blink: false,
             minion_attack_target_npc: -1,
+            minion_rest_target_point: Vec2::ZERO,
+            set_forbidden: false,
+            set_stardust: false,
             tag_effects: crate::tag_effects::TagEffectStack::default(),
+            whip_range_multiplier: 1.0,
+            whip_use_time_multiplier: 1.0,
+            // The RAW summoner-speed bonus starts 0 (`Player.cs:2460`,
+            // `ResetEffects` re-zeroes `:18341`) — the i12 read-only
+            // `summoner_weapon_speed_multiplier` folds `melee + bonus`
+            // on demand, so the gate's old post-first-fold 1.0 spawn
+            // stand-in is gone (the resync keep-one).
+            summoner_weapon_speed_bonus: 0.0,
+            cool_whip_buff: false,
+            cob_whip_buff: false,
+            acc_snake_band: false,
+            acc_wicked_armlet: false,
+            acc_mobius_strip: false,
+            acc_silver_bracer: false,
+            repeat_whip_swings: -1,
+            repeat_whips_reset_cooldown: 0,
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
@@ -2395,8 +2543,6 @@ impl Player {
             well_fed: false,
             pick_speed_bonus: 0.0,
             melee_speed_bonus: 0.0,
-            summoner_weapon_speed_bonus: 0.0,
-            whip_use_time_multiplier: 1.0,
             tile_speed_bonus: 0.0,
             wall_speed_bonus: 0.0,
             auto_reuse_glove: false,
@@ -2434,6 +2580,7 @@ impl Player {
             hornet_minion: false,
             imp_minion: false,
             spider_minion: false,
+            next_cycled_spider_minion_type: 0,
             twins_minion: false,
             pirate_minion: false,
             vampire_frog: false,
@@ -2591,6 +2738,9 @@ impl Player {
             p_stone: false,
             p_stone_prev: false,
             mana_max_base: 20,
+            mana_flower: false,
+            slow_magic_use: false,
+            mana_regen_item_in_use: false,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             black_belt: false,
@@ -2651,6 +2801,9 @@ impl Player {
             try_keeping_hovering_down: false,
             try_keeping_hovering_up: false,
             down_prev: false,
+            double_tap_down_timer: 0,
+            hold_down_timer: 0,
+            release_down: true,
             has_jump_options: [false; 9],
             can_jump_again: [false; 9],
             performing_jump: None,
@@ -2737,7 +2890,10 @@ impl Player {
             // (`Player.cs:52958-52968`).
             channel: false,
             channel_item: 0,
+            channel_shoot: 0,
             channel_target: Vec2::ZERO,
+            channel_proj_expected: 0,
+            channel_index_expected: 0,
             // `Player.heldProj = -1` (`Player.cs:1516`'s stock).
             held_proj: -1,
             magic_quiver: false,
@@ -3238,9 +3394,9 @@ impl Player {
     }
 
     /// `Player.ManaEffect` (`Player.cs:4531-4538`): queue the HealMana
-    /// combat-text amount (S1-P-i37 — the mana-potion drink's
-    /// `ApplyLifeAndOrMana` `:51950` half; the cuffs' `Hurt` arm writes the
-    /// field directly, `:38299`). The caller owns `Main.combatText`.
+    /// combat-text amount. The cuffs' `Hurt` arm writes the field directly
+    /// (`:38299`); the potion drink (`ApplyLifeAndOrMana` `:51950`) and the
+    /// star pickups (`:35072`) call the method — this is its port.
     pub(crate) fn queue_mana_effect(&mut self, amount: i32) {
         self.pending_mana_effect = Some(amount);
     }
@@ -3277,6 +3433,7 @@ impl Player {
             self.buffs.add_buff(396, self.latest_mana_potion_duration as i32);
         }
     }
+
 
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
     /// (`Player.cs:38401-38517`) — the hit-moment snapshot (final post-floor
@@ -3629,6 +3786,14 @@ impl Player {
         self.dead_time += 1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
         self.hp = 0;
+        // `Player.cs:17017`: the dead tick drops the channel.
+        self.channel = false;
+        self.channel_item = 0;
+        self.channel_target = Vec2::ZERO;
+        self.channel_proj_expected = 0;
+        self.channel_index_expected = 0;
+        // S1-P-i20 seam: the shoot-id field clears with the latch.
+        self.channel_shoot = 0;
         // `Player.cs:17018-17019`: the dead tick zeroes both sickness clocks
         // (the buff-21 slot itself survives until expiry — only the counters
         // reset, exactly like the source).
@@ -4482,27 +4647,34 @@ impl Player {
         1.0 / (1.0 + self.wall_speed_bonus).min(3.0)
     }
 
-    /// `Player.GetWeaponKnockback` (`Player.cs:53346-53369`): the summon
-    /// `minionKB` add, the melee `kbGlove` ×2, the `kbBuff` ×1.5, and the
-    /// ranged stealth scalings (shroomite / Vortex). The port has no
-    /// `setVortex` field (the Vortex stealth set is unported), so that arm
-    /// stays a note; the shroomite arm reads the ported `shroomite_stealth`.
-    pub fn weapon_knockback(&self, class: registry::DamageClass, base_kb: f32) -> f32 {
-        let mut kb = base_kb;
-        if class == registry::DamageClass::Summon {
-            kb += self.minion_kb;
+    /// Resync keep-one: main's i12 `melee_speed(held_kind)` /
+    /// `summoner_weapon_speed_multiplier(held_kind)` read-only accessors
+    /// above are canonical (the landed V4 form — `CapAttackSpeeds`
+    /// `Player.cs:29021-29026` folded on demand instead of mutating the
+    /// accumulator). The gate's mutating `cap_attack_speeds` +
+    /// `turn_attack_speed_to_use_time_multiplier` copies were dropped;
+    /// `weapon_knockback` keeps ONE def — the i25 `&ItemDef` form below
+    /// (the census-corrected minionKB-first order, `Player.cs:53346-53369`).
+
+    /// The whip swing's animation multiplier (`Player.ApplyItemAnimation`
+    /// `:4474-4476`): `summonerWeaponSpeedBonus * whipUseTimeMultiplier` —
+    /// the i12 read-only fold over the live held item (the gate's i24
+    /// swing-tail seam, re-armed onto the canonical accessor at the resync).
+    pub fn whip_animation_multiplier(&self) -> f32 {
+        self.summoner_weapon_speed_multiplier(self.held_item_kind)
+    }
+
+    /// `Player.Update_SnakeBand` (`Player.cs:28412-28418`): the whip-repeat
+    /// reset cooldown counts down one per tick; at 0 the swing counter
+    /// returns to −1 (the next whip throw is swing #0). Called from the
+    /// world-sim player pass at the `:24567` position.
+    pub fn update_snake_band(&mut self) {
+        if self.repeat_whips_reset_cooldown > 0 {
+            self.repeat_whips_reset_cooldown -= 1;
+            if self.repeat_whips_reset_cooldown == 0 {
+                self.repeat_whip_swings = -1;
+            }
         }
-        if class == registry::DamageClass::Melee && self.kb_glove {
-            kb *= 2.0;
-        }
-        if self.kb_buff {
-            kb *= 1.5;
-        }
-        if class == registry::DamageClass::Ranged && self.shroomite_stealth {
-            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
-        }
-        // `sItem.ranged && this.setVortex` (`:53364-53367`) — no port field.
-        kb
     }
 
     /// `Player.MountedCenter` (`Player.cs:3335-3343`):
@@ -4805,6 +4977,20 @@ impl Player {
         if crate::accessory_combat::apply_combat_accessory(kind, self) {
             return;
         }
+        // `ApplyEquipFunctional`'s mana stat switch (`Player.cs:14922-14935`,
+        // a `switch` INDEPENDENT of the per-type `if` chain the match below
+        // ports — both run per slot): the Band of Starpower 111 and the
+        // cuffs 1595/2221 add +40 `statManaMax2`; the Mana Regeneration Band
+        // 982, the Restoration Shield 6188 and the Mystic Arts Sash 6189 add
+        // +40 AND `manaRegenBonus += 60` (`:14933`).
+        match kind {
+            111 | 1595 | 2221 => self.mana_max += 40,
+            982 | 6188 | 6189 => {
+                self.mana_max += 40;
+                self.mana_regen_bonus += 60;
+            }
+            _ => {}
+        }
         match kind {
             // S1-P-i29 — the Ancient Chisel (`Player.cs:14396-14398`):
             // `chiselSpeed = true`, folded by `UpdateEquips` into
@@ -4983,8 +5169,13 @@ impl Player {
                 self.melee_speed_bonus += 0.12;
                 self.auto_reuse_glove = true;
             }
-            // The Wicked Claws (`:14600-14604`): the same pair.
+            // The Wicked Claws (`:14600-14604`): the armlet flag + the
+            // Titan-Glove pair (`autoReuseGlove` + meleeSpeed +0.12). The
+            // resync keep-one: the i24 whip block below ALSO carried a 6182
+            // arm (armlet + meleeSpeed, no glove) — first-match-wins shadowed
+            // it; this i12 arm is the C#-complete one, the duplicate dropped.
             6182 => {
+                self.acc_wicked_armlet = true;
                 self.melee_speed_bonus += 0.12;
                 self.auto_reuse_glove = true;
             }
@@ -5067,9 +5258,27 @@ impl Player {
             908 => self.lava_max += 420,
             // The Worm Scarf (`:15081-15084`): +17% endurance.
             3224 => self.endurance += 0.17,
-            // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
-            // Nature's Gift (`:15110-15113`, −0.06).
-            555 => self.mana_cost -= 0.08,
+            // The Mana Flower (`:15591-15594`), the Arcane Flower
+            // (`:14405-14410` — also +5 magic crit / +5% magic damage; the
+            // aggro -400 has no port consumer), the Magnet Flower
+            // (`:14455-14457`, its manaMagnet half unported) and the Mana
+            // Cloak (`:14459-14460`) arm `manaFlower`; the ONE -0.08
+            // `manaCost` row applies after the equip loop (`:12962-12965`),
+            // so two flowers do not stack. Nature's Gift (`:15110-15113`)
+            // keeps its own per-item -0.06 row.
+            555 => self.mana_flower = true,
+            // The Magnet Flower 4000 (`:14455-14458`): `manaFlower` +
+            // `manaMagnet` (S1-P-i52) — ONE arm, the i19 flag + the i52
+            // magnet merged (a second 4000 arm below would be unreachable).
+            4000 => {
+                self.mana_flower = true;
+                self.mana_magnet = true;
+            }
+            3991 => {
+                self.mana_flower = true;
+                self.magic_crit += 5;
+                self.magic_damage += 0.05;
+            }
             223 => self.mana_cost -= 0.06,
             // The Philosopher's Stone family (S1-P-i37): 535
             // (`:15574-15577`) and the Charm of Myths 860 (`:15150-15153`)
@@ -5109,6 +5318,11 @@ impl Player {
                 self.acc_sentry_backpack = true;
                 self.no_knockback = true;
             }
+            // (Resync keep-one: the i27 whip-accessory flag block that sat
+            // here was the STALE subset — the i24 block below carries the
+            // same rows PLUS the 6157 Snake Band / 6183 Silver Shield arms
+            // and the live `acc_snake_band` grants. First-match-wins made
+            // these arms shadow the fuller ones; dropped.)
             // The dodge family (`ApplyEquipFunctional`): the Black Belt
             // 963 (`:15058-15061`) and the Master Ninja Gear 984
             // (`:15062-15067`) both arm `blackBelt`; the Mystic Arts Sash
@@ -5158,13 +5372,11 @@ impl Player {
                 self.gold_ring = true;
                 self.has_lucky_coin = true;
             }
-            // The Magnet Flower 4000 (`Player.cs:14455-14458`):
-            // `manaFlower` + `manaMagnet`. The port folds `manaFlower` to
-            // its -0.08 `manaCost` row (the 555 convention, S1-P-i52).
-            4000 => {
-                self.mana_cost -= 0.08;
-                self.mana_magnet = true;
-            }
+            // The Magnet Flower 4000's manaMagnet + manaFlower arm lives in
+            // the flower-flag block above (deduped keep-one — the per-item
+            // `manaCost -= 0.08` i52 stand-in was dropped at the i19 resync;
+            // the ONE -0.08 fold rides the post-loop `mana_flower` gate,
+            // `:12962-12965`).
             // The S1-C-7 wave B retaliate family (`Player.Hurt`
             // `:38401-38517`): the star cloak + its four override kinds, the
             // honeycomb family and the strong-bee flag. The C# carries Item
@@ -5187,20 +5399,51 @@ impl Player {
                 self.bee_cloak_override = true;
             }
             // Mana Cloak 4001 (`:14459-14463`): `manaFlower` + the cloak +
-            // the manaCloak override (star type 723). The port folds
-            // `manaFlower` to its -0.08 `manaCost` row (the 555 convention).
+            // the manaCloak override (star type 723). The flower flag arms
+            // here; the ONE -0.08 `manaCost` row rides the post-loop
+            // `mana_flower` fold (`:12962-12965`, the 555 convention).
             4001 => {
-                self.mana_cost -= 0.08;
+                self.mana_flower = true;
                 self.star_cloak = true;
                 self.mana_cloak_override = true;
             }
             // Serpent's Coil 6186 (`:14620-14624`): the cloak + the
-            // snakeCloak override (star type 1133). (`accSnakeBand` is its
-            // own unported family.)
+            // snakeCloak override (star type 1133) + `accSnakeBand` (the
+            // whip-repeat flag, `:14621`).
             6186 => {
                 self.star_cloak = true;
                 self.snake_cloak_override = true;
+                self.acc_snake_band = true;
             }
+            // The whip accessory flags (`ApplyEquipFunctional`,
+            // `Player.cs:14509-14624`): Silver Bracer 6156 (`:14510`),
+            // Mobius Strip 6158 (`:14513`), Wicked Armlet 6159 (`:14516`),
+            // Ouroboros Ring 6162 (`:14519-14520`, Mobius + Snake), Twilight
+            // Grasp 6163 (`:14523`, Silver Bracer + Wicked), Snake Band 6157
+            // (`:14526`), Armlet of Ruin 6179 (`:14585`, Wicked), Wicked
+            // Claws 6182 (`:14601-14603`, Wicked + meleeSpeed +0.12), Silver
+            // Shield 6183 (`:14606`, Silver Bracer — its knockback/fire-walk
+            // halves ride `accessory_defense`). The `maxTagEffects` /
+            // `whipRangeMultiplier` / `tagEffectDuration` consumers fold in
+            // `update_equips`' tail (`:12970-12984`).
+            6156 => self.acc_silver_bracer = true,
+            6158 => self.acc_mobius_strip = true,
+            6159 => self.acc_wicked_armlet = true,
+            6162 => {
+                self.acc_mobius_strip = true;
+                self.acc_snake_band = true;
+            }
+            6163 => {
+                self.acc_silver_bracer = true;
+                self.acc_wicked_armlet = true;
+            }
+            6157 => self.acc_snake_band = true,
+            6179 => self.acc_wicked_armlet = true,
+            // (Resync keep-one: the 6182 Wicked Claws arm lives in the i12
+            // Titan-Glove block above — armlet + autoReuseGlove + meleeSpeed,
+            // the C#-complete `:14600-14604` set. This block's old copy
+            // lacked the glove grant and was shadowed anyway.)
+            6183 => self.acc_silver_bracer = true,
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
             // Panic Necklace 1578 (`:15076-15080`): the honeycomb + `panic`.
@@ -5300,6 +5543,32 @@ impl Player {
             registry::DamageClass::Magic => self.magic_crit,
             _ => 0,
         }
+    }
+
+    /// `Player.GetWeaponKnockback` (`Player.cs:53346-53369`): the summon
+    /// staff's shot knockback takes the `minionKB` bonus FIRST (`:53348-53351`,
+    /// `if (sItem.summon) KnockBack += this.minionKB`), then the melee glove's
+    /// ×2 (`:53352-53355`), the Titan buff's ×1.5 (`:53356-53359`) and the
+    /// shroomite-stealth ranged scale (`:53360-53363`). The `setVortex` ranged
+    /// arm (`:53364-53367`) has no port field (the vortex stealth is unported)
+    /// and folds out. `ItemCheck_Shoot` calls this at `:47151` before the
+    /// spawn, so the minion/sentry shots carry the bonus — the port's throw
+    /// path previously passed the raw `fx_kb` and dropped it.
+    pub fn weapon_knockback(&self, def: &registry::ItemDef, knock_back: f32) -> f32 {
+        let mut kb = knock_back;
+        if def.summon {
+            kb += self.minion_kb;
+        }
+        if def.melee && self.kb_glove {
+            kb *= 2.0;
+        }
+        if self.kb_buff {
+            kb *= 1.5;
+        }
+        if def.ranged && self.shroomite_stealth {
+            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
+        }
+        kb
     }
 
     /// `Player.ItemCheck`'s food consumption side (`:14353`'s gate): the
@@ -5742,6 +6011,24 @@ impl Player {
         // `grant_summon_caps`) re-add per tick.
         self.max_minions = 1;
         self.max_turrets = 1;
+        // `ResetEffects`' whip rows (`Player.cs:18498-18499` whipRange/
+        // whipUseTime = 1f, `:18341` summonerWeaponSpeedBonus = 0f,
+        // `:18400-18401` cool/cobWhipBuff = false, `:18517-18518`
+        // maxTagEffects = 1 / tagEffectDuration = 1f, `:18519-18522` the four
+        // whip accessory flags = false): the buff arms, the armor rows and
+        // the accessory match below re-derive them per tick. The Snake Band
+        // counters (`repeatWhipSwings`/`repeatWhipsResetCooldown`) are NOT
+        // reset here — they are a countdown (`Update_SnakeBand`, `:28412`).
+        self.whip_range_multiplier = 1.0;
+        self.whip_use_time_multiplier = 1.0;
+        self.summoner_weapon_speed_bonus = 0.0;
+        self.cool_whip_buff = false;
+        self.cob_whip_buff = false;
+        self.acc_snake_band = false;
+        self.acc_wicked_armlet = false;
+        self.acc_mobius_strip = false;
+        self.acc_silver_bracer = false;
+        self.tag_effects.set_player_caps(1, 1.0);
         // The 28 summon keep-alive flags (`:18620-18646`+`:18741`) — the
         // arms table is the single source of the flag set.
         self.clear_summon_flags();
@@ -5772,13 +6059,12 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
-        // `ResetEffects`' attack-speed clears (`Player.cs:18341`
-        // summonerWeaponSpeedBonus = 0f, `:18499` whipUseTimeMultiplier = 1f,
-        // `:18531-18532` wallSpeed/tileSpeed = 1f, `:18710` autoReuseGlove =
-        // false, `:18431` stressBall = false) — the buff/equipment grants
+        // (Resync keep-one: the summoner/whip attack-speed clears live in
+        // the i24/i27 ResetEffects block above — `:18341`/`:18499`.)
+        // `ResetEffects`' attack-speed clears (`Player.cs:18531-18532`
+        // wallSpeed/tileSpeed = 1f, `:18710` autoReuseGlove = false,
+        // `:18431` stressBall = false) — the buff/equipment grants
         // below re-add them per tick, like the melee speed sum.
-        self.summoner_weapon_speed_bonus = 0.0;
-        self.whip_use_time_multiplier = 1.0;
         self.tile_speed_bonus = 0.0;
         self.wall_speed_bonus = 0.0;
         self.auto_reuse_glove = false;
@@ -5791,18 +6077,39 @@ impl Player {
         self.stat_defense = 0;
         // `:18334`: `manaCost = 1f` — the reductions re-apply below.
         self.mana_cost = 1.0;
+        // `:18389`: `statManaMax2 = statManaMax` — the effective cap rebases
+        // to the permanent one every tick, then the per-tick grants re-add —
+        // the Arcane prefix 66's +20 (`GrantPrefixBenefits` `:13971-13974`),
+        // the Magic Power buff's +20 (`:11890`) and the caster sets' rows.
+        // Without the rebase the grants compound every tick and stick after
+        // the item comes off. (ONE rebase — both sides carried it.)
+        self.mana_max = self.mana_max_base;
         // `:18720`: `pStone = false` — the Stone family's accessory rows
         // (535/860/6185) re-arm below (`:15576`/`:15152`/`:14617`).
         self.p_stone = false;
-        // `ResetEffects`' `statManaMax2 = statManaMax` (`Player.cs:18389`):
-        // the effective cap rebases to the permanent one every tick, then
-        // the per-tick grants re-add — the Arcane prefix 66's +20
-        // (`GrantPrefixBenefits` `:13971-13974`), the Magic Power buff's +20
-        // (`:11890`) and the caster sets' rows. Without the rebase the
-        // grants compound every tick and stick after the item comes off.
-        self.mana_max = self.mana_max_base;
+        // `:18721`: `manaFlower = false` — the flower accessories re-arm it
+        // in the equip pass; the ONE -0.08 row applies after the loop.
+        // (`manaSick = false` `:18592` already ran at the damage-reset head
+        // above — the i37 form, take-one.)
+        self.mana_flower = false;
         // `:18497`: `endurance = 0f` — the rows below re-apply.
         self.endurance = 0.0;
+        // S1-P-i27 — `ResetEffects`' summoner-tag resets (`Player.cs:18498`,
+        // `:18517-18522`): the whip range base, the tag-stack cap/duration
+        // defaults and the three accessory flags re-derive per tick from
+        // the equip match below (`apply_equip_functional`) and the
+        // `UpdateEquips` fold. The stack's own fields mirror the C#'s
+        // `_owner.maxTagEffects`/`tagEffectDuration` reads
+        // (`TagEffectStack.cs:47`/`:133` — the stack reads the PLAYER, so
+        // the port syncs the copies here).
+        self.whip_range_multiplier = 1.0;
+        self.acc_silver_bracer = false;
+        self.acc_mobius_strip = false;
+        self.acc_wicked_armlet = false;
+        self.tag_effects.reset_player_scalars(
+            crate::tag_effects::MAX_TAG_EFFECTS_DEFAULT,
+            crate::tag_effects::TAG_EFFECT_DURATION_DEFAULT,
+        );
         // `:18323-18324`: the penetration reset.
         self.armor_penetration = 0;
         self.melee_armor_penetration = 0;
@@ -5836,6 +6143,11 @@ impl Player {
         self.set_monk_t3 = false;
         self.set_apprentice_t2 = false;
         self.set_apprentice_t3 = false;
+        // S1-P-i27 — `ResetEffects`' `setStardust = false` (`Player.cs:18743`)
+        // and `setForbidden = false` (`:18745`): the armor-set block above
+        // re-derives both per tick.
+        self.set_stardust = false;
+        self.set_forbidden = false;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -5903,6 +6215,12 @@ impl Player {
                 self.magic_crit += piece.magic_crit;
                 self.move_speed += piece.move_speed;
                 self.melee_speed_bonus += piece.melee_speed;
+                // Gate-merge: the piece `whipRangeMultiplier` halves (Tiki Mask
+                // 1159 +0.1, Stardust 3382/3383 +0.15, `Player.cs:13854`/`:13879`)
+                // ride `grant_summon_caps` beside the minion-cap rows (the i27
+                // seam) — NOT here. i24's `armor_stats.whip_range` fold was the
+                // duplicate; the set half stays in the `set_stats` block below.
+                self.whip_use_time_multiplier *= piece.whip_use_time_mult;
             }
             // S1-P-i35 — `GrantArmorBenefits`' Angler pieces
             // (`Player.cs:13447-13450`): 2367-2369 (the Angler set) and
@@ -5912,22 +6230,51 @@ impl Player {
             }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
             // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
-            // Hat robes (1282-1287, −0.05…−0.15 by tier), the Crystal
-            // Assassin head (4982, −0.1), the Spectre hood/mask (1003 −0.17,
-            // 2189 −0.13), the Mystic Robe (2279, −0.1), the Apprentice/
-            // Dark Artist rows (3797 −0.1, 3875 −0.15).
+            // Hat robes (1282-1287, −0.05…−0.15 by tier; the Amber Robe 4256
+            // shares the 1286 row, `:13742-13746`), the Crystal Assassin
+            // head (4982, −0.1), the Spectre hood/mask (1003 −0.17, 2189
+            // −0.13), the Mystic Robe (2279, −0.1), the Apprentice/Dark
+            // Artist rows (3797 −0.1, 3875 −0.15), the Nebula Helmet (2760,
+            // −0.15, `:13918-13924`).
             self.mana_cost -= match kind {
                 1282 => 0.05,
                 1283 => 0.07,
                 1284 => 0.09,
                 1285 => 0.11,
-                1286 => 0.13,
+                1286 | 4256 => 0.13,
                 1287 => 0.15,
                 2279 | 3797 | 4982 => 0.1,
                 2189 => 0.13,
-                3875 => 0.15,
+                3875 | 2760 => 0.15,
                 1003 => 0.17,
                 _ => 0.0,
+            };
+            // `GrantArmorBenefits`' per-piece `statManaMax2 +=` rows
+            // (`Player.cs:13274-13924`): the caster heads and the jungle/
+            // ancient-cobalt pieces. The set bonuses' own +60 rows ride
+            // `set_stats` below (once per completed set).
+            self.mana_max += match kind {
+                228 | 960 => 40,   // `:13343-13347` Jungle Hat / Ancient Cobalt Helmet
+                229 | 961 => 20,   // `:13348-13352` Jungle Shirt / Ancient Cobalt Breastplate
+                230 | 962 => 20,   // `:13353-13357` Jungle Pants / Ancient Cobalt Leggings
+                371 => 40,         // `:13389-13394` Cobalt Hat
+                376 => 60,         // `:13419-13423` Mythril Hood
+                400 => 80,         // `:13451-13456` Adamantite Headgear
+                1207 => 60,        // `:13491-13496` Palladium Headgear
+                1212 => 80,        // `:13528-13532` Orichalcum Headgear
+                1217 => 100,       // `:13558-13563` Titanium Headgear
+                558 | 4898 => 100, // `:13585-13590` Hallowed Headgear / Ancient Hallowed Headgear
+                1003 => 80,        // `:13651-13656` Spectre Hood
+                2189 => 60,        // `:13679-13685` Spectre Mask
+                1282 => 20,        // `:13722-13726` Amethyst Robe
+                1283 => 40,        // `:13727-13731` Topaz Robe
+                1284 => 40,        // `:13732-13736` Sapphire Robe
+                1285 => 60,        // `:13737-13741` Emerald Robe
+                1286 | 4256 => 60, // `:13742-13746` Ruby Robe / Amber Robe
+                1287 => 80,        // `:13747-13751` Diamond Robe
+                2760 => 60,        // `:13918-13924` Nebula Helmet
+                3777 | 3778 => 40, // `:13274-13285` Ancient Battle Armor Shirt/Pants
+                _ => 0,
             };
         }
         // `:12988-13003`: the Celestial Stone bundle — S1-C-12 wave E
@@ -6025,6 +6372,23 @@ impl Player {
                 self.set_apprentice_t2 = true;
                 self.max_turrets += 1;
             }
+            // S1-P-i27 — the minion-rest-target set bonuses. The Forbidden
+            // triple (`ArmorSetBonuses.cs:483`, `Benefits.Forbidden` `:61-66`)
+            // arms `setForbidden` — the double-tap-down rest aim + storm
+            // command gate (`KeyDoubleTap` `Player.cs:56779-56786`). The
+            // `UpdateForbiddenSetLock`/`Lighting.AddLight` halves are the
+            // storm command's and the light layer's (deferred, ANALYSIS).
+            (3776, 3777, 3778) => {
+                self.set_forbidden = true;
+            }
+            // The Stardust triple (`:482`, `Benefits.Stardust` `:56-59` →
+            // `ApplySetBonus_Stardust` `Player.cs:16339-16356`): `setStardust`
+            // gates the down-hold rest-target clear (`KeyHoldDown`
+            // `:56903-56906`). The buff-187 grant + the 623 guardian spawn
+            // are the guardian's own lane (deferred, ANALYSIS).
+            (3381, 3382, 3383) => {
+                self.set_stardust = true;
+            }
             _ => {}
         }
         // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
@@ -6048,10 +6412,15 @@ impl Player {
             self.mana_max += set.mana_max;
             self.max_minions += set.max_minions;
             self.mana_cost += set.mana_cost;
+            // S1-P-i27 — the Tiki set's `whipRangeMultiplier += 0.2f`
+            // (`ArmorSetBonuses.cs:15`); the whip sweep now reads the field.
+            // Gate-merge: ONE application (i24 and i27 both added the line).
+            self.whip_range_multiplier += set.whip_range;
             self.endurance += set.endurance;
             self.thorns += set.thorns;
             self.cactus_thorns |= set.cactus_thorns;
             self.turtle_thorns |= set.turtle_thorns;
+            self.whip_use_time_multiplier *= set.whip_use_time_mult;
             if set.dash_type != 0 {
                 self.dash_type = set.dash_type;
             }
@@ -6181,6 +6550,18 @@ impl Player {
                 // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
                 // C#: `statDefense += 5`).
                 215 => self.stat_defense += 5,
+                // `:10110-10121` — the whip-speed buffs: Dark Harvest (311)
+                // +0.35, Sword Whip (308) +0.25, Thorn Whip (314) +0.12, per
+                // slot. `CapAttackSpeeds` (`:29025`) folds `meleeSpeed + bonus`
+                // into the use-time multiplier the whip swing reads.
+                311 => self.summoner_weapon_speed_bonus += 0.35,
+                308 => self.summoner_weapon_speed_bonus += 0.25,
+                314 => self.summoner_weapon_speed_bonus += 0.12,
+                // `:10122-10129` — the Cool/Cob Whip buff flags: the on-hit
+                // latch (`Projectile.cs:13918`/`:13929`) reads them to spawn
+                // one snowflake/spark; the buff re-affirms the flag per tick.
+                312 => self.cool_whip_buff = true,
+                365 => self.cob_whip_buff = true,
                 // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
                 // `lifeRegen += 6` (the regen half has no consumer yet) and
                 // `thorns += 0.5` while under 1.
@@ -6231,6 +6612,10 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
+                // (Gate resync take-one: the Mana Sickness 94 arm lives ONCE
+                // above through `potions::apply_mana_sickness_arm` — the i37
+                // canonical fn; the i19 inline copy was identical maths
+                // (`0.25 * buffTime / 300`) and dropped, an unreachable arm.)
                 // The WellFed tiers (`:11931-11969`): the per-slot stat adds —
                 // the defense rows (26 +2, 206 +3, 207 +4) since M3-EQUIP-5;
                 // the minion halves wait for M4-MINION.
@@ -6396,6 +6781,27 @@ impl Player {
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
+        // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
+        // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
+        // `maxTagEffects++` and `whipRangeMultiplier += 0.1f`, the Wicked
+        // Armlet adds `maxTagEffects++`. The base cap/duration reset to 1/1f
+        // in `ResetEffects` (`:18517-18518`); the stack reads them per tick.
+        // (Gate i24/i27 deduped form — ONE application, V2's fix.)
+        let mut max_tag_effects = 1usize;
+        let mut tag_effect_duration = 1.0f32;
+        if self.acc_silver_bracer {
+            tag_effect_duration += 2.0;
+            max_tag_effects += 1;
+        }
+        if self.acc_mobius_strip {
+            max_tag_effects += 1;
+            self.whip_range_multiplier += 0.1;
+        }
+        if self.acc_wicked_armlet {
+            max_tag_effects += 1;
+        }
+        self.tag_effects.set_player_caps(max_tag_effects, tag_effect_duration);
         // The placement-speed accessories (`Player.cs:15263-15292` set the
         // flags — 2214 Brick Layer → tile, 2217 Portable Cement Mixer → wall,
         // 3061 Architect Gizmo Pack and 5126 Hand Of Creation → both;
@@ -6413,15 +6819,11 @@ impl Player {
         if wall_acc {
             self.wall_speed_bonus += 0.5;
         }
-        // The Obsidian Outlaw set (`DataStructures/ArmorSetBonuses.cs:120-125`,
-        // the 3266/3267/3268 triple): `whipUseTimeMultiplier *= 1f/1.15f`
-        // — the scaling whips' `ApplyItemAnimation` multiplier (`:4476`).
-        // The set is not in the port's `armor_sets::SETS` flag table (its
-        // minionDamage/whipRange halves are unported), so the triple is
-        // matched directly here.
-        if (self.equipped[0], self.equipped[1], self.equipped[2]) == (3266, 3267, 3268) {
-            self.whip_use_time_multiplier *= 1.0 / 1.15;
-        }
+        // (Resync keep-one: the Obsidian Outlaw ×(1/1.15) triple-match that
+        // sat here was the i12 stand-in from before the set joined
+        // `armor_sets::SETS` — the set-stats fold above now carries
+        // `whip_use_time_mult` (`ArmorSetBonuses.cs:124`), so the direct
+        // match DOUBLE-applied the scale. Dropped.)
         // `Player.cs:25640-25643`: a pStone CHANGE across `UpdateEquips`
         // rescales the live Potion Sickness timer (`AdjustRemainingPotionSickness`,
         // `:28939-28952`) — ×0.75 equipping the Stone family, ÷0.75 removing it.
@@ -6440,6 +6842,19 @@ impl Player {
         // OR grants with no RNG draw — a second pass over the same slots
         // is order-identical to the C#'s interleaved rows.
         crate::accessory_defense::apply_defense_accessories(self);
+        // `UpdateEquips`' post-loop `manaFlower` fold (`Player.cs:12962-
+        // 12965`): ONE `manaCost -= 0.08f` for the flag the four flower
+        // accessories armed (555/3991/4000/4001) — a bool, so stacking two
+        // flowers still costs only 0.08.
+        if self.mana_flower {
+            self.mana_cost -= 0.08;
+        }
+        // Gate-merge note (i24 vs i27): the summoner-tag fold
+        // (`Player.cs:12970-12984`, the Silver Bracer/Mobius Strip/Wicked
+        // Armlet adds) lives ONCE above — i24's local-fold +
+        // `set_player_caps` form (the same three C# `if`s, same order,
+        // same values). i27's `add_player_scalars` twin was dropped at the
+        // gate (it would double the adds); the seam stays available.
         // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
         // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
         if self.used_gummy_worm {
@@ -6462,6 +6877,17 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
+        // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
+        // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`
+        // (the i37 canonical tail fn — the i19 inline cut dropped at the
+        // resync take-one; the heat multiply stays ×1 on the drink path).
+        crate::potions::apply_magic_damage_sickness_tail(self);
+        // `Player.CapAttackSpeeds` (`Player.cs:25976`): the i12 canonical
+        // read-only form folds the cap/invert on demand —
+        // `melee_speed(held_kind)` / `summoner_weapon_speed_multiplier`
+        // read the live grants, so no mutating pass runs here (the gate's
+        // `cap_attack_speeds` accumulator rewrite was the superseded form).
         // `UpdateJumpHeight` (`Player.cs:19618`): the flat jump-speed add
         // rides after the grants (the Amphibian Boots' +1.6); a non-additive
         // mount still overwrites the pair in `update_mount` (`:19628-19629`).
@@ -10192,50 +10618,315 @@ impl Player {
         crate::luck::on_town_npc_death(&mut self.luck_state, npc_type, self.dead);
     }
 
-    /// `Player.MinionNPCTargetAim` (`Player.cs:56913-56931`): the summon
+    /// `Player.MinionNPCTargetAim` (`Player.cs:56914-56933`): the summon
     /// staff's right-click picks the nearest chaseable NPC to the mouse world
     /// point; a second click on the same target clears it.
-    pub fn minion_npc_target_aim(&mut self, npcs: &[Npc], mouse_world: Vec2) {
+    ///
+    /// S1-P-i27 fixes (verbatim against the C#):
+    /// * the distance is `NPC.Hitbox.Distance(mouseWorld)` — the
+    ///   rectangle-to-point distance (`Utils.cs:1507-1542`, 0 inside the box),
+    ///   NOT a centre-to-centre distance. A wide NPC's edge can be nearer to
+    ///   the cursor than a small NPC's centre even when the small one's centre
+    ///   is closer.
+    /// * the scan re-evaluates the CURRENT best's hitbox distance each
+    ///   iteration (`Main.npc[num].Hitbox.Distance(mouseWorld)`, `:56920`) —
+    ///   equivalent to tracking it, kept as a re-read for clarity.
+    /// * `do_not_disable_if_the_target_is_the_same` (`:56925`): the toggle-off
+    ///   only fires when the flag is false. The use path passes false
+    ///   (`ItemCheck_MinionAltFeatureUse`, `:49777`). The whip's aiStyle-165
+    ///   on-hit retarget is a PLAIN WRITE (`Projectile.cs:14261`,
+    ///   `whip_on_hit` — it never calls this method), so no caller passes
+    ///   true today; the parameter mirrors the C# signature.
+    pub fn minion_npc_target_aim(
+        &mut self,
+        npcs: &[Npc],
+        mouse_world: Vec2,
+        do_not_disable_if_the_target_is_the_same: bool,
+    ) {
+        let hitbox_dist = |n: &Npc| -> f32 {
+            let (w, h) = n.size();
+            crate::npc_ai_style64::rect_distance(
+                n.x as i32,
+                n.y as i32,
+                w as i32,
+                h as i32,
+                mouse_world.x,
+                mouse_world.y,
+            )
+        };
         let mut best: i32 = -1;
-        let mut best_d = f32::MAX;
         for (i, n) in npcs.iter().enumerate() {
             if !n.can_be_chased_by() {
                 continue;
             }
-            let (w, h) = n.size();
-            let d = (Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5 - mouse_world).length();
-            if best == -1 || d < best_d {
+            // `:56920` — `num == -1 || Main.npc[i].Hitbox.Distance(mouseWorld)
+            // < Main.npc[num].Hitbox.Distance(mouseWorld)`.
+            if best == -1 || hitbox_dist(n) < hitbox_dist(&npcs[best as usize]) {
                 best = i as i32;
-                best_d = d;
             }
         }
-        if self.minion_attack_target_npc == best {
+        if self.minion_attack_target_npc == best && !do_not_disable_if_the_target_is_the_same {
             self.minion_attack_target_npc = -1;
         } else {
             self.minion_attack_target_npc = best;
         }
     }
 
-    /// `Player.MinionRestTargetAim`'s invalidation half (`Player.cs:57009-57011`):
-    /// a target that is no longer chaseable or drifted past 3000 px drops.
-    pub fn invalidate_minion_target(&mut self, npcs: &[Npc]) {
-        if self.minion_attack_target_npc == -1 {
-            return;
-        }
-        let ok = npcs
-            .get(self.minion_attack_target_npc as usize)
-            .is_some_and(|n| {
-                if !n.can_be_chased_by() {
-                    return false;
-                }
-                let (w, h) = n.size();
-                let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
-                (aim - Vec2::new(self.x, self.y)).length() <= 3000.0
-            });
-        if !ok {
-            self.minion_attack_target_npc = -1;
+    /// `Player.Update`'s tank-pet decay (`Player.cs:24539-24548`): while
+    /// `tankPet >= 0`, the first tick arms the one-tick grace latch
+    /// (`tankPetReset = true`); a tick where the pet did NOT re-pin the
+    /// claim (AI_120 writes `tankPetReset = false` every non-idle tick,
+    /// `Projectile.cs:44683`) drops it to -1. The callers run it inside
+    /// both fixed-step branches — the C# block sits ahead of the
+    /// dead-player early return (`:24749-24754`), so the dead player's
+    /// claim decays too. S1-P-i56.
+    pub fn tank_pet_decay(&mut self) {
+        if self.tank_pet >= 0 {
+            if !self.tank_pet_reset {
+                self.tank_pet_reset = true;
+            } else {
+                self.tank_pet = -1;
+            }
         }
     }
+
+    /// `Player.UpdateMinionTarget` (`Player.cs:56999-57028`) — the per-tick
+    /// minion-target maintenance (the `whoAmI == Main.myPlayer` gate,
+    /// `:57001-57004`, folds to the local player: the port runs one).
+    ///
+    /// S1-P-i27 fixes (verbatim against the C#):
+    /// * the rest target drops when the player drifts past 1000 px
+    ///   (`base.Distance(MinionRestTargetPoint) > 1000f`, `:57005-57007`) —
+    ///   `base.Distance` is CENTRE-to-point (`Entity.cs:195-198`); the C#
+    ///   runs the compare UNCONDITIONALLY (a ZERO point is >1000 px from
+    ///   any real player and re-zeroes — no `!= ZERO` gate).
+    /// * the attack target drops when unchaseable OR its HITBOX is past
+    ///   3000 px (`Main.npc[..].Hitbox.Distance(base.Center) > 3000f`,
+    ///   `:57009-57011`) — rectangle-to-CENTRE, not centre-to-position.
+    ///
+    /// The stardust-guardian rest-spot dust ring (`:57013-57027`) is the
+    /// visual layer (deferred, ANALYSIS). Gate-merge: supersedes i56's
+    /// `invalidate_minion_target` (same halves; the i56 name stays as an
+    /// alias for its witnesses).
+    pub fn update_minion_target(&mut self, npcs: &[Npc]) {
+        let (cx, cy) = self.center();
+        let player_center = Vec2::new(cx, cy);
+        // `:57005-57007` — the rest target's 1000-px centre-distance drop.
+        if (player_center - self.minion_rest_target_point).length() > 1000.0 {
+            self.minion_rest_target_point = Vec2::ZERO;
+        }
+        // `:57009-57011` — the attack target's chaseable + 3000-px hitbox drop.
+        if self.minion_attack_target_npc != -1 {
+            let ok = npcs
+                .get(self.minion_attack_target_npc as usize)
+                .is_some_and(|n| {
+                    if !n.can_be_chased_by() {
+                        return false;
+                    }
+                    let (w, h) = n.size();
+                    crate::npc_ai_style64::rect_distance(
+                        n.x as i32,
+                        n.y as i32,
+                        w as i32,
+                        h as i32,
+                        cx,
+                        cy,
+                    ) <= 3000.0
+                });
+            if !ok {
+                self.minion_attack_target_npc = -1;
+            }
+        }
+    }
+
+    /// S1-P-i56's name for the same `UpdateMinionTarget` maintenance —
+    /// kept as an alias for the Guardian witnesses (the live tick calls
+    /// [`Player::update_minion_target`], S1-P-i27's canonical form).
+    pub fn invalidate_minion_target(&mut self, npcs: &[Npc]) {
+        self.update_minion_target(npcs);
+    }
+
+    /// `Player.HasMinionRestTarget` (`Player.cs:4060`): the rest spot is set
+    /// (non-zero). The idle minions read it to choose their return point.
+    pub fn has_minion_rest_target(&self) -> bool {
+        self.minion_rest_target_point != Vec2::ZERO
+    }
+
+    /// `Player.HasMinionAttackTargetNPC` (`Player.cs:4062`).
+    pub fn has_minion_attack_target_npc(&self) -> bool {
+        self.minion_attack_target_npc != -1
+    }
+
+    /// `Player.MinionRestTargetAim` (`Player.cs:56935-56997`): the Forbidden
+    /// set bonus's rest-spot aim — the mouse world point is projected onto the
+    /// ground below/above it and stored as the idle minions' return point.
+    ///
+    /// The C# walks the tile column at the mouse's X: if the mouse tile is a
+    /// full solid, it scans up to 20 tiles up and 20 down for the solid run's
+    /// edges and picks a row 2-3 tiles clear of the run (`:56942-56971`); then
+    /// it drops straight down until a 5-tile window holds a
+    /// `SolidTileAllowBottomSlope` (`:56973-56991`). The spot is
+    /// `(tileX*16+8, row*16)` and is kept only within 1000 px of the player
+    /// (`base.Distance(vector) <= 1000f`, `:56993-56996`).
+    ///
+    /// S1-P-i27: ported verbatim. The `WorldGen.SolidTileAllowBottomSlope`
+    /// probe is the full form (platform-top-frame clause + inactive test,
+    /// `WorldGen.cs:70167-70189`), mirrored from the AI_026 slice-C copy.
+    pub fn minion_rest_target_aim(&mut self, world: &World, mouse_world: Vec2) {
+        let num = mouse_world.x as i32 / 16;
+        let num2 = mouse_world.y as i32 / 16;
+        // The full-solid test the column scan uses (`Main.tile[..].nactive()
+        // && tileSolid[type] && !tileSolidTop[type]`, `:56942`/`:56949`/
+        // `:56962`). Out-of-world reads non-solid here (the C# would throw →
+        // the try/catch folds to the scan's bounds).
+        let full_solid_at = |x: i32, y: i32| -> bool {
+            world.tile(x, y).is_some_and(|t| {
+                t.active()
+                    && !t.inactive()
+                    && td::TILE_SOLID.has(t.kind)
+                    && !td::TILE_SOLID_TOP.has(t.kind)
+            })
+        };
+        let mut num3 = 0;
+        if full_solid_at(num, num2) {
+            // `:56944-56957` — the upward scan (num4 = the topmost solid
+            // offset, ≤ 0).
+            let mut num4 = 0;
+            let mut num5 = 0;
+            while num5 > -20 && num2 + num5 > 1 {
+                let num6 = num2 + num5;
+                if full_solid_at(num, num6) {
+                    num4 = num5;
+                    num5 -= 1;
+                    continue;
+                }
+                num4 = num5;
+                break;
+            }
+            // `:56958-56969` — the downward scan (num7 = the bottommost solid
+            // offset, ≥ 0).
+            let mut num7 = 0;
+            for i in 0..20 {
+                if num2 + i >= world.height {
+                    break;
+                }
+                let num8 = num2 + i;
+                if full_solid_at(num, num8) {
+                    num7 = i;
+                    continue;
+                }
+                num7 = i;
+                break;
+            }
+            // `:56970` — pick the side with more clearance.
+            num3 = if num7 <= -num4 { num7 + 3 } else { num4 - 2 };
+        }
+        let mut num9 = num2 + num3;
+        // `:56973-56991` — drop until a 5-tile window holds a bottom-slope-
+        // allowed solid. The C#'s `while (!flag)` has no bound; the port caps
+        // at the world's bottom row (out-of-world reads solid, so the loop
+        // terminates there anyway).
+        let solid_allow_bottom_slope = |x: i32, y: i32| -> bool {
+            crate::projectile_ai026_c::solid_tile_allow_bottom_slope(world, x, y)
+        };
+        let mut flag = false;
+        for j in num9..num9 + 5 {
+            if solid_allow_bottom_slope(num, j) {
+                flag = true;
+            }
+        }
+        while !flag && num9 < world.height {
+            num9 += 1;
+            for k in num9..num9 + 5 {
+                if solid_allow_bottom_slope(num, k) {
+                    flag = true;
+                }
+            }
+        }
+        let vector = Vec2::new((num * 16 + 8) as f32, (num9 * 16) as f32);
+        // `:56993-56996` — the 1000-px centre-distance gate.
+        let (cx, cy) = self.center();
+        if (Vec2::new(cx, cy) - vector).length() <= 1000.0 {
+            self.minion_rest_target_point = vector;
+        }
+    }
+
+    /// `Player.KeyDoubleTap` (`Player.cs:56764-56787`) — the down-cardinal
+    /// double-tap. S1-P-i27: the Forbidden set bonus's rest aim fires here
+    /// (`:56779-56786`). The `CommandForbiddenStorm` half (`:56784`) is the
+    /// storm command's own lane (deferred, ANALYSIS — it spawns the 656
+    /// projectile + pays mana). The Vortex stealth toggle (`:56775-56778`)
+    /// is the stealth system's lane (unported).
+    ///
+    /// `reversed` is `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`):
+    /// when true the set-bonus cardinal is UP (keyDir 1), so the DOWN
+    /// double-tap (keyDir 0) does nothing.
+    pub fn key_double_tap_down(&mut self, world: &World, mouse_world: Vec2, reversed: bool) {
+        let num = if reversed { 1 } else { 0 };
+        // keyDir 0 (down) != num when reversed → early return (`:56771-56774`).
+        if 0 != num {
+            return;
+        }
+        if self.set_forbidden {
+            self.minion_rest_target_aim(world, mouse_world);
+            // `CommandForbiddenStorm` (`:56782-56785`) — deferred (ANALYSIS).
+        }
+    }
+
+    /// `Player.KeyHoldDown` (`Player.cs:56894-56912`) — the down-cardinal
+    /// hold. S1-P-i27: at holdTime >= 60 the Stardust/Forbidden set bonuses
+    /// clear the rest target (`:56903-56910`). `reversed` flips the cardinal
+    /// to UP, so the DOWN hold does nothing.
+    pub fn key_hold_down(&mut self, hold_time: i32, reversed: bool) {
+        let num = if reversed { 1 } else { 0 };
+        if 0 != num {
+            return;
+        }
+        if self.set_stardust && hold_time >= 60 {
+            self.minion_rest_target_point = Vec2::ZERO;
+        }
+        if self.set_forbidden && hold_time >= 60 {
+            self.minion_rest_target_point = Vec2::ZERO;
+        }
+    }
+
+    /// The down-cardinal double-tap/hold driver (`Player.cs:25022-25073`),
+    /// down-cardinal half. S1-P-i27: the rest-target command's input edge.
+    /// Called once per tick with the live down control; the 15-tick
+    /// double-tap window and the hold counter mirror the C#'s
+    /// `doubleTapCardinalTimer[0]`/`holdDownCardinalTimer[0]`.
+    pub fn update_minion_rest_command(
+        &mut self,
+        world: &World,
+        mouse_world: Vec2,
+        control_down: bool,
+        reversed: bool,
+    ) {
+        // `:25024-25028` — the double-tap timer decays toward 0.
+        self.double_tap_down_timer -= 1;
+        if self.double_tap_down_timer < 0 {
+            self.double_tap_down_timer = 0;
+        }
+        // `:25037` — flag5 = controlDown && releaseDown (the press edge).
+        let flag5 = control_down && self.release_down;
+        if flag5 {
+            if self.double_tap_down_timer > 0 {
+                self.key_double_tap_down(world, mouse_world, reversed);
+            } else {
+                self.double_tap_down_timer = 15;
+            }
+        }
+        // `:25064-25072` — the hold counter.
+        if control_down {
+            self.hold_down_timer += 1;
+            self.key_hold_down(self.hold_down_timer, reversed);
+        } else {
+            self.hold_down_timer = 0;
+        }
+        // `Player.releaseDown = !controlDown` (the per-tick latch refresh).
+        self.release_down = !control_down;
+    }
+
     /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath only
     /// drains while the **head** is under the water — the C#'s
     /// `Collision.DrownCollision` probe (`:23193`), not the "any water"
@@ -10485,7 +11176,14 @@ impl Player {
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
-            update_mana_regen(&mut self.regen, &in_, &mut self.mana);
+            update_mana_regen(
+                &mut self.regen,
+                &in_,
+                &mut self.mana,
+                crate::regen::ManaRegenFlags {
+                    item_in_use: self.mana_regen_item_in_use,
+                },
+            );
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
@@ -11974,6 +12672,80 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert!((p.mana_cost - (1.0 - 0.17 - 0.02)).abs() < 1e-4);
+    }
+
+    /// S1-P-i19 — `statManaMax2` rebases to `statManaMax` every tick
+    /// (`ResetEffects` `Player.cs:18389`); the piece/accessory/set/buff rows
+    /// re-add once per tick, never accumulate.
+    #[test]
+    fn s1_p_i19_the_mana_max_rebases_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The Band of Starpower (+40, `:14924-14928`) + Magic Power (+20,
+        // `:11890`): 20 base + 40 + 20 = 80, stable across ticks.
+        p.equipped[3] = 111;
+        p.buffs.add_buff(29, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 80);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 80, "no per-tick accumulation");
+        // Taking the band off drops the max back to base + buff next tick.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 40);
+        // The base itself is the owned 20 (`:56075`); the crystal-use arm
+        // (`:45274-45288`) is unported, so it never grows here.
+        assert_eq!(p.mana_max_base, 20);
+    }
+
+    /// S1-P-i19 — the `manaFlower` flag's ONE −0.08 row (`UpdateEquips`
+    /// `Player.cs:12962-12965`): two flowers do not stack, and the Arcane
+    /// Flower's own +5 crit / +5% damage rows (`:14405-14410`) ride along.
+    #[test]
+    fn s1_p_i19_the_flower_fold_applies_once_and_the_arcane_rows_ride() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 555; // Mana Flower
+        p.equipped[4] = 4001; // Mana Cloak (also manaFlower)
+        p.update(&w, PlayerInput::default());
+        assert!(p.mana_flower);
+        assert!(
+            (p.mana_cost - 0.92).abs() < 1e-4,
+            "two flowers still cost only 0.08, got {}",
+            p.mana_cost
+        );
+        // The Arcane Flower keeps its crit/damage halves.
+        let mut q = Player::spawn(&w);
+        q.equipped[3] = 3991;
+        q.update(&w, PlayerInput::default());
+        assert!(q.mana_flower);
+        assert!((q.mana_cost - 0.92).abs() < 1e-4);
+        assert_eq!(q.magic_crit, 4 + 5);
+        assert!((q.magic_damage - 1.05).abs() < 1e-4);
+        // The flag clears when the flowers come off (`:18721`).
+        q.equipped[3] = 0;
+        q.update(&w, PlayerInput::default());
+        assert!(!q.mana_flower);
+        assert!((q.mana_cost - 1.0).abs() < 1e-4);
+    }
+
+    /// S1-P-i19 — the mana-regen accessory rows (`ApplyEquipFunctional`
+    /// `Player.cs:14929-14934`): the Mana Regeneration Band 982 adds +40
+    /// max AND +60 `manaRegenBonus`; the cuffs' +40 max rows landed too.
+    #[test]
+    fn s1_p_i19_the_mana_regen_band_grants_max_and_bonus() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 982;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 20 + 40);
+        assert_eq!(p.mana_regen_bonus, 60);
+        // The Magic Cuffs keep their flag AND gain the +40 max row.
+        let mut q = Player::spawn(&w);
+        q.equipped[3] = 1595;
+        q.update(&w, PlayerInput::default());
+        assert!(q.magic_cuffs);
+        assert_eq!(q.mana_max, 20 + 40);
     }
 
     /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the
@@ -13857,6 +14629,114 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         p
+    }
+
+    #[test]
+    fn the_whip_speed_buffs_fold_through_cap_attack_speeds() {
+        // `Player.cs:10110-10121`: Dark Harvest (311) +0.35, Sword Whip (308)
+        // +0.25, Thorn Whip (314) +0.12 per slot. `CapAttackSpeeds` (`:29025`)
+        // folds `meleeSpeed(1) + bonus` through `TurnAttackSpeedToUseTimeMultiplier`
+        // (cap 3, invert) into the use-time multiplier the whip swing reads.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(311, 600); // Dark Harvest
+        p.update(&w, PlayerInput::default());
+        // bonus 0.35 → 1/(1+0.35) = 0.7407…; whipUseTimeMultiplier 1.
+        let want = 1.0 / 1.35;
+        assert!(
+            (p.whip_animation_multiplier() - want).abs() < 1e-5,
+            "the Dark Harvest swing scales to {want}, got {}",
+            p.whip_animation_multiplier()
+        );
+        // The three buffs stack: 0.35 + 0.25 + 0.12 = 0.72 → 1/1.72.
+        let mut p2 = Player::spawn(&w);
+        p2.buffs.add_buff(311, 600);
+        p2.buffs.add_buff(308, 600);
+        p2.buffs.add_buff(314, 600);
+        p2.update(&w, PlayerInput::default());
+        let want2 = 1.0 / 1.72;
+        assert!(
+            (p2.whip_animation_multiplier() - want2).abs() < 1e-5,
+            "the stacked whip speed scales to {want2}, got {}",
+            p2.whip_animation_multiplier()
+        );
+    }
+
+    #[test]
+    fn the_obsidian_outlaw_set_speeds_the_whip_and_stretches_its_reach() {
+        // `ArmorSetBonuses.cs:120-125`: minionDamage +0.15, whipRange +0.3,
+        // whipUseTimeMultiplier ×1/1.15. The set triple is (3266, 3267, 3268).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3266;
+        p.equipped[1] = 3267;
+        p.equipped[2] = 3268;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.whip_range_multiplier - 1.3).abs() < 1e-5,
+            "the set adds +0.3 reach, got {}",
+            p.whip_range_multiplier
+        );
+        // No speed buff: summonerWeaponSpeedBonus folds 1/(1+0) = 1, times
+        // the set's 1/1.15.
+        let want = 1.0 / 1.15;
+        assert!(
+            (p.whip_animation_multiplier() - want).abs() < 1e-5,
+            "the set's use-time scale {want}, got {}",
+            p.whip_animation_multiplier()
+        );
+    }
+
+    #[test]
+    fn the_whip_accessories_raise_the_tag_cap_and_duration() {
+        // `Player.cs:12970-12984`: Silver Bracer +1 cap / +2 duration, Mobius
+        // Strip +1 cap / +0.1 range, Wicked Armlet +1 cap. The base is 1/1f.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 6156; // Silver Bracer
+        p.equipped[4] = 6158; // Mobius Strip
+        p.equipped[5] = 6159; // Wicked Armlet
+        p.update(&w, PlayerInput::default());
+        assert!(p.acc_silver_bracer && p.acc_mobius_strip && p.acc_wicked_armlet);
+        // cap 1 + 3 = 4; duration 1 + 2 = 3; range 1 + 0.1 = 1.1.
+        assert!(
+            (p.whip_range_multiplier - 1.1).abs() < 1e-5,
+            "the Mobius Strip adds +0.1 reach"
+        );
+        // The stack caps at 4: four distinct tags all stay active.
+        for item in [4672u16, 5074, 4913, 4678] {
+            p.tag_effects.try_apply_tag_to_npc(item, 0, crate::npc::NpcKind::Zombie);
+        }
+        assert_eq!(p.tag_effects.active_types().len(), 4, "the cap is 4");
+        // The Silver Bracer's +2 duration stretches the mark: 240 × 3 = 720.
+        assert!(p.tag_effects.is_npc_tagged(4678, 0));
+        for _ in 0..240 {
+            p.tag_effects.update_tick();
+        }
+        assert!(
+            p.tag_effects.is_npc_tagged(4678, 0),
+            "the 720-tick mark outlives the base 240"
+        );
+    }
+
+    #[test]
+    fn the_snake_band_cooldown_resets_the_swing_counter() {
+        // `Update_SnakeBand` (`Player.cs:28412-28418`): the reset cooldown
+        // counts down one per tick; at 0 the swing counter returns to −1.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.repeat_whip_swings = 5;
+        p.repeat_whips_reset_cooldown = 2;
+        p.update_snake_band();
+        assert_eq!(p.repeat_whip_swings, 5, "not yet reset");
+        assert_eq!(p.repeat_whips_reset_cooldown, 1);
+        p.update_snake_band();
+        assert_eq!(p.repeat_whip_swings, -1, "the counter resets at 0");
+        assert_eq!(p.repeat_whips_reset_cooldown, 0);
+        // A zero cooldown is inert (the `> 0` gate).
+        p.repeat_whip_swings = 3;
+        p.update_snake_band();
+        assert_eq!(p.repeat_whip_swings, 3, "the idle cooldown changes nothing");
     }
 
     #[test]
@@ -19251,6 +20131,41 @@ mod summon_tests {
         assert!(!p.deadly_sphere_minion);
     }
 
+    /// S1-P-i25 round 2 — `Player.GetWeaponKnockback` (`Player.cs:53346-53369`):
+    /// the summon `minionKB` add FIRST, then the melee glove's ×2, the Titan
+    /// buff's ×1.5 and the shroomite-stealth ranged scale, in that order.
+    #[test]
+    fn i25_get_weapon_knockback_folds_the_bonuses_in_order() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let summon = crate::registry::get(2364).unwrap(); // Hornet Staff (summon)
+        let melee = crate::registry::get(1).unwrap(); // Iron Pickaxe (melee)
+        let ranged = crate::registry::get(435).unwrap(); // Cobalt Repeater (ranged)
+        // The summon add: minionKB rides a summon item, not a melee one.
+        p.minion_kb = 2.0;
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the summon minionKB add");
+        assert_eq!(p.weapon_knockback(melee, 5.0), 5.0, "no add for melee");
+        // The melee glove ×2 (melee only).
+        p.kb_glove = true;
+        assert_eq!(p.weapon_knockback(melee, 5.0), 10.0, "the glove doubles melee");
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the glove skips summon");
+        // The Titan buff ×1.5 rides everything, AFTER the add/glove.
+        p.kb_buff = true;
+        assert_eq!(p.weapon_knockback(summon, 5.0), 10.5, "(5+2)*1.5");
+        assert_eq!(p.weapon_knockback(melee, 5.0), 15.0, "5*2*1.5");
+        // The shroomite-stealth ranged scale (ranged only): 1 + (1-stealth)*0.5.
+        p.kb_buff = false;
+        p.kb_glove = false;
+        p.shroomite_stealth = true;
+        p.stealth = 0.5;
+        assert_eq!(
+            p.weapon_knockback(ranged, 4.0),
+            4.0 * 1.25,
+            "the stealth scale at stealth 0.5"
+        );
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the stealth scale skips summon");
+    }
+
     // ---- S1-P-i12: the useTime/useAnimation speed machinery ----------------
 
     /// `Player.meleeSpeed` as the game logic reads it — the `:25912`
@@ -20383,5 +21298,356 @@ mod s1_p_i05_thrust_tests {
         p.sand_storm = true;
         p.horizontal_movement(PlayerInput::default());
         assert_eq!(p.facing, 1, "the sandstorm gates the run-key turn");
+    }
+}
+
+/// S1-P-i27 — the minion target command witnesses (written, NOT run — the
+/// code-only branch carries no compiler): the summoner accessory
+/// target-priority fold (`Player.cs:12970-12984` + the grant rows
+/// `:14509-14527`/`:14585`/`:14601-14609`), the whip-range consumers
+/// (`:13852-13855`, `:13876-13881`, `ArmorSetBonuses.cs:15`), the rest-spot
+/// aim (`MinionRestTargetAim`, `:56935-56997`) and the down-cardinal
+/// double-tap/hold driver (`:25022-25073`, `KeyDoubleTap` `:56764-56787`,
+/// `KeyHoldDown` `:56894-56912`).
+#[cfg(test)]
+mod s1_p_i27_tests {
+    use super::*;
+    use super::tests::ground_world;
+
+    /// Two settled ticks with the accessory worn — the same fixture shape
+    /// `player_with_accessory` uses (the reset clears, the pass re-grants).
+    fn worn(kind: u16) -> Player {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = kind;
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        p
+    }
+
+    /// `Player.cs:14510` + `:12970-12975` — the Silver Bracer: the fold
+    /// adds +1 tag slot and +2f duration (the `minionDamage += 0f` half
+    /// changes nothing).
+    #[test]
+    fn s1_p_i27_the_silver_bracer_scales_the_tag_stack() {
+        let p = worn(6156);
+        assert!(p.acc_silver_bracer, "the grant row (:14510)");
+        assert_eq!(p.tag_effects.max_tag_effects(), 2, "(:12974)");
+        assert!((p.tag_effects.tag_effect_duration() - 3.0).abs() < 1e-4, "(:12973)");
+        assert!((p.minion_damage - 1.0).abs() < 1e-4, "the += 0f no-op (:12972)");
+        assert!((p.whip_range_multiplier - 1.0).abs() < 1e-4, "no whip-range row");
+    }
+
+    /// `Player.cs:14513` + `:12976-12980` — the Mobius Strip: +1 tag slot
+    /// and +0.1 whip range.
+    #[test]
+    fn s1_p_i27_the_mobius_strip_scales_the_tags_and_the_whip_range() {
+        let p = worn(6158);
+        assert!(p.acc_mobius_strip);
+        assert_eq!(p.tag_effects.max_tag_effects(), 2, "(:12978)");
+        assert!((p.tag_effects.tag_effect_duration() - 1.0).abs() < 1e-4);
+        assert!((p.whip_range_multiplier - 1.1).abs() < 1e-4, "(:12979)");
+    }
+
+    /// `Player.cs:14516` + `:12981-12984` — the Wicked Armlet: +1 tag slot
+    /// only.
+    #[test]
+    fn s1_p_i27_the_wicked_armlet_adds_one_tag_slot() {
+        let p = worn(6159);
+        assert!(p.acc_wicked_armlet);
+        assert_eq!(p.tag_effects.max_tag_effects(), 2, "(:12983)");
+        assert!((p.whip_range_multiplier - 1.0).abs() < 1e-4);
+    }
+
+    /// `Player.cs:14523` — the Twilight Grasp arms BOTH flags: the fold
+    /// stacks +2 slots and +2f duration (the bracer's rows then the
+    /// armlet's, `:12970-12984`'s if-order).
+    #[test]
+    fn s1_p_i27_the_twilight_grasp_arms_both_folds() {
+        let p = worn(6163);
+        assert!(p.acc_silver_bracer && p.acc_wicked_armlet);
+        assert_eq!(p.tag_effects.max_tag_effects(), 3);
+        assert!((p.tag_effects.tag_effect_duration() - 3.0).abs() < 1e-4);
+    }
+
+    /// `Player.cs:14519-14520` — the Ouroboros Ring grants the Mobius flag
+    /// (the `accSnakeBand` half has no port consumer).
+    #[test]
+    fn s1_p_i27_the_ouroboros_ring_rides_the_mobius_fold() {
+        let p = worn(6162);
+        assert!(p.acc_mobius_strip);
+        assert_eq!(p.tag_effects.max_tag_effects(), 2);
+        assert!((p.whip_range_multiplier - 1.1).abs() < 1e-4);
+    }
+
+    /// `Player.cs:14605-14609` — the Silver Shield's bracer flag joins its
+    /// knockback/fire-walk row (the defense pass grants it).
+    #[test]
+    fn s1_p_i27_the_silver_shield_arms_the_bracer_fold() {
+        let p = worn(6183);
+        assert!(p.no_knockback && p.fire_walk, "the defense halves");
+        assert!(p.acc_silver_bracer, "(:14606)");
+        assert_eq!(p.tag_effects.max_tag_effects(), 2);
+        assert!((p.tag_effects.tag_effect_duration() - 3.0).abs() < 1e-4);
+    }
+
+    /// `Player.cs:14585`/`:14601-14603` — the Armlet of Ruin and the Wicked
+    /// Claws both arm the armlet fold; the Claws add +0.12 melee speed.
+    #[test]
+    fn s1_p_i27_the_armlet_combos_arm_the_wicked_fold() {
+        let p = worn(6179);
+        assert!(p.acc_wicked_armlet);
+        assert_eq!(p.tag_effects.max_tag_effects(), 2);
+        let p = worn(6182);
+        assert!(p.acc_wicked_armlet);
+        assert_eq!(p.tag_effects.max_tag_effects(), 2);
+        assert!(
+            (p.melee_speed_bonus - 0.12).abs() < 1e-4,
+            "(:14603) — the raw grant; the i12 melee_speed(held_kind) accessor inverts it"
+        );
+    }
+
+    /// The reset half (`Player.cs:18498`/`:18517-18522`): removing the
+    /// accessory drops the scalars back to the bases on the next tick.
+    #[test]
+    fn s1_p_i27_the_scalars_reset_when_the_accessory_leaves() {
+        let w = ground_world();
+        let mut p = worn(6156);
+        assert_eq!(p.tag_effects.max_tag_effects(), 2);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.acc_silver_bracer);
+        assert_eq!(p.tag_effects.max_tag_effects(), 1, "(:18517)");
+        assert!((p.tag_effects.tag_effect_duration() - 1.0).abs() < 1e-4, "(:18518)");
+        assert!((p.whip_range_multiplier - 1.0).abs() < 1e-4, "(:18498)");
+    }
+
+    /// `Player.cs:13852-13855` — the Tiki Mask's +0.1 whip range rides the
+    /// armor-piece pass (`grant_summon_caps`' seam — here the tr-core
+    /// `set_stats` row carries only the SET half, the piece half is the
+    /// world_sim grant; this witness pins the set half via `set_stats`).
+    #[test]
+    fn s1_p_i27_the_tiki_set_bonus_lifts_the_whip_range() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 1159;
+        p.equipped[1] = 1160;
+        p.equipped[2] = 1161;
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        // The set row's +0.2 (`ArmorSetBonuses.cs:15`); the piece +0.1
+        // (`:13854`) rides `grant_summon_caps` (the world_sim seam, not
+        // this update), so the player-update alone sees the set half.
+        assert!((p.whip_range_multiplier - 1.2).abs() < 1e-4);
+        assert_eq!(p.max_minions, 2, "the set's maxMinions++ (:14)");
+    }
+
+    /// `Player.MinionRestTargetAim` (`Player.cs:56935-56997`) over the
+    /// ground fixture (solid from row 60): the mouse inside the ground run
+    /// (row 62) scans up — rows 62/61/60 solid, row 59 air → num4 = −3 —
+    /// and down (the whole 20-row run is solid → num7 = 19), so
+    /// num7(19) > −num4(3) picks the UP side: num3 = num4 − 2 = −5, the
+    /// row 57 candidate; the 5-tile drop window (57..62) finds the ground
+    /// at 60 → the spot is `(x*16+8, 57*16)` — three tiles above the
+    /// surface.
+    #[test]
+    fn s1_p_i27_the_rest_aim_hovers_above_the_ground_run() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The player near the column so the 1000-px gate passes.
+        p.x = 20.0 * 16.0;
+        p.y = 55.0 * 16.0;
+        // The mouse inside the ground run (row 62).
+        p.minion_rest_target_aim(&w, Vec2::new(20.0 * 16.0 + 8.0, 62.0 * 16.0 + 4.0));
+        assert_eq!(
+            p.minion_rest_target_point,
+            Vec2::new(20.0 * 16.0 + 8.0, 57.0 * 16.0),
+            "the up-side clearance pick (:56970) + the drop window (:56974)"
+        );
+        assert!(p.has_minion_rest_target(), "(:4060)");
+    }
+
+    /// The air-mouse case (`:56942` false → num3 stays 0): the spot drops
+    /// straight down from the mouse row until the 5-window catches the
+    /// ground — row 56's window 56..61 finds row 60.
+    #[test]
+    fn s1_p_i27_the_rest_aim_in_air_drops_to_the_first_window() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 20.0 * 16.0;
+        p.y = 50.0 * 16.0;
+        p.minion_rest_target_aim(&w, Vec2::new(20.0 * 16.0 + 8.0, 56.0 * 16.0 + 4.0));
+        assert_eq!(
+            p.minion_rest_target_point,
+            Vec2::new(20.0 * 16.0 + 8.0, 56.0 * 16.0),
+            "the window 56..61 already holds the ground at 60 (:56974-56980)"
+        );
+    }
+
+    /// The 1000-px gate (`:56993-56996`): a far column's spot is refused —
+    /// the previous rest point stays.
+    #[test]
+    fn s1_p_i27_the_rest_aim_refuses_a_far_spot() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 20.0 * 16.0;
+        p.y = 50.0 * 16.0;
+        p.minion_rest_target_point = Vec2::new(1.0, 2.0);
+        // Column 60 is > 1000 px away horizontally? 40 tiles = 640 px —
+        // use the vertical: the mouse deep under the player's reach is
+        // still in-world; instead pin the player far LEFT of the world's
+        // ground columns and aim at the far right edge (63*16 ≈ 1008 px
+        // from x=0 minus the centre offset — over the gate).
+        p.x = 0.0;
+        p.y = 50.0 * 16.0;
+        p.minion_rest_target_aim(&w, Vec2::new(63.0 * 16.0 + 15.0, 56.0 * 16.0));
+        assert_eq!(
+            p.minion_rest_target_point,
+            Vec2::new(1.0, 2.0),
+            "the >1000-px spot is refused (:56993)"
+        );
+    }
+
+    /// `Player.UpdateMinionTarget`'s rest half (`:57005-57007`): drifting
+    /// past 1000 px from the rest spot zeroes it.
+    #[test]
+    fn s1_p_i27_the_rest_target_drops_past_1000px() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 100.0;
+        p.y = 100.0;
+        p.minion_rest_target_point = Vec2::new(100.0 + 999.0, 100.0 + 21.0);
+        p.update_minion_target(&[]);
+        assert!(p.has_minion_rest_target(), "inside the 1000-px centre distance");
+        p.minion_rest_target_point = Vec2::new(100.0 + 1200.0, 100.0);
+        p.update_minion_target(&[]);
+        assert_eq!(p.minion_rest_target_point, Vec2::ZERO, "(:57007)");
+    }
+
+    /// `KeyHoldDown` (`Player.cs:56894-56912`): the 60-tick down hold
+    /// clears the rest spot for the Stardust/Forbidden sets; 59 does not;
+    /// the reversed cardinal disables the DOWN hold entirely.
+    #[test]
+    fn s1_p_i27_the_down_hold_clears_the_rest_spot_at_60() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_stardust = true;
+        p.minion_rest_target_point = Vec2::new(10.0, 10.0);
+        p.key_hold_down(59, false);
+        assert!(p.has_minion_rest_target(), "59 < 60 (:56903)");
+        p.key_hold_down(60, false);
+        assert_eq!(p.minion_rest_target_point, Vec2::ZERO);
+        // The Forbidden half (:56907-56910).
+        p.set_stardust = false;
+        p.set_forbidden = true;
+        p.minion_rest_target_point = Vec2::new(10.0, 10.0);
+        p.key_hold_down(60, false);
+        assert_eq!(p.minion_rest_target_point, Vec2::ZERO);
+        // Reversed: keyDir 0 != num 1 → the early return (:56901).
+        p.minion_rest_target_point = Vec2::new(10.0, 10.0);
+        p.key_hold_down(120, true);
+        assert!(p.has_minion_rest_target(), "the reversed cardinal skips DOWN");
+        // No set flag: nothing clears.
+        p.set_forbidden = false;
+        p.key_hold_down(120, false);
+        assert!(p.has_minion_rest_target());
+        let _ = w;
+    }
+
+    /// `KeyDoubleTap` (`Player.cs:56764-56787`): the Forbidden set's down
+    /// double-tap aims the rest spot; without the flag nothing happens;
+    /// the reversed cardinal skips the DOWN tap.
+    #[test]
+    fn s1_p_i27_the_forbidden_double_tap_aims_the_rest_spot() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 20.0 * 16.0;
+        p.y = 50.0 * 16.0;
+        let mouse = Vec2::new(20.0 * 16.0 + 8.0, 56.0 * 16.0 + 4.0);
+        // No flag: no aim.
+        p.key_double_tap_down(&w, mouse, false);
+        assert!(!p.has_minion_rest_target());
+        // The flag arms the aim (the storm command is deferred).
+        p.set_forbidden = true;
+        p.key_double_tap_down(&w, mouse, false);
+        assert_eq!(
+            p.minion_rest_target_point,
+            Vec2::new(20.0 * 16.0 + 8.0, 56.0 * 16.0)
+        );
+        // Reversed: the early return.
+        p.minion_rest_target_point = Vec2::ZERO;
+        p.key_double_tap_down(&w, mouse, true);
+        assert!(!p.has_minion_rest_target());
+    }
+
+    /// The input driver (`Player.cs:25022-25073`): the first down press
+    /// arms the 15-tick window; a second press INSIDE it fires the
+    /// double-tap; a press after the window lapses re-arms instead. The
+    /// hold counter clears the rest spot at 60 held ticks.
+    #[test]
+    fn s1_p_i27_the_double_tap_window_and_the_hold_counter() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 20.0 * 16.0;
+        p.y = 50.0 * 16.0;
+        p.set_forbidden = true;
+        let mouse = Vec2::new(20.0 * 16.0 + 8.0, 56.0 * 16.0 + 4.0);
+        let tick = |p: &mut Player, down: bool| {
+            p.update_minion_rest_command(&w, mouse, down, false);
+        };
+        // Press 1: arms the window, no aim yet.
+        tick(&mut p, true);
+        assert!(!p.has_minion_rest_target(), "the first press only arms");
+        // Release + press 2 within the window: the double-tap aims.
+        tick(&mut p, false);
+        tick(&mut p, true);
+        assert!(p.has_minion_rest_target(), "the second press inside 15 ticks");
+        // Clear, then let the window lapse (16 idle ticks) — the next
+        // press re-arms instead of firing.
+        p.minion_rest_target_point = Vec2::ZERO;
+        tick(&mut p, false);
+        for _ in 0..16 {
+            tick(&mut p, false);
+        }
+        tick(&mut p, true);
+        assert!(!p.has_minion_rest_target(), "the lapsed window re-arms");
+        // The hold: 60 held ticks clear the spot (the counter runs from
+        // the press above — 1 — so 59 more reach 60).
+        p.minion_rest_target_point = Vec2::new(10.0, 10.0);
+        for _ in 0..59 {
+            tick(&mut p, true);
+        }
+        assert_eq!(p.minion_rest_target_point, Vec2::ZERO, "hold 60 (:56907)");
+    }
+
+    /// The set-flag grants + the per-tick reset (`Player.cs:18743`/
+    /// `:18745`, the armor-set block): the Forbidden triple arms
+    /// `setForbidden`, the Stardust triple `setStardust`; taking the
+    /// armor off clears both on the next tick.
+    #[test]
+    fn s1_p_i27_the_set_flags_grant_and_reset() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3776;
+        p.equipped[1] = 3777;
+        p.equipped[2] = 3778;
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.set_forbidden, "the Forbidden triple (ArmorSetBonuses.cs:483)");
+        assert!(!p.set_stardust);
+        p.equipped[0] = 3381;
+        p.equipped[1] = 3382;
+        p.equipped[2] = 3383;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_stardust, "the Stardust triple (:482)");
+        assert!(!p.set_forbidden, "the reset clears the old set (:18745)");
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_stardust, "(:18743)");
     }
 }

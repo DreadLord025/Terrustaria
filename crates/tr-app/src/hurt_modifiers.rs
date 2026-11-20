@@ -56,7 +56,8 @@ pub struct RetaliateRequest {
 /// giant bee 566, else the bee 181. The C# `makeStrongBee` field's only
 /// readers are `beeDamage`/`beeKB` in the same spawn expression, so the port
 /// returns the (kind, strong) pair instead of carrying the scratch bool.
-fn bee_type(p: &Player, rng: &mut dyn DropRng) -> (u16, bool) {
+/// Shared with the Bee Gun's shoot arm (`Player.cs:48328`, S1-P-i20).
+pub(crate) fn bee_type(p: &Player, rng: &mut dyn DropRng) -> (u16, bool) {
     if p.strong_bees && rng.next_range(0, 2) == 0 {
         return (566, true);
     }
@@ -65,7 +66,7 @@ fn bee_type(p: &Player, rng: &mut dyn DropRng) -> (u16, bool) {
 
 /// `Player.beeDamage` (`Player.cs:12428-12435`): the strong bee adds
 /// `Next(1, 4)`, the plain bee `Next(2)`.
-fn bee_damage(strong: bool, dmg: i32, rng: &mut dyn DropRng) -> i32 {
+pub(crate) fn bee_damage(strong: bool, dmg: i32, rng: &mut dyn DropRng) -> i32 {
     if strong {
         dmg + rng.next_range(1, 4)
     } else {
@@ -75,7 +76,7 @@ fn bee_damage(strong: bool, dmg: i32, rng: &mut dyn DropRng) -> i32 {
 
 /// `Player.beeKB` (`Player.cs:12437-12444`): the strong bee's knockback is
 /// `0.5 + KB * 1.1`, the plain bee keeps `KB`.
-fn bee_kb(strong: bool, kb: f32) -> f32 {
+pub(crate) fn bee_kb(strong: bool, kb: f32) -> f32 {
     if strong { 0.5 + kb * 1.1 } else { kb }
 }
 

@@ -853,6 +853,10 @@ pub const BALL_OF_FIRE: u16 = 15;
 pub const MAGIC_MISSILE: u16 = 16;
 /// `ProjectileID.GreenLaser` (20) — the Space Gun's aiStyle-1 rider.
 pub const GREEN_LASER: u16 = 20;
+/// `ProjectileID.AquaScepter` (22) — the Aqua Scepter's water stream
+/// (aiStyle 12, `Projectile.cs:1040-1056`); the lava bounce seeds an
+/// `LCG32Random` off the spawn `ai[2]` (`Player.cs:49409-49411`).
+pub const AQUA_SCEPTER: u16 = 22;
 /// `ProjectileID.WaterBolt` (27) — the Water Bolt spell.
 pub const WATER_BOLT: u16 = 27;
 /// `ProjectileID.Flamelash` (34) — the channeled aimed spell.
@@ -893,6 +897,20 @@ pub const BALL_OF_FROST: u16 = 253;
 pub const MAGNET_SPHERE_BALL: u16 = 254;
 /// `ProjectileID.MagnetSphereBolt` (255) — the ball's shot (aiStyle 48).
 pub const MAGNET_SPHERE_BOLT: u16 = 255;
+/// `ProjectileID.RainCloudMoving` (237) — the Nimbus Rod's flying cloud
+/// (aiStyle 45); on death it spawns the raining cloud 238.
+pub const RAIN_CLOUD_MOVING: u16 = 237;
+/// `ProjectileID.RainCloudRaining` (238) — the settled cloud (aiStyle 45);
+/// it rains the friendly drop 239 every 9 ticks and caps the owner at two.
+pub const RAIN_CLOUD_RAINING: u16 = 238;
+/// `ProjectileID.RainFriendly` (239) — the cloud's rain drop (aiStyle 45).
+pub const RAIN_FRIENDLY: u16 = 239;
+/// `ProjectileID.GoldenShowerFriendly` (280) — the Golden Shower's stream
+/// (aiStyle 12).
+pub const GOLDEN_SHOWER: u16 = 280;
+/// `ProjectileID.ShadowBeamFriendly` (294) — the Shadowbeam Staff's beam
+/// (aiStyle 48); it reflects off tiles instead of dying.
+pub const SHADOWBEAM: u16 = 294;
 /// `ProjectileID.InfernoFriendlyBolt` (295) — the Inferno Fork's bolt
 /// (aiStyle 50); it spawns the blast 296 on death.
 pub const INFERNO_FORK_BOLT: u16 = 295;
@@ -962,6 +980,14 @@ pub const GEM_BOLTS: [u16; 7] = [
     GEM_BOLT_DIAMOND,
     GEM_BOLT_AMBER,
 ];
+/// `ProjectileID.Bat` (316) — the Bat Scepter's homing bat (aiStyle 36).
+pub const BAT_FRIENDLY: u16 = 316;
+/// `ProjectileID.PineNeedleFriendly` (336) — the Razorpine's needle
+/// (aiStyle 1); it flies straight for 50 ticks then falls at 0.5/tick.
+pub const PINE_NEEDLE_FRIENDLY: u16 = 336;
+/// `ProjectileID.Blizzard` (337) — the Blizzard Staff's icicle (aiStyle 1);
+/// it falls through tiles until it nears the owner or the surface.
+pub const BLIZZARD: u16 = 337;
 /// `ProjectileID.BlueDungeonDebris` (736, `ProjectileID.cs:2026`) — the
 /// cracked blue dungeon brick's fall shard: aiStyle 10, 10x10
 /// (`Projectile.cs:7748-7755`).
@@ -1026,6 +1052,56 @@ pub const NEBULA_ARCANUM: u16 = 617;
 /// `ProjectileID.NebulaArcanumSubshot` (618) — the Arcanum's arm (aiStyle
 /// 119, 18x30, `timeLeft = 420`, local-immunity 20).
 pub const NEBULA_ARCANUM_SUBSHOT: u16 = 618;
+// S1-P-i22 — the magic guns + tomes' shots (`Player.ItemCheck_Shoot` census,
+// `Player.cs:47056-49468`). Every id is the verbatim `ProjectileID` value;
+// the `SetDefaults` arms are cited per row in [`proj_data`].
+/// `ProjectileID.Starfury` (9, `ProjectileID.cs:572`) — the falling star the
+/// Starfury sword (65) and the Star Cannon's fallback share (aiStyle 5).
+pub const STARFURY: u16 = 9;
+/// `ProjectileID.QuarterNote` (76, `ProjectileID.cs:706`) — the Magical
+/// Harp's first note kind; the shoot rolls `76 + Next(3)` (`Player.cs:47394`).
+pub const QUARTER_NOTE: u16 = 76;
+/// `ProjectileID.EighthNote` (77, `ProjectileID.cs:708`) — the harp's second.
+pub const EIGHTH_NOTE: u16 = 77;
+/// `ProjectileID.TiedEighthNote` (78, `ProjectileID.cs:710`) — the harp's third.
+pub const TIED_EIGHTH_NOTE: u16 = 78;
+/// `ProjectileID.NettleBurstRight` (150, `ProjectileID.cs:854`) — the Nettle
+/// Burst's head segment (aiStyle 4, the Vilethorn family's chain).
+pub const NETTLE_BURST_RIGHT: u16 = 150;
+/// `ProjectileID.NettleBurstLeft` (151, `ProjectileID.cs:856`).
+pub const NETTLE_BURST_LEFT: u16 = 151;
+/// `ProjectileID.NettleBurstEnd` (152, `ProjectileID.cs:858`) — the chain's tip.
+pub const NETTLE_BURST_END: u16 = 152;
+/// `ProjectileID.HeatRay` (260, `ProjectileID.cs:1074`) — the Heat Ray's beam
+/// (aiStyle 48, `extraUpdates = 100`).
+pub const HEAT_RAY: u16 = 260;
+/// `ProjectileID.PoisonFang` (265, `ProjectileID.cs:1084`) — the Poison
+/// Staff's fang (aiStyle 1, `timeLeft = 37`, local immunity 10).
+pub const POISON_FANG: u16 = 265;
+/// `ProjectileID.ElectrosphereMissile` (442, `ProjectileID.cs:1438`) — the
+/// Electrosphere Launcher's rocket; `Kill()` spawns the sphere 443.
+pub const ELECTROSPHERE_MISSILE: u16 = 442;
+/// `ProjectileID.Electrosphere` (443, `ProjectileID.cs:1440`) — the sphere the
+/// missile's death spawns (aiStyle 77).
+pub const ELECTROSPHERE: u16 = 443;
+/// `ProjectileID.ChargedBlasterOrb` (459, `ProjectileID.cs:1472`) — the
+/// cannon's charge orb (aiStyle 1, `extraUpdates = 1`).
+pub const CHARGED_BLASTER_ORB: u16 = 459;
+/// `ProjectileID.ChargedBlasterCannon` (460, `ProjectileID.cs:1474`) — the
+/// channel holder (aiStyle 75, 14x18, `penetrate = -1`, `tileCollide = false`).
+pub const CHARGED_BLASTER_CANNON: u16 = 460;
+/// `ProjectileID.ChargedBlasterLaser` (461, `ProjectileID.cs:1476`) — the
+/// holder's full-charge beam (aiStyle 84, the key-linked 460 rider).
+pub const CHARGED_BLASTER_BEAM: u16 = 461;
+/// `ProjectileID.CrystalPulse` (521, `ProjectileID.cs:1596`) — the Crystal
+/// Serpent's pulse (aiStyle 29's own 521 arm, `extraUpdates = 1`).
+pub const CRYSTAL_PULSE: u16 = 521;
+/// `ProjectileID.SparkleGuitar` (856, `ProjectileID.cs:2266`) — the Sparkle
+/// Guitar's note (aiStyle 167, the CatmullRom arc).
+pub const SPARKLE_GUITAR: u16 = 856;
+/// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
+/// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
+pub const STAR_CANNON_STAR: u16 = 955;
 /// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
 /// 14x18, `penetrate = -1`, `tileCollide = false`).
 pub const LAST_PRISM: u16 = 633;
@@ -1133,6 +1209,12 @@ pub struct ProjData {
     /// `idStaticNPCHitCooldown` (default −1, `:466`).
     pub uses_id_static_immunity: bool,
     pub id_static_hit_cooldown: i32,
+    /// `Projectile.immunityIdentity` (`:782`, reset to `type`) — the key the
+    /// id-static immunity table is indexed by. `UseGroupStaticImmunity(Type)`
+    /// (`:10676-10681`) overrides it to a shared group id: the Bee Gun's bee
+    /// 181 and giant bee 566 both carry 181, so one cooldown covers both.
+    /// `0` = "use the kind" (every row that does not call the group helper).
+    pub immunity_identity: u16,
     /// `Projectile.alpha` (`:779`) — the draw-time fade, which the AI arms
     /// also read as a state marker (the magic families, Phase 3).
     pub alpha: i32,
@@ -2565,6 +2647,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // hook), `penetrate = 3`, `extraUpdates = 2`, `scale = 0.65f`,
             // `timeLeft = 600`.
             GREEN_LASER => (4.0, 4.0, 1, 3, 600, 2, true, false, false, (false, -2, false, -1, 0, 0.65)),
+            // `:1040-1056` — the Aqua Scepter's stream: 18x18, aiStyle 12,
+            // alpha 255, `penetrate = 5`, `extraUpdates = 2`, `ignoreWater`.
+            // The remix-world local-immunity arm (`:1051-1055`) is unported
+            // (no remix seed flag — ANALYSIS); the stock immunity reset holds.
+            AQUA_SCEPTER => (18.0, 18.0, 12, 5, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:1095-1105` — the water bolt: 16x16, aiStyle 8, alpha 255,
             // `penetrate = 10` and `timeLeft /= 2` off the 3600 reset
             // (`:787`) — 1800.
@@ -2616,6 +2703,36 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:3378-3387` — the ball's bolt: 8x8, aiStyle 48,
             // `extraUpdates = 100`, `timeLeft = 100`.
             MAGNET_SPHERE_BOLT => (8.0, 8.0, 48, 1, 100, 100, true, false, false, RESET_STATE),
+            // S1-P-i21 — the hardmode staves' missing rows (the six kinds the
+            // census found row-less: without a `proj_data` row the
+            // data-carrying spawn refuses the shot entirely).
+            // `:3185-3192` — the Nimbus Rod's flying cloud: 28x28, aiStyle 45,
+            // `penetrate = -1`, `netImportant` (the tail's kind list).
+            RAIN_CLOUD_MOVING => (28.0, 28.0, 45, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:3193-3203` — the settled raining cloud: 54x28, aiStyle 45,
+            // `tileCollide = false`, `ignoreWater`, `penetrate = -1`,
+            // `timeLeft = 18000`.
+            RAIN_CLOUD_RAINING => (54.0, 28.0, 45, -1, 18000, 0, false, false, false, RESET_STATE),
+            // `:3204-3217` — the rain drop: 4x40, aiStyle 45, `penetrate = 5`,
+            // `timeLeft = 300`, `scale = 1.1f`, `extraUpdates = 1`, the
+            // id-static immunity with the 10-tick cooldown.
+            RAIN_FRIENDLY => (4.0, 40.0, 45, 5, 300, 1, true, false, false, (false, -2, true, 10, 0, 1.1)),
+            // `:3664-3674` — the Golden Shower's stream: 32x32, aiStyle 12,
+            // alpha 255, `penetrate = 5`, `extraUpdates = 2`, `ignoreWater`.
+            GOLDEN_SHOWER => (32.0, 32.0, 12, 5, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:3838-3848` — the Shadowbeam Staff's beam: 4x4, aiStyle 48,
+            // `extraUpdates = 100`, `timeLeft = 300`, `penetrate = -1`.
+            SHADOWBEAM => (4.0, 4.0, 48, -1, 300, 100, true, false, false, RESET_STATE),
+            // `:4088-4097` — the Bat Scepter's bat: 16x16, aiStyle 36,
+            // alpha 255, `timeLeft = 600` (the stock `penetrate = 1`).
+            BAT_FRIENDLY => (16.0, 16.0, 36, 1, 600, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:4287-4296` — the Razorpine's needle: 4x4, aiStyle 1,
+            // `scale = 0.8f`, `extraUpdates = 1`.
+            PINE_NEEDLE_FRIENDLY => (4.0, 4.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 0, 0.8)),
+            // `:4297-4307` — the Blizzard Staff's icicle: 10x10, aiStyle 1,
+            // `tileCollide = false`, `extraUpdates = 1` (coldDamage — no slot
+            // field yet).
+            BLIZZARD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 1, false, false, false, RESET_STATE),
             // `:3849-3858` — the inferno fork's bolt: 12x12, aiStyle 50,
             // alpha 255.
             INFERNO_FORK_BOLT => (12.0, 12.0, 50, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
@@ -3256,6 +3373,82 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `timeLeft *= 5` and the idStatic-12 pair (`:3526-3527`,
             // the state group below — NOT the local pair).
             SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, (false, -2, true, 12, 0, 1.0)),
+            // ===== S1-P-i25: the summon-staff minions' missing rows =====
+            // The slot-counting / sacrifice machinery needs every summon
+            // staff's minion kind to carry its `SetDefaults` slice; these
+            // rows were absent, so the staves' spawns declined and the
+            // budget never booked them. The AI machines stay the documented
+            // deferrals (the aiStyle-26/54/156/164/169/206 dispatch no-ops).
+            // `Projectile.cs:2791-2813` (191-194, the Pygmy Staff's four):
+            // 18x18, aiStyle 26, penetrate -1, `timeLeft *= 5`, a full slot;
+            // the 192/193/194 scale ladder (1.025/1.05/1.075).
+            191 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            192 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 1.025)),
+            193 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 1.05)),
+            194 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 1.075)),
+            // `Projectile.cs:4099-4111` (317, the Raven Staff): 28x28,
+            // aiStyle 54, penetrate 1, `timeLeft *= 5`, a full slot, the
+            // LOCAL pair (10).
+            317 => (28.0, 28.0, 54, 1, 18000, 0, true, false, false, (true, 10, false, -1, 0, 1.0)),
+            // `Projectile.cs:4742-4754` (390-392, the Spider Staff's trio):
+            // 30x30, aiStyle 26, penetrate -1, `timeLeft *= 5`, a full slot,
+            // the idStatic pair (15).
+            390 | 391 | 392 => (30.0, 30.0, 26, -1, 18000, 0, true, false, false, (false, -2, true, 15, 0, 1.0)),
+            // `Projectile.cs:7777-7792` (755, the Sanguine Staff's bat):
+            // 10x10, aiStyle 156, penetrate -1, `timeLeft *= 5`, a full slot,
+            // tileCollide false, ignoreWater, the LOCAL pair (-1).
+            755 => (10.0, 10.0, 156, -1, 18000, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // `Projectile.cs:8067-8081` (831, the Storm Tiger Staff's gem):
+            // 10x10, aiStyle 164, penetrate -1, `timeLeft = 60` (NOT *5), a
+            // full slot, tileCollide false, ignoreWater, hide.
+            831 => (10.0, 10.0, 164, -1, 60, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:8284-8300` (864, the Smolstar): 10x10, aiStyle
+            // 169, penetrate -1, `timeLeft = 60`, a full slot, tileCollide
+            // false, ignoreWater, the LOCAL pair (10), armorPenetration 25
+            // (no port field — dropped).
+            864 => (10.0, 10.0, 169, -1, 60, 0, false, false, false, (true, 10, false, -1, 0, 1.0)),
+            // `Projectile.cs:8922-8940` (946, the Empress Blade): 10x10,
+            // aiStyle 156, penetrate -1, `timeLeft *= 5`, a full slot,
+            // tileCollide false, ignoreWater, the LOCAL pair (-1), scale
+            // 0.75, manualDirectionChange/drawLayer (render-side, dropped).
+            946 => (10.0, 10.0, 156, -1, 18000, 0, false, false, false, (true, -1, false, -1, 0, 0.75)),
+            // `Projectile.cs:8969-8983` (951, the Flinx Staff): 26x26,
+            // aiStyle 67, penetrate -1, `timeLeft *= 5`, a full slot, the
+            // idStatic pair (10), decidesManualFallThrough.
+            951 => (26.0, 26.0, 67, -1, 18000, 0, true, false, false, (false, -2, true, 10, 0, 1.0)),
+            // `Projectile.cs:9182-9196` (970, Abigail's counter): 10x10,
+            // aiStyle 164, penetrate -1, `timeLeft = 60`, a full slot,
+            // tileCollide false, ignoreWater, hide.
+            970 => (10.0, 10.0, 164, -1, 60, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:9667-9680` (1022, the Dead Cells Mushroom Boi):
+            // 20x30, aiStyle 67, penetrate -1, `timeLeft *= 5`, a full slot,
+            // the LOCAL pair (18), decidesManualFallThrough.
+            1022 => (20.0, 30.0, 67, -1, 18000, 0, true, false, false, (true, 18, false, -1, 0, 1.0)),
+            // `Projectile.cs:10195-10209` (1093, the Palworld Cattiva) /
+            // `:10362-10376` (1112, the Trusty Cattiva): 14x22, aiStyle 67,
+            // penetrate -1, `timeLeft *= 5`, a full slot, the LOCAL pair (9),
+            // decidesManualFallThrough, alpha 255.
+            1093 | 1112 => (14.0, 22.0, 67, -1, 18000, 0, true, false, false, (true, 9, false, -1, 255, 1.0)),
+            // `Projectile.cs:10210-10221` (1094, the Palworld Foxsparks) /
+            // `:10377-10388` (1113, the Trusty Foxsparks): 18x18, aiStyle 26,
+            // penetrate -1, `timeLeft *= 5`, a full slot, alpha 255.
+            1094 | 1113 => (18.0, 18.0, 26, -1, 18000, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:10450-10463` (1118, the Clay Pot Minion): 14x22,
+            // aiStyle 67, penetrate -1, `timeLeft *= 5`, a full slot, the
+            // LOCAL pair (30), decidesManualFallThrough.
+            1118 => (14.0, 22.0, 67, -1, 18000, 0, true, false, false, (true, 30, false, -1, 0, 1.0)),
+            // `Projectile.cs:10464-10478` (1119, the Forbidden Minion):
+            // 14x22, aiStyle 206, penetrate -1, `timeLeft *= 5`, a full slot,
+            // the LOCAL pair (30), tileCollide false, ignoreWater.
+            1119 => (14.0, 22.0, 206, -1, 18000, 0, false, false, false, (true, 30, false, -1, 0, 1.0)),
+            // `Projectile.cs:6729-6753` (625-628, the Stardust Dragon chain):
+            // 24x24, aiStyle 121, penetrate -1, `timeLeft *= 5`, tileCollide
+            // false, ignoreWater, alpha 255, the LOCAL pair (7); the 626/627
+            // BODY segments carry 0.5 slots, the 625 head / 628 tail 0 (the
+            // slot block excludes them, `:16709`). The chain AI is the 121
+            // arm (`dragon_step`, `AI_121_StardustDragon` `:42824-43080`).
+            STARDUST_DRAGON_HEAD | STARDUST_DRAGON_TAIL => (24.0, 24.0, 121, -1, 18000, 0, false, false, false, (true, 7, false, -1, 255, 1.0)),
+            STARDUST_DRAGON_BODY_1 | STARDUST_DRAGON_BODY_2 => (24.0, 24.0, 121, -1, 18000, 0, false, false, false, (true, 7, false, -1, 255, 1.0)),
             // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
             // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
             // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
@@ -3584,6 +3777,60 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
             // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
             ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-P-i22 — the magic guns + tomes' shots. The verbatim
+            // `SetDefaults` arms, in `ProjectileID` order; `light`/`magic`/
+            // `melee`/`ranged`/`ignoreWater`/`drawLayer`/`armorPenetration`
+            // have no `ProjData` consumer (dropped, as the Phase-1 rows note).
+            // `Projectile.cs:886-896` — the Starfury star (9): 24x24, aiStyle 5,
+            // `penetrate = 2`, `scale = 0.8f`, `tileCollide = false`, melee.
+            STARFURY => (24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.8)),
+            // `Projectile.cs:1556-1593` — the harp notes (76/77/78): aiStyle 21,
+            // `alpha = 100`, `penetrate = 5`, `timeLeft = 180`, ignoreWater; the
+            // per-kind box (76: 10x22, 77: 18x24, 78: 22x24). The `switch (2)`
+            // local-immunity arm (`:1588-1591`) sets `localNPCHitCooldown = 30`.
+            QUARTER_NOTE => (10.0, 22.0, 21, 5, 180, 0, true, false, false, (true, 30, false, -1, 100, 1.0)),
+            EIGHTH_NOTE => (18.0, 24.0, 21, 5, 180, 0, true, false, false, (true, 30, false, -1, 100, 1.0)),
+            TIED_EIGHTH_NOTE => (22.0, 24.0, 21, 5, 180, 0, true, false, false, (true, 30, false, -1, 100, 1.0)),
+            // `Projectile.cs:2398-2410` — the Nettle Burst segments (150-152):
+            // 28x28, aiStyle 4, `penetrate = -1`, `tileCollide = false`,
+            // `alpha = 255`, ignoreWater (`armorPenetration = 10` dropped).
+            NETTLE_BURST_RIGHT | NETTLE_BURST_LEFT | NETTLE_BURST_END => (
+                28.0, 28.0, 4, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3441-3451` — the Heat Ray (260): 8x8, aiStyle 48,
+            // `extraUpdates = 100`, `timeLeft = 200`, `penetrate = 1`.
+            HEAT_RAY => (8.0, 8.0, 48, 1, 200, 100, true, false, false, RESET_STATE),
+            // `Projectile.cs:3503-3515` — the Poison Fang (265): 12x12,
+            // aiStyle 1, `alpha = 255`, `penetrate = 3`, local immunity 10,
+            // `timeLeft = 37`.
+            POISON_FANG => (12.0, 12.0, 1, 3, 37, 0, true, false, false, (true, 10, false, -1, 255, 1.0)),
+            // The Electrosphere Missile 442 + sphere 443 rows live in main's
+            // i16 dart block (numeric arms above; the sphere carries the
+            // NewProjectileSetup 300-tick seed, Projectile.cs:11065-11068) —
+            // deduped keep-one here, the named consts stay live.
+            // `Projectile.cs:5292-5303` — the Charged Blaster Orb (459): 22x22,
+            // aiStyle 1, `alpha = 255`, `extraUpdates = 1`, ignoreWater, magic.
+            CHARGED_BLASTER_ORB => (22.0, 22.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:5304-5316` — the Charged Blaster Cannon holder
+            // (460): 14x18, aiStyle 75, `penetrate = -1`, `tileCollide = false`,
+            // ignoreWater, magic (`drawLayer = 8`/`usesOwnerLight` dropped).
+            CHARGED_BLASTER_CANNON => (14.0, 18.0, 75, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5317-5328` — the Charged Blaster Laser (461):
+            // 18x18, aiStyle 84, `penetrate = -1`, `alpha = 255`,
+            // `tileCollide = false`, magic (`hide = true` dropped).
+            CHARGED_BLASTER_BEAM => (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:5908-5918` — the Crystal Pulse (521): 14x14,
+            // aiStyle 29, `alpha = 255`, `penetrate = 1`, `extraUpdates = 1`.
+            CRYSTAL_PULSE => (14.0, 14.0, 29, 1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:8206-8219` — the Sparkle Guitar note (856): 32x32,
+            // aiStyle 167, `alpha = 255`, `tileCollide = false`,
+            // `extraUpdates = 2`, local immunity −1, ignoreWater, magic.
+            SPARKLE_GUITAR => (32.0, 32.0, 167, 1, TIME_LEFT_DEFAULT, 2, false, false, false, (true, -1, false, -1, 255, 1.0)),
+            // `Projectile.cs:9013-9023` — the Star Cannon star (955): 18x18,
+            // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
+            // dropped).
+            STAR_CANNON_STAR => (18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 50, 1.0)),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -3767,6 +4014,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         STARDUST_GUARDIAN | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 | ABIGAIL => {
             (true, false, 0.0)
         }
+        // S1-P-i25: the summon-staff minions' missing identification rows —
+        // every one a full slot (`minionSlots = 1f`, the cited `SetDefaults`
+        // arms), the dragon BODY segments (626/627) half a slot
+        // (`Projectile.cs:6735-6738`), the head/tail (625/628) zero (the slot
+        // block excludes them, `:16709`).
+        191 | 192 | 193 | 194 | 317 | 390 | 391 | 392 | 755 | 831 | 864 | 946 | 951
+        | 970 | 1022 | 1093 | 1094 | 1112 | 1113 | 1118 | 1119 => (true, false, 1.0),
+        STARDUST_DRAGON_HEAD | STARDUST_DRAGON_TAIL => (true, false, 0.0),
+        STARDUST_DRAGON_BODY_1 | STARDUST_DRAGON_BODY_2 => (true, false, 0.5),
         FROST_HYDRA | QUEEN_SPIDER | MOONLORD_TURRET | RAINBOW_CRYSTAL | FLAME_BURST_TOWER_1
         | FLAME_BURST_TOWER_2 | FLAME_BURST_TOWER_3 | BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2
         | BALLISTRA_TOWER_3 | LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3
@@ -3820,6 +4076,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         } else {
             -1
         },
+        // `UseGroupStaticImmunity(181)` (`Projectile.cs:10676-10681`) — the
+        // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
+        // id-static table keys both under one cooldown. Every other row keeps
+        // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
+        immunity_identity: if matches!(kind, BEE | GIANT_BEE) { BEE } else { 0 },
         alpha,
         // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
         // other row carries its own scale in the state group.
@@ -3840,6 +4101,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion_slots,
         net_important: minion
             || sentry
+            // S1-P-i21: the Nimbus Rod's two clouds set `netImportant`
+            // (`Projectile.cs:3186`/`:3194`); the rain drop 239 keeps false.
+            || matches!(kind, RAIN_CLOUD_MOVING | RAIN_CLOUD_RAINING)
             // S1-P-i35 — the bobber family sets `netImportant` itself
             // (`Projectile.cs:4514`/`:9428`).
             || BOBBER_KINDS.contains(&kind)
@@ -3883,6 +4147,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (AI_026 slice C; its wet-swim arm `:64475-64485` is a
                     // live C# branch the port folds dry with the wet flags).
                     | SLIME_MINION
+                    // S1-P-i25: the new aiStyle-26/54/67 minion rows set no
+                    // ignoreWater either — the pygmies (`:2791-2813`), the
+                    // raven (`:4099-4111`), the spiders (`:4742-4754`), the
+                    // foxsparks (`:10210-10221`/`:10377-10388`), the flinx
+                    // (`:8969-8983`), the mushroom boi (`:9667-9680`), the
+                    // cattivas (`:10195-10209`/`:10362-10376`) and the clay
+                    // pot (`:10450-10463`).
+                    | 191 | 192 | 193 | 194 | 317 | 390 | 391 | 392 | 1094 | 1113
+                    | 951 | 1022 | 1093 | 1112 | 1118
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
@@ -3901,6 +4174,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
             // (`Projectile.cs:4672`/`:4694`).
             || matches!(kind, FORCE_BUBBLE | CTHULUNADO)
+            // S1-P-i21: the Nimbus Rod's raining cloud sets `ignoreWater`
+            // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
+            // keep the stock false.
+            || kind == RAIN_CLOUD_RAINING
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -3914,6 +4191,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
             || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
+            // S1-P-i20: the Aqua Scepter (22, `Projectile.cs:1049`) and the
+            // Magic Missile (16, `:983`) set `ignoreWater = true`; the
+            // Flamelash (34) does NOT (`:1162-1173` has no such line).
+            || matches!(kind, AQUA_SCEPTER | MAGIC_MISSILE)
             // S1-P-i13/i17 — the bow-launch arrows that set `ignoreWater` in
             // their `SetDefaults` bodies: the JestersArrow 5
             // (`Projectile.cs:859`) and the DD2BetsyArrow 710 (`:7529`).
@@ -3938,6 +4219,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             kind,
             ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
                 | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3
+                // S1-P-i25: the new aiStyle-67 rows' `decidesManualFallThrough`
+                // — the flinx (`:8980`), the mushroom boi (`:9679`), the
+                // cattivas (`:10207`/`:10374`) and the clay pot (`:10462`).
+                | 951 | 1022 | 1093 | 1112 | 1118
         ),
         // The damage-class flags (`Projectile.cs:751-753` reset false) the
         // per-hit crit block reads (`:12890-12898`). The census is the
@@ -4078,6 +4363,18 @@ pub const CTHULUNADO: u16 = 386;
 pub const UFO_MINION: u16 = 423;
 pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
+/// `ProjectileID.StardustDragon1` (625) — the chain HEAD (`ProjectileID.cs:1804`):
+/// the aiStyle-121 steering half (`Projectile.cs:42862-42992`), a 0-slot summon.
+pub const STARDUST_DRAGON_HEAD: u16 = 625;
+/// `ProjectileID.StardustDragon2` (626) — the first BODY segment
+/// (`ProjectileID.cs:1806`): 0.5 slots, the key-linked follow half.
+pub const STARDUST_DRAGON_BODY_1: u16 = 626;
+/// `ProjectileID.StardustDragon3` (627) — the second BODY segment
+/// (`ProjectileID.cs:1808`): 0.5 slots, the key-linked follow half.
+pub const STARDUST_DRAGON_BODY_2: u16 = 627;
+/// `ProjectileID.StardustDragon4` (628) — the chain TAIL (`ProjectileID.cs:1810`):
+/// 0 slots; its contact with the HEAD kills both (`Projectile.cs:43022-43027`).
+pub const STARDUST_DRAGON_TAIL: u16 = 628;
 pub const BABY_BIRD: u16 = 759;
 pub const SLIME_MINION: u16 = 266;
 /// `ProjectileID.SkeletronPet` (885) — AI_026 slice B (S1-D-4b-11): the
@@ -4167,8 +4464,61 @@ pub const MINION_SACRIFICABLE: &[u16] = &[
     831, 970, 864, 946, 951, 963, 1022, 1093, 1112, 1094, 1113, 1118, 1119, 625, 626, 627, 628,
 ];
 
+/// `Main.projPet` (`Main.cs:8728-8852`): the projectile ids the game treats as
+/// pets/minions for the use-path gates — `FreeUpPetsAndMinions`'s call gate
+/// (`Player.cs:42778`) and the pet-buff shoot arm (`:48561`). Verbatim id list.
+pub const PROJ_PET: &[u16] = &[
+    492, 499, 653, 701, 703, 702, 764, 765, 319, 334, 324, 266, 313, 314, 317, 175, 111, 112, 127,
+    191, 192, 193, 194, 197, 198, 199, 200, 208, 209, 210, 211, 236, 268, 269, 353, 373, 375, 380,
+    387, 388, 390, 391, 392, 393, 394, 395, 1093, 1094, 1112, 1113, 1118, 1119, 398, 407, 423, 533,
+    613, 623, 625, 626, 627, 628, 755, 758, 759, 774, 815, 816, 817, 821, 825, 831, 833, 834, 835,
+    854, 858, 859, 860, 864, 875, 946, 951, 963, 970, 1022, 881, 882, 883, 884, 885, 886, 887, 888,
+    889, 890, 891, 892, 893, 894, 895, 896, 897, 898, 899, 900, 901, 934, 956, 957, 958, 959, 960,
+    994, 998, 1003, 1004, 1018, 1056, 1090, 1027, 1046, 1050, 1095, 1096,
+];
+
+/// `ProjectileID.Sets.LightPet` (`ProjectileID.cs:523`): the light-pet
+/// projectile ids — the other half of `FreeUpPetsAndMinions`'s call gate
+/// (`Player.cs:42778`, `LightPet[shoot] || projPet[shoot]`).
+pub const LIGHT_PET_PROJ: &[u16] = &[18, 500, 72, 87, 86, 211, 492, 650, 702, 891, 896, 895];
+
+/// `Player.ItemCheck_ApplyPetBuffs`' summon-staff rows (`Player.cs:53190-53281`):
+/// the item types whose use grants `AddBuff(sItem.buffType, 3600)` at the
+/// use-start (`:42766`), the minion-buff PERSISTENCE mechanism — the 3600-tick
+/// grant is what the keep-alive arm's 18000 refresh then pins while the minion
+/// lives (the `:42880` `item.buffTime` grant is 0 for the staves, a ghost).
+/// Verbatim: the 1157/1309/1802/2364/2365 single-item arms (`:53190`/`:53194`/
+/// `:53218`/`:53234`/`:53238`) plus the 24-case switch (`:53254-53277`).
+pub const MINION_STAFF_PET_BUFF_ITEMS: &[u16] = &[
+    1157, 1309, 1802, 2364, 2365, 2535, 2551, 2584, 2621, 2749, 3249, 3474, 3531, 4269, 4273,
+    4281, 4607, 4758, 5005, 5069, 5114, 5456, 5663, 5664, 6148, 6149, 6161, 6164,
+];
+
+/// `ProjectileID.Sets.MinionShot` (`ProjectileID.cs:431`): the minion attack
+/// shot kinds — `WhipTagEffect.CanRunHitEffects`'s gate
+/// (`GameContent/Items/WhipTagEffect.cs:81-85`) treats them as summon shots
+/// alongside the `minion`/`sentry` flags (S1-P-i24/S1-P-i25 landed the same
+/// table; gate-merged to one definition).
+pub const MINION_SHOT: &[u16] = &[374, 376, 389, 195, 408, 433, 614, 818, 1044, 1097, 1106, 1120];
+
 pub const SENTRY_SHOT: &[u16] = &[
     680, 664, 666, 668, 694, 695, 696, 644, 642, 378, 379, 309, 967, 1026,
+];
+
+/// `WhipTagEffect.CanRunHitEffects` (`GameContent/Items/WhipTagEffect.cs:75-86`):
+/// `optionalProjectile.OwnedBySomeone && (minion || MinionShot[type] ||
+/// sentry || SentryShot[type])`. The owned check is the caller's (`owner !=
+/// 255`); this folds the four-way shot test the tag-damage math gates on.
+pub fn can_run_whip_hit_effects(minion: bool, sentry: bool, kind: u16) -> bool {
+    minion || sentry || MINION_SHOT.contains(&kind) || SENTRY_SHOT.contains(&kind)
+}
+
+/// `ItemID.Sets.SummonerWeaponThatScalesWithAttackSpeed` (`ID/ItemID.cs:497`):
+/// the 18 whip items — `ApplyItemAnimation` (`Player.cs:4474-4476`) scales
+/// their swing by `summonerWeaponSpeedBonus * whipUseTimeMultiplier`.
+pub const SUMMONER_WEAPON_SCALES_WITH_ATTACK_SPEED: &[u16] = &[
+    4672, 4679, 4680, 4678, 4913, 4912, 4911, 4914, 5074, 5473, 5474, 5475, 5476, 5477, 5478,
+    5479, 5480, 5688,
 ];
 
 pub const MINION_TARGETING_FEATURE: &[u16] = &[
@@ -4241,6 +4591,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
         // The Vampire Frog's 24-frame sheet (`Main.cs:8631`).
         VAMPIRE_FROG => 24,
+        // The Stardust Guardian's 19-frame sheet (`Main.cs:8497`) —
+        // AI_120's idle machine wraps at 8 (`Projectile.cs:44693`), the
+        // rest-hover at projFrames − 4 = 15 (`:44830`) and the dash at
+        // 19 → 14 (`:44852-44855`). S1-P-i56.
+        STARDUST_GUARDIAN => 19,
         // The Crimson Heart's 4-frame sheet (`Main.cs:8484`) — the pet's
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
@@ -4320,6 +4675,16 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         FROST_SHARD => 5,
         ORNAMENT_HOSTILE => 2,
         ORNAMENT_SHRAPNEL => 2,
+        // S1-P-i21 — the hardmode staves' sheets (`Main.cs:8569`/`:8573`/
+        // `:8602-8603`): the Blizzard's 5 icicle rows (`frame = (int)ai[1]`,
+        // `Projectile.cs:56948`), the bat's 4-frame flap (the aiStyle-36 arm
+        // wraps at 3, `:27362`), the moving cloud's 4-frame drift and the
+        // raining cloud's 6-frame sheet (the aiStyle-45 arm's frame machine,
+        // `:27976-27985`/`:27996-28005`).
+        BLIZZARD => 5,
+        BAT_FRIENDLY => 4,
+        RAIN_CLOUD_MOVING => 4,
+        RAIN_CLOUD_RAINING => 6,
         // The spear family's sub-shots (S1-P-i06): the spore cloud's 5-frame
         // sheet (`Main.cs:8605`) — the aiStyle-44 frame machine
         // (`Projectile.cs:27941-27948`) wraps at it; the Thunder bolt's

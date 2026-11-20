@@ -5,7 +5,6 @@ use glam::Vec2;
 
 use crate::app::App;
 use crate::projectile::{FlailInputs, SHURIKEN, YoyoInputs};
-use crate::registry;
 
 /// Fixed 60 Hz pool stepping. Damage lands through `Npc::hurt`, so the
 /// knockback chain is shared with melee; the immunity bookkeeping is the
@@ -135,9 +134,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (`Main.ReverseGravitySupport(Main.MouseScreen) + Main.screenPosition`,
     // `Projectile.cs:67928` — the same mouse-world math editing.rs:26 uses),
     // the held-button channel state (`Player.channel`, the release arm
-    // `:67920-67925`), the owner's death (`:67824`), `CCed` (the same
-    // release arm — S1-P-i09) and `meleeSpeed` (the lifetime divisor
-    // `:67750` + the range/top-speed division `:67886-67887`).
+    // `:67920-67925`), the CCed gate (`:67920`'s `|| CCed`), the owner's
+    // death (`:67824`) and `meleeSpeed` (the lifetime divisor `:67750` + the
+    // range/top-speed division `:67886-67887` — S1-P-i09). The channel reads
+    // the LATCHED `p.channel` (armed at the use start, cleared on
+    // release/CC/kill/death — S1-P-i23), not a per-tick re-derive from the
+    // button: a tracked-shot death must be able to drop the channel mid-hold
+    // (`TryCancelChannel` `Player.cs:52975`).
     let (sw, sh) = app.screen_size();
     // The `controlUseItem` zeroing gates (`Player.cs:42804-42807`'s
     // `channel = false` on the cleared input): the inventory
@@ -156,10 +159,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
             )
         }),
-        channel: app.player.is_some() && app.mine_down && use_input_live && {
-            let held = app.inventory[app.selected];
-            held.count > 0 && registry::get(held.kind).is_some_and(|d| d.channel)
-        },
+        // S1-P-i23's latched channel AND S1-P-i09's use-input gates: the
+        // inventory/map/minimap clears drop the use input, so the channel
+        // drops behind them even before `update_editing` clears the latch.
+        channel: app.player.as_ref().is_some_and(|p| p.channel) && use_input_live,
         player_dead: app.player.as_ref().is_some_and(|p| p.dead),
         player_cced: app.player.as_ref().is_some_and(|p| p.cced()),
         melee_speed: app
@@ -190,7 +193,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // the dual-flail flag5's selected-item gate.
             let held = app.inventory[app.selected];
             let selected_shoot = if held.count > 0 {
-                registry::projectile(held.kind)
+                crate::registry::projectile(held.kind)
             } else {
                 None
             };
@@ -467,6 +470,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }
+    }
+    // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):
+    // the local spawns of this tick track the cancel key's expected type —
+    // the last one wins (`ChannelCancelKey.TryTracking` `Player.cs:134-140`).
+    // The pool queued the intents (it cannot borrow the player mid-loop);
+    // apply them here, after the walk, before the next tick's kills read the
+    // key (S1-P-i23).
+    if let Some(p) = app.player.as_mut() {
+        app.projectiles.apply_channel_tracks(p);
     }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
@@ -1008,34 +1020,118 @@ mod dw4_tests {
     }
 }
 
-/// S1-P-i09 — the yoyo snapshot's `controlUseItem` gates (written, NOT run
-/// — code-only mode). `Player.ItemCheck` clears the channel whenever the
-/// use input is cleared (`Player.cs:42804-42807`): the inventory, the
-/// fullscreen map (`Player.cs:24798-24807`) and the minimap hover
-/// (`MinimapFrame.cs:164`) all drop it, so the aiStyle-99 release arm
-/// (`Projectile.cs:67920-67925`) fires behind them. The old snapshot read
-/// only `mine_down` + the held item and kept the yoyo flying with the
-/// inventory open.
+/// S1-P-i23 — the pass-level channel witnesses (written, NOT run — code-only
+/// mode): the yoyo/flail snapshots read the LATCHED `Player.channel` (not a
+/// per-tick button re-derive), and the pass tail drains the spawn-tracking
+/// intents onto the cancel key (`Projectile.cs:11097-11100`).
+#[cfg(test)]
+mod s1_p_i23_channel_pass_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::WOOD_YOYO;
+
+    /// A mid-channel player on the Wood Yoyo row (item 3278, shoot 541),
+    /// parked at centre (64, 64) inside the 8x8-tile fixture world, the
+    /// cursor 40 px right of centre. The button is UP — the latch alone
+    /// must hold the aim (the pre-i23 per-tick re-derive would release).
+    fn yoyo_channel_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 54.0;
+        p.y = 43.0;
+        p.channel = true;
+        p.channel_item = 3278;
+        p.channel_proj_expected = WOOD_YOYO;
+        app.player = Some(p);
+        app.camera = Vec2::new(64.0, 64.0);
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = Vec2::new(sw * 0.5 + 40.0, sh * 0.5);
+        app.mine_down = false;
+        app.projectiles
+            .spawn_with_data_ai_owned(WOOD_YOYO, 0, 56.0, 56.0, 0.0, 0.0, 9, 2.5, 0.0, 0.0);
+        app
+    }
+
+    #[test]
+    fn s1_p_i23_the_pass_reads_the_latched_channel_not_the_button() {
+        // `AI_099_2_Yoyos`'s release arm (`Projectile.cs:67920-67925`)
+        // reads `Main.player[owner].channel` — the latch. Button up +
+        // latch open keeps the aim; the latch drop releases it.
+        let mut app = yoyo_channel_app();
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let yoyo = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == WOOD_YOYO)
+            .expect("the yoyo lives");
+        assert_eq!(yoyo.ai[0], 104.0, "the latched channel holds the aim");
+        // The latch drops (a kill-cancel / CC / release would do this).
+        app.player.as_mut().unwrap().channel = false;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let yoyo = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.kind == WOOD_YOYO)
+            .expect("the slot");
+        assert_eq!(yoyo.ai[0], -1.0, "the dropped latch releases the aim");
+    }
+
+    #[test]
+    fn s1_p_i23_the_pass_tail_tracks_the_local_spawns() {
+        // `NewProjectile`'s tail (`Projectile.cs:11097-11100`): the pool
+        // queues the intents mid-loop; the pass tail applies them — the
+        // LAST local spawn of the expected type wins (`TryTracking`
+        // `Player.cs:134-140`). Two yoyos out: the key lands on slot 1.
+        let mut app = yoyo_channel_app();
+        app.projectiles
+            .spawn_with_data_ai_owned(WOOD_YOYO, 0, 72.0, 56.0, 0.0, 0.0, 9, 2.5, 0.0, 0.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().channel_index_expected,
+            0,
+            "the struct default before the pass"
+        );
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.player.as_ref().unwrap().channel_index_expected,
+            1,
+            "the pass tail tracked the last spawn"
+        );
+    }
+}
+
+/// S1-P-i09 — the yoyo snapshot's `controlUseItem` gates. `Player.ItemCheck`
+/// clears the channel whenever the use input is cleared
+/// (`Player.cs:42804-42807`): the inventory, the fullscreen map
+/// (`Player.cs:24798-24807`) and the minimap hover (`MinimapFrame.cs:164`)
+/// all drop it, so the aiStyle-99 release arm (`Projectile.cs:67920-67925`)
+/// fires behind them. Re-pinned onto the S1-P-i23 latch: the fixture arms
+/// `p.channel` directly (a real use-start would), and the snapshot gates
+/// the latch on the use-input clears — no per-tick button re-derive.
 #[cfg(test)]
 mod s1_p_i09_yoyo_snapshot_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::projectile::WOOD_YOYO;
 
-    /// One Wood Yoyo out with the Wood Yoyo item (3278) held and the use
-    /// button down — the channel-hold fixture. The spawn sits inside the
-    /// 8×8-tile fixture world (the out-of-world guard). The camera centres
-    /// on the player and the mouse sits 100 px right of the screen centre,
-    /// so the aim world point lands INSIDE the string range on the player's
-    /// right (a clamped aim left of world x = 0 would read negative — the
-    /// C#'s own edge quirk, `ai[0]` is a world coordinate).
+    /// One Wood Yoyo out with the channel latch armed (the Wood Yoyo item
+    /// 3278 held). The spawn sits inside the 8×8-tile fixture world (the
+    /// out-of-world guard); the camera centres on the player and the mouse
+    /// sits right of centre so the aim world point lands inside the string
+    /// range (`ai[0]` is a world coordinate, the C#'s own edge quirk).
     fn yoyo_channel_app() -> App {
         let mut app = flow_app(None, vec![], vec![]);
-        app.player = Some(crate::player::Player::spawn(&app.world));
-        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let mut p = crate::player::Player::spawn(&app.world);
+        let (cx, cy) = p.center();
+        p.channel = true;
+        p.channel_item = 3278;
+        p.channel_proj_expected = WOOD_YOYO;
+        app.player = Some(p);
         app.camera = Vec2::new(cx, cy);
         app.zoom = 1.0;
-        app.mouse_pos = Vec2::new(640.0 + 100.0, 360.0);
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = Vec2::new(sw * 0.5 + 100.0, sh * 0.5);
         app.inventory[app.selected] = crate::item::ItemSlot {
             kind: 3278,
             name: "Wood Yoyo",

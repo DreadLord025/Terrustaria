@@ -88,6 +88,48 @@ impl Default for TagEffectStack {
 }
 
 impl TagEffectStack {
+    /// `Player.maxTagEffects` / `Player.tagEffectDuration` (`Player.cs:1204`/
+    /// `:1206`) — the stack reads them off its owner every `Update`/`TrySet…`;
+    /// the port folds them in through this seam (the `ResetEffects` base
+    /// 1/1f and the accessory adds, `Player.cs:12970-12984`).
+    pub fn set_player_caps(&mut self, max_tag_effects: usize, tag_effect_duration: f32) {
+        self.max_tag_effects = max_tag_effects;
+        self.tag_effect_duration = tag_effect_duration;
+    }
+
+    /// `Player.ResetEffects`' `maxTagEffects = 1` / `tagEffectDuration = 1f`
+    /// (`Player.cs:18517-18518`): the C# stack reads the PLAYER's fields
+    /// live (`TagEffectStack.cs:47`, `:133`, `TagEffectState.cs:64`); the
+    /// port keeps copies on the stack, so the reset syncs them here
+    /// (S1-P-i27 — same seam as i24's `set_player_caps`, kept for the i27
+    /// call sites).
+    pub fn reset_player_scalars(&mut self, max_tag_effects: usize, tag_effect_duration: f32) {
+        self.set_player_caps(max_tag_effects, tag_effect_duration);
+    }
+
+    /// The `UpdateEquips` fold's per-accessory adds (`Player.cs:12974`,
+    /// `:12978`, `:12983` `maxTagEffects++`; `:12973` `tagEffectDuration
+    /// += 2f`). Uncapped like the C# `int` — the stack's `limit_active`
+    /// clamps at `MaxEffects` (5) on use (`TagEffectStack.cs:35`).
+    /// Gate-merge note: the live fold rides i24's local-sum +
+    /// `set_player_caps` (one application per tick); this seam backs the
+    /// i27 witnesses.
+    pub fn add_player_scalars(&mut self, max_tag_effects_add: usize, tag_duration_add: f32) {
+        self.max_tag_effects += max_tag_effects_add;
+        self.tag_effect_duration += tag_duration_add;
+    }
+
+    /// `Player.maxTagEffects`'s live value (the tests' read seam).
+    pub fn max_tag_effects(&self) -> usize {
+        self.max_tag_effects
+    }
+
+    /// `Player.tagEffectDuration`'s live value (the tests' read seam).
+    pub fn tag_effect_duration(&self) -> f32 {
+        self.tag_effect_duration
+    }
+
+
     /// The index of `tag_type` in the active stack, or −1 (`IndexOf`).
     fn index_of(&self, tag_type: u16) -> Option<usize> {
         (0..self.active).find(|&i| {
@@ -189,10 +231,17 @@ impl TagEffectStack {
         }
     }
 
-    /// `TryEnableProcOnNPC` (`:89-96`).
+    /// `TryEnableProcOnNPC` (`:89-96` → `TagEffectState.EnableProcOnNPC`
+    /// `:68-71`): the window runs the STATE's own `TagDuration` — not the
+    /// front effect's (the state may sit behind the front after a newer tag
+    /// activated; the Constellation's 480 must not leak into a plain whip's
+    /// proc window, nor vice versa).
     pub fn try_enable_proc(&mut self, tag_type: u16, npc_index: usize) {
         if let Some(i) = self.index_of(tag_type) {
-            let duration = self.duration_of_front();
+            let duration = self.states[i]
+                .as_ref()
+                .map(|s| s.effect.tag_duration)
+                .unwrap_or(tr_core::whip::TAG_DURATION_GENERIC);
             self.proc_left_write(
                 i,
                 npc_index,
@@ -406,6 +455,34 @@ mod tests {
         s.reset_npc_slot(5);
         assert!(!s.is_npc_tagged(4672, 5));
         assert!(!s.can_proc(4672, 5));
+    }
+
+    #[test]
+    fn the_proc_window_runs_the_states_own_duration_not_the_fronts() {
+        // `TagEffectState.EnableProcOnNPC` (`:68-71`) reads the STATE's own
+        // `_effect.TagDuration`, not the front effect's. With the cap raised
+        // to 2, tag the Constellation (480) then the BlandWhip (240): the
+        // BlandWhip is front, the Constellation sits behind. Arming the
+        // Constellation's proc must run 480 ticks, not the front's 240.
+        let mut s = stack();
+        s.set_player_caps(2, 1.0);
+        s.try_apply_tag_to_npc(5479, 0, NpcKind::Zombie); // Constellation, 480
+        s.try_apply_tag_to_npc(4672, 0, NpcKind::Zombie); // BlandWhip, 240 (front)
+        assert_eq!(s.active_types(), vec![4672, 5479]);
+        s.try_enable_proc(5479, 0);
+        assert!(s.can_proc(5479, 0));
+        // 240 ticks would expire a front-duration window; the Constellation's
+        // own 480 holds.
+        for _ in 0..240 {
+            s.update_tick();
+        }
+        assert!(s.can_proc(5479, 0), "the 480 proc outlives the front's 240");
+        for _ in 0..239 {
+            s.update_tick();
+        }
+        assert!(s.can_proc(5479, 0), "still armed at 479");
+        s.update_tick();
+        assert!(!s.can_proc(5479, 0), "the proc expires at 480");
     }
 
     #[test]

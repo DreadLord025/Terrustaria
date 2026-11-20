@@ -263,29 +263,118 @@ pub fn update_life_regen(
     None
 }
 
-/// `Player.ApplyManaRegenerationDelay` (`Player.cs:19380-19397`). The caller
-/// (the mana spend — M3-ITEM-4) invokes it whenever mana is consumed.
+/// `DebugOptions.ManaV2` (`Testing/DebugOptions.cs:26`, static ctor `:85`
+/// sets it TRUE; no command or config in the decompile ever writes it
+/// false — S1-P-i19 census). The 1.4.5 mana rework is the SHIPPED mana
+/// machine: weapons never refuse on low mana (`CheckMana` `Player.cs:52602-
+/// 52614` drains to 0 and arms `slowMagicUse` instead), the regen delay caps
+/// at 4 (`:19403-19415`), the sub-4 window regenerates at ×0.05 (`:19437-
+/// 19441`, `:19472-19475`) and the full-bar sound/dust is suppressed while an
+/// item animation runs (`:19542-19560` — the mana point itself still lands).
+/// The port folds the flag to this constant — the
+/// V1 lanes stay unreachable exactly as in the source.
+pub const MANA_V2: bool = true;
+
+/// `Player.GetSlowMagicMultiplier` (`Player.cs:47046-47049`): the out-of-mana
+/// cast stretches the use animation/time by 2.5×.
+pub const SLOW_MAGIC_MULTIPLIER: f32 = 2.5;
+
+/// `UpdateManaRegen`'s animation input — the C# `flag`
+/// (`Player.cs:19420`): `itemAnimation > 0 || reuseDelay > 0`. While true the
+/// ManaV2 arm (`:19542-19545`) clears `flag4` AFTER the point was granted —
+/// the bar still fills; only the full-bar sound + dust (`:19550-19560`) is
+/// suppressed mid-animation.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ManaRegenFlags {
+    pub item_in_use: bool,
+}
+
+/// `Player.ApplyManaRegenerationDelay` (`Player.cs:19396-19416`). The caller
+/// invokes it whenever mana is consumed (`ItemCheck_ApplyManaRegenDelay`
+/// `:50587-50593` EVERY animation tick of a mana item — not once per cast —
+/// and the direct pays `:5883`/`:56873`).
 pub fn apply_mana_regen_delay(state: &mut RegenState, max_mana: i32, mana: i32, buff: bool) {
     state.mana_regen_delay =
         (((1.0f32 - mana as f32 / max_mana as f32) * 60.0 * 4.0 + 45.0) * 0.7) as i32 as f32;
     if buff && state.mana_regen_delay > 20.0 {
         state.mana_regen_delay = 20.0;
     }
+    if MANA_V2 {
+        // `:19403-19415`: cap at 4, then a bar with ANY mana left pins the
+        // delay to 4 (the emptier-bar curve above only survives at mana 0).
+        let num = 4.0;
+        let num2 = 4.0;
+        if state.mana_regen_delay > num2 {
+            state.mana_regen_delay = num2;
+        }
+        if mana > 0 {
+            state.mana_regen_delay = num;
+        }
+    }
 }
 
-/// `Player.UpdateManaRegen` (`Player.cs:19418-19562`). Returns true when this
+/// `Player.CheckMana` (`Player.cs:52576-52617`) — the weapon/channel pay.
+/// `slow_magic_use` is the Player field the entry clears (`:52578`) and the
+/// ManaV2 empty arm arms (`DoRunOutOfManaEffect` `:52619-52622`). Under the
+/// shipped ManaV2 the check NEVER refuses: enough mana pays
+/// `(int)(amount * mana_cost)` (`:52579-52586`); not enough drains the bar to
+/// 0 and arms the 2.5× slow cast (`:52610-52614` — the manaFlower lane
+/// `:52588-52608` lands the same V2 arm after its QuickMana, which the port
+/// has no potion seam for yet). The V1 refusal lanes (`:52608`, `:52616`)
+/// are unreachable while [`MANA_V2`] stands.
+pub fn check_mana(
+    mana: &mut i32,
+    slow_magic_use: &mut bool,
+    amount: i32,
+    mana_cost: f32,
+    pay: bool,
+) -> bool {
+    *slow_magic_use = false; // `:52578`
+    let num = (amount as f32 * mana_cost) as i32; // `:52579`
+    if *mana >= num {
+        if pay {
+            *mana -= num; // `:52584`
+        }
+        return true;
+    }
+    if MANA_V2 {
+        // `:52610-52614` (and the flower lane's twin `:52602-52606`):
+        // `statMana = 0; DoRunOutOfManaEffect(); return true`.
+        *mana = 0;
+        *slow_magic_use = true;
+        return true;
+    }
+    false
+}
+
+/// `Player.UpdateManaRegen` (`Player.cs:19418-19563`). Returns true when this
 /// tick refilled the last missing mana point (the full-bar sound + dust in the
-/// C# — M6-AUDIO polish). `manaRegenDelayBonus` and the arcane crystal have no
-/// sources yet and are folded out (noted in ANALYSIS).
-pub fn update_mana_regen(state: &mut RegenState, in_: &RegenInputs, mana: &mut i32) -> bool {
+/// C# — M6-AUDIO polish). `manaRegenDelayBonus` has no grant source in the
+/// source (`:18656` is its only write) and the arcane crystal is unported —
+/// both folded out (noted in ANALYSIS). `flags.item_in_use` is the C# `flag`
+/// (`:19420`) feeding the ManaV2 animation gate.
+pub fn update_mana_regen(
+    state: &mut RegenState,
+    in_: &RegenInputs,
+    mana: &mut i32,
+    flags: ManaRegenFlags,
+) -> bool {
     if state.mana_regen_delay > 0.0 {
         state.mana_regen_delay -= 1.0;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen_delay -= 1.0;
         }
     }
+    // `:19435-19441`: the ManaV2 sub-4 window counts as expired (flag3) and
+    // scales the regen line by 0.05 below (`:19470-19475`).
+    let mut flag2 = state.mana_regen_delay <= 0.0;
+    let mut flag3 = false;
+    if MANA_V2 && !flag2 && state.mana_regen_delay < 4.0 {
+        flag2 = true;
+        flag3 = true;
+    }
     let mut refilled = false;
-    if state.mana_regen_delay <= 0.0 {
+    if flag2 {
         // `Player.cs:19448`: `statManaMax2 / 3 + manaRegenBonus + 1`.
         let num5 = in_.max_mana / 3 + in_.mana_regen_bonus + 1;
         state.mana_regen = num5;
@@ -294,7 +383,10 @@ pub fn update_mana_regen(state: &mut RegenState, in_: &RegenInputs, mana: &mut i
         }
         let num6 = *mana as f32 / in_.max_mana as f32;
         let num9: f32 = if in_.mana_regen_buff { 1.0 } else { 0.5 };
-        let num10 = num9 + (1.0 - num9) * num6;
+        let mut num10 = num9 + (1.0 - num9) * num6;
+        if MANA_V2 && flag3 {
+            num10 *= 0.05; // `:19470-19475` (num7/num8 are both 1f, `:19458-19468`)
+        }
         state.mana_regen = (state.mana_regen as f32 * num10) as i32;
         if state.mana_regen < 2 {
             state.mana_regen = 2;
@@ -305,11 +397,23 @@ pub fn update_mana_regen(state: &mut RegenState, in_: &RegenInputs, mana: &mut i
     state.mana_regen_count += state.mana_regen;
     while state.mana_regen_count >= MANA_CHUNK {
         state.mana_regen_count -= MANA_CHUNK;
+        let mut flag4 = false;
         if *mana < in_.max_mana {
             *mana += 1;
-            refilled = true;
+            flag4 = true;
+        }
+        if MANA_V2 && flags.item_in_use {
+            // `:19542-19545`: flag4 clears AFTER the grant — the point
+            // landed above; only the full-bar sound/dust below is gated.
+            flag4 = false;
         }
         if *mana >= in_.max_mana {
+            // `:19546-19561`: the bar hit max — the sound + 5× dust-45 block
+            // fires only when a point was actually granted THIS chunk, then
+            // `statMana = statManaMax2`.
+            if flag4 {
+                refilled = true;
+            }
             *mana = in_.max_mana;
         }
     }
@@ -320,18 +424,23 @@ pub fn update_mana_regen(state: &mut RegenState, in_: &RegenInputs, mana: &mut i
 mod tests {
     #[test]
     fn the_mana_spend_resets_the_regen_delay() {
-        // `Player.CheckMana`'s pay arm + `ApplyManaRegenerationDelay`
-        // (`Player.cs:19380-19397`): the spend re-arms the delay from the
-        // REMAINING mana (the emptier bar waits longer).
+        // `ApplyManaRegenerationDelay` (`Player.cs:19396-19416`) under the
+        // shipped ManaV2 (`DebugOptions.cs:85`): the V2 cap pins EVERY delay
+        // above 4 down to 4 (`:19403-19410`), then mana > 0 pins 4 again
+        // (`:19411-19414`). The long curve (199 at an empty bar) is capped to
+        // 4 — the pre-V2 "emptier bar waits longer" ladder no longer ships.
         let mut st = RegenState::default();
         apply_mana_regen_delay(&mut st, 100, 100, false);
         let full = st.mana_regen_delay;
-        apply_mana_regen_delay(&mut st, 100, 10, false);
+        apply_mana_regen_delay(&mut st, 100, 0, false);
         let empty = st.mana_regen_delay;
-        assert!(empty > full, "full {full} vs empty {empty}");
-        // The mana-flower cap (20) rides the buff flag.
+        assert_eq!(full, 4.0, "the full bar pins 4");
+        assert_eq!(empty, 4.0, "the V2 cap pins the empty bar's 199 down to 4");
+        // The regen-buff cap (20, `:19399-19402`) runs before the V2 cap —
+        // both leave 4.
         apply_mana_regen_delay(&mut st, 100, 0, true);
         assert!(st.mana_regen_delay <= 20.0);
+        assert_eq!(st.mana_regen_delay, 4.0);
     }
 
     use super::*;
@@ -495,19 +604,22 @@ mod tests {
     fn mana_delay_ramps_with_missing_mana_and_counts_down() {
         let mut st = RegenState::default();
         apply_mana_regen_delay(&mut st, 200, 200, false); // full
-        assert_eq!(st.mana_regen_delay, 31.0); // (0×240+45)×0.7 = 31.5 → 31
+        // ManaV2 (`Player.cs:19403-19415`): the (0×240+45)×0.7 = 31 curve
+        // caps at 4 — a bar with mana left always waits exactly 4 ticks.
+        assert_eq!(st.mana_regen_delay, 4.0);
         apply_mana_regen_delay(&mut st, 200, 100, false); // half
-        assert_eq!(st.mana_regen_delay, 115.0); // (120+45)×0.7 = 115.5 → 115
+        assert_eq!(st.mana_regen_delay, 4.0); // (120+45)×0.7 = 115 → cap 4
+        apply_mana_regen_delay(&mut st, 200, 0, false); // empty: the V2 cap pins 4
+        assert_eq!(st.mana_regen_delay, 4.0); // (240+45)×0.7 = 199 → V2 cap 4
                                                 // Standing still counts the delay down twice per tick.
         let mut in_ = inputs(400, 200);
         in_.standing_still = true;
         let mut mana = 100;
-        for _ in 0..57 {
-            update_mana_regen(&mut st, &in_, &mut mana);
-        }
-        assert!(st.mana_regen_delay > 0.0);
-        update_mana_regen(&mut st, &in_, &mut mana);
-        assert!(st.mana_regen_delay <= 0.0); // 115 − 2×58 → negative
+        apply_mana_regen_delay(&mut st, 200, mana, false); // 4
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(st.mana_regen_delay, 2.0); // −1 base −1 still
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert!(st.mana_regen_delay <= 0.0); // 4 − 2×2 → 0
                                              // Once the delay is gone the regen line starts: base 200/3+1 = 67,
                                              // doubled while still → 134, ×(0.5+0.5·frac).
         assert!(st.mana_regen > 0);
@@ -521,7 +633,7 @@ mod tests {
         let mut mana = 19;
         let in_ = inputs(400, 20);
         for _ in 0..60 {
-            update_mana_regen(&mut st, &in_, &mut mana);
+            update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
         }
         assert_eq!(mana, 20);
         assert!(st.mana_regen_count >= 0 && st.mana_regen_count < 120);
@@ -539,7 +651,7 @@ mod tests {
         mana = 19;
         let mut refills = 0;
         for _ in 0..40 {
-            if update_mana_regen(&mut st, &in_, &mut mana) {
+            if update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default()) {
                 refills += 1;
             }
             if mana == 20 && refills > 0 {
@@ -557,11 +669,136 @@ mod tests {
         let mut mana = 100;
         let mut in_ = inputs(400, 200);
         in_.grappling = true;
-        update_mana_regen(&mut st, &in_, &mut mana);
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
         assert!(st.mana_regen_delay <= 0.0); // −1 base −1 grapple
                                              // The regen line doubles while grappled: (200/3+1)×2 = 134, then
                                              // ×(0.5+0.5·(100/200)) = ×0.75 → 100.
         assert_eq!(st.mana_regen, 100);
+    }
+
+    // ---- S1-P-i19: the shipped ManaV2 machine --------------------------------
+
+    #[test]
+    fn s1_p_i19_check_mana_pays_the_scaled_cost_and_never_refuses() {
+        // `Player.CheckMana` (`Player.cs:52576-52617`) under ManaV2
+        // (`DebugOptions.cs:85`): enough mana pays `(int)(amount*manaCost)`;
+        // the entry clears slowMagicUse (`:52578`).
+        let mut mana = 20;
+        let mut slow = true;
+        assert!(check_mana(&mut mana, &mut slow, 9, 0.74, true));
+        assert_eq!(mana, 20 - 6); // (int)(9 × 0.74) = 6
+        assert!(!slow, "the entry clears the flag");
+        // pay: false checks without spending (`:52582-52586`).
+        assert!(check_mana(&mut mana, &mut slow, 9, 1.0, false));
+        assert_eq!(mana, 14);
+        // Not enough: the ManaV2 arm drains to 0, arms the slow cast and
+        // STILL returns true (`:52610-52614`) — the weapon fires.
+        let mut mana = 3;
+        assert!(check_mana(&mut mana, &mut slow, 9, 1.0, true));
+        assert_eq!(mana, 0);
+        assert!(slow, "DoRunOutOfManaEffect arms slowMagicUse (:52621)");
+        // Exactly enough pays to zero WITHOUT the slow flag (`:52580`).
+        let mut mana = 9;
+        let mut slow = true;
+        assert!(check_mana(&mut mana, &mut slow, 9, 1.0, true));
+        assert_eq!(mana, 0);
+        assert!(!slow, "the >= arm never arms the slow cast");
+    }
+
+    #[test]
+    fn s1_p_i19_the_mana_v2_delay_caps_at_four_and_pins_while_mana_remains() {
+        // `ApplyManaRegenerationDelay` (`Player.cs:19403-19415`): the V2 cap
+        // pins EVERY delay above 4 down to 4, then mana > 0 pins 4 again.
+        // The empty bar's long curve (199) is capped to 4 — it does NOT
+        // survive the V2 cap (the pre-V2 ladder no longer ships).
+        let mut st = RegenState::default();
+        apply_mana_regen_delay(&mut st, 200, 1, false);
+        assert_eq!(st.mana_regen_delay, 4.0);
+        apply_mana_regen_delay(&mut st, 200, 0, false);
+        assert_eq!(st.mana_regen_delay, 4.0); // (1×240+45)×0.7 = 199 → V2 cap 4
+        // The regen buff's 20 cap (`:19399-19402`) runs BEFORE the V2 cap —
+        // both leave 4.
+        apply_mana_regen_delay(&mut st, 200, 1, true);
+        assert_eq!(st.mana_regen_delay, 4.0);
+    }
+
+    #[test]
+    fn s1_p_i19_the_sub_four_window_regens_at_five_percent() {
+        // `UpdateManaRegen` (`Player.cs:19437-19441`, `:19470-19475`): a
+        // delay in (0, 4) counts as expired with flag3, scaling num10 by
+        // 0.05 — the floor of 2 (`:19477-19480`) still applies.
+        let mut st = RegenState {
+            mana_regen_delay: 3.0,
+            ..Default::default()
+        };
+        let mut mana = 100;
+        let in_ = inputs(400, 200);
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        // delay 3 → 2 (still in the window); base 67 × (0.5+0.5·0.5) = 50.25
+        // × 0.05 = 2.5125 → 2.
+        assert_eq!(st.mana_regen_delay, 2.0);
+        assert_eq!(st.mana_regen, 2);
+        // At delay 5 the tick decrements to 4 and the window stays CLOSED
+        // (`< 4f` is strict, evaluated AFTER the decrement `:19422-19435`):
+        // the regen line stays 0 this tick.
+        let mut st = RegenState {
+            mana_regen_delay: 5.0,
+            ..Default::default()
+        };
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(st.mana_regen_delay, 4.0);
+        assert_eq!(st.mana_regen, 0);
+    }
+
+    #[test]
+    fn s1_p_i19_the_animation_gate_suppresses_only_the_full_bar_trigger() {
+        // `UpdateManaRegen` (`Player.cs:19537-19545`): the chunk's +1 lands
+        // BEFORE `flag4 = false` — while `itemAnimation > 0 || reuseDelay > 0`
+        // the bar still fills, only the full-bar sound/dust trigger
+        // (`:19550-19560`, gated on flag4) stays quiet.
+        let mut st = RegenState {
+            mana_regen_count: 119,
+            mana_regen_delay: 0.0,
+            ..Default::default()
+        };
+        let mut mana = 19;
+        let mut in_ = inputs(400, 20);
+        in_.standing_still = true;
+        let flags = ManaRegenFlags { item_in_use: true };
+        let refilled = update_mana_regen(&mut st, &in_, &mut mana, flags);
+        // base (20/3+1)×2 = 14 × (0.5+0.5·0.95) = 13.65 → 13; 119+13 = 132
+        // → one chunk, the point lands, the trigger is suppressed.
+        assert_eq!(mana, 20, "the point lands even mid-animation");
+        assert!(!refilled, "the full-bar trigger is gated by flag4");
+        assert_eq!(st.mana_regen_count, 12);
+        // The gate down with a missing point: the same chunk shape grants
+        // AND fires the trigger (`:19550-19561`).
+        let mut st = RegenState {
+            mana_regen_count: 119,
+            mana_regen_delay: 0.0,
+            ..Default::default()
+        };
+        let mut mana = 19;
+        let refilled = update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(mana, 20);
+        assert!(refilled, "the last point fires the sound/dust trigger");
+    }
+
+    #[test]
+    fn s1_p_i19_the_full_bar_trigger_only_fires_on_a_granted_point() {
+        // `Player.cs:19546-19561`: at max mana with no point granted
+        // (flag4 false) the clamp runs but the trigger stays quiet — a
+        // full bar idling never re-fires the sound every chunk.
+        let mut st = RegenState {
+            mana_regen_count: 240,
+            mana_regen_delay: 0.0,
+            ..Default::default()
+        };
+        let mut mana = 20;
+        let in_ = inputs(400, 20);
+        let refilled = update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(mana, 20);
+        assert!(!refilled, "already full — no trigger");
     }
 
     #[test]

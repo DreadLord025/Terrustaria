@@ -161,6 +161,31 @@ mod tests {
         assert!(set_buff_immunity(231, 232, 233).is_empty());
         assert!(set_buff_immunity(231, 232, 980).is_empty());
     }
+
+    #[test]
+    fn the_whip_armor_rows_carry_their_range_and_speed() {
+        // The Tiki head (1159) adds +0.1 reach (`Player.cs:13854`); the
+        // Stardust body/legs (3382/3383) add +0.15 (`:13879`).
+        assert_eq!(armor_stats(1159).unwrap().whip_range, 0.1);
+        assert_eq!(armor_stats(3382).unwrap().whip_range, 0.15);
+        assert_eq!(armor_stats(3383).unwrap().whip_range, 0.15);
+        // The Tiki set adds +0.2 reach (`ArmorSetBonuses.cs:15`).
+        let (name, tiki) = set_stats(1159, 1160, 1161).unwrap();
+        assert_eq!(name, "Tiki");
+        assert_eq!(tiki.whip_range, 0.2);
+        assert_eq!(tiki.max_minions, 1);
+        // The Obsidian Outlaw set: +0.3 reach, ×1/1.15 use-time, +0.15 minion
+        // damage (`ArmorSetBonuses.cs:120-125`).
+        let (name, outlaw) = set_stats(3266, 3267, 3268).unwrap();
+        assert_eq!(name, "ObsidianOutlaw");
+        assert_eq!(outlaw.whip_range, 0.3);
+        assert!((outlaw.whip_use_time_mult - 1.0 / 1.15).abs() < 1e-6);
+        assert_eq!(outlaw.minion_damage, 0.15);
+        // A non-whip set leaves the defaults (1.0 use-time, 0 reach).
+        let (_, necro) = set_stats(151, 152, 153).unwrap();
+        assert_eq!(necro.whip_range, 0.0);
+        assert_eq!(necro.whip_use_time_mult, 1.0);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +217,12 @@ pub struct SetStats {
     pub dash_type: i32,
     /// `Player.manaCost -= x` (the casters' set bonuses).
     pub mana_cost: f32,
+    /// `Player.whipRangeMultiplier += x` (the Tiki head `Player.cs:13854`,
+    /// the Stardust body/legs `:13879`, the Tiki set
+    /// `ArmorSetBonuses.cs:15`, the Obsidian Outlaw set `:123`) — S1-P-i27
+    /// wired the consumer (the whip sweep, `Projectile.cs:48301`);
+    /// gate-merged with i24's identical field.
+    pub whip_range: f32,
     /// `Player.endurance += x` (the Turtle/Chlorophyte/Solar rows).
     pub endurance: f32,
     /// `Player.thorns` / `turtleThorns` / `cactusThorns` (the Turtle and
@@ -199,6 +230,9 @@ pub struct SetStats {
     pub thorns: f32,
     pub turtle_thorns: bool,
     pub cactus_thorns: bool,
+    /// `Player.whipUseTimeMultiplier *= x` — a MULTIPLIER (1.0 = no change),
+    /// the Obsidian Outlaw set's `1/1.15` (`ArmorSetBonuses.cs:124`).
+    pub whip_use_time_mult: f32,
 }
 
 const fn stats() -> SetStats {
@@ -217,10 +251,12 @@ const fn stats() -> SetStats {
         max_minions: 0,
         dash_type: 0,
         mana_cost: 0.0,
+        whip_range: 0.0,
         endurance: 0.0,
         thorns: 0.0,
         turtle_thorns: false,
         cactus_thorns: false,
+        whip_use_time_mult: 1.0,
     }
 }
 
@@ -456,12 +492,67 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
             ..stats()
         },
     ),
-    // `:475` Benefits.Tiki — `maxMinions++` (the `whipRangeMultiplier` row has
-    // no consumer yet).
+    // `:475` Benefits.Tiki — `maxMinions++` + `whipRangeMultiplier +=
+    // 0.2f` (`:15`; S1-P-i27 wired the whip sweep's consumer).
     (
         "Tiki",
         (1159, 1160, 1161),
-        SetStats { max_minions: 1, ..stats() },
+        SetStats { max_minions: 1, whip_range: 0.2, ..stats() },
+    ),
+    // S1-P-i25 — `:472` Benefits.HallowedSummoner (`:225-229`):
+    // `maxMinions += 2` (the `onHitDodge` half has no port consumer). The
+    // registration is `Set(new int[2]{4873,4899}, new int[2]{551,4900},
+    // new int[2]{552,4901})` — the array overload's cartesian product
+    // (`ArmorSetBonus.cs:98-126`): the ancient hallowed pieces (4899/4900/
+    // 4901) mix freely with the regular ones, 8 triples.
+    (
+        "HallowedSummoner",
+        (4873, 551, 552),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4873, 551, 4901),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4873, 4900, 552),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4873, 4900, 4901),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4899, 551, 552),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4899, 551, 4901),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4899, 4900, 552),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    (
+        "HallowedSummoner",
+        (4899, 4900, 4901),
+        SetStats { max_minions: 2, ..stats() },
+    ),
+    // S1-P-i25 — `:448` Benefits.ChlorophyteSummon (`:134-139`):
+    // `maxMinions += 2` (the `AddBuff(60,5)` leaf-crystal half and the
+    // `setChlorophyte` flag have no port consumer). The concrete triple
+    // (5524 chlorophyte headgear, 1004 shirt, 1005 greaves).
+    (
+        "ChlorophyteSummon",
+        (5524, 1004, 1005),
+        SetStats { max_minions: 2, ..stats() },
     ),
     // `:476` Benefits.Spooky — `minionDamage += 0.25f`.
     (
@@ -474,6 +565,19 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         "Spider",
         (2370, 2371, 2372),
         SetStats { minion_damage: 0.12, ..stats() },
+    ),
+    // `:492` Benefits.ObsidianOutlaw (`ArmorSetBonuses.cs:120-125`):
+    // `minionDamage += 0.15f`, `whipRangeMultiplier += 0.3f`,
+    // `whipUseTimeMultiplier *= 1/1.15`.
+    (
+        "ObsidianOutlaw",
+        (3266, 3267, 3268),
+        SetStats {
+            minion_damage: 0.15,
+            whip_range: 0.3,
+            whip_use_time_mult: 1.0 / 1.15,
+            ..stats()
+        },
     ),
     // `:158` Benefits.Turtle — `endurance += 0.15f; thorns = 1f;
     // turtleThorns = true`.
@@ -644,7 +748,7 @@ pub const ARMOR_STATS: &[(u16, SetStats)] = &[
     (1003, SetStats { magic_damage: 0.16, ..stats() }),
     (1004, SetStats { melee_damage: 0.05, magic_damage: 0.05, ranged_damage: 0.05, minion_damage: 0.05, ..stats() }),
     (1005, SetStats { move_speed: 0.05, ..stats() }),
-    (1159, SetStats { minion_damage: 0.15, ..stats() }),
+    (1159, SetStats { minion_damage: 0.15, whip_range: 0.1, ..stats() }),
     (1205, SetStats { melee_damage: 0.12, melee_speed: 0.12, ..stats() }),
     (1206, SetStats { ranged_damage: 0.09, ..stats() }),
     (1207, SetStats { magic_damage: 0.09, ..stats() }),
@@ -691,7 +795,11 @@ pub const ARMOR_STATS: &[(u16, SetStats)] = &[
     (3268, SetStats { minion_damage: 0.08, ..stats() }),
     (3375, SetStats { ranged_damage: 0.05, ..stats() }),
     (3381, SetStats { minion_damage: 0.22, ..stats() }),
-    (3382, SetStats { minion_damage: 0.22, ..stats() }),
+    (3382, SetStats { minion_damage: 0.22, whip_range: 0.15, ..stats() }),
+    // `Player.cs:13876-13881` — the Stardust legs share the body's row
+    // (`minionDamage += 0.22f`, `whipRangeMultiplier += 0.15f`); the
+    // `maxMinions += 2` half rides `grant_summon_caps`.
+    (3383, SetStats { minion_damage: 0.22, whip_range: 0.15, ..stats() }),
     (3776, SetStats { magic_damage: 0.15, minion_damage: 0.15, ..stats() }),
     (3777, SetStats { minion_damage: 0.1, ..stats() }),
     (3778, SetStats { magic_damage: 0.1, ..stats() }),

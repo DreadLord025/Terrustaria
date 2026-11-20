@@ -241,6 +241,16 @@ pub(crate) fn grant_summon_caps(
             1833 => p.max_minions += 2,        // :13941-13945
             _ => {}
         }
+        // S1-P-i27 — the whip-range armor halves beside the cap rows:
+        // `:13852-13855` the Tiki Mask (1159) `whipRangeMultiplier +=
+        // 0.1f`; `:13876-13881` the Stardust Plate/Leggings (3382/3383)
+        // `+= 0.15f`. (The rows' `minionDamage` halves ride the
+        // `set_stats`/combat folds; the cap halves above.)
+        match slot.kind {
+            1159 => p.whip_range_multiplier += 0.1,
+            3382 | 3383 => p.whip_range_multiplier += 0.15,
+            _ => {}
+        }
     }
     // `ApplyEquipFunctional`'s held summon items (`:15322-15331`): the
     // Pygmy Necklace (1845) and the Papyrus Scarab (1864) — the 1167 row's
@@ -387,6 +397,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
         app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
     );
+    // S1-P-i27 — `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`), copied
+    // out before the player borrow (the rest-target command reads it).
+    let reversed_armor_bonuses = app.settings.reversed_armor_bonuses;
     let hook_type = crate::env::hook_type();
     // `TR_CART` pins the minecart mount (the granting item, QuickMount and the
     // TrackHook paths are M2-MOUNT-3) — mounted idempotently like the
@@ -637,6 +650,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
+                // S1-P-i56 — `Player.Update`'s tank-pet decay
+                // (`Player.cs:24539-24548`): the C# block sits AHEAD of the
+                // dead-player early return (`:24749-24754`), so the dead
+                // player's claim decays too — the Guardian's own dead-owner
+                // arm clears the summon flag, the 2-tick despawn follows
+                // and the claim drops one grace tick later.
+                p.tank_pet_decay();
                 // S1-P-i55 — the golf state update runs on the dead branch
                 // too (`Main.cs:17219` is unconditional).
                 update_golf_state(
@@ -1079,6 +1099,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // the port's `prev_x`/`prev_y` hold it until this tick's update
             // overwrites them.
             let plate_last = (p.prev_x, p.prev_y);
+            // `Player.cs:19420` — `UpdateManaRegen`'s `flag` reads the LIVE
+            // `itemAnimation`/`reuseDelay`; the port's stand-ins are the
+            // App's swing/reuse timers (fed before the tick, the
+            // `frame_inputs` convention).
+            p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -1195,11 +1220,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.cs:25709-25712` — a `maxTurrets` change drives the
             // `UpdateMaxTurrets` sweep (the lowest-`timeLeft` wipable sentry
             // dies while the budget holds); Phase 5's pool method runs it.
+            // S1-P-i26: the `DD2Event.Ongoing` read is the world's live flag,
+            // not the `event_ongoing()` stub (the O'A towers persist through
+            // the sweep while the event runs).
             if p.max_turrets_old != p.max_turrets {
                 app.projectiles.update_max_turrets(
                     p.max_turrets,
                     app.local_id as u8,
-                    tr_core::dd2::event_ongoing(),
+                    app.world.dd2_event_ongoing,
                 );
                 p.max_turrets_old = p.max_turrets;
             }
@@ -1213,10 +1241,42 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if p.acc_sentry_backpack_grab_cooldown > 0 {
                 p.acc_sentry_backpack_grab_cooldown -= 1;
             }
-            // M4-PROJ-8 Phase 6 — `MinionRestTargetAim`'s invalidation half
-            // (`Player.cs:57009-57011`): an unchaseable or >3000-px whip
-            // target drops every tick.
-            p.invalidate_minion_target(&app.npcs);
+            // S1-P-i56 — `Player.Update`'s tank-pet decay
+            // (`Player.cs:24539-24548`, `Player::tank_pet_decay`): while a
+            // tank pet is claimed, the first tick arms the one-tick grace
+            // latch; a tick where the pet did NOT re-pin it (AI_120 writes
+            // `tankPetReset = false` every non-idle tick,
+            // `Projectile.cs:44683`) drops the claim to -1. The projectile
+            // pass runs AFTER the player pass (`frame/world.rs` players →
+            // projectiles), so the previous tick's re-pin is what this
+            // reads — the vanilla order. The C# runs it ahead of
+            // `UpdateMinionTarget` (`:24738`), mirrored here.
+            p.tank_pet_decay();
+            // `Player.Update_SnakeBand` (`Player.cs:28412-28418`, called at
+            // `:24567` right after `Update_AmmoCycler`): the whip-repeat
+            // reset cooldown counts down one per tick; at 0 the swing
+            // counter returns to −1 (the next whip throw is swing #0).
+            p.update_snake_band();
+            // S1-P-i27 — `Player.UpdateMinionTarget` (`Player.cs:56999-57028`):
+            // the per-tick minion-target maintenance. The rest target drops
+            // past 1000 px (`:57005-57007`), the attack target drops when
+            // unchaseable or its HITBOX drifts past 3000 px (`:57009-57011`).
+            // (Replaces the old invalidation-only half, which measured
+            // centre-to-position instead of hitbox-to-centre; supersedes
+            // i56's invalidate call — same halves, one canonical fn.)
+            p.update_minion_target(&app.npcs);
+            // S1-P-i27 — the rest-target command's input edge
+            // (`Player.cs:25022-25073`, the down-cardinal double-tap/hold):
+            // the Forbidden set bonus aims the rest spot on the down
+            // double-tap, the Stardust/Forbidden bonuses clear it on a 60-tick
+            // down hold. `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`)
+            // flips the cardinal to UP, disabling the down command.
+            p.update_minion_rest_command(
+                &app.world,
+                mouse_world,
+                input.down,
+                reversed_armor_bonuses,
+            );
             // `Player.cs:27608-27614`: right after the NPC collision pass,
             // the tile-contact damage check (`GetHurtTile` +
             // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints,

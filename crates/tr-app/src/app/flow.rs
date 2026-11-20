@@ -2455,6 +2455,7 @@ pub(crate) mod front_flow_tests {
             swing_aim: 0.0,
             shot_fired: false,
             swing_max: 0.0,
+            whip_snake_refire: false,
             coins: 0,
             projectiles: crate::projectile::ProjectilePool::new(),
             tomb_falls: Vec::new(),

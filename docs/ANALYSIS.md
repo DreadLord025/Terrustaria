@@ -7212,7 +7212,11 @@ Deviations:
   (see "DoT debuffs (M2-BUFF-3)" below).
 - **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
   deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
-- **TheDebugOptions.ManaV2 block** is a debug cheat and is not ported.
+- **The `DebugOptions.ManaV2` block is the SHIPPED mana machine** — S1-P-i19
+  corrected the earlier "debug cheat, not ported" reading: the static ctor
+  sets `ManaV2 = true` (`Testing/DebugOptions.cs:85`) and nothing in the
+  decompile ever writes it false, so the 1.4.5 mana rework is the default
+  behaviour. See "The mana machinery (S1-P-i19)" below.
 - **Integration-test pace corrected** вЂ” `health_regenerates_after_a_delay`
   bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
   `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
@@ -13800,6 +13804,413 @@ The batch review's three spell-arm findings (the missing
 default and the retarget's closest-wins loop) were fixed forward against the
 decompilation and pinned with tests.
 
+## The early magic staves (S1-P-i20, 2026-11-19, code-only mode)
+
+**Code-only mode**: written without invoking any compiler (no
+cargo/rustc/rustfmt/tests/dotnet/graphify). The witness tests in
+`world_sim/editing.rs` (the `s1_p_i20_*` block) and `projectile.rs`
+(`magic_ai_tests`' `s1_p_i20_*` block) are WRITTEN, NOT RUN — each expected
+value was verified by re-reading the cited C# and hand arithmetic. A
+follow-up build must run `cargo test -p tr-app s1_p_i20` before merging.
+
+**Census** — `Player.ItemCheck_Shoot` (`Player.cs:47056+`, the decompile's
+name for the task's "ManageShoot magic arm") vs the port's generic shoot in
+`world_sim/editing.rs`, for the nine listed early staves:
+
+| Item | Shoot | C# arm | Port verdict |
+| --- | --- | --- | --- |
+| Vilethorn 64 | 7 | generic tail `:49437` (aiStyle-4 chain is the proj's own) | OK — rowed + armed |
+| Band of Starpower 111 | — | **accessory** (`Item.cs:2692-2699`, no shoot/damage/mana) | OK — not a weapon, never fires |
+| Magic Missile 113 | 16 | generic tail + channel (`Projectile.cs:43241`) | **WRONG → fixed** (channel id) |
+| Flamelash 218 | 34 | generic tail + channel | **WRONG → fixed** (channel id) |
+| Aqua Scepter 157 | 22 | generic tail + `ai[2] = Next(0,20000)` `:49409-49411` | **MISSING → ported** (row 22, aiStyle 12, the seed) |
+| Water Bolt 165 | 27 | generic tail (aiStyle 8) | OK — rowed + armed |
+| Demon Scythe 272 | 45 | generic tail (aiStyle 18) | OK — rowed + armed |
+| Space Gun 127 | 20 | generic tail (aiStyle-1 rider) + Meteor mana skip `:52695-52698` | OK — rowed + armed + skip |
+| Bee Gun 1121 | 181 | multi-bee arm `:48309-48332` | **MISSING → ported** (volley, rows 181/566, aiStyle 36) |
+
+**The channel-id fix (the WRONG):** the aiStyle-9 owner block holds the aim
+only while `player.channel && player.HeldItem.shoot == this.type`
+(`Projectile.cs:43241`) — the held item's **projectile** id vs the spell's own
+kind. The pre-fix port stored the held **item** id in `channel_item` and
+compared it to the projectile kind (`p.channel_item == self.kind`), so for the
+Magic Missile (item 113, proj 16) and Flamelash (item 218, proj 34) the compare
+was `113 == 16` / `218 == 34` — always false, the channel hold never fired in
+the real use path (the unit fixture masked it by setting `channel_item` to the
+proj id). The fix adds `Player.channel_shoot` (the held item's `shoot`, written
+by the channel block in `update_editing`) and compares THAT in
+`ai_magic_missile`; `channel_item` stays the item id for the Last Prism
+holder's `registry::item(channel_item)` keep-alive (`Projectile.cs:66540`).
+
+**The two missing arms (ported verbatim):**
+- **Aqua Scepter** — the proj-22 row (`Projectile.cs:1040-1056`: 18×18,
+  aiStyle 12, alpha 255, penetrate 5, extraUpdates 2, ignoreWater), the
+  aiStyle-12 arm (`:24501-24635`: the 0.01/tick scale decay, the 0.15 gravity
+  from `ai[0] > 3`, the lava bounce seeding `LCG32Random(ai[2])` —
+  `Utilities/LCG32Random.cs:5-44`, `state = state * -1856014347 + 1`,
+  `NextFloat = state / 2^32` — Y then X), and the spawn `ai[2] =
+  Main.rand.Next(0, 20000)` (`Player.cs:49409-49411`) via the new `set_ai2`
+  seam. The bounced state (`ai[1] == 1`) halves the gravity, stops the scale
+  decay, drops `extraUpdates` to 0 and sets `penetrate = -1` (`:24554-24560`).
+- **Bee Gun** — the multi-bee volley (`Player.cs:48309-48332`): count
+  `Next(1,4)` + two `Next(6) == 0` bonuses + a `strongBees && Next(3) == 0`
+  third; per bee the two `Next(-35,36) * 0.02` velocity jitters precede
+  `beeType`'s `Next(2)` coin flip (the Hive Pack's giant bee 566), then
+  `beeDamage` (`Next(1,4)` strong / `Next(2)` plain) and `beeKB`
+  (`0.5 + KB*1.1` strong). The helpers are the S1-C-7 `hurt_modifiers` ones,
+  now `pub(crate)`. The proj-181/566 rows (`:2673-2685`/`:6172-6184`) and the
+  aiStyle-36 arm (`:27292-27471`: the alpha fade-in → `extraUpdates = 0`, the
+  sprite facing + `velocity.X * 0.1` tilt + 3-frame flap, the 30-tick launch
+  counter, the Manhattan-800 `CanBeChasedBy` + `CanHit` scan with the
+  `!npc.wet || type == 370` exclusion, the per-kind steering 6/0.1 vs
+  6.8/0.14). Both bees carry `UseGroupStaticImmunity(181)`
+  (`:10676-10681`) — the new `immunity_identity` ProjData/slot field folds the
+  id-static table key onto 181 for both kinds (`id_static_key`), so one
+  cooldown covers the pair.
+
+**RNG order** (the `UpdatePlayers` stream, `Main.cs:17754`): the generic tail
+rolls the crit first (`Next(1,101)`), then the per-item arm. The Aqua Scepter's
+LCG seed is the tail's second draw; the Bee Gun's count rolls (base + two
+`Next(6)` + the `strongBees` `Next(3)`) precede the per-bee velocity/type/damage
+draws, in the C#'s named-argument order (SpeedX, SpeedY, Type, Damage,
+KnockBack). The witnesses replay the exact draw sequence.
+
+**Deliberate deviations / skips:**
+- **Dust/gore skipped** in both new arms (no dust layer), but their
+  `Main.rand` gates still draw on the pass's `UpdateProjectiles` stream in the
+  C#'s order (the Aqua Scepter's `Next(3)` gore gate, the `Next(2)`/`Next(8)`
+  dust gates; the bee arm draws nothing — its C# block has no rand).
+- **The remix-world Aqua Scepter immunity arm** (`Projectile.cs:1051-1055`,
+  `usesLocalNPCImmunity` + cooldown 12 under `Main.remixWorld`) is unported —
+  no remix seed flag in the port (the standing ANALYSIS deviation); the stock
+  immunity reset holds.
+- **The bee wet-kill** (`:27294-27297`, `base.wet && !honeyWet && !shimmerWet`)
+  folds to false — the port's slots carry no liquid-wet flags (the standing
+  deviation); the gate is kept for shape.
+- **The Aqua Scepter's `ai[1] != 0 && Next(2) != 0` early-return**
+  (`:24604-24607`) skips the trailing dust, not the movement — the port runs
+  `kill_step` on both paths.
+- **The Band of Starpower is an accessory**, not a staff — the task's list
+  includes it, but `Item.cs:2692-2699` gives it no shoot/damage/mana, so the
+  use path never fires it (`registry::is_weapon` is false). No ManageShoot arm
+  exists to port; the witness pins that it fires nothing.
+
+**The ItemTimeIsZero volley tick (the i01 census item, 2026-11-20):** the
+pre-fix port fired every non-ammo shooter ONCE per swing — the spawn chain ran
+only in the use-start block. The C# fires the shot from the `itemAnimation > 0
+&& ItemTimeIsZero` gate (`Player.cs:43544-43570`) on EVERY tick the action timer
+hits zero mid-swing, and `ItemCheck_Shoot`'s `ApplyItemTime` (`:47185-47194` →
+`SetItemTime(useTime)`, `:4416-4419`) re-arms `itemTime = useTime` after EACH
+shot. A `useTime < useAnimation` staff therefore fires its whole volley inside
+one swing: the **Aqua Scepter** (`useTime 8 < useAnimation 16`,
+`Item.cs:3252-3268`) fires 2 shots/swing (press tick + 8 ticks later), not 1.
+
+The fix extracts the non-ammo spawn chain into a shared nested helper
+`fire_non_ammo_shot` (called from the use-start block AND a new mid-swing volley
+gate that mirrors the ammo fire block's tick semantics — integer counts off the
+60 Hz-rounded timers via `ticks_of`, never a raw float compare). The helper
+re-borrows `p = app.player.as_ref()` inside (read-only) rather than taking it as
+a parameter: the chain touches only `app` fields disjoint from `app.player`
+(projectiles/rngs/inventory/world/local_id), so the split borrow compiles where
+a passed-in `&Player` alongside `&mut App` would be E0502. It returns whether the
+aim was non-zero (the port's `dir != ZERO` gate) so the caller keeps the swing
+tail gated; the swing tail (`ApplyItemAnimation`, `:51680`) stays on the
+use-start path only — a mid-swing volley shot must NOT restart the swing. The
+press path re-arms `item_time = useTime` after the first shot (`ApplyItemTime`);
+the volley gate re-arms after each subsequent shot. Mana is paid ONCE per swing
+(`ItemCheck_TryStartUse` / `ActuallyPayMana`, `:52021-52040`/`:52638`), NOT per
+volley shot — the pay stays in the start block.
+
+The volley gate carries the C# `flag`/`flag4` exclusions verbatim:
+- **Coins** (`sItem.IsACoin` → `canShoot = false`, `:47103-47106`): never fire.
+- **`shootsEveryUse`** (`:43560-43562`, `flag4 = ItemAnimationJustStarted`): the
+  set {190, 273, 368, 674, 675, 757, 1226, 1826, 5382} fires once per use. All
+  have `useTime == useAnimation`, so the exclusion is belt-and-suspenders.
+- **Channel items** (the drills/chainsaws, the aimed spells, the Last Prism):
+  fire once per use, then the channel holds the projectile; the C# keeps their
+  `itemTime` armed via the channel/mining cadence (`toolTime`, `:43576-43587`),
+  so they never reach a mid-swing re-fire. The port skips them (`d.channel`).
+  None of the nine listed staves is a channel item, so this excludes no target.
+- **The animation-window limits** (`:43491`/`:43502`/`:43506`/`:43514`): the
+  Zenith 4956 / True Copper 5669 fire inside `useTime*3` (their `useTime =
+  useAnimation/3`, so the window spans the whole swing — all 3 shots fire); the
+  Fairy Queen magic 4952 / Book Staff 3852 / Daybloom 6152 inside `useTime*4`.
+  The 4953 limit is the ammo path's.
+
+**Blast radius:** among the ported `useTime < useAnimation` non-ammo shooters,
+the general gate gives the Leaf Blower 1178 (5<15) and Sky Fracture 3787 (4<12)
+faithful volleys they lacked. The existing Leaf Blower witnesses are all
+single-tick (`fire_once`), so they are unaffected; no Sky Fracture volley test
+existed. The drills/chainsaws are channel items (excluded). The gem staves,
+whips and Last Prism have `useTime == useAnimation` (no mid-swing re-fire).
+
+**The Flamelash wet gate (`Player.cs:52112-52115`):** a wet (non-lava) player
+refuses the fire spells `{85, 15, 34, 1122}` — the Flamelash (shoot 34) among the
+listed staves. `base.wet` is `WetCollision` (ANY liquid, `Collision.cs:1605-1645`
+returns true for water/honey/shimmer); the port splits the kinds
+(`player.rs:4315-4358`), so the gate reads the water/honey/shimmer union
+`(p.wet || p.honey_wet || p.shimmer_wet) && !p.lava_wet`. It sits at the USE START
+(`ItemCheck_CheckCanUse_Inner` via `TryStartUse`, `:52023`), after the silence
+check — the mid-swing shot gate (`:43544`) does NOT re-check wet, so a player who
+enters water mid-swing keeps firing until the swing ends (faithful). The refusal
+returns before the mana pay and the swing start: no shot, no mana, no swing.
+
+**The Aqua Scepter aiStyle-12 RNG-order fixes (2026-11-20):** two defects in the
+new arm were corrected against `Projectile.cs:24501-24635`:
+1. The scale-death early `return` was removed — the C# `Kill()` (`:24594`) does
+   NOT return from `AI()`; the gravity arm (`:24596-24634`) still runs on the
+   dying sub-step and its dust gates still draw. The port marks the slot dead
+   and falls through (the `kill_step` movement tail runs regardless — C#
+   `HandleMovement` has no `active` guard, `:17015`).
+2. The lava-bounce taken branch now draws the gore-type roll `Next(61, 64)`
+   (`:24583`) after the `Next(3) == 0` gate (`:24581`) — the house
+   gore-type-roll convention (`ai_freaking_pirates`' `Next(580,583)`). The
+   pre-fix port drew only the gate, dropping the taken branch's draw.
+
+**Volley witnesses (WRITTEN NOT RUN):** `s1_p_i20_the_aqua_scepter_fires_a_two_shot_volley_per_swing`
+(2 shots at swing ticks 16/8, one mana pay), `s1_p_i20_the_aqua_volley_rolls_crit_and_seed_per_shot`
+(per-shot crit `Next(1,101)` + LCG seed `Next(0,20000)`, draw-exact stream),
+`s1_p_i20_the_wet_flamelash_refuses_the_use` (water/honey/shimmer each: no shot,
+no mana, no swing), `s1_p_i20_the_lava_wet_flamelash_still_fires` (the `!lavaWet`
+exclusion), `s1_p_i20_the_dry_flamelash_fires_and_channels` (the control).
+## The hardmode staves' use census (S1-P-i21, 2026-11-20, code-only mode)
+
+**Gate-merge reconciliation (V2, 2026-11-20):** i20's generic non-ammo
+`ItemTimeIsZero` volley gate (the C#-true cadence with the coins/shootsEveryUse/
+channel exclusions and the animation-window limits) supersedes i21's
+HARDMODE_MAGIC_STAVES-scoped re-fire block; i21's four dedicated staff arms
+(Razorpine/Blizzard/Nimbus/Bat) live inside i20's shared `fire_non_ammo_shot`
+chain, so both the first shot and every mid-swing re-fire run them. The i21
+volley witnesses ride the generic gate unchanged. HARDMODE_MAGIC_STAVES stays
+as the census record (anchors row).
+
+**Code-only mode**: written without invoking any compiler (no
+cargo/rustc/rustfmt/tests/dotnet/graphify). The witness tests in
+`projectile.rs::magic_ai_tests` and `world_sim/editing.rs::tests` are WRITTEN,
+NOT RUN — each expected value was verified by re-reading the cited C# and hand
+arithmetic. A follow-up build must run `cargo test -p tr-app` before merging.
+
+The census of `Player.ItemCheck_Shoot`'s magic arm for the 12 hardmode staves
+(`Player.cs:47056+`), each against its `Item.shoot` kind and the port:
+
+| Staff (item) | shoot | C# shoot arm | Port verdict |
+| --- | --- | --- | --- |
+| CrystalStorm 518 | 94 | dedicated `:47820-47826` (±0.04 spread) | CORRECT — the generic arm's 518 tweak + `ai_crystal_storm` (24) |
+| CursedFlames 519 | 95 | generic tail `:49437` | CORRECT — generic spawn + `ai_ball_of_fire` (8) |
+| GoldenShower 1336 | 280 | generic tail | **MISSING** — no 280 row → spawn refused; row + aiStyle-12 arm landed |
+| MagnetSphere 1266 | 254 | generic tail | CORRECT — generic spawn + `magnet_sphere_step` (47) |
+| RainbowRod 495 | 79 | generic tail (channel) | CORRECT — generic spawn + `ai_magic_missile` (9) + the channel write |
+| NimbusRod 1244 | 237 | dedicated `:48271-48277` (ai0/ai1 = cursor) | **MISSING** — no 237 row; row + shoot arm + the aiStyle-45 chain landed |
+| ShadowbeamStaff 1444 | 294 | generic tail | **MISSING** — no 294 row; row + reflect/delay/decay landed (the 48 arm existed) |
+| InfernoFork 1445 | 295 | generic tail | CORRECT — generic spawn + `ai_inferno_fork` (50) + the blast kill hook |
+| SpectreStaff 1446 | 297 | generic tail | CORRECT — generic spawn + `ai_spectre_shot` (51) |
+| BatScepter 1801 | 316 | dedicated `:48344-48354` (Next(2,4) flock) | **MISSING** — no 316 row; row + shoot arm + aiStyle-36 arm landed |
+| Razorpine 1930 | 336 | dedicated `:47647-47662` (volley) | **MISSING** — no 336 row; row + shoot arm + the AI_001 needle branch landed |
+| BlizzardStaff 1931 | 337 | dedicated `:47663-47692` (sky icicles) | **MISSING** — no 337 row; row + shoot arm + the AI_001 icicle branch landed |
+
+The six MISSING staves shared one root cause: their projectile kinds had no
+`proj_data` row, so `spawn_with_data_ai` returned `None` and the staff fired
+nothing. The fix lands the eight `SetDefaults` rows (the six kinds plus the
+Nimbus chain's raining cloud 238 and rain drop 239), the four dedicated shoot
+arms, and the projectile AIs the rows dispatch to.
+
+Deliberate deviations (the pool-wide conventions, same as M4-PROJ-6):
+- **Dust/sound skipped with their draws** — the Golden Shower's three-dust
+  trail + `Next(8)` sparkle (`Projectile.cs:24522-24540`), the Blizzard's
+  `Next(2)` dust (`:56949`), the bat's frame dust, the cloud's rain dust. The
+  arms keep the state markers (alpha/scale/frame) so the tick order stays
+  observable; the RNG streams are preserved BY CONSTRUCTION (no draw consumed
+  for a skipped cosmetic).
+- **The wet/shimmer gates fold dry** — the bat's wet kill (`:27294`), the rain
+  drop's shimmer bounce (`:28088`), the NPC `wet` chase gate (`:27377`): the
+  port carries no liquid-wet/shimmer state on the slot or the NPC, so these
+  read their dry default (the M4-PROJ-6 convention).
+- **The Shadowbeam's per-hit ×0.9 decay** (`:13411`) lands in `damage_pve`'s
+  landed block AFTER the strike (the moon-lord 0.96 precedent): the C# switch
+  runs before `StrikeNPC` but the strike reads the local `dmg` computed at
+  `:12938` from the pre-decay store, so this hit keeps full damage and the next
+  hit reads the decayed value — behaviour-identical.
+- **The Nimbus cloud cap** (`:28058-28082`) ages out the oldest of >2 living
+  raining clouds (`ai[1] = 18000`); the `netUpdate` flag is the MP bookkeeping
+  the single-player port drops.
+- **The bat's homing** picks the tightest-Manhattan candidate (the C#'s
+  `num281 < num277` closest-wins loop, `:27382`), not the magnet sphere's
+  first-candidate stand-in — the bat's C# has no RNG pick, so it is faithful.
+
+### The i01 non-ammo volley `ItemTimeIsZero` tick (the retry round)
+
+The census above fixed the SPAWN half (the six row-less kinds). The second
+half — the fire CADENCE — was still WRONG for the non-ammo path: it fired once
+per swing (`attack_cd <= 0`) and never armed `item_time`, while the C# fires
+`ItemCheck_Shoot` at EVERY `itemAnimation > 0 && ItemTimeIsZero` tick
+(`Player.cs:43544`'s `flag4` → `:43568-43570`), `ApplyItemTime` re-arming
+`itemTime = useTime` after each shot (`:47185-47194` → `SetItemTime(useTime)`,
+`:4416-4418`). A `useTime < useAnimation` staff therefore volleys inside ONE
+swing; the ammo shooters already had this seam (`held_use_ammo > 0`,
+`editing.rs`'s `ItemTimeIsZero` block), the non-ammo half was missing.
+
+Of the 12 staves only TWO have `useTime < useAnimation` (the rest pace
+`useTime == useAnimation`, one shot per swing, already correct):
+- **GoldenShower 1336**: `useTime 6 < useAnimation 18` (`Item.cs:16545-16546`)
+  → THREE streams per swing (ticks 1, 7, 13).
+- **BlizzardStaff 1931**: `useTime 5 < useAnimation 10` (`Item.cs:20976-20977`)
+  → TWO icicle pairs per swing (four icicles, ticks 1 and 6).
+
+The fix (`world_sim/editing.rs`): the first-shot block now arms
+`app.item_time = shooter_use_time_secs(...)` after the swing start (the
+`ApplyItemTime` tail), and a new mid-swing re-fire block — gated on
+`HARDMODE_MAGIC_STAVES.contains(&held.kind) && ticks_of(app.swing) > 0 &&
+ticks_of(app.item_time) <= 0` — re-runs the SAME per-staff spawn chain (the
+Razorpine volley, the Blizzard sky icicles, the Nimbus cursor cloud, the Bat
+flock, the generic/Crystal-Storm tail) and re-arms `item_time`. The block pays
+NO mana: the C# pays ONCE per swing at `ItemCheck_TryStartUse`
+(`Player.cs:52026` → `ActuallyPayMana` `:52638`); the mid-swing `flag4` re-fire
+calls `ItemCheck_Shoot` directly with no mana gate, so the whole volley is free
+after the one pay. The crit rolls per shot on the `UpdatePlayers` stream and
+the multi-shot spreads re-roll in the C#'s argument order (the re-fire is the
+same `ItemCheck_Shoot` body, not a cached first shot).
+
+Scope discipline: the re-fire is gated to the 12-staff list, so the melee
+weapons, the gem staves, the Spirit Flame / Sky Fracture / Nebula Blaze and the
+`useTime == useAnimation` staves keep their one-shot-per-swing cadence
+unchanged (their `item_time` re-arm equals `useAnimation`, so the block never
+fires mid-swing). Witnesses `s1_p_i21_the_golden_shower_volleys_three_streams_per_swing`,
+`s1_p_i21_the_blizzard_volleys_two_icicle_pairs_per_swing`,
+`s1_p_i21_the_crystal_storm_stays_one_shard_per_swing`,
+`s1_p_i21_the_razorpine_volley_draw_order_is_per_shot` (WRITTEN NOT RUN).
+## The channel machinery (S1-P-i23)
+
+**Code-only mode**: this task was written without invoking any compiler (no
+cargo/rustc/rustfmt/tests/dotnet/graphify). The 25 `s1_p_i23_*` witness tests
+are WRITTEN, NOT RUN — each expected value was verified by re-reading the
+cited C# and hand arithmetic. A follow-up build must run
+`cargo test -p tr-app s1_p_i23` (plus the repointed `test_dw_4b_*`,
+`test_dw_5_2_*` and `prism_rig` fixtures) before merging.
+
+The census found the port's `Player.channel` was a per-tick button re-derive,
+not the C#'s latch, and the cancel-key machinery was absent entirely. The
+fixes (all RNG-neutral — no draw added, removed or reordered):
+
+- **The channel is a LATCH** (`Player.cs:52952-52981`). Armed at the use
+  start AFTER the mana pay (`StartChanneling(sItem)` inside
+  `ItemCheck_StartActualUse` `:51677`); cleared on the button release
+  (`ItemCheck` `:42804-42807`'s `if (!flag5) channel = false`), the buffered
+  item switch (`:42800-42803` — even a switch to ANOTHER channel item drops
+  it; the new item re-arms at its own use start), a CC (`:42598-42603`,
+  `CCed` = frozen || webbed || stoned `:3377-3387` — the port's `cced()`
+  reads buff 156 for stoned), the tracked shot's death (`TryCancelChannel`
+  `:52975-52981`, the pool's `Kill` head) and the dead tick (`UpdateDead`
+  `:17017`). The port hoists the release/switch/inventory clear to the
+  tick head (ahead of the cursor/reach early-returns — the C# `ItemCheck`
+  clears every tick regardless of cursor position); the channel block
+  only REFRESHES the aim while the latch survives; the yoyo/flail
+  snapshots (`world_sim/projectiles.rs`) read the latched `p.channel`, so
+  a kill-cancel can drop the channel mid-hold.
+- **`ChannelCancelKey`** (`Player.cs:115-141`) ported as two Player fields:
+  `channel_proj_expected` (the held item's `shoot`, seeded by
+  `StartChanneling(Item)` `:52963-52966`) and `channel_index_expected` (the
+  pool slot of the LAST spawn of the expected type). The C# struct's index
+  defaults to 0 — NOT an Option — so an untracked cache matches slot 0;
+  the port keeps the same 0 default verbatim.
+- **The intent-queue convention**: `NewProjectile`'s tail
+  (`Projectile.cs:11097-11100`) calls `TryUpdateChannel` on every
+  local-owner spawn, but the pool's slot loop cannot borrow the player.
+  Both spawn seams (`spawn_with_data_ai_owned` and the raw `spawn`) push
+  `(kind, slot)` onto `pending_channel_tracks`; the use-path tail
+  (`world_sim/editing.rs`, same-tick tracking) and the projectile-pass tail
+  (`world_sim/projectiles.rs`, the AI-side spawns) drain them through
+  `apply_channel_tracks` — the `drain_mark_spawns` convention. The last
+  spawn of the expected type wins (`TryTracking` `:134-140`).
+- **The kill-cancel** (`Projectile.Kill`'s head `:70651-70659`):
+  `try_cancel_channel` runs at the pool's per-slot death hook — the
+  `owner == Main.myPlayer` gate, the `DontCancelChannelOnKill` {190}
+  exemption (`ProjectileID.cs:524`, the Piranha Gun's piranha) and the
+  `Matches` arms (`Player.cs:121-132`: the aiStyle-99 `ai[0] == -3`
+  Magic-String ghost cancels regardless of the key; otherwise type+index).
+  The out-of-world guard's direct deactivate (`Projectile.cs:16696` —
+  `active = false` + `return`, NO `Kill()` call) never cancels; the port
+  flags that death path (`died_out_of_world`) to keep the distinction.
+- **The aiStyle-9 hold gate** (`Projectile.cs:43241`): the C# compares
+  `player.HeldItem.shoot == this.type` — the held ITEM's shoot projectile
+  vs the spell's kind. `channel_item` stores the held item's kind, so the
+  arm resolves `registry::projectile(p.channel_item)` before the compare
+  (the pre-i23 code compared the item id against the projectile id — an
+  item id is never a projectile id, so the hold NEVER ran in game).
+- **The homing blend** (`:43297`): `t = base.Distance(vector.Value)` is the
+  projectile CENTRE to the target (`Entity.cs:195-198`), not the velocity's
+  length. (The ramp itself is a C# dead-ramp quirk kept verbatim: the outer
+  `GetLerpValue(200f, 20f, x)` reads x in [0,1], always below the 20f `to`,
+  so the descending range returns 1 and the blend amount is the constant
+  0.2 — the witness pins the exact `Lerp((4,0),(32,0),0.2) = (9.6,0)`.)
+- **The idle rotation** (`:43358`): `rotation.AngleLerp(0f, 0.2f)`
+  (`Utils.cs:2033-2051`) — the shortest-way 20% ANGULAR lerp, not a 0.2*pi
+  max-step turn (`angle_towards`). The port's `angle_lerp` helper carries
+  the XNA `WrapAngle` form.
+- **The Last Prism interval pay** (`:66612-66613` -> `CheckMana(mana, pay:
+  true)` `Player.cs:52576-52586`): the pay scales `(int)(item.mana *
+  manaCost)` — the armor/accessory multiplier the use path already folds.
+  Folds (no port fields): the `manaFlower` quick-mana retry (`:52588-52609`)
+  and the `DebugOptions.ManaV2` cast-at-zero arms (`:52602-52615`) — the
+  plain `statMana >= num` compare stands; the prism gate's `!player.noItems`
+  term (`:66614`) has no port field either (the flail kill gate's same fold,
+  `:43727`).
+- **`LimitPointToPlayerReachableArea`** (`Player.cs:45447-45473`) rewritten
+  verbatim: `Utils.CenteredRectangle(Center, MaxWorldViewSize)`
+  (`Utils.cs:947-950` — the `(int)` corner truncation, the size stays
+  1920x1200) clamped by `WorldUtils.ClampToWorldBorders`
+  (`WorldBuilding/WorldUtils.cs:24-31` -> `Utils.Clamp(Rectangle, Rectangle)`
+  `Utils.cs:236-239`): the TOP-LEFT slides inside the 640-px-inset play
+  area (`GetWorldPlayArea` `:16-22`) while the box KEEPS its size — on a
+  world smaller than the view the clamp's max < min and `Utils.Clamp<T>`
+  (`:223-234`, max FIRST) returns the max, so the box hangs off the far
+  edge exactly as the C#'s does. The centre is XNA's int `X + Width/2`.
+  The pre-i23 helper shrank the box to the world and centred on floats.
+- **The yoyo release** (`Projectile.cs:67920-67925`): `!channel || CCed`
+  drops the aim to -1 — the CCed arm rides the new `YoyoInputs.player_cced`
+  snapshot (the pre-i23 port stubbed it false). The flail kill gate's CCed
+  term (`:43727`) already rode `FlailInputs.player_cced`.
+- **The toolTime hold guard** (`Player.cs:43576-43587`): the port's
+  swing-hold stand-in for the projectile-less channel items now requires
+  the LATCHED `p.channel` — the per-tick button re-derive would resurrect
+  a kill-cancelled channel.
+
+Deliberate folds (recorded, all cited in the code):
+- **The projectile-less channel items keep a per-tick arm**: the mounts'
+  `StartChanneling()` parameterless overload (`Player.cs:52941`, no cancel
+  key) fires from the mount-use path the port has not ported; the port's
+  use path only arms the WEAPON channel at the shot start, so the
+  `!held_weapon` family (the mounts, the fairy bell — the items with no
+  `projectile` row) keeps its pre-i23 per-tick arm in the third else-if of
+  the channel block. The latch's clear paths (release/CC/switch/death)
+  still apply to it.
+- **The aim is a one-tick-old snapshot** (the M4-PROJ-6 deviation above,
+  unchanged): the use start seeds `channel_target` with the clamped cursor
+  so the spawn tick already carries it; the refresh block re-clamps on the
+  following ticks.
+- **The `Matches` ghost arm reads `proj_data(kind).ai_style == 99`**: the
+  C# reads the live `projectile.aiStyle`; the port's row table is the same
+  value for every rowed kind (the yoyo family). A rowless aiStyle-99 kind
+  cannot spawn through the data seam, so the read is equivalent.
+- **Census note (out of scope)**: the port's `channel` item flags match the
+  C# (`itemdata.rs` vs `Item.cs` — RainbowRod 495 shoot 79 channel;
+  VortexBeater 3475 shoot 615 channel (`Item.cs:31175`); LaserMachinegun
+  2795 shoot 439 mana 6 channel; 726 FrostStaff / NimbusRod / MagnetSphere /
+  Shadowbeam NOT channel). The AI_075 channel kinds 439/445/460/595/735/927
+  etc. are rowless in the port (their per-stave spawn params belong to the
+  i20-i22 rows); the machinery here serves every kind once rowed.
+- **Census fold (ammo shooters)**: the C# `ItemCheck_StartActualUse` calls
+  `StartChanneling(sItem)` for EVERY item (`:51677`), including the
+  `useAmmo` guns; the port's use-start arm rides the generic (non-ammo)
+  shoot path only, so the channel guns (Vortex Beater 3475, Phantasm 3540,
+  Celeb2 3930, DD2 Phoenix Bow 3854) do not arm the latch through the
+  separate ammo-shooter arm. Their gunProj rockets (615/630/705/714) carry
+  aiStyle 75, which the port's dispatch currently routes through the
+  `ai_last_prism` stand-in (the per-gun AI_075 arms are unported — the
+  i20-i22 rows); that stand-in reads `p.channel`, so the guns' channel
+  behaviour is already coupled to the prism stand-in, not to a faithful
+  gun arm. Wiring `StartChanneling` into the shared shooter arm and the
+  real per-gun AI_075 arms belong to those rows, not this machinery slice.
+
 ## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
 
 **Code-only mode**: this slice was written without invoking any compiler
@@ -14382,24 +14793,162 @@ The summon system's harness: the per-player slot budget (`maxMinions`/`numMinion
 `slotsMinions`, `Player.cs:1260-1264`), the keep-alive buff arms, `AI_062`'s
 follow/target/return machine and the sentry cap/lifetime/targeting.
 
+### The minion summon use-path (S1-P-i25, code-only 2026-11-20)
+
+The summon-staff USE machinery (`Player.ItemCheck_Shoot`'s minion arms + the
+budget/sacrifice/buff chain), audited distrust-verbatim against the C# and
+gap-filled. Verdicts + cites:
+
+- **The summon spawn arm was MISSING** — summon staves fell through to the generic
+  `Item.shoot` flight (player-centre spawn, aim velocity, class-multiplied damage).
+  The C# spawns minions via `SpawnMinionOnCursor` (`Player.cs:49573-49603`): the
+  CURSOR point clamped by `LimitPointToPlayerReachableArea` (`:45447-45473`), ZERO
+  velocity, the UNSCALED `sItem.damage` as both `Damage` and `originalDamage`
+  (`:49600-49601` — the pool applies `minionDamage` at `Projectile.cs:16707`), and
+  `GetWeaponKnockback`'s `minionKB` add (`:47151`/`:53348-53351`). Now ported as the
+  first branch of `update_editing`'s spawn chain (`world_sim/editing.rs`), gated
+  `def.summon && proj_data(proj).minion`. The per-item arms: Pygmy 1157
+  (`Next(191,195)` pick + ai1=60 + `localAI[0]=30`, `:48436-48440`/`:49584`), Optic
+  2535 (both twins 387+388, zero `RotatedBy` velocity, ai1=1, `:48468-48474`),
+  Spider 2551 (`nextCycledSpiderMinionType` mod-3 cycle 390/391/392, `:48476-48481`,
+  the field never reset — `Player.cs:1280`), Pirate 2584 (`Next(3)` offset,
+  `:48483-48486`), Foxsparks 5664/6149 (`localAI[0]=30`, `:48452-48456`), the ai1=1
+  seed for 2364/2365/2621/2749/3474 and ai0=45 for 6164 (`:49587-49596`). The
+  Stardust Dragon 3531 chain spawn (`:48498-48554`) stays deferred with the
+  aiStyle-121 chain (the 625-628 rows book slots, the chain AI is a follow-up).
+- **`FreeUpPetsAndMinions` was WRONG on three counts** (`Player.cs:51701-51851`),
+  fixed in `projectile.rs::free_up_pets_and_minions`: (1) the sacrifice sort is
+  ASCENDING `minionSlots` (the C# insertion at `:51736-51747` inserts before the
+  first strictly-larger entry), not descending — the kill walk eats the SMALLEST
+  slots first; (2) the sacrificable arm `return`s at `:51830`, so the same-kind
+  outright-kill tail (`:51832-51850`) NEVER runs for a sacrificable staff (it is
+  the sentry/pet refresh); (3) the tail's 5131 special keys on `sItem.type`
+  (`:51845`), not `shoot` — the fn now takes `staff_item`. The list also includes
+  ALL owned minions (no per-kind filter, `:51731`) and `num` counts the dragon
+  kinds the removal pass drops.
+- **The free-up call gate was WRONG** — the port called it for every `shoot > 0`;
+  the C# gates on `LightPet[shoot] || Main.projPet[shoot]` (`Player.cs:42778`). The
+  sentry staves' shoot kinds are in NEITHER set, so the C# never frees for them.
+  Added `PROJ_PET` (`Main.cs:8728-8852`) + `LIGHT_PET_PROJ` (`ProjectileID.cs:523`)
+  verbatim tables and the gate.
+- **The slot block excluded the wrong dragon kinds** — `Projectile.cs:16709` is
+  `type != 625 && type != 628` (the HEAD/TAIL carry no slot block); the port
+  excluded 626/627 (the BODY segments, 0.5 slots each) — the inverse. Fixed in
+  `summon_tick_block`; the bodies now book, the head/tail never double-book.
+- **The minion-buff PERSISTENCE grant was MISSING** — the port granted only the
+  `:42880` `item.buffTime` (0 for the staves, a ghost). The C#'s
+  `ItemCheck_ApplyPetBuffs` (`Player.cs:42766` → `:53190-53281`) grants
+  `AddBuff(sItem.buffType, 3600)` at the use-start for the 28 summon-staff item
+  types; THAT 3600 buff is what the keep-alive arm's 18000 refresh pins while the
+  minion lives. Added `MINION_STAFF_PET_BUFF_ITEMS` + the grant. (This SUPERSEDES
+  the "0-time grant is a ghost" note below for the summon staves — the ghost was
+  the missing 3600 grant, not an inherent C# behaviour.)
+- **The maxMinions cap set-bonuses were MISSING** — `HallowedSummoner`
+  (`ArmorSetBonuses.cs:225-229`, `maxMinions += 2`, the 8 cartesian triples of
+  4873/4899 × 551/4900 × 552/4901) and `ChlorophyteSummon` (`:134-139`,
+  `maxMinions += 2`, the 5524/1004/1005 triple) added to `tr_core::armor_sets`
+  `SET_STATS`. The per-piece rows (`grant_summon_caps`, `Player.cs:13254-13948`/
+  `:15324-15329`) and the buff cap effects (110/150, `:10173-10180`) were already
+  faithful.
+- **The missing minion `proj_data` rows** — the slot-counting needs every summon
+  staff's minion kind to carry its `SetDefaults` slice; 191-194/317/390-392/755/
+  831/864/946/951/970/1022/1093/1094/1112/1113/1118/1119/625-628 were absent (the
+  staves' spawns declined). Added verbatim (`Projectile.cs` cites in `data.rs`);
+  the AI machines stay the documented dispatch no-ops (aiStyle 26/54/156/164/169/
+  206). The `is_summon_shot` flag now books for minion/sentry spawns (the whip
+  `CanRunHitEffects` gate).
+- **RNG**: the only draws the summon arm spends are the Pygmy `Next(191,195)` and
+  Pirate `Next(3)` kind picks, on the `UpdatePlayers` stream at the spawn site (the C#
+  `ItemCheck_Shoot` runs under `UpdatePlayers`, `Main.cs:17754`). The spider cycle and
+  the ai seeds draw nothing. **Round 2 removed the summon crit draw**: the C# has NO
+  spawn-time crit roll — `Projectile.Damage` rolls at HIT and only for the
+  melee/ranged/magic flags (`Projectile.cs:12890-12901`); the minion/sentry rows carry
+  none, and `DefaultToWhip` (`:10704-10718`) sets none either (the whip's crit rides its
+  tag effect's hit roll, `WhipTagEffect.cs:69`). The port rolls crit at throw time for
+  the three classes (its documented stand-in); the summon arm now SKIPS that draw
+  (`crit = false`, no roll) so the stream is faithful — a plain minion staff's use
+  leaves `UpdatePlayers` untouched, the Pygmy spends exactly its kind pick. No existing
+  stream pin covers a summon shot (leaf=3, blaze=4, prism=1, bow=1/2 all non-summon), so
+  the skip breaks no pin. Witnesses WRITTEN NOT RUN (`use_loop_tests::i25_*`,
+  `test_DW_6_1/6_2` corrected to the ascending order); no compiler invoked.
+
+#### Round 2 (2026-11-20, same branch): the sentry arm, the Clay Pot, centring, kb wiring
+
+A second distrust-verbatim pass over the use path found four more defects, all fixed
+in `world_sim/editing.rs` (witnesses WRITTEN NOT RUN, no compiler invoked):
+
+- **The sentry spawn arm was MISSING** — the sentry staves (1572/2366/3571/3569/5119/
+  5463) fell through to the generic flight. The C# arm (`Player.cs:48189-48211`) calls
+  `PickSentryLandingSpot` (`:49525-49543` — the cursor column + its two neighbours
+  scanned down to the first `WorldGen.SolidTile2` row, one above, at `row*16-24`; the
+  3571/3569/5463 staves SKIP the scan), drops the shot at `vy=15` (the 5463 barnacle
+  lands at the cursor's exact world Y, `vy=0`, `:48203-48206`), seeds `ai0=60` for the
+  1572 Frost Hydra / `90` for the 5119 Houndius / `0` else (`:48195-48207`), spawns the
+  SCALED `Damage` and overrides `originalDamage = damage` (UNSCALED, `:48209`), then runs
+  `UpdateMaxTurrets` (`:48210`). The helpers `pick_sentry_landing_spot`/`sentry_solid_tile2`
+  were already ported (round 1) but never called; the arm now wires them, gated
+  `def.summon && proj_data(proj).sentry`. The shared tail's `update_max_turrets` sweep
+  (already present) covers the cap. The `AI_053` init latch overwrites `ai0→120` on the
+  first tick (`projectile.rs`), so the spawn seed is passed verbatim but transient.
+- **The Clay Pot (6161) was in the WRONG arm** — round 1 gave it a `SpawnMinionOnCursor`
+  cursor spawn, but the C# has NO such arm for 6161: it rides the generic tail
+  (`Player.cs:49437` — player-centre spawn, aim velocity, SCALED `Damage`) and only
+  overrides `originalDamage = damage` (`:49442-49444`). Removed the cursor arm; the
+  override now rides the generic spawn. (6161's shoot 1118 is a minion row, so the
+  generic spawn's `original_damage` init already books the SCALED value — the override
+  corrects it to UNSCALED for the pool's `minionDamage` recompute.)
+- **The cursor spawns missed the half-box subtraction** — `NewProjectile` takes the
+  CENTRE and subtracts `width/2, height/2` (`Projectile.cs:10876-10877`); the port's
+  `spawn_with_data_ai*` seam takes the TOP-LEFT. The minion cursor spawns (and the new
+  sentry spawn) now subtract the per-kind half-box (the inferno-blast precedent,
+  `projectile.rs`). The GENERIC spawn sites keep their existing centre-ish convention
+  (a port-wide stand-in; changing them would break the pinned leaf/blaze/prism tests).
+- **`GetWeaponKnockback` was only wired into the minion arm** — the C# runs it ONCE at
+  `:47151` for EVERY shoot (after the ammo fuse / gunProj reset). Now folded into the
+  shared throw block (`fx_kb`) and the ammo path (`knock_back`), so the gem/spirit/sky/
+  blaze/generic/whip shots all carry the glove/Titan/stealth scales. Behaviour-neutral
+  today: the only live `minion_kb` writer is the sky-stone accessory (+0.5) and the
+  kb-glove; `kb_buff`/`shroomite_stealth` have NO live writers (the DebuffEffects/
+  MiscEffects tables never reach the Player), and the gunProj four are Ranged with no
+  stealth armed (the DW-4.2 raw-knockback pins hold). The whip (`summon=true`) takes the
+  `minionKB` add faithfully.
+- **The summon crit draw was removed** (see the RNG bullet above): the C# never
+  spawn-crits a summon shot; the port's throw-time roll now skips `def.summon`.
+
+Deferred / noted (not ported this wave):
+- **`MinionRespawner`** (`Player.cs:38815`/`:37704`, `MinionSpawnFromInventoryItem`) —
+  the death/respawn re-summon path; deferred (the minion AI machines' follow-up).
+- **The Foxsparks ability gate** (`Player.cs:43347`/`:42774`) — the 5664/6149 right-click
+  dash ability; unported (the spawn + `localAI[0]=30` land, the ability is a follow-up).
+- **`Player.stealth` init** — the port inits 0.0 vs the C# default 1f (`Player.cs:1562`);
+  the frost seam already folds 1f when shroomite is off (`npc_ai_frost_mob.rs`), so the
+  kb wiring's stealth scale is unaffected today. Left as-is (no live shroomite writer).
+
 Deviations and notes:
 
-- **The 0-time summon grant is a ghost.** The summon staves' `Item.buffTime` rows are 0
-  (itemdata, the C# `Item.SetDefaults` cases set only `buffType`), so `ItemCheck`'s grant
-  (`Player.cs:42879`) adds a 0-time buff вЂ” and the C#'s arm guard (`Player.cs:9868`,
-  `buffTime[j] <= 0` skips) plus the expired sweep (`:25611`) drop it on the next tick.
-  The port repeats this verbatim: a freshly-granted minion buff is swept one tick later,
-  and the arm's 18000 refresh only reaches buffs that entered with a non-zero time (the
-  regression tests seed one). The minion itself lives on its row's `timeLeft * 5` and the
-  pool's cap check either way.
+- **The 0-time `item.buffTime` grant is a ghost — but the 3600 `ApplyPetBuffs` grant
+  is NOT.** The summon staves' `Item.buffTime` rows are 0 (itemdata, the C#
+  `Item.SetDefaults` cases set only `buffType`), so `ItemCheck`'s `:42879` grant adds a
+  0-time buff — and the C#'s arm guard (`Player.cs:9868`, `buffTime[j] <= 0` skips) plus
+  the expired sweep (`:25611`) drop it on the next tick. The port repeats THAT verbatim.
+  The persistence does NOT ride it: `ItemCheck_ApplyPetBuffs` (`:42766` → `:53190-53281`)
+  grants `AddBuff(buffType, 3600)` at the use-start for the 28 summon-staff types
+  (`MINION_STAFF_PET_BUFF_ITEMS`), and the keep-alive arm's 18000 refresh pins THAT buff
+  while the minion lives. (Round 1 added the 3600 grant; the earlier "the minion buff is
+  swept one tick later" reading was the MISSING-grant bug, not a C# behaviour — the
+  regression tests now assert the 3600 grant survives and refreshes to 18000.)
 - **The port's arms run after the player tick's expiry sweep** (the Phase-2 seam): the C#
   runs them inside `UpdateBuffs` between the reset and the sweep. The consequence is the
   ghost above; the cap effects (110/150/348) still land after `ResetEffects` zeroed the
   budgets, the order that keeps them.
 - **The Stardust Dragon chain (625-628) is excluded** вЂ” the relink arms in the kill-oldest
   and the free-up are stubbed; the kinds carry rows only where the summon slice needs them.
-- **DD2 persistence stubbed**: `tr_core::dd2::event_ongoing()` reports false until
-  M4-EVENT-5, so the O'A towers (663-693) are wipable like the vanilla sentries.
+- **DD2 persistence** (S1-P-i26 update): the sentry-summon path now reads the world's
+  live `World::dd2_event_ongoing` flag (not the `tr_core::dd2::event_ongoing()` stub,
+  which still reports false for the wave machinery until M4-EVENT-5). The O'A towers
+  (663-693) genuinely persist through `UpdateMaxTurrets` and hold their `timeLeft`
+  (`Projectile.cs:17197-17200`) while the event runs, and are wipable like the vanilla
+  sentries once it ends. See "The sentry-summon use machinery (S1-P-i26)" below.
 - **Dust, sound, light and frame machines unported**: `AI_062`'s dust spawns and their
   `Main.rand` rolls, 963's cry/attack cues, 613's `Lighting.AddLight`, the per-kind
   `frameCounter` machines and `strongBees` (373's bee cooldown keeps the default 90) вЂ”
@@ -14605,18 +15154,121 @@ Apprentice T2/T3 set flags (`ArmorSetBonuses.cs:74-78`/`:99-104`, the triples
 - **The 131 shot's movement** rides the generic `kill_step` (the aiStyle-28 frost
   bolt precedent): the shot keeps `tileCollide = true`, integrates `pos += vel`
   and dies on a tile hit вЂ” the generic `HandleMovement` tail, not a per-type arm.
-- **Deferred вЂ” aiStyle 120 (Stardust Guardian, `:44634-44964`)**: the ~12-minute
+- **Deferred — aiStyle 120 (Stardust Guardian, `:44634-44964`)**: the ~12-minute
   scope took the tower style first. The Guardian needs unported player machinery
   (`tankPet`/`tankPetReset` `Player.cs:870-872`/`:24539-24547`,
-  `MinionRestTargetPoint`/`HasMinionRestTarget` `:4060` вЂ” the rest-hover states 1/3
+  `MinionRestTargetPoint`/`HasMinionRestTarget` `:4060` — the rest-hover states 1/3
   depend on them; without the rest target they revert to the idle state) plus its
   19-frame sheet (`Main.cs:8497`) and the teleport dust bursts. It stays on the
-  S1-D-4b-3 row.
+  S1-D-4b-3 row. **RESOLVED 2026-11-20 by S1-P-i56** — the arm landed with the
+  player machinery (`Player.tank_pet_reset` + `tank_pet_decay`,
+  `minion_rest_target_point` + the >1000-px invalidation) and the 19-frame row;
+  see "The Stardust Guardian arm (S1-P-i56)" below.
 - Tests (written, not run): `s1_d_4b_9_flame_burst_tests` вЂ” the row/frame pins,
   the dispatch + 300-wrap, the unclamped shot fire + muzzle centring + same-tick
   shot-arm run, the per-tier cycle wrap, the Apprentice cone/speed test, the
   facing flip, the backpack ride, the shot fade/rotation and the two RNG-order
   proofs; `player.rs`'s armor-set test gained the Apprentice T2/T3 triples.
+
+### The sentry-summon use machinery (S1-P-i26, code-only mode)
+
+**Code-only mode**: no `cargo`/`rustc`/`rustfmt`, no test run, no graphify. The port
+was verified by re-reading the C# line by line; the witnesses below are written as
+code, NOT executed.
+
+The census found the sentry **AI bodies** already ported (S1-D-4b-2/-3/-9: aiStyle
+53/123/130/134/137/138/139/197, the `proj_data` rows, the cap sweep
+`update_max_turrets`, the targeting) but the **use path** — the two `ItemCheck_Shoot`
+sentry arms and their placement/gate helpers — was MISSING: a sentry staff fell
+through to the generic `Item.shoot` firing (spawn at the player centre + 10 px
+toward the cursor, aim-normalized velocity, a throw-time crit draw), not the C#'s
+cursor/tile placement. S1-P-i26 ports the use machinery verbatim.
+
+- **Arm A — the placeable staff sentries** (`Player.cs:48189-48212`): items 1572
+  (Frost Hydra → 308), 2366 (Queen Spider → 377), 3571 (Rainbow Crystal → 643),
+  3569 (Moon Lord Turret → 641), 5119 (Houndius Shootius → 966), 5463 (Dead Cells
+  Barnacle → 1025). `PickSentryLandingSpot` (`:49525-49543`) picks the spot: the
+  hover kinds (3571/3569/5463) skip the ground scan, the rest scan the cursor column
+  + its two neighbours down to the first `SolidTile2` row then step one row up;
+  `spawnX` is the RAW cursor X, `spawnY = row*16 − 24`. The spawn drops at `(0, 15)`
+  (the barnacle at `(0, 0)` on the raw cursor Y), `ai0` = 60/90 for the 1572/5119,
+  `originalDamage = sItem.damage` (the UNSCALED prefixed item damage, `:47060` /
+  `:48209` — NOT the class-multiplied `weaponDamage`), then `UpdateMaxTurrets`.
+- **Arm B — the DD2 tower poppers** (`:49057-49094`): items 3818-3820 (Flameburst →
+  663/665/667), 3824-3826 (Ballista → 677/678/679), 3829-3831 (Lightning Aura →
+  688/689/690), 3832-3834 (Explosive Trap → 691/692/693). `PayDD2CrystalsBeforeUse`
+  (`:42367-42374`) consumes 10 Eternia crystals (3822) in reverse slot order
+  (`ConsumeItem` `:9269-9308`, ammo → coins → grid; a drained cell turns to air),
+  `FindSentryRestingSpot` (`:53015-53059`) picks the ground spot (the cursor pulled
+  into the reachable area, `worldX = col*16 + 8` with the per-kind facing/X offsets,
+  `pushYUp = 41` + the per-kind offsets − 14, `worldY = firstSolidRow*16`), the
+  per-tier payload rides the spawn (`ai0/ai1` = 1/80, 1/70, 1/60 for the Flameburst
+  T1/T2/T3; `ai1 = GetBallistraShotDelay` for the Ballista; `localAI[0] =
+  GetExplosiveTrapCooldown` for the Trap), `originalDamage = sItem.damage`, then
+  `UpdateMaxTurrets`.
+- **The use gates** (`ItemCheck_CheckCanUse_Inner`, `:52079-52111`) run BEFORE the
+  use starts: the crystal-payment lock (`CheckDD2CrystalPaymentLock` `:42376-42384`
+  — free outside the event, the full 10 required during it), the
+  `downedDD2EventAnyDifficulty || Ongoing` gate (`:52083-52086` — the port reads the
+  world's three monotonic tier flags, the C# player field is their per-tick latch
+  `:24450-24453` / `DD2Event.cs:89-99`), the `WouldSpotOverlapWithSentry` overlap
+  refusal (`:52983-53013` — the three probe points against every active sentry's
+  hitbox, the aura kinds inflate ±8, the rest recentre to a 30-px width) and the
+  solid-tile refusal (`:52095-52111` — the aura kinds test a 3-tall `SolidTiles`
+  column, the rest a single `SolidTile`).
+- **The DD2 lifetime hold** (`Projectile.cs:17197-17200`): while `DD2Event.Ongoing`
+  holds, an `IsADD2Turret` sentry's `timeLeft++` cancels the per-tick decrement, so
+  its lifetime never drains during the event. The port's lifetime block gained this
+  arm; the `Ongoing` read is the world's live `dd2_event_ongoing` flag, not the
+  `event_ongoing()` stub (which still reports false for the wave machinery). The two
+  `update_max_turrets` call sites (the spawn sweep `editing.rs` + the cap-change
+  sweep `world_sim/player.rs`) likewise read the world flag, so the O'A towers
+  genuinely persist through the sweep during the event (`TurretShouldPersist`
+  `Projectile.cs:670-690`).
+- **RNG order preserved by construction**: NONE of the placement/gate/payment
+  helpers draws `Main.rand` — the scans, the overlap test, the crystal consume and
+  the spawn payload are pure arithmetic. The C# `ItemCheck_Shoot` makes NO crit draw
+  for the sentry arms (`Projectile.Damage`'s crit block `Projectile.cs:12890-12901`
+  gates on the melee/ranged/magic flags, which no sentry row sets — the summon class
+  has no crit), so the port's sentry arms SKIP the generic throw-time crit roll,
+  keeping the `UpdatePlayers` stream's draw count 1:1. The witness
+  (`sentry_use_tests::the_sentry_use_draws_no_crit_on_the_updateplayers_stream`)
+  isolates the crit by mirroring the stream: one `next_range(1, 101)` on a clone of
+  the sentry's post-use stream lands on the non-sentry summon's, proving the only
+  delta is the single crit draw the sentry skips. The knockback takes
+  `GetWeaponKnockback`'s summon arm (`:53348-53351` `+= minionKB`, then `kbBuff`
+  ×1.5 `:53356-53359`).
+- **Skips / deviations**: the aiStyle-53 sentry-backpack branch
+  (`AI_053_FrostHydra`'s `CanGetPickedUpBySentryBackpack` pickup `:37314-37335`)
+  stays the documented S1-D-4b-2 skip (the 134/137/138/130/123 arms carry it; the 53
+  arm does not call the reposition yet). The `gravDir == -1` row re-fold in
+  `PickSentryLandingSpot`/`Main.MouseWorld` is inert (the port keeps `gravDir = 1`,
+  no gravity potion). The C# `NewProjectile` centres the box (`:10876-10877`); the
+  port's spawn seam takes the top-left, so the arms subtract half the row's size
+  (the ballista-shot precedent). The `UpdateMaxTurrets` sweep runs after EVERY
+  sentry spawn (the port's pre-existing convention at `editing.rs`), matching the
+  C#'s two sentry call sites (`:48210`/`:49092`).
+- Tests (written, not run): `world_sim/editing/sentry.rs`'s 8 unit witnesses (the
+  landing/resting spots, the overlap recentre/inflate, the crystal cost/reverse
+  payment/lock, the reload ladders, the downed gate); `sentry_use_tests`'s 9
+  integration/RNG witnesses (the Frost Hydra/Houndius/barnacle spawn payloads, the
+  Flameburst/Trap popper payment + reload, the crit-draw delta, the downed-tier
+  refusal, the Ballista shot-delay ladder, the summon knockback, the over-cap
+  spawn sweep); `sentry_tests::the_dd2_tower_lifetime_holds_while_the_event_runs`.
+- **Retry round (W3-i26b) fixes, all C#-verified:** (1) the `sentry_app` fixture
+  now latches `mine_released = true` — the sentry staves are NOT autoReuse, so the
+  fire gate reads `prev_mine_released && !prev_mine_down` (`Player.cs:42733`);
+  without the released latch the fire block never ran and no spawn witness could
+  pass. (2) Both spawn arms now truncate the class-scaled damage with the
+  `GetWeaponDamage` epsilon (`(raw + 5e-6) as i32`, `Player.cs:53421-53429`) — the
+  ammo path's `weapon_damage` precedent; the plain `raw as i32` dropped the
+  5E-06f the C# adds before the cast. (3) The overlap witness's aura probe is
+  rebuilt on the true `Inflate(8, 0)` geometry (the C# inflates the RAW box and
+  SKIPS the recentre on the aura branch — the old probe (88,100) sat outside
+  every box); the new probes (95/93/123,100) prove the ±8 reach past the
+  recentred 30-px box. (4) A `ProjectilePool::set_time_left` spawn-site setter
+  (the `set_ai1` convention) backs the over-cap sweep witness's aged-slot
+  fixture. Module behaviour otherwise untouched.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -14738,6 +15390,88 @@ Deviations recorded here:
    `CanRunHitEffects` admits nothing in-game until M4-PROJ-8; the
    `is_summon_shot` slot flag carries the gate and the tests set it directly,
    so the math is proven end-to-end (`a_tagged_summon_shot_takes_the_damage_bonus`).
+
+7. **S1-P-i24 census — the WRONGs fixed and the missing fire arm.** A
+   code-only census of the whip system against the C# found five defects
+   and one wholly-missing arm, all repaired (tests written, not run):
+   - **The curve's spiral sign** (`FillWhipControlPoints` `:48292`): `num4`
+     carries `(float)(-proj.spriteDirection)`, not `+`. Invisible while
+     `num13 == 0` (ai1 = 0, the render curve of a fresh spawn) but the
+     collision path forces `num13 = 1`, so the spiral wound the wrong way.
+     Fixed; `the_collision_spiral_winds_against_the_sprite_facing` pins the
+     golden tip (74.40, 77.25) vs the wrong-sign (121.69, 69.44).
+   - **The tag crit roll** (`WhipTagEffect.cs:69`): `Main.rand.Next(100)`
+     (0..99), not `Next(1,101)`. A 10% tag crits on 0..9; the old roll
+     shifted the window to 1..10 (an off-by-one). Fixed;
+     `the_tag_crit_roll_is_next_100_not_next_1_101` pins the boundary.
+   - **The proc window's duration** (`TagEffectState.cs:70`):
+     `EnableProcOnNPC` reads the STATE's own `_effect.TagDuration`, not the
+     front effect's. The Constellation's 480 must not leak into a plain
+     whip's window nor vice versa. Fixed;
+     `the_proc_window_runs_the_states_own_duration_not_the_fronts` pins it.
+   - **The on-hit gating/order** (`Projectile.cs:13579-14263`): the whip
+     debuffs (`StatusNPC`) and the tag application run BEFORE `StrikeNPC`
+     (`:13580`/`:13583` vs `:13649`) — moved pre-strike (the ThornWhip's 1/5
+     poison roll now rides its C# position ahead of `DamageVar`). The
+     per-type switch is gated by `flag8` (`!immortal`, `:12815`/`:13673`)
+     AND `flag10` (`num24 > 0 && lifeMax > 5 && friendly && !hostile`,
+     `:13659`/`:13810`), while the `MinionAttackTargetNPC` retarget
+     (`:14257-14263`) is OUTSIDE both gates — the port ran the switch
+     ungated; fixed. The C# runs `TagEffectStack.OnHit` (`:13658`) before
+     the switch (`:13904`) and gates it on `CanRunHitEffects`; the port
+     KEEPS the landed order (switch then `tag_on_hit`, ungated) because the
+     Constellation's `OnTaggedHit` self-arm
+     (`the_constellation_first_hit_arms_and_clears_the_proc_window`) depends
+     on it — the gate + the order swap are a recorded follow-up.
+     `the_whip_per_type_switch_is_gated_by_flag8_and_flag10` pins the gate.
+   - **The `ItemCheck_Shoot` whip arm was MISSING** (`Player.cs:48655-48690`):
+     the port spawned whips through the generic `Item.shoot` path with
+     ai1 = 0 (a straight whip) and a spurious crit draw. The C# arm rolls
+     the spin seed `ai1 = 0.6 + 0.4*NextFloat()` (`:48657`), then the
+     `x-2.5` flip on `Next(3) == 0` for every whip but the Dark Harvest
+     (4680, `:48658`), adds the Wicked Armlet's +1 knockback
+     (`:48663-48666`), and — for the Snake Band's
+     `withAudioVisualFeedback = false` refire (`:42729`) — rotates the
+     velocity by `RotatedByRandom(pi/10)` (`:48670`, two `NextDouble`s),
+     overrides `timeToFlyOut` via `ai2 = 1000 + itemAnimationMax*2`
+     (`:48673`), cuts damage x0.3 (floor 3) and knockback x0.25
+     (`:48676-48681`), and bumps `repeatWhipSwings`/re-arms the 120-tick
+     reset only on the audible swing (`:48684-48688`). Ported verbatim as
+     `spawn_whip_shot` + the mid-animation refire trigger;
+     `the_whip_spin_seed_is_nonzero_and_seed_deterministic`,
+     `the_dark_harvest_never_flips_its_spin`,
+     `the_whip_throw_bumps_the_repeat_counter_and_cooldown`,
+     `the_wicked_armlet_adds_one_knockback_to_the_whip` pin it. The damage
+     reads `GetWeaponDamage`'s `+5E-06f` epsilon (`:53428`).
+   - **The whip speed buffs + range consumers were MISSING**: the
+     summoner-speed buff arms (Dark Harvest 311 +0.35, Sword Whip 308
+     +0.25, Thorn Whip 314 +0.12, `Player.cs:10110-10121`) fold through
+     `CapAttackSpeeds` (`:29021-29039`, cap 3 / invert) into the use-time
+     multiplier `ApplyItemAnimation` (`:4474-4476`) scales the whip swing
+     by; the Cool/Cob Whip buff flags (312/365, `:10122-10129`) re-affirm
+     the on-hit latch; the `whipRangeMultiplier` rows (Tiki head +0.1
+     `:13854`, Stardust body/legs +0.15 `:13879`, Tiki set +0.2
+     `ArmorSetBonuses.cs:15`, Obsidian Outlaw +0.3 / x1/1.15 use-time
+     `:120-125`, Mobius Strip +0.1 `:12979`) stretch the curve (both render
+     and collision); the tag-cap accessories (Silver Bracer +1 cap/+2
+     duration, Mobius/Wicked +1 cap, `:12970-12984`) raise the stack. All
+     wired; `the_whip_speed_buffs_fold_through_cap_attack_speeds`,
+     `the_obsidian_outlaw_set_speeds_the_whip_and_stretches_its_reach`,
+     `the_whip_accessories_raise_the_tag_cap_and_duration`,
+     `the_whip_armor_rows_carry_their_range_and_speed` pin them. The
+     melee-half of `CapAttackSpeeds` (assigns `meleeSpeed` itself) stays a
+     separate deviation — the port's `melee_speed()` accessor returns the
+     uncapped `1 + bonus` the flail/shoot paths read.
+   RNG order: the whip fire arm draws the spin `NextFloat` then the flip
+   `Next(3)` (skipped for 4680) on the `UpdatePlayers` stream
+   (`Main.cs:17754`); the refire adds the `RotatedByRandom` pair; the
+   ThornWhip's 1/5 poison roll now rides its pre-strike `StatusNPC`
+   position (`:11738`) ahead of `DamageVar` (`:12938`), matching the C#.
+   The `CanRunHitEffects` gate now admits the `MINION_SHOT`/`SENTRY_SHOT`
+   kind sets (`ProjectileID.cs:431-432`) via `can_run_whip_hit_effects`, so
+   the ported minion/sentry shots take the tag bonus without the
+   `is_summon_shot` latch; the whip's own hit is not a summon shot, so its
+   `OnHit` never consumes a proc window.
 
 ## The player→NPC strike mechanics (S1-P-i11, code-only mode)
 
@@ -32655,6 +33389,8 @@ Census slice P-3 (`docs/research/50-entity-ai-census.md` §3c on
 NO dispatch arm. This round takes **31 / 147 / 181 / 193**; **194**
 (HorsemanPumpkin, R56 / TR-wire15) and **120** (StardustGuardian, R62 /
 TR-emproj) are other workers' in-flight claims and stay out.
+**(2026-11-20 update: 194 landed with S1-D-4 W-10 and 120 with S1-P-i56 —
+`UNARMED_ROWED` is now EMPTY, every rowed style is armed or kind-gated.)**
 
 **Per-style census + verdict** (kinds from `projectile/data.rs`, C# arms
 read WHOLE before porting):
@@ -35201,6 +35937,507 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## The mana machinery (S1-P-i19)
+
+**Headline finding — `DebugOptions.ManaV2` is the SHIPPED mana machine.** The
+static ctor sets `ManaV2 = true` (`Testing/DebugOptions.cs:85`) and a census of
+the whole decompile (game + ReLogic) finds NO write that ever sets it false —
+no command, no config, no menu. The earlier ANALYSIS note ("a debug cheat, not
+ported") was wrong: the 1.4.5 mana rework IS the default behaviour, and the
+port's pre-i19 `CheckMana` implemented the legacy V1 refusal the source never
+uses. `regen.rs::MANA_V2` folds the flag to a `true` constant; the V1 lanes
+stay unreachable exactly as in the source.
+
+### The census (C# → port verdicts)
+
+Mana-cost modifiers (`Player.manaCost`, reset 1f `Player.cs:18334`):
+- Buff 29 Magic Power −0.02 (`:11891`) — was ported (`player.rs` buff scan). OK.
+- `manaFlower` −0.08 ONCE after the equip loop (`:12962-12965`) — was WRONG:
+  the port folded −0.08 per flower item (555/4001), so two flowers stacked
+  −0.16 and the Arcane Flower 3991 / Magnet Flower 4000 granted nothing.
+  Fixed: a `mana_flower` bool armed by 555 (`:15591-15594`), 3991
+  (`:14405-14410`, also +5 magic crit / +5% magic damage), 4000
+  (`:14455-14457`) and 4001 (`:14459-14463`); the ONE −0.08 row applies
+  post-loop; `ResetEffects` clears (`:18721`).
+- Nature's Gift 223 −0.06 (`:15110-15113`) — was ported. OK.
+- Armor pieces: robes 1282-1287 (−0.05…−0.15, `:13722-13751`), Amber Robe
+  4256 shares 1286 (`:13742`), Mystic Robe 2279 −0.1 (`:13302-13307`),
+  Apprentice 3797 −0.1 (`:13132-13136`), Dark Artist 3875 −0.15
+  (`:13204-13208`), Crystal Assassin 4982 −0.1 (`:13621-13627`), Spectre
+  Hood 1003 −0.17 (`:13651-13656`), Spectre Mask 2189 −0.13
+  (`:13679-13685`), Nebula Helmet 2760 −0.15 (`:13918-13924`). The port
+  had all but 4256 and 2760 — added.
+- Caster sets: Jungle −0.16, Cobalt −0.14, Mythril −0.17, Adamantite −0.19
+  (`ArmorSetBonuses.cs:278/166/181/196`) — were ported (`tr-core` SET_STATS). OK.
+- Prefixes: `Item.Prefix`'s `mcst` (`Item.cs:845-899`) rounds the item's
+  `mana` by banker's rounding (`Item.cs:580`) — was ported
+  (`prefix.rs::prefixed_stats`). OK.
+
+`statManaMax2` (effective max):
+- WRONG (accumulation): the port's `mana_max` never rebased, so the per-tick
+  `+=` rows (set +60, buff 29 +20) grew unbounded. Fixed: `mana_max_base`
+  (= `statManaMax`, 20 at creation `:56075`) + the `ResetEffects` rebase
+  `statManaMax2 = statManaMax` (`:18389`).
+- MISSING rows added: the per-piece `statManaMax2 +=` table
+  (`:13274-13924`: jungle/ancient-cobalt 228/229/230 + 960/961/962, caster
+  heads 371/376/400/1207/1212/1217/558/4898, spectre 1003/2189, robes
+  1282-1287/4256, nebula 2760, ancient battle 3777/3778) and the accessory
+  switch (`:14922-14935`: Band of Starpower 111 + cuffs 1595/2221 +40; Mana
+  Regeneration Band 982 / Restoration Shield 6188 / Mystic Arts Sash 6189
+  +40 AND `manaRegenBonus += 60`).
+- The Mana Crystal use arm (`ItemCheck_UseManaCrystal` `:45274-45288`,
+  `statManaMax += 20`) is UNPORTED — the whole crystal consumable-stat family
+  (Life Crystal `:45306` too) has no port seam; the base stays 20. Recorded
+  gap, not a regression.
+
+`CheckMana` / the pay path (`:52576-52617`, `ItemCheck_ActuallyPayMana`
+`:52638-52655`):
+- WRONG (the headline): the port refused the use when `mana < cost`. Under
+  ManaV2 the check NEVER refuses — enough mana pays `(int)(amount*manaCost)`
+  (`:52579-52586`); not enough drains the bar to 0, arms `slowMagicUse`
+  (`DoRunOutOfManaEffect` `:52619-52622`) and returns true (`:52610-52614`;
+  the manaFlower lane `:52588-52608` lands the same V2 arm after its
+  QuickMana). Fixed: `regen.rs::check_mana` + the weapon pay block
+  (`world_sim/editing.rs`) and the Last Prism channel pay
+  (`projectile.rs::ai_last_prism`, `Projectile.cs:66613`).
+- The slow cast: `ApplyItemAnimation`'s ManaV2 arm (`:4478-4483`) stretches
+  the use animation ×2.5 (`GetSlowMagicMultiplier` `:47046-47049`); the same
+  multiplier rides `ApplyItemTime` at the shoot (`:47187-47194`). The port's
+  non-ammo mana weapons fire at the use start, so the stretched swing IS the
+  cadence — applied at the swing arm. `UndoSlowMagicUse` (`:51954-51966`)
+  scales the four timers by 1/2.5 floored at 2 ticks on a mid-swing potion
+  drink. The `slowMagicUse` field is NOT reset by ResetEffects (only
+  `CheckMana`'s entry `:52578`, the skip arm `:52647` and Undo clear it).
+- The Silenced refusal (`:52221-52224`) is upstream of CheckMana and survives
+  ManaV2 — kept. The spaceGun skip (`:52695-52698`) clears `slowMagicUse`
+  (`:52645-52648`) and pays nothing — kept.
+
+Mana regen delay (`ApplyManaRegenerationDelay` `:19396-19416`,
+`UpdateManaRegen` `:19418-19563`):
+- WRONG: the port applied the delay once per cast. The C# re-arms it EVERY
+  animation tick of a mana item (`ItemCheck` `:42808-42813` →
+  `ItemCheck_ApplyManaRegenDelay` `:50587-50593`), not once. Fixed: a per-tick
+  site at the `update_editing` head (the `app.swing > 0` stand-in) + the
+  use-start re-arm from the post-pay mana.
+- WRONG: the port passed `buff = false`. The C# reads `manaRegenBuff`
+  (`:19399`). Fixed: both sites pass `p.mana_regen_buff`.
+- MISSING (ManaV2): the delay cap (`:19403-19415`) — cap 4, then mana > 0
+  pins 4; only the empty bar keeps the `((1−mana/max)·240+45)·0.7` curve.
+  Added to `apply_mana_regen_delay`.
+- MISSING (ManaV2): the sub-4 window (`:19437-19441`) counts as expired with
+  flag3, scaling the regen line ×0.05 (`:19470-19475`); the floor of 2 still
+  applies. Added to `update_mana_regen`.
+- MISSING (ManaV2): the animation gate (`:19542-19545`) clears flag4 AFTER
+  the point was granted — the bar still fills mid-animation, only the
+  full-bar sound/dust (`:19550-19560`) is suppressed. Added via
+  `ManaRegenFlags::item_in_use` (the C# `flag = itemAnimation > 0 ||
+  reuseDelay > 0`, `:19420`), fed by the sim from `app.swing`/`app.reuse_delay`.
+- The full-bar trigger now fires only when a point was granted THIS chunk
+  (flag4), matching `:19550` — an idling full bar no longer re-fires.
+- `manaRegenDelayBonus` has NO grant source in the source (`:18656` is its
+  only write) and the arcane crystal is unported — both stay folded out.
+
+Mana Sickness (buff 94) — **not for weapons**:
+- `CheckMana` has NO buff grant; the ONLY grant site is `ApplyLifeAndOrMana`
+  (`:51933-51943`, `manaSickTime = 300` `:57101`) on a mana potion drink.
+  Added the potion drink arm (`world_sim/editing.rs`): restore `healMana`
+  capped at max, grant buff 94 for 300 (additive cap 600, `buffs.rs`), queue
+  `ManaEffect`. The stock mana potions are `potion: false` (`Item.cs:2680`),
+  so no Potion Sickness gate rides them.
+- The buff arm (`:10318-10326`) sets `manaSick` + `manaSickReduction =
+  0.25·buffTime/300` (ASSIGN, one slot per type); the recalc multiplies
+  `magicDamage *= 1 − reduction` (`:25900-25902`). Added to the `player.rs`
+  buff scan + a post-grant multiply. `ResetEffects` clears `manaSick`
+  (`:18592`).
+- `ApplyManaPotionManaHeat` (`:51968-52003`) has NO caller in the source —
+  dead code, not ported. The `manaHeat` multiply (`:25904-25911`) stays ×1
+  (the star-pickup heat `:35071` has no port seam). The
+  `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
+  false in the shipped statics (`DebugOptions.cs:86`) — folded out.
+
+### Deliberate folds / gaps (recorded)
+- The QuickMana potion seam (`QuickMana` `:5598-5627`,
+  `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
+  manaFlower lane lands the same empty-bar arm as the plain lane, so
+  `check_mana` folds the flower branch into the V2 arm. The quick-mana
+  keybind (`Action::QuickMana`) has no sim consumer yet.
+- The other `CheckMana` projectile sites — Glacier Fang (`Projectile.cs:36943`,
+  AI_208), Life Drain (`:42662`, AI_185), Medusa (`:44567`, AI_100), the
+  aiStyle-75 Clinger/Shadowbeam members (`:66204`/`:66479`) — have no ported
+  AI arms; only the Last Prism (633) is ported and was fixed. The Forbidden
+  Storm command (`Player.cs:56870`) and the QuickBuff mana pay (`:5881-5884`)
+  have no port seam.
+- The star pickup (`PickupItem` `:35065-35078`, +100 mana + heat) and the
+  Mana/Life Crystal use arms are unported consumable/pickup families.
+- The slow-cast ×2.5 is applied to the swing (animation) at the use start;
+  the port's non-ammo mana weapons fire there, so the separate `ApplyItemTime`
+  site (`:47187`) coincides. Ammo shooters with mana (none stock) would need
+  the `item_time` stretch too — recorded.
+
+### RNG order
+No new RNG draws. `check_mana`, `apply_mana_regen_delay` and
+`update_mana_regen` are pure arithmetic; the full-bar dust's 5×
+`Main.rand.Next(20,26)` (`:19555`) stays deferred to M6-AUDIO (the trigger
+is returned, not drawn). The potion drink's `ManaEffect` combat text draws
+ride the existing `UpdatePlayers` stream through the cuffs' drain
+convention — no new stream, no reorder. The weapon pay's crit/spawn rolls
+are unchanged (the pay now always succeeds, so the downstream rolls run on
+every cast exactly as the C#'s ManaV2 does).
+
+**Verification.** Code-only: every C# site was re-read line-by-line
+(`Player.cs:52549-52708`, `:19396-19563`, `:42808-42813`, `:50587-50593`,
+`:51888-51966`, `:10318-10326`, `:25900-25911`, `:14922-14935`,
+`:12962-12965`, `DebugOptions.cs:74-91`); the port seams were checked by
+read/grep (the `Player` field additions, the `update_survival` feed, the
+`BuffSlots::add_buff` cap, the `prefix.rs` rounding). The witness tests
+(`regen.rs` ×6, `player.rs` ×3, `world_sim/editing.rs` ×6, the rewritten
+`projectile.rs` Last Prism pair) are WRITTEN, NOT RUN — **no compiler
+invoked**.
+
+## The magic guns + tomes use arms (S1-P-i22)
+
+`Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:
+`docs/research/56-magic-guns-tomes-census.md`). The use-pass arms live in
+`world_sim/editing.rs` (the if/else chain beside the gem-staff/blaze arms);
+the 17 projectile rows + AI arms in `projectile/data.rs` + `projectile.rs`.
+
+Deliberate deviations (the port's established conventions, not new gaps):
+
+1. **Dust/sound RNG skipped pool-wide.** The C# projectile AI arms draw
+   `Main.rand` for dust/gore/sound only (AI_005's :23883/:23973/:23983/
+   :24035/:24039, AI_021's :25594, the 459 orb's :54678, the 442 Kill's
+   :73531 Next(3,7)). The port's pool keeps ZERO RNG (the S1-D-5 slice-A
+   precedent, `projectile_ai001_a.rs` module doc), so these draws are NOT
+   consumed - the `UpdateProjectiles` stream stays untouched BY
+   CONSTRUCTION. The ONE exception is the NettleBurst head's `Next(2)` type
+   flip (`Projectile.cs:23709-23713`), which changes STATE (the kind), so it
+   IS consumed on the pool's rng (the `ai_style4` arm takes the rng arg).
+   The use-pass draws (the harp/guitar/poison/starfury/sky-fracture rolls)
+   ride `UpdatePlayers` in C# order - the witnesses replay them.
+2. **Crit at spawn.** The port rolls crit at spawn (the existing use-pass
+   convention, `tr_core::damage::crit_roll` = Next(1,101)); the C# rolls at
+   hit (`Projectile.cs:12890-12898`). Same stream, same count per shot.
+3. **Hit-time multipliers NOT applied.** The 265 PoisonFang x0.75
+   (`Projectile.cs:13414-13416`, a `this.damage` mutation that COMPOUNDS per
+   hit), the 76/77/78 notes x0.95 (:13432-13436) and the 9 Starfury star
+   x0.75 (:14502-14504) are HIT-time folds in `Damage_PVE_Inner` /
+   `Damage_GetProjectileSpecificDamageMultiplier`, not the use path. The
+   port's `damage_pve` applies no per-kind hit multiplier today (only the
+   flail family), so they are left unported and recorded as a gap in the
+   census (research/56). The spawn carries the raw weapon damage. The
+   Starfury's x1.5 USE-time damage (`Player.cs:47265`) IS applied at spawn
+   (it is a use-pass fold, not a hit-time one).
+4. **`SmallerScaledAxis`** (`Camera.cs:29-40`) computed from the port's
+   screen + zoom via the `GameViewMatrix.Translation` formula
+   (`app/frame/draw.rs:735-746`): min(screen - 2*translation). The harp's
+   distance scale reads it (`Player.cs:47395`).
+5. **ChargedBlasterCannon 460/461 + Electrosphere 443**: the channel charge
+   machine (`AI_075` :66360-66538) + the sphere pulse (aiStyle 77
+   :30671-30761) are ported; the dust/sound/light visuals skip (no pool
+   layer). The 460's `GetSlowMagicUseRate` = 1 (no ManaV2,
+   `Player.cs:47028-47035`). The 461 beam's LaserScan uses the width-0 fold
+   (one tile ray, `laser_ray_len`) at the 0.5 lerp.
+6. **The Starfury `base.Left/Right`** reads the port's `Player.x` +
+   `WIDTH` (20); the mounted centre Y folds to `center().1` (no mount
+   offsets, the `mounted_center` accessor convention).
+
+Witnesses WRITTEN, NOT RUN (code-only mode: no cargo/rustc invoked).
+## The minion target command (S1-P-i27)
+
+The summoner target lane, verbatim against `Player.cs`/`Projectile.cs`
+(code-only mode — no compiler invoked, 28 witnesses written not run).
+
+**The aim + maintenance.** `minion_npc_target_aim`
+(`Player.MinionNPCTargetAim`, `Player.cs:56914-56933`) measures
+`NPC.Hitbox.Distance(mouseWorld)` — the rectangle-to-point distance
+(`Utils.cs:1507-1542`: 0 inside/touching, the axis bands, the four corner
+distances), shared as `npc_ai_style64::rect_distance` (`pub(crate)`).
+The scan re-reads the current best's distance each iteration (the C#
+shape); the hitbox anchors are the `(int)` position/size
+(`Entity.cs:171-176`). The `doNotDisableIfTheTargetIsTheSame` parameter
+mirrors the C# signature — the only caller passes false
+(`ItemCheck_MinionAltFeatureUse`, `:49777`); the whip's aiStyle-165
+retarget is a plain write and never calls it. `update_minion_target`
+(`UpdateMinionTarget`, `:56999-57028`) replaces the old invalidation
+half: the rest point drops past 1000 px CENTRE distance
+(`base.Distance`, `Entity.cs:195-198`), the attack target drops when
+unchaseable or its HITBOX is past 3000 px from the player's centre. The
+`whoAmI == Main.myPlayer` gate folds to the single local player.
+
+**The rest-spot command.** `minion_rest_target_aim`
+(`MinionRestTargetAim`, `:56935-56997`) walks the mouse's tile column:
+the full-solid test (`nactive && tileSolid && !tileSolidTop`), the ≤20
+up-scan (bounded `num2+num5 > 1`) and 20 down-scan, the clearance pick
+`num3 = (num7 <= -num4) ? num7+3 : num4-2`, then the unbounded drop
+until a 5-tile window holds a `WorldGen.SolidTileAllowBottomSlope`
+(`WorldGen.cs:70167-70189` — the FULL form: solid-or-solidTop, the
+platform-top-frame clause, no half-brick, not actuated; shared
+`pub(crate)` from the AI_026 slice-C copy). The port caps the drop at
+the world's bottom row (the out-of-world probe reads solid, so the C#
+loop terminates there too). The spot `(tileX*16+8, row*16)` is kept
+only within 1000 px of the player. Triggers: `key_double_tap_down`
+(`KeyDoubleTap`, `:56764-56787`) fires the aim for `setForbidden`;
+`key_hold_down` (`KeyHoldDown`, `:56894-56912`) clears the spot at
+holdTime ≥ 60 for `setStardust`/`setForbidden`. The driver
+(`update_minion_rest_command`, `:25022-25073`'s down-cardinal half)
+mirrors the 15-tick double-tap window, the press edge
+(`controlDown && releaseDown`) and the hold counter; the
+`releaseDown = !controlDown` latch refresh (`:27636`) folds to the
+driver's tail (the only down-cardinal consumer in the port).
+`Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`, the settings
+toggle) flips the cardinal to UP, disabling the DOWN command. Both set
+flags re-derive per tick (`ResetEffects` `:18743`/`:18745`, the
+armor-set block's Forbidden 3776/3777/3778 + Stardust 3381/3382/3383
+triples, `DataStructures/ArmorSetBonuses.cs:482-483`).
+
+**The summoner accessory fold.** The `UpdateEquips` tail
+(`Player.cs:12970-12984`): `accSilverBracer` adds `tagEffectDuration +=
+2f` + `maxTagEffects++` (the `minionDamage += 0f` half is a verbatim
+no-op), `accMobiusStrip` adds `maxTagEffects++` + `whipRangeMultiplier
++= 0.1f`, `accWickedArmlet` adds `maxTagEffects++`. Grants: 6156 Silver
+Bracer (`:14510`), 6158 Mobius Strip (`:14513`), 6159 Wicked Armlet
+(`:14516`), 6162 Ouroboros Ring (`:14519` — the Mobius flag; the
+`accSnakeBand` half unported), 6163 Twilight Grasp (`:14523` — BOTH
+flags), 6179 Armlet of Ruin (`:14585` — the armlet flag; the
+`accArmletOfRuin` tag-damage half unported), 6182 Wicked Claws
+(`:14601-14603` — the armlet flag + `meleeSpeed += 0.12f`; the
+`autoReuseGlove` half unported, the Titan Glove precedent), 6183 Silver
+Shield (`:14605-14609` — the bracer flag beside its knockback/fire-walk
+row in `accessory_defense.rs`). The C# `TagEffectStack` reads the
+PLAYER's `maxTagEffects`/`tagEffectDuration` live
+(`TagEffectStack.cs:47`/`:133`); the port keeps copies on the stack, so
+`ResetEffects` syncs the bases (`reset_player_scalars`, `:18517-18518`)
+and the fold adds once per tick after every grant
+(`add_player_scalars`). The whip range: base 1f (`:18498`), the Tiki
+helm +0.1 (`:13852-13855`) and Stardust body/legs +0.15
+(`:13876-13881`) ride `grant_summon_caps`' armor loop, the Tiki SET
++0.2 rides `tr_core::armor_sets::SetStats::whip_range`
+(`ArmorSetBonuses.cs:15`); the sweep's `FillWhipControlPoints` now
+reads `owner.whipRangeMultiplier` (`Projectile.cs:48301`) instead of
+the pinned 1f.
+
+**AI_062's target search (the census items 6a-d).** (a) The aim split:
+the Tempest/UFO/Cell branch aims at `position + Size * (0.5, 0.5)` with
+`Y = 0` ONLY for the UFO 423 (`Projectile.cs:65335-65339`), distances
+anchored on the OWNER's centre; the generic branch (Hornet/Imp/Abigail)
+aims at the full `nPC.Center` anchored on the minion
+(`:65379`/`:65386`/`:65401`/`:65408`) — the old single `(x+w/2, y)`
+closure served both and was wrong for every h > 0 box. The `num12`
+ladder's 400/300/300 openers are dead in the C# too (the unconditional
+`num12 = 2000f` at `:65300` overwrites them; only Abigail's 700
+survives). (b) Abigail's LOS is `Collision.CanHit(base.Center, 1, 1,
+nPC.Center, 1, 1)` (`:65383`/`:65405`) — the Manhattan walk, not the
+box `CanHitLine` trio walk. (c) The UFO/Cell dash-lift probes clamp a
+negative tile ROW to 0 (`:65507-65511`/`:65544-65548`); the second
+probe reads the raw row. The dash length is `(int)(num22 / 10f)`
+(`:65528`/`:65565`) — the port had kept the fraction, which would never
+count down to the `ai[1] != 0f` dash exit (`:65141`/`:65199`). (d) The
+return branch's no-LOS probe is `CanHitLine(base.Center, 1, 1,
+player.Center, 1, 1)` (`:65646`) — two 1x1 centre boxes. The far snap's
+Y quirk (BOTH axes subtract `width / 2`, `:65711-65712`) is preserved.
+
+**The sentry + whip halves.** `sentry_npc_targeting`
+(`AI_053_HandleSentryNPCTargeting`, `Projectile.cs:40194-40254`) probes
+from `position` (the centre + firing offset) to the NPC's CENTRE, both
+size 0, `CanHitLine`/`CanHit` selected by `straightLine`
+(`:40209`/`:40232`) — the old port probed the sentry's own box against
+the NPC's box. The whip retarget (`:14257-14263`) gates on
+`targetNPC.active` (`:14259`): a killing blow deactivated the victim
+inside `StrikeNPC` (`NPC.checkDead`), so the port reads `hp > 0` after
+the strike (the `can_be_chased_by` liveness precedent — the NPC list
+carries no `active` field).
+
+**Deferred (recorded).** `CommandForbiddenStorm` + the
+`setForbiddenCooldownLocked` gate (`Player.cs:56782-56785`,
+`UpdateForbiddenSetLock` `:56788+` — the storm command spawns the 656
+projectile + pays mana, its own lane); the Vortex stealth toggle
+(`:56775-56778`, the stealth system unported); the Stardust set's
+buff-187 grant + 623 guardian spawn (`ApplySetBonus_Stardust`,
+`:16339-16356` — the guardian's lane, i56 landed the arm; the AI_120
+rest-point CONSUMPTION (`Projectile.cs:44744-44746`/`:44914-44916`)
+waits on that arm's wiring — the writer lands here); the guardian
+rest-spot dust ring (`UpdateMinionTarget` `:57013-57027`, the visual
+layer); `accSnakeBand` (the whip-repeat system `:42711-42731`),
+`accArmletOfRuin` (the tag-damage pipeline) and `autoReuseGlove`; the
+up/left/right cardinals (the dash / other set bonuses). The
+`Minion_FindTargetInRange` view rect keeps the float ±960/±600 form —
+the C# `Utils.CenteredRectangle` truncates the centre to int first
+(`Utils.cs:947-950`), a sub-pixel boundary difference recorded, not
+changed (the census MATCH verdict).
+
+**RNG.** The target-command paths draw NOTHING: the aim, the
+maintenance, the rest-spot scan, the double-tap/hold driver, the
+accessory fold and the whip retarget gate contain no `Main.rand` call
+in the C# bodies; the AI_062 fire-cooldown rolls are untouched.
+
+**Verification.** Code-only: every fixed block re-read against the C#
+(the branch split, the LOS anchors, the row clamps, the int truncation,
+the rect-distance bands, the column-scan bounds, the fold order); every
+seam checked by read/grep (`rect_distance`/`solid_tile_allow_bottom_slope`
+`pub(crate)`, the `tag_effects` scalar seams, `settings.reversed_armor_bonuses`,
+the `WhipCurveInputs` field, the registry's accessory rows). The 28
+witness tests are WRITTEN, NOT RUN — no compiler invoked.
+
+## The Stardust Guardian arm (S1-P-i56, 2026-11-20, code-only mode)
+
+**Scope.** The last `UNARMED_ROWED` entry: aiStyle **120**, the Stardust
+Guardian (623) — the 0-slot summon pet's idle / rest-hover / attack-dash /
+teleport-return machine. C# read WHOLE: `AI_120_StardustGuardian`
+(`Projectile.cs:44634-44963`), `AI_120_StardustGuardian_FindTarget`
+(`:44965-44982`), the dispatch arm (`:34888-34891`), the `SetDefaults` row
+(`:6699-6716`), the frame table (`Main.cs:8497` — 19 frames), the player
+machinery (`Player.cs:870-872` tankPet/tankPetReset, `:24539-24548` the
+decay, `:3006`/`:4060` MinionRestTargetPoint/HasMinionRestTarget,
+`:56999-57028` UpdateMinionTarget), `HandleMovement`/`UpdatePosition`
+(`:17469`/`:20433-20446` — 120 is NOT in the skip list),
+`AutomaticallyChangesDirection` (`:17281-17288` — the row's
+`manualDirectionChange = true` suppresses the velocity-sign rewrite),
+`Utils.MoveTowards`/`Remap`/`ToDirectionInt`
+(`Utils.cs:1772-1780`/`:345-348`/`:2010-2017`), `Entity.Distance`
+(`Entity.cs:195-198` — centre-based), `NPC.CanBeChasedBy`
+(`NPC.cs:90030-90041`).
+
+**The port.** `Projectile::ai_stardust_guardian` +
+`Projectile::ai_120_guardian_find_target` (`projectile.rs`, inline after
+`ai_horseman_pumpkin` — the `ai_floating_turrets` precedent), the `120 =>`
+dispatch arm (the mutable-player channel, `i` as the C# `whoAmI`), the
+free `pos += vel` integrate after the AI (the row keeps
+`tileCollide = false`; the owner-inactive kill tick still integrates —
+the C#'s `if !active` return sits AFTER `HandleMovement`, `:17027`).
+The state machine is verbatim: the parameter block (150-px leash behind
+the owner's facing — the C#'s INT `(5 + width/2)` = 15 — and 25 px up),
+the keep-alive pin (`timeLeft = 2` while the summon flag holds; death
+clears the flag), the materialize/dematerialize alpha flips, the tank
+claim (`tankPet = whoAmI`, `tankPetReset = false` every non-idle tick),
+the idle 5% lerp + 0.5 damp + 9-tick frame machine (wrap 8), the
+leash-gated acquire scan (owner-centred nearest, NO LOS — unlike the
+sentry scans), the attack posture's per-axis accel/damp pairs (the Y
+pair measures from the Guardian's BOTTOM), the owner-only dash commit,
+the dash's frame machine (floor 12, rate 8 on frames 12/13 else 3, wrap
+19 → 14), the two abort gates (Guardian inside 500 of the owner, target
+chaseable + inside 500 of the Guardian; abort floors the frame at 18),
+the stand-off steering (`num18` from the OWNER-relative X, half-width +
+70 px offset, 10 px up, `6·Remap(len, 50, 400, 1, 4)` cap, the double
+MoveTowards with the 32-px velocity step), the 4-tick POST-increment
+retarget (`localAI[0]++ >= 3`, the −1 distance seed), the rest-hover
+drift (0.06 accel / 0.8 damp, the settled X facing reads the OWNER's
+centre, `Math.Sign` on Y via `csign`), the teleport tail (0.7 damp, 20%
+lerp, <10 px arrival → state 1) — states 1/2 can arm state 3 mid-tick
+and the tail runs it the same tick, exactly as the C# falls through.
+
+**The player machinery** (the deferred prerequisite, now landed):
+`Player.tank_pet_reset` (the `:872` field) + `Player::tank_pet_decay`
+(the `:24539-24548` one-tick grace latch), called inside BOTH
+fixed-step branches of `world_sim::player::update_player` — the dead
+branch ahead of `update_dead` and the alive branch ahead of
+`invalidate_minion_target`, as the C# runs the block ahead of the
+dead-player early return (`:24749-24754`) and ahead of
+`UpdateMinionTarget` (`:24738`); the projectile pass runs after the
+player pass, so the previous tick's re-pin is what the decay reads
+(the vanilla order).
+`Player.minion_rest_target_point` (the `:3006` field, `Vec2::ZERO` =
+`HasMinionRestTarget` false) + the >1000-px centre-distance invalidation
+half of `UpdateMinionTarget` (`:57005-57007`) folded into
+`invalidate_minion_target`. The WRITER (`MinionRestTargetAim`
+`:56935-56997`, the Forbidden set's down double-tap `KeyDoubleTap`
+`:56779-56786`) is unported — the armor set has no port yet — so the
+rest point stays ZERO and states 1/3 revert to idle exactly as the
+vanilla does without the set. The rest-point dust ring (`:57013-57027`)
+is a documented visual skip behind the same gate. The 19-frame row
+landed in `proj_frames` (`data.rs`, `Main.cs:8497`).
+
+**RNG: ZERO draws by construction.** Every `Main.rand` roll in the C#
+arm is a `Dust.NewDust` INTERNAL (`:44668`/`:44672`/`:44928`/`:44932`/
+`:44943`/`:44948` — `Dust.cs:170-175`/`:190`/`:216`, pool-occupancy
+dependent); there are NO gate draws outside the dust calls. The pool
+has no dust layer, so the bodies and their rolls are the documented
+skip (the `ai_flying_minion`/`ai_stardust_mark` precedent) and the arm
+takes NO rng parameter. The dispatch witness
+(`s1_p_i56_the_dispatch_runs_and_draws_nothing`) runs 12 full pool ticks
+through a draw-census stream and pins zero `Next`/`NextFloat`.
+
+**Documented skips.** The dust bursts (the 30×2 materialize /
+dematerialize / 2×2 trail), `Lighting.AddLight` (`:44662`), the
+armor-shader writes (`GameShaders.Armor.GetSecondaryShader`), the
+`MinionRestTargetAim` writer + its dust ring (above). The frame machines
+ARE ported (the slot carries `frame`/`frame_counter`).
+
+**The pin updates.** `UNARMED_ROWED` is now `[u8; 0]` — every rowed
+style is armed or kind-gated (the coverage pin
+`s1_d_4c_every_rowed_style_has_exactly_one_live_arm` keeps guarding both
+directions). `test_edge_unported_ai_style_holds_position` drops its
+Guardian half (the 120 arm is live now); the Storm Tiger's 67 keeps the
+inert-row check.
+
+**Verification.** Code-only: the C# arm re-read whole and matched
+line-by-line (the else-if chain's fall-through into the state-3 tail,
+the post-increment retarget, the INT hover offset, the bottom-anchored Y
+posture, the owner-vs-Guardian scan centres, the two 500-px gates'
+different anchors); every seam checked by read/grep (`set_center`,
+`npc_center`, `csign`, `remap`, `move_towards`, `get_lerp_value`,
+`kill()`, `proj_frames`, the `Player` fields, the dispatch's arm-indent
+contract the coverage pin parses). The 18 witness tests in
+`s1_p_i56_guardian_tests` are WRITTEN, NOT RUN — **no compiler invoked**.
+
+
+## The wave-3 V2 gate decisions (S1-P-i19…i27/i56, 2026-11-20)
+
+The V2 verify gate merged the ten magic+summon branches onto
+`gate/v2-verify` and resolved the i25×i56 census collision plus the
+fixture cluster. The decisions that outlive the gate:
+
+**The Stardust Dragon chain AI landed (`dragon_step`, the 121 arm).**
+i25 rowed 625-628 (aiStyle 121) with the chain AI deferred; i56 emptied
+`UNARMED_ROWED` on a base without those rows — the coverage pin
+(`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) went red at the
+merge. The gate ported `AI_121_StardustDragon` (`Projectile.cs:42824-
+43080`) as a pool-side step (the segment half reads AND writes its
+parent slot through the `ProjectileKey` bit pattern in `ai[0]` — the
+port's key packs the slot index exactly, `net.rs:3123-3125` ≡
+`ProjectileKey.cs:18/27-31`, so the C#'s `projectileKey.Index` orphan
+relink match is byte-identical). ONE gate draw per chain slot per
+sub-step (`Main.rand.Next(30)`, `:42850`) stays on the
+`UpdateProjectiles` stream; the dust bodies are the documented skip.
+The `% 120` netUpdate cadence reads `Main.timeForVisualEffects` (a
+draw-frame clock the pool does not carry) — the port's `update_count`
+is the stand-in (net bookkeeping only, no gameplay state). The
+`whoAmI` backlink writes are the pool SLOT INDEX. The 3531 staff's
+chain-SPAWN choreography (`Player.cs:48498-48554`) stays deferred —
+the use-path follow-up; the rows book slots and fly.
+
+**The coverage pin keeps four honest census entries.** i25's other new
+rows — 755/946 (aiStyle 156, `AI_156_BatOfLight` `:51516-51911`),
+831/970 (164, `AI_164_StormTigerGem` `:46593-46699`), 864 (169,
+`AI_169_Smolstars` `:45718-45853`), 1119 (206, `AI_206_ForbiddenMinion`
+`:37501-37641`) — are i25's DOCUMENTED dispatch no-op deferrals (i25
+ANALYSIS: "the AI machines stay the documented dispatch no-ops
+(aiStyle 26/54/156/164/169/206)"; 26 and 54 were armed at the gate).
+`UNARMED_ROWED = [156, 164, 169, 206]` — the pin's original census
+design, NOT a four-machine port inside the fix round. The minion-AI
+follow-up empties the list again.
+
+**The weapon-use reach gate is a pre-existing deviation (unchanged by
+the gate).** `update_editing`'s hoisted circular reach gate
+(`editing.rs:750-779`, the `IsInTileInteractionRange` stand-in) returns
+for ANY held item out of reach — but the C# gates MINING/PLACEMENT only
+(`Player.cs:17635-17660`, `:23164`); the weapon use-start
+(`Player.cs:42733`) has NO tile-reach gate, and the placeable-sentry
+arm (`:48189-48212`) → `PickSentryLandingSpot` (`:49525-49543`) reads
+the RAW mouse point. Identical on main — the gate did not introduce it
+and did not fix it (the blast radius is the whole use path). The i25
+sentry fixtures moved their cursor inside the reach (−160 → −48, row
+294) instead; the canonical module fix (skip the gate's `return` for
+`held_weapon`) is the recorded follow-up.
+
+**The small-world reach clamp is C#-true.** On a 64-wide world
+`LimitPointToPlayerReachableArea` (`Player.cs:45447-45473`) degenerates:
+the play area's max (1024−640−1920 = −1536) sits BELOW its min (640)
+and `Utils.Clamp` tests MAX FIRST (`Utils.cs:223-235`) → the rect
+centre lands at x = −576 and the shared scale shrinks BOTH axes — the
+clamped cursor is (384, ≈4761.27), not the raw (488, 4760). The i25
+centring witnesses now route their expected cursor through the same
+helper (computed, not hardcoded); the module is untouched.
+
 
 ## The pickaxe mining census (S1-P-i29, code-only mode, 2026-11-19)
 
