@@ -6390,6 +6390,15 @@ impl Projectile {
     /// order — the `ai[1] != 0f && Next(2) != 0` early-return (`:24604-24607`)
     /// is kept (it skips the trailing dust, not the movement).
     fn ai_aqua_scepter(&mut self, world: &World, rng: &mut dyn DropRng) {
+        // Gate-merge (i20+i21): ONE aiStyle-12 arm serves both families — the
+        // C# `else if (this.aiStyle == 12)` (`:24501-24635`) branches on type:
+        // 280 (the Golden Shower) takes the `:24508-24546` head (0.002 decay,
+        // 0.075 arc, its dust draws SKIPPED per the i21 convention) and
+        // returns; 22 (the Aqua Scepter) runs the body below.
+        if self.kind == GOLDEN_SHOWER {
+            self.ai_golden_shower(world);
+            return;
+        }
         // `:24548-24553`: the type-22 constants.
         let mut scale_decay = 0.01f32;
         let mut gravity = 0.15f32;
@@ -6472,6 +6481,15 @@ impl Projectile {
     /// The 307/316/189 per-type arms are unported kinds. The dust spawns are
     /// SKIPPED (no dust layer, no RNG in this arm).
     fn ai_bee(&mut self, world: &World, npcs: &[Npc]) {
+        // Gate-merge (i20+i21): ONE aiStyle-36 arm serves both families — the
+        // C# `else if (this.aiStyle == 36)` (`:27292-27471`) branches on type:
+        // 316 (the Bat Scepter's bat) flips its sprite and steers at the
+        // found-target pair 13/0.325 vs 10/0.25 (`:27413-27425`); the bees
+        // 181/566 face the flight and steer 6/0.1 vs 6.8/0.14.
+        if self.kind == BAT_FRIENDLY {
+            self.ai_bat(world, npcs);
+            return;
+        }
         // `:27294-27297`: the wet kill — the port's slots carry no liquid-wet
         // flags (ANALYSIS), so `base.wet` folds to false and the kill never
         // fires; the gate is kept for shape.
@@ -15413,13 +15431,12 @@ impl ProjectilePool {
                         47 => self.magnet_sphere_step(i, world, npcs),
                         // The aiStyle-48 magnet bolt (`:28204-28242`).
                         48 => self.slots[i].ai_magnet_bolt(world),
-                        // S1-P-i21 — the Golden Shower's stream (aiStyle 12,
-                        // `:24501-24547`): the scale decay + the arc.
-                        12 => self.slots[i].ai_golden_shower(world),
-                        // S1-P-i21 — the Bat Scepter's homing bat (aiStyle 36,
-                        // `:27292-27471`): the alpha fade, the hunt and the
-                        // per-axis steer.
-                        36 => self.slots[i].ai_bat(world, &npcs[..]),
+                        // S1-P-i21 — the Golden Shower's stream (280) rides
+                        // the SAME aiStyle-12 arm above (the type-gated head
+                        // delegates to `ai_golden_shower`); the Bat Scepter's
+                        // bat (316) rides the aiStyle-36 arm (the type-gated
+                        // head delegates to `ai_bat`). The duplicate dispatch
+                        // arms were merged at the gate (unreachable_patterns).
                         // S1-P-i21 — the Nimbus Rod's aiStyle-45 chain
                         // (`:27950-28105`): the moving cloud flies to the
                         // cursor, the raining cloud spawns the drops and caps
@@ -24175,6 +24192,7 @@ mod phasmal_projectile_tests {
             local_hit_cooldown: -2,
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -2,
+            immunity_identity: 0,
             extra_updates: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
@@ -24568,6 +24586,7 @@ mod ritual_projectile_tests {
             local_hit_cooldown: -2,
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -2,
+            immunity_identity: 0,
             extra_updates: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],

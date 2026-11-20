@@ -2681,12 +2681,12 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             // forces `projToShoot = 442` AFTER PickAmmo (the additive rocket
             // arm would otherwise carry Rocket II's own shoot 3 → 445).
             if held.kind == 2796 {
-                shot_kind = crate::projectile::ELECTROSPHERE_MISSILE as i32;
+                shot_kind = crate::projectile::ELECTROSPHERE_MISSILE;
             }
             // `Player.cs:49388-49392` - the Electrosphere Missile (442) anchors
             // on the cursor tile (`ai0 = tileTargetX, ai1 = tileTargetY`); the
             // generic tail's ai0/ai1 are 0 for every other ammo shot.
-            let (ai0, ai1) = if shot_kind == crate::projectile::ELECTROSPHERE_MISSILE as i32 {
+            let (ai0, ai1) = if shot_kind == crate::projectile::ELECTROSPHERE_MISSILE {
                 let (ttx, tty) = tile_target(&app.world, world_pos);
                 (ttx as f32, tty as f32)
             } else {
@@ -7992,7 +7992,7 @@ mod tests {
         let out = limit_point_to_player_reachable_area(center, point, &w);
         // off = (6088, 728); |off.x| > 960 → 960/6088, |off.y| > 600 →
         // 600/728 — the x scale wins (the smaller). out = mid + off·scale.
-        let scale = (960.0 / 6088.0).min(600.0 / 728.0);
+        let scale = (960.0f32 / 6088.0).min(600.0 / 728.0);
         let want = Vec2::new(-576.0 + 6088.0 * scale, -216.0 + 728.0 * scale);
         assert!(
             (out - want).length() < 1e-3,
@@ -8408,7 +8408,7 @@ mod tests {
     /// icicle Next(201), Next(-200, 201), spread X, spread Y, ai1 — 11 draws.
     #[test]
     fn s1_p_i21_the_blizzard_draw_chain_is_seed_deterministic() {
-        let seed = 0xB112_0002;
+        let seed = 0xB112_0002u32 as i32;
         let mut app = staff_app(1931, "Blizzard Staff");
         seed_stream(&mut app, seed);
         fire_once(&mut app);
@@ -8460,7 +8460,7 @@ mod tests {
     /// `2 + 2*count` draws total.
     #[test]
     fn s1_p_i21_the_bat_scepter_draw_chain_is_seed_deterministic() {
-        let seed = 0xBA75_0003;
+        let seed = 0xBA75_0003u32 as i32;
         let mut state = tr_core::UnifiedRandom::new(seed);
         let _crit = state.next_range(1, 101);
         let count = state.next_range(2, 4);
