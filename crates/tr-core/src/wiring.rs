@@ -2561,6 +2561,69 @@ impl Wiring {
                 world.swap_tile_kind(i, j, 546);
                 let _ = crate::edit::square_tile_frame_default(world, i, j);
             }
+            // ---- W4-f11: the HitWireSingle remainder arms (the c42/e20/e21
+            // ---- co-lanes own 144/421/422/235/506/226 — the fix round on the
+            // ---- already-ported arms; this lane ports the MISSING set).
+            // The torch (`TileID.Sets.Torches[type]` → `ToggleTorch`,
+            // `Wiring.cs:1575-1579` → `:2903-2918`): the lit/unlit frameX
+            // ±66 toggle. `forcedStateWhereTrueIsOn` is null on the wire path
+            // (`:999`), so the guard always passes. The generated set is {4}
+            // (`TileID.cs:615`; `tiledata::SET_TORCHES`).
+            k if crate::tiledata::SET_TORCHES.has(k) => {
+                let f = world.tile_frame_x(i, j);
+                if f < 66 {
+                    world.set_tile_frame_x(i, j, f + 66);
+                } else {
+                    world.set_tile_frame_x(i, j, f - 66);
+                }
+            }
+            // The campfire (`TileID.Sets.Campfires[type]` → `ToggleCampFire`,
+            // `Wiring.cs:1418-1422` → `:3000-3042`): the 3×2 anchor from
+            // `frameX % 54 / 18` / `frameY % 36 / 18`, the active+same-kind
+            // validation (the shared validator — a mismatch kills every
+            // matching cell, drops queued), then the frameY ±36 flip by the
+            // ANCHOR's frameY, SkipWire over the whole body and the per-cell
+            // active+kind gate before the write. The set is {215}
+            // (`TileID.cs:616`; `tiledata::SET_CAMPFIRES`).
+            k if crate::tiledata::SET_CAMPFIRES.has(k) => {
+                self.toggle_campfire(world, i, j, tile_frame_x, tile_frame_y);
+            }
+            // The stone slab / sand stone slab pair (130 → 131,
+            // `Wiring.cs:1423-1432`): `Main.tile[i, j-1] != null &&
+            // (!above.active() || !PreventsActuationUnder[above.type]) &&
+            // WorldGen.CanKillTile(i, j)` — NOTE the CanKillTile conjunct is
+            // OUTSIDE the above-active disjunction (unlike DeActive's fold,
+            // `:3210-3211`), and a null above tile refuses. Then the swap +
+            // the `SquareTileFrame` wake; the drops queue like the actuation
+            // cascade's.
+            130 => {
+                let above_ok = world.tile(i, j - 1).is_some_and(|above| {
+                    !above.active() || !PREVENTS_ACTUATION_UNDER.contains(&above.kind)
+                });
+                if above_ok && self.can_kill_tile(world, i, j) {
+                    world.swap_tile_kind(i, j, 131);
+                    let drops = crate::edit::square_tile_frame_default(world, i, j);
+                    self.actuation_drops.extend(drops);
+                }
+            }
+            // The reverse pair (131 → 130, `Wiring.cs:1433-1439`): the
+            // unconditional swap + the wake.
+            131 => {
+                world.swap_tile_kind(i, j, 130);
+                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                self.actuation_drops.extend(drops);
+            }
+            // The switch track (314, `Wiring.cs:1744-1749`): `CheckMech(i, j,
+            // 5)` gates `Minecart.FlipSwitchTrack` — the plain rail swaps its
+            // front/back frames, the booster re-frames through the pound
+            // branch (`Minecart.cs:1296-1319`; the tables + FrameTrack slice
+            // in `crate::minecart`, the hammer.rs `Consumed` seam's other
+            // half).
+            314 => {
+                if self.check_mech(i, j, 5) {
+                    crate::minecart::flip_switch_track(world, i, j);
+                }
+            }
             // The weighted pressure-plate's big frame shift (506, `:2503-
             // 2531`): the 2×3 anchor from `frameY / 18 % 3`, the active+same-
             // kind validation over the sprite, then the frameX ±72.
@@ -2761,6 +2824,47 @@ impl Wiring {
             for y in num4..num4 + 2 {
                 self.skip.insert((x, y)); // `Wiring.SkipWire` (`:3060-3063`)
                 world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num5);
+            }
+        }
+    }
+
+    /// `Wiring.ToggleCampFire` (`Wiring.cs:3000-3042`), the wire path
+    /// (`forcedStateWhereTrueIsOn` null, `doSkipWires` true): the 3×2 anchor
+    /// validation, the anchor-frameY ±36 flip, SkipWire over the body and the
+    /// per-cell active+kind gate before the write.
+    fn toggle_campfire(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
+        let kind = world.tile(i, j).map(|t| t.kind).unwrap_or(0);
+        // `:3002-3005` — the set gate (the caller already matched it).
+        if !crate::tiledata::SET_CAMPFIRES.has(kind) {
+            return;
+        }
+        // `:3006-3011` — `num3 = frameX % (3*18) / 18`, `num4 = frameY % (2*18) / 18`.
+        let num3 = (i32::from(frame_x) % 54) / 18;
+        let num4 = (i32::from(frame_y) % 36) / 18;
+        let (num5, num6) = (i - num3, j - num4);
+        // `:3012-3015` — the shared validator (a mismatch kills every matching
+        // cell; the drops queue like the actuation cascade's).
+        let mut drops = Vec::new();
+        if !crate::edit::validate_tile_square(world, num5, num6, 3, 2, kind, &mut drops) {
+            self.actuation_drops.extend(drops);
+            return;
+        }
+        self.actuation_drops.extend(drops);
+        // `:3016-3025` — the forced-state guard is vacuous on the wire path;
+        // `num7 = 36`, flipped to −36 when the ANCHOR's frameY >= 36.
+        let num7: i32 = if world.tile_frame_y(num5, num6) >= 36 {
+            -36
+        } else {
+            36
+        };
+        // `:3026-3040` — SkipWire per cell, the write gated on active+kind.
+        for x in num5..num5 + 3 {
+            for y in num6..num6 + 2 {
+                self.skip.insert((x, y)); // `Wiring.SkipWire` (`:3030-3033`)
+                if world.tile(x, y).is_some_and(|t| t.active() && t.kind == kind) {
+                    let f = world.tile_frame_y(x, y);
+                    world.set_tile_frame_y(x, y, f + num7);
+                }
             }
         }
     }
@@ -5980,6 +6084,220 @@ mod s1_l6_tests {
         wiring.hit_switch(&mut w, 10, 20);
         assert_eq!(w.tile_frame_x(10, 20), 36, "the lever shifted");
         assert_eq!(w.tile(12, 20).unwrap().kind, 422, "the lamp swapped");
+    }
+}
+
+#[cfg(test)]
+mod w4_f11_light_pair_tests {
+    //! W4-f11 — the HitWireSingle remainder arms, batch 1: the torch
+    //! (`Wiring.cs:1575-1579` → `ToggleTorch` `:2903-2918`), the campfire
+    //! (`:1418-1422` → `ToggleCampFire` `:3000-3042`), the 130/131 stone
+    //! slab pair (`:1423-1439`) and the switch track 314 (`:1744-1749`).
+    //! Witnesses WRITTEN NOT RUN (code-only mode).
+
+    use super::*;
+    use crate::tile::{Tile, FLAG_ACTIVE, FLAG_ACTUATOR};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// `ToggleTorch` (`Wiring.cs:2903-2918`): frameX < 66 → +66, else −66;
+    /// the forced-state guard is vacuous on the wire path (`:999` null).
+    #[test]
+    fn w4_f11_the_torch_toggles_its_frame_by_66() {
+        let mut w = world();
+        put(&mut w, 10, 20, 4, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile_frame_x(10, 20), 66, "the unlit torch lit (+66)");
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile_frame_x(10, 20), 0, "the lit torch unlit (−66)");
+        // A style offset rides the same ±66 (frameX 22 → 88 → 22).
+        put(&mut w, 11, 20, 4, 22, 0);
+        wiring.hit_wire_single(&mut w, 11, 20);
+        assert_eq!(w.tile_frame_x(11, 20), 88);
+        wiring.hit_wire_single(&mut w, 11, 20);
+        assert_eq!(w.tile_frame_x(11, 20), 22);
+    }
+
+    /// `ToggleCampFire` (`Wiring.cs:3000-3042`): the 3×2 anchor from
+    /// `frameX % 54 / 18` / `frameY % 36 / 18`, the anchor-frameY ±36 flip,
+    /// SkipWire over the body. Hit a NON-anchor cell — the anchor resolves
+    /// from its frames.
+    #[test]
+    fn w4_f11_the_campfire_flips_the_whole_3x2_body() {
+        let mut w = world();
+        // The 3×2 body at (10, 20)..(12, 21), lit (frameY < 36).
+        for dx in 0..3i32 {
+            for dy in 0..2i32 {
+                put(
+                    &mut w,
+                    10 + dx,
+                    20 + dy,
+                    215,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        let mut wiring = Wiring::new();
+        // Hit the middle-bottom cell (frameX 18, frameY 18) — the anchor is
+        // (10, 20) either way.
+        wiring.hit_wire_single(&mut w, 11, 21);
+        for dx in 0..3i32 {
+            for dy in 0..2i32 {
+                assert_eq!(
+                    w.tile_frame_y(10 + dx, 20 + dy),
+                    36 + dy * 18,
+                    "the body flipped to unlit (+36)"
+                );
+                assert!(
+                    wiring.skip.contains(&(10 + dx, 20 + dy)),
+                    "SkipWire covered the body"
+                );
+            }
+        }
+        // The second hit flips back (the anchor's frameY is now >= 36).
+        wiring.hit_wire_single(&mut w, 10, 20);
+        for dx in 0..3i32 {
+            for dy in 0..2i32 {
+                assert_eq!(
+                    w.tile_frame_y(10 + dx, 20 + dy),
+                    dy * 18,
+                    "flipped back to lit"
+                );
+            }
+        }
+    }
+
+    /// `ToggleCampFire`'s validation arm (`Wiring.cs:3012-3015`): a broken
+    /// body kills every matching cell through the shared validator and the
+    /// flip never runs.
+    #[test]
+    fn w4_f11_a_broken_campfire_body_is_killed_not_flipped() {
+        let mut w = world();
+        for dx in 0..3i32 {
+            for dy in 0..2i32 {
+                put(
+                    &mut w,
+                    10 + dx,
+                    20 + dy,
+                    215,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        // The top-right cell is a foreign kind — the validation fails.
+        put(&mut w, 12, 20, 0, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        // The five matching cells were killed (the validator's KillTile
+        // cascade); no frame flip happened on the survivor.
+        for dx in 0..3i32 {
+            for dy in 0..2i32 {
+                if dx == 2 && dy == 0 {
+                    continue;
+                }
+                assert!(
+                    !w.tile_active(10 + dx, 20 + dy),
+                    "the matching cell ({}, {}) was killed",
+                    10 + dx,
+                    20 + dy
+                );
+            }
+        }
+    }
+
+    /// The 130 → 131 swap (`Wiring.cs:1423-1432`): the above-cell gate +
+    /// `CanKillTile`, then the swap and the wake.
+    #[test]
+    fn w4_f11_the_stone_slab_swaps_to_its_pair() {
+        let mut w = world();
+        put(&mut w, 10, 20, 130, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 131, "130 swapped to 131");
+        // The reverse arm (`:1433-1439`) is unconditional.
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 130, "131 swapped back");
+    }
+
+    /// The 130 gate (`Wiring.cs:1425`): a `PreventsActuationUnder` kind
+    /// directly above refuses the swap (the chest 21 is in the set).
+    #[test]
+    fn w4_f11_a_chest_above_refuses_the_130_swap() {
+        let mut w = world();
+        put(&mut w, 10, 20, 130, 0, 0);
+        put(&mut w, 10, 19, 21, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 130, "the swap refused");
+        // An inactive above tile passes the disjunction (`!above.active()`).
+        let i = w.index(10, 19);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(
+            w.tile(10, 20).unwrap().kind,
+            131,
+            "the inactive above passes"
+        );
+    }
+
+    /// The actuator precedence (`Wiring.cs:1002-1009`): an actuated tile
+    /// runs `ActuateForced` first; a non-solid kind refuses the actuation and
+    /// the device arm still runs (the C# fall-through).
+    #[test]
+    fn w4_f11_an_actuated_torch_actuates_instead_of_toggling() {
+        let mut w = world();
+        put(&mut w, 10, 20, 4, 0, 0);
+        let i = w.index(10, 20);
+        w.tiles[i].flags |= FLAG_ACTUATOR;
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        // The torch is not solid — ActuateForced refuses, the tile stays
+        // active and the torch arm still toggles.
+        assert_eq!(
+            w.tile_frame_x(10, 20),
+            66,
+            "the non-solid actuator refused, the toggle ran"
+        );
+    }
+
+    /// The switch track (314, `Wiring.cs:1744-1749`): `CheckMech(i, j, 5)`
+    /// gates `Minecart.FlipSwitchTrack`. A plain rail with a back connection
+    /// swaps front/back on the first hit; the 5-tick cooldown blocks an
+    /// immediate second hit.
+    #[test]
+    fn w4_f11_the_switch_track_flips_and_the_cooldown_gates_the_rehit() {
+        let mut w = world();
+        // A plain rail (frame 2, type 0) with back frame 3.
+        put(&mut w, 10, 20, 314, 2, 3);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile_frame_x(10, 20), 3, "front took the back");
+        assert_eq!(w.tile_frame_y(10, 20), 2, "back took the front");
+        // The mech is queued (5 ticks) — an immediate re-hit is refused.
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile_frame_x(10, 20), 3, "the cooldown blocked the re-flip");
+        // Drain the cooldown: five updates tick the mech to expiry.
+        for _ in 0..5 {
+            wiring.update(&mut w);
+        }
+        wiring.hit_wire_single(&mut w, 10, 20);
+        assert_eq!(w.tile_frame_x(10, 20), 2, "after the cooldown the flip runs again");
     }
 }
 
