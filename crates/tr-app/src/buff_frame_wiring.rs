@@ -645,6 +645,7 @@ mod tests {
         // frame advance; the inline endurance half is folded out (keep-one).
         let mut p = player();
         let mut pool = ProjectilePool::default();
+        p.stat_life_max2 = p.max_hp; // the ResetEffects rebase (the direct call skips it)
         p.hp = p.max_hp / 2;
         p.buffs.add_buff(62, 600);
         run(&mut p, &mut pool);
@@ -658,6 +659,7 @@ mod tests {
         // `:10482-10483`: above half life DelBuff(j); j-- (the slot rescans).
         let mut p = player();
         let mut pool = ProjectilePool::default();
+        p.stat_life_max2 = p.max_hp; // the ResetEffects rebase (the direct call skips it)
         p.hp = p.max_hp;
         p.buffs.add_buff(62, 600);
         run(&mut p, &mut pool);
