@@ -39244,3 +39244,66 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Main.cs AddLight census, batch 1 (W4-g18, S1-E-5 wave 4, 2026-11-20, code-only)
+
+**Claim (pushed early per the lane rules).** `task/W4-g18-addlight-main-1`
+is Main batch 1 of 2; `task/W4-g19-addlight-main-2` is batch 2 in line
+order. The e8/f9 tile/ambient co-lanes were probed BEFORE work
+(2026-11-20, `git fetch --prune` + worktree reads):
+
+* Pushed branches: W4-f9 `c2740784` (the Main.cs census CLOSED empty,
+  third tile batch) and W4-c20 `9555e586` (the claim map: NPC.cs sites
+  1-40 c20, 41-80 e7, the Main.cs tile sites e8). No g18/g19/e8 branch
+  is pushed yet.
+* W4-e8 worktree: in-flight untracked `crates/tr-app/src/tile_lights.rs`
+  (445 lines) porting ALL FIVE Main.cs sites
+  (`christmas_hook_chain_lights` / `illuminant_hook_chain_lights`) plus
+  the TileDrawing mushroom flicker and the five
+  `DelegateMethods.CastLight*`/`SpreadLight` delegates.
+* W4-g19 worktree: in-flight untracked
+  `crates/tr-app/tests/main_addlight_census.rs` - the whole-file census
+  freeze (the five sites' line numbers + argument text), the negative
+  light-write-form census, the 332/488 arm-structure pins and the
+  `Lighting.cs` funnel/gate pins.
+* W4-f9 worktree: clean at `c2740784`; W4-e7: in-flight
+  `npc_lights_b.rs` (NPC second half, no Main.cs claim).
+
+**Independent census (re-derived here, not trusted from the siblings).**
+Full-file greps over `decompiled/Terraria/Main.cs`: exactly **five**
+`Lighting.AddLight` call sites; the bare `AddLight` token count is 5 (no
+comment/alternate spelling), `.AddLight(` is 5 (no
+`LegacyLighting.AddLight`/engine-direct write), and
+`PlotTileLine|CastLight|SpreadLight|DynamicLight|_activeEngine|
+perFrameLights|LightingEngine|tileLight[` all count 0 - the same verdict
+as f9's `c2740784`, reached independently. The verbatim register (colors
+and anchors kept as the C# literals):
+
+| # | Site | Arm | Colour (verbatim) | Anchor |
+| - | ---- | --- | ----------------- | ------ |
+| 1 | `Main.cs:29016` | `DrawProj` type-332 Christmas-hook chain, `num112 == 0` | `(0f, 0.2f, 0.2f)` | `(int)vector19.X / 16` (`:29012-29013`, truncate FIRST) |
+| 2 | `Main.cs:29020` | same walk, `num112 == 1` | `(0.1f, 0.2f, 0f)` | same |
+| 3 | `Main.cs:29024` | same walk, `num112 == 2` | `(0.2f, 0.1f, 0f)` | same |
+| 4 | `Main.cs:29028` | same walk, `num112 == 3` | `(0.2f, 0f, 0.2f)` | same |
+| 5 | `Main.cs:29186` | `DrawProj` type-488 Illuminant-hook chain, per stepped link | `(0.2f, 0f, 0.175f)` | `AddLight(Vector2, ...)` QUOTIENT `(int)(v / 16f)` (`Lighting.cs:140-143`) |
+
+**Batch split (line order).** Sites 1-4 (`:29016`-`:29028`, the 332
+chain's four rotating colour rows) are batch 1 - this lane's audit
+scope; site 5 (`:29186`, the 488 chain) is batch 2 (g19). g19's in-flight
+freeze test covers the WHOLE file - the merger keeps it as the single
+census pin; this lane adds no duplicate test or module (e8's
+`tile_lights.rs` stays the single port copy, f9's merge note).
+
+**Negative census (the "ambient" half).** Main.cs has NO update-side or
+ambient `AddLight`: tile ambience (torches/lava/glowing blocks) is
+scanner-seeded (`TileLightScanner`, ported in `tr-core/tile_light`), not
+entity-list fed; the laser/hook tile-cast delegates live in
+`DelegateMethods.cs`/`Utils.cs` (e8 scope), and the mushroom-tree flicker
+is `TileDrawing.cs`'s (also e8).
+
+**Verdict: the batch-1 remainder is EMPTY.** All four first-half sites
+are already ported by e8's in-flight `christmas_hook_chain_lights`, so
+this round is the claim + independent census + distrust-verbatim audit
+(the next commit) - the f9 `c2740784` / S1-D-3-aistyle61 docs-only
+precedent. **Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked; the siblings' witnesses stay written-not-run.**
