@@ -24145,7 +24145,8 @@ mod tests {
         assert!(grave_rows.contains(&4662), "the graveyard goggles on-zone");
     }
 
-    /// The Party Girl's shop (`case 13`): the eighteen always rows.
+    /// The Party Girl's shop (`case 13`, W4-d123): the party set + the
+    /// golfer/graveyard/lantern/HasItem/Golem/hardmode/party gates.
     #[test]
     fn the_party_girl_shop_carries_the_party_rows() {
         let stock = crate::shop::resolve_stock(13, &crate::shop::ShopFlags::default(), &[]);
@@ -24154,8 +24155,7 @@ mod tests {
         ] {
             assert!(stock.contains(&id), "the {id} party row");
         }
-        // 1449 is the `Main.dayTime` row (the port carries no day gate), 4552
-        // the night half.
+        // 1449 is the `Main.dayTime` row, 4552 the night half (`:2285-2294`).
         assert!(stock.contains(&1449));
         assert!(!stock.contains(&4552), "the night row is off by day");
         let night = crate::shop::ShopFlags {
@@ -24164,13 +24164,42 @@ mod tests {
         };
         let rows = crate::shop::resolve_stock(13, &night, &[]);
         assert!(rows.contains(&4552), "the night row by night");
-        // The graveyard/lantern/golfer/pirate/golem/hardmode/party rows ride
-        // flags the port has not modelled.
+        assert!(!rows.contains(&1449), "the day row is off by night");
+        // The default flags carry none of the gated rows.
         assert!(!rows.contains(&4682), "no graveyard goggles");
         assert!(!rows.contains(&4743), "no football at score 0");
         assert!(!rows.contains(&3369), "no pirate row");
         assert!(!rows.contains(&3546), "no golem row");
         assert!(!rows.contains(&3749), "no party block");
+        assert!(!rows.contains(&4702), "no lantern row");
+        assert!(!rows.contains(&3214), "no hardmode dye set");
+        // W4-d123: each gate flips its own rows (`Chest.cs:2277-2358`).
+        let full = crate::shop::ShopFlags {
+            golfer_score: 500,
+            zone_graveyard: true,
+            lantern_night: true,
+            pirate_present: true,
+            downed_golem: true,
+            hard_mode: true,
+            party_is_up: true,
+            ..Default::default()
+        };
+        let full_rows = crate::shop::resolve_stock(13, &full, &[3548]);
+        for id in [4743, 4682, 4702, 3548, 3369, 3546, 3214, 2868, 970, 971, 972, 973] {
+            assert!(full_rows.contains(&id), "the gated row {id} missing");
+        }
+        for id in [3749, 3746, 3739, 3740, 3741, 3737, 3738, 3736, 3745, 3744, 3743] {
+            assert!(full_rows.contains(&id), "the party row {id} missing");
+        }
+        // The HasItem(3548) row needs the inventory scan hit.
+        let no_item = crate::shop::resolve_stock(13, &full, &[]);
+        assert!(!no_item.contains(&3548), "the carried-item row needs the scan");
+        // The golfer row is `>= 500` (`:2277`).
+        let under = crate::shop::ShopFlags {
+            golfer_score: 499,
+            ..Default::default()
+        };
+        assert!(!crate::shop::resolve_stock(13, &under, &[]).contains(&4743));
     }
 
     #[test]

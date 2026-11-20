@@ -53,6 +53,18 @@ pub struct ShopFlags {
     /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
     /// that opens the Princess's arrival without the full roster.
     pub unlocked_princess: bool,
+    /// W4-d123: `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — the
+    /// Party Girl's 4702 row (`Chest.cs:2309`).
+    pub lantern_night: bool,
+    /// W4-d123: `NPC.AnyNPCs(229)` (`Chest.cs:2318`) — the Party Girl's
+    /// 3369 row. The port has no town Pirate kind yet (constants-off).
+    pub pirate_present: bool,
+    /// W4-d123: `NPC.downedGolemBoss` (`Chest.cs:2322`) — the Party Girl's
+    /// 3546 row.
+    pub downed_golem: bool,
+    /// W4-d123: `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`) — the
+    /// Party Girl's party block (`Chest.cs:2345-2358`).
+    pub party_is_up: bool,
     /// M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
     /// `SecretSeed.vampirism.Enabled` write) — the Dryad's and the Bestiary
     /// Girl's vampirism rows (`Chest.cs:1733`/`:3403`).
@@ -97,6 +109,10 @@ impl Default for ShopFlags {
             golfer_score: 0,
             bestiary_completion: 0.0,
             unlocked_princess: false,
+            lantern_night: false,
+            pirate_present: false,
+            downed_golem: false,
+            party_is_up: false,
             vampirism: false,
             infected_seed: false,
             crimson_world: false,
@@ -221,6 +237,22 @@ pub enum StockWhen {
     MoonPhaseDayParity,
     /// `NPC.AnyNPCs(208)` (`:2762`) — the Party Hair Dye row.
     PartyGirlPresent,
+    /// W4-d123: `Main.dayTime` (`Chest.cs:2285`'s Party Girl 1449 row) —
+    /// the port's `night` is `!Main.dayTime`, so Day is its negation.
+    Day,
+    /// W4-d123: `LanternNight.LanternsUp` (`Chest.cs:2309`'s Party Girl
+    /// 4702 row) — the world-events scheduler's genuine/manual lanterns.
+    LanternNight,
+    /// W4-d123: `NPC.AnyNPCs(229)` (`Chest.cs:2318`'s Party Girl 3369 row)
+    /// — the Pirate's presence; the port has no town Pirate kind yet, so
+    /// the flag stays false (constants-off, recorded in ANALYSIS).
+    PiratePresent,
+    /// W4-d123: `NPC.downedGolemBoss` (`Chest.cs:2322`'s Party Girl 3546
+    /// row) — the world's `downed_golem` latch.
+    DownedGolem,
+    /// W4-d123: `BirthdayParty.PartyIsUp` (`Chest.cs:2345`'s Party Girl
+    /// party block) — the world-events scheduler's genuine/manual party.
+    PartyIsUp,
     /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
     DownedMechAll,
     /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
@@ -503,17 +535,20 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // `:2269-2272` — the graveyard goggles.
             row(4662, StockWhen::ZoneGraveyard),
         ],
-        // The Party Girl's shop (index 13, `Chest.cs:case 13`): the
-        /// 18 always rows (the food/party set) + the graveyard goggles
-        /// and the lantern-night row (both constants-off) + the
-        /// golfer-score row + the Pirate's presence row (unported)
-        /// + the Golem's row + the hardmode dye set + the BirthdayParty
-        /// block (constants-off until the party event).
+        // The Party Girl's shop (index 13, `Chest.cs:2274-2358`, W4-d123):
+        // the party set in the vanilla's `num` order — the golfer-score row
+        // after 859, the day/night 1449/4552 split, the graveyard/lantern/
+        // HasItem(3548)/Golem rows, the hardmode dye set and the
+        // BirthdayParty block. The Pirate's presence row (3369, `:2318`)
+        // rides `pirate_present` (constants-off — no town Pirate kind).
         13 => vec![
             row(859, StockWhen::Always),
+            // `:2277-2280` — `golferScoreAccumulated >= 500`.
+            row(4743, StockWhen::GolfScore(500, true)),
             row(1000, StockWhen::Always),
             row(1168, StockWhen::Always),
-            row(1449, StockWhen::Always), // `Main.dayTime` — the port has no day gate yet
+            // `:2285-2294` — the day/night split.
+            row(1449, StockWhen::Day),
             row(4552, StockWhen::Night),
             row(1345, StockWhen::Always),
             row(1450, StockWhen::Always),
@@ -523,10 +558,40 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(2738, StockWhen::Always),
             row(4470, StockWhen::Always),
             row(4681, StockWhen::Always),
+            // `:2305-2308` — the graveyard goggles.
+            row(4682, StockWhen::ZoneGraveyard),
+            // `:2309-2312` — `LanternNight.LanternsUp`.
+            row(4702, StockWhen::LanternNight),
+            // `:2313-2317` — `HasItem(3548)` restocks the carried item.
+            row(3548, StockWhen::PlayerHasItem(3548)),
+            // `:2318-2321` — `NPC.AnyNPCs(229)` (the Pirate).
+            row(3369, StockWhen::PiratePresent),
+            // `:2322-2325` — `NPC.downedGolemBoss`.
+            row(3546, StockWhen::DownedGolem),
+            // `:2326-2340` — the hardmode dye set.
+            row(3214, StockWhen::HardMode),
+            row(2868, StockWhen::HardMode),
+            row(970, StockWhen::HardMode),
+            row(971, StockWhen::HardMode),
+            row(972, StockWhen::HardMode),
+            row(973, StockWhen::HardMode),
             row(4791, StockWhen::Always),
             row(3747, StockWhen::Always),
             row(3732, StockWhen::Always),
             row(3742, StockWhen::Always),
+            // `:2345-2358` — the BirthdayParty block (eleven rows, the
+            // C#'s own order).
+            row(3749, StockWhen::PartyIsUp),
+            row(3746, StockWhen::PartyIsUp),
+            row(3739, StockWhen::PartyIsUp),
+            row(3740, StockWhen::PartyIsUp),
+            row(3741, StockWhen::PartyIsUp),
+            row(3737, StockWhen::PartyIsUp),
+            row(3738, StockWhen::PartyIsUp),
+            row(3736, StockWhen::PartyIsUp),
+            row(3745, StockWhen::PartyIsUp),
+            row(3744, StockWhen::PartyIsUp),
+            row(3743, StockWhen::PartyIsUp),
         ],
         // The Zoologist's shop (index 23, `Chest.cs:3263-3340`): the
         // bestiary tools — the progress-gated rows ride
@@ -1309,6 +1374,12 @@ pub fn resolve_stock_entries_moon(
             StockWhen::CoinsOverGold => flags.coins_over_gold,
             StockWhen::MoonPhaseDayParity => (moon_phase % 2 == 0) == !flags.night,
             StockWhen::PartyGirlPresent => flags.party_girl_present,
+            // W4-d123: the Party Girl's second-half gates (`Chest.cs:2285-2358`).
+            StockWhen::Day => !flags.night,
+            StockWhen::LanternNight => flags.lantern_night,
+            StockWhen::PiratePresent => flags.pirate_present,
+            StockWhen::DownedGolem => flags.downed_golem,
+            StockWhen::PartyIsUp => flags.party_is_up,
             StockWhen::DownedMechAll => {
                 flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
             }

@@ -938,6 +938,13 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
         // override; the port's roster is the other half of her gate.
         unlocked_princess: false,
+        // W4-d123: the Party Girl's second-half gates (`Chest.cs:2309-2345`)
+        // — the world-events scheduler's lantern/party states, the Golem
+        // latch; the Pirate's presence stays constants-off (no town kind).
+        lantern_night: crate::world_events::lanterns_up(&app.world_events),
+        pirate_present: false,
+        downed_golem: app.world.downed_golem,
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
         coins_over_gold: coin_total(&app.inventory, app.coins) >= 1_000_000,
