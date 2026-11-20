@@ -676,6 +676,16 @@ impl App {
             }
         }
         self.set_equip_cell(context, idx, target);
+        // `ItemSlot.cs:955-975` (and the action-2/3/4/5 twins `:1039/:1102/
+        // :1143/:1205`): after the transfer, a NON-EMPTY equipment cell fires
+        // `HandleOnEquip(player, inv[slot], context)` — the slot's new content
+        // and the live arrays (W4-c36). Contexts 25/27 (the loadout rows) have
+        // no port system.
+        if target.count > 0
+            && matches!(context, 8 | 9 | 10 | 11 | 12 | 16 | 17 | 33)
+        {
+            crate::app::achievement_hooks::handle_on_equip(self, target, context);
+        }
     }
 
     /// `ItemSlot.TryItemSwap` + `AfterItemSwap` (`ItemSlot.cs:1901-2009`)
@@ -728,6 +738,40 @@ impl App {
                 std::mem::swap(item, &mut self.equip.misc_equips[slot]);
             }
         }
+        // W4-c36 — `SwapEquip`'s achievement tails (`ItemSlot.cs:3297/:3307/
+        // :3317/:3355`): the dye swap fires ctx 12, the grapple ctx 16, the
+        // mount ctx 17, the armour swap the vanity/accessory-derived context.
+        // The minecart/light-pet/vanity-pet arms carry NO hook (`:3321-3347`).
+        match target {
+            SwapTarget::Dye(slot) => {
+                let after = self.equip.dye[slot];
+                crate::app::achievement_hooks::handle_on_equip(self, after, 12);
+            }
+            SwapTarget::Misc(4) => {
+                let after = self.equip.misc_equips[4];
+                crate::app::achievement_hooks::handle_on_equip(self, after, 16);
+            }
+            SwapTarget::Misc(3) => {
+                let after = self.equip.misc_equips[3];
+                crate::app::achievement_hooks::handle_on_equip(self, after, 17);
+            }
+            SwapTarget::Armor(slot) => {
+                // `:3350`: `num = accessory ? (vanity ? 11 : 10) : (vanity ? 9 : 8)`.
+                let after = self.equip.armor[slot];
+                let d = registry::get(after.kind);
+                let (accessory, vanity) =
+                    d.map_or((false, false), |d| (d.accessory, d.vanity));
+                let ctx = if accessory {
+                    if vanity { 11 } else { 10 }
+                } else if vanity {
+                    9
+                } else {
+                    8
+                };
+                crate::app::achievement_hooks::handle_on_equip(self, after, ctx);
+            }
+            SwapTarget::Misc(_) => {}
+        }
         if let Some(idx) = ctx0_index {
             self.favorite_slots.retain(|&f| f != idx);
         }
@@ -758,6 +802,12 @@ impl App {
         }
         self.equip.armor.swap(slot, real);
         self.audio.play("Grab"); // `:1879` — `SoundEngine.PlaySound(7)`
+        // `:1880-1897` (W4-c36): the vanity cell's NEW content (post-swap)
+        // fires `HandleOnEquip(player, inv[slot], context)` when non-empty.
+        let after = self.equip.armor[slot];
+        if after.count > 0 {
+            crate::app::achievement_hooks::handle_on_equip(self, after, context);
+        }
     }
 
     /// `MinimapFrameManager.DrawTo` -> `MinimapFrame.Update`

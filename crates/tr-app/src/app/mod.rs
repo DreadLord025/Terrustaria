@@ -6,6 +6,7 @@
 //! `loop.rs`, the frame orchestrator `frame.rs`. (A7: extracted from
 //! `main.rs`.)
 
+pub(crate) mod achievement_hooks;
 pub(crate) mod capture_driver;
 pub(crate) mod clicks;
 pub(crate) mod equip_swap;
@@ -2315,6 +2316,12 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // W4-c36 — `AchievementsHelper.Initialize` (`AchievementsHelper.cs:
+        // 89-92`) arms `OnPlayerEnteredWorld` on `Player.Hooks.OnEnterWorld`;
+        // the port's world-entry tail is this fn (every install route calls
+        // it). The sweep (`:94-198`) feeds the pickup rows and completes the
+        // stat/equip flags off the loaded character.
+        crate::app::achievement_hooks::on_player_entered_world(self);
     }
 
     pub(crate) fn is_client(&self) -> bool {
