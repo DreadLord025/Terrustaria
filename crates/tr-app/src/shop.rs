@@ -1518,7 +1518,9 @@ pub fn can_bulk_buy(entry: &ShopEntry, shift_in_use: bool) -> bool {
 /// snaps to whole gold. The charge at `:43978` is this unclamped value
 /// (`BuyItem(num11)`); the `< 0 → 0` clamp at `:43808-43812` is the display
 /// half (the inputs are non-negative anyway). W4-f37: the price MATH only —
-/// the hair-window UI itself is the recorded M4-TOWN-17 deviation.
+/// the hair-window UI itself is the recorded M4-TOWN-17 deviation, so the
+/// helper stays pinned by its golden vectors until the window lands.
+#[allow(dead_code)]
 pub fn hair_restyle_cost(
     style_changed: bool,
     color_changed: bool,

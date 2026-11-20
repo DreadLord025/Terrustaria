@@ -18360,7 +18360,7 @@ mod king_slime_audit_tests {
         // (missing × 0.95) truncated (no boss ladder, no discount).
         let player = app.player.as_mut().unwrap();
         player.hp = player.max_hp - 40;
-        let cost = app.nurse_heal_cost(0);
+        let cost = app.nurse_heal_cost();
         assert_eq!(cost, (40.0f32 * app.shop_mood) as i32, "the latch rides the cost");
         // The close resets to NotInShop.
         app.player.as_mut().unwrap().x = 190.0 * 16.0; // walk out of range

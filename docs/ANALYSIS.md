@@ -18124,11 +18124,13 @@ Three scope notes, none of which change the ported numbers:
   the port yet. Those rows must not reach the price helper until that
   subsystem lands; the ported shops (case 1 and the rest of M4-TOWN) never
   set the field.
-- **`discountAvailable` has no writer yet**: the C# refreshes it from
-  `discountEquipped` (`Player.cs:25638`), which the Discount Card accessory
-  sets (`:14973`/`:14995`). The equipment/update-equips pass is S1-C-12;
-  `App::discount_available` defaults `false` (the exact pre-Discount-Card
-  state) and the price arms already consume it.
+- **`discountAvailable`'s writer landed with W4-f37** (2026-11-21): the C#
+  refreshes it from `discountEquipped` (`Player.cs:25636-25639` — only while
+  `Main.npcShop <= 0`, an open shop LATCHES the value), which the Discount
+  Card 854 (`:14971-14974`) and the Greedy Ring 3035 (`:14995`) arm per tick
+  (`ResetEffects` clears, `:18759`). `Player::discount_equipped` carries the
+  flag; `world_sim/player.rs` mirrors it into `App::discount_available` on
+  the shop-closed ticks. See "The shop price math completion (W4-f37)" below.
 - **The f32 casts are part of the contract**: the discount multiply
   truncates through the C#'s `(int)` cast (no rounding вЂ” 7 Г— 0.8f = 5, not
   6), the adjustment multiply/divide round through `Math.Round`'s
@@ -18136,6 +18138,88 @@ Three scope notes, none of which change the ported numbers:
   (`40000 @ 0.75` sells for 10666, not the 10667 the old port printed by
   dividing first). Golden vectors pin every arm in
   `shop.rs::tests`.
+
+## The shop price math completion (W4-f37, 2026-11-21)
+
+The price-MATH lane over the S1-C-11 chain: the Discount Card writer, the
+faithful `ShopHelper.ProcessMood` and the captured `currentShoppingSettings`.
+C# cites inline; the witnesses are written (not run — the code-only swarm).
+The shop inventories (d122/d123) and the happiness UI (g58) are co-lanes —
+this lane owns the multiplier/discount arithmetic only.
+
+- **The Discount Card writer** (`Player.cs:2634`/`:14971-14974`/`:14990-14996`/
+  `:18759`/`:25636-25639`): `Player::discount_equipped` arms from the 854 and
+  3035 accessory rows, clears in `ResetEffects`; `world_sim/player.rs` mirrors
+  it into `App::discount_available` ONLY on shop-closed ticks — an open shop
+  latches the open-time value (the vanilla never re-reads it while
+  `npcShop > 0`). Witnesses: the per-item grant/clear + the latch both ways.
+- **`ShopHelper.ProcessMood` re-ported 1:1** (`ShopHelper.cs:95-181`) — the
+  former port deviated in six places, all fixed:
+  1. the `loveStruck` ×0.9 head (`:99-102`) runs BEFORE the exclusions (the
+     travelling sellers keep it, UNROUNDED — the early return skips the cents
+     tail); the flag derives from the NPC's live buff-119 slots
+     (`NPC.cs:92057-92060`);
+  2. `Main.remixWorld` (`:103`) drops EVERY town NPC out at 1.0 — the port
+     reads `World.seeds`' REMIX bit;
+  3. the Princess (663) branches (`:122-131`): `flag = false` kills her crowd
+     multiply (num = 1f) AND her LoveSpace, but the crowded REPORT still
+     lands; alone (< 2 house AND < 2 village) she hates the loneliness at the
+     sentinel;
+  4. the crowd scan counts EVERY town NPC (`:298-323` — the former port
+     counted Guides only), minus the not-really-town trio (37/368/453) and
+     the different-housing-category roommates (`TownRoomManager.cs:153-161`;
+     the pets' category 1 has no ported kinds). The Tavernkeep (550) counts
+     even though the shared `is_town_npc_like` omits him;
+  5. the biome traits judge the PLAYER's zones
+     (`BiomePreferenceListTrait.cs:44` — `IsInBiome(info.player)`), NOT the
+     NPC's home scene, and apply the SINGLE best-affection row
+     (`AffectionLevel` Love 100 > Like 50 > Dislike -50 > Hate -100) — the
+     former port multiplied every matching row against a home-anchor biome
+     classification. The Forest/Underground rows ride the special getters
+     (`Player.cs:3823-3847`): `BelowSurface = Center tile Y > worldSurface`,
+     `Forest = !AnyBiome && !BelowSurface` (Desert counts as a biome);
+  6. the cents round is `Math.Round`'s BANKER'S default (`:179` — the
+     `shop.rs::round_half_to_even` helper), not away-from-zero. The traits
+     also run at the sentinel (no `< 1000` gate at `:152-168`) — the report
+     collects them, the clamp tames the product.
+- **The neighbor table** (`AllPersonalitiesModifier.cs:12-506`): the former
+  "the Guide carries none" note was WRONG — case 22 exists (`:451-468`).
+  `happiness.rs::neighbor_preferences` now carries all 20 ported-kind cases
+  verbatim (ids of unported kinds stay in the rows, they never match). The
+  Princess's up-to-3 random loves (`:15-36`) draw off the bare `Main.rand`
+  (`app.rngs.global()` — the talk/shop open runs outside every SwapRandom
+  block), type-deduped (the `bool[NPCID.Count]` scan), each pick removed
+  before the next draw; everyone else likes a nearby Princess (`:37-40`).
+  `MoodFlag::NpcAffection` carries the VANILLA id (the rows reference
+  unported kinds).
+- **`currentShoppingSettings` is captured ONCE per `SetTalkNPC`**
+  (`Player.cs:4375-4390`): the talk open latches `App::shop_mood`; the closes
+  (`SetTalkNPC(-1)` — the walk-away, the chat Close button, the recall
+  teleport) reset it to `NotInShop` = 1.0 (`ShoppingSettings.cs:9-13`).
+  `Main.OpenShop` (`Main.cs:40459-40467`) does NOT recompute it — the port's
+  shop-open re-capture fires only for the collapsed chat-button entry (the
+  recorded #9 deviation, `talk_npc = None`), so the Princess's draws fire
+  once per talk. `GetNurseHealCost` (`Main.cs:40100`) reads the LATCH — the
+  former per-call `process_mood` re-scan was wrong (it also re-rolled the
+  Princess's loves every frame).
+- **The Stylist hair-restyle charge** (`Main.cs:43786-43799`):
+  `shop.rs::hair_restyle_cost` — style +100000 / color +20000, the Discount
+  Card's `(int)((float)x * 0.8f)`, the mood float multiply truncating to int
+  FIRST, then the banker's `/10000` round and the whole-gold ×10000 snap.
+  The f32 bits ARE the contract: `100000 × 0.95f` truncates to 94999 (not
+  the decimal 95000) → 9 gold; `× 0.85f` lands the exact 8.5 tie → 8 (even).
+  The hair-window UI itself stays the M4-TOWN-17 deviation — the helper is
+  pinned by its golden vectors until the window lands.
+- **Dead code stays out**: `GetSkeletonMerchantPrices` (`ShopHelper.cs:64-88`)
+  and `GetTravelingMerchantPrices` (`:90-93`) have NO callers in 1.4.5.8
+  (whole-tree grep) — the port keeps the math out of the price path (the
+  travelling-merchant witness records the formula).
+- **Scope residuals**: the town pets (`NPCID.Sets.IsTownPet`) and the
+  SantaClaus 142 / Truffle 160 / Steampunker 178 / Cyborg 209 / Pirate 229
+  kinds have no ported `NpcKind`s — their exclusion/affection rows land with
+  the kinds; the `housingCategory` filter is a no-op until a category-1 kind
+  ships. The `shopSpecialCurrency` arm still waits for the
+  `CustomCurrencyManager` (the S1-C-11 note stands).
 
 ## The shop buy/sell transactions (S1-P-i44, 2026-11-19)
 

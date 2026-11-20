@@ -2077,13 +2077,12 @@ impl App {
     /// `currentShoppingSettings.PriceAdjustment` (`:40100`) — the App's
     /// `shop_mood` latch from the shop/talk open, NOT a fresh re-scan (the
     /// former per-call `process_mood` re-derived it every frame).
-    pub(crate) fn nurse_heal_cost(&self, nurse_idx: usize) -> i32 {
+    pub(crate) fn nurse_heal_cost(&self) -> i32 {
         let Some(player) = self.player.as_ref() else {
             return 0;
         };
         let missing = player.max_hp - player.hp;
         let debuffs = player.remountable_debuff_count();
-        let _npc = &self.npcs[nurse_idx];
         let w = &self.world;
         nurse_heal_cost_for(
             missing,
@@ -2106,7 +2105,8 @@ impl App {
     /// → the life to full + the removable debuffs cleared. Returns false
     /// when the purse is short or there is nothing to heal.
     pub(crate) fn nurse_heal(&mut self, nurse_idx: usize) -> bool {
-        let cost = self.nurse_heal_cost(nurse_idx);
+        let _ = nurse_idx; // the C# cost reads the player's captured settings
+        let cost = self.nurse_heal_cost();
         if cost <= 0 || self.coins < cost as u64 {
             return false;
         }
@@ -5627,7 +5627,7 @@ mod s1_e_18_tests {
             1,
             0.0,
         ));
-        let cost = app.nurse_heal_cost(0);
+        let cost = app.nurse_heal_cost();
         assert!(cost > 0, "half life is a heal");
         // Shy of the price: the C# returns before `HandleNurseService`.
         app.coins = cost as u64 - 1;
