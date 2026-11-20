@@ -2163,6 +2163,56 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d38 b3 — BestiaryEntry.Enemy(292)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "TacticalSkeleton",
+        net_id: 292,
+        kind: NpcKind::TacticalSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Tactical Skeleton",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(293)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonCommando",
+        net_id: 293,
+        kind: NpcKind::SkeletonCommando,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton Commando",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(294)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "AngryBonesBig",
+        net_id: 294,
+        kind: NpcKind::AngryBonesBig,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Bones",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(295)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "AngryBonesBigMuscle",
+        net_id: 295,
+        kind: NpcKind::AngryBonesBigMuscle,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Bones",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(296)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "AngryBonesBigHelmet",
+        net_id: 296,
+        kind: NpcKind::AngryBonesBigHelmet,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Bones",
+    },
     // W4-d38 b2 — BestiaryEntry.Enemy(286)
     // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
     BestiaryEntryDef {

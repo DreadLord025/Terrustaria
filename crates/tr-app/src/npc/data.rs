@@ -570,6 +570,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b3 — vanilla ids kept (free protocol slots).
+            NpcKind::TacticalSkeleton => 292,
+            NpcKind::SkeletonCommando => 293,
+            NpcKind::AngryBonesBig => 294,
+            NpcKind::AngryBonesBigMuscle => 295,
+            NpcKind::AngryBonesBigHelmet => 296,
             // W4-d38 b2 — vanilla ids kept (free protocol slots).
             NpcKind::DiabolistWhite => 286,
             NpcKind::BoneLee => 287,
@@ -919,6 +925,12 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // W4-d38 b3 — decode at the vanilla ids.
+            292 => NpcKind::TacticalSkeleton,
+            293 => NpcKind::SkeletonCommando,
+            294 => NpcKind::AngryBonesBig,
+            295 => NpcKind::AngryBonesBigMuscle,
+            296 => NpcKind::AngryBonesBigHelmet,
             // W4-d38 b2 — decode at the vanilla ids.
             286 => NpcKind::DiabolistWhite,
             287 => NpcKind::BoneLee,
@@ -1812,6 +1824,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d38 b3 — SetDefaults HitSound rows.
+            NpcKind::TacticalSkeleton => "NPC_Hit_2",
+            NpcKind::SkeletonCommando => "NPC_Hit_2",
+            NpcKind::AngryBonesBig => "NPC_Hit_2",
+            NpcKind::AngryBonesBigMuscle => "NPC_Hit_2",
+            NpcKind::AngryBonesBigHelmet => "NPC_Hit_2",
             // W4-d38 b2 — SetDefaults HitSound rows.
             NpcKind::DiabolistWhite => "NPC_Hit_2",
             NpcKind::BoneLee => "NPC_Hit_2",
@@ -2128,6 +2146,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d38 b3 — SetDefaults DeathSound rows.
+            NpcKind::TacticalSkeleton => "NPC_Killed_2",
+            NpcKind::SkeletonCommando => "NPC_Killed_2",
+            NpcKind::AngryBonesBig => "NPC_Killed_2",
+            NpcKind::AngryBonesBigMuscle => "NPC_Killed_2",
+            NpcKind::AngryBonesBigHelmet => "NPC_Killed_2",
             // W4-d38 b2 — SetDefaults DeathSound rows.
             NpcKind::DiabolistWhite => "NPC_Killed_2",
             NpcKind::BoneLee => "NPC_Killed_2",
@@ -2501,6 +2525,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d38 b3 — SetDefaults aiStyle rows.
+            NpcKind::TacticalSkeleton => 3,
+            NpcKind::SkeletonCommando => 3,
+            NpcKind::AngryBonesBig => 3,
+            NpcKind::AngryBonesBigMuscle => 3,
+            NpcKind::AngryBonesBigHelmet => 3,
             // W4-d38 b2 — SetDefaults aiStyle rows.
             NpcKind::DiabolistWhite => 8,
             NpcKind::BoneLee => 3,
@@ -2621,6 +2651,12 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-d38 b3 — AI_003 per-type walk caps.
+            NpcKind::TacticalSkeleton => 1.0,
+            NpcKind::SkeletonCommando => 1.0,
+            NpcKind::AngryBonesBig => 2.0,
+            NpcKind::AngryBonesBigMuscle => 1.75,
+            NpcKind::AngryBonesBigHelmet => 1.25,
             // W4-d38 b2 — AI_003 per-type walk caps.
             NpcKind::BoneLee => 5.0,
             NpcKind::Paladin => 1.0,
@@ -3047,6 +3083,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d38 b3 — SetDefaults width/height rows.
+            NpcKind::TacticalSkeleton => (18.0, 40.0),
+            NpcKind::SkeletonCommando => (18.0, 40.0),
+            NpcKind::AngryBonesBig => (18.0, 40.0),
+            NpcKind::AngryBonesBigMuscle => (18.0, 40.0),
+            NpcKind::AngryBonesBigHelmet => (18.0, 40.0),
             // W4-d38 b2 — SetDefaults width/height rows.
             NpcKind::DiabolistWhite => (18.0, 40.0),
             NpcKind::BoneLee => (18.0, 40.0),
@@ -3213,6 +3255,10 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-d38 b3 — humanoid-group FindFrame strips.
+            NpcKind::AngryBonesBig => 16,
+            NpcKind::AngryBonesBigMuscle => 15,
+            NpcKind::AngryBonesBigHelmet => 15,
             // W4-d38 b2 — humanoid-group FindFrame strips.
             NpcKind::BoneLee => 16,
             _ => 1,
@@ -3702,6 +3748,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d38 b3 — SetDefaults lifeMax rows.
+            NpcKind::TacticalSkeleton => 400,
+            NpcKind::SkeletonCommando => 400,
+            NpcKind::AngryBonesBig => 70,
+            NpcKind::AngryBonesBigMuscle => 70,
+            NpcKind::AngryBonesBigHelmet => 120,
             // W4-d38 b2 — SetDefaults lifeMax rows.
             NpcKind::DiabolistWhite => 250,
             NpcKind::BoneLee => 1000,
@@ -4078,6 +4130,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d38 b3 — SetDefaults damage rows.
+            NpcKind::TacticalSkeleton => 60,
+            NpcKind::SkeletonCommando => 60,
+            NpcKind::AngryBonesBig => 34,
+            NpcKind::AngryBonesBigMuscle => 28,
+            NpcKind::AngryBonesBigHelmet => 24,
             // W4-d38 b2 — SetDefaults damage rows.
             NpcKind::DiabolistWhite => 60,
             NpcKind::BoneLee => 90,

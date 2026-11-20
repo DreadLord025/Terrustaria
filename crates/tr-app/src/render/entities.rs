@@ -516,6 +516,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FISHRON_SHEETS)
             .chain(D38_B1_SHEETS)
             .chain(D38_B2_SHEETS)
+            .chain(D38_B3_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
@@ -1236,6 +1237,11 @@ pub(crate) const SNOW_SHEETS: &[u32] = &[
 /// The Queen Bee's volley minions' sheets (S1-D-3 W-3): `NPC_210`/`NPC_211`,
 /// keyed by the vanilla net id in `NpcAssets::npc_sheets` like the families.
 pub(crate) const BEE_SHEETS: &[u32] = &[210, 211];
+
+/// W4-d38 b3 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B3_SHEETS: &[u32] = &[292, 293, 294, 295, 296];
+
 
 /// W4-d38 b2 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
 /// keyed by the vanilla net id in NpcAssets::npc_sheets.
@@ -3180,6 +3186,31 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_292 sheet, generic centred anchor.
+            NpcKind::TacticalSkeleton => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_293 sheet, generic centred anchor.
+            NpcKind::SkeletonCommando => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_294 sheet, generic centred anchor.
+            NpcKind::AngryBonesBig => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_295 sheet, generic centred anchor.
+            NpcKind::AngryBonesBigMuscle => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_296 sheet, generic centred anchor.
+            NpcKind::AngryBonesBigHelmet => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
             // W4-d38 b2 — own NPC_286 sheet, generic centred anchor.
             NpcKind::DiabolistWhite => {

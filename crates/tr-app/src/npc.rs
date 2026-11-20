@@ -1017,6 +1017,17 @@ pub enum NpcKind {
     /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The
     /// aiStyle-22 machine's 490 branches ride `npc_ai_drippler.rs`.
     Drippler,
+    // W4-d38 b3 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.TacticalSkeleton` (292) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
+    TacticalSkeleton,
+    /// `NPCID.SkeletonCommando` (293) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
+    SkeletonCommando,
+    /// `NPCID.AngryBonesBig` (294) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 34, def 6, 70 HP, kb 0.9, value 130.
+    AngryBonesBig,
+    /// `NPCID.AngryBonesBigMuscle` (295) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 28, def 12, 70 HP, kb 0.7, value 130.
+    AngryBonesBigMuscle,
+    /// `NPCID.AngryBonesBigHelmet` (296) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 24, def 14, 120 HP, kb 0.6, value 130.
+    AngryBonesBigHelmet,
     // W4-d38 b2 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
     /// `NPCID.DiabolistWhite` (286) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 60, def 10, 250 HP, kb 0.65, value 1500.
     DiabolistWhite,
@@ -3551,6 +3562,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d38 b3 — SetDefaults knockBackResist rows.
+            NpcKind::TacticalSkeleton => 0.4,
+            NpcKind::SkeletonCommando => 0.4,
+            NpcKind::AngryBonesBig => 0.9,
+            NpcKind::AngryBonesBigMuscle => 0.7,
+            NpcKind::AngryBonesBigHelmet => 0.6,
             // W4-d38 b2 — SetDefaults knockBackResist rows.
             NpcKind::DiabolistWhite => 0.65,
             NpcKind::BoneLee => 0.3,
@@ -3943,6 +3960,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d38 b3 — SetDefaults defense rows.
+            NpcKind::TacticalSkeleton => 28,
+            NpcKind::SkeletonCommando => 28,
+            NpcKind::AngryBonesBig => 6,
+            NpcKind::AngryBonesBigMuscle => 12,
+            NpcKind::AngryBonesBigHelmet => 14,
             // W4-d38 b2 — SetDefaults defense rows.
             NpcKind::DiabolistWhite => 10,
             NpcKind::BoneLee => 42,
@@ -4327,6 +4350,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d38 b3 — SetDefaults value rows (copper).
+            NpcKind::TacticalSkeleton => 1000.0,
+            NpcKind::SkeletonCommando => 1000.0,
+            NpcKind::AngryBonesBig => 130.0,
+            NpcKind::AngryBonesBigMuscle => 130.0,
+            NpcKind::AngryBonesBigHelmet => 130.0,
             // W4-d38 b2 — SetDefaults value rows (copper).
             NpcKind::DiabolistWhite => 1500.0,
             NpcKind::BoneLee => 2000.0,
@@ -6345,6 +6374,16 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d38 b3 — aiStyle 3 shooter.
+            NpcKind::TacticalSkeleton => self.update_dungeon_shooter(world, player, rng),
+            // W4-d38 b3 — aiStyle 3 shooter.
+            NpcKind::SkeletonCommando => self.update_dungeon_shooter(world, player, rng),
+            // W4-d38 b3 — aiStyle 3, num83 group NPC.cs:57606.
+            NpcKind::AngryBonesBig => self.update_skeleton(world, player, dt),
+            // W4-d38 b3 — aiStyle 3, num83 group.
+            NpcKind::AngryBonesBigMuscle => self.update_skeleton(world, player, dt),
+            // W4-d38 b3 — aiStyle 3, num83 group.
+            NpcKind::AngryBonesBigHelmet => self.update_skeleton(world, player, dt),
             // W4-d38 b2 — aiStyle 8 caster.
             NpcKind::DiabolistWhite => self.update_caster(world, player, rng),
             // W4-d38 b2 — aiStyle 3, the 5/0.2 cap NPC.cs:57944-57971.
@@ -9049,6 +9088,48 @@ impl Npc {
             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                 self.frame = 1;
             }
+            // W4-d38 b3 — case 291/292 (NPC.cs:76139-76178): the grounded flip, the
+            // ai[2]>0 aim row (ai[2]-1), the |vx|*3.3 walk rows 7.., air row 6.
+            NpcKind::TacticalSkeleton => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = (self.ai[2] as i32 - 1) as u32;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 7 { self.frame = 7; }
+                        self.frame_counter += self.vx.abs() * 3.3;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 7; }
+                    }
+                } else { self.frame_counter = 0.0; self.frame = 6; }
+            }
+            // W4-d38 b3 — case 293 (NPC.cs:76021-76059): the grounded flip, the
+            // ai[2]>0 aim row (ai[2]), the |vx|*3 walk rows 6.., air row 0.
+            NpcKind::SkeletonCommando => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = self.ai[2] as i32 as u32;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 6 { self.frame = 6; }
+                        self.frame_counter += self.vx.abs() * 3.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 6; }
+                    }
+                } else { self.frame_counter = 0.0; self.frame = 0; }
+            }
+            // W4-d38 b3 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::AngryBonesBig => self.humanoid_town_frame(),
+            // W4-d38 b3 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::AngryBonesBigMuscle => self.humanoid_town_frame(),
+            // W4-d38 b3 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::AngryBonesBigHelmet => self.humanoid_town_frame(),
             // W4-d38 b2 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
             // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
             NpcKind::DiabolistWhite => {
@@ -18818,6 +18899,12 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b3 — vanilla types (G6 key injective).
+            NpcKind::TacticalSkeleton => 292,
+            NpcKind::SkeletonCommando => 293,
+            NpcKind::AngryBonesBig => 294,
+            NpcKind::AngryBonesBigMuscle => 295,
+            NpcKind::AngryBonesBigHelmet => 296,
             // W4-d38 b2 — vanilla types (G6 key injective).
             NpcKind::DiabolistWhite => 286,
             NpcKind::BoneLee => 287,
@@ -23908,7 +23995,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 280] = [
+    pub(super) const ALL_KINDS: [NpcKind; 285] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24158,6 +24245,12 @@ mod tests {
         // S1-D-3z — the blood-moon pair.
         NpcKind::BloodZombie,
         NpcKind::Drippler,
+        // W4-d38 b3.
+        NpcKind::TacticalSkeleton,
+        NpcKind::SkeletonCommando,
+        NpcKind::AngryBonesBig,
+        NpcKind::AngryBonesBigMuscle,
+        NpcKind::AngryBonesBigHelmet,
         // W4-d38 b2.
         NpcKind::DiabolistWhite,
         NpcKind::BoneLee,
@@ -27810,7 +27903,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            280,
+            285,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31438,6 +31531,12 @@ mod s1_d_2_tests {
         // S1-D-3z — the blood-moon pair (`NPC.cs:14609`/`:14623`).
         (NpcKind::BloodZombie, 3),
         (NpcKind::Drippler, 22),
+        // W4-d38 b3.
+        (NpcKind::TacticalSkeleton, 3),
+        (NpcKind::SkeletonCommando, 3),
+        (NpcKind::AngryBonesBig, 3),
+        (NpcKind::AngryBonesBigMuscle, 3),
+        (NpcKind::AngryBonesBigHelmet, 3),
         // W4-d38 b2.
         (NpcKind::DiabolistWhite, 8),
         (NpcKind::BoneLee, 3),
@@ -33990,5 +34089,69 @@ mod s1_f_13d_tests {
         n.frame_counter = 0.0;
         n.find_frame();
         assert_eq!(n.frame, 3, "the dash adds row 3");
+    }
+
+    // ---- W4-d38 b3 — TacticalSkeleton 292, SkeletonCommando 293,
+    // AngryBonesBig 294, AngryBonesBigMuscle 295, AngryBonesBigHelmet 296.
+    // Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:12797-12863`).
+    #[test]
+    fn w4_d38_b3_the_setdefaults_rows() {
+        let table = [
+            (NpcKind::TacticalSkeleton, 292u16, 18.0, 40.0, 3u8, 400, 60, 28, 1000.0, 0.4),
+            (NpcKind::SkeletonCommando, 293, 18.0, 40.0, 3, 400, 60, 28, 1000.0, 0.4),
+            (NpcKind::AngryBonesBig, 294, 18.0, 40.0, 3, 70, 34, 6, 130.0, 0.9),
+            (NpcKind::AngryBonesBigMuscle, 295, 18.0, 40.0, 3, 70, 28, 12, 130.0, 0.7),
+            (NpcKind::AngryBonesBigHelmet, 296, 18.0, 40.0, 3, 120, 24, 14, 130.0, 0.6),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
+            // All five carry {20} only (`NPCID.cs:7808-7836`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20] && !b.buff_immune[31], "{kind:?} immunity");
+        }
+    }
+
+    /// The walk caps: the Tactical/Commando ride the shooters' 1f default
+    /// (`NPC.cs:59717`); the Angry Bones trio the num83 group's per-type rows
+    /// (`:57613-57624` — 294 2f, 295 1.75f, 296 1.25f).
+    #[test]
+    fn w4_d38_b3_the_walk_caps() {
+        assert_eq!(NpcKind::TacticalSkeleton.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::SkeletonCommando.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::AngryBonesBig.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::AngryBonesBigMuscle.ai3_walk_speed(), Some(1.75));
+        assert_eq!(NpcKind::AngryBonesBigHelmet.ai3_walk_speed(), Some(1.25));
+    }
+
+    /// The Angry Bones trio's humanoid strips (`Main.npcFrameCount` 294 16,
+    /// 295 15, 296 15) and the Commando's case-293 FindFrame air row 0
+    /// (`NPC.cs:76054-76058`, unlike the Sniper/Tactical's air row 6).
+    #[test]
+    fn w4_d38_b3_the_frames() {
+        assert_eq!(NpcKind::AngryBonesBig.humanoid_frame_count(), 16);
+        assert_eq!(NpcKind::AngryBonesBigMuscle.humanoid_frame_count(), 15);
+        assert_eq!(NpcKind::AngryBonesBigHelmet.humanoid_frame_count(), 15);
+        let mut n = bare(NpcKind::SkeletonCommando);
+        n.vy = 2.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the Commando's air row 0");
+        let mut t = bare(NpcKind::TacticalSkeleton);
+        t.vy = 2.0;
+        t.find_frame();
+        assert_eq!(t.frame, 6, "the Tactical's air row 6");
     }
 }

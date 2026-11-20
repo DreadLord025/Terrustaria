@@ -3211,6 +3211,12 @@ fn npc_seed(
         | crate::npc::NpcKind::BoneLee
         | crate::npc::NpcKind::Paladin
         | crate::npc::NpcKind::SkeletonSniper
+        // W4-d38 b3 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::TacticalSkeleton
+        | crate::npc::NpcKind::SkeletonCommando
+        | crate::npc::NpcKind::AngryBonesBig
+        | crate::npc::NpcKind::AngryBonesBigMuscle
+        | crate::npc::NpcKind::AngryBonesBigHelmet
         | crate::npc::NpcKind::BloodZombie => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
