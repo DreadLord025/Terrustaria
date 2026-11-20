@@ -26055,6 +26055,46 @@ hang, the sway ladder + anchor walk, the blocking-wall freeze, the remix
 gate, the grid push subtract/bounce, the gap/bottom-bound break, the Echo
 hide-not-break.
 
+## The post-debuff buff tail (S1-E-7 wave H, 2026-11-20, code-only, IN FLIGHT)
+
+**Claimed range** (`task/W4-d74-buff-effects-wave-h`, disjoint from the landed
+waves A `:9875-10048` / B `:10049-10317` / C `:10800-11400` / D
+`:11400-12069`+pet head): `Player.cs:10318-10808` — the `UpdateBuffs` arms
+between Electrified (144, B's last) and the Trusty Cattiva keep-alive's tail
+(386) — **exactly 40 buff ids**, the tail of the debuff scan:
+
+- **94 Mana Sickness** (`:10318-10327`) — already ported inline
+  (`player.rs` scan arm → `potions::apply_mana_sickness_arm`); witness-only
+  here (the `DebugOptions.ManaPotionDelay` mirror stays constants-off).
+- **396 Mana Heat** (`:10328-10341`) — MISSING: `manaHeat += latestBonus *
+  buffTime/latestDuration` with the `duration == 0 → 1` guard; the
+  `TryApplyManaHeat` producer is in (`player.rs::try_apply_mana_heat`), only
+  this consumer arm was absent.
+- **The six armor-set orb-tier triples** (`:10342-10461`) — ALL MISSING (18
+  ids): Beetle Defense 95-97 (`buffTime = 5` pin, tier-or-DelBuff ladder vs
+  `beetleOrbs`, `beetleDefense` gate → `beetleBuff`), Solar Shields 170-172
+  (same ladder vs `solarShields`/`setSolar`), Beetle Might 98-100 (no time
+  pin; `meleeDamage`/`meleeSpeed += 0.1 * orbs`, `beetleOffense` gate),
+  Nebula Mana 176-178 / Life 173-175 (+`lifeRegen += 6 * level`) / Damage
+  179-181 (+0.15 * level to all four classes) via
+  `UpdateBuffs_NebulaBuffs` (`:12070-12079`: level = 1 + type − base; at
+  `buffTime == 2` with level > 1: level−−, type−−, time = 480).
+- **62 Ice Barrier** (`:10462-10485`) — PARTIAL inline (the endurance +0.25
+  half rides `player.rs`); MISSING: the `iceBarrier` flag, the 12-frame /
+  3-tick frame counter, and the above-half-life `DelBuff(j); j--`. The light
+  RGB is already in `player_lights.rs` (witness there).
+- **The 19 summon keep-alives** 49/83/64/125/126/133/134/135/214/139/140/
+  182/213/216/355/385/393/394/386 (`:10486-10808`) — already ported
+  (`player.rs::SUMMON_BUFF_ARMS` + `run_baby_bird_arm`); witness-only census
+  here, no second effect path.
+
+Shape: a PURE accumulator module `buff_effects_tail.rs`
+(`apply_tail_effect_arm` → `TailEffects`), the wave-B/C/D pattern — wiring
+rides the waves' merge step. RNG census: the block draws NO `Main.rand` (the
+orb ladders, nebula step and ice frames are deterministic); the only RNG
+nearby is the beetle-orb VISUAL drift in `UpdateArmorSets_Always_Beetle`
+(`:16466-16467`, outside this range, unported draw family).
+
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_accessory.rs` ports the `Player.UpdateBuffs`
