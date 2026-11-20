@@ -348,6 +348,13 @@ mod tests {
     // Calculate ledger. pass_disabled_by_special_seeds gains the classic
     // SeedFlags arm (the skyblock pruning). STILL no classic draw — the
     // tables fire only under SeedFlags::SKYBLOCK; both pins stay.
+    // W4-f24 A2: `skyblock.rs` gains SkyblockIsland (WorldGen.cs:22818-23556)
+    // — the proximity veto, the 14-style palette, the two drifting ellipsoid
+    // blobs + stalactite drip + tidy sweep, the style-1 shimmer pool, the
+    // wall backing, the solidifier/monolith/music-box objects (the tileobject
+    // registry seam + SwitchMonolith/SwitchMB), the cloud puffs + grass
+    // fringe, the LandmassData ledger. STILL UNWIRED (A4 lands the gated
+    // step) — both classic pins stay, a == b untouched.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
