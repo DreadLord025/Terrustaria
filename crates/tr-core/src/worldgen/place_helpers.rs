@@ -502,6 +502,165 @@ pub(crate) fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32
     }
 }
 
+/// `WorldGen.Place3x4` (`WorldGen.cs:51912-51961`): the 3-wide, 4-tall
+/// object — body `(x-1..=x+1, y-3..=y)` empty, `SolidTile2` under all
+/// three columns; the 5-tile bounds gate. `frameX = 54 * style + col*18`,
+/// `frameY = (3 + k) * 18` for the row offset `k` in `-3..=0`.
+pub(crate) fn place_3x4(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut flag = true;
+    for i in (x - 1)..(x + 2) {
+        for j in (y - 3)..(y + 1) {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                flag = false;
+            }
+        }
+        if !solid_tile2(world, i, y + 1) {
+            flag = false;
+        }
+    }
+    if flag {
+        let num = style * 54;
+        for k in -3..=0 {
+            let frame_y = ((3 + k) * 18) as i16;
+            for (col, fx) in [(x - 1, num), (x, num + 18), (x + 1, num + 36)] {
+                let i = world.index(col, y + k);
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.frame_y = frame_y;
+                t.frame_x = fx as i16;
+                t.kind = kind;
+            }
+        }
+    }
+}
+
+/// `WorldGen.Place5x4` (`WorldGen.cs:51963-52020`): the 5-wide, 4-tall
+/// object — body `(x-2..=x+2, y-3..=y)` empty, `SolidTile2` under all five
+/// columns; the 5-tile bounds gate. The frame columns are CENTRED on
+/// `54 * style`: `num-36, num-18, num, num+18, num+36` (the style-0 sheet
+/// offset goes negative — kept verbatim, the C# writes the same).
+pub(crate) fn place_5x4(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut flag = true;
+    for i in (x - 2)..(x + 3) {
+        for j in (y - 3)..(y + 1) {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                flag = false;
+            }
+        }
+        if !solid_tile2(world, i, y + 1) {
+            flag = false;
+        }
+    }
+    if flag {
+        let num = style * 54;
+        for k in -3..=0 {
+            let frame_y = ((3 + k) * 18) as i16;
+            for (col, fx) in [
+                (x - 2, num - 36),
+                (x - 1, num - 18),
+                (x, num),
+                (x + 1, num + 18),
+                (x + 2, num + 36),
+            ] {
+                let i = world.index(col, y + k);
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.frame_y = frame_y;
+                t.frame_x = fx as i16;
+                t.kind = kind;
+            }
+        }
+    }
+}
+
+/// `WorldGen.Place3x3` (`WorldGen.cs:53534-53634`): the 3×3 object with
+/// TWO orientations. The standing family (106/212/219/220/228/231/243/
+/// 247/283/300-308/354/355/642/733/753, `:53538`) sits on the floor:
+/// `num = -2`, the body `(x-1..=x+1, y-2..=y)` empty, and each floor
+/// column `SolidTile2` — EXCEPT a 753 floor tile under another 753
+/// (the stackable ammo box, `:53562`). Every other kind HANGS: the body
+/// `(x-1..=x+1, y..=y+2)` empty and the ceiling `(x, y-1)` active +
+/// `tileSolid` + not `tileSolidTop` (`:53589`). No bounds gate in the C#
+/// (the null-tile news cover it); the port guards the written cells.
+/// `frameX = 54 * style + col * 18`, `frameY = row * 18`.
+pub(crate) fn place_3x3(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    let mut flag = true;
+    let standing = matches!(
+        kind,
+        106 | 212
+            | 219
+            | 220
+            | 228
+            | 231
+            | 243
+            | 247
+            | 283
+            | 300..=308
+            | 354
+            | 355
+            | 642
+            | 733
+            | 753
+    );
+    let num = if standing { -2 } else { 0 };
+    if standing {
+        for i in (x - 1)..(x + 2) {
+            for j in (y - 2)..(y + 1) {
+                if world.tile(i, j).is_some_and(|t| t.active()) {
+                    flag = false;
+                }
+            }
+        }
+        for k in (x - 1)..(x + 2) {
+            // `:53562` — the 753-on-753 stacking exemption.
+            let stack_ok = kind == 753
+                && world.tile(k, y + 1).is_some_and(|t| t.active() && t.kind == 753);
+            if !stack_ok && !solid_tile2(world, k, y + 1) {
+                flag = false;
+                break;
+            }
+        }
+    } else {
+        for l in (x - 1)..(x + 2) {
+            for m in y..(y + 3) {
+                if world.tile(l, m).is_some_and(|t| t.active()) {
+                    flag = false;
+                }
+            }
+        }
+        let ceil = world.tile(x, y - 1);
+        if !ceil.is_some_and(|t| {
+            t.active() && TILE_SOLID.has(t.kind) && !TILE_SOLID_TOP.has(t.kind)
+        }) {
+            flag = false;
+        }
+    }
+    if flag {
+        let num2 = style * 18 * 3;
+        // `:53597-53632` — row-major over the three rows at y+num..y+num+2.
+        for row in 0..3 {
+            for (col, fx) in [(x - 1, num2), (x, num2 + 18), (x + 1, num2 + 36)] {
+                let py = y + num + row;
+                if !in_world(world, col, py, 0) {
+                    continue;
+                }
+                let i = world.index(col, py);
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.frame_y = (row * 18) as i16;
+                t.frame_x = fx as i16;
+                t.kind = kind;
+            }
+        }
+    }
+}
+
 /// `WorldGen.Place2x2Style` (`WorldGen.cs:52198-52256`): the style-column
 /// 2×2 at `(x-1, y-1)` — the 5-tile bounds gate, the body empty, both
 /// floors `SolidTile` (the coordinate overload — WITH the inactive veto).
@@ -842,5 +1001,56 @@ mod tests {
         }
         place_3x2(&mut w5, 45, 19, 285, 0);
         assert!(!w5.tile(45, 18).unwrap().active());
+    }
+
+    /// `Place3x4`/`Place5x4` lay the tall bodies bottom-anchored at y with
+    /// the 54-px style stride; the 5x4 frame columns centre on the stride.
+    #[test]
+    fn place_3x4_and_5x4_tall_bodies() {
+        let mut w = floor_world();
+        place_3x4(&mut w, 10, 19, 79, 1);
+        let top = w.tile(9, 16).unwrap();
+        assert!(top.active() && top.kind == 79);
+        assert_eq!(top.frame_y, 0); // (3 + -3) * 18
+        assert_eq!(top.frame_x, 54);
+        assert_eq!(w.tile(11, 19).unwrap().frame_y, 54);
+        assert_eq!(w.tile(11, 19).unwrap().frame_x, 90);
+        let mut w2 = floor_world();
+        place_5x4(&mut w2, 20, 19, 244, 1);
+        assert!(w2.tile(18, 16).unwrap().active());
+        assert_eq!(w2.tile(18, 16).unwrap().frame_x, 18); // 54 - 36
+        assert_eq!(w2.tile(22, 19).unwrap().frame_x, 90); // 54 + 36
+        // Style 0 keeps the negative sheet offset verbatim.
+        let mut w3 = floor_world();
+        place_5x4(&mut w3, 30, 19, 244, 0);
+        assert_eq!(w3.tile(28, 16).unwrap().frame_x, -36);
+    }
+
+    /// `Place3x3`: the standing family sits on the floor (num=-2); the
+    /// hanging family needs a solid ceiling; 753 stacks on 753.
+    #[test]
+    fn place_3x3_standing_hanging_and_the_753_stack() {
+        let mut w = floor_world();
+        place_3x3(&mut w, 10, 19, 219, 2); // standing: body y-2..y
+        assert!(w.tile(9, 17).unwrap().active());
+        assert_eq!(w.tile(9, 17).unwrap().frame_x, 108); // 54 * 2
+        assert_eq!(w.tile(11, 19).unwrap().frame_y, 36);
+        // Hanging (e.g. 42 lantern): needs the ceiling at (x, y-1).
+        let mut w2 = floor_world();
+        place_3x3(&mut w2, 20, 10, 42, 0); // no ceiling — refused
+        assert!(!w2.tile(20, 10).unwrap().active());
+        let i = w2.index(20, 9);
+        w2.tiles[i].flags |= FLAG_ACTIVE;
+        w2.tiles[i].kind = 1;
+        place_3x3(&mut w2, 20, 10, 42, 1);
+        assert!(w2.tile(19, 10).unwrap().active());
+        assert_eq!(w2.tile(21, 12).unwrap().frame_y, 36);
+        // 753 on an active 753 floor passes without SolidTile2.
+        let mut w3 = World::new("ph".into(), 60, 60);
+        let i = w3.index(30, 20);
+        w3.tiles[i].flags |= FLAG_ACTIVE;
+        w3.tiles[i].kind = 753;
+        place_3x3(&mut w3, 30, 19, 753, 0);
+        assert!(w3.tile(30, 17).unwrap().active());
     }
 }
