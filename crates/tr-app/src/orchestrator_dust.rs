@@ -1,8 +1,9 @@
-//! W4-e4 — the world dust sites' SECOND batch, part 1: the
-//! `ParticleOrchestrator.cs` `Dust.NewDust*` sites 41-51 (lines 2653-3061,
+//! W4-e4 — the world dust sites' SECOND batch: the
+//! `ParticleOrchestrator.cs` `Dust.NewDust*` sites 41-61 (lines 2653-3920,
 //! research/66's claim doc). The first 40 orchestrator sites (423-2582)
 //! stay W4-d54's lane; WorldGen.cs is W4-g14's and Main.cs is
-//! W4-g11/g12/g13's (g12's pushed census).
+//! W4-g11/g12/g13's (g12's pushed census). The Mount.cs sites 1-19 live
+//! in `mount_dust.rs` (batches 3-4).
 //!
 //! Contract (the S1-E-1 pool, `tr_core::particles`, d50's DustPool):
 //! the orchestrator spawns run SYNCHRONOUSLY inside
@@ -30,6 +31,17 @@
 //!   (`Gore.cs:1327-1328`, two draws) are the gore pool owner's.
 //! - 2997/3000/3058/3061 — `Spawn_TrueExcalibur`'s two gated pairs
 //!   (`:2955-3067`), ported WHOLE (the golden rule).
+//! - 3195/3198 — `Spawn_TrueNightsEdge`'s double pair (`:3139-3203`),
+//!   both loops step +2 over <3 (the num==1f arms are DEAD, cited).
+//! - 3324/3378/3428/3478 — the 267-sparkle tail family: PaladinsHammer
+//!   (`:3286-3339`), PrincessWeapon (`:3341-3393`), StardustPunch
+//!   (`:3395-3442`), RainbowRodHit (`:3444-3492`); each clone re-rolls a
+//!   fresh NewDust. RainbowRodHit's 272-draw contract matches prefix.rs
+//!   (S1-P-i45) — the wiring wave folds that count-only drain in here.
+//! - 3641 — `Spawn_LightningSmall`'s gated 226/331 dust (`:3599-3653`).
+//! - 3723 — `Spawn_FormatC`'s 12 type-213 sparks (`:3683-3743`).
+//! - 3882/3920 — `Spawn_FlameWaders` / `Spawn_WallOfFleshGoatMountFlames`
+//!   (`:3863-3937`), the Next(16)/Next(8)-gated 4×4 type-6 pair.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled by
 //! the merge-verify wave, not executed here.
 
@@ -305,6 +317,398 @@ pub(crate) fn true_excalibur(
     }
 }
 
+/// Sites 3195/3198 — `Spawn_TrueNightsEdge` (`ParticleOrchestrator.cs:
+/// 3139-3203`). `num2 = 0f`; both sparkle loops step `num += 2f` over
+/// `< 3f` (iterations 0 and 2 — the `num == 1f` scale arms are DEAD,
+/// cited); the second loop spawns TWO 75 pairs per iteration (the inner
+/// `i < 2` loop, `:3193`), both scales 1.4, no fadeIn/colour writes.
+pub(crate) fn true_nights_edge(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let num2 = 0.0f32; // `:3142`
+    // `:3143-3168` — the first sparkle loop (0, 2): zero draws.
+    let mut num4 = 0.0f32;
+    while num4 < 3.0 {
+        // `:3169-3192` — the second sparkle loop: zero draws; the vector
+        // feeds the dust pairs.
+        let vector2 =
+            to_rotation_vector2(std::f32::consts::PI / 4.0 + std::f32::consts::PI / 4.0 * num4 + num2) * 4.0;
+        for _ in 0..2 {
+            // `:3193-3201`
+            blade_dust_pair(vector2, 75, 1.4, 1.4, None, None, rng, dust, ctx, world, s.position);
+        }
+        num4 += 2.0;
+    }
+}
+
+/// The 267-sparkle dust tail shared by PaladinsHammer / PrincessWeapon /
+/// StardustPunch / RainbowRodHit (`:3322-3338` et al.): per dust the
+/// colour argument draws first (the caller supplies them), then the
+/// `NewDust` internals, then velocity = Circular(2,2), += movement *
+/// (0.5 + 0.5*NextFloat) * 1.4, noGravity, the scale write, position +=
+/// Circular(16,16), and the final velocity overwrite the hammer/princess
+/// arms carry. When the spawn is refused (idx == 6000) the clone is
+/// skipped but the post-writes still land on the sentinel. The clone
+/// re-rolls a fresh `NewDust` (6 internals), then scale /= 2, fadeIn *=
+/// 0.75, colour White.
+#[allow(clippy::too_many_arguments)]
+fn sparkle_267_tail(
+    color: Color,
+    scale_write: Option<f32>,
+    scale_roll: bool,
+    final_velocity: Option<Vec2>,
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let idx = dust.new_dust(rng, ctx, world, s.position, 0, 0, 267, 0.0, 0.0, 0, color, 1.0);
+    {
+        let d = dust.slot_mut(idx);
+        d.velocity = next_vector2_circular(rng, 2.0, 2.0);
+        let f = 0.5 + 0.5 * rng.next_float();
+        d.velocity += s.movement * f * 1.4;
+        d.no_gravity = true;
+        if scale_roll {
+            // StardustPunch: scale = 0.6 + NextFloat * 2 (`:3432`).
+            d.scale = 0.6 + rng.next_float() * 2.0;
+        } else {
+            d.scale = scale_write.unwrap_or(0.1);
+        }
+        d.position += next_vector2_circular(rng, 16.0, 16.0);
+        if let Some(v) = final_velocity {
+            d.velocity = v;
+        }
+    }
+    if idx != tr_core::particles::DUST_SENTINEL {
+        let cidx = dust.clone_dust(rng, ctx, world, idx);
+        let cd = dust.slot_mut(cidx);
+        cd.scale /= 2.0;
+        cd.fade_in *= 0.75;
+        cd.color = Color::WHITE;
+    }
+}
+
+/// Site 3324 — `Spawn_PaladinsHammer` (`:3286-3339`). The head phase
+/// draw + the single-iteration sparkle block's 6 draws (scale, size,
+/// angle, Circular(12,12)×2 — `:3288-3298`) are consumed though the
+/// sparkles are the renderer skip; then 2 iterations of the 267 tail
+/// with the fixed colour (1, 0.7, 0.3, 0), scale 0.1 and the final
+/// velocity = movement overwrite.
+pub(crate) fn paladins_hammer(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let _num = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3288`
+    // `:3290-3321` — the num3 < 1f sparkle block (one iteration):
+    let _num4 = 0.6 + rng.next_float() * 0.35; // `:3292`
+    let _size = rng.next_float() * 0.4 + 0.2; // `:3294`
+    let _f = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3295`
+    let _circ = next_vector2_circular(rng, 12.0, 12.0); // `:3298`
+    for _ in 0..2 {
+        // `:3324` — newColor = new Color(1f, 0.7f, 0.3f, 0f).
+        sparkle_267_tail(color_f(1.0, 0.7, 0.3, 0.0), Some(0.1), false, Some(s.movement), s, rng, dust, ctx, world);
+    }
+}
+
+/// Site 3378 — `Spawn_PrincessWeapon` (`:3341-3393`). Same head shape as
+/// the hammer but the sparkle block draws Circular(8,8) and TWO colour
+/// floats (`:3347-3359`); the dust colour is the hsl roll
+/// `(0.92 + NextFloat*0.02) % 1, 1, 0.4 + NextFloat*0.25` drawn as the
+/// NewDust ARGUMENT (before the internals), scale 0.1, final velocity =
+/// movement.
+pub(crate) fn princess_weapon(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let _num = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3343`
+    // `:3345-3375` — the one-iteration sparkle block:
+    let _scale = rng.next_float() * 0.35; // `:3347` (0.6 + … factor)
+    let _size = rng.next_float() * 0.4 + 0.2; // `:3348`
+    let _f = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3349`
+    let _circ = next_vector2_circular(rng, 8.0, 8.0); // `:3353`
+    let _hue = rng.next_float(); // `:3359` — the sparkle tint's hue
+    let _lum = rng.next_float(); // `:3359` — the sparkle tint's luminosity
+    for _ in 0..2 {
+        // `:3378` — the dust colour argument: two floats, then hsl.
+        let h = (0.92 + rng.next_float() * 0.02) % 1.0;
+        let l = 0.4 + rng.next_float() * 0.25;
+        sparkle_267_tail(hsl(h, l), Some(0.1), false, Some(s.movement), s, rng, dust, ctx, world);
+    }
+}
+
+/// Site 3428 — `Spawn_StardustPunch` (`:3395-3442`). The sparkle block's
+/// scale factor is `0.3 + NextFloat*0.35`, size `NextFloat*0.4 + 0.4`,
+/// Circular(8,8), two colour floats; the dust colour hue base is 0.59
+/// (NOT the sparkle's 0.6), scale = 0.6 + NextFloat*2 (a POST-spawn roll),
+/// NO final velocity overwrite (the Circular+blend velocity stays).
+pub(crate) fn stardust_punch(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let _num = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3397`
+    // `:3399-3425` — the one-iteration sparkle block:
+    let _scale = rng.next_float() * 0.35; // `:3401`
+    let _size = rng.next_float() * 0.4 + 0.4; // `:3402`
+    let _f = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3403`
+    let _circ = next_vector2_circular(rng, 8.0, 8.0); // `:3407`
+    let _hue = rng.next_float(); // `:3411`
+    let _lum = rng.next_float(); // `:3411`
+    for _ in 0..2 {
+        // `:3428` — the dust colour argument: hue base 0.59.
+        let h = (0.59 + rng.next_float() * 0.02) % 1.0;
+        let l = 0.4 + rng.next_float() * 0.25;
+        sparkle_267_tail(hsl(h, l), None, true, None, s, rng, dust, ctx, world);
+    }
+}
+
+/// Site 3478 — `Spawn_RainbowRodHit` (`:3444-3492`). Two head floats
+/// (`:3446`/`:3448` — num, num3), then SIX sparkle iterations each
+/// drawing dir + scale + angle + Circular(8,8)×2 + two colour floats
+/// (`:3451-3461`); then 12 dust iterations: colour argument
+/// `(num3 + NextFloat*0.12) % 1, 1, 0.4 + NextFloat*0.25`, internals,
+/// velocity = Circular(1,1) += movement * NextFloatDirection * 0.5,
+/// noGravity, scale = 0.6 + NextFloat*0.9, fadeIn = 0.7 + NextFloat*0.8,
+/// clone (scale/2, fadeIn*0.75, White). NOTE: `prefix.rs` (S1-P-i45)
+/// consumes this spawn's draws count-only on the reforge tail — the
+/// wiring wave folds that drain into this emitter (research/66).
+pub(crate) fn rainbow_rod_hit(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let _num = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3446`
+    let num3 = rng.next_float(); // `:3448`
+    for _ in 0..6 {
+        // `:3449-3475` — the sparkle block (num4 < 1f, step 1/6):
+        let _dir = rng.next_float_direction(); // `:3451`
+        let _size = rng.next_float() * 0.4 + 0.4; // `:3452`
+        let _f = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3453`
+        let _circ = next_vector2_circular(rng, 8.0, 8.0); // `:3457`
+        let _hue = rng.next_float(); // `:3461`
+        let _lum = rng.next_float(); // `:3461`
+    }
+    for _ in 0..12 {
+        // `:3478` — the colour argument draws BEFORE the internals.
+        let h = (num3 + rng.next_float() * 0.12) % 1.0;
+        let l = 0.4 + rng.next_float() * 0.25;
+        let idx = dust.new_dust(rng, ctx, world, s.position, 0, 0, 267, 0.0, 0.0, 0, hsl(h, l), 1.0);
+        {
+            let d = dust.slot_mut(idx);
+            d.velocity = next_vector2_circular(rng, 1.0, 1.0); // `:3479`
+            let dir = rng.next_float_direction(); // `:3480`
+            d.velocity += s.movement * dir * 0.5;
+            d.no_gravity = true; // `:3481`
+            d.scale = 0.6 + rng.next_float() * 0.9; // `:3482`
+            d.fade_in = 0.7 + rng.next_float() * 0.8; // `:3483`
+        }
+        if idx != tr_core::particles::DUST_SENTINEL {
+            // `:3484-3490`
+            let cidx = dust.clone_dust(rng, ctx, world, idx);
+            let cd = dust.slot_mut(cidx);
+            cd.scale /= 2.0;
+            cd.fade_in *= 0.75;
+            cd.color = Color::WHITE;
+        }
+    }
+}
+
+/// Site 3641 — `Spawn_LightningSmall` (`:3599-3653`). Head: phase float,
+/// `Next(1,3)` count, a DISCARDED `Next(1,3)` (`:3603`); the
+/// `UniqueInfoPiece != 0` arm re-packs the colour (no draws) and the
+/// AddLight is the lights lane's. Per iteration (count = 1 or 2): angle
+/// dir, speed float, Circular(6,6)×2, colour-lerp float (the
+/// RandomizedFrame particle is the renderer skip), then a `Next(2) == 0`
+/// gate: type 226 (331 when info != 0), NewDustPerfect at the particle's
+/// position with its velocity, scale 0.8 → velocity = Circular(4,4) →
+/// scale *= 1.25 → noLight, colour = the lerp when info != 0.
+pub(crate) fn lightning_small(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let num = rng.next_float() * (std::f32::consts::PI * 2.0); // `:3601`
+    let num2 = rng.next_range(1, 3); // `:3602`
+    let _discarded = rng.next_range(1, 3); // `:3603`
+    let num3 = 0.7f32; // `:3604`
+    let mut color = Color::new(133, 255, 255, 0); // `:3607`
+    let mut value = Color::new(15, 100, 155, 0); // `:3608`
+    if s.info != 0 {
+        // `:3609-3614` — PackedValue = (uint)info, A = 0, value = color*0.75.
+        let packed = s.info as u32;
+        color = Color::new(
+            (packed & 0xFF) as u8,
+            ((packed >> 8) & 0xFF) as u8,
+            ((packed >> 16) & 0xFF) as u8,
+            0,
+        );
+        value = Color::new(
+            (color.r as f32 * 0.75) as u8,
+            (color.g as f32 * 0.75) as u8,
+            (color.b as f32 * 0.75) as u8,
+            0,
+        );
+    }
+    // `:3615` — Lighting.AddLight: the lights lane's (W4-c19/g18-g19).
+    let mut num5 = 0.0f32;
+    while num5 < 1.0 {
+        // `:3618-3621` — the particle argument draws.
+        let f = std::f32::consts::PI * 2.0 * num5 + num + rng.next_float_direction() * 0.25;
+        let num6 = rng.next_float() * 4.0 + 0.1;
+        let vector = next_vector2_circular(rng, 6.0, 6.0) * num3;
+        let color2 = lerp_color(color, value, rng.next_float());
+        // `:3622-3633` — the RandomizedFrame particle: renderer skip.
+        // Its LocalPosition/Velocity feed the dust:
+        let local = s.position + vector;
+        let vel = to_rotation_vector2(f) * num6 * Vec2::new(1.0, 0.5) * 0.2 + s.movement;
+        if rng.next_max(2) == 0 {
+            // `:3634-3651`
+            let dtype = if s.info != 0 { 331 } else { 226 };
+            let idx = dust.new_dust_perfect(rng, ctx, world, local, dtype, Some(vel), 0, Color::default(), 1.0);
+            let d = dust.slot_mut(idx);
+            d.scale = 0.8; // `:3642`
+            d.no_gravity = true; // `:3643`
+            d.velocity = next_vector2_circular(rng, 4.0, 4.0); // `:3644`
+            d.scale *= 1.25; // `:3645`
+            d.no_light = true; // `:3646`
+            if s.info != 0 {
+                d.color = color2; // `:3647-3650`
+            }
+        }
+        num5 += 1.0 / num2 as f32;
+    }
+}
+
+/// Site 3723 — `Spawn_FormatC` (`:3683-3743`). Head: `num` = movement
+/// rotation + π/2 + 0.9424779 * dir (`:3685`); the one-iteration Fading
+/// block draws dir + dir + Circular(8,8)×2 (`:3690-3695`, the particles
+/// are the renderer skip); then 12 type-213 dusts: the velocity ARGUMENTS
+/// are `Next(-2,3)` X then Y (drawn before the internals), noGravity,
+/// fadeIn = scale + 1 + 0.01*Next(0,51), noGravity again, velocity *=
+/// Next(15,51)*0.01, X *= Next(25,101)*0.01, Y -= Next(15,31)*0.1,
+/// position.Y -= 4, velocity = RotatedBy(num ± π/2 by the X sign),
+/// position -= velocity*5, then Next(3): != 0 → noGravity false, else
+/// scale *= 0.6.
+pub(crate) fn format_c(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let num = to_rotation(s.movement) + std::f32::consts::PI / 2.0
+        + 0.9424779 * rng.next_float_direction(); // `:3685`
+    // `:3688-3720` — the one-iteration Fading block:
+    let _dir1 = rng.next_float_direction(); // `:3690`
+    let _dir2 = rng.next_float_direction(); // `:3691`
+    let _circ = next_vector2_circular(rng, 8.0, 8.0); // `:3695`
+    for _ in 0..12 {
+        // `:3723` — the speed arguments draw X then Y.
+        let sx = rng.next_range(-2, 3) as f32;
+        let sy = rng.next_range(-2, 3) as f32;
+        let idx = dust.new_dust(rng, ctx, world, s.position, 1, 1, 213, sx, sy, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:3724`
+        d.fade_in = d.scale + 1.0 + 0.01 * rng.next_range(0, 51) as f32; // `:3725`
+        d.no_gravity = true; // `:3726`
+        d.velocity *= rng.next_range(15, 51) as f32 * 0.01; // `:3727`
+        d.velocity.x *= rng.next_range(25, 101) as f32 * 0.01; // `:3728`
+        d.velocity.y -= rng.next_range(15, 31) as f32 * 0.1; // `:3729`
+        d.position.y -= 4.0; // `:3730`
+        // `:3731` — the spin angle picks ±π/2 by the velocity's X sign.
+        let half = if d.velocity.x > 0.0 { std::f32::consts::PI / 2.0 } else { -(std::f32::consts::PI / 2.0) };
+        d.velocity = rotated_by(d.velocity, (num + half) as f64);
+        d.position -= d.velocity * 5.0; // `:3732`
+        if rng.next_max(3) != 0 {
+            d.no_gravity = false; // `:3733-3736`
+        } else {
+            d.scale *= 0.6; // `:3737-3740`
+        }
+    }
+}
+
+/// The FlameWaders / WoFGoatMountFlames shared shape
+/// (`:3863-3899` / `:3901-3937`): three iterations i = -1..1, each draws
+/// `NextFromList([326,327,328])` (one Next(3)), a scale float, then a
+/// `Next(16)` / `Next(8)` gate; a passed gate spawns a 4×4 type-6
+/// NewDustDirect alpha 100 at position + (i*5.3333335, 0), then
+/// `Next(2) == 0` → noGravity + fadeIn 1.15 else scale 0.6; velocity *=
+/// 0.6, Y -= 1.2, noLight, position.Y -= 4. The FlameParticle + the
+/// `dust.shader` write are renderer skips (the port has no shader chain).
+fn flame_mount_arm(
+    gate_max: i32,
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for i in -1..=1 {
+        let _proj = rng.next_max(3); // `:3868`/`:3906` — NextFromList
+        let _scale = rng.next_float() * 0.9 + 0.1; // `:3871`/`:3909`
+        let vector = s.position + Vec2::new(i as f32 * 5.3333335, 0.0);
+        // `:3873-3879`/`:3911-3917` — the FlameParticle: renderer skip.
+        if rng.next_max(gate_max) == 0 {
+            // `:3880`/`:3918`
+            let idx = dust.new_dust_direct(rng, ctx, world, vector, 4, 4, 6, 0.0, 0.0, 100, Color::default(), 1.0);
+            let d = dust.slot_mut(idx);
+            if rng.next_max(2) == 0 {
+                d.no_gravity = true;
+                d.fade_in = 1.15;
+            } else {
+                d.scale = 0.6;
+            }
+            d.velocity *= 0.6;
+            d.velocity.y -= 1.2;
+            d.no_light = true;
+            d.position.y -= 4.0;
+            // `dust.shader = …` (`:3896`/`:3934`): dropped field, cited.
+        }
+    }
+}
+
+/// Site 3882 — `Spawn_FlameWaders` (`:3863-3899`): the Next(16) gate.
+pub(crate) fn flame_waders(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    flame_mount_arm(16, s, rng, dust, ctx, world);
+}
+
+/// Site 3920 — `Spawn_WallOfFleshGoatMountFlames` (`:3901-3937`): the
+/// Next(8) gate; the body is otherwise identical (the shader source is
+/// cMount vs cFlameWaker — a dropped field either way).
+pub(crate) fn wof_goat_mount_flames(
+    s: &OrchestraSettings,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    flame_mount_arm(8, s, rng, dust, ctx, world);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,25 +873,192 @@ mod tests {
         let w = world();
         let c = ctx();
         let s = settings();
-        for (f, dtype, internals): (fn(&OrchestraSettings, &mut UnifiedRandom, &mut DustPool, &SpawnCtx, &World), i32, usize) in
-            [(terra_blade, 107i32, 6usize), (excalibur, 169i32, 7usize)]
+        // TerraBlade: type 107, 6 internals → 8 × (2 + 6) = 64 draws.
         {
             let mut pool = DustPool::new();
             let mut rng = UnifiedRandom::new(37);
-            f(&s, &mut rng, &mut pool, &c, &w);
+            terra_blade(&s, &mut rng, &mut pool, &c, &w);
             let slots = active(&pool);
             assert_eq!(slots.len(), 8);
             for &i in &slots {
-                assert_eq!(pool.slot(i).dust_type, dtype);
+                assert_eq!(pool.slot(i).dust_type, 107);
                 assert!(pool.slot(i).no_gravity);
                 assert_eq!(pool.slot(i).position, s.position);
             }
-            // 8 × (2 argument + internals) draws, no head floats.
             let mut bare = UnifiedRandom::new(37);
-            for _ in 0..8 * (2 + internals) {
+            for _ in 0..8 * (2 + 6) {
                 bare.next();
             }
             assert_eq!(rng.next_range(0, 1000), bare.next_range(0, 1000));
+        }
+        // Excalibur: type 169, 7 internals → 8 × (2 + 7) = 72 draws.
+        {
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(37);
+            excalibur(&s, &mut rng, &mut pool, &c, &w);
+            let slots = active(&pool);
+            assert_eq!(slots.len(), 8);
+            for &i in &slots {
+                assert_eq!(pool.slot(i).dust_type, 169);
+                assert!(pool.slot(i).no_gravity);
+                assert_eq!(pool.slot(i).position, s.position);
+            }
+            let mut bare = UnifiedRandom::new(37);
+            for _ in 0..8 * (2 + 7) {
+                bare.next();
+            }
+            assert_eq!(rng.next_range(0, 1000), bare.next_range(0, 1000));
+        }
+    }
+
+    /// W4-e4 — sites 3195/3198: both loops step +2 over <3 (iterations 0
+    /// and 2), the second spawns 2 pairs each → 4 pairs = 8 dusts, type
+    /// 75 (tweak chain → 7 internals), 2 argument draws each = 9 × 8 = 72.
+    #[test]
+    fn w4_e4_true_nights_edge_steps_by_two_and_pairs_twice() {
+        let w = world();
+        let c = ctx();
+        let s = settings();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(43);
+        true_nights_edge(&s, &mut rng, &mut pool, &c, &w);
+        let slots = active(&pool);
+        assert_eq!(slots.len(), 8);
+        for &i in &slots {
+            assert_eq!(pool.slot(i).dust_type, 75);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).scale, 1.4);
+        }
+        let mut bare = UnifiedRandom::new(43);
+        for _ in 0..72 {
+            bare.next();
+        }
+        assert_eq!(rng.next_range(0, 1000), bare.next_range(0, 1000));
+    }
+
+    /// W4-e4 — site 3478: the FULL RainbowRodHit body draws exactly 272
+    /// (2 head + 6×7 sparkle + 12×19 dust), the same contract `prefix.rs`
+    /// (S1-P-i45) consumes count-only — the wiring wave folds that drain
+    /// into this emitter. 12 dusts + 12 clones = 24 live slots, type 267.
+    #[test]
+    fn w4_e4_rainbow_rod_hit_matches_the_prefix_272_contract() {
+        let w = world();
+        let c = ctx();
+        let s = settings();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        rainbow_rod_hit(&s, &mut rng, &mut pool, &c, &w);
+        let slots = active(&pool);
+        assert_eq!(slots.len(), 24, "12 dusts + 12 clones");
+        for &i in &slots {
+            assert_eq!(pool.slot(i).dust_type, 267);
+            assert!(pool.slot(i).no_gravity);
+        }
+        let mut bare = UnifiedRandom::new(53);
+        for _ in 0..272 {
+            bare.next();
+        }
+        assert_eq!(rng.next_range(0, 1000), bare.next_range(0, 1000));
+    }
+
+    /// W4-e4 — site 3324: 6 head draws (phase + the 5 sparkle-block:
+    /// scale, size, angle, Circular(12,12)×2) + 2 × 17 tail (6 internals
+    /// + 2 circular + 1 blend float + 2 circular + 6 clone internals) =
+    /// 40; 2 dusts + 2 clones live, the final velocity overwrite pins
+    /// movement, the clone halves scale.
+    #[test]
+    fn w4_e4_paladins_hammer_tail_overwrites_velocity_and_clones() {
+        let w = world();
+        let c = ctx();
+        let s = settings();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        paladins_hammer(&s, &mut rng, &mut pool, &c, &w);
+        let slots = active(&pool);
+        assert_eq!(slots.len(), 4, "2 dusts + 2 clones");
+        // The parent dusts (even slots) carry the movement velocity and
+        // scale 0.1; the clones (odd slots) halve it and go White.
+        for (k, &i) in slots.iter().enumerate() {
+            let d = pool.slot(i);
+            assert_eq!(d.dust_type, 267);
+            assert!(d.no_gravity);
+            if k % 2 == 0 {
+                assert_eq!(d.velocity, s.movement);
+                assert_eq!(d.scale, 0.1);
+            } else {
+                assert_eq!(d.scale, 0.05);
+                assert_eq!(d.color, Color::WHITE);
+            }
+        }
+        let mut bare = UnifiedRandom::new(47);
+        for _ in 0..40 {
+            bare.next();
+        }
+        assert_eq!(rng.next_range(0, 1000), bare.next_range(0, 1000));
+    }
+
+    /// W4-e4 — site 3723: 5 head draws (1 num dir + 2 block dirs + 2
+    /// circular) + 12 × 13 (2 speed args + 6 internals + 5 post rolls) =
+    /// 161; 12 type-213 dusts, the Next(3) tail splits noGravity/scale.
+    #[test]
+    fn w4_e4_format_c_spins_the_minecart_sparks() {
+        let w = world();
+        let c = ctx();
+        let s = settings();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(61);
+        format_c(&s, &mut rng, &mut pool, &c, &w);
+        let slots = active(&pool);
+        assert_eq!(slots.len(), 12);
+        for &i in &slots {
+            assert_eq!(pool.slot(i).dust_type, 213);
+        }
+        let mut bare = UnifiedRandom::new(61);
+        for _ in 0..161 {
+            bare.next();
+        }
+        assert_eq!(rng.next_range(0, 1000), bare.next_range(0, 1000));
+    }
+
+    /// W4-e4 — sites 3882/3920: three iterations each draw Next(3) + a
+    /// scale float + the gate; a passed gate spawns one 4×4 type-6
+    /// NewDustDirect (alpha 100) with the Next(2) noGravity/scale split.
+    /// Twin-pool parity over both gate widths.
+    #[test]
+    fn w4_e4_flame_arms_gate_per_iteration() {
+        let w = world();
+        let c = ctx();
+        let s = settings();
+        for gate in [16i32, 8i32] {
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(71);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(71);
+            if gate == 16 {
+                flame_waders(&s, &mut rng, &mut pool, &c, &w);
+            } else {
+                wof_goat_mount_flames(&s, &mut rng, &mut pool, &c, &w);
+            }
+            let mut expect = 0usize;
+            for i in -1..=1 {
+                let _proj = mirror.next_max(3);
+                let _scale = mirror.next_float() * 0.9 + 0.1;
+                let vector = s.position + Vec2::new(i as f32 * 5.3333335, 0.0);
+                if mirror.next_max(gate) == 0 {
+                    let idx = mpool.new_dust_direct(&mut mirror, &c, &w, vector, 4, 4, 6, 0.0, 0.0, 100, Color::default(), 1.0);
+                    let gate2 = mirror.next_max(2) == 0;
+                    let d = pool.slot(expect);
+                    assert_eq!(d.dust_type, 6);
+                    assert_eq!(d.alpha, 100);
+                    assert_eq!(d.no_gravity, gate2);
+                    assert!(d.no_light);
+                    // The emitter nudges position.Y -= 4 after the spawn.
+                    assert_eq!(d.position, mpool.slot(idx).position - Vec2::new(0.0, 4.0));
+                    expect += 1;
+                }
+            }
+            assert_eq!(active(&pool).len(), expect);
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
         }
     }
 }
