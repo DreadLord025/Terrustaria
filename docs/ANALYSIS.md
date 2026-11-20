@@ -3057,6 +3057,24 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
   `TrimDisplayIfOverElementDimensions(27)` display trim is not ported.
 * **The keyboard draws the desktop layer only** (`ShowGamepadHints` false
   without a gamepad); the 50-key grid layer is kept behind `TR_VK_GRID=1`.
+* **Text-entry bindings (W4-c25)** — `ui/keyboard.rs` now carries the field-less
+  text-entry layer (`TextField`, `get_input_text`, `BackspaceRepeat`). The
+  1.4.5.8 decompilation has **no `UITextField.cs`**: the semantics port from
+  `UITextBox.cs:11-78` (caret/insert/backspace/cursor), `Main.GetInputText`
+  (`Main.cs:20010-20121` — shortcuts, typed queue, flags, repeat) and ReLogic's
+  `Clipboard.SanitizeClipboardText`. Documented mappings/deviations:
+  (1) the caret is a `char` index, not the C# UTF-16 code-unit index — the
+  port's strings are `char`-indexed and `TrimUserString`'s dangling-surrogate
+  guard (`Utils.cs:2845-2848`) has no reachable arm; (2) there is no ranged
+  selection in any of the sources — copy/cut take the whole string;
+  (3) `GetInputText`'s `ChatManager.ParseMessage` snippet-delete arm
+  (`Main.cs:20110-20111`) is not ported — no text-field consumer produces chat
+  markup, so the plain `TrimLastCharacter` arm is the live one; (4) the
+  bindings are pure (clipboard in/out through parameters, no OS access, no
+  IME — `imeCompositionActive` gates are caller-side and currently always
+  false); (5) no consumer is wired yet — the crafting search box
+  (`ItemFilters.BySearch`) and the chest rename keep their current paths until
+  their own tasks attach the field.
 * **The Advanced seed tab is out of scope** (spec В§9.4): the seed plate's
   click degrades to the plain seed keyboard and the special-seed ring effect
   is not drawn; `UIWorldLoad`/`UIWorldGenDebug`/`UIWorldCreationAdvanced`

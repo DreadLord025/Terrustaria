@@ -272,6 +272,7 @@ pub fn write_str(state: &mut KeyboardState, s: &str) {
 /// (`UISearchBar.cs:63`), the chest rename 20 (`Chest.cs:70` — the keyboard
 /// session's [`Request::max_length`]).
 #[derive(Clone, Debug, PartialEq)]
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 pub struct TextField {
     /// `Text` — the `UITextPanel<string>` payload (`UITextBox.cs:9`).
     pub text: String,
@@ -282,6 +283,7 @@ pub struct TextField {
     pub max_length: usize,
 }
 
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 impl TextField {
     /// `new UITextBox(text, ...)` + `SetTextMaxLength` — the ctor runs
     /// `SetText`, so the initial text is trimmed and the caret lands at the
@@ -353,6 +355,7 @@ impl TextField {
 /// units, dropping a dangling high surrogate at the cut. The port counts
 /// `char`s (its string index unit) and never splits a scalar, so the
 /// surrogate guard has no reachable arm — same visible behaviour.
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 pub fn trim_user_string(s: &str, length: usize) -> String {
     if s.chars().count() <= length {
         return s.to_string();
@@ -361,6 +364,7 @@ pub fn trim_user_string(s: &str, length: usize) -> String {
 }
 
 /// `Utils.TrimLastCharacter` (`Utils.cs:2852-2855`).
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 pub fn trim_last_character(s: &str) -> String {
     trim_user_string(s, s.chars().count().saturating_sub(1))
 }
@@ -368,6 +372,7 @@ pub fn trim_last_character(s: &str) -> String {
 /// `Clipboard.SanitizeClipboardText` (`ReLogic.OS.Base/Clipboard.cs:21-32`):
 /// keep chars `>= ' '` except DEL, plus `'\n'` when `allow_newline`
 /// (`MultiLineValue`, the sign path; the single-line `Value` strips it).
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 pub fn sanitize_clipboard_text(text: &str, allow_newline: bool) -> String {
     text.chars()
         .filter(|&c| (c >= ' ' && c != '\u{7f}') || (allow_newline && c == '\n'))
@@ -376,8 +381,9 @@ pub fn sanitize_clipboard_text(text: &str, allow_newline: bool) -> String {
 
 /// What one `GetInputText` pass reports — the `Main.inputTextEnter` /
 /// `Main.inputTextEscape` flags (`Main.cs:20020-20021`, `:20071-20078`) plus
-/// the edited string. `None` of the flags means keep editing.
+/// the edited string. Neither flag set means keep editing.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 pub struct InputTextResult {
     /// The edited string (`GetInputText`'s return, `Main.cs:20114`).
     pub text: String,
@@ -394,6 +400,7 @@ pub struct InputTextResult {
 /// (`Main.keyInt`/`keyString`, `:20067-20083`). The App fills it from winit;
 /// the bindings stay OS-free.
 #[derive(Clone, Debug, Default)]
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 pub struct InputKeys {
     /// Control held this frame (`PressingControl`, `:20029`).
     pub control: bool,
@@ -424,6 +431,7 @@ pub struct InputKeys {
 /// defaults (0/0) so the first held frame repeats immediately, exactly like
 /// the source's first `GetInputText` call.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 pub struct BackspaceRepeat {
     /// `backSpaceRate` — starts 0, reset to 7 on release (`:20105`).
     rate: f32,
@@ -431,6 +439,7 @@ pub struct BackspaceRepeat {
     count: i32,
 }
 
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 impl BackspaceRepeat {
     /// One frame of `:20089-20107`: while Backspace stays held, the rate
     /// decays 0.05/frame (floored at 0) and a repeat fires when the counter
@@ -489,6 +498,7 @@ fn round_to_even(v: f32) -> i32 {
 /// (search 50, chest 20), so the pass lands through [`TextField::set_text`].
 /// Returns the flags+text and, when a copy/cut fired, the string to write to
 /// the OS clipboard (`Platform.Get<IClipboard>().Value = oldString`).
+#[allow(dead_code)] // W4-c25 bindings; the search/rename consumers attach later.
 pub fn get_input_text(
     field: &mut TextField,
     keys: &InputKeys,
@@ -1686,6 +1696,18 @@ mod tests {
         f.backspace(); // empty is a no-op
         assert_eq!(f.text, "");
         assert_eq!(f.cursor, 0);
+    }
+
+    #[test]
+    fn set_max_length_stores_without_retrimming() {
+        // `SetTextMaxLength` (`UITextBox.cs:51-54`) only stores the cap; the
+        // next SetText/Write enforces it (the C# setter does not re-trim).
+        let mut f = TextField::new("abcdef", 20);
+        f.set_max_length(3);
+        assert_eq!(f.text, "abcdef", "the setter itself does not trim");
+        f.set_text(&f.text.clone());
+        assert_eq!(f.text, "abc");
+        assert_eq!(f.cursor, 3);
     }
 
     #[test]
