@@ -39244,3 +39244,87 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d116 — the StrikeNPC_Inner damage tail + the strike draw order (2026-11-20)
+
+Branch `task/W4-d116-player-hurt-armor`, base a725acb0 (wave-3 complete).
+The research/04 headline was re-verified FIRST: the projectile→NPC
+DamageVar/defence skip (S1-C-2) and the `num2 < 1 → 1` hurt floor (S1-C-3)
+were already fixed on main; wave-3 i11 landed the per-hit crit + knockback
+census. This task ported the REMAINING `NPC.StrikeNPC_Inner` steps
+(`NPC.cs:81235-81563`) — the full verbatim table + the RNG order census
+live in `docs/research/04-player-combat.md` (the W4-d116 addendum).
+
+### What landed
+
+- The scalar damage tail (`:81240-81249`) in `strike_pooled`, `hurt` and
+  `hurt_from_projectile`: the red-hat ×0.7 (`Max(1, (int)(num * 0.7f))`,
+  the existing `red_hat_skeletron_adjustments_enabled` predicate), the
+  LIVE `takenDamageMultiplier` applied only when `> 1f`, the final
+  `Math.Max(1, num)`.
+- `Npc::taken_damage_multiplier` is now a live f32 field seeded from
+  `NpcKind::taken_damage_multiplier()` at construction (the crawltipede
+  tail's 10, `NPC.cs:15316` — the old strike-time kind read preserved
+  exactly). The C# field's other writer is the solar selenian's
+  `AI_003_Fighters` arm (`:56722` reset 1 / `:56776` roll-phase 3).
+- The `!immortal` gate (`:81368`) wraps every strike-life subtraction
+  (both pool arms + the no-list twins): an immortal target takes the
+  text/knockback/justHit/interaction but no life loss.
+- `strike_melee`/`strike_projectile` return the dealt number (`:81563`);
+  the whip per-type gate reads the RETURN (`Projectile.cs:13649` num24 →
+  `:13659` flag10), not the pre-strike value.
+- The projectile-lane combat text (`:81250-81264`) — never spawned
+  before: both PVE walks queue `(hitbox, final num, crit, friendly)` on
+  landed `lifeMax > 1` hits (`pending_npc_damage_texts`); the world-sim
+  drain spawns them on the `UpdateProjectiles` stream.
+- The strike draw order: the C# draws text (`:81250`) → HitEffect/probe
+  (`:81488`) → HitSound (`:81544`) inside the strike. The melee lane drew
+  probe-then-text (fixed: text first, final num, the town friendly colour
+  pair `:81252-81254`); the projectile lane drew the probe inline before
+  any text (fixed: `pending_probe_rolls` defers it behind the text drain;
+  the drain order is text → probe → hit-sound).
+
+### Deliberate deviations (recorded)
+
+- **The selenian's 1/3 multiplier flip is NOT wired.** Its
+  `AI_003_Fighters` arm (`NPC.cs:56719-56785` — the windup/roll/reflect
+  cycle with `reflectsProjectiles`) is unported; `update_solar_selenian`
+  is the walker stand-in. The field is the seam the arm will write; the
+  kind row seeds 1, so today's selenian behaviour is unchanged.
+- **The `:81275-81367` strike-reaction block is deferred with its
+  readers.** The town panic (`ai[0]=1`, `ai[1]=300+Next(300)`,
+  `:81283-81303`), the aiStyle-8 caster re-arms (172→450, 283/284
+  `Next(2)`→390, 533 `Next(3)!=0`→181, else 400 + TargetClosest,
+  `:81311-81346`), the cultist aggro relay (438/379, `:81275-81282`), the
+  346 gore / 184/535/185 localAI writes: most kinds are unported
+  (Necromancer, RuneWizard, CultistDevote/ArcherBlue, SlimeSpiked,
+  SnowFlinx, LibrarianSkeleton); the ported kinds' AI machines do not
+  read these strike writes yet. Adding the writes (and their
+  `Next(300)`/`Next(2)`/`Next(3)` draws) without the readers would shift
+  every downstream stream draw for zero behaviour — the deferred-with-
+  reader precedent (the 693 localAI arm, `npc_ai_bat.rs:288`).
+- **The batch-tail deferral now covers the text + probe too.** The C#
+  draws them mid-walk inside `StrikeNPC`; the port drains at the pass
+  tail in the same relative order (the S1-E-21c convention, "The NPC
+  hit/death sound plays" above). Within one tick the draw SEQUENCE on
+  `UpdateProjectiles` is unchanged relative to the sound plays; the new
+  text draws insert ahead of the probe/sound draws exactly where the C#
+  puts them.
+- `NPCDamageTracker` (`:81372`/`:81383`) has no port system (the DoT
+  precedent, `npc_buffs.rs`). The instakill flag (`:81237`) and
+  `StrikeNPCNoInteraction` (`:81184`) have no ported callers. The net
+  host spawns no strike text — the C# `netMode == 2` early-return
+  (`CombatText.cs:61-64`) makes that faithful.
+
+### Verification
+
+Code-only mode: **no cargo/rustc/tests invoked**. Every step re-read
+against the cited C# windows (`NPC.cs:81184-81568`, `:66671-66682`,
+`:56719-56785`, `Main.cs:66118-66155`, `Projectile.cs:13640-13669`,
+`CombatText.cs:54-121`, `Player.cs:20432-20461`/`:31370-31429`); the
+call sites checked by read/grep (the three strike fns + netglue's
+discard, the ctor seed, the drain seams, the `bare`/`thrust_app` test
+rigs). 10 witnesses WRITTEN NOT RUN (5 `npc.rs`, 3 `projectile.rs`, 2
+`world_sim/editing.rs` — listed in the research/04 addendum); the
+existing pool/crawltipede/immortal-yoyo/S1-C-2 witnesses re-checked by
+reading against the new gates.
