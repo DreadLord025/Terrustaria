@@ -17,6 +17,7 @@
 
 mod biome_detail;
 mod biomes;
+mod buried_chest;
 pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;

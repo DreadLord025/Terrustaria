@@ -31,6 +31,7 @@
 
 use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
+use super::buried_chest;
 use super::caves;
 use super::desert;
 use super::desert_dunes;
@@ -378,6 +379,24 @@ pub(crate) struct GenVars {
     pub(crate) oasis_position: [(i32, i32); 20],
     pub(crate) oasis_width: [i32; 20],
     pub(crate) oasis_height: i32,
+    /// `GenVars.hellChestItem`/`hellChest` (`GenVars.cs:272-274`, the Reset
+    /// shuffle `WorldGen.cs:11246-11258`): the five-item hell-chest main
+    /// table, shuffled once per world by the pick-and-remove draw, and the
+    /// wrap counter `AddBuriedChest`'s hell arm advances (`:36210-36217`).
+    /// W4-d103 pass 24: the faithful buried-chest core reads it; the
+    /// shuffle rides the Reset stand-in's own stream after the crimson
+    /// roll (the classic table {274, 220, 112, 218, 3019}, the remix swap
+    /// 112 → 683).
+    pub(crate) hell_chest_item: [u16; 5],
+    pub(crate) hell_chest: usize,
+    /// `GenVars.desertHiveHigh`/`desertHiveLow` (`GenVars.cs:142-144`, the
+    /// Reset values `WorldGen.cs:11147-11148`: maxTilesY / 0, tightened by
+    /// `UpdateDesertHiveBounds` `:10989-10998` as the hive carve walks).
+    /// W4-d103 pass 24: the buried-chest desert arm's `flag20` depth test
+    /// (`:36041`) reads them; the port mirrors the reset pair and the
+    /// hive-bounds publication tightens them.
+    pub(crate) desert_hive_high: i32,
+    pub(crate) desert_hive_low: i32,
 }
 
 impl Default for GenVars {
@@ -444,6 +463,14 @@ impl Default for GenVars {
             oasis_position: [(0, 0); 20],
             oasis_width: [0; 20],
             oasis_height: 20,
+            // The Reset shuffle overwrites the table before any pass runs;
+            // the unshuffled order is the C# list literal (`:11246`).
+            hell_chest_item: [274, 220, 112, 218, 3019],
+            hell_chest: 0,
+            // The Reset pair (`WorldGen.cs:11147-11148`): High = maxTilesY
+            // (the run() head re-stamps the real height), Low = 0.
+            desert_hive_high: i32::MAX,
+            desert_hive_low: 0,
         }
     }
 }
@@ -1409,6 +1436,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The vanilla Statues slot (`WorldGen.cs:16853`): after Life Crystals
     // (`:16755`), before the buried chests (`:16971`) — W4-d103 pass 23.
     step!("statues", "Statues", step_statues),
+    // The vanilla Surface Chests slot (`WorldGen.cs:17130`): after Statues
+    // (`:16853`) and the buried chests (`:16971` — the port's grouped
+    // `cave houses` sits earlier), before the jungle chests (`:17211`) —
+    // W4-d103 pass 24.
+    step!("surface chests", "Surface Chests", step_surface_chests),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2747,6 +2779,52 @@ fn step_statues(
     );
 }
 
+/// The vanilla Surface Chests slot (`WorldGen.cs:17130`): the surface-band
+/// chests on a fresh `pass_rng("Surface Chests")` stream through the
+/// faithful `AddBuriedChest` core. The `Skyblock.denySomeGeneration` and
+/// `noSurface` gates (`:17132`) ride their flags.
+fn step_surface_chests(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK)
+        || opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE)
+    {
+        return;
+    }
+    let layers = *gv.layers();
+    let flags = buried_chest::ChestSeedFlags {
+        remix: opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        get_good: opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        drunk: opts.flags.contains(crate::seeds::SeedFlags::DRUNK),
+        anniversary: opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        not_the_bees: opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        dont_starve: opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE),
+        no_traps: opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS),
+        error_world: opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::ERROR_WORLD),
+        crimson: opts.crimson,
+        crimson_left: gv.crimson_left,
+    };
+    buried_chest::pass_surface_chests(
+        world,
+        gv,
+        layers.surface_low,
+        layers.world_surface,
+        layers.rock_layer,
+        flags,
+        &mut streams.pass_rng("Surface Chests"),
+        streams.chest_stock.as_deref_mut(),
+    );
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3039,6 +3117,20 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
     let mut reset_rng = core.pass_rng("Reset");
     gv.crimson_left = reset_rng.range(0, 2) == 1;
     gv.flip_infections = opts.flags.flip_infections();
+    // The hell-chest shuffle (`WorldGen.cs:11246-11258`): the uniform
+    // pick-and-remove over the five items, once per world. The port draws
+    // it after the crimson roll on the same Reset stream (the vanilla
+    // pre-pass genRand order; W4-d103 pass 24).
+    let mut list: Vec<u16> = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        vec![274, 220, 683, 218, 3019]
+    } else {
+        vec![274, 220, 112, 218, 3019]
+    };
+    for slot in gv.hell_chest_item.iter_mut() {
+        let index = reset_rng.range(0, list.len() as i32) as usize;
+        *slot = list[index];
+        list.remove(index);
+    }
     gv
 }
 
@@ -3111,6 +3203,8 @@ pub(crate) fn run(
     config: &WorldGenConfig,
 ) -> GenOutcome {
     let mut gv = reset_genvars(&streams.core(), opts);
+    // The Reset desert-hive High (`WorldGen.cs:11147`): maxTilesY.
+    gv.desert_hive_high = world.height;
     if let Some(h) = streams.progress.as_mut() {
         h.begin_generation(total_weight(opts));
     }
@@ -3186,7 +3280,9 @@ impl GenerationRunner {
         world.micro_seeds = opts.micro_flags;
         boot_statics(&mut world);
         let core = StreamCore::new(opts.seed);
-        let gv = reset_genvars(&core, opts);
+        let mut gv = reset_genvars(&core, opts);
+        // The Reset desert-hive High (`WorldGen.cs:11147`): maxTilesY.
+        gv.desert_hive_high = height;
         GenerationRunner {
             world,
             gv,
@@ -3333,8 +3429,10 @@ mod tests {
         // "Waterfalls", `:16610`) after `living trees`; + `wall variety`
         // (vanilla "Wall Variety", `:16697`) after `waterfalls`; + `life
         // crystals` (vanilla "Life Crystals", `:16755`) after `wall variety`;
-        // + `statues` (vanilla "Statues", `:16853`) after `life crystals`.
-        assert_eq!(names.len(), 71);
+        // + `statues` (vanilla "Statues", `:16853`) after `life crystals`;
+        // + `surface chests` (vanilla "Surface Chests", `:17130`) after
+        // `statues`.
+        assert_eq!(names.len(), 72);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3430,6 +3528,7 @@ mod tests {
                 "wall variety",
                 "life crystals",
                 "statues",
+                "surface chests",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3524,7 +3623,8 @@ mod tests {
         assert_eq!(names[pos("waterfalls") + 1], "wall variety");
         assert_eq!(names[pos("wall variety") + 1], "life crystals");
         assert_eq!(names[pos("life crystals") + 1], "statues");
-        assert_eq!(names[pos("statues") + 1], "trees");
+        assert_eq!(names[pos("statues") + 1], "surface chests");
+        assert_eq!(names[pos("surface chests") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3556,6 +3656,11 @@ mod tests {
         // W4-d103 pass 23: the vanilla Statues pairs (`:16755` Life
         // Crystals → `:16853` Statues → `:16971` Buried Chests).
         assert!(cpos("Statues") < cpos("Buried Chests"));
+        // W4-d103 pass 24: the vanilla Surface Chests pairs (`:16971`
+        // Buried Chests → `:17130` Surface Chests → `:17211` Jungle
+        // Chests Placement).
+        assert!(cpos("Buried Chests") < cpos("Surface Chests"));
+        assert!(cpos("Surface Chests") < cpos("Jungle Chests Placement"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 

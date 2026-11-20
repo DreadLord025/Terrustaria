@@ -281,6 +281,15 @@ mod tests {
     // pass runs IF the band floor sits below 212 (unmeasured). The new
     // 105/349/135 frame-important boot bits are inert without the kinds.
     // Stale-by-design if statues place; the gate re-pins. a == b stays.
+    // W4-d103 pass 24 (2026-11-20, code-only): the `Surface Chests` pass
+    // (`WorldGen.cs:17130-17210`) lands on a fresh `pass_rng("Surface
+    // Chests")` stream after `statues`, through the faithful AddBuriedChest
+    // core (the Reset hell-chest shuffle now draws 5 words on the Reset
+    // stream — the crimson roll's stream tail moves, but no executed pass
+    // reads the Reset stream after Reset, so the tiles are untouched by
+    // the shuffle alone). The size guard needs > 600 wide — the 512
+    // fixture skips before any draw, so this pin is UNCHANGED by the pass
+    // itself. a == b stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -356,6 +365,11 @@ mod tests {
     // DEFERRED to the merge gate (no compiler on this branch); a == b
     // stays green — the pass draws only its own fresh stream (the wires
     // are a side table, not hashed).
+    // W4-d103 pass 24 (code-only): the Surface Chests pass (21 chests on
+    // the 4200-wide default, the AddBuriedChest core's 2×2 tile-21 writes
+    // + the living-tree style-12 arm) moves this pin BY DESIGN. The re-pin
+    // is DEFERRED to the merge gate (no compiler on this branch); a == b
+    // stays green — the pass draws only its own fresh stream.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

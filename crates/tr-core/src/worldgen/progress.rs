@@ -141,6 +141,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "life crystals" => PassMessage::Gen(28),
         // WorldGen.cs:16857 (Statues).
         "statues" => PassMessage::Gen(29),
+        // WorldGen.cs:17134 (Surface Chests).
+        "surface chests" => PassMessage::Gen(31),
         // WorldGen.cs:15480.
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:19944.
