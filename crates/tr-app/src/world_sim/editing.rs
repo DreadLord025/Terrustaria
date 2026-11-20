@@ -1795,7 +1795,6 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // order :44404). The swing-start tail below is i12's
                 // start_use_timers (ApplyItemAnimation, V4-landed).
                 resolve_melee_strike(app, idx, held, held_weapon, held_fx, melee_pen, pcx);
-                }
                 // One swing per `ApplyItemAnimation` (`Player.cs:4463-4497`):
                 // the melee branch scales by the inverted meleeSpeed, the
                 // reuse lock rides the start (`:4496`).
@@ -11104,54 +11103,13 @@ mod item_mechanics {
     // the drink through `potions::use_potion_item` (the `:52217` sickness
     // gate reads `potionDelay`, not the buff slot).
 
-    const DRINK_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+    pub(super) const DRINK_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
 
     /// A drink rig on the flow app's 8x8 air world: the player parked at the
     /// world centre, the camera pinned on the cursor cell (in bounds, in
     /// reach, no tile under it — the melee/mining arms fall through), the
     /// SILENT listener so the use-sound draws nothing.
-    fn potion_press_app(kind: u16, count: u32) -> App {
-        let mut app = flow_app(None, vec![], vec![]);
-        let mut p = Player::spawn(&app.world);
-        p.x = 4.0 * TILE_PX;
-        p.y = 4.0 * TILE_PX;
-        p.hp = 50;
-        app.player = Some(p);
-        app.camera = Vec2::new(4.0 * TILE_PX + 8.0, 4.0 * TILE_PX + 8.0);
-        app.mouse_pos = Vec2::new(640.0, 360.0);
-        app.audio.set_listener(crate::sound::Listener {
-            camera_center: (app.camera.x, app.camera.y),
-            sound_volume: 0.0,
-            ambient_volume: 1.0,
-            quiet_ambient_sounds: false,
-            game_menu: false,
-            generating_or_loading: false,
-            server: false,
-        });
-        app.inventory[app.selected] = ItemSlot {
-            kind,
-            name: registry::name(kind),
-            count,
-            prefix: 0,
-        };
-        // The released state: one idle frame arms the press edge.
-        app.mine_down = false;
-    // ---- S1-P-i37: the drink press-edge regression witnesses ---------------
-    // WRITTEN NOT RUN (code-only swarm). The P1 census bug: the old heal arm
-    // computed `sick` but never read it and ran on every `mine_down` tick —
-    // holding LMB drained the whole stack and re-armed buff 21 forever. The
-    // fix gates the consumable arms on the `Player.cs:42733` press edge
-    // (`controlUseItem && releaseUseItem && itemAnimation == 0`) and routes
-    // the drink through `potions::use_potion_item` (the `:52217` sickness
-    // gate reads `potionDelay`, not the buff slot).
-
-    const DRINK_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
-
-    /// A drink rig on the flow app's 8x8 air world: the player parked at the
-    /// world centre, the camera pinned on the cursor cell (in bounds, in
-    /// reach, no tile under it — the melee/mining arms fall through), the
-    /// SILENT listener so the use-sound draws nothing.
-    fn potion_press_app(kind: u16, count: u32) -> App {
+    pub(super) fn potion_press_app(kind: u16, count: u32) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         let mut p = Player::spawn(&app.world);
         p.x = 4.0 * TILE_PX;
@@ -11284,6 +11242,9 @@ mod s1_p_i08_throw_tests {
     //! and `GetWeaponKnockback`'s melee arms (`:53352-53359`).
 
     use super::*;
+    // M1 re-sync: the i37 drink witnesses landed in this module by the merge
+    // splice; their rig lives in the sibling item_mechanics module.
+    use super::item_mechanics::{DRINK_SCREEN, potion_press_app};
     use crate::projectile::{
         ENCHANTED_BOOMERANG, ICE_BOOMERANG, LIGHT_DISC, WOODEN_BOOMERANG,
     };

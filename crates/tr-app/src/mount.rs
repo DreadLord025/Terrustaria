@@ -2177,17 +2177,6 @@ impl MountState {
         self.active
     }
 
-    /// `Mount.AllowDirectionChange` (`Mount.cs:630-640`): true for every
-    /// mount except the Scutlix (type 9), which allows the turn only once
-    /// its ability cooldown is under half the row's maximum.
-    pub(crate) fn allow_direction_change(&self) -> bool {
-        if self.kind == 9 {
-            let max = self.data().map_or(0, |d| d.ability_cooldown);
-            return self.ability_cooldown < max / 2;
-        }
-        true
-    }
-
     /// `Mount.UpdateEffects` (`Mount.cs:4798`): the Super Cart flag rides the
     /// cart set (`MountID.Sets.Cart`) and the player's unlock/enable pair.
     /// The flag then overrides the run/dash/acceleration/jump getters

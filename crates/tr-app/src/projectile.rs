@@ -21591,10 +21591,11 @@ mod tests {
         let before = npc.hp;
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         pool.damage_pve(
+            &w,
             slot,
             std::slice::from_mut(&mut npc),
             None,
-            None,
+            Some(player.center()),
             Some(&mut player),
             &mut rng,
         );
@@ -21625,10 +21626,11 @@ mod tests {
         pool.set_armor_penetration(slot3, arpen);
         let mut rng3 = tr_core::tile_light::FastRandom::new(7);
         pool.damage_pve(
+            &w,
             slot3,
             std::slice::from_mut(&mut npc3),
             None,
-            None,
+            Some(player.center()),
             Some(&mut player),
             &mut rng3,
         );
@@ -21659,6 +21661,7 @@ mod tests {
         pool.set_armor_penetration(slot2, arpen);
         let mut rng2 = tr_core::tile_light::FastRandom::new(7);
         pool.damage_pve(
+            &w,
             slot2,
             std::slice::from_mut(&mut npc2),
             None,
@@ -27127,7 +27130,6 @@ mod phasmal_projectile_tests {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
-            no_drop_item: false,
             wet: false,
             wants_dart_spawns: Vec::new(),
         }
@@ -27530,7 +27532,6 @@ mod ritual_projectile_tests {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
-            no_drop_item: false,
             wet: false,
             wants_dart_spawns: Vec::new(),
         }

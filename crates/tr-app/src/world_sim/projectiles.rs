@@ -162,7 +162,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         },
         player_dead: app.player.as_ref().is_some_and(|p| p.dead),
         player_cced: app.player.as_ref().is_some_and(|p| p.cced()),
-        melee_speed: app.player.as_ref().map_or(1.0, |p| p.melee_speed()),
+        melee_speed: app
+            .player
+            .as_ref()
+            .map_or(1.0, |p| p.melee_speed(app.inventory[app.selected].kind)),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)
@@ -243,7 +246,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             item_animation: (app.swing * 60.0).round() as i32,
             item_animation_max: (app.swing_max * 60.0).round() as i32,
             channel: p.channel,
-            melee_speed: p.melee_speed(),
+            // i12's held-kind form (`Player.cs:25912` reads
+            // `BonusMeleeSpeedMultiplier[selectedItem.type]`).
+            melee_speed: p.melee_speed(app.inventory[app.selected].kind),
             wet: p.wet,
             player_vel: Vec2::new(p.vx, p.vy),
             player_pos: Vec2::new(p.x, p.y),
