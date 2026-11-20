@@ -1703,7 +1703,23 @@ impl App {
         };
         if !self.inventory_open {
             if left {
-                self.selected = slot;
+                // S1-P-i54 — `GUIHotbarDrawInner` (`Main.cs:43616-43623`):
+                // the click latches `changeItem`, which `Player.Update`
+                // feeds to `Select` (`Player.cs:25087-25091`) — buffered,
+                // not immediate. The hover gate (`:43616`) refuses the
+                // locked hotbar (`hbLocked` has no port state — the lock
+                // icon is a recorded no-op, `ui/chrome.rs`), the torch
+                // auto-select hold and an active channel; `Main.blockMouse`
+                // (`:43620`) blocks the held button after a mid-use switch.
+                let control_torch = self.keys.iter().any(|k| {
+                    crate::input_map::is_bound(&self.keybinds, crate::input_map::Action::Torch, *k)
+                });
+                let channel = self.player.as_ref().is_some_and(|p| p.channel);
+                if !control_torch && !channel && !self.block_mouse {
+                    if self.selection.select(self.selected, slot, false) {
+                        self.audio.play("Menu_Tick"); // `Select`, `:506`
+                    }
+                }
             }
             return;
         }
@@ -4046,6 +4062,12 @@ mod tests {
         app.ui_left_press = true;
         app.handle_chest_clicks();
         app.handle_inventory_clicks();
+        // S1-P-i54 — the click buffers the request (`Main.cs:43622`
+        // `changeItem` -> `Player.cs:25087-25091` `Select`); the live slot
+        // changes on the player tick (`selectedItemState.Update`,
+        // `:25218`), not on the click.
+        assert_eq!(app.selection.buffered, 3, "the select buffered");
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
         assert_eq!(app.selected, 3, "the select ran");
         assert!(app.favorite_slots.is_empty(), "context 13 cannot favorite");
     }

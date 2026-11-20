@@ -239,6 +239,15 @@ pub(crate) struct App {
     /// slot `DyeSwap` starts its empty scan from and advances past.
     pub(crate) dye_swap_counter: usize,
     pub(crate) selected: usize,
+    /// `Player.selectedItemState` (`Player.cs:414-568`) — the buffered /
+    /// overridden halves of the selection machine (S1-P-i54); the live
+    /// slot stays `selected` above. The switch applies only when idle
+    /// (`CanChangeSelectedItemImmediately`, `:428-438`).
+    pub(crate) selection: crate::hotbar::SelectionState,
+    /// `Main.blockMouse` (`Main.cs:2445`): a mid-use switch blocks the
+    /// held left button until its release (`OnSelectionChanged`,
+    /// `Player.cs:563`; the release clears it, `TriggersSet.cs:846`).
+    pub(crate) block_mouse: bool,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
@@ -696,6 +705,9 @@ pub(crate) struct App {
     /// `releaseMount` latch). An `App` field rather than a `static` so two
     /// headless apps in one test process cannot share it.
     pub(crate) mount_prev: bool,
+    /// `Player.releaseQuickHeal` (`Player.cs:1770`): the quick-heal press
+    /// edge latch (`:24822-24833`), the per-player twin of `mount_prev`.
+    pub(crate) quick_heal_prev: bool,
     /// `Main.gamePaused` (`Main.cs:645`): the world-sim freeze written by the
     /// two pause sources — the focus arm (`Main.cs:17138`) and the in-game
     /// gate's arm pair (`Main.cs:17197-17201`). Cleared on world load
@@ -1550,6 +1562,11 @@ impl App {
     /// deposit the item through the pickup stack (`Player.PickupItem`'s
     /// slot_for_pickup). Returns false when the purse is short or the slot
     /// is out of range.
+    /// S1-P-i54: the Digit1 shop-buy arm is gone (vanilla `Hotbar1` always
+    /// selects, `Player.cs:25095-25097`; the shop buys are mouse-only,
+    /// `ItemSlot.cs:1220`/`:1650`). The charge helper stays for the
+    /// click-buy surface (M4-TOWN-5's recorded follow-up).
+    #[allow(dead_code)]
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
         // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
         // charge is `GetItemExpectedPrice`'s buying value for the stock
@@ -3356,6 +3373,8 @@ impl App {
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             dye_swap_counter: 0,
             selected: 0,
+            selection: crate::hotbar::SelectionState::new(),
+            block_mouse: false,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
                 s[0] = 1.0;
@@ -3588,6 +3607,7 @@ impl App {
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
             mount_prev: false,
+            quick_heal_prev: false,
             // `Main.gamePaused` starts false and `ResetGameCounter` pins
             // `GameUpdateCount` at 65536 (`Main.cs:6442-6445`, the `OnWorldLoad`
             // hook at `:6605`) — both ride this constructor, so a `swap_world`

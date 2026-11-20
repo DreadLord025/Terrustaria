@@ -576,10 +576,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // 43249`); the release or a switch clears it (`TryCancelChannel`
     // `:52975-52981`).
     {
+        // S1-P-i54 — `ItemCheck` (`Player.cs:42800-42807`): a buffered
+        // selection change forces `flag5 = false`, which both clears
+        // `channel` and blocks the use path — so the hold cannot re-arm
+        // the channel while the switch is pending (the player pass's
+        // interrupt clears it; this gate keeps it cleared until the
+        // switch lands).
         let holding = registry::get(held.kind).is_some_and(|d| d.channel)
             && app.mine_down
             && held_weapon
-            && !app.inventory_open;
+            && !app.inventory_open
+            && !app.selection.has_buffered_change();
         if let Some(p) = app.player.as_mut() {
             if holding {
                 let (cx, cy) = p.center();
