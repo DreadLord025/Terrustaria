@@ -17404,6 +17404,28 @@ impl ProjectilePool {
                             // row keeps tileCollide = false (`:7431`).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d15 — aiStyle 144: the DD2 pets 701/702/703/
+                        // 764/1050 (`AI_144_DD2Pet`,
+                        // `Projectile.cs:70038-70324`): the hover machine,
+                        // the pet-flag re-pin, the 1050 tree-shake scan
+                        // and the draw census. The owner snapshot rides
+                        // `set_dd2_owner`; a `None` link holds the slot.
+                        144 => {
+                            if let Some(o) = self.dd2_owner {
+                                crate::projectile_ai_dd2::ai_dd2_pet(
+                                    &mut self.slots[i],
+                                    &o,
+                                    world,
+                                    rng,
+                                );
+                            }
+                            // HandleMovement after the AI (`:17015`); the
+                            // rows keep tileCollide = false (`:7444`).
+                            // manualDirectionChange (`:7445`) — the arm
+                            // pins facing; the free integrate never
+                            // rewrites it (the aiStyle-120 precedent).
+                            self.slots[i].kill_step(world);
+                        }
                         // aiStyle 147 — the Celebration Mk2 rockets
                         // (`AI_147_Celeb2Rocket` `:52881-53092`): the
                         // seven-state machine; the death resize + Damage

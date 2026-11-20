@@ -1193,6 +1193,21 @@ pub const MONK_STAFF_T3_ALT: u16 = 708;
 /// `ProjectileID.MonkStaffT3_AltShot` (709) — the T3-alt's volley shot,
 /// aiStyle 1 (`Projectile.cs:7508-7520`).
 pub const MONK_STAFF_T3_ALT_SHOT: u16 = 709;
+/// `ProjectileID.DD2PetDragon` (701) — the DD2 dragon pet, aiStyle 144
+/// (`Projectile.cs:7433-7446`).
+pub const DD2_PET_DRAGON: u16 = 701;
+/// `ProjectileID.DD2PetGhost` (702) — the DD2 ghost pet, aiStyle 144
+/// (the same row block).
+pub const DD2_PET_GHOST: u16 = 702;
+/// `ProjectileID.DD2PetGato` (703) — the DD2 gato pet, aiStyle 144
+/// (the same row block).
+pub const DD2_PET_GATO: u16 = 703;
+/// `ProjectileID.UpbeatStar` (764) — the Upbeat Star pet, aiStyle 144
+/// (`Projectile.cs:7866-7878`).
+pub const UPBEAT_STAR: u16 = 764;
+/// `ProjectileID.AxeFairyPet` (1050) — the Axe Fairy pet, aiStyle 144
+/// (`Projectile.cs:9953-9966`).
+pub const AXE_FAIRY_PET: u16 = 1050;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -4028,6 +4043,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 12.0, 12.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false,
                 (false, -2, false, -1, 255, 0.6),
             ),
+            // `Projectile.cs:7433-7446` (701/702/703) + `:7866-7878`
+            // (764) + `:9953-9966` (1050): the DD2 pets — 20x20, aiStyle
+            // 144, penetrate -1, netImportant (the overlay), timeLeft *=
+            // 5 (18000), friendly, ignoreWater (the overlay), tileCollide
+            // false, manualDirectionChange (no port field — the arms pin
+            // facing themselves).
+            DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET => (
+                20.0, 20.0, 144, -1, TIME_LEFT_DEFAULT * 5, 0, false, false, false, RESET_STATE
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4193,7 +4217,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-d15 — the DD2 pets set `netImportant = true` themselves
+            // (`Projectile.cs:7439`/`:7872`/`:9959`).
+            || matches!(
+                kind,
+                DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET
+            ),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4278,6 +4308,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 kind,
                 MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T2_GHAST
                     | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
+            )
+            // W4-d15 — the DD2 pets' `ignoreWater = true`
+            // (`Projectile.cs:7443`/`:7875`/`:9963`).
+            || matches!(
+                kind,
+                DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET
             ),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
@@ -4631,6 +4667,15 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         659 => 4,
         837 => 3,
         1130 => 6,
+        // W4-d15 — the DD2 pets' sheets (`Main.cs:8626-8628`): the gato 8
+        // (the arm overrides the wrap to 4), the dragon 3, the ghost 4;
+        // the 1050's 16 (`Main.cs:8719`) — the tree-shake frames 8/12
+        // (`Projectile.cs:70215`) index it. The 764 has no override (the
+        // init loop's 1).
+        DD2_PET_GATO => 8,
+        DD2_PET_DRAGON => 3,
+        DD2_PET_GHOST => 4,
+        AXE_FAIRY_PET => 16,
         // W4-d15 — the T2 ghast's 4-frame sheet (`Main.cs:8473`) — the
         // 5-tick frame machine (`Projectile.cs:70003-70010`) wraps at it.
         MONK_STAFF_T2_GHAST => 4,

@@ -76,8 +76,9 @@ use tr_core::loot::DropRng;
 
 use crate::bow_launch::rotated_by;
 use crate::projectile::{
-    MONK_STAFF_T2, MONK_STAFF_T2_GHAST, MONK_STAFF_T3_ALT, MONK_STAFF_T3_ALT_SHOT, Projectile,
-    safe_normalize_or,
+    AXE_FAIRY_PET, DD2_PET_DRAGON, DD2_PET_GATO, DD2_PET_GHOST, MONK_STAFF_T2, MONK_STAFF_T2_GHAST,
+    MONK_STAFF_T3_ALT, MONK_STAFF_T3_ALT_SHOT, Projectile, UPBEAT_STAR, proj_frames,
+    safe_normalize_or, solid_tile,
 };
 
 /// The owner state the 142/144/148 arms read off `Main.player[owner]`
@@ -89,9 +90,13 @@ pub(crate) struct Dd2Owner {
     /// `player.RotatedRelativePoint(player.MountedCenter)` (`:69820`) —
     /// the T2/T3 swing anchor.
     pub anchor: Vec2,
-    /// `player.direction` (`:69821`).
+    /// `player.Center` (`:70250`'s teleport).
+    pub center: Vec2,
+    /// `player.MountedCenter` (`:70246`) — the pet hover anchor.
+    pub mounted_center: Vec2,
+    /// `player.direction` (`:69821`/`:70049`).
     pub direction: i32,
-    /// `player.dead` (`:69824`).
+    /// `player.dead` (`:69824`/`:70050`).
     pub dead: bool,
     /// `player.frozen` (`:69829`) — the frozen owner holds the swing pose.
     pub frozen: bool,
@@ -101,6 +106,17 @@ pub(crate) struct Dd2Owner {
     pub item_animation: i32,
     /// `player.itemAnimationMax` (`:69844`).
     pub item_animation_max: i32,
+    /// The `petFlag*` reads (`:70060`/`:70095`/`:70106`/`:70157`/
+    /// `:70164`) — the port's `Player.pet_flags[kind]` (the buff rows
+    /// `buff_effects_accessory.rs` index by PET PROJECTILE id). The
+    /// `:70241` hover-shift term reads `petFlagDD2Ghost` for EVERY 144
+    /// kind (the `suspiciouslookingTentacle` half has no port field and
+    /// folds false, recorded).
+    pub pet_flag_dd2_dragon: bool,
+    pub pet_flag_dd2_ghost: bool,
+    pub pet_flag_dd2_gato: bool,
+    pub pet_flag_upbeat_star: bool,
+    pub pet_flag_axe_fairy: bool,
 }
 
 /// One queued sub-shot spawn — `(x, y)` are the C# `NewProjectile`
@@ -519,6 +535,283 @@ pub(crate) fn ai_monk_staff_t2_ghast(p: &mut Projectile, rng: &mut dyn DropRng) 
     }
 }
 
+/// `AI_144_DD2Pet` (`Projectile.cs:70038-70324`) — the DD2 pets: the
+/// dragon 701, the ghost 702, the gato 703, the Upbeat Star 764 and the
+/// Axe Fairy 1050. The hover machine: the per-kind parameter block, the
+/// pet-flag `timeLeft = 2` re-pin, the 1000-px teleport, the leash
+/// velocity (×0.25 inside the radius, the direct snap under half, the
+/// num7 lerp otherwise), the >6-speed rotation blend + frame machine and
+/// the idle rotation decay, the `localAI[0]` 120-wrap (the 764 owns its
+/// counter — `flag`).
+///
+/// RNG: the 702's 1-in-24 sparkle gate (`:70070`) → `Next(3)` (`:70073`)
+/// → the else arm's `Next(2)` (`:70079`) → ONE `NextFloat` (the scale
+/// `:70085`). The 764's slow arm rolls `Next(30)` only above 0.1 speed
+/// (`:70134`), the fast arm `Next(15)` (`:70145`). The 1050's tree-shake
+/// rolls `Next(100)` + the conditional `Next(20)` + the conditional
+/// `Next(5)` (`:70220-70225`) — the `KillTile_*` effects are the recorded
+/// skip (their own rolls ride `WorldGen.genRand`, not `Main.rand`).
+/// Skips: the 702's `PlotTileLine` light casts (`:70087-70091`), the
+/// 764's `Opacity` write (`:70155`, no port field) and the dead
+/// `Hitbox.Intersects` read (`:70143-70144`); the
+/// `suspiciouslookingTentacle` half of `:70241` folds false (no port
+/// field).
+pub(crate) fn ai_dd2_pet(p: &mut Projectile, o: &Dd2Owner, world: &World, rng: &mut dyn DropRng) {
+    // `:70041-70049` — the parameter block.
+    let mut num = 4.0f32; // the leash radius
+    let mut num2 = 6i32; // the idle frame rate
+    let mut num3 = 4i32; // the flight frame rate
+    let mut num4 = proj_frames(p.kind) as i32; // the frame wrap
+    let mut num5 = 0i32; // the wrap target
+    let mut num6 = 0.08f32; // the rotation X coefficient
+    let mut flag = false; // the 764 owns its localAI[0]
+    let mut num7 = 0.1f32; // the velocity lerp
+    let mut vector = Vec2::new(o.direction as f32 * 30.0, -20.0);
+    // `:70050-70054` — the dead owner kills and returns.
+    if o.dead {
+        kill(p);
+        return;
+    }
+    let mut flag2 = true; // the ghost hover-shift gate
+    match p.kind {
+        DD2_PET_GHOST => {
+            // `:70058-70092` — the ghost: the π/60 bob, the 10/4 rates,
+            // the 6-px leash, no hover shift (flag2 = false).
+            if o.pet_flag_dd2_ghost {
+                p.time_left = 2;
+            }
+            vector.y += (p.local_ai[0] * (std::f32::consts::PI / 60.0)).cos() * 2.0;
+            num3 = 4;
+            num2 = 10;
+            flag2 = false;
+            num = 6.0;
+            // `:70069-70086` — the sparkle: the rotated offset feeds dust
+            // only; the gate + branch draws stay.
+            if rng.next_range(0, 24) == 0 {
+                if rng.next_range(0, 3) != 0 {
+                    // `:70075-70077` — the noGravity arm: no draws.
+                } else if rng.next_range(0, 2) != 0 {
+                    // `:70081` — the noLight arm: no draws.
+                }
+                let _ = rng.next_float(); // `:70085` — the scale kick
+            }
+            // `:70087-70091` — the PlotTileLine light casts: the skip.
+        }
+        DD2_PET_GATO => {
+            // `:70094-70104` — the gato: the π/30 bob, the 4/2 rates,
+            // the 3-px leash, the 4-frame wrap.
+            if o.pet_flag_dd2_gato {
+                p.time_left = 2;
+            }
+            vector.y += (p.local_ai[0] * (std::f32::consts::PI / 30.0)).cos() * 2.0;
+            num2 = 4;
+            num3 = 2;
+            num = 3.0;
+            num4 = 4;
+        }
+        DD2_PET_DRAGON => {
+            // `:70105-70110` — the dragon keeps the defaults.
+            if o.pet_flag_dd2_dragon {
+                p.time_left = 2;
+            }
+        }
+        UPBEAT_STAR => {
+            // `:70111-70161` — the Upbeat Star: the slow lerp, the own
+            // counter, the spin phase and the speed-gated sparkle.
+            num7 = 0.025;
+            num6 = 0.04;
+            flag = true;
+            p.local_ai[0] += 1.0;
+            if p.local_ai[0] > 120.0 {
+                p.local_ai[0] = 0.0;
+            }
+            p.local_ai[1] += p.vel.x * 0.01;
+            p.local_ai[1] += 1.0 / 120.0;
+            if p.local_ai[1] < std::f32::consts::PI * -2.0 {
+                p.local_ai[1] += std::f32::consts::PI * 2.0;
+            }
+            if p.local_ai[1] > std::f32::consts::PI * 2.0 {
+                p.local_ai[1] -= std::f32::consts::PI * 2.0;
+            }
+            if p.vel.length() < 4.0 {
+                p.local_ai[1] *= 0.9;
+                if p.vel.length() > 0.1 && rng.next_range(0, 30) == 0 {
+                    // `:70136-70138` — the slow sparkle: the dust body
+                    // is the skip (no explicit draws inside).
+                }
+            } else {
+                // `:70143-70144` — the dead Hitbox.Intersects read: the
+                // skip (result discarded in the C# too).
+                if rng.next_range(0, 15) == 0 {
+                    // `:70147` — the fast sparkle: the dust skip.
+                }
+            }
+            // `:70150-70155` — the opacity triangle: the Opacity write
+            // has no port field (the Last Prism fold) — the value feeds
+            // nothing else, skipped whole.
+            vector.y += (p.local_ai[0] / 120.0 * (std::f32::consts::PI * 2.0)).cos() * 2.0;
+            if o.pet_flag_upbeat_star {
+                p.time_left = 2;
+            }
+        }
+        AXE_FAIRY_PET => {
+            // `:70163-70239` — the Axe Fairy: the mirrored hover, the
+            // 320-px tree-shake scan and the π/30 bob.
+            if o.pet_flag_axe_fairy {
+                p.time_left = 2;
+            }
+            num2 = 5;
+            num3 = 3;
+            num4 = 3;
+            vector.x *= -1.0;
+            num = 3.0;
+            if p.local_ai[1] < 0.0 {
+                p.local_ai[1] += 1.0;
+            }
+            if p.local_ai[1] >= 0.0 {
+                // `:70179` — `base.Distance(MountedCenter)` reads the
+                // slot CENTRE (`Entity.cs:195-198`).
+                let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                if center.distance(o.mounted_center) < 320.0 {
+                    p.local_ai[2] += 1.0;
+                    // `:70182-70208` — the tree scan: 12 steps along the
+                    // facing, stopping on a shakeable or full-solid tile.
+                    let num8 = p.direction;
+                    let mut px = (center.x / 16.0) as i32;
+                    let py = (center.y / 16.0) as i32;
+                    let mut num9 = 12i32;
+                    let mut flag3 = false;
+                    while !flag3
+                        && num9 > 0
+                        && px >= 0
+                        && px < world.width
+                        && py >= 0
+                        && py < world.height
+                    {
+                        let Some(t) = world.tile(px, py) else { break };
+                        if t.active() {
+                            flag3 = tr_core::tiledata::SET_IS_SHAKEABLE.has(t.kind);
+                            if flag3 || solid_tile(world, px, py) {
+                                break;
+                            }
+                        }
+                        num9 -= 1;
+                        px += num8;
+                    }
+                    if num9 == 0 {
+                        px -= num8;
+                    }
+                    if flag3 {
+                        // `:70211-70214` — the shake hover point:
+                        // `ToWorldCoordinates` = tile*16 + (8, 8)
+                        // (`Utils.cs:1762-1765`).
+                        vector = Vec2::new(px as f32 * 16.0 + 8.0, py as f32 * 16.0 + 8.0)
+                            + Vec2::new(-num8 as f32 * 30.0, 0.0)
+                            - o.mounted_center;
+                        num4 = 16;
+                        num5 = 8;
+                        num2 = 3;
+                        // `:70215-70230` — the shake tick: the dust/sound/
+                        // drop effects are the recorded skip; the three
+                        // Main.rand draws stay in order.
+                        if p.frame_counter == 0 && (p.frame == 8 || p.frame == 12) {
+                            let mut num10 = 200 + rng.next_range(0, 100);
+                            if rng.next_range(0, 20) == 0 {
+                                num10 /= 8;
+                            }
+                            // `Main.netMode != 1` folds true (single
+                            // player); the DropItems effect is the skip.
+                            if p.local_ai[2] >= num10 as f32 && rng.next_range(0, 5) == 0 {
+                                p.local_ai[2] = 0.0;
+                            }
+                        }
+                    }
+                } else {
+                    // `:70235` — out of range: the 300-tick cooldown.
+                    p.local_ai[1] = -300.0;
+                }
+            }
+            vector.y += (p.local_ai[0] * (std::f32::consts::PI / 30.0)).cos() * 2.0;
+        }
+        _ => {}
+    }
+    // `:70241-70244` — the ghost hover shift (the suspiciousTentacle
+    // half folds false — no port field).
+    if flag2 && o.pet_flag_dd2_ghost {
+        vector.x += -o.direction as f32 * 64.0;
+    }
+    // `:70245-70251` — the facing pin, the hover point and the 1000-px
+    // teleport (num12 is the PRE-teleport distance).
+    p.direction = o.direction;
+    p.sprite_direction = o.direction;
+    let vector4 = o.mounted_center + vector;
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let num12 = center.distance(vector4);
+    if num12 > 1000.0 {
+        let c = o.center + vector;
+        p.pos = c - Vec2::new(p.w * 0.5, p.h * 0.5);
+    }
+    // `:70252-70267` — the leash velocity (vector5 reads the
+    // POST-teleport centre).
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let vector5 = vector4 - center;
+    if num12 < num {
+        p.vel *= 0.25;
+    }
+    if vector5 != Vec2::ZERO {
+        if vector5.length() < num * 0.5 {
+            p.vel = vector5;
+        } else {
+            p.vel = vector5 * num7;
+        }
+    }
+    // `:70268-70315` — the flight/idle rotation + frame machines.
+    if p.vel.length() > 6.0 {
+        let num13 = p.vel.x * num6 + p.vel.y * p.sprite_direction as f32 * 0.02;
+        if (p.rot - num13).abs() >= std::f32::consts::PI {
+            if num13 < p.rot {
+                p.rot -= std::f32::consts::PI * 2.0;
+            } else {
+                p.rot += std::f32::consts::PI * 2.0;
+            }
+        }
+        let num14 = 12.0f32;
+        p.rot = (p.rot * (num14 - 1.0) + num13) / num14;
+        p.frame_counter += 1;
+        if p.frame_counter >= num3 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= num4 {
+                p.frame = num5;
+            }
+        }
+    } else {
+        if p.rot > std::f32::consts::PI {
+            p.rot -= std::f32::consts::PI * 2.0;
+        }
+        if p.rot > -0.005 && p.rot < 0.005 {
+            p.rot = 0.0;
+        } else {
+            p.rot *= 0.96;
+        }
+        p.frame_counter += 1;
+        if p.frame_counter >= num2 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= num4 {
+                p.frame = num5;
+            }
+        }
+    }
+    // `:70316-70323` — the shared counter (the 764 owns its own).
+    if !flag {
+        p.local_ai[0] += 1.0;
+        if p.local_ai[0] > 120.0 {
+            p.local_ai[0] = 0.0;
+        }
+    }
+}
+
 // Witnesses (W4-d15 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -645,11 +938,18 @@ mod tests {
     fn owner(anim: i32, anim_max: i32) -> Dd2Owner {
         Dd2Owner {
             anchor: Vec2::new(1600.0, 800.0),
+            center: Vec2::new(1600.0, 821.0),
+            mounted_center: Vec2::new(1600.0, 800.0),
             direction: 1,
             dead: false,
             frozen: false,
             item_animation: anim,
             item_animation_max: anim_max,
+            pet_flag_dd2_dragon: false,
+            pet_flag_dd2_ghost: false,
+            pet_flag_dd2_gato: false,
+            pet_flag_upbeat_star: false,
+            pet_flag_axe_fairy: false,
         }
     }
 
@@ -874,5 +1174,172 @@ mod tests {
         assert_eq!(p.sprite_direction, -1, ":70015 — the negative-X sign");
         assert!((p.rot - (std::f32::consts::PI + std::f32::consts::PI)).abs() < 1e-3,
             "atan2(0, −x) = π, +π on spriteDirection −1");
+    }
+
+    /// The five pet rows are verbatim `SetDefaults`
+    /// (`Projectile.cs:7433-7446`/`:7866-7878`/`:9953-9966`).
+    #[test]
+    fn the_pet_rows_are_verbatim() {
+        for kind in [DD2_PET_DRAGON, DD2_PET_GHOST, DD2_PET_GATO, UPBEAT_STAR, AXE_FAIRY_PET] {
+            let d = proj_data(kind).expect("the pet row");
+            assert_eq!((d.w, d.h, d.ai_style), (20.0, 20.0, 144), "kind {kind}");
+            assert_eq!(d.penetrate, -1);
+            assert_eq!(d.time_left, 18000, "timeLeft *= 5");
+            assert!(d.net_important && d.ignore_water && !d.tile_collide);
+            assert_eq!(d.scale, 1.0);
+        }
+        assert_eq!(crate::projectile::proj_frames(DD2_PET_DRAGON), 3, "Main.cs:8627");
+        assert_eq!(crate::projectile::proj_frames(DD2_PET_GHOST), 4, "Main.cs:8628");
+        assert_eq!(crate::projectile::proj_frames(DD2_PET_GATO), 8, "Main.cs:8626");
+        assert_eq!(crate::projectile::proj_frames(AXE_FAIRY_PET), 16, "Main.cs:8719");
+        assert_eq!(crate::projectile::proj_frames(UPBEAT_STAR), 1, "no override");
+    }
+
+    /// The dead owner kills ahead of everything (`:70050-70054`); the
+    /// pet flag re-pins timeLeft = 2 (`:70060` etc.).
+    #[test]
+    fn the_pet_dead_kill_and_the_flag_repin() {
+        let w = world();
+        let mut o = owner(0, 0);
+        o.dead = true;
+        let mut p = proj(DD2_PET_DRAGON);
+        let mut rng = census();
+        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        assert!(!p.active, ":70052");
+        assert_eq!(rng.ranges.len(), 0);
+        let mut o = owner(0, 0);
+        o.pet_flag_dd2_dragon = true;
+        let mut p = proj(DD2_PET_DRAGON);
+        p.pos = o.mounted_center + Vec2::new(30.0, -20.0) - Vec2::new(10.0, 10.0);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        assert_eq!(p.time_left, 2, ":70108");
+        assert!(p.active);
+    }
+
+    /// The hover leash: at the hover point the velocity snaps to the
+    /// (bob-shifted) delta; far away it lerps ×0.1; past 1000 px the pet
+    /// teleports onto player.Center + vector (`:70248-70266`).
+    #[test]
+    fn the_pet_leash_and_the_teleport() {
+        let w = world();
+        let o = owner(0, 0);
+        let mut p = proj(DD2_PET_DRAGON);
+        // Sit exactly on the hover point: localAI[0] = 0, the dragon has
+        // no bob term → vector = (30, −20).
+        let hover = o.mounted_center + Vec2::new(30.0, -20.0);
+        p.pos = hover - Vec2::new(10.0, 10.0);
+        let mut rng = census();
+        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        // num12 = 0 < 4 → ×0.25 first, then vector5 = 0 → no rewrite.
+        assert_eq!(p.vel, Vec2::ZERO);
+        assert_eq!(p.local_ai[0], 1.0, ":70318");
+        // Far but under 1000: the ×0.1 lerp toward the hover point.
+        let mut p = proj(DD2_PET_DRAGON);
+        p.pos = o.mounted_center + Vec2::new(500.0, 0.0) - Vec2::new(10.0, 10.0);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        let want = (hover - (o.mounted_center + Vec2::new(500.0, 0.0))) * 0.1;
+        assert!((p.vel - want).length() < 1e-3, ":70265");
+        // Past 1000: the teleport onto player.Center + vector, THEN the
+        // leash reads the post-teleport centre.
+        let mut p = proj(DD2_PET_DRAGON);
+        p.pos = o.mounted_center + Vec2::new(1500.0, 0.0) - Vec2::new(10.0, 10.0);
+        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        let c = Vec2::new(p.pos.x + 10.0, p.pos.y + 10.0);
+        let want_c = o.center + Vec2::new(30.0, -20.0);
+        assert!((c - want_c).length() < 1e-3, ":70250");
+    }
+
+    /// The 702 sparkle census: the min-return census takes Next(24) == 0,
+    /// then Next(3) == 0 falls to the Next(2) arm, then ONE float. The
+    /// ghost keeps flag2 = false (no hover shift even with the flag).
+    #[test]
+    fn the_ghost_sparkle_census_and_no_hover_shift() {
+        let w = world();
+        let mut o = owner(0, 0);
+        o.pet_flag_dd2_ghost = true;
+        let mut p = proj(DD2_PET_GHOST);
+        p.pos = o.mounted_center - Vec2::new(10.0, 10.0);
+        let mut rng = census();
+        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 24), (0, 3), (0, 2)], ":70070-70079");
+        assert_eq!(rng.floats, 1, ":70085");
+        // The dragon WITH the ghost flag shifts −64 X (`:70241-70243`);
+        // the ghost itself never does (flag2 = false, `:70067`).
+        let mut d = proj(DD2_PET_DRAGON);
+        d.pos = o.mounted_center + Vec2::new(-34.0, -20.0) - Vec2::new(10.0, 10.0);
+        let mut rng2 = census();
+        ai_dd2_pet(&mut d, &o, &w, &mut rng2);
+        // hover = mounted + (30 − 64, −20) → the dragon sits on it:
+        // velocity stays zero.
+        assert_eq!(d.vel, Vec2::ZERO, "the shifted hover point");
+    }
+
+    /// The 764 owns its counter (flag): localAI[0] advances INSIDE the
+    /// type arm and the shared tail skips it; the spin phase accumulates
+    /// 1/120 + vel.x·0.01 and decays ×0.9 under 4 speed. The slow arm's
+    /// Next(30) gate needs > 0.1 speed.
+    #[test]
+    fn the_upbeat_star_counter_and_spin() {
+        let w = world();
+        let o = owner(0, 0);
+        let mut p = proj(UPBEAT_STAR);
+        p.pos = o.mounted_center + Vec2::new(30.0, -20.0) - Vec2::new(10.0, 10.0);
+        p.vel = Vec2::new(1.0, 0.0);
+        let mut rng = census();
+        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        assert_eq!(p.local_ai[0], 1.0, ":70116 — once, not twice");
+        let phase = 1.0 * 0.01 + 1.0 / 120.0;
+        assert!((p.local_ai[1] - phase * 0.9).abs() < 1e-5, ":70121-70133");
+        assert_eq!(rng.ranges, vec![(0, 30)], ":70134 — the slow gate");
+        // At rest (<= 0.1 speed) the gate draw is skipped.
+        let mut p2 = proj(UPBEAT_STAR);
+        p2.pos = p.pos;
+        let mut rng2 = census();
+        ai_dd2_pet(&mut p2, &o, &w, &mut rng2);
+        assert!(rng2.ranges.is_empty(), ":70134 — the 0.1 floor");
+    }
+
+    /// The 1050 tree scan: a shakeable tree 12 steps ahead re-aims the
+    /// hover point (tile*16+8 − dir*30) and the shake tick rolls
+    /// Next(100) + Next(20) + Next(5) in order; out of 320 range the
+    /// localAI[1] cooldown latches −300.
+    #[test]
+    fn the_axe_fairy_tree_scan_and_cooldown() {
+        let mut w = world();
+        let mut p = proj(AXE_FAIRY_PET);
+        // Centre at tile (100, 50); the tree at (105, 50) — 5 steps in.
+        // The owner sits 200 px away (inside the 320 scan radius).
+        let mut o = owner(0, 0);
+        o.mounted_center = Vec2::new(100.0 * 16.0 + 200.0, 50.0 * 16.0);
+        o.center = o.mounted_center;
+        p.pos = Vec2::new(100.0 * 16.0, 50.0 * 16.0) - Vec2::new(10.0, 10.0);
+        p.direction = 1;
+        p.frame = 8;
+        p.frame_counter = 0;
+        // The drop gate needs localAI[2] >= num10 (the census min gives
+        // 200/8 = 25) — pre-load the counter past it.
+        p.local_ai[2] = 100.0;
+        put(&mut w, 105, 50, 5); // a tree — IsShakeable
+        let mut rng = census();
+        ai_dd2_pet(&mut p, &o, &w, &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 100), (0, 20), (0, 5)], ":70220-70225");
+        assert_eq!(p.local_ai[2], 0.0, "the census min returns take the drop arm");
+        // The hover re-aim: vector = tree(105*16+8, 50*16+8) + (−30, 0)
+        // − mounted, THEN the π/30 bob adds cos(0)*2 = +2 Y (`:70238`).
+        // The pet is far → the ×0.1 lerp toward it.
+        let hover = Vec2::new(105.0 * 16.0 + 8.0 - 30.0, 50.0 * 16.0 + 8.0 + 2.0);
+        let center = Vec2::new(p.pos.x + 10.0, p.pos.y + 10.0);
+        let want = (hover - center) * 0.1;
+        assert!((p.vel - want).length() < 1e-2, ":70211 + :70238 + :70265");
+        // Out of range: the −300 cooldown, no scan draws.
+        let mut p2 = proj(AXE_FAIRY_PET);
+        p2.pos = o.mounted_center + Vec2::new(400.0, 0.0) - Vec2::new(10.0, 10.0);
+        let mut rng2 = census();
+        ai_dd2_pet(&mut p2, &o, &w, &mut rng2);
+        assert_eq!(p2.local_ai[1], -300.0, ":70235");
+        assert!(rng2.ranges.is_empty());
+        // The cooldown counts back up one per tick (`:70173-70176`).
+        ai_dd2_pet(&mut p2, &o, &w, &mut rng2);
+        assert_eq!(p2.local_ai[1], -299.0);
     }
 }

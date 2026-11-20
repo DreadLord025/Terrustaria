@@ -268,13 +268,24 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // pet arms' reads extend this snapshot with their styles.
     let dd2_owner = app.player.as_ref().map(|p| {
         let (mcx, mcy) = p.mounted_center();
+        let (cx, cy) = p.center();
         crate::projectile_ai_dd2::Dd2Owner {
             anchor: p.rotated_relative_point(Vec2::new(mcx, mcy), 0),
+            center: Vec2::new(cx, cy),
+            mounted_center: Vec2::new(mcx, mcy),
             direction: p.facing,
             dead: p.dead,
             frozen: p.frozen,
             item_animation: (app.swing * 60.0).round() as i32,
             item_animation_max: (app.swing_max * 60.0).round() as i32,
+            // `player.petFlagDD2Dragon/Ghost/Gato/UpbeatStar/AxeFairyPet`
+            // — the buff rows index `pet_flags` by PET PROJECTILE id
+            // (`buff_effects_accessory.rs`).
+            pet_flag_dd2_dragon: p.pet_flags[usize::from(crate::projectile::DD2_PET_DRAGON)],
+            pet_flag_dd2_ghost: p.pet_flags[usize::from(crate::projectile::DD2_PET_GHOST)],
+            pet_flag_dd2_gato: p.pet_flags[usize::from(crate::projectile::DD2_PET_GATO)],
+            pet_flag_upbeat_star: p.pet_flags[usize::from(crate::projectile::UPBEAT_STAR)],
+            pet_flag_axe_fairy: p.pet_flags[usize::from(crate::projectile::AXE_FAIRY_PET)],
         }
     });
     app.projectiles.set_dd2_owner(dd2_owner);
