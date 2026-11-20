@@ -191,6 +191,11 @@ pub struct PlayerFile {
     /// in file order. The write pads back to 44 with (0, 0) and zeroes the
     /// `Main.buffNoSave` types (`Serialize:54864-54876`).
     pub buffs: Vec<(i32, i32)>,
+    /// `Player.spX/spY/spI/spN` (`Player.cs:2484-2488`, int[200]/string[200])
+    /// — the bed spawn points, up to 200 `(x, y, worldId, worldName)` records
+    /// (`Serialize:54877-54888` writes until the first null spN then the -1
+    /// sentinel; `Deserialize:55600-55611` reads until spX == -1).
+    pub spawn_points: Vec<(i32, i32, i32, String)>,
     /// `Player.bank` (the piggy bank's 40 slots, `Chest.cs:142-144` maxItems),
     /// each `(type, stack, prefix)` — read at >= 58 (`Deserialize:55449-55456`;
     /// the < 58 arm reads 20, `:55464-55471`). `netDefaults` airs an
@@ -737,15 +742,18 @@ fn read_player_fields(
         }
     }
     // spawn points (`:55600-55611`, ungated): up to 200 records, each
-    // (spX, spY, spI, spN); spX == -1 is the end sentinel.
+    // (spX, spY, spI, spN); spX == -1 is the end sentinel. W4-f44 ph3: the
+    // records ride verbatim (an spX of -1 inside a record ends the read,
+    // exactly like the C# loop — no special case).
     for _ in 0..200 {
         let sp_x = r.i32().ok_or(PlayerFileError::Truncated("spawnX"))?;
         if sp_x == -1 {
             break;
         }
-        r.i32().ok_or(PlayerFileError::Truncated("spawnY"))?;
-        r.i32().ok_or(PlayerFileError::Truncated("spawnI"))?;
-        r.cs_string().ok_or(PlayerFileError::Truncated("spawnN"))?;
+        let sp_y = r.i32().ok_or(PlayerFileError::Truncated("spawnY"))?;
+        let sp_i = r.i32().ok_or(PlayerFileError::Truncated("spawnI"))?;
+        let sp_n = r.cs_string().ok_or(PlayerFileError::Truncated("spawnN"))?;
+        tail.spawn_points.push((sp_x, sp_y, sp_i, sp_n));
     }
     if version >= 16 {
         r.boolean().ok_or(PlayerFileError::Truncated("hbLocked"))?; // `:55612-55615`
@@ -959,6 +967,7 @@ struct PlayerTail {
     hair_dye: u8,
     team: u8,
     buffs: Vec<(i32, i32)>,
+    spawn_points: Vec<(i32, i32, i32, String)>,
     current_loadout: i32,
     loadouts: [LoadoutData; 3],
     void_vault_info: u8,
@@ -986,6 +995,7 @@ impl Default for PlayerTail {
             hair_dye: 0,
             team: 0,
             buffs: Vec::new(),
+            spawn_points: Vec::new(),
             current_loadout: 0,
             loadouts: Default::default(),
             void_vault_info: 0,
@@ -1038,6 +1048,7 @@ fn finish_player_file(
         hair_dye: tail.hair_dye,
         team: tail.team,
         buffs: tail.buffs,
+        spawn_points: tail.spawn_points,
         skin_variant,
         hair,
         life,
@@ -1168,6 +1179,7 @@ fn read_legacy_port_subset(
         hair_dye,
         team: 0, // the subset shape has no team byte
         buffs: Vec::new(), // the subset files end after the inventory
+        spawn_points: Vec::new(),
         skin_variant,
         hair,
         life,
@@ -1255,6 +1267,10 @@ pub struct PlayerFileWrite {
     /// pads to maxBuffs = 44 with (0, 0) and zeroes the `Main.buffNoSave`
     /// types; a fresh player has none.
     pub buffs: Vec<(i32, i32)>,
+    /// `Player.spX/spY/spI/spN`'s bed spawn points (`:54877-54888`) — the
+    /// write emits up to 200 records then the -1 sentinel; a fresh player's
+    /// spN[200] is all null, so only the sentinel is written.
+    pub spawn_points: Vec<(i32, i32, i32, String)>,
     /// `Player.bank`'s 40 slots (`:54838-54843`) — the piggy bank.
     pub bank: [(i32, i32, u8); 40],
     /// `Player.bank2`'s 40 slots (`:54844-54849`) — the safe.
@@ -1298,6 +1314,7 @@ impl Default for PlayerFileWrite {
             hair_dye: 0,
             team: 0,
             buffs: Vec::new(),
+            spawn_points: Vec::new(),
             skin_variant: 0,
             hair: 0,
             life: 100,
@@ -1488,9 +1505,16 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
             w.i32(buff_time);
         }
     }
-    // spawn points (`:54877-54888`): spN is a fresh null string[200]
-    // (`Player.cs:2488`), so the first iteration writes the -1 sentinel
-    // and breaks — one i32, no coordinates.
+    // spawn points (`:54877-54888`): up to 200 (spX, spY, spI, spN) records
+    // then the -1 sentinel at the first null spN. A fresh spN[200] is all
+    // null (`Player.cs:2488`), so only the sentinel is written. W4-f44 ph3:
+    // the caller's records ride verbatim.
+    for (x, y, world_id, world_name) in file.spawn_points.iter().take(200) {
+        w.i32(*x);
+        w.i32(*y);
+        w.i32(*world_id);
+        w.cs_string(world_name);
+    }
     w.i32(-1);
     // hbLocked (`:54889`): default false (`Player.cs:1436`).
     w.boolean(false);
@@ -1787,6 +1811,46 @@ mod tests {
         // A fresh write keeps the golden zeros (`:54754-54757`).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: spawn points round-trip in order, the write emits the
+    /// records then the -1 sentinel, and the 200-record cap holds.
+    #[test]
+    fn the_spawn_points_round_trip_with_the_sentinel() {
+        let points = vec![
+            (100, 200, 7, "Alpha".to_string()),
+            (0, 0, 0, String::new()), // an empty world name still rides
+            (4000, 1200, 3, "Beta".to_string()),
+        ];
+        let written = PlayerFileWrite { spawn_points: points.clone(), ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The spawn block starts at 2402 + 352 buffs = 2754.
+        let mut r = Reader::new(&plain);
+        r.skip(2754).unwrap();
+        assert_eq!(r.i32().unwrap(), 100);
+        assert_eq!(r.i32().unwrap(), 200);
+        assert_eq!(r.i32().unwrap(), 7);
+        assert_eq!(r.cs_string().unwrap(), "Alpha");
+        assert_eq!(r.i32().unwrap(), 0);
+        assert_eq!(r.i32().unwrap(), 0);
+        assert_eq!(r.i32().unwrap(), 0);
+        assert_eq!(r.cs_string().unwrap(), "");
+        assert_eq!(r.i32().unwrap(), 4000);
+        assert_eq!(r.i32().unwrap(), 1200);
+        assert_eq!(r.i32().unwrap(), 3);
+        assert_eq!(r.cs_string().unwrap(), "Beta");
+        assert_eq!(r.i32().unwrap(), -1); // the sentinel `:54881`
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.spawn_points, points);
+        // The 200 cap: record 201 never reaches the file (`:54877`).
+        let many: Vec<_> = (0..205).map(|i| (i, i, 0, format!("W{i}"))).collect();
+        let written = PlayerFileWrite { spawn_points: many.clone(), ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.spawn_points.len(), 200);
+        assert_eq!(file.spawn_points[199], many[199]);
+        // A fresh write is the lone sentinel (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(fresh.spawn_points.is_empty());
     }
 
     /// W4-f44 ph3: buffs round-trip through the compaction read and the
