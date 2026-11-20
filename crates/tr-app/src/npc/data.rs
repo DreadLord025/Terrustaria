@@ -630,6 +630,15 @@ impl NpcKind {
             NpcKind::GreenJellyfish => 451,
             NpcKind::Werewolf => 452,
             NpcKind::Clown => 453,
+            // W4-d35 (F): the 110/112/116/120/121 band - port-local protocol ids
+            // 429.. (the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::SkeletonArcher => 454,
+            NpcKind::VileSpit => 455,
+            NpcKind::TheHungryII => 456,
+            NpcKind::ChaosElemental => 457,
+            NpcKind::Slimer => 458,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -985,6 +994,11 @@ impl NpcKind {
             451 => NpcKind::GreenJellyfish,
             452 => NpcKind::Werewolf,
             453 => NpcKind::Clown,
+            454 => NpcKind::SkeletonArcher,
+            455 => NpcKind::VileSpit,
+            456 => NpcKind::TheHungryII,
+            457 => NpcKind::ChaosElemental,
+            458 => NpcKind::Slimer,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1876,6 +1890,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d35 (F): the 110/112/116/120/121 HitSound rows.
+            NpcKind::SkeletonArcher => "NPC_Hit_2",
+            NpcKind::TheHungryII => "NPC_Hit_9",
+            NpcKind::ChaosElemental => "NPC_Hit_1",
+            NpcKind::Slimer => "NPC_Hit_1",
             // W4-d35 (E): the 101/102/103/104/109 HitSound rows.
             NpcKind::Clinger => "NPC_Hit_1",
             NpcKind::AnglerFish => "NPC_Hit_1",
@@ -2210,6 +2229,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d35 (F): the 110/112/116/120/121 DeathSound rows.
+            NpcKind::SkeletonArcher => "NPC_Killed_2",
+            NpcKind::VileSpit => "NPC_Killed_9",
+            NpcKind::TheHungryII => "NPC_Killed_12",
+            NpcKind::ChaosElemental => "NPC_Killed_6",
             // W4-d35 (E): the 101/102/103/104/109 DeathSound rows.
             NpcKind::Clinger => "NPC_Killed_1",
             NpcKind::AnglerFish => "NPC_Killed_1",
@@ -2350,6 +2374,8 @@ impl NpcKind {
             NpcKind::Clinger
             | NpcKind::AnglerFish
             | NpcKind::GreenJellyfish => true,
+            // W4-d35 (F): the 121 noGravity flyers (kb>0).
+            NpcKind::Slimer => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2642,6 +2668,15 @@ impl NpcKind {
             NpcKind::AnglerFish => 16,
             // aiStyle 18 - W4-d35 (E; NPC.cs :10216).
             NpcKind::GreenJellyfish => 18,
+            // aiStyle 2 - W4-d35 (F; NPC.cs :10393).
+            NpcKind::TheHungryII => 2,
+            // aiStyle 3 - W4-d35 (F; NPC.cs :10313, :10453).
+            NpcKind::SkeletonArcher
+            | NpcKind::ChaosElemental => 3,
+            // aiStyle 9 - W4-d35 (F; NPC.cs :10326).
+            NpcKind::VileSpit => 9,
+            // aiStyle 14 - W4-d35 (F; NPC.cs :10466).
+            NpcKind::Slimer => 14,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3202,6 +3237,12 @@ impl NpcKind {
             NpcKind::GreenJellyfish => (26.0, 26.0),
             NpcKind::Werewolf => (18.0, 40.0),
             NpcKind::Clown => (34.0, 78.0),
+            // W4-d35 (F): the 110/112/116/120/121 SetDefaults boxes.
+            NpcKind::SkeletonArcher => (18.0, 40.0),
+            NpcKind::VileSpit => (16.0, 16.0),
+            NpcKind::TheHungryII => (30.0, 32.0),
+            NpcKind::ChaosElemental => (18.0, 40.0),
+            NpcKind::Slimer => (40.0, 30.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3301,6 +3342,11 @@ impl NpcKind {
             NpcKind::GreenJellyfish => 103,
             NpcKind::Werewolf => 104,
             NpcKind::Clown => 109,
+            // W4-d35 (F): the 110/116/120/121 vanilla NPC.type rows.
+            NpcKind::SkeletonArcher => 110,
+            NpcKind::TheHungryII => 116,
+            NpcKind::ChaosElemental => 120,
+            NpcKind::Slimer => 121,
             NpcKind::BlazingWheel => 72,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
@@ -3909,6 +3955,12 @@ impl NpcKind {
             NpcKind::GreenJellyfish => 120,
             NpcKind::Werewolf => 350,
             NpcKind::Clown => 800,
+            // W4-d35 (F): the 110/112/116/120/121 lifeMax rows.
+            NpcKind::SkeletonArcher => 210,
+            NpcKind::VileSpit => 1,
+            NpcKind::TheHungryII => 80,
+            NpcKind::ChaosElemental => 370,
+            NpcKind::Slimer => 60,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4303,6 +4355,12 @@ impl NpcKind {
             NpcKind::GreenJellyfish => 80,
             NpcKind::Werewolf => 70,
             NpcKind::Clown => 60,
+            // W4-d35 (F): the 110/112/116/120/121 damage rows.
+            NpcKind::SkeletonArcher => 45,
+            NpcKind::VileSpit => 65,
+            NpcKind::TheHungryII => 30,
+            NpcKind::ChaosElemental => 40,
+            NpcKind::Slimer => 45,
             NpcKind::DungeonSpirit => 70,
         }
     }

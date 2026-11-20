@@ -3628,6 +3628,19 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d35 (F): the 110/120 walkers plant feet on the
+        // column surface (the generic surface ctor; the family machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::SkeletonArcher
+        | crate::npc::NpcKind::ChaosElemental => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d35 (F): the 112/116/121 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::VileSpit
+        | crate::npc::NpcKind::TheHungryII
+        | crate::npc::NpcKind::Slimer => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

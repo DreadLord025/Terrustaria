@@ -1186,6 +1186,26 @@ pub enum NpcKind {
     /// 34x78, aiStyle 3, dmg 60, def 25, 800 HP,
     /// kb 0.2, value 10000. UNWIRED (data-only; the AI lands with its wave).
     Clown,
+    /// `NPCID.SkeletonArcher` (110) - W4-d35 data wave (`NPC.cs:10313-10325`):
+    /// 18x40, aiStyle 3, dmg 45, def 14, 210 HP,
+    /// kb 0.55, value 400. UNWIRED (data-only; the AI lands with its wave).
+    SkeletonArcher,
+    /// `NPCID.VileSpit` (112) - W4-d35 data wave (`NPC.cs:10326-10341`):
+    /// 16x16, aiStyle 9, dmg 65, def 0, 1 HP,
+    /// kb 0.0, value 0, noGravity, noTileCollide. UNWIRED (data-only; the AI lands with its wave). Bestiary folds onto Corruptor (Hide=true).
+    VileSpit,
+    /// `NPCID.TheHungryII` (116) - W4-d35 data wave (`NPC.cs:10393-10405`):
+    /// 30x32, aiStyle 2, dmg 30, def 6, 80 HP,
+    /// kb 0.8, value 0. UNWIRED (data-only; the AI lands with its wave).
+    TheHungryII,
+    /// `NPCID.ChaosElemental` (120) - W4-d35 data wave (`NPC.cs:10453-10465`):
+    /// 18x40, aiStyle 3, dmg 40, def 30, 370 HP,
+    /// kb 0.4, value 600. UNWIRED (data-only; the AI lands with its wave).
+    ChaosElemental,
+    /// `NPCID.Slimer` (121) - W4-d35 data wave (`NPC.cs:10466-10478`):
+    /// 40x30, aiStyle 14, dmg 45, def 20, 60 HP,
+    /// kb 0.8, value 0, noGravity. UNWIRED (data-only; the AI lands with its wave).
+    Slimer,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3065,6 +3085,11 @@ impl Npc {
                     NpcKind::DiggerTail => Some(0.9),
                     _ => None,
                 })
+                .or_else(|| match kind {
+                    NpcKind::VileSpit => Some(0.9),
+                    NpcKind::Slimer => Some(1.1),
+                    _ => None,
+                })
                 .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
@@ -3244,6 +3269,8 @@ impl Npc {
                             }
                             NpcKind::Wraith => 100,
                             NpcKind::GreenJellyfish => 20,
+                            NpcKind::VileSpit => 80,
+                            NpcKind::Slimer => 55,
                             _ => 0,
                         }
                     }),
@@ -3678,6 +3705,13 @@ impl Npc {
             NpcKind::GreenJellyfish => 1.0,
             NpcKind::Werewolf => 0.4,
             NpcKind::Clown => 0.2,
+            // W4-d35 (F): the 110/112/116/120/121 knockBackResist rows
+            // (the no-row kinds keep the head's 1f, NPC.cs:8533).
+            NpcKind::SkeletonArcher => 0.55,
+            NpcKind::VileSpit => 0.0,
+            NpcKind::TheHungryII => 0.8,
+            NpcKind::ChaosElemental => 0.4,
+            NpcKind::Slimer => 0.8,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4088,6 +4122,12 @@ impl Npc {
             NpcKind::GreenJellyfish => 30,
             NpcKind::Werewolf => 38,
             NpcKind::Clown => 25,
+            // W4-d35 (F): the 110/112/116/120/121 defense rows.
+            NpcKind::SkeletonArcher => 14,
+            NpcKind::VileSpit => 0,
+            NpcKind::TheHungryII => 6,
+            NpcKind::ChaosElemental => 30,
+            NpcKind::Slimer => 20,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4490,6 +4530,12 @@ impl Npc {
             NpcKind::GreenJellyfish => 800.0,
             NpcKind::Werewolf => 1000.0,
             NpcKind::Clown => 10000.0,
+            // W4-d35 (F): the 110/112/116/120/121 value rows (copper).
+            NpcKind::SkeletonArcher => 400.0,
+            NpcKind::VileSpit => 0.0,
+            NpcKind::TheHungryII => 0.0,
+            NpcKind::ChaosElemental => 600.0,
+            NpcKind::Slimer => 0.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -4889,7 +4935,10 @@ impl Npc {
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
-            9 => self.ai_009_sphere_family(world, player, rng),
+            // W4-d35 (F): the 112 data-only kinds skip the
+            // aiStyle-9 family (it would run AI); they fall through to
+            // the update_kind_ai no-op until the AI wave.
+            9 if !matches!(self.kind, NpcKind::VileSpit) => self.ai_009_sphere_family(world, player, rng),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -6537,6 +6586,13 @@ impl Npc {
             | NpcKind::GreenJellyfish
             | NpcKind::Werewolf
             | NpcKind::Clown => {}
+            // W4-d35 (F): the 110/112/116/120/121 kinds are UNWIRED (data-only);
+            // the AI lands with its wave (the wyvern no-op precedent).
+            NpcKind::SkeletonArcher
+            | NpcKind::VileSpit
+            | NpcKind::TheHungryII
+            | NpcKind::ChaosElemental
+            | NpcKind::Slimer => {}
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
     }
@@ -9326,6 +9382,13 @@ impl Npc {
             | NpcKind::GreenJellyfish
             | NpcKind::Werewolf
             | NpcKind::Clown => {}
+            // W4-d35 (F): the 110/112/116/120/121 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::SkeletonArcher
+            | NpcKind::VileSpit
+            | NpcKind::TheHungryII
+            | NpcKind::ChaosElemental
+            | NpcKind::Slimer => {}
         }
     }
 
@@ -18916,6 +18979,12 @@ impl Npc {
             NpcKind::GreenJellyfish => 451,
             NpcKind::Werewolf => 452,
             NpcKind::Clown => 453,
+            // W4-d35 (F): the port-local band (to_u16's ids).
+            NpcKind::SkeletonArcher => 454,
+            NpcKind::VileSpit => 455,
+            NpcKind::TheHungryII => 456,
+            NpcKind::ChaosElemental => 457,
+            NpcKind::Slimer => 458,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23985,7 +24054,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 295] = [
+    pub(super) const ALL_KINDS: [NpcKind; 300] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24293,6 +24362,12 @@ mod tests {
         NpcKind::GreenJellyfish,
         NpcKind::Werewolf,
         NpcKind::Clown,
+        // W4-d35 (F): the 110/112/116/120/121 data-wave kinds.
+        NpcKind::SkeletonArcher,
+        NpcKind::VileSpit,
+        NpcKind::TheHungryII,
+        NpcKind::ChaosElemental,
+        NpcKind::Slimer,
         NpcKind::WyvernTail,
     ];
 
@@ -27905,7 +27980,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            295,
+            300,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31577,6 +31652,12 @@ mod s1_d_2_tests {
         (NpcKind::GreenJellyfish, 18),
         (NpcKind::Werewolf, 3),
         (NpcKind::Clown, 3),
+        // W4-d35 (F).
+        (NpcKind::SkeletonArcher, 3),
+        (NpcKind::VileSpit, 9),
+        (NpcKind::TheHungryII, 2),
+        (NpcKind::ChaosElemental, 3),
+        (NpcKind::Slimer, 14),
         (NpcKind::WyvernTail, 6),
     ];
 
@@ -34480,5 +34561,117 @@ mod w4_d35_e_tests {
         assert_eq!(e.credit_id, "Clown", "Clown credit");
         assert_eq!(e.name, "Clown", "Clown name");
         assert_eq!(NpcKind::Clown.cs_id(), 109, "Clown cs_id");
+    }
+}
+
+#[cfg(test)]
+mod w4_d35_f_tests {
+    //! W4-d35 batch F (110/112/116/120/121) - the data-only SetDefaults wave.
+    //! Every row pins verbatim to the C# (`NPC.cs:10313-10325`, `NPC.cs:10326-10341`, `NPC.cs:10393-10405`, `NPC.cs:10453-10465`, `NPC.cs:10466-10478`). WRITTEN, NOT RUN
+    //! (code-only mode); the smallkinds-witness precedent.
+    use super::*;
+
+    #[test]
+    fn w4_d35_f_the_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value, scale, alpha)
+        let rows = [
+            (NpcKind::SkeletonArcher, 110u16, 3u8, 18.0, 40.0, 45, 14, 210, 0.55f32, 400.0f32, 1.0f32, 0u8),
+            (NpcKind::VileSpit, 112u16, 9u8, 16.0, 16.0, 65, 0, 1, 0.0f32, 0.0f32, 0.9f32, 80u8),
+            (NpcKind::TheHungryII, 116u16, 2u8, 30.0, 32.0, 30, 6, 80, 0.8f32, 0.0f32, 1.0f32, 0u8),
+            (NpcKind::ChaosElemental, 120u16, 3u8, 18.0, 40.0, 40, 30, 370, 0.4f32, 600.0f32, 1.0f32, 0u8),
+            (NpcKind::Slimer, 121u16, 14u8, 40.0, 30.0, 45, 20, 60, 0.8f32, 0.0f32, 1.1f32, 55u8),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value, scale, alpha) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // cs_id: visible kinds ride their own vanilla id; the Hide
+            // kinds fold to the head (the fallback reads the head entry).
+            if crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            }
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, scale, "{kind:?} scale");
+            assert_eq!(shell.alpha, alpha, "{kind:?} alpha");
+        }
+        // sounds
+        assert_eq!(NpcKind::SkeletonArcher.hit_sound(), Some("NPC_Hit_2"), "SkeletonArcher hit");
+        assert_eq!(NpcKind::SkeletonArcher.death_sound(), Some("NPC_Killed_2"), "SkeletonArcher death");
+        assert_eq!(NpcKind::VileSpit.hit_sound(), None, "VileSpit hit");
+        assert_eq!(NpcKind::VileSpit.death_sound(), Some("NPC_Killed_9"), "VileSpit death");
+        assert_eq!(NpcKind::TheHungryII.hit_sound(), Some("NPC_Hit_9"), "TheHungryII hit");
+        assert_eq!(NpcKind::TheHungryII.death_sound(), Some("NPC_Killed_12"), "TheHungryII death");
+        assert_eq!(NpcKind::ChaosElemental.hit_sound(), Some("NPC_Hit_1"), "ChaosElemental hit");
+        assert_eq!(NpcKind::ChaosElemental.death_sound(), Some("NPC_Killed_6"), "ChaosElemental death");
+        assert_eq!(NpcKind::Slimer.hit_sound(), Some("NPC_Hit_1"), "Slimer hit");
+        assert_eq!(NpcKind::Slimer.death_sound(), None, "Slimer death");
+        // protocol band (port-local 429..; the vanilla ids collide)
+        assert_eq!(NpcKind::SkeletonArcher.to_u16(), 454, "SkeletonArcher proto");
+        assert_eq!(NpcKind::from_u16(454), Some(NpcKind::SkeletonArcher), "SkeletonArcher decode");
+        assert_eq!(NpcKind::VileSpit.to_u16(), 455, "VileSpit proto");
+        assert_eq!(NpcKind::from_u16(455), Some(NpcKind::VileSpit), "VileSpit decode");
+        assert_eq!(NpcKind::TheHungryII.to_u16(), 456, "TheHungryII proto");
+        assert_eq!(NpcKind::from_u16(456), Some(NpcKind::TheHungryII), "TheHungryII decode");
+        assert_eq!(NpcKind::ChaosElemental.to_u16(), 457, "ChaosElemental proto");
+        assert_eq!(NpcKind::from_u16(457), Some(NpcKind::ChaosElemental), "ChaosElemental decode");
+        assert_eq!(NpcKind::Slimer.to_u16(), 458, "Slimer proto");
+        assert_eq!(NpcKind::from_u16(458), Some(NpcKind::Slimer), "Slimer decode");
+        // flags
+        assert_eq!(NpcKind::SkeletonArcher.behind_tiles(), false, "SkeletonArcher behindTiles");
+        assert_eq!(NpcKind::SkeletonArcher.no_gravity(), false, "SkeletonArcher noGravity");
+        assert_eq!(NpcKind::VileSpit.behind_tiles(), false, "VileSpit behindTiles");
+        assert_eq!(NpcKind::VileSpit.no_gravity(), false, "VileSpit noGravity");
+        assert_eq!(NpcKind::TheHungryII.behind_tiles(), false, "TheHungryII behindTiles");
+        assert_eq!(NpcKind::TheHungryII.no_gravity(), false, "TheHungryII noGravity");
+        assert_eq!(NpcKind::ChaosElemental.behind_tiles(), false, "ChaosElemental behindTiles");
+        assert_eq!(NpcKind::ChaosElemental.no_gravity(), false, "ChaosElemental noGravity");
+        assert_eq!(NpcKind::Slimer.behind_tiles(), false, "Slimer behindTiles");
+        assert_eq!(NpcKind::Slimer.no_gravity(), true, "Slimer noGravity");
+        // debuff immunities (NPCID.cs DebuffImmunitySets)
+        let b = NpcBuffs::for_kind(NpcKind::SkeletonArcher);
+        assert!(b.buff_immune[20], "SkeletonArcher immune 20");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "SkeletonArcher derived 20");
+        let b = NpcBuffs::for_kind(NpcKind::VileSpit);
+        assert!(b.buff_immune[31], "VileSpit immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::TheHungryII);
+        assert!(b.buff_immune[31], "TheHungryII immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::ChaosElemental);
+        assert!(b.buff_immune[20], "ChaosElemental immune 20");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "ChaosElemental derived 20");
+        let b = NpcBuffs::for_kind(NpcKind::Slimer);
+        assert!(b.buff_immune[20], "Slimer immune 20");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "Slimer derived 20");
+        // bestiary entries / Hide folds
+        let e = crate::bestiary::entry_for_npc(NpcKind::SkeletonArcher, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 110, "SkeletonArcher net");
+        assert_eq!(e.credit_id, "SkeletonArcher", "SkeletonArcher credit");
+        assert_eq!(e.name, "Skeleton Archer", "SkeletonArcher name");
+        assert_eq!(NpcKind::SkeletonArcher.cs_id(), 110, "SkeletonArcher cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::TheHungryII, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 116, "TheHungryII net");
+        assert_eq!(e.credit_id, "TheHungryII", "TheHungryII credit");
+        assert_eq!(e.name, "The Hungry", "TheHungryII name");
+        assert_eq!(NpcKind::TheHungryII.cs_id(), 116, "TheHungryII cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::ChaosElemental, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 120, "ChaosElemental net");
+        assert_eq!(e.credit_id, "ChaosElemental", "ChaosElemental credit");
+        assert_eq!(e.name, "Chaos Elemental", "ChaosElemental name");
+        assert_eq!(NpcKind::ChaosElemental.cs_id(), 120, "ChaosElemental cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Slimer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 121, "Slimer net");
+        assert_eq!(e.credit_id, "Slimer", "Slimer credit");
+        assert_eq!(e.name, "Slimer", "Slimer name");
+        assert_eq!(NpcKind::Slimer.cs_id(), 121, "Slimer cs_id");
+        // VileSpit is Hide=true: folds onto Corruptor (no own entry/cs_id hand row).
+        let e = crate::bestiary::entry_for_npc(NpcKind::VileSpit, SlimeVariant::Blue);
+        assert_eq!(e.kind, NpcKind::Corruptor, "VileSpit folds to Corruptor");
+        assert_eq!(NpcKind::VileSpit.net_id(), e.net_id, "VileSpit net reads the fold");
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::VileSpit), 112, "VileSpit draw sheet stays own");
     }
 }

@@ -510,6 +510,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::AnglerFish => &[31],
         NpcKind::GreenJellyfish => &[31],
         NpcKind::Werewolf => &[],
+        // W4-d35 (F): the 110/112/116/120/121 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::SkeletonArcher => &[20],
+        NpcKind::VileSpit => &[31],
+        NpcKind::TheHungryII => &[31],
+        NpcKind::ChaosElemental => &[20],
+        NpcKind::Slimer => &[20],
         NpcKind::Clown => &[31],
         NpcKind::SeekerTail => &[31],
         NpcKind::DiggerHead => &[31],

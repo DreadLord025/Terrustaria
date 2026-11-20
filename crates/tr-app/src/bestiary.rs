@@ -2334,6 +2334,39 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         kind: NpcKind::Clown,
         variant: None,
         quick_unlock: false,
+    // W4-d35 (F): the 110/116/120/121 data-wave entries.
+    BestiaryEntryDef {
+        credit_id: "SkeletonArcher",
+        net_id: 110,
+        kind: NpcKind::SkeletonArcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "TheHungryII",
+        net_id: 116,
+        kind: NpcKind::TheHungryII,
+        variant: None,
+        quick_unlock: false,
+        name: "The Hungry",
+    },
+    BestiaryEntryDef {
+        credit_id: "ChaosElemental",
+        net_id: 120,
+        kind: NpcKind::ChaosElemental,
+        variant: None,
+        quick_unlock: false,
+        name: "Chaos Elemental",
+    },
+    BestiaryEntryDef {
+        credit_id: "Slimer",
+        net_id: 121,
+        kind: NpcKind::Slimer,
+        variant: None,
+        quick_unlock: false,
+        name: "Slimer",
+    },
         name: "Clown",
     },
         name: "World Feeder",
@@ -2454,6 +2487,10 @@ pub fn try_entry_for_npc(
         | NpcKind::WyvernBody2
         | NpcKind::WyvernBody3
         | NpcKind::WyvernTail => NpcKind::WyvernHead,
+        // W4-d35 (F): the 112 Hide=true kinds fold onto
+        // the head's entry (NPCID.cs DrawOffset Hide; the populator's
+        // GetExclusions skips them - the Wyvern-segment precedent).
+        NpcKind::VileSpit => NpcKind::Corruptor,
         // W4-d35 (D): the 96/97/99/100 Hide=true kinds fold onto
         // the head's entry (NPCID.cs DrawOffset Hide; the populator's
         // GetExclusions skips them - the Wyvern-segment precedent).
@@ -2506,6 +2543,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         | NpcKind::WyvernBody2
         | NpcKind::WyvernBody3
         | NpcKind::WyvernTail => NpcKind::WyvernHead,
+        // W4-d35 (F): the 112 Hide=true kinds fold onto
+        // the head's entry (NPCID.cs DrawOffset Hide; the populator's
+        // GetExclusions skips them - the Wyvern-segment precedent).
+        NpcKind::VileSpit => NpcKind::Corruptor,
         // W4-d35 (D): the 96/97/99/100 Hide=true kinds fold onto
         // the head's entry (NPCID.cs DrawOffset Hide; the populator's
         // GetExclusions skips them - the Wyvern-segment precedent).

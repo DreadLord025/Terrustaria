@@ -1624,6 +1624,12 @@ fn portrait_data(
         (NpcKind::GreenJellyfish, _) => (sheet_i, 26.0, 26.0, 26.0, white),
         (NpcKind::Werewolf, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Clown, _) => (sheet_i, 78.0, 34.0, 78.0, white),
+        // W4-d35 (F): the 110/112/116/120/121 portraits rest the SetDefaults box.
+        (NpcKind::SkeletonArcher, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::VileSpit, _) => (sheet_i, 16.0, 16.0, 16.0, white),
+        (NpcKind::TheHungryII, _) => (sheet_i, 32.0, 30.0, 32.0, white),
+        (NpcKind::ChaosElemental, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Slimer, _) => (sheet_i, 30.0, 40.0, 30.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

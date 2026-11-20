@@ -1118,6 +1118,9 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::DiggerTail => 97,
         NpcKind::SeekerBody => 99,
         NpcKind::SeekerTail => 100,
+        // W4-d35 (F): the 112 Hide kinds' DRAW sheets are their
+        // own NPC_<id> (net_id() folds to the head; the fishron-hazard precedent).
+        NpcKind::VileSpit => 112,
         NpcKind::ForceBubble => 384,
         _ => kind.net_id() as u16,
     }
@@ -3218,6 +3221,15 @@ pub(crate) fn draw_npcs(
             NpcKind::GreenJellyfish => generic_anchor(assets.npc_sheet(103), 7, n, w, h),
             NpcKind::Werewolf => humanoid_draw(assets.npc_sheet(104), 16, n, w, h),
             NpcKind::Clown => humanoid_draw(assets.npc_sheet(109), 12, n, w, h),
+            // W4-d35 (F): the 110/112/116/120/121 draw arms. **Sheet deferral**:
+            // NPC_110/112/116/120/121 are NOT packed (the atlas stands at the 8192
+            // strict-GPU bound - the wyvern precedent); npc_sheet returns
+            // None and the draw skips. The packing rides the atlas-repack wave.
+            NpcKind::SkeletonArcher => humanoid_draw(assets.npc_sheet(110), 20, n, w, h),
+            NpcKind::VileSpit => generic_anchor(assets.npc_sheet(112), 1, n, w, h),
+            NpcKind::TheHungryII => generic_anchor(assets.npc_sheet(116), 6, n, w, h),
+            NpcKind::ChaosElemental => humanoid_draw(assets.npc_sheet(120), 15, n, w, h),
+            NpcKind::Slimer => generic_anchor(assets.npc_sheet(121), 4, n, w, h),
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
