@@ -39304,6 +39304,69 @@ is `TileDrawing.cs`'s (also e8).
 **Verdict: the batch-1 remainder is EMPTY.** All four first-half sites
 are already ported by e8's in-flight `christmas_hook_chain_lights`, so
 this round is the claim + independent census + distrust-verbatim audit
-(the next commit) - the f9 `c2740784` / S1-D-3-aistyle61 docs-only
-precedent. **Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify
-invoked; the siblings' witnesses stay written-not-run.**
+(below) - the f9 `c2740784` / S1-D-3-aistyle61 docs-only precedent.
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked;
+the siblings' witnesses stay written-not-run.**
+
+### The distrust-verbatim audit of the 332 chain (sites 1-4)
+
+Re-read against the C# window `Main.cs:28991-29045` + `Entity.cs:50-54`
++ `Lighting.cs:157-163`, statement by statement, against e8's
+in-flight `christmas_hook_chain_lights` (audited as-is, uncommitted):
+
+* **Init.** C# `:28994` builds `vector19` as
+  `position + width*0.5f / height*0.5f`; `Entity.Center` (`Entity.cs:53`)
+  is `position + width/2f` - the same IEEE product (`x*0.5 == x/2`
+  exactly for every f32), so e8's `center: Vec2` parameter fed
+  `proj.Center` is the exact anchor. The aim deltas `:28995-28996` and
+  the colour index `num112 = 0` (`:28993`) match.
+* **Exits.** `< 30f` (`:29002-29006`) then `float.IsNaN` (`:29007-29011`),
+  BOTH before the anchor/light, in that order; the C#
+  `flag21 = false; continue` maps to `break` exactly (the flag is only
+  read at the `while` head). e8: same order, same breaks. **Faithful.**
+* **Anchor.** `:29012-29013` `(int)vector19.X / 16` - truncate the
+  coordinate FIRST, then integer-divide. NOT the Vector2 overload's
+  quotient form (`Lighting.cs:142`) and NOT `>> 4`; the three agree for
+  non-negative coordinates but the source form is pinned (g19's
+  structure test freezes the line text). e8: `vector19.x as i32 / 16`.
+  **Faithful.**
+* **Colour rows.** Four SEPARATE `if`s (`:29014/29018/29022/29026`), not
+  else-if; literals verbatim `(0f,0.2f,0.2f)` / `(0.1f,0.2f,0f)` /
+  `(0.2f,0.1f,0f)` / `(0.2f,0f,0.2f)`; no torch-id indirection, no
+  scaling. e8: four separate `if`s, same literals. **Faithful.**
+* **Step.** `:29030-29036` - `num115 = 16f/num115`, scale both deltas,
+  add to `vector19`, re-aim from `mountedCenter`; the light is sampled
+  at the PRE-step position (the anchor precedes the step in source
+  order). e8: same statement order. **Faithful.**
+* **Wrap.** `:29039-29043` - `num112++` then `if (> 3) num112 = 0`, AFTER
+  the two chain sprite draws (`:29037-29038`, draw-only, dropped with
+  the chain-rendering drop e8 documents). e8: same. **Faithful.**
+* **RNG.** The walk draws nothing - the two `EntitySpriteDraw` calls are
+  draw-only; stream-neutral by construction.
+
+**Behavioural oracle (this lane's code contribution).**
+`crates/tr-app/tests/main_addlight_batch1.rs` - a self-contained
+statement-for-statement f32 mirror of the walk's light half (the
+reference, NOT a second port copy) pinned against hand-derived f32-exact
+fixtures: the straight 160 px drop (9 links, tiles 10..18, colours wrap
+0..3,0..3,0 - agrees with f9's hand-replay), the 150 px drop (8 links),
+the < 30 px dark hook, the negative-x truncate-first anchor (-165 ->
+-10, not -11), the NaN dark hook, the pre-step first light, and the
+(0,0)->(300,400) diagonal's 30-link tile sequence carrying the f32
+rounding at the near-boundary links (link 10 x=95.99999 -> tile 5, link
+15 y=192.00003 -> tile 12). `Math.Sqrt` computes in double then casts to
+float, which equals the correctly-rounded f32 sqrt, so the mirror's
+`f32::sqrt` is bit-exact with the C#. **Merger obligation:** replay e8's
+`christmas_hook_chain_lights` against the file's `ORACLE_FIXTURES`
+(same inputs, same `(tile_x, tile_y, [r,g,b])` sequence). 6 witnesses
+WRITTEN NOT RUN. g19's in-flight `main_addlight_census.rs` keeps the
+whole-file structural freeze - no duplicate census test here.
+
+### Verification
+
+Code-only: the census is independent full-file greps (site count, bare
+token count, `.AddLight(` count, seven negative-form counts - all
+re-derived, not copied from f9); the audit re-read the cited C# windows
+line by line; the oracle fixtures were derived by an exact-f32
+statement mirror (scratch computation, no compiler/test run). **No
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
