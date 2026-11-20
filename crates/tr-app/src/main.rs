@@ -233,6 +233,7 @@ mod projectile_bobber;
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
 mod rain;
+mod resource_pack;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
