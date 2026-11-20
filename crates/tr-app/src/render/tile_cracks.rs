@@ -11,11 +11,19 @@
 //! (`Main.cs:61541`), so abandoned hits keep drawing their crack stage
 //! while the 60-tick TTL decay (`HitTile.cs:285-333`) drains the damage
 //! back under the 20 floor. Recorded deviations (ANALYSIS "The tile-crack
-//! overlay (S1-G-1 wave C)" + "The book-driven crack draw (W4-g77)"):
+//! overlay (S1-G-1 wave C)" — the W4-g77 book re-arm supersedes its
+//! single-accumulator paragraph; the list below is current):
 //! - `hitReplace` draws nothing until replacement mining lands (the port
 //!   has no second book); the wall-layer sites (`WallDrawing.cs:203-204`,
-//!   crack type 2) await the wall-layer overlay wiring — the type-2 plan
-//!   arm is ported and tested here;
+//!   crack type 2) draw from the SAME book (the i29 `HitTile` holds both
+//!   `TILE` and `WALL` kinds) through the same hook with `CRACK_WALL` —
+//!   the wall pair runs BEFORE the tile pair in the per-frame overlay
+//!   (the C#'s wall layer draws first). The port's fused cached range
+//!   paints walls and tiles together, so a wall crack under a covering
+//!   solid tile would paint over it — the same z-order approximation the
+//!   pylon pass records; in practice `PickWall` only lands on exposed
+//!   walls (`Player.cs:45832-45967`), so the cracked cell has no active
+//!   block;
 //! - `HitTileObject.Clear`'s `crackStyle` roll (`HitTile.cs:29-46`, a static
 //!   `UnifiedRandom` + the no-repeat-of-`lastCrack` loop) is seeded from the
 //!   world seed instead of `DateTime.Now.Ticks` (the port's determinism
@@ -181,10 +189,60 @@ pub(crate) fn crack_draw_plan(
     }
 }
 
-/// `Main.DrawTileCracks` (`Main.cs:61533-61626`) over one record list.
-/// The `offScreenRange` vector (`:61535-61539`) is zero: the port draws the
+/// One emitted crack sprite — the C#'s `spriteBatch.Draw` arguments
+/// (`Main.cs:61623`) minus the texture handle: the screen position
+/// (`x*16 - screenPosition.X`, the `drawToScreen` zero-vector arm), the
+/// `TileCrack` source rect (`:61618-61622`) and the `Lighting.GetColor`
+/// tint at alpha 1 (`Color` is opaque). The quad list is the sprite-draw
+/// witness seam (W4-g77): the emit is testable without a renderer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CrackQuad {
+    pub(crate) pos: [f32; 2],
+    pub(crate) src: [f32; 4],
+    pub(crate) tint: [f32; 4],
+}
+
+/// The per-record sprite quads of one `DrawTileCracks` call
+/// (`Main.cs:61533-61626`): the plan walk in `hitter.data` index order,
+/// then the `:61623` draw arguments per drawing record. The
+/// `offScreenRange` vector (`:61535-61539`) is zero: the port draws the
 /// world range straight to the screen-range coordinate space (the wires
 /// pass's convention), so the C#'s `drawToScreen` arm is the one taken.
+pub(crate) fn crack_quads(
+    world: &World,
+    light: &LightMap,
+    style: &LightStyle,
+    camera: Vec2,
+    anim_time: f32,
+    crack_type: i32,
+    hitter: &[CrackRecord],
+    show_invisible: bool,
+) -> Vec<CrackQuad> {
+    let mut out = Vec::new();
+    for hit in hitter {
+        let Some(src) = crack_draw_plan(world, hit, crack_type, show_invisible) else {
+            continue;
+        };
+        // `Lighting.GetColor(x, y)` tint (`:61623`) — the port's light
+        // style shade, the same seam every tile pass uses. The position is
+        // the C#'s `x * 16 - (int)screenPosition.X` (`:61623`).
+        let c = style.shade(light.get(hit.x, hit.y), hit.x, hit.y, anim_time);
+        out.push(CrackQuad {
+            pos: [
+                hit.x as f32 * TILE_PX - camera.x,
+                hit.y as f32 * TILE_PX - camera.y,
+            ],
+            src,
+            tint: [c[0], c[1], c[2], 1.0],
+        });
+    }
+    out
+}
+
+/// `Main.DrawTileCracks` (`Main.cs:61533-61626`) over one record list —
+/// the sprite push of [`crack_quads`]: one 16×16 quad per drawing record,
+/// rotation 0, scale 1, `SpriteEffects.None`, layer 0 (`:61623`), paint 0
+/// (the crack is never painted — the C# draws the raw sheet).
 pub(crate) fn draw_tile_cracks(
     r: &mut SpriteRenderer,
     world: &World,
@@ -196,28 +254,20 @@ pub(crate) fn draw_tile_cracks(
     hitter: &[CrackRecord],
     show_invisible: bool,
 ) {
-    for hit in hitter {
-        let Some([sx, sy, sw, sh]) = crack_draw_plan(world, hit, crack_type, show_invisible) else {
+    for q in crack_quads(
+        world,
+        light,
+        style,
+        camera,
+        anim_time,
+        crack_type,
+        hitter,
+        show_invisible,
+    ) {
+        let Some(uv) = r.uv("TileCracks", q.src[0], q.src[1], q.src[2], q.src[3]) else {
             continue;
         };
-        let Some(uv) = r.uv("TileCracks", sx, sy, sw, sh) else {
-            continue;
-        };
-        // `Lighting.GetColor(x, y)` tint (`:61623`) — the port's light
-        // style shade, the same seam every tile pass uses. The position is
-        // the C#'s `x * 16 - (int)screenPosition.X` (`:61623`).
-        let c = style.shade(light.get(hit.x, hit.y), hit.x, hit.y, anim_time);
-        r.push_sprite_paint(
-            [
-                hit.x as f32 * TILE_PX - camera.x,
-                hit.y as f32 * TILE_PX - camera.y,
-            ],
-            [TILE_PX, TILE_PX],
-            uv,
-            [c[0], c[1], c[2], 1.0],
-            0.0,
-            0,
-        );
+        r.push_sprite_paint(q.pos, [TILE_PX, TILE_PX], uv, q.tint, 0.0, 0);
     }
 }
 
@@ -283,10 +333,14 @@ impl CrackStyles {
     }
 }
 
-/// The frame hook: run both draw sites in the C# order — `hitReplace` then
-/// `hitTile` (`TileDrawing.cs:732-733`) — over the local player's real
-/// `HitTile` book (i29). The port has no replacement-mining book yet, so
-/// the first site is empty (module deviations).
+/// The frame hook: run all four draw sites in the C# layer order — the
+/// wall layer first (`WallDrawing.cs:203-204`, crack type 2, `hitReplace`
+/// then `hitTile`), then the solid tile layer (`TileDrawing.cs:732-733`,
+/// crack type 1, same pair) — over the local player's real `HitTile` book
+/// (i29; the one book holds both `TILE` and `WALL` kinds). The port has no
+/// replacement-mining book yet, so both `hitReplace` sites are empty
+/// (module deviations). The style refresh runs ONCE per frame over the
+/// whole book (the C# rolls per Clear, not per site).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_mining_cracks(
     r: &mut SpriteRenderer,
@@ -301,7 +355,34 @@ pub(crate) fn draw_mining_cracks(
     show_invisible: bool,
 ) {
     let records = crack_styles.records(book, rng);
-    // `DrawTileCracks(1, hitReplace)` — empty in the port (module note).
+    // The wall layer's pair first (`WallDrawing.cs:203-204`):
+    // `DrawTileCracks(2, hitReplace)` — empty in the port (module note) —
+    // then `DrawTileCracks(2, hitTile)` (the WALL-kind slots).
+    draw_tile_cracks(
+        r,
+        world,
+        light,
+        style,
+        camera,
+        anim_time,
+        CRACK_WALL,
+        &[],
+        show_invisible,
+    );
+    draw_tile_cracks(
+        r,
+        world,
+        light,
+        style,
+        camera,
+        anim_time,
+        CRACK_WALL,
+        &records,
+        show_invisible,
+    );
+    // The solid tile layer's pair (`TileDrawing.cs:732-733`):
+    // `DrawTileCracks(1, hitReplace)` — empty — then
+    // `DrawTileCracks(1, hitTile)` (the TILE-kind slots).
     draw_tile_cracks(
         r,
         world,
@@ -313,7 +394,6 @@ pub(crate) fn draw_mining_cracks(
         &[],
         show_invisible,
     );
-    // `DrawTileCracks(1, hitTile)`.
     draw_tile_cracks(
         r,
         world,
@@ -327,9 +407,52 @@ pub(crate) fn draw_mining_cracks(
     );
 }
 
+/// [`draw_mining_cracks`]'s quad-list twin — the four sites' sprite quads
+/// in push order (the wall pair's `hitTile` quads, then the tile pair's;
+/// both `hitReplace` sites are empty), so the whole frame hook is
+/// witnessable without a renderer (W4-g77). Test-only: the production
+/// hook pushes straight through [`draw_tile_cracks`].
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn mining_crack_quads(
+    world: &World,
+    light: &LightMap,
+    style: &LightStyle,
+    camera: Vec2,
+    anim_time: f32,
+    book: &HitTile,
+    crack_styles: &mut CrackStyles,
+    rng: &mut UnifiedRandom,
+    show_invisible: bool,
+) -> Vec<CrackQuad> {
+    let records = crack_styles.records(book, rng);
+    let mut out = crack_quads(
+        world,
+        light,
+        style,
+        camera,
+        anim_time,
+        CRACK_WALL,
+        &records,
+        show_invisible,
+    );
+    out.extend(crack_quads(
+        world,
+        light,
+        style,
+        camera,
+        anim_time,
+        CRACK_TILE,
+        &records,
+        show_invisible,
+    ));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tr_core::lighting::{LightMode, LightParams};
     use tr_core::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK};
 
     fn world_with(kind: u16, x: i32, y: i32) -> World {
@@ -698,6 +821,124 @@ mod tests {
         assert_eq!(
             styles2.records(&book2, &mut rng2)[0].crack_style,
             prev_style
+        );
+    }
+
+    /// A lit fixture map over the whole 40×40 world (the sunlit surface
+    /// defaults; the exact values ride `style.shade` like the real pass).
+    fn lit_map(w: &World) -> LightMap {
+        let mut lm = LightMap::new();
+        lm.compute_into(w, 0, 0, w.width - 1, w.height - 1, &LightParams::default());
+        lm
+    }
+
+    /// W4-g77 — the SPRITE draw (`Main.cs:61623`): one quad per drawing
+    /// record at `x*16 - screenPosition.X`, the plan's source rect, the
+    /// light tint at alpha 1 — and the skipped records emit nothing.
+    #[test]
+    fn w4_g77_the_sprite_quad_rides_the_csharp_draw_arguments() {
+        let mut w = world_with(1, 5, 6); // stone, active
+        w.tile_mut(7, 6).unwrap().kind = 1;
+        w.tile_mut(7, 6).unwrap().flags |= FLAG_ACTIVE;
+        let lm = lit_map(&w);
+        let style = LightStyle::for_mode(LightMode::Color);
+        let cam = Vec2::new(13.0, 29.0);
+        let recs = [rec(5, 6, 85, CRACK_TILE, 2), rec(7, 6, 19, CRACK_TILE, 0)];
+        let quads = crack_quads(&w, &lm, &style, cam, 0.0, CRACK_TILE, &recs, false);
+        // The <20 record draws nothing (`:61548`); the 85 one draws row 3.
+        assert_eq!(quads.len(), 1);
+        let q = quads[0];
+        assert_eq!(q.pos, [5.0 * TILE_PX - 13.0, 6.0 * TILE_PX - 29.0]);
+        assert_eq!(q.src, [36.0, 54.0, 16.0, 16.0]);
+        let c = style.shade(lm.get(5, 6), 5, 6, 0.0);
+        assert_eq!(q.tint, [c[0], c[1], c[2], 1.0], "the opaque light tint");
+        // The wall type emits nothing from TILE records (`:61543`).
+        assert!(crack_quads(&w, &lm, &style, cam, 0.0, CRACK_WALL, &recs, false).is_empty());
+        // The tree column shift reaches the quad (`:61619-61622`).
+        w.tile_mut(5, 6).unwrap().kind = 5; // tree trunk
+        let quads = crack_quads(
+            &w,
+            &lm,
+            &style,
+            cam,
+            0.0,
+            CRACK_TILE,
+            &[rec(5, 6, 85, CRACK_TILE, 3)],
+            false,
+        );
+        assert_eq!(quads[0].src, [90.0, 54.0, 16.0, 16.0]);
+    }
+
+    /// W4-g77 — the wall-layer sites (`WallDrawing.cs:203-204`) draw the
+    /// WALL-kind slots through the SAME hook, and the wall pair's quads
+    /// push BEFORE the tile pair's (the C#'s wall layer draws first).
+    #[test]
+    fn w4_g77_the_wall_pair_draws_before_the_tile_pair() {
+        let mut w = world_with(1, 5, 6);
+        w.tile_mut(2, 2).unwrap().wall = 4; // an exposed wall cell
+        let lm = lit_map(&w);
+        let style = LightStyle::for_mode(LightMode::Color);
+        let mut book = HitTile::new();
+        let mut styles = CrackStyles::new();
+        let mut rng = UnifiedRandom::new(5);
+        // The tile hit lands first (slot 0), the wall hit second (slot
+        // 500) — the index-order walk interleaves the kinds.
+        let t = book.hit_object(5, 6, CRACK_TILE);
+        book.add_damage(t, 85, true);
+        let wl = book.hit_object(2, 2, CRACK_WALL);
+        book.add_damage(wl, 60, true);
+        let quads = mining_crack_quads(
+            &w,
+            &lm,
+            &style,
+            Vec2::ZERO,
+            0.0,
+            &book,
+            &mut styles,
+            &mut rng,
+            false,
+        );
+        assert_eq!(quads.len(), 2);
+        // The WALL quad first even though its slot index (500) is AFTER
+        // the tile's (0): the site order, not the book order, groups them.
+        assert_eq!(quads[0].pos, [2.0 * TILE_PX, 2.0 * TILE_PX]);
+        assert_eq!(quads[0].src[1], 36.0, "the wall hit's 60 damage → row 2");
+        assert_eq!(quads[1].pos, [5.0 * TILE_PX, 6.0 * TILE_PX]);
+        assert_eq!(quads[1].src[1], 54.0, "the tile hit's 85 damage → row 3");
+        // One style roll per occupancy, shared by both sites' records.
+        assert_eq!(styles.styles[t], quads[1].src[0] as i32 / 18);
+        assert_eq!(styles.styles[wl], quads[0].src[0] as i32 / 18);
+        assert_ne!(styles.styles[t], styles.styles[wl]);
+    }
+
+    /// W4-g77 — the wall crack gates ride the wall visibility arm
+    /// (`Main.cs:61563-61566`): a gone wall or an echo-coated wall draws
+    /// nothing, and the tile book never feeds the wall site.
+    #[test]
+    fn w4_g77_the_wall_quads_gate_on_the_wall_not_the_block() {
+        let mut w = world_with(1, 3, 3);
+        w.tile_mut(3, 3).unwrap().wall = 4;
+        let lm = lit_map(&w);
+        let style = LightStyle::for_mode(LightMode::Color);
+        let recs = [rec(3, 3, 85, CRACK_WALL, 1), rec(3, 3, 85, CRACK_TILE, 1)];
+        let quads = crack_quads(&w, &lm, &style, Vec2::ZERO, 0.0, CRACK_WALL, &recs, false);
+        assert_eq!(quads.len(), 1, "only the WALL record draws");
+        assert_eq!(quads[0].src, [18.0, 54.0, 16.0, 16.0]);
+        // The echo coating hides it; show-invisible reveals it.
+        w.set_invisible_wall(3, 3, true);
+        assert!(crack_quads(&w, &lm, &style, Vec2::ZERO, 0.0, CRACK_WALL, &recs, false).is_empty());
+        assert_eq!(
+            crack_quads(&w, &lm, &style, Vec2::ZERO, 0.0, CRACK_WALL, &recs, true).len(),
+            1
+        );
+        // The wall breaks: the wall site draws nothing, the TILE record
+        // still draws through the tile site (the block stands).
+        w.set_invisible_wall(3, 3, false);
+        w.tile_mut(3, 3).unwrap().wall = 0;
+        assert!(crack_quads(&w, &lm, &style, Vec2::ZERO, 0.0, CRACK_WALL, &recs, false).is_empty());
+        assert_eq!(
+            crack_quads(&w, &lm, &style, Vec2::ZERO, 0.0, CRACK_TILE, &recs, false).len(),
+            1
         );
     }
 }

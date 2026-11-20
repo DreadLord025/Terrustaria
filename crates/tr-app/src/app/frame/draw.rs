@@ -1185,16 +1185,23 @@ impl App {
                     }
 
                     // S1-G-1 wave C / W4-g77: the tile-crack overlay
-                    // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
-                    // solid-layer sites `TileDrawing.cs:732-733`) over the
-                    // local player's real i29 `HitTile` book — every
-                    // damaged slot draws its crack stage, TTL decay
-                    // included. It rides the per-frame world range right
-                    // after the cached tile pass — the book decays every
-                    // tick, so the crack cannot live inside the G6-cached
-                    // range (the `WorldFrameKey` is untouched). The port's
-                    // stand-in for the solid-layer site; ANALYSIS "The
-                    // tile-crack overlay (S1-G-1 wave C)".
+                    // (`Main.DrawTileCracks`, `Main.cs:61533-61626`) over
+                    // the local player's real i29 `HitTile` book — all
+                    // four sites in the C# layer order: the wall pair
+                    // (`WallDrawing.cs:203-204`, crack type 2) then the
+                    // solid-tile pair (`TileDrawing.cs:732-733`, crack
+                    // type 1), `hitReplace` before `hitTile` (both
+                    // `hitReplace` sites empty — no replacement-mining
+                    // book yet). Every damaged slot draws its crack
+                    // stage, TTL decay included. It rides the per-frame
+                    // world range right after the cached tile pass — the
+                    // book decays every tick, so the crack cannot live
+                    // inside the G6-cached range (the `WorldFrameKey` is
+                    // untouched). The port's stand-in for the two layer
+                    // epilogues; the deviations live in the
+                    // `render/tile_cracks.rs` module doc (ANALYSIS
+                    // "The tile-crack overlay (S1-G-1 wave C)" — the
+                    // W4-g77 re-arm supersedes its projection paragraph).
                     crate::render::tile_cracks::draw_mining_cracks(
                         renderer,
                         world,

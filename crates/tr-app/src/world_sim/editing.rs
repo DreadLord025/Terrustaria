@@ -12589,6 +12589,81 @@ mod tests {
         assert_eq!(r1, r2);
     }
 
+    /// W4-g77 — the WALL-layer crack draw is wired: the hammer's WALL-book
+    /// hit (`Player.cs:45912`) drives a crack quad through the frame hook's
+    /// wall site (`WallDrawing.cs:203-204`, crack type 2) while the wall
+    /// stands, and the quad vanishes when the second hit breaks the wall
+    /// (the slot clears, `Player.cs:45947`).
+    #[test]
+    fn w4_g77_the_hammers_wall_hit_draws_a_wall_crack() {
+        use crate::render::tile_cracks::{CRACK_WALL, mining_crack_quads};
+        let mut w = World::new("wall".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i].wall = 24; // a house wall (Main.wallHouse)
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505; // the Copper Hammer
+        mine_frames(&mut app, 2);
+        // Hit 1: 52 damage in the WALL book — above the 20 floor.
+        let wid = app
+            .hit_tile
+            .try_finding(30, 260, tr_core::hit_tile::WALL)
+            .expect("the wall hit landed in the WALL book");
+        assert_eq!(app.hit_tile.data[wid].damage, 52);
+        let mut lm = tr_core::lighting::LightMap::new();
+        lm.compute_into(
+            &app.world,
+            28,
+            258,
+            32,
+            262,
+            &tr_core::lighting::LightParams::default(),
+        );
+        let style = tr_core::lighting::LightStyle::for_mode(tr_core::lighting::LightMode::Color);
+        let quads = mining_crack_quads(
+            &app.world,
+            &lm,
+            &style,
+            app.camera,
+            0.0,
+            &app.hit_tile,
+            &mut app.mine_crack_styles,
+            &mut app.mine_crack_rng,
+            false,
+        );
+        assert_eq!(quads.len(), 1, "one WALL crack, no tile hits");
+        assert_eq!(
+            quads[0].pos,
+            [30.0 * TILE_PX - app.camera.x, 260.0 * TILE_PX - app.camera.y]
+        );
+        assert_eq!(quads[0].src[1], 18.0, "52 damage → row 1");
+        assert_eq!(
+            quads[0].src[0],
+            (app.mine_crack_styles.styles[wid] * 18) as f32,
+            "the quad rides the slot's rolled style"
+        );
+        // The wall-site record type: the plan draws it only as CRACK_WALL.
+        let recs = app
+            .mine_crack_styles
+            .records(&app.hit_tile, &mut app.mine_crack_rng);
+        assert_eq!(recs[0].kind, CRACK_WALL);
+        // Hit 2 breaks the wall: the slot clears, no crack draws.
+        mine_frames(&mut app, 12);
+        assert_eq!(app.world.tile(30, 260).unwrap().wall, 0, "the wall broke");
+        let quads = mining_crack_quads(
+            &app.world,
+            &lm,
+            &style,
+            app.camera,
+            0.0,
+            &app.hit_tile,
+            &mut app.mine_crack_styles,
+            &mut app.mine_crack_rng,
+            false,
+        );
+        assert!(quads.is_empty(), "the broken wall draws no crack");
+    }
+
     /// A frame_important kind without a registry entry (torch 4) breaks as a
     /// single cell with its `by_tile` drop — the plan's stated edge case for
     /// the ungated branch (no `Check*` routine exists for kind 4).
