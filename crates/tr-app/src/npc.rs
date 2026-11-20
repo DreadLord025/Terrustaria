@@ -1802,6 +1802,14 @@ pub struct Npc {
     /// on the `UpdateNPCs` stream at the C# call position, and this queue
     /// is the fallback drain (the `wants_hostile_shot` pattern).
     pub wants_item_sounds: Vec<(i32, f32, f32)>,
+    /// The aiStyle-64 glow tail's `Lighting.AddLight(i2, j2, r, g, b)`
+    /// request (`NPC.cs:34162`/`:34166`/`:34170`) — `(tile_x, tile_y,
+    /// [r, g, b])`, the colours already scaled by `this.scale` and the
+    /// tile coords TRUNCATED (`(int)Center / 16`, `:34156-34157`). The
+    /// sim drains it into the shared `EntityLights` pair at the NPC's
+    /// slot turn (the `item_lights::rand_light` fixed-step precedent);
+    /// the solo `update_rng` wrapper queues it for the caller. W4-c7.
+    pub wants_ai_light: Vec<(i32, i32, [f32; 3])>,
     /// `NPC.alpha`: the spawn fade (`SetDefaults` 245/246/247/248's
     /// `alpha = 255`, `NPC.cs:12176/12190/12201`); the Golem family's
     /// machines decrement it by 10 per tick and the draw reads it as
@@ -3119,6 +3127,7 @@ impl Npc {
             wants_mount_carrier: None,
             wants_transform: None,
             wants_item_sounds: Vec::new(),
+            wants_ai_light: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
             // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
@@ -4960,6 +4969,15 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
+            // `else if (this.aiStyle == 64)` (`NPC.cs:34019-34248`) — the
+            // firefly family (355/358/654/677). W4-c7: the SOLO path runs
+            // the faithful `ai_064_step` with an empty sibling view (the
+            // 677 threat scan sees only the player); the SIM's pooled
+            // path (`world_sim/npcs.rs`'s tick closure) hands it the
+            // slot-ordered pool so the scan's f32 sums keep their order.
+            // The arm is pure velocity — the integration tail is the
+            // shared `ai_064_integrate` (the `UpdateCollision`/raw split).
+            64 => self.update_rng_style64_solo(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5071,6 +5089,71 @@ impl Npc {
         );
         *self = pool[0].clone();
         self.drain_style75_out(out);
+    }
+
+    /// The SOLO aiStyle-64 step (`NPC.cs:34019-34248`) for a bare
+    /// `update_rng` caller (the unit tests): the faithful `ai_064_step`
+    /// with an EMPTY sibling view — the 677 threat scan sees only the
+    /// session player (the style75 solo wrapper's precedent). The SIM's
+    /// pooled path (`world_sim/npcs.rs`'s tick closure) hands the arm the
+    /// slot-ordered `App::npcs` views. The glow request queues on
+    /// `wants_ai_light` for the caller's `EntityLights` feed; the
+    /// integration tail is [`Self::ai_064_integrate`].
+    fn update_rng_style64_solo(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let ctx = crate::npc_ai_style64::Ai64Ctx {
+            players: &[cand],
+            npcs: &[],
+            // The `EverLastingTicker` stand-in (the zombie convention):
+            // 0 until the ticker migration.
+            ticker: 0,
+        };
+        let fx = crate::npc_ai_style64::ai_064_step(
+            self.kind.cs_id() as i32,
+            self,
+            world,
+            &ctx,
+            rng,
+        );
+        if let Some(light) = fx.light {
+            self.wants_ai_light.push(light);
+        }
+        self.ai_064_integrate(world);
+    }
+
+    /// The firefly family's post-`AI()` movement — `NPC.UpdateNPC`'s
+    /// integration split (`NPC.cs:90490-90503`). All four are noGravity
+    /// (`:13528`/`:13570`/`:17276`/`:17590`), so no gravity applies; the
+    /// dead-band X snap (`:90473-90476`, the double f64 compare) runs for
+    /// every kind. The Shimmerfly (677) is noTileCollide (`:17592`): the
+    /// raw `position += velocity` branch with the oldPosition/
+    /// oldDirection stamps (`:90496-90498`). The other three ride the
+    /// no-gravity `UpdateCollision` stand-in (`integrate_flyer_collision`,
+    /// the bat/fish tail shape — the blocked axes latch collideX/collideY
+    /// for the NEXT tick's bounce arm). The wet probe rides the same
+    /// `is_wet` seam the bat wiring uses.
+    pub(crate) fn ai_064_integrate(&mut self, world: &World) {
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        if self.kind == NpcKind::Shimmerfly {
+            // `:90496-90498` — the stamps + the raw integration.
+            self.old_x = self.x;
+            self.old_y = self.y;
+            self.old_direction = self.facing;
+            self.x += self.vx;
+            self.y += self.vy;
+        } else {
+            let (w, h) = self.size();
+            self.wet = is_wet(world, self.x, self.y, w, h);
+            self.integrate_flyer_collision(world);
+        }
     }
 
     /// Land a `Style75Out` on this NPC: the shots ride the established
