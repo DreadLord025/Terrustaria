@@ -88,7 +88,7 @@ render-target cache.
 | 3. `DrawTile_LiquidBehindTile` on solid layer (:524) | PORTED | `render/liquids.rs::draw_tile_liquid_behind` | |
 | 4. Special-point classification switch (:534-723) — vines / MultiTileVine / MultiTileGrass / VoidLens / Pylon / MasterTrophy / AnyDirectionalGrass / WindyGrass | PARTIAL | none (registry) | Inlined: grass+sunflower sway (`tiles.rs:671-751`, `838-851`), trees (`foliage.rs`). The **deferred ordering** is lost — `tiles.rs:671-678` admits the "z-order approximation". |
 | 5. `DrawSingleTile` (:864-1411) | PARTIAL | `tiles.rs::draw_tiles` body | See coverage table; `GetTileDrawData`, the positional switch, flames, half/slice/slope are ported. |
-| 6. `DrawTileCracks` (solid only, :732-733) | PORTED | `render/tile_cracks.rs::draw_tile_cracks` | S1-G-1 wave C: `Main.cs:61533-61626` verbatim (the damage ladder, the tree/mushroom shape arms, the 18 px rects, the `Lighting.GetColor` tint); the port's mining accumulator projects onto the `HitTile` damage units. The wall sites (`WallDrawing.cs:203-204`) draw when the wall book fills — the projection already emits `CRACK_WALL` records. Deviations: ANALYSIS "The tile-crack overlay (S1-G-1 wave C)". |
+| 6. `DrawTileCracks` (:732-733 + `WallDrawing.cs:203-204`) | PORTED | `render/tile_cracks.rs::draw_tile_cracks` | S1-G-1 wave C: `Main.cs:61533-61626` verbatim (the damage ladder, the tree/mushroom shape arms, the 18 px rects, the `Lighting.GetColor` tint). W4-g77 re-arm: the walk reads the real i29 `HitTile` book (501 slots in index order, the TTL decay keeps abandoned hits drawing their stage); all four sites draw in C# layer order - the wall pair (`WallDrawing.cs:203-204`, crack type 2) then the tile pair (`TileDrawing.cs:732-733`), `hitReplace` before `hitTile` (both empty - no replacement book); the `CrackQuad` seam witnesses the `Main.cs:61623` draw arguments. The single-accumulator projection is RETIRED. Deviations: ANALYSIS "The tile-crack overlay (S1-G-1 wave C)". |
 | 7. `DrawSpecialTilesLegacy` (:736, :7893-8024) | MISSING | — | No SunOrb / in-tile item / item frame / food platter / weapon rack / critter cage. |
 | 8. `DrawEntities_DisplayDolls`/`HatRacks` (:8026/:8039) | MISSING | — | No tile-entity sprite pass. |
 | 9. `DrawTrees` (:8052) | PORTED | `foliage.rs::draw_tree_foliage` | Canopy + branch + leaf gores; sway per `DrawGrass`. |
@@ -240,8 +240,10 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
     vs the port's `HIGH_LIGHT`/`MEDIUM_LIGHT` (`tiles.rs:362-366`). **Not admitted.**
 12. **`DrawTileCracks` missing** — `cosmetic` (the mining/hit overlay).
     **RESOLVED 2026-11-18 (S1-G-1 wave C)**: `render/tile_cracks.rs` ports the
-    pass; the single-accumulator projection + the world-seeded crack-style
-    roll are the recorded deviations (ANALYSIS "The tile-crack overlay").
+    pass; W4-g77 re-armed it onto the real i29 `HitTile` book (all four
+    sites in C# layer order, wall pair first; the single-accumulator
+    projection RETIRED); the world-seeded crack-style roll is the
+    recorded deviation (ANALYSIS "The tile-crack overlay").
 
 ## Task seeds
 

@@ -25859,38 +25859,72 @@ and `WallDrawing.cs:203-204` (crack type 2). The `TileCracks` sheet joins the
 static atlas loads (`assets.rs`, the `WiresNew`/`Actuator` seam) вЂ” one atlas,
 one pipeline, unchanged.
 
+**W4-g77 re-arm (2026-11-21, `task/W4-g77-tile-cracks-draw`).** The draw
+now walks the local player's REAL i29 `HitTile` book (`App.hit_tile`,
+`tr_core::hit_tile` - the S1-P-i29 mining hit-buffer): all 501 `data`
+slots in index order (`Main.cs:61541`), so abandoned hits keep drawing
+their crack stage while the 60-tick TTL decay (`HitTile.cs:285-333`)
+drains the damage back under the 20 floor. All FOUR draw sites run in
+the C# layer order (`draw_mining_cracks`): the wall pair
+(`WallDrawing.cs:203-204`, crack type 2, `hitReplace` then `hitTile`)
+BEFORE the solid-tile pair (`TileDrawing.cs:732-733`, crack type 1, same
+order); both `hitReplace` sites are empty (no replacement-mining book
+yet). The per-slot `crackStyle` memory lives render-side (`CrackStyles`):
+the sim book is RNG-free (i29), so the world-seeded roll fires when a
+slot takes a NEW occupancy (the C# rolls on `Clear` just before reuse -
+one roll per occupancy either way). The `Main.cs:61623` sprite arguments
+are a witness seam: `crack_quads`/`CrackQuad` (pos/src/tint) make the
+emit testable without a renderer; `draw_tile_cracks` pushes the quads.
+A `WallDrawing.cs` census confirms `:203-204` are its ONLY wall-damage
+draw sites - nothing beyond the landed pair.
+
 Deviations (deliberate):
-- **Single-accumulator projection.** The C# keeps 500-entry `hitTile` /
-  `hitReplace` books with per-hit `AddDamage` steps and 60-tick TTL decay
-  (`HitTile.cs`). The port's mining is one `mine_target` + `mine_timer`
-  accumulator (`world_sim/editing.rs`); `mining_crack_record` maps it linearly
-  onto the C# 0..100 damage (`mine_timer / mine_hardness * 100`, truncated
-  like the int accumulator). At most one crack draws at a time; `hitReplace`
-  draws nothing until replacement mining lands. The wall arm already emits
-  `CRACK_WALL` records when the mined cell has no active block.
+- **RETIRED: single-accumulator projection (W4-g77).** The wave-C port
+  projected one `mine_target` + `mine_timer` accumulator linearly onto
+  the C# 0..100 damage (at most one crack at a time). That projection is
+  gone: the draw reads the real 501-slot i29 `HitTile` book
+  (`tr_core::hit_tile`, `HitTile.cs` - the per-hit `AddDamage` steps +
+  the 60-tick TTL decay), ONE book holding both `TILE` and `WALL` kinds;
+  `mine_timer`/`mine_hardness` are refreshed FROM the book's damage
+  (`world_sim/editing.rs`). `hitReplace` still draws nothing until
+  replacement mining lands (the port has no second book); the wall pair
+  draws the WALL-kind slots through the same hook with `CRACK_WALL`.
 - **World-seeded crack style.** `HitTileObject.Clear` rolls
   `rand.Next(4)` re-rolled against the static `lastCrack` (`HitTile.cs:40-45`)
   from a `DateTime.Now.Ticks`-seeded stream. The port keeps the roll + the
   no-repeat loop verbatim but seeds `App.mine_crack_rng` with the world seed
-  (the determinism rule, same deviation class as `NamedRngs::global`). The
-  roll fires once per dig target (the C# rolls on slot reuse).
-- **Invisible-block conjuncts vacuous.** `ShouldShowInvisibleBlocksAndWalls`
+  (the determinism rule, same deviation class as `NamedRngs::global`).
+  W4-g77: the roll fires per NEW slot occupancy (`CrackStyles.records`,
+  the `kind == 0` -> occupied edge; the C# rolls on `Clear` just before
+  reuse - a clear that is never reused draws no roll in the port).
+- **Invisible-block stand-in (W4-g77).** `ShouldShowInvisibleBlocksAndWalls`
   (`Main.cs:58023-58030`) reads the echo monolith / `CanSeeInvisibleBlocks`;
-  neither exists in the port and `Tile` carries no invisible bits, so the
-  `(flag || !invisibleвЂ¦)` conjuncts are always true.
+  the port stands it in with the `TR_SHOW_INVISIBLE` pin
+  (`env::show_invisible`, the pylons pass's convention). The echo-coating
+  bits are REAL (`World::invisible_block`/`invisible_wall`,
+  `Tile.cs:528`/`:545`) and gate the crack in `crack_draw_plan`.
 - **Draw site.** The C# draws inside the solid tile layer; the port hooks the
   per-frame world range right after the cached tile pass (`frame/draw.rs`) вЂ”
-  the damage timer advances every frame, so the crack cannot ride the
-  G6-cached range. The `WorldFrameKey` is untouched; the existing tile draw
-  order and framing are unchanged.
+  the book decays every tick, so the crack cannot ride the G6-cached
+  range. The `WorldFrameKey` is untouched; the existing tile draw order
+  and framing are unchanged. The fused cached range paints walls and
+  tiles together, so a wall crack under a covering solid tile would paint
+  over it - the same z-order approximation the pylon pass records; in
+  practice `PickWall` only lands on exposed walls (`Player.cs:45832-45967`),
+  so the cracked cell has no active block.
 - The C#'s `type == 72` arm (`:61591`) is kept verbatim but unreachable: 72 is
   in `TileID.Sets.IsATreeTrunk` (bits 71-77), so the tree arm claims it first.
 
-Tests: `s1_g_1c_*` (7) вЂ” the damage ladder, the 18 px rects + tree column
-shift, the shape classification (incl. every tree exclusion window), the
-no-repeat style roll + seed determinism, the timerв†’damage projection, the
-full per-record draw-gate walk (`crack_draw_plan`) and the hook's one-record
-projection.
+Tests: `s1_g_1c_*` (6 surviving) - the damage ladder, the 18 px rects +
+tree column shift, the shape classification (incl. every tree exclusion
+window), the no-repeat style roll + seed determinism, the full per-record
+draw-gate walk (`crack_draw_plan`) and the hook's damage-ladder walk;
+`w4_g77_*` (9) - the index-order book walk, the abandoned-hit TTL decay
+through the crack stages, the echo-coating gates, the `CrackQuad`
+pos/src/tint vs the `Main.cs:61623` draw arguments, the wall-before-tile
+site order, the wall visibility gates, the live-book read after the
+release, two damaged cells keeping distinct per-slot styles, and the
+hammer's WALL-book hit drawing a wall crack then vanishing on the break.
 ## The rope back-draw pass (S1-G-1 wave B, 2026-11-18)
 
 `crates/tr-app/src/render/ropes.rs` ports `TileDrawing.DrawTile_BackRope`
