@@ -240,6 +240,44 @@ pub(crate) fn player_input(
     }
 }
 
+/// S1-P-i55 — `Main.LocalGolfState.Update()` (`Main.cs:17219`,
+/// `GolfState.cs:111-133`): once per fixed world tick, ahead of the player
+/// body (the C# call precedes `UpdatePlayers`). The held item's type/shoot
+/// gate the settle-wait (`IsAGolfingItem` + the 3611 whistle); the live
+/// ball is the pool slot the state's stored snapshot names, re-validated
+/// by `GetLastHitBall`'s four guards (`GolfState.cs:102-109`). The parts
+/// signature keeps the stepper closures' `&mut Player` borrow disjoint.
+fn update_golf_state(
+    golf_state: &mut tr_core::golf_state::GolfState,
+    inventory: &[crate::item::ItemSlot],
+    selected: usize,
+    projectiles: &crate::projectile::ProjectilePool,
+    local_id: i32,
+) {
+    let held = inventory
+        .get(selected)
+        .filter(|s| s.count > 0)
+        .map(|s| s.kind)
+        .unwrap_or(0);
+    let held_shoot = crate::registry::projectile(held).unwrap_or(0) as i32;
+    let live_ball = golf_state.last_hit_golf_ball().and_then(|stored| {
+        projectiles.slots().get(stored.who_am_i).map(|q| {
+            let (cx, cy) = q.center();
+            tr_core::golf_state::GolfBall {
+                who_am_i: stored.who_am_i,
+                kind: q.kind as i32,
+                owner: q.owner as i32,
+                active: q.active,
+                position: q.pos,
+                center: Vec2::new(cx, cy),
+                ai1: q.ai[1],
+                local_ai1: q.local_ai[1],
+            }
+        })
+    });
+    golf_state.update(held as i32, held_shoot, local_id, live_ball.as_ref());
+}
+
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
     let (hold_right, hold_jump) = crate::env::hold_input();
@@ -340,6 +378,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
+                // S1-P-i55 — the golf state update runs on the dead branch
+                // too (`Main.cs:17219` is unconditional).
+                update_golf_state(
+                    &mut app.golf_state,
+                    &app.inventory,
+                    app.selected,
+                    &app.projectiles,
+                    app.local_id as i32,
+                );
                 respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
                     || respawn_now;
                 p.reset_projectile_caches();
@@ -689,6 +736,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
         let mut run_pixels = 0.0f32;
         app.player_step.tick(dt, |_| {
+            // S1-P-i55 — `Main.LocalGolfState.Update()` (`Main.cs:17219`)
+            // runs once per world update BEFORE `UpdatePlayers` — the
+            // dead-player branch included (the C# call is unconditional).
+            update_golf_state(
+                &mut app.golf_state,
+                &app.inventory,
+                app.selected,
+                &app.projectiles,
+                app.local_id as i32,
+            );
             // `player.itemAnimation > 0` for the sleeping state — the same
             // gate the swing render uses (`self.swing > 0.0` with a held
             // item, `frame.rs:483`). The danger gate rides the M2-DEATH-2

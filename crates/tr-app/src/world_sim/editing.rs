@@ -784,7 +784,97 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // one if/else chain before the shared swing tail. The
                     // base velocity is the aim normalized to `shootSpeed`.
                     let shot = Vec2::new(dir.x * shot_speed, dir.y * shot_speed);
-                    if GEM_STAFF_BOLTS.contains(&proj) {
+                    if tr_core::golf_state::is_a_golf_ball(proj as i32) {
+                        // S1-P-i55 — `ItemCheck_Shoot`'s golf-ball arm
+                        // (`Player.cs:47516-47537`): within 100 px of the
+                        // player the use tees the ball on a nearby tee
+                        // (`TryPlacingAGolfBallNearANearbyTee(MouseWorld)`);
+                        // failing that, a far or blocked aim spawns at the
+                        // hand point with the aim velocity, a near clear aim
+                        // spawns AT the mouse with zero velocity. The arm
+                        // `return`s in the C# — the port skips the generic
+                        // spawn but keeps the shared swing tail below.
+                        let (pcx, pcy) = p.center();
+                        let to_mouse = world_pos - Vec2::new(pcx, pcy);
+                        let mut placed = false;
+                        if to_mouse.length() < 100.0 {
+                            // The disjoint-parts resolver — `p` holds the
+                            // player borrow for the whole shoot block.
+                            placed = crate::projectile_ai_golf::try_place_golf_ball_near_tee_parts(
+                                &mut app.projectiles,
+                                &app.world,
+                                world_pos,
+                                world_pos,
+                                Vec2::new(p.x, p.y),
+                                Vec2::new(crate::player::WIDTH, p.height),
+                                p.tile_range_x(),
+                                p.tile_range_y(),
+                                app.selected,
+                                &app.inventory,
+                                &p.equipped,
+                                app.local_id as u8,
+                            );
+                        }
+                        if !placed {
+                            let damage = raw as i32;
+                            let slot = if to_mouse.length() > 100.0
+                                || !crate::projectile::can_hit(
+                                    &app.world, pcx, pcy, 1.0, 1.0,
+                                    world_pos.x, world_pos.y, 1.0, 1.0,
+                                )
+                            {
+                                // `:47529` — the hand-point spawn with the
+                                // aim velocity (the C# takes the centre,
+                                // the port's seam takes the top-left).
+                                let row = crate::projectile::proj_data(proj);
+                                let (hw, hh) =
+                                    row.map_or((3.5, 3.5), |d| (d.w * 0.5, d.h * 0.5));
+                                app.projectiles.spawn_with_data_ai_owned(
+                                    proj,
+                                    app.local_id as u8,
+                                    spawn.x - hw,
+                                    spawn.y - hh,
+                                    shot.x,
+                                    shot.y,
+                                    damage,
+                                    fx_kb,
+                                    0.0,
+                                    0.0,
+                                )
+                            } else {
+                                // `:47533` — the mouse-point spawn, zero
+                                // velocity.
+                                let row = crate::projectile::proj_data(proj);
+                                let (hw, hh) =
+                                    row.map_or((3.5, 3.5), |d| (d.w * 0.5, d.h * 0.5));
+                                app.projectiles.spawn_with_data_ai_owned(
+                                    proj,
+                                    app.local_id as u8,
+                                    world_pos.x - hw,
+                                    world_pos.y - hh,
+                                    0.0,
+                                    0.0,
+                                    damage,
+                                    fx_kb,
+                                    0.0,
+                                    0.0,
+                                )
+                            };
+                            if let Some(slot) = slot {
+                                app.projectiles.set_crit(slot, crit);
+                                // `NewProjectile`'s >10-ball cull
+                                // (`Projectile.cs:10932-10955`): the use
+                                // spawns are the local owner's, so the
+                                // `Owner == Main.myPlayer` gate holds.
+                                crate::projectile_ai_golf::cull_extra_golf_balls(
+                                    &mut app.projectiles,
+                                    app.local_id as u8,
+                                    proj,
+                                    damage,
+                                );
+                            }
+                        }
+                    } else if GEM_STAFF_BOLTS.contains(&proj) {
                         // `Player.cs:49262-49375` - the gem-staff shoot.
                         // `PackGemStaffFeatures` (`:49470-49489`): the bits
                         // from the bolt kind and the matching body robe

@@ -127,6 +127,50 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
 }
 
 pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
+    // S1-P-i55 — the golf tee's right-click arm (`TileInteractionsUse`'s
+    // `type == 494` branch, `Player.cs:32342-32354`): EVERY owned golf ball
+    // dies (the C# loop tests type+owner only — no `active` gate), then the
+    // preferred ball spawns on THIS tee with `ai1 = -1` (the sentinel).
+    // The arm consumes the click (`flag2 = true`) whether or not a ball
+    // spawned — the C# has no reach check here (the click's own tile-range
+    // gate ran upstream).
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && t.kind == crate::projectile_ai_golf::TILE_GOLF_TEE)
+    {
+        let owner = app.local_id as u8;
+        for q in app.projectiles.slots_mut() {
+            if tr_core::golf_state::is_a_golf_ball(q.kind as i32) && q.owner == owner {
+                q.active = false;
+                q.time_left = 0;
+            }
+        }
+        let preferred = crate::projectile_ai_golf::preferred_golf_ball_from_inventory(
+            app.selected,
+            &app.inventory,
+            &app.player.as_ref().map(|p| p.equipped).unwrap_or([0; 20]),
+        );
+        // `:32353` — the spawn at `(x*16 + 8.5, y*16 + 6)` CENTRE, zero
+        // velocity, damage 0, ai0 0 / ai1 -1. The port's seam takes the
+        // top-left, so the row's half-box comes off.
+        let row = crate::projectile::proj_data(preferred);
+        let (hw, hh) = row.map_or((3.5, 3.5), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            preferred,
+            owner,
+            tx as f32 * 16.0 + 8.5 - hw,
+            (ty * 16) as f32 + 6.0 - hh,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            0.0,
+            -1.0,
+        );
+        crate::projectile_ai_golf::cull_extra_golf_balls(&mut app.projectiles, owner, preferred, 0);
+        return true;
+    }
     // The Lihzahrd Altar arm (`TileInteractionsUse`'s `type == 237`
     // branch, `Player.cs:32755-32790`): the right-click on the altar
     // consumes the click and, with a Power Cell 1293 in the INVENTORY

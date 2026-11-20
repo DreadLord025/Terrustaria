@@ -198,6 +198,57 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
+    // + the mouse-right pair + the player snapshot). The C# reads the live
+    // state mid-walk; the port clones it into the pool for the tick and
+    // writes the resolved clone back after (the strikes' RecordSwing and
+    // the cup's scoring run inside the arms). `mouseRightRelease` lags one
+    // frame in the C# (`Main.cs:62458-62465` runs after Draw): the pair
+    // `mouseRight && mouseRightRelease` is therefore the PRESS tick — the
+    // port's `place_down && !place_prev_down` is the same edge.
+    let golf_ctx = app.player.as_ref().map(|p| {
+        let (cx, cy) = p.center();
+        let (bx, by) = p.bottom();
+        let held = app
+            .inventory
+            .get(app.selected)
+            .filter(|s| s.count > 0)
+            .map(|s| s.kind)
+            .unwrap_or(0);
+        let use_animation = crate::registry::get(held).map_or(0, |d| d.use_animation as i32);
+        crate::projectile_ai_golf::GolfContext {
+            golf_state: app.golf_state.clone(),
+            mouse_world: Vec2::new(
+                app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+            ),
+            mouse_right: app.place_down,
+            // The C#'s `mouseRightRelease` lags one frame (the flag
+            // refresh runs after Draw, `Main.cs:62458-62465`), so the
+            // pair's `true && true` is the PRESS tick. The port's
+            // `place_prev_down` is last frame's button state — the
+            // release-lag stand-in.
+            mouse_right_release: !app.place_prev_down,
+            player: crate::projectile_ai_golf::GolfClubPlayer {
+                // `player.active` is the slot-in-use flag, NOT liveness —
+                // a dead player's helper keeps charging (the C# kill gate
+                // `:52420` reads `active` only). The context exists only
+                // when the player is present, so the flag is true.
+                active: true,
+                center: Vec2::new(cx, cy),
+                bottom: Vec2::new(bx, by),
+                direction: p.facing,
+                channel: p.channel,
+                use_animation,
+                held_item_type: held as i32,
+            },
+            player_name: app.player_name.clone(),
+            golfer_score: p.golfer_score,
+        }
+    });
+    if let Some(ctx) = golf_ctx {
+        app.projectiles.set_golf_context(ctx);
+    }
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
@@ -213,6 +264,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // S1-P-i55 — the golf context writeback: the arms mutated the clone
+    // (RecordSwing / the cup scoring); the resolved state is authoritative
+    // for the tick. The `golfer_score` accumulator rides the player.
+    if let Some(ctx) = app.projectiles.take_golf_context() {
+        app.golf_state = ctx.golf_state;
+        if let Some(p) = app.player.as_mut() {
+            p.golfer_score = ctx.golfer_score;
+        }
+    }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-
@@ -322,6 +382,120 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.ai[3] = ai3;
         n.net_update = true;
         app.npcs.push(n);
+    }
+    // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
+    // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
+    // The C# plays the sounds / trips the wiring mid-walk; the port's
+    // batch convention defers them here, on the SAME `UpdateProjectiles`
+    // stream (the S1-E-21c precedent, ANALYSIS). The tee placement runs
+    // first among the golf effects — the C#'s `TryPlacingAGolfBallNearA
+    // NearbyTee` fires inside the helper's AI, ahead of the strike's
+    // sounds; the effect queue keeps the arm order.
+    for effect in app.projectiles.drain_golf_effects() {
+        match effect {
+            crate::projectile_ai_golf::GolfEffect::TeePlace { place_position } => {
+                crate::projectile_ai_golf::try_place_golf_ball_near_tee_app(app, place_position);
+            }
+            crate::projectile_ai_golf::GolfEffect::CupScored { hit_location, chat, cue } => {
+                // `Wiring.HitSwitch` + `SendData(59)` (`GolfHelper.cs:105-
+                // 106`) — the cup's tile trip.
+                app.wiring.hit_switch(&mut app.world, hit_location.0, hit_location.1);
+                app.send_hit_switch(hit_location.0, hit_location.1);
+                // The trip's Mech-28 clicks ride the same stream (the
+                // C# call sits inside the `UpdateProjectiles` swap).
+                for (px, py) in app.wiring.take_switch_clicks() {
+                    app.audio.play_switch_click(
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                    );
+                }
+                if let Some(text) = chat {
+                    app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
+                }
+                if let Some((id, style, x, y, pitch)) = cue {
+                    app.audio.play_proj_sound(
+                        (id, style),
+                        x,
+                        y,
+                        pitch,
+                        app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                    );
+                }
+            }
+            crate::projectile_ai_golf::GolfEffect::PadProbe { pos, old_pos, w, h } => {
+                // `Collision.SwitchTiles(..., 4)` (`Projectile.cs:20367`)
+                // — the projectile pressure-pad call. The switch sends
+                // ride the outcome (`Collision.cs:3304` et al.).
+                let outcome = crate::collision::switch_tiles(
+                    &mut app.wiring,
+                    &mut app.world,
+                    pos.x,
+                    pos.y,
+                    old_pos.x,
+                    old_pos.y,
+                    w as i32,
+                    h as i32,
+                    4,
+                );
+                app.send_switch_outcome(&outcome);
+                // The tripped switches' Mech-28 clicks (S1-E-21i): the
+                // C#'s `Collision.SwitchTiles` runs inside
+                // `UpdateProjectiles` (`Main.cs:17775`'s swap), so the
+                // pitch draws ride this pass's stream.
+                for (px, py) in app.wiring.take_switch_clicks() {
+                    app.audio.play_switch_click(
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                    );
+                }
+            }
+            crate::projectile_ai_golf::GolfEffect::PlayerWrites {
+                facing,
+                held_proj,
+                dummy_item_time,
+                cancel_use,
+            } => {
+                if let Some(p) = app.player.as_mut() {
+                    // `player.ChangeDir(direction)` (`Player.cs:42091`) —
+                    // the pulley arm is unported (no pulley state); the
+                    // facing write is the rest.
+                    if let Some(dir) = facing {
+                        p.facing = dir;
+                    }
+                    // `player.heldProj = whoAmI` (`:52490`/`:52535`).
+                    if let Some(slot) = held_proj {
+                        p.held_proj = slot;
+                    }
+                    if cancel_use {
+                        // `SetItemTime(0)` + `itemAnimation/Max = 0` +
+                        // `reuseDelay = 0` (`Projectile.cs:52515-52518`)
+                        // — the port's seconds timers.
+                        app.item_time = 0.0;
+                        app.swing = 0.0;
+                        app.swing_max = 0.0;
+                        app.attack_cd = 0.0;
+                        app.reuse_delay = 0.0;
+                        // The channel clears with the helper's death
+                        // (`Kill()`'s TryCancelChannel, `Player.cs:52975`)
+                        // — the editing pass's release arm owns the
+                        // steady-state clear; the cancel is the same tick.
+                        p.channel = false;
+                        p.channel_item = 0;
+                        p.channel_target = Vec2::ZERO;
+                    } else if let Some(frames) = dummy_item_time {
+                        // `SetDummyItemTime(frames)` (`Player.cs:4432-
+                        // 4441`): itemAnimation = itemTime = frames,
+                        // itemTimeMax = frames + 1. The port's swing is
+                        // the animation, item_time the action cadence.
+                        app.swing = frames as f32 / 60.0;
+                        app.swing_max = app.swing;
+                        app.item_time = frames as f32 / 60.0;
+                    }
+                }
+            }
+        }
     }
 }
 

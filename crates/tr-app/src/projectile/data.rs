@@ -713,6 +713,16 @@ pub const NEBULA_BLAZE_2: u16 = 635;
 /// `ProjectileID.HorsemanPumpkin` (1001) — the Headless Horseman's
 /// 480-tick lob (`NPC.cs:62417`; `Projectile.cs:9511-9522`, aiStyle 194).
 pub const HORSEMAN_PUMPKIN: u16 = 1001;
+/// `ProjectileID.DirtGolfBall` (721) + the 14 dyed twins 739-752
+/// (`ProjectileID.cs:428`'s `IsAGolfBall` set) — aiStyle 149, 7x7,
+/// friendly, penetrate -1, tileCollide false, netImportant
+/// (`Projectile.cs:7626-7635`). S1-P-i55.
+pub const GOLF_BALL: u16 = 721;
+/// `ProjectileID.GolfClubHelper` (722) — aiStyle 150, 2x2, tileCollide
+/// false, ignoreWater, penetrate -1, hide (`Projectile.cs:7636-7645`).
+/// S1-P-i55.
+pub const GOLF_CLUB_HELPER: u16 = 722;
+
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -2759,6 +2769,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
             // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
             ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:7626-7635` — the golf ball (721) and the 14
+            // dyed twins (739-752): 7x7, aiStyle 149, friendly, penetrate
+            // -1, tileCollide false, netImportant (the overlay below);
+            // the stock 3600 life (the AI floors it at 10 and the strike
+            // re-arms it to 18000). S1-P-i55.
+            GOLF_BALL | 739..=752 => {
+                (7.0, 7.0, 149, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
+            // `Projectile.cs:7636-7645` — the club helper (722): 2x2,
+            // aiStyle 150, tileCollide false, ignoreWater (the overlay),
+            // penetrate -1, hide (draw-only, no port field). S1-P-i55.
+            GOLF_CLUB_HELPER => {
+                (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -2892,7 +2916,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 BABY_SKELETRON_HEAD | BABY_HORNET | TIKI_SPIRIT | WISP | ZEPHYR_FISH
                     | SHARK_PUP | LIL_HARPY | GLITTERY_BUTTERFLY | QUEEN_BEE_PET
                     | DUKE_FISHRON_PET | MOON_LORD_PET | DD2_BETSY_PET | PUFFERFISH
-            ),
+            )
+            // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
+            // dyed twins) set `netImportant = true` themselves.
+            || matches!(kind, GOLF_BALL | 739..=752),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -2935,7 +2962,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
-            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL),
+            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
+            // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
+            // `ignoreWater = true`.
+            || kind == GOLF_CLUB_HELPER,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

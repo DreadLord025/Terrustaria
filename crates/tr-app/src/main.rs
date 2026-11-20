@@ -185,6 +185,11 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// S1-P-i55 golf: the two golf projectile AIs (721/739-752 aiStyle 149,
+// 722 aiStyle 150) + the club strike / tee placement / cup scoring,
+// reusing tr-core's golf.rs + golf_state.rs (code-only round — the
+// witness tests are WRITTEN NOT RUN).
+mod projectile_ai_golf;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs
