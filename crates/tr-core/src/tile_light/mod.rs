@@ -5,9 +5,9 @@
 //! glowing walls, self-lit tile types and liquids. The self-lit dispatch lives in
 //! [`scanner`]; the colour tables and the per-tile `FastRandom` live in [`palette`].
 //!
-//! Tile types whose light is a plain constant are still taken from the generated
-//! `tiledata::EMISSIVE` table; these modules only own the cases that the table
-//! cannot express (conditions, animation, per-tile random jitter, paint overrides).
+//! All 147 `ApplyTileLight` cases live in [`scanner`] (W4-d66 census); the
+//! generated `tiledata::EMISSIVE` table only feeds the debug emissive-camera
+//! heuristic, not the light seeds.
 
 mod palette;
 mod scanner;

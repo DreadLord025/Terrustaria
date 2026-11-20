@@ -8,9 +8,12 @@
 //! order of the C# source, so frame-dependent colours (torch variants, chandeliers,
 //! lamps, gemspark, painted lamps) match the original exactly.
 //!
-//! Tile types whose light is a plain constant are still taken from the generated
-//! `tiledata::EMISSIVE` table; this module only owns the cases that the table cannot
-//! express (conditions, animation, per-tile random jitter, paint overrides).
+//! All 147 top-level cases are ported here (W4-d66 census: 110 bodies, zero
+//! missing kinds). The generated `tiledata::EMISSIVE` table is NOT read by this
+//! module — it only feeds the debug emissive-camera heuristic
+//! (`tr-app/src/app/mod.rs` `scan_light`); every constant arm lives in the
+//! matches below so conditions, animation, per-tile random jitter and paint
+//! overrides stay in one place.
 //!
 //! The original switch is one flat match over ~110 top-level cases. The arms are
 //! mutually exclusive tile-kind literals, so this module partitions them into
@@ -1279,6 +1282,27 @@ mod tests {
         let c = lit(&tile(215, 54, 0), 5, 5, &p);
         assert!(c[1] > c[0] && c[2] < c[1], "green campfire {c:?}");
         close(lit(&tile(215, 0, 36), 5, 5, &p), [0.0; 3]);
+    }
+
+    /// W4-d66 witness: gemspark blocks 262-268 are lighted by the LOOP write
+    /// `Main.cs:10334-10342` (`if (num3 > 261) tileLighted[num3] = true`),
+    /// which the generator's literal-index regex could not see — the scanner
+    /// gate (`TileLightScanner.cs:345`) muted all seven arms (`:970-995`).
+    /// GenTileData now replays the loop for tileLighted; these pins fail if
+    /// the table regresses.
+    #[test]
+    fn gemspark_blocks_pass_the_lighted_gate() {
+        let p = LightParams::default();
+        close(lit(&tile(262, 0, 0), 5, 5, &p), [0.75, 0.0, 0.75]);
+        close(lit(&tile(263, 0, 0), 5, 5, &p), [0.75, 0.75, 0.0]);
+        close(lit(&tile(264, 0, 0), 5, 5, &p), [0.0, 0.0, 0.75]);
+        close(lit(&tile(265, 0, 0), 5, 5, &p), [0.0, 0.75, 0.0]);
+        close(lit(&tile(266, 0, 0), 5, 5, &p), [0.75, 0.0, 0.0]);
+        close(lit(&tile(267, 0, 0), 5, 5, &p), [0.75, 0.75, 0.75]);
+        close(lit(&tile(268, 0, 0), 5, 5, &p), [0.75, 0.375, 0.0]);
+        // 235 (Teleporter) is NOT lighted in C# (no tileLighted[235] write);
+        // its `case 235` (`:1010`) is dead code in vanilla too — keep it dark.
+        close(lit(&tile(235, 0, 0), 5, 5, &p), [0.0; 3]);
     }
 
     #[test]
