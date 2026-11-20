@@ -789,31 +789,20 @@ impl SpriteRenderer {
     /// The sheet id whose atlas rect contains `uv0` — the reverse of
     /// [`Self::uv`], so a push that only carries UVs still lands on its
     /// source sheet's batch. Cached on the last hit (tile runs ride one
-    /// sheet); the scan picks the lowest id on the impossible overlap so
-    /// the result never depends on `HashMap` iteration order.
+    /// sheet); the scan ([`crate::batch::sheet_at`]) picks the lowest id on
+    /// the impossible overlap so the result never depends on `HashMap`
+    /// iteration order.
     fn sheet_id_at(&mut self, uv0: [f32; 2]) -> u32 {
-        let inside = |r: &[f32; 4]| {
-            // Half-texel slack: `uv`'s `(x0+sx)/aw` round-trip can land one
-            // ulp outside the sheet rect stored as `v.x/aw`.
-            let eu = 0.5 / self.atlas_size.0 as f32;
-            let ev = 0.5 / self.atlas_size.1 as f32;
-            uv0[0] >= r[0] - eu && uv0[0] < r[2] && uv0[1] >= r[1] - ev && uv0[1] < r[3]
-        };
         if let Some((rect, id)) = self.last_sheet {
-            if inside(&rect) {
+            if crate::batch::sheet_rect_contains(&rect, uv0, self.atlas_size) {
                 return id;
             }
         }
-        let mut best: Option<(u32, [f32; 4])> = None;
-        for (name, rect) in &self.sheets {
-            if inside(rect) {
-                let id = self.sheet_batch_id(name);
-                if best.map_or(true, |(b, _)| id < b) {
-                    best = Some((id, *rect));
-                }
-            }
-        }
-        match best {
+        let entries = self
+            .sheets
+            .iter()
+            .map(|(name, rect)| (self.sheet_batch_id(name), rect));
+        match crate::batch::sheet_at(entries, uv0, self.atlas_size) {
             Some((id, rect)) => {
                 self.last_sheet = Some((rect, id));
                 id

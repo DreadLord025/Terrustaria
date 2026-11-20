@@ -120,6 +120,37 @@ pub fn needs_reorder(keys: &[u64]) -> bool {
     keys.windows(2).any(|w| w[0] > w[1])
 }
 
+/// Half-texel-slack containment for the uv0 → sheet reverse lookup (the pure
+/// form of [`crate::sprite::SpriteRenderer`]'s `sheet_id_at`): the low edges
+/// get half a texel of slack because `uv`'s `(x0+sx)/aw` round-trip can land
+/// one ulp outside the sheet rect stored as `v.x/aw`; the high edges stay
+/// exclusive so adjacent sheets never both claim a boundary uv.
+pub fn sheet_rect_contains(rect: &[f32; 4], uv0: [f32; 2], atlas: (u32, u32)) -> bool {
+    let eu = 0.5 / atlas.0 as f32;
+    let ev = 0.5 / atlas.1 as f32;
+    uv0[0] >= rect[0] - eu && uv0[0] < rect[2] && uv0[1] >= rect[1] - ev && uv0[1] < rect[3]
+}
+
+/// The uv0 → `(sheet id, normalized rect)` reverse lookup over
+/// `(stable id, rect)` entries — the port's stand-in for the C#'s
+/// `Texture2D` reference identity (`TileBatch.cs:428/433` compare texture
+/// references; the atlas erased them, so the source sheet is recovered from
+/// the uv). The lowest id wins on the impossible overlap so the result never
+/// depends on `HashMap` iteration order; `None` = no sheet claims the uv
+/// (the caller maps that to id 0, "no sheet").
+pub fn sheet_at<'a, I>(entries: I, uv0: [f32; 2], atlas: (u32, u32)) -> Option<(u32, [f32; 4])>
+where
+    I: IntoIterator<Item = (u32, &'a [f32; 4])>,
+{
+    let mut best: Option<(u32, [f32; 4])> = None;
+    for (id, rect) in entries {
+        if sheet_rect_contains(rect, uv0, atlas) && best.map_or(true, |(b, _)| id < b) {
+            best = Some((id, *rect));
+        }
+    }
+    best
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +211,52 @@ mod tests {
         assert!(!needs_reorder(&keys));
         assert_eq!(sorted_draw_order(&keys), (0..9).collect::<Vec<u32>>());
         assert_eq!(sorted_draw_order(&[]), Vec::<u32>::new());
+    }
+
+    /// The reverse lookup's half-texel slack: `uv`'s `(x0+sx)/aw` round-trip
+    /// can land one ulp below the sheet rect's stored `v.x/aw` — the low
+    /// edges forgive that, the high edges stay exclusive so a boundary uv
+    /// never lands in two sheets.
+    #[test]
+    fn sheet_containment_forgives_one_ulp_at_the_low_edges_only() {
+        let atlas = (8192u32, 8192u32);
+        let rect = [0.25, 0.5, 0.5, 0.75];
+        let eps = 0.5 / 8192.0;
+        // Inside, and exactly on the stored low edges.
+        assert!(sheet_rect_contains(&rect, [0.25, 0.5], atlas));
+        assert!(sheet_rect_contains(&rect, [0.3, 0.6], atlas));
+        // One ulp below the low edge: still inside (the slack).
+        let u_low = 0.25f32 - f32::EPSILON * 0.25;
+        assert!(sheet_rect_contains(&rect, [u_low, 0.5], atlas));
+        // A full half-texel below the low edge: outside (the slack bound).
+        assert!(!sheet_rect_contains(&rect, [0.25 - eps * 1.5, 0.5], atlas));
+        // The high edges are exclusive — no slack there.
+        assert!(!sheet_rect_contains(&rect, [0.5, 0.6], atlas));
+        assert!(!sheet_rect_contains(&rect, [0.3, 0.75], atlas));
+    }
+
+    /// The scan picks the lowest id on an (impossible) overlap and `None`
+    /// when no sheet claims the uv — never `HashMap` iteration order.
+    #[test]
+    fn sheet_at_picks_the_lowest_id_and_reports_unknown() {
+        let atlas = (100u32, 100u32);
+        let a = [0.0, 0.0, 0.4, 0.4];
+        let b = [0.2, 0.2, 0.6, 0.6]; // overlaps a on purpose
+        let entries = [(7u32, &b), (3u32, &a)];
+        // uv inside both: the lowest id (3, sheet a) wins regardless of the
+        // entry order.
+        assert_eq!(
+            sheet_at(entries.iter().copied(), [0.3, 0.3], atlas),
+            Some((3, a))
+        );
+        assert_eq!(
+            sheet_at(entries.iter().copied().rev(), [0.3, 0.3], atlas),
+            Some((3, a))
+        );
+        // Inside b only.
+        assert_eq!(sheet_at(entries.iter().copied(), [0.5, 0.5], atlas), Some((7, b)));
+        // Outside everything: None (the caller maps it to id 0).
+        assert_eq!(sheet_at(entries.iter().copied(), [0.9, 0.9], atlas), None);
+        assert_eq!(sheet_at(std::iter::empty(), [0.1, 0.1], atlas), None);
     }
 }
