@@ -80,6 +80,168 @@ pub fn transform_to_npc(npc_type: u16) -> i32 {
         .unwrap_or(-1)
 }
 
+/// `NPCID.Sets.ShimmerTransformToItem` (`NPCID.cs:10468`) — the NPC's shimmer
+/// ITEM drop target, -1 when unset (`NPC.GetShimmered`'s third arm).
+pub fn npc_transform_to_item(npc_type: u16) -> i32 {
+    super::shimmer_tables::SHIMMER_NPC_TRANSFORM_TO_ITEM
+        .iter()
+        .find(|&&(ty, _)| ty == npc_type)
+        .map(|&(_, target)| i32::from(target))
+        .unwrap_or(-1)
+}
+
+/// `NPCID.Sets.ShimmerTownTransform` (`NPCID.cs:10469`) — the town-variant
+/// swap membership (`NPC.GetShimmered`'s fourth arm).
+pub fn is_shimmer_town_transform(npc_type: u16) -> bool {
+    super::shimmer_tables::SHIMMER_TOWN_TRANSFORM.contains(&npc_type)
+}
+
+/// `NPC.UpdateNPC_BuffApplyVFX`'s shimmer tail (`NPC.cs:91514-91544`): the
+/// transparency ramp, verbatim order. While `shimmering` (buff 353 active):
+/// +0.01 per tick, the `> 0.9` DOUBLE-compare crossing flag (the caller fires
+/// `GetShimmered` — the C# gates it `netMode != 1`, the port is host-side),
+/// then the 1.0 clamp. Else, with transparency > 0: `justHit` −0.1 FIRST,
+/// then buff-immune[353] −0.015 else −0.001, then the 0 floor. Returns
+/// `(new_transparency, crossed_0_9)` — the crossing is computed on the
+/// PRE-clamp value, exactly like the C# `if` chain.
+pub fn npc_shimmer_transparency_tick(
+    shimmering: bool,
+    transparency: f32,
+    just_hit: bool,
+    buff_immune_353: bool,
+) -> (f32, bool) {
+    let mut t = transparency;
+    let mut crossed = false;
+    if shimmering {
+        t += 0.01; // :91516
+        // :91517 — `(double)this.shimmerTransparency > 0.9`: the f32 sum
+        // widened to f64 BEFORE the compare (the 0.9 literal is a double).
+        if f64::from(t) > 0.9 {
+            crossed = true;
+        }
+        if t > 1.0 {
+            t = 1.0; // :91521-91524
+        }
+    } else if t > 0.0 {
+        if just_hit {
+            t -= 0.1; // :91528-91531
+        }
+        if buff_immune_353 {
+            t -= 0.015; // :91532-91535
+        } else {
+            t -= 0.001; // :91536-91539
+        }
+        if t < 0.0 {
+            t = 0.0; // :91540-91543
+        }
+    }
+    (t, crossed)
+}
+
+/// What `NPC.GetShimmered` (`NPC.cs:91548-91592`) does, in the C# else-if
+/// order. The caller executes: the statue poof and the item-drop arms also
+/// set `NPC.noSpawnCycle = true` and deactivate; the transform arm rides
+/// `NPC.Transform` + `WorldItem.ShimmerEffect`; the town arm zeroes the ai,
+/// sets `shimmerTransparency = 0.89f` and deletes buff 353.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NpcShimmerOutcome {
+    /// No arm matches (the C# falls through silently).
+    Nothing,
+    /// `SpawnedFromStatue` (`:91550-91560`): ShimmerEffect + noSpawnCycle +
+    /// active = false (the server also zeroes life / sends 23).
+    StatuePoof,
+    /// `ShimmerTransformToNPC[type] >= 0` (`:91561-91565`).
+    TransformNpc { new_type: u16 },
+    /// `ShimmerTransformToItem[type] >= 0` (`:91566-91577`):
+    /// SpawnShimmeredItem(stack 0 → 1) + ShimmerEffect + noSpawnCycle +
+    /// active = false.
+    DropItem { item_type: u16 },
+    /// `ShimmerTownTransform[type]` (`:91578-91591`): ai[0]=25, ai[1..3]=0,
+    /// netUpdate, transparency 0.89, FindBuffIndex(353) → DelBuff.
+    TownVariant,
+}
+
+/// `NPC.GetShimmered` (`NPC.cs:91548-91592`) as a decision function — the
+/// branch order IS the resolution order.
+pub fn resolve_npc_shimmer(npc_type: u16, spawned_from_statue: bool) -> NpcShimmerOutcome {
+    if spawned_from_statue {
+        return NpcShimmerOutcome::StatuePoof; // :91550
+    }
+    let to_npc = transform_to_npc(npc_type);
+    if to_npc >= 0 {
+        return NpcShimmerOutcome::TransformNpc { new_type: to_npc as u16 }; // :91561
+    }
+    let to_item = npc_transform_to_item(npc_type);
+    if to_item >= 0 {
+        return NpcShimmerOutcome::DropItem { item_type: to_item as u16 }; // :91566
+    }
+    if is_shimmer_town_transform(npc_type) {
+        return NpcShimmerOutcome::TownVariant; // :91578
+    }
+    NpcShimmerOutcome::Nothing
+}
+
+/// `NPC.AppearsFriendlyToHunterPotion` (`NPC.cs:91008-91017`):
+/// `friendly || catchItem > 0 || (damage == 0 && lifeMax == 5)`, then the
+/// `NPCID.Sets.HunterPotionFriendlyOverride` map — the ONE row is 689 →
+/// false (`NPCID.cs:10128-10132`, the Princess's shimmer variant reads
+/// hostile to the potion).
+pub fn appears_friendly_to_hunter_potion(
+    npc_type: u16,
+    friendly: bool,
+    catch_item: i32,
+    damage: i32,
+    life_max: i32,
+) -> bool {
+    let mut result = friendly || catch_item > 0 || (damage == 0 && life_max == 5);
+    if npc_type == 689 {
+        result = false; // the override row
+    }
+    result
+}
+
+/// `NPC.CurrentlyShimmerTransparent` (`NPC.cs:90995-91006`): transparency
+/// > 0 AND (no detectCreature → true; detectCreature → the friendly
+/// predicate). `detect_creature` is `Main.SceneMetrics.PerspectivePlayer.
+/// detectCreature` (`CanApplyHunterPotionEffects`, `:91019-91022`).
+pub fn currently_shimmer_transparent(
+    transparency: f32,
+    detect_creature: bool,
+    npc_type: u16,
+    friendly: bool,
+    catch_item: i32,
+    damage: i32,
+    life_max: i32,
+) -> bool {
+    if transparency > 0.0 {
+        if detect_creature {
+            return appears_friendly_to_hunter_potion(
+                npc_type, friendly, catch_item, damage, life_max,
+            );
+        }
+        return true;
+    }
+    false
+}
+
+/// `NPC.UpdateNPC_UpdateGravity`'s wet tail (`NPC.cs:90937-90954`): when
+/// `base.wet`, the gravity/cap pair is OVERRIDDEN (after the depth scaling
+/// at `:90926-90936`) — shimmer 0.15/5.5 first, honey 0.1/4, else 0.2/7.
+/// Returns `Some((gravity, max_fall))` while wet, `None` dry (the caller
+/// keeps the depth-scaled pair).
+pub fn npc_wet_gravity(wet: bool, shimmer_wet: bool, honey_wet: bool) -> Option<(f32, f32)> {
+    if !wet {
+        return None;
+    }
+    if shimmer_wet {
+        Some((0.15, 5.5)) // :90939-90943
+    } else if honey_wet {
+        Some((0.1, 4.0)) // :90944-90948
+    } else {
+        Some((0.2, 7.0)) // :90949-90953
+    }
+}
+
 /// `ItemID.Sets.CommonCoin` (`ItemID.cs:1318`).
 pub fn is_common_coin(item_type: u16) -> bool {
     super::shimmer_tables::SHIMMER_COMMON_COIN.contains(&item_type)
@@ -265,5 +427,107 @@ mod tests {
         assert_eq!(spot, Some((4.0 * 16.0 - 10.0, 6.0 * 16.0 - 40.0)));
         // All-refused → None.
         assert!(find_spot_without_shimmer(5, 10, 2, true, 20.0, 40.0, &|_, _| false).is_none());
+    }
+
+    #[test]
+    fn the_npc_set_fingerprints_match_the_extraction() {
+        // NPCID.cs:10468 — 15 pairs; :10469 — 29 ids.
+        assert_eq!(shimmer_tables::SHIMMER_NPC_TRANSFORM_TO_ITEM.len(), 15);
+        assert_eq!(shimmer_tables::SHIMMER_TOWN_TRANSFORM.len(), 29);
+        // The gem critters → their gems, the moths → amber, 448 → the RoD.
+        assert_eq!(npc_transform_to_item(651), 182); // diamond critter
+        assert_eq!(npc_transform_to_item(639), 181); // amethyst critter
+        assert_eq!(npc_transform_to_item(652), 999);
+        assert_eq!(npc_transform_to_item(448), 5341);
+        assert_eq!(npc_transform_to_item(1), -1);
+        // The town set: the Guide (22) yes, the shimmer slime (676) no.
+        assert!(is_shimmer_town_transform(22));
+        assert!(is_shimmer_town_transform(368));
+        assert!(!is_shimmer_town_transform(676));
+        assert!(!is_shimmer_town_transform(1));
+    }
+
+    #[test]
+    fn the_transparency_ramp_rises_and_crosses_at_the_double_compare() {
+        // +0.01 per shimmering tick (:91516).
+        let (t, c) = npc_shimmer_transparency_tick(true, 0.0, false, false);
+        assert_eq!(t, 0.01);
+        assert!(!c);
+        // The f32 accumulation quirk: f32(0.89) + f32(0.01) rounds to
+        // EXACTLY f32(0.9) = 0.89999997615814… which widened to f64 is
+        // still BELOW the 0.9 double literal (:91517) — no crossing yet.
+        let (t, c) = npc_shimmer_transparency_tick(true, 0.89, false, false);
+        assert_eq!(t, 0.9f32);
+        assert!(!c, "f32 0.9 as f64 is below the double 0.9 literal");
+        // One more tick lands above → the crossing fires.
+        let (t, c) = npc_shimmer_transparency_tick(true, t, false, false);
+        assert!(c);
+        assert!(f64::from(t) > 0.9);
+        // The clamp at 1.0 (:91521-91524).
+        let (t, _) = npc_shimmer_transparency_tick(true, 1.0, false, false);
+        assert_eq!(t, 1.0);
+    }
+
+    #[test]
+    fn the_transparency_decay_is_just_hit_then_the_immune_split() {
+        // justHit −0.1 FIRST, then the −0.015 / −0.001 split (:91528-91539).
+        let (t, c) = npc_shimmer_transparency_tick(false, 1.0, true, false);
+        assert!((t - (1.0 - 0.1 - 0.001)).abs() < 1e-6);
+        assert!(!c);
+        let (t, _) = npc_shimmer_transparency_tick(false, 1.0, false, true);
+        assert!((t - (1.0 - 0.015)).abs() < 1e-6);
+        // The 0 floor; a dry zero stays zero (no decay arm runs).
+        let (t, _) = npc_shimmer_transparency_tick(false, 0.05, true, true);
+        assert_eq!(t, 0.0);
+        let (t, _) = npc_shimmer_transparency_tick(false, 0.0, true, false);
+        assert_eq!(t, 0.0);
+    }
+
+    #[test]
+    fn the_npc_resolution_order_is_statue_npc_item_town() {
+        // The statue wins over every set (:91550).
+        assert_eq!(resolve_npc_shimmer(1, true), NpcShimmerOutcome::StatuePoof);
+        // The NPC set (:91561): the blue slime → 676, the eye → 21.
+        assert_eq!(
+            resolve_npc_shimmer(1, false),
+            NpcShimmerOutcome::TransformNpc { new_type: 676 }
+        );
+        // The ITEM set (:91566): the diamond critter 651 → 182.
+        assert_eq!(
+            resolve_npc_shimmer(651, false),
+            NpcShimmerOutcome::DropItem { item_type: 182 }
+        );
+        // The town set (:91578): the Guide 22.
+        assert_eq!(resolve_npc_shimmer(22, false), NpcShimmerOutcome::TownVariant);
+        // Unset everywhere → nothing (the C# falls through).
+        assert_eq!(resolve_npc_shimmer(9999, false), NpcShimmerOutcome::Nothing);
+    }
+
+    #[test]
+    fn the_hunter_predicate_and_the_transparency_gate() {
+        // friendly || catchItem > 0 || (damage == 0 && lifeMax == 5).
+        assert!(appears_friendly_to_hunter_potion(1, true, 0, 10, 100));
+        assert!(appears_friendly_to_hunter_potion(1, false, 300, 10, 100));
+        assert!(appears_friendly_to_hunter_potion(1, false, 0, 0, 5));
+        assert!(!appears_friendly_to_hunter_potion(1, false, 0, 10, 100));
+        // The 689 override row (NPCID.cs:10128-10132) beats friendly.
+        assert!(!appears_friendly_to_hunter_potion(689, true, 300, 0, 5));
+        // transparency 0 → never transparent, whatever the potion says.
+        assert!(!currently_shimmer_transparent(0.0, true, 1, true, 0, 0, 5));
+        // No detectCreature → any positive transparency hides the NPC.
+        assert!(currently_shimmer_transparent(0.5, false, 1, false, 0, 10, 100));
+        // detectCreature → the friendly predicate decides.
+        assert!(currently_shimmer_transparent(0.5, true, 1, true, 0, 10, 100));
+        assert!(!currently_shimmer_transparent(0.5, true, 1, false, 0, 10, 100));
+    }
+
+    #[test]
+    fn the_wet_gravity_tail_overrides_in_shimmer_honey_water_order() {
+        // NPC.cs:90937-90954 — dry keeps the caller's pair.
+        assert_eq!(npc_wet_gravity(false, true, true), None);
+        assert_eq!(npc_wet_gravity(true, true, true), Some((0.15, 5.5)));
+        assert_eq!(npc_wet_gravity(true, false, true), Some((0.1, 4.0)));
+        // Lava has no own arm — the water else covers it (:90949-90953).
+        assert_eq!(npc_wet_gravity(true, false, false), Some((0.2, 7.0)));
     }
 }
