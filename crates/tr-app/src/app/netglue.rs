@@ -816,6 +816,10 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // S1-I-1 wave d95: `68 Unknown68` — the C# host reads the UUID
+            // string and drops it (`MessageBuffer.cs:3056-3058`), so the
+            // codec's read IS the whole arm; nothing to apply or relay.
+            C2s::ClientUuid(_) => {}
         }
     }
 
@@ -1858,6 +1862,11 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // S1-I-1 wave d95: `91 SyncEmoteBubble`'s client read site
+            // (`MessageBuffer.cs:3394-3441`: DeserializeNetAnchor +
+            // emoteTime = 360 on a player anchor + the byID table) lands
+            // with the send-path pass (S1-I-4) — nothing sends it yet.
+            S2c::EmoteBubble(_) => {}
         }
     }
 

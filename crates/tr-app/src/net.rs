@@ -147,6 +147,22 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- S1-I-1 wave d95: the tile-edit region's UUID/emote pair ----
+    // Census (2026-11-20): 19 ToggleDoorState is wave B's (d90, `DOOR_TOGGLE`);
+    // 20 AreaTileChange (`SECTION_RANGE`, the tile-square codec), 21 SyncItem
+    // (`ITEM_DROP`) and 69 ChestName (`CHEST_NAME`) were already ported. The
+    // region's remaining ids are 68 and 91.
+    /// `68 Unknown68` (`MessageID.cs:149`) — the client's `Main.clientUUID`
+    /// string (`NetMessage.cs:1114-1116`); the join push is the `3 PlayerId`
+    /// arm's `TrySendData(68)` (`MessageBuffer.cs:249`), the host reads and
+    /// drops it (`:3056-3058`). Gate-whitelisted (`:165`).
+    pub const CLIENT_UUID: u8 = 68;
+    /// `91 SyncEmoteBubble` (`MessageID.cs:196`) — an emote bubble's
+    /// create/update/removal (`NetMessage.cs:1307-1320`,
+    /// `MessageBuffer.cs:3394-3441`; the sends are
+    /// `EmoteBubble.NewBubble`/`NewBubbleNPC`, `EmoteBubble.cs:128`, `:147`).
+    pub const EMOTE_BUBBLE: u8 = 91;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1537,6 +1553,70 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+// ---- S1-I-1 wave d95: the UUID / emote bodies ----
+
+/// `msg 68 Unknown68`'s body (`NetMessage.cs:1114-1116`): one
+/// `BinaryWriter.Write(string)` — `Main.clientUUID`, the client's
+/// `Guid.NewGuid().ToString()` (`Main.cs:10618`). Sent in the `3 PlayerId`
+/// join push right after `4 SyncPlayer` (`MessageBuffer.cs:248-249`); the
+/// host's arm reads the string and drops it (`:3056-3058`). The id is
+/// gate-whitelisted pre-spawn (`MessageBuffer.cs:165`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClientUuid {
+    pub uuid: String,
+}
+
+/// `msg 91 SyncEmoteBubble`'s body (`NetMessage.cs:1307-1320`): the bubble
+/// id (`int`), the anchor kind byte, then — unless the kind is `255` (the
+/// removal marker, `MessageBuffer.cs:3402-3408`) — the anchor index
+/// (`ushort`), the lifetime (`ushort`), the emote byte and, gated on
+/// `number5 < 0`, the metadata `short`. The anchor pair is
+/// `EmoteBubble.SerializeNetAnchor` (`EmoteBubble.cs:78-98`): kind 0 NPC,
+/// 1 Player, 2 Projectile + `entity.whoAmI`; the reader rebuilds it with
+/// `DeserializeNetAnchor` (`:100-109`) and sets `emoteTime = 360` on a
+/// player anchor (`MessageBuffer.cs:3419-3422`).
+///
+/// Verbatim quirk: the C# writer's emote byte is `(byte)number5` and its
+/// metadata gate is `number5 < 0`, while the reader tests the READ byte
+/// (`num247 < 0`, `MessageBuffer.cs:3412-3417`) — a byte is never negative,
+/// so the metadata tail is dead on both sides for every emote the game
+/// sends (`NewBubble`/`NewBubbleNPC`, `EmoteBubble.cs:128`, `:147`). The
+/// port keeps the writer's shape: `metadata` rides only when the signed
+/// `emote` is negative.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EmoteBubble {
+    pub id: i32,
+    /// `255` = remove the bubble; else 0 NPC / 1 Player / 2 Projectile.
+    pub anchor_kind: u8,
+    /// `DeserializeNetAnchor`'s entity index (`whoAmI`); only read when
+    /// `anchor_kind != 255`.
+    pub anchor_index: u16,
+    /// `lifeTime`/`lifeTimeStart` (`MessageBuffer.cs:3431-3432`).
+    pub life_time: u16,
+    /// The emote id as the writer's signed `number5`; the wire byte is its
+    /// low 8 bits.
+    pub emote: i32,
+    /// `EmoteBubble.metadata` (`EmoteBubble.cs:30`) — the NPC-head index
+    /// for the `-1` emote (`:227-229`); written only when `emote < 0`.
+    pub metadata: i16,
+}
+
+impl EmoteBubble {
+    /// The removal frame (`MessageBuffer.cs:3402-3408`): id + `255`, no
+    /// tail. The C# has no dedicated remove send site — the shape is the
+    /// reader's removal arm.
+    pub fn removal(id: i32) -> Self {
+        Self {
+            id,
+            anchor_kind: 255,
+            anchor_index: 0,
+            life_time: 0,
+            emote: 0,
+            metadata: 0,
+        }
+    }
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1648,6 +1728,11 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `68 Unknown68` — the client's UUID string, pushed right after
+    /// `4 PlayerInfo` in the `3 PlayerId` join arm
+    /// (`MessageBuffer.cs:248-249`); the host reads and drops it
+    /// (`:3056-3058`). Gate-whitelisted pre-spawn (`:165`).
+    ClientUuid(ClientUuid),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1805,6 +1890,11 @@ pub enum S2c {
     },
     /// `22 ItemOwner` — the reservation announcement.
     ItemOwner(Box<ItemOwner>),
+    /// `91 SyncEmoteBubble` — a bubble's create/update/removal, host-only
+    /// (`EmoteBubble.NewBubble`/`NewBubbleNPC`'s `netMode == 2` sends,
+    /// `EmoteBubble.cs:128`, `:147`; the reader is `netMode == 1`-gated,
+    /// `MessageBuffer.cs:3394-3441`).
+    EmoteBubble(EmoteBubble),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -1859,6 +1949,7 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::ClientUuid(_) => id::CLIENT_UUID,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1927,6 +2018,8 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1114-1116`: one BinaryWriter.Write(string).
+            Self::ClientUuid(u) => w.str(&u.uuid),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2049,6 +2142,8 @@ impl C2s {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // `MessageBuffer.cs:3056-3058`: ReadString, then dropped.
+            id::CLIENT_UUID => Self::ClientUuid(ClientUuid { uuid: r.str()? }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2209,6 +2304,7 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::EmoteBubble(_) => id::EMOTE_BUBBLE,
         }
     }
 
@@ -2351,6 +2447,25 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1307-1320`: int id + byte anchor kind; the tail
+            // rides unless the kind is 255, and the metadata short only when
+            // the signed emote is negative.
+            Self::EmoteBubble(b) => {
+                let w = w.i32(b.id).u8(b.anchor_kind);
+                if b.anchor_kind == 255 {
+                    w
+                } else {
+                    let w = w
+                        .u16(b.anchor_index)
+                        .u16(b.life_time)
+                        .u8(b.emote as u8);
+                    if b.emote < 0 {
+                        w.i16(b.metadata)
+                    } else {
+                        w
+                    }
+                }
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2553,6 +2668,30 @@ impl S2c {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // `MessageBuffer.cs:3394-3441`: int id + byte kind; 255 removes
+            // and reads nothing else. The metadata gate tests the READ byte
+            // (`num247 < 0`) — a byte is never negative, so the tail is dead
+            // here even when the writer sent it (`emote < 0`); the port keeps
+            // that verbatim (the decoded metadata is always 0).
+            id::EMOTE_BUBBLE => {
+                let id = r.i32()?;
+                let anchor_kind = r.u8()?;
+                if anchor_kind == 255 {
+                    Self::EmoteBubble(EmoteBubble::removal(id))
+                } else {
+                    let anchor_index = r.u16()?;
+                    let life_time = r.u16()?;
+                    let emote = r.u8()?;
+                    Self::EmoteBubble(EmoteBubble {
+                        id,
+                        anchor_kind,
+                        anchor_index,
+                        life_time,
+                        emote: emote as i32,
+                        metadata: 0,
+                    })
+                }
+            }
             _ => return None,
         })
     }
@@ -4709,5 +4848,125 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    #[test]
+    fn s1_i_1_client_uuid_round_trips() {
+        // `NetMessage.cs:1114-1116`: one BinaryWriter.Write(string) —
+        // Main.clientUUID, a Guid.NewGuid().ToString() (`Main.cs:10618`),
+        // so the wire is the 7-bit byte count (36 = 0x24) + the ASCII.
+        let uuid = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        let u = ClientUuid {
+            uuid: uuid.to_string(),
+        };
+        let c = C2s::ClientUuid(u.clone()).encode();
+        assert_eq!(c[2], 68);
+        let mut body = vec![36];
+        body.extend_from_slice(uuid.as_bytes());
+        assert_eq!(&c[3..], &body);
+        assert_eq!(c.len(), 3 + 1 + 36);
+        let mut r = NetReader::new(&c[3..]);
+        match C2s::decode(c[2], &mut r).expect("decode") {
+            C2s::ClientUuid(d) => assert_eq!(d, u),
+            other => panic!("expected 68, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The length prefix counts UTF-8 BYTES, not chars (BinaryWriter).
+        let multi = ClientUuid {
+            uuid: "é☃".to_string(), // 2 + 3 = 5 bytes
+        };
+        let c = C2s::ClientUuid(multi.clone()).encode();
+        assert_eq!(&c[3..4], &[5]);
+        match C2s::decode(68, &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ClientUuid(d) => assert_eq!(d, multi),
+            other => panic!("expected 68, got {:?}", other.msg_id()),
+        }
+        // The empty string is a bare 0 length byte; a truncated payload
+        // must not decode (`MessageBuffer.cs:3056-3058` ReadString).
+        let empty = C2s::ClientUuid(ClientUuid {
+            uuid: String::new(),
+        })
+        .encode();
+        assert_eq!(&empty[3..], &[0]);
+        assert!(C2s::decode(68, &mut NetReader::new(&[36, b'a'])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1_emote_bubble_round_trips() {
+        // `NetMessage.cs:1307-1320`: (int)id + (byte)anchor kind; unless
+        // 255: (ushort)index + (ushort)lifeTime + (byte)emote, and the
+        // (short)metadata tail only when the signed emote is negative.
+        let b = EmoteBubble {
+            id: 0x0102_0304,
+            anchor_kind: 1, // Player (`EmoteBubble.cs:78-98`)
+            anchor_index: 3,
+            life_time: 360,
+            emote: 5,
+            metadata: 0,
+        };
+        let f = S2c::EmoteBubble(b).encode();
+        assert_eq!(f[2], 91);
+        let mut body = Vec::new();
+        body.extend_from_slice(&b.id.to_le_bytes());
+        body.push(1);
+        body.extend_from_slice(&3u16.to_le_bytes());
+        body.extend_from_slice(&360u16.to_le_bytes());
+        body.push(5);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::EmoteBubble(d) => assert_eq!(d, b),
+            other => panic!("expected 91, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The removal frame (`MessageBuffer.cs:3402-3408`): id + 255, no
+        // tail — 5 body bytes, and the decoder rebuilds the zeroed shape.
+        let f = S2c::EmoteBubble(EmoteBubble::removal(77)).encode();
+        assert_eq!(f.len(), 3 + 4 + 1);
+        let mut body = 77i32.to_le_bytes().to_vec();
+        body.push(255);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(91, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::EmoteBubble(d) => assert_eq!(d, EmoteBubble::removal(77)),
+            other => panic!("expected 91, got {:?}", other.msg_id()),
+        }
+        // The dead-metadata quirk, verbatim: the writer's gate is the
+        // signed `number5 < 0` (so the NPC-head emote -1 DOES write the
+        // short, `EmoteBubble.cs:147` + `:227-229`), but the reader's gate
+        // tests the READ byte (`num247 < 0`, `MessageBuffer.cs:3412-3417`)
+        // — never negative — so the short is left unread and the decoded
+        // metadata is 0 with the emote widened unsigned (255, not -1).
+        let neg = EmoteBubble {
+            id: 9,
+            anchor_kind: 0, // NPC
+            anchor_index: 17,
+            life_time: 600,
+            emote: -1,
+            metadata: 42,
+        };
+        let f = S2c::EmoteBubble(neg).encode();
+        let mut body = Vec::new();
+        body.extend_from_slice(&9i32.to_le_bytes());
+        body.push(0);
+        body.extend_from_slice(&17u16.to_le_bytes());
+        body.extend_from_slice(&600u16.to_le_bytes());
+        body.push(0xFF); // (byte)(-1)
+        body.extend_from_slice(&42i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(91, &mut r).expect("decode") {
+            S2c::EmoteBubble(d) => {
+                assert_eq!(d.emote, 255); // ReadByte widened, not sign-extended
+                assert_eq!(d.metadata, 0); // the tail is dead on the read side
+                assert_eq!(d.id, 9);
+                assert_eq!(d.anchor_kind, 0);
+                assert_eq!(d.anchor_index, 17);
+                assert_eq!(d.life_time, 600);
+            }
+            other => panic!("expected 91, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 2); // the unread metadata short
+        // A truncated tail (no emote byte) must not decode.
+        assert!(S2c::decode(91, &mut NetReader::new(&body[..9])).is_none());
     }
 }
