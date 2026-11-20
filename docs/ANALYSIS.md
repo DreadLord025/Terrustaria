@@ -39321,5 +39321,10 @@ nebula gores add a `Circular(25,25)` reposition (two floats) to the celeb2
 argument row — the 1078 twin (`:75030`) shares it. The confetti postlude
 ADDS before MULTIPLYING (`:74581-74587`), the opposite order of enchant-7
 (`:17453-17457`); seven rolls either way.
-Remainder: sites 85-165 (waves I+), the UpdateProjectiles slot dispatch
+Wave I (sites 86-96): `projectile_gore_i.rs`, 5 witnesses written not run.
+The tombstone/lava-boulder offsets use INTEGER `width / 2` (the int
+division truncates before the float cast). The 723 `NewGoreDirect(...).
+velocity *= 2` doubles the KICKED velocity. The :75204/:75221 row is one
+keep-one fn with the 907 halving flag.
+Remainder: sites 97-165 (waves J+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
