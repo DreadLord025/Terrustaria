@@ -479,10 +479,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // HERE, after the text draws above and before the hit-sound drain —
     // the C#'s inside-the-strike order (text → HitEffect → HitSound).
     for idx in app.projectiles.drain_probe_rolls() {
-        if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
-            &mut app.npcs[idx], rng, false,
-        ) {
-            app.npcs[idx].wants_probe = Some(anchor);
+        // The queued index rides this tick's list (the death retain runs in
+        // the NPC pass, after this one); the guard keeps a stale index from
+        // ever panicking.
+        let Some(n) = app.npcs.get_mut(idx) else { continue };
+        if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(n, rng, false) {
+            n.wants_probe = Some(anchor);
         }
     }
     // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays

@@ -21465,6 +21465,27 @@ mod tests {
         );
     }
 
+    /// W4-d116 — the kind's `takenDamageMultiplier` row seeds the LIVE field
+    /// at construction (`NPC.cs:6091` stock 1 + the SetDefaults write, the
+    /// crawltipede tail's 10 `:15316`); a later AI write (the selenian's
+    /// 1/3 flip, `:56722`/`:56776`) replaces it — the strike reads the
+    /// field, never the kind table. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_taken_multiplier_seeds_from_the_kind_row() {
+        let tail = bare(NpcKind::SolarCrawltipedeTail);
+        assert_eq!(tail.taken_damage_multiplier, 10.0, "the :15316 row seeds");
+        let slime = bare(NpcKind::Slime);
+        assert_eq!(slime.taken_damage_multiplier, 1.0, "the stock 1 (:6091)");
+        // A live write wins over the kind row (the strike reads the field).
+        let mut n = bare(NpcKind::SolarCrawltipedeTail);
+        n.hp = 1000;
+        n.max_hp = 1000;
+        n.taken_damage_multiplier = 1.0; // the AI reset (`:56722` shape)
+        let mut npcs = vec![n];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 7, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 7, "the field, not the kind table");
+    }
+
     #[test]
     fn the_worm_head_digs_and_stumbles() {
         // The head machine (`:51923-52051`): inside the solid the velocity
