@@ -816,6 +816,51 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // `case 84` — the stealth sync (W4-g50,
+            // `MessageBuffer.cs:3246-3260`): the host forces the subject to
+            // the sender (`:3251`), stores the value and relays it to the
+            // other clients (`:3257`'s `TrySendData(84, -1, whoAmI, …)`).
+            C2s::PlayerStealth(s) => {
+                let peer = id as u8;
+                if let Some(p) = self.remote_players.get_mut(&id) {
+                    p.stealth = s.stealth;
+                }
+                server.broadcast_except(
+                    &S2c::PlayerStealth(net::PlayerStealth {
+                        player_id: peer,
+                        stealth: s.stealth,
+                    }),
+                    id,
+                );
+            }
+            // `case 92` — the coin-credit delta (W4-g50,
+            // `MessageBuffer.cs:3442-3461`): the `0..=maxNPCs` slot gate
+            // (`:3448`), the host adds the DELTA to the NPC's accumulated
+            // `extraValue` (`:3457`) and relays the TOTAL with the same
+            // ping position (`:3458`).
+            C2s::NpcExtraValue(e) => {
+                if e.npc < 0 || e.npc as usize > self.npcs.len() {
+                    return; // `num228 >= 0 && num228 <= Main.maxNPCs` (`:3448`)
+                }
+                let Some(npc) = self.npcs.get_mut(e.npc as usize) else {
+                    return;
+                };
+                // `extraValue += num229` — the C# int add on the float
+                // field; the port's u64 credit saturates at 0 (a negative
+                // delta cannot drive the purse under zero).
+                npc.extra_value = if e.value >= 0 {
+                    npc.extra_value.saturating_add(e.value as u64)
+                } else {
+                    npc.extra_value.saturating_sub((-e.value) as u64)
+                };
+                let total = npc.extra_value.min(i32::MAX as u64) as i32;
+                server.broadcast(&S2c::NpcExtraValue(net::NpcExtraValue {
+                    npc: e.npc,
+                    value: total,
+                    x: e.x,
+                    y: e.y,
+                }));
+            }
         }
     }
 
@@ -1899,6 +1944,77 @@ impl App {
                     1.0, // the port keeps gravDir = 1 (`player.rs:4693`)
                     self.rngs.global(),
                 );
+            }
+            // `case 84` — a peer's stealth value (W4-g50,
+            // `MessageBuffer.cs:3246-3260`): the subject is the wire's id
+            // byte (the host already forced it to the sender); the port
+            // stores it on the peer snapshot — the stealth-armour draw
+            // reads it when that system lands.
+            S2c::PlayerStealth(s) => {
+                if s.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.stealth = s.stealth;
+                    }
+                } else if let Some(p) = self.remote_players.get_mut(&(s.player_id as u32)) {
+                    p.stealth = s.stealth;
+                }
+            }
+            // `case 92` — the town NPC's accumulated coin credit (W4-g50,
+            // `MessageBuffer.cs:3442-3461`): the client assigns the TOTAL
+            // (`:3453`) and pings the coins at the wire position (`:3452`'s
+            // `moneyPing`, `NPC.cs:90052-90073` — the case-38 cue then the
+            // 20-dust burst on the bare `Main.rand` stream, the message-time
+            // replay convention S1-E-21i). The slot is the HOST's NPC index
+            // — the client's slot-keyed store (`net_npcs`, the 23/54
+            // convention), rebuilt into the render list by the dirty flag.
+            S2c::NpcExtraValue(e) => {
+                if e.npc < 0 {
+                    return; // `num228 >= 0 && num228 <= Main.maxNPCs` (`:3448`)
+                }
+                let Some(npc) = self.net_npcs.get_mut(&(e.npc as u32)) else {
+                    return;
+                };
+                npc.extra_value = e.value.max(0) as u64;
+                self.net_npcs_dirty = true;
+                let credit = npc.extra_value;
+                // `moneyPing`'s sound half (`NPC.cs:90054`): the positioned
+                // case-38 coin cue (`Audio::play_coin_ping`, S1-E-21f).
+                let rng = self.rngs.global();
+                self.audio.play_coin_ping(e.x, e.y, rng);
+                // The dust half (`NPC.cs:90055-90072`): the type ladder on
+                // the NEW total, then 20 spawns at `pos - (1, 2)` with the
+                // 10x14 box, alpha 254, scale 0.25 and the ×0.2 velocity.
+                let dust_type = if credit >= 1_000_000 {
+                    247
+                } else if credit >= 10_000 {
+                    246
+                } else if credit >= 100 {
+                    245
+                } else {
+                    244
+                };
+                let ctx = self.spawn_ctx();
+                let pos = Vec2::new(e.x - 1.0, e.y - 2.0);
+                for _ in 0..20 {
+                    let rng = self.rngs.global();
+                    let idx = self.dust.new_dust(
+                        rng,
+                        &ctx,
+                        &self.world,
+                        pos,
+                        10,
+                        14,
+                        dust_type,
+                        0.0,
+                        0.0,
+                        254,
+                        tr_core::particles::Color::default(),
+                        0.25,
+                    );
+                    if idx != tr_core::particles::DUST_SENTINEL {
+                        self.dust.slot_mut(idx).velocity *= 0.2;
+                    }
+                }
             }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
@@ -5316,5 +5432,65 @@ mod message_family_tests {
         assert_eq!(t.text, "Belsin was slain...");
         assert_eq!(t.color, [255, 160, 80, 255]);
         assert!(t.position[0] <= -8.0 && t.position[1] <= 100.0);
+    }
+
+    /// `case 84` (`MessageBuffer.cs:3246-3260`): the host forces the subject
+    /// to the sender and relays; the client stores the peer's stealth.
+    #[test]
+    fn w4_g50_the_84_stealth_relays_to_the_peer_snapshot() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let peer = client_app.local_id;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerStealth(net::PlayerStealth {
+                player_id: 250, // the host overrides it (`:3251`)
+                stealth: 0.25,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert_eq!(
+            host_app.remote_players.get(&peer).map(|p| p.stealth),
+            Some(0.25),
+            "the host stored the sender's stealth"
+        );
+        // The relay reaches the host's own view of the peer; the sender
+        // itself is excluded (`TrySendData(84, -1, whoAmI, …)`).
+        // A second client would see it; here the host's snapshot is the
+        // witness that the forced id + value landed.
+    }
+
+    /// `case 92` (`MessageBuffer.cs:3442-3461`): the host adds the DELTA and
+    /// relays the TOTAL; the client assigns it and pings the coins.
+    #[test]
+    fn w4_g50_the_92_extra_value_accumulates_and_relays_the_total() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        npc.extra_value = 500;
+        host_app.npcs.push(npc);
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(client_app.net_npcs.contains_key(&0), "the NPC synced");
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcExtraValue(net::NpcExtraValue {
+                npc: 0,
+                value: 250, // a DELTA on the client leg
+                x: 100.0,
+                y: 100.0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(host_app.npcs[0].extra_value, 750, "the host added the delta");
+        assert_eq!(
+            client_app.net_npcs[&0].extra_value, 750,
+            "the client assigned the relayed TOTAL"
+        );
+        // The moneyPing dust burst fired on the client (the 244-type row at
+        // a 750-copper credit — under the 10000 ladder step).
+        assert!(
+            client_app
+                .dust
+                .slots()
+                .iter()
+                .any(|d| d.active && d.dust_type == 244),
+            "the moneyPing burst spawned"
+        );
     }
 }

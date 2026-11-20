@@ -106,6 +106,16 @@ pub mod id {
     /// `(float)x, (float)y, RGB, NetworkText` (`NetMessage.cs:1188-1196`,
     /// `MessageBuffer.cs:3235-3242`, host→client only; the 81 string twin).
     pub const COMBAT_TEXT_STRING: u8 = 119;
+    /// `84 PlayerStealth` (W4-g50, S1-I-4): `(byte)plr + (float)stealth`
+    /// (`MessageID.cs:182`, `NetMessage.cs:1197-1204`,
+    /// `MessageBuffer.cs:3246-3260` — the host overrides the id to the
+    /// sender and relays). Both directions.
+    pub const PLAYER_STEALTH: u8 = 84;
+    /// `92 SyncExtraValue` (`MessageID.cs:198`) — `(short)` npc slot,
+    /// `(int)` value, two `(float)`s (`NetMessage.cs:1321-1326`,
+    /// `MessageBuffer.cs:3442-3461`): a DELTA in on the client→host leg,
+    /// the accumulated TOTAL out on the host→client leg. Both directions.
+    pub const NPC_EXTRA_VALUE: u8 = 92;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -554,7 +564,7 @@ pub fn sections_y(world_h: i32) -> i32 {
 /// `13 PlayerState`; `off_x/off_y` are the client-side smoothing accumulator
 /// (`Player.netOffset`'s port, `MessageBuffer.cs:1004-1008`) and never cross
 /// the wire.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PlayerNet {
     pub id: u32,
     pub name: String,
@@ -583,6 +593,37 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Main.player[id].stealth` (`Player.cs:1562`, default 1f), fed by
+    /// `84 PlayerStealth` (`MessageBuffer.cs:3246-3260`; W4-g50).
+    pub stealth: f32,
+}
+
+impl Default for PlayerNet {
+    /// The field defaults the C# player ctor carries for the synced subset
+    /// (`Player.cs:1562`'s `stealth = 1f`); everything else stays zeroed.
+    fn default() -> Self {
+        Self {
+            id: 0,
+            name: String::new(),
+            x: 0.0,
+            y: 0.0,
+            vx: 0.0,
+            vy: 0.0,
+            hp: 0,
+            max_hp: 0,
+            facing: 0,
+            selected: 0,
+            on_ground: false,
+            leg_frame: 0,
+            body_frame: 0,
+            off_x: 0.0,
+            off_y: 0.0,
+            inventory: HashMap::new(),
+            buffs: Vec::new(),
+            chest: None,
+            stealth: 1.0,
+        }
+    }
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1573,6 +1614,34 @@ pub struct CombatTextString {
     pub text: NetText,
 }
 
+/// `msg 84 PlayerStealth`'s body (`NetMessage.cs:1197-1204`, W4-g50): the
+/// player id byte then `Main.player[b3].stealth` as a `float`
+/// (`Player.cs:1562`, default 1f). Sent by the stealth-armour update
+/// (`Player.cs:25766`-area); the host overrides the id to the sender and
+/// relays (`MessageBuffer.cs:3249-3258`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlayerStealth {
+    pub player_id: u8,
+    pub stealth: f32,
+}
+
+/// `msg 92 SyncExtraValue`'s body (`NetMessage.cs:1321-1326`): `(short)` npc
+/// slot, `(int)` value, `(float)` x, `(float)` y (the writer's `number3` /
+/// `number4` are floats — the reader `ReadSingle`s them,
+/// `MessageBuffer.cs:3446-3447`). The value is a DELTA on the client→host
+/// leg (the host does `extraValue += num229` then relays the accumulated
+/// total, `MessageBuffer.cs:3457-3458`) and the TOTAL on the host→client
+/// leg (the client assigns it and pings the coins at (x, y), `:3452-3453`).
+/// Sent when a dropped coin is absorbed by a town NPC
+/// (`WorldItem.cs:1186-1194`, the `netMode != 0` branch).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcExtraValue {
+    pub npc: i16,
+    pub value: i32,
+    pub x: f32,
+    pub y: f32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1684,6 +1753,13 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `84 PlayerStealth` - this client's stealth value
+    /// (`MessageBuffer.cs:3246-3260` forces the id and relays; W4-g50).
+    PlayerStealth(PlayerStealth),
+    /// `92 SyncExtraValue` - a coin pickup's credit delta for a town NPC
+    /// (`WorldItem.cs:1186-1194`; `MessageBuffer.cs:3455-3459` adds it and
+    /// relays the total; W4-g50).
+    NpcExtraValue(NpcExtraValue),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1813,6 +1889,12 @@ pub enum S2c {
     /// `119 CombatTextString` - a peer's combat text, the 81 string twin
     /// (`NetMessage.SendCombatText`; W4-g50).
     CombatTextString(CombatTextString),
+    /// `84 PlayerStealth` - a peer's stealth value, relayed by the host
+    /// (`MessageBuffer.cs:3257`; W4-g50).
+    PlayerStealth(PlayerStealth),
+    /// `92 SyncExtraValue` - a town NPC's accumulated coin credit, relayed
+    /// as the TOTAL (`MessageBuffer.cs:3458`; W4-g50).
+    NpcExtraValue(NpcExtraValue),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1901,6 +1983,8 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::PlayerStealth(_) => id::PLAYER_STEALTH,
+            Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1969,6 +2053,10 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1197-1204` — byte id + float stealth.
+            Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
+            // `NetMessage.cs:1321-1326` — short npc, int value, two floats.
+            Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2090,6 +2178,19 @@ impl C2s {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:3248-3253` — byte id + ReadSingle stealth.
+            id::PLAYER_STEALTH => Self::PlayerStealth(PlayerStealth {
+                player_id: r.u8()?,
+                stealth: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3444-3447`: (short)npc, (int)value, two
+            // ReadSingles (the writer's number3/number4 are floats).
+            id::NPC_EXTRA_VALUE => Self::NpcExtraValue(NpcExtraValue {
+                npc: r.i16()?,
+                value: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2253,6 +2354,8 @@ impl S2c {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::CombatTextInt(_) => id::COMBAT_TEXT_INT,
             Self::CombatTextString(_) => id::COMBAT_TEXT_STRING,
+            Self::PlayerStealth(_) => id::PLAYER_STEALTH,
+            Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
         }
     }
 
@@ -2402,6 +2505,10 @@ impl S2c {
                 let w = w.f32(t.x).f32(t.y).rgb(t.color);
                 t.text.clone().write_to(w)
             }
+            // `NetMessage.cs:1197-1204` — byte id + float stealth.
+            Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
+            // `NetMessage.cs:1321-1326` — short npc, int value, two floats.
+            Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2617,6 +2724,19 @@ impl S2c {
                 y: r.f32()?,
                 color: r.rgb()?,
                 text: NetText::read_from(r)?,
+            }),
+            // `MessageBuffer.cs:3248-3253` — byte id + ReadSingle stealth.
+            id::PLAYER_STEALTH => Self::PlayerStealth(PlayerStealth {
+                player_id: r.u8()?,
+                stealth: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3444-3447`: (short)npc, (int)value, two
+            // ReadSingles (the writer's number3/number4 are floats).
+            id::NPC_EXTRA_VALUE => Self::NpcExtraValue(NpcExtraValue {
+                npc: r.i16()?,
+                value: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
             }),
             _ => return None,
         })
@@ -4838,5 +4958,66 @@ mod tests {
         }
         // A truncated body (no text) is malformed, not a partial frame.
         assert!(S2c::decode(119, &mut NetReader::new(&body[..11])).is_none());
+    }
+
+    /// `84 PlayerStealth` (`NetMessage.cs:1197-1204`): byte player id +
+    /// float stealth. Both directions — the host forces the id to the
+    /// sender and relays (`MessageBuffer.cs:3249-3258`).
+    #[test]
+    fn w4_g50_player_stealth_round_trips() {
+        let s = PlayerStealth {
+            player_id: 2,
+            stealth: 0.375,
+        };
+        let f = S2c::PlayerStealth(s).encode();
+        assert_eq!(f[2], 84);
+        let mut body = vec![2u8];
+        body.extend_from_slice(&0.375f32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerStealth(d) => assert_eq!(d, s),
+            other => panic!("expected 84, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerStealth(s).encode();
+        assert_eq!(c[2], 84);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerStealth(d) => assert_eq!(d, s),
+            other => panic!("expected 84, got {:?}", other.msg_id()),
+        }
+        // The C# default (`Player.cs:1562`): a fresh peer snapshot is 1f.
+        assert_eq!(PlayerNet::default().stealth, 1.0);
+    }
+
+    /// `92 SyncExtraValue` (`NetMessage.cs:1321-1326`): short npc, int
+    /// value, two floats — the writer's number3/number4 are floats and the
+    /// reader `ReadSingle`s them (`MessageBuffer.cs:3444-3447`). A DELTA in
+    /// on the client leg, the TOTAL out on the host leg.
+    #[test]
+    fn w4_g50_npc_extra_value_round_trips() {
+        let e = NpcExtraValue {
+            npc: 17,
+            value: -250,
+            x: 123.5,
+            y: -67.25,
+        };
+        let c = C2s::NpcExtraValue(e).encode();
+        assert_eq!(c[2], 92);
+        let mut body = Vec::new();
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.extend_from_slice(&(-250i32).to_le_bytes());
+        body.extend_from_slice(&123.5f32.to_le_bytes());
+        body.extend_from_slice(&(-67.25f32).to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcExtraValue(d) => assert_eq!(d, e),
+            other => panic!("expected 92, got {:?}", other.msg_id()),
+        }
+        let f = S2c::NpcExtraValue(e).encode();
+        assert_eq!(f[2], 92);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcExtraValue(d) => assert_eq!(d, e),
+            other => panic!("expected 92, got {:?}", other.msg_id()),
+        }
     }
 }
