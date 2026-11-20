@@ -996,6 +996,48 @@ impl App {
         }
     }
 
+    /// The shared `21`/`90` client apply (`MessageBuffer.cs:1445-1493`):
+    /// one drop's state keyed by the host slot index. The `90` instanced
+    /// tail (`:1489-1493`) reserves the drop for the local player — the
+    /// port's `net_reserved` map is the `playerIndexTheItemIsReservedFor`
+    /// stand-in (the `22` convention); the `WorldItem.instanced` flag has
+    /// no port field (the per-player lifetime is the reservation itself).
+    fn apply_item_state(&mut self, d: &net::ItemState, instanced: bool) {
+        let mut drop = item::ItemDrop::new(
+            d.kind.max(0) as u16,
+            d.stack.max(0) as u32,
+            d.prefix as u16,
+            d.x,
+            d.y,
+            d.vx,
+            d.vy,
+            0.0,
+        );
+        // `MessageBuffer.cs:1519-1528` — the `21` handler writes
+        // type/prefix/stack/position/velocity/shimmer/enemyGrabDelay
+        // but NOT the grab-delay pair (that is `22`'s job,
+        // `:1558-1559`): a live cadence update must not wipe the
+        // join burst's 100-tick lock (S1-P-i51). The port rebuilds
+        // the record, so carry the pair over from the old one.
+        if let Some(old) = self.net_items.get(&(d.slot as i16)) {
+            drop.grab_delay_player = old.grab_delay_player;
+            drop.grab_delay_time = old.grab_delay_time;
+        }
+        drop.shimmered = d.shimmered;
+        drop.shimmer_time = d.shimmer_time;
+        drop.age = 60.0;
+        self.net_items.insert(d.slot as i16, drop);
+        self.net_items_dirty = true;
+        if instanced {
+            // `:1492` — `playerIndexTheItemIsReservedFor = Main.myPlayer`.
+            // The hold ticks are the C# `MakeInstanced` lifetime default
+            // (54000, `WorldItem.cs:327`); the port's reservation map
+            // carries the pair the grab gate reads.
+            self.net_reserved
+                .insert(d.slot as i16, (self.local_id as u8, 54000));
+        }
+    }
+
     /// The `86 TileEntitySharing` broadcast for one live entity
     /// (`NetMessage.cs:1216-1225`): the id, the presence bool, then the
     /// `networkSend: true` record. A tombstoned id broadcasts the removal
@@ -1773,31 +1815,38 @@ impl App {
             // `case 21` — one drop's state, keyed by the host slot index
             // (the port's item ids — the C# fixed-400 scheme is M6-NET-5).
             S2c::ItemState(d) => {
-                let mut drop = item::ItemDrop::new(
-                    d.kind.max(0) as u16,
-                    d.stack.max(0) as u32,
-                    d.prefix as u16,
-                    d.x,
-                    d.y,
-                    d.vx,
-                    d.vy,
-                    0.0,
-                );
-                // `MessageBuffer.cs:1519-1528` — the `21` handler writes
-                // type/prefix/stack/position/velocity/shimmer/enemyGrabDelay
-                // but NOT the grab-delay pair (that is `22`'s job,
-                // `:1558-1559`): a live cadence update must not wipe the
-                // join burst's 100-tick lock (S1-P-i51). The port rebuilds
-                // the record, so carry the pair over from the old one.
-                if let Some(old) = self.net_items.get(&(d.slot as i16)) {
-                    drop.grab_delay_player = old.grab_delay_player;
-                    drop.grab_delay_time = old.grab_delay_time;
+                self.apply_item_state(&d, false);
+            }
+            // `case 90` — the instanced twin of 21 (W4-g50,
+            // `MessageBuffer.cs:1489-1493`): the same body, then
+            // `instanced = true` + `playerIndexTheItemIsReservedFor =
+            // Main.myPlayer` — the drop is reserved for THIS client.
+            S2c::SpawnInstancedItem(d) => {
+                self.apply_item_state(&d, true);
+            }
+            // `case 91` — an emote bubble's create/update/removal (W4-g50,
+            // `MessageBuffer.cs:3394-3441`): 255 removes by id; otherwise
+            // the anchor rebuilds (`DeserializeNetAnchor`), a player anchor
+            // sets `emoteTime = 360` (`:3419-3422`), and the by-ID upsert
+            // refreshes lifetime/emote/anchor + fires `OnBubbleChange`.
+            S2c::EmoteBubble(b) => {
+                if b.anchor_kind == 255 {
+                    self.emotes.remove_net(b.id);
+                    return;
                 }
-                drop.shimmered = d.shimmered;
-                drop.shimmer_time = d.shimmer_time;
-                drop.age = 60.0;
-                self.net_items.insert(d.slot as i16, drop);
-                self.net_items_dirty = true;
+                // `:3419-3422` — the player-anchor emoteTime write.
+                if b.anchor_kind == 1 {
+                    if b.anchor_index as u32 == self.local_id {
+                        if let Some(p) = self.player.as_mut() {
+                            p.emote_time = 360;
+                        }
+                    } else if let Some(p) =
+                        self.remote_players.get_mut(&(b.anchor_index as u32))
+                    {
+                        p.emote_time = 360;
+                    }
+                }
+                self.emotes.upsert_net(&b, self.local_id as u16);
             }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
@@ -5840,5 +5889,90 @@ mod message_family_tests {
             Some(7),
             "the new item took the frame"
         );
+    }
+
+    /// `case 90` (`MessageBuffer.cs:1489-1493`): the instanced drop lands
+    /// reserved for the receiving client.
+    #[test]
+    fn w4_g50_the_90_instanced_drop_reserves_for_the_local_client() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(
+                client_app.local_id,
+                &S2c::SpawnInstancedItem(Box::new(net::ItemState {
+                    slot: 5,
+                    x: 100.0,
+                    y: 100.0,
+                    vx: 0.0,
+                    vy: 0.0,
+                    stack: 2,
+                    prefix: 0,
+                    kind: 29,
+                    shimmered: false,
+                    shimmer_time: 0.0,
+                })),
+            );
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(client_app.net_items.contains_key(&5), "the drop landed");
+        assert_eq!(
+            client_app.net_reserved.get(&5).map(|(who, _)| *who),
+            Some(client_app.local_id as u8),
+            "the instanced tail reserved it for me (`:1492`)"
+        );
+    }
+
+    /// `case 91` (`MessageBuffer.cs:3394-3441`): the bubble upserts with the
+    /// wire's lifetime/emote/anchor, a player anchor sets emoteTime 360,
+    /// and the 255 shape removes it.
+    #[test]
+    fn w4_g50_the_91_emote_bubble_upserts_and_removes() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u16;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::EmoteBubble(net::EmoteBubble {
+                id: 42,
+                anchor_kind: 1,
+                anchor_index: me,
+                life_time: 360,
+                emote: 17,
+                metadata: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let b = client_app
+            .emotes
+            .bubbles
+            .iter()
+            .find(|b| b.id == 42)
+            .expect("the bubble landed");
+        assert_eq!(b.emote, 17);
+        assert!(b.anchored_to_player, "the local-slot anchor resolves");
+        assert_eq!(
+            client_app.player.as_ref().map(|p| p.emote_time),
+            Some(360),
+            "the player anchor set emoteTime (`:3421`)"
+        );
+        // A second bubble on the same anchor pops the first to 6
+        // (`OnBubbleChange`, `EmoteBubble.cs:273`).
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::EmoteBubble(net::EmoteBubble {
+                id: 43,
+                anchor_kind: 1,
+                anchor_index: me,
+                life_time: 360,
+                emote: 0,
+                metadata: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let first = client_app.emotes.bubbles.iter().find(|b| b.id == 42).unwrap();
+        assert!(first.life_time <= 6, "the older bubble popped");
+        // The removal shape drops it.
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::EmoteBubble(net::EmoteBubble::removal(42)));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(!client_app.emotes.bubbles.iter().any(|b| b.id == 42));
     }
 }

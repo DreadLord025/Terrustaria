@@ -154,6 +154,10 @@ pub fn bubble_anchor(
 /// (`ui::resources::draw_breath`); before the fix the raw world coordinates
 /// went straight into the UI batch, putting every bubble thousands of px
 /// offscreen.
+///
+/// W4-g50: the `91`-synced bubbles anchor on peer players / NPCs /
+/// projectiles (`DeserializeNetAnchor`, `EmoteBubble.cs:100-109`) — the
+/// resolver walks the three stores by the wire's (kind, index) pair.
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
     r: &mut SpriteRenderer,
@@ -165,9 +169,13 @@ pub fn draw(
     zoom: f32,
     mouse: Vec2,
     pulse: super::UiPulse,
+    local_id: u32,
+    remote_players: &std::collections::HashMap<u32, crate::net::PlayerNet>,
+    npcs: &[crate::npc::Npc],
+    projectiles: &crate::projectile::ProjectilePool,
 ) {
     // The bubbles (`EmoteBubble.Draw`, `EmoteBubble.cs:199-241`).
-    if let (Some(sheet), Some(p)) = (lookups.ui_emote_sheet, player) {
+    if let Some(sheet) = lookups.ui_emote_sheet {
         let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
         // `value.Frame(8, EMOTE_SHEET_VERTICAL_FRAMES, …)` — integer division
         // (`Utils.Frame`): 272/8 = 34 wide, 1092/39 = 28 tall.
@@ -189,8 +197,35 @@ pub fn draw(
             r.push_ui_sprite(pos, [sw * zoom, sh * zoom], uv, [1.0; 4]);
         };
         for b in &emotes.bubbles {
-            let (world0, flip0) =
-                bubble_anchor(p.x, p.y, crate::player::WIDTH, p.facing);
+            // `GetPosition`'s entity arm (`:247-249`) on the resolved
+            // anchor: the local player, a peer snapshot, an NPC or a
+            // projectile. An unresolvable anchor draws nothing (the C#
+            // entity reference would be null — the port skips it).
+            let resolved: Option<(f32, f32, f32, i32)> = match b.anchor_kind {
+                1 if b.anchor_index as u32 == local_id => {
+                    player.map(|p| (p.x, p.y, crate::player::WIDTH, p.facing))
+                }
+                1 => remote_players
+                    .get(&(b.anchor_index as u32))
+                    .map(|p| (p.x, p.y, crate::player::WIDTH, p.facing)),
+                0 => npcs.get(b.anchor_index as usize).map(|n| {
+                    let (w, _) = n.size();
+                    (n.x, n.y, w, n.facing)
+                }),
+                // The projectile pool carries no per-kind width table (the
+                // draw reads the sheet frame); the 16 px hitbox stand-in is
+                // the port's recorded convention (`projectile.rs:10318`).
+                2 => projectiles
+                    .slots()
+                    .get(b.anchor_index as usize)
+                    .filter(|p| p.active)
+                    .map(|p| (p.pos.x, p.pos.y, 16.0, if p.vel.x >= 0.0 { 1 } else { -1 })),
+                _ => None,
+            };
+            let Some((ex, ey, ew, ef)) = resolved else {
+                continue;
+            };
+            let (world0, flip0) = bubble_anchor(ex, ey, ew, ef);
             // `GetPosition(...).Floor()` (`:203`).
             let world0 = [world0[0].floor(), world0[1].floor()];
             let anchor = [

@@ -2036,6 +2036,12 @@ pub struct Player {
     // armour's ranged knockback scale (`Main.cs:20342-20345`).
     pub shroomite_stealth: bool,
     pub stealth: f32,
+    /// `Player.emoteTime` (`Player.cs:792`): the close-players overlay's
+    /// emote-icon window — the `91` reader sets 360 on a player anchor
+    /// (`MessageBuffer.cs:3421`), `Player.Update` decrements it
+    /// (`Player.cs:24456-24459`). The overlay draw is unported; the field
+    /// rides for the net apply (W4-g50).
+    pub emote_time: i32,
     // `Player.spaceGun` (`Player.cs`): the mana row's exemption
     // (`Main.cs:20917`).
     pub space_gun: bool,
@@ -2908,6 +2914,7 @@ impl Player {
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
+            emote_time: 0,
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
@@ -5664,6 +5671,11 @@ impl Player {
         }
         if self.mana_potion_delay > 0 {
             self.mana_potion_delay -= 1;
+        }
+        // `Player.Update`'s emote-window clock (`Player.cs:24456-24459`):
+        // one tick off the `91`-set 360 while it runs (W4-g50).
+        if self.emote_time > 0 {
+            self.emote_time -= 1;
         }
         // The `flag9` pStone latch (`Player.cs:25477`): snapshotted BEFORE
         // `ResetEffects` (`:25491`) clears it; the post-`UpdateEquips` change

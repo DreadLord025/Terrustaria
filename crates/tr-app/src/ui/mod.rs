@@ -716,6 +716,12 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // W4-g50: the `91`-synced emote bubbles anchor on peer players /
+    // projectiles (`DeserializeNetAnchor`, `EmoteBubble.cs:100-109`) — the
+    // local slot, the peer snapshots and the projectile pool resolve them.
+    emote_local_id: u32,
+    emote_remote_players: &std::collections::HashMap<u32, crate::net::PlayerNet>,
+    emote_projectiles: &crate::projectile::ProjectilePool,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -777,7 +783,21 @@ pub fn draw_hud(
     // bubbles ride the world→UI transform (`GameViewMatrix.ZoomMatrix`,
     // `Main.cs:46455-46459`), so the pass takes the player + camera/zoom,
     // not a pre-baked screen position.
-    emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
+    emotes::draw(
+        r,
+        lookups,
+        screen,
+        emotes_state,
+        player,
+        camera,
+        zoom,
+        mouse_pos,
+        pulse,
+        emote_local_id,
+        emote_remote_players,
+        npcs,
+        emote_projectiles,
+    );
 
     // `DrawInterface_1_1_DrawEmoteBubblesInWorld`'s tail
     // (`Main.cs:46460-46464`): the hovered town NPC's chat bubble rides
