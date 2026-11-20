@@ -527,24 +527,88 @@ impl App {
                     id as u8,
                 );
             }
-            // `case 27` — a peer's own projectile state. The host applies it
-            // into its pool (rendering; the owner-side damage arrives as
-            // `28`) and relays it to the others
-            // (`MessageBuffer.cs:1760-1763`).
+            // `case 27` — a peer's own projectile state. The host refuses a
+            // hostile-kind shot or a key whose spawner is not the sender
+            // (`MessageBuffer.cs:1725-1728`: `Main.projHostile[type] ||
+            // key.Spawner != whoAmI` — the break skips BOTH the apply and
+            // the relay), then applies it into its pool (rendering; the
+            // owner-side damage arrives as `28`) and relays it to the
+            // others (`MessageBuffer.cs:1760-1763`).
             C2s::Projectile(ps) => {
+                let (spawner, _, _) = net::projectile_key_parts(ps.key);
+                if crate::projectile::data::proj_hostile(ps.kind.max(0) as u16)
+                    || spawner != id as u8
+                {
+                    return; // `:1727` — the whole arm is skipped
+                }
                 self.projectiles.upsert_remote(&ps);
                 server.broadcast_except(&S2c::Projectile(ps.clone()), id);
             }
-            // `case 29` — a peer's projectile is gone; the host drops the slot
-            // and relays the key + position verbatim (`MessageBuffer.cs:1825-1850`,
-            // the relay `:1847` forwards `position3.X/Y`). A finite position
-            // snaps the slot there before the kill (`:1835-1839`), NaN/Inf
-            // deactivates silently (`:1840-1843`).
+            // `case 29` — a peer's projectile is gone. The host gates on the
+            // key's owner (`MessageBuffer.cs:1831-1834`: only the owner may
+            // kill it), applies the despawn (a finite position moves the
+            // slot before `Kill`, NaN/Inf deactivates silently,
+            // `:1835-1843`) and relays the RECEIVED position to the others
+            // (`:1845-1848` — the relay is skipped when the owner gate
+            // refused). The g48 reconciliation keeps d93's owner gate over
+            // d91's ungated arm and folds the inline position move into
+            // d91's `kill_remote_at` seam (its occupant-match check is the
+            // same `live` test, so the behaviour is identical).
             C2s::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
+                // `:1829` — the gate + position move only run when the key
+                // resolves to the slot's ACTIVE occupant; a stale key falls
+                // through to the relay (`:1845-1848` is outside the block).
+                let live = self
+                    .projectiles
+                    .slots()
+                    .get(slot)
+                    .map_or(false, |p| {
+                        p.active && p.owner == owner && p.generation == generation
+                    });
+                if live && owner != id as u8 {
+                    return; // `:1831-1834` — not this client's projectile
+                }
                 self.projectiles
                     .kill_remote_at(slot, owner, generation, x, y);
                 server.broadcast_except(&S2c::ProjectileDead { key, x, y }, id);
+            }
+            // `case 95` — MurderSomeoneElsesPortal (`MessageBuffer.cs:3519-
+            // 3537`, host-only): the client's new portal intersected a
+            // peer's portal projectile. Kill the FIRST active type-602
+            // whose owner + ai[1] form match, then broadcast one `29` for
+            // it (`:3532` passes the key only — number2/3 default to 0).
+            C2s::MurderPortal { owner, form } => {
+                // `:3527-3534` — the first active type-602 whose owner and
+                // ai[1] form match; snapshot before the mutable kill.
+                let mut hit = None;
+                for (slot, p) in self.projectiles.slots().iter().enumerate() {
+                    if p.owner as u16 == owner
+                        && p.active
+                        && p.kind == 602
+                        && p.ai[1] == form as f32
+                    {
+                        hit = Some((slot, p.owner, p.generation));
+                        break; // `:3533` — the first match only
+                    }
+                }
+                if let Some((slot, p_owner, generation)) = hit {
+                    let key = self.projectiles.key_of(slot);
+                    self.projectiles.kill_remote(slot, p_owner, generation);
+                    server.broadcast(&S2c::ProjectileDead {
+                        key,
+                        x: 0.0,
+                        y: 0.0,
+                    });
+                }
+            }
+            // `case 128` — a client's golf ball landed in a cup. The host
+            // only relays: `SendData(128, -1, num157, …)` with
+            // `ignoreClient = owner` (`MessageBuffer.cs:4065-4068`) — the
+            // owner already ran the cup effects locally before sending
+            // (`GolfHelper.cs:103`). No host-side apply exists.
+            C2s::GolfBallInCup(g) => {
+                server.broadcast_except(&S2c::GolfBallInCup(g), g.owner as u32);
             }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
@@ -812,6 +876,15 @@ impl App {
             | C2s::TilePicking(_)
             | C2s::TeamChangeUi(_)
             | C2s::SectionRequest { .. } => {}
+
+            // `case 109` — the host runs `Wiring.MassWireOperation` under a
+            // temporary ToolMode swap for the SENDER (`MessageBuffer.cs:
+            // 3774-3788`, `Wiring.cs:419-453`) and bills it with two `110`s
+            // (`Wiring.cs:441-442`). The port's mass operation is unported
+            // (the Multicolor Wrench / Grand Design are outside the wiring
+            // tool set, `world_sim/editing/wiring.rs:27-29`), so the arm is
+            // parked for S1-I-4.
+            C2s::MassWireOperation(_) => {}
         }
     }
 
@@ -1458,9 +1531,14 @@ impl App {
             S2c::Projectile(ps) => {
                 self.projectiles.upsert_remote(&ps);
             }
-            // `case 29` — the projectile is gone; a finite position means the
-            // slot dies there, NaN deactivates it silently
-            // (`MessageBuffer.cs:1825-1850`).
+            // `case 29` — the projectile is gone (`MessageBuffer.cs:1825-
+            // 1850`): when the key resolves to an ACTIVE occupant, a finite
+            // position moves the slot to it before `Kill` (`:1835-1838`),
+            // NaN/Inf deactivates silently (`:1840-1843`); a stale key is a
+            // no-op. The g48 keep-one folds d91/d93's identical logic into
+            // the `kill_remote_at` seam — the port's silent-despawn stand-in
+            // for `Kill`'s death effects (the effects belong to the
+            // projectile AI pass, not the net reader).
             S2c::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
                 self.projectiles
@@ -1893,6 +1971,16 @@ impl App {
             | S2c::WallPaint(_)
             | S2c::TilePicking(_)
             | S2c::ExtraSpawnLoaded { .. } => {}
+            // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
+            // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
+            // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
+            // the relay lands here until then (S1-I-4).
+            | S2c::GolfBallInCup(_) => {}
+            // `case 110`'s client half (`MessageBuffer.cs:3789-3807`): when
+            // the bill is the local player's, consume `count` of `item_type`
+            // and clear `wireOperationsCooldown`. Parked with the 109 host
+            // arm (the mass operation is unported) for S1-I-4.
+            S2c::MassWireOperationPay(_) => {}
         }
     }
 
@@ -2603,6 +2691,8 @@ impl App {
                             client.send(&C2s::Projectile(Box::new(state)))
                         }
                         ProjSend::Kill { key, x, y } => {
+                            // `NetMessage.cs:852-855` — the entry position
+                            // rides verbatim (`Projectile.cs:77256`).
                             client.send(&C2s::ProjectileDead { key, x, y })
                         }
                     }
@@ -4668,6 +4758,237 @@ mod handshake_tests {
         assert!(
             client_app.net_proj_outbox.is_empty(),
             "the host's shot is not the client's to sync/despawn"
+        );
+    }
+
+    /// S1-I-1 W4-d93: the `29` body carries the entry position verbatim and
+    /// the host gates on the key's owner (`MessageBuffer.cs:1831-1834`).
+    #[test]
+    fn the_kill_wire_carries_the_position_and_the_owner_gate() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let owner = client_app.local_id as u8;
+        // The client's own shot, seeded into the host pool by key.
+        let key = net::projectile_key(owner, 3, 1);
+        let st = net::ProjectileState {
+            key,
+            x: 100.0,
+            y: 100.0,
+            vx: 4.0,
+            vy: 0.0,
+            kind: 1,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 10,
+            knock_back: 2.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        host_app.projectiles.upsert_remote(&st);
+        client_app.projectiles.upsert_remote(&st);
+        // A peer's key (a different owner) cannot kill the slot
+        // (`:1831-1834`); the host keeps it.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ProjectileDead {
+                key: net::projectile_key(owner.wrapping_add(1), 3, 1),
+                x: 5.0,
+                y: 5.0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            host_app.projectiles.slots()[3].active,
+            "a stale-owner key never kills (`:1831` gates before TryGet's slot)"
+        );
+        // The owner's kill lands and the position rides the wire
+        // (`NetMessage.cs:852-855`, `Projectile.cs:77256`).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ProjectileDead {
+                key,
+                x: 12.5,
+                y: -8.0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            !host_app.projectiles.slots()[3].active,
+            "the owner's 29 dropped the slot"
+        );
+        assert!(
+            !client_app.projectiles.slots()[3].active,
+            "the relayed 29 dropped the client's copy"
+        );
+    }
+
+    /// S1-I-1 W4-d93: `95 MurderSomeoneElsesPortal` kills the first matching
+    /// active type-602 and relays one `29` (`MessageBuffer.cs:3519-3537`).
+    #[test]
+    fn murder_portal_kills_the_matching_602_and_relays_29() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let owner = client_app.local_id as u8;
+        // A portal-gun projectile (602) owned by the client, form ai[1]=1.
+        let slot = host_app
+            .projectiles
+            .spawn_with_data_owned(602, owner, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 1.0)
+            .expect("spawn");
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(host_app.projectiles.slots()[slot].active);
+        // A wrong form matches nothing (`:3529` compares ai[1]).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MurderPortal {
+                owner: owner as u16,
+                form: 0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            host_app.projectiles.slots()[slot].active,
+            "the form mismatch spared the portal"
+        );
+        // The right form kills it and the `29` relay reaches the client.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MurderPortal {
+                owner: owner as u16,
+                form: 1,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.projectiles.slots()[slot].active,
+            "the host killed the matching portal"
+        );
+        assert!(
+            !client_app.projectiles.slots()[slot].active,
+            "the 29 relay dropped the client's copy (`:3532`)"
+        );
+    }
+
+    /// S1-I-1 W4-d93: the `27` host read gate (`MessageBuffer.cs:1725-1728`)
+    /// refuses a hostile-kind shot or a key whose spawner is not the sender —
+    /// the break skips BOTH the apply and the relay.
+    #[test]
+    fn the_27_host_gate_refuses_hostile_kinds_and_foreign_spawners() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        let base = net::ProjectileState {
+            key: net::projectile_key(me, 7, 1),
+            x: 50.0,
+            y: 50.0,
+            vx: 1.0,
+            vy: 0.0,
+            kind: 1, // WoodenArrow — not in `Main.projHostile`
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 5,
+            knock_back: 1.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        // A hostile kind (31, EyeSpring — `Projectile.cs:1138`) is refused.
+        let hostile = net::ProjectileState { kind: 31, ..base };
+        // A foreign spawner (the host's slot 0) is refused even when friendly.
+        let foreign = net::ProjectileState {
+            key: net::projectile_key(0, 8, 1),
+            ..base
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Projectile(Box::new(hostile)));
+            client.send(&C2s::Projectile(Box::new(foreign)));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.projectiles.slots()[7].active && !host_app.projectiles.slots()[8].active,
+            "the `:1727` break skipped the apply for both refused shots"
+        );
+        assert!(
+            !client_app.projectiles.slots()[7].active && !client_app.projectiles.slots()[8].active,
+            "the break skipped the relay too (`:1760` is after the gate)"
+        );
+        // The own friendly shot lands and relays (`:1729-1763`).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Projectile(Box::new(base)));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            host_app.projectiles.slots()[7].active,
+            "the owner's friendly kind passed the gate"
+        );
+        assert!(
+            client_app.projectiles.slots()[7].active,
+            "the accepted shot relayed back (`:1760-1763`)"
+        );
+    }
+
+    /// S1-I-1 W4-d93: `128 LandGolfBallInCup` — the host only relays, with
+    /// `ignoreClient = owner` (`MessageBuffer.cs:4065-4068`): the owner
+    /// already ran the cup effects locally (`GolfHelper.cs:103`). The client
+    /// apply is parked (M4-GOLF-1), so the witness pins the end-to-end wire:
+    /// an undecodable relay would be a `BadFrame` → disconnect
+    /// (`netglue.rs`'s client reader), so a surviving IN_WORLD peer proves
+    /// the 128 reached it and decoded. Step 2 keys the ignore on the BODY's
+    /// owner (not the sender): the sender itself receives that relay.
+    #[test]
+    fn the_golf_cup_relay_routes_by_the_body_owner() {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr.clone(), String::new()));
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        let me = client_app.local_id;
+        let peer = second.local_id;
+        // Step 1 — the owner's own cup: ignoreClient = owner, so the relay
+        // goes to the second client only; it decodes (parked arm) and lives.
+        let g = net::GolfBallInCup {
+            owner: me as u8,
+            x: 40,
+            y: 12,
+            hits: 3,
+            ball_type: 520,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::GolfBallInCup(g));
+        }
+        // Step 2 — a cup credited to the SECOND player: the ignore now skips
+        // the second, and the FIRST client (the sender, not the owner)
+        // receives the relay — it must decode and survive too.
+        let g2 = net::GolfBallInCup {
+            owner: peer as u8,
+            x: 41,
+            y: 13,
+            hits: 1,
+            ball_type: 521,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::GolfBallInCup(g2));
+        }
+        for _ in 0..40 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(
+            client_app.net_state,
+            net::client_state::IN_WORLD,
+            "the sender received the peer-owner relay and decoded it (step 2)"
+        );
+        assert_eq!(
+            second.net_state,
+            net::client_state::IN_WORLD,
+            "the peer received the owner-skip relay and decoded it (step 1)"
         );
     }
 

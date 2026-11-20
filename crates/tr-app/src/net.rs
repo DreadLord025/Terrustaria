@@ -194,6 +194,45 @@ pub mod id {
     /// 4490`, with 25/26/44/67/83/93) accepts and ignores it.
     pub const UNKNOWN_15: u8 = 15;
 
+    // ---- S1-I-1 projectile-family first half (W4-d93) ----
+    // Census vs the C# table: 27/28/29 already had ids + bodies (M6-NET);
+    // 29's C2s body now carries the Vector2 verbatim (it used to hardcode
+    // NaN); 95 was NOT-FOUND and lands here. The NPC-side 28 arms belong to
+    // the NPC half (W4-d91/d92); the minion/portal-teleport ids (99/100/115)
+    // are the second half (W4-d94).
+    /// `95 MurderSomeoneElsesPortal` (`MessageID.cs:204`) — a client's new
+    /// portal intersected a peer's portal-gun projectile (type 602):
+    /// `(ushort)owner + (byte)ai[1] form` (`NetMessage.cs:1333-1336`, sent
+    /// by `PortalHelper.RemoveIntersectingPortals`, `PortalHelper.cs:364-367`).
+    /// Host-only read (`MessageBuffer.cs:3519-3537`): kill the first matching
+    /// active 602 and relay one `29`. Client→server only — the C# has no
+    /// host send site for 95.
+    pub const MURDER_PORTAL: u8 = 95;
+    /// `128 LandGolfBallInCup` (`MessageID.cs:270`) — a client's golf ball
+    /// (a projectile) dropped into a cup: `(byte)owner + (ushort)hitX +
+    /// (ushort)hitY + (ushort)numberOfHits + (ushort)ballType`
+    /// (`NetMessage.cs:1521-1527`, sent by `GolfHelper.ContactListener.
+    /// PutBallInCup` at `netMode == 1`, `GolfHelper.cs:107-110`). The host
+    /// relays it to the others (`MessageBuffer.cs:4058-4074`, the
+    /// `ignoreClient = owner` resend); the client runs the cup text/effects
+    /// (`PutBallInCup_TextAndEffects`, the golf FX of M4-GOLF-1).
+    pub const GOLF_BALL_IN_CUP: u8 = 128;
+    /// `109 MassWireOperation` (`MessageID.cs:232`) — the Grand Design's
+    /// wire-drag (projectile 651, `Projectile.cs:72053-72066`) or the
+    /// Multicolor Wrench's (`Player.cs:46911`): `(short)ps.X + (short)ps.Y +
+    /// (short)pe.X + (short)pe.Y + (byte)WiresUI.Settings.ToolMode`
+    /// (`NetMessage.cs:1412-1418`). Client→server only — the host runs
+    /// `Wiring.MassWireOperation` under a temporary ToolMode swap and never
+    /// relays the 109 (`MessageBuffer.cs:3774-3788`).
+    pub const MASS_WIRE_OPERATION: u8 = 109;
+    /// `110 MassWireOperationPay` (`MessageID.cs:234`) — the host's wire/
+    /// actuator bill after a mass operation: `(short)itemType + (short)count
+    /// + (byte)player` (`NetMessage.cs:1419-1423`), sent twice — 530 Wire and
+    /// 849 Actuator (`Wiring.cs:439-443`). Server→client only; the client
+    /// consumes the items and clears `wireOperationsCooldown` when the bill
+    /// is its own (`MessageBuffer.cs:3789-3807`).
+    pub const MASS_WIRE_OPERATION_PAY: u8 = 110;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1594,6 +1633,48 @@ pub struct TogglePvp {
     pub hostile: bool,
 }
 
+/// `msg 128 LandGolfBallInCup`'s body (`NetMessage.cs:1521-1527`, S1-I-1
+/// W4-d93): `(byte)number` (the owner), `(ushort)number5`/`(ushort)number6`
+/// (the cup's tile coords), `(ushort)number2` (the hit count, the ball's
+/// `ai[1]`) and `(ushort)number3` (the ball's projectile type). The writer's
+/// field order is NOT the argument order — the reader mirrors it
+/// (`MessageBuffer.cs:4060-4064`: owner, x, y, hits, type).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GolfBallInCup {
+    pub owner: u8,
+    pub x: u16,
+    pub y: u16,
+    pub hits: u16,
+    pub ball_type: u16,
+}
+
+/// `msg 109 MassWireOperation`'s body (`NetMessage.cs:1412-1418`, S1-I-1
+/// W4-d93): the drag's start/end tile points as four `(short)`s, then the
+/// `(byte)` tool mode — the `WiresUI.Settings.MultiToolMode` flags
+/// (`WiresUI.cs:13-21`: Red 1 / Green 2 / Blue 4 / Yellow 8 / Actuator 0x10 /
+/// Cutter 0x20). The reader runs the operation under a temporary ToolMode
+/// swap and restores it (`MessageBuffer.cs:3781-3786`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MassWireOperation {
+    pub start_x: i16,
+    pub start_y: i16,
+    pub end_x: i16,
+    pub end_y: i16,
+    pub tool_mode: u8,
+}
+
+/// `msg 110 MassWireOperationPay`'s body (`NetMessage.cs:1419-1423`, S1-I-1
+/// W4-d93): `(short)number` (the item type — 530 Wire or 849 Actuator),
+/// `(short)number2` (the consumed count) and `(byte)number3` (the billed
+/// player). The client only pays when `number3 == Main.myPlayer`
+/// (`MessageBuffer.cs:3797`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MassWireOperationPay {
+    pub item_type: i16,
+    pub count: i16,
+    pub player: u8,
+}
+
 /// `msg 42 Unknown42`'s body (`NetMessage.cs:961-965`): the player id,
 /// `statMana` and `statManaMax`, both `short` (`MessageBuffer.cs:2290-2306`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1842,14 +1923,33 @@ pub enum C2s {
     /// machine simulates and sends, `Projectile.cs:17210-17244`).
     Projectile(Box<ProjectileState>),
     /// `29` — one of this client's projectiles is gone
-    /// (`NetMessage.cs:852-855`): the key plus the position — the Kill tail
-    /// sends the ENTRY snapshot (`Projectile.cs:77256`), the owner-lost
-    /// despawn sends NaN/NaN (`Projectile.cs:16697`).
+    /// (`Projectile.cs:77254-77257`): the key plus the **entry** position
+    /// (`NetMessage.cs:852-855` writes `Vector2(number2, number3)`; the
+    /// owner-gated `Kill` tail passes the entry snapshot, `Projectile.cs:77256`).
+    /// The NaN/NaN pair is the silent-deactivate variant
+    /// (`Projectile.cs:16697`, the host's case-95 relay passes 0/0).
     ProjectileDead {
         key: i32,
         x: f32,
         y: f32,
     },
+    /// `95 MurderSomeoneElsesPortal` — this client's new portal intersected
+    /// a peer's portal projectile (`PortalHelper.cs:364-367`): the peer's
+    /// owner id and the portal form (`ai[1]`), so the host can kill the
+    /// matching type-602 slot (`MessageBuffer.cs:3519-3537`).
+    MurderPortal {
+        owner: u16,
+        form: u8,
+    },
+    /// `128 LandGolfBallInCup` — this client's golf ball dropped into a cup
+    /// (`GolfHelper.ContactListener.PutBallInCup`, `GolfHelper.cs:107-110`,
+    /// `netMode == 1` only); the host relays it with `ignoreClient = owner`
+    /// (`MessageBuffer.cs:4058-4074`).
+    GolfBallInCup(GolfBallInCup),
+    /// `109 MassWireOperation` — this client's Grand Design / Multicolor
+    /// Wrench drag (`Projectile.cs:72060`, `Player.cs:46911`); the host runs
+    /// the operation for the sender (`MessageBuffer.cs:3774-3788`).
+    MassWireOperation(MassWireOperation),
     /// `154 Ping` - this client's RTT probe, no body (`Net/Ping.cs:31`).
     Ping,
     /// `31 RequestChestOpen` - ask the host for a chest's contents
@@ -2040,6 +2140,15 @@ pub enum S2c {
     /// `142 SyncProjectileTrackers` - a peer's trackers (join push
     /// `NetMessage.cs:2907`, relay `MessageBuffer.cs:4294`).
     ProjectileTrackers(ProjectileTrackers),
+    /// `128 LandGolfBallInCup` - a peer's golf ball landed in a cup, relayed
+    /// to everyone but the owner (`MessageBuffer.cs:4067`); the client runs
+    /// the cup text/effects (`:4071`, M4-GOLF-1).
+    GolfBallInCup(GolfBallInCup),
+    /// `110 MassWireOperationPay` - the host's wire/actuator bill for a mass
+    /// operation, sent to the billed player only (`Wiring.cs:439-443`); the
+    /// client consumes the items when the bill is its own
+    /// (`MessageBuffer.cs:3789-3807`).
+    MassWireOperationPay(MassWireOperationPay),
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
@@ -2149,6 +2258,9 @@ impl C2s {
             Self::ReleaseNpc { .. } => id::RELEASE_NPC,
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
+            Self::MurderPortal { .. } => id::MURDER_PORTAL,
+            Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
+            Self::MassWireOperation(_) => id::MASS_WIRE_OPERATION,
             Self::Ping => id::PING,
             Self::ChestOpenRequest(_) => id::CHEST_OPEN_REQUEST,
             Self::ChestItem(_) => id::CHEST_ITEM,
@@ -2288,6 +2400,8 @@ impl C2s {
                 w.i32(*x).i32(*y).i16(*npc_type).u8(*style)
             }
             Self::Projectile(p) => return p.frame(),
+            // `NetMessage.cs:852-855` — `number` (the key) +
+            // `Vector2(number2, number3)`; the position rides verbatim.
             Self::ProjectileDead { key, x, y } => {
                 return NetWriter::open(id::PROJECTILE_DEAD)
                     .i32(*key)
@@ -2295,6 +2409,18 @@ impl C2s {
                     .f32(*y)
                     .finish();
             }
+            // `NetMessage.cs:1333-1336` — `(ushort)number + (byte)number2`.
+            Self::MurderPortal { owner, form } => w.u16(*owner).u8(*form),
+            // `NetMessage.cs:1521-1527` — owner byte, then the four ushorts
+            // in the WRITER's order (x, y, hits, type — not the arg order).
+            Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
+            // `NetMessage.cs:1412-1418` — four (short)s, then the (byte) mode.
+            Self::MassWireOperation(m) => w
+                .i16(m.start_x)
+                .i16(m.start_y)
+                .i16(m.end_x)
+                .i16(m.end_y)
+                .u8(m.tool_mode),
         };
         w.finish()
     }
@@ -2478,11 +2604,33 @@ impl C2s {
                 style: r.u8()?,
             },
             id::PROJECTILE => Self::Projectile(Box::new(ProjectileState::read_from(r)?)),
+            // `MessageBuffer.cs:1827-1828` — the key, then the Vector2.
             id::PROJECTILE_DEAD => Self::ProjectileDead {
                 key: r.i32()?,
                 x: r.f32()?,
                 y: r.f32()?,
             },
+            // `MessageBuffer.cs:3521-3522` — (ushort) owner + (byte) form.
+            id::MURDER_PORTAL => Self::MurderPortal {
+                owner: r.u16()?,
+                form: r.u8()?,
+            },
+            // `MessageBuffer.cs:4060-4064` — owner, x, y, hits, type.
+            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
+                owner: r.u8()?,
+                x: r.u16()?,
+                y: r.u16()?,
+                hits: r.u16()?,
+                ball_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:3777-3781` — the four shorts + the mode byte.
+            id::MASS_WIRE_OPERATION => Self::MassWireOperation(MassWireOperation {
+                start_x: r.i16()?,
+                start_y: r.i16()?,
+                end_x: r.i16()?,
+                end_y: r.i16()?,
+                tool_mode: r.u8()?,
+            }),
             _ => return None,
         })
     }
@@ -2597,6 +2745,8 @@ impl S2c {
             Self::DeadPlayer { .. } => id::DEAD_PLAYER,
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
+            Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
+            Self::MassWireOperationPay(_) => id::MASS_WIRE_OPERATION_PAY,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::TileEdit(_) => id::TILE_EDIT,
             Self::DoorToggle(_) => id::DOOR_TOGGLE,
@@ -2748,6 +2898,11 @@ impl S2c {
                 .i16(t.piggy_bank.kind)
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
+            // `NetMessage.cs:1521-1527` — the relay writes the same case-128
+            // arm (`MessageBuffer.cs:4067` re-sends with number5/6 = x/y).
+            Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
+            // `NetMessage.cs:1419-1423` — (short)type, (short)count, (byte)plr.
+            Self::MassWireOperationPay(p) => w.i16(p.item_type).i16(p.count).u8(p.player),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
             // ---- S1-I-1 wave B ----
             // (`11 TileFrameSection` encodes at the d89 arm above — keep-one.)
@@ -3011,6 +3166,21 @@ impl S2c {
             id::EXTRA_SPAWN_LOADED => Self::ExtraSpawnLoaded {
                 player_id: r.u8()?,
             },
+
+            // `MessageBuffer.cs:4060-4064` — owner, x, y, hits, type.
+            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
+                owner: r.u8()?,
+                x: r.u16()?,
+                y: r.u16()?,
+                hits: r.u16()?,
+                ball_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:3795-3797` — type, count, player.
+            id::MASS_WIRE_OPERATION_PAY => Self::MassWireOperationPay(MassWireOperationPay {
+                item_type: r.i16()?,
+                count: r.i16()?,
+                player: r.u8()?,
+            }),
             _ => return None,
         })
     }
@@ -4461,8 +4631,9 @@ mod tests {
             C2s::ProjectileDead {
                 key: projectile_key(255, 7, 1),
                 x: 12.5,
-                y: -3.0,
+                y: -8.0,
             },
+            C2s::MurderPortal { owner: 2, form: 1 },
             C2s::Ping,
             // `31-33`, `46-47`, `50`, `53`, `59` — the message families of
             // S1-E-27 (`MessageBuffer.cs:1868-1982`, `:2366-2405`,
@@ -5698,6 +5869,126 @@ mod tests {
         }
     }
 
+    // ---- S1-I-1 projectile-family first half (W4-d93): 27/28/29/95 ----
+
+    #[test]
+    fn s1_i_1d93_sync_projectile_body_bytes() {
+        // `NetMessage.cs:776-842` (case 27), verbatim field order: key int,
+        // Vector2 position, Vector2 velocity, (short)type, flags1 BitsByte,
+        // [flags2 BitsByte when flags1 bit 2], ai[0], ai[1], (ushort)banner,
+        // (short)damage, float knockBack, (short)originalDamage, ai[2].
+        let st = ProjectileState {
+            key: projectile_key(1, 2, 0),
+            x: 16.0,
+            y: -32.5,
+            vx: 1.5,
+            vy: -2.0,
+            kind: 4,
+            ai0: Some(0.25),
+            ai1: None,
+            banner_id: 0,
+            damage: 12,
+            knock_back: 3.0,
+            original_damage: 0,
+            ai2: Some(-1.0),
+        };
+        let f = st.frame();
+        assert_eq!(f[2], 27);
+        let mut body = Vec::new();
+        body.extend_from_slice(&st.key.to_le_bytes());
+        for v in [16.0f32, -32.5, 1.5, -2.0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&4i16.to_le_bytes());
+        // bits: 0 ai0, 2 flags2-present, 4 damage, 5 knockback.
+        body.push(0x35);
+        body.push(0x01); // flags2: bit 0 = ai[2] present
+        body.extend_from_slice(&0.25f32.to_le_bytes());
+        body.extend_from_slice(&12i16.to_le_bytes());
+        body.extend_from_slice(&3.0f32.to_le_bytes());
+        body.extend_from_slice(&(-1.0f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let back = C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode");
+        assert_eq!(back.encode(), f);
+        // The minimal body (`MessageBuffer.cs:1715-1724` with every
+        // conditional absent): flags1 = 0 writes NO flags2 byte and no
+        // extras — 23 bytes of body.
+        let bare = ProjectileState {
+            key: 513,
+            x: 0.0,
+            y: 0.0,
+            vx: 0.0,
+            vy: 0.0,
+            kind: 1,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 0,
+            knock_back: 0.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        let b = bare.frame();
+        assert_eq!(b[2], 27);
+        assert_eq!(b.len(), 3 + 4 + 16 + 2 + 1);
+        assert_eq!(b[3 + 4 + 16 + 2], 0); // flags1 = 0, no flags2 follows
+        assert_eq!(
+            C2s::decode(b[2], &mut NetReader::new(&b[3..]))
+                .expect("decode")
+                .encode(),
+            b
+        );
+    }
+
+    #[test]
+    fn s1_i_1d93_kill_projectile_body_bytes() {
+        // `NetMessage.cs:852-855` (case 29): `number` (the key int) +
+        // `Vector2(number2, number3)`. Both directions carry the position
+        // verbatim — the C2s used to hardcode NaN, which dropped the kill
+        // site's entry snapshot (`Projectile.cs:77256`).
+        let key = projectile_key(2, 7, 1);
+        let mut body = Vec::new();
+        body.extend_from_slice(&key.to_le_bytes());
+        body.extend_from_slice(&12.5f32.to_le_bytes());
+        body.extend_from_slice(&(-8.0f32).to_le_bytes());
+        let c = C2s::ProjectileDead {
+            key,
+            x: 12.5,
+            y: -8.0,
+        }
+        .encode();
+        assert_eq!(c[2], 29);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ProjectileDead { key: k, x, y } => {
+                assert_eq!((k, x, y), (key, 12.5, -8.0));
+            }
+            other => panic!("expected 29, got {:?}", other.msg_id()),
+        }
+        let s = S2c::ProjectileDead {
+            key,
+            x: 12.5,
+            y: -8.0,
+        }
+        .encode();
+        assert_eq!(s[2], 29);
+        assert_eq!(&s[3..], &body);
+        // The NaN/NaN silent-deactivate variant (`Projectile.cs:16697`)
+        // survives the wire bit-for-bit (`MessageBuffer.cs:1835-1843`).
+        let nan = C2s::ProjectileDead {
+            key,
+            x: f32::NAN,
+            y: f32::NAN,
+        }
+        .encode();
+        match C2s::decode(nan[2], &mut NetReader::new(&nan[3..])).expect("decode") {
+            C2s::ProjectileDead { x, y, .. } => {
+                assert!(x.is_nan() && y.is_nan());
+            }
+            other => panic!("expected 29, got {:?}", other.msg_id()),
+        }
+    }
+
     #[test]
     fn s1_i_1b_the_1_to_16_region_is_fully_mapped() {
         // The census against `MessageID.cs:9-41`: every id 1..=16 has a
@@ -5745,6 +6036,41 @@ mod tests {
     }
 
     #[test]
+    fn s1_i_1d93_damage_npc_body_bytes() {
+        // `NetMessage.cs:844-850` (case 28): (byte)npc, (byte)generation,
+        // (short)damage, float knockback, (byte)(hitDirection + 1),
+        // (byte)crit. The NPC-family apply arms belong to the NPC half
+        // (W4-d91/d92); this pins the shared wire layout only.
+        let st = NpcStrike {
+            npc: 7,
+            generation: 2,
+            damage: -13,
+            knock_back: 5.5,
+            hit_direction: -1,
+            crit: true,
+        };
+        let c = C2s::NpcStrike(st).encode();
+        assert_eq!(c[2], 28);
+        let mut body = vec![7, 2];
+        body.extend_from_slice(&(-13i16).to_le_bytes());
+        body.extend_from_slice(&5.5f32.to_le_bytes());
+        body.push(0); // (-1 + 1f) as byte — the wire offset (`:849`)
+        body.push(1);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcStrike(d) => assert_eq!(d, st),
+            other => panic!("expected 28, got {:?}", other.msg_id()),
+        }
+        let s = S2c::NpcStrike(st).encode();
+        assert_eq!(s[2], 28);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::NpcStrike(d) => assert_eq!(d, st),
+            other => panic!("expected 28, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
     fn s1_i_1b_extra_spawn_loaded_round_trips() {
         // `NetMessage.cs:1659-1661`: one (byte)player; the reader spawns with
         // `PlayerSpawnContext.TeamSwap` = 3 (`MessageBuffer.cs:4453-4454`,
@@ -5784,5 +6110,142 @@ mod tests {
         assert_eq!(section_y(1100), 7);
         // Truncated body must not decode.
         assert!(C2s::decode(159, &mut NetReader::new(&body[..3])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1d93_murder_portal_round_trips() {
+        // `NetMessage.cs:1333-1336` (case 95): (ushort)number (the peer's
+        // owner id) + (byte)number2 (the portal form, ai[1]). Client→server
+        // only — the C# host never sends 95 (`MessageBuffer.cs:3519-3537`
+        // reads it at netMode == 2 only).
+        let c = C2s::MurderPortal { owner: 3, form: 1 }.encode();
+        assert_eq!(c[2], 95);
+        assert_eq!(&c[3..], &[3, 0, 1]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MurderPortal { owner, form } => assert_eq!((owner, form), (3, 1)),
+            other => panic!("expected 95, got {:?}", other.msg_id()),
+        }
+        // No S2c counterpart exists in the C# reader.
+        assert!(S2c::decode(95, &mut NetReader::new(&[3, 0, 1])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1d93_golf_ball_in_cup_body_bytes() {
+        // `NetMessage.cs:1521-1527` (case 128): (byte)owner, (ushort)x,
+        // (ushort)y, (ushort)hits, (ushort)type. The writer's field order is
+        // NOT the send's argument order (`GolfHelper.cs:109` passes
+        // owner, hits, type, 0f, x, y → number/2/3/5/6); the reader mirrors
+        // the writer (`MessageBuffer.cs:4060-4064`).
+        let g = GolfBallInCup {
+            owner: 3,
+            x: 1234,
+            y: 567,
+            hits: 7,
+            ball_type: 520,
+        };
+        let mut body = vec![3];
+        body.extend_from_slice(&1234u16.to_le_bytes());
+        body.extend_from_slice(&567u16.to_le_bytes());
+        body.extend_from_slice(&7u16.to_le_bytes());
+        body.extend_from_slice(&520u16.to_le_bytes());
+        let c = C2s::GolfBallInCup(g).encode();
+        assert_eq!(c[2], 128);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::GolfBallInCup(d) => assert_eq!(d, g),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+        // The host's relay (`MessageBuffer.cs:4067`) writes the same arm.
+        let s = S2c::GolfBallInCup(g).encode();
+        assert_eq!(s[2], 128);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::GolfBallInCup(d) => assert_eq!(d, g),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+        // The swapped-pair trap: the send args are owner, hits, type, 0f,
+        // x, y — a codec that wrote hits/type before x/y fails above; pin
+        // the asymmetry with a second fixture (distinct ushort values).
+        let g2 = GolfBallInCup {
+            owner: 255,
+            x: 0,
+            y: 65535,
+            hits: 65535,
+            ball_type: 1,
+        };
+        let c2 = C2s::GolfBallInCup(g2).encode();
+        assert_eq!(&c2[3..], &[255, 0, 0, 255, 255, 255, 255, 1, 0]);
+        match C2s::decode(c2[2], &mut NetReader::new(&c2[3..])).expect("decode") {
+            C2s::GolfBallInCup(d) => assert_eq!(d, g2),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1d93_mass_wire_operation_body_bytes() {
+        // `NetMessage.cs:1412-1418` (case 109): (short)ps.X, (short)ps.Y,
+        // (short)pe.X, (short)pe.Y, (byte)ToolMode. Client→server only — the
+        // host arm (`MessageBuffer.cs:3774-3788`) runs the operation and
+        // never relays the 109.
+        let m = MassWireOperation {
+            start_x: -12,
+            start_y: 300,
+            end_x: 45,
+            end_y: -7,
+            tool_mode: 0x21, // Red | Cutter (`WiresUI.cs:13-21`)
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&(-12i16).to_le_bytes());
+        body.extend_from_slice(&300i16.to_le_bytes());
+        body.extend_from_slice(&45i16.to_le_bytes());
+        body.extend_from_slice(&(-7i16).to_le_bytes());
+        body.push(0x21);
+        let c = C2s::MassWireOperation(m).encode();
+        assert_eq!(c[2], 109);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MassWireOperation(d) => assert_eq!(d, m),
+            other => panic!("expected 109, got {:?}", other.msg_id()),
+        }
+        // The C# has no server→client 109 send site.
+        assert!(S2c::decode(109, &mut NetReader::new(&body)).is_none());
+    }
+
+    #[test]
+    fn s1_i_1d93_mass_wire_operation_pay_body_bytes() {
+        // `NetMessage.cs:1419-1423` (case 110): (short)itemType,
+        // (short)count, (byte)player. Server→client only — the host bills
+        // 530 then 849 (`Wiring.cs:441-442`); the client pays only its own
+        // (`MessageBuffer.cs:3798`).
+        let p = MassWireOperationPay {
+            item_type: 530,
+            count: 17,
+            player: 2,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&530i16.to_le_bytes());
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.push(2);
+        let s = S2c::MassWireOperationPay(p).encode();
+        assert_eq!(s[2], 110);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::MassWireOperationPay(d) => assert_eq!(d, p),
+            other => panic!("expected 110, got {:?}", other.msg_id()),
+        }
+        // The actuator twin — the second bill of the pair.
+        let p2 = MassWireOperationPay {
+            item_type: 849,
+            count: 0,
+            player: 255,
+        };
+        let s2 = S2c::MassWireOperationPay(p2).encode();
+        assert_eq!(&s2[3..], &[0x51, 0x03, 0, 0, 255]);
+        match S2c::decode(s2[2], &mut NetReader::new(&s2[3..])).expect("decode") {
+            S2c::MassWireOperationPay(d) => assert_eq!(d, p2),
+            other => panic!("expected 110, got {:?}", other.msg_id()),
+        }
+        // The C# has no client→server 110 send site.
+        assert!(C2s::decode(110, &mut NetReader::new(&body)).is_none());
     }
 }
