@@ -39244,3 +39244,83 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The aiStyle-1..10 projectile census + the powder/fertilizer cloud (W4-d1, 2026-11-21, code-only mode)
+
+Census of the `match data.ai_style` dispatch (`ProjectilePool::update`,
+`projectile.rs`) for aiStyles 1-10, each C# arm read WHOLE before the
+verdict. The dispatch's coverage pin
+(`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) already guarantees
+every ROWED style has exactly one live arm; this round's census confirms
+which arms are kind-gated vs whole, and ports the one style with neither an
+arm nor rows.
+
+| style | C# arm (read whole) | Rust dispatch arm | verdict |
+| --- | --- | --- | --- |
+| 1 | `AI_001` `Projectile.cs:23201` -> `:54002-57798` | kind-match + slices A/B/C + riders + `ai_arrow` | PORTED (verify-only) — the per-type AI_001 slices are kind-disjoint; the generic `ai_arrow` serves the unrowed kinds. |
+| 2 | inline `:23205-23689` | `ai_style2` | PORTED (verify-only) — the wind head, the per-type rotation/counter ladder, the 968/304/909/162/281/240/497/861 hooks. |
+| 3 | `AI_003_Boomerang` `:23690` -> `:39464+` | `ai_boomerang` | PORTED (verify-only) — the meleeSpeed remap + the catch owner gate. |
+| 4 | inline `:23694-23828` | `vilethorn_step` / `ai_style4` | PORTED (verify-only) — the Vilethorn 7/8 + Nettle Burst 150/151/152 chains; the 493/494 variant is unrowed (documented). |
+| 5 | inline `:23830-24099` | kind-gated 92/9/955 (`falling_star_step` / `ai_falling_star`) | PORTED for the rowed kinds (verify-only) — the 12/503/723-726/1037/1049/1133 kinds have no rows yet, the arm stays kind-gated. |
+| **6** | inline `:24100-24228` | **none on main** | **MISSING -> PORTED this round** (`projectile_ai_powder`). |
+| 7 | `AI_007_GrapplingHooks` `:24229` -> `:52567+` | `ai_hook` | PORTED (verify-only) — the dead/CCed kill gate, the MountedCenter pull, the attach-cap recycle, the blacklist rebuild, the Queen Slime teleport. |
+| 8 | inline `:24233-24362` | `ai_ball_of_fire` | PORTED (verify-only) — the gravity timer + the per-type bounce budget; the WaterBolt lava bounce, the 96/258 sound latches. |
+| 9 | `AI_009_MagicMissiles` `:24363` -> `:43195-43425` | `ai_magic_missile` | PORTED (verify-only) — the channel aim, the Flamelash drag-lift, the release homing. |
+| 10 | `AI_010` `:24367` -> `:57826-58100` | kind-gated 109/736-738 (`ai_snowball_hostile` / `ai_dungeon_debris`) + the falling-tile tail | PORTED for the rowed kinds (verify-only) — the sand family 42/65/68/354 rides the falling-tile tail; the 42 row's full AI_010 arm is the documented S1-D-5 gap. |
+
+**The missing style 6.** The powder/fertilizer cloud — five kinds, all
+unrowed on main: 10 PurificationPowder (`Projectile.cs:897-912`), 11
+VilePowder (`:913-923`), 463 ViciousPowder (`:5340-5350`), 1019 Fertilizer
+(`:9648-9658`), 1051 SuperFertilizer (`:9967-9977`). The arm
+(`:24100-24228`) is the 0.95 velocity decay + the `ai[0]` age counter + the
+180-tick kill, the one-shot `ai[1] == 0` dust burst, the owner-gated tile
+scan (`WorldGen.Convert` types 11/1/4 for the three powders, the
+CommonSapling growth for the fertilizer pair) and the fertilizer pair's
+`velocity.Length() < 0.5f` slow-kill.
+
+**Port shape.** `projectile_ai_powder::step` (the `ai_dungeon_debris`
+mutable-world carve-out — the dispatch reborrows `world` at the call site).
+The rows land in `projectile/data.rs` (the five `SetDefaults` arms verbatim:
+64x64, aiStyle 6, penetrate -1, alpha 255, tileCollide false, ignoreWater).
+The 10's infectedSeed box growth (`:907-911`, width/height += /3*2 INTEGER
+division -> 106x106) rides the data-carrying spawn through the
+`set_infected_seed` pool snapshot (the `set_disco` precedent), fed by the
+world-sim pass from `MicroSeedFlags::WORLD_IS_INFECTED`. The conversion is
+`tr_core::spread::convert_sized` (the new type-1/4/11 cells beside the
+type-0 cleanse port). The sapling growth draws `WorldGen.genRand`, so it
+DEFERS to the world-sim pass via `wants_sapling_grow` / `drain_sapling_grows`
+on the `UpdateWorldGen` stream (the `palm_frame_rolls` precedent,
+`world_sim/editing.rs`).
+
+**RNG argument (by construction).** The `UpdateProjectiles` stream
+(`Main.cs:17775-17777`) is untouched except where the C# arm draws:
+- 10/11/463/1019: ZERO `Main.rand` draws — the dust burst's non-flag loop
+  rolls nothing; the conversion / growth are rand-free at the arm layer
+  (the growth's genRand rides the deferred `UpdateWorldGen` pass).
+- 1051: 50 `Next(3)` draws on the first tick (`ai[1] == 0`), one per dust
+  iteration (`:24132`), in loop order; ZERO on every later tick. The dust
+  BODIES and their `NewDust` internals are SKIPPED (no dust layer), but the
+  EXPLICIT call-site `Next(3)` stays (the `projectile_ai_misc` convention).
+
+**Deliberate deviations.**
+- The dust/gore bodies are skipped (no dust layer in the pool); the 1051's
+  per-dust `Next(3)` type pick is an explicit call-site draw, so it stays.
+- The type-11 wall 69/70/81 surface roll draws `WorldGen.genRand.Next(10)`
+  (`WorldGen.cs:55783`) — the port has no runtime genRand stream, so the
+  shared `convert_wall_by_case(wall, 11, .., None)` takes the no-rng 64 (the
+  `convert_cleanse_cell` precedent).
+- The `RainbowSandAndBlackSandWalls` paint arms
+  (`WorldGen.cs:56302-56306`/`:56319-56323`/`:56335-56339`) gate on
+  `Main.onlyShimmerOceanWorlds`, a mode the port does not generate
+  (`worldgen/finish_seeds.rs`) — skipped.
+- The sapling growth's `treeHeightAddon` (the 1051's +15) and
+  `ignoreWalls: true` args park in the growth port today (`growth/trees.rs`,
+  M5-SEED-1) — the request carries them for when it lands them; the growth
+  itself runs with the parked 0/false.
+- The fertilizer pair's `flag3` override (`Main.netMode != 1`,
+  `:24153-24156`) folds to true (single-player netMode 0).
+
+**Code-only round.** The 12 `projectile_ai_powder` witnesses + the 6
+`spread` converter witnesses + the 1 row witness are WRITTEN, NOT RUN — no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked. Verified by re-reading the
+cited C# blocks and hand arithmetic.
