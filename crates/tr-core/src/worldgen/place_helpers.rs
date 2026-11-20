@@ -392,6 +392,116 @@ pub(crate) fn place_2x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32
     }
 }
 
+/// `WorldGen.InvalidTileForPilesOrSpeleothems` (`WorldGen.cs:38979-38994`):
+/// `InWorld(x, y, 2)`, then an active tile is invalid iff it is a boulder.
+fn invalid_tile_for_piles(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 2) {
+        return false;
+    }
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && crate::tiledata::SET_BOULDERS.has(t.kind))
+}
+
+/// `WorldGen.Place3x2` (`WorldGen.cs:52066-52196`): the general 3×2
+/// object centred on `x`. The 5-tile bounds gate. The picnic table
+/// (14 style 25) is the ONE-ROW arm (`flag`, `:52074-52082`): only row `y`
+/// is scanned and only row `y` is written (`frameY = 0`, `:52155-52169`).
+/// The body scan (`:52083-52100`): every cell inactive, and a campfire
+/// kind (`TileID.Sets.Campfires`) also refuses liquid. Per-column floor
+/// arms (`:52105-52139`):
+/// - 285/286/298/299/310/361-364 AND 582/619 (the `goto case 285`):
+///   `SolidTile2` OR an active `tileSolidTop` with `frameY == 0`;
+/// - default: the piles pair (186/187) refuses a boulder floor
+///   (`InvalidTileForPilesOrSpeleothems`), the altar (26) refuses a
+///   boulder floor directly, and `SolidTile2` is required.
+///
+/// The chest arm (88, `:52141-52151`): the C# `Chest.CreateChest` ledger
+/// write + the `netMode == 1` SendData are runtime/chest-lane concerns —
+/// the port's worldgen chest sites ride `structures::place_chest` +
+/// `chest_stock` (the gen-time ledger seam); this wrapper places the
+/// tiles and the ledger stays with the chest lane (documented deviation,
+/// the worldgen chest cap is never hit so the C# gate never refuses).
+/// Frames: `frameX = 54 * style + col * 18`, `frameY = row * 18`.
+pub(crate) fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let one_row = kind == 14 && style == 25;
+    let num = if one_row { y } else { y - 1 };
+    let mut flag2 = true;
+    for i in (x - 1)..(x + 2) {
+        for j in num..(y + 1) {
+            let cell = world.tile(i, j);
+            if cell.is_some_and(|t| t.active()) {
+                flag2 = false;
+            }
+            if crate::tiledata::SET_CAMPFIRES.has(kind)
+                && cell.is_some_and(|t| t.liquid > 0)
+            {
+                flag2 = false;
+            }
+        }
+        let floor = world.tile(i, y + 1);
+        match kind {
+            // `:52125-52138` (+ the 582/619 goto, `:52108-52124`): the
+            // solidTop-with-frameY-0 alternative floor.
+            285 | 286 | 298 | 299 | 310 | 361 | 362 | 363 | 364 | 582 | 619 => {
+                let solid_top_ok = floor.is_some_and(|t| {
+                    t.active() && TILE_SOLID_TOP.has(t.kind) && t.frame_y == 0
+                });
+                if !solid_tile2(world, i, y + 1) && !solid_top_ok {
+                    flag2 = false;
+                }
+            }
+            _ => {
+                if (kind == 186 || kind == 187) && invalid_tile_for_piles(world, i, y + 1) {
+                    flag2 = false;
+                }
+                if kind == 26 && floor.is_some_and(|t| crate::tiledata::SET_BOULDERS.has(t.kind)) {
+                    flag2 = false;
+                }
+                if !solid_tile2(world, i, y + 1) {
+                    flag2 = false;
+                }
+            }
+        }
+    }
+    if flag2 {
+        let num2 = (54 * style) as i16;
+        if one_row {
+            // `:52157-52168` — the single row, frameY 0.
+            for (col, fx) in [(x - 1, num2), (x, num2 + 18), (x + 1, num2 + 36)] {
+                let i = world.index(col, y);
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.frame_y = 0;
+                t.frame_x = fx;
+                t.kind = kind;
+            }
+            return;
+        }
+        // `:52171-52194` — row-major, top row then bottom row.
+        for (col, row) in [
+            (x - 1, y - 1),
+            (x, y - 1),
+            (x + 1, y - 1),
+            (x - 1, y),
+            (x, y),
+            (x + 1, y),
+        ] {
+            let fx = num2 + ((col - (x - 1)) * 18) as i16;
+            let fy = if row == y { 18 } else { 0 };
+            let i = world.index(col, row);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = fy;
+            t.frame_x = fx;
+            t.kind = kind;
+        }
+    }
+}
+
 /// `WorldGen.Place2x2Style` (`WorldGen.cs:52198-52256`): the style-column
 /// 2×2 at `(x-1, y-1)` — the 5-tile bounds gate, the body empty, both
 /// floors `SolidTile` (the coordinate overload — WITH the inactive veto).
@@ -681,5 +791,56 @@ mod tests {
         assert!(t.active() && t.kind == 254);
         assert_eq!(t.frame_y, ((30 % 12 / 2) * 36) as i16); // 108
         assert_eq!(w.tile(29, 19).unwrap().frame_y, 126);
+    }
+
+    /// `Place3x2` lays the six cells row-major; the picnic table (14/25)
+    /// writes only row y; the altar refuses a boulder floor; the
+    /// solidTop-frameY-0 arm accepts a platform floor.
+    #[test]
+    fn place_3x2_general_picnic_and_floor_arms() {
+        let mut w = floor_world();
+        place_3x2(&mut w, 10, 19, 26, 1);
+        for (col, row, fx, fy) in [
+            (9, 18, 54, 0),
+            (10, 18, 72, 0),
+            (11, 18, 90, 0),
+            (9, 19, 54, 18),
+            (10, 19, 72, 18),
+            (11, 19, 90, 18),
+        ] {
+            let t = w.tile(col, row).unwrap();
+            assert!(t.active() && t.kind == 26);
+            assert_eq!((t.frame_x, t.frame_y), (fx, fy));
+        }
+        // The picnic table: only row y, frameY 0 everywhere.
+        let mut w2 = floor_world();
+        place_3x2(&mut w2, 20, 19, 14, 25);
+        assert!(!w2.tile(19, 18).unwrap().active());
+        assert!(w2.tile(19, 19).unwrap().active());
+        assert_eq!(w2.tile(21, 19).unwrap().frame_x, (54 * 25 + 36) as i16);
+        // The altar refuses a boulder (138) floor.
+        let mut w3 = floor_world();
+        let i = w3.index(30, 20);
+        w3.tiles[i].kind = 138;
+        place_3x2(&mut w3, 30, 19, 26, 0);
+        assert!(!w3.tile(30, 18).unwrap().active());
+        // The 285 arm accepts an active solidTop floor with frameY 0.
+        let mut w4 = floor_world();
+        for col in [39, 40, 41] {
+            let i = w4.index(col, 20);
+            w4.tiles[i].kind = 19; // platform: tileSolidTop, not tileSolid
+            w4.tiles[i].frame_y = 0;
+        }
+        place_3x2(&mut w4, 40, 19, 285, 0);
+        assert!(w4.tile(40, 18).unwrap().active());
+        // … but a framed platform (frameY != 0) refuses.
+        let mut w5 = floor_world();
+        for col in [44, 45, 46] {
+            let i = w5.index(col, 20);
+            w5.tiles[i].kind = 19;
+            w5.tiles[i].frame_y = 18;
+        }
+        place_3x2(&mut w5, 45, 19, 285, 0);
+        assert!(!w5.tile(45, 18).unwrap().active());
     }
 }
