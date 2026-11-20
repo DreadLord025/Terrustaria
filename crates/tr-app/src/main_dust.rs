@@ -271,8 +271,8 @@ fn portal_color(color_index: i32) -> Color {
 /// `Main.rand` pitch draw). `Main.TeleportEffect`'s Item6/Item8 cues
 /// (`Main.cs:13239`/`:13258`/`:13286`/`:13320`/`:13367`).
 fn item_cue(app: &mut App, style: i32, x: f32, y: f32, key: RngKey) {
-    app.audio
-        .play_npc_item_cue(style, x, y, app.rngs.stream(key));
+    let rng = app.rngs.stream(key);
+    app.audio.play_npc_item_cue(style, x, y, rng);
 }
 
 /// `Main.TeleportEffect` (`Main.cs:13233-13464`) — THIS BATCH's styles
@@ -428,8 +428,8 @@ pub(crate) fn teleport_effect(
             // `PlaySound(19, Center.ToVector2(), 0)` — the int overload's
             // style-0 splash (case 19, `LegacySoundPlayer.cs:871-888`: the
             // playing guard, then ONE `Next(-10, 11)` pitch draw).
-            app.audio
-                .play_splash_sound(0, cx as f32, cy as f32, app.rngs.stream(key));
+            let rng = app.rngs.stream(key);
+            app.audio.play_splash_sound(0, cx as f32, cy as f32, rng);
         }
         // `:13352-13369` — site 8 (`:13358`): the potion-of-return column,
         // type 35, the same shape as style 5, the Item8 cue AFTER the loop.
