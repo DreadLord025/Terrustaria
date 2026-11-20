@@ -68,6 +68,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "dirt wall backgrounds" => PassMessage::Gen(3),
         // WorldGen.cs:11963 (Clay, W4-d101 — Lang.gen[6]).
         "clay" => PassMessage::Gen(6),
+        // WorldGen.cs:12012 (Small Holes, W4-d101 — Lang.gen[7]).
+        "small holes" => PassMessage::Gen(7),
         // JunglePass.cs:21.
         "jungle" => PassMessage::Gen(11),
         // WorldGen.cs:12472.

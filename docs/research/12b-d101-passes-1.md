@@ -80,7 +80,7 @@ stay in place untouched.
 | Mount Caves | (this commit) | landed (code-only; 512-pin unchanged, default re-pin deferred) |
 | Dirt Wall Backgrounds | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Clay | (this commit) | landed (code-only; hash re-pin deferred to gate) |
-| Small Holes | — | pending |
+| Small Holes | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Dirt Layer Caves | — | pending |
 | Rock Layer Caves | — | pending |
 | Generate Ice Biome | — | pending |

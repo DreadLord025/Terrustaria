@@ -338,6 +338,125 @@ pub(crate) fn pass_clay(world: &mut World, rng: &mut Rng, layers: &Layers) {
     }
 }
 
+/// `GenVars.smallHolesBeachAvoidance` (`WorldGen.cs:11204`):
+/// `beachSandRandomCenter + 20` = (275 + 5 + 40) + 20 = 340
+/// (`:11191-11192`). Shared by Small Holes and Dirt Layer Caves.
+const SMALL_HOLES_BEACH_AVOIDANCE: i32 = 340;
+
+/// The `Small Holes` pass (`WorldGen.cs:12008-12066`): `area * 0.0015`
+/// PAIRED diggers — one `Next(5) == 0` lottery per pair picks the type for
+/// BOTH runners (-2 water fill on a hit, -1 air otherwise), then the small
+/// (2..5, 2..20) and the large (8..15, 7..30) runners each roll their own
+/// point through the beach + spawn-middle rejection loop. The
+/// tenth-anniversary arm's `while` condition (`:12027`) is the C#'s
+/// verbatim `x < 0.2·w && x > 0.8·w` — unsatisfiable, so the loop never
+/// re-rolls; kept as the literal condition here (never true). Remix
+/// shrinks the runners below the rock line (×0.8/×0.9 small, ×0.7/×0.9
+/// large). Draw order per pair: `Next(5)` → x → y → rejections → strength
+/// → steps → runner ledger → x → y → rejections → strength → steps →
+/// runner ledger.
+pub(crate) fn pass_small_holes(
+    world: &mut World,
+    rng: &mut Rng,
+    layers: &Layers,
+    gv: &GenVars,
+) {
+    let (width, height) = (world.width, world.height);
+    let flags = world.seeds;
+    let remix = flags.contains(SeedFlags::REMIX);
+    let anniversary = flags.contains(SeedFlags::TENTH_ANNIVERSARY);
+    let world_surface = layers.world_surface;
+    let surface_high = layers.surface_high;
+    let rock_layer = layers.rock_layer;
+    let count = ((width * height) as f64 * 0.0015) as i32;
+    for _ in 0..count {
+        // The per-pair type lottery (`:12018-12022`).
+        let kind = if rng.range(0, 5) == 0 { -2 } else { -1 };
+        // --- the small runner (`:12023-12048`) ---
+        let mut x = rng.range(0, width);
+        let mut y = rng.range(surface_high as i32, height);
+        if !remix && anniversary {
+            // The C#'s unsatisfiable condition, verbatim (`:12027`).
+            while (x as f64) < width as f64 * 0.2
+                && (x as f64) > width as f64 * 0.8
+                && (y as f64) < world_surface
+            {
+                x = rng.range(0, width);
+                y = rng.range(surface_high as i32, height);
+            }
+        } else {
+            while small_holes_rejected(x, y, width, surface_high, world_surface) {
+                x = rng.range(0, width);
+                y = rng.range(surface_high as i32, height);
+            }
+        }
+        let mut strength = rng.range(2, 5);
+        let mut steps = rng.range(2, 20);
+        if remix && (y as f64) > rock_layer {
+            strength = (strength as f64 * 0.8) as i32;
+            steps = (steps as f64 * 0.9) as i32;
+        }
+        dig(world, rng, x, y, strength, steps, kind, layers, gv);
+        // --- the large runner (`:12049-12063`) ---
+        let mut x = rng.range(0, width);
+        let mut y = rng.range(surface_high as i32, height);
+        while small_holes_rejected(x, y, width, surface_high, world_surface) {
+            x = rng.range(0, width);
+            y = rng.range(surface_high as i32, height);
+        }
+        let mut strength = rng.range(8, 15);
+        let mut steps = rng.range(7, 30);
+        if remix && (y as f64) > rock_layer {
+            strength = (strength as f64 * 0.7) as i32;
+            steps = (steps as f64 * 0.9) as i32;
+        }
+        dig(world, rng, x, y, strength, steps, kind, layers, gv);
+    }
+}
+
+/// The Small Holes rejection gate (`WorldGen.cs:12035`, `:12051`): the
+/// beach margins above `worldSurfaceHigh`, or the spawn middle
+/// `(0.45, 0.55)` above `worldSurface` (strict inequalities here).
+fn small_holes_rejected(x: i32, y: i32, width: i32, surface_high: f64, world_surface: f64) -> bool {
+    ((x < SMALL_HOLES_BEACH_AVOIDANCE || x > width - SMALL_HOLES_BEACH_AVOIDANCE)
+        && (y as f64) < surface_high)
+        || ((x as f64) > width as f64 * 0.45
+            && (x as f64) < width as f64 * 0.55
+            && (y as f64) < world_surface)
+}
+
+/// One `TileRunner(type)` dig with the depth anchors the -2 water fill
+/// reads (`WorldGen.cs:76895-76909`: `GenVars.waterLine`/`lavaLine`) — the
+/// lane's shared runner call for the negative-kind diggers.
+#[allow(clippy::too_many_arguments)]
+fn dig(
+    world: &mut World,
+    rng: &mut Rng,
+    x: i32,
+    y: i32,
+    strength: i32,
+    steps: i32,
+    kind: i32,
+    layers: &Layers,
+    gv: &GenVars,
+) {
+    tile_runner(
+        world,
+        rng,
+        x,
+        y,
+        strength as f64,
+        steps,
+        kind,
+        layers.world_surface,
+        &TileRunnerOpts {
+            water_line: gv.water_line as f64,
+            lava_line: gv.lava_line as f64,
+            ..TileRunnerOpts::for_world(world)
+        },
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -537,6 +656,46 @@ mod tests {
         let run = || {
             let mut world = flat_world(600, 240, 50);
             pass_clay(&mut world, &mut Rng(0xC1A0), &layers_for(50, 240));
+            world.tiles
+        };
+        assert_eq!(run(), run());
+    }
+
+    /// Small Holes: the diggers open air below `worldSurfaceHigh` and the
+    /// 1-in-5 lottery fills some pockets with liquid between the water and
+    /// lava lines (`WorldGen.cs:12019-12021`, the runner's -2 arm).
+    #[test]
+    fn small_holes_dig_air_and_fill_water_pockets() {
+        let (w, h) = (1000, 400);
+        let surface = 100;
+        let mut world = flat_world(w, h, surface);
+        let layers = layers_for(surface, h);
+        let mut gv = GenVars::default();
+        gv.water_line = 200;
+        gv.lava_line = 300;
+        pass_small_holes(&mut world, &mut Rng(0x5301), &layers, &gv);
+        // Air opened below the surface-high line.
+        let air = (layers.surface_high as i32..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| world.tile(x, y).is_some_and(|t| !t.active()))
+            .count();
+        assert!(air > 0, "no holes dug");
+        // Some -2 pocket carries water between the lines.
+        let water = (200..300)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .any(|(x, y)| world.tile(x, y).is_some_and(|t| t.liquid > 0));
+        assert!(water, "no water pocket from the Next(5) lottery");
+    }
+
+    /// Small Holes is deterministic for a seed (the a == b contract).
+    #[test]
+    fn small_holes_are_deterministic_for_a_seed() {
+        let run = || {
+            let mut world = flat_world(600, 300, 60);
+            let mut gv = GenVars::default();
+            gv.water_line = 150;
+            gv.lava_line = 220;
+            pass_small_holes(&mut world, &mut Rng(0x5301), &layers_for(60, 300), &gv);
             world.tiles
         };
         assert_eq!(run(), run());
