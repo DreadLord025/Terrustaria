@@ -39376,3 +39376,18 @@ dust-only, no explicit draw. The `DeathSnapshot` gains `rot`/`direction`; the
 module gains `lerp_color`/`safe_normalize`/`rotation_vector` helpers. Witnesses:
 the walking-position counts/noGravity, the 384 lerp colour, the 336/344/349 +
 plain-7 bursts — WRITTEN NOT RUN.
+
+### Batch 7 (10 kinds, the old-velocity-kick + bee `:74384-74564` bursts)
+
+265 (15× dust-163 alpha 100 scale 1.2, noGravity/vel×1.2 −= oldVel×0.3), 355
+(the shape, dust-205), 304 (3× dust-182 scale 0.8, same writes), 263 (15×
+dust-92 speed vel, alpha Next(0,101) + scale 1+Next(40)*0.01 BEFORE the spawn,
+noGravity/vel×2), 261 (15× dust-148 Direct vel×2/Y−=0.4 + 3× dust-228 Direct
+vel×2/noLight/scale×0.8/Y−=0.3), 928 (25× dust-5 speed vel White scale 1.3),
+227 (15× dust-157 noGravity + vel += oldVel×NextFloat + scale 1.5), 120 (10×
+dust-67 at pos−vel speed vel alpha 100, first 5 noGravity, all vel×0.2),
+181/189/566 (6× dust-150 speed vel alpha 50 noGravity scale 1), 206/225 (5×
+dust-40, gated `type != 206 || alpha < 255`). The `DeathSnapshot` gains `alpha`;
+the 263 alpha/scale draws ride BEFORE the spawn, the 227 NextFloat AFTER.
+Witnesses: the old-vel-kick counts, the 263 draws, the 206 alpha gate, the
+261/928/227/120/181 bursts — WRITTEN NOT RUN.
