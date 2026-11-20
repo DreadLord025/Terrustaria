@@ -1780,11 +1780,14 @@ fn step_mushroom(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // The underground-desert veto reads the published rect (W4-g42 G2 —
+    // `GenVars.UndergroundDesertLocation`, the desert pass's product).
     biomes::pass_mushroom(
         world,
         gv.spans(),
         gv.layers().rock_layer,
         gv.layers().world_surface,
+        gv.underground_desert,
         &mut streams.pass_rng("GlowingMushroomPatches"),
     );
 }

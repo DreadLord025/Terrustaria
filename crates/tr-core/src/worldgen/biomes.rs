@@ -867,17 +867,22 @@ pub(crate) fn pass_mushroom(
     spans: &BiomeSpans,
     rock_layer: f64,
     world_surface: f64,
+    desert: Option<super::desert::Rect>,
     rng: &mut super::Rng,
 ) {
     let _ = spans;
     let w = world.width;
     let h = world.height;
     // `num = maxTilesX / 700.0`, clamped to maxMushroomBiomes = 50
-    // (`:12566-12570`).
-    let max_biomes = 50;
-    let clusters = ((w as f64 / 700.0) as i32).min(max_biomes);
+    // (`:12566-12570`). The loop bound is the DOUBLE comparison
+    // `(double)k < num` (`:12570`) — a fractional count runs its ceiling
+    // (width 6400 → 9.142… → 10 clusters; W4-g42 G1).
+    let max_biomes = 50usize;
+    let num = (w as f64 / 700.0).min(max_biomes as f64);
     let mut positions: Vec<(i32, i32)> = Vec::new();
-    for _ in 0..clusters {
+    let mut k = 0i32;
+    while (k as f64) < num {
+        k += 1;
         let mut attempts = 0;
         loop {
             // The middle 60% band, widening to 95% after w/4 attempts
@@ -888,14 +893,17 @@ pub(crate) fn pass_mushroom(
                 rng.range((w as f64 * 0.2) as i32, (w as f64 * 0.8) as i32)
             };
             // The non-remix band: rockLayer + 50 .. maxTilesY - 300 (`:12586`).
+            // The remix/errorWorld Y arms (`:12586-12597`) are the documented
+            // seed-lane skips (research/12j-g42); the `.max(lo + 1)` clamp is
+            // the sub-vanilla width guard.
             let lo = rock_layer as i32 + 50;
             let hi = (h - 300).max(lo + 1);
             let y = rng.range(lo, hi);
-            attempts += 1;
-            let mut reject = shroom_site_rejected(world, x, y);
+            let mut reject = shroom_site_rejected(world, x, y, desert);
             if !reject {
                 // The 500-tile separation from the accepted patches
-                // (`:12636-12645`).
+                // (`:12636-12645`) — `Vector2D.Distance < 500`, the squared
+                // compare is the same predicate.
                 if positions
                     .iter()
                     .any(|(px, py)| (px - x) * (px - x) + (py - y) * (py - y) < 500 * 500)
@@ -903,20 +911,29 @@ pub(crate) fn pass_mushroom(
                     reject = true;
                 }
             }
-            if reject || positions.len() >= max_biomes as usize {
-                if attempts <= w / 2 {
-                    continue;
+            // `num2++` then the `num2 > maxTilesX / 2` break (`:12656-12660`).
+            attempts += 1;
+            if !reject {
+                // The accept gate `!flag && numMushroomBiomes <
+                // maxMushroomBiomes` (`:12646`): a valid site at the cap
+                // places NOTHING and exits the while (flag stays false) —
+                // it does not retry (W4-g42 G1).
+                if positions.len() < max_biomes {
+                    shroom_patch(world, x, y, world_surface, rock_layer, rng);
+                    for _ in 0..5 {
+                        let dx = x + rng.range(-40, 41);
+                        let dy = y + rng.range(-40, 41);
+                        shroom_patch(world, dx, dy, world_surface, rock_layer, rng);
+                    }
+                    // The position records AFTER the six patches (`:12653-
+                    // 12655`).
+                    positions.push((x, y));
                 }
                 break;
             }
-            positions.push((x, y));
-            shroom_patch(world, x, y, world_surface, rock_layer, rng);
-            for _ in 0..5 {
-                let dx = x + rng.range(-40, 41);
-                let dy = y + rng.range(-40, 41);
-                shroom_patch(world, dx, dy, world_surface, rock_layer, rng);
+            if attempts > w / 2 {
+                break;
             }
-            break;
         }
     }
     // The SpreadGrass sweep over the cavern band (`:12679-12693`): every active
@@ -958,9 +975,12 @@ pub(crate) fn pass_mushroom(
 }
 
 /// The 100-tile rejection scan (`:12611-12635`): a live patch of ice, the
-/// desert sands, the jungle grass, the other caves' tiles or the out-of-world
-/// edge vetoes the site.
-fn shroom_site_rejected(world: &World, x: i32, y: i32) -> bool {
+/// desert sands, the jungle grass, the other caves' tiles, the underground
+/// desert rect (`GenVars.UndergroundDesertLocation.Contains`, `:12630-12634`
+/// — W4-g42 G2) or the out-of-world edge vetoes the site. The dualDungeons
+/// bounds veto (`:12618-12627`) is the documented seed-lane skip (no
+/// potential-dungeon-bounds model).
+fn shroom_site_rejected(world: &World, x: i32, y: i32, desert: Option<super::desert::Rect>) -> bool {
     let (w, h) = (world.width, world.height);
     let radius = 100;
     let mut l = x - radius;
@@ -972,6 +992,12 @@ fn shroom_site_rejected(world: &World, x: i32, y: i32) -> bool {
             }
             if let Some(t) = world.tile(l, m) {
                 if t.active() && matches!(t.kind, 147 | 161 | 162 | 60 | 368 | 367) {
+                    return true;
+                }
+            }
+            // `Rectangle.Contains(new Point(l, m))` — the half-open rect.
+            if let Some(d) = desert {
+                if l >= d.left() && l < d.right() && m >= d.top() && m < d.bottom() {
                     return true;
                 }
             }
@@ -1010,9 +1036,11 @@ fn shroom_patch(
     let num4 = num2 - 1.0;
     let mut num5 = num;
     let (mut px, mut py) = (i as f64, j as f64 - num2 * 0.3);
+    // `Next(-200, -100)` (`:79879`) — exclusive hi, W4-g42 G3 (the old
+    // `-99` was a one-off).
     let (mut vx, mut vy) = (
         rng.range(-100, 101) as f64 * 0.005,
-        rng.range(-200, -99) as f64 * 0.005,
+        rng.range(-200, -100) as f64 * 0.005,
     );
     while num > 0.0 && num2 > 0.0 {
         num -= rng.range(0, 3) as f64;
@@ -1050,7 +1078,14 @@ fn shroom_patch(
                 } else if num12 < num5 * 0.4 * (0.95 + rng.next_f64() * 0.1) {
                     if let Some(t) = world.tile_mut(k, l) {
                         t.kind = TILE_MUD;
-                        t.flags |= FLAG_ACTIVE;
+                        // The first-ring activation guard (`:79925-79928`):
+                        // `num2--` ran at the loop top, so `num2 == num4`
+                        // holds on the FIRST iteration only; the mud write
+                        // activates only that ring's lower half (W4-g42 G3
+                        // — the old port activated EVERY mud write).
+                        if num2 == num4 && (l as f64) > py {
+                            t.flags |= FLAG_ACTIVE;
+                        }
                         if t.wall > 0 {
                             t.wall = WALL_MUSHROOM_UNSAFE;
                         }
@@ -1058,9 +1093,11 @@ fn shroom_patch(
                 }
             }
         }
+        // `vector2D += vector2D2; vector2D.X += vector2D2.X;` (`:79939-
+        // 79940`) — BOTH axes advance, then X advances AGAIN (the vanilla
+        // quirk; W4-g42 G3 — the old port never advanced py).
         px += vx;
-        // The vanilla's `vector2D += vector2D2; vector2D.X += vector2D2.X;`
-        // advances X twice per step — keep the quirk.
+        py += vy;
         px += vx;
         vx += rng.range(-100, 110) as f64 * 0.005;
         vy -= rng.range(0, 110) as f64 * 0.005;
@@ -1156,19 +1193,23 @@ fn shroom_tidy(world: &mut World, i: i32, j: i32, rng: &mut super::Rng) {
                     t.kind = TILE_MUD;
                     t.flags |= FLAG_ACTIVE;
                 }
+                // The vertical re-mud (`:12731-12738`): the C# reads
+                // `tile[num16, num15 - 1]` / `tile[num16, num15 + 1]` — the
+                // INNER column k (= num16) and the OUTER row j (= num15) ±1,
+                // NOT the outer column i / inner row l (W4-g42 G4).
                 if world
-                    .tile(i, l - 1)
+                    .tile(k, j - 1)
                     .is_some_and(|t| t.kind == TILE_MUSHROOM_GRASS)
                 {
-                    if let Some(t) = world.tile_mut(i, l - 1) {
+                    if let Some(t) = world.tile_mut(k, j - 1) {
                         t.kind = TILE_MUD;
                     }
                 }
                 if world
-                    .tile(i, l + 1)
+                    .tile(k, j + 1)
                     .is_some_and(|t| t.kind == TILE_MUSHROOM_GRASS)
                 {
-                    if let Some(t) = world.tile_mut(i, l + 1) {
+                    if let Some(t) = world.tile_mut(k, j + 1) {
                         t.kind = TILE_MUD;
                     }
                 }
@@ -2404,6 +2445,129 @@ mod tests {
         assert!(
             min15 > max64 - 5,
             "15 below, 64 above (15@{min15}, 64@{max64})"
+        );
+    }
+
+    /// W4-g42 G2: the underground-desert rect vetoes a cluster site
+    /// (`WorldGen.cs:12630-12634`) — a site whose 100-box scan touches the
+    /// rect rejects; the same site without the rect accepts.
+    #[test]
+    fn w4_g42_the_desert_rect_vetoes_the_cluster_site() {
+        let (world, _surf, _rock) = flat_world(100, 512, 512);
+        // A rect covering (250, 300)..(270, 320); the site (256, 306) scans
+        // it (the ±100 box, step 3, hits (250, 300) exactly).
+        let desert = super::super::desert::Rect::new(250, 300, 20, 20);
+        assert!(
+            shroom_site_rejected(&world, 256, 306, Some(desert)),
+            "the rect inside the scan box vetoes"
+        );
+        assert!(
+            !shroom_site_rejected(&world, 256, 306, None),
+            "the same site accepts without the rect"
+        );
+        // A rect far outside the scan box never vetoes.
+        let far = super::super::desert::Rect::new(450, 450, 20, 20);
+        assert!(
+            !shroom_site_rejected(&world, 256, 306, Some(far)),
+            "the distant rect is invisible to the scan"
+        );
+    }
+
+    /// W4-g42 G1: the cluster count is the DOUBLE loop bound's ceiling
+    /// (`(double)k < num`, `:12570`) — a 6400-wide world runs 10 clusters
+    /// (6400/700 = 9.142…), not the truncated 9. The witness counts the
+    /// accepted sites on an empty rejection-free world (every site accepts;
+    /// the 500-separation never fires because the first accept ends each
+    /// cluster's while).
+    #[test]
+    fn w4_g42_the_cluster_count_uses_the_double_bound() {
+        // The count formula alone, pinned against the C# comparison for the
+        // three vanilla widths (the full pass on a 6400-wide world is the
+        // gate's job — the formula is the load-bearing delta).
+        let count = |w: i32| -> i32 {
+            let num = (w as f64 / 700.0).min(50.0);
+            let mut k = 0i32;
+            while (k as f64) < num {
+                k += 1;
+            }
+            k
+        };
+        assert_eq!(count(4200), 6, "4200/700 = 6 exact");
+        assert_eq!(count(6400), 10, "6400/700 = 9.142… → 10 (the ceiling)");
+        assert_eq!(count(8400), 12, "8400/700 = 12 exact");
+        assert_eq!(count(512), 1, "512/700 = 0.731… → 1");
+    }
+
+    /// W4-g42 G3: the ShroomPatch first-ring activation guard
+    /// (`:79925-79928`) — only the FIRST ring's lower half activates; later
+    /// rings write the mud kind on possibly-inactive cells. The witness
+    /// runs one patch over an all-inactive world and checks that the mud
+    /// writes outside the first ring's lower half stay inactive.
+    #[test]
+    fn w4_g42_the_shroom_patch_activates_only_the_first_ring_lower_half() {
+        let mut world = World::new("t".into(), 300, 300);
+        // An all-inactive world: every mud write the patch makes is on an
+        // inactive cell, so only the guarded writes activate.
+        let mut rng = Rng(0x5EED);
+        shroom_patch(&mut world, 150, 150, 100.0, 180.0, &mut rng);
+        let mud_active = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_MUD)
+            .count();
+        let mud_inactive = world
+            .tiles
+            .iter()
+            .filter(|t| !t.active() && t.kind == TILE_MUD)
+            .count();
+        assert!(mud_active > 0, "the first ring's lower half activated ({mud_active})");
+        assert!(
+            mud_inactive > 0,
+            "later rings wrote inactive mud ({mud_inactive}) — the old port activated every write"
+        );
+    }
+
+    /// W4-g42 G4: the tidy sweep's vertical re-mud reads the INNER column
+    /// and the OUTER row ±1 (`:12731-12738`: `tile[num16, num15 ± 1]`), not
+    /// the outer column / inner row. The fixture plants a grass tile at
+    /// (k, j-1) — the inner column, outer row −1 — and checks it re-muds
+    /// when the vertical-gap arm fires at (k, l).
+    #[test]
+    fn w4_g42_the_tidy_vertical_remud_reads_the_inner_column() {
+        let mut world = World::new("t".into(), 40, 40);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        };
+        // The grass anchor (i=20, j=20). The 3x3 tidy box is (19..21, 19..21).
+        // The box is processed row-major; the anchor (20,20) is visited
+        // AFTER row 19, so the (21,19) grass must survive the earlier
+        // cells' arms: (19,19)/(20,19) see no horizontal/vertical gap
+        // (their left/right and up/down neighbours are inactive), and
+        // (21,19)'s own arms need both horizontal neighbours active —
+        // (20,19) is inactive, so it stands.
+        put(&mut world, 20, 20, TILE_MUSHROOM_GRASS);
+        // A vertical gap at (k=21, l=20): inactive, with active above/below
+        // (21, 19) and (21, 21) — the vertical re-mud arm fires when the
+        // scan reaches (21, 20).
+        put(&mut world, 21, 21, TILE_MUD);
+        // The discriminator: grass at (k=21, j-1=19) — the C#'s
+        // `tile[num16, num15 - 1]` read re-muds it. The OLD port read
+        // (i=20, l-1=19) instead, an inactive cell — no write.
+        put(&mut world, 21, 19, TILE_MUSHROOM_GRASS);
+        // The seed's first chance(4) is false (hi-word % 4 == 2), so the
+        // random re-grass tail never fires — the assertions are draw-free.
+        let mut rng = Rng(0xC0FFEE);
+        shroom_tidy(&mut world, 20, 20, &mut rng);
+        // The vertical gap (21, 20) re-mudded.
+        assert_eq!(world.tile(21, 20).unwrap().kind, TILE_MUD);
+        assert!(world.tile(21, 20).unwrap().active());
+        // The C# read (k=21, j-1=19): the grass there re-mudded.
+        assert_eq!(
+            world.tile(21, 19).unwrap().kind,
+            TILE_MUD,
+            "the inner-column/outer-row-1 grass re-mudded"
         );
     }
 
