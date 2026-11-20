@@ -478,6 +478,18 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 _ => quick_spawn(rng, out, 4912, 1),
             }
         }
+        // The Destroyer (`Player.cs:7403-7412`).
+        3325 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2113, 1); // Destroyer Mask
+            }
+            // `:7409-7410` — Souls of Might Next(25, 41), Hallowed Bars
+            // Next(20, 36).
+            quick_spawn(rng, out, 548, range(rng, 25, 41));
+            quick_spawn(rng, out, 1225, range(rng, 20, 36));
+            quick_spawn(rng, out, 3355, 1); // Mechanical Wagon Piece
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -589,6 +601,47 @@ mod tests {
             stack: stack as u32,
             prefix,
         });
+    }
+
+    /// The `TryGettingDevArmor` replay (`Player.cs:7885-8026`) for the
+    /// mech-bag twins — the gate + the set pick + the pieces + the two
+    /// torch tails, in the C# order.
+    fn dev_armor_replay(r: &mut UnifiedRandom, want: &mut Vec<BagGrant>, tenth: bool) {
+        if r.next_max(if tenth { 8 } else { 16 }) != 0 {
+            return;
+        }
+        let set = r.next_max(21);
+        let pieces: &[i32] = match set {
+            0 => &[666, 667, 668, 665, 3287],
+            1 => &[1554, 1555, 1556, 1586],
+            2 => &[1554, 1587, 1588, 1586],
+            3 => &[1557, 1558, 1559, 1585],
+            4 => &[1560, 1561, 1562, 1584],
+            5 => &[1563, 1564, 1565, 3582],
+            6 => &[1566, 1567, 1568],
+            7 => &[1580, 1581, 1582, 1583],
+            8 => &[3226, 3227, 3228, 3288],
+            9 => &[3583, 3581, 3578, 3579, 3580],
+            10 => &[3585, 3586, 3587, 3588],
+            11 => &[3589, 3590, 3591, 3592],
+            12 => &[3368, 3921, 3922, 3923, 3924],
+            13 => &[3925, 3926, 3927, 3928, 3929],
+            14 => &[4732, 4733, 4734, 4730],
+            15 => &[4747, 4748, 4749, 4746],
+            16 => &[4751, 4752, 4753, 4750],
+            17 => &[4755, 4756, 4757, 4754],
+            18 => &[5583, 5584, 5585, 5586, 5587],
+            19 => &[5683, 5684, 5685, 5686],
+            _ => &[6137, 6138, 6139, 6140, 6141],
+        };
+        for &p in pieces {
+            spawn_replay(r, want, p, 1);
+        }
+        match set {
+            10 => spawn_replay(r, want, 3024, 4),
+            11 => spawn_replay(r, want, 3599, 4),
+            _ => {}
+        }
     }
 
     #[test]
@@ -1082,6 +1135,56 @@ mod tests {
                 assert_eq!(got, want, "extra {extra} seed {seed}");
                 assert_eq!(got_rng, r, "extra {extra} seed {seed} stream");
             }
+        }
+    }
+
+    #[test]
+    fn w4_f35_destroyer_bag_zero_script_grants_the_whole_arm() {
+        // The zero script: the dev-armor gate HITS (0) and set 0 grants
+        // the five Red pieces FIRST, then the mask 1/7, Souls of Might
+        // 25, Hallowed Bars 20, the Mechanical Wagon Piece — then coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3325, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..9],
+            [666, 667, 668, 665, 3287, 2113, 548, 1225, 3355],
+            "the dev set leads: {its:?}"
+        );
+        assert_eq!(out[6].stack, 25, "Souls Next(25,41) minimum");
+        assert_eq!(out[7].stack, 20, "Bars Next(20,36) minimum");
+        assert!(its[9..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_destroyer_bag_dev_armor_miss_skips_the_set() {
+        // The gate draw 1 misses: no dev set, the arm starts at the mask.
+        let mut rng = ScriptRng::new(&[1, 6]); // dev miss, mask miss
+        let mut out = Vec::new();
+        open_boss_bag(3325, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..3], [548, 1225, 3355], "{its:?}");
+    }
+
+    #[test]
+    fn w4_f35_destroyer_bag_replays_the_csharp_draw_order() {
+        for seed in [29i32, 134134] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3325, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            dev_armor_replay(&mut r, &mut want, false);
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 2113, 1);
+            }
+            spawn_replay(&mut r, &mut want, 548, r.next_range(25, 41));
+            spawn_replay(&mut r, &mut want, 1225, r.next_range(20, 36));
+            spawn_replay(&mut r, &mut want, 3355, 1);
+            money_replay_on(&mut r, 134, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
         }
     }
 
