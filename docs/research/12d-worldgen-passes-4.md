@@ -74,7 +74,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | --- | --- | --- |
 | range doc | 2d9cfcbb | claimed |
 | 28 Floating Island Houses | 93b1938e | landed (code-only; hash re-pin deferred to the gate) |
-| 29 Quick Cleanup | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
+| 29 Quick Cleanup | df067118 | landed (code-only; hash re-pin deferred to the gate) |
+| 30 Hellforge | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
 
 ### Pass 28 — Floating Island Houses (landed)
 
@@ -159,11 +160,32 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   too). Re-pin DEFERRED to the gate; **a == b untouched** + the
   pass-level witness `w4_d104_29_the_cleanup_sweep_replays_and_tidies`.
 
+### Pass 30 — Hellforge (landed)
+
+* **C# read in full**: the pass body `WorldGen.cs:18187-18234` —
+  `num = maxTilesX / 200` forges, each a `while (!flag)` retry: the
+  `Next(1, maxTilesX)` column + `Next(maxTilesY - 250, maxTilesY - 30)`
+  row, the wall 13/14 gate, the drop scan to the first active cell
+  (`j < maxTilesY - 20`), `j--`, `PlaceTile(num3, j, 77)` (the `Place3x2`
+  route `:60079-60083`), the type-77 success check, the 10000-failure
+  valve. The wall-miss arm redraws WITHOUT bumping the failure count
+  (only the place-failure + catch arms do). The `try/catch`'s
+  out-of-bounds reads map to the port's bounds-checked `tile` reads.
+* **Rust**: `structures.rs::pass_hellforge` (+ the `TILE_HELLFORGE`
+  const + the a==b witness), `pipeline.rs` (`step_hellforge` after
+  `quick cleanup`, the skyblock gate), `progress.rs` (`Lang.gen[36]`
+  `:18191`).
+* **RNG**: the retry draws ride the fresh `pass_rng("Hellforge")`
+  stream — no other ledger shifts.
+* **Hash doc**: both pins gain the pass-30 stale-by-design notes.
+  Re-pin DEFERRED to the gate; **a == b untouched** + the pass-level
+  witness `w4_d104_30_the_hellforge_places_and_replays`.
+
 ## Status
 
 - [x] 28 Floating Island Houses
 - [x] 29 Quick Cleanup
-- [ ] 30 Hellforge
+- [x] 30 Hellforge
 - [ ] 31 Spreading Grass
 - [ ] 32 Surface Ore and Stone
 - [ ] 33 Place Fallen Log

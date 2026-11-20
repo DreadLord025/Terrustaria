@@ -1393,6 +1393,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // sweep's only draws are the beach sand drip's per-check `Next(4, 7)`
     // on the fresh `pass_rng("Quick Cleanup")` stream.
     step!("quick cleanup", "Quick Cleanup", step_quick_cleanup),
+    // The vanilla Hellforge slot (`WorldGen.cs:18187`): after Quick
+    // Cleanup (`:17875`), before Spreading Grass (`:18237`) — W4-d104
+    // pass 30. The retry draws ride the fresh `pass_rng("Hellforge")`
+    // stream.
+    step!("hellforge", "Hellforge", step_hellforge),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2647,6 +2652,23 @@ fn step_quick_cleanup(
     );
 }
 
+/// The `Hellforge` pass (`WorldGen.cs:18187-18234`, W4-d104 pass 30):
+/// the hell-house forges on the fresh `pass_rng("Hellforge")` stream.
+/// The `Skyblock.denyAllGeneration` gate rides here.
+fn step_hellforge(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    structures::pass_hellforge(world, &mut streams.pass_rng("Hellforge"));
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3505,7 +3527,8 @@ mod tests {
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("floating island houses"), pos("living trees") + 1);
         assert_eq!(pos("floating island houses") + 1, pos("quick cleanup"));
-        assert!(pos("quick cleanup") < pos("trees"));
+        assert_eq!(pos("quick cleanup") + 1, pos("hellforge"));
+        assert!(pos("hellforge") < pos("trees"));
         assert!(pos("floating islands") < pos("floating island houses"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3517,6 +3540,11 @@ mod tests {
         assert!(cpos("Floating Island Houses") < cpos("Planting Trees"));
         // W4-d104 pass 29: Quick Cleanup follows the houses in the chain.
         assert_eq!(cpos("Quick Cleanup"), cpos("Floating Island Houses") + 1);
+        // W4-d104 pass 30: Hellforge follows Quick Cleanup (Pots sits
+        // between in vanilla but executed earlier — the pre-scaffold
+        // deviation the lane doc records).
+        assert!(cpos("Hellforge") > cpos("Quick Cleanup"));
+        assert!(cpos("Hellforge") < cpos("Planting Trees"));
     }
 
     /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's

@@ -687,3 +687,92 @@ pub(crate) fn pass_hell_forts(
     }
     placed
 }
+
+/// `TileID.Hellforge` (`TileID.cs`: 77) — the 3×2 forge the hell houses
+/// host (`WorldGen.cs:60079-60083` routes it through `Place3x2`).
+pub(crate) const TILE_HELLFORGE: u16 = 77;
+
+/// The `Hellforge` pass (`WorldGen.cs:18187-18234`, W4-d104 pass 30):
+/// `maxTilesX / 200` forges, each a retry loop — the `Next(1, maxTilesX)`
+/// column + the `Next(maxTilesY - 250, maxTilesY - 30)` row, the wall
+/// 13/14 (the hell-house brick walls) gate, the drop to the first active
+/// cell (`j < maxTilesY - 20` bound), then `PlaceTile(num3, j - 1, 77)`
+/// (the `Place3x2` route). The 10000-failure valve ends the retry. The
+/// C#'s `try/catch` covers the out-of-bounds reads — the port's
+/// bounds-checked `tile` reads stand in (a miss counts as a failure).
+pub(crate) fn pass_hellforge(world: &mut World, rng: &mut super::Rng) -> u32 {
+    let num = world.width / 200;
+    let mut placed = 0u32;
+    for _ in 0..num {
+        let mut flag = false;
+        let mut num2 = 0;
+        while !flag {
+            let num3 = rng.range(1, world.width);
+            let mut j = rng.range(world.height - 250, world.height - 30);
+            let wall = world.tile(num3, j).map(|t| t.wall).unwrap_or(0);
+            if wall == 13 || wall == 14 {
+                // The drop scan (`:18205-18208`): the first active cell,
+                // bounded by `maxTilesY - 20`.
+                while !world.tile(num3, j).is_some_and(|t| t.active()) && j < world.height - 20 {
+                    j += 1;
+                }
+                j -= 1;
+                // `PlaceTile(num3, j, 77)` — the `Place3x2` route
+                // (`:60079-60083`), style 0.
+                super::evil::place_3x2(world, num3, j, TILE_HELLFORGE, 0);
+                if world.tile(num3, j).is_some_and(|t| t.kind == TILE_HELLFORGE) {
+                    flag = true;
+                    placed += 1;
+                } else {
+                    num2 += 1;
+                    if num2 >= 10000 {
+                        flag = true;
+                    }
+                }
+            }
+            // The C#'s wall-miss arm draws again with no failure count
+            // (only the place-failure and the catch arms bump `num2`).
+        }
+    }
+    placed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// W4-d104 pass 30: the forge lands on a hell-house wall column's
+    /// floor, and two same-stream runs replay byte-equal (a == b).
+    #[test]
+    fn w4_d104_30_the_hellforge_places_and_replays() {
+        let build = || {
+            let mut w = World::new("hf".into(), 400, 600);
+            // A hell-house block: wall 14 over rows 400..500, the floor
+            // at 500 (the drop scan stops there).
+            for x in 100..140 {
+                for y in 400..500 {
+                    let i = w.index(x, y);
+                    w.tiles[i].wall = 14;
+                }
+                for y in 500..600 {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = TILE_HELL_BRICK;
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                    w.tiles[i].wall = 14;
+                }
+            }
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        let pa = pass_hellforge(&mut a, &mut crate::worldgen::noise::Rng(42));
+        let pb = pass_hellforge(&mut b, &mut crate::worldgen::noise::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b: the pass stream replays");
+        assert_eq!(pa, pb);
+        assert!(pa > 0, "the forge placed ({pa})");
+        assert!(
+            a.tiles.iter().any(|t| t.active() && t.kind == TILE_HELLFORGE),
+            "the 77 tiles exist"
+        );
+    }
+}

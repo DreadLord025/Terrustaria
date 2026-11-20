@@ -177,7 +177,7 @@ vanilla names; **52 of the 106 classic passes have no executed step** —
 `Wood Tree Walls`, `Settle Liquids`, `Oasis`, `Waterfalls`, `Wall Variety`,
 `Life Crystals`, `Statues`, `Surface Chests`, `Water Chests`, `Cave Walls`,
 `Floating Island Houses` (executed — W4-d104 pass 28, `12d-worldgen-passes-4.md`),
-`Quick Cleanup` (executed — W4-d104 pass 29), `Hellforge`, `Spreading Grass`,
+`Quick Cleanup` (executed — W4-d104 pass 29), `Hellforge` (executed — W4-d104 pass 30), `Spreading Grass`,
 `Surface Ore and Stone`, `Place Fallen Log`, `Traps`, `Piles`, `Spawn Point`,
 `Grass Wall`, `Guide`, `Sunflowers`, `Herbs`, `Dye Plants`, `Flowers`,
 `Mushrooms`, `Random Gems`, `Moss Grass`, `Larva`, `Settle Liquids Again`,

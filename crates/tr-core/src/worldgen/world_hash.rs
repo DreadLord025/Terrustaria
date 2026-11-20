@@ -258,6 +258,13 @@ mod tests {
     // (`x < 380 || x > width - 380`) covers the whole sweep width, so the
     // drip's draws and the slope clears move this pin BY DESIGN too —
     // stale, the gate re-pins. The a == b halves stay untouched.
+    // W4-d104 pass 30 (2026-11-21, code-only): the `Hellforge` pass
+    // (`WorldGen.cs:18187-18234`) lands — `maxTilesX / 200` forges retry
+    // onto the hell-house wall columns on the fresh `pass_rng("Hellforge")`
+    // stream. On a 512-wide world the count is 2 and the compact hell
+    // forts' wall-14 columns can host a forge, so this pin moves BY
+    // DESIGN too — stale, the gate re-pins. The a == b halves stay
+    // untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -314,6 +321,10 @@ mod tests {
     // the wall retypes fire across the default world, and the beach sand
     // drip draws on the pass's own stream. Re-pin DEFERRED to the merge
     // gate; the a == b halves stay untouched.
+    // W4-d104 pass 30 (2026-11-21, code-only): the `Hellforge` pass
+    // (above) moves this pin BY DESIGN — the default world's 21 forge
+    // retries place 77 forges in the hell houses. Re-pin DEFERRED to the
+    // merge gate; the a == b halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

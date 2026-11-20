@@ -137,6 +137,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "floating island houses" => PassMessage::Key("WorldGeneration.FloatingIslandHouses"),
         // WorldGen.cs:17879 (Quick Cleanup, W4-d104).
         "quick cleanup" => PassMessage::Key("WorldGeneration.QuickCleanup"),
+        // WorldGen.cs:18191 — Lang.gen[36] (Hellforge, W4-d104).
+        "hellforge" => PassMessage::Gen(36),
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.
