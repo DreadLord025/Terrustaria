@@ -13,8 +13,11 @@
 //! (`player.rs`'s buff scan + `buff_effects*.rs`); this module only ports
 //! the USE side — the sickness gates, the durations/buff ids the item rows
 //! carry, the heal/mana restore and the stack consume. `QuickBuff`
-//! (`Player.cs:5766-6017`) is census-MISSING and deferred (its food-priority
-//! + ShouldBotherUsingThisBuff + mana-pay table is a separate slice).
+//! (`Player.cs:5766-6017`) lands with W4-a5: the food-priority ladder
+//! (`quick_buff_pick_best_food_item`), the slot-order buff ladder and the
+//! last-used `UseSound` play (`quick_buff`). The `ShouldUseItem` /
+//! `ShouldBotherUsingThisBuff` exclusions + the `:5879-5890` mana-pay are
+//! the W4-a5 phase-2 slice (the phase-1 ladder grants verbatim).
 //!
 //! Coordination: `QuickHeal`'s H-key EDGE + the hotbar chooser also land on
 //! the i54 branch (`hotbar.rs` + `world_sim/player.rs`); this module is the
@@ -870,6 +873,261 @@ fn spawn_heal_text(app: &mut App, amount: i32) {
     );
 }
 
+// ---- QuickBuff (W4-a5 phase 1: Player.cs:5766-5870) -----------------------
+//
+// The B-key buff hotkey. Phase 1 ports the ladder proper: the gates, the
+// food-priority pick (`QuickBuff_PickBestFoodItem` :5918-5963 + the
+// `FindFoodPriority` table :5965-5974), the 58-slot inventory scan, the
+// void-bag scan and the last-used `UseSound` play (:5842-5845). The
+// `ShouldUseItem` slice here is the :5869 row gates + the `TryStartUse`
+// can-use gate reduced to the potion arm (the `quick_heal` precedent);
+// the :5878-5914 exclusions (ShouldBotherUsingThisBuff, the mana pay, the
+// pet/603 refusals, the buff-27 trio roll) are the W4-a5 phase-2 slice.
+
+/// `Player.QuickBuff_FindFoodPriority` (`Player.cs:5965-5974`): the three
+/// Well Fed tiers rank 1/2/3 (the [`crate::buffs::is_well_fed`] set),
+/// everything else 0.
+fn quick_buff_find_food_priority(buff_type: i32) -> i32 {
+    match buff_type {
+        26 => 1,
+        206 => 2,
+        207 => 3,
+        _ => 0,
+    }
+}
+
+/// `Player.QuickBuff_PickBestFoodItem` (`Player.cs:5918-5963`): the live
+/// well-fed tier sets the floor (`num = priority + 1`, so only a STRICTLY
+/// higher tier re-feeds), then the 58 inventory slots + the void bag are
+/// scanned for the best food: priority ≥ floor, and among equals the
+/// LONGER `buffTime` wins (`item.buffTime < item2.buffTime || num3 > num`).
+/// The port's 58 slots span the grid + coin + ammo rows (the `quick_heal`
+/// convention); `useVoidBag` reads the per-tick `void_vault_enabled`
+/// refresh (`Player.cs:24550-24553`).
+pub fn quick_buff_pick_best_food_item(app: &App) -> Option<QuickSlot> {
+    let p = app.player.as_ref()?;
+    let mut num = 0; // `:5920`
+    for i in 0..crate::buffs::MAX_BUFFS {
+        if p.buffs.buff_time[i] >= 1 {
+            let num2 = quick_buff_find_food_priority(p.buffs.buff_type[i]);
+            if num <= num2 {
+                num = num2 + 1; // `:5927-5930`
+            }
+        }
+    }
+    // (loc, the stored item's buffTime, its priority) — the C# keeps the
+    // Item reference; the port keeps the two fields the compare reads.
+    let mut best: Option<(QuickSlot, i32, i32)> = None;
+    let mut consider = |slot: ItemSlot, loc: QuickSlot| {
+        if slot.count == 0 || slot.kind == 0 {
+            return; // `!item2.IsAir` (`Item.cs:385-395`)
+        }
+        let Some(def) = registry::get(slot.kind) else {
+            return;
+        };
+        let num3 = quick_buff_find_food_priority(def.buff_type);
+        // `:5939`: num3 > 0 && num3 >= num && (item == null ||
+        // item.buffTime < item2.buffTime || num3 > num).
+        let take = num3 > 0
+            && num3 >= num
+            && match best {
+                None => true,
+                Some((_, best_time, _)) => best_time < def.buff_time || num3 > num,
+            };
+        if take {
+            best = Some((loc, def.buff_time, num3));
+            num = num3;
+        }
+    };
+    for (i, slot) in app.inventory.iter().enumerate() {
+        consider(*slot, QuickSlot::Inventory(i));
+    }
+    for (i, slot) in app.equip.coins.iter().enumerate() {
+        consider(*slot, QuickSlot::Coin(i));
+    }
+    for (i, slot) in app.equip.ammo.iter().enumerate() {
+        consider(*slot, QuickSlot::Ammo(i));
+    }
+    if p.void_vault_enabled {
+        for (i, slot) in p.banks[3].iter().enumerate() {
+            consider(*slot, QuickSlot::VoidBag(i));
+        }
+    }
+    best.map(|(loc, _, _)| loc)
+}
+
+/// `Player.QuickBuff_ShouldUseItem` (`Player.cs:5866-5916`) — the W4-a5
+/// phase-1 slice: the `:5869` row gates (stack/type/buffType/summon) and
+/// the `:5873` `ItemCheck_TryStartUse` can-use gate reduced to the potion
+/// arm (the `quick_heal` precedent — buff potions are NOT potion-flagged,
+/// `Item.cs:4858-4871`, so they pass through sickness). Returns the
+/// `btype` the C# writes through its `out` param. The `:5878-5914`
+/// exclusions + mana pay land with phase 2.
+fn quick_buff_should_use_item(app: &App, loc: QuickSlot) -> Option<i32> {
+    let slot = loc.slot(app);
+    if slot.count == 0 || slot.kind == 0 {
+        return None; // `:5869` stack <= 0 || type <= 0
+    }
+    let def = registry::get(slot.kind)?;
+    if def.buff_type <= 0 || def.summon {
+        return None; // `:5869` buffType <= 0 || summon
+    }
+    let p = app.player.as_ref()?;
+    if potion_use_blocked(p, def) {
+        return None; // `:5873`
+    }
+    Some(def.buff_type) // `:5877`
+}
+
+/// `Player.QuickBuff_UseItemForBuff` (`Player.cs:5848-5864`): the buffTime
+/// 0 → 3600 fallback (`:5850-5854`), `AddBuff(btype, num)` and the
+/// consumable stack-- / TurnToAir (`:5856-5863`).
+fn quick_buff_use_item_for_buff(app: &mut App, loc: QuickSlot, btype: i32) {
+    let slot = loc.slot(app);
+    let Some(def) = registry::get(slot.kind) else {
+        return;
+    };
+    let time = if def.buff_time == 0 { 3600 } else { def.buff_time };
+    if let Some(p) = app.player.as_mut() {
+        p.buffs.add_buff(btype, time); // `:5855`
+    }
+    if def.consumable {
+        loc.consume(app); // `:5856-5863`
+    }
+}
+
+/// One `QuickBuff_ShouldUseItem` → dismount → sound-record → use step of
+/// the `:5803-5819`/`:5824-5840` loops. Returns whether the item was used
+/// (the C# loop's `if` body ran).
+fn quick_buff_ladder_step(
+    app: &mut App,
+    loc: QuickSlot,
+    last_sound: &mut Option<(u16, f32)>,
+) -> bool {
+    let Some(btype) = quick_buff_should_use_item(app, loc) else {
+        return false;
+    };
+    let held = loc.slot(app);
+    if let Some(p) = app.player.as_mut() {
+        // `:5808-5811`/`:5829-5832`: `Mount.DismountsOnItemUse` →
+        // `TryEarlyDismount` (the mount helper carries its own gates).
+        p.try_early_dismount(&app.world);
+    }
+    if let Some(def) = registry::get(held.kind) {
+        // `:5812`/`:5833`: `legacySoundStyle = item2.UseSound` — the LAST
+        // used item's sound wins; it plays once at the tail (`:5842`).
+        *last_sound = def.use_sound.map(|idx| (idx, def.use_sound_pitch));
+    }
+    quick_buff_use_item_for_buff(app, loc, btype); // `:5813`/`:5834`
+    true
+}
+
+/// The `CountBuffs() == Player.maxBuffs` full-bar read (`Player.cs:5773`,
+/// `:5800`, `:5814`, `:5821`, `:5835`) — the leading-run count, NOT a
+/// census (see [`crate::buffs::BuffSlots::count_buffs`]).
+fn quick_buff_bar_full(app: &App) -> bool {
+    app.player
+        .as_ref()
+        .is_some_and(|p| p.buffs.count_buffs() == crate::buffs::MAX_BUFFS as i32)
+}
+
+/// `Player.QuickBuff` (`Player.cs:5766-5846`): the B-key buff hotkey. The
+/// gates (`:5768`): pending inventory actions (the cursor-stack stand-in)
+/// / cursed / CCed / dead / spectating (no port field — single-player,
+/// constants-off like `recall_teleport.rs`'s note) / the full buff bar.
+/// Then the best food (`:5777-5799`, the TryStartUse gate, the early
+/// dismount, the buff grant WITH the 3600 fallback, the consume), the
+/// 58-slot buff ladder (`:5800-5820`) and the void-bag ladder
+/// (`:5821-5841`), each breaking at the full bar. The LAST used item's
+/// `UseSound` plays ONCE at `base.position` (`:5842-5845`, the top-left
+/// like the other quick-use paths). Returns true when any item was used
+/// (the C# is void; the bool is the port's latch-witness seam).
+pub fn quick_buff(app: &mut App) -> bool {
+    {
+        let Some(p) = app.player.as_ref() else {
+            return false;
+        };
+        if app.mouse_item.count > 0
+            || p.buffs.find_buff_index(23).is_some()
+            || p.cced()
+            || p.dead
+        {
+            return false; // `:5768-5771`
+        }
+        if p.buffs.count_buffs() == crate::buffs::MAX_BUFFS as i32 {
+            return false; // `:5773-5776`
+        }
+    }
+    let mut used = false;
+    let mut last_sound: Option<(u16, f32)> = None; // `LegacySoundStyle`
+    // The food arm (`:5777-5799`).
+    if let Some(loc) = quick_buff_pick_best_food_item(app) {
+        let held = loc.slot(app);
+        if let Some(def) = registry::get(held.kind) {
+            let can_use = app
+                .player
+                .as_ref()
+                .is_some_and(|p| !potion_use_blocked(p, def)); // `:5778`
+            if can_use {
+                if let Some(p) = app.player.as_mut() {
+                    p.try_early_dismount(&app.world); // `:5780-5783`
+                }
+                // `:5784`: `legacySoundStyle = item.UseSound`.
+                last_sound = def.use_sound.map(|idx| (idx, def.use_sound_pitch));
+                // `:5785-5798`: the grant + consume (the same body as
+                // UseItemForBuff, with the item's own buffType).
+                quick_buff_use_item_for_buff(app, loc, def.buff_type);
+                used = true;
+            }
+        }
+    }
+    // The 58-slot ladder (`:5800-5820`): the port's grid + coin + ammo
+    // rows in C# inventory order.
+    let inv_n = app.inventory.len();
+    let coin_n = app.equip.coins.len();
+    let ammo_n = app.equip.ammo.len();
+    if !quick_buff_bar_full(app) {
+        for i in 0..(inv_n + coin_n + ammo_n) {
+            let loc = if i < inv_n {
+                QuickSlot::Inventory(i)
+            } else if i < inv_n + coin_n {
+                QuickSlot::Coin(i - inv_n)
+            } else {
+                QuickSlot::Ammo(i - inv_n - coin_n)
+            };
+            if quick_buff_ladder_step(app, loc, &mut last_sound) {
+                used = true;
+                if quick_buff_bar_full(app) {
+                    break; // `:5814-5817`
+                }
+            }
+        }
+    }
+    // The void-bag ladder (`:5821-5841`), gated on `useVoidBag()`.
+    let bag_enabled = app.player.as_ref().is_some_and(|p| p.void_vault_enabled);
+    let bag_n = app.player.as_ref().map_or(0, |p| p.banks[3].len());
+    if !quick_buff_bar_full(app) && bag_enabled {
+        for j in 0..bag_n {
+            if quick_buff_ladder_step(app, QuickSlot::VoidBag(j), &mut last_sound) {
+                used = true;
+                if quick_buff_bar_full(app) {
+                    break; // `:5835-5838`
+                }
+            }
+        }
+    }
+    // `:5842-5845`: `SoundEngine.PlaySound(legacySoundStyle, base.position)`
+    // — ONE play of the last used item's sound, at the top-left.
+    if let Some((idx, pitch)) = last_sound {
+        let pos = app.player.as_ref().map(|p| (p.x, p.y));
+        if let Some((x, y)) = pos {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            app.audio.play_use_sound(idx, x, y, pitch, rng);
+        }
+    }
+    used
+}
+
 // ---- witnesses (S1-P-i37) — WRITTEN NOT RUN (code-only swarm, no compiler) ----
 //
 // The RNG expectations below were derived from a JS mirror of
@@ -1599,6 +1857,159 @@ mod tests {
             assert!(p.buffs.find_buff_index(332).is_none(), "kind {kind}");
             assert!(p.buffs.find_buff_index(333).is_none());
         }
+    }
+
+    // ---- QuickBuff phase 1 (W4-a5, Player.cs:5766-5870) — WRITTEN NOT RUN ----
+
+    /// The food floor: a live tier blocks equal/lower foods, only a
+    /// strictly higher tier re-feeds (`:5922-5932` num = priority + 1).
+    #[test]
+    fn quick_buff_food_pick_respects_the_live_tier_floor() {
+        let mut app = drink_app();
+        // No live food: the highest-priority food wins (4029 Pizza, 207).
+        app.inventory[0] = slot(4009, 1); // Apple, 26, 18000
+        app.inventory[1] = slot(4029, 1); // Pizza, 207, 28800
+        assert_eq!(
+            quick_buff_pick_best_food_item(&app),
+            Some(QuickSlot::Inventory(1))
+        );
+        // A live 206 floor = 3: the Pizza (207) still wins.
+        app.player.as_mut().unwrap().buffs.add_buff(206, 1000);
+        assert_eq!(
+            quick_buff_pick_best_food_item(&app),
+            Some(QuickSlot::Inventory(1))
+        );
+        // A live 207 floor = 4: nothing outranks it — no food pick.
+        app.player.as_mut().unwrap().buffs.add_buff(207, 1000);
+        assert_eq!(quick_buff_pick_best_food_item(&app), None);
+    }
+
+    /// Among equal-priority foods the longer buffTime wins (`:5939`).
+    #[test]
+    fn quick_buff_food_pick_prefers_the_longer_buff_time_at_equal_tier() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(967, 1); // Marshmallow, 26, 3600
+        app.inventory[1] = slot(2425, 1); // Cooked Fish, 26, 28800
+        assert_eq!(
+            quick_buff_pick_best_food_item(&app),
+            Some(QuickSlot::Inventory(1)),
+            "28800 > 3600 at the same tier"
+        );
+    }
+
+    /// The void bag joins the food scan only while enabled (`:5946-5961`).
+    #[test]
+    fn quick_buff_food_pick_scans_the_void_bag_when_enabled() {
+        let mut app = drink_app();
+        app.player.as_mut().unwrap().banks[3][2] = slot(4029, 1);
+        assert_eq!(quick_buff_pick_best_food_item(&app), None, "bag disabled");
+        app.player.as_mut().unwrap().void_vault_enabled = true;
+        assert_eq!(
+            quick_buff_pick_best_food_item(&app),
+            Some(QuickSlot::VoidBag(2))
+        );
+    }
+
+    /// The ladder grants every distinct buff potion, consumes the stacks,
+    /// skips summon staffs, and plays ONE use sound at the tail.
+    #[test]
+    fn quick_buff_ladder_grants_consumes_and_skips_summons() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(292, 2); // Ironskin, buff 5, 28800
+        app.inventory[1] = slot(290, 1); // Swiftness, buff 3, 28800
+        app.inventory[2] = slot(1309, 1); // Slime Staff — summon, skipped
+        assert!(quick_buff(&mut app));
+        let p = app.player.as_ref().unwrap();
+        let i5 = p.buffs.find_buff_index(5).expect("Ironskin granted");
+        assert_eq!(p.buffs.buff_time[i5], 28800);
+        assert!(p.buffs.find_buff_index(3).is_some(), "Swiftness granted");
+        assert!(p.buffs.find_buff_index(64).is_none(), "the summon skipped");
+        assert_eq!(app.inventory[0].count, 1);
+        assert_eq!(app.inventory[1].count, 0, "TurnToAir at 0");
+        assert_eq!(app.inventory[1].kind, 0);
+        assert_eq!(app.inventory[2].count, 1, "the staff untouched");
+        // No swing on the quick path (the C# QuickBuff has no animation).
+        assert_eq!(app.swing, 0.0);
+    }
+
+    /// The buffTime 0 → 3600 fallback (`:5785-5789`/`:5850-5854`).
+    #[test]
+    fn quick_buff_zero_buff_time_falls_back_to_3600() {
+        let mut app = drink_app();
+        // 115 Shadow Orb: buffType 19 (light pet), buffTime 0. Phase 1 has
+        // no pet exclusion yet — the grant rides the fallback.
+        app.inventory[0] = slot(115, 1);
+        assert!(quick_buff(&mut app));
+        let p = app.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(19).expect("the 19 grant");
+        assert_eq!(p.buffs.buff_time[i], 3600);
+        assert_eq!(app.inventory[0].count, 1, "not consumable — no drain");
+    }
+
+    /// The food arm feeds first, then the ladder; the well-fed grant's
+    /// IsFedState cleanup keeps only the new tier.
+    #[test]
+    fn quick_buff_feeds_the_best_food_before_the_buff_ladder() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(292, 1); // Ironskin
+        app.inventory[1] = slot(4029, 1); // Pizza, 207
+        assert!(quick_buff(&mut app));
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(207).is_some(), "the food fed");
+        assert!(p.buffs.find_buff_index(5).is_some(), "the ladder ran too");
+        assert_eq!(app.inventory[1].count, 0);
+        assert_eq!(app.inventory[0].count, 0);
+    }
+
+    /// The gates (`:5768-5776`): dead / cursed / CCed / cursor stack /
+    /// the full buff bar (CountBuffs' leading-run quirk included).
+    #[test]
+    fn quick_buff_gates_dead_cursed_cced_cursor_and_the_full_bar() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(292, 1);
+        app.player.as_mut().unwrap().dead = true;
+        assert!(!quick_buff(&mut app));
+        let mut app2 = drink_app();
+        app2.inventory[0] = slot(292, 1);
+        app2.player.as_mut().unwrap().buffs.add_buff(23, 600);
+        assert!(!quick_buff(&mut app2));
+        let mut app3 = drink_app();
+        app3.inventory[0] = slot(292, 1);
+        app3.player.as_mut().unwrap().frozen = true;
+        assert!(!quick_buff(&mut app3), "CCed (frozen) blocks");
+        let mut app4 = drink_app();
+        app4.inventory[0] = slot(292, 1);
+        app4.mouse_item = slot(2, 1);
+        assert!(!quick_buff(&mut app4));
+        // The full bar: 44 leading non-empty slots (CountBuffs == 44).
+        let mut app5 = drink_app();
+        app5.inventory[0] = slot(292, 1);
+        {
+            let p = app5.player.as_mut().unwrap();
+            for i in 0..crate::buffs::MAX_BUFFS {
+                p.buffs.buff_type[i] = 5;
+                p.buffs.buff_time[i] = 100;
+            }
+        }
+        assert!(!quick_buff(&mut app5), "the full bar refuses");
+        assert_eq!(app5.inventory[0].count, 1);
+    }
+
+    /// `CountBuffs`' verbatim quirk (`Player.cs:5483-5494`): the read index
+    /// is the RUNNING COUNT, so a hole mid-bar stops the count — a plain
+    /// census would say 44, the C# says 22.
+    #[test]
+    fn count_buffs_counts_the_leading_run_not_a_census() {
+        let mut b = crate::buffs::BuffSlots::default();
+        // Fill every slot, then punch a hole at 22.
+        for i in 0..crate::buffs::MAX_BUFFS {
+            b.buff_type[i] = 5;
+            b.buff_time[i] = 100;
+        }
+        assert_eq!(b.count_buffs(), 44);
+        b.buff_type[22] = 0;
+        b.buff_time[22] = 0;
+        assert_eq!(b.count_buffs(), 22, "the leading run stops at the hole");
     }
 
     #[test]
