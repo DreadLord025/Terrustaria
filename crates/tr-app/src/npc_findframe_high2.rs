@@ -385,10 +385,14 @@ pub fn find_frame_high2(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput)
 /// `npc_findframe_a::find_frame_kind` shape, keyed on the vanilla id
 /// because the `NpcKind` rows do not exist yet — the roster wave
 /// `task/W4-d39-npc-kinds-351-420` owns them). Returns `None` for every
-/// id outside this wave's 12.
+/// id outside this wave's 12 kinds / 13 ids (the W4-g7 wire-2 keep-one
+/// folds the d48 ScorpionBlack 366 onto the shared 366/367 C# arm).
 pub fn find_frame_kind_high2(vanilla_type: i16) -> Option<FindFrameKind> {
     Some(match vanilla_type {
-        367 => FindFrameKind::Scorpion,
+        // W4-g7 wire-2 keep-one: the C# groups `case 366 : case 367`
+        // (`NPC.cs:76820-76850`) — the d48 wave-C ScorpionBlack twin
+        // delegates here, so this ONE machine serves both ids.
+        366 | 367 => FindFrameKind::Scorpion,
         374 => FindFrameKind::TruffleWorm,
         375 => FindFrameKind::TruffleWormDigger,
         377 => FindFrameKind::Grasshopper,
@@ -452,9 +456,12 @@ mod tests {
             );
             assert_eq!(find_frame_kind_high2(vanilla), Some(kind), "{kind:?} seam");
         }
-        // The band edges stay outside this wave (d48 owns 355-366,
+        // W4-g7 wire-2 keep-one: the C# `case 366 : case 367` group —
+        // the d48 ScorpionBlack delegates to this Scorpion machine.
+        assert_eq!(find_frame_kind_high2(366), Some(FindFrameKind::Scorpion));
+        // The band edges stay outside this wave (d48 owns 355-365,
         // the next wave owns 435+).
-        assert_eq!(find_frame_kind_high2(366), None);
+        assert_eq!(find_frame_kind_high2(365), None);
         assert_eq!(find_frame_kind_high2(376), None);
         assert_eq!(find_frame_kind_high2(435), None);
         assert_eq!(find_frame_kind_high2(591), None);

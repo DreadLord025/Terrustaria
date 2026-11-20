@@ -186,10 +186,34 @@ impl FindFrameExtra2Kind {
     }
 }
 
+/// The wiring seam: the vanilla `NPC.type` → extra-wave-2 kind map
+/// (the `npc_findframe_low2::find_frame_kind_for_cs_id` shape, keyed
+/// on the vanilla id because the `NpcKind` rows do not exist yet).
+/// W4-g7 wire-2 — added by the wiring lane (the module itself landed
+/// machine-only). Keep-one: the 84/93/94/101/102/103/116/120 twins
+/// ride the d45 `npc_findframe_low2` hook (the g6 wire-1 half — the
+/// machines are verbatim identical, verified arm-by-arm); this lookup
+/// claims only the 7 ids the low band does not carry. The dropped
+/// arms stay as the parity references their module witnesses pin.
+pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameExtra2Kind> {
+    Some(match cs_id {
+        121 => FindFrameExtra2Kind::Slimer,
+        137 => FindFrameExtra2Kind::IlluminantBat,
+        141 => FindFrameExtra2Kind::ToxicSludge,
+        142 => FindFrameExtra2Kind::SantaClaus,
+        148 => FindFrameExtra2Kind::Penguin,
+        149 => FindFrameExtra2Kind::PenguinBlack,
+        181 => FindFrameExtra2Kind::FaceMonster,
+        _ => return None,
+    })
+}
+
 /// The `NPC` fields `FindFrame` reads/writes for these arms:
 /// `frame.Y / num` (the row), `frameCounter`, `spriteDirection`,
 /// `rotation`, and `localAI[0]` (the Slimer's one-shot init writes it,
-/// `NPC.cs:74014-74018`; the penguin group reads it as the colour bank).
+/// `NPC.cs:74014-74018`; the penguin group reads it as the colour bank —
+/// W4-g7 wire-2 routes the bank through `FrameInput::local_ai0` AND
+/// copies the state field both ways, so either feed resolves).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FrameState {
     /// `frame.Y / num` — the sheet row.
