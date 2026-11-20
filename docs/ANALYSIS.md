@@ -39391,3 +39391,18 @@ dust-40, gated `type != 206 || alpha < 255`). The `DeathSnapshot` gains `alpha`;
 the 263 alpha/scale draws ride BEFORE the spawn, the 227 NextFloat AFTER.
 Witnesses: the old-vel-kick counts, the 263 draws, the 206 alpha gate, the
 261/928/227/120/181 bursts — WRITTEN NOT RUN.
+
+### Batch 8 (10 kinds, the center-lerp + count-draw `:72543-73572` bursts)
+
+444 (Next(5,9) dust-171 at Center, vel×0.8 + Lerp→Center 0.5 + noGravity; the
+i14 bullet release stays with i14), 435 (Next(5,10) dust-226, vel×1.6/Y−−/
+Lerp/noGravity), 436 (the shape, dust-220), 462 (the shape, dust-229, position
+−= One×4 before Lerp), 732 (Next(5,10) dust-226, vel = vel×0.5 + baseVel×(i/
+count)×0.7), 631 (Next(5,10) dust-229, −= One×4 + Lerp), 684 (Next(15,25)
+dust-60 colour (255,255,255,0), vel×8×(0.3+0.7×NextFloat) + fadeIn 1.3+NextFloat
+×0.2 + noLight/noGravity + position += vel×4), 625-628 (6× dust-135 alpha 100
+scale 2 noGravity/noLight), 472 (20× dust-30 noGravity vel×0.45 += baseVel×0.9),
+440/606 (Next(3,7) dust-135/182 at Center−vel/2, vel×2/×1.5 noGravity). The
+module gains `lerp_vec`/`center_lerp_burst` helpers; the count draws ride BEFORE
+the spawns, the 684 NextFloats AFTER. Witnesses: the center-lerp count ranges +
+noGravity, the 684 noLight, the 625/472/440/606 bursts — WRITTEN NOT RUN.

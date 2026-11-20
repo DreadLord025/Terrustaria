@@ -72,6 +72,46 @@ fn rotation_vector(angle: f32) -> Vec2 {
     Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
 }
 
+/// `Vector2.Lerp(a, b, t)` (XNA): `a + (b - a) * t` per axis — the center-lerp
+/// death arms' position write.
+fn lerp_vec(a: Vec2, b: Vec2, t: f32) -> Vec2 {
+    a + (b - a) * t
+}
+
+/// The center-lerp dust burst (`:73469-73477` et al.): `Next(count_min,
+/// count_max)` dust of `dust_type` at Center 0×0 alpha 100 scale `scale`, each
+/// `velocity *= vel_mul`, `velocity.Y -= 1`, optionally `position -= One×4`,
+/// then `position = Lerp(position, Center, 0.5)`, `noGravity = true`. The
+/// 435/436/462/631 shape. The count draw rides BEFORE the spawns.
+#[allow(clippy::too_many_arguments)]
+fn center_lerp_burst(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    count_min: i32,
+    count_max: i32,
+    dust_type: i32,
+    scale: f32,
+    vel_mul: f32,
+    subtract_one4: bool,
+) {
+    let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+    let count = rng.next_range(count_min, count_max);
+    for _ in 0..count {
+        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, dust_type, 0.0, 0.0, 100, Color::default(), scale);
+        let d = dust.slot_mut(idx);
+        d.velocity *= vel_mul;
+        d.velocity.y -= 1.0;
+        if subtract_one4 {
+            d.position -= Vec2::ONE * 4.0;
+        }
+        d.position = lerp_vec(d.position, center, 0.5);
+        d.no_gravity = true;
+    }
+}
+
 /// The dying slot's snapshot the death arms read (`base.position`,
 /// `base.width/height`, `base.velocity`, `base.scale`, `base.ai`). Taken at the
 /// death hook BEFORE any other hook mutates the corpse (the C# `Kill()` reads
@@ -564,6 +604,108 @@ fn death_bursts(
         206 | 225 => {
             if s.kind != 206 || s.alpha < 255 {
                 plain_burst(s, dust, rng, ctx, world, 5, 40, 0.0, 0.0, 0, Color::default(), 1.0, None, false);
+            }
+        }
+        // `:73398-73408` — the 444 Xenopopper bubble: Next(5,9) dust-171 at
+        // Center 0×0 alpha 100 scale 1.4, vel×0.8 + position Lerp→Center 0.5 +
+        // noGravity. (The owner-gated bullet release is i14's, not here.)
+        444 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let count = rng.next_range(5, 9);
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 171, 0.0, 0.0, 100, Color::default(), 1.4);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 0.8;
+                d.position = lerp_vec(d.position, center, 0.5);
+                d.no_gravity = true;
+            }
+        }
+        // `:73467-73478` — the 435: Next(5,10) dust-226 at Center 0×0 alpha 100
+        // scale 0.5, vel×1.6 + Y−− + position Lerp→Center 0.5 + noGravity.
+        435 => center_lerp_burst(s, dust, rng, ctx, world, 5, 10, 226, 0.5, 1.6, false),
+        // `:73503-73514` — the 436: the 435 shape, dust-220.
+        436 => center_lerp_burst(s, dust, rng, ctx, world, 5, 10, 220, 0.5, 1.6, false),
+        // `:73515-73527` — the 462: the 435 shape, dust-229, position −= One×4
+        // before the Lerp.
+        462 => center_lerp_burst(s, dust, rng, ctx, world, 5, 10, 229, 0.5, 1.6, true),
+        // `:73479-73491` — the 732: Next(5,10) dust-226 at Center, vel×1.6 + Y−−
+        // then vel = vel×0.5 + baseVel×(i/count)×0.7, position Lerp→Center 0.5,
+        // noGravity.
+        732 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let count = rng.next_range(5, 10);
+            for i in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 226, 0.0, 0.0, 100, Color::default(), 0.5);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.6;
+                d.velocity.y -= 1.0;
+                d.velocity = d.velocity * 0.5 + s.vel * (i as f32 / count as f32) * 0.7;
+                d.position = lerp_vec(d.position, center, 0.5);
+                d.no_gravity = true;
+            }
+        }
+        // `:72552-72564` — the 631: Next(5,10) dust-229 at Center 0×0 alpha 100,
+        // vel×1.6 + Y−− + position −= One×4 then Lerp→Center 0.5 + noGravity.
+        631 => center_lerp_burst(s, dust, rng, ctx, world, 5, 10, 229, 1.0, 1.6, true),
+        // `:73454-73466` — the 684: Next(15,25) dust-60 at Center 0×0 alpha 100
+        // color (255,255,255,0) scale 1.3, vel×8×(0.3+0.7×NextFloat) + fadeIn
+        // 1.3+NextFloat×0.2 + noLight + noGravity + position += vel×4.
+        684 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let count = rng.next_range(15, 25);
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 60, 0.0, 0.0, 100, Color::new(255, 255, 255, 0), 1.3);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 8.0 * (0.3 + 0.7 * rng.next_float());
+                d.fade_in = 1.3 + rng.next_float() * 0.2;
+                d.no_light = true;
+                d.no_gravity = true;
+                d.position += d.velocity * 4.0;
+            }
+        }
+        // `:72543-72551` — the 625-628: 6 dust-135 alpha 100 scale 2, noGravity
+        // + noLight. No explicit draw.
+        625..=628 => {
+            for _ in 0..6 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 135, 0.0, 0.0, 100, Color::default(), 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+            }
+        }
+        // `:73421-73430` — the 472: 20 dust-30, noGravity + vel×0.45 + vel +=
+        // baseVel×0.9. No explicit draw.
+        472 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 30, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 0.45;
+                d.velocity += s.vel * 0.9;
+            }
+        }
+        // `:73553-73562` — the 440: Next(3,7) dust-135 at Center−vel/2 0×0 alpha
+        // 100 scale 2.1, vel×2 + noGravity.
+        440 => {
+            let pos = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5) - s.vel / 2.0;
+            let count = rng.next_range(3, 7);
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, pos, 0, 0, 135, 0.0, 0.0, 100, Color::default(), 2.1);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
+        // `:73563-73572` — the 606: Next(3,7) dust-182 at Center−vel/2 0×0 alpha
+        // 100 scale 1.6, vel×1.5 + noGravity.
+        606 => {
+            let pos = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5) - s.vel / 2.0;
+            let count = rng.next_range(3, 7);
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, pos, 0, 0, 182, 0.0, 0.0, 100, Color::default(), 1.6);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.5;
+                d.no_gravity = true;
             }
         }
         _ => {}
@@ -1296,6 +1438,55 @@ mod tests {
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(active.len(), 6);
             assert!(active.iter().all(|d| d.dust_type == 150 && d.no_gravity && d.scale == 1.0));
+        }
+    }
+
+    /// The center-lerp bursts (435/436/462/631/444/732) take a Next count draw
+    /// then spawn that many dust, all noGravity, position lerped toward the
+    /// centre. The 684 takes Next(15,25) + per-dust NextFloat×2.
+    #[test]
+    fn w4_g65_the_center_lerp_bursts() {
+        let w = world();
+        for (kind, dust_type) in [(435u16, 226), (436, 220), (462, 229), (631, 229), (444, 171), (732, 226)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            // The count is Next(5,9) for 444, Next(5,10) for the rest — in [5,9].
+            assert!((5..=9).contains(&active.len()), "kind {kind} count in range");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity), "kind {kind} type/noGravity");
+        }
+        // 684: Next(15,25) dust-60, noLight + noGravity.
+        let mut dust = DustPool::new();
+        drain(&[snap(684)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert!((15..=24).contains(&active.len()));
+        assert!(active.iter().all(|d| d.dust_type == 60 && d.no_light && d.no_gravity));
+    }
+
+    /// The 625-628 noGravity/noLight burst, the 472 vel-kick burst, and the
+    /// 440/606 Center−vel/2 count bursts.
+    #[test]
+    fn w4_g65_the_625_472_440_606_bursts() {
+        let w = world();
+        for kind in [625u16, 626, 627, 628] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 6);
+            assert!(active.iter().all(|d| d.dust_type == 135 && d.no_gravity && d.no_light));
+        }
+        let mut dust = DustPool::new();
+        drain(&[snap(472)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        assert!(active.iter().all(|d| d.dust_type == 30 && d.no_gravity));
+        for (kind, dust_type) in [(440u16, 135), (606, 182)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert!((3..=6).contains(&active.len()), "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity));
         }
     }
 }
