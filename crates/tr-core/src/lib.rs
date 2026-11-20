@@ -62,6 +62,7 @@ pub mod wind;
 pub mod wld;
 pub mod world;
 pub mod worldgen;
+pub mod worldgen_dust;
 
 pub use tile::Tile;
 pub use unified_random::UnifiedRandom;
