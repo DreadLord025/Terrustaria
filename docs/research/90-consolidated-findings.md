@@ -265,7 +265,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-36-6 | The per-kind/per-tier kill worth — port `GetMonsterPointsWorth` (`DD2Event.cs:546-554` → `:1106`, `:1199`, `:1509`) and drop the constant `KILL_WORTH_T1` | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:186 |
 | R-36-7 | The D1 wave-6 win transition — the `waveNumber`/`currentKillCount` write-back + the victory-scene call (`DD2Event.cs:998-1005`) | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:190 |
 | R-36-9 | The wave-break skip — `IsStandActive` + `RequestToSkipWaitTime` + `AttemptToSkipWaitTime` (`DD2Event.cs:1765-1801`) | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:193 |
-| R-36-10 | `DropMedals` (`DD2Event.cs:802-813`, called at `:405-420`) → the Defender Medal item 3817 | 36 | S | behavioural (loot) | — | 36-cinematics-film.md:196 |
+| R-36-10 | `DropMedals` (`DD2Event.cs:802-813`, called at `:405-420`) → the Defender Medal item 3817 — **DONE** (S1-E-12b/c decisions+wiring; W4-f36 drop-side: rect-truncation fix + 5 witnesses) | 36 | S | behavioural (loot) | — | 36-cinematics-film.md:196 |
 | R-36-13 | The zone metric — `Player.SceneMetrics.CloseEnoughToDD2LanePortal` → `Player.ZoneOldOneArmy` + `NPC.ZoneOldOneArmy` + the `NPC.cs:799` despawn gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:204 |
 | R-36-14 | The OOA's invasion id — set `invasion_type = 3` (`DD2Event.cs:47`) and route the progress through `invasion_progress_icon = 3` | 36 | S | behavioural (UI) | — | 36-cinematics-film.md:207 |
 | R-36-15 | Replace the `DD2Event.Ongoing` stub (`dd2.rs:17-19`) with the world's real flag and re-enable the sentry-persistence gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:210 |

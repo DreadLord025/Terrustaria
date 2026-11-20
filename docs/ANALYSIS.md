@@ -5674,6 +5674,42 @@ the stand-interaction input seam (a separate slice).
 invoked this round. Every citation re-verified against the decompiled
 source.
 
+## The OOA medal drop side (W4-f36)
+
+The `DropMedals` spawn (`DD2Event.cs:802-813`) landed with S1-E-12c's
+wiring; this round closes the DROP side with a fidelity fix + witnesses
+(`world_sim/npcs.rs::dd2_victory_tests`).
+
+* **Rect-overload truncation (fix)** — `:809` calls the obsolete RECT
+  `Item.NewItem(source, (int)position.X, (int)position.Y, (int)Size.X,
+  (int)Size.Y, 3817, numberOfMedals, noBroadcast: true)` overload, whose
+  centre is `new Vector2(X + Width / 2, Y + Height / 2)` on the already-
+  truncated args (`Item.cs:49651` — the `/2` is INT division). The port's
+  `dd2_drop_medals` used the float `Npc::center()` (`x + w/2`), carrying
+  sub-pixel drift into the drop point; it now computes
+  `(x as i32) + (w as i32)/2` per axis — the same convention the coin/gem
+  drops pin (`death.rs`, `Player.cs:54373` → `Item.cs:49651`).
+* **RNG census** — 3817 is NOT in `ItemID.Sets.ItemNoGravity`
+  (`ItemID.cs:1320`), so each stack draws the gravity velocity pair
+  `Next(-30,31)*0.1 / Next(-40,-15)*0.1` (`Item.cs:49749-49750`); the
+  port's pinned triplet+phase rides `spawn_item_drop_px` on the caller's
+  `UpdateNpcs` stream — 3 draws per stack, zero for the scan and for the
+  `medals <= 0` refusal (`stack <= 0` early return, `Item.cs:49660-49663`).
+  `Prefix(0)` draws nothing (`Item.cs:511-514`'s early return; 3817 has no
+  rollable prefix table either) — every medal stack lands prefix 0.
+* **Witnesses (5, WRITTEN NOT RUN — code-only)**: the truncated-centre
+  position (fractional crystal position pins the truncation) + whole
+  stack + prefix 0; one stack per LIVE 548 in `Main.npc` order (a dead
+  crystal and a portal pay nothing — no first-match break, unlike
+  `DropStarterCrystals`); the 3-draws/stack `UpdateNpcs` census with the
+  zero-guard drawing nothing; a win with no live crystal still latches
+  the tier flag + broadcasts but drops nothing and draws nothing; the
+  full per-tier wave-complete rows at the driver (`:405-449` — t1 waves
+  4/5 → 1/1, t2 5/6/7 → 1/3/6, t3 4/5/6/7 → 1/3/11/25), each through
+  `dd2_report_kill` on the real budget tables.
+* `MakeInstanced` (`:810`) stays netplay-only (constants-off). The tier
+  latches' persistence witnesses are W4-d124's slice (untouched here).
+
 ## The Ancient Cultist (M4-EVENT-6)
 
 The Lunar Events' summoner (422, aiStyle 94): the 180-tick ritual
