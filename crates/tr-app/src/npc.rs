@@ -4833,6 +4833,29 @@ impl Npc {
                 }
                 self.integrate_no_tile_collide();
             }
+            // `else if (this.aiStyle == 46)` (`NPC.cs:31129-31346`) — the
+            // Golem's ATTACHED head (246), the style's only user. W4-c5:
+            // the faithful `npc_ai_style46::golem_head_step` claims the
+            // axis (the aiStyle-42 `8ac80b4e` precedent); the stand-in
+            // inside `update_golem_rng`'s GolemHead arm is retired. The
+            // flags ride the LIVE feeds: getGood = the FTW seed (the
+            // style30/43 precedent), the temple/jungle zones = the
+            // player's zone scan (the body arm's precedent). The beams'
+            // `timeLeft = 300` rides the sim drain's timed list
+            // (`world_sim/npcs.rs`, `NPC.cs:31307`/`:31333`).
+            46 => crate::npc_ai_style46::golem_head_step(
+                self,
+                world,
+                player,
+                crate::npc_ai_style46::Style46Flags {
+                    get_good_world: world
+                        .seeds
+                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                    player_zone_temple: player.zones.temple,
+                    player_zone_jungle: player.zones.jungle,
+                },
+                rng,
+            ),
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
             // (`NPC.cs:31347-31350`) - the Golem's fists. The three-way
             // reconcile (TR-D3s48 note) prefers golem-audit's faithful
@@ -17273,131 +17296,32 @@ impl Npc {
             }
             NpcKind::GolemHead => {
                 // The attached head (`aiStyle 46`, `NPC.cs:31129-31346`).
-                // The body-gone self-kill (`:31141-31145`'s
-                // `StrikeNPCNoInteraction(9999)` — the port's hp = 0).
-                if !world.golem_present {
-                    self.hp = 0;
-                    return;
-                }
-                // The snap tether (`:31146-31164`): inside 100 px the
-                // RAW delta (rotation 0), beyond it the 100-normalised
-                // velocity with `rotation = vx * 0.1`. The v1 ran an
-                // invented +9 accel with a +-7 clamp.
-                let (vx, vy, rot) = crate::npc_ai_golem::head_tether_velocity(
-                    cx, cy, world.golem_x, world.golem_y, 1.0,
+                // W4-c5: the faithful `npc_ai_style46::golem_head_step`
+                // owns the machine — the axis `46 =>` claim above routes
+                // the live sim there; this delegate keeps the direct-call
+                // tests (`update_golem`) on the SAME machine (the
+                // `ai_047_golem_fist_family` reconcile precedent). The
+                // stand-in's remaining fold-outs vs the module: the
+                // scale-blind dock/muzzles (the module rides `npc.scale`),
+                // the missing TargetClosest sites (`:31190`/`:31208`/
+                // `:31245`), the velocity-sign facing stand-in (`:31338`'s
+                // tail writes only ai[0]; the facing comes from the
+                // scans), and the missing below-world despawn guard.
+                // The flags mirror the axis claim (FTW seed + the live
+                // zone scan).
+                crate::npc_ai_style46::golem_head_step(
+                    self,
+                    world,
+                    player,
+                    crate::npc_ai_style46::Style46Flags {
+                        get_good_world: world
+                            .seeds
+                            .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                        player_zone_temple: player.zones.temple,
+                        player_zone_jungle: player.zones.jungle,
+                    },
+                    rng,
                 );
-                self.vx = vx;
-                self.vy = vy;
-                self.rotation = rot;
-                // The alpha fade (`:31165-31173`): `ai[1] = 30`.
-                if self.alpha > 0 {
-                    self.alpha = self.alpha.saturating_sub(10);
-                    self.ai[1] = 30.0;
-                }
-                // The fireball cycle (`:31174-31260`): the phase arms
-                // read the CURRENT ai[0] — the half-life phase write
-                // lands at the END (`:31338-31345`), the v1 had it first.
-                if self.ai[0] == 0.0 {
-                    self.ai[1] += 1.0;
-                    let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
-                    self.ai[1] += crate::npc_ai_golem::head_fireball_step(
-                        num, false, mouth, self.hp, self.max_hp,
-                    ) - 1.0;
-                    self.local_ai[0] = if mouth { 1.0 } else { 0.0 };
-                    if self.ai[1] >= 300.0 {
-                        self.ai[1] = 0.0;
-                        // The 8-speed fireball (`:31192-31204`): the v1
-                        // pushed the RAW delta — the normalise was missing.
-                        // W1-6: the invented `.max(0.001)` guard is dropped —
-                        // the C# divides by the RAW sqrt (`:31196`), NaN/inf
-                        // passes through on coincident centres.
-                        let (sx, sy) = (cx, cy + 10.0);
-                        let (mut dvx, mut dvy) = (pcx - sx, pcy - sy);
-                        let d = (dvx * dvx + dvy * dvy).sqrt();
-                        dvx = dvx / d * 8.0;
-                        dvy = dvy / d * 8.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::GOLEM_FIREBALL,
-                            sx, sy, dvx, dvy, 18,
-                        ));
-                    }
-                } else if self.ai[0] == 1.0 {
-                    // The phase-1 turn (`:31209-31224`): the three-way
-                    // about `Center.X +- width`, the +-40 volley offset.
-                    let ox = if pcx < cx - w {
-                        self.head_turn = -1;
-                        -40.0
-                    } else if pcx > cx + w {
-                        self.head_turn = 1;
-                        40.0
-                    } else {
-                        self.head_turn = 0;
-                        0.0
-                    };
-                    self.ai[1] += crate::npc_ai_golem::head_fireball_step(
-                        num, true, false, self.hp, self.max_hp,
-                    );
-                    self.local_ai[0] =
-                        if self.ai[1] < 20.0 || self.ai[1] > 280.0 { 1.0 } else { 0.0 };
-                    if self.ai[1] >= 300.0 {
-                        self.ai[1] = 0.0;
-                        let (sx, sy) = (cx + ox, cy + 10.0);
-                        let (mut dvx, mut dvy) = (pcx - sx, pcy - sy);
-                        // W1-6: raw sqrt, no guard (`:31251` — NaN pass-through).
-                        let d = (dvx * dvx + dvy * dvy).sqrt();
-                        dvx = dvx / d * 8.0;
-                        dvy = dvy / d * 8.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::GOLEM_FIREBALL,
-                            sx, sy, dvx, dvy, 24,
-                        ));
-                    }
-                    // The beam volley (`:31261-31336`): the num688 ladder,
-                    // the RESTORED `60 + Main.rand.Next(600)` trigger
-                    // (`:31278` — one draw per tick, the v1 folded it to
-                    // a flat 300). In-band: the two-shot +-18 at 11; a
-                    // side turn: the single +-30 at 12; both dmg 28 with
-                    // the 3-tick lead and the timeLeft 300 (the sim's
-                    // timed-spawn arm).
-                    self.ai[2] += crate::npc_ai_golem::head_beam_step(
-                        num,
-                        self.hp,
-                        self.max_hp,
-                        !crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0),
-                    );
-                    if self.ai[2] > crate::npc_ai_golem::head_beam_trigger(rng) {
-                        self.ai[2] = 0.0;
-                        let (shots, count) = if self.head_turn == 0 {
-                            ([(-18.0, 11.0), (18.0, 11.0)], 2)
-                        } else if self.head_turn == -1 {
-                            ([(-30.0, 12.0), (0.0, 0.0)], 1)
-                        } else {
-                            ([(30.0, 12.0), (0.0, 0.0)], 1)
-                        };
-                        for (sx, sp) in shots.into_iter().take(count) {
-                            let mut vx = pcx - (cx + sx);
-                            let mut vy = pcy - (cy - 22.0);
-                            // W1-6: raw sqrt, no guard (`:31299`/`:31325`).
-                            let vd = (vx * vx + vy * vy).sqrt();
-                            vx = vx / vd * sp;
-                            vy = vy / vd * sp;
-                            self.wants_hostile_shot.push((
-                                crate::projectile::GOLEM_EYE_BEAM,
-                                cx + sx + vx * 3.0,
-                                cy - 22.0 + vy * 3.0,
-                                vx,
-                                vy,
-                                28,
-                            ));
-                        }
-                    }
-                }
-                // The phase write LAST (`:31338-31345`).
-                self.ai[0] = if self.hp < self.max_hp / 2 { 1.0 } else { 0.0 };
-                self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-                self.sprite_dir = self.facing;
-                self.x += self.vx;
-                self.y += self.vy;
             }
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
                 // The fists (`AI_047_GolemFist`, `NPC.cs:19231-19503`).

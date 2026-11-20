@@ -43,13 +43,12 @@
 //! - `GetMyBalance()` (`:18483-18491`): the port has one session player
 //!   (`statsAreScaledForThisManyPlayers <= 1`) → the 1f base; the
 //!   multiplayer scaling table stays unported (the fists' precedent).
-//! - `Main.getGoodWorld` has no runtime flag in the port yet (the seed
-//!   only rides worldgen) — the wiring passes false; the +3 row is
-//!   ported and witnessed (the S1-D-3-s9 precedent).
-//! - `Main.player[target].ZoneLihzhardTemple`/`ZoneJungle` have no
-//!   `Player` fields in the port — the wiring passes false/false, so the
-//!   enrage ×2 rides whenever the player is out of the (untracked)
-//!   zones; the flags struct keeps the gate complete for the wiring.
+//! - `Main.getGoodWorld` rides the world's FOR_THE_WORTHY seed flag (the
+//!   style30/43 wiring precedent); the +3 row is ported and witnessed.
+//! - `Main.player[target].ZoneLihzhardTemple`/`ZoneJungle` ride the
+//!   player's live zone scan (`player.zones.temple`/`.jungle` — the
+//!   golem body arm's precedent); the flags struct keeps the gate
+//!   complete for the pure witnesses.
 //! - `this.noTileCollide = true` (`:31140`): the port models it as the
 //!   raw `position += velocity` integration at the tail (the
 //!   `integrate_no_tile_collide` shape); `Npc` has no runtime flag.
@@ -62,22 +61,20 @@
 //!   the standing fold of every `wants_hostile_shot` arm.
 //! - The beams' `timeLeft = 300` (`:31307`/`:31333`) rides the sim's
 //!   timed-spawn resolution (`world_sim/npcs.rs`'s DESTROYER_LASER list
-//!   at the shot drain) — GOLEM_EYE_BEAM joins that list at the MERGE
-//!   STEP (the style-48 free head's `:31568` beams carry the same
-//!   override, so the row serves both rounds).
+//!   at the shot drain) — GOLEM_EYE_BEAM is ON that list (the style-48
+//!   free head's `:31568` beams carry the same override, so the row
+//!   serves both rounds; the golem-audit merge landed it).
 //!
-//! ## UNWIRED (the 8ac80b4e / aiStyle-42 precedent)
+//! ## WIRED (W4-c5, the S1-D-3 golem family's merge step)
 //!
-//! The kind arm (`update_golem`'s `GolemHead` branch, `npc.rs`), the
-//! `46 =>` style-axis claim and the FindFrame case-246 `localAI[0]` read
-//! are the S1-D-3 golem family's MERGE STEP: the sibling aiStyle-45/47/48
-//! rounds (body/fists/free head) are rewriting the same `update_golem`
-//! arms and the findframe rounds the same case — this module lands the
-//! faithful machine without touching those contested regions. Until the
-//! wiring, the live head keeps its documented stand-in (the accel tether,
-//! the raw-delta fireballs, the flat-300 beam gate — ROADMAP S1-D-3).
-
-#![allow(dead_code)] // UNWIRED — see the module doc; the wiring is the S1-D-3 merge step.
+//! The aiStyle axis claims `46 =>` (`npc.rs::update_rng_dust`) and
+//! `update_golem_rng`'s `GolemHead` kind arm delegates here (the
+//! `ai_047_golem_fist_family` reconcile precedent — the direct-call tests
+//! ride the same machine); FindFrame case 246 reads the STORED
+//! `local_ai[0]` mouth flag + `local_ai[1]` turn; GOLEM_EYE_BEAM rides
+//! the sim shot drain's `timeLeft = 300` list (`world_sim/npcs.rs`).
+//! The wiring passes the live flags: getGood = the FTW seed, the zones =
+//! the player's zone scan. The fists/body/free-head arms are untouched.
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
