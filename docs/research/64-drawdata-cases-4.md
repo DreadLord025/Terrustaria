@@ -1225,6 +1225,95 @@ Audit notes (R13):
 - No other R13 id has a second-switch row (468's glow is audited at its
   index 195 in R14).
 
+### R14 — fake chest tail, lava lamp, lunar station, chimney, balloons, fireplace, crystal group: 468, 390, 412, 36, 406, 452, 455, 454, 453, 456, 405, 12, 31, 96, 639 (15 ids, indices 195-209)
+
+C# `TileDrawing.cs:5343-5440`. Verbatim (:5367-5417):
+
+```csharp
+		case 406:
+		{
+			tileHeight = 16;
+			if (tileFrameY % 54 >= 36)
+			{
+				tileHeight = 18;
+			}
+			int num39 = Main.tileFrame[typeCache];
+			if (tileFrameY >= 108)
+			{
+				num39 = 6 - tileFrameY / 54;
+			}
+			else if (tileFrameY >= 54)
+			{
+				num39 = Main.tileFrame[typeCache] - 1;
+			}
+			addFrY = num39 * 56;
+			addFrY += tileFrameY / 54 * 2;
+			break;
+		}
+		case 452:
+		{
+			int num34 = Main.tileFrame[typeCache];
+			if (tileFrameX >= 54)
+			{
+				num34 = 0;
+			}
+			addFrY = num34 * 54;
+			break;
+		}
+		case 455:
+		{
+			addFrY = 0;
+			tileTop = 2;
+			int num31 = 1 + Main.tileFrame[typeCache];
+			if (!BirthdayParty.PartyIsUp)
+			{
+				num31 = 0;
+			}
+			addFrY = num31 * 54;
+			break;
+		}
+		case 454:
+			addFrY = Main.tileFrame[typeCache] * 54;
+			break;
+		case 453:
+			addFrY = (Main.tileFrameCounter[typeCache] / 20 + (y - tileFrameY / 18 + x)) % 3 * 54;
+			break;
+		case 456:
+			addFrY = (Main.tileFrameCounter[typeCache] / 20 + (y - tileFrameY / 18 + (x - tileFrameX / 18))) % 4 * 54;
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 468 | shares 441's body (R13) | :5343 | `drawdata.rs:665-669`; glow :6295 → `cases_a.rs:461-470` | DEVIATION (R13 probe residual) + glow ported |
+| 390 | `tileFrame * 36` (LavaLamp) | :5357-5359 | :671-673 | PORTED |
+| 412 | `addFrY = 0; tileTop = 2;` | :5360-5363 | :676-679; glow :6051-6055 → `cases_a.rs:307` (GlowMask 202, rect `(fx, fy+addFrY)`, opaque white) | PORTED (glow unconsumed) |
+| 36 | `tileTop = 2;` (Presents) | :5364-5366 | :681-683 | PORTED |
+| 406 | chimney: height bands + the 3-way row pick + `*56 + fy/54*2` | :5367-5386 | :686-698 — all gates and the two-step addFrY fold | PORTED |
+| 452 | row dropped on `fx >= 54`, `*54` | :5387-5396 | :701-707 | PORTED |
+| 455 | party-gated row | :5397-5408 | static :711-714 (addFrY 0, top 2); full body `cases_b.rs:287-294` (`party_is_up` fed) | PORTED (delegated, wired :700) |
+| 454 | `tileFrame * 54` (Pigronata) | :5409-5411 | :716-718 | PORTED |
+| 453 | counter cycle `%3*54`, x NOT sheet-relative | :5412-5414 | `cases_b.rs:150-152` verbatim | PORTED (delegated, wired) |
+| 456 | counter cycle `%4*54`, both axes sheet-relative | :5415-5417 | `cases_b.rs:155-157` | PORTED (delegated, wired) |
+| 405 | fireplace: height 16/18 + row drop + `*38` | :5418-5432 | :725-735 | PORTED |
+| 12, 31, 96, 639 | `tileFrame * 36` (crystal/orb group) | :5433-5440 | :739-741 (`12 \| 31 \| 96 \| 639 \| 665 \| 696`) | PORTED |
+
+Audit notes (R14):
+- 406's row pick is the trickiest arithmetic in this stretch: `fy >= 108`
+  REVERSES the row (`6 - fy/54`), `54 <= fy < 108` steps back one
+  (`tileFrame - 1`), else the raw row; then `*56` plus the `fy/54*2` padding
+  walk. The port keeps the if/else-if order and folds both adds into one
+  expression — same value.
+- 453 vs 456: 453's cycle uses the RAW `x` (`y - fy/18 + x`) while 456
+  subtracts the frame column from BOTH axes — the port carries the asymmetry
+  (tests `cases_b.rs:490-503` pin both).
+- 455's C# `addFrY = 0` then reassignment is dead-store-folded in the port's
+  static arm; the live `cases_b` body recomputes `num31` exactly (party down →
+  row 0, up → `(1 + tileFrame) * 54`).
+- 412's glow is UNCONDITIONAL (no row gate) with alpha 255 — distinct from
+  the alpha-0 martian/meteor glows; the port's `[255,255,255,255]` matches.
+- No other R14 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
