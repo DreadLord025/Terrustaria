@@ -31683,6 +31683,26 @@ screenshot SHA256s change by construction and must be re-taken when a build
 is next allowed (no pixel-behaviour change вЂ” the same texels, new addresses).
 The E-4b and L-8b branches can now un-skip: their sheet sets fit.
 
+**W4-b4 re-verify + re-pin procedure (2026-11-20, code-only).** The packer
+landed intact (`548fc335` via merge `4791ae7f`; the scout's "unmerged branch"
+note was stale — the branch was merged, then deleted in the wave-2 purge).
+E-4b's gore enumeration landed on main afterwards (`b45c70fc`), so the
+`the_full_gore_and_mount_sheet_set_fits_the_strict_gpu_bound` witness's
+"simulated E-4b additions" now double-enumerate the gore set — the name dedup
+makes the second copy a no-op (first wins, identical pixels), the test stays
+correct. The `skyline_backfills_the_tall_sheets_tail` witness was re-verified
+by hand-trace (bin 98: Tall(42,82)@(0,0), Wide(56,22)@(42,0), Small(32,12)
+backfills at (42,22) — y=22 beats y=82; height 82+2=84). UV-pin audit: no
+absolute atlas-coordinate expectations exist outside the packer's own
+witnesses (all draw UVs ride `SheetRect` at draw time). `tools/atlas_sim.js`
+was repaired for the purge: the L-8b branch ref is gone, so the sim falls
+back to the pinned 25-name additions list (the same list the assets.rs
+witness simulates) and its census now includes the landed gore enumeration.
+The golden re-pin procedure (which goldens, the harness commands, twin-run +
+pixel-diff gates) lives in **`docs/GOLDEN_REPIN.md`** — owed, executed in the
+next build-allowed window. Unblocks: N16 wyvern sheets, S1-L-8b mounts, gore
+draw refinements (each lane re-takes the goldens it touches at its merge).
+
 ## The vines keep their background walls (fix/vines-destroy-walls)
 
 **User report.** Spawned vines destroy background-wall tiles: in mini-caves
