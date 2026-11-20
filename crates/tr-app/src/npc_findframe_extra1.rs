@@ -73,6 +73,18 @@ pub enum FindFrameExtra1Kind {
     Penguin,
     /// `NPCID.PenguinBlack` = 149 — the penguin group.
     PenguinBlack,
+    /// `NPCID.FaceMonster` = 181 — the humanoid fighter group.
+    FaceMonster,
+    /// `NPCID.FloatyGross` = 182 — the floater group.
+    FloatyGross,
+    /// `NPCID.SnowFlinx` = 185 — the humanoid fighter group.
+    SnowFlinx,
+    /// `NPCID.LostGirl` = 195 — `case 195` (the ai[0] pose ladder).
+    LostGirl,
+    /// `NPCID.Nymph` = 196 — the humanoid fighter group.
+    Nymph,
+    /// `NPCID.Lihzahrd` = 198 — the humanoid fighter group.
+    Lihzahrd,
 }
 
 impl FindFrameExtra1Kind {
@@ -85,6 +97,12 @@ impl FindFrameExtra1Kind {
             Self::SantaClaus => 142,
             Self::Penguin => 148,
             Self::PenguinBlack => 149,
+            Self::FaceMonster => 181,
+            Self::FloatyGross => 182,
+            Self::SnowFlinx => 185,
+            Self::LostGirl => 195,
+            Self::Nymph => 196,
+            Self::Lihzahrd => 198,
         }
     }
 
@@ -103,6 +121,16 @@ impl FindFrameExtra1Kind {
             Self::SantaClaus => 25,
             Self::Penguin => 12,
             Self::PenguinBlack => 12,
+            // Main.cs:67102 (entries 180-189): 181 = 16, 182 = 5,
+            // 185 = 12.
+            Self::FaceMonster => 16,
+            Self::FloatyGross => 5,
+            Self::SnowFlinx => 12,
+            // Main.cs:67103 (entries 190-199): 195 = 7, 196 = 14,
+            // 198 = 16.
+            Self::LostGirl => 7,
+            Self::Nymph => 14,
+            Self::Lihzahrd => 16,
         }
     }
 }
@@ -120,6 +148,12 @@ pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameExtra1Kind> {
         142 => FindFrameExtra1Kind::SantaClaus,
         148 => FindFrameExtra1Kind::Penguin,
         149 => FindFrameExtra1Kind::PenguinBlack,
+        181 => FindFrameExtra1Kind::FaceMonster,
+        182 => FindFrameExtra1Kind::FloatyGross,
+        185 => FindFrameExtra1Kind::SnowFlinx,
+        195 => FindFrameExtra1Kind::LostGirl,
+        196 => FindFrameExtra1Kind::Nymph,
+        198 => FindFrameExtra1Kind::Lihzahrd,
         _ => return None,
     })
 }
@@ -309,6 +343,62 @@ pub fn find_frame_extra1(kind: FindFrameExtra1Kind, s: &mut FrameState, i: &Fram
                 s.row = 2 + bank;
             }
         }
+        // The humanoid-group case list (`NPC.cs:68574-68578` carries
+        // 181/185/196/198) → the shared fighter walk
+        // (`NPC.cs:68647-69655`). None is `isLikeATownNPC` (the
+        // `townNPC = true` census over `SetDefaults` carries none of
+        // the four), so `num57` = 0 and the walk wraps at the FULL
+        // `npcFrameCount`; none is `IsTownSlime`, so `num108` = 6 /
+        // `num109` = row 2. None is in the airborne pin list
+        // (`:69647` — 201/202 are, later in this wave), so the air
+        // holds the group's row 1; none is the 140/489 idle-row-1 pair.
+        FindFrameExtra1Kind::FaceMonster
+        | FindFrameExtra1Kind::SnowFlinx
+        | FindFrameExtra1Kind::Nymph
+        | FindFrameExtra1Kind::Lihzahrd => {
+            humanoid_frame_extra1(s, i, kind.frame_count(), 0, false);
+        }
+        // `case 182` in the floater group (`NPC.cs:74823-74884`): the
+        // same machine as the IlluminantBat above — the velocity-sign
+        // flip, the `vx * 0.1` tilt, the 6-tick strip — over the FULL
+        // 5 rows (`num292` = 5; the `--` list 49/51/60/634 does not
+        // carry 182). No dust, no RNG.
+        FindFrameExtra1Kind::FloatyGross => {
+            if i.vx > 0.0 {
+                s.sprite_dir = 1;
+            }
+            if i.vx < 0.0 {
+                s.sprite_dir = -1;
+            }
+            s.rotation = i.vx * 0.1;
+            s.counter += 1.0;
+            if s.counter >= 6.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= 5 {
+                s.row = 0;
+            }
+        }
+        // `case 195` (`NPC.cs:73146-73171`): the LostGirl's pose ladder
+        // — `ai[0]` <3/<6/<9/<12/<15 picks rows 0/1/2/3/4, the `else`
+        // row 5. No counter, no sprite/rotation write; row 6 of the
+        // 7-row sheet is never written by this machine.
+        FindFrameExtra1Kind::LostGirl => {
+            if i.ai[0] < 3.0 {
+                s.row = 0;
+            } else if i.ai[0] < 6.0 {
+                s.row = 1;
+            } else if i.ai[0] < 9.0 {
+                s.row = 2;
+            } else if i.ai[0] < 12.0 {
+                s.row = 3;
+            } else if i.ai[0] < 15.0 {
+                s.row = 4;
+            } else {
+                s.row = 5;
+            }
+        }
     }
 }
 
@@ -394,6 +484,12 @@ mod tests {
             (FindFrameExtra1Kind::SantaClaus, 142, 25),
             (FindFrameExtra1Kind::Penguin, 148, 12),
             (FindFrameExtra1Kind::PenguinBlack, 149, 12),
+            (FindFrameExtra1Kind::FaceMonster, 181, 16),
+            (FindFrameExtra1Kind::FloatyGross, 182, 5),
+            (FindFrameExtra1Kind::SnowFlinx, 185, 12),
+            (FindFrameExtra1Kind::LostGirl, 195, 7),
+            (FindFrameExtra1Kind::Nymph, 196, 14),
+            (FindFrameExtra1Kind::Lihzahrd, 198, 16),
         ];
         for (kind, vanilla, count) in table {
             assert_eq!(kind.vanilla_type(), vanilla, "{kind:?} id");
@@ -413,7 +509,10 @@ mod tests {
     fn the_cs_id_hook_maps_only_the_extra1_ids() {
         for id in 0u16..=697 {
             let mapped = find_frame_kind_for_cs_id(id);
-            let in_set = matches!(id, 121 | 137 | 141 | 142 | 148 | 149);
+            let in_set = matches!(
+                id,
+                121 | 137 | 141 | 142 | 148 | 149 | 181 | 182 | 185 | 195 | 196 | 198
+            );
             assert_eq!(mapped.is_some(), in_set, "cs_id {id}");
         }
     }
@@ -549,6 +648,77 @@ mod tests {
             let mut t = FrameState { local_ai0: 1.0, ..Default::default() };
             find_frame_extra1(FindFrameExtra1Kind::Penguin, &mut t, &i);
             assert_eq!(t.row, 0);
+        }
+    }
+
+    /// The fighter group (`NPC.cs:68574-68578` → `:68647-69655`):
+    /// num57 = 0 so the walk wraps at the FULL count; the air holds
+    /// row 1 (none of the four is in the `:69647` pin list); the idle
+    /// snaps to row 0.
+    #[test]
+    fn the_fighter_group_wraps_at_the_full_count_and_holds_air_row_one() {
+        for (kind, count) in [
+            (FindFrameExtra1Kind::FaceMonster, 16u32),
+            (FindFrameExtra1Kind::SnowFlinx, 12),
+            (FindFrameExtra1Kind::Nymph, 14),
+            (FindFrameExtra1Kind::Lihzahrd, 16),
+        ] {
+            // vx 1 → +3 a tick; row r (r >= 2) lands on tick 3(r-2);
+            // the last walk row count-1 holds 3 ticks, then the wrap.
+            let rows = rows_over(kind, input(1.0, 0.0), 3 * (count as usize - 2) + 1);
+            assert_eq!(rows[0], 2, "{kind:?} floor");
+            assert_eq!(rows[3 * (count as usize - 3)], count - 1, "{kind:?} last row");
+            assert_eq!(rows[3 * (count as usize - 2)], 2, "{kind:?} full-count wrap");
+            let mut s = FrameState { row: 7, counter: 4.0, ..Default::default() };
+            find_frame_extra1(kind, &mut s, &input(1.0, -2.0));
+            assert_eq!((s.row, s.counter), (1, 0.0), "{kind:?} air row 1");
+            find_frame_extra1(kind, &mut s, &input(0.0, 0.0));
+            assert_eq!((s.row, s.counter), (0, 0.0), "{kind:?} idle row 0");
+        }
+    }
+
+    /// The FloatyGross (`NPC.cs:74823-74884`): the floater machine over
+    /// the FULL 5 rows (the `--` list does not carry 182).
+    #[test]
+    fn the_floaty_gross_flaps_five_rows_every_six_ticks() {
+        let mut s = FrameState::default();
+        let i = input(3.0, 0.0);
+        find_frame_extra1(FindFrameExtra1Kind::FloatyGross, &mut s, &i);
+        assert_eq!(s.sprite_dir, 1);
+        assert_eq!(s.rotation, 0.3, "the vx * 0.1 tilt");
+        assert_eq!(
+            rows_over(FindFrameExtra1Kind::FloatyGross, i, 29),
+            vec![
+                0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4,
+                4, 4, 4, 4, 4
+            ]
+        );
+    }
+
+    /// The LostGirl (`NPC.cs:73146-73171`): the ai[0] <3/<6/<9/<12/<15
+    /// ladder over rows 0..5; no counter/sprite/rotation write.
+    #[test]
+    fn the_lost_girl_pose_ladder_reads_ai_zero() {
+        for (ai0, row) in [
+            (0.0f32, 0u32),
+            (2.9, 0),
+            (3.0, 1),
+            (5.9, 1),
+            (6.0, 2),
+            (9.0, 3),
+            (12.0, 4),
+            (14.9, 4),
+            (15.0, 5),
+            (100.0, 5),
+        ] {
+            let mut s = FrameState { counter: 9.0, sprite_dir: -1, rotation: 0.5, ..Default::default() };
+            let mut i = input(1.0, 1.0);
+            i.ai[0] = ai0;
+            find_frame_extra1(FindFrameExtra1Kind::LostGirl, &mut s, &i);
+            assert_eq!(s.row, row, "ai[0] {ai0}");
+            assert_eq!(s.counter, 9.0, "the ladder never touches the counter");
+            assert_eq!(s.sprite_dir, -1, "no sprite write");
+            assert_eq!(s.rotation, 0.5, "no rotation write");
         }
     }
 }
