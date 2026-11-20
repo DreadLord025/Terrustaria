@@ -138,5 +138,5 @@ runtime-side, not the skyblock generator's tail).
 | B6 pipeline wire (dither snake) | (this commit) | landed (code-only; gated, both classic pins unchanged) |
 | A1 Skyblock statics + gate census | (this commit) | landed (code-only; gated, both classic pins unchanged) |
 | A2 SkyblockIsland | (this commit) | landed (code-only; unwired, both classic pins unchanged) |
-| A3 shared tail helpers | — | pending |
+| A3 shared tail helpers | (this commit) | landed (code-only; unwired, both classic pins unchanged) |
 | A4 GenerateSkyBlockWorld + wire | — | pending |

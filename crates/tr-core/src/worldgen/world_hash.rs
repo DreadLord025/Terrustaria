@@ -355,6 +355,12 @@ mod tests {
     // registry seam + SwitchMonolith/SwitchMB), the cloud puffs + grass
     // fringe, the LandmassData ledger. STILL UNWIRED (A4 lands the gated
     // step) — both classic pins stay, a == b untouched.
+    // W4-f24 A3: `seed_tails.rs` ports the skyblock generator's tail helpers
+    // — DoPooEverywhere (WorldGen.cs:2966-2993), DoErrorWorldShuffleBlocks
+    // (:1094-1278 + GetRandomBlock :1084 + SwapTiles :1280 +
+    // errorWorldAdjustment :329), DoAdditionalChangesAroundSpawnIfNeeded
+    // (:24936 + PlaceTorchesAroundSpawn :24989 + RemoveSpecificTilesUnderSpawn
+    // :24953). STILL UNWIRED (A4 lands the gated step) — both pins stay.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
