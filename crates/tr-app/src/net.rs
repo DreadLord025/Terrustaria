@@ -152,6 +152,14 @@ pub mod id {
     /// lifted the parked d93 codec; the host relay is wired, the client cup
     /// FX ride the golf system (parked).
     pub const GOLF_BALL_IN_CUP: u8 = 128;
+    /// `130 FishOutNPC` (`MessageID.cs:274`) — a client fished an NPC out
+    /// (`NetMessage.cs:1528-1532`, `MessageBuffer.cs:4086-4120`). W4-g51
+    /// lifted the parked d92 codec and wired the host spawn arm.
+    pub const FISH_OUT_NPC: u8 = 130;
+    /// `131 TamperWithNPC` (`MessageID.cs:276`) — the host tames an NPC's
+    /// immunity (`NetMessage.cs:1533-1541`, `MessageBuffer.cs:4122-4133`).
+    /// W4-g51 lifted the parked d92 codec and wired the client arm.
+    pub const TAMPER_WITH_NPC: u8 = 131;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -1588,6 +1596,33 @@ pub struct GolfBallInCup {
     pub ball_type: u16,
 }
 
+/// `msg 130 FishOutNPC`'s body (`NetMessage.cs:1528-1532`): `(ushort)` tile
+/// x, `(ushort)` tile y, `(short)` npc type. The host multiplies both
+/// coordinates by 16 and `NPC.NewNPC`s the type (`MessageBuffer.cs:4104-4110`);
+/// type 682 (Red Slime) also flips `NPC.unlockedSlimeRedSpawn` once and
+/// re-pushes `7 WorldData` (`:4095-4103`). The wire carries TILE coordinates
+/// — the sender already divided by 16 (`Player.cs:52425`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FishOutNpc {
+    pub tile_x: u16,
+    pub tile_y: u16,
+    pub npc_type: i16,
+}
+
+/// `msg 131 TamperWithNPC`'s body (`NetMessage.cs:1533-1541`): `(ushort)` npc
+/// slot, `(byte)` kind; kind 1 appends `(int)` immune time + `(short)`
+/// fromWho. The client's kind-1 arm calls `GetImmuneTime(time, fromWho)`
+/// (`MessageBuffer.cs:4128-4131`); a slot ≥ `Main.maxNPCs` tames a throwaway
+/// `new NPC()` instead (`:4127`). The only send site is the 485 statue-break
+/// 582 spawn's `GetImmuneTime(-1, 20)` (`WorldGen.cs:48373-48376`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TamperWithNpc {
+    pub npc: u16,
+    pub kind: u8,
+    /// Present only when `kind == 1` (the `(int)` time + `(short)` fromWho).
+    pub immune: Option<(i32, i16)>,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1707,6 +1742,9 @@ pub enum C2s {
     /// `netMode == 1` only); the host relays it with `ignoreClient = owner`
     /// (`MessageBuffer.cs:4058-4074`).
     GolfBallInCup(GolfBallInCup),
+    /// `130 FishOutNPC` - a client fished an NPC out at the tile point
+    /// (`Player.cs:52423-52426`; the host spawns, `MessageBuffer.cs:4086-4121`).
+    FishOutNpc(FishOutNpc),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1840,6 +1878,10 @@ pub enum S2c {
     /// to everyone but the owner (`MessageBuffer.cs:4067`); the client runs
     /// the cup text/effects (`:4071`, M4-GOLF-1).
     GolfBallInCup(GolfBallInCup),
+    /// `131 TamperWithNPC` - the host tames an NPC's immunity (the 485
+    /// statue-break 582 spawns, `WorldGen.cs:48373-48376`;
+    /// `MessageBuffer.cs:4122-4133`).
+    TamperWithNpc(TamperWithNpc),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1930,6 +1972,7 @@ impl C2s {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::TilePicking(_) => id::TILE_PICKING,
             Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
+            Self::FishOutNpc(_) => id::FISH_OUT_NPC,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2004,6 +2047,9 @@ impl C2s {
             // `NetMessage.cs:1521-1527`: byte owner + ushort x + ushort y +
             // ushort hits + ushort type (the writer's field order).
             Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
+            // `NetMessage.cs:1528-1532`: (ushort)tile x, (ushort)tile y,
+            // (short)npc type.
+            Self::FishOutNpc(f) => w.u16(f.tile_x).u16(f.tile_y).i16(f.npc_type),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2141,6 +2187,12 @@ impl C2s {
                 y: r.u16()?,
                 hits: r.u16()?,
                 ball_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4092-4094`: (ushort)x, (ushort)y, (short)type.
+            id::FISH_OUT_NPC => Self::FishOutNpc(FishOutNpc {
+                tile_x: r.u16()?,
+                tile_y: r.u16()?,
+                npc_type: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2305,6 +2357,7 @@ impl S2c {
             Self::TilePicking(_) => id::TILE_PICKING,
             Self::RemoveRevengeMarker(_) => id::REMOVE_REVENGE_MARKER,
             Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
+            Self::TamperWithNpc(_) => id::TAMPER_WITH_NPC,
         }
     }
 
@@ -2455,6 +2508,15 @@ impl S2c {
             // `NetMessage.cs:1521-1527`: byte owner + ushort x + ushort y +
             // ushort hits + ushort type (the relay reuses the writer case).
             Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
+            // `NetMessage.cs:1533-1541`: (ushort)npc, (byte)kind; kind 1
+            // appends (int)time + (short)fromWho.
+            Self::TamperWithNpc(t) => {
+                let w = w.u16(t.npc).u8(t.kind);
+                match t.immune {
+                    Some((time, from_who)) => w.i32(time).i16(from_who),
+                    None => w,
+                }
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2677,6 +2739,18 @@ impl S2c {
                 hits: r.u16()?,
                 ball_type: r.u16()?,
             }),
+            // `MessageBuffer.cs:4125-4131`: (ushort)npc, (byte)kind; kind 1
+            // appends (int)time + (short)fromWho.
+            id::TAMPER_WITH_NPC => {
+                let npc = r.u16()?;
+                let kind = r.u8()?;
+                let immune = if kind == 1 {
+                    Some((r.i32()?, r.i16()?))
+                } else {
+                    None
+                };
+                Self::TamperWithNpc(TamperWithNpc { npc, kind, immune })
+            }
             _ => return None,
         })
     }
@@ -4799,6 +4873,65 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::GolfBallInCup(d) => assert_eq!(d, g),
             other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `130 FishOutNPC` body byte-pins the tile-coordinate order
+    /// (`NetMessage.cs:1528-1532`: ushort x, ushort y, short type); C2s-only.
+    #[test]
+    fn w4_g51_fish_out_npc_round_trips() {
+        let f = FishOutNpc {
+            tile_x: 100,
+            tile_y: 200,
+            npc_type: 682,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&100u16.to_le_bytes());
+        body.extend_from_slice(&200u16.to_le_bytes());
+        body.extend_from_slice(&682i16.to_le_bytes());
+        let c = C2s::FishOutNpc(f).encode();
+        assert_eq!(c[2], 130);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::FishOutNpc(d) => assert_eq!(d, f),
+            other => panic!("expected 130, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `131 TamperWithNPC` body byte-pins the kind-1 tail
+    /// (`NetMessage.cs:1533-1541`: ushort npc, byte kind, then int time +
+    /// short fromWho ONLY when kind==1); S2c-only. The bare kind-0 body
+    /// carries no tail.
+    #[test]
+    fn w4_g51_tamper_with_npc_round_trips() {
+        let t = TamperWithNpc {
+            npc: 7,
+            kind: 1,
+            immune: Some((20, -1)),
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&7u16.to_le_bytes());
+        body.push(1);
+        body.extend_from_slice(&20i32.to_le_bytes());
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        let f = S2c::TamperWithNpc(t).encode();
+        assert_eq!(f[2], 131);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TamperWithNpc(d) => assert_eq!(d, t),
+            other => panic!("expected 131, got {:?}", other.msg_id()),
+        }
+        // The bare kind-0 body: no tail.
+        let bare = TamperWithNpc {
+            npc: 7,
+            kind: 0,
+            immune: None,
+        };
+        let g = S2c::TamperWithNpc(bare).encode();
+        assert_eq!(&g[3..], &[7, 0, 0]);
+        match S2c::decode(g[2], &mut NetReader::new(&g[3..])).expect("decode") {
+            S2c::TamperWithNpc(d) => assert_eq!(d, bare),
+            other => panic!("expected 131, got {:?}", other.msg_id()),
         }
     }
 

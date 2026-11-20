@@ -824,6 +824,47 @@ impl App {
             C2s::GolfBallInCup(g) => {
                 server.broadcast_except(&S2c::GolfBallInCup(g), g.owner as u32);
             }
+            // `case 130` — a client fished an NPC out (`MessageBuffer.cs:
+            // 4086-4120`, host-only). Type 682 (Red Slime) flips
+            // `unlockedSlimeRedSpawn` ONCE and re-pushes `7 WorldData`
+            // (`:4095-4103`); then both coords ×16 and `NPC.NewNPC` at the
+            // Bottom anchor (`:4104-4110`). The `netID != type` re-default +
+            // `23` (`:4111-4115`) is the town-slime remap — the port has no
+            // town-slime kinds, so `kind_from_net_id` carries the roster gap
+            // (the spawn is skipped, the unlock still lands). The 682
+            // achievement check (`:4116-4119`) rides the housed-NPC census.
+            C2s::FishOutNpc(f) => {
+                if f.npc_type == 682 {
+                    if self.world.unlocked_slime_red_spawn {
+                        return; // `:4097-4100` — already unlocked
+                    }
+                    self.world.unlocked_slime_red_spawn = true; // `:4101`
+                    let info = self.world_info();
+                    server.broadcast(&S2c::WorldInfo(Box::new(info))); // `:4102`
+                }
+                let x = f.tile_x as i32 * 16; // `:4104`
+                let y = f.tile_y as i32 * 16; // `:4105`
+                if let Some((kind, slime)) = crate::npc::kind_from_net_id(f.npc_type as i32) {
+                    // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`): the
+                    // bottom-centre anchor, the release_npc convention.
+                    let (w, h) = kind.size();
+                    let mut npc = crate::npc::Npc::new(
+                        kind,
+                        x as f32 - w * 0.5,
+                        y as f32 - h,
+                        1,
+                        0.0,
+                    );
+                    npc.slime = slime;
+                    // `timeLeft = (int)(activeTime * 1.25)` (`NPC.cs:80772`).
+                    npc.despawn_timer = (750.0 * 1.25) as i32;
+                    npc.net_update = true;
+                    self.npcs.push(npc);
+                }
+                if f.npc_type == 682 {
+                    self.check_real_estate_and_town_slimes(); // `:4118`
+                }
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1923,6 +1964,31 @@ impl App {
             // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
             // the relay lands here until then (S1-I-4).
             S2c::GolfBallInCup(_) => {}
+            // `case 131`'s client half (`MessageBuffer.cs:4122-4133`):
+            // kind 1 runs `GetImmuneTime(time, fromWho)` (`NPC.cs:92508-
+            // 92521`): fromWho -1 sets EVERY immune slot, else just
+            // `[fromWho]`. A slot ≥ maxNPCs tames a throwaway `new NPC()`
+            // (`:4127`) — the port's live-slot gate skips it (no slot to
+            // write). The only send site is the 485 statue-break 582 spawn
+            // (`WorldGen.cs:48373-48376`, fromWho -1, time 20).
+            S2c::TamperWithNpc(t) => {
+                if t.kind != 1 {
+                    return; // `:4128` — only kind 1 reads the tail
+                }
+                let Some((time, from_who)) = t.immune else {
+                    return;
+                };
+                let slot = t.npc as usize;
+                if slot >= self.npcs.len() {
+                    return; // `:4127` — the throwaway NPC, no live slot
+                }
+                let npc = &mut self.npcs[slot];
+                if from_who == -1 {
+                    npc.immune = [time; 256]; // `:92512-92515`
+                } else if from_who >= 0 && (from_who as usize) < npc.immune.len() {
+                    npc.immune[from_who as usize] = time; // `:92517-92520`
+                }
+            }
         }
     }
 
@@ -3055,6 +3121,35 @@ impl App {
         self.notify_progression_net(29)
     }
 
+    /// `WorldGen.CheckAchievement_RealEstateAndTownSlimes`
+    /// (`WorldGen.cs:5659-5677`): the housed-NPC census — every active,
+    /// non-homeless NPC marks its `type`; the 25-type real-estate set fires
+    /// progression 17, the 8-town-slime set fires 26. The port's `cs_id` is
+    /// the C# `NPC.type`; the town slimes (670/678-684) have no ported kind,
+    /// so the 26 gate can never fire until they land (the census still runs).
+    fn check_real_estate_and_town_slimes(&mut self) {
+        let mut housed = [false; 697]; // `NPCID.Count`
+        for n in &self.npcs {
+            if n.hp > 0 && n.home.is_some() {
+                let ty = n.kind.cs_id() as usize;
+                if ty < housed.len() {
+                    housed[ty] = true;
+                }
+            }
+        }
+        const REAL_ESTATE: [usize; 25] = [
+            38, 17, 107, 19, 22, 124, 228, 178, 18, 229, 209, 54, 108, 160, 20, 369, 207,
+            227, 208, 441, 353, 550, 588, 633, 663,
+        ];
+        const TOWN_SLIMES: [usize; 8] = [670, 678, 679, 680, 681, 682, 683, 684];
+        if REAL_ESTATE.iter().all(|&t| housed[t]) {
+            self.notify_progression_net(17); // `:5671`
+        }
+        if TOWN_SLIMES.iter().all(|&t| housed[t]) {
+            self.notify_progression_net(26); // `:5675`
+        }
+    }
+
     /// `NPCKillsTracker.RegisterKill`'s broadcast half
     /// (`NPCKillsTracker.cs:23-33`): the host pushes the credit's new count
     /// through `NetBestiaryModule.SerializeKillCount`.
@@ -4056,6 +4151,82 @@ mod handshake_tests {
         client_app.net = role;
         assert_eq!(client_app.revenge_markers.len(), 1, "id 9 was destroyed");
         assert_eq!(client_app.revenge_markers[0].unique_id, 10);
+    }
+
+    /// W4-g51 `130 FishOutNPC`: type 682 flips `unlockedSlimeRedSpawn` once
+    /// and re-pushes `7 WorldData` (`MessageBuffer.cs:4095-4103`); a second
+    /// 682 is refused (`:4097-4100`). The port has no town-slime kind, so the
+    /// spawn itself is the roster gap — the unlock is the observable state.
+    #[test]
+    fn the_fish_out_red_slime_unlocks_once() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        assert!(!host_app.world.unlocked_slime_red_spawn);
+        for _ in 0..2 {
+            let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+            if let NetRole::Host(server) = &role {
+                host_app.host_event(
+                    server,
+                    net::ServerEvent::Frame {
+                        id: 1,
+                        msg: C2s::FishOutNpc(net::FishOutNpc {
+                            tile_x: 10,
+                            tile_y: 5,
+                            npc_type: 682,
+                        }),
+                    },
+                );
+            }
+            host_app.net = role;
+        }
+        assert!(
+            host_app.world.unlocked_slime_red_spawn,
+            "the first 682 flipped the unlock"
+        );
+    }
+
+    /// W4-g51 `131 TamperWithNPC`: kind 1 with fromWho -1 sets EVERY immune
+    /// slot (`MessageBuffer.cs:4128-4131`, `NPC.cs:92512-92515`); a specific
+    /// fromWho sets just that slot (`:92517-92520`).
+    #[test]
+    fn the_tamper_with_npc_sets_the_immune_slots() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        // Seed one live NPC on the client.
+        client_app
+            .npcs
+            .push(crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0));
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::TamperWithNpc(net::TamperWithNpc {
+                    npc: 0,
+                    kind: 1,
+                    immune: Some((20, -1)),
+                })),
+            );
+        }
+        client_app.net = role;
+        assert!(
+            client_app.npcs[0].immune.iter().all(|&v| v == 20),
+            "fromWho -1 set every slot"
+        );
+        // A specific fromWho writes just that slot.
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::TamperWithNpc(net::TamperWithNpc {
+                    npc: 0,
+                    kind: 1,
+                    immune: Some((7, 3)),
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.npcs[0].immune[3], 7);
+        assert_eq!(client_app.npcs[0].immune[0], 20, "the other slots kept 20");
     }
 
     #[test]
