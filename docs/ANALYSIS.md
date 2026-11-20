@@ -10146,6 +10146,102 @@ The micro-biome decorators over the finished world:
   cannot pass in the compact terrain вЂ” the snow band is a one-row skin
   over the ice shell (`terrain.rs:320-330`), so the biome would be dead
   code until the faithful `Generate Ice Biome` pass lands.
+- **The dead man's chests** (`DeadMansChestBiome`, `DeadMansChestBiome.cs:
+  10-625` — W4-c29, 2026-11-21, **code-only mode: written NOT run**): the
+  faithful port of the Micro Biomes pass's dead-man's-chest block
+  (`WorldGen.cs:20916-20938`) — the `actuallyNoTrapsForRealIMeanIt` veto
+  rides the step adapter (there is NO notTheBees gate here, unlike the
+  explosives block; the `num *= 3.0` trap-world multiplier scales only
+  the progress denominator). The candidate scan
+  (`GetPossibleChestsToTrapify`, `:411-448`) runs FIRST — every chest
+  record whose anchor passes `IsAGoodSpot` (`:450-482`: the 50-fluff
+  bounds, the oceanDepths veto, the style-1 gold chest tile 21
+  `frameX/36 == 1` — the port's `frame_x/18 == 1` convention, the
+  clearable floor two rows down, the 20-tile four-colour `countWires`
+  exclusion, the >=40-cell `countTiles(jungle: false, lavaOk: true)`
+  pocket at maxTileCount 3500) AND whose boulder+dart finds satisfy
+  `AreThereEnoughTraps` (`:163-170`: (boulder OR explosive) AND dart —
+  the explosive finder does NOT run in the scan) AND the 1×1
+  `StructureMap.CanPlace` (padding 10) over the widened
+  `GeneralPlacementTiles` set (21/467/138/664/712/713/714/715 re-allowed,
+  `:419-426`). The finder draws consume the stream even for rejected
+  candidates — the C# order is load-bearing. THEN the `DeadManChests`
+  config roll (Min 10 / Max 20 / WorldWidth,
+  `worldgen_configuration.json:191-195`) draws AFTER the scan
+  (`:20923-20924`), then the pick loop: `Next(candidates.Count)` per
+  iteration, the 3000-attempt budget decremented BEFORE the `<= 0` break
+  (2999 picks max), `Place` at the chest anchor, the counter advances
+  even on a failed Place (`:20936` — the C# ignores the return), the
+  picked index is removed. The Place body (`:102-136`): the good-spot
+  gate, the three finders in the exact draw order — boulder
+  (`FindBoulderTrapSpots`, `:180-220`: the `Next(2,5)` count + step rolls,
+  the left-shifted scan line `Y-6`, the 50-up first-active find, the
+  `CheckSpot` 2×5 solid histogram with the un-clearable/container veto +
+  the 4×4 active ceiling ring + the not-both-active floor pair + the 6×6
+  container/12/665/639 exclusion + the dominant-kind first-max pick,
+  `:236-296`; the min/max-x wire run + the 7-step drop wire), dart
+  (`FindDartTrapSpots`, `:298-334`: the `Next(3,7)` count, the `Next(2)`
+  direction, the alternating-direction walk stepping up, the 20-cell
+  side find with the >=5 / non-actuated / non-frame-important / clearable
+  gates, the vertical wire over the last successful index — the -1
+  sentinel runs nothing), explosive (`FindExplosiveTrapSpots`,
+  `:336-395`: the centre pair, the right 4-band and the left 4-band
+  picks, each `Next(list.Count)` over its good spots — the C# clears
+  `list` ONLY after the centre pick (`:355`), so the right and left bands
+  ACCUMULATE, ported verbatim; the spots append left, centre, right) —
+  the enough-traps gate, then `TurnGoldChestIntoDeadMansChest`
+  (`:484-519`: the 2×2 retype to 467 style 4, `frameX = 144 + i*18`,
+  `frameY = j*18` — the `IsChestRigged` style, `netglue.rs:57-58`; the
+  `Next(3) == 0` Dead Man's Sweater 5007 insert at slot 1: the occupied
+  slots `len-2 ..= 1` copy DOWN one — the DeepClone loop, the stale
+  sources survive; the port's compressed slot vec materializes to the
+  40-slot maxItems first), then the four placement loops in the C# order
+  (darts `:521-537` — the 137 retype, `frameX = 18` when firing left else
+  0, slope/half-brick cleared, the wire run; wires `:539-545` — the
+  inclusive `0..=steps` red-wire walk; boulders `:547-614` — the 2-wide
+  column, the top/bottom 2 rows cleared, the 5 body rows filled with the
+  dominant kind, wired + actuated when solid, the 6×6 seat box retypes
+  non-boulder kinds to stone 1 with wired cells gaining the actuator,
+  the boulder 138 `PlaceTile` → `Place2x2` and the drop wire; explosives
+  `:616-624` — the 141 retype, frames 0/0) + `PlaceWiresForExplosives`
+  (`:138-161`: the vertical wire from the chest down to the FIRST
+  explosive's row, then the horizontal run across the min/max x of ALL
+  explosive spots at that row). The shared `Place2x2` helper
+  (`place_2x2_floor_tile`, generalized from the wave-B detonator 411
+  site) now carries the `tileTable` floor alternative (`:51371-51378`)
+  and the `nactive()` floor gate (`Tile.cs:240-247` — active AND not
+  actuated); the boulder site adds the `PlaceTile` wrapper's
+  `Collision.EmptyTile` origin gate (`:59373` — 138 is tileSolid
+  `Main.cs:7462`, not forced; the wave-B detonator called `forced: true`
+  and skipped it). The 138 frame-important boot bit (`Main.cs:7432`)
+  landed in `boot_statics`; 137/141/21/467 were already booted. The step
+  draws from a fresh `pass_rng("Micro Biomes")` copy (the per-pass
+  re-seed model — the wave-C thin-ice precedent) and sits FIRST in the
+  port's grouped Micro Biomes slot (the vanilla block order: dead man's
+  chests `:20916` → thin ice `:20941` → shrines `:20979` → campsites
+  `:21031` → explosives `:21066` → mahogany `:21105`). **Pins: both
+  UNCHANGED** — `generate()` (no chest-stock hook) leaves `world.chests`
+  empty (`chest_stock.rs:238-240`), so the scan finds no candidates and
+  the block draws ONLY the config roll on its own fresh stream: no tile
+  writes, no other step's ledger shifts; `SEED42_512` and
+  `DEFAULT_WORLD` stay (the S1-P-i33 deferral stands; the gate re-pins
+  sequentially). The stocked tr-app path traps chests by design — that
+  moves the app-side world, not the tr-core pins. Deviations: the
+  `TileFrame` re-frame calls ride the post-pipeline framing seam (137 is
+  frame-important, so the stored frames survive); the `dualDungeons`
+  veto inside `CanBeClearedDuringGeneration` is deferred with the seed
+  (the `ocean.rs:620` precedent); the boulder do/while always exits after
+  one iteration (the fill activates an inactive cell, an active cell
+  passes the while test immediately — no observable difference); the
+  pass-local protected list is empty (the port's micro steps register no
+  shared StructureMap boxes — the wave-B idiom). **Tests written NOT
+  run** (8 new: the good-spot gates + no-draw proof, the full trap
+  placement over a 12-seed sweep with the sweater split, the DeepClone
+  shift, the accumulating explosive bands, the enough-traps gate, the
+  boulder wrapper's empty-origin veto, the scan→roll→pick stream-order
+  replay, the no-records inert path + the pass determinism) + the
+  pipeline order/count tests updated (67 steps) + the Gen(76) progress
+  arm.
 
 Deviations: the HouseBuilder room variants (the biome walls, the furniture
 sets) are the shape-level approximation; the spike tiles and the sword
