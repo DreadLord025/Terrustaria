@@ -1046,10 +1046,11 @@ mod tests {
     fn recipe_cells_share_a_row_y_on_a_constant_44px_pitch() {
         // `UIDynamicItemCollection.cs:75-79`: integer `num / _itemsPerLine`
         // gives every recipe in a row the same Y; `:21-23` the pitch is 44;
-        // `:162` `_itemsPerLine = Width / 44` — the port's list width is
-        // grid.w - 20 = 450, and floor((470 - 4) / 44) = 10 columns, the same
-        // 450 / 44 = 10. The grid origin at 1600x900 is (32, 439)
-        // (`layout_matches_the_source_table_at_1600x900`).
+        // `:162` `_itemsPerLine = Width / 44` — the collection fills the list
+        // (450 px), 450 / 44 = 10 columns. `GetGridParameters` (`:81-97`)
+        // centres the 440 px row in the 450 px list: startX = 32 + 225 − 220
+        // = 37; startY is the LIST top, 446 (the grid container's top 7 px
+        // carry the separator — W4-d67).
         let l = layout(Vec2::new(1600.0, 900.0), W, false);
         let cols = 10usize; // 450 / 44, integer division (C# `:162`)
         let n = 25usize; // two full rows plus a partial third
@@ -1058,23 +1059,23 @@ mod tests {
             let row = i / cols;
             let col = i % cols;
             // Y is a pure function of the row index: top + row * 44.
-            assert_eq!(cell[1], 439.0 + row as f32 * 44.0, "recipe {i}");
+            assert_eq!(cell[1], 446.0 + row as f32 * 44.0, "recipe {i}");
             // X wraps left-to-right on the same pitch.
-            assert_eq!(cell[0], 32.0 + col as f32 * 44.0, "recipe {i}");
+            assert_eq!(cell[0], 37.0 + col as f32 * 44.0, "recipe {i}");
             assert_eq!([cell[2], cell[3]], [40.0, 40.0]);
             // (y[i] - y[0]) divides evenly by the row index times the pitch.
-            assert_eq!(cell[1] - 439.0, row as f32 * 44.0);
+            assert_eq!(cell[1] - 446.0, row as f32 * 44.0);
         }
         // Every recipe of the first row shares one Y, the second row the
         // next pitch — no per-iteration accumulation (the old float
         // `i as f32 / cols` drifted each icon by 44/cols = 4.4 px).
         for i in 0..cols {
-            assert_eq!(recipe_cell(&l, i)[1], 439.0);
+            assert_eq!(recipe_cell(&l, i)[1], 446.0);
         }
         for i in cols..2 * cols {
-            assert_eq!(recipe_cell(&l, i)[1], 483.0);
+            assert_eq!(recipe_cell(&l, i)[1], 490.0);
         }
-        assert_eq!(recipe_cell(&l, 2 * cols)[1], 527.0);
+        assert_eq!(recipe_cell(&l, 2 * cols)[1], 534.0);
     }
 
     #[test]
@@ -1099,6 +1100,59 @@ mod tests {
         let [x, y, _, _] = recipe_cell(&l, 0);
         assert_eq!(
             hit_test(screen, &lookups, Vec2::new(x + 42.0, y + 20.0), &available),
+            None
+        );
+    }
+
+    #[test]
+    fn the_recipe_list_clip_rect_bounds_the_grid_content() {
+        // `UIList.OverflowHidden = true` (`UIList.cs:59`) + `GetClippingRectangle`
+        // reading `_innerDimensions` (`UIElement.cs:254`): the crafting list
+        // sets no padding (`NewCraftingUI.cs:367-373`), so the scissor is the
+        // list rect itself. At 1600x900 the 404 px view holds 9 whole 44 px
+        // rows; row 9 (y 842..886) straddles the 850 bottom edge and is cut
+        // mid-cell — the C# device scissor behaviour, pinned here (W4-d67).
+        let l = layout(Vec2::new(1600.0, 900.0), W, false);
+        let view = l.list;
+        assert_eq!(view, [32.0, 446.0, 450.0, 404.0]);
+        let view_bottom = view[1] + view[3];
+        assert_eq!(view_bottom, 850.0);
+        // Row 0 starts exactly at the list top — below the separator, which
+        // owns the container's top 7 px (439..446).
+        assert_eq!(recipe_cell(&l, 0)[1], view[1]);
+        assert!(recipe_cell(&l, 0)[1] > l.separator[1] + l.separator[3]);
+        // The first cell past the bottom edge: row 9 straddles (starts 842,
+        // ends 882 > 850), row 10 is fully hidden.
+        let straddler = recipe_cell(&l, 9 * 10);
+        assert!(straddler[1] < view_bottom && straddler[1] + 40.0 > view_bottom);
+        assert!(recipe_cell(&l, 10 * 10)[1] >= view_bottom);
+    }
+
+    #[test]
+    fn clipped_recipe_cells_are_unreachable() {
+        // The clipped-ancestor rule (`UIElement.cs:327-341`): a cell whose
+        // centre is below the list bottom is clipped away, so `hit_test`
+        // must not select it even though the point is inside its own rect.
+        let screen = Vec2::new(1600.0, 900.0);
+        let lookups = assets::Lookups::default();
+        let l = layout(screen, title_width(&lookups), false);
+        let available: Vec<usize> = (0..110).collect();
+        // Row 9's centre y = 842 + 20 = 862 > 850 (the list bottom).
+        let clipped = recipe_cell(&l, 9 * 10);
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(clipped[0] + 20.0, clipped[1] + 20.0), &available),
+            None,
+            "the point is inside cell 90 but outside the OverflowHidden list"
+        );
+        // Row 8's centre y = 798 + 20 = 818 < 850: still reachable.
+        let visible = recipe_cell(&l, 8 * 10);
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(visible[0] + 20.0, visible[1] + 20.0), &available),
+            Some(80)
+        );
+        // Outside the list horizontally: also unreachable.
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(l.list[0] + l.list[2] + 2.0, 500.0), &available),
             None
         );
     }
