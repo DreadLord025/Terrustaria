@@ -1880,7 +1880,7 @@ impl App {
         // (`PopupText.cs:196-199`) rides `settings.pickup_text`.
         if self.settings.pickup_text {
             let name = crate::lang::prefixed_item_name(kind, prefix);
-            let stack = self.reforge_slot.count.max(1);
+            let stack = self.reforge_slot.count.max(1) as i32;
             let display = crate::popup_text::display_text(&name, stack);
             let text_size = [
                 crate::ui::text::ui_font_width(&self.lookups, &display, 1.0)

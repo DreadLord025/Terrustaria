@@ -1792,7 +1792,12 @@ impl App {
                                         )
                                     })
                                     .unwrap_or(0);
-                                (&self.reforge_slot, cost, self.reforge_cooldown)
+                                (
+                                    &self.reforge_slot,
+                                    cost,
+                                    self.reforge_scale,
+                                    self.mouse_reforge,
+                                )
                             }),
                             player.as_ref().and_then(|p| {
                                 crate::bank::bank_for_chest(p.chest)

@@ -885,6 +885,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // both horizontal 2-frame strips.
         "UI/Bestiary",
         "UI/Emotes",
+        // The reforge button's idle/hover sheets (`TextureAssets.Reforge[0/1]`,
+        // `AssetInitializer.cs:293-296`; drawn at `Main.cs:41642-41647`, W4-g57).
+        "UI/Reforge_0",
+        "UI/Reforge_1",
         "UI/Bestiary/Slot_Back",
         "UI/Bestiary/Slot_Front",
         "UI/Bestiary/Slot_Overlay",
@@ -2092,6 +2096,10 @@ pub struct Lookups {
     /// and a click handler but no sprite until §14 because the sheet was
     /// never packed.
     pub ui_emote_button: Option<tr_render::SheetRect>,
+    /// `Images/UI/Reforge_0`/`Reforge_1` (`TextureAssets.Reforge[0/1]`,
+    /// `AssetInitializer.cs:293-296`): the reforge menu's hammer button —
+    /// `[0]` idle, `[1]` hovered (`Main.cs:41642-41647`, W4-g57).
+    pub ui_reforge: [Option<tr_render::SheetRect>; 2],
     /// The bestiary card stack (`UIBestiaryEntryButton.cs:40-86`): the cell
     /// back, the hover frame, the 60 %-white overlay, the front border and
     /// the locked portrait.
@@ -2442,6 +2450,10 @@ impl Lookups {
             ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
             ui_emote_button: atlas.sheet("UI/Emotes").copied(),
+            ui_reforge: [
+                atlas.sheet("UI/Reforge_0").copied(),
+                atlas.sheet("UI/Reforge_1").copied(),
+            ],
             ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
             ui_bestiary_slot_selection: atlas.sheet("UI/Bestiary/Slot_Selection").copied(),
             ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),

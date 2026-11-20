@@ -538,9 +538,8 @@ impl App {
     /// sizes are `MeasureString(displayText)` (`:672`), the renderer-free
     /// `text::ui_font_*` twins with the bitmap estimate fallback. No RNG.
     fn update_popup_texts(&mut self, screen: Vec2) {
-        if self.popup_texts.num_active == 0 && self.popup_texts.texts.is_empty() {
-            return;
-        }
+        // `UpdateItemText` walks all 20 slots and refreshes `numActive` even
+        // when none is active (`PopupText.cs:752-764`) — no early return.
         let ui_scale = self.settings.applied_ui_scale(screen.x, screen.y);
         let render_zoom = App::forced_minimum_zoom((screen.x, screen.y)) * self.zoom;
         let mut target_scale = if render_zoom > 0.0 { ui_scale / render_zoom } else { 0.0 };
