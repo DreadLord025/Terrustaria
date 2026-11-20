@@ -17508,6 +17508,33 @@ impl ProjectilePool {
                             self.slots[i].direction =
                                 if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                         }
+                        // W4-a9 — `AI()`'s `else if (this.aiStyle == 169)`
+                        // (`Projectile.cs:36639-36642`) -> `AI_169_Smolstars`
+                        // (`:45718-45855`): the Smolstar (864), the style's
+                        // ONLY row (`:8284-8300`). Pool-side — the idle orbit
+                        // and the separation loop read the sibling slots.
+                        // The i25 dispatch no-op deferral is superseded (the
+                        // UNARMED_ROWED census drops 169). The row keeps
+                        // `tileCollide = false` and aiStyle 169 is not in
+                        // `UpdatePosition`'s skip list (`:20435`), so the free
+                        // integrate runs every sub-step.
+                        169 => {
+                            self.smolstar_step(
+                                i,
+                                world,
+                                &npcs[..],
+                                player.as_deref_mut(),
+                                rng,
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                            // `AutomaticallyChangesDirection` (`:17281-
+                            // 17288`): the row leaves `manualDirectionChange`
+                            // false, so the direction follows velocity.X's
+                            // sign after the move (`:17016-17026`).
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                        }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
@@ -22412,6 +22439,183 @@ impl ProjectilePool {
         self.slots[i].set_center(home);
     }
 
+    /// W4-a9 — `AI_169_Smolstars` (`Projectile.cs:45718-45855`, the dispatch
+    /// `:36639-36642`): the Smolstar (864), the style's ONLY SetDefaults row
+    /// (`:8284-8300`). A pool-side step — the idle orbit's group index and
+    /// the attack-state separation loop both read the sibling slots.
+    ///
+    /// RNG: the −1 tumble's first tick (`ai[1] == 0`, `:45776-45791`) draws
+    /// TWO `Next(3)` dust-scale gates (`:45782`, the dust bodies are the
+    /// documented skip but the GATE draws stay — the dragon precedent) then
+    /// ONE `NextFloat` for the `NextVector2CircularEdge(4, 4)` velocity kick
+    /// (`:45790`, `Utils.cs:1271-1274` → `NextVector2Unit` `:1261-1264`).
+    /// Every other state draws NOTHING.
+    ///
+    /// Skips (ANALYSIS): the tumble's `SoundEngine.PlaySound(0, …)` thud
+    /// (`:45778`) and the two dust bodies (`:45781-45789`); the
+    /// `Main.GlobalTimeWrappedHourly` orbit phase reads the pool's
+    /// `update_count / 60` stand-in (the dragon's `timeForVisualEffects`
+    /// precedent — a draw-frame clock the pool does not carry; the phase is
+    /// cosmetic orbit position only).
+    fn smolstar_step(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:45720` — `Main.player[this.owner]`; no owner-inactive kill in
+        // the C# arm — an unresolved owner folds the machine away (the
+        // bat_of_light_step precedent) and the dispatch still integrates.
+        let Some(pl) = player else {
+            return;
+        };
+        let flag = self.slots[i].kind == 864;
+        // `:45722` — the hover anchor: the owner's Top + (0, −30).
+        let (pcx, pcy) = pl.center();
+        let player_center = Vec2::new(pcx, pcy);
+        let mut vector = Vec2::new(pl.x + pl.width * 0.5, pl.y) + Vec2::new(0.0, -30.0);
+        if flag {
+            // `:45725-45732` — death clears the summon flag; the live flag
+            // pins `timeLeft = 2`.
+            if pl.dead {
+                pl.smolstar = false;
+            }
+            if pl.smolstar {
+                self.slots[i].time_left = 2;
+            }
+            if self.slots[i].ai[0] == 0.0 {
+                // `:45735-45741` — the idle orbit: the group ring around
+                // the anchor, the wrapped-hourly spin, the gfx lift, floored.
+                let (index, total) = self.group_index_and_total(i);
+                let num = std::f32::consts::TAU / total as f32;
+                let num2 = total as f32 * 0.66;
+                let vector2 = Vec2::new(30.0, 6.0) / 5.0 * (total - 1) as f32;
+                let global_time = self.update_count as f32 / 60.0 % 3600.0;
+                vector += rotate(
+                    Vec2::UNIT_Y,
+                    num * index as f32 + global_time % num2 / num2 * std::f32::consts::TAU,
+                ) * vector2;
+                vector.y += pl.gfx_off_y;
+                vector = vector.floor();
+            }
+        }
+        if self.slots[i].ai[0] == 0.0 {
+            // `:45746-45756` — the idle steer: the 10 + 30·remap speed cap,
+            // the 3000-px teleport snap, the velocity clamp.
+            let p = &mut self.slots[i];
+            let c = Vec2::from(p.center());
+            let vector3 = vector - c;
+            let num3 = 10.0 + get_lerp_value(200.0, 600.0, vector3.length()) * 30.0;
+            if vector3.length() >= 3000.0 {
+                p.set_center(vector);
+            }
+            p.vel = vector3;
+            if p.vel.length() > num3 {
+                p.vel *= num3 / p.vel.length();
+            }
+            // `:45757-45765` — the 800-px acquire (the shared
+            // Minion_FindTargetInRange walk, `skipIfCannotHitWithOwnBody:
+            // false`, respectOwnerTarget default true).
+            let attack_target =
+                self.slots[i].minion_find_target_in_range(world, npcs, Some(pl), 800.0, false, true);
+            if attack_target != -1 {
+                let p = &mut self.slots[i];
+                p.ai[0] = 60.0;
+                p.ai[1] = attack_target as f32;
+                p.net_update = true;
+            }
+            // `:45766-45771` — the heading blend: the velocity's rotation +
+            // π/2 (the UnitY fallback), the <40-px near-anchor pin to straight
+            // down, the 0.2 AngleLerp.
+            let p = &mut self.slots[i];
+            let mut target_angle =
+                safe_normalize_or(p.vel, Vec2::UNIT_Y).to_angle() + std::f32::consts::FRAC_PI_2;
+            if vector3.length() < 40.0 {
+                target_angle = Vec2::UNIT_Y.to_angle() + std::f32::consts::FRAC_PI_2;
+            }
+            p.rot = angle_lerp(p.rot, target_angle, 0.2);
+            return;
+        }
+        if self.slots[i].ai[0] == -1.0 {
+            // `:45776-45791` — the tumble's first tick: the thud + the two
+            // dust gates (the draws stay, the bodies skip) + the circular-edge
+            // velocity kick (ONE NextFloat).
+            if self.slots[i].ai[1] == 0.0 {
+                let _ = rng.next_range(0, 3);
+                let _ = rng.next_range(0, 3);
+                let angle = rng.next_float() * std::f32::consts::TAU;
+                self.slots[i].vel += rotate(Vec2::UNIT_X, angle) * Vec2::new(4.0, 4.0);
+            }
+            // `:45792-45799` — the tumble: the counter, the velocity-scaled
+            // spin, the 0.92 drag, the 9-tick reset to idle.
+            let p = &mut self.slots[i];
+            p.ai[1] += 1.0;
+            p.rot += p.vel.x * 0.1 + p.vel.y * 0.05;
+            p.vel *= 0.92;
+            if p.ai[1] >= 9.0 {
+                p.ai[0] = 0.0;
+                p.ai[1] = 0.0;
+            }
+            return;
+        }
+        // `:45802-45830` — the attack state: the target validity fork (the
+        // −1 tumble on a dead/invalid target, the 900-px owner leash drop to
+        // idle), else the 16-speed chase + the 0.4 heading blend.
+        let num4 = self.slots[i].ai[1] as i32;
+        let target = npcs.get(num4 as usize).filter(|n| chaseable(n));
+        match target {
+            None => {
+                let p = &mut self.slots[i];
+                p.ai[0] = -1.0;
+                p.ai[1] = 0.0;
+                p.net_update = true;
+            }
+            Some(n) if player_center.distance(npc_center(n)) >= 900.0 => {
+                let p = &mut self.slots[i];
+                p.ai[0] = 0.0;
+                p.ai[1] = 0.0;
+                p.net_update = true;
+            }
+            Some(n) => {
+                let p = &mut self.slots[i];
+                let c = Vec2::from(p.center());
+                let vector4 = npc_center(n) - c;
+                let num5 = 16.0f32;
+                p.vel = vector4;
+                if p.vel.length() > num5 {
+                    p.vel *= num5 / p.vel.length();
+                }
+                p.rot = angle_lerp(
+                    p.rot,
+                    safe_normalize_or(p.vel, Vec2::UNIT_Y).to_angle() + std::f32::consts::FRAC_PI_2,
+                    0.4,
+                );
+            }
+        }
+        // `:45831-45854` — the same-kind separation: every other active
+        // sibling of the same owner+kind within width·5 Manhattan px pushes
+        // 0.1 per axis away (the C# scans all 1000 slots; the port walks the
+        // pool array, skipping self).
+        let (kind, owner, pos, w) = {
+            let p = &self.slots[i];
+            (p.kind, p.owner, p.pos, p.w)
+        };
+        let num7 = w * 5.0;
+        let mut push = Vec2::ZERO;
+        for (j, other) in self.slots.iter().enumerate() {
+            if j == i || !other.active || other.owner != owner || other.kind != kind {
+                continue;
+            }
+            if (pos.x - other.pos.x).abs() + (pos.y - other.pos.y).abs() < num7 {
+                push.x += if pos.x < other.pos.x { -0.1 } else { 0.1 };
+                push.y += if pos.y < other.pos.y { -0.1 } else { 0.1 };
+            }
+        }
+        self.slots[i].vel += push;
+    }
+
     /// `((ProjectileKey)this.ai[0]).TryGetActive(ProjectileID.Sets
     /// .StardustDragon, out proj)` + the 625/626/627 type gate
     /// (`Projectile.cs:43007-43008`, `ProjectileKey.cs:96-108`): the key's
@@ -24546,9 +24750,10 @@ mod tests {
         // deferral collided with the same pin and the machine is one
         // self-contained family. W4-a9: 156 LEFT with the `bat_of_light_step`
         // arm (the pool-side AI_156 port); 164 LEFT with the
-        // `storm_tiger_gem_step` arm (the pool-side AI_164 port); 169/206
-        // follow.
-        const UNARMED_ROWED: [u8; 2] = [169, 206];
+        // `storm_tiger_gem_step` arm (the pool-side AI_164 port); 169 LEFT
+        // with the `smolstar_step` arm (the pool-side AI_169 port); 206
+        // follows.
+        const UNARMED_ROWED: [u8; 1] = [206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -45348,5 +45553,143 @@ mod w4_a9_storm_tiger_gem_tests {
         assert_eq!(d.local_ai[1], 2.0);
         assert_eq!(d.frame_counter, 2, "the pulse counts on (:46631)");
         assert!(rng.draws.is_empty(), "still ZERO draws");
+    }
+}
+
+#[cfg(test)]
+mod w4_a9_smolstar_tests {
+    //! W4-a9 — the aiStyle-169 machine (`AI_169_Smolstars`,
+    //! `Projectile.cs:45718-45855`, the dispatch `:36639-36642`): the
+    //! Smolstar (864). The i25 dispatch no-op deferral is superseded — the
+    //! pool-side `smolstar_step` arm lands and `UNARMED_ROWED` drops 169.
+    //! WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at centre (410, 321), the smolstar summon flag live.
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.smolstar = true;
+        p.max_minions = 3;
+        p
+    }
+
+    /// The scripted stream: records every draw; `next_range` returns max−1
+    /// (the dust gates never fire their bodies — the draws are the census).
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, npcs: &mut [Npc], rng: &mut CensusRng) {
+        let center = p.center();
+        pool.update(
+            w,
+            npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    fn npc_centered(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (w, h) = n.size();
+        n.x = cx - w * 0.5;
+        n.y = cy - h * 0.5;
+        n
+    }
+
+    /// Witness 1 — the idle orbit pin + keep-alive (`:45722-45741`): a lone
+    /// smolstar (index 0 of 1) idles at the owner's Top + (0, −30) — the
+    /// single-member ring offset is (30, 6)/5·0 = ZERO, so the anchor is
+    /// (410, 300 − 30) = (410, 270), floored. Spawned ON the anchor, the
+    /// steer's delta is zero: velocity stays zero, the <40-px near-anchor
+    /// pin blends the rotation toward straight-down + π/2 = π, and the
+    /// 800-px acquire finds nothing. The live flag pins timeLeft = 2 (the
+    /// tail decrements to 1). ZERO draws.
+    #[test]
+    fn w4_a9_the_idle_orbit_pins_the_lone_anchor() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Centre (410, 270) — on the anchor.
+        let slot = pool
+            .spawn_with_data_ai_owned(864, 0, 405.0, 265.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert!(d.active);
+        assert_eq!(d.ai[0], 0.0, "no target — the idle state holds");
+        let c = Vec2::from(d.center());
+        assert_eq!(c, Vec2::new(410.0, 270.0), "the floored lone anchor (:45738-45741)");
+        assert_eq!(d.vel, Vec2::ZERO, "the zero delta steers nothing (:45752)");
+        assert_eq!(d.time_left, 1, "the keep-alive pin 2 minus the tail decrement (:45731)");
+        // The rotation blends 0 → π at 0.2: AngleLerp(0, π, 0.2) = 0.2π.
+        assert!((d.rot - 0.2 * std::f32::consts::PI).abs() < 1e-5, "the 0.2 blend (:45771): {}", d.rot);
+        assert!(rng.draws.is_empty(), "the idle draws NO Next: {:?}", rng.draws);
+        assert_eq!(rng.floats, 0, "the idle draws NO NextFloat");
+    }
+
+    /// Witness 2 — the acquire + chase (`:45757-45765`, `:45820-45830`):
+    /// the idle smolstar on its anchor sees the zombie 300 px right (within
+    /// the 800-px Minion_FindTargetInRange reach, chaseable, in view), arms
+    /// ai[0] = 60 / ai[1] = the index + netUpdate. The NEXT tick runs the
+    /// attack state: the 16-speed chase clamp caps the 300-px gap velocity
+    /// at 16 along +X, the 0.4 heading blend turns the sprite, and the
+    /// separation loop finds no sibling. The keep-alive re-pins each tick.
+    #[test]
+    fn w4_a9_the_acquire_arms_and_the_chase_clamps_16() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(864, 0, 405.0, 265.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs = vec![npc_centered(710.0, 270.0)];
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], 60.0, "the acquire arms the 60-window (:45762)");
+        assert_eq!(d.ai[1], 0.0, "the NPC index (:45763)");
+        assert!(d.net_update, ":45764");
+        // The chase tick: the gap is (300, 0) minus the idle tick's zero
+        // move — the velocity clamps to 16 along +X, then the integrate
+        // moves the box 16 px right.
+        pool.slots_mut()[slot].net_update = false;
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], 60.0, "the attack state holds (no countdown in the C# arm)");
+        assert!((d.vel.x - 16.0).abs() < 1e-4, "the 16-speed clamp (:45823-45828): {}", d.vel);
+        assert!(d.vel.y.abs() < 1e-4, "the chase is horizontal: {}", d.vel);
+        let c = Vec2::from(d.center());
+        assert!((c.x - 426.0).abs() < 0.01, "410 + 16 integrate: {c}");
+        assert!(rng.draws.is_empty(), "the chase draws nothing");
     }
 }

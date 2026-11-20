@@ -4585,6 +4585,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at the literal 6 (`Projectile.cs:46607-46614`/
         // `:46631-46638`).
         831 | 970 => 6,
+        // W4-a9 — the Smolstar's 2-frame sheet (`Main.cs:8665`) — the
+        // aiStyle-169 arm runs no frame machine (the stock frame 0 reads
+        // the top row); the row lands for the draw slice.
+        864 => 2,
         // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
         // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
         // (`Projectile.cs:60192`) and the walk steps frames 0-5
