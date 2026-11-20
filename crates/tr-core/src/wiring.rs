@@ -2196,11 +2196,22 @@ impl Wiring {
             return;
         }
         match kind {
-            // The timer re-arms through HitSwitch (`:1008-1012`).
-            144 => self.hit_switch(world, i, j),
-            // The wire lamp: the lit/unlit tile pair swaps types (`:1013-1026`).
-            421 => world.swap_tile_kind(i, j, 422),
-            422 => world.swap_tile_kind(i, j, 421),
+            // The timer re-arms through HitSwitch (`:1012-1016`), then the
+            // `SquareTileFrame` wake (`:1014`) — the port's object-cascade
+            // slice, drops queued like the actuation cascade's.
+            144 => {
+                self.hit_switch(world, i, j);
+                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                self.actuation_drops.extend(drops);
+            }
+            // The wire lamp: the lit/unlit tile pair swaps types (`:1017-
+            // 1032`) — only when NOT actuated (`if (!tile.actuator())`),
+            // then the `SquareTileFrame` wake.
+            421 | 422 if !actuator => {
+                world.swap_tile_kind(i, j, if kind == 421 { 422 } else { 421 });
+                let drops = crate::edit::square_tile_frame_default(world, i, j);
+                self.actuation_drops.extend(drops);
+            }
             // The logic lamp (419): `case 419` verbatim (`Wiring.cs:1053-1070`)
             // — `num50 = 18; if (frameX >= 18) num50 = -18; if (frameX == 36)
             // num50 = 0; frameX += num50;` — then the gate below is poked.
@@ -2232,15 +2243,16 @@ impl Wiring {
             137 => self.trap_emit(i, j, tile_frame_x, tile_frame_y),
             // The teleporter pad (235): the wall-87 temple guard, then the
             // pad registration — the first hit fills `_teleport[0]`, a hit at
-            // a different position fills `_teleport[1]` (`Wiring.cs:1067-
-            // 1082` wait — the case body at `:1066-1081`; the halfBrick adds
-            // 0.5 to the anchor y).
+            // a different position fills `_teleport[1]` (`Wiring.cs:1547-
+            // 1573`; the halfBrick adds 0.5 to the anchor y).
             235 => {
                 // `tile.wall == 87 && j > worldSurface && !downedPlantBoss`
-                // (`:1069-1072`): the Lihzahrd wall guard (the port has no
-                // `downedPlantBoss` flag yet — that conjunct is pending
-                // M5-HARDFORCE).
-                if wall == 87 && j as f32 > world.world_surface as f32 {
+                // (`:1550-1553`): the Lihzahrd wall guard — the Plantera flag
+                // lives on `World` (save.rs:461/:533).
+                if wall == 87
+                    && j as f64 > world.world_surface
+                    && !world.downed_plant_boss
+                {
                     return;
                 }
                 let anchor_x = i - anchor_frame_x;
@@ -2572,17 +2584,15 @@ impl Wiring {
                 }
                 num76 = i - num76;
                 // `WorldGen.ValidateTileSquareIsActiveAndOfType(num76, num75,
-                // 2, 3, type)` (`:2512`).
-                let mut valid = true;
-                for x in num76..num76 + 2 {
-                    for y in num75..num75 + 3 {
-                        if !world.tile(x, y).is_some_and(|t| t.active() && t.kind == kind) {
-                            valid = false;
-                        }
-                    }
-                }
+                // 2, 3, type)` (`:2517`): the shared validator — a mismatch
+                // kills every matching cell (full cascade, drops collected).
+                let mut drops = Vec::new();
+                let valid = crate::edit::validate_tile_square(
+                    world, num76, num75, 2, 3, kind, &mut drops,
+                );
+                self.actuation_drops.extend(drops);
                 if !valid {
-                    return; // `break` out of the case (`:2513`)
+                    return; // `break` out of the case (`:2518-2520`)
                 }
                 for y in num75..num75 + 3 {
                     for x in num76..num76 + 2 {
@@ -2973,10 +2983,9 @@ impl Wiring {
             return;
         }
         // `Main.tile[i, j].type == 226 && j > worldSurface &&
-        // !NPC.downedPlantBoss` (`:3198`): the Plantera bulb guard. The port
-        // has no boss-progress flags yet (M5-HARDFORCE), so the bulb is
-        // always guarded below the surface.
-        if t.kind == 226 && j as f64 > world.world_surface {
+        // !NPC.downedPlantBoss` (`:3197`): the Plantera bulb guard — the
+        // flag lives on `World` (save.rs:461/:533).
+        if t.kind == 226 && j as f64 > world.world_surface && !world.downed_plant_boss {
             return;
         }
         let mut flag =

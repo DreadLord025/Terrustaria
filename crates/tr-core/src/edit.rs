@@ -930,7 +930,7 @@ pub fn close_door(
 /// active and of `kind`. Otherwise every matching cell is `KillTile`d (full
 /// cascade — drops collected) and `false` returned; an out-of-world square
 /// returns `false` without killing (`WorldGen.InWorld`, `:9688`).
-fn validate_tile_square(
+pub(crate) fn validate_tile_square(
     world: &mut World,
     x: i32,
     y: i32,
