@@ -160,6 +160,107 @@ already recorded above (`_glow` TILE-DRAW-2, `furniture_post_pass` W4-d57,
 
 Remainder batches are numbered R1…R19 (≤15 ids each, C# order).
 
+### R1 — switch head: 752, 751, 739, 748, 726, 719, 443, 571, 698, 136, 561, 518, 330, 331, 332 (15 ids, indices 0-14)
+
+C# `TileDrawing.cs:4542-4633`. The method prologue (:4529-4538) seeds
+`tileTop = 0; tileWidth = 16; tileHeight = 16; halfBrickHeight = 0;
+addFrY = Main.tileFrame[typeCache] * 38; addFrX = 0; tileSpriteEffect = None;
+glowTexture = null;` — the port's `TileDrawData` default + `drawdata.rs:121-124`
+(`add_fr_y: (tile_frame * 38) as i16`) reproduce it exactly.
+
+Verbatim (:4542-4561):
+
+```csharp
+		case 752:
+			tileHeight = 38;
+			tileWidth = 36;
+			tileTop = 2;
+			break;
+		case 751:
+			tileHeight = 46;
+			tileWidth = 56;
+			tileFrameY += (short)((x + y * 2) % 7 * 46);
+			break;
+		case 739:
+		case 748:
+			addFrY = Main.tileFrame[typeCache] * 90;
+			break;
+		case 726:
+			tileFrameX = 0;
+			tileFrameY = 0;
+			tileWidth = 20;
+			tileHeight = 20;
+			break;
+```
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 752 | `tileHeight = 38; tileWidth = 36; tileTop = 2;` | :4542-4546 | `drawdata.rs:133-137` (height 38, width 36, top 2) | PORTED |
+| 751 | `tileFrameY += (short)((x + y * 2) % 7 * 46);` (56×46) | :4547-4551 | :140-144 `frame_y_override = Some((fy + (x + y*2) % 7 * 46) as i16)` — the `(short)` wrap is the `as i16` (pinned :2191) | PORTED |
+| 739 | `addFrY = Main.tileFrame[typeCache] * 90;` | :4552-4554 | :147-149 (`739 \| 748`, `tile_frame * 90`) | PORTED |
+| 748 | shares 739's arm | :4553 | :147 | PORTED |
+| 726 | `tileFrameX = 0; tileFrameY = 0; tileWidth = 20; tileHeight = 20;` | :4556-4561 | :152-157 (both overrides `Some(0)`, 20×20) | PORTED |
+| 719 | `int num24 = (x + y + (int)(Main.GlobalTimeWrappedHourly * 15f)) % 14;` `addFrX += 288 * num25; addFrY += 270 * num26;` (`num25 = num24/4`, `num26 = num24%4`) | :4562-4570 | `cases_b.rs:125-131` — term-for-term, `+=` onto the `tile_frame*38` base; clock fed `anim_time % 3600.0` (`tiles.rs:358`, `Main.cs:16836`) | PORTED (delegated, wired :700) |
+| 443 | `if (tileFrameX / 36 >= 2) { tileTop = -2; } else { tileTop = 2; }` | :4571-4580 | `drawdata.rs:163-169` | PORTED |
+| 571 | `if (x % 2 == 0) { tileSpriteEffect = SpriteEffects.FlipHorizontally; } tileTop = 2;` | :4581-4587 | :172-175 (`flip = flip_x`, `flip_x = x % 2 == 0` :128; top 2) | PORTED |
+| 698 | `tileWidth = 36; tileFrameX = (short)(tileFrameX / 18 * 38); tileHeight = 44;` | :4588-4592 | :178-182 (same order; `as i16` cast) | PORTED |
+| 136 | `if (tileFrameX == 0) { tileTop = 2; }` | :4593-4598 | :185-189 | PORTED |
+| 561 | `tileTop -= 2; tileHeight = 20; addFrY = tileFrameY / 18 * 4;` | :4599-4603 | :192-196 | PORTED |
+| 518 | liquid float — verbatim below | :4604-4630 | `cases_a.rs::lily_pad_top_delta` :158-177 + `apply_cases_a` :639-642 (`top.wrapping_add(delta)`) | PORTED (delegated, wired :731) |
+| 330 | `tileTop += 2;` | :4631-4636 | `drawdata.rs:200-202` (`330..=333`, `top += 2`) | PORTED |
+| 331 | shares the candy-cane arm | :4632 | :200 | PORTED |
+| 332 | shares the candy-cane arm | :4633 | :200 | PORTED |
+
+518 verbatim (:4604-4630):
+
+```csharp
+		case 518:
+		{
+			int num19 = tileCache.liquid / 16 - 3;
+			if (WorldGen.SolidTile(x, y - 1) && num19 > 8)
+			{
+				num19 = 8;
+			}
+			if (tileCache.liquid == 0)
+			{
+				Tile tileSafely = Framing.GetTileSafely(x, y + 1);
+				if (tileSafely.nactive())
+				{
+					switch (tileSafely.blockType())
+					{
+					case 1:
+						num19 = -16 + Math.Max(8, tileSafely.liquid / 16);
+						break;
+					case 2:
+					case 3:
+						num19 -= 4;
+						break;
+					}
+				}
+			}
+			tileTop -= num19;
+			break;
+		}
+```
+
+Audit notes (R1):
+- 518's probes are faithful: `solid_tile` (`cases_a.rs:129-139`) is
+  `WorldGen.SolidTile` incl. the null-tile-is-solid rule (`WorldGen.cs:70111-70132`);
+  `block_type` (:144-151) is `Tile.blockType()` verbatim (`Tile.cs:202-214`:
+  halfBrick→1, slope>0→slope+1); `Framing.GetTileSafely` out-of-world returns the
+  inactive default tile, matching `world.tile(..) == None` skipping the switch.
+  The `tileTop -= num19` becomes `wrapping_add(-num19)` on i16 — values bounded
+  ±16, no wrap in range. Tests pin the levels/slopes/wiring
+  (`cases_a.rs:711/:740/:775`).
+- 719 is delegated, not missing: `drawdata.rs:158-160`'s comment records the
+  static default while `cases_b.rs:125-131` carries the full body; the live path
+  runs it (`tiles.rs:700-712`). Test `case_719_rainbow_cloud_clock_grid`
+  (`cases_b.rs:439`) pins the 14-step grid and the `+=` base.
+- 751/752 draw only on their (0,0) frame — that gate lives in
+  `apply_world_corrections` (`drawdata.rs:1358-1374`, the `DrawSingleTile`
+  :1022-1039 correction), outside the case-arm scope but verified present.
+- No second-switch glow rows exist for any R1 id (checked :6049-6510).
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
