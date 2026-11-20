@@ -238,6 +238,11 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-g40 (code-only): the marble/granite residual places nothing on a
+    // 512-wide world (both Count draws truncate to 0), so the residual
+    // itself leaves this pin unchanged; the P0 hive-rising stalactite arm
+    // may move it via the spider-cave decor — the gate re-pins or confirms
+    // (see the DEFAULT_WORLD note).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +286,25 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-g40 (2026-11-21, code-only): the marble/granite residual port
+    // (`biomes.rs::pass_marble/pass_granite` — the seven SlabStates +
+    // SmoothSlope masks, ResetToType, the corrected Sets.Ore literal, the
+    // PlaceTight Next(4) arms and the Tile.SmoothSlope cascade on the Marble
+    // stream; ShouldUseLava on GenVars.lavaLine, the resistance<0.01 clear
+    // arm, the SolidTile cleanup census and the FastRandom PlaceDecorations
+    // on the Granite side) moves DEFAULT_WORLD BY DESIGN — every marble and
+    // granite chamber changes shape/walls/decor, and the new PlaceTight
+    // draws shift the Marble pass's own stream tail (isolated — no other
+    // pass's ledger moves). The re-pin is DEFERRED to the merge gate (no
+    // compiler on this branch); `a == b` stays green (the witnesses in
+    // `biomes.rs` pin the per-function ledgers and the end-to-end replay).
+    // SEED42_512: the marble/granite Count draws truncate to 0 on a 512-wide
+    // world (WorldArea 512*512/5040000 → (4*x) as int = 0; WorldWidth
+    // 512/4200 → 0), so both passes place nothing there — unchanged by the
+    // residual itself. The P0 stalactite-table additions (the hive RISING
+    // arm, `WorldGen.cs:38543-38552`, previously missing) can move the pin
+    // if a spider-cave hive seat exists on the 512 world; unmeasurable
+    // code-only, so the gate re-pins or confirms it.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

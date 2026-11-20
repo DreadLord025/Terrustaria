@@ -12918,26 +12918,58 @@ The three micro-biome passes are 1:1 ports; the deviations:
 - **`tile_is_ore` is a hardcoded kind list**, not the generated
   `TileID.Sets.Ore` bitset (`TileID.cs`): the port's `tiledata` carries no
   Ore set, so the slab map's ore preservation uses the vanilla's ore ids
-  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`).
-- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): the port has no pot
-  tile yet вЂ” the pots land with M5-STRUCT's pots step.
+  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`). W4-g40
+  (2026-11-21): the list is now the `TileID.cs:614` literal verbatim —
+  7/166/6/167/9/168/8/169/22/204/37/58/107/221/108/222/111/223/211 (the
+  pre-residual list carried eight non-ore kinds and missed eight ores).
+- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): RETIRED by W4-g40 —
+  the two `SolidTile`-gated `Next(4)` arms call the shared
+  `spider_gem_moss::place_tight` (the C#'s `PlaceTight` places stalactite
+  speleothems, not pots — the old note misnamed them). The post-place
+  `CheckStalactite` validation (`WorldGen.cs:38320-38323`) rides the
+  shared helper's existing deviation.
 - **No `structures.AddStructure(8)`**: the port has no `StructureMap`; the
   cave-house voters read the tiles directly, so the registration has no
   consumer yet.
-- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** вЂ” the port
-  has no worldgen `SmoothSlope`; the marble caves carry no slopes yet (the
-  slabs' corner states flatten to the active pattern).
-- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`): the
-  port's lava line is not tracked yet, so `PlaceGranite`'s lava arm rides off.
+- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** — RETIRED
+  by W4-g40: the slab grid carries the seven `SlabStates` delegates
+  (`MarbleBiome.cs:12-48`) with the `SmoothSlope` mask map (`:79-110`),
+  `PlaceSlab` writes the per-cell active pattern + `ResetToType` (`:142`,
+  the extent seeds 0/scale per `:121-124`), and the per-tile
+  `Tile.SmoothSlope` cascade (`Tile.cs:792-865`, neighbours-first, the
+  `CanPoundTile` gate on the shared `edit::can_pound_tile` with
+  `generating: true`, the flag2 no-write veto) runs per written cell. The
+  drunk 368/180 swap (`:116-120`) landed with it.
+- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`):
+  RETIRED by W4-g40 — `GenVars.lavaLine` is tracked since the terrain
+  step's `TerrainPass.cs:211-236` pair; the lava-line gate + the 100x100
+  ice-family scan run, and `PlaceGranite`'s `(liquid > 0) & flag` retype
+  (`:239-242`) lands. The resistance<0.01 `ClearTile` arm (`:234-238`),
+  the ore-arm `ResetToType` + wall repaint, the `SolidTile` cleanup
+  census (`:266-279`) and the drunk wall swaps landed too.
 - **`PlaceDecorations` (the FastRandom stalactite pass) is not ported**
-  (`GraniteBiome.cs:296-330`): the stalactites land with the spider/gem-cave
-  decor family.
-- **The granite step moved after the cave carve** вЂ” the vanilla order
-  (`WorldGen.cs:11100`-`12600` caves в†’ `:12757` Marble в†’ `:12839` Granite).
+  (`GraniteBiome.cs:296-330`): RETIRED by W4-g40 — the
+  `FastRandom(worldSeed).WithModifier(65440)` per-chamber stream with the
+  per-cell `WithModifier(x, y)` copies runs the `Next(8)` stalactite pair
+  (below first, then above) and the unconditional `Next(2)` smoothing
+  roll; the granite/marble hanging stalactite arms
+  (`WorldGen.cs:38448-38505`) and the hive rising arm (`:38543-38552`)
+  joined the shared frame table. No worldgen-stream draw (the FastRandom
+  is world-seed-keyed, the hive precedent).
+- **The granite step moved after the cave carve** — the vanilla order
+  (`WorldGen.cs:11100`-`12600` caves → `:12757` Marble → `:12839` Granite).
   The pass's own isolated stream keeps the move RNG-neutral for the other
-  steps; the world contract's per-step pins hold.
+  steps; the world contract's per-step pins hold. W4-g40 also fixed the
+  collection-phase quirks: the f32 fraction (`:12855`), the success arm's
+  missing attempts reset (`:12907-12911` — the marble pass resets, the
+  granite pass does not) and `Place`'s origin-only re-gate (`:64-67`).
 - The three passes draw from their own `pass_rng` streams; the shared
-  `streams.rng` is untouched by them.- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+  `streams.rng` is untouched by them. W4-g40 hash notes: DEFAULT_WORLD
+  moves by design (the chambers' shape/walls/decor + the Marble stream's
+  new PlaceTight tail), the re-pin deferred to the merge gate; SEED42_512
+  is unchanged by the residual (both Count draws truncate to 0 at 512
+  wide) — `world_hash.rs`'s notes carry the ledger.
+- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
   velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
   `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
   300 the vanilla `Transform(405)` вЂ” the port swaps `kind` in place (the
