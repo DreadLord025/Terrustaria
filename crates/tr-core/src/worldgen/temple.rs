@@ -3495,4 +3495,189 @@ mod tests {
         assert_eq!(world.tiles.len(), 300 * 300);
     }
 
+    // --- the M5-SEED temple branches (W4-d108, code-only — written not run) ---
+
+    /// The room-count multiplier chain (`WorldGen.cs:33439-33450`): drunk
+    /// ×3, else FTW ×3, else remix ×2 — with the underworld ceiling far
+    /// away the walk never collapses, so the seeded counts are exact
+    /// multiples of the classic count on the same stream. The drunk+FTW
+    /// combo takes the FIRST arm once (×3, not ×9). a == b: every seeded
+    /// walk replays byte-identical (rooms + stream state).
+    #[test]
+    fn test_M5_SEED_room_count_multipliers() {
+        let classic = {
+            let mut rng = Rng(0xDEAD_BEEF);
+            make_temple_rooms(&mut rng, 1.0, 100_000, 2000, 300, SeedFlags::none())
+        };
+        let n = classic.rooms.len();
+        assert!(n > 1, "the classic walk must not collapse ({n})");
+        for (flags, factor) in [
+            (SeedFlags::DRUNK, 3usize),
+            (SeedFlags::FOR_THE_WORTHY, 3),
+            (SeedFlags::REMIX, 2),
+            (SeedFlags::DRUNK | SeedFlags::FOR_THE_WORTHY, 3),
+            (SeedFlags::DRUNK | SeedFlags::REMIX, 3),
+        ] {
+            let mut rng = Rng(0xDEAD_BEEF);
+            let walk = make_temple_rooms(&mut rng, 1.0, 100_000, 2000, 300, SeedFlags::from(flags));
+            assert_eq!(walk.rooms.len(), n * factor, "flags {flags}");
+            // a == b: the same seed + flags replay the same walk + stream.
+            let mut rng2 = Rng(0xDEAD_BEEF);
+            let walk2 = make_temple_rooms(&mut rng2, 1.0, 100_000, 2000, 300, SeedFlags::from(flags));
+            assert_eq!(rng.0, rng2.0, "the stream replays (flags {flags})");
+            for (a, b) in walk.rooms.iter().zip(walk2.rooms.iter()) {
+                assert_eq!(a.rect, b.rect);
+                assert_eq!(a.depth, b.depth);
+            }
+        }
+        // The classic walk is untouched by the new parameter (the ledger
+        // pin of DW-1.1 still holds with `SeedFlags::none()`).
+        let mut rng = Rng(0xDEAD_BEEF);
+        let again = make_temple_rooms(&mut rng, 1.0, 100_000, 2000, 300, SeedFlags::none());
+        assert_eq!(again.rooms.len(), n);
+    }
+
+    /// A synthetic temple room for the spike witnesses: the brick border
+    /// (active 226, solid), the interior inactive with the unsafe wall 87 —
+    /// the spike loop's eligibility shape (`WorldGen.cs:34078`).
+    fn spike_room_world(seeds: u16) -> (World, Vec<TempleRoom>, Bounds) {
+        let mut world = World::new("t".into(), 200, 200);
+        world.seeds = SeedFlags::from(seeds);
+        let rect = Rect { x: 60, y: 60, w: 60, h: 60 };
+        for x in rect.x..rect.right() {
+            for y in rect.y..rect.bottom() {
+                let i = world.index(x, y);
+                let border = x == rect.x
+                    || x == rect.right() - 1
+                    || y == rect.y
+                    || y == rect.bottom() - 1;
+                world.tiles[i] = if border {
+                    Tile { kind: TILE_TEMPLE_BRICK, flags: FLAG_ACTIVE, ..Default::default() }
+                } else {
+                    Tile { wall: WALL_TEMPLE_UNSAFE, ..Default::default() }
+                };
+            }
+        }
+        let rooms = vec![TempleRoom { rect, depth: 0 }];
+        let b = Bounds { left: rect.x, top: rect.y, right: rect.right(), bottom: rect.bottom() };
+        (world, rooms, b)
+    }
+
+    /// The drunk spike arms (`WorldGen.cs:34065-34068`, `:34122-34136`,
+    /// `:34193-34207`): the ×1.5 budget plus the second rows/columns place
+    /// strictly more spikes than the classic run on the same stream, and
+    /// the classic run is byte-identical to a second classic run (a == b),
+    /// as is the drunk run. The second-row writes are gated on `drunk` at
+    /// all four call sites — the classic count is the unchanged baseline.
+    #[test]
+    fn test_M5_SEED_drunk_spikes_place_more_and_replay() {
+        let spike_count = |w: &World| w.tiles.iter().filter(|t| t.active() && t.kind == 232).count();
+        let (mut classic, rooms, b) = spike_room_world(0);
+        temple_spikes(&mut classic, &rooms, b, &mut Rng(0x5EED));
+        let (mut classic2, rooms2, b2) = spike_room_world(0);
+        temple_spikes(&mut classic2, &rooms2, b2, &mut Rng(0x5EED));
+        assert_eq!(classic.tiles, classic2.tiles, "a == b (classic)");
+        let (mut drunk, rooms3, b3) = spike_room_world(SeedFlags::DRUNK);
+        temple_spikes(&mut drunk, &rooms3, b3, &mut Rng(0x5EED));
+        let (mut drunk2, rooms4, b4) = spike_room_world(SeedFlags::DRUNK);
+        temple_spikes(&mut drunk2, &rooms4, b4, &mut Rng(0x5EED));
+        assert_eq!(drunk.tiles, drunk2.tiles, "a == b (drunk)");
+        assert!(
+            spike_count(&drunk) > spike_count(&classic),
+            "the drunk budget + second rows place more spikes ({} vs {})",
+            spike_count(&drunk),
+            spike_count(&classic)
+        );
+    }
+
+    /// The remix placement search (`WorldGen.cs:15853-15893`): the x
+    /// re-roll into `[0.2·W, 0.8·W)` (not-the-bees: `[0.2·W, 0.4·W)`), the
+    /// up-walk to the surface line and the `10 + Next(10)` bury offset.
+    /// The mud row sits exactly where the walk lands: with surface 100 the
+    /// loop stops at row 95 (`num6 > surface - 5` false, air) and steps
+    /// back to 96 — the painted mud row — so the bury point is
+    /// `96 - (10..19)` = rows 77..=86.
+    #[test]
+    fn test_M5_SEED_remix_search_buries_above_the_surface_mud() {
+        for (flags, lo, hi) in [
+            (SeedFlags::REMIX, 160, 640),
+            (SeedFlags::REMIX | SeedFlags::NOT_THE_BEES, 160, 320),
+        ] {
+            let mut world = World::new("t".into(), 800, 800);
+            world.seeds = SeedFlags::from(flags);
+            world.world_surface = 100.0;
+            paint(&mut world, 160, 640, 96, 97, 59); // the mud row
+            let mut rng = Rng(0xC0FFEE);
+            let site = find_temple_site(&world, 700, 400.0, &mut rng);
+            assert!(site.0 >= lo && site.0 < hi, "the remix x band ({})", site.0);
+            assert!((77..=86).contains(&site.1), "the bury offset ({})", site.1);
+            // a == b.
+            let mut rng2 = Rng(0xC0FFEE);
+            let site2 = find_temple_site(&world, 700, 400.0, &mut rng2);
+            assert_eq!(site, site2);
+            assert_eq!(rng.0, rng2.0);
+        }
+    }
+
+    /// The remix search's 21×21 rejection box (`WorldGen.cs:15876-15891`):
+    /// a living wood 191 inside the ±10 box refuses the sample — the
+    /// search keeps drawing (the widening valve still advances) instead
+    /// of burying there. The mud row is poisoned by a 191 every 20 tiles
+    /// up to x = 620, leaving one clean slot: any accepted box must avoid
+    /// every poison, so the bury x is ≥ 631 BY CONSTRUCTION (the last
+    /// poison at 620 sits in every box centred ≤ 630) — whichever attempt
+    /// accepts, the refusal path ran for all the poisoned candidates.
+    #[test]
+    fn test_M5_SEED_remix_search_refuses_the_living_wood_box() {
+        let mut world = World::new("t".into(), 800, 800);
+        world.seeds = SeedFlags::from(SeedFlags::REMIX);
+        world.world_surface = 100.0;
+        paint(&mut world, 160, 640, 96, 97, 59);
+        for x in (160..=620).step_by(20) {
+            let i = world.index(x, 96);
+            world.tiles[i] = Tile { kind: 191, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        let mut rng = Rng(0xC0FFEE);
+        let site = find_temple_site(&world, 700, 400.0, &mut rng);
+        assert!(site.0 >= 631 && site.0 < 640, "only the clean slot accepts ({})", site.0);
+        assert!((77..=86).contains(&site.1), "the bury offset ({})", site.1);
+        // a == b.
+        let mut rng2 = Rng(0xC0FFEE);
+        let site2 = find_temple_site(&world, 700, 400.0, &mut rng2);
+        assert_eq!(site, site2);
+        assert_eq!(rng.0, rng2.0);
+    }
+
+    /// The remix fallback (`WorldGen.cs:15918-15922`): x = `0.3·maxTilesX`
+    /// (the dead notTheBees ternary computes the same value in both arms),
+    /// y = `surface - 100` when the surface sits at 150+, else a
+    /// `Next(200, (int)rockLayer)` draw. The sub-vanilla valve reaches the
+    /// fallback without any search draws.
+    #[test]
+    fn test_M5_SEED_remix_fallback_positions() {
+        // surface >= 150: the fixed row, no draws.
+        let mut world = World::new("t".into(), 500, 500);
+        world.seeds = SeedFlags::from(SeedFlags::REMIX);
+        world.world_surface = 200.0;
+        let mut rng = Rng(999);
+        let site = find_temple_site(&world, 300, 400.0, &mut rng);
+        assert_eq!(site, (150, 100), "0.3·W, surface - 100");
+        assert_eq!(rng.0, 999, "no draws on the fixed-row arm");
+        // surface < 150: the y draw.
+        world.world_surface = 100.0;
+        let mut rng = Rng(999);
+        let site = find_temple_site(&world, 300, 400.0, &mut rng);
+        assert_eq!(site.0, 150);
+        assert!((200..400).contains(&site.1), "the Next(200, rockLayer) draw");
+        let mut fresh = Rng(999);
+        let want_y = fresh.range(200, 400);
+        assert_eq!(site.1, want_y, "exactly one draw");
+        assert_eq!(rng.0, fresh.0);
+        // The classic fallback is unchanged (DW-6.1's pin).
+        world.seeds = SeedFlags::none();
+        let mut rng = Rng(999);
+        let site = find_temple_site(&world, 300, 50.0, &mut rng);
+        assert_eq!(site, (200, 150), "the classic mirrored fallback");
+        assert_eq!(rng.0, 999);
+    }
 }
