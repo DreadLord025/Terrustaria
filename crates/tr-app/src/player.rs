@@ -737,6 +737,45 @@ pub(crate) struct WingGlideDust {
     pub(crate) facing: i32,
 }
 
+/// The liquid splash arms (`Player.cs:27783-27940`): the entry/exit bursts per
+/// liquid kind. The water arms roll `Dust.dustWater()` (the biome water style);
+/// the lava arms are type 35, honey 152, shimmer 308.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SplashArm {
+    /// `:27783` — the shimmer entry: 50 type-308, the `Next(6)` colour pick.
+    ShimmerEntry,
+    /// `:27810` — the honey entry: 20 type-152.
+    HoneyEntry,
+    /// `:27823` — the water entry: 50 `dustWater()`.
+    WaterEntry,
+    /// `:27837` — the lava entry: 20 type-35.
+    LavaEntry,
+    /// `:27877` — the shimmer exit: 50 type-308, scale 0.75.
+    ShimmerExit,
+    /// `:27904` — the honey exit: 20 type-152.
+    HoneyExit,
+    /// `:27917` — the water exit: 50 `dustWater()`, Y -= 4.
+    WaterExit,
+    /// `:27931` — the lava exit: 20 type-35.
+    LavaExit,
+}
+
+/// One queued liquid entry/exit splash dust burst (`Player.cs:27783-27940`):
+/// the tick snapshots the arm + box at the wet-edge moment; the drain
+/// (`player_dust::drain_splash_dust`) replays the `Dust.NewDust` chain on the
+/// `UpdatePlayers` stream BEFORE the splash sound (the C# runs the dust loop
+/// before `PlaySound(19)`). `water_style` feeds `Dust.dustWater()` for the water
+/// arms (the biome style under the player, `Main.CalculateWaterStyle`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SplashDust {
+    pub(crate) arm: SplashArm,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) water_style: i32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2157,6 +2196,11 @@ pub struct Player {
     /// one snapshot per glide tick, drained on the `UpdatePlayers` stream
     /// (`player_dust::drain_wing_glide`).
     pending_wing_glide_dust: Option<WingGlideDust>,
+    /// W4-f3 — the tick's queued liquid entry/exit splash dust
+    /// (`Player.cs:27783-27940`): one snapshot per wet-edge, drained on the
+    /// `UpdatePlayers` stream BEFORE the splash sound
+    /// (`player_dust::drain_splash_dust`).
+    pending_splash_dust: Option<SplashDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3101,6 +3145,7 @@ impl Player {
             pending_drown_bubble: None,
             pending_floor_dust: None,
             pending_wing_glide_dust: None,
+            pending_splash_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3746,6 +3791,13 @@ impl Player {
         self.pending_wing_glide_dust.take()
     }
 
+    /// W4-f3 — takes the liquid splash dust snapshot (`Player.cs:27783-27940`);
+    /// the caller owns `Main.dust` and the `UpdatePlayers` stream
+    /// (`player_dust::drain_splash_dust`), drained BEFORE the splash sound.
+    pub(crate) fn take_splash_dust(&mut self) -> Option<SplashDust> {
+        self.pending_splash_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3939,6 +3991,7 @@ impl Player {
         self.pending_drown_bubble = None;
         self.pending_floor_dust = None;
         self.pending_wing_glide_dust = None;
+        self.pending_splash_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -6129,6 +6182,9 @@ impl Player {
         let now_honey = liquid == Some(tr_core::tile::LiquidKind::Honey);
         let now_shimmer = liquid == Some(tr_core::tile::LiquidKind::Shimmer);
         let now_any_wet = now_wet || now_lava || now_honey || now_shimmer;
+        // W4-f3 — the biome water style under the player feeds `Dust.dustWater()`
+        // for the water splash arms (`Main.CalculateWaterStyle`, `biome.rs`).
+        let water_style = crate::biome::calculate_water_style(world, Vec2::new(cx, cy)) as i32;
         if now_any_wet && !was_any_wet && self.wet_count == 0 {
             self.wet_count = 10;
             // `:27777` — the shimmering (absorbed) state suppresses the play;
@@ -6136,31 +6192,52 @@ impl Player {
             // `:27779` — `flag25` is the NEW `Collision.LavaCollision`
             // (`:27671`): a lava entry plays the `:27846` default-1 arm;
             // the dry arms read the freshly-set shimmer/honey flags.
-            let style = if now_lava {
-                1 // `:27846` — the lava arm, default Style 1
+            let (style, arm) = if now_lava {
+                (1, SplashArm::LavaEntry) // `:27846` — the lava arm, default Style 1
             } else if now_shimmer {
-                2 // `:27806`
+                (2, SplashArm::ShimmerEntry) // `:27806`
             } else if now_honey {
-                1 // `:27819`
+                (1, SplashArm::HoneyEntry) // `:27819`
             } else {
-                0 // `:27832`
+                (0, SplashArm::WaterEntry) // `:27832`
             };
             self.pending_splash_sound = Some((style, self.x, self.y));
+            // W4-f3 — the entry dust burst (`:27783-27846`), drained BEFORE the
+            // splash sound (the C# runs the dust loop before `PlaySound(19)`).
+            self.pending_splash_dust = Some(SplashDust {
+                arm,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                water_style,
+            });
         } else if !now_any_wet && was_any_wet {
             // `:27864` — the exit jump clamp (`jump > jumpHeight/5`) is a
             // movement seam, not a sound one; the splash gate stands alone.
             if self.wet_count == 0 {
                 self.wet_count = 10;
-                let style = if self.lava_wet {
-                    1 // `:27940` — flag24, the OLD lava flag
+                // `:27873` — `flag24` is the OLD lava flag (the pre-update
+                // `lavaWet`); the dry arms read the old shimmer/honey flags.
+                let (style, arm) = if self.lava_wet {
+                    (1, SplashArm::LavaExit) // `:27940` — flag24, the OLD lava flag
                 } else if self.shimmer_wet {
-                    3 // `:27900`
+                    (3, SplashArm::ShimmerExit) // `:27900`
                 } else if self.honey_wet {
-                    1 // `:27913`
+                    (1, SplashArm::HoneyExit) // `:27913`
                 } else {
-                    0 // `:27926`
+                    (0, SplashArm::WaterExit) // `:27926`
                 };
                 self.pending_splash_sound = Some((style, self.x, self.y));
+                // W4-f3 — the exit dust burst (`:27877-27940`).
+                self.pending_splash_dust = Some(SplashDust {
+                    arm,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    water_style,
+                });
             }
         }
         self.wet = now_wet;

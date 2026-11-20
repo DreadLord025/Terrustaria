@@ -29,7 +29,7 @@
 //! `Main.rand` draw is a documented skip here.
 
 use crate::app::App;
-use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, StonedDust, WingGlideDust};
+use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, SplashArm, SplashDust, StonedDust, WingGlideDust};
 use glam::Vec2;
 use tr_core::particles::Color;
 
@@ -1276,6 +1276,72 @@ fn glide_217(app: &mut App, b: &WingGlideDust, off_l: i32, off_r: i32, ty: i32, 
     d.no_light = true;
     d.velocity /= 4.0;
     d.velocity -= Vec2::new(b.vx, b.vy);
+}
+
+// ---- W4-f3: the liquid entry/exit splash dust (`Player.cs:27783-27940`) -----
+
+/// Drain the liquid entry/exit splash dust burst (`Player.cs:27783-27940`). The
+/// C# runs the dust loop BEFORE `PlaySound(19)`, so the drain precedes the splash
+/// sound on the `UpdatePlayers` stream. The shimmer arms roll a `Next(6)` colour
+/// pick per puff; the water arms use `Dust.dustWater()` (the biome water style).
+pub(crate) fn drain_splash_dust(app: &mut App, b: SplashDust) {
+    match b.arm {
+        SplashArm::ShimmerEntry => splash_shimmer(app, &b, 0.8),
+        SplashArm::ShimmerExit => splash_shimmer(app, &b, 0.75),
+        SplashArm::HoneyEntry | SplashArm::HoneyExit => splash_simple(app, &b, 152, 20, -8.0, -1.0, 1.3, true),
+        SplashArm::LavaEntry | SplashArm::LavaExit => splash_simple(app, &b, 35, 20, -8.0, -1.5, 1.3, true),
+        SplashArm::WaterEntry => {
+            let ty = tr_core::particles::dust_water(b.water_style);
+            splash_simple(app, &b, ty, 50, -8.0, -3.0, 0.8, true);
+        }
+        SplashArm::WaterExit => {
+            let ty = tr_core::particles::dust_water(b.water_style);
+            splash_simple(app, &b, ty, 50, 0.0, -4.0, 0.8, true);
+        }
+    }
+}
+
+/// The shimmer splash (`:27783-27805` entry / `:27877-27899` exit): 50 type-308
+/// puffs at `(x-6, y+height/2)`, box `(width+12)×24`, `velocity.Y -= 4`,
+/// `velocity.X *= 2.5`, scale 0.8 (entry) / 0.75 (exit), noGravity, then a
+/// `Next(6)` colour pick (0 → (255,255,210), 1 → (190,245,255), 2 → (255,150,255),
+/// else (190,175,255)).
+fn splash_shimmer(app: &mut App, b: &SplashDust, scale: f32) {
+    let pos = Vec2::new(b.x - 6.0, b.y + b.height * 0.5);
+    for _ in 0..50 {
+        let idx = nd(app, pos, b.width as i32 + 12, 24, 308, 0.0, 0.0, 0, Color::default(), 1.0);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.velocity.y -= 4.0;
+        d.velocity.x *= 2.5;
+        d.scale = scale;
+        d.no_gravity = true;
+        d.color = match rng.next_max(6) {
+            0 => Color::new(255, 255, 210, 255),
+            1 => Color::new(190, 245, 255, 255),
+            2 => Color::new(255, 150, 255, 255),
+            _ => Color::new(190, 175, 255, 255),
+        };
+    }
+}
+
+/// The honey/lava/water splash (`:27810-27846` / `:27904-27940`): `count` puffs
+/// of `ty` at `(x-6, y+height/2+dy)`, box `(width+12)×24`, `velocity.Y += y_sub`,
+/// `velocity.X *= 2.5`, scale set, alpha 100 (when `alpha100`), noGravity.
+#[allow(clippy::too_many_arguments)]
+fn splash_simple(app: &mut App, b: &SplashDust, ty: i32, count: i32, dy: f32, y_sub: f32, scale: f32, alpha100: bool) {
+    let pos = Vec2::new(b.x - 6.0, b.y + b.height * 0.5 + dy);
+    for _ in 0..count {
+        let idx = nd(app, pos, b.width as i32 + 12, 24, ty, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = app.dust.slot_mut(idx);
+        d.velocity.y += y_sub;
+        d.velocity.x *= 2.5;
+        d.scale = scale;
+        if alpha100 {
+            d.alpha = 100;
+        }
+        d.no_gravity = true;
+    }
 }
 
 #[cfg(test)]
@@ -2549,6 +2615,127 @@ mod tests {
             assert_eq!(d2.velocity, vel2 / 4.0 - v);
         } else {
             assert_eq!(slots.len(), 1);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    // ---- W4-f3: liquid splash witnesses -------------------------------------
+
+    fn splash_burst(arm: SplashArm) -> SplashDust {
+        SplashDust {
+            arm,
+            x: 300.0,
+            y: 600.0,
+            width: 20.0,
+            height: 42.0,
+            water_style: 0,
+        }
+    }
+
+    /// `:27783-27805` — the shimmer entry: 50 type-308 puffs, the `Next(6)`
+    /// colour pick per puff, scale 0.8. The type-308 tweak (`velocity *= 0.5`,
+    /// `Y += 1`) rides the pool before the post-arms.
+    #[test]
+    fn w4_f3_the_shimmer_entry_rolls_six_colours() {
+        let mut app = rig(0x5EED);
+        let b = splash_burst(SplashArm::ShimmerEntry);
+        drain_splash_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 50);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 308);
+            assert!(d.no_gravity);
+            assert_eq!(d.scale, 0.8);
+            let (v, _) = default_six(&mut rng, b.width as i32 + 12, 24, 0.0, 0.0, 1.0);
+            // The type-308 tweak, then the post-arms.
+            let mut vel = v * 0.5;
+            vel.y += 1.0;
+            vel.y -= 4.0;
+            vel.x *= 2.5;
+            assert_eq!(d.velocity, vel);
+            let pick = rng.next_max(6);
+            let expect = match pick {
+                0 => Color::new(255, 255, 210, 255),
+                1 => Color::new(190, 245, 255, 255),
+                2 => Color::new(255, 150, 255, 255),
+                _ => Color::new(190, 175, 255, 255),
+            };
+            assert_eq!(d.color, expect);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:27810-27818` — the honey entry: 20 type-152 puffs, alpha 100, scale 1.3.
+    /// The type-152 tweak (`velocity *= 0.1`, `Y = -0.5`) rides the pool.
+    #[test]
+    fn w4_f3_the_honey_entry_puffs_152() {
+        let mut app = rig(0x5EED);
+        let b = splash_burst(SplashArm::HoneyEntry);
+        drain_splash_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 20);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 152);
+            assert_eq!(d.alpha, 100);
+            assert!(d.no_gravity);
+            assert_eq!(d.scale, 1.3);
+            let (v, _) = default_six(&mut rng, b.width as i32 + 12, 24, 0.0, 0.0, 1.0);
+            let mut vel = v * 0.1;
+            vel.y = -0.5;
+            vel.y -= 1.0;
+            vel.x *= 2.5;
+            assert_eq!(d.velocity, vel);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:27823-27831` — the water entry: 50 `dustWater()` puffs (style 0 → 33),
+    /// alpha 100, scale 0.8. The type-33 tweak (`alpha = 170`, `velocity *= 0.5`,
+    /// `Y += 1`) rides the pool before the post-arms re-set alpha 100.
+    #[test]
+    fn w4_f3_the_water_entry_uses_dust_water() {
+        let mut app = rig(0x5EED);
+        let b = splash_burst(SplashArm::WaterEntry);
+        drain_splash_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 50);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 33, "water style 0 → dustWater 33");
+            assert_eq!(d.alpha, 100);
+            assert!(d.no_gravity);
+            assert_eq!(d.scale, 0.8);
+            let (v, _) = default_six(&mut rng, b.width as i32 + 12, 24, 0.0, 0.0, 1.0);
+            let mut vel = v * 0.5;
+            vel.y += 1.0;
+            vel.y -= 3.0;
+            vel.x *= 2.5;
+            assert_eq!(d.velocity, vel);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:27837-27845` — the lava entry: 20 type-35 puffs, alpha 100, scale 1.3.
+    #[test]
+    fn w4_f3_the_lava_entry_puffs_35() {
+        let mut app = rig(0x5EED);
+        let b = splash_burst(SplashArm::LavaEntry);
+        drain_splash_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 20);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 35);
+            assert_eq!(d.alpha, 100);
+            assert_eq!(d.scale, 1.3);
+            let (v, _) = default_six(&mut rng, b.width as i32 + 12, 24, 0.0, 0.0, 1.0);
+            let mut vel = v * 0.1;
+            vel.y = -0.5;
+            vel.y -= 1.5;
+            vel.x *= 2.5;
+            assert_eq!(d.velocity, vel);
         }
         assert_eq!(stream_of(&mut app), rng);
     }

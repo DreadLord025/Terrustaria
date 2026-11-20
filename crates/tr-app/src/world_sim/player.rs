@@ -1538,6 +1538,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_double_jump_dust() {
                 crate::player_dust::drain_double_jump_dust(app, burst);
             }
+            // W4-f3 — the liquid entry/exit splash DUST (`Player.cs:27783-27940`):
+            // the C# runs the dust loop BEFORE `PlaySound(19)`, so the drain
+            // precedes the splash sound on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_splash_dust() {
+                crate::player_dust::drain_splash_dust(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
