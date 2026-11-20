@@ -5786,6 +5786,21 @@ impl Player {
         let now_honey = liquid == Some(tr_core::tile::LiquidKind::Honey);
         let now_shimmer = liquid == Some(tr_core::tile::LiquidKind::Shimmer);
         let now_any_wet = now_wet || now_lava || now_honey || now_shimmer;
+        // W4-f34 — `Player.cs:27744-27748`: honey contact refreshes the
+        // Honey buff every tick (`AddBuff(48, 1800)` — 30 s, the refresh-
+        // not-stack path `:5402-5426`); the `!this.shimmering` guard is
+        // vacuous in the port (no absorbed state, S1-E-16 — the same
+        // deviation the splash block records at `:27777`). The C# runs the
+        // grant between the shimmer arm and the splash edges; the port
+        // folds it ahead of the splash block — observation-identical:
+        // `AddBuff` draws no RNG, the splash reads only the wet flags, and
+        // the buff's effect rows (`update_survival`, later in this tick)
+        // see the fresh grant either way. The effect rows: the drain
+        // mitigation (`:19096-19103`, `derive_dot_inputs`) and the +2 regen
+        // / +2 ramp-time adds (`:19134-19138`, `update_survival`).
+        if now_honey {
+            self.buffs.add_buff(48, 1800);
+        }
         if now_any_wet && !was_any_wet && self.wet_count == 0 {
             self.wet_count = 10;
             // `:27777` — the shimmering (absorbed) state suppresses the play;
@@ -6059,6 +6074,10 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
+        // W4-f34 — `ResetEffects`' `deadCellsPotionStation = false`
+        // (`Player.cs:18362`): the buff-366 arm below re-arms it per tick;
+        // the `AddBuff` chain's 1.2× extension rule (`:5430-5433`) reads it.
+        self.buffs.dead_cells_potion_station = false;
         // (Resync keep-one: the summoner/whip attack-speed clears live in
         // the i24/i27 ResetEffects block above — `:18341`/`:18499`.)
         // `ResetEffects`' attack-speed clears (`Player.cs:18531-18532`
@@ -6521,6 +6540,19 @@ impl Player {
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
                 // +12 armor penetration.
                 159 => self.melee_armor_penetration += 12,
+                // W4-f34 — `:9935-9939` — Sugar Rush (192, the Slice of
+                // Cake): `pickSpeed -= 0.2f; moveSpeed += 0.2f` (the port's
+                // positive pick_speed_bonus convention: a lower pickSpeed
+                // mines faster, the Mining-104 row's shape).
+                192 => {
+                    self.pick_speed_bonus += 0.2;
+                    self.move_speed += 0.2;
+                }
+                // W4-f34 — `:10185-10188` — the Dead Cells Potion Station
+                // buff (366): `deadCellsPotionStation = true` — the AddBuff
+                // chain's 1.2× time-extension flag (`:5430-5433`, the
+                // `BuffTimeIsExtendedByDeadCellsPotionStationBuff` set).
+                366 => self.buffs.dead_cells_potion_station = true,
                 // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
                 // Shell): +25% while at or below half life.
                 62 => {
@@ -11164,12 +11196,20 @@ impl Player {
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting || self.sleeping,
-                extra_regen: self.accessory_life_regen,
+                // W4-f34 — the Honey buff's regen adds (`Player.cs:19134-
+                // 19138`): `lifeRegenTime += 2f; lifeRegen += 2` while held
+                // (the drain mitigation `:19096-19103` already folds into
+                // `dot_regen`). The adds land AFTER the ramp-time++ and
+                // BEFORE the starving/soulDrain/heartyMeal rows and the
+                // campfire/heart aura adds — the engine's `extra_*` slots
+                // sit at exactly that point (`regen.rs:174-182`).
+                extra_regen: self.accessory_life_regen + if self.holding(48) { 2 } else { 0 },
                 // S1-C-12 wave D — the Crimson set's regen halves
                 // (`ArmorSetBonuses.cs:248-251` grants the flag):
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
-                extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
+                extra_time: if self.crimson_regen { 1.0 } else { 0.0 }
+                    + if self.holding(48) { 2.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
                 ..RegenInputs::default()
             };
@@ -13281,6 +13321,86 @@ mod tests {
         // 108000 ticks = 30 minutes at 60 Hz — the grant duration.
         let slot = p.buffs.find_buff_index(29).unwrap();
         assert!(p.buffs.buff_time[slot] > 107000);
+    }
+
+    #[test]
+    fn w4_f34_the_sugar_rush_buff_arm_is_verbatim() {
+        // `Player.cs:9935-9939` — the Slice of Cake's buff 192:
+        // `pickSpeed -= 0.2f; moveSpeed += 0.2f`. The port's positive
+        // pick_speed_bonus convention mirrors the Mining-104 row.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let (pick0, move0) = (p.pick_speed_bonus, p.move_speed);
+        p.buffs.add_buff(192, 7200);
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - (pick0 + 0.2)).abs() < 1e-5);
+        assert!((p.move_speed - (move0 + 0.2)).abs() < 1e-5);
+        // The grant expires normally (192 is NOT in
+        // `TimeLeftDoesNotDecrease`, `BuffID.cs:47`).
+        let slot = p.buffs.find_buff_index(192).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 7199, "one tick decremented");
+    }
+
+    #[test]
+    fn w4_f34_the_dead_cells_station_flag_rearms_per_tick_and_clears() {
+        // `Player.cs:10185-10188` — buff 366 sets `deadCellsPotionStation`;
+        // `ResetEffects` (`:18362`) clears it per tick, the arm re-arms it.
+        // The flag feeds `AddBuff_DetermineBuffTimeToAdd`'s 1.2× extension
+        // (`:5430-5433`) for the `BuffTimeIsExtendedByDeadCellsPotionStation`
+        // set (potions 1..18 / 104..117 / 121..124 / 257 / 343).
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(366, 108000);
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.dead_cells_potion_station, "the arm re-arms it");
+        // While held, a set-member potion's grant extends ×1.2 truncating.
+        p.buffs.add_buff(1, 100); // ObsidianSkin, in the set
+        let slot = p.buffs.find_buff_index(1).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 120, "100 × 1.2");
+        // The buff never ticks down (`TimeLeftDoesNotDecrease`, `:47`).
+        let slot366 = p.buffs.find_buff_index(366).unwrap();
+        assert_eq!(p.buffs.buff_time[slot366], 108000);
+        // Cleared: the next tick's ResetEffects drops the flag, and a fresh
+        // potion grant lands at its plain duration.
+        p.buffs.clear_buff(366);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.buffs.dead_cells_potion_station, "the reset clears it");
+        p.buffs.add_buff(2, 100); // Regeneration, in the set
+        let slot = p.buffs.find_buff_index(2).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 100, "no extension without the flag");
+    }
+
+    #[test]
+    fn w4_f34_honey_contact_refreshes_the_honey_buff_every_tick() {
+        // `Player.cs:27744-27748`: while in honey (`Collision.honey`, the
+        // port's mid-tile probe) `AddBuff(48, 1800)` refreshes per tick —
+        // the buff holds at 1800 while submerged and decays once dry.
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Honey);
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let slot = p.buffs.find_buff_index(48).expect("the honey grant");
+        assert_eq!(p.buffs.buff_time[slot], 1800, "the 30-second grant");
+        // Submerged ticks refresh, never stack (`:5402-5426`).
+        for _ in 0..5 {
+            p.update(&w, PlayerInput::default());
+        }
+        let slot = p.buffs.find_buff_index(48).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 1800, "refreshed, not stacked");
+        // Out of the honey the timer runs down (48 is not in
+        // `TimeLeftDoesNotDecrease`).
+        p.teleport_style(p.x, 20.0 * 16.0, 0);
+        p.update(&w, PlayerInput::default());
+        let slot = p.buffs.find_buff_index(48).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 1799, "decays once dry");
     }
 
     #[test]
@@ -17046,25 +17166,30 @@ mod tests {
     fn honey_softens_a_drain_by_four_and_never_heals() {
         // DW-2.5 — `Player.cs:19096-19103`: honey +4 to a negative regen,
         // clamped at 0 — never positive, no heal from the mitigation itself.
+        // W4-f34 re-derivation: the +2 flat add / +2 ramp-time rows
+        // (`:19134-19138`) now land too, so the totals carry them.
         let (mut p, dw) = drain_rig();
         p.buffs.add_buff(20, 600); // Poisoned −4
         p.buffs.add_buff(48, 600); // Honey
         for _ in 0..300 {
             p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         }
-        assert_eq!(p.regen.life_regen, 0, "−4 + 4 clamps at 0");
-        assert_eq!(p.hp, 1000, "a softened −4 drains nothing");
+        // −4 + 4 clamps at 0, then honey's +2 flat add (`:19137`).
+        assert_eq!(p.regen.life_regen, 2, "the mitigation clamps, the +2 adds");
+        assert!(p.hp >= 1000, "a softened drain never loses life");
         let (mut p, dw) = drain_rig();
         p.buffs.add_buff(70, 600); // Venom −30
         p.buffs.add_buff(48, 600);
         p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
-        assert_eq!(p.regen.life_regen, -26, "−30 + 4 stays negative");
-        // Honey without a drain never adds anything (the +2 aura is M2-BUFF-5).
+        assert_eq!(p.regen.life_regen, -24, "−30 + 4 mitigation + 2 honey");
+        // Honey without a drain adds its flat +2 (W4-f34 — the former
+        // M2-BUFF-5 deferral landed; the ramp row at time 3 still rounds 0).
         let (mut p, dw) = drain_rig();
         p.buffs.add_buff(48, 600);
         p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
-        assert_eq!(p.regen.life_regen, 0);
-        assert_eq!(p.hp, 1000);
+        assert_eq!(p.regen.life_regen, 2, "the +2 flat add");
+        assert_eq!(p.regen.life_regen_time, 3.0, "1 base + 2 honey");
+        assert!(p.hp >= 1000);
     }
 
     #[test]
