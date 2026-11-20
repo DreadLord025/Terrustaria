@@ -482,8 +482,14 @@ pub struct Projectile {
     pub rot: f32,
     pub damage: i32,
     pub knock_back: f32,
-    /// The crit decision rolled at throw time (the roll rides the editing
-    /// pass's `UpdatePlayers` stream, not the projectile step's).
+    /// The crit decision. The C# rolls crit PER-HIT inside
+    /// `Damage_PVE_Inner` (`Projectile.cs:12883-12917`) on the
+    /// `UpdateProjectiles` stream — the damage walks compute it locally and
+    /// no longer read this field. A retained seam (S1-P-i11): the plain
+    /// `spawn`'s crit argument still lands here and `set_crit` still writes
+    /// it, but no production caller passes a non-false flag today; the whip
+    /// test's "never self-crits" witness reads it. The data-carrying spawn
+    /// leaves it false.
     pub crit: bool,
     /// `Projectile.friendly` (`:3115`): true = the player's shots (the pool's
     /// PVE pass hits NPCs), false = the hostile shots (the player-contact
@@ -689,6 +695,24 @@ pub struct Projectile {
     /// tick — the `wants_mark_spawn` intent pattern. `None` for every slot
     /// that played nothing this sub-step.
     pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32)>,
+    /// `Projectile.melee`/`ranged`/`magic` (`:434-438`, reset false
+    /// `:751-753`) — the damage-class flags the per-hit crit block reads
+    /// (`Damage_PVE_Inner`, `Projectile.cs:12890-12898`). The data-carrying
+    /// spawn copies them from `proj_data`; the plain `spawn` leaves the
+    /// false default (the SetDefaults reset).
+    pub melee: bool,
+    pub ranged: bool,
+    pub magic: bool,
+    /// `Projectile.appliesImmunityTimeOnSingleHits` (`:717`, reset false) —
+    /// the id-static gate's single-hit override (`:13969`/`:14116`).
+    pub applies_immunity_time_on_single_hits: bool,
+    /// `Projectile.bonusCritChance` (`:803`, reset 0) — the per-hit crit
+    /// block's additive bonus (`:12886-12889`). The C# writers are the monk
+    /// staff's 698 ground-impact (`:69501`, +25), the revolver's
+    /// `revolverCritChanceBonus` (`:11131`) and the item-source copy
+    /// (`:11139`) — all unported state; the field rides for completeness
+    /// and stays 0 on every ported shot.
+    pub bonus_crit_chance: i32,
 }
 
 impl Default for Projectile {
@@ -759,6 +783,11 @@ impl Default for Projectile {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            melee: false,
+            ranged: false,
+            magic: false,
+            applies_immunity_time_on_single_hits: false,
+            bonus_crit_chance: 0,
         }
     }
 }
@@ -13560,6 +13589,11 @@ impl ProjectilePool {
             falling_tile: None,
             detonated: false,
             blast_spawned: false,
+            melee: data.melee,
+            ranged: data.ranged,
+            magic: data.magic,
+            applies_immunity_time_on_single_hits: data.applies_immunity_time_on_single_hits,
+            bonus_crit_chance: 0,
             ..Default::default()
         };
         let base = slot * 256;
@@ -17631,7 +17665,7 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
-        let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, crit, center) = {
+        let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, center) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
                 return;
@@ -17643,10 +17677,15 @@ impl ProjectilePool {
                 p.uses_id_static_immunity,
                 p.max_penetrate,
                 p.knock_back,
-                p.crit,
                 p.pos + Vec2::splat(SIZE * 0.5),
             )
         };
+        // `Damage_PVE_Inner`'s `ownedBySomeone` (`Projectile.cs:12557` →
+        // `:578-588`): `!npcProj && !trap`. The port has no `npcProj` field
+        // (the hostile shots ride `friendly = false`), so the gate is the
+        // owner slot + the trap flag. The per-hit crit block (`:12883`) and
+        // the luck-carrying `DamageVar` (`:12938`) both ride it.
+        let owned_by_someone = owner_idx < 255 && !self.slots[slot].trap;
         // `Player.killGuide`/`killClothier` — the worn-doll flags the friendly
         // gate reads (`Player.cs:15124`/`:15128`).
         let (kill_guide, kill_clothier) = doll_flags(player.as_deref());
@@ -17842,12 +17881,43 @@ impl ProjectilePool {
                 continue;
             }
             let hit = center;
+            // `Damage_PVE_Inner`'s per-hit crit block (`Projectile.cs:12829`,
+            // `:12883-12917`): `crit` starts false and each set class flag
+            // rolls an independent `Next(1, 101) <= classCrit + bonus` on the
+            // `UpdateProjectiles` stream — BEFORE the tag math and DamageVar.
+            // The spawn-time roll is gone (the C# never rolls crit at spawn).
+            let mut crit = false;
+            if owned_by_someone {
+                let (melee_crit, ranged_crit, magic_crit) = player
+                    .as_deref()
+                    .map(|pl| (pl.melee_crit, pl.ranged_crit, pl.magic_crit))
+                    .unwrap_or((0, 0, 0));
+                let p = &self.slots[slot];
+                crit = tr_core::damage::projectile_hit_crit(
+                    rng,
+                    p.melee,
+                    p.ranged,
+                    p.magic,
+                    melee_crit,
+                    ranged_crit,
+                    magic_crit,
+                    p.bonus_crit_chance,
+                );
+                // `TryConsumingTimerCrit` (`:12902`) and the monk-set /
+                // sentry-backpack arms (`:12903-12916`) are unported
+                // accessories — no port state, no draws.
+            }
             // `:12919-12933`: the tag-damage math runs on the hit's damage —
             // the summon/sentry gate (`WhipTagEffect.CanRunHitEffects`)
             // rejects every ported shot until M4-PROJ-8, the synthetic tests
-            // set the slot flag directly.
-            let (mut dmg, hit_crit) =
+            // set the slot flag directly. The tag's forced crit wins.
+            let (mut dmg, mut hit_crit) =
                 self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
+            // `:12934-12937`: the Eye-of-Cthulhu yoyo's homing dash (1130)
+            // never crits.
+            if self.slots[slot].kind == EYE_OF_CTHULHU_DASH {
+                hit_crit = false;
+            }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
             // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
@@ -17974,7 +18044,10 @@ impl ProjectilePool {
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
-            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8));
+            let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
+            let landed = Npc::strike_projectile(
+                npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
+            );
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
             // Destroyer body's probe launch gate (`:89266-89285`) — the
             // Next(25) roll rides the strike's stream (the C# HitEffect runs
@@ -17995,17 +18068,43 @@ impl ProjectilePool {
                     self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
                 }
             }
-            // `:14087-14119`: the immunity application.
-            if uses_local && self.slots[slot].local_hit_cooldown != -2 {
+            // `Projectile.cs:13967-14119`: the immunity application, in the
+            // C#'s if/else order. The id-static gate reads the CURRENT
+            // `penetrate` (not maxPenetrate) with the single-hit override
+            // (`:13969`); the −1 cooldown wraps to the u32::MAX block-forever
+            // sentinel via `GameUpdateCount + (uint)cooldown` (`:13972`).
+            let p = &self.slots[slot];
+            if uses_id_static {
+                if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
+                    npcs[idx].immune[owner_idx] = 0;
+                    self.id_static.insert(
+                        (p.kind, idx as u16),
+                        self.update_count
+                            .wrapping_add(p.id_static_hit_cooldown as u32 as u64),
+                    );
+                }
+            } else if p.kind == LAST_PRISM_LASER {
+                // `:13992-13995` — the Last Prism laser (632):
+                // `GetSlowMagicUseTime(5)`; the `slowMagicUse` state is
+                // unported (`Player.cs:47019-47026` returns the original
+                // time when the flag is false), so the window is 5.
+                npcs[idx].immune[owner_idx] = 5;
+            } else if matches!(p.kind, NEBULA_BLAZE_1 | NEBULA_BLAZE_2 | SPIRIT_FLAME) {
+                // `:14016-14023` — the 634/635/659 per-type arm: 5 ticks.
+                npcs[idx].immune[owner_idx] = 5;
+            } else if p.kind == MAGIC_MISSILE {
+                // `:14032-14035` — the Magic Missile (16): 8 ticks.
+                npcs[idx].immune[owner_idx] = 8;
+            } else if p.kind == TYPHOON {
+                // `:14036-14039` — the Razorblade Typhoon (409): 6 ticks.
+                npcs[idx].immune[owner_idx] = 6;
+            } else if uses_local && p.local_hit_cooldown != -2 {
+                // `:14111-14115` — the local pair.
                 npcs[idx].immune[owner_idx] = 0;
-                self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
-            } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
-                npcs[idx].immune[owner_idx] = 0;
-                self.id_static.insert(
-                    (self.slots[slot].kind, idx as u16),
-                    self.update_count + self.slots[slot].id_static_hit_cooldown as u64,
-                );
-            } else if max_penetrate != 1 {
+                self.local_immunity[slot * 256 + idx] = p.local_hit_cooldown;
+            } else if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
+                // `:14116-14119` — the stock per-owner window, gated on the
+                // CURRENT penetrate with the single-hit override.
                 npcs[idx].immune[owner_idx] = OWNER_IMMUNE_TICKS;
             }
             if landed {
@@ -18070,7 +18169,7 @@ impl ProjectilePool {
         rng: &mut dyn DropRng,
         luck: f32,
     ) {
-        let (damage, owner, uses_local, uses_id_static, max_penetrate, kb, crit) = {
+        let (damage, owner, uses_local, uses_id_static, max_penetrate, kb) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
                 return;
@@ -18082,9 +18181,13 @@ impl ProjectilePool {
                 p.uses_id_static_immunity,
                 p.max_penetrate,
                 p.knock_back,
-                p.crit,
             )
         };
+        // `ownedBySomeone` (`:12557`): the owner slot + the trap flag. The
+        // boxed seam has no player reference, so the class crits read 0 (the
+        // base-4 default is the player's; the death-burst callers pass no
+        // player — the per-hit roll still rides the stream in the C# order).
+        let owned_by_someone = owner < 255 && !self.slots[slot].trap;
         let (px, py, pw, ph) = {
             let p = &self.slots[slot];
             (p.pos.x, p.pos.y, p.w, p.h)
@@ -18117,11 +18220,26 @@ impl ProjectilePool {
                 continue;
             }
             let (cx, cy) = (px + pw * 0.5, py + ph * 0.5);
+            // `Damage_PVE_Inner`'s per-hit crit block (`:12883-12917`) — the
+            // boxed walk rolls it like the plain pass, BEFORE DamageVar. The
+            // class crits read 0 (no player in this seam); the roll still
+            // consumes its draws on the stream in the C# order.
+            let mut crit = false;
+            if owned_by_someone {
+                let p = &self.slots[slot];
+                crit = tr_core::damage::projectile_hit_crit(
+                    rng, p.melee, p.ranged, p.magic, 0, 0, 0, p.bonus_crit_chance,
+                );
+            }
+            if self.slots[slot].kind == EYE_OF_CTHULHU_DASH {
+                crit = false; // `:12934-12937`
+            }
             // Projectile.cs:12938, NPC.cs:81189,81239 — the boxed Damage() walk
             // applies DamageVar and defense/crit like the plain PVE pass.
             let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
-            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8));
+            let landed =
+                Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8), false);
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
             // Destroyer body's probe gate rides the strike's stream.
             if landed {
@@ -18138,23 +18256,33 @@ impl ProjectilePool {
                     self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
                 }
             }
-            if uses_local && self.slots[slot].local_hit_cooldown != -2 {
+            // `Projectile.cs:13967-14119` — the same if/else order as the
+            // plain walk: id-static first (CURRENT penetrate + the override),
+            // the per-type arms, then local, then the stock window.
+            let p = &self.slots[slot];
+            if uses_id_static {
+                if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
+                    npcs[idx].immune[owner] = 0;
+                    self.id_static.insert(
+                        (p.kind, idx as u16),
+                        self.update_count
+                            .wrapping_add(p.id_static_hit_cooldown as u32 as u64),
+                    );
+                }
+            } else if p.kind == LAST_PRISM_LASER {
+                // `:13992-13995` — `GetSlowMagicUseTime(5)`; `slowMagicUse`
+                // is unported (`Player.cs:47019-47026`), so the window is 5.
+                npcs[idx].immune[owner] = 5;
+            } else if matches!(p.kind, NEBULA_BLAZE_1 | NEBULA_BLAZE_2 | SPIRIT_FLAME) {
+                npcs[idx].immune[owner] = 5; // `:14016-14023`
+            } else if p.kind == MAGIC_MISSILE {
+                npcs[idx].immune[owner] = 8; // `:14032-14035`
+            } else if p.kind == TYPHOON {
+                npcs[idx].immune[owner] = 6; // `:14036-14039`
+            } else if uses_local && p.local_hit_cooldown != -2 {
                 npcs[idx].immune[owner] = 0;
-                self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
-            } else if uses_id_static && max_penetrate != 1 {
-                // `:13967-13973` — the idStatic application's
-                // `penetrate != 1 || appliesImmunityTimeOnSingleHits` gate
-                // (no ported row sets the override flag — the three C#
-                // setters `:2568`/`:3754`/`:10643` are unported kinds),
-                // then the stamp `GameUpdateCount + (uint)cooldown` — a −1
-                // cooldown wraps to u32::MAX (the block-forever sentinel,
-                // the 644 shard burst's stock pair).
-                npcs[idx].immune[owner] = 0;
-                self.id_static.insert(
-                    (self.slots[slot].kind, idx as u16),
-                    self.update_count.wrapping_add(self.slots[slot].id_static_hit_cooldown as u32 as u64),
-                );
-            } else if max_penetrate != 1 {
+                self.local_immunity[slot * 256 + idx] = p.local_hit_cooldown;
+            } else if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
                 npcs[idx].immune[owner] = OWNER_IMMUNE_TICKS;
             }
             if landed {
@@ -19235,6 +19363,143 @@ mod tests {
         assert!(npc.hp < npc.max_hp);
         // `:14112-14119`: a single-hit projectile applies no immunity.
         assert_eq!(npc.immune[0], 0);
+    }
+
+    #[test]
+    fn the_id_static_block_forever_sentinel_stamps_on_a_single_hit() {
+        // W3-i11 — `Projectile.cs:13967-13973`: the id-static gate reads the
+        // CURRENT penetrate with the single-hit override; the −1 cooldown
+        // wraps to the u32::MAX block-forever sentinel. The 644 shard's
+        // resize-and-`Damage` burst sets `penetrate = maxPenetrate = -1`
+        // (`:72167-72168`/`:34351-34352`) BEFORE the walk, so the gate passes
+        // and the −1 idStatic cooldown (`:466` default) stamps the sentinel —
+        // the old `cooldown > 0` gate skipped it entirely.
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(
+                RAINBOW_CRYSTAL_EXPLOSION,
+                npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0,
+            )
+            .unwrap();
+        // The burst window (`rainbow_crystal_burst`): friendly flips true
+        // (`:34345`/`:72160`) and penetrate/maxPenetrate go −1
+        // (`:34351-34352`/`:72167-72168`) before `Damage()`.
+        pool.slots_mut()[slot].friendly = true;
+        pool.slots_mut()[slot].penetrate = -1;
+        pool.slots_mut()[slot].max_penetrate = -1;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert!(npc.hp < 10_000, "the burst lands");
+        // The sentinel stamp: update_count 0 + (u32::MAX) — never expires.
+        let stamp = pool.id_static.get(&(RAINBOW_CRYSTAL_EXPLOSION, 0)).copied();
+        assert_eq!(stamp, Some(u32::MAX as u64), "the −1 cooldown wraps to the sentinel");
+        assert_eq!(npc.immune[0], 0, "the id-static arm clears the per-owner window");
+        // A second hit on the same NPC is refused (the sentinel blocks).
+        let hp_after = npc.hp;
+        pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert_eq!(npc.hp, hp_after, "the block-forever sentinel refuses the re-hit");
+    }
+
+    #[test]
+    fn the_nebula_blaze_and_spirit_flame_apply_five_tick_immunity() {
+        // W3-i11 — `Projectile.cs:14016-14023`: the 634/635/659 per-type arms
+        // set `immune[owner] = 5`. The old walk fell through to the stock
+        // 10-tick window (penetrate −1).
+        let w = ground();
+        for kind in [NEBULA_BLAZE_1, NEBULA_BLAZE_2, SPIRIT_FLAME] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert!(npc.hp < 10_000, "kind {kind} lands");
+            assert_eq!(npc.immune[0], 5, "kind {kind}: the 5-tick per-type arm");
+        }
+    }
+
+    #[test]
+    fn the_magic_missile_and_typhoon_apply_their_per_type_immunity() {
+        // W3-i11 — `Projectile.cs:14032-14039`: the Magic Missile (16) sets 8,
+        // the Razorblade Typhoon (409) sets 6.
+        let w = ground();
+        for (kind, want) in [(MAGIC_MISSILE, 8), (TYPHOON, 6)] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert!(npc.hp < 10_000, "kind {kind} lands");
+            assert_eq!(npc.immune[0], want, "kind {kind}: the per-type arm");
+        }
+    }
+
+    #[test]
+    fn the_last_prism_laser_applies_five_tick_immunity_in_both_walks() {
+        // W3-i11 — `Projectile.cs:13992-13995`: the Last Prism laser (632)
+        // sets `immune[owner] = GetSlowMagicUseTime(5)`; the `slowMagicUse`
+        // state is unported (`Player.cs:47019-47026` returns the original
+        // time when the flag is false), so the window is 5. The old walks
+        // fell through to the stock 10-tick window (penetrate −1). Both the
+        // plain PVE pass and the boxed `Damage()` walk carry the arm, in
+        // the C# if/else position (after id-static, before 634/635/659).
+        let w = ground();
+        // The plain walk.
+        {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(LAST_PRISM_LASER, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert!(npc.hp < 10_000, "the laser lands");
+            assert_eq!(npc.immune[0], 5, "the 5-tick per-type arm (plain walk)");
+            // penetrate −1 keeps the shot alive, but the 5-tick window
+            // refuses the immediate re-hit (`:12620-12624`).
+            let hp_after = npc.hp;
+            pool.damage_pve(slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert_eq!(npc.hp, hp_after, "the per-owner window refuses the re-hit");
+        }
+        // The boxed walk — same arm, same position in the if/else chain.
+        {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(LAST_PRISM_LASER, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve_boxed(
+                slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0,
+            );
+            assert!(npc.hp < 10_000, "the laser lands (boxed walk)");
+            assert_eq!(npc.immune[0], 5, "the 5-tick per-type arm (boxed walk)");
+        }
     }
 
     /// S1-C-8: `Damage()`'s PVE hit test is `Colliding(Damage_GetHitbox(),
@@ -24578,6 +24843,11 @@ mod phasmal_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            melee: false,
+            ranged: false,
+            magic: false,
+            applies_immunity_time_on_single_hits: false,
+            bonus_crit_chance: 0,
         }
     }
 
@@ -24971,6 +25241,11 @@ mod ritual_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            melee: false,
+            ranged: false,
+            magic: false,
+            applies_immunity_time_on_single_hits: false,
+            bonus_crit_chance: 0,
         }
     }
 

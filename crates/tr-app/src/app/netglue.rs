@@ -479,6 +479,9 @@ impl App {
                     st.knock_back,
                     st.crit,
                     Some(id as u8),
+                    // `Main.expertMode` — the host's world-mode state is not
+                    // persisted yet (DropCtx's note); the classic default.
+                    false,
                 );
                 let dead = self.npcs[slot].hp <= 0;
                 // The relay carries the validated values to everyone else.

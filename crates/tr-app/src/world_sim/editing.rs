@@ -574,9 +574,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
-    // cost, the throw damage and the crit all read the instance values.
+    // cost and the throw damage read the instance values. The throw's crit
+    // is per-hit now (the projectile's class flags), not a spawn roll.
     let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
-    let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
     let held_use_ammo = registry::get(held.kind).map_or(0, |d| d.use_ammo);
     // `Player.channel` (`Player.cs:52958-52968`): while the button is held
     // on a `channel` item the aim target rides the player for the aiStyle-9
@@ -826,14 +826,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         Vec2::new(pcx, pcy) + dir * 10.0
                     };
                     let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
-                    // The crit rolls at throw time (the class crit + the
-                    // item's crit; `Projectile.Damage` consumes it on hit) —
-                    // the throw runs in `Player.ItemCheck` under the
-                    // `UpdatePlayers` swap (`Main.cs:17754`), so the roll
-                    // rides `stream(UpdatePlayers)`.
+                    // The crit does NOT roll at throw time: the C# rolls it
+                    // per-hit inside `Projectile.Damage_PVE_Inner`
+                    // (`Projectile.cs:12883-12917`) on the `UpdateProjectiles`
+                    // stream. The spawn carries only the class flags
+                    // (`proj_data`); the throw's `UpdatePlayers` stream spends
+                    // no crit draw (the Nebula Blaze pre-pass below is the
+                    // first draw of the generic shot).
                     let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    let crit =
-                        tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit);
                     // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
                     // 20% roll upgrades the bolt (634→635) at triple damage —
                     // `Damage *= 3` on the weapon-damage int (`:42653`'s
@@ -992,12 +992,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                                     offset * (std::f32::consts::PI / 4.0) / 10.0,
                                 ));
                                 v *= remap_gem(offset.abs(), 0.0, 3.0, 1.3, 1.0);
-                                let slot = app.projectiles.spawn_with_data_ai(
+                                let _slot = app.projectiles.spawn_with_data_ai(
                                     kind, sx, sy, v.x, v.y, damage, kb, bits, n as f32,
                                 );
-                                if let Some(slot) = slot {
-                                    app.projectiles.set_crit(slot, crit);
-                                }
                             }
                         } else if features.all_gems() {
                             // `:49350-49364`: three bolts of one random gem
@@ -1010,29 +1007,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                                     offset * (std::f32::consts::PI / 4.0) / 10.0,
                                 ));
                                 v *= remap_gem(offset.abs(), 0.0, 1.0, 1.1, 1.0);
-                                let slot = app.projectiles.spawn_with_data_ai(
+                                let _slot = app.projectiles.spawn_with_data_ai(
                                     kind, sx, sy, v.x, v.y, damage, kb, bits, n as f32,
                                 );
-                                if let Some(slot) = slot {
-                                    app.projectiles.set_crit(slot, crit);
-                                }
                             }
                         } else {
                             // `:49365-49372`: the single bolt, the SwirlTwins
                             // twin with `ai1 = 1f`.
-                            let slot = app.projectiles.spawn_with_data_ai(
+                            let _slot = app.projectiles.spawn_with_data_ai(
                                 proj, sx, sy, vx, vy, damage, kb, bits, 0.0,
                             );
-                            if let Some(slot) = slot {
-                                app.projectiles.set_crit(slot, crit);
-                            }
                             if features.swirl_twins() {
-                                let slot = app.projectiles.spawn_with_data_ai(
+                                let _slot = app.projectiles.spawn_with_data_ai(
                                     proj, sx, sy, vx, vy, damage, kb, bits, 1.0,
                                 );
-                                if let Some(slot) = slot {
-                                    app.projectiles.set_crit(slot, crit);
-                                }
                             }
                         }
                     } else if held.kind == 3779 {
@@ -1052,7 +1040,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         }
                         let speed = 0.95 + loot_rng.next_float() * 0.3;
                         let v = shot.rotate(Vec2::from_angle(angle)) * speed;
-                        let slot = app.projectiles.spawn_with_data_ai(
+                        let _slot = app.projectiles.spawn_with_data_ai(
                             proj,
                             spawn.x + v.x * 30.0,
                             spawn.y + v.y * 30.0,
@@ -1063,9 +1051,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             -2.0,
                             0.0,
                         );
-                        if let Some(slot) = slot {
-                            app.projectiles.set_crit(slot, crit);
-                        }
                     } else if held.kind == 3787 {
                         // `Player.cs:48808-48827` - the Sky Fracture's spawn:
                         // a ring point 20-60 px out (up to 50 retries with an
@@ -1087,12 +1072,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         let toward = (world_pos - ring).normalize_or_zero() * fx_spd;
                         let along = shot.normalize_or_zero() * fx_spd;
                         let v = toward + (along - toward) * 0.25;
-                        let slot = app.projectiles.spawn_with_data_ai(
+                        let _slot = app.projectiles.spawn_with_data_ai(
                             proj, ring.x, ring.y, v.x, v.y, raw as i32, fx_kb, 0.0, 0.0,
                         );
-                        if let Some(slot) = slot {
-                            app.projectiles.set_crit(slot, crit);
-                        }
                     } else if held.kind == 3542 {
                         // `Player.cs:48778-48792` - the Nebula Blaze's spawn:
                         // the aim angle within ±(π/4 · 0.7), up to 10 retries
@@ -1117,12 +1099,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         let v = shot.rotate(Vec2::from_angle(angle))
                             * (0.95 + loot_rng.next_float() * 0.3);
                         let damage = blaze_damage.unwrap_or(raw as i32);
-                        let slot = app.projectiles.spawn_with_data_ai(
+                        let _slot = app.projectiles.spawn_with_data_ai(
                             proj, spawn.x, spawn.y, v.x, v.y, damage, fx_kb, 0.0, 0.0,
                         );
-                        if let Some(slot) = slot {
-                            app.projectiles.set_crit(slot, crit);
-                        }
                     } else {
                         // The generic `Item.shoot` firing, with the two
                         // per-item tweaks: the Crystal Storm's +/-0.04 spread
@@ -1210,7 +1189,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
                         );
                         if let Some(slot) = slot {
-                            app.projectiles.set_crit(slot, crit);
                             // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
                             // the whip's tag row off the firing item + the
                             // prefix's `bonusTagDamage`, plus `AI_165_Whip`'s
@@ -1453,8 +1431,13 @@ fn resolve_melee_strike(
                 if flymeal_town_hit {
                     let _ = app.notify_progression_net(42);
                 }
-                let landed =
-                    crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit, Some(me));
+                // `Main.expertMode` (`NPC.cs:81419`) — the knockback gate's
+                // ×15 reads the player's expert flag (the port's world-mode
+                // stand-in, `BuffSlots.expert_mode`).
+                let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+                let landed = crate::npc::Npc::strike_melee(
+                    &mut app.npcs, idx, dmg, pcx, kb, crit, Some(me), expert,
+                );
                 // S1-P-i05: `ProcessHitAgainstNPC`'s tail
                 // (`Player.cs:44414/:44419`) — the landed hit re-arms the
                 // per-NPC melee lock to the CURRENT `itemAnimation` ticks
@@ -2273,7 +2256,7 @@ fn thrust_stab_tick(
         // read here: the resolver's fused `speed` already starts from it
         // (`Player.cs:47058-47059`'s seed), and the gunProj reset overrides it
         // with the id-keyed vanilla value.
-        let (w_dmg, w_kb, w_crit) = held_fx.map_or(
+        let (w_dmg, w_kb, _w_crit) = held_fx.map_or(
             (weapon_def.damage, weapon_def.knock_back, weapon_def.crit),
             |s| (s.damage, s.knock_back, s.crit),
         );
@@ -2329,19 +2312,17 @@ fn thrust_stab_tick(
                 return;
             }
             let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
-            // The ranged shot rides the same `ItemCheck` → `UpdatePlayers`
-            // stream as the rest of the pass (`Main.cs:17754`).
-            let crit = {
-                let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + w_crit)
-            };
+            // The ranged shot's crit does NOT roll here: the C# rolls it
+            // per-hit in `Damage_PVE_Inner` (`Projectile.cs:12894`) on the
+            // `UpdateProjectiles` stream. The spawn carries the ranged flag
+            // (`proj_data`); the `UpdatePlayers` stream spends no crit draw.
             // origin/main’s owned spawner (the owner plumbing of the
             // projectile-ownership task) + this task’s resolution: the pair
             // table’s or the ammo’s own projectile, the gunProj fixed id when
             // the weapon is one of the four, and the fused knockback (the
             // weapon’s own + the ammo’s + the magicQuiver scale), which
             // supersedes the pre-fuse `w_kb` read.
-            let slot = app.projectiles.spawn_with_data_owned(
+            let _slot = app.projectiles.spawn_with_data_owned(
                 gun_proj.map_or(resolved.projectile, |g| g.projectile),
                 app.local_id as u8,
                 spawn.x,
@@ -2353,9 +2334,6 @@ fn thrust_stab_tick(
                 0.0,
                 0.0,
             );
-            if let Some(slot) = slot {
-                app.projectiles.set_crit(slot, crit);
-            }
             app.audio.play_at("Item_1", pcx, pcy, 1.0);
         }
         // `ApplyItemTime` (`Player.cs:47184-47193` → `SetItemTime(useTime)`,
@@ -5738,14 +5716,14 @@ mod tests {
     fn test_DW_4_3_a_random_cycling_pick_spends_one_extra_draw() {
         // The determinism invariant, pinned on the stream: the `Random` mode's
         // `ammoCyclingOffset = Main.rand.Next()` (`Player.cs:53577`) is ONE extra
-        // draw on the `UpdatePlayers` stream, spent BEFORE the shot's own crit
-        // roll (the C# updates the cycler inside `PickAmmo`, the roll arms after
-        // it). The Cobalt Repeater carries no roll arm of its own and the ammo
-        // has no flags, so its whole per-shot draw count is the cycler's one
-        // plus the crit's one — asserted against a helper that advances the same
-        // stream, so a later refactor cannot silently add or drop a draw
-        // (`draws_after` re-pinned from the splitmix rounds to stream draws,
-        // DW-4.4, same count contract).
+        // draw on the `UpdatePlayers` stream (the C# updates the cycler inside
+        // `PickAmmo`). The Cobalt Repeater carries no roll arm of its own and the
+        // ammo has no flags. The crit does NOT roll at spawn — it is per-hit in
+        // `Damage_PVE_Inner` on the `UpdateProjectiles` stream
+        // (`Projectile.cs:12894`), so the plain shot spends ZERO `UpdatePlayers`
+        // draws and the cycler's shot spends exactly its one. Asserted against a
+        // helper that advances the same stream, so a later refactor cannot
+        // silently add or drop a draw.
         let draws_after = |seed: i32, n: usize| {
             let mut rng = tr_core::UnifiedRandom::new(seed);
             for _ in 0..n {
@@ -5754,7 +5732,7 @@ mod tests {
             rng
         };
         let stream = |app: &mut App| app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
-        // The same shot without the cycler: the crit roll's single draw.
+        // The same shot without the cycler: no spawn-time draw at all.
         let mut plain = shooter_rig(435, "Cobalt Repeater", &[(0, 40, 12)]);
         let seed = 0x5EED_CA5Eu64 as i32;
         *plain.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
@@ -5764,11 +5742,10 @@ mod tests {
         assert_eq!(log.len(), 1, "one shot");
         assert_eq!(
             stream(&mut plain),
-            draws_after(seed, 1),
-            "the plain shot spends exactly the crit's draw"
+            draws_after(seed, 0),
+            "the plain shot spends no UpdatePlayers draw (crit is per-hit)"
         );
-        // With the Random cycler: the cycler's draw comes first, the crit's
-        // second — two draws in total, in that order.
+        // With the Random cycler: the cycler's draw is the only one.
         let mut random = shooter_rig(435, "Cobalt Repeater", &[(0, 40, 12)]);
         random.equip.misc_equips[0] = crate::item::ItemSlot {
             kind: 6193, // the Ammo Cycler (Random) (`Player.cs:14538`)
@@ -5785,8 +5762,8 @@ mod tests {
         assert_eq!(log.len(), 1, "one shot");
         assert_eq!(
             stream(&mut random),
-            draws_after(seed, 2),
-            "the Random cycler adds exactly one draw ahead of the crit roll"
+            draws_after(seed, 1),
+            "the Random cycler adds exactly one draw (the only spawn-time draw)"
         );
         // The offset is that first draw (`UnifiedRandom::next` is already
         // .NET's non-negative `Random.Next()`).
@@ -7902,7 +7879,8 @@ mod tests {
     fn test_dw_5_1_the_leaf_blower_jitter_spends_two_circular_draws() {
         // `Utils.NextVector2Circular` (`Utils.cs:1266-1269`): one angle draw
         // (`NextVector2Unit`'s NextFloat) then one radial draw — the whole
-        // shot spends exactly the crit's draw plus the pair.
+        // shot spends exactly the pair (the crit is per-hit now, no spawn
+        // draw).
         let mut app = staff_app(1178, "Leaf Blower");
         let seed = 0x1EAF_B07E as i32;
         seed_stream(&mut app, seed);
@@ -7914,8 +7892,8 @@ mod tests {
         );
         assert_eq!(
             stream_of(&mut app),
-            draws_after(seed, 3),
-            "crit, then the circular pair in the C#'s order"
+            draws_after(seed, 2),
+            "the circular pair only (crit is per-hit)"
         );
     }
 
@@ -7946,17 +7924,16 @@ mod tests {
         // The 20% gate splits the spawn (`Player.cs:47119-47130`): the miss
         // keeps 634 at the plain weapon damage with the decremented speed
         // (`else speed--`), the hit upgrades to 635 at the int ×3 with the
-        // full speed; the pre-pass is the stream's second draw (after the
-        // crit, BEFORE the spawn-angle rolls), the multiplier the fourth,
-        // and the angle stays inside ±(π/4 · 0.7) (`:48778-48792`).
+        // full speed; the pre-pass is the stream's FIRST draw (the crit is
+        // per-hit now, no spawn draw), the multiplier the third, and the
+        // angle stays inside ±(π/4 · 0.7) (`:48778-48792`).
         let mut saw_miss = false;
         let mut saw_hit = false;
         for seed in 0..40u64 {
             let s = (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) as i32;
-            // The replay: draw 1 is the crit roll's (`Next(1, 101)`), draw 2
-            // is the pre-pass's `Main.rand.Next(100)` — the kind must follow it.
+            // The replay: draw 1 is the pre-pass's `Main.rand.Next(100)` —
+            // the kind must follow it.
             let mut state = tr_core::UnifiedRandom::new(s);
-            let _crit = state.next_range(1, 101);
             let hit = state.next_range(0, 100) < 20;
             let mut app = staff_app(3542, "Nebula Blaze");
             seed_stream(&mut app, s);
@@ -7981,11 +7958,10 @@ mod tests {
                 saw_miss = true;
                 assert_eq!(bolt.damage, 130, "the plain weapon damage");
             }
-            // The multiplier is the stream's fourth draw (0.95 + rand·0.3)
-            // over the pre-pass's speed decision; the angle draw (third) is
+            // The multiplier is the stream's third draw (0.95 + rand·0.3)
+            // over the pre-pass's speed decision; the angle draw (second) is
             // consumed between them.
             let mut state = tr_core::UnifiedRandom::new(s);
-            let _ = state.next_range(1, 101);
             let _ = state.next_range(0, 100);
             let _angle = state.next_float();
             let mult = 0.95 + state.next_float() * 0.3;
@@ -8008,8 +7984,8 @@ mod tests {
             );
             assert_eq!(
                 stream_of(&mut app),
-                draws_after(s, 4),
-                "seed {seed}: exactly crit, pre-pass, angle, multiplier"
+                draws_after(s, 3),
+                "seed {seed}: exactly pre-pass, angle, multiplier"
             );
         }
         assert!(
@@ -8065,12 +8041,12 @@ mod tests {
             app.player.as_ref().unwrap().channel,
             "the hold keeps the channel alive"
         );
-        // And no special-case rolls: the whole run spends exactly the crit's
-        // draw on the stream.
+        // And no special-case rolls: the whole run spends NO draw on the
+        // stream (the crit is per-hit now, on UpdateProjectiles).
         assert_eq!(
             stream_of(&mut app),
-            draws_after(seed, 1),
-            "the crit's draw only"
+            draws_after(seed, 0),
+            "no spawn-time draw (crit is per-hit)"
         );
     }
 }
@@ -8508,7 +8484,7 @@ mod loot_summon_tests {
             .unwrap();
         let hp_before = brain_mut.hp;
         assert!(
-            !brain_mut.hurt(50, brain_mut.x - 10.0, 5.0, false),
+            !brain_mut.hurt(50, brain_mut.x - 10.0, 5.0, false, false),
             "the shield refuses"
         );
         assert_eq!(brain_mut.hp, hp_before);
@@ -8526,7 +8502,7 @@ mod loot_summon_tests {
             .find(|n| n.kind == NpcKind::BrainOfCthulhu)
             .unwrap();
         assert!(!brain_mut.dont_take_damage, "the shield falls");
-        assert!(brain_mut.hurt(50, brain_mut.x - 10.0, 5.0, false));
+        assert!(brain_mut.hurt(50, brain_mut.x - 10.0, 5.0, false, false));
         assert!(brain_mut.hp < hp_before);
     }
 
