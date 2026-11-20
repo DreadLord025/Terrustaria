@@ -28,6 +28,154 @@ pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     false
 }
 
+/// W4-e9 — one `NPC.Collision_WaterCollision` splash decision
+/// (`NPC.cs:93085-93272`, the entry `:93087` / exit `:93177` halves).
+/// The inputs are the C#'s flags AT the decision: `wet_now` =
+/// `Collision.WetCollision` (`:93063`'s flag), `was_wet` = `base.wet`
+/// before the pass, `wet_count` = `base.wetCount` before the pass;
+/// `lava` is the ENTRY's `Collision_LavaCollision` argument (`:93090`)
+/// or the EXIT's OLD `base.lavaWet` (`:93186`); `shimmer_wet`/`honey_wet`
+/// are the freshly-set flags on entry (`:93065-93069`) and the OLD
+/// flags on exit. PURE and RNG-free — the 30×/10× dust bursts
+/// (`:93096-93117` etc., the shimmer colour `Next(6)` per dust) are the
+/// documented dust-layer skip; the sound arms themselves draw nothing
+/// (the case-19 pitch rides the play, [`crate::audio::Audio::play_splash_sound`]).
+///
+/// The caller owns the state writes: `arm_cooldown` → `wetCount = 10`
+/// (`:93089`/`:93184` — set even when the type gate refuses the play),
+/// `style` → the `PlaySound(19, (int)position.X, (int)position.Y[, style])`
+/// queue ([`crate::audio::Audio::play_splash_sound`], the `UpdateNPCs`
+/// stream); the exit half also halves
+/// `velocity.X` and clears `base.wet` (`:93179-93180`, movement seams).
+/// The `Npc` port has no `wetCount`/per-kind wet flags yet (the
+/// style21/67 modules' cited gap) — the water-collision layer's wiring
+/// consumes this decision.
+#[allow(dead_code)] // the water-collision layer's wiring consumes the decision
+pub(crate) struct WaterSplashDecision {
+    /// `base.wetCount = 10` — the edge fired (even if the play gate refused).
+    pub arm_cooldown: bool,
+    /// The case-19 style: entry shimmer 4 (`:93121`) / honey 1 (`:93138`)
+    /// / water 0 (`:93154`) / lava 1 (`:93171`); exit shimmer 5
+    /// (`:93219`) / honey 1 (`:93236`) / water 0 (`:93252`) / lava 1
+    /// (`:93269`). `None` = the type gate refused (or no edge).
+    pub style: Option<i32>,
+}
+
+/// The shared water/shimmer type gate (`:93119`/`:93152`/`:93217`/
+/// `:93250` — the four arms carry the SAME set, the C# only reorders
+/// the 16/59/300 terms): the slime/fish/critter exclusions, the
+/// noGravity exclusion, and the 615 (seahorse) override.
+#[allow(dead_code)] // reachable only through the wiring-gated decision fn
+fn water_splash_gate(npc_type: i32, ai_style: i32, no_gravity: bool) -> bool {
+    (npc_type != 376
+        && npc_type != 579
+        && ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 147
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && ai_style != 68
+        && npc_type != 362
+        && npc_type != 364
+        && npc_type != 361
+        && npc_type != 445
+        && !no_gravity)
+        || npc_type == 615
+}
+
+/// The honey/lava type gate (`:93136`/`:93169`/`:93234`/`:93267` — the
+/// shorter set: no 376/579/68/362/364/361/445 terms, no 615 override).
+#[allow(dead_code)] // reachable only through the wiring-gated decision fn
+fn honey_splash_gate(npc_type: i32, ai_style: i32, no_gravity: bool) -> bool {
+    ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 147
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && !no_gravity
+}
+
+#[allow(dead_code)] // the water-collision layer's wiring consumes the decision
+pub(crate) fn water_collision_splash(
+    npc_type: i32,
+    ai_style: i32,
+    no_gravity: bool,
+    wet_now: bool,
+    was_wet: bool,
+    wet_count: i32,
+    lava: bool,
+    shimmer_wet: bool,
+    honey_wet: bool,
+) -> WaterSplashDecision {
+    let mut out = WaterSplashDecision { arm_cooldown: false, style: None };
+    if wet_now {
+        // `:93087-93089` — the entry edge: dry → wet with the cooldown spent.
+        if was_wet || wet_count != 0 {
+            return out;
+        }
+        out.arm_cooldown = true;
+        if !lava {
+            if shimmer_wet {
+                // `:93093-93122` — the shimmer arm: 617/616/625 skip the
+                // whole block; the play is style 4 (`:93121`).
+                if npc_type != 617 && npc_type != 616 && npc_type != 625
+                    && water_splash_gate(npc_type, ai_style, no_gravity)
+                {
+                    out.style = Some(4);
+                }
+            } else if honey_wet {
+                // `:93125-93139` — the honey arm: the default Style 1.
+                if honey_splash_gate(npc_type, ai_style, no_gravity) {
+                    out.style = Some(1);
+                }
+            } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                // `:93141-93155` — the water arm: style 0.
+                if water_splash_gate(npc_type, ai_style, no_gravity) {
+                    out.style = Some(0);
+                }
+            }
+        } else if honey_splash_gate(npc_type, ai_style, no_gravity) {
+            // `:93158-93172` — the lava entry arm: the default Style 1.
+            out.style = Some(1);
+        }
+    } else if was_wet {
+        // `:93177-93184` — the exit edge (the velocity halving + the
+        // 620 leap are movement seams the caller owns).
+        if wet_count != 0 {
+            return out;
+        }
+        out.arm_cooldown = true;
+        if !lava {
+            if shimmer_wet {
+                // `:93188-93220` — the shimmer exit: style 5 (`:93219`).
+                if npc_type != 617 && npc_type != 616 && npc_type != 625
+                    && water_splash_gate(npc_type, ai_style, no_gravity)
+                {
+                    out.style = Some(5);
+                }
+            } else if honey_wet {
+                // `:93223-93237` — the honey exit: the default Style 1.
+                if honey_splash_gate(npc_type, ai_style, no_gravity) {
+                    out.style = Some(1);
+                }
+            } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                // `:93239-93253` — the water exit: style 0.
+                if water_splash_gate(npc_type, ai_style, no_gravity) {
+                    out.style = Some(0);
+                }
+            }
+        } else if honey_splash_gate(npc_type, ai_style, no_gravity) {
+            // `:93256-93270` — the lava exit arm: the default Style 1.
+            out.style = Some(1);
+        }
+    }
+    out
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NpcKind {
     Slime,
@@ -19003,6 +19151,97 @@ mod s1_d_3_moonlord_rng_witnesses {
 
 #[cfg(test)]
 mod tests {
+    /// W4-e9 — the `Collision_WaterCollision` ENTRY splash decision
+    /// (`NPC.cs:93085-93172`): the dry→wet edge arms the cooldown even
+    /// when the type gate refuses; the four style arms map shimmer 4 /
+    /// honey 1 / water 0 / lava 1; the 617/616/625 shimmer-water skip,
+    /// the 615 override, the short honey/lava gate and the wetCount
+    /// churn guard all hold. The decision is RNG-free (the dust bursts
+    /// are the documented skip).
+    #[test]
+    fn w4_e9_the_water_collision_entry_splash_edges_and_styles() {
+        use super::{water_collision_splash, WaterSplashDecision};
+        // A plain walker (type 3 zombie, aiStyle 3, gravity on).
+        let call = |wet_now, was_wet, count, lava, shimmer, honey| {
+            water_collision_splash(3, 3, false, wet_now, was_wet, count, lava, shimmer, honey)
+        };
+        // No edge: dry→dry / wet→wet draw and play nothing.
+        let WaterSplashDecision { arm_cooldown, style } = call(false, false, 0, false, false, false);
+        assert!(!arm_cooldown && style.is_none());
+        let WaterSplashDecision { arm_cooldown, style } = call(true, true, 0, false, false, false);
+        assert!(!arm_cooldown && style.is_none());
+        // The entry edge: cooldown arms + the water style 0 (`:93154`).
+        let d = call(true, false, 0, false, false, false);
+        assert!(d.arm_cooldown);
+        assert_eq!(d.style, Some(0));
+        // The churn guard: wetCount != 0 refuses the whole edge.
+        let d = call(true, false, 5, false, false, false);
+        assert!(!d.arm_cooldown && d.style.is_none());
+        // Entry shimmer → 4, honey → 1, lava → 1 (`:93121`/`:93138`/`:93171`).
+        assert_eq!(call(true, false, 0, false, true, false).style, Some(4));
+        assert_eq!(call(true, false, 0, false, false, true).style, Some(1));
+        assert_eq!(call(true, false, 0, true, false, false).style, Some(1));
+        // The slime exclusion (aiStyle 1): the cooldown arms, no play.
+        let d = water_collision_splash(1, 1, false, true, false, 0, false, false, false);
+        assert!(d.arm_cooldown && d.style.is_none(), "the gate refuses, the cooldown arms");
+        // noGravity: the same refusal.
+        let d = water_collision_splash(3, 3, true, true, false, 0, false, false, false);
+        assert!(d.arm_cooldown && d.style.is_none());
+        // 617/616/625 skip the shimmer AND water arms but NOT honey/lava.
+        for ty in [617, 616, 625] {
+            let d = water_collision_splash(ty, 0, false, true, false, 0, false, true, false);
+            assert!(d.arm_cooldown && d.style.is_none(), "type {ty} shimmer");
+            let d = water_collision_splash(ty, 0, false, true, false, 0, false, false, false);
+            assert!(d.style.is_none(), "type {ty} water");
+            let d = water_collision_splash(ty, 0, false, true, false, 0, false, false, true);
+            assert_eq!(d.style, Some(1), "type {ty} honey plays");
+        }
+        // The 615 override forces the water/shimmer play past noGravity.
+        let d = water_collision_splash(615, 0, true, true, false, 0, false, false, false);
+        assert_eq!(d.style, Some(0), "the seahorse override");
+        // ...but NOT the honey gate (no 615 term there).
+        let d = water_collision_splash(615, 0, true, true, false, 0, false, false, true);
+        assert!(d.style.is_none());
+        // The long gate's extra terms: 376 refuses water, plays honey.
+        let d = water_collision_splash(376, 0, false, true, false, 0, false, false, false);
+        assert!(d.style.is_none());
+        let d = water_collision_splash(376, 0, false, true, false, 0, false, false, true);
+        assert_eq!(d.style, Some(1));
+    }
+
+    /// W4-e9 — the EXIT half (`NPC.cs:93177-93270`): the wet→dry edge
+    /// arms the cooldown behind the same wetCount guard; the styles map
+    /// shimmer 5 (`:93219`) / honey 1 (`:93236`) / water 0 (`:93252`) /
+    /// lava 1 (`:93269`); the type gates match the entry's.
+    #[test]
+    fn w4_e9_the_water_collision_exit_splash_edges_and_styles() {
+        use super::water_collision_splash;
+        let call = |count, lava, shimmer, honey| {
+            water_collision_splash(3, 3, false, false, true, count, lava, shimmer, honey)
+        };
+        // The exit edge: water style 0; the cooldown arms.
+        let d = call(0, false, false, false);
+        assert!(d.arm_cooldown);
+        assert_eq!(d.style, Some(0));
+        // The churn guard.
+        let d = call(5, false, false, false);
+        assert!(!d.arm_cooldown && d.style.is_none());
+        // The four exit styles.
+        assert_eq!(call(0, false, true, false).style, Some(5));
+        assert_eq!(call(0, false, false, true).style, Some(1));
+        assert_eq!(call(0, true, false, false).style, Some(1));
+        // The gates mirror the entry: the slime refuses, 615 overrides
+        // water, 617 skips water but plays honey.
+        let d = water_collision_splash(1, 1, false, false, true, 0, false, false, false);
+        assert!(d.arm_cooldown && d.style.is_none());
+        let d = water_collision_splash(615, 0, true, false, true, 0, false, false, false);
+        assert_eq!(d.style, Some(0));
+        let d = water_collision_splash(617, 0, false, false, true, 0, false, false, false);
+        assert!(d.style.is_none());
+        let d = water_collision_splash(617, 0, false, false, true, 0, false, false, true);
+        assert_eq!(d.style, Some(1));
+    }
+
     /// S1-E-21a — the per-kind hit/death cues (`NPC.HitSound`/`NPC.DeathSound`,
     /// `NPC.cs:6475-6477`, the `SetDefaults` assignments).
     #[test]
