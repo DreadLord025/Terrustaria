@@ -6681,6 +6681,36 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-g7 wire-2 (d49 wave D) — the bridge into
+    /// `npc_findframe_high2`'s pure machines: copy the five `FindFrame`
+    /// fields out, run one tick, copy them back (the
+    /// `find_frame_wave_a` precedent). `direction` is `facing` (the
+    /// C#'s `Entity.direction`); `ai[2]` rides the NPC's own field (the
+    /// cultist archers' bow-draw frame / the armed zombies' swing band,
+    /// `NPC.cs:71590-71596`/`:70887-70905`); `local_ai[0]` the truffle
+    /// worm's `-2f` pin (`:71122`).
+    fn find_frame_wave_high2(&mut self, kind: crate::npc_findframe_high2::FindFrameKind) {
+        let mut s = crate::npc_findframe_high2::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+            local_ai0: self.local_ai[0],
+        };
+        let i = crate::npc_findframe_high2::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai2: self.ai[2],
+        };
+        crate::npc_findframe_high2::find_frame_high2(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+        self.local_ai[0] = s.local_ai0;
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // W4-g7 wire-2 (e14 extra-2) — the `cs_id`-keyed hook into the
         // extra wave's pure machines (`npc_findframe_extra2.rs`), the
@@ -6727,6 +6757,22 @@ impl Npc {
         {
             self.find_frame_wave_extra4(kind);
             return;
+        }
+        // W4-g7 wire-2 (d49 wave D) — the `cs_id`-keyed hook into the
+        // high-band wave's pure machines (`npc_findframe_high2.rs`),
+        // the FIRST 6 kinds / 7 ids: 366/367 (the keep-one scorpion
+        // pair — the d48 ScorpionBlack delegates here), 374/375/377/
+        // 378/379 (the remaining 380/430-434 ride the next commit —
+        // the 10-kinds-per-commit rule). NO current kind's `cs_id`
+        // lands in the set (verified over the hand rows + all 249
+        // bestiary net ids), so this is stream-inert today; the arms
+        // themselves draw no RNG. The d45/e13 hook precedent.
+        let cs = self.kind.cs_id();
+        if matches!(cs, 366 | 367 | 374 | 375 | 377 | 378 | 379) {
+            if let Some(kind) = crate::npc_findframe_high2::find_frame_kind_high2(cs as i16) {
+                self.find_frame_wave_high2(kind);
+                return;
+            }
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
@@ -33968,5 +34014,75 @@ mod w4_g7_wire2_extra4_tests {
             n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::RainbowSlime);
         }
         assert_eq!((n.frame, n.frame_counter), (1, 1.0), "the attack x3 stride");
+    }
+}
+
+#[cfg(test)]
+mod w4_g7_wire2_high2_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g7 wire-2 (d49 wave D) — the `find_frame` hook into
+    // `npc_findframe_high2` ---- The pure machines carry their own 13
+    // pinned witnesses in `npc_findframe_high2.rs`; these pin the
+    // NPC-side seam. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster waves have not added the wave-D kinds; verified
+    /// over the hand `cs_id` rows + all 249 bestiary net ids).
+    #[test]
+    fn w4_g7_the_high2_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_high2::find_frame_kind_high2(kind.cs_id() as i16),
+                None,
+                "{kind:?} cs_id {} must not ride the wave-D hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The keep-one scorpion pair: BOTH 366 (the d48 ScorpionBlack)
+    /// and 367 map onto the ONE Scorpion machine (the C# groups
+    /// `case 366 : case 367`, `NPC.cs:76820-76850`).
+    #[test]
+    fn w4_g7_the_high2_lookup_folds_the_scorpion_pair() {
+        use crate::npc_findframe_high2::{find_frame_kind_high2, FindFrameKind};
+        assert_eq!(find_frame_kind_high2(366), Some(FindFrameKind::Scorpion));
+        assert_eq!(find_frame_kind_high2(367), Some(FindFrameKind::Scorpion));
+        assert_eq!(find_frame_kind_high2(365), None, "the band edge stays out");
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation/local_ai[0]
+    /// both ways and feeds vx/vy/facing/ai[2] through — pinned on the
+    /// truffle worm's `-2f` pin + spin (`NPC.cs:71122-71144`) and the
+    /// cultist archer's bow-draw row (`:71590-71596`).
+    #[test]
+    fn w4_g7_the_high2_bridge_copies_the_five_fields_both_ways() {
+        let mut n = bare(NpcKind::Slime);
+        // The truffle worm pins local_ai[0] = -2 EVERY tick; the air
+        // accumulates the direction * 0.1 spin.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.local_ai[0] = 0.0;
+        n.rotation = 0.0;
+        n.facing = 1;
+        n.vx = 0.0;
+        n.vy = -1.0;
+        n.find_frame_wave_high2(crate::npc_findframe_high2::FindFrameKind::TruffleWorm);
+        assert_eq!(n.local_ai[0], -2.0, "the -2f pin copies back");
+        assert_eq!(n.rotation, 0.1, "the direction * 0.1 air spin");
+        assert_eq!(n.frame_counter, 1.0, "the air counter tick");
+        // The archer's ai[2] > 0 pins the bow-draw row (int)ai[2]+1
+        // and re-copies facing UNCONDITIONALLY (0 included).
+        n.vy = 0.0;
+        n.ai[2] = 3.0;
+        n.facing = 0;
+        n.sprite_dir = -1;
+        n.find_frame_wave_high2(crate::npc_findframe_high2::FindFrameKind::CultistArcherBlue);
+        assert_eq!(n.frame, 4, "the ai[2]=3 draw row (3-1+2)");
+        assert_eq!(n.frame_counter, 0.0, "the draw zeroes the counter");
+        assert_eq!(n.sprite_dir, 0, "the unconditional draw re-flip");
     }
 }
