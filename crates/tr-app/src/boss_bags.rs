@@ -360,6 +360,31 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, 47, range(rng, 0, 31) + 20);
             quick_spawn(rng, out, 3097, 1); // Shield of Cthulhu
         }
+        // Eater of Worlds (`Player.cs:7255-7284`).
+        3320 => {
+            // `:7257` — the DISCARDED Next(15, 30): the C# draws num5
+            // and never reads it (the stream still advances).
+            let _num5 = range(rng, 15, 30);
+            // `:7258-7265` — the ore stack: master 110..135, else 80..110.
+            if env.master_mode {
+                quick_spawn(rng, out, 56, range(rng, 110, 136));
+            } else {
+                quick_spawn(rng, out, 56, range(rng, 80, 111));
+            }
+            // `:7266-7273` — the Shadow Scales: master 30..50, else 20..40.
+            if env.master_mode {
+                quick_spawn(rng, out, 86, range(rng, 30, 51));
+            } else {
+                quick_spawn(rng, out, 86, range(rng, 20, 41));
+            }
+            if rng.next_max(20) == 0 {
+                quick_spawn(rng, out, 994, 1); // Eater's Bone
+            }
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2111, 1); // Eater Mask
+            }
+            quick_spawn(rng, out, 3224, 1); // Worm Scarf (expert-exclusive)
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -650,6 +675,72 @@ mod tests {
             money_replay_on(&mut r, 4, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}: the grants + prefixes");
             assert_eq!(got_rng, r, "seed {seed}: the stream state");
+        }
+    }
+
+    #[test]
+    fn w4_f35_eow_bag_zero_script_grants_the_whole_arm() {
+        // The zero script: the discarded num5 draws Next(15,30) first
+        // (the stream advances though the value is never read), ore
+        // 80, scales 20, the bone 1/20 hits, the mask 1/7 hits, the
+        // Worm Scarf. Money: EoW head 800f, −20 % → 640 → 6 silver +
+        // 40 copper.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3320, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..6], [56, 86, 994, 2111, 3224, 72], "{its:?}");
+        assert_eq!(out[0].stack, 80, "the classic ore range minimum");
+        assert_eq!(out[1].stack, 20, "the classic scales minimum");
+        assert_eq!(out[5].stack, 6);
+        assert_eq!(its[6..], [71], "the copper remainder: {its:?}");
+        assert_eq!(out[6].stack, 40);
+        // The FIRST draw is the discarded Next(15, 30) — the census.
+        assert_eq!(rng.ranges[0], (0, 15), "num5 Next(15,30) span 15");
+    }
+
+    #[test]
+    fn w4_f35_eow_bag_master_mode_bumps_the_ore_and_scales() {
+        // `:7258-7273` — master: ore Next(110,136), scales Next(30,51).
+        let env = BagEnv { master_mode: true, ..Default::default() };
+        let mut rng = ScriptRng::new(&[0, 0, 0, 19, 6]); // bone + mask miss
+        let mut out = Vec::new();
+        open_boss_bag(3320, &env, &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..3], [56, 86, 3224], "{its:?}");
+        assert_eq!(out[0].stack, 110, "the master ore minimum");
+        assert_eq!(out[1].stack, 30, "the master scales minimum");
+    }
+
+    #[test]
+    fn w4_f35_eow_bag_replays_the_csharp_draw_order_both_modes() {
+        for master in [false, true] {
+            for seed in [11i32, 2024] {
+                let env = BagEnv { master_mode: master, ..Default::default() };
+                let mut got_rng = UnifiedRandom::new(seed);
+                let mut got = Vec::new();
+                open_boss_bag(3320, &env, &mut got_rng, &mut got);
+                let mut r = UnifiedRandom::new(seed);
+                let mut want: Vec<BagGrant> = Vec::new();
+                let _num5 = r.next_range(15, 30); // the discarded draw
+                if master {
+                    spawn_replay(&mut r, &mut want, 56, r.next_range(110, 136));
+                    spawn_replay(&mut r, &mut want, 86, r.next_range(30, 51));
+                } else {
+                    spawn_replay(&mut r, &mut want, 56, r.next_range(80, 111));
+                    spawn_replay(&mut r, &mut want, 86, r.next_range(20, 41));
+                }
+                if r.next_max(20) == 0 {
+                    spawn_replay(&mut r, &mut want, 994, 1);
+                }
+                if r.next_max(7) == 0 {
+                    spawn_replay(&mut r, &mut want, 2111, 1);
+                }
+                spawn_replay(&mut r, &mut want, 3224, 1);
+                money_replay_on(&mut r, 13, 1.0, &mut want);
+                assert_eq!(got, want, "master {master} seed {seed}");
+                assert_eq!(got_rng, r, "master {master} seed {seed} stream");
+            }
         }
     }
 
