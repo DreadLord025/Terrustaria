@@ -11,6 +11,9 @@
 mod colors;
 mod file;
 mod option;
+mod sections;
+
+pub use sections::MapDrawQueue;
 
 pub use colors::{
     color_table, dirt_gradient, rock_gradient, sky_gradient, LIQUID_COLORS, MapColorTable,
