@@ -17420,6 +17420,24 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d18 — `AI()`'s `else if (this.aiStyle == 176)`
+                        // (`Projectile.cs:36667-36670`) ->
+                        // `AI_176_EdgyLightning` (`:45058-45095`): the
+                        // Dark Harvest scythe bolt (916), the style's ONLY
+                        // SetDefaults row (`:8676-8688`), so no kind gate.
+                        // The target latch/acquire, the 10-px chase and the
+                        // 3-tick frame roll. The slot's local-immunity row
+                        // rides the per-slot slice (the special_bullets shape).
+                        176 => {
+                            crate::projectile_ai_misc::ai_edgy_lightning(
+                                &mut self.slots[i],
+                                &npcs[..],
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the

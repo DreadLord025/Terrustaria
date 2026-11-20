@@ -824,6 +824,12 @@ pub const LUNATIC_CULTIST_PET: u16 = 893;
 /// `AI_175_TitaniumStormShards` `:45319-45343`).
 pub const TITANIUM_STORM_SHARD: u16 = 908;
 
+// ===== W4-d18: the aiStyle-176 edgy lightning =====
+/// `ProjectileID.ScytheWhipProj` (916, `ProjectileID.cs:2386`) — the
+/// Dark Harvest's homing scythe bolt, aiStyle 176
+/// (`Projectile.cs:8676-8688`, `AI_176_EdgyLightning` `:45058-45095`).
+pub const SCYTHE_WHIP_PROJ: u16 = 916;
+
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
 /// second hand-maintained list: the id space above the port's highest row is
@@ -3790,6 +3796,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             TITANIUM_STORM_SHARD => (
                 14.0, 14.0, 175, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE,
             ),
+            // ===== W4-d18: the aiStyle-176 edgy lightning =====
+            // `Projectile.cs:8676-8688` — the Scythe Whip Proj (916):
+            // 18x18, aiStyle 176, friendly, `tileCollide = false`,
+            // `penetrate = 3`, the local-immunity pair (true, −1),
+            // `extraUpdates = 2`. `armorPenetration = 50` is damage-side
+            // (no port field — the melee port's slice).
+            SCYTHE_WHIP_PROJ => (
+                18.0, 18.0, 176, 3, TIME_LEFT_DEFAULT, 2, false, false, false,
+                (true, -1, false, -1, 0, 1.0),
+            ),
             // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
             // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile
             // (`friendly = false` rides the pool's `!friendly` proxy),
@@ -4660,6 +4676,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`Main.cs:8690`) — the first-tick `rand.Next(12)` frame roll
         // (`Projectile.cs:45330`) picks one row.
         TITANIUM_STORM_SHARD => 12,
+        // W4-d18: the scythe whip bolt's 6-frame sheet (`Main.cs:8453`)
+        // — the 3-tick frame machine's `rand.Next(projFrames)` roll
+        // (`Projectile.cs:45088`) picks one row.
+        SCYTHE_WHIP_PROJ => 6,
         // AI_026 slice C: the slime minion's 12-frame sheet
         // (`Main.cs:8612`) — the fly-out frames 8-11
         // (`Projectile.cs:61209`) and the ground frames 0-7

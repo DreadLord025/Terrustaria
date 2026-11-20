@@ -1717,6 +1717,95 @@ pub(crate) fn ai_titanium_storm_shard(
     // port carries no drawLayer field (the localAI[0] key survives).
 }
 
+/// `Projectile.FindTargetWithinRange` (`Projectile.cs:45097-45115`) —
+/// the nearest chaseable NPC within `max_range` whose local-immunity
+/// entry is 0. NOT the line-of-sight variant (`:45632-45660`): the
+/// default `checkCanHit = false` skips the `Collision.CanHitLine` test,
+/// so no world is needed. The strict `!(num <= num2)` keeps the FIRST
+/// nearest on ties (the scan order is the NPC index). Returns −1 for no
+/// target (the C# null). Shared by the 176 bolt and the 177 slicers.
+pub(crate) fn find_target_within_range(
+    center: Vec2,
+    npcs: &[Npc],
+    immune: &[i32],
+    max_range: f32,
+) -> i32 {
+    let mut num = max_range;
+    let mut result: i32 = -1;
+    for (i, n) in npcs.iter().enumerate() {
+        if !chaseable(n) || immune.get(i).is_some_and(|v| *v != 0) {
+            continue;
+        }
+        let num2 = center.distance(crate::projectile::npc_center(n));
+        if !(num <= num2) {
+            num = num2;
+            result = i as i32;
+        }
+    }
+    result
+}
+
+/// `AI_176_EdgyLightning` (`Projectile.cs:45058-45095`) — the Dark
+/// Harvest's scythe bolt (916). The `ai[0] − 1` target latch with its
+/// chaseable/immunity re-validation, the 400-px acquire, the 10-px
+/// `DirectionTo` flight with the velocity rotation, the 3-tick frame
+/// machine (`Next(projFrames)` — the ONLY draw) and the no-target kill.
+///
+/// `immune` is the slot's local-NPC immunity row (the pool passes its
+/// per-slot slice); the kill rides `Kill()`'s active+timeLeft zero.
+pub(crate) fn ai_edgy_lightning(
+    p: &mut Projectile,
+    npcs: &[Npc],
+    immune: &[i32],
+    rng: &mut dyn DropRng,
+) {
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    // `:45060-45065` — the held target re-validates: a gone/un-chaseable
+    // or immune NPC drops the latch.
+    let mut num = p.ai[0] as i32 - 1;
+    if num != -1 {
+        let gone = npcs
+            .get(num as usize)
+            .map_or(true, |n| !chaseable(n));
+        if gone || immune.get(num as usize).is_some_and(|v| *v != 0) {
+            p.ai[0] = 0.0;
+            num = -1;
+        }
+    }
+    // `:45066-45075` — the acquire: the nearest within 400 px latches
+    // `ai[0] = whoAmI + 1` and flags the net update.
+    if num == -1 {
+        let target = find_target_within_range(center, npcs, immune, 400.0);
+        if target != -1 {
+            num = target;
+            p.ai[0] = num as f32 + 1.0;
+            p.net_update = true;
+        }
+    }
+    if num != -1 {
+        // `:45078-45084` — the 10-px chase: `DirectionTo` is
+        // `Normalize(target − Center)`; a NaN direction (the zero delta)
+        // keeps the old velocity and rotation.
+        let n = &npcs[num as usize];
+        let delta = crate::projectile::npc_center(n) - center;
+        if !delta.is_nan() && delta != Vec2::ZERO {
+            let vector = delta.normalize();
+            p.vel = vector * 10.0;
+            p.rot = to_rotation(p.vel);
+        }
+        // `:45085-45089` — the 3-tick frame machine: the ONLY rand draw.
+        p.frame_counter += 1;
+        if p.frame_counter >= 3 {
+            p.frame_counter = 0;
+            p.frame = rng.next_range(0, crate::projectile::proj_frames(p.kind) as i32);
+        }
+    } else {
+        // `:45091-45094` — no target: `Kill()`.
+        p.active = false;
+        p.time_left = 0;
+    }
+}
+
 #[cfg(test)]
 mod w4_d18_174_tests {
     //! W4-d18 — aiStyle 174 (`AI_174_MultisegmentPet`,
@@ -2153,5 +2242,163 @@ mod w4_d18_175_tests {
             false,
         );
         assert!(!pool.slots()[slot2].active, "the missing buff kills");
+    }
+}
+
+#[cfg(test)]
+mod w4_d18_176_tests {
+    //! W4-d18 — aiStyle 176 (`AI_176_EdgyLightning`,
+    //! `Projectile.cs:45058-45095`, the dispatch `:36667-36670`). WRITTEN
+    //! NOT RUN (code-only mode). The row, the target latch/acquire, the
+    //! chase, the frame-roll census and the no-target kill.
+    use super::*;
+    use crate::npc::NpcKind;
+    use crate::projectile::{
+        FlailInputs, ProjectilePool, SCYTHE_WHIP_PROJ, YoyoInputs, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn bolt(x: f32, y: f32) -> Projectile {
+        let d = proj_data(SCYTHE_WHIP_PROJ).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = SCYTHE_WHIP_PROJ;
+        p.owner = 0;
+        p.pos = Vec2::new(x, y);
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.extra_updates = d.extra_updates;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    fn npc_at(x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// The row (`Projectile.cs:8676-8688`): 18x18, aiStyle 176,
+    /// penetrate 3, tileCollide false, extraUpdates 2, local-immunity −1.
+    #[test]
+    fn w4_d18_176_the_row_matches_set_defaults() {
+        let d = proj_data(SCYTHE_WHIP_PROJ).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (18.0, 18.0, 176));
+        assert_eq!(d.penetrate, 3);
+        assert_eq!(d.extra_updates, 2);
+        assert!(!d.tile_collide);
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+        assert_eq!(crate::projectile::proj_frames(SCYTHE_WHIP_PROJ), 6);
+    }
+
+    /// `:45066-45075` + `:45078-45084` — the acquire latches ai[0] =
+    /// whoAmI+1, the velocity aims at 10 px and the rotation follows.
+    #[test]
+    fn w4_d18_176_the_acquire_and_chase() {
+        let mut p = bolt(1600.0, 800.0);
+        // The NPC 100 px to the right (its centre — the zombie box).
+        let n = npc_at(1700.0, 800.0);
+        let npcs = vec![n];
+        let immune = [0i32; 256];
+        let mut rng = census();
+        ai_edgy_lightning(&mut p, &npcs, &immune, &mut rng);
+        assert_eq!(p.ai[0], 1.0, "whoAmI 0 + 1");
+        assert!(p.net_update, "the acquire flags the net update");
+        assert!((p.vel.length() - 10.0).abs() < 1e-3, "the 10-px chase");
+        assert!(p.vel.x > 0.0, "toward the right-hand target");
+        assert!((p.rot - p.vel.y.atan2(p.vel.x)).abs() < 1e-4, "the rotation follows");
+        // The frame counter climbs but rolls nothing before tick 3.
+        assert_eq!(p.frame_counter, 1);
+        assert!(rng.ranges.is_empty());
+    }
+
+    /// `:45085-45089` — the 3-tick frame machine rolls `Next(6)` exactly
+    /// once per three ticks (the ONLY draw).
+    #[test]
+    fn w4_d18_176_the_frame_roll_census() {
+        let mut p = bolt(1600.0, 800.0);
+        let npcs = vec![npc_at(1700.0, 800.0)];
+        let immune = [0i32; 256];
+        let mut rng = census();
+        for _ in 0..3 {
+            ai_edgy_lightning(&mut p, &npcs, &immune, &mut rng);
+        }
+        assert_eq!(rng.ranges, vec![(0, 6)], "one Next(projFrames) at tick 3");
+        assert_eq!(p.frame_counter, 0, "the reset");
+        assert_eq!(p.frame, 0, "CensusRng returns min");
+        assert_eq!(rng.floats, 0, "no float draws");
+    }
+
+    /// `:45060-45065` — a held target that dies or turns immune drops
+    /// the latch and re-acquires; `:45091-45094` — no target kills.
+    #[test]
+    fn w4_d18_176_the_latch_revalidation_and_kill() {
+        let mut p = bolt(1600.0, 800.0);
+        p.ai[0] = 1.0; // holds NPC 0
+        let mut n = npc_at(1700.0, 800.0);
+        n.hp = 0; // dead → un-chaseable
+        let npcs = vec![n];
+        let immune = [0i32; 256];
+        let mut rng = census();
+        ai_edgy_lightning(&mut p, &npcs, &immune, &mut rng);
+        assert!(!p.active && p.time_left == 0, "the dead target kills");
+        // An immune held target drops the latch too (ai[0] = 0).
+        let mut p2 = bolt(1600.0, 800.0);
+        p2.ai[0] = 1.0;
+        let npcs2 = vec![npc_at(5000.0, 800.0)]; // out of the 400 range
+        let mut immune2 = [0i32; 256];
+        immune2[0] = 5;
+        ai_edgy_lightning(&mut p2, &npcs2, &immune2, &mut rng);
+        assert_eq!(p2.ai[0], 0.0, "the immune target drops the latch");
+        assert!(!p2.active, "no re-acquire in range → kill");
+    }
+
+    /// The dispatch wiring: a pool update acquires the nearby NPC.
+    #[test]
+    fn w4_d18_176_the_dispatch_arms_the_bolt() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs = vec![npc_at(1700.0, 800.0)];
+        let slot = pool
+            .spawn_with_data(SCYTHE_WHIP_PROJ, 1600.0, 800.0, 0.0, 0.0, 10, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 1.0, "the acquire ran through the dispatch");
+        // extraUpdates 2 → 3 sub-steps → the frame machine rolled once.
+        assert_eq!(rng.ranges, vec![(0, 6)]);
     }
 }
