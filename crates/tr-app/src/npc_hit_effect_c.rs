@@ -33,6 +33,8 @@
 //! | 86-90 | `:82262-82266` | the 574/575 DD2 Kobold Flyer death (5 gores) |
 //! | 91-95 | `:82285-82289` | the 570/571 DD2 Drakin death (5 gores, per-tier base) |
 //! | 96-100 | `:82307-82311` | the 568/569 DD2 Wither Beast death (5 gores) |
+//! | 101-107 | `:82338-82344` | the 558/559/560 DD2 Wyvern death (7 gores, per-tier base) |
+//! | 108-110 | `:82362-82369` | the 566/567 DD2 Skeleton death: head + the first two coin-gates |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -246,6 +248,73 @@ fn wither_beast_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1022, s); // :82311
 }
 
+/// The 558/559/560 DD2 Wyvern death (`NPC.cs:82325-82344`, sites 101-107):
+/// the 20-dust type-5 burst, then 7 gores at the per-tier base
+/// (`num66`: 558→974, 559→1040, 560→1045, `:82329-82337`) with the type
+/// order `+2 / base / base / +4 / +1 / +3 / +3` at the +0/+10/+10/+10/+24/+24/+24
+/// Y ladder.
+fn wyvern_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 20);
+    // `:82329-82337` — the per-tier base (two independent ifs, not else-if).
+    let mut num66 = 974;
+    if npc_type == 559 {
+        num66 = 1040;
+    }
+    if npc_type == 560 {
+        num66 = 1045;
+    }
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, num66 + 2, s); // :82338
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, num66, s); // :82339
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, num66, s); // :82340
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, num66 + 4, s); // :82341
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 24.0), vel, num66 + 1, s); // :82342
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 24.0), vel, num66 + 3, s); // :82343
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 24.0), vel, num66 + 3, s); // :82344
+}
+
+/// The 566/567 DD2 Skeleton death (`NPC.cs:82358-82386`, sites 108-114):
+/// the 20-dust type-236 burst, the 970 head, then SIX independent
+/// `Main.rand.Next(2) == 0` coin-gates (972/972/973/973/971/971). Each gate
+/// draws its `Next(2)` BEFORE the conditional spawn — a refused gate still
+/// consumes the draw. This commit ports the head + the first two gates
+/// (sites 108-110); the remaining four gates land with the next batch.
+fn skeleton_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:82358-82361` — the dust is type 236 (NOT 5).
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 236, hit_direction, 20);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 970, s); // :82362
+    // `:82363-82366` — gate 1: Next(2) then the conditional 972.
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 972, s); // :82365
+    }
+    // `:82367-82370` — gate 2: Next(2) then the conditional 972.
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 972, s); // :82369
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); only the death
@@ -285,6 +354,15 @@ pub fn hit_effect_c(
     // `:82292-82313` — the 568/569 DD2 Wither Beast arm (sites 96-100).
     if (npc_type == 568 || npc_type == 569) && npc.hp <= 0 {
         wither_beast_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82314-82346` — the 558/559/560 DD2 Wyvern arm (sites 101-107).
+    if (npc_type == 558 || npc_type == 559 || npc_type == 560) && npc.hp <= 0 {
+        wyvern_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82347-82388` — the 566/567 DD2 Skeleton arm (sites 108-110 here;
+    // the remaining four coin-gates land with the next batch).
+    if (npc_type == 566 || npc_type == 567) && npc.hp <= 0 {
+        skeleton_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -484,6 +562,66 @@ mod tests {
         assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
         assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
         assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:82329-82344` — the Wyvern death's per-tier base and the
+    /// +2/base/base/+4/+1/+3/+3 type order at the +0/+10/+24 Y ladder.
+    #[test]
+    fn w4_f10_the_wyvern_death_uses_the_per_tier_base() {
+        let w = air();
+        for (ty, base) in [(558, 974), (559, 1040), (560, 1045)] {
+            let n = boss(100.0, 100.0, 60.0, 60.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(23);
+            wyvern_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..7].iter().map(|g| g.gore_type).collect();
+            assert_eq!(
+                types,
+                vec![base + 2, base, base, base + 4, base + 1, base + 3, base + 3],
+                "tier {ty}"
+            );
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 110.0));
+            assert_eq!(gore.slot(4).position, Vec2::new(100.0, 124.0));
+        }
+    }
+
+    /// `NPC.cs:82362-82370` — the Skeleton death: the 970 head always
+    /// spawns; the coin-gates draw Next(2) BEFORE the conditional spawn, so
+    /// the stream advances even when a gate refuses. The twin replay pins
+    /// the head kicks + both gate draws regardless of the gate outcomes.
+    #[test]
+    fn w4_f10_the_skeleton_death_gates_draw_before_the_spawn() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(29);
+        skeleton_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        // The head always lands (site 108).
+        assert_eq!(gore.slot(0).gore_type, 970);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        // The twin: 20 type-236 dusts, the head's 2 kicks, then the two
+        // Next(2) gates; a taken gate adds its 2 kicks.
+        let mut twin = UnifiedRandom::new(29);
+        for _ in 0..20 {
+            let _px = twin.next_max(40);
+            let _py = twin.next_max(52);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        for _ in 0..2 {
+            if twin.next_max(2) == 0 {
+                let _gy = twin.next_range(10, 31);
+                let _gx = twin.next_range(-20, 21);
+            }
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the skeleton gates mirror the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
