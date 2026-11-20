@@ -4742,32 +4742,12 @@ impl Player {
                 let wet = self.wet;
                 self.set_mount(m, wet);
                 self.buffs.buff_time[i] = 10;
-                // `:9885-9912` — the per-buff water grants (the C# else-if
-                // chain; each sets the same flag pair, the Lava Shark adds
-                // the full lava suite).
-                match bt {
-                    // `:9885-9889` (131), `:9890-9894` (168), `:9900-9904`
-                    // (279): `ignoreWater = true; accFlipper = true`.
-                    131 | 168 | 279 => {
-                        self.ignore_water = true;
-                        self.acc_flipper = true;
-                    }
-                    // `:9895-9899` (265): `canFloatInWater = true;
-                    // accFlipper = true`.
-                    265 => {
-                        self.can_float_in_water = true;
-                        self.acc_flipper = true;
-                    }
-                    // `:9905-9912` (305, the Lava Shark): the full lava suite.
-                    305 => {
-                        self.ignore_water = true;
-                        self.acc_flipper = true;
-                        self.lava_immune = true;
-                        self.lava_vision = true;
-                        self.fire_walk = true;
-                    }
-                    _ => {}
-                }
+                // The per-buff water grants (`:9885-9912`) run in the main
+                // buff loop below — AFTER the `ResetEffects` clears (the C#
+                // `ResetEffects` `:25491` precedes `UpdateBuffs` `:25566`);
+                // granting them here at the tick head would be wiped by the
+                // `ignoreWater`/`accFlipper`/`canFloatInWater`/`lavaVision`
+                // resets later in this same tick (gate V3, S1-P-i41).
             }
         }
         // Buffs whose timer ran out are deleted right after the tick
@@ -5454,14 +5434,9 @@ impl Player {
                 121 => self.fishing_skill += 15,
                 122 => self.sonar_potion = true,
                 123 => self.crate_potion = true,
-                // S1-P-i35 — the Merman buff 265 (`Player.cs:9895-9898`):
-                // `canFloatInWater = true` (the fishing float bonus) +
-                // `accFlipper`. The flipper swim half rides the wet statics.
-                265 => self.can_float_in_water = true,
-                // S1-P-i35 — the Cursed debuff 23 (`Player.cs:11731-11734`):
-                // `noItems = true` + `cursed` — blocks item use (the bobber
-                // kill gate). The `cursed` field is unported (no consumer).
-                23 => self.no_items = true,
+                // (Gate merge i35 ⨉ i41: the Merman 265 and Cursed 23 arms
+                // live ONCE in this loop — the i41 arms above/below carry
+                // `accFlipper`/`cursed` too; the i35 duplicates folded in.)
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
                 // `:11001-11004`: the Sunflower buff's movement tier —
@@ -5548,6 +5523,30 @@ impl Player {
                         self.luck_state.kite_luck_level =
                             (self.buffs.buff_time[i] / 10_800).clamp(0, 3) as u8;
                     }
+                }
+                // S1-P-i41 — `UpdateBuffs`' mount sub-arms (`Player.cs:9885-
+                // 9912`), in the main buff loop so they run AFTER the
+                // `ResetEffects` clears (`:25491` ResetEffects precedes
+                // `:25566` UpdateBuffs). The mount re-affirm + buffTime hold
+                // stays at the tick head (the `:9881-9884` loop); only the
+                // swim-flag grants move here (gate V3 ordering fix).
+                // `:9885-9889` (131), `:9890-9894` (168), `:9900-9904` (279).
+                131 | 168 | 279 => {
+                    self.ignore_water = true;
+                    self.acc_flipper = true;
+                }
+                // `:9895-9899` (265, the Water Strider).
+                265 => {
+                    self.can_float_in_water = true;
+                    self.acc_flipper = true;
+                }
+                // `:9905-9912` (305, the Lava Shark): the full lava suite.
+                305 => {
+                    self.ignore_water = true;
+                    self.acc_flipper = true;
+                    self.lava_immune = true;
+                    self.lava_vision = true;
+                    self.fire_walk = true;
                 }
                 _ => {}
             }

@@ -24312,17 +24312,21 @@ mod magic_data_tests {
         // M4-PROJ-6b Phase 1 moved the boundary: the followup kinds
         // (114/115/116/132/156/157/173, 206, 293/297, 356, 409, 617/618,
         // 632/633, 634/635) now carry rows, so the rowless set is the plan's
-        // documented OUT list — the 75/84 gun riders (439/445/460/595/600/
+        // documented OUT list — the 75/84 gun riders (439/460/595/600/
         // 611/735/927; 615/630/705/714 already ride the ammo-resolution row)
         // and the hostile lasers (461/537), plus the flame jet 187 and
         // 502. The 642 left the list with S1-D-4b-3 (the turret beam's
-        // row). The unported-kind spawn must still reach the caller as
-        // `None`, never an inert slot.
+        // row); the 445 left it with S1-P-i29 (the Laser Drill's channel
+        // beam carries the aiStyle-75 row — the full AI_075 laser is the
+        // follow-up, the row is the spawn/hold seam). The unported-kind
+        // spawn must still reach the caller as `None`, never an inert slot.
         for kind in [
-            439u16, 445, 460, 595, 600, 611, 735, 927, 461, 537, 187, 502,
+            439u16, 460, 595, 600, 611, 735, 927, 461, 537, 187, 502,
         ] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
+        // S1-P-i29: the Laser Drill's beam carries its row now.
+        assert_eq!(proj_data(445).unwrap().ai_style, 75);
         // The Golem's fireball 258 already rides a pre-existing row, the
         // hostile style-8 rider of the same kind, and keeps it.
         // The Leaf Blower's petal carries its own row now

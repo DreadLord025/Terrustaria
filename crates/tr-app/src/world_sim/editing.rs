@@ -405,16 +405,25 @@ fn pick_tile_hit(app: &mut App, tx: i32, ty: i32, pick_power: i32) -> bool {
     // reach 100 on a grass/moss tile, the damage zeroes (the conversion
     // fires instead of the break).
     let transforms = does_pick_target_transform(&app.world, tx, ty, tile.kind);
-    if transforms
-        && app
-            .hit_tile
-            .add_damage(buffer_index, damage, false)
-            >= 100
-    {
-        damage = 0;
-    }
+    // `:53840-53843` — the transforming-tile preview. The C# zeroes `damage`
+    // when the hit WOULD reach 100, then `PickTile`'s `AddDamage(0)` returns
+    // the standing total (<100) and falls to the `KillTile(fail: true)` arm —
+    // which is where the grass/moss conversion actually lands
+    // (`WorldGen.cs:63715-63735`). The port converts on the preview crossing
+    // directly (the break-path total never reaches 100 once the preview zeroes
+    // the damage), keeping the same observable: the cell turns to its soil on
+    // the hit that would have broken it, no item drop.
+    let would_break = if transforms {
+        let preview = app.hit_tile.add_damage(buffer_index, damage, false);
+        if preview >= 100 {
+            damage = 0;
+        }
+        preview >= 100
+    } else {
+        false
+    };
     let total = app.hit_tile.add_damage(buffer_index, damage, true);
-    if total >= 100 {
+    if total >= 100 || would_break {
         if transforms {
             // The conversion (`WorldGen.KillTile(fail: true)`'s grass/moss
             // arms, `WorldGen.cs:63715-63735`): the tile becomes its soil,
@@ -7490,18 +7499,21 @@ mod tests {
     /// the damage per hit is unchanged (the pick power, not the speed).
     #[test]
     fn s1_p_i29_the_mining_cadence_reads_use_time_and_pick_speed() {
-        // The Iron Pickaxe: useTime 13. With pickSpeed 1 the hits are 13 ticks
-        // apart; with the Mining buff (pickSpeed 0.75) they are (int)(13*0.75)
-        // = 9 ticks apart. Count the hits over a fixed window by the book's
-        // damage steps.
+        // The Iron Pickaxe: useTime 13, pick 40 on stone (plain power). With
+        // pickSpeed 1 the hits are 13 ticks apart (first hit tick 2, then 15);
+        // with the Mining buff (pickSpeed 0.75) they are (int)(13*0.75) = 9
+        // ticks apart (first hit tick 2, then 11). Gate V3: measure the damage
+        // in a window BEFORE the third hit breaks the stone (the break clears
+        // the book, so a post-break read would show 0, not the cadence).
         let mut plain = pick_world_at(1, 30, 260);
-        // 27 frames: hits at ~tick 1, 14, 27 → the third may not land; use a
-        // window that captures exactly two hits for the plain cadence.
-        mine_frames(&mut plain, 20);
+        mine_frames(&mut plain, 14); // hits at tick 2 only (next at 15)
         let plain_dmg = hit_damage(&plain, 30, 260);
         let mut fast = pick_world_at(1, 30, 260);
-        fast.player.as_mut().unwrap().buffs.add_buff(104, 3600);
-        mine_frames(&mut fast, 20);
+        // The Mining buff's −0.25 pickSpeed fold (the C# UpdateBuffs arm
+        // `:10134-10137`, the port's positive-bonus convention), set directly
+        // so the player stays parked on the target.
+        fast.player.as_mut().unwrap().pick_speed_bonus += 0.25;
+        mine_frames(&mut fast, 14); // hits at tick 2 AND 11 (next at 20)
         let fast_dmg = hit_damage(&fast, 30, 260);
         // The faster pickSpeed lands MORE hits in the same window (each hit
         // is the same 40 damage). The plain cadence lands fewer.
@@ -7510,9 +7522,11 @@ mod tests {
             "the Mining buff's faster cadence lands more damage: fast {fast_dmg} vs plain {plain_dmg}"
         );
         // Both are multiples of the pick's 40 (the damage per hit is the
-        // power, not the speed).
+        // power, not the speed), and the stone still stands (no break yet).
         assert_eq!(plain_dmg % 40, 0, "plain damage is a multiple of 40");
         assert_eq!(fast_dmg % 40, 0, "fast damage is a multiple of 40");
+        assert!(plain.world.tile(30, 260).unwrap().active(), "plain stone stands");
+        assert!(fast.world.tile(30, 260).unwrap().active(), "fast stone stands");
     }
 
     /// S1-P-i29 — the reach is the C# rectangle (`TileReachCheckSettings.
@@ -7563,24 +7577,33 @@ mod tests {
     /// reaches one tile farther than the Iron Pickaxe (tileBoost 0).
     #[test]
     fn s1_p_i29_the_tile_boost_widens_the_reach() {
-        // The target 6 tiles to the side: beyond the Iron Pickaxe's X reach
-        // 5, within the Chlorophyte Pickaxe's 5 + 1 = 6.
+        // Gate V3: `tile_in_reach_rect` is the C# `GetTileRegion` rectangle
+        // (`TileReachCheckSettings.cs:45-54`): HX = ceil((X+width)/16)−1+reach.
+        // The player at x=33 tiles (width 20px) spans columns 33..34, so the
+        // Iron Pickaxe's X reach 5 reaches column 39 (34+5); tileBoost 1
+        // widens it to 40. Probe column 40: refused at tileBoost 0, reached
+        // at tileBoost 1 (`IsTargetTileInItemRange`, `Player.cs:46313-46316`).
         let mut w = World::new("boost".into(), 64, 800);
-        let i = w.index(39, 260);
+        let i = w.index(40, 260);
         w.tiles[i] = Tile { kind: 1, ..Default::default() };
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.compute_column_surface();
-        let mut app = mining_app(w, 39, 260);
+        let mut app = mining_app(w, 40, 260);
         app.player.as_mut().unwrap().x = 33.0 * TILE_PX;
         app.player.as_mut().unwrap().y = 260.0 * TILE_PX;
-        app.camera = Vec2::new(39.0 * TILE_PX + 8.0, 260.0 * TILE_PX + 8.0);
-        // The Iron Pickaxe (tileBoost 0) refuses.
-        mine_frames(&mut app, 40);
-        assert!(app.world.tile(39, 260).unwrap().active(), "tileBoost 0 refuses 6 across");
-        // The Chlorophyte Pickaxe (1230, tileBoost 1, pick 200) reaches.
-        app.inventory[app.selected].kind = 1230;
-        mine_frames(&mut app, 40);
-        assert!(!app.world.tile(39, 260).unwrap().active(), "tileBoost 1 reaches 6 across");
+        app.camera = Vec2::new(40.0 * TILE_PX + 8.0, 260.0 * TILE_PX + 8.0);
+        let (rx, ry) = mining_tile_range(&app);
+        let iron_tb = registry::get(1).map_or(0, |d| d.tile_boost);
+        assert!(
+            !app.player.as_ref().is_some_and(|p| tile_in_reach_rect(p, 40, 260, rx, ry, iron_tb)),
+            "tileBoost 0 refuses the cell past its X reach"
+        );
+        let chlo_tb = registry::get(1230).map_or(0, |d| d.tile_boost);
+        assert_eq!(chlo_tb, iron_tb + 1, "the Chlorophyte Pickaxe adds one tile of boost");
+        assert!(
+            app.player.as_ref().is_some_and(|p| tile_in_reach_rect(p, 40, 260, rx, ry, chlo_tb)),
+            "tileBoost 1 reaches the widened cell"
+        );
     }
 
     /// S1-P-i29 — the grass conversion (`DoesPickTargetTransformOnKill`,
@@ -7621,10 +7644,13 @@ mod tests {
         // the animation so the hit lands within the useTime cadence.
         mine_frames(&mut app, 20);
         assert!(!app.world.tile(30, 260).unwrap().active(), "the drill broke the stone");
-        // The release: the channel clears and the drill projectile dies.
+        // The release: the channel clears; the projectile's own Kill rides
+        // the aiStyle-20 machine on the next POOL tick (the i30 chainsaw
+        // precedent — `update_editing` alone never ticks the pool).
         app.mine_down = false;
         mine_frames(&mut app, 2);
         assert!(!app.player.as_ref().unwrap().channel, "the release clears the channel");
+        crate::world_sim::projectiles::update_projectiles(&mut app, ONE_TICK_SECS);
         assert!(
             !app.projectiles.slots().iter().any(|p| p.active && p.kind == 59),
             "the release kills the drill projectile"
@@ -7638,9 +7664,16 @@ mod tests {
     #[test]
     fn s1_p_i29_the_pick_speed_floor_is_0_3() {
         let mut app = pick_world_at(1, 30, 260);
+        // Gate V3: the buff→stat fold runs in `update_player` (the C#
+        // `UpdateBuffs`), not in `add_buff` — drive one player tick so the
+        // Mining/WellFed bonuses land before the accessor reads them.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.buffs.add_buff(104, 3600); // Mining −0.25
+            p.buffs.add_buff(26, 3600); // WellFed −0.05 (the tier 26 row)
+        }
+        crate::world_sim::player::update_player(&mut app, ONE_TICK_SECS);
         let p = app.player.as_mut().unwrap();
-        p.buffs.add_buff(104, 3600); // Mining −0.25
-        p.buffs.add_buff(26, 3600); // WellFed −0.05 (the tier 26 row)
         p.pick_speed_bonus += 0.5; // the chisel-style extra
         // The raw 1 − bonus would be below 0.3; the accessor clamps.
         assert!(p.pick_speed() >= 0.3, "pickSpeed clamps at 0.3");
@@ -11895,6 +11928,11 @@ mod wall_placement_tests {
         set_wall(&mut w, 12, 10, 4);
         set_wall(&mut w, 11, 9, 4);
         set_wall(&mut w, 11, 11, 4);
+        // Gate V3 fixture: the target (10,10) needs a supporting neighbour
+        // (`PlaceThing_Walls`' four-neighbour gate, `Player.cs:39607`) — a
+        // wall below it that is NOT one of (11,10)'s four sides, so the fill
+        // still sees exactly the three-wall enclosure + the new (10,10).
+        set_wall(&mut w, 10, 11, 4);
         let mut app = wall_app(w, 10, 10);
         hold_wall(&mut app, 93, 5);
         app.place_down = true;
@@ -11915,6 +11953,9 @@ mod wall_placement_tests {
         set_wall(&mut w, 12, 10, 4);
         set_wall(&mut w, 11, 9, 4);
         set_wall(&mut w, 11, 11, 4);
+        // Gate V3 fixture: the target's supporting neighbour (see the
+        // second-item test) — below the target, off (11,10)'s four sides.
+        set_wall(&mut w, 10, 11, 4);
         let mut app = wall_app(w, 10, 10);
         hold_wall(&mut app, 93, 1); // the last item
         app.place_down = true;
@@ -11931,9 +11972,14 @@ mod wall_placement_tests {
     #[test]
     fn s1_p_i33_the_hammer_refuses_an_enclosed_unsafe_wall() {
         let mut w = empty_world();
-        // A 3x3 of unsafe dirt wall; the centre is fully enclosed.
-        for x in 9..=11 {
-            for y in 9..=11 {
+        // Gate V3 fixture: a 5x5 of unsafe dirt wall (the i31 finder's
+        // banker's-quadrant 2x2 scan walks to the patch EDGE on a 3x3 and
+        // smashes that edge cell instead — `TryFindingWallToHammer`,
+        // `Player.cs:45862-45905`). On a 5x5 the cursor (10,10) is interior:
+        // every scanned cell's 3x3 stays inside the patch, so the finder
+        // keeps the cursor and `CanPlayerSmashWall` refuses the enclosed cell.
+        for x in 8..=12 {
+            for y in 8..=12 {
                 set_wall(&mut w, x, y, 2);
             }
         }
@@ -11944,7 +11990,7 @@ mod wall_placement_tests {
             update_editing(&mut app, 1.0 / 60.0, SCREEN);
         }
         assert_eq!(app.world.tile(10, 10).unwrap().wall, 2, "enclosed unsafe refuses");
-        // Open a neighbour → the hammer breaks it.
+        // Open a neighbour of the cursor → the hammer breaks it.
         set_wall(&mut app.world, 9, 9, 0);
         for _ in 0..120 {
             update_editing(&mut app, 1.0 / 60.0, SCREEN);
@@ -11958,19 +12004,23 @@ mod wall_placement_tests {
     #[test]
     fn s1_p_i33_the_hammer_cadence_is_the_damage_model() {
         // Copper Hammer: hammer 35 → 52 per hit → 2 hits; useTime 23 → 11
-        // ticks per hit → 22 ticks ≈ 0.3667 s. A house wall (wood 4) breaks.
+        // ticks between hits. Gate V3: the i31 chain arms `toolTime = 1` on
+        // the press (`ItemCheck_StartActualUse`, `Player.cs:51660-51663`), so
+        // the FIRST wall hit lands on tick 2 (not tick 11) and the second one
+        // `useTime / 2 = 11` ticks later, on tick 13. A house wall (wood 4)
+        // breaks on the second hit (104 >= 100).
         let mut w = empty_world();
         set_wall(&mut w, 10, 10, 4);
         let mut app = wall_app(w, 10, 10);
         hold_wall(&mut app, 3505, 1);
         app.mine_down = true;
-        // 21 ticks: not yet broken (22 needed).
-        for _ in 0..21 {
+        // 12 ticks: the first hit (52) landed, the second (tick 13) has not.
+        for _ in 0..12 {
             update_editing(&mut app, 1.0 / 60.0, SCREEN);
         }
-        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "21 ticks is short");
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "12 ticks is short");
         update_editing(&mut app, 1.0 / 60.0, SCREEN);
-        assert_eq!(app.world.tile(10, 10).unwrap().wall, 0, "the 22nd tick breaks");
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 0, "the 13th tick breaks");
     }
 
     /// `break_wall`'s drop is the `KillWall_GetItemDrops` conversion, not a
