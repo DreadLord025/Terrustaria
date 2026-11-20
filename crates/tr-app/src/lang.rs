@@ -866,8 +866,14 @@ const NEGATIVE_NPC_NAMES: &[(usize, &str)] = &[
     (54, "BigRainZombie"),
 ];
 
-/// `Lang.GetBuffName(id)` (`Lang.cs:241-244`): `BuffName.{const name}`.
+/// `Lang.GetBuffName(id)` (`Lang.cs:241-244`): `BuffName.{const name}` —
+/// the C# indexes `_buffNameCache[id]` directly, so an id outside
+/// `0..BuffID.Count` is out of the cache (the port answers empty rather than
+/// throw, the `GetProjectileName` bounds convention — W4-c21).
 pub fn buff_name(id: i32) -> String {
+    if id < 0 || id as usize >= crate::buffs::BUFF_ID_COUNT {
+        return String::new();
+    }
     match const_name(crate::lang_tables::BUFF_ID, id) {
         Some(name) => text(&format!("BuffName.{name}")),
         None => String::new(),
@@ -875,8 +881,12 @@ pub fn buff_name(id: i32) -> String {
 }
 
 /// `Lang.GetBuffDescription(id)` (`Lang.cs:246-249`):
-/// `BuffDescription.{const name}`.
+/// `BuffDescription.{const name}` — the same cache bounds as
+/// [`buff_name`] (W4-c21).
 pub fn buff_description(id: i32) -> String {
+    if id < 0 || id as usize >= crate::buffs::BUFF_ID_COUNT {
+        return String::new();
+    }
     match const_name(crate::lang_tables::BUFF_ID, id) {
         Some(name) => text(&format!("BuffDescription.{name}")),
         None => String::new(),
@@ -1191,5 +1201,25 @@ mod tests {
         assert_eq!(projectile_name(i32::MAX), "");
         // The last in-cache id resolves (`ProjectileID.KrakenWave` = 1135).
         assert!(!projectile_name(crate::projectile_id::PROJECTILE_COUNT - 1).is_empty());
+    }
+
+    /// W4-c21 — `Lang.GetBuffName`/`GetBuffDescription` (`Lang.cs:241-249`)
+    /// index `_buffNameCache`/`_buffDescriptionCache` sized `BuffID.Count` =
+    /// 401; the port answers empty outside the cache instead of the C#
+    /// IndexOutOfRange (the W4-c26 hover test's `buff_name(99999) == ""`).
+    #[test]
+    fn w4_c21_buff_name_bounds_answer_empty() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        assert_eq!(buff_name(1), "Obsidian Skin");
+        assert_eq!(buff_description(24), "Slowly losing life");
+        // The last in-cache id (`BuffID.MoonLordFreeEye` = 400) resolves.
+        assert!(!buff_name(400).is_empty());
+        // Outside `0..BuffID.Count`: empty, both directions.
+        assert_eq!(buff_name(-1), "");
+        assert_eq!(buff_name(crate::buffs::BUFF_ID_COUNT as i32), "");
+        assert_eq!(buff_name(99999), "");
+        assert_eq!(buff_description(-1), "");
+        assert_eq!(buff_description(99999), "");
     }
 }
