@@ -39334,15 +39334,16 @@ A's dispatch (`hit_effect_b` runs after wave A's last arm):
   loop runs after. The hit arm's 3-gore twin (`:82045-82046`) is wave
   C.
 
-Deviations / stand-ins (cited at their sites): `hitDirection` rides an
-explicit parameter (wave A's `hit_effect` gained it, the C# default 0);
-the hit-half dmg-scaled dust loops stay with the wiring wave's dust pass
-(wave A's convention) EXCEPT the 658-660 shared loop and the 551
-`DD2Event.CheckProgress` gate (RETURNED,
-`HitEffectOutcome::dd2_crystal_check_progress`); the 636 dust loop
-keeps wave A's draw-census skip; the 572/573 `localAI[0/1]` and 574/575
-`localAI[2]` sound stops are RETURNED (`dd2_flyer_sound_stops` /
-`dd2_mage_sound_stop`) - the tracked-sound seam is the wiring wave's.
+Deviations / stand-ins (cited at their sites): `hitDirection`/`dmg`
+ride explicit parameters (wave A's `hit_effect` gained them, the C#
+defaults 0/10.0); the hit-half dmg-scaled dust loops stay with the wiring
+wave's dust pass (wave A's convention) EXCEPT the 658-660 shared loop and
+the 551 `DD2Event.CheckProgress` gate (the pure
+`dd2_crystal_crossed_percent` predicate - the float-100 before cast,
+the double/(float)lifeMax after cast - RETURNED as
+`HitEffectOutcome::dd2_crystal_check_progress`; the caller runs the
+ported walk, `world_sim/npcs.rs:2561`); the 636 dust loop keeps wave
+A's draw-census skip.
 
 RNG: the strike's stream, wave A's contract; the witnesses replay the
 cited draws on twin streams (WRITTEN, NOT RUN - code-only mode).

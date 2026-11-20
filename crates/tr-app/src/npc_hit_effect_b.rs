@@ -20,10 +20,9 @@
 //! | 57-63 | `:82134`-`:82140` | the 561/562/563 DD2 javeliner death (7) |
 //! | 64-66 | `:82167`-`:82169` | the 555/556/557 DD2 kobold death (3) |
 //! | 67-76 | `:82193`-`:82202` | the 551 crystal death, `spriteDirection != -1` (10) |
-//! | 77-86 | `:82206`-`:82215` | the 551 `-1` twin (10) |
-//! | 87-91 | `:82237`-`:82241` | the 572/573 DD2 flyer death (5) |
+//! | 77-86 | `:82206`-`:82215` | the 551 `-1` twin (10, commit 4) |
 //!
-//! Everything after `:82243` (574/575 onward, the 566/567 `Next(2)` gates,
+//! Everything after `:82218` (572/573 onward, the 566/567 `Next(2)` gates,
 //! the 576/577 pair, …) is wave C (`W4-f10-gore-sites-3`).
 //!
 //! ## Documented drops / stand-ins (this wave)
@@ -40,11 +39,13 @@
 //!   660 gores BEFORE the dust, 667 gores BEFORE the dust, DD2 dust
 //!   BEFORE the gores. The 636 dust loop keeps wave A's draw-census skip
 //!   (`empress_hit_dust_draws`).
-//! * `hitDirection` rides an explicit parameter (the C# `HitEffect(int
-//!   hitDirection = 0, double dmg = 10.0)`, `:81654`).
-//! * The 572/573 sound stops (`:82230-82231`) are RETURNED
-//!   (`dd2_goblin_sound_stops`) — the tracked-sound seam is the wiring
-//!   wave's.
+//! * `hitDirection`/`dmg` ride explicit parameters (the C# `HitEffect(int
+//!   hitDirection = 0, double dmg = 10.0)`, `:81654`); `dmg` feeds the 551
+//!   `CheckProgress` percent-crossing gate.
+//! * The 551 `DD2Event.CheckProgress` gate (`:82174-82177`) is ported as
+//!   the pure [`dd2_crystal_crossed_percent`] predicate and RETURNED
+//!   (`HitEffectOutcome::dd2_crystal_check_progress`) — the caller runs
+//!   the ported walk (`world_sim/npcs.rs:2561`).
 //! * `AI_121_QueenSlime_GetDustColor` (`NPC.cs:45121-45124`) is ported as
 //!   [`queen_slime_dust_color`] — TWO `NextFloat` draws (the inner lerp's
 //!   amount evaluates first, C# argument order), `Color.Lerp` through
@@ -308,11 +309,12 @@ fn dd2_javeliner_death(
     gore.new_gore(rng, world, p + Vec2::new(0.0, 34.0), vel, base + 1, s); // :82140
 }
 
-/// The wave-B dispatch tail — appended to wave A's `hit_effect` in source
-/// order (`NPC.cs:81942` onward). `npc.hp` is `this.life` at the call.
-/// Commit 1 scope: the 636 tail, 657, 658-660, 667.
-pub(crate) fn hit_effect_b(
-    npc: &mut Npc,
+/// The 555/556/557 DD2 kobold death (`NPC.cs:82143-82171`, sites 64-66):
+/// the base pick (1031, 556→1034, 557→1037) precedes the 20-dust type-5
+/// loop (no draws in the pick), then 3 gores: `base` at (X,Y), `base+1`
+/// at (X+10,Y+20), `base+2` at (X+10,Y+30).
+fn dd2_kobold_death(
+    npc: &Npc,
     npc_type: i32,
     hit_direction: i32,
     gore: &mut GorePool,
@@ -320,9 +322,81 @@ pub(crate) fn hit_effect_b(
     dust_ctx: &SpawnCtx,
     rng: &mut UnifiedRandom,
     world: &World,
+) {
+    // `:82154-82162` — the per-type base.
+    let base = match npc_type {
+        556 => 1034,
+        557 => 1037,
+        _ => 1031,
+    };
+    dd2_death_dust(npc, 5, hit_direction, dust, dust_ctx, rng, world); // :82163-82166
+    let p = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, p, vel, base, s); // :82167
+    gore.new_gore(rng, world, p + Vec2::new(10.0, 20.0), vel, base + 1, s); // :82168
+    gore.new_gore(rng, world, p + Vec2::new(10.0, 30.0), vel, base + 2, s); // :82169
+}
+
+/// The 551 DD2 crystal's `DD2Event.CheckProgress` gate
+/// (`NPC.cs:82174-82177`): the strike crossed a whole-life percent —
+/// `(int)(life/(float)lifeMax*100f) != (int)((life+dmg)/(double)
+/// (float)lifeMax*100.0)` — AND `life > 0`; netMode != 1 (the
+/// single-player port runs it). Pure predicate; the caller runs the
+/// ported walk (`world_sim/npcs.rs:2561`).
+pub fn dd2_crystal_crossed_percent(life: i32, life_max: i32, dmg: f64) -> bool {
+    let before = (life as f32 / life_max as f32 * 100.0) as i32;
+    let after = ((life as f64 + dmg) / (life_max as f32 as f64) * 100.0) as i32;
+    before != after && life > 0
+}
+
+/// The 551 DD2 crystal death (`NPC.cs:82185-82217`, sites 67-76): the
+/// 20-dust type-5 preamble then the 10-gore body, `spriteDirection != -1`
+/// arm — types 1079/1080/1080/1081/1082/1083/1084/1085/1085/1086 at the
+/// cited offsets. The `-1` mirrored twin (`:82206-82215`, sites 77-86)
+/// is the next commit (the wave-A partial-arm precedent).
+fn dd2_crystal_death(
+    npc: &Npc,
+    hit_direction: i32,
+    gore: &mut GorePool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    dd2_death_dust(npc, 5, hit_direction, dust, dust_ctx, rng, world); // :82187-82190
+    let p = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:82191-82203` — the spriteDirection != -1 arm (sites 67-76).
+    debug_assert!(npc.sprite_dir != -1, "the -1 twin is the next commit");
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 54.0), vel, 1079, s); // :82193
+    gore.new_gore(rng, world, p + Vec2::new(72.0, 90.0), vel, 1080, s); // :82194
+    gore.new_gore(rng, world, p + Vec2::new(102.0, 94.0), vel, 1080, s); // :82195
+    gore.new_gore(rng, world, p + Vec2::new(178.0, 0.0), vel, 1081, s); // :82196
+    gore.new_gore(rng, world, p + Vec2::new(136.0, 12.0), vel, 1082, s); // :82197
+    gore.new_gore(rng, world, p + Vec2::new(82.0, 18.0), vel, 1083, s); // :82198
+    gore.new_gore(rng, world, p + Vec2::new(100.0, 26.0), vel, 1084, s); // :82199
+    gore.new_gore(rng, world, p + Vec2::new(170.0, 16.0), vel, 1085, s); // :82200
+    gore.new_gore(rng, world, p + Vec2::new(190.0, 10.0), vel, 1085, s); // :82201
+    gore.new_gore(rng, world, p + Vec2::new(100.0, 36.0), vel, 1086, s); // :82202
+}
+
+/// The wave-B dispatch tail — appended to wave A's `hit_effect` in source
+/// order (`NPC.cs:81942` onward). `npc.hp` is `this.life` at the call.
+/// Commit 1 scope: the 636 tail, 657, 658-660, 667.
+pub(crate) fn hit_effect_b(
+    npc: &mut Npc,
+    npc_type: i32,
+    hit_direction: i32,
+    dmg: f64,
+    gore: &mut GorePool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
     outcome: &mut HitEffectOutcome,
 ) {
-    let _ = outcome; // the sound/check-progress seams arrive with commit 4
     // `:81952-81990` — the 657 Queen Slime death (sites 39-41).
     if npc_type == 657 && npc.hp <= 0 {
         queen_slime_657_death(npc, gore, dust, dust_ctx, rng, world);
@@ -344,6 +418,22 @@ pub(crate) fn hit_effect_b(
     // `:82110-82142` — the 561-563 DD2 javeliner death (sites 57-63).
     if matches!(npc_type, 561 | 562 | 563) && npc.hp <= 0 {
         dd2_javeliner_death(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world);
+    }
+    // `:82143-82171` — the 555-557 DD2 kobold death (sites 64-66).
+    if matches!(npc_type, 555 | 556 | 557) && npc.hp <= 0 {
+        dd2_kobold_death(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world);
+    }
+    // `:82172-82218` — the 551 DD2 crystal: the CheckProgress gate on the
+    // HIT path (returned), the death arm's 10-gore body (sites 67-76).
+    if npc_type == 551 {
+        // `:82174-82177` — the percent-crossing gate (netMode != 1 runs).
+        if dd2_crystal_crossed_percent(npc.hp, npc.max_hp, dmg) {
+            outcome.dd2_crystal_check_progress = true;
+        }
+        if npc.hp <= 0 && npc.sprite_dir != -1 {
+            // The `-1` mirrored twin is the next commit (sites 77-86).
+            dd2_crystal_death(npc, hit_direction, gore, dust, dust_ctx, rng, world);
+        }
     }
 }
 
@@ -607,5 +697,99 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "javeliner {ty} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:82154-82169` — the 555-557 kobold death: base 1031/1034/
+    /// 1037, the 3-gore staircase (X,Y)/(X+10,Y+20)/(X+10,Y+30).
+    #[test]
+    fn w4_e5_the_dd2_kobold_death_rows_match_the_csharp() {
+        let w = air();
+        for (ty, base) in [(555, 1031), (556, 1034), (557, 1037)] {
+            let n = boss(100.0, 100.0, 30.0, 40.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(37);
+            dd2_kobold_death(&n, ty, 1, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![base, base + 1, base + 2]);
+            let pos: Vec<Vec2> = gore.slots()[..3].iter().map(|g| g.position).collect();
+            assert_eq!(
+                pos,
+                vec![
+                    Vec2::new(100.0, 100.0),
+                    Vec2::new(110.0, 120.0),
+                    Vec2::new(110.0, 130.0),
+                ]
+            );
+            let mut twin = UnifiedRandom::new(37);
+            for _ in 0..20 {
+                let _px = twin.next_max(26);
+                let _py = twin.next_max(36);
+                let _vx = twin.next_range(-20, 21);
+                let _vy = twin.next_range(-20, 21);
+                let _row = twin.next_max(3);
+                let _scale = twin.next_range(-20, 21);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kobold {ty} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:82174` — the percent-crossing gate: the float-100 cast on
+    /// the before side, the double/(float)lifeMax on the after side, the
+    /// life > 0 term.
+    #[test]
+    fn w4_e5_the_crystal_percent_gate_matches_the_csharp() {
+        // life 100/200 = 50%, dmg 1 → 50.5% → 50 — no crossing.
+        assert!(!dd2_crystal_crossed_percent(100, 200, 1.0));
+        // life 100/200 = 50%, dmg 10 → 55% — crossed.
+        assert!(dd2_crystal_crossed_percent(100, 200, 10.0));
+        // life 0 — the gate never fires (the death path).
+        assert!(!dd2_crystal_crossed_percent(0, 200, 50.0));
+        // life 1/3 = 33.33% → 33; dmg 1 → 66.67% → 66 — crossed.
+        assert!(dd2_crystal_crossed_percent(1, 3, 1.0));
+    }
+
+    /// `NPC.cs:82187-82202` — the 551 crystal death (!= -1 arm): the
+    /// 20-dust preamble then the 10-gore body at the cited offsets.
+    #[test]
+    fn w4_e5_the_crystal_death_spawns_the_ten_gore_body() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 200.0, 120.0);
+        n.sprite_dir = 1;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(41);
+        dd2_crystal_death(&n, 1, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..10].iter().map(|g| g.gore_type).collect();
+        assert_eq!(
+            types,
+            vec![1079, 1080, 1080, 1081, 1082, 1083, 1084, 1085, 1085, 1086]
+        );
+        let offsets = [
+            (0.0, 54.0), (72.0, 90.0), (102.0, 94.0), (178.0, 0.0),
+            (136.0, 12.0), (82.0, 18.0), (100.0, 26.0), (170.0, 16.0),
+            (190.0, 10.0), (100.0, 36.0),
+        ];
+        for (g, (dx, dy)) in gore.slots()[..10].iter().zip(offsets) {
+            assert_eq!(g.position, Vec2::new(100.0 + dx, 100.0 + dy));
+        }
+        let mut twin = UnifiedRandom::new(41);
+        for _ in 0..20 {
+            let _px = twin.next_max(196);
+            let _py = twin.next_max(116);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the crystal mirrors the C# draws");
     }
 }

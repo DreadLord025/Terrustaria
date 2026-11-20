@@ -252,14 +252,6 @@ pub struct HitEffectOutcome {
     /// `AI_113_WindyBalloon_GetSlaveNPC()` and, when found, zeroes its
     /// `ai[0]`, lifts `position.Y` by 10 and flags `netUpdate`.
     pub windy_balloon_slave_release: bool,
-    /// W4-e5 (wave B): the 572/573 death's `SoundEngine.GetActiveSound(
-    /// SlotId.FromFloat(localAI[0/1]))?.Stop()` pair (`NPC.cs:82230-82231`)
-    /// — the tracked-sound slots the wiring caller stops. `None` = the arm
-    /// did not run.
-    pub dd2_flyer_sound_stops: Option<(f32, f32)>,
-    /// W4-e5 (wave B): the 574/575 death's `localAI[2]` sound stop
-    /// (`NPC.cs:82255`) — the same seam.
-    pub dd2_mage_sound_stop: Option<f32>,
     /// W4-e5 (wave B): the 551 crystal's `DD2Event.CheckProgress(551)`
     /// (`NPC.cs:82174-82177`) — fires when the strike crossed a whole-life
     /// percent AND `life > 0` (netMode != 1: the single-player port runs
@@ -582,11 +574,11 @@ pub fn hit_effect(
         empress_first_gore(npc, gore, rng, world);
     }
     // W4-e5 (wave B): the 636 tail (sites 31-38) then the 657/658-660/667
-    // arms — the same `life <= 0` gates, source order.
+    // + DD2 arms — the same `life <= 0` gates, source order.
     if npc_type == 636 && npc.hp <= 0 {
         empress_tail_gores(npc, gore, rng, world);
     }
-    crate::npc_hit_effect_b::hit_effect_b(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world, &mut outcome);
+    crate::npc_hit_effect_b::hit_effect_b(npc, npc_type, hit_direction, dmg, gore, dust, dust_ctx, rng, world, &mut outcome);
     outcome
 }
 
