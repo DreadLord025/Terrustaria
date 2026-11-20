@@ -146,3 +146,17 @@ Missing styles (42): 6, 11, 13, 17, 25, 32, 35, 37, 38, 39, 41, 42, 43, 46,
 (d1: 6; d2: 11/13/17; d3: 25; d4: 32/35/37/38/39; d5: 41/42/43/46/49;
 d6: 52/55/56/60; d7: 63/69; d8: 72/73/74/76; d9: 81/86/87/89/90;
 d10: 91-98/100; d11: 101/104/105). No port lands from this task.
+
+## Finding F1 — aiStyle 99's counterweight SUB-arm is missing (claimed: d10)
+
+The C# splits style 99 in TWO arms: `else if ((this.aiStyle == 99 &&
+this.type >= 556 && this.type <= 561) || this.type == 1079)` (`:33153-33156`)
+→ `AI_099_1_Counterweights` (`:67380-67732`: `timeLeft = 6` refresh, the 250-px
+string-orbit machine), THEN `else if (this.aiStyle == 99)` (`:33157-33160`)
+→ `AI_099_2_Yoyos` (`:67733+`). The port has ONLY the yoyo arm
+(`projectile.rs:17951`, `ai_yoyo`); the counterweight kinds 556-561/1079 have
+NO `proj_data` rows (the only mention is the comment at `data.rs:742` — the
+draw path knows them, `assets.rs:706-708`, the AI does not). A counterweight
+spawned today silently no-ops in `_ => {}`-equivalent fashion (no row → the
+spawn itself no-ops). Claimed by `task/W4-d10-proj-ai-91-100` (99 ∈ 91-100);
+recorded here so the d10 port covers the sub-arm, not just the yoyo half.
