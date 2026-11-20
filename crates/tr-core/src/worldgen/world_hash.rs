@@ -340,6 +340,14 @@ mod tests {
     // classic world runs the byte-identical ledger (the step is a no-op).
     // The dual seed's hash moves by design and rides the a == b witness
     // `w4_f24_the_dither_snake_is_gated_and_deterministic` (written NOT run).
+    // W4-f24 A1: `skyblock.rs` ports the Skyblock statics + gate census
+    // (WorldGen.cs:3063-3281) — the 75-name denyAllGeneration table + the
+    // 22-name denySomeGeneration table (the AddPasses body census mapped to
+    // VANILLA_CHAIN names), denySomeGeneration/denyFloatingIslands/
+    // spawnSolidifier/spawnShimmerPool, and the SkyblockState ScanTiles/
+    // Calculate ledger. pass_disabled_by_special_seeds gains the classic
+    // SeedFlags arm (the skyblock pruning). STILL no classic draw — the
+    // tables fire only under SeedFlags::SKYBLOCK; both pins stay.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

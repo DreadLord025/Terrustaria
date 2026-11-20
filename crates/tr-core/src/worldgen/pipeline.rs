@@ -1183,16 +1183,23 @@ pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Shimmer",                 // GenPassNameID.Shimmer             "Shimmer"
 ];
 
-/// Is `vanilla` one of the passes `WorldGen.cs:22504` disables? The gate reads
-/// the micro-seed bit `SecretSeed.dualDungeons` (`WorldGen.cs:22495`);
-/// `SecretSeed.dualDungeons.Enabled` is the port's
-/// [`crate::seeds::MicroSeedFlags::DUAL_DUNGEONS`].
+/// Is `vanilla` one of the passes the special seeds disable? Two arms:
+/// the micro-seed bit `SecretSeed.dualDungeons` (`WorldGen.cs:22495/:22504`,
+/// the port's [`crate::seeds::MicroSeedFlags::DUAL_DUNGEONS`]) prunes the
+/// twelve-name table; the classic `SeedFlags::SKYBLOCK` arm (W4-f24 A1)
+/// prunes the `denyAllGeneration`/`denySomeGeneration` pass bodies
+/// (`WorldGen.cs:3131-3147`, the `skyblock` module's census).
 pub(crate) fn pass_disabled_by_special_seeds(
     vanilla: &str,
     flags: crate::seeds::MicroSeedFlags,
+    classic: crate::seeds::SeedFlags,
 ) -> bool {
-    flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+    if flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
         && DUAL_DUNGEON_DISABLED_PASSES.contains(&vanilla)
+    {
+        return true;
+    }
+    super::skyblock::skyblock_prunes(vanilla, classic, flags)
 }
 
 // --- the executed pipeline (today's order, verbatim call sites) -------------
@@ -2938,7 +2945,7 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
 fn total_weight(opts: &GenOptions) -> f64 {
     EXECUTED_PIPELINE
         .iter()
-        .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags))
+        .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags, opts.flags))
         .map(|s| {
             VANILLA_CHAIN
                 .iter()
@@ -2967,8 +2974,8 @@ fn apply_step(
     // pass returns a `Skipped` result without applying — no tiles and no
     // draws from its stream. The port's steps own their streams, so a
     // skipped step is simply not called.
-    if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags) {
-        log::debug!("worldgen pass '{}' skipped (dualDungeons)", step.name);
+    if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags, opts.flags) {
+        log::debug!("worldgen pass '{}' skipped (special seeds)", step.name);
         return false;
     }
     // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
@@ -3126,10 +3133,11 @@ impl GenerationRunner {
             && pass_disabled_by_special_seeds(
                 EXECUTED_PIPELINE[self.cursor].vanilla,
                 self.opts.micro_flags,
+                self.opts.flags,
             )
         {
             log::debug!(
-                "worldgen pass '{}' skipped (dualDungeons)",
+                "worldgen pass '{}' skipped (special seeds)",
                 EXECUTED_PIPELINE[self.cursor].name
             );
             self.cursor += 1;
@@ -3802,18 +3810,19 @@ mod tests {
     /// micro-seed prunes exactly the twelve.
     #[test]
     fn s1_k_1_the_gate_reads_the_dual_dungeons_micro_seed() {
-        use crate::seeds::MicroSeedFlags;
+        use crate::seeds::{MicroSeedFlags, SeedFlags};
         let classic = MicroSeedFlags::none();
         let dual = MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS);
+        let no_classic = SeedFlags::none();
         for name in DUAL_DUNGEON_DISABLED_PASSES {
-            assert!(!pass_disabled_by_special_seeds(name, classic));
-            assert!(pass_disabled_by_special_seeds(name, dual));
+            assert!(!pass_disabled_by_special_seeds(name, classic, no_classic));
+            assert!(pass_disabled_by_special_seeds(name, dual, no_classic));
         }
         // A pass outside the list stays enabled under the seed.
-        assert!(!pass_disabled_by_special_seeds("Terrain", dual));
+        assert!(!pass_disabled_by_special_seeds("Terrain", dual, no_classic));
         // Another micro-seed does not prune.
         let other = MicroSeedFlags::from_sum(MicroSeedFlags::EXTRA_LIQUID);
-        assert!(!pass_disabled_by_special_seeds("Jungle", other));
+        assert!(!pass_disabled_by_special_seeds("Jungle", other, no_classic));
     }
 
     /// End to end: a `dualDungeons` world runs the shrunken chain. The jungle

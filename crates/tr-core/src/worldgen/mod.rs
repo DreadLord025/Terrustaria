@@ -46,6 +46,7 @@ mod ocean;
 pub mod pipeline;
 pub mod progress;
 mod spider_gem_moss;
+mod skyblock;
 mod structures;
 mod surface;
 mod temple;
