@@ -4664,6 +4664,18 @@ impl Npc {
             // style now (the S1-D-2 convention); the kind arm becomes the
             // unreachable marker, the machine unchanged.
             15 => self.update_king_slime(world, player, rng),
+            // `if (this.aiStyle == 16)` (`NPC.cs:23492-24021`) — the
+            // fish/swimmer family. The port's roster carries three of the
+            // thirteen vanilla members (Goldfish 55 / Piranha 58 / Shark
+            // 65, `npc/data.rs`'s aiStyle-16 row). W4-d24 verify-only
+            // census: the S1-D-3 reconcile's machine
+            // (`npc_ai_style16::ai_016_step` via `update_swimmer`) is
+            // faithful — the Pufferfish puff + water-line hover, the
+            // Dolphin leap/float draw order, the wet chase/bob arms, the
+            // dry flop rand triple (`:23977-23979`), the Shark/Orca flop
+            // exemption. The axis claims the style now; the kind arm
+            // becomes the unreachable marker, the machine unchanged.
+            16 => self.update_swimmer(world, player, rng),
             // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
             // BlazingWheel (72), the style's only user. The small-kinds
             // wiring wave: the ricochet machine rides `npc_ai_style21`
@@ -6149,8 +6161,11 @@ impl Npc {
             NpcKind::DungeonSpirit => {
                 unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
             }
+            // W4-d24 axis census: the fish trio (aiStyle 16) rides the
+            // style axis above (`16 => update_swimmer`) — this arm is
+            // unreachable through `update_rng` (the S1-D-2 axis precedent).
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
-                self.update_swimmer(world, player, rng)
+                unreachable!("aiStyle 16 rides the style axis (W4-d24)")
             }
             // The worms: the movement runs in the world sim's worm pass
             // (the chain needs the sibling segments; `AI_006` reads
@@ -33627,5 +33642,75 @@ mod w4_d24_style15_census_tests {
         assert_eq!(k.size_override, Some((122.0, 115.0)), "the int box");
         assert!(!k.wants_minion, "no batch at the full hp");
         assert_eq!(rng, UnifiedRandom::new(7), "the quiet tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d24 — the aiStyles 15-22 axis census witnesses (style 16 slice).
+// WRITTEN, NOT RUN (code-only mode). 16 fish family LANDED + WIRED
+// (S1-D-3 reconcile, `update_swimmer`) -> verify-only axis claim; the
+// module's own RNG witnesses stay the draw-order pins.
+// =====================================================================
+#[cfg(test)]
+mod w4_d24_style16_census_tests {
+    use super::*;
+
+    /// The axis claims style 16 exactly once; the fish trio's kind arm is
+    /// the unreachable marker.
+    #[test]
+    fn w4_d24_the_axis_claims_style_16_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "16" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 16 claimed once");
+        assert!(src.contains("aiStyle 16 rides the style axis (W4-d24)"));
+    }
+
+    /// The 16 claim is LIVE: a beached Goldfish tick through `update_rng`
+    /// runs the flop arm — exactly the cited rand triple
+    /// `Next(-50,-20)`, `Next(-20,20)`, `Next(2)` (`NPC.cs:23977-23979`),
+    /// then the 0.3 gravity and `ai[0] = 1` (`:23983-23988`). The stream
+    /// mirror pins the order byte-for-byte.
+    #[test]
+    fn w4_d24_the_fish_ride_the_16_axis_flop_triple() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 80.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Goldfish, 100.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        // Dry + grounded (vy == 0): the flop arm fires on the first tick.
+        n.wet = false;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        let want_vy = mirror.next_range(-50, -20) as f32 * 0.1;
+        let want_vx = mirror.next_range(-20, 20) as f32 * 0.1;
+        let want_dir = if mirror.next_max(2) == 0 { 1 } else { -1 };
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.facing, want_dir, "the flop direction draw");
+        assert_eq!(n.ai[0], 1.0, "the dry arm sets the bob latch");
+        // The 0.3 gravity lands on the drawn vy BEFORE integration.
+        assert!((n.vy - (want_vy + 0.3)).abs() < 1e-4 || n.collide_y,
+            "the flop vy + gravity ({})", n.vy);
+        let _ = want_vx; // consumed by the same triple (order pinned below)
+        assert_eq!(rng, mirror, "exactly the flop triple, in C# order");
     }
 }
