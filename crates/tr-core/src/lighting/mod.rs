@@ -487,6 +487,16 @@ fn seed_row_range(
     let mut lit = 0u32;
     for lx in 0..wu {
         let x = rx0 + lx as i32;
+        // `TileLightScanner.IsTileNullOrTouchingNull` (`TileLightScanner.cs:
+        // 43-54`, the ExportTo gate `:26-30`): the dense tile array never
+        // holds null, so the check reduces to `WorldGen.InWorld(x, y, 1)`
+        // (`WorldGen.cs:9688-9695`) — the 1-tile world border seeds zero with
+        // the None mask (W4-d66; the legacy engine already kept this gate).
+        if x < 1 || x >= world.width - 1 || y < 1 || y >= world.height - 1 {
+            mask_row[lx] = Mask::Air;
+            colors_row[lx] = [0.0; 3];
+            continue;
+        }
         let tile = &world.tiles[row + x as usize];
         mask_row[lx] = mask_of(tile, x, y, params.draw_invisible_walls, world);
         let c = seed(world, tile, x, y, params, cutoffs[lx]);
@@ -626,6 +636,23 @@ mod tests {
         let far = lm.get(22, 42);
         assert!(near[0] > 0.5, "near torch {near:?}");
         assert!(near[0] > far[0], "torch should fade with distance");
+    }
+
+    /// W4-d66 witness: `ExportTo`'s `IsTileNullOrTouchingNull` gate
+    /// (`TileLightScanner.cs:26-30/43-54`) seeds the 1-tile world border zero
+    /// with the None mask — the modern path had dropped it (only the legacy
+    /// engine kept it). The border torch must not glow; its interior twin does.
+    #[test]
+    fn world_border_seeds_zero_like_the_null_gate() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 0.0;
+        // Torch on the left border column and one just inside it.
+        set(&mut w, 0, 32, 4);
+        set(&mut w, 1, 32, 4);
+        let lm = LightMap::compute(&w, 0, 28, 8, 36, &LightParams::default());
+        assert_eq!(lm.get(0, 32), [0.0; 3], "border tile must seed zero");
+        // Row 0 is border too: even the sky above the interior torch is nil.
+        assert_eq!(lm.get(3, 0), [0.0; 3], "border row must seed zero");
     }
 
     #[test]

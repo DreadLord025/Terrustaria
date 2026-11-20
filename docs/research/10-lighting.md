@@ -89,13 +89,54 @@ quality thresholds, light stats).
 | `LightingEngine` state machine | PARTIAL | `lighting/mod.rs::LightEngine::compute` (`:48-62`, `:300-424`) | Scan+Blur+Present semantics ported (seed → dynamic-light max → 2 blurs), but the 4-phase rotation (minimap export / scene metrics split over frames) is absent; the whole computation is one call. `Rebuild`/`AddLight`/`Clear` have no counterpart (documented `mod.rs:46-47`). |
 | `LightMap` buffer + blur | PORTED | `lighting/blur.rs::blur/blur_line_v/blur_line_h` (`:42-163`) | Two passes × 4 sweeps, column-then-row order, `0.0185` cutoff, per-channel `done` flags, carried-max update — matches `LightMap.cs:86-250`. Row-major storage vs C# `x*Height+y` (`:252-255`) with serial vertical sweeps (`blur.rs:41`). |
 | `LightMap` decay per medium | PARTIAL | `blur.rs::Mask::decay` (`:26-37`) | Air 0.91 / Solid 0.56 / CrackedBricks 0.8 / Honey / Water-hardcoded-to-style-0. C# `LightingEngine.UpdateLightDecay` (`:147-182`) varies water decay per `Main.waterStyle` (13 arm values); nightVision ×1.03 / blind ×0.95 / blackout+headcovered ×0.85 (`:184-203`) and `airLightDecay`/`solidLightDecay` (`:204-205`) are not in `LightParams` — missing. |
-| `TileLightScanner` seeds | PORTED | `tile_light/{mod,scanner,palette}.rs` | Wall table (357/182/33/174/175/176/137/44/154-166/153/341-346 + paint), surface (wall gate 88-93/241 gem themes + `shimmerDarken`), hell glow `0.55 + sin(2t)*0.08`, liquid lava/shimmer, `light_blocked` echo rule — all match `TileLightScanner.cs:87-3317` incl. the invisible-wall/block gates (`:3142/3149/3246`). |
+| `TileLightScanner` seeds | PORTED (W4-d66 residual census 2026-11-20: 147/147 arms; 9 in-body/gate residuals fixed — see the W4-d66 section below) | `tile_light/{mod,scanner,palette}.rs` | Wall table (357/182/33/174/175/176/137/44/154-166/153/341-346 + paint), surface (wall gate 88-93/241 gem themes + `shimmerDarken`), hell glow `0.55 + sin(2t)*0.08`, liquid lava/shimmer, `light_blocked` echo rule — all match `TileLightScanner.cs:87-3317` incl. the invisible-wall/block gates (`:3142/3149/3246`). |
 | Per-tile `FastRandom` palette | PORTED | `tile_light/palette.rs::FastRandom` (`:19-100`) | `25214903917/11/281474976710655`, `next_bits` 48-shift, `WithModifier(x,y)` (`:44-50`), `with_modifier_u64` = `next_seed ^ seed` (`:56-60`); test `fast_random_matches_the_original_stream` pins the stream. |
 | `GetColor9Slice` / `GetColor4Slice` / `GetCornerColors` | PORTED | `LightMap::slice9`/`quad4`/`corner4` (`mod.rs:150-221`) | Slice index mapping `(dx+1)+3*(dy+1)` = C# num-stride pattern (`Lighting.cs:244-272`); darker-neighbour rule in `quad4` per `:530-586`; `corner4` ≈ `GetCornerColors` 4-way average (`:299-301`, `*63.75`). |
 | Draw-path blending (LightMap → tints) | PARTIAL | `render/tiles.rs::push_lit` (`:1219`), `push_sliced` (`:1340`) | Thresholds match `_highQualityLightingRequirement`/`_mediumQualityLightingRequirement` (`:363-366` ≈ `TileDrawing.cs:3524/3605`); `SLICE_POS` 4/8/4 grid == C# `sourceRectangle` switch (`:3534-3577`). C# per-slice `tileLight = (slice+own)*0.5` (`:3578-3580`) — Rust pre-averages inside `slice9` (`mod.rs:157-161`), algebraically equal, **but** C# then runs `GetFinalLight` per slice (`:3581`) and the Rust slice path does not re-apply the actuated ×0.4 / `light_scale` (only `push_lit` does, `tiles.rs:525-531`). |
 | `AddLight` point lights (NPC/projectile/dust) | MISSING | `DynamicLight` fed only by waterfalls (`render/tiles.rs:51-55`) | C# call sites: Projectile 107, Dust 94, NPC 80, WorldItem 69, Player 46, Mount 14, WaterfallManager 11… (`Lighting.cs:145-163`). Only the waterfall feed exists; entity/particle glows are not seeded. |
 | Per-frame light swap (one-frame delay) | PORTED | `tiles.rs:320-334` | `waterfall_lights` is the previous frame's list, mirroring `ApplyPerFrameLights` (`LightingEngine.cs:208-235`), incl. the capture exception. |
 | `subLight` bilinear sample | MISSING | — | `Lighting.GetSubLight` (`Lighting.cs:124-133`) not found in `render/` (nearest-tile `LightMap::get_px` only). |
+
+## W4-d66 — TileLightScanner residual census (2026-11-20, code-only mode)
+
+Full arm-by-arm census of `ApplyTileLight` (`TileLightScanner.cs:339-3129`) vs
+`tile_light/scanner.rs`, plus the wall/surface/hell/liquid passes and their gates.
+Method: scripted extraction of all 147 top-level case labels (110 bodies) on both
+sides, inner frame-switch label census for the five lamp arms (93: 57 labels,
+33: 55, 100/173: 57, 34: 57, 42: 61 — all present, order kept), f32-exact constant
+comparison (C# float division emulated), then paired-body reads. **Arm coverage:
+147/147 kinds, zero missing, zero extra.** The residuals were inside bodies/gates:
+
+| # | Residual | C# cite (verbatim) | Rust fix | Witness |
+| --- | --- | --- | --- | --- |
+| 1 | Lantern 42 frames 7/9 fed through `torch_color(7)` | `:2610-2613` `float num13 = Main.demonTorch * 0.2f; R = 0.9f - num13; G = 0.9f - num13; B = 0.7f + num13;` and `:2622-2626` `R = 1f; G = 0.3f; B = 0.5f + Main.demonTorch * 0.2f; R -= Main.demonTorch * 0.1f; G -= Main.demonTorch * 0.2f;` | `scanner.rs` own shift arms (C# B/R/G order kept) | `lantern_frames_7_and_9_use_their_own_demon_shifts` |
+| 2 | Wall-paint /765 override applied to EVERY glowing wall (`l != 0` proxy) | `:318` `if (flag && tile.wallColor() != 0)` — `flag` set only at `:178` (wall 357) and `:214` (painted wall 175); wall 175's painted arm sets NO base colour | `apply_wall_light` carries the C# `flag`; 175 painted defers | `wall_paint_only_overrides_the_flag_arms` |
+| 3 | Modern blur mask dropped `!tile.inActive()` | `:68` `if (this.LightIsBlocked(tile) && tile.type != 131 && !tile.inActive() && tile.slope() == 0)` | `blur.rs::mask_of` regains the conjunct (legacy_mask already had it) | `actuated_block_is_air_to_the_modern_mask` |
+| 4 | Gemspark 262-268 muted by the `tileLighted` gate | `Main.cs:10334-10342` `for (int num3 = 255; num3 <= 268; num3++) { ... if (num3 > 261) { Main.tileLighted[num3] = true; ...` — a LOOP write the generator's literal-index regex missed; gate `TileLightScanner.cs:345` `if (Main.tileLighted[tile.type])` | `tools/GenTileData` replays the loop for tileLighted ONLY; `sets.rs` regenerated (`--check` green) | `gemspark_blocks_pass_the_lighted_gate` (+ dead `case 235` pin: no `tileLighted[235]` write exists, `:1010` is dead in vanilla too) |
+| 5 | Hell glow pinned to the static 0.55 base | `:3245` `float num4 = 0.55f + (float)Math.Sin(Main.GlobalTimeWrappedHourly * 2f) * 0.08f;` | driver `frame/draw.rs` computes the pulse (double sin → f32 narrow) | driver-level; `hell_glow` rides `LightKey` already |
+| 6 | Modern engine dropped the border-null gate | `:26-30` `if (this.IsTileNullOrTouchingNull(i, j)) { outputMap.SetMaskAt(..., LightMaskMode.None); outputMap[...] = Vector3.Zero; }` + `:45` `WorldGen.InWorld(x, y, 1)` | `seed_row_range` zeroes the 1-tile border (legacy kept it) | `world_border_seeds_zero_like_the_null_gate` |
+| 7 | Shimmer wave all-f32 | `LiquidRenderer.cs:756` `(float)Math.Sin(((double)((worldPositionX + worldPositionY / 6f) / 10f) - Main.timeForVisualEffects / 360.0) * 6.2831854820251465)` — phase subtraction + sin in DOUBLE | `palette.rs::shimmer_wave` f32 pos, f64 phase/sin; endpoint `14f/15f` stays f32 (`:796`) | `shimmer_wave_sins_in_double_like_the_original` |
+| 8 | Shimmer liquid n3 folded | `:135` `num3 += (float)(270 - Main.mouseTextColor) / 125f;` — a second division, not `delta * (900/125)` | `lighting/mod.rs::liquid_light` | f32-exact by construction |
+| 9 | f32-ULP literal folds | `:1095` `G = 1.2824999f` (campfire 215 frame 6); `TorchID.cs:150` `new ConstantTorchLight(0.75f, 1.3499999f, 1.5f)`; `:186` `num3 = 0.089999996f` / `:192-193` (walls 182/33); `:1415` `G = 128f / 255f` = 0.50196081 (5 lamp arms had 0.50196078); `:3010-3013` `num3 = 0.9f; ... G = num3 * 0.8f; B = num3 * 0.2f` (sundial 84 frame 5 — folded 0.72/0.18 are 1 ULP off) | literals restored / products kept | `ultra_bright_torch_green_keeps_the_ulp` + scripted f32 census |
+
+Verified CLEAN (verbatim-paired): all other 100+ bodies incl. the RNG draw order
+(`localRandom` per-tile `WithModifier(x,y)`), the 209 portal hues
+(`PortalHelper.cs:383`, netMode 0 arm — netplay hue rotation unported, noted),
+the 620 `MultiplyRGBA` byte path (roundtrip checked exhaustively for all 256
+bytes), 171 gem-torch parent-frame bits (`& 0x3C00 >> 10`), 125's direct
+`lightColor.Y/Z` writes, 238/235 direct-colour arms, 350's `(int)(num9/6.283)%3`
+cosine pulse, the surface/hell gem-wall themes and Echo gates (`:3142/3149/3246`),
+`solid_tile3` (`WorldGen.cs:70474-70485`), `CAGE_FRAMES = 25` (`Main.cs:66901`).
+
+**Out of scope, escalated (generator loop writes beyond tileLighted):** the same
+regex gap leaves `tileSolid`/`tileBlockLight` 727-732 (`Main.cs:9970-9974`),
+435-439's `tileSolidTop/tileSolid/tileLavaDeath/tileNoSunLight=false`
+(`:9986-9995`), 255-268's `tileSolid` (`:10336`), and the `tileNoSunLight` copy
+loop (`:8387-8395`, with 163 later `tileSolid=true` writes that never re-enter
+it) ungenerated. Those tables feed worldgen/collision/framing whose frozen hashes
+(`worldgen/world_hash.rs`) must be re-pinned with the full test suite — NOT done
+here (code-only mode, no cargo). The tileLighted fix is safe: its only consumer is
+the scanner gate (grep: `TILE_LIGHTED` → `scanner.rs:49` only).
 
 ## Tests
 
@@ -112,7 +153,15 @@ seeding/blur on Rayon), `lava_glows_and_hell_is_warm`,
 `tile_light/scanner.rs`: `torch_variants_use_the_frame_row`,
 `demon_and_disco_torches_are_animated`, `candles_and_lamps_follow_their_frame_tables`,
 `gemspark_encodes_colour_in_the_frame_column`, `lantern_frame_sets_the_colour`,
-`campfire_only_lights_its_lit_frames`, `dw_1_5_dial_light_needs_zero_cooldown`.
+`campfire_only_lights_its_lit_frames`, `dw_1_5_dial_light_needs_zero_cooldown`,
+plus W4-d66 (2026-11-20, written-not-run — code-only mode):
+`lantern_frames_7_and_9_use_their_own_demon_shifts`,
+`gemspark_blocks_pass_the_lighted_gate`; `tile_light/mod.rs`:
+`wall_paint_only_overrides_the_flag_arms`; `tile_light/palette.rs`:
+`ultra_bright_torch_green_keeps_the_ulp`,
+`shimmer_wave_sins_in_double_like_the_original`; `lighting/mod.rs`:
+`actuated_block_is_air_to_the_modern_mask`,
+`world_border_seeds_zero_like_the_null_gate`.
 No `render/tiles.rs` test targets the sliced/flat light paths or the 9-slice geometry.
 
 ## Deviations & risks
@@ -163,6 +212,13 @@ No `render/tiles.rs` test targets the sliced/flat light paths or the 9-slice geo
    demand per drawn rect, so minimap lighting export ordering differs.
 10. **`GetSubLight` (bilinear sub-tile sample) missing** (cosmetic, low) — used by a few
     per-pixel consumers in C# (`Lighting.cs:124-133`); not found in the renderer.
+11. **Shimmer-water sun boost draws the wrong stream** (behavioural, low — dormant) —
+    C# `TileLightScanner.cs:3166` reads `Main.rand.NextFloat()` (the GLOBAL
+    UnifiedRandom, lazily created `:3162-3165`), not the scanner's `localRandom`;
+    `tile_light/mod.rs::apply_surface_light` draws its per-tile `rng`. Dormant while
+    the driver pins `shimmer_alpha: 0.0` (`frame/draw.rs`), but wiring shimmer must
+    route this draw to the global stream or it will desync every `Main.rand`
+    consumer. Found in the W4-d66 census; NOT fixed (needs the global-rand seam).
 
 ## Task seeds
 
@@ -193,3 +249,13 @@ No `render/tiles.rs` test targets the sliced/flat light paths or the 9-slice geo
   intentional and documented.
 - **[S] Sliced-path render test** — unit-test `push_sliced` quad count/geometry against the
   C# `sourceRectangle` table (4/8/4 grid) for both the high and medium quality arms.
+- **[M] GenTileData loop-write replay for the remaining tables** (W4-d66 escalation) —
+  `Main.cs:9970-9974` (tileSolid/tileBlockLight 727-732), `:9986-9995` (435-439
+  solidTop/solid/lavaDeath/noSunLight=false), `:10336` (tileSolid 255-268) and the
+  `:8387-8395` tileNoSunLight copy loop are still literal-regex-only. Fixing them
+  changes worldgen/collision/framing inputs → re-pin `world_hash.rs` goldens +
+  full `cargo test` + deterministic screenshots. The tileLighted half landed in
+  W4-d66 (scanner-gate-only consumer, no worldgen impact).
+- **[S] Shimmer sun-boost `Main.rand` seam** — route `apply_surface_light`'s
+  `liquidAlpha[13]` draw (`TileLightScanner.cs:3166`) to the global UnifiedRandom
+  when shimmer wiring lands (deviation 11).

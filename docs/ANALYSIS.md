@@ -757,8 +757,10 @@ Deliberate deviations, all invisible in the current content set:
 - `tile.invisibleBlock()` / `tile.invisibleWall()` are not stored in the packed 12-byte
   tile; an invisible block/wall is treated as visible (the scanner's `_drawInvisibleWalls`
   off path).
-- `tile.wallColor()` is not stored, so a painted glowing wall is treated as unpainted. The
-  tile paint (`tile.color()`) *is* stored and drives the lamp override.
+- `tile.wallColor()` IS stored (`World::wall_paint`, `world.rs:1247`) and drives the /765
+  glowing-wall override — W4-d66 (2026-11-20) re-gated it to the C# `flag` arms only
+  (walls 357/175, `TileLightScanner.cs:169/178/214/318`); the old `l != 0` proxy painted
+  every glowing wall. The tile paint (`tile.color()`) drives the lamp override.
 - The jellyfish-cage animation state machine (`Main.Update`'s `jellyfishCageMode`) is not
   ticked yet; `LightParams::cage_mode` is zeroed, which selects the dim cage colour.
 - `new Color(230,230,230,0).MultiplyRGBA(hsl) * 0.4f` (type 620) is reproduced with the
@@ -1429,6 +1431,62 @@ The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPa
 `rockLayer` snapped up to a multiple of 6 above it (BUG-019). An earlier generator used the
 mean column height, which floated the dirt sheet ~60 tiles (в‰€1000 px) above the true layer
 boundary; the underground now begins where the original's does.
+
+## The TileLightScanner residual census (W4-d66, 2026-11-20, code-only mode)
+
+Full 147-arm census of `ApplyTileLight` vs `tile_light/scanner.rs` (scripted label
+extraction + f32-exact constant comparison + paired-body reads): arm coverage was
+already 147/147; nine in-body/gate residuals were found and fixed. Full evidence
+table with verbatim C# cites: `docs/research/10-lighting.md` § W4-d66. Summary:
+
+- Lantern 42 frames 7/9 had been folded onto `TorchColor(7)`; the C# uses its own
+  `demonTorch` shifts (`TileLightScanner.cs:2608-2627`). Fixed + witness.
+- The /765 wall-paint override ran for every glowing wall; the C# gates it on
+  `flag`, set only by walls 357/175 (`:169/178/214/318`). Fixed + witness.
+- The modern blur mask had dropped `!tile.inActive()` (`:68`); the legacy mask
+  kept it. Fixed + witness (`blur.rs::mask_of`).
+- Gemspark 262-268 were muted: `Main.cs:10334-10342` sets `tileLighted` in a
+  `for` loop the generator's literal-index regex never saw, so the scanner's
+  `Main.tileLighted` gate (`:345`) rejected all seven arms. `tools/GenTileData`
+  now replays that loop **for tileLighted only** (its sole consumer is the
+  scanner gate); `sets.rs` regenerated, `--check` green. Witness pins the seven
+  colours + the dead `case 235` (no `tileLighted[235]` write exists in C#).
+- The hell glow was pinned to 0.55; the driver now computes
+  `0.55 + sin(GlobalTimeWrappedHourly * 2) * 0.08` (`:3245`, double sin → f32).
+- The modern engine had dropped `IsTileNullOrTouchingNull` (`:26-30/43-54`);
+  `seed_row_range` now zeroes the 1-tile world border like `ExportTo`. Witness.
+- `GetShimmerWave`'s phase subtraction + sin run in double in C#
+  (`LiquidRenderer.cs:756`); the all-f32 port drifted ~2.6e-6 at large tick
+  counts. Fixed to the f32-pos/f64-phase split; the `14f/15f` endpoint stays
+  f32 (`:796`). Witness with reference-evaluated values.
+- f32-ULP literal folds restored: `1.2824999f` (campfire frame 6), `1.3499999f`
+  (`TorchID.cs:150`), `0.089999996f`/`0.052500002f` (walls 182/33),
+  `128f/255f` = 0.50196081 (five lamp arms), and the sundial frame-5 products
+  `0.9*0.8`/`0.9*0.2` (folded 0.72/0.18 are one ULP off). The shimmer liquid's
+  `n3` keeps its own `/125f` division (`:135`).
+
+Deliberate deviations / escalations recorded (NOT fixed here):
+- The generator's loop-write gap remains for `tileSolid`/`tileBlockLight`
+  727-732 (`Main.cs:9970-9974`), 435-439 (`:9986-9995`), 255-268's solid half
+  (`:10336`) and the `tileNoSunLight` copy loop (`:8387-8395`). Those feed
+  worldgen/collision/framing — the frozen `world_hash.rs` goldens must be
+  re-pinned with the full suite before landing (research/10 task seed).
+- The shimmer-water sun boost draws the scanner's per-tile RNG where C# draws
+  the GLOBAL `Main.rand` (`TileLightScanner.cs:3162-3166`). Dormant while
+  `shimmer_alpha` is 0; must be routed to the global stream when shimmer lands
+  (research/10 deviation 11).
+- Portal 209 uses the single-player hues (`PortalHelper.cs:383`); the netplay
+  per-player hue rotation (`:388`) is unported with the rest of netplay.
+
+Verification: code-only mode — no cargo invoked. 8 witness tests WRITTEN NOT RUN
+(`lantern_frames_7_and_9_use_their_own_demon_shifts`,
+`gemspark_blocks_pass_the_lighted_gate`, `wall_paint_only_overrides_the_flag_arms`,
+`actuated_block_is_air_to_the_modern_mask`, `world_border_seeds_zero_like_the_null_gate`,
+`ultra_bright_torch_green_keeps_the_ulp`, `shimmer_wave_sins_in_double_like_the_original`,
+plus the driver-level hell pulse). GenTileData regen ran: `--check` exit 0, diff
+limited to the TILE_LIGHTED word (`0x700040004000c000` → `0x700040004000dfc0`).
+The f32 constant census re-ran clean after the fixes (0 diffs across the five
+lamp tables). Anchors: 5 rows added.
 
 ## Sky and daylight
 
