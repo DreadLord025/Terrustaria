@@ -6651,6 +6651,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 town_npcs: app.scene_metrics.town_npc_count,
                 day_time: app.world.day_time,
                 player_life_max: app.player.as_ref().map_or(100, |p| p.max_hp),
+                // `Spawner.luck = player.luck` (`NPC.cs:369`) — the spawn
+                // chain's RollLuck consumers (W4-f32).
+                luck: player.luck(),
                 underworld_for_bats: (app.camera.y / 16.0) as i32 > app.world.height - 200,
                 // `NPC.cs:2084`'s guards: the army downed, the rescue not
                 // yet raised, and nobody bound/freed on the map.
@@ -7609,6 +7612,7 @@ mod tests {
                     moon_npc_counts: &[],
                     day_time: true,
                     player_life_max: 100,
+                    luck: 0.0,
                     underworld_for_bats: false,
                     flags: crate::spawner::SpawnFlags {
                         hard_mode: hard,
