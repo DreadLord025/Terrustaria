@@ -797,7 +797,10 @@ fn ground_machine(
 /// variant drops the platform clause and the inactive test - its
 /// callers never place sloped platforms; the hop probe here keeps the
 /// C# conjunction verbatim.)
-fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
+///
+/// S1-P-i27: `pub(crate)` — the Forbidden set bonus's rest-spot aim
+/// (`Player.MinionRestTargetAim`, `Player.cs:56976`/`:56986`) shares it.
+pub(crate) fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
     if x < 0 || x >= world.width || y < 0 || y >= world.height {
         return true;
     }

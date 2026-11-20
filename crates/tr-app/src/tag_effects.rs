@@ -88,6 +88,35 @@ impl Default for TagEffectStack {
 }
 
 impl TagEffectStack {
+    /// `Player.ResetEffects`' `maxTagEffects = 1` / `tagEffectDuration = 1f`
+    /// (`Player.cs:18517-18518`): the C# stack reads the PLAYER's fields
+    /// live (`TagEffectStack.cs:47`, `:133`, `TagEffectState.cs:64`); the
+    /// port keeps copies on the stack, so the reset syncs them here
+    /// (S1-P-i27 — the summoner accessory fold re-adds after the grants).
+    pub fn reset_player_scalars(&mut self, max_tag_effects: usize, tag_effect_duration: f32) {
+        self.max_tag_effects = max_tag_effects;
+        self.tag_effect_duration = tag_effect_duration;
+    }
+
+    /// The `UpdateEquips` fold's per-accessory adds (`Player.cs:12974`,
+    /// `:12978`, `:12983` `maxTagEffects++`; `:12973` `tagEffectDuration
+    /// += 2f`). Uncapped like the C# `int` — the stack's `limit_active`
+    /// clamps at `MaxEffects` (5) on use (`TagEffectStack.cs:35`).
+    pub fn add_player_scalars(&mut self, max_tag_effects_add: usize, tag_duration_add: f32) {
+        self.max_tag_effects += max_tag_effects_add;
+        self.tag_effect_duration += tag_duration_add;
+    }
+
+    /// `Player.maxTagEffects`'s live value (the tests' read seam).
+    pub fn max_tag_effects(&self) -> usize {
+        self.max_tag_effects
+    }
+
+    /// `Player.tagEffectDuration`'s live value (the tests' read seam).
+    pub fn tag_effect_duration(&self) -> f32 {
+        self.tag_effect_duration
+    }
+
     /// The index of `tag_type` in the active stack, or −1 (`IndexOf`).
     fn index_of(&self, tag_type: u16) -> Option<usize> {
         (0..self.active).find(|&i| {

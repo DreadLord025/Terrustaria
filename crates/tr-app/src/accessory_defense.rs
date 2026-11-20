@@ -31,9 +31,8 @@
 //! item's `Item.defense` (`GrantArmorBenefits`, `Player.cs:13121`, the
 //! generic sum at `player.rs:3595-3601`).
 //!
-//! Deliberately out (docs/ANALYSIS.md "S1-C-12 wave C"): the
-//! `accSilverBracer` flag's whip-tag consumers (`Player.cs:12970-12974`,
-//! wave B territory), the Frozen Shield's half-life Ice Barrier buff
+//! Deliberately out (docs/ANALYSIS.md "S1-C-12 wave C"): the Frozen
+//! Shield's half-life Ice Barrier buff
 //! (`:14888-14891`, buff arms = E-7), the `waterWalk`/`lavaRose` halves
 //! of the boot rows (movement = wave A / unported), the Paladin's
 //! Shield multiplayer team-dust arm (`:15354-15365`, single player) and
@@ -77,11 +76,12 @@ pub fn apply_defense_accessories(p: &mut Player) {
                 }
             }
             // `Player.cs:14605-14609` — the Silver Shield: knockback
-            // immunity + fire walk. The `accSilverBracer` flag's whip-tag
-            // consumers (`:12970-12974`) ride wave B.
+            // immunity + fire walk + `accSilverBracer` (S1-P-i27 — the
+            // whip-tag fold `:12970-12975` now consumes the flag).
             6183 => {
                 p.no_knockback = true;
                 p.fire_walk = true;
+                p.acc_silver_bracer = true;
             }
             // `Player.cs:14629-14631` — the Restoration Shield: knockback
             // immunity. Its `lifeRegen = 2` rides the generic

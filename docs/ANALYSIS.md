@@ -32870,3 +32870,138 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## The minion target command (S1-P-i27)
+
+The summoner target lane, verbatim against `Player.cs`/`Projectile.cs`
+(code-only mode — no compiler invoked, 28 witnesses written not run).
+
+**The aim + maintenance.** `minion_npc_target_aim`
+(`Player.MinionNPCTargetAim`, `Player.cs:56914-56933`) measures
+`NPC.Hitbox.Distance(mouseWorld)` — the rectangle-to-point distance
+(`Utils.cs:1507-1542`: 0 inside/touching, the axis bands, the four corner
+distances), shared as `npc_ai_style64::rect_distance` (`pub(crate)`).
+The scan re-reads the current best's distance each iteration (the C#
+shape); the hitbox anchors are the `(int)` position/size
+(`Entity.cs:171-176`). The `doNotDisableIfTheTargetIsTheSame` parameter
+mirrors the C# signature — the only caller passes false
+(`ItemCheck_MinionAltFeatureUse`, `:49777`); the whip's aiStyle-165
+retarget is a plain write and never calls it. `update_minion_target`
+(`UpdateMinionTarget`, `:56999-57028`) replaces the old invalidation
+half: the rest point drops past 1000 px CENTRE distance
+(`base.Distance`, `Entity.cs:195-198`), the attack target drops when
+unchaseable or its HITBOX is past 3000 px from the player's centre. The
+`whoAmI == Main.myPlayer` gate folds to the single local player.
+
+**The rest-spot command.** `minion_rest_target_aim`
+(`MinionRestTargetAim`, `:56935-56997`) walks the mouse's tile column:
+the full-solid test (`nactive && tileSolid && !tileSolidTop`), the ≤20
+up-scan (bounded `num2+num5 > 1`) and 20 down-scan, the clearance pick
+`num3 = (num7 <= -num4) ? num7+3 : num4-2`, then the unbounded drop
+until a 5-tile window holds a `WorldGen.SolidTileAllowBottomSlope`
+(`WorldGen.cs:70167-70189` — the FULL form: solid-or-solidTop, the
+platform-top-frame clause, no half-brick, not actuated; shared
+`pub(crate)` from the AI_026 slice-C copy). The port caps the drop at
+the world's bottom row (the out-of-world probe reads solid, so the C#
+loop terminates there too). The spot `(tileX*16+8, row*16)` is kept
+only within 1000 px of the player. Triggers: `key_double_tap_down`
+(`KeyDoubleTap`, `:56764-56787`) fires the aim for `setForbidden`;
+`key_hold_down` (`KeyHoldDown`, `:56894-56912`) clears the spot at
+holdTime ≥ 60 for `setStardust`/`setForbidden`. The driver
+(`update_minion_rest_command`, `:25022-25073`'s down-cardinal half)
+mirrors the 15-tick double-tap window, the press edge
+(`controlDown && releaseDown`) and the hold counter; the
+`releaseDown = !controlDown` latch refresh (`:27636`) folds to the
+driver's tail (the only down-cardinal consumer in the port).
+`Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`, the settings
+toggle) flips the cardinal to UP, disabling the DOWN command. Both set
+flags re-derive per tick (`ResetEffects` `:18743`/`:18745`, the
+armor-set block's Forbidden 3776/3777/3778 + Stardust 3381/3382/3383
+triples, `DataStructures/ArmorSetBonuses.cs:482-483`).
+
+**The summoner accessory fold.** The `UpdateEquips` tail
+(`Player.cs:12970-12984`): `accSilverBracer` adds `tagEffectDuration +=
+2f` + `maxTagEffects++` (the `minionDamage += 0f` half is a verbatim
+no-op), `accMobiusStrip` adds `maxTagEffects++` + `whipRangeMultiplier
++= 0.1f`, `accWickedArmlet` adds `maxTagEffects++`. Grants: 6156 Silver
+Bracer (`:14510`), 6158 Mobius Strip (`:14513`), 6159 Wicked Armlet
+(`:14516`), 6162 Ouroboros Ring (`:14519` — the Mobius flag; the
+`accSnakeBand` half unported), 6163 Twilight Grasp (`:14523` — BOTH
+flags), 6179 Armlet of Ruin (`:14585` — the armlet flag; the
+`accArmletOfRuin` tag-damage half unported), 6182 Wicked Claws
+(`:14601-14603` — the armlet flag + `meleeSpeed += 0.12f`; the
+`autoReuseGlove` half unported, the Titan Glove precedent), 6183 Silver
+Shield (`:14605-14609` — the bracer flag beside its knockback/fire-walk
+row in `accessory_defense.rs`). The C# `TagEffectStack` reads the
+PLAYER's `maxTagEffects`/`tagEffectDuration` live
+(`TagEffectStack.cs:47`/`:133`); the port keeps copies on the stack, so
+`ResetEffects` syncs the bases (`reset_player_scalars`, `:18517-18518`)
+and the fold adds once per tick after every grant
+(`add_player_scalars`). The whip range: base 1f (`:18498`), the Tiki
+helm +0.1 (`:13852-13855`) and Stardust body/legs +0.15
+(`:13876-13881`) ride `grant_summon_caps`' armor loop, the Tiki SET
++0.2 rides `tr_core::armor_sets::SetStats::whip_range`
+(`ArmorSetBonuses.cs:15`); the sweep's `FillWhipControlPoints` now
+reads `owner.whipRangeMultiplier` (`Projectile.cs:48301`) instead of
+the pinned 1f.
+
+**AI_062's target search (the census items 6a-d).** (a) The aim split:
+the Tempest/UFO/Cell branch aims at `position + Size * (0.5, 0.5)` with
+`Y = 0` ONLY for the UFO 423 (`Projectile.cs:65335-65339`), distances
+anchored on the OWNER's centre; the generic branch (Hornet/Imp/Abigail)
+aims at the full `nPC.Center` anchored on the minion
+(`:65379`/`:65386`/`:65401`/`:65408`) — the old single `(x+w/2, y)`
+closure served both and was wrong for every h > 0 box. The `num12`
+ladder's 400/300/300 openers are dead in the C# too (the unconditional
+`num12 = 2000f` at `:65300` overwrites them; only Abigail's 700
+survives). (b) Abigail's LOS is `Collision.CanHit(base.Center, 1, 1,
+nPC.Center, 1, 1)` (`:65383`/`:65405`) — the Manhattan walk, not the
+box `CanHitLine` trio walk. (c) The UFO/Cell dash-lift probes clamp a
+negative tile ROW to 0 (`:65507-65511`/`:65544-65548`); the second
+probe reads the raw row. The dash length is `(int)(num22 / 10f)`
+(`:65528`/`:65565`) — the port had kept the fraction, which would never
+count down to the `ai[1] != 0f` dash exit (`:65141`/`:65199`). (d) The
+return branch's no-LOS probe is `CanHitLine(base.Center, 1, 1,
+player.Center, 1, 1)` (`:65646`) — two 1x1 centre boxes. The far snap's
+Y quirk (BOTH axes subtract `width / 2`, `:65711-65712`) is preserved.
+
+**The sentry + whip halves.** `sentry_npc_targeting`
+(`AI_053_HandleSentryNPCTargeting`, `Projectile.cs:40194-40254`) probes
+from `position` (the centre + firing offset) to the NPC's CENTRE, both
+size 0, `CanHitLine`/`CanHit` selected by `straightLine`
+(`:40209`/`:40232`) — the old port probed the sentry's own box against
+the NPC's box. The whip retarget (`:14257-14263`) gates on
+`targetNPC.active` (`:14259`): a killing blow deactivated the victim
+inside `StrikeNPC` (`NPC.checkDead`), so the port reads `hp > 0` after
+the strike (the `can_be_chased_by` liveness precedent — the NPC list
+carries no `active` field).
+
+**Deferred (recorded).** `CommandForbiddenStorm` + the
+`setForbiddenCooldownLocked` gate (`Player.cs:56782-56785`,
+`UpdateForbiddenSetLock` `:56788+` — the storm command spawns the 656
+projectile + pays mana, its own lane); the Vortex stealth toggle
+(`:56775-56778`, the stealth system unported); the Stardust set's
+buff-187 grant + 623 guardian spawn (`ApplySetBonus_Stardust`,
+`:16339-16356` — the guardian's lane, i56 landed the arm; the AI_120
+rest-point CONSUMPTION (`Projectile.cs:44744-44746`/`:44914-44916`)
+waits on that arm's wiring — the writer lands here); the guardian
+rest-spot dust ring (`UpdateMinionTarget` `:57013-57027`, the visual
+layer); `accSnakeBand` (the whip-repeat system `:42711-42731`),
+`accArmletOfRuin` (the tag-damage pipeline) and `autoReuseGlove`; the
+up/left/right cardinals (the dash / other set bonuses). The
+`Minion_FindTargetInRange` view rect keeps the float ±960/±600 form —
+the C# `Utils.CenteredRectangle` truncates the centre to int first
+(`Utils.cs:947-950`), a sub-pixel boundary difference recorded, not
+changed (the census MATCH verdict).
+
+**RNG.** The target-command paths draw NOTHING: the aim, the
+maintenance, the rest-spot scan, the double-tap/hold driver, the
+accessory fold and the whip retarget gate contain no `Main.rand` call
+in the C# bodies; the AI_062 fire-cooldown rolls are untouched.
+
+**Verification.** Code-only: every fixed block re-read against the C#
+(the branch split, the LOS anchors, the row clamps, the int truncation,
+the rect-distance bands, the column-scan bounds, the fold order); every
+seam checked by read/grep (`rect_distance`/`solid_tile_allow_bottom_slope`
+`pub(crate)`, the `tag_effects` scalar seams, `settings.reversed_armor_bonuses`,
+the `WhipCurveInputs` field, the registry's accessory rows). The 28
+witness tests are WRITTEN, NOT RUN — no compiler invoked.

@@ -192,6 +192,10 @@ pub struct SetStats {
     pub dash_type: i32,
     /// `Player.manaCost -= x` (the casters' set bonuses).
     pub mana_cost: f32,
+    /// `Player.whipRangeMultiplier += x` (the Tiki set bonus,
+    /// `ArmorSetBonuses.cs:15`) — S1-P-i27 wired the consumer (the whip
+    /// sweep, `Projectile.cs:48301`).
+    pub whip_range: f32,
     /// `Player.endurance += x` (the Turtle/Chlorophyte/Solar rows).
     pub endurance: f32,
     /// `Player.thorns` / `turtleThorns` / `cactusThorns` (the Turtle and
@@ -217,6 +221,7 @@ const fn stats() -> SetStats {
         max_minions: 0,
         dash_type: 0,
         mana_cost: 0.0,
+        whip_range: 0.0,
         endurance: 0.0,
         thorns: 0.0,
         turtle_thorns: false,
@@ -456,12 +461,12 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
             ..stats()
         },
     ),
-    // `:475` Benefits.Tiki — `maxMinions++` (the `whipRangeMultiplier` row has
-    // no consumer yet).
+    // `:475` Benefits.Tiki — `maxMinions++` + `whipRangeMultiplier +=
+    // 0.2f` (`:15`; S1-P-i27 wired the whip sweep's consumer).
     (
         "Tiki",
         (1159, 1160, 1161),
-        SetStats { max_minions: 1, ..stats() },
+        SetStats { max_minions: 1, whip_range: 0.2, ..stats() },
     ),
     // `:476` Benefits.Spooky — `minionDamage += 0.25f`.
     (
