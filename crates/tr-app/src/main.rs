@@ -42,6 +42,7 @@ mod player_lights;
 mod proj_lights;
 mod eoc_fight;
 mod input_map;
+mod input_profiles;
 mod inv;
 mod luck;
 mod wiring_stub;

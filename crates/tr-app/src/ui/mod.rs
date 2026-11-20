@@ -21,6 +21,7 @@ pub mod ingame_options;
 pub mod housing;
 pub mod inventory;
 pub mod keyboard;
+pub mod manage_controls;
 pub mod minimap;
 pub mod notifications;
 pub(crate) mod npc_chat;

@@ -24789,6 +24789,48 @@ Known residual deviations (unchanged, documented elsewhere): the port's
 the update-tail exponential camera ease is the port's stand-in for the
 mid-tick camera reads (the draw camera itself is the faithful snap).
 
+## The manage-controls screen (W4-d86)
+
+`crates/tr-app/src/ui/manage_controls.rs` + `crates/tr-app/src/input_profiles.rs`
+port `UIManageControls` (`UIManageControls.cs:20-1061`) and the
+`PlayerInputProfile`/`PlayerInput` data it edits (`PlayerInputProfile.cs:9-354`,
+`KeyConfiguration.cs:22-29`, `PlayerInput.cs:713-755`, `:2046-2500`,
+`:2558-2566`). Code-only lane (research/18c): witnesses written, not run.
+Deliberate deviations:
+
+- **The `input.json` persistence is not ported.** `PlayerInput.Save/Load`
+  (`PlayerInput.cs:765-812`) is a second config file beside `config.json`;
+  the registry lives in memory exactly as a fresh vanilla boot seeds it
+  (`Initialize` `:722-755` — five profiles, four originals, "Custom"
+  selected and Redigit-seeded).
+- **The `TriggersSet` runtime consumption stays with the input pass.**
+  `KeyConfiguration.cs:31-56`'s `Processkey`/`CopyKeyState` feed the live
+  input, which today reads the 14+6 bind strings in `input_map.rs`; the
+  screen's keyboard edits reach that table at the wiring follow-up.
+- **The sprite draw + `UIList` scrolling ride the shared UI seams.** The
+  port is the state half: the tab pair, the six bind lists + the row pairing
+  (`CreateElementGroup` `:388-433` — the thin-pair arm consumes its partner
+  WITHOUT re-checking the half-single/full-line lists, so `Dash`+`sp20`
+  pair as thin rows), the group heights (`GetTotalHeight` +
+  `UIList.cs:119-127`'s padding-after-every-item, single-item lists excepted),
+  the 22 special rows' click machines, the border hover colours and the
+  `"P1"`/`"F2"` label formats (half-away-from-zero, the loading screen's
+  custom-format rule).
+- **Gamepad is the Stage-1 exclusion.** `SetupGamepadPoints` (`:949-1048`),
+  `OnActivate`'s `ChangePoint(3002)` (`:706-709`), the `ForceMoveTo` static
+  (`:69`, `:1043-1047`) and the `UILinkPointNavigator` snap-point wiring are
+  not ported; the sp3-sp8/sp18/sp19 gamepad slider steps ARE (they are pure
+  math over `HandleSliderHorizontalInput`, `UILinksInitializer.cs:86-91`,
+  with the stick X passed in — 0 at rest).
+- **The five `UIKeybinding*ListItem` row elements are d83's**
+  (`ui/keybinding_rows.rs`, research/18b rows 40-44). This module cites
+  their behaviour and stays self-contained until the merge; the merger
+  keeps d83's row module and ONE `InputMode` (both cite `InputMode.cs:3-10`;
+  `input_profiles.rs` is the data-layer home).
+- **`GoBackClick` returns 1127** (`:937-941` — `Main.menuMode = 1127` +
+  `IngameFancyUI.Close()`); 1127 is the legacy Controls menu
+  (`Main.cs:50638-50647`), already drawn by `menu/pages.rs`.
+
 ## The loading screen + capture mode (S1-E-17)
 
 `crates/tr-app/src/ui/world_load.rs` ports the loading screen:
