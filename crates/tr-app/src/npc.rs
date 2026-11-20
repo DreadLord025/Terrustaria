@@ -4795,6 +4795,33 @@ impl Npc {
             // `npc/data.rs`'s ai_style rows); the saw (129, style 33)
             // and the head (127, style 32) keep their kind-match arms.
             34 | 35 | 36 => self.ai_prime_limb_family(world, player, rng),
+            // `else if (this.aiStyle == 41)` (`NPC.cs:29899-30159`) — the
+            // jungle hoppers (Herpling 174 / Derpling 177 / Chattering
+            // Teeth Bomb 378). The faithful `npc_ai_style41::style41_step`
+            // claims the axis: the AI body PLUS the generic post-AI
+            // gravity/wet/collision integration on every path (the module
+            // folds `UpdateNPC`'s tail, the frost-legion shape). The step
+            // is keyed on the C# type id — the wiring passes
+            // `kind.to_u16()` (the module doc). RNG-free by construction
+            // (the dust/gore/audio draws are the module's cited skips).
+            // No `NpcKind` carries ai_style 41 yet — the arm is dormant
+            // until the kind rows land (the S1-D-5 types work).
+            41 => {
+                let npc_type = self.kind.to_u16() as i32;
+                crate::npc_ai_style41::style41_step(self, world, player, npc_type);
+            }
+            // `else if (this.aiStyle == 42)` (`NPC.cs:30160-30189`) — the
+            // Lost Girl (195), the style's only user. The faithful
+            // `npc_ai_style42::lost_girl_ai` claims the axis; the
+            // `Transform(196)` maths (life share, hitbox, ai/target/frame
+            // resets) is applied INSIDE via `transform_to(&NYMPH)`. The
+            // `NpcKind::Nymph` kind swap + the private `frame_counter`
+            // reset ride the kind-table wiring (the module doc — no
+            // LostGirl/Nymph rows exist yet, so the arm is dormant).
+            // RNG-free by construction (the module's 600-tick witness).
+            42 => {
+                let _ = crate::npc_ai_style42::lost_girl_ai(self, world, player);
+            }
             // `else if (this.aiStyle == 43)` (`NPC.cs:30190-30860`) —
             // the Queen Bee (222), the style's only user. S1-D-3 W-3:
             // the faithful `npc_ai_style43::queen_bee_ai` machine claims
