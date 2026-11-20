@@ -2243,4 +2243,267 @@ mod tests {
         assert!(!changed.contains(&(95, 60)));
         assert_eq!(update_map, Some([90, 52, 21, 16]));
     }
+
+    // ---- S1-E-19d: the WoF gross light block (tests-as-code, code-only
+    // mode — written, not run; see ANALYSIS "The WoF gross light block").
+
+    /// A fresh engine after one ProcessArea (pre-rendered: the requested /
+    /// expanded rects and the array are set). The export fixture's camera
+    /// and world size, but surface 0 — NO sunlight rows, so the working set
+    /// is all-zero after the pre-render and every nonzero cell is the
+    /// gross block's own write (the swipe passes fold to empty ranges).
+    fn gross_engine() -> (World, LegacyLighting, [f32; 2], [f32; 2]) {
+        let (mut w, pos, size) = export_world();
+        w.world_surface = 0.0;
+        let mut engine = LegacyLighting::new(LightMode::White);
+        engine.process_area(
+            &w,
+            pos,
+            size,
+            &LightParams::default(),
+            &LegacyInputs::default(),
+            &[],
+            None,
+        );
+        (w, engine, pos, size)
+    }
+
+    /// The `:687-692` floors at a given `demonTorch`, verbatim factor order.
+    fn gross_floors(d: f32) -> [f32; 3] {
+        [
+            (0.5 * d + 1.0 * (1.0 - d)) * 0.2,
+            0.3f32 * 0.1,
+            (1.0 * d + 0.5 * (1.0 - d)) * 0.3,
+        ]
+    }
+
+    #[test]
+    fn wof_gross_floors_the_nine_column_strip_at_demon_torch_one() {
+        // `:684-686` facing right: position.X = 1600 → tile 100 → strip
+        // columns [97, 106) world = local [0, 9). `:682-683` rows: camera
+        // 840..1080 px → tiles [42, 78] inclusive. demonTorch = 1 → floors
+        // (0.1, 0.03, 0.3) — the C# expression order kept.
+        let (_w, mut e, pos, size) = gross_engine();
+        e.wof_gross_light(
+            WofGrossLight { position_x: 1600.0, direction: 1 },
+            1.0,
+            pos,
+            size,
+        );
+        let floors = gross_floors(1.0);
+        // The f32 expression order (`:687-692`) rounds G to 0.030000001,
+        // NOT the decimal 0.03 — keep the derivation, not a literal.
+        assert_eq!(floors[0], 0.1f32);
+        assert_eq!(floors[2], 0.3f32);
+        // Rows 42..=77 (`:682-683`), local ly = world_y - expanded[2] =
+        // world_y - 11 → ly 31..=66.
+        for lx in 0..9 {
+            for ly in 0..e.sh {
+                let s = e.states[(lx * e.sh + ly) as usize];
+                if (31..=66).contains(&ly) {
+                    assert_eq!([s.r2, s.g2, s.b2], floors, "strip {lx},{ly}");
+                } else {
+                    assert_eq!([s.r2, s.g2, s.b2], [0.0; 3], "outside rows {lx},{ly}");
+                }
+            }
+        }
+        // Local column 9 is outside the strip (`:693`'s k <= num7 + 8).
+        assert_eq!(e.states[(9 * e.sh + 50) as usize].r2, 0.0);
+    }
+
+    #[test]
+    fn wof_gross_strip_is_screen_anchored_in_x_world_anchored_in_y() {
+        // The C# quirk kept verbatim: `:695` indexes `_states[k - num7]` —
+        // the strip's COLUMNS are screen-anchored (local 0..8) whatever the
+        // WoF's world x or facing (`:685` only shifts the loop variable),
+        // while `:698`'s rows are world-anchored (`l - _expandedRectTop`).
+        // Two engines with different positions/facings must write the SAME
+        // local cells; a different camera y must move the rows.
+        let (_w, mut a, pos, size) = gross_engine();
+        let (_w2, mut b, _p2, _s2) = gross_engine();
+        a.wof_gross_light(
+            WofGrossLight { position_x: 1600.0, direction: 1 },
+            1.0,
+            pos,
+            size,
+        );
+        b.wof_gross_light(
+            WofGrossLight { position_x: 2400.0, direction: -1 },
+            1.0,
+            pos,
+            size,
+        );
+        for i in 0..a.states.len() {
+            assert_eq!(
+                [a.states[i].r2, a.states[i].g2, a.states[i].b2],
+                [b.states[i].r2, b.states[i].g2, b.states[i].b2],
+                "cell {i} — x/facing must not move the strip"
+            );
+        }
+        // Camera 16 px lower → num5/num6 shift one tile → the lit row band
+        // moves down one local row.
+        let (_w3, mut c, _p3, _s3) = gross_engine();
+        c.wof_gross_light(
+            WofGrossLight { position_x: 1600.0, direction: 1 },
+            1.0,
+            [pos[0], pos[1] + 16.0],
+            size,
+        );
+        let ly_a = 50;
+        assert!(a.states[(4 * a.sh + ly_a) as usize].r2 > 0.0);
+        // The band's top row: a lit at world y 42 (ly 31), c at 43 (ly 32).
+        assert_eq!(a.states[(4 * a.sh + 31) as usize].r2 > 0.0, true);
+        assert_eq!(c.states[(4 * c.sh + 31) as usize].r2 > 0.0, false);
+        assert_eq!(c.states[(4 * c.sh + 32) as usize].r2 > 0.0, true);
+    }
+
+    #[test]
+    fn wof_gross_demon_torch_zero_swaps_the_r_b_ramp() {
+        // `:687-692` at demonTorch = 0: R floor 0.2, B floor 0.15 — the
+        // purple (1) vs orange (0) ends of the demon-torch ramp.
+        let (_w, mut e, pos, size) = gross_engine();
+        e.wof_gross_light(
+            WofGrossLight { position_x: 1600.0, direction: 1 },
+            0.0,
+            pos,
+            size,
+        );
+        let s = e.states[(4 * e.sh + 50) as usize];
+        assert_eq!([s.r2, s.g2, s.b2], gross_floors(0.0));
+        assert_eq!(s.r2, 0.2f32);
+        assert_eq!(s.b2, 0.15f32);
+    }
+
+    #[test]
+    fn wof_gross_is_raise_only() {
+        // `:699-710`: each channel keeps a brighter working value.
+        let (_w, mut e, pos, size) = gross_engine();
+        let s = &mut e.states[(4 * e.sh + 50) as usize];
+        s.r2 = 0.9;
+        s.g2 = 0.01;
+        s.b2 = 0.5;
+        e.wof_gross_light(
+            WofGrossLight { position_x: 1600.0, direction: 1 },
+            1.0,
+            pos,
+            size,
+        );
+        let s = e.states[(4 * e.sh + 50) as usize];
+        assert_eq!(s.r2, 0.9f32);
+        assert_eq!(s.g2, gross_floors(1.0)[1]);
+        assert_eq!(s.b2, 0.5f32);
+    }
+
+    #[test]
+    fn wof_gross_out_of_range_row_aborts_keeping_prior_writes() {
+        // The `:714` catch: `_states[k - num7][l - _expandedRectTop]` throws
+        // on the first out-of-range row; the abort keeps every earlier
+        // write (columns 0..k land fully, column k keeps rows < the throw).
+        // The row range is camera-derived (`:682-683`) while the array rows
+        // are world-anchored — a camera BELOW the processed rect walks off
+        // the array's bottom mid-strip.
+        let (_w, mut e, _pos, _size) = gross_engine();
+        // Fixture: req top = floor(840/16) - 1 = 51, expanded[2] = 51 - 40
+        // = 11; sh = 240/16 + 100 = 115 → rows ly 0..114 valid.
+        assert_eq!(e.expanded[2], 11);
+        assert_eq!(e.sh, 115);
+        // pos_y = 1840: num5 = 105, num6 = (1840+240)/16 + 10 = 140.
+        // ly = l - 11: valid while l <= 125 → rows 105..=125 land (ly
+        // 94..=114), l = 126 throws → columns 0..8 keep 21 rows each.
+        e.wof_gross_light(
+            WofGrossLight { position_x: 1600.0, direction: 1 },
+            1.0,
+            [1440.0, 1840.0],
+            [320.0, 240.0],
+        );
+        for lx in 0..9 {
+            for ly in 0..e.sh {
+                let lit = e.states[(lx * e.sh + ly) as usize].r2 > 0.0;
+                assert_eq!(lit, (94..=114).contains(&ly), "cell {lx},{ly}");
+            }
+        }
+        // A camera above the rect aborts at the FIRST row of column 0 —
+        // num5 = 320/16 - 10 = 10 < expanded top 11 → ly = -1 throws
+        // before any write.
+        let mut e2 = LegacyLighting::new(LightMode::White);
+        let (w2, pos2, size2) = export_world();
+        e2.process_area(
+            &w2,
+            pos2,
+            size2,
+            &LightParams::default(),
+            &LegacyInputs::default(),
+            &[],
+            None,
+        );
+        e2.wof_gross_light(
+            WofGrossLight { position_x: 1600.0, direction: 1 },
+            1.0,
+            [1440.0, 320.0],
+            size2,
+        );
+        assert!(e2.states.iter().all(|s| s.r2 == 0.0), "abort before writes");
+    }
+
+    #[test]
+    fn wof_gross_block_draws_no_random_numbers() {
+        // The block itself (`:678-717`) has no RNG call: driving the helper
+        // directly must leave the swipe stream untouched. Wet cells beside
+        // the torch put real `WithModifier`/`Next(98,100)` draws in the
+        // preceding cycle, so the seed is not the fresh 0.
+        let mut w = torch_world();
+        for x in [46, 47] {
+            let i = w.index(x, 48);
+            w.tiles[i].liquid = 255;
+        }
+        let mut e = LegacyLighting::new(LightMode::White);
+        run_cycle(&mut e, &w, &LegacyInputs::default());
+        let before = e.swipe_rng.seed;
+        let scanner_before = e.scanner_rng.map(|r| r.seed);
+        e.wof_gross_light(
+            WofGrossLight { position_x: 48.0 * 16.0, direction: 1 },
+            1.0,
+            camera().0,
+            camera().1,
+        );
+        assert_eq!(e.swipe_rng.seed, before, "no swipe draws");
+        assert_eq!(e.scanner_rng.map(|r| r.seed), scanner_before, "no scanner draws");
+    }
+
+    #[test]
+    fn wof_gross_gate_off_is_byte_identical_and_deterministic() {
+        // The module-note witness: `wof_gross: None` (the driver default
+        // without a Horrified player + living WoF) must present the SAME
+        // light as a second gate-off run, byte-for-byte, with both RNG
+        // streams at the same position — the port adds no behaviour when
+        // the gate is closed. (A gated-ON run legitimately changes the wet
+        // swipe draws downstream: the floor raises carries past the 0.0185
+        // cutoff — the C# does the same; only the block itself is RNG-free.)
+        let mut w = torch_world();
+        for x in [46, 47] {
+            let i = w.index(x, 48);
+            w.tiles[i].liquid = 255;
+        }
+        let (pos, size) = camera();
+        let params = LightParams::default();
+        let inputs = LegacyInputs::default();
+        let mut a = LegacyLighting::new(LightMode::White);
+        let mut b = LegacyLighting::new(LightMode::White);
+        for _ in 0..12 {
+            a.process_area(&w, pos, size, &params, &inputs, &[], None);
+            b.process_area(&w, pos, size, &params, &inputs, &[], None);
+        }
+        assert_eq!(a.swipe_rng.seed, b.swipe_rng.seed);
+        assert_eq!(a.scanner_rng.map(|r| r.seed), b.scanner_rng.map(|r| r.seed));
+        let (x0, y0, ww, hh) = a.get_area();
+        for y in y0..y0 + hh {
+            for x in x0..x0 + ww {
+                assert_eq!(
+                    a.get_color(x, y).map(f32::to_bits),
+                    b.get_color(x, y).map(f32::to_bits),
+                    "gate-off light diverged at {x},{y}"
+                );
+            }
+        }
+    }
 }
