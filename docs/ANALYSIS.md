@@ -26145,6 +26145,100 @@ keep-alives already in `player.rs::SUMMON_BUFF_ARMS`) plus the weapon imbues
 
 Tests: `buff_effects_accessory::tests::s1_e_7c_*` (13).
 
+## The booster buff-effect block (S1-E-7 wave G, 2026-11-20, code-only) — RANGE CLAIM
+
+`task/W4-d73-buff-effects-wave-g` claims the SIXTH missing block of
+`Player.UpdateBuffs` (`Player.cs:9855-12069`): **`Player.cs:10328-10485`**
+(the mana-heat + beetle/solar/nebula booster block and the Ice Barrier
+completion) plus the two wave-A stragglers **`:9935-9946`** (Sugar Rush 192,
+Brain of Confusion buff 321). Disjoint from the five landed waves:
+
+| wave | branch | C# range | module |
+| --- | --- | --- | --- |
+| A | c16 (`S1-E-7a`) | `:9875-10048` potion block | `player.rs` effect match |
+| B | c16 (`S1-E-7b`) | `:10049-10317` debuff block | `buff_effects.rs` |
+| C | c17 (`S1-E-7c`) | `:10800-11400` accessory/set + imbues `:12013-12044` | `buff_effects_accessory.rs` |
+| D | c18 (`S1-E-7d`) | `:11400-12069` mount/pet/misc + pet head `:11005-11241` | `buff_effects_misc.rs` |
+| E/F | d71/d72 | (in flight, unpushed at claim time — no committed range) | — |
+| **G** | **d73 (this)** | **`:10328-10485` + `:9935-9946`** | `buff_effects_boosters.rs` (new) |
+
+**Full-region census (2026-11-20).** All 254 `else if (this.buffType[j] …)`
+arm heads in `:9855-12069` were extracted (266 unique ids incl. the range
+arms) and diffed against the ported dispatch sets (`player.rs` effect match +
+`SUMMON_BUFF_ARMS`, `buff_effects.rs`, `buff_effects_misc.rs` `PET_ARMS`,
+`buff_effects_accessory.rs` `PET_BUFF_ARMS`, `world_sim/player.rs` ammo
+grants). Exactly 22 entries are unported; every one sits in this wave's
+claimed range:
+
+- **396 Mana Heat** (`:10328-10341`) — the `manaHeat += bonus * time/duration`
+  decay; the port's `try_apply_mana_heat` (`player.rs:3429`) explicitly
+  defers this arm. The `latestManaPotionDuration == 0 → 1` field write is
+  part of the arm.
+- **95-97 Beetle Endurance** (`:10342-10376`) — `buffTime = 5` pin, the
+  orb-tier `DelBuff` sweep, `beetleDefense` gate, `beetleBuff` flag.
+- **170-172 Solar Shield** (`:10377-10407`) — the same shape on
+  `solarShields`/`setSolar` (no `beetleBuff` flag).
+- **98-100 Beetle Might** (`:10408-10443`) — NO time pin; `meleeDamage`/
+  `meleeSpeed += 0.1 * orbs`, `beetleOffense` gate.
+- **176-178 / 173-175 / 179-181 Nebula** (`:10444-10461`) — the
+  `UpdateBuffs_NebulaBuffs` helper (`:12070-12079`: level = 1 + type − base;
+  at `buffTime == 2 && level > 1` the tier steps down, `buffType--`,
+  `buffTime = 480`); life adds `lifeRegen += 6 * level`, damage adds
+  `0.15 * level` to melee/ranged/magic/minion.
+- **62 Ice Barrier** (`:10462-10485`) — COMPLETION: the endurance half is
+  already in the `player.rs` match (`:6526`) and the light in
+  `player_lights.rs:280`; missing are the `iceBarrier` flag, the 3-tick ×
+  12-frame counter and the `DelBuff(j); j--` when above half life. The
+  module ports the WHOLE arm; the wiring step folds the `player.rs` 62 arm
+  into it (keep-one, like the M2 dedupes) and switches the gate to
+  `statLifeMax2` (the existing arm reads `max_hp`).
+- **192 Sugar Rush** (`:9935-9939`) — `pickSpeed -= 0.2`, `moveSpeed += 0.2`
+  (wave-A range, missed by A; claimed here, A's merge must not re-add).
+- **321 Brain of Confusion buff** (`:9940-9947`) — +10 melee/ranged/magic
+  crit, `minionDamage += 0.1` (the dodge GRANT side is already ported,
+  `player.rs:4233`; this is the effect arm).
+
+Already ported, NOT re-claimed: 94 Mana Sickness (`potions.rs`), 16 Archery
+(`world_sim/player.rs:62`), the 29 summon keep-alives `:10486-10976`
+(`SUMMON_BUFF_ARMS` + the 216/335/263 special cases).
+
+**RNG census: ZERO draws.** `Main.rand`/`Next(`/`Random` appear nowhere in
+`:10328-10485`, `:9935-9946` or the nebula helper `:12070-12079` (verified
+by scan). No stream is touched by this wave.
+
+Shape: a PURE accumulator module (`BoosterEffects` stats + `BoosterState`
+persistent counters), slot mutations (`DelBuff`/time pins/tier step-down)
+run on `BuffSlots` directly like `update_summon_buff_arms`; the `player.rs`
+scan wiring rides the waves' merge step. The C# double-`DelBuff` quirk (the
+`!beetleDefense`/`!setSolar` delete uses the ALREADY-decremented `j` after a
+downgrade delete, `:10350-10351`→`:10369`) is preserved verbatim; a `j < 0`
+guard stands in for the C# `IndexOutOfRangeException` that path would throw.
+
+**Landed** (code-only, tests written not run):
+`crates/tr-app/src/buff_effects_boosters.rs` —
+`apply_booster_effect_arm(e, s, slots, ctx, j) -> BoosterArmResult`
+(`NotHandled` / `NextSlot(i32)` — the C# `j` after the arm plus the loop's
+`j++`, so a `DelBuff(j); j--` rescan returns `j` and the double-delete quirk
+can return `j - 1`; the caller clamps to `>= 0`). The persistent counters
+(`beetleOrbs` shared by both beetle families, `solarShields`, the three
+nebula levels, the ice-barrier frame pair) live in `BoosterState` — the C#
+`ResetEffects` does not clear them, neither does the port. The Might arm's
+stat adds run BEFORE the offense gate (`:10431-10432` precede `:10433`), so
+the stats land on the delete tick too. The nebula mana tier writes only
+`nebulaLevelMana` (its regen consumer reads the level elsewhere). The
+`if (0f == 0f)` at `:10336` is decompilation noise — the multiply always
+runs.
+
+Tests: `buff_effects_boosters::tests::s1_e_7g_*` (20), one or more per id:
+396 ×2 (ratio decay, zero-duration write-back), 192, 321, 95-97 ×4 (pin +
+flag, upgrade sweep, downgrade rescan, defense-off delete) + the
+double-delete quirk ×2 (previous-slot hit, negative-index guard), 98-100 ×2
+(no pin + stats, offense-off stats-then-delete), 170-172 (pin/gate +
+set-absent), 173-175 ×2 (step-down at time 2, tier-3 regen 18), 176-178
+(level only), 179-181 (0.15 × level on four classes), 62 ×2 (half-life
+flag + 3-tick × 12-frame wrap, above-half delete), pass-through (94/49/2/144
+left to their owners).
+
 ## S1-C-12 wave C - the defense/immunity accessory family (2026-11-18)
 
 `crates/tr-app/src/accessory_defense.rs` carries the DEFENSE/IMMUNITY
