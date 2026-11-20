@@ -38,6 +38,8 @@
 //! | `UsesCustomCanPlace` / `UsesGlobalLiquidChecks` :144/:157 | `uses_custom_can_place` / `uses_global_liquid_checks` |
 //! | `GetStyleOverride` :728 | `get_style_override` (the tag; resolution is wave B) |
 //! | `HookCheckIfCanPlace` / `HookPlaceOverride` / `HookPostPlaceMyPlayer` | `hook_check_if_can_place` / `hook_place_override` / `hook_post_place_my_player` |
+//! | `CallPostPlacementPlayerHook` :5269 / `OriginToTopLeft` :5285 | [`call_post_placement_player_hook`] / [`origin_to_top_left`] (W4-d114 hook wiring) |
+//! | `CheckWaterDeath(type, style)` :5073 / `CheckLavaDeath(type, style)` :5097 | [`check_water_death_for_style`] / [`check_lava_death_for_style`] (W4-d114, the `ApplyNaturalObjectRules` consumers) |
 //! | `CoordinateHeights` :1417 | `coordinate_heights` |
 //! | `CoordinateWidth` :1503 / `CoordinatePadding` :1537 | `coordinate_width` / `coordinate_padding` |
 //! | `CoordinatePaddingFix` | `coordinate_padding_fix` |
@@ -60,6 +62,11 @@
 //!   seam. The bodies read runtime state (chests, tile entities, plants)
 //!   outside this task; the hook *branches* in `can_place`/`place` are ported.
 //!   The M3-CHEST-UI seam is unchanged: the chest is a pure tile object here.
+//!   W4-d114 ports the after-placement INVOCATION seam
+//!   ([`call_post_placement_player_hook`], `Player.cs:40144`/:45816 wiring)
+//!   and its `OriginToTopLeft` helper ([`origin_to_top_left`]) — with every
+//!   generated body still `hook: None` the seam is a behaviour-frozen no-op
+//!   until the chest/TE tasks install bodies.
 //! - **`GetStyleOverride` resolution** (the frameY-based `GetTileData(Tile)`
 //!   overload :5196-5261): the tag is generated data; the tile-based resolution
 //!   is a framing/cascade consumer (wave B remaining).
@@ -561,6 +568,138 @@ pub fn get_tile_data(
         resolved = resolved.alternates.get(alt as usize)?;
     }
     Some(resolved)
+}
+
+/// `TileObjectData.CallPostPlacementPlayerHook` (`TileObjectData.cs:5269-5283`)
+/// — the after-placement hook INVOCATION consumer (W4-d114): resolves
+/// `GetTileData(type, style, data.alternate)`, subtracts the def's `Origin`
+/// when the hook wants processed coordinates, and calls the hook. Returns
+/// `hookResult == badReturn` — the C# quirk verbatim: for the chest
+/// (`badReturn = -1`, `Chest.AfterPlacement_Hook` returns -1 on FAILURE,
+/// `Chest.cs:559-567`) this answers `true` when the hook FAILED. Both C#
+/// call sites (`Player.cs:40144`, `:45816`) ignore the return value.
+///
+/// The `alternate` parameter is part of the C# signature but the body reads
+/// only `data.alternate` (:5271/:5276/:5282) — kept 1:1. Wave A keeps every
+/// generated hook body as a documented callback (`hook: None`, see
+/// [`PlacementHook::callback`]), so this answers `false` for every registry
+/// def today; the invocation seam is what the chest/TE tasks wire into.
+/// A negative style throws in C# (:5132-5135); the port degrades to `false`
+/// (the [`check_liquid_placement`] precedent).
+#[allow(unused_variables)]
+pub fn call_post_placement_player_hook(
+    world: &World,
+    tile_x: i32,
+    tile_y: i32,
+    kind: u16,
+    style: i32,
+    dir: i32,
+    alternate: i32,
+    data: &TileObjectInstance,
+) -> bool {
+    if style < 0 {
+        return false;
+    }
+    // :5271 — `GetTileData(type, style, data.alternate)`.
+    let Some(def) = def_for_tile(kind) else {
+        return false;
+    };
+    let Some(tile_data) = get_tile_data(def, style, data.alternate) else {
+        return false;
+    };
+    call_post_placement_player_hook_with_def(
+        world, tile_x, tile_y, kind, style, dir, tile_data, data,
+    )
+}
+
+/// The body of [`call_post_placement_player_hook`] after the :5271
+/// resolution — split out like [`place`]/[`place_with_def`] so witnesses can
+/// inject a hook body outside the generated registry.
+#[allow(unused_variables)]
+pub fn call_post_placement_player_hook_with_def(
+    world: &World,
+    tile_x: i32,
+    tile_y: i32,
+    kind: u16,
+    style: i32,
+    dir: i32,
+    tile_data: &TileObjectDef,
+    data: &TileObjectInstance,
+) -> bool {
+    // :5272-5275 — the `_placementHooks == null` / `hook == null` gates (the
+    // port folds both into `hook: None`).
+    let Some(hook_fn) = tile_data.hook_post_place_my_player.hook else {
+        return false;
+    };
+    let hook = tile_data.hook_post_place_my_player;
+    let (mut x, mut y) = (tile_x, tile_y);
+    // :5277-5281 — processed coordinates arrive origin-relative.
+    if hook.processed_coordinates {
+        x -= tile_data.origin.x;
+        y -= tile_data.origin.y;
+    }
+    // :5282 — `== badReturn`, NOT `!=` (see the doc quirk).
+    hook_fn(world, x, y, kind, style, dir, data.alternate) == hook.bad_return
+}
+
+/// `TileObjectData.OriginToTopLeft` (`TileObjectData.cs:5285-5292`) — the
+/// coordinate helper `Chest.AfterPlacement_Hook` opens with (`Chest.cs:562`):
+/// a resolved def shifts the anchor point back by its `Origin`; an
+/// unregistered kind (or a negative style — the C# throw, degraded like
+/// [`call_post_placement_player_hook`]) leaves the point unchanged. The C#
+/// `ref Point16` becomes a returned value.
+pub fn origin_to_top_left(kind: u16, style: i32, base_coords: Point16) -> Point16 {
+    if style < 0 {
+        return base_coords;
+    }
+    if let Some(def) = def_for_tile(kind) {
+        if let Some(tile_data) = get_tile_data(def, style, 0) {
+            return Point16::new(
+                base_coords.x - tile_data.origin.x,
+                base_coords.y - tile_data.origin.y,
+            );
+        }
+    }
+    base_coords
+}
+
+/// `TileObjectData.CheckWaterDeath(int type, int style)`
+/// (`TileObjectData.cs:5073-5081`) — the style-indexed liquid-death consumer
+/// of `ApplyNaturalObjectRules` (:1847-1851 sets `UsesGlobalLiquidChecks`;
+/// W4-d114 takes the (type, style) overloads, the Tile overloads :5083-5119
+/// are W4-e11's). A def that opted out of the global checks answers its own
+/// `WaterDeath`; a natural-object def (or an unregistered kind) answers the
+/// global `Main.tileWaterDeath` table ([`TILE_WATER_DEATH`]). Negative style:
+/// the C# throw degrades to the global table (the
+/// [`check_liquid_placement`] precedent).
+pub fn check_water_death_for_style(kind: u16, style: i32) -> bool {
+    if style >= 0 {
+        if let Some(def) = def_for_tile(kind) {
+            if let Some(td) = get_tile_data(def, style, 0) {
+                if !td.uses_global_liquid_checks {
+                    return td.water_death;
+                }
+            }
+        }
+    }
+    TILE_WATER_DEATH.contains(&kind)
+}
+
+/// `TileObjectData.CheckLavaDeath(int type, int style)`
+/// (`TileObjectData.cs:5097-5105`) — the lava twin of
+/// [`check_water_death_for_style`]; the global table is the generated
+/// `TILE_LAVA_DEATH` bitset (`Main.tileLavaDeath`, `Main.cs:7233-8218`).
+pub fn check_lava_death_for_style(kind: u16, style: i32) -> bool {
+    if style >= 0 {
+        if let Some(def) = def_for_tile(kind) {
+            if let Some(td) = get_tile_data(def, style, 0) {
+                if !td.uses_global_liquid_checks {
+                    return td.lava_death;
+                }
+            }
+        }
+    }
+    crate::tiledata::TILE_LAVA_DEATH.has(kind)
 }
 
 /// `TileObjectData.CalculatePlacementStyle` (`TileObjectData.cs:1990-1998`).

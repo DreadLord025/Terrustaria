@@ -102,6 +102,22 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
             // (`Player.cs:40121`); `reframe_area` leaves `frame_important` tiles
             // intact, so the object's stored frames survive (DW-1.6 guarantee).
             framing::reframe_area(world, x, y, 2, true);
+            // `TileObjectData.CallPostPlacementPlayerHook(tileTargetX,
+            // tileTargetY, tileToCreate, style, direction, data.alternate,
+            // data)` (`Player.cs:40144`, the `if (flag) { if (newObjectType) }`
+            // tail; W4-d114). Every generated hook body is a wave-A documented
+            // callback (`hook: None`), so this is a no-op today — the seam the
+            // chest/TE hook bodies wire into. The return value is ignored 1:1.
+            crate::tileobject::call_post_placement_player_hook(
+                world,
+                x,
+                y,
+                kind,
+                style,
+                dir,
+                instance.alternate,
+                &instance,
+            );
             return true;
         }
     }

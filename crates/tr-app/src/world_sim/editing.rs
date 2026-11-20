@@ -7490,6 +7490,22 @@ fn try_replanting_tree(app: &mut App, tx: i32, ty: i32) {
     // `if (flag)` net/placement-hook tail).
     tr_core::framing::reframe_area(&mut app.world, tx, ty, 2, true);
     if placed {
+        // `TileObjectData.CallPostPlacementPlayerHook(tileTargetX, tileTargetY,
+        // 20, 0, direction, objectData.alternate, objectData)`
+        // (`Player.cs:45816`; W4-d114). Kind 20's builder chain never assigns
+        // `HookPostPlaceMyPlayer` (acorn block ending `addTile(20)`,
+        // `TileObjectData.cs:4909`) — a no-op seam, called 1:1. The return
+        // value is ignored.
+        tr_core::tileobject::call_post_placement_player_hook(
+            &app.world,
+            tx,
+            ty,
+            20,
+            0,
+            dir,
+            instance.alternate,
+            &instance,
+        );
         app.request_edit(tx, ty, 1, 20);
         app.world_key = None;
     }
