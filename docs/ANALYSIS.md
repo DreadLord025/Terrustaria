@@ -6180,6 +6180,79 @@ cleared (11 Hungries re-spawn every tick). The 2026-11-19 wiring round
   The noTileCollide integration (`NPC.cs:90495-90498`) rides the family
   wrappers (the modules leave the step to the caller).
 
+### The WoF draw pass + the leech's missing pieces (W4-d127, code-only mode)
+
+**Code-only mode**: no compiler invoked — no cargo, no tests run, no
+graphify refresh. The witness tests are WRITTEN NOT RUN; every claim is
+verified by reading the C# and the Rust side by side.
+
+**The task-brief premise was wrong, corrected by the census**: the brief
+named "aiStyle-24 / AI_024" for the Wall of Flesh. aiStyle 24 is the BIRD
+family (`NPC.cs:25313-25537`, already ported as `npc_ai_style24.rs`); there
+is no `AI_024` WoF function. The Wall of Flesh is **aiStyle 27** (the body,
+`NPC.cs:25635-26052`), its mirror eye **aiStyle 28** (`:26053-26208`), the
+Hungry **aiStyle 29** (`:26209-26404`) and the leeches **aiStyle 6** (the
+worm engine, `AI_006_Worms` `:50963-52090`). All four AI arms were already
+landed WIRED (S1-D-3 W-1: `npc_ai_style27/28/29.rs` + `worm_head_step`).
+The census found THREE genuinely missing pieces, landed here:
+
+* **A — the leech head's WoF-hp speed ladder** (`NPC.cs:51745-51763`).
+  `worm_head_step` read only the base `worm_tunables` (8/0.07); the C#'s
+  `type == 117 && Main.wofNPCIndex >= 0` block bumps the speed/accel by the
+  FLOAT ratio `(float)life / (float)lifeMax` — <0.5 → +1/+0.1, <0.25 →
+  +1/+0.1, <0.1 → +2/+0.1 (cumulative). The port gates on
+  `world.wof_npc_index >= 0` and reads `wof_life`/`wof_life_max` (the sim's
+  wall mirror). 2 witnesses pin the four hp-band caps + the no-wall base.
+* **B — the leech entry dust burst** (`NPC.cs:50969-50977`). The chain-init
+  latch (`localAI[1]` 0→1 + `NPCDeath13`) was landed but the 20-dust burst
+  behind it was SKIPPED ("wave G"). Now the verbatim `DustPool::new_dust`
+  runs on the `UpdateNPCs` stream — `num = ±1` from `velocity.X`, the
+  `(pos-20, width+40, height+40, type 5, num*8, -1)` payload — BEFORE the
+  `:51310` budget roll (the C#'s `:50965` opens `AI_006_Worms`). The pool +
+  ctx thread through `update_worms_ctx`; the dust-free `None` seam keeps the
+  W-A2-1 budget witnesses' ledger intact. 1 witness pins the
+  burst-before-budget stream order (the 6-draw default-block ledger ×20).
+* **C — `Main.DrawWoF`** (`Main.cs:38377-38525`), the whole dedicated draw
+  pass, landed as `render/wof.rs`:
+  - `DrawWOFBody` (`:38400-38446`): the `TextureAssets.Wof` sheet (190x420,
+    measured; `num = Height()/3` = 140-px rows) tiles from the band top to
+    the screen bottom in 16-px slices; the mouth row is
+    `wofDrawFrameIndex / 6` (the 18-tick draw clock, `:38426-38430`), the
+    column at the wall's X (−80 when `direction > 0`), flipped on
+    `spriteDirection == 1`; the `num4 > 12` early-out + the row alignment
+    (`top -= num4 * num`) are the pure `body_row_start` helper.
+  - `DrawWOFRopeToTheHungry` (`:38448-38496`): every live aiStyle-29 slot
+    gets a Chain12 leash from its centre-X / scaled-half-height anchor to
+    the band anchor `wofDrawAreaTop + (bottom - top) * ai[0]` (the SAME
+    anchor the Hungry's AI chases, `NPC.cs:26283`); the link step is
+    `28 * scale`, the final link truncates to `(int)dist - (int)(40*scale) +
+    28`, the flip alternates per link starting from `frameCounter > 7`.
+  - `DrawWOFTongueToPlayer` (`:38498-38525`): every active+tongued+living
+    player gets a chain from its FLOAT centre to the wall's INTEGER-half
+    centre; the 40-px partial link is dropped, every link `SpriteEffects.None`.
+  - The seam sits between the wall pass and `npcs_behind_tiles` in
+    `draw_tiles` (the C#'s `:63272-63279` order). The sheets
+    (`WallOfFlesh`/`Chain12`/`Chain4`) pack through `STATIC_SHEET_NAMES`;
+    the mouth clock lives in `DrawScratch.wof_draw_frame_index` and feeds
+    `WorldFrameKey.wof_key` (clock + band statics + tongue gate, zero
+    wall-free so the G6 cache stays bit-identical without a wall).
+  - 4 witnesses: the mouth clock's 18-wrap + pause, the rope's final-link
+    truncation, the body row alignment, the pass gate/order (source-inspection).
+
+**Deviations (documented)**: `Lighting.GetColor` is the port's
+`light.get` + `style.shade` (the NPC pass convention); the link/body tints
+use the C#'s INTEGER tile coords (`(int)x / 16`). The C# draws at
+`position - screenPosition`; the port's world-range pipeline draws in world
+pixels with `snap_to_screen` rounding. The link quads rotate about their
+centres (`push_sprite_origin_rot`, origin = half the SCALED size — XNA's
+`origin` is source pixels × scale). The tongue's `Main.player[i]` 255-slot
+scan is the one session player. The mouth clock advances once per frame in
+`draw_tiles` (the C# increments inside the body draw); the key uses the
+NEXT tick value so the cached range matches the frame drawn. The leech
+burst's `Dust.NewDust` rides the same `UpdateNPCs` stream as the AI draws
+(the Everscream/saucer precedent) — the dust-free `None` seam is a
+test-isolation convenience, not a behavioural fork.
+
 ## The Eye of Cthulhu (M4-BOSS-1)
 
 The first boss lands through the aiStyle-4 block's classic path
