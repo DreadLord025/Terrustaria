@@ -3441,6 +3441,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 14x22, aiStyle 206, penetrate -1, `timeLeft *= 5`, a full slot,
             // the LOCAL pair (30), tileCollide false, ignoreWater.
             1119 => (14.0, 22.0, 206, -1, 18000, 0, false, false, false, (true, 30, false, -1, 0, 1.0)),
+            // W4-a9 — `Projectile.cs:10479-10490` (1120, the Forbidden sign's
+            // shot): 10x10, aiStyle 29 (the gem-bolt family's ActuallyGemStaffs
+            // tail, `:37836-37846` — dust id 170, ONE unconditional dust, the
+            // Item72 cue), alpha 255, friendly, the LOCAL pair (60),
+            // `timeLeft = 75`, `extraUpdates = 1`. The 206 arm's fire spawns it
+            // with the FastThenSlow feature bit (`:37588-37592`).
+            1120 => (10.0, 10.0, 29, 1, 75, 1, true, false, false, (true, 60, false, -1, 255, 1.0)),
             // `Projectile.cs:6729-6753` (625-628, the Stardust Dragon chain):
             // 24x24, aiStyle 121, penetrate -1, `timeLeft *= 5`, tileCollide
             // false, ignoreWater, alpha 255, the LOCAL pair (7); the 626/627
@@ -4589,6 +4596,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // aiStyle-169 arm runs no frame machine (the stock frame 0 reads
         // the top row); the row lands for the draw slice.
         864 => 2,
+        // W4-a9 — the Forbidden Minion's 9-frame sheet (`Main.cs:8561`) —
+        // `AI_206_ForbiddenMinion`'s idle machine steps frames 0-4 and the
+        // attack machine 5-8 (`Projectile.cs:37605-37640`).
+        1119 => 9,
         // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
         // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
         // (`Projectile.cs:60192`) and the walk steps frames 0-5

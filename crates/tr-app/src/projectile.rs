@@ -8182,8 +8182,21 @@ impl Projectile {
         _player: Option<&crate::player::Player>,
     ) {
         // `:37831-37839`: the gem dust id `type - 121 + 86` (121→86 amethyst
-        // … 126→91 diamond, 597→262 amber) — the two-per-tick dust spawns
-        // that read it (`:37847-37855`) are SKIPPED.
+        // … 126→91 diamond, 597→262 amber, 1120→170 the Forbidden sign) —
+        // the per-tick dust spawns that read it (`:37847-37855`) are SKIPPED
+        // (the 1120's single unconditional dust draws NO Next(5) gate,
+        // `:37842-37846` — the flag folds false).
+        // `:37856-37864` — the one-cue-per-life latch: the gem family plays
+        // StackableItem8ForRubyStaff (2, 205), the 1120 sign plays Item72
+        // (2, 72) (`SoundID.cs:1455`/`:1589`). The cue rides the slot's
+        // `wants_sound` intent (the S1-E-21h queue); the 1120's 8-dust
+        // first-cue ring (`:37865-37873`, two NextFloats per dust) is the
+        // documented dust skip.
+        if self.sound_delay == 0 {
+            self.sound_delay = -1;
+            let style = if self.kind == 1120 { 72 } else { 205 };
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
+        }
         let features = GemStaffFeatures::from_ai(self.ai[0]);
         // The homing block (`:37876-37923`).
         if features.homing() {
@@ -12406,6 +12419,37 @@ impl Projectile {
         skip_if_cannot_hit: bool,
         respect_owner_target: bool,
     ) -> i32 {
+        // W4-a9 — the aiStyle-206 caller's `AI_206_CustomEliminationCheck_
+        // Forbidden` (`Projectile.cs:37496-37499`): the box-to-box
+        // `Collision.CanHitLine` probe. `None` = the C#'s default null check.
+        self.minion_find_target_in_range_custom(
+            world,
+            npcs,
+            player,
+            start_attack_range,
+            skip_if_cannot_hit,
+            respect_owner_target,
+            None,
+        )
+    }
+
+    /// [`Self::minion_find_target_in_range`] with the C#'s
+    /// `customEliminationCheck` parameter (`Projectile.cs:48990`'s
+    /// `Func<Entity, int, bool>`): `Some(f)` runs `f(npc, current_target)`
+    /// as the LAST conjunction of the scan's gate (`:49012`) — a false
+    /// answer skips the candidate without touching the distance ladder.
+    /// The 206 arm passes the Forbidden box-LOS probe; every other caller
+    /// keeps the null default through the wrapper above.
+    fn minion_find_target_in_range_custom(
+        &self,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&crate::player::Player>,
+        start_attack_range: f32,
+        skip_if_cannot_hit: bool,
+        respect_owner_target: bool,
+        custom_elimination_check: Option<&dyn Fn(&Npc, i32) -> bool>,
+    ) -> i32 {
         let mut num = start_attack_range;
         let mut num2 = num;
         let mut num3 = num;
@@ -12456,6 +12500,12 @@ impl Projectile {
                 || crate::revenge::BOSS_KINDS.contains(&n.kind);
             if !in_view {
                 continue;
+            }
+            // `:49012` — the custom elimination check, the gate's last term.
+            if let Some(check) = custom_elimination_check {
+                if !check(n, attack_target) {
+                    continue;
+                }
             }
             attack_target = i as i32;
             let my_distance = center.distance(npc_center(n));
@@ -13397,10 +13447,10 @@ fn shift_ring<T: Copy>(ring: &mut [T]) {
 /// `CreateIntSet(-1, …)` default −1 records nothing.
 ///
 /// The table is the in-scope slice over the ported kinds (`Projectile.cs`
-/// `17091-17195`'s chain). The C# set's 1120 (the Forbidden sign's shot) and the
-/// rest of the unported kinds default to −1 here, as the source's factory
-/// default does for every id the set omits. Modes 4/5 have no ported kind
-/// (933/1100/106) and no arm.
+/// `17091-17195`'s chain). W4-a9: the 1120 Forbidden sign's shot carries the
+/// family's mode 2 now; the rest of the unported kinds default to −1 here,
+/// as the source's factory default does for every id the set omits. Modes
+/// 4/5 have no ported kind (933/1100/106) and no arm.
 pub(crate) fn trailing_mode(kind: u16) -> i32 {
     match kind {
         // `:17091`'s mode-0 kinds among the ported rows (the positions only;
@@ -13417,10 +13467,11 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         // `:17099`'s mode 1 — the Vortex Ritual's bolt.
         VORTEX_RITUAL_BOLT => 1,
         // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
-        // Betsy's fireball.
+        // Betsy's fireball. W4-a9: the 1120 Forbidden sign's shot joins the
+        // family's mode (`ProjectileID.cs:521`'s `1120, 2` entry).
         GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
         | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND
-        | GEM_BOLT_AMBER => 2,
+        | GEM_BOLT_AMBER | 1120 => 2,
         // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
         _ => -1,
@@ -13466,8 +13517,9 @@ fn trail_family(kind: u16) -> Option<TrailFamily> {
     let gem = |c1, c2, c3| Some(TrailFamily::Gem { c1, c2, c3 });
     match kind {
         // `:28197-28229`'s switch: the amethyst (121) keeps the call site's
-        // default Violet/Purple/White, and 1120 (unported) would take it too.
-        GEM_BOLT_AMETHYST => gem(VIOLET, PURPLE, [1.0; 3]),
+        // default Violet/Purple/White; W4-a9: the 1120 sign's shot takes the
+        // same default (the C# switch has no 1120 case).
+        GEM_BOLT_AMETHYST | 1120 => gem(VIOLET, PURPLE, [1.0; 3]),
         // `:28199-28203`.
         GEM_BOLT_TOPAZ => gem(ORANGE, ORANGE, [1.0; 3]),
         // `:28204-28212`.
@@ -17535,6 +17587,38 @@ impl ProjectilePool {
                             self.slots[i].direction =
                                 if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                         }
+                        // W4-a9 — `AI()`'s `else if (this.aiStyle == 206)`
+                        // (`Projectile.cs:36787-36790`) ->
+                        // `AI_206_ForbiddenMinion` (`:37501-37641`): the
+                        // Forbidden Minion (1119), the style's ONLY row
+                        // (`:10464-10478`). Pool-side — the group index reads
+                        // the sibling slots and the fire tick spawns the
+                        // 1120 sign's shot. The i25 dispatch no-op deferral
+                        // is superseded (the UNARMED_ROWED census drops 206
+                        // — the list is EMPTY). The row keeps `tileCollide =
+                        // false` and aiStyle 206 is not in `UpdatePosition`'s
+                        // skip list (`:20435`), so the free integrate runs
+                        // every sub-step.
+                        206 => {
+                            self.forbidden_minion_step(
+                                i,
+                                world,
+                                &npcs[..],
+                                player.as_deref_mut(),
+                                rng,
+                                local_owner,
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                            // `AutomaticallyChangesDirection` (`:17281-
+                            // 17288`): the row leaves `manualDirectionChange`
+                            // false, so the direction follows velocity.X's
+                            // sign after the move (`:17016-17026`) — the
+                            // arm's owner-facing pin is overwritten here,
+                            // exactly as the C# does.
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                        }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
@@ -21402,6 +21486,13 @@ impl ProjectilePool {
     /// seven [`GEM_BOLTS`] and feature-gated, so nothing else can die through
     /// it and the burst fires at most once per bolt (a dead slot never returns
     /// to `active`).
+    ///
+    /// W4-a9 — the 1120 Forbidden sign's shot takes its OWN `Kill()` arm
+    /// (`:75374-75424`, the branch AHEAD of the gem family): the unconditional
+    /// `Resize(112, 112)` burst, `damage × 1`, the same penetration open +
+    /// immunity reset + boxed `Damage()` + trailing `Resize(22, 22)` — NO
+    /// feature gate (the C# arm never reads the pack). The 15+30 dust spawns
+    /// and the thud are the documented skip.
     fn gem_bolt_aoe(
         &mut self,
         slot: usize,
@@ -21414,6 +21505,40 @@ impl ProjectilePool {
             Some(p) => (p.kind, p.ai[0]),
             None => return,
         };
+        if kind == 1120 {
+            // `:75407-75423` — the sign's burst: Resize(112, 112), damage ×1,
+            // the penetration open, the cooldown-preserving immunity reset,
+            // the boxed Damage() and the trailing Resize(22, 22).
+            let (center, cooldown) = {
+                let p = &self.slots[slot];
+                (
+                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                    p.local_hit_cooldown,
+                )
+            };
+            let p = &mut self.slots[slot];
+            p.w = 112.0;
+            p.h = 112.0;
+            p.pos = center - Vec2::new(56.0, 56.0);
+            p.max_penetrate = -1;
+            p.penetrate = -1;
+            let base = slot * 256;
+            for v in &mut self.local_immunity[base..base + 256] {
+                if *v != cooldown {
+                    *v = 0;
+                }
+            }
+            self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+            let (cx, cy) = {
+                let p = &self.slots[slot];
+                (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            };
+            let p = &mut self.slots[slot];
+            p.w = 22.0;
+            p.h = 22.0;
+            p.pos = Vec2::new(cx - 11.0, cy - 11.0);
+            return;
+        }
         if !GEM_BOLTS.contains(&kind) {
             return;
         }
@@ -22614,6 +22739,221 @@ impl ProjectilePool {
             }
         }
         self.slots[i].vel += push;
+    }
+
+    /// W4-a9 — `AI_206_ForbiddenMinion` (`Projectile.cs:37501-37641`, the
+    /// dispatch `:36787-36790`) + `AI_206_CustomEliminationCheck_Forbidden`
+    /// (`:37496-37499`): the Forbidden Minion (1119), the style's ONLY
+    /// SetDefaults row (`:10464-10478`). A pool-side step — the group index
+    /// reads the sibling slots (the 1119 cohort gate: same `localAI[0]`),
+    /// and the fire tick spawns the 1120 sign's shot through the pool's
+    /// spawn seam.
+    ///
+    /// RNG: the fire tick's `Next(105, 115)` re-arm (`:37580`, ONE draw)
+    /// and the idle frame machine's `Next(7)` hold gate (`:37629`, drawn
+    /// every frame-0 tick the attack frames did not return early). The
+    /// fire's dust/sound are the documented skip.
+    ///
+    /// Skips (ANALYSIS): the `Main.GlobalTimeWrappedHourly` orbit phases
+    /// read the pool's `update_count / 60` stand-in (the smolstar precedent
+    /// — cosmetic orbit position only). The 1120 shot's `GemStaffFeatures`
+    /// pack carries ONLY FastThenSlow (`:37588-37591`), so the spawn's
+    /// `ai0` is the bit-1 float.
+    fn forbidden_minion_step(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+    ) {
+        // `:37503` — `Main.player[this.owner]`; no owner-inactive kill in
+        // the C# arm — an unresolved owner folds the machine away (the
+        // bat_of_light_step precedent) and the dispatch still integrates.
+        let Some(pl) = player else {
+            return;
+        };
+        // `:37504-37511` — death clears the summon flag; the live flag pins
+        // `timeLeft = 2`.
+        if pl.dead {
+            pl.forbidden_minion = false;
+        }
+        if pl.forbidden_minion {
+            self.slots[i].time_left = 2;
+        }
+        // `:37512-37516` — the hover anchor behind the owner's facing, the
+        // 2000-px leash teleport onto the mount centre.
+        let mut vec = Vec2::new(pl.x + pl.width * 0.5, pl.y)
+            + Vec2::new(-pl.facing as f32 * 16.0, -25.0);
+        let (mcx, mcy) = pl.mounted_center();
+        let mounted_center = Vec2::new(mcx, mcy);
+        if Vec2::from(self.slots[i].center()).distance(mounted_center) > 2000.0 {
+            self.slots[i].set_center(mounted_center);
+        }
+        // `:37517-37519` — the 800-px acquire with the Forbidden box-LOS
+        // elimination check (`:37496-37499` — the box-to-box CanHitLine).
+        let (px, py, pw, ph) = (self.slots[i].pos.x, self.slots[i].pos.y, self.slots[i].w, self.slots[i].h);
+        let check = |n: &Npc, _current: i32| {
+            let (nw, nh) = n.size();
+            can_hit_line(world, px, py, pw, ph, n.x, n.y, nw, nh)
+        };
+        let attack_target = self.slots[i].minion_find_target_in_range_custom(
+            world,
+            npcs,
+            Some(pl),
+            800.0,
+            false,
+            true,
+            Some(&check),
+        );
+        self.slots[i].local_ai[0] = attack_target as f32;
+        // `:37520-37546` — the group ring: the per-slot share of 2π, the
+        // even-count π/2 phase, the setForbidden idle stretch, the facing
+        // offset, the gfx lift, the wrapped-hourly bob, floored.
+        let (index, total) = self.group_index_and_total(i);
+        let num = std::f32::consts::TAU / total as f32;
+        let num2 = total as f32 * 0.66;
+        let vector = Vec2::new(30.0, 6.0) / 5.0 * (total - 1) as f32;
+        let mut num3 = std::f32::consts::PI;
+        if pl.owned_projectile_counts[1119] % 2 == 0 {
+            num3 = std::f32::consts::FRAC_PI_2;
+        }
+        let mut vector2 = rotate(Vec2::UNIT_Y, num * index as f32 + num3);
+        vector2.x *= 1.0;
+        vector2.y *= 1.2;
+        if pl.set_forbidden && attack_target == -1 {
+            vector2.y *= 4.0;
+            vec.y += 20.0;
+            vec.x += pl.facing as f32 * 4.0;
+        }
+        if pl.facing == -1 {
+            vec.x -= 6.0;
+        }
+        vec += vector2 * vector;
+        vec.y += pl.gfx_off_y;
+        let global_time = self.update_count as f32 / 60.0 % 3600.0;
+        let vector3 = rotate(Vec2::UNIT_Y, num * index as f32 + global_time % num2 / num2 * std::f32::consts::TAU);
+        vec.y += vector3.y * 4.0;
+        vec = vec.floor();
+        // `:37547-37551` — the fire countdown + the owner-facing pin.
+        if self.slots[i].ai[0] > 0.0 {
+            self.slots[i].ai[0] -= 1.0;
+        }
+        self.slots[i].direction = pl.facing;
+        self.slots[i].sprite_direction = pl.facing;
+        // `:37552-37567` — the attack posture: the 200-px MoveTowards onto
+        // the target, the 0.306-ring bob, the target facing + the rotation
+        // (plus π when facing left); no target zeroes the rotation.
+        if attack_target >= 0 {
+            let n = &npcs[attack_target as usize];
+            let nc = npc_center(n);
+            vec = move_towards(nc, vec, 200.0);
+            let num4 = total as f32 * 0.306;
+            vec += rotate(Vec2::UNIT_Y, num * index as f32 + global_time % num4 / num4 * std::f32::consts::TAU) * 20.0;
+            let c = Vec2::from(self.slots[i].center());
+            let dir = if nc.x > c.x { 1 } else { -1 };
+            self.slots[i].direction = dir;
+            self.slots[i].sprite_direction = dir;
+            self.slots[i].rot = (nc - c).to_angle();
+            if dir == -1 {
+                self.slots[i].rot += std::f32::consts::PI;
+            }
+        }
+        if attack_target == -1 {
+            self.slots[i].rot = 0.0;
+        }
+        // `:37568-37596` — the owner-only fire machine: the 150-tick arm,
+        // the 120-tick fire (the Next(105, 115) − 30 re-arm, the 32-px
+        // MoveTowards shot velocity, the 1120 spawn with the FastThenSlow
+        // bit, the −0.3 recoil, the early return).
+        let num5 = 150.0f32;
+        let num6 = 30.0f32;
+        let num7 = 10.0f32;
+        if self.slots[i].owner == local_owner {
+            if self.slots[i].ai[0] == 0.0 && attack_target != -1 {
+                self.slots[i].ai[0] = num5;
+                self.slots[i].net_update = true;
+            }
+            if self.slots[i].ai[0] == num5 - num6 && attack_target != -1 {
+                self.slots[i].ai[0] =
+                    rng.next_range((num5 - num6 - num7 - 5.0) as i32, (num5 - num6 - num7 + 5.0) as i32) as f32 - num6;
+                self.slots[i].net_update = true;
+                let n = &npcs[attack_target as usize];
+                let c = Vec2::from(self.slots[i].center());
+                let vector4 = move_towards(Vec2::ZERO, npc_center(n) - c, 32.0);
+                let (damage, knock_back, owner) = {
+                    let p = &self.slots[i];
+                    (p.damage, p.knock_back, p.owner)
+                };
+                let mut features = GemStaffFeatures::from_ai(0.0);
+                features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, true);
+                // `NewProjectile` centres the box (`:10876-10877`): the spawn
+                // site subtracts the 1120's half-box (the spawn_hook precedent).
+                let shot_data = proj_data(1120).expect("the 1120 row");
+                self.spawn_with_data_ai_owned(
+                    1120,
+                    owner,
+                    c.x - shot_data.w * 0.5,
+                    c.y - shot_data.h * 0.5,
+                    vector4.x,
+                    vector4.y,
+                    damage,
+                    knock_back,
+                    features.ai_state(),
+                    0.0,
+                );
+                self.slots[i].vel = -vector4 * 0.3;
+                return;
+            }
+        }
+        // `:37599-37604` — the hover steer: the 16-px/speed cap shrinks over
+        // the fire wind-up (the 150→120 remap), the 2-px MoveTowards blend.
+        let mut num11 = 16.0f32;
+        if self.slots[i].ai[0] > num5 - num6 {
+            num11 *= remap(self.slots[i].ai[0], num5, num5 - num6, 1.0, 0.0);
+        }
+        let c = Vec2::from(self.slots[i].center());
+        let target_vel = move_towards(Vec2::ZERO, vec - c, num11);
+        self.slots[i].vel = move_towards(self.slots[i].vel, target_vel, 2.0);
+        // `:37605-37628` — the attack frame machine: the 124-tick frame-5
+        // pin, the 5-8 attack frames' 4-tick advance (the no-target reset),
+        // the >4 early return.
+        if self.slots[i].ai[0] == num5 - num6 + 4.0 {
+            self.slots[i].frame = 5;
+        }
+        if self.slots[i].frame >= 5 && self.slots[i].frame <= 8 {
+            let p = &mut self.slots[i];
+            p.frame_counter += 1;
+            if p.frame_counter >= 4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= 9 {
+                    p.frame = 0;
+                }
+            }
+            if attack_target == -1 {
+                p.frame_counter = 0;
+                p.frame = 0;
+            }
+        }
+        if self.slots[i].frame > 4 {
+            return;
+        }
+        // `:37629-37640` — the idle frame machine: the frame-0 Next(7) hold
+        // gate (a non-zero draw resets the counter), the 4-tick 0-4 advance.
+        if self.slots[i].frame == 0 && rng.next_range(0, 7) != 0 {
+            self.slots[i].frame_counter = 0;
+        }
+        let p = &mut self.slots[i];
+        p.frame_counter += 1;
+        if p.frame_counter >= 4 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= 5 {
+                p.frame = 0;
+            }
+        }
     }
 
     /// `((ProjectileKey)this.ai[0]).TryGetActive(ProjectileID.Sets
@@ -24751,9 +25091,11 @@ mod tests {
         // self-contained family. W4-a9: 156 LEFT with the `bat_of_light_step`
         // arm (the pool-side AI_156 port); 164 LEFT with the
         // `storm_tiger_gem_step` arm (the pool-side AI_164 port); 169 LEFT
-        // with the `smolstar_step` arm (the pool-side AI_169 port); 206
-        // follows.
-        const UNARMED_ROWED: [u8; 1] = [206];
+        // with the `smolstar_step` arm (the pool-side AI_169 port); 206 LEFT
+        // with the `forbidden_minion_step` arm (the pool-side AI_206 port +
+        // the 1120 sign's shot row) — the list is EMPTY, the i25 deferral
+        // census is fully superseded.
+        const UNARMED_ROWED: [u8; 0] = [];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -36134,9 +36476,10 @@ mod magic_ai_tests {
         for kind in [CRYSTAL_STORM, TYPHOON, NEBULA_ARCANUM, SKY_FRACTURE] {
             assert_eq!(trailing_mode(kind), 0, "kind {kind} records the positions only");
         }
-        // 1120 is in the C#'s set but its row is out of scope, and every kind
-        // the set omits reads the −1 factory default.
-        assert_eq!(trailing_mode(1120), -1, "the unported kind defaults");
+        // W4-a9: the 1120 sign's shot now carries the family's mode 2 (the
+        // row + the 206 arm landed); every kind the set omits reads the −1
+        // factory default.
+        assert_eq!(trailing_mode(1120), 2, "the sign's shot records the triple");
         assert_eq!(trailing_mode(WOODEN_ARROW), -1, "the arrows have no history");
     }
 
@@ -45691,5 +46034,175 @@ mod w4_a9_smolstar_tests {
         let c = Vec2::from(d.center());
         assert!((c.x - 426.0).abs() < 0.01, "410 + 16 integrate: {c}");
         assert!(rng.draws.is_empty(), "the chase draws nothing");
+    }
+}
+
+#[cfg(test)]
+mod w4_a9_forbidden_minion_tests {
+    //! W4-a9 — the aiStyle-206 machine (`AI_206_ForbiddenMinion` +
+    //! `AI_206_CustomEliminationCheck_Forbidden`, `Projectile.cs:37496-37641`,
+    //! the dispatch `:36787-36790`): the Forbidden Minion (1119) + its 1120
+    //! sign's shot. The i25 dispatch no-op deferral is superseded — the
+    //! pool-side `forbidden_minion_step` arm lands and `UNARMED_ROWED` is
+    //! EMPTY. WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at centre (410, 321), the forbidden summon flag live.
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.forbidden_minion = true;
+        p.max_minions = 3;
+        p
+    }
+
+    /// The scripted stream: records every draw; `next_range` returns max−1
+    /// (the Next(7) hold gate reads 6 ≠ 0 — the counter resets; the fire
+    /// re-arm reads 114).
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, npcs: &mut [Npc], rng: &mut CensusRng) {
+        let center = p.center();
+        pool.update(
+            w,
+            npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    fn npc_centered(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (w, h) = n.size();
+        n.x = cx - w * 0.5;
+        n.y = cy - h * 0.5;
+        n
+    }
+
+    /// Witness 1 — the idle hover + keep-alive + frame hold
+    /// (`:37504-37546`, `:37629-37640`): a lone minion (index 0 of 1, the
+    /// even count keeps the π/2 phase) idles with no target. The ring offset
+    /// is (30, 6)/5·0 = ZERO, so the anchor is the owner's Top + (−16, −25)
+    /// = (394, 275); the wrapped-hourly bob at update_count 1 is
+    /// cos(2π·(1/60)/0.66)·4 ≈ +3.95 — the floor lifts the anchor to 278.
+    /// Spawned at (394, 275), the steer's delta is (0, 3): the 16-cap keeps
+    /// it, the 2-px MoveTowards blend steps the velocity to (0, 2) and the
+    /// integrate lands the centre at (394, 277). The live flag pins
+    /// timeLeft = 2 (the tail decrements to 1), the rotation zeroes,
+    /// localAI[0] = −1, and the frame-0 Next(7) hold gate draws 6 ≠ 0 so the
+    /// counter resets then counts to 1. ONE draw.
+    #[test]
+    fn w4_a9_the_idle_hover_pins_the_anchor_and_holds_frame_zero() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Centre (394, 275) — the un-bobbed anchor. The 14x22 box: pos (387, 264).
+        let slot = pool
+            .spawn_with_data_ai_owned(1119, 0, 387.0, 264.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert!(d.active);
+        assert_eq!(d.local_ai[0], -1.0, "no target (:37519)");
+        assert_eq!(d.rot, 0.0, "the no-target rotation zero (:37566)");
+        assert_eq!(d.vel, Vec2::new(0.0, 2.0), "the 2-px blend toward the bobbed anchor (:37604)");
+        let c = Vec2::from(d.center());
+        assert_eq!(c, Vec2::new(394.0, 277.0), "275 + the 2-px integrate");
+        assert_eq!(d.time_left, 1, "the keep-alive pin 2 minus the tail decrement (:37510)");
+        assert_eq!(d.frame, 0, "the Next(7) hold gate keeps frame 0 (:37629-37631)");
+        assert_eq!(d.frame_counter, 1, "the reset then the count (:37633)");
+        assert_eq!(rng.draws, vec![(0, 7)], "ONE Next(7) hold gate draw (:37629)");
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// Witness 2 — the acquire + fire (`:37517-37518`, `:37573-37594`): the
+    /// idle minion sees the zombie 300 px right (within the 800-px reach,
+    /// chaseable, in view, the box-LOS check walks clean air), arms
+    /// ai[0] = 150 + netUpdate, and the attack posture faces the target.
+    /// Then 30 ticks count the fire window down to 120: the fire tick draws
+    /// Next(105, 115) → 114, re-arms ai[0] = 114 − 30 = 84, spawns the 1120
+    /// sign's shot at the minion's centre with the FastThenSlow bit and the
+    /// 32-px MoveTowards velocity, and recoils −0.3×. The shot's row carries
+    /// aiStyle 29, extraUpdates 1, alpha 255, the LOCAL 60 pair.
+    #[test]
+    fn w4_a9_the_acquire_arms_and_the_fire_spawns_the_sign() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(1119, 0, 387.0, 264.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs = vec![npc_centered(694.0, 275.0)];
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], 150.0, "the acquire arms the 150-window (:37575)");
+        assert_eq!(d.local_ai[0], 0.0, "the target index (:37519)");
+        assert!(d.net_update, ":37576");
+        assert_eq!(d.sprite_direction, 1, "the target is right (:37557)");
+        // The fire window: 30 ticks count 150 → 120. The attack posture
+        // keeps the target each tick (the zombie holds still).
+        for _ in 0..30 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        }
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], 84.0, "the fire re-arm: Next(105,115)=114 − 30 (:37580)");
+        assert!(d.net_update, ":37581");
+        // The recoil: the shot velocity is the 32-px MoveTowards along the
+        // ~240-px gap (the minion chased ~60 px over the wind-up) → mostly
+        // +X; the minion recoils −0.3× → ≈ −9.6.
+        assert!((d.vel.x + 9.6).abs() < 0.15, "the −0.3 recoil (:37593): {}", d.vel);
+        // The spawned sign's shot: the pool's second slot. It ticks its own
+        // gem AI (FastThenSlow ×0.97 drag) twice this same update
+        // (extraUpdates 1), so its velocity is the spawn vector dragged.
+        let shot = pool
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 1120)
+            .expect("the fire spawned the 1120 sign's shot (:37592)");
+        let s = &pool.slots()[shot];
+        let features = GemStaffFeatures::from_ai(s.ai[0]);
+        assert!(features.fast_then_slow(), "the FastThenSlow bit (:37590)");
+        assert!(!features.homing(), "ONLY FastThenSlow");
+        assert!(s.vel.x > 29.0 && s.vel.x < 32.0, "the 32-px shot velocity dragged ×0.97² (:37582): {}", s.vel);
+        assert_eq!(s.damage, 40, "the minion's damage rides the shot (:37585)");
+        assert_eq!(s.owner, 0, "the minion's owner (:37587)");
+        assert_eq!(s.extra_updates, 1, "the row's extraUpdates (:10489)");
+        assert_eq!(s.alpha, 255, "the row's alpha (:10484)");
+        assert_eq!(s.local_hit_cooldown, 60, "the row's LOCAL pair (:10487)");
+        // The fire tick's draw is the ONE Next(105, 115). (The wind-up ticks
+        // draw the frame-0 Next(7) hold gate until ai[0] hits 124 and pins
+        // frame 5 — the attack frames then early-return past the gate.)
+        assert_eq!(rng.draws.last(), Some(&(105, 115)), "the fire re-arm draw (:37580)");
     }
 }
