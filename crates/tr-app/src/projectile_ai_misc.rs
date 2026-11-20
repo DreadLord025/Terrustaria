@@ -62,7 +62,7 @@ use tr_core::loot::DropRng;
 
 use crate::npc::Npc;
 use crate::projectile::{
-    Projectile, can_hit, chaseable, chaseable_held, get_lerp_value, rotate, safe_normalize,
+    Projectile, can_hit, chaseable, chaseable_held, csign, get_lerp_value, rotate, safe_normalize,
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
@@ -1259,6 +1259,104 @@ pub(crate) fn ai_mystic_snake_coil(
     }
     p.active = false;
     p.time_left = 0;
+}
+
+/// `AI_159_PaperAirplanes` (`Projectile.cs:48695-48755`) — the thrown
+/// paper gliders (761/762): the one-shot launch latch (the velocity-sign
+/// direction, the velocity rotation, `ai[0] = -Next(30,80)`), the wet
+/// kill (the owner-gated `base.wet && owner == myPlayer` — the port's
+/// wet probe is the tick-head stand-in, the bobber precedent), the glide
+/// counter, the wind-borne sine bob (`timeForVisualEffects % 90`), the
+/// 20..69 downwind loop window (the `GetLerpValue(0,30)` eased
+/// `−direction·2π·0.02` bank), the 70 re-arm (`-Next(120,600)`), the
+/// speed-preserving `SafeNormalize(UnitY)` steer, and the non-loop
+/// float (the `Lerp(0.15,0.05,|wind|)` bob step on the `timeLeft % 40`
+/// half-cycle, the ±2 Y clamp, the `wind·0.006` X drift clamped ±6, the
+/// X-sign flip re-arm `-Next(120,300)`).
+///
+/// RNG: the three `Main.rand.Next` draws are the glide TIMERS (`ai[0]`),
+/// state-bearing — the launch `Next(30,80)`, the 70 re-arm
+/// `Next(120,600)`, the flip re-arm `Next(120,300)`. No dust/gore bodies.
+///
+/// `wind` is `Main.WindForVisuals` (= `windSpeedCurrent`, `Main.cs:2823`);
+/// `visual_time` is `Main.timeForVisualEffects`; `old_vel_x` is
+/// `base.oldVelocity.X` (the sub-step's start velocity, `:16766`).
+/// Movement: the C# `HandleMovement` integrates after the AI; the row's
+/// tileCollide true + the blocked-move chain's default (`:19849-19853`)
+/// is the dispatch's `kill_step` (die on contact). `manualDirectionChange`
+/// (`:7853`) suppresses the post-move auto-flip (`:17283`) — the arm owns
+/// `direction` alone.
+pub(crate) fn ai_paper_airplanes(
+    p: &mut Projectile,
+    rng: &mut dyn DropRng,
+    wind: f32,
+    visual_time: f64,
+    local_owner: u8,
+    old_vel_x: f32,
+) {
+    // `:48697-48704` — the launch latch.
+    if p.ai[1] == 0.0 {
+        p.direction = if p.vel.x > 0.0 { 1 } else { -1 };
+        p.rot = p.vel.y.atan2(p.vel.x);
+        p.ai[1] = 1.0;
+        p.ai[0] = -rng.next_range(30, 80) as f32;
+        p.net_update = true;
+    }
+    // `:48705-48708` — the wet kill (the owner gate folds to the
+    // simulated-slot set; the port probes wet at the tick head).
+    if p.wet && p.owner == local_owner {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+    }
+    // `:48709` — the glide counter.
+    p.ai[0] += 1.0;
+    // `:48710-48712` — the wind-borne bob. `vector` is the rotation unit
+    // ×8; `v` adds the wind X and the sine Y (`direction · WindForVisuals`).
+    // The C# association: the double `% 90 / 90` casts to float, the
+    // `(float)π * 2f * phase` is float math, `Math.Sin` widens to double
+    // and the result casts back (`:48711`).
+    let vector = Vec2::new(p.rot.cos(), p.rot.sin()) * 8.0;
+    let phase = ((visual_time % 90.0) / 90.0) as f32;
+    let bob = ((std::f32::consts::PI * 2.0 * phase) as f64).sin() as f32;
+    let mut v = vector + Vec2::new(wind, bob * p.direction as f32 * wind);
+    // `:48713-48714` — the downwind flag and the loop window.
+    let flag = p.direction as f32 == csign(wind) && p.vel.length() > 3.0;
+    let num = p.ai[0] >= 20.0 && p.ai[0] <= 69.0;
+    // `:48715-48718` — the 70 re-arm.
+    if p.ai[0] == 70.0 {
+        p.ai[0] = -rng.next_range(120, 600) as f32;
+    }
+    // `:48719-48724` — the loop bank (the C# `&` is non-short-circuit, but
+    // both operands are pure — no draws).
+    let num2 = num && flag;
+    if num2 {
+        let lerp_value = get_lerp_value(0.0, 30.0, p.ai[0]);
+        v = rotate(vector, -p.direction as f32 * std::f32::consts::TAU * 0.02 * lerp_value);
+    }
+    // `:48725` — the speed-preserving steer (`SafeNormalize(UnitY)`).
+    let speed = p.vel.length();
+    p.vel = if v == Vec2::ZERO || v.is_nan() { Vec2::Y } else { v.normalize() } * speed;
+    // `:48726-48752` — the non-loop float.
+    if !num2 {
+        let num3 = 0.15 + (0.05 - 0.15) * wind.abs();
+        if p.time_left % 40 < 20 {
+            p.vel.y -= num3;
+        } else {
+            p.vel.y += num3;
+        }
+        p.vel.y = p.vel.y.clamp(-2.0, 2.0);
+        p.vel.x = (p.vel.x + wind * 0.006).clamp(-6.0, 6.0);
+        // `:48746-48751` — the X-sign flip re-arm.
+        if p.vel.x * old_vel_x < 0.0 {
+            p.direction *= -1;
+            p.ai[0] = -rng.next_range(120, 300) as f32;
+            p.net_update = true;
+        }
+    }
+    // `:48753-48754` — the rotation and the sprite facing.
+    p.rot = p.vel.y.atan2(p.vel.x);
+    p.sprite_direction = p.direction;
 }
 
 /// `Collision.LavaCollision` (`Collision.cs:1653-1684`) — the clamped
@@ -2721,5 +2819,217 @@ mod w4_d16_155_tests {
         );
         assert!(!pool.slots()[slot].active, "the orphan kill");
         assert_eq!(rng.ranges, Vec::new());
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_159_tests {
+    //! W4-d16 — aiStyle 159 (`AI_159_PaperAirplanes`,
+    //! `Projectile.cs:48695-48755`, the dispatch `:36599-36602`, the row
+    //! `:7846-7854`, the Kill arm `:76083-76095`). WRITTEN NOT RUN
+    //! (code-only mode). The row, the launch latch + the glide census,
+    //! the 70 re-arm, the loop bank, the float bob + the X-flip re-arm,
+    //! the wet kill, the dispatch + the recovery drop.
+    use super::*;
+    use crate::projectile::{
+        FlailInputs, PAPER_AIRPLANE_A, PAPER_AIRPLANE_B, ProjectilePool, YoyoInputs, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn plane() -> Projectile {
+        let d = proj_data(PAPER_AIRPLANE_A).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = PAPER_AIRPLANE_A;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        // The throw: 5 px/tick rightward (`shootSpeed` 5, the item row).
+        p.vel = Vec2::new(5.0, 0.0);
+        p
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    /// The row (`Projectile.cs:7846-7854`).
+    #[test]
+    fn w4_d16_159_the_row_matches_set_defaults() {
+        for kind in [PAPER_AIRPLANE_A, PAPER_AIRPLANE_B] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h, d.ai_style), (10.0, 10.0, 159));
+            assert!(d.tile_collide && !d.ignore_water);
+            assert_eq!(d.penetrate, 1);
+            assert_eq!(d.time_left, 3600);
+            assert!(d.ranged, "the ranged crit class (`:7852`)");
+        }
+    }
+
+    /// The launch latch (`:48697-48704`): the velocity-sign direction,
+    /// the rotation, ai[1] = 1, ai[0] = -Next(30,80) (census min 30 →
+    /// -30, then the counter++ → -29). Calm wind: the float arm runs —
+    /// the bob step −0.15 (timeLeft 3600 % 40 = 0 < 20), the Y clamp,
+    /// the X drift 0. The steer keeps the speed 5 along +X.
+    #[test]
+    fn w4_d16_159_the_launch_and_first_glide_tick() {
+        let mut p = plane();
+        let mut rng = census();
+        ai_paper_airplanes(&mut p, &mut rng, 0.0, 0.0, 0, 5.0);
+        assert_eq!(p.direction, 1);
+        assert_eq!(p.rot, 0.0);
+        assert_eq!(p.ai[1], 1.0);
+        assert_eq!(p.ai[0], -29.0, "-Next(30,80) + the counter++");
+        assert!(p.net_update);
+        assert_eq!(p.vel, Vec2::new(5.0, -0.15), "the steer keeps 5, the bob −0.15");
+        assert_eq!(p.sprite_direction, 1);
+        assert_eq!(rng.ranges, vec![(30, 80)], "the launch timer only");
+        assert_eq!(rng.floats, 0);
+        // The leftward throw → direction −1 (the `> 0` form).
+        let mut p2 = plane();
+        p2.vel = Vec2::new(-5.0, 0.0);
+        ai_paper_airplanes(&mut p2, &mut census(), 0.0, 0.0, 0, -5.0);
+        assert_eq!(p2.direction, -1);
+    }
+
+    /// The 70 re-arm (`:48715-48718`): ai[0] = 69 → the counter++ hits
+    /// 70 → ai[0] = -Next(120,600) (census min 120 → -120). The loop
+    /// window `num` was computed BEFORE the re-arm (69 ≤ 69 → true), but
+    /// calm wind folds `flag` false — the float arm runs.
+    #[test]
+    fn w4_d16_159_the_seventy_rearm() {
+        let mut p = plane();
+        p.ai[1] = 1.0;
+        p.ai[0] = 69.0;
+        let mut rng = census();
+        ai_paper_airplanes(&mut p, &mut rng, 0.0, 0.0, 0, 5.0);
+        assert_eq!(p.ai[0], -120.0, "the 70 re-arm");
+        assert_eq!(rng.ranges, vec![(120, 600)]);
+    }
+
+    /// The loop bank (`:48719-48725`): downwind (direction 1, wind 0.5,
+    /// speed 5 > 3) and ai[0] = 30 (the window's top) → the eased bank
+    /// `−1·2π·0.02·1` rotates the 8-unit vector; the steer normalizes it
+    /// back to speed 5. The float arm is SKIPPED (num2 true) — no bob,
+    /// no drift, no flip draw.
+    #[test]
+    fn w4_d16_159_the_loop_bank_steers() {
+        let mut p = plane();
+        p.ai[1] = 1.0;
+        p.ai[0] = 30.0; // the counter++ → 31, still in 20..69
+        p.direction = 1;
+        let mut rng = census();
+        ai_paper_airplanes(&mut p, &mut rng, 0.5, 0.0, 0, 5.0);
+        // ai[0] 31 → GetLerpValue(0,30,31) clamps to 1 → the full bank.
+        let banked = rotate(Vec2::new(8.0, 0.0), -std::f32::consts::TAU * 0.02);
+        let want = banked.normalize() * 5.0;
+        assert!((p.vel - want).length() < 1e-4, "the banked steer: {:?} vs {:?}", p.vel, want);
+        assert_eq!(rng.ranges, Vec::new(), "the loop arm draws nothing");
+        // The rotation follows the banked velocity.
+        assert_eq!(p.rot, p.vel.y.atan2(p.vel.x));
+    }
+
+    /// The X-flip re-arm (`:48746-48751`): a leftward drift crosses zero
+    /// against the old velocity's sign → direction flips, ai[0] =
+    /// -Next(120,300). Wind −0.5, the plane flying left at 5: the steer
+    /// keeps −5, the drift −0.003 keeps it negative — no flip. Force the
+    /// crossing with a tiny leftward velocity and a rightward wind.
+    #[test]
+    fn w4_d16_159_the_x_flip_rearm() {
+        let mut p = plane();
+        p.ai[1] = 1.0;
+        p.ai[0] = 0.0;
+        p.vel = Vec2::new(-0.001, 0.0); // barely leftward
+        p.direction = -1;
+        let mut rng = census();
+        // Wind +0.5: the bob is downwind-flagged false (direction −1 vs
+        // sign +1), the float arm runs; the drift +0.003 crosses zero.
+        ai_paper_airplanes(&mut p, &mut rng, 0.5, 0.0, 0, -0.001);
+        assert_eq!(p.direction, 1, "the X-sign flip");
+        // ai[0] was 0 → the counter++ → 1, then the flip re-arm → -120
+        // (the re-arm is the LAST write — no counter after it).
+        assert_eq!(p.ai[0], -120.0, "-Next(120,300)");
+        assert!(p.net_update);
+        assert_eq!(rng.ranges, vec![(120, 300)]);
+    }
+
+    /// The wet kill (`:48705-48708`): the owner-gated wet probe kills
+    /// the plane (the port's death convention zeroes time_left).
+    #[test]
+    fn w4_d16_159_the_wet_kill() {
+        let mut p = plane();
+        p.wet = true;
+        let mut rng = census();
+        ai_paper_airplanes(&mut p, &mut rng, 0.0, 0.0, 0, 5.0);
+        assert!(!p.active);
+        assert_eq!(p.time_left, 0);
+        // The foreign owner's wet plane survives (the owner gate).
+        let mut p2 = plane();
+        p2.wet = true;
+        p2.owner = 1;
+        ai_paper_airplanes(&mut p2, &mut census(), 0.0, 0.0, 0, 5.0);
+        assert!(p2.active, "the owner gate");
+    }
+
+    /// The dispatch wiring + the Kill recovery drop: a plane thrown into
+    /// a solid tile dies on contact (the blocked-move default) and queues
+    /// the Item10 cue + the 4343 recovery drop at its centre.
+    #[test]
+    fn w4_d16_159_the_dispatch_and_recovery_drop() {
+        let mut w = world();
+        // A dirt wall at tile (101, 50) — the plane at (1600, 800) flies
+        // right into it (centre row 50).
+        let i = w.index(101, 50);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data_ai(PAPER_AIRPLANE_A, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(!pool.slots()[slot].active, "the tile kill");
+        let sounds = pool.drain_proj_sounds();
+        assert!(sounds.iter().any(|&(id, style, _, _, _)| id == 2 && style == 10), "the Item10 cue");
+        let drops = pool.drain_item_drops();
+        assert_eq!(drops.len(), 1, "the recovery drop");
+        assert_eq!(drops[0].0, 4343, "761 → 4343");
+        // The B variant drops 4344.
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data_ai(PAPER_AIRPLANE_B, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .unwrap();
+        pool2.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(!pool2.slots()[s2].active);
+        assert_eq!(pool2.drain_item_drops()[0].0, 4344, "762 → 4344");
     }
 }

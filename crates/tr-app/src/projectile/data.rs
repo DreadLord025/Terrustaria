@@ -1198,6 +1198,10 @@ pub const VOID_LENS: u16 = 734;
 /// `ProjectileID.MysticSnakeCoil` (754) — the Mystic Snake's rope coil,
 /// aiStyle 155 (`Projectile.cs:7767-7776`). W4-d16.
 pub const MYSTIC_SNAKE_COIL: u16 = 754;
+/// `ProjectileID.PaperAirplaneA` (761) / `PaperAirplaneB` (762) — the
+/// thrown paper gliders, aiStyle 159 (`Projectile.cs:7846-7854`). W4-d16.
+pub const PAPER_AIRPLANE_A: u16 = 761;
+pub const PAPER_AIRPLANE_B: u16 = 762;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -4058,6 +4062,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             MYSTIC_SNAKE_COIL => {
                 (16.0, 16.0, 155, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
+            // W4-d16 — `Projectile.cs:7846-7854` (761/762, the paper
+            // airplanes): 10x10, aiStyle 159, friendly + ranged,
+            // manualDirectionChange (no ProjData field — the arm owns the
+            // direction, the dispatch skips the auto-flip). Stock
+            // penetrate 1 / timeLeft 3600 / tileCollide true / alpha 0.
+            PAPER_AIRPLANE_A | PAPER_AIRPLANE_B => {
+                (10.0, 10.0, 159, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4346,9 +4358,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ),
         ranged: matches!(
             kind,
-            // W4-d16 — `Projectile.cs:7666`/`:7680`: the Super Star (728)
-            // and its slash (729) set `ranged = true` (the 151/152 rows).
-            SUPER_STAR | SUPER_STAR_SLASH |
+            // W4-d16 — `Projectile.cs:7666`/`:7680`/`:7852`: the Super Star
+            // (728), its slash (729) and the paper airplanes (761/762) set
+            // `ranged = true` (the 151/152/159 rows).
+            SUPER_STAR | SUPER_STAR_SLASH | PAPER_AIRPLANE_A | PAPER_AIRPLANE_B |
             // The arrows/bullets (1/2/14, `:814`/`:825`/`:961`), the thrown
             // kinds (3/48/166, `:835`/`:1317`/`:2555`), the moon-lord drop
             // shots (638/639/640, `:6867`/`:6880`/`:6895`), the DD2 kobold

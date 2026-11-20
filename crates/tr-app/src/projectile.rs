@@ -14467,6 +14467,15 @@ pub struct ProjectilePool {
     /// [`ProjectilePool::set_screen_view`] (the `set_wind` setter
     /// pattern); `None` folds the gate false (the pool-only tests).
     screen_view: Option<(Vec2, Vec2)>,
+    /// W4-d16 — the paper airplane's (aiStyle 159) and the kite's (160)
+    /// wind/scene reads: `(Main.WindForVisuals, Main.timeForVisualEffects,
+    /// Main.cloudAlpha, Main.GlobalTimeWrappedHourly)`. The world-sim pass
+    /// feeds it per tick through [`ProjectilePool::set_visual_scene`] (the
+    /// `set_wind` setter pattern). Defaults: calm wind, zero clocks — the
+    /// airplane glides straight and the kite hovers (the pool-only tests).
+    /// `wind_for_visuals` is `Main.windSpeedCurrent` (`Main.cs:2823`), NOT
+    /// the wind-physics tail's `wind_speed` (that gate is off, `:16777`).
+    visual_scene: (f32, f64, f32, f32),
     /// `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) per
     /// owner: the tiles that owner's hooks may not latch on. The C# rebuilds
     /// the set when a hook latches (`Projectile.cs:52772` →
@@ -14527,6 +14536,12 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// W4-d16 — the paper airplane's `Kill()` recovery drop
+    /// (`Projectile.cs:76083-76095` → `Item.RequestNewItem`): `(item,
+    /// centre x, centre y)` the world sim resolves into a world item drop
+    /// on the `UpdateItems` stream (the `drain_catches` shape — the pool
+    /// cannot borrow the App's item vec).
+    pending_item_drops: Vec<(u16, f32, f32)>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -14917,6 +14932,7 @@ impl ProjectilePool {
             hook_grap_count: 0,
             wind_speed: 0.0,
             screen_view: None,
+            visual_scene: (0.0, 0.0, 0.0, 0.0),
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
@@ -14927,6 +14943,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            pending_item_drops: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -15004,6 +15021,14 @@ impl ProjectilePool {
         self.screen_view = view;
     }
 
+    /// W4-d16 — the paper airplane's / kite's wind + scene clocks
+    /// (`Main.WindForVisuals`, `Main.timeForVisualEffects`, `Main.cloudAlpha`,
+    /// `Main.GlobalTimeWrappedHourly`). The world-sim pass feeds it before
+    /// `update` (the `set_screen_view` pattern).
+    pub fn set_visual_scene(&mut self, scene: (f32, f64, f32, f32)) {
+        self.visual_scene = scene;
+    }
+
     /// `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll sees it
     /// (`Projectile.cs:37262`). The app's `DoUpdate_AnimateDiscoRGB` cycle
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
@@ -15029,6 +15054,13 @@ impl ProjectilePool {
     /// hands to the owner's inventory (the `QuickSpawnItem` overflow drop).
     pub fn drain_catches(&mut self) -> Vec<(u8, u16, i32)> {
         std::mem::take(&mut self.pending_catches)
+    }
+
+    /// W4-d16 — the paper airplane's `Kill()` recovery-drop drain
+    /// (`Projectile.cs:76083-76095`): `(item, centre x, centre y)` the world
+    /// sim spawns as a world item drop on the `UpdateItems` stream.
+    pub fn drain_item_drops(&mut self) -> Vec<(u16, f32, f32)> {
+        std::mem::take(&mut self.pending_item_drops)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -17595,6 +17627,35 @@ impl ProjectilePool {
                         // (`:51358-51477`): the opacity ramp, the scale and
                         // the 20-tick life.
                         157 => self.slots[i].ai_sharp_tears(world, rng),
+                        // W4-d16 — aiStyle 159, the paper airplanes
+                        // (`AI_159_PaperAirplanes` `:48695-48755`): the
+                        // wind glider. The wet probe is the tick-head
+                        // centre-cell stand-in (the i16 bomb precedent —
+                        // the C# wet block runs post-AI, the one-tick lag
+                        // is the bobber convention); the row keeps
+                        // tileCollide true (`:775` stock) — the kill_step
+                        // is the blocked-move default (die on contact).
+                        159 => {
+                            let p = &self.slots[i];
+                            let wet = world
+                                .tile(
+                                    ((p.pos.x + p.w * 0.5) / 16.0) as i32,
+                                    ((p.pos.y + p.h * 0.5) / 16.0) as i32,
+                                )
+                                .is_some_and(|t| t.liquid > 0);
+                            self.slots[i].wet = wet;
+                            let (wind, visual_time, _, _) = self.visual_scene;
+                            crate::projectile_ai_misc::ai_paper_airplanes(
+                                &mut self.slots[i],
+                                rng,
+                                wind,
+                                visual_time,
+                                local_owner,
+                                old_velocity.x,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // The aiStyle-2 thrown family
                         // (`Projectile.cs:23205-23689`): the wind head, the
                         // per-kind gravity ladder and the fall clamp. The
@@ -20168,6 +20229,22 @@ impl ProjectilePool {
                 // bursts spawn through the pool (the arm cannot see the slot
                 // array); the water conversion writes tiles directly.
                 self.thrown_consumable_death(i, world, player.as_deref(), rng);
+                // W4-d16 — `Kill()`'s paper-airplane arm
+                // (`Projectile.cs:76083-76095`): the Item10 cue + the
+                // owner-gated `!noDropItem` recovery drop (761 → 4343,
+                // 762 → 4344) at the centre. The cue rides the pool's
+                // sound queue directly (the dead slot's `wants_sound`
+                // never drains — the death-hook convention); the drop
+                // rides `pending_item_drops` (the `drain_catches` shape).
+                if matches!(self.slots[i].kind, PAPER_AIRPLANE_A | PAPER_AIRPLANE_B) {
+                    let p = &self.slots[i];
+                    self.pending_proj_sounds.push((2, 10, p.pos.x, p.pos.y, 0.0));
+                    if p.owner == local_owner && !p.no_drop_item {
+                        let item = if p.kind == PAPER_AIRPLANE_B { 4344 } else { 4343 };
+                        let (cx, cy) = p.center();
+                        self.pending_item_drops.push((item, cx, cy));
+                    }
+                }
 
                 // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
                 // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides
