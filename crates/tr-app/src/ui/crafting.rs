@@ -1110,8 +1110,8 @@ mod tests {
         // reading `_innerDimensions` (`UIElement.cs:254`): the crafting list
         // sets no padding (`NewCraftingUI.cs:367-373`), so the scissor is the
         // list rect itself. At 1600x900 the 404 px view holds 9 whole 44 px
-        // rows; row 9 (y 842..886) straddles the 850 bottom edge and is cut
-        // mid-cell — the C# device scissor behaviour, pinned here (W4-d67).
+        // rows; row 9 (cell y 842..882) straddles the 850 bottom edge and is
+        // cut mid-cell — the C# device scissor behaviour, pinned here (W4-d67).
         let l = layout(Vec2::new(1600.0, 900.0), W, false);
         let view = l.list;
         assert_eq!(view, [32.0, 446.0, 450.0, 404.0]);
