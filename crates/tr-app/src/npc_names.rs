@@ -177,6 +177,16 @@ pub fn type_name(npc: &Npc) -> String {
     crate::lang::npc_name(npc.kind.net_id())
 }
 
+/// `NPC.GetGivenOrTypeNetName` (`NPC.cs:7358-7365`): the given name alone
+/// while named ("Andrew"), else the `TypeName` — the party broadcasts read
+/// this, NOT the full `FullName` (`BirthdayParty.cs:130-138`).
+pub fn given_or_type_name(npc: &Npc) -> String {
+    if npc.given_name.is_empty() {
+        return type_name(npc);
+    }
+    npc.given_name.clone()
+}
+
 /// `NPC.FullName` (`NPC.cs:6729-6739`): the `TypeName` while unnamed, else
 /// `Language.GetTextValue("Game.NPCTitle", _givenName, TypeName)` —
 /// "{0} the {1}" ("Andrew the Guide"). `GetFullNetName` (`:7349-7356`) is

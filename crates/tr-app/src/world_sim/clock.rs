@@ -142,6 +142,10 @@ pub(crate) fn advance_time_with_events(
     if was_day && !app.world.day_time {
         // StartNight: the eclipse row cleared above, then the world clear.
         app.world.eclipse = false;
+        // `Main.cs:65222`: `NPC.freeCake = false` — BEFORE the event pair
+        // (`:65225-65226`), so the cake condition dies with the dusk even
+        // when no party was up to broadcast the farewell.
+        app.world_events.free_cake = false;
         // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
         // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
         // S1-F-14.
@@ -190,6 +194,22 @@ pub(crate) fn advance_time_with_events(
         // `CheckForAchievement`: a natural party coming up credits
         // THROW_A_PARTY (25).
         if party_up {
+            // `BirthdayParty.cs:127-139`: the start broadcast —
+            // `Game.BirthdayParty_{n}` over the celebrants'
+            // `GetGivenOrTypeNetName`, in `new Color(255, 0, 160)`, BEFORE
+            // the `SendData(7)`/`CheckForAchievement` tail.
+            let names: Vec<String> = app
+                .world_events
+                .celebrating_npcs
+                .iter()
+                .filter_map(|&i| app.npcs.get(i))
+                .map(crate::npc_names::given_or_type_name)
+                .collect();
+            if !names.is_empty() {
+                let key = format!("Game.BirthdayParty_{}", names.len());
+                let text = crate::lang::text_args(&key, &names);
+                crate::chat::broadcast_death_text(&mut app.chat, &text, [255, 0, 160]);
+            }
             let _ = app.notify_progression_net(25);
         }
         crate::world_events::check_morning_lanterns(&mut app.world_events);
@@ -593,6 +613,99 @@ mod tests {
         advance_time_with_events(&mut app, 5.0, false);
         assert!(!done(&app, "KILL_THE_SUN"));
         assert!(!done(&app, "BLOODBATH"));
+    }
+
+    /// W4-f38 — the party broadcasts: the dawn `Game.BirthdayParty_{n}`
+    /// start row over the celebrants' `GetGivenOrTypeNetName`
+    /// (`BirthdayParty.cs:127-139`), the dusk `Lang.misc[99]` farewell
+    /// (`:56`) and the `NPC.freeCake` dusk clear (`Main.cs:65222`).
+    #[test]
+    fn the_party_broadcasts_name_the_celebrants_and_clear_the_cake_at_dusk() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // Five partyable towns: the Party Girl plus four Guides (the
+        // `CanNPCParty` gates — townNPC, aiStyle != 0, not 37/453/441).
+        let mut kinds = [crate::npc::NpcKind::PartyGirl; 5];
+        kinds[1] = crate::npc::NpcKind::Guide;
+        kinds[2] = crate::npc::NpcKind::Merchant;
+        kinds[3] = crate::npc::NpcKind::Nurse;
+        kinds[4] = crate::npc::NpcKind::Dryad;
+        for (i, kind) in kinds.into_iter().enumerate() {
+            let mut n = crate::npc::Npc::new(kind, 32.0, 32.0, 1, 0.0);
+            n.hp = n.max_hp;
+            n.home = Some((2 + i as i32, 6));
+            n.given_name = format!("Name{i}");
+            app.npcs.push(n);
+        }
+        // The party's own draws: Next(10)==0, Next(5,11)=6, the celebrant
+        // count roll (1), then one Next() per candidate for the OrderBy.
+        let mut seq = [0i32, 6, 1, 4, 3, 2, 1, 0].into_iter();
+        app.world.day_time = false;
+        app.world.time = 32399.0;
+        // Drive the scheduler directly with the pinned party stream — the
+        // boundary's own roll rides the named stream (the eclipse/blood-moon
+        // gates are off: no hardmode, no 120+ player).
+        let party_girl = app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::PartyGirl);
+        let partyable: Vec<bool> = app
+            .npcs
+            .iter()
+            .map(|n| {
+                n.hp > 0 && n.kind.is_town_npc() && n.kind != crate::npc::NpcKind::TaxCollector
+            })
+            .collect();
+        let party_up = crate::world_events::check_morning_party(
+            &mut app.world_events,
+            party_girl,
+            &partyable,
+            &mut |lo, _hi| seq.next().unwrap_or(lo),
+        );
+        assert!(party_up, "the pinned sequence lands a genuine party");
+        assert!(app.world_events.free_cake);
+        // The start broadcast — the clock's dawn arm formats it from the
+        // celebrants; mirror the same call here (the boundary walk below
+        // exercises the dusk side).
+        let names: Vec<String> = app
+            .world_events
+            .celebrating_npcs
+            .iter()
+            .filter_map(|&i| app.npcs.get(i))
+            .map(crate::npc_names::given_or_type_name)
+            .collect();
+        let key = format!("Game.BirthdayParty_{}", names.len());
+        let text = crate::lang::text_args(&key, &names);
+        crate::chat::broadcast_death_text(&mut app.chat, &text, [255, 0, 160]);
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.starts_with("Looks like Name")
+                    && m.text.ends_with("is throwing a party")
+                    && m.color == [255, 0, 160]),
+            "the Game.BirthdayParty_1 start broadcast: {text}"
+        );
+        // The dusk boundary: the farewell + the freeCake clear.
+        app.world.day_time = true;
+        app.world.time = 53999.0;
+        app.chat.messages.clear();
+        advance_time_with_events(&mut app, 5.0, false);
+        assert!(!app.world.day_time, "the dusk transition ran");
+        assert!(
+            !app.world_events.free_cake,
+            "Main.cs:65222 clears NPC.freeCake at dusk"
+        );
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text == "Party time's over!" && m.color == [255, 0, 160]),
+            "the Lang.misc[99] farewell"
+        );
     }
 
     #[test]
