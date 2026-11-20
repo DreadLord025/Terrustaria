@@ -157,7 +157,12 @@ fn destroy_oldest_proximity_mines_over_cap(app: &mut App, owner: u8, cap: usize)
         let mut oldest: Option<usize> = None;
         let mut oldest_time = i32::MAX;
         for (i, p) in app.projectiles.slots().iter().enumerate() {
-            if p.active && p.owner == owner && MINES.contains(&p.kind) {
+            // Gate fix (i16 infinite loop): a mine already latched for
+            // detonation is the C#'s REMOVED list entry (`Kill()` ran,
+            // `Player.cs:47012` — the slot dies on the pool's next
+            // explosion pass). Counting it again re-picks the same oldest
+            // forever; exclude the detonated slots so the loop terminates.
+            if p.active && !p.detonated && p.owner == owner && MINES.contains(&p.kind) {
                 count += 1;
                 if p.time_left < oldest_time {
                     oldest_time = p.time_left;
