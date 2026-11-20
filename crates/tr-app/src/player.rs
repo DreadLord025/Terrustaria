@@ -145,6 +145,14 @@ pub struct PlayerInput {
     pub down: bool,
     /// `Player.controlHook` (the quick-grapple key).
     pub hook: bool,
+    /// `player.itemAnimation > 0` at the movement pass — the swing-state
+    /// half of the `useTurn` direction lock (`Player.cs:19837`). The
+    /// world-sim fills it from `app.swing`; the plain `update` harness
+    /// leaves it false (idle).
+    pub item_in_use: bool,
+    /// `inventory[selectedItem].useTurn` — the other half of the
+    /// `Player.cs:19837` lock. False for an empty hand / unknown kind.
+    pub held_use_turn: bool,
 }
 
 /// The DoT-derived half of [`RegenInputs`] for one tick — what the held buffs
@@ -632,6 +640,42 @@ pub struct Player {
     /// The WellFed melee speed add (`meleeSpeed +=`, `:11937`) — rides the
     /// swing pacing until the per-item meleeSpeed lands (M3-ITEM).
     pub melee_speed_bonus: f32,
+    /// `Player.summonerWeaponSpeedBonus` (`Player.cs:2460`, reset `:18341`):
+    /// the whip attack-speed buffs' sum (311 +0.35 / 308 +0.25 / 314 +0.12,
+    /// `:10110-10121`). `CapAttackSpeeds` (`:29025`) folds it with the melee
+    /// speed into the use-time multiplier — see
+    /// [`Self::summoner_weapon_speed_multiplier`].
+    pub summoner_weapon_speed_bonus: f32,
+    /// `Player.whipUseTimeMultiplier` (`Player.cs:1142`, reset 1f `:18499`):
+    /// the Obsidian Outlaw set's ×(1/1.15) (`ArmorSetBonuses.cs:124`).
+    pub whip_use_time_multiplier: f32,
+    /// `Player.tileSpeed` / `Player.wallSpeed` (`Player.cs:2470`/`:2468`,
+    /// reset 1f `:18532`/`:18531`): the Builder buff's +0.25 (`:10160-10161`)
+    /// and the Brick Layer / Extendo Grip accessories' +0.5
+    /// (`:13029`/`:13038`). `UpdateEquips`' tail (`:25913-25922`) caps them
+    /// at 3f and INVERTS them — `ApplyItemAnimation`'s createTile/createWall
+    /// branches (`:4486`/`:4490`) read the inverted multipliers.
+    pub tile_speed_bonus: f32,
+    pub wall_speed_bonus: f32,
+    /// `Player.autoReuseGlove` (`Player.cs:2384`, reset `:18710`): the
+    /// Feral Claws and the glove family grant it (`:15107`, `:14413`,
+    /// `:14602`, `:15304`, `:15311`, `:15374`); `TryAllowingItemReuse`
+    /// (`:52905-52920`) forces `releaseUseItem` for melee (except the Flying
+    /// Knife 3030) and the attack-speed-scaling summon weapons.
+    pub auto_reuse_glove: bool,
+    /// `Player.stressBall` (`Player.cs:1814`-adjacent, reset `:18431`): the
+    /// Stress Ball (5543) grants it while `CanUseStressBall` passes
+    /// (`:14730-14733`); `TryAllowingItemReuse` treats it like the
+    /// auto-reuse-all setting.
+    pub stress_ball: bool,
+    /// `Player.revolverCritChanceBonus` (`Player.cs:42691-42698`): the
+    /// Revolver (2269) builds +1 crit per early-release tick and decays −2
+    /// on a 1/3 roll each `ItemCheck` tick.
+    pub revolver_crit_chance_bonus: i32,
+    /// `inventory[selectedItem].type` — the held kind snapshot the
+    /// `CanUseStressBall` gate reads (`Player.cs:14352`); the world-sim
+    /// fills it each tick before the grant pass.
+    pub held_item_kind: u16,
     /// `Player.statDefense` — the armor pieces' defense + the set bonus
     /// (M3-EQUIP-2); the buff arms' `statDefense` adds join as their
     /// systems land.
@@ -1873,6 +1917,14 @@ impl Player {
             well_fed: false,
             pick_speed_bonus: 0.0,
             melee_speed_bonus: 0.0,
+            summoner_weapon_speed_bonus: 0.0,
+            whip_use_time_multiplier: 1.0,
+            tile_speed_bonus: 0.0,
+            wall_speed_bonus: 0.0,
+            auto_reuse_glove: false,
+            stress_ball: false,
+            revolver_crit_chance_bonus: 0,
+            held_item_kind: 0,
             slow: false,
             chilled: false,
             frozen: false,
@@ -3590,15 +3642,78 @@ impl Player {
         (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
 
-    /// `Player.meleeSpeed` (`Player.cs:2458`, reset to 1f at `:18335`): the
-    /// base 1f plus the accumulator the equipment/buff grants write
-    /// (`meleeSpeedBonus`; the C# folds its flat `+=` arms straight into
-    /// `meleeSpeed`, the port keeps the same sum). The flail family scales
-    /// its per-kind speeds and its 900-px leash by `1 / meleeSpeed`
-    /// (`AI_015_Flails` `Projectile.cs:43824-43831`, `:43727`), and the
-    /// melee shoot path's `speed /= meleeSpeed` (`Player.cs:47063`) reads it.
-    pub fn melee_speed(&self) -> f32 {
-        1.0 + self.melee_speed_bonus
+    /// `Player.meleeSpeed` AS READ by the game logic — the INVERTED,
+    /// held-item-scaled use-time multiplier, not the raw speed sum.
+    /// `UpdateEquips`' tail (`Player.cs:25912`) scales the accumulated speed
+    /// by `ItemID.Sets.BonusMeleeSpeedMultiplier[selectedItem.type]`
+    /// (`ItemID.cs:1350`: default 1f, Bladed Glove 1827 → 0.5f, Fetid
+    /// Baghnakhs 3013 → 0.25f, Psycho Knife 3106 → 0.33f, Terra Blade 757 →
+    /// 0.75f), then `CapAttackSpeeds` (`:29021-29026`) runs
+    /// `TurnAttackSpeedToUseTimeMultiplier` (`:29028-29039`): cap at 3f,
+    /// then `1f / speed` (a 0 speed stays 0). Every consumer reads THIS
+    /// value: `ApplyItemAnimation`'s melee branch (`:4472`), the melee
+    /// shoot's `speed /= meleeSpeed` (`:47063`) and the flail family's
+    /// `1f / player.meleeSpeed` scales (`Projectile.cs:43727`,
+    /// `:43824-43831`). The raw 1f + grants sum lives in
+    /// [`Self::melee_speed_bonus`] (`Player.cs:2458`, reset `:18335`).
+    pub fn melee_speed(&self, held_kind: u16) -> f32 {
+        let bonus_mult = match held_kind {
+            1827 => 0.5,
+            3013 => 0.25,
+            3106 => 0.33,
+            757 => 0.75,
+            _ => 1.0,
+        };
+        let mut speed = 1.0 + self.melee_speed_bonus;
+        speed = 1.0 + (speed - 1.0) * bonus_mult;
+        if speed > 3.0 {
+            speed = 3.0;
+        }
+        if speed != 0.0 {
+            speed = 1.0 / speed;
+        }
+        speed
+    }
+
+    /// `CapAttackSpeeds`' summoner half (`Player.cs:29025`):
+    /// `summonerWeaponSpeedBonus = TurnAttackSpeedToUseTimeMultiplier(
+    /// meleeSpeed + summonerWeaponSpeedBonus)`. The `meleeSpeed` it reads is
+    /// the ALREADY held-item-scaled raw speed — `UpdateEquips`' tail rewrites
+    /// `meleeSpeed = 1f + (meleeSpeed - 1f) * BonusMeleeSpeedMultiplier[type]`
+    /// at `:25912` BEFORE `CapAttackSpeeds` runs (`:25976`), so the summoner
+    /// fold carries that scale too (it just hasn't been inverted yet). Capped
+    /// and inverted, then `ApplyItemAnimation`'s scaling-whip branch multiplies
+    /// by `whipUseTimeMultiplier` (`:4476`).
+    pub fn summoner_weapon_speed_multiplier(&self, held_kind: u16) -> f32 {
+        let bonus_mult = match held_kind {
+            1827 => 0.5,
+            3013 => 0.25,
+            3106 => 0.33,
+            757 => 0.75,
+            _ => 1.0,
+        };
+        let scaled_melee = 1.0 + self.melee_speed_bonus * bonus_mult;
+        let mut speed = scaled_melee + self.summoner_weapon_speed_bonus;
+        if speed > 3.0 {
+            speed = 3.0;
+        }
+        if speed != 0.0 {
+            speed = 1.0 / speed;
+        }
+        speed * self.whip_use_time_multiplier
+    }
+
+    /// `Player.tileSpeed` as `ApplyItemAnimation` reads it (`:4486`):
+    /// `UpdateEquips`' tail caps the accumulated speed at 3f and inverts
+    /// (`Player.cs:25913-25917`).
+    pub fn tile_speed_multiplier(&self) -> f32 {
+        1.0 / (1.0 + self.tile_speed_bonus).min(3.0)
+    }
+
+    /// `Player.wallSpeed` as `ApplyItemAnimation` reads it (`:4490`):
+    /// the same cap-and-invert (`Player.cs:25918-25922`).
+    pub fn wall_speed_multiplier(&self) -> f32 {
+        1.0 / (1.0 + self.wall_speed_bonus).min(3.0)
     }
 
     /// `Player.MountedCenter` (`Player.cs:3335-3343`):
@@ -3901,9 +4016,35 @@ impl Player {
                 self.has_wings = true;
                 self.wing_time_max = Self::wing_stats(slot_id).0;
             }
-            // The Titan Glove's melee-speed row (`:15103-15107`); its
-            // `autoReuseGlove` flag has no port consumer yet.
-            211 => self.melee_speed_bonus += 0.12,
+            // The Titan Glove's melee-speed row (`:15103-15107`) plus its
+            // `autoReuseGlove` grant — `TryAllowingItemReuse`
+            // (`:52905-52920`) forces the reuse edge for melee weapons.
+            211 => {
+                self.melee_speed_bonus += 0.12;
+                self.auto_reuse_glove = true;
+            }
+            // The Wicked Claws (`:14600-14604`): the same pair.
+            6182 => {
+                self.melee_speed_bonus += 0.12;
+                self.auto_reuse_glove = true;
+            }
+            // The Stress Ball (`:14730-14733`): `CanUseStressBall` gates the
+            // grant (`:14342-14366`). The port stands in for the extractinate
+            // hover (false) and the food-in-hand arm (the food buff check
+            // rides the use path); the standing-still + damage arms are the
+            // reachable ones. `TryAllowingItemReuse` reads the flag.
+            5543 => {
+                let standing_still = self.vx.abs() < 0.05 && self.vy.abs() < 0.05;
+                let held = self.held_item_kind;
+                let held_def = crate::registry::get(held);
+                let food_arm = !self.well_fed
+                    && held_def.is_some_and(|d| matches!(d.buff_type, 26 | 206 | 207));
+                let coin_or_bomb = (71..=74).contains(&held) || held == 1338;
+                let damage_arm = held_def.is_some_and(|d| d.damage > 0) || held == 1124;
+                if standing_still && (food_arm || (!coin_or_bomb && damage_arm)) {
+                    self.stress_ball = true;
+                }
+            }
             // The damage/crit accessories OUTSIDE the combat family
             // (`ApplyEquipFunctional`): the Sniper Scope's +10 ranged
             // crit/+10% ranged damage (1858, `Player.cs:14907-14911`),
@@ -4519,6 +4660,17 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
+        // `ResetEffects`' attack-speed clears (`Player.cs:18341`
+        // summonerWeaponSpeedBonus = 0f, `:18499` whipUseTimeMultiplier = 1f,
+        // `:18531-18532` wallSpeed/tileSpeed = 1f, `:18710` autoReuseGlove =
+        // false, `:18431` stressBall = false) — the buff/equipment grants
+        // below re-add them per tick, like the melee speed sum.
+        self.summoner_weapon_speed_bonus = 0.0;
+        self.whip_use_time_multiplier = 1.0;
+        self.tile_speed_bonus = 0.0;
+        self.wall_speed_bonus = 0.0;
+        self.auto_reuse_glove = false;
+        self.stress_ball = false;
         // `ResetEffects`' `statDefense = 0` (`Player.cs:18327`): the buff arms
         // below and `GrantArmorBenefits` (`:13121`, the equipment pass at the
         // bottom of this block) re-add per tick. Before M3-EQUIP-5 the field
@@ -4869,6 +5021,19 @@ impl Player {
                 }
                 // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
                 25 => self.stat_defense -= 4,
+                // The whip attack-speed buffs (`Player.cs:10110-10121`):
+                // 311 +0.35, 308 +0.25, 314 +0.12 onto
+                // `summonerWeaponSpeedBonus` — `ApplyItemAnimation`'s
+                // scaling-whip branch reads the capped inverse (`:4476`).
+                311 => self.summoner_weapon_speed_bonus += 0.35,
+                308 => self.summoner_weapon_speed_bonus += 0.25,
+                314 => self.summoner_weapon_speed_bonus += 0.12,
+                // `:10158-10163` — the Builder Potion (107): tileSpeed /
+                // wallSpeed += 0.25 (the blockRange half rides the reach).
+                107 => {
+                    self.tile_speed_bonus += 0.25;
+                    self.wall_speed_bonus += 0.25;
+                }
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
                 // `:11001-11004`: the Sunflower buff's movement tier —
@@ -5003,6 +5168,32 @@ impl Player {
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // The placement-speed accessories (`Player.cs:15263-15292` set the
+        // flags — 2214 Brick Layer → tile, 2217 Portable Cement Mixer → wall,
+        // 3061 Architect Gizmo Pack and 5126 Hand Of Creation → both;
+        // `:13024-13039` folds them): each grant adds +0.5 to its speed — the
+        // Brick Layer's tile half skips torch placements (`TileID.Sets.Torches`,
+        // `:13027`). The flags ride `ApplyEquipFunctional`, which runs the
+        // accessory slots 3..10 only (`:12946-12952`) — armor-slot copies
+        // never grant.
+        let held_tile = crate::registry::place_tile(self.held_item_kind);
+        let tile_acc = self.equipped[3..10].iter().any(|k| matches!(k, 2214 | 3061 | 5126));
+        let wall_acc = self.equipped[3..10].iter().any(|k| matches!(k, 2217 | 3061 | 5126));
+        if tile_acc && held_tile.is_some_and(|t| !td::SET_TORCHES.has(t)) {
+            self.tile_speed_bonus += 0.5;
+        }
+        if wall_acc {
+            self.wall_speed_bonus += 0.5;
+        }
+        // The Obsidian Outlaw set (`DataStructures/ArmorSetBonuses.cs:120-125`,
+        // the 3266/3267/3268 triple): `whipUseTimeMultiplier *= 1f/1.15f`
+        // — the scaling whips' `ApplyItemAnimation` multiplier (`:4476`).
+        // The set is not in the port's `armor_sets::SETS` flag table (its
+        // minionDamage/whipRange halves are unported), so the triple is
+        // matched directly here.
+        if (self.equipped[0], self.equipped[1], self.equipped[2]) == (3266, 3267, 3268) {
+            self.whip_use_time_multiplier *= 1.0 / 1.15;
+        }
         // S1-C-12 wave C — the defense/immunity accessory rows kept in
         // their own module (the Obsidian/Paladin-family shields' knockback
         // + fire-walk grants, `Player.cs:14605-14631`/`:15209-15213`/
@@ -5256,7 +5447,7 @@ impl Player {
             // it — the two never fire together (no cart row in the mount
             // table; M2-MOUNT-3 bridges them).
             self.update_mount(world, raining, wind);
-            self.horizontal_movement();
+            self.horizontal_movement(input);
         }
         // `Player.cs:19637-19641` (`UpdateJumpHeight`'s tail): Dazed (160)
         // divides the jump statics — height /5, speed /2 — after the sticky
@@ -7917,7 +8108,7 @@ impl Player {
     /// (`:19858-19865`, `:19948-19956`), the cart coast arm clamps ±max without
     /// on-track friction (`:20023-20058`), and the grounded/airborne friction
     /// tails close the chain (`:20059-20087`).
-    fn horizontal_movement(&mut self) {
+    fn horizontal_movement(&mut self, input: PlayerInput) {
         // `Player.cs:19779`: the fast-run threshold — halfway between the
         // boot top speed and the base run speed.
         let fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
@@ -7934,15 +8125,23 @@ impl Player {
                 self.vx = self.max_run_speed;
             }
         }
-        // `Player.cs:19835-19843`: the direction lock — the facing follows the
-        // run keys (`ChangeDir(num5)`); a cart keeps the roll direction, read
-        // AFTER the boost above (`Math.Sign(velocity.X) == num5`; `Sign(0) =
-        // 0` locks a stationary cart; `AllowDirectionChange` is true for
-        // carts, `Mount.cs:630-639`).
+        // `Player.cs:19835-19845`: the direction lock — `flag3 =
+        // (itemAnimation == 0 || inventory[selectedItem].useTurn) &&
+        // mount.AllowDirectionChange && !sandStorm`; a cart additionally
+        // demands the roll direction match (`Math.Sign(velocity.X) == num5`,
+        // `Sign(0) = 0` locks a stationary cart), read AFTER the boost above.
+        // So a NON-useTurn weapon locks the facing for the whole swing
+        // (`useTurn` is what lets a pickaxe/hammer turn mid-swing).
         let dir_keys = self.control_right as i32 - self.control_left as i32;
         if dir_keys != 0 {
-            let roll = (self.vx > 0.0) as i32 - (self.vx < 0.0) as i32;
-            if !self.cart_mounted || roll == dir_keys {
+            let mut allow = (!input.item_in_use || input.held_use_turn)
+                && self.mount.allow_direction_change()
+                && !self.sand_storm;
+            if self.cart_mounted {
+                let roll = (self.vx > 0.0) as i32 - (self.vx < 0.0) as i32;
+                allow &= roll == dir_keys;
+            }
+            if allow {
                 self.facing = dir_keys;
             }
         }
@@ -15978,6 +16177,209 @@ mod summon_tests {
         assert_eq!(p.buffs.find_buff_index(161), None);
         p.update(&w, PlayerInput::default());
         assert!(!p.deadly_sphere_minion);
+    }
+
+    // ---- S1-P-i12: the useTime/useAnimation speed machinery ----------------
+
+    /// `Player.meleeSpeed` as the game logic reads it — the `:25912`
+    /// held-item scale, then `CapAttackSpeeds`' cap-and-invert
+    /// (`:29021-29039`). Mirror clone of the C# chain, written not run.
+    #[test]
+    fn i12_melee_speed_is_the_capped_inverted_held_item_scaled_multiplier() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // No grants: 1f speed → 1f multiplier (`TurnAttackSpeedToUseTimeMultiplier(1)`).
+        assert_eq!(p.melee_speed(1), 1.0);
+        // The Feral Claws' +0.12 (`:15108`): 1.12 → 1/1.12.
+        p.melee_speed_bonus = 0.12;
+        assert!((p.melee_speed(1) - 1.0 / 1.12).abs() < 1e-6);
+        // `BonusMeleeSpeedMultiplier` (`ItemID.cs:1350`): the Fetid
+        // Baghnakhs (3013) scale the BONUS by 0.25 — 1 + 0.12*0.25 = 1.03.
+        assert!((p.melee_speed(3013) - 1.0 / 1.03).abs() < 1e-6);
+        // The Bladed Glove (1827) 0.5, Psycho Knife (3106) 0.33, Terra
+        // Blade (757) 0.75 — each scales only the bonus, never the base 1f.
+        assert!((p.melee_speed(1827) - 1.0 / 1.06).abs() < 1e-6);
+        assert!((p.melee_speed(3106) - 1.0 / (1.0 + 0.12 * 0.33)).abs() < 1e-6);
+        assert!((p.melee_speed(757) - 1.0 / 1.09).abs() < 1e-6);
+        // The 3f cap (`:29030-29033`): a +5 bonus clamps to 1/3.
+        p.melee_speed_bonus = 5.0;
+        assert!((p.melee_speed(1) - 1.0 / 3.0).abs() < 1e-6);
+        // A zero speed stays zero (`:29034`'s `speed != 0f` guard).
+        p.melee_speed_bonus = -1.0;
+        assert_eq!(p.melee_speed(1), 0.0);
+    }
+
+    /// `CapAttackSpeeds`' summoner half (`:29025`) folds the ALREADY
+    /// held-item-scaled melee speed (`:25912` runs before `:25976`) plus the
+    /// whip-buff sum, caps, inverts; `ApplyItemAnimation` (`:4476`) then
+    /// multiplies by `whipUseTimeMultiplier`. Mirror clone, written not run.
+    #[test]
+    fn i12_summoner_speed_folds_the_scaled_melee_and_whip_buffs() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Baseline: no grants → 1f.
+        assert_eq!(p.summoner_weapon_speed_multiplier(4672), 1.0);
+        // The 311 buff's +0.35 (`:10112`): 1.35 → 1/1.35.
+        p.summoner_weapon_speed_bonus = 0.35;
+        assert!((p.summoner_weapon_speed_multiplier(4672) - 1.0 / 1.35).abs() < 1e-6);
+        // The melee sum joins it (`num + summonerWeaponSpeedBonus`): the
+        // Feral Claws' +0.12 makes 1.47.
+        p.melee_speed_bonus = 0.12;
+        assert!((p.summoner_weapon_speed_multiplier(4672) - 1.0 / 1.47).abs() < 1e-6);
+        // The held-item scale rides the melee half too (`:25912` precedes
+        // `CapAttackSpeeds`): holding the Fetid Baghnakhs (0.25) makes the
+        // melee contribution 0.03 → 1.38.
+        assert!((p.summoner_weapon_speed_multiplier(3013) - 1.0 / 1.38).abs() < 1e-6);
+        // The Obsidian Outlaw set's ×(1/1.15) (`ArmorSetBonuses.cs:124`)
+        // multiplies AFTER the inversion (`Player.cs:4476`).
+        p.whip_use_time_multiplier = 1.0 / 1.15;
+        assert!(
+            (p.summoner_weapon_speed_multiplier(4672) - (1.0 / 1.47) * (1.0 / 1.15)).abs() < 1e-6
+        );
+    }
+
+    /// `UpdateEquips`' tail caps tileSpeed/wallSpeed at 3f and INVERTS them
+    /// (`Player.cs:25913-25922`) — `ApplyItemAnimation`'s createTile/
+    /// createWall branches (`:4486`/`:4490`) read the inverted values.
+    /// Mirror clone, written not run.
+    #[test]
+    fn i12_tile_and_wall_speed_cap_and_invert() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.tile_speed_multiplier(), 1.0);
+        assert_eq!(p.wall_speed_multiplier(), 1.0);
+        // The Builder buff's +0.25 (`:10160-10161`): 1.25 → 1/1.25 = 0.8.
+        p.tile_speed_bonus = 0.25;
+        p.wall_speed_bonus = 0.25;
+        assert!((p.tile_speed_multiplier() - 0.8).abs() < 1e-6);
+        assert!((p.wall_speed_multiplier() - 0.8).abs() < 1e-6);
+        // The cap: +5 clamps to 3f → 1/3 (NOT 1/6).
+        p.tile_speed_bonus = 5.0;
+        p.wall_speed_bonus = 5.0;
+        assert!((p.tile_speed_multiplier() - 1.0 / 3.0).abs() < 1e-6);
+        assert!((p.wall_speed_multiplier() - 1.0 / 3.0).abs() < 1e-6);
+    }
+
+    /// The glove family + Feral Claws + Wicked Claws grant `autoReuseGlove`
+    /// (`Player.cs:14413`/`:14602`/`:15107`/`:15302`/`:15309`/`:15372`) —
+    /// `TryAllowingItemReuse` (`:52905-52920`) reads it. The per-tick
+    /// `ResetEffects` clear (`:18710`) re-arms from the live slots.
+    /// Mirror clone, written not run.
+    #[test]
+    fn i12_the_glove_family_grants_auto_reuse_glove() {
+        let w = ground_world();
+        for kind in [211u16, 6182, 897, 936, 1343, 3992] {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            assert!(p.auto_reuse_glove, "kind {kind} grants autoReuseGlove");
+            assert!((p.melee_speed_bonus - 0.12).abs() < 1e-6, "kind {kind} +0.12");
+        }
+        // Taking the glove off clears the flag on the next tick
+        // (`ResetEffects` `:18710`, no re-grant).
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 211;
+        p.update(&w, PlayerInput::default());
+        assert!(p.auto_reuse_glove);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.auto_reuse_glove, "the reset clears it without a re-grant");
+    }
+
+    /// The whip attack-speed buffs (`Player.cs:10110-10121`: 311 +0.35,
+    /// 308 +0.25, 314 +0.12) and the Builder buff's tile/wall halves
+    /// (`:10158-10163`) land on the per-tick accumulators. Mirror clone,
+    /// written not run.
+    #[test]
+    fn i12_the_whip_and_builder_buffs_feed_the_speed_accumulators() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(311, 600);
+        p.buffs.add_buff(308, 600);
+        p.buffs.add_buff(314, 600);
+        p.buffs.add_buff(107, 600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.summoner_weapon_speed_bonus - 0.72).abs() < 1e-6, "0.35+0.25+0.12");
+        assert!((p.tile_speed_bonus - 0.25).abs() < 1e-6);
+        assert!((p.wall_speed_bonus - 0.25).abs() < 1e-6);
+    }
+
+    /// The placement-speed accessories (`Player.cs:15263-15292` flags,
+    /// `:13024-13039` fold): Brick Layer 2214 → tile +0.5 (skipping torch
+    /// placements, `:13027`), Cement Mixer 2217 → wall +0.5, Gizmo Pack
+    /// 3061 / Hand Of Creation 5126 → both. The flags ride
+    /// `ApplyEquipFunctional` (slots 3..10, `:12946`). Mirror clone,
+    /// written not run.
+    #[test]
+    fn i12_the_placement_speed_accessories_fold_half_a_speed() {
+        let w = ground_world();
+        // The Brick Layer with a stone block in hand (createTile 1, not a
+        // torch): tile +0.5, wall untouched.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 2214;
+        p.held_item_kind = 3; // Stone Block
+        p.update(&w, PlayerInput::default());
+        assert!((p.tile_speed_bonus - 0.5).abs() < 1e-6);
+        assert_eq!(p.wall_speed_bonus, 0.0);
+        // A torch in hand (createTile 4, `TileID.Sets.Torches`): the tile
+        // half skips (`:13027`).
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 2214;
+        p.held_item_kind = 8; // Torch
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.tile_speed_bonus, 0.0, "the torch placement skips the Brick Layer");
+        // The Cement Mixer: wall only.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 2217;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.tile_speed_bonus, 0.0);
+        assert!((p.wall_speed_bonus - 0.5).abs() < 1e-6);
+        // The Gizmo Pack: both.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3061;
+        p.held_item_kind = 3;
+        p.update(&w, PlayerInput::default());
+        assert!((p.tile_speed_bonus - 0.5).abs() < 1e-6);
+        assert!((p.wall_speed_bonus - 0.5).abs() < 1e-6);
+    }
+
+    /// The Obsidian Outlaw set (`ArmorSetBonuses.cs:120-125`, the
+    /// 3266/3267/3268 triple registered at `:492`):
+    /// `whipUseTimeMultiplier *= 1f/1.15f`. Mirror clone, written not run.
+    #[test]
+    fn i12_the_obsidian_outlaw_triple_scales_the_whip_use_time() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3266;
+        p.equipped[1] = 3267;
+        p.equipped[2] = 3268;
+        p.update(&w, PlayerInput::default());
+        assert!((p.whip_use_time_multiplier - 1.0 / 1.15).abs() < 1e-6);
+        // A broken triple grants nothing (the set bonus needs all three).
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3266;
+        p.equipped[1] = 3267;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.whip_use_time_multiplier, 1.0);
+    }
+
+    /// `Mount.AllowDirectionChange` (`Mount.cs:630-640`): the Scutlix
+    /// (type 9) turns only while its ability cooldown is under half the
+    /// row's max (20 → `< 10`); every other mount always allows.
+    /// Mirror clone, written not run.
+    #[test]
+    fn i12_the_scutlix_direction_lock_rides_the_ability_cooldown() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(9, false));
+        // `SetMount` floors the Scutlix cooldown at the row max 20
+        // (`Mount.cs:6236-6243`, the port's `mount.rs` `:2459-2461`): the
+        // lock reads `< max/2` = `< 10`, so a fresh mount locks the turn.
+        assert!(!p.mount.allow_direction_change(), "the fresh 20 >= 10 locks the turn");
+        // A non-Scutlix mount always allows (the `:638` fallback).
+        let mut q = Player::spawn(&w);
+        assert!(q.set_mount(10, false));
+        assert!(q.mount.allow_direction_change());
     }
 }
 
