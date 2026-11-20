@@ -366,6 +366,15 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.numOasis`/`oasisPosition`/`oasisWidth` (`GenVars.cs:262-270`,
+    /// static ctor `:469-473`: `maxOasis` 20, `oasisHeight` 20) — the Oasis
+    /// pass's placed-basin ledger (`WorldGen.cs:10923-10928`), consumed by
+    /// the `Cactus, Palm Trees, & Coral` oasis block (`:21326-21363`).
+    /// `oasis_height` is the C# readonly static — 20, never redrawn.
+    pub(crate) num_oasis: i32,
+    pub(crate) oasis_position: [(i32, i32); 20],
+    pub(crate) oasis_width: [i32; 20],
+    pub(crate) oasis_height: i32,
 }
 
 impl Default for GenVars {
@@ -426,6 +435,12 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // The C# static ctor (`GenVars.cs:469-473`): numOasis 0, the
+            // 20-slot arrays zero-filled, oasisHeight the readonly 20.
+            num_oasis: 0,
+            oasis_position: [(0, 0); 20],
+            oasis_width: [0; 20],
+            oasis_height: 20,
         }
     }
 }
@@ -1366,6 +1381,9 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
     // World (`:16419`) — the M5-OCEAN phase-4 insertion.
     step!("remove water", "Remove Water From Sand", step_remove_water),
+    // The vanilla Oasis slot (`WorldGen.cs:16243`): after Remove Water From
+    // Sand (`:16211`), before Shell Piles (`:16266`) — W4-d103 pass 19.
+    step!("oasis", "Oasis", step_oasis),
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
@@ -2631,6 +2649,32 @@ fn step_remove_water(
     ocean::remove_water_from_sand(world, world_surface);
 }
 
+fn step_oasis(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The seed gate (`WorldGen.cs:16245`): !skyblock && !roundLandmasses &&
+    // !noSurface && (!notTheBees || dontStarve).
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK)
+        || opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::ROUND_LANDMASSES)
+        || opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE)
+        || (opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES)
+            && !opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE))
+    {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    ocean::oasis(world, gv, world_surface, &mut streams.pass_rng("Oasis"));
+}
+
 fn step_shell_piles(
     world: &mut World,
     gv: &mut GenVars,
@@ -2671,12 +2715,13 @@ fn step_cacti(
     _pass_config: &ConfigSection,
 ) {
     // The faithful `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310`) —
-    // the three zones, the beach palms/coral/shells, the middle cactus, the
-    // sea oats — replacing the compact desert-only cactus scatter (the
-    // faithful middle zone's `PlantCactus` covers the desert's cacti).
+    // the oasis block (`:21326-21363`, W4-d103: the Oasis ledger is live)
+    // plus the three zones, the beach palms/coral/shells, the middle
+    // cactus, the sea oats.
     let layers = *gv.layers();
     ocean::cactus_palm_trees_and_coral(
         world,
+        gv,
         &layers,
         &mut streams.pass_rng("Cactus, Palm Trees, & Coral"),
     );
@@ -3140,7 +3185,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-d103: + `oasis` (vanilla "Oasis", `WorldGen.cs:16243`) between
+        // `remove water` and `shell piles`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3228,6 +3275,7 @@ mod tests {
                 "muds walls in jungle",
                 "floating islands",
                 "remove water",
+                "oasis",
                 "shell piles",
                 "slopes",
                 "living trees",
@@ -3312,7 +3360,10 @@ mod tests {
     fn test_DW_4_4_late_ocean_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(names[pos("remove water") + 1], "shell piles");
+        // W4-d103: the Oasis pass (`WorldGen.cs:16243`) slots between
+        // Remove Water From Sand (`:16211`) and Shell Piles (`:16266`).
+        assert_eq!(names[pos("remove water") + 1], "oasis");
+        assert_eq!(names[pos("oasis") + 1], "shell piles");
         assert_eq!(names[pos("shell piles") + 1], "slopes");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
@@ -3324,7 +3375,8 @@ mod tests {
             .map(|p| p.name)
             .collect();
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
-        assert!(cpos("Remove Water From Sand") < cpos("Shell Piles"));
+        assert!(cpos("Remove Water From Sand") < cpos("Oasis"));
+        assert!(cpos("Oasis") < cpos("Shell Piles"));
         assert!(cpos("Shell Piles") < cpos("Smooth World"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }

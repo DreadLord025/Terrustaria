@@ -846,6 +846,297 @@ pub(crate) fn remove_water_from_sand(world: &mut World, world_surface: f64) {
 /// `TileID.ShellPile` = 495 (`TileID.cs:1619`).
 const TILE_SHELL_PILE: u16 = 495;
 
+/// `WorldGen.PlaceOasis(X, Y)` (`WorldGen.cs:10707-10932`): the desert
+/// oasis basin — the sand-floor scan, the 350-tile spacing gate against
+/// `GenVars.oasisPosition`, the `Next(45, 61)` width roll, the sand-only
+/// clearance box, the ≤20-row floor walk, the wobble-radius ellipse carve
+/// (one `NextDouble` per cell, the water row at `i + 1`), the sand rim and
+/// the `Next(5)`/`Next(5, 10)` bridge speckle. The dead
+/// `k > X - num2/2 && k < X - num2/2` box (`:10759`) and the `flag = true`
+/// overwrite (`:10899`) are verbatim no-ops/quirks of the original.
+pub(crate) fn place_oasis(
+    world: &mut World,
+    gv: &mut GenVars,
+    x: i32,
+    y: i32,
+    world_surface: f64,
+    rng: &mut Rng,
+) -> bool {
+    let (max_x, max_y) = (world.width, world.height);
+    if x < 0 || y < 0 || x >= max_x || y >= max_y {
+        return false;
+    }
+    let mut i = y;
+    if world.tiles[world.index(x, i)].active() || world.tiles[world.index(x, i)].wall != 0 {
+        return false;
+    }
+    // The scan reads the tile first, then the surface bound (`:10712`).
+    while !world.tiles[world.index(x, i)].active()
+        && world.tiles[world.index(x, i)].wall == 0
+        && (i as f64) <= world_surface
+    {
+        i += 1;
+        if i >= max_y {
+            return false;
+        }
+    }
+    if (i as f64) > world_surface - 10.0 {
+        return false;
+    }
+    if world.tiles[world.index(x, i)].kind != TILE_SAND {
+        return false;
+    }
+    // The 350-tile spacing against every placed basin (`:10723-10730`).
+    for j in 0..gv.num_oasis as usize {
+        let (px, py) = gv.oasis_position[j];
+        let (dx, dy) = ((px - x) as f64, (py - i) as f64);
+        if (dx * dx + dy * dy).sqrt() < 350.0 {
+            return false;
+        }
+    }
+    let num2 = rng.range(45, 61);
+    let oasis_height = gv.oasis_height;
+    let num3 = num2 + 50;
+    let num4 = 4;
+    // The clearance box (`:10735-10770`): solids must be sand (the
+    // 151/397 near-core reject first), the near-core air must be dry and
+    // wall-free.
+    for k in x - num3..=x + num3 {
+        if k < 0 || k >= max_x {
+            continue;
+        }
+        for l in i - oasis_height..=i + oasis_height + num4 {
+            if l < 0 || l >= max_y {
+                continue;
+            }
+            let tile = world.tiles[world.index(k, l)];
+            if tile.active() {
+                if (tile.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(tile.kind) {
+                    if (tile.kind == 151 || tile.kind == 397)
+                        && (k - x).abs() < num2
+                        && (l - i).abs() < oasis_height / 2
+                    {
+                        return false;
+                    }
+                    if tile.kind != TILE_SAND {
+                        return false;
+                    }
+                }
+            } else if (tile.liquid > 0 || tile.wall > 0)
+                && (k - x).abs() < num2
+                && (l - i).abs() < oasis_height / 2
+            {
+                return false;
+            }
+        }
+        // `:10759` — `k > X - num2/2 && k < X - num2/2` is never true;
+        // the C#'s dead box is a verbatim no-op.
+    }
+    // The floor walk (`:10771-10780`): drop until both rim columns at
+    // `i + 5` are active and wall-free, at most 20 rows.
+    let num5 = 5;
+    let num6 = i;
+    loop {
+        let (lx, rx) = (x - num2, x + num2);
+        if lx < 0 || rx >= max_x || i + num5 >= max_y {
+            break;
+        }
+        let lt = world.tiles[world.index(lx, i + num5)];
+        let rt = world.tiles[world.index(rx, i + num5)];
+        if lt.active() && lt.wall == 0 && rt.active() && rt.wall == 0 {
+            break;
+        }
+        i += 1;
+        if i - num6 > 20 {
+            break;
+        }
+    }
+    let num7 = num2 / 2;
+    let num8 = (x - num2 * 3).max(0);
+    let num9 = (x + num2 * 3).min(max_x);
+    let num10 = (i - oasis_height * 4).max(0);
+    let num11 = (i + oasis_height * 3).min(max_y);
+    // The ellipse carve (`:10802-10847`): one NextDouble per cell, the
+    // 0.7/1.35 axis stretch, the `num7 * (0.53 + d * 0.04)` radius, the
+    // `(1 - |m-X|/(num9-X)) * 2.3` rim factor raised to the fourth.
+    for m in num8..num9 {
+        for n in num10..num11 {
+            let num12 = (m - x).abs() as f64 * 0.7;
+            let num13 = (n - i).abs() as f64 * 1.35;
+            let num14 = (num12 * num12 + num13 * num13).sqrt();
+            let num15 = num7 as f64 * (0.53 + rng.next_f64() * 0.04);
+            let mut num16 = (1.0 - (m - x).abs() as f64 / (num9 - x) as f64) * 2.3;
+            num16 *= num16;
+            num16 *= num16;
+            let idx = world.index(m, n);
+            if num14 < num15 {
+                let t = &mut world.tiles[idx];
+                if n == i + 1 {
+                    t.liquid = 127;
+                } else if n > i + 1 {
+                    t.liquid = 255;
+                }
+                t.flags &= !FLAG_LIQUID_LAVA;
+                t.flags &= !FLAG_ACTIVE;
+            } else if n < i && num12 < num15 + ((n - i).abs() * 3) as f64 * num16 {
+                let t = &mut world.tiles[idx];
+                if t.kind == TILE_SAND {
+                    t.flags &= !FLAG_ACTIVE;
+                }
+            } else if n >= i
+                && num12 < num15 + (n - i).abs() as f64 * num16
+                && world.tiles[idx].wall == 0
+            {
+                let t = &mut world.tiles[idx];
+                if t.active()
+                    && (t.kind as usize) < td::TILE_COUNT
+                    && td::TILE_SOLID.has(t.kind)
+                    && !td::TILE_SOLID_TOP.has(t.kind)
+                {
+                    t.set_slope(0);
+                    t.flags &= !FLAG_HALF_BRICK;
+                    continue;
+                }
+                t.flags |= FLAG_ACTIVE;
+                t.kind = TILE_SAND;
+                t.set_slope(0);
+                t.flags &= !FLAG_HALF_BRICK;
+            }
+        }
+    }
+    // The bridge speckle (`:10848-10922`): outside the 0.57 core, scan
+    // ±50 for a solid floor pair and fill the gap with sand, the
+    // `Next(5) == 0 → Next(5, 10)` raised-row runs.
+    let num17 = 50;
+    let (b_left, b_right) = (x - num2 * 2, x + num2 * 2);
+    let b_bottom = i + oasis_height * 2;
+    for num18 in b_left..b_right {
+        if num18 < 0 || num18 >= max_x {
+            continue;
+        }
+        for num19 in (i..=b_bottom).rev() {
+            if num19 < 0 || num19 >= max_y {
+                continue;
+            }
+            let num20 = (num18 - x).abs() as f64 * 0.7;
+            let num21 = (num19 - i).abs() as f64 * 1.35;
+            if (num20 * num20 + num21 * num21).sqrt() <= num7 as f64 * 0.5700000000000001 {
+                continue;
+            }
+            let here = world.tiles[world.index(num18, num19)];
+            if here.active() || here.wall != 0 {
+                continue;
+            }
+            let mut num22 = -1i32;
+            let mut num23 = -1i32;
+            // The east scan (`:10865-10880`).
+            let mut num24 = num18;
+            while num24 <= num18 + num17 && num24 < max_x && num19 + 1 < max_y {
+                let below = world.tiles[world.index(num24, num19 + 1)];
+                let cell = world.tiles[world.index(num24, num19)];
+                if !(below.active()
+                    && (below.kind as usize) < td::TILE_COUNT
+                    && td::TILE_SOLID.has(below.kind)
+                    && cell.wall == 0)
+                {
+                    break;
+                }
+                if cell.active()
+                    && (cell.kind as usize) < td::TILE_COUNT
+                    && td::TILE_SOLID.has(cell.kind)
+                {
+                    num23 = num24;
+                    break;
+                }
+                if cell.active() {
+                    break;
+                }
+                num24 += 1;
+            }
+            // The west scan (`:10881-10898`).
+            let mut num25 = num18;
+            while num25 >= num18 - num17 && num25 >= 0 && num19 + 1 < max_y {
+                let below = world.tiles[world.index(num25, num19 + 1)];
+                let cell = world.tiles[world.index(num25, num19)];
+                if !(below.active()
+                    && (below.kind as usize) < td::TILE_COUNT
+                    && td::TILE_SOLID.has(below.kind)
+                    && cell.wall == 0)
+                {
+                    break;
+                }
+                if cell.active()
+                    && (cell.kind as usize) < td::TILE_COUNT
+                    && td::TILE_SOLID.has(cell.kind)
+                {
+                    num22 = num25;
+                    break;
+                }
+                if cell.active() {
+                    break;
+                }
+                num25 -= 1;
+            }
+            // `:10899` — the C# overwrites the sand-found flag with `true`
+            // before the `&` test; verbatim, the flag never gates.
+            if num22 > -1 && num23 > -1 {
+                let mut num26 = 0i32;
+                for num27 in num22 + 1..num23 {
+                    if num23 - num22 > 5 && rng.chance(5) {
+                        num26 = rng.range(5, 10);
+                    }
+                    let idx = world.index(num27, num19);
+                    let t = &mut world.tiles[idx];
+                    t.flags |= FLAG_ACTIVE;
+                    t.kind = TILE_SAND;
+                    if num26 > 0 {
+                        num26 -= 1;
+                        let up = world.index(num27, num19 - 1);
+                        let t = &mut world.tiles[up];
+                        t.flags |= FLAG_ACTIVE;
+                        t.kind = TILE_SAND;
+                    }
+                }
+            }
+        }
+    }
+    // The ledger append (`:10923-10928`).
+    if (gv.num_oasis as usize) < gv.oasis_position.len() {
+        let slot = gv.num_oasis as usize;
+        gv.oasis_position[slot] = (x, i);
+        gv.oasis_width[slot] = num2;
+        gv.num_oasis += 1;
+    }
+    true
+}
+
+/// `Oasis` (`WorldGen.cs:16243-16265`): `maxTilesX / 2100 + Next(2)`
+/// basins, each up to `maxTilesX * 2` placement tries at
+/// `Next(beachDistance + 300, maxTilesX - (beachDistance + 300))` /
+/// `Next(100, (int)worldSurface)`. The seed gate lives in the step
+/// adapter. Sub-vanilla width guard: the C#'s `Next(680, maxTilesX - 680)`
+/// throws below 1360 wide; the port skips the pass before any draw (the
+/// mining-explosives convention).
+pub(crate) fn oasis(world: &mut World, gv: &mut GenVars, world_surface: f64, rng: &mut Rng) {
+    let margin = BEACH_DISTANCE + 300;
+    if world.width <= margin * 2 || (world_surface as i32) <= 100 {
+        return;
+    }
+    let num = world.width / 2100 + rng.range(0, 2);
+    for _ in 0..num {
+        let mut tries = world.width * 2;
+        while tries > 0 {
+            tries -= 1;
+            // Named arguments evaluate in source order: X, then Y.
+            let x = rng.range(margin, world.width - margin);
+            let y = rng.range(100, world_surface as i32);
+            if place_oasis(world, gv, x, y, world_surface, rng) {
+                tries = -1;
+            }
+        }
+    }
+}
+
 /// `WorldGen.ShellPile(X, Y)` (`WorldGen.cs:10332-10448`): the oval shell
 /// blob — the sentinel walk down to the sand floor, the radius wobble per
 /// cell (`Next(70, 91) * 0.01`), the 495 core with the sand/hardened-sand
@@ -1803,13 +2094,17 @@ fn plant_cactus(world: &mut World, i: i32, j: i32, rng: &mut Rng) {
     }
 }
 
-/// `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310-21518`): the three
-/// zones' depth and shallow arms. The oasis block (`:21326-21363`) is dead
-/// in the port — `GenVars.numOasis` has no writer (the Oasis pass
-/// `WorldGen.cs:16243` is deferred to M5-DESERT-structures), so its per-tile
-/// draws never run. The middle (cactus) zone keeps the faithful water box
-/// and the 1-in-4 palm, with `PlantCactus` growing the cactus.
-pub(crate) fn cactus_palm_trees_and_coral(world: &mut World, layers: &Layers, rng: &mut Rng) {
+/// `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310-21518`): the oasis
+/// block (`:21326-21363`) over `GenVars.numOasis` (W4-d103: the Oasis pass
+/// now writes the ledger) and the three zones' depth and shallow arms.
+/// The middle (cactus) zone keeps the faithful water box and the 1-in-4
+/// palm, with `PlantCactus` growing the cactus.
+pub(crate) fn cactus_palm_trees_and_coral(
+    world: &mut World,
+    gv: &GenVars,
+    layers: &Layers,
+    rng: &mut Rng,
+) {
     let (num2, max_x, max_y) = (400i32, world.width, world.height);
     let num = 8; // remix 2 — no remix seed yet
     let num3 = rng.range(3, 13);
@@ -1817,6 +2112,50 @@ pub(crate) fn cactus_palm_trees_and_coral(world: &mut World, layers: &Layers, rn
     let _num5 = rng.range(2, 6);
     let _num6 = rng.range(2, 6);
     let num7 = 380;
+    // The oasis block (`:21326-21363`): palms at 1.0 (0.13 near an
+    // existing palm), sea oats and oasis plants over each basin's box.
+    for oi in 0..gv.num_oasis as usize {
+        let (ox, oy) = gv.oasis_position[oi];
+        let num8 = (gv.oasis_width[oi] as f64 * 1.5) as i32;
+        for j in ox - num8..=ox + num8 {
+            if j < 0 || j >= max_x {
+                continue;
+            }
+            for k in oy - gv.oasis_height..=oy + gv.oasis_height {
+                if k < 0 || k >= max_y {
+                    continue;
+                }
+                let mut num9 = 1.0;
+                let num10 = 8;
+                'palm_scan: for l in j - num10..=j + num10 {
+                    for m in k - num10..=k + num10 {
+                        if l < 0 || m < 0 || l >= max_x || m >= max_y {
+                            continue;
+                        }
+                        let t = &world.tiles[world.index(l, m)];
+                        if t.active() && t.kind == TILE_PALM {
+                            num9 = 0.13;
+                            break 'palm_scan;
+                        }
+                    }
+                }
+                if rng.next_f64() < num9 {
+                    try_growing_palm(world, j, k, rng);
+                }
+                if plant_sea_oat(world, j, k, rng) {
+                    if rng.chance(2) {
+                        let idx = world.index(j, k);
+                        grow_sea_oat(&mut world.tiles[idx]);
+                    }
+                    if rng.chance(2) {
+                        let idx = world.index(j, k);
+                        grow_sea_oat(&mut world.tiles[idx]);
+                    }
+                }
+                place_oasis_plant(world, j, k, TILE_OASIS_PLANTS, rng);
+            }
+        }
+    }
     let num13 = layers.world_surface - 1.0;
     for n in 0..3 {
         let (num11, num12, flag, max_value) = match n {
@@ -2579,7 +2918,7 @@ mod tests {
         let (mut coral, mut shells, mut sand_top) = (0, 0, 0);
         for seed in 0..12u64 {
             let mut w = world.clone();
-            cactus_palm_trees_and_coral(&mut w, &layers, &mut Rng(seed));
+            cactus_palm_trees_and_coral(&mut w, &GenVars::default(), &layers, &mut Rng(seed));
             for (i, t) in w.tiles.iter().enumerate() {
                 if !t.active() {
                     continue;
@@ -2624,7 +2963,7 @@ mod tests {
         for seed in 0..12u64 {
             let mut w = world.clone();
             let layers = cave_layers();
-            cactus_palm_trees_and_coral(&mut w, &layers, &mut Rng(seed));
+            cactus_palm_trees_and_coral(&mut w, &GenVars::default(), &layers, &mut Rng(seed));
             if w.tiles.iter().any(|t| t.kind == TILE_SEA_OATS) {
                 any = true;
                 break;
@@ -2657,5 +2996,80 @@ mod tests {
         plant_cactus(&mut world, 150, 60, &mut Rng(0x5EED));
         let cactus = world.tiles.iter().filter(|t| t.kind == TILE_CACTUS).count();
         assert!(cactus > 0, "PlantCactus grows a cactus ({cactus})");
+    }
+
+    /// W4-d103 pass 19: `PlaceOasis` carves the water basin on flat sand
+    /// and appends the GenVars ledger; a stone floor is rejected.
+    #[test]
+    fn place_oasis_carves_the_basin_and_publishes_the_ledger() {
+        let mut world = World::new("oa".into(), 1000, 300);
+        for x in 0..1000 {
+            for y in 100..300 {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut gv = GenVars::default();
+        let ok = place_oasis(&mut world, &mut gv, 500, 90, 150.0, &mut Rng(0x5EED));
+        assert!(ok, "the basin lands on flat sand");
+        assert_eq!(gv.num_oasis, 1, "the ledger appended");
+        assert_eq!(gv.oasis_position[0].0, 500);
+        assert!((45..61).contains(&gv.oasis_width[0]), "the width roll");
+        // The water row at i + 1 carries 127, deeper rows 255.
+        let i = gv.oasis_position[0].1;
+        assert_eq!(world.tile(500, i + 1).unwrap().liquid, 127, "the surface row");
+        assert_eq!(world.tile(500, i + 2).unwrap().liquid, 255, "the deep rows");
+        // The spacing gate: a second basin within 350 tiles is rejected.
+        let near = place_oasis(&mut world, &mut gv, 600, 90, 150.0, &mut Rng(0x5EED));
+        assert!(!near, "the 350-tile spacing gate");
+        assert_eq!(gv.num_oasis, 1);
+        // A stone floor is rejected (the `type != 53` guard).
+        let mut stone = World::new("oa2".into(), 1000, 300);
+        for x in 0..1000 {
+            for y in 100..300 {
+                let i = stone.index(x, y);
+                stone.tiles[i].kind = 1;
+                stone.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut gv2 = GenVars::default();
+        let rejected = place_oasis(&mut stone, &mut gv2, 500, 90, 150.0, &mut Rng(0x5EED));
+        assert!(!rejected, "the stone floor is rejected");
+        assert_eq!(gv2.num_oasis, 0);
+    }
+
+    /// W4-d103 pass 19: the Oasis pass is deterministic for a seed and
+    /// places `maxTilesX / 2100 + Next(2)` basins on a vanilla-width world.
+    #[test]
+    fn oasis_pass_is_deterministic_and_places_basins() {
+        let base = {
+            let mut world = World::new("op".into(), 4200, 400);
+            for x in 0..4200 {
+                for y in 120..400 {
+                    let i = world.index(x, y);
+                    world.tiles[i].kind = TILE_SAND;
+                    world.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            world
+        };
+        let mut a = base.clone();
+        let mut b = base.clone();
+        let mut gva = GenVars::default();
+        let mut gvb = GenVars::default();
+        oasis(&mut a, &mut gva, 200.0, &mut Rng(42));
+        oasis(&mut b, &mut gvb, 200.0, &mut Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        assert_eq!(gva.num_oasis, gvb.num_oasis);
+        assert!(gva.num_oasis >= 2, "4200 / 2100 + Next(2) basins ({})", gva.num_oasis);
+        // The sub-vanilla width guard draws nothing.
+        let mut small = World::new("os".into(), 512, 300);
+        let mut gvs = GenVars::default();
+        let mut rng = Rng(7);
+        let state = rng.0;
+        oasis(&mut small, &mut gvs, 200.0, &mut rng);
+        assert_eq!(rng.0, state, "the width guard skips before any draw");
+        assert_eq!(gvs.num_oasis, 0);
     }
 }

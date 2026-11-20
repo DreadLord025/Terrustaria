@@ -238,6 +238,17 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-d103 pass 19 (2026-11-20, code-only): the `Oasis` pass
+    // (`WorldGen.cs:16243-16265` + `PlaceOasis` `:10707-10932`) lands on a
+    // fresh `pass_rng("Oasis")` stream between `remove water` and
+    // `shell piles`, and the `Cactus, Palm Trees, & Coral` oasis block
+    // (`:21326-21363`) wakes over the new `GenVars.numOasis` ledger.
+    // This pin is UNCHANGED by design: the pass's sub-vanilla width guard
+    // (`Next(680, maxTilesX - 680)` needs > 1360 wide) skips before any
+    // draw on the 512-wide world, and the oasis block draws nothing with
+    // `numOasis == 0`. The DEFAULT_WORLD re-pin below is deferred to the
+    // merge gate (no compiler on this branch); the a == b determinism
+    // asserts stay in place.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +292,12 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-d103 pass 19 (code-only): the Oasis basins (the water carve, the
+    // sand rim, the bridge speckle) plus the awakened cacti-pass oasis
+    // block (palms/sea oats/oasis plants over each basin) move this pin BY
+    // DESIGN on the 4200-wide default world. The re-pin is DEFERRED to the
+    // merge gate (no compiler on this branch); a == b stays green — the
+    // pass draws only its own fresh stream.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

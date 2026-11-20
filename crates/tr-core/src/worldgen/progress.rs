@@ -125,6 +125,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         // classic-world arm; the MarblePiles/SpikeCaves messages are the
         // Don't Starve / no-traps arms, not the classic feed).
         "spike pits" | "shell piles" => PassMessage::Key("WorldGeneration.ShellPiles"),
+        // WorldGen.cs:16247 (Oasis).
+        "oasis" => PassMessage::Key("WorldGeneration.Oasis"),
         // WorldGen.cs:20197.
         "vines" => PassMessage::Gen(43),
         // WorldGen.cs:12933.
