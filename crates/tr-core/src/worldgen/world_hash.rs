@@ -279,6 +279,12 @@ mod tests {
     // skips before any draw (the stone count `Next(1, width*7/4200)`
     // throws there; the C# never generates a ≤600-wide world). The
     // a == b halves stay untouched.
+    // W4-d104 pass 33 (2026-11-21, code-only): the `Place Fallen Log`
+    // pass (`WorldGen.cs:18513-18655`) lands — the 488 logs on the fresh
+    // `pass_rng("Place Fallen Log")` stream. The 512-wide pin is
+    // UNCHANGED: the ≤800 width guard skips before any draw (the C#
+    // column draw `Next(400, width-400)` throws there). The a == b
+    // halves stay untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -348,6 +354,10 @@ mod tests {
     // Stone` pass (above) moves this pin BY DESIGN — the default world's
     // ore veins + stone blobs land on the surface band. Re-pin DEFERRED
     // to the merge gate; the a == b halves stay untouched.
+    // W4-d104 pass 33 (2026-11-21, code-only): the `Place Fallen Log`
+    // pass (above) moves this pin BY DESIGN — the default world's 1-3
+    // fallen logs (488) land on the grass surface. Re-pin DEFERRED to
+    // the merge gate; the a == b halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

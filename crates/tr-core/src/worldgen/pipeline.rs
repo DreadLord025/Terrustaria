@@ -377,6 +377,11 @@ pub(crate) struct GenVars {
     /// ore-patch columns the `Surface Ore and Stone` pass (`:18447`,
     /// W4-d104 pass 32) records and reads for the ±200/±100 spacing.
     pub(crate) ore_patch_x: Vec<i32>,
+    /// `GenVars.logX/logY` (`GenVars.cs:252-254`, reset
+    /// `WorldGen.cs:11210`) — the fallen log the `Place Fallen Log` pass
+    /// (`:18513`, W4-d104 pass 33) records on its 1-in-2 roll; the Guide
+    /// pass (`:20468-20536`, lane 5) consumes it.
+    pub(crate) log_anchor: Option<(i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -416,6 +421,7 @@ impl Default for GenVars {
             sky_island_house_count: 0,
             island_house_slots: Vec::new(),
             ore_patch_x: Vec::new(),
+            log_anchor: None,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1418,6 +1424,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Surface Ore and Stone",
         step_surface_ore_and_stone
     ),
+    // The vanilla Place Fallen Log slot (`WorldGen.cs:18513`, the
+    // FallenLogsAndWaterFeatures pass's classic arm): after Surface Ore
+    // and Stone (`:18447`), before Traps (`:18657`) — W4-d104 pass 33.
+    step!("place fallen log", "Place Fallen Log", step_place_fallen_log),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2756,6 +2766,31 @@ fn step_surface_ore_and_stone(
     );
 }
 
+/// The `Place Fallen Log` pass (`WorldGen.cs:18513-18655`, W4-d104 pass
+/// 33): the fallen-log scatter on the fresh `pass_rng("Place Fallen
+/// Log")` stream. The `Skyblock.denySomeGeneration` gate rides the pass
+/// body (it reads the micro-seed surface-shape flags).
+fn step_place_fallen_log(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    surface::pass_place_fallen_log(
+        world,
+        world_surface,
+        opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        &mut gv.log_anchor,
+        &mut streams.pass_rng("Place Fallen Log"),
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3617,7 +3652,8 @@ mod tests {
         assert_eq!(pos("quick cleanup") + 1, pos("hellforge"));
         assert_eq!(pos("hellforge") + 1, pos("spreading grass"));
         assert_eq!(pos("spreading grass") + 1, pos("surface ore and stone"));
-        assert!(pos("surface ore and stone") < pos("trees"));
+        assert_eq!(pos("surface ore and stone") + 1, pos("place fallen log"));
+        assert!(pos("place fallen log") < pos("trees"));
         assert!(pos("floating islands") < pos("floating island houses"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()

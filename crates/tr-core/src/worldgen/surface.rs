@@ -820,6 +820,162 @@ pub(crate) fn pass_surface_ore_and_stone(
     }
 }
 
+// --- Place Fallen Log (W4-d104 pass 33) --------------------------------------
+
+/// `Skyblock.denySomeGeneration` (`WorldGen.cs:3133-3147`): a skyblock
+/// world denies the pass unless one of the surface-shape seeds is on
+/// (then it allows), else `!extraLivingTrees`.
+pub(crate) fn deny_some_generation(world: &World) -> bool {
+    if !world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return false;
+    }
+    let m = world.micro_seeds;
+    let surface_shape = m.contains(crate::seeds::MicroSeedFlags::WORLD_IS_FROZEN)
+        || m.contains(crate::seeds::MicroSeedFlags::SURFACE_IS_DESERT)
+        || m.contains(crate::seeds::MicroSeedFlags::SURFACE_IS_MUSHROOMS)
+        || m.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)
+        || m.contains(crate::seeds::MicroSeedFlags::HALLOW_ON_THE_SURFACE)
+        || m.contains(crate::seeds::MicroSeedFlags::NO_INFECTION)
+        || m.contains(crate::seeds::MicroSeedFlags::EXTRA_FLOATING_ISLANDS)
+        || m.contains(crate::seeds::MicroSeedFlags::EXTRA_LIQUID);
+    if surface_shape {
+        return false;
+    }
+    !m.contains(crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES)
+}
+
+/// The `Place Fallen Log` arm of `FallenLogsAndWaterFeatures`
+/// (`WorldGen.cs:18513-18655`, W4-d104 pass 33): `width/2100 +
+/// Next(-1, 2)` logs (the remix `Next(0, 2)` arm is the seed lane's),
+/// each a 30000-attempt retry — the ±400 beach margin column, the
+/// `Next(10, worldSurface)` row, the budget-end relaxations (`flag` at
+/// `num3 < 5000` skips the scans, the centre re-roll only above 2500,
+/// the liquid gate relaxes below 1000), the drop scan, the
+/// `worldSurface - 10` veto, the ±50 cloud/sand/dungeon/evil scan, the
+/// ±10 overhead clear scan, the grass triplet, then `PlaceTile(num5,
+/// j - 1, 488)` (the `Place3x2` route `:59887-59890`) and the 1-in-2
+/// `GenVars.logX/logY` record (`:18643-18647`, the Guide pass's anchor).
+/// The `extraLiquid` bubble-block arm (`:18517-18521`) is the seed
+/// lane's; the `noSurface` gate reads the port's flag.
+pub(crate) fn pass_place_fallen_log(
+    world: &mut World,
+    world_surface: f64,
+    not_the_bees: bool,
+    log_anchor: &mut Option<(i32, i32)>,
+    rng: &mut Rng,
+) {
+    // The sub-vanilla width guard: the column draw `Next(400, width -
+    // 400)` throws on a ≤800-wide world — skip before any draw.
+    if world.width <= 800 {
+        return;
+    }
+    if world.micro_seeds.contains(crate::seeds::MicroSeedFlags::NO_SURFACE) {
+        return;
+    }
+    let frozen = world.micro_seeds.contains(crate::seeds::MicroSeedFlags::WORLD_IS_FROZEN);
+    let desert = world.micro_seeds.contains(crate::seeds::MicroSeedFlags::SURFACE_IS_DESERT);
+    let skyblock = world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK);
+    // `num` may go negative on narrow worlds — the C# for-loop simply
+    // runs zero times; Rust's `0..num` is empty the same way.
+    let num = world.width / 2100 + rng.range(-1, 2);
+    for _ in 0..num {
+        let num2 = 380 + 20;
+        let mut num3 = if skyblock { 3000 } else { 30000 };
+        let num4 = if skyblock { 500 } else { 5000 };
+        while num3 > 0 {
+            num3 -= 1;
+            let mut num5 = rng.range(num2, world.width - num2);
+            let mut j = rng.range(10, world_surface as i32);
+            let flag = num3 < num4;
+            if num3 > num4 / 2 {
+                while (num5 as f64) > world.width as f64 * 0.4
+                    && (num5 as f64) < world.width as f64 * 0.6
+                {
+                    num5 = rng.range(num2, world.width - num2);
+                }
+            }
+            if world.tile(num5, j).is_some_and(|t| !t.active() && t.wall == 0) {
+                let mut flag2 = true;
+                // The drop scan (`:18566-18570`).
+                while world.tile(num5, j).is_some_and(|t| !t.active() && t.wall == 0)
+                    && (j as f64) <= world_surface
+                {
+                    j += 1;
+                }
+                if (j as f64) > world_surface - 10.0 {
+                    flag2 = false;
+                } else if !flag {
+                    // The ±50 biome scan (`:18575-18615`).
+                    let num6 = 50;
+                    for k in (num5 - num6)..(num5 + num6) {
+                        if k > 10 && k < world.width - 10 {
+                            for l in (j - num6)..(j + num6) {
+                                if l > 10 && l < world.height - 10 {
+                                    let kind = world.tile(k, l).map(|t| t.kind).unwrap_or(0);
+                                    if kind == 189
+                                        || kind == 53
+                                        || tile_dungeon(kind)
+                                        || crate::tiledata::SET_CRIMSON.has(kind)
+                                        || crate::tiledata::SET_CORRUPT.has(kind)
+                                    {
+                                        flag2 = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if flag2 {
+                        // The ±10 overhead clear scan (`:18616-18633`).
+                        let num7 = 10;
+                        let num8 = 10;
+                        for m in (num5 - num7)..(num5 + num7) {
+                            for n in (j - num8)..(j - 1) {
+                                if let Some(t) = world.tile(m, n) {
+                                    if t.active() && crate::tiledata::TILE_SOLID.has(t.kind) {
+                                        flag2 = false;
+                                    }
+                                    if t.wall != 0 {
+                                        flag2 = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // The grass triplet (`:18634-18637`) — the classic arm is
+                // grass 2; the notTheBees 60 / frozen 147 / desert 53
+                // alternatives ride their seed flags.
+                let ground_ok = |world: &World, px: i32| {
+                    world.tile(px, j).is_some_and(|t| {
+                        t.kind == 2
+                            || (not_the_bees && t.kind == 60)
+                            || (frozen && t.kind == 147)
+                            || (desert && t.kind == 53)
+                    })
+                };
+                let liquid_ok = world.tile(num5, j - 1).map(|t| t.liquid).unwrap_or(0) == 0
+                    || num3 < num4 / 5;
+                if flag2
+                    && liquid_ok
+                    && ground_ok(world, num5)
+                    && ground_ok(world, num5 - 1)
+                    && ground_ok(world, num5 + 1)
+                {
+                    j -= 1;
+                    // `PlaceTile(num5, j, 488)` — the `Place3x2` route.
+                    super::evil::place_3x2(world, num5, j, 488, 0);
+                    if world.tile(num5, j).is_some_and(|t| t.active() && t.kind == 488) {
+                        if rng.range(0, 2) == 0 {
+                            *log_anchor = Some((num5, j));
+                        }
+                        num3 = -1;
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -906,6 +1062,39 @@ mod tests {
         assert!(
             a.tiles.iter().any(|t| t.active() && (t.kind == 7 || t.kind == 166)),
             "an ore vein landed"
+        );
+    }
+
+    /// W4-d104 pass 33: the log lands on the grass triplet and two
+    /// same-stream runs replay byte-equal (a == b).
+    #[test]
+    fn w4_d104_33_the_fallen_log_places_and_replays() {
+        let build = || {
+            let mut w = World::new("fl".into(), 4200, 1200);
+            for x in 0..w.width {
+                for y in 300..1200 {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = if y == 300 { 2 } else { 0 };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                    if y > 302 {
+                        w.tiles[i].wall = 2;
+                    }
+                }
+            }
+            w.world_surface = 325.0;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        let mut la = None;
+        let mut lb = None;
+        pass_place_fallen_log(&mut a, 325.0, false, &mut la, &mut crate::worldgen::noise::Rng(42));
+        pass_place_fallen_log(&mut b, 325.0, false, &mut lb, &mut crate::worldgen::noise::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b: the pass stream replays");
+        assert_eq!(la, lb, "the log anchor replays");
+        assert!(
+            a.tiles.iter().any(|t| t.active() && t.kind == 488),
+            "a fallen log landed"
         );
     }
 }

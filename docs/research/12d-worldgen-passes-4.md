@@ -77,7 +77,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | 29 Quick Cleanup | df067118 | landed (code-only; hash re-pin deferred to the gate) |
 | 30 Hellforge | 2ac7c298 | landed (code-only; hash re-pin deferred to the gate) |
 | 31 Spreading Grass | 3a101031 | landed (code-only; classic arm, remix arm deferred to d107; hash re-pin deferred) |
-| 32 Surface Ore and Stone | (this commit) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
+| 32 Surface Ore and Stone | 19bc132b | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
+| 33 Place Fallen Log | (this commit) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
 
 ### Pass 28 — Floating Island Houses (landed)
 
@@ -243,6 +244,31 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   `DEFAULT_WORLD` stale-by-design. Re-pin DEFERRED; **a == b untouched**
   + the pass-level witness `w4_d104_32_the_patches_place_and_replay`.
 
+### Pass 33 — Place Fallen Log (landed)
+
+* **C# read in full**: the pass body `WorldGen.cs:18513-18655` — the
+  `denySomeGeneration` gate (`:3133-3147`), the `extraLiquid` bubble arm
+  (seed lane), the `noSurface` gate, the `width/2100 + Next(-1, 2)` count
+  (the remix `Next(0, 2)` arm deferred), the 30000/5000 budgets (the
+  skyblock /10), the ±400 column + `Next(10, worldSurface)` row, the
+  centre re-roll above half-budget, the drop scan, the
+  `worldSurface - 10` veto, the ±50 cloud/sand/dungeon/Crimson/Corrupt
+  scan, the ±10 overhead clear scan, the liquid gate (relaxed below
+  budget/5), the grass triplet (the notTheBees 60 / frozen 147 / desert
+  53 alternatives), `PlaceTile(num5, j-1, 488)` (the `Place3x2` route
+  `:59887-59890`), the 1-in-2 `GenVars.logX/logY` record.
+* **Rust**: `surface.rs::pass_place_fallen_log` +
+  `deny_some_generation` (+ the a==b witness), `pipeline.rs`
+  (`GenVars.log_anchor`, `step_place_fallen_log` after `surface ore and
+  stone`), `progress.rs` (`Lang.gen[85]` `:18524`).
+* **RNG**: all draws on the fresh `pass_rng("Place Fallen Log")` stream.
+* **Deviations**: the ≤800 width guard (the C# column draw throws
+  there); the remix count/row arms + the extraLiquid arm defer to the
+  seed lanes.
+* **Hash doc**: `SEED42_512` UNCHANGED (the width guard);
+  `DEFAULT_WORLD` stale-by-design. Re-pin DEFERRED; **a == b untouched**
+  + the witness `w4_d104_33_the_fallen_log_places_and_replays`.
+
 ## Status
 
 - [x] 28 Floating Island Houses
@@ -250,7 +276,7 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 - [x] 30 Hellforge
 - [x] 31 Spreading Grass (classic arm; remix arm → d107)
 - [x] 32 Surface Ore and Stone
-- [ ] 33 Place Fallen Log
+- [x] 33 Place Fallen Log
 - [ ] 34 Traps
 - [ ] 35 Piles
 - [ ] 36 Spawn Point
