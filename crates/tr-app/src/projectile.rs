@@ -2735,9 +2735,10 @@ impl Projectile {
             let flag4 = player_dist > range * 1.3;
             // The owner-only aim update (`:67918-67956`).
             if let Some((mut aim_x, mut aim_y)) = inputs.aim {
-                if !inputs.channel {
-                    // The release (`:67920-67925`; the `CCed` arm is stubbed
-                    // false — no CC system ported).
+                if !inputs.channel || inputs.player_cced {
+                    // The release (`:67920-67925`): `!channel || CCed` drops
+                    // the aim to −1 (the CCed arm rides `player_cced`,
+                    // S1-P-i23).
                     self.ai[0] = -1.0;
                     self.ai[1] = 0.0;
                 } else {
@@ -4498,6 +4499,14 @@ impl Projectile {
         let mut spawn = None;
         if fire_window && self.owner == 0 {
             if let Some(p) = player.as_deref_mut() {
+                // `:66612-66613` — `flag10 = !flag8 || CheckMana(mana, pay:
+                // true)`: the pay scales by `manaCost` (`Player.cs:52579`'s
+                // `(int)(amount * this.manaCost)`), the armor/accessory
+                // multiplier the use path already folds (S1-P-i23). The
+                // quick-mana (`manaFlower`) retry folds through `mana_cost`
+                // (S1-P-i19); `DebugOptions.ManaV2` IS the shipped machine —
+                // the interval pay rides `check_mana` (never refuses under
+                // V2, drains to 0 + arms the slow cast).
                 let mana_ok = !interval_tick
                     || match item {
                         Some(item) => crate::regen::check_mana(
@@ -7001,11 +7010,20 @@ impl Projectile {
             if self.ai[0] >= 0.0 {
                 if let Some(p) = player {
                     // `:43239-43249`: hold — keep the aim only while the
-                    // channel is open and the held item SHOOTS this kind
-                    // (`HeldItem.shoot == this.type`, `:43241`). The port
-                    // carries the held item's shoot id in `channel_shoot`
-                    // (S1-P-i20 — the pre-fix port compared the item id).
-                    if p.channel && p.channel_shoot == self.kind {
+                    // channel is open and the held item shoots this kind.
+                    // The C# reads `player.HeldItem.shoot == this.type`: the
+                    // held ITEM's shoot projectile vs this spell's kind.
+                    // `channel_item` stores the held item's kind (the use path,
+                    // `world_sim/editing.rs`), so resolve its shoot before the
+                    // compare — an item id is never a projectile id (S1-P-i23).
+                    // Gate-merge note: equivalent to i20's `channel_shoot ==
+                    // self.kind` seam (the use path writes channel_shoot =
+                    // registry::projectile(held.kind)); the registry-resolved
+                    // form is kept as the robust superset (S1-P-i20's seam
+                    // field stays live for its witnesses).
+                    if p.channel
+                        && crate::registry::projectile(p.channel_item) == Some(self.kind)
+                    {
                         if self.ai[0] != p.channel_target.x || self.ai[1] != p.channel_target.y {
                             // The C# writes `pointPosition.Y + num2 * num3`;
                             // when the 34 block above just armed the flag it
@@ -7075,8 +7093,12 @@ impl Projectile {
                     aim = Some(center);
                     // `:43292-43295`: the distance-ramped blend — the C#
                     // wraps the ramp in `MathHelper.Lerp(0f, 0.2f, ...)`, so
-                    // the blend never exceeds 0.2.
-                    let t = self.vel.distance(center);
+                    // the blend never exceeds 0.2. `t = base.Distance(
+                    // vector.Value)` is the projectile CENTRE to the target
+                    // (`Entity.cs:195-198`), not the velocity's length
+                    // (S1-P-i23).
+                    let t = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5)
+                        .distance(center);
                     let ramp = get_lerp_value(
                         200.0,
                         20.0,
@@ -7153,9 +7175,10 @@ impl Projectile {
         if spin && self.vel != Vec2::ZERO {
             self.rot = angle_towards(self.rot, self.vel.y.atan2(self.vel.x), std::f32::consts::FRAC_PI_4);
         } else {
-            // `AngleLerp(rotation, 0f, 0.2f)` — the shortest-way clamped turn
-            // toward 0, which is what `angle_towards` computes for the 0 target.
-            self.rot = angle_towards(self.rot, 0.0, 0.2 * std::f32::consts::PI);
+            // `AngleLerp(rotation, 0f, 0.2f)` (`:43358`, `Utils.cs:2033-2051`)
+            // — the shortest-way 20% angular lerp toward 0. The C# lerps by
+            // the 0.2 AMOUNT, not a 0.2·π max-step turn (S1-P-i23).
+            self.rot = angle_lerp(self.rot, 0.0, 0.2);
         }
         // `:43346`: `flag3` (the turn-sharpness detector) is read only by the
         // 16/34 dust blocks below — both SKIPPED (no dust layer in the pool).
@@ -13095,6 +13118,12 @@ pub struct ProjectilePool {
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
     pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
+    /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
+    /// the world-sim pass onto the player's `_channelShotCache` — the LAST
+    /// spawn of the expected type wins (`ChannelCancelKey.TryTracking`
+    /// `Player.cs:134-140`, S1-P-i23).
+    pending_channel_tracks: Vec<(u16, u16)>,
 }
 
 impl Default for ProjectilePool {
@@ -13118,6 +13147,9 @@ pub struct YoyoInputs {
     pub aim: Option<(f32, f32)>,
     /// `Player.channel` — the use button held with the channel item.
     pub channel: bool,
+    /// `Main.player[owner].CCed` (`:67920`'s release arm `!channel || CCed`)
+    /// — frozen / webbed / stoned (`Player.cs:3377-3387`).
+    pub player_cced: bool,
     /// `Main.player[owner].dead` (`:67824`).
     pub player_dead: bool,
 }
@@ -13374,6 +13406,7 @@ impl ProjectilePool {
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
+            pending_channel_tracks: Vec::new(),
         }
     }
 
@@ -13781,6 +13814,13 @@ impl ProjectilePool {
         // A spawned slot starts with clean local immunity.
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
+        // `NewProjectile`'s `TryUpdateChannel` tail (`Projectile.cs:11097-
+        // 11100`) rides the raw spawn too (the star-cloak stars, the dart,
+        // the rowless pets — every C# caller reaches the same tail); the
+        // world-sim pass drains the intents (S1-P-i23).
+        if owner == 0 {
+            self.pending_channel_tracks.push((kind, slot as u16));
+        }
         Some(slot)
     }
 
@@ -14193,6 +14233,17 @@ impl ProjectilePool {
         if GEM_BOLTS.contains(&kind) {
             self.slots[slot].gem_staves_finalize();
         }
+        // `NewProjectile`'s channel tracking (`Projectile.cs:11097-11100`):
+        // `if (Owner == Main.myPlayer) Main.player[Owner].TryUpdateChannel
+        // (projectile)` — the LAST local spawn of the cancel key's expected
+        // type becomes the tracked index (`ChannelCancelKey.TryTracking`
+        // `Player.cs:134-140`). The pool cannot borrow the player (the slot
+        // loop holds it), so the intent rides out to the world-sim pass
+        // (the `drain_mark_spawns` convention); the pass applies it to the
+        // local player's `_channelShotCache` (S1-P-i23).
+        if owner == 0 {
+            self.pending_channel_tracks.push((kind, slot as u16));
+        }
         Some(slot)
     }
 
@@ -14267,6 +14318,49 @@ impl ProjectilePool {
     /// first — the wave-C drain convention.
     pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
+    }
+
+    /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
+    /// 11100`): `(kind, slot)` per local-owner spawn this tick. The world sim
+    /// drains them onto the player's `_channelShotCache` — the last spawn of
+    /// the expected type wins (`ChannelCancelKey.TryTracking`
+    /// `Player.cs:134-140`, S1-P-i23).
+    pub fn drain_channel_tracks(&mut self) -> Vec<(u16, u16)> {
+        std::mem::take(&mut self.pending_channel_tracks)
+    }
+
+    /// `Player.TryUpdateChannel` (`Player.cs:52970-52973`) →
+    /// `ChannelCancelKey.TryTracking` (`:134-140`): a spawn of the expected
+    /// type becomes the tracked index. The world-sim pass calls this with
+    /// the local player after the pool tick (the slot loop cannot borrow
+    /// the player).
+    pub fn apply_channel_tracks(&mut self, player: &mut crate::player::Player) {
+        for (kind, slot) in self.drain_channel_tracks() {
+            if player.channel_proj_expected == kind {
+                player.channel_index_expected = slot;
+            }
+        }
+    }
+
+    /// `Projectile.Kill`'s channel-cancel head (`Projectile.cs:70651-70659`):
+    /// `if ((owner == Main.myPlayer) & !DontCancelChannelOnKill[type])
+    /// Main.player[owner].TryCancelChannel(this)` — a dying local shot whose
+    /// type+index match the cancel key (or the aiStyle-99 `ai[0] == -3`
+    /// Magic-String ghost, `ChannelCancelKey.Matches` `Player.cs:121-132`)
+    /// drops the channel. The pool runs it at the per-slot death hook; the
+    /// `DontCancelChannelOnKill` set is `{190}` (the Piranha Gun's piranha,
+    /// `ProjectileID.cs:524`) — its death never cancels (S1-P-i23).
+    fn try_cancel_channel(&self, slot: usize, player: &mut crate::player::Player) {
+        let p = &self.slots[slot];
+        if p.owner != 0 || p.kind == 190 {
+            return;
+        }
+        let matches = (proj_data(p.kind).is_some_and(|d| d.ai_style == 99) && p.ai[0] == -3.0)
+            || (player.channel_proj_expected == p.kind
+                && player.channel_index_expected == slot as u16);
+        if matches {
+            player.channel = false;
+        }
     }
 
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
@@ -14608,6 +14702,12 @@ impl ProjectilePool {
                 }
             }
             let sub_steps = 1 + self.slots[i].extra_updates;
+            // `Kill()`'s `!active` head (`:70644-70648`): the channel-cancel
+            // at the death hook below runs only for `Kill()`-shaped deaths —
+            // the out-of-world guard (`:16696`) sets `active = false`
+            // directly and `return`s, never through `Kill()`, so its
+            // channel-cancel head never runs (S1-P-i23).
+            let mut died_out_of_world = false;
             // `Projectile.cs:16768-16771` — the per-slot cue cooldown ticks
             // down once per update, ahead of the AI sub-steps, and only
             // while positive: a `-1` latch stays down (S1-E-21h — the
@@ -14650,6 +14750,7 @@ impl ProjectilePool {
                         }
                         self.slots[i].active = false;
                         self.slots[i].time_left = 0;
+                        died_out_of_world = true;
                         continue;
                     }
                 }
@@ -17222,6 +17323,20 @@ impl ProjectilePool {
             // spawns the blast, exactly once (the flag) and only for the bolt
             // kind (so the blast cannot chain a second spawn).
             if !self.slots[i].active {
+                // `Kill()`'s channel-cancel head (`Projectile.cs:70651-
+                // 70659`): the slot died this pass — whichever of the death
+                // paths above ended it — so the tracked-shot match drops the
+                // owner's channel (S1-P-i23). The C# runs it inside `Kill()`
+                // ahead of the death arms; the port's death hook is the same
+                // once-per-death seam (a dead slot never returns to active).
+                // The `!active` head (`:70644-70648`) excludes the
+                // out-of-world guard's direct deactivate (`:16696`, no
+                // `Kill()` call) — it never cancels.
+                if !died_out_of_world {
+                    if let Some(p) = player.as_deref_mut() {
+                        self.try_cancel_channel(i, p);
+                    }
+                }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
@@ -22504,6 +22619,7 @@ mod yoyo_tests {
         YoyoInputs {
             aim,
             channel,
+            player_cced: false,
             player_dead: false,
         }
     }
@@ -22752,6 +22868,50 @@ mod yoyo_tests {
     }
 
     #[test]
+    fn s1_p_i23_the_cced_owner_releases_the_yoyo_aim() {
+        // `:67920-67925` — `!channel || CCed` drops the aim to −1 even
+        // while the channel latch is open: the CCed arm rides the new
+        // `player_cced` snapshot (S1-P-i23; the pre-i23 port stubbed it
+        // false). The yoyo parks at the aim first, then the CC lands.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOOD_YOYO, 312.0, 312.0, 0.0, 0.0, 9, 2.5)
+            .unwrap();
+        let mut w = world();
+        // One held tick: the aim lands.
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((320.0, 320.0)),
+            None,
+            None,
+            inputs(Some((380.0, 320.0)), true),
+            FlailInputs::default(),
+            &mut fast_seed(),
+            0,
+            true,
+        );
+        assert_eq!(pool.slots[slot].ai[0], 380.0, "the held aim landed");
+        // The CC: the channel stays true, `player_cced` flips.
+        let mut ins = inputs(Some((380.0, 320.0)), true);
+        ins.player_cced = true;
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((320.0, 320.0)),
+            None,
+            None,
+            ins,
+            FlailInputs::default(),
+            &mut fast_seed(),
+            0,
+            true,
+        );
+        assert_eq!(pool.slots[slot].ai[0], -1.0, "the CCed release drops the aim");
+        assert_eq!(pool.slots[slot].ai[1], 0.0);
+    }
+
+    #[test]
     fn the_owner_death_and_keepalive() {
         // `:67824-67828`; the keep-alive re-pins `timeLeft = 6` (`:67857`) —
         // the slot reads 5 after the update's decrement.
@@ -22784,6 +22944,7 @@ mod yoyo_tests {
             YoyoInputs {
                 aim: Some((380.0, 320.0)),
                 channel: true,
+                player_cced: false,
                 player_dead: true,
             },
             FlailInputs::default(),
@@ -27096,12 +27257,15 @@ mod magic_ai_tests {
         let mut rng = tr_core::tile_light::FastRandom::new(7);
 
         // `:43239-43249`: the channel keeps `ai[0..1]` on the clamped
-        // `MouseWorld` while the held item shoots this kind. The fixture
-        // carries the held item's shoot id in `channel_shoot` (S1-P-i20 —
-        // the C# compares `HeldItem.shoot`, not the item id).
+        // `MouseWorld` while the held item shoots this kind. `channel_item`
+        // is the held ITEM's kind (113 Magic Missile, `Item.cs:2725-2740`'s
+        // `shoot = 16`) — the arm resolves its shoot before the compare
+        // (S1-P-i23; the old fixture stored the projectile id 16 here).
+        // The fixture also arms i20's `channel_shoot` seam field (the use
+        // path writes both).
         let mut p = crate::player::Player::spawn(&world());
         p.channel = true;
-        p.channel_item = 113; // the Magic Missile item
+        p.channel_item = 113;
         p.channel_shoot = MAGIC_MISSILE; // its shoot (proj 16)
         p.channel_target = Vec2::new(500.0, 400.0);
         let mut pool = ProjectilePool::new();
@@ -28215,6 +28379,9 @@ mod magic_ai_tests {
         player.y = 100.0;
         player.channel = true;
         player.channel_item = 3541;
+        // The cancel key the use start seeds (`StartChanneling` `:52963-
+        // 52966`): the Last Prism's shoot 633 (S1-P-i23).
+        player.channel_proj_expected = LAST_PRISM;
         player.mana = 120;
         let center = player.center();
         player.channel_target = Vec2::new(center.0 + 1040.0, center.1);
@@ -29491,6 +29658,217 @@ mod magic_ai_tests {
         assert_eq!(pool.slots()[slot].local_ai[0], 101.0, "101 sub-steps in the tick");
         assert!((pool.slots()[slot].local_ai[1] - 202.0).abs() < 1e-3, "the centre X snapshot");
         assert!((pool.slots()[slot].local_ai[2] - 202.0).abs() < 1e-3, "the centre Y snapshot");
+    }
+
+    // ---- S1-P-i23: the channel-machinery fixes (written, NOT run) ---------
+
+    #[test]
+    fn s1_p_i23_the_hold_gate_resolves_the_held_items_shoot() {
+        // `:43241` — `player.HeldItem.shoot == this.type`: the compare is
+        // the held ITEM's shoot projectile vs the spell's kind. Storing the
+        // projectile id 16 in `channel_item` (the pre-i23 fixture bug) must
+        // NOT hold — item 16 has no shoot row; storing the item 113 does.
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        for (channel_item, holds) in [(113u16, true), (MAGIC_MISSILE, false)] {
+            let mut p = crate::player::Player::spawn(&w);
+            p.channel = true;
+            p.channel_item = channel_item;
+            p.channel_target = Vec2::new(500.0, 400.0);
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(
+                    MAGIC_MISSILE, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 30, 0.0, 320.0, 384.0,
+                )
+                .unwrap();
+            pool.update(
+                &mut w,
+                &mut npcs,
+                Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                false,
+            );
+            let spell = &pool.slots()[slot];
+            if holds {
+                assert_eq!(spell.ai[0], 500.0, "item 113's shoot 16 holds the aim");
+                assert_eq!(spell.ai[1], 400.0);
+            } else {
+                assert_eq!(
+                    spell.ai[0], -1.0,
+                    "the projectile id stored as the item RELEASES (no such shoot)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn s1_p_i23_the_item_switch_releases_the_spell() {
+        // `:43241` again: a switch to a DIFFERENT channel item (Flamelash
+        // 218, shoot 34) breaks `HeldItem.shoot == 16` — the Magic Missile
+        // releases mid-flight even though the channel latch stays open on
+        // the new item.
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut p = crate::player::Player::spawn(&world());
+        p.channel = true;
+        p.channel_item = 218; // Flamelash — shoot 34, not 16
+        p.channel_target = Vec2::new(500.0, 400.0);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 30, 0.0, 320.0, 384.0,
+            )
+            .unwrap();
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some((10.0 * TILE_PX, 10.0 * TILE_PX)),
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        assert_eq!(
+            pool.slots()[slot].ai[0], -1.0,
+            "the switched item's shoot breaks the hold — the release runs"
+        );
+    }
+
+    #[test]
+    fn s1_p_i23_the_homing_blend_reads_the_centre_distance() {
+        // `:43297-43298` — `t = base.Distance(vector.Value)` is the
+        // projectile CENTRE to the target (`Entity.cs:195-198`), not the
+        // velocity's length (the pre-i23 bug). The ramp's outer
+        // `GetLerpValue(200f, 20f, x)` reads x = 1 − the two clamped inner
+        // ramps' product, so x ∈ [0,1] is ALWAYS below the 20f `to` and the
+        // descending range returns 1 — the blend amount is the constant
+        // 0.2 (the C#'s own dead-ramp quirk, kept verbatim). The witness
+        // pins the exact Lerp at two centre distances with the SAME 4f
+        // velocity: a velocity-length read would have produced the same
+        // amount here too, so the pin is the verbatim 0.2 blend itself —
+        // `Lerp((4,0), (32,0), 0.2) = (9.6, 0)` at both distances.
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for d in [100.0f32, 700.0] {
+            let mut w = world();
+            // The spell's centre sits at (336, 400) (the 32x32 box at
+            // (320, 384)); the slime's 24x18 box centres +12/+9, so park
+            // its top-left at (324 + d, 391) — the centre distance is
+            // exactly d on the +x axis.
+            let mut npcs = vec![Npc::spawn_slime_sky(324.0 + d, 391.0, SlimeVariant::Blue)];
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(
+                    MAGIC_MISSILE, 20.0 * TILE_PX, 24.0 * TILE_PX, 4.0, 0.0, 30, 0.0, -1.0, 0.0,
+                )
+                .unwrap();
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng,
+                0,
+                false,
+            );
+            let spell = &pool.slots()[slot];
+            assert_eq!(spell.ai[1], 0.0, "the target locked (d={d})");
+            assert!(
+                (spell.vel.x - 9.6).abs() < 1e-4 && spell.vel.y.abs() < 1e-6,
+                "the verbatim 0.2 blend at centre distance {d} (v={:?})",
+                spell.vel
+            );
+        }
+    }
+
+    #[test]
+    fn s1_p_i23_the_idle_rotation_lerps_by_the_amount_not_a_max_step() {
+        // `:43358` — `rotation.AngleLerp(0f, 0.2f)` (`Utils.cs:2033-2051`):
+        // the shortest-way 20% ANGULAR lerp, not a 0.2·π max-step turn. A
+        // held spell (no spin) at rotation 1.0 lands at 0.8 after one tick
+        // — the old angle_towards(…, 0.2π) would have stepped the full
+        // 0.628 to 0.372. The aim sits exactly on the spell's centre
+        // (176, 176): the close arm (`:43330-43334`) pulls a zero velocity
+        // by zero, so `flag2` stays false and the else arm runs.
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut p = crate::player::Player::spawn(&world());
+        p.channel = true;
+        p.channel_item = 113;
+        p.channel_target = Vec2::new(176.0, 176.0);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 160.0, 160.0, 0.0, 0.0, 30, 0.0, 176.0, 176.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].rot = 1.0;
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some((160.0, 160.0)),
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let spell = &pool.slots()[slot];
+        assert_eq!(spell.ai[0], 176.0, "the hold ran (no spin)");
+        assert!(
+            (spell.rot - 0.8).abs() < 1e-5,
+            "AngleLerp(1.0, 0, 0.2) = 0.8 (rot={})",
+            spell.rot
+        );
+    }
+
+    #[test]
+    fn s1_p_i23_the_prism_interval_pay_scales_by_mana_cost() {
+        // `:66613` → `CheckMana(mana, pay: true)` (`Player.cs:52576-52586`):
+        // the pay is `(int)(item.mana * manaCost)` — at manaCost 0.5 the
+        // Last Prism's 12-mana interval costs 6. The pre-i23 arm paid the
+        // raw 12.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana_cost = 0.5;
+        player.mana = 120;
+        for _ in 0..30 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert!(pool.slots()[holder].active, "the first interval paid");
+        assert_eq!(player.mana, 114, "12 × 0.5 = 6 per interval");
+        for _ in 0..30 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(player.mana, 108, "the second interval pays 6 again");
+        // The failed check at the scaled cost: 5 mana cannot pay 6.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana_cost = 0.5;
+        player.mana = 5;
+        for _ in 0..29 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert!(pool.slots()[holder].active, "no interval tick yet");
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(
+            !pool.slots()[holder].active,
+            "5 < (int)(12 × 0.5) — the scaled CheckMana fails, the holder dies"
+        );
+        assert_eq!(player.mana, 5, "a failed check pays nothing");
     }
 }
 #[cfg(test)]
@@ -36017,5 +36395,297 @@ mod s1_p_i22_magic_guns_tomes_tests {
         assert!(p.local_ai[1] > 0.0, "the start X snapshot");
         assert!(p.local_ai[2] > 0.0, "the start Y snapshot");
         assert_eq!(p.alpha, 255, "the aiStyle-48 alpha write (`:28240`)");
+    }
+}
+
+/// S1-P-i23 — the channel machinery witnesses (written, NOT run — code-only
+/// mode): the cancel key's tracking (`NewProjectile`'s tail
+/// `Projectile.cs:11097-11100` → `ChannelCancelKey.TryTracking`
+/// `Player.cs:134-140`), the kill-cancel (`Kill`'s head `:70651-70659` →
+/// `TryCancelChannel` `Player.cs:52975-52981`, `Matches` `:121-132`), the
+/// `DontCancelChannelOnKill` exemption (`ProjectileID.cs:524`'s {190}) and
+/// the out-of-world guard's no-`Kill()` deactivate (`Projectile.cs:16696`).
+#[cfg(test)]
+mod channel_machinery_tests {
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// One pool tick with the local player driving (the `step_player` shape
+    /// of `magic_ai_tests` — no NPCs, the player's centre as the owner
+    /// context, a fresh seeded stream per tick).
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut crate::player::Player) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        let center = p.center();
+        pool.update(
+            w,
+            &mut npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+    }
+
+    /// A mid-channel player on the Magic Missile row (item 113, shoot 16):
+    /// the cancel key seeded as `StartChanneling(sItem)` does
+    /// (`Player.cs:52963-52966` — type expected, index 0).
+    fn missile_player(w: &World) -> crate::player::Player {
+        let mut p = crate::player::Player::spawn(w);
+        p.channel = true;
+        p.channel_item = 113;
+        p.channel_proj_expected = MAGIC_MISSILE;
+        p.channel_index_expected = 0;
+        p.channel_target = Vec2::new(500.0, 400.0);
+        p
+    }
+
+    #[test]
+    fn s1_p_i23_the_tracked_shots_death_drops_the_channel() {
+        // `Kill`'s head (`Projectile.cs:70651-70659`): a dying local shot
+        // whose type+index match the cancel key calls `TryCancelChannel`
+        // (`Player.cs:52975-52981`) — `Matches` (`:127-130`) hits, the
+        // channel drops. The tracked shot dies on its `timeLeft` tail
+        // (`:17201-17204`'s `Kill()`).
+        let mut w = world();
+        let mut p = missile_player(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 300.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
+            )
+            .unwrap();
+        // The use-path tail applies the spawn's tracking intent on the
+        // spawn tick (`Projectile.cs:11097-11100`).
+        pool.apply_channel_tracks(&mut p);
+        assert_eq!(p.channel_index_expected, slot as u16, "the spawn tracked");
+        // One tick to prove the hold stays open while the shot lives.
+        tick(&mut pool, &mut w, &mut p);
+        assert!(pool.slots()[slot].active);
+        assert!(p.channel, "the live tracked shot keeps the channel");
+        // The lifetime kill: the death hook runs the cancel.
+        pool.slots_mut()[slot].time_left = 1;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[slot].active, "the lifetime tail kills");
+        assert!(!p.channel, "the tracked shot's death cancels the channel");
+    }
+
+    #[test]
+    fn s1_p_i23_an_untracked_shot_of_the_same_type_does_not_cancel() {
+        // `Matches` (`Player.cs:127-130`) compares BOTH the type and the
+        // index: a second Magic Missile in another slot is not the tracked
+        // shot, so its death leaves the channel open.
+        let mut w = world();
+        let mut p = missile_player(&w);
+        let mut pool = ProjectilePool::new();
+        let tracked = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 300.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
+            )
+            .unwrap();
+        // The use-path tail tracks the first spawn; the second spawn's
+        // intent is dropped (the test's extra shot, never applied).
+        pool.apply_channel_tracks(&mut p);
+        let other = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 400.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
+            )
+            .unwrap();
+        let _ = pool.drain_channel_tracks();
+        assert_eq!(p.channel_index_expected, tracked as u16);
+        assert_ne!(tracked, other);
+        // Kill the untracked twin.
+        pool.slots_mut()[other].time_left = 1;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[other].active, "the twin died");
+        assert!(pool.slots()[tracked].active);
+        assert!(p.channel, "the untracked twin's death does not cancel");
+    }
+
+    #[test]
+    fn s1_p_i23_the_last_spawn_of_the_expected_type_wins() {
+        // `ChannelCancelKey.TryTracking` (`Player.cs:134-140`): every spawn
+        // of the expected type overwrites the index — two Magic Missiles
+        // in one tick, the second is the tracked one, and the FIRST's death
+        // no longer cancels while the second's does.
+        let mut w = world();
+        let mut p = missile_player(&w);
+        let mut pool = ProjectilePool::new();
+        let first = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 300.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
+            )
+            .unwrap();
+        let second = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 400.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
+            )
+            .unwrap();
+        pool.apply_channel_tracks(&mut p);
+        assert_eq!(
+            p.channel_index_expected, second as u16,
+            "the last spawn of the expected type wins"
+        );
+        pool.slots_mut()[first].time_left = 1;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[first].active);
+        assert!(p.channel, "the superseded shot's death does not cancel");
+        pool.slots_mut()[second].time_left = 1;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[second].active);
+        assert!(!p.channel, "the tracked (last) shot's death cancels");
+    }
+
+    #[test]
+    fn s1_p_i23_a_foreign_owners_death_never_cancels() {
+        // `Kill`'s owner gate (`Projectile.cs:70656`'s `owner ==
+        // Main.myPlayer`): a peer's shot dying in slot 0 with the local
+        // key's type+index still matches nothing — the cancel is local-only.
+        // The peer's slot simulates under its own `local_owner` (the wire
+        // pass shape), so the lifetime kill runs.
+        let mut w = world();
+        let mut p = missile_player(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                MAGIC_MISSILE, 1, 300.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 1;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            1, // the peer's machine: its own shots simulate
+            false,
+        );
+        assert!(!pool.slots()[slot].active, "the peer's shot died");
+        assert!(p.channel, "a foreign owner's death never cancels");
+    }
+
+    #[test]
+    fn s1_p_i23_the_piranhas_death_is_exempt() {
+        // `DontCancelChannelOnKill` (`ProjectileID.cs:524`'s {190}): the
+        // Piranha Gun's piranha dies without cancelling — `Kill`'s `flag`
+        // (`Projectile.cs:70651-70655`) is false for the type, so the
+        // `TryCancelChannel` call never runs even on a type+index match.
+        // The 190 row is unported (`proj_data` None — the slot rides the
+        // raw spawn, the Piranha Gun's own AI task), so the lifetime tail
+        // is the kill path.
+        let mut w = world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.channel = true;
+        p.channel_item = 1156; // the Piranha Gun, shoot 190
+        p.channel_proj_expected = 190;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(190, 0, Vec2::new(300.0, 300.0), Vec2::ZERO, 40, 1.0, false)
+            .unwrap();
+        pool.apply_channel_tracks(&mut p);
+        assert_eq!(p.channel_index_expected, slot as u16, "the raw spawn tracks too");
+        pool.slots_mut()[slot].time_left = 1;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[slot].active, "the piranha died");
+        assert!(p.channel, "the 190 exemption keeps the channel");
+    }
+
+    #[test]
+    fn s1_p_i23_the_magic_string_ghost_cancels_without_a_key_match() {
+        // `Matches`'s first arm (`Player.cs:123-126`): an aiStyle-99 slot
+        // with `ai[0] == -3` (the Magic String's ghost,
+        // `Projectile.cs:68023-68025`) cancels regardless of the key — the
+        // key here expects a DIFFERENT type and index. The ghost's NaN
+        // velocity kill (`:67853-67855`'s `Kill()`) rides the death hook.
+        let mut w = world();
+        let mut p = missile_player(&w); // expects 16, index 0 — not the yoyo
+        let mut pool = ProjectilePool::new();
+        let ghost = pool
+            .spawn_with_data_ai(WOOD_YOYO, 400.0, 400.0, 0.0, 0.0, 9, 2.5, -3.0, 0.0)
+            .unwrap();
+        // The key's type (16) never matches the yoyo's 541 — the cancel
+        // can only come from the ghost arm.
+        assert_eq!(p.channel_proj_expected, MAGIC_MISSILE);
+        pool.slots_mut()[ghost].vel.x = f32::NAN;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[ghost].active, "the NaN kill ran");
+        assert!(!p.channel, "the aiStyle-99 −3 ghost cancels on its own");
+    }
+
+    #[test]
+    fn s1_p_i23_a_live_yoyo_death_without_the_ghost_state_does_not_cancel() {
+        // The ghost arm is strict: `ai[0] == -3` only. A returning yoyo
+        // (`ai[0] == -1`, no Magic String) dying on the owner-death gate
+        // (`:67824-67827`'s `Kill()`) matches neither arm — the key expects
+        // 16, and −1 is not −3.
+        let mut w = world();
+        let mut p = missile_player(&w);
+        let mut pool = ProjectilePool::new();
+        let yoyo = pool
+            .spawn_with_data_ai(WOOD_YOYO, 400.0, 400.0, 0.0, 0.0, 9, 2.5, -1.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[yoyo].vel.x = f32::NAN;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[yoyo].active, "the NaN kill ran");
+        assert!(p.channel, "−1 is not the ghost state — no cancel");
+    }
+
+    #[test]
+    fn s1_p_i23_the_out_of_world_deactivate_never_cancels() {
+        // `Projectile.Update`'s out-of-world guard (`Projectile.cs:16684-
+        // 16698`): `active = false` + `return` — NO `Kill()` call, so the
+        // channel-cancel head never runs. The tracked shot leaves the
+        // world; the channel stays open (the C# behaviour — the latch
+        // drops only on the release/CC/death paths).
+        let mut w = world();
+        let mut p = missile_player(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, -40.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
+            )
+            .unwrap();
+        pool.apply_channel_tracks(&mut p);
+        assert_eq!(p.channel_index_expected, slot as u16);
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[slot].active, "the guard deactivated the slot");
+        assert!(p.channel, "the guard's deactivate is not a Kill()");
+    }
+
+    #[test]
+    fn s1_p_i23_the_untracked_cache_matches_slot_zero_verbatim() {
+        // `StartChanneling(Item)` news the key with ONLY the type set
+        // (`Player.cs:52963-52966`) — `ProjectileIndexExpected` keeps the
+        // struct's 0 default. A slot-0 shot of the expected type dying
+        // BEFORE any tracking intent applied still matches (`:127-130`):
+        // the port keeps the 0 default, not an Option.
+        let mut w = world();
+        let mut p = missile_player(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(
+                MAGIC_MISSILE, 300.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
+            )
+            .unwrap();
+        assert_eq!(slot, 0);
+        assert_eq!(p.channel_index_expected, 0, "the struct default");
+        // NO apply_channel_tracks — the raw 0 default is the match.
+        pool.slots_mut()[slot].time_left = 1;
+        tick(&mut pool, &mut w, &mut p);
+        assert!(!pool.slots()[slot].active);
+        assert!(!p.channel, "the untracked 0 default matches slot 0");
     }
 }

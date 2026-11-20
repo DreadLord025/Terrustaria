@@ -1458,6 +1458,18 @@ pub struct Player {
     /// `ai[0..1] = LimitPointToPlayerReachableArea(MouseWorld)`), in world
     /// pixels. `Vec2::ZERO` while not channelling.
     pub channel_target: Vec2,
+    /// `Player._channelShotCache.ProjectileTypeExpected` (`Player.cs:117`,
+    /// `:52963-52966`): the held channel item's `shoot` — the projectile
+    /// type `TryUpdateChannel` tracks and `TryCancelChannel` matches
+    /// (`ChannelCancelKey` `:121-140`). 0 = no channel armed.
+    pub channel_proj_expected: u16,
+    /// `Player._channelShotCache.ProjectileIndexExpected` (`Player.cs:119`,
+    /// `:134-140`): the pool slot of the LAST spawned projectile of the
+    /// expected type (`NewProjectile`'s tail `Projectile.cs:11097-11100`).
+    /// The C# struct field defaults to 0 (`StartChanneling(Item)` news the
+    /// key with only `ProjectileTypeExpected` set, `:52963-52966`), so an
+    /// untracked cache matches slot 0 — the port keeps the same 0 default.
+    pub channel_index_expected: u16,
     // ------------------------------- the ammo mastery layer (M3-ITEM-6)
     // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
     // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
@@ -2227,6 +2239,8 @@ impl Player {
             channel_item: 0,
             channel_shoot: 0,
             channel_target: Vec2::ZERO,
+            channel_proj_expected: 0,
+            channel_index_expected: 0,
             magic_quiver: false,
             minion_kb: 0.0,
             kb_glove: false,
@@ -2984,6 +2998,14 @@ impl Player {
         self.dead_time += 1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
         self.hp = 0;
+        // `Player.cs:17017`: the dead tick drops the channel.
+        self.channel = false;
+        self.channel_item = 0;
+        self.channel_target = Vec2::ZERO;
+        self.channel_proj_expected = 0;
+        self.channel_index_expected = 0;
+        // S1-P-i20 seam: the shoot-id field clears with the latch.
+        self.channel_shoot = 0;
         self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
         // budget zeroes while dead — the pool stays until AI_062's dead-owner
