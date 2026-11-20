@@ -234,10 +234,17 @@ fn lerp_rgba(a: [u8; 4], b: [u8; 4], amount: f32) -> [u8; 4] {
 }
 
 /// `Item.GetAlpha(Color)` (`Item.cs:49170-49342`): the per-type self-lit /
-/// ghost tint over the environment light. `alpha` is `item.alpha` and
-/// `g_fade` is `Main.gFade` (the 1446/1506/1507/1543-1545 ghost arm) — the
-/// callers pass the runtime values (0 stand-ins, see the module doc).
-pub(crate) fn item_get_alpha(kind: u16, alpha: i32, g_fade: u8, new_color: [u8; 4]) -> [u8; 4] {
+/// ghost tint over the environment light. `alpha` is `item.alpha`,
+/// `g_fade` is `Main.gFade` (the 1446/1506/1507/1543-1545 ghost arm) and
+/// `disco` is `Main.DiscoR/G/B` (the 5128 shimmer-bait floor) — the callers
+/// pass the runtime values (0 / [0,0,0] stand-ins, see the module doc).
+pub(crate) fn item_get_alpha(
+    kind: u16,
+    alpha: i32,
+    g_fade: u8,
+    disco: [u8; 3],
+    new_color: [u8; 4],
+) -> [u8; 4] {
     if BOSS_BAG.contains(&kind) {
         // `:49172-49175`: Lerp(newColor, White, 0.4).
         return lerp_rgba(new_color, [255; 4], 0.4);
@@ -284,11 +291,8 @@ pub(crate) fn item_get_alpha(kind: u16, alpha: i32, g_fade: u8, new_color: [u8; 
                 4378 => [50, 200, 255, 255],
                 4389 => [255, 50, 125, 200],
                 5127 => [150, 50, 250, 200],
-                // 5128 reads Main.DiscoR/G/B — the caller's env already
-                // carries the disco tint through GetItemLight; the base
-                // here keeps the 200 alpha floor (the disco RGB rides the
-                // `disco` parameter of the wrapper).
-                5128 => [0, 0, 0, 200],
+                // 5128 reads Main.DiscoR/G/B (:49303), alpha floor 200.
+                5128 => [disco[0], disco[1], disco[2], 200],
                 _ => [255, 150, 150, 200],
             };
             [
@@ -373,7 +377,7 @@ fn icon_resolve(
     IconDraw {
         center,
         scale,
-        color: item_get_alpha(item.kind, item_alpha, g_fade, item_light),
+        color: item_get_alpha(item.kind, item_alpha, g_fade, disco, item_light),
         flip,
         second,
     }
@@ -516,7 +520,7 @@ pub(crate) fn food_platter_draw(
         pos,
         origin: [(fw / 2) as f32, fh as f32],
         scale,
-        color: item_get_alpha(item.kind, item_alpha, g_fade, current),
+        color: item_get_alpha(item.kind, item_alpha, g_fade, disco, current),
         flip: frame_x == 0,
         second,
         food_frame: is_food.then_some([fw, fh]),
@@ -1760,35 +1764,38 @@ mod tests {
     #[test]
     fn boss_bags_lerp_toward_white() {
         // Item.cs:49172-49175: Lerp(newColor, White, 0.4), byte truncation.
-        let c = item_get_alpha(3318, 0, 0, [100, 50, 0, 255]);
+        let c = item_get_alpha(3318, 0, 0, [0; 3], [100, 50, 0, 255]);
         assert_eq!(c, [162, 132, 102, 255]); // 100+155*0.4=162, 50+205*0.4=132
     }
 
     #[test]
     fn default_alpha_scales_rgb_and_clamps_the_subtraction() {
         // Item.cs:49324-49340: alpha 100 → num = 155/255.
-        let c = item_get_alpha(1, 100, 0, [255, 128, 0, 200]);
+        let c = item_get_alpha(1, 100, 0, [0; 3], [255, 128, 0, 200]);
         assert_eq!(c[0], (255.0 * 155.0 / 255.0) as u8); // 155
         assert_eq!(c[3], 100);
         // Alpha underflow clamps to 0, not a byte wrap.
-        let c2 = item_get_alpha(1, 250, 0, [255, 255, 255, 100]);
+        let c2 = item_get_alpha(1, 250, 0, [0; 3], [255, 255, 255, 100]);
         assert_eq!(c2[3], 0);
     }
 
     #[test]
     fn self_lit_arms_ignore_the_light() {
-        assert_eq!(item_get_alpha(75, 0, 0, [10, 20, 30, 40]), [255; 4]);
-        assert_eq!(item_get_alpha(520, 0, 0, [10, 20, 30, 40]), [255, 255, 255, 50]);
-        assert_eq!(item_get_alpha(58, 0, 0, [10, 20, 30, 40]), [200, 200, 200, 200]);
+        assert_eq!(item_get_alpha(75, 0, 0, [0; 3], [10, 20, 30, 40]), [255; 4]);
+        assert_eq!(item_get_alpha(520, 0, 0, [0; 3], [10, 20, 30, 40]), [255, 255, 255, 50]);
+        assert_eq!(item_get_alpha(58, 0, 0, [0; 3], [10, 20, 30, 40]), [200, 200, 200, 200]);
         // The ghost arm rides gFade.
-        assert_eq!(item_get_alpha(1446, 0, 77, [10, 20, 30, 40]), [10, 20, 30, 77]);
+        assert_eq!(item_get_alpha(1446, 0, 77, [0; 3], [10, 20, 30, 40]), [10, 20, 30, 77]);
     }
 
     #[test]
     fn shimmer_bait_floors_take_the_per_channel_max() {
         // Item.cs:49296-49322: 4377's floor (50, 255, 50, 200).
-        let c = item_get_alpha(4377, 0, 0, [100, 10, 200, 255]);
+        let c = item_get_alpha(4377, 0, 0, [0; 3], [100, 10, 200, 255]);
         assert_eq!(c, [100, 255, 200, 255]);
+        // 5128's floor reads the disco RGB (:49303).
+        let d = item_get_alpha(5128, 0, 0, [255, 128, 0], [10, 10, 10, 10]);
+        assert_eq!(d, [255, 128, 10, 200]);
     }
 
     #[test]
