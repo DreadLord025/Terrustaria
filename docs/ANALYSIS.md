@@ -26225,6 +26225,57 @@ ride the slot-ordered `update_potion_set_buff_arms` driver over
 
 Tests: 17 `s1_e_7c17_*` witnesses in the module — WRITTEN NOT RUN (code-only
 worker contract; compile-by-inspection).
+## The summon keep-alive buff block (S1-E-7 wave D / W4-c18, 2026-11-20, code-only)
+
+The THIRD missing block of `UpdateBuffs` (`Player.cs:10462-10976`, 30 ids:
+Ice Barrier 62 + the 29 summon keep-alive arms 49…161) is ported as a PURE
+effect table in `crates/tr-app/src/buff_effects_summons.rs`:
+`apply_summon_effect_arm` folds one arm's writes into a `SummonEffects`
+accumulator; `run_summon_buff_chain` is the slot-ordered driver over
+`BuffSlots` with the C# `DelBuff(j); j--` rescan. Claim + live-set census:
+`docs/research/28d-wave-d-claim.md` (c16 = first block `:9914-10048`, c17 =
+second `:10318-10461`, this worker = third). Deliberate deviations:
+
+* **Disjoint-wave shape**: the live `player.rs::SUMMON_BUFF_ARMS` +
+  `update_summon_buff_arms` path stays authoritative; this module is the
+  module-table form the waves' merge reconciles onto. Test-only until then —
+  no behaviour change, no RNG or fixed-step-order change.
+* **RNG census of the block: zero direct draws.** The indirect draws ride
+  the deferred spawn seams: 216's respawn `NewProjectile` (`:10712`, the
+  request records the staff's shoot/damage/knockBack; the wiring maps it onto
+  `spawn_with_data_ai_owned` exactly as `run_baby_bird_arm` does, failure →
+  DelBuff per the `flag2` guard) and the Abigail/StormTiger status updaters'
+  Kill/spawn pairs (live STUBs `player.rs:4137/:4142`, M4-PROJ-8 phases 4/6).
+  The DETERMINISTIC decision cores are ported here
+  (`desired_storm_tiger_rank` `:12337-12354`, `abigail_status_decision`
+  `:12274-12293`, `storm_tiger_status_decision` `:12295-12335`).
+* **62's missing halves**: the live `player.rs:6526` arm has only the
+  endurance add; this table adds the DelBuff-when-healthy half (`:10482`),
+  the `iceBarrier` flag, the light request (RGB 0.1/0.2/0.45, `:10466` — the
+  light itself already rides `player_lights.rs`) and the
+  `iceBarrierFrameCounter`/`iceBarrierFrame` advance (`advance_ice_barrier_frame`,
+  `:10469-10478`). 62 writes NO 18000 refresh.
+* **The persistent-flag read**: the C# keep gate reads `this.X` (`if
+  (!this.pygmy)`), not just the count — an earlier slot's keep in the same
+  tick keeps a later count-0 slot. The accumulator reproduces it (the live
+  driver reads the live fields, same semantics). 216 is the exception: its
+  gate reads ONLY the count (`:10700`).
+* **The unconditional status requests**: the C# runs `UpdateAbigailStatus`/
+  `UpdateStormTigerStatus` AFTER the keep/delete decision even when the buff
+  was DelBuff'd (`:10872-10875`/`:10892-10895` — the orphan-cleanup path).
+  The live driver only calls them on keep (`player.rs:4050-4057`); the table
+  records the faithful shape. Unobservable today (both live updaters are
+  stubs); the merge must keep the C# order when the pool bodies land.
+* **Inferno**: the aura scan (`:10224-10263`) is NOT in this block's range —
+  wave B owns it (roster dependency note stands, see above).
+
+Tests: 12 `s1_e_7d_*` tests — the 29-row keep/refresh/delete sweep (per id,
+per watched kind), 62's half-life boundary + 36-step frame cycle, 216's
+respawn gates, the DelBuff rescan, the persistent-flag read, the
+unconditional status requests, the tiger rank/form ladder + decisions, the
+foreign-id pass-through and the 29-row census pin. WRITTEN NOT RUN
+(code-only worker contract); compile-by-inspection.
+
 ## The NPC aiStyle dispatch axis (S1-D-2, 2026-11-18)
 
 The C# dispatches NPC AI on `aiStyle` first (`NPC.AI`, `NPC.cs:19819-41132`:
