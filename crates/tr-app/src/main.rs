@@ -259,6 +259,7 @@ mod signs;
 mod sound;
 mod soundid;
 mod test_world_helpers;
+mod orch_dust;
 mod town;
 mod town_arrival;
 mod tracked_sound;
