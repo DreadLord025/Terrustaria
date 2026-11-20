@@ -6415,7 +6415,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // death moment; the respawn TIMER then runs in `update_player`
         // (M2-DEATH-2's `UpdateDead` port) and revives on expiry.
         if player.hp <= 0 && !player.dead {
-            let (dx, dy) = player.center();
+            // `KillMe`'s drops read `base.position` (the TOP-LEFT) —
+            // `TryDroppingSingleItem`'s `(int)position.X/Y + Width/2,
+            // Height/2` centre (`Player.cs:54373`, `Item.cs:49651`).
+            let (dx, dy) = (player.x, player.y);
             let boss_near = player.boss_hinders(&app.npcs);
             // `KillMe` → `GetDeathText` runs inside `Player.Update` — the
             // `UpdatePlayers` swap (`Main.cs:17754`). The C# variant roll is

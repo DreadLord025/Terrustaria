@@ -176,8 +176,28 @@ const MAX_FALL: f32 = 7.0;
 /// `base.velocity.X *= 0.95f` and the snap to rest below `0.1`.
 const FRICTION_X: f32 = 0.95;
 const FRICTION_EPSILON: f32 = 0.1;
-/// Seconds before a drop can be collected (vanilla `Item.instanced` pickup delay).
+/// Seconds before a drop with no spawn ownership can be collected — the
+/// port's recorded stand-in for the C#'s no-delay SP pickup (PORT_MAP
+/// "ITEMS-2": `PICKUP_DELAY = 0.35` s replaces the ownership model for the
+/// tile/pot loot spawns). The player-drop path carries the REAL
+/// `WorldItem.grabDelayTime` model below (`Player.cs:5199`'s ownership).
 const PICKUP_DELAY: f32 = 0.35;
+/// `WorldItem.DefaultGrabDelay = 100` (`WorldItem.cs:30`/`:110`) — the ticks
+/// a drop's grab-delay timer starts at when it spawns under a
+/// `GrabDelay*` ownership (`Item.NewItem`, `Item.cs:49757-49760` sets
+/// `enemyGrabDelayTime`; `ApplySpawnOwnership`, `WorldItem.cs:306-313`,
+/// sets `grabDelayTime`).
+pub(crate) const DEFAULT_GRAB_DELAY: i32 = 100;
+/// `NewItemOwnership.GrabDelayForLocalPlayer` (`Item.NewItem`'s ownership
+/// argument on the player drop, `Player.cs:5199`): `grabDelayTime = 100`,
+/// `grabDelayPlayer = localPlayerIndex` (`WorldItem.cs:306-309`) — the
+/// dropping player cannot re-grab for 100 ticks, everyone else can at once.
+pub(crate) const GRAB_DELAY_LOCAL: u8 = 0;
+/// `NewItemOwnership.GrabDelayForAllPlayers` — `grabDelayPlayer = 255`
+/// (`WorldItem.cs:310-313`); the set is `ItemID.Sets
+/// .DropWithGrabDelayForAllPlayers = CreateBoolSet(267)` (`ItemID.cs:430`,
+/// the Guide Voodoo Doll alone).
+pub(crate) const GRAB_DELAY_ALL: u8 = 255;
 
 #[derive(Clone, Debug)]
 pub struct ItemDrop {
@@ -205,6 +225,18 @@ pub struct ItemDrop {
     pub age: f32,
     /// Bob phase so items on the ground do not pulse in lockstep.
     pub phase: f32,
+    /// `WorldItem.grabDelayTime` (`WorldItem.cs:26`), in ticks: the
+    /// `GrabDelay*` spawn ownership arms it to [`DEFAULT_GRAB_DELAY`]
+    /// (`WorldItem.cs:306-313`), `UpdateItem` decrements one per tick
+    /// (`:441-443`) and `Player.GrabItems` refuses the grab while it is
+    /// positive for the matching player (`Player.cs:34911`). 0 = the
+    /// no-ownership spawns keep the [`PICKUP_DELAY`] stand-in. (The field
+    /// name matches the i47 pickup seam — S1-P-i47 ports the same model.)
+    pub grab_delay_time: i32,
+    /// `WorldItem.grabDelayPlayer` (`WorldItem.cs:24`): the local player
+    /// index for `GrabDelayForLocalPlayer` ([`GRAB_DELAY_LOCAL`]), 255 for
+    /// `GrabDelayForAllPlayers` ([`GRAB_DELAY_ALL`]).
+    pub grab_delay_player: u8,
 }
 
 impl ItemDrop {
@@ -230,7 +262,19 @@ impl ItemDrop {
             vel: Vec2::new(vx, vy),
             age: 0.0,
             phase,
+            grab_delay_time: 0,
+            grab_delay_player: 255,
         }
+    }
+
+    /// `WorldItem.ApplySpawnOwnership`'s `GrabDelayForLocalPlayer` /
+    /// `GrabDelayForAllPlayers` arms (`WorldItem.cs:306-313`): the 100-tick
+    /// lock. `Player.DropSelectedItem` spawns with the local-player delay
+    /// (the voodoo doll 267 with the all-players one, `Player.cs:5199`,
+    /// `ItemID.cs:430`). The i47 pickup seam's helper of the same name.
+    pub fn apply_grab_delay(&mut self, player: u8) {
+        self.grab_delay_time = DEFAULT_GRAB_DELAY;
+        self.grab_delay_player = player;
     }
 
     pub fn center(&self) -> Vec2 {
@@ -315,11 +359,23 @@ impl ItemDrop {
     /// Returns true when the drop was collected by `player`.
     pub fn update(&mut self, world: &World, player_center: Option<Vec2>, dt: f32) -> bool {
         self.age += dt;
+        // `WorldItem.UpdateItem`'s grab-delay decrement (`WorldItem.cs:441-443`):
+        // one tick per update while positive.
+        if self.grab_delay_time > 0 {
+            self.grab_delay_time -= 1;
+        }
         self.shimmer_wet = self.box_in_shimmer(world);
         if let Some(pc) = player_center {
+            // `Player.GrabItems`' refusal (`Player.cs:34911`): while
+            // `grabDelayTime > 0` and the delay is for this player (the port
+            // is the local player, index 0 — `GRAB_DELAY_LOCAL`) or everyone
+            // (`GRAB_DELAY_ALL` = 255), no magnet and no pickup.
+            let delayed = self.grab_delay_time > 0
+                && (self.grab_delay_player == GRAB_DELAY_LOCAL
+                    || self.grab_delay_player == GRAB_DELAY_ALL);
             let d = pc - self.center();
             let dist = d.length();
-            if self.age > PICKUP_DELAY && dist < MAGNET_RADIUS {
+            if !delayed && self.age > PICKUP_DELAY && dist < MAGNET_RADIUS {
                 // Pull toward the player; skip the ground physics while collecting.
                 let speed = if dist < 10.0 { 8.0 } else { 4.0 };
                 self.vel = d.normalize_or_zero() * speed;

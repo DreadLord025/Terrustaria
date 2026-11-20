@@ -32870,3 +32870,158 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## S1-P-i51 item drop/throw (2026-11-20, code-only)
+
+The player drop/throw pass (`Player.dropItemCheck` `Player.cs:5107-5156`,
+`DropSelectedItem` `:5158-5217`) and the death drops (`DropItems(gemsOnly)`
+`:54302-54362`, `TryDroppingSingleItem` `:54364-54380`) are ported in
+`world_sim/items.rs` (`drop_item_check`/`drop_selected_item`/
+`spawn_player_drop`) and `death.rs` (`drop_items`/`try_drop_single_item`).
+The throw bind is `Main.cThrowItem` = **T** (`Main.cs:67168`) — the brief's
+"Q" phrasing was wrong; `input_map.rs` already seeded T correctly, the row
+was simply never read by a drop pass.
+
+**RNG order (the slice's critical invariant).**
+- The player drop (`Player.cs:5199`) passes an EXPLICIT velocity
+  `(4*direction + velocity.X, -2f)`, so `Item.NewItem`'s `velocity.HasValue`
+  arm (`Item.cs:49738-49741`) skips the scatter draws entirely, and
+  `item.Prefix(prefix)` with the carried prefix rolls nothing (`:511-514`,
+  only `-1/-2` roll) — **a player drop is DRAW-FREE**. The port's
+  `spawn_player_drop` takes no rng and draws nothing.
+- The death drops (`TryDroppingSingleItem` `:54373`) pass an explicit
+  velocity too: exactly TWO integer draws per drop — `Next(-20, 21) * 0.2f`
+  then `Next(-20, 1) * 0.2f` — on the `UpdatePlayers` stream (`KillMe` runs
+  inside `Player.Update`, `Main.cs:17754`), in slot order. The C# walk covers
+  `this.inventory[59]` (`Player.cs:1576`) — grid 0..49, coins 50..53, ammo
+  54..57 AND the cursor mirror 58 — then armor → dye → miscEquips → miscDyes
+  (`:54319-54350`); the port walks the same order across its split arrays
+  (`App.inventory` → `EquipSlots::coins`/`ammo` → `App.mouse_item` → armor →
+  dye → miscEquips → miscDyes). The old port's gems-only path used an
+  invented 3-draw float scatter (`(next_float*2-1)*1.2`, `-1.5-next_float`,
+  `phase*TAU`) — NOT the C# integer draws; replaced verbatim. The coin half
+  (`DropCoins`) rides the same two-draw pair per coin stack.
+- The starter re-grant (`:54356-54361`) is `SetDefaults(kind)` + `Prefix(-1)`
+  — the NATURAL spawn roll, NOT a no-op: 3506/3507/3509 sit in
+  `PrefixLegacy.ItemSets.SwordsHammersAxesPicks`, so `roll_prefix(kind, -1)`
+  draws on the same `UpdatePlayers` stream in slot order 3507 → 3509 → 3506
+  (1/4 no prefix, the reduced set 1/3 none, `Item.cs:544-559`). The first
+  in-flight draft pinned `prefix: 0` with a false "tools carry no prefix
+  category" claim — FIXED on resume.
+- The closed-inventory cursor return (`dropItemCheck` `:5141-5146` →
+  `GetOrDropItem` `:7193-7200`) and the death cursor return (`KillMe`
+  `:38937-38944`, the plain `GetItem` — the overflow STAYS on the cursor, no
+  world spawn) play the `IsACoin ? 38 : 7` chime per fill
+  (`GetItem_FillIntoOccupiedSlot` `Player.cs:39491`;
+  `ReturnItemFromSlot` is NOT NoSound, `GetItemSettings.cs:59`) — ONE
+  `Next(-10, 11)` pitch draw (case 7) or TWO (case 38: `Next(5)` slot then
+  `Next(-40, 41)` pitch) on `UpdatePlayers`, once per pickup event (the
+  port's merged-fill convention). The `GetOrDropItem` overflow spawns with
+  NO velocity argument, so it rides the port's pinned `spawn_item_drop_px`
+  triplet+prefix order (the recorded `Item.NewItem` scatter deviation,
+  unchanged).
+
+**Grab-delay model.** `ItemDrop.grab_delay_time`/`grab_delay_player` +
+`apply_grab_delay(player)` (the field/helper names match the unmerged i47
+pickup seam — S1-P-i47 ports the same model, coordinated per the Lead
+census). The player drop arms `DefaultGrabDelay = 100` ticks
+(`WorldItem.cs:110`) for the local player (`GrabDelayForLocalPlayer`,
+`WorldItem.cs:306-309`); the Guide Voodoo Doll 267 alone delays ALL players
+(`ItemID.Sets.DropWithGrabDelayForAllPlayers = CreateBoolSet(267)`,
+`ItemID.cs:430` → `grabDelayPlayer = 255`, `:310-313`). **The GrabDelay arms
+apply in SP too** — `ApplySpawnOwnership`'s early return is `netMode == 1`
+only (`:289-292`); the `netMode != 0` gate guards the RESERVE arm alone
+(`:300`), so a normal player drop IS locked for its dropper for 100 ticks
+in SP (the census's "instantly re-grabbable SP" phrasing conflated Reserve
+with GrabDelay — `GrabItems` `:34911` has no netMode gate).
+`ItemDrop::update` decrements one per tick (`:441-443`) and the pickup
+magnet refuses the locked drop (`Player.GrabItems` `:34911`). The
+no-ownership loot spawns keep the port's `PICKUP_DELAY = 0.35` s stand-in
+(the i47 seam replaces it with the real hitbox/magnet model on merge). The
+net `22 ItemOwner` join burst now carries the drop's LIVE
+`grabDelayPlayer`/`grabDelayTime` (`NetMessage.cs:681-682`) instead of
+zeros, the client handler writes them onto the drop
+(`MessageBuffer.cs:1558-1559`), the client's `21` cadence handler CARRIES
+the pair over on rebuild (`MessageBuffer.cs:1519-1528` never touches
+`grabDelay*` — only `22` writes it; the first in-flight draft wiped the
+lock on every cadence update — FIXED on resume), and both the client's
+pickup request filter and the host's `C2s::Pickup` validation re-check the
+gate. The `21 ItemDrop` body's `enemyGrabDelayTime` bit
+(`NetMessage.cs:652`/`:665-668`) is unported — it gates only the monster
+grab (`WorldItem.cs:405`), which has no port; the player grab-delay pair
+rides `22` exclusively, exactly like the C#. **Merge seams (coordination,
+NOT merged here):** i47 (f118fe91) reshapes `ItemDrop::update` to
+`(world, dt)` with the pickup moved into a GrabItems-shaped pass — the
+`delayed` magnet gate in this branch's `update` moves to that pass's grab
+site on merge (the decrement stays in `update`, i47 keeps it too); i50
+(d0deb3b8/179058ea) extends `update` to
+`(world, player_center, dt, grab_range, gold_ring)` — the gate keeps its
+shape inside that arm. The field/helper names (`grab_delay_time`,
+`grab_delay_player`, `apply_grab_delay`, `DEFAULT_GRAB_DELAY`) are
+byte-identical to i47's, so the struct/constructor halves auto-merge.
+
+**Death difficulty split.** `KillMe` `:38863` calls
+`DropItems(difficulty == 0 || difficulty == 3)`: softcore/journey drop only
+the large gems (1522-1527, 3643) and half the coins; mediumcore (1) /
+hardcore (2) drop the WHOLE carry — the starter tools 3506/3507/3509
+`TurnToAir` without dropping (`:54322-54325`), everything else drops
+(including the coin/ammo rows and the cursor stack — the 59-slot walk),
+then the tools re-grant into slots 0/1/2 (`:54356-54361`, `Prefix(-1)` =
+the natural roll, see RNG order above). `DropCoins` runs for difficulty 0/3
+only (`:38925-38936`); `lostCoins` books the whole purse first for every
+difficulty (`:38849-38853`) then overwrites with the dropped value for 0/3.
+The difficulty rides `App::active_player_difficulty` (the session draft).
+The death spawn centre is `(int)position + Width/2, Height/2`
+(`Item.cs:49651`'s X/Y overload), so the npcs-pass caller hands the
+pre-death TOP-LEFT position, not the centre. The cursor return
+(`:38937-38944`) runs after the coin bookkeeping: the plain `GetItem` fill
+(the remainder stays on the cursor), the Grab chime per fill, no world
+spawn — the mediumcore walk already dropped the cursor stack, so it sees
+air there.
+
+**Folds (deliberate, recorded).**
+- The `releaseThrow` latch refresh and the `dropItemCheck` call run
+  per-frame in the borrow-free tail of `update_player` (the house hook/
+  mount key-edge convention), gated on the swing/item_time/reuse_delay
+  trio (`Player.cs:25214-25217`). The right-click press edge is captured
+  in `players_phase` BEFORE the player pass (`drop_right_edge`) because
+  `update_editing` refreshes `place_prev_down` only after it; the
+  `mouseInterface` stand-in excludes every drawn slot surface (grid/
+  closed hotbar, coin/ammo rows, equipment columns, trash cell).
+- The guide/reforge `GetOrDropItem` returns (`:5118-5127`) ride the
+  existing `App::close_shop` seam; `inventory[58] = mouseItem.Clone()`
+  (`:5130`) is the port's single `App.mouse_item`; the `tileTargetX/Y`
+  cursor refresh (`:5132-5140`) feeds the smart-cursor pass, not the drop.
+- The favorited guard's `GetItem`-return half (`:5175-5183`) folds to the
+  slot-positional favourite refusal (the port's cursor stack cannot carry
+  the flag); the `inventoryChestStack` gate (`:5164`) folds open (no
+  quick-stack-to-chest feature).
+- Lucy the Axe's ThrownAway chat bubble (`:5195-5198`, item 5095) has no
+  port chat-bubble system — skipped.
+- `DropSelectedItem_InterruptActionsThatUseAnimations` (`:5227-5245`)
+  sweeps owned aiStyle-61/160 projectiles (the fishing bobbers
+  `AI_061_FishingBobber` `Projectile.cs:53658` and the kites `AI_160_Kites`
+  `:48421`); neither family is ported yet, so the sweep is the
+  shape-keeper. The `heldProj` kill has no port field.
+- `JustDroppedAnItem` (`Player.cs:2426`) is ported: the drop sets it
+  (`:5213`), the animation expiry clears it (`:43338-43339`), and
+  `player_lights.rs::held_item_lights` now gates on it (`:42847`'s
+  `!JustDroppedAnItem`); `IsAllowedToHoldItems` still folds true.
+- The loadout sweep (`DropItems` `:54351-54355`) is unported (no loadout
+  system); the expert/master coin `/4`/`0` rows are constants-off (the
+  port's difficulty plumbing).
+- The `App.coins` copper-total purse keeps whole on mediumcore/hardcore
+  (the port's recorded coin fold — the C# has no aggregate, its coin stacks
+  ride the 59-slot walk; the port's coin ROWS drop through the walk while
+  the purse total is the shops'/world-pickups' stand-in). The PvP
+  `lostCoins = 0` arm (`:38927-38930`) is unported (no PvP).
+- The swap-back (`:5205-5209`) restores the saved slot even when it is air
+  (the C# has no kind gate on `theItemWeDrop = item`); the first in-flight
+  draft gated on `swapped_in.kind > 0` and ran the drop animation on an
+  air-slot right-click instead — FIXED on resume.
+- The `dropItemCheck` dead-player skip runs BEFORE the noThrow countdown
+  (the C# never calls the check on the dead path — `UpdateDead` returns
+  first), so a dead player's noThrow does not tick.
+
+15 witness tests WRITTEN, NOT RUN (`world_sim/items.rs::drop_witness_tests`
+×11, `death.rs` ×4) — **no compiler invoked**.

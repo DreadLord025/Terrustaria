@@ -84,10 +84,11 @@ use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::player::{Player, WIDTH};
 
 /// The `AddLight` gate of `Player.ItemCheck` (`Player.cs:42847`):
-/// `!JustDroppedAnItem && IsAllowedToHoldItems`. Neither flag is ported
-/// (`IsAllowedToHoldItems` is only cleared by the unported webbed/stoned
-/// visuals), so both fold to true — recorded here so the fold is
-/// discoverable.
+/// `!JustDroppedAnItem && IsAllowedToHoldItems`. `JustDroppedAnItem` is
+/// ported now (S1-P-i51: the drop sets it, `Player.cs:5213`, the animation
+/// expiry clears it, `:43338-43339` — `p.just_dropped_an_item`);
+/// `IsAllowedToHoldItems` is only cleared by the unported webbed/stoned
+/// visuals and folds to true — recorded here so the fold is discoverable.
 const HELD_LIGHT_ALLOWED: bool = true;
 
 /// `Player.BiomeTorchHoldStyle` (`Player.cs:40291-40346`): the plain torch
@@ -341,7 +342,7 @@ pub(crate) fn held_item_lights(
     params: &LightParams,
 ) -> Vec<(i32, i32, [f32; 3])> {
     let mut out = Vec::new();
-    if kind == 0 || !HELD_LIGHT_ALLOWED || p.pulley {
+    if kind == 0 || !HELD_LIGHT_ALLOWED || p.just_dropped_an_item || p.pulley {
         // Every arm below gates on `!this.pulley` (`:49817` etc.); the
         // one exception (4952) gates on it too (`:50174`).
         return out;
