@@ -122,6 +122,14 @@ impl WireState {
         }
     }
 
+    /// `Tile.anyWire()` (`Tile.cs`): any of the four colour bits set.
+    pub fn any(&self, x: i32, y: i32) -> bool {
+        self.red.contains(&(x, y))
+            || self.blue.contains(&(x, y))
+            || self.green.contains(&(x, y))
+            || self.yellow.contains(&(x, y))
+    }
+
     fn any_in_rect(&self, left: i32, top: i32, width: i32, height: i32, color: WireColor) -> bool {
         let set = match color {
             WireColor::Red => &self.red,
@@ -297,6 +305,20 @@ pub struct Wiring {
     /// [`Self::rand`] — so the app layer drains these and plays them on its
     /// stage's named stream (`take_statue_spawns`' event-queue seam).
     switch_clicks: Vec<(i32, i32)>,
+    /// `HitWireSingle`'s case-314 switch-track flips (`Wiring.cs:1744-1748` →
+    /// `Minecart.FlipSwitchTrack`, `Minecart.cs:1296-1319`): the hit cell after
+    /// `CheckMech(5)` passes. The app owns the track-frame table and the flip.
+    switch_track_flips: Vec<(i32, i32)>,
+    /// `HitWireSingle`'s cases 21/467 hopper pulls (`Wiring.cs:1986-1988` →
+    /// `Wiring.Hopper`, `:2638-2678`): the hit cell + kind. The app resolves
+    /// the 2×2 anchor, the `CheckMech(60)`/locked/in-use gates and the chest
+    /// fill (the item pool + chest store live app-side).
+    hopper_requests: Vec<(i32, i32, u16)>,
+    /// `HitWireSingle`'s cases 219/642 extractinator rolls (`Wiring.cs:1990-
+    /// 1992` → `Wiring.Extractinator`, `:2554-2584`): the hit cell + kind. The
+    /// app resolves the 3×3 anchor, the `CheckMech(60)`/chest gates and the
+    /// `ExtractinatorHelper` roll (the chest store + drop pool live app-side).
+    extractinator_requests: Vec<(i32, i32, u16)>,
 }
 
 /// A device shot request: one `Projectile.NewProjectile` call from the device
@@ -779,6 +801,21 @@ impl Wiring {
     /// wiring stand-in stream.
     pub fn take_switch_clicks(&mut self) -> Vec<(i32, i32)> {
         std::mem::take(&mut self.switch_clicks)
+    }
+
+    /// Drains the case-314 switch-track flip requests (`Wiring.cs:1744-1748`).
+    pub fn take_switch_track_flips(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.switch_track_flips)
+    }
+
+    /// Drains the cases-21/467 hopper pull requests (`Wiring.cs:1986-1988`).
+    pub fn take_hopper_requests(&mut self) -> Vec<(i32, i32, u16)> {
+        std::mem::take(&mut self.hopper_requests)
+    }
+
+    /// Drains the cases-219/642 extractinator roll requests (`Wiring.cs:1990-1992`).
+    pub fn take_extractinator_requests(&mut self) -> Vec<(i32, i32, u16)> {
+        std::mem::take(&mut self.extractinator_requests)
     }
 
     /// Drains the trap emission requests (the case-137 trap family).
@@ -2338,10 +2375,28 @@ impl Wiring {
             141 => self.explosives(world, i, j),
             210 => self.explode_mine(world, i, j),
             443 => self.geyser_trap(world, i, j),
+            // ---- W4-e20: the three D8-residual arms whose supporting systems
+            // ---- have since landed (the switch-track table, the chest store +
+            // ---- item sorting, the ExtractinatorHelper roll tables). The
+            // ---- engine runs the CheckMech gate and emits the request; the
+            // ---- app resolves the anchor, the chest gates and the effect.
+            // The switch track (314, `:1744-1748`): `CheckMech(5)` then the
+            // `Minecart.FlipSwitchTrack` request (`Minecart.cs:1296-1319`).
+            314 => {
+                if self.check_mech(i, j, 5) {
+                    self.switch_track_flips.push((i, j));
+                }
+            }
+            // The hopper (21/467, `:1986-1988` → `Wiring.Hopper` `:2638-2678`):
+            // the request carries the hit cell + kind; the app resolves the 2×2
+            // anchor, `CheckMech(60)`, the locked/in-use gates and the fill.
+            21 | 467 => self.hopper_requests.push((i, j, kind)),
+            // The extractinator (219/642, `:1990-1992` → `Wiring.Extractinator`
+            // `:2554-2584`): the request carries the hit cell + kind; the app
+            // resolves the 3×3 anchor, `CheckMech(60)`, the chest gates + roll.
+            219 | 642 => self.extractinator_requests.push((i, j, kind)),
             // ---- S1-L-6: the arms below close research-23 D8's missing set
-            // ---- (the tile-mechanical half; Hopper 21/467, Extractinator
-            // ---- 219/642 and the switch-track 314 need unported systems —
-            // ---- see the research note).
+            // ---- (the tile-mechanical half).
             // The type-pair swap 255..268 (`:1033-1050`): the two halves
             // (e.g. the pressure-plate colours) toggle ±7, then the wake.
             k if (255..=268).contains(&k) => {
@@ -6207,6 +6262,37 @@ mod s1_l6_tests {
         wiring.hit_switch(&mut w, 10, 20);
         assert_eq!(w.tile_frame_x(10, 20), 36, "the lever shifted");
         assert_eq!(w.tile(12, 20).unwrap().kind, 422, "the lamp swapped");
+    }
+
+    #[test]
+    fn the_switch_track_requests_the_flip_after_check_mech_5() {
+        // `Wiring.cs:1744-1748`: case 314 runs `CheckMech(5)` then requests
+        // `Minecart.FlipSwitchTrack`. The re-trip inside the window is silent.
+        let mut w = wired_device(10, 20, 314, 1, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(wiring.take_switch_track_flips(), vec![(10, 20)]);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert!(wiring.take_switch_track_flips().is_empty(), "CheckMech(5) holds");
+    }
+
+    #[test]
+    fn the_hopper_and_extractinator_request_their_anchors() {
+        // `Wiring.cs:1986-1992`: cases 21/467 (Hopper) and 219/642
+        // (Extractinator) emit the hit cell + kind; the app resolves the
+        // anchor, CheckMech(60) and the chest gates.
+        for (kind, is_hopper) in [(21u16, true), (467, true), (219, false), (642, false)] {
+            let mut w = wired_device(10, 20, kind, 0, 0);
+            let mut wiring = Wiring::new();
+            wiring.trip_wire(&mut w, 8, 20, 1, 1);
+            if is_hopper {
+                assert_eq!(wiring.take_hopper_requests(), vec![(10, 20, kind)]);
+                assert!(wiring.take_extractinator_requests().is_empty());
+            } else {
+                assert_eq!(wiring.take_extractinator_requests(), vec![(10, 20, kind)]);
+                assert!(wiring.take_hopper_requests().is_empty());
+            }
+        }
     }
 }
 

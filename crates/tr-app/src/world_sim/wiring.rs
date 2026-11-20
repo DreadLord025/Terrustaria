@@ -100,6 +100,11 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // spawn loop after the step — their caps read the projectile pool.
     let mut trap_requests = Vec::new();
     let mut device_shots = Vec::new();
+    // The D8-residual device arms (W4-e20): the switch-track flips (314), the
+    // hopper pulls (21/467) and the extractinator rolls (219/642).
+    let mut switch_track_flips = Vec::new();
+    let mut hopper_requests = Vec::new();
+    let mut extractinator_requests = Vec::new();
     // THROW_A_PARTY (25) rides after the fixed step: the `98` broadcast needs
     // `&mut App`, which the wiring closure holds across its body.
     let mut party_credits = 0;
@@ -247,6 +252,13 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         trap_requests.extend(app.wiring.take_trap_requests());
         // The device shots (cannons, fireworks, explosives/mine/geyser/toilet).
         device_shots.extend(app.wiring.take_device_shots());
+        // The D8-residual device arms (W4-e20): the switch-track flips (314),
+        // the hopper pulls (21/467) and the extractinator rolls (219/642). The
+        // engine ran the case-314 CheckMech(5); the hopper/extractinator
+        // anchors + CheckMech(60) + chest gates resolve app-side below.
+        switch_track_flips.extend(app.wiring.take_switch_track_flips());
+        hopper_requests.extend(app.wiring.take_hopper_requests());
+        extractinator_requests.extend(app.wiring.take_extractinator_requests());
         // The announcement box's texts (`HitWireSingle`'s case 425 →
         // `Main.NewTextMultiline`, `Wiring.cs:1202-1233`): the C# `Color.Pink`
         // chat line. `AnnouncementBoxRange == -1` announces unconditionally;
@@ -448,6 +460,22 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             shot.ai1,
         );
     }
+    // The switch-track flips (`HitWireSingle` case 314 → `Minecart.FlipSwitchTrack`,
+    // `Wiring.cs:1744-1748`/`Minecart.cs:1296-1319`): the engine's CheckMech(5)
+    // already gated the request; the flip reads the track-frame table.
+    for (i, j) in switch_track_flips {
+        crate::minecart::flip_switch_track(&mut app.world, i, j);
+    }
+    // The hopper pulls (`HitWireSingle` cases 21/467 → `Wiring.Hopper`,
+    // `Wiring.cs:2638-2678`) and the extractinator rolls (cases 219/642 →
+    // `Wiring.Extractinator`, `:2554-2584`): the anchor, CheckMech(60) and the
+    // chest gates resolve here (the chest store + item pool live app-side).
+    for (i, j, kind) in hopper_requests {
+        hopper_pull(app, i, j, kind);
+    }
+    for (i, j, kind) in extractinator_requests {
+        extractinator_roll(app, i, j, kind);
+    }
 }
 
 /// The C#'s `NPC.NewNPC` (`NPC.cs:80750-80780`): the entity is constructed at
@@ -522,6 +550,326 @@ fn spear_cap_allows(app: &App, req: &tr_core::wiring::TrapRequest) -> bool {
         };
     }
     count > 0
+}
+
+/// `ItemID.Sets.ItemsThatShouldNotBeInInventory` (`ID/ItemID.cs:345`) — the
+/// hopper's grab gate (`Wiring.cs:2612`/`:2667`). Same set as `chest.rs`'s
+/// `BANNED_IN_INVENTORY` (the save-side air rule).
+const HOPPER_BANNED: &[u16] = &[
+    58, 184, 1734, 1735, 1867, 1868, 3453, 3454, 3455, 4143, 5013, 6135, 6136,
+];
+
+/// `Utils.CoinsCount` (`Utils.cs:1019-1046`): the copper-equivalent value of
+/// the coin slots (71×1, 72×100, 73×10000, 74×1000000). No ignore slots here.
+fn coins_count(slots: &[crate::item::ItemSlot]) -> i64 {
+    let mut total = 0i64;
+    for s in slots {
+        total += match s.kind {
+            71 => i64::from(s.count),
+            72 => i64::from(s.count) * 100,
+            73 => i64::from(s.count) * 10_000,
+            74 => i64::from(s.count) * 1_000_000,
+            _ => 0,
+        };
+    }
+    total
+}
+
+/// `Utils.CoinsSplit` (`Utils.cs:1048-1060`): the four-denomination split
+/// `[copper, silver, gold, platinum]` of a copper-equivalent count.
+fn coins_split(count: i64) -> [i64; 4] {
+    let mut out = [0i64; 4];
+    let mut acc = 0i64;
+    let mut denom = 1_000_000i64;
+    for idx in (0..4).rev() {
+        out[idx] = (count - acc) / denom;
+        acc += out[idx] * denom;
+        denom /= 100;
+    }
+    out
+}
+
+/// `Wiring.TryMoveCoinsInChest` (`Wiring.cs:2703-2757`): the hopper's coin arm.
+/// The chest's coins plus the drop's value (`value / 5 * stack`) are re-split
+/// into denominations and laid into the first air/coin slots (scanned high→low
+/// so platinum lands first); a slot shortfall returns false (no mutation). On
+/// success every old coin is cleared and the new stacks written, the drop gone.
+fn try_move_coins_in_chest(
+    drop_kind: u16,
+    drop_count: u32,
+    slots: &mut [crate::item::ItemSlot],
+    max_items: usize,
+) -> bool {
+    if !crate::registry::is_coin(drop_kind) {
+        return false;
+    }
+    let value = i64::from(crate::registry::get(drop_kind).map_or(0, |d| d.value));
+    let total = coins_count(&slots[..max_items.min(slots.len())])
+        + value / 5 * i64::from(drop_count);
+    let split = coins_split(total);
+    // `:2713-2732`: reserve one slot per non-zero denomination, high→low,
+    // skipping occupied non-coin slots; a shortfall aborts before any write.
+    let mut targets = [usize::MAX; 4];
+    let mut cursor = 0usize;
+    for idx in (0..4).rev() {
+        if split[idx] == 0 {
+            continue;
+        }
+        loop {
+            if cursor >= max_items {
+                return false;
+            }
+            let air = slots.get(cursor).is_none_or(|s| s.kind == 0 || s.count == 0);
+            if air || crate::registry::is_coin(slots.get(cursor).map_or(0, |s| s.kind)) {
+                break;
+            }
+            cursor += 1;
+        }
+        targets[idx] = cursor;
+        cursor += 1;
+    }
+    // `:2733-2740`: clear every existing coin.
+    for s in slots.iter_mut().take(max_items.min(slots.len())) {
+        if crate::registry::is_coin(s.kind) {
+            *s = crate::item::EMPTY_SLOT;
+        }
+    }
+    // `:2741-2754`: write the new stacks (capped at the denomination maxStack).
+    for idx in (0..4).rev() {
+        if split[idx] == 0 {
+            continue;
+        }
+        let kind = 71 + idx as u16;
+        let max = i64::from(crate::registry::max_stack(kind));
+        let stack = split[idx].min(max);
+        let t = targets[idx];
+        if t >= slots.len() {
+            slots.resize(t + 1, crate::item::EMPTY_SLOT);
+        }
+        slots[t] = crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: stack as u32,
+            prefix: 0,
+        };
+    }
+    true
+}
+
+/// `Wiring.TryAddingToStack` (`Wiring.cs:2772-2798`): merge the drop into a
+/// matching chest stack up to its maxStack. Returns true when the drop is
+/// fully consumed (the C# `worldItem.stack <= 0` arm); a partial merge returns
+/// `num > 0` but the hopper caller treats any true as "placed" only when the
+/// drop emptied — the port models the full-consume path the hopper relies on.
+fn try_adding_to_stack(
+    drop_kind: u16,
+    drop_prefix: u16,
+    drop_count: &mut u32,
+    slot: &mut crate::item::ItemSlot,
+) -> bool {
+    let max = crate::registry::max_stack(slot.kind);
+    if slot.count >= max || slot.kind != drop_kind || slot.prefix != drop_prefix {
+        return false;
+    }
+    let room = max - slot.count;
+    let take = (*drop_count).min(room);
+    *drop_count -= take;
+    slot.count += take;
+    *drop_count == 0
+}
+
+/// `Wiring.TryToPutItemInChest` (`Wiring.cs:2680-2701`): coins ride the coin
+/// arm; otherwise the first stack merge, then the first empty slot. Returns
+/// true when the drop was placed (consumed).
+fn try_put_item_in_chest(
+    drop: &crate::item::ItemDrop,
+    slots: &mut [crate::item::ItemSlot],
+    max_items: usize,
+) -> bool {
+    if crate::registry::is_coin(drop.kind) {
+        return try_move_coins_in_chest(drop.kind, drop.count, slots, max_items);
+    }
+    let mut left = drop.count;
+    // `:2686-2692`: the stack-merge pass over the chest's slots.
+    for slot in slots.iter_mut().take(max_items.min(slots.len())) {
+        if try_adding_to_stack(drop.kind, drop.prefix, &mut left, slot) {
+            return true;
+        }
+    }
+    // `:2693-2699`: the first empty slot takes the whole (remaining) drop.
+    for idx in 0..max_items {
+        let air = slots.get(idx).is_none_or(|s| s.kind == 0 || s.count == 0);
+        if air {
+            if idx >= slots.len() {
+                slots.resize(idx + 1, crate::item::EMPTY_SLOT);
+            }
+            slots[idx] = crate::item::ItemSlot {
+                kind: drop.kind,
+                name: crate::registry::name(drop.kind),
+                count: left,
+                prefix: drop.prefix,
+            };
+            return true;
+        }
+    }
+    false
+}
+
+/// `Wiring.Hopper` (`Wiring.cs:2638-2678`, `HitWireSingle` cases 21/467): the
+/// 2×2 anchor from the negative frame offsets, `CheckMech(60)`, the locked /
+/// in-use gates, then every ground item inside the 192×192 grab box centred on
+/// the chest is pulled into the chest (`TryToPutItemInChest`); a successful
+/// pull sorts the chest (`ItemSorting.SortInventory`, withSync/withFeedback
+/// false). The C#'s `VisualizeChestTransfer` is a draw-only effect (no port).
+fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
+    let Some(tile) = app.world.tile(i, j).copied() else {
+        return;
+    };
+    if tile.kind != kind {
+        return;
+    }
+    // `:2643-2650`: the anchor — `frameX % 36 != 0` steps left, `frameY % 36
+    // != 0` steps up.
+    let mut ax = i;
+    let mut ay = j;
+    if tile.frame_x % 36 != 0 {
+        ax -= 1;
+    }
+    if tile.frame_y % 36 != 0 {
+        ay -= 1;
+    }
+    // `:2651-2659`: CheckMech(60), the locked tile, the chest's existence and
+    // the in-use gate.
+    if !app.wiring.check_mech(ax, ay, 60) || crate::chest::is_locked(&app.world, ax, ay) {
+        return;
+    }
+    let open = app.player.as_ref().map_or(-1, |p| p.chest);
+    let Some(idx) = crate::chest::find_chest(&app.world_chests, ax, ay) else {
+        return;
+    };
+    if crate::chest::using_chest(&app.world_chests, idx, open) {
+        return;
+    }
+    // `:2660`: the 192×192 grab box centred on `(ax*16+16, ay*16+16)`
+    // (`HopperGrabHitboxSize`, `Wiring.cs:3429`).
+    let cx = ax as f32 * 16.0 + 16.0;
+    let cy = ay as f32 * 16.0 + 16.0;
+    let (gx0, gy0, gx1, gy1) = (cx - 96.0, cy - 96.0, cx + 96.0, cy + 96.0);
+    let max_items = app.world_chests[idx].max_items;
+    let mut pulled = false;
+    // `:2663-2673`: the 400-slot item scan — active, local-reserved, not banned,
+    // box-intersecting, and placeable. The port's single player folds the
+    // `playerIndexTheItemIsReservedFor == Main.myPlayer` gate to "all drops".
+    for drop in app.items.iter_mut() {
+        if drop.count == 0 || HOPPER_BANNED.contains(&drop.kind) {
+            continue;
+        }
+        let (dx0, dy0) = (drop.pos.x, drop.pos.y);
+        let (dx1, dy1) = (dx0 + crate::item::SIZE, dy0 + crate::item::SIZE);
+        if dx1 < gx0 || dx0 > gx1 || dy1 < gy0 || dy0 > gy1 {
+            continue;
+        }
+        let slots = crate::chest::chest_slots_mut(&mut app.world_chests, idx)
+            .expect("the chest exists");
+        if try_put_item_in_chest(drop, slots, max_items) {
+            drop.count = 0;
+            drop.kind = 0;
+            pulled = true;
+        }
+    }
+    // `:2674-2677`: a successful pull sorts the chest (no sync, no feedback).
+    if pulled {
+        let mult = app.player.as_ref().map_or([1.0; 4], |p| {
+            [p.melee_damage, p.ranged_damage, p.magic_damage, p.minion_damage]
+        });
+        if let Some(slots) = crate::chest::chest_slots_mut(&mut app.world_chests, idx) {
+            crate::item_sorting::sort(slots, &[], false, mult);
+        }
+    }
+}
+
+/// `Wiring.TryFindChestForExtractinator` (`Wiring.cs:2586-2608`): the first
+/// unlocked chest in the 8×8 region around the 3×3 anchor (`lookupX-2 ..
+/// lookupX+5`, `lookupY-2 .. lookupY+5`), scanned row-major.
+fn find_chest_for_extractinator(app: &App, ax: i32, ay: i32) -> Option<usize> {
+    for x in ax - 2..=ax + 5 {
+        for y in ay - 2..=ay + 5 {
+            if crate::chest::is_locked(&app.world, x, y) {
+                continue;
+            }
+            if let Some(idx) = crate::chest::find_chest(&app.world_chests, x, y) {
+                return Some(idx);
+            }
+        }
+    }
+    None
+}
+
+/// `Wiring.Extractinator` (`Wiring.cs:2554-2584`, `HitWireSingle` cases
+/// 219/642): the 3×3 anchor from `frameX/Y % 54 / 18`, `CheckMech(60)`, the
+/// nearby-chest search and the in-use gate, then the LAST non-air chest slot
+/// rolls through `ExtractinatorHelper.RollExtractinatorDrop`; a positive output
+/// consumes one input and spawns the drop at the anchor (`Item.NewItem`,
+/// 32×32 box). The roll + drop draw ride the wiring stream (the `HitWireSingle`
+/// `Main.rand` site, the S1-L-6c contract).
+fn extractinator_roll(app: &mut App, i: i32, j: i32, kind: u16) {
+    let Some(tile) = app.world.tile(i, j).copied() else {
+        return;
+    };
+    if tile.kind != kind {
+        return;
+    }
+    // `:2559-2560`: the 3×3 anchor.
+    let ax = i - i32::from(tile.frame_x % 54 / 18);
+    let ay = j - i32::from(tile.frame_y % 54 / 18);
+    // `:2561-2564`: CheckMech(60), the chest search, the in-use gate.
+    if !app.wiring.check_mech(ax, ay, 60) {
+        return;
+    }
+    let open = app.player.as_ref().map_or(-1, |p| p.chest);
+    let Some(idx) = find_chest_for_extractinator(app, ax, ay) else {
+        return;
+    };
+    if crate::chest::using_chest(&app.world_chests, idx, open) {
+        return;
+    }
+    // `:2567-2583`: the last non-air slot rolls; a positive output consumes one
+    // input and spawns the drop, then breaks (one extraction per wire hit).
+    let max_items = app.world_chests[idx].max_items;
+    let slots = crate::chest::chest_slots_mut(&mut app.world_chests, idx)
+        .expect("the chest exists");
+    for slot_idx in (0..max_items.min(slots.len())).rev() {
+        let (in_kind, in_count) = (slots[slot_idx].kind, slots[slot_idx].count);
+        if in_kind == 0 || in_count == 0 {
+            continue;
+        }
+        let mode = tr_core::extract::extractinator_mode(in_kind);
+        let (item_type, stack) = tr_core::extract::roll_extractinator_drop(
+            mode,
+            kind,
+            app.world.hard_mode,
+            app.wiring.rand_mut(),
+        );
+        if item_type > 0 {
+            // `:2575-2578`: `--item2.stack <= 0` → TurnToAir.
+            if in_count <= 1 {
+                slots[slot_idx] = crate::item::EMPTY_SLOT;
+            } else {
+                slots[slot_idx].count = in_count - 1;
+            }
+            // `:2579`: `Item.NewItem(source, num*16, num2*16, 32, 32, ...)` —
+            // the centre is `(ax*16+16, ay*16+16)`.
+            let rng = app.wiring.rand_mut();
+            crate::world_sim::items::spawn_item_drop_px(
+                &mut app.items,
+                rng,
+                item_type as u16,
+                stack.max(1) as u32,
+                Vec2::new(ax as f32 * 16.0 + 16.0, ay as f32 * 16.0 + 16.0),
+            );
+            break;
+        }
+    }
 }
 
 /// `WorldGen.BunnyCannonCanFire` (`WorldGen.cs:50700-50747`): at least one free
@@ -1090,5 +1438,103 @@ mod tests {
             .iter()
             .filter(|p| p.active)
             .any(|p| (419..=422).contains(&p.kind) && p.ai[0] == x && p.ai[1] == y)
+    }
+
+    /// A chest at `(x, y)` holding the given slots (the hopper/extractinator
+    /// fixtures). The chest tile is a plain container (21, frame 0 — unlocked).
+    fn chest_at(app: &mut App, x: i32, y: i32, slots: Vec<crate::item::ItemSlot>) -> usize {
+        let i = app.world.index(x, y);
+        app.world.tiles[i] = tr_core::tile::Tile {
+            kind: 21,
+            ..Default::default()
+        };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        let idx = crate::chest::create_chest(&mut app.world_chests, x, y);
+        app.world_chests[idx].slots = slots;
+        idx
+    }
+
+    fn slot(kind: u16, count: u32) -> crate::item::ItemSlot {
+        crate::item::ItemSlot { kind, name: "", count, prefix: 0 }
+    }
+
+    #[test]
+    fn dw_e20_the_switch_track_flips_front_and_back() {
+        // `Minecart.FlipSwitchTrack` (`Minecart.cs:1296-1319`): a normal track
+        // (frame 1 straight, type 0) with a back frame swaps front/back. The
+        // device at (10, 20) carries front 1 / back 5; the wire hit flips them.
+        let mut app = app_with(314, 1, 5);
+        trip_and_tick(&mut app);
+        assert_eq!(app.world.tile_frame_x(10, 20), 5, "front takes the back");
+        assert_eq!(app.world.tile_frame_y(10, 20), 1, "back takes the front");
+    }
+
+    #[test]
+    fn dw_e20_the_hopper_pulls_a_ground_item_into_the_chest() {
+        // `Wiring.Hopper` (`Wiring.cs:2638-2678`): the 2×2 chest at (10, 20),
+        // a dirt drop inside the 192×192 grab box is pulled in and the chest
+        // sorted. The hopper tile (21) is the chest's own anchor cell.
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        // A dirt drop at the chest centre (well inside the grab box).
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 0, "the drop was consumed");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 5), "the dirt landed");
+    }
+
+    #[test]
+    fn dw_e20_the_hopper_merges_coins_into_denominations() {
+        // `Wiring.TryMoveCoinsInChest` (`Wiring.cs:2703-2757`): a copper drop
+        // (71, value 5 → 1 copper each) merges with the chest's coins and the
+        // total re-splits. 150 copper in the chest + a 60-copper drop = 210 →
+        // 2 silver (200) + 10 copper.
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![slot(71, 150)]);
+        app.items.push(crate::item::ItemDrop::new(
+            71, 60, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 0, "the coin drop was consumed");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        let copper: u32 = slots.iter().filter(|s| s.kind == 71).map(|s| s.count).sum();
+        let silver: u32 = slots.iter().filter(|s| s.kind == 72).map(|s| s.count).sum();
+        assert_eq!((copper, silver), (10, 2), "210 copper = 2 silver + 10 copper");
+    }
+
+    #[test]
+    fn dw_e20_the_extractinator_rolls_the_last_chest_slot() {
+        // `Wiring.Extractinator` (`Wiring.cs:2554-2584`): the 3×3 extractinator
+        // at (10, 20), a chest nearby holding silt (424, mode 0). The last slot
+        // rolls; a positive output consumes one input and spawns a drop. The
+        // wiring RNG is seeded so the roll is deterministic — silt's coin arm
+        // (`num7 = 1`, `Next(0, 2) == 0`) fires on the first draw for seed 7.
+        let mut app = app_with(219, 0, 0);
+        app.wiring.seed_rand(7);
+        // The chest sits at (12, 20) — inside the 8×8 search region around the
+        // anchor (10, 20), and NOT on the extractinator's own cells.
+        let idx = chest_at(&mut app, 12, 20, vec![slot(424, 3)]);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "one silt consumed");
+        assert!(!app.items.is_empty(), "the roll spawned a drop");
+    }
+
+    #[test]
+    fn dw_e20_the_extractinator_skips_a_non_extractable_slot() {
+        // `ExtractinatorHelper.RollExtractinatorDrop` mode −1 (`ExtractinatorHelper.cs:20-23`):
+        // a non-extractable input (dirt, 2) rolls nothing — the slot is untouched
+        // and no drop spawns. The scan continues to earlier slots; with only the
+        // dirt slot the whole hit is a no-op.
+        let mut app = app_with(219, 0, 0);
+        app.wiring.seed_rand(7);
+        let idx = chest_at(&mut app, 12, 20, vec![slot(2, 3)]);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 3, "the dirt is untouched");
+        assert!(app.items.is_empty(), "no drop from a mode -1 roll");
     }
 }
