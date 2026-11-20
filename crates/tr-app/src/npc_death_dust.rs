@@ -221,7 +221,7 @@ fn lane_covers(ty: u16) -> bool {
     matches!(
         ty,
         668 | 552..=554 | 561..=563 | 555..=557 | 551 | 558..=560 | 566 | 567
-            | 576 | 577 | 564 | 565
+            | 576 | 577 | 564 | 565 | 572..=575 | 570 | 571 | 568 | 569 | 550 | 441
     )
 }
 
@@ -294,6 +294,26 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         // `NPC.cs:82435-82453` — the DD2 Dark Mage pair: 20×5; the
         // eleven gores (1009..1019) are constant-argument.
         564 | 565 => fx.burst(20, 5, hd, -1.0),
+        // `NPC.cs:82228-82242` — the DD2 Kobold Walker pair: the two
+        // `SoundEngine...Stop()` calls (`:82230-82231`) draw nothing;
+        // 20×5 then five constant gores at Center-(10,10).
+        572 | 573 => fx.burst(20, 5, hd, -1.0),
+        // `NPC.cs:82253-82267` — the DD2 Kobold Flyer pair: one Stop
+        // (`:82255`, no draws); 20×5 then five constant gores.
+        574 | 575 => fx.burst(20, 5, hd, -1.0),
+        // `NPC.cs:82278-82290` — the DD2 Drakin pair: 20×5; the five
+        // gores (1075/979 tier rows) are constant-argument.
+        570 | 571 => fx.burst(20, 5, hd, -1.0),
+        // `NPC.cs:82301-82312` — the DD2 Wither Beast pair: 20×5; the
+        // five gores (1020-1023) are constant-argument.
+        568 | 569 => fx.burst(20, 5, hd, -1.0),
+        // `NPC.cs:87952-87960` — the DD2 Bartender: 50×5 at
+        // `(2.5×hitDirection, -2.5)`; the five gores are
+        // IsShimmerVariant-conditional but BOTH arms constant.
+        550 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:87685-87693` — the Tax Collector: the same 50×5; the
+        // five shimmer-conditional gores are constant both ways.
+        441 => fx.burst(50, 5, 2.5 * hd, -2.5),
         _ => {}
     }
 }
