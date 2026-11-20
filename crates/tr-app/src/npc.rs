@@ -4885,6 +4885,24 @@ impl Npc {
                 }
                 self.integrate_no_tile_collide();
             }
+            // `else if (this.aiStyle == 44)` (`NPC.cs:30861-31124`) — the
+            // flying-fish / flying-antlion swimmers (224/509/581/587).
+            // W4-c4: the steering machine (`npc_ai_style44::style44_step`)
+            // runs in the world-sim pre-pass at the NPC's own slot turn
+            // (the 587 materialize's dust rolls ride the `UpdateNPCs`
+            // stream through the shared `DustPool`, and the separation
+            // loop reads the sibling slots — the style-56 seam); this arm
+            // owns only the post-`AI()` movement: the family is noGravity
+            // (the `:30863` every-tick write) but NOT noTileCollide, so
+            // `UpdateNPC` runs `UpdateCollision` (`:90490-90492`) — the
+            // bat/fish flyer stand-in (`integrate_flyer_collision`, the
+            // `update_cave_bat` shape; the wet re-probe is
+            // `Collision_WaterCollision`'s, `:92526`).
+            44 => {
+                let (w, h) = self.size();
+                self.wet = is_wet(world, self.x, self.y, w, h);
+                self.integrate_flyer_collision(world);
+            }
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
             // (`NPC.cs:31347-31350`) - the Golem's fists. The three-way
             // reconcile (TR-D3s48 note) prefers golem-audit's faithful
@@ -6184,6 +6202,18 @@ impl Npc {
             NpcKind::DungeonSpirit => {
                 unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
             }
+            // W4-c4: the style-44 swimmers ride the style axis (the
+            // steering machine runs in the world-sim pre-pass at the
+            // NPC's slot turn — the sibling scan + the 587 dust rolls;
+            // the axis' 44 arm owns the UpdateCollision tail). These
+            // arms are unreachable through `update_rng` (the axis claims
+            // style 44 first — the DungeonSpirit precedent).
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => {
+                unreachable!("aiStyle 44 rides the style axis (W4-c4)")
+            }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
             }
@@ -6701,6 +6731,31 @@ impl Npc {
                 if self.frame >= 3 {
                     self.frame = 0;
                 }
+            }
+            // W4-c4: the style-44 swimmers' type cases — `case 509/581`
+            // (`NPC.cs:70104-70119`: the agree-gated sprite flip + the
+            // 3-tick flap over `npcFrameCount` 9) and `case 224/587`
+            // (`:74763-74785`: the velocity-sign flip + the ±vy·0.2
+            // tilt + the 6-tick flap over the literal 4-row wrap).
+            // `style44_find_frame` reads the vanilla type (`cs_id` —
+            // the FlyingFish's protocol id is the port-local 354) and
+            // the sheet's row count (`rows()` rides `texture_net_id` →
+            // the vanilla net ids 224/509/581/587).
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => {
+                crate::npc_ai_style44::style44_find_frame(
+                    self.kind.cs_id(),
+                    self.vx,
+                    self.vy,
+                    self.facing,
+                    self.rows(),
+                    &mut self.frame,
+                    &mut self.frame_counter,
+                    &mut self.sprite_dir,
+                    &mut self.rotation,
+                );
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -24108,6 +24163,81 @@ mod tests {
         for (kind, _, _, _, _, _, _, _, _, _) in rows {
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
+    }
+
+    /// W4-c4: the style-44 swimmers ride the style axis — the axis' 44
+    /// arm owns the post-`AI()` flyer integration (the steering machine
+    /// runs in the world-sim pre-pass; the solo `update` path skips it,
+    /// the DungeonSpirit precedent) and `find_frame` rides
+    /// `style44_find_frame` through the port's vanilla-type + row-count
+    /// tables. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_axis_claims_style_44_and_the_frames_walk_their_strips() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        // (kind, vanilla type, sheet rows, flap stride) — `Main.cs:67082`
+        // (224/587 four frames, 509/581 nine) + the FindFrame cases'
+        // strides (`NPC.cs:70110` the antlions' 3, `:74776` the fish 6).
+        for (kind, ty, rows, stride) in [
+            (NpcKind::FlyingFish, 224u16, 4u32, 6u32),
+            (NpcKind::GiantFlyingAntlion, 509, 9, 3),
+            (NpcKind::FlyingAntlion, 581, 9, 3),
+            (NpcKind::EyeballFlyingFish, 587, 4, 6),
+        ] {
+            assert_eq!(kind.ai_style(), 44, "{kind:?} aiStyle");
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                ty,
+                "{kind:?} draws its own vanilla sheet"
+            );
+            assert_eq!(
+                crate::render::entities::npc_rows(ty),
+                rows,
+                "{kind:?} sheet rows"
+            );
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            // The full update tick must not panic (the axis arm runs;
+            // the kind-match stand-in is unreachable) and the frame
+            // stays inside the kind's own strip.
+            for _ in 0..60 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+            }
+            // The flap cadence through `find_frame` itself: a steady
+            // rightward velocity (the fish's tilt writes ride it), the
+            // row advances exactly every `stride` ticks and wraps.
+            let mut n2 = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            n2.vx = 1.0;
+            n2.facing = 1;
+            for t in 1..=(stride * rows) {
+                n2.find_frame();
+                assert_eq!(
+                    n2.frame,
+                    (t / stride) % rows,
+                    "{kind:?} tick {t}: row (t/{stride}) % {rows}"
+                );
+            }
+        }
+        // The fish pair's FindFrame tilt (`NPC.cs:74768`/`:74773`): the
+        // sprite flips with the velocity sign, rotation = ±vy·0.2.
+        let mut fish = Npc::new(NpcKind::FlyingFish, 100.0, 100.0, 1, 0.0);
+        fish.vx = 2.0;
+        fish.vy = 1.5;
+        fish.find_frame();
+        assert_eq!(fish.sprite_dir, 1);
+        assert_eq!(fish.rotation, 1.5 * 0.2);
+        fish.vx = -2.0;
+        fish.find_frame();
+        assert_eq!(fish.sprite_dir, -1);
+        assert_eq!(fish.rotation, -1.5 * 0.2);
+        // The antlion pair keeps the AI's vx·0.1 tilt (FindFrame writes
+        // no rotation — `:70104-70119` has none).
+        let mut ant = Npc::new(NpcKind::FlyingAntlion, 100.0, 100.0, 1, 0.0);
+        ant.vx = 1.0;
+        ant.rotation = 0.1;
+        ant.find_frame();
+        assert_eq!(ant.rotation, 0.1, "the antlion's FindFrame leaves the tilt");
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so

@@ -3,14 +3,22 @@
 //!
 //! S1-D-3 (aiStyle-44 round, code-only mode): this module is the faithful
 //! 1:1 port of the arm as a pure function over `Npc` + a small Env seam
-//! (the c7fa4513 style-56 / d6bc30ed style-14 precedent). It is NOT wired
-//! into `Npc::update`'s style axis yet — the port has none of the four
-//! kinds (the escape-clause check: no `NpcKind` row, no dispatch arm, no
-//! anchors row, no PORT_MAP row on main; `lang_tables.rs` carries only
-//! the display-name rows 224/509/581/587). The wiring round adds the
-//! kinds + their `SetDefaults` rows + the dispatch claim together.
-//! Every other file is byte-identical except the one `mod` line in
-//! `main.rs` and the docs.
+//! (the c7fa4513 style-56 / d6bc30ed style-14 precedent).
+//!
+//! **WIRED by W4-c4 (2026-11-20).** The four `NpcKind` rows + their
+//! `SetDefaults` tables landed with the census commit (5c4c8311); this
+//! round claims the dispatch: the arm runs in the world-sim tick closure
+//! (`world_sim/npcs.rs`) at the NPC's own slot turn — the separation
+//! loop reads the sibling slots live (`Style44Sibling` carries the
+//! VANILLA `cs_id`, not the protocol id) and the 587 materialize's dust
+//! rolls ride the shared `DustPool` on the `UpdateNPCs` stream (the
+//! style-56 seam). The style axis' 44 arm (`npc.rs`) owns the post-`AI()`
+//! movement: the family is noGravity but NOT noTileCollide, so
+//! `UpdateNPC` runs `UpdateCollision` (`NPC.cs:90490-90492`) — the
+//! bat/fish flyer stand-in (`integrate_flyer_collision`) with the wet
+//! re-probe (`Collision_WaterCollision`, `:93063`). `find_frame`'s four
+//! kind arms ride [`style44_find_frame`]; the draw arms + sheets
+//! (`STYLE44_SHEETS`) and the bestiary portraits landed with them.
 //!
 //! Family identity (verified from the C#, not from the roadmap): the
 //! census of `aiStyle = 44` assignments in `NPC.cs` is exactly four:
@@ -146,7 +154,7 @@
 //!   `:92936-92939` returns true for aiStyle 44) — the port's
 //!   collision layer owns that decision; the hit/death sounds
 //!   (NPCHit1/32, NPCDeath1/35).
-#![allow(dead_code)] // wiring deferred (code-only mode) — the kind rows + dispatch claim are the follow-up round
+#![allow(dead_code)] // WIRED by W4-c4 (the world-sim slot-turn pre-pass + axis 44's integration tail + find_frame); the witnesses stay as the audit cross-check
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

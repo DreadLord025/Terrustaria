@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(STYLE44_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -949,6 +950,16 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         // NOT in the `:23214` support group's overwrite list, so the -6
         // stands alone.
         DD2JavelinT2 => num46 = -6.0,
+        // W4-c4 — the SAME `:23011-23013` row for the vanilla type 581
+        // (`NPCID.FlyingAntlion`, the Antlion Swarmer): the C# keys the
+        // nudge on the type id, and the port now carries a kind at 581
+        // (the javelin T2's row above is the historical mis-mapping —
+        // its real net id is 562; left untouched, the two kinds ride the
+        // same literal exactly like the C#'s single 581 arm). 581 is not
+        // in the `:23166` afterglow group's overwrite list either (the
+        // group draws its own arm — the cited draw-side skip), so the
+        // -6 stands alone here too.
+        FlyingAntlion => num46 = -6.0,
         // `:23038` — 612/613's `num46 -= 2` (the DD2 goblin T3 riders); the
         // port's T1/T2 pair is its stand-in.
         DD2GoblinT1 | DD2GoblinT2 => num46 = -2.0,
@@ -1245,6 +1256,23 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+];
+
+/// W4-c4: the style-44 swimmers' own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `SMALL_KIND_SHEETS`. The FlyingFish's protocol id is the port-local
+/// 354 (`to_u16`'s wyvern-band reassignment), but its DRAW sheet is the
+/// vanilla NPC_224 — `texture_net_id` rides `net_id()` (the bestiary row),
+/// which already carries 224, so no override arm is needed. Measured
+/// headroom (tools/atlas_sim.js's skyline packer over the real content
+/// dims): the four sheets (40×128, 138×522, 100×378, 40×128) lift the
+/// main set 7711 → 7757 px and the full gore+font set 8119 → 8143 px —
+/// both under the 8192 strict-GPU bound.
+pub(crate) const STYLE44_SHEETS: &[u32] = &[
+    224, // the Flying Fish
+    509, // the Giant Antlion Swarmer
+    581, // the Antlion Swarmer
+    587, // the Wandering Eye Fish
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3170,6 +3198,20 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-c4: the style-44 swimmers draw their own sheets
+            // (`STYLE44_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (`Main.cs:67082`:
+            // 224/587 four frames, 509/581 nine) with the generic centred
+            // anchor — the small-kinds arm's shape. All four rotate (the
+            // whitelist below): the antlions' AI tilt (`NPC.cs:30963`/
+            // `:30996`) and the fish's FindFrame tilt (`:74768`/`:74773`).
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3361,14 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-c4: the swimmers' velocity tilts — the antlions'
+                    // `velocity.X * 0.1` AI write (`NPC.cs:30963`/`:30996`)
+                    // and the fish's ±`velocity.Y * 0.2` FindFrame write
+                    // (`:74768`/`:74773`).
+                    | NpcKind::FlyingFish
+                    | NpcKind::GiantFlyingAntlion
+                    | NpcKind::FlyingAntlion
+                    | NpcKind::EyeballFlyingFish
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

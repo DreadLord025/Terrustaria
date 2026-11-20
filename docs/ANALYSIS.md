@@ -32712,6 +32712,65 @@ their SetDefaults rows + the dispatch claim together. Every other
 file is byte-identical except the one `mod` line in `main.rs` and
 the docs. 15 witness tests WRITTEN, NOT RUN — **no compiler invoked**
 (code-only mode).
+
+**WIRED by W4-c4 (2026-11-20, code-only mode).** The census commit
+(5c4c8311) landed the four `NpcKind` rows + the `SetDefaults` tables
+(the protocol ids: FlyingFish takes the port-local **354** — the
+vanilla 224 slot is the WyvernLegs' band; 509/581/587 keep their
+vanilla ids; `cs_id()` maps kind → vanilla type for the arm). This
+round claims the dispatch:
+
+* **The sim pre-pass** (`world_sim/npcs.rs`, the style-56 seam): at
+  each swimmer's own slot turn the tick closure fills a `Style44Env`
+  from the live pool — `siblings` carries the VANILLA `cs_id` per slot
+  (a protocol-keyed scan would never match: the FlyingFish's 354 ≠
+  224), `player_wet` the session player's live flag, `dust`/`dust_ctx`
+  the shared `app.dust` + the frame's `spawn_ctx`, `rng` the
+  `UpdateNPCs` stream. The 587 materialize's rolls land in the shared
+  pool in slot order; `wants_no_gravity` is consumed as a no-op (the
+  port's flyer integration is kind-driven — `NpcKind::no_gravity`
+  carries the four, the `:30863` every-tick write).
+* **The axis' 44 arm** (`npc.rs`) owns the post-`AI()` movement: the
+  family is noGravity but NOT noTileCollide, so `UpdateNPC` runs
+  `UpdateCollision` (`NPC.cs:90490-90492`) — the bat/fish flyer
+  stand-in (`integrate_flyer_collision`, the `update_cave_bat` shape)
+  with the wet re-probe (`Collision_WaterCollision`, `:93063`; the
+  pre-AI `is_wet` pass feeds the arm's wet tail, the `update_swimmer`
+  convention). The documented granularity of that stand-in (the
+  snap-after-halving order, ANALYSIS "The bat/fish reconcile") applies
+  unchanged. The `update_kind_ai` arms are `unreachable!` markers (the
+  DungeonSpirit precedent).
+* **FindFrame**: the four kind arms ride `style44_find_frame` with
+  `cs_id()` + `rows()` (the sheet's `Main.npcFrameCount` — 4/9/9/4,
+  verified entry-by-entry against `Main.cs:67082` and the port's
+  verbatim `NPC_FRAME_COUNT` table).
+* **The draw**: `STYLE44_SHEETS` (224/509/581/587) packs the four own
+  sheets (`texture_net_id` rides `net_id()` — the bestiary rows carry
+  the vanilla ids, so the FlyingFish draws NPC_224 despite protocol
+  354); the draw arms use `pumpkin_moon_draw` (the integer-division
+  row height) and all four join the rotation whitelist (the antlions'
+  AI tilt + the fish's FindFrame tilt). The 581 anchor nudge
+  (`Main.cs:23011-23013`, `num46 = -6`) rides `npc_anchor_nudge` —
+  the same literal the historical DD2JavelinT2 row carries (the C#
+  keys on the type id; both kinds now sit at the C#'s single 581 arm).
+  The bestiary portraits rest the sheets' own row heights.
+  **Atlas headroom measured** (tools/atlas_sim.js's skyline packer
+  over the real content dims — NPC_224/587 40×128, NPC_509 138×522,
+  NPC_581 100×378): the main set lifts 7711 → 7757 px, the full
+  gore+font set 8119 → 8143 px — both under the 8192 strict-GPU bound
+  (the wyvern deferral does NOT apply here).
+* **Cited skips kept**: the 581 afterglow draw arm (`Main.cs:23166`/
+  `:23304-23308` — the DD2-style glow group the antlion swarmer rides
+  in the vanilla; the port's glow pass is the pillar/tower family
+  only), the ambient sound rolls, the death gore/dust, the platform
+  fall-through (the module header's census).
+
+2 wiring witnesses WRITTEN, NOT RUN (`w4_c4_the_axis_claims_style_44_and_the_frames_walk_their_strips`
+in `npc.rs` — the axis claim + the per-kind flap cadence through the
+port's tables; `w4_c4_the_style44_pre_pass_separates_the_swarm_and_materializes_the_eye`
+in `world_sim/npcs.rs` — the cs_id-keyed separation push, the
+pre-separation tilt latch, the shared-pool 587 burst, the sight-gate
+pin). **No compiler invoked** (code-only mode).
 ## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
 
 **Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module
