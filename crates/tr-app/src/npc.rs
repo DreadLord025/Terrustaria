@@ -4860,6 +4860,50 @@ impl Npc {
                 }
                 self.integrate_no_tile_collide();
             }
+            // `else if (this.aiStyle == 44)` (`NPC.cs:30861-31124`) — the
+            // flying-fish / flying-antlion swimmers (224/509/581/587).
+            // The faithful `npc_ai_style44::style44_step` claims the axis
+            // (the bat-wrapper shape, `update_cave_bat`): the wet stamp,
+            // the session-player candidate + wet flag, the shared dust
+            // pool on the caller's stream, then the no-gravity
+            // `UpdateCollision` integration (`noGravity = true`,
+            // `:30863` — the module latches `wants_no_gravity`, consumed
+            // here). SOLO path: a one-slot sibling pool (the style-75
+            // solo precedent) — the separation loop skips `whoAmI`, so
+            // the scan reads absent until the sim threads the roster.
+            // No `NpcKind` carries ai_style 44 yet — the arm is dormant
+            // until the kind rows land.
+            44 => {
+                let (w, h) = self.size();
+                self.wet = is_wet(world, self.x, self.y, w, h);
+                let npc_type = self.kind.to_u16();
+                let cand = crate::npc_target::session_candidate(player);
+                let players = [cand];
+                let players_wet = [player.wet];
+                let siblings = [crate::npc_ai_style44::Style44Sibling {
+                    active: true,
+                    npc_type,
+                    x: self.x,
+                    y: self.y,
+                }];
+                let mut env = crate::npc_ai_style44::Style44Env {
+                    npc_type,
+                    self_index: 0,
+                    siblings: &siblings,
+                    world,
+                    players: &players,
+                    player_wet: &players_wet,
+                    // The ticker stand-in (0 — the `update_cave_bat`
+                    // convention).
+                    ticker: 0,
+                    dust,
+                    dust_ctx,
+                    rng,
+                    wants_no_gravity: false,
+                };
+                crate::npc_ai_style44::style44_step(self, &mut env);
+                self.integrate_flyer_collision(world);
+            }
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
             // (`NPC.cs:31347-31350`) - the Golem's fists. The three-way
             // reconcile (TR-D3s48 note) prefers golem-audit's faithful
