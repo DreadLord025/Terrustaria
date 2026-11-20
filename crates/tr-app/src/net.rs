@@ -101,6 +101,17 @@ pub mod id {
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
+    /// `34 ChestUpdates` (S1-I-1 wave I): the chest/dresser/piggy-bank
+    /// place/destroy relay (`NetMessage.cs:913-927`,
+    /// `MessageBuffer.cs:1984-2158`; the client send sites
+    /// `Player.cs:53787-53795`).
+    pub const CHEST_UPDATES: u8 = 34;
+    /// `81 CombatTextInt` (S1-I-1 wave I): a peer's damage number —
+    /// `(float)x, (float)y, RGB, (int)amount` (`NetMessage.cs:1179-1186`,
+    /// `MessageBuffer.cs:3227-3233`, host→client only).
+    pub const COMBAT_TEXT_INT: u8 = 81;
+    // (`35 PLAYER_HEAL` / `36 PLAYER_ZONE` are the W4-d96 constants below —
+    // keep-one dedupe at the g48 merge, d96/d98 both landed them.)
     pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
     pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
     /// `70 CatchNPC` (S1-P-i36): one `(short)` npc slot — the client's bug
@@ -1052,7 +1063,8 @@ impl NpcInfo {
 
 /// `msg 21 ItemDrop`'s body (`NetMessage.cs:646-669`): the slot, the
 /// position/velocity, the stack, the prefix, the flag byte and the type, plus
-/// the conditional shimmer fields. C#'s `noBroadcast`/`instanced` split and
+/// the conditional shimmer fields and the bit-3 enemy-grab tail byte
+/// (S1-I-1 wave I). C#'s `noBroadcast`/`instanced` split and
 /// the slot-400 spawn request are the M6-NET-5 follow-ups (deviation in
 /// `docs/ANALYSIS.md`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1067,12 +1079,18 @@ pub struct ItemState {
     pub kind: i16,
     pub shimmered: bool,
     pub shimmer_time: f32,
+    /// `WorldItem.enemyGrabDelayTime` (`WorldItem.cs:28`) — the monster-grab
+    /// lock (`:405`); bit 3 carries it clamped to a byte
+    /// (`NetMessage.cs:652`/`:665-668`, S1-I-1 wave I).
+    pub enemy_grab_delay: u8,
 }
 
 impl ItemState {
     fn write_to(&self, w: NetWriter) -> NetWriter {
+        // `NetMessage.cs:646-669`: bit 2 shimmer, bit 3 enemyGrabDelayTime.
         let mut flags = BitsByte::new();
         flags.set(2, self.shimmered || self.shimmer_time > 0.0);
+        flags.set(3, self.enemy_grab_delay > 0);
         let w = w
             .i16(self.slot)
             .f32(self.x)
@@ -1083,8 +1101,15 @@ impl ItemState {
             .u8(self.prefix)
             .bitsbyte(flags)
             .i16(self.kind);
-        if self.shimmered || self.shimmer_time > 0.0 {
+        let w = if self.shimmered || self.shimmer_time > 0.0 {
             w.bool(self.shimmered).f32(self.shimmer_time)
+        } else {
+            w
+        };
+        // `:665-668` — `(byte)MathHelper.Clamp(enemyGrabDelayTime, 0f, 255f)`;
+        // the field is already the clamped byte on this struct.
+        if self.enemy_grab_delay > 0 {
+            w.u8(self.enemy_grab_delay)
         } else {
             w
         }
@@ -1105,6 +1130,8 @@ impl ItemState {
         } else {
             (false, 0.0)
         };
+        // `MessageBuffer.cs:1455`/`:1459` — bit 3's conditional tail byte.
+        let enemy_grab_delay = if flags.get(3) { r.u8()? } else { 0 };
         Some(Self {
             slot,
             x,
@@ -1116,6 +1143,7 @@ impl ItemState {
             kind,
             shimmered,
             shimmer_time,
+            enemy_grab_delay,
         })
     }
 }
@@ -1622,6 +1650,37 @@ pub struct ChestItem {
     pub kind: i16,
 }
 
+/// `msg 34 ChestUpdates`'s body (`NetMessage.cs:913-927`, S1-I-1 wave I):
+/// the action byte (0/2/4 place chest/dresser/piggy-bank, 1/3/5 destroy —
+/// the client send sites `Player.cs:53785-53796`), the tile, the style, and
+/// the resulting chest index. The writer's last short is `number5` on the
+/// server and a literal `0` on the client (`:918-927`); the host reader
+/// zeroes it before its place/destroy pass (`MessageBuffer.cs:1991-1994`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChestUpdates {
+    /// The C#'s `b4` action byte.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+    pub style: i16,
+    /// `PlaceChest`'s return (`-1` = refused) or `Chest.FindChest`'s index
+    /// on the destroy relays; the client's own send writes 0.
+    pub chest: i16,
+}
+
+/// `msg 81 CombatTextInt`'s body (`NetMessage.cs:1179-1186`, S1-I-1 wave I):
+/// two floats, `WriteRGB`'s three bytes and the `(int)` amount. The client
+/// truncates the floats and spawns `CombatText.NewText` at
+/// `Rectangle(x, y, 0, 0)` (`MessageBuffer.cs:3227-3233`); the one C# send
+/// site is `NPC.HealEffect`'s broadcast (`NPC.cs:77440-77443`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CombatTextInt {
+    pub x: f32,
+    pub y: f32,
+    pub color: Rgb,
+    pub amount: i32,
+}
+
 /// `msg 33 SyncPlayerChest`'s body (`NetMessage.cs:879-911`): the chest index,
 /// its tile position and the optional name (`name_len` = 1..=20 with the text
 /// following, 0 = none, 255 = a too-long name the C# refuses,
@@ -1691,6 +1750,10 @@ pub struct HitSwitch {
     pub x: i16,
     pub y: i16,
 }
+
+// (`msg 35 PlayerHeal` / `msg 36 SyncPlayerZone` bodies are the W4-d96
+// structs below — keep-one dedupe at the g48 merge; d96's zone words are
+// `BitsByte`, d98's plain `u8` form encodes the identical seven bytes.)
 
 /// `msg 80 SyncPlayerChestIndex`'s body (`NetMessage.cs:1175-1178`): which
 /// chest a player has open (`-3..8000`, `MessageBuffer.cs:3216-3227`).
@@ -2127,6 +2190,10 @@ pub enum C2s {
     /// (`Player.cs:31520`, the `1023` violin cases; `NetMessage.cs:1878`'s
     /// chest drops).
     ChestItem(ChestItem),
+    /// `34 ChestUpdates` - this client mined/placed a container
+    /// (`Player.cs:53785-53796`'s destroy asks, `Chest.cs:577-583`'s place
+    /// asks; S1-I-1 wave I).
+    ChestUpdates(ChestUpdates),
     /// `46 OpenSignRequest` - a client asks for a sign's text
     /// (`Player.cs:32720`).
     SignRequest(SignRequest),
@@ -2147,6 +2214,8 @@ pub enum C2s {
     /// `30 TogglePVP` - a client flipped its PvP flag
     /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
     TogglePvp(TogglePvp),
+    // (`35 PlayerHeal` / `36 SyncPlayerZone` are the W4-d96 variants below —
+    // keep-one dedupe at the g48 merge.)
     /// `42 Unknown42` - a client's mana sync (`Player.cs`'s mana sends;
     /// `MessageBuffer.cs:2290-2306`).
     PlayerMana(PlayerMana),
@@ -2275,6 +2344,13 @@ pub enum S2c {
     /// `32 SyncChestItem` - one chest slot, relayed to the other clients
     /// (`MessageBuffer.cs:1913-1916`).
     ChestItem(ChestItem),
+    /// `34 ChestUpdates` - the host's place/destroy result, relayed
+    /// (`MessageBuffer.cs:2006-2112`'s `TrySendData(34, …)` arms;
+    /// S1-I-1 wave I).
+    ChestUpdates(ChestUpdates),
+    /// `81 CombatTextInt` - a peer's heal number (`NPC.HealEffect`'s
+    /// broadcast, `NPC.cs:77442`; S1-I-1 wave I).
+    CombatTextInt(CombatTextInt),
     /// `33 SyncPlayerChest` - the chest a player opened
     /// (`MessageBuffer.cs:1880`, `:1980`; `Player.cs:32885`).
     PlayerChest(PlayerChest),
@@ -2300,6 +2376,8 @@ pub enum S2c {
     /// `30 TogglePVP` - a peer's PvP flag, relayed by the host
     /// (`MessageBuffer.cs:1862`).
     TogglePvp(TogglePvp),
+    // (`35 PlayerHeal` / `36 SyncPlayerZone` are the W4-d96 variants below —
+    // keep-one dedupe at the g48 merge.)
     /// `42 Unknown42` - a peer's mana (`NetMessage.cs:961-965`; the join
     /// bundle's `SyncOnePlayer` push, `:2904`).
     PlayerMana(PlayerMana),
@@ -2468,6 +2546,7 @@ impl C2s {
             Self::Ping => id::PING,
             Self::ChestOpenRequest(_) => id::CHEST_OPEN_REQUEST,
             Self::ChestItem(_) => id::CHEST_ITEM,
+            Self::ChestUpdates(_) => id::CHEST_UPDATES,
             Self::SignRequest(_) => id::SIGN_REQUEST,
             Self::SignData(_) => id::SIGN_DATA,
             Self::HitSwitch(_) => id::HIT_SWITCH,
@@ -2528,6 +2607,9 @@ impl C2s {
                 .i16(c.stack)
                 .u8(c.prefix)
                 .i16(c.kind),
+            // `NetMessage.cs:913-927` — the client branch writes the literal
+            // `0` short (`:926`); the host's `number5` relay rides S2c.
+            Self::ChestUpdates(c) => w.u8(c.action).i16(c.x).i16(c.y).i16(c.style).i16(0),
             Self::SignRequest(s) => w.i16(s.x).i16(s.y),
             Self::SignData(s) => w
                 .i16(s.sign)
@@ -2557,6 +2639,7 @@ impl C2s {
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
+            // (35/36 encode at the d96 arms below — keep-one at the g48 merge.)
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
             Self::ProjectileTrackers(t) => w
@@ -2700,6 +2783,18 @@ impl C2s {
                 prefix: r.u8()?,
                 kind: r.i16()?,
             }),
+            // `MessageBuffer.cs:1986-1994` — the host reads the fifth short
+            // then zeroes it; the client's send wrote 0 anyway.
+            id::CHEST_UPDATES => Self::ChestUpdates(ChestUpdates {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                style: r.i16()?,
+                chest: {
+                    let _ = r.i16()?;
+                    0
+                },
+            }),
             id::SIGN_REQUEST => Self::SignRequest(SignRequest {
                 x: r.i16()?,
                 y: r.i16()?,
@@ -2723,6 +2818,7 @@ impl C2s {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
             }),
+            // (35/36 decode at the d96 arms below — keep-one at the g48 merge.)
             id::PLAYER_MANA => Self::PlayerMana(PlayerMana {
                 player_id: r.u8()?,
                 mana: r.i16()?,
@@ -3007,6 +3103,8 @@ impl S2c {
             Self::Time { .. } => id::INT_TIME,
             Self::Edit { .. } => id::INT_EDIT,
             Self::ChestItem(_) => id::CHEST_ITEM,
+            Self::ChestUpdates(_) => id::CHEST_UPDATES,
+            Self::CombatTextInt(_) => id::COMBAT_TEXT_INT,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::SignData(_) => id::SIGN_DATA,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
@@ -3127,6 +3225,15 @@ impl S2c {
                 .i16(c.stack)
                 .u8(c.prefix)
                 .i16(c.kind),
+            // `NetMessage.cs:913-923` — the server branch writes `number5`.
+            Self::ChestUpdates(c) => w
+                .u8(c.action)
+                .i16(c.x)
+                .i16(c.y)
+                .i16(c.style)
+                .i16(c.chest),
+            // `NetMessage.cs:1179-1186` — two floats, RGB, (int)amount.
+            Self::CombatTextInt(t) => w.f32(t.x).f32(t.y).rgb(t.color).i32(t.amount),
             Self::PlayerChest(c) => {
                 // `NetMessage.cs:903-910`: the length byte, then the C#
                 // `BinaryWriter.Write(string)` (a 7-bit length + bytes) when
@@ -3164,6 +3271,7 @@ impl S2c {
             Self::ChestSize(c) => w.i16(c.chest).i16(c.size),
             Self::ChestName(c) => w.i16(c.chest).i16(c.x).i16(c.y).str(&c.name),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
+            // (35/36 encode at the d96 arms below — keep-one at the g48 merge.)
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
             Self::NpcHouse(h) => w.i16(h.npc).i16(h.home_x).i16(h.home_y).u8(h.status),
@@ -3357,6 +3465,22 @@ impl S2c {
                 prefix: r.u8()?,
                 kind: r.i16()?,
             }),
+            // `MessageBuffer.cs:1986-1990` — the client keeps the fifth
+            // short (the host's `num35` result index).
+            id::CHEST_UPDATES => Self::ChestUpdates(ChestUpdates {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                style: r.i16()?,
+                chest: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3227-3233` — float pair, RGB, int amount.
+            id::COMBAT_TEXT_INT => Self::CombatTextInt(CombatTextInt {
+                x: r.f32()?,
+                y: r.f32()?,
+                color: r.rgb()?,
+                amount: r.i32()?,
+            }),
             id::PLAYER_CHEST => Self::PlayerChest(read_player_chest(r)?),
             id::SIGN_DATA => Self::SignData(read_sign_data(r)?),
             id::PLAYER_BUFFS => Self::PlayerBuffs(PlayerBuffs {
@@ -3397,6 +3521,7 @@ impl S2c {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
             }),
+            // (35/36 decode at the d96 arms below — keep-one at the g48 merge.)
             id::PLAYER_MANA => Self::PlayerMana(PlayerMana {
                 player_id: r.u8()?,
                 mana: r.i16()?,
@@ -5041,6 +5166,29 @@ mod tests {
                 prefix: 2,
                 kind: 42,
             }),
+            // S1-I-1 wave I: the client's 34 destroy ask (chest 0 on the
+            // wire — the writer's else branch, `NetMessage.cs:926`).
+            C2s::ChestUpdates(ChestUpdates {
+                action: 1,
+                x: 100,
+                y: 200,
+                style: 0,
+                chest: 0,
+            }),
+            // S1-I-1 wave I census remainder: the 35/36 bodies.
+            C2s::PlayerHeal(PlayerHeal {
+                player_id: 2,
+                amount: 20,
+            }),
+            C2s::PlayerZone(PlayerZone {
+                player_id: 2,
+                zone1: BitsByte(1),
+                zone2: BitsByte(2),
+                zone3: BitsByte(4),
+                zone4: BitsByte(8),
+                zone5: BitsByte(16),
+                town_npcs: 3,
+            }),
             C2s::PlayerChest(PlayerChest {
                 chest: 3,
                 x: 100,
@@ -5353,6 +5501,7 @@ mod tests {
                 kind: 42,
                 shimmered: true,
                 shimmer_time: 30.0,
+                enemy_grab_delay: 0,
             })),
             S2c::ItemState(Box::new(ItemState {
                 slot: 6,
@@ -5365,6 +5514,7 @@ mod tests {
                 kind: 1,
                 shimmered: false,
                 shimmer_time: 0.0,
+                enemy_grab_delay: 0,
             })),
             S2c::ItemDead { slot: 9 },
             S2c::NetModule {
@@ -5425,6 +5575,34 @@ mod tests {
                 x: 30,
                 y: 40,
                 name: "renamed".into(),
+            }),
+            // S1-I-1 wave I: the 34/81 bodies.
+            S2c::ChestUpdates(ChestUpdates {
+                action: 4,
+                x: 100,
+                y: 200,
+                style: 2,
+                chest: -1,
+            }),
+            S2c::CombatTextInt(CombatTextInt {
+                x: 64.5,
+                y: -8.25,
+                color: Rgb(100, 255, 100),
+                amount: 20,
+            }),
+            // S1-I-1 wave I census remainder: the 35/36 host relays.
+            S2c::PlayerHeal(PlayerHeal {
+                player_id: 1,
+                amount: -5,
+            }),
+            S2c::PlayerZone(PlayerZone {
+                player_id: 1,
+                zone1: BitsByte(255),
+                zone2: BitsByte(0),
+                zone3: BitsByte(128),
+                zone4: BitsByte(1),
+                zone5: BitsByte(0),
+                town_npcs: 255,
             }),
         ];
         for msg in &msgs {
@@ -6842,6 +7020,181 @@ mod tests {
         }
     }
 
+    // ---- S1-I-1 wave I: the item/chest-family region (21/22/30-34/80/81) ----
+
+    /// `21 SyncItem` bit 3 — `enemyGrabDelayTime > 0` sets bit 3 and appends
+    /// the clamped byte AFTER the shimmer tail (`NetMessage.cs:652`/
+    /// `:660-668`); the reader consumes it (`MessageBuffer.cs:1455`/`:1459`).
+    #[test]
+    fn s1_i_1_item_state_enemy_grab_bit_round_trips() {
+        let d = ItemState {
+            slot: 12,
+            x: 100.0,
+            y: 200.0,
+            vx: 1.5,
+            vy: -0.5,
+            stack: 3,
+            prefix: 81,
+            kind: 757,
+            shimmered: false,
+            shimmer_time: 0.0,
+            enemy_grab_delay: 100,
+        };
+        let f = S2c::ItemState(Box::new(d)).encode();
+        assert_eq!(f[2], 21);
+        let mut body = Vec::new();
+        body.extend_from_slice(&12i16.to_le_bytes());
+        for v in [100.0f32, 200.0, 1.5, -0.5] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.push(81);
+        body.push(1 << 3); // bit 3 only — no shimmer tail
+        body.extend_from_slice(&757i16.to_le_bytes());
+        body.push(100); // the clamped enemy-grab byte, LAST
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemState(back) => assert_eq!(*back, d),
+            other => panic!("expected 21, got {:?}", other.msg_id()),
+        }
+        // Both bits set: the shimmer pair comes first, the enemy byte last
+        // (`:660-668`'s order).
+        let both = ItemState {
+            shimmered: true,
+            shimmer_time: 0.9,
+            enemy_grab_delay: 255,
+            ..d
+        };
+        let f = S2c::ItemState(Box::new(both)).encode();
+        assert_eq!(f[3 + 2 + 16 + 2 + 1], (1 << 2) | (1 << 3));
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemState(back) => assert_eq!(*back, both),
+            other => panic!("expected 21, got {:?}", other.msg_id()),
+        }
+        // Zero delay writes NO tail byte and clears bit 3 (`:652`'s `> 0`).
+        let none = ItemState {
+            enemy_grab_delay: 0,
+            ..d
+        };
+        let f = S2c::ItemState(Box::new(none)).encode();
+        assert_eq!(f[3 + 2 + 16 + 2 + 1], 0);
+        assert_eq!(f.len(), 3 + 2 + 16 + 2 + 1 + 1 + 2);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemState(back) => assert_eq!(*back, none),
+            other => panic!("expected 21, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `34 ChestUpdates` (`NetMessage.cs:913-927`): byte action + three
+    /// shorts + the fifth short — the host writes `number5`, the client a
+    /// literal 0 (`:926`); the host reader zeroes it
+    /// (`MessageBuffer.cs:1991-1994`), the client keeps it (`:1990`).
+    #[test]
+    fn s1_i_1_chest_updates_round_trips() {
+        let u = ChestUpdates {
+            action: 0,
+            x: 120,
+            y: 340,
+            style: 4,
+            chest: 17,
+        };
+        let f = S2c::ChestUpdates(u).encode();
+        assert_eq!(f[2], 34);
+        let mut body = vec![0];
+        for v in [120i16, 340, 4, 17] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ChestUpdates(d) => assert_eq!(d, u),
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+        // The client's destroy ask (`Player.cs:53787`): action 1, style and
+        // index default to 0 — the writer's else branch (`:924-927`).
+        let c = C2s::ChestUpdates(ChestUpdates {
+            action: 1,
+            x: 120,
+            y: 340,
+            style: 0,
+            chest: 17, // ignored on the wire: the client writes 0
+        })
+        .encode();
+        assert_eq!(c[2], 34);
+        assert_eq!(&c[c.len() - 2..], &0i16.to_le_bytes());
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ChestUpdates(d) => {
+                assert_eq!(d.action, 1);
+                assert_eq!((d.x, d.y, d.style, d.chest), (120, 340, 0, 0));
+            }
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+        // The refusal relay: chest = -1 (`MessageBuffer.cs:2006`).
+        let refused = ChestUpdates { chest: -1, ..u };
+        let f = S2c::ChestUpdates(refused).encode();
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ChestUpdates(d) => assert_eq!(d.chest, -1),
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `81 CombatTextInt` (`NetMessage.cs:1179-1186`): float x, float y,
+    /// `WriteRGB`'s R/G/B bytes (`Utils.cs:1369-1374`), `(int)` amount.
+    /// Host→client only — no `C2s` arm (`MessageBuffer.cs:3227-3233` reads
+    /// it at `netMode == 1` only).
+    #[test]
+    fn s1_i_1_combat_text_int_round_trips() {
+        let t = CombatTextInt {
+            x: 1234.5,
+            y: -678.25,
+            color: Rgb(100, 255, 100), // CombatText.HealLife
+            amount: 42,
+        };
+        let f = S2c::CombatTextInt(t).encode();
+        assert_eq!(f[2], 81);
+        let mut body = Vec::new();
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-678.25f32).to_le_bytes());
+        body.extend_from_slice(&[100, 255, 100]);
+        body.extend_from_slice(&42i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CombatTextInt(d) => assert_eq!(d, t),
+            other => panic!("expected 81, got {:?}", other.msg_id()),
+        }
+        // The reader truncates the floats to the Rectangle's ints
+        // (`MessageBuffer.cs:3230-3231`'s `(int)ReadSingle()`).
+        assert_eq!(t.x as i32, 1234);
+        assert_eq!(t.y as i32, -678);
+    }
+
+    /// `35 PlayerHeal` (`NetMessage.cs:929-932`): byte player id + short
+    /// amount; the host overrides the id to the sender and relays
+    /// (`MessageBuffer.cs:2163-2166`/`:2174`).
+    #[test]
+    fn s1_i_1_player_heal_round_trips() {
+        let h = PlayerHeal {
+            player_id: 3,
+            amount: 20,
+        };
+        let f = C2s::PlayerHeal(h).encode();
+        assert_eq!(f[2], 35);
+        let mut body = vec![3u8];
+        body.extend_from_slice(&20i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerHeal(d) => assert_eq!(d, h),
+            other => panic!("expected 35, got {:?}", other.msg_id()),
+        }
+        // The host relay keeps the same layout (`:2174`'s TrySendData).
+        let f = S2c::PlayerHeal(h).encode();
+        assert_eq!(f[2], 35);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerHeal(d) => assert_eq!(d, h),
+            other => panic!("expected 35, got {:?}", other.msg_id()),
+        }
+    }
+
     /// `40 SyncTalkNPC` (`NetMessage.cs:952-955`): `(byte)number +
     /// (short)talkNPC`; `-1` = not talking (`MessageBuffer.cs:2256-2270`).
     #[test]
@@ -7123,5 +7476,201 @@ mod tests {
         assert!(back.flags1.get(3), "difficulty 3 rides bit 3, not bit 2");
         assert!(back.flags1.get(2), "bit 2 is extraAccessory");
         assert!(!back.flags1.get(0) && !back.flags1.get(1));
+    }
+
+    /// `36 SyncPlayerZone` (`NetMessage.cs:933-944`): byte player id, the
+    /// five `BitsByte` zone words as their implicit bytes, `(byte)townNPCs`
+    /// — the host relays and latches zone5[0]'s rising edge into
+    /// `SpawnFaelings` (`MessageBuffer.cs:2186`/`:2195-2199`). The g48
+    /// keep-one repointed d98's fixture onto d96's `BitsByte` zone fields
+    /// (byte-identical wire).
+    #[test]
+    fn s1_i_1_player_zone_round_trips() {
+        let z = PlayerZone {
+            player_id: 1,
+            zone1: BitsByte(0b1010_0101),
+            zone2: BitsByte(0x00),
+            zone3: BitsByte(0xFF),
+            zone4: BitsByte(0b0000_0001),
+            zone5: BitsByte(0b1000_0000),
+            town_npcs: 7,
+        };
+        let f = C2s::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+        assert_eq!(&f[3..], &[1, 0xA5, 0x00, 0xFF, 0x01, 0x80, 7]);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+        assert_eq!(&f[3..], &[1, 0xA5, 0x00, 0xFF, 0x01, 0x80, 7]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        // The zone5[0] edge bit the host's SpawnFaelings gate reads.
+        assert_eq!(z.zone5.0 & 1, 0);
+        let edge = PlayerZone { zone5: BitsByte(1), ..z };
+        assert_eq!(edge.zone5.0 & 1, 1);
+    }
+
+    /// `22 ItemOwner` (`NetMessage.cs:675-685`): short slot, byte
+    /// reserved-for, 7-bit hold, byte grab player, 7-bit grab delay, the
+    /// position pair — `hold`/`grab_delay` at 300 pin the TWO-byte varint
+    /// form (`0xAC 0x02`); the reader mirrors (`MessageBuffer.cs:1552-1562`).
+    #[test]
+    fn s1_i_1_item_owner_round_trips() {
+        let o = ItemOwner {
+            slot: 5,
+            reserved_for: 2,
+            hold: 300,
+            grab_delay_player: 255,
+            grab_delay: 300,
+            x: 16.0,
+            y: -32.5,
+        };
+        let f = S2c::ItemOwner(Box::new(o)).encode();
+        assert_eq!(f[2], 22);
+        let mut body = Vec::new();
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&[2, 0xAC, 0x02, 255, 0xAC, 0x02]);
+        body.extend_from_slice(&16.0f32.to_le_bytes());
+        body.extend_from_slice(&(-32.5f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemOwner(back) => assert_eq!(*back, o),
+            other => panic!("expected 22, got {:?}", other.msg_id()),
+        }
+        // The one-byte varint form: hold 15 / grab delay 100 (`:681`/`:683`).
+        let small = ItemOwner { hold: 15, grab_delay: 100, ..o };
+        let f = S2c::ItemOwner(Box::new(small)).encode();
+        assert_eq!(&f[5..9], &[2, 15, 255, 100]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemOwner(back) => assert_eq!(*back, small),
+            other => panic!("expected 22, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `31 RequestChestOpen` (`NetMessage.cs:860-863`): two shorts, the
+    /// chest tile's top-left; the host reads them at
+    /// `MessageBuffer.cs:1873-1874`. Client→host only.
+    #[test]
+    fn s1_i_1_chest_open_request_round_trips() {
+        let q = ChestOpenRequest { x: 100, y: -200 };
+        let f = C2s::ChestOpenRequest(q).encode();
+        assert_eq!(f[2], 31);
+        let mut body = Vec::new();
+        body.extend_from_slice(&100i16.to_le_bytes());
+        body.extend_from_slice(&(-200i16).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::ChestOpenRequest(d) => assert_eq!(d, q),
+            other => panic!("expected 31, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `32 SyncChestItem` (`NetMessage.cs:864-877`): short chest, byte slot,
+    /// short stack, byte prefix, short type — the stack comes BEFORE the
+    /// prefix, the type last (the name-null zeroing is the writer's job).
+    /// Both directions share the layout (`MessageBuffer.cs:1899-1903`).
+    #[test]
+    fn s1_i_1_chest_item_round_trips() {
+        let c = ChestItem { chest: 2, slot: 9, stack: 250, prefix: 81, kind: 757 };
+        let mut body = Vec::new();
+        body.extend_from_slice(&2i16.to_le_bytes());
+        body.push(9);
+        body.extend_from_slice(&250i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&757i16.to_le_bytes());
+        let f = C2s::ChestItem(c).encode();
+        assert_eq!(f[2], 32);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::ChestItem(d) => assert_eq!(d, c),
+            other => panic!("expected 32, got {:?}", other.msg_id()),
+        }
+        let f = S2c::ChestItem(c).encode();
+        assert_eq!(f[2], 32);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ChestItem(d) => assert_eq!(d, c),
+            other => panic!("expected 32, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `33 SyncPlayerChest` (`NetMessage.cs:879-911`,
+    /// `MessageBuffer.cs:1920-1937`): three shorts + the length byte; a
+    /// `1..=20` name rides `BinaryWriter.Write(string)` (7-bit length +
+    /// UTF-8), `0` writes no text, `255` the refusal. The reader zeroes any
+    /// other length (`num24 = 0`, `:1934`) and re-derives the accepted
+    /// length from the read text.
+    #[test]
+    fn s1_i_1_player_chest_round_trips() {
+        let c = PlayerChest { chest: 3, x: 100, y: 200, name_len: 5, name: "chest".into() };
+        let mut body = Vec::new();
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&100i16.to_le_bytes());
+        body.extend_from_slice(&200i16.to_le_bytes());
+        body.push(5);
+        body.push(5); // the string's own 7-bit length byte
+        body.extend_from_slice(b"chest");
+        let f = C2s::PlayerChest(c.clone()).encode();
+        assert_eq!(f[2], 33);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerChest(d) => assert_eq!(d, c),
+            other => panic!("expected 33, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerChest(c.clone()).encode();
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerChest(d) => assert_eq!(d, c),
+            other => panic!("expected 33, got {:?}", other.msg_id()),
+        }
+        // `0`/`255` write NO text after the length byte (`:906-910`).
+        for len in [0u8, 255] {
+            let bare = PlayerChest { name_len: len, name: String::new(), ..c.clone() };
+            let f = C2s::PlayerChest(bare.clone()).encode();
+            assert_eq!(f.len(), 3 + 7);
+            assert_eq!(f[9], len);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::PlayerChest(d) => assert_eq!(d, bare),
+                other => panic!("expected 33, got {:?}", other.msg_id()),
+            }
+        }
+        // A stray length (e.g. 21) reads as "no name", `num24 = 0`
+        // (`MessageBuffer.cs:1932-1935`); 255 keeps its refusal value.
+        let mut stray = Vec::new();
+        stray.extend_from_slice(&3i16.to_le_bytes());
+        stray.extend_from_slice(&100i16.to_le_bytes());
+        stray.extend_from_slice(&200i16.to_le_bytes());
+        stray.push(21);
+        match C2s::decode(33, &mut NetReader::new(&stray)).expect("decode") {
+            C2s::PlayerChest(d) => {
+                assert_eq!(d.name_len, 0);
+                assert_eq!(d.name, "");
+            }
+            other => panic!("expected 33, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `80 SyncPlayerChestIndex` (`NetMessage.cs:1175-1178`): byte player
+    /// id + short chest index; the client's `-3..8000` range gate lives in
+    /// the apply arm (`MessageBuffer.cs:3221`, netglue). Host→client only.
+    #[test]
+    fn s1_i_1_player_chest_index_round_trips() {
+        for chest in [-3i16, -1, 0, 7999] {
+            let ci = PlayerChestIndex { player_id: 3, chest };
+            let f = S2c::PlayerChestIndex(ci).encode();
+            assert_eq!(f[2], 80);
+            let mut body = vec![3u8];
+            body.extend_from_slice(&chest.to_le_bytes());
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::PlayerChestIndex(d) => assert_eq!(d, ci),
+                other => panic!("expected 80, got {:?}", other.msg_id()),
+            }
+        }
     }
 }

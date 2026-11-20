@@ -201,6 +201,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         phase: 0.0,
                         grab_delay_time: 0,
                         grab_delay_player: 255,
+                        enemy_grab_delay_time: 0,
                         being_grabbed: false,
                         on_conveyor: false,
                     });
@@ -788,6 +789,7 @@ mod tests {
                 phase: 0.0,
                 grab_delay_time: 0,
                 grab_delay_player: 255,
+                enemy_grab_delay_time: 0,
                 being_grabbed: false,
                 on_conveyor: false,
             });

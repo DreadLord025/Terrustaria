@@ -26701,6 +26701,114 @@ Six byte-pin tests `net::tests::s1_i_1_npc_info_*` /
 `s1_i_1_projectile_dead_verbatim_body` lock the id bytes + the exact C#
 body bytes + the round trips (written, not run — the lane is code-only).
 
+## The item/chest-family net ids (S1-I-1 wave I, 2026-11-20)
+
+Wave I censuses the 21/22/30/31/32/33/34/80/81 region against `net.rs`
+(code-only mode — no compiler invoked, tests WRITTEN NOT RUN):
+
+- **21 SyncItem — WRONG, fixed**: the body dropped bit 3
+  (`enemyGrabDelayTime > 0`, `NetMessage.cs:652`) and its conditional tail
+  byte (`(byte)MathHelper.Clamp(enemyGrabDelayTime, 0f, 255f)`, `:665-668`,
+  written AFTER the shimmer pair). `ItemState.enemy_grab_delay` + the
+  `ItemDrop.enemy_grab_delay_time` field (decay `WorldItem.cs:449-452`,
+  spawn `Item.cs:49757-49760` sets it for the reserve/grab-delay ownership
+  arms — the port's spawn sites keep 0, the monster-grab gate `:405` is
+  unported with no enemy item grab) landed; the client's `21` handler
+  writes it (`MessageBuffer.cs:1487`). The ownership bits 0/1 stay 0 on
+  the port's diff cadence — the C# sets them only on the spawn send's
+  `number2` ownership argument (`Item.cs:49768`), which the port's
+  event-driven stand-in does not carry (documented deviation).
+- **22 ItemOwner — FAITHFUL**: `(short)slot + (byte)reservedFor +
+  7bit hold + (byte)grabDelayPlayer + 7bit grabDelayTime + Vector2`
+  (`NetMessage.cs:675-685`) matches field-for-field; the client apply
+  carries the grab-delay pair (S1-P-i51).
+- **30 TogglePVP — FAITHFUL** (wave A body); dispatcher parked for S1-I-4.
+- **31 RequestChestOpen — i43/S1-E-27 arm verified, one gap fixed**:
+  `Chest.UsingChest` scans ALL active players (`Chest.cs:502-508`) — the
+  host's own local player (slot 0) included. The port only scanned the
+  remote slots, so a client could open a chest the HOST was browsing.
+  The check now includes `App.player.chest`. The rest of the arm
+  (FindChest → contents burst → 33 → 80 → rigged 59) is 1:1.
+- **32 SyncChestItem / 33 SyncPlayerChest — FAITHFUL** (S1-E-27 + the
+  i43 rename flush): the writer order `short stack, byte prefix,
+  short type` with the no-name zero (`NetMessage.cs:869-876`), the 33
+  length-byte gate (0/1..20/255, `MessageBuffer.cs:1927-1937`) and the
+  sender-tracked rename target all match.
+- **34 ChestUpdates — MISSING, ported**: `(byte)action + (short)x +
+  (short)y + (short)style + (short)chest` (`NetMessage.cs:913-927`).
+  The writer's fifth short is `number5` on the server, a literal 0 on
+  the client (`:918-927`) — the port's `C2s` encode writes 0 and its
+  decode zeroes the field (the host reader does, `MessageBuffer.cs:
+  1991-1994`); `S2c` keeps it. The host's PlaceChest/KillTile pass
+  (`:1995-2122`) and the client's PlaceChestDirect/DestroyChestDirect
+  apply (`:2124-2157`) are parked for S1-I-4 — the port's container
+  place/break already runs through the local `world_sim/editing.rs`
+  chain, and wiring the relay needs that chain's send seams.
+- **80 SyncPlayerChestIndex — FAITHFUL**: `(byte)plr + (short)chest`
+  (`NetMessage.cs:1175-1178`), the client's `-3..8000` gate
+  (`MessageBuffer.cs:3221`).
+- **81 CombatTextInt — MISSING, ported**: `(float)x + (float)y + RGB +
+  (int)amount` (`NetMessage.cs:1179-1186`, `WriteRGB` = R,G,B bytes,
+  `Utils.cs:1369-1374`). Host→client only (the reader gates
+  `netMode == 1`, `MessageBuffer.cs:3227-3233`); the one C# send site is
+  `NPC.HealEffect`'s broadcast (`NPC.cs:77440-77443`). The client apply
+  truncates the floats into `Rectangle(x, y, 0, 0)`, adds alpha 255 to
+  the RGB and spawns `CombatText.NewText` with the default
+  dramatic/dot = false — the jitter draws ride `Main.rand` (the port's
+  bare global stream, the message-time cue precedent S1-E-21i).
+
+Witnesses: `net::tests::s1_i_1_item_state_enemy_grab_bit_round_trips`,
+`s1_i_1_chest_updates_round_trips`, `s1_i_1_combat_text_int_round_trips`
++ the 34/81 entries in the frame round-trip families;
+`netglue::message_family_tests::a_chest_open_request_is_refused_while_the_host_browses_it`
+and `a_combat_text_int_spawns_the_clients_heal_number`.
+
+### The wave-I verify round (2026-11-20, code-only)
+
+The whole region was re-verified byte-for-byte against the C# writer AND
+reader arms: 21 (`NetMessage.cs:646-669` vs `MessageBuffer.cs:1445-1487`
+— the bit-3 tail byte rides AFTER the shimmer pair, the reader consumes
+it at `:1459`), 22 (`:675-685` vs `:1552-1562`, the two 7-bit varints),
+30/31/32/33/80 (`:856-911`/`:1175-1178` vs `:1851-1982`/`:3216-3227` —
+the 33 length-byte gate `0/1..20/255` and the 80 `-3..8000` gate), 34
+(`:913-927` vs `:1984-1994` — the C2s encode writes the literal 0 and
+the host decode zeroes the fifth short, S2c keeps `number5`), 81
+(`:1179-1186` vs `:3227-3233` — `WriteRGB` = R,G,B, `Utils.cs:1369-1374`;
+the send site `NPC.HealEffect` `NPC.cs:77440-77443`). All faithful.
+
+One census WRONG corrected: research/17's old row claimed **35 PlayerHeal
+and 36 SyncPlayerZone NOT-FOUND** — both have writer arms
+(`NetMessage.cs:929-932`/`:933-944`) AND reader arms
+(`MessageBuffer.cs:2160-2177`/`:2178-2202`). Ported as bodies + codecs
+(the wave-A pattern, dispatchers parked for S1-I-4):
+
+- **35 PlayerHeal**: `(byte)plr + (short)amount`. The host overrides the
+  id to the sender (`:2163-2166`), calls `Player.HealEffect` unless it is
+  the local player without `ServerSideCharacter` (`:2168-2171`), relays
+  (`:2174`). The client send site is `Player.cs:4527`.
+- **36 SyncPlayerZone**: `(byte)plr + zone1..zone5 + (byte)townNPCs` —
+  the five `BitsByte` words ride their implicit byte conversion
+  (`BitsByte.cs:101`). The host overrides the id, latches the OLD
+  `zone5[0]` before the reads and spawns faelings on the rising edge
+  (`MessageBuffer.cs:2186`/`:2195-2198`), relays (`:2199`).
+
+Witnesses: `net::tests::s1_i_1_player_heal_round_trips`,
+`s1_i_1_player_zone_round_trips` (both pin the exact body bytes in both
+directions) + the 35/36 entries in the frame round-trip families.
+
+The witness pass then closed the per-id byte-verbatim gaps the region's
+older S1-E-27 bodies had (they only rode the frame round-trip families):
+`s1_i_1_item_owner_round_trips` (22 — the two 7-bit varints pinned in both
+the one-byte and two-byte forms, `0xAC 0x02` = 300),
+`s1_i_1_chest_open_request_round_trips` (31 — the two shorts),
+`s1_i_1_chest_item_round_trips` (32 — the stack-BEFORE-prefix order),
+`s1_i_1_player_chest_round_trips` (33 — the 0/1..20/255 length-byte gate,
+the string's own 7-bit length byte, and the stray-length `num24 = 0`
+zeroing) and `s1_i_1_player_chest_index_round_trips` (80 — byte plr +
+short index across the `-3..7999` legal span). The 80 apply-side
+`-3..8000` gate itself is `netglue`'s `S2c::PlayerChestIndex` arm
+(`MessageBuffer.cs:3221`). All code-only — tests written, not run.
+
 ## The buff misc block (S1-E-7 wave D, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
