@@ -419,6 +419,10 @@ impl App {
             }
             C2s::Edit { x, y, kind, tile } => {
                 log::info!("net edit kind {kind} at {x},{y} from {id}");
+                // `MessageBuffer.cs:1153` runs on the host too (a listen
+                // server is `netMode == 2` but not `dedServ`) — queue before
+                // the dispatch, exactly like the client arm.
+                self.queue_map_tile(x, y);
                 let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
                 // S1-E-21i — the `KillWall` replay's sound arm
                 // (`MessageBuffer.cs:1177`): the host is `netMode == 2`, so
@@ -1262,6 +1266,16 @@ impl App {
                     Self::apply_tile_block(&mut self.world, &block);
                     self.world.revision = self.world.revision.wrapping_add(1);
                     self.world_key = None;
+                    // `NetMessage.cs:2456`: `DecompressTileBlock`'s tail
+                    // queues the whole rect — the out-of-window catch-up
+                    // refreshes on the next drain instead of waiting for
+                    // the reveal window to revisit it (audit D14).
+                    self.queue_map_area(
+                        block.x,
+                        block.y,
+                        block.w as i32,
+                        block.h as i32,
+                    );
                 } else {
                     self.net_pending_sections.push(*block);
                 }
@@ -1271,9 +1285,17 @@ impl App {
             }
             // `case 20` — a rectangle of tile changes; applied straight into
             // the tiles (the C#'s reader writes the fields, no
-            // KillTile/PlaceTile, `NetMessage.cs:2240-2458`).
+            // KillTile/PlaceTile, `NetMessage.cs:2240-2458`), then
+            // `WorldGen.RangeFrame` over the rect (`MessageBuffer.cs:1438`)
+            // — its map half queues the refresh (audit D14).
             S2c::SectionRange(range) => {
                 self.apply_section_range(&range);
+                self.queue_map_range_frame(
+                    range.x as i32,
+                    range.y as i32,
+                    range.x as i32 + range.w as i32,
+                    range.y as i32 + range.h as i32,
+                );
             }
             // `case 49` — `InitialSpawn` (`MessageBuffer.cs:2447-2453`): the
             // server says "spawn in now"; the client installs the streamed
@@ -1438,6 +1460,10 @@ impl App {
                 self.world.day_time = day;
             }
             S2c::Edit { x, y, kind, tile } => {
+                // `MessageBuffer.cs:1153`: the tile-change arm queues its
+                // tile BEFORE the KillTile/PlaceTile dispatch — the map
+                // refreshes on the next drain, reveal window or not.
+                self.queue_map_tile(x, y);
                 let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
                 // S1-E-21i — the client's `KillWall` replay plays too
                 // (`MessageBuffer.cs:1177`); the message handler runs
