@@ -33705,7 +33705,8 @@ mod w4_d25_style26_census_tests {
             }
         }
         assert_eq!(count, 1, "aiStyle 26 claimed once");
-        // The four kind arms carry the retirement marker.
+        // The three kind arms carry the retirement marker (the
+        // 315/329 pair shares one arm) + this witness's own literal.
         assert_eq!(
             src.matches("aiStyle 26 rides the style axis (W4-d25)").count(),
             4,
