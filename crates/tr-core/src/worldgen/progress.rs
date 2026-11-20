@@ -123,6 +123,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "statues" => PassMessage::Gen(29),
         // WorldGen.cs:17134 (W4-g37 B2).
         "surface chests" => PassMessage::Gen(31),
+        // WorldGen.cs:17249 (W4-g37 B3).
+        "water chests" => PassMessage::Gen(33),
         // WorldGen.cs:20910 (Micro Biomes — the grouped steps).
         "campsites" | "sword shrines" | "mahogany trees" | "mining explosives" | "thin ice" => PassMessage::Gen(76),
         // WorldGen.cs:16309 (ShellPilesMarblePilesAndSpikePits — the

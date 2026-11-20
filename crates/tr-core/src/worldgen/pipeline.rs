@@ -1324,6 +1324,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // Chests (`:16971`), before Jungle Chests Placement (`:17211`) — W4-g37
     // B2. Own `pass_rng("Surface Chests")` stream.
     step!("surface chests", "Surface Chests", step_surface_chests),
+    // The vanilla Water Chests slot (`WorldGen.cs:17245`): after Jungle Chests
+    // Placement (`:17211`), before Spider Caves (`:17356`) — W4-g37 B3. The
+    // port groups it right after `surface chests` (the chest family); the
+    // ocean-cave treasure anchors it reads are produced by `ocean caves`
+    // (earlier). Own `pass_rng("Water Chests")` stream.
+    step!("water chests", "Water Chests", step_water_chests),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2375,6 +2381,33 @@ fn step_surface_chests(
     );
 }
 
+/// The vanilla Water Chests slot (`WorldGen.cs:17245-17355`) — W4-g37 B3: the
+/// ocean-cave treasure chests + the width-scaled water scatter. Own
+/// `pass_rng("Water Chests")` stream.
+fn step_water_chests(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let rock_layer = gv.layers().rock_layer;
+    let num_treasure = gv.num_ocean_cave_treasure;
+    let treasure = gv.ocean_cave_treasure;
+    let mut rng = streams.pass_rng("Water Chests");
+    passes_b::pass_water_chests(
+        world,
+        num_treasure,
+        treasure,
+        world_surface,
+        rock_layer,
+        &mut rng,
+        streams.chest_stock.as_deref_mut(),
+    );
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -3210,8 +3243,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-g37 B1: + `statues` (vanilla "Statues", `WorldGen.cs:16853`)
         // before `cave houses`. B2: + `surface chests` (vanilla "Surface
-        // Chests", `:17130`) after `cave houses`.
-        assert_eq!(names.len(), 68);
+        // Chests", `:17130`) after `cave houses`. B3: + `water chests`
+        // (vanilla "Water Chests", `:17245`) after `surface chests`.
+        assert_eq!(names.len(), 69);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3292,6 +3326,10 @@ mod tests {
                 // W4-g37 B2: the vanilla Surface Chests slot
                 // (`WorldGen.cs:17130`) follows Buried Chests (`:16971`).
                 "surface chests",
+                // W4-g37 B3: the vanilla Water Chests slot
+                // (`WorldGen.cs:17245`) — the port groups it with the chest
+                // family, after Surface Chests.
+                "water chests",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3552,6 +3590,25 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Buried Chests") < cpos("Surface Chests"));
         assert!(cpos("Surface Chests") < cpos("Jungle Chests Placement"));
+    }
+
+    /// W4-g37 B3: `water chests` sits with the chest family — after
+    /// `surface chests`, before `spider caves` (the vanilla Water Chests
+    /// anchor `WorldGen.cs:17245` precedes Spider Caves `:17356`).
+    #[test]
+    fn w4_g37_the_water_chests_step_follows_the_surface_chests() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("water chests"), pos("surface chests") + 1);
+        assert!(pos("water chests") < pos("spider caves"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Jungle Chests Placement") < cpos("Water Chests"));
+        assert!(cpos("Water Chests") < cpos("Spider Caves"));
     }
 
     #[test]

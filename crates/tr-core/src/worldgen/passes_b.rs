@@ -1173,3 +1173,166 @@ pub(crate) fn pass_surface_chests(
     }
     placed
 }
+
+// --- B3: Water Chests --------------------------------------------------------
+
+/// `WorldGen.UnderwaterChests` (`WorldGen.cs:17245-17355`): the ocean-cave
+/// treasure chests (the widening ±num search around each `oceanCaveTreasure`
+/// anchor), then the width-scaled scatter (the 1-in-10 water-breathing 863 /
+/// the 186/4404/277/187 cycle, the two liquid-search loops). Every chest is
+/// `AddBuriedChest(…, style 17, trySlope: beach-band, 0)`. Returns the number
+/// placed.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pass_water_chests(
+    world: &mut World,
+    gv_num_treasure: i32,
+    gv_treasure: [(i32, i32); 2],
+    world_surface: f64,
+    rock_layer: f64,
+    rng: &mut Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> u32 {
+    let mut placed = 0u32;
+    let underworld_layer = world.height - 200; // `Main.UnderworldLayer` (Main.cs:2790).
+    const BEACH_DISTANCE: i32 = 380;
+    // The sub-vanilla guard: the C# `Next(50, maxX-50)` / liquid-search bands
+    // collapse on a tiny world; skip (the d10x idiom).
+    if world.width <= 100 || underworld_layer <= 1 {
+        return 0;
+    }
+    // `:17250-17270`: the ocean-cave treasure chests.
+    for i in 0..gv_num_treasure {
+        // `:17252`: NextFromList{863, 186, 277, 187, 4404} (the extraLiquid 268
+        // arm is a special seed — deferred).
+        let main_item = [863u16, 186, 277, 187, 4404][rng.range(0, 5) as usize];
+        let mut flag = false;
+        let mut num = 2.0f64;
+        while !flag && num < 50.0 {
+            num += 0.1;
+            let (tx, ty) = gv_treasure[i as usize];
+            let mut num2 = rng.range(tx - num as i32, tx + num as i32 + 1);
+            let num3 = rng.range(ty - (num as i32) / 2, ty + (num as i32) / 2 + 1);
+            // `:17264`: the edge fold.
+            num2 = if num2 >= world.width {
+                (num2 as f64 + num / 2.0) as i32
+            } else {
+                (num2 as f64 - num / 2.0) as i32
+            };
+            // `:17265`: InWorld + liquid > 250 + water (the notTheBees/remix
+            // disjuncts are special seeds — deferred).
+            let water = world.tile(num2, num3).is_some_and(|t| {
+                t.liquid > 250 && t.liquid_kind() == crate::tile::LiquidKind::Water
+            });
+            if in_world(world, num2, num3, 0) && water {
+                if add_buried_chest(
+                    world, num2, num3, main_item, false, 17, true,
+                    world_surface, rock_layer, rng, stock.as_deref_mut(),
+                )
+                .is_some()
+                {
+                    flag = true;
+                    placed += 1;
+                }
+            }
+        }
+    }
+    // `:17271-17353`: the width-scaled scatter.
+    let num5 = world.width as f64 / 4200.0; // `:17272` (extraLiquid ×3 deferred).
+    let scatter_count = (9.0 * num5) as i32;
+    let mut num4 = 0i32;
+    for _j in 0..scatter_count {
+        // `:17280-17316`: the main-item pick.
+        let num6: u16;
+        num4 += 1;
+        if rng.range(0, 10) == 0 {
+            num6 = 863;
+        } else {
+            match num4 {
+                1 => num6 = 186,
+                2 => num6 = 4404,
+                3 => num6 = 277,
+                _ => {
+                    num6 = 187;
+                    num4 = 0;
+                }
+            }
+        }
+        // `:17317-17334`: the first liquid-search loop (the full-depth band).
+        let mut flag2 = false;
+        let mut num7 = 0;
+        while !flag2 {
+            let mut num8 = rng.range(50, world.width - 50);
+            let mut num9 = rng.range(1, underworld_layer);
+            let mut rerolls = 0;
+            while !liquid_water(world, num8, num9) {
+                num8 = rng.range(50, world.width - 50);
+                num9 = rng.range(50, underworld_layer);
+                rerolls += 1;
+                // The C# inner loop is unbounded (it hangs on a world with no
+                // water); the port caps it (a degenerate-world guard).
+                if rerolls > 10000 {
+                    break;
+                }
+            }
+            if rerolls > 10000 {
+                break;
+            }
+            let try_slope = num8 < BEACH_DISTANCE || num8 > world.width - BEACH_DISTANCE;
+            if add_buried_chest(
+                world, num8, num9, num6, false, 17, try_slope,
+                world_surface, rock_layer, rng, stock.as_deref_mut(),
+            )
+            .is_some()
+            {
+                flag2 = true;
+                placed += 1;
+            }
+            num7 += 1;
+            if num7 > 10000 {
+                break;
+            }
+        }
+        // `:17335-17352`: the second liquid-search loop (the surface band).
+        let mut flag2 = false;
+        let mut num7 = 0;
+        while !flag2 {
+            let mut num10 = rng.range(50, world.width - 50);
+            let mut num11 = rng.range(world_surface as i32, underworld_layer);
+            let mut rerolls = 0;
+            while !liquid_water(world, num10, num11) {
+                num10 = rng.range(50, world.width - 50);
+                num11 = rng.range(world_surface as i32, underworld_layer);
+                rerolls += 1;
+                if rerolls > 10000 {
+                    break;
+                }
+            }
+            if rerolls > 10000 {
+                break;
+            }
+            let try_slope = num10 < BEACH_DISTANCE || num10 > world.width - BEACH_DISTANCE;
+            if add_buried_chest(
+                world, num10, num11, num6, false, 17, try_slope,
+                world_surface, rock_layer, rng, stock.as_deref_mut(),
+            )
+            .is_some()
+            {
+                flag2 = true;
+                placed += 1;
+            }
+            num7 += 1;
+            if num7 > 10000 {
+                break;
+            }
+        }
+    }
+    placed
+}
+
+/// The water-chest liquid gate (`WorldGen.cs:17323`/`:17341`): `liquid >= 250`
+/// and water kind (the notTheBees/remix disjuncts are special seeds — deferred).
+fn liquid_water(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.liquid >= 250 && t.liquid_kind() == crate::tile::LiquidKind::Water
+    })
+}

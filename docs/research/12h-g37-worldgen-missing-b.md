@@ -176,6 +176,35 @@ Traps, Final Cleanup.
   untouched.
 - **Verification**: code-only — witnesses written, not run.
 
+## B3 Water Chests — landing notes (this commit)
+
+- **Pass body** `WorldGen.cs:17245-17355` (`GenPassNameID.UnderwaterChests`)
+  → `passes_b.rs::pass_water_chests`. The treasure loop (`:17250-17270`):
+  per `GenVars.numOceanCaveTreasure` anchor the `NextFromList{863,186,277,
+  187,4404}` main (extraLiquid 268 deferred), the `num = 2.0; num += 0.1`
+  widening search with the `(int)num` / `(int)num/2` bands, the `:17264` edge
+  fold, the `InWorld + liquid > 250 + water` gate, `AddBuriedChest(…, 17,
+  trySlope:true, 0)`. The scatter (`:17271-17353`): `9 * (maxTilesX/4200)`
+  iterations, the 1-in-10 863 / the `num4` 186→4404→277→187 cycle, the two
+  liquid-search loops (`Next(50, maxX-50)` × the depth / surface bands,
+  `liquid >= 250` water), `trySlope = num8 < beachDistance || num8 >
+  maxX - beachDistance`, the 10000 outer budget.
+- **GenVars seam**: reads `gv.num_ocean_cave_treasure` / `gv.ocean_cave_treasure`
+  (the `ocean caves` step's product, `ocean.rs::record_cave_treasure`) — no
+  new GenVars slots.
+- **Deviation**: the C# inner liquid-search loops are unbounded (they hang on
+  a waterless world); the port caps them at 10000 re-rolls (a degenerate-world
+  guard, cited inline). The notTheBees/remix/extraLiquid/tenth arms are
+  deferred.
+- **Pipeline**: `step!("water chests", …)` after `surface chests` (the port's
+  chest-family grouping; vanilla `:17245` sits after Jungle Chests Placement
+  `:17211`, before Spider Caves `:17356` — the isolated stream makes the
+  grouping RNG-neutral); count 68→69; witness
+  `w4_g37_the_water_chests_step_follows_the_surface_chests`; progress `Gen(33)`
+  (`:17249`).
+- **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
+- **Verification**: code-only — witnesses written, not run.
+
 ## Landing ledger
 
 | pass | commit | status |
@@ -183,8 +212,8 @@ Traps, Final Cleanup.
 | range claim (this doc) | 8ef3e111 | claimed |
 | census re-probe + claim confirmation (this doc) | 30f605c7 | confirmed — all nine UNLANDED on every pushed branch |
 | B1 Statues | a0bf6174 | ported — witnesses written not run |
-| B2 Surface Chests | (this commit) | ported — witnesses written not run |
-| B3 Water Chests | — | pending |
+| B2 Surface Chests | 1cf9f0f1 | ported — witnesses written not run |
+| B3 Water Chests | (this commit) | ported — witnesses written not run |
 | B4 Cave Walls | — | pending |
 | B5 Floating Island Houses | — | pending |
 | B6 Quick Cleanup | — | pending |
