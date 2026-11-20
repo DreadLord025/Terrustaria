@@ -682,20 +682,21 @@ mod tests {
 
     fn glow(kind: u16) -> Projectile {
         let d = proj_data(kind).expect("a glowstick row");
-        Projectile {
-            active: true,
-            kind,
-            owner: 0,
-            pos: Vec2::new(320.0, 320.0),
-            vel: Vec2::new(6.0, 0.0),
-            w: d.w,
-            h: d.h,
-            tile_collide: d.tile_collide,
-            time_left: d.time_left,
-            alpha: d.alpha,
-            light: d.light,
-            ..Default::default()
-        }
+        // The struct-literal/update forms cannot span the pool-private
+        // fields from a sibling module (E0451) — mutate the public surface.
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(320.0, 320.0);
+        p.vel = Vec2::new(6.0, 0.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.tile_collide = d.tile_collide;
+        p.time_left = d.time_left;
+        p.alpha = d.alpha;
+        p.light = d.light;
+        p
     }
 
     #[test]
