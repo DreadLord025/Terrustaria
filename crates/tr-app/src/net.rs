@@ -151,9 +151,10 @@ pub mod id {
     // Census: the NPC-family ids whose body centres on `Main.npc` / the NPC
     // statics / the NPC shop / the NPC smoke, minus c27's entity-state tier
     // (18/36/41/43/51/55/62/84), wave A's 60/72/74 and the already-ported
-    // 23/28/53/54/70/71/97/98: 40/56/65/100/101/103/104 (d91, the first half)
-    // + 106/130/131/136/137/153/162 (this batch). Bodies + codecs only; the
-    // apply/relay arms and the send fan-out are S1-I-4.
+    // 23/28/53/54/70/71/97/98 and the lanes' claimed tails (d96 took 35/40,
+    // d99 took 61/65/78/100/101/103/106/112): 56/92 remain — batch 1 landed
+    // 130/131/136/137/153/162, batch 2 lands 56 (this id) + 92. Bodies +
+    // codecs only; the apply/relay arms and the send fan-out are S1-I-4.
     /// `130 FishOutNPC` (`MessageID.cs:274`) — a client fished an NPC out:
     /// `(ushort)` tile x, `(ushort)` tile y, `(short)` type
     /// (`NetMessage.cs:1528-1532`); the host spawns it
@@ -190,6 +191,21 @@ pub mod id {
     /// pops `NPC.pendingDamages[0]` (`MessageBuffer.cs:1819-1824`,
     /// `NPC.AckDamage`, `NPC.cs:90703-90713`).
     pub const NPC_STRIKE_ACK: u8 = 162;
+    /// `56 UniqueTownNPCInfoSyncRequest` (`MessageID.cs:125`) — `(short)` npc
+    /// slot; the host appends `GivenName` (a `BinaryWriter` string) + `(int)`
+    /// townNpcVariationIndex only when `netMode == 2`
+    /// (`NetMessage.cs:1046-1053`); the client asks with the bare slot
+    /// (`NPC.TrySyncingUniqueTownNPCData`, `NPC.cs:90559-90566`) and the host
+    /// answers the asker (`MessageBuffer.cs:2612-2630`).
+    pub const UNIQUE_TOWN_NPC_INFO: u8 = 56;
+    /// `92 SyncExtraValue` (`MessageID.cs:198`) — `(short)` npc slot,
+    /// `(int)` value, two floats x/y (`NetMessage.cs:1321-1326`); a coin
+    /// pickup credits a town NPC's `extraValue`: the sender adds the delta
+    /// locally then sends it (`WorldItem.cs:1186-1194`), the host adds the
+    /// delta and relays the TOTAL (`MessageBuffer.cs:3455-3459`), the client
+    /// sets it + `moneyPing` (`:3450-3454`). The slot gate is `0..=maxNPCs`
+    /// (`:3448`, inclusive — unlike 56's `< maxNPCs`).
+    pub const NPC_EXTRA_VALUE: u8 = 92;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1646,6 +1662,39 @@ pub struct NpcDebuffDamage {
     pub damage: i16,
 }
 
+/// `msg 56 UniqueTownNPCInfoSyncRequest`'s body (`NetMessage.cs:1046-1053`):
+/// `(short)` npc slot, then — ONLY in the host's answer (`netMode == 2`) —
+/// `GivenName` (`BinaryWriter.Write(string)`: 7-bit length + UTF-8) and
+/// `(int)` townNpcVariationIndex. The client's request is the bare slot
+/// (`NPC.cs:90564`); the host's read arm answers it back to the asker
+/// (`MessageBuffer.cs:2626`), the client's read arm stores the pair behind
+/// the `0..Main.maxNPCs` slot gate (`:2615-2623`). Other host send sites:
+/// the shimmer town-NPC variation flip (`NPC.cs:53265`) and the pet
+/// exchange's new name (`NPC.cs:80959`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UniqueTownNpcInfo {
+    pub npc: i16,
+    /// Present only in the host's answer (`NetMessage.cs:1048` netMode gate).
+    pub info: Option<(String, i32)>,
+}
+
+/// `msg 92 SyncExtraValue`'s body (`NetMessage.cs:1321-1326`): `(short)` npc
+/// slot, `(int)` value, `(float)` x, `(float)` y (the writer's `number3` /
+/// `number4` are floats — the reader `ReadSingle`s them,
+/// `MessageBuffer.cs:3446-3447`). The value is a DELTA on the client→host
+/// leg (the host does `extraValue += num229` then relays the accumulated
+/// total, `MessageBuffer.cs:3457-3458`) and the TOTAL on the host→client
+/// leg (the client assigns it and pings the coins at (x, y), `:3452-3453`).
+/// Sent when a dropped coin is absorbed by a town NPC
+/// (`WorldItem.cs:1186-1194`, the `netMode != 0` branch).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcExtraValue {
+    pub npc: i16,
+    pub value: i32,
+    pub x: f32,
+    pub y: f32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1763,6 +1812,14 @@ pub enum C2s {
     /// `137 RequestNPCBuffRemoval` - a client asks the host to drop an NPC
     /// buff (`NPC.cs:89995-89998`; `MessageBuffer.cs:4219-4229`).
     NpcBuffRemovalRequest(NpcBuffRemovalRequest),
+    /// `56 UniqueTownNPCInfoSyncRequest` - a client asks for a town NPC's
+    /// name + variation (`NPC.cs:90559-90566`); the host answers
+    /// (`MessageBuffer.cs:2624-2627`). The request carries the bare slot.
+    UniqueTownNpcInfo(UniqueTownNpcInfo),
+    /// `92 SyncExtraValue` - a coin pickup's credit delta for a town NPC
+    /// (`WorldItem.cs:1193`); the host accumulates + relays the total
+    /// (`MessageBuffer.cs:3455-3459`).
+    NpcExtraValue(NpcExtraValue),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1900,6 +1957,14 @@ pub enum S2c {
     /// (`MessageBuffer.cs:1768-1771` sends, `:1819-1824` pops
     /// `NPC.pendingDamages[0]`).
     NpcStrikeAck,
+    /// `56 UniqueTownNPCInfoSyncRequest` - the host's answer with the town
+    /// NPC's `GivenName` + `townNpcVariationIndex`
+    /// (`MessageBuffer.cs:2617-2623` stores them).
+    UniqueTownNpcInfo(UniqueTownNpcInfo),
+    /// `92 SyncExtraValue` - a town NPC's accumulated coin credit, relayed
+    /// by the host (`MessageBuffer.cs:3458`); the client assigns + moneyPings
+    /// (`:3450-3454`).
+    NpcExtraValue(NpcExtraValue),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1990,6 +2055,8 @@ impl C2s {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::FishOutNpc(_) => id::FISH_OUT_NPC,
             Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
+            Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
+            Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2062,6 +2129,17 @@ impl C2s {
             Self::FishOutNpc(f) => w.u16(f.tile_x).u16(f.tile_y).i16(f.npc_type),
             // `NetMessage.cs:1583-1586`: (short)npc, (ushort)buff type.
             Self::NpcBuffRemovalRequest(q) => w.i16(q.npc).u16(q.buff_type),
+            // `NetMessage.cs:1046-1053`: (short)npc; the name + variation
+            // ride only the host's answer (the client sends the bare slot).
+            Self::UniqueTownNpcInfo(t) => {
+                let w = w.i16(t.npc);
+                match &t.info {
+                    Some((name, variation)) => w.str(name).i32(*variation),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y.
+            Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2194,6 +2272,20 @@ impl C2s {
             id::NPC_BUFF_REMOVAL_REQUEST => Self::NpcBuffRemovalRequest(NpcBuffRemovalRequest {
                 npc: r.i16()?,
                 buff_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:2614`: the host reads ONLY the (short) slot —
+            // the request is bodyless past it (`NPC.cs:90564`).
+            id::UNIQUE_TOWN_NPC_INFO => Self::UniqueTownNpcInfo(UniqueTownNpcInfo {
+                npc: r.i16()?,
+                info: None,
+            }),
+            // `MessageBuffer.cs:3444-3447`: (short)npc, (int)value, two
+            // ReadSingles (the writer's number3/number4 are floats).
+            id::NPC_EXTRA_VALUE => Self::NpcExtraValue(NpcExtraValue {
+                npc: r.i16()?,
+                value: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2359,6 +2451,8 @@ impl S2c {
             Self::CavernMonsterTypes(_) => id::CAVERN_MONSTER_TYPES,
             Self::NpcDebuffDamage(_) => id::NPC_DEBUFF_DAMAGE,
             Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
+            Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
+            Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
         }
     }
 
@@ -2524,6 +2618,18 @@ impl S2c {
             Self::NpcDebuffDamage(d) => w.u8(d.npc).i16(d.damage),
             // `SendData` has no case 162 — the bare id is the whole frame.
             Self::NpcStrikeAck => w,
+            // `NetMessage.cs:1046-1053`: (short)npc, then the netMode == 2
+            // answer's string + (int) variation.
+            Self::UniqueTownNpcInfo(t) => {
+                let w = w.i16(t.npc);
+                match &t.info {
+                    Some((name, variation)) => w.str(name).i32(*variation),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y
+            // — the host relay carries the accumulated extraValue.
+            Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2739,6 +2845,19 @@ impl S2c {
             }),
             // `MessageBuffer.cs:1819-1824`: no body.
             id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
+            // `MessageBuffer.cs:2614-2622`: (short)npc, then the host
+            // answer's string + (int) variation.
+            id::UNIQUE_TOWN_NPC_INFO => Self::UniqueTownNpcInfo(UniqueTownNpcInfo {
+                npc: r.i16()?,
+                info: Some((r.str()?, r.i32()?)),
+            }),
+            // `MessageBuffer.cs:3444-3447`: (short)npc, (int)value, floats.
+            id::NPC_EXTRA_VALUE => Self::NpcExtraValue(NpcExtraValue {
+                npc: r.i16()?,
+                value: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
             id::PROJECTILE_TRACKERS => Self::ProjectileTrackers(ProjectileTrackers {
                 player_id: r.u8()?,
                 piggy_bank: TrackedProjectileRef {
@@ -5047,6 +5166,84 @@ mod tests {
         // no C2s body, like 97/98.
         assert!(C2s::decode(153, &mut NetReader::new(&body)).is_none());
         assert!(S2c::decode(153, &mut NetReader::new(&body[..2])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_unique_town_npc_info_round_trips() {
+        // `NetMessage.cs:1046-1053`: (short)npc; the netMode == 2 answer
+        // appends GivenName (7-bit length + UTF-8) + (int)variation. The
+        // client request is the bare slot (`NPC.cs:90564`).
+        let req = UniqueTownNpcInfo {
+            npc: 17,
+            info: None,
+        };
+        let c = C2s::UniqueTownNpcInfo(req.clone()).encode();
+        assert_eq!(c, vec![5, 0, 56, 17, 0]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::UniqueTownNpcInfo(d) => assert_eq!(d, req),
+            other => panic!("expected 56, got {:?}", other.msg_id()),
+        }
+        // The host answer (`MessageBuffer.cs:2619-2622` reads string + int).
+        let ans = UniqueTownNpcInfo {
+            npc: 17,
+            info: Some(("Andrew".into(), 1)),
+        };
+        let f = S2c::UniqueTownNpcInfo(ans.clone()).encode();
+        assert_eq!(f[2], 56);
+        let mut body = Vec::new();
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.push(6); // Write7BitEncodedInt(6) — one byte
+        body.extend_from_slice(b"Andrew");
+        body.extend_from_slice(&1i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::UniqueTownNpcInfo(d) => assert_eq!(d, ans),
+            other => panic!("expected 56, got {:?}", other.msg_id()),
+        }
+        // Truncated before the variation int must not decode.
+        assert!(S2c::decode(56, &mut NetReader::new(&body[..12])).is_none());
+        // The bare-slot request must not decode on the S2c side (the client
+        // arm always reads the string + int, `MessageBuffer.cs:2619-2621`).
+        assert!(S2c::decode(56, &mut NetReader::new(&[17, 0])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_npc_extra_value_round_trips() {
+        // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y —
+        // number3/number4 are floats (WorldItem.cs:1193 passes position.X/Y;
+        // the reader ReadSingles them, `MessageBuffer.cs:3446-3447`).
+        let e = NpcExtraValue {
+            npc: 5,
+            value: 1250, // a delta on the C2s leg, the total on the S2c leg
+            x: 4096.5,
+            y: 1024.25,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&1250i32.to_le_bytes());
+        body.extend_from_slice(&4096.5f32.to_bits().to_le_bytes());
+        body.extend_from_slice(&1024.25f32.to_bits().to_le_bytes());
+        // The client's coin-credit delta (`WorldItem.cs:1193`).
+        let c = C2s::NpcExtraValue(e).encode();
+        assert_eq!(c[2], 92);
+        assert_eq!(c.len(), 3 + 14);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcExtraValue(d) => assert_eq!(d, e),
+            other => panic!("expected 92, got {:?}", other.msg_id()),
+        }
+        // The host's relay of the accumulated total
+        // (`MessageBuffer.cs:3458`).
+        let f = S2c::NpcExtraValue(e).encode();
+        assert_eq!(f[2], 92);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcExtraValue(d) => assert_eq!(d, e),
+            other => panic!("expected 92, got {:?}", other.msg_id()),
+        }
+        // Truncated before the y float must not decode.
+        assert!(C2s::decode(92, &mut NetReader::new(&body[..10])).is_none());
+        assert!(S2c::decode(92, &mut NetReader::new(&body[..13])).is_none());
     }
 
     #[test]

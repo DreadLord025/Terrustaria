@@ -822,6 +822,14 @@ impl App {
             // `:4219-4229` the buff-removal request) land with the send-path
             // pass (S1-I-4).
             C2s::FishOutNpc(_) | C2s::NpcBuffRemovalRequest(_) => {}
+            // S1-I-1 wave B batch 2 (W4-d92): the town-NPC info request's
+            // host answer arm (`MessageBuffer.cs:2624-2627`, the
+            // `TrySendData(56, whoAmI, …)` reply) lands with S1-I-4.
+            C2s::UniqueTownNpcInfo(_) => {}
+            // S1-I-1 wave B batch 2 (W4-d92): the coin-credit delta's host
+            // accumulate + relay arm (`MessageBuffer.cs:3455-3459`) lands
+            // with S1-I-4.
+            C2s::NpcExtraValue(_) => {}
         }
     }
 
@@ -1874,6 +1882,14 @@ impl App {
             | S2c::CavernMonsterTypes(_)
             | S2c::NpcDebuffDamage(_)
             | S2c::NpcStrikeAck => {}
+            // S1-I-1 wave B batch 2 (W4-d92): the town-NPC info answer's
+            // client store arm (`MessageBuffer.cs:2617-2623`, GivenName +
+            // townNpcVariationIndex behind the slot gate) lands with S1-I-4.
+            S2c::UniqueTownNpcInfo(_) => {}
+            // S1-I-1 wave B batch 2 (W4-d92): the coin-credit total's client
+            // assign + moneyPing arm (`MessageBuffer.cs:3450-3454`) lands
+            // with S1-I-4.
+            S2c::NpcExtraValue(_) => {}
         }
     }
 
