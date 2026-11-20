@@ -1060,10 +1060,13 @@ mod tests {
 
     #[test]
     fn strange_brew_iframe_table_arms() {
-        // Seeds 2/1/3 (JS-mirror derived): floats 0.166 / 0.467 / 0.865 ->
-        // the 120 / 60 / none arms (`:51900-51911`).
+        // Seeds 1/2/3 (exact-stream derived, gate V4 re-pin — the original
+        // JS-mirror values 0.166/0.467/0.865 mis-modelled the subtractive
+        // index pair): after the heal roll `Next(70,121)`, the floats are
+        // 0.11074 / 0.40416 / 0.69758 -> the 120 / 60 / none arms
+        // (`:51900-51911`).
         let w = crate::test_world_helpers::ground();
-        for (seed, want) in [(2i32, 120i32), (1, 60), (3, 0)] {
+        for (seed, want) in [(1i32, 120i32), (2, 60), (3, 0)] {
             let mut p = Player::spawn(&w);
             let mut rng = UnifiedRandom::new(seed);
             apply_life_and_or_mana(&mut p, registry::get(3001).unwrap(), &mut rng);

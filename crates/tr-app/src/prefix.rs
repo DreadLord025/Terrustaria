@@ -1204,9 +1204,18 @@ mod tests {
             let m = Multipliers::stat_switch(p);
             assert_eq!(shift_rare(3, p, &m), 4, "prefix {p}: +1");
         }
-        // The clamp floor and the quest-fish exemption still hold.
+        // The clamp floor: a shifted rare inside the band clamps to −1.
         assert_eq!(shift_rare(0, 39, &Multipliers::stat_switch(39)), -1);
-        assert_eq!(shift_rare(-11, 39, &Multipliers::stat_switch(39)), -11);
+        // The quest-fish exemption (`Item.cs:603`'s `if (this.rare > -11)`
+        // gate) reads the POST-SHIFT value: a −11 base shifted to −13 by
+        // the ≤0.8 arm stays BELOW the gate (−13 > −11 is false), so the
+        // clamp never runs and −13 survives (gate V4 re-pin: the i49
+        // witness expected −11 — neither the pre- nor post-shift value
+        // the C# produces).
+        assert_eq!(shift_rare(-11, 39, &Multipliers::stat_switch(39)), -13);
+        // A prefix that leaves −11 untouched keeps it (the neutral arm —
+        // the actual quest-fish shape: −11 is not > −11, clamp skipped).
+        assert_eq!(shift_rare(-11, 0, &Multipliers::stat_switch(0)), -11);
     }
 
     #[test]

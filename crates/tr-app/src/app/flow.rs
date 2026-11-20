@@ -3836,12 +3836,17 @@ pub(crate) mod front_flow_tests {
         assert!(app.mouse_reforge);
         assert!((app.reforge_scale - 0.82).abs() < 1e-6, "+0.02 toward 1");
         assert_eq!(app.reforge_cooldown, 30, "hovered keeps the cooldown");
-        // The scale clamps at 1 (no overshoot).
+        // The scale approaches 1 without overshoot. `Main.cs:41559-41565`
+        // adds +0.02 while `reforgeScale < 1f` with NO min-clamp — 0.99 +
+        // 0.02f = 1.01 (f32), and the hovered arm never decreases, so the
+        // value settles at 1.01 (gate V4 re-pin: the i45 witness expected a
+        // clamp the C# does not have; the unhovered −0.02 arm above 1 is
+        // the only decay).
         app.reforge_scale = 0.99;
         app.update_reforge_menu();
-        assert!((app.reforge_scale - 1.0).abs() < 1e-6);
+        assert!((app.reforge_scale - 1.01).abs() < 1e-5, "0.99 + 0.02f");
         app.update_reforge_menu();
-        assert!((app.reforge_scale - 1.0).abs() < 1e-6, "clamped at 1");
+        assert!((app.reforge_scale - 1.01).abs() < 1e-5, "no further growth above 1");
     }
 
     #[test]

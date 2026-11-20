@@ -1353,6 +1353,11 @@ mod tests {
         // A copper stack looted with a partial GRID copper stack present:
         // the occupied walk merges the grid partial FIRST (pInv 0-49 after
         // the coin rows), exactly like GetItem's `num2 = -4` loop.
+        // Gate V4 re-pin: the fixture's 60+50 = 110 crosses the DoCoins
+        // threshold — the grid row hits 100 (`:39519`), converts IN PLACE
+        // to 1 silver (`DoCoins` `:39252`, no other silver row exists),
+        // and the 10 remainder rides the descending empty coin row 53.
+        // (The i43 witness predates i50's DoCoins and pinned the raw 100.)
         let mut container = [slot(71, 50)];
         let mut inventory: [ItemSlot; crate::item::INV] =
             std::array::from_fn(|_| EMPTY_SLOT);
@@ -1361,9 +1366,10 @@ mod tests {
         let mut ammo = empty_vault_ammo();
         let (mut audio, mut rng) = cue_rig();
         loot_all(&mut container, &mut inventory, &mut coins, &mut ammo, None, &mut audio, &mut rng);
-        // The grid partial soaked 40 (60 -> 100), the remaining 10 landed on
-        // the HIGHEST empty coin row (pInv 53, the descending empty walk).
-        assert_eq!(inventory[30].count, 100, "the occupied grid merge ran");
+        // The grid partial soaked 40 (60 -> 100 -> DoCoins -> 1 silver), the
+        // remaining 10 landed on the HIGHEST empty coin row (pInv 53).
+        assert_eq!(inventory[30].kind, 72, "the 100-copper row converted (DoCoins)");
+        assert_eq!(inventory[30].count, 1, "the occupied grid merge ran");
         assert_eq!(coins[3].count, 10, "the empty coin fill is descending (row 3)");
         assert_eq!(coins[0].count, 0, "row 0 stays empty — not ascending");
         assert_eq!(container[0].count, 0, "the stack drained");

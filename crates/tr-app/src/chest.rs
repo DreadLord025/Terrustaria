@@ -2824,8 +2824,13 @@ mod tests {
         assert!(try_open_chest_at_cursor(&mut app, click(40, 10)));
         assert!(!progression(&app, 19) && !progression(&app, 20));
 
-        // The Plantera-gated style 23 → progression 20.
+        // The Plantera-gated style 23 → progression 20. `Chest.Unlock`
+        // (`Chest.cs:376`) REFUSES while `!NPC.downedPlantBoss` — the i43
+        // gate fix retired the old `true` fallback, so the fixture arms
+        // the world flag (gate V4 witness fix; the pre-i43 test relied on
+        // the WRONG always-true gate).
         let mut w = world();
+        w.downed_plant_boss = true;
         place_chest(&mut w, 60, 10, 21, 828);
         let mut app = interact_app(w);
         app.inventory[0] = slot(1533, 1);

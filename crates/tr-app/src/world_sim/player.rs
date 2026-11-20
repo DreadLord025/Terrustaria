@@ -2919,6 +2919,11 @@ mod tests {
             let p = app.player.as_mut().unwrap();
             p.mana = 0;
             p.mana_max = 200;
+            // S1-P-i49's per-tick rebase (`Player.cs:18389` statManaMax2 =
+            // statManaMax): the PERMANENT cap must carry the fixture's 200
+            // too, or ResetEffects rebases to the spawn default 20 and the
+            // second drink clamps away (gate V4 witness fix).
+            p.mana_max_base = 200;
         }
         // The silent listener: the use-sound draws nothing, the HealMana
         // text's two jitter draws are the only stream spend.

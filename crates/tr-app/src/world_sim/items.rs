@@ -2556,11 +2556,21 @@ mod drop_witness_tests {
             p.x = dc.x - crate::player::WIDTH * 0.5;
             p.y = dc.y - crate::player::HEIGHT * 0.5;
         }
-        for _ in 0..99 {
+        // `DropSelectedItem`'s `SetItemAnimation(10)` (`Player.cs:5212`)
+        // arms the 10-tick drop animation — the direct-pickup gate
+        // (`:34919`, held-air + swing-live refuses) blocks the grab while
+        // it runs. The fixture clears it (the animation ran out long
+        // before the 100-tick delay expires; gate V4: the merged i47 grab
+        // pass honours the gate the i51 stand-in magnet never had).
+        app.swing = 0.0;
+        // The grab pass runs BEFORE the physics decrement (the C# order:
+        // GrabItems in UpdatePlayers, the delay tick in UpdateItem), so
+        // ticks 1..100 all see delay >= 1 and tick 101 is the first grab.
+        for _ in 0..100 {
             update_items(&mut app, 1.0 / 60.0);
             assert!(!app.items.is_empty(), "the delayed drop is not grabbed");
         }
-        // Tick 100: the delay hit 0, the grab opens.
+        // Tick 101: tick 100's decrement hit 0, the grab opens.
         update_items(&mut app, 1.0 / 60.0);
         assert!(app.items.is_empty(), "the grab opens when the delay expires");
         assert!(app.inventory.iter().any(|s| s.kind == 2 && s.count == 1));
