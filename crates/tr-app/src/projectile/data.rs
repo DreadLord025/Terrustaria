@@ -1052,6 +1052,9 @@ pub const DRYADS_WARD_CIRCLE: u16 = 586;
 /// `ProjectileID.TruffleSpore` (590, `ProjectileID.cs:1734`) — the Truffle
 /// worm's spore (aiStyle 112's 590 sub-arm). W4-d12.
 pub const TRUFFLE_SPORE: u16 = 590;
+/// `ProjectileID.PortalGunGate` (602, `ProjectileID.cs:1758`) — the Portal
+/// Gun's gate (aiStyle 114). W4-d12.
+pub const PORTAL_GUN_GATE: u16 = 602;
 /// `ProjectileID.DandelionSeed` (836, `ProjectileID.cs:2226`) — the
 /// Dandelion's wind-borne seed (aiStyle 112's 836 sub-arm, hostile). W4-d12.
 pub const DANDELION_SEED: u16 = 836;
@@ -3592,6 +3595,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DANDELION_SEED => {
                 (4.0, 4.0, 112, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
+            // W4-d12 — `Projectile.cs:6511-6520` PortalGunGate (602): 10x10,
+            // aiStyle 114, `alpha = 255`, friendly, `tileCollide = false`,
+            // `netImportant`; the stock `penetrate = 1` (`:774`) and
+            // `timeLeft = 3600` (`:787`) — the AI pins `timeLeft = 3` every
+            // tick (`:34375`).
+            PORTAL_GUN_GATE => {
+                (10.0, 10.0, 114, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_3 => (28.0, 60.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
@@ -4131,6 +4142,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i21: the Nimbus Rod's two clouds set `netImportant`
             // (`Projectile.cs:3186`/`:3194`); the rain drop 239 keeps false.
             || matches!(kind, RAIN_CLOUD_MOVING | RAIN_CLOUD_RAINING)
+            // W4-d12 — `Projectile.cs:6519`: the Portal gate's
+            // `netImportant = true`.
+            || kind == PORTAL_GUN_GATE
             // S1-P-i35 — the bobber family sets `netImportant` itself
             // (`Projectile.cs:4514`/`:9428`).
             || BOBBER_KINDS.contains(&kind)
@@ -4683,6 +4697,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // row (the init 1, `Main.cs:8441`); its arm's frame machine walks
         // the literal 0-2 / 3-5 bands (`:34196-34210`), not `projFrames`.
         DANDELION_SEED => 4,
+        // W4-d12 — the Portal gate's 4-frame sheet (`Main.cs:8625`) — the
+        // aiStyle-114 arm's 6-tick machine wraps at `projFrames`
+        // (`Projectile.cs:34404-34411`).
+        PORTAL_GUN_GATE => 4,
         // S1-D-3 W-9 fishron wiring — the sharknado family's strips
         // (`Main.cs:8512-8514`): the clouds 6 rows, the bolt 3.
         FORCE_BUBBLE | CTHULUNADO => 6,

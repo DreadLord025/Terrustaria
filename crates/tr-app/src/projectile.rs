@@ -10212,6 +10212,80 @@ impl Projectile {
         }
     }
 
+    /// `AI()`'s aiStyle-114 arm (`Projectile.cs:34368-34413`) — the Portal
+    /// Gun's gate (602), the style's ONLY SetDefaults row (`:6511-6520`).
+    /// The gate lives while its owner is alive within 12800 px, its centre
+    /// is in-world (40-tile fluff) and the three support tiles under its
+    /// angle still stand (`PortalHelper.SupportedTilesAreFine`); any miss
+    /// kills it. Otherwise the alpha fades in at −25/tick, the 6-tick frame
+    /// machine wraps at `projFrames[602] = 4` and the rotation pins to
+    /// `ai[0] − π/2`.
+    ///
+    /// Skips (ANALYSIS): the `netMode == 2` section sync (`:34370-34374`,
+    /// MP-only), the `GetPortalColor` + `Lighting.AddLight` cast
+    /// (`:34394-34403`, the light layer). ZERO `Main.rand` draws.
+    /// `owner_active` is the dispatch's resolution of `Main.player[owner]`
+    /// (the local channel for the local owner; a foreign owner reads an
+    /// inactive player — the golf precedent).
+    fn ai_portal_gate(
+        &mut self,
+        world: &World,
+        owner_player: Option<(Vec2, bool)>,
+    ) {
+        // `:34375` — the keep-alive pin.
+        self.time_left = 3;
+        let center = Vec2::from(self.center());
+        // `:34376-34380` — the owner gate: `owner != 255` and the player
+        // inactive / dead / farther than 12800 px kills.
+        let mut flag57 = false;
+        if self.owner != 255 {
+            match owner_player {
+                Some((pc, dead)) => {
+                    if dead || center.distance(pc) > 12800.0 {
+                        flag57 = true;
+                    }
+                }
+                None => flag57 = true,
+            }
+        }
+        // `:34381-34384` — `WorldGen.InWorld((int)Center.X / 16,
+        // (int)Center.Y / 16, 40)` (`WorldGen.cs:9688-9695`): the C#
+        // truncates the centre FIRST, then divides (the int division).
+        if !flag57 {
+            let tx = center.x as i32 / 16;
+            let ty = center.y as i32 / 16;
+            if tx < 40 || tx >= world.width - 40 || ty < 40 || ty >= world.height - 40 {
+                flag57 = true;
+            }
+        }
+        // `:34385-34388` — the support probe.
+        if !flag57 && !portal_supported_tiles_are_fine(world, center, self.ai[0]) {
+            flag57 = true;
+        }
+        // `:34389-34393` — any miss kills and returns.
+        if flag57 {
+            self.kill();
+            return;
+        }
+        // `:34395-34399` — the fade-in.
+        self.alpha -= 25;
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:34404-34411` — the 6-tick frame machine, wrapping at
+        // `Main.projFrames[602] = 4` (`Main.cs:8625`).
+        self.frame_counter += 1;
+        if self.frame_counter >= 6 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= proj_frames(self.kind) as i32 {
+                self.frame = 0;
+            }
+        }
+        // `:34412` — the rotation pins to the gate angle minus π/2.
+        self.rot = self.ai[0] - std::f32::consts::FRAC_PI_2;
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -14031,6 +14105,130 @@ fn full_solid(t: &tr_core::tile::Tile) -> bool {
 /// C#'s `WorldGen.InWorld` guard in front, exactly as the source does.
 pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).is_none_or(full_solid)
+}
+
+/// W4-d12 — `PortalHelper.DoesTileTypeSupportPortals`
+/// (`PortalHelper.cs:293-300`): every tile type supports portals EXCEPT
+/// 496 (the Echo Block).
+fn portal_tile_type_supported(kind: u16) -> bool {
+    kind != 496
+}
+
+/// `PortalHelper.SupportedSlope` (`PortalHelper.cs:555-563`): the cell is
+/// `nactive()`, not `tileCut`, not `BreakableWhenPlacing`, `tileSolid`,
+/// carries EXACTLY the asked slope, and its type supports portals.
+fn portal_supported_slope(world: &World, x: i32, y: i32, slope: u8) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        tr_core::tileobject::nactive(t)
+            && !tr_core::tileobject::tile_cut(t.kind)
+            && !tr_core::tileobject::breakable_when_placing(t.kind)
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && t.slope() == slope
+            && portal_tile_type_supported(t.kind)
+    })
+}
+
+/// `PortalHelper.SupportedHalfbrick` (`PortalHelper.cs:565-573`): the same
+/// conjunction with `halfBrick()` in the slope's place.
+fn portal_supported_halfbrick(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        tr_core::tileobject::nactive(t)
+            && !tr_core::tileobject::tile_cut(t.kind)
+            && !tr_core::tileobject::breakable_when_placing(t.kind)
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && t.half_brick()
+            && portal_tile_type_supported(t.kind)
+    })
+}
+
+/// `PortalHelper.SupportedNormal` (`PortalHelper.cs:575-583`): the same
+/// conjunction plus `!NotReallySolid`, `!halfBrick()` and `slope() == 0`.
+fn portal_supported_normal(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        tr_core::tileobject::nactive(t)
+            && !tr_core::tileobject::tile_cut(t.kind)
+            && !tr_core::tileobject::breakable_when_placing(t.kind)
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && !tr_core::tileobject::not_really_solid(t.kind)
+            && !t.half_brick()
+            && t.slope() == 0
+            && portal_tile_type_supported(t.kind)
+    })
+}
+
+/// `PortalHelper.SupportedTilesAreFine` (`PortalHelper.cs:470-553`): the
+/// gate's three-tile support probe. The angle snaps to the nearest π/4
+/// (`Math.Round` — banker's rounding, the `wrap_angle` precedent), the
+/// octant picks the (num2, num3) offset pair, and the three cells along
+/// the gate's face must all stand: the diagonal octants test the matching
+/// slope (the 3/5/2/4 → index−1 ladder), the horizontal octant tests three
+/// vertical normals, the vertical octant tests three horizontal normals
+/// with the halfbrick fallback. An out-of-range octant is the C#'s
+/// "Broken portal!" `false` (`:498-500`).
+pub(crate) fn portal_supported_tiles_are_fine(
+    world: &World,
+    portal_center: Vec2,
+    portal_angle: f32,
+) -> bool {
+    // `:472` — `ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)X >> 4`.
+    let mut px = (portal_center.x as i32) >> 4;
+    let mut py = (portal_center.y as i32) >> 4;
+    // `:473` — `(int)Math.Round(WrapAngle(angle) / (π/4))`: C# `Math.Round`
+    // is round-half-to-even (banker's), Rust `round_ties_even` matches.
+    let num = (wrap_angle(portal_angle) / (std::f32::consts::PI / 4.0)).round_ties_even() as i32;
+    let (num2, num3) = match num {
+        -2 | 2 => (if num != 2 { 1 } else { -1 }, 0),
+        0 | 4 => (0, if num == 0 { 1 } else { -1 }),
+        -3 | 3 => (if num == -3 { 1 } else { -1 }, -1),
+        -1 | 1 => (if num == -1 { 1 } else { -1 }, 1),
+        _ => return false, // `:498-500` — "Broken portal!"
+    };
+    // `:502-523` — the diagonal octants: the slope index ladder
+    // (3 stock, 5 for (−1,+1), 2 for (+1,−1), 4 for (+1,+1)), then −1.
+    if num2 != 0 && num3 != 0 {
+        let mut num4 = 3;
+        if num2 == -1 && num3 == 1 {
+            num4 = 5;
+        }
+        if num2 == 1 && num3 == -1 {
+            num4 = 2;
+        }
+        if num2 == 1 && num3 == 1 {
+            num4 = 4;
+        }
+        num4 -= 1;
+        let slope = num4 as u8;
+        return portal_supported_slope(world, px, py, slope)
+            && portal_supported_slope(world, px + num2, py - num3, slope)
+            && portal_supported_slope(world, px - num2, py + num3, slope);
+    }
+    // `:524-535` — the horizontal octants: the +1 side shifts the anchor
+    // left, then three vertical normals.
+    if num2 != 0 {
+        if num2 == 1 {
+            px -= 1;
+        }
+        return portal_supported_normal(world, px, py)
+            && portal_supported_normal(world, px, py - 1)
+            && portal_supported_normal(world, px, py + 1);
+    }
+    // `:536-551` — the vertical octants: the +1 side shifts the anchor up,
+    // three horizontal normals, the halfbrick fallback on any miss.
+    if num3 != 0 {
+        if num3 == 1 {
+            py -= 1;
+        }
+        if !portal_supported_normal(world, px, py)
+            || !portal_supported_normal(world, px + 1, py)
+            || !portal_supported_normal(world, px - 1, py)
+        {
+            return portal_supported_halfbrick(world, px, py)
+                && portal_supported_halfbrick(world, px + 1, py)
+                && portal_supported_halfbrick(world, px - 1, py);
+        }
+        return true;
+    }
+    true
 }
 
 /// `Collision.SolidTiles(Vector2, int, int)` (`Collision.cs:3450-3488`): the
@@ -17922,6 +18120,31 @@ impl ProjectilePool {
                             // blocked-move probe stands (the 147/181/193
                             // `kill_step` precedent).
                             self.slots[i].kill_step(world);
+                        }
+                        // W4-d12 — `AI()`'s `else if (this.aiStyle == 114)`
+                        // (`Projectile.cs:34368-34413`): the Portal Gun's
+                        // gate (602), the style's ONLY SetDefaults row
+                        // (`:6511-6520`). The owner gate reads the local
+                        // player channel (a foreign owner reads an
+                        // inactive player — the golf precedent); the
+                        // support probe reads the world's tiles.
+                        114 => {
+                            let owner_player = if self.slots[i].owner == local_owner {
+                                player.as_deref().map(|pl| {
+                                    let (cx, cy) = pl.center();
+                                    (Vec2::new(cx, cy), pl.dead)
+                                })
+                            } else {
+                                None
+                            };
+                            self.slots[i].ai_portal_gate(world, owner_player);
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:6518`) — `UpdatePosition` integrates the
+                            // zero velocity (the gate holds its centre).
+                            if self.slots[i].active {
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
                         }
                         // aiStyle 113: the Bone javelin (598)
                         // (`AI_113_TargetSticker` `:40562-40899`). The stick
@@ -45263,5 +45486,220 @@ mod w4_d12_style112_seed_spore_tests {
         p.ai[0] = 179.0;
         p.ai_truffle_spore(&mut rng, 225);
         assert_eq!(p.ai[0], 0.0, "the 180 wrap (:34230-34232)");
+    }
+}
+
+/// W4-d12 — the Portal Gun's gate (`AI()`'s aiStyle-114 arm,
+/// `Projectile.cs:34368-34413` + `PortalHelper.SupportedTilesAreFine`
+/// `PortalHelper.cs:470-583`). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d12_portal_gate_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// A 128x128 world with a flat dirt floor at tile row 60 (the gate's
+    /// support tests reason in tile coordinates around (64, 60)).
+    fn world() -> World {
+        let mut w = World::new("t".into(), 128, 128);
+        for x in 0..128 {
+            for y in 60..128 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    fn gate_at(cx: f32, cy: f32, angle: f32) -> Projectile {
+        let d = proj_data(PORTAL_GUN_GATE).unwrap();
+        Projectile {
+            active: true,
+            kind: PORTAL_GUN_GATE,
+            owner: 0,
+            pos: Vec2::new(cx - d.w * 0.5, cy - d.h * 0.5),
+            w: d.w,
+            h: d.h,
+            time_left: d.time_left,
+            max_penetrate: d.penetrate,
+            penetrate: d.penetrate,
+            tile_collide: d.tile_collide,
+            net_important: d.net_important,
+            alpha: d.alpha,
+            ai: [angle, 0.0, 0.0, 0.0],
+            ..Default::default()
+        }
+    }
+
+    /// The row pin (`Projectile.cs:6511-6520`).
+    #[test]
+    fn w4_d12_the_602_row_matches_set_defaults() {
+        let d = proj_data(PORTAL_GUN_GATE).unwrap();
+        assert_eq!((d.w, d.h), (10.0, 10.0), ":6513-6514");
+        assert_eq!(d.ai_style, 114, ":6515");
+        assert_eq!(d.alpha, 255, ":6516");
+        assert!(!d.tile_collide, ":6518");
+        assert!(d.net_important, ":6519");
+        assert_eq!(d.penetrate, 1, "the stock (:774)");
+        assert_eq!(proj_frames(PORTAL_GUN_GATE), 4, "Main.cs:8625");
+    }
+
+    /// The support probe's octant ladder (`PortalHelper.cs:473-501`): the
+    /// angle snaps to the nearest π/4 with banker's rounding; the vertical
+    /// octant (angle 0 → num 0 → (0, +1)) shifts the anchor up one row and
+    /// tests three horizontal normals.
+    #[test]
+    fn w4_d12_the_vertical_octant_reads_three_normals() {
+        let w = world();
+        // Centre (64·16+8, 59·16+8) = (1032, 952): tile (64, 59), the row
+        // ABOVE the floor. num3 = +1 shifts the anchor to row 58... the
+        // floor is at 60, so place the gate one row lower: centre tile
+        // (64, 60) → anchor row 59 — still air. Use centre tile (64, 61):
+        // the anchor shifts to row 60, the floor's top row.
+        let center = Vec2::new(64.0 * 16.0 + 8.0, 61.0 * 16.0 + 8.0);
+        assert!(portal_supported_tiles_are_fine(&w, center, 0.0), "the floor stands");
+        // Dig the middle support cell → the probe fails.
+        let mut w2 = world();
+        let i = w2.index(64, 60);
+        w2.tiles[i].flags &= !FLAG_ACTIVE;
+        assert!(!portal_supported_tiles_are_fine(&w2, center, 0.0), ":542-548");
+    }
+
+    /// The halfbrick fallback (`PortalHelper.cs:542-548`): three halfbrick
+    /// cells pass where the normals fail.
+    #[test]
+    fn w4_d12_the_halfbrick_fallback() {
+        let mut w = world();
+        for x in 63..=65 {
+            let i = w.index(x, 60);
+            w.tiles[i].flags |= tr_core::tile::FLAG_HALF_BRICK;
+        }
+        let center = Vec2::new(64.0 * 16.0 + 8.0, 61.0 * 16.0 + 8.0);
+        assert!(portal_supported_tiles_are_fine(&w, center, 0.0), ":544-546");
+        // A single flat cell among the halfbricks fails the fallback.
+        let i = w.index(65, 60);
+        w.tiles[i].flags &= !tr_core::tile::FLAG_HALF_BRICK;
+        assert!(!portal_supported_tiles_are_fine(&w, center, 0.0));
+    }
+
+    /// The horizontal octant (`PortalHelper.cs:524-535`): angle π/2 →
+    /// num 2 → (−1, 0), three vertical normals at the anchor column.
+    #[test]
+    fn w4_d12_the_horizontal_octant_reads_three_verticals() {
+        let w = world();
+        // Centre tile (64, 61): num2 = −1 keeps the anchor; the cells
+        // (64, 60/61/62) — 60 is floor, 61/62 are floor too (the floor
+        // fills 60..128). All three stand.
+        let center = Vec2::new(64.0 * 16.0 + 8.0, 61.0 * 16.0 + 8.0);
+        assert!(portal_supported_tiles_are_fine(&w, center, std::f32::consts::FRAC_PI_2));
+        // The +1 side (angle −π/2 → num −2 → (+1, 0)) shifts the anchor
+        // left: centre tile (64, 61) → column 63.
+        assert!(portal_supported_tiles_are_fine(&w, center, -std::f32::consts::FRAC_PI_2));
+    }
+
+    /// The diagonal octant (`PortalHelper.cs:502-523`): angle π/4 → num 1
+    /// → (−1, +1) → slope index 5−1 = 4. Three slope-4 cells pass.
+    #[test]
+    fn w4_d12_the_diagonal_octant_reads_the_slope() {
+        let mut w = world();
+        // The probe cells for centre (64, 61), (num2, num3) = (−1, +1):
+        // (64, 61), (63, 60), (65, 62). Slope 4 on all three.
+        for (x, y) in [(64, 61), (63, 60), (65, 62)] {
+            let i = w.index(x, y);
+            w.tiles[i].set_slope(4);
+        }
+        let center = Vec2::new(64.0 * 16.0 + 8.0, 61.0 * 16.0 + 8.0);
+        assert!(portal_supported_tiles_are_fine(&w, center, std::f32::consts::FRAC_PI_4));
+        // A wrong slope on one cell fails.
+        let i = w.index(63, 60);
+        w.tiles[i].set_slope(3);
+        assert!(!portal_supported_tiles_are_fine(&w, center, std::f32::consts::FRAC_PI_4));
+    }
+
+    /// The 496 exclusion (`PortalHelper.cs:293-300`) and the tileCut /
+    /// BreakableWhenPlacing refusals.
+    #[test]
+    fn w4_d12_the_unsupported_types_fail() {
+        let mut w = world();
+        let center = Vec2::new(64.0 * 16.0 + 8.0, 61.0 * 16.0 + 8.0);
+        // 496 (the Echo Block) is tileSolid but refuses portals.
+        for x in 63..=65 {
+            let i = w.index(x, 60);
+            w.tiles[i].kind = 496;
+        }
+        assert!(!portal_supported_tiles_are_fine(&w, center, 0.0), ":295-298");
+        // A tileCut kind fails even when solid: 484 (the pink vase) is
+        // tileSolid (`Main.cs`) AND tileCut — the cut term refuses it.
+        let mut w2 = world();
+        for x in 63..=65 {
+            let i = w2.index(x, 60);
+            w2.tiles[i].kind = 484;
+        }
+        assert!(!portal_supported_tiles_are_fine(&w2, center, 0.0), ":558");
+    }
+
+    /// The owner gate (`:34376-34380`): a dead owner kills; a far owner
+    /// (> 12800 px) kills; the 255 owner skips the gate.
+    #[test]
+    fn w4_d12_the_owner_gates() {
+        let w = world();
+        let center = Vec2::new(64.0 * 16.0 + 8.0, 61.0 * 16.0 + 8.0);
+        // Dead owner.
+        let mut p = gate_at(center.x, center.y, 0.0);
+        p.ai_portal_gate(&w, Some((center, true)));
+        assert!(!p.active, ":34377");
+        // Far owner.
+        let mut p2 = gate_at(center.x, center.y, 0.0);
+        p2.ai_portal_gate(&w, Some((center + Vec2::new(12801.0, 0.0), false)));
+        assert!(!p2.active, "the 12800 leash (:34377)");
+        // No owner channel (a foreign owner) kills.
+        let mut p3 = gate_at(center.x, center.y, 0.0);
+        p3.ai_portal_gate(&w, None);
+        assert!(!p3.active);
+        // The 255 owner skips the player gate entirely (the support probe
+        // still runs — the floor stands).
+        let mut p4 = gate_at(center.x, center.y, 0.0);
+        p4.owner = 255;
+        p4.ai_portal_gate(&w, None);
+        assert!(p4.active, ":34377 — owner == 255 skips");
+        assert_eq!(p4.time_left, 3, "the keep-alive pin (:34375)");
+    }
+
+    /// The in-world fluff gate (`:34381-34384`): a centre within 40 tiles
+    /// of the edge kills.
+    #[test]
+    fn w4_d12_the_in_world_fluff_gate() {
+        let w = world();
+        // Tile (39, 61) — inside the 40-tile left fluff.
+        let mut p = gate_at(39.0 * 16.0 + 8.0, 61.0 * 16.0 + 8.0, 0.0);
+        p.owner = 255;
+        p.ai_portal_gate(&w, None);
+        assert!(!p.active, ":34381");
+    }
+
+    /// The live gate's fade + frame + rotation (`:34395-34412`): alpha
+    /// −25/tick, the 6-tick machine wraps at 4, rotation = ai[0] − π/2.
+    #[test]
+    fn w4_d12_the_live_gate_fades_and_animates() {
+        let w = world();
+        let center = Vec2::new(64.0 * 16.0 + 8.0, 61.0 * 16.0 + 8.0);
+        let mut p = gate_at(center.x, center.y, 0.0);
+        p.owner = 255;
+        p.ai_portal_gate(&w, None);
+        assert_eq!(p.alpha, 230, ":34395");
+        assert_eq!(p.frame_counter, 1, ":34404");
+        assert!((p.rot - (0.0 - std::f32::consts::FRAC_PI_2)).abs() < 1e-6, ":34412");
+        for _ in 0..5 {
+            p.ai_portal_gate(&w, None);
+        }
+        assert_eq!(p.frame_counter, 0, "the 6-tick wrap (:34405-34406)");
+        assert_eq!(p.frame, 1, ":34407");
+        // 18 more ticks: 3 more wraps → frame 4 wraps to 0.
+        for _ in 0..18 {
+            p.ai_portal_gate(&w, None);
+        }
+        assert_eq!(p.frame, 0, "the projFrames[602] = 4 wrap (:34407-34409)");
+        // The alpha floors at 0 (255 − 24·25 < 0).
+        assert_eq!(p.alpha, 0, ":34396-34398");
     }
 }
