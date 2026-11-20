@@ -12,6 +12,7 @@ pub mod binio;
 pub mod damage;
 pub mod drawdata;
 pub mod drawdata_anim;
+pub mod drawdata_cages;
 pub mod drawdata_furniture;
 pub mod dd2;
 pub mod dd2_victory;
