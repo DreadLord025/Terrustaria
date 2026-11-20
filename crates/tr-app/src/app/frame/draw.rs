@@ -767,6 +767,25 @@ impl App {
                             },
                             // `Netplay.Connection.StatusMax > 0` (`:341`).
                             net_connecting: self.net_status_max > 0,
+                            // `Main.wofNPCIndex >= 0 &&
+                            // Main.player[Main.myPlayer].gross`
+                            // (`LegacyLighting.cs:678`, S1-E-19d): the
+                            // Horrified + living-WoF gate carries the indexed
+                            // WoF's position/direction into the gross light
+                            // floor. An out-of-range index is the C# try's
+                            // abort before any write (`:684`) — `None` here.
+                            wof_gross: if world.wof_npc_index >= 0
+                                && player.as_ref().is_some_and(|p| p.gross)
+                            {
+                                npcs.get(world.wof_npc_index as usize).map(|n| {
+                                    tr_core::lighting::legacy::WofGrossLight {
+                                        position_x: n.x,
+                                        direction: n.facing,
+                                    }
+                                })
+                            } else {
+                                None
+                            },
                         };
                         let engine = legacy_light.get_or_insert_with(|| {
                             tr_core::lighting::legacy::LegacyLighting::new(*light_mode)

@@ -34,10 +34,13 @@
 //!   the S1-A-6 `LightMap.blur_rng` precedent. Stream *order* is exact:
 //!   `NextSeed()` after every swipe pass (`:1082`), `WithModifier(i*1000+j)`
 //!   per wet cell (`:1250`), `Next(98,100)` per wet decay draw.
-//! - The Wall-of-Flesh `gross` light block (`:678-717`) is not ported: it
-//!   needs `Player.gross` / `Main.wofNPCIndex`, neither of which exists in
-//!   the port yet. It is gated off in vanilla single-player without those
-//!   conditions.
+//! - The Wall-of-Flesh `gross` light block (`:678-717`) is ported (S1-E-19d)
+//!   through [`LegacyInputs::wof_gross`] — the driver resolves
+//!   `Main.wofNPCIndex >= 0 && Main.player[Main.myPlayer].gross` and the
+//!   indexed WoF's `position.X` / `direction`. The C# `try/catch` becomes an
+//!   abort-on-out-of-bounds early return (the wave-B map-export precedent):
+//!   cells written before the abort persist, the rest of `PreRenderPhase`
+//!   runs either way, and the block draws no random numbers.
 //! - The minimap light export (`TryUpdatingMapWithLight`, `:371-433`, wave B)
 //!   is split along the C#'s own seam: the `ProcessArea` gate block
 //!   (`:341-358`) runs INLINE in `process_area` (before `PreRenderPhase`
@@ -133,6 +136,17 @@ impl<'a> MapLightExport<'a> {
     }
 }
 
+/// The indexed WoF snapshot for the `gross` light block (`PreRenderPhase`,
+/// `:684-685`): `Main.npc[Main.wofNPCIndex].position.X` and `.direction`.
+/// Carried only while the `:678` gate holds (see [`LegacyInputs::wof_gross`]).
+#[derive(Clone, Copy, Debug)]
+pub struct WofGrossLight {
+    /// `Main.npc[Main.wofNPCIndex].position.X` (`:684`).
+    pub position_x: f32,
+    /// `Main.npc[Main.wofNPCIndex].direction` (`:685`).
+    pub direction: i32,
+}
+
 /// The per-frame `Main` state the legacy engine reads beyond `LightParams`.
 #[derive(Clone, Copy, Debug)]
 pub struct LegacyInputs {
@@ -162,6 +176,11 @@ pub struct LegacyInputs {
     /// `Netplay.Connection.StatusMax > 0` (`:341`) — while connecting, the
     /// export countdown is pinned to 1 every shift frame.
     pub net_connecting: bool,
+    /// `Main.wofNPCIndex >= 0 && Main.player[Main.myPlayer].gross` (`:678`)
+    /// — `Some` carries the indexed WoF's position/direction for the gross
+    /// light floor; `None` keeps the gate closed (the vanilla single-player
+    /// default without a Horrified player facing the Wall of Flesh).
+    pub wof_gross: Option<WofGrossLight>,
 }
 
 impl Default for LegacyInputs {
@@ -176,6 +195,7 @@ impl Default for LegacyInputs {
             game_paused: false,
             view_translation: [0.0; 2],
             net_connecting: false,
+            wof_gross: None,
         }
     }
 }
@@ -840,8 +860,14 @@ impl LegacyLighting {
                 s.honey = false;
             }
         }
-        // `:678-717`: the Wall-of-Flesh `gross` light block needs
-        // `Main.wofNPCIndex` + `Player.gross` — not ported (module note).
+        // `:678-717`: the Wall-of-Flesh `gross` light block (S1-E-19d). The
+        // `:678` gate rides `inputs.wof_gross`; the `try/catch` (`:680/714`)
+        // becomes the abort-on-out-of-bounds early return inside the helper
+        // — cells written before the abort persist and the rest of the
+        // pre-render runs either way, exactly like the C#. No RNG draws.
+        if let Some(wof) = inputs.wof_gross {
+            self.wof_gross_light(wof, params.demon_torch, camera_pos, camera_size);
+        }
 
         // `:718-727`: the scanner export over the expanded rect clamped to
         // `[5, maxTiles-1]`. `TileLightScanner.Update()` advances the scanner
@@ -963,6 +989,67 @@ impl LegacyLighting {
         self.render_count = 0;
         // `:848`.
         self.do_colors(inputs);
+    }
+
+    /// The Wall-of-Flesh `gross` light block (`PreRenderPhase`, `:678-717`):
+    /// while the local player is Horrified and the WoF lives, a 9-column
+    /// strip beside the boss raises the WORKING set to a demon-torch-
+    /// coloured floor. Runs AFTER the working-set clear (`:663-677`) and
+    /// BEFORE the scanner export (`:718-727`) — the export overwrites the
+    /// floor wherever it seeds; the visible effect is the swipe spread from
+    /// the strip's edges. The C# `try/catch` (`:680/714`) becomes an
+    /// abort-on-out-of-bounds early return (the wave-B map-export
+    /// precedent): cells written before the abort persist, the rest of
+    /// `PreRenderPhase` runs either way. No random numbers are drawn.
+    fn wof_gross_light(
+        &mut self,
+        wof: WofGrossLight,
+        demon_torch: f32,
+        camera_pos: [f32; 2],
+        camera_size: [f32; 2],
+    ) {
+        // `:682-683`: the camera's tile rows ±10 (truncating casts, no floor).
+        let num5 = camera_pos[1] as i32 / 16 - 10;
+        let num6 = (camera_pos[1] + camera_size[1]) as i32 / 16 + 10;
+        // `:684-686`: the strip beside the WoF — facing left (direction <= 0)
+        // starts 2 tiles right of its position, facing right 3 tiles left.
+        let mut num7 = wof.position_x as i32 / 16;
+        num7 = if wof.direction <= 0 { num7 + 2 } else { num7 - 3 };
+        let num8 = num7 + 8;
+        // `:687-692`: the demon-torch colour floor, verbatim factor order.
+        let mut num9 = 0.5 * demon_torch + 1.0 * (1.0 - demon_torch);
+        let mut num10 = 0.3f32;
+        let mut num11 = 1.0 * demon_torch + 0.5 * (1.0 - demon_torch);
+        num9 *= 0.2;
+        num10 *= 0.1;
+        num11 *= 0.3;
+        for k in num7..=num8 {
+            // `:695`: `_states[k - num7]` — the strip is anchored at column
+            // 0, NOT at the world column. An out-of-range column throws →
+            // the `:714` catch aborts the whole block.
+            let lx = k - num7;
+            if lx < 0 || lx >= self.sw {
+                return;
+            }
+            for l in num5..=num6 {
+                // `:698`: `[l - _expandedRectTop]` — the row IS world-anchored.
+                let ly = l - self.expanded[2];
+                if ly < 0 || ly >= self.sh {
+                    return;
+                }
+                let s = &mut self.states[(lx * self.sh + ly) as usize];
+                // `:699-710`: per-channel raise-only floor.
+                if s.r2 < num9 {
+                    s.r2 = num9;
+                }
+                if s.g2 < num10 {
+                    s.g2 = num10;
+                }
+                if s.b2 < num11 {
+                    s.b2 = num11;
+                }
+            }
+        }
     }
 
     /// `DoColors` (`:851-1085`): the per-frame decay factors and the swipe
