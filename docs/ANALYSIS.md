@@ -930,6 +930,33 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   Witnesses: `lavafall_scan_sums_strength_and_tracks_the_nearest_cell`,
   `water_falls_leave_the_lavafall_triple_at_the_reset`,
   `the_last_active_pass_overwrites_the_lavafall_triple` (written, not run вЂ” code-only).
+- Honeyfall lane + the water-style ambience scan (W4-g75, code-only): the second
+  `DrawWaterfall` ambience arm (`WaterfallManager.cs:708-729`, locals `:328-332`,
+  store `:960-962`) now rides a second `AmbientScan` out of `WaterfallManager::draw`
+  into `App::ambient_waterfall` вЂ” the waterfall loop's volume/pan input
+  (`Main.Ambience`, `Main.cs:13475-13486`); the field was dead 0 after g74 removed
+  the quad-based approximation. The arm's exclusion list is verbatim
+  (`num12 != 1 && != 14 && != 25 && != 11 && != 12 && != 22`): the honey fall
+  (type 14, `FindWaterfalls` `:186-188`) feeds NEITHER ambience triple, emits no
+  `AddLight` (no case 14 in `:1067-1116`), animates on the shared typed-fall slow
+  cadence (`32 * slowFrame`, the 7-tick counter, `:352-358`) and rides `GetAlpha`'s
+  flat 0.8 (`:1035`) вЂ” no wall/surface 0.6 damp, no pass-alpha multiply, no
+  `StylizeColor` case 14, so an unlit honey fall stays black (no lava-style 190
+  self-glow floor); the last-10-steps fade (`:1039-1042`) still scales the 0.8.
+  The Y-distance arm keeps the original's verbatim quirk at `:725-728` (tests
+  `num39`, stores `num38` into `num3`), so on a straight drop `ambientWaterfallY`
+  freezes at the head row. The g74 witness fixtures were re-derived against the
+  C# direction chain (written-not-run, never executed): the half-brick spout head
+  cannot fall straight (`:609`'s `!tile3.halfBrick()` gate) and the liquid-filled
+  right neighbour bends it LEFT (`:625-634`) вЂ” cells (10,10), (9,10), (9,11..59),
+  51 not 50; the head quad rides the `16 + num21` source, the column-9 quads ride
+  `num21`. Witnesses: `honey_spout_uses_type_fourteen`,
+  `honey_frames_ride_the_slow_counter`,
+  `honey_alpha_is_flat_point_eight_without_a_glow_floor`,
+  `honey_falls_emit_no_light_and_feed_neither_ambience_scan`,
+  `waterfall_scan_sums_strength_and_tracks_the_nearest_cell`,
+  `waterfall_scan_y_arm_keeps_the_num3_equals_num38_quirk` (written, not run вЂ”
+  code-only).
 - `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid never
   takes the normal liquid path вЂ” every type-3 cell draws twice, the base quad with
   per-corner `GetShimmerBaseColor` wave colours (self-luminous: the light map is
