@@ -39293,3 +39293,47 @@ later batches drain; the App drain lands with batch 2.
 every helper re-read against the cited C# windows; 15 witness tests in
 `main_sounds.rs` WRITTEN NOT RUN.
 
+## W4-g22 batch 2 (2026-11-21, code-only) — sites 106-120 + the menu cue drain
+
+**Batch 2 (sites 106-120)** — the builder-toggle tail + the legacy-menu cue
+queue goes live:
+
+| site | C# | port |
+| --- | --- | --- |
+| 106-109 `:47433`/`:47453`/`:47473`/`:47493` | ruler-line/ruler-grid/paint-sprayer/actuation toggles 12 | `main_sounds::builder_acc_toggle` slots 0/1/3/2 (batch-1 helper, census rows land here) |
+| 110 `:47556` | wire-brightness cycle 12 | `builder_acc_toggle` slots 4/5/6/7/9 (wrap-at-3) |
+| 111 `:48489` | first-launch language pick 10 | `Act::SetLanguage` on `LanguageInitial` queues `Menu_Open` |
+| 112 `:48516` | language-page Back 11 | `Act::Nav` parent relation queues `Menu_Close` |
+| 113 `:48522` | language-page row 12 | `Act::SetLanguage` on `Language` queues `Menu_Tick` |
+| 114 `:48551` | join-password text edit 12 | `Menu::character`/Backspace change-diff queues `Menu_Tick` |
+| 115 `:48621` | connecting-cancel 11 | UNPORTED surface — the port's connecting overlay has no cancel row (the netglue drop path is the disconnect, not a menu click); recorded, no seam invented |
+| 116 `:48651` | mode-882 cancel 11 | UNPORTED surface (Steam join cancel, spec §9.1) — recorded |
+| 117 `:48675` | host-password text edit 12 | same `character`/Backspace seam as 114 |
+| 118 `:48786` | 889 lobby XOR 12 | `Toggle::ServerLobby` queues `Menu_Tick` |
+| 119/120 `:48790`/`:48794` | FriendsCanJoin/FriendsOfFriends XOR 12 | UNPORTED rows (blank without Steam, `pages.rs` server_settings_items) — the toggle arm's cue rule covers them when the rows land |
+
+**The App drain** (`app/loop.rs`): the click path replaces the blanket
+`Menu_Tick`-on-non-None-action with `m.take_cue()` (the C# plays 10/11/12 per
+site, never a uniform tick — the Quit row `:48975-48978` is silent); the key
+path drains after `character` and after `key`. The hover tick
+(`DoStatefulTickSound`, `:3244`/`:3256`) stays — g21's site, not this batch's.
+
+**Cue rules landed** (`menu/actions.rs`): Nav forward 10 / Back 11 via the
+`parent()` relation with the per-site exceptions (Settings→Volume plays 11
+`:49741`; the input Accept rows are cue-less; HostPassword Back is silent
+`ExitServerPasswordMenu :52020-52031`; the password Backs keep vanilla's 11
+despite the deviated targets); Out rows (Singleplayer/Achievements/ConfirmYes
+10, ConfirmNo/ReturnToWorld 11, Quit/Host/Join silent); toggles 12 except the
+silent cycles (MinimapFrame `:49945`, ResourceSets `:49951`, BossBarText
+`:49970` — the cycle helpers draw no sound) and the port's invented Zoom row;
+SetLanguage 10/12 by page; PickColor 10 (`:50256`/`:50265`); Escape parent-walk
+11 (the `flag5` gamepad-Back stand-in).
+
+**RNG**: all batch-2 sites draw-free (ids 10/11/12 int overload). The
+`:49076` randomize `Next(51)` chain is batch 3's — untouched here.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+7 menu witnesses + the batch-1 helpers' census rows WRITTEN NOT RUN. The
+in-flight Nav relation's swapped branches were fixed against the C# (Back =
+`parent(current) == target`, not the reverse).
+
