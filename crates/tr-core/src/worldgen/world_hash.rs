@@ -251,6 +251,13 @@ mod tests {
     // `ores and gems` and `evil` — the 0.0006·area cobweb runners grow on
     // every world with cave pockets (the port's carved caves qualify), so
     // this pin moves BY DESIGN too; deferred to the merge gate.
+    // W4-d102 pass 3 (code-only): the Slush sweep
+    // (`WorldGen.cs:14697-14752`, `passes2.rs::pass_slush`) lands between
+    // `liquids` and `dungeon` — a pure retype over the GenVars snow rect,
+    // which is EMPTY (snowTop == snowBottom == 0) until d101's Generate
+    // Ice Biome producer lands, so this pin is UNCHANGED by this pass
+    // alone (the silt/ice kinds it would retype do not occur in the empty
+    // rect; the sweep draws nothing).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -299,6 +306,8 @@ mod tests {
     // this pin moves BY DESIGN too; deferred to the merge gate.
     // W4-d102 pass 2 (code-only): the Webs pass (see SEED42_512 above) —
     // the cobweb 51 tiles move this pin BY DESIGN; deferred to the gate.
+    // W4-d102 pass 3 (code-only): the Slush sweep (see SEED42_512 above)
+    // is a no-op on the empty snow rect — UNCHANGED by this pass alone.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

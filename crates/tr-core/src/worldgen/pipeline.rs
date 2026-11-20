@@ -377,6 +377,18 @@ pub(crate) struct GenVars {
     pub(crate) num_m_caves: i32,
     pub(crate) m_cave_x: [i32; 30],
     pub(crate) m_cave_y: [i32; 30],
+    /// `GenVars.snowTop`/`snowBottom`/`snowMinX`/`snowMaxX`
+    /// (`GenVars.cs:78-88`, Reset allocates the per-row arrays at
+    /// `maxTilesY` and zeroes the bounds, `WorldGen.cs:11178-11181`) — the
+    /// snow biome's per-row column span. W4-d102 adds the slots for the
+    /// Slush retype sweep (`WorldGen.cs:14697-14752`); the producer is
+    /// d101's `Generate Ice Biome` pass (`:12317`/`:12418` write the
+    /// bounds) — until it lands `snow_top == snow_bottom == 0` and the
+    /// sweep is a no-op on the empty rect.
+    pub(crate) snow_top: i32,
+    pub(crate) snow_bottom: i32,
+    pub(crate) snow_min_x: Vec<i32>,
+    pub(crate) snow_max_x: Vec<i32>,
 }
 
 impl Default for GenVars {
@@ -443,6 +455,14 @@ impl Default for GenVars {
             num_m_caves: 0,
             m_cave_x: [0; 30],
             m_cave_y: [0; 30],
+            // The snow bounds zero in Reset (`WorldGen.cs:11180-11181`);
+            // the per-row arrays allocate there too (`:11178-11179`) — the
+            // port sizes them in `reset_genvars` (the height is not known
+            // to `Default`), empty here.
+            snow_top: 0,
+            snow_bottom: 0,
+            snow_min_x: Vec::new(),
+            snow_max_x: Vec::new(),
         }
     }
 }
@@ -1299,6 +1319,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `mushroom patches`).
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
+    // The vanilla Slush slot (`WorldGen.cs:14697`): after Lakes (`:14556`)
+    // and before Dungeon (`:14757`) — W4-d102 pass 3. A pure retype sweep
+    // (no draws); a no-op on the empty snow rect until d101's Generate Ice
+    // Biome producer lands.
+    step!("slush", "Slush", step_slush),
     step!("dungeon", "Dungeon", step_dungeon),
     // The vanilla Dungeon tail (`WorldGen.cs:14867`): the Constant's
     // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
@@ -1819,6 +1844,19 @@ fn step_webs(
         &gv.m_cave_y,
         &mut streams.pass_rng("Webs"),
     );
+}
+
+/// The vanilla Slush slot (`WorldGen.cs:14697-14752`) — W4-d102 pass 3:
+/// the snow-rect retype sweep. No RNG — the pass draws nothing in C#.
+fn step_slush(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    passes2::pass_slush(world, gv.snow_top, gv.snow_bottom, &gv.snow_min_x, &gv.snow_max_x);
 }
 
 fn step_evil(
@@ -2928,6 +2966,12 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
     let mut reset_rng = core.pass_rng("Reset");
     gv.crimson_left = reset_rng.range(0, 2) == 1;
     gv.flip_infections = opts.flags.flip_infections();
+    // The snow per-row arrays (`WorldGen.cs:11178-11179`: `new
+    // int[Main.maxTilesY]`) — zero-filled until Generate Ice Biome (d101)
+    // writes the spans.
+    let height = opts.height.max(512) as usize;
+    gv.snow_min_x = vec![0; height];
+    gv.snow_max_x = vec![0; height];
     gv
 }
 
@@ -3219,8 +3263,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-d102: + `silt` (vanilla "Silt", `WorldGen.cs:13143`) between
         // `dirt to mud` and `ash blobs`; + `webs` (vanilla "Webs", `:13607`)
-        // between `ores and gems` and `evil`.
-        assert_eq!(names.len(), 68);
+        // between `ores and gems` and `evil`; + `slush` (vanilla "Slush",
+        // `:14697`) between `liquids` and `dungeon`.
+        assert_eq!(names.len(), 69);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3275,6 +3320,7 @@ mod tests {
                 "webs",
                 "evil",
                 "liquids",
+                "slush",
                 "dungeon",
                 "constant lava layer",
                 "beaches",
@@ -3565,6 +3611,25 @@ mod tests {
         assert!(cpos("Shinies") < cpos("Webs"));
         assert!(cpos("Webs") < cpos("Underworld"));
         assert!(cpos("Underworld") < cpos("Corruption"));
+    }
+
+    /// W4-d102 pass 3: `slush` sits in its vanilla slot — after `liquids`
+    /// (Lakes `WorldGen.cs:14556`) and before `dungeon` (`:14757`); the
+    /// Slush anchor is `:14697`.
+    #[test]
+    fn w4_d102_the_slush_step_sits_between_lakes_and_dungeon() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("slush"), pos("liquids") + 1);
+        assert_eq!(names[pos("slush") + 1], "dungeon");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Lakes") < cpos("Slush"));
+        assert!(cpos("Slush") < cpos("Dungeon"));
     }
 
     #[test]

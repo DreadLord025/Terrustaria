@@ -13,7 +13,7 @@
 
 use super::noise::Rng;
 use super::tile_runner::{tile_runner, TileRunnerOpts};
-use crate::seeds::SeedFlags;
+use crate::seeds::{MicroSeedFlags, SeedFlags};
 use crate::tile::FLAG_ACTIVE;
 use crate::world::World;
 
@@ -195,6 +195,60 @@ pub(crate) fn pass_webs(
     }
 }
 
+/// The Slush pass (`StoneToIceAndSiltPlusMudIntoSlush`,
+/// `WorldGen.cs:14697-14752`): the snow-rect retype sweep — silt 123 →
+/// slush 224, mud 59 → slush 224 gated on the 7×7 jungle-grass scan (the
+/// C#'s inner `break` leaves only the inner loop — the scan keeps walking
+/// the outer columns, and a later hit still clears the flag), stone 1 →
+/// ice 161. The `surfaceIsDesert && noSurface` micro-seed pair retypes to
+/// sand 53 instead of slush (`:14708-14715`, `:14734-14741`). The C#
+/// switches on `tile.type` without an active gate for 123/1 — kept
+/// verbatim; the mud arm's scan checks `active()` on the neighbours.
+/// Draws nothing.
+pub(crate) fn pass_slush(
+    world: &mut World,
+    snow_top: i32,
+    snow_bottom: i32,
+    snow_min_x: &[i32],
+    snow_max_x: &[i32],
+) {
+    let desert_no_surface = world.micro_seeds.contains(MicroSeedFlags::SURFACE_IS_DESERT)
+        && world.micro_seeds.contains(MicroSeedFlags::NO_SURFACE);
+    let slush_or_sand: u16 = if desert_no_surface { 53 } else { 224 };
+    for i in snow_top..snow_bottom {
+        for j in snow_min_x[i as usize]..snow_max_x[i as usize] {
+            let Some(t) = world.tile(j, i) else { continue };
+            match t.kind {
+                123 => {
+                    world.tile_mut(j, i).unwrap().kind = slush_or_sand;
+                }
+                59 => {
+                    // The 7×7 jungle-grass scan (`:14719-14731`): 60/70/71/72.
+                    let mut flag = true;
+                    let num = 3;
+                    for k in (j - num)..=(j + num) {
+                        for l in (i - num)..=(i + num) {
+                            if world.tile(k, l).is_some_and(|t| {
+                                t.active() && matches!(t.kind, 60 | 70 | 71 | 72)
+                            }) {
+                                flag = false;
+                                break;
+                            }
+                        }
+                    }
+                    if flag {
+                        world.tile_mut(j, i).unwrap().kind = slush_or_sand;
+                    }
+                }
+                1 => {
+                    world.tile_mut(j, i).unwrap().kind = 161;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,5 +352,52 @@ mod tests {
         let anchors = [0i32; 30];
         pass_webs(&mut w, 100.0, 90.0, 100.0, 0, &anchors, &anchors, &mut Rng(0xEB));
         assert_eq!(web_count(&w), 0);
+    }
+
+    #[test]
+    fn slush_retypes_the_snow_rect_and_respects_the_jungle_scan() {
+        let mut w = World::new("slush".into(), 100, 100);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let i = w.index(x, y);
+            w.tiles[i].kind = kind;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        };
+        put(&mut w, 10, 10, 123); // silt → slush
+        put(&mut w, 11, 10, 1); // stone → ice
+        put(&mut w, 12, 10, 59); // mud near jungle grass → stays
+        put(&mut w, 14, 12, 60); // the jungle grass (within 3 of 12,10)
+        put(&mut w, 30, 10, 59); // mud far from grass → slush
+        put(&mut w, 60, 10, 123); // outside the rect → stays silt
+        let min_x = vec![5i32; 100];
+        let max_x = vec![50i32; 100];
+        pass_slush(&mut w, 8, 20, &min_x, &max_x);
+        assert_eq!(w.tile(10, 10).unwrap().kind, 224);
+        assert_eq!(w.tile(11, 10).unwrap().kind, 161);
+        assert_eq!(w.tile(12, 10).unwrap().kind, 59, "the jungle scan vetoes");
+        assert_eq!(w.tile(30, 10).unwrap().kind, 224);
+        assert_eq!(w.tile(60, 10).unwrap().kind, 123, "outside the rect");
+    }
+
+    #[test]
+    fn the_desert_no_surface_pair_retypes_to_sand() {
+        let mut w = World::new("slush".into(), 100, 100);
+        w.micro_seeds |= MicroSeedFlags::SURFACE_IS_DESERT | MicroSeedFlags::NO_SURFACE;
+        let i = w.index(10, 10);
+        w.tiles[i].kind = 123;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let min_x = vec![5i32; 100];
+        let max_x = vec![50i32; 100];
+        pass_slush(&mut w, 8, 20, &min_x, &max_x);
+        assert_eq!(w.tile(10, 10).unwrap().kind, 53);
+    }
+
+    #[test]
+    fn the_empty_snow_rect_is_a_no_op() {
+        // The blocked-producer state: snowTop == snowBottom == 0 until
+        // Generate Ice Biome (d101) lands — the sweep touches nothing.
+        let mut w = stone_world(100, 100);
+        let before = w.tiles.clone();
+        pass_slush(&mut w, 0, 0, &[], &[]);
+        assert_eq!(w.tiles, before);
     }
 }
