@@ -78,7 +78,7 @@ stay in place untouched.
 | census + range doc | (this commit) | claimed |
 | Sand Patches | (next commit) | landed (code-only; hash re-pin deferred to gate) |
 | Mount Caves | (this commit) | landed (code-only; 512-pin unchanged, default re-pin deferred) |
-| Dirt Wall Backgrounds | — | pending |
+| Dirt Wall Backgrounds | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Clay | — | pending |
 | Small Holes | — | pending |
 | Dirt Layer Caves | — | pending |

@@ -213,6 +213,58 @@ fn mountinater(world: &mut World, rng: &mut Rng, i: i32, j: i32, remix: bool) {
     }
 }
 
+/// The `Dirt Wall Backgrounds` pass (`WorldGen.cs:11858-11895`): the
+/// per-column wall sweep from the sky down to `worldSurface + num` where
+/// `num` is a clamped `Next(-1, 2)` random walk (0..10). `wall` tracks the
+/// last active tile's kind — dirt 2, or snow 40 under a snow tile 147 —
+/// and paints every cell once the 2×3-solid `flag` latch has tripped
+/// (the cell itself plus its left/right neighbours, both rows). A jungle
+/// wall 64 is never overwritten. The write order per cell is the C#'s:
+/// kind read → wall paint → latch test (the latch trips only AFTER the
+/// current row was painted, so the first fully-solid row keeps its old
+/// wall).
+pub(crate) fn pass_dirt_wall_backgrounds(world: &mut World, rng: &mut Rng, layers: &Layers) {
+    let width = world.width;
+    let world_surface = layers.world_surface;
+    let mut num = 0;
+    for i in 1..width - 1 {
+        let mut wall: u16 = 2;
+        let mut flag = false;
+        // `num += Next(-1, 2)` clamped to [0, 10] (`:11869-11877`).
+        num += rng.range(-1, 2);
+        num = num.clamp(0, 10);
+        let mut j = 0;
+        // `j < worldSurface + 10 && !(j > worldSurface + num)` (`:11878`).
+        while (j as f64) < world_surface + 10.0 && !((j as f64) > world_surface + num as f64) {
+            let active = world.tile(i, j).is_some_and(|t| t.active());
+            if active {
+                wall = if world.tile(i, j).is_some_and(|t| t.kind != 147) {
+                    2
+                } else {
+                    40
+                };
+            }
+            if flag && world.tile(i, j).is_some_and(|t| t.wall != 64) {
+                if let Some(t) = world.tile_mut(i, j) {
+                    t.wall = wall;
+                }
+            }
+            // The 2×3-solid latch (`:11888`): (i-1..=i+1) × (j..=j+1).
+            let solid = |x: i32, y: i32| world.tile(x, y).is_some_and(|t| t.active());
+            if solid(i, j)
+                && solid(i - 1, j)
+                && solid(i + 1, j)
+                && solid(i, j + 1)
+                && solid(i - 1, j + 1)
+                && solid(i + 1, j + 1)
+            {
+                flag = true;
+            }
+            j += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,5 +379,52 @@ mod tests {
         let mut gv = GenVars::default();
         pass_mount_caves(&mut world, &mut gv, &mut Rng(0x3000), &layers);
         assert_eq!(gv.num_m_caves, 0, "sand world raises no mountains");
+    }
+
+    /// Dirt Wall Backgrounds: the wall paints start one row BELOW the
+    /// first fully-solid 2×3 block (the latch trips after the row's paint,
+    /// `WorldGen.cs:11884-11891`) and stop at `worldSurface + num ≤
+    /// worldSurface + 10`; a snow column carries wall 40, a jungle wall 64
+    /// cell keeps its wall.
+    #[test]
+    fn dirt_walls_paint_below_the_solid_latch_and_stop_at_the_band() {
+        let (w, h) = (64, 200);
+        let surface = 40;
+        let mut world = flat_world(w, h, surface);
+        // A snow patch over columns 10..20 and a pre-existing jungle wall
+        // at (30, surface + 5).
+        for x in 10..20 {
+            for y in surface..h {
+                let i = world.index(x, y);
+                world.tiles[i].kind = 147;
+            }
+        }
+        let ji = world.index(30, surface + 5);
+        world.tiles[ji].wall = 64;
+        let layers = layers_for(surface, h); // world_surface = 45
+        pass_dirt_wall_backgrounds(&mut world, &mut Rng(0xD1A7), &layers);
+        // The loop bound `j < worldSurface + 10` caps the paint at row
+        // worldSurface + 9; the per-column `num` walk can stop it earlier.
+        let cap = layers.world_surface as i32 + 10;
+        let mut painted = 0;
+        for x in 1..w - 1 {
+            for y in 0..h {
+                let t = world.tile(x, y).unwrap();
+                if y <= surface || y >= cap {
+                    if !(x == 30 && y == surface + 5) {
+                        assert_eq!(t.wall, 0, "wall at ({x},{y}) outside the paint band");
+                    }
+                    continue;
+                }
+                if x == 30 && y == surface + 5 {
+                    assert_eq!(t.wall, 64, "the jungle wall survives");
+                } else if t.wall != 0 {
+                    painted += 1;
+                    let expected = if (10..20).contains(&x) { 40 } else { 2 };
+                    assert_eq!(t.wall, expected, "wall at ({x},{y})");
+                }
+            }
+        }
+        assert!(painted > 0, "no walls painted");
     }
 }

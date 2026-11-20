@@ -1269,6 +1269,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // mountain anchors (`GenVars.numMCaves/mCaveX/mCaveY`) feed d102's
     // Mountain Caves (`:14873`) and Webs (`:13607`).
     step!("mount caves", "Mount Caves", step_mount_caves),
+    // The vanilla Dirt Wall Backgrounds slot (`WorldGen.cs:11858`): after
+    // Mount Caves (`:11784`) and before Rocks In Dirt (`:11896`) — W4-d101
+    // pass 3. The port's `fill_terrain` pre-walls every solid row; this
+    // sweep re-paints the surface band with the C#'s snow-40 arm and its
+    // per-column stop walk (the tile_runner wall-arm doc, `:165-173`).
+    step!("dirt wall backgrounds", "Dirt Wall Backgrounds", step_dirt_wall_backgrounds),
     // The vanilla order is Caves (~:11100-12600) -> Marble (:12757) ->
     // Granite (:12839): the granite caves recruit into pre-carved caves
     // (the `GraniteBiome.CanPlace` inactive-origin gate feeds the
@@ -1876,6 +1882,20 @@ fn step_mount_caves(
 ) {
     let layers = *gv.layers();
     passes1::pass_mount_caves(world, gv, &mut streams.pass_rng("Mount Caves"), &layers);
+}
+
+/// The vanilla Dirt Wall Backgrounds slot (`WorldGen.cs:11858-11895`): the
+/// surface-band dirt/snow wall sweep (W4-d101 pass 3).
+fn step_dirt_wall_backgrounds(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_dirt_wall_backgrounds(world, &mut streams.pass_rng("Dirt Wall Backgrounds"), &layers);
 }
 
 fn step_surface_caves(
@@ -3201,7 +3221,9 @@ mod tests {
         // `WorldGen.cs:11689`) before `cave fields`.
         // W4-d101 pass 2: + `mount caves` (vanilla "Mount Caves",
         // `WorldGen.cs:11784`) after `cave fields`.
-        assert_eq!(names.len(), 68);
+        // W4-d101 pass 3: + `dirt wall backgrounds` (vanilla "Dirt Wall
+        // Backgrounds", `WorldGen.cs:11858`) after `mount caves`.
+        assert_eq!(names.len(), 69);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3243,6 +3265,7 @@ mod tests {
                 "sand patches",
                 "cave fields",
                 "mount caves",
+                "dirt wall backgrounds",
                 // M5-BIOME-2: granite moved after the cave carve (the vanilla
                 // order) — the `GraniteBiome.CanPlace` inactive-origin gate
                 // needs the pre-carved caves.
@@ -3348,6 +3371,25 @@ mod tests {
         // The later Mountain Caves opener pass (`:14873`, d102's lane) is
         // a DIFFERENT declaration — the anchors this step publishes feed it.
         assert!(cpos("Mountain Caves") > cpos("Dungeon"));
+    }
+
+    /// W4-d101 pass 3: `dirt wall backgrounds` sits in its vanilla slot
+    /// (`WorldGen.cs:11858`) — immediately after Mount Caves (`:11784`)
+    /// and immediately before Rocks In Dirt (`:11896`).
+    #[test]
+    fn w4_d101_dirt_wall_backgrounds_sits_between_mount_caves_and_rocks_in_dirt() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dirt wall backgrounds"), pos("mount caves") + 1);
+        assert_eq!(names[pos("dirt wall backgrounds") + 1], "stone-in-dirt blobs");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dirt Wall Backgrounds") == cpos("Mount Caves") + 1);
+        assert!(cpos("Rocks In Dirt") == cpos("Dirt Wall Backgrounds") + 1);
     }
 
     /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla

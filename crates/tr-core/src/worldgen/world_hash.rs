@@ -250,6 +250,10 @@ mod tests {
     // mountains on a 512-wide world — the count truncates to zero, so this
     // pass draws NOTHING and the pin does not move from it (the pass-1
     // re-pin above still stands).
+    // W4-d101 pass 3 (code-only): `Dirt Wall Backgrounds`
+    // (`WorldGen.cs:11858-11895`) re-paints the surface band's walls (the
+    // snow-40 arm over the eastern-third snow skin, the per-column stop
+    // walk) — this pin moves BY DESIGN; deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -299,6 +303,8 @@ mod tests {
     // W4-d101 pass 2 (code-only): Mount Caves raises 4 dirt mountains on a
     // 4200-wide world (`Mountinater`, the climbing circle) — this pin moves
     // BY DESIGN too; deferred to the gate.
+    // W4-d101 pass 3 (code-only): the Dirt Wall Backgrounds sweep moves the
+    // surface-band wall fields — deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
