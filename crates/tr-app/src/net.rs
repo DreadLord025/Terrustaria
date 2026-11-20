@@ -169,6 +169,11 @@ pub mod id {
     /// `MessageBuffer.cs:2271-2289`; sent beside a `13` at the useStyle-5/13
     /// aim sites, `Player.cs:43693`, `:47374`, `:47380`).
     pub const ITEM_ANIM: u8 = 41;
+    /// `43 ManaEffect` (`MessageID.cs:97`) — the mana combat-text relay,
+    /// `35 PlayerHeal`'s mana twin (`NetMessage.cs:966-969`,
+    /// `MessageBuffer.cs:2307-2324`; the send site is `Player.ManaEffect`,
+    /// `Player.cs:4531-4538`).
+    pub const MANA_EFFECT: u8 = 43;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1633,6 +1638,18 @@ pub struct ItemAnim {
     pub animation: i16,
 }
 
+/// `msg 43 ManaEffect`'s body (`NetMessage.cs:966-969`): the player id then
+/// the mana amount as a `short` — `35 PlayerHeal`'s mana twin. The server
+/// forces the id to the sender (`MessageBuffer.cs:2309-2313`); the read side
+/// raises `ManaEffect` for a peer (`:2315-2318`, no `ServerSideCharacter`
+/// escape here — unlike 35's `:2168`) and relays (`:2319-2322`). The send
+/// site is `Player.ManaEffect` (`Player.cs:4531-4538`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ManaEffect {
+    pub player_id: u8,
+    pub amount: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1761,6 +1778,9 @@ pub enum C2s {
     /// (`Player.cs:43693`/`:47374`/`:47380` beside a `13`;
     /// `MessageBuffer.cs:2271-2289`).
     ItemAnim(ItemAnim),
+    /// `43 ManaEffect` - a client's mana effect (`Player.ManaEffect`'s
+    /// broadcast, `Player.cs:4531-4538`; `MessageBuffer.cs:2307-2324`).
+    ManaEffect(ManaEffect),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1899,6 +1919,9 @@ pub enum S2c {
     /// `41 ItemRotationAndAnimation` - a peer's aimed-item rotation,
     /// relayed by the host (`MessageBuffer.cs:2284-2287`).
     ItemAnim(ItemAnim),
+    /// `43 ManaEffect` - a peer's mana effect, relayed by the host
+    /// (`MessageBuffer.cs:2319-2322`).
+    ManaEffect(ManaEffect),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1991,6 +2014,7 @@ impl C2s {
             Self::TalkNpc(_) => id::TALK_NPC,
             Self::PlayerZone(_) => id::PLAYER_ZONE,
             Self::ItemAnim(_) => id::ITEM_ANIM,
+            Self::ManaEffect(_) => id::MANA_EFFECT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2080,6 +2104,8 @@ impl C2s {
                 .u8(z.town_npcs),
             // `NetMessage.cs:956-960`: (byte)number + itemRotation + (short)itemAnimation.
             Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
+            // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+            Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
             Self::PlayerSpawn(s) => w
@@ -2233,6 +2259,11 @@ impl C2s {
                 rotation: r.f32()?,
                 animation: r.i16()?,
             }),
+            // `MessageBuffer.cs:2309-2314`: (byte)id + (short)amount.
+            id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2255,10 +2286,14 @@ impl C2s {
                 player_id: r.u8()?,
                 active: r.u8()? == 1,
             },
+            // `MessageBuffer.cs:1097-1111`: (byte)id + (short)statLife +
+            // (short)statLifeMax; the read side floors statLifeMax at 20
+            // (`:1107-1110`) and derives `dead = statLife <= 0` (`:1111`,
+            // the apply arm's job — S1-I-4).
             id::PLAYER_HP => Self::PlayerHp {
                 player_id: r.u8()?,
                 hp: r.i16()?,
-                max_hp: r.i16()?,
+                max_hp: r.i16()?.max(20),
             },
             id::PLAYER_STATE => Self::PlayerState(PlayerState::read_from(r)?),
             id::INT_EDIT => Self::Edit {
@@ -2402,6 +2437,7 @@ impl S2c {
             Self::TalkNpc(_) => id::TALK_NPC,
             Self::PlayerZone(_) => id::PLAYER_ZONE,
             Self::ItemAnim(_) => id::ITEM_ANIM,
+            Self::ManaEffect(_) => id::MANA_EFFECT,
         }
     }
 
@@ -2569,6 +2605,8 @@ impl S2c {
                 .u8(z.town_npcs),
             // `NetMessage.cs:956-960`: (byte)number + itemRotation + (short)itemAnimation.
             Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
+            // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+            Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2650,10 +2688,14 @@ impl S2c {
                 team: r.u8()?,
                 spawn_context: r.u8()?,
             }),
+            // `MessageBuffer.cs:1097-1111`: (byte)id + (short)statLife +
+            // (short)statLifeMax; the read side floors statLifeMax at 20
+            // (`:1107-1110`) and derives `dead = statLife <= 0` (`:1111`,
+            // the apply arm's job — S1-I-4).
             id::PLAYER_HP => Self::PlayerHp {
                 player_id: r.u8()?,
                 hp: r.i16()?,
-                max_hp: r.i16()?,
+                max_hp: r.i16()?.max(20),
             },
             id::INT_JOINED => Self::Joined {
                 id: r.u32()?,
@@ -2809,6 +2851,11 @@ impl S2c {
                 player_id: r.u8()?,
                 rotation: r.f32()?,
                 animation: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2309-2314`: (byte)id + (short)amount.
+            id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
+                player_id: r.u8()?,
+                amount: r.i16()?,
             }),
             _ => return None,
         })
@@ -4475,10 +4522,11 @@ mod tests {
                 player_id: 1,
                 active: true,
             },
+            // max_hp >= 20: the read side floors it (`MessageBuffer.cs:1107-1110`).
             S2c::PlayerHp {
                 player_id: 1,
                 hp: 5,
-                max_hp: 6,
+                max_hp: 100,
             },
             S2c::Joined {
                 id: 1,
@@ -5274,6 +5322,94 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::ItemAnim(d) => assert_eq!(d, a),
             other => panic!("expected 41, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `43 ManaEffect` (`NetMessage.cs:966-969`): `(byte)number +
+    /// (short)number2`, both directions (`MessageBuffer.cs:2307-2324`) —
+    /// `35 PlayerHeal`'s mana twin, byte-for-byte the same shape.
+    #[test]
+    fn w4_d96_mana_effect_round_trips() {
+        let m = ManaEffect {
+            player_id: 5,
+            amount: 60,
+        };
+        let mut body = vec![5];
+        body.extend_from_slice(&60i16.to_le_bytes());
+        let c = C2s::ManaEffect(m).encode();
+        assert_eq!(c[2], 43);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        }
+        let f = S2c::ManaEffect(m).encode();
+        assert_eq!(f[2], 43);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `16 PlayerLifeMana` (`NetMessage.cs:519-523`): the writer sends
+    /// `(byte)number + (short)statLife + (short)statLifeMax` RAW; the read
+    /// side floors `statLifeMax` at 20 (`MessageBuffer.cs:1107-1110`) and
+    /// leaves `statLife` untouched (`dead = statLife <= 0` is the apply
+    /// arm's derivation, `:1111`).
+    #[test]
+    fn w4_d96_player_hp_read_floors_the_max() {
+        let raw = C2s::PlayerHp {
+            player_id: 2,
+            hp: -5,
+            max_hp: 6,
+        };
+        let mut body = vec![2];
+        body.extend_from_slice(&(-5i16).to_le_bytes());
+        body.extend_from_slice(&6i16.to_le_bytes());
+        let c = raw.encode();
+        assert_eq!(c[2], 16);
+        assert_eq!(&c[3..], &body, "the writer does not clamp");
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerHp {
+                player_id,
+                hp,
+                max_hp,
+            } => {
+                assert_eq!(player_id, 2);
+                assert_eq!(hp, -5, "statLife rides raw; dead is derived on apply");
+                assert_eq!(max_hp, 20, "statLifeMax < 20 floors to 20 (:1107-1110)");
+            }
+            other => panic!("expected 16, got {:?}", other.msg_id()),
+        }
+        // The S2c relay arm clamps identically.
+        let f = S2c::PlayerHp {
+            player_id: 2,
+            hp: 90,
+            max_hp: 19,
+        }
+        .encode();
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerHp { max_hp, hp, .. } => {
+                assert_eq!(max_hp, 20);
+                assert_eq!(hp, 90);
+            }
+            other => panic!("expected 16, got {:?}", other.msg_id()),
+        }
+        // A legal max rides untouched.
+        let ok = C2s::PlayerHp {
+            player_id: 0,
+            hp: 400,
+            max_hp: 500,
+        };
+        let c = ok.encode();
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerHp {
+                player_id,
+                hp,
+                max_hp,
+            } => assert_eq!((player_id, hp, max_hp), (0, 400, 500)),
+            other => panic!("expected 16, got {:?}", other.msg_id()),
         }
     }
 }
