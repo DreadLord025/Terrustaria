@@ -339,11 +339,24 @@ fn title_width(lookups: &assets::Lookups) -> f32 {
 /// pitch is constant; `:21-23` `sizePerEntryX/Y = 44`, `:162`
 /// `_itemsPerLine = Width / 44`). The shared geometry for the draw pass and
 /// `hit_test` — a fractional `i / cols` here drifts each icon 44/cols px down.
+///
+/// `startX`/`startY` come from `GetGridParameters` (`:81-97`): the collection's
+/// own rect `Center.X − 44·_itemsPerLine/2` and `Top`. The collection fills the
+/// `UIInnerList` (`Width.Set(0,1)` `UIList.cs:57`), which fills the `UIList`
+/// (padding 0 — `NewCraftingUI.cs:367-373` never calls `SetPadding`), so at
+/// scroll 0 the origin is the **list** rect, not the grid container's: the
+/// container's top 7 px carry the separator (`:359-365`) and the cells start
+/// below it (W4-d67 — the old `l.grid` origin painted row 0 over the separator).
 pub fn recipe_cell(l: &Layout, i: usize) -> [f32; 4] {
-    let cols = (((l.grid[2] - 4.0) / 44.0).floor() as usize).max(1);
+    // `_itemsPerLine = Width / 44` (`:162`) — the collection fills the list
+    // (450 px at the reference screen), so 450/44 = 10 columns.
+    let cols = ((l.list[2] / 44.0).floor() as usize).max(1);
     let col = (i % cols) as f32;
     let row = (i / cols) as f32;
-    [l.grid[0] + col * 44.0, l.grid[1] + row * 44.0, 40.0, 40.0]
+    // `startX = rectangle.Center.X − (int)(44·cols·0.5)` (`:85`): the 440 px
+    // row centred in the 450 px list leaves a 5 px inset each side.
+    let start_x = l.list[0] + l.list[2] * 0.5 - ((44.0 * cols as f32) * 0.5).trunc();
+    [start_x + col * 44.0, l.list[1] + row * 44.0, 40.0, 40.0]
 }
 
 /// The recipe grid cell the mouse is over, mapped back to the available
@@ -356,6 +369,14 @@ pub(crate) fn hit_test(
     available: &[usize],
 ) -> Option<usize> {
     let l = layout(screen, title_width(lookups), false);
+    // The clipped-ancestor rule (`UIElement.cs:327-341` via `GetElementAt`):
+    // the `OverflowHidden` `UIList` rejects any point outside its rect before
+    // the row is ever tested, so a cell scrolled past the list bottom is
+    // unreachable even though its own 40x40 rect contains the point
+    // (the `Element.viewport` half of S1-H-2, applied to the crafting grid).
+    if !in_rect(mouse, l.list) {
+        return None;
+    }
     for (i, recipe) in available.iter().enumerate() {
         let [x, y, w, h] = recipe_cell(&l, i);
         if mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h {
@@ -432,6 +453,14 @@ pub fn draw(
     //    same cells `hit_test` maps clicks back to ([`recipe_cell`]). The
     //    hovered cell takes the cyan hover frame (`ItemSlot`'s hover,
     //    `ItemSlot.cs:2264+` family).
+    //    The enclosing `UIList` is `OverflowHidden = true` (`UIList.cs:59`),
+    //    so the cells ride its scissor (`UIElement.cs:222-237` → `push_clip`,
+    //    S1-H-2/W4-d67): rows past the list bottom are cut mid-cell exactly
+    //    as XNA's device scissor cuts them, instead of bleeding over the
+    //    filter strip below. The list has no padding here, so the rect is
+    //    the list itself (`GetClippingRectangle` reads `_innerDimensions`,
+    //    `UIElement.cs:254`).
+    r.push_clip(l.list);
     for (i, recipe_idx) in available.iter().enumerate() {
         let [x, y, _, _] = recipe_cell(&l, i);
         let hovered = mouse_pos.x >= x
@@ -469,6 +498,9 @@ pub fn draw(
             r.push_ui_sprite([x + 4.0, y + 4.0], [32.0, 32.0], r.white_uv(), [0.5; 4]);
         }
     }
+    // `UIElement.Draw`'s restore (`:233-235`): the scrollbar and everything
+    // after the list draw unclipped again.
+    r.pop_clip();
 
     // 6. The scrollbar (`:376-384`): an empty list views 1 of 1, and
     //    `AutoHide` hides it when it cannot scroll (`UIScrollbar.cs:105`).
