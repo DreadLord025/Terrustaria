@@ -39332,5 +39332,11 @@ The 503 type override keeps the `Next(16,18)` draw (`:75729-75733`). The
 four comes AFTER the dust loops (the wiring keeps that stream order). The
 281/162 corner rows are one magnitude-parameter keep-one (±1 / ±1.5, both
 after ×0.4 — distinct from the 1053 boulder row, which has no ×0.4).
-Remainder: sites 110-165 (waves K+), the UpdateProjectiles slot dispatch
+Wave K (sites 110-119): `projectile_gore_k.rs`, 5 witnesses written not
+run. The confetti row gained a velocity parameter (`confetti_gores_vel`)
+for the 284 `-vel*0.3` twin. The 286 gore has NO `Next(100)` position pair
+(fixed pos−10). The 183 bee four applies signs FIRST then ×0.3 — the
+opposite order of the corner rows, a distinct fn. The 1023 barrel
+overwrites the velocity with the spoke direction × `NextFloat` × 8.
+Remainder: sites 120-165 (waves L+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.

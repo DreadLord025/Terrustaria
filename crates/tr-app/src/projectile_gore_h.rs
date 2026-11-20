@@ -145,9 +145,23 @@ pub fn confetti_gores(
     rng: &mut UnifiedRandom,
     world: &World,
 ) {
+    confetti_gores_vel(p, count, p.vel, gore, rng, world);
+}
+
+/// The confetti row with an explicit spawn velocity — the 284 twin
+/// (`Projectile.cs:75988-75998`, wave K) passes `-velocity * 0.3`; the
+/// 178/289 arms pass the velocity itself. One keep-one implementation.
+pub fn confetti_gores_vel(
+    p: &Projectile,
+    count: i32,
+    vel: Vec2,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
     for _ in 0..count {
         let ty = rng.next_range(276, 283);
-        let idx = gore.new_gore(rng, world, p.pos, p.vel, ty, 1.0);
+        let idx = gore.new_gore(rng, world, p.pos, vel, ty, 1.0);
         let g = gore.slot_mut(idx);
         g.velocity.x += rng.next_range(-50, 51) as f32 * 0.01;
         g.velocity.y += rng.next_range(-50, 51) as f32 * 0.01;
