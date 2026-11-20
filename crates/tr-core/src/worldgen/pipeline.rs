@@ -47,6 +47,7 @@ use super::micro_surface;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
+use super::shimmer;
 use super::spider_gem_moss;
 use super::structures;
 use super::surface;
@@ -366,6 +367,18 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.shimmerPosition` (`GenVars.cs`, reset `Vector2D.Zero` at
+    /// `WorldGen.cs:7039`, written by the Shimmer pass `:15241`) — the
+    /// aether centre the Altars (`:15780`), Wall Variety (`:16710`) and
+    /// Moss (`:17585`/`:17606`) safety-distance gates read. `None` = the
+    /// zero vector (no shimmer placed — the C# distance-to-(0,0) reads
+    /// the same sentinel). W4-g36 A1.
+    pub(crate) shimmer_position: Option<(i32, i32)>,
+    /// `GenVars.structures.AddProtectedStructure` (`WorldGen.cs:15243`):
+    /// the Shimmer pass's 200×200 protected rect — the port's
+    /// structure-map stand-in list (the `mini_biomes` `protected` idiom).
+    /// W4-g36 A1.
+    pub(crate) protected_structures: Vec<(i32, i32, i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -426,6 +439,10 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // `GenVars.shimmerPosition = Vector2D.Zero` (`WorldGen.cs:7039`)
+            // and the empty StructureMap — W4-g36 A1.
+            shimmer_position: None,
+            protected_structures: Vec::new(),
         }
     }
 }
@@ -1156,8 +1173,10 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// which is where the two vocabularies meet.
 ///
 /// Two of the twelve have no executed step in the port yet (`Larva` —
-/// `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`); listing them keeps the
-/// table 1:1 with the C# so a future step cannot silently un-prune itself.
+/// `GenPassNameID.BeeLarvaInBeehives`); listing it keeps the table 1:1
+/// with the C# so a future step cannot silently un-prune itself.
+/// (`Shimmer` joined the executed chain with W4-g36 A1 — its prune is now
+/// live.)
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
@@ -1287,6 +1306,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         step_gravitating_sand
     ),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
+    // The vanilla Shimmer slot (`WorldGen.cs:15195`): immediately after
+    // Create Ocean Caves (`:15167`), before Clean Up Dirt (`:15246`,
+    // W4-g36 A2) — W4-g36 A1. Own `pass_rng("Shimmer")` stream; the
+    // dualDungeons prune (`DUAL_DUNGEON_DISABLED_PASSES`) now finds a real
+    // step to skip.
+    step!("shimmer", "Shimmer", step_shimmer),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -2004,6 +2029,43 @@ fn step_ocean_caves(
         &layers,
         &mut streams.pass_rng("Create Ocean Caves"),
     );
+}
+
+/// The vanilla Shimmer slot (`WorldGen.cs:15195-15245`) — W4-g36 A1: the
+/// aether biome placement on the pass's own stream. The
+/// `Skyblock.denyAllGeneration` gate (`:15197`) lives here; the dungeon
+/// side is the port's spans-derived side (`step_full_desert`'s idiom —
+/// the C# `GenVars.CurrentDungeonGenVars.dungeonSide`, -1/1).
+fn step_shimmer(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `!Skyblock.denyAllGeneration` (`:15197` → `:3131`).
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    let dungeon_side = if gv.spans().dungeon_x > world.width / 2 { 1 } else { -1 };
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    let Some((x, y)) = shimmer::pass_shimmer(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        dungeon_side,
+        anniversary,
+        &mut streams.pass_rng("Shimmer"),
+    ) else {
+        return; // the sub-vanilla width guard (no draws, no writes)
+    };
+    // `GenVars.shimmerPosition = new Vector2D(num4, num3)` (`:15241`).
+    gv.shimmer_position = Some((x, y));
+    // `structures.AddProtectedStructure(Rectangle(x-100, y-100, 200, 200))`
+    // (`:15242-15243`).
+    gv.protected_structures.push((x - 100, y - 100, 200, 200));
 }
 
 fn step_fragile_ice(
@@ -3140,7 +3202,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-g36 A1: + `shimmer` (vanilla "Shimmer", `WorldGen.cs:15195`)
+        // between `ocean caves` and `fragile ice`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3198,6 +3262,7 @@ mod tests {
                 "beaches",
                 "gravitating sand",
                 "ocean caves",
+                "shimmer",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
@@ -3437,6 +3502,27 @@ mod tests {
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
+    }
+
+    /// W4-g36 A1: `shimmer` sits in its vanilla slot — immediately after
+    /// `ocean caves` (Create Ocean Caves `WorldGen.cs:15167` → Shimmer
+    /// `:15195`) and before `fragile ice` (the port's Ice stand-in; the
+    /// vanilla Clean Up Dirt `:15246` lands as W4-g36 A2).
+    #[test]
+    fn w4_g36_a1_the_shimmer_step_sits_after_the_ocean_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
+        assert_eq!(names[pos("shimmer") + 1], "fragile ice");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Create Ocean Caves") < cpos("Shimmer"));
+        assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
     }
 
     #[test]
@@ -3703,12 +3789,13 @@ mod tests {
             ]
         );
         // The C# loop can only disable a pass that exists in `_passes`; every
-        // name must therefore be a real chain name — `Shimmer` is the one slot
+        // name must therefore be a real chain name — `Larva` is the one slot
         // the port's chain does not declare yet (research/12's missing-pass
         // list), so it is allowed to be absent and pruned vacuously.
+        // (`Shimmer` declared its chain row with W4-g36 A1.)
         for name in DUAL_DUNGEON_DISABLED_PASSES {
             assert!(
-                VANILLA_CHAIN.iter().any(|p| p.name == name) || name == "Shimmer",
+                VANILLA_CHAIN.iter().any(|p| p.name == name) || name == "Larva",
                 "'{name}' is not a vanilla chain pass"
             );
         }

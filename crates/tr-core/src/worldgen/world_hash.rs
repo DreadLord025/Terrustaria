@@ -238,6 +238,13 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-g36 A1 (code-only): the Shimmer pass (`WorldGen.cs:15195-15245`,
+    // `shimmer.rs::pass_shimmer`) lands between `ocean caves` and
+    // `fragile ice`. This pin is UNCHANGED by this pass alone: the
+    // sub-vanilla width guard skips the pass before any draw on a
+    // 512-wide world (the x-band `Next(200, (int)(0.11*512))` is empty —
+    // the C# throws there; the `pass_mining_explosives` width-guard
+    // precedent). The DEFAULT_WORLD re-pin is deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +288,11 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-g36 A1 (code-only): the Shimmer pass (see SEED42_512 above) carves
+    // the aether biome on every DEFAULT-sized world — the stone shell, the
+    // shimmer pool, the gem trees and the two openings move this pin BY
+    // DESIGN; the re-pin is deferred to the gate. The pass draws only its
+    // own `pass_rng("Shimmer")` stream, so no other step's ledger shifts.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
