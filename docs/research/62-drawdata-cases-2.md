@@ -384,3 +384,129 @@ of 38) + rows 28/29 glow (masks 88/122), `cases_a.rs:598-610`. **PORTED**.
 
 Batch 3 verdict: **15/15 static arms PORTED**; 711's first-switch glow record
 FIXED (produced, unconsumed); 21/467 chest rewrite PORTED-UNWIRED (d57/d58 seam).
+
+### Batch 4 — sunflower, levers, herbs and the vine head: #111-125 (15 ids)
+
+Ids: 376, 27, 132, 135, 82, 83, 84, 324, 494, 52, 62, 115, 205, 382, 528.
+
+**376 FishingCrate** — second label of the 172 arm (batch 3 quote,
+`TileDrawing.cs:4960-4966`): `if (tileFrameY % 38 == 18) tileHeight = 18;`.
+Rust `172 | 376` (`drawdata.rs:399-405`). No second-switch case (the 172 glow
+row is kind-gated by the switch label itself — 376 never enters it).
+**PORTED**.
+
+**27 Sunflower** (`TileDrawing.cs:4967-4972`):
+
+```csharp
+		case 27:
+			if (tileFrameY % 74 == 54)
+			{
+				tileHeight = 18;
+			}
+			break;
+```
+
+Rust (`drawdata.rs:406-412`): `27 => { if fy % 74 == 54 { data.height = 18; } }`.
+**PORTED**, and the draw side is WIRED beyond the table: the sunflower never
+draws through `DrawSingleTile` in C# (MultiTileGrass special, `:600-606`); the
+port draws each cell inline with the same per-cell transform
+(`tiles.rs:915-977`, `sunflower_sway` over `_sunflowerWindCounter`, the face
+glow 74 px below the cell, `:8924-8928`/`:9004-9008`) — the documented z-order
+approximation. The `% 74 == 54` row is the flower's face row.
+
+**132 / 135** (`TileDrawing.cs:4973-4977`):
+
+```csharp
+		case 132:
+		case 135:
+			tileTop = 2;
+			tileHeight = 18;
+			break;
+```
+
+Rust (`drawdata.rs:413-418`): `132 | 135 => { data.top = 2; data.height = 18; }`.
+**PORTED** — Lever / PressurePlates. (The `_d62_range.py` "+cases_a" tag on 132
+is the moss-glow nested match `132 => Some(KRYPTON_MOSS_GLOW)` inside case 184's
+arm, `cases_a.rs:350` — a false positive, not a lever arm.)
+
+**82 / 83 / 84** (`TileDrawing.cs:4978-4987`):
+
+```csharp
+		case 82:
+		case 83:
+		case 84:
+			tileHeight = 20;
+			tileTop = -2;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+```
+
+Rust (`drawdata.rs:419-425`): `82 | 83 | 84 => { data.height = 20; data.top = -2; data.flip = flip_x; }`.
+**PORTED** — ImmatureHerbs / MatureHerbs / BloomingHerbs. Draw-side notes:
+83/84 are `SwaysInWindBasic` members (`wind.rs:1062` set; the grass-sway path
+`tiles.rs:882-896` + `:978-994` draws them with the wind transform); 82 is not
+(the immature herb does not sway in vanilla's set either). **83's
+`DrawSingleTile` texture override** (`TileDrawing.cs:1149-1151`):
+
+```csharp
+		case 83:
+			tileDrawInfo.drawTexture = this.GetTileDrawTexture(tileDrawInfo.tileCache, tileX, tileY);
+			break;
+```
+
+`GetTileDrawTexture` resolves the per-tile PAINT-coat sheet; the port parks it
+(`drawdata.rs:1344-1345` comment: "the texture override (83) stay parked … the
+per-tile sheet override"). The paint tint itself rides `push_lit`'s
+`tile.paint()` argument, so unpainted mature herbs draw identically; painted
+ones miss the sheet swap. **DEVIATION** (documented, paint-sheet resolve scope).
+
+**324 BeachPiles** (`TileDrawing.cs:4988-4996`):
+
+```csharp
+		case 324:
+			tileWidth = 20;
+			tileHeight = 20;
+			tileTop = -2;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+```
+
+Rust (`drawdata.rs:426-433`): all four writes verbatim. **PORTED**.
+
+**494 GolfTee** (`TileDrawing.cs:4997-4999`): `tileTop = 2; break;` — Rust
+`data.top = 2` (`drawdata.rs:434-437`). **PORTED**.
+
+**52 / 62 / 115 / 205 / 382 / 528** — first six labels of the vine group
+(`TileDrawing.cs:5000-5013`; 636/638 are batch 5):
+
+```csharp
+		case 52:
+		case 62:
+		case 115:
+		case 205:
+		case 382:
+		case 528:
+		case 636:
+		case 638:
+			tileTop = -2;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+```
+
+Rust (`drawdata.rs:438-443`): the full 8-id pattern, `data.top = -2; data.flip = flip_x;`.
+**PORTED** — Vines / JungleVines / HallowedVines / CrimsonVines / VineFlowers /
+MushroomVines. The vine THREAD growth animation (`Main.tileFrame` rows) rides
+the wired animator's global `addFrY = tileFrame * 38` default; the dedicated
+vine-tip pass is S1-G-1a (out of this slice's scope).
+
+Batch 4 verdict: **14/15 PORTED**, 83's painted-sheet override DEVIATION
+(documented, pre-existing).
