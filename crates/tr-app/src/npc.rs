@@ -23175,29 +23175,40 @@ mod tests {
 
     #[test]
     fn the_golem_head_turn_rows_and_free_head_mouth_row() {
-        // `FindFrame` cases 246/249 (`NPC.cs:72931-72981`): the mouth row
-        // rides the 300-cadence window; the attached head's phase-1 rows
-        // add the three-way `localAI[1]` turn (+4 left / +2 right / 0
-        // in-band); the free head carries the mouth row alone.
+        // W4-c5 — `FindFrame` cases 246/249 (`NPC.cs:72931-72981`): the
+        // attached head's mouth row reads the STORED `localAI[0]` flag
+        // the aiStyle-46 machine writes (`:72934`/`:72945`), NOT a
+        // recomputed ai[1] window (the case-249 R23 G5 precedent); the
+        // phase-1 rows add the three-way `localAI[1]` turn (+4 left /
+        // +2 right / 0 in-band, mirrored to `head_turn`); the free head
+        // carries the mouth row alone.
         let mut w = ground_air();
         w.golem_present = true;
         w.golem_x = 100.0 * 16.0;
         w.golem_y = 100.0 * 16.0;
         let mut player = crate::player::Player::spawn(&w);
+        // In-band (|pcx - cx| <= 70) and below the surface line: the
+        // jungle zone keeps the solo balance calm (num675 = 1,
+        // num688 = 1 — at hp max/3 the 0.4 tier doubles the add to 2).
+        player.x = 100.0 * 16.0 - 10.0;
+        player.y = 100.0 * 16.0;
+        player.zones.jungle = true;
         let mut head = Npc::new(
             NpcKind::GolemHead,
-            100.0 * 16.0 - 3.0,
-            100.0 * 16.0 - 57.0,
+            100.0 * 16.0 - 3.0 - 35.0,
+            100.0 * 16.0 - 57.0 - 35.0,
             -1,
             0.0,
         );
         head.hp = head.max_hp / 3;
         head.ai[0] = 1.0;
-        // The in-band player (inside `Center.X +- width`): the turn is 0,
-        // the mouth window (first/last 20 of 300) selects row 1.
+        // The in-band player: the turn is 0; ai[1] = 5 -> 7 (the 0.4
+        // tier's double add) < 20 opens the mouth (`:31238`) -> row 1
+        // without the turn offset.
         head.ai[1] = 5.0;
         head.update_golem(&w, &player);
         head.find_frame();
+        assert_eq!(head.local_ai[0], 1.0, "the AI's open-mouth write");
         assert_eq!(head.head_turn, 0, "the in-band turn");
         assert_eq!(head.frame, 1, "the mouth row without the turn offset");
         // The player to the left: -1 -> +4; mid-cadence -> the closed
