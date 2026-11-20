@@ -102,6 +102,52 @@ pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// shot (the AI_003 shooter block's `num170 = 82` default,
 /// `NPC.cs:59403`); the hostile twin of the flame arrow 2.
 pub const FLAMING_ARROW_HOSTILE: u16 = 82;
+/// S1-P-i17 — the special-arrow family (`ProjectileID.cs:556-2566`; the
+/// ammo items' `shoot` values, `itemdata.rs`). The per-kind effects live in
+/// `special_arrows.rs` (the AI_001 arms, the StatusNPC debuffs, the Kill()
+/// spawns) and the pool's seams.
+/// `ProjectileID.UnholyArrow` (`ProjectileID.cs:562`).
+pub const UNHOLY_ARROW: u16 = 4;
+/// `ProjectileID.JestersArrow` (`ProjectileID.cs:564`).
+pub const JESTERS_ARROW: u16 = 5;
+/// `ProjectileID.HellfireArrow` (`ProjectileID.cs:636`).
+pub const HELLFIRE_ARROW: u16 = 41;
+/// `ProjectileID.HolyArrow` (`ProjectileID.cs:736`).
+pub const HOLY_ARROW: u16 = 91;
+/// `ProjectileID.FallingStar` (92) — the Holy Arrow's death spawn
+/// (`Projectile.cs:75212-75248`, aiStyle 5).
+pub const FALLING_STAR: u16 = 92;
+/// `ProjectileID.CursedArrow` (`ProjectileID.cs:760`).
+pub const CURSED_ARROW: u16 = 103;
+/// `ProjectileID.BoneArrow` (`ProjectileID.cs:788`) — the Bone Bow's 117
+/// (the merchant's 474 converts through `Player.cs:53511-53514`).
+pub const BONE_ARROW: u16 = 117;
+/// `ProjectileID.FrostArrow` (`ProjectileID.cs:794`) — the Ice Bow's shot.
+pub const FROST_ARROW: u16 = 120;
+/// `ProjectileID.FrostburnArrow` (`ProjectileID.cs:898`).
+pub const FROSTBURN_ARROW: u16 = 172;
+/// `ProjectileID.ChlorophyteArrow` (`ProjectileID.cs:1004`).
+pub const CHLOROPHYTE_ARROW: u16 = 225;
+/// `ProjectileID.IchorArrow` (`ProjectileID.cs:1110`).
+pub const ICHOR_ARROW: u16 = 278;
+/// `ProjectileID.VenomArrow` (`ProjectileID.cs:1118`).
+pub const VENOM_ARROW: u16 = 282;
+/// `ProjectileID.BeeArrow` (`ProjectileID.cs:1492`).
+pub const BEE_ARROW: u16 = 469;
+/// `ProjectileID.BoneArrowFromMerchant` (`ProjectileID.cs:1502`).
+pub const BONE_ARROW_MERCHANT: u16 = 474;
+/// `ProjectileID.ShadowFlameArrow` (`ProjectileID.cs:1544`).
+pub const SHADOWFLAME_ARROW: u16 = 495;
+/// `ProjectileID.BloodArrow` (`ProjectileID.cs:2192`) — the Blood Rain
+/// Bow's rain shot.
+pub const BLOOD_ARROW: u16 = 819;
+/// `ProjectileID.ShimmerArrow` (`ProjectileID.cs:2566`).
+pub const SHIMMER_ARROW: u16 = 1006;
+/// `ProjectileID.Bee` (181) / `GiantBee` (566) — the Bee Arrow's death
+/// swarm (`Projectile.cs:76407-76429`), the same pair `Player.beeType`
+/// picks (`Player.cs:12417-12426`).
+pub const BEE: u16 = 181;
+pub const GIANT_BEE: u16 = 566;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
 /// `ProjectileID.SnowBallHostile` (109) — the Snow Balla's (net 145,
@@ -1025,6 +1071,12 @@ fn set_defaults_scale(kind: u16) -> f32 {
 pub(crate) fn set_defaults_light(kind: u16) -> f32 {
     match kind {
         FLAME_ARROW => 1.0,                    // `:824`
+        UNHOLY_ARROW => 0.35,                  // `:844` (S1-P-i17)
+        JESTERS_ARROW => 0.4,                  // `:856` (S1-P-i17)
+        HELLFIRE_ARROW => 0.3,                 // `:1246` (S1-P-i17)
+        CURSED_ARROW => 1.0,                   // `:1911` (S1-P-i17)
+        FROSTBURN_ARROW => 1.0,                // `:2586` (S1-P-i17)
+        ICHOR_ARROW => 1.0,                    // `:3645` (S1-P-i17)
         ENCHANTED_BOOMERANG => 0.4,            // `:872`
         MUSKET_BALL => 0.5,                    // `:957`
         BULLET_SNOWMAN => 0.5,                 // `:1985`
@@ -2343,18 +2395,110 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // knockBack (8 / 6) is dropped — the spawner's input wins.
             42 => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             65 | 68 | 354 => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+            // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
+            // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
+            // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever
+            // the arm writes none.
+            // `Projectile.cs:837-848` — the Unholy Arrow (4): 10x10, aiStyle
+            // 1, `penetrate = 5`, `light = 0.35f` (the light slice below),
+            // `timeLeft = 1200`.
+            UNHOLY_ARROW => (10.0, 10.0, 1, 5, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:849-863` — the Jester's Arrow (5): `penetrate =
+            // -1` (infinite piercing), `alpha = 100`, `ignoreWater` (the
+            // overlay below), `extraUpdates = 1`, `timeLeft = 120` — the
+            // SHORT life is the arrow's whole gimmick; `light = 0.4f`.
+            JESTERS_ARROW => (
+                10.0, 10.0, 1, -1, 120, 1, true, true, false,
+                (false, -2, false, -1, 100, 1.0),
+            ),
+            // `Projectile.cs:1237-1247` — the Hellfire Arrow (41):
+            // `penetrate = -1`, stock 3600 life, `light = 0.3f`. The
+            // on-hit `timeLeft = 1` clamp (`:13252-13255`) and the Kill()
+            // 64x64 blast (`:76308-76341`) ride `damage_pve` and the pool's
+            // death hook (`special_arrows.rs`).
+            HELLFIRE_ARROW => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:1743-1752` — the Holy Arrow (91): stock
+            // penetrate 1, `timeLeft = 1200`. Its Kill() spawns the falling
+            // star 92 (`:75212-75248`).
+            HOLY_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:1753-1764` — the falling star (92): 24x24,
+            // aiStyle 5, penetrate 1, `alpha = 50`, `scale = 0.8f`,
+            // `tileCollide = false` (the AI_005 arm turns it on below the
+            // `ai[1]` floor), stock 3600 life.
+            FALLING_STAR => (
+                24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 50, 0.8),
+            ),
+            // `Projectile.cs:1904-1914` — the Cursed Arrow (103): stock
+            // penetrate 1, `light = 1f`, `timeLeft = 1200`. The
+            // CursedInferno infliction is `StatusNPC` `:11665-11668`.
+            CURSED_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:2093-2104` — the Frost Arrow (120, the Ice
+            // Bow's shot): `coldDamage` (no port field), `extraUpdates = 1`,
+            // `timeLeft = 1200`.
+            FROST_ARROW => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // `Projectile.cs:2579-2590` — the Frostburn Arrow (172):
+            // `light = 1f`, `coldDamage`, `timeLeft = 1200`. The 1/3
+            // Frostburn roll is `StatusNPC` `:11556-11562`.
+            FROSTBURN_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:3100-3110` — the Chlorophyte Arrow (225):
+            // `extraUpdates = 1`, `timeLeft = 1200`. The bounce/retarget
+            // machine is `HandleMovement` `:18539-18561`.
+            CHLOROPHYTE_ARROW => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // `Projectile.cs:3638-3649` — the Ichor Arrow (278): `light =
+            // 1f`, `extraUpdates = 1`, `timeLeft = 1200`. Ichor 69 for 600
+            // ticks is `StatusNPC` `:11669-11672`.
+            ICHOR_ARROW => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // `Projectile.cs:3688-3698` — the Venom Arrow (282):
+            // `extraUpdates = 1`, `timeLeft = 1200`. Venom 70/600 +
+            // PotentAcid 395/120 is `StatusNPC` `:11673-11677`.
+            VENOM_ARROW => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // `Projectile.cs:5474-5484` — the Bone Arrow From Merchant
+            // (474): `timeLeft = 1200`, `penetrate = 2`.
+            BONE_ARROW_MERCHANT => (10.0, 10.0, 1, 2, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:2673-2685` — the Bee (181, the Bee Arrow's
+            // death swarm): 8x8, aiStyle 36 (the bee flight — UNARMED, the
+            // row lets the spawn land; the aiStyle-36 machine is a
+            // follow-up), `penetrate = 3`, `alpha = 255`, `timeLeft = 600`,
+            // `extraUpdates = 3`, `UseGroupStaticImmunity(181)` (the
+            // idStatic-10 pair; the shared 181 identity is the port's
+            // per-kind key — the 566's group share is a recorded gap).
+            BEE => (
+                8.0, 8.0, 36, 3, 600, 3, true, false, false,
+                (false, -2, true, 10, 255, 1.0),
+            ),
+            // `Projectile.cs:6172-6184` — the Giant Bee (566, the strong
+            // bee): 16x16, aiStyle 36, `penetrate = 4`, `alpha = 255`,
+            // `timeLeft = 660`, `extraUpdates = 3`, the same group pair.
+            GIANT_BEE => (
+                16.0, 16.0, 36, 4, 660, 3, true, false, false,
+                (false, -2, true, 10, 255, 1.0),
+            ),
+            // `Projectile.cs:9570-9579` — the Shimmer Arrow (1006): stock
+            // penetrate 1, `timeLeft = 1200`; the INVERTED gravity is
+            // `flag4` (`:56034-56036` + `:57571-57574`).
+            SHIMMER_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
             // The arrow overrides — 117 the Bone Arrow (`:2058-2068`,
-            // `extraUpdates = 2`), 469 the Bee Arrow (`:5429-5441`,
-            // `alpha = 255` dropped), 485 the Hellwing (`:5604-5615` — 24x24,
-            // `penetrate = -1`), 495 the Shadowflame (`:5681-5692` —
+            // `extraUpdates = 2`), 469 the Bee Arrow (`:5435-5445`,
+            // S1-P-i17 carries the C# `alpha = 255` — the AI_001 fade
+            // `:55197-55208` reads it), 485 the Hellwing (`:5604-5615` —
+            // 24x24, `penetrate = -1`), 495 the Shadowflame (`:5681-5692` —
             // `penetrate = 3`) and 819 the Blood Rain arrow (`:7993-8002` —
-            // `extraUpdates = 1`, `alpha`/`hide` dropped): 10x10 aiStyle-1
-            // arrows, `timeLeft = 1200` (485's 24x24 box aside).
+            // `extraUpdates = 1`; S1-P-i17 carries the C# `alpha = 255` and
+            // the stock `timeLeft = 3600` — the arm writes NO override, the
+            // old 1200 was a row deviation; `hide` has no port field):
+            // 10x10 aiStyle-1 arrows (485's 24x24 box aside).
             117 => (10.0, 10.0, 1, 1, 1200, 2, true, true, false, RESET_STATE),
-            469 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            469 => (
+                10.0, 10.0, 1, 1, 1200, 0, true, true, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             485 => (24.0, 24.0, 1, -1, 1200, 0, true, true, false, RESET_STATE),
             495 => (10.0, 10.0, 1, 3, 1200, 0, true, true, false, RESET_STATE),
-            819 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            819 => (
+                10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, true, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // The spray/ball ammo the not-consume windows resolve — the
             // Flamethrower's Flames (`:1660-1670`: 6x6, aiStyle 193, pen 4,
             // extraUpdates 2, `armorPenetration = 15` dropped; its immunity
@@ -2935,7 +3079,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
-            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL),
+            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
+            // `Projectile.cs:859` — the Jester's Arrow ignores water
+            // (S1-P-i17).
+            || kind == JESTERS_ARROW,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

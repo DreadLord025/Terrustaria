@@ -178,6 +178,7 @@ mod projectile_ai_moonlord;
 
 
 mod projectile_ai001_a;
+mod special_arrows;
 mod projectile_frost_shots;
 mod projectile_ai001_c;
 mod projectile_ai067_b;
