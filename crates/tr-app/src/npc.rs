@@ -6715,20 +6715,18 @@ impl Npc {
             return;
         }
         // W4-g7 wire-2 (f27 extra-4) — the `cs_id`-keyed hook into the
-        // extra wave's pure machines (`npc_findframe_extra4.rs`), the
-        // FIRST 8 of its 15 ids: 233/234/235/236/237/238/239/240 (the
-        // remaining 241/242/243/244/251/252/253 ride the next commit —
-        // the 10-kinds-per-commit rule). NO current kind's `cs_id`
-        // lands in the set (verified over the hand rows + all 249
-        // bestiary net ids), so this is stream-inert today; the arms
-        // themselves draw no RNG (the floater group's only draw is
-        // 634-gated, `NPC.cs:74844`). The d45/e13 hook precedent.
-        let cs = self.kind.cs_id();
-        if matches!(cs, 233 | 234 | 235 | 236 | 237 | 238 | 239 | 240) {
-            if let Some(kind) = crate::npc_findframe_extra4::find_frame_kind_extra4(cs as i16) {
-                self.find_frame_wave_extra4(kind);
-                return;
-            }
+        // extra wave's pure machines (`npc_findframe_extra4.rs`), all
+        // 15 ids: 233/234/235/236/237/238/239/240/241/242/243/244/
+        // 251/252/253. NO current kind's `cs_id` lands in the set
+        // (verified over the hand rows + all 249 bestiary net ids), so
+        // this is stream-inert today; the arms themselves draw no RNG
+        // (the floater group's only draw is 634-gated, `NPC.cs:74844`).
+        // The d45/e13 hook precedent.
+        if let Some(kind) =
+            crate::npc_findframe_extra4::find_frame_kind_extra4(self.kind.cs_id() as i16)
+        {
+            self.find_frame_wave_extra4(kind);
+            return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
@@ -33935,5 +33933,40 @@ mod w4_g7_wire2_extra4_tests {
         n.sprite_dir = -1;
         n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::JungleCreeper);
         assert_eq!(n.sprite_dir, 0, "the unconditional direction copy");
+    }
+
+    /// The half-B batch: the BloodFeeder's wet/dry split rides `wet`
+    /// through the bridge (`NPC.cs:74191-74225`), the BloodJelly's
+    /// pulse gate reads `ai[1]` (`:73921`) and the RainbowSlime's
+    /// attack stride reads `ai_action` (`:66696-66704` + `:72633-72650`).
+    #[test]
+    fn w4_g7_the_extra4_bridge_feeds_wet_ai_and_ai_action() {
+        let mut n = bare(NpcKind::Slime);
+        // The fish dry band: <6 → row 4, <12 → row 5 (the flop rows).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.wet = false;
+        n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::BloodFeeder);
+        assert_eq!(n.frame, 4, "the dry <6 band");
+        // Wet flips to the swim band: counter 2 < 6 → row 0.
+        n.wet = true;
+        n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::BloodFeeder);
+        assert_eq!(n.frame, 0, "the wet <6 band");
+        // The jelly pulse: ai[1] == 1 lifts ANY row into the 4..6 band
+        // on the first pulse tick (the <4 clamp).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.ai[1] = 1.0;
+        n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::BloodJelly);
+        assert_eq!(n.frame, 4, "the pulse lift clamp");
+        // The RainbowSlime attack: ai_action 1 → num2 4 → +3 a tick,
+        // 3 ticks reach 9 ≥ 8 → row 1, counter 1.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.ai_action = 1;
+        for _ in 0..3 {
+            n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::RainbowSlime);
+        }
+        assert_eq!((n.frame, n.frame_counter), (1, 1.0), "the attack x3 stride");
     }
 }
