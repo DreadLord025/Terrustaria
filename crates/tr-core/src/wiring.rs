@@ -370,6 +370,13 @@ pub enum TrapRequest {
         /// `ProjectileID.cs:554`) on the floor, 185 (SpikyBallTrap) on the
         /// ceiling.
         count_kind: u16,
+        /// The proximity cap's measurement anchor — `(i*16+8, j*18+8)`
+        /// (`Wiring.cs:1819` floor / `:1950` ceiling). The **18** is verbatim
+        /// (F3): the cap reads the trap's row scaled by 18, NOT the spawn
+        /// point's 16, and measures against the projectile's `Center` (the
+        /// app adds the half-box). Distinct from the spawn `x`/`y`.
+        cap_x: f32,
+        cap_y: f32,
     },
 }
 
@@ -912,6 +919,10 @@ impl Wiring {
                     damage: 40,
                     // F1: `num95` is 0 when the cap loop runs (`:1817`).
                     count_kind: 0,
+                    // F3: the cap anchor is `(i*16+8, j*18+8)` (`:1819`) —
+                    // the 18 is verbatim, distinct from the spawn point.
+                    cap_x: (i * 16 + 8) as f32,
+                    cap_y: (j * 18 + 8) as f32,
                 });
             }
             // `Wiring.cs:1855-1886`: the spear trap — `CheckMech(90)`.
@@ -935,7 +946,9 @@ impl Wiring {
             // `Wiring.cs:1890-1936`: the wall-mounted negatives — the dart
             // (−10), super dart (−9) and flame (−8), the same projectiles at
             // the fixed `(i*16+8, j*16+7)` + `(10*dx, +2)` offset,
-            // `frameX != 0 → +1 X`.
+            // `frameX != 0 → +1 X`. The `+2` is a POSITION offset
+            // (`vector3.Y += 2f`, `:1903`/`:1919`/`:1935`); `speedY` stays 0
+            // (the C# never assigns it on these arms — only `speedX`).
             -10 | -9 | -8 if self.check_mech(i, j, 200) => {
                 let dx: i32 = if frame_x != 0 { 1 } else { -1 };
                 let (kind, damage, speed) = match variant {
@@ -947,7 +960,7 @@ impl Wiring {
                     x: (i * 16 + 8 + 10 * dx) as f32,
                     y: (j * 16 + 7 + 2) as f32,
                     vx: (dx as f32) * speed,
-                    vy: 2.0,
+                    vy: 0.0,
                     kind,
                     damage,
                 });
@@ -970,6 +983,9 @@ impl Wiring {
                     vy: sy,
                     damage: 40,
                     count_kind: 185,
+                    // F3: the cap anchor is `(i*16+8, j*18+8)` (`:1950`).
+                    cap_x: (i * 16 + 8) as f32,
+                    cap_y: (j * 18 + 8) as f32,
                 };
                 self.trap_requests.push(request);
                 self.trap_requests.push(request);
@@ -5655,8 +5671,10 @@ mod trap_tests {
             }
             _ => panic!("variant 4 emits a Shot"),
         }
-        // The wall-mounted negatives: frameX 18 → +1 X, `vy = 2`, the
-        // anchor at `(i*16+8+10, j*16+7+2)`.
+        // The wall-mounted negatives: frameX 18 → +1 X, the anchor at
+        // `(i*16+8+10, j*16+7+2)`; the `+2` is a POSITION offset
+        // (`vector3.Y += 2f`, `:1903`), so `vy = 0` — the C# never assigns
+        // `speedY` on these arms (only `speedX = 12*num110`, `:1898`).
         for (frame_y, kind, damage, speed) in
             [(-180, 98, 20, 12.0), (-162, 184, 40, 12.0), (-144, 187, 40, 5.0)]
         {
@@ -5669,7 +5687,7 @@ mod trap_tests {
                 TrapRequest::Shot { x, y, vx, vy, kind: k, damage: d } => {
                     assert_eq!((k, d), (kind, damage));
                     assert_eq!(vx, speed, "frameY {frame_y} fires rightward");
-                    assert_eq!(vy, 2.0);
+                    assert_eq!(vy, 0.0, "the +2 is a position offset, not speedY");
                     assert_eq!(x, 10.0 * 16.0 + 8.0 + 10.0);
                     assert_eq!(y, 20.0 * 16.0 + 7.0 + 2.0);
                 }
@@ -5726,11 +5744,15 @@ mod trap_tests {
         wiring.trip_wire(&mut w, 8, 20, 1, 1);
         let reqs = wiring.take_trap_requests();
         match reqs[0] {
-            TrapRequest::Spear { x, y, vx, vy, damage, count_kind } => {
+            TrapRequest::Spear { x, y, vx, vy, damage, count_kind, cap_x, cap_y } => {
                 assert_eq!(damage, 40);
                 assert_eq!(count_kind, 0, "F1: the floor caps on type 0");
                 assert_eq!(x, 10.0 * 16.0 + 8.0);
                 assert_eq!(y, 20.0 * 16.0 + 8.0 + 14.0);
+                // F3: the cap anchor is `(i*16+8, j*18+8)` (`:1819`) — the
+                // 18 is verbatim, distinct from the spawn point's 16.
+                assert_eq!(cap_x, 10.0 * 16.0 + 8.0);
+                assert_eq!(cap_y, 20.0 * 18.0 + 8.0);
                 // `speedY = 4 * 1 + rand(0, 21) * 0.05` — 4..5 px/tick.
                 assert!((4.0..=5.0).contains(&vy), "vy {vy}");
                 // `speedX = rand(-20, 21) * 0.05` — the ±1 px spread.
@@ -5767,11 +5789,14 @@ mod trap_tests {
         assert_eq!(reqs.len(), 2, "F2: the ceiling fires twice");
         assert_eq!(reqs[0], reqs[1], "one roll set — the requests are identical");
         match reqs[0] {
-            TrapRequest::Spear { x, y, vx, vy, damage, count_kind } => {
+            TrapRequest::Spear { x, y, vx, vy, damage, count_kind, cap_x, cap_y } => {
                 assert_eq!(count_kind, 185);
                 assert_eq!(damage, 40);
                 assert_eq!(x, 10.0 * 16.0 + 8.0);
                 assert_eq!(y, 20.0 * 16.0 + 16.0 + 6.0);
+                // F3: the cap anchor is `(i*16+8, j*18+8)` (`:1950`).
+                assert_eq!(cap_x, 10.0 * 16.0 + 8.0);
+                assert_eq!(cap_y, 20.0 * 18.0 + 8.0);
                 // The exact X-then-Y roll values pin both the order and the
                 // one-roll-set sharing.
                 let (sx, sy) = ceiling_rolls(7);

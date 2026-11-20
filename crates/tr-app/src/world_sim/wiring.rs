@@ -501,19 +501,20 @@ fn statue_npc(npc_id: i16, x: i32, y: i32) -> Option<Npc> {
 }
 
 /// The spiky ball's proximity cap (`Wiring.cs:1814-1822`/`:1945-1953`): the
-/// 200 base count decrements by the distance rings measured from
-/// `(i*16+8, j*18+8)` — the 18 is verbatim — against the request's
-/// `count_kind` projectiles. 0 on the floor (F1: `ProjectileID.None`, which no
-/// live slot can hold — the cap is a no-op by construction), 185 on the
-/// ceiling.
+/// 200 base count decrements by the distance rings measured from the
+/// request's cap anchor `(i*16+8, j*18+8)` — the 18 is verbatim (F3) —
+/// against each matching projectile's **Center** (`Main.projectile[..].Center`,
+/// `:1819`/`:1950`), counting the request's `count_kind` projectiles. 0 on
+/// the floor (F1: `ProjectileID.None`, which no live slot can hold — the cap
+/// is a no-op by construction), 185 on the ceiling.
 fn spear_cap_allows(app: &App, req: &tr_core::wiring::TrapRequest) -> bool {
-    let (x, y, count_kind) = match *req {
+    let (cap_x, cap_y, count_kind) = match *req {
         tr_core::wiring::TrapRequest::Spear {
-            x,
-            y,
+            cap_x,
+            cap_y,
             count_kind,
             ..
-        } => (x, y, count_kind),
+        } => (cap_x, cap_y, count_kind),
         tr_core::wiring::TrapRequest::Shot { .. } => return true,
     };
     let mut count = 200;
@@ -521,8 +522,9 @@ fn spear_cap_allows(app: &App, req: &tr_core::wiring::TrapRequest) -> bool {
         if p.kind != count_kind {
             continue;
         }
-        let dx = (x - p.pos.x).abs();
-        let dy = (y - p.pos.y).abs();
+        let (cx, cy) = p.center();
+        let dx = cap_x - cx;
+        let dy = cap_y - cy;
         let dist = (dx * dx + dy * dy).sqrt();
         count -= if dist < 50.0 {
             50
@@ -1026,6 +1028,41 @@ mod tests {
             .filter(|p| p.active && p.kind == crate::projectile::TRAP_SPIKY_BALL)
             .count();
         assert_eq!(live, 2, "one cap decision, two spawns");
+    }
+
+    #[test]
+    fn dw_4_2_the_spiky_ball_cap_measures_from_the_verbatim_anchor_to_center() {
+        // F3 (`Wiring.cs:1819`/`:1950`): the cap measures from `(i*16+8,
+        // j*18+8)` — the 18 is verbatim — against the projectile's Center
+        // (`pos + half-box`), NOT the spawn point against `pos`. The trap at
+        // (10, 20): anchor (168, 368). Four 185s whose CENTERS sit ~45 px from
+        // the anchor (each −50) exhaust the 200 base and block both ceiling
+        // requests. Under the old spawn-point/pos reading the distance was
+        // ~67 px (−15 each, only −60 total) and the cap would NOT block — so
+        // this fixture discriminates the fix.
+        let mut app = app_with(137, 18, -7 * 18);
+        for k in 0..4 {
+            // Center (168, 323+k): pos = center − (7, 7) for the 14×14 box.
+            app.projectiles
+                .spawn_with_data(
+                    crate::projectile::TRAP_SPIKY_BALL,
+                    161.0,
+                    316.0 + k as f32,
+                    0.0,
+                    0.0,
+                    40,
+                    2.0,
+                )
+                .expect("a free slot");
+        }
+        trip_and_tick(&mut app);
+        let live = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == crate::projectile::TRAP_SPIKY_BALL)
+            .count();
+        assert_eq!(live, 4, "the verbatim anchor + Center reading blocks both");
     }
 
     #[test]
