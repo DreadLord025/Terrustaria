@@ -35,6 +35,8 @@
 //! | 96-100 | `:82307-82311` | the 568/569 DD2 Wither Beast death (5 gores) |
 //! | 101-107 | `:82338-82344` | the 558/559/560 DD2 Wyvern death (7 gores, per-tier base) |
 //! | 108-110 | `:82362-82369` | the 566/567 DD2 Skeleton death: head + the first two coin-gates |
+//! | 111-114 | `:82373-82385` | the 566/567 DD2 Skeleton death: the remaining four coin-gates |
+//! | 115-120 | `:82406-82413` | the 576/577 DD2 Ogre FLIPPED death (6 gores, Next(5) type gate + π rotations) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -288,8 +290,7 @@ fn wyvern_death(
 /// the 20-dust type-236 burst, the 970 head, then SIX independent
 /// `Main.rand.Next(2) == 0` coin-gates (972/972/973/973/971/971). Each gate
 /// draws its `Next(2)` BEFORE the conditional spawn — a refused gate still
-/// consumes the draw. This commit ports the head + the first two gates
-/// (sites 108-110); the remaining four gates land with the next batch.
+/// consumes the draw. Sites 108-114 (the head + all six gates).
 fn skeleton_death(
     npc: &Npc,
     dust: &mut DustPool,
@@ -313,6 +314,56 @@ fn skeleton_death(
     if rng.next_max(2) == 0 {
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 972, s); // :82369
     }
+    // `:82371-82374` — gate 3: Next(2) then the conditional 973.
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 973, s); // :82373
+    }
+    // `:82375-82378` — gate 4: Next(2) then the conditional 973.
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 973, s); // :82377
+    }
+    // `:82379-82382` — gate 5: Next(2) then the conditional 971 at +34.
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 971, s); // :82381
+    }
+    // `:82383-82386` — gate 6: Next(2) then the conditional 971 at +34.
+    if rng.next_max(2) == 0 {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 971, s); // :82385
+    }
+}
+
+/// The 576/577 DD2 Ogre FLIPPED death (`NPC.cs:82404-82413`, sites 115-120):
+/// the 20-dust type-273 burst, then the 6 flipped gores. The head type is
+/// `1005 + (Next(5) == 0 ? 1 : 0)` (`:82406`, the draw rides the strike
+/// stream BEFORE the spawn); gores 1001 (`:82408`) and 1002 (`:82410`) get
+/// `rotation = π` post-writes on the returned slot (sentinel included).
+/// The non-flipped branch (`:82417-82422`) is the NEXT batch.
+fn ogre_flipped_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:82400-82403` — the dust is type 273.
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 273, hit_direction, 20);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:82406` — the head's Next(5) type gate draws first.
+    let head = 1005 + if rng.next_max(5) == 0 { 1 } else { 0 };
+    gore.new_gore(rng, world, pos, vel, head, s);
+    gore.new_gore(rng, world, pos + Vec2::new(18.0, 28.0), vel, 1000, s); // :82407
+    // `:82408-82409` — the 1001 gore, rotation = π on the slot.
+    let num71 = gore.new_gore(rng, world, pos + Vec2::new(-40.0, 70.0), vel, 1001, s);
+    gore.slot_mut(num71).rotation = std::f32::consts::PI;
+    // `:82410-82411` — the 1002 gore, rotation = π on the slot.
+    let num71 = gore.new_gore(rng, world, pos + Vec2::new(4.0, 28.0), vel, 1002, s);
+    gore.slot_mut(num71).rotation = std::f32::consts::PI;
+    gore.new_gore(rng, world, pos + Vec2::new(36.0, 90.0), vel, 1003, s); // :82412
+    gore.new_gore(rng, world, pos + Vec2::new(32.0, 90.0), vel, 1004, s); // :82413
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -359,10 +410,16 @@ pub fn hit_effect_c(
     if (npc_type == 558 || npc_type == 559 || npc_type == 560) && npc.hp <= 0 {
         wyvern_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:82347-82388` — the 566/567 DD2 Skeleton arm (sites 108-110 here;
-    // the remaining four coin-gates land with the next batch).
+    // `:82347-82388` — the 566/567 DD2 Skeleton arm (sites 108-114, all
+    // six coin-gates).
     if (npc_type == 566 || npc_type == 567) && npc.hp <= 0 {
         skeleton_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82389-82425` — the 576/577 DD2 Ogre arm; this commit owns the
+    // FLIPPED (`spriteDirection == -1`) branch (sites 115-120); the
+    // non-flipped branch lands with the next batch.
+    if (npc_type == 576 || npc_type == 577) && npc.hp <= 0 && npc.sprite_dir == -1 {
+        ogre_flipped_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -587,10 +644,10 @@ mod tests {
         }
     }
 
-    /// `NPC.cs:82362-82370` — the Skeleton death: the 970 head always
-    /// spawns; the coin-gates draw Next(2) BEFORE the conditional spawn, so
-    /// the stream advances even when a gate refuses. The twin replay pins
-    /// the head kicks + both gate draws regardless of the gate outcomes.
+    /// `NPC.cs:82362-82386` — the Skeleton death: the 970 head always
+    /// spawns; the six coin-gates draw Next(2) BEFORE the conditional spawn,
+    /// so the stream advances even when a gate refuses. The twin replay pins
+    /// the head kicks + all six gate draws regardless of the gate outcomes.
     #[test]
     fn w4_f10_the_skeleton_death_gates_draw_before_the_spawn() {
         let w = air();
@@ -602,7 +659,7 @@ mod tests {
         // The head always lands (site 108).
         assert_eq!(gore.slot(0).gore_type, 970);
         assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
-        // The twin: 20 type-236 dusts, the head's 2 kicks, then the two
+        // The twin: 20 type-236 dusts, the head's 2 kicks, then the six
         // Next(2) gates; a taken gate adds its 2 kicks.
         let mut twin = UnifiedRandom::new(29);
         for _ in 0..20 {
@@ -615,13 +672,56 @@ mod tests {
         }
         let _ky = twin.next_range(10, 31);
         let _kx = twin.next_range(-20, 21);
-        for _ in 0..2 {
+        for _ in 0..6 {
             if twin.next_max(2) == 0 {
                 let _gy = twin.next_range(10, 31);
                 let _gx = twin.next_range(-20, 21);
             }
         }
         assert_eq!(rng.peek(), twin.peek(), "the skeleton gates mirror the C# draws");
+        // Every spawned coin-gore is one of the six gate types.
+        for g in gore.slots()[1..7].iter().filter(|g| g.active) {
+            assert!(matches!(g.gore_type, 971 | 972 | 973), "gate type {}", g.gore_type);
+        }
+    }
+
+    /// `NPC.cs:82406-82413` — the Ogre FLIPPED death: the head's Next(5)
+    /// type gate draws first, the 1001/1002 gores get rotation = π, and the
+    /// twin replay mirrors the census + the head gate + the six gores' kicks.
+    #[test]
+    fn w4_f10_the_ogre_flipped_death_rotates_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 96.0, 104.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(31);
+        ogre_flipped_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        // The head is 1005 or 1006 (the Next(5) gate).
+        assert!(matches!(gore.slot(0).gore_type, 1005 | 1006));
+        assert_eq!(gore.slot(1).gore_type, 1000);
+        assert_eq!(gore.slot(2).gore_type, 1001);
+        assert_eq!(gore.slot(2).rotation, std::f32::consts::PI);
+        assert_eq!(gore.slot(3).gore_type, 1002);
+        assert_eq!(gore.slot(3).rotation, std::f32::consts::PI);
+        assert_eq!(gore.slot(4).gore_type, 1003);
+        assert_eq!(gore.slot(5).gore_type, 1004);
+        // The twin: 20 type-273 dusts, the Next(5) head gate, then 6 gores'
+        // kicks (the rotation writes draw nothing).
+        let mut twin = UnifiedRandom::new(31);
+        for _ in 0..20 {
+            let _px = twin.next_max(92);
+            let _py = twin.next_max(100);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        let _head_gate = twin.next_max(5);
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the ogre flipped death mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
