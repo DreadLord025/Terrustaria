@@ -220,6 +220,83 @@ fn death_bursts(
         330 => plain_burst(s, dust, rng, ctx, world, 10, 0, s.vel.x * 0.4, s.vel.y * 0.4, 0, Color::default(), 0.75, None, false),
         // `:75660-75667` — the 4 UnholyArrow: 10 dust-14 alpha 150 scale 1.1.
         4 => plain_burst(s, dust, rng, ctx, world, 10, 14, 0.0, 0.0, 150, Color::default(), 1.1, None, false),
+        // `:76134-76145` — the 15/321: 20 iterations, each a dust-6 scale 2
+        // (noGravity, vel×2) THEN a dust-6 scale 1 (vel×2), speed = −vel×0.2,
+        // alpha 100. No explicit draw.
+        15 | 321 => reverse_vel_pair(s, dust, rng, ctx, world, 20, 6, 2.0, 1.0),
+        // `:76146-76157` — the 253: the same pair shape, dust-135.
+        253 => reverse_vel_pair(s, dust, rng, ctx, world, 20, 135, 2.0, 1.0),
+        // `:76158-76169` — the 95/96: the pair shape, dust-75, scales 2×scale
+        // and 1×scale (the projectile's own scale rides the dust scale).
+        95 | 96 => reverse_vel_pair(s, dust, rng, ctx, world, 20, 75, 2.0 * s.scale, 1.0 * s.scale),
+        // `:76281-76290` — the 27: 30 iterations, each a dust-172 (noGravity,
+        // scale 1) THEN a dust-172 scale 0.5, speed = vel×0.1, alpha 100.
+        27 => {
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 172, s.vel.x * 0.1, s.vel.y * 0.1, 100, Color::default(), 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 172, s.vel.x * 0.1, s.vel.y * 0.1, 100, Color::default(), 0.5);
+            }
+        }
+        // `:76298-76307` — the 44/45: 30 iterations, each a dust-27 scale 1.7
+        // (noGravity) THEN a dust-27 scale 1, speed = vel (full), alpha 100.
+        44 | 45 => {
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 27, s.vel.x, s.vel.y, 100, Color::default(), 1.7);
+                dust.slot_mut(idx).no_gravity = true;
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 27, s.vel.x, s.vel.y, 100, Color::default(), 1.0);
+            }
+        }
+        // `:73583-73591` — the 495 ShadowflameArrow: 15 dust-27 at Center 10×10,
+        // noGravity + velocity −= oldVel×0.3. No explicit draw.
+        495 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..15 {
+                let idx = dust.new_dust(rng, ctx, world, center, 10, 10, 27, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity -= s.old_vel * 0.3;
+            }
+        }
+        // `:73592-73602` — the 497: 15 dust-27 at Center 10×10, noGravity +
+        // vel×2 −= oldVel×0.3 + scale += Next(150)*0.001.
+        497 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..15 {
+                let idx = dust.new_dust(rng, ctx, world, center, 10, 10, 27, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 2.0;
+                d.velocity -= s.old_vel * 0.3;
+                d.scale += rng.next_max(150) as f32 * 0.001;
+            }
+        }
+        // `:75149-75158` — the 729: 10 dust-279 (NewDustDirect), speed = vel×0.1,
+        // alpha 150 scale 1.2, noGravity + velocity.X ×= 2. No explicit draw.
+        729 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 279, s.vel.x * 0.1, s.vel.y * 0.1, 150, Color::default(), 1.2);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity.x *= 2.0;
+            }
+        }
+        // `:75486-75499` — the 731: 15 dust-226 (NewDustDirect), speed =
+        // oldVel×0.5, alpha 50 scale 0.5; per dust a Next(3) gate → noGravity +
+        // scale×1.5 + vel×0.5.
+        731 => {
+            for _ in 0..15 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 226, s.old_vel.x * 0.5, s.old_vel.y * 0.5, 50, Color::default(), 0.5);
+                if rng.next_max(3) != 0 {
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale *= 1.5;
+                    d.velocity *= 0.5;
+                }
+            }
+        }
+        // `:75513-75521` — the 337: 10 dust-197, noGravity. No explicit draw.
+        337 => plain_burst(s, dust, rng, ctx, world, 10, 197, 0.0, 0.0, 0, Color::default(), 1.0, None, true),
         _ => {}
     }
 }
@@ -330,6 +407,34 @@ fn velocity_sub_burst(
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
         d.velocity -= s.vel * sub;
+    }
+}
+
+/// `count` iterations of the reverse-velocity dust PAIR (`:76137-76144`):
+/// each iteration spawns a dust of `dust_type` at scale `scale_a` (noGravity,
+/// velocity ×2) THEN one at scale `scale_b` (velocity ×2), both with speed
+/// `−base.velocity × 0.2`, alpha 100. The 15/321/253/95/96 shape. No explicit
+/// draw.
+fn reverse_vel_pair(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    count: i32,
+    dust_type: i32,
+    scale_a: f32,
+    scale_b: f32,
+) {
+    let sx = (0.0 - s.vel.x) * 0.2;
+    let sy = (0.0 - s.vel.y) * 0.2;
+    for _ in 0..count {
+        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, sx, sy, 100, Color::default(), scale_a);
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 2.0;
+        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, sx, sy, 100, Color::default(), scale_b);
+        dust.slot_mut(idx).velocity *= 2.0;
     }
 }
 
@@ -572,5 +677,69 @@ mod tests {
             // the C#'s. The 330's speed is vel×0.4 (vs the 3-family's ×0.1).
             assert_ne!(rng, before, "kind {kind} internals ran");
         }
+    }
+
+    /// The 15/321/253/95/96 reverse-velocity pairs spawn 2×count dust (the
+    /// pair per iteration), all noGravity-or-not per the C# (the first of each
+    /// pair is noGravity, the second is not), and draw nothing explicit.
+    #[test]
+    fn w4_g65_the_reverse_velocity_pairs() {
+        let w = world();
+        for (kind, dust_type) in [(15u16, 6), (321, 6), (253, 135), (95, 75), (96, 75)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 40, "kind {kind} pair count (20×2)");
+            assert!(active.iter().all(|d| d.dust_type == dust_type));
+            // The first of each pair is noGravity; the second is not.
+            for (i, d) in active.iter().enumerate() {
+                assert_eq!(d.no_gravity, i % 2 == 0, "kind {kind} pair {i} noGravity");
+            }
+        }
+    }
+
+    /// The 497 takes one Next(150) scale draw per dust (15 total) after the
+    /// internals; the 495 (no explicit draw) is stream-neutral vs a witness.
+    #[test]
+    fn w4_g65_the_495_497_center_bursts() {
+        let w = world();
+        // 495: 15 dust-27 at the centre, noGravity, no explicit draw.
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(495)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 15);
+        assert!(active.iter().all(|d| d.dust_type == 27 && d.no_gravity));
+        // 497: 15 dust-27, each a Next(150) scale draw → the stream advances
+        // beyond a no-draw witness by exactly 15 Next(150) steps.
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(497)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 15);
+        assert!(active.iter().all(|d| d.dust_type == 27 && d.no_gravity));
+    }
+
+    /// The 731 Next(3) gate (≠0 → noGravity/scale×1.5/vel×0.5) and the 729
+    /// velocity.X×2 write; the 337 plain noGravity burst.
+    #[test]
+    fn w4_g65_the_729_731_337_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(729)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 279 && d.no_gravity));
+        let mut dust = DustPool::new();
+        drain(&[snap(731)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 15);
+        assert!(active.iter().all(|d| d.dust_type == 226));
+        let mut dust = DustPool::new();
+        drain(&[snap(337)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 197 && d.no_gravity));
     }
 }

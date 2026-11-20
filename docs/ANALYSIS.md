@@ -39334,3 +39334,16 @@ vel×0.4 scale 0.75), 4 (10× dust-14 alpha 150 scale 1.1). All dust-only, no
 explicit draw (the velocity-subtract family's randomness is the internals).
 Witnesses: the velocity-subtract witness-pool comparison + stream-neutrality,
 the batch-3 plain-burst counts/types — WRITTEN NOT RUN.
+
+### Batch 4 (10 kinds, the multi-loop dust pairs `:73583-76307`)
+
+15/321 (20× dust-6 pair: scale 2 noGravity vel×2 + scale 1 vel×2, speed
+−vel×0.2 alpha 100), 253 (the pair, dust-135), 95/96 (the pair, dust-75, scales
+2×scale/1×scale), 27 (30× dust-172 pair: noGravity + scale 0.5, speed vel×0.1),
+44/45 (30× dust-27 pair: scale 1.7 noGravity + scale 1, speed vel full), 495
+(15× dust-27 at Center 10×10, noGravity −= oldVel×0.3), 497 (the same + vel×2 +
+`Next(150)*0.001` scale), 729 (10× dust-279 Direct, noGravity + vel.X×2), 731
+(15× dust-226 Direct, `Next(3)` gate ≠0 → noGravity/scale×1.5/vel×0.5), 337
+(10× dust-197 noGravity). The 497/731 explicit draws ride the drain rng after
+each spawn. Witnesses: the pair counts/noGravity alternation, the 495/497
+centre bursts, the 729/731/337 bursts — WRITTEN NOT RUN.
