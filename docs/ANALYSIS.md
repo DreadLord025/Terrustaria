@@ -21918,6 +21918,34 @@ machinery and the two roster ladders are new:
   `Next(n)`s); the walks, start/stop, the dawn stop and the triggers draw
   nothing.
 
+**W4-c38 re-verification (2026-11-20, code-only)**: the wave rosters, the
+spawn logic and the wave progression were re-derived against the sources
+and two 1:1 drifts fixed (`de5f8c8e`), with witness tests landed
+(`b3f53f0f`):
+
+- **The pumpkin wave-4 gate counts 325, not the spawned 330**
+  (`NPC.cs:3510-3522`): the arm rolls `Next(8) == 0 && !AnyNPCs(325)` but
+  spawns 330 — the pre-fix port fed `moon_chain`'s generic count-by-kind
+  (counting live 330s). Now `moon_arm_count` takes the explicit 325 gate
+  count; `the_pumpkin_wave_4_gate_counts_325_not_the_spawned_330` pins all
+  three outcomes (closed-by-325 / open-with-live-330 / open-empty) and the
+  draw order (the closed gate still draws its `Next(8)`, the C# `&&`).
+- **The moon raid pacing gates on the player above the surface line**
+  (`NPC.cs:771`): `(Main.remixWorld || player.position.Y < worldSurface *
+  16.0)` — research/24 errata 1 CLOSED; the underground moon player keeps
+  the un-paced rate (the inner night arm `:542-546` carries the same gate).
+- **Witnesses (RNG spawn slots exact)**: the pumpkin-327 lead always draws
+  even when it fires and the chain after it draws too (cases 18/17/15/14,
+  seed-swept lead+chain replay — the second-spawn deviation above stays);
+  the frost wave-14 chain's missing `else` spawns nothing on the all-miss
+  (`:2958-2975`, seed-swept); the frost wave-12 final `else` draws
+  `Next(338, 341)` AS the type (`:3019-3021`, the gingerbread band spread).
+- **Verified unchanged**: the start items (medallion 1844 / Naughty
+  Present 1958, `Player.cs:43974-43985`/`:44041-44052`, already armed in
+  editing.rs), the wave walk + the 21-row requirement table
+  (`NPC.cs:95292-95297`), start/stop (`Main.cs:10953-11017`) and the dawn
+  stop (`:65392`) all match the sources.
+
 ## The Dark Mage's machine (S1-D-3o, 2026-11-16)
 
 `AI_109_DarkMage` (`NPC.cs:65791-66186`) carries the Old One's Army's
