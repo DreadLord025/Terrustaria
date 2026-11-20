@@ -39244,3 +39244,71 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The butterfly family (W4-d30 aiStyle-65, code-only)
+
+**Task row.** W4-d30 NPC aiStyles 65-72 (66/67/68 owned by c8/c9/c10);
+module `crates/tr-app/src/npc_ai_style65.rs` (`ai_065_butterflies` +
+`Ai65Ctx`/`Ai65Effects`), branch `task/W4-d30-npc-ai-styles-65-72`.
+UNWIRED - no compiler invoked; the 15 witness tests are WRITTEN, NOT RUN.
+Styles 69/70/71/72 are already landed + wired on main (the W-9 Fishron
+chain `ai_069_fishron`/`ai_070_bubble`/`ai_071_sharkron` and the
+ForceBubble-384 arm); the axis census found 65 the ONLY missing claim.
+
+**Identity (whole-tree census).** `this.aiStyle = 65;` has exactly four
+NPC rows: Butterfly 356 (`NPC.cs:13535`), GoldButterfly 444
+(`:14279`), HellButterfly 653 (`:17254`), EmpressButterfly 661
+(`:17355`) - all the 10x10 zero-stat noGravity row; 653/661 lavaImmune.
+The dispatch is `NPC.cs:34249-34252` -> `AI_065_Butterflies`
+(`:44896-45119`). NOT the projectile aiStyle 65 (the Sharknado Bolt
+385, `projectile.rs::ai_sharknado_bolt`, W-9).
+
+**The port.** The whole method as a pure velocity machine (the style64
+precedent): the 661-only rainbow light + fade counter (Clamp 0..50, or
+0..60 with the forced rise for a live player target outside the Hallow
+on a non-remix world), the ai2>=60 despawn EARLY RETURN (`despawn`
+effect + no further draws), the clamped reversed-lerp Opacity (returned
+- `Npc` has no opacity field), the 1/5-gated type-267 shimmer dust +
+half-scale clone (the REAL `DustPool::new_dust`/`clone_dust` on the
+caller's stream), `dontTakeDamage = ai2 >= num4/2`; the one-time
+Next(100) colour ladder + the Next(75,111) scale latch; the rearm timer
+Next(90,240) then the RNG-free `TargetClosest` then the FAR
+(>700, localAI[3] unset) speed ladder with the CONDITIONAL Y-bias draw /
+the NEAR 26..300 quad (localAI[3] latches 1); the 1/60 blend; the
+3-tile down-scan (solid OR liquid, flip + 0.9 damp INSIDE the loop, once
+per blocking tile) / the 30-tile up-scan (solid only, single flip+damp
+only over an empty column); the 15-tick (661: 10) threat flee (slot-order
+`Ai64NpcView` scan, `rect_distance` <= 100, averaged DirectionFrom
+push x2, the 16-cap via SafeNormalize(Zero)); the collideX bounce, the
+two facing ifs, the aim write-back LAST; the 653 netOffset round-trip +
+ember light + 1/60-gated type-6 dust (alpha 254, velocity zeroed).
+
+**RNG census (per-tick C# order).** 661 fading: Next(5) gate, on 0 the
+NewDust internals + NextVector2Circular (angle NextFloat then radial
+NextFloat, `Utils.cs:1266-1269`, FULL box as half-extents kept) +
+velocity NextFloat + fadeIn NextFloat + the CloneDust internals (slot
+!= 6000). Non-661 ai2==0: ONE Next(100). ai3==0: ONE Next(75,111). Rearm
+expiry: Next(90,240), then FAR Next(50,151)/Next(150,201)/Next(100,151) +
+Next(100,251) + Next(-50,51) + conditional Next(100,251); or NEAR
+Next(26,301) + two Next(-100,101). 653 tail: ONE Next(60) every tick, on
+0 the type-6 NewDust internals. The despawn tick draws nothing further.
+The witnesses mirror the cited draws on cloned streams (+ a twin
+DustPool for the dust internals) and compare state.
+
+**Documented folds.** netMode!=1 -> true; GetTargetData -> the player
+target iff HasValidTarget (661 not in UsesNewTargeting), ZoneHallow
+resolved by the caller; AddLight -> the `light` effect (the 661 head
+`(int)(v/16f)` quotient form vs the 653 tail `(int)v/16` truncation
+- both computed); Opacity returned; despawn returned (the sim retain);
+`Main.tileSolid` runtime table minus 192 (the style64 precedent); the
+normalize divides f64 sqrt over int sums cast BEFORE the divide, NO
+zero guard (NaN/Inf pass-through kept); the 356 catchItem re-derive
+rides `bug_net.rs::catch_item(356, ai2)` (no item field write); the
+`Color * 0.5f` XNA byte truncation (127 all four channels), the HSL
+byte recovery rounds FIRST (the `cage_halo_color` G-3 precedent - a
+plain truncate can land a byte low on the divide/multiply round-trip).
+
+**Remainders.** The four kinds' `NpcKind` rows + the `65 =>` axis
+claim + the FindFrame 356/444/653/661 flap cycle (`NPC.cs:72739-72772`)
+are the roster lanes (W4-d39/d40/d43); the 661 death's Empress-of-Light
+spawn is `DoDeathEvents` case 661 (`:79493-79503`), not this arm.

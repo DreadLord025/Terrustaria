@@ -68,6 +68,7 @@ mod revenge;
 mod npc_ai;
 mod npc_ai_prime_limbs;
 mod npc_ai_style64;
+mod npc_ai_style65;
 mod npc_ai_style70;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
