@@ -593,7 +593,7 @@ fn any_liquid_kind(kind: LiquidKind, tiles: &[&Tile; 3]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_LAVA};
+    use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA};
 
     fn world_with_air() -> World {
         let mut w = World::new("test".into(), 80, 60);
@@ -878,15 +878,21 @@ mod tests {
         let (_, _, scan) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
         assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
         assert_eq!(scan.y, 10.0 * 16.0 + 8.0);
-        // The straight drop walks until the world edge (y = 59): 50 segments,
-        // each `1 - (16*j)/(640*0.75)` for j = 0..50 (the last rows leave the
-        // strength positive until dist >= 480). Hand-summed C# replay:
+        // The head bends LEFT off the half-brick spout (the lava-filled right
+        // neighbour, `WaterfallManager.cs:625-634`), then the drop runs down
+        // column 9 until the world edge (y = 59): cells (10,10), (9,10),
+        // (9,11..59). Hand-summed C# replay:
+        let mut cells = vec![(10, 10), (9, 10)];
+        cells.extend((11..60).map(|y| (9, y)));
         let mut expected = 0.0f32;
-        for j in 0..50 {
-            let dy = (10 + j) as f32 * 16.0 + 8.0 - 168.0;
-            let s = 1.0 - dy.abs() / (640.0 * 0.75);
-            if s > 0.0 {
-                expected += s;
+        for (cx, cy) in cells {
+            let dx = (cx as f32 * 16.0 + 8.0 - 168.0).abs();
+            let dy = (cy as f32 * 16.0 + 8.0 - 168.0).abs();
+            if dx < 640.0 * 2.0 && dy < 640.0 * 2.0 {
+                let s = 1.0 - (dx * dx + dy * dy).sqrt() / (640.0 * 0.75);
+                if s > 0.0 {
+                    expected += s;
+                }
             }
         }
         assert!((scan.strength - expected).abs() < 1e-3, "{} vs {}", scan.strength, expected);
@@ -952,7 +958,11 @@ mod tests {
             mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
             mgr.take_quads()
                 .iter()
-                .find(|d| d.texture == 1)
+                // The head cell bends LEFT off the half-brick spout
+                // (`WaterfallManager.cs:625-634`, the honey-filled right
+                // neighbour), so the straight drop runs down column 9; its
+                // quads take the `[num21, 0, ...]` source (`:851-861`).
+                .find(|d| d.texture == 1 && d.pos[0] == 9.0 * 16.0)
                 .expect("the lava fall draws")
                 .source[0]
         };
@@ -1035,9 +1045,252 @@ mod tests {
             assert!((l.rgb[1] - l.rgb[0] * 0.3).abs() < 1e-6);
             assert!((l.rgb[2] - l.rgb[0] * 0.1).abs() < 1e-6);
         }
-        // One light per walked cell, in walk order down column 10.
-        for (j, l) in dim.iter().enumerate() {
-            assert_eq!((l.x, l.y), (10, 10 + j as i32));
+        // One light per walked cell, in walk order: the head (10,10), the
+        // left bend (9,10) (`WaterfallManager.cs:625-634`), then column 9
+        // down to the world edge.
+        let mut cells = vec![(10, 10), (9, 10)];
+        cells.extend((11..60).map(|y| (9, y)));
+        assert_eq!(dim.len(), cells.len());
+        for (cell, l) in cells.iter().zip(dim.iter()) {
+            assert_eq!((l.x, l.y), *cell);
         }
+    }
+
+    /// Honey-spout fixture: half brick at (10, 10), honey on the right — the
+    /// `FindWaterfalls` kind probe sets type 14 (`WaterfallManager.cs:186-188`).
+    /// The walk bends left off the half-brick head (`:625-634`): cells
+    /// (10,10), (9,10), then column 9 down to the world edge.
+    fn honey_spout_world() -> World {
+        let mut w = world_with_air();
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        let mut honey = Tile::default();
+        honey.liquid = 255;
+        honey.flags |= FLAG_LIQUID_HONEY;
+        put(&mut w, 11, 9, honey);
+        put(&mut w, 11, 10, honey);
+        w
+    }
+
+    /// `WaterfallManager.cs:186-188`: the honey spout takes waterfall type 14
+    /// (not the lava 1 checked first, not the water 0 default).
+    #[test]
+    fn honey_spout_uses_type_fourteen() {
+        let w = honey_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert_eq!(mgr.entries(), vec![(10, 10, 14)]);
+    }
+
+    /// `WaterfallManager.cs:352-358`: the honey fall shares the typed-fall arm
+    /// with lava/shimmer — `num21 = 32 * slowFrame` (the 7-tick counter), not
+    /// the 3-tick regular frame the water falls use.
+    #[test]
+    fn honey_frames_ride_the_slow_counter() {
+        let w = honey_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let screen = screen_at(0.0, 0.0);
+        let honey_x = |mgr: &mut WaterfallManager| -> i32 {
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+            mgr.take_quads()
+                .iter()
+                .find(|d| d.texture == 14)
+                .expect("the honey fall draws")
+                .source[0]
+        };
+        // The head cell is the half-brick spout with honey on its right, so
+        // the walk bends LEFT (`WaterfallManager.cs:625-634`) and the head
+        // quad takes the num32 = -1 arm's `16 + num21` source (`:874-889`).
+        // Tick 0: slowFrame 0 — 16 px into the sheet's first 32 px frame.
+        assert_eq!(honey_x(&mut mgr), 16);
+        // 7 ticks advance slowFrame to 1 (`UpdateFrame`'s >6 gate).
+        for _ in 0..7 {
+            mgr.update_tick();
+        }
+        assert_eq!(honey_x(&mut mgr), 16 + 32);
+        // 7 more: slowFrame 2. The regular frame has advanced 4 times by now
+        // (ticks 3/6/9/12) — a regular-frame fall would sit at 16 + 128.
+        for _ in 0..7 {
+            mgr.update_tick();
+        }
+        assert_eq!(honey_x(&mut mgr), 16 + 64);
+    }
+
+    /// `WaterfallManager.GetAlpha` (`WaterfallManager.cs:1035`): honey rides a
+    /// flat 0.8 — no wall/surface 0.6 damp, no pass-alpha multiply (unlike the
+    /// water default arm), and `StylizeColor` has no case 14 (`:993-1025`), so
+    /// an unlit fall stays black: no 190 self-glow floor like lava's. The
+    /// last-10-steps fade (`:1039-1042`) still scales the 0.8.
+    #[test]
+    fn honey_alpha_is_flat_point_eight_without_a_glow_floor() {
+        // A tall world so the fall walks the full 100 steps (k > 90 fade).
+        let mut w = World::new("test".into(), 80, 300);
+        w.world_surface = 5.0; // every walked row is below the surface
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        let mut honey = Tile::default();
+        honey.liquid = 255;
+        honey.flags |= FLAG_LIQUID_HONEY;
+        put(&mut w, 11, 9, honey);
+        put(&mut w, 11, 10, honey);
+        // A stone wall behind the fall column: proves GetAlpha's type-14 arm
+        // never takes the default arm's wall 0.6 damp (`:1037`).
+        for y in 9..115 {
+            let i = w.index(9, y);
+            w.tiles[i].wall = 1;
+            let i = w.index(10, y);
+            w.tiles[i].wall = 1;
+        }
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new(); // unlit: GetColor returns black
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        // Pass alpha 0.5 must NOT scale the typed-fall 0.8 (`:1032-1038`).
+        let mut alpha = [0.0f32; 15];
+        alpha[0] = 0.5;
+        mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        let honey_quads: Vec<&WaterfallDraw> =
+            out.iter().filter(|d| d.texture == 14).collect();
+        assert!(!honey_quads.is_empty());
+        // Unlit: colour = (int)(0 * 0.8) = 0 on RGB, alpha = (int)(255 * 0.8).
+        assert_eq!(honey_quads[0].color, [0.0, 0.0, 0.0, 204.0 / 255.0]);
+        // The fade tail: k = 99 fades 0.8 -> 0.08, alpha (int)(255*0.08) = 20.
+        let last = honey_quads.last().unwrap();
+        assert!((last.color[3] - 20.0 / 255.0).abs() < 1e-6);
+        // The lit leg: a torch at (16,10) lights the head cell from 6 tiles
+        // away. Sunlight off (sky 0) keeps the head dim — below lava's 190
+        // floor — so the tint proves StylizeColor has no case 14 lift. The
+        // expected value replays the port's exact chain (shade -> byte/255
+        // -> *255*alpha -> (int)).
+        let torch = stone(4);
+        put(&mut w, 16, 10, torch);
+        let params = crate::lighting::LightParams {
+            sky: [0.0; 3],
+            ..Default::default()
+        };
+        let lit = crate::lighting::LightMap::compute(&w, 0, 0, 40, 40, &params);
+        assert!(lit.get(10, 10)[0] > 0.0, "the torch must light the head");
+        mgr.draw(&w, &lit, &style, 0.0, &alpha, 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        let head = out
+            .iter()
+            .find(|d| d.texture == 14 && d.pos == [160.0, 160.0])
+            .expect("the honey head segment draws");
+        let shaded = style.shade(lit.get(10, 10), 10, 10, 0.0);
+        let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as i32;
+        let tint = byte(shaded[0]) as f32 / 255.0;
+        let expected = (tint * 255.0 * 0.8).clamp(0.0, 255.0) as i32 as f32 / 255.0;
+        assert!((head.color[0] - expected).abs() < 1e-6);
+        // No StylizeColor case 14: the tint is exactly the light times 0.8 —
+        // never lifted to lava's 190 floor even where the light is dim.
+        assert!(head.color[0] < 190.0 / 255.0, "no lava-style glow floor");
+        assert!(head.color[0] > 0.0, "a lit honey fall is visible");
+    }
+
+    /// `WaterfallManager.AddLight` (`WaterfallManager.cs:1067-1116`) has no
+    /// case 14: the honey fall emits no light. And both ambience scans skip
+    /// it — the kind-1 arm (`:685`) and the water arm's verbatim exclusion
+    /// (`:708` `num12 != 14`) — so a honey-only world leaves BOTH triples at
+    /// the `Main.cs:67230-67234` load reset.
+    #[test]
+    fn honey_falls_emit_no_light_and_feed_neither_ambience_scan() {
+        let w = honey_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        // Screen centred on the spout head: the fall would sum strength if it
+        // were not excluded.
+        let screen = screen_at(168.0 - 320.0, 168.0 - 320.0);
+        let (lights, water_scan, lava_scan) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false);
+        assert!(lights.is_empty());
+        assert_eq!(water_scan, AmbientScan::default());
+        assert_eq!(lava_scan, AmbientScan::default());
+        assert!(mgr.take_quads().iter().any(|d| d.texture == 14));
+    }
+
+    /// `WaterfallManager.cs:708-729` + `:960-962`: a water fall sums the
+    /// near-screen strength into the water-style triple and tracks the
+    /// nearest cell-centre world pixels — the arm the honey fall is excluded
+    /// from. The walk geometry replays the C# direction chain: the half-brick
+    /// head cannot fall straight (`:609`'s `!tile3.halfBrick()` gate), and the
+    /// liquid-filled right neighbour bends it left (`:625-634`), so the cells
+    /// are (10,10), (9,10), then (9,11..59) until the world edge.
+    #[test]
+    fn waterfall_scan_sums_strength_and_tracks_the_nearest_cell() {
+        let mut w = world_with_air();
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        put_liquid(&mut w, 11, 9, 255);
+        put_liquid(&mut w, 11, 10, 255);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let screen = screen_at(168.0 - 320.0, 168.0 - 320.0);
+        let (_, scan, lava) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+        // The head is nearest on both axes (dx = dy = 0); the bent column 9
+        // never beats it (the Y arm's num3 = num38 quirk pins 0 at the head).
+        assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
+        assert_eq!(scan.y, 10.0 * 16.0 + 8.0);
+        assert_eq!(lava, AmbientScan::default());
+        // Hand-summed C# replay over the walked cells:
+        let mut cells = vec![(10, 10), (9, 10)];
+        cells.extend((11..60).map(|y| (9, y)));
+        let mut expected = 0.0f32;
+        for (cx, cy) in cells {
+            let dx = (cx as f32 * 16.0 + 8.0 - 168.0).abs();
+            let dy = (cy as f32 * 16.0 + 8.0 - 168.0).abs();
+            if dx < 640.0 * 2.0 && dy < 640.0 * 2.0 {
+                let s = 1.0 - (dx * dx + dy * dy).sqrt() / (640.0 * 0.75);
+                if s > 0.0 {
+                    expected += s;
+                }
+            }
+        }
+        assert!((scan.strength - expected).abs() < 1e-3, "{} vs {}", scan.strength, expected);
+        assert!(scan.strength > 0.0);
+    }
+
+    /// `WaterfallManager.cs:725-728` verbatim quirk: the Y-distance arm tests
+    /// num39 but stores num38 (the X distance) into the num3 sentinel. On a
+    /// straight drop num38 is 0 for every row, so the head row already pins
+    /// num3 = 0 and no later row can pass the strict `<` — ambientWaterfallY
+    /// freezes at the head even when a later row's centre is nearer to the
+    /// screen centre (a corrected `num3 = num39` would track it).
+    #[test]
+    fn waterfall_scan_y_arm_keeps_the_num3_equals_num38_quirk() {
+        let mut w = world_with_air();
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        put_liquid(&mut w, 11, 9, 255);
+        put_liquid(&mut w, 11, 10, 255);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        // Screen centre y = 184 (row 11's centre): head row 10 has num39 = 16
+        // but stores num3 = num38 = 0 (y = 168); row 11 has num39 = 0, which
+        // fails the strict `0 < 0`, and every later row has num39 > 0 — the
+        // nearest row (11) never wins. The corrected arm would report y = 184.
+        let screen = screen_at(168.0 - 320.0, 184.0 - 320.0);
+        let (_, scan, _) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+        assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
+        assert_eq!(scan.y, 10.0 * 16.0 + 8.0, "the quirk freezes Y at the head");
     }
 }
