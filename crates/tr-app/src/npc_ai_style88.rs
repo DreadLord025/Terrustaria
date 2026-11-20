@@ -308,7 +308,9 @@ pub fn style88_step(npc: &mut Npc, env: &mut Style88Env<'_>) -> Style88Outcome {
         npc.ai[0] = -1.0;
     } else {
         let p = target_of(npc, env.players);
-        if npc.target < 0 || p.dead || !p.active {
+        // The C# indexes `Main.player[this.target]` — an unset 255
+        // slot is INACTIVE (the range check stands in for it).
+        if npc.target < 0 || npc.target as usize >= env.players.len() || p.dead || !p.active {
             target_closest(npc, env.world, env.players, true, 88, env.ticker);
             let p = target_of(npc, env.players);
             let (pcx, pcy) = candidate_center(p);
@@ -419,7 +421,7 @@ pub fn style88_step(npc: &mut Npc, env: &mut Style88Env<'_>) -> Style88Outcome {
         out.knock_back_resist = Some(0.0);
         {
             let p = target_of(npc, env.players);
-            if npc.target < 0 || !p.active || p.dead {
+            if npc.target < 0 || npc.target as usize >= env.players.len() || !p.active || p.dead {
                 target_closest(npc, env.world, env.players, true, 88, env.ticker);
             }
         }
@@ -453,7 +455,7 @@ pub fn style88_step(npc: &mut Npc, env: &mut Style88Env<'_>) -> Style88Outcome {
         out.knock_back_resist = Some(0.0);
         {
             let p = target_of(npc, env.players);
-            if npc.target < 0 || !p.active || p.dead {
+            if npc.target < 0 || npc.target as usize >= env.players.len() || !p.active || p.dead {
                 target_closest(npc, env.world, env.players, true, 88, env.ticker);
                 npc.ai[0] = 0.0;
                 npc.ai[1] = 0.0;

@@ -179,6 +179,11 @@ pub fn style92_step(npc: &mut Npc, env: &mut Style92Env<'_>) -> Style92Outcome {
             if npc.target == 255 {
                 return true;
             }
+            // The C# indexes `Main.player[this.target]` — an
+            // out-of-range slot is inactive (dead false).
+            if npc.target < 0 || npc.target as usize >= env.players.len() {
+                return false;
+            }
             let p = target_of(npc, env.players);
             let (pcx, pcy) = candidate_center(p);
             p.dead || sqrt_f32(cx - pcx, cy - pcy) > 4800.0

@@ -330,10 +330,17 @@ pub fn style87_step(npc: &mut Npc, ty: i32, env: &mut Style87Env<'_>) -> Style87
     out.no_tile_collide = false;
     out.no_gravity = false;
     out.reflects_projectiles = false;
-    // `:37478-37489` — the dead-target bail.
-    if npc.ai[0] != 7.0 && target_of(npc, env.players).dead {
+    // `:37478-37489` — the dead-target bail. The C# indexes
+    // `Main.player[this.target]` — an unset 255 slot is inactive
+    // (dead false); the range check stands in for it.
+    let target_dead = |n: &Npc| -> bool {
+        n.target >= 0
+            && (n.target as usize) < env.players.len()
+            && env.players[n.target as usize].dead
+    };
+    if npc.ai[0] != 7.0 && target_dead(npc) {
         target_closest(npc, env.world, env.players, true, 87, env.ticker);
-        if target_of(npc, env.players).dead {
+        if target_dead(npc) {
             npc.ai[0] = 7.0;
             npc.ai[1] = 0.0;
             npc.ai[2] = 0.0;

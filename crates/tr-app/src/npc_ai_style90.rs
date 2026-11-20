@@ -248,7 +248,13 @@ pub fn style90_step(
     // `:38428-38444` — the target gates.
     {
         let p = target_of(&npcs[me], env.players);
-        if npcs[me].target < 0 || p.dead || !p.active {
+        // The C# indexes `Main.player[this.target]` — an unset 255
+        // slot is INACTIVE (the range check stands in for it).
+        if npcs[me].target < 0
+            || npcs[me].target as usize >= env.players.len()
+            || p.dead
+            || !p.active
+        {
             target_closest(&mut npcs[me], env.world, env.players, true, 90, env.ticker);
             let p = target_of(&npcs[me], env.players);
             let (pcx, pcy) = candidate_center(p);
@@ -322,7 +328,11 @@ pub fn style90_step(
         out.knock_back_resist = Some(0.0);
         {
             let p = target_of(&npcs[me], env.players);
-            if npcs[me].target < 0 || !p.active || p.dead {
+            if npcs[me].target < 0
+                || npcs[me].target as usize >= env.players.len()
+                || !p.active
+                || p.dead
+            {
                 target_closest(&mut npcs[me], env.world, env.players, true, 90, env.ticker);
             }
         }
