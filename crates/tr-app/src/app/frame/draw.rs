@@ -569,6 +569,27 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // The projectile AI-arm lights, second wave (S1-E-5,
+                    // W4-e6, `proj_ai_lights.rs`): the `AddLight` sites
+                    // OUTSIDE `ProjLight` — `AI_001`'s per-type arms
+                    // (`Projectile.cs:54173`…`:55171`), `AI_026`'s foxsparks
+                    // pair (`:58213`/`:58226`), `AI_062`'s StardustCell
+                    // (`:65120`), `AI_075`'s LaserDrill (`:66272`),
+                    // `AI_130`'s FlameBurst tower pairs (`:68124-68225`) and
+                    // `AI_138`'s ExplosiveTrap tail (`:69332`). Like the
+                    // `ProjLight` feed above, the port collects the sources
+                    // here after the step in `Main.projectile` slot order;
+                    // an arm whose kind has no `proj_data` row is absent
+                    // wholesale. No ported arm draws `Main.rand`, so the
+                    // placement leaves the UpdateProjectiles stream
+                    // untouched.
+                    for p in projectiles.slots().iter().filter(|p| p.active) {
+                        for (x, y, rgb) in
+                            crate::proj_ai_lights::proj_ai_lights(p.kind, p.pos, p.w, p.h, p.alpha)
+                        {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     // The Dust `UpdateDust` lights (S1-E-5, dust family):
                     // the RNG-free AddLight arms of the FIRST ladder
                     // (`Dust.cs:483-1047`, `dust_lights.rs`) run per active
