@@ -238,6 +238,17 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-g38 C1 (2026-11-21, code-only): the `Place Fallen Log` pass
+    // (`WorldGen.cs:18513-18656` + `Place3x2` `:52066-52196` + the
+    // `PlaceTile(488)` slice) lands after `cave houses` on a fresh
+    // `pass_rng("Place Fallen Log")` stream. The pin is EXPECTED
+    // UNCHANGED: on the 512-wide world the x band `[beachDistance+20,
+    // width−beachDistance−20)` = `[400, 112)` collapses — the port's
+    // width guard returns after the count roll (the C# `Next` would
+    // throw there), so no log places and no other stream moves. The
+    // 488 frame-important boot bit is inert without the kind. If a
+    // future width change admits the band, the pin moves BY DESIGN;
+    // re-pin DEFERRED to the merge gate. a == b stays green.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +292,13 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-g38 C1 (2026-11-21, code-only): the Place Fallen Log pass (see
+    // SEED42_512 above) — on the 4200-wide default world the x band
+    // `[400, 3800)` is live, so the `width/2100` (+`Next(-1,2)`) logs
+    // place their 3×2 tile-488 objects on the surface and this pin moves
+    // BY DESIGN. The pass draws only its own fresh stream — no other
+    // step's ledger shifts. Re-pin DEFERRED to the merge gate (no
+    // compiler on this branch); a == b stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -366,6 +366,14 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.logX`/`logY` (`GenVars.cs:252-254`, reset −1 at
+    /// `WorldGen.cs:11210-11211`) — the fallen-log flower anchor: the
+    /// Place Fallen Log pass's `Next(2) == 0` roll stores the placed log
+    /// (`:18643-18647`), the Flowers pass consumes it once (`:20468-20472`
+    /// remix / `:20532-20536` classic) and resets logX to −1. W4-g38 C1.
+    pub(crate) log_x: i32,
+    #[allow(dead_code)] // consumed by the Flowers pass (d105/g39's slice)
+    pub(crate) log_y: i32,
 }
 
 impl Default for GenVars {
@@ -403,6 +411,9 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            // The C# Reset sets both to −1 (`WorldGen.cs:11210-11211`).
+            log_x: -1,
+            log_y: -1,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1316,6 +1327,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("lihzahrd temple", "Jungle Temple", step_temple),
     step!("temple part 2", "Temple", step_temple_part2),
     step!("cave houses", "Buried Chests", step_cave_houses),
+    // The vanilla Place Fallen Log slot (`WorldGen.cs:18513`): after
+    // Surface Ore and Stone (`:18447`, g37's B9) and before Traps
+    // (`:18657`, this lane's C2) — W4-g38 C1. The port slots it after the
+    // cave houses (the nearest executed neighbour ahead of the grouped
+    // micro-biome family); the pass draws only its own
+    // `pass_rng("Place Fallen Log")` stream, so the insertion shifts no
+    // other step's ledger.
+    step!("fallen log", "Place Fallen Log", step_fallen_log),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2314,6 +2333,31 @@ fn step_cave_houses(
     );
 }
 
+/// The vanilla Place Fallen Log slot (`WorldGen.cs:18513-18656`) — W4-g38
+/// C1: the fallen logs (tile 488) on the pass's own stream; the
+/// `GenVars.logX/logY` flower anchor rides `gv`. The skyblock/noSurface
+/// gates and the deferred extraLiquid head live in the pass body.
+fn step_fallen_log(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    let mut anchor = (gv.log_x, gv.log_y);
+    surface::place_fallen_log(
+        world,
+        &layers,
+        &mut streams.pass_rng("Place Fallen Log"),
+        opts,
+        &mut anchor,
+    );
+    gv.log_x = anchor.0;
+    gv.log_y = anchor.1;
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -2794,6 +2838,10 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[186] = true;
     world.frame_important[187] = true;
     world.frame_important[380] = true;
+    // The fallen log 488 (`Main.cs:7644`) — W4-g38 C1: the Place Fallen
+    // Log pass writes its 3×2 `Place3x2` frames, which the framer must
+    // keep instead of autotiling the object.
+    world.frame_important[488] = true;
     // The ocean tiles the ocean passes write — the palm trunk 323, the
     // coral 81, the beach piles 324, the shell piles 495, the sea oats 529
     // (`Main.cs:7376`) and the oasis plants 530 (`:7385`) are all
@@ -3140,7 +3188,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-g38 C1: + `fallen log` (vanilla "Place Fallen Log",
+        // `WorldGen.cs:18513`) after `cave houses`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3215,6 +3265,7 @@ mod tests {
                 "lihzahrd temple",
                 "temple part 2",
                 "cave houses",
+                "fallen log",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3433,10 +3484,34 @@ mod tests {
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("cave houses") + 1);
+        assert_eq!(pos("thin ice"), pos("fallen log") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
+    }
+
+    /// W4-g38 C1: `fallen log` sits after the port's `cave houses` step —
+    /// the vanilla chain's relative order Buried Chests (`WorldGen.cs:
+    /// 16971`) → Surface Ore and Stone (`:18447`, g37's B9) → Place Fallen
+    /// Log (`:18513`) → Traps (`:18657`, C2) puts the pass ahead of the
+    /// grouped micro family and behind the chest work.
+    #[test]
+    fn w4_g38_c1_the_fallen_log_step_sits_after_the_cave_houses() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("fallen log"), pos("cave houses") + 1);
+        assert_eq!(pos("fallen log") + 1, pos("thin ice"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Buried Chests") < cpos("Place Fallen Log"));
+        assert!(cpos("Surface Ore and Stone") < cpos("Place Fallen Log"));
+        assert!(cpos("Place Fallen Log") < cpos("Traps"));
+        assert!(cpos("Place Fallen Log") < cpos("Spawn Point"));
     }
 
     #[test]

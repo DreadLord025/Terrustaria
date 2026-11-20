@@ -1,9 +1,11 @@
 //! Surface dressing: slope tiles, trees, small flora and desert cacti.
 
 use super::noise::Rng;
-use super::terrain::SurfaceMap;
-use super::{TILE_GRASS, TILE_SAND, TILE_SNOW};
-use crate::tile::{FLAG_ACTIVE, Tile};
+use super::terrain::{Layers, SurfaceMap};
+use super::{GenOptions, TILE_GRASS, TILE_SAND, TILE_SNOW};
+use crate::seeds::{MicroSeedFlags, SeedFlags};
+use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, Tile};
+use crate::tiledata::{self as td, TILE_SOLID};
 use crate::tree;
 use crate::world::World;
 
@@ -349,5 +351,449 @@ pub(crate) fn plant_cacti(world: &mut World, rng: &mut Rng, map: &SurfaceMap, wi
                 };
             }
         }
+    }
+}
+
+// --- W4-g38 C1: the Place Fallen Log pass ------------------------------------
+
+/// `Skyblock.denySomeGeneration` (`WorldGen.cs:3133-3147`): skyblock with
+/// none of the eight surface-rebuilding micro seeds and no extra living
+/// trees denies the pass; every other world enters.
+fn deny_some_generation(opts: &GenOptions) -> bool {
+    if !opts.flags.contains(SeedFlags::SKYBLOCK) {
+        return false;
+    }
+    let rebuilding = MicroSeedFlags::WORLD_IS_FROZEN
+        | MicroSeedFlags::SURFACE_IS_DESERT
+        | MicroSeedFlags::SURFACE_IS_MUSHROOMS
+        | MicroSeedFlags::WORLD_IS_INFECTED
+        | MicroSeedFlags::HALLOW_ON_THE_SURFACE
+        | MicroSeedFlags::NO_INFECTION
+        | MicroSeedFlags::EXTRA_FLOATING_ISLANDS
+        | MicroSeedFlags::EXTRA_LIQUID;
+    if opts.micro_flags.intersects(rebuilding) {
+        return false;
+    }
+    !opts.micro_flags.contains(MicroSeedFlags::EXTRA_LIVING_TREES)
+}
+
+/// `WorldGen.SolidTile2(int, int)` (`WorldGen.cs:70492-70509`) — the
+/// `Place3x2` floor test: active + `tileSolid` + (platform half-brick/top-
+/// slope exemption OR slope 0) + not half-brick + not inactive. Null reads
+/// solid; out-of-bounds reads false (the C# catch).
+fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && TILE_SOLID.has(t.kind)
+        && ((td::SET_PLATFORMS.has(t.kind) && (t.half_brick() || t.top_slope()))
+            || t.slope() == 0)
+        && !t.half_brick()
+        && !t.inactive()
+}
+
+/// `WorldGen.Place3x2` (`WorldGen.cs:52066-52196`), the type-488 path the
+/// fallen-log placement runs — no RNG: the 5-tile bounds guard, the 3×2
+/// clear scan (`y-1..y+1` — the `14/25` picnic one-row arm never fires for
+/// 488), the campfire liquid veto (dead for 488), the default-case floor
+/// (`SolidTile2` under every column; the 186/187 piles veto and the 26
+/// boulder veto are dead kinds here), then the row-major frame write
+/// (`frameX = 54*style + dx*18`, `frameY = dy*18`). The 88 chest ledger and
+/// the 582/619 solid-top arm are other kinds' paths.
+fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut ok = true;
+    for i in (x - 1)..(x + 2) {
+        for j in (y - 1)..(y + 1) {
+            if let Some(t) = world.tile(i, j) {
+                if t.active() {
+                    ok = false;
+                }
+                // `TileID.Sets.Campfires[488]` is false — the liquid veto
+                // never fires for this kind (`:52096-52099`).
+            }
+        }
+        if !solid_tile2(world, i, y + 1) {
+            ok = false;
+        }
+    }
+    if !ok {
+        return;
+    }
+    let num2 = (54 * style) as i16;
+    let write = |world: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16| {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags |= FLAG_ACTIVE;
+            t.kind = kind;
+            t.frame_x = frame_x;
+            t.frame_y = frame_y;
+        }
+    };
+    // The 3×2 write (`:52171-52194`), C# row-major order.
+    write(world, x - 1, y - 1, num2, 0);
+    write(world, x, y - 1, num2 + 18, 0);
+    write(world, x + 1, y - 1, num2 + 36, 0);
+    write(world, x - 1, y, num2, 18);
+    write(world, x, y, num2 + 18, 18);
+    write(world, x + 1, y, num2 + 36, 18);
+}
+
+/// `WorldGen.PlaceTile(i, j, 488)` (`WorldGen.cs:59342-60295`), the slice
+/// the fallen-log pass runs: the gen-time existing-log veto (`:59345`),
+/// the empty/non-solid entry (`:59373` — `Main.tileSolid[488]` is false,
+/// so the entry always passes), the inactive-cell `Clear(Tile|TilePaint|
+/// Slope)` (`:59473-59476`), the `Place3x2` dispatch (`:59888-59891`), and
+/// the post-dispatch success flag (`:60255-60262`). The `SquareTileFrame`
+/// re-frame rides the port's post-pipeline seam (the d106 convention).
+/// Returns the C# `result` — whether the centre cell ended active.
+fn place_tile_fallen_log(world: &mut World, x: i32, y: i32) -> bool {
+    // `:59345`: during generation an existing fallen log blocks placement.
+    if world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && t.kind == 488)
+    {
+        return false;
+    }
+    let Some(t) = world.tile(x, y).copied() else {
+        return false;
+    };
+    // `:59373` entry: `Collision.EmptyTile || !tileSolid[488]` — 488 is not
+    // in `Main.tileSolid`, so the second disjunct always admits. The
+    // torch/flower/moss/Abigail special arms are other kinds' paths.
+    // `:59473-59476`: an inactive cell clears tile + paint/coating + slope
+    // (wall, liquid and wiring survive).
+    if !t.active() {
+        if let Some(c) = world.tile_mut(x, y) {
+            c.kind = 0;
+            c.flags &= !FLAG_ACTIVE;
+            c.frame_x = 0;
+            c.frame_y = 0;
+            c.set_paint(0);
+            c.flags &= !crate::tile::FLAG_FULLBRIGHT;
+            c.set_slope(0);
+            c.flags &= !FLAG_HALF_BRICK;
+        }
+        world.set_invisible_block(x, y, false);
+    }
+    place_3x2(world, x, y, 488, 0);
+    // `:60255-60262`: `result = tile.active()` — `TruncatesWalls[488]` is
+    // false, the sound/dust arms are mute-irrelevant at gen time.
+    world.tile(x, y).is_some_and(|t| t.active())
+}
+
+/// `Main.tileDungeon` (`Main.cs:7992-7997`) — the six dungeon brick kinds
+/// the fallen-log neighbourhood veto reads.
+const TILE_DUNGEON: [u16; 6] = [41, 43, 44, 677, 678, 679];
+
+/// The `Place Fallen Log` pass (`GenPassNameID.FallenLogsAndWaterFeatures`,
+/// `WorldGen.cs:18513-18656`): `maxTilesX / 2100` (+ `Next(-1, 2)`, remix
+/// `Next(0, 2)`) fallen logs (tile 488, a 3×2 object), each found by a
+/// 30000-attempt surface scan with a 5000-attempt desperation tail.
+///
+/// Draws, in C# order on the pass's own stream: one count roll, then per
+/// attempt the (x, y) pair, the centre-band x re-rolls while attempts
+/// remain above half the desperation threshold, and on a placed log one
+/// `Next(2)` for the `GenVars.logX/logY` flower anchor (`:18643-18647`,
+/// consumed by the Flowers pass `:20468`/`:20532`).
+///
+/// Deferred seed arms (documented, flag-gated — a classic world never
+/// enters them): the `extraLiquid && !roundLandmasses` water-features head
+/// (`:18517-18521`, `SecretSeed.DoExtraLiquidAddBubbleBlocks` `:1648-1807`
+/// — the QuickWater pre-settle + bubble-square speckle belongs to the
+/// settle-liquids/extra-liquid lane); the remix surface-layer y band
+/// (`:18543-18546`/`:18562-18567`, `GenVars.remixSurfaceLayerLow/High` —
+/// `TerrainPass.cs:239-240`'s rock-low..height-350 band, not yet a port
+/// GenVars field). The skyblock budgets (`:18533-18537`) and the
+/// notTheBees/frozen/desert soil kinds (`:18637`) are ported.
+pub(crate) fn place_fallen_log(
+    world: &mut World,
+    layers: &Layers,
+    rng: &mut Rng,
+    opts: &GenOptions,
+    log_anchor: &mut (i32, i32),
+) {
+    // `!Skyblock.denySomeGeneration` (`:18515`).
+    if deny_some_generation(opts) {
+        return;
+    }
+    // The extraLiquid water-features head (`:18517-18521`) — deferred (see
+    // the doc comment); no draws on the classic path.
+    // `!SecretSeed.noSurface.Enabled` (`:18522`).
+    if opts.micro_flags.contains(MicroSeedFlags::NO_SURFACE) {
+        return;
+    }
+    let remix = opts.flags.contains(SeedFlags::REMIX);
+    let skyblock = opts.flags.contains(SeedFlags::SKYBLOCK);
+    let bees = opts.flags.contains(SeedFlags::NOT_THE_BEES);
+    let frozen = opts.micro_flags.contains(MicroSeedFlags::WORLD_IS_FROZEN);
+    let desert_surface = opts.micro_flags.contains(MicroSeedFlags::SURFACE_IS_DESERT);
+    // `num = maxTilesX / 2100` then the count roll (`:18525-18526`).
+    let mut count = world.width / 2100;
+    count += if remix { rng.range(0, 2) } else { rng.range(-1, 2) };
+    // The x band must be non-empty (the sub-vanilla 512 test world
+    // collapses it — the C# `Next` would throw; the port skips the whole
+    // loop after the count roll, drawing nothing more, like the
+    // mining-explosives width guard). `num2 = beachDistance + 20`
+    // (`:18530`, `:86914`'s 380).
+    let margin = super::ocean::ZONE_MARGIN + 20;
+    if margin >= world.width - margin {
+        return;
+    }
+    let world_surface = layers.world_surface;
+    for _ in 0..count {
+        let (mut attempts, mut desperation) = (30000i32, 5000i32);
+        if skyblock {
+            attempts /= 10;
+            desperation /= 10;
+        }
+        while attempts > 0 {
+            attempts -= 1;
+            let mut x = rng.range(margin, world.width - margin);
+            let mut y = rng.range(10, world_surface as i32);
+            if remix {
+                // Deferred remix band (see the doc comment): the port's
+                // nearest published anchors — rock_low..height-350
+                // (`TerrainPass.cs:239-240`). Drawn in the C#'s spot.
+                y = rng.range(layers.rock_low as i32, world.height - 350);
+            }
+            let desperate = attempts < desperation;
+            if attempts > desperation / 2 {
+                // The centre-band exclusion re-roll (`:18552-18558`).
+                while (x as f64) > (world.width as f64) * 0.4
+                    && (x as f64) < (world.width as f64) * 0.6
+                {
+                    x = rng.range(margin, world.width - margin);
+                }
+            }
+            let start_clear = world
+                .tile(x, y)
+                .is_some_and(|t| !t.active() && t.wall == 0);
+            if !start_clear {
+                continue;
+            }
+            // The fall-to-ground scan (`:18562-18573`): the classic arm
+            // drops while air + wall 0 and `j <= worldSurface`.
+            let mut ok = true;
+            if remix {
+                let high = world.height - 350;
+                while world
+                    .tile(x, y)
+                    .is_some_and(|t| !t.active() && t.wall == 0)
+                    && y <= high
+                {
+                    y += 1;
+                }
+            } else {
+                while world
+                    .tile(x, y)
+                    .is_some_and(|t| !t.active() && t.wall == 0)
+                    && (y as f64) <= world_surface
+                {
+                    y += 1;
+                }
+                if (y as f64) > world_surface - 10.0 {
+                    ok = false;
+                }
+            }
+            if ok && !desperate {
+                // The 100×100 neighbourhood veto (`:18578-18616`): clouds
+                // 189, sand 53, dungeon bricks, crimson and corrupt kinds
+                // disqualify the site. The scan bounds mirror the C#
+                // (>10 / <max-10); reads outside the world are skipped.
+                'hood: for k in (x - 50)..(x + 50) {
+                    if k <= 10 || k >= world.width - 10 {
+                        continue;
+                    }
+                    for l in (y - 50)..(y + 50) {
+                        if l <= 10 || l >= world.height - 10 {
+                            continue;
+                        }
+                        let Some(t) = world.tile(k, l) else { continue };
+                        let kind = t.kind;
+                        if kind == 189
+                            || kind == 53
+                            || TILE_DUNGEON.contains(&kind)
+                            || td::SET_CRIMSON.has(kind)
+                            || td::SET_CORRUPT.has(kind)
+                        {
+                            ok = false;
+                            break 'hood;
+                        }
+                    }
+                }
+                if ok {
+                    // The 20×9 headroom veto (`:18617-18635`): no solid
+                    // active tile and no wall in the columns above the
+                    // seat. The C# reads unguarded; the port's bounds
+                    // check only skips cells the scan can never reach on
+                    // a real world (x ≥ 400, y ≥ 10).
+                    for m in (x - 10)..(x + 10) {
+                        for n in (y - 10)..(y - 1) {
+                            if let Some(t) = world.tile(m, n) {
+                                if t.active() && TILE_SOLID.has(t.kind) {
+                                    ok = false;
+                                }
+                                if t.wall != 0 {
+                                    ok = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if !ok {
+                continue;
+            }
+            // The seat test (`:18637`): liquid 0 (or the desperation tail
+            // below a fifth), dirt 2 under the centre and both neighbours
+            // (bees mud 60 / frozen snow 147 / desert sand 53 arms).
+            let soil = |dx: i32| {
+                world.tile(x + dx, y).is_some_and(|t| {
+                    t.kind == 2
+                        || (bees && t.kind == 60)
+                        || (frozen && t.kind == 147)
+                        || (desert_surface && t.kind == 53)
+                })
+            };
+            let liquid_ok = world.tile(x, y - 1).is_some_and(|t| t.liquid == 0)
+                || attempts < desperation / 5;
+            if !(liquid_ok && soil(0) && soil(-1) && soil(1)) {
+                continue;
+            }
+            y -= 1;
+            place_tile_fallen_log(world, x, y);
+            if world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && t.kind == 488)
+            {
+                // The Flowers-pass anchor roll (`:18643-18647`).
+                if rng.range(0, 2) == 0 {
+                    *log_anchor = (x, y);
+                }
+                attempts = -1;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod fallen_log_tests {
+    use super::*;
+    use crate::tiledata::TILE_COUNT;
+
+    /// A flat dirt-2 ground row with air above — the fallen-log seat the
+    /// C# scan finds (`:18637`'s three-column dirt test).
+    fn seat_world() -> World {
+        let mut w = World::new("log".into(), 64, 64);
+        w.frame_important = vec![false; TILE_COUNT];
+        w.frame_important[488] = true;
+        for x in 0..64 {
+            let i = w.index(x, 30);
+            w.tiles[i] = Tile {
+                kind: 2,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        w
+    }
+
+    /// W4-g38 C1: `Place3x2`'s type-488 path — the 3×2 frame write
+    /// (`WorldGen.cs:52171-52194`): frameX = dx*18, frameY = dy*18, the
+    /// floor `SolidTile2` under every column, the clear-body veto.
+    #[test]
+    fn w4_g38_c1_place_3x2_writes_the_log_frames_on_a_solid_floor() {
+        let mut w = seat_world();
+        place_3x2(&mut w, 30, 29, 488, 0);
+        // The six cells: rows y-1/y, columns x-1..x+1.
+        for (dx, dy) in [(-1i32, -1i32), (0, -1), (1, -1), (-1, 0), (0, 0), (1, 0)] {
+            let t = w.tile(30 + dx, 29 + dy).unwrap();
+            assert!(t.active(), "cell ({dx},{dy})");
+            assert_eq!(t.kind, 488);
+            assert_eq!(t.frame_x, ((dx + 1) * 18) as i16);
+            assert_eq!(t.frame_y, ((dy + 1) * 18) as i16);
+        }
+        // An occupied body cell vetoes the whole write.
+        let mut w2 = seat_world();
+        let i = w2.index(30, 28);
+        w2.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        place_3x2(&mut w2, 30, 29, 488, 0);
+        assert!(!w2.tile(30, 29).unwrap().active());
+        // A missing floor column vetoes too (`SolidTile2`, `:52118`).
+        let mut w3 = seat_world();
+        let i = w3.index(31, 30);
+        w3.tiles[i] = Tile::default();
+        place_3x2(&mut w3, 30, 29, 488, 0);
+        assert!(!w3.tile(30, 29).unwrap().active());
+        // The 5-tile bounds guard (`:52068`).
+        let mut w4 = seat_world();
+        place_3x2(&mut w4, 3, 29, 488, 0);
+        assert!(!w4.tile(3, 29).unwrap().active());
+    }
+
+    /// W4-g38 C1: `PlaceTile(488)`'s gen-time slice — the existing-log veto
+    /// (`WorldGen.cs:59345`) and the success flag (`:60255-60262`).
+    #[test]
+    fn w4_g38_c1_place_tile_fallen_log_vetoes_an_existing_log() {
+        let mut w = seat_world();
+        assert!(place_tile_fallen_log(&mut w, 30, 29));
+        assert!(w.tile(30, 29).is_some_and(|t| t.active() && t.kind == 488));
+        // A second placement on the same centre is refused, world unchanged.
+        let before = w.tiles.clone();
+        assert!(!place_tile_fallen_log(&mut w, 30, 29));
+        assert_eq!(w.tiles, before);
+    }
+
+    /// W4-g38 C1: the pass gates — skyblock's `denySomeGeneration`
+    /// (`WorldGen.cs:3133-3147`) and the noSurface skip (`:18522`); the
+    /// sub-vanilla width guard draws only the count roll.
+    #[test]
+    fn w4_g38_c1_the_pass_gates_skip_without_tile_writes() {
+        let layers = Layers {
+            avg_surface: 30.0,
+            world_surface: 30.0,
+            rock_layer: 50.0,
+            hell_top: 60,
+            surface_low: 30.0,
+            surface_high: 30.0,
+            rock_low: 46.0,
+            rock_high: 52.0,
+        };
+        // Plain skyblock denies; the extra-living-trees micro seed admits.
+        let mut sky = GenOptions::default();
+        sky.flags.insert(SeedFlags::SKYBLOCK);
+        assert!(deny_some_generation(&sky));
+        let mut w = seat_world();
+        let before = w.tiles.clone();
+        let mut anchor = (-1, -1);
+        // The denied pass draws nothing at all (`:18515` outer gate).
+        let mut rng_denied = Rng(7);
+        place_fallen_log(&mut w, &layers, &mut rng_denied, &sky, &mut anchor);
+        assert_eq!(w.tiles, before);
+        assert_eq!(anchor, (-1, -1));
+        assert_eq!(rng_denied.next_u32(), Rng(7).next_u32(), "no draw");
+        sky.micro_flags.insert(MicroSeedFlags::EXTRA_LIVING_TREES);
+        assert!(!deny_some_generation(&sky));
+        // The admitted skyblock world enters, but the 64-wide band guard
+        // stops it after the count roll (see the classic arm below).
+        place_fallen_log(&mut w, &layers, &mut Rng(7), &sky, &mut anchor);
+        assert_eq!(w.tiles, before);
+        // noSurface skips the log loop (`:18522`).
+        let mut nos = GenOptions::default();
+        nos.micro_flags.insert(MicroSeedFlags::NO_SURFACE);
+        place_fallen_log(&mut w, &layers, &mut Rng(7), &nos, &mut anchor);
+        assert_eq!(w.tiles, before);
+        // The 64-wide world collapses the x band (margin 400): the count
+        // roll runs, the scan draws nothing, no tile moves.
+        let classic = GenOptions::default();
+        let mut rng_a = Rng(7);
+        let mut rng_b = Rng(7);
+        let _count_roll = rng_a.range(-1, 2);
+        place_fallen_log(&mut w, &layers, &mut rng_b, &classic, &mut anchor);
+        assert_eq!(w.tiles, before);
+        assert_eq!(rng_a.next_u32(), rng_b.next_u32(), "only the count roll drew");
     }
 }

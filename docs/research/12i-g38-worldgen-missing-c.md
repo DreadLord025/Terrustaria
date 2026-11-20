@@ -74,8 +74,8 @@ reassigns; the merger reconciles per `12h`.
 
 | pass | commit | status |
 | --- | --- | --- |
-| range claim (this doc) | (this commit) | claimed |
-| C1 Place Fallen Log | — | pending |
+| range claim (this doc) | d32b13cc | claimed |
+| C1 Place Fallen Log | (this commit) | landed (code-only, witnesses written NOT run) |
 | C2 Traps | — | pending |
 | C3 Piles | — | pending |
 | C4 Spawn Point | — | pending |
@@ -83,3 +83,39 @@ reassigns; the merger reconciles per `12h`.
 | C6 Sunflowers | — | pending |
 | C7 Herbs | — | pending |
 | C8 Dye Plants | — | pending |
+
+## C1 landing note (2026-11-21)
+
+Re-probe before C1: d104/d105 still claim-only (2d9cfcbb / 5bb4116e), d106
+still Grass-Wall-only (ee0fcbef), g36 claim-only (0b01c170), g37 census
+re-probe only (30f605c7 — all nine B-passes unlanded), f25 claim-only
+(fd098528), g39 pivoted to the **helper lane** (`12j`, H1-H15 landed —
+general `Place3x2` in its new `place_helpers.rs`, unwired). None of the
+eight C-passes landed anywhere; the claim stands.
+
+C1 ports `WorldGen.cs:18513-18656` verbatim into `surface.rs`
+(`place_fallen_log` + the `PlaceTile(488)` slice + a local type-488
+`Place3x2` slice + `SolidTile2(int,int)` `:70492` + `denySomeGeneration`
+`:3133`). The local `place_3x2` duplicates g39's H6 general helper by
+design at this base (g39's `place_helpers.rs` is not on this branch); the
+merger dedupes onto the general helper — the 488 path takes its default
+arm, identical behaviour. Slot: after `cave houses`, before `thin ice`
+(the nearest executed neighbours of the vanilla `:18513` slot between
+Surface Ore and Stone `:18447` and Traps `:18657`). Stream:
+`pass_rng("Place Fallen Log")` — no other step's ledger shifts.
+`GenVars.log_x/log_y` (Reset −1, `:11210-11211`) published for the Flowers
+consumers (`:20468`/`:20532`, d105/g39's slice). Boot static: 488
+frame-important (`Main.cs:7644`). Progress message `Lang.gen[85]`
+(`:18524`). Deferred (flag-gated, documented in the pass doc comment):
+the extraLiquid water-features head (`DoExtraLiquidAddBubbleBlocks`
+`:1648-1807` — the settle-liquids lane's QuickWater dependency) and the
+remix `GenVars.remixSurfaceLayerLow/High` band (nearest published anchors
+`rock_low`..`height-350` drawn in the C#'s spot). Hash pins: SEED42_512
+expected UNCHANGED (the `[400,112)` x band collapses on 512 — width guard
+after the count roll, the mining-explosives precedent); DEFAULT_WORLD
+moves BY DESIGN (logs place on the 4200-wide world). Re-pins deferred to
+the gate; `a == b` halves untouched. Witnesses: 3 unit tests in
+`surface.rs` (frame write + floor/body/bounds vetoes, the existing-log
+veto, the gates + width-guard draw schedule) + the pipeline positional
+witness `w4_g38_c1_the_fallen_log_step_sits_after_the_cave_houses`; the
+step-count/name-list tests updated 66→67.
