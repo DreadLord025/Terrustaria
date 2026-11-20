@@ -38,6 +38,7 @@
 //! | 111-114 | `:82373-82385` | the 566/567 DD2 Skeleton death: the remaining four coin-gates |
 //! | 115-120 | `:82406-82413` | the 576/577 DD2 Ogre FLIPPED death (6 gores, Next(5) type gate + π rotations) |
 //! | 121-126 | `:82417-82422` | the 576/577 DD2 Ogre NON-flipped death (6 gores, Next(5) type gate) |
+//! | 127-132 | `:82442-82447` | the 564/565 DD2 Dark Mage death: the first six gores (base 1009 ladder) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -394,6 +395,33 @@ fn ogre_death(
     gore.new_gore(rng, world, pos + Vec2::new(32.0, 90.0), vel, 1004, s); // :82422
 }
 
+/// The 564/565 DD2 Dark Mage death (`NPC.cs:82437-82452`, sites 127-137):
+/// the 20-dust type-5 burst, then 11 gores at base `num74 = 1009`
+/// (`:82441`). This commit ports the first six gores (sites 127-132,
+/// `:82442-82447`); the +6/+10/+7/+8/+9 tail lands with the next batch.
+fn dark_mage_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 20);
+    // `:82441` — num74 = 1009.
+    let num74 = 1009;
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, num74, s); // :82442
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 15.0), vel, num74 + 1, s); // :82443
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 15.0), vel, num74 + 2, s); // :82444
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 15.0), vel, num74 + 3, s); // :82445
+    gore.new_gore(rng, world, Vec2::new(pos.x - 20.0, pos.y + 35.0), vel, num74 + 4, s); // :82446
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 35.0), vel, num74 + 5, s); // :82447
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); only the death
@@ -452,6 +480,11 @@ pub fn hit_effect_c(
         } else {
             ogre_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
         }
+    }
+    // `:82426-82454` — the 564/565 DD2 Dark Mage arm (sites 127-132 here;
+    // the +6/+10/+7/+8/+9 tail lands with the next batch).
+    if (npc_type == 564 || npc_type == 565) && npc.hp <= 0 {
+        dark_mage_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -774,6 +807,26 @@ mod tests {
         assert_eq!(gore.slot(3).gore_type, 1002);
         assert_eq!(gore.slot(3).rotation, 0.0);
         assert_eq!(gore.slot(5).position, Vec2::new(132.0, 190.0));
+    }
+
+    /// `NPC.cs:82442-82447` — the Dark Mage death's first six gores: base
+    /// 1009, the +1/+2/+3 trio at +15 Y, the +4 gore shifted -20 in X at
+    /// +35 Y, and the +5 gore at +35 Y.
+    #[test]
+    fn w4_f10_the_dark_mage_death_spawns_the_first_six_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 48.0, 64.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(41);
+        dark_mage_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1009, 1010, 1011, 1012, 1013, 1014]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 115.0));
+        // The +4 gore (index 4) is shifted -20 in X at +35 Y.
+        assert_eq!(gore.slot(4).position, Vec2::new(80.0, 135.0));
+        assert_eq!(gore.slot(5).position, Vec2::new(100.0, 135.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
