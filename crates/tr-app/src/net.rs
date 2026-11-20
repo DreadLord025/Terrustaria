@@ -138,6 +138,10 @@ pub mod id {
     pub const NPC_HOUSE: u8 = 60;
     pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
     pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
+    /// `125 SyncTilePicking` (`MessageID.cs:264`) — a peer's pickaxe hit on a
+    /// tile (`NetMessage.cs:1509-1514`, `MessageBuffer.cs:4023-4042`). W4-g51
+    /// lifted the parked d90 codec and wired the apply arms.
+    pub const TILE_PICKING: u8 = 125;
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
@@ -1537,6 +1541,18 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+/// `msg 125 SyncTilePicking`'s body (`NetMessage.cs:1509-1514`): the player
+/// id (host-overridden to the sender), the picked tile and the pick damage
+/// byte (`Player.GetOtherPlayersPickTile`, `Player.cs:53751`; the host
+/// relays to the others, `MessageBuffer.cs:4023-4042`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TilePicking {
+    pub player_id: u8,
+    pub x: i16,
+    pub y: i16,
+    pub damage: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1648,6 +1664,9 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `125 SyncTilePicking` - a client's pickaxe hit on a tile
+    /// (`MessageBuffer.cs:4023-4042` overrides the id and relays).
+    TilePicking(TilePicking),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1771,6 +1790,9 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `125 SyncTilePicking` — another player's pickaxe hit
+    /// (`MessageBuffer.cs:4033-4036` applies it to the local player).
+    TilePicking(TilePicking),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1859,6 +1881,7 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::TilePicking(_) => id::TILE_PICKING,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1927,6 +1950,9 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1509-1514`: byte player + short x + short y +
+            // byte damage.
+            Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2048,6 +2074,14 @@ impl C2s {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4025-4028`: byte player, short x, short y,
+            // byte damage.
+            id::TILE_PICKING => Self::TilePicking(TilePicking {
+                player_id: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                damage: r.u8()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2209,6 +2243,7 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::TilePicking(_) => id::TILE_PICKING,
         }
     }
 
@@ -2351,6 +2386,9 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1509-1514`: byte player + short x + short y +
+            // byte damage (the relay reuses the writer case).
+            Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2552,6 +2590,14 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4025-4028`: byte player, short x, short y,
+            // byte damage.
+            id::TILE_PICKING => Self::TilePicking(TilePicking {
+                player_id: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                damage: r.u8()?,
             }),
             _ => return None,
         })
@@ -4598,6 +4644,37 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::RevengeMarker(d) => assert_eq!(d, m),
             other => panic!("expected 126, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `125 SyncTilePicking` body byte-pins the writer order
+    /// (`NetMessage.cs:1509-1514`: byte player, short x, short y, byte
+    /// damage) and round-trips both directions.
+    #[test]
+    fn w4_g51_tile_picking_round_trips() {
+        let p = TilePicking {
+            player_id: 3,
+            x: 120,
+            y: -45,
+            damage: 37,
+        };
+        let mut body = vec![3u8];
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&(-45i16).to_le_bytes());
+        body.push(37);
+        let c = C2s::TilePicking(p).encode();
+        assert_eq!(c[2], 125);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TilePicking(d) => assert_eq!(d, p),
+            other => panic!("expected 125, got {:?}", other.msg_id()),
+        }
+        let f = S2c::TilePicking(p).encode();
+        assert_eq!(f[2], 125);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TilePicking(d) => assert_eq!(d, p),
+            other => panic!("expected 125, got {:?}", other.msg_id()),
         }
     }
 

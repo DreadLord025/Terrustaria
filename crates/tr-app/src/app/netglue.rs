@@ -807,6 +807,15 @@ impl App {
                     })); // `:2573`
                 }
             }
+            // `case 125` — a client's pickaxe hit on a tile
+            // (`MessageBuffer.cs:4023-4042`): the host forces the subject to
+            // the sender (`:4029-4032`) and relays to the OTHERS
+            // (`:4037-4040`, `ignoreClient = num166`). No host-side apply —
+            // the pick damage lands on each client's own `hitTile`.
+            C2s::TilePicking(mut p) => {
+                p.player_id = id as u8; // `:4031`
+                server.broadcast_except(&S2c::TilePicking(p), id);
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1841,10 +1850,46 @@ impl App {
                     }
                 }
             }
+            // `case 125`'s client half (`MessageBuffer.cs:4033-4036`):
+            // `Main.player[Main.myPlayer].GetOtherPlayersPickTile(x, y, dmg)`
+            // (`Player.cs:53751-53755`) — `hitTile.HitObject(x, y, 1)` then
+            // `AddDamage(tileId, pickDamage)`. The damage accumulates on the
+            // LOCAL player's pick book (the wire subject is the peer, but the
+            // C# applies to `Main.myPlayer`).
+            S2c::TilePicking(p) => {
+                let tile_id = self
+                    .hit_tile
+                    .hit_object(p.x as i32, p.y as i32, tr_core::hit_tile::TILE);
+                self.hit_tile.add_damage(tile_id, p.damage as i32, true);
+            }
+            // `case 126`'s client half (`MessageBuffer.cs:4043-4048`):
+            // `NPC.RevengeManager.AddMarkerFromReader` — the marker joins the
+            // session list (`CoinLossRevengeSystem.cs:321-324`). The ctor
+            // computes `_expirationTime = CalculateExpirationTime(gameTime,
+            // coinValue)` (`:86`, `:155-165`); the port's `expiration_addon`
+            // is that bracket table and `revenge_tick` is `_gameTime`. The
+            // kind rides `kind_from_net_id` (the 23 convention); an unported
+            // kind drops the marker (the respawn pass has no model for it).
+            S2c::RevengeMarker(m) => {
+                if let Some((kind, _)) = crate::npc::kind_from_net_id(m.npc_net_id) {
+                    let coins = m.coins_value.max(0) as u64;
+                    self.revenge_markers.push(crate::revenge::RevengeMarker {
+                        location: Vec2::new(m.x, m.y),
+                        kind,
+                        hp_percent: m.npc_hp_percent,
+                        base_value: m.base_value,
+                        coins_value: coins,
+                        expiration_tick: self.revenge_tick
+                            + crate::revenge::expiration_addon(coins),
+                        unique_id: m.unique_id as u64,
+                        force_expire: false,
+                    });
+                }
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:2695-2739`, `:3118-3126`, `:3147-3153`, `:4043-4048`,
+            // `:2695-2739`, `:3118-3126`, `:3147-3153`,
             // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
@@ -1853,7 +1898,6 @@ impl App {
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
-            | S2c::RevengeMarker(_)
             | S2c::DeadPlayer { .. }
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
@@ -3857,6 +3901,96 @@ mod handshake_tests {
         peer.off_y = 0.0;
         client_app.net_interp_tick(1.0 / 60.0);
         assert_eq!(client_app.remote_players[&0].off_x, 0.0);
+    }
+
+    /// W4-g51 `125 SyncTilePicking`: the host forces the subject to the
+    /// sender and relays to the others (`MessageBuffer.cs:4029-4040`); the
+    /// receiving client applies the pick damage to its OWN `hitTile`
+    /// (`Main.player[Main.myPlayer].GetOtherPlayersPickTile`, `:4033-4036`).
+    #[test]
+    fn the_tile_picking_relays_and_lands_on_the_local_pick_book() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The host arm: the subject is forced to the sender and the relay
+        // goes to the OTHERS (a single client means nobody else receives).
+        // The role is taken out so the handler can borrow `self` mutably
+        // (the `poll_net` convention).
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::TilePicking(net::TilePicking {
+                        player_id: 99, // overridden to the sender (1)
+                        x: 12,
+                        y: 7,
+                        damage: 40,
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        // The client arm applies to the LOCAL pick book regardless of the
+        // wire subject (`Main.myPlayer`, `:4035`).
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::TilePicking(net::TilePicking {
+                    player_id: 1,
+                    x: 12,
+                    y: 7,
+                    damage: 40,
+                })),
+            );
+        }
+        client_app.net = role;
+        let id = client_app
+            .hit_tile
+            .hit_object(12, 7, tr_core::hit_tile::TILE);
+        assert_eq!(
+            client_app.hit_tile.add_damage(id, 0, false),
+            40,
+            "the pick damage accumulated on the local book"
+        );
+    }
+
+    /// W4-g51 `126 SyncRevengeMarker`: the client's `AddMarkerFromReader`
+    /// lands the marker in the session list with the ctor's expiration
+    /// (`MessageBuffer.cs:4043-4048`, `CoinLossRevengeSystem.cs:321-324`).
+    #[test]
+    fn the_revenge_marker_lands_in_the_session_list() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        client_app.revenge_tick = 1000;
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::RevengeMarker(net::RevengeMarker {
+                    unique_id: 9,
+                    x: 1234.5,
+                    y: 678.25,
+                    npc_net_id: 1, // Blue Slime — a ported kind
+                    npc_hp_percent: 0.75,
+                    npc_type: 1,
+                    npc_ai_style: 1,
+                    coins_value: 50000,
+                    base_value: 12.5,
+                    spawned_from_statue: false,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.revenge_markers.len(), 1, "the marker landed");
+        let m = &client_app.revenge_markers[0];
+        assert_eq!(m.unique_id, 9);
+        assert_eq!(m.coins_value, 50000);
+        assert_eq!(
+            m.expiration_tick,
+            1000 + crate::revenge::expiration_addon(50000),
+            "the ctor's gameTime + bracket expiration"
+        );
     }
 
     #[test]
