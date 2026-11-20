@@ -39,6 +39,13 @@ P = ported (dispatch arm), M = missing, part = family partial.
 MISSING: 111, 112's 836+590 sub-arms, 114, 116, 117.** All five sit in this
 task's claimed decade (branch `task/W4-d12-proj-ai-111-120`), so they port here.
 
+**LANDED (this branch, one style per commit):** 111 (`d159cdfe`), 112's
+836+590 (`cf31db11`), 114 (`0cbdd909`), 116 (`f4f41e48`), 117 (`f0150a69`).
+The decade is now 10/10 armed (112's three kind sub-arms all live). The
+608 Solar Counter shares 117's row but its spawn sites `Kill()` it
+immediately, so its burst rides the Kill path (`:72177-72225`), ported
+with the 117 commit. Witnesses WRITTEN NOT RUN (code-only round).
+
 ## Findings
 
 - **F1 (113 partial kinds).** `AI_113_TargetSticker` serves 598/614/636/971/
