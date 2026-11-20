@@ -39282,14 +39282,17 @@ wiring wave. netMode: single-player (the `== 0` arm runs, `== 2` drops).
 ## The world gore sites (W4-g17, wave B)
 
 `world_gore_b.rs`: `WorldGen.CheckPot`'s gore switch
-(`WorldGen.cs:56878-56954`), styles 0-12 so far — the 51/52/53,
+(`WorldGen.cs:56878-56954`) — COMPLETE: the 51/52/53,
 166/167/168, 169/170/171, 172/173/174 rows + the 2-gore bands
-(4-6 → 197/198, 7-9 → 199/200, 10-12 → 201/202). The fixed rows draw NOTHING but the
+(4-6 → 197/198, 7-9 → 199/200, 10-12 → 201/202, 13-15 → 203/204),
+the no-gore band 16-24, the genRand pairs (25-27 → 2× Next(217,220),
+28-30 → 2× Next(315,317)), the count roll (31-33 → Next(2,5) gores of
+698+Next(6)) and the 34-36 → 1122/1123/1124 trio. The fixed rows draw NOTHING but the
 `NewGore` kicks; the spawn point is the TRIGGER cell `(i*16, j*16)`,
 not the pot's 2x2 origin. The style is `frameY / 36` (`:56810-56816`).
 The validation/KillTile/loot tail stay in the edit lane
 (`tr_core::edit::kill::check_pot` → `PotEvent`); the wiring wave feeds
 the event here. The `genRand` rows (25-36) draw their type picks on a
 SEPARATE stream from the kicks' `Main.rand` — the port has no runtime
-genRand (`edit.rs:900`), the caller hands it in. 3 witnesses written,
+genRand (`edit.rs:900`), the caller hands it in. 7 witnesses written,
 NOT run (code-only mode).
