@@ -274,6 +274,13 @@ pub struct PlayerFile {
     /// `Player.golferScoreAccumulated` (`Player.cs:1912`) — `Serialize:54910`
     /// / `Deserialize:55692-55695`, gate 206.
     pub golfer_score: i32,
+    /// `Player._temporaryItemSlots[4]` (`Player.cs:3223`, a null-able
+    /// `Item[4]`) — the mouse / creative-menu / guide / reforge global slots
+    /// (`SaveTemporaryItemSlotContents:54935-54959` /
+    /// `LoadTemporaryItemSlotContents:54962-54985`): one BitsByte over the
+    /// four `!IsAir` flags, then an `Item.DeserializeFrom` triple per set
+    /// bit. `None` = the slot is air (no payload).
+    pub temp_slots: [Option<(i32, i32, u8)>; 4],
 }
 
 /// The three `IPersistentPerPlayerContent` powers the `.plr` carries
@@ -883,10 +890,16 @@ fn read_player_fields(
     if version >= 214 {
         // LoadTemporaryItemSlotContents (`Player.cs:54962-54985`): one
         // BitsByte, then an Item.DeserializeFrom triple per set bit 0..3.
+        // W4-f44 ph3: the slots ride; the triple airs a type >= ItemID.Count
+        // AFTER the whole record (`Item.cs:49930-49933` TurnToAir — the
+        // bank4/loadout precedent keeps the read stack/prefix).
         let bits = r.u8().ok_or(PlayerFileError::Truncated("tempSlots"))?;
-        for i in 0..4 {
+        for (i, slot) in tail.temp_slots.iter_mut().enumerate() {
             if bits & (1 << i) != 0 {
-                read_item_triple(r, "tempItem")?;
+                let id = r.i32().ok_or(PlayerFileError::Truncated("tempItem"))?;
+                let stack = r.i32().ok_or(PlayerFileError::Truncated("tempItem"))?;
+                let prefix = r.u8().ok_or(PlayerFileError::Truncated("tempItem"))?;
+                *slot = Some((if id < ITEM_ID_COUNT { id } else { 0 }, stack, prefix));
             }
         }
     }
@@ -1031,6 +1044,7 @@ struct PlayerTail {
     dead: bool,
     respawn_timer: i32,
     golfer_score: i32,
+    temp_slots: [Option<(i32, i32, u8)>; 4],
 }
 
 impl Default for PlayerTail {
@@ -1067,6 +1081,7 @@ impl Default for PlayerTail {
             dead: false,
             respawn_timer: 0,
             golfer_score: 0,
+            temp_slots: [None; 4],
         }
     }
 }
@@ -1144,6 +1159,7 @@ fn finish_player_file(
         dead: tail.dead,
         respawn_timer: tail.respawn_timer,
         golfer_score: tail.golfer_score,
+        temp_slots: tail.temp_slots,
     }
 }
 
@@ -1286,6 +1302,7 @@ fn read_legacy_port_subset(
         dead: false,
         respawn_timer: 0,
         golfer_score: 0,
+        temp_slots: [None; 4],
     })
 }
 
@@ -1385,6 +1402,10 @@ pub struct PlayerFileWrite {
     pub respawn_timer: i32,
     /// `Player.golferScoreAccumulated` (`:54910`), default 0.
     pub golfer_score: i32,
+    /// `Player._temporaryItemSlots[4]` (`:54912` ->
+    /// `SaveTemporaryItemSlotContents:54935-54959`): `Some(triple)` writes
+    /// the slot's bit + payload, `None` = air. A fresh save is all-`None`.
+    pub temp_slots: [Option<(i32, i32, u8)>; 4],
 }
 
 impl Default for PlayerFileWrite {
@@ -1437,6 +1458,7 @@ impl Default for PlayerFileWrite {
             dead: false,
             respawn_timer: 0,
             golfer_score: 0,
+            temp_slots: [None; 4],
         }
     }
 }
@@ -1652,9 +1674,20 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     }
     // `:54912` SaveTemporaryItemSlotContents (`Player.cs:54935-54959`): one
     // BitsByte over mouseItem / CreativeMenu.GetItemByIndex(0) / guideItem /
-    // reforgeItem IsAir — the port models none of the four global slots, so
-    // all air → 0, no item payloads.
-    w.u8(0);
+    // reforgeItem IsAir, then an Item.Serialize triple per set bit. W4-f44
+    // ph3: the caller's slots ride; a fresh save is all-air → 0, no payloads.
+    let mut temp_bits = 0u8;
+    for (i, slot) in file.temp_slots.iter().enumerate() {
+        if slot.is_some() {
+            temp_bits |= 1 << i;
+        }
+    }
+    w.u8(temp_bits);
+    for slot in file.temp_slots.iter().flatten() {
+        w.i32(slot.0);
+        w.i32(slot.1);
+        w.u8(slot.2);
+    }
     // `:54913` CreativePowerManager.SaveToPlayer
     // (`CreativePowerManager.cs:183-195`): for each registered power that is
     // IPersistentPerPlayerContent, `true` + the u16 id + its Save. The
@@ -1903,6 +1936,37 @@ mod tests {
         // A fresh write keeps the golden zeros (`:54754-54757`).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: the four temporary item slots round-trip through the
+    /// BitsByte + per-set-bit triples; air slots carry no payload.
+    #[test]
+    fn the_temp_slots_round_trip_through_the_bits_byte() {
+        // Bits 0 and 2 set (mouse + guide), 1 and 3 air.
+        let written = PlayerFileWrite {
+            temp_slots: [Some((757, 1, 81)), None, Some((2, 999, 0)), None],
+            ..sample()
+        };
+        let plain = serialize_plaintext(&written);
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.temp_slots, [Some((757, 1, 81)), None, Some((2, 999, 0)), None]);
+        // All four set: the BitsByte is 0x0F and four triples follow.
+        let written = PlayerFileWrite {
+            temp_slots: [Some((1, 1, 0)), Some((2, 2, 0)), Some((3, 3, 0)), Some((4, 4, 0))],
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.temp_slots, [Some((1, 1, 0)), Some((2, 2, 0)), Some((3, 3, 0)), Some((4, 4, 0))]);
+        // An over-count id airs after the whole record (`Item.cs:49930`).
+        let written = PlayerFileWrite {
+            temp_slots: [Some((ITEM_ID_COUNT + 1, 5, 9)), None, None, None],
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.temp_slots[0], Some((0, 5, 9)));
+        // Fresh: the lone 0 BitsByte, no payloads (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert_eq!(fresh.temp_slots, [None; 4]);
     }
 
     /// W4-f44 ph3: angler/dpad/builderAcc/bartender/dead/golfer round-trip;
