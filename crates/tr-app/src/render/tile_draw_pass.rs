@@ -591,3 +591,331 @@ pub(crate) fn render_target_tile_order() -> &'static [FrameTileStep] {
     &[DrawSolid, DrawNonSolid]
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tr_core::tile::FLAG_ACTIVE;
+    use DrawStep::*;
+    use PostPass::*;
+
+    fn area(fx: i32, lx: i32, fy: i32, ly: i32) -> ScreenDrawArea {
+        ScreenDrawArea {
+            draw_offset: [0.0, 0.0],
+            first_x: fx,
+            last_x: lx,
+            first_y: fy,
+            last_y: ly,
+            needs_framing: false,
+            needs_refresh: false,
+        }
+    }
+
+    /// Witness: `GetScreenDrawArea` (`TileDrawing.cs:6551-6573`) — the
+    /// `-1f` inside the first casts, `+2`/`+5` outside the last, the four
+    /// edge clamps, and the offscreen offset only when drawing to targets.
+    #[test]
+    fn w4_g32_the_screen_area_truncates_and_clamps() {
+        // pos 160,160 size 160,128: first = 160/16-1 = 9; last_x =
+        // (160+160)/16+2 = 22; last_y = (160+128)/16+5 = 23.
+        let a = get_screen_draw_area([160.0, 160.0], [160.0, 128.0], false, 192.0, 1000, 800, false, false);
+        assert_eq!((a.first_x, a.last_x, a.first_y, a.last_y), (9, 22, 9, 23));
+        assert_eq!(a.draw_offset, [0.0, 0.0], "drawToScreen: no offset (:6553)");
+        // Into targets: off = 192 both axes; first_x = (160-192)/16-1 =
+        // -3 -> clamp 4; last_x = (160+160+192)/16+2 = 34.
+        let b = get_screen_draw_area([160.0, 160.0], [160.0, 128.0], true, 192.0, 1000, 800, false, false);
+        assert_eq!(b.draw_offset, [192.0, 192.0]);
+        assert_eq!((b.first_x, b.last_x), (4, 34));
+        // The world-edge clamps (:6562-6573): a tiny world pins last to
+        // max-4 even when first > last (no reorder in C#).
+        let c = get_screen_draw_area([160.0, 160.0], [160.0, 128.0], false, 0.0, 20, 20, true, true);
+        assert_eq!((c.first_x, c.last_x, c.first_y, c.last_y), (9, 16, 9, 16));
+        assert!(c.needs_framing && c.needs_refresh, ":6574-6585 flags ride out");
+    }
+
+    /// Witness: C# `(int)f` truncates toward ZERO, not floor
+    /// (`TileDrawing.cs:6554-6557`): pos -100 + size 92 = -8 -> -0.5 ->
+    /// `(int)(-0.5) = 0`, so last_x = 0+2 = 2 (floor would give 1) and
+    /// last_y = 0+5 = 5. The +2/+5 sit OUTSIDE the cast.
+    #[test]
+    fn w4_g32_the_area_cast_truncates_toward_zero() {
+        let a = get_screen_draw_area([-100.0, -100.0], [92.0, 92.0], false, 0.0, 1000, 800, false, false);
+        assert_eq!(a.last_x, 2, "trunc(-0.5)+2, NOT floor(-0.5)+2");
+        assert_eq!(a.last_y, 5, "trunc(-0.5)+5");
+        assert_eq!(a.first_x, 4, "(-6.25-1) trunc -7 -> clamp 4");
+    }
+
+    /// Witness: the `Draw` walk pads the clamped area (`TileDrawing.cs:
+    /// 504-506`): rows `firstY ..< lastY+4`, cols `firstX-2 ..< lastX+2`.
+    #[test]
+    fn w4_g32_the_walk_bounds_pad_the_area() {
+        assert_eq!(draw_loop_bounds(&area(9, 22, 9, 23)), (7, 24, 9, 27));
+    }
+
+    /// Witness: `EnsureWindGridSize` (`TileDrawing.cs:7773-7777`) sizes
+    /// the grid to the UNPADDED extents and `SetSize` only grows
+    /// (`WindGrid.cs:25-30` — a same-or-smaller size keeps the stamps, a
+    /// growth reallocates and zeroes them).
+    #[test]
+    fn w4_g32_the_wind_grid_sizes_to_the_unpadded_extents() {
+        let mut grid = tr_core::wind::WindGrid::new();
+        ensure_wind_grid_size(&area(9, 22, 9, 23), &mut grid); // 13 x 14
+        grid.set_wind_time(5, 5, 1, 1);
+        assert_eq!(grid.get_wind_time(5, 5, 20).direction_x, 1);
+        // Same extents: kept. The walk bounds (17x18 padded) are NOT used.
+        ensure_wind_grid_size(&area(9, 22, 9, 23), &mut grid);
+        assert_eq!(grid.get_wind_time(5, 5, 20).direction_x, 1, "same-size keeps");
+        // Smaller area: still kept (SetSize never shrinks).
+        ensure_wind_grid_size(&area(9, 12, 9, 13), &mut grid);
+        assert_eq!(grid.get_wind_time(5, 5, 20).direction_x, 1, "no shrink");
+        // Growth reallocates -> the stamp is zeroed.
+        ensure_wind_grid_size(&area(9, 40, 9, 40), &mut grid);
+        assert_eq!(grid.get_wind_time(5, 5, 20).direction_x, 0, "realloc zeroes");
+    }
+
+    /// Witness: `_martianGlow` (`TileDrawing.cs:498-499`) — the byte
+    /// `(byte)(100f + 150f * martianLight)` on all three channels, alpha 0.
+    #[test]
+    fn w4_g32_the_martian_glow_is_the_byte_ramp() {
+        assert_eq!(martian_glow(0.0), [100, 100, 100, 0]);
+        assert_eq!(martian_glow(0.5), [175, 175, 175, 0]);
+        assert_eq!(martian_glow(1.0), [250, 250, 250, 0]);
+    }
+
+    /// Witness: `DrawSingleTile`'s layer pick (`TileDrawing.cs:877-887`)
+    /// — tileTop < 0 wins FIRST (OverTiles even for tall tiles), the
+    /// <= 16 sum boundary is inclusive, everything else BehindTiles.
+    #[test]
+    fn w4_g32_the_single_tile_layer_pick() {
+        assert_eq!(single_tile_layer(-1, 40), LAYER_OVER_TILES);
+        assert_eq!(single_tile_layer(0, 16), LAYER_TILES);
+        assert_eq!(single_tile_layer(4, 12), LAYER_TILES, "sum == 16 is Tiles");
+        assert_eq!(single_tile_layer(0, 17), LAYER_BEHIND_TILES);
+        assert_eq!(single_tile_layer(1, 16), LAYER_BEHIND_TILES);
+        assert_eq!(
+            (LAYER_LIQUID_BEHIND_TILES, LAYER_BEHIND_TILES, LAYER_TILES, LAYER_OVER_TILES),
+            (0, 1, 2, 3),
+            "the static ctor values (:791-794)"
+        );
+    }
+
+    /// Witness: the per-cell `SetLayer` sequence (`TileDrawing.cs:521-
+    /// 526`): solid cells draw the behind-liquid on layer 0 first, then
+    /// both layers switch to Layer_Tiles for the cell body.
+    #[test]
+    fn w4_g32_the_cell_layer_sequence() {
+        assert_eq!(cell_batch_layers(true), &[0, 2]);
+        assert_eq!(cell_batch_layers(false), &[2]);
+    }
+
+    /// Witness: `AddSpecialLegacyPoint` (`TileDrawing.cs:6606-6611`)
+    /// appends without dedup and honours the 1000-slot cap (`:70`).
+    #[test]
+    fn w4_g32_the_legacy_points_append_and_cap_at_1000() {
+        let mut c = LegacyCaches::default();
+        c.add_special_legacy_point(1, 2);
+        c.add_special_legacy_point(1, 2);
+        assert_eq!(c.legacy_points, vec![(1, 2), (1, 2)]);
+        for i in 0..(MAX_SPECIALS_LEGACY + 5) {
+            c.add_special_legacy_point(i as i32, 0);
+        }
+        assert_eq!(c.legacy_points.len(), MAX_SPECIALS_LEGACY);
+        assert_eq!(c.legacy_points[2], (0, 0));
+    }
+
+    /// Witness: `ClearLegacyCachedDraws` (`TileDrawing.cs:6613-6622`)
+    /// clears the six legacy caches + the point count but NOT the two
+    /// clothing dictionaries; `ClearCachedTileDraws(true)` (`:6590-6594`)
+    /// clears exactly those two and does NOT chain the registry clear.
+    #[test]
+    fn w4_g32_the_clear_split_between_legacy_and_solid() {
+        let mut c = LegacyCaches::default();
+        for set in [
+            &mut c.chest, &mut c.training_dummy, &mut c.food_platter,
+            &mut c.item_frame, &mut c.dead_cells_jar, &mut c.weapon_rack,
+            &mut c.display_doll, &mut c.hat_rack,
+        ] {
+            set.insert((3, 4));
+        }
+        c.add_special_legacy_point(3, 4);
+        c.clear_legacy_cached_draws();
+        assert!(c.legacy_points.is_empty());
+        assert!(c.chest.is_empty() && c.training_dummy.is_empty() && c.food_platter.is_empty());
+        assert!(c.item_frame.is_empty() && c.dead_cells_jar.is_empty() && c.weapon_rack.is_empty());
+        assert!(!c.display_doll.is_empty() && !c.hat_rack.is_empty(), ":6613-6622 leaves the clothing pair");
+        assert!(!c.clear_cached_tile_draws(true), "solid: no registry clear");
+        assert!(c.display_doll.is_empty() && c.hat_rack.is_empty());
+    }
+
+    /// Witness: `ClearCachedTileDraws(false)` (`TileDrawing.cs:6595-6598`)
+    /// signals the `ClearSpecialBlockCounts` chain (the g30 registry seam)
+    /// and leaves the clothing dictionaries alone.
+    #[test]
+    fn w4_g32_the_non_solid_clear_chains_the_registry() {
+        let mut c = LegacyCaches::default();
+        c.display_doll.insert((1, 1));
+        c.hat_rack.insert((2, 2));
+        assert!(c.clear_cached_tile_draws(false), "the g30 clear seam fires");
+        assert!(!c.display_doll.is_empty() && !c.hat_rack.is_empty());
+    }
+
+    /// Witness: `DrawBlackHelper` (`DrawBlackHelper.cs:17-37`) merges
+    /// consecutive same-row cells, flushes on a gap with the `<< 4` pixel
+    /// maths, and `EndStrip` does NOT reset (a second call re-emits).
+    #[test]
+    fn w4_g32_the_black_helper_merges_strips() {
+        let mut h = DrawBlackHelper::new(LAYER_TILES, [0.0, 0.0]);
+        let sp = [0.0, 0.0];
+        assert_eq!(h.draw_black(5, 10, sp), None, "the fresh strip is empty");
+        assert_eq!(h.draw_black(6, 10, sp), None);
+        assert_eq!(h.draw_black(7, 10, sp), None);
+        // Gap at 8: flush 5..8 -> x 80, y 160, w 48, h 16.
+        assert_eq!(h.draw_black(9, 10, sp), Some([80.0, 160.0, 48.0, 16.0]));
+        assert_eq!(h.end_strip(sp), Some([144.0, 160.0, 16.0, 16.0]));
+        // The C# quirk: EndStrip leaves startX/endX, so it re-emits.
+        assert_eq!(h.end_strip(sp), Some([144.0, 160.0, 16.0, 16.0]));
+        // A fresh helper (Draw constructs one per call, :497) emits nothing.
+        assert_eq!(DrawBlackHelper::new(LAYER_TILES, [0.0, 0.0]).end_strip(sp), None);
+    }
+
+    /// Witness: the strip flush applies `- screenPosition + drawOffset`
+    /// (`DrawBlackHelper.cs:34`) and a row change breaks the strip even
+    /// at the same x (`:19`).
+    #[test]
+    fn w4_g32_the_black_strip_offset_and_row_break() {
+        let mut h = DrawBlackHelper::new(LAYER_TILES, [192.0, 192.0]);
+        let sp = [32.0, 16.0];
+        assert_eq!(h.draw_black(5, 10, sp), None);
+        // Row change at the SAME x: flush the one-cell strip.
+        assert_eq!(h.draw_black(5, 11, sp), Some([240.0, 336.0, 16.0, 16.0]));
+        assert_eq!(h.end_strip(sp), Some([240.0, 352.0, 16.0, 16.0]));
+    }
+
+    /// Witness: the NON-SOLID `Draw` step order (`TileDrawing.cs:465-
+    /// 741`): the critter-cage reset is non-solid only, no crack steps,
+    /// the legacy pass after RestartLayeredBatch, preview gated off.
+    #[test]
+    fn w4_g32_the_non_solid_draw_step_order() {
+        assert_eq!(
+            draw_steps(false, (false, false, false, false)),
+            vec![
+                EffectsActiveGate, PerspectivePlayer, ResetCritterCage,
+                EnsureWindGridSize, ClearLegacyCachedDraws, ClearCachedTileDraws,
+                QualityLightTiers, ScreenDrawArea, NewBlackHelper, MartianGlow,
+                ResetPaintKey, CellLoop, BlackEndStrip, RestartLayeredBatch,
+                SpecialTilesLegacy,
+            ]
+        );
+    }
+
+    /// Witness: the SOLID `Draw` step order (`TileDrawing.cs:730-735`):
+    /// hitReplace cracks BEFORE hitTile, RestartSpriteBatch after both,
+    /// then the legacy pass; the preview arm appends when all four gates
+    /// pass (`:737`).
+    #[test]
+    fn w4_g32_the_solid_draw_step_order() {
+        assert_eq!(
+            draw_steps(true, (true, true, true, false)),
+            vec![
+                EffectsActiveGate, PerspectivePlayer,
+                EnsureWindGridSize, ClearLegacyCachedDraws, ClearCachedTileDraws,
+                QualityLightTiers, ScreenDrawArea, NewBlackHelper, MartianGlow,
+                ResetPaintKey, CellLoop, BlackEndStrip, RestartLayeredBatch,
+                TileCracksHitReplace, TileCracksHitTile, RestartSpriteBatch,
+                SpecialTilesLegacy, PlacementPreview,
+            ]
+        );
+    }
+
+    /// Witness: the placement-preview gate (`TileDrawing.cs:737`) — all
+    /// three flags required, an active capture blocks it; the legacy pass
+    /// restarts the batch only with cached points (`:7895-7899`).
+    #[test]
+    fn w4_g32_the_preview_gate_truth_table() {
+        assert!(placement_preview_draws((true, true, true, false)));
+        assert!(!placement_preview_draws((true, true, true, true)), "capture blocks");
+        assert!(!placement_preview_draws((false, true, true, false)));
+        assert!(!placement_preview_draws((true, false, true, false)));
+        assert!(!placement_preview_draws((true, true, false, false)));
+        assert!(!legacy_restarts_batch(0));
+        assert!(legacy_restarts_batch(1));
+    }
+
+    /// Witness: `DrawLiquidBehindTiles` (`TileDrawing.cs:449-458`) walks
+    /// the same padded rect but gates ONLY on the tile existing — an
+    /// INACTIVE cell still draws its behind-liquid; out-of-bounds rows
+    /// are skipped (the dense-array stand-in for `tile != null`).
+    #[test]
+    fn w4_g32_the_behind_liquid_walk_includes_inactive_cells() {
+        let mut world = World::new("t".into(), 8, 8);
+        world.compute_column_surface();
+        world.compute_chunks();
+        let i = world.index(3, 4);
+        world.tiles[i].flags = FLAG_ACTIVE;
+        // (4,4) stays INACTIVE — it must still be listed.
+        let a = area(4, 4, 4, 6); // bounds x 2..6, y 4..10; rows 8,9 OOB.
+        let cells = draw_liquid_behind_tiles_cells(&world, &a);
+        assert_eq!(cells.len(), 16, "4 cols x 4 in-bounds rows");
+        assert!(cells.contains(&(3, 4)));
+        assert!(cells.contains(&(4, 4)), "no active() gate (:454)");
+        assert!(!cells.contains(&(2, 8)), "OOB row skipped");
+        assert_eq!(cells[0], (2, 4), "row-major, y outer (:449-451)");
+    }
+
+    /// Witness: `PostDrawTiles(false)` (`TileDrawing.cs:421-433`) — the
+    /// ten-pass drain order, NatureAfterAll LAST after the batch End.
+    #[test]
+    fn w4_g32_the_non_solid_post_pass_order() {
+        assert_eq!(
+            post_draw_tiles_passes(false),
+            &[
+                MultiTileVines, MultiTileGrass, VoidLenses, TeleportationPylons,
+                MasterTrophies, Grass, AnyDirectionalGrass, Trees, Vines,
+                ReverseVines, NatureAfterAll,
+            ]
+        );
+    }
+
+    /// Witness: `PostDrawTiles(true)` (`TileDrawing.cs:435-441`) — ONLY
+    /// the two clothing passes, HAT RACKS FIRST.
+    #[test]
+    fn w4_g32_the_solid_post_pass_order() {
+        assert_eq!(post_draw_tiles_passes(true), &[HatRacks, DisplayDolls]);
+    }
+
+    /// Witness: each post pass drains its `int num = N` bucket
+    /// (`TileDrawing.cs:8056/:8330/:8387/:8599/:8641/:8710/:8742/:8833/
+    /// :8894/:8907`) — the g30 TileCounterType discriminants (`:21-35`).
+    #[test]
+    fn w4_g32_the_post_pass_bucket_indices() {
+        assert_eq!(post_pass_bucket(Trees), Some(0));
+        assert_eq!(post_pass_bucket(Grass), Some(1));
+        assert_eq!(post_pass_bucket(MultiTileGrass), Some(2));
+        assert_eq!(post_pass_bucket(MultiTileVines), Some(3));
+        assert_eq!(post_pass_bucket(Vines), Some(4));
+        assert_eq!(post_pass_bucket(VoidLenses), Some(6));
+        assert_eq!(post_pass_bucket(ReverseVines), Some(7));
+        assert_eq!(post_pass_bucket(TeleportationPylons), Some(8));
+        assert_eq!(post_pass_bucket(MasterTrophies), Some(9));
+        assert_eq!(post_pass_bucket(AnyDirectionalGrass), Some(10));
+        // BiomeGrass (5) has no post pass — never registered (g30 note).
+        for p in post_draw_tiles_passes(false) {
+            assert_ne!(post_pass_bucket(*p), Some(5));
+        }
+        assert_eq!(post_pass_bucket(NatureAfterAll), None);
+        assert_eq!(post_pass_bucket(HatRacks), None);
+        assert_eq!(post_pass_bucket(DisplayDolls), None);
+    }
+
+    /// Witness: the frame-level tile phase order — drawToScreen runs
+    /// NON-SOLID first (`Main.cs:56957-56988`), the render-target capture
+    /// runs SOLID first (`Main.cs:57296-57305`) with NO post passes.
+    #[test]
+    fn w4_g32_the_frame_tile_phase_orders() {
+        use FrameTileStep::*;
+        assert_eq!(
+            frame_tile_draw_order(),
+            &[LiquidBehindTilesPass, DrawNonSolid, PostNonSolid, Waterfalls, DrawSolid, PostSolid]
+        );
+        assert_eq!(render_target_tile_order(), &[DrawSolid, DrawNonSolid]);
+    }
+}
