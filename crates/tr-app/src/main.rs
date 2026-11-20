@@ -150,6 +150,10 @@ mod npc_ai_style88;
 // the 478 kind + the axis arm wait on the roster wave (the style86
 // precedent; see the module doc).
 mod npc_ai_style89;
+// W4-d32 style 90: UNWIRED Mothron Spawn machine (NPC.cs:38394-38628) -
+// the 479 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style90;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
