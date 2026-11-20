@@ -238,6 +238,16 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-d108 (M5-SEED temple branches, code-only): the drunk/FTW ×3 +
+    // remix ×2 room-count chain (`WorldGen.cs:33439-33450`), the drunk
+    // spike budget ×1.5 + second rows (`:34065-34207`) and the remix
+    // placement-search/fallback arms (`:15853-15922`) are ALL flag-gated —
+    // the classic pinned worlds draw and write NOTHING new, so this pin
+    // is UNCHANGED by the branch (the `a == b` determinism asserts in both
+    // pin tests still guard the streams; the seeded worlds' hashes are
+    // unpinned until the gate generates them). `PaintTheTemple` itself
+    // already landed with M5-SEED-1 (`finish_seeds.rs`) and only fires
+    // under the anniversary flag — likewise inert here.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +291,12 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-d108 (M5-SEED temple branches, code-only): UNCHANGED for the same
+    // reason as SEED42_512 above — every new arm sits behind a seed flag
+    // the default world does not carry (the room-count multipliers, the
+    // drunk spike rows, the remix search/fallback; `a == b` stays the
+    // guard). The pre-existing S1-P-i33 staleness note still applies at
+    // the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

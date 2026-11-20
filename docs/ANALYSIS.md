@@ -9807,10 +9807,12 @@ Deviations:
   worlds; the port's `in_world` guards keep the writes total.
 - **`PaintTheTemple`** (`:24529`) is celebrationmk10-only
   (`FinishTenthAnniversaryWorld` runs under `Main.tenthAnniversaryWorld`) вЂ”
-  M5-SEED-1's scope, not a deviation here.
+  landed verbatim with M5-SEED-1 (`finish_seeds.rs::paint_the_temple`;
+  re-verified line-by-line at W4-d108), not a deviation here.
 - **The drunk/good/remix branches** (Г—3/Г—2 room counts, the drunk spike
-  second row, `placeTNTBarrel`'s twin) and the dualDungeons 232 variants are
-  M5-SEED-1/2's scope.
+  second row) landed with **W4-d108** (the section below); the dualDungeons
+  232 variants stay M5-SEED-2's scope (`placeTNTBarrel` is the
+  mining-explosives pass, S1-K-2 wave B, not temple scope).
 - **The Golem-summon altar interaction** (Plantera gate) is M5-HARDFORCE /
   Golem-BOSC-19's; the traps fire through the wiring engine's case-137
   variants (the frameY selects the variant, the trap column's wires are
@@ -9836,6 +9838,60 @@ Deviations:
   `B39E064184AFA48F0DCA290C5A14A65711AE121BF203422FB56DBBBE2F13AC2A`,
   zoom 2.0 `B8EE063DECBB4BBF25A7D2349428075A16AA3279EE44F2B29827980B9ED57376`.
   The committed `temple_altar_z{1,2}{,_repeat}.png` are these re-takes.
+
+## The temple seed branches (W4-d108 / M5-SEED)
+
+Code-only wave 2026-11-20 (`task/W4-d108-worldgen-temple-paint`): the
+`worldgen/temple.rs` seed branches the M5-TEMPLE row deferred, ported
+verbatim; no compiler invoked, the 5 witness tests WRITTEN NOT RUN.
+
+- **The room-count multipliers** (`makeTemple`, `WorldGen.cs:33439-33450`):
+  `make_temple_rooms` gained the `seeds` parameter — drunk ×3, else
+  for-the-worthy ×3, else remix ×2, in the C#'s else-if order (a drunk+FTW
+  world takes the FIRST ×3 once, not ×9). Draw-free: the multiplier lands
+  between the count draw and the direction draw, so the classic ledger
+  (DW-1.1) is untouched.
+- **The drunk spike arms** (`temple_spikes`, `:34064-34207`): the budget
+  `num92 *= 1.5` (`:34065-34068`) and the second rows/columns at all four
+  flip sites (`:34122-34126`, `:34132-34136`, `:34193-34197`,
+  `:34203-34207`) — including the C# quirk at `:34205` where the
+  horizontal `flip != 0` arm writes `num110 - 2` (NOT `+ 2`), ported
+  verbatim with the cite. Classic worlds draw and write nothing new.
+- **The remix placement search** (`find_temple_site`, `:15853-15893`):
+  gated `remixWorldGen && !SecretSeed.noSurface.Enabled` (the port's
+  `MicroSeedFlags::NO_SURFACE`); the x re-roll (notTheBees: the fixed-Right
+  dungeon-opposite `[0.2·W, 0.4·W)` band; plain remix: `[0.2·W, 0.8·W)`
+  re-rolled out of `(0.4·W, 0.6·W)`), the surface up-walk
+  (`active || wall > 0 || num6 > worldSurface - 5`, then `+1`), the 60/59
+  acceptance with the ±10 box refusing living wood 191 / the six
+  `Main.tileDungeon` bricks (read WITHOUT the active gate, like the C#),
+  and the `10 + Next(10)` bury offset. A refusal falls through to the
+  widening valve (no `continue` — the attempt counter advances).
+- **The remix fallback** (`:15918-15922`): x = `0.3·maxTilesX` — BOTH arms
+  of the C#'s notTheBees ternary compute the same value (a dead copy),
+  ported as the fixed-Right pick with the cite; y = `surface - 100` when
+  `worldSurface >= 150`, else one `Next(200, (int)rockLayer)` draw. The
+  sub-vanilla height valve reaches this arm without search draws.
+- **`PaintTheTemple`** (`:24529-24573`) was already verbatim in
+  `finish_seeds.rs::paint_the_temple` (M5-SEED-1) — re-verified against
+  the source at this wave (the 226 / plants-61-on-226 / trap-137-frames-1-4
+  arms, the notTheBees paint-0 branch, the wall-87 override outside the
+  active gate, the 10..W-10 bounds); an `anchors.txt` row now pins it.
+- **Deviations**: the remix up-walk reads out-of-world cells as air (the
+  C# indexes raw `Main.tile`; the walk terminates at the map edge — the
+  port's `in_world` guard family); the sub-vanilla valve skips the remix
+  search loop the same way it skips the classic one (a <600-tall world
+  cannot hold the vanilla y band).
+- **The hashes**: every arm is flag-gated — the classic `SEED42_512` /
+  `DEFAULT_WORLD` pins are UNCHANGED by this branch (documented in
+  `world_hash.rs`; the `a == b` determinism asserts guard the streams).
+  The seeded worlds' hashes are unpinned until the gate generates them.
+- **Witnesses** (temple.rs tests, written not run): the multiplier chain
+  + drunk/FTW/remix combos with a==b stream replay, the drunk spike
+  count > classic with byte-equal repeat runs, the remix surface bury
+  band, the 21×21 refusal box (the clean-slot construction: acceptance
+  only past the last poison), the remix fallback's fixed row / single
+  draw / classic-unchanged pins.
 
 ## Polish passes (M1.4-WGEN-7)
 
