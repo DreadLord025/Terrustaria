@@ -17354,6 +17354,24 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d18 — `AI()`'s `else if (this.aiStyle == 174)`
+                        // (`Projectile.cs:36659-36662`) ->
+                        // `AI_174_MultisegmentPet` (`:45345-45427`): the
+                        // three worm-segment pets (883/887/893), the style's
+                        // ONLY SetDefaults rows (`:8474-8485`/`:8496-8507`/
+                        // `:8531-8542`), so no kind gate. The keep-alive,
+                        // the teleport, the steering and the world clamp.
+                        // The owner writes ride the mutable player channel
+                        // (the ai026_b shape). ZERO rand draws.
+                        174 => {
+                            crate::projectile_ai_misc::ai_multisegment_pet(
+                                &mut self.slots[i],
+                                player.as_deref_mut(),
+                                world,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the

@@ -804,6 +804,20 @@ pub const FAIRY_QUEEN_LANCE: u16 = 919;
 /// boss-tethered sun-dance beam, aiStyle 180 (`Projectile.cs:8757-8770`).
 pub const FAIRY_QUEEN_SUN_DANCE: u16 = 923;
 
+// ===== W4-d18: the aiStyle-174 multisegment pets =====
+// `AI_174_MultisegmentPet` (`Projectile.cs:45345-45427`) — the three
+// worm-segment pets share one arm; the per-type keep-alive flags ride the
+// port's `pet_flags` array (the `projectile_ai026_b` precedent).
+/// `ProjectileID.EaterOfWorldsPet` (883, `ProjectileID.cs:2320`) —
+/// aiStyle 174 (`Projectile.cs:8474-8485`).
+pub const EATER_OF_WORLDS_PET: u16 = 883;
+/// `ProjectileID.DestroyerPet` (887, `ProjectileID.cs:2328`) —
+/// aiStyle 174 (`Projectile.cs:8496-8507`).
+pub const DESTROYER_PET: u16 = 887;
+/// `ProjectileID.LunaticCultistPet` (893, `ProjectileID.cs:2340`) —
+/// aiStyle 174 (`Projectile.cs:8531-8542`).
+pub const LUNATIC_CULTIST_PET: u16 = 893;
+
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
 /// second hand-maintained list: the id space above the port's highest row is
@@ -3743,6 +3757,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 30.0, 30.0, 172, -1, 240, 0, false, false, false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // ===== W4-d18: the aiStyle-174 multisegment pets =====
+            // `Projectile.cs:8474-8485` — the Eater of Worlds Pet (883):
+            // 20x20, aiStyle 174, `penetrate = -1`, `timeLeft *= 5`
+            // (the stock 3600 → 18000), friendly, `ignoreWater = true`,
+            // `tileCollide = false`, `netImportant = true` (the overlays
+            // below). NOT a minion (no `minion`/`minionSlots` write).
+            EATER_OF_WORLDS_PET => (
+                20.0, 20.0, 174, -1, 18000, 0, false, false, false, RESET_STATE,
+            ),
+            // `Projectile.cs:8496-8507` — the Destroyer Pet (887): the
+            // identical block (20x20, 174, -1, ×5 life, the three flags).
+            DESTROYER_PET => (
+                20.0, 20.0, 174, -1, 18000, 0, false, false, false, RESET_STATE,
+            ),
+            // `Projectile.cs:8531-8542` — the Lunatic Cultist Pet (893):
+            // the identical block again.
+            LUNATIC_CULTIST_PET => (
+                20.0, 20.0, 174, -1, 18000, 0, false, false, false, RESET_STATE,
+            ),
             // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
             // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile
             // (`friendly = false` rides the pool's `!friendly` proxy),
@@ -4135,6 +4168,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
+            // W4-d18: the multisegment pets' `netImportant = true`
+            // (`Projectile.cs:8484`/`:8506`/`:8541`).
+            || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -4202,6 +4238,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | FAIRY_QUEEN_LANCE
                     | FAIRY_QUEEN_SUN_DANCE
             )
+            // W4-d18: the multisegment pets' `ignoreWater = true`
+            // (`Projectile.cs:8482`/`:8504`/`:8539`).
+            || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
             || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
@@ -4595,6 +4634,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`:60240-60247`).
         SKELETRON_PET => 10,
         SKELETRON_PRIME_PET => 11,
+        // W4-d18: the multisegment pets' sheets (`Main.cs:8671` 883 → 3,
+        // `:8675` 887 → 3, `:8681` 893 → 4). `AI_174` writes no `frame`
+        // (the worm segments draw from the trail, not the sheet rows).
+        EATER_OF_WORLDS_PET | DESTROYER_PET => 3,
+        LUNATIC_CULTIST_PET => 4,
         // AI_026 slice C: the slime minion's 12-frame sheet
         // (`Main.cs:8612`) — the fly-out frames 8-11
         // (`Projectile.cs:61209`) and the ground frames 0-7

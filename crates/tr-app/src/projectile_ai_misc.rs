@@ -1539,3 +1539,352 @@ mod w4_d18_172_tests {
         assert!(rng.ranges.is_empty() && rng.floats == 0);
     }
 }
+
+/// `Entity.AngleTo` (`Entity.cs:185-188`): `(float)Math.Atan2(dy, dx)` —
+/// the double atan2 cast to float (the `npc_ai_style75` precision order).
+fn angle_to(from: Vec2, to: Vec2) -> f32 {
+    ((to.y - from.y) as f64).atan2((to.x - from.x) as f64) as f32
+}
+
+/// `Utils.ToRotation` (`Utils.cs:1655-1658`): `(float)Math.Atan2(Y, X)`.
+fn to_rotation(v: Vec2) -> f32 {
+    (v.y as f64).atan2(v.x as f64) as f32
+}
+
+/// `Utils.ToRotationVector2` (`Utils.cs:1665-1668`): `(cos f, sin f)` in
+/// double, cast to f32 (the `npc_ai_style75` helper's shape).
+fn to_rotation_vector2(f: f32) -> Vec2 {
+    Vec2::new((f as f64).cos() as f32, (f as f64).sin() as f32)
+}
+
+/// `AI_174_MultisegmentPet` (`Projectile.cs:45345-45427`) — the three
+/// worm-segment pets (883 Eater of Worlds / 887 Destroyer / 893 Lunatic
+/// Cultist). The inactive-owner kill, the per-type keep-alive (death
+/// clears the flag FIRST, a standing flag pins `timeLeft = 2` — the
+/// `projectile_ai026_b::keep_alive` shape), the >2000-px teleport, the
+/// zero-velocity kick with the `oldPos` refill, the 5°/tick steering past
+/// 120 px, the speed clamp to `Min(12, Max(4, |player.velocity|))`, the
+/// −0.1 Y drift under 1, the flight rotation + π/2, the direction flip
+/// and the 160-px world-edge clamp. ZERO `Main.rand` draws by construction.
+///
+/// `player` is the owner channel (`None` = the C# `!player.active`); the
+/// `pet_flags` array is indexed by the pet projectile id (the port's
+/// per-pet bool stand-in, `player.rs:2034`).
+pub(crate) fn ai_multisegment_pet(
+    p: &mut Projectile,
+    player: Option<&mut crate::player::Player>,
+    world: &World,
+) {
+    // `:45347-45352` — the inactive owner kills outright (no `timeLeft`
+    // write — the C# sets `active = false` only, not `Kill()`).
+    let Some(player) = player else {
+        p.active = false;
+        return;
+    };
+    // `:45353-45385` — the three keep-alive blocks: death clears the
+    // flag, then the (possibly cleared) flag pins the lifetime.
+    let idx = usize::from(p.kind);
+    if player.dead {
+        player.pet_flags[idx] = false;
+    }
+    if player.pet_flags[idx] {
+        p.time_left = 2;
+    }
+    // `:45386-45392` — the teleport: `Distance(center) > 2000` snaps the
+    // centre onto the owner's and zeroes the velocity.
+    let (px, py) = player.center();
+    let center = Vec2::new(px, py);
+    let mut pcenter = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    if pcenter.distance(center) > 2000.0 {
+        pcenter = center;
+        p.pos = Vec2::new(pcenter.x - p.w * 0.5, pcenter.y - p.h * 0.5);
+        p.vel = Vec2::ZERO;
+        p.net_update = true;
+    }
+    // `:45393-45395` — the distance and the speed band. The discarded
+    // `base.velocity.Length()` call (`:45395`) has no side effect.
+    let num = (center - pcenter).length();
+    let player_speed = Vec2::new(player.vx, player.vy).length();
+    let num2 = player_speed.max(4.0).min(12.0);
+    // `:45396-45405` — the zero-velocity kick: `velocity.X = 2·direction`
+    // and the `oldPos` ring refills walking BACK from the position.
+    if p.vel == Vec2::ZERO {
+        p.vel.x = 2.0 * player.facing as f32;
+        let mut vector = p.pos;
+        for slot in p.old_pos.iter_mut() {
+            vector -= p.vel;
+            *slot = vector;
+        }
+    }
+    // `:45406-45409` — past 120 px the heading turns toward the owner at
+    // `MathHelper.ToRadians(5)` per tick (`5·π/180`, the XNA constant).
+    if !(num < 120.0) {
+        let target = angle_to(pcenter, center);
+        let cur = to_rotation(p.vel);
+        let turned = crate::projectile::angle_towards(cur, target, std::f32::consts::PI / 180.0 * 5.0);
+        p.vel = to_rotation_vector2(turned) * num2;
+    }
+    // `:45410-45413` — the speed cap (`SafeNormalize(Zero)`).
+    if p.vel.length() > num2 {
+        p.vel = safe_normalize(p.vel) * num2;
+    }
+    // `:45414-45417` — the near-horizontal drift.
+    if p.vel.y.abs() < 1.0 {
+        p.vel.y -= 0.1;
+    }
+    // `:45418` — the flight rotation + π/2.
+    p.rot = to_rotation(p.vel) + std::f32::consts::FRAC_PI_2;
+    // `:45419-45424` — the direction/spriteDirection flip (the netUpdate
+    // on a change).
+    let num3 = p.direction;
+    let dir = if p.vel.x > 0.0 { 1 } else { -1 };
+    p.direction = dir;
+    p.sprite_direction = dir;
+    if num3 != p.direction {
+        p.net_update = true;
+    }
+    // `:45425-45426` — the world-edge clamp (160 px inset).
+    p.pos.x = p.pos.x.clamp(160.0, world.width as f32 * 16.0 - 160.0);
+    p.pos.y = p.pos.y.clamp(160.0, world.height as f32 * 16.0 - 160.0);
+}
+
+#[cfg(test)]
+mod w4_d18_174_tests {
+    //! W4-d18 — aiStyle 174 (`AI_174_MultisegmentPet`,
+    //! `Projectile.cs:45345-45427`, the dispatch `:36659-36662`). WRITTEN
+    //! NOT RUN (code-only mode). The rows, the keep-alive, the teleport,
+    //! the zero-kick oldPos refill, the steering band and the clamp.
+    use super::*;
+    use crate::player::Player;
+    use crate::projectile::{
+        DESTROYER_PET, EATER_OF_WORLDS_PET, FlailInputs, LUNATIC_CULTIST_PET,
+        ProjectilePool, YoyoInputs, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    fn owner(w: &World) -> Player {
+        let mut pl = Player::spawn(w);
+        pl.x = 1600.0;
+        pl.y = 800.0;
+        pl.vx = 0.0;
+        pl.vy = 0.0;
+        pl.facing = 1;
+        pl
+    }
+
+    fn pet(kind: u16, x: f32, y: f32) -> Projectile {
+        let d = proj_data(kind).expect("the 174 row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(x, y);
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p.direction = 1;
+        p
+    }
+
+    /// The rows (`Projectile.cs:8474-8485`/`:8496-8507`/`:8531-8542`):
+    /// 20x20, aiStyle 174, penetrate -1, timeLeft 18000 (the ×5),
+    /// tileCollide false, ignoreWater + netImportant, NOT minions.
+    #[test]
+    fn w4_d18_174_the_rows_match_set_defaults() {
+        for kind in [EATER_OF_WORLDS_PET, DESTROYER_PET, LUNATIC_CULTIST_PET] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h, d.ai_style), (20.0, 20.0, 174), "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, 18000, "kind {kind}: 3600 × 5");
+            assert!(!d.tile_collide && d.ignore_water && d.net_important, "kind {kind}");
+            assert!(!d.minion && !d.sentry, "kind {kind}: pets, not minions");
+            assert_eq!(d.extra_updates, 0, "kind {kind}");
+        }
+        // The frame sheets (`Main.cs:8671`/`:8675`/`:8681`).
+        assert_eq!(crate::projectile::proj_frames(EATER_OF_WORLDS_PET), 3);
+        assert_eq!(crate::projectile::proj_frames(DESTROYER_PET), 3);
+        assert_eq!(crate::projectile::proj_frames(LUNATIC_CULTIST_PET), 4);
+    }
+
+    /// `:45347-45352` — an absent owner kills outright (active false,
+    /// the C# does NOT zero timeLeft here).
+    #[test]
+    fn w4_d18_174_an_absent_owner_kills() {
+        let w = world();
+        let mut p = pet(EATER_OF_WORLDS_PET, 1600.0, 800.0);
+        let tl = p.time_left;
+        ai_multisegment_pet(&mut p, None, &w);
+        assert!(!p.active);
+        assert_eq!(p.time_left, tl, "no Kill() — the raw deactivate");
+    }
+
+    /// `:45353-45385` — the keep-alive: a standing flag pins timeLeft 2;
+    /// death clears the flag FIRST so the death tick does not pin.
+    #[test]
+    fn w4_d18_174_the_keep_alive_pins_and_death_clears_first() {
+        let w = world();
+        let mut pl = owner(&w);
+        for kind in [EATER_OF_WORLDS_PET, DESTROYER_PET, LUNATIC_CULTIST_PET] {
+            pl.pet_flags[usize::from(kind)] = true;
+            let mut p = pet(kind, 1600.0, 800.0);
+            ai_multisegment_pet(&mut p, Some(&mut pl), &w);
+            assert_eq!(p.time_left, 2, "kind {kind}: the standing flag pins");
+            p.time_left = 18000;
+            pl.dead = true;
+            ai_multisegment_pet(&mut p, Some(&mut pl), &w);
+            assert!(!pl.pet_flags[usize::from(kind)], "kind {kind}: death clears");
+            assert_eq!(p.time_left, 18000, "kind {kind}: the cleared flag does not pin");
+            pl.dead = false;
+            pl.pet_flags[usize::from(kind)] = false;
+        }
+    }
+
+    /// `:45386-45392` — the >2000-px teleport snaps the centre onto the
+    /// owner's, zeroes the velocity and flags netUpdate.
+    #[test]
+    fn w4_d18_174_the_far_teleport() {
+        let w = world();
+        let mut pl = owner(&w);
+        let mut p = pet(EATER_OF_WORLDS_PET, 1600.0 + 2500.0, 800.0);
+        p.vel = Vec2::new(3.0, 0.0);
+        ai_multisegment_pet(&mut p, Some(&mut pl), &w);
+        let (cx, cy) = pl.center();
+        assert_eq!(p.pos, Vec2::new(cx - 10.0, cy - 10.0), "the centre snap");
+        assert!(p.net_update);
+        // The kick re-arms the velocity (the zeroed teleport velocity).
+        assert_eq!(p.vel.x, 2.0, "the zero-kick after the teleport");
+    }
+
+    /// `:45396-45405` — the zero-velocity kick: X = 2·direction and the
+    /// oldPos ring walks BACK from the position by the kick velocity.
+    #[test]
+    fn w4_d18_174_the_zero_kick_refills_old_pos() {
+        let w = world();
+        let mut pl = owner(&w);
+        let mut p = pet(DESTROYER_PET, 1600.0, 800.0);
+        p.vel = Vec2::ZERO;
+        ai_multisegment_pet(&mut p, Some(&mut pl), &w);
+        assert_eq!(p.vel.x, 2.0, "2 × facing 1");
+        // entry i = pos − (i+1)·vel (the kick's X only, Y drifts −0.1).
+        for (i, slot) in p.old_pos.iter().enumerate() {
+            let want = Vec2::new(1600.0 - 2.0 * (i as f32 + 1.0), 800.0);
+            assert_eq!(*slot, want, "ring entry {i}");
+        }
+        pl.facing = -1;
+        let mut p2 = pet(DESTROYER_PET, 1600.0, 800.0);
+        p2.vel = Vec2::ZERO;
+        ai_multisegment_pet(&mut p2, Some(&mut pl), &w);
+        assert_eq!(p2.vel.x, -2.0, "the left-facing kick");
+    }
+
+    /// `:45393-45417` — the speed band: `Min(12, Max(4, |player.vel|))`,
+    /// the >120-px steering, the cap and the −0.1 Y drift.
+    #[test]
+    fn w4_d18_174_the_speed_band_and_steering() {
+        let w = world();
+        let mut pl = owner(&w);
+        let (cx, cy) = pl.center();
+        // The owner stands still: the band floors at 4. The pet sits on
+        // the owner's centre-Y so the aim is pure −X (no Y component to
+        // fight the drift assertion).
+        let mut p = pet(LUNATIC_CULTIST_PET, cx + 300.0 - 10.0, cy - 10.0);
+        p.vel = Vec2::new(-4.0, 0.0);
+        ai_multisegment_pet(&mut p, Some(&mut pl), &w);
+        assert!((p.vel.length() - 4.0).abs() < 2e-3, "the 4 floor (plus the −0.1 drift)");
+        assert!(p.vel.x < 0.0, "still flying toward the owner");
+        assert!(p.vel.y < 0.0, "the −0.1 drift under |Y| < 1");
+        // A fast owner raises the band to its 12 cap.
+        pl.vx = 30.0;
+        let mut p2 = pet(LUNATIC_CULTIST_PET, cx + 300.0 - 10.0, cy - 10.0);
+        p2.vel = Vec2::new(-20.0, 0.0);
+        ai_multisegment_pet(&mut p2, Some(&mut pl), &w);
+        assert!(p2.vel.length() <= 12.0 + 1e-3, "the 12 cap");
+        // Inside 120 px NO steering runs — the velocity keeps its shape
+        // (only the cap/drift touch it).
+        let mut p3 = pet(LUNATIC_CULTIST_PET, cx + 50.0 - 10.0, cy - 10.0);
+        p3.vel = Vec2::new(0.0, 3.0);
+        ai_multisegment_pet(&mut p3, Some(&mut pl), &w);
+        assert_eq!(p3.vel.x, 0.0, "no turn inside the 120 band");
+        assert_eq!(p3.vel.y, 3.0, "|Y| ≥ 1 keeps the drift off");
+    }
+
+    /// `:45418-45426` — the rotation, the direction flip and the clamp.
+    #[test]
+    fn w4_d18_174_the_rotation_direction_and_clamp() {
+        let w = world();
+        let mut pl = owner(&w);
+        let mut p = pet(EATER_OF_WORLDS_PET, 1600.0, 800.0);
+        // |Y| = 1 keeps the drift off and the length √10 < 4 keeps the cap
+        // off, so the velocity is untouched and the rotation is exact.
+        p.vel = Vec2::new(3.0, 1.0);
+        p.direction = -1;
+        ai_multisegment_pet(&mut p, Some(&mut pl), &w);
+        assert_eq!(p.direction, 1, "the X-sign flip");
+        assert_eq!(p.sprite_direction, 1);
+        assert!(p.net_update, "the flip flags the net update");
+        let want_rot = to_rotation(Vec2::new(3.0, 1.0)) + std::f32::consts::FRAC_PI_2;
+        assert!((p.rot - want_rot).abs() < 1e-5, "rot = ToRotation + π/2");
+        // The world-edge clamp: a position past the 160-px inset snaps.
+        let mut p2 = pet(EATER_OF_WORLDS_PET, 10.0, 10.0);
+        p2.vel = Vec2::new(4.0, 0.0);
+        ai_multisegment_pet(&mut p2, Some(&mut pl), &w);
+        assert_eq!(p2.pos.x, 160.0, "the left clamp");
+        assert_eq!(p2.pos.y, 160.0, "the top clamp");
+    }
+
+    /// The dispatch wiring: one pool update runs the keep-alive pin.
+    #[test]
+    fn w4_d18_174_the_dispatch_arms_the_pet() {
+        let mut w = world();
+        let mut pl = owner(&w);
+        pl.pet_flags[usize::from(EATER_OF_WORLDS_PET)] = true;
+        let (cx, cy) = pl.center();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        // Near the owner (inside 120 px) so no teleport/steering flings
+        // the pet out of the world before the lifetime block.
+        let slot = pool
+            .spawn_with_data(EATER_OF_WORLDS_PET, cx - 10.0, cy - 10.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.time_left, 1, "the pin 2 minus the lifetime tick");
+        assert!(rng.ranges.is_empty() && rng.floats == 0);
+    }
+}
