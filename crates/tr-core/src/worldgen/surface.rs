@@ -351,3 +351,181 @@ pub(crate) fn plant_cacti(world: &mut World, rng: &mut Rng, map: &SurfaceMap, wi
         }
     }
 }
+
+/// The `Spreading Grass` pass's classic arm
+/// (`WorldGen.cs:18237-18351`, W4-d104 pass 31 — the full pass name is
+/// `SpreadingGrassOnSurfaceSunflowersEvilsOnSurfaceAndLavaCleanup`): the
+/// two surface sweeps. The remix arm (`:18352-18443` — the surface-layer
+/// grass, the sunflowers, the evil Convert band, the hive/lava cleanup)
+/// is the remix-seed lane's (d107). The classic arm draws NO RNG — the
+/// step still takes its own `pass_rng("Spreading Grass")` stream slot so
+/// the remix arm lands without a ledger shift.
+///
+/// Sweep 1 (`:18242-18313`): over the ±50-margin columns down to
+/// `worldSurface`, the jungle-grass 60 spreads to adjacent dirt (grass
+/// over open air, mud under a cover), and the stone/snow/ore cells take
+/// the ±3-box's biome flavour (the sand 53 latch, the 59/60/147/161/
+/// 199/23 picks, the open-air-above `flag` gate, the evil cover veto and
+/// the jungle-band grass/mud split).
+///
+/// Sweep 2 (`:18314-18351`): over the ±10-margin columns, the FIRST
+/// surface dirt cell (the `flag2` open-sky latch, reset by any wall-less
+/// air cell) takes `SpreadGrass(num3, num4, 0, 2, repeat: false)`; the
+/// column scan breaks past `worldSurfaceHigh`.
+pub(crate) fn pass_spreading_grass(
+    world: &mut World,
+    world_surface: f64,
+    surface_high: f64,
+    jungle_min_x: i32,
+    jungle_max_x: i32,
+) {
+    // --- sweep 1: the biome retypes (`:18242-18313`) -----------------------
+    for i in 50..(world.width - 50) {
+        let mut j = 50;
+        while (j as f64) <= world_surface {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                let kind = world.tile(i, j).map(|t| t.kind).unwrap_or(0);
+                if kind == 60 {
+                    // The jungle-grass spread (`:18249-18265`).
+                    for k in (i - 1)..=(i + 1) {
+                        for l in (j - 1)..=(j + 1) {
+                            if world.tile(k, l).is_some_and(|t| t.active() && t.kind == 0) {
+                                let covered = world.tile(k, l - 1).is_some_and(|t| t.active());
+                                if let Some(t) = world.tile_mut(k, l) {
+                                    t.kind = if covered { 59 } else { 60 };
+                                }
+                            }
+                        }
+                    }
+                } else if kind == 1 || kind == 40 || crate::tiledata::SET_ORE.has(kind) {
+                    // The ±3 flavour scan (`:18266-18289`).
+                    let num = 3;
+                    let mut flag = false;
+                    let mut num2 = 0u16;
+                    for m in (i - num)..=(i + num) {
+                        for n in (j - num)..=(j + num) {
+                            if let Some(t) = world.tile(m, n) {
+                                if t.active() {
+                                    if t.kind == 53 || num2 == 53 {
+                                        num2 = 53;
+                                    } else if matches!(t.kind, 59 | 60 | 147 | 161 | 199 | 23) {
+                                        num2 = t.kind;
+                                    }
+                                } else if n < j && t.wall == 0 {
+                                    flag = true;
+                                }
+                            }
+                        }
+                    }
+                    if flag {
+                        // The cover vetoes (`:18292-18307`).
+                        match num2 {
+                            23 | 199 => {
+                                if world.tile(i, j - 1).is_some_and(|t| t.active()) {
+                                    num2 = 0;
+                                }
+                            }
+                            59 | 60 => {
+                                if i >= jungle_min_x && i <= jungle_max_x {
+                                    let covered =
+                                        world.tile(i, j - 1).is_some_and(|t| t.active());
+                                    num2 = if covered { 59 } else { 60 };
+                                }
+                            }
+                            _ => {}
+                        }
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.kind = num2;
+                        }
+                    }
+                }
+            }
+            j += 1;
+        }
+    }
+    // --- sweep 2: the first-surface grass (`:18314-18351`) -----------------
+    for num3 in 10..(world.width - 10) {
+        let mut flag2 = true;
+        let mut num4 = 0;
+        while (num4 as f64) < world_surface - 1.0 {
+            if world.tile(num3, num4).is_some_and(|t| t.active()) {
+                if flag2 && world.tile(num3, num4).is_some_and(|t| t.kind == 0) {
+                    // `grassSpread = 0; SpreadGrass(num3, num4, 0, 2,
+                    // repeat: false)` (`:18334-18338`).
+                    let mut grass_spread = 0i32;
+                    super::evil::spread_evil_grass(
+                        world,
+                        num3,
+                        num4,
+                        0,
+                        2,
+                        world_surface,
+                        &mut grass_spread,
+                        false,
+                    );
+                }
+                if (num4 as f64) > surface_high {
+                    break;
+                }
+                flag2 = false;
+            } else if world.tile(num3, num4).map(|t| t.wall).unwrap_or(0) == 0 {
+                flag2 = true;
+            }
+            num4 += 1;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// W4-d104 pass 31: the first-surface dirt takes grass, the covered
+    /// dirt stays, and two runs are byte-equal (a == b — the classic arm
+    /// draws no RNG).
+    #[test]
+    fn w4_d104_31_the_surface_dirt_takes_grass() {
+        let build = || {
+            let mut w = World::new("sg".into(), 300, 200);
+            // A dirt column at x=150: the surface cell at row 60 (open
+            // sky above), a buried dirt cell at row 70 under a cover.
+            for y in 60..200 {
+                let i = w.index(150, y);
+                w.tiles[i].kind = 0;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        pass_spreading_grass(&mut a, 100.0, 90.0, -1, -1);
+        pass_spreading_grass(&mut b, 100.0, 90.0, -1, -1);
+        assert_eq!(a.tiles, b.tiles, "a == b: the classic arm replays");
+        assert_eq!(a.tile(150, 60).unwrap().kind, 2, "the first dirt takes grass");
+        assert_eq!(a.tile(150, 70).unwrap().kind, 0, "the buried dirt stays");
+    }
+
+    /// W4-d104 pass 31: the ±3 flavour scan retypes an exposed stone to
+    /// the neighbouring snow (147), and the sand latch wins over it.
+    #[test]
+    fn w4_d104_31_the_stone_takes_the_biome_flavour() {
+        let mut w = World::new("sg".into(), 300, 200);
+        // An exposed stone at (150, 60) with snow two cells away.
+        let i = w.index(150, 60);
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let i = w.index(152, 60);
+        w.tiles[i].kind = 147;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        pass_spreading_grass(&mut w, 100.0, 90.0, -1, -1);
+        assert_eq!(w.tile(150, 60).unwrap().kind, 147, "the snow flavour wins");
+        // The sand latch: a sand cell in the box overrides the snow.
+        let i = w.index(148, 60);
+        w.tiles[i].kind = 53;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let i = w.index(150, 60);
+        w.tiles[i].kind = 1;
+        pass_spreading_grass(&mut w, 100.0, 90.0, -1, -1);
+        assert_eq!(w.tile(150, 60).unwrap().kind, 53, "the sand latch wins");
+    }
+}

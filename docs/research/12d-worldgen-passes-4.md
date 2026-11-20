@@ -75,7 +75,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | range doc | 2d9cfcbb | claimed |
 | 28 Floating Island Houses | 93b1938e | landed (code-only; hash re-pin deferred to the gate) |
 | 29 Quick Cleanup | df067118 | landed (code-only; hash re-pin deferred to the gate) |
-| 30 Hellforge | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
+| 30 Hellforge | 2ac7c298 | landed (code-only; hash re-pin deferred to the gate) |
+| 31 Spreading Grass | (this commit) | landed (code-only; classic arm, remix arm deferred to d107; hash re-pin deferred) |
 
 ### Pass 28 — Floating Island Houses (landed)
 
@@ -181,12 +182,36 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   Re-pin DEFERRED to the gate; **a == b untouched** + the pass-level
   witness `w4_d104_30_the_hellforge_places_and_replays`.
 
+### Pass 31 — Spreading Grass (landed, classic arm)
+
+* **C# read in full**: the pass body `WorldGen.cs:18237-18446` — the
+  gate (`!denyAllGeneration && (!notTheBees || remix || anniversary)`),
+  sweep 1 (`:18242-18313`: the ±50 columns down to `worldSurface`, the
+  jungle-grass 60 → dirt spread, the stone/snow/ore ±3 flavour scan with
+  the sand-53 latch + the open-air `flag` gate + the evil cover veto +
+  the jungle-band 59/60 split), sweep 2 (`:18314-18351`: the ±10
+  columns, the `flag2` open-sky latch, the first-surface
+  `SpreadGrass(num3, num4, 0, 2, repeat: false)`, the
+  `worldSurfaceHigh` break). The remix arm (`:18352-18443`) is d107's.
+  `SpreadGrass` `:75146-75268` re-read for the `repeat` parameter.
+* **Rust**: `surface.rs::pass_spreading_grass` (+ 2 witnesses),
+  `evil.rs::spread_evil_grass` gains the `repeat` parameter (the evil
+  calls pass `true` — behaviour unchanged; the recursion gate is
+  `repeat && grassSpread < 1000`), `pipeline.rs`
+  (`step_spreading_grass` after `hellforge`, the gate),
+  `progress.rs` (`Lang.gen[37]` `:18241`).
+* **RNG**: the classic arm draws NOTHING — the step's stream slot is
+  the remix arm's future home. No ledger shifts.
+* **Hash doc**: both pins gain the pass-31 stale-by-design notes (the
+  surface cells move; no draws). Re-pin DEFERRED; **a == b untouched** +
+  the pass-level witness `w4_d104_31_the_surface_dirt_takes_grass`.
+
 ## Status
 
 - [x] 28 Floating Island Houses
 - [x] 29 Quick Cleanup
 - [x] 30 Hellforge
-- [ ] 31 Spreading Grass
+- [x] 31 Spreading Grass (classic arm; remix arm → d107)
 - [ ] 32 Surface Ore and Stone
 - [ ] 33 Place Fallen Log
 - [ ] 34 Traps

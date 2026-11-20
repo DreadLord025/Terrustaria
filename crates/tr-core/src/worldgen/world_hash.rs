@@ -265,6 +265,12 @@ mod tests {
     // forts' wall-14 columns can host a forge, so this pin moves BY
     // DESIGN too — stale, the gate re-pins. The a == b halves stay
     // untouched.
+    // W4-d104 pass 31 (2026-11-21, code-only): the `Spreading Grass`
+    // classic arm (`WorldGen.cs:18237-18351`) lands — the surface biome
+    // retypes + the first-surface grass spread move the surface cells of
+    // every world (the 512 included). No RNG draw (the classic arm is
+    // draw-free), so only the tiles move. Stale-by-design; the gate
+    // re-pins. The a == b halves stay untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -325,6 +331,11 @@ mod tests {
     // (above) moves this pin BY DESIGN — the default world's 21 forge
     // retries place 77 forges in the hell houses. Re-pin DEFERRED to the
     // merge gate; the a == b halves stay untouched.
+    // W4-d104 pass 31 (2026-11-21, code-only): the `Spreading Grass`
+    // classic arm (above) moves this pin BY DESIGN — the surface retypes
+    // and the first-surface grass land across the default world. No RNG
+    // draw; re-pin DEFERRED to the merge gate; the a == b halves stay
+    // untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

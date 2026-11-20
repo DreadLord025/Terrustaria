@@ -752,6 +752,7 @@ fn evil_shell(
                                     grass,
                                     world_surface,
                                     &mut grass_spread,
+                                true,
                                 );
                             } else if kind == TILE_MUD {
                                 let mut grass_spread = 0i32;
@@ -763,6 +764,7 @@ fn evil_shell(
                                     jungle_grass,
                                     world_surface,
                                     &mut grass_spread,
+                                true,
                                 );
                             }
                         }
@@ -2016,17 +2018,21 @@ fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
 
 /// `WorldGen.SpreadGrass` (`WorldGen.cs:75146-75268`), the slice the evil
 /// shell's four call shapes run (`(0, 23)`, `(0, 199)`, `(59, 661)`,
-/// `(59, 662)`). Ported locally into this module (D18 — `growth.rs`'s slice
-/// carries the inverted guard, Decision #13; `biomes.rs`'s stays the jungle
-/// pass's local slice). During generation (`isGeneratingOrLoadingWorld`):
-/// grass 23/199 takes the beach/centre exclusion branch (`:75151-75159`),
-/// 661/662 the else-if whose surface rule's `dirt == 0` clause never fires
-/// for mud 59. `Conversion.Grass` = {2, 23, 199, 109, 477, 492}
-/// (`TileID.cs:86`) holds neither 0 nor 59, so the `flag2` Convert path is
-/// dead for our calls and the plain write runs (`:75219-75223` — wall and
-/// liquid kept; `SquareTileFrame` deferred). No trees exist during
-/// generation, so `TryConvertingOrKillingTreesAbove...` is a no-op.
-fn spread_evil_grass(
+/// `(59, 662)`) plus the Spreading Grass pass's `(0, 2, repeat: false)`
+/// (W4-d104 pass 31). Ported locally into this module (D18 — `growth.rs`'s
+/// slice carries the inverted guard, Decision #13; `biomes.rs`'s stays the
+/// jungle pass's local slice). During generation
+/// (`isGeneratingOrLoadingWorld`): grass 23/199 takes the beach/centre
+/// exclusion branch (`:75151-75159`), 661/662 the else-if whose surface
+/// rule's `dirt == 0` clause never fires for mud 59. `Conversion.Grass` =
+/// {2, 23, 199, 109, 477, 492} (`TileID.cs:86`) holds neither 0 nor 59, so
+/// the `flag2` Convert path is dead for our calls and the plain write runs
+/// (`:75219-75223` — wall and liquid kept; `SquareTileFrame` deferred). No
+/// trees exist during generation, so
+/// `TryConvertingOrKillingTreesAbove...` is a no-op. `repeat` is the C#'s
+/// parameter (`:75146`) — the evil calls take the default `true`, the
+/// Spreading Grass pass passes `false` (`:18338`).
+pub(crate) fn spread_evil_grass(
     world: &mut World,
     i: i32,
     j: i32,
@@ -2034,6 +2040,7 @@ fn spread_evil_grass(
     grass: u16,
     world_surface: f64,
     grass_spread: &mut i32,
+    repeat: bool,
 ) {
     // `!InWorld(i, j, 10) || !active || type != dirt` (`:75149-75151`).
     if i < 10 || i >= world.width - 10 || j < 10 || j >= world.height - 10 {
@@ -2105,16 +2112,18 @@ fn spread_evil_grass(
     let flag2 = dirt > 0 && SET_GRASS.has(dirt);
     let _ = flag2;
     set_kind(world, i, j, grass);
-    // The 3x3 recursion (`:75238-75260`) with the `grassSpread < 1000` cap.
+    // The 3x3 recursion (`:75238-75260`) with the `repeat && grassSpread <
+    // 1000` cap.
     for m in num2..num3 {
         for n in num4..num5 {
             if world
                 .tile(m, n)
                 .is_some_and(|t| t.active() && t.kind == dirt)
+                && repeat
                 && *grass_spread < 1000
             {
                 *grass_spread += 1;
-                spread_evil_grass(world, m, n, dirt, grass, world_surface, grass_spread);
+                spread_evil_grass(world, m, n, dirt, grass, world_surface, grass_spread, repeat);
                 *grass_spread -= 1;
             }
         }
@@ -2379,6 +2388,7 @@ mod tests {
             TILE_CORRUPT_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(world.tile(600, 50).unwrap().kind, TILE_CORRUPT_GRASS);
         // The centre exclusion (900, 1100] blocks the dirt conversion.
@@ -2392,6 +2402,7 @@ mod tests {
             TILE_CORRUPT_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(
             world.tile(1000, 50).unwrap().kind,
@@ -2409,6 +2420,7 @@ mod tests {
             TILE_CORRUPT_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(
             world.tile(200, 50).unwrap().kind,
@@ -2425,6 +2437,7 @@ mod tests {
             TILE_CORRUPT_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(
             world.tile(1700, 50).unwrap().kind,
@@ -2442,6 +2455,7 @@ mod tests {
             TILE_CRIMSON_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(world.tile(600, 55).unwrap().kind, TILE_CRIMSON_GRASS);
         put_dirt(&mut world, 1000, 55, TILE_DIRT, 0);
@@ -2454,6 +2468,7 @@ mod tests {
             TILE_CRIMSON_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(world.tile(1000, 55).unwrap().kind, TILE_DIRT);
         // The mud conversion (59 → 661) ignores the exclusions (the 661/662
@@ -2468,6 +2483,7 @@ mod tests {
             TILE_CORRUPT_JUNGLE_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(
             world.tile(1000, 60).unwrap().kind,
@@ -2489,6 +2505,7 @@ mod tests {
             TILE_CORRUPT_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(
             world.tile(700, 75).unwrap().kind,
@@ -2506,6 +2523,7 @@ mod tests {
             TILE_CORRUPT_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(
             world.tile(600, 70).unwrap().kind,
@@ -2523,6 +2541,7 @@ mod tests {
             TILE_CORRUPT_GRASS,
             0.0,
             &mut spread,
+        true,
         );
         assert_eq!(world.tile(600, 80).unwrap().kind, TILE_GRASS, "kind gate");
     }
@@ -3180,6 +3199,7 @@ mod tests {
                                         TILE_CORRUPT_GRASS,
                                         num2,
                                         &mut gs,
+                                    true,
                                     );
                                 } else if kind == TILE_MUD {
                                     let mut gs = 0i32;
@@ -3191,6 +3211,7 @@ mod tests {
                                         TILE_CORRUPT_JUNGLE_GRASS,
                                         num2,
                                         &mut gs,
+                                    true,
                                     );
                                 }
                             }

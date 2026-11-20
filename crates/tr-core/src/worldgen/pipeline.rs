@@ -1398,6 +1398,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // pass 30. The retry draws ride the fresh `pass_rng("Hellforge")`
     // stream.
     step!("hellforge", "Hellforge", step_hellforge),
+    // The vanilla Spreading Grass slot (`WorldGen.cs:18237`): after
+    // Hellforge (`:18187`), before Surface Ore and Stone (`:18447`) —
+    // W4-d104 pass 31. The classic arm draws no RNG; the remix arm is the
+    // seed lane's.
+    step!("spreading grass", "Spreading Grass", step_spreading_grass),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2669,6 +2674,41 @@ fn step_hellforge(
     structures::pass_hellforge(world, &mut streams.pass_rng("Hellforge"));
 }
 
+/// The `Spreading Grass` pass (`WorldGen.cs:18237-18446`, W4-d104 pass
+/// 31): the classic surface sweeps. The `Skyblock.denyAllGeneration` +
+/// `notTheBees && !remix && !tenthAnniversary` gate (`:18239`) rides
+/// here. The classic arm draws no RNG — the stream slot is the remix
+/// arm's future home.
+fn step_spreading_grass(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let not_the_bees = opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    if not_the_bees && !remix && !anniversary {
+        return;
+    }
+    let (world_surface, surface_high) = {
+        let l = gv.layers();
+        (l.world_surface, l.surface_high)
+    };
+    surface::pass_spreading_grass(
+        world,
+        world_surface,
+        surface_high,
+        gv.jungle_min_x,
+        gv.jungle_max_x,
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3528,7 +3568,8 @@ mod tests {
         assert_eq!(pos("floating island houses"), pos("living trees") + 1);
         assert_eq!(pos("floating island houses") + 1, pos("quick cleanup"));
         assert_eq!(pos("quick cleanup") + 1, pos("hellforge"));
-        assert!(pos("hellforge") < pos("trees"));
+        assert_eq!(pos("hellforge") + 1, pos("spreading grass"));
+        assert!(pos("spreading grass") < pos("trees"));
         assert!(pos("floating islands") < pos("floating island houses"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
