@@ -4773,7 +4773,7 @@ impl Npc {
                         .seeds
                         .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
                 };
-                crate::npc_ai_style30::retinazer_ai(self, world, player, rng, &env)
+                crate::npc_ai_style30::retinazer_ai(self, world, player, rng, &env, dust, dust_ctx)
             }
             // `else if (this.aiStyle == 31)` (`NPC.cs:27015-27625`) -
             // the Spazmatism (126), the style's only user. S1-D-3
@@ -4786,6 +4786,8 @@ impl Npc {
                 player,
                 rng,
                 &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
+                dust,
+                dust_ctx,
             ),
             // `else if (this.aiStyle == 34/35/36)` (`NPC.cs:28245-28521` /
             // `:28522-28756` / `:28757-28990`) — the Prime Vice (130),
@@ -5809,6 +5811,8 @@ impl Npc {
                 player,
                 rng,
                 &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
+                dust,
+                dust_ctx,
             ),
             NpcKind::Plantera => self.update_plantera(world, player, rng),
             // The Plantera minions (S1-D-3-wire-plantera-minions): the
