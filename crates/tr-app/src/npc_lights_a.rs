@@ -508,6 +508,242 @@ pub(crate) fn martian_probe_light(
 }
 
 // ---------------------------------------------------------------------
+// Site 31 — `:36923`, the aiStyle-83 tail light (437 CultistTablet,
+// `NPCID.cs:11549`). TWIN: no NpcKind yet (the AncientCultist 436 rides
+// aiStyle 84, a different arm).
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:36921-36924`: `AddLight(base.Center, 0.8f, 0.75f, 0.55f)` —
+/// quotient truncation ([`XAnchor::Center`]). The arm's earlier
+/// `return` (`:36902`, the head-gone despawn) deactivates the NPC, so
+/// a live tablet always reaches the tail.
+pub(crate) fn cultist_tablet_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    (
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [0.8, 0.75, 0.55],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 32 — `:40732`, the aiStyle-105 head light (548 DD2EterniaCrystal,
+// the style's only member). FED: the wired `update_eternia_crystal`
+// machine keeps `alpha` live (the loss-scene fade `:40899-40902` is
+// ported). The light fires while `alpha == 0` — the crystal's
+// SetDefaults writes no alpha row (`:15998-16032`), so it spawns at
+// the class default 0 (`:8525`) and lights until the loss fade.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:40730-40733`: `if (this.alpha == 0) AddLight(base.Center,
+/// 1.3f, 0.5f, 1.5f)` — quotient truncation.
+pub(crate) fn eternia_crystal_light(
+    alpha: u8,
+    pos: Vec2,
+    w: f32,
+    h: f32,
+) -> Option<(i32, i32, [f32; 3])> {
+    if alpha == 0 {
+        Some((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [1.3, 0.5, 1.5],
+        ))
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------
+// Site 33 — `:40975`, the aiStyle-106 head light (549 DD2LanePortal,
+// the style's only member). FED: the wired `update_dd2_lane` machine
+// never writes alpha (the C# arm doesn't either — `:40970-41047` has
+// no alpha write), so the portal stays at the class default 0 and
+// lights every live tick.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:40973-40976`: `if (this.alpha == 0) AddLight(base.Center,
+/// 0.5f, 0.1f, 0.3f)` — quotient truncation.
+pub(crate) fn lane_portal_light(
+    alpha: u8,
+    pos: Vec2,
+    w: f32,
+    h: f32,
+) -> Option<(i32, i32, [f32; 3])> {
+    if alpha == 0 {
+        Some((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [0.5, 0.1, 0.3],
+        ))
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------
+// Site 34 — `:43017`, AI_127_Pal's type-696 light
+// (PalworldFoxsparksDistressed, `NPCID.cs:12069`). TWIN: no NpcKind yet.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:43015-43018`: `if (this.type == 696) AddLight(base.Center,
+/// 0.5f, 0.3f, 0.1f)` — quotient truncation. The method's earlier
+/// returns (`:42944` the despawn, `:43012` the reward-give death)
+/// deactivate the NPC, so a live 696 always reaches the light.
+pub(crate) fn pal_foxsparks_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    (
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [0.5, 0.3, 0.1],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 35 — `:44904`, AI_065_Butterflies' type-661 light
+// (EmpressButterfly, `NPCID.cs:11999`). TWIN: no NpcKind yet. The
+// colour rides `Main.GlobalTimeWrappedHourly` — a draw-time value the
+// feed already carries (`LightParams::global_time`), so the twin takes
+// it as a parameter.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:44900-44904`: `rgb = Main.hslToRgb(Main.GlobalTimeWrappedHourly
+/// * 0.33f % 1f, 1f, 0.5f).ToVector3() * 0.3f; rgb += Vector3.One *
+/// 0.1f; AddLight(base.Center, rgb)`. The hsl port is the byte-quantised
+/// `tr_core::tile_light::hsl_to_rgb` (`Main.cs:47890`, banker's
+/// rounding); `ToVector3` is the identity on its already-normalised
+/// output. Quotient truncation.
+pub(crate) fn empress_butterfly_light(
+    global_time_wrapped_hourly: f32,
+    pos: Vec2,
+    w: f32,
+    h: f32,
+) -> (i32, i32, [f32; 3]) {
+    let hue = (global_time_wrapped_hourly * 0.33) % 1.0;
+    let rgb = tr_core::tile_light::hsl_to_rgb(hue, 1.0, 0.5);
+    (
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [rgb[0] * 0.3 + 0.1, rgb[1] * 0.3 + 0.1, rgb[2] * 0.3 + 0.1],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 36 — `:45111`, AI_065_Butterflies' type-653 light (HellButterfly,
+// `NPCID.cs:11983`). TWIN: no NpcKind yet.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:45108-45117`: `base.position += this.netOffset;
+/// AddLight((int)Center.X / 16, (int)Center.Y / 16, 0.6f, 0.3f, 0.1f)`
+/// — cast-before-divide ([`XAnchor::CenterTruncated`]); `pos` includes
+/// `netOffset`. The trailing `Next(60)` dust half (`:45112`) belongs to
+/// the future butterfly machine's stream.
+pub(crate) fn hell_butterfly_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    (
+        tile_x(pos, w, XAnchor::CenterTruncated),
+        tile_y(pos, h, XAnchor::CenterTruncated),
+        [0.6, 0.3, 0.1],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 37 — `:45217`, AI_121_QueenSlime's unconditional head light
+// (657 QueenSlimeBoss, `NPCID.cs:11991`). TWIN: no NpcKind yet.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:45217`: `AddLight(base.Center, 1f, 0.7f, 0.9f)` — quotient
+/// truncation; no gate (the light runs before the despawn check).
+pub(crate) fn queen_slime_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    (
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [1.0, 0.7, 0.9],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 38 — `:46941`, AI_120_HallowBoss' opacity tail light (636
+// HallowBoss). DEDUP-TWIN — `npc_ai_empress.rs` ports the whole machine
+// (`empress_ai_step`, the `:46919-46941` tail included); the light is
+// its documented skip. The module is UNWIRED (no HallowBoss NpcKind);
+// its wiring feeds `One * Opacity` ONCE (the state carries `alpha`,
+// `Opacity = 1 - alpha/255f`, `NPC.cs:6820-6825`).
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:46941`: `AddLight(base.Center, Vector3.One * this.Opacity)`
+/// — quotient truncation; the white light scales with the boss's
+/// materialise fade. Pure twin for the empress wiring's feed.
+pub(crate) fn hallow_boss_light(alpha: u8, pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    let opacity = 1.0 - f32::from(alpha) / 255.0;
+    (
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [opacity, opacity, opacity],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 39 — `:47434`, AI_117_BloodNautilus' state-3 charge light (618
+// BloodNautilus, `NPCID.cs:11913`). TWIN: no NpcKind yet. The factor
+// rides the machine's `ai[1]/num8` cadence (num8 = 180f, `:47137`) and
+// `Utils.GetLerpValue`'s UNCLAMPED form — the twin takes the rolled
+// `t` so the wiring never re-derives the machine's state.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:47425-47434`: while `ai[1] < num8` in state 3,
+/// `t = ai[1]/num8`, `num10 = GetLerpValue(0, 0.5, t) *
+/// GetLerpValue(1, 0.5, t)` (both UNCLAMPED — the descending second
+/// lerp gives `2 - 2t`), `AddLight(base.Center, new Vector3(1, 0.5,
+/// 0.5) * num10)` inside the `netOffset` bracket (`:47427`/`:47441`).
+/// `pos` includes `netOffset`; quotient truncation. `None` outside the
+/// charge window.
+pub(crate) fn blood_nautilus_light(
+    ai0: f32,
+    ai1: f32,
+    pos: Vec2,
+    w: f32,
+    h: f32,
+) -> Option<(i32, i32, [f32; 3])> {
+    let num8 = 180.0f32;
+    if ai0 != 3.0 || ai1 >= num8 {
+        return None;
+    }
+    let t = ai1 / num8;
+    // `Utils.GetLerpValue(from, to, t, clamped: false)` = (t-from)/(to-from).
+    let num10 = (t / 0.5) * ((t - 1.0) / (0.5 - 1.0));
+    Some((
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [num10, 0.5 * num10, 0.5 * num10],
+    ))
+}
+
+// ---------------------------------------------------------------------
+// Site 40 — `:48641`, AI_112_FairyCritter's colour tail (583/584/585
+// FairyCritterPink/Green/Blue, `NPCID.cs:11843-11847`). TWIN: no
+// NpcKind yet.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:48618-48641`: `value3 = Color.HotPink` (255, 105, 180);
+/// 584 → `Color.LimeGreen` (50, 205, 50); 585 → `Color.RoyalBlue`
+/// (65, 105, 225); `AddLight(base.Center, value3.ToVector3() * 0.7f)`
+/// — quotient truncation. The preceding dust half (`:48631-48639`,
+/// the `% 2` cadence + `NextFloat` lerp) belongs to the future
+/// fairy machine's stream; the light itself is unconditional.
+pub(crate) fn fairy_critter_light(vanilla_type: i32, pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    let base = if vanilla_type == 584 {
+        [50.0 / 255.0, 205.0 / 255.0, 50.0 / 255.0]
+    } else if vanilla_type == 585 {
+        [65.0 / 255.0, 105.0 / 255.0, 225.0 / 255.0]
+    } else {
+        [1.0, 105.0 / 255.0, 180.0 / 255.0]
+    };
+    (
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [base[0] * 0.7, base[1] * 0.7, base[2] * 0.7],
+    )
+}
+
+// ---------------------------------------------------------------------
 // The dispatcher: the FED sites, keyed on the roster kind. The TWIN
 // sites' kinds are absent (or their machines unwired), so they return
 // `None` here until their wave lands — the per-site table in ANALYSIS
@@ -552,6 +788,11 @@ pub(crate) fn npc_light_a(n: &Npc, world: &World, player_dead: bool) -> Option<(
         // Site 30 — `:36623`, the aiStyle-80 tail light (the state-0
         // dead-player gate folds the `:36575` return).
         NpcKind::MartianProbe => martian_probe_light(n.ai[0], player_dead, pos, w, h),
+        // Site 32 — `:40732`, the aiStyle-105 head light (alpha gate).
+        NpcKind::DD2EterniaCrystal => eternia_crystal_light(n.alpha, pos, w, h),
+        // Site 33 — `:40975`, the aiStyle-106 head light (alpha gate;
+        // neither the C# arm nor the port's machine writes alpha).
+        NpcKind::DD2LanePortal => lane_portal_light(n.alpha, pos, w, h),
         _ => None,
     }
 }
@@ -782,5 +1023,100 @@ mod tests {
         // regardless (the gate lives in the state-0 arm only).
         assert!(martian_probe_light(0.0, true, pos, w, h).is_none());
         assert!(martian_probe_light(1.0, true, pos, w, h).is_some());
+    }
+
+    /// Site 31 — `:36923`: the tablet's centre light, (0.8, 0.75, 0.55).
+    #[test]
+    fn w4_c20_s31_cultist_tablet_center_light() {
+        let (x, y, rgb) = cultist_tablet_light(Vec2::new(160.0, 176.0), 32.0, 32.0);
+        assert_eq!((x, y), (11, 12));
+        assert_eq!(rgb, [0.8, 0.75, 0.55]);
+    }
+
+    /// Sites 32/33 — `:40730-40733`/`:40973-40976`: the alpha-0 gates.
+    /// The crystal's 40x40 box centres (180, 196) → tile (11, 12);
+    /// the portal's 78x130 box centres (199, 241) → tile (12, 15).
+    #[test]
+    fn w4_c20_s32_s33_crystal_and_portal_alpha_gates() {
+        let c = eternia_crystal_light(0, Vec2::new(160.0, 176.0), 40.0, 40.0).unwrap();
+        assert_eq!(c, (11, 12, [1.3, 0.5, 1.5]));
+        assert!(eternia_crystal_light(50, Vec2::ZERO, 40.0, 40.0).is_none());
+        let p = lane_portal_light(0, Vec2::new(160.0, 176.0), 78.0, 130.0).unwrap();
+        assert_eq!(p, (12, 15, [0.5, 0.1, 0.3]));
+        assert!(lane_portal_light(1, Vec2::ZERO, 78.0, 130.0).is_none());
+    }
+
+    /// Site 34 — `:43017`: the foxsparks centre light (0.5, 0.3, 0.1).
+    #[test]
+    fn w4_c20_s34_pal_foxsparks_center_light() {
+        let (_, _, rgb) = pal_foxsparks_light(Vec2::ZERO, 24.0, 24.0);
+        assert_eq!(rgb, [0.5, 0.3, 0.1]);
+    }
+
+    /// Site 35 — `:44902-44904`: at globalTime 0 the hue is 0 → pure
+    /// red (1, 0, 0); ×0.3 + 0.1 → (0.4, 0.1, 0.1).
+    #[test]
+    fn w4_c20_s35_empress_butterfly_hsl_cycle() {
+        let (_, _, rgb) = empress_butterfly_light(0.0, Vec2::ZERO, 20.0, 20.0);
+        assert_eq!(rgb, [1.0 * 0.3 + 0.1, 0.1, 0.1]);
+        // The hue wraps: globalTime 3600 → 3600*0.33 % 1 = 1188 % 1 = 0.
+        let (_, _, rgb2) = empress_butterfly_light(3600.0, Vec2::ZERO, 20.0, 20.0);
+        assert_eq!(rgb2, rgb);
+    }
+
+    /// Site 36 — `:45111`: cast-before-divide, (0.6, 0.3, 0.1).
+    #[test]
+    fn w4_c20_s36_hell_butterfly_truncated_center() {
+        let (x, y, rgb) = hell_butterfly_light(Vec2::new(160.0, 176.0), 20.0, 20.0);
+        assert_eq!((x, y), (10, 11));
+        assert_eq!(rgb, [0.6, 0.3, 0.1]);
+    }
+
+    /// Site 37 — `:45217`: the queen slime's unconditional (1, 0.7, 0.9).
+    #[test]
+    fn w4_c20_s37_queen_slime_center_light() {
+        let (_, _, rgb) = queen_slime_light(Vec2::ZERO, 100.0, 100.0);
+        assert_eq!(rgb, [1.0, 0.7, 0.9]);
+    }
+
+    /// Site 38 — `:46941`: Opacity = 1 - alpha/255. alpha 255 → black
+    /// (the spawn state), alpha 0 → white, alpha 128 → 127/255.
+    #[test]
+    fn w4_c20_s38_hallow_boss_opacity_white() {
+        let (_, _, black) = hallow_boss_light(255, Vec2::ZERO, 100.0, 140.0);
+        assert_eq!(black, [0.0, 0.0, 0.0]);
+        let (_, _, white) = hallow_boss_light(0, Vec2::ZERO, 100.0, 140.0);
+        assert_eq!(white, [1.0, 1.0, 1.0]);
+        let (_, _, mid) = hallow_boss_light(128, Vec2::ZERO, 100.0, 140.0);
+        let o = 1.0 - 128.0 / 255.0;
+        assert_eq!(mid, [o, o, o]);
+    }
+
+    /// Site 39 — `:47432-47434`: at ai[1] = 45 (t = 0.25) num10 =
+    /// (0.25/0.5)·((0.25-1)/(0.5-1)) = 0.5·1.5 = 0.75; the light is
+    /// (0.75, 0.375, 0.375). Outside state 3 or at/after 180: dark.
+    #[test]
+    fn w4_c20_s39_blood_nautilus_charge_pulse() {
+        let (_, _, rgb) =
+            blood_nautilus_light(3.0, 45.0, Vec2::ZERO, 100.0, 100.0).unwrap();
+        assert_eq!(rgb, [0.75, 0.375, 0.375]);
+        // The peak at t = 0.5: num10 = 1·1 = 1.
+        let (_, _, peak) =
+            blood_nautilus_light(3.0, 90.0, Vec2::ZERO, 100.0, 100.0).unwrap();
+        assert_eq!(peak, [1.0, 0.5, 0.5]);
+        assert!(blood_nautilus_light(3.0, 180.0, Vec2::ZERO, 100.0, 100.0).is_none());
+        assert!(blood_nautilus_light(0.0, 45.0, Vec2::ZERO, 100.0, 100.0).is_none());
+    }
+
+    /// Site 40 — `:48618-48641`: HotPink·0.7 for 583, LimeGreen·0.7
+    /// for 584, RoyalBlue·0.7 for 585.
+    #[test]
+    fn w4_c20_s40_fairy_critter_named_colors() {
+        let pink = fairy_critter_light(583, Vec2::ZERO, 20.0, 20.0);
+        assert_eq!(pink.2, [0.7, 105.0 / 255.0 * 0.7, 180.0 / 255.0 * 0.7]);
+        let green = fairy_critter_light(584, Vec2::ZERO, 20.0, 20.0);
+        assert_eq!(green.2, [50.0 / 255.0 * 0.7, 205.0 / 255.0 * 0.7, 50.0 / 255.0 * 0.7]);
+        let blue = fairy_critter_light(585, Vec2::ZERO, 20.0, 20.0);
+        assert_eq!(blue.2, [65.0 / 255.0 * 0.7, 105.0 / 255.0 * 0.7, 225.0 / 255.0 * 0.7]);
     }
 }
