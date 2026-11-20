@@ -262,20 +262,25 @@ pub fn paint_color(color: u8) -> [f32; 3] {
     [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]
 }
 
-/// `LiquidRenderer.GetShimmerWave`.
+/// `LiquidRenderer.GetShimmerWave` (`LiquidRenderer.cs:754-757`): the C#
+/// computes `(x + y/6)/10` in f32, subtracts `timeForVisualEffects / 360.0`
+/// in DOUBLE, multiplies by `6.2831854820251465` and takes the double sin
+/// before narrowing to f32 (W4-d66 — the old all-f32 `mul_add(TAU)` drifted
+/// at large tick counts).
 fn shimmer_wave(x: f32, y: f32, time: f32) -> f32 {
-    (((x + y / 6.0) / 10.0) - time / 360.0)
-        .mul_add(std::f32::consts::TAU, 0.0)
-        .sin()
+    let pos = (x + y / 6.0) / 10.0;
+    ((pos as f64 - time as f64 / 360.0) * 6.2831854820251465).sin() as f32
 }
 
 /// `LiquidRenderer.GetShimmerBaseColor(x, y)`: a lerp between two purples driven by
-/// the shimmer wave, sampled at tile coordinates.
+/// the shimmer wave, sampled at tile coordinates. The lerp amount is f32
+/// (`0.1f + wave * 0.4f`, `LiquidRenderer.cs:796`), the endpoints are f32
+/// divisions — `14f/15f` included (W4-d66: 0.93333334, not double 14/15).
 pub fn shimmer_base_color(x: i32, y: i32, time: f32) -> [f32; 3] {
     let w = shimmer_wave(x as f32, y as f32, time);
     let amount = 0.1 + w * 0.4;
-    let a = [165.0 / 255.0, 130.0 / 255.0, 14.0 / 15.0];
-    let b = [205.0 / 255.0, 205.0 / 255.0, 1.0];
+    let a = [165.0f32 / 255.0, 130.0 / 255.0, 14.0 / 15.0];
+    let b = [205.0f32 / 255.0, 205.0 / 255.0, 1.0];
     [
         a[0] + (b[0] - a[0]) * amount,
         a[1] + (b[1] - a[1]) * amount,
@@ -331,6 +336,42 @@ mod tests {
         let mut one = FastRandom::new(7);
         for _ in 0..16 {
             assert_eq!(one.next(1), 0);
+        }
+    }
+
+    /// W4-d66 witness: `TorchID.cs:150` seeds UltraBright with `1.3499999f` —
+    /// one f32 ULP BELOW 1.35. The old table folded it to 1.35.
+    #[test]
+    fn ultra_bright_torch_green_keeps_the_ulp() {
+        assert_eq!(TORCH_LIGHT[12][1].to_bits(), 1.3499999f32.to_bits());
+        assert_ne!(TORCH_LIGHT[12][1].to_bits(), 1.35f32.to_bits());
+    }
+
+    /// W4-d66 witness: `GetShimmerWave` (`LiquidRenderer.cs:756`) subtracts
+    /// `timeForVisualEffects / 360.0` in DOUBLE and sins in double before the
+    /// f32 narrowing. Values pinned from an f32/f64-split reference evaluation
+    /// of the C# expression; the old all-f32 wave drifted at large tick counts
+    /// (wave(10,20,200000): -0.98482203 all-f32 vs -0.98482466 C#).
+    #[test]
+    fn shimmer_wave_sins_in_double_like_the_original() {
+        // Tolerance 1e-6: still discriminates the old all-f32 drift (2.6e-6)
+        // while tolerating libm last-ULP differences in the double sin.
+        let w = shimmer_wave(10.0, 20.0, 200000.0);
+        assert!(
+            (w - (-0.9848246574401855f64 as f32)).abs() < 1e-6,
+            "wave {w}"
+        );
+        // Base colour at the same inputs: the f32 lerp of the C# endpoints
+        // (`14f/15f` is the f32 0.93333334, not the double 14/15).
+        let c = shimmer_base_color(10, 20, 200000.0);
+        let want = [0.6009522080421448f32, 0.42335399985313416, 0.9137380123138428];
+        for i in 0..3 {
+            assert!((c[i] - want[i]).abs() < 1e-6, "channel {i}: {c:?}");
+        }
+        let c0 = shimmer_base_color(10, 20, 0.0);
+        let want0 = [0.7170839905738831f32, 0.641101062297821, 0.9630939960479736];
+        for i in 0..3 {
+            assert!((c0[i] - want0[i]).abs() < 1e-6, "channel {i}: {c0:?}");
         }
     }
 }

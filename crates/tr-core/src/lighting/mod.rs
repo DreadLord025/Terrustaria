@@ -558,7 +558,9 @@ fn liquid_light(tile: &Tile, c: &mut [f32; 3], p: &LightParams) {
         }
         LiquidKind::Shimmer => {
             let n2 = 0.7 + delta;
-            let n3 = 0.7 + delta * (900.0 / 125.0);
+            // `TileLightScanner.cs:135`: a second `(270 - mouseTextColor) / 125f`
+            // division — NOT `delta * (900/125)` (W4-d66: distinct f32 rounding).
+            let n3 = 0.7 + (270.0 - p.mouse_text_color as f32) / 125.0;
             if c[0] < n2 {
                 c[0] = n2 * 0.6;
             }
