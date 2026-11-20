@@ -106,6 +106,12 @@ pub struct ShopFlags {
     /// `WorldGen.cs:11290`); the Arms Dealer's bullet split compares it to
     /// 168 (`Chest.cs:1489`). Fed from `World.ore_tiers.silver`.
     pub silver_ore_tier: i32,
+    /// W4-d122 shop 3: `Main.player[Main.myPlayer].ZoneUnderworldHeight`
+    /// (`Chest.cs:1647`) — the Dryad's Hellcake 5214 (and the 194 else-if).
+    pub zone_underworld: bool,
+    /// W4-d122 shop 3: `Main.player[Main.myPlayer].ZoneGlowshroom`
+    /// (`Chest.cs:1651`) — the Mushroom set 194 under the else-if.
+    pub zone_glowshroom: bool,
 }
 
 impl Default for ShopFlags {
@@ -152,6 +158,8 @@ impl Default for ShopFlags {
             party_is_up: false,
             // `SavedOreTiers::new`'s static default (`WorldGen.cs:3303`).
             silver_ore_tier: 9,
+            zone_underworld: false,
+            zone_glowshroom: false,
         }
     }
 }
@@ -249,9 +257,6 @@ pub enum StockWhen {
     /// `:1468-1475`'s inventory scan — the item appears when the player
     /// carries `0` (the Flower Boots 930 → the 931/1614 rows).
     PlayerHasItem(u16),
-    /// The blood-moon corruption rows (`Chest.cs:1570-1593`'s else branch —
-    /// the crimson variants ride the world's crimson flag, constants-off).
-    BloodMoonCorruption,
     /// M5-SEED-2: `Chest.cs:3403-3406`'s Bestiary Girl tail — `Main.vampireSeed
     /// && !Main.infectedSeed` adds one Torch (8) after the moon-phase rows.
     VampirismNotInfected,
@@ -262,13 +267,16 @@ pub enum StockWhen {
     VampirismInfectedCrimson,
     /// The Dryad tail's other half — the Corrupt Torch (4385).
     VampirismInfectedCorrupt,
-    /// `ZoneUnderworldHeight` (`:1710`) — constants-off until the scene
-    /// metrics' underworld flag reaches the shop call.
+    /// `ZoneUnderworldHeight` (`Chest.cs:1647`) — the Hellcake 5214; the
+    /// scene metrics feed it at the open seam.
     ZoneUnderworld,
-    /// `ZoneGlowshroom` (`:1713`) — constants-off like the underworld.
+    /// `ZoneGlowshroom` (`Chest.cs:1651`'s else-if — the Mushroom set 194
+    /// only when NOT underworld) — the scene's glowing-mushroom tile
+    /// count feeds it.
     ZoneGlowshroom,
-    /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
-    /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
+    /// The moon-phase pairs (`Chest.cs:1685-1732`'s `moonPhase / 2`
+    /// switches): the row appears when `moon_phase / 2 == n`; pair 3 is
+    /// the C#'s `default:` arm (phases 6/7).
     MoonPhasePair(u8),
     /// The ODD moon phases only (`Chest.cs:2085`'s
     /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
@@ -382,6 +390,12 @@ pub enum StockWhen {
     /// W4-d122 shop 2: `NPC.downedBoss2` ALONE (`Chest.cs:1500`'s first
     /// conjunct — the Minishark gate reads it with `!dayTime`).
     DownedBoss2,
+    /// W4-d122 shop 3: `!Main.remixWorld || Main.infectedSeed ||
+    /// (Main.tenthAnniversaryWorld && !Main.getGoodWorld)`
+    /// (`Chest.cs:1598`) — the Purification Powder 66 inside the
+    /// NOT-blood-moon else branch (the infected-seed disjunct is the
+    /// difference from [`StockWhen::NotRemixOrAnniversary`]).
+    NotRemixOrInfectedOrAnniversary,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -520,33 +534,56 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(270, StockWhen::Always),
             row(271, StockWhen::Always),
         ],
-        // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
-        // branch, the base rows, the flower-seed moon-phase pairs. The
-        // crimson variants (2886/2171/4508), the graveyard/underworld/
-        // glowshroom rows and the halloween rows sit constants-off.
+        // The Dryad (`Chest.cs:1568-1745`, the registry
+        // `NPCInteractions.Shop(20, 3)`, `NPCInteractions.cs:490` —
+        // `NPCID.Dryad = 20`): the blood-moon evil-seed split, the
+        // NOT-blood-moon powder else branch, the graveyard hardmode seed,
+        // the underworld/glowshroom else-if, the crimson planter split and
+        // the hardmode flower-seed TRIPLETS — every gate verbatim.
         3 => vec![
-            row(67, StockWhen::BloodMoonCorruption),
-            row(59, StockWhen::BloodMoonCorruption),
-            row(4504, StockWhen::BloodMoonCorruption),
-            row(66, StockWhen::Always),
-            row(62, StockWhen::Always),
-            row(63, StockWhen::Always),
-            row(745, StockWhen::Always),
-            row(27, StockWhen::Always),
+            // `:1569-1595`: `bloodMoon` → the crimson/corruption split;
+            // the powder row (2886/67) rides the remix gate on top, the
+            // seed + mushroom rows (2171/4508 vs 59/4504) are bare.
+            row(2886, DRYAD_BM_CRIMSON_POWDER),
+            row(2171, DRYAD_BM_CRIMSON),
+            row(4508, DRYAD_BM_CRIMSON),
+            row(67, DRYAD_BM_CORRUPT_POWDER),
+            row(59, DRYAD_BM_CORRUPT),
+            row(4504, DRYAD_BM_CORRUPT),
+            // `:1596-1609`'s else branch: the Purification Powder 66 under
+            // `!remix || infectedSeed || (anniversary && !getGood)`, then
+            // the three bare rows.
+            row(66, DRYAD_POWDER_ELSE),
+            row(62, StockWhen::Not(&StockWhen::BloodMoon)),
+            row(63, StockWhen::Not(&StockWhen::BloodMoon)),
+            row(745, StockWhen::Not(&StockWhen::BloodMoon)),
+            // `:1610-1621`: `hardMode && ZoneGraveyard` — the crimson world
+            // sells the Corrupt Seeds 59, the corruption world the Crimson
+            // Seeds 2171 (the C#'s flipped split is verbatim).
+            row(59, DRYAD_GRAVE_CRIMSON),
+            row(2171, DRYAD_GRAVE_CORRUPT),
+            row(27, StockWhen::Always), // `:1622`
             row(5309, StockWhen::Always),
             row(114, StockWhen::Always),
             row(1828, StockWhen::Always),
             row(747, StockWhen::Always),
-            row(746, StockWhen::HardMode),
-            row(369, StockWhen::HardMode),
-            row(4505, StockWhen::HardMode),
+            row(746, StockWhen::HardMode),  // `:1632-1636`
+            row(369, StockWhen::HardMode),  // `:1637-1641`
+            row(4505, StockWhen::HardMode), // `:1642-1646`
+            // `:1647-1654`: the underworld/glowshroom else-if — the
+            // Hellcake 5214 wins over the Mushroom set 194.
             row(5214, StockWhen::ZoneUnderworld),
-            row(194, StockWhen::ZoneGlowshroom),
-            row(3215, StockWhen::Always),
+            row(194, DRYAD_GLOWSHROOM_ELSE),
+            // `:1655-1661`: `Main.halloween` — the Goodie Bag pair
+            // (constants-off, no season system).
+            row(1853, StockWhen::Halloween),
+            row(1854, StockWhen::Halloween),
+            row(3215, StockWhen::Always), // `:1662-1675`'s planter block
             row(3216, StockWhen::Always),
             row(3219, StockWhen::Always),
-            // `:1656-1661`'s 3217/3218 crimson split rides the world flag.
-            row(3217, StockWhen::Always),
+            // `:1665-1672`: `WorldGen.crimson` → 3218, else 3217.
+            row(3218, StockWhen::CrimsonWorld),
+            row(3217, StockWhen::Not(&StockWhen::CrimsonWorld)),
             row(3220, StockWhen::Always),
             row(3221, StockWhen::Always),
             row(3222, StockWhen::Always),
@@ -559,14 +596,21 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4041, StockWhen::Always),
             row(4241, StockWhen::Always),
             row(4048, StockWhen::Always),
-            row(4430, StockWhen::MoonPhasePair(0)),
-            row(4431, StockWhen::MoonPhasePair(0)),
-            row(4433, StockWhen::MoonPhasePair(1)),
-            row(4434, StockWhen::MoonPhasePair(1)),
-            row(4436, StockWhen::MoonPhasePair(2)),
-            row(4437, StockWhen::MoonPhasePair(2)),
-            row(4439, StockWhen::MoonPhasePair(3)),
-            row(4440, StockWhen::MoonPhasePair(3)),
+            // `:1685-1710`: hardmode — the flower-seed TRIPLETS by
+            // `moonPhase / 2` (the third row is the hardmode-only one).
+            row(4430, DRYAD_FLOWER_PAIR0),
+            row(4431, DRYAD_FLOWER_PAIR0),
+            row(4432, DRYAD_FLOWER_TRIPLE0),
+            row(4433, DRYAD_FLOWER_PAIR1),
+            row(4434, DRYAD_FLOWER_PAIR1),
+            row(4435, DRYAD_FLOWER_TRIPLE1),
+            row(4436, DRYAD_FLOWER_PAIR2),
+            row(4437, DRYAD_FLOWER_PAIR2),
+            row(4438, DRYAD_FLOWER_TRIPLE2),
+            // The `default:` arm — phases 6/7 (pair 3).
+            row(4439, DRYAD_FLOWER_PAIR3),
+            row(4440, DRYAD_FLOWER_PAIR3),
+            row(4441, DRYAD_FLOWER_TRIPLE3),
             // M5-SEED-2: `:1733-1742`'s vampirism tail — the case's LAST rows,
             // after the `moonPhase / 2` flower-seed pairs: `!Main.hardMode &&
             // Main.vampireSeed && Main.infectedSeed` adds the Torch (8) and
@@ -1055,6 +1099,73 @@ const ARMS_MINISHARK: StockWhen = StockWhen::Any(&[
 /// Shotgun 4703.
 const ARMS_GRAVEYARD_QUAD: StockWhen =
     StockWhen::All(&[StockWhen::ZoneGraveyard, StockWhen::DownedBoss3]);
+
+// — W4-d122: the Dryad's compound gates (`Chest.cs:1568-1745`), named once
+// so the if/else arms share ONE condition object. —
+
+/// `Chest.cs:1571-1577`: `bloodMoon && crimson` + the remix gate — the
+/// Crimson Powder 2886 (the corruption twin's gate is the NOT-crimson).
+const DRYAD_BM_CRIMSON_POWDER: StockWhen = StockWhen::All(&[
+    StockWhen::BloodMoon,
+    StockWhen::CrimsonWorld,
+    StockWhen::NotRemixOrAnniversary,
+]);
+/// `:1578-1581`: `bloodMoon && crimson` — the Crimson Seeds 2171 + the
+/// Crimson Mushroom Grass Seeds 4508 (no remix conjunct).
+const DRYAD_BM_CRIMSON: StockWhen =
+    StockWhen::All(&[StockWhen::BloodMoon, StockWhen::CrimsonWorld]);
+/// `:1585-1589`: the corruption half's powder — the Vile Powder 67.
+const DRYAD_BM_CORRUPT_POWDER: StockWhen = StockWhen::All(&[
+    StockWhen::BloodMoon,
+    StockWhen::Not(&StockWhen::CrimsonWorld),
+    StockWhen::NotRemixOrAnniversary,
+]);
+/// `:1590-1593`: the Corrupt Seeds 59 + the Corrupt Mushroom Grass
+/// Seeds 4504.
+const DRYAD_BM_CORRUPT: StockWhen = StockWhen::All(&[
+    StockWhen::BloodMoon,
+    StockWhen::Not(&StockWhen::CrimsonWorld),
+]);
+/// `:1596-1602`: the else branch's powder gate — `!bloodMoon &&
+/// (!remix || infectedSeed || (anniversary && !getGood))`.
+const DRYAD_POWDER_ELSE: StockWhen = StockWhen::All(&[
+    StockWhen::Not(&StockWhen::BloodMoon),
+    StockWhen::NotRemixOrInfectedOrAnniversary,
+]);
+/// `:1610-1615`: `hardMode && ZoneGraveyard && crimson` — the Corrupt
+/// Seeds 59 (the C#'s flipped split is verbatim).
+const DRYAD_GRAVE_CRIMSON: StockWhen = StockWhen::All(&[
+    StockWhen::HardMode,
+    StockWhen::ZoneGraveyard,
+    StockWhen::CrimsonWorld,
+]);
+/// `:1616-1619`'s else arm — the Crimson Seeds 2171 in a corruption world.
+const DRYAD_GRAVE_CORRUPT: StockWhen = StockWhen::All(&[
+    StockWhen::HardMode,
+    StockWhen::ZoneGraveyard,
+    StockWhen::Not(&StockWhen::CrimsonWorld),
+]);
+/// `:1651-1654`: the glowshroom ELSE-IF — `!ZoneUnderworldHeight &&
+/// ZoneGlowshroom` (the Mushroom set 194).
+const DRYAD_GLOWSHROOM_ELSE: StockWhen = StockWhen::All(&[
+    StockWhen::Not(&StockWhen::ZoneUnderworld),
+    StockWhen::ZoneGlowshroom,
+]);
+/// `:1685-1732`: the flower-seed pairs — BOTH hardmode/non-hardmode
+/// switches carry the same first two rows per `moonPhase / 2` pair, so
+/// the pair rows are the moon gate alone; the THIRD row is hardmode-only.
+const DRYAD_FLOWER_PAIR0: StockWhen = StockWhen::MoonPhasePair(0);
+const DRYAD_FLOWER_PAIR1: StockWhen = StockWhen::MoonPhasePair(1);
+const DRYAD_FLOWER_PAIR2: StockWhen = StockWhen::MoonPhasePair(2);
+const DRYAD_FLOWER_PAIR3: StockWhen = StockWhen::MoonPhasePair(3);
+const DRYAD_FLOWER_TRIPLE0: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(0)]);
+const DRYAD_FLOWER_TRIPLE1: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(1)]);
+const DRYAD_FLOWER_TRIPLE2: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(2)]);
+const DRYAD_FLOWER_TRIPLE3: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhasePair(3)]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -1701,7 +1812,6 @@ fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_p
             StockWhen::ZoneSnow => flags.zone_snow,
             StockWhen::ZoneJungle => flags.zone_jungle,
             StockWhen::PlayerHasItem(id) => inventory_ids.contains(&id),
-            StockWhen::BloodMoonCorruption => flags.blood_moon,
             StockWhen::VampirismNotInfected => flags.vampirism && !flags.infected_seed,
             StockWhen::VampirismInfected => {
                 !flags.hard_mode && flags.vampirism && flags.infected_seed
@@ -1712,7 +1822,8 @@ fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_p
             StockWhen::VampirismInfectedCorrupt => {
                 !flags.hard_mode && flags.vampirism && flags.infected_seed && !flags.crimson_world
             }
-            StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
+            StockWhen::ZoneUnderworld => flags.zone_underworld,
+            StockWhen::ZoneGlowshroom => flags.zone_glowshroom,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
             StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
             StockWhen::LifeMax400 => flags.life_max_400,
@@ -1780,6 +1891,12 @@ fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_p
             // `Chest.cs:1489` verbatim — the rolled ore id comparison.
             StockWhen::SilverIsTungsten => flags.silver_ore_tier == 168,
             StockWhen::DownedBoss2 => flags.downed_boss2,
+            // `Chest.cs:1598` verbatim — the infected-seed disjunct.
+            StockWhen::NotRemixOrInfectedOrAnniversary => {
+                !flags.remix_world
+                    || flags.infected_seed
+                    || (flags.anniversary_world && !flags.get_good_world)
+            }
             // The combinators are handled above — unreachable here.
             StockWhen::All(_) | StockWhen::Any(_) | StockWhen::Not(_) => unreachable!(),
         },
@@ -2447,6 +2564,134 @@ mod tests {
                 97, 4915, 47, 95, 98, 4703, 324, 534, 1432, 2177, 1261, 1836, 3108, 1783, 1785
             ],
             "the exact num order (`:1485-1557`; the halloween trio stays off)"
+        );
+    }
+
+    /// W4-d122 shop 3 — the Dryad (`Chest.cs:1568-1745`, the registry
+    /// `NPCInteractions.Shop(20, 3)`, `NPCInteractions.cs:490`): the
+    /// blood-moon evil split with the remix-gated powder heads, the
+    /// NOT-blood-moon else branch, the flipped graveyard seed split, the
+    /// underworld/glowshroom else-if, the crimson planter split and the
+    /// hardmode flower TRIPLETS — verbatim. Written, not run (code-only).
+    #[test]
+    fn the_dryad_full_stock_pins_the_evil_splits_and_the_flower_triplets() {
+        // Classic day, phase 0, corruption world: the else branch + the
+        // base rows + the 3217 planter + the pair-0 rows.
+        let base = resolve_stock_moon(3, &ShopFlags::default(), &[], 0);
+        assert_eq!(
+            base,
+            vec![
+                66, 62, 63, 745, 27, 5309, 114, 1828, 747, 3215, 3216, 3219, 3217, 3220, 3221,
+                3222, 4047, 4045, 4044, 4043, 4042, 4046, 4041, 4241, 4048, 4430, 4431
+            ],
+            "the exact num order (`:1598-1731`, no hardmode)"
+        );
+        // `:1569`: the blood moon REPLACES the else branch with the
+        // corruption seeds (the powder rides the remix gate).
+        let bm = ShopFlags {
+            blood_moon: true,
+            ..Default::default()
+        };
+        let b = resolve_stock_moon(3, &bm, &[], 0);
+        assert_eq!(&b[..3], &[67, 59, 4504], "the corruption head rows");
+        assert!(!b.contains(&66) && !b.contains(&62), "the else rows are gone");
+        // The crimson world flips the split (`:1571-1581`).
+        let crimson = ShopFlags {
+            crimson_world: true,
+            ..bm
+        };
+        let c = resolve_stock_moon(3, &crimson, &[], 0);
+        assert_eq!(&c[..3], &[2886, 2171, 4508]);
+        // `:1573`/`:1585`: remix ON kills ONLY the powder head.
+        let remix = ShopFlags {
+            remix_world: true,
+            ..bm
+        };
+        let r = resolve_stock_moon(3, &remix, &[], 0);
+        assert_eq!(&r[..2], &[59, 4504], "the seeds survive the remix gate");
+        // `:1598`: remix ON also kills the else-branch powder — but the
+        // infected seed brings it back (the middle disjunct).
+        let remix_day = ShopFlags {
+            remix_world: true,
+            ..Default::default()
+        };
+        let rd = resolve_stock_moon(3, &remix_day, &[], 0);
+        assert!(!rd.contains(&66) && rd.contains(&62), "the bare else rows stay");
+        let infected = ShopFlags {
+            infected_seed: true,
+            ..remix_day
+        };
+        assert!(resolve_stock_moon(3, &infected, &[], 0).contains(&66));
+        // `:1610`: hardmode + graveyard — the FLIPPED split (crimson world
+        // sells 59, corruption world 2171).
+        let grave = ShopFlags {
+            hard_mode: true,
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let g = resolve_stock_moon(3, &grave, &[], 0);
+        let i747 = g.iter().position(|v| *v == 747).unwrap();
+        assert_eq!(g[i747 - 1], 2171, "the corruption world's grave seed");
+        let grave_c = ShopFlags {
+            crimson_world: true,
+            ..grave
+        };
+        let gc = resolve_stock_moon(3, &grave_c, &[], 0);
+        let i747c = gc.iter().position(|v| *v == 747).unwrap();
+        assert_eq!(gc[i747c - 1], 59, "the crimson world's grave seed");
+        // `:1647-1654`: the underworld wins over the glowshroom else-if.
+        let under = ShopFlags {
+            zone_underworld: true,
+            zone_glowshroom: true,
+            ..Default::default()
+        };
+        let u = resolve_stock_moon(3, &under, &[], 0);
+        assert!(u.contains(&5214) && !u.contains(&194), "the else-if precedence");
+        let glow = ShopFlags {
+            zone_glowshroom: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock_moon(3, &glow, &[], 0).contains(&194));
+        // `:1665`: the crimson planter split.
+        let planter = ShopFlags {
+            crimson_world: true,
+            ..Default::default()
+        };
+        let pl = resolve_stock_moon(3, &planter, &[], 0);
+        assert!(pl.contains(&3218) && !pl.contains(&3217));
+        // `:1685-1710`: hardmode adds the THIRD flower row per pair; the
+        // pairs themselves are hardmode-independent.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let h0 = resolve_stock_moon(3, &hm, &[], 0);
+        assert_eq!(&h0[h0.len() - 3..], &[4430, 4431, 4432]);
+        let h6 = resolve_stock_moon(3, &hm, &[], 6);
+        assert_eq!(&h6[h6.len() - 3..], &[4439, 4440, 4441], "the default arm");
+        let p6 = resolve_stock_moon(3, &ShopFlags::default(), &[], 6);
+        assert_eq!(&p6[p6.len() - 2..], &[4439, 4440], "the non-hardmode pair");
+        // The FULL pin: hardmode + blood moon + crimson + graveyard +
+        // underworld + remix + anniversary (the powder survives via the
+        // anniversary disjunct), phase 5 (pair 2).
+        let full = ShopFlags {
+            hard_mode: true,
+            blood_moon: true,
+            crimson_world: true,
+            zone_graveyard: true,
+            zone_underworld: true,
+            remix_world: true,
+            anniversary_world: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock_moon(3, &full, &[], 5),
+            vec![
+                2886, 2171, 4508, 59, 27, 5309, 114, 1828, 747, 746, 369, 4505, 5214, 3215,
+                3216, 3219, 3218, 3220, 3221, 3222, 4047, 4045, 4044, 4043, 4042, 4046, 4041,
+                4241, 4048, 4436, 4437, 4438
+            ],
+            "the exact num order (`:1569-1731`; the halloween pair stays off)"
         );
     }
 

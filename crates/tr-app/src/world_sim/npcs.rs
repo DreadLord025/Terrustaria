@@ -970,6 +970,10 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         zone_graveyard: app.scene_metrics.zone_graveyard,
         zone_sky_height: app.scene_metrics.zone_sky_height,
         zone_hallow: app.scene_metrics.zone_hallow,
+        // W4-d122 shop 3: the Dryad's underworld/glowshroom else-if
+        // (`Chest.cs:1647-1654`) — the scene metrics' own zone flags.
+        zone_underworld: app.scene_metrics.zone_underworld_height,
+        zone_glowshroom: app.scene_metrics.enough_tiles_for_glowing_mushroom(),
         // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
         // (`WorldGen.cs:555-562`) — `Chest.SetupShop`'s Dryad and Bestiary
         // Girl vampirism rows (`shop.rs`'s `Vampirism*` gates). The world's
