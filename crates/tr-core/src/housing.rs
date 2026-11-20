@@ -110,14 +110,25 @@ fn housing_check_if_in_room(scan: &RoomScan, x: i32, y: i32) -> bool {
     scan.room_tiles.contains(&(x, y))
 }
 
-/// `Collision.SolidTiles` (`Collision.cs:1862-1878`): any solid tile in the
-/// box.
+/// `Collision.SolidTiles(int startX, int endX, int startY, int endY)`
+/// (`Collision.cs:3455-3488`): the box's blocking test — the four edge
+/// guards return true (an off-world box blocks), a null cell returns false,
+/// and a cell blocks only when `active && !inActive && tileSolid &&
+/// !tileSolidTop` (`:3481` — platforms and actuated tiles do not block).
 fn solid_tiles_in_box(world: &World, x1: i32, x2: i32, y1: i32, y2: i32) -> bool {
+    // `:3457-3472`.
+    if x1 < 0 || x2 >= world.width as i32 || y1 < 0 || y2 >= world.height as i32 - 40 {
+        return true;
+    }
     for x in x1..=x2 {
         for y in y1..=y2 {
-            if world
-                .tile(x, y)
-                .is_some_and(|t| t.active() && TILE_SOLID.has(t.kind))
+            let Some(t) = world.tile(x, y) else {
+                return false; // `:3477-3480`: the null-cell arm
+            };
+            if t.active()
+                && !t.inactive()
+                && TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
             {
                 return true;
             }
@@ -354,8 +365,12 @@ pub fn score_room_report(
             if num <= hi_score {
                 continue;
             }
-            // `:5953-5972`: the three cells above the spot must be in the
-            // room and the room must hold the spot itself.
+            // `:5961-5982`: the three cells above the spot must be non-solid,
+            // in the room, and the room must hold the spot itself. The C#
+            // reads `Main.tile[i, j - m].active()` + `tileSolid` only — no
+            // `!tileSolidTop` exclusion here (that one lives in
+            // `Collision.SolidTiles` alone), so a platform above the spot
+            // disqualifies it.
             let mut in_room = housing_check_if_in_room(scan, i, j);
             let mut above = [false; 3];
             for m in 1..=3 {

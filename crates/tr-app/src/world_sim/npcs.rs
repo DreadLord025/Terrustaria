@@ -4842,15 +4842,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 n.kind.net_id(),
             ));
         }
+        let mut homed = 0;
         for (i, tx, ty, net_id) in asking {
             // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
+            // `NPC.unlockedTruffleSpawn` has no ported field yet (no Truffle
+            // kind), so the special-conditions gate reads false.
             if let Some((hx, hy)) =
-                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), net_id)
+                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), net_id, false)
             {
-                // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
-                // the home assigns, the homeless flag clears.
+                // `QuickFindHome`'s success arm (`WorldGen.cs:5776-5780`):
+                // homeTileX/Y = bestX/bestY, homeless = false,
+                // homelessDespawn = false, NotifyProgressionEvent(8).
                 npcs[i].home = Some((hx, hy));
+                npcs[i].homeless_despawn = false;
+                homed += 1;
             }
+        }
+        // The NO_HOBO notifications after the mutable pass (the borrow seam
+        // — `notify_progression_net` needs `&mut App`; one per move-in,
+        // `WorldGen.cs:5780`).
+        for _ in 0..homed {
+            let _ = app.notify_progression_net(8);
         }
     }
     // `Main.UpdateTime_SpawnTownNPCs` (`Main.cs:65542-66116`, M4-TOWN-1b):
@@ -4906,9 +4918,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             if let Some(player) = app.player.as_ref() {
                 let xt = (player.x / TILE_PX) as i32;
                 let yt = (player.y / TILE_PX) as i32;
-                if let Some((hx, hy)) =
-                    crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None, kind.net_id())
-                {
+                if let Some((hx, hy)) = crate::town::quick_find_home(
+                    &app.world,
+                    &app.npcs,
+                    xt,
+                    yt,
+                    None,
+                    kind.net_id(),
+                    false,
+                ) {
                     // `WorldGen.SpawnTownNPC`'s relocation arm
                     // (`WorldGen.cs:5428` `FindNPCLookingForHomeThatCanMoveIn`
                     // → `:5453-5463`): an already-live homeless NPC of this
