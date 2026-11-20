@@ -92,6 +92,21 @@ pub enum FindFrameExtra4Kind {
     /// `NPCID.BloodJelly` = 242 (`NPCID.cs:11161`) — the
     /// 63/64/103/256 jellyfish group (`NPC.cs:73916-73920`).
     BloodJelly,
+    /// `NPCID.IceGolem` = 243 (`NPCID.cs:11163`) — `case 243`
+    /// (`NPC.cs:72995-73053`), the negative-counter landing ladder.
+    IceGolem,
+    /// `NPCID.RainbowSlime` = 244 (`NPCID.cs:11165`) — `case 244`
+    /// (`NPC.cs:72632-72651`), the num2-fed slime strip.
+    RainbowSlime,
+    /// `NPCID.Eyezor` = 251 (`NPCID.cs:11179`) — the case-3 zombie
+    /// walker group (`NPC.cs:76324-76346`).
+    Eyezor,
+    /// `NPCID.Parrot` = 252 (`NPCID.cs:11181`) — the 301 pair
+    /// (`NPC.cs:73558-73559`), the 252 branch.
+    Parrot,
+    /// `NPCID.Reaper` = 253 (`NPCID.cs:11183`) — the floater group
+    /// (`NPC.cs:74833`).
+    Reaper,
 }
 
 impl FindFrameExtra4Kind {
@@ -108,6 +123,11 @@ impl FindFrameExtra4Kind {
             Self::BloodCrawlerWall => 240,
             Self::BloodFeeder => 241,
             Self::BloodJelly => 242,
+            Self::IceGolem => 243,
+            Self::RainbowSlime => 244,
+            Self::Eyezor => 251,
+            Self::Parrot => 252,
+            Self::Reaper => 253,
         }
     }
 
@@ -128,6 +148,12 @@ impl FindFrameExtra4Kind {
             Self::BloodCrawlerWall => 4,
             Self::BloodFeeder => 6,
             Self::BloodJelly => 7,
+            // Main.cs:67108 (243/244): 15, 4; :67109 (251/252/253): 3, 5, 3.
+            Self::IceGolem => 15,
+            Self::RainbowSlime => 4,
+            Self::Eyezor => 3,
+            Self::Parrot => 5,
+            Self::Reaper => 3,
         }
     }
 }
@@ -146,6 +172,11 @@ pub fn find_frame_kind_extra4(vanilla_type: i16) -> Option<FindFrameExtra4Kind> 
         240 => FindFrameExtra4Kind::BloodCrawlerWall,
         241 => FindFrameExtra4Kind::BloodFeeder,
         242 => FindFrameExtra4Kind::BloodJelly,
+        243 => FindFrameExtra4Kind::IceGolem,
+        244 => FindFrameExtra4Kind::RainbowSlime,
+        251 => FindFrameExtra4Kind::Eyezor,
+        252 => FindFrameExtra4Kind::Parrot,
+        253 => FindFrameExtra4Kind::Reaper,
         _ => return None,
     })
 }
@@ -352,6 +383,211 @@ pub fn find_frame_extra4(kind: FindFrameExtra4Kind, s: &mut FrameState, i: &Fram
                 s.counter = 0.0;
             }
         }
+        // `case 243` (`NPC.cs:72995-73053`): the Ice Golem's
+        // negative-counter landing ladder. While the counter is
+        // below 0 the ground ticks climb it +1 — < -12 pins row 11,
+        // < -6 pins row 12, the < 0 tail snaps the counter to 0 and
+        // pins row 11 (all three gated on row > 9, `:72998-73023`);
+        // the AIR ticks re-pin the counter to -18 and write row 14
+        // rising / row 13 falling (`:73024-73035`). The grounded
+        // walk copies direction unconditionally and accumulates
+        // `|vx * 1.1|` stepping every >= 6 over rows 0..9 with the
+        // > 9 wrap (`:73038-73048`); the fast-air kick (vy < -2 or
+        // vy > 5) re-arms the -18 ladder AFTER the walk step
+        // (`:73049-73052`).
+        FindFrameExtra4Kind::IceGolem => {
+            // `:72996-73037`.
+            if s.counter < 0.0 {
+                if i.vy == 0.0 {
+                    s.counter += 1.0;
+                    if s.counter < -12.0 {
+                        if s.row > 9 {
+                            s.row = 11;
+                        }
+                    } else if s.counter < -6.0 {
+                        if s.row > 9 {
+                            s.row = 12;
+                        }
+                    } else if s.counter < 0.0 {
+                        s.counter = 0.0;
+                        if s.row > 9 {
+                            s.row = 11;
+                        }
+                    }
+                } else {
+                    s.counter = -18.0;
+                    s.row = if i.vy < 0.0 { 14 } else { 13 };
+                }
+                return;
+            }
+            // `:73038-73048`.
+            s.sprite_dir = i.direction;
+            s.counter += (i.vx * 1.1).abs();
+            if s.counter >= 6.0 {
+                s.counter = 0.0;
+                s.row += 1;
+                if s.row > 9 {
+                    s.row = 0;
+                }
+            }
+            // `:73049-73052`.
+            if i.vy < -2.0 || i.vy > 5.0 {
+                s.counter = -18.0;
+            }
+        }
+        // `case 244` (`NPC.cs:72632-72651`): the Rainbow Slime — the
+        // counter feeds on the `num2` motion class (`NPC.cs:66696-
+        // 66704`): +1 always, +1 more while moving/airborne
+        // (num2 > 0), +1 more on the attack class (num2 == 4,
+        // aiAction 1); the >= 8 step walks the FULL 4 rows with the
+        // >= count wrap. No sprite/rotation write.
+        FindFrameExtra4Kind::RainbowSlime => {
+            // `:66696-66704` — the num2 class.
+            let num2 = if i.ai_action == 0 {
+                if i.vy < 0.0 {
+                    2
+                } else if i.vy > 0.0 {
+                    3
+                } else if i.vx != 0.0 {
+                    1
+                } else {
+                    0
+                }
+            } else if i.ai_action == 1 {
+                4
+            } else {
+                0
+            };
+            // `:72633-72650`.
+            s.counter += 1.0;
+            if num2 > 0 {
+                s.counter += 1.0;
+            }
+            if num2 == 4 {
+                s.counter += 1.0;
+            }
+            if s.counter >= 8.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= kind.frame_count() {
+                s.row = 0;
+            }
+        }
+        // `case 251` in the zombie walker group (`NPC.cs:76324-76391`,
+        // shared with 3/52/53/132/161/186-189/200/223/254/255/319-321/
+        // 331/332/342/536/590/691 — the wave-A zombie arm is the same
+        // machine, keep-one at the merge): the grounded flip writes
+        // only on direction ±1 (`:76347-76357`); the air OR the
+        // facing-against-motion turn pins row 2 + zeroes the counter
+        // (`:76358-76363` — the 3-row sheet's jump row); the idle
+        // snaps row 0 (`:76364-76369`); the walk accumulates |vx|
+        // over the <8/<16/<24/<32 bands rows 0/1/2/1 with the >= 32
+        // tail zeroing the counter and HOLDING the row
+        // (`:76370-76390`).
+        FindFrameExtra4Kind::Eyezor => {
+            // `:76347-76357`.
+            if i.vy == 0.0 {
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+            }
+            // `:76358-76363`.
+            if i.vy != 0.0
+                || (i.direction == -1 && i.vx > 0.0)
+                || (i.direction == 1 && i.vx < 0.0)
+            {
+                s.counter = 0.0;
+                s.row = 2;
+                return;
+            }
+            // `:76364-76369`.
+            if i.vx == 0.0 {
+                s.counter = 0.0;
+                s.row = 0;
+                return;
+            }
+            // `:76370-76390`.
+            s.counter += i.vx.abs();
+            if s.counter < 8.0 {
+                s.row = 0;
+            } else if s.counter < 16.0 {
+                s.row = 1;
+            } else if s.counter < 24.0 {
+                s.row = 2;
+            } else if s.counter < 32.0 {
+                s.row = 1;
+            } else {
+                s.counter = 0.0;
+            }
+        }
+        // `case 252` (`NPC.cs:73558-73606`, the 301 pair — the 301
+        // inverted-flip branch `:73560-73577` is 301's, not 252's):
+        // the |vx| > 0.5 velocity-sign flip (`:73580-73587`), the
+        // `vx * 0.1` tilt (`:73589`), the still-air idle snaps row 0
+        // + zeroes the counter (`:73590-73595`); else the >4 counter
+        // steps a row and the `> 4 || == 0` clamp lifts row 0 to
+        // row 1 / wraps row 5 to 1 (`:73596-73605` — the strip
+        // cycles rows 1..4, row 0 is idle-only).
+        FindFrameExtra4Kind::Parrot => {
+            // `:73580-73587` — the 252 branch.
+            if i.vx > 0.5 {
+                s.sprite_dir = 1;
+            }
+            if i.vx < -0.5 {
+                s.sprite_dir = -1;
+            }
+            // `:73589`.
+            s.rotation = i.vx * 0.1;
+            // `:73590-73595`.
+            if i.vx == 0.0 && i.vy == 0.0 {
+                s.row = 0;
+                s.counter = 0.0;
+                return;
+            }
+            // `:73596-73605`.
+            s.counter += 1.0;
+            if s.counter > 4.0 {
+                s.counter = 0.0;
+                s.row += 1;
+            }
+            if s.row > 4 || s.row == 0 {
+                s.row = 1;
+            }
+        }
+        // `case 253` in the floater group (`NPC.cs:74823-74884`,
+        // shared with 48/49/51/60/82/93/137/182/210/211/316/634/662/
+        // 664 — e13's 137/182 and f26's 182 are the same machine,
+        // keep-one at the merge): the vx-sign flip (0 leaves it),
+        // the `vx * 0.1` tilt, the 6-tick strip over the FULL 3 rows
+        // — 253 is not in the `num292--` list (49/51/60/634,
+        // `:74867-74870`), not the type-48 `num291 = 5` override, not
+        // the 210/211 double-increment. The group's dust spawns are
+        // types 60/634's (the header's skip — the only `Main.rand`
+        // draw `:74844` is 634-gated, so 253 is RNG-free).
+        FindFrameExtra4Kind::Reaper => {
+            // `:74850-74857`.
+            if i.vx > 0.0 {
+                s.sprite_dir = 1;
+            }
+            if i.vx < 0.0 {
+                s.sprite_dir = -1;
+            }
+            // `:74858`.
+            s.rotation = i.vx * 0.1;
+            // `:74864-74883` — num291 = 6, num292 = the full count.
+            s.counter += 1.0;
+            if s.counter >= 6.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            if s.row >= kind.frame_count() {
+                s.row = 0;
+            }
+        }
     }
 }
 
@@ -389,6 +625,11 @@ mod tests {
             FindFrameExtra4Kind::BloodCrawlerWall,
             FindFrameExtra4Kind::BloodFeeder,
             FindFrameExtra4Kind::BloodJelly,
+            FindFrameExtra4Kind::IceGolem,
+            FindFrameExtra4Kind::RainbowSlime,
+            FindFrameExtra4Kind::Eyezor,
+            FindFrameExtra4Kind::Parrot,
+            FindFrameExtra4Kind::Reaper,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -522,13 +763,183 @@ mod tests {
         assert_eq!((s.row, s.counter), (4, 0.0));
     }
 
+    /// 243 IceGolem: the negative-counter landing ladder — from
+    /// counter -18 / row 13 the ground ticks climb +1 (row 11 until
+    /// -12, row 12 from -12 to -7, the -1 tick snaps the counter to
+    /// 0 + row 11); the air re-pins -18 + row 14/13; the walk wraps
+    /// past row 9 and the fast-air kick re-arms -18 AFTER the step
+    /// (`NPC.cs:72995-73053`). Expectation re-derived by replay.
+    #[test]
+    fn f27_ice_golem_landing_ladder_and_walk() {
+        let mut s = FrameState { row: 13, counter: -18.0, ..Default::default() };
+        let mut seen = Vec::new();
+        for _ in 0..12 {
+            find_frame_extra4(FindFrameExtra4Kind::IceGolem, &mut s, &input(0.0, 0.0));
+            seen.push((s.row, s.counter));
+        }
+        assert_eq!(
+            seen,
+            vec![
+                (11, -17.0), (11, -16.0), (11, -15.0), (11, -14.0), (11, -13.0),
+                (12, -12.0), (12, -11.0), (12, -10.0), (12, -9.0), (12, -8.0),
+                (12, -7.0), (11, 0.0)
+            ]
+        );
+        // The air pins: rising 14, falling 13, counter -18.
+        let mut s = FrameState { counter: -18.0, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::IceGolem, &mut s, &input(0.0, -3.0));
+        assert_eq!((s.row, s.counter), (14, -18.0));
+        find_frame_extra4(FindFrameExtra4Kind::IceGolem, &mut s, &input(0.0, 3.0));
+        assert_eq!((s.row, s.counter), (13, -18.0));
+        // The walk: vx 3 → 3.3/tick, two ticks a step, wrap 9 → 0.
+        let rows = rows_over(FindFrameExtra4Kind::IceGolem, input(3.0, 0.0), 24);
+        assert_eq!(rows, vec![0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 0, 0, 1, 1, 2]);
+        // The fast-air kick re-arms the ladder after the step.
+        let mut s = FrameState::default();
+        find_frame_extra4(FindFrameExtra4Kind::IceGolem, &mut s, &input(3.0, 6.0));
+        assert_eq!(s.counter, -18.0);
+        // The row > 9 gate: a walk-band row is NOT lifted by the ladder.
+        let mut s = FrameState { row: 5, counter: -18.0, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::IceGolem, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (5, -17.0));
+    }
+
+    /// 244 RainbowSlime: the num2-fed counter — idle +1 (8 ticks a
+    /// step), moving +2 (4 ticks), attack +3 (`NPC.cs:72633-72641`);
+    /// the strip walks the FULL 4 rows.
+    #[test]
+    fn f27_rainbow_slime_num2_feeds_the_counter() {
+        let idle = rows_over(FindFrameExtra4Kind::RainbowSlime, input(0.0, 0.0), 17);
+        assert_eq!(idle, vec![0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2]);
+        let walk = rows_over(FindFrameExtra4Kind::RainbowSlime, input(2.0, 0.0), 9);
+        assert_eq!(walk, vec![0, 0, 0, 1, 1, 1, 1, 2, 2]);
+        let attack_i = FrameInput { ai_action: 1, ..Default::default() };
+        let attack = rows_over(FindFrameExtra4Kind::RainbowSlime, attack_i, 7);
+        assert_eq!(attack, vec![0, 0, 1, 1, 1, 2, 2]);
+        // The full-count wrap: 32 idle ticks walk 0..3 back to 0.
+        let rows = rows_over(FindFrameExtra4Kind::RainbowSlime, input(0.0, 0.0), 33);
+        assert_eq!(rows[31], 0);
+        assert_eq!(rows[32], 0);
+    }
+
+    /// 251 Eyezor: the zombie walker — the |vx| bands 0/1/2/1, the
+    /// >= 32 tail row-hold, the air/turn row-2 pin, the idle row-0
+    /// snap, the grounded-only ±1 flip (`NPC.cs:76347-76390`).
+    #[test]
+    fn f27_eyezor_walks_the_zombie_bands() {
+        let rows = rows_over(FindFrameExtra4Kind::Eyezor, input(4.0, 0.0), 20);
+        assert_eq!(rows, vec![0, 1, 1, 2, 2, 1, 1, 1, 0, 1, 1, 2, 2, 1, 1, 1, 0, 1, 1, 2]);
+        // The air pin zeroes the counter.
+        let mut s = FrameState { counter: 9.0, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::Eyezor, &mut s, &input(4.0, 2.0));
+        assert_eq!((s.row, s.counter), (2, 0.0));
+        // The facing-against-motion turn pins row 2 too.
+        let mut s = FrameState { counter: 9.0, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::Eyezor, &mut s, &input(-1.0, 0.0));
+        assert_eq!((s.row, s.counter), (2, 0.0));
+        // The idle snap + the grounded-only flip (direction 0 holds).
+        let mut s = FrameState { row: 2, counter: 9.0, sprite_dir: -1, ..Default::default() };
+        let i = FrameInput { direction: 0, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::Eyezor, &mut s, &i);
+        assert_eq!((s.row, s.counter, s.sprite_dir), (0, 0.0, -1));
+    }
+
+    /// 252 Parrot: the |vx| > 0.5 flip + vx*0.1 tilt, the still-air
+    /// row-0 snap, the >4 step with the `>4 || ==0` clamp — the
+    /// strip cycles rows 1..4 (`NPC.cs:73580-73605`).
+    #[test]
+    fn f27_parrot_flaps_rows_one_through_four() {
+        let rows = rows_over(FindFrameExtra4Kind::Parrot, input(2.0, -1.0), 22);
+        assert_eq!(rows, vec![1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 1, 1, 1]);
+        let mut s = FrameState { row: 3, counter: 2.0, sprite_dir: -1, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::Parrot, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter, s.sprite_dir), (0, 0.0, -1), "still air snaps row 0");
+        // The sub-0.5 velocity leaves the flip alone but still flaps.
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::Parrot, &mut s, &input(0.4, -1.0));
+        assert_eq!(s.sprite_dir, -1);
+        assert_eq!(s.rotation, 0.4 * 0.1);
+        assert_eq!(s.row, 1, "the == 0 clamp lifts row 0 to 1");
+    }
+
+    /// 253 Reaper: the floater 6-tick strip over the FULL 3 rows,
+    /// the vx-sign flip (0 holds) and the vx*0.1 tilt
+    /// (`NPC.cs:74850-74883` — the 634-gated rand draw is skipped).
+    #[test]
+    fn f27_reaper_flaps_the_full_three_rows() {
+        let rows = rows_over(FindFrameExtra4Kind::Reaper, input(2.0, -1.0), 19);
+        assert_eq!(rows, vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 0, 0]);
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        find_frame_extra4(FindFrameExtra4Kind::Reaper, &mut s, &input(0.0, 0.0));
+        assert_eq!(s.sprite_dir, -1, "vx == 0 leaves the flip alone");
+        find_frame_extra4(FindFrameExtra4Kind::Reaper, &mut s, &input(-3.0, 0.0));
+        assert_eq!(s.sprite_dir, -1);
+        assert_eq!(s.rotation, -0.3);
+    }
+
+    /// The 15-kind strip sweep: a 5x3x3 vx/vy/direction input grid
+    /// (plus the wet/ai[1]/aiAction variants for 241/242/244), 40
+    /// ticks each — every row stays inside its sheet (the e14
+    /// precedent).
+    #[test]
+    fn f27_fifteen_kind_strip_sweep_stays_inside_the_sheets() {
+        let kinds = [
+            FindFrameExtra4Kind::HornetLeafy,
+            FindFrameExtra4Kind::HornetSpikey,
+            FindFrameExtra4Kind::HornetStingy,
+            FindFrameExtra4Kind::JungleCreeper,
+            FindFrameExtra4Kind::JungleCreeperWall,
+            FindFrameExtra4Kind::BlackRecluseWall,
+            FindFrameExtra4Kind::BloodCrawler,
+            FindFrameExtra4Kind::BloodCrawlerWall,
+            FindFrameExtra4Kind::BloodFeeder,
+            FindFrameExtra4Kind::BloodJelly,
+            FindFrameExtra4Kind::IceGolem,
+            FindFrameExtra4Kind::RainbowSlime,
+            FindFrameExtra4Kind::Eyezor,
+            FindFrameExtra4Kind::Parrot,
+            FindFrameExtra4Kind::Reaper,
+        ];
+        for k in kinds {
+            let count = k.frame_count();
+            for vx in [-4.0f32, -1.0, 0.0, 1.0, 4.0] {
+                for vy in [-3.0f32, 0.0, 3.0] {
+                    for direction in [-1i32, 0, 1] {
+                        for &(wet, ai1, ai_action) in
+                            &[(false, 0.0, 0), (true, 1.0, 0), (false, 0.0, 1)]
+                        {
+                            let i = FrameInput {
+                                vx,
+                                vy,
+                                direction,
+                                wet,
+                                ai: [0.0, ai1, 0.0, 0.0],
+                                ai_action,
+                            };
+                            let mut s = FrameState::default();
+                            for tick in 0..40 {
+                                find_frame_extra4(k, &mut s, &i);
+                                assert!(
+                                    s.row < count,
+                                    "type {} tick {tick} row {} >= {count} (vx {vx}, vy {vy}, dir {direction})",
+                                    k.vanilla_type(),
+                                    s.row
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// The seam maps exactly the batch's vanilla types and nothing
     /// else.
     #[test]
     fn f27_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra4(t);
-            let claimed = [233, 234, 235, 236, 237, 238, 239, 240, 241, 242];
+            let claimed = [233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 251, 252, 253];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
