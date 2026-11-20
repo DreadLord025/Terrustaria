@@ -1412,6 +1412,15 @@ pub struct Player {
     pub brain_of_confusion: bool,
     pub shadow_dodge: bool,
     pub long_invince: bool,
+    /// `Player.panic` (`Player.cs:1154`): the Panic Necklace 1290
+    /// (`ApplyEquipFunctional` `:14892-14895`), the Sweetheart Necklace
+    /// 1578 (`:15076-15080`, + the honeycomb) and the Crossed Heart
+    /// Necklace 6187 (`:14625-14628`, + `longInvince`) arm it per tick;
+    /// `ResetEffects` clears it (`:18616`). `Hurt` (`:38237-38240`) grants
+    /// the Panic buff 63 (480 ticks) on every accepted hit — the buff's
+    /// `moveSpeed++` (`UpdateBuffs` `:10130-10133`) doubles the base run
+    /// speed for its duration (W4-f48).
+    pub panic: bool,
     /// `Player.magicCuffs` (`Player.cs:2248`): the Magic Cuffs (1595,
     /// `ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
     /// `:14949-14953`) arm it per tick; `ResetEffects` clears it (`:18599`).
@@ -2749,6 +2758,7 @@ impl Player {
             mystic_sash_dodge: false,
             brain_of_confusion: false,
             shadow_dodge: false,
+            panic: false,
             long_invince: false,
             magic_cuffs: false,
             gold_ring: false,
@@ -4350,6 +4360,16 @@ impl Player {
                 return false;
             }
         }
+        // `Player.Hurt`'s panic grant (`Player.cs:38237-38240`): AFTER the
+        // dodge block's early returns (a dodged hit grants nothing) and
+        // BEFORE the defense reduction — `AddBuff(63, 480)` whenever the
+        // necklace armed `panic` (W4-f48). The `whoAmI == Main.myPlayer`
+        // gate collapses single-player; the `setSquireT2` twin
+        // (`:38241-38244`, `AddBuff(205, 300)`) rides the DD2 hurt-buff
+        // wave. `AddBuff` draws nothing (the `buffs.rs` port).
+        if self.panic {
+            self.buffs.add_buff(63, 480);
+        }
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
         // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
@@ -5456,10 +5476,22 @@ impl Player {
             6183 => self.acc_silver_bracer = true,
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
-            // Panic Necklace 1578 (`:15076-15080`): the honeycomb + `panic`.
-            // The port has no `panic` field — the hurt buff `AddBuff(63,
-            // 480)` (`:38237-38240`) stays deferred (ANALYSIS, wave B).
-            1578 => self.honey_comb = true,
+            // Sweetheart Necklace 1578 (`:15076-15080`): the honeycomb +
+            // `panic` (W4-f48 — the hurt buff `AddBuff(63, 480)`
+            // `:38237-38240` lands in `hurt_inner`).
+            1578 => {
+                self.honey_comb = true;
+                self.panic = true;
+            }
+            // Panic Necklace 1290 (`:14892-14895`): the bare `panic` flag.
+            1290 => self.panic = true,
+            // Crossed Heart Necklace 6187 (`:14625-14628`): panic +
+            // longInvince — the Cross Necklace's window doubling AND the
+            // panic speed on one accessory.
+            6187 => {
+                self.panic = true;
+                self.long_invince = true;
+            }
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
@@ -6179,6 +6211,8 @@ impl Player {
         self.black_belt = false;
         self.mystic_sash_dodge = false;
         self.long_invince = false;
+        // `:18616`: `panic = false` — the necklace rows re-arm (W4-f48).
+        self.panic = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
         }
@@ -6572,6 +6606,12 @@ impl Player {
                 // one snowflake/spark; the buff re-affirms the flag per tick.
                 312 => self.cool_whip_buff = true,
                 365 => self.cob_whip_buff = true,
+                // W4-f48 — `:10130-10133`: Panic (63) `moveSpeed++` — the
+                // necklace hurt-grant's speed half: +1.0 on the base-1
+                // multiplier doubles the run speed while the 480-tick buff
+                // lives (the `buff_effects.rs` pure-table row's wired twin,
+                // the Swiftness-3 convention).
+                63 => self.move_speed += 1.0,
                 // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
                 // `lifeRegen += 6` (the regen half has no consumer yet) and
                 // `thorns += 0.5` while under 1.
@@ -15455,6 +15495,86 @@ mod tests {
             (p.hurt_cd - 120.0 / 60.0).abs() < 1e-4,
             "the long-invince dodge window"
         );
+    }
+
+    #[test]
+    fn w4_f48_the_panic_necklaces_arm_the_flag_and_clear() {
+        // `ApplyEquipFunctional`: 1290 the bare panic (`Player.cs:14892-
+        // 14895`), 1578 panic + honeycomb (`:15076-15080`), 6187 panic +
+        // longInvince (`:14625-14628`); `ResetEffects` `:18616` clears.
+        let p = player_with_accessory(1290);
+        assert!(p.panic && !p.honey_comb && !p.long_invince);
+        let p = player_with_accessory(1578);
+        assert!(p.panic && p.honey_comb, "the Sweetheart keeps the bees");
+        let p = player_with_accessory(6187);
+        assert!(p.panic && p.long_invince, "the Crossed Heart pairs both");
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1290;
+        p.update(&w, PlayerInput::default());
+        assert!(p.panic);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.panic, "the clear re-folds without the source");
+    }
+
+    #[test]
+    fn w4_f48_the_accepted_hit_grants_panic_63_for_480_ticks() {
+        // `Hurt` `:38237-38240`: `AddBuff(63, 480)` after the dodge block,
+        // before the defense reduction. 63 is no debuff (the extension
+        // list omits it) — the classic time lands verbatim.
+        let mut p = player_with_accessory(1290);
+        assert!(p.buffs.find_buff_index(63).is_none());
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let i = p.buffs.find_buff_index(63).expect("the panic grant");
+        assert_eq!(p.buffs.buff_time[i], 480);
+        // Without the necklace: no grant.
+        let w = ground_world();
+        let mut q = Player::spawn(&w);
+        assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(q.buffs.find_buff_index(63).is_none());
+    }
+
+    #[test]
+    fn w4_f48_a_dodged_hit_grants_no_panic_and_draws_no_extra_roll() {
+        // The grant sits AFTER the dodge block's early returns
+        // (`Player.cs:38231-38240`) — a belt dodge skips it; the necklace
+        // adds no RNG draw of its own.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1290;
+        p.equipped[4] = 963;
+        p.update(&w, PlayerInput::default());
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(rng.draws, vec![(0, 10)]);
+        assert!(p.buffs.find_buff_index(63).is_none(), "the dodge skips the grant");
+        // The next accepted hit grants it (the window expired).
+        expire_dodge_window(&mut p);
+        let mut rng = DodgeRng::with_rolls(&[5]);
+        assert!(p.hurt(50, p.x + 100.0, &mut rng, true));
+        assert!(p.buffs.find_buff_index(63).is_some());
+    }
+
+    #[test]
+    fn w4_f48_the_panic_buff_doubles_the_move_speed_until_expiry() {
+        // `UpdateBuffs` `:10130-10133`: `moveSpeed++` per live slot — +1.0
+        // on the base-1 multiplier. The fold order: the reset (`:25491`'s
+        // stand-in) → the buff scan → the run-speed merge (`:26004`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.0).abs() < 1e-6, "the base multiplier");
+        p.buffs.add_buff(63, 480);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 2.0).abs() < 1e-6, "the doubled speed");
+        // Expiry: the next fold returns to base.
+        let i = p.buffs.find_buff_index(63).unwrap();
+        p.buffs.buff_time[i] = 1;
+        p.update(&w, PlayerInput::default()); // ticks 1 → 0, purged
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(63).is_none());
+        assert!((p.move_speed - 1.0).abs() < 1e-6, "the speed folds back");
     }
 
     #[test]

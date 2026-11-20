@@ -18472,9 +18472,14 @@ Documented gaps, all deliberate:
   Necklace 6187 (`:14627`) arm it with W4-f48; the Seraph Necklace 6180
   (`:14590`) rides a later wave with its unported `accHarpyCharm`/
   `accSeraphNecklace` halves.
-- **The panic/squire hurt buffs** (`:38242-38247`, `AddBuff(63, 480)` /
-  `AddBuff(205, 300)`) ride S1-C-7 (wave B arms the 1578 honeycomb half only вЂ”
-  the `panic` buff itself stays deferred, see "The hurt modifiers").
+- **The panic/squire hurt buffs** (`:38237-38244`, `AddBuff(63, 480)` /
+  `AddBuff(205, 300)`): the panic half lands with W4-f48 вЂ” the `panic` flag
+  (1290 `:14894`, 1578 `:15079`, 6187 `:14626`, clear `:18616`), the
+  post-dodge grant in `hurt_inner` and the buff-63 `moveSpeed++` effect arm
+  (`:10130-10133`, +1.0 on the base-1 multiplier, the Swiftness-3 wired
+  convention). The squire `setSquireT2` twin (`AddBuff(205, 300)`) rides
+  the DD2 hurt-buff wave (the flag + the buff-205 ballista arm exist; the
+  hurt grant is the missing row).
 - **`brain_of_confusion_dodge_animation_counter`** has no render consumer
   (the S1-A-9 dead-slot convention) вЂ” carried for state parity.
 - **The contact/thorns restructure** (Phase 2, landed): the contact block runs
@@ -18642,8 +18647,9 @@ Documented deviations, all deliberate:
   in the same spawn expression).
 - **The NPC `active` gate** folds to the `hp > 0` live-list convention (the
   `buff_effects_accessory` precedent).
-- **Deferred families**: 1578's `panic` hurt buff (`AddBuff(63, 480)`,
-  `:38242-38244`), 6184's `accPoisonBarb`/`accHoneyedBarb`, 6186's
+- **Deferred families**: 1578's `panic` hurt buff landed with W4-f48 (see
+  "The dodge family" вЂ” the flag, the grant and the buff-63 speed arm);
+  6184's `accPoisonBarb`/`accHoneyedBarb`, 6186's
   `accSnakeBand`, 4001's manaFlower auto-potion half (`:52588`, the port
   folds only the -0.08 `manaCost` row), 3251's `hasLuck_LuckyHorseshoe`
   (`:14876`, no luck-horseshoe field yet). Combat text stays FROZEN
