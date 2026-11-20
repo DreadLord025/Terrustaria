@@ -39665,3 +39665,97 @@ wet/ai1/aiAction variants, 40 ticks each, rows stay inside their
 sheets) and the seam's exact-set pin. The strip/band expectation
 tables were re-derived by mechanical replay of the ported machines
 (a Python transcription of the C# order), not by hand alone.
+
+## W4-g7 FindFrame wire-2 — the SECOND wiring half (2026-11-21, code-only mode)
+
+The g6 wire-1 lane takes the first half (d44 low-1 / d45 low-2 / d46
+mid-1 / d47 mid-2 / d48 wave C); THIS lane wires the second half — the
+d49 wave-D, e14 extra-2, f26 extra-3 and f27 extra-4 machines — and
+resolves the e13 extra-1 overlap by full keep-one dedupe.
+
+### Census (the dispatch state before this lane)
+
+`npc.rs::find_frame` on main `a725acb0` dispatches on `NpcKind` with the
+wave-A/B bridges (`find_frame_wave_a`, the `npc_findframe_b` arms); NO
+cs_id-keyed hook existed yet. The five second-half modules landed
+machine-only on their branches (the wave-A precedent), each with a
+vanilla-type seam lookup and pinned module witnesses.
+
+### The hooks (the d45/e13 `cs_id` precedent, four bridges)
+
+Four `cs_id`-keyed hooks sit at the head of `npc.rs::find_frame`, in
+ascending-id order, each `return`ing after one machine tick:
+
+1. `npc_findframe_extra2::find_frame_kind_for_cs_id` →
+   `find_frame_wave_extra2` — 7 ids: 121/137/141/142/148/149/181.
+2. `npc_findframe_extra3::find_frame_kind_extra3` →
+   `find_frame_wave_extra3` — 15 ids: 182/185/195/196/198/199/201/202/
+   203/204/205/209/217/218/219.
+3. `npc_findframe_extra4::find_frame_kind_extra4` →
+   `find_frame_wave_extra4` — 15 ids: 233-244/251/252/253.
+4. `npc_findframe_high2::find_frame_kind_high2` →
+   `find_frame_wave_high2` — 13 ids / 12 kinds: 366/367 (the keep-one
+   scorpion pair)/374/375/377/378/379/380/430-434.
+
+The bridges copy the machines' `FrameState` fields both ways
+(row/counter/sprite_dir/rotation, plus `local_ai[0]` for extra-2 and
+high2) and feed the per-tick inputs from the NPC's own fields: `facing`
+as `direction`, `ai`, `wet`, `ai_action`, `ai[2]` as `ai2`. The extra-2
+penguin colour bank is fed through BOTH `FrameState::local_ai0` and
+`FrameInput::local_ai0` (the module reads the input slot; the state
+slot copies back), so either read resolves.
+
+### Stream-inertness (verified, not assumed)
+
+NO current `NpcKind::cs_id` lands in any of the four claim sets —
+checked over the hand `cs_id` rows (`npc/data.rs::cs_id`) AND all 249
+bestiary `net_id` rows the fallback resolves (the mechanical census:
+zero collisions with the 50 claimed ids). Each hook has an
+`ALL_KINDS`-sweep inertness witness in `npc.rs`. No arm draws
+`Main.rand` (the floater group's only draw is 634-gated,
+`NPC.cs:74844`; the eye group's dust is type 23's), so the wiring
+cannot move a stream even after the roster waves add the kinds.
+
+### The keep-one dedupes (arms verified verbatim before folding)
+
+* **e13 extra-1 fully deduped** — all 15 of its ids are twins: the 7
+  e14 ids (121/137/141/142/148/149/181) ride the extra-2 hook, the 8
+  f26 ids (182/185/195/196/198/199/201/202) ride the extra-3 hook
+  (f26's batches 2/3 landed 201/202 after e13's claim). Every arm was
+  compared side-by-side (the Slimer latch/second-flip branch, the
+  penguin bank — e13 reads `FrameState.local_ai0`, e14 reads
+  `FrameInput.local_ai0`, the bridge feeds both — Santa's
+  ExtraFramesCount-9 town band, the humanoid fighter walk incl the
+  201/202 `:69647` air pin-0 pair, the LostGirl ladder, the
+  LihzahrdCrawler two-clock). The `npc_findframe_extra1` module is NOT
+  landed on this branch; its e13 anchors/PORT_MAP claims are superseded
+  by the extra-2/extra-3 rows.
+* **e14's low-band twins dropped from its lookup** —
+  84/93/94/101/102/103/116/120 ride the g6 d45 low-2 hook (all 8 arms
+  verified identical: the cursed-hammer spin/bonk, the bat flap, the
+  Corruptor row-1 tail, the Clinger +2 stride, the fish wet/dry
+  hold-tails, the jellyfish pulse gate, the Hungry II atan2 + literal
+  3.14f tilt, the ChaosElemental air-pin-0 fighter walk). The arms stay
+  in `npc_findframe_extra2.rs` as the parity references its module
+  witnesses pin; only the lookup claims the 7 unclaimed ids.
+* **The d48 ScorpionBlack 366 folds onto the d49 Scorpion machine** —
+  the C# groups `case 366 : case 367` (`NPC.cs:76820-76850`); the arms
+  are verbatim twins (the ground-only flip, the idle row-0 snap, the
+  `|vx|+1` scuttle stride). `find_frame_kind_high2` maps both ids; the
+  g6 d48 hook must NOT also claim 366 (the wire-1 lane's dedupe note).
+
+### Witnesses
+
+12 NPC-side seam witnesses in four `w4_g7_wire2_*` test modules
+(inertness sweeps over `ALL_KINDS`, the extra-2 7-id lookup census
+0..697, the scorpion-pair fold, and the field-copy bridge pins: the
+Slimer latch, the ToxicSludge air counter-hold + unconditional flip,
+the penguin bank, the LostGirl ladder, the 201-vs-185 air-pin split,
+the SpikedJungleSlime ai_action x1/x3 stride, the beetle facing-0 flip,
+the hornet reset-tick row-hold, the creeper air pin, the BloodFeeder
+wet/dry bands, the BloodJelly pulse lift-clamp, the RainbowSlime attack
+stride, the truffle worm -2f pin + spin, the archer draw row, the
+armed-zombie swing-before-flip + >=32 row-hold). All WRITTEN NOT RUN —
+no cargo/rustc/tests invoked on this branch (code-only mode). The
+module-side witnesses (13 high2 + 15 extra2 + 12 extra3 + 14 extra4)
+ride their cherry-picked port commits unchanged.
