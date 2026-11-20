@@ -174,6 +174,7 @@ mod hurt_modifiers;
 mod melee_on_hit;
 mod player;
 mod player_file;
+mod popup_text;
 mod potions;
 mod prefix;
 pub(crate) mod prefix_id;
