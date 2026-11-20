@@ -2963,4 +2963,404 @@ mod tests {
             .count();
         assert!(band_mud > 1000, "the band's mud ({band_mud})");
     }
+
+    // --- W4-g40 marble/granite residual witnesses (WRITTEN NOT RUN —
+    // code-only mode; the merge gate runs them) ------------------------------
+
+    /// `MarbleBiome.SlabStates` (`MarbleBiome.cs:14-47`): every pattern's
+    /// per-cell predicate transcribed independently over the 3x3 slab grid.
+    #[test]
+    fn w4_g40_slab_state_predicates_match_the_csharp_delegates() {
+        for x in 0..3 {
+            for y in 0..3 {
+                assert!(!SlabState::Empty.active_at(x, y, 3));
+                assert!(SlabState::Solid.active_at(x, y, 3));
+                assert_eq!(SlabState::HalfBrick.active_at(x, y, 3), y >= 3 / 2);
+                assert_eq!(SlabState::BottomRightFilled.active_at(x, y, 3), x >= 3 - y);
+                assert_eq!(SlabState::BottomLeftFilled.active_at(x, y, 3), x < y);
+                assert_eq!(SlabState::TopRightFilled.active_at(x, y, 3), x > y);
+                assert_eq!(SlabState::TopLeftFilled.active_at(x, y, 3), x < 3 - y);
+            }
+        }
+    }
+
+    /// `MarbleBiome.SmoothSlope`'s mask map (`MarbleBiome.cs:88-108`): the
+    /// five named cases plus the default re-solidify, over a 3x3 slab grid
+    /// with the centre solid and the four neighbours toggled per mask.
+    #[test]
+    fn w4_g40_marble_smooth_maps_the_five_named_masks() {
+        let cases = [
+            (10u8, SlabState::TopLeftFilled),
+            (9, SlabState::TopRightFilled),
+            (6, SlabState::BottomLeftFilled),
+            (5, SlabState::BottomRightFilled),
+            (4, SlabState::HalfBrick),
+            (0, SlabState::Solid),
+            (15, SlabState::Solid),
+            (3, SlabState::Solid),
+        ];
+        for (mask, want) in cases {
+            // gw = gh = 3, centre (1, 1); bit 3 = above, bit 2 = below,
+            // bit 1 = left, bit 0 = right (`:88`).
+            let mut slabs = vec![(SlabState::Empty, true); 9];
+            slabs[4].0 = SlabState::Solid;
+            if mask & 8 != 0 {
+                slabs[1].0 = SlabState::Solid;
+            }
+            if mask & 4 != 0 {
+                slabs[7].0 = SlabState::Solid;
+            }
+            if mask & 2 != 0 {
+                slabs[3].0 = SlabState::Solid;
+            }
+            if mask & 1 != 0 {
+                slabs[5].0 = SlabState::Solid;
+            }
+            marble_smooth(&mut slabs, 1, 1, 3, 3);
+            assert_eq!(slabs[4].0, want, "mask {mask}");
+            assert!(slabs[4].1, "WithState keeps HasWall (`:64-67`)");
+        }
+        // An empty centre is untouched (`:82`'s IsSolid gate).
+        let mut slabs = vec![(SlabState::Empty, false); 9];
+        marble_smooth(&mut slabs, 1, 1, 3, 3);
+        assert_eq!(slabs[4], (SlabState::Empty, false));
+    }
+
+    /// `TileID.Sets.Ore` (`TileID.cs:614`) — the literal set transcribed
+    /// from the decompile, both directions (the old port list carried
+    /// 170/171/172/174/176/408/224/403, none of which are Ore).
+    #[test]
+    fn w4_g40_tile_is_ore_is_the_tileid_sets_ore_literal() {
+        let ore = [
+            7u16, 166, 6, 167, 9, 168, 8, 169, 22, 204, 37, 58, 107, 221, 108, 222, 111, 223,
+            211,
+        ];
+        for kind in 0..700u16 {
+            assert_eq!(tile_is_ore(kind), ore.contains(&kind), "kind {kind}");
+        }
+    }
+
+    /// `MarbleBiome.PlaceSlab` (`MarbleBiome.cs:112-161`) with an EMPTY slab
+    /// (every cell inactive): the per-column draw ledger replays exactly —
+    /// the edge skip roll, the two extent rolls, and NO `Next(4)` draws (the
+    /// written cells are inactive, so both `SolidTile` gates fail and the
+    /// short-circuit spends nothing). The writes are `ResetToType(367)` +
+    /// active(false) + wall 178; `Tile.SmoothSlope` refuses inactive cells.
+    #[test]
+    fn w4_g40_marble_place_slab_empty_ledger_and_writes() {
+        let (mut world, _, _) = flat_world(20, 60, 60);
+        world.seed = 5;
+        let (ox, oy) = (25, 35);
+        // Carve the slab's reach (plus the SmoothSlope/PlaceTight neighbour
+        // halo) to air so every `SolidTile` gate fails and the ledger is the
+        // column rolls alone (no Next(4) draws).
+        for x in (ox - 2)..=(ox + 4) {
+            for y in (oy - 6)..=(oy + 9) {
+                let i = world.index(x, y);
+                world.tiles[i].flags &= !FLAG_ACTIVE;
+            }
+        }
+        let mut world_b = world.clone();
+        let mut rng = Rng(0x9A11);
+        marble_place_slab(&mut world, (SlabState::Empty, true), ox, oy, &mut rng);
+        // The independent draw replay (`:125-138`).
+        let mut rep = Rng(0x9A11);
+        let (mut num4, mut num5) = (0i32, 3i32);
+        let mut touched: Vec<(i32, i32)> = Vec::new();
+        for i in -1..4 {
+            if (i == -1 || i == 3) && rep.chance(2) {
+                continue;
+            }
+            if rep.chance(2) {
+                num4 -= 1;
+            }
+            if rep.chance(2) {
+                num5 += 1;
+            }
+            for j in num4..num5 {
+                touched.push((ox + i, oy + j));
+            }
+        }
+        assert_eq!(rng.0, rep.0, "the column rolls replay the stream");
+        assert!(!touched.is_empty(), "the witness is not vacuous");
+        for (x, y) in touched {
+            let t = world.tile(x, y).unwrap();
+            assert_eq!(t.kind, TILE_MARBLE, "ResetToType(367) at {x},{y}");
+            assert!(!t.active(), "the Empty state writes active(false)");
+            assert_eq!(t.wall, WALL_MARBLE, "HasWall paints 178");
+            assert_eq!((t.frame_x, t.frame_y, t.liquid, t.meta), (0, 0, 0, 0));
+        }
+        // a == b: a fresh same-seed run over a clone is tile- and stream-equal.
+        let mut rng_b = Rng(0x9A11);
+        marble_place_slab(&mut world_b, (SlabState::Empty, true), ox, oy, &mut rng_b);
+        assert_eq!(world.tiles, world_b.tiles);
+        assert_eq!(rng.0, rng_b.0);
+    }
+
+    /// The drunk swap (`MarbleBiome.cs:116-120`): the slab paints granite
+    /// 368 / wall 180 instead; and the ore arm (`:142`) keeps an ore kind
+    /// through `ResetToType`.
+    #[test]
+    fn w4_g40_marble_place_slab_drunk_swap_and_ore_preservation() {
+        let (mut world, _, _) = flat_world(20, 60, 60);
+        world.seed = 5;
+        world.seeds |= crate::seeds::SeedFlags::DRUNK;
+        // An ore field across the slab's reach plus the neighbour halo
+        // (kind 7 = Copper, `Sets.Ore`), INACTIVE so the PlaceTight
+        // SolidTile gates fail and no stalactite overwrites the paint —
+        // `ResetToType` reads the kind regardless of the active bit.
+        for x in 18..36 {
+            for y in 28..46 {
+                let i = world.index(x, y);
+                world.tiles[i].kind = 7;
+                world.tiles[i].flags &= !FLAG_ACTIVE;
+            }
+        }
+        let mut rng = Rng(0x9A11);
+        marble_place_slab(&mut world, (SlabState::Empty, true), 25, 35, &mut rng);
+        let painted: Vec<_> = world
+            .tiles
+            .iter()
+            .filter(|t| t.wall == WALL_GRANITE)
+            .collect();
+        assert!(!painted.is_empty(), "the drunk slab painted wall 180");
+        for t in painted {
+            assert_eq!(t.kind, 7, "the ore kind survives ResetToType");
+            assert!(!t.active());
+        }
+        assert!(
+            !world.tiles.iter().any(|t| t.wall == WALL_MARBLE),
+            "no marble wall in the drunk world"
+        );
+    }
+
+    /// `Tile.SmoothSlope`'s single-cell mask map (`Tile.cs:814-845`): the
+    /// five named arms over a stone cell with toggled neighbours. The
+    /// `flag2` veto (an active-but-not-solid tile above) blocks the two
+    /// top-corner arms (`:817`/`:824`).
+    #[test]
+    fn w4_g40_tile_smooth_slope_one_maps_the_mask_arms() {
+        // Neighbour layout: above (10,9), below (10,11), left (9,10),
+        // right (11,10). mask = above<<3 | below<<2 | left<<1 | right.
+        let run = |above: Option<u16>, below: bool, left: bool, right: bool| -> (u8, bool) {
+            let mut w = World::new("t".into(), 20, 20);
+            let set = |w: &mut World, x: i32, y: i32, kind: u16| {
+                let i = w.index(x, y);
+                w.tiles[i].kind = kind;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            };
+            set(&mut w, 10, 10, TILE_STONE);
+            // A pre-existing slope: the veto arms must NOT clear it (the
+            // C# breaks without a write), the default arm must.
+            let c = w.index(10, 10);
+            w.tiles[c].set_slope(2);
+            if let Some(kind) = above {
+                set(&mut w, 10, 9, kind);
+            }
+            if below {
+                set(&mut w, 10, 11, TILE_STONE);
+            }
+            if left {
+                set(&mut w, 9, 10, TILE_STONE);
+            }
+            if right {
+                set(&mut w, 11, 10, TILE_STONE);
+            }
+            tile_smooth_slope_one(&mut w, 10, 10);
+            let t = w.tile(10, 10).unwrap();
+            (t.slope(), t.half_brick())
+        };
+        // mask 6 (below+left, above empty) → slope 1.
+        assert_eq!(run(None, true, true, false), (1, false));
+        // mask 5 (below+right) → slope 2.
+        assert_eq!(run(None, true, false, true), (2, false));
+        // mask 4 (below only) → half-brick.
+        assert_eq!(run(None, true, false, false), (0, true));
+        // mask 10 (above+left) → slope 3; mask 9 (above+right) → slope 4.
+        assert_eq!(run(Some(TILE_STONE), false, true, false), (3, false));
+        assert_eq!(run(Some(TILE_STONE), false, false, true), (4, false));
+        // The flag2 veto: a platform above (solidTop — active, not
+        // SolidOrSloped) blocks both top-corner arms → NO write (the
+        // pre-existing slope 2 survives; `:817`/`:824` break).
+        assert_eq!(run(Some(19), false, true, false), (2, false));
+        assert_eq!(run(Some(19), false, false, true), (2, false));
+        // Default (all four solid) → flat.
+        assert_eq!(run(Some(TILE_STONE), true, true, true), (0, false));
+    }
+
+    /// `GraniteBiome.ShouldUseLava` (`GraniteBiome.cs:171-196`): the
+    /// lava-line gate (`tileOrigin.Y + 100 <= lavaLine - 30` refuses) and
+    /// the ice-family veto inside the 100x100 scan.
+    #[test]
+    fn w4_g40_granite_should_use_lava_gate_and_ice_veto() {
+        let mut w = World::new("t".into(), 400, 400);
+        // Chamber origin (100, 100): centre y = 200. lavaLine 229 → the
+        // gate `200 <= 229 - 30 = 199` is false → the scan runs (empty → true).
+        assert!(granite_should_use_lava(&w, 100, 100, 229));
+        // lavaLine 230 → `200 <= 200` → refused before any scan.
+        assert!(!granite_should_use_lava(&w, 100, 100, 230));
+        // The veto kinds 147/161/162/163/200 (`:188`), at the scan's far
+        // corner (centre + 49, + 49).
+        for kind in [147u16, 161, 162, 163, 200] {
+            let mut v = w.clone();
+            let i = v.index(249, 249);
+            v.tiles[i].kind = kind;
+            v.tiles[i].flags |= FLAG_ACTIVE;
+            assert!(!granite_should_use_lava(&v, 100, 100, 229), "kind {kind}");
+        }
+        // A stone tile does not veto; an INACTIVE ice tile does not either.
+        let i = w.index(249, 249);
+        w.tiles[i].kind = TILE_STONE;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert!(granite_should_use_lava(&w, 100, 100, 229));
+        w.tiles[i].kind = 161;
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        assert!(granite_should_use_lava(&w, 100, 100, 229));
+    }
+
+    /// `GraniteBiome.CleanupTiles` (`GraniteBiome.cs:247-294`): the census
+    /// is `SolidTile` (half-bricks/slopes do not count), the lone solid
+    /// clears to air with the granite wall painted after, and the drunk
+    /// world paints 178.
+    #[test]
+    fn w4_g40_granite_cleanup_census_and_clear() {
+        let mut w = World::new("t".into(), 40, 40);
+        // One active magma cell at map (10, 10) → world (10, 10) (ox = oy = 0).
+        let side = 200usize;
+        let mut map = vec![MagmaCell::empty(1.0); side * side];
+        map[10 * side + 10] = MagmaCell::flow(5.0, 0.0);
+        let i = w.index(10, 10);
+        w.tiles[i].kind = TILE_GRANITE;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // A half-brick neighbour: active but NOT SolidTile (`:274`).
+        let j = w.index(11, 10);
+        w.tiles[j].kind = TILE_STONE;
+        w.tiles[j].flags |= FLAG_ACTIVE | FLAG_HALF_BRICK;
+        granite_cleanup(&mut w, 0, 0, &map, (10, 10, 10, 10));
+        let t = w.tile(10, 10).unwrap();
+        assert!(!t.active(), "1 solid neighbour < 3 → cleared");
+        assert_eq!(t.wall, WALL_GRANITE, "the wall rides after the clear");
+        assert_eq!(t.kind, TILE_GRANITE, "ClearTile keeps the kind");
+        // Three solid neighbours (self + two) survive.
+        let mut w2 = World::new("t".into(), 40, 40);
+        for (x, y) in [(10, 10), (9, 10), (10, 9)] {
+            let i = w2.index(x, y);
+            w2.tiles[i].kind = TILE_GRANITE;
+            w2.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        granite_cleanup(&mut w2, 0, 0, &map, (10, 10, 10, 10));
+        assert!(w2.tile(10, 10).unwrap().active(), "3 solid neighbours keep it");
+        // The drunk wall.
+        let mut w3 = World::new("t".into(), 40, 40);
+        w3.seeds |= crate::seeds::SeedFlags::DRUNK;
+        let i = w3.index(10, 10);
+        w3.tiles[i].kind = TILE_MARBLE;
+        w3.tiles[i].flags |= FLAG_ACTIVE;
+        granite_cleanup(&mut w3, 0, 0, &map, (10, 10, 10, 10));
+        assert_eq!(w3.tile(10, 10).unwrap().wall, WALL_MARBLE);
+    }
+
+    /// `GraniteBiome.PlaceDecorations`' FastRandom ledger
+    /// (`GraniteBiome.cs:296-330`): over an all-air world every active map
+    /// cell spends `Next(8)` then (the active-bit gate fails → no stalactite
+    /// draws) the unconditional `Next(2)`. The per-cell stream is
+    /// `FastRandom(worldSeed).WithModifier(65440).WithModifier(x, y)` —
+    /// replayed here independently. No worldgen-stream draw exists (the
+    /// function takes no `Rng`).
+    #[test]
+    fn w4_g40_granite_decorations_fastrandom_ledger() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.seed = 0x1234_5678;
+        let side = 200usize;
+        let mut map = vec![MagmaCell::empty(1.0); side * side];
+        for my in 10..=12 {
+            for mx in 10..=12 {
+                map[my * side + mx] = MagmaCell::flow(5.0, 0.0);
+            }
+        }
+        let before = w.tiles.clone();
+        granite_decorations(&mut w, 0, 0, &map, (10, 12, 10, 12));
+        // All cells inactive: the smoothing rolls fire but write nothing.
+        assert_eq!(w.tiles, before, "no writes on an all-air chamber");
+        // The ledger: the C# walk is X-major; each cell's draws come from
+        // its own WithModifier copy, so the replay is per-cell.
+        let fast = FastRandom::new(w.seed as i32 as u64).with_modifier_u64(65440);
+        for mx in 10..=12i32 {
+            for my in 10..=12i32 {
+                let mut f = fast.with_modifier(mx, my);
+                let eight = f.next(8);
+                assert!((0..8).contains(&eight));
+                // The active-bit gate fails (all air) → straight to Next(2).
+                let _two = f.next(2);
+            }
+        }
+        // a == b: the pass is a pure function of (world, map) — a second
+        // run over a clone is tile-equal.
+        let mut w2 = World::new("t".into(), 40, 40);
+        w2.seed = 0x1234_5678;
+        granite_decorations(&mut w2, 0, 0, &map, (10, 12, 10, 12));
+        assert_eq!(w.tiles, w2.tiles);
+    }
+
+    /// The decorations' firing arm, pinned to a pre-computed seed: with
+    /// world seed 10368 the cell (10,10) FastRandom copy rolls
+    /// `Next(8) == 0`, then below-small `Next(2) == 0`, variation
+    /// `Next(3) == 0`, above-small `Next(2) == 1`, variation `Next(3) == 2`,
+    /// smoothing `Next(2) == 1` (the LCG replayed independently in Python
+    /// from `FastRandom.cs:27-35/:63-81`). A lone granite cell at (10,10)
+    /// with air above/below therefore grows: the below hanging SMALL
+    /// granite stalactite (frame 432, frame_y 72) at (10,11), then the
+    /// above rising TALL pair (frame 432+2*18 = 468, frame_y 36/54) at
+    /// (10,8)/(10,9) — `PlaceUncheckedStalactite`'s granite arms
+    /// (`WorldGen.cs:38448-38476` hanging, `:38582-38610` rising). The
+    /// smoothing roll is 1 → no slope write.
+    #[test]
+    fn w4_g40_granite_decorations_firing_arm_writes_the_stalactite_pair() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.seed = 10368;
+        let i = w.index(10, 10);
+        w.tiles[i].kind = TILE_GRANITE;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let side = 200usize;
+        let mut map = vec![MagmaCell::empty(1.0); side * side];
+        map[10 * side + 10] = MagmaCell::flow(5.0, 0.0);
+        granite_decorations(&mut w, 0, 0, &map, (10, 10, 10, 10));
+        let below = w.tile(10, 11).unwrap();
+        assert_eq!(below.kind, 165, "the hanging stalactite");
+        assert!(below.active());
+        assert_eq!((below.frame_x, below.frame_y), (432, 72), "small granite");
+        let top = w.tile(10, 8).unwrap();
+        assert_eq!(top.kind, 165);
+        assert_eq!((top.frame_x, top.frame_y), (468, 36), "tall rising upper");
+        let mid = w.tile(10, 9).unwrap();
+        assert_eq!(mid.kind, 165);
+        assert_eq!((mid.frame_x, mid.frame_y), (468, 54), "tall rising lower");
+        // The support cell survives (the rising pair writes y-1/y of the
+        // call site 9, i.e. cells 8/9); the smoothing roll was 1.
+        let support = w.tile(10, 10).unwrap();
+        assert_eq!(support.kind, TILE_GRANITE);
+        assert_eq!(support.slope(), 0);
+        assert!(!support.half_brick());
+    }
+
+    /// `MarbleBiome.Place` end-to-end a == b on the flat synthetic terrain:
+    /// two same-seed runs are tile- and stream-equal (the slab grid, the
+    /// smoothing, the arc emission, the PlaceTight arms and the
+    /// SmoothSlope cascade all ride the one pass stream).
+    #[test]
+    fn w4_g40_marble_place_is_reproducible_for_a_seed() {
+        let (mut wa, _, rock) = flat_world(120, 512, 512);
+        wa.seed = 42;
+        let mut wb = wa.clone();
+        let (mut ra, mut rb) = (Rng(0x0CEA), Rng(0x0CEA));
+        let ok_a = marble_place(&mut wa, 256, rock as i32 + 100, &mut ra);
+        let ok_b = marble_place(&mut wb, 256, rock as i32 + 100, &mut rb);
+        assert_eq!(ok_a, ok_b);
+        assert!(ok_a, "the flat stone site passes BiomeTileCheck");
+        assert_eq!(wa.tiles, wb.tiles, "tile-for-tile");
+        assert_eq!(ra.0, rb.0, "the draw ledger");
+        // The cave substance: marble tiles and walls landed.
+        assert!(wa.tiles.iter().any(|t| t.kind == TILE_MARBLE && t.active()));
+        assert!(wa.tiles.iter().any(|t| t.wall == WALL_MARBLE));
+    }
 }
