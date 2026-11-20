@@ -261,6 +261,83 @@ Audit notes (R1):
   :1022-1039 correction), outside the case-arm scope but verified present.
 - No second-switch glow rows exist for any R1 id (checked :6049-6510).
 
+### R2 — trees, palms and the 20×20 groups: 333, 129, 5, 583-589, 596, 616, 634, 476, 323 (15 ids, indices 15-29)
+
+C# `TileDrawing.cs:4634-4671`. Verbatim (:4637-4671):
+
+```csharp
+		case 129:
+			addFrY = 0;
+			if (tileFrameX >= 324)
+			{
+				int num40 = (tileFrameX - 324) / 18;
+				addFrX = ((num40 + Main.tileFrame[typeCache]) % 6 - num40) * 18;
+			}
+			break;
+		case 5:
+			tileWidth = 20;
+			tileHeight = 20;
+			tileFrameX += (short)(176 * (TileDrawing.GetTreeBiome(x, y, tileFrameX, tileFrameY) + 1));
+			break;
+		case 583:
+		case 584:
+		case 585:
+		case 586:
+		case 587:
+		case 588:
+		case 589:
+		case 596:
+		case 616:
+		case 634:
+			tileWidth = 20;
+			tileHeight = 20;
+			break;
+		case 476:
+			tileWidth = 20;
+			tileHeight = 18;
+			break;
+		case 323:
+			tileWidth = 20;
+			tileHeight = 20;
+			tileFrameY = (short)(22 * this.GetPalmTreeBiome(x, y));
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 333 | `tileTop += 2;` (candy-cane tail) | :4634-4636 | `drawdata.rs:200-202` (`330..=333`) | PORTED |
+| 129 | `addFrY = 0;` + the `((num40 + tileFrame) % 6 - num40) * 18` small-crystal walk | :4637-4644 | :206-212 — term-for-term incl. the `fx >= 324` gate | PORTED |
+| 5 | 20×20 + `tileFrameX += 176 * (GetTreeBiome + 1)` | :4645-4649 | static :219-222; probe in `apply_world_corrections` :1304-1307 → `tree_frame_x_offset` :1183-1185 → `tree_biome` :1142-1177 (wired `tiles.rs:683`) | PORTED |
+| 583-589 | 20×20, no biome shift (own trunk sheets) | :4650-4662 | :227-230 (`583..=589 \| 596 \| 616 \| 634`) | PORTED |
+| 596 | shares the variant arm | :4657 | :227 | PORTED |
+| 616 | shares the variant arm | :4658 | :227 | PORTED |
+| 634 | shares the variant arm | :4659 | :227 | PORTED |
+| 476 | `tileWidth = 20; tileHeight = 18;` (GolfHole) | :4663-4666 | :232-235 | PORTED |
+| 323 | 20×20 + `tileFrameY = 22 * GetPalmTreeBiome(x, y)` (REPLACES the stored row) | :4667-4671 | static :239-242; replacement in `apply_world_corrections` :1310-1312 → `palm_frame_y` :1101-1103 (`22 * biome`) → `palm_tree_biome` :1059-1068 | PORTED |
+
+Audit notes (R2):
+- `tree_biome` (:1142-1177) is `GetTreeBiome` (`TileDrawing.cs:1735-1776`)
+  verbatim: the START-cell type is read BEFORE the column shifts (:1739 ↔ :1148,
+  regardless of `active()`); the four shift gates match order-for-order
+  (`fx==66 && fy<=45` → +1; `fx==88 && 66<=fy<=110` → −1; `fy>=198` → 66:−1/44:+1;
+  else `fy>=132` → 22:−1/44:+1); the down-walk stops on the first inactive or
+  different-type cell. The C# walk indexes `Main.tile` without bounds checks;
+  the port's out-of-world `None` stops the walk — the same convention
+  `palm_tree_biome` documents (:1056-1058). Ground classification
+  (`GetTreeVariant`) is the d44-d49 framing lane's port (`tree_variant`);
+  tests pin the offsets (`drawdata.rs:2339` — `176 * 4` gem-tree ground).
+- `palm_tree_biome` walks down while `active() && type == 323`
+  (`TileDrawing.cs:1726-1733`) then classifies the ground
+  (`GetPalmTreeVariant`); tests `test_DW_2_1_palm_biome` (:2219) and
+  `test_DW_2_1_palm_oasis_offset` (:2250) pin sand/crimsand/pearlsand/oasis.
+- The C# `(short)` casts on 5/323 are the port's `as i16` on the overrides;
+  the additive 5 shift and the replacing 323 row keep their distinct shapes
+  (`+=` vs `=`) — `frame_x_override` adds `frame_x`, `frame_y_override` replaces.
+- Kind 5's live app draw routes through the dedicated tree path
+  (`tree::trunk_sheet_offset_at`, documented :216-218); the DrawData arm itself
+  is complete and the world correction is applied on the generic path too.
+- No second-switch glow rows exist for any R2 id.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
