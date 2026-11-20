@@ -39244,3 +39244,39 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Main.cs dust sites, batch 1 (W4-g11, code-only 2026-11-21)
+
+`crates/tr-app/src/main_dust.rs` ports the first line-order third of the
+Main.cs `Dust.NewDust*` census (research/64's split: g11 sites 1-8,
+g12 9-16, g13 17-23): `Main.snowing()` (`Main.cs:13032-13116`, the
+type-76 site `:13088`) and `Main.TeleportEffect`'s styles 0/1/2/3/4/5/7
+(`:13233-13369`). The full ledger + witness list: research/65.
+
+Deliberate deviations / drops (all cited in the module):
+
+- **RNG slots.** `snowing` runs at `:17238`, before every `SwapRandom` —
+  the bare `Main.rand`, the port's `NamedRngs::global()`.
+  `TeleportEffect` takes the calling pass's key (`Player.Teleport` →
+  UpdatePlayers, `NPC.Teleport` → the NPC pass, `Wiring.Teleport` →
+  UpdateWorldGen); the Item6/Item8/Splash cues ride the same stream, the
+  audio-only `GetRandomPitch` draw stays on the audio stream (the
+  `play_npc_item_cue` façade).
+- **`Main.snowDust`** (`Main.cs:621`) is a Main static the pool does not
+  carry (d50's cited skip of the 76 arm's `snowDust++`); the budget gate
+  reads the live type-76 population — the `SandStormCount` stand-in
+  pattern (`sand.rs:115`).
+- **`maxScreenW`** is the HiDef 4096 (`Main.cs:3709`); `sand.rs`'s 1920
+  stand-in is its own recorded deviation, not shared here.
+- **Dropped:** `snowing`'s per-iteration try/catch (no exceptions),
+  `TeleportEffect`'s unread `side` param and `otherPosition` (feeds only
+  g12's style 10), the MP portal-colour hue ladder (SP port), style 9's
+  pylon dust (`TeleportPylonsSystem.SpawnInWorldDust` — not a Main.cs
+  NewDust site).
+- **Staged, not wired** (the W4-e2 batch-1 precedent): the snow site's
+  live stand-in (`rain.rs`'s Snowflake vector) keeps running until the
+  dust-76 physics/draw wiring round; the teleport callers' effect halves
+  are the port's documented render seams (`player.rs::teleport_style`).
+  `#![allow(dead_code)]` until the wiring; the 11 witnesses
+  (`main_dust.rs::tests`) mirror every draw sequence with full-stream
+  equality. WRITTEN NOT RUN — no cargo/rustc invoked (code-only).

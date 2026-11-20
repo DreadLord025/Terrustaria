@@ -56,6 +56,10 @@ mod loot_db;
 mod loot_db_gen;
 mod map;
 mod map_layers;
+// W4-g11: the Main.cs `Dust.NewDust*` sites, batch 1 of 3 — `snowing()`
+// (Main.cs:13088) + `TeleportEffect` styles 0-7 (:13243-13358), staged
+// per the claim doc (docs/research/64-dust-main-sites-claims.md).
+mod main_dust;
 mod melee_swing;
 mod menu;
 mod minecart;
