@@ -76,7 +76,8 @@ use tr_core::loot::DropRng;
 
 use crate::bow_launch::rotated_by;
 use crate::projectile::{
-    MONK_STAFF_T2, MONK_STAFF_T3_ALT, MONK_STAFF_T3_ALT_SHOT, Projectile, safe_normalize_or,
+    MONK_STAFF_T2, MONK_STAFF_T2_GHAST, MONK_STAFF_T3_ALT, MONK_STAFF_T3_ALT_SHOT, Projectile,
+    safe_normalize_or,
 };
 
 /// The owner state the 142/144/148 arms read off `Main.player[owner]`
@@ -456,6 +457,68 @@ fn impact_explosion2_sleepy_octopod(p: &Projectile, rng: &mut dyn DropRng, _orig
     }
 }
 
+/// `AI_143_MonkStaffT2Ghast` (`Projectile.cs:69970-70036`) — the ghast
+/// 700 the T2's first hit summons (`SummonMonkGhast` `:15155-15184`, the
+/// hit-hook spawner — a `Damage_PVE` seam follow-up, unchanged here).
+/// The tracked-sound latch (`:69972-69984`) folds to the inert
+/// `SlotId.Invalid` float (`ReLogic.Utilities/SlotId.cs:5` — the pool has
+/// no tracked-sound layer, S1-E-23); zero draws. The age counter kills at
+/// 60, the alpha ramps ±25 around the 50-tick midpoint, the velocity
+/// decays ×0.98, the 5-tick frame machine wraps 4, and the 10..34 window
+/// spawns two trail dusts (ONE `NextFloat` each, the scale `:70031`).
+pub(crate) fn ai_monk_staff_t2_ghast(p: &mut Projectile, rng: &mut dyn DropRng) {
+    // `:69972-69984` — the tracked-sound fold: the first tick "plays" the
+    // ghost impact (no port layer), every tick re-latches Invalid (the
+    // GetActiveSound-null arm).
+    p.local_ai[1] = f32::from_bits(65535); // SlotId.Invalid.ToFloat()
+    // `:69985-70001` — the counter and the alpha ramps.
+    p.ai[0] += 1.0;
+    if p.ai[0] > 50.0 {
+        p.alpha += 25;
+        if p.alpha > 255 {
+            p.alpha = 255;
+        }
+    } else {
+        p.alpha -= 25;
+        if p.alpha < 100 {
+            p.alpha = 100;
+        }
+    }
+    // `:70002-70010` — the velocity decay and the 5-tick frame wrap.
+    p.vel *= 0.98;
+    p.frame_counter += 1;
+    if p.frame_counter >= 5 {
+        p.frame_counter = 0;
+        p.frame += 1;
+        if p.frame >= 4 {
+            p.frame = 0;
+        }
+    }
+    // `:70011-70014` — the 60-tick kill (the facing/rotation/dust below
+    // still run on the kill tick — the C# has no early return).
+    if p.ai[0] >= 60.0 {
+        kill(p);
+    }
+    // `:70015-70020` — the velocity-sign facing and the rotation (+π on
+    // spriteDirection −1).
+    p.sprite_direction = if p.vel.x > 0.0 { 1 } else { -1 };
+    p.direction = p.sprite_direction;
+    p.rot = p.vel.y.atan2(p.vel.x);
+    if p.sprite_direction == -1 {
+        p.rot += std::f32::consts::PI;
+    }
+    // `:70021-70035` — the 10..34 trail window: two dusts, ONE NextFloat
+    // each (the scale `:70031`); the bodies are the dust skip.
+    if p.ai[0] >= 10.0 && p.ai[0] < 34.0 {
+        let num2 = 2.0f32;
+        let mut i = 0.0f32;
+        while i < num2 {
+            let _ = rng.next_float(); // `:70031`
+            i += 1.0;
+        }
+    }
+}
+
 // Witnesses (W4-d15 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -731,5 +794,85 @@ mod tests {
         assert_eq!(rng.ranges, vec![(0, 6), (0, 3), (0, 6), (0, 3)]);
         assert!(p.active, ":69963 — the local-owner gate");
         assert!(tick.reuse_delay.is_none());
+    }
+
+    /// The 700 row is verbatim `SetDefaults` (`Projectile.cs:7419-7432`).
+    #[test]
+    fn the_700_row_is_verbatim() {
+        let d = proj_data(MONK_STAFF_T2_GHAST).expect("the 700 row");
+        assert_eq!((d.w, d.h, d.ai_style), (40.0, 40.0, 143), ":7421-7423");
+        assert_eq!(d.alpha, 255, ":7424");
+        assert_eq!(d.penetrate, -1, ":7425");
+        assert!(d.melee, ":7427");
+        assert!(d.uses_local_immunity, ":7428");
+        assert_eq!(d.local_hit_cooldown, -1, ":7429");
+        assert!(d.ignore_water && !d.tile_collide, ":7430-7431");
+        assert_eq!(crate::projectile::proj_frames(MONK_STAFF_T2_GHAST), 4, "Main.cs:8473");
+    }
+
+    /// The alpha ramps: −25 down to the 100 floor while ai[0] <= 50,
+    /// +25 up to the 255 cap after; the ×0.98 decay and the velocity-sign
+    /// facing ride every tick. The trail window [10, 34) draws 2 floats.
+    #[test]
+    fn the_ghast_alpha_ramps_decay_and_trail_window() {
+        let mut p = proj(MONK_STAFF_T2_GHAST);
+        p.vel = Vec2::new(10.0, 0.0);
+        let mut rng = census();
+        // Ticks 1..9: alpha 255 → 100 floor (255-25*7 = 80 → clamped 100
+        // at tick 7), no trail draws.
+        for _ in 0..9 {
+            ai_monk_staff_t2_ghast(&mut p, &mut rng);
+        }
+        assert_eq!(p.ai[0], 9.0);
+        assert_eq!(p.alpha, 100, ":69996-70000");
+        assert_eq!(rng.floats, 0, "the window opens at 10");
+        assert!((p.vel.x - 10.0 * 0.98f32.powi(9)).abs() < 1e-3, ":70002");
+        assert_eq!(p.direction, 1, ":70015");
+        // Tick 10 opens the window: 2 floats per tick through 33.
+        ai_monk_staff_t2_ghast(&mut p, &mut rng);
+        assert_eq!(rng.floats, 2, ":70021-70034");
+        for _ in 0..23 {
+            ai_monk_staff_t2_ghast(&mut p, &mut rng);
+        }
+        assert_eq!(p.ai[0], 33.0);
+        assert_eq!(rng.floats, 24 * 2);
+        // Tick 34 closes the window; the ramp flips past 50.
+        ai_monk_staff_t2_ghast(&mut p, &mut rng);
+        assert_eq!(rng.floats, 48, "no draw at 34");
+        for _ in 0..17 {
+            ai_monk_staff_t2_ghast(&mut p, &mut rng);
+        }
+        assert_eq!(p.ai[0], 51.0);
+        assert_eq!(p.alpha, 125, ":69988 — one +25 step past 50");
+        // The 60-tick kill; the facing/rotation still run on the kill
+        // tick (no early return in the C#).
+        for _ in 0..9 {
+            ai_monk_staff_t2_ghast(&mut p, &mut rng);
+        }
+        assert!(!p.active, ":70011-70013");
+        assert_eq!(p.time_left, 0);
+        assert_eq!(rng.floats, 48, "the kill tick is past the window");
+    }
+
+    /// The 5-tick frame machine wraps 4 → 0 (`:70003-70010`); the
+    /// tracked-sound fold latches SlotId.Invalid's float bits.
+    #[test]
+    fn the_ghast_frame_wrap_and_the_sound_fold() {
+        let mut p = proj(MONK_STAFF_T2_GHAST);
+        p.vel = Vec2::new(-5.0, 0.0);
+        let mut rng = census();
+        for _ in 0..5 {
+            ai_monk_staff_t2_ghast(&mut p, &mut rng);
+        }
+        assert_eq!(p.frame, 1, "the first wrap at tick 5");
+        assert_eq!(p.frame_counter, 0);
+        for _ in 0..15 {
+            ai_monk_staff_t2_ghast(&mut p, &mut rng);
+        }
+        assert_eq!(p.frame, 0, "4 wraps back to 0 at tick 20");
+        assert_eq!(p.local_ai[1].to_bits(), 65535, "SlotId.Invalid");
+        assert_eq!(p.sprite_direction, -1, ":70015 — the negative-X sign");
+        assert!((p.rot - (std::f32::consts::PI + std::f32::consts::PI)).abs() < 1e-3,
+            "atan2(0, −x) = π, +π on spriteDirection −1");
     }
 }

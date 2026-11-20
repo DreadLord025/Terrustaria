@@ -17389,6 +17389,21 @@ impl ProjectilePool {
                             // `:7502`) — the free integrate.
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d15 — aiStyle 143: the T2 ghast 700
+                        // (`AI_143_MonkStaffT2Ghast`,
+                        // `Projectile.cs:69970-70036`): the tracked-sound
+                        // fold, the ±25 alpha ramps, the ×0.98 decay, the
+                        // 5-tick frame wrap, the 60-tick kill and the
+                        // 10..34 trail window's 2 floats.
+                        143 => {
+                            crate::projectile_ai_dd2::ai_monk_staff_t2_ghast(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement after the AI (`:17015`); the
+                            // row keeps tileCollide = false (`:7431`).
+                            self.slots[i].kill_step(world);
+                        }
                         // aiStyle 147 — the Celebration Mk2 rockets
                         // (`AI_147_Celeb2Rocket` `:52881-53092`): the
                         // seven-state machine; the death resize + Damage

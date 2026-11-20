@@ -4005,6 +4005,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 24.0, 24.0, 142, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
                 (false, -2, true, 10, 255, 1.0),
             ),
+            // `Projectile.cs:7419-7432`: the T2 ghast (700): 40x40,
+            // aiStyle 143, alpha 255, penetrate -1, melee (the overlay),
+            // local immunity -1, ignoreWater (the overlay), tileCollide
+            // false.
+            MONK_STAFF_T2_GHAST => (
+                40.0, 40.0, 143, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:7491-7507`: the T3-alt swing ghost (708) —
             // the 699 box with LOCAL immunity 6 instead of idStatic 10.
             MONK_STAFF_T3_ALT => (
@@ -4264,11 +4272,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER
             // W4-d15 — the DD2 slice's `ignoreWater = true` rows: the 698
-            // (`Projectile.cs:7392`), the 699 (`:7414`), the 708 (`:7503`)
-            // and the 709 (`:7516`).
+            // (`Projectile.cs:7392`), the 699 (`:7414`), the 700 (`:7430`),
+            // the 708 (`:7503`) and the 709 (`:7516`).
             || matches!(
                 kind,
-                MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
+                MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T2_GHAST
+                    | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
             ),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
@@ -4305,10 +4314,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
                     // W4-d15 — the Sleepy Octopod's blast (`:7398`), the
-                    // Monk Staff swings (`:7408`/`:7497`) and the volley
-                    // shot (`:7514`).
-                    | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T3_ALT
-                    | MONK_STAFF_T3_ALT_SHOT
+                    // Monk Staff swings (`:7408`/`:7497`), the ghast
+                    // (`:7427`) and the volley shot (`:7514`).
+                    | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T2_GHAST
+                    | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
             ),
         ranged: matches!(
             kind,
@@ -4622,6 +4631,9 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         659 => 4,
         837 => 3,
         1130 => 6,
+        // W4-d15 — the T2 ghast's 4-frame sheet (`Main.cs:8473`) — the
+        // 5-tick frame machine (`Projectile.cs:70003-70010`) wraps at it.
+        MONK_STAFF_T2_GHAST => 4,
         // W4-d15 — the T3-alt volley shot's 3-frame sheet (`Main.cs:8554`).
         MONK_STAFF_T3_ALT_SHOT => 3,
         // The Flamelash's 6-frame sheet (`Main.cs:8454`). Its AI's
