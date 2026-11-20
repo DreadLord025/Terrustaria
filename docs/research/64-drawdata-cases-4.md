@@ -338,6 +338,79 @@ Audit notes (R2):
   is complete and the world correction is applied on the generic path too.
 - No second-switch glow rows exist for any R2 id.
 
+### R3 — torch + the top-2 furniture group: 4, 78, 85, 133, 134, 173, 210, 233, 254, 283, 378, 457, 466, 520, 651 (15 ids, indices 30-44)
+
+C# `TileDrawing.cs:4672-4696`. Verbatim:
+
+```csharp
+		case 4:
+			tileWidth = 20;
+			tileHeight = 20;
+			if (WorldGen.SolidTile(x, y - 1))
+			{
+				tileTop = 4;
+			}
+			break;
+		case 78:
+		case 85:
+		case 133:
+		case 134:
+		case 173:
+		case 210:
+		case 233:
+		case 254:
+		case 283:
+		case 378:
+		case 457:
+		case 466:
+		case 520:
+		case 651:
+		case 652:
+			tileTop = 2;
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 4 | 20×20; `tileTop = 4` iff `WorldGen.SolidTile(x, y-1)` | :4672-4679 | `drawdata.rs:245-251` (`solid_above` param) | PORTED (probe delta, see note) |
+| 78 | `tileTop = 2;` (ClayPot) | :4680-4696 | :256-258 (the 15-id `\|` arm) | PORTED |
+| 85 | shares the top-2 arm (Tombstones) | :4681 | :256 | PORTED |
+| 133 | shares the top-2 arm | :4682 | :256 | PORTED |
+| 134 | shares (Forge) | :4683 | :256 | PORTED |
+| 173 | shares (Candelabra) | :4684 | :256 | PORTED |
+| 210 | shares (LandMine) | :4685 | :256 | PORTED |
+| 233 | shares (PlantDetritus) | :4686 | :256 | PORTED |
+| 254 | shares (Pumpkins) | :4687 | :256 | PORTED |
+| 283 | shares (HeavyWorkBench) | :4688 | :256 | PORTED |
+| 378 | shares (TargetDummy) | :4689 | :256 | PORTED |
+| 457 | shares (PartyPresent) | :4690 | :256 | PORTED |
+| 466 | shares (ElderCrystalStand) | :4691 | :256 | PORTED |
+| 520 | shares (FoodPlatter) | :4692 | :256 | PORTED |
+| 651 | shares (detritus echo) | :4693 | :256 | PORTED |
+
+(652, the arm's last id, is index 45 — audited in R4; the shared body is quoted
+once here.)
+
+Audit notes (R3):
+- **Case 4's probe predicate delta (already-documented deviation, re-verified):**
+  the C# gate is `WorldGen.SolidTile(x, y-1)` (`WorldGen.cs:70111-70132`):
+  null-tile → **true**; else `active && tileSolid && !tileSolidTop && !halfBrick
+  && slope == 0 && !inActive`. The live feed (`tiles.rs:654-656`) is only
+  `is_some_and(active && TILE_SOLID && !TILE_SOLID_TOP)` — it drops the
+  half-brick/slope/inactive exclusions and takes out-of-world as **false**
+  (C# true). A torch under a sloped or half-brick ceiling, or an actuated
+  ceiling, keeps top 0 in the port where vanilla raises it 4. This is the
+  ANALYSIS.md:3954-3957 "predicate delta … follow-up (Phase 4)" row — NOT a
+  missing case; the arm itself (`drawdata.rs:245-251`) is verbatim and tests
+  `torch_uses_solid_above` (:1509) / `test_DW_4_2_solid_above_scope` (:2870)
+  pin the arm's contract. The exact predicate already exists in the tree
+  (`cases_a.rs::solid_tile` :129-139) — the fix is a one-line feed swap,
+  left to the wiring lane per scope.
+- The top-2 group's 15 labels are one shared `tileTop = 2;` body — the port's
+  single `|` arm is label-for-label identical (order irrelevant, no fallthrough
+  arithmetic).
+- No second-switch glow rows exist for any R3 id.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
