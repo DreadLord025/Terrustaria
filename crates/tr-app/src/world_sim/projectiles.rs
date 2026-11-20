@@ -135,8 +135,20 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (`Main.ReverseGravitySupport(Main.MouseScreen) + Main.screenPosition`,
     // `Projectile.cs:67928` — the same mouse-world math editing.rs:26 uses),
     // the held-button channel state (`Player.channel`, the release arm
-    // `:67920-67925`) and the owner's death (`:67824`).
+    // `:67920-67925`), the owner's death (`:67824`), `CCed` (the same
+    // release arm — S1-P-i09) and `meleeSpeed` (the lifetime divisor
+    // `:67750` + the range/top-speed division `:67886-67887`).
     let (sw, sh) = app.screen_size();
+    // The `controlUseItem` zeroing gates (`Player.cs:42804-42807`'s
+    // `channel = false` on the cleared input): the inventory
+    // (`Main.cs:17659-17663`'s `player.mouseInterface`/inventory arm), the
+    // fullscreen map (`Player.cs:24798-24807`) and the minimap hover
+    // (`MinimapFrame.cs:164`) all clear the use input, so the channel
+    // drops behind them exactly like `update_editing`'s own gates
+    // (S1-P-i09 — the old snapshot ignored them).
+    let use_input_live = !app.inventory_open
+        && !app.map.as_ref().is_some_and(|m| m.open)
+        && app.minimap_hover.is_none();
     let inputs = YoyoInputs {
         aim: app.player.as_ref().map(|_| {
             (
@@ -144,11 +156,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
             )
         }),
-        channel: app.player.is_some() && app.mine_down && {
+        channel: app.player.is_some() && app.mine_down && use_input_live && {
             let held = app.inventory[app.selected];
             held.count > 0 && registry::get(held.kind).is_some_and(|d| d.channel)
         },
         player_dead: app.player.as_ref().is_some_and(|p| p.dead),
+        player_cced: app.player.as_ref().is_some_and(|p| p.cced()),
+        melee_speed: app.player.as_ref().map_or(1.0, |p| p.melee_speed()),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)
@@ -689,5 +703,92 @@ mod dw4_tests {
         assert_eq!(a.1, b.1, "the stream replayed identically");
         assert_eq!(a.0, b.0, "the pool state is byte-equal");
         assert!(!a.0.is_empty(), "at least one yoyo live across the pair");
+    }
+}
+
+/// S1-P-i09 — the yoyo snapshot's `controlUseItem` gates (written, NOT run
+/// — code-only mode). `Player.ItemCheck` clears the channel whenever the
+/// use input is cleared (`Player.cs:42804-42807`): the inventory, the
+/// fullscreen map (`Player.cs:24798-24807`) and the minimap hover
+/// (`MinimapFrame.cs:164`) all drop it, so the aiStyle-99 release arm
+/// (`Projectile.cs:67920-67925`) fires behind them. The old snapshot read
+/// only `mine_down` + the held item and kept the yoyo flying with the
+/// inventory open.
+#[cfg(test)]
+mod s1_p_i09_yoyo_snapshot_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::WOOD_YOYO;
+
+    /// One Wood Yoyo out with the Wood Yoyo item (3278) held and the use
+    /// button down — the channel-hold fixture. The spawn sits inside the
+    /// 8×8-tile fixture world (the out-of-world guard). The camera centres
+    /// on the player and the mouse sits 100 px right of the screen centre,
+    /// so the aim world point lands INSIDE the string range on the player's
+    /// right (a clamped aim left of world x = 0 would read negative — the
+    /// C#'s own edge quirk, `ai[0]` is a world coordinate).
+    fn yoyo_channel_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        app.camera = Vec2::new(cx, cy);
+        app.zoom = 1.0;
+        app.mouse_pos = Vec2::new(640.0 + 100.0, 360.0);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3278,
+            name: "Wood Yoyo",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        app.projectiles.spawn_with_data_ai_owned(
+            WOOD_YOYO, 0, 32.0, 32.0, 2.0, 0.0, 10, 4.0, 0.0, 0.0,
+        );
+        app
+    }
+
+    #[test]
+    fn s1_p_i09_the_held_channel_keeps_the_yoyo_flying() {
+        let mut app = yoyo_channel_app();
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(app.projectiles.slots()[0].ai[0] >= 0.0, "the hold keeps the flight");
+    }
+
+    #[test]
+    fn s1_p_i09_the_open_inventory_releases_the_yoyo() {
+        let mut app = yoyo_channel_app();
+        app.inventory_open = true;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the inventory clears the use input");
+        assert_eq!(app.projectiles.slots()[0].ai[1], 0.0);
+    }
+
+    #[test]
+    fn s1_p_i09_the_fullscreen_map_releases_the_yoyo() {
+        let mut app = yoyo_channel_app();
+        let mut map = crate::map::WorldMap::new(&app.world);
+        map.open = true;
+        app.map = Some(map);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the fullscreen map clears the use input");
+    }
+
+    #[test]
+    fn s1_p_i09_the_minimap_hover_releases_the_yoyo() {
+        let mut app = yoyo_channel_app();
+        app.minimap_hover = Some(crate::ui::minimap::MinimapButton::ZoomIn);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the minimap hover clears the use input");
+    }
+
+    /// `Projectile.cs:67920` — the snapshot carries the owner's `CCed`
+    /// (`Player.cced()` — frozen / webbed / stoned): a frozen owner
+    /// releases the string even with the button held.
+    #[test]
+    fn s1_p_i09_the_frozen_owner_releases_the_yoyo() {
+        let mut app = yoyo_channel_app();
+        app.player.as_mut().unwrap().frozen = true;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
     }
 }
