@@ -22,9 +22,9 @@ pub use post::{
 };
 pub use sprite::{BlendMode, Globals, SpriteInstance, SpriteRenderer};
 pub use targets::{
-    init_target_layout, is_partially_offscreen, render_to_targets_plan, sky_target_active,
-    target_transition, LayerCamera, LayerUpdate, RenderTargetFamily, SceneLayer, ScreenTarget,
-    TargetLayout, TargetTransition, WorldSceneLayerTarget, MAX_WORLD_VIEW_SIZE,
-    RENDER_TARGET_MAX_HIDEF, RENDER_TARGET_MAX_REACH,
+    init_target_layout, is_partially_offscreen, layer_composite_position, render_to_targets,
+    render_to_targets_plan, sky_target_active, target_transition, LayerCamera, LayerUpdate,
+    RenderTargetFamily, SceneLayer, ScreenTarget, TargetLayout, TargetTransition,
+    WorldSceneLayerTarget, MAX_WORLD_VIEW_SIZE, RENDER_TARGET_MAX_HIDEF, RENDER_TARGET_MAX_REACH,
 };
 pub use water_mask::{MaskRect, WaterMask};
