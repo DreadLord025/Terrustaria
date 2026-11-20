@@ -39244,3 +39244,33 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Draw quality-light tiers (W4-g28 pass 1)
+
+`TileDrawing.Draw` rebuilds `_highQualityLightingRequirement` /
+`_mediumQualityLightingRequirement` once per call (`TileDrawing.cs:479-495`);
+`DrawSingleTile_SlicedBlock` picks the 9-slice / 4-slice / flat arm by a
+per-channel strict `>` on `drawData.tileLight` bytes (`:3524` / `:3605`).
+The port lands the pure tier maths in `tr-render::quality_light`
+(`quality_light_tiers` / `tile_light_bytes` / `QualityLightTiers::slice_arm`),
+UNWIRED — the `draw_tiles` seam is contested by the tile-draw siblings; the
+sliced-arm wiring rides the family merge step.
+
+* **The byte cast wraps (net40).** The decompiled target is `net40`
+  (`Terraria.csproj:7`): an unchecked `(byte)f` lowers to `conv.i4` then
+  `conv.u1`, so out-of-range products WRAP — at `gfxQuality = 0` the high
+  tier is `[255, 24, 50]` (G = (byte)280.5 = 24, B = (byte)306 = 50), NOT
+  `[255, 255, 255]`. Rust's `as u8` saturates, so the port spells the wrap
+  out via `i32`. The old renderer compared raw floats against the R-only
+  constants 142/255 and 26/255 (research/09 row 1) — the G/B channels and the
+  q-dependence were silently dropped; the witnesses pin all three channels at
+  q = 0 / 0.25 / 0.5 / 1 and the double-precision ×1.1/×1.2 factors
+  (q = 0.25's B = 238 vs the truncated-first 237).
+* **The comparison input is quantised bytes.** `tileLight` is
+  `Lighting.GetColor` (`Lighting.cs:224-238`): `(int)(engineColor *
+  GlobalBrightness * 255)` per channel, clamped at 255 — `tile_light_bytes`
+  reproduces the f32 product + truncation (0.1f × 306f = 30.6000004 → 30).
+* `DebugOptions.devLightTilesCheat` pins both tiers to 255 (every block
+  flat); no port toggle exists — the parameter is fed `false`.
+* The tier rebuild is per-`Draw` (twice per frame); the wiring step calls it
+  at the head of each layer pass, never caches across frames.
