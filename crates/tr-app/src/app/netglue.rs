@@ -844,6 +844,73 @@ impl App {
                 }
                 server.broadcast_except(&S2c::ManaEffect(m), id); // `:2321`
             }
+            // `case 51` — a client's misc request (`MessageBuffer.cs:2482-2530`).
+            // The host forces the subject to the sender (`:2485-2488`).
+            C2s::MiscDataSync(mut d) => {
+                d.player_id = id as u8; // `:2487`
+                match d.kind {
+                    // `:2493` NPC.SpawnSkeletron — the summon trigger is
+                    // unported (`NPC.cs:80422-80473`, the world_sim/npcs.rs
+                    // red-hat note); parked, W4-c27.
+                    1 => {}
+                    // `:2496-2499` — the host relays; the clients play Item1.
+                    2 => server.broadcast_except(&S2c::MiscDataSync(d), id),
+                    // `:2505-2510` Main.Sundialing (`Main.cs:6169-6182`): the
+                    // cooldown-0 gate, the dawn fast-forward + cooldown 8,
+                    // then `SendData(7)` — the port re-pushes the header.
+                    3 => {
+                        if self.world.sundial_cooldown == 0 {
+                            self.world.fast_forward_to_dawn = true;
+                            self.world.sundial_cooldown = 8;
+                            server.broadcast(&S2c::WorldInfo(Box::new(self.world_info())));
+                        }
+                    }
+                    // `:2512` BigMimicSpawnSmoke (`NPC.cs:77494-77515`): the
+                    // 20x dust-54 + 6x gore-99 burst — the big-mimic roster
+                    // is unported; parked, W4-c27.
+                    4 => {}
+                    // `:2514-2521` — the TorchGod (664) bestiary kill.
+                    5 => self.bestiary.kills.register_kill("TorchGod"),
+                    // `:2522-2527` Main.Moondialing (`Main.cs:6184-6197`).
+                    6 => {
+                        if self.world.moondial_cooldown == 0 {
+                            self.world.fast_forward_to_dusk = true;
+                            self.world.moondial_cooldown = 8;
+                            server.broadcast(&S2c::WorldInfo(Box::new(self.world_info())));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // `case 55` — a PvP debuff aimed at a peer
+            // (`MessageBuffer.cs:2594-2611`). The gate (`:2599`): BOTH the
+            // target and the sender hostile, and `Main.pvpBuff[type]`. The
+            // id is NOT forced — the target stays as written. The host sends
+            // to the target alone (`:2603`); the port's host keeps a local
+            // player, so a buff aimed at it applies locally (the target
+            // client's `:2607` half).
+            C2s::PlayerBuffPvp(b) => {
+                let target_hostile = if b.player_id as u32 == self.local_id {
+                    self.player.as_ref().is_some_and(|p| p.hostile)
+                } else {
+                    self.remote_players
+                        .get(&(b.player_id as u32))
+                        .is_some_and(|p| p.hostile)
+                };
+                let sender_hostile = self.remote_players.get(&id).is_some_and(|p| p.hostile);
+                if target_hostile
+                    && sender_hostile
+                    && crate::buffs::is_pvp_buff(b.buff_type as i32)
+                {
+                    if b.player_id as u32 == self.local_id {
+                        if let Some(p) = self.player.as_mut() {
+                            p.buffs.add_buff_from_net_pvp(b.buff_type as i32, b.time);
+                        }
+                    } else {
+                        server.send(b.player_id as u32, &S2c::PlayerBuffPvp(b)); // `:2603`
+                    }
+                }
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1964,6 +2031,31 @@ impl App {
             S2c::ManaEffect(m) => {
                 if m.player_id as u32 != self.local_id {
                     self.spawn_peer_mana_text(m.player_id, m.amount as i32);
+                }
+            }
+            // `case 51` — the host's misc fan-out (`MessageBuffer.cs:2482-2530`,
+            // the client half). Kind 2 plays Item1 at the subject's position
+            // (`:2502`, `SoundID.Item1` — the case-2 façade, the net handlers
+            // run outside every swap so the draws ride the bare stream).
+            // Kinds 1/3/5/6 are host-side only; kind 4's big-mimic smoke
+            // burst is parked (the roster is unported), W4-c27.
+            S2c::MiscDataSync(d) => {
+                if d.kind == 2 {
+                    if let Some(p) = self.remote_players.get(&(d.player_id as u32)) {
+                        let (x, y) = (p.x, p.y);
+                        self.audio
+                            .play_npc_item_cue(1, x, y, self.rngs.global()); // `:2502`
+                    }
+                }
+            }
+            // `case 55` — a PvP debuff aimed at us (`MessageBuffer.cs:2599`'s
+            // `netMode == 1` clause: only our own id applies; `:2607`
+            // `AddBuff(fromNetPvP: true)` — the wire time is final).
+            S2c::PlayerBuffPvp(b) => {
+                if b.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.buffs.add_buff_from_net_pvp(b.buff_type as i32, b.time);
+                    }
                 }
             }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +

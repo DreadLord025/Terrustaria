@@ -152,6 +152,8 @@ pub mod id {
     pub const SYNC_PLAYER_ZONE: u8 = 36; // MessageID.cs:83 / NetMessage.cs:933-944 / MessageBuffer.cs:2178-2202
     pub const ITEM_ANIM: u8 = 41; // MessageID.cs:93 ItemRotationAndAnimation / NetMessage.cs:956-960 / MessageBuffer.cs:2271-2289
     pub const MANA_EFFECT: u8 = 43; // MessageID.cs:97 / NetMessage.cs:966-969 / MessageBuffer.cs:2307-2324
+    pub const MISC_DATA_SYNC: u8 = 51; // MessageID.cs:115 / NetMessage.cs:1010-1013 / MessageBuffer.cs:2482-2530
+    pub const ADD_PLAYER_BUFF_PVP: u8 = 55; // MessageID.cs:123 / NetMessage.cs:1041-1045 / MessageBuffer.cs:2594-2611
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -590,6 +592,11 @@ pub struct PlayerNet {
     pub item_rotation: f32,
     pub item_animation: i16,
     pub channel: bool,
+    /// `Player.hostile`, the `55 AddPlayerBuffPvP` gate's input
+    /// (`MessageBuffer.cs:2599`). Fed by `30 TogglePVP` when that arm lands
+    /// (S1-I-4); until then `false` — the gate refuses, exactly the C#'s
+    /// PvP-off shape. W4-c27.
+    pub hostile: bool,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1606,6 +1613,33 @@ pub struct ManaEffect {
     pub amount: i16,
 }
 
+/// `msg 51 MiscDataSync`'s body (`NetMessage.cs:1010-1013`): two bytes —
+/// `number` (the subject: a player slot for kinds 1/2, an NPC slot for kind
+/// 4) and `number2`, the kind switch (`MessageBuffer.cs:2490-2528`):
+/// 1 SpawnSkeletron, 2 the Item1 use sound at the player, 3 Sundialing
+/// (host-only), 4 BigMimicSpawnSmoke, 5 the TorchGod bestiary kill
+/// (host-only), 6 Moondialing (host-only). The host forces the subject to
+/// the sender (`:2485-2488`). W4-c27.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MiscDataSync {
+    pub player_id: u8,
+    pub kind: u8,
+}
+
+/// `msg 55 AddPlayerBuffPvP`'s body (`NetMessage.cs:1041-1045`): the player
+/// id, `(ushort)number2` the buff type and `(int)number3` the time
+/// (`MessageBuffer.cs:2596-2598`). The host applies only when BOTH players
+/// are hostile and `Main.pvpBuff[type]` (`:2599`) and sends it to the TARGET
+/// alone (`:2603`); the client applies only to itself (`:2599`'s second
+/// clause) via `AddBuff(fromNetPvP: true)` (`:2607`, `Player.cs:5287-5290`
+/// skips the time extension). W4-c27.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerBuffPvp {
+    pub player_id: u8,
+    pub buff_type: u16,
+    pub time: i32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1729,6 +1763,13 @@ pub enum C2s {
     /// (`Player.ManaEffect`'s send, `Player.cs:4534-4537`;
     /// `MessageBuffer.cs:2307-2324`). W4-c27.
     ManaEffect(ManaEffect),
+    /// `51 MiscDataSync` - a client's misc request (kinds 1/2/3/6;
+    /// `MessageBuffer.cs:2482-2530`). W4-c27.
+    MiscDataSync(MiscDataSync),
+    /// `55 AddPlayerBuffPvP` - a client applied a PvP debuff to a peer
+    /// (`Player.AddBuff`'s remote branch, `Player.cs:5269-5275`;
+    /// `MessageBuffer.cs:2594-2611`). W4-c27.
+    PlayerBuffPvp(PlayerBuffPvp),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1864,6 +1905,12 @@ pub enum S2c {
     /// `43 ManaEffect` - a peer's mana-restore text amount, relayed by the
     /// host (`MessageBuffer.cs:2321`). W4-c27.
     ManaEffect(ManaEffect),
+    /// `51 MiscDataSync` - the host's misc fan-out (kinds 2/4;
+    /// `MessageBuffer.cs:2498`, `:2512`). W4-c27.
+    MiscDataSync(MiscDataSync),
+    /// `55 AddPlayerBuffPvP` - a PvP debuff aimed at us, sent by the host to
+    /// the target alone (`MessageBuffer.cs:2603`). W4-c27.
+    PlayerBuffPvp(PlayerBuffPvp),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1955,6 +2002,8 @@ impl C2s {
             Self::PlayerZone(_) => id::SYNC_PLAYER_ZONE,
             Self::ItemAnim(_) => id::ITEM_ANIM,
             Self::ManaEffect(_) => id::MANA_EFFECT,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::PlayerBuffPvp(_) => id::ADD_PLAYER_BUFF_PVP,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2037,6 +2086,11 @@ impl C2s {
             Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
             // `NetMessage.cs:966-969`: (byte)number + (short)number2.
             Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
+            // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+            Self::MiscDataSync(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+            // (int)number3.
+            Self::PlayerBuffPvp(b) => w.u8(b.player_id).u16(b.buff_type).i32(b.time),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2179,6 +2233,17 @@ impl C2s {
             id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
                 player_id: r.u8()?,
                 amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2484-2489`: two bytes.
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2596-2598`: byte + ushort + int.
+            id::ADD_PLAYER_BUFF_PVP => Self::PlayerBuffPvp(PlayerBuffPvp {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                time: r.i32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2344,6 +2409,8 @@ impl S2c {
             Self::PlayerZone(_) => id::SYNC_PLAYER_ZONE,
             Self::ItemAnim(_) => id::ITEM_ANIM,
             Self::ManaEffect(_) => id::MANA_EFFECT,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::PlayerBuffPvp(_) => id::ADD_PLAYER_BUFF_PVP,
         }
     }
 
@@ -2507,6 +2574,11 @@ impl S2c {
             Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
             // `NetMessage.cs:966-969`: (byte)number + (short)number2.
             Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
+            // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+            Self::MiscDataSync(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+            // (int)number3.
+            Self::PlayerBuffPvp(b) => w.u8(b.player_id).u16(b.buff_type).i32(b.time),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2736,6 +2808,17 @@ impl S2c {
             id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
                 player_id: r.u8()?,
                 amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2484-2489`: two bytes.
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2596-2598`: byte + ushort + int.
+            id::ADD_PLAYER_BUFF_PVP => Self::PlayerBuffPvp(PlayerBuffPvp {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                time: r.i32()?,
             }),
             _ => return None,
         })
@@ -5018,5 +5101,58 @@ mod tests {
             other => panic!("expected 43, got {:?}", other.msg_id()),
         }
         assert!(C2s::decode(43, &mut NetReader::new(&[5])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_misc_data_sync_round_trips() {
+        // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+        let d = MiscDataSync {
+            player_id: 3,
+            kind: 6,
+        };
+        let f = S2c::MiscDataSync(d).encode();
+        assert_eq!(f[2], 51);
+        assert_eq!(&f[3..], &[3, 6]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MiscDataSync(x) => assert_eq!(x, d),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+        let c = C2s::MiscDataSync(d).encode();
+        assert_eq!(c[2], 51);
+        assert_eq!(&c[3..], &[3, 6]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MiscDataSync(x) => assert_eq!(x, d),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(51, &mut NetReader::new(&[3])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_player_buff_pvp_round_trips() {
+        // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+        // (int)number3.
+        let b = PlayerBuffPvp {
+            player_id: 1,
+            buff_type: 400,
+            time: 600,
+        };
+        let mut body = vec![1u8];
+        body.extend_from_slice(&400u16.to_le_bytes());
+        body.extend_from_slice(&600i32.to_le_bytes());
+        let f = S2c::PlayerBuffPvp(b).encode();
+        assert_eq!(f[2], 55);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerBuffPvp(x) => assert_eq!(x, b),
+            other => panic!("expected 55, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerBuffPvp(b).encode();
+        assert_eq!(c[2], 55);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerBuffPvp(x) => assert_eq!(x, b),
+            other => panic!("expected 55, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(55, &mut NetReader::new(&body[..5])).is_none());
     }
 }
