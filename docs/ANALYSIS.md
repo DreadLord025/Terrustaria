@@ -23104,6 +23104,89 @@ colours, the laser/hook arm colours, the negative-coordinate truncation and the
 even-side anchor invariant; `projectile.rs`'s `proj_light_spawn_tests` pin the
 spawn copy, the crystal-storm scale-driven rewrite across the fade gate, the
 dark WaterBolt and the stream-neutrality witness.
+### The projectile AI-arm lights, second wave (S1-E-5, W4-e6, 2026-11-20, code-only mode)
+
+`crates/tr-app/src/proj_ai_lights.rs::proj_ai_lights` ports the **second 40**
+of `Projectile.cs`'s 107 `Lighting.AddLight` call sites (sites 68-107 in line
+order, `:54173`…`:78556`) — the AI-arm lights OUTSIDE `ProjLight`
+(`:16153-16661`, the first wave's chain tail; the first 67 sites are W4-c19's
+slice). The feed is ONE loop in `app/frame/draw.rs` beside the `proj_light`
+feed, after the step, in `Main.projectile` slot order, into the **same**
+`EntityLights` pair. Like the `ProjLight` chain, an arm whose kind has no
+`proj_data` row is absent wholesale (no slot can carry it), and no ported arm
+draws `Main.rand` — the feed is pure, so its placement cannot move any stream.
+
+**Ported (20 sites / 23 lights):**
+
+* `AI_001`'s per-type arms: 436 BrainScramblerBolt (`:54173`,
+  `(int)Center/16`, (0.3, 1.1, 0.5)); 634/635 NebulaBlaze1/2 (`:54571`,
+  `AddLight(Center, rgb2)` — the per-kind head colours (0.7, 0.1, 0.5) /
+  (0.4, 0.6, 0.9), `:54470`/`:54481`); 459 ChargedBlasterOrb (`:54674`,
+  (0.4, 0.85, 0.9) — the `:54670-54673` box rewrite keeps the centre
+  invariant); 442 ElectrosphereMissile (`:54755`, (0.3, 0.45, 0.8), inside
+  `if (alpha == 0)` after the `localAI[1] >= 120` kill the sim already runs);
+  449 SaucerLaser (`:54788`, (0.7, 0.65, 0.3)); 438 RayGunnerLaser (`:54831`,
+  (0.4, 0.1, 0.2)); 350 Missile (`:55137`) + 325 FlamingWood (`:55171`), the
+  twin (0.9, 0.6, 0.2) arms; 819 BloodArrow (`:56421`, (0.3, 0.05, 0.05)).
+* `AI_026`'s foxsparks pair: 1094/1113 (`:58213`/`:58226`,
+  `AddLight(Center, 0.5, 0.3, 0.1)`, unconditional inside each type block).
+* `AI_062`'s StardustCell 613 (`:65120`, (0.2, 0.6, 0.7)).
+* `AI_075`'s LaserDrill 445 (`:66272`): the `localAI[0]/60` triangle-wave
+  `Vector3.Lerp((0,1,0.7),(0,0.7,1), 1-num12*2) * 0.5` colour (unclamped
+  Lerp), gated on `Distance(hand, Center) >= 5f` (`:66256`), `hand` = the
+  owner's `RotatedRelativePoint(MountedCenter)` (`:66135`; the feed resolves
+  `owner == 0` to the local player, the `ai_drill`/`map_layers` precedent).
+* `AI_130`'s FlameBurst tower pairs: 663 T1 (`:68124-68125`), 665 T2
+  (`:68172-68173`, ×1.2), 667 T3 (`:68224-68225`, ×1.5) — each appends the
+  `Center` light then the `Bottom + (0,-10)` light at (0.4, 0.2, 0.1)×mult.
+* `AI_138`'s ExplosiveTrap shared tail (`:69332`): 691/692/693 all light
+  `Center` (0.6, 0.5, 0.3).
+
+**The LaserDrill deviation (recorded).** The 445 arm is ported but **dark in
+the current port**, the WaterBolt dead-arm precedent (`proj_lights.rs`): the
+port's `ai_drill` stand-in pins the slot's centre to the hand every tick
+(`projectile.rs::ai_drill`), so the `>= 5f` distance gate reads 0, and the
+`localAI[0]++`/wrap-60 cycle (`:66251-66255`) is an AI-side writer that lands
+with the full `AI_075` 445 arm — until then the colour reads the stock 0. The
+C# pins the drill to the hand at `AI_075`'s TAIL (`:67329`), AFTER this light,
+so the vanilla gate reads the pre-pin (moved) centre and the light is live
+there. The `>= 30f` `PlotTileLine` flood half (`:66264-66271`) is the
+light-map write with no port — skipped, the 870 `FloodFillTile` precedent.
+
+**Absent (20 sites), exactly:**
+
+* The 18 unrowed kinds: 467 CultistBossFireBall (`:54262`), 468
+  CultistBossFireBallClone (`:54406`), 709 MonkStaffT3_AltShot (`:54714`),
+  440 LaserMachinegunLaser (`:54784`), 606 ScutlixLaser (`:54792`), 593
+  AncientDoomProjectile (`:54835`), 592 MartianWalkerLaser (`:54858`), 435
+  MartianTurretBolt (`:54932`), 682 DD2LightningBugZap (`:54968`), 684
+  DD2SquireSonicBoom (`:54992`), 585 ClothiersCurse (`:56126`, the colour
+  rides `NPCID.Sets.MagicAuraColor[54]` = (100, 4, 227)/255,
+  `NPCID.cs:10475`), 577 VortexLaser (`:56294`), 576 NebulaLaser (`:56298`),
+  312 JackOLantern (`:57185`), 324 CursedSapling (`:61228`), 595 Arkhalis
+  (`:66683`) + 735 Terragrim (`:66736`) (the `Center + velocity*3` lead
+  anchor), 707 MonkStaffT3 (`:69507`) + 708 MonkStaffT3_Alt (`:69885`) (the
+  OWNER-centre anchor, 708 behind `!player.frozen`). Each lands with its
+  kind's `proj_data` row.
+* The lightning-liquid electrification scan (`:78556`,
+  `SpawnLightningLiquidElectrificationParticles(int, int)`): the
+  `Main.rand.Next(4) == 0` gate (`:78549`) draws on the projectile stream and
+  the `ParticleOrchestrator` request has no port — absent wholesale (the
+  S1-E-5 RNG rule).
+
+**The anchor vocabulary.** `(int)Center.X / 16` (the 436/459/442/449/438/
+350/325/445 arms) truncates the centre coordinate BEFORE the divide
+(`XAnchor::CenterTruncated`); the `AddLight(Vector2, …)` overload
+(`Lighting.cs:140-143`, the 634/635/819/foxsparks/613/tower/trap arms)
+truncates the QUOTIENT (`XAnchor::Center`). Truncation commutes with division
+by a positive integer, so the two agree for every real coordinate —
+`the_two_anchor_forms_agree_for_every_position` pins that across a sweep.
+
+Tests (written, **not run** — code-only mode): 15 witnesses in
+`proj_ai_lights.rs` — the per-arm colours/anchors, the 442 alpha gate, the
+445 hand-distance gate + triangle-wave colour (0/30/60), the tower
+Centre+Bottom pair order + tier multipliers, the trap shared tail, the
+anchor-agreement sweep and the every-ported-kind-has-a-row invariant.
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
