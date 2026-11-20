@@ -6150,10 +6150,13 @@ impl Npc {
             | NpcKind::LeechHead
             | NpcKind::LeechBody
             | NpcKind::LeechTail => {}
-            // The wyvern family: the chain assembly + the follower trail run
-            // in the world sim's worm pass; the head's altitude-gate machine
-            // (`npc_ai_wyvern.rs`, S1-D-3) is UNWIRED — the sim wiring is the
-            // follow-up wave (docs/ANALYSIS.md "The Wyvern family").
+            // The wyvern family: the chain assembly + the head's
+            // altitude-gate machine + the follower trail run in the world
+            // sim's OWN wyvern pass (`world_sim/npcs.rs::update_wyverns`,
+            // N16 — `npc_ai_wyvern.rs::wyvern_family_step`; the family is
+            // NOT `is_worm()`, the shared worm pass never sees it). The
+            // per-NPC step keeps its preamble + find_frame + contact tail;
+            // this kind arm is the movement no-op (the worm convention).
             NpcKind::WyvernHead
             | NpcKind::WyvernLegs
             | NpcKind::WyvernBody

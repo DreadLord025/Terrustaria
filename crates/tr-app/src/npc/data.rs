@@ -1104,7 +1104,8 @@ impl NpcKind {
             // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
             // precedent): the shared pass's budget chain + dig head are
             // NOT the wyvern's machine — the fixed 14-link chain and the
-            // altitude-gate flyer live in `npc_ai_wyvern.rs` (UNWIRED).
+            // altitude-gate flyer live in `npc_ai_wyvern.rs` (WIRED by
+            // N16: `world_sim/npcs.rs::update_wyverns`).
             NpcKind::WyvernHead => (11.0, 0.25),
             _ => (8.0, 0.07),
         }

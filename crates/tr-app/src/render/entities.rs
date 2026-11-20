@@ -2936,13 +2936,15 @@ pub(crate) fn draw_npcs(
             // The wyvern family (`S1-D-3` wyvern): single-frame segments
             // (`Main.npcFrameCount` 87..92 = 1, `Main.cs:67092-67093`),
             // rotated along the chain like the worms above. **Sheet
-            // deferral**: NPC_87..92 are NOT packed — the best-fit atlas
-            // stands at 8121 px against the 8192 strict-GPU bound
-            // (`tr-render/src/atlas.rs:98-105`), only ~71 px of headroom,
-            // and the six sheets do not fit; `npc_sheet` returns None and
-            // the draw skips (the `let Some(tex)` guard below). The
-            // packing + the bestiary portraits ride the atlas-repack
-            // wave (docs/ANALYSIS.md "The Wyvern family").
+            // deferral**: NPC_87..92 are NOT packed — the skyline atlas
+            // (S1-G-12b) holds the full gore+mount+font set at 8119 px
+            // against the 8192 strict-GPU bound, only 73 px of headroom
+            // (N16 re-measure, `tools/atlas_sim.js`), and the six sheets
+            // do not fit; `npc_sheet` returns None and the draw skips
+            // (the `let Some(tex)` guard below). The packing + the
+            // bestiary portraits ride the atlas-repack wave
+            // (docs/ANALYSIS.md "The Wyvern family" + "The wyvern
+            // wiring (N16)"). The AI is LIVE (N16: `update_wyverns`).
             NpcKind::WyvernHead => generic_anchor(assets.npc_sheet(87), 1, n, w, h),
             NpcKind::WyvernLegs => generic_anchor(assets.npc_sheet(88), 1, n, w, h),
             NpcKind::WyvernBody => generic_anchor(assets.npc_sheet(89), 1, n, w, h),
