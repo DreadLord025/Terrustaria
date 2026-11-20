@@ -16830,9 +16830,14 @@ mod s1_player_composite_tests {
         p.equipped[4] = 4989; // Soaring Insignia
         p.update(&w, PlayerInput::default());
         assert!(p.empress_brooch, "the brooch flag arms");
-        // Fly: the budget drains to max each tick, never below max-1.
+        // Fly: the budget drains to max each tick, never below max-1. The
+        // initial jump burst (jump > 0) does NOT fly — wait it out first
+        // (the C# flag19 needs `jump == 0`, `:26786`).
         let held = PlayerInput { jump: true, ..Default::default() };
         p.update(&w, held); // the ground jump
+        for _ in 0..30 {
+            p.update(&w, held); // the burst drains (jumpHeight 15)
+        }
         for _ in 0..200 {
             p.update(&w, held);
             assert!(
