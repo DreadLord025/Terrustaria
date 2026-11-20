@@ -1516,6 +1516,14 @@ impl App {
                         };
                         let favs = self.favorite_slots.clone();
                         let fav = move |i: usize| favs.contains(&i);
+                        // S1-P-i43 — the transfer cues ride the bare-`Main.rand`
+                        // stand-in (the click handler runs outside every
+                        // SwapRandom block, the `quick_transfer_from_slot`
+                        // precedent); snapshot it across the `p` borrow.
+                        let mut rng = std::mem::replace(
+                            self.rngs.global(),
+                            tr_core::UnifiedRandom::default(),
+                        );
                         match id {
                             // `ChestUI.LootAll`'s bank arm (:417-473) —
                             // `LootAllFromBank` is the default settings
@@ -1525,7 +1533,10 @@ impl App {
                                 &mut p.banks[bi],
                                 &mut self.inventory,
                                 &mut self.equip.coins,
+                                &mut self.equip.ammo,
                                 None,
+                                &mut self.audio,
+                                &mut rng,
                             ),
                             // `ChestUI.DepositAll` (`:540-659`) — the
                             // MoveCoins pre-pass runs for every container
@@ -1536,11 +1547,15 @@ impl App {
                                     &mut self.inventory,
                                     &mut self.equip.coins,
                                     &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                                 crate::bank::deposit_all(
                                     &mut p.banks[bi],
                                     &mut self.inventory,
                                     &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                             }
                             // `ChestUI.QuickStack`'s bank arm (:670-685) —
@@ -1552,12 +1567,16 @@ impl App {
                                     &mut self.inventory,
                                     &mut self.equip.coins,
                                     &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                                 crate::bank::quick_stack(
                                     &mut p.banks[bi],
                                     &mut self.inventory,
                                     &mut self.equip.coins,
                                     &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                             }
                             _ => {
@@ -1565,9 +1584,13 @@ impl App {
                                     &mut p.banks[bi],
                                     &mut self.inventory,
                                     &mut self.equip.ammo,
+                                    &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                             }
                         }
+                        *self.rngs.global() = rng;
                         return;
                     }
                 }
@@ -1916,6 +1939,12 @@ impl App {
                 self.ui_right_press = false;
                 return true;
             }
+            // The dresser top-row storage open (`Player.cs:32864-32925`,
+            // S1-P-i43): the same open-inventory right-click route.
+            if chest::try_open_dresser_at_cursor(self, world_pos) {
+                self.ui_right_press = false;
+                return true;
+            }
         }
         false
     }
@@ -2035,13 +2064,21 @@ impl App {
         } else {
             None
         };
+        // S1-P-i43 — the transfer cues ride the bare-`Main.rand` stand-in
+        // (the click handler runs outside every SwapRandom block, the
+        // `quick_transfer_from_slot` precedent); snapshot it across the
+        // `wc`/`p` borrows.
+        let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
         match id {
             // `ChestUI.LootAll` (`:393-473`).
             0 => crate::bank::loot_all(
                 &mut wc.slots,
                 &mut self.inventory,
                 &mut self.equip.coins,
+                &mut self.equip.ammo,
                 vault,
+                &mut self.audio,
+                &mut rng,
             ),
             // `ChestUI.DepositAll` (`:540-659`) — the MoveCoins pre-pass runs
             // for every container kind (`:543-562`).
@@ -2051,8 +2088,16 @@ impl App {
                     &mut self.inventory,
                     &mut self.equip.coins,
                     &fav,
+                    &mut self.audio,
+                    &mut rng,
                 );
-                crate::bank::deposit_all(&mut wc.slots, &mut self.inventory, &fav);
+                crate::bank::deposit_all(
+                    &mut wc.slots,
+                    &mut self.inventory,
+                    &fav,
+                    &mut self.audio,
+                    &mut rng,
+                );
             }
             // `ChestUI.QuickStack` (`:661-825`) — NO MoveCoins for a world
             // chest (`:670-685`'s arms are the bank kinds only).
@@ -2061,14 +2106,23 @@ impl App {
                 &mut self.inventory,
                 &mut self.equip.coins,
                 &fav,
+                &mut self.audio,
+                &mut rng,
             ),
             // `ChestUI.Restock` (`:871-995`) — the single PlaySound(7) on a
-            // moved item (`:991-994`) stays out with the existing cue stance.
+            // moved item (`:991-994`), S1-P-i43's faithful-cue decision.
             _ => {
-                let _ =
-                    crate::bank::restock(&mut wc.slots, &mut self.inventory, &mut self.equip.ammo);
+                let _ = crate::bank::restock(
+                    &mut wc.slots,
+                    &mut self.inventory,
+                    &mut self.equip.ammo,
+                    &fav,
+                    &mut self.audio,
+                    &mut rng,
+                );
             }
         }
+        *self.rngs.global() = rng;
     }
 
     /// `ChestUI.cs:304-306` → `ItemSorting.SortChest` (`ItemSorting.cs:1629-1653`)
@@ -2656,6 +2710,7 @@ mod tests {
             slots,
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         });
         app.player = Some(crate::player::Player::spawn(&app.world));
         let p = app.player.as_mut().unwrap();
@@ -3084,6 +3139,7 @@ mod tests {
             slots: vec![],
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         });
         app.player.as_mut().unwrap().chest = 0;
         app.mouse_pos = tile_click(40, 10);

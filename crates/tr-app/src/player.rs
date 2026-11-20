@@ -756,6 +756,19 @@ pub struct Player {
     /// `:33524-33525`), the per-tick range close's probe point.
     pub chest_x: i32,
     pub chest_y: i32,
+    /// `Player.editedChestName` (`Player.cs:1442`): the MP client's rename
+    /// flag — `ChestUI.RenameChestSubmit` sets it on a write under netMode 1
+    /// (`ChestUI.cs:855-859`), and the next `33 SyncPlayerChest` send carries
+    /// the name (`Main.TrySyncingMyPlayer`, `Main.cs:17575-17593`; the open
+    /// click's flush `Player.cs:33097-33101` / the dresser's `:32883-32887`
+    /// are the same seam). Cleared on the send (S1-P-i43).
+    pub edited_chest_name: bool,
+    /// The previous tick's `chest` snapshot for `Main.TrySyncingMyPlayer`'s
+    /// close-transition test (`Main.cs:17575` — `player` is the last-synced
+    /// copy; the port keeps just the chest index, the one field the rename
+    /// flush reads). Updated by `chest::tick_open` each player tick
+    /// (S1-P-i43).
+    pub prev_synced_chest: i32,
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
@@ -2009,6 +2022,8 @@ impl Player {
             chest: crate::bank::CHEST_CLOSED,
             chest_x: 0,
             chest_y: 0,
+            edited_chest_name: false,
+            prev_synced_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
@@ -2926,6 +2941,10 @@ impl Player {
         // flag read (M4-PROJ-8 phase 4) despawns the minions.
         self.num_minions = 0;
         self.slots_minions = 0.0;
+        // `Player.cs:17020` — `this.chest = -1`: the dead tick force-closes
+        // the open container SILENTLY (no sound — the range close's 11 never
+        // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
+        self.chest = crate::bank::CHEST_CLOSED;
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
@@ -3566,6 +3585,16 @@ impl Player {
     /// `FarPlacementRangePower` is enabled. The C# gates the doubling on
     /// `Main.IsJourneyMode`; the port has no journey-difficulty flag, so the
     /// power's own toggle is the gate.
+    ///
+    /// S1-P-i43: the per-tick static writes AFTER the journey block ride in
+    /// too — `UpdateEquips`' `equippedAnyTileRangeAcc` +3/+2
+    /// (`Player.cs:13040-13044`, set by the Extendo Grip 2215 `:15267-15270`,
+    /// the Architect's Gizmo Pack 3061 `:15279-15285` and the Ancient
+    /// Manipulator-family 5126 `:15286-15294`) and `ApplyEquipFunctional`'s
+    /// held Toolbox 1923 +1/+1 (`:14954-14958`). The chest range close reads
+    /// this through `craft::tile_reach`'s `TileReachLimit = 20` clamp
+    /// (`TileReachCheckSettings.cs:24-33`), the same seam the crafting scan
+    /// uses (`craft.rs:547-578`).
     pub fn tile_range_x(&self) -> f32 {
         let base = 5.0;
         if self.far_placement_range {
@@ -3584,6 +3613,30 @@ impl Player {
         } else {
             base
         }
+    }
+
+    /// The full per-tick `Player.tileRangeX/Y` pair after the journey block,
+    /// the `equippedAnyTileRangeAcc` accessory grant and the equipped Toolbox
+    /// (`Player.cs:18815-18828` → `:13040-13044` → `:14954-14958`), clamped
+    /// by `TileReachCheckSettings.Simple`'s `TileReachLimit = 20`
+    /// (`TileReachCheckSettings.cs:24-33`, `:81-85`) — the exact reach
+    /// `IsInTileInteractionRange` reads (`Player.cs:32025-32029`). The
+    /// accessory scan is the C#'s `UpdateEquips` loop 3..10 over the
+    /// equipped kinds (`:12946-12952`); the Toolbox 1923's +1/+1 fires from
+    /// the SAME loop (`ApplyEquipFunctional`, `:14954` — an equipped
+    /// accessory, not the held item). Delegates to `craft::tile_reach` —
+    /// one formula, no second copy (S1-P-i43).
+    pub fn tile_interaction_reach(&self) -> (i32, i32) {
+        let range_acc = self.equipped[3..10]
+            .iter()
+            .any(|k| matches!(k, 2215 | 3061 | 5126));
+        let toolbox = self.equipped[3..10].contains(&1923);
+        crate::craft::tile_reach(
+            range_acc,
+            toolbox,
+            self.far_placement_range,
+            false, // the artisan loaf's TB is the AdjTiles scan's, not Simple's
+        )
     }
 
     pub fn center(&self) -> (f32, f32) {
@@ -10283,6 +10336,26 @@ mod tests {
         p.update_dead(false, false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
         assert_eq!(p.respawn_timer, 3600);
+    }
+
+    /// S1-P-i43 — `Player.UpdateDead`'s `this.chest = -1` (`Player.cs:17020`):
+    /// the dead tick force-closes the open container silently (no sound 11),
+    /// `chestX/Y` stay. The world chest AND the banks both close.
+    #[test]
+    fn s1_p_i43_the_dead_tick_closes_the_open_container() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.chest = 3;
+        p.chest_x = 20;
+        p.chest_y = 10;
+        p.start_death(&w, false, false);
+        p.update_dead(false, false, false, false);
+        assert_eq!(p.chest, -1, "the world chest closes (:17020)");
+        assert_eq!((p.chest_x, p.chest_y), (20, 10), "the origin stays");
+        // A bank closes too (the C# writes -1 unconditionally).
+        p.chest = -4;
+        p.update_dead(false, false, false, false);
+        assert_eq!(p.chest, -1, "the safe closes too");
     }
 
     #[test]
