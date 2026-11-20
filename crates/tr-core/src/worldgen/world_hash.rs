@@ -238,6 +238,10 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-g41 (code-only): the egg-sac validator + the new decor arms (see
+    // DEFAULT_WORLD below) move this pin too — the 512 world's spider caves
+    // restyle/pop sacs and the framer keeps the 165 frames. Stale-by-design;
+    // the gate re-pins it.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +285,16 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-g41 (2026-11-21, code-only): the spider-cave egg-sac validator
+    // (`spider_gem_moss.rs::check_stalactite`, `WorldGen.cs:38996-39175`)
+    // pops unsupported sacs and restyles mismatched ones (the chain's
+    // `Next(3)*18` draw, `:38665`), the missing stalactite arms place new
+    // tiles, the pile boulder-seat veto removes piles, and the
+    // `frame_important[165]` boot static keeps the stored frames through the
+    // framer — so classic worlds change BY DESIGN. BOTH pins move; the
+    // re-pin is DEFERRED to the merge gate (no compiler on this branch, the
+    // S1-K-2 wave B precedent). The `a == b` determinism witnesses are
+    // written NOT run. Census: `docs/research/93-spider-cave-census.md`.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -12884,6 +12884,20 @@ Deliberate deviations, all in the module header:
 
 Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
 
+### The spider-cave egg-sac validator (W4-g41)
+
+Code-only census + gap-fill of the spider-cave biome gen against `WorldGen.cs`, scoped to web placement / egg sacs / wall coverage. Full census: `docs/research/93-spider-cave-census.md`. The landed M5-STRUCT-5 passes were audited verbatim; the gaps ported here:
+
+- **The egg-sac validator chain** — `CheckStalactite` (`:38996-39175`), `UpdateStalagtiteStyle` (`:38643-38718`), `GetStalagtiteStyle` (`:38823-38872`), `GetDesiredStalagtiteStyle` (`:38720-38821`) and `InvalidTileForPilesOrSpeleothems` (`:38979-38994`) — wired through `PlaceTight`'s tail (`:38320-38323`). The "egg sac" is the spider stalactite family (tile 165, frameX `108 + variation*18`, two tiles tall); the validator pops unsupported sacs and restyles mismatched ones. The chain's ONLY RNG draw is `UpdateStalagtiteStyle`'s `Next(3)*18` (`:38665`), fired only on a style mismatch; it rides the existing `pass_rng("Spider Caves")` / `("Webs And Honey")` slots. The `destroyObject` kills ride `edit::remove_tile` (the generation strip — the C#'s guarded `Check*` re-entries early-return while the flag is set, so no cascade); the C# `KillTile` keeps `tile.type`, so the pair's type comparisons read the original kind (captured before the kills). The spider override (`side == 3 && wall == 62` → style 11, `:38766-38769`) is the egg-sac's own arm.
+- **The missing `PlaceUncheckedStalactite` arms** — hanging granite (`:38448-38476`) / marble (`:38477-38505`), rising hive (`:38543-38552`, always small frameY 90) — and `Main.tileMoss[627]` (`Main.cs:7031`, the rainbow moss) in the moss-support test (now the generated `TILE_MOSS` set).
+- **`PlacePot`'s `halfBrick(false)` write** (`:54108`); **`PlaceSmallPile`'s boulder-seat veto** (`:46847-46850`) + the `anyLava` `liquid > 0` guard (`Tile.cs:410-415` — the old read tested the kind alone).
+- **The spider pass** — the `shroomCount > 1` retry veto (`:17407-17410`, zeroes the count INSIDE the loop so the acceptance re-fails), the `ILied` tail dispatch (`:17422-17425` → `micro_finish::no_spider_caves_i_lied`, previously unwired), and the remix y-band draws (`:17392-17405`, gated on `SeedFlags::REMIX`, classic unchanged).
+- **The webs pass** — the DST row-50 start (`:20003-20006`) and the `ILied` honey arm (`:20022-20028`, wall-62 liquid converts to honey instead of clearing).
+- **`SpiderWallRemover`** (`:77279-77344`) — the drifting diamond wall-62 eraser, ported as a tested pure fn but **UNWIRED** (the c32 constants-off precedent): its only callers are `FinishNotTheBees`' two search loops (`:25409-25434`), and `FinishNotTheBees` (`:25388`) is itself unported — the wiring lands with that row.
+- **`frame_important[165]`** boot static (`Main.cs:7407`, `pipeline.rs::boot_statics`) so the framer keeps the validator's stored frames.
+
+Deviations: the validator's kills use the generation strip (no loot/cascade, the worldgen idiom); `SpiderWallRemover` is unwired; the `Spread.Gem` duplicate-visit redraw (`:3617`) is a real RNG deviation left for the gem-fidelity row (the Spider/Moss dedups are draw-faithful — the depth-gate draws run on every visit before the dedup). Both world-hash pins move BY DESIGN (the validator pops/restyles sacs, the new arms place tiles, the pile veto removes piles); the re-pin is DEFERRED to the merge gate (no compiler on this branch, the S1-K-2 wave B precedent). 14 witness tests written NOT run; the `a == b` determinism witnesses pin the pass's seed-reproducibility.
+
 ## The pillar shards (M4-EVENT-9)
 
 The celestial pillars spawn six mobs (`NPC.cs`'s tower region of
