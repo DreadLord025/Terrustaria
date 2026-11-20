@@ -39270,5 +39270,13 @@ NOTHING. The anniversary 12/955 arm draws BOTH SelectRandom picks
 726 twice and omits 724 — the wiring dispatch must reproduce that quirk.
 
 Wave A (sites 1-10): `projectile_gore_a.rs`, 5 witnesses written not run.
-Remainder: sites 11-165 (waves B+), the UpdateProjectiles slot dispatch
+Wave B (sites 11-20): `projectile_gore_b.rs`, 5 witnesses written not run.
+`NextVector2Square`/`RotatedByRandom` draw TWO `NextDouble` each
+(`Utils.cs:1251-1254`/`:1697-1700`) — NOT `NextFloat`; the witnesses replay
+`next_double`. The lava-bounce gores upgrade the landed census arms
+(`projectile.rs::ai_aqua_scepter` + the type-27 twin) at wiring: the census
+line is REPLACED by the pool fn (gate + type + kicks + post-writes). The
+volcano's shared `num7 = Next(3,7)` (`:42311`) rides `volcano_gores` as an
+input — the caller draws it between the two dust loops.
+Remainder: sites 21-165 (waves C+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
