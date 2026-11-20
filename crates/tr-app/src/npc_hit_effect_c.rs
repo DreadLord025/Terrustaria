@@ -50,6 +50,8 @@
 //! | 169-174 | `:82676` | the 437 Cultist Tablet `dmg == 9999` burst (6 gores 728-733, RotatedByRandom velocity) |
 //! | 175-177 | `:82743` | the 513-515 Tomb Crawler death (1 gore each, type-513+822, alpha copy) |
 //! | 178-180 | `:82762` | the 510-512 Dune Splicer death (1 gore each, type-510+819, alpha copy) |
+//! | 181-183 | `:82781` | the 621-623 Blood Eel death (1 gore each, type-621+1187, alpha copy, type-5 dust) |
+//! | 184-188 | `:82816-82820` | the 518/416 Solar Spearman/Drakomire Rider death (5 gores, gated type-6 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -789,6 +791,83 @@ fn dune_splicer_death(
     gore.slot_mut(idx).alpha = alpha;
 }
 
+/// The 621-623 Blood Eel death (`NPC.cs:82777-82782`, sites 181-183): the
+/// 50-dust type-5 burst (SpeedY -2, alpha/color/scale from the NPC), then
+/// ONE gore of type `this.type - 621 + 1187` with the alpha copy. The three
+/// segments (621/622/623) map to gores 1187/1188/1189. Same shape as the
+/// other worm arms, but the dust is type 5 (not 250). The 621-623 family
+/// sets `alpha = 255` in SetDefaults (`NPC.cs:16985`), carried by `npc.alpha`.
+fn blood_eel_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    // `:82777-82780` — the 50-dust type-5 burst (SpeedY -2).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    // `:82781-82782` — the single gore + the alpha copy.
+    let ty = npc_type - 621 + 1187;
+    let idx = gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), ty, 1.0);
+    gore.slot_mut(idx).alpha = alpha;
+}
+
+/// The 518/416 Solar Spearman / Drakomire Rider death (`NPC.cs:82804-82820`,
+/// sites 184-188): the 20-iteration burst, each a type-241 dust then a
+/// `Main.rand.Next(3) == 0`-gated type-6 dust (noGravity, scale 1.5,
+/// fadeIn 1, velocity ×3); then the 5 gores 844/845/847/835/836 at the
+/// +0/+20/+20/+20/+20 Y ladder. The death gate is `Next(3)` (the hit half
+/// uses `Next(4)`, `:82792`).
+fn solar_spearman_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82804-82815` — 20 iterations: type-241 dust + the Next(3)-gated type-6.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 241, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        // `:82807` — the death gate is Next(3) == 0 (draws before the spawn).
+        if rng.next_max(3) == 0 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 1.0;
+            d.velocity *= 3.0;
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 844, s); // :82816
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 845, s); // :82817
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 847, s); // :82818
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 835, s); // :82819
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 836, s); // :82820
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -893,6 +972,15 @@ pub fn hit_effect_c(
     // `:82747-82765` — the 510-512 Dune Splicer arm (sites 178-180).
     if (510..=512).contains(&npc_type) && npc.hp <= 0 {
         dune_splicer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82766-82784` — the 621-623 Blood Eel arm (sites 181-183).
+    if (621..=623).contains(&npc_type) && npc.hp <= 0 {
+        blood_eel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82785-82822` — the 518/416 Solar Spearman / Drakomire Rider arm
+    // (sites 184-188).
+    if (npc_type == 518 || npc_type == 416) && npc.hp <= 0 {
+        solar_spearman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -1454,6 +1542,67 @@ mod tests {
             assert_eq!(gore.slot(0).gore_type, gore_ty, "segment {ty}");
             assert_eq!(gore.slot(0).alpha, 0);
         }
+    }
+
+    /// `NPC.cs:82781-82782` — the Blood Eel death: one gore per segment
+    /// (621/622/623 -> 1187/1188/1189) with the alpha copy (the family sets
+    /// alpha 255), after the 50-dust type-5 burst.
+    #[test]
+    fn w4_f10_the_blood_eel_death_maps_the_segments() {
+        let w = air();
+        for (ty, gore_ty) in [(621, 1187), (622, 1188), (623, 1189)] {
+            let mut n = boss(100.0, 100.0, 28.0, 28.0);
+            n.alpha = 255;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(83);
+            blood_eel_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "segment {ty}");
+            assert_eq!(gore.slot(0).alpha, 255);
+            // The dust is type 5 (not 250).
+            let d5 = dust.slots().iter().find(|d| d.active && d.dust_type == 5);
+            assert!(d5.is_some(), "the type-5 burst ran");
+        }
+    }
+
+    /// `NPC.cs:82816-82820` — the Solar Spearman death: the 5 gores
+    /// 844/845/847/835/836 at +0/+20 Y, after the 20-iteration type-241 +
+    /// Next(3)-gated type-6 burst. The twin replay pins the gate draws.
+    #[test]
+    fn w4_f10_the_solar_spearman_death_gates_the_type_six_dust() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(89);
+        solar_spearman_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![844, 845, 847, 835, 836]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        // The twin: 20 x (type-241 6-draw census + Next(3) gate; a taken gate
+        // adds the type-6 census + its tweak draw), then the 5 gores' kicks.
+        let mut twin = UnifiedRandom::new(89);
+        let census = |r: &mut UnifiedRandom| {
+            let _px = r.next_max(36);
+            let _py = r.next_max(52);
+            let _vx = r.next_range(-20, 21);
+            let _vy = r.next_range(-20, 21);
+            let _row = r.next_max(3);
+            let _scale = r.next_range(-20, 21);
+        };
+        for _ in 0..20 {
+            census(&mut twin); // type 241 (no tweak)
+            if twin.next_max(3) == 0 {
+                census(&mut twin); // type 6 default block
+                let _tweak = twin.next_range(-10, 6); // type-6 tweak (Dust.cs:216)
+            }
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the spearman death mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
