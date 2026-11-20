@@ -2739,6 +2739,117 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     })
 }
 
+/// `WorldGen.CheckAlch` (`WorldGen.cs:45972-46092`) as the standalone
+/// support check the liquid retirement calls (`Liquid.DelWater`,
+/// `Liquid.cs:1580-1583`): run the herb's support probe and kill the cell
+/// when it lost its soil. The kill's per-cell herb drop rolls ride the
+/// discarded `TileKill` (the liquid engine is pure — the same deviation as
+/// `liquid_check`'s `tileCut` burn, ANALYSIS "The liquid reactions").
+pub fn check_alch_tile(world: &mut World, x: i32, y: i32) {
+    let Some(plan) = check_alch(world, x, y) else {
+        return;
+    };
+    let mut destroy_object = false;
+    for &(cx, cy) in &plan.cells {
+        kill_tile_cascading(world, cx, cy, false, &mut destroy_object);
+    }
+}
+
+/// `WorldGen.CheckLilyPad` (`WorldGen.cs:59203-59310`): the lily pad 518
+/// floats on water only — a non-water cell kills it; on water it re-frames
+/// to the grass family below (dirt 2/477 → 0, jungle 109/116 → 18, mud 60
+/// → 36; the C#'s `type == 109 || type == 109` duplicate is kept as the
+/// 109/116 set) and climbs into an open liquid cell above, or sinks into
+/// an empty cell below, or dies on a non-platform non-solid support. The
+/// `SquareTileFrame(…, resetFrame: false)` tails ride
+/// [`actuation_square_frame`]; the MP `SendTileSquare`/`SendData` arms have
+/// no port consumer. `Main.netMode == 1`'s early return is the client half
+/// of the MP gate — single-player never takes it.
+pub fn check_lily_pad(world: &mut World, x: i32, y: i32) {
+    let Some(pad) = world.tile(x, y).copied() else {
+        return;
+    };
+    // :59209-59217 — water only.
+    if pad.liquid_kind() != crate::tile::LiquidKind::Water {
+        kill_tile(world, x, y, false);
+        return;
+    }
+    // :59218-59226 — walk down to the first solid (non-solidTop) cell,
+    // stopping 50 rows above the world bottom.
+    let mut num = y;
+    while num < world.height - 50 {
+        let t = world.tile(x, num).copied().unwrap_or_default();
+        if t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind) {
+            break;
+        }
+        num += 1;
+    }
+    // :59227-59240 — the ground family's frame row.
+    let ground = world.tile(x, num).map(|t| t.kind).unwrap_or(0);
+    let frame_row: i32 = match ground {
+        2 | 477 => 0,
+        109 | 116 => 18,
+        60 => 36,
+        _ => -1,
+    };
+    if frame_row < 0 {
+        // :59302-59309 — no grass family below: the pad dies.
+        kill_tile(world, x, y, false);
+        return;
+    }
+    // :59243-59250 — re-frame to the ground family.
+    if i32::from(pad.frame_y) != frame_row {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_y = frame_row as i16;
+        }
+        touch(world, x, y);
+    }
+    let pad = world.tile(x, y).copied().unwrap_or_default();
+    let above = world.tile(x, y - 1).copied().unwrap_or_default();
+    if above.liquid > 0 && !above.active() {
+        // :59251-59267 — climb into the open liquid cell above.
+        move_lily_pad(world, x, y, x, y - 1, &pad);
+        actuation_square_frame(world, x, y - 1);
+    } else {
+        // :59270-59273 — a submerged pad stays put.
+        if pad.liquid != 0 {
+            return;
+        }
+        let below = world.tile(x, y + 1).copied().unwrap_or_default();
+        if !below.active() {
+            // :59275-59291 — sink into the empty cell below.
+            move_lily_pad(world, x, y, x, y + 1, &pad);
+            actuation_square_frame(world, x, y + 1);
+        } else if !td::SET_PLATFORMS.has(below.kind)
+            && (!td::TILE_SOLID.has(below.kind) || td::TILE_SOLID_TOP.has(below.kind))
+        {
+            // :59292-59299 — a non-platform non-solid support: the pad dies.
+            kill_tile(world, x, y, false);
+        }
+    }
+}
+
+/// `CheckLilyPad`'s two relocation writes (`WorldGen.cs:59253-59261` /
+/// `:59278-59285`): the destination becomes the pad (frame, paint, no
+/// half-brick, slope 0), the source cell deactivates to type 0.
+fn move_lily_pad(world: &mut World, sx: i32, sy: i32, dx: i32, dy: i32, pad: &Tile) {
+    if let Some(d) = world.tile_mut(dx, dy) {
+        d.flags |= crate::tile::FLAG_ACTIVE;
+        d.kind = 518;
+        d.frame_x = pad.frame_x;
+        d.frame_y = pad.frame_y;
+        d.flags &= !crate::tile::FLAG_HALF_BRICK;
+        d.set_slope(0);
+        d.set_paint(pad.paint());
+    }
+    if let Some(s) = world.tile_mut(sx, sy) {
+        s.flags &= !crate::tile::FLAG_ACTIVE;
+        s.kind = 0;
+    }
+    touch(world, dx, dy);
+    touch(world, sx, sy);
+}
+
 /// Clears the active tile at `(x, y)` and keeps the wall and the liquid. The caller is
 /// responsible for re-framing; `kill_tile` is the version that does it.
 pub(crate) fn remove_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
