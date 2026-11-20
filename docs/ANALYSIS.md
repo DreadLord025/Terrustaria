@@ -39244,3 +39244,49 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Main.cs dust sites, batch 3 (W4-g13)
+
+The last third of the 23-site Main.cs `Dust.NewDust*` census (the split is
+`docs/research/64-dust-main-sites-claims.md`, W4-g12's claim; the batch
+report is `docs/research/65-dust-main-sites-3.md`): sites 17-23
+(`Main.cs:24756/27381/27384/38664/57766/57789/57793`) port into
+`crates/tr-app/src/main_dust.rs`, UNWIRED (the d60 precedent) - the
+draw-call seams (`DrawNPCDirect`'s type-398 arm, `DrawNPCExtras`' 550 arm,
+`DrawItem`, the retro `oldDrawWater` path) are the wiring wave's.
+
+- **Site 24756 is a DEAD ARM**: the Moon Lord core's tentacle-tip puff
+  sits behind `bool flag8 = false` (`:24703`, never set) - the whole
+  four-site cluster `:24736-24756` never fires. Ported verbatim behind the
+  dead flag parameter; the tip geometry (`:24732-24756`, the
+  `(220,-60)*side` shoulder, the half-length link, the double `Math.Acos`
+  bend, the `RotatedBy` tip) is split into `tentacle_tip_position` and
+  witnessed. The g12/g13 boundary splits the cluster by line order
+  (24752 g12's, 24756 g13's), each batch citing the shared arm.
+- **27381/27384** - the Tavernkeep's ale-toss sparkle: 30 iterations of
+  two type-4 `NewDustDirect` gold specks (0.7 `noGravity` + `velocity *=
+  1f` no-op kept / 0.6 `velocity *= 2f`), gated on the talked-to player
+  holding Ale (353), `direction == Math.Sign(...)` facing,
+  `Hitbox.Distance < 46` (the C# `&` is non-short-circuiting) and the
+  `localAI[3]` 0->1 edge (failed gate decays 1->2). 360 draws per burst.
+- **38664** - `DrawItem`'s coin/heart/mana sparkle: the focus/kind/`R > 60`
+  pre-gates short-circuit before the `Next(500)` draw; `R / 50` is INTEGER
+  division; coins take `default(Color)`/alpha 0/scale 1 + the type switch
+  71-74 -> 244-247; `velocity *= 0f` post.
+- **57766/57789/57793** - the RETRO `oldDrawWater` path (only reached when
+  `!Lighting.NotRetro`, `:57519-57522`; the port draws liquids through the
+  `LiquidRenderer` record path, so these wait on the retro seam): the
+  surface sparkle (`max(R,G,B)/30` integer vs one `Next(20000)`, drawn
+  even at budget 0; white/honey alpha-255 tints) and the lava-bubble pair
+  (`Dust.lavaBubbles < 200` budget - the pool static, maintained by the
+  d50 phase-2 physics lane; independent `Next(700)`/`Next(350)` gates; the
+  surface bubble's `*0.8`/`X*2`/`Next(1,7)*0.1`/1-in-10 `Next(2,5)` post
+  chain after the type-35 internals tweak).
+
+**RNG contract**: all seven sites run on the DRAW path, outside every
+`Main.SwapRandom` block - the C# bare `Main.rand`. The wiring passes
+`app.rngs.global()` (the port's bare-stream slot, the recorded world-seed
+deviation), the minecart `dust_phase` player-less precedent; no new
+stream, the 17 named simulation streams untouched. 14 lockstep-mirror
+witnesses (the d51 pattern) pin the per-site draw census; WRITTEN, NOT
+RUN - no cargo/rustc/rustfmt/tests/graphify invoked (code-only mode).

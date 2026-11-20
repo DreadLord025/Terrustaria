@@ -250,6 +250,13 @@ mod craft_filter;
 mod registry;
 mod variants;
 mod render;
+// W4-g13: UNWIRED Main.cs dust-site batch 3 (sites 17-23 of the 23-site
+// census, docs/research/64-dust-main-sites-claims.md) - the Moon Lord
+// core's dead tentacle-tip puff, the Tavernkeep ale sparkle pair, the
+// world-item coin sparkle and the retro oldDrawWater surface/lava pair;
+// the draw-call seams are the wiring wave (see the module doc +
+// docs/ANALYSIS.md "The Main.cs dust sites, batch 3 (W4-g13)").
+mod main_dust;
 mod spawner;
 mod tag_effects;
 mod settings;
