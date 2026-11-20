@@ -49,6 +49,8 @@ use std::collections::HashSet;
 use tr_core::tile_entities::{TeItem, TeKind};
 use tr_core::world::World;
 
+use crate::projectile::{get_lerp_value, proj_frames};
+use crate::projectile_ai_spear::spear_offset;
 use crate::render::special_tiles::xna_scale_color;
 
 // ---------------------------------------------------------------------------
@@ -853,6 +855,779 @@ pub(crate) fn hat_rack_draw(
 }
 
 // ---------------------------------------------------------------------------
+// The held-projectile preview (TEDisplayDoll.cs:458-490 → Projectile.AI_DisplayDoll)
+// ---------------------------------------------------------------------------
+
+/// `ProjectileID.Sets.DisplayDollDrawUseStyle` (`ID/ProjectileID.cs:188`):
+/// every listed projectile previews under useStyle 5 (the gun aim ladder)
+/// regardless of its item's own useStyle; the default is -1.
+const DISPLAY_DOLL_DRAW_USE_STYLE: [u16; 67] = [
+    301, 933, 1100, 6, 19, 33, 52, 106, 113, 182, 272, 320, 333, 383, 866, 867, 902, 1000,
+    1052, 491, 273, 481, 636, 3, 21, 48, 54, 69, 70, 621, 93, 166, 304, 318, 330, 370, 371,
+    497, 510, 520, 599, 861, 868, 869, 936, 996, 1085, 507, 598, 28, 29, 37, 470, 516, 519,
+    637, 773, 903, 904, 905, 906, 910, 911, 1077, 1086, 1087,
+];
+
+/// The set's value for a projectile kind (`SetFactory.CreateIntSet(-1, …)`):
+/// 5 for the listed kinds, -1 otherwise.
+pub(crate) fn display_doll_draw_use_style(kind: u16) -> i32 {
+    if DISPLAY_DOLL_DRAW_USE_STYLE.contains(&kind) { 5 } else { -1 }
+}
+
+/// `ItemID.Sets.IsAPhaseblade` (`ID/ProjectileID.cs:192`): the aiStyle-3
+/// arm refuses to preview these (`Projectile.cs:22730-22734`).
+const IS_A_PHASEBLADE: [u16; 19] = [
+    1059, 1060, 1061, 1062, 1063, 1064, 1065, 1066, 1067, 1068, 1069, 1070, 1071, 1072,
+    1075, 1076, 1101, 1102, 1074,
+];
+
+/// The doll player's geometry the preview reads (`Player.MountedCenter`
+/// `Player.cs:3337-3341`, `HandPosition` `:4189-4216`, `GetArmPosition`
+/// `:50595-50615`). The wiring step derives these from the live doll
+/// `Player` after `PlayerFrame`; the pure machine takes them as inputs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct DollProjEnv {
+    /// `dollPlayer.direction` (the resolved [`DollDraw::direction`]).
+    pub direction: i32,
+    /// `doll.MountedCenter` — `(position.X + width/2, position.Y +
+    /// BaseHeight/2 + HeightOffsetHitboxCenter)`.
+    pub mounted_center: [f32; 2],
+    /// `doll.Center` — `(position.X + width/2, position.Y + height/2)`.
+    pub center: [f32; 2],
+    /// `doll.Bottom` — `(position.X + width/2, position.Y + height)`.
+    pub bottom: [f32; 2],
+    /// `doll.GetArmPosition()` (`:50595`) — the aiStyle-165 flail anchor.
+    pub arm_position: [f32; 2],
+    /// `doll.bodyFrame.Y / 56` — the body row the on-hand table indexes.
+    pub body_frame_row: u32,
+    /// `doll.gravDir` (1 stock; the doll never flips gravity).
+    pub grav_dir: f32,
+    /// `doll.miscCounter` (`Player.UpdateMiscCounter`, `:29295-29301`).
+    pub misc_counter: u32,
+    /// `doll.mount.PlayerOffset` (`Mount.cs:407-420`) — the per-frame
+    /// player Y offset; 0 when unmounted.
+    pub mount_player_offset: i32,
+    /// `doll.sitting.isSitting` — the `RotatedRelativePoint` sitting term.
+    pub sitting: bool,
+    /// `GetSittingOffsetInfo`'s `seatAdjustment` (`PlayerSittingHelper.cs:
+    /// 23-24`): `-4 + (int)offsetForSeat.Y`; 0 when not seated.
+    pub seat_y_offset: i32,
+}
+
+/// The previewed projectile's `SetDefaults` slice the machine reads:
+/// `width`/`height` (the box), `aiStyle`, `scale`, `alpha`, `drawLayer`.
+/// The wiring step resolves it from `proj_data(kind)` plus the per-type
+/// overrides the generated table omits (the module's `doll_proj_defaults`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct DollProjDefaults {
+    pub w: f32,
+    pub h: f32,
+    pub ai_style: u8,
+    pub scale: f32,
+    pub alpha: i32,
+    pub draw_layer: i32,
+}
+
+/// The `SetDefaults` rows for the kinds `AI_DisplayDoll` previews that the
+/// generated `proj_data` table does not carry (or carries with a different
+/// box). Every row is the C# `SetDefaults` arm verbatim (`Projectile.cs`,
+/// the cited line). `None` = fall through to `proj_data`.
+pub(crate) fn doll_proj_defaults(kind: u16) -> Option<DollProjDefaults> {
+    let (w, h, ai, scale, alpha, layer) = match kind {
+        // :864-872 — the Enchanted Boomerang 6.
+        6 => (22.0, 22.0, 3, 1.0, 0, 0),
+        // :1008-1016 — the Flamarang 19.
+        19 => (22.0, 22.0, 3, 1.0, 0, 0),
+        // :1152-1160 — the Thorn Chakram 33, scale 0.9.
+        33 => (38.0, 38.0, 3, 0.9, 0, 0),
+        // :1345-1353 — the Wooden Boomerang 52.
+        52 => (22.0, 22.0, 3, 1.0, 0, 0),
+        // :1765-1773 — the Shuriken 93… no, the Poisoned Knife 93 is
+        // :1765; the box 12x12, aiStyle 2.
+        93 => (12.0, 12.0, 2, 1.0, 0, 0),
+        // :2012-2020 — the Ice Boomerang 113.
+        113 => (22.0, 22.0, 3, 1.0, 0, 0),
+        // :2686-2694 — the Light Disc 182.
+        182 => (30.0, 30.0, 3, 1.0, 0, 0),
+        // :3578-3586 — the Paladin's Hammer 272, scale 0.9, alpha 255.
+        272 => (32.0, 32.0, 3, 0.9, 255, 0),
+        // :3916-3924 — the Death Sickle 301.
+        301 => (38.0, 38.0, 3, 1.0, 0, 0),
+        // :3952-3960 — the Fruitcake Chakram 304, alpha 255.
+        304 => (30.0, 30.0, 2, 1.0, 255, 0),
+        // :4112-4120 — the Bloody Machete 318.
+        318 => (12.0, 14.0, 2, 1.0, 0, 0),
+        // :4130-4138 — the Combat Wrench 320.
+        320 => (34.0, 34.0, 3, 1.0, 0, 0),
+        // :4226-4234 — the Bone Glove 330… the box 22x22, aiStyle 2.
+        330 => (22.0, 22.0, 2, 1.0, 0, 0),
+        // :4258-4266 — the Bananarang 333, scale 0.9.
+        333 => (38.0, 38.0, 3, 0.9, 0, 0),
+        // :4536-4543 — the Vampire Knives 370.
+        370 => (14.0, 14.0, 2, 1.0, 0, 0),
+        // :4544-4552 — the Scourge of the Corruptor 371.
+        371 => (14.0, 14.0, 2, 1.0, 0, 0),
+        // :5091-5099 — the Hornet minion 439 (drawLayer 7).
+        439 => (22.0, 22.0, 75, 1.0, 0, 7),
+        // :5162-5170 — the Laser Drill 445 (drawLayer 7).
+        445 => (10.0, 10.0, 75, 1.0, 0, 7),
+        // :5404-5412 — the Flairon 491.
+        491 => (26.0, 26.0, 9, 1.0, 0, 0),
+        // :5561-5569 — the Shadowflame Knife 481, alpha 255.
+        481 => (22.0, 22.0, 13, 1.0, 255, 0),
+        // :5705-5713 — the Flying Knife 497.
+        497 => (30.0, 30.0, 2, 1.0, 0, 0),
+        // :5770-5778 — the Javelin 507.
+        507 => (16.0, 16.0, 1, 1.0, 0, 0),
+        // :5796-5804 — the Bone Javelin 510, scale 1.1.
+        510 => (18.0, 18.0, 2, 1.1, 0, 0),
+        // :6094-6102 — the Magic Dagger 535 (drawLayer 8).
+        535 => (18.0, 18.0, 100, 1.0, 0, 8),
+        // :6437-6445 — the Magnet Sphere 595 (drawLayer 7).
+        595 => (68.0, 64.0, 75, 1.0, 0, 7),
+        // :6481-6489 — the Snowball 599… the box 22x22, aiStyle 2,
+        // drawLayer 8 (the :6481 arm).
+        599 => (22.0, 22.0, 2, 1.0, 0, 8),
+        // :6620-6628 — the Pirate minion 615 (drawLayer 7).
+        615 => (22.0, 22.0, 75, 1.0, 0, 7),
+        // :7366-7374 — the Meowmere 697, scale 1.35, alpha 255, layer 7.
+        697 => (16.0, 16.0, 140, 1.35, 255, 7),
+        // :7402-7410 — the Star Wrath 699, alpha 255, layer 7.
+        699 => (24.0, 24.0, 142, 1.0, 255, 7),
+        // :7572-7580 — the Spider minion 714 (drawLayer 7).
+        714 => (22.0, 22.0, 75, 1.0, 0, 7),
+        // :7736-7744 — the Rainbow Crystal 735 (drawLayer 7).
+        735 => (68.0, 64.0, 75, 1.0, 0, 7),
+        // :8312-8320 — the Phaseblade 866.
+        866 => (30.0, 30.0, 3, 1.0, 0, 0),
+        // :8325-8333 — the Phasesaber 867.
+        867 => (22.0, 22.0, 3, 1.0, 0, 0),
+        // :8599-8607 — the Code 2 902.
+        902 => (20.0, 20.0, 3, 1.0, 0, 0),
+        // :8781-8789 — the Terrarian 927 (drawLayer 7).
+        927 => (40.0, 40.0, 75, 1.0, 0, 7),
+        // :8896-8904 — the Amarok 936, alpha 255.
+        936 => (14.0, 14.0, 2, 1.0, 255, 0),
+        // :9458-9466 — the Cascade 996.
+        996 => (18.0, 18.0, 2, 1.0, 0, 0),
+        // :10125-10133 — the Kraken 1085.
+        1085 => (18.0, 18.0, 2, 1.0, 0, 0),
+        _ => return None,
+    };
+    Some(DollProjDefaults { w, h, ai_style: ai, scale, alpha, draw_layer: layer })
+}
+
+/// The resolved preview draw: the projectile's centre, rotation, scale,
+/// alpha and sprite direction, plus the `drawLayer` the renderer routes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct DollProjDraw {
+    pub center: [f32; 2],
+    pub rotation: f32,
+    pub scale: f32,
+    pub alpha: i32,
+    pub sprite_direction: i32,
+    pub draw_layer: i32,
+    /// `Projectile.frame` — the misc-counter frame the 75/161/100 arms pin.
+    pub frame: i32,
+}
+
+/// `Utils.RotatedBy` about the origin (`Utils.cs:1675-1684`).
+fn rotated(v: [f32; 2], radians: f32) -> [f32; 2] {
+    let (c, s) = (radians.cos(), radians.sin());
+    [v[0] * c - v[1] * s, v[0] * s + v[1] * c]
+}
+
+/// `Vector2.SafeNormalize(Vector2.Zero)` — the zero vector stays zero.
+fn safe_normalize(v: [f32; 2]) -> [f32; 2] {
+    let len = (v[0] * v[0] + v[1] * v[1]).sqrt();
+    if len == 0.0 { [0.0, 0.0] } else { [v[0] / len, v[1] / len] }
+}
+
+fn add(a: [f32; 2], b: [f32; 2]) -> [f32; 2] { [a[0] + b[0], a[1] + b[1]] }
+fn sub(a: [f32; 2], b: [f32; 2]) -> [f32; 2] { [a[0] - b[0], a[1] - b[1]] }
+fn mul(v: [f32; 2], s: f32) -> [f32; 2] { [v[0] * s, v[1] * s] }
+
+/// `Player.CalculateFrameFromMiscCounter` (`Player.cs:4253-4274`): the
+/// 300-tick misc-counter cycle remapped onto `[minFrame, maxFrame]`.
+pub(crate) fn calculate_frame_from_misc_counter(
+    misc_counter: u32,
+    framerate: i32,
+    min_frame: i32,
+    max_frame: i32,
+) -> i32 {
+    let num = 300.0f32;
+    let mut num2 = 0i32;
+    let mut num3 = 0i32;
+    while (num3 as f32) < num {
+        num2 += 1;
+        num3 += framerate * (max_frame + min_frame);
+        if (num3 as f32) >= num {
+            num2 += 1;
+            break;
+        }
+    }
+    if num2 <= 0 {
+        num2 = 1;
+    }
+    let num4 = 1.0 / num2 as f32;
+    let t = (misc_counter as f32 / num) % num4;
+    // Utils.Remap(t, 0, num4, minFrame, maxFrame) — the clamped lerp.
+    let lerp = get_lerp_value(0.0, num4, t);
+    (min_frame as f32 + (max_frame - min_frame) as f32 * lerp) as i32
+}
+
+/// `Main.OffsetsPlayerOnhand` (`Main.cs:66615-66637`): the 20-row on-hand
+/// offset table the `HandPosition`/`GetArmPosition`/aiStyle-100 arms read.
+const OFFSETS_PLAYER_ONHAND: [[f32; 2]; 20] = [
+    [6.0, 19.0], [5.0, 10.0], [12.0, 10.0], [13.0, 17.0], [12.0, 19.0],
+    [5.0, 10.0], [7.0, 17.0], [6.0, 16.0], [6.0, 16.0], [6.0, 16.0],
+    [6.0, 17.0], [7.0, 17.0], [7.0, 17.0], [7.0, 17.0], [8.0, 17.0],
+    [9.0, 16.0], [9.0, 12.0], [8.0, 17.0], [7.0, 17.0], [7.0, 17.0],
+];
+
+/// `Player.HandPosition` (`Player.cs:4189-4216`) for the doll: the on-hand
+/// offset for the body row, mirrored for direction, centred on
+/// `MountedCenter` and rotated about the mount pivot
+/// (`RotatedRelativePoint`, `:4225-4251`). `fullRotation` is 0 for the doll
+/// (it never spins) and `gfxOffY` 0, so the rotation is the identity; the
+/// sitting offset rides when the pose is Sitting. The
+/// `ApplyItemPositionOffsetFromMount` half (`:4213`) is a no-op for the
+/// doll's stock mounts (no item-position delegate).
+pub(crate) fn doll_hand_position(env: &DollProjEnv) -> [f32; 2] {
+    let row = (env.body_frame_row as usize).min(19);
+    let mut vector = mul(OFFSETS_PLAYER_ONHAND[row], 2.0);
+    if env.direction != 1 {
+        vector[0] = 40.0 - vector[0];
+    }
+    if env.grav_dir != 1.0 {
+        vector[1] = 56.0 - vector[1];
+    }
+    // :4210 — subtract (bodyFrame.Width - width, bodyFrame.Height - 42)/2.
+    vector = sub(vector, [(40.0 - 20.0) / 2.0, (56.0 - 42.0) / 2.0]);
+    // :4211-4212 — -new Vector2(20,42)/2 + vector, on MountedCenter.
+    let pos = add(env.mounted_center, add([-10.0, -21.0], vector));
+    rotated_relative_point(env, pos)
+}
+
+/// `Player.RotatedRelativePoint` (`Player.cs:4225-4251`) with the doll's
+/// `fullRotation = 0`, `gfxOffY = 0`, `sleeping = false`: the mount pivot
+/// is `Bottom + (0, -(PlayerOffset/2 + 4))`, the point rotates about it by
+/// `fullRotation` (0 → identity), and the sitting offset is added when
+/// seated. The doll's `sittingIndex` is 0 (single-player), so the sitting
+/// `posOffset` is `(0, 0)` and `seatAdjustment` is `-4 + (int)offsetForSeat.Y`.
+fn rotated_relative_point(env: &DollProjEnv, pos: [f32; 2]) -> [f32; 2] {
+    let num2 = env.mount_player_offset / 2 + 4;
+    let pivot = add(env.bottom, [0.0, -num2 as f32]);
+    // fullRotation 0 → the rotated term is the point itself; the pivot
+    // offset (0,-num2) + RotatedBy((0,num2), 0) = (0,0).
+    let mut out = add(pivot, sub(pos, pivot));
+    if env.sitting {
+        // sittingIndex 0 → posOffset (0,0); seatAdjustment -4 + seat drop.
+        out = add(out, [0.0, env.seat_y_offset as f32]);
+    }
+    out
+}
+
+/// `Projectile.AI_DisplayDoll_ItemDisplay` (`Projectile.cs:22545-22572`):
+/// the shared "hold the weapon out along the aim" placement. Returns the
+/// projectile centre + rotation; the caller applies the per-type nudges.
+/// `weapon_shoot_speed`/`weapon_scale` are `item.shootSpeed`/`item.scale`.
+fn item_display(
+    env: &DollProjEnv,
+    pose: &UsePose,
+    weapon_shoot_speed: f32,
+    weapon_scale: f32,
+    rotation_addon: f32,
+) -> ([f32; 2], f32, [f32; 2]) {
+    // :22548-22559 — the aim vector, rotated then mirrored for direction -1.
+    let mut spin = mul([1.0, 0.0], weapon_shoot_speed * weapon_scale);
+    let aim = pose.item_aim_radians.unwrap_or(0.0);
+    spin = rotated(spin, aim);
+    if env.direction == -1 {
+        spin[0] *= -1.0;
+    }
+    // :22560-22565 — position += spin, then centre on the hand
+    // (`doll.HandPosition`, always Some in the doll's stock path). The
+    // position += spin is dropped: the HandPosition overwrite replaces it.
+    let center = doll_hand_position(env);
+    // :22566-22570 — rotation = velocity.ToRotation() + addon*direction,
+    // plus PI/2 when facing left.
+    let mut rotation = spin[1].atan2(spin[0]) + rotation_addon * env.direction as f32;
+    if env.direction == -1 {
+        rotation += std::f32::consts::PI / 2.0;
+    }
+    (center, rotation, spin)
+}
+
+/// `Projectile.AI_DisplayDoll` (`Projectile.cs:22580-23197`) — the doll's
+/// held-projectile preview. Returns `None` when `botherDrawing` is false
+/// (the pose is not a Use pose, the aiStyle has no preview arm, or the
+/// per-type gate refuses). The caller draws the returned sprite only when
+/// `drawLayer <= 3` (`TEDisplayDoll.cs:485-488`); the 7/8 layers ride the
+/// player-renderer override and are returned for the wiring step.
+///
+/// Deferrals (ANALYSIS "The TE furniture draw"): the deep per-type centre
+/// nudges of the aiStyle-2/3 boomerang families and the aiStyle-75/161
+/// minion frame machines are ported for the kinds the doll actually
+/// previews; the `ownedProjectileCounts[902]` write (`:22799-22802`) is a
+/// sim-side effect the pure draw omits.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ai_display_doll(
+    kind: u16,
+    defaults: &DollProjDefaults,
+    env: &DollProjEnv,
+    pose: &UsePose,
+    weapon_shoot_speed: f32,
+    weapon_scale: f32,
+) -> Option<DollProjDraw> {
+    let pi = std::f32::consts::PI;
+    // :22585-22588 — only the Use poses (4-8) preview.
+    let is_use = matches!(
+        pose.pose,
+        DollPose::Use1 | DollPose::Use2 | DollPose::Use3 | DollPose::Use4 | DollPose::Use5
+    );
+    let mut bother = true;
+    let mut center = env.mounted_center;
+    let mut rotation = 0.0f32;
+    let mut scale = defaults.scale;
+    let mut alpha = defaults.alpha;
+    let mut sprite_dir = env.direction;
+    let mut draw_layer = defaults.draw_layer;
+    let mut frame = 0i32;
+    let mut velocity = [0.0f32, 0.0];
+
+    match defaults.ai_style {
+        // :22595-22610 — aiStyle 1: only the Javelin 507 previews.
+        1 => {
+            if kind != 507 {
+                return None;
+            }
+            draw_layer = 7;
+            let (c, r, v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, 0.0);
+            center = add(c, mul(safe_normalize(v), 12.0));
+            center = add(center, [-2.0, -2.0]);
+            rotation = r;
+            velocity = v;
+            alpha = 0;
+        }
+        // :22611-22723 — aiStyle 2: the thrown/boomerang family.
+        2 => {
+            draw_layer = 7;
+            let (c, r, v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, 0.0);
+            center = c;
+            rotation = r;
+            velocity = v;
+            if env.direction == 1 {
+                rotation += pi / 2.0;
+            }
+            match kind {
+                497 => center = add(center, [8.0, -4.0]),
+                69 | 70 | 621 => {
+                    center = add(center, mul([rotation.cos(), rotation.sin()], 6.0));
+                    rotation += pi;
+                    match pose.pose {
+                        DollPose::Use1 | DollPose::Use2 => {
+                            center = add(center, [6.0 * env.direction as f32, -6.0]);
+                        }
+                        DollPose::Use3 => center = add(center, [6.0 * env.direction as f32, 0.0]),
+                        _ => {}
+                    }
+                }
+                1085 => rotation -= pi / 4.0 * env.direction as f32,
+                3 | 166 | 318 | 330 | 510 | 868 | 869 | 996 => {
+                    if env.direction == 1 {
+                        center = sub(center, mul([rotation.cos(), rotation.sin()], 6.0));
+                    } else {
+                        center = add(center, mul([rotation.cos(), rotation.sin()], 6.0));
+                    }
+                    match pose.pose {
+                        DollPose::Use1 => center = add(center, [6.0 * env.direction as f32, -6.0]),
+                        DollPose::Use2 => {
+                            if kind != 318 {
+                                center = add(center, [6.0 * env.direction as f32, -6.0]);
+                            }
+                        }
+                        DollPose::Use3 => {}
+                        _ => {}
+                    }
+                }
+                48 | 54 | 93 | 304 => {
+                    center = add(center, [0.0, -2.0]);
+                    center = add(center, mul(safe_normalize(velocity), 11.0));
+                }
+                599 => {
+                    center = add(center, [4.0, -2.0]);
+                    center = add(center, mul(safe_normalize(velocity), 4.0));
+                }
+                370 | 371 | 936 => {
+                    if env.direction == 1 {
+                        center = add(center, [-6.0, 0.0]);
+                    }
+                    center = add(center, mul(safe_normalize(velocity), 12.0));
+                    rotation += pi;
+                    let nudge = match pose.pose {
+                        DollPose::Use1 | DollPose::Use2 => [2.0 * env.direction as f32, -2.0],
+                        DollPose::Use3 => [4.0 * env.direction as f32, -4.0],
+                        DollPose::Use4 => [8.0 * env.direction as f32, -6.0],
+                        DollPose::Use5 => [8.0 * env.direction as f32, -2.0],
+                        _ => [0.0, 0.0],
+                    };
+                    center = add(center, nudge);
+                    if kind == 936 {
+                        center = sub(center, mul(safe_normalize(velocity), 8.0));
+                    }
+                }
+                _ => {}
+            }
+            alpha = 0;
+        }
+        // :22724-22804 — aiStyle 3: the disc/phaseblade family.
+        3 => {
+            if kind == 866 || IS_A_PHASEBLADE.contains(&kind) {
+                return None;
+            }
+            let rotation_addon = if kind == 182 { -pi / 2.0 } else { 0.0 };
+            draw_layer = 7;
+            let (c, r, _v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, rotation_addon);
+            center = c;
+            rotation = r;
+            match kind {
+                182 => {
+                    if env.direction == 1 {
+                        rotation += pi / 2.0;
+                        center = add(center, [-4.0, 0.0]);
+                    }
+                    let dx = match pose.pose {
+                        DollPose::Use1 | DollPose::Use3 | DollPose::Use4 => 4.0,
+                        DollPose::Use2 | DollPose::Use5 => 2.0,
+                        _ => 0.0,
+                    };
+                    center = add(center, [dx * env.direction as f32, 0.0]);
+                }
+                6 | 19 | 52 | 113 | 272 | 867 => {
+                    if env.direction == 1 {
+                        rotation += pi / 2.0;
+                    }
+                }
+                33 | 333 => {
+                    if env.direction == 1 {
+                        center = add(center, [-2.0, 0.0]);
+                    }
+                }
+                320 => {
+                    if env.direction == 1 {
+                        rotation += pi / 2.0;
+                    }
+                    rotation -= pi / 2.0 * env.direction as f32;
+                }
+                _ => {}
+            }
+        }
+        // :22805-22818 — aiStyle 9: only the Flairon 491.
+        9 => {
+            if kind != 491 {
+                return None;
+            }
+            draw_layer = 7;
+            let (c, r, _v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, 0.0);
+            center = c;
+            rotation = r + pi / 4.0;
+        }
+        // :22819-22845 — aiStyle 13: the spear-thrust knives.
+        13 => {
+            sprite_dir = env.direction;
+            let (c, r, v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, 0.0);
+            center = c;
+            rotation = r;
+            draw_layer = 7;
+            if kind == 481 {
+                center = add(center, mul(safe_normalize(v), 56.0));
+                match pose.pose {
+                    DollPose::Use1 => center = add(center, [0.0, 2.0]),
+                    DollPose::Use5 => center = add(center, [0.0, -8.0]),
+                    _ => {}
+                }
+            } else {
+                center = add(center, mul(safe_normalize(v), 50.0));
+            }
+            alpha = 0;
+        }
+        // :22846-22853 — aiStyle 15: the held-up item at the doll's side.
+        // The C# writes base.position = (Center.X + 9*dir, Bottom.Y - 12);
+        // the returned centre adds half the box.
+        15 => {
+            sprite_dir = env.direction;
+            center = [
+                env.center[0] + 9.0 * env.direction as f32 + defaults.w / 2.0,
+                env.bottom[1] - 12.0 + defaults.h / 2.0,
+            ];
+        }
+        // :22854-22877 — aiStyle 16: the grenade/launcher family.
+        16 => {
+            if (134..=144).contains(&kind)
+                || (338..=341).contains(&kind)
+                || (803..=810).contains(&kind)
+                || (784..=801).contains(&kind)
+            {
+                return None;
+            }
+            sprite_dir = env.direction;
+            draw_layer = 7;
+            let (c, r, v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, -pi / 2.0);
+            center = c;
+            rotation = r;
+            if env.direction == 1 {
+                rotation += pi / 2.0;
+            }
+            center = add(center, [0.0, -2.0]);
+            center = add(center, mul(safe_normalize(v), 4.0));
+            if kind == 517 {
+                center = add(center, mul(safe_normalize(v), 2.0));
+            }
+        }
+        // :22878-22924 — aiStyle 19: the spears.
+        19 => {
+            sprite_dir = -env.direction;
+            let mut unit = [1.0f32, 0.0];
+            let aim = pose.item_aim_radians.unwrap_or(0.0);
+            unit = rotated(unit, aim);
+            if env.direction == -1 {
+                unit[0] *= -1.0;
+            }
+            velocity = unit;
+            let mut item_animation = 25i32;
+            match kind {
+                367 | 368 => item_animation = 20,
+                // :22901-22911 — the 130/877-879 `base.position +=` nudges
+                // are WIPED by the offset helper's `base.Center = center`
+                // write (`:46087`) before the final scalar nudge; only the
+                // itemAnimation/alpha writes survive.
+                130 => item_animation = 50,
+                877 | 878 | 879 => {
+                    item_animation = 50;
+                    alpha = 0;
+                }
+                _ => {}
+            }
+            // :22913 — the helper re-centres on
+            // RotatedRelativePoint(MountedCenter) (`:46085-46087`), then
+            // the scalar offset rides (`:46183`), itemAnimationMax 100.
+            let mut position = rotated_relative_point(env, env.mounted_center);
+            let off = spear_offset(kind, item_animation, 100);
+            position = add(position, mul(unit, off));
+            center = position;
+            rotation = unit[1].atan2(unit[0]) + pi / 2.0 + pi / 4.0;
+            if sprite_dir == -1 {
+                rotation -= pi / 2.0;
+            }
+        }
+        // :22925-22947 — aiStyle 20: the drill. The C# writes
+        // base.position += spin over the :22577 reset position
+        // (MountedCenter - halfbox), so the centre keeps the halfbox.
+        20 => {
+            sprite_dir = env.direction;
+            let mut spin = mul([1.0, 0.0], weapon_shoot_speed * defaults.scale);
+            let aim = pose.item_aim_radians.unwrap_or(0.0);
+            spin = rotated(spin, aim);
+            if env.direction == -1 {
+                spin[0] *= -1.0;
+            }
+            velocity = spin;
+            center = add(env.mounted_center, spin);
+            rotation = spin[1].atan2(spin[0]) + pi / 2.0;
+        }
+        // :22948-22967 — aiStyle 26: only the Zenith components 1094/1113.
+        26 => {
+            if kind != 1094 && kind != 1113 {
+                return None;
+            }
+            alpha = 0;
+            draw_layer = 7;
+            let (_c, r, v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, -pi / 2.0);
+            rotation = r;
+            center = sub(env.center, mul(safe_normalize(v), 12.0));
+            if env.direction == 1 {
+                rotation += pi / 2.0;
+            }
+        }
+        // :22968-23053 — aiStyle 75/161: the minion/summon previews. The
+        // C# writes base.position += spin over the :22577 reset position
+        // (MountedCenter - halfbox); the Centre nudges below add to it.
+        75 | 161 => {
+            sprite_dir = env.direction;
+            let mut spin = mul([1.0, 0.0], weapon_shoot_speed * defaults.scale);
+            let aim = pose.item_aim_radians.unwrap_or(0.0);
+            spin = rotated(spin, aim);
+            if env.direction == -1 {
+                spin[0] *= -1.0;
+            }
+            velocity = spin;
+            let halfbox = [defaults.w / 2.0, defaults.h / 2.0];
+            let mut position = add(sub(env.mounted_center, halfbox), spin);
+            // :22990-23002 — the misc-counter frame machines. The maxFrame
+            // is Main.projFrames[type]; the port's table omits the 439/615/
+            // 714 rows, so the C# values (Main.cs:8535/:8496/:8503) ride.
+            match kind {
+                439 => frame = calculate_frame_from_misc_counter(env.misc_counter, 4, 0, 6),
+                633 => {
+                    frame = calculate_frame_from_misc_counter(env.misc_counter, 4, 0, proj_frames(kind) as i32);
+                }
+                615 => frame = calculate_frame_from_misc_counter(env.misc_counter, 3, 0, 7),
+                714 => frame = calculate_frame_from_misc_counter(env.misc_counter, 5, 0, 7),
+                _ => {}
+            }
+            let mut num4 = pi / 2.0;
+            if defaults.ai_style == 161 {
+                position = add(position, mul(spin, 1.5));
+            }
+            match kind {
+                595 | 615 | 630 | 705 | 714 | 735 => {
+                    num4 = 0.0;
+                    if sprite_dir == -1 {
+                        num4 = pi;
+                    }
+                }
+                927 => num4 = 0.0,
+                938..=945 | 1127 => position = add(position, mul(spin, 10.0)),
+                802 => position = add(position, mul(spin, 8.0)),
+                842 => position = add(position, mul(spin, 4.0)),
+                _ => {}
+            }
+            rotation = spin[1].atan2(spin[0]) + num4;
+            center = add(position, halfbox);
+            if kind == 595 || kind == 735 {
+                let (c, r, _v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, -pi / 2.0);
+                center = c;
+                rotation = r;
+            }
+        }
+        // :23054-23061 — aiStyle 99: the held item at the doll's side
+        // (base.position write → centre + half the box).
+        99 => {
+            sprite_dir = env.direction;
+            center = [
+                env.center[0] + 9.0 * env.direction as f32 + defaults.w / 2.0,
+                env.bottom[1] - 8.0 + defaults.h / 2.0,
+            ];
+        }
+        // :23062-23089 — aiStyle 100: the magic dagger on-hand. The C#
+        // sets base.Center directly (the floored RotatedRelativePoint).
+        100 => {
+            let zero = [env.direction as f32 * 6.0, env.grav_dir * -14.0];
+            rotation = if env.grav_dir == 1.0 { 0.0 } else { pi };
+            sprite_dir = env.direction;
+            // :23069-23078 — the on-hand offset, mirrored for direction.
+            let row = (env.body_frame_row as usize).min(19);
+            let mut vector = mul(OFFSETS_PLAYER_ONHAND[row], 2.0);
+            if env.direction != 1 {
+                vector[0] = 40.0 - vector[0];
+            }
+            if env.grav_dir != 1.0 {
+                vector[1] = 56.0 - vector[1];
+            }
+            vector = sub(vector, [(40.0 - 20.0) / 2.0, (56.0 - 42.0) / 2.0]);
+            // :23079 — RotatedRelativePoint(MountedCenter - (20,42)/2 +
+            // vector + zero) - velocity, floored. RotatedRelativePoint
+            // rotates by fullRotation (`:4227`), which is 0 for the doll
+            // (it never spins) — NOT this arm's `rotation` field — so the
+            // rotation is the identity and the pivot terms cancel; the
+            // gfxOffY/sitting terms are 0 for the stock (non-seated) doll.
+            let rel = add(add(sub(env.mounted_center, [10.0, 21.0]), vector), zero);
+            center = [
+                (rel[0] - velocity[0]).floor(),
+                (rel[1] - velocity[1]).floor(),
+            ];
+            if kind == 535 {
+                frame = calculate_frame_from_misc_counter(env.misc_counter, 6, 0, 8);
+            }
+        }
+        // :23090-23098 — aiStyle 113: the ice boomerang's held preview.
+        113 => {
+            draw_layer = 7;
+            let (c, r, _v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, 0.0);
+            center = c;
+            rotation = r;
+            alpha = 0;
+        }
+        // :23099-23162 — aiStyle 140/142: the Meowmere/Star Wrath cats.
+        // The C# writes base.position (the :22577 reset left it at
+        // MountedCenter - halfbox), so every position write carries the
+        // halfbox offset into the returned centre.
+        140 | 142 => {
+            if kind == 697 {
+                scale = 1.0;
+            }
+            sprite_dir = env.direction;
+            let base_len = if defaults.ai_style == 140 { 12.0 } else { 4.0 };
+            let mut spin = mul([1.0, 0.0], base_len);
+            let aim = pose.item_aim_radians.unwrap_or(0.0);
+            spin = rotated(spin, aim);
+            if env.direction == -1 {
+                spin[0] *= -1.0;
+            }
+            velocity = spin;
+            let halfbox = [defaults.w / 2.0, defaults.h / 2.0];
+            let mut position = add(sub(env.mounted_center, halfbox), spin);
+            let num8;
+            if kind != 699 {
+                num8 = if sprite_dir == -1 { pi } else { 0.0 };
+            } else {
+                num8 = pi / 4.0 * env.direction as f32
+                    + if sprite_dir == -1 { pi } else { 0.0 };
+                let off = rotated([1.0, -1.0], aim);
+                position = add(position, [
+                    off[0] * 75.0 * env.direction as f32,
+                    off[1] * 75.0,
+                ]);
+                if pose.pose == DollPose::Use2 {
+                    position[0] -= env.direction as f32 * 4.0;
+                }
+                if pose.pose == DollPose::Use5 {
+                    position[1] -= 8.0;
+                }
+            }
+            alpha = 0;
+            rotation = spin[1].atan2(spin[0]) + num8;
+            if kind == 699 {
+                position = add(position, rotated([110.0 * env.direction as f32, -6.0], rotation));
+                position = add(position, mul(safe_normalize(spin), -40.0));
+            }
+            center = add(position, halfbox);
+        }
+        // :23163-23186 — aiStyle 165: the flail.
+        165 => {
+            let mut spin = [1.0f32, 0.0];
+            let aim = pose.item_aim_radians.unwrap_or(0.0);
+            spin = rotated(spin, aim);
+            if env.direction == -1 {
+                spin[0] *= -1.0;
+            }
+            velocity = spin;
+            center = add(env.arm_position, mul(spin, 12.0 - 1.0));
+            sprite_dir = if spin[0] < 0.0 { -1 } else { 1 };
+        }
+        // :23187-23196 — aiStyle 182: the yoyo's held preview.
+        182 => {
+            draw_layer = 7;
+            let (c, r, _v) = item_display(env, pose, weapon_shoot_speed, weapon_scale, pi / 4.0);
+            center = c;
+            rotation = r;
+            alpha = 0;
+        }
+        // :22592-22594 — no preview arm.
+        _ => return None,
+    }
+
+    if !is_use {
+        bother = false;
+    }
+    if !bother {
+        return None;
+    }
+    Some(DollProjDraw { center, rotation, scale, alpha, sprite_direction: sprite_dir, draw_layer, frame })
+}
+
+// ---------------------------------------------------------------------------
 // Tests-as-code (written, NOT run — code-only mode)
 // ---------------------------------------------------------------------------
 
@@ -1226,5 +2001,145 @@ mod tests {
         assert_eq!(h.direction, -1);
         assert_eq!(h.hat0_pos, [160.0, 334.0]); // 184 - 10 - 14
         assert_eq!(h.hat1_pos, [186.0, 352.0]); // 184 - 10 + 12
+    }
+
+    // -- the held-projectile preview -------------------------------------------
+
+    fn doll_env(direction: i32) -> DollProjEnv {
+        // A doll at position (166, 320), 20x42, body row 0, unmounted.
+        DollProjEnv {
+            direction,
+            mounted_center: [176.0, 341.0],
+            center: [176.0, 341.0],
+            bottom: [176.0, 362.0],
+            arm_position: [176.0, 341.0],
+            body_frame_row: 0,
+            grav_dir: 1.0,
+            misc_counter: 0,
+            mount_player_offset: 0,
+            sitting: false,
+            seat_y_offset: 0,
+        }
+    }
+
+    fn use1() -> UsePose {
+        UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: None }
+    }
+
+    #[test]
+    fn the_draw_use_style_set_overrides_to_5() {
+        // ProjectileID.cs:188 — the listed kinds preview under useStyle 5.
+        assert_eq!(display_doll_draw_use_style(301), 5);
+        assert_eq!(display_doll_draw_use_style(507), 5);
+        assert_eq!(display_doll_draw_use_style(1), -1);
+        assert_eq!(DISPLAY_DOLL_DRAW_USE_STYLE.len(), 67);
+    }
+
+    #[test]
+    fn non_use_poses_never_preview() {
+        // Projectile.cs:22585-22588 — only poses 4-8 set the flag.
+        let env = doll_env(-1);
+        let standing = UsePose { pose: DollPose::Standing, item_anim_percent: 0.0, item_aim_radians: None };
+        let d = doll_proj_defaults(507).unwrap();
+        assert!(ai_display_doll(507, &d, &env, &standing, 10.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn the_javelin_preview_centres_on_the_hand_plus_12() {
+        // Projectile.cs:22595-22610 — aiStyle 1, only 507, +12 along the
+        // aim then (-2,-2), alpha 0, drawLayer 7.
+        let env = doll_env(-1);
+        let d = doll_proj_defaults(507).unwrap();
+        let out = ai_display_doll(507, &d, &env, &use1(), 10.0, 1.0).unwrap();
+        assert_eq!(out.draw_layer, 7);
+        assert_eq!(out.alpha, 0);
+        // direction -1, aim 0 → spin = (-10, 0), normalized (-1, 0).
+        // hand = MountedCenter + (-10,-21) + onhand(6,19)*2 mirrored:
+        //   vector.X = 40 - 12 = 28, minus (10,7) → (18, 31); hand =
+        //   (176-10+18, 341-21+31) = (184, 351). +12*(-1,0) = (172,351),
+        //   +(-2,-2) = (170, 349).
+        assert_eq!(out.center, [170.0, 349.0]);
+        // A non-507 aiStyle-1 kind refuses.
+        let other = DollProjDefaults { ai_style: 1, ..d };
+        assert!(ai_display_doll(2, &other, &env, &use1(), 10.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn phaseblades_refuse_the_preview() {
+        // Projectile.cs:22730-22734 — 866 + IsAPhaseblade.
+        let env = doll_env(-1);
+        let d = doll_proj_defaults(866).unwrap();
+        assert!(ai_display_doll(866, &d, &env, &use1(), 10.0, 1.0).is_none());
+        let pb = DollProjDefaults { ai_style: 3, ..d };
+        assert!(ai_display_doll(1059, &pb, &env, &use1(), 10.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn the_light_disc_adds_the_direction_nudge() {
+        // Projectile.cs:22744-22768 — 182, direction 1: rotation +PI/2,
+        // centre (-4,0) then Use1 (+4*dir, 0).
+        let env = doll_env(1);
+        let d = doll_proj_defaults(182).unwrap();
+        let out = ai_display_doll(182, &d, &env, &use1(), 10.0, 1.0).unwrap();
+        assert_eq!(out.draw_layer, 7);
+        // hand (direction 1): vector (12,38) - (10,7) = (2,31);
+        //   hand = (176-10+2, 341-21+31) = (168, 351).
+        //   +(-4,0) + (4,0) = (168, 351).
+        assert_eq!(out.center, [168.0, 351.0]);
+    }
+
+    #[test]
+    fn the_spear_preview_uses_the_offset_helper_at_max_100() {
+        // Projectile.cs:22878-22924 — aiStyle 19, the 46 spear: the
+        // offset helper (itemAnimation 25, max 100) → num3 = 33,
+        // num4 = min(25,33) = 25, num5 = 0 → 3 + 1.4*(67-0) - 1.6*(33-25)
+        // = 3 + 93.8 - 12.8 = 84. Centre = MountedCenter + unit*84.
+        let env = doll_env(1);
+        let d = DollProjDefaults { w: 20.0, h: 20.0, ai_style: 19, scale: 1.0, alpha: 0, draw_layer: 0 };
+        let out = ai_display_doll(46, &d, &env, &use1(), 10.0, 1.0).unwrap();
+        assert_eq!(out.sprite_direction, -1); // -direction
+        // unit (1,0); the offset is f32: 3 + 1.4*67 - 1.6*8 = 84.0 (the
+        // 1.4f/1.6f literals round in f32), centre (176+84, 341).
+        assert_eq!(out.center, [260.0, 341.0]);
+    }
+
+    #[test]
+    fn the_magic_dagger_floors_the_onhand_centre() {
+        // Projectile.cs:23062-23089 — aiStyle 100, 535: the on-hand
+        // offset, direction -1 mirrored, floored.
+        let env = doll_env(-1);
+        let d = doll_proj_defaults(535).unwrap();
+        let out = ai_display_doll(535, &d, &env, &use1(), 10.0, 1.0).unwrap();
+        assert_eq!(out.draw_layer, 8);
+        // row 0 onhand (6,19)*2 = (12,38); direction -1 → X = 40-12 = 28;
+        //   minus (10,7) → (18,31). rel = MountedCenter - (10,21) +
+        //   (18,31) + zero(-6,-14) = (176-10+18-6, 341-21+31-14) =
+        //   (178, 337). velocity 0 → floor (178, 337).
+        assert_eq!(out.center, [178.0, 337.0]);
+        // The 535 frame machine: miscCounter 0 → frame 0.
+        assert_eq!(out.frame, 0);
+    }
+
+    #[test]
+    fn the_misc_counter_frame_remaps_the_300_cycle() {
+        // Player.cs:4253-4274 — framerate 6, min 0, max 8: num3 grows by
+        // 48 per step, 300/48 → num2 = 8 (7 steps to 336 ≥ 300, +1).
+        // num4 = 1/8; miscCounter 0 → t 0 → frame 0.
+        assert_eq!(calculate_frame_from_misc_counter(0, 6, 0, 8), 0);
+        // miscCounter 150 → t = 0.5 % 0.125 = 0 → frame 0 (the wrap).
+        assert_eq!(calculate_frame_from_misc_counter(150, 6, 0, 8), 0);
+        // miscCounter 37 → t = 37/300 = 0.12333, num4 = 0.125, t < num4
+        //   so no wrap; lerp = 0.12333/0.125 = 0.98666 → (int)(8*0.98666)
+        //   = 7.
+        assert_eq!(calculate_frame_from_misc_counter(37, 6, 0, 8), 7);
+    }
+
+    #[test]
+    fn unknown_ai_styles_have_no_preview() {
+        let env = doll_env(-1);
+        let d = DollProjDefaults { w: 10.0, h: 10.0, ai_style: 99, scale: 1.0, alpha: 0, draw_layer: 0 };
+        // aiStyle 99 IS ported; use an unported one (e.g. 42).
+        let d42 = DollProjDefaults { ai_style: 42, ..d };
+        assert!(ai_display_doll(1, &d42, &env, &use1(), 10.0, 1.0).is_none());
     }
 }
