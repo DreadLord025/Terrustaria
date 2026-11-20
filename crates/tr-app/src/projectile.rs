@@ -22983,10 +22983,14 @@ impl ProjectilePool {
             // Sharpened 159 +12 (`Player.cs:9929`) now reaches those
             // families. The whip sets NO class flag (`DefaultToWhip`
             // `:10704-10718`), so it correctly drops out of the melee
-            // fold (the old `is_whip` stand-in over-applied it). The
-            // debuff bonuses (ichor/broken armor/Betsy's curse) ride the
-            // melee hit's convention (false until the NPC debuff scan
-            // lands here).
+            // fold (the old `is_whip` stand-in over-applied it). W4-a3
+            // half 2: the debuff bonuses (ichor 69 +15 / broken armor 36
+            // +20 / Betsy's curse 203 +40, `NPC.cs:81149-81160`) read the
+            // victim's LIVE buff table (`has_buff` — the `FindBuffIndex`
+            // gate); the C# latches `this.ichor`/`brokenArmor`/
+            // `betsysCurse` in `UpdateNPC_BuffSetFlags` (`:92021-92028`,
+            // `:92101-92104`), the port derives them fresh at the read
+            // (the frost-legion confused precedent, `npc.rs`).
             if let Some(pl) = player.as_deref() {
                 let num5 = pl.get_armor_penetration(self.slots[slot].melee)
                     + self.slots[slot].armor_penetration;
@@ -22994,9 +22998,9 @@ impl ProjectilePool {
                     num5,
                     0.0,
                     npcs[idx].defense(),
-                    false,
-                    false,
-                    false,
+                    npcs[idx].buffs.has_buff(69),
+                    npcs[idx].buffs.has_buff(36),
+                    npcs[idx].buffs.has_buff(203),
                 );
             }
             // The defense read re-borrows the NPC entry (the pre-strike whip
@@ -24900,6 +24904,7 @@ mod tests {
         w: &World,
         pl: &mut crate::player::Player,
         melee_pen: i32,
+        npc_debuffs: &[i32],
     ) -> i32 {
         let mut pool = ProjectilePool::new();
         let mut npc = one_npc(w);
@@ -24908,6 +24913,12 @@ mod tests {
         npc.hp = 500;
         npc.max_hp = 500;
         npc.defense_override = Some(24);
+        // Half 2 — the victim's live debuffs (`NpcBuffs.add_buff`, the
+        // `NPC.AddBuff` guard): the fold reads them at strike time.
+        for &id in npc_debuffs {
+            npc.buffs.add_buff(id, 600);
+            assert!(npc.buffs.has_buff(id), "the slime dummy takes debuff {id}");
+        }
         let slot = pool
             .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 40, 5.0, 0.0, 0.0)
             .unwrap();
@@ -24954,8 +24965,8 @@ mod tests {
         player.ranged_crit = 0;
         player.magic_crit = 0;
         for kind in [BALL_O_HURT, ENCHANTED_BOOMERANG] {
-            let plain = w4_a3_strike(kind, &w, &mut player, 0);
-            let sharp = w4_a3_strike(kind, &w, &mut player, 12);
+            let plain = w4_a3_strike(kind, &w, &mut player, 0, &[]);
+            let sharp = w4_a3_strike(kind, &w, &mut player, 12, &[]);
             assert_eq!(
                 sharp - plain,
                 6,
@@ -24976,12 +24987,60 @@ mod tests {
         player.melee_crit = 0;
         player.ranged_crit = 0;
         player.magic_crit = 0;
-        let plain = w4_a3_strike(WOOD_YOYO, &w, &mut player, 0);
-        let sharp = w4_a3_strike(WOOD_YOYO, &w, &mut player, 12);
+        let plain = w4_a3_strike(WOOD_YOYO, &w, &mut player, 0, &[]);
+        let sharp = w4_a3_strike(WOOD_YOYO, &w, &mut player, 12, &[]);
         assert_eq!(sharp - plain, 6, "the yoyo is melee — the +12 folds");
-        let plain = w4_a3_strike(SHURIKEN, &w, &mut player, 0);
-        let sharp = w4_a3_strike(SHURIKEN, &w, &mut player, 12);
+        let plain = w4_a3_strike(SHURIKEN, &w, &mut player, 0, &[]);
+        let sharp = w4_a3_strike(SHURIKEN, &w, &mut player, 12, &[]);
         assert_eq!(sharp - plain, 0, "the shuriken is ranged — no melee row");
+    }
+
+    /// W4-a3 half 2 — the victim's defense debuffs join `num5` inside
+    /// `checkArmorPenetration` (`NPC.cs:81149-81156`): ichor (69) +15 and
+    /// broken armor (36) +20. On the defense-24 dummy with no weapon pen
+    /// the plain fold is 0; ichor lifts 15/2 = 7, broken armor 20/2 = 10,
+    /// both together (15+20)/2 = 17 (the truncation is per-sum, NOT
+    /// per-debuff). The shuriken (ranged, owner pen 0) carries the read so
+    /// the melee flag stays out of the difference.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_a3_ichor_and_broken_armor_pen_join_the_pve_strike() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.melee_crit = 0;
+        player.ranged_crit = 0;
+        player.magic_crit = 0;
+        let plain = w4_a3_strike(SHURIKEN, &w, &mut player, 0, &[]);
+        let ichor = w4_a3_strike(SHURIKEN, &w, &mut player, 0, &[69]);
+        assert_eq!(ichor - plain, 7, "ichor +15 folds as 15/2 = 7");
+        let broken = w4_a3_strike(SHURIKEN, &w, &mut player, 0, &[36]);
+        assert_eq!(broken - plain, 10, "broken armor +20 folds as 20/2 = 10");
+        let both = w4_a3_strike(SHURIKEN, &w, &mut player, 0, &[69, 36]);
+        assert_eq!(both - plain, 17, "(15+20)/2 = 17 — the sum truncates once");
+    }
+
+    /// W4-a3 half 2 — Betsy's curse (203) adds +40 (`NPC.cs:81157-81160`)
+    /// but the result CAPS at `defense / 2` when the total exceeds the
+    /// defense (`:81166-81169`): 40 > 24 on the dummy, so the lift is 12,
+    /// not 20. Stacked with Sharpened's +12 (52 total) the cap holds at
+    /// 12. The debuff read fires for the melee families too — the flail
+    /// takes the same capped lift.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_a3_betsys_curse_pen_caps_at_half_the_defense() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.melee_crit = 0;
+        player.ranged_crit = 0;
+        player.magic_crit = 0;
+        let plain = w4_a3_strike(SHURIKEN, &w, &mut player, 0, &[]);
+        let curse = w4_a3_strike(SHURIKEN, &w, &mut player, 0, &[203]);
+        assert_eq!(curse - plain, 12, "+40 > defense 24 caps at 24/2 = 12");
+        // The melee lane: Sharpened +12 (half 1) + the curse +40 = 52,
+        // still capped at 12 — the flail's plain strike carries +6.
+        let flail_plain = w4_a3_strike(BALL_O_HURT, &w, &mut player, 12, &[]);
+        let flail_curse = w4_a3_strike(BALL_O_HURT, &w, &mut player, 12, &[203]);
+        assert_eq!(flail_curse - flail_plain, 6, "12/2 → cap 12: +6 more");
     }
 
     /// S1-C-8: `Damage_GetHitbox()` (`Projectile.cs:14959-15023`) — the base
