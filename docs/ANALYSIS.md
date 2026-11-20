@@ -7087,6 +7087,42 @@ resolve through `setup_shop(index, ...)` today; cases 17 (Pirate), 20
 (the OOA/medal co-lanes own 20/21's currency territory). Witnesses written,
 not run (the code-only swarm).
 
+## The first-half shop completions (W4-d122, second round)
+
+The seven remaining first-half `Chest.SetupShop` cases — 1 (Merchant,
+`Chest.cs:1371-1483`), 2 (Arms Dealer, `:1484-1567`), 3 (Dryad,
+`:1568-1745`), 4 (Demolitionist, `:1746-1813`), 5 (Clothier, `:1814-1988`),
+7 (Wizard, `:2004-2032`) and 8 (Mechanic, `:2033-2090`) — now carry every
+row with its verbatim gate (case 6, Goblin Tinkerer `:1989-2003`, was
+already complete). The stale partial lists are replaced, not extended:
+the Merchant's Flower-Boots scan pair re-slotted BEFORE the 1786 row, the
+Dryad's always-on 66/62/63/745/3217 stand-ins became the real
+blood-moon/else/crimson splits, and the Clothier grew from 5 rows to the
+full 60-row case. New gate machinery: `StockWhen::NumBelow(38, child)`
+threads the C#'s live `num` (the resolved-row count) through
+`resolve_stock_entries_moon`/`stock_gate` for the Clothier's two tail
+guards (`:1979`'s `num < 38 && golferScore >= 2000` and `:1984`'s bare
+`num < 38`); `MoonPhaseExact(n)` distinguishes the Clothier's/Wizard-adjacent
+`moonPhase == n` comparisons from the Dryad's `/2` pairs. `ShopFlags` grows
+`not_the_bees` (the `World.seeds` NOT_THE_BEES bit), `happy_windy_day`
+(`Wind.happy_windy_day`), `party_is_up` (`world_events::party_is_up`),
+`silver_ore_tier` (`World.ore_tiers.silver` — the Arms Dealer's `== 168`
+Tungsten split), `zone_underworld`/`zone_glowshroom` (the scene metrics),
+`downed_pirates`/`downed_cultist`/`downed_frost` (the world latches),
+`downed_clown` (caller-fed — the port persists no clown bit),
+`tax_collector_present`/`angler_present` (the live `AnyNPCs(441)`/`(369)`
+roster scans) — all fed at the shop-open seam
+(`world_sim/npcs.rs::try_open_town_shop_at_cursor`) and, where a world
+field exists, in `ShopFlags::from_world`. Deviations: the halloween rows
+(the Arms Dealer's undertaker 1736-1738, the Dryad's Goodie Bags
+1853/1854, the Clothier's 1740 + 3246/3247, the Wizard's 1739) stay
+constants-off (no season system); `downed_clown` stays false until a
+persisted latch lands; the Dryad's 3217/3218 planter and grave-seed
+splits ride the caller's `crimson_world` like the Steampunker's. The
+stale npc.rs Wizard/Mechanic witnesses were re-derived onto the new
+conjuncts (the blood-moon-alone arm no longer adds the Spell Tome; the
+Rod needs the Angler). Witnesses written, not run (the code-only swarm).
+
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
 Two late-roster town NPCs. Deviations: the Dye Trader's `item.dye > 0` scan
