@@ -1175,6 +1175,12 @@ pub const GOLF_BALL: u16 = 721;
 /// S1-P-i55.
 pub const GOLF_CLUB_HELPER: u16 = 722;
 
+// W4-d15 — the DD2 weapon/pet slice's kinds (`ProjectileID.cs`'s values,
+// the `SetDefaults` rows cited in [`proj_data`]).
+/// `ProjectileID.MonkStaffT1Explosion` (698) — the Sleepy Octopod's ground
+/// blast, aiStyle 141 (`Projectile.cs:7385-7401`).
+pub const MONK_STAFF_T1_EXPLOSION: u16 = 698;
+
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -3969,6 +3975,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // W4-d15 — `Projectile.cs:7385-7401`: the Sleepy Octopod's
+            // ground blast (698): 75x200, aiStyle 141, alpha 255,
+            // tileCollide false, ignoreWater (the overlay), timeLeft 5,
+            // penetrate -1, local immunity -1, melee (the overlay).
+            MONK_STAFF_T1_EXPLOSION => (
+                75.0, 200.0, 141, -1, 5, 0, false, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4211,7 +4225,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d15 — the DD2 slice's `ignoreWater = true` rows: the 698
+            // (`Projectile.cs:7392`).
+            || kind == MONK_STAFF_T1_EXPLOSION,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4246,6 +4263,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d15 — the Sleepy Octopod's blast (`:7398`).
+                    | MONK_STAFF_T1_EXPLOSION
             ),
         ranged: matches!(
             kind,

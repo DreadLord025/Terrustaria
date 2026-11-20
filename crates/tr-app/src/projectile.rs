@@ -17302,6 +17302,22 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d15 — aiStyle 141: the Sleepy Octopod's ground
+                        // blast 698 (`AI_141_MonkStaffT1Explosion`,
+                        // `Projectile.cs:69602-69620`): the 20-tick counter
+                        // kill and the tick-1 impact-explosion draw census
+                        // (the tile walk's dust rows + the 25-point rings).
+                        141 => {
+                            crate::projectile_ai_dd2::ai_monk_staff_t1_explosion(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return
+                            // (:17015/:17027); the row keeps tileCollide =
+                            // false (`:7391`) — the free integrate.
+                            self.slots[i].kill_step(world);
+                        }
                         // aiStyle 147 — the Celebration Mk2 rockets
                         // (`AI_147_Celeb2Rocket` `:52881-53092`): the
                         // seven-state machine; the death resize + Damage

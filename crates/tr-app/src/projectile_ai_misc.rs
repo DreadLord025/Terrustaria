@@ -585,7 +585,7 @@ pub(crate) fn celeb2_explosion(p: &Projectile, world: &World, rng: &mut dyn Drop
 /// (`WorldGen.cs:66597-66685`) — the per-kind dust count the ground
 /// explosion's tile walk reads. The `fail: true` arms only (the sole
 /// caller passes true).
-fn kill_tile_dust_amount_fail(kind: u16, frame_x: i16) -> i32 {
+pub(crate) fn kill_tile_dust_amount_fail(kind: u16, frame_x: i16) -> i32 {
     match kind {
         654 | 630 | 631 => 0,
         231 => 3,
