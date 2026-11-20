@@ -383,3 +383,71 @@ arms, each `tileTop = 2; break;`. Port `drawdata.rs:1025-1027` (`89 | 102 | 753`
 
 Port `drawdata.rs:1036-1043`: `if kind == 215` — `add_fr_y = tile_frame * 36` below row
 36 else 252, `top = 2`, positioned after the match exactly like the C#. **PORTED.**
+
+### Batch 6 — second-switch (glow) cases: 19, 34, 10, 11, 88, 42, 87, 93, 101, 104 (+ 89's glow half) (10 ids)
+
+These ten ids appear ONLY in the second `switch (typeCache)` (`TileDrawing.cs:6049-6510`,
+runs after the halfBrick epilogue :6045-6048); the first switch has no arm for them, so
+the base metrics stay the 16×16 default — `drawdata.rs:1028-1029` documents exactly that
+("19 (platforms), 25, 40, 50, 51, 75 and 76 have no branch in GetTileDrawData"). The port
+delegates the whole second switch to `drawdata_cases_a.rs::glow_switch` (:277-614),
+called via `apply_cases_a` (:625) at `tiles.rs:731` AFTER `draw_data` +
+`apply_world_corrections` + `cases_b` — the C# order. The glow colours, verbatim:
+`_meteorGlow = new Color(100, 100, 100, 0)` (:130) → `METEOR_GLOW` (`cases_a.rs:112`);
+`_martianGlow` recomputed per frame `byte b = (byte)(100f + 150f * Main.martianLight);
+new Color(b, b, b, 0)` (:498-499) → `martian_glow` (:107-109, truncating cast).
+
+| Id | C# (verbatim key lines) | C# line | Rust (`glow_switch`) | Verdict |
+| --- | --- | --- | --- | --- |
+| 19 | `int num46 = tileFrameY / 18;` row 26 → `GlowMask[65]`, rect `(tileFrameX, tileFrameY % 18, w, h)`, `_martianGlow`; row 27 → `GlowMask[112]`, `_meteorGlow` | :6157-6173 | :365-374 (`mask: 65`/`112`, `rect_plain(fx, fy % 18, height)`) | PORTED (glow unconsumed) |
+| 34 | `if (tileFrameX / 54 == 0 && tileFrameY / 54 == 33)` → `GlowMask[55]`, rect `(fx, fy % 54, w, h)`, `_martianGlow` | :6268-6275 | :444-448 | PORTED (glow unconsumed) |
+| 10 | `if (tileFrameX < 54 && num46 == 32)` (`num46 = fy / 54`) → `GlowMask[57]`, `_martianGlow` | :6312-6322 | :472-477 | PORTED (glow unconsumed) |
+| 11 | `fx < 54` gate; row 32 → `GlowMask[58]` martian, row 33 → `GlowMask[119]` meteor | :6323-6342 | :479-490 | PORTED (glow unconsumed) |
+| 88 | `addFrX -= 1998 * num55; addFrY += 36 * num55;` (`num55 = fx / 1998`); col 24 → `GlowMask[59]` martian, col 25 → `GlowMask[120]` meteor, rect `(fx % 54, fy, w, h)` | :6343-6362 | :492-504 (`add_fr_x_delta`/`add_fr_y_delta`) | PORTED (glow unconsumed) |
+| 42 | `addFrY -= 2016 * num54; addFrX += 36 * num54;` (`num54 = fy / 2016`); row 33 → `GlowMask[63]`, rect `(fx, fy % 36, w, h)` | :6363-6376 | :507-515 | PORTED (glow unconsumed) |
+| 87 | 1998 stride unwind (as 88); col 26 → `GlowMask[64]` martian, col 27 → `GlowMask[121]` meteor | :6377-6396 | :517-529 | PORTED (glow unconsumed) |
+| 93 | `addFrY -= 1998 * num51; addFrX += 36 * num51;` (`num51 = fy / 1998`); **`tileTop += 2;`** row 27 → `GlowMask[62]`, rect `(fx, fy % 54, w, h)` | :6414-6428 | :544-553 (`top_delta = 2`) | PORTED (glow unconsumed) |
+| 101 | `addFrX -= 1998 * num50; addFrY += 72 * num50;` (**72** row step, not 36); col 28 → `GlowMask[60]` martian, col 29 → `GlowMask[115]` meteor | :6446-6465 | :567-579 | PORTED (glow unconsumed) |
+| 104 | `addFrX -= 2016 * num48; addFrY += 90 * num48;` (**90** row step); **`tileTop = 2;`** col 24 → `GlowMask[51]` martian, col 25 → `GlowMask[118]` meteor, rect `(fx % 36, fy, w, h)` | :6466-6486 | :582-595 (`top_override = Some(2)`) | PORTED (glow unconsumed) |
+| 89 (glow half) | `addFrX -= 1998 * num49; addFrY += 36 * num49;` col 29 → `GlowMask[66]` martian, col 30 → `GlowMask[123]` meteor | :6208-6227 | :400-412 | PORTED (glow unconsumed) |
+
+Verbatim exemplar — case 104, the trickiest (stride + top override), :6466-6486:
+
+```csharp
+		case 104:
+		{
+			int num46 = tileFrameX / 36;
+			int num48 = tileFrameX / 2016;
+			addFrX -= 2016 * num48;
+			addFrY += 90 * num48;
+			tileTop = 2;
+			if (num46 == 24)
+			{
+				glowTexture = TextureAssets.GlowMask[51].Value;
+				glowSourceRect = new Rectangle(tileFrameX % 36, tileFrameY, tileWidth, tileHeight);
+				glowColor = this._martianGlow;
+			}
+			if (num46 == 25)
+			{
+				glowTexture = TextureAssets.GlowMask[118].Value;
+				glowSourceRect = new Rectangle(tileFrameX % 36, tileFrameY, tileWidth, tileHeight);
+				glowColor = this._meteorGlow;
+			}
+			break;
+		}
+```
+
+Audit notes:
+- The C# glow gate reads the RAW `tileFrameX / 54` (or `/36`) BEFORE the stride unwind
+  mutates `addFr*` — the port computes `num46` from raw `fx`/`fy` likewise
+  (e.g. :401/:493/:568), and the rect uses `fx % 54` — faithful.
+- The frame/top deltas ARE consumed: `DrawDataCasesA::apply` (:93-100) folds them into
+  `TileDrawData` in place, so the martian/meteor furniture styles draw the right sheet
+  section today. Only the `glow` record itself is dropped (`tiles.rs:731` `let _glow`),
+  pending the TILE-DRAW-2 glow pass. `martian_light` is fed 0.0 (`tiles.rs:732`) —
+  `Main.martianLight` is event state the port does not simulate (documented,
+  `cases_a.rs:53-54`); meteor glow is the constant (100,100,100,0).
+- Platform 19's glow rows are the research/09 deviation-6 "martian conduit rows 26/27"
+  — now PORTED as data (this audit), still not drawn (the glow pass). The slope
+  side-fill quads (`DrawBasicTile` :1511-1545) are a separate pass, out of DrawData
+  case scope (W4-d59 owns them).
