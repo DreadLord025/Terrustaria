@@ -39359,3 +39359,22 @@ jitter ×2, `Next(40)` scale, the `Next(2)` gate ALWAYS, and a second
 dodge syncs are the caller's / the net lane's. `Color.Lerp` mirrors
 the `dust_table.rs` per-channel truncating helper. 3 witnesses
 written, NOT run (code-only mode).
+
+## The player gore sites (W4-g17, wave D)
+
+`player_gore_d.rs`: `KillMe`'s tenth-anniversary confetti
+(`Player.cs:38869-38893`) — 85 type-`Next(139,143)` dusts (7 post
+rolls each) then 40 `Next(276,283)` gores at the death spot, velocity
+`(0,-10)`, 7 post rolls each (X/Y adds → X/Y multipliers → scale →
+X/Y `*0.05` adds). `ItemCheck_EmitUseVisuals`' type-65 arm
+(`:44796-44806`, the `Next(5)`/`Next(10)` gates ALWAYS draw, type
+`Next(16,18)`), type-3065 arm (`:44807-44817`, one dust + the
+`Next(8)` gate, gore 16 at the rect centre, velocity ×0.5 +
+`(direction,0)`), meleeEnchant-7 arm (`:44988-45008`, the
+`Next(20)`/`Next(40)` gates ALWAYS draw, type `Next(276,283)`, 5 post
+rolls) and the item-1304 ChildSafety arm (`:45024-45027`, the
+`Next(60)` gate ALWAYS draws, the velocity's two `NextFloat`s ride
+BEFORE the `Next(3,6)` type — C# Position/Velocity/Type argument
+order). The KillMe drop pipeline is `death.rs`'s; the item-type /
+melee-flag gates are the caller's. 3 witnesses written, NOT run
+(code-only mode).

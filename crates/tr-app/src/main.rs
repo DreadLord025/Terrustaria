@@ -276,6 +276,10 @@ mod player_gore_b;
 // Ninja (Player.cs:38057-38165); the dodge dispatch claims are the
 // wiring wave.
 mod player_gore_c;
+// W4-g17 player wave D (code-only): the death confetti + item-use
+// visuals (Player.cs:38869-45027); the KillMe/ItemCheck dispatch
+// claims are the wiring wave.
+mod player_gore_d;
 // W4-g17 (code-only): the world-side Gore.NewGore sites, wave A — the
 // TreeGrowFX trunk/leaf column + ash shake (WorldGen.cs:29600-29672)
 // and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /
