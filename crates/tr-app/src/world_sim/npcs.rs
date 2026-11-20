@@ -923,6 +923,8 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // half shops' graveyard tails (`Chest.cs:2269`/`:2305`/`:2411`/
         // `:2471`/`:2684`).
         zone_graveyard: app.scene_metrics.zone_graveyard,
+        // W4-d123: `ZoneBeach` — the Pirate's 1180 row (`Chest.cs:2688`).
+        zone_beach: app.scene_metrics.zone_beach,
         // `NPC.downedBoss2`/`downedBoss3` — the world's own latches (the
         // chat context reads the same pair, `npc_chat`'s `downed_boss2/3`).
         downed_boss2: app.world.downed_eow,

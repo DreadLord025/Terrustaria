@@ -29,6 +29,9 @@ pub struct ShopFlags {
     /// Girl's 4682 `:2305`, the Cyborg's 4409/4392 `:2411-2420`, the
     /// Painter's 4668/5344 `:2471-2480`, the Pirate's 5926 `:2684`).
     pub zone_graveyard: bool,
+    /// W4-d123: `Main.player[Main.myPlayer].ZoneBeach` — the Pirate's 1180
+    /// row (`Chest.cs:2688`).
+    pub zone_beach: bool,
     pub downed_boss2: bool,
     pub downed_boss3: bool,
     /// The Stylist shop's gates (`Chest.cs:2704-2783`): the player's life
@@ -107,6 +110,7 @@ impl Default for ShopFlags {
             zone_snow: false,
             zone_jungle: false,
             zone_graveyard: false,
+            zone_beach: false,
             downed_boss2: false,
             downed_boss3: false,
             life_max_400: false,
@@ -238,6 +242,12 @@ pub enum StockWhen {
     /// W4-d123: `Main.player[Main.myPlayer].ZoneGraveyard` (`Chest.cs:2269`
     /// and the second-half shops' graveyard tails).
     ZoneGraveyard,
+    /// W4-d123: `Main.player[Main.myPlayer].ZoneBeach` (`Chest.cs:2688`'s
+    /// Pirate 1180 row).
+    ZoneBeach,
+    /// W4-d123: `Main.hardMode && NPC.downedMechBossAny && NPC.AnyNPCs(208)`
+    /// (`Chest.cs:2692`'s Pirate 1337 row) — the three conjuncts.
+    HardModeMechAnyPartyGirl,
     /// The ODD moon phases only (`Chest.cs:2085`'s
     /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
     MoonPhaseOdd,
@@ -587,6 +597,21 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(8, StockWhen::VampirismInfected),
             row(4386, StockWhen::VampirismInfectedCrimson),
             row(4385, StockWhen::VampirismInfectedCorrupt),
+        ],
+        // The Pirate's shop (index 17, `Chest.cs:2672-2697`, W4-d123): the
+        // six always rows (the vanity set + the Bunny Cannon 2434), the
+        // graveyard 5926 (`:2684`), the beach 1180 (`:2688`) and the
+        // hardmode+mech+Party-Girl 1337 (`:2692`).
+        17 => vec![
+            row(928, StockWhen::Always),
+            row(929, StockWhen::Always),
+            row(876, StockWhen::Always),
+            row(877, StockWhen::Always),
+            row(878, StockWhen::Always),
+            row(2434, StockWhen::Always),
+            row(5926, StockWhen::ZoneGraveyard),
+            row(1180, StockWhen::ZoneBeach),
+            row(1337, StockWhen::HardModeMechAnyPartyGirl),
         ],
         // The Stylist's shop (index 18, `Chest.cs:2698-2790`): the
         // hair-dye family — the two always-on rows, the life/mana/money
@@ -1512,6 +1537,10 @@ pub fn resolve_stock_entries_moon(
             // W4-d123: `Chest.cs:2260`'s exact-phase compare.
             StockWhen::MoonPhaseIs(n) => moon_phase == n as u32,
             StockWhen::ZoneGraveyard => flags.zone_graveyard,
+            StockWhen::ZoneBeach => flags.zone_beach,
+            StockWhen::HardModeMechAnyPartyGirl => {
+                flags.hard_mode && flags.downed_mech_any && flags.party_girl_present
+            }
             StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
             StockWhen::LifeMax400 => flags.life_max_400,
             StockWhen::ManaMax200 => flags.mana_max_200,

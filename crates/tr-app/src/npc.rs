@@ -24328,6 +24328,37 @@ mod tests {
         assert!(!crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[999]).contains(&3664));
     }
 
+    /// The Pirate's shop (`case 17`, W4-d123, `Chest.cs:2672-2697`): the
+    /// vanity set + the graveyard/beach/hardmode-mech-Party-Girl gates.
+    #[test]
+    fn the_pirate_shop_carries_the_vanity_rows() {
+        let stock = crate::shop::resolve_stock(17, &crate::shop::ShopFlags::default(), &[]);
+        // The six always rows (`:2673-2683`).
+        for id in [928, 929, 876, 877, 878, 2434] {
+            assert!(stock.contains(&id), "the {id} always row");
+        }
+        assert_eq!(stock.len(), 6, "the day stock: {stock:?}");
+        assert!(!stock.contains(&5926), "no graveyard row off-zone");
+        assert!(!stock.contains(&1180), "no beach row off-zone");
+        assert!(!stock.contains(&1337), "no hardmode row");
+        // The graveyard row (`:2684`).
+        let grave = crate::shop::ShopFlags { zone_graveyard: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(17, &grave, &[]).contains(&5926));
+        // The beach row (`:2688`).
+        let beach = crate::shop::ShopFlags { zone_beach: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(17, &beach, &[]).contains(&1180));
+        // The 1337 row needs ALL THREE conjuncts (`:2692`).
+        let two = crate::shop::ShopFlags {
+            hard_mode: true, downed_mech_any: true, ..Default::default()
+        };
+        assert!(!crate::shop::resolve_stock(17, &two, &[]).contains(&1337));
+        let three = crate::shop::ShopFlags {
+            hard_mode: true, downed_mech_any: true, party_girl_present: true,
+            ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(17, &three, &[]).contains(&1337));
+    }
+
     #[test]
     fn the_zoologist_and_princess_kinds_stats_roundtrip_and_shops() {
         // `SetDefaults` 633 (`NPC.cs:17147`) and 663 (`:17384-17397`): the
