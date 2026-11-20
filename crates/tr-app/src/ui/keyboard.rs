@@ -248,6 +248,313 @@ pub fn write_str(state: &mut KeyboardState, s: &str) {
     state.text = state.text.chars().chain(s.chars()).take(state.max_length).collect();
 }
 
+// --- Text-entry bindings (W4-c25) ------------------------------------------------
+//
+// The field-less text-entry layer the crafting search box and the chest rename
+// consume: a faithful port of the C# text field's semantics. NOTE: the 1.4.5.8
+// decompilation has no `UITextField.cs` — the caret/selection/backspace/repeat/
+// maxlen/paste semantics live in three places, all ported here:
+//   * `UITextBox.cs` — the caret (`_cursor`), `Write` (insert at caret),
+//     `SetText` (the `Utils.TrimUserString` cap + caret clamp), `Backspace`,
+//     `CursorLeft`/`CursorRight`;
+//   * `Main.GetInputText` (`Main.cs:20010-20115`) — the physical-keyboard edit
+//     pass: Ctrl+Z/X/C/V and Shift+Del/Ins, the typed-char filter, the Enter/
+//     Escape flags and the held-Backspace repeat machine (`:20089-20107`);
+//   * `ReLogic.OS.Base.Clipboard.SanitizeClipboardText`
+//     (`Clipboard.cs:21-32`) — the paste filter.
+// There is no ranged selection anywhere in those sources: the "selection" is
+// the whole string (copy/cut operate on the entire text, `Main.cs:20037`,
+// `:20042`, `:20055`). Pure bindings — no `UIElement`, no draw, no App wiring.
+
+/// The text field — `UITextBox`'s editable state (`UITextBox.cs:11-78`) minus
+/// the draw: the string, the caret and the max length. `max_length` defaults
+/// to 20 (`_maxLength = 20`, `:15`); the crafting search passes 50
+/// (`UISearchBar.cs:63`), the chest rename 20 (`Chest.cs:70` — the keyboard
+/// session's [`Request::max_length`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextField {
+    /// `Text` — the `UITextPanel<string>` payload (`UITextBox.cs:9`).
+    pub text: String,
+    /// `_cursor` (`:11`) — a UTF-16 code-unit index in the C#, a `char` index
+    /// here (the port's strings are `char`-indexed; a documented mapping).
+    pub cursor: usize,
+    /// `_maxLength` (`:15`), set through `SetTextMaxLength` (`:51-54`).
+    pub max_length: usize,
+}
+
+impl TextField {
+    /// `new UITextBox(text, ...)` + `SetTextMaxLength` — the ctor runs
+    /// `SetText`, so the initial text is trimmed and the caret lands at the
+    /// end (`UITextBox.cs:44-49`, `Utils.TrimUserString`).
+    pub fn new(text: &str, max_length: usize) -> Self {
+        let text = trim_user_string(text, max_length);
+        let cursor = text.chars().count();
+        Self { text, cursor, max_length }
+    }
+
+    /// `Write` (`UITextBox.cs:38-42`): insert at the caret, advance the caret
+    /// by the inserted length, then `SetText` re-trims to the max length and
+    /// clamps the caret (`:44-49`). A write past the cap swallows the overflow
+    /// exactly like the C# (insert first, trim after).
+    pub fn write(&mut self, s: &str) {
+        let at = self.cursor.min(self.text.chars().count());
+        self.text = self
+            .text
+            .chars()
+            .take(at)
+            .chain(s.chars())
+            .chain(self.text.chars().skip(at))
+            .collect();
+        self.cursor = at + s.chars().count();
+        self.set_text(&self.text.clone());
+    }
+
+    /// `SetText` (`UITextBox.cs:44-49`): `Utils.TrimUserString` to the max
+    /// length, then `_cursor = Math.Min(Text.Length, _cursor)`.
+    pub fn set_text(&mut self, text: &str) {
+        self.text = trim_user_string(text, self.max_length);
+        self.cursor = self.cursor.min(self.text.chars().count());
+    }
+
+    /// `SetTextMaxLength` (`UITextBox.cs:51-54`) — the setter only stores the
+    /// cap; the NEXT `SetText`/`Write` enforces it (the C# does not re-trim on
+    /// the setter itself).
+    pub fn set_max_length(&mut self, max_length: usize) {
+        self.max_length = max_length;
+    }
+
+    /// `Backspace` (`UITextBox.cs:56-62`): a no-op at caret 0, else
+    /// `SetText(TrimLastCharacter(Text))` — the C# trims the string's tail
+    /// regardless of where the caret sits (the caret is pinned to the end by
+    /// `DrawSelf` every frame, `:86`); the caret clamp in `SetText` follows.
+    pub fn backspace(&mut self) {
+        if self.cursor != 0 {
+            let trimmed = trim_last_character(&self.text);
+            self.set_text(&trimmed);
+        }
+    }
+
+    /// `CursorLeft` (`UITextBox.cs:64-70`).
+    pub fn cursor_left(&mut self) {
+        if self.cursor != 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    /// `CursorRight` (`UITextBox.cs:72-78`).
+    pub fn cursor_right(&mut self) {
+        if self.cursor < self.text.chars().count() {
+            self.cursor += 1;
+        }
+    }
+}
+
+/// `Utils.TrimUserString` (`Utils.cs:2839-2850`): cap to `length` UTF-16 code
+/// units, dropping a dangling high surrogate at the cut. The port counts
+/// `char`s (its string index unit) and never splits a scalar, so the
+/// surrogate guard has no reachable arm — same visible behaviour.
+pub fn trim_user_string(s: &str, length: usize) -> String {
+    if s.chars().count() <= length {
+        return s.to_string();
+    }
+    s.chars().take(length).collect()
+}
+
+/// `Utils.TrimLastCharacter` (`Utils.cs:2852-2855`).
+pub fn trim_last_character(s: &str) -> String {
+    trim_user_string(s, s.chars().count().saturating_sub(1))
+}
+
+/// `Clipboard.SanitizeClipboardText` (`ReLogic.OS.Base/Clipboard.cs:21-32`):
+/// keep chars `>= ' '` except DEL, plus `'\n'` when `allow_newline`
+/// (`MultiLineValue`, the sign path; the single-line `Value` strips it).
+pub fn sanitize_clipboard_text(text: &str, allow_newline: bool) -> String {
+    text.chars()
+        .filter(|&c| (c >= ' ' && c != '\u{7f}') || (allow_newline && c == '\n'))
+        .collect()
+}
+
+/// What one `GetInputText` pass reports — the `Main.inputTextEnter` /
+/// `Main.inputTextEscape` flags (`Main.cs:20020-20021`, `:20071-20078`) plus
+/// the edited string. `None` of the flags means keep editing.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct InputTextResult {
+    /// The edited string (`GetInputText`'s return, `Main.cs:20114`).
+    pub text: String,
+    /// `Main.inputTextEnter` — a `13` in the typed queue (`:20071-20074`).
+    pub enter: bool,
+    /// `Main.inputTextEscape` — a `27` in the queue (`:20075-20078`) or the
+    /// non-Windows Escape edge (`:20063-20066`).
+    pub escape: bool,
+}
+
+/// The per-frame physical-keyboard snapshot `GetInputText` reads — the
+/// `Main.inputText`/`oldInputText` pair (`Main.cs:1897-1899`, the edge tests
+/// `IsKeyDown && !old.IsKeyDown`) plus the typed-char queue
+/// (`Main.keyInt`/`keyString`, `:20067-20083`). The App fills it from winit;
+/// the bindings stay OS-free.
+#[derive(Clone, Debug, Default)]
+pub struct InputKeys {
+    /// Control held this frame (`PressingControl`, `:20029`).
+    pub control: bool,
+    /// Alt held this frame (`!PressingAlt` gates the Ctrl arm, `:20029`).
+    pub alt: bool,
+    /// Shift held this frame (`PressingShift`, `:20051`).
+    pub shift: bool,
+    /// Backspace held this frame (`Keys.Back`, `:20089`).
+    pub backspace: bool,
+    /// Backspace held last frame (`oldInputText.IsKeyDown(Back)`).
+    pub backspace_old: bool,
+    /// The Z/X/C/V/Insert/Delete press edges (`:20031-20059`) — `true` only on
+    /// the down-edge frame (`IsKeyDown && !old.IsKeyDown`).
+    pub z_pressed: bool,
+    pub x_pressed: bool,
+    pub c_pressed: bool,
+    pub v_pressed: bool,
+    pub insert_pressed: bool,
+    pub delete_pressed: bool,
+    /// The typed-character queue (`Main.keyInt[i]`, `:20069`): 13 Enter,
+    /// 27 Escape, `>= 32 && != 127` printable appends. The caller passes the
+    /// platform's char codes (winit's `ReceivedCharacter`/`Ime` text).
+    pub typed: Vec<u32>,
+}
+
+/// The held-Backspace repeat machine — `Main.backSpaceRate`/`backSpaceCount`
+/// (`Main.cs:1841-1843`, driven at `:20089-20107`). Seeds are the C# statics'
+/// defaults (0/0) so the first held frame repeats immediately, exactly like
+/// the source's first `GetInputText` call.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BackspaceRepeat {
+    /// `backSpaceRate` — starts 0, reset to 7 on release (`:20105`).
+    rate: f32,
+    /// `backSpaceCount` — starts 0, reset to 15 on release (`:20106`).
+    count: i32,
+}
+
+impl BackspaceRepeat {
+    /// One frame of `:20089-20107`: while Backspace stays held, the rate
+    /// decays 0.05/frame (floored at 0) and a repeat fires when the counter
+    /// runs out, reloading it with `Math.Round(rate)` — .NET's default is
+    /// banker's rounding (`MidpointRounding.ToEven`). Released resets 7/15.
+    /// Returns `flag` — the repeat-fire bit the backspace gate ORs with the
+    /// press edge (`:20108`).
+    pub fn step(&mut self, held: bool, held_old: bool) -> bool {
+        let mut fire = false;
+        if held && held_old {
+            self.rate -= 0.05;
+            if self.rate < 0.0 {
+                self.rate = 0.0;
+            }
+            if self.count <= 0 {
+                self.count = round_to_even(self.rate);
+                fire = true;
+            }
+            self.count -= 1;
+        } else {
+            self.rate = 7.0;
+            self.count = 15;
+        }
+        fire
+    }
+}
+
+/// `Math.Round(float)` — banker's rounding (`MidpointRounding.ToEven`), the
+/// `(int)` cast's truncation after (`Main.cs:20098`).
+fn round_to_even(v: f32) -> i32 {
+    let floor = v.floor();
+    let frac = v - floor;
+    let rounded = if frac > 0.5 {
+        floor + 1.0
+    } else if frac < 0.5 {
+        floor
+    } else if (floor as i64) % 2 == 0 {
+        floor
+    } else {
+        floor + 1.0
+    };
+    rounded as i32
+}
+
+/// `Main.GetInputText` (`Main.cs:20010-20115`) over a [`TextField`] — the
+/// physical-keyboard edit pass, in the source's order: the Ctrl arm
+/// (Z clears, X copies+clears, C/Insert copies, V pastes; `:20029-20048`),
+/// else the Shift arm (Delete copies+clears, Insert pastes; `:20051-20062`)
+/// and the typed-char queue (`:20067-20083`); then the append (`:20086`) and
+/// the Backspace edge/repeat trim (`:20089-20112`). The clipboard rides the
+/// caller-supplied `clipboard` string (the App reads `ui::clipboard`); copy
+/// side-effects come back as the second return value so the binding stays
+/// pure. `allow_multi_line` selects `MultiLineValue` vs `Value` sanitization
+/// (`PasteTextIn`, `:20117-20121`). The max-length cap applies at the end
+/// through `SetText` (`UITextBox.cs:44-49`) — the consumers' boxes all cap
+/// (search 50, chest 20), so the pass lands through [`TextField::set_text`].
+/// Returns the flags+text and, when a copy/cut fired, the string to write to
+/// the OS clipboard (`Platform.Get<IClipboard>().Value = oldString`).
+pub fn get_input_text(
+    field: &mut TextField,
+    keys: &InputKeys,
+    repeat: &mut BackspaceRepeat,
+    clipboard: &str,
+    allow_multi_line: bool,
+) -> (InputTextResult, Option<String>) {
+    let old_string = field.text.clone();
+    let mut text = old_string.clone();
+    let mut new_keys = String::new();
+    let mut result = InputTextResult::default();
+    let mut copy_out = None;
+    if keys.control && !keys.alt {
+        // `:20031-20047` — the else-if chain: one shortcut per frame.
+        if keys.z_pressed {
+            text = String::new();
+        } else if keys.x_pressed {
+            copy_out = Some(old_string.clone());
+            text = String::new();
+        } else if keys.c_pressed || keys.insert_pressed {
+            copy_out = Some(old_string.clone());
+        } else if keys.v_pressed {
+            new_keys = sanitize_clipboard_text(clipboard, allow_multi_line);
+        }
+    } else {
+        if keys.shift {
+            // `:20053-20061` — two independent ifs (not else-if).
+            if keys.delete_pressed {
+                copy_out = Some(old_string.clone());
+                text = String::new();
+            }
+            if keys.insert_pressed {
+                new_keys = sanitize_clipboard_text(clipboard, allow_multi_line);
+            }
+        }
+        // `:20067-20083` — the typed queue.
+        for &code in &keys.typed {
+            if code == 13 {
+                result.enter = true;
+            } else if code == 27 {
+                result.escape = true;
+            } else if code >= 32 && code != 127 {
+                if let Some(c) = char::from_u32(code) {
+                    new_keys.push(c);
+                }
+            }
+        }
+    }
+    text += &new_keys; // `:20086`
+    // The Backspace machine (`:20089-20107`) then the trim gate (`:20108`):
+    // the press edge OR the repeat fire, and only a non-empty string trims.
+    // The `ChatManager.ParseMessage` snippet arm (`:20110-20111`) is chat
+    // markup ([i:...] etc.) — none of the text-field consumers produce it, so
+    // the plain `TrimLastCharacter` arm is the live one (documented).
+    let fire = repeat.step(keys.backspace, keys.backspace_old);
+    if ((keys.backspace && !keys.backspace_old) || fire) && !text.is_empty() {
+        text = trim_last_character(&text);
+    }
+    // The consumers' `SetText` cap (`UITextBox.cs:44-49` via
+    // `UISearchBar.SetContents` `:80-81` / the keyboard's `this.Text = text`
+    // `UIVirtualKeyboard.cs:778-788`): trim + caret clamp.
+    field.set_text(&text);
+    result.text = field.text.clone();
+    (result, copy_out)
+}
+
 // --- The label tables ----------------------------------------------------------
 
 /// The three label tables (`SetKeyState`, `:562-570`) — 40 characters in the
@@ -1317,6 +1624,193 @@ mod tests {
         assert_eq!(click_at(&state, &d, false, centre(d.submit)), Click::Submit);
         assert_eq!(click_at(&state, &d, false, centre(d.cancel)), Click::Cancel);
         assert_eq!(click_at(&state, &d, false, Vec2::new(100.0, 100.0)), Click::None);
+    }
+
+    // --- Text-entry bindings (W4-c25) — hand-derived from `UITextBox.cs`,
+    // `Main.cs:20010-20121`, `Utils.cs:2839-2855`, ReLogic `Clipboard.cs:21-32`.
+
+    #[test]
+    fn text_field_ctor_trims_and_pins_the_caret() {
+        // `UITextBox.cs:44-49` — the ctor's SetText trims to `_maxLength` and
+        // the caret lands at the (trimmed) end.
+        let f = TextField::new("0123456789", 4);
+        assert_eq!(f.text, "0123");
+        assert_eq!(f.cursor, 4);
+        let e = TextField::new("", 20);
+        assert_eq!(e.cursor, 0);
+        assert_eq!(e.max_length, 20); // `_maxLength = 20` (`:15`)
+    }
+
+    #[test]
+    fn text_field_write_inserts_at_the_caret_and_caps() {
+        // `Write` (`:38-42`): Insert(_cursor), caret += len, SetText re-trims.
+        let mut f = TextField::new("ac", 20);
+        f.cursor_left(); // caret 1
+        f.write("b");
+        assert_eq!(f.text, "abc");
+        assert_eq!(f.cursor, 2);
+        // The cap swallows the overflow AFTER the insert (`:40` then `:46`).
+        let mut g = TextField::new("abcd", 4);
+        g.cursor = 0;
+        g.write("XY");
+        assert_eq!(g.text, "XYab");
+        assert_eq!(g.cursor, 2); // min(4, 0+2)
+        // A write at the end of a full box is fully swallowed.
+        let mut h = TextField::new("abcd", 4);
+        h.write("z");
+        assert_eq!(h.text, "abcd");
+        assert_eq!(h.cursor, 4);
+    }
+
+    #[test]
+    fn text_field_backspace_and_cursor_edges() {
+        // `Backspace` (`:56-62`): caret 0 is a no-op; else trim the tail and
+        // clamp the caret. `CursorLeft`/`Right` (`:64-78`) clamp at 0/len.
+        let mut f = TextField::new("abc", 20);
+        f.cursor_left();
+        f.cursor_left();
+        f.cursor_left();
+        f.cursor_left(); // clamped at 0
+        assert_eq!(f.cursor, 0);
+        f.backspace(); // no-op at caret 0
+        assert_eq!(f.text, "abc");
+        f.cursor_right();
+        f.backspace();
+        assert_eq!(f.text, "ab");
+        assert_eq!(f.cursor, 1);
+        f.cursor_right();
+        f.cursor_right(); // clamped at len
+        assert_eq!(f.cursor, 2);
+        f.backspace();
+        f.backspace();
+        f.backspace(); // empty is a no-op
+        assert_eq!(f.text, "");
+        assert_eq!(f.cursor, 0);
+    }
+
+    #[test]
+    fn trim_helpers_match_utils() {
+        // `Utils.TrimUserString` (`Utils.cs:2839-2850`) /
+        // `TrimLastCharacter` (`:2852-2855`).
+        assert_eq!(trim_user_string("abc", 5), "abc");
+        assert_eq!(trim_user_string("abc", 2), "ab");
+        assert_eq!(trim_user_string("abc", 0), "");
+        assert_eq!(trim_last_character("abc"), "ab");
+        assert_eq!(trim_last_character(""), "");
+    }
+
+    #[test]
+    fn sanitize_clipboard_filters_control_chars() {
+        // `Clipboard.SanitizeClipboardText` (`Clipboard.cs:21-32`): >= ' '
+        // except DEL; '\n' only with allowNewLine.
+        assert_eq!(sanitize_clipboard_text("a\tb\nc\u{7f}d", false), "abcd");
+        assert_eq!(sanitize_clipboard_text("a\tb\nc\u{7f}d", true), "ab\ncd");
+        assert_eq!(sanitize_clipboard_text("\r\n", true), "\n");
+    }
+
+    #[test]
+    fn backspace_repeat_matches_the_rate_machine() {
+        // `Main.cs:20089-20107`, statics seeded 0/0 (`:1841-1843`).
+        let mut r = BackspaceRepeat::default();
+        // The press frame resets 7/15 and does not fire the repeat bit (the
+        // press edge is the caller's OR arm).
+        assert!(!r.step(true, false));
+        // 15 held frames drain the counter without firing.
+        for _ in 0..15 {
+            assert!(!r.step(true, true));
+        }
+        // Frame 16 of the hold: count hit 0 -> fire, reload round(7-0.05*16)
+        // = round(6.2) = 6, then decrement to 5.
+        assert!(r.step(true, true));
+        for _ in 0..5 {
+            assert!(!r.step(true, true));
+        }
+        assert!(r.step(true, true)); // the next reload fires 6 frames later
+        // Release resets 7/15 (`:20105-20106`).
+        assert!(!r.step(false, true));
+        assert!(!r.step(true, false));
+        for _ in 0..15 {
+            assert!(!r.step(true, true));
+        }
+        assert!(r.step(true, true));
+        // Banker's rounding (`Math.Round` default ToEven).
+        assert_eq!(round_to_even(6.5), 6);
+        assert_eq!(round_to_even(7.5), 8);
+        assert_eq!(round_to_even(6.2), 6);
+    }
+
+    #[test]
+    fn get_input_text_types_and_flags() {
+        // The typed queue (`Main.cs:20067-20083`): >= 32 && != 127 appends,
+        // 13/27 set the flags, controls are dropped.
+        let mut f = TextField::new("ab", 20);
+        let mut r = BackspaceRepeat::default();
+        let keys = InputKeys {
+            typed: vec!['c' as u32, 9, 127, 13, 27],
+            ..Default::default()
+        };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "abc");
+        assert!(res.enter);
+        assert!(res.escape);
+        assert!(copy.is_none());
+        // The press edge trims one char (`:20108`), even on the flag frame.
+        let keys = InputKeys { backspace: true, ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "ab");
+        assert!(!res.enter, "the flags reset every pass (`:20020-20021`)");
+    }
+
+    #[test]
+    fn get_input_text_ctrl_and_shift_arms() {
+        let mut r = BackspaceRepeat::default();
+        // Ctrl+Z clears (`:20031-20034`).
+        let mut f = TextField::new("abc", 20);
+        let keys = InputKeys { control: true, z_pressed: true, ..Default::default() };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "");
+        assert!(copy.is_none());
+        // Ctrl+X copies the OLD string and clears (`:20035-20039`).
+        let mut f = TextField::new("abc", 20);
+        let keys = InputKeys { control: true, x_pressed: true, ..Default::default() };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "");
+        assert_eq!(copy.as_deref(), Some("abc"));
+        // Ctrl+C copies without clearing (`:20040-20043`); Alt kills the arm.
+        let mut f = TextField::new("abc", 20);
+        let keys = InputKeys { control: true, c_pressed: true, ..Default::default() };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "abc");
+        assert_eq!(copy.as_deref(), Some("abc"));
+        let keys = InputKeys { control: true, alt: true, z_pressed: true, ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert_eq!(res.text, "abc");
+        // Ctrl+V pastes sanitized (`:20044-20047`, `PasteTextIn` `:20117`).
+        let mut f = TextField::new("a", 20);
+        let keys = InputKeys { control: true, v_pressed: true, ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "b\tc\nd", false);
+        assert_eq!(res.text, "abcd");
+        // Shift+Delete cuts, Shift+Insert pastes (`:20053-20061`) — two
+        // independent ifs, so one frame can cut then paste.
+        let mut f = TextField::new("old", 20);
+        let keys = InputKeys {
+            shift: true,
+            delete_pressed: true,
+            insert_pressed: true,
+            ..Default::default()
+        };
+        let (res, copy) = get_input_text(&mut f, &keys, &mut r, "new", false);
+        assert_eq!(copy.as_deref(), Some("old"));
+        assert_eq!(res.text, "new");
+        // The paste rides the max-length cap (the consumers' SetText).
+        let mut f = TextField::new("", 4);
+        let keys = InputKeys { control: true, v_pressed: true, ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "abcdef", false);
+        assert_eq!(res.text, "abcd");
+        // Multi-line paste keeps '\n' (`MultiLineValue`).
+        let mut f = TextField::new("", 20);
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "a\nb", true);
+        assert_eq!(res.text, "a\nb");
     }
 
     #[test]
