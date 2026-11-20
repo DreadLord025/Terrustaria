@@ -893,10 +893,16 @@ pub fn buff_description(id: i32) -> String {
     }
 }
 
-/// `Lang.GetEmojiName(id)` (`Lang.cs:211-218`): `EmojiName.{const name}`.
-/// The C# leaves a missing entry blank (`leaveMissingEntriesBlank`), so an
-/// unknown id answers empty.
+/// `Lang.GetEmojiName(id)` (`Lang.cs:211-218`): `EmojiName.{const name}`,
+/// bounded by `0..EmoteID.Count` (= 151, the cache length `Lang.cs:1226`) —
+/// an out-of-range id answers `LocalizedText.Empty` (W4-c21, the
+/// `GetProjectileName` bounds convention). The C# leaves a missing entry
+/// blank (`leaveMissingEntriesBlank`, `Lang.cs:520`), so an in-cache id with
+/// no shipped row answers empty too (the port's table walk already does).
 pub fn emoji_name(id: i32) -> String {
+    if id < 0 || id >= crate::emotes::EMOTE_COUNT {
+        return String::new();
+    }
     match crate::emotes::EMOTE_NAMES
         .iter()
         .find(|(n, _)| *n == id)
@@ -1221,5 +1227,24 @@ mod tests {
         assert_eq!(buff_name(99999), "");
         assert_eq!(buff_description(-1), "");
         assert_eq!(buff_description(99999), "");
+    }
+
+    /// W4-c21 — `Lang.GetEmojiName` (`Lang.cs:211-218`) bounds the id by
+    /// `0..EmoteID.Count` (= 151, `EmoteID.cs:317`) and answers
+    /// `LocalizedText.Empty` outside it; every in-cache id carries a shipped
+    /// `EmojiName` row (the `leaveMissingEntriesBlank` gate, `Lang.cs:520`,
+    /// blanks only rows the culture lacks).
+    #[test]
+    fn w4_c21_emoji_name_bounds_answer_empty() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // Inside the cache: `EmoteID.EmotionLove` = 0.
+        assert_eq!(emoji_name(0), "heart");
+        // The last in-cache id (`EmoteID.Count - 1` = 150) resolves.
+        assert!(!emoji_name(crate::emotes::EMOTE_COUNT - 1).is_empty());
+        // Negative ids and ids at/over `Count` answer Empty (`:213`).
+        assert_eq!(emoji_name(-1), "");
+        assert_eq!(emoji_name(crate::emotes::EMOTE_COUNT), "");
+        assert_eq!(emoji_name(i32::MAX), "");
     }
 }
