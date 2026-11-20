@@ -659,12 +659,21 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         34 => check_chandelier(world, x, y),
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
-        219 | 642 => check_3x3_bottom(world, x, y, kind),
+        // W4-f41: the party monolith (455) rides the same arm (the dispatch
+        // gate `WorldGen.cs:85526` + the `:53114` group; its item drop is
+        // `Check3x3`'s `case 455` → 3747, `:53224-53226`).
+        219 | 455 | 642 => check_3x3_bottom(world, x, y, kind),
         42 => check_lantern(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
         93 => check_lamp(world, x, y),
-        100 | 172 => check_candelabra_sink(world, x, y),
+        // W4-f41: the cake (621) rides `Check2x2` (`WorldGen.cs:85796-85798`'s
+        // dispatch group, drop `case 621` → 3750 `:48609-48611`); the party
+        // present (457) rides `Check2x2Style` (the `type != 457` gate
+        // `:85649` falls through to `goto case 254` `:85950-85952`, drop
+        // `case 457` → 3749 `:52395-52397`).
+        100 | 172 | 621 => check_2x2(world, x, y, kind),
+        457 => check_2x2_style(world, x, y, kind),
         101 => check_bookcase(world, x, y),
         104 => check_clock(world, x, y),
         185 => check_pile(world, x, y),
@@ -1518,11 +1527,13 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
 }
 
 /// `WorldGen.Check2x2`'s default branch (`WorldGen.cs:48397-48470`) for the
-/// candelabra (100) and the sink (172): the 2x2 cells with the style frames
+/// candelabra (100), the sink (172) and the slice of cake (621, W4-f41 —
+/// the dispatch group `:85784-85798`): the 2x2 cells with the style frames
 /// (the sink's full height is 38) and the solid-or-table floor without
-/// half-bricks.
-fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
-    let kind = world.tile(x, y)?.kind;
+/// half-bricks. The drop is the `num14` switch (`:48570-48615`): 621 → 3750
+/// (`:48609-48611`) at the trigger cell; 100/172 keep the registry slice
+/// (`GetItemDrop_Candelabras/Sinks`, the style-0 rows).
+fn check_2x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
     let t = world.tile(x, y)?;
     let full = if kind == 172 { 38 } else { 36 };
     let mut num = 0i32;
@@ -1571,14 +1582,87 @@ fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan>
             tile_kind: kind,
             x,
             y,
-            item: None,
+            // `:48609-48611` — the cake's `num14` row; the candelabra/sink
+            // keep the registry slice (item: None → `registry::tile_drop`).
+            item: if kind == 621 { Some(3750) } else { None },
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,
         herb_event: None,
         pile_event: None,
         ring: None,
-        // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
+        // The C# tail rings a 4x4 `TileFrame` walk (`:48791-48798`); the
+        // port's candelabra/sink slice keeps the deferred-pop convention
+        // (ring: None — the ring is cosmetic re-framing, the remainders
+        // float until a later break), and the cake rides the same slice.
+    })
+}
+
+/// `WorldGen.Check2x2Style` (`WorldGen.cs:52293-52436`) for the party
+/// present (457, W4-f41 — the `TileFrameImportant` gate `:85649`'s
+/// `type != 457` falls through to `goto case 254` `:85950-85952`): the
+/// origin decode walks `frameY / 18` down by 2 and `frameX / 18` down by 2
+/// counting styles (`:52300-52314`), the 2x2 cells need the matching kind
+/// and the style-column `frameX` (the row frames are NOT checked — the
+/// C# checks only `frameX`, `:52323`), and both floor cells must be
+/// `SolidTileAllowBottomSlope` (`:52328`; the 254 pumpkin's ground-kind
+/// extra gate is out of this slice). Drop = `case 457` → 3749
+/// (`:52395-52397`) at the trigger cell; the tail's 4x4 `TileFrame` ring
+/// (`:52429-52435`) — the C# rings `num3-1..num3+3` x `num-1..num+3`.
+fn check_2x2_style(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    // `:52300-52305` — the origin row.
+    let mut row = t.frame_y as i32 / 18;
+    while row > 1 {
+        row -= 2;
+    }
+    let oy = y - row;
+    // `:52306-52314` — the origin column + the style offset.
+    let mut col = t.frame_x as i32 / 18;
+    let mut style = 0i32;
+    while col > 1 {
+        col -= 2;
+        style += 1;
+    }
+    let ox = x - col;
+    let style_x = style * 36;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(4);
+    for k in ox..ox + 2 {
+        for l in oy..oy + 2 {
+            region.push((k, l));
+            // `:52323` — the frameX check ONLY (the C# never checks frameY
+            // here — the style rows share the column frames).
+            let expected_fx = ((k - ox) * 18 + style_x) as i16;
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || c.frame_x != expected_fx)
+            {
+                broken = true;
+            }
+        }
+        // `:52328-52331` — the floor cell (the 254-only ground-kind arm
+        // `:52334-52346` never runs for 457).
+        if !solid_tile_allow_bottom_slope(world, k, oy + 2) {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            // `:52395-52397` — `Item.NewItem(..., 3749)`.
+            item: Some(3749),
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: Some(region_ring(&region)),
     })
 }
 
@@ -1639,8 +1723,14 @@ fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
             tile_kind: kind,
             x,
             y,
-            // `:53170-53175` — the item per tile kind (219 → 997, 642 → 5296).
-            item: Some(if kind == 219 { 997 } else { 5296 }),
+            // `:53170-53175` — the item per tile kind (219 → 997, 642 →
+            // 5296); W4-f41: `case 455` → 3747 (`:53224-53226`, the party
+            // monolith rides the same bottom-support arm).
+            item: Some(match kind {
+                219 => 997,
+                455 => 3747,
+                _ => 5296,
+            }),
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,
@@ -5018,6 +5108,225 @@ mod tests {
         );
         // The tiles are gone.
         assert!(!w.tile(100, 100).unwrap().active());
+    }
+
+    // ---- W4-f41: the birthday-party furniture break records ---------------
+
+    /// A 3x3 party monolith (455) at columns 10..=12, rows 17..=19 on the
+    /// stone floor (row 20) — the style-0 frames (`(dx*18, dy*18)`).
+    fn party_monolith_world() -> World {
+        let mut w = object_world();
+        for dy in 0..3i32 {
+            for dx in 0..3i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    17 + dy,
+                    455,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        w
+    }
+
+    /// W4-f41 — the monolith stands on solid ground: a neighbour break's
+    /// cascade leaves it intact (`Check3x3`'s bottom-support arm,
+    /// `WorldGen.cs:53114-53127` — 455 rides the same group as 219/642).
+    #[test]
+    fn w4_f41_the_monolith_survives_on_solid_ground() {
+        let mut w = party_monolith_world();
+        trigger_at(&mut w, 9, 20);
+        for dy in 0..3 {
+            for dx in 0..3 {
+                assert!(
+                    w.tile(10 + dx, 17 + dy).unwrap().active(),
+                    "cell ({dx},{dy}) supported"
+                );
+            }
+        }
+    }
+
+    /// W4-f41 — breaking the support row collapses the whole 3x3 and drops
+    /// ONE monolith item 3747 (`Check3x3`'s `case 455`,
+    /// `WorldGen.cs:53224-53226`) at the trigger cell of the check.
+    #[test]
+    fn w4_f41_the_monolith_support_break_drops_3747() {
+        let mut w = party_monolith_world();
+        let kill = trigger_at(&mut w, 11, 20);
+        assert_all_gone(
+            &w,
+            &[
+                (10, 17), (11, 17), (12, 17),
+                (10, 18), (11, 18), (12, 18),
+                (10, 19), (11, 19), (12, 19),
+            ],
+        );
+        let drops: Vec<_> = kill
+            .object_drops
+            .iter()
+            .filter(|d| d.tile_kind == 455)
+            .collect();
+        assert_eq!(drops.len(), 1, "one object record, not nine cell drops");
+        assert_eq!(drops[0].item, Some(3747), "the Party Monolith item");
+    }
+
+    /// A 2x2 cake (621) at columns 10..=11, rows 18..=19 on the stone floor.
+    fn cake_world() -> World {
+        let mut w = object_world();
+        for dy in 0..2i32 {
+            for dx in 0..2i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    18 + dy,
+                    621,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        w
+    }
+
+    /// W4-f41 — the cake rides `Check2x2` (`WorldGen.cs:85796-85798`):
+    /// solid-or-table floor holds it; the support break kills the 2x2 and
+    /// drops ONE 3750 (`case 621`, `:48609-48611`).
+    #[test]
+    fn w4_f41_the_cake_support_break_drops_3750() {
+        let mut w = cake_world();
+        // The intact pass first.
+        trigger_at(&mut w, 9, 20);
+        assert!(w.tile(10, 18).unwrap().active(), "supported cake stands");
+        // The support break.
+        let kill = trigger_at(&mut w, 10, 20);
+        assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
+        let drops: Vec<_> = kill
+            .object_drops
+            .iter()
+            .filter(|d| d.tile_kind == 621)
+            .collect();
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item, Some(3750), "the Slice Of Cake item");
+    }
+
+    /// W4-f41 — the cake stands on a TABLE floor too (`Check2x2`'s
+    /// `Main.tileTable` arm, `:48455`): a properly framed 3x2 table (14)
+    /// at columns 9..=11, rows 18..=19 on the stone floor carries the cake
+    /// at columns 10..=11, rows 16..=17.
+    #[test]
+    fn w4_f41_the_cake_stands_on_a_table() {
+        let mut w = object_world();
+        // The table: style-0 frames, its own support is the stone row 20.
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                set_object_cell(
+                    &mut w,
+                    9 + dx,
+                    18 + dy,
+                    14,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        // The cake on the table's top row (18).
+        for dy in 0..2i32 {
+            for dx in 0..2i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    16 + dy,
+                    621,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        // The trigger frames the cake's column without touching the table.
+        set_active(&mut w, 9, 16, 1);
+        trigger_at(&mut w, 9, 16);
+        assert!(
+            w.tile(10, 16).unwrap().active(),
+            "the table floor carries the cake"
+        );
+        assert!(w.tile(9, 18).unwrap().active(), "the table itself stands");
+    }
+
+    /// A 2x2 party present (457) at columns 10..=11, rows 18..=19 — style 2
+    /// (the wand's `CreateSingleTileWand(3749, 457, 0, 1, 2, 3, 4)` rolls a
+    /// style, `FlexibleTileWand.cs:393`): the style column offset is
+    /// `2 * 36 = 72`, so the frames are `(72 + dx*18, dy*18)`.
+    fn party_present_world(style: i32) -> World {
+        let mut w = object_world();
+        for dy in 0..2i32 {
+            for dx in 0..2i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    18 + dy,
+                    457,
+                    (style * 36 + dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        w
+    }
+
+    /// W4-f41 — the present rides `Check2x2Style` (the `type != 457` gate
+    /// `WorldGen.cs:85649` → `goto case 254` `:85950`): the style-column
+    /// decode walks `frameX / 18` down by 2 counting styles; the support
+    /// break drops ONE 3749 (`case 457`, `:52395-52397`).
+    #[test]
+    fn w4_f41_the_party_present_support_break_drops_3749() {
+        let mut w = party_present_world(2);
+        // The intact pass — the style decode must find the origin.
+        trigger_at(&mut w, 9, 20);
+        assert!(w.tile(10, 18).unwrap().active(), "supported present stands");
+        // The support break.
+        let kill = trigger_at(&mut w, 11, 20);
+        assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
+        let drops: Vec<_> = kill
+            .object_drops
+            .iter()
+            .filter(|d| d.tile_kind == 457)
+            .collect();
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item, Some(3749), "the Party Present item");
+    }
+
+    /// W4-f41 — the style-0 present takes the same arm (the decode's zero
+    /// walk); a mismatched style column breaks it even while supported
+    /// (`:52323`'s frameX check — the C# checks ONLY frameX, never frameY).
+    #[test]
+    fn w4_f41_the_present_style_zero_and_the_frame_x_only_check() {
+        let mut w = party_present_world(0);
+        trigger_at(&mut w, 9, 20);
+        assert!(w.tile(10, 18).unwrap().active(), "style 0 stands");
+        // Corrupt one cell's frameY only — the check NEVER reads frameY,
+        // so the present stays intact through the next cascade.
+        let i = w.index(11, 19);
+        w.tiles[i].frame_y = 90;
+        set_active(&mut w, 9, 19, 1);
+        trigger_at(&mut w, 9, 19);
+        assert!(
+            w.tile(10, 18).unwrap().active(),
+            "frameY is not part of Check2x2Style's integrity scan"
+        );
+        // Corrupt the frameX — now the scan breaks it, supported or not.
+        let i = w.index(11, 19);
+        w.tiles[i].frame_x = 0; // should be 18
+        set_active(&mut w, 9, 19, 1);
+        let kill = trigger_at(&mut w, 9, 19);
+        assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
+        assert!(
+            kill.object_drops
+                .iter()
+                .any(|d| d.tile_kind == 457 && d.item == Some(3749)),
+            "the mismatched-column break still drops the present"
+        );
     }
 
     #[test]
