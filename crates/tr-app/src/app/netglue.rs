@@ -911,6 +911,31 @@ impl App {
                     }
                 }
             }
+            // `case 62` — a client's dodge fired
+            // (`MessageBuffer.cs:2879-2908`). The host forces the subject to
+            // the sender (`:2883-2886`) and relays to the others (`:2905`).
+            // The C# host also runs the dodge on its non-simulated remote
+            // `Player` copy (`:2887-2902`) — the survivors there are the
+            // 120/80 immunity window (the buff strip + Hallowed cooldown
+            // are `whoAmI == myPlayer`-gated, `Player.cs:38026-38029`) and
+            // the dust/gore bursts. The port keeps no remote `Player` (the
+            // peer record is a render snapshot; the bursts are S1-E-1), so
+            // that half is parked with the `:2577` hostile-shot follow-up;
+            // the relay is the live half. W4-c27.
+            C2s::SyncDodge(mut d) => {
+                d.player_id = id as u8; // `:2885`
+                server.broadcast_except(&S2c::SyncDodge(d), id); // `:2905`
+            }
+            // `case 84` — a client's stealth value
+            // (`MessageBuffer.cs:3246-3260`). The host forces the subject to
+            // the sender (`:3249-3252`), stores the float (`:3254`) and
+            // relays (`:3257` — the writer re-reads the stored field,
+            // `NetMessage.cs:1200`, so the relay carries the stored value).
+            C2s::PlayerStealth(mut s) => {
+                s.player_id = id as u8; // `:3251`
+                self.remote_players.entry(id).or_default().stealth = s.stealth; // `:3254`
+                server.broadcast_except(&S2c::PlayerStealth(s), id); // `:3257`
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -2057,6 +2082,34 @@ impl App {
                         p.buffs.add_buff_from_net_pvp(b.buff_type as i32, b.time);
                     }
                 }
+            }
+            // `case 62` — a dodge on the wire (`MessageBuffer.cs:2879-2908`,
+            // the `netMode == 1` half keeps the wire id). Ours runs the
+            // ported handlers (the `Player.cs:38023-38165` bodies via
+            // `player.rs` — the client IS the subject's `myPlayer`, so the
+            // buff strip / Hallowed cooldown / brain buff run). A peer's
+            // dodge on the remote copy leaves only the 120/80 immunity
+            // window (the rest is `myPlayer`-gated, `Player.cs:38026-38029`)
+            // and the dust/gore bursts — the port has no peer hurt lane
+            // (hostile shots parked, the `:2577` follow-up) and the bursts
+            // are S1-E-1, so that half is parked, same as the host arm.
+            // W4-c27.
+            S2c::SyncDodge(d) => {
+                if d.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.apply_net_dodge(d.kind);
+                    }
+                }
+            }
+            // `case 84` — a peer's stealth value (`MessageBuffer.cs:3246-3260`,
+            // the `netMode == 1` half keeps the wire id): stored on the peer
+            // record (`:3254`); ours is applied by the local stealth writer
+            // that sent it, the relay echo excluded by the host.
+            S2c::PlayerStealth(s) => {
+                self.remote_players
+                    .entry(s.player_id as u32)
+                    .or_default()
+                    .stealth = s.stealth; // `:3254`
             }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
@@ -5529,5 +5582,87 @@ mod message_family_tests {
         assert_eq!(texts.len(), 1, "one HealMana text for the peer");
         assert_eq!(texts[0].color, crate::combat_text::HEAL_MANA);
         assert_eq!(texts[0].position[0], 100.0);
+    }
+
+    /// W4-c27 `62 SyncDodge` — the host forces the subject to the sender
+    /// (`MessageBuffer.cs:2883-2886`) and relays to the others (`:2905`);
+    /// the sender's own echo is excluded, so its local player is untouched
+    /// (the send site applies its own dodge, S1-I-4).
+    #[test]
+    fn w4_c27_sync_dodge_relays_with_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::SyncDodge(net::SyncDodge {
+                player_id: 200, // spoofed — the host must override it to 1
+                kind: 2,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        // The relay excludes the sender (`:2905`'s `this.whoAmI`), so the
+        // client never re-applies its own dodge from an echo.
+        let p = client_app.player.as_ref().unwrap();
+        assert_eq!(p.shadow_dodge_timer, 0, "no self-echo apply");
+        assert!(!p.immune);
+        // The host-side apply on the non-simulated remote copy is parked
+        // (no peer hurt lane); the host's own player is not the subject.
+        assert_eq!(host_app.player.as_ref().unwrap().shadow_dodge_timer, 0);
+    }
+
+    /// W4-c27 `62 SyncDodge` — the client's own-id arm runs the ported
+    /// handler (`MessageBuffer.cs:2891-2894` → `Player.ShadowDodge`,
+    /// `Player.cs:38023-38042`): the 80-tick immunity (longInvince false),
+    /// buff 59 stripped, the 1800-tick Hallowed cooldown armed.
+    #[test]
+    fn w4_c27_sync_dodge_shadow_applies_on_the_client() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        client_app.player.as_mut().unwrap().buffs.add_buff(59, 600);
+        let me = client_app.local_id as u8;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::SyncDodge(net::SyncDodge {
+                player_id: me,
+                kind: 2,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let p = client_app.player.as_ref().unwrap();
+        assert!(p.immune, "the dodge armed the i-frames");
+        assert_eq!(p.immune_time, 80, "longInvince false → 80");
+        assert_eq!(p.shadow_dodge_timer, 1800, "the Hallowed cooldown");
+        assert!(
+            p.buffs.find_buff_index(59).is_none(),
+            "buff 59 stripped by the dodge"
+        );
+    }
+
+    /// W4-c27 `84 PlayerStealth` — the host forces the subject to the sender
+    /// (`MessageBuffer.cs:3249-3252`), stores the float (`:3254`) and relays
+    /// (`:3257`); the client stores a peer's value on its record.
+    #[test]
+    fn w4_c27_player_stealth_relays_with_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerStealth(net::PlayerStealth {
+                player_id: 200, // spoofed — the host must override it to 1
+                stealth: 0.25,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let stored = host_app.remote_players.get(&1).expect("peer stored");
+        assert_eq!(stored.stealth, 0.25, "the float stored under the sender");
+        // The relay excludes the sender, so no self-echo record.
+        assert!(client_app.remote_players.get(&1).is_none());
+        // The host's own stealth value reaches the client's peer record
+        // (the `netMode == 1` half keeps the wire id, `:3254`).
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::PlayerStealth(net::PlayerStealth {
+                player_id: 0,
+                stealth: 0.625,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get(&0).expect("host peer");
+        assert_eq!(peer.stealth, 0.625);
     }
 }

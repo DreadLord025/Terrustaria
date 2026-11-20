@@ -4245,6 +4245,27 @@ impl Player {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
 
+    /// The `62 SyncDodge` reader's switch on ourselves
+    /// (`MessageBuffer.cs:2887-2902`): kind 1 Ninja, 2 Shadow, 4
+    /// BrainOfConfusion, 5 MysticSash — four independent `if`s in the C#
+    /// order (3, the retired Holy dodge, has no arm; any other kind falls
+    /// through). The send-back inside each handler is the SEND path's
+    /// (S1-I-4), not the reader's — the reader never re-sends. W4-c27.
+    pub(crate) fn apply_net_dodge(&mut self, kind: u8) {
+        if kind == 1 {
+            self.ninja_dodge(); // `:2889`
+        }
+        if kind == 2 {
+            self.do_shadow_dodge(); // `:2893`
+        }
+        if kind == 4 {
+            self.brain_of_confusion_dodge(); // `:2897`
+        }
+        if kind == 5 {
+            self.do_mystic_sash_dodge(); // `:2901`
+        }
+    }
+
     /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
     /// countdown — `immune` clears at 0 and `immuneNoBlink` rides with it;
     /// the `immuneAlpha` blinkVisual half is draw-side and stays out.

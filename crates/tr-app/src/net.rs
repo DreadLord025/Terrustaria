@@ -154,6 +154,8 @@ pub mod id {
     pub const MANA_EFFECT: u8 = 43; // MessageID.cs:97 / NetMessage.cs:966-969 / MessageBuffer.cs:2307-2324
     pub const MISC_DATA_SYNC: u8 = 51; // MessageID.cs:115 / NetMessage.cs:1010-1013 / MessageBuffer.cs:2482-2530
     pub const ADD_PLAYER_BUFF_PVP: u8 = 55; // MessageID.cs:123 / NetMessage.cs:1041-1045 / MessageBuffer.cs:2594-2611
+    pub const SYNC_DODGE: u8 = 62; // MessageID.cs:137 / NetMessage.cs:1077-1080 / MessageBuffer.cs:2879-2908
+    pub const PLAYER_STEALTH: u8 = 84; // MessageID.cs:182 / NetMessage.cs:1197-1204 / MessageBuffer.cs:3246-3260
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -597,6 +599,12 @@ pub struct PlayerNet {
     /// (S1-I-4); until then `false` — the gate refuses, exactly the C#'s
     /// PvP-off shape. W4-c27.
     pub hostile: bool,
+    /// `Player.stealth` (`Player.cs:1562`, the C# field default 1f), fed by
+    /// `84 PlayerStealth` (`MessageBuffer.cs:3254`). The port's peer record
+    /// keeps the `Default` 0 until the first sync — same as the local
+    /// `Player` ctor's 0.0 (the shroomite-stealth writers are still unported,
+    /// `npc_target.rs:83`). W4-c27.
+    pub stealth: f32,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1640,6 +1648,33 @@ pub struct PlayerBuffPvp {
     pub time: i32,
 }
 
+/// `msg 62 SyncDodge`'s body (`NetMessage.cs:1077-1080`): the player id and
+/// `(byte)number2`, the dodge kind — 1 Ninja, 2 Shadow, 4 BrainOfConfusion,
+/// 5 MysticSash (`MessageBuffer.cs:2887-2902`; 3 is the retired Holy dodge,
+/// no arm). The host forces the id to the sender (`:2883-2886`), runs the
+/// dodge on the subject and relays to the others (`:2903-2906`). Send sites:
+/// `Player.NinjaDodge` (`Player.cs:38163`), `ShadowDodge` (`:38038`),
+/// `BrainOfConfusionDodge` (`:38053`), `DoMysticSashDodge` (`:38115`).
+/// W4-c27.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SyncDodge {
+    pub player_id: u8,
+    pub kind: u8,
+}
+
+/// `msg 84 PlayerStealth`'s body (`NetMessage.cs:1197-1204`): the player id
+/// then the LIVE `Main.player[id].stealth` float — the writer re-reads the
+/// field, `number2` never crosses the wire. The host forces the id to the
+/// sender (`MessageBuffer.cs:3249-3252`), stores the float (`:3254`) and
+/// relays (`:3257`, re-read on send). Send sites: the shroomite/vortex
+/// stealth transitions (`Player.cs:25753`/`:25800`/`:25843`/`:25869`/
+/// `:44139`/`:44474`). W4-c27.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlayerStealth {
+    pub player_id: u8,
+    pub stealth: f32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1770,6 +1805,14 @@ pub enum C2s {
     /// (`Player.AddBuff`'s remote branch, `Player.cs:5269-5275`;
     /// `MessageBuffer.cs:2594-2611`). W4-c27.
     PlayerBuffPvp(PlayerBuffPvp),
+    /// `62 SyncDodge` - a client's dodge fired (`Player.NinjaDodge`/
+    /// `ShadowDodge`/`BrainOfConfusionDodge`/`DoMysticSashDodge`'s sends;
+    /// `MessageBuffer.cs:2879-2908`). W4-c27.
+    SyncDodge(SyncDodge),
+    /// `84 PlayerStealth` - a client's stealth value changed (the
+    /// shroomite/vortex transitions, `Player.cs:25753` etc.;
+    /// `MessageBuffer.cs:3246-3260`). W4-c27.
+    PlayerStealth(PlayerStealth),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1911,6 +1954,13 @@ pub enum S2c {
     /// `55 AddPlayerBuffPvP` - a PvP debuff aimed at us, sent by the host to
     /// the target alone (`MessageBuffer.cs:2603`). W4-c27.
     PlayerBuffPvp(PlayerBuffPvp),
+    /// `62 SyncDodge` - a peer's dodge, relayed by the host
+    /// (`MessageBuffer.cs:2905`). W4-c27.
+    SyncDodge(SyncDodge),
+    /// `84 PlayerStealth` - a peer's stealth value, relayed by the host
+    /// (`MessageBuffer.cs:3257` — the writer re-reads the stored float).
+    /// W4-c27.
+    PlayerStealth(PlayerStealth),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2004,6 +2054,8 @@ impl C2s {
             Self::ManaEffect(_) => id::MANA_EFFECT,
             Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
             Self::PlayerBuffPvp(_) => id::ADD_PLAYER_BUFF_PVP,
+            Self::SyncDodge(_) => id::SYNC_DODGE,
+            Self::PlayerStealth(_) => id::PLAYER_STEALTH,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2091,6 +2143,10 @@ impl C2s {
             // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
             // (int)number3.
             Self::PlayerBuffPvp(b) => w.u8(b.player_id).u16(b.buff_type).i32(b.time),
+            // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+            Self::SyncDodge(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1197-1204`: (byte)id + the live stealth float.
+            Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2244,6 +2300,16 @@ impl C2s {
                 player_id: r.u8()?,
                 buff_type: r.u16()?,
                 time: r.i32()?,
+            }),
+            // `MessageBuffer.cs:2881-2882`: two bytes.
+            id::SYNC_DODGE => Self::SyncDodge(SyncDodge {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3248-3253`: byte + float.
+            id::PLAYER_STEALTH => Self::PlayerStealth(PlayerStealth {
+                player_id: r.u8()?,
+                stealth: r.f32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2411,6 +2477,8 @@ impl S2c {
             Self::ManaEffect(_) => id::MANA_EFFECT,
             Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
             Self::PlayerBuffPvp(_) => id::ADD_PLAYER_BUFF_PVP,
+            Self::SyncDodge(_) => id::SYNC_DODGE,
+            Self::PlayerStealth(_) => id::PLAYER_STEALTH,
         }
     }
 
@@ -2579,6 +2647,10 @@ impl S2c {
             // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
             // (int)number3.
             Self::PlayerBuffPvp(b) => w.u8(b.player_id).u16(b.buff_type).i32(b.time),
+            // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+            Self::SyncDodge(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1197-1204`: (byte)id + the live stealth float.
+            Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2819,6 +2891,16 @@ impl S2c {
                 player_id: r.u8()?,
                 buff_type: r.u16()?,
                 time: r.i32()?,
+            }),
+            // `MessageBuffer.cs:2881-2882`: two bytes.
+            id::SYNC_DODGE => Self::SyncDodge(SyncDodge {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3248-3253`: byte + float.
+            id::PLAYER_STEALTH => Self::PlayerStealth(PlayerStealth {
+                player_id: r.u8()?,
+                stealth: r.f32()?,
             }),
             _ => return None,
         })
@@ -5154,5 +5236,55 @@ mod tests {
             other => panic!("expected 55, got {:?}", other.msg_id()),
         }
         assert!(C2s::decode(55, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_sync_dodge_round_trips() {
+        // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+        let d = SyncDodge {
+            player_id: 4,
+            kind: 5, // MysticSash (`Player.cs:38115`)
+        };
+        let f = S2c::SyncDodge(d).encode();
+        assert_eq!(f[2], 62);
+        assert_eq!(&f[3..], &[4, 5]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SyncDodge(x) => assert_eq!(x, d),
+            other => panic!("expected 62, got {:?}", other.msg_id()),
+        }
+        let c = C2s::SyncDodge(d).encode();
+        assert_eq!(c[2], 62);
+        assert_eq!(&c[3..], &[4, 5]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SyncDodge(x) => assert_eq!(x, d),
+            other => panic!("expected 62, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(62, &mut NetReader::new(&[4])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_player_stealth_round_trips() {
+        // `NetMessage.cs:1197-1204`: (byte)id + the live stealth float.
+        let s = PlayerStealth {
+            player_id: 2,
+            stealth: 0.625,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&0.625f32.to_le_bytes());
+        let f = S2c::PlayerStealth(s).encode();
+        assert_eq!(f[2], 84);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerStealth(x) => assert_eq!(x, s),
+            other => panic!("expected 84, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerStealth(s).encode();
+        assert_eq!(c[2], 84);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerStealth(x) => assert_eq!(x, s),
+            other => panic!("expected 84, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(84, &mut NetReader::new(&body[..4])).is_none());
     }
 }
