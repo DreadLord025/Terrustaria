@@ -319,6 +319,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_117", 2),
     ("Item_128", 2),
     ("Item_130", 2),
+    // W4-d80 — the Laser Drill 445's loop cue (`SoundID.Item132`,
+    // `Projectile.cs:66248`; `Sounds/Item_132.xnb`).
+    ("Item_132", 2),
     ("Item_151", 2),
     ("Item_152", 2),
     ("Item_156", 2),
@@ -332,6 +335,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_186", 2),
     ("Item_187", 2),
     ("Item_188", 2),
+    // W4-d80 — the drill/chainsaw held-tool loop cues (`SoundID.Item189`/
+    // `Item190`, `Projectile.cs:25514`/`:25519`; the aiStyle-20 machine's
+    // 20/15-tick `soundDelay` cadence).
+    ("Item_189", 2),
+    ("Item_190", 2),
     ("Item_196", 2),
     ("Item_210", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar

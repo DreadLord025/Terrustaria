@@ -5084,6 +5084,25 @@ impl Projectile {
             self.time_left = 0;
             return;
         };
+        // W4-d80 — the held-tool loop cue (`Projectile.cs:25510-25522`):
+        // on `soundDelay <= 0` the drill (the owner's held item has
+        // `pick > 0`) plays `SoundID.Item190` and re-arms 15; the chainsaw
+        // plays `SoundID.Item189` and re-arms 20 — BEFORE the channel gate
+        // (the release tick still cues). The held item is the channel item
+        // while the tool lives (the `drill_channel_start` latch); the cue
+        // rides the pool's `wants_sound` queue (one case-2 pitch draw at
+        // the pass tail, `UpdateProjectiles`, attenuation-gated).
+        if self.sound_delay <= 0 {
+            let pick_held = crate::registry::item(p.channel_item)
+                .is_some_and(|it| it.pick > 0);
+            if pick_held {
+                self.wants_sound = Some((2, 190, self.pos.x, self.pos.y, 0.0));
+                self.sound_delay = 15;
+            } else {
+                self.wants_sound = Some((2, 189, self.pos.x, self.pos.y, 0.0));
+                self.sound_delay = 20;
+            }
+        }
         // `:25524-25550` — the local-owner channel gate: while the channel
         // holds, aim at the mouse; otherwise `Kill()`.
         if self.owner == 0 {
@@ -17721,6 +17740,17 @@ impl ProjectilePool {
                             // beam light — is a follow-up); the release kills
                             // it (`:66280-66283`).
                             } else if self.slots[i].kind == LASER_DRILL {
+                                // W4-d80 — the 445 arm's own loop cue
+                                // (`Projectile.cs:66246-66250`): on
+                                // `soundDelay <= 0` play `SoundID.Item132`
+                                // and re-arm 23 (the case-2 132 pitch arm,
+                                // `Next(-20, 21) * 0.001`).
+                                if self.slots[i].sound_delay <= 0 {
+                                    let pos = self.slots[i].pos;
+                                    self.slots[i].wants_sound =
+                                        Some((2, 132, pos.x, pos.y, 0.0));
+                                    self.slots[i].sound_delay = 23;
+                                }
                                 self.slots[i].ai_drill(owner, inputs.aim, player.as_deref());
                             } else {
                                 let spawn =
@@ -44382,5 +44412,107 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+/// W4-d80 — the drill/chainsaw held-tool loop cues (`Projectile.cs:25510-
+/// 25522`) + the Laser Drill 445's own cue (`:66246-66250`). WRITTEN NOT
+/// RUN (code-only mode). The census: research/64.
+#[cfg(test)]
+mod w4_d80_drill_loop_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn tool(kind: u16) -> Projectile {
+        Projectile {
+            active: true,
+            kind,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            vel: Vec2::new(8.0, 0.0),
+            tile_collide: false,
+            ..Default::default()
+        }
+    }
+
+    /// The drill (`pick > 0` held): Item190 at `base.position`, re-arm 15;
+    /// the chainsaw: Item189, re-arm 20 (`:25514-25520`). The cue fires on
+    /// `soundDelay <= 0` and the cooldown holds it while positive.
+    #[test]
+    fn w4_d80_the_drill_and_chainsaw_cue_on_their_cadences() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.channel = true;
+        // Cobalt Drill 385 (pick 110) / Cobalt Chainsaw 383 (axe 14).
+        for (held, style, delay) in [(385u16, 190i32, 15i32), (383, 189, 20)] {
+            player.channel_item = held;
+            let mut p = tool(if held == 385 { DRILL_COBALT } else { CHAINSAW_COBALT });
+            p.ai_drill(None, None, Some(&player));
+            assert_eq!(
+                p.wants_sound,
+                Some((2, style, 64.0, 64.0, 0.0)),
+                "held {held}'s loop cue"
+            );
+            assert_eq!(p.sound_delay, delay, "held {held}'s re-arm");
+            // The pool decrements ahead of the AI (`:16768-16771`); while
+            // the cooldown is positive the arm queues nothing new.
+            for _ in 0..(delay - 1) {
+                p.sound_delay -= 1;
+                p.wants_sound = None;
+                p.ai_drill(None, None, Some(&player));
+                assert_eq!(p.wants_sound, None, "the cooldown holds the cue");
+            }
+            assert_eq!(p.sound_delay, 1);
+            p.sound_delay -= 1;
+            p.ai_drill(None, None, Some(&player));
+            assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, style)));
+            assert_eq!(p.sound_delay, delay, "the cadence wraps");
+        }
+    }
+
+    /// The cue sits BEFORE the channel gate (`:25510` precedes `:25526`):
+    /// the release tick still cues, then the slot dies (`:25549`).
+    #[test]
+    fn w4_d80_the_release_tick_still_cues_then_kills() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.channel = false;
+        player.channel_item = 385;
+        let mut p = tool(DRILL_COBALT);
+        p.ai_drill(None, None, Some(&player));
+        assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 190)));
+        assert!(!p.active, "the release kills (`:25549`)");
+        assert_eq!(p.time_left, 0);
+    }
+
+    /// The negative-latch semantics: `soundDelay <= 0` includes the -1
+    /// latch (`:25510` is `<=`, not `==`) — a latched slot re-cues and
+    /// re-arms (the drill family never latches -1 itself, but the guard
+    /// shape is the C#'s).
+    #[test]
+    fn w4_d80_the_cue_guard_is_le_zero() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.channel = true;
+        player.channel_item = 383;
+        let mut p = tool(CHAINSAW_COBALT);
+        p.sound_delay = -1;
+        p.ai_drill(None, None, Some(&player));
+        assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 189)));
+        assert_eq!(p.sound_delay, 20);
+    }
+
+    /// The bank rows: the three loop cues resolve in the SFX bank (the
+    /// `play_proj_sound` façade's name lookup cannot silently miss them).
+    #[test]
+    fn w4_d80_the_loop_cues_are_registered() {
+        for cue in ["Item_189", "Item_190", "Item_132"] {
+            assert!(
+                crate::audio::sfx_cue_registered(cue),
+                "{cue} must be in the bank"
+            );
+        }
     }
 }
