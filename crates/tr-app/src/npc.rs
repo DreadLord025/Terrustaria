@@ -33899,7 +33899,8 @@ mod w4_g7_wire2_extra3_tests {
             );
         }
         assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the idle 8-tick stride");
-        // Attack (ai_action 1 → num2 = 4): +3 a tick — 3 ticks reach 9.
+        // Attack (ai_action 1 → num2 = 4): +3 a tick — the 3rd tick
+        // hits 9 ≥ 8, steps the row and zeroes the counter.
         n.frame = 0;
         n.frame_counter = 0.0;
         n.ai_action = 1;
@@ -33908,7 +33909,7 @@ mod w4_g7_wire2_extra3_tests {
                 crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime,
             );
         }
-        assert_eq!((n.frame, n.frame_counter), (1, 1.0), "the attack x3 stride");
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the attack x3 stride");
         // The CochinealBeetle snaps spriteDirection = facing even at 0
         // (the crab group's unconditional copy, not the ±1 gate).
         n.ai_action = 0;
@@ -33955,8 +33956,9 @@ mod w4_g7_wire2_extra4_tests {
     #[test]
     fn w4_g7_the_extra4_bridge_copies_the_four_fields_both_ways() {
         let mut n = bare(NpcKind::Slime);
-        // The hornet cycle: 8 ticks walk 0/0/1/1/2/2/1/1 — the 8th
-        // tick resets the counter and HOLDS row 1 (no frame write).
+        // The hornet cycle: 8 ticks walk 0/1/1/2/2/1/1/1 — the 8th
+        // tick resets the counter and HOLDS row 1 (no frame write,
+        // the module witness' mechanical-replay table).
         n.frame = 0;
         n.frame_counter = 0.0;
         let mut rows = Vec::new();
@@ -33964,7 +33966,7 @@ mod w4_g7_wire2_extra4_tests {
             n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::HornetLeafy);
             rows.push(n.frame);
         }
-        assert_eq!(rows, vec![0, 0, 1, 1, 2, 2, 1, 1], "the reset-tick row-hold");
+        assert_eq!(rows, vec![0, 1, 1, 2, 2, 1, 1, 1], "the reset-tick row-hold");
         assert_eq!(n.frame_counter, 0.0, "the 8th tick zeroes the counter");
         // The creeper air pin: rising vy < 0 → row 4, counter 0; the
         // ground tick copies facing UNCONDITIONALLY (0 included).
@@ -34004,14 +34006,14 @@ mod w4_g7_wire2_extra4_tests {
         n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::BloodJelly);
         assert_eq!(n.frame, 4, "the pulse lift clamp");
         // The RainbowSlime attack: ai_action 1 → num2 4 → +3 a tick,
-        // 3 ticks reach 9 ≥ 8 → row 1, counter 1.
+        // the 3rd tick hits 9 ≥ 8 → row 1, counter 0.
         n.frame = 0;
         n.frame_counter = 0.0;
         n.ai_action = 1;
         for _ in 0..3 {
             n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::RainbowSlime);
         }
-        assert_eq!((n.frame, n.frame_counter), (1, 1.0), "the attack x3 stride");
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the attack x3 stride");
     }
 }
 
