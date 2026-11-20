@@ -507,3 +507,72 @@ comments for 489/490 are STALE (full bodies wired in `cases_b`). 529's pick maps
 hallow→2, corrupt→4, crimson→3 — note this DIFFERS from 530's 1/3/2 numbering;
 both ported verbatim. 33's glow rect uses the candle sheet's own 22 px stride
 (`fy % 22`), not 18 — preserved.
+
+### Batch 8 — plant group tail / painted plant glow / plant echo / saplings: 61, 71, 110, 201, 637, 703, 20, 590, 595, 615 (10 ids)
+
+C# `TileDrawing.cs:4852-4879` (28-line window), verbatim:
+
+```csharp
+		case 61:
+		case 71:
+		case 110:
+		case 201:
+		case 637:
+		case 703:
+			tileHeight = 20;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		case 20:
+		case 590:
+		case 595:
+			tileHeight = 18;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		case 615:
+			tileHeight = 18;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+```
+
+637's second-switch glow row (`TileDrawing.cs:6075-6079`), verbatim:
+
+```csharp
+		case 637:
+			glowTexture = this.GetTileDrawTexture(tileCache, x, y);
+			glowSourceRect = new Rectangle(tileFrameX + addFrX, tileFrameY + addFrY, tileWidth, tileHeight);
+			glowColor = Color.Lerp(Color.White, color, 0.75f);
+			break;
+```
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 61 | height 20 + parity flip plant group | :4852-4863 | `drawdata.rs:313-316` | PORTED |
+| 71 | shares the group | :4853 | :313-316 | PORTED |
+| 110 | shares the group | :4854 | :313-316 | PORTED |
+| 201 | shares the group | :4855 | :313-316 | PORTED |
+| 637 | shares the group + glow: painted tile sheet, framed rect, `Lerp(White, color, 0.75)` | :4856, :6075-6079 | metrics :313-316; glow `cases_a.rs:321-324` (`mask: 0` sentinel for `GetTileDrawTexture`, `rect_framed(height)`, `lerp_white_75(color)` :300-303 — per-byte float lerp, truncating) | PORTED; glow record DEVIATION (sheet binding unrouted, documented `cases_a.rs:46-48`) + PORTED-UNWIRED (`_glow`) |
+| 703 | shares the plant group (echo) | :4857 | :313-316 | PORTED |
+| 20 | height 18 + parity flip sapling group | :4864-4872 | `drawdata.rs:319-322` (`20 \| 590 \| 595 \| 615`) | PORTED |
+| 590 | shares the group | :4865 | :319-322 | PORTED |
+| 595 | shares the group | :4866 | :319-322 | PORTED |
+| 615 | own label, byte-identical body (C# duplicate) | :4873-4879 | :319-322 (folded — net-identical, d63 batch 4 fold pattern) | PORTED |
+
+Notes: 637's glow rect is the FRAMED spelling (`fx + addFrX, fy + addFrY`) unlike
+634's anim-y spelling — preserved via `rect_framed`. The `color` input is the
+shaded cell light as XNA bytes with alpha 255 (`tiles.rs:724-730`; C#
+`Lighting.GetColor` has no alpha channel — `Color.Lerp` against alpha 255 leaves
+alpha 255, matching). The painted-sheet texture (`GetTileDrawTexture`, the
+per-tile paint/coating override) is engine state the port does not route into the
+glow record yet — documented deviation, and the whole record is unconsumed
+(`_glow`) until TILE-DRAW-2, so no pixel effect today. 615's separate C# label
+with an identical body is folded into the sapling alternation — behaviourally
+1:1.
