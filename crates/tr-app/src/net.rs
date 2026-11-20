@@ -150,13 +150,17 @@ pub mod id {
     // ---- S1-I-1 wave D94: the projectile family's support ids (2nd half) ----
     // The projectile-driven messages outside the 27/29 state sync (d93's
     // first half): the Moon Leech heal (66), the minion target pair (99/115),
-    // the tower shields (101), the smoke poof (106) and the cannon redirect
-    // (108). Bodies + codecs only; the apply/relay arms are S1-I-4.
+    // the NPC portal teleport (100), the tower shields (101), the smoke poof
+    // (106) and the cannon redirect (108). Bodies + codecs only; the
+    // apply/relay arms are S1-I-4. Census vs MessageID.cs: d93 landed
+    // 27/28/29/95; 142 SyncProjectileTrackers already rides the wave-A block
+    // above; the portal-teleport player twin (96) is the player half's.
     /// `66 Unknown66` (`MessageID.cs:145`) — the Moon Leech Clot's owner heal
     /// (`Projectile.cs:28524`, `NetMessage.cs:1110-1113`;
     /// `MessageBuffer.cs:3036-3055` applies + relays).
     pub const HEAL_PLAYER: u8 = 66;
     pub const MINION_REST_TARGET: u8 = 99; // MessageID.cs:212 / NetMessage.cs:1353-1356 / MessageBuffer.cs:3570-3583
+    pub const NPC_PORTAL_TELEPORT: u8 = 100; // MessageID.cs:214 / NetMessage.cs:1361-1369 / MessageBuffer.cs:3598-3610
     pub const TOWER_SHIELDS: u8 = 101; // MessageID.cs:216 / NetMessage.cs:1371-1376 / MessageBuffer.cs:3611-3651
     pub const POOF_OF_SMOKE: u8 = 106; // MessageID.cs:226 / NetMessage.cs:1400-1402 / MessageBuffer.cs:3742-3751
     pub const WIRED_CANNON_SHOT: u8 = 108; // MessageID.cs:230 / NetMessage.cs:1403-1411 / MessageBuffer.cs:3758-3773
@@ -1697,6 +1701,48 @@ pub struct PoofOfSmoke {
     pub packed: u32,
 }
 
+/// `msg 100 TeleportNPCThroughPortal`'s body (`NetMessage.cs:1361-1369`):
+/// `(ushort)number` (the NPC slot), `(short)number4` (the portal color index
+/// `owner * 2 + ai[1]`, `PortalHelper.cs:181`), `number2`/`number3` (the
+/// destination floats) then `WriteVector2(nPC2.velocity)` — the NPC's
+/// *current* velocity, read from the live entity at send time, NOT the
+/// destination floats echoed back. The host sends it after the portal-gun
+/// (type 602) pulls an NPC through (`PortalHelper.cs:195-204`, followed by a
+/// `23` NPCInfo push); the client flips the color parity
+/// (`num145 + (num145 % 2 == 0 ? 1 : -1)`), teleports with style 4, overwrites
+/// the velocity and zeroes `netOffset` (`MessageBuffer.cs:3598-3610` — the
+/// apply arm, parked for S1-I-4). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcPortalTeleport {
+    pub npc: u16,
+    pub color_index: i16,
+    pub x: f32,
+    pub y: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+}
+
+/// `msg 108 WiredCannonShot`'s body (`NetMessage.cs:1403-1411`):
+/// `(short)number` (damage), `number2` (knockback float), `(short)number3`
+/// (tile x), `(short)number4` (tile y), `(short)number5` (the cannon angle
+/// 0..8), `(short)number6` (the ammo id) then `(byte)number7` (the owner
+/// player). Sent by the host when a wire fires a cannon / bunny cannon
+/// (ammo 4/5) owned by a remote player — `WorldGen.ShootFromCannon`
+/// redirects instead of spawning (`WorldGen.cs:50689-50692`); the owning
+/// client checks `num75 == Main.myPlayer` and replays the shot locally with
+/// `fromWire: true` (`MessageBuffer.cs:3758-3773`, parked for S1-I-4).
+/// Server→client only, addressed to one owner (`remoteClient = owner`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WiredCannonShot {
+    pub damage: i16,
+    pub knockback: f32,
+    pub x: i16,
+    pub y: i16,
+    pub angle: i16,
+    pub ammo: i16,
+    pub owner: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1960,6 +2006,14 @@ pub enum S2c {
     /// (`Projectile.cs:14746`, `NPC.cs:79887`, `Wiring.cs:826` et al.;
     /// client replays `Utils.PoofOfSmoke`, `MessageBuffer.cs:3742-3751`).
     PoofOfSmoke(PoofOfSmoke),
+    /// `100 TeleportNPCThroughPortal` - the portal-gun pulled an NPC
+    /// through (`PortalHelper.cs:202`; client teleports style 4 + zeroes
+    /// `netOffset`, `MessageBuffer.cs:3598-3610`).
+    NpcPortalTeleport(NpcPortalTeleport),
+    /// `108 WiredCannonShot` - a wire-fired cannon shot redirected to its
+    /// remote owner (`WorldGen.cs:50691`; owner replays
+    /// `ShootFromCannon(fromWire: true)`, `MessageBuffer.cs:3758-3773`).
+    WiredCannonShot(WiredCannonShot),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2425,6 +2479,8 @@ impl S2c {
             Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
             Self::TowerShields(_) => id::TOWER_SHIELDS,
             Self::PoofOfSmoke(_) => id::POOF_OF_SMOKE,
+            Self::NpcPortalTeleport(_) => id::NPC_PORTAL_TELEPORT,
+            Self::WiredCannonShot(_) => id::WIRED_CANNON_SHOT,
         }
     }
 
@@ -2578,6 +2634,25 @@ impl S2c {
             Self::TowerShields(t) => w.u16(t.solar).u16(t.vortex).u16(t.nebula).u16(t.stardust),
             // `NetMessage.cs:1400-1402`: the HalfVector2's PackedValue.
             Self::PoofOfSmoke(p) => w.u32(p.packed),
+            // `NetMessage.cs:1361-1369`: (ushort)npc + (short)color + the
+            // destination floats + WriteVector2(the NPC's live velocity).
+            Self::NpcPortalTeleport(p) => w
+                .u16(p.npc)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
+            // `NetMessage.cs:1403-1411`: (short)damage + float knockback +
+            // (short)x/y/angle/ammo + (byte)owner.
+            Self::WiredCannonShot(c) => w
+                .i16(c.damage)
+                .f32(c.knockback)
+                .i16(c.x)
+                .i16(c.y)
+                .i16(c.angle)
+                .i16(c.ammo)
+                .u8(c.owner),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2800,6 +2875,23 @@ impl S2c {
                 stardust: r.u16()?,
             }),
             id::POOF_OF_SMOKE => Self::PoofOfSmoke(PoofOfSmoke { packed: r.u32()? }),
+            id::NPC_PORTAL_TELEPORT => Self::NpcPortalTeleport(NpcPortalTeleport {
+                npc: r.u16()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+            }),
+            id::WIRED_CANNON_SHOT => Self::WiredCannonShot(WiredCannonShot {
+                damage: r.i16()?,
+                knockback: r.f32()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                angle: r.i16()?,
+                ammo: r.i16()?,
+                owner: r.u8()?,
+            }),
             _ => return None,
         })
     }
@@ -5121,5 +5213,68 @@ mod tests {
         assert_eq!(half_unpack(0x7c00).to_bits(), f32::INFINITY.to_bits());
         assert_eq!(half_unpack(0xfc00).to_bits(), f32::NEG_INFINITY.to_bits());
         assert!(half_unpack(0x7e00).is_nan());
+    }
+
+    #[test]
+    fn s1_i_1_d94_npc_portal_teleport_round_trips() {
+        // `NetMessage.cs:1361-1369` (case 100), verbatim field order:
+        // (ushort)number (npc slot), (short)number4 (color index), number2
+        // (x), number3 (y), WriteVector2(nPC2.velocity) — the velocity is
+        // the NPC's live one, deliberately different from the destination
+        // so a swapped pair cannot pass. Server→client only
+        // (`PortalHelper.cs:200-203`, host side).
+        let p = NpcPortalTeleport {
+            npc: 300,
+            color_index: 5, // owner 2 * 2 + ai[1] 1 (`PortalHelper.cs:181`)
+            x: 4096.5,
+            y: -128.25,
+            velocity_x: 3.5,
+            velocity_y: -0.1, // the `ent.velocity.Y = -num * 0.1f` floor
+        };
+        let f = S2c::NpcPortalTeleport(p).encode();
+        assert_eq!(f[2], 100);
+        let mut body = Vec::new();
+        body.extend_from_slice(&300u16.to_le_bytes());
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&4096.5f32.to_le_bytes());
+        body.extend_from_slice(&(-128.25f32).to_le_bytes());
+        body.extend_from_slice(&3.5f32.to_le_bytes());
+        body.extend_from_slice(&(-0.1f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 100, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_wired_cannon_shot_round_trips() {
+        // `NetMessage.cs:1403-1411` (case 108), verbatim field order:
+        // (short)damage, float knockback, (short)x, (short)y, (short)angle,
+        // (short)ammo, (byte)owner — the `SendData(108, owner, ..)` argument
+        // order at `WorldGen.cs:50691`. Server→client, one addressee.
+        let c = WiredCannonShot {
+            damage: 300,
+            knockback: 11.0,
+            x: 1200,
+            y: 450,
+            angle: 4, // straight up (`WorldGen.cs`'s angle ladder 0..8)
+            ammo: 5,  // the bunny cannon redirect gate is ammo 4 || 5
+            owner: 2,
+        };
+        let f = S2c::WiredCannonShot(c).encode();
+        assert_eq!(f[2], 108);
+        let mut body = Vec::new();
+        body.extend_from_slice(&300i16.to_le_bytes());
+        body.extend_from_slice(&11.0f32.to_le_bytes());
+        for v in [1200i16, 450, 4, 5] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.push(2);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::WiredCannonShot(d) => assert_eq!(d, c),
+            other => panic!("expected 108, got {:?}", other.msg_id()),
+        }
     }
 }

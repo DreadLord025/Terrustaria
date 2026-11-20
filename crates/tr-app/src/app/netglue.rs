@@ -1871,6 +1871,10 @@ impl App {
             // 101 tower shields (`:3611-3651` clamp) + 106 smoke poof
             // (`:3742-3751` Utils.PoofOfSmoke) — same wave, same parking.
             S2c::TowerShields(_) | S2c::PoofOfSmoke(_) => {}
+            // 100 NPC portal teleport (`:3598-3610` style-4 teleport +
+            // netOffset zero) + 108 cannon redirect (`:3758-3773` owner-gated
+            // ShootFromCannon) — same wave, same parking.
+            S2c::NpcPortalTeleport(_) | S2c::WiredCannonShot(_) => {}
         }
     }
 
