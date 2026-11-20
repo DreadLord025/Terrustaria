@@ -234,6 +234,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+    // W4-e3 — the dust seam: the frame's spawn ctx is captured HERE, before
+    // the `rng` mutable borrow (the helper borrows `app` immutably — the
+    // `world_sim/npcs.rs:4191` convention); the live pool is threaded into
+    // the tick closure below. The aiStyle-2/4/5/8 dust arms roll the SAME
+    // `UpdateProjectiles` stream through the verbatim `DustPool::new_dust`
+    // (`Main.cs:17775-17777`'s `SwapRandom` wraps the walk, dust included).
+    let dust_spawn_ctx = app.spawn_ctx();
     // S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
     // `Main.player[owner]` reads, `Projectile.cs:45859-45868`). The C# reads
     // the live `itemAnimation`/`itemAnimationMax` integers; the port's swing
@@ -384,7 +391,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.projectiles.set_golf_context(ctx);
     }
     app.projectile_step.tick(dt.min(0.25), |_| {
-        app.projectiles.update(
+        app.projectiles.update_dust(
             &mut app.world,
             &mut app.npcs,
             owner,
@@ -395,6 +402,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
             local_owner,
             hostile_local,
+            &mut app.dust,
+            &dust_spawn_ctx,
         );
     });
     app.projectile_step.cap_backlog();

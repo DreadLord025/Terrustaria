@@ -16556,12 +16556,68 @@ impl ProjectilePool {
         npcs: &mut [Npc],
         owner: Option<(f32, f32)>,
         aim: Option<Vec2>,
+        player: Option<&mut crate::player::Player>,
+        inputs: YoyoInputs,
+        flail_inputs: FlailInputs,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+        hostile_local: bool,
+    ) {
+        // W4-e3 — the dust-free entry (the tests' and the pool-only callers'):
+        // a scratch pool with a permissive ctx (the whole world on-screen,
+        // the full dust budget — the pool never culls, so the scratch spawn
+        // always lands and the draw count matches the live empty-pool path;
+        // the `Npc::update_rng` precedent, `npc.rs:4595`). The live sim
+        // threads `app.dust` + the frame's `spawn_ctx` through
+        // [`Self::update_dust`].
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(world.width as f32 * TILE_PX, world.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        self.update_dust(
+            world,
+            npcs,
+            owner,
+            aim,
+            player,
+            inputs,
+            flail_inputs,
+            rng,
+            local_owner,
+            hostile_local,
+            &mut dust,
+            &ctx,
+        );
+    }
+
+    /// W4-e3 — the full step with the caller's RNG stream AND the live dust
+    /// pool + spawn ctx (the `Npc::update_rng_dust` precedent, `npc.rs:4622`):
+    /// the aiStyle-2/4/5/8 dust arms roll `Main.rand` through the verbatim
+    /// `DustPool::new_dust` on the SAME `UpdateProjectiles` stream the AI
+    /// draws ride (`Main.cs:17775-17777`'s `SwapRandom("UpdateProjectiles")`
+    /// wraps the whole walk, dust included). The live sim
+    /// (`world_sim/projectiles.rs::update_projectiles`) threads `app.dust` +
+    /// the frame's `spawn_ctx` here; every other arm ignores the pool.
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_dust(
+        &mut self,
+        world: &mut World,
+        npcs: &mut [Npc],
+        owner: Option<(f32, f32)>,
+        aim: Option<Vec2>,
         mut player: Option<&mut crate::player::Player>,
         inputs: YoyoInputs,
         flail_inputs: FlailInputs,
         rng: &mut dyn tr_core::loot::DropRng,
         local_owner: u8,
         hostile_local: bool,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         self.update_count += 1;
         // `Player.Update`'s clear (`Player.cs:28300-28301`): the C#

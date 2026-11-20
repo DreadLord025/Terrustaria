@@ -181,6 +181,7 @@ pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
+mod projectile_dust3;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
 mod projectile_ai_moonlord;
