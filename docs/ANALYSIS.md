@@ -8774,20 +8774,17 @@ void bag + (with `Player.Settings.CraftFromNearbyChests`, default true,
 `Player.cs:406`) the container projectiles/banks in a В±39-tile rect and the
 world chests within 600 px of the player's feet
 (`NearbyChests.GetChestsInRangeOf`, `NearbyChests.cs:10-31`). Port subset:
-the tile chests (21/341) within 600 px over an in-memory `WorldChest` store
-gated by the new `craft_from_nearby_chests` setting wired to the panel's
-nearby-chests toggle. Deviations: the store's population landed with
-M3-CHEST-UI (2026-11-07 вЂ” `crates/tr-app/src/chest.rs`; entries appear
+the tile chests (21/467, `TileID.Sets.BasicChest` — S1-P-i46 corrected the
+former 21/341 pair, 341 is `LivingDemonFire`) within 600 px over an in-memory
+`WorldChest` store gated by the new `craft_from_nearby_chests` setting wired to
+the panel's nearby-chests toggle. Deviations: the store's population landed with
+M3-CHEST-UI (2026-11-07 — `crates/tr-app/src/chest.rs`; entries appear
 lazily on first open, so a never-opened chest still contributes nothing to
-the scan вЂ” "Chest UI + world chests (M3-CHEST-UI)"), the save/persistence
-is M6-SAVE-2's, the banks/void bag are M3-STORE-1's; `Chest.IsLockedOrInUse`
-is ported with M3-CHEST-UI but the craft scan still passes every in-range
-chest (the lock gate is unwired here вЂ” a latent note, not fixed in that
-task); the scan order is raster (the
-vanilla iterates `Main.chest[]`'s instance order вЂ” the port has no instance
-registry); the group drain walks members in the group's registration order
-when the inventory pass runs per-member (the vanilla drains one flat pass
-matching `Matches` вЂ” the same totals, a different slot walk).
+the scan — "Chest UI + world chests (M3-CHEST-UI)"), the save/persistence
+is M6-SAVE-2's, the banks/void bag are M3-STORE-1's; the scan order is raster
+(the vanilla iterates `Main.chest[]`'s instance order — the port has no instance
+registry). The `Chest.IsLockedOrInUse` gate and the flat slot-order group drain
+were unwired here until S1-P-i46 fixed both (see "Crafting interaction census").
 
 `available` now implements `UpdateRecipeList`'s composition
 (`Recipe.cs:230-259`): environment Г— enough-ingredients вЂ” the port's older
@@ -8802,6 +8799,62 @@ recipes re-authored as group entries вЂ” the old "Wood в†’ 9 / IronBar 
 expansion deviation is retired. Out: the alchemy discount (M3-CRAFT-3),
 the torch-god/mechdusa flags (no systems), the guide-item mode
 (`CollectGuideRecipes`), the `SendData(32)` chest syncs (multiplayer).
+
+## Crafting interaction census (S1-P-i46)
+
+A code-only census of the craft USE machinery (`Player.cs`/`Main.cs` craft flow
++ `Recipe.cs` availability) against the port. The subsystem is mature
+(S1-L-11a..e, S1-H-7 landed); the census found four verbatim WRONGs and fixed
+them. **`Recipe.cs FindRecipes` does not exist in 1.4.5.8** — a whole-tree grep
+returns nothing; the availability engine is `Recipe.UpdateRecipeList`
+(`Recipe.cs:230-259`), already ported as `craft::available_with_gates`. The
+recipe *data* (the `SetupRecipes` table) is a separate task and untouched.
+
+The four fixes (all in `craft.rs`, witnesses written not run):
+
+1. **Nearby-chest tile kinds** — `CHEST_TILES` was `[21, 341]`; 341 is
+   `LivingDemonFire` (`TileID.cs:1311`), a fire block, not a chest. The C#
+   world-chest tiles are `TileID.Sets.BasicChest = {21 Containers, 467
+   Containers2}` (`TileID.cs:570`, `:671`/:1563). Now `[21, 467]`. (The
+   chest-stocking/save subsystem's own `chest_gen.rs::CHEST_KINDS` still reads
+   `[21, 341]` — that is S1-A-4's lane, out of scope here, noted for follow-up.)
+2. **Group ingredient drain order** — the inventory pass walked group members
+   in registration order (`consume_kind` per member), emptying all of member[0]
+   before member[1] regardless of slot position. The C# `ConsumeItemsFrom`
+   (`CraftingRequests.cs:258-290`) is ONE flat slot-index pass matching
+   `RequiredItemEntry.Matches` (`Recipe.cs:36-43`), so a group drains whichever
+   member the slots hold first. Now `consume_inv` does the flat `Matches` pass.
+3. **Locked/in-use chest gate** — `chests_in_range` passed every in-range chest;
+   the C# `Recipe.cs:397` gates `!item2.chest.IsLockedOrInUse()`. Now wired to
+   the existing `chest::is_locked_or_in_use` (`Chest.cs:178-188`, single-player:
+   the local player's open chest). Safe: crafting and chest-open are mutually
+   exclusive in the port (`chest.rs::open_chest` clears `crafting_open`), so the
+   gate only ever drops locked chests here.
+4. **58-slot ingredient scope** — collection/consumption read only the 50-slot
+   grid; the C# spans **58 carry slots** (`CollectItems(player.inventory, 58)`
+   `Recipe.cs:369`; `ConsumeItemsFrom(Main.LocalPlayer.inventory, 58, …)`
+   `CraftingRequests.cs:227`) = grid + 4 coin + 4 ammo. Coins are real
+   ingredients (the coin-conversion rows 3200-3205, `Recipe.cs:15121-15147`) and
+   ammo is too (the arrow/bullet rows), living in dedicated slots the craft
+   never saw. `collect_owned`/`consume_inv` now chain `EquipSlots::coins`/`ammo`;
+   the `available*`/`can_craft*`/`try_craft*` signatures take `&EquipSlots`.
+
+RNG: unchanged. The alchemy discount still rolls `craft_rng`
+(`Recipe.cs:221` `Main.rand.Next(3)`, one draw per unit, `ingredient_discount`)
+and the created item's prefix still rolls the bare-`Main.rand` stand-in
+`NamedRngs::global()` (`CraftingRequests.cs:126-129` `Item.Prefix(-1)`); the
+fixes touch no draw site or order. The S1-A-11 shared-stream residual stands.
+
+Still-open craft-interaction gaps (recorded, not fixed here): the result grant
+goes to the inventory, not the cursor (`Main.CraftItem_GrantItem`
+`Main.cs:42607-42628`); `TryAllowingToCraftRecipe`'s mouse-item block/fetch
+(`Main.cs:42314-42347`) and the `UsingOrReusingItem`/`IsLockedFromCrafting`
+gates of `flag3` (`Main.cs:42269`, `Player.cs:4068`/:23098) are unmodelled; the
+gamepad quick-craft (`ItemSlot.GetQuickCraftGamepadInstructions`
+`ItemSlot.cs:4555-4576`, `CraftItem(recipe, 1, quickCraft: true)`) has no port
+input path; `TryRefocusingRecipe` (`Recipe.cs:477-495`) is not ported (the port
+re-derives the list per frame and keeps `focus_recipe` as a raw index).
+
 ## Floating islands (M1.4-WGEN-4)
 
 The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) вЂ” the classic sky

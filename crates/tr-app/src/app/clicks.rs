@@ -896,6 +896,7 @@ impl App {
         // the grid narrows only what is shown (`NewCraftingUI.cs:596-611`).
         let available = self.craft_filters.shown(craft::available_with_gates(
             &self.inventory,
+            &self.equip,
             &self.world_chests,
             &in_range,
             &adj,
@@ -952,6 +953,7 @@ impl App {
         // rolled prefix (`CraftingRequests.cs:139`).
         let crafted = craft::try_craft_qty(
             &mut self.inventory,
+            &mut self.equip,
             &mut self.world_chests,
             &in_range,
             recipe,
@@ -4822,6 +4824,7 @@ mod s1_h_7_tests {
         );
         let available = craft::available(
             &app.inventory,
+            &app.equip,
             &app.world_chests,
             &in_range,
             &adj,
@@ -4976,6 +4979,7 @@ mod s1_h_7_tests {
         );
         app.craft_filters.shown(craft::available(
             &app.inventory,
+            &app.equip,
             &app.world_chests,
             &in_range,
             &adj,
@@ -5073,6 +5077,7 @@ mod s1_h_7_tests {
         );
         let available = craft::available(
             &app.inventory,
+            &app.equip,
             &app.world_chests,
             &in_range,
             &adj,
