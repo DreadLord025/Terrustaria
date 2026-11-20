@@ -9,7 +9,7 @@
 use super::{
     after_edit, is_locked_door, liquid_flags, touch, ALCH_SOILS, WALL_UNBREAKABLE,
 };
-use crate::tile::Tile;
+use crate::tile::{LiquidKind, Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
 use crate::tiledata as td;
 use crate::world::World;
 
@@ -662,7 +662,7 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         219 | 642 => check_3x3_bottom(world, x, y, kind),
         42 => check_lantern(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
-        82 | 83 | 84 => check_alch(world, x, y),
+        82 | 83 | 84 => check_alch_plan(world, x, y),
         93 => check_lamp(world, x, y),
         100 | 172 => check_candelabra_sink(world, x, y),
         101 => check_bookcase(world, x, y),
@@ -2673,7 +2673,7 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
 /// `frameY = 0` (:45991) is kept as a gated write (the port's herbs always
 /// carry it). The kill is the single cell; no item spawns here (the per-cell
 /// herb drops are phase 3 — `KillTile_GetItemDrops` :65674-65698).
-fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+fn check_alch_plan(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let herb = *world.tile(x, y)?;
     // :45983-45990 — the support pair.
     let mut flag = world
@@ -2737,6 +2737,121 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pile_event: None,
         ring: None,
     })
+}
+
+/// `WorldGen.CheckAlch(x, y)` (`WorldGen.cs:45972-46092`) — the direct call
+/// `Liquid.DelWater`'s retirement tail makes (`Liquid.cs:1580-1583`): the
+/// plan's `frameY = 0` / Fireblossom-blink writes land inside
+/// [`check_alch_plan`], the death is the plain unguarded `KillTile`
+/// (:46090). The herb drop rolls ride the returned record's `herb_events`
+/// (the app resolves them with the `Main.rand` stream).
+pub fn check_alch(world: &mut World, x: i32, y: i32) -> Option<TileKill> {
+    let plan = check_alch_plan(world, x, y)?;
+    let mut kill = TileKill::default();
+    let mut destroy_object = false;
+    if let Some(herb) = plan.herb_event {
+        kill.herb_events.push(herb);
+    }
+    kill_plan_cells(world, &plan.cells, false, &mut destroy_object, &mut kill);
+    Some(kill)
+}
+
+/// `WorldGen.CheckLilyPad(x, y)` (`WorldGen.cs:59203-59310`) — the lily pad
+/// 518 floats on the water surface. The DelWater tail calls it with the
+/// pass-scoped solidity toggles still up (`Liquid.cs:1586-1597`), so the
+/// support walk reads them through the raw-table closure the caller passes.
+/// The pad on a non-water liquid dies (:59209-59217); otherwise the column
+/// walk finds the first solid support (:59218-59226, `maxTilesY - 50`
+/// bound), its kind picks the pad's `frameY` row (:59227-59240 — the C#'s
+/// `type == 109 || type == 109` duplicate kept as one arm), and the pad
+/// moves onto the wet cell above (:59251-59267) or sinks onto the dry cell
+/// below (:59268-59291); a pad on an unsupported non-platform open tile
+/// dies (:59292-59299). An unsupported soil kind kills the pad (:59302-59309).
+pub fn check_lily_pad(world: &mut World, x: i32, y: i32, raw_solid: impl Fn(u16) -> bool) -> Option<TileKill> {
+    // :59209 — the type bits alone, no amount gate (live read: the
+    // DelWater drain may have re-typed the cell before this tail).
+    if world.tile(x, y)?.liquid_kind() != LiquidKind::Water {
+        // :59209-59217.
+        return kill_tile(world, x, y, false);
+    }
+    // :59218-59226 — the support walk (`!active || !tileSolid || solidTop`
+    // is the raw-table open test, NOT the nactive fold). The bound stops
+    // the walk AT `maxTilesY - 50` and the soil read still runs on that
+    // row (the C# exits the loop, it does not return); only a null cell
+    // returns early (:59222-59225).
+    let mut num = y;
+    loop {
+        let Some(t) = world.tile(x, num).copied() else {
+            return None;
+        };
+        let open = !t.active() || !raw_solid(t.kind) || td::TILE_SOLID_TOP.has(t.kind);
+        if !open || num >= world.height - 50 {
+            break;
+        }
+        num += 1;
+    }
+    let soil = world.tile(x, num)?.kind;
+    // :59229-59240 — the frameY row per soil kind.
+    let row: i16 = match soil {
+        2 | 477 => 0,
+        109 | 116 => 18,
+        60 => 36,
+        _ => {
+            // :59302-59309 — no row: the pad dies.
+            return kill_tile(world, x, y, false);
+        }
+    };
+    // :59243-59250 — the gated frameY write.
+    if world.tiles[world.index(x, y)].frame_y != row {
+        world.tiles[world.index(x, y)].frame_y = row;
+        touch(world, x, y);
+    }
+    let above = world.tile(x, y - 1).copied();
+    if above.is_some_and(|t| t.liquid > 0 && !t.active()) {
+        // :59251-59267 — the pad rises onto the wet cell above.
+        move_lily_pad(world, x, y, x, y - 1);
+        return None;
+    }
+    if world.tile(x, y).is_some_and(|t| t.liquid != 0) {
+        return None; // :59270-59273 — the LIVE amount (the drain emptied it)
+    }
+    let below = world.tile(x, y + 1).copied().unwrap_or_default();
+    if !below.active() {
+        // :59275-59291 — the pad sinks onto the dry cell below.
+        move_lily_pad(world, x, y, x, y + 1);
+        return None;
+    }
+    if !td::SET_PLATFORMS.has(below.kind)
+        && (!raw_solid(below.kind) || td::TILE_SOLID_TOP.has(below.kind))
+    {
+        // :59292-59299 — the open non-platform support cannot carry the pad.
+        return kill_tile(world, x, y, false);
+    }
+    None
+}
+
+/// `CheckLilyPad`'s move body (`WorldGen.cs:59252-59262` / `:59276-59286`):
+/// the destination takes the pad's kind/frames/paint with a clean slope and
+/// half-brick, the origin deactivates, and the destination reframes with
+/// `SquareTileFrame(resetFrame: false)` — the port's actuation square (the
+/// keep-frame 3×3 walk + reframe; the reset-roll deviation is the documented
+/// `reframe_area` one).
+fn move_lily_pad(world: &mut World, x: i32, y: i32, dx: i32, dy: i32) {
+    let pad = world.tiles[world.index(x, y)];
+    let d = world.index(dx, dy);
+    world.tiles[d].flags |= FLAG_ACTIVE;
+    world.tiles[d].flags &= !FLAG_HALF_BRICK;
+    world.tiles[d].kind = 518;
+    world.tiles[d].frame_x = pad.frame_x;
+    world.tiles[d].frame_y = pad.frame_y;
+    world.tiles[d].set_slope(0);
+    world.tiles[d].set_paint(pad.paint());
+    let o = world.index(x, y);
+    world.tiles[o].flags &= !FLAG_ACTIVE;
+    world.tiles[o].kind = 0;
+    touch(world, x, y);
+    touch(world, dx, dy);
+    actuation_square_frame(world, dx, dy);
 }
 
 /// Clears the active tile at `(x, y)` and keeps the wall and the liquid. The caller is

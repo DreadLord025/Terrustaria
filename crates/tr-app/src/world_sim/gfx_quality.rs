@@ -111,13 +111,17 @@ impl GfxQuality {
         // `:17075` — `Gore.goreTime`.
         self.gore_time = (600.0 * self.quality) as i32;
         // `:17077-17091` — the liquid budgets (the runtime pair S1-A-8 walks).
-        // `Liquid.quickSettle`'s full-window arm (`:17098-17104`) rides
-        // R-11-7's flag — the port's settlement pass keeps it `false`, so the
-        // quality values hold.
         app.liquids.set_cycles((17.0 - 10.0 * self.quality) as usize);
         let max_liquid = app.liquids.max_active();
         app.liquids
             .set_cur_max_liquid((max_liquid as f64 * 0.25 + max_liquid as f64 * 0.75 * self.quality as f64) as usize);
+        // `:17105-17113` — quickSettle overrides the quality budgets: the
+        // full window and a single cycle, so the settle drain walks the
+        // whole active list every update (W4-g47).
+        if app.liquids.quick_settle() {
+            app.liquids.set_cur_max_liquid(max_liquid);
+            app.liquids.set_cycles(1);
+        }
         // `:17085-17101` — the legacy light scanner's render phases.
         self.render_phases = if (self.quality as f64) < 0.2 {
             8
@@ -239,5 +243,32 @@ fn int_ceil(v: f32) -> i32 {
         assert_eq!(half, 510, "`600 * 0.75 + 60` at q=0.5");
         assert_eq!(zero, 360, "`600 * 0.5 + 60` at q=0");
         assert!(half < full && zero < half, "low quality flakes fewer");
+    }
+
+    /// W4-g47 — `Main.cs:17105-17113`: quickSettle overrides the quality
+    /// liquid budgets — the full window and a single cycle — so the
+    /// settle drain walks the whole list every update. Written, NOT run
+    /// (code-only mode).
+    #[test]
+    fn quick_settle_overrides_the_quality_liquid_budgets() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut gfx = GfxQuality::default();
+        app.settings.quality = 3; // q=0 — the quarter window, 17 cycles
+        app.liquids.set_quick_settle(true);
+        gfx.apply(&mut app);
+        assert_eq!(
+            app.liquids.cur_max_liquid(),
+            app.liquids.max_active(),
+            ":17107 restores the full window"
+        );
+        assert_eq!(app.liquids.cycles(), 1, ":17112 forces the single cycle");
+        // The flag down: the quality budgets hold again.
+        app.liquids.set_quick_settle(false);
+        gfx.apply(&mut app);
+        assert_eq!(app.liquids.cycles(), 17);
+        assert_eq!(
+            app.liquids.cur_max_liquid(),
+            app.liquids.max_active() / 4
+        );
     }
 }

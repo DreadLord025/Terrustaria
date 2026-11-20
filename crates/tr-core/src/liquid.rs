@@ -80,12 +80,28 @@ pub struct LiquidSystem {
     /// (`Liquid.cs:1333`/`:1447`). The port's settlement pass never runs
     /// during generation yet (R-12-5 plumbs it), so it stays `false`.
     generating: bool,
+    /// `Liquid.stuckCount` (`Liquid.cs:21`): consecutive full cycles whose
+    /// active count stayed within ±50 of `stuck_amount` (`:1131-1148`).
+    stuck_count: i32,
+    /// `Liquid.stuckAmount` (`Liquid.cs:23`): the active count the stuck
+    /// band compares against; re-pinned whenever the count leaves the band.
+    stuck_amount: i32,
+    /// `Liquid.stuck` (`Liquid.cs:27`): up only during the 10 000-cycle
+    /// self-clear (`:1136-1141`) — it disables `DelWater`'s keep-alive
+    /// branch (`:1506`) so the pathological pool empties itself.
+    stuck: bool,
     /// The `WorldGen.PlayLiquidChangeSound` events (`Liquid.cs:1345-1347`,
     /// S1-E-25): one row per live-game merge tile — `(kind, x, y)` in tile
     /// coordinates, drained by the audio caller after the pass. The C# plays
     /// the cue inline (`!Main.gameMenu && !isGeneratingOrLoadingWorld`);
     /// the port's engine is pure, so the caller's seam carries it.
     merge_events: Vec<(TileChangeType, i32, i32)>,
+    /// The `CheckAlch`/`CheckLilyPad` kills `DelWater`'s retirement tail
+    /// performs (`Liquid.cs:1580-1598`): the C# spawns the drops inline
+    /// (`KillTile` → `KillTile_DropItems`); the port's engine is pure, so
+    /// the records queue here and the liquid tick resolves them through
+    /// the same `TileKill` drop seam the mining path uses.
+    edit_kills: Vec<crate::edit::TileKill>,
     /// `Liquid.tilesIgnoreWater`'s state (`Liquid.cs:69-73`): during a pass
     /// the grate 546 and the boulder family lose solidity, so water falls
     /// through grates and settles past boulders; the C#'s stock
@@ -164,8 +180,12 @@ impl LiquidSystem {
             quick_fall: false,
             quick_settle: false,
             generating: false,
+            stuck_count: 0,
+            stuck_amount: 0,
+            stuck: false,
             remix_world_gen: false,
             merge_events: Vec::new(),
+            edit_kills: Vec::new(),
             // The stock solidity: the grate and the boulders are solid and
             // the bubble is not (`Main.cs:10124`, `Main.cs:17753`).
             ignore_solids: false,
@@ -190,6 +210,14 @@ impl LiquidSystem {
     /// merge (`!Main.gameMenu && !isGeneratingOrLoadingWorld`).
     pub fn drain_merge_events(&mut self) -> Vec<LiquidMergeEvent> {
         std::mem::take(&mut self.merge_events)
+    }
+
+    /// The `DelWater` retirement-tail kills (`Liquid.cs:1580-1598`) — the
+    /// herb/lily-pad `Check*` deaths whose drops the C# spawns inline;
+    /// drained by the liquid tick and resolved through the `TileKill`
+    /// drop seam.
+    pub fn drain_edit_kills(&mut self) -> Vec<crate::edit::TileKill> {
+        std::mem::take(&mut self.edit_kills)
     }
 
     pub fn buffered_len(&self) -> usize {
@@ -245,8 +273,14 @@ impl LiquidSystem {
         if t.liquid == 0 || self.tile_is_solid(t) {
             return;
         }
-        if self.active.len() >= MAX_ACTIVE {
-            if self.buffer.len() < MAX_BUFFER {
+        // `Liquid.cs:1167-1171` — the overflow threshold is
+        // `curMaxLiquid - 1`; `LiquidBuffer.AddBuffer`
+        // (`LiquidBuffer.cs:11-20`) caps at `maxLiquidBuffer - 2` and
+        // marks the buffered cell `checkingLiquid` so later wakes dedupe
+        // against it (the promotion at `:1127` clears the bit first).
+        if self.active.len() >= self.cur_max_liquid - 1 {
+            if self.buffer.len() < MAX_BUFFER - 2 {
+                self.set_checking(x, y, true);
                 self.buffer.push((x, y));
             }
             return;
@@ -340,28 +374,197 @@ impl LiquidSystem {
         self.ignore_solids = false;
     }
 
-    /// `wetCounter >= cycles` bookkeeping: retire dead entries, promote buffered cells.
-    fn end_pass(&mut self, world: &World) {
-        let old = std::mem::take(&mut self.active);
-        for e in old {
-            if e.kill < KILL_PASSES {
-                self.active.push(e);
-            } else {
-                self.set_checking(e.x, e.y, false);
+    /// `wetCounter >= cycles` bookkeeping (`Liquid.cs:1106-1149`): the
+    /// `kill >= 8` retirement sweep (descending, swap-remove `DelWater`
+    /// with the 254→255 promotion at `:1113-1116`), the buffer promotion
+    /// counts (`:1120-1130`), then the stuck detection (`:1131-1149`).
+    fn end_pass(&mut self, world: &mut World) {
+        // `Liquid.cs:1109-1119` — the descending retirement walk: a
+        // retired cell sitting at 254 promotes to 255 first, then
+        // `DelWater`'s own drain rules decide whether it really leaves.
+        let mut l = self.active.len();
+        while l > 0 {
+            l -= 1;
+            if self.active[l].kill >= KILL_PASSES {
+                let (x, y) = (self.active[l].x, self.active[l].y);
+                let i = world.index(x, y);
+                if world.tiles[i].liquid == 254 {
+                    world.tiles[i].liquid = 255;
+                    world.mark_chunk(x, y);
+                    self.dirty = true;
+                }
+                self.del_water(world, l);
             }
         }
-        self.refill_from_buffer(world);
+        // `Liquid.cs:1120-1130` — `num8 = curMaxLiquid - (curMaxLiquid -
+        // numLiquid)` is `numLiquid` (the C#'s own algebra), clamped to
+        // the buffer count; each promotion clears the buffered cell's
+        // `checkingLiquid` first so `AddWater` re-queues it, then
+        // `LiquidBuffer.DelBuffer(0)` swap-removes the slot
+        // (`LiquidBuffer.cs:22-27` — the LAST entry moves into slot 0,
+        // not a FIFO shift).
+        let mut limit = self.active.len().min(self.buffer.len());
+        while limit > 0 {
+            limit -= 1;
+            let (x, y) = self.buffer[0];
+            self.set_checking(x, y, false);
+            self.add_water(world, x, y);
+            let last = self.buffer.len() - 1;
+            self.buffer[0] = self.buffer[last];
+            self.buffer.pop();
+        }
+        // `Liquid.cs:1131-1149` — the stuck band: 10 000 consecutive
+        // cycles inside ±50 of the pinned count self-clears the whole
+        // list (`stuck` up disables `DelWater`'s keep-alive branch).
+        let n = self.active.len() as i32;
+        if n > 0 && n > self.stuck_amount - 50 && n < self.stuck_amount + 50 {
+            self.stuck_count += 1;
+            if self.stuck_count >= 10_000 {
+                self.stuck = true;
+                let mut k = self.active.len();
+                while k > 0 {
+                    k -= 1;
+                    self.del_water(world, k);
+                }
+                self.stuck = false;
+                self.stuck_count = 0;
+            }
+        } else {
+            self.stuck_count = 0;
+            self.stuck_amount = n;
+        }
     }
 
-    fn refill_from_buffer(&mut self, world: &World) {
-        let limit = self.active.len().max(1);
-        let mut promoted = 0;
-        while promoted < limit && !self.buffer.is_empty() && self.active.len() < MAX_ACTIVE {
-            let (x, y) = self.buffer.remove(0);
-            let before = self.active.len();
-            self.add_water(world, x, y);
-            if self.active.len() > before {
-                promoted += 1;
+    /// `Liquid.DelWater` (`Liquid.cs:1470-1599`) — retire active entry
+    /// `l`. The drain rules decide first: a < 2 cell empties itself and
+    /// its < 2 side neighbours (waking the fuller ones); a < 20 cell
+    /// empties when a side or the cell below can take it; a >= 20 cell
+    /// with an open, non-full cell below stays alive (`kill = 0`) unless
+    /// the stuck self-clear is running. Then the wake/type bookkeeping,
+    /// the lava reaction tail (the grass conversions + `HoneyCheck` /
+    /// `ShimmerCheck`), the swap-remove and the herb / lily-pad checks.
+    fn del_water(&mut self, world: &mut World, l: usize) {
+        let (x, y) = (self.active[l].x, self.active[l].y);
+        let i = world.index(x, y);
+        let here = world.tiles[i];
+        let left = world.tile(x - 1, y).copied().unwrap_or_default();
+        let right = world.tile(x + 1, y).copied().unwrap_or_default();
+        let down = world.tile(x, y + 1).copied().unwrap_or_default();
+        // `Liquid.cs:1478-1498` — the < 2 drain.
+        if here.liquid < 2 {
+            world.tiles[i].liquid = 0;
+            world.mark_chunk(x, y);
+            self.dirty = true;
+            for (nx, t) in [(x - 1, left), (x + 1, right)] {
+                if t.liquid < 2 {
+                    if nx >= 0 && nx < self.width {
+                        let j = world.index(nx, y);
+                        world.tiles[j].liquid = 0;
+                        world.mark_chunk(nx, y);
+                    }
+                } else {
+                    self.add_water(world, nx, y);
+                }
+            }
+        } else if here.liquid < 20 {
+            // `Liquid.cs:1499-1505` — a side lower than the cell (and
+            // open) or an open non-full cell below drains it.
+            let side_takes = |t: Tile| t.liquid < here.liquid && self.tile_open(&t);
+            let down_takes = down.liquid < 255 && self.tile_open(&down);
+            if side_takes(left) || side_takes(right) || down_takes {
+                world.tiles[i].liquid = 0;
+                world.mark_chunk(x, y);
+                self.dirty = true;
+            }
+        } else if down.liquid < 255
+            && self.tile_open(&down)
+            && !self.stuck
+            && self.tile_open(&here)
+        {
+            // `Liquid.cs:1506-1510` — the keep-alive: the cell can still
+            // fall, so it stays active with a fresh kill count.
+            self.active[l].kill = 0;
+            return;
+        }
+        // Re-read: the drain arms above may have emptied the cell.
+        let here = world.tiles[i];
+        // `Liquid.cs:1511-1518` — wake the cell above a non-full pool;
+        // an emptied cell loses its liquid TYPE.
+        if here.liquid < 250 && world.tile(x, y - 1).is_some_and(|t| t.liquid > 0) {
+            self.add_water(world, x, y - 1);
+        }
+        if here.liquid == 0 {
+            set_kind(&mut world.tiles[i], 0);
+        } else {
+            // `Liquid.cs:1521-1528` — wake the unequal < 250 open sides.
+            for (nx, t) in [(x + 1, right), (x - 1, left)] {
+                if t.liquid > 0
+                    && t.liquid < 250
+                    && self.tile_open(&t)
+                    && here.liquid != t.liquid
+                {
+                    self.add_water(world, nx, y);
+                }
+            }
+            // `Liquid.cs:1529-1569` — the reaction tail. The lava arm
+            // re-checks the merge and converts the grass ring; honey and
+            // shimmer only re-check. The kind reads the LIVE cell — the
+            // merge may have emptied it (the C# holds the tile reference).
+            let tail_kind = kind_code(world.tiles[i].liquid_kind());
+            if tail_kind == 1 {
+                self.lava_check(world, x, y);
+                for gx in (x - 1)..=(x + 1) {
+                    for gy in (y - 1)..=(y + 1) {
+                        let Some(t) = world.tile(gx, gy).copied() else { continue };
+                        if !t.active() {
+                            continue;
+                        }
+                        let j = world.index(gx, gy);
+                        if matches!(t.kind, 2 | 23 | 109 | 199 | 477 | 492) {
+                            world.tiles[j].kind = 0;
+                            crate::edit::square_tile_frame_default(world, gx, gy);
+                        } else if matches!(t.kind, 60 | 70 | 661 | 662) {
+                            world.tiles[j].kind = 59;
+                            crate::edit::square_tile_frame_default(world, gx, gy);
+                        }
+                    }
+                }
+            } else if tail_kind == 2 {
+                self.honey_check(world, x, y);
+            } else if tail_kind == 3 {
+                self.shimmer_check(world, x, y);
+            }
+        }
+        // `Liquid.cs:1575-1579` — the swap-remove: the last entry moves
+        // into the slot (its kill rides along; `delay` is NOT copied —
+        // the C# leaves the slot's own value).
+        self.set_checking(x, y, false);
+        let last = self.active.len() - 1;
+        self.active[l].x = self.active[last].x;
+        self.active[l].y = self.active[last].y;
+        self.active[l].kill = self.active[last].kill;
+        self.active.pop();
+        // `Liquid.cs:1580-1598` — the herb check, or the lily-pad arm. The
+        // kind reads the LIVE cell (`tile4` is a reference — the lava
+        // tail's grass ring may have rewritten it). The checks' kills/drops
+        // ride the pass's `edit_kills` seam (the C# spawns the items
+        // inline; the port's engine is pure).
+        let tail_tile_kind = world.tiles[i].kind;
+        if crate::tileobject::tile_alch(tail_tile_kind) {
+            if let Some(kill) = crate::edit::check_alch(world, x, y) {
+                self.edit_kills.push(kill);
+            }
+        } else if tail_tile_kind == 518 {
+            let below_full = world.tile(x, y + 1).is_some_and(|t| t.liquid == 255);
+            let above_wet = world.tile(x, y - 1).is_some_and(|t| t.liquid > 0);
+            if self.quick_fall || (below_full && !above_wet) {
+                if let Some(kill) =
+                    crate::edit::check_lily_pad(world, x, y, |k| self.kind_solid(k))
+                {
+                    self.edit_kills.push(kill);
+                }
+            } else {
+                crate::edit::square_tile_frame_default(world, x, y);
             }
         }
     }
@@ -1016,7 +1219,15 @@ impl LiquidSystem {
         if !t.active() || t.flags & crate::tile::FLAG_INACTIVE != 0 {
             return false;
         }
-        let kind = t.kind;
+        self.kind_solid(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
+    }
+
+    /// The raw `Main.tileSolid[type]` read with the pass-scoped toggles —
+    /// `DelWater`'s drain rules and `CheckLilyPad`'s support walk read the
+    /// table directly (no `nactive`/`solidTop` fold), so the
+    /// grate/boulder/bubble swaps must ride here too.
+    #[inline]
+    fn kind_solid(&self, kind: u16) -> bool {
         if kind as usize >= td::TILE_COUNT {
             return false;
         }
@@ -1026,7 +1237,18 @@ impl LiquidSystem {
         if kind == 379 {
             return self.bubble_solid;
         }
-        td::TILE_SOLID.has(kind) && !td::TILE_SOLID_TOP.has(kind)
+        td::TILE_SOLID.has(kind)
+    }
+
+    /// `!tile.nactive() || !Main.tileSolid[tile.type] ||
+    /// Main.tileSolidTop[tile.type]` — the "open for liquid" test
+    /// `DelWater`'s drain rules use (`Liquid.cs:1501`/`:1506`/`:1521`).
+    #[inline]
+    fn tile_open(&self, t: &Tile) -> bool {
+        !t.active()
+            || t.flags & crate::tile::FLAG_INACTIVE != 0
+            || !self.kind_solid(t.kind)
+            || td::TILE_SOLID_TOP.has(t.kind)
     }
 }
 
@@ -1941,5 +2163,280 @@ mod liquid_quick_settle {
         sys.set_quick_settle(false);
         sys.update(&mut w);
         assert!(!sys.quick_fall, ":1067 clears quickFall");
+    }
+}
+
+/// W4-g47 — the settle-side witnesses: `DelWater`'s drain rules and
+/// swap-remove (`Liquid.cs:1470-1599`), the retirement sweep's 254→255
+/// promotion (`:1109-1119`), the `LiquidBuffer.AddBuffer`/`DelBuffer`
+/// counts (`LiquidBuffer.cs:11-27`), and the stuck band's 10 000-cycle
+/// self-clear (`:1131-1149`). Written, NOT run (code-only mode).
+#[cfg(test)]
+mod liquid_settle {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    fn basin(width: i32, wall_y: i32) -> World {
+        let mut w = World::new("liquid_settle".into(), width, wall_y + 3);
+        for x in 0..width {
+            for y in wall_y..wall_y + 3 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn the_retirement_sweep_promotes_254_before_delwater() {
+        // `Liquid.cs:942-952` + `:1113-1116`: the row arm averages a 255
+        // cell with its 253 neighbour to 254 — the 255→254 settle step
+        // counts a kill pass, and every later unchanged walk counts
+        // another. On the eighth walk the sweep promotes the 254 to 255
+        // BEFORE DelWater reads it; the neighbour retires one walk later.
+        let mut w = basin(9, 8);
+        // A sealed 2-wide cup: walls at x=2/5 up to y=7, floor at y=8.
+        for y in 0..8 {
+            for x in [2, 5] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        put_as(&mut w, 4, 7, 255, 0);
+        put_as(&mut w, 3, 7, 253, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 7);
+        for _ in 0..8 {
+            sys.update(&mut w);
+        }
+        assert_eq!(w.tiles[w.index(4, 7)].liquid, 255, ":1115 promotes the 254");
+        // The neighbour (queued by the first averaging at kill 0) is one
+        // walk behind — it stays active and keeps churning (the vanilla
+        // 254/255 re-average the stuck band exists for).
+        assert_eq!(sys.active_len(), 1);
+        assert_eq!((sys.active[0].x, sys.active[0].y), (3, 7));
+    }
+
+    #[test]
+    fn delwater_drains_a_thin_film_into_the_open_side() {
+        // `Liquid.cs:1499-1504`: a < 20 cell empties when an open side
+        // holds less. DelWater is called directly (the retirement tail's
+        // entry point) so the row arm never spreads the film first.
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 7, 10, 2); // honey — the type-clear is visible
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 7);
+        sys.active[0].kill = KILL_PASSES;
+        sys.del_water(&mut w, 0);
+        assert_eq!(w.tiles[w.index(4, 7)].liquid, 0, ":1503 empties the film");
+        assert_eq!(sys.active_len(), 0, "the entry is gone");
+        assert_eq!(
+            w.tiles[w.index(4, 7)].liquid_kind(),
+            LiquidKind::Water,
+            "an emptied cell loses its type (:1517)"
+        );
+    }
+
+    #[test]
+    fn delwater_keeps_a_full_cell_over_an_open_below_alive() {
+        // `Liquid.cs:1506-1509`: a >= 20 cell with an open non-full cell
+        // below resets kill and stays active — the fall has work left.
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 5, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 5);
+        sys.active[0].kill = KILL_PASSES;
+        sys.del_water(&mut w, 0);
+        assert_eq!(sys.active_len(), 1, "the keep-alive holds the entry");
+        assert_eq!(sys.active[0].kill, 0, ":1508 resets the kill count");
+        assert_eq!(w.tiles[w.index(4, 5)].liquid, 200, "nothing drained");
+    }
+
+    #[test]
+    fn delwater_swap_remove_rides_kill_but_not_delay() {
+        // `Liquid.cs:1575-1579`: the last entry's x/y/kill move into the
+        // retired slot — `delay` keeps the SLOT's value (the C# never
+        // copies it).
+        let mut w = basin(9, 8);
+        // Two sealed cups so both cells are static; the second is the
+        // swap donor.
+        for y in 0..8 {
+            for x in [3, 5, 7] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        put_as(&mut w, 4, 7, 100, 0);
+        put_as(&mut w, 6, 7, 100, 2);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 7);
+        sys.add_water(&w, 6, 7);
+        sys.active[0].kill = KILL_PASSES;
+        sys.active[0].delay = 3;
+        sys.active[1].kill = 5;
+        sys.active[1].delay = 9;
+        sys.del_water(&mut w, 0);
+        assert_eq!(sys.active_len(), 1);
+        assert_eq!((sys.active[0].x, sys.active[0].y), (6, 7), "the donor moved");
+        assert_eq!(sys.active[0].kill, 5, "the donor's kill rides along");
+        assert_eq!(sys.active[0].delay, 3, "the slot's own delay stays");
+    }
+
+    #[test]
+    fn the_buffer_overflow_marks_checking_and_the_promotion_swap_removes() {
+        // `LiquidBuffer.cs:11-27`: AddBuffer caps at maxLiquidBuffer - 2
+        // and marks checkingLiquid; the promotion (`Liquid.cs:1125-1130`)
+        // clears the bit, re-queues, and DelBuffer(0) moves the LAST
+        // buffered entry into slot 0 (not a FIFO shift).
+        let mut w = basin(9, 8);
+        // The active cell sits in a sealed cup so the pass walks it
+        // unchanged (no new wakes pollute the buffer).
+        for y in 0..8 {
+            for x in [3, 5] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        put_as(&mut w, 4, 7, 100, 0);
+        put_as(&mut w, 2, 7, 100, 0);
+        put_as(&mut w, 6, 7, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        // Shrink the window so the second wake overflows.
+        sys.set_cur_max_liquid(2);
+        sys.add_water(&w, 4, 7);
+        sys.add_water(&w, 2, 7); // active full (len 1 >= 2 - 1) -> buffer
+        sys.add_water(&w, 6, 7); // -> buffer
+        assert_eq!(sys.active_len(), 1);
+        assert_eq!(sys.buffered_len(), 2);
+        assert!(sys.is_checking(2, 7), "AddBuffer marks the bit");
+        assert!(sys.is_checking(6, 7));
+        // The dedupe: a buffered cell does not queue twice.
+        sys.add_water(&w, 2, 7);
+        assert_eq!(sys.buffered_len(), 2);
+        // Restore the window so the promotion can actually queue, and
+        // drive one full cycle: num8 = min(numLiquid 1, buffer 2) = 1 —
+        // slot 0 promotes, DelBuffer(0) moves the LAST entry into it.
+        sys.set_cur_max_liquid(MAX_ACTIVE);
+        sys.set_cycles(1);
+        sys.update(&mut w);
+        assert_eq!(sys.buffered_len(), 1, "one promotion drained the head");
+        assert_eq!(sys.buffer[0], (6, 7), "the last entry moved into slot 0");
+        assert_eq!(sys.active_len(), 2, "the promoted cell re-queued");
+        assert!(sys.is_checking(2, 7), "the promoted cell is active again");
+        assert!(sys.is_checking(6, 7), "the still-buffered cell keeps its bit");
+    }
+
+    #[test]
+    fn the_stuck_band_self_clears_after_10000_cycles() {
+        // `Liquid.cs:1131-1149`: an active count pinned inside ±50 of
+        // stuckAmount for 10 000 consecutive cycles force-retires the
+        // whole list with `stuck` up (the keep-alive branch disabled).
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 5, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 5);
+        // Pin the band: the count (1) sits inside ±50 of the pinned 1.
+        sys.stuck_amount = 1;
+        sys.stuck_count = 9_999;
+        // Age the entry into the retirement sweep; the keep-alive holds
+        // it there (open below, `stuck` still down), then the band check
+        // trips the 10 000th cycle and the self-clear runs with `stuck`
+        // up — the keep-alive branch disabled.
+        sys.active[0].kill = KILL_PASSES;
+        sys.end_pass(&mut w);
+        assert_eq!(sys.active_len(), 0, "the self-clear emptied the list");
+        assert_eq!(sys.stuck_count, 0, ":1142 resets the counter");
+        assert!(!sys.stuck, ":1141 drops the flag after the clear");
+        // The >= 20 cell had an open below — without `stuck` it would
+        // have stayed alive; with it the tail ran and the cell kept its
+        // liquid (no side/below drain applies at >= 20).
+        assert_eq!(w.tiles[w.index(4, 5)].liquid, 200);
+    }
+
+    #[test]
+    fn the_stuck_band_repins_when_the_count_leaves_it() {
+        // `Liquid.cs:1145-1148`: outside the band the counter resets and
+        // stuckAmount re-pins to the live count.
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 7, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 7);
+        sys.stuck_amount = 500; // the count 1 is far outside ±50
+        sys.stuck_count = 42;
+        sys.end_pass(&mut w);
+        assert_eq!(sys.stuck_count, 0, "the band exit resets the counter");
+        assert_eq!(sys.stuck_amount, sys.active_len() as i32, "re-pinned");
+    }
+
+    #[test]
+    fn delwater_retires_a_submerged_herb_through_check_alch() {
+        // `Liquid.cs:1580-1583` + `WorldGen.cs:46002-46005`: a Daybloom
+        // (82, style 0) whose own cell holds lava dies when its liquid
+        // entry retires; the kill rides the edit_kills seam.
+        let mut w = basin(9, 8);
+        let i = w.index(4, 7);
+        w.tiles[i] = Tile { kind: 82, frame_x: 0, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        put_as(&mut w, 4, 7, 30, 1);
+        // The soil below is the basin floor (stone 1) — not in the
+        // style-0 set either, so the herb dies on the soil arm as well.
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 7);
+        sys.active[0].kill = KILL_PASSES;
+        // The lava reaction tail merges nothing here (no water nearby).
+        sys.del_water(&mut w, 0);
+        assert!(!w.tiles[w.index(4, 7)].active(), "the herb died");
+        let kills = sys.drain_edit_kills();
+        assert_eq!(kills.len(), 1, "one CheckAlch kill record");
+        assert!(
+            kills[0].herb_events.iter().any(|h| h.kind == 82 && h.x == 4 && h.y == 7),
+            "the herb drop roll rides the record"
+        );
+    }
+
+    #[test]
+    fn delwater_sinks_a_dry_lily_pad_onto_the_full_water_below() {
+        // `Liquid.cs:1590-1597`: a retired 518 cell whose below is full
+        // (255) and whose above is dry takes the CheckLilyPad arm; the
+        // pad's own cell is dry, so it sinks onto the cell below
+        // (`WorldGen.cs:59275-59291`) when that cell is not active. The
+        // support soil (grass 2) picks frameY 0 (:59229-59231). The world
+        // must be taller than y + 50 — the support walk's `maxTilesY - 50`
+        // bound (:59219) otherwise stops at the pad itself.
+        let mut w = basin(9, 60);
+        let pad = w.index(4, 6);
+        w.tiles[pad] = Tile { kind: 518, frame_x: 0, frame_y: 0, ..Default::default() };
+        w.tiles[pad].flags |= FLAG_ACTIVE;
+        put_as(&mut w, 4, 7, 255, 0);
+        let soil = w.index(4, 8);
+        w.tiles[soil] = Tile { kind: 2, ..Default::default() };
+        w.tiles[soil].flags |= FLAG_ACTIVE;
+        let mut sys = LiquidSystem::new(&w);
+        // The pad cell carries a token 1 so it queues (the C# reaches
+        // this tail when a pad cell was queued while wet and then
+        // dried); the < 2 drain empties it before the lily-pad arm.
+        w.tiles[pad].liquid = 1;
+        sys.add_water(&w, 4, 6);
+        sys.active[0].kill = KILL_PASSES;
+        sys.del_water(&mut w, 0);
+        assert_eq!(w.tiles[w.index(4, 7)].kind, 518, "the pad sank onto the water");
+        assert!(w.tiles[w.index(4, 7)].active());
+        assert_eq!(w.tiles[w.index(4, 7)].frame_y, 0, "the grass row");
+        assert!(!w.tiles[pad].active(), "the origin deactivated");
+        assert_eq!(w.tiles[pad].kind, 0);
     }
 }
