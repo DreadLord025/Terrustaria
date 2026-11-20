@@ -166,6 +166,17 @@ pub const CURSED_FLARE: u16 = 1009;
 pub const RAINBOW_FLARE: u16 = 1010;
 /// `ProjectileID.ShimmerFlare` (1011) — aiStyle 33 (`Projectile.cs:9613-9623`).
 pub const SHIMMER_FLARE: u16 = 1011;
+// W4-d2 — the aiStyle-11 light pets (`ProjectileID.cs:590/698/726/728`).
+/// `ProjectileID.ShadowOrb` (18) — the Shadow Orb light pet, aiStyle 11
+/// (`Projectile.cs:993-1007`).
+pub const SHADOW_ORB: u16 = 18;
+/// `ProjectileID.BlueFairy` (72) — aiStyle 11 (`Projectile.cs:1522-1535`).
+pub const BLUE_FAIRY: u16 = 72;
+/// `ProjectileID.PinkFairy` (86) — aiStyle 11 (`Projectile.cs:1674-1687`);
+/// the C# player flag is `redFairy` (`Player.cs:2064`).
+pub const PINK_FAIRY: u16 = 86;
+/// `ProjectileID.GreenFairy` (87) — aiStyle 11 (`Projectile.cs:1688-1701`).
+pub const GREEN_FAIRY: u16 = 87;
 /// `ProjectileID.RainbowGlowstick` (1089) — aiStyle 14, no alpha override
 /// (`Projectile.cs:10153-10162`); the disco light rides `ProjLight`
 /// (`:16434-16439`). S1-P-i42.
@@ -1517,6 +1528,9 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         FROSTBURN_ARROW => 1.0,                // `:2586` (S1-P-i17)
         ICHOR_ARROW => 1.0,                    // `:3645` (S1-P-i17)
         ENCHANTED_BOOMERANG => 0.4,            // `:872`
+        // W4-d2 — the aiStyle-11 light pets' `this.light = 0.9f`
+        // (`Projectile.cs:1000`/`:1529`/`:1681`/`:1695`).
+        SHADOW_ORB | BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY => 0.9,
         MUSKET_BALL => 0.5,                    // `:957`
         // S1-P-i42 — the glowstick family's `this.light = 1f`
         // (`Projectile.cs:1334`/`:1362`/`:5493`/`:5859`/`:8351`/`:10160`).
@@ -1618,6 +1632,41 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:828-836` — the shuriken (3): the 22x22 box, aiStyle 2,
             // `penetrate = 4`, the stock 3600 life and the stock `tileCollide`.
             SHURIKEN => (22.0, 22.0, 2, 4, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d2 — the aiStyle-11 light pets. `Projectile.cs:993-1007` (the
+            // Shadow Orb 18): 32x32, aiStyle 11, friendly, `light = 0.9f`,
+            // `alpha = 150`, `tileCollide = false`, `penetrate = -1`,
+            // `timeLeft *= 5` (3600 → 18000), `ignoreWater`, `scale = 0.8f`,
+            // `netImportant`. The fairies below share everything but the box
+            // (18x18) and the alpha (the stock 0).
+            SHADOW_ORB => (
+                32.0,
+                32.0,
+                11,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 150, 0.8),
+            ),
+            // `Projectile.cs:1522-1535` (72) / `:1674-1687` (86) /
+            // `:1688-1701` (87): 18x18, aiStyle 11, friendly, `light = 0.9f`,
+            // `tileCollide = false`, `penetrate = -1`, `timeLeft *= 5`,
+            // `ignoreWater`, `scale = 0.8f`, `netImportant` — NO alpha line
+            // (the stock 0, `:779`).
+            BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY => (
+                18.0,
+                18.0,
+                11,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 0, 0.8),
+            ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
@@ -4110,6 +4159,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The slice-B pets set `netImportant` themselves
             // (`Projectile.cs:5419`/`:9643`/`:9993`).
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // W4-d2 — the aiStyle-11 light pets set `netImportant = true`
+            // (`Projectile.cs:995`/`:1524`/`:1676`/`:1690`).
+            || matches!(kind, SHADOW_ORB | BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY)
             // S1-P-i42 — the glowstick/flare family sets `netImportant = true`
             // (`Projectile.cs:1328`/`:1356`/`:2517`/`:4024`/`:5487`/`:5853`/
             // `:8345`/`:9582`/`:9593`/`:9604`/`:9615`/`:10155`).
@@ -4162,6 +4214,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The slice-B pets set `ignoreWater` themselves
             // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // W4-d2 — the aiStyle-11 light pets' `ignoreWater = true`
+            // (`Projectile.cs:1005`/`:1533`/`:1685`/`:1699`).
+            || matches!(kind, SHADOW_ORB | BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
@@ -4703,6 +4758,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at it. The other glowsticks/flares keep the stock 1 (no
         // `projFrames` override in `Main.cs:8444-8727`).
         FAIRY_GLOWSTICK => 4,
+        // W4-d2 — the fairies' 4-frame sheets (`Main.cs:8578-8580`); the
+        // aiStyle-11 arm's `frameCounter >= 4` / `frame >= 4` cycle
+        // (`Projectile.cs:24385-24394`). The Shadow Orb keeps the stock 1
+        // (no `projFrames[18]` override — its arm spins, never frames).
+        BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY => 4,
         _ => 1,
     }
 }

@@ -201,6 +201,12 @@ mod projectile_ai_misc;
 // projectile/data.rs; the dispatch arms (14-gate + 33) are wired in
 // projectile.rs::update. Code-only mode — witness tests written not run.
 mod projectile_ai_light_items;
+// W4-d2 — the aiStyle-11 light pets (the Shadow Orb 18 + the fairies
+// 72/86/87): the fairy head, the affirmative keep-alive pin and the
+// owner-center seek (`Projectile.cs:24371-24500`). The rows land in
+// projectile/data.rs; the dispatch arm (11) is wired in
+// projectile.rs::update. Code-only mode — witnesses written not run.
+mod projectile_ai_light_pets;
 // S1-P-i55 golf: the two golf projectile AIs (721/739-752 aiStyle 149,
 // 722 aiStyle 150) + the club strike / tee placement / cup scoring,
 // reusing tr-core's golf.rs + golf_state.rs (code-only round — the

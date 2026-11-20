@@ -39244,3 +39244,57 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The aiStyle-11 light pets (W4-d2, 2026-11-21, code-only вЂ” tests written NOT run)
+
+The projectile aiStyles 11-20 census (`task/W4-d2-proj-ai-11-20`) found
+12/14/15/16/18/19/20 armed and **11/13/17 missing** (the f19 verify
+branch's 1-105 coverage census agrees). This slice lands **aiStyle 11**
+(`Projectile.cs:24371-24500`): the Shadow Orb (18) and the three fairies
+(72/86/87), in `projectile_ai_light_pets.rs` behind the dispatch's
+`11 =>` arm (kind-gated to `LIGHT_PET_KINDS`).
+
+* **The fairy head** (`:24373-24410`): the sprite flips AGAINST the X
+  velocity, `rotation = velocity.X * 0.1f` (a SET), the 4-tick frame
+  cycle, the 1-in-6 dust gate. The orb's else arm spins `+= 0.02f`.
+* **The keep-alive pin is AFFIRMATIVE** (`:24415-24439`): the flag true
+  pins `timeLeft = 2` вЂ” the exact `AI_026` keep-alive shape
+  (`projectile_ai026_a::keep_alive`). The buff pass re-grants
+  `pet_flags[kind]` every tick (`buff_effects_accessory.rs`,
+  `Player.cs:11286-11297`/`:11008`), so the pin holds the pet alive; the
+  tick the buff lapses the flag stays false and the 2-tick life runs
+  out. Verified against the decompile bytes (no negation вЂ” hex-dumped
+  `:24417`).
+* **The follow block** (`:24440-24495`): speed 3 (fairies 6), the 800-px
+  teleport (position only вЂ” the velocity is untouched), the 70-px rest
+  band (fairies 50; the orb's controlUp/controlDown shifts the target
+  В±40 Y / в€’6 X and narrows the band to 4), the fairy-only overshoot cap
+  `SafeNormalize(Zero) * (dist в€’ band)`. The owner-centre reads use the
+  C# INTEGER box halves (`(float)(width / 2)`).
+* **Rows** (`data.rs`): 18 в†’ 32Г—32 alpha 150; 72/86/87 в†’ 18Г—18 stock
+  alpha 0; all aiStyle 11, penetrate в€’1, `timeLeft *= 5` (18000),
+  `tileCollide = false`, `light = 0.9f`, `scale = 0.8f`,
+  `netImportant`/`ignoreWater`; `proj_frames` 4 for the fairies
+  (`Main.cs:8578-8580`), stock 1 for the orb.
+* **Spawn seam**: the pet buff pass's `spawn_pet_if_needed` + the fairy
+  arm now route the FOUR light-pet kinds through
+  `spawn_with_data_ai_owned` (SetDefaults + the centred box,
+  `Projectile.cs:10876-10877`). The other pets keep the plain spawn вЂ”
+  the rowed style-67 trio's (500/1018/1056) spawn upgrade is the pet-AI
+  task's follow-up, deliberately out of this slice's scope.
+
+RNG: the fairy head consumes exactly ONE `Next(6)` per tick
+(`:24395`); the `Dust.NewDust` INTERNAL rolls are pool-occupancy gated
+(`Dust.cs:114-152`) and skip with the unported dust layer вЂ” the
+`projectile_ai026_a` wisp-dust precedent, NOT the empress six-draw
+form. The orb draws nothing. The witness suite mirrors the gate
+against a same-seeded `UnifiedRandom` (`peek` equality).
+
+Deliberate skips: the dust visuals + the `cLight` shader read (draw
+state), `netUpdate`, the wet movement half (`ignoreWater = true` on
+every row). The direction flip rides the arm tail
+(`AutomaticallyChangesDirection` `:17283` does not exclude 11).
+
+Verification: code-only вЂ” no cargo/rustc/tests/graphify invoked. The
+12 witness tests in `projectile_ai_light_pets.rs` are WRITTEN NOT RUN;
+every expected value hand-derived from the cited C# lines.
+

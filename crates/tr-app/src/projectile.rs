@@ -16965,6 +16965,27 @@ impl ProjectilePool {
                                 self.slots[i].ai_dungeon_debris(world, rng, local_owner);
                             }
                         }
+                        // W4-d2 — `AI()`'s `else if (this.aiStyle == 11)`
+                        // (`Projectile.cs:24371-24500`): the light pets —
+                        // the Shadow Orb 18 + the fairies 72/86/87. The
+                        // fairy head (sprite flip / rotation set / frame
+                        // cycle / the 1-in-6 dust gate), the affirmative
+                        // keep-alive pin (`pet_flags[kind]`), the
+                        // owner-center seek with the 800-px teleport and
+                        // the fairy overshoot cap. The rows keep
+                        // `tileCollide = false` — the arm owns the free
+                        // integration + the direction flip.
+                        11 => {
+                            if crate::projectile_ai_light_pets::LIGHT_PET_KINDS
+                                .contains(&self.slots[i].kind)
+                            {
+                                crate::projectile_ai_light_pets::light_pet_step(
+                                    &mut self.slots[i],
+                                    player.as_deref(),
+                                    rng,
+                                );
+                            }
+                        }
                         // `AI()`'s `else if (this.aiStyle == 7)`
                         // (`Projectile.cs:24230-24233`) ->
                         // `AI_007_GrapplingHooks` — the grappling hooks.
