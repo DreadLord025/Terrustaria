@@ -6674,6 +6674,31 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-g6 extra-3 — the bridge into `npc_findframe_extra3`'s pure
+    /// machines: the four fields both ways; `aiAction` rides the
+    /// SpikedJungleSlime's `num2` motion class (`NPC.cs:66696-66704` —
+    /// the King Slime's wind-up writes the NPC field).
+    fn find_frame_wave_extra3(&mut self, kind: crate::npc_findframe_extra3::FindFrameExtra3Kind) {
+        let mut s = crate::npc_findframe_extra3::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra3::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            ai_action: self.ai_action,
+        };
+        crate::npc_findframe_extra3::find_frame_extra3(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // W4-g6 low-1 — the `cs_id`-keyed hook into the low-band wave's
         // pure machines (`npc_findframe_low1.rs`, the FIRST-12 missing
@@ -6708,6 +6733,19 @@ impl Npc {
             crate::npc_findframe_mid2::find_frame_kind_for_cs_id(self.kind.cs_id())
         {
             self.find_frame_wave_mid2(kind);
+            return;
+        }
+        // W4-g6 extra-3 — the hook into `npc_findframe_extra3.rs` (the
+        // W4-f26 module, the first-15 UNCLAIMED set 182/185/195/196/198/
+        // 199/201/202/203/204/205/209/217/218/219). The mapper speaks
+        // vanilla `i16` (the `find_frame_kind_high2` precedent) — the
+        // `cs_id` cast is lossless (every id ≤ 697). Stream-inert on the
+        // same proof; the arms draw no RNG (the Cyborg's town pose zones
+        // are the documented skip).
+        if let Some(kind) =
+            crate::npc_findframe_extra3::find_frame_kind_extra3(self.kind.cs_id() as i16)
+        {
+            self.find_frame_wave_extra3(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -33626,6 +33664,83 @@ mod w4_g6_mid2_tests {
         n.vy = -1.0;
         n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::RuneWizard);
         assert_eq!(n.frame, 2, "the air gate wins over the cast");
+    }
+}
+
+#[cfg(test)]
+mod w4_g6_extra3_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g6 extra-3 — the `find_frame` hook into `npc_findframe_extra3` ----
+    // The pure machines carry their own 13 pinned witnesses in
+    // `npc_findframe_extra3.rs`; these pin the NPC-side seam (incl. the
+    // wave-B fighter delegate through the bridge). WRITTEN NOT RUN
+    // (code-only mode — no compiler invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (verified statically over the hand rows AND the bestiary
+    /// `net_id` fallback — no value in the 182..219 set appears).
+    #[test]
+    fn w4_g6_the_extra3_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra3::find_frame_kind_extra3(kind.cs_id() as i16),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-3 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies the four fields both ways and feeds
+    /// vx/vy/facing/ai/ai_action through — pinned on the FloatyGross
+    /// floater (`NPC.cs:74850-74883`), the SpikedJungleSlime's aiAction
+    /// motion class (`:66696-66704` + `:70828-70845`), the
+    /// HeadacheSkeleton/SnowFlinx wave-B delegate air pins
+    /// (`:69642-69650`, 201 pin-0 vs 185 row-1) and the Moth's half-tick
+    /// bands (`:74935-74957`).
+    #[test]
+    fn w4_g6_the_extra3_bridge_copies_the_four_fields_and_feeds_ai_action() {
+        let mut n = bare(NpcKind::Piranha);
+        // The FloatyGross: row 4 + the 6-tick step wraps the FULL 5-row
+        // sheet to 0; the vx-sign flip + the vx * 0.1 tilt.
+        n.frame = 4;
+        n.frame_counter = 5.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.0;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::FloatyGross);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "row 4 + step wraps");
+        assert_eq!((n.sprite_dir, n.rotation), (1, 0.2));
+        // The SpikedJungleSlime: aiAction 1 forces num2 = 4 → the
+        // counter adds THREE (preset 5 → 8 steps the 2-row sheet).
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.vx = 0.0;
+        n.ai_action = 1;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the attack triple-add");
+        // aiAction 0 idle: the single add only (5 → 6, no step).
+        n.ai_action = 0;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime);
+        assert_eq!((n.frame, n.frame_counter), (1, 6.0));
+        // The wave-B delegate through the bridge: the HeadacheSkeleton
+        // (201, in the `:69647` pin list) pins air row 0; the SnowFlinx
+        // (185, not in the list) holds the group's row 1.
+        n.vy = 1.0;
+        n.frame = 7;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::HeadacheSkeleton);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "the 201 air pin-0");
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SnowFlinx);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the 185 air row-1");
+        // The Moth: the +0.5 half-tick — preset 1.5 → 2.0 lands the <4
+        // band's row 1.
+        n.frame_counter = 1.5;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::Moth);
+        assert_eq!((n.frame, n.frame_counter), (1, 2.0));
     }
 }
 

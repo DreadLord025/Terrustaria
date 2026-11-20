@@ -39320,3 +39320,104 @@ entry-by-entry and cross-checked against the port's own
 56=3, 57=6, 61=6, 62=5, 63/64=7, 67=8). 12 witness tests are WRITTEN, NOT
 RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (code-only
 mode).
+
+## W4-g6 FindFrame wiring wave 1
+
+The FIRST-half wiring lane for the ported-but-UNWIRED `NPC.FindFrame`
+waves (`task/W4-g6-npc-findframe-wire-1`, code-only mode 2026-11-21 — no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
+
+**The dispatch census.** `npc.rs::find_frame` is the port's single
+frame-clock site (the `NPC.UpdateNPC` tail, `NPC.cs:90516` — called from
+`update_rng`/`update_rng_dust` and the aiStyle-75 pooled wrapper in
+`world_sim/npcs.rs`). Its head carries the `cs_id`-keyed hooks into the
+pure frame machines; the body match arms the rostered kinds. Census of
+the ten wave branches:
+
+| module | branch | kinds | hook on its own branch | this lane |
+| --- | --- | --- | --- | --- |
+| `npc_findframe_low1` | W4-d44 | 37-67 (12) | NO (in-flight here) | WIRED (commit 1) |
+| `npc_findframe_low2` | W4-d45 | 69-120 (12) | YES | left (already wired) |
+| `npc_findframe_mid1` | W4-d46 | 150-165 (12) | YES | left (already wired) |
+| `npc_findframe_mid2` | W4-d47 | 166-180 (12) | NO | WIRED |
+| `npc_findframe_c` | W4-d48 | 355-366 (12) | NO | W4-g7 (second half) |
+| `npc_findframe_high2` | W4-d49 | 367-434 (12) | NO | W4-g7 (second half) |
+| `npc_findframe_extra1` | W4-e13 | 121-202 (15) | YES | left (already wired) |
+| `npc_findframe_extra2` | W4-e14 | 84-181 (15) | NO | WIRED |
+| `npc_findframe_extra3` | W4-f26 | 182-219 (15) | NO | WIRED |
+| `npc_findframe_extra4` | W4-f27 | 233-253 (15) | NO | W4-g7 (second half) |
+
+**The lane split.** The unwired kinds sorted by vanilla C# slot leave a
+clean gap at 219/233: the FIRST half (every slot ≤ 219 — extra2 84-181,
+mid2 166-180, extra3 182-219, plus the in-flight low1 37-67) is THIS
+lane; the SECOND half (every slot ≥ 233 — extra4 233-253, c 355-366,
+high2 367-434) is W4-g7. The split keeps the c-module's worm tile-slope
+probe seam (`FrameInput::slope`, the caller-resolved
+`Framing.GetTileSafely` read, `NPC.cs:72807-72825`) wholly in the second
+half — this lane's bridges need no world access.
+
+**The wiring shape** (the low1/d46-mid1 precedent, per module):
+* a `find_frame_kind_for_cs_id(u16) -> Option<Kind>` mapper in the module
+  (extra3 keeps its existing `find_frame_kind_extra3(i16)` name — the
+  d48/d49 `find_frame_kind_c`/`_high2` precedent; the hook casts
+  `cs_id() as i16`, lossless since every vanilla id ≤ 697);
+* a `find_frame_wave_<mod>` bridge on `Npc` copying the frame fields out,
+  running one machine tick, copying them back;
+* a `cs_id`-keyed hook at the `find_frame` head, ahead of the body match
+  (the sets are disjoint from every rostered kind's arms — see the
+  inertness proof).
+
+**The field seams** (per-module deviations from the four-field base):
+* extra2 copies FIVE fields both ways — `localAI[0]` rides
+  `FrameState::local_ai0` because the Slimer's one-shot init latch
+  WRITES it (`NPC.cs:74014-74018`); the penguin pair reads the same slot
+  as the colour bank input (the e13 extra-1 five-field precedent). `wet`
+  feeds the AnglerFish's swim/flop split (`:74191`).
+* mid2's `local_ai0` is INPUT-only (the CorruptPenguin bank,
+  `:76398-76409` — no slice-2 arm writes it, so its `FrameState` stays
+  four-field); the bridge feeds `self.local_ai[0]` in and does NOT copy
+  it back.
+* extra3 feeds `ai_action` (the SpikedJungleSlime's `num2` motion class,
+  `NPC.cs:66696-66704` — the King Slime's wind-up writes the NPC field,
+  `:43224`/`:43342`); its `FrameState` is four-field.
+* the wave-B `humanoid_fighter_frame` lifts to `pub(crate)` (the e14/f26
+  keep-one delegate — the ChaosElemental/FaceMonster and the
+  SnowFlinx/Nymph/Lihzahrd/skeleton-trio groups ride ONE helper).
+
+**The inertness proof.** Every hook is stream-inert today: no current
+`NpcKind`'s `cs_id()` lands in any wired set. `cs_id()` has exactly two
+value sources — the 57 hand rows in `npc/data.rs` and the bestiary
+`net_id` fallback (`bestiary.rs::ENTRIES`, 241 literal ids + the 8
+negative slime-variant consts). A static sweep of BOTH sources against
+the four sets (low1 37-67, extra2 84-181, mid2 166-180, extra3 182-219)
+finds ZERO collisions (the bestiary rows whose VALUES sit near the sets
+— e.g. the 143-145 frost trio — belong to kinds whose hand rows override
+them or whose ids miss the sets; the sweep is over the reachable
+outputs, and the `ALL_KINDS` witness re-proves it per-kind at test time). The machine arms themselves draw no
+`Main.rand` (the modules' per-arm censuses: the floater dust is types
+60/634's, the eye dust is type 23's, the town pose zones are the
+documented skips), so even a future roster addition cannot move a
+stream through these hooks.
+
+**The overlap note (for the merger).** extra2's 121/137/141/142/148/149
+and extra3's 182/185/195/196/198/199/201/202 are VERBATIM twins of
+e13-extra1's arms (the two census passes claimed them independently —
+the modules' own keep-one notes). This lane wires BOTH mappers ahead of
+the body match in hook order low1 → extra2 → mid2 → extra3; when e13's
+hook lands at the merge the FIRST matching hook wins and the twins are
+byte-identical machines, so the frame output is the same either way —
+the merger dedupes the mappers (keep-one), not the behaviour. The
+`find_frame_kind_for_cs_id` inertness witnesses hold per-module
+regardless of hook order.
+
+**Witnesses.** 6 seam tests WRITTEN NOT RUN (`npc.rs`'s
+`w4_g6_extra2_tests`/`w4_g6_mid2_tests`/`w4_g6_extra3_tests` — one
+`ALL_KINDS` inertness sweep + one bridge-copy pin each): the extra2
+bridge pins the Slimer latch both ways + the penguin bank round-trip +
+the AnglerFish wet band; the mid2 bridge pins the penguin bank/air rows,
+the SwampThing +2 idle counter, the IceElemental NO-flip strip and the
+RuneWizard cast/air pose precedence; the extra3 bridge pins the
+FloatyGross wrap/tilt, the SpikedJungleSlime aiAction triple-add vs the
+idle single-add, the wave-B delegate's 201-pin-0 vs 185-row-1 air pins
+and the Moth half-tick band. The modules' own machine witnesses (13
+mid2 + 15 extra2 + 13 extra3) ride their branches verbatim.

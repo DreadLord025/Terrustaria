@@ -167,6 +167,7 @@ mod npc_findframe_low1;
 // 182-219; the SECOND half 233+ rides W4-g7).
 mod npc_findframe_extra2;
 mod npc_findframe_mid2;
+mod npc_findframe_extra3;
 mod persist;
 mod grapple;
 mod gore_seam;
