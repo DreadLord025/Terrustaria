@@ -21285,10 +21285,102 @@ reads it; it is omitted rather than carried as a dead constant.
 
 **Scope.** Ported: the ball engine, the shot model, the club table, the contact
 listener's bounce/bumper/hole-capture/pass-through decisions, the score record
-and the per-client state. Not ported: the projectile AIs 721/722 and 739-752,
-the golf UI, `FancyGolfPredictionLine`, tee placement, netcode, and the
-dust/sound/chat effects (the listener reports contacts instead of performing
-them, so the caller owns those).
+and the per-client state. Not ported: the golf UI, `FancyGolfPredictionLine`,
+netcode beyond the `27`/`59` flags. The projectile AIs, tee placement and the
+strike/cup effects landed with S1-P-i55 (below).
+
+## The golf projectile AIs (S1-P-i55, 2026-11-20)
+
+`crates/tr-app/src/projectile_ai_golf.rs` ports the two golf AIs and the
+player-side strike path, REUSING the tr-core seams above (never duplicated):
+
+- **aiStyle 149** (`Projectile.AI_149_GolfBall`, `Projectile.cs:20331-20374`):
+  the `timeLeft < 10` floor, the `ai[1] == -1` tee sentinel (the tile-494
+  check under `Bottom.ToTileCoordinates`, the clear-with-netUpdate), the
+  `StepGolfBall` step through `tr_core::golf::step_golf_ball` (the wrapper
+  pins `PHYSICS` on `ball::step` + `GolfContactListener`), the Resting
+  damage-zero + state-change netUpdate, the `localAI[1]` state latch, the
+  `rotation += localAI[0]` spin + the airborne `vx*0.1 + vy*0.1` term, and
+  the moving-owned-ball pressure-pad probe (`Collision.SwitchTiles(..., 4)`
+  — `ForcePlateDetection[135]` is null in the set, `ProjectileID.cs:434-520`,
+  so `!flag.HasValue` holds). `UpdatePosition`'s golf-ball skip
+  (`:20435`) means the ball engine owns ALL movement — the dispatch latches
+  `old_position` after the arm and integrates nothing.
+- **aiStyle 150** (`AI_150_GolfClubHelper`, `Projectile.cs:52417-52548`):
+  the orphan kill, the 500×500 `CenteredRectangle` nearby-ball scan, the
+  tee request, the release strike (ONE `NextFloatDirection` per struck
+  ball BEFORE the dust ring, `ValidateShot` per ball, the strength off
+  `calculate_shot_strength_from_helper` + the owner's held club, the
+  unguarded XNA normalize), the follow-through (kill at `useAnimation + 30`,
+  the dummy item time floor 2), the mouse-track + right-click PRESS-edge
+  cancel, the facing latch and the charge hold (the `useAnimation*4*3`
+  wrap). The `mouseRight && mouseRightRelease` pair is the press tick: the
+  release flag refresh runs AFTER Draw (`Main.cs:62458-62465`), so during
+  Update it holds LAST frame's `!mouseRight`.
+- **the strike** (`GolfHelper.HitGolfBall`, `:434-457`): the velocity blend
+  is `hit_golf_ball_velocity` (reused); the projectile writes (`timeLeft =
+  18000`, the negative `ai[1]` reset then `++`, `localAI[1] = 1`) and
+  `RecordSwing` land pool-side.
+- **the tee placement** (`Player.TryPlacingAGolfBallNearANearbyTee`,
+  `Player.cs:49677-49737`): the ±2-tile scan with the INNER-loop break (one
+  candidate per column), the nearest-to-mouse pick (first wins ties), the
+  `TileReachCheckSettings.Simple` region (mult 1, limit 20) clamped to
+  [10, maxTiles−10], the owned-ball cull (type+owner, NO active gate), the
+  `GetPreferredGolfBallToUse` order (held shoot → armour 19..0 → inventory
+  0..49, default 721) and the `(x*16+8.5, y*16+6)` centre spawn with
+  `ai1 = -1`. Three call sites: the ball-item use arm (`ItemCheck_Shoot`,
+  `Player.cs:47516-47537` — the <100 px tee attempt, then the far/blocked
+  hand-point spawn or the near-clear mouse-point spawn), the helper's
+  no-nearby-ball request, and the tee right-click (`TileInteractionsUse`'s
+  494 arm, `Player.cs:32342-32354`).
+- **the cup** (`ContactListener.PutBallInCup`, `GolfHelper.cs:84-113`): the
+  contact now carries the impact point + normal so `hitLocation =
+  (ImpactPoint − Normal*0.5).ToTileCoordinates()` is exact; the scoring
+  gate (local owner + `ShouldScoreHole`), the multi-stroke timer pin,
+  `RecordBallInfo`/`LandBall`/`GetGolfBallScore`, the
+  `AccumulateGolfingScore` accumulate, the chat line
+  (`Game.BallBounceResultGolf_Single/_Plural`), the timer reset, the
+  `Wiring.HitSwitch` + `59` send, and the unconditional kill — in that
+  order. The contact replay keeps the C#'s mid-step `projectile.active`
+  semantics: a `BreaksToy`/`InCup` kill suppresses the later `BounceDust`
+  draws of the same step (the core listener reports contacts in collision
+  order).
+- **the >10-ball cull** (`NewProjectile`, `Projectile.cs:10932-10955`): the
+  11th active damage-0 owned ball kills the lowest-`timeLeft` one, after
+  every local ball spawn.
+
+**RNG contract** (the `UpdateProjectiles` stream): 149 draws one
+`NextFloat` per `BounceDust` contact (`NextVector2CircularEdge(0.5, 0.4)` =
+one `NextVector2Unit` angle, `Utils.cs:1261-1274`), in collision order,
+gated on the replay-local active flag. 150 draws one `NextFloatDirection`
+per struck ball before the (draw-free) dust ring. The cup's
+`EmitGolfballExplosion` (`GolfHelper.cs:154-214`) keeps every explicit draw
+in the C#'s order with the f32 loop accumulation verbatim (12 + 1 + 1 +
+per-spoke(1 + 1 + 2·count) + 5 + 1 + 14). The dust BODIES are the layer
+skip; the sounds ride the pool's cue queue (Item1 + N×Item126 + Item129).
+
+**The context seam.** The pool cannot borrow the App, so the world-sim
+pass clones `GolfState` + the mouse/player snapshot into a `GolfContext`
+before `update` (the `FlailInputs` pattern); the arms mutate the clone
+(the strikes' `RecordSwing`, the cup's scoring) and queue `GolfEffect`s
+(the tee request, the cup's wiring/chat/cue, the pad probe, the player
+writes). The pass writes the resolved clone back and drains the effects
+at the tail — the `drain_mark_spawns` shape. `GolfState.update` rides the
+player stepper's head (`Main.cs:17219` runs before `UpdatePlayers`), on
+both the alive and dead branches.
+
+**Deliberate folds.** `gravDir == -1` arms (`:52425-52430`,
+`Player.cs:52229-52232`): the port is upright-only — recorded, not dead
+code. `SetDummyItemTime`/`SetItemTime` map to the app's `swing`/`item_time`
+seconds pair; `heldProj` is a new `Player` field (stock −1).
+`CheckSectionsInCaseOwnerIsWatching` (MP section loading), the
+`SendData(128)` golf-score message, `Main.blockMouse`/`mouseInterface`,
+the dust bodies and the chat's byte-255 alpha: no ported layers. The
+`record_ball_info` game-time argument is 0.0 (no monotonic clock at the
+seam; the 2 s camera window is the unported consumer). The 722 `hide`
+flag is draw-only (no port field). The ball's 20-entry `oldPos` cache
+rides the port's 10-entry ring (the recorded trail-density deviation).
+Witness tests WRITTEN NOT RUN (code-only round).
 ## The conveyor-belt family (S1-E-13e, 2026-11-16)
 
 `crates/tr-app/src/collision.rs::build_tile_contacts` ports

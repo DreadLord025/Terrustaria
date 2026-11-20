@@ -19,9 +19,11 @@
 use glam::Vec2;
 
 use crate::ball::{
-    BallCollisionEvent, BallContactListener, BallPassThroughEvent, PhysicsProperties,
+    BallBody, BallCollisionEvent, BallContactListener, BallPassThroughEvent, BallStepResult,
+    PhysicsProperties,
 };
 use crate::tile::Tile;
+use crate::world::World;
 
 /// `GolfHelper.cs:471` - `new PhysicsProperties(0.3f, 0.99f)`.
 pub const PHYSICS: PhysicsProperties = PhysicsProperties {
@@ -228,16 +230,85 @@ pub fn hit_golf_ball_velocity(
     dampened.lerp(velocity, t)
 }
 
+/// `GolfHelper.CalculateShotStrength(Projectile golfHelper, Entity golfBall)`
+/// (`:305-324`) — the club helper's aim read. The C# computes the screen-size
+/// term (`min(screenWidth, screenHeight)`, `(num - 150) / 2`, floor 200) and
+/// then OVERWRITES it with `num2 = 300f` (`:317-318`) — the screen inputs are
+/// dead writes in the decompile, so this port takes neither. A swung helper
+/// (`ai[0] != 0`) returns `default(ShotStrength)` — all zero (`:319-322`).
+/// `club` is `GetClubPropertiesFromGolfHelper` (`:326-329`): the OWNER's held
+/// item id through [`get_club_properties`] — the caller resolves the item.
+pub fn calculate_shot_strength_from_helper(
+    helper_ai0: f32,
+    helper_center: Vec2,
+    ball_center: Vec2,
+    club: ClubProperties,
+) -> ShotStrength {
+    if helper_ai0 != 0.0 {
+        return ShotStrength {
+            absolute_strength: 0.0,
+            relative_strength: 0.0,
+            rough_land_resistance: 0.0,
+        };
+    }
+    calculate_shot_strength((helper_center - ball_center) / 300.0, club)
+}
+
+/// `GolfHelper.IsGolfBallResting` (`:383-390`): a never-hit ball
+/// (`localAI[1] == 0`) rests by definition; a hit one rests when its position
+/// is within 1 px of the OLDEST `oldPos` ring entry. The port's history ring
+/// is fixed 10 (the recorded trail-density deviation, projectile.rs
+/// `shift_trailing_history`), so `oldest_old_pos` is `oldPos[9]` where the C#
+/// reads `oldPos[Length - 1]` of the ball's 20-entry cache
+/// (`ProjectileID.cs:522`).
+pub fn is_golf_ball_resting(local_ai1: f32, position: Vec2, oldest_old_pos: Vec2) -> bool {
+    if local_ai1 as i32 == 0 {
+        return true;
+    }
+    (position - oldest_old_pos).length() < 1.0
+}
+
+/// `GolfHelper.StepGolfBall` (`:267-270`) - one physics step of a golf ball:
+/// `BallCollision.Step(PhysicsProperties, entity, ref angularVelocity, Listener)`.
+/// The generic engine ([`crate::ball::step`]) and the contact listener
+/// ([`GolfContactListener`]) are reused verbatim; this wrapper only pins the
+/// golf `PhysicsProperties` (0.3 gravity / 0.99 drag, `:471`). The caller owns
+/// the listener instance (the C# shares one static `GolfHelper.Listener`) and
+/// drains its contacts afterwards.
+pub fn step_golf_ball<E: Copy>(
+    body: &mut BallBody,
+    angular_velocity: &mut f32,
+    entity: E,
+    world: &World,
+    listener: &dyn BallContactListener<E>,
+) -> BallStepResult {
+    crate::ball::step(&PHYSICS, body, angular_velocity, entity, world, listener)
+}
+
 /// `GolfHelper.ContactListener` (`:32-253`). The effect calls
 /// (`PutBallInCup`'s scoring/net/wiring, the dust bursts, the sounds, the chat
 /// text) are the caller's - this struct only produces the physics decisions and
 /// reports a [`GolfContact`] for each one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GolfContact {
-    /// `:57-69` - the ball dropped into the cup at this tile.
-    InCup { tile_x: i32, tile_y: i32 },
+    /// `:57-69` - the ball dropped into the cup at this tile. The impact
+    /// point and normal ride along so the caller can compute
+    /// `PutBallInCup`'s `hitLocation = (ImpactPoint - Normal * 0.5)
+    /// .ToTileCoordinates()` (`:88`) exactly.
+    InCup {
+        tile_x: i32,
+        tile_y: i32,
+        impact_point: Vec2,
+        normal: Vec2,
+    },
     /// `:71-74` - `BreaksFromToyBreaker` + `TileID.Sets.BreaksToys`.
     BreaksToy,
+    /// `:75-81` - the small upward bounce's dust: one
+    /// `Main.rand.NextVector2CircularEdge(0.5, 0.4)` draw (`:80` = one
+    /// `NextVector2Unit` float, `Utils.cs:1261-1274`). Reported in collision
+    /// order so the caller's stream mirror stays exact across the engine's
+    /// `ceil(speed/2)` sub-steps.
+    BounceDust,
 }
 
 /// The listener's state: it holds the material table and collects contacts.
@@ -260,7 +331,8 @@ impl<'a> GolfContactListener<'a> {
         }
     }
 
-    /// The contacts raised since the last [`Self::take_contacts`].
+    /// The contacts raised since the last [`Self::take_contacts`], in
+    /// collision order (the engine's sub-step order).
     pub fn take_contacts(&self) -> Vec<GolfContact> {
         core::mem::take(&mut *self.contacts.borrow_mut())
     }
@@ -309,15 +381,37 @@ impl<E: Copy> BallContactListener<E> for GolfContactListener<'_> {
                     self.contacts.borrow_mut().push(GolfContact::InCup {
                         tile_x: collision.tile_x,
                         tile_y: collision.tile_y,
+                        impact_point: collision.impact_point,
+                        normal: collision.normal,
                     });
                 }
             }
             _ => {}
         }
 
-        // `:75-81` - the small upward bounce's dust.
-        self.wants_bounce_dust
-            .set(velocity.y < -0.3 && velocity.y > -2.0 && velocity.length() > 1.0);
+        // `:71-74` - `BreaksFromToyBreaker[type] && tile.nactive() &&
+        // TileID.Sets.BreaksToys[tile.type]` kills the projectile. The type
+        // set is entity-side (the caller owns the kind gate); the tile half
+        // is reported here. `BreaksToys` is tile 740 only
+        // (`TileID.cs:479`, `SET_BREAKS_TOYS`). Reported BEFORE the dust
+        // (`:71-74` precedes `:75-81`): a kill here flips the caller's
+        // active flag, and the dust gate reads it.
+        if collision.tile.active()
+            && !collision.tile.inactive()
+            && crate::tiledata::SET_BREAKS_TOYS.has(collision.tile.kind)
+        {
+            self.contacts.borrow_mut().push(GolfContact::BreaksToy);
+        }
+
+        // `:75-81` - the small upward bounce's dust. The C# gates on
+        // `projectile != null && projectile.active`; the engine cannot see
+        // the entity's liveness (E is opaque), so the caller re-checks its
+        // own active flag when it replays the contact order.
+        let bounce = velocity.y < -0.3 && velocity.y > -2.0 && velocity.length() > 1.0;
+        self.wants_bounce_dust.set(bounce);
+        if bounce {
+            self.contacts.borrow_mut().push(GolfContact::BounceDust);
+        }
     }
 
     /// `GolfHelper.cs:125-147`.
@@ -559,7 +653,9 @@ mod tests {
             listener.take_contacts(),
             vec![GolfContact::InCup {
                 tile_x: 12,
-                tile_y: 34
+                tile_y: 34,
+                impact_point: Vec2::ZERO,
+                normal: Vec2::new(0.0, -1.0),
             }]
         );
 

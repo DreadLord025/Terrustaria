@@ -12202,6 +12202,18 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// S1-P-i55 — the golf family's per-tick context
+    /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
+    /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
+    /// sets it before `update` (the pool cannot borrow the App); `None`
+    /// keeps the golf arms inert (the pool-only tests). The arm's effects
+    /// ride back in [`Self::golf_effects`] for the pass to resolve — the
+    /// `wants_mark_spawn` intent pattern.
+    golf_ctx: Option<crate::projectile_ai_golf::GolfContext>,
+    /// The golf arms' queued effects this tick, drained by the world-sim
+    /// pass (the tee placement, the strikes, the cup scoring, the pad
+    /// probes, the player-side writes).
+    golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
 }
 
 impl Default for ProjectilePool {
@@ -12484,6 +12496,8 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            golf_ctx: None,
+            golf_effects: Vec::new(),
         }
     }
 
@@ -12869,8 +12883,11 @@ impl ProjectilePool {
         &self.slots
     }
 
-    #[cfg(test)]
-    fn slots_mut(&mut self) -> &mut [Projectile] {
+    /// The mutable slot array — the golf family's pool-side resolvers
+    /// (the tee placement's owned-ball cull, the >10-ball spawn cull, the
+    /// strike writes) run here where the C# reads `Main.projectile` whole
+    /// (`Player.cs:49725-49731`, `Projectile.cs:10939-10954`).
+    pub fn slots_mut(&mut self) -> &mut [Projectile] {
         &mut self.slots
     }
 
@@ -13501,6 +13518,29 @@ impl ProjectilePool {
     /// first — the wave-C drain convention.
     pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
+    }
+
+    /// S1-P-i55 — the golf family's per-tick context setter: the world-sim
+    /// pass builds it from the App (the `GolfState` borrow cannot ride the
+    /// pool), the dispatch reads it inside the 149/150 arms. The arms
+    /// mutate it in place (the strikes' `RecordSwing`, the cup's scoring);
+    /// [`Self::take_golf_context`] hands the resolved state back.
+    pub fn set_golf_context(&mut self, ctx: crate::projectile_ai_golf::GolfContext) {
+        self.golf_ctx = Some(ctx);
+    }
+
+    /// The resolved golf context after `update` — the pass writes the
+    /// `GolfState` clone back to `App.golf_state` and the `golfer_score`
+    /// to the player (the C# mutates the live state mid-walk; the port's
+    /// clone is authoritative for the tick).
+    pub fn take_golf_context(&mut self) -> Option<crate::projectile_ai_golf::GolfContext> {
+        self.golf_ctx.take()
+    }
+
+    /// The golf arms' queued effects, drained by the world-sim pass after
+    /// `update` (the `drain_mark_spawns` shape).
+    pub fn drain_golf_effects(&mut self) -> Vec<crate::projectile_ai_golf::GolfEffect> {
+        std::mem::take(&mut self.golf_effects)
     }
 
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
@@ -16316,6 +16356,156 @@ impl ProjectilePool {
                                 }
                             }
                         }
+                        // S1-P-i55 — the golf ball (aiStyle 149,
+                        // `Projectile.cs:20331-20374`): the tee sentinel,
+                        // the ball-engine step, the state latch + spin,
+                        // the pad probe and the cup capture. The arm's
+                        // effects (the cup scoring, the pad probe) ride
+                        // out through `golf_effects`; the bounce dust's
+                        // draws ride `rng` inline (the C#'s order).
+                        149 => {
+                            if let Some(ctx) = self.golf_ctx.as_mut() {
+                                let mats = crate::projectile_ai_golf::default_materials();
+                                let tick = crate::projectile_ai_golf::ai_golf_ball(
+                                    &mut self.slots[i],
+                                    world,
+                                    &mats,
+                                    local_owner,
+                                    rng,
+                                );
+                                if let Some((pos, old_pos, w, h)) = tick.wants_pad_probe {
+                                    self.golf_effects.push(
+                                        crate::projectile_ai_golf::GolfEffect::PadProbe {
+                                            pos,
+                                            old_pos,
+                                            w,
+                                            h,
+                                        },
+                                    );
+                                }
+                                if let Some((_tx, _ty, impact, normal)) = tick.in_cup {
+                                    // `PutBallInCup`'s hitLocation
+                                    // (`GolfHelper.cs:88`):
+                                    // `(ImpactPoint - Normal*0.5)
+                                    // .ToTileCoordinates()`.
+                                    let hit = impact - normal * 0.5;
+                                    let hx = (hit.x as i32) >> 4;
+                                    let hy = (hit.y as i32) >> 4;
+                                    // The scoring runs HERE on the still-
+                                    // live ball (the arm's capture only
+                                    // flipped its replay-local flag — the
+                                    // C#'s `PutBallInCup` scores BEFORE
+                                    // the `:112` kill, so `RecordBallInfo`'s
+                                    // `GetLastHitBall` re-validation sees
+                                    // `active = true`).
+                                    let (text, cue, wire) =
+                                        crate::projectile_ai_golf::put_ball_in_cup(
+                                            &mut self.slots[i],
+                                            i,
+                                            (hx, hy),
+                                            &mut ctx.golf_state,
+                                            &mut ctx.golfer_score,
+                                            &ctx.player_name,
+                                            local_owner,
+                                            rng,
+                                        );
+                                    if let Some(hit_location) = wire {
+                                        self.golf_effects.push(
+                                            crate::projectile_ai_golf::GolfEffect::CupScored {
+                                                hit_location,
+                                                chat: text,
+                                                cue,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        // S1-P-i55 — the club helper (aiStyle 150,
+                        // `Projectile.cs:52417-52548`): the nearby-ball
+                        // scan + tee request, the release strike (the
+                        // per-ball draws ride `rng` inline), the
+                        // follow-through and the charge hold. The
+                        // strikes' projectile writes + RecordSwing run
+                        // here (the pool owns both the slots and the
+                        // context's state).
+                        150 => {
+                            if let Some(ctx) = self.golf_ctx.as_mut() {
+                                // The C# reads `Main.player[owner]` — the
+                                // context's snapshot is the local player;
+                                // a foreign-owned helper reads an inactive
+                                // player (the orphan kill, `:52420`).
+                                let player = if self.slots[i].owner == local_owner {
+                                    ctx.player
+                                } else {
+                                    crate::projectile_ai_golf::GolfClubPlayer {
+                                        active: false,
+                                        ..ctx.player
+                                    }
+                                };
+                                // The C# reads the live `Main.projectile`
+                                // array while mutating the helper slot; the
+                                // port clones the scan view (the helper's
+                                // own entry is never read by either scan —
+                                // 722 is not a golf ball — so the clone is
+                                // byte-identical for every read the arm
+                                // makes).
+                                let scan_slots = self.slots.clone();
+                                let tick = crate::projectile_ai_golf::ai_golf_club_helper(
+                                    &mut self.slots[i],
+                                    &scan_slots,
+                                    player,
+                                    ctx.mouse_world,
+                                    ctx.mouse_right,
+                                    ctx.mouse_right_release,
+                                    local_owner,
+                                    rng,
+                                );
+                                if tick.wants_tee_place {
+                                    self.golf_effects.push(
+                                        crate::projectile_ai_golf::GolfEffect::TeePlace {
+                                            place_position: player.center,
+                                        },
+                                    );
+                                }
+                                // The strikes: `HitGolfBall`'s projectile
+                                // writes + RecordSwing per entry, in the
+                                // C#'s scan order.
+                                let mats = crate::projectile_ai_golf::default_materials();
+                                for (j, v, rough) in tick.strikes {
+                                    crate::projectile_ai_golf::strike_golf_ball(
+                                        &mut self.slots[j],
+                                        j,
+                                        v,
+                                        rough,
+                                        world,
+                                        &mats,
+                                        &mut ctx.golf_state,
+                                    );
+                                    // `NetMessage.SendData(27, ..., j)`
+                                    // (`Projectile.cs:52472`) — the struck
+                                    // ball's sync rides its netUpdate flag.
+                                    self.slots[j].net_update = true;
+                                }
+                                // The strike arm's cue list (Item1 +
+                                // N×Item126) — the pool's sound queue.
+                                for req in tick.sounds {
+                                    self.pending_proj_sounds.push(req);
+                                }
+                                self.golf_effects.push(
+                                    crate::projectile_ai_golf::GolfEffect::PlayerWrites {
+                                        facing: tick.facing,
+                                        held_proj: if tick.writes_held_proj {
+                                            Some(i as i32)
+                                        } else {
+                                            None
+                                        },
+                                        dummy_item_time: tick.dummy_item_time,
+                                        cancel_use: tick.cancel_use,
+                                    },
+                                );
+                            }
+                        }
                         _ => {}
                     }
                     }
@@ -16326,6 +16516,28 @@ impl ProjectilePool {
                     // (the S1-E-21c batch convention, ANALYSIS).
                     if let Some(req) = self.slots[i].wants_sound.take() {
                         self.pending_proj_sounds.push(req);
+                    }
+                    // S1-P-i55 — `base.oldPosition = base.position`
+                    // (`Projectile.cs:17013`) latches between the AI and
+                    // `HandleMovement` for the golf kinds: the ball's pad
+                    // probe (`:20367`) reads LAST tick's latch, and the
+                    // helper's facing test (`:52522`) reads this tick's
+                    // pre-move position. The golf balls' `UpdatePosition`
+                    // is a no-op (`:20435`'s IsAGolfBall skip) and the
+                    // helper zeroes its velocity in the arm, so no
+                    // movement integrates after the latch.
+                    if data.ai_style == 149 || data.ai_style == 150 {
+                        self.slots[i].old_position = self.slots[i].pos;
+                    }
+                    // `AutomaticallyChangesDirection` (`:17281-17288`)
+                    // excludes aiStyle 150 but NOT 149: the ball's
+                    // direction follows `velocity.X`'s sign every
+                    // sub-step (`:17016-17026`, after HandleMovement —
+                    // the golf skip is inside UpdatePosition, so this
+                    // write still runs).
+                    if data.ai_style == 149 {
+                        self.slots[i].direction =
+                            if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                     }
                     // The wind tail (`:16777-16781`) runs after the AI
                     // sub-steps, for the wind-eligible new arms only (the

@@ -1531,6 +1531,11 @@ pub struct Player {
     /// `ai[0..1] = LimitPointToPlayerReachableArea(MouseWorld)`), in world
     /// pixels. `Vec2::ZERO` while not channelling.
     pub channel_target: Vec2,
+    /// `Player.heldProj` (`Player.cs:1516`, stock −1): the slot index of the
+    /// held-channel projectile (the golf club helper writes it every tick,
+    /// `Projectile.cs:52490`/`:52535`). The port's draw/pose consumers land
+    /// with the held-item layers; the field keeps the C#'s write exact.
+    pub held_proj: i32,
     // ------------------------------- the ammo mastery layer (M3-ITEM-6)
     // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
     // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
@@ -2362,6 +2367,8 @@ impl Player {
             channel: false,
             channel_item: 0,
             channel_target: Vec2::ZERO,
+            // `Player.heldProj = -1` (`Player.cs:1516`'s stock).
+            held_proj: -1,
             magic_quiver: false,
             minion_kb: 0.0,
             kb_glove: false,
@@ -3886,6 +3893,13 @@ impl Player {
 
     pub fn center(&self) -> (f32, f32) {
         (self.x + self.width * 0.5, self.y + self.height * 0.5)
+    }
+
+    /// `Entity.Bottom` (`Entity.cs:122-132`):
+    /// `(position.X + width/2, position.Y + height)` — the golf shot's
+    /// legality-box anchor (`GolfHelper.ValidateShot`, `GolfHelper.cs:408`).
+    pub fn bottom(&self) -> (f32, f32) {
+        (self.x + WIDTH * 0.5, self.y + self.height)
     }
 
     /// `Player.meleeSpeed` (`Player.cs:2458`, reset to 1f at `:18335`): the

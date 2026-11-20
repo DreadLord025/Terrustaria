@@ -958,6 +958,13 @@ pub(crate) struct App {
     pub(crate) coins: u64,
     /// The 1000-slot projectile pool (`Main.projectile`, `projectile.rs`).
     pub(crate) projectiles: ProjectilePool,
+    /// `Main.LocalGolfState` (`Main.cs:1807`, `GolfState.cs:6-173`): the
+    /// per-client golf scoring state — the hit records, the score timer and
+    /// the last-hit-ball tracking. `Update()` rides the player stepper's
+    /// head (`Main.cs:17219` runs before `UpdatePlayers`); the cup scoring
+    /// and the strike's `RecordSwing` run pool-side
+    /// (`projectile_ai_golf.rs`, S1-P-i55).
+    pub(crate) golf_state: tr_core::golf_state::GolfState,
     /// The falling tombstone projectiles (`Player.DropTombstone`).
     pub(crate) tomb_falls: Vec<crate::death::TombFall>,
     /// `Player.lostCoins`/`lostCoinString` + the last death text — the
@@ -3733,6 +3740,8 @@ impl App {
             mining_can_hit_walls: true,
             coins,
             projectiles: ProjectilePool::new(),
+            // `Main.LocalGolfState = new GolfState()` (`Main.cs:6483`).
+            golf_state: tr_core::golf_state::GolfState::new(),
             tomb_falls: Vec::new(),
             lost_coins: 0,
             lost_coin_string: String::new(),
