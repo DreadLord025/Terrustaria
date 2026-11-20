@@ -1352,7 +1352,31 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 }
             }
             for cue in p.take_cart_sounds() {
-                app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                // W4-c14 - the cart/movement cues are `SoundID.ItemN` style
+                // plays (`Player.cs:19870`/`:19928` Item55, the landing
+                // Item53 `DelegateMethods.cs:250`, the bumper Item56
+                // `:255`): the facade (`SoundEngine.cs:93-99`) - the
+                // GetRandomPitch NextFloat on the audio-only stream, then
+                // case 2's volume/pitch draws on the `UpdatePlayers`
+                // stream after the gate (53/55's ×0.75 arms + the signed
+                // Next(-20,-11)*0.02 windows, `LegacySoundPlayer.cs:552-
+                // 563`/`:612-616`). The 53/55 playing guards stay the
+                // standing D4 deviation (wave A). The positions are already
+                // the C#'s truncated ints.
+                let style = cue
+                    .cue
+                    .strip_prefix("Item_")
+                    .and_then(|s| s.parse::<i32>().ok());
+                if let Some(style) = style {
+                    app.audio.play_npc_item_cue(
+                        style,
+                        cue.x,
+                        cue.y,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                } else {
+                    app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                }
             }
             // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
             // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
@@ -1532,10 +1556,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some((sx, sy)) = p.take_chillet_sound() {
                 app.audio.play_chillet_sound(sx, sy);
             }
-            // S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`):
+            // S1-P-i41 - the QuickMount no-space tink (`Player.cs:6057`):
             // case 0's Dig variation + pitch draws ride the `UpdatePlayers`
             // stream (the player tick runs under the `Main.cs:17754` swap).
             if let Some((sx, sy)) = p.take_no_space_sound() {
+                app.audio.play_no_space_sound(
+                    sx,
+                    sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-c14 - the petrify-transition Dig-0 (`Player.cs:25225`):
+            // the same case-0 contract, both transition edges.
+            if let Some((sx, sy)) = p.take_stoned_sound() {
                 app.audio.play_no_space_sound(
                     sx,
                     sy,
@@ -2391,7 +2424,56 @@ mod tests {
         assert_eq!(app.audio.played_count(), before, "no item, no UseSound");
     }
 
-    /// S1-L-10c — `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount
+    /// W4-c14 - the petrify-transition Dig-0 (`Player.cs:25219-25235`):
+    /// the `stoned != lastStoned` edge queues the case-0 play at the
+    /// truncated top-left on BOTH directions (the C# site sits outside
+    /// the `stoned` arm); the drain spends exactly the case-0 two draws
+    /// on `UpdatePlayers`, and a muted listener draws nothing.
+    #[test]
+    fn w4_c14_the_stoned_transition_plays_the_dig_on_both_edges() {
+        let mut app = ammo_app();
+        // Park the listener on the player so the gate passes.
+        let (px, py) = {
+            let p = app.player.as_ref().unwrap();
+            (p.x, p.y)
+        };
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (px, py),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.player.as_mut().unwrap().buffs.add_buff(156, 3600);
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        // The on-edge also lands the flat 20 hurt (its own dodge rolls ride
+        // the stream first) - the play census is the pin here.
+        assert_eq!(app.audio.played_count() - before, 1, "the on-edge plays");
+        // The held buff: no second play.
+        let mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), mid, "no edge, no play");
+        // The off-edge (the buff expires) plays too - the C# site is
+        // outside the `stoned` arm - and with no hurt in the way the drain
+        // spends exactly the case-0 two draws.
+        app.player.as_mut().unwrap().buffs.clear_buff(156);
+        let mut witness = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let _ = witness.next_range(0, 3);
+        let _ = witness.next_range(-10, 11);
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count() - before, 1, "the off-edge plays");
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the case-0 two draws"
+        );
+    }
+
+    /// S1-L-10c - `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount
     /// dismounts before the hook fires only when it is outside
     /// `MountID.Sets.CanUseHooks` ({54, 57-60}) — the port dismounted every
     /// mount.

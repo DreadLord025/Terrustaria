@@ -1928,6 +1928,11 @@ pub struct Player {
     /// case-0 Dig play draws its variation + pitch on the `UpdatePlayers`
     /// stream (the `play_place_sound` contract).
     pending_no_space_sound: Option<(f32, f32)>,
+    /// W4-c14 - the petrify-transition Dig-0 (`Player.cs:25225`:
+    /// `SoundEngine.PlaySound(0, (int)position.X, (int)position.Y)` on the
+    /// `stoned != lastStoned` edge, BOTH directions): `(x, y)` - the case-0
+    /// variation + pitch draws ride the drain's `UpdatePlayers` stream.
+    pending_stoned_sound: Option<(f32, f32)>,
     /// S1-P-i41 — the third-fail `PlayerNoSpaceTeleport` request
     /// (`Player.cs:6061-6066`): the forced dismount ran, the tick owns
     /// `&World` for the spot scan (`TeleportHelpers.FindClosestTeleportSpotNoSpace`).
@@ -2879,6 +2884,7 @@ impl Player {
             pending_dismount: false,
             pending_chillet_sound: None,
             pending_no_space_sound: None,
+            pending_stoned_sound: None,
             pending_no_space_teleport: false,
             pending_force_clear: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
@@ -3369,10 +3375,16 @@ impl Player {
         self.pending_chillet_sound.take()
     }
 
-    /// S1-P-i41 — takes the QuickMount no-space tink (`Player.cs:6057`) —
+    /// S1-P-i41 - takes the QuickMount no-space tink (`Player.cs:6057`) -
     /// `(x, y)`, the truncated position; the case-0 draws ride the drain.
     pub(crate) fn take_no_space_sound(&mut self) -> Option<(f32, f32)> {
         self.pending_no_space_sound.take()
+    }
+
+    /// W4-c14 - takes the petrify-transition Dig-0 (`Player.cs:25225`) -
+    /// `(x, y)`, the truncated position; the case-0 draws ride the drain.
+    pub(crate) fn take_stoned_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_stoned_sound.take()
     }
 
     /// S1-P-i41 — takes the third-fail no-space teleport request
@@ -3651,6 +3663,7 @@ impl Player {
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
         self.pending_flap_sound = None;
+        self.pending_stoned_sound = None;
         self.pending_dismount = false;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
@@ -7514,12 +7527,19 @@ impl Player {
             self.pending_switch_trip = Some(((m.x / 16.0) as i32, (m.y / 16.0) as i32));
         }
 
-        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
+        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit -
         // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
         let stoned = self.buffs.find_buff_index(156).is_some();
-        if stoned && !self.last_stoned {
-            let cx = self.x + self.width * 0.5;
-            self.hurt_inner(20, cx, false, rng, true, false, None, true);
+        if stoned != self.last_stoned {
+            if stoned && !self.last_stoned {
+                let cx = self.x + self.width * 0.5;
+                self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            }
+            // W4-c14 - `:25225`: the transition's Dig-0 plays on BOTH edges
+            // (the C# site sits outside the `stoned` arm), at the truncated
+            // top-left; the case-0 draws ride the drain. The 20 dust 1
+            // (`:25226-25233`) are the visual seam.
+            self.pending_stoned_sound = Some((self.x.trunc(), self.y.trunc()));
         }
         self.last_stoned = stoned;
 
