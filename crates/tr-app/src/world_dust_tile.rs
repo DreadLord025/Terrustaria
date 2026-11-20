@@ -2073,7 +2073,7 @@ mod tests {
             (tile(3, 0, 0), 3),
             (tile(22, 0, 0), 14),
             (tile(28, 0, 0), 22),
-            (tile(28, 0, 800), 18),
+            (tile(28, 0, 700), 18),
             (tile(163, 0, 0), 118),
             (tile(224, 0, 0), 149),
             (tile(226, 0, 0), 148),
@@ -2203,7 +2203,12 @@ mod tests {
                     17 => gen_p.next_range(68, 71),
                     18 => { let mut n = 189; if gen_p.next_max(2) == 0 { n = 6; } n }
                     19 => 189, // 35 fx>=36: the && short-circuit, no roll
-                    20 => { let mut n = -1; if gen_p.next_max(2) == 0 { n = 6; } n }
+                    20 => {
+                        // 34: the roll fires, but the final 33|34|42|
+                        // 93|100 overwrite (`:69043`) resets to -1.
+                        gen_p.next_max(2);
+                        -1
+                    }
                     21 => 68 + rng_p.next_max(3), // Main.rand!
                     _ => unreachable!(),
                 };
