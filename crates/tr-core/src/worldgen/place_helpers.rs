@@ -240,6 +240,208 @@ pub(crate) fn place_3x1(world: &mut World, x: i32, y: i32, kind: u16, style: i32
     }
 }
 
+/// `WorldGen.SolidTile(Tile)` (`WorldGen.cs:69957-69974`): the TILE
+/// overload — null reads solid; active + `tileSolid` + NOT `tileSolidTop`
+/// + no half brick + no slope. NOTE: unlike the `(int, int)` overload
+/// (`:70111-70132`) this one has NO `inActive()` term — `CanPlaceSink`
+/// calls this form, so an actuated-inactive floor still passes.
+fn solid_tile_t(t: Option<&crate::tile::Tile>) -> bool {
+    let Some(t) = t else {
+        return true;
+    };
+    t.active()
+        && TILE_SOLID.has(t.kind)
+        && !TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+}
+
+/// `WorldGen.SolidTile(int, int)` (`WorldGen.cs:70111-70132`, `noDoors`
+/// default false): the coordinate overload — the Tile terms PLUS the
+/// `inActive()` veto. Out-of-world reads solid.
+fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && TILE_SOLID.has(t.kind)
+        && !TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
+}
+
+/// `WorldGen.CanPlaceSink` (`WorldGen.cs:51885-51910`): the 5-tile bounds
+/// gate, then the 2×2 body at `(x-1, y-1)` empty and both floor columns
+/// `(x-1, y+1)`/`(x, y+1)` active and `SolidTile` (the Tile overload —
+/// no inactive veto).
+fn can_place_sink(world: &World, x: i32, y: i32) -> bool {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return false;
+    }
+    let mut result = true;
+    let (x, y) = (x - 1, y - 1);
+    for i in 0..2 {
+        for j in 0..2 {
+            if world.tile(x + i, y + j).is_some_and(|t| t.active()) {
+                result = false;
+            }
+        }
+        let floor = world.tile(x + i, y + 2);
+        if !floor.is_some_and(|t| t.active()) || !solid_tile_t(floor) {
+            result = false;
+        }
+    }
+    result
+}
+
+/// `WorldGen.Place2x2` (`WorldGen.cs:51330-51423`): the general 2×2
+/// object at `(x-1, y-1)`. The hanging pair (95/126) bumps `y` FIRST
+/// (`:51332-51335`), then the 5-tile bounds gate. The sink (172) rides
+/// `CanPlaceSink`; every other kind scans the 2×2 body empty (the
+/// campfire 98 also refuses any liquid, `:51354`) and per column:
+/// - 95/126: the CEILING `(i, y-2)` active + `tileSolid` + not
+///   `tileSolidTop` (`:51361-51370`);
+/// - 132 (the hanging bottle): no floor term in the scan (`:51380`);
+/// - default: the floor `(i, y+1)` active AND (`SolidTile2` OR
+///   `tileTable`) (`:51371-51379`).
+///
+/// The 132 wall arm (`:51385-51408`): both floors must be active +
+/// (solid2 or table); if not, all four body walls must be >= 1 — the C#
+/// `:51404` tests `(x-1, y)` TWICE (the `(x, y)` cell is never read);
+/// kept verbatim. The frame stride is 38 for the sink, 36 otherwise
+/// (`:51411`): `frameX = k * 18`, `frameY = style * num + l * 18`.
+pub(crate) fn place_2x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    let mut y = y;
+    if kind == 95 || kind == 126 {
+        y += 1;
+    }
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    if kind == 172 {
+        if !can_place_sink(world, x, y) {
+            return;
+        }
+    } else {
+        for i in (x - 1)..(x + 1) {
+            for j in (y - 1)..(y + 1) {
+                let cell = world.tile(i, j);
+                if cell.is_some_and(|t| t.active() || (kind == 98 && t.liquid > 0)) {
+                    return;
+                }
+            }
+            match kind {
+                // `:51361-51370` — the ceiling arm.
+                95 | 126 => {
+                    let ceil = world.tile(i, y - 2);
+                    if !ceil.is_some_and(|t| {
+                        t.active() && TILE_SOLID.has(t.kind) && !TILE_SOLID_TOP.has(t.kind)
+                    }) {
+                        return;
+                    }
+                }
+                // `:51380-51381` — the hanging bottle: no floor term.
+                132 => {}
+                // `:51371-51379` — the floor arm.
+                _ => {
+                    let floor = world.tile(i, y + 1);
+                    let ok = floor.is_some_and(|t| t.active())
+                        && (solid_tile2(world, i, y + 1)
+                            || floor.is_some_and(|t| tile_table(t.kind)));
+                    if !ok {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    if kind == 132 {
+        // `:51385-51408` — the floor-or-wall arm (the duplicated
+        // `(x-1, y)` wall test kept verbatim).
+        let mut flag = true;
+        for col in [x - 1, x] {
+            let floor = world.tile(col, y + 1);
+            if !floor.is_some_and(|t| t.active())
+                || !(solid_tile2(world, col, y + 1) || floor.is_some_and(|t| tile_table(t.kind)))
+            {
+                flag = false;
+            }
+        }
+        let wall_ok = |wx: i32, wy: i32| world.tile(wx, wy).is_some_and(|t| t.wall >= 1);
+        if !flag
+            && (!wall_ok(x - 1, y - 1)
+                || !wall_ok(x, y - 1)
+                || !wall_ok(x - 1, y)
+                || !wall_ok(x - 1, y))
+        {
+            return;
+        }
+    }
+    let (x, y) = (x - 1, y - 1);
+    let num = if kind == 172 { 38 } else { 36 };
+    for k in 0..2 {
+        for l in 0..2 {
+            let i = world.index(x + k, y + l);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.frame_x = (k * 18) as i16;
+            t.frame_y = (style * num + l * 18) as i16;
+            t.kind = kind;
+        }
+    }
+}
+
+/// `WorldGen.Place2x2Style` (`WorldGen.cs:52198-52256`): the style-column
+/// 2×2 at `(x-1, y-1)` — the 5-tile bounds gate, the body empty, both
+/// floors `SolidTile` (the coordinate overload — WITH the inactive veto).
+/// The lihzahrd plate (254) adds the position-derived
+/// `frameY = (x % 12 / 2) * 36` (`:52205-52208`) and demands a grass floor
+/// (2/477/492/109, `:52231-52234`). `frameX = 36 * style + col * 18`,
+/// `frameY = num + row * 18`.
+pub(crate) fn place_2x2_style(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let num: i16 = if kind == 254 {
+        ((x % 12 / 2) * 36) as i16
+    } else {
+        0
+    };
+    let mut flag = true;
+    for i in (x - 1)..(x + 1) {
+        for j in (y - 1)..(y + 1) {
+            if world.tile(i, j).is_some_and(|t| t.active()) {
+                flag = false;
+            }
+        }
+        if !solid_tile(world, i, y + 1) {
+            flag = false;
+        }
+        if kind == 254
+            && !world
+                .tile(i, y + 1)
+                .is_some_and(|t| matches!(t.kind, 2 | 477 | 492 | 109))
+        {
+            flag = false;
+        }
+    }
+    if flag {
+        let num2 = (36 * style) as i16;
+        // `:52239-52254` — row-major, C# write order.
+        for (col, row) in [(x - 1, y - 1), (x, y - 1), (x - 1, y), (x, y)] {
+            let fx = num2 + if col == x { 18 } else { 0 };
+            let fy = num + if row == y { 18 } else { 0 };
+            let i = world.index(col, row);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = fy;
+            t.frame_x = fx;
+            t.kind = kind;
+        }
+    }
+}
+
 /// `WorldGen.Place1x1` (`WorldGen.cs:45188-45235`): the general 1x1
 /// frame-important object. `InWorld(x, y, 2)` (`:45190`). Two arms:
 /// - the seashell (324, `:45204-45213`): a `SolidTile2` floor OR an active
@@ -422,5 +624,62 @@ mod tests {
         // An occupied cell refuses the general arm (no overwrite).
         place_1x1(&mut w, &mut rng, 12, 19, 4, 0);
         assert_eq!(w.tile(12, 19).unwrap().frame_y, 54);
+    }
+
+    /// `Place2x2` lays the 2×2 at (x-1, y-1) with the 36-px style stride;
+    /// the sink rides the 38-px stride and the Tile-overload floor (no
+    /// inactive veto); the campfire refuses liquid.
+    #[test]
+    fn place_2x2_general_sink_and_campfire_arms() {
+        let mut w = floor_world();
+        place_2x2(&mut w, 10, 19, 79, 2);
+        for (col, row, fx, fy) in [(9, 18, 0, 72), (10, 18, 18, 72), (9, 19, 0, 90), (10, 19, 18, 90)]
+        {
+            let t = w.tile(col, row).unwrap();
+            assert!(t.active() && t.kind == 79);
+            assert_eq!((t.frame_x, t.frame_y), (fx, fy));
+        }
+        // The sink (172): 38-px stride, and an actuated-inactive floor
+        // still passes (the Tile overload has no inActive term).
+        let mut w2 = floor_world();
+        for col in [20, 21] {
+            let i = w2.index(col, 20);
+            w2.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+        }
+        place_2x2(&mut w2, 21, 19, 172, 1);
+        assert!(w2.tile(20, 18).unwrap().active());
+        assert_eq!(w2.tile(20, 19).unwrap().frame_y, 56); // 38 * 1 + 18
+        // The campfire (98) refuses a body cell carrying liquid.
+        let mut w3 = floor_world();
+        let i = w3.index(29, 18);
+        w3.tiles[i].liquid = 5;
+        place_2x2(&mut w3, 30, 19, 98, 0);
+        assert!(!w3.tile(29, 18).unwrap().active());
+    }
+
+    /// `Place2x2Style` lays the style columns; the lihzahrd plate (254)
+    /// needs a grass floor and carries the position-derived frameY.
+    #[test]
+    fn place_2x2_style_and_the_lihzahrd_plate() {
+        let mut w = floor_world();
+        place_2x2_style(&mut w, 10, 19, 246, 3);
+        let t = w.tile(9, 18).unwrap();
+        assert!(t.active() && t.kind == 246);
+        assert_eq!(t.frame_x, 108); // 36 * 3
+        assert_eq!(t.frame_y, 0);
+        assert_eq!(w.tile(10, 19).unwrap().frame_x, 126);
+        // 254 refuses stone …
+        place_2x2_style(&mut w, 20, 19, 254, 0);
+        assert!(!w.tile(19, 18).unwrap().active());
+        // … and places on grass with frameY = (x % 12 / 2) * 36.
+        for col in [29, 30] {
+            let i = w.index(col, 20);
+            w.tiles[i].kind = 2;
+        }
+        place_2x2_style(&mut w, 30, 19, 254, 0);
+        let t = w.tile(29, 18).unwrap();
+        assert!(t.active() && t.kind == 254);
+        assert_eq!(t.frame_y, ((30 % 12 / 2) * 36) as i16); // 108
+        assert_eq!(w.tile(29, 19).unwrap().frame_y, 126);
     }
 }

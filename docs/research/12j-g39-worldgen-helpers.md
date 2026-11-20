@@ -72,8 +72,8 @@ the C# call site), so no stream is invented.
 | H1 | `Place1x2` | `WorldGen.cs:46652-46679` | Herbs/Flowers (d105), temple-chair shape | landed 578b94ef |
 | H2 | `Place2x1` | `:47368-47406` | Hellforge furniture (d104/g37), Guide | landed 578b94ef |
 | H3 | `Place3x1` | `:52022-52065` | furniture passes | (this slice) |
-| H4 | `Place2x2` (general) | `:51330-51423` | Piles/Traps (d104) — the 411-only slice exists (`mini_biomes.rs:1673`) | pending |
-| H5 | `Place2x2Style` | `:52198-52437` | furniture passes | pending |
+| H4 | `Place2x2` (general) | `:51330-51423` | Piles/Traps (d104) — the 411-only slice exists (`mini_biomes.rs:1673`) | (this slice) |
+| H5 | `Place2x2Style` | `:52198-52256` | furniture passes | (this slice) |
 | H6 | `Place3x2` (general) | `:52066-52197` | the 26-altar slice exists (`evil.rs:1925`) | pending |
 | H7 | `Place3x3` | `:53534-53635` | Statues (g37), Hellforge | pending |
 | H8 | `Place1x1` (general) | `:45188-45235` | the 141-only slice exists (`mini_biomes.rs:1653`); 324 seashell arm | (this slice) |
