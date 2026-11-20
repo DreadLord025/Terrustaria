@@ -33652,4 +33652,45 @@ mod w4_d29_census_tests {
         assert_eq!(n.despawn_timer, 10, "EncourageDespawn(10) (`:33941`)");
         assert_eq!(rng, UnifiedRandom::new(999));
     }
+
+    /// aiStyle 63 through the FULL `update_rng` axis (`63 if Flocko`,
+    /// `NPC.cs:33971-34018`): the <200px spin latch re-arms ai[0]=20,
+    /// sets the direction from vx's sign, adds direction*0.3 to the
+    /// rotation and leaves the velocity untouched — then the
+    /// noTileCollide integration moves the position by it. The whole
+    /// arm draws NOTHING (`flocko_ai` takes no rng).
+    #[test]
+    fn w4_d29_style63_axis_spins_draw_free_and_integrates() {
+        let w = night_world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 62.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Flocko, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.vx = -2.0;
+        n.vy = 1.0;
+        n.ai[0] = 5.0;
+        let (x0, y0) = (n.x, n.y);
+        let mut rng = UnifiedRandom::new(9);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 20.0, "the <200px latch re-arms (`:33990-33993`)");
+        assert_eq!(n.facing, -1, "the direction follows vx's sign (`:33994-34001`)");
+        assert_eq!(n.vx, -2.0, "the spin early-return leaves the velocity");
+        assert_eq!(n.vy, 1.0);
+        assert_eq!((n.x, n.y), (x0 - 2.0, y0 + 1.0), "the raw integration");
+        assert_eq!(rng, UnifiedRandom::new(9), "aiStyle 63 draws nothing");
+        // The chase path (outside 200px, ai[0] spent) is draw-free too:
+        // the three sequential lerp tiers and the 0.15 tilt (`:34005-34017`).
+        p.x = 2000.0;
+        p.y = 600.0;
+        n.x = 1000.0;
+        n.y = 600.0;
+        n.ai[0] = 0.0;
+        let vx0 = n.vx;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], -1.0, "the decrement runs before the latch (`:33987`)");
+        assert!(n.vx > vx0, "the 50/51 tier chases the aim");
+        assert_eq!(n.rotation, n.vx * 0.15, "the tilt (`:34017`)");
+        assert_eq!(rng, UnifiedRandom::new(9));
+    }
 }

@@ -39354,3 +39354,29 @@ Wiring: axis `62 if ElfCopter => frost_mob_step` (kind arm
 request rides `wants_hostile_shot` (`PIRATE_ARROW` = the BulletDeadeye
 row, `projectile/data.rs:340`), noTileCollide integration.
 No compiler invoked; witnesses written not run (code-only mode).
+
+## The aiStyle-63 re-verification (W4-d29, 2026-11-20, code-only mode)
+The research/25 row for aiStyle 63 ("MISSING") was stale (2026-11-12).
+Census: whole-tree `aiStyle = 63` grep → exactly ONE NPC row, Flocko 352
+(`NPC.cs:13475`; `Projectile.cs:4639` is type 379's own style). The
+S1-D-3 census (`## The aiStyle-63 census`, 2026-11-18) audited the
+then-in-flight sibling; this round re-read the WHOLE arm
+(`NPC.cs:33971-34018`) against `npc_ai_frost_mob.rs::flocko_ai` on the
+merged tree and confirms **faithful**: the 11f aim from
+`Center + (direction*20, 6)` at the player's CENTRE (`:33977`), the day
+reversal (`0f - x` literals), the `ai[0]--` BEFORE the latch test, the
+<200px re-arm to 20 / the direction-from-vx-sign (zero → +1) / the
+`rotation += direction * 0.3` early return, the THREE SEQUENTIAL lerp
+tiers each re-reading the just-written velocity (50/51 always, 10/11
+inside 350, 7/8 inside 300), the `rotation = vx * 0.15` assignment.
+RNG census: ZERO draws on every path — the machine takes no rng
+parameter (`TargetClosest` is the deterministic Manhattan scan).
+**New witness this round**
+(`npc.rs::w4_d29_census_tests::w4_d29_style63_axis_spins_draw_free_and_integrates`):
+the FULL `update_rng` axis tick pins the spin latch + the untouched
+velocity + the raw noTileCollide integration AND the chase path's
+decrement/tilt, with a same-seeded stream equality on both — the prior
+witnesses ran the pure machine / the `frost_mob_step` seam only.
+Wiring: axis `63 if Flocko => frost_mob_step` (kind arm
+`unreachable!`-guarded), `retarget_state` at the `:33973` site.
+No compiler invoked; witnesses written not run (code-only mode).
