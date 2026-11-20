@@ -19481,22 +19481,25 @@ impl ProjectilePool {
             // `velocity = (npc.Center - Center) * 0.75`. The C# arm sits
             // AFTER DamageVar (`:12938`) and BEFORE the Hellfire clamp
             // (`:13252`) / StatusNPC / StrikeNPC, so the Daybroken gate
-            // below reads the fresh pin.
+            // below reads the fresh pin. The scalars are copied so the
+            // `p` borrow ends before the mutation (E0502).
             if p.kind == BONE_JAVELIN && p.ai[0] < 2.0 {
                 let (ncx, ncy) = n.center();
                 let (pcx, pcy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                let pin_vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
                 let pj = &mut self.slots[slot];
                 pj.ai[0] = 1.0;
                 pj.ai[1] = idx as f32;
-                pj.vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
+                pj.vel = pin_vel;
             }
             // S1-P-i17 — `Damage_PVE_Inner`'s Hellfire clamp
             // (`Projectile.cs:13252-13255`): the 41's contact pins
             // `timeLeft = 1` (the C# site sits between DamageVar `:12938`
-            // and the yoyo doublings `:13389`, ABOVE the strike). The
-            // scalars were read above; the `p` borrow ends here so the
-            // mutation lands (E0502).
-            if p.kind == HELLFIRE_ARROW && p.time_left > 1 {
+            // and the yoyo doublings `:13389`, ABOVE the strike).
+            let hellfire_clamp = p.kind == HELLFIRE_ARROW && p.time_left > 1;
+            let pkind = p.kind;
+            let (ppx, ppy, pw, ph) = (p.pos.x, p.pos.y, p.w, p.h);
+            if hellfire_clamp {
                 self.slots[slot].time_left = 1;
             }
             // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
@@ -19510,10 +19513,9 @@ impl ProjectilePool {
             // call (`:13272`, `Player.cs:12356-12415`) is the accessory
             // arm — yoyoGlove/counterWeight are unported grants
             // (M3-EQUIP-3), so the call folds out (ANALYSIS).
-            if proj_data(p.kind).is_some_and(|d| d.ai_style == 99) {
-                // The slot scalars copied out before the mutations below
-                // (the `p` borrow stays live for the rest of the walk).
-                let (pkind, ppx, ppy, pw, ph) = (p.kind, p.pos.x, p.pos.y, p.w, p.h);
+            if proj_data(pkind).is_some_and(|d| d.ai_style == 99) {
+                // The slot scalars were copied out above (the `p` borrow
+                // ended at the Hellfire clamp).
                 let (ncx, ncy) = n.center();
                 let dropped = self.slots[slot].ai[0] == -2.0;
                 if dropped {
@@ -20380,12 +20382,11 @@ mod tests {
         // 31/147/181/193 left with the unarmed-styles slice
         // (projectile_ai_misc). 120 stays: StardustGuardian rowed but arm
         // UNOWNED (R62's kinds are 872/873/874/919/923 — next-wave item).
-        // 36 joins with S1-P-i17: the Bee/GiantBee (181/566) rows let the
-        // Bee Arrow's death swarm land; the aiStyle-36 bee flight
-        // (`AI()`'s `:27292` block) is the follow-up — the rows ride the
-        // `_ => {}` no-op until it lands (the same shape the honeycomb's
-        // retaliate bees already use via the base spawn).
-        const UNARMED_ROWED: [u8; 2] = [120, 36];
+        // 36 LEFT the list at the gate: S1-P-i28 armed the aiStyle-36 bee
+        // flight (`projectile_ai_thrown::bee_step`, the beenade's children
+        // AND the Bee Arrow's death swarm — the i17 rows now ride a live
+        // arm, the i17 "follow-up" note is superseded).
+        const UNARMED_ROWED: [u8; 1] = [120];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the

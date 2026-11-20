@@ -1370,265 +1370,6 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     pick > 0 && tr_core::tool::pick_can_mine(tile.kind, pick as i32, below_surface)
 }
 
-/// `ProcessHitAgainstNPC`'s landed-strike resolution
-/// (`Player.cs:44291-44419`) — the class multiplier, the crit +
-/// `DamageVar` rolls, the Flymeal/cane arms, the penetration sum, the
-/// `StrikeNPC` call and its combat-text/net/sound tails. Extracted
-/// VERBATIM from the cursor melee arm (S1-P-i05) so the useStyle-3 stab
-/// sweep lands through the SAME resolution — the draw order and the
-/// `UpdatePlayers` stream draws are byte-identical to the pre-extract
-/// inline code. `idx` is the already-gated NPC (friendly/dontTakeDamage
-/// refusals ran in the caller); `pcx` the player-centre X (the knockback
-/// direction). Returns nothing — the callers own the swing-start arms.
-fn resolve_melee_strike(
-    app: &mut App,
-    idx: usize,
-    held: crate::item::ItemSlot,
-    held_weapon: bool,
-    held_fx: Option<crate::prefix::PrefixedStats>,
-    melee_pen: i32,
-    pcx: f32,
-) {
-                let n = &app.npcs[idx];
-                // The Flymeal's TERRARIST (42) fires before the strike in the
-                // C# (`Player.cs:44377-44387` vs `:44404`), but the notify
-                // needs `&mut app` — it lands just ahead of the strike below,
-                // still before `StrikeNPC`.
-                let mut flymeal_town_hit = false;
-                // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
-                // crit roll (`meleeCrit` + the item's crit), `DamageVar`, then
-                // `CalculateDamageNPCsTake` with the NPC's defense
-                // (`NPC.cs:81226`; armor pen joins when the item data carries
-                // it — M3-TOOL).
-                let class = if held_weapon {
-                    registry::get(held.kind)
-                        .map(|d| d.class)
-                        .unwrap_or_default()
-                } else {
-                    registry::DamageClass::Melee
-                };
-                let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
-                // `ProcessHitAgainstNPC`'s `weaponDamage` (`Player.cs:44241`):
-                // the class multiplier over the item's damage. Tools are
-                // weapons in vanilla for `ItemCheck` purposes — the pickaxe
-                // row carries `damage: 5, knock_back: 2.0` — so the tool arm
-                // reads the same registry values (the pre-BUG-09 fixed 15
-                // was the placeholder).
-                let raw = held_fx
-                    .map_or(registry::damage(held.kind), |s| s.damage)
-                    .max(0) as f32
-                    * app
-                        .player
-                        .as_ref()
-                        .map(|p| p.weapon_damage_multiplier(class))
-                        .unwrap_or(1.0);
-                // `if (nPC.isLikeATownNPC && sItem.type == 3351) dmg = 1;`
-                // (`Player.cs:44300-44304`): the Tax Collector's cane is a
-                // one-damage slap on the town (it showers coins on mobs,
-                // `:44362-44371` — the item drop rides the M3 item system).
-                let raw = if n.kind.is_town_npc_like() && held.kind == 3351 {
-                    1.0
-                } else {
-                    raw
-                };
-                // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
-                // passes the raw value (`ProcessHitAgainstNPC`,
-                // `Player.cs:44342`; damage taken negates it, `:31387`).
-                let (luck, class_crit) = app
-                    .player
-                    .as_ref()
-                    .map(|p| (p.luck(), p.class_crit(class)))
-                    .unwrap_or((0.0, 0));
-                // `Player.ItemCheck`'s melee hit runs under the
-                // `UpdatePlayers` swap (`Main.cs:17754`).
-                let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
-                let mut dmg = tr_core::damage::damage_var(loot_rng, raw, luck);
-                // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
-                // (`Player.cs:44344-44353`): the Flymeal takes full armour
-                // penetration (`armorPenetrationPercent = 1f`), doubles the
-                // rolled damage and doubles it again on the Nurse (type 18).
-                let mut pen_percent = 0.0f32;
-                if held.kind == 5129 && n.kind.is_town_npc_like() {
-                    pen_percent = 1.0;
-                    dmg *= 2;
-                    if n.kind == NpcKind::Nurse {
-                        dmg *= 2;
-                    }
-                    // `:44377-44387` — the Flymeal's second block: a hit on a
-                    // `townNPC` fires TERRARIST (42). The C# splits it from the
-                    // `:44345` multiplier arm but gates on the same item and
-                    // both run before `StrikeNPC` (`:44404`). Both predicates
-                    // collapse to `is_town_npc_like()` here: it *is* the
-                    // vanilla `townNPC` flag, and `isLikeATownNPC` only adds
-                    // type 453, which the port does not ship.
-                    flymeal_town_hit = true;
-                }
-                // The struck NPC's Copy reads — captured before the
-                // mutable buff borrow below ends the `n` borrow (NLL).
-                let n_defense = n.defense();
-                let (nx, ny) = (n.x, n.y);
-                let (bw, bh) = n.size();
-                // The kind's hit cue (`NPC.HitSound`) — read before the app
-                // borrows below.
-                let hit_cue = n.kind.hit_sound();
-                // `this.StatusToNPC(sItem.type, npcIndex)`
-                // (`Player.cs:44391`, the block `:6502-6617`) — the melee
-                // on-hit debuff infliction runs AFTER the crit/DamageVar
-                // rolls above and BEFORE the nano-flask boost / the
-                // armour-pen add / `StrikeNPC` (`:44396-44403`). The
-                // buff-duration `Next` rolls ride the same
-                // `UpdatePlayers` stream in the C#'s block order (the
-                // `melee_on_hit.rs` module doc); an immune NPC still
-                // consumes them (the C# evaluates the duration argument
-                // before `NPC.AddBuff`'s guard, `NPC.cs:89928`).
-                let enchant_flags = app.player.as_ref().map(|p| p.melee_on_hit_flags());
-                if let Some(flags) = enchant_flags {
-                    let status_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    crate::melee_on_hit::status_to_npc_flags(
-                        flags,
-                        held.kind,
-                        &mut app.npcs[idx].buffs,
-                        status_rng,
-                    );
-                    // `if (this.meleeEnchant == 6) num2 = (int)((float)
-                    // num2 * Player.GetNanoFlaskDamageBoost())`
-                    // (`Player.cs:44396-44399`, `:44423-44426`) — the
-                    // Flask of Nanites' ×1.05 on the rolled damage,
-                    // between StatusToNPC and the armour-pen add.
-                    if flags.melee_enchant == 6 {
-                        dmg = (dmg as f32 * crate::melee_on_hit::nano_flask_damage_boost()) as i32;
-                    }
-                }
-                // `:44383`: `num2 += nPC.checkArmorPenetration(
-                // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
-                // — the player's own penetration sum (the Shark Tooth
-                // Necklace 3212, the Honey Comb 4007, the Sharpened buff 159's
-                // melee-only +12) joins the Flymeal's full percent.
-                dmg += tr_core::damage::check_armor_penetration(
-                    melee_pen,
-                    pen_percent,
-                    n_defense,
-                    false,
-                    false,
-                    false,
-                );
-                let dmg = tr_core::damage::strike_npc_damage(dmg, n_defense, crit);
-                // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
-                // (`NPC.cs:81546`) so the hit is placed at the NPC corner —
-                // the position/size/cue reads were captured above, before
-                // the StatusToNPC buff borrow.
-                // `ItemCheck_MeleeHitNPCs`' knockback (`Player.cs:43664-43679`):
-                // the item's `knockBack` times the glove/buff multipliers (the
-                // port's 1f — no ported accessory grants them).
-                let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
-                // `NPC.StrikeNPC` (`NPC.cs:81189-81563`): the strike lands on
-                // the carrier's life pool when the hit NPC is a linked
-                // segment (`NPC.realLife`, `NPC.cs:81374-81378`). The owner is
-                // this player's slot — `StrikeNPC_Inner`'s interaction gate
-                // key (`NPC.cs:81266-81272`).
-                let me = app.local_id as u8;
-                if flymeal_town_hit {
-                    let _ = app.notify_progression_net(42);
-                }
-                // `Main.expertMode` (`NPC.cs:81419`) — the knockback gate's
-                // ×15 reads the player's expert flag (the port's world-mode
-                // stand-in, `BuffSlots.expert_mode`).
-                let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
-                let landed = crate::npc::Npc::strike_melee(
-                    &mut app.npcs, idx, dmg, pcx, kb, crit, Some(me), expert,
-                );
-                // S1-P-i05: `ProcessHitAgainstNPC`'s tail
-                // (`Player.cs:44414/:44419`) — the landed hit re-arms the
-                // per-NPC melee lock to the CURRENT `itemAnimation` ticks
-                // and `ApplyAttackCooldown` (`:44428-44431`) sets
-                // `attackCD = max(1, (int)(itemAnimationMax * 0.33))`. The
-                // cursor arm's caller overwrites `attack_cd` with the full
-                // swing right after (the established start-arm stand-in);
-                // the stab sweep keeps this C# value.
-                if landed {
-                    let anim_ticks = ticks_of(app.swing);
-                    let uid = app.npcs[idx].uid;
-                    if let Some(p) = app.player.as_mut() {
-                        p.melee_npc_hit_cooldown.insert(uid, anim_ticks);
-                    }
-                    let max_ticks = ticks_of(app.swing_max);
-                    // Keep-one (gate i04/i05): the shared ApplyAttackCooldown
-                    // helper — identical double-truncation semantics.
-                    app.attack_cd =
-                        crate::melee_swing::MeleeHitCooldowns::attack_cooldown_frames(max_ticks)
-                            as f32
-                            / 60.0;
-                }
-                // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
-                // the Destroyer body's probe gate (`:89266-89285`) — the
-                // roll rides the melee strike's stream (the `UpdatePlayers`
-                // swap the damage/crit rolls above already ride).
-                if landed {
-                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
-                        &mut app.npcs[idx], probe_rng, false,
-                    ) {
-                        app.npcs[idx].wants_probe = Some(anchor);
-                    }
-                }
-                if landed {
-                    // `NPC.cs:81250-81264`: a landed strike on a `lifeMax > 1`
-                    // NPC spawns the combat text with the post-defence number
-                    // (`:81239`) and the crit flag. The local player's strike
-                    // takes the hostile pair (`:81258`) — never the friendly
-                    // (`:81254`) or network (`:81261`) arms.
-                    let text = dmg.to_string();
-                    let font = if crit {
-                        app.lookups.combat_crit_font.as_ref()
-                    } else {
-                        app.lookups.combat_text_font.as_ref()
-                    };
-                    // `FontAssets.CombatText[crit ? 1 : 0].MeasureString`
-                    // (`CombatText.cs:76`) — the placement size.
-                    let size = match font {
-                        Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
-                        None => [text.chars().count() as f32 * 8.0, 10.0],
-                    };
-                    let location = crate::combat_text::Rect {
-                        x: nx,
-                        y: ny,
-                        width: bw,
-                        height: bh,
-                    };
-                    let color = crate::combat_text::damage_text_color(crit, false, false);
-                    // The port's player carries no flipped-gravity state, so
-                    // `Main.player[Main.myPlayer].gravDir` is the normal 1f
-                    // (`CombatText.cs:93`).
-                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    crate::combat_text::spawn(
-                        &mut app.combat_texts,
-                        location,
-                        color,
-                        text,
-                        crit,
-                        false,
-                        size,
-                        1.0,
-                        rng,
-                    );
-                }
-                // A joining client's strike goes to the host as `28`
-                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
-                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
-                // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
-                // (`NPC.cs:81544-81553`) — the kind's own hit cue through
-                // the faithful case-3 path (S1-E-21 wave C): the volume
-                // arms + the `Main.rand.Next(-10, 11) * 0.01` pitch draw
-                // ride the `UpdatePlayers` stream (`Main.cs:17754`), only
-                // after the attenuation gate passed. The C#'s `null`
-                // guard: the kinds with no row play nothing.
-                if let Some(cue) = hit_cue {
-                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    app.audio.play_npc_hit_sound(cue, nx, ny, rng);
-                }
-}
-
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
     // `ItemCheck_MeleeHitNPCs` runs for every item with `damage > 0` and
     // `!noMelee` (`Player.cs:43648`) — the tools included, their damage
@@ -4162,6 +3903,265 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
         }
         _ => None,
     }
+}
+
+/// `ProcessHitAgainstNPC`'s landed-strike resolution
+/// (`Player.cs:44291-44419`) — the class multiplier, the crit +
+/// `DamageVar` rolls, the Flymeal/cane arms, the penetration sum, the
+/// `StrikeNPC` call and its combat-text/net/sound tails. Extracted
+/// VERBATIM from the cursor melee arm (S1-P-i05) so the useStyle-3 stab
+/// sweep lands through the SAME resolution — the draw order and the
+/// `UpdatePlayers` stream draws are byte-identical to the pre-extract
+/// inline code. `idx` is the already-gated NPC (friendly/dontTakeDamage
+/// refusals ran in the caller); `pcx` the player-centre X (the knockback
+/// direction). Returns nothing — the callers own the swing-start arms.
+fn resolve_melee_strike(
+    app: &mut App,
+    idx: usize,
+    held: crate::item::ItemSlot,
+    held_weapon: bool,
+    held_fx: Option<crate::prefix::PrefixedStats>,
+    melee_pen: i32,
+    pcx: f32,
+) {
+                let n = &app.npcs[idx];
+                // The Flymeal's TERRARIST (42) fires before the strike in the
+                // C# (`Player.cs:44377-44387` vs `:44404`), but the notify
+                // needs `&mut app` — it lands just ahead of the strike below,
+                // still before `StrikeNPC`.
+                let mut flymeal_town_hit = false;
+                // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
+                // crit roll (`meleeCrit` + the item's crit), `DamageVar`, then
+                // `CalculateDamageNPCsTake` with the NPC's defense
+                // (`NPC.cs:81226`; armor pen joins when the item data carries
+                // it — M3-TOOL).
+                let class = if held_weapon {
+                    registry::get(held.kind)
+                        .map(|d| d.class)
+                        .unwrap_or_default()
+                } else {
+                    registry::DamageClass::Melee
+                };
+                let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
+                // `ProcessHitAgainstNPC`'s `weaponDamage` (`Player.cs:44241`):
+                // the class multiplier over the item's damage. Tools are
+                // weapons in vanilla for `ItemCheck` purposes — the pickaxe
+                // row carries `damage: 5, knock_back: 2.0` — so the tool arm
+                // reads the same registry values (the pre-BUG-09 fixed 15
+                // was the placeholder).
+                let raw = held_fx
+                    .map_or(registry::damage(held.kind), |s| s.damage)
+                    .max(0) as f32
+                    * app
+                        .player
+                        .as_ref()
+                        .map(|p| p.weapon_damage_multiplier(class))
+                        .unwrap_or(1.0);
+                // `if (nPC.isLikeATownNPC && sItem.type == 3351) dmg = 1;`
+                // (`Player.cs:44300-44304`): the Tax Collector's cane is a
+                // one-damage slap on the town (it showers coins on mobs,
+                // `:44362-44371` — the item drop rides the M3 item system).
+                let raw = if n.kind.is_town_npc_like() && held.kind == 3351 {
+                    1.0
+                } else {
+                    raw
+                };
+                // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
+                // passes the raw value (`ProcessHitAgainstNPC`,
+                // `Player.cs:44342`; damage taken negates it, `:31387`).
+                let (luck, class_crit) = app
+                    .player
+                    .as_ref()
+                    .map(|p| (p.luck(), p.class_crit(class)))
+                    .unwrap_or((0.0, 0));
+                // `Player.ItemCheck`'s melee hit runs under the
+                // `UpdatePlayers` swap (`Main.cs:17754`).
+                let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
+                let mut dmg = tr_core::damage::damage_var(loot_rng, raw, luck);
+                // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
+                // (`Player.cs:44344-44353`): the Flymeal takes full armour
+                // penetration (`armorPenetrationPercent = 1f`), doubles the
+                // rolled damage and doubles it again on the Nurse (type 18).
+                let mut pen_percent = 0.0f32;
+                if held.kind == 5129 && n.kind.is_town_npc_like() {
+                    pen_percent = 1.0;
+                    dmg *= 2;
+                    if n.kind == NpcKind::Nurse {
+                        dmg *= 2;
+                    }
+                    // `:44377-44387` — the Flymeal's second block: a hit on a
+                    // `townNPC` fires TERRARIST (42). The C# splits it from the
+                    // `:44345` multiplier arm but gates on the same item and
+                    // both run before `StrikeNPC` (`:44404`). Both predicates
+                    // collapse to `is_town_npc_like()` here: it *is* the
+                    // vanilla `townNPC` flag, and `isLikeATownNPC` only adds
+                    // type 453, which the port does not ship.
+                    flymeal_town_hit = true;
+                }
+                // The struck NPC's Copy reads — captured before the
+                // mutable buff borrow below ends the `n` borrow (NLL).
+                let n_defense = n.defense();
+                let (nx, ny) = (n.x, n.y);
+                let (bw, bh) = n.size();
+                // The kind's hit cue (`NPC.HitSound`) — read before the app
+                // borrows below.
+                let hit_cue = n.kind.hit_sound();
+                // `this.StatusToNPC(sItem.type, npcIndex)`
+                // (`Player.cs:44391`, the block `:6502-6617`) — the melee
+                // on-hit debuff infliction runs AFTER the crit/DamageVar
+                // rolls above and BEFORE the nano-flask boost / the
+                // armour-pen add / `StrikeNPC` (`:44396-44403`). The
+                // buff-duration `Next` rolls ride the same
+                // `UpdatePlayers` stream in the C#'s block order (the
+                // `melee_on_hit.rs` module doc); an immune NPC still
+                // consumes them (the C# evaluates the duration argument
+                // before `NPC.AddBuff`'s guard, `NPC.cs:89928`).
+                let enchant_flags = app.player.as_ref().map(|p| p.melee_on_hit_flags());
+                if let Some(flags) = enchant_flags {
+                    let status_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::melee_on_hit::status_to_npc_flags(
+                        flags,
+                        held.kind,
+                        &mut app.npcs[idx].buffs,
+                        status_rng,
+                    );
+                    // `if (this.meleeEnchant == 6) num2 = (int)((float)
+                    // num2 * Player.GetNanoFlaskDamageBoost())`
+                    // (`Player.cs:44396-44399`, `:44423-44426`) — the
+                    // Flask of Nanites' ×1.05 on the rolled damage,
+                    // between StatusToNPC and the armour-pen add.
+                    if flags.melee_enchant == 6 {
+                        dmg = (dmg as f32 * crate::melee_on_hit::nano_flask_damage_boost()) as i32;
+                    }
+                }
+                // `:44383`: `num2 += nPC.checkArmorPenetration(
+                // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
+                // — the player's own penetration sum (the Shark Tooth
+                // Necklace 3212, the Honey Comb 4007, the Sharpened buff 159's
+                // melee-only +12) joins the Flymeal's full percent.
+                dmg += tr_core::damage::check_armor_penetration(
+                    melee_pen,
+                    pen_percent,
+                    n_defense,
+                    false,
+                    false,
+                    false,
+                );
+                let dmg = tr_core::damage::strike_npc_damage(dmg, n_defense, crit);
+                // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
+                // (`NPC.cs:81546`) so the hit is placed at the NPC corner —
+                // the position/size/cue reads were captured above, before
+                // the StatusToNPC buff borrow.
+                // `ItemCheck_MeleeHitNPCs`' knockback (`Player.cs:43664-43679`):
+                // the item's `knockBack` times the glove/buff multipliers (the
+                // port's 1f — no ported accessory grants them).
+                let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
+                // `NPC.StrikeNPC` (`NPC.cs:81189-81563`): the strike lands on
+                // the carrier's life pool when the hit NPC is a linked
+                // segment (`NPC.realLife`, `NPC.cs:81374-81378`). The owner is
+                // this player's slot — `StrikeNPC_Inner`'s interaction gate
+                // key (`NPC.cs:81266-81272`).
+                let me = app.local_id as u8;
+                if flymeal_town_hit {
+                    let _ = app.notify_progression_net(42);
+                }
+                // `Main.expertMode` (`NPC.cs:81419`) — the knockback gate's
+                // ×15 reads the player's expert flag (the port's world-mode
+                // stand-in, `BuffSlots.expert_mode`).
+                let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+                let landed = crate::npc::Npc::strike_melee(
+                    &mut app.npcs, idx, dmg, pcx, kb, crit, Some(me), expert,
+                );
+                // S1-P-i05: `ProcessHitAgainstNPC`'s tail
+                // (`Player.cs:44414/:44419`) — the landed hit re-arms the
+                // per-NPC melee lock to the CURRENT `itemAnimation` ticks
+                // and `ApplyAttackCooldown` (`:44428-44431`) sets
+                // `attackCD = max(1, (int)(itemAnimationMax * 0.33))`. The
+                // cursor arm's caller overwrites `attack_cd` with the full
+                // swing right after (the established start-arm stand-in);
+                // the stab sweep keeps this C# value.
+                if landed {
+                    let anim_ticks = ticks_of(app.swing);
+                    let uid = app.npcs[idx].uid;
+                    if let Some(p) = app.player.as_mut() {
+                        p.melee_npc_hit_cooldown.insert(uid, anim_ticks);
+                    }
+                    let max_ticks = ticks_of(app.swing_max);
+                    // Keep-one (gate i04/i05): the shared ApplyAttackCooldown
+                    // helper — identical double-truncation semantics.
+                    app.attack_cd =
+                        crate::melee_swing::MeleeHitCooldowns::attack_cooldown_frames(max_ticks)
+                            as f32
+                            / 60.0;
+                }
+                // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+                // the Destroyer body's probe gate (`:89266-89285`) — the
+                // roll rides the melee strike's stream (the `UpdatePlayers`
+                // swap the damage/crit rolls above already ride).
+                if landed {
+                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                        &mut app.npcs[idx], probe_rng, false,
+                    ) {
+                        app.npcs[idx].wants_probe = Some(anchor);
+                    }
+                }
+                if landed {
+                    // `NPC.cs:81250-81264`: a landed strike on a `lifeMax > 1`
+                    // NPC spawns the combat text with the post-defence number
+                    // (`:81239`) and the crit flag. The local player's strike
+                    // takes the hostile pair (`:81258`) — never the friendly
+                    // (`:81254`) or network (`:81261`) arms.
+                    let text = dmg.to_string();
+                    let font = if crit {
+                        app.lookups.combat_crit_font.as_ref()
+                    } else {
+                        app.lookups.combat_text_font.as_ref()
+                    };
+                    // `FontAssets.CombatText[crit ? 1 : 0].MeasureString`
+                    // (`CombatText.cs:76`) — the placement size.
+                    let size = match font {
+                        Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                        None => [text.chars().count() as f32 * 8.0, 10.0],
+                    };
+                    let location = crate::combat_text::Rect {
+                        x: nx,
+                        y: ny,
+                        width: bw,
+                        height: bh,
+                    };
+                    let color = crate::combat_text::damage_text_color(crit, false, false);
+                    // The port's player carries no flipped-gravity state, so
+                    // `Main.player[Main.myPlayer].gravDir` is the normal 1f
+                    // (`CombatText.cs:93`).
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::combat_text::spawn(
+                        &mut app.combat_texts,
+                        location,
+                        color,
+                        text,
+                        crit,
+                        false,
+                        size,
+                        1.0,
+                        rng,
+                    );
+                }
+                // A joining client's strike goes to the host as `28`
+                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
+                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
+                // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
+                // (`NPC.cs:81544-81553`) — the kind's own hit cue through
+                // the faithful case-3 path (S1-E-21 wave C): the volume
+                // arms + the `Main.rand.Next(-10, 11) * 0.01` pitch draw
+                // ride the `UpdatePlayers` stream (`Main.cs:17754`), only
+                // after the attenuation gate passed. The C#'s `null`
+                // guard: the kinds with no row play nothing.
+                if let Some(cue) = hit_cue {
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    app.audio.play_npc_hit_sound(cue, nx, ny, rng);
+                }
 }
 
 /// S1-P-i05 — `ItemCheck`'s useStyle-3 (Thrust) use-start + stab sweep
