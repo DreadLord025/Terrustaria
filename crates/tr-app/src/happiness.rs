@@ -57,223 +57,215 @@ pub struct BiomePreference {
     pub biome: BiomeKind,
 }
 
-/// The per-NPC biome preferences (`PersonalityDatabasePopulator.
-/// Populate_BiomePreferences`): the port carries the rows for the town NPCs
-/// it has — the Guide (22, `:27-30`: likes the Forest, dislikes the Ocean).
-/// The table grows with each town NPC (M4-TOWN-3+).
-pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
-    match kind {
-        NpcKind::Guide => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Forest,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Ocean,
-            },
-        ],
-        // `Register(54)` (`PersonalityDatabasePopulator.cs:122-126`): the
-        // Clothier likes the Underground, dislikes the Hallow.
-        NpcKind::Clothier => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Underground,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Hallow,
-            },
-        ],
-        // `Register(124)` (`PersonalityDatabasePopulator.cs:52-56`):
-        // the Mechanic likes the Snow, dislikes the Underground.
-        NpcKind::Mechanic => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Snow,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Underground,
-            },
-        ],
-        // `Register(353)` (`PersonalityDatabasePopulator.cs:107-111`):
-        // the Stylist likes the Ocean, dislikes the Snow.
-        NpcKind::Stylist => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Ocean,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Snow,
-            },
-        ],
-        // `Register(207)` (`PersonalityDatabasePopulator.cs:67-71`):
-        // the Dye Trader likes the Desert, dislikes the Forest.
-        NpcKind::DyeTrader => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Desert,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Forest,
-            },
-        ],
-        // `Register(208)` (`PersonalityDatabasePopulator.cs:137-141`):
-        // the Party Girl likes the Hallow, dislikes the Underground.
-        NpcKind::PartyGirl => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Hallow,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Underground,
-            },
-        ],
-        // `Register(633)` (`PersonalityDatabasePopulator.cs:42-46`):
-        // the Zoologist likes the Forest, dislikes the Desert.
-        NpcKind::Zoologist => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Forest,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Desert,
-            },
-        ],
-        // `Register(588)` (`PersonalityDatabasePopulator.cs:37-41`):
-        NpcKind::Golfer => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Forest,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Underground,
-            },
-        ],
-        // `Register(441)` (`PersonalityDatabasePopulator.cs:47-51`):
-        // the Tax Collector likes the Snow, dislikes the Hallow.
-        NpcKind::TaxCollector => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Snow,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Hallow,
-            },
-        ],
-        // `Register(108)` (`PersonalityDatabasePopulator.cs:127-131`):
-        NpcKind::Wizard => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Hallow,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Ocean,
-            },
-        ],
-        // `Register(107)` (`PersonalityDatabasePopulator.cs:117-121`):
-        // the Tinkerer likes the Underground, dislikes the Jungle.
-        NpcKind::GoblinTinkerer => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Underground,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Jungle,
-            },
-        ],
-        // `Register(228)` (`PersonalityDatabasePopulator.cs:87-91`): the
-        // Witch Doctor likes the Jungle, dislikes the Hallow.
-        NpcKind::WitchDoctor => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Jungle,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Hallow,
-            },
-        ],
-        // `Register(227)` (`PersonalityDatabasePopulator.cs:92-96`): the
-        // Painter likes the Jungle, dislikes the Forest.
-        NpcKind::Painter => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Jungle,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Forest,
-            },
-        ],
-        // `Register(38)` (`PersonalityDatabasePopulator.cs:112-116`): the
-        // Demolitionist likes the Underground, dislikes the Ocean.
-        NpcKind::Demolitionist => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Underground,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Ocean,
-            },
-        ],
-        // `Register(19)` (`PersonalityDatabasePopulator.cs:72-76`): the
-        // Arms Dealer likes the Desert, dislikes the Snow.
-        NpcKind::ArmsDealer => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Desert,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Snow,
-            },
-        ],
-        // `Register(18)` (`PersonalityDatabasePopulator.cs:132-136`): the
-        // Nurse likes the Hallow, dislikes the Snow.
-        NpcKind::Nurse => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Hallow,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Snow,
-            },
-        ],
-        // `Register(20)` (`PersonalityDatabasePopulator.cs:82-86`): the
-        // Dryad likes the Jungle, dislikes the Desert.
-        NpcKind::Dryad => &[
-            BiomePreference {
-                level: AffectionLevel::Like,
-                biome: BiomeKind::Jungle,
-            },
-            BiomePreference {
-                level: AffectionLevel::Dislike,
-                biome: BiomeKind::Desert,
-            },
-        ],
+/// The row shorthand (`Populate_BiomePreferences`' `{ level, biome }`
+/// initializer pairs — `PersonalityDatabasePopulator.cs:27-147`).
+const fn bp(level: AffectionLevel, biome: BiomeKind) -> BiomePreference {
+    BiomePreference { level, biome }
+}
+use AffectionLevel::{Dislike as D, Hate as H, Like as L, Love as V};
+use BiomeKind::{Desert, Forest, Hallow, Jungle, Mushroom, Ocean, Snow, Underground};
+
+/// The per-NPC biome preferences — the FULL vanilla table
+/// (`PersonalityDatabasePopulator.Populate_BiomePreferences`,
+/// `PersonalityDatabasePopulator.cs:27-147`), keyed on the C# `NPCID` so the
+/// unported kinds (142 Santa, 160 Truffle, 178 Steampunker, 209 Cyborg,
+/// 229 Pirate, 550 Tavernkeep — the W4-g58 DATA half) carry their rows too.
+/// Row order = the C# initializer order (`BiomePreferenceListTrait.
+/// ModifyShopPrice` `:41-48` picks the HIGHEST affection among the biomes
+/// the judge is in — the first-match convention is wrong).
+pub fn biome_preferences_by_id(id: u16) -> &'static [BiomePreference] {
+    match id {
+        22 => &[bp(L, Forest), bp(D, Ocean)],      // `:27-31` the Guide
+        17 => &[bp(L, Forest), bp(D, Desert)],     // `:32-36` the Merchant
+        588 => &[bp(L, Forest), bp(D, Underground)], // `:37-41` the Golfer
+        633 => &[bp(L, Forest), bp(D, Desert)],    // `:42-46` the Zoologist
+        441 => &[bp(L, Snow), bp(D, Hallow)],      // `:47-51` the Tax Collector
+        124 => &[bp(L, Snow), bp(D, Underground)], // `:52-56` the Mechanic
+        209 => &[bp(L, Snow), bp(D, Jungle)],      // `:57-61` the Cyborg
+        142 => &[bp(V, Snow), bp(H, Desert)],      // `:62-66` Santa Claus
+        207 => &[bp(L, Desert), bp(D, Forest)],    // `:67-71` the Dye Trader
+        19 => &[bp(L, Desert), bp(D, Snow)],       // `:72-76` the Arms Dealer
+        178 => &[bp(L, Desert), bp(D, Jungle)],    // `:77-81` the Steampunker
+        20 => &[bp(L, Jungle), bp(D, Desert)],     // `:82-86` the Dryad
+        228 => &[bp(L, Jungle), bp(D, Hallow)],    // `:87-91` the Witch Doctor
+        227 => &[bp(L, Jungle), bp(D, Forest)],    // `:92-96` the Painter
+        369 => &[bp(L, Ocean), bp(D, Desert)],     // `:97-101` the Angler
+        229 => &[bp(L, Ocean), bp(D, Underground)], // `:102-106` the Pirate
+        353 => &[bp(L, Ocean), bp(D, Snow)],       // `:107-111` the Stylist
+        38 => &[bp(L, Underground), bp(D, Ocean)], // `:112-116` the Demolitionist
+        107 => &[bp(L, Underground), bp(D, Jungle)], // `:117-121` the Tinkerer
+        54 => &[bp(L, Underground), bp(D, Hallow)], // `:122-126` the Clothier
+        108 => &[bp(L, Hallow), bp(D, Ocean)],     // `:127-131` the Wizard
+        18 => &[bp(L, Hallow), bp(D, Snow)],       // `:132-136` the Nurse
+        208 => &[bp(L, Hallow), bp(D, Underground)], // `:137-141` the Party Girl
+        550 => &[bp(L, Hallow), bp(D, Snow)],      // `:142-146` the Tavernkeep
+        160 => &[bp(L, Mushroom)],                 // `:147` the Truffle
         _ => &[],
     }
 }
 
-/// The neighbor-relationship rows (`AllPersonalitiesModifier.
-/// ModifyShopPrice_Relationships`): the Guide carries none (the switch has
-/// no case 22 — the Guide judges the biome alone). The table grows with the
-/// town NPCs.
+/// The kind-keyed view (`NpcKind.cs_id` — the M4-TOWN callers/tests).
+pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
+    biome_preferences_by_id(kind.cs_id())
+}
+
+/// The `TownNPCMoodBiomes.{NameKey}` localization key
+/// (`AShoppingBiome.NameKey` — `OceanBiome.cs:7` … `DungeonBiome.cs:7`;
+/// the Underground row's key is `NormalUnderground`, NOT `Underground`).
+pub fn biome_name_key(biome: BiomeKind) -> &'static str {
+    match biome {
+        BiomeKind::Forest => "Forest",
+        BiomeKind::Ocean => "Ocean",
+        BiomeKind::Snow => "Snow",
+        BiomeKind::Desert => "Desert",
+        BiomeKind::Jungle => "Jungle",
+        BiomeKind::Underground => "NormalUnderground",
+        BiomeKind::Hallow => "Hallow",
+        BiomeKind::Mushroom => "Mushroom",
+        BiomeKind::Corruption => "Corruption",
+        BiomeKind::Crimson => "Crimson",
+        BiomeKind::Dungeon => "Dungeon",
+    }
+}
+
+/// The neighbor-relationship rows — the FULL vanilla switch
+/// (`AllPersonalitiesModifier.ModifyShopPrice_Relationships`,
+/// `AllPersonalitiesModifier.cs:41-505`), keyed on the C# `NPCID`; row
+/// order = the C# `if` order (the report text prepends, so the LAST row
+/// reads first). The Princess's random three-loves head (`:15-36`) and
+/// the universal LikePrincess row (`:37-40`) ride `process_mood` itself.
+pub fn neighbor_preferences_by_id(id: u16) -> &'static [(AffectionLevel, u16)] {
+    match id {
+        // `:43-60` the Merchant: Golfer/Nurse like, TaxCollector dislike,
+        // Angler hate.
+        17 => &[(L, 588), (L, 18), (D, 441), (H, 369)],
+        // `:61-82` the Nurse: ArmsDealer love, Wizard like, PartyGirl +
+        // Dryad dislike, Zoologist hate.
+        18 => &[(V, 19), (L, 108), (D, 208), (D, 20), (H, 633)],
+        // `:83-100` the Painter: Dryad love, PartyGirl like, Cyborg +
+        // Truffle dislike.
+        227 => &[(V, 20), (L, 208), (D, 209), (D, 160)],
+        // `:101-118` the Dye Trader: ArmsDealer/Painter like, Steampunker
+        // dislike, Pirate hate.
+        207 => &[(L, 19), (L, 227), (D, 178), (H, 229)],
+        // `:119-140` the Party Girl: Wizard love, Stylist like, Merchant
+        // dislike, TaxCollector hate, Zoologist love (the trailing row).
+        208 => &[(V, 108), (L, 353), (D, 17), (H, 441), (V, 633)],
+        // `:141-158` the Angler: PartyGirl/Demolitionist/TaxCollector
+        // like, Tavernkeep hate.
+        369 => &[(L, 208), (L, 38), (L, 441), (H, 550)],
+        // `:159-176` the Stylist: DyeTrader love, Pirate like, Tavernkeep
+        // dislike, Tinkerer hate.
+        353 => &[(V, 207), (L, 229), (D, 550), (H, 107)],
+        // `:177-194` the Demolitionist: Tavernkeep love, Mechanic like,
+        // Tinkerer + ArmsDealer dislike.
+        38 => &[(V, 550), (L, 124), (D, 107), (D, 19)],
+        // `:195-212` the Dryad: WitchDoctor/Truffle like, Angler dislike,
+        // Golfer hate.
+        20 => &[(L, 228), (L, 160), (D, 369), (H, 588)],
+        // `:213-230` the Tavernkeep: Demolitionist love, Tinkerer like,
+        // Guide dislike, DyeTrader hate.
+        550 => &[(V, 38), (L, 107), (D, 22), (H, 207)],
+        // `:231-248` the Arms Dealer: Nurse love, Steampunker like,
+        // Golfer dislike, Demolitionist hate.
+        19 => &[(V, 18), (L, 178), (D, 588), (H, 38)],
+        // `:249-266` the Tinkerer: Mechanic love, DyeTrader like,
+        // Clothier dislike, Stylist hate.
+        107 => &[(V, 124), (L, 207), (D, 54), (H, 353)],
+        // `:267-284` the Witch Doctor: Dryad/Guide like, Nurse dislike,
+        // Truffle hate.
+        228 => &[(L, 20), (L, 22), (D, 18), (H, 160)],
+        // `:285-302` the Clothier: Truffle love, TaxCollector like, Nurse
+        // dislike, Mechanic hate.
+        54 => &[(V, 160), (L, 441), (D, 18), (H, 124)],
+        // `:303-320` the Mechanic: Tinkerer love, Cyborg like, ArmsDealer
+        // dislike, Clothier hate.
+        124 => &[(V, 107), (L, 209), (D, 19), (H, 54)],
+        // `:321-342` the Tax Collector: Merchant love, PartyGirl like,
+        // Demolitionist + Mechanic dislike, Santa hate.
+        441 => &[(V, 17), (L, 208), (D, 38), (D, 124), (H, 142)],
+        // `:343-360` the Pirate: Angler love, Tavernkeep like, Stylist
+        // dislike, Guide hate.
+        229 => &[(V, 369), (L, 550), (D, 353), (H, 22)],
+        // `:361-378` the Wizard: Golfer love, Merchant like, WitchDoctor
+        // dislike, Cyborg hate.
+        108 => &[(V, 588), (L, 17), (D, 228), (H, 209)],
+        // `:379-400` the Steampunker: Cyborg love, Painter like,
+        // PartyGirl + Wizard + Dryad dislike.
+        178 => &[(V, 209), (L, 227), (D, 208), (D, 108), (D, 20)],
+        // `:401-422` the Cyborg: Stylist/Pirate/Steampunker like, Wizard
+        // hate, Zoologist dislike (the trailing row).
+        209 => &[(L, 353), (L, 229), (L, 178), (H, 108), (D, 633)],
+        // `:423-428` Santa Claus: TaxCollector hate alone.
+        142 => &[(H, 441)],
+        // `:429-450` the Golfer: Painter like, Angler love, Merchant
+        // hate, Pirate dislike, Zoologist like (the trailing row).
+        588 => &[(L, 227), (V, 369), (H, 17), (D, 229), (L, 633)],
+        // `:451-468` the Guide: Clothier like, Steampunker dislike,
+        // Painter hate, Zoologist like (the trailing row).
+        22 => &[(L, 54), (D, 178), (H, 227), (L, 633)],
+        // `:469-486` the Truffle: Guide love, Dryad like, Clothier
+        // dislike, WitchDoctor hate.
+        160 => &[(V, 22), (L, 20), (D, 54), (H, 228)],
+        // `:487-504` the Zoologist: Angler dislike, ArmsDealer hate,
+        // WitchDoctor love, Golfer like.
+        633 => &[(D, 369), (H, 19), (V, 228), (L, 588)],
+        _ => &[],
+    }
+}
+
+/// The kind-keyed view — the neighbor ids map back through the port's
+/// `cs_id` roster; a row for an UNPORTED kind drops out (the vanilla can
+/// never have that neighbor either — the kind does not exist).
 pub fn neighbor_preferences(kind: NpcKind) -> &'static [(AffectionLevel, NpcKind)] {
-    let _ = kind;
-    &[]
+    // The reverse `cs_id` table for the town roster — built once, the
+    // switch's rows resolve at first read.
+    use std::sync::OnceLock;
+    static ROWS: OnceLock<Vec<&'static [(AffectionLevel, NpcKind)]>> = OnceLock::new();
+    static IDS: &[NpcKind] = &[
+        NpcKind::Guide,
+        NpcKind::Merchant,
+        NpcKind::Nurse,
+        NpcKind::ArmsDealer,
+        NpcKind::Dryad,
+        NpcKind::Demolitionist,
+        NpcKind::Clothier,
+        NpcKind::GoblinTinkerer,
+        NpcKind::Angler,
+        NpcKind::Wizard,
+        NpcKind::Mechanic,
+        NpcKind::Stylist,
+        NpcKind::TaxCollector,
+        NpcKind::Golfer,
+        NpcKind::Zoologist,
+        NpcKind::Princess,
+        NpcKind::DyeTrader,
+        NpcKind::PartyGirl,
+        NpcKind::Painter,
+        NpcKind::WitchDoctor,
+    ];
+    let rows = ROWS.get_or_init(|| {
+        IDS.iter()
+            .map(|k| {
+                let v: Vec<(AffectionLevel, NpcKind)> = neighbor_preferences_by_id(k.cs_id())
+                    .iter()
+                    .filter_map(|(lv, id)| {
+                        IDS.iter()
+                            .find(|o| o.cs_id() == *id)
+                            .map(|o| (*lv, *o))
+                    })
+                    .collect();
+                // Leaked ONCE at first read — the &'static contract the
+                // old hand-table carried.
+                &*Box::leak(v.into_boxed_slice())
+            })
+            .collect()
+    });
+    let idx = IDS.iter().position(|k| *k == kind);
+    match idx {
+        Some(i) => rows[i],
+        None => &[],
+    }
 }
 
 /// The resolved mood flags — the report-text keys land with the shop dialog
@@ -284,6 +276,11 @@ pub enum MoodFlag {
     NoHome,
     FarFromHome,
     HateBiomeEvil,
+    /// `IsPlayerInEvilBiomes`' named row (`ShopHelper.cs:353-356`) — the
+    /// evil biome carries its `BiomeName` substitute; supersedes the
+    /// name-less `HateBiomeEvil` marker in the mood pass (the marker stays
+    /// for the price-side callers/tests).
+    HateBiomeNamed(BiomeKind),
     DislikeCrowded,
     HateCrowded,
     LoveSpace,
@@ -363,7 +360,16 @@ pub fn process_mood(
             false,
         );
         if pm.zone_corrupt || pm.zone_crimson || pm.zone_dungeon {
-            flags.push(MoodFlag::HateBiomeEvil);
+            // `_dangerousBiomes` order (`:28-34`): Corruption first, then
+            // Crimson, then Dungeon — the first hit names the report row.
+            let evil = if pm.zone_corrupt {
+                BiomeKind::Corruption
+            } else if pm.zone_crimson {
+                BiomeKind::Crimson
+            } else {
+                BiomeKind::Dungeon
+            };
+            flags.push(MoodFlag::HateBiomeNamed(evil));
             adjustment = 1000.0;
         }
     }
@@ -377,9 +383,20 @@ pub fn process_mood(
         if other.hp <= 0 || std::ptr::eq(other, npc) {
             continue;
         }
-        if !matches!(other.kind, NpcKind::Guide) {
-            // `IsNotReallyTownNPC` + the townNPC gate — the port's town set
-            // grows here.
+        if !other.kind.is_town_resident()
+            || matches!(
+                other.kind,
+                NpcKind::TravellingMerchant | NpcKind::DD2Bartender
+            )
+        {
+            // `:305` — `townNPC && !IsNotReallyTownNPC` (`:363-371`: 37
+            // OldMan / 368 Travelling Merchant / 453 Skeleton Merchant).
+            // The port's town set rides `is_town_resident`; the Tavernkeep
+            // (550) is a town NPC but his kind ports as the DD2 event
+            // Bartender — excluded until his town twin lands (ANALYSIS
+            // "Shop happiness UI (W4-g58)"). The pets' housingCategory
+            // filter (`CanNPCsLiveWithEachOther_ShopHelper`,
+            // `TownRoomManager.cs:153-161`) is inert — no pets ported.
             continue;
         }
         let (ox, oy) = match other.home {
@@ -425,12 +442,25 @@ pub fn process_mood(
                 adjustment *= pref.level.multiplier();
             }
         }
-        // The neighbor prefs (`AllPersonalitiesModifier`): the Guide's rows
-        // are empty; the table grows with the town NPCs.
+        // The neighbor prefs (`AllPersonalitiesModifier`, `:168`): the
+        // full switch table; the NpcAffection flags feed the report UI
+        // (the row order is the C# `if` order).
         for (level, other_kind) in neighbor_preferences(npc.kind) {
             if nearby_types.iter().any(|t| t == other_kind) {
+                flags.push(MoodFlag::NpcAffection(*level, *other_kind));
                 adjustment *= level.multiplier();
             }
+        }
+        // The universal LikePrincess row (`AllPersonalitiesModifier.cs:
+        // 37-40`): every NON-Princess town NPC likes a nearby Princess
+        // (×0.94). The Princess's own random three-loves head (`:15-36`,
+        // `Main.rand.Next(list.Count)` per pick) stays constants-off —
+        // it draws the global RNG and her crowd gate (`:122-130`'s
+        // HateLonely) rides her own AI lane (ANALYSIS "Shop happiness UI
+        // (W4-g58)").
+        if npc.kind != NpcKind::Princess && nearby_types.contains(&NpcKind::Princess) {
+            flags.push(MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Princess));
+            adjustment *= AffectionLevel::Like.multiplier();
         }
     }
 
@@ -466,6 +496,156 @@ fn classify_biome(pm: &tr_core::scene::SceneMetrics) -> BiomeKind {
         BiomeKind::Hallow
     } else {
         BiomeKind::Forest
+    }
+}
+
+/// `ShoppingSettings` (`ShoppingSettings.cs:3-14`) — the pair
+/// `Player.SetTalkNPC` latches (`Player.cs:4383-4390`): `NotInShop` is
+/// `{ 1f, "" }`.
+#[derive(Clone, Debug)]
+pub struct ShoppingSettings {
+    pub price_adjustment: f32,
+    pub happiness_report: String,
+}
+
+impl Default for ShoppingSettings {
+    /// `ShoppingSettings.NotInShop` (`ShoppingSettings.cs:9-13`).
+    fn default() -> Self {
+        ShoppingSettings {
+            price_adjustment: 1.0,
+            happiness_report: String::new(),
+        }
+    }
+}
+
+/// `NPC.GetFullnameByID` (`NPC.cs:7010-7020`): the first live NPC of the
+/// type answers `FullName` (the given name through `Game.NPCTitle`,
+/// `NPC.cs:6980-6990`); no resident → `Lang.GetNPCNameValue`.
+pub fn npc_full_name(all_npcs: &[crate::npc::Npc], kind: NpcKind) -> String {
+    if let Some(n) = all_npcs.iter().find(|n| n.hp > 0 && n.kind == kind) {
+        let type_name = crate::lang::npc_name(kind.cs_id() as i32);
+        if n.given_name.is_empty() {
+            return type_name; // `TypeName` (`NPC.cs:6978`)
+        }
+        // `Language.GetTextValue("Game.NPCTitle", given, typeName)`
+        // (`NPC.cs:6988`) — the "{0} the {1}" row.
+        return crate::lang::text_args("Game.NPCTitle", &[n.given_name.clone(), type_name]);
+    }
+    crate::lang::npc_name(kind.cs_id() as i32)
+}
+
+/// `ShopHelper.AddHappinessReportText` (`ShopHelper.cs:188-196`): the
+/// category is `TownNPCMood_{NPCID.Search.GetName(netID)}` (the Zoologist's
+/// `altTexture == 2` shapeshift suffix `:191-194` is constants-off — no
+/// alt-texture state ported); each row PREPENDS
+/// `Language.GetTextValueWith(category.key, substitutes) + " "`.
+fn prepend_report(report: &mut String, kind: NpcKind, key: &str, args: &[(&str, String)]) {
+    let Some(name) = crate::lang_tables::NPC_ID
+        .iter()
+        .find(|(id, _)| *id == kind.cs_id() as i32)
+        .map(|(_, n)| *n)
+    else {
+        return;
+    };
+    let subs: Vec<(&str, tr_core::localization::Substitution)> = args
+        .iter()
+        .map(|(k, v)| (*k, tr_core::localization::Substitution::Text(v.clone())))
+        .collect();
+    let line = crate::lang::text_format_with(&format!("TownNPCMood_{name}.{key}"), &subs);
+    // `string.Concat(str1: text, str0: report, str2: " ")` — text FIRST.
+    *report = format!("{line}{report} ");
+}
+
+/// `ShopHelper.BiomeNameByKey` (`ShopHelper.cs:183-186`).
+fn biome_name(key: &str) -> String {
+    crate::lang::text(&format!("TownNPCMoodBiomes.{key}"))
+}
+
+/// The mood flags → the report string (`ShopHelper.ProcessMood`'s
+/// `AddHappinessReportText` call order — the flags carry the order the
+/// factors landed, and every call PREPENDS). The evil-biome row names the
+/// biome (`IsPlayerInEvilBiomes` `:353-356` passes `BiomeName`); the
+/// LikePrincess row uses the `LikeNPC_Princess` key
+/// (`AllPersonalitiesModifier.cs:37-40` → `ShopHelper.cs:252-259`).
+pub fn happiness_report(kind: NpcKind, flags: &[MoodFlag], all_npcs: &[crate::npc::Npc]) -> String {
+    let mut report = String::new();
+    for flag in flags {
+        match flag {
+            MoodFlag::NoHome => prepend_report(&mut report, kind, "NoHome", &[]),
+            MoodFlag::FarFromHome => prepend_report(&mut report, kind, "FarFromHome", &[]),
+            MoodFlag::HateBiomeEvil => {
+                // The name-less legacy marker — no BiomeName substitute
+                // (the mood pass emits `HateBiomeNamed` instead).
+                prepend_report(&mut report, kind, "HateBiome", &[]);
+            }
+            MoodFlag::HateBiomeNamed(biome) => prepend_report(
+                &mut report,
+                kind,
+                "HateBiome",
+                &[("BiomeName", biome_name(biome_name_key(*biome)))],
+            ),
+            MoodFlag::DislikeCrowded => prepend_report(&mut report, kind, "DislikeCrowded", &[]),
+            MoodFlag::HateCrowded => prepend_report(&mut report, kind, "HateCrowded", &[]),
+            MoodFlag::LoveSpace => prepend_report(&mut report, kind, "LoveSpace", &[]),
+            MoodFlag::Content => prepend_report(&mut report, kind, "Content", &[]),
+            MoodFlag::BiomeAffection(level, biome) => {
+                let key = match level {
+                    AffectionLevel::Love => "LoveBiome",
+                    AffectionLevel::Like => "LikeBiome",
+                    AffectionLevel::Dislike => "DislikeBiome",
+                    AffectionLevel::Hate => "HateBiome",
+                };
+                prepend_report(
+                    &mut report,
+                    kind,
+                    key,
+                    &[("BiomeName", biome_name(biome_name_key(*biome)))],
+                );
+            }
+            MoodFlag::NpcAffection(level, other) => {
+                // The LikePrincess row's dedicated key (`ShopHelper.cs:
+                // 252-259` — `LikeNPC_Princess` with the Princess's name).
+                let (key, name_kind) =
+                    if *level == AffectionLevel::Like && *other == NpcKind::Princess {
+                        ("LikeNPC_Princess", *other)
+                    } else {
+                        (
+                            match level {
+                                AffectionLevel::Love => "LoveNPC",
+                                AffectionLevel::Like => "LikeNPC",
+                                AffectionLevel::Dislike => "DislikeNPC",
+                                AffectionLevel::Hate => "HateNPC",
+                            },
+                            *other,
+                        )
+                    };
+                prepend_report(
+                    &mut report,
+                    kind,
+                    key,
+                    &[("NPCName", npc_full_name(all_npcs, name_kind))],
+                );
+            }
+        }
+    }
+    report
+}
+
+/// `ShopHelper.GetShoppingSettings` (`ShopHelper.cs:49-62`) — the
+/// `Player.SetTalkNPC` companion (`Player.cs:4389`): the mood pass plus the
+/// report string. `process_mood`'s flags carry the call order; the report
+/// folds them through `AddHappinessReportText`'s prepend.
+pub fn shopping_settings(
+    world: &World,
+    all_npcs: &[crate::npc::Npc],
+    npc: &crate::npc::Npc,
+    player_center: (f32, f32),
+    raining: bool,
+) -> ShoppingSettings {
+    let mood = process_mood(world, all_npcs, npc, player_center, raining);
+    ShoppingSettings {
+        price_adjustment: mood.multiplier,
+        happiness_report: happiness_report(npc.kind, &mood.flags, all_npcs),
     }
 }
 
@@ -615,7 +795,7 @@ mod tests {
             false,
         );
         assert!((mood.multiplier - 1.5).abs() < 0.001);
-        assert!(mood.flags.contains(&MoodFlag::HateBiomeEvil));
+        assert!(mood.flags.contains(&MoodFlag::HateBiomeNamed(BiomeKind::Corruption)));
     }
 
     #[test]
@@ -701,5 +881,140 @@ mod tests {
             biome_preferences(NpcKind::GoblinTinkerer)[1].biome,
             BiomeKind::Jungle
         );
+    }
+
+    /// W4-g58 witnesses — the DATA tables against the C# source rows.
+    mod w4_g58_tests {
+        use super::*;
+
+        /// `PersonalityDatabasePopulator.cs:27-147` — all 25 Register rows:
+        /// the id, the row count and the (level, biome) pairs in the
+        /// initializer order.
+        #[test]
+        fn the_biome_table_matches_the_populator_rows() {
+            let cases: &[(u16, &[(AffectionLevel, BiomeKind)])] = &[
+                (22, &[(L, Forest), (D, Ocean)]),
+                (17, &[(L, Forest), (D, Desert)]),
+                (588, &[(L, Forest), (D, Underground)]),
+                (633, &[(L, Forest), (D, Desert)]),
+                (441, &[(L, Snow), (D, Hallow)]),
+                (124, &[(L, Snow), (D, Underground)]),
+                (209, &[(L, Snow), (D, Jungle)]),
+                (142, &[(V, Snow), (H, Desert)]),
+                (207, &[(L, Desert), (D, Forest)]),
+                (19, &[(L, Desert), (D, Snow)]),
+                (178, &[(L, Desert), (D, Jungle)]),
+                (20, &[(L, Jungle), (D, Desert)]),
+                (228, &[(L, Jungle), (D, Hallow)]),
+                (227, &[(L, Jungle), (D, Forest)]),
+                (369, &[(L, Ocean), (D, Desert)]),
+                (229, &[(L, Ocean), (D, Underground)]),
+                (353, &[(L, Ocean), (D, Snow)]),
+                (38, &[(L, Underground), (D, Ocean)]),
+                (107, &[(L, Underground), (D, Jungle)]),
+                (54, &[(L, Underground), (D, Hallow)]),
+                (108, &[(L, Hallow), (D, Ocean)]),
+                (18, &[(L, Hallow), (D, Snow)]),
+                (208, &[(L, Hallow), (D, Underground)]),
+                (550, &[(L, Hallow), (D, Snow)]),
+                (160, &[(L, Mushroom)]),
+            ];
+            for (id, rows) in cases {
+                let got = biome_preferences_by_id(*id);
+                assert_eq!(got.len(), rows.len(), "id {id} row count");
+                for (i, (lv, b)) in rows.iter().enumerate() {
+                    assert_eq!(got[i].level, *lv, "id {id} row {i} level");
+                    assert_eq!(got[i].biome, *b, "id {id} row {i} biome");
+                }
+            }
+            // The unregistered ids carry no rows (the Princess 663 has no
+            // Register row — `Populate_BiomePreferences` skips her).
+            assert!(biome_preferences_by_id(663).is_empty());
+            assert!(biome_preferences_by_id(368).is_empty());
+        }
+
+        /// `AllPersonalitiesModifier.cs:41-505` — every switch case's rows
+        /// in the C# `if` order (the report prepends, so the order is the
+        /// read order).
+        #[test]
+        fn the_neighbor_table_matches_the_switch() {
+            let cases: &[(u16, &[(AffectionLevel, u16)])] = &[
+                (17, &[(L, 588), (L, 18), (D, 441), (H, 369)]),
+                (18, &[(V, 19), (L, 108), (D, 208), (D, 20), (H, 633)]),
+                (227, &[(V, 20), (L, 208), (D, 209), (D, 160)]),
+                (207, &[(L, 19), (L, 227), (D, 178), (H, 229)]),
+                (208, &[(V, 108), (L, 353), (D, 17), (H, 441), (V, 633)]),
+                (369, &[(L, 208), (L, 38), (L, 441), (H, 550)]),
+                (353, &[(V, 207), (L, 229), (D, 550), (H, 107)]),
+                (38, &[(V, 550), (L, 124), (D, 107), (D, 19)]),
+                (20, &[(L, 228), (L, 160), (D, 369), (H, 588)]),
+                (550, &[(V, 38), (L, 107), (D, 22), (H, 207)]),
+                (19, &[(V, 18), (L, 178), (D, 588), (H, 38)]),
+                (107, &[(V, 124), (L, 207), (D, 54), (H, 353)]),
+                (228, &[(L, 20), (L, 22), (D, 18), (H, 160)]),
+                (54, &[(V, 160), (L, 441), (D, 18), (H, 124)]),
+                (124, &[(V, 107), (L, 209), (D, 19), (H, 54)]),
+                (441, &[(V, 17), (L, 208), (D, 38), (D, 124), (H, 142)]),
+                (229, &[(V, 369), (L, 550), (D, 353), (H, 22)]),
+                (108, &[(V, 588), (L, 17), (D, 228), (H, 209)]),
+                (178, &[(V, 209), (L, 227), (D, 208), (D, 108), (D, 20)]),
+                (209, &[(L, 353), (L, 229), (L, 178), (H, 108), (D, 633)]),
+                (142, &[(H, 441)]),
+                (588, &[(L, 227), (V, 369), (H, 17), (D, 229), (L, 633)]),
+                (22, &[(L, 54), (D, 178), (H, 227), (L, 633)]),
+                (160, &[(V, 22), (L, 20), (D, 54), (H, 228)]),
+                (633, &[(D, 369), (H, 19), (V, 228), (L, 588)]),
+            ];
+            for (id, rows) in cases {
+                assert_eq!(neighbor_preferences_by_id(*id), *rows, "id {id}");
+            }
+            // The Princess's own case is the random three-loves head —
+            // no static rows (`:15-36`).
+            assert!(neighbor_preferences_by_id(663).is_empty());
+        }
+
+        /// The kind-keyed view resolves through `cs_id` and drops the
+        /// unported neighbor kinds (the vanilla can never house them).
+        #[test]
+        fn the_kind_view_filters_the_unported_neighbors() {
+            // The Guide (`:451-468`): Clothier like, Steampunker dislike
+            // (UNPORTED — drops), Painter hate, Zoologist like.
+            let guide = neighbor_preferences(NpcKind::Guide);
+            assert_eq!(
+                guide,
+                &[
+                    (L, NpcKind::Clothier),
+                    (H, NpcKind::Painter),
+                    (L, NpcKind::Zoologist),
+                ]
+            );
+            // The Merchant: the Angler hate row survives (369 ports).
+            let merchant = neighbor_preferences(NpcKind::Merchant);
+            assert_eq!(merchant.len(), 4);
+            assert_eq!(merchant[3], (H, NpcKind::Angler));
+            // The Tax Collector's Santa hate row drops (142 unported).
+            let tax = neighbor_preferences(NpcKind::TaxCollector);
+            assert_eq!(tax.len(), 4);
+            assert!(!tax.iter().any(|(_, k)| k.cs_id() == 142));
+        }
+
+        /// `AffectionLevel.cs:5-8` + `ShopHelper.cs:35-42` — the four
+        /// multipliers.
+        #[test]
+        fn the_affection_multipliers() {
+            assert_eq!(AffectionLevel::Love.multiplier(), 0.88);
+            assert_eq!(AffectionLevel::Like.multiplier(), 0.94);
+            assert_eq!(AffectionLevel::Dislike.multiplier(), 1.06);
+            assert_eq!(AffectionLevel::Hate.multiplier(), 1.12);
+        }
+
+        /// The Underground row's key is `NormalUnderground`
+        /// (`UndergroundBiome.cs:7`), not the enum's name.
+        #[test]
+        fn the_biome_name_keys() {
+            assert_eq!(biome_name_key(BiomeKind::Underground), "NormalUnderground");
+            assert_eq!(biome_name_key(BiomeKind::Mushroom), "Mushroom");
+            assert_eq!(biome_name_key(BiomeKind::Forest), "Forest");
+        }
     }
 }
