@@ -269,6 +269,9 @@ mod ui;
 // and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /
 // axe-hit / Check3x3 dispatch claims are the wiring wave.
 mod world_gore_a;
+// W4-g17 wave B (code-only): the CheckPot gore switch, styles 0-2
+// (WorldGen.cs:56878-56894); the PotEvent dispatch is the wiring wave.
+mod world_gore_b;
 mod world_sim;
 mod world_stepper;
 
