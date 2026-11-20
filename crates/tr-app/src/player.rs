@@ -844,6 +844,19 @@ pub struct Player {
     /// `Player.manaRegenBonus` — the star-in-bottle's +10 per slot
     /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
     pub mana_regen_bonus: i32,
+    /// `Player.nebulaLevelMana` (`Player.cs:926`): the Nebula Mana booster
+    /// tier 0..3 (`UpdateBuffs_NebulaBuffs` `:12070-12079` derives it from
+    /// the live 176-178 slot — the buff-scan lane owns that write;
+    /// `NebulaLevelup` `:57050-57053` grants the buff). `ResetEffects`
+    /// zeroes it (`:18755`); `RegenState::nebula_mana_counter` is the
+    /// cadence half the regen engine reads (`ApplyNebulaBuffMana`).
+    pub nebula_level_mana: i32,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 shimmer
+    /// permanent (`ItemCheck_UseShimmerPermanentItems` `:45399-45404` —
+    /// the crystals/powerups lane owns the use arm). NOT cleared by
+    /// ResetEffects — a permanent unlock (the player-file field `:54783`).
+    /// The regen engine reads it (`:19430-19433`, `:19453-19456`).
+    pub used_arcane_crystal: bool,
     /// `Player.wellFed` — any of the fed tiers 26/206/207 held
     /// (`Player.cs:11933-11967`); gates the re-eat (`:14353`) and the
     /// expert regen halving.
@@ -2539,6 +2552,8 @@ impl Player {
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
+            nebula_level_mana: 0,
+            used_arcane_crystal: false,
             stat_defense: 0,
             well_fed: false,
             pick_speed_bonus: 0.0,
@@ -6037,6 +6052,11 @@ impl Player {
         // summon arms pass in `world_sim/player.rs`).
         self.reset_projectile_caches();
         self.mana_regen_bonus = 0;
+        // `ResetEffects`' nebula trio zero (`Player.cs:18755`) — the Mana
+        // tier; the Life/Damage twins are the buff-tail lane's fields. The
+        // regen COUNTER is not reset here (the C# leaves it to the tier-0
+        // arm of `ApplyNebulaBuffMana`, `:19583`).
+        self.nebula_level_mana = 0;
         // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
         // accessory rows below re-arm it from the live items each tick.
         self.magic_cuffs = false;
@@ -11153,11 +11173,17 @@ impl Player {
                 max_mana: self.mana_max,
                 mana_regen_bonus: self.mana_regen_bonus,
                 mana_regen_buff: self.mana_regen_buff,
+                nebula_level_mana: self.nebula_level_mana,
+                used_arcane_crystal: self.used_arcane_crystal,
                 well_fed: self.well_fed,
+                expert_mode: self.buffs.expert_mode,
                 campfire: self.auras.campfire,
                 heart_lantern: self.auras.heart_lantern,
-                moving_x: self.vx != 0.0,
+                // `Player.cs:19241`: the halving arm needs BOTH a non-zero
+                // vx AND no hook — grappled movement keeps the ×1.25 lane.
+                moving_x: self.vx != 0.0 && !self.grappling_active,
                 standing_still: self.vx.abs() < 0.05 && self.vy.abs() < 0.05,
+                grappling: self.grappling_active,
                 dot_regen: dots.regen,
                 dot_resets_time: dots.resets_time,
                 dot_fast_lane: dots.fast_lane,
@@ -11184,6 +11210,18 @@ impl Player {
                     item_in_use: self.mana_regen_item_in_use,
                 },
             );
+        }
+        // `Player.Update`'s post-UpdateManaRegen tail (`Player.cs:
+        // 25996-26003`): runs UNCONDITIONALLY (outside the port's hp gate —
+        // the C# clamps a dead player's fields too). A negative regen
+        // counter zeroes (no C# lane writes it negative — a defensive pin),
+        // and an over-max bar (a same-tick pickup/drink landed past the
+        // engine's chunk clamps) snaps back to the max.
+        if self.regen.mana_regen_count < 0 {
+            self.regen.mana_regen_count = 0;
+        }
+        if self.mana > self.mana_max {
+            self.mana = self.mana_max;
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
@@ -12746,6 +12784,78 @@ mod tests {
         q.update(&w, PlayerInput::default());
         assert!(q.magic_cuffs);
         assert_eq!(q.mana_max, 20 + 40);
+    }
+
+    /// W4-d117 — `Player.cs:19241`: the moving-halving arm needs BOTH
+    /// `velocity.X != 0` AND `grappling[0] < 0`; a hooked player keeps the
+    /// ×1.25 lane (and the mana delay's double countdown, `:19426`).
+    #[test]
+    fn w4_d117_grappled_movement_keeps_the_still_lane() {
+        let w = World::new("t".into(), 64, 800);
+        let ramp = |hooked: bool| -> (i32, f32) {
+            let mut p = Player::spawn(&w);
+            p.vx = 2.0;
+            p.grappling_active = hooked;
+            p.regen.life_regen_time = 3000.0;
+            p.regen.mana_regen_delay = 4.0;
+            p.mana = 10;
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+            (p.regen.life_regen, p.regen.mana_regen_delay)
+        };
+        // max 100 → scale 0.3625: tier 8 × 1.25 = 10 → banker's(3.625) = 4;
+        // unhooks halve to 4 → banker's(1.45) = 1. Delay: hooked −1 −1 = 2,
+        // unhooked moving −1 = 3.
+        assert_eq!(ramp(true), (4, 2.0));
+        assert_eq!(ramp(false), (1, 3.0));
+    }
+
+    /// W4-d117 — the nebula tier / arcane-crystal fields flow from Player
+    /// into the engine (`:19421`, `:19430-19433`), and ResetEffects zeroes
+    /// the tier but NOT the counter (`:18755` vs `:19583`).
+    #[test]
+    fn w4_d117_nebula_and_crystal_fields_flow_through_the_engine() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.mana = 10;
+        p.nebula_level_mana = 3;
+        p.regen.mana_regen_delay = 100.0; // regen line off — pure nebula
+        for _ in 0..2 {
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        }
+        assert_eq!(p.mana, 11, "tier 3 grants at counter 6 (:19571-19574)");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        // A full update's ResetEffects wipes the tier (`:18755`); the
+        // counter's wipe is the ENGINE's tier-0 arm (`:19583`), not the
+        // reset — both are 0 after the tick.
+        p.regen.nebula_mana_counter = 4;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        // The crystal survives ResetEffects (a permanent, `:45399-45404`
+        // has no reset site) and shaves the delay: still → 4 −1 −1 −0.05.
+        p.used_arcane_crystal = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_arcane_crystal, "ResetEffects keeps the permanent");
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.regen.mana_regen_delay = 4.0;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert!((p.regen.mana_regen_delay - 1.95).abs() < 1e-6);
+    }
+
+    /// W4-d117 — `Player.Update`'s post-regen tail (`Player.cs:25996-26003`)
+    /// runs UNCONDITIONALLY: a dead player's negative counter and over-max
+    /// bar are clamped too (the port's hp gate only guards the engines).
+    #[test]
+    fn w4_d117_the_update_tail_clamps_run_even_when_dead() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.hp = 0;
+        p.mana = 30; // > mana_max 20
+        p.regen.mana_regen_count = -50;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.mana, 20, "the over-max snap (:26000-26003)");
+        assert_eq!(p.regen.mana_regen_count, 0, "the negative wipe (:25996)");
     }
 
     /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the
