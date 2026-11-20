@@ -4575,6 +4575,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The baby bird's 5-frame sheet (`Main.cs:8506`) — `AI_158`'s
         // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
         BABY_BIRD => 5,
+        // W4-a9 — the Sanguine bat's 5-frame sheet (`Main.cs:8505`) —
+        // `AI_156_BatOfLight`'s 6-tick flap wraps at projFrames − 1
+        // (`Projectile.cs:51535-51542`). The 946 blade keeps the stock 1
+        // (no override; its arm runs no frame machine).
+        755 => 5,
         // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
         // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
         // (`Projectile.cs:60192`) and the walk steps frames 0-5
