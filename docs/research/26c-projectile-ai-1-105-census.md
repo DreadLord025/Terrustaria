@@ -192,3 +192,21 @@ would park the spear in `_ => {}` forever. The stale doc comments at
 `projectile.rs:301-306` still call 186 "the boulder (aiStyle 37)" — the boulder
 is kind 99 / aiStyle 25; 186 is the spear trap. The d4 port (37 ∈ 31-40) must
 land the arm AND the row correction together and retire the ANALYSIS row.
+
+## Finding F4 — the pushed d3 census OVER-CLAIMS the style-25 port
+
+`origin/task/W4-d3-proj-ai-21-30` tip `57abe80a` ("Census projectile aiStyles
+21-30 … style 25 boulder family MISSING") adds ONLY
+`docs/research/26b-projectile-ai-21-30-census.md`. That doc's last paragraph
+says style 25 was "Ported by this task in
+`crates/tr-app/src/projectile_ai_boulder.rs`" — but the branch has NO code
+commit (`git show 57abe80a --stat`: 1 file, the doc), the module does not exist
+on the branch or in the d3 worktree (`TR-W4-d3`, clean at `57abe80a`), and
+main's dispatch has no 25 arm. **Style 25 is still MISSING and still CLAIMED
+by d3** — the doc sentence is aspirational, not landed. The d3 owner (or a
+reland task) owes the boulder port: 13 kinds (99/655/727/1005/1013/1014/1021/
+1047/1048/1053/1054/1055/1057), the AI arm `:26015-26415`, the HandleMovement
+bounce ladder `:18941-19277`, the RainbowBoulder helpers `:20024-20315`, the
+Shimmer arm `:22504-22515` and the Kill hooks (26b's cite list). The 26b
+verify-only verdicts for 21-24/26-30 match this census (arms present); its
+style-28 deviation note (967/1026 frame machines skipped) stands as recorded.
