@@ -22,6 +22,7 @@ pub mod falling;
 pub mod flame;
 pub mod framing;
 pub mod generation_progress;
+pub mod glowmask;
 pub mod housing;
 pub mod hit_tile;
 pub mod lighting;
