@@ -506,10 +506,12 @@ fn put_hive(world: &mut World, x: i32, y: i32, kind: u16) {
     t.set_slope(0);
 }
 
-/// `Beehives` + `BeeLarvaInBeehives` (`WorldGen.cs:15927-16000`,
-/// `AddBeeLarva` `:32050-32068`): 1-8 hive domes in the underground jungle —
-/// the hive-block (225) shell with the honey pockets (the liquid 2) inside,
-/// roughly half carrying the larva (231) in the 3×4 clear centre.
+/// RETIRED (W4-c31): the shape-level hive dome — replaced by the faithful
+/// `HiveBiome` port (`hive::pass_beehives`, `HiveBiome.cs:11-383` + the
+/// `Beehives`/`BeeLarvaInBeehives` passes). Kept for its test history
+/// (`mini_biomes::the_hive_places_its_five_patches_on_the_ring` exercises
+/// the retired shape); the pipeline no longer calls it.
+#[allow(dead_code)]
 pub(crate) fn pass_beehives(
     world: &mut World,
     spans: &super::biomes::BiomeSpans,

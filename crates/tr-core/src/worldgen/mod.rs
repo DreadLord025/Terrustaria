@@ -47,6 +47,7 @@ mod tile_runner;
 mod wavy;
 mod world_hash;
 mod finish_seeds;
+mod hive;
 
 use self::noise::{Noise, Rng};
 use crate::tiledata as td;

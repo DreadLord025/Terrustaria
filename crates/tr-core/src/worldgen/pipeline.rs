@@ -366,6 +366,11 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.numLarva/larvaX/larvaY` (`GenVars.cs:150-154`, reset 0 at
+    /// `WorldGen.cs:11245`) — the hive stands' larva anchors (W4-c31):
+    /// `HiveBiome.CreateStandForLarva` publishes, the `Larva` pass
+    /// (`BeeLarvaInBeehives`, `:20868-20900`) consumes.
+    pub(crate) larva: hive::LarvaAnchors,
 }
 
 impl Default for GenVars {
@@ -426,6 +431,9 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // `GenVars.numLarva = 0` (`WorldGen.cs:11245`), the arrays
+            // zero-init (`GenVars.cs:446-447`).
+            larva: hive::LarvaAnchors::default(),
         }
     }
 }
@@ -1155,9 +1163,10 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// `Step::vanilla` values for those constants (`ID/GenPassNameID.cs:239-325`),
 /// which is where the two vocabularies meet.
 ///
-/// Two of the twelve have no executed step in the port yet (`Larva` —
-/// `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`); listing them keeps the
-/// table 1:1 with the C# so a future step cannot silently un-prune itself.
+/// One of the twelve has no executed step in the port yet (`Shimmer`);
+/// listing it keeps the table 1:1 with the C# so a future step cannot
+/// silently un-prune itself. (`Larva` — `GenPassNameID.BeeLarvaInBeehives`
+/// — landed with W4-c31's hive rewrite.)
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
@@ -1357,6 +1366,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Muds Walls In Jungle",
         step_muds_walls_in_jungle
     ),
+    // The vanilla Larva slot (`WorldGen.cs:20868`): immediately after Muds
+    // Walls In Jungle (`:20813`), before Micro Biomes (`:20901`) — W4-c31's
+    // `BeeLarvaInBeehives` port over the anchors the beehives step
+    // published. (The port's grouped micro steps run earlier — the
+    // recorded EXECUTED_PIPELINE order deviation.)
+    step!("larva", "Larva", step_larva),
     step!(
         "floating islands",
         "Floating Islands",
@@ -2213,7 +2228,33 @@ fn step_beehives(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    structures::pass_beehives(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
+    // W4-c31: the faithful `HiveBiome` rewrite (the shape-level dome in
+    // `structures::pass_beehives` is retired). The pass keeps the shared
+    // `srng` stream the dome drew from (the port's stream contract — the
+    // vanilla per-pass re-seed is the recorded model); the layer anchors
+    // ride in as parameters (`world.world_surface` publishes at the tail).
+    let layers = gv.layers();
+    hive::pass_beehives(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        &mut gv.larva,
+        &mut streams.srng,
+    );
+}
+
+/// The `Larva` pass (`GenPassNameID.BeeLarvaInBeehives`,
+/// `WorldGen.cs:20868-20900`) — W4-c31: the stand re-clear + the 231
+/// `Place3x3` per published anchor. Draws no RNG (the C# body has none).
+fn step_larva(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    hive::pass_larva(world, &gv.larva);
 }
 
 fn step_hell_forts(
@@ -2824,6 +2865,11 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[467] = true;
     world.frame_important[441] = true;
     world.frame_important[468] = true;
+    // The larva 231 (`Main.cs:7396`) — W4-c31: the `Place3x3` frames the
+    // Larva pass writes must survive the load-time framing, and the kill
+    // cascade must reach the object (`TileFrameImportant`'s Check3x3 arm,
+    // `WorldGen.cs:86000-86013`).
+    world.frame_important[231] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -3140,7 +3186,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-c31: + `larva` (vanilla "Larva", `WorldGen.cs:20868`) after
+        // `muds walls in jungle`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3226,6 +3274,7 @@ mod tests {
                 "jungle plants",
                 "vines",
                 "muds walls in jungle",
+                "larva",
                 "floating islands",
                 "remove water",
                 "shell piles",
@@ -3365,7 +3414,10 @@ mod tests {
         assert_eq!(pos("wet jungle"), pos("altars") + 1);
         assert_eq!(pos("jungle plants"), pos("mushroom and jungle plants") + 1);
         assert_eq!(pos("muds walls in jungle"), pos("vines") + 1);
-        assert_eq!(names[pos("muds walls in jungle") + 1], "floating islands");
+        // W4-c31: the `larva` step slots between them (vanilla Muds Walls
+        // In Jungle `:20813` → Larva `:20868`).
+        assert_eq!(names[pos("muds walls in jungle") + 1], "larva");
+        assert_eq!(names[pos("larva") + 1], "floating islands");
         // The vanilla chain carries the same relative pairs.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
