@@ -25,6 +25,10 @@ mod config;
 mod desert;
 mod desert_dunes;
 mod desert_entrances;
+// W4-f24 lane B — the gated Dual Dungeons Dither Snake pass's geometry
+// (the f64 Vector2D/Utils math + the clamped DungeonBounds rectangle).
+mod dungeon_bounds;
+mod snake_math;
 pub mod evil;
 mod islands;
 mod liquids;

@@ -290,6 +290,17 @@ mod tests {
     // into the frames (`:35978-35988`), so the srng tail and the chest tiles
     // move. Values re-measured on the merged tree (S1-A-3's pins + S1-A-4).
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
+    // W4-f24 (2026-11-21, code-only): lane B ports the gated Dual Dungeons
+    // Dither Snake pass's geometry — `snake_math.rs` (the f64 Vector2D +
+    // Utils.Remap/Lerp/GetLerpValue/RotatedBy/SafeNormalize, ReLogic
+    // `Vector2D.cs` + `Utils.cs:107/:315/:350/:730/:1686/:1846`) and
+    // `dungeon_bounds.rs` (`DungeonBounds.cs:8-337`, the clamped hitbox
+    // rectangle). UNWIRED: pure math/geometry, no pipeline step consumes
+    // them yet — no RNG draw added, no tile written. BOTH CLASSIC PINS STAY
+    // and the a == b determinism halves are untouched. The gated step (B6)
+    // will draw only under `MicroSeedFlags::DUAL_DUNGEONS`, so a classic
+    // world keeps the byte-identical ledger; the affected seed's hash moves
+    // by design and rides an a == b witness (written NOT run).
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
