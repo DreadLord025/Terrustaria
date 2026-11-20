@@ -335,7 +335,10 @@ mod tests {
 
     /// `Projectile.cs:25438-25444` — the drill gore: Next(5) gate, TWO
     /// NextDouble (the square), one NextFloat (the Y velocity), Next(3)
-    /// (the type), the kicks; post timeLeft/alpha/velocity.X (no draws).
+    /// (the type), the kicks; the 1007/1008 SpecialAI==3 arm then draws
+    /// FOUR more inside the pool (`Gore.cs:1391-1402`: two NextFloat +
+    /// Next(8) row + Next(8) counter); post timeLeft/alpha/velocity.X draw
+    /// nothing.
     #[test]
     fn w4_g16_the_drill_gore_uses_two_doubles_for_the_square() {
         let w = air();
@@ -355,7 +358,12 @@ mod tests {
         let pick = twin.next_max(3);
         let _ky = twin.next_range(10, 31);
         let _kx = twin.next_range(-20, 21);
-        assert_eq!(rng.peek(), twin.peek(), "square = two NextDouble");
+        // The SpecialAI==3 arm (1007/1008 are both in the set, GoreID.cs:20).
+        let _vel_x = twin.next_float();
+        let _vel_y = twin.next_float();
+        let _row = twin.next_max(8);
+        let _counter = twin.next_max(8);
+        assert_eq!(rng.peek(), twin.peek(), "square = two NextDouble + the SpecialAI four");
         let g = gore.slot(0);
         assert_eq!(g.gore_type, [1007, 1008, 1008][pick as usize]);
         assert_eq!(g.time_left, 60);

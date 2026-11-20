@@ -39284,5 +39284,13 @@ keep-one `celeb2_gore` fn consuming the landed census's same 7 range draws
 (`projectile_ai_misc.rs:490-498`); the wiring swaps each census call. The
 idle gate's `Next(900,1200)` ALWAYS draws (`:51157`); the rope gate is
 `Next(4) != 0` (3-in-4 TAKEN, `:52134`).
-Remainder: sites 31-165 (waves D+), the UpdateProjectiles slot dispatch
+Wave D (sites 31-40): `projectile_gore_d.rs`, 5 witnesses written not run.
+`NextVector2CircularEdge` draws ONE `NextFloat` (the unit only,
+`Utils.cs:1271-1274`). The pool-internal type arms are part of the site
+contract: 1225 draws `Next(6)` (`Gore.cs:1382`), the SpecialAI==3 types
+(910-925, 1007/1008, 1113-1121, 1248-1255, 1257, 1278 — `GoreID.cs:20`)
+draw two `NextFloat` + `Next(8)` + `Next(8)` (`Gore.cs:1391-1402`); the
+witnesses replay them after the kicks. The wave-B drill witness was
+corrected for the 1007/1008 SpecialAI four.
+Remainder: sites 41-165 (waves E+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
