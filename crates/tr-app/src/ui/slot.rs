@@ -18,7 +18,8 @@ use crate::item::ItemSlot;
 /// The numbers are indices into this port's sheet set: `0` `Inventory_Back`,
 /// `1` `Inventory_Back9`, `2` `Inventory_Back4`, `3` `Inventory_Back7`,
 /// `4` `Inventory_Back13`, `5` `Inventory_Back3`, `6` `Inventory_Back12`,
-/// `7` `Inventory_Back18`, `8` `Inventory_Back5`, `9` `Inventory_Back10`.
+/// `7` `Inventory_Back18`, `8` `Inventory_Back5`, `9` `Inventory_Back10`,
+/// `10` `Inventory_Back6`.
 /// Tests assert on this because `SheetRect` has no `PartialEq`.
 fn context_texture_index(context: i32, index: i32) -> u8 {
     match context {
@@ -43,6 +44,9 @@ fn context_texture_index(context: i32, index: i32) -> u8 {
         // `ItemSlot.cs:2264-2277` / `:2298-2302`: crafting contexts 41/42/43 end up
         // on `Inventory_Back18` (42/43 start on `_4` and are then overridden).
         41 | 42 | 43 => 7,
+        // `ItemSlot.Draw`'s context-15 arm (`ItemSlot.cs:2250-2252`): the
+        // shop cells ride `Inventory_Back6`.
+        15 => 10,
         // Contexts outside the ported set keep the default `Inventory_Back`.
         _ => 0,
     }
@@ -64,6 +68,7 @@ pub(crate) fn background_for(
         7 => lookups.ui_back18,      // Inventory_Back18
         8 => lookups.ui_back5,       // Inventory_Back5
         9 => lookups.ui_back10,      // Inventory_Back10
+        10 => lookups.ui_back6,      // Inventory_Back6
         _ => lookups.ui_back,        // Inventory_Back
     }
 }

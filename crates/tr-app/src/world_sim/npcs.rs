@@ -867,8 +867,10 @@ pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
 
 /// `Chest.cs:2714-2746`'s copper total over the 54-slot inventory scan — the
 /// Stylist's Money Hair Dye gate reads it (the cap at 9,999,999,999 stands).
-fn coin_total(inventory: &[crate::item::ItemSlot]) -> i64 {
-    let mut total: i64 = 0;
+/// The port's coin model keeps the purse aggregate (`App.coins`) beside the
+/// grid's coin stacks, so both feed the total (the recorded purse deviation).
+fn coin_total(inventory: &[crate::item::ItemSlot], purse: u64) -> i64 {
+    let mut total: i64 = purse as i64;
     for sl in inventory.iter() {
         if sl.count == 0 {
             continue;
@@ -917,12 +919,15 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         blood_moon: app.world.blood_moon,
         zone_snow: app.scene_metrics.zone_snow,
         zone_jungle: app.scene_metrics.zone_jungle,
-        downed_boss2: false,
-        downed_boss3: false,
+        // `NPC.downedBoss2`/`downedBoss3` — the world's own latches (the
+        // chat context reads the same pair, `npc_chat`'s `downed_boss2/3`).
+        downed_boss2: app.world.downed_eow,
+        downed_boss3: app.world.downed_skeletron,
         // The Stylist shop's player-side gates (`Chest.cs:2704-2783`): the
         // life/mana maxima, the copper purse, the Party Girl's presence and
         // the mech/martian flags.
-        golfer_score: 0, // the golf system is not ported (M4-GOLF-1)
+        // `Main.LocalPlayer.golferScoreAccumulated` (`Chest.cs:3158`).
+        golfer_score: app.player.as_ref().map_or(0, |p| p.golfer_score),
         // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
         // port's tracker over the ENTRIES' unlock states.
         bestiary_completion: crate::bestiary::completion_percent(&app.bestiary.kills),
@@ -931,8 +936,12 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         unlocked_princess: false,
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
-        coins_over_gold: coin_total(&app.inventory) >= 1_000_000,
-        party_girl_present: false, // the Party Girl (208) is not ported yet
+        coins_over_gold: coin_total(&app.inventory, app.coins) >= 1_000_000,
+        // `NPC.AnyNPCs(208)` (`Chest.cs:2762`) — the live roster scan.
+        party_girl_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::PartyGirl),
         downed_mech_any: app.world.downed_mech_boss1
             || app.world.downed_mech_boss2
             || app.world.downed_mech_boss3,
@@ -962,9 +971,30 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         .filter(|sl| sl.kind != 0 && sl.count > 0)
         .map(|sl| sl.kind)
         .collect();
-    app.shop_stock = crate::shop::resolve_stock_entries(shop, &flags, &inv_ids);
+    // `Main.OpenShop` (`Main.cs:40459-40467`): the inventory opens, the
+    // stack-split locks (`stackSplit = 9999`), the chat text clears, the
+    // shop index arms and `SetupShop` rebuilds the stock from the LIVE
+    // world state (the per-open refresh — the time/biome/progression
+    // gates re-resolve on every open). `SetNPCShopIndex`'s index change
+    // clears the sellback memo (`Main.UpdateOldNPCShop`,
+    // `Main.cs:18204-18211`); the re-open of the SAME shop keeps it (the
+    // C# `npcShop != oldNPCShop` gate).
+    let same_shop = app.shop_npc == Some(idx);
+    app.inventory_open = true; // `Main.playerInventory = true` (`:40461`)
+    app.stack_split = 9999; // `:40462`
+    app.npc_chat_text.clear(); // `Main.npcChatText = ""` (`:40463`)
+    app.shop_stock = crate::shop::resolve_stock_entries_moon(
+        shop,
+        &flags,
+        &inv_ids,
+        app.world.moon_phase as u32,
+    );
     app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
+    if !same_shop {
+        app.shop_sellback.clear();
+    }
+    crate::chest::play_menu_sound(app, 12); // `SoundEngine.PlaySound(12)` (`:40466`)
     // `TinkererReforge` (`NPCInteractions.cs:407-423`) opens the reforge
     // menu beside the shop (`NPCChatText_TinkererReforge`,
     // `Main.cs:40022-40029`).

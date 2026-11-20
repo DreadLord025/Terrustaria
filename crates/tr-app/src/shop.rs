@@ -148,6 +148,15 @@ pub struct ShopEntry {
     /// (`Chest.cs:3538-3541`); under the Discount Card the sell value
     /// mirrors the discounted buy value (`Player.cs:35375-35378`).
     pub is_a_shop_item: bool,
+    /// `Item.prefix` — 0 on the fresh `SetDefaults` stock rows; a row the
+    /// player sold in keeps the instance's prefix (`Chest.AddItemToShop`'s
+    /// `Clone`, `Chest.cs:699`), and the buy copies it onto the cursor
+    /// (`ItemSlot.cs:2078-2081`).
+    pub prefix: u16,
+    /// `Item.stack` — the row's remaining count. Only `buyOnce` rows
+    /// deplete (`ItemSlot.cs:2090-2093`); the plain stock rows keep the
+    /// `SetDefaults` 1 and buy forever.
+    pub stack: u32,
 }
 
 /// The gate kinds (`Chest.cs`'s `if` arms around the `SetDefaults` rows).
@@ -1199,6 +1208,8 @@ fn row(item: u16, when: StockWhen) -> ShopEntry {
         shop_custom_price: None,
         buy_once: false,
         is_a_shop_item: false,
+        prefix: 0,
+        stack: 1, // `Item.SetDefaults`'s default stack (`Item.cs:49022`)
     }
 }
 
@@ -1215,6 +1226,9 @@ pub fn resolve_stock(shop_index: u32, flags: &ShopFlags, inventory_ids: &[u16]) 
 /// The stock with its per-row price fields (`Item.shopCustomPrice` /
 /// `buyOnce` / `isAShopItem`) — the buy path prices the ROW
 /// (`Item.GetStoreValue`, `Item.cs:49901-49908`), not the kind default.
+/// The moon-phase-0 view; the shop open resolves the live phase through
+/// [`resolve_stock_entries_moon`].
+#[cfg(test)]
 pub fn resolve_stock_entries(
     shop_index: u32,
     flags: &ShopFlags,
@@ -1380,9 +1394,12 @@ pub(crate) fn buy_price_row(
 }
 
 /// The price a stock row DISPLAYS (`Main.MouseText_DrawItemTooltip_AddShopLines`,
-/// `Main.cs:20457`): buyOnce/isAShopItem rows show the buying value, every
+/// `Main.cs:20454-20455`): buyOnce/isAShopItem rows show the buying value, every
 /// other row shows the SELLING value — the two diverge whenever
-/// `PriceAdjustment != 1` (the display quirk is verbatim).
+/// `PriceAdjustment != 1` (the display quirk is verbatim). The shop grid
+/// (S1-P-i44) replaced the text panel; the tooltip shop-lines wiring is the
+/// recorded follow-up, so the helper stays pinned by its golden vectors.
+#[allow(dead_code)]
 pub(crate) fn display_price_row(
     entry: &ShopEntry,
     discount_available: bool,
@@ -1414,21 +1431,74 @@ pub(crate) fn reforge_cost(value: i32, stack: u32, mood: f32) -> u64 {
     (product / 3).max(0) as u64
 }
 
-/// The sell transaction's per-item price (`Player.SellItem`,
-/// `Player.cs:35168-35192`): `GetItemExpectedPrice`'s selling value ÷ 5,
+/// The sell transaction's payout (`Player.SellItem`,
+/// `Player.cs:35168-35195`): `GetItemExpectedPrice`'s selling value ÷ 5,
 /// min 1 — the vanilla's 20 % sale rate lives HERE, after the adjustment
-/// divide (the port used to fold it into the helper in the wrong order).
-/// The `calcForSelling <= 0` refusal (`:35170-35172`) returns 0; the
-/// sellback correction (`Main.shopSellbackHelper`, `:35191-35193`) and the
-/// stack multiply ride the sell click's own pass. The caller prices the
-/// instance — `prefix::prefixed_stats(kind, prefix).value`'s ×value².
-pub fn sell_price(instance_value: i32, price_adjustment: f32) -> i64 {
-    let (calc_for_selling, _) =
-        get_item_expected_price(instance_value, false, false, false, price_adjustment);
+/// divide (the port used to fold it into the helper in the wrong order) —
+/// × the sold stack, plus the sellback correction: the first
+/// `min(memo_amount, item.stack)` units refund at the price they were
+/// BOUGHT for (`(-num2 + calcForBuying) * min`, `:35191-35195`; the memo
+/// is `Main.shopSellbackHelper`, filled by every shop buy,
+/// `ItemSlot.cs:2084-2087`). The `calcForSelling <= 0` refusal
+/// (`:35170-35174`) returns 0 — the caller then runs the value-0 giveaway
+/// arm (`ItemSlot.cs:1232-1238`). `stack` defaults to the whole instance
+/// (`stack == -1`, `:35175-35178`); the caller prices the instance —
+/// `prefix::prefixed_stats(kind, prefix).value`'s ×value².
+pub fn sell_payout(
+    instance_value: i32,
+    buy_once: bool,
+    is_a_shop_item: bool,
+    discount_available: bool,
+    price_adjustment: f32,
+    stack: u32,
+    sellback_amount: u32,
+) -> i64 {
+    let (calc_for_selling, calc_for_buying) = get_item_expected_price(
+        instance_value,
+        buy_once,
+        is_a_shop_item,
+        discount_available,
+        price_adjustment,
+    );
     if calc_for_selling <= 0 {
         return 0;
     }
-    (calc_for_selling / 5).max(1)
+    // `long num = calcForSelling / 5; if (num < 1) num = 1L;`
+    let num2 = (calc_for_selling / 5).max(1);
+    let mut num = num2 * stack as i64;
+    // `:35191-35195` — `Math.Min(amount, item.stack)` (the WHOLE stack,
+    // not the sold count).
+    if sellback_amount > 0 {
+        num += (-num2 + calc_for_buying) * sellback_amount.min(stack) as i64;
+    }
+    num
+}
+
+/// The sell transaction's per-item price — [`sell_payout`]'s plain
+/// whole-stack, no-memo shape (the `Player.SellItem` price half).
+pub fn sell_price(instance_value: i32, price_adjustment: f32) -> i64 {
+    let payout = sell_payout(instance_value, false, false, false, price_adjustment, 1, 0);
+    if payout <= 0 {
+        return 0;
+    }
+    payout
+}
+
+/// The bulk-buy unit count (`ItemSlot.GetBulkBuyAmount`,
+/// `ItemSlot.cs:3121-3129`): 10, clamped to a buyOnce row's remaining
+/// stack.
+pub fn bulk_buy_amount(entry: &ShopEntry) -> u32 {
+    if entry.buy_once {
+        10u32.min(entry.stack)
+    } else {
+        10
+    }
+}
+
+/// The bulk-buy gate (`ItemSlot.CanBulkBuy`, `ItemSlot.cs:3131-3138`):
+/// only isAShopItem/buyOnce rows bulk, and only while Shift is in use.
+pub fn can_bulk_buy(entry: &ShopEntry, shift_in_use: bool) -> bool {
+    (entry.is_a_shop_item || entry.buy_once) && shift_in_use
 }
 
 /// The C# `Math.Round`'s default = the banker's rounding (the damage.rs
@@ -1440,6 +1510,152 @@ fn round_half_to_even(v: f32) -> i32 {
         return down as i32;
     }
     r as i32
+}
+
+/// `Item.IsConsideredSameItemAsType` (`Item.cs:47851-47933`) — the
+/// variant families the sellback memo matches across (the Rubblemakers,
+/// the echo-chamber family, ...). The plain kinds fall to the default
+/// `type == compareType` arm.
+pub fn is_considered_same_item_as_type(kind: u16, compare: u16) -> bool {
+    const GROUPS: &[&[u16]] = &[
+        &[5324, 5329, 5330],
+        &[4346, 5391],
+        &[4131, 5325],
+        &[6190, 6195],
+        &[5323, 5455],
+        &[4767, 5453],
+        &[5309, 5454],
+        &[5358, 5359, 5360, 5361, 5437],
+        &[6168, 6169, 6193, 6194],
+        &[2611, 5526],
+    ];
+    for g in GROUPS {
+        if g.contains(&kind) {
+            return g.contains(&compare);
+        }
+    }
+    kind == compare
+}
+
+/// `Main.shopSellbackHelper` (`GameContent/ItemShopSellbackHelper.cs:5-73`):
+/// the per-session memo of what the player BOUGHT from the current shop —
+/// every plain-currency, non-buyOnce buy adds its unit (`ItemSlot.cs:
+/// 2084-2087`), a sell refunds the memo'd units at their buy price
+/// (`Player.cs:35191-35195`) and `Chest.AddItemToShop` removes them before
+/// re-stocking (`Chest.cs:672-676`). `Main.UpdateOldNPCShop`
+/// (`Main.cs:18204-18211`) clears the whole memo whenever the shop index
+/// changes (the close included).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SellbackHelper {
+    /// The `ItemMemo` list — `(type, prefix, stack)` (`:7-30`).
+    memos: Vec<(u16, u16, u32)>,
+}
+
+impl SellbackHelper {
+    fn matches(memo: &(u16, u16, u32), kind: u16, prefix: u16) -> bool {
+        // `ItemMemo.Matches` (`:22-29`): the variant-family type match AND
+        // the exact prefix.
+        is_considered_same_item_as_type(kind, memo.0) && prefix == memo.1
+    }
+
+    /// `Add` (`:34-45`): the first matching memo grows, else a new one.
+    pub fn add(&mut self, kind: u16, prefix: u16, stack: u32) {
+        if let Some(m) = self.memos.iter_mut().find(|m| Self::matches(m, kind, prefix)) {
+            m.2 += stack;
+        } else {
+            self.memos.push((kind, prefix, stack));
+        }
+    }
+
+    /// `Clear` (`:47-50`).
+    pub fn clear(&mut self) {
+        self.memos.clear();
+    }
+
+    /// `GetAmount` (`:52-55`): the memo'd count, 0 without a memo.
+    pub fn get_amount(&self, kind: u16, prefix: u16) -> u32 {
+        self.memos
+            .iter()
+            .find(|m| Self::matches(m, kind, prefix))
+            .map_or(0, |m| m.2)
+    }
+
+    /// `Remove` (`:57-72`): subtracts `stack` from the first matching memo
+    /// and returns the amount actually removed (the memo's whole count
+    /// when it depletes, else `stack`); 0 without a memo.
+    pub fn remove(&mut self, kind: u16, prefix: u16, stack: u32) -> u32 {
+        let Some(i) = self
+            .memos
+            .iter()
+            .position(|m| Self::matches(m, kind, prefix))
+        else {
+            return 0;
+        };
+        let before = self.memos[i].2;
+        // The C# int subtraction may go negative; the `<= 0` arm then
+        // removes the memo and returns its whole pre-count.
+        let after = before as i64 - stack as i64;
+        if after <= 0 {
+            self.memos.remove(i);
+            before
+        } else {
+            self.memos[i].2 = after as u32;
+            before - after as u32
+        }
+    }
+}
+
+/// `Chest.AddItemToShop` (`Chest.cs:670-706`): a sold stack re-enters the
+/// shop as buyOnce stock. The sellback memo removes its own units first
+/// (`:672-676` — a full re-sell of bought goods adds NOTHING back); the
+/// remainder merges into the first stackable buyOnce row (`:678-690`,
+/// `Item.CanStack` = same kind AND prefix, `Item.cs:49865-49871`) and
+/// spills into the first air slot as a fresh buyOnce clone (`:691-705`).
+/// The scan covers the first 39 of the shop's 40 slots (`Chest.cs:678`/
+/// `:691`'s `i < 39` loops; the 40th slot never takes a sell); a full shop
+/// drops the overflow, exactly like the C#.
+pub fn add_item_to_shop(
+    stock: &mut Vec<ShopEntry>,
+    sellback: &mut SellbackHelper,
+    item: &crate::item::ItemSlot,
+) {
+    let removed = sellback.remove(item.kind, item.prefix, item.count);
+    if removed >= item.count {
+        return; // `:673-676`
+    }
+    let mut num2 = item.count - removed;
+    for e in stock.iter_mut().take(39) {
+        if num2 == 0 {
+            break;
+        }
+        if e.buy_once && e.item == item.kind && e.prefix == item.prefix {
+            let max = crate::registry::max_stack(e.item);
+            let num3 = num2.min(max.saturating_sub(e.stack));
+            e.stack += num3;
+            num2 -= num3;
+        }
+    }
+    if num2 == 0 {
+        return;
+    }
+    // `:691-705` — the first AIR slot takes the clone. A depleted buyOnce
+    // row turns to air in place (`ItemSlot.cs:2092`'s `SetDefaults(0)`), so
+    // the port reuses that gap before appending; the 39-slot window caps
+    // both (the C# loops never reach slot 39).
+    let clone = ShopEntry {
+        item: item.kind,
+        when: StockWhen::Always,
+        shop_custom_price: None,
+        buy_once: true,
+        is_a_shop_item: false,
+        prefix: item.prefix,
+        stack: num2,
+    };
+    if let Some(e) = stock.iter_mut().take(39).find(|e| e.item == 0 || e.stack == 0) {
+        *e = clone;
+    } else if stock.len() < 39 {
+        stock.push(clone);
+    }
 }
 
 #[cfg(test)]
@@ -1755,6 +1971,8 @@ mod tests {
             shop_custom_price: Some(50),
             buy_once: false,
             is_a_shop_item: false,
+            prefix: 0,
+            stack: 1,
         };
         assert_eq!(buy_price_row(&custom, false, 1.0), 50);
         assert_eq!(
@@ -1932,5 +2150,186 @@ mod town5_tests {
         assert!(!base.contains(&746));
         // The unknown index stays empty.
         assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
+    }
+}
+
+/// S1-P-i44 — the shop TRANSACTION witnesses: the sell payout's stack +
+/// sellback shape (`Player.SellItem`, `Player.cs:35184-35195`), the
+/// sellback memo (`ItemShopSellbackHelper.cs`), the sold-in restock
+/// (`Chest.AddItemToShop`, `Chest.cs:670-706`) and the bulk-buy gates
+/// (`ItemSlot.cs:3121-3138`). Written, not run (the code-only swarm).
+#[cfg(test)]
+mod s1_p_i44_tests {
+    use super::*;
+    use crate::item::ItemSlot;
+
+    fn held(kind: u16, count: u32, prefix: u16) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count,
+            prefix,
+        }
+    }
+
+    #[test]
+    fn the_sell_payout_multiplies_the_stack_and_refunds_the_memo() {
+        // `Player.cs:35184-35190`: 40000 @ mood 1 → 8000 per unit, × the
+        // sold stack.
+        assert_eq!(sell_payout(40000, false, false, false, 1.0, 3, 0), 24000);
+        // `:35191-35195`: the first min(memo, stack) units refund at the
+        // BUY price — 2 memo'd units of a 40000-value item pay 40000 each
+        // instead of 8000: 3×8000 + (40000−8000)×2 = 88000.
+        assert_eq!(sell_payout(40000, false, false, false, 1.0, 3, 2), 88000);
+        // The memo clamps at the sold stack (`Math.Min(amount, item.stack)`).
+        assert_eq!(sell_payout(40000, false, false, false, 1.0, 1, 9), 40000);
+        // The mood rides BOTH halves: @0.75 the sell is 10666, the buy
+        // 30000 (`Player.cs:35387-35388`): 2×10666 + (30000−10666)×1.
+        assert_eq!(sell_payout(40000, false, false, false, 0.75, 2, 1), 40666);
+        // The ≤0 refusal (`:35170-35174`) — a value-0 item pays nothing.
+        assert_eq!(sell_payout(0, false, false, false, 1.0, 5, 0), 0);
+        // The min-1 clamp before the stack multiply (`:35185-35188`).
+        assert_eq!(sell_payout(1, false, false, false, 1.0, 4, 0), 4);
+    }
+
+    #[test]
+    fn the_sellback_memo_adds_gets_and_removes_by_kind_and_prefix() {
+        // `ItemShopSellbackHelper.cs:34-72`.
+        let mut h = SellbackHelper::default();
+        assert_eq!(h.get_amount(8, 0), 0);
+        assert_eq!(h.remove(8, 0, 3), 0, "no memo, nothing removed");
+        h.add(8, 0, 3);
+        h.add(8, 0, 2); // the matching memo grows (`:36-40`)
+        assert_eq!(h.get_amount(8, 0), 5);
+        // The prefix is part of the match (`ItemMemo.Matches`, `:22-29`).
+        h.add(8, 5, 1);
+        assert_eq!(h.get_amount(8, 5), 1);
+        assert_eq!(h.get_amount(8, 0), 5);
+        // A partial remove returns the removed count (`:71`).
+        assert_eq!(h.remove(8, 0, 2), 2);
+        assert_eq!(h.get_amount(8, 0), 3);
+        // An over-remove depletes the memo and returns its WHOLE pre-count
+        // (`:66-70`), not the requested stack.
+        assert_eq!(h.remove(8, 0, 9), 3);
+        assert_eq!(h.get_amount(8, 0), 0);
+        // Clear empties every memo (`:47-50`).
+        h.clear();
+        assert_eq!(h.get_amount(8, 5), 0);
+    }
+
+    #[test]
+    fn the_sellback_memo_matches_the_variant_families() {
+        // `Item.IsConsideredSameItemAsType` (`Item.cs:47851-47933`): the
+        // Rubblemaker family (5324/5329/5330) matches across kinds.
+        let mut h = SellbackHelper::default();
+        h.add(5324, 0, 2);
+        assert_eq!(h.get_amount(5329, 0), 2, "the family match");
+        assert_eq!(h.get_amount(5330, 0), 2);
+        assert_eq!(h.get_amount(8, 0), 0, "an alien kind stays out");
+        assert!(is_considered_same_item_as_type(4346, 5391));
+        assert!(!is_considered_same_item_as_type(4346, 5324));
+        assert!(is_considered_same_item_as_type(8, 8));
+    }
+
+    #[test]
+    fn the_sold_stack_restocks_as_buy_once_and_merges() {
+        // `Chest.cs:691-705`: the first air slot takes the clone — buyOnce,
+        // the sold stack, the instance's prefix.
+        let mut stock = vec![row(88, StockWhen::Always)];
+        let mut memo = SellbackHelper::default();
+        add_item_to_shop(&mut stock, &mut memo, &held(9, 5, 0));
+        assert_eq!(stock.len(), 2);
+        let e = stock[1];
+        assert_eq!((e.item, e.stack, e.prefix), (9, 5, 0));
+        assert!(e.buy_once && !e.is_a_shop_item);
+        // `:684-689`: a second sell of the same kind merges into the
+        // buyOnce row (capped at the kind's maxStack).
+        add_item_to_shop(&mut stock, &mut memo, &held(9, 3, 0));
+        assert_eq!(stock.len(), 2);
+        assert_eq!(stock[1].stack, 8);
+        // A prefixed sell never merges into the unprefixed row
+        // (`Item.CanStack`, `Item.cs:49865-49871`) — a fresh row.
+        add_item_to_shop(&mut stock, &mut memo, &held(9, 2, 5));
+        assert_eq!(stock.len(), 3);
+        assert_eq!((stock[2].stack, stock[2].prefix), (2, 5));
+    }
+
+    #[test]
+    fn the_memoed_resell_adds_nothing_back() {
+        // `Chest.cs:672-676`: `Remove` eats the bought units first — a
+        // full re-sell of bought goods adds NO row.
+        let mut stock = vec![row(88, StockWhen::Always)];
+        let mut memo = SellbackHelper::default();
+        memo.add(8, 0, 5); // five torches bought
+        add_item_to_shop(&mut stock, &mut memo, &held(8, 5, 0));
+        assert_eq!(stock.len(), 1, "the bought units never re-stock");
+        assert_eq!(memo.get_amount(8, 0), 0);
+        // A partial memo: only the excess re-stocks (`num2 = stack - num`).
+        memo.add(8, 0, 2);
+        add_item_to_shop(&mut stock, &mut memo, &held(8, 5, 0));
+        assert_eq!(stock.len(), 2);
+        assert_eq!(stock[1].stack, 3, "5 sold − 2 memo'd = 3 re-stocked");
+    }
+
+    #[test]
+    fn the_restock_window_is_39_slots() {
+        // `Chest.cs:678`/`:691`: both loops scan `i < 39` — the 40th slot
+        // never takes a sell; a full window drops the overflow.
+        let mut stock: Vec<ShopEntry> = (0..39).map(|_| row(88, StockWhen::Always)).collect();
+        let mut memo = SellbackHelper::default();
+        add_item_to_shop(&mut stock, &mut memo, &held(9, 5, 0));
+        assert_eq!(stock.len(), 39, "the full window drops the sell");
+        // One slot free: the clone lands.
+        stock.pop();
+        add_item_to_shop(&mut stock, &mut memo, &held(9, 5, 0));
+        assert_eq!(stock.len(), 39);
+        assert_eq!(stock[38].item, 9);
+    }
+
+    #[test]
+    fn the_restock_reuses_a_depleted_air_gap() {
+        // `Chest.cs:697`'s `IsAir` arm: a buyOnce row that depleted to air
+        // in place (`ItemSlot.cs:2092`) is the FIRST air slot — the sell
+        // re-fills that gap, not the append position.
+        let mut stock = vec![
+            row(88, StockWhen::Always),
+            crate::shop::ShopEntry {
+                item: 0,
+                when: StockWhen::Always,
+                shop_custom_price: None,
+                buy_once: false,
+                is_a_shop_item: false,
+                prefix: 0,
+                stack: 0,
+            },
+        ];
+        let mut memo = SellbackHelper::default();
+        add_item_to_shop(&mut stock, &mut memo, &held(9, 4, 0));
+        assert_eq!(stock.len(), 2, "the gap is reused, no append");
+        assert_eq!((stock[1].item, stock[1].stack), (9, 4));
+        assert!(stock[1].buy_once);
+    }
+
+    #[test]
+    fn the_bulk_buy_gates_and_amounts() {
+        // `ItemSlot.cs:3131-3138`: only isAShopItem/buyOnce rows bulk, and
+        // only under Shift; `:3121-3129`: 10, clamped to the buyOnce stack.
+        let plain = row(88, StockWhen::Always);
+        assert!(!can_bulk_buy(&plain, true));
+        assert_eq!(bulk_buy_amount(&plain), 10);
+        let once = ShopEntry {
+            buy_once: true,
+            stack: 3,
+            ..plain
+        };
+        assert!(can_bulk_buy(&once, true));
+        assert!(!can_bulk_buy(&once, false));
+        assert_eq!(bulk_buy_amount(&once), 3);
+        let shop_item = ShopEntry {
+            is_a_shop_item: true,
+            ..plain
+        };
+        assert!(can_bulk_buy(&shop_item, true));
+        assert_eq!(bulk_buy_amount(&shop_item), 10);
     }
 }

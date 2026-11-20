@@ -197,8 +197,15 @@ pub(crate) struct App {
     pub(crate) shop_npc: Option<usize>,
     /// The stock captured at the open (`Chest.item[]`) — the rows carry
     /// their per-row price fields (`Item.shopCustomPrice`/`buyOnce`/
-    /// `isAShopItem`), priced by `Item.GetStoreValue`.
+    /// `isAShopItem`), priced by `Item.GetStoreValue`. Sold-in rows append
+    /// as buyOnce clones (`Chest.AddItemToShop`); a buyOnce row depletes
+    /// and turns to air (`ItemSlot.cs:2090-2093`).
     pub(crate) shop_stock: Vec<crate::shop::ShopEntry>,
+    /// `Main.shopSellbackHelper` (`Main.cs:1775`): the bought-goods memo
+    /// the sell payout refunds through (`Player.cs:35191-35195`); cleared
+    /// whenever the shop index changes (`Main.UpdateOldNPCShop`,
+    /// `Main.cs:18204-18211`).
+    pub(crate) shop_sellback: crate::shop::SellbackHelper,
     /// The happiness multiplier captured at the open
     /// (`currentShoppingSettings.PriceAdjustment`).
     pub(crate) shop_mood: f32,
@@ -1553,10 +1560,33 @@ impl App {
         }
     }
 
-    /// `Player.BuyItem`'s shape: the purse covers the price → deduct and
-    /// deposit the item through the pickup stack (`Player.PickupItem`'s
-    /// slot_for_pickup). Returns false when the purse is short or the slot
-    /// is out of range.
+    /// `Main.DrawInventory`'s shop-close rule (`Main.cs:41784-41787`):
+    /// `npcShop > 0 && (!playerInventory || talkNPC == -1)` →
+    /// `SetNPCShopIndex(0)`. The port's shop opens collapse the talk onto
+    /// the open (`try_open_town_shop_at_cursor`), so the talk index rides
+    /// `shop_npc` — the inventory close is the operative half. Runs in the
+    /// click cluster beside the other interface handlers (the C# runs it
+    /// inside `DrawInventory`).
+    pub(crate) fn update_shop_close(&mut self) {
+        if self.shop_npc.is_some() && !self.inventory_open {
+            self.close_shop();
+        }
+    }
+
+    /// One unit of the shop buy — `ItemSlot.HandleShopSlot`'s loop body
+    /// (`UI/ItemSlot.cs:2053-2095`) with the `BuyItem` charge
+    /// (`Player.cs:35400-35414`): the purse covers the row's buying value
+    /// → deduct, memo the purchase (`shopSellbackHelper.Add`, `:2084-2087`
+    /// — plain-currency non-buyOnce rows only), push ONE unit onto the
+    /// cursor (`Main.mouseItem`, `:2075-2088` — the vanilla buy lands on
+    /// the CURSOR, not the inventory) and deplete a buyOnce row
+    /// (`:2090-2093`). The caller gates the cursor room and plays the
+    /// first-unit cue. Returns false when the purse is short, the slot is
+    /// out of range or the row is air.
+    ///
+    /// Deviation: the charge rides the port's aggregate `App.coins` purse
+    /// (the recorded coin model, ANALYSIS) — the C# `BuyItem` spends the
+    /// inventory + bank coin stacks through `TryPurchasing`.
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
         // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
         // charge is `GetItemExpectedPrice`'s buying value for the stock
@@ -1565,31 +1595,81 @@ impl App {
         let Some(entry) = self.shop_stock.get(slot) else {
             return false;
         };
-        let item = entry.item;
+        if entry.item == 0 || entry.stack == 0 {
+            return false; // `:2043`'s `inv[slot].type <= 0` / `:2060`'s stack gate
+        }
         let price =
             crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
         if self.coins < price {
             return false;
         }
-        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item, 0) {
-            Some(i) => i,
-            None => return false,
-        };
-        // `Player.PickupItem`'s deposit: the stack merge on the same kind,
-        // else the fresh slot.
-        let sl = &mut self.inventory[idx];
-        if sl.kind == item && sl.count > 0 {
-            sl.count += 1;
-        } else {
-            *sl = crate::item::ItemSlot {
-                kind: item,
-                name: crate::itemdata::ITEMS[item as usize].name,
-                count: 1,
-                prefix: 0,
+        // `:2075-2083` — an air cursor takes the row's kind (and prefix);
+        // the unit rides the cursor stack (`:2088`).
+        if self.mouse_item.count == 0 {
+            self.mouse_item = ItemSlot {
+                kind: entry.item,
+                name: crate::itemdata::ITEMS[entry.item as usize].name,
+                count: 0,
+                prefix: entry.prefix,
             };
+        }
+        // `:2084-2087` — the sellback memo (no custom currencies in the
+        // port, so the `shopSpecialCurrency == -1` half is always true).
+        if !entry.buy_once {
+            self.shop_sellback.add(entry.item, entry.prefix, 1);
+        }
+        self.mouse_item.count += 1;
+        // `:2090-2093` — a buyOnce row depletes; at 0 it turns to air
+        // (`SetDefaults(0)`, `Item.cs:48685-48688`).
+        let entry = &mut self.shop_stock[slot];
+        if entry.buy_once {
+            entry.stack = entry.stack.saturating_sub(1);
+            if entry.stack == 0 {
+                *entry = crate::shop::ShopEntry {
+                    item: 0,
+                    when: crate::shop::StockWhen::Always,
+                    shop_custom_price: None,
+                    buy_once: false,
+                    is_a_shop_item: false,
+                    prefix: 0,
+                    stack: 0,
+                };
+            }
         }
         self.coins -= price;
         true
+    }
+
+    /// `Player.SellItem`'s transaction half (`Player.cs:35168-35329`) over
+    /// the port's purse: the payout (`shop::sell_payout` — the ÷5, the
+    /// stack multiply and the sellback refund) lands in `App.coins`;
+    /// returns the payout, or 0 on the `calcForSelling <= 0` refusal
+    /// (`:35170-35174`). The C# spawns the payout as coin stacks through
+    /// the four denomination loops (74/73/72/71, descending slots 53→0,
+    /// `DoCoins` carrying at 100) and restores the cloned inventory when
+    /// no room exists (`:35321-35328`) — the aggregate purse cannot fill
+    /// up, so the refusal half folds out (the recorded coin-model
+    /// deviation, ANALYSIS). The item removal + `AddItemToShop` ride the
+    /// caller (`ItemSlot.cs:854-867`/`:1225-1238`).
+    pub(crate) fn sell_item(&mut self, item: &ItemSlot) -> i64 {
+        let value = crate::prefix::prefixed_stats(item.kind, item.prefix)
+            .map(|s| s.value)
+            .unwrap_or(crate::itemdata::ITEMS[item.kind as usize].value);
+        let amount = self.shop_sellback.get_amount(item.kind, item.prefix);
+        let payout = crate::shop::sell_payout(
+            value,
+            false,
+            false,
+            self.discount_available,
+            self.shop_mood,
+            item.count,
+            amount,
+        );
+        if payout <= 0 {
+            return 0;
+        }
+        self.coins += payout as u64;
+        payout
     }
 
     /// The reforge slot transfer (`ItemSlot.cs:821-836`): swap with the
@@ -1721,9 +1801,12 @@ impl App {
     /// closes with the shop (`Main.cs:41574-41578`'s talk/chest change
     /// `dropItemCheck`); the slot item returns to the cursor if held there
     /// is impossible, so it drops to the inventory's first free slot.
+    /// `Main.UpdateOldNPCShop` (`Main.cs:18204-18211`) clears the sellback
+    /// memo on the index change — the close is one.
     pub(crate) fn close_shop(&mut self) {
         self.shop_npc = None;
         self.shop_stock.clear();
+        self.shop_sellback.clear();
         self.shop_mood = 1.0;
         self.in_reforge_menu = false;
         if self.reforge_slot.count > 0 {
@@ -3265,6 +3348,7 @@ impl App {
             next_npc_uid: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
+            shop_sellback: crate::shop::SellbackHelper::default(),
             in_reforge_menu: false,
             reforge_slot: EMPTY_SLOT,
             reforge_cooldown: 0,
@@ -5336,5 +5420,181 @@ mod dye_pin_tests {
         assert_eq!(crate::env::parse_tr_dmount(" 2871 "), 2871);
         assert_eq!(crate::env::parse_tr_dmount("nope"), 0);
         assert_eq!(crate::env::parse_tr_dmount(""), 0);
+    }
+}
+/// S1-P-i44 — the shop TRANSACTION witnesses: the buy lands on the CURSOR
+/// (`ItemSlot.HandleShopSlot`, `ItemSlot.cs:2053-2095`), the sell pays the
+/// purse and re-stocks the sold units (`Player.SellItem` +
+/// `Chest.AddItemToShop`), the sellback memo refunds the bought units at
+/// their buy price, and the close clears the memo
+/// (`Main.UpdateOldNPCShop`, `Main.cs:18204-18211`). Written, not run.
+#[cfg(test)]
+mod s1_p_i44_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// An open Merchant shop with the base stock, mood 1 and a funded
+    /// purse. The stock resolves through the same seam the open uses.
+    fn shop_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.shop_npc = Some(0);
+        app.shop_stock =
+            crate::shop::resolve_stock_entries(1, &crate::shop::ShopFlags::default(), &[]);
+        app.shop_mood = 1.0;
+        app.coins = 1_000_000;
+        app
+    }
+
+    fn held(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count,
+            prefix: 0,
+        }
+    }
+
+    #[test]
+    fn the_buy_charges_the_purse_and_lands_on_the_cursor() {
+        // `ItemSlot.cs:2059-2088`: the Mining Helmet 88 costs its 40000
+        // store value at mood 1; the unit rides `Main.mouseItem`, NOT the
+        // inventory grid; the sellback memo records the purchase.
+        let mut app = shop_app();
+        assert_eq!(app.shop_stock[0].item, 88);
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, 1_000_000 - 40000);
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (88, 1));
+        assert!(app.inventory.iter().all(|s| s.count == 0), "no grid deposit");
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 1);
+        // A second unit stacks on the cursor and the memo.
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.mouse_item.count, 2);
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 2);
+        // The plain stock row never depletes (`:2090` gates on buyOnce).
+        assert_eq!(app.shop_stock[0].stack, 1);
+    }
+
+    #[test]
+    fn the_short_purse_refuses_the_buy() {
+        // `Player.BuyItem`'s gate (`Player.cs:35411-35414`): nothing moves.
+        let mut app = shop_app();
+        app.coins = 39_999;
+        assert!(!app.buy_shop_item(0));
+        assert_eq!(app.coins, 39_999);
+        assert_eq!(app.mouse_item.count, 0);
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
+    }
+
+    #[test]
+    fn the_happiness_and_discount_ride_the_buy_charge() {
+        // `Player.cs:35387` — the mood multiplies the buy; `:35373` — the
+        // Discount Card truncates ×0.8 first.
+        let mut app = shop_app();
+        app.shop_mood = 0.75;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, 1_000_000 - 30000);
+        let mut app = shop_app();
+        app.discount_available = true;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.coins, 1_000_000 - 32000);
+    }
+
+    #[test]
+    fn the_buy_once_row_depletes_and_turns_to_air() {
+        // `ItemSlot.cs:2090-2093`: a buyOnce row loses one unit per buy and
+        // `SetDefaults(0)` at zero; the memo never records it (`:2084`).
+        let mut app = shop_app();
+        app.shop_stock.push(crate::shop::ShopEntry {
+            item: 9,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: None,
+            buy_once: true,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 2,
+        });
+        let slot = app.shop_stock.len() - 1;
+        assert!(app.buy_shop_item(slot));
+        assert_eq!(app.shop_stock[slot].stack, 1);
+        assert_eq!(app.shop_sellback.get_amount(9, 0), 0, "no memo on buyOnce");
+        assert!(app.buy_shop_item(slot));
+        assert_eq!(app.shop_stock[slot].item, 0, "the depleted row is air");
+        assert_eq!(app.shop_stock[slot].stack, 0);
+        assert!(!app.buy_shop_item(slot), "an air row sells nothing");
+    }
+
+    #[test]
+    fn the_sell_pays_the_purse_at_a_fifth() {
+        // `Player.cs:35184-35190`: the Torch 8 (value 50) sells 50/5 = 10
+        // per unit × the stack; a value-0 item refuses.
+        let mut app = shop_app();
+        let payout = app.sell_item(&held(8, 7));
+        assert_eq!(payout, 70);
+        assert_eq!(app.coins, 1_000_000 + 70);
+        // The value-0 refusal (`:35170-35174`) pays nothing.
+        let before = app.coins;
+        assert_eq!(app.sell_item(&held(9, 5)), 0);
+        assert_eq!(app.coins, before);
+    }
+
+    #[test]
+    fn the_sellback_refund_pays_the_buy_price_back() {
+        // The round trip: buy 3 helmets (40000 each), sell all 3 — the
+        // memo refunds every unit at its buy price (`Player.cs:35191-35195`),
+        // so the purse returns to its start and the shop gains NO row
+        // (`Chest.cs:672-676`).
+        let mut app = shop_app();
+        for _ in 0..3 {
+            assert!(app.buy_shop_item(0));
+        }
+        assert_eq!(app.coins, 1_000_000 - 120000);
+        let stock_len = app.shop_stock.len();
+        let item = app.mouse_item;
+        let payout = app.sell_item(&item);
+        assert_eq!(payout, 120000, "3 × the 40000 buy price");
+        assert_eq!(app.coins, 1_000_000);
+        crate::shop::add_item_to_shop(&mut app.shop_stock, &mut app.shop_sellback, &item);
+        assert_eq!(app.shop_stock.len(), stock_len, "bought goods never re-stock");
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
+    }
+
+    #[test]
+    fn the_sell_prices_the_prefixed_instance() {
+        // `Item.cs:614-615`'s ×value²: the Large Mining Helmet (prefix 1)
+        // is worth 50176, selling 10035 (`shop.rs`'s seed vector).
+        let mut app = shop_app();
+        let item = ItemSlot {
+            prefix: 1,
+            ..held(88, 1)
+        };
+        assert_eq!(app.sell_item(&item), 10035);
+    }
+
+    #[test]
+    fn the_close_clears_the_stock_and_the_memo() {
+        // `Main.UpdateOldNPCShop` (`Main.cs:18204-18211`): the index change
+        // clears the sellback helper; `close_shop` is the port's index-0.
+        let mut app = shop_app();
+        assert!(app.buy_shop_item(0));
+        assert!(app.shop_sellback.get_amount(88, 0) > 0);
+        app.close_shop();
+        assert!(app.shop_npc.is_none());
+        assert!(app.shop_stock.is_empty());
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
+        assert_eq!(app.shop_mood, 1.0);
+    }
+
+    #[test]
+    fn the_inventory_close_closes_the_shop() {
+        // `Main.cs:41784-41787`: `npcShop > 0 && !playerInventory` →
+        // `SetNPCShopIndex(0)`.
+        let mut app = shop_app();
+        app.update_shop_close();
+        assert!(app.shop_npc.is_some(), "the open inventory keeps the shop");
+        app.inventory_open = false;
+        app.update_shop_close();
+        assert!(app.shop_npc.is_none());
+        assert!(app.shop_stock.is_empty());
     }
 }

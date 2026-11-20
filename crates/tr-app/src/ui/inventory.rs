@@ -950,6 +950,44 @@ pub(crate) fn trash_slot_at(mouse: Vec2, chest_or_shop: bool) -> bool {
     hit_test(mouse, x, y, scale, SLOT_FALLBACK_PX)
 }
 
+/// `Main.DrawInventory`'s shop grid (`Main.cs:41798-41818`): the 10×4
+/// context-15 cells at `(int)(73 + i*56*0.755)`, `(int)(invBottom +
+/// j*56*0.755)` — `Main.invBottom = 258` (`Main.cs:6608`),
+/// `Main.inventoryScale = 0.755` (`:41798`). The same layout the chest
+/// panel draws at (`ChestUI.cs:379-380`, `ui::chest::slot_pos`).
+pub(crate) const SHOP_SCALE: f32 = 0.755;
+pub(crate) const SHOP_COLS: usize = 10;
+pub(crate) const SHOP_ROWS: usize = 4;
+
+/// One shop cell's top-left — `Main.cs:41807-41808`'s truncated positions.
+pub(crate) fn shop_slot_pos(i: usize, j: usize) -> Vec2 {
+    Vec2::new(
+        (73.0 + i as f32 * GRID_PITCH * SHOP_SCALE) as i32 as f32,
+        (258.0 + j as f32 * GRID_PITCH * SHOP_SCALE) as i32 as f32,
+    )
+}
+
+/// The shop cell under the cursor — `Main.cs:41811`'s per-cell hit test
+/// (inclusive on all four edges, the `InventoryBack` size × 0.755), the
+/// slot index `i + j*10` (`:41809`). `cell` is the sheet width the draw
+/// uses (`lookups.ui_back`, the 52 px retail fallback).
+pub(crate) fn shop_slot_at(mouse: Vec2, cell: f32) -> Option<usize> {
+    for i in 0..SHOP_COLS {
+        for j in 0..SHOP_ROWS {
+            let p = shop_slot_pos(i, j);
+            let size = cell * SHOP_SCALE;
+            if mouse.x >= p.x
+                && mouse.x <= p.x + size
+                && mouse.y >= p.y
+                && mouse.y <= p.y + size
+            {
+                return Some(i + j * SHOP_COLS);
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

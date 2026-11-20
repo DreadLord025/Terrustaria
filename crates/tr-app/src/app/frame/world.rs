@@ -41,6 +41,9 @@ impl App {
     // `Main.cs:62466-62473` — the stack-split decay, after the
     // interface's MouseUI pass.
     self.decay_stack_split();
+    // `Main.DrawInventory`'s shop-close rule (`Main.cs:41784-41787`) — the
+    // interface pass closes the shop when the inventory closes.
+    self.update_shop_close();
     for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
         let target = if i == self.selected { 1.0 } else { 0.75 };
         if *scale < target {

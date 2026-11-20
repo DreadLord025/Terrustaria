@@ -883,28 +883,41 @@ pub fn draw_hud(
         // `Main.DrawGuideCraftText(73, 331 + num50)` (`Main.cs:41694`); the guide
         // slot cannot be opened in the port yet, so the empty label is drawn.
         chrome::draw_guide_text(r, lookups, 73.0, 331.0 + (screen.y - 600.0) / 2.0, None);
-        // The shop row (`Main.DrawShop`): the stock's names and the
-        // happiness-adjusted prices in a text column above the inventory
-        // grid (the vanilla draws the item slots at (406, 258+); the slot
-        // frames land with the slot-work pass).
-        if let Some((stock, mood, discount)) = shop {
-            text::hud_text(r, lookups, 40.0, 34.0, 0.85, [1.0; 4], "Shop");
-            for (i, entry) in stock.iter().enumerate().take(10) {
-                let y = 50.0 + i as f32 * 16.0;
-                let def = &crate::itemdata::ITEMS[entry.item as usize];
-                // The displayed price follows `Main.cs:20457`: buyOnce/
-                // isAShopItem rows show the buying value, the rest the
-                // selling value.
-                let price = crate::shop::display_price_row(entry, discount, mood);
-                text::hud_text(
-                    r,
-                    lookups,
-                    40.0,
-                    y,
-                    0.85,
-                    [1.0; 4],
-                    &format!("{} - {} copper", def.name, price),
-                );
+        // The shop row (`Main.DrawInventory`'s shop block,
+        // `Main.cs:41788-41818`): the 10×4 context-15 slot grid at
+        // (73, invBottom=258), scale 0.755 — the same layout the chest
+        // panel draws at (`ui::chest`). The ported stock resolves to ≤39
+        // rows (`Chest.AddItemToShop`'s window); a cell past the stock's
+        // end draws air. The happiness label/icon at (504, invBottom)
+        // (`:41790-41797`) and the coin breakdown wait for the chrome
+        // pass (ANALYSIS).
+        if let Some((stock, _mood, _discount)) = shop {
+            for i in 0..inventory::SHOP_COLS {
+                for j in 0..inventory::SHOP_ROWS {
+                    let idx = i + j * inventory::SHOP_COLS;
+                    let p = inventory::shop_slot_pos(i, j);
+                    // The row's live instance: the kind default with the
+                    // sold-in prefix/stack (`ShopEntry`); a cell past the
+                    // stock's end draws air.
+                    let item = stock.get(idx).map_or(EMPTY_SLOT, |e| ItemSlot {
+                        kind: e.item,
+                        name: crate::itemdata::ITEMS[e.item as usize].name,
+                        count: e.stack,
+                        prefix: e.prefix,
+                    });
+                    slot::draw_slot(
+                        r,
+                        lookups,
+                        &item,
+                        p.x,
+                        p.y,
+                        15,
+                        idx as i32,
+                        false,
+                        inventory::SHOP_SCALE,
+                        [220.0 / 255.0; 4],
+                    );
+                }
             }
         }
         // The reforge menu (`Main.DrawInventory`'s inline block,
@@ -942,8 +955,14 @@ pub fn draw_hud(
         // `Main.cs:41831`: `ChestUI.Draw` runs after the shop pass — the chest
         // panel draws together with the inventory (`OpenChest` sets
         // `playerInventory`, `Player.cs:33517`, chest.rs:409). The closed arm
-        // decays the button state (`ChestUI.cs:99-104`).
-        chest::draw(r, lookups, chest_panel, pulse, mouse_pos);
+        // decays the button state (`ChestUI.cs:99-104`). While a shop is
+        // open the shop grid above owns the (73, 258) rect, so the chest
+        // grid stands down (the two share `Main.invBottom`; the vanilla
+        // never shows both — `Player.cs:33087-33090` closes the shop on a
+        // chest open).
+        if shop.is_none() {
+            chest::draw(r, lookups, chest_panel, pulse, mouse_pos);
+        }
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
         // glued to the top while the minimap HUD pushed the panel down.

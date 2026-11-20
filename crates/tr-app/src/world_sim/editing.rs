@@ -2032,12 +2032,23 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     // The town-NPC chat arm (`Main.cs:43069-43083`): the region-gated fresh
     // press latches `SetTalkNPC(i)` and fills `Main.npcChatText = GetChat()`;
     // the per-tick close rule (`Player.cs:27494-27503`) rides inside the call.
-    if crate::world_sim::npcs::talk_to_npc(app, prev_place_down).is_some() {
+    // `Player.mouseInterface` (`Main.cs:41799-41813`): the open shop grid's
+    // rect suppresses the world use — a press over the panel neither talks
+    // nor places.
+    let shop_panel_hover = app.inventory_open
+        && app.shop_npc.is_some()
+        && crate::ui::inventory::shop_slot_at(
+            app.mouse_pos,
+            app.lookups.ui_back.map_or(52.0, |b| b.width as f32),
+        )
+        .is_some();
+    if !shop_panel_hover && crate::world_sim::npcs::talk_to_npc(app, prev_place_down).is_some() {
         return;
     }
     if app.place_down
         && !prev_place_down
         && !app.inventory_open
+        && !shop_panel_hover
         && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
     {
         return;

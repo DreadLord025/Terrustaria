@@ -2193,6 +2193,7 @@ pub(crate) mod front_flow_tests {
             next_npc_uid: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
+            shop_sellback: crate::shop::SellbackHelper::default(),
             in_reforge_menu: false,
             reforge_slot: crate::item::EMPTY_SLOT,
             reforge_cooldown: 0,
