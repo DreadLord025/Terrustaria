@@ -325,6 +325,13 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-f14: the critter-cage animator (`Main.critterCage` + the
+    // `Main.*CageFrame` tables, `Main.cs:1445`/`:66902-66972`). The draw
+    // CLEARS the flag at the non-solid layer start (`TileDrawing.cs:474`)
+    // and SETS it while a cage cell draws (`:5672` etc.); the cage arms'
+    // `frame_of` reads the tables. Ticked at the `AnimateTiles` tail
+    // (`Main.cs:19303`) by `App::animate_tiles_phase`.
+    cage_anim: &mut tr_core::drawdata_cages::CritterCageAnimator,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -339,6 +346,14 @@ pub(crate) fn draw_tiles(
     let x1 = ((max.x / TILE_PX).ceil() as i32 + 1).clamp(0, world.width - 1);
     let y0 = ((min.y / TILE_PX).floor() as i32 - 1).clamp(0, world.height - 1);
     let y1 = ((max.y / TILE_PX).ceil() as i32 + 1).clamp(0, world.height - 1);
+
+    // W4-f14: `Main.critterCage = false` at the non-solid layer's start
+    // (`TileDrawing.Draw`, TileDrawing.cs:472-475). The port draws both
+    // layers in ONE walk (no solidLayer split), so the clear rides the
+    // walk's start — the cage arms below re-set it per in-view cage cell
+    // exactly like the C# non-solid pass; the flag then gates the NEXT
+    // `animate_tiles_phase` tick (Main.cs:19303).
+    cage_anim.critter_cage = false;
 
     // S1-F-9 slice B: the engine-driven `GetTileDrawData` cases' per-frame
     // environment (`drawdata_cases_b.rs`). S1-G-1f: the animator is WIRED —
@@ -728,6 +743,41 @@ pub(crate) fn draw_tiles(
                         (cell[2] * 255.0).min(255.0) as u8,
                         255,
                     ];
+                    // W4-f14: the census furniture post-pass — the C#
+                    // FIRST GetTileDrawData switch's four cage case groups
+                    // (TileDrawing.cs:5629-5907), at the FIRST switch's
+                    // tail position: AFTER the static table + slice B's
+                    // delegated first-switch cases, and BEFORE slice A's
+                    // SECOND switch (`:6049-6507`) — the 568/569/570/580
+                    // glow rects read `tileFrameY + addFrY` POST-cage
+                    // (`:6085-6104`), so the rewrite must land before
+                    // `apply_cases_a` builds them, and before the
+                    // source-rect resolve (`:1007`'s rectangle reads
+                    // addFrX/addFrY). The cage half REPLACES the static
+                    // cage arms (top 2 + the `Main.*CageFrame[row, idx] *
+                    // stride` rewrite); the `Main.critterCage = true`
+                    // side effect (`:5672` etc.) gates the animator tick.
+                    // The chest half of `furniture_post_pass` stays
+                    // UNWIRED here — the `CacheSpecialDraws_Part2`
+                    // position (`:993`) is owned by the in-flight W4-d58
+                    // chest-frames wiring (the `chest_frame: None` call
+                    // keeps this pass cage-only; `chest_draw_rewrite` is
+                    // a no-op for non-chest kinds and the cage kinds
+                    // never overlap BasicChest).
+                    if tr_core::drawdata_furniture::is_cage_kind(tile.kind) {
+                        cage_anim.critter_cage = true; // TileDrawing.cs:5672 etc.
+                        tr_core::drawdata_furniture::furniture_post_pass(
+                            tile.kind,
+                            tx,
+                            ty,
+                            tile.frame_x,
+                            tile.frame_y,
+                            tr_core::drawdata_furniture::CAGE_FRAMES,
+                            |table, row, idx| cage_anim.frame_of(table, row, idx),
+                            None,
+                            &mut dd,
+                        );
+                    }
                     let _glow = crate::drawdata_cases_a::apply_cases_a(
                         &mut dd, world, tile, tx, ty, cell_bytes, 255, 0.0,
                     );
@@ -1871,6 +1921,68 @@ mod tests {
         assert_eq!(dd_block.matches("anim_row,").count(), 3);
         assert!(dd_block.contains("anim_counter,"));
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
+    }
+
+    /// W4-f14 composite-order witness: the cage post-pass sits at the C#
+    /// FIRST `GetTileDrawData` switch's tail (TileDrawing.cs:5629-5907) —
+    /// AFTER `draw_data` + slice B's delegated first-switch cases and
+    /// BEFORE slice A's SECOND switch, whose 568/569/570/580 glow rects
+    /// read `tileFrameY + addFrY` POST-cage (`:6085-6104`), and BEFORE the
+    /// source-rect resolve (`:1007`). The `Main.critterCage = true` side
+    /// effect rides the same gated block (`:5672` etc.).
+    #[test]
+    fn w4_f14_the_cage_post_pass_rides_the_first_switch_tail() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        let table = dd_block.find("tr_core::drawdata::draw_data(").expect("the static table");
+        let cases_b = dd_block.find("crate::drawdata_cases_b::case_draw_data(").expect("slice B");
+        let cage = dd_block
+            .find("tr_core::drawdata_furniture::furniture_post_pass(")
+            .expect("the cage post-pass");
+        let cases_a = dd_block
+            .find("crate::drawdata_cases_a::apply_cases_a")
+            .expect("slice A");
+        assert!(table < cases_b, "slice B follows the static table");
+        assert!(cases_b < cage, "the cage groups are the FIRST switch's tail");
+        assert!(
+            cage < cases_a,
+            "the SECOND switch's glow rects read the POST-cage addFrY (:6085-6104)"
+        );
+        // Exactly one dispatch site, gated on a cage kind, and the flag
+        // set rides the same block BEFORE the table lookup.
+        assert_eq!(
+            dd_block.matches("tr_core::drawdata_furniture::furniture_post_pass(").count(),
+            1
+        );
+        assert!(dd_block.contains("is_cage_kind(tile.kind)"));
+        let gate = dd_block.find("is_cage_kind(tile.kind)").unwrap();
+        let flag = dd_block.find("cage_anim.critter_cage = true").unwrap();
+        assert!(gate < flag && flag < cage, "the flag set gates the rewrite");
+        // The lookup feeds the animator's tables (not a zero stand-in).
+        assert!(dd_block.contains("cage_anim.frame_of(table, row, idx)"));
+        // The chest half stays cage-only here (the W4-d58 seam owns :993).
+        let call = &dd_block[cage..(cage + 600).min(dd_block.len())];
+        assert!(call.contains("None,"), "chest_frame stays None (W4-d58 seam)");
+    }
+
+    /// W4-f14 flag-clear witness: `Main.critterCage = false` rides the
+    /// walk's start (the port's stand-in for the non-solid layer's
+    /// `Draw` head, TileDrawing.cs:472-475), BEFORE any cell can set it.
+    #[test]
+    fn w4_f14_the_walk_start_clears_the_cage_flag() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let clear = body.find("cage_anim.critter_cage = false").expect("the clear");
+        let set = body.find("cage_anim.critter_cage = true").expect("the set");
+        let walk = body
+            .find("scratch.open.clear();")
+            .expect("the tile walk's head");
+        assert!(clear < walk && walk < set, "the clear precedes the walk");
+        assert_eq!(body.matches("cage_anim.critter_cage = false").count(), 1);
     }
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain

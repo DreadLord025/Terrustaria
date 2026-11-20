@@ -1013,6 +1013,32 @@ impl App {
                                 0
                             }
                         },
+                        // W4-f14: the cage animator's frame tables feed the
+                        // cage arms' addFrY rewrites inside the cached range
+                        // — the state must ride the key, gated on a cage
+                        // kind being active in the view rect (the tile_anim
+                        // key's convention): a cage-free view keeps the
+                        // pre-wiring cache behaviour bit-for-bit.
+                        cage_anim: {
+                            let vh = screen * 0.5 / *zoom;
+                            let vx0 = ((camera.x - vh.x) / TILE_PX).floor() as i32 - 1;
+                            let vx1 = ((camera.x + vh.x) / TILE_PX).ceil() as i32 + 1;
+                            let vy0 = ((camera.y - vh.y) / TILE_PX).floor() as i32 - 1;
+                            let vy1 = ((camera.y + vh.y) / TILE_PX).ceil() as i32 + 1;
+                            let any_cage = (vy0..=vy1).any(|ty| {
+                                (vx0..=vx1).any(|tx| {
+                                    world.tile(tx, ty).is_some_and(|t| {
+                                        t.active()
+                                            && tr_core::drawdata_furniture::is_cage_kind(t.kind)
+                                    })
+                                })
+                            });
+                            if any_cage {
+                                self.cage_anim.anim_key()
+                            } else {
+                                0
+                            }
+                        },
                         net_key: {
                             // FNV-1a over the peers' smoothed state and the NPC
                             // smoothing accumulators (`npc_key` covers the base
@@ -1183,6 +1209,11 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-f14: the critter-cage animator — the draw
+                            // clears/sets `Main.critterCage` and reads the
+                            // `Main.*CageFrame` tables (TileDrawing.cs:474/
+                            // :5672-5907).
+                            &mut self.cage_anim,
                         );
                         *world_key = Some(key);
                     }

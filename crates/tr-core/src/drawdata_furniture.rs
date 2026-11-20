@@ -205,6 +205,14 @@ pub fn is_basic_chest(kind: u16) -> bool {
     kind == 21 || kind == 467
 }
 
+/// Whether a kind rides one of the four cage `case` groups — the G6 key's
+/// in-view gate for the cage animator (the `TileAnimator::is_animated_kind`
+/// convention) and the draw's `Main.critterCage` set probe
+/// (TileDrawing.cs:5672 etc.).
+pub fn is_cage_kind(kind: u16) -> bool {
+    cage_table(kind).is_some()
+}
+
 /// The chest half of `CacheSpecialDraws_Part2` (TileDrawing.cs:4289-4330),
 /// which `DrawSingleTile` runs AFTER `GetTileDrawData` (:993): the source
 /// rect folds back to the chest's sheet origin per sub-cell, the opening

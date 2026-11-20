@@ -871,6 +871,18 @@ pub(crate) struct App {
     /// `WorldFrameKey::tile_anim` covers every value it feeds the draw.
     pub(crate) tile_anim: tr_core::drawdata_anim::TileAnimator,
     pub(crate) tile_anim_step: FixedStepper,
+    /// W4-f14: `Main.critterCage` + the `Main.*CageFrame` tables
+    /// (`Main.cs:1445`, `:66902-66972`) — the critter-cage animator
+    /// (`Main.AnimateTiles_CritterCages`, `Main.cs:13511-16596`), ticked at
+    /// the `AnimateTiles` tail (`Main.cs:19303`) on the SAME accumulator
+    /// and `Main.rand` stream as `tile_anim`. PROCESS state in the C# —
+    /// never re-zeroed per world (the `:8393-8394` reset covers
+    /// `tileFrame` only); `new` replays the 3600-tick startup warm-up
+    /// (`Main.cs:6800-6807`). `draw_tiles` clears/sets `critter_cage`
+    /// (TileDrawing.cs:474/:5672) and reads the tables through
+    /// `drawdata_furniture::cage_draw_data`; the G6
+    /// `WorldFrameKey::cage_anim` covers the state.
+    pub(crate) cage_anim: tr_core::drawdata_cages::CritterCageAnimator,
     /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
@@ -1122,6 +1134,11 @@ pub(crate) struct WorldFrameKey {
     /// keep the pre-wiring cache behaviour bit-for-bit (the waterfall key's
     /// convention).
     pub(crate) tile_anim: u64,
+    /// W4-f14: `CritterCageAnimator::anim_key()` — the `Main.*CageFrame`
+    /// tables the cage arms' `addFrY` rewrites read
+    /// (TileDrawing.cs:5629-5907). Zero unless a cage kind is active in
+    /// the view rect (the `tile_anim` convention).
+    pub(crate) cage_anim: u64,
     /// Remote peers' smoothed positions/animations and the NPC smoothing
     /// accumulators: the networked entities drawn inside the cached world
     /// range. Zero in single-player (the offsets are zero and no peers).
@@ -1159,6 +1176,7 @@ mod frame_key {
             brightness: brightness.to_bits(),
             waterfall: 0,
             tile_anim: 0,
+            cage_anim: 0,
             net_key: 0,
             world_revision: 0,
         };
@@ -1191,6 +1209,7 @@ mod frame_key {
             brightness: 0,
             waterfall: 0,
             tile_anim,
+            cage_anim: 0,
             net_key: 0,
             world_revision: 0,
         };
@@ -1206,6 +1225,48 @@ mod frame_key {
         let before = a.anim_key();
         a.weather_vane_bobframe += 1;
         assert_ne!(before, a.anim_key(), "the weather-vane bob rides the key");
+    }
+
+    /// W4-f14 key-coverage witness: the cage animator's frame tables ride
+    /// the cached world range (`draw_tiles` feeds `frame_of` into the cage
+    /// arms' addFrY rewrites), so two frames that differ only in cage
+    /// state must not share a cached range.
+    #[test]
+    fn cage_animator_state_changes_the_frame_key() {
+        let key = |cage_anim: u64| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            cage_anim,
+            net_key: 0,
+            world_revision: 0,
+        };
+        let mut a = tr_core::drawdata_cages::CritterCageAnimator::zeroed();
+        let k0 = key(a.anim_key());
+        a.critter_cage = true;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        a.animate_critter_cages(&mut rng);
+        let k1 = key(a.anim_key());
+        assert_ne!(k0, k1, "one open-gate cage tick must change the key");
+        assert_eq!(k1, key(a.anim_key()), "an unchanged animator must not");
+        // The closed gate draws nothing — the key holds (the pre-wiring
+        // cache behaviour for cage-free views).
+        a.critter_cage = false;
+        a.animate_critter_cages(&mut rng);
+        assert_eq!(k1, key(a.anim_key()), "the closed gate keeps the key");
     }
 }
 
@@ -3988,6 +4049,10 @@ impl App {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
+            // W4-f14: the cage animator is PROCESS state — constructed
+            // once per App with the world-seed warm-up stand-in (the C#
+            // seeds Main.rand from DateTime.Now.Ticks, Main.cs:6463).
+            cage_anim: tr_core::drawdata_cages::CritterCageAnimator::new(world_seed as i32),
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
