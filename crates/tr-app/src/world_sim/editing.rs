@@ -862,13 +862,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // the `+ dir * 10` the generic port arm carries is its
                     // own recorded deviation (M4-PROJ-3), NOT the C# — the
                     // boomerang variant drops it.
-                    let spawn = if boomerang_use {
+                    let mut spawn = if boomerang_use {
                         Vec2::new(pcx, pcy)
                     } else if held.kind == 2611 || held.kind == 5526 {
                         Vec2::new(pcx, pcy) + dir * 10.0 + dir
                     } else {
                         Vec2::new(pcx, pcy) + dir * 10.0
                     };
+                    // S1-P-i28 — `if (sItem.type == 3094 || sItem.type == 3378
+                    // || sItem.type == 3543) pointPosition.Y = position.Y +
+                    // height / 3` (`Player.cs:47225-47228`): the two javelins
+                    // throw from the upper third of the hitbox, not the centre.
+                    // The integer `height / 3` truncates (42 / 3 = 14).
+                    if held.kind == 3094 || held.kind == 3378 || held.kind == 3543 {
+                        spawn.y = p.y + (p.height as i32 / 3) as f32;
+                    }
                     let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
                     // The crit does NOT roll at throw time: the C# rolls it
                     // per-hit inside `Projectile.Damage_PVE_Inner`
@@ -1264,9 +1272,51 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             tr_core::dd2::event_ongoing(),
                         );
                     }
-                    if def.consumable {
-                        app.inventory[app.selected].count =
-                            app.inventory[app.selected].count.saturating_sub(1);
+                    // S1-P-i28 — `Player.ItemCheck`'s consumable arm
+                    // (`Player.cs:43280-43326`): the decrement is NOT
+                    // unconditional. For a `ranged` consumable the four
+                    // not-consume rolls run in order on the `UpdatePlayers`
+                    // stream (`Player.ItemCheck` under the `Main.cs:17754`
+                    // swap), each gated by its flag and each consuming its
+                    // draw even when an earlier roll already saved the stack
+                    // (the C# `if`s are independent, no short-circuit):
+                    //   huntressAmmoCost90 → Next(10)==0  (`:43285`)
+                    //   chloroAmmoCost80   → Next(5)==0   (`:43289`)
+                    //   ammoCost80         → Next(5)==0   (`:43293`)
+                    //   ammoCost75         → Next(4)==0   (`:43297`)
+                    // `CanConsumeConsumableItem` is const-true (`:5496-5499`)
+                    // and none of the twelve thrown kinds is in
+                    // `ItemID.Sets.ForceConsumption` (`ItemID.cs:413-427`), so
+                    // those two gates pass. The three water bottles carry no
+                    // `ranged` flag (`Item.cs:6285-6318`/`:31200-31216`), so
+                    // they skip the roll chain and always consume.
+                    let mut consume = true;
+                    if def.ranged {
+                        if p.huntress_ammo_cost90 && loot_rng.next_range(0, 10) == 0 {
+                            consume = false;
+                        }
+                        if p.chloro_ammo_cost80 && loot_rng.next_range(0, 5) == 0 {
+                            consume = false;
+                        }
+                        if p.ammo_cost80 && loot_rng.next_range(0, 5) == 0 {
+                            consume = false;
+                        }
+                        if p.ammo_cost75 && loot_rng.next_range(0, 4) == 0 {
+                            consume = false;
+                        }
+                    }
+                    let mut stack_emptied = false;
+                    if def.consumable && consume {
+                        // `if (item.stack > 0) item.stack--` (`:43317-43320`).
+                        if app.inventory[app.selected].count > 0 {
+                            app.inventory[app.selected].count -= 1;
+                        }
+                        // `if (item.stack <= 0) itemTime = itemAnimation`
+                        // (`:43321-43324`): the last throw locks the action
+                        // cadence to the remaining animation so the empty slot
+                        // cannot re-fire. The latch lands after the swing is
+                        // armed below (the port fires on the press frame).
+                        stack_emptied = app.inventory[app.selected].count == 0;
                     }
                     // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
                     // swing lasts the item's `useAnimation` ticks; `attack_cd`
@@ -1275,6 +1325,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
+                    if stack_emptied {
+                        app.item_time = app.swing;
+                    }
                 }
             }
         }
@@ -5273,7 +5326,7 @@ mod tests {
 
     use crate::app::flow::front_flow_tests::flow_app;
 
-    const MINE_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+    pub(super) const MINE_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
 
     /// A headless mining rig: `world` staged by the caller, the player parked
     /// three tiles right of the target, the camera pinned so the screen-centre
@@ -6711,7 +6764,7 @@ mod tests {
         assert_eq!(live_mines, 20, "the cap holds at 20");
     }
 
-    fn mining_app(world: World, tx: i32, ty: i32) -> App {
+    pub(super) fn mining_app(world: World, tx: i32, ty: i32) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;
         let mut player = Player::spawn(&app.world);
@@ -9859,6 +9912,12 @@ mod item_mechanics {
     use crate::item::{EMPTY_SLOT, ItemDrop, INV};
     use tr_core::tile::Tile;
     use tr_core::tile::FLAG_ACTIVE;
+    // S1-P-i28 — the thrown-consumable witnesses below reuse the mining rig
+    // from the sibling `tests` mod (the player parked three tiles right of
+    // the target, the camera pinned so the screen-centre cursor points at it).
+    // Both helpers are `pub(super)` there; without these imports the calls do
+    // not resolve (they are private to `tests`, not visible through `super::*`).
+    use super::tests::{MINE_SCREEN, mining_app};
 
     fn slot(kind: u16, count: u32) -> ItemSlot {
         ItemSlot {
@@ -10010,6 +10069,126 @@ mod item_mechanics {
             "the drop lies flush on the floor, at {}",
             rest.pos.y
         );
+    }
+
+    // ---- S1-P-i28: the thrown-consumable throwing arm --------------------
+    // WRITTEN, NOT RUN (code-only mode). The fixtures reuse `mining_app` (the
+    // player parked three tiles right of the target, the cursor at the screen
+    // centre). The thrown weapon's `useAmmo == 0`, so it takes the generic
+    // shoot path (the press-frame fire), not the ammo-shooter path.
+
+    /// A thrown-consumable rig: the held stack set to `kind`/`count`, the
+    /// cursor 80 px right of the player (a clear rightward aim).
+    fn thrown_app(kind: u16, count: u32) -> App {
+        let w = World::new("t".into(), 64, 800);
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: "thrown",
+            count,
+            prefix: 0,
+        };
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        app.mine_down = true;
+        // The press edge (`Player.cs:42733`'s `controlUseItem && releaseUseItem`):
+        // the non-autoReuse thrown kinds (the shuriken, the waters, the
+        // grenades, …) only fire on a FRESH press — the previous frame must
+        // read released-and-not-down, or `throw_ready` refuses the first
+        // frame's swing. `mining_app` leaves both latches false (a held
+        // button), so arm the release the vanilla starts from.
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        app
+    }
+
+    /// The shuriken throw spawns the aiStyle-2 shuriken (3) at shootSpeed 9
+    /// and consumes one from the stack (`Player.cs:47056+`, `:43317`).
+    #[test]
+    fn s1_p_i28_shuriken_throws_and_consumes() {
+        let mut app = thrown_app(42, 5);
+        let screen = MINE_SCREEN;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let shot = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active)
+            .expect("the shuriken spawns");
+        assert_eq!(shot.kind, 3, "ItemID.Shuriken's shoot is 3");
+        // The aim is rightward; the speed is the item's shootSpeed 9.
+        assert!(shot.vel.x > 0.0, "the throw flies toward the cursor");
+        assert!((shot.vel.length() - 9.0).abs() < 1e-3, "shootSpeed 9");
+        assert_eq!(app.inventory[app.selected].count, 4, "one consumed");
+    }
+
+    /// The bone javelin throws from the upper third of the hitbox
+    /// (`Player.cs:47225-47228`): spawn.Y = position.Y + height/3.
+    #[test]
+    fn s1_p_i28_bone_javelin_spawn_height() {
+        let mut app = thrown_app(3378, 5);
+        let screen = MINE_SCREEN;
+        let py = app.player.as_ref().unwrap().y;
+        let ph = app.player.as_ref().unwrap().height;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let shot = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active)
+            .expect("the bone javelin spawns");
+        assert_eq!(shot.kind, 598, "ItemID.BoneJavelin's shoot is 598");
+        // The spawn Y is the upper third (`Player.cs:47227`): the port's
+        // generic spawn point is the centre + dir*10, but the javelin arm
+        // overrides `spawn.y = position.Y + height/3`, and
+        // `spawn_with_data_ai` takes that point as the projectile's TOP-LEFT
+        // (`pos`, not a centre). So `shot.pos.y` is exactly `p.y + height/3`.
+        let expected_y = py + (ph as i32 / 3) as f32;
+        assert!(
+            (shot.pos.y - expected_y).abs() < 1e-3,
+            "the javelin throws from the upper third, got {} want {}",
+            shot.pos.y,
+            expected_y
+        );
+    }
+
+    /// The last throw locks the action cadence (`Player.cs:43321-43324`):
+    /// `itemTime = itemAnimation` when the stack empties.
+    #[test]
+    fn s1_p_i28_last_throw_locks_cadence() {
+        let mut app = thrown_app(42, 1);
+        let screen = MINE_SCREEN;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        assert_eq!(app.inventory[app.selected].count, 0, "the stack empties");
+        // itemTime is latched to the swing (the remaining animation).
+        assert!(
+            (app.item_time - app.swing).abs() < 1e-6,
+            "itemTime = itemAnimation on the empty stack"
+        );
+    }
+
+    /// The water bottles carry no `ranged` flag, so they skip the not-consume
+    /// roll chain and always consume (`Item.cs:6285-6318`, `Player.cs:43283`).
+    #[test]
+    fn s1_p_i28_holy_water_always_consumes() {
+        let mut app = thrown_app(422, 3);
+        // Arm every not-consume flag — the water bottle must ignore them all.
+        if let Some(p) = app.player.as_mut() {
+            p.huntress_ammo_cost90 = true;
+            p.chloro_ammo_cost80 = true;
+            p.ammo_cost80 = true;
+            p.ammo_cost75 = true;
+        }
+        let screen = MINE_SCREEN;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let shot = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active)
+            .expect("the holy water spawns");
+        assert_eq!(shot.kind, 69, "ItemID.HolyWater's shoot is 69");
+        assert_eq!(app.inventory[app.selected].count, 2, "the water always consumes");
     }
 }
 
