@@ -149,6 +149,12 @@ fn hit_time_damage(kind: u16, damage: i32) -> i32 {
         UNHOLY_TRIDENT => (damage as f64 * 0.9) as i32,
         // `:13423-13425` — the Cascade Explosion zeroes its store.
         CASCADE_EXPLOSION => 0,
+        // `:13426-13428` — the Glacier Fang shot (the `(float)` cast).
+        1115 => (damage as f32 * 0.66) as i32,
+        // `:13429-13431` — the friendly Paladin's Hammer (the `(float)` cast).
+        301 => (damage as f32 * 0.9) as i32,
+        // `:13432-13436` — the Magical Harp's notes (the `(float)` cast).
+        QUARTER_NOTE | EIGHTH_NOTE | TIED_EIGHTH_NOTE => (damage as f32 * 0.95) as i32,
         _ => damage,
     }
 }
@@ -44581,5 +44587,80 @@ mod w4_a4_hit_time_tests {
         hit(&mut pool, slot, &mut npc);
         assert_eq!(pool.slots()[slot].damage, 100, "still no decay on hit 2");
         assert_eq!(10_000 - npc.hp, 200, "both hits strike full");
+    }
+
+    /// A hand-built rowless slot (the 1115/301 kinds have no `proj_data`
+    /// row): the stock box at (100, 100), owner 0, no class flags (the crit
+    /// block draws nothing), penetrate −1 so the re-hit passes.
+    fn rowless(kind: u16, damage: i32) -> ProjectilePool {
+        let mut pool = ProjectilePool::new();
+        pool.slots[0] = Projectile {
+            active: true,
+            kind,
+            owner: 0,
+            pos: Vec2::new(100.0, 100.0),
+            damage,
+            penetrate: -1,
+            max_penetrate: -1,
+            ..Default::default()
+        };
+        pool
+    }
+
+    /// `:13426-13428` — the Glacier Fang shot's `(float)` 0.66f cast: at
+    /// store 50 the f32 product is 33.0000013 → 33, while a `(double)`
+    /// 0.66 would give 32.9999999 → 32. The cast width is the witness.
+    #[test]
+    fn w4_a4_the_glacier_fang_uses_the_float_cast() {
+        let mut pool = rowless(1115, 50);
+        let mut npc = victim();
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 33, "(int)(50f·0.66f) = 33, not 32");
+        assert_eq!(10_000 - npc.hp, 50, "hit 1 strikes the pre-switch store");
+        npc.immune[0] = 0;
+        hit(&mut pool, 0, &mut npc);
+        // 33f·0.66f = 21.7800009 → 21.
+        assert_eq!(pool.slots()[0].damage, 21, "hit 2 compounds in f32");
+        assert_eq!(10_000 - npc.hp, 83, "hit 2 strikes the decayed 33");
+    }
+
+    /// `:13429-13431` — the friendly Paladin's Hammer's `(float)` 0.9f
+    /// cast: at store 10 the f32 product is 8.9999998 → 8, while a
+    /// `(double)` 0.9 would give 9.0000000000000002 → 9.
+    #[test]
+    fn w4_a4_the_paladins_hammer_uses_the_float_cast() {
+        let mut pool = rowless(301, 10);
+        let mut npc = victim();
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 8, "(int)(10f·0.9f) = 8, not 9");
+        npc.immune[0] = 0;
+        hit(&mut pool, 0, &mut npc);
+        // 8f·0.9f = 7.1999998 → 7.
+        assert_eq!(pool.slots()[0].damage, 7, "hit 2 compounds in f32");
+        assert_eq!(10_000 - npc.hp, 18, "10 then 8");
+    }
+
+    /// `:13432-13436` — the Magical Harp's three notes share the `(float)`
+    /// 0.95f arm: 100f·0.95f = 94.9999988 → 94 (NOT 95), then 94 → 89.
+    /// The local-immunity rows (cooldown 30) clear their slot row for the
+    /// re-hit.
+    #[test]
+    fn w4_a4_the_harp_notes_decay_in_float() {
+        for kind in [QUARTER_NOTE, EIGHTH_NOTE, TIED_EIGHTH_NOTE] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+                .unwrap();
+            let mut npc = victim();
+            hit(&mut pool, slot, &mut npc);
+            assert_eq!(pool.slots()[slot].damage, 94, "kind {kind}: (int)(100f·0.95f)");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[slot * 256] = 0;
+            hit(&mut pool, slot, &mut npc);
+            // 94f·0.95f = 89.2999989 → 89.
+            assert_eq!(pool.slots()[slot].damage, 89, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 194, "kind {kind} hit 2 strikes 94");
+        }
     }
 }
