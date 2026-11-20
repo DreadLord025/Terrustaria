@@ -20878,6 +20878,92 @@ NOT RUN. The old `the_actuator_item_marks_the_tile` test is renamed
 `the_actuator_item_marks_the_tile_and_consumes_one`.
 
 
+## The wire DRAW overlay census and fixes (S1-W4-g81, 2026-11-21)
+
+A verbatim re-read of `Main.DrawWires` (`Main.cs:58218-58675`) against
+`render/wires.rs` (the M7-WIRE-3 draw + the S1-P-i34 visibility gate). The
+visibility half (i34) verified FAITHFUL — `wire_view` keeps the held-mech /
+lens-toggle / no-traps gates and the `builderAccStatus` channel picks
+(`:58224-58243`). The DRAW half carried four WRONGs and one MISSING; all
+fixed in the same file, byte-maths first. Scope: the overlay DRAW only —
+the wiring arms (tool use, `HitWireSingle`, `Wiring`'s trip scan) belong to
+the sibling lanes (c42/e20/e21/f11) and are untouched.
+
+**WRONG 1 — float tints instead of XNA bytes.** The C# tint chain is
+`Lighting.GetColor(j, i)` (`Lighting.cs:216-242`: `(int)(light *
+GlobalBrightness * 255)` per channel, clamp 255, alpha 255) → the channel
+switch (`Main.cs:58318-58329`: White / `color *= 0.5f` / Transparent) →
+`color * (1f / num7)` (`:58405`). XNA's `Color * float` is
+`(int)(byte * scale)` on EVERY channel INCLUDING alpha — the faded channel
+draws at alpha 127 and the overlap dim at `255/num7` truncated (127, not
+127.5). The v1 port ran `style.shade` floats and divided by `num7` in
+float space, losing every truncation and the alpha entirely. Now
+`light_color_bytes`/`channel_tint`/`scale_color` carry the byte chain; the
+per-mode `LightStyle::shade` transforms (White/Retro/Trippy) do NOT apply —
+the C# draws the raw `GetColor` bytes in every light mode (the legacy
+engine's own colour already rides the light map). `GlobalBrightness` rides
+`style.brightness` (the blind drop 1.2 → 1.0 is applied at the frame seam).
+
+**WRONG 2 — the overlap strips rode the dim.** `:58405` draws the main
+quad at `color2 * (1f / num7)` but `:58410` draws the 6 px strip at plain
+`color2` — the channel-tinted colour BEFORE the dim. The v1 port passed
+the already-dimmed colour to both. `wire_tint` now returns the pair.
+
+**WRONG 3 — the strip table indexed the wrong sides.** The v1 strip array
+was ordered up/down/right/left but indexed `sides[k]`/`claimed[k]`
+directly on `[up, right, down, left]` — the down strip checked the RIGHT
+claim and vice versa. The `STRIPS` table now carries the side index
+explicitly, in the C#'s draw order (`flag8` up, `flag9` down, `flag7`
+right, `flag6` left — `:58406-58437`), with the source rects
+`(18, Y, 16, 6)` / `(72, Y+10, 16, 6)` at +10y / `(46, Y, 6, 16)` at +10x /
+`(144, Y, 6, 16)`.
+
+**WRONG 4 — the actuator gate + the guard scope.** The plate's draw gate
+is `Lighting.Brightness(j, i) > 0f` (`:58643`) — the RAW light mean ×
+GlobalBrightness (`Lighting.cs:118-122`), not the v1's per-channel any-positive
+on the shaded colour. And the C#'s `flag && CanShowWireStuffHere` guard
+(`:58266`) wraps ONLY the four wire colours: the actuator plate (`:58643`)
+and the 423 collection (`:58660`) sit outside it and draw inside the
+pre-Golem temple and under `HideWires`. The v1 `continue`d the whole tile.
+The plate's `color5 * num` (`:58658`) is a byte scale too (the rod's ×0.5
+halves the alpha). A Transparent actuator channel draws an alpha-0 quad in
+the C# (premultiplied blend: no-op); the port skips it — pixel-identical.
+
+**MISSING — the tile-423 range rectangle.** `DrawWiresSpecialTiles`
+(`:58223`/`:58660-58672`): every active 423 with `frameY == 36` collects
+during the walk; after the loop each draws `Utils.DrawRectangle` from
+`(j*16-33, i*16-161)` to `(j*16+49, i*16+1)` in `Color.LightSeaGreen`
+(32, 178, 170, 255), width 2. `Utils.DrawRectangle` (`Utils.cs:2619-2625`)
+is four `DrawLine` calls (left, top, bottom, right); `DrawLine`
+(`:2689-2702`) draws `min(5, (int)distance)` segments — collapsed to ONE
+when `colorStart == colorEnd` (the 423 case) — each a `BlackTile` quad
+scaled `(num/num2/16, width/16)`, rotated `(end-start).ToRotation()` about
+the origin `(0, 8)` (source px — the destination anchor is `(0, width/2)`,
+the left-middle). Ported as `special_tile_rect`/`line_segments`/
+`draw_line`/`draw_rectangle` through the solid-white pixel block (no
+`BlackTile` sheet — the `ui/crafting.rs` precedent). The port has no
+placeable 423 yet, but `.wld` worlds carry the sensor (`tile_entities.rs`).
+
+**Kept deviations (documented, unchanged):** the unified `claimed` walk
+(the C# red claims its sides unconditionally, the later colours only on
+draw — unreachable in practice: the UI cycle wraps at 3 so Transparent is
+never selected, `Main.cs:47551-47555`); the `dualDungeonsSeed` temple-wall
+style check in `CanShowWireStuffHere` (`Player.cs:46955`) has no ported
+seed; the screen-range walk keeps the port's ±1-tile margin form.
+
+**RNG:** the draw pass draws no random numbers — no stream touched.
+
+**Verification: code-only mode — no cargo/rustc/rustfmt/tests/graphify
+invoked.** 13 witnesses in `render/wires.rs::tests` WRITTEN, NOT RUN: the
+four i34 visibility tests kept, plus the GetColor byte truncation/clamp,
+the channel switch's alpha truncation (255 → 127, 101 → 50), the overlap
+dim's byte truncation (255/2 = 127, 255/3 = 85), the strip-colour escape
+from the dim (main 76 vs strip 153 at ×0.5 on 0.5 light), the raw
+brightness mean, the 424/445 junction offsets, the temple guard's scope
+(the 423 collects behind wall 87), the strip side mapping, the 82×162 rect
+corners, and the DrawLine single-segment collapse + gradient plan.
+
+
 ## The Deerclops' ice-spike rows (S1-D-4b-5b, 2026-11-14)
 
 `AI_123_Deerclops_MakeSpikesForward`/`MakeSpikesBothSides` +
