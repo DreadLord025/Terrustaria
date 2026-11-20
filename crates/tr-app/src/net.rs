@@ -1770,6 +1770,23 @@ pub struct RemoveRevengeMarker {
     pub unique_id: i32,
 }
 
+/// `msg 141 LucyTheAxeMessage`'s body (`NetMessage.cs:1595-1602`):
+/// `(byte)` message source, `(byte)` variation, the velocity floats, then
+/// `(int)` x, `(int)` y — the position ints come AFTER the velocity on the
+/// wire (`LucyAxeMessage.cs:133`'s send order). The client creates the
+/// popup via `CreateFromNet(source, variation, new Vector2(x, y), velocity)`
+/// (`MessageBuffer.cs:4278`); the host relays verbatim (`:4274`). Both
+/// directions.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LucyPopup {
+    pub source: u8,
+    pub variation: u8,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+    pub x: i32,
+    pub y: i32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1903,6 +1920,12 @@ pub enum C2s {
     /// `113 DD2EventSummonCrystal` - a client placed the eternia crystal
     /// (`DD2Event.cs:576`; the host summons, `MessageBuffer.cs:3841-3854`).
     CrystalInvasionStart(CrystalInvasionStart),
+    /// `141 LucyTheAxeMessage` - a talking-axe popup
+    /// (`LucyAxeMessage.cs:133`; the host relays, `:4274`).
+    LucyPopup(LucyPopup),
+    /// `143 DD2EventSkipWaitTime` - a client asked to skip the DD2 wait,
+    /// no body (`DD2Event.cs:1790`, `MessageBuffer.cs:4298-4303`).
+    CrystalInvasionSkip,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2056,6 +2079,9 @@ pub enum S2c {
     /// `127 RemoveRevengeMarker` - a coin-loss revenge marker is gone
     /// (`CoinLossRevengeSystem.cs:451`, `MessageBuffer.cs:4049-4057`).
     RemoveRevengeMarker(RemoveRevengeMarker),
+    /// `141 LucyTheAxeMessage` - the host's relay of a talking-axe popup
+    /// (`MessageBuffer.cs:4274`; the client CreateFromNet, `:4278`).
+    LucyPopup(LucyPopup),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2151,6 +2177,8 @@ impl C2s {
             Self::AnglerQuestFinished => id::ANGLER_QUEST_FINISHED,
             Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
             Self::CrystalInvasionStart(_) => id::CRYSTAL_INVASION_START,
+            Self::LucyPopup(_) => id::LUCY_POPUP,
+            Self::CrystalInvasionSkip => id::CRYSTAL_INVASION_SKIP,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2252,6 +2280,17 @@ impl C2s {
                 .f32(p.velocity_y),
             // `NetMessage.cs:1432-1435`: (short)x + (short)y.
             Self::CrystalInvasionStart(c) => w.i16(c.x).i16(c.y),
+            // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
+            // the velocity floats + (int)x + (int)y.
+            Self::LucyPopup(l) => w
+                .u8(l.source)
+                .u8(l.variation)
+                .f32(l.velocity_x)
+                .f32(l.velocity_y)
+                .i32(l.x)
+                .i32(l.y),
+            // No writer arm — bodyless (`DD2Event.cs:1790` SendData(143)).
+            Self::CrystalInvasionSkip => w,
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2397,6 +2436,15 @@ impl C2s {
                 x: r.i16()?,
                 y: r.i16()?,
             }),
+            id::LUCY_POPUP => Self::LucyPopup(LucyPopup {
+                source: r.u8()?,
+                variation: r.u8()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+                x: r.i32()?,
+                y: r.i32()?,
+            }),
+            id::CRYSTAL_INVASION_SKIP => Self::CrystalInvasionSkip,
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2596,6 +2644,7 @@ impl S2c {
             Self::CrystalInvasionWipe => id::CRYSTAL_INVASION_WIPE,
             Self::CrystalInvasionWait(_) => id::CRYSTAL_INVASION_WAIT,
             Self::RemoveRevengeMarker(_) => id::REMOVE_REVENGE_MARKER,
+            Self::LucyPopup(_) => id::LUCY_POPUP,
         }
     }
 
@@ -2796,6 +2845,15 @@ impl S2c {
             Self::CrystalInvasionWait(t) => w.i32(t.time_left),
             // `NetMessage.cs:1518-1520`: the raw (int) marker UniqueID.
             Self::RemoveRevengeMarker(m) => w.i32(m.unique_id),
+            // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
+            // the velocity floats + (int)x + (int)y.
+            Self::LucyPopup(l) => w
+                .u8(l.source)
+                .u8(l.variation)
+                .f32(l.velocity_x)
+                .f32(l.velocity_y)
+                .i32(l.x)
+                .i32(l.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3041,6 +3099,14 @@ impl S2c {
             }),
             id::REMOVE_REVENGE_MARKER => Self::RemoveRevengeMarker(RemoveRevengeMarker {
                 unique_id: r.i32()?,
+            }),
+            id::LUCY_POPUP => Self::LucyPopup(LucyPopup {
+                source: r.u8()?,
+                variation: r.u8()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+                x: r.i32()?,
+                y: r.i32()?,
             }),
             _ => return None,
         })
@@ -5585,5 +5651,58 @@ mod tests {
             S2c::RemoveRevengeMarker(d) => assert_eq!(d, m),
             other => panic!("expected 127, got {:?}", other.msg_id()),
         }
+    }
+
+    #[test]
+    fn w4_d99_lucy_popup_round_trips() {
+        // `NetMessage.cs:1595-1602` (case 141), verbatim: (byte)number
+        // (source), (byte)number2 (variation), number3/number4 (the
+        // velocity floats) THEN number5/number6 (the position ints) —
+        // deliberately different magnitudes so a swapped pair cannot
+        // pass. Both directions (`LucyAxeMessage.cs:133` client send,
+        // `MessageBuffer.cs:4274` relay).
+        let l = LucyPopup {
+            source: 2,
+            variation: 7,
+            velocity_x: 1.5,
+            velocity_y: -3.25,
+            x: 51200,
+            y: -1024,
+        };
+        let mut body = vec![2u8, 7];
+        body.extend_from_slice(&1.5f32.to_le_bytes());
+        body.extend_from_slice(&(-3.25f32).to_le_bytes());
+        body.extend_from_slice(&51200i32.to_le_bytes());
+        body.extend_from_slice(&(-1024i32).to_le_bytes());
+        let f = C2s::LucyPopup(l).encode();
+        assert_eq!(f[2], 141);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+        let s = S2c::LucyPopup(l).encode();
+        assert_eq!(s[2], 141);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_crystal_invasion_skip_is_bodyless() {
+        // No `case 143` writer arm and the reader consumes nothing
+        // (`MessageBuffer.cs:4298-4303` AttemptToSkipWaitTime on the host;
+        // the send is `SendData(143)` with no args, `DD2Event.cs:1790`):
+        // [len=3][143].
+        let f = C2s::CrystalInvasionSkip.encode();
+        assert_eq!(f, vec![3, 0, 143]);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::CrystalInvasionSkip => {}
+            other => panic!("expected 143, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
     }
 }

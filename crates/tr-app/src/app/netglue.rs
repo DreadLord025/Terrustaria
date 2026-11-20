@@ -837,6 +837,10 @@ impl App {
             // WouldFailSpawningHere + SummonCrystal on the sender) — same
             // wave, same parking.
             C2s::CrystalInvasionStart(_) => {}
+            // 141's client half (`LucyAxeMessage.cs:133`; the host relays,
+            // `MessageBuffer.cs:4272-4275`) + 143 DD2 skip-wait
+            // (`:4298-4303` AttemptToSkipWaitTime) — same wave, same parking.
+            C2s::LucyPopup(_) | C2s::CrystalInvasionSkip => {}
         }
     }
 
@@ -1905,6 +1909,9 @@ impl App {
             // revenge-marker removal (`:4049-4057` DestroyMarker) — same
             // wave, same parking.
             S2c::CrystalInvasionWait(_) | S2c::RemoveRevengeMarker(_) => {}
+            // 141's relay (`MessageBuffer.cs:4278` CreateFromNet) — same
+            // wave, same parking.
+            S2c::LucyPopup(_) => {}
         }
     }
 
