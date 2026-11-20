@@ -111,6 +111,16 @@ pub const PREFIX_ID: &[(u16, &str)] = &[
 /// `PrefixID.Count` (`PrefixID.cs:214`): 98 — 0 is the no-prefix slot.
 pub const PREFIX_COUNT: usize = 98;
 
+/// `PrefixID.Sets.ReducedNaturalChance` (`PrefixID.cs:14` —
+/// `CreateBoolSet(7, 8, 9, 10, 11, 22, 23, 24, 29, 30, 31, 39, 40, 56, 41,
+/// 47, 48, 49)`), in the C#'s declaration order. The only set the C# `Sets`
+/// class declares (besides the `Factory` itself). The roll engine's working
+/// copy is `prefix.rs::REDUCED_NATURAL_CHANCE` — the same membership sorted
+/// for its binary searches; the cross-pin test keeps the two from drifting.
+pub const SETS_REDUCED_NATURAL_CHANCE: &[u16] = &[
+    7, 8, 9, 10, 11, 22, 23, 24, 29, 30, 31, 39, 40, 56, 41, 47, 48, 49,
+];
+
 /// The constant spelling for `id`, or `"None"` for the 0 slot (`Lang.prefix`'s
 /// array bounds leave 0 unnamed; `Item.Prefix`'s 0 return means "no prefix").
 pub fn prefix_const_name(id: u16) -> &'static str {
@@ -178,5 +188,35 @@ mod tests {
             (96, "Ballistic"), (97, "Scraggling"),
         ];
         assert_eq!(PREFIX_ID, cs, "the PrefixID walk");
+    }
+
+    /// W4-c45 -- `PrefixID.Sets` (`PrefixID.cs:5-16`): the class declares
+    /// exactly one bool set, `ReducedNaturalChance` (`:14`). Pin the C#'s
+    /// declaration order verbatim, and cross-pin the roll engine's sorted
+    /// working copy (`prefix.rs::REDUCED_NATURAL_CHANCE`) so the data
+    /// carrier and the consumer can never drift apart. WRITTEN NOT RUN.
+    #[test]
+    fn w4_c45_the_prefix_sets_ride_and_match_the_roll_engine() {
+        // `Sets.Factory.CreateBoolSet(7, 8, 9, 10, 11, 22, 23, 24, 29, 30,
+        // 31, 39, 40, 56, 41, 47, 48, 49)` (`PrefixID.cs:14`) — 56 rides
+        // between 40 and 41 in the C#'s own order.
+        assert_eq!(
+            SETS_REDUCED_NATURAL_CHANCE,
+            &[7, 8, 9, 10, 11, 22, 23, 24, 29, 30, 31, 39, 40, 56, 41, 47, 48, 49][..],
+            "the C# declaration order"
+        );
+        assert_eq!(SETS_REDUCED_NATURAL_CHANCE.len(), 18);
+        // Every member is a real prefix id on the walk.
+        for &id in SETS_REDUCED_NATURAL_CHANCE {
+            assert_ne!(prefix_const_name(id), "None", "set member {id}");
+        }
+        // The roll engine's working copy is the same membership, sorted.
+        let mut sorted = SETS_REDUCED_NATURAL_CHANCE.to_vec();
+        sorted.sort_unstable();
+        assert_eq!(
+            crate::prefix::REDUCED_NATURAL_CHANCE,
+            sorted.as_slice(),
+            "the roll-engine copy drifted from the Sets carrier"
+        );
     }
 }
