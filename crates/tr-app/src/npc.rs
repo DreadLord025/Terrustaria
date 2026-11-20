@@ -6760,19 +6760,17 @@ impl Npc {
         }
         // W4-g7 wire-2 (d49 wave D) — the `cs_id`-keyed hook into the
         // high-band wave's pure machines (`npc_findframe_high2.rs`),
-        // the FIRST 6 kinds / 7 ids: 366/367 (the keep-one scorpion
-        // pair — the d48 ScorpionBlack delegates here), 374/375/377/
-        // 378/379 (the remaining 380/430-434 ride the next commit —
-        // the 10-kinds-per-commit rule). NO current kind's `cs_id`
-        // lands in the set (verified over the hand rows + all 249
-        // bestiary net ids), so this is stream-inert today; the arms
-        // themselves draw no RNG. The d45/e13 hook precedent.
-        let cs = self.kind.cs_id();
-        if matches!(cs, 366 | 367 | 374 | 375 | 377 | 378 | 379) {
-            if let Some(kind) = crate::npc_findframe_high2::find_frame_kind_high2(cs as i16) {
-                self.find_frame_wave_high2(kind);
-                return;
-            }
+        // all 12 kinds / 13 ids: 366/367 (the keep-one scorpion pair —
+        // the d48 ScorpionBlack delegates here), 374/375/377/378/379/
+        // 380/430/431/432/433/434. NO current kind's `cs_id` lands in
+        // the set (verified over the hand rows + all 249 bestiary net
+        // ids), so this is stream-inert today; the arms themselves
+        // draw no RNG. The d45/e13 hook precedent.
+        if let Some(kind) =
+            crate::npc_findframe_high2::find_frame_kind_high2(self.kind.cs_id() as i16)
+        {
+            self.find_frame_wave_high2(kind);
+            return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
@@ -34084,5 +34082,40 @@ mod w4_g7_wire2_high2_tests {
         assert_eq!(n.frame, 4, "the ai[2]=3 draw row (3-1+2)");
         assert_eq!(n.frame_counter, 0.0, "the draw zeroes the counter");
         assert_eq!(n.sprite_dir, 0, "the unconditional draw re-flip");
+    }
+
+    /// The half-B batch: the armed zombies' `ai[2]` swing ladder
+    /// (rows 3/4/5/6 at the <5/<10/<15 bands, breaking BEFORE any
+    /// flip — `NPC.cs:70887-70905`) rides `ai[2]` through the bridge,
+    /// and the reset-tick row-HOLD quirk (`:70947-70950`) keeps the
+    /// row while zeroing the counter at >= 32.
+    #[test]
+    fn w4_g7_the_high2_bridge_feeds_the_armed_zombie_swing_band() {
+        let mut n = bare(NpcKind::Slime);
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.sprite_dir = -1;
+        n.facing = 1;
+        n.vx = 2.0;
+        n.vy = -1.0; // airborne — the swing band must still win first
+        n.ai[2] = 7.0;
+        n.find_frame_wave_high2(crate::npc_findframe_high2::FindFrameKind::ArmedZombieEskimo);
+        assert_eq!(n.frame, 4, "the <10 swing band");
+        assert_eq!(n.sprite_dir, -1, "the swing breaks BEFORE the flip");
+        // The ground stride: |vx| = 8 a tick — the 4th tick hits 32,
+        // zeroes the counter and HOLDS the row (the reset-tick quirk).
+        n.ai[2] = 0.0;
+        n.vy = 0.0;
+        n.vx = 8.0;
+        n.facing = 1;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..4 {
+            n.find_frame_wave_high2(crate::npc_findframe_high2::FindFrameKind::ArmedZombie);
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![1, 2, 1, 1], "the 8/16/24/32 bands + row-hold");
+        assert_eq!(n.frame_counter, 0.0, "the >=32 tail zeroes the counter");
     }
 }
