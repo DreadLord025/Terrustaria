@@ -191,6 +191,9 @@ mod projectile_ai_misc;
 // remainder; the dispatch claim + the R7 request drain are the wiring
 // follow-up (module doc + docs/ANALYSIS.md "S1-D-4 empress proj").
 mod projectile_ai_empress;
+// S1-P-i35: the fishing bobber's AI_061 flight/bite machine + the FishingCheck
+// orchestration (the pure roll engine is tr_core::fishing).
+mod projectile_bobber;
 mod rain;
 mod regen;
 mod research;

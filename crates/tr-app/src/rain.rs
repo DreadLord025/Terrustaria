@@ -292,6 +292,15 @@ impl Rain {
         self.rain_time
     }
 
+    /// S1-P-i35 — `Main.ladyBugRainBoost += NPC.ladyBugRainTime` clamped at
+    /// `NPC.maximumAmountOfTimesLadyBugRainCanStack` (`NPC.cs:81568-81572`,
+    /// the `LadyBugKilled` writer): a consumed ladybug bait (4361/4362) adds
+    /// its rain boost. The cap is `crate::luck::LADYBUG_RAIN_CAP`.
+    pub(crate) fn add_lady_bug_rain_boost(&mut self, add: i32) {
+        self.lady_bug_rain_boost =
+            (self.lady_bug_rain_boost + add).min(crate::luck::LADYBUG_RAIN_CAP);
+    }
+
     /// `SetOngoingToTemps` (`WorldFile.cs:159-162`): the load applies the
     /// save-time snapshot — the event state comes back and `Main.cloudAlpha`
     /// := `maxRaining`. The triple rode the `.trwld` v14 block (S1-J-7).

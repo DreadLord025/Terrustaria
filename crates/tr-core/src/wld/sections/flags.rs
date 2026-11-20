@@ -188,7 +188,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.u8(0); // treeBG2
     w.u8(0); // treeBG3
     w.u8(0); // treeBG4
-    w.boolean(false); // combatBookWasUsed
+    w.boolean(world.combat_book_was_used); // combatBookWasUsed
                       // WorldFile.cs:1380-1384: the lantern night snapshot — unowned.
     w.i32(0); // _tempLanternNightCooldown
     w.boolean(false); // _tempLanternNightGenuine
@@ -237,7 +237,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // unlockedSlimeOldSpawn
     w.boolean(false); // unlockedSlimePurpleSpawn
     w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
-    w.boolean(false); // unlockedSlimeRedSpawn
+    w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
     w.boolean(false); // unlockedSlimeYellowSpawn
     w.boolean(false); // unlockedSlimeCopperSpawn
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
@@ -569,7 +569,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(3)?; // setBG(10..12) treeBG2..4
     }
     if version >= 204 {
-        r.skip(1)?; // combatBookWasUsed
+        world.combat_book_was_used = r.bool()?; // combatBookWasUsed
     }
     // WorldFile.cs:2234-2239 — the lantern night snapshot.
     if version >= 207 {
@@ -634,7 +634,8 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version >= 261 {
         r.skip(3)?; // unlockedSlimeGreen/Old/Purple
         world.unlocked_slime_rainbow_spawn = r.bool()?; // unlockedSlimeRainbowSpawn
-        r.skip(3)?; // unlockedSlimeRed/Yellow/Copper
+        world.unlocked_slime_red_spawn = r.bool()?; // unlockedSlimeRedSpawn
+        r.skip(2)?; // unlockedSlimeYellow/Copper
     }
     // WorldFile.cs:2306-2319 — the moondial, the forced seasons, the secret seeds, the
     // meteor shower, the team spawns and the extra spawn points.

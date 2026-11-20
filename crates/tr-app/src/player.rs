@@ -1505,6 +1505,59 @@ pub struct Player {
     /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
     /// +1 ammo damage on arrows (`:53548`).
     pub acc_sharp_barb: bool,
+    // S1-P-i35 — the fishing family (`Player.cs:1088-1102` region).
+    /// `Player.fishingSkill` (`Player.cs:1092`): the +15 Fishing potion
+    /// (buff 121, `UpdateBuffs` `:10146-10149`), the Angler armor pieces
+    /// (+5 each, `GrantArmorBenefits` `:13447-13450`), the earring/tackle
+    /// combos (+10, `:14655-14683`), the bobber accessory (+10, `:12985-
+    /// 12988`) and the Gummy Worm (+3, `:12857-12860`). `ResetEffects`
+    /// clears it (`:18507`).
+    pub fishing_skill: i32,
+    /// `Player.cratePotion` (`Player.cs:1096`): buff 123 (`:10154-10157`) —
+    /// the crate roll's +15 window (`Projectile.cs:21520-21523`).
+    /// `ResetEffects` clears it (`:18508`).
+    pub crate_potion: bool,
+    /// `Player.sonarPotion` (`Player.cs:1094`): buff 122 (`:10150-10153`) —
+    /// the sonar popup on a bite (`Projectile.cs:20746-20751`; the popup
+    /// layer is a draw seam, the flag rides). `ResetEffects` clears it
+    /// (`:18509`).
+    pub sonar_potion: bool,
+    /// `Player.accTackleBox` (`Player.cs:1098`): 2375/3721/5064
+    /// (`:14663-14683`) — the bait conservation +1 (`:52483-52486`).
+    /// `ResetEffects` clears it (`:18510`).
+    pub acc_tackle_box: bool,
+    /// `Player.accFishingBobber` (`Player.cs:1100`): the glow-bobber
+    /// accessories 5139-5146 (`:14659-14662`) — +10 skill (`:12985-12988`).
+    /// `ResetEffects` clears it (`:18511`).
+    pub acc_fishing_bobber: bool,
+    /// `Player.accFishingLine` (`Player.cs:1102`): 2373/3721/5064
+    /// (`:14651-14683`) — the 1-in-7 line snap never fires (`:52438`).
+    /// `ResetEffects` clears it (`:18512`).
+    pub acc_fishing_line: bool,
+    /// `Player.accLavaFishing` (`Player.cs:1104`): 4881/5064 (`:14667-
+    /// 14683`) — the lava-fishing gate (`Projectile.cs:20637`).
+    /// `ResetEffects` clears it (`:18513`).
+    pub acc_lava_fishing: bool,
+    /// `Player.overrideFishingBobber` (`Player.cs:1106`): the glow-bobber
+    /// accessory's projectile override (`UpdateFishingBobber`, `:36673-
+    /// 36702`: items 5139-5146 → 986-993), read by `ItemCheck_Shoot`
+    /// (`:47181-47184`). Reset to -1 (`:16990`/`:18410`).
+    pub override_fishing_bobber: i32,
+    /// `Player.usedGummyWorm` (`Player.cs:2074`): the 5341 permanent +3
+    /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
+    /// ResetEffects — a permanent unlock (the player-file field).
+    pub used_gummy_worm: bool,
+    /// `Player.canFloatInWater` (`Player.cs:1086`): the merman buff 265
+    /// (`UpdateBuffs` `:9895-9898`) or the Water Strider mount item 4404
+    /// (`GrantArmorBenefits` `:13265-13267`) — the fishing +5 float bonus
+    /// (`GetFishingConditions` `:42194`, `canFloatInWater && wet`).
+    /// `ResetEffects` clears it (`:18332`).
+    pub can_float_in_water: bool,
+    /// `Player.noItems` (`Player.cs:2332`): the Cursed debuff 23
+    /// (`UpdateBuffs` `:11731-11734`) or the mount channel (`:52938`) blocks
+    /// item use — the bobber kill gate reads it (`Projectile.cs:53664`).
+    /// `ResetEffects` clears it (`:18687`).
+    pub no_items: bool,
     /// `Player.accSentryBackpack` (`Player.cs:1250`): the Heavy Sling family
     /// (6172/6175/6176/6177, `ApplyEquipFunctional` `:14507`/`:14565`/`:14573`/
     /// `:14577`) — the sentry-backpack pickup gate
@@ -2220,6 +2273,18 @@ impl Player {
             vampire_burning_in_sunlight: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
+            // S1-P-i35 — the fishing family's spawn defaults.
+            fishing_skill: 0,
+            crate_potion: false,
+            sonar_potion: false,
+            acc_tackle_box: false,
+            acc_fishing_bobber: false,
+            acc_fishing_line: false,
+            acc_lava_fishing: false,
+            override_fishing_bobber: -1,
+            used_gummy_worm: false,
+            can_float_in_water: false,
+            no_items: false,
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -2385,7 +2450,9 @@ impl Player {
         self.sit_up();
         self.stop_sleeping();
         self.grappling_active = false;
-        // `RemoveAllFishingBobbers` — no bobbers in the port yet;
+        // `RemoveAllFishingBobbers` (`PlayerSleepingHelper.cs:174`) runs at
+        // the interaction caller (`world_sim/editing/doors.rs`'s BedSleep arm,
+        // S1-P-i35) — the pool is not reachable from this pure player method;
         // `mount.TryDismount` (`:175-178`).
         if self.cart_mounted || self.mount.is_active() {
             let _ = self.dismount(world, false);
@@ -3664,6 +3731,89 @@ impl Player {
         (self.x + WIDTH * 0.5, self.y)
     }
 
+    /// S1-P-i35 — `Player.GetFishingConditions` (`Player.cs:42176-42206`)
+    /// over the App's inventory layout: the grid 0-49, the coins 50-53 and
+    /// the ammo 54-57 (the C# `inventory[58]`). Returns
+    /// `(pole_power, pole_type, bait_power, bait_type, final_level)`.
+    ///
+    /// `Fishing_GetBestFishingPole` (`:42282-42298`): the held item first,
+    /// then the strongest pole across 0..58. `Fishing_GetBait`
+    /// (`:42254-42280`): the ammo slots 54-58 first, then the grid 0-50.
+    /// The final level rides `tr_core::fishing::final_fishing_level` — the
+    /// Tipsy buff 25 (`:42190`), the water-float (`canFloatInWater && wet`,
+    /// `:42194`), the sitting bonus (`:42198`) and the power multiplier.
+    pub fn fishing_conditions(
+        &self,
+        inventory: &[crate::item::ItemSlot],
+        coins: &[crate::item::ItemSlot],
+        ammo: &[crate::item::ItemSlot],
+        selected: usize,
+        world: &World,
+        raining: bool,
+        cloud_bg_alpha: f32,
+    ) -> (i32, u16, i32, u16, i32) {
+        let stat = |kind: u16| crate::registry::get(kind);
+        // The held pole (`:42284-42289`).
+        let held = inventory[selected];
+        let mut pole_power = stat(held.kind).map_or(0, |d| d.fishing_pole);
+        let mut pole_type = held.kind;
+        if pole_power == 0 {
+            // `:42290-42297`: the 0..58 scan (grid + coins + ammo).
+            for sl in inventory.iter().chain(coins.iter()).chain(ammo.iter()) {
+                let p = stat(sl.kind).map_or(0, |d| d.fishing_pole);
+                if p > pole_power {
+                    pole_power = p;
+                    pole_type = sl.kind;
+                }
+            }
+        }
+        // The bait (`:42258-42279`): ammo first, then the grid.
+        let mut bait_power = 0i32;
+        let mut bait_type = 0u16;
+        for sl in ammo.iter() {
+            if sl.count > 0 {
+                let b = stat(sl.kind).map_or(0, |d| d.bait as i32);
+                if b > 0 {
+                    bait_power = b;
+                    bait_type = sl.kind;
+                    break;
+                }
+            }
+        }
+        if bait_power == 0 && bait_type == 0 {
+            for sl in inventory.iter() {
+                if sl.count > 0 {
+                    let b = stat(sl.kind).map_or(0, |d| d.bait as i32);
+                    if b > 0 {
+                        bait_power = b;
+                        bait_type = sl.kind;
+                        break;
+                    }
+                }
+            }
+        }
+        let level = tr_core::fishing::final_fishing_level(
+            pole_power,
+            bait_type,
+            bait_power,
+            self.fishing_skill,
+            // `:42190` — `FindBuffIndex(25) != -1` (Tipsy).
+            self.buffs.find_buff_index(25).is_some(),
+            // `:42194` — `canFloatInWater && wet`: the merman buff 265
+            // (`:9895-9898`) or the Water Strider mount item 4404
+            // (`:13265-13267`); the field is granted in the buff loop.
+            self.can_float_in_water && self.wet,
+            self.sitting,
+            raining,
+            cloud_bg_alpha,
+            world.day_time,
+            world.time,
+            world.moon_phase as i32,
+            world.blood_moon,
+        );
+        (pole_power, pole_type, bait_power, bait_type, level)
+    }
+
     /// `Player.ApplyHeadOffsetFromMount` (`Player.cs:51544-51645`): the
     /// per-mount head offsets — the whole table is the four types 54/55/56/61
     /// (the other mounts fall through to the zero vector), each with its
@@ -3821,6 +3971,35 @@ impl Player {
             // carries the same `chiselSpeed` (`:15293`) plus the range
             // flag the reach scan reads (`craft.rs`).
             4056 | 5126 => self.pick_speed_bonus += 0.25,
+            // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
+            // (`Player.cs:14651-14683`), in the C#'s order: the High Test
+            // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
+            // family 5139-5146 (the flag + the projectile override via
+            // `UpdateFishingBobber` `:36673-36702`), the Tackle Box 2375,
+            // the Lavaproof Hook 4881, the combos 3721 (line+box+10) and
+            // 5064 (line+box+10+lava).
+            2373 => self.acc_fishing_line = true,
+            2374 => self.fishing_skill += 10,
+            5139..=5146 => {
+                self.acc_fishing_bobber = true;
+                // `UpdateFishingBobber` (`:36677-36700`): 5139→986 …
+                // 5146→993 (the C# calls it from the same equip pass,
+                // `:14381`).
+                self.override_fishing_bobber = 986 + (kind - 5139) as i32;
+            }
+            2375 => self.acc_tackle_box = true,
+            4881 => self.acc_lava_fishing = true,
+            3721 => {
+                self.acc_fishing_line = true;
+                self.acc_tackle_box = true;
+                self.fishing_skill += 10;
+            }
+            5064 => {
+                self.acc_fishing_line = true;
+                self.acc_tackle_box = true;
+                self.fishing_skill += 10;
+                self.acc_lava_fishing = true;
+            }
             // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
             53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
             857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
@@ -4600,6 +4779,23 @@ impl Player {
         // (`Update_SentryBackpack`, `:28428-28434`).
         self.acc_sentry_backpack = false;
         self.ballista_panic = false;
+        // S1-P-i35 — `ResetEffects`' fishing clears (`Player.cs:18507-18513`):
+        // the skill and the six accessory/potion flags re-derive in the buff
+        // loop (121/122/123) and the equip grants below. The bobber override
+        // resets to -1 (`:18410`); `usedGummyWorm` is permanent (NOT cleared).
+        self.fishing_skill = 0;
+        self.crate_potion = false;
+        self.sonar_potion = false;
+        self.acc_tackle_box = false;
+        self.acc_fishing_bobber = false;
+        self.acc_fishing_line = false;
+        self.acc_lava_fishing = false;
+        self.override_fishing_bobber = -1;
+        // S1-P-i35 — `ResetEffects`' `canFloatInWater = false`
+        // (`Player.cs:18332`) and `noItems = false` (`:18687`): the merman
+        // buff 265 / the Cursed debuff 23 re-grant them in the buff loop.
+        self.can_float_in_water = false;
+        self.no_items = false;
         self.set_squire_t2 = false;
         self.set_squire_t3 = false;
         self.set_huntress_t2 = false;
@@ -4675,6 +4871,12 @@ impl Player {
                 self.magic_crit += piece.magic_crit;
                 self.move_speed += piece.move_speed;
                 self.melee_speed_bonus += piece.melee_speed;
+            }
+            // S1-P-i35 — `GrantArmorBenefits`' Angler pieces
+            // (`Player.cs:13447-13450`): 2367-2369 (the Angler set) and
+            // 5591-5593 (the Lava Angler set) each +5 fishing skill.
+            if matches!(kind, 2367 | 2368 | 2369 | 5591 | 5592 | 5593) {
+                self.fishing_skill += 5;
             }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
             // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
@@ -4933,6 +5135,20 @@ impl Player {
                 }
                 // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
                 25 => self.stat_defense -= 4,
+                // S1-P-i35 — `UpdateBuffs`' fishing potions
+                // (`Player.cs:10146-10157`): Fishing (121) +15 skill,
+                // Sonar (122) and Crate (123) flags.
+                121 => self.fishing_skill += 15,
+                122 => self.sonar_potion = true,
+                123 => self.crate_potion = true,
+                // S1-P-i35 — the Merman buff 265 (`Player.cs:9895-9898`):
+                // `canFloatInWater = true` (the fishing float bonus) +
+                // `accFlipper`. The flipper swim half rides the wet statics.
+                265 => self.can_float_in_water = true,
+                // S1-P-i35 — the Cursed debuff 23 (`Player.cs:11731-11734`):
+                // `noItems = true` + `cursed` — blocks item use (the bobber
+                // kill gate). The `cursed` field is unported (no consumer).
+                23 => self.no_items = true,
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
                 // `:11001-11004`: the Sunflower buff's movement tier —
@@ -5074,6 +5290,17 @@ impl Player {
         // OR grants with no RNG draw — a second pass over the same slots
         // is order-identical to the C#'s interleaved rows.
         crate::accessory_defense::apply_defense_accessories(self);
+        // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
+        // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
+        if self.used_gummy_worm {
+            self.fishing_skill += 3;
+        }
+        // S1-P-i35 — `UpdateEquips`' post-loop bobber row
+        // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
+        // AFTER the functional pass set the flag.
+        if self.acc_fishing_bobber {
+            self.fishing_skill += 10;
+        }
         // S1-C-12 wave D — `Player.UpdateArmorSets` (`Player.cs:25685` →
         // `:16304-16306`: `ArmorSetBonuses.GetCompleteSet(...)?.Effect`):
         // the completed LOW-tier set's FLAG halves (shadow/crimson/meteor/

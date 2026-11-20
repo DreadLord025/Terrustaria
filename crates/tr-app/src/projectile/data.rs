@@ -617,6 +617,50 @@ pub const INFERNO_BLAST: u16 = 296;
 pub const VENOM_FANG: u16 = 355;
 /// `ProjectileID.FrostBoltStaff` (359) — the Frost Staff's bolt.
 pub const FROST_BOLT: u16 = 359;
+/// The fishing bobbers (S1-P-i35): the plain pole family 360-366
+/// (`ProjectileID.BobberWooden`..`BobberSittingDuck`), the Fleshcatcher /
+/// Hotline 381/382, the Blood rod 760 and the Scarab 775
+/// (`Projectile.cs:4508-4516`), plus the glow-bobber accessory overrides
+/// 986-993 (`:9422-9435`). All aiStyle 61, 14x14, penetrate -1,
+/// netImportant, `bobber = true`.
+pub const BOBBER_WOODEN: u16 = 360;
+pub const BOBBER_REINFORCED: u16 = 361;
+pub const BOBBER_FIBERGLASS: u16 = 362;
+pub const BOBBER_FISHEROF_SOULS: u16 = 363;
+pub const BOBBER_GOLDEN: u16 = 364;
+pub const BOBBER_MECHANICS: u16 = 365;
+pub const BOBBER_SITTING_DUCK: u16 = 366;
+pub const BOBBER_FLESHCATCHER: u16 = 381;
+pub const BOBBER_HOTLINE: u16 = 382;
+pub const BOBBER_BLOOD: u16 = 760;
+pub const BOBBER_SCARAB: u16 = 775;
+/// The glow-bobber overrides (`Player.UpdateFishingBobber`,
+/// `Player.cs:36673-36702`: items 5139-5146 map to 986-993).
+pub const BOBBER_GLOW_START: u16 = 986;
+pub const BOBBER_GLOW_END: u16 = 993;
+/// Every kind the aiStyle-61 dispatch claims (the `Projectile.bobber` flag's
+/// SetDefaults writers — `Projectile.cs:4515`/`:9429`).
+pub const BOBBER_KINDS: [u16; 19] = [
+    BOBBER_WOODEN,
+    BOBBER_REINFORCED,
+    BOBBER_FIBERGLASS,
+    BOBBER_FISHEROF_SOULS,
+    BOBBER_GOLDEN,
+    BOBBER_MECHANICS,
+    BOBBER_SITTING_DUCK,
+    BOBBER_FLESHCATCHER,
+    BOBBER_HOTLINE,
+    BOBBER_BLOOD,
+    BOBBER_SCARAB,
+    986,
+    987,
+    988,
+    989,
+    990,
+    991,
+    992,
+    993,
+];
 /// `ProjectileID.AmberBolt` (597) — the Amber Staff's gem bolt.
 pub const GEM_BOLT_AMBER: u16 = 597;
 /// The seven gem-bolt kinds the C# spells out as
@@ -1108,6 +1152,9 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
         ILLUMINANT_HOOK => 0.3,                // `:5631`
         CRYSTAL_SHARD_MELEE => 0.5,            // `:10644`
+        // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
+        // `light = 1f` (the 986 plain override keeps the stock 0).
+        987..=993 => 1.0,
         _ => 0.0,
     }
 }
@@ -1157,6 +1204,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:2549-2557` — the snowball (166): 14x14, aiStyle 2.
             SNOWBALL => (14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-P-i35 — the fishing bobbers (`Projectile.cs:4508-4516`,
+            // `:9422-9435`): 14x14, aiStyle 61, `penetrate = -1`,
+            // `netImportant = true`, `bobber = true`; the stock 3600 life
+            // (`AI_061` refreshes `timeLeft = 60` every tick, `:53662`).
+            // The glow overrides 987-993 add `light = 1f` (`:9433`) via
+            // `set_defaults_light`; their glowMask 318+(type-987) is a draw
+            // seam (no port field).
+            k if BOBBER_KINDS.contains(&k) => {
+                (14.0, 14.0, 61, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // `Projectile.cs:9002-9011` — the Wand of Sparking's spark (954):
             // 10x10, aiStyle 2, `penetrate = 2`, the spawn `alpha = 255`.
             SPARK => (
@@ -2966,6 +3023,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion_slots,
         net_important: minion
             || sentry
+            // S1-P-i35 — the bobber family sets `netImportant` itself
+            // (`Projectile.cs:4514`/`:9428`).
+            || BOBBER_KINDS.contains(&kind)
             // The slice-B pets set `netImportant` themselves
             // (`Projectile.cs:5419`/`:9643`/`:9993`).
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
