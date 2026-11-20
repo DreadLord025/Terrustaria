@@ -83,7 +83,7 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | phlebas/lazure wall lookups (`Framing.cs:35-39`, `:378-387`) | NOT-FOUND | — | large-frame walls keep the generic mask |
 | `TileObjectData` registry | PARTIAL | `tileobject.rs:293-330` | 36 defs registered out of the C#'s full registry (`Initialize` `:2110`); ROADMAP:1319 admits "remaining: the full-registry generator" |
 | `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5312`) | PARTIAL | `tileobject.rs::base_def` + `edit.rs:2600-2612` | base/style routing ported; dynamic stalactite/detritus arms not found |
-| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263` |
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263`; **W4-e12**: the int overload's alternate tail corrected 1:1 (:5150-5159 — an out-of-range alternate KEEPS the resolved def, the port answered None; consumers `TileObject.Place` :31 / `DrawPreview` :859; witnesses `test_w4_e12_*` written-not-run). The Tile overload :5196-5261 + bounds :5163-5194 are the d112/d113/e11/d114 branch claims |
 | `tiledata` sets | PARTIAL | `tiledata/sets.rs` | 46 `TileSet`s vs 152 `Factory.CreateBoolSet(` sites in `TileID.cs` (upper bound: nested/Conversion sets) |
 | `tiledata` merge relation | PORTED | `tiledata/merge.rs` | dense 754×12-word bitset, generated |
 | emissive tile/wall tables | PORTED | `tiledata/emissive.rs` | full coverage 754 + 367 |
