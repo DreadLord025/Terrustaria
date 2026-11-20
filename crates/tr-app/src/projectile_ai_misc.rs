@@ -896,6 +896,52 @@ fn remap_clamped(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
+/// `AI_153_ToiletPop` (`Projectile.cs:52198-52236`) — the toilet's pop
+/// effect (733). The first tick (`ai[0] == 0`) spawns 6 dust + 1 gore;
+/// ticks 1-10 spawn 2 dust + a 1-in-5 gore; past 10 the effect dies.
+/// The counter advances AFTER the branch pick (`:52222`).
+///
+/// RNG: the else branch's `Next(5)` gate (`:52216`, ONLY when
+/// `ai[0] <= 10` — the kill returns first); every spawned gore's
+/// `NextVector2Circular(1,1)` pair (two floats, `:52233` — the velocity
+/// argument `UnitY * -3f + NextVector2Circular(1f, 1f)` is evaluated
+/// BEFORE the call, on the first tick too) + the `Next(580,583)` type
+/// roll + the NewGore kicks `Next(10,31)` / `Next(-20,21)`
+/// (`Gore.cs:1327-1328`). The dust bodies (`:52223-52230`) roll nothing
+/// explicit.
+pub(crate) fn ai_toilet_pop(p: &mut Projectile, rng: &mut dyn DropRng) {
+    // `:52200-52221` — the branch pick (the centre/speedY feed only the
+    // skipped dust bodies).
+    let (num, mut num2) = if p.ai[0] == 0.0 {
+        (6, 1)
+    } else {
+        if p.ai[0] > 10.0 {
+            // `:52211-52215` — the kill (the C# `Kill()`; the port's
+            // death convention zeroes time_left).
+            p.active = false;
+            p.time_left = 0;
+            return;
+        }
+        let mut g = 0;
+        if rng.next_range(0, 5) == 0 {
+            g = 1;
+        }
+        (2, g)
+    };
+    // `:52222` — the counter.
+    p.ai[0] += 1.0;
+    // `:52223-52230` — the dust loop: `num` bodies, no explicit draws.
+    let _ = num;
+    // `:52231-52235` — the gore loop: `num2` gores, each the circular
+    // velocity pair + the type roll + the NewGore kicks.
+    for _ in 0..num2 {
+        let _ = (rng.next_float(), rng.next_float()); // NextVector2Circular(1,1)
+        let _ = rng.next_range(580, 583); // the gore type
+        let _ = rng.next_range(10, 31); // NewGore's Y kick
+        let _ = rng.next_range(-20, 21); // NewGore's X kick
+    }
+}
+
 /// `Collision.LavaCollision` (`Collision.cs:1653-1684`) — the clamped
 /// box scan (`[x/16−1, (x+w)/16+2)` × `[y/16−1, (y+h)/16+2)`, the y-range
 /// capped at `maxTilesY−40`): any lava cell whose liquid surface
@@ -1849,5 +1895,138 @@ mod w4_d16_152_tests {
         assert!((p.pos.x - 1630.0).abs() < 1e-3, "3 × 10 px");
         // The cue draws ONCE (the re-arm holds across the sub-steps).
         assert_eq!(rng.ranges, vec![(0, 40)]);
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_153_tests {
+    //! W4-d16 — aiStyle 153 (`AI_153_ToiletPop`, `Projectile.cs:52198-
+    //! 52236`, the dispatch `:36575-36578`). WRITTEN NOT RUN (code-only
+    //! mode). The row, the first-tick burst census (no Next(5) gate —
+    //! the gore is unconditional), the 1-in-5 gate ticks, the past-10
+    //! kill (zero draws), the counter's after-the-pick advance.
+    use super::*;
+    use crate::projectile::{FlailInputs, ProjectilePool, TOILET_EFFECT, YoyoInputs, proj_data};
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn pop() -> Projectile {
+        let d = proj_data(TOILET_EFFECT).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = TOILET_EFFECT;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:7716-7725`): 2x2, aiStyle 153, tileCollide
+    /// false, ignoreWater, penetrate -1, alpha 255.
+    #[test]
+    fn w4_d16_153_the_row_matches_set_defaults() {
+        let d = proj_data(TOILET_EFFECT).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (2.0, 2.0, 153));
+        assert!(!d.tile_collide && d.ignore_water);
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.alpha, 255);
+    }
+
+    /// The first tick (`:52204-52208`, `:52231-52235`): NO Next(5) gate —
+    /// the gore is unconditional: the circular pair + the type roll +
+    /// the kicks. The counter advances to 1.
+    #[test]
+    fn w4_d16_153_the_first_tick_burst_census() {
+        let mut p = pop();
+        let mut rng = census();
+        ai_toilet_pop(&mut p, &mut rng);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(rng.ranges, vec![(580, 583), (10, 31), (-20, 21)], "no gate on tick 0");
+        assert_eq!(rng.floats, 2, "the circular velocity pair");
+    }
+
+    /// The gate ticks (`:52216-52220`): the Next(5) draws; on the taken
+    /// branch (census min 0) the gore row follows. The counter advances.
+    #[test]
+    fn w4_d16_153_the_gate_ticks_census() {
+        let mut p = pop();
+        p.ai[0] = 5.0;
+        let mut rng = census();
+        ai_toilet_pop(&mut p, &mut rng);
+        assert_eq!(p.ai[0], 6.0);
+        assert_eq!(rng.ranges, vec![(0, 5), (580, 583), (10, 31), (-20, 21)]);
+        assert_eq!(rng.floats, 2);
+    }
+
+    /// The past-10 kill (`:52211-52215`): ai[0] = 11 dies BEFORE the gate
+    /// — zero draws, the counter does NOT advance.
+    #[test]
+    fn w4_d16_153_the_past_ten_kill_spends_nothing() {
+        let mut p = pop();
+        p.ai[0] = 11.0;
+        let mut rng = census();
+        ai_toilet_pop(&mut p, &mut rng);
+        assert!(!p.active);
+        assert_eq!(p.time_left, 0);
+        assert_eq!(p.ai[0], 11.0, "the kill returns before the ++");
+        assert_eq!(rng.ranges, Vec::new());
+        assert_eq!(rng.floats, 0);
+        // ai[0] = 10 is the LAST live tick (`<= 10f` holds).
+        let mut p2 = pop();
+        p2.ai[0] = 10.0;
+        ai_toilet_pop(&mut p2, &mut census());
+        assert!(p2.active);
+        assert_eq!(p2.ai[0], 11.0);
+    }
+
+    /// The dispatch wiring: one pool update runs the first-tick burst.
+    #[test]
+    fn w4_d16_153_the_dispatch_arms_the_pop() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(TOILET_EFFECT, 1600.0, 800.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(rng.ranges, vec![(580, 583), (10, 31), (-20, 21)]);
+        assert_eq!(rng.floats, 2);
     }
 }

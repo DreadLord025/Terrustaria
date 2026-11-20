@@ -17386,6 +17386,19 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d16 — aiStyle 153, the toilet's pop
+                        // (`AI_153_ToiletPop` `:52198-52236`): the
+                        // first-tick 6-dust/1-gore burst, the 1-in-5 gore
+                        // ticks, the past-10 kill. The row keeps
+                        // tileCollide false — the free integrate.
+                        153 => {
+                            crate::projectile_ai_misc::ai_toilet_pop(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the

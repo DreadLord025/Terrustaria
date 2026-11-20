@@ -1189,6 +1189,9 @@ pub const ZENITH_MURAMASA_SLASH: u16 = 977;
 /// `ProjectileID.MoonLordWhipProc` (1045) — the Moon Lord whip's proc
 /// slash, aiStyle 152 (`Projectile.cs:9890-9907`). W4-d16.
 pub const MOON_LORD_WHIP_PROC: u16 = 1045;
+/// `ProjectileID.ToiletEffect` (733) — the toilet's pop effect, aiStyle
+/// 153 (`Projectile.cs:7716-7725`). W4-d16.
+pub const TOILET_EFFECT: u16 = 733;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -4028,6 +4031,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             MOON_LORD_WHIP_PROC => {
                 (20.0, 20.0, 152, 1, 48, 1, false, false, false, (true, -1, false, -1, 255, 1.0))
             }
+            // W4-d16 — `Projectile.cs:7716-7725` (733, the toilet's pop):
+            // 2x2, aiStyle 153, tileCollide false, ignoreWater (the
+            // overlay), penetrate -1, alpha 255. Stock friendly/hostile
+            // false — the effect damages nothing (the debris precedent).
+            TOILET_EFFECT => {
+                (2.0, 2.0, 153, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4268,9 +4278,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
             || kind == HIGH_VELOCITY_BULLET
-            // W4-d16 — `Projectile.cs:7679`/`:9215`/`:9277`/`:9897`: the
-            // four aiStyle-152 slashes set `ignoreWater = true`.
-            || matches!(kind, SUPER_STAR_SLASH | ZENITH_MURAMASA_SLASH | ZENITH_GRASS_SLASH | MOON_LORD_WHIP_PROC)
+            // W4-d16 — `Projectile.cs:7679`/`:9215`/`:9277`/`:9897`/`:7722`:
+            // the four aiStyle-152 slashes + the toilet pop set ignoreWater.
+            || matches!(kind, SUPER_STAR_SLASH | ZENITH_MURAMASA_SLASH | ZENITH_GRASS_SLASH | MOON_LORD_WHIP_PROC | TOILET_EFFECT)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
