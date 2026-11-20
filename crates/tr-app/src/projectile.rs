@@ -21539,6 +21539,8 @@ impl ProjectilePool {
             p.sound_delay -= 1;
             if p.sound_delay <= 0 {
                 let (cx, cy) = p.center();
+                // `SoundID.Item1` — the (2, style 1) payload (the golf
+                // strike's Item1 precedent, `projectile_ai_golf.rs:434`).
                 p.wants_sound = Some((2, 1, cx, cy, 0.0));
                 p.sound_delay = 12;
             }
@@ -44719,6 +44721,6 @@ mod w4_d17_rapier_stab_tests {
         assert_eq!(s.sound_delay, 11, "12 - 1 (:47658-47662)");
         let cues = pool.drain_proj_sounds();
         assert_eq!(cues.len(), 1, "one Item1 whoosh this tick");
-        assert_eq!((cues[0].0, cues[0].1), (2, 0), "SoundID.Item1, style 0");
+        assert_eq!((cues[0].0, cues[0].1), (2, 1), "SoundID.Item1, style 1");
     }
 }
