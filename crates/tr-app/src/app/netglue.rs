@@ -816,6 +816,11 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // W4-d97 (S1-I-1 player-family second half): bodies + codecs in
+            // `net.rs`; the host relay arm (`MessageBuffer.cs:3657-3660`)
+            // and the apply+relay arm (`:3867-3885`) land with the send-path
+            // pass (S1-I-4).
+            C2s::NebulaLevelupRequest(_) | C2s::PlayerHurtV2(_) => {}
         }
     }
 
@@ -1858,6 +1863,11 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // W4-d97 (S1-I-1 player-family second half): bodies + codecs in
+            // `net.rs`; the client read sites — the team level-up fan
+            // (`MessageBuffer.cs:3662-3705`) and the quiet `Player.Hurt`
+            // replay (`:3879`) — land with the send-path pass (S1-I-4).
+            S2c::NebulaLevelupRequest(_) | S2c::PlayerHurtV2(_) => {}
         }
     }
 

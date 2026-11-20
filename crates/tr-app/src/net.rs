@@ -147,6 +147,31 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- W4-d97 (S1-I-1 player-family SECOND half): the high-region ids ----
+    // Census: the player-family set claimed after the d89-d96 lanes —
+    // 36/43/55/62/66/84/99/102/115/117/118/120/134/150 (+ the 157 team tail).
+    // Minus c27's entity-state tier 18/36/41/43/51/55/62/84, minus d94's
+    // 66/99/115 (projectile support) and d96's 35/40 (low region), the second
+    // half is 102/117/118/120/134/150/157. Bodies + codecs only; the
+    // dispatcher apply/relay arms stay parked (S1-I-4).
+    /// `102 NebulaLevelupRequest` (`MessageID.cs:218`) — a client picked up a
+    /// nebula booster: `(byte)` player, `(ushort)` the booster item's
+    /// `buffType` (173/176/179), `(float)` x, `(float)` y of the picker's
+    /// centre (`NetMessage.cs:1377-1382`; send site `Player.PickupItem`,
+    /// `Player.cs:35045-35053`). The host relays (`MessageBuffer.cs:3657-3660`);
+    /// the client fans the level-up + the dust spiral out to teammates
+    /// within 700 px (`:3662-3705`).
+    pub const NEBULA_LEVELUP_REQUEST: u8 = 102;
+    /// `117 PlayerHurtV2` (`MessageID.cs:248`) — `(byte)` player,
+    /// `PlayerDeathReason.WriteSelfTo`, `(short)` damage,
+    /// `(byte)(hitDirection + 1)`, `BitsByte{bit0 crit, bit1 pvp}`,
+    /// `(sbyte)` cooldownCounter (`NetMessage.cs:1439-1446`, packed by
+    /// `SendPlayerHurt`, `:2598-2605`). The host applies `Player.Hurt`
+    /// behind the self/PvP gate (`MessageBuffer.cs:3867-3885`) and relays
+    /// via `SendPlayerHurt` (`:3882`); the client send site is
+    /// `Player.Hurt` (`Player.cs:38369-38377`).
+    pub const PLAYER_HURT_V2: u8 = 117;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1537,6 +1562,185 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+// ---- W4-d97 (S1-I-1 player-family SECOND half): the high-region bodies ----
+// Bodies + codecs only; the dispatcher apply/relay arms stay parked (S1-I-4).
+
+/// `PlayerDeathReason` (`DataStructures/PlayerDeathReason.cs`), the shared
+/// reason block of `117 PlayerHurtV2` / `118 PlayerDeathV2`
+/// (`NetMessage.cs:1441`/`:1449` write it via `_currentPlayerDeathReason`,
+/// set by `SendPlayerHurt`/`SendPlayerDeath`, `:2600`/`:2609`). The indices
+/// default to -1 and the type/prefix fields to 0 (`:8-20`); the wire is the
+/// flag byte then the present fields in bit order (`WriteSelfTo`,
+/// `:138-182`; `FromReader`, `:184-221`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlayerDeathReason {
+    /// bit 0 — `(short)` when != -1 (`PlayerDeathReason.cs:141`/`:150-153`).
+    pub source_player_index: i16,
+    /// bit 1 — `(short)` when != -1 (`:142`/`:154-157`).
+    pub source_npc_index: i16,
+    /// bit 2 — `(short)` when != -1 (`:143`/`:158-161`).
+    pub source_projectile_local_index: i16,
+    /// bit 3 — `(byte)` when != -1 (`:144`/`:162-165`). The C# casts the int
+    /// to a byte, so -1 would ride as 255; the port keeps the flag test on
+    /// the un-cast value (`LegacyDefault`'s 255 is a *present* other-index).
+    pub source_other_index: i16,
+    /// bit 4 — `(short)` when != 0 (`:145`/`:166-169`).
+    pub source_projectile_type: i16,
+    /// bit 5 — `(short)` when != 0 (`:146`/`:170-173`).
+    pub source_item_type: i16,
+    /// bit 6 — `(byte)` when != 0 (`:147`/`:174-177`).
+    pub source_item_prefix: u8,
+    /// bit 7 — the string when present (`:148`/`:178-181`). The port's wire
+    /// strings are literal-mode `BinaryWriter.Write(string)`
+    /// (a 7-bit length + UTF-8), same as every other body here.
+    pub source_custom_reason: Option<String>,
+}
+
+impl Default for PlayerDeathReason {
+    /// The C# field initialisers (`PlayerDeathReason.cs:8-22`): -1 indices,
+    /// 0 types, no custom reason.
+    fn default() -> Self {
+        Self {
+            source_player_index: -1,
+            source_npc_index: -1,
+            source_projectile_local_index: -1,
+            source_other_index: -1,
+            source_projectile_type: 0,
+            source_item_type: 0,
+            source_item_prefix: 0,
+            source_custom_reason: None,
+        }
+    }
+}
+
+impl PlayerDeathReason {
+    /// `WriteSelfTo` (`PlayerDeathReason.cs:138-182`): the flag byte then the
+    /// present fields in bit order.
+    pub fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut b = BitsByte::new();
+        b.set(0, self.source_player_index != -1);
+        b.set(1, self.source_npc_index != -1);
+        b.set(2, self.source_projectile_local_index != -1);
+        b.set(3, self.source_other_index != -1);
+        b.set(4, self.source_projectile_type != 0);
+        b.set(5, self.source_item_type != 0);
+        b.set(6, self.source_item_prefix != 0);
+        b.set(7, self.source_custom_reason.is_some());
+        let mut w = w.bitsbyte(b);
+        if b.get(0) {
+            w = w.i16(self.source_player_index);
+        }
+        if b.get(1) {
+            w = w.i16(self.source_npc_index);
+        }
+        if b.get(2) {
+            w = w.i16(self.source_projectile_local_index);
+        }
+        if b.get(3) {
+            w = w.u8(self.source_other_index as u8);
+        }
+        if b.get(4) {
+            w = w.i16(self.source_projectile_type);
+        }
+        if b.get(5) {
+            w = w.i16(self.source_item_type);
+        }
+        if b.get(6) {
+            w = w.u8(self.source_item_prefix);
+        }
+        if let Some(reason) = &self.source_custom_reason {
+            w = w.str(reason);
+        }
+        w
+    }
+
+    /// `FromReader` (`PlayerDeathReason.cs:184-221`): absent fields keep the
+    /// constructor defaults (-1 / 0 / null).
+    pub fn read_from(r: &mut NetReader) -> Option<Self> {
+        let b = r.bitsbyte()?;
+        Some(Self {
+            source_player_index: if b.get(0) { r.i16()? } else { -1 },
+            source_npc_index: if b.get(1) { r.i16()? } else { -1 },
+            source_projectile_local_index: if b.get(2) { r.i16()? } else { -1 },
+            // The wire byte widens back to the int field; an absent flag
+            // keeps -1, a present 255 stays 255 (`LegacyDefault`).
+            source_other_index: if b.get(3) { r.u8()? as i16 } else { -1 },
+            source_projectile_type: if b.get(4) { r.i16()? } else { 0 },
+            source_item_type: if b.get(5) { r.i16()? } else { 0 },
+            source_item_prefix: if b.get(6) { r.u8()? } else { 0 },
+            source_custom_reason: if b.get(7) { Some(r.str()?) } else { None },
+        })
+    }
+}
+
+/// `msg 102 NebulaLevelupRequest`'s body (`NetMessage.cs:1377-1382`):
+/// `(byte)number, (ushort)number2, number3, number4` — the picker, the
+/// booster's `buffType` and the picker's centre (`Player.cs:35052` passes
+/// `Center.X`/`Center.Y` as the two floats). The host relays verbatim with
+/// the sender forced into the id byte (`MessageBuffer.cs:3654-3660`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NebulaLevelupRequest {
+    pub player_id: u8,
+    /// The booster item's `Item.buffType` — 173 life / 176 mana / 179 damage
+    /// (`MessageBuffer.cs:3681-3692`'s dust-kind switch).
+    pub buff_type: u16,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// `msg 117 PlayerHurtV2`'s body (`NetMessage.cs:1439-1446`): `(byte)number`,
+/// the death reason, `(short)number2` damage, `(byte)(number3 + 1f)`
+/// direction, `(byte)number4` the `BitsByte{bit0 critical, bit1 pvp}` packed
+/// by `SendPlayerHurt` (`:2601-2604`), `(sbyte)number5` the immunity-cooldown
+/// counter. The reader subtracts the 1 back off the direction
+/// (`MessageBuffer.cs:3874`) and unpacks bit0/bit1 (`:3875-3877`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerHurtV2 {
+    pub player_id: u8,
+    pub reason: PlayerDeathReason,
+    pub damage: i16,
+    /// The wire value is `hitDirection + 1` (`NetMessage.cs:1443`); -1 rides
+    /// as 0, +1 as 2. Stored un-offset like `NpcStrike.hit_direction`.
+    pub hit_direction: i8,
+    pub crit: bool,
+    pub pvp: bool,
+    /// `Player.Hurt`'s `cooldownCounter` (`ImmunityCooldownID`), an `sbyte`
+    /// on the wire (`NetMessage.cs:1445`, `MessageBuffer.cs:3878`).
+    pub cooldown_counter: i8,
+}
+
+impl PlayerHurtV2 {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut b = BitsByte::new();
+        b.set(0, self.crit);
+        b.set(1, self.pvp);
+        let w = w.u8(self.player_id);
+        let w = self.reason.write_to(w);
+        w.i16(self.damage)
+            .u8(self.hit_direction.wrapping_add(1) as u8)
+            .bitsbyte(b)
+            .i8(self.cooldown_counter)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let player_id = r.u8()?;
+        let reason = PlayerDeathReason::read_from(r)?;
+        let damage = r.i16()?;
+        let hit_direction = (r.u8()? as i8).wrapping_sub(1);
+        let b = r.bitsbyte()?;
+        let cooldown_counter = r.i8()?;
+        Some(Self {
+            player_id,
+            reason,
+            damage,
+            hit_direction,
+            crit: b.get(0),
+            pvp: b.get(1),
+            cooldown_counter,
+        })
+    }
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1648,6 +1852,14 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `102 NebulaLevelupRequest` - a client picked up a nebula booster
+    /// (`Player.PickupItem`, `Player.cs:35050-35053`; the host relays,
+    /// `MessageBuffer.cs:3657-3660`).
+    NebulaLevelupRequest(NebulaLevelupRequest),
+    /// `117 PlayerHurtV2` - a client took a hit (`Player.Hurt`'s
+    /// `netMode == 1` send, `Player.cs:38376`; the host applies + relays,
+    /// `MessageBuffer.cs:3867-3885`).
+    PlayerHurtV2(PlayerHurtV2),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1771,6 +1983,14 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `102 NebulaLevelupRequest` - a peer's booster pickup, relayed by the
+    /// host (`MessageBuffer.cs:3659`); the client runs the team level-up fan
+    /// (`:3662-3705`).
+    NebulaLevelupRequest(NebulaLevelupRequest),
+    /// `117 PlayerHurtV2` - a peer took a hit, relayed by the host via
+    /// `SendPlayerHurt` (`MessageBuffer.cs:3882`); the client replays
+    /// `Player.Hurt(quiet: true)` (`:3879`).
+    PlayerHurtV2(PlayerHurtV2),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1859,6 +2079,8 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
+            Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1927,6 +2149,13 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1377-1382`: (byte)number, (ushort)number2,
+            // number3, number4 — the two floats ride raw (`Utils.cs:1376-1380`).
+            Self::NebulaLevelupRequest(n) => {
+                w.u8(n.player_id).u16(n.buff_type).f32(n.x).f32(n.y)
+            }
+            // `NetMessage.cs:1439-1446` via `SendPlayerHurt` (`:2598-2605`).
+            Self::PlayerHurtV2(h) => h.write_to(w),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2049,6 +2278,17 @@ impl C2s {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // `MessageBuffer.cs:3654-3656`: (byte)id, (ushort)buffType,
+            // ReadVector2 (two raw floats, `Utils.cs:1392-1395`).
+            id::NEBULA_LEVELUP_REQUEST => Self::NebulaLevelupRequest(NebulaLevelupRequest {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3869-3878`: the direction byte minus 1, the
+            // crit/pvp BitsByte, the sbyte cooldown counter.
+            id::PLAYER_HURT_V2 => Self::PlayerHurtV2(PlayerHurtV2::read_from(r)?),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2209,6 +2449,8 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
+            Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
         }
     }
 
@@ -2351,6 +2593,13 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1377-1382`: (byte)number, (ushort)number2,
+            // number3, number4 — the two floats ride raw (`Utils.cs:1376-1380`).
+            Self::NebulaLevelupRequest(n) => {
+                w.u8(n.player_id).u16(n.buff_type).f32(n.x).f32(n.y)
+            }
+            // `NetMessage.cs:1439-1446` via `SendPlayerHurt` (`:2598-2605`).
+            Self::PlayerHurtV2(h) => h.write_to(w),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2553,6 +2802,17 @@ impl S2c {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // `MessageBuffer.cs:3654-3656`: (byte)id, (ushort)buffType,
+            // ReadVector2 (two raw floats, `Utils.cs:1392-1395`).
+            id::NEBULA_LEVELUP_REQUEST => Self::NebulaLevelupRequest(NebulaLevelupRequest {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3869-3878`: the direction byte minus 1, the
+            // crit/pvp BitsByte, the sbyte cooldown counter.
+            id::PLAYER_HURT_V2 => Self::PlayerHurtV2(PlayerHurtV2::read_from(r)?),
             _ => return None,
         })
     }
@@ -4709,5 +4969,141 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    // ---- W4-d97 (S1-I-1 player-family second half): per-id round trips ----
+    // Each test pins the frame's id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    #[test]
+    fn w4_d97_nebula_levelup_request_byte_pin() {
+        // `NetMessage.cs:1377-1382`: (byte)number, (ushort)number2, then the
+        // two raw floats (`Utils.cs:1376-1380`'s WriteVector2 order X, Y).
+        let n = NebulaLevelupRequest {
+            player_id: 6,
+            buff_type: 179, // the damage booster (`MessageBuffer.cs:3683`)
+            x: 4200.5,
+            y: 1100.25,
+        };
+        let mut body = vec![6];
+        body.extend_from_slice(&179u16.to_le_bytes());
+        body.extend_from_slice(&4200.5f32.to_bits().to_le_bytes());
+        body.extend_from_slice(&1100.25f32.to_bits().to_le_bytes());
+        let f = C2s::NebulaLevelupRequest(n).encode();
+        assert_eq!(f[2], 102);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::NebulaLevelupRequest(d) => assert_eq!(d, n),
+            other => panic!("expected 102, got {:?}", other.msg_id()),
+        }
+        // The host relay carries the same bytes (`MessageBuffer.cs:3659`).
+        let s = S2c::NebulaLevelupRequest(n).encode();
+        assert_eq!(s[2], 102);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::NebulaLevelupRequest(d) => assert_eq!(d, n),
+            other => panic!("expected 102, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d97_player_hurt_v2_byte_pin() {
+        // `NetMessage.cs:1439-1446`: (byte)number, the reason block,
+        // (short)damage, (byte)(direction + 1), the crit/pvp BitsByte
+        // (`SendPlayerHurt`, `:2601-2604`), (sbyte)cooldownCounter.
+        let h = PlayerHurtV2 {
+            player_id: 3,
+            reason: PlayerDeathReason {
+                source_player_index: 5,
+                source_npc_index: 40,
+                source_projectile_local_index: 12,
+                source_other_index: 255, // LegacyDefault's present 255
+                source_projectile_type: 442,
+                source_item_type: 757,
+                source_item_prefix: 81,
+                source_custom_reason: Some("Lava".into()),
+            },
+            damage: 120,
+            hit_direction: -1, // rides as 0
+            crit: true,
+            pvp: true,
+            cooldown_counter: -2,
+        };
+        // The reason block: all eight flags set (`PlayerDeathReason.cs:140-149`).
+        let mut body = vec![3, 0xFF];
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&40i16.to_le_bytes());
+        body.extend_from_slice(&12i16.to_le_bytes());
+        body.push(255); // (byte)otherIndex
+        body.extend_from_slice(&442i16.to_le_bytes());
+        body.extend_from_slice(&757i16.to_le_bytes());
+        body.push(81); // (byte)itemPrefix
+        body.push(4); // the string's 7-bit length
+        body.extend_from_slice(b"Lava");
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.push(0); // direction -1 + 1
+        body.push(0b11); // bit0 crit, bit1 pvp
+        body.push(0xFE); // (sbyte)-2
+        let f = C2s::PlayerHurtV2(h.clone()).encode();
+        assert_eq!(f[2], 117);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerHurtV2(d) => assert_eq!(d, h),
+            other => panic!("expected 117, got {:?}", other.msg_id()),
+        }
+        let s = S2c::PlayerHurtV2(h.clone()).encode();
+        assert_eq!(s[2], 117);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::PlayerHurtV2(d) => assert_eq!(d, h),
+            other => panic!("expected 117, got {:?}", other.msg_id()),
+        }
+        // The +1 direction wraps the other way too: +1 rides as 2
+        // (`MessageBuffer.cs:3874` reads it back with the -1).
+        let mut h2 = h;
+        h2.hit_direction = 1;
+        h2.crit = false;
+        h2.pvp = false;
+        let f2 = C2s::PlayerHurtV2(h2.clone()).encode();
+        let dir_at = body.len() - 3; // body tail: dir, bits, sbyte
+        assert_eq!(f2[3 + dir_at], 2);
+        assert_eq!(f2[3 + dir_at + 1], 0);
+        match C2s::decode(f2[2], &mut NetReader::new(&f2[3..])).expect("decode") {
+            C2s::PlayerHurtV2(d) => assert_eq!(d, h2),
+            other => panic!("expected 117, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d97_death_reason_defaults_and_legacy_default() {
+        // The empty reason writes the bare 0 flag byte
+        // (`PlayerDeathReason.cs:140-149` with every field at its default)
+        // and reads back to the -1/0/null defaults (`:184-221`).
+        let empty = PlayerDeathReason::default();
+        let f = empty.write_to(NetWriter::open(id::PLAYER_HURT_V2)).finish();
+        assert_eq!(&f[3..], &[0]);
+        let back = PlayerDeathReason::read_from(&mut NetReader::new(&f[3..])).expect("decode");
+        assert_eq!(back, empty);
+        // `LegacyDefault` (`PlayerDeathReason.cs:71-77`): otherIndex 255 is
+        // PRESENT (255 != -1), so bit3 sets and the byte 255 rides.
+        let legacy = PlayerDeathReason {
+            source_other_index: 255,
+            ..Default::default()
+        };
+        let f = legacy.write_to(NetWriter::open(id::PLAYER_HURT_V2)).finish();
+        assert_eq!(&f[3..], &[0b0000_1000, 255]);
+        let back = PlayerDeathReason::read_from(&mut NetReader::new(&f[3..])).expect("decode");
+        assert_eq!(back, legacy);
+        // `ByNPC` (`:79-85`): only bit1 + the (short) npc slot.
+        let by_npc = PlayerDeathReason {
+            source_npc_index: 17,
+            ..Default::default()
+        };
+        let f = by_npc.write_to(NetWriter::open(id::PLAYER_HURT_V2)).finish();
+        let mut body = vec![0b0000_0010];
+        body.extend_from_slice(&17i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let back = PlayerDeathReason::read_from(&mut NetReader::new(&f[3..])).expect("decode");
+        assert_eq!(back, by_npc);
     }
 }
