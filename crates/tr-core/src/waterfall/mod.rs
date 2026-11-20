@@ -58,12 +58,14 @@ pub struct SparkleSpawn {
     pub y: f32,
 }
 
-/// The `Main.ambientLavafallX/Y/Strength` triple `DrawWaterfall` leaves behind
-/// (`WaterfallManager.cs:333-337` init, `:685-707` accumulation, `:963-965`
-/// store): the summed near-screen strength of the lava falls (kind 1) and the
-/// nearest segment's cell-centre world pixel (`x*16+8` / `y*16+8`). `x`/`y`
-/// stay `-1` when no lava fall was visited; `Main.cs:67232-67234` resets the
-/// same triple on world load.
+/// One `Main.ambient*fallX/Y/Strength` triple `DrawWaterfall` leaves behind —
+/// the water-style scan (`WaterfallManager.cs:328-332` init, `:708-729`
+/// accumulation, `:960-962` store) or the lavafall scan (`:333-337` init,
+/// `:685-707` accumulation, `:963-965` store): the summed near-screen strength
+/// of the contributing falls and the nearest segment's cell-centre world pixel
+/// (`x*16+8` / `y*16+8`). `x`/`y` stay `-1` when no contributing fall was
+/// visited (honey falls contribute to neither scan); `Main.cs:67230-67234`
+/// resets both triples on world load.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AmbientScan {
     pub x: f32,
@@ -82,8 +84,8 @@ impl Default for AmbientScan {
 }
 
 /// `Main.screenPosition` / `screenWidth` / `screenHeight` in pixels, the inputs
-/// of the lavafall ambience distance scan (`WaterfallManager.cs:687-691`) and
-/// the rain-arm view cull (`:381`).
+/// of the two ambience distance scans (`WaterfallManager.cs:687-691` /
+/// `:710-714`) and the rain-arm view cull (`:381`).
 #[derive(Clone, Copy, Debug)]
 pub struct ScreenInfo {
     /// `Main.screenPosition`: the view's top-left corner.
@@ -459,10 +461,11 @@ impl WaterfallManager {
     /// `DoDraw_Waterfalls` site (`Main.cs:63281`) runs after `DrawWaters`,
     /// which sets it true (`:57938`), but `Draw()` clears it first.
     ///
-    /// Returns the `AddLight` rows and the `Main.ambientLavafallX/Y/Strength`
-    /// scan of the LAST pass (`WaterfallManager.cs:963-965` — each
-    /// `DrawWaterfall` call overwrites the triple; the water-style ambience
-    /// `:960-962` stays with the waterfall co-lane).
+    /// Returns the `AddLight` rows plus the `Main.ambientWaterfallX/Y/Strength`
+    /// and `Main.ambientLavafallX/Y/Strength` scans of the LAST pass
+    /// (`WaterfallManager.cs:960-965` — each `DrawWaterfall` call overwrites
+    /// both triples). Honey falls (kind 14) feed neither scan: the second
+    /// ambience arm excludes them verbatim (`:708`).
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
@@ -475,7 +478,7 @@ impl WaterfallManager {
         sparkle_seed: u64,
         screen: ScreenInfo,
         drew_lava: bool,
-    ) -> (Vec<DynamicLight>, AmbientScan) {
+    ) -> (Vec<DynamicLight>, AmbientScan, AmbientScan) {
         for w in &mut self.waterfalls[..self.current_max] {
             w.stop_at_step = self.waterfall_dist;
         }
@@ -491,10 +494,12 @@ impl WaterfallManager {
         // list's `stop_at_step` bookkeeping, so it cannot borrow `self` twice.
         let mut quads = Vec::new();
         let mut lights = Vec::new();
-        // `Main.ambientLavafall*` start at the `Main.cs:67232-67234` load
-        // reset; each pass overwrites the triple (`WaterfallManager.cs:963-965`),
-        // so the last active pass wins. No active pass leaves the reset values.
-        let mut ambient = AmbientScan::default();
+        // `Main.ambientWaterfall*`/`ambientLavafall*` start at the
+        // `Main.cs:67230-67234` load reset; each pass overwrites both triples
+        // (`WaterfallManager.cs:960-965`), so the last active pass wins. No
+        // active pass leaves the reset values.
+        let mut water_ambient = AmbientScan::default();
+        let mut lava_ambient = AmbientScan::default();
         // The sparkle draws use `Main.rand`; the port pins the stream to a
         // frame-derived seed so screenshots stay deterministic.
         let mut sparkle_rng = FastRandom::new(sparkle_seed);
@@ -513,7 +518,7 @@ impl WaterfallManager {
             (13, 24),
         ] {
             if liquid_alpha[idx] > 0.0 {
-                ambient = self.draw_waterfall(
+                (water_ambient, lava_ambient) = self.draw_waterfall(
                     fall_style as i32,
                     liquid_alpha[idx],
                     world,
@@ -530,7 +535,7 @@ impl WaterfallManager {
             }
         }
         self.pending_quads = quads;
-        (lights, ambient)
+        (lights, water_ambient, lava_ambient)
     }
 
     /// The `TrySparkling` spawns accumulated by the last [`Self::draw`].
@@ -700,7 +705,7 @@ mod tests {
             a[0] = 1.0;
             a
         };
-        let (lights, _) = mgr.draw(
+        let (lights, _, _) = mgr.draw(
             &w, &light, &style, 0.0, &alpha, 190, 0,
             ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
             false,
@@ -757,12 +762,13 @@ mod tests {
                 width: 640.0,
                 height: 640.0,
             };
-            let (lights_a, amb_a) =
+            let (lights_a, wamb_a, lamb_a) =
                 a.draw(&wa, &la, &style, frame as f32 / 60.0, &alpha, 190, seed, screen, false);
-            let (lights_b, amb_b) =
+            let (lights_b, wamb_b, lamb_b) =
                 b.draw(&wb, &lb, &style, frame as f32 / 60.0, &alpha, 190, seed, screen, false);
             assert_eq!(lights_a, lights_b);
-            assert_eq!(amb_a, amb_b);
+            assert_eq!(wamb_a, wamb_b);
+            assert_eq!(lamb_a, lamb_b);
             assert_eq!(a.take_quads(), b.take_quads());
             assert_eq!(a.pending_sparkles, b.pending_sparkles);
         }
@@ -791,7 +797,7 @@ mod tests {
             a[0] = 1.0;
             a
         };
-        let (lights, _) = mgr.draw(
+        let (lights, _, _) = mgr.draw(
             &w, &light, &style, 0.0, &alpha, 255, 0,
             ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
             false,
@@ -869,7 +875,7 @@ mod tests {
         // segment is inside the 2x box, so each contributes
         // `1 - dist/(640*0.75)`; the nearest cell is the spout head itself.
         let screen = screen_at(168.0 - 320.0, 168.0 - 320.0);
-        let (_, scan) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+        let (_, _, scan) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
         assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
         assert_eq!(scan.y, 10.0 * 16.0 + 8.0);
         // The straight drop walks until the world edge (y = 59): 50 segments,
@@ -902,7 +908,7 @@ mod tests {
         mgr.update_tick();
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        let (_, scan) = mgr.draw(
+        let (_, _, scan) = mgr.draw(
             &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
         );
         assert_eq!(scan, AmbientScan::default());
@@ -926,9 +932,9 @@ mod tests {
         let near = screen_at(168.0 - 320.0, 168.0 - 320.0);
         let mut single = [0.0f32; 15];
         single[0] = 1.0;
-        let (_, scan_single) = mgr.draw(&w, &light, &style, 0.0, &single, 190, 0, near, false);
+        let (_, _, scan_single) = mgr.draw(&w, &light, &style, 0.0, &single, 190, 0, near, false);
         assert!(scan_single.strength > 0.0);
-        let (_, scan_both) = mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, near, false);
+        let (_, _, scan_both) = mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, near, false);
         assert_eq!(scan_both, scan_single);
     }
 
@@ -1015,8 +1021,9 @@ mod tests {
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         let screen = screen_at(0.0, 0.0);
-        let (dim, _) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
-        let (bright, _) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false);
+        let (dim, _, _) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+        let (bright, _, _) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false);
         assert_eq!(dim.len(), bright.len());
         assert!(!dim.is_empty());
         let n_dim = (0.55 + (270.0 - 190.0) / 900.0) * 0.4;

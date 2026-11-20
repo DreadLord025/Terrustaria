@@ -18,8 +18,8 @@ fn blocks_water_drawing_behind_self(kind: u16) -> bool {
 
 impl WaterfallManager {
     /// `WaterfallManager.DrawWaterfall`. Returns the pass's
-    /// `Main.ambientLavafallX/Y/Strength` store (`WaterfallManager.cs:963-965`);
-    /// the water-style ambience (`:960-962`) stays with the waterfall co-lane.
+    /// `Main.ambientWaterfallX/Y/Strength` + `Main.ambientLavafallX/Y/Strength`
+    /// stores (`WaterfallManager.cs:960-965`), in that order.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_waterfall(
         &mut self,
@@ -35,7 +35,15 @@ impl WaterfallManager {
         drew_lava: bool,
         out: &mut Vec<WaterfallDraw>,
         lights: &mut Vec<DynamicLight>,
-    ) -> AmbientScan {
+    ) -> (AmbientScan, AmbientScan) {
+        // The water-style ambience locals (`WaterfallManager.cs:328-332`): num
+        // strength, num2/num3 nearest distances (99999 sentinels), num4/num5
+        // the nearest segment's cell-centre world pixels (-1 until visited).
+        let mut num = 0.0f32;
+        let mut num2 = 99999.0f32;
+        let mut num3 = 99999.0f32;
+        let mut num4 = -1i32;
+        let mut num5 = -1i32;
         // The lavafall ambience locals (`WaterfallManager.cs:333-337`): num6
         // strength, num7/num8 nearest distances (99999 sentinels), num9/num10
         // the nearest segment's cell-centre world pixels (-1 until visited).
@@ -340,6 +348,38 @@ impl WaterfallManager {
                     if num36 < num8 {
                         num8 = num35;
                         num10 = num14 * 16 + 8;
+                    }
+                } else if num12 != 1
+                    && num12 != 14
+                    && num12 != 25
+                    && num12 != 11
+                    && num12 != 12
+                    && num12 != 22
+                {
+                    // `Main.ambientWaterfall*` scan (`WaterfallManager.cs:708-729`):
+                    // the same near-screen strength sum for every fall type
+                    // EXCEPT the lava (1), honey (14), shimmer (25) and the
+                    // rain arms (11/12/22) — the honey fall contributes to
+                    // neither ambience triple. The Y arm keeps the original's
+                    // verbatim quirk (`:725-728`): it tests num39 but stores
+                    // num38 (the X distance) into num3.
+                    let centre = screen.centre();
+                    let num38 = ((num13 * 16 + 8) as f32 - centre[0]).abs();
+                    let num39 = ((num14 * 16 + 8) as f32 - centre[1]).abs();
+                    if num38 < screen.width * 2.0 && num39 < screen.height * 2.0 {
+                        let num40 = 1.0
+                            - (num38 * num38 + num39 * num39).sqrt() / (screen.width * 0.75);
+                        if num40 > 0.0 {
+                            num += num40;
+                        }
+                    }
+                    if num38 < num2 {
+                        num2 = num38;
+                        num4 = num13 * 16 + 8;
+                    }
+                    if num39 < num3 {
+                        num3 = num38;
+                        num5 = num14 * 16 + 8;
                     }
                 }
 
@@ -681,13 +721,20 @@ impl WaterfallManager {
                 k += 1;
             }
         }
-        // `WaterfallManager.cs:963-965`: the lavafall triple store (the water
-        // triple `:960-962` belongs to the waterfall co-lane's scan).
-        AmbientScan {
-            x: num9 as f32,
-            y: num10 as f32,
-            strength: num6,
-        }
+        // `WaterfallManager.cs:960-965`: the water-style then lavafall triple
+        // stores, verbatim order.
+        (
+            AmbientScan {
+                x: num4 as f32,
+                y: num5 as f32,
+                strength: num,
+            },
+            AmbientScan {
+                x: num9 as f32,
+                y: num10 as f32,
+                strength: num6,
+            },
+        )
     }
 }
 

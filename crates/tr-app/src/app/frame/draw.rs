@@ -661,7 +661,7 @@ impl App {
                         // port `oldDrawWater`'s true-store (`:57938`), so the
                         // flag rides false; `WaterfallManager.Draw` clears it
                         // at `:1125` either way.
-                        let (lights, lavafall_scan) = waterfall.draw(
+                        let (lights, waterfall_scan, lavafall_scan) = waterfall.draw(
                             world,
                             light,
                             &style,
@@ -673,13 +673,19 @@ impl App {
                             false,
                         );
                         scratch.waterfall_quads = waterfall.take_quads();
+                        // `Main.ambientWaterfallX/Y/Strength` +
                         // `Main.ambientLavafallX/Y/Strength`
-                        // (`WaterfallManager.cs:685-707` scan, `:963-965`
-                        // store): the walk's kind-1 near-screen strength sum
-                        // and the nearest segment's cell-centre world pixels
-                        // — the lavafall loop's volume/pan inputs. The
-                        // water-style triple (`:960-962`) stays with the
-                        // waterfall co-lane.
+                        // (`WaterfallManager.cs:685-729` scans, `:960-965`
+                        // stores): the near-screen strength sums and the
+                        // nearest segments' cell-centre world pixels — the
+                        // waterfall/lavafall loops' volume/pan inputs
+                        // (`Main.Ambience`, `Main.cs:13475-13508`). Honey
+                        // falls feed neither triple (`:708`'s kind-14 skip).
+                        self.ambient_waterfall = (
+                            waterfall_scan.strength,
+                            waterfall_scan.x,
+                            waterfall_scan.y,
+                        );
                         self.ambient_lavafall = (
                             lavafall_scan.strength,
                             lavafall_scan.x,
