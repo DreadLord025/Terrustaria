@@ -1852,10 +1852,11 @@ mod tests {
     fn the_living_wood_leaf_draws_the_sideways_roll_unconditionally() {
         let mut w = world();
         put(&mut w, 50, 50, 192, 0, 0);
-        // N3500 pass (14000/4), N1200 refuse, N2 -> 1 (no sideways).
+        // N3500 pass (14000/4), N2 -> 1 (no sideways, drawn INSIDE the
+        // leaf emit), N1200 refuse.
         let mut rand = ScriptRand::new().with(&[0, 1, 1]);
         let (_, _, gore, _) = run(&w, 50, 50, &ctx(), &mut rand, 1);
-        assert_eq!(rand.log, vec!["N3500", "N1200", "N2"]);
+        assert_eq!(rand.log, vec!["N3500", "N2", "N1200"]);
         // The below-spawn fired (calm wind, open air below).
         assert!(gore.slot(0).active);
         assert_eq!(gore.slot(0).gore_type, 910);
@@ -2080,7 +2081,8 @@ mod tests {
             }
         }
         let (rand, gore) = found.expect("a seed whose RollLuck(100) gate passes");
-        assert_eq!(&rand.log[..prefix.len()], &prefix[..]);
+        let got: Vec<&str> = rand.log.iter().map(|s| s.as_str()).collect();
+        assert_eq!(&got[..prefix.len()], &prefix[..]);
         // The second gore of the pair is a fresh NewGore then a field
         // copy of the first (`:6709-6712`).
         assert!(gore.slot(1).active, "the second gore of the pair");
