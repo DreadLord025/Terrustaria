@@ -1464,6 +1464,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // nothing; the attenuation gate still applies.
                 app.audio.play_death_sound(p.x, p.y);
             }
+            // W4-f3 — the petrify-transition burst (`Player.cs:25226-25233`):
+            // the stoned edge queues 20 type-1 puffs + the per-puff `Next(2)`
+            // noGravity roll. The C#'s `PlaySound(0)` (`:25225`) is a cited
+            // seam (the stoned hurt rides `hurt_inner`'s own cue above), so the
+            // drain replays only the dust chain on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_stoned_dust() {
+                crate::player_dust::drain_stoned_dust(app, burst);
+            }
             // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
             // fast-run footstep at the player's top-left position — the
             // case-17 `Main.rand.Next(-10, 11)` pitch roll (`:862`) rides
@@ -1522,6 +1530,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_dash_dust() {
                 crate::player_dust::drain_dash_dust(app, burst);
             }
+            // W4-f3 — the `DoubleJumpVisuals` trail (`Player.cs:21892-22021`):
+            // the performing-jump arm's per-tick dust, snapshotted at the C#
+            // read moment; the drain follows the dash dust on the same
+            // `UpdatePlayers` stream (the C# runs `DoubleJumpVisuals` at
+            // `:26767`, right after `DashMovement` `:26757`).
+            if let Some(burst) = p.take_double_jump_dust() {
+                crate::player_dust::drain_double_jump_dust(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
@@ -1538,6 +1554,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // Volume/Pan only — no draws, no stream.
             if p.take_drown_sound() {
                 app.audio.play_drown_sound();
+            }
+            // W4-f3 — the drowning bubble (`Player.cs:23283-23316`): the
+            // `Next(20)` gate drew on the tick side; the type-34 puff rides the
+            // pool's own wet-probe kill. Same stream, after the gasp.
+            if let Some((mouth, width)) = p.take_drown_bubble() {
+                crate::player_dust::drain_drown_bubble(app, mouth, width);
             }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.

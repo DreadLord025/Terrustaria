@@ -21,9 +21,15 @@
 //! `gravDir` is the vanilla `1f` (the port has no gravity flip, the
 //! `sticky_movement` convention, `Player.cs:1956`), so the `gravDir == -1`
 //! height/offset folds collapse to their `+1` arms.
+//!
+//! W4-f3 scope (third batch, `Player.cs:21654-27933`): the `DoubleJumpVisuals`
+//! per-tick trail (`:21892-22021`), the petrify-transition burst (`:25226-25233`)
+//! and the `CheckDrowning` bubble (`:23283-23316`). The `Gore.NewGore` sibling of
+//! the Sandstorm visual arm (`:21922`) is the gore lane's (W4-d55) — its
+//! `Main.rand` draw is a documented skip here.
 
 use crate::app::App;
-use crate::player::{DashDust, ExtraJump, FastRunArm, FastRunDust, JumpDust};
+use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, JumpDust, StonedDust};
 use glam::Vec2;
 use tr_core::particles::Color;
 
@@ -728,6 +734,249 @@ fn fast_run_plain(app: &mut App, b: &FastRunDust) {
     let d = app.dust.slot_mut(idx);
     d.velocity.x *= 0.2;
     d.velocity.y *= 0.2;
+}
+
+// ---- W4-f3: the DoubleJumpVisuals per-tick trail (`Player.cs:21892-22021`) --
+
+/// Drain the `DoubleJumpVisuals` dust trail (`Player.cs:21892-22021`). Called
+/// after the dash dust on the `UpdatePlayers` stream (the C# runs
+/// `DoubleJumpVisuals` at `:26767`, right after `DashMovement` `:26757`). The
+/// tick snapshotted the box/velocity/jump-counter at the C# read moment; each
+/// arm replays its `Dust.NewDust` chain in source order. The performing flag is
+/// the single active arm (the C#'s `isPerformingJump_*` flags are mutually
+/// exclusive — one extra jump per ascent).
+pub(crate) fn drain_double_jump_dust(app: &mut App, b: DoubleJumpDust) {
+    match b.kind {
+        ExtraJump::Cloud => dj_cloud(app, &b),
+        ExtraJump::Sandstorm => dj_sandstorm(app, &b),
+        ExtraJump::Fart => dj_fart(app, &b),
+        ExtraJump::Unicorn => dj_unicorn(app, &b),
+        ExtraJump::Sail => dj_sail(app, &b),
+        ExtraJump::Blizzard => dj_blizzard(app, &b),
+        // Santank / WallOfFleshGoat / Basilisk have no DoubleJumpVisuals arm.
+        _ => {}
+    }
+}
+
+/// `:21894-21904` — the Cloud's one type-16 puff, box `(width+8)×4` at
+/// `(x-4, y+height)`, speed `(-vx*0.5, vy*0.5)`, alpha 100, scale 1.5. Post:
+/// the Fart-style velocity arms (no RNG).
+fn dj_cloud(app: &mut App, b: &DoubleJumpDust) {
+    let pos = Vec2::new(b.x - 4.0, b.y + b.height);
+    let idx = nd(
+        app,
+        pos,
+        b.width as i32 + 8,
+        4,
+        16,
+        -b.vx * 0.5,
+        b.vy * 0.5,
+        100,
+        Color::default(),
+        1.5,
+    );
+    let d = app.dust.slot_mut(idx);
+    d.velocity.x = d.velocity.x * 0.5 - b.vx * 0.1;
+    d.velocity.y = d.velocity.y * 0.5 - b.vy * 0.3;
+}
+
+/// `:21905-21926` — the Sandstorm's 3 type-124 puffs, box `width×32` at
+/// `(x, y+height/2)`, speed `(vx*0.3, vy*0.3)`, alpha 150, scale `1*num4`
+/// where `num4 = (jump/75 + 1)/2`. Post: `velocity *= 0.5*num4`,
+/// `fadeIn = 1.5*num4`. The `Gore.NewGore` sibling (`:21922`, the
+/// `miscCounter % 3 == 0` arm) is the gore lane's (W4-d55 skip).
+fn dj_sandstorm(app: &mut App, b: &DoubleJumpDust) {
+    let num4 = (b.jump as f32 / 75.0 + 1.0) / 2.0;
+    let pos = Vec2::new(b.x, b.y + b.height * 0.5);
+    for _ in 0..3 {
+        let idx = nd(
+            app,
+            pos,
+            b.width as i32,
+            32,
+            124,
+            b.vx * 0.3,
+            b.vy * 0.3,
+            150,
+            Color::default(),
+            num4,
+        );
+        let d = app.dust.slot_mut(idx);
+        d.velocity *= 0.5 * num4;
+        d.fade_in = 1.5 * num4;
+    }
+}
+
+/// `:21927-21938` — the Fart's one type-188 puff, the Cloud shape plus a final
+/// `velocity *= 0.5` (no RNG).
+fn dj_fart(app: &mut App, b: &DoubleJumpDust) {
+    let pos = Vec2::new(b.x - 4.0, b.y + b.height);
+    let idx = nd(
+        app,
+        pos,
+        b.width as i32 + 8,
+        4,
+        188,
+        -b.vx * 0.5,
+        b.vy * 0.5,
+        100,
+        Color::default(),
+        1.5,
+    );
+    let d = app.dust.slot_mut(idx);
+    d.velocity.x = d.velocity.x * 0.5 - b.vx * 0.1;
+    d.velocity.y = d.velocity.y * 0.5 - b.vy * 0.3;
+    d.velocity *= 0.5;
+}
+
+/// `:21939-21947` — the Unicorn's one puff of a rolled type
+/// (`SelectRandom(176,177,179)` — a `Next(3)` BEFORE the `NewDust` internals),
+/// box `width×height` at `position`. Post: `velocity = Zero`, `noGravity`,
+/// `scale = 0.5 + NextFloat*0.8`, `fadeIn = 1 + NextFloat*2`.
+fn dj_unicorn(app: &mut App, b: &DoubleJumpDust) {
+    let ty = {
+        let r = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        [176, 177, 179][r.next_max(3) as usize]
+    };
+    let idx = nd(
+        app,
+        Vec2::new(b.x, b.y),
+        b.width as i32,
+        b.height as i32,
+        ty,
+        0.0,
+        0.0,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let d = app.dust.slot_mut(idx);
+    d.velocity = Vec2::ZERO;
+    d.no_gravity = true;
+    d.scale = 0.5 + rng.next_float() * 0.8;
+    d.fade_in = 1.0 + rng.next_float() * 2.0;
+}
+
+/// `:21948-21977` — the Sail's 1-or-2 type-253 puffs (`num9 = 2` while
+/// `jump > 0`, else 1), box `width×12` at `(x, y+height-6)`, speed
+/// `(vx*0.3, vy*0.3)`, alpha 100, scale 1.5. Per puff: `scale += Next(-5,3)*0.1`,
+/// then `scale *= 0.8` (jump <= 0) or `velocity -= base.velocity/5` (jump > 0),
+/// `noGravity`, then the DEAD `vector` draws `Next(-100,101)`×2 + `Next(81)`.
+fn dj_sail(app: &mut App, b: &DoubleJumpDust) {
+    let num9 = if b.jump > 0 { 2 } else { 1 };
+    let pos = Vec2::new(b.x, b.y + b.height - 6.0);
+    for _ in 0..num9 {
+        let idx = nd(
+            app,
+            pos,
+            b.width as i32,
+            12,
+            253,
+            b.vx * 0.3,
+            b.vy * 0.3,
+            100,
+            Color::default(),
+            1.5,
+        );
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.scale += rng.next_range(-5, 3) as f32 * 0.1;
+        if b.jump <= 0 {
+            d.scale *= 0.8;
+        } else {
+            d.velocity -= Vec2::new(b.vx, b.vy) / 5.0;
+        }
+        d.no_gravity = true;
+        // The dead `vector` local (`:21973-21975`): three draws, no effect.
+        let _ = rng.next_range(-100, 101);
+        let _ = rng.next_range(-100, 101);
+        let _ = rng.next_max(81);
+    }
+}
+
+/// `:21978-22020` — the Blizzard's three type-76 loops (2 + 3 + 3), box
+/// `width×12` at `(x, y+height-6)`, speed `(vx*0.3, vy*0.3)`. Loop 1:
+/// `velocity *= 0.1`, `± base.velocity*0.03` (k==0 add / else subtract),
+/// `- base.velocity*0.1`, `noGravity`, `noLight`. Loops 2/3: `fadeIn = 1.5`,
+/// `velocity *= 0.6`, `± base.velocity*0.8`, `noGravity`, `noLight`.
+fn dj_blizzard(app: &mut App, b: &DoubleJumpDust) {
+    let pos = Vec2::new(b.x, b.y + b.height - 6.0);
+    let v = Vec2::new(b.vx, b.vy);
+    for k in 0..2 {
+        let idx = nd(app, pos, b.width as i32, 12, 76, b.vx * 0.3, b.vy * 0.3, 0, Color::default(), 1.0);
+        let d = app.dust.slot_mut(idx);
+        d.velocity *= 0.1;
+        if k == 0 {
+            d.velocity += v * 0.03;
+        } else {
+            d.velocity -= v * 0.03;
+        }
+        d.velocity -= v * 0.1;
+        d.no_gravity = true;
+        d.no_light = true;
+    }
+    for _ in 0..3 {
+        let idx = nd(app, pos, b.width as i32, 12, 76, b.vx * 0.3, b.vy * 0.3, 0, Color::default(), 1.0);
+        let d = app.dust.slot_mut(idx);
+        d.fade_in = 1.5;
+        d.velocity *= 0.6;
+        d.velocity += v * 0.8;
+        d.no_gravity = true;
+        d.no_light = true;
+    }
+    for _ in 0..3 {
+        let idx = nd(app, pos, b.width as i32, 12, 76, b.vx * 0.3, b.vy * 0.3, 0, Color::default(), 1.0);
+        let d = app.dust.slot_mut(idx);
+        d.fade_in = 1.5;
+        d.velocity *= 0.6;
+        d.velocity -= v * 0.8;
+        d.no_gravity = true;
+        d.no_light = true;
+    }
+}
+
+// ---- W4-f3: the petrify-transition burst (`Player.cs:25226-25233`) ----------
+
+/// Drain the petrify-transition burst (`Player.cs:25226-25233`): 20 type-1
+/// puffs over the player box, each followed by a `Next(2)` that sets
+/// `noGravity` on a 0. The C# plays `PlaySound(0)` at `position` (`:25225`)
+/// BEFORE the loop; the sound is a cited seam (the port's stoned hurt rides
+/// `hurt_inner`'s own cue), so the drain replays only the dust chain.
+pub(crate) fn drain_stoned_dust(app: &mut App, b: StonedDust) {
+    let pos = Vec2::new(b.x, b.y);
+    for _ in 0..20 {
+        let idx = nd(
+            app,
+            pos,
+            b.width as i32,
+            b.height as i32,
+            1,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.0,
+        );
+        let roll = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .next_max(2);
+        if roll == 0 {
+            app.dust.slot_mut(idx).no_gravity = true;
+        }
+    }
+}
+
+// ---- W4-f3: the CheckDrowning bubble (`Player.cs:23283-23316`) --------------
+
+/// Drain the drowning bubble (`Player.cs:23283-23316`): one type-34 puff,
+/// box `(width-8)×8` at the mouth position, speed `(0,0)`, alpha 0, scale 1.2.
+/// The `Next(20) != 0` gate (`:23283`) is drawn on the tick side (it gates the
+/// whole bubble, lava/honey-wet excluded); the type-34 wet-probe kill rides
+/// `DustPool::new_dust` verbatim (`Dust.cs:248-250`).
+pub(crate) fn drain_drown_bubble(app: &mut App, pos: Vec2, width: f32) {
+    nd(app, pos, width as i32 - 8, 8, 34, 0.0, 0.0, 0, Color::default(), 1.2);
 }
 
 #[cfg(test)]
@@ -1586,6 +1835,209 @@ mod tests {
         let _ = rng.next_max(3);
         let _ = rng.next_range(-20, 21);
         assert_eq!(d.velocity, Vec2::new(vx, vyy));
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 6));
+    }
+
+    // ---- W4-f3: DoubleJumpVisuals / stoned / drowning-bubble witnesses ------
+
+    fn dj_burst(kind: ExtraJump) -> DoubleJumpDust {
+        DoubleJumpDust {
+            kind,
+            x: 300.0,
+            y: 600.0,
+            width: 20.0,
+            height: 42.0,
+            vx: 3.0,
+            vy: -5.01,
+            jump: 30,
+        }
+    }
+
+    /// The six default `NewDust` draws (`Dust.cs:153-193`): position X/Y,
+    /// velocity X/Y, frame row, scale. Returns the rolled velocity + scale.
+    fn default_six(rng: &mut UnifiedRandom, w: i32, h: i32, sx: f32, sy: f32, scale_arg: f32) -> (Vec2, f32) {
+        let _ = rng.next_max(w.max(5) - 4);
+        let _ = rng.next_max(h.max(5) - 4);
+        let vx = rng.next_range(-20, 21) as f32 * 0.1 + sx;
+        let vy = rng.next_range(-20, 21) as f32 * 0.1 + sy;
+        let _ = rng.next_max(3);
+        let scale = (1.0 + rng.next_range(-20, 21) as f32 * 0.01) * scale_arg;
+        (Vec2::new(vx, vy), scale)
+    }
+
+    /// `:21894-21904` — the Cloud visual: one type-16, the Fart-style velocity
+    /// post-arms, 6 draws.
+    #[test]
+    fn w4_f3_the_cloud_visual_mirrors_the_fart_shape() {
+        let mut app = rig(0x5EED);
+        let b = dj_burst(ExtraJump::Cloud);
+        drain_double_jump_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 16);
+        assert_eq!(d.alpha, 100);
+        let (v, _) = default_six(&mut rng, b.width as i32 + 8, 4, -b.vx * 0.5, b.vy * 0.5, 1.5);
+        assert_eq!(d.velocity.x, v.x * 0.5 - b.vx * 0.1);
+        assert_eq!(d.velocity.y, v.y * 0.5 - b.vy * 0.3);
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 6));
+    }
+
+    /// `:21905-21918` — the Sandstorm visual: 3 type-124 puffs, scale arg
+    /// `num4 = (jump/75+1)/2`, post `velocity *= 0.5*num4` / `fadeIn = 1.5*num4`.
+    #[test]
+    fn w4_f3_the_sandstorm_visual_scales_by_the_jump_counter() {
+        let mut app = rig(0x5EED);
+        let b = dj_burst(ExtraJump::Sandstorm);
+        drain_double_jump_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 3);
+        let num4 = (b.jump as f32 / 75.0 + 1.0) / 2.0;
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 124);
+            assert_eq!(d.alpha, 150);
+            let (v, _) = default_six(&mut rng, b.width as i32, 32, b.vx * 0.3, b.vy * 0.3, num4);
+            assert_eq!(d.velocity, v * (0.5 * num4));
+            assert_eq!(d.fade_in, 1.5 * num4);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 3 * 6));
+    }
+
+    /// `:21927-21938` — the Fart visual: the Cloud shape plus `velocity *= 0.5`.
+    #[test]
+    fn w4_f3_the_fart_visual_halves_again() {
+        let mut app = rig(0x5EED);
+        let b = dj_burst(ExtraJump::Fart);
+        drain_double_jump_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 188);
+        let (v, _) = default_six(&mut rng, b.width as i32 + 8, 4, -b.vx * 0.5, b.vy * 0.5, 1.5);
+        let post = Vec2::new(v.x * 0.5 - b.vx * 0.1, v.y * 0.5 - b.vy * 0.3) * 0.5;
+        assert_eq!(d.velocity, post);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 6));
+    }
+
+    /// `:21939-21947` — the Unicorn visual: one rolled type (`Next(3)` before
+    /// the internals), zero velocity, `scale = 0.5 + NextFloat*0.8`,
+    /// `fadeIn = 1 + NextFloat*2`. 9 draws.
+    #[test]
+    fn w4_f3_the_unicorn_visual_rolls_one_type() {
+        let mut app = rig(0x5EED);
+        let b = dj_burst(ExtraJump::Unicorn);
+        drain_double_jump_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let ty = [176, 177, 179][rng.next_max(3) as usize];
+        let d = slots[0];
+        assert_eq!(d.dust_type, ty);
+        let _ = default_six(&mut rng, b.width as i32, b.height as i32, 0.0, 0.0, 1.0);
+        assert_eq!(d.velocity, Vec2::ZERO);
+        assert!(d.no_gravity);
+        assert_eq!(d.scale, 0.5 + rng.next_float() * 0.8);
+        assert_eq!(d.fade_in, 1.0 + rng.next_float() * 2.0);
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 9));
+    }
+
+    /// `:21948-21977` — the Sail visual: 2 puffs while `jump > 0`, 10 draws each
+    /// (6 default + 1 scale + 3 dead vector); `velocity -= base.velocity/5`.
+    #[test]
+    fn w4_f3_the_sail_visual_keeps_the_dead_draws() {
+        let mut app = rig(0x5EED);
+        let b = dj_burst(ExtraJump::Sail);
+        drain_double_jump_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 2, "jump > 0 → two puffs");
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 253);
+            assert!(d.no_gravity);
+            let (v, mut scale) = default_six(&mut rng, b.width as i32, 12, b.vx * 0.3, b.vy * 0.3, 1.5);
+            scale += rng.next_range(-5, 3) as f32 * 0.1;
+            assert_eq!(d.scale, scale);
+            assert_eq!(d.velocity, v - Vec2::new(b.vx, b.vy) / 5.0);
+            let _ = rng.next_range(-100, 101);
+            let _ = rng.next_range(-100, 101);
+            let _ = rng.next_max(81);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 2 * 10));
+    }
+
+    /// `:21978-22020` — the Blizzard visual: 2+3+3 type-76 puffs, noLight, the
+    /// three velocity loops. 8×6 = 48 draws.
+    #[test]
+    fn w4_f3_the_blizzard_visual_runs_three_loops() {
+        let mut app = rig(0x5EED);
+        let b = dj_burst(ExtraJump::Blizzard);
+        drain_double_jump_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 8);
+        let v = Vec2::new(b.vx, b.vy);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for (i, d) in slots.iter().enumerate() {
+            assert_eq!(d.dust_type, 76);
+            assert!(d.no_gravity);
+            assert!(d.no_light);
+            let (vel, _) = default_six(&mut rng, b.width as i32, 12, b.vx * 0.3, b.vy * 0.3, 1.0);
+            let expect = if i < 2 {
+                let mut x = vel * 0.1;
+                x += if i == 0 { v * 0.03 } else { -v * 0.03 };
+                x -= v * 0.1;
+                x
+            } else if i < 5 {
+                assert_eq!(d.fade_in, 1.5);
+                vel * 0.6 + v * 0.8
+            } else {
+                assert_eq!(d.fade_in, 1.5);
+                vel * 0.6 - v * 0.8
+            };
+            assert_eq!(d.velocity, expect);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 8 * 6));
+    }
+
+    /// `:25226-25233` — the petrify burst: 20 type-1 puffs, each + a `Next(2)`
+    /// noGravity roll. 20×7 = 140 draws.
+    #[test]
+    fn w4_f3_the_stoned_burst_rolls_no_gravity_per_puff() {
+        let mut app = rig(0x5EED);
+        let b = StonedDust { x: 300.0, y: 600.0, width: 20.0, height: 42.0 };
+        drain_stoned_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 20);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 1);
+            let _ = default_six(&mut rng, b.width as i32, b.height as i32, 0.0, 0.0, 1.0);
+            let roll = rng.next_max(2);
+            assert_eq!(d.no_gravity, roll == 0);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 20 * 7));
+    }
+
+    /// `:23283-23316` — the drowning bubble: one type-34 puff, box `(width-8)×8`,
+    /// scale 1.2. The type-34 wet-probe kill rides the pool (the rig's world is
+    /// dry, so the slot deactivates but the 6 default draws still ride).
+    #[test]
+    fn w4_f3_the_drowning_bubble_spends_six_draws() {
+        let mut app = rig(0x5EED);
+        drain_drown_bubble(&mut app, Vec2::new(312.0, 604.0), 20.0);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let _ = default_six(&mut rng, 20 - 8, 8, 0.0, 0.0, 1.2);
+        // The dry world's type-34 wet probe deactivates the slot (`Dust.cs:250`).
+        assert!(live(&app).is_empty(), "the dry probe kills the type-34 bubble");
         assert_eq!(stream_of(&mut app), rng);
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 6));
     }

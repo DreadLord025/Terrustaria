@@ -663,6 +663,37 @@ pub(crate) enum FastRunArm {
     Plain,
 }
 
+/// One queued `DoubleJumpVisuals` dust trail (`Player.cs:21892-22021`): the
+/// tick snapshots the box/velocity/jump-counter at the C# read moment (the
+/// performing arm is the single active extra jump) and the drain
+/// (`player_dust::drain_double_jump_dust`) replays the arm's `Dust.NewDust`
+/// chain on the `UpdatePlayers` stream. `height` is `base.height` (the
+/// `gravDir == -1 → -6` fold collapses to `height`, gravDir 1); `jump` is the
+/// live hold-boost counter the Sandstorm `num4` and the Sail count read.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DoubleJumpDust {
+    pub(crate) kind: ExtraJump,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) jump: i32,
+}
+
+/// One queued petrify-transition dust burst (`Player.cs:25226-25233`): the
+/// tick snapshots the box at the stoned-edge moment; the drain
+/// (`player_dust::drain_stoned_dust`) replays the 20 type-1 puffs + the per-puff
+/// `Next(2)` noGravity roll on the `UpdatePlayers` stream.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StonedDust {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2062,6 +2093,19 @@ pub struct Player {
     /// one snapshot per footstep tick, drained on the `UpdatePlayers` stream
     /// right after the footstep sound (`player_dust::drain_fast_run`).
     pending_fast_run_dust: Option<FastRunDust>,
+    /// W4-f3 — the tick's queued `DoubleJumpVisuals` trail
+    /// (`Player.cs:21892-22021`): one snapshot per performing-jump tick, drained
+    /// on the `UpdatePlayers` stream after the dash dust
+    /// (`player_dust::drain_double_jump_dust`).
+    pending_double_jump_dust: Option<DoubleJumpDust>,
+    /// W4-f3 — the tick's queued petrify-transition burst
+    /// (`Player.cs:25226-25233`): one snapshot on the stoned edge, drained on the
+    /// `UpdatePlayers` stream (`player_dust::drain_stoned_dust`).
+    pending_stoned_dust: Option<StonedDust>,
+    /// W4-f3 — the tick's queued drowning bubble (`Player.cs:23283-23316`):
+    /// `(mouth position, base.width)` when the `Next(20)` gate passes, drained on
+    /// the `UpdatePlayers` stream (`player_dust::drain_drown_bubble`).
+    pending_drown_bubble: Option<(Vec2, f32)>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3001,6 +3045,9 @@ impl Player {
             pending_jump_dust: None,
             pending_dash_dust: None,
             pending_fast_run_dust: None,
+            pending_double_jump_dust: None,
+            pending_stoned_dust: None,
+            pending_drown_bubble: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3611,6 +3658,27 @@ impl Player {
         self.pending_fast_run_dust.take()
     }
 
+    /// W4-f3 — takes the `DoubleJumpVisuals` trail snapshot
+    /// (`Player.cs:21892-22021`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_double_jump_dust`).
+    pub(crate) fn take_double_jump_dust(&mut self) -> Option<DoubleJumpDust> {
+        self.pending_double_jump_dust.take()
+    }
+
+    /// W4-f3 — takes the petrify-transition burst snapshot
+    /// (`Player.cs:25226-25233`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_stoned_dust`).
+    pub(crate) fn take_stoned_dust(&mut self) -> Option<StonedDust> {
+        self.pending_stoned_dust.take()
+    }
+
+    /// W4-f3 — takes the drowning bubble snapshot (`Player.cs:23283-23316`);
+    /// the caller owns `Main.dust` and the `UpdatePlayers` stream
+    /// (`player_dust::drain_drown_bubble`).
+    pub(crate) fn take_drown_bubble(&mut self) -> Option<(Vec2, f32)> {
+        self.pending_drown_bubble.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3799,6 +3867,9 @@ impl Player {
         self.pending_jump_dust = None;
         self.pending_dash_dust = None;
         self.pending_fast_run_dust = None;
+        self.pending_double_jump_dust = None;
+        self.pending_stoned_dust = None;
+        self.pending_drown_bubble = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -7514,11 +7585,22 @@ impl Player {
         // `Player.cs:26061-26099`: the stale option clear while airborne.
         self.clear_stale_jumps();
 
+        // `Player.cs:26753-26756`: `jump == 0` cancels the performing-jump
+        // visual flag (`CancelAllJumpVisualEffects(includeDownDash: false)`).
+        if self.jump == 0 {
+            self.cancel_all_jump_visual_effects();
+        }
+
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
         // velocity-only dash pass before the collision step.
         if !grappling {
             self.dash_movement(world, input);
         }
+        // `Player.cs:26767`: `DoubleJumpVisuals` right after `DashMovement`
+        // (the WallClimb/Wallslide/Carpet movement blocks between them are
+        // unported — their dust sites are cited deferrals). The performing-jump
+        // trail queues its snapshot here; the drain replays it after the dash.
+        self.double_jump_visuals();
         // `Player.cs:26799-26812`: while CCed the mount dismounts and the
         // plain gravity takes over (the port's CC input zeroing and the
         // flight gate below already cover the rest of that branch).
@@ -7744,12 +7826,23 @@ impl Player {
             self.pending_switch_trip = Some(((m.x / 16.0) as i32, (m.y / 16.0) as i32));
         }
 
-        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
+        // `Player.cs:25219-25234`: the tick petrification lands, a flat hit —
         // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
+        // The transition (either direction) queues the 20-puff type-1 burst
+        // (`:25226-25233`); the C#'s `PlaySound(0)` (`:25225`) is a cited seam
+        // (the port's stoned hurt rides `hurt_inner`'s own cue).
         let stoned = self.buffs.find_buff_index(156).is_some();
-        if stoned && !self.last_stoned {
-            let cx = self.x + self.width * 0.5;
-            self.hurt_inner(20, cx, false, rng, true, false, None, true);
+        if stoned != self.last_stoned {
+            if stoned {
+                let cx = self.x + self.width * 0.5;
+                self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            }
+            self.pending_stoned_dust = Some(StonedDust {
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+            });
         }
         self.last_stoned = stoned;
 
@@ -8160,6 +8253,8 @@ impl Player {
         } else if self.grappling_active {
             // `:36498-36535`: the grapple pose leans with the hooks' centroid.
             self.sand_storm = false;
+            // `Player.cs:36493`: the grapple pose cancels the performing-jump visual.
+            self.cancel_all_jump_visual_effects();
             let dx = held.grapple_dx;
             let dy = held.grapple_dy;
             if dy < 0.0 && dy.abs() > dx.abs() {
@@ -8897,6 +8992,64 @@ impl Player {
                 self.can_jump_again[i] = false;
             }
         }
+    }
+
+    /// `Player.CancelAllJumpVisualEffects` (`Player.cs:36649-36662`): the
+    /// performing-jump visual flag clears. The port's single `performing_jump`
+    /// stands in for the seven `isPerformingJump_*` flags (the DownDash flag is
+    /// always false — the Dead-Cells dash is unported). The C# call sites are
+    /// the pulley block (`:26135`, movement unported — folded), the `jump == 0`
+    /// gate (`:26755`), the CCed flight arm (`:26811`) and the grapple pose
+    /// (`:36493`).
+    fn cancel_all_jump_visual_effects(&mut self) {
+        self.performing_jump = None;
+    }
+
+    /// `Player.DoubleJumpVisuals` (`Player.cs:21892-22021`): the per-tick dust
+    /// trail of the performing extra jump. Each arm gates on the performing
+    /// flag + the granted option + the spent can-flag + the ascent direction
+    /// (`velocity.Y < 0`, gravDir 1); the Cloud arm additionally needs the
+    /// Sandstorm option spent-or-absent (`:21894`). The tick snapshots the
+    /// box/velocity/jump-counter at the C# read moment; the drain
+    /// (`player_dust::drain_double_jump_dust`) replays the arm's chain on the
+    /// `UpdatePlayers` stream. The Sandstorm arm re-arms `sandStorm` (`:21919`);
+    /// its `Gore.NewGore` sibling (`:21922`) is the gore lane's (W4-d55 skip).
+    /// The Santank / WallOfFleshGoat / Basilisk mount jumps have no visual arm.
+    fn double_jump_visuals(&mut self) {
+        let Some(kind) = self.performing_jump else { return };
+        let i = kind.index();
+        if !self.has_jump_options[i] || self.can_jump_again[i] {
+            return;
+        }
+        // The gravDir-1 ascent gate (the gravDir == -1 mirror is unported).
+        let ascending = match kind {
+            // The Sail's gate is `velocity.Y < 1` (`:21948`), not `< 0`.
+            ExtraJump::Sail => self.vy < 1.0,
+            _ => self.vy < 0.0,
+        };
+        if !ascending {
+            return;
+        }
+        // `:21894`: the Cloud arm also needs the Sandstorm option spent-or-absent.
+        if kind == ExtraJump::Cloud
+            && self.has_jump_options[ExtraJump::Sandstorm.index()]
+            && self.can_jump_again[ExtraJump::Sandstorm.index()]
+        {
+            return;
+        }
+        if kind == ExtraJump::Sandstorm {
+            self.sand_storm = true; // `:21919`
+        }
+        self.pending_double_jump_dust = Some(DoubleJumpDust {
+            kind,
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            vx: self.vx,
+            vy: self.vy,
+            jump: self.jump,
+        });
     }
 
     /// `Player.SpawnFastRunParticles` (`Player.cs:20205-20299`): the fast-run
@@ -9965,6 +10118,8 @@ impl Player {
         // (the rocket thrust included). The visual-effect cancels are seams.
         if self.cced() {
             self.sand_storm = false;
+            // `Player.cs:26811`: the CCed arm cancels the performing-jump visual.
+            self.cancel_all_jump_visual_effects();
             self.vy += gravity;
             if self.vy > fall_cap {
                 self.vy = fall_cap;
@@ -11216,7 +11371,7 @@ impl Player {
     /// yet; the Gills buff (4) arm IS ported (`Player.cs:23226-23229`,
     /// S1-E-7 wave A): `flag = Main.getGoodWorld && !flag` — on the For the
     /// Worthy seed the gills invert the probe (air drowns, water breathes).
-    fn check_drowning(&mut self, world: &World) {
+    fn check_drowning(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         // `this.gravDir` is -1 for the vanilla gravity — the probe sits at the
         // head; the NPCs' call passes 1 (the feet).
         let mut drowning = crate::collision::drown_collision(
@@ -11255,6 +11410,15 @@ impl Player {
         } else {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
+        }
+        // `Player.cs:23283-23316`: the drowning bubble. The `Next(20)` gate
+        // draws only while drowning (the `!flag` short-circuit); lava/honey-wet
+        // refuse after the draw. The mouth position is `(x + 12*direction,
+        // y + 4)` (gravDir 1, `num4 = 0`); the breathing-reed / mount-mouth
+        // offsets (`:23293-23314`) have no port fields and fold to the base.
+        if drowning && rng.next_range(0, 20) == 0 && !self.lava_wet && !self.honey_wet {
+            let mouth = Vec2::new(self.x + 12.0 * self.facing as f32, self.y + 4.0);
+            self.pending_drown_bubble = Some((mouth, self.width));
         }
     }
 
@@ -11418,7 +11582,7 @@ impl Player {
         self.refresh_wet_state();
         let dots = self.derive_dot_inputs(self.buffs.expert_mode);
 
-        self.check_drowning(world);
+        self.check_drowning(world, rng);
 
         // `Player.Update` → `UpdateLifeRegen` / `UpdateManaRegen`
         // (`Player.cs:25977,25995`). The aura/item/grapple inputs stay at their
