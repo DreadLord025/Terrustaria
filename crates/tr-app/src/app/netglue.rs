@@ -3207,6 +3207,10 @@ fn npc_seed(
         // S1-D-3z — the Blood Zombie plants its feet on the column
         // surface like the wave-A walkers (the aiStyle-3 family machine
         // takes over on the first tick).
+        // W4-d38 b2 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::BoneLee
+        | crate::npc::NpcKind::Paladin
+        | crate::npc::NpcKind::SkeletonSniper
         | crate::npc::NpcKind::BloodZombie => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
@@ -3492,6 +3496,9 @@ fn npc_seed(
         | crate::npc::NpcKind::Necromancer
         | crate::npc::NpcKind::NecromancerArmored
         | crate::npc::NpcKind::DiabolistRed
+        // W4-d38 b2 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::DiabolistWhite
+        | crate::npc::NpcKind::GiantCursedSkull
         | crate::npc::NpcKind::Drippler => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?

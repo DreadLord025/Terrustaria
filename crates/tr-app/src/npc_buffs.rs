@@ -484,6 +484,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d38 b2 — SpecificallyImmuneTo {20, 31}.
+        NpcKind::DiabolistWhite
+        | NpcKind::GiantCursedSkull => &[20, 31],
+        // W4-d38 b2 — SpecificallyImmuneTo {20}.
+        NpcKind::BoneLee
+        | NpcKind::SkeletonSniper => &[20],
+        // W4-d38 b2 — SpecificallyImmuneTo {20, 31, 69}.
+        NpcKind::Paladin => &[20, 31, 69],
         // W4-d38 b1 — SpecificallyImmuneTo {20, 31}.
         NpcKind::RaggedCaster
         | NpcKind::RaggedCasterOpenCoat

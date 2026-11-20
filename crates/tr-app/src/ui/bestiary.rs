@@ -1595,6 +1595,14 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d38 b2 — the 18x40 SetDefaults box.
+        (NpcKind::DiabolistWhite
+        | NpcKind::BoneLee
+        | NpcKind::SkeletonSniper, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // W4-d38 b2 — the 44x44 SetDefaults box.
+        (NpcKind::GiantCursedSkull, _) => (sheet_i, 44.0, 44.0, 44.0, white),
+        // W4-d38 b2 — the 34x62 SetDefaults box.
+        (NpcKind::Paladin, _) => (sheet_i, 62.0, 34.0, 62.0, white),
         // W4-d38 b1 — the 18x40 SetDefaults box.
         (NpcKind::RaggedCaster
         | NpcKind::RaggedCasterOpenCoat

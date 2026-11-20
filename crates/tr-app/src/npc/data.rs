@@ -570,6 +570,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b2 — vanilla ids kept (free protocol slots).
+            NpcKind::DiabolistWhite => 286,
+            NpcKind::BoneLee => 287,
+            NpcKind::GiantCursedSkull => 289,
+            NpcKind::Paladin => 290,
+            NpcKind::SkeletonSniper => 291,
             // W4-d38 b1 — vanilla ids kept (free protocol slots).
             NpcKind::RaggedCaster => 281,
             NpcKind::RaggedCasterOpenCoat => 282,
@@ -913,6 +919,12 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // W4-d38 b2 — decode at the vanilla ids.
+            286 => NpcKind::DiabolistWhite,
+            287 => NpcKind::BoneLee,
+            289 => NpcKind::GiantCursedSkull,
+            290 => NpcKind::Paladin,
+            291 => NpcKind::SkeletonSniper,
             // W4-d38 b1 — decode at the vanilla ids.
             281 => NpcKind::RaggedCaster,
             282 => NpcKind::RaggedCasterOpenCoat,
@@ -1800,6 +1812,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d38 b2 — SetDefaults HitSound rows.
+            NpcKind::DiabolistWhite => "NPC_Hit_2",
+            NpcKind::BoneLee => "NPC_Hit_2",
+            NpcKind::GiantCursedSkull => "NPC_Hit_2",
+            NpcKind::Paladin => "NPC_Hit_4",
+            NpcKind::SkeletonSniper => "NPC_Hit_2",
             // W4-d38 b1 — SetDefaults HitSound rows.
             NpcKind::RaggedCaster => "NPC_Hit_2",
             NpcKind::RaggedCasterOpenCoat => "NPC_Hit_2",
@@ -2110,6 +2128,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d38 b2 — SetDefaults DeathSound rows.
+            NpcKind::DiabolistWhite => "NPC_Killed_2",
+            NpcKind::BoneLee => "NPC_Killed_2",
+            NpcKind::GiantCursedSkull => "NPC_Killed_2",
+            NpcKind::Paladin => "NPC_Killed_6",
+            NpcKind::SkeletonSniper => "NPC_Killed_2",
             // W4-d38 b1 — SetDefaults DeathSound rows.
             NpcKind::RaggedCaster => "NPC_Killed_2",
             NpcKind::RaggedCasterOpenCoat => "NPC_Killed_2",
@@ -2223,6 +2247,8 @@ impl NpcKind {
             // The Angry Nimbus (250) — `SetDefaults` writes no flag, but the
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
+            // W4-d38 b2 — the noGravity SetDefaults rows.
+            NpcKind::GiantCursedSkull => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2475,6 +2501,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d38 b2 — SetDefaults aiStyle rows.
+            NpcKind::DiabolistWhite => 8,
+            NpcKind::BoneLee => 3,
+            NpcKind::GiantCursedSkull => 10,
+            NpcKind::Paladin => 3,
+            NpcKind::SkeletonSniper => 3,
             // W4-d38 b1 — SetDefaults aiStyle rows.
             NpcKind::RaggedCaster => 8,
             NpcKind::RaggedCasterOpenCoat => 8,
@@ -2589,6 +2621,10 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-d38 b2 — AI_003 per-type walk caps.
+            NpcKind::BoneLee => 5.0,
+            NpcKind::Paladin => 1.0,
+            NpcKind::SkeletonSniper => 1.0,
             _ => return None,
         })
     }
@@ -3011,6 +3047,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d38 b2 — SetDefaults width/height rows.
+            NpcKind::DiabolistWhite => (18.0, 40.0),
+            NpcKind::BoneLee => (18.0, 40.0),
+            NpcKind::GiantCursedSkull => (44.0, 44.0),
+            NpcKind::Paladin => (34.0, 62.0),
+            NpcKind::SkeletonSniper => (18.0, 40.0),
             // W4-d38 b1 — SetDefaults width/height rows.
             NpcKind::RaggedCaster => (18.0, 40.0),
             NpcKind::RaggedCasterOpenCoat => (18.0, 40.0),
@@ -3171,6 +3213,8 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-d38 b2 — humanoid-group FindFrame strips.
+            NpcKind::BoneLee => 16,
             _ => 1,
         }
     }
@@ -3658,6 +3702,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d38 b2 — SetDefaults lifeMax rows.
+            NpcKind::DiabolistWhite => 250,
+            NpcKind::BoneLee => 1000,
+            NpcKind::GiantCursedSkull => 400,
+            NpcKind::Paladin => 5000,
+            NpcKind::SkeletonSniper => 400,
             // W4-d38 b1 — SetDefaults lifeMax rows.
             NpcKind::RaggedCaster => 400,
             NpcKind::RaggedCasterOpenCoat => 450,
@@ -4028,6 +4078,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d38 b2 — SetDefaults damage rows.
+            NpcKind::DiabolistWhite => 60,
+            NpcKind::BoneLee => 90,
+            NpcKind::GiantCursedSkull => 60,
+            NpcKind::Paladin => 100,
+            NpcKind::SkeletonSniper => 60,
             // W4-d38 b1 — SetDefaults damage rows.
             NpcKind::RaggedCaster => 40,
             NpcKind::RaggedCasterOpenCoat => 35,

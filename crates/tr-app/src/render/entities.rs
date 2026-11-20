@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(D38_B1_SHEETS)
+            .chain(D38_B2_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
@@ -1235,6 +1236,11 @@ pub(crate) const SNOW_SHEETS: &[u32] = &[
 /// The Queen Bee's volley minions' sheets (S1-D-3 W-3): `NPC_210`/`NPC_211`,
 /// keyed by the vanilla net id in `NpcAssets::npc_sheets` like the families.
 pub(crate) const BEE_SHEETS: &[u32] = &[210, 211];
+
+/// W4-d38 b2 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B2_SHEETS: &[u32] = &[286, 287, 289, 290, 291];
+
 
 /// W4-d38 b1 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
 /// keyed by the vanilla net id in NpcAssets::npc_sheets.
@@ -3174,6 +3180,31 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_286 sheet, generic centred anchor.
+            NpcKind::DiabolistWhite => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_287 sheet, generic centred anchor.
+            NpcKind::BoneLee => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_289 sheet, generic centred anchor.
+            NpcKind::GiantCursedSkull => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_290 sheet, generic centred anchor.
+            NpcKind::Paladin => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_291 sheet, generic centred anchor.
+            NpcKind::SkeletonSniper => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
             // W4-d38 b1 — own NPC_281 sheet, generic centred anchor.
             NpcKind::RaggedCaster => {

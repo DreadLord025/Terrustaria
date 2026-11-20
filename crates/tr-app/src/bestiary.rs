@@ -2163,6 +2163,56 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d38 b2 — BestiaryEntry.Enemy(286)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "DiabolistWhite",
+        net_id: 286,
+        kind: NpcKind::DiabolistWhite,
+        variant: None,
+        quick_unlock: false,
+        name: "Diabolist",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(287)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BoneLee",
+        net_id: 287,
+        kind: NpcKind::BoneLee,
+        variant: None,
+        quick_unlock: false,
+        name: "Bone Lee",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(289)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "GiantCursedSkull",
+        net_id: 289,
+        kind: NpcKind::GiantCursedSkull,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Cursed Skull",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(290)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Paladin",
+        net_id: 290,
+        kind: NpcKind::Paladin,
+        variant: None,
+        quick_unlock: false,
+        name: "Paladin",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(291)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonSniper",
+        net_id: 291,
+        kind: NpcKind::SkeletonSniper,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton Sniper",
+    },
     // W4-d38 b1 — BestiaryEntry.Enemy(281)
     // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
     BestiaryEntryDef {
