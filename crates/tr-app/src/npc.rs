@@ -6670,21 +6670,19 @@ impl Npc {
             return;
         }
         // W4-g7 wire-2 (f26 extra-3) — the `cs_id`-keyed hook into the
-        // extra wave's pure machines (`npc_findframe_extra3.rs`), the
-        // FIRST 9 of its 15 ids: 182/185/195/196/198/199/201/202/203
-        // (the remaining 204/205/209/217/218/219 ride the next commit
-        // — the 10-kinds-per-commit rule). The e13 extra-1 wave's
-        // 182/185/195/196/198/199/201/202 twins dedupe onto this hook
-        // (keep-one, the arms verified verbatim identical). NO current
-        // kind's `cs_id` lands in the set (verified over the hand rows
-        // + all 249 bestiary net ids), so this is stream-inert today;
-        // the arms themselves draw no RNG. The d45/e13 hook precedent.
-        let cs = self.kind.cs_id();
-        if matches!(cs, 182 | 185 | 195 | 196 | 198 | 199 | 201 | 202 | 203) {
-            if let Some(kind) = crate::npc_findframe_extra3::find_frame_kind_extra3(cs as i16) {
-                self.find_frame_wave_extra3(kind);
-                return;
-            }
+        // extra wave's pure machines (`npc_findframe_extra3.rs`), all
+        // 15 ids: 182/185/195/196/198/199/201/202/203/204/205/209/
+        // 217/218/219. The e13 extra-1 wave's 182/185/195/196/198/199/
+        // 201/202 twins dedupe onto this hook (keep-one, the arms
+        // verified verbatim identical). NO current kind's `cs_id`
+        // lands in the set (verified over the hand rows + all 249
+        // bestiary net ids), so this is stream-inert today; the arms
+        // themselves draw no RNG. The d45/e13 hook precedent.
+        if let Some(kind) =
+            crate::npc_findframe_extra3::find_frame_kind_extra3(self.kind.cs_id() as i16)
+        {
+            self.find_frame_wave_extra3(kind);
+            return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
@@ -33791,5 +33789,46 @@ mod w4_g7_wire2_extra3_tests {
         // …while the SnowFlinx (185, NOT in the pin list) holds row 1.
         n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SnowFlinx);
         assert_eq!(n.frame, 1, "the group's air row 1");
+    }
+
+    /// The half-B batch: the SpikedJungleSlime's `num2` motion class
+    /// rides `ai_action` through the bridge (`NPC.cs:66696-66704` +
+    /// `:70828-70845` — idle +1, moving/air +2, attack +3 per tick over
+    /// the 8-tick stride) and the beetle group's UNCONDITIONAL flip
+    /// (`:74571-74589`, 0 included) copies facing verbatim.
+    #[test]
+    fn w4_g7_the_extra3_bridge_feeds_ai_action_and_the_beetle_flip() {
+        let mut n = bare(NpcKind::Slime);
+        // Idle: +1 a tick — 8 ticks to step row 0 → 1.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.ai_action = 0;
+        for _ in 0..8 {
+            n.find_frame_wave_extra3(
+                crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime,
+            );
+        }
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the idle 8-tick stride");
+        // Attack (ai_action 1 → num2 = 4): +3 a tick — 3 ticks reach 9.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.ai_action = 1;
+        for _ in 0..3 {
+            n.find_frame_wave_extra3(
+                crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime,
+            );
+        }
+        assert_eq!((n.frame, n.frame_counter), (1, 1.0), "the attack x3 stride");
+        // The CochinealBeetle snaps spriteDirection = facing even at 0
+        // (the crab group's unconditional copy, not the ±1 gate).
+        n.ai_action = 0;
+        n.facing = 0;
+        n.sprite_dir = -1;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::CochinealBeetle);
+        assert_eq!(n.sprite_dir, 0, "the unconditional beetle flip");
     }
 }
