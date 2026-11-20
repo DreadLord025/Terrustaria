@@ -28,6 +28,7 @@ pub mod panel;
 pub mod pointer;
 pub mod resources;
 pub(crate) mod resource_pack_info;
+pub(crate) mod resource_packs;
 pub mod save_list;
 pub mod sliders;
 pub mod select_hit;

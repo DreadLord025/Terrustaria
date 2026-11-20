@@ -60,6 +60,14 @@ pub(crate) enum FrontScreen {
     /// restores the exact parent selection screen (`GoBackClick`, `:170-173`
     /// — `SetState(_resourceMenu)`, no re-list).
     ResourcePackInfo(Box<ui::resource_pack_info::PackInfoState>),
+    /// W4-d84 row 5's `UIResourcePackSelectionMenu`
+    /// (`UIResourcePackSelectionMenu.cs:17`) — the two-list pack screen
+    /// (`Main.OpenResourcePacksMenu`, `Main.cs:52371-52375`). The payload is
+    /// the screen's own state (`_packsList` + the two list scrolls + the
+    /// `_uiStateToGoBackTo` target); `enter_front` re-lists from the config
+    /// (`AssetInitializer.CreateResourcePackList`), the ctor's
+    /// `PopulatePackList` (`:57`).
+    ResourcePackSelection(Box<ui::resource_packs::PackSelectionState>),
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -169,6 +177,15 @@ pub(crate) enum FlowClick {
     /// `SetState(_resourceMenu)` — the exact parked selection screen returns
     /// (the payload's `back`), no `OnActivate` re-list.
     PackInfoBack,
+    /// `UIResourcePackSelectionMenu.HandleBackButtonUsage`
+    /// (`UIResourcePackSelectionMenu.cs:476-488`): `ApplyListChanges` +
+    /// `Main.SaveSettings`, then the `_uiStateToGoBackTo` target (the hub)
+    /// or `menuMode = 0` when null.
+    PackSelectionBack,
+    /// `Click_Info` (`UIResourcePackSelectionMenu.cs:263-270`): the info
+    /// screen opens over the live selection screen (parked as its back
+    /// target). The store index rides along.
+    PackInfo(usize),
 }
 
 /// One hop of the `Main.menuMode` alternation as a pure table — the plan's
@@ -249,6 +266,49 @@ pub(crate) fn next_flow_state(
             };
             (back, None, None)
         }
+        // `UIResourcePackSelectionMenu.HandleBackButtonUsage` (`:476-488`):
+        // the `_uiStateToGoBackTo` target returns (the hub), or `menuMode = 0`
+        // when null. The ApplyListChanges + SaveSettings side effects run in
+        // the click arm before the hop (the settings write needs the App).
+        FlowClick::PackSelectionBack => {
+            let back = match &front {
+                Some(FrontScreen::ResourcePackSelection(state)) => {
+                    state.back.as_deref().cloned()
+                }
+                _ => None,
+            };
+            match back {
+                Some(target) => (Some(target), None, None),
+                None => (None, None, Some(P::Main)),
+            }
+        }
+        // `Click_Info` (`:263-270`): the info screen opens with the pack and
+        // the live selection screen parked as its back target.
+        FlowClick::PackInfo(index) => {
+            let Some(current) = front.clone() else {
+                return (front, backup, page);
+            };
+            let info = match &current {
+                FrontScreen::ResourcePackSelection(state) => {
+                    state.packs.packs.get(index).map(|pack| {
+                        ui::resource_pack_info::PackInfoState {
+                            pack: Some(pack.clone()),
+                            scroll: 0.0,
+                            back: Some(Box::new(current.clone())),
+                        }
+                    })
+                }
+                _ => None,
+            };
+            match info {
+                Some(state) => (
+                    Some(FrontScreen::ResourcePackInfo(Box::new(state))),
+                    None,
+                    None,
+                ),
+                None => (front, backup, page),
+            }
+        }
         // Any other combination is a no-op (a click kind its screen never
         // sends); the state passes through unchanged.
         _ => (front, backup, page),
@@ -269,6 +329,8 @@ pub(crate) enum TrUiPreset {
     Keyboard,
     /// S1-E-17's loading screen (`UIWorldLoad`).
     WorldLoad,
+    /// W4-d84 row 5's pack-selection screen (`UIResourcePackSelectionMenu`).
+    Packs,
     /// menuMode 3000.
     Credits,
     /// menuMode 5.
@@ -290,6 +352,7 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
         "worldnew" => TrUiPreset::WorldNew,
         "vk" => TrUiPreset::Keyboard,
         "worldload" => TrUiPreset::WorldLoad,
+        "packs" => TrUiPreset::Packs,
         "credits" => TrUiPreset::Credits,
         "delplayer" => TrUiPreset::DelPlayer,
         "delworld" => TrUiPreset::DelWorld,
@@ -516,6 +579,17 @@ impl FrontScreenBehaviours for FrontScreen {
                 // `UIResourcePackInfoMenu.Draw` (`:188-192`): the header,
                 // the divider, the wrapped description list and Back.
                 ui::resource_pack_info::draw(
+                    d.renderer,
+                    d.lookups,
+                    state,
+                    d.screen,
+                    d.mouse,
+                );
+            }
+            FrontScreen::ResourcePackSelection(state) => {
+                // `UIResourcePackSelectionMenu.Draw` (`:537-541`): the two
+                // pack lists, the titles, the header and Back/Open Folder.
+                ui::resource_packs::draw(
                     d.renderer,
                     d.lookups,
                     state,
@@ -1101,6 +1175,86 @@ impl FrontScreenBehaviours for FrontScreen {
                     None
                 }
             }
+            FrontScreen::ResourcePackSelection(_) => {
+                // The selection menu's click table (`PopulatePackList`'s
+                // handlers + `GoBackClick`/`OpenFoldersClick`). The mutations
+                // run under the borrow; the navigation clicks ride the flow
+                // table. Every button plays sound 12 itself (`:152/:159/:200`
+                // etc.) — the flow's generic cue is suppressed for this
+                // screen (the `front_click_cue` gate below).
+                let header_w = app.front_header_w(&crate::lang::text("UI.ResourcePacks"));
+                let l = ui::resource_packs::layout(screen, header_w);
+                let divider_h = app.lookups.ui_divider.map_or(4.0, |s| s.height as f32);
+                let Some(FrontScreen::ResourcePackSelection(state)) = app.front.as_mut() else {
+                    return None;
+                };
+                let (available, enabled) = (state.available(), state.enabled());
+                let click = ui::resource_packs::click_at(
+                    &l, &available, &enabled,
+                    state.available_scroll, state.enabled_scroll, divider_h, mouse,
+                );
+                match click {
+                    ui::resource_packs::Click::Back => {
+                        // `HandleBackButtonUsage` (`:476-488`): sound 11,
+                        // ApplyListChanges (the enabled-only list becomes the
+                        // active one, `AssetSourceController.cs:38-63` — the
+                        // port stores it in the config), Main.SaveSettings.
+                        app.audio.play("Menu_Close");
+                        let enabled_only = crate::resource_pack::ResourcePackList {
+                            packs: state.enabled().iter().map(|&i| state.packs.packs[i].clone()).collect(),
+                        };
+                        app.settings.resource_packs = enabled_only.to_json();
+                        if let Err(e) = app.settings.save() {
+                            log::warn!("resource pack config save failed: {e}");
+                        }
+                        Some(FlowClick::PackSelectionBack)
+                    }
+                    ui::resource_packs::Click::OpenFolder => {
+                        // `OpenFoldersClick` (`:464-469`): sound 12 +
+                        // Utils.OpenFolder — the port has no folder-open
+                        // seam (the capture toolbar's documented no-op).
+                        app.audio.play("Menu_Tick");
+                        None
+                    }
+                    ui::resource_packs::Click::Enable(i) | ui::resource_packs::Click::Disable(i) => {
+                        // The toggle (`:198-205`): sound 12, flip IsEnabled,
+                        // SetResourcePackAsTopPriority, PopulatePackList.
+                        app.audio.play("Menu_Tick");
+                        state.packs.packs[i].is_enabled = !state.packs.packs[i].is_enabled;
+                        state.packs.set_top_priority(i);
+                        state.populate();
+                        None
+                    }
+                    ui::resource_packs::Click::Info(i) => {
+                        // `Click_Info` (`:263-270`): sound 10, the info
+                        // screen opens over the parked selection screen.
+                        app.audio.play("Menu_Open");
+                        Some(FlowClick::PackInfo(i))
+                    }
+                    ui::resource_packs::Click::OrderUp(i) => {
+                        // `CreateOffsetButton(-1)` (`:148-164`): sound 12;
+                        // the dead-end gate (`:131`, SortingOrder == 0)
+                        // plays the cue without moving.
+                        app.audio.play("Menu_Tick");
+                        if state.packs.packs[i].sorting_order != 0 {
+                            state.packs.offset_priority(i, -1);
+                            state.populate();
+                        }
+                        None
+                    }
+                    ui::resource_packs::Click::OrderDown(i) => {
+                        // `CreateOffsetButton(1)`: the bottom-end gate
+                        // (`:131`, SortingOrder == count - 1).
+                        app.audio.play("Menu_Tick");
+                        if state.packs.packs[i].sorting_order != state.enabled().len() as i32 - 1 {
+                            state.packs.offset_priority(i, 1);
+                            state.populate();
+                        }
+                        None
+                    }
+                    ui::resource_packs::Click::None => None,
+                }
+            }
         }
     }
 
@@ -1185,6 +1339,12 @@ impl App {
     /// consume the notch. `_scrollbar.ViewPosition -= evt.ScrollWheelValue`
     /// (`:112`), clamped by `SetView` (`UIScrollbar.cs:75`).
     pub(crate) fn front_wheel(&mut self, delta: i32) -> bool {
+        // The pack screens carry their own list scrolls (the selection
+        // screen's two lists, the info screen's description list) — the
+        // single-list `front_list` path below does not cover them.
+        if self.front_pack_wheel(delta) {
+            return true;
+        }
         let Some((cards, header)) = self.front_list() else {
             return false;
         };
@@ -1204,12 +1364,103 @@ impl App {
         true
     }
 
+    /// `UIList.ScrollWheel` for the pack screens' own lists — the selection
+    /// screen's two `UIList`s (`UIResourcePackSelectionMenu.cs:335-353`) and
+    /// the info screen's description list (`UIResourcePackInfoMenu.cs:119-130`).
+    /// Returns whether a pack screen was live (the wheel is consumed).
+    fn front_pack_wheel(&mut self, delta: i32) -> bool {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
+        match self.front.as_mut() {
+            Some(FrontScreen::ResourcePackSelection(state)) => {
+                let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
+                let l = ui::resource_packs::layout(screen, header_w);
+                let avail_h = ui::workshop_kit::pack_content_height(state.available().len());
+                let en_h = ui::workshop_kit::pack_content_height(state.enabled().len());
+                // The wheel goes to the list under the pointer (the inner
+                // list's ContainsPoint is true, `UIList.cs:16-19`); each
+                // attached bar is its own target.
+                if crate::ui::in_rect(mouse, l.available_list)
+                    || crate::ui::in_rect(mouse, l.available_bar)
+                {
+                    state.available_scroll = ui::char_select::scroll_wheel(
+                        state.available_scroll, delta, l.available_list[3], avail_h,
+                    );
+                } else if crate::ui::in_rect(mouse, l.enabled_list)
+                    || crate::ui::in_rect(mouse, l.enabled_bar)
+                {
+                    state.enabled_scroll = ui::char_select::scroll_wheel(
+                        state.enabled_scroll, delta, l.enabled_list[3], en_h,
+                    );
+                }
+                true
+            }
+            Some(FrontScreen::ResourcePackInfo(state)) => {
+                // The description height needs the renderer for the wrap
+                // measure; the wheel only needs the list rect + the content
+                // height. The renderer-free measure uses the font when present.
+                let Some(pack) = state.pack.clone() else { return true };
+                let l = self.pack_info_layout(screen, &pack);
+                if ui::resource_pack_info::wheel_target(&l, mouse) {
+                    let desc_h = self.pack_info_desc_height(&pack, l.list[2]);
+                    state.scroll = ui::char_select::scroll_wheel(
+                        state.scroll, delta, l.container[3], desc_h,
+                    );
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The info screen's resolved layout without a renderer borrow — the
+    /// wrap measure rides the font directly (the draw's `resolved_layout`
+    /// twin for the scroll paths).
+    fn pack_info_layout(
+        &self,
+        screen: Vec2,
+        pack: &crate::resource_pack::ResourcePack,
+    ) -> ui::resource_pack_info::Layout {
+        // The detached layout first, then the attach branch on the measured
+        // height (the same two-pass `resolved_layout` does with a renderer).
+        let detached = ui::resource_pack_info::layout(screen, 0.0);
+        let desc_h = self.pack_info_desc_height(pack, detached.list[2]);
+        let l = ui::resource_pack_info::layout(screen, desc_h);
+        if l.attached {
+            let desc_h2 = self.pack_info_desc_height(pack, l.list[2]);
+            return ui::resource_pack_info::layout(screen, desc_h2);
+        }
+        l
+    }
+
+    /// The wrapped description's content height over the font metrics (the
+    /// renderer-free twin of `resource_pack_info::description_height`).
+    fn pack_info_desc_height(
+        &self,
+        pack: &crate::resource_pack::ResourcePack,
+        list_w: f32,
+    ) -> f32 {
+        let lines = ui::workshop_kit::wrap_text_with(
+            &pack.description,
+            list_w - 20.0,
+            |s| match &self.lookups.ui_font {
+                Some(f) => ui::text::font_width(f, s, 1.0),
+                None => s.chars().count() as f32 * 8.0,
+            },
+        );
+        ui::workshop_kit::wrapped_height(&self.lookups, lines.len(), 1.0, false, 0.0)
+    }
+
     /// `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`): a press on the
     /// attached bar grabs the handle (`:134-135`, `_dragYOffset = mouse.Y -
     /// handle.Y`) or jumps the track (`:137-141`). Returns whether the bar took
     /// the press — the same press must not also reach a card button, exactly as
     /// the C#'s `evt.Target == this` keeps it on the bar.
     pub(crate) fn front_scrollbar_press(&mut self) -> bool {
+        if self.front_pack_scrollbar_press() {
+            return true;
+        }
         let Some((cards, header)) = self.front_list() else {
             return false;
         };
@@ -1224,6 +1475,77 @@ impl App {
         true
     }
 
+    /// `UIScrollbar.LeftMouseDown` for the pack screens' bars — the selection
+    /// screen's two (`UIResourcePackSelectionMenu.cs:379-386`/`:412-418`) and
+    /// the info screen's attached one (`UIResourcePackInfoMenu.cs:131-136`).
+    /// The drag latch records which list it belongs to
+    /// (`front_scroll_drag_enabled`).
+    fn front_pack_scrollbar_press(&mut self) -> bool {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
+        // The bar press maths (`UIScrollbar.cs:126-143`) over one bar rect:
+        // the handle grab keeps the pointer offset, the track press jumps.
+        let bar_press = |bar: [f32; 4], view_h: f32, content_h: f32, scroll: f32|
+            -> Option<(f32, Option<f32>)> {
+            if !crate::ui::in_rect(mouse, bar) {
+                return None;
+            }
+            let handle = ui::panel::scrollbar_handle_at(bar, view_h, content_h, scroll);
+            if crate::ui::in_rect(mouse, handle) {
+                Some((scroll, Some(mouse.y - handle[1])))
+            } else {
+                Some((
+                    ui::panel::scrollbar_jump_value(bar, view_h, content_h, handle[3], mouse.y),
+                    None,
+                ))
+            }
+        };
+        match self.front.as_mut() {
+            Some(FrontScreen::ResourcePackSelection(state)) => {
+                let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
+                let l = ui::resource_packs::layout(screen, header_w);
+                let avail_h = ui::workshop_kit::pack_content_height(state.available().len());
+                let en_h = ui::workshop_kit::pack_content_height(state.enabled().len());
+                if let Some((scroll, drag)) =
+                    bar_press(l.available_bar, l.available_list[3], avail_h, state.available_scroll)
+                {
+                    state.available_scroll = scroll;
+                    self.front_scroll_drag = drag;
+                    self.front_scroll_drag_enabled = false;
+                    return true;
+                }
+                if let Some((scroll, drag)) =
+                    bar_press(l.enabled_bar, l.enabled_list[3], en_h, state.enabled_scroll)
+                {
+                    state.enabled_scroll = scroll;
+                    self.front_scroll_drag = drag;
+                    self.front_scroll_drag_enabled = true;
+                    return true;
+                }
+                false
+            }
+            Some(FrontScreen::ResourcePackInfo(state)) => {
+                let Some(pack) = state.pack.clone() else { return false };
+                let l = self.pack_info_layout(screen, &pack);
+                if !l.attached {
+                    return false;
+                }
+                let desc_h = self.pack_info_desc_height(&pack, l.list[2]);
+                if let Some((scroll, drag)) =
+                    bar_press(l.scrollbar, l.container[3], desc_h, state.scroll)
+                {
+                    state.scroll = scroll;
+                    self.front_scroll_drag = drag;
+                    self.front_scroll_drag_enabled = false;
+                    return true;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
     /// The drag frame (`UIScrollbar.DrawSelf`'s `_isDragging` arm,
     /// `UIScrollbar.cs:109-112`): the position follows the pointer with the
     /// latched grab offset while the button is held.
@@ -1231,12 +1553,56 @@ impl App {
         let Some(offset) = self.front_scroll_drag else {
             return;
         };
+        if self.front_pack_scrollbar_drag(offset) {
+            return;
+        }
         let Some((cards, header)) = self.front_list() else {
             return;
         };
         let (sw, sh) = self.screen_size();
         let l = self.select_layout(Vec2::new(sw, sh), &header, cards);
         self.front_scroll = ui::char_select::scrollbar_drag(&l, cards, offset, self.mouse_pos.y);
+    }
+
+    /// The drag frame for the pack screens' latched bar
+    /// (`UIScrollbar.DrawSelf`'s `_isDragging` arm, `:109-112`).
+    fn front_pack_scrollbar_drag(&mut self, offset: f32) -> bool {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse_y = self.mouse_pos.y;
+        let enabled = self.front_scroll_drag_enabled;
+        match self.front.as_mut() {
+            Some(FrontScreen::ResourcePackSelection(state)) => {
+                let header_w = self.front_header_w(&crate::lang::text("UI.ResourcePacks"));
+                let l = ui::resource_packs::layout(screen, header_w);
+                let (bar, view_h, content_h) = if enabled {
+                    (l.enabled_bar, l.enabled_list[3],
+                     ui::workshop_kit::pack_content_height(state.enabled().len()))
+                } else {
+                    (l.available_bar, l.available_list[3],
+                     ui::workshop_kit::pack_content_height(state.available().len()))
+                };
+                let value = ui::panel::scrollbar_drag_value(bar, view_h, content_h, offset, mouse_y);
+                if enabled {
+                    state.enabled_scroll = value;
+                } else {
+                    state.available_scroll = value;
+                }
+                true
+            }
+            Some(FrontScreen::ResourcePackInfo(state)) => {
+                let Some(pack) = state.pack.clone() else { return false };
+                let l = self.pack_info_layout(screen, &pack);
+                if !l.attached {
+                    return false;
+                }
+                let desc_h = self.pack_info_desc_height(&pack, l.list[2]);
+                state.scroll =
+                    ui::panel::scrollbar_drag_value(l.scrollbar, l.container[3], desc_h, offset, mouse_y);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The element id under the pointer on the live front screen — the
@@ -1304,8 +1670,13 @@ impl App {
             // hops (`UICharacterSelect.cs:110/:118`, `UIWorldListItem.cs:365`).
             // `PackInfoBack` is silent: `UIResourcePackInfoMenu.GoBackClick`
             // (`:170-173`) plays no sound (only its hover plays 12).
-            if matches!(click, FlowClick::PackInfoBack) {
-                // no cue
+            // `PackSelectionBack`/`PackInfo` already played their own cue in
+            // the selection screen's click arm (`:478`'s 11, `:267`'s 10).
+            if matches!(
+                click,
+                FlowClick::PackInfoBack | FlowClick::PackSelectionBack | FlowClick::PackInfo(_)
+            ) {
+                // no cue — the screen owns it
             } else if matches!(
                 click,
                 FlowClick::CharBack
@@ -1641,6 +2012,64 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
+    fn pack_selection_back_returns_to_the_parked_target_or_menu() {
+        // `HandleBackButtonUsage` (`UIResourcePackSelectionMenu.cs:476-488`):
+        // a null `_uiStateToGoBackTo` runs `menuMode = 0`; a parked target
+        // (the hub) returns verbatim.
+        let null_back = FrontScreen::ResourcePackSelection(Box::new(
+            ui::resource_packs::PackSelectionState::new(),
+        ));
+        let (front, backup, page) =
+            next_flow_state(Some(null_back), None, None, FlowClick::PackSelectionBack);
+        assert!(front.is_none() && backup.is_none());
+        assert_eq!(page, Some(P::Main), "the null target opens menuMode 0");
+        // A parked char-select target (the hub lands with row 1; any
+        // FrontScreen rides the same back slot).
+        let mut state = ui::resource_packs::PackSelectionState::new();
+        state.back = Some(Box::new(FrontScreen::CharSelect));
+        let parked = FrontScreen::ResourcePackSelection(Box::new(state));
+        let (front, _, page) =
+            next_flow_state(Some(parked), None, None, FlowClick::PackSelectionBack);
+        assert_eq!(front, Some(FrontScreen::CharSelect));
+        assert!(page.is_none());
+    }
+
+    #[test]
+    fn pack_info_opens_over_the_parked_selection_screen() {
+        // `Click_Info` (`UIResourcePackSelectionMenu.cs:263-270`): the info
+        // screen opens with the named pack and the live selection screen
+        // parked as its back target; `PackInfoBack` restores it verbatim
+        // (the unapplied edits survive — no OnActivate re-list).
+        let mut state = ui::resource_packs::PackSelectionState::new();
+        state.packs.packs = vec![crate::resource_pack::ResourcePack {
+            file_name: "a".into(),
+            full_path: "a".into(),
+            name: "Alpha".into(),
+            description: "d".into(),
+            author: "au".into(),
+            version: crate::resource_pack::PackVersion { major: 1, minor: 0 },
+            is_enabled: true,
+            sorting_order: 0,
+            is_compressed: false,
+        }];
+        // An unapplied edit: the pack is disabled in the live store but the
+        // config was never written (Back not pressed yet).
+        let selection = FrontScreen::ResourcePackSelection(Box::new(state));
+        let (front, _, page) =
+            next_flow_state(Some(selection.clone()), None, None, FlowClick::PackInfo(0));
+        assert!(page.is_none());
+        let Some(FrontScreen::ResourcePackInfo(info)) = &front else {
+            panic!("the info screen opens");
+        };
+        assert_eq!(info.pack.as_ref().unwrap().name, "Alpha");
+        assert_eq!(info.back.as_deref(), Some(&selection), "the exact parent parks");
+        // Back restores the parked selection screen verbatim.
+        let (front, _, page) = next_flow_state(front, None, None, FlowClick::PackInfoBack);
+        assert_eq!(front, Some(selection));
+        assert!(page.is_none());
+    }
+
+    #[test]
     fn bug17_a_front_click_plays_the_activation_cue() {
         // Bug 17: the front-end clicks play the menu open (10) — the vanilla
         // `UICharacterListItem.cs:198` / `UIWorldListItem.cs:365` cues.
@@ -1748,6 +2177,10 @@ pub(crate) mod front_flow_tests {
             Some(FrontScreen::ResourcePackInfo(Box::new(
                 ui::resource_pack_info::PackInfoState::default(),
             ))),
+            // W4-d84 row 5: the pack-selection screen joins the matrix.
+            Some(FrontScreen::ResourcePackSelection(Box::new(
+                ui::resource_packs::PackSelectionState::new(),
+            ))),
         ];
         let backs = [
             None,
@@ -1783,6 +2216,8 @@ pub(crate) mod front_flow_tests {
             FlowClick::ConfirmYes,
             FlowClick::ConfirmNo,
             FlowClick::PackInfoBack,
+            FlowClick::PackSelectionBack,
+            FlowClick::PackInfo(0),
         ];
         for front in &fronts {
             for backup in &backs {
@@ -1841,6 +2276,7 @@ pub(crate) mod front_flow_tests {
         assert_eq!(tr_ui_preset("charnew"), Some(TrUiPreset::CharNew));
         assert_eq!(tr_ui_preset("worldnew"), Some(TrUiPreset::WorldNew));
         assert_eq!(tr_ui_preset("vk"), Some(TrUiPreset::Keyboard));
+        assert_eq!(tr_ui_preset("packs"), Some(TrUiPreset::Packs));
         assert_eq!(tr_ui_preset("credits"), Some(TrUiPreset::Credits));
         assert_eq!(tr_ui_preset("delplayer"), Some(TrUiPreset::DelPlayer));
         assert_eq!(tr_ui_preset("delworld"), Some(TrUiPreset::DelWorld));
@@ -2338,6 +2774,7 @@ pub(crate) mod front_flow_tests {
             front_mouse_down: false,
             front_scroll: 0.0,
             front_scroll_drag: None,
+            front_scroll_drag_enabled: false,
             session_draft: None,
             vk_grid: false,
             settings: settings::Settings::default(),

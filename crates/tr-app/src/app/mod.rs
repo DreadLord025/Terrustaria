@@ -429,6 +429,11 @@ pub(crate) struct App {
     /// inside the handle is kept (`:134-135`). `LeftMouseUp` clears it
     /// (`:145-149`).
     pub(crate) front_scroll_drag: Option<f32>,
+    /// Which list the `front_scroll_drag` latch belongs to on the two-list
+    /// pack-selection screen (`UIResourcePackSelectionMenu`'s
+    /// `_availablePacksList`/`_enabledPacksList`): `false` = available (left),
+    /// `true` = enabled (right). The single-list screens ignore it.
+    pub(crate) front_scroll_drag_enabled: bool,
     /// `Main.PendingPlayer`'s recorded twin — `FinishCreatingCharacter`'s
     /// `PlayerFileData.CreateAndSave` + `Main.LoadPlayers` port: the created
     /// draft feeds the implicit session entry's name/difficulty
@@ -2432,6 +2437,25 @@ impl App {
             // ctor's `BuildPage` (`:33-38`) is the whole setup; the pack and
             // the back target rode in from `Click_Info`.
             FrontScreen::ResourcePackInfo(_) => {}
+            // `Main.OpenResourcePacksMenu` (`Main.cs:52371-52375`): the ctor
+            // takes `AssetInitializer.CreateResourcePackList` — the config's
+            // saved entries + the directory discovery (`ResourcePackList.
+            // FromJson`) — then `PopulatePackList` (`:57`). The back target
+            // rode in from the opener (null for the menu row, the hub for
+            // `Click_OpenResourcePacksMenu`).
+            FrontScreen::ResourcePackSelection(ref mut state) => {
+                let dir = crate::resource_pack::resource_packs_dir();
+                state.packs = match dir {
+                    Some(dir) => crate::resource_pack::ResourcePackList::from_config(
+                        &self.settings.resource_packs,
+                        &dir,
+                    ),
+                    None => crate::resource_pack::ResourcePackList::default(),
+                };
+                state.populate();
+                state.available_scroll = 0.0;
+                state.enabled_scroll = 0.0;
+            }
         }
         self.park_menu();
         self.front = Some(front);
@@ -3821,6 +3845,7 @@ impl App {
             front_mouse_down: false,
             front_scroll: 0.0,
             front_scroll_drag: None,
+            front_scroll_drag_enabled: false,
             session_draft: None,
             vk_grid: crate::env::vk_grid(),
             settings,

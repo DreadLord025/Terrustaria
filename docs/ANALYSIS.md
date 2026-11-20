@@ -36103,6 +36103,40 @@ flow's cue arm skips `PackInfoBack` (only the hover `FadedMouseOver` plays
 layout's `attached` flag; the description height re-measures after the
 25 px width flip (the C# converges in one `Recalculate` pass).
 
+### UIResourcePackSelectionMenu (row 5)
+
+`ui/resource_packs.rs` + `FrontScreen::ResourcePackSelection`. The menuMode 11
+row 4 hint ("Resource packs are not ported yet") becomes `Action::ResourcePacks`
+(`Main.cs:48949-48957`'s no-Steam else branch → `OpenResourcePacksMenu(null)`);
+`TR_UI=packs` presets the screen. The payload carries `_packsList` (the flat
+store the two views index into), the two list scrolls and the
+`_uiStateToGoBackTo` target. `enter_front` re-lists from the config
+(`AssetInitializer.CreateResourcePackList` → `ResourcePackList::from_config`)
+and runs `PopulatePackList`'s priority cleanup.
+
+- **`ApplyListChanges` stores the enabled-only list** (`:272-275` →
+  `AssetSourceController.UseResourcePacks`, `AssetSourceController.cs:38-63`):
+  the C# builds `new ResourcePackList(_enabledPacksList.Select(...))` — only
+  the enabled packs become the active list, so `Main.SaveSettings`'
+  `SaveResourcePacks` (`Main.cs:6528-6536`) writes only those. The port's Back
+  tail mirrors it: `Settings.resource_packs = enabled_only.to_json()` + save.
+  Disabled packs are re-discovered from the directory on the next open
+  (`CreatePacksFromDirectories`), exactly as the vanilla re-lists them.
+- **The offset arrows' dead-end gate** (`CreateOffsetButton`, `:131`): an
+  up-arrow on `SortingOrder == 0` (or a down-arrow on the last) plays sound 12
+  without moving — the gate is click-side, the draw is identical.
+- **The hover `MouseText`** (`DisplayMouseTextIfHovered`, `:528-535`) is
+  ported as `hover_text_key` (the `OnUpdate` handlers' keys, including the
+  swapped up/down wording); the cursor-following tooltip draw is the
+  `front_hint` channel's documented stand-in.
+- **`ResetAllContentBasedRenderTargets`** (`:162/:204`) has no port seam —
+  dropped with the content-pipeline deviation.
+- The two lists' scrollbars are always children (`:379-386`/`:412-418` — no
+  `Recalculate` detach branch on this screen, unlike the info menu); the
+  wheel/press/drag route per-list through `front_pack_wheel`/
+  `front_pack_scrollbar_press`/`front_pack_scrollbar_drag`, the drag latch
+  recording its list (`front_scroll_drag_enabled`).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

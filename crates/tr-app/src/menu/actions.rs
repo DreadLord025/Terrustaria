@@ -27,6 +27,10 @@ pub enum Action {
     /// `Main.MenuUI.SetState(Main.AchievementsMenu)` — the port opens the
     /// `UIAchievementsMenu` overlay over the live menu (M6-ACH-2).
     Achievements,
+    /// menuMode 11 row 4's no-Steam branch (`Main.cs:48949-48957`):
+    /// `UI.ResourcePacks` → `Main.OpenResourcePacksMenu(null)` — the port
+    /// opens `FrontScreen::ResourcePackSelection` (W4-d84 row 5).
+    ResourcePacks,
     /// The in-world keybinds screen's Back/Escape (`IngameFancyUI.Close`,
     /// `IngameFancyUI.cs:162-188`): the menu closes and gameplay resumes —
     /// only reachable on the menu the options window's Keybinds row opened
@@ -186,6 +190,9 @@ impl Menu {
                 // `Lang.menu[131]`'s row: the App opens the
                 // `UIAchievementsMenu` overlay (M6-ACH-2).
                 Action::Achievements => Action::Achievements,
+                // menuMode 11 row 4 (`Main.cs:48949-48957`): the App opens
+                // the pack-selection screen (W4-d84).
+                Action::ResourcePacks => Action::ResourcePacks,
                 // No row carries it — only the in-game keybinds' Back/Escape
                 // arms produce it.
                 Action::ReturnToWorld => Action::ReturnToWorld,

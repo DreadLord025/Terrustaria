@@ -72,6 +72,15 @@ impl App {
                 self.front = None;
                 self.enter_front(FrontScreen::WorldLoad(Box::new(state)));
             }
+            TrUiPreset::Packs => {
+                // The pack-selection screenshot (`TR_UI=packs`): the menuMode
+                // 11 row 4 entry (`Main.cs:48949-48957`, the no-Steam else
+                // branch) — `OpenResourcePacksMenu(null)`, the config's
+                // packs + the directory discovery.
+                self.enter_front(FrontScreen::ResourcePackSelection(Box::new(
+                    ui::resource_packs::PackSelectionState::new(),
+                )));
+            }
             TrUiPreset::Credits => {
                 self.front = None;
                 self.front_backup = None;
