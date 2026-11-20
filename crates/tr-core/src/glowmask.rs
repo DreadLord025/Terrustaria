@@ -52,6 +52,17 @@ pub const TILE_GLOW_RECORDS: &[(u16, i16)] = &[
     (627, 313),  // :10041 — RainbowMoss (disco colour, TileDrawing.cs:1235)
     (628, 314),  // :10042 — RainbowMossBrick (disco colour)
     (692, 341),  // :10043 — RainbowMossBlock (disco colour)
+    (370, 111),  // :10044 — MeteoriteBrick (meteor colour, TileDrawing.cs:1243)
+    (429, 214),  // :10045 — WireBulb (painted-sheet swap :1253-1256)
+    (209, 215),  // :10046 — Cannon (PortalHelper.GetPortalColor :1250-1251)
+    (445, 214),  // :10047 — PixelBox (painted-sheet swap :1253-1256)
+    (129, -2),   // :10048 — Crystals: the SENTINEL — IndexInRange(-2) fails,
+                 // the glow block keeps the painted tile texture (:1258-1275)
+    (633, 326),  // :10049 — AshGrass (Lerp(White, finalColor, 0.75) :1199-1200)
+    (659, 348),  // :10050 — ShimmerBlock (shimmer glitter :1202-1205)
+    (667, 349),  // :10051 — ShimmerBrick (shimmer glitter)
+    (708, 359),  // :10052 — Shimmerfall (shimmer glitter)
+    (699, 353),  // :10053 — DeadCellsPotionStation (White :1240-1241)
 ];
 
 /// `Main.tileGlowMask[type]` (`Main.cs:10024-10068`): the glow-mask sheet
