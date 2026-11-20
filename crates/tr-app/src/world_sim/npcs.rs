@@ -535,6 +535,10 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Princess => 24,
         NpcKind::DyeTrader => 12,
         NpcKind::PartyGirl => 13,
+        // W4-d123: `Shop(550, 21)` (`NPCInteractions.cs:508`) — the
+        // Tavernkeep's medal shop. The Skeleton Merchant's `Shop(453, 20)`
+        // (`:507`) has no ported kind yet (the shop itself is ported).
+        NpcKind::DD2Bartender => 21,
         _ => return None,
     })
 }
