@@ -1685,8 +1685,8 @@ mod tests {
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
         // W4-d124: the DD2 tier flags (`DD2Event.Save`, `DD2Event.cs:151-156`)
-        // ride the round-trip at DISTINCT non-default values — a tier-3 win
-        // latches all three, but the bytes must survive independently.
+        // ride the round-trip in an ALTERNATING pattern — an adjacent byte
+        // swap (T1/T2 or T2/T3) breaks the assert, so the offsets are pinned.
         world.dd2_downed_t1 = true;
         world.dd2_downed_t2 = false;
         world.dd2_downed_t3 = true;
