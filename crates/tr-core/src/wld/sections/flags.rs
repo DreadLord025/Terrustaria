@@ -143,11 +143,13 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.downed_martians);
     w.boolean(world.downed_ancient_cultist); // downedAncientCultist
     w.boolean(world.downed_moon_lord); // downedMoonlord
-    w.boolean(false); // downedHalloweenKing
-    w.boolean(false); // downedHalloweenTree
-    w.boolean(false); // downedChristmasIceQueen
-    w.boolean(false); // downedChristmasSantank
-    w.boolean(false); // downedChristmasTree
+    // W4-f45: the five seasonal bosses — the moon-event-gated kills
+    // (`NPC.cs:79210-79239`); the death arms raise them in world_sim/npcs.rs.
+    w.boolean(world.downed_halloween_king); // downedHalloweenKing
+    w.boolean(world.downed_halloween_tree); // downedHalloweenTree
+    w.boolean(world.downed_christmas_ice_queen); // downedChristmasIceQueen
+    w.boolean(world.downed_christmas_santank); // downedChristmasSantank
+    w.boolean(world.downed_christmas_tree); // downedChristmasTree
     w.boolean(world.downed_tower_solar); // downedTowerSolar
     w.boolean(world.downed_tower_vortex); // downedTowerVortex
     w.boolean(world.downed_tower_nebula); // downedTowerNebula
@@ -213,8 +215,9 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // boughtDog
     w.boolean(false); // boughtBunny
     // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedQueenSlime` and
-    // `downedDeerclops` are owned, the Empress has no port state.
-    w.boolean(false); // downedEmpressOfLight — unowned
+    // `downedDeerclops` are owned; W4-f45 claims `downedEmpressOfLight` too
+    // (the HallowBoss kind is unported, so the file round-trips the latch).
+    w.boolean(world.downed_empress_of_light); // downedEmpressOfLight
     w.boolean(world.downed_queen_slime); // downedQueenSlime
     w.boolean(world.downed_deerclops);
     // WorldFile.cs:1398-1410: the unlocked town-NPC spawns — set on the NPC's
@@ -317,7 +320,7 @@ fn write_downed_flags(w: &mut Writer, world: &World) {
     w.boolean(world.saved_wizard); // savedWizard
     w.boolean(world.saved_mech); // savedMech
     w.boolean(world.downed_goblins);
-    w.boolean(false); // downedClown — unowned
+    w.boolean(world.downed_clown); // downedClown (W4-f45; the kind is unported, the file round-trips)
     w.boolean(world.downed_frost);
     w.boolean(world.downed_pirates);
 }
@@ -415,7 +418,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.saved_wizard = r.bool()?; // savedWizard
     world.saved_mech = r.bool()?; // savedMech
     world.downed_goblins = r.bool()?;
-    r.skip(1)?; // downedClown
+    world.downed_clown = r.bool()?; // downedClown (W4-f45)
     world.downed_frost = r.bool()?;
     world.downed_pirates = r.bool()?;
     // WorldFile.cs:2103-2117 — orbs, meteor, altars, hardmode, invasion.
@@ -500,7 +503,12 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.downed_martians = r.bool()?;
     world.downed_ancient_cultist = r.bool()?; // downedAncientCultist
     world.downed_moon_lord = r.bool()?; // downedMoonlord
-    r.skip(5)?; // downedHalloweenKing .. downedChristmasTree
+    // W4-f45: the five seasonal bosses (`LoadWorldFlags:2217-2221`, v131+).
+    world.downed_halloween_king = r.bool()?; // downedHalloweenKing
+    world.downed_halloween_tree = r.bool()?; // downedHalloweenTree
+    world.downed_christmas_ice_queen = r.bool()?; // downedChristmasIceQueen
+    world.downed_christmas_santank = r.bool()?; // downedChristmasSantank
+    world.downed_christmas_tree = r.bool()?; // downedChristmasTree
     if version < 140 {
         return Ok(());
     }
@@ -608,7 +616,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(3)?; // boughtCat/Dog/Bunny
     }
     if version >= 223 {
-        r.skip(1)?; // downedEmpressOfLight — unowned
+        world.downed_empress_of_light = r.bool()?; // downedEmpressOfLight (W4-f45)
         world.downed_queen_slime = r.bool()?; // downedQueenSlime
     }
     if version >= 240 {

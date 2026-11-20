@@ -5090,6 +5090,56 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
             }
+            // W4-f45 — the five seasonal-boss arms (`NPC.cs:79210-79239`):
+            // the kill only counts while its moon event is up (the C#'s
+            // `Main.pumpkinMoon`/`Main.snowMoon` gates). `SetEventFlagCleared`
+            // (`:78759-78767`) fires the progression event ONLY on the
+            // false→true transition — the notify rides that guard.
+            // `OnGameEventClearedForTheFirstTime` (`:78769-78793`): events
+            // 5/20 hit the DEFAULT arm (`NextNightIsLanternNight = true`);
+            // 4/21/22 hit the explicit no-op arm (`:78789-78792`).
+            NpcKind::Pumpking => {
+                if app.world.pumpkin_moon {
+                    if !app.world.downed_halloween_king {
+                        app.world.downed_halloween_king = true; // case 327, flag 5
+                        app.world_events.next_night_is_lantern_night = true;
+                        let _ = app.notify_progression_net(5);
+                    }
+                }
+            }
+            NpcKind::MourningWood => {
+                if app.world.pumpkin_moon {
+                    if !app.world.downed_halloween_tree {
+                        app.world.downed_halloween_tree = true; // case 325, flag 4
+                        let _ = app.notify_progression_net(4);
+                    }
+                }
+            }
+            NpcKind::Everscream => {
+                if app.world.snow_moon {
+                    if !app.world.downed_christmas_tree {
+                        app.world.downed_christmas_tree = true; // case 344, flag 21
+                        let _ = app.notify_progression_net(21);
+                    }
+                }
+            }
+            NpcKind::IceQueen => {
+                if app.world.snow_moon {
+                    if !app.world.downed_christmas_ice_queen {
+                        app.world.downed_christmas_ice_queen = true; // case 345, flag 20
+                        app.world_events.next_night_is_lantern_night = true;
+                        let _ = app.notify_progression_net(20);
+                    }
+                }
+            }
+            NpcKind::SantaNK1 => {
+                if app.world.snow_moon {
+                    if !app.world.downed_christmas_santank {
+                        app.world.downed_christmas_santank = true; // case 346, flag 22
+                        let _ = app.notify_progression_net(22);
+                    }
+                }
+            }
             NpcKind::SolarTower => {
                 app.world.downed_tower_solar = true;
                 app.world.tower_active_solar = false;
@@ -17826,6 +17876,71 @@ mod fishron_wiring_tests {
         update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_fishron);
         assert!(app.npcs.iter().all(|n| n.kind != NpcKind::DukeFishron));
+    }
+
+    /// W4-f45 — the seasonal-boss death census (`NPC.cs:79210-79239`): each
+    /// kill raises its downed flag ONLY while its moon event is up, and
+    /// `OnGameEventClearedForTheFirstTime` (`:78769-78793`) arms the next
+    /// lantern night for events 5/20 (the default arm) but NOT for 4/21/22
+    /// (the explicit no-op arm). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_seasonal_boss_deaths_gate_on_their_moon_events() {
+        let dead_boss = |kind: NpcKind| {
+            let mut n = Npc::new(kind, 90.0 * 16.0, 90.0 * 16.0, 1, 0.0);
+            n.hp = 0;
+            n
+        };
+        let app_with = |pumpkin: bool, snow: bool, kind: NpcKind| {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            app.world = air();
+            app.world.pumpkin_moon = pumpkin;
+            app.world.snow_moon = snow;
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 100.0 * 16.0;
+            player.y = 100.0 * 16.0;
+            app.player = Some(player);
+            app.npcs.push(dead_boss(kind));
+            app
+        };
+        // The Pumpkin Moon up: both Halloween bosses latch; the King's
+        // event 5 arms the lantern night (the default arm), the Wood's
+        // event 4 does not (the no-op arm — checked on a fresh app).
+        let mut app = app_with(true, false, NpcKind::Pumpking);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_halloween_king, "case 327 while pumpkinMoon");
+        assert!(app.world_events.next_night_is_lantern_night, "event 5's default arm");
+        let mut app = app_with(true, false, NpcKind::MourningWood);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_halloween_tree, "case 325 while pumpkinMoon");
+        assert!(
+            !app.world_events.next_night_is_lantern_night,
+            "event 4 is the explicit no-op arm (`:78789-78792`)"
+        );
+        // The Frost Moon up: the three Christmas bosses latch; only the
+        // Ice Queen's event 20 arms the lantern night.
+        let mut app = app_with(false, true, NpcKind::IceQueen);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_christmas_ice_queen, "case 345 while snowMoon");
+        assert!(app.world_events.next_night_is_lantern_night, "event 20's default arm");
+        let mut app = app_with(false, true, NpcKind::SantaNK1);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_christmas_santank, "case 346 while snowMoon");
+        assert!(!app.world_events.next_night_is_lantern_night, "event 22 no-op");
+        let mut app = app_with(false, true, NpcKind::Everscream);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_christmas_tree, "case 344 while snowMoon");
+        assert!(!app.world_events.next_night_is_lantern_night, "event 21 no-op");
+        // No moon event up: every gate stays closed (the C#'s `if` guards).
+        let mut app = app_with(false, false, NpcKind::Pumpking);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.downed_halloween_king, "no pumpkinMoon, no latch");
+        let mut app = app_with(false, false, NpcKind::IceQueen);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.downed_christmas_ice_queen, "no snowMoon, no latch");
+        // The wrong moon does not open the gate either.
+        let mut app = app_with(false, true, NpcKind::Pumpking);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.downed_halloween_king, "snowMoon is not pumpkinMoon");
     }
 
     /// The shark spawn seam: the aiStyle-64 cloud's request becomes a

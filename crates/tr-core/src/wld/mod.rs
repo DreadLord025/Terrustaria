@@ -1673,6 +1673,14 @@ mod tests {
         world.downed_deerclops = true;
         // S1-D-3 W-9: the fishron flag round-trips too.
         world.downed_fishron = true;
+        // W4-f45: the downed-flag census — each at a distinct non-default.
+        world.downed_clown = true;
+        world.downed_empress_of_light = true;
+        world.downed_halloween_king = true;
+        world.downed_halloween_tree = true;
+        world.downed_christmas_ice_queen = true;
+        world.downed_christmas_santank = true;
+        world.downed_christmas_tree = true;
         world.shadow_orb_smashed = true;
         world.spawn_meteor = true;
         world.shadow_orb_count = 7;
@@ -1817,6 +1825,32 @@ mod tests {
         assert_eq!(
             got.downed_deerclops, want.downed_deerclops,
             "{context}: deerclops"
+        );
+        // W4-f45: the downed-flag census.
+        assert_eq!(got.downed_clown, want.downed_clown, "{context}: downedClown");
+        assert_eq!(
+            got.downed_empress_of_light, want.downed_empress_of_light,
+            "{context}: downedEmpressOfLight"
+        );
+        assert_eq!(
+            got.downed_halloween_king, want.downed_halloween_king,
+            "{context}: downedHalloweenKing"
+        );
+        assert_eq!(
+            got.downed_halloween_tree, want.downed_halloween_tree,
+            "{context}: downedHalloweenTree"
+        );
+        assert_eq!(
+            got.downed_christmas_ice_queen, want.downed_christmas_ice_queen,
+            "{context}: downedChristmasIceQueen"
+        );
+        assert_eq!(
+            got.downed_christmas_santank, want.downed_christmas_santank,
+            "{context}: downedChristmasSantank"
+        );
+        assert_eq!(
+            got.downed_christmas_tree, want.downed_christmas_tree,
+            "{context}: downedChristmasTree"
         );
         assert_eq!(
             got.shadow_orb_smashed, want.shadow_orb_smashed,
@@ -2040,6 +2074,7 @@ mod tests {
         }
         tail[22] = u8::from(world.saved_goblin); // savedGoblin (`:1293`)
         tail[25] = u8::from(world.downed_goblins); // downedGoblins (`:1296`)
+        tail[26] = u8::from(world.downed_clown); // downedClown (`:1297`, W4-f45)
         tail[27] = u8::from(world.downed_frost); // downedFrost (`:1297`)
         tail[28] = u8::from(world.downed_pirates); // downedPirates (`:1298`)
         // The orbs/meteor/counts/hardmode block at 29..36 (`:1299-1305`).
@@ -2081,6 +2116,12 @@ mod tests {
         // S1-D-3 W-9: downedFishron is World-owned now (`:1343`).
         tail[1889] = u8::from(world.downed_fishron); // downedFishron
         tail[1890] = u8::from(world.downed_martians); // downedMartians (`:1344`)
+        // W4-f45: the five seasonal bosses at 1893..1897 (`:1347-1351`).
+        tail[1893] = u8::from(world.downed_halloween_king);
+        tail[1894] = u8::from(world.downed_halloween_tree);
+        tail[1895] = u8::from(world.downed_christmas_ice_queen);
+        tail[1896] = u8::from(world.downed_christmas_santank);
+        tail[1897] = u8::from(world.downed_christmas_tree);
         // The four tower downeds + four actives + the apocalypse phase, after
         // the five seasonal bosses (1893..1897): 1898..1906.
         tail[1898] = u8::from(world.downed_tower_solar); // (`:1352`)
@@ -2093,6 +2134,7 @@ mod tests {
         tail[1905] = u8::from(world.tower_active_stardust); // (`:1359`)
         tail[1906] = u8::from(world.lunar_apocalypse_is_up); // (`:1360`)
         // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
+        tail[2024] = u8::from(world.downed_empress_of_light); // (`:1395`, W4-f45)
         tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
         // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
@@ -3706,6 +3748,66 @@ mod tests {
         let tail_at = ptr1 - flags_tail(VER).len();
         assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
         assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
+    }
+
+    /// W4-f45 — the downed-flag census lands at its C# byte offsets and
+    /// follows the C# read gates. downedClown is ungated (`:2099`), the five
+    /// seasonal bosses read from 131 (`:2217-2221`), downedEmpressOfLight
+    /// from 223 (`:2370`). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_downed_census_lands_at_the_csharp_offsets_and_gates() {
+        // v326: patch each census byte into the independent `flags_tail`
+        // table and read it back through the real reader.
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 26] = 1; // downedClown (`:1297`)
+        for off in 1893..=1897 {
+            data[tail_at + off] = 1; // the five seasonal bosses (`:1347-1351`)
+        }
+        data[tail_at + 2024] = 1; // downedEmpressOfLight (`:1395`)
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.downed_clown, "downedClown at tail 26");
+        assert!(w.downed_halloween_king, "downedHalloweenKing at tail 1893");
+        assert!(w.downed_halloween_tree, "downedHalloweenTree at tail 1894");
+        assert!(w.downed_christmas_ice_queen, "downedChristmasIceQueen at tail 1895");
+        assert!(w.downed_christmas_santank, "downedChristmasSantank at tail 1896");
+        assert!(w.downed_christmas_tree, "downedChristmasTree at tail 1897");
+        assert!(w.downed_empress_of_light, "downedEmpressOfLight at tail 2024");
+        assert!(!w.downed_queen_slime, "the queen slime byte after it stays 0");
+        // The writer's own block carries the same values at the same offsets.
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let tail_at = ptr1 - flags_tail(VER).len();
+        assert_eq!(buf[tail_at + 26], 1, "downedClown at tail 26");
+        for off in 1893..=1897 {
+            assert_eq!(buf[tail_at + off], 1, "seasonal boss at tail {off}");
+        }
+        assert_eq!(buf[tail_at + 2024], 1, "downedEmpressOfLight at tail 2024");
+        // v130: the seasonal block does not exist yet (the fishron..moonlord
+        // quartet ends the v130 tail after the dawn byte) — all five stay
+        // false. downedClown is ungated and reads on every version.
+        let mut data = synthetic_file(130, &[2, 144], 160, 7);
+        let tail_at = tail_offset_in_synthetic(&data, 130);
+        data[tail_at + 26] = 1; // downedClown — ungated
+        let w = parse(&data).expect("v130 loads");
+        assert!(w.downed_clown, "downedClown reads on every version");
+        assert!(!w.downed_halloween_king, "below 131: the seasonal five stay false");
+        assert!(!w.downed_christmas_tree);
+        // v222: the empress byte does not exist yet (the 223 pair is absent).
+        let w = parse(&synthetic_file(222, &[2, 144], 160, 11)).expect("v222 loads");
+        assert!(!w.downed_empress_of_light, "below 223: the empress stays false");
+        assert!(!w.downed_queen_slime);
+        // v223: the pair lands — the empress is the FIRST byte of the pair.
+        let mut data = synthetic_file(223, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 223);
+        // The v223 tail ends at the empress/queenSlime pair (deerclops needs
+        // 240): the empress is 2 from the end.
+        let empress_at = flags_tail(223).len() - 2;
+        data[tail_at + empress_at] = 1;
+        let w = parse(&data).expect("v223 loads");
+        assert!(w.downed_empress_of_light, "downedEmpressOfLight reads from 223");
+        assert!(!w.downed_queen_slime, "the queen slime byte after it stays 0");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

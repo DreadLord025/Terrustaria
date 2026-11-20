@@ -235,6 +235,30 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    // --- W4-f45: the downed-flag census (`.wld` `SaveWorldFlags`) -----------
+    /// `NPC.downedClown` (`NPC.cs:6361`): the first Clown kill
+    /// (`DoDeathEvents` case 109, `:79376-79384`). The Clown kind is
+    /// unported, so the latch has no live setter yet — the file round-trips.
+    pub downed_clown: bool,
+    /// `NPC.downedEmpressOfLight` (`NPC.cs:6393`): the event flag 23
+    /// (`DoDeathEvents` case 636, `:79351-79352`). The HallowBoss kind is
+    /// unported (R7), so the latch has no live setter yet.
+    pub downed_empress_of_light: bool,
+    /// `NPC.downedHalloweenKing` (`NPC.cs:6373`): a Pumpking killed while
+    /// the Pumpkin Moon is up (case 327, `:79210-79215`, event flag 5).
+    pub downed_halloween_king: bool,
+    /// `NPC.downedHalloweenTree` (`NPC.cs:6371`): a Mourning Wood killed
+    /// while the Pumpkin Moon is up (case 325, `:79216-79221`, flag 4).
+    pub downed_halloween_tree: bool,
+    /// `NPC.downedChristmasIceQueen` (`NPC.cs:6375`): an Ice Queen killed
+    /// while the Frost Moon is up (case 345, `:79228-79233`, flag 20).
+    pub downed_christmas_ice_queen: bool,
+    /// `NPC.downedChristmasSantank` (`NPC.cs:6379`): a Santa-NK1 killed
+    /// while the Frost Moon is up (case 346, `:79234-79239`, flag 22).
+    pub downed_christmas_santank: bool,
+    /// `NPC.downedChristmasTree` (`NPC.cs:6377`): an Everscream killed
+    /// while the Frost Moon is up (case 344, `:79222-79227`, flag 21).
+    pub downed_christmas_tree: bool,
     /// The Skeletron Prime head's centre + the present flag (the limbs'
     /// tether reads — the WoF write-through shape).
     pub prime_present: bool,
@@ -655,6 +679,15 @@ impl World {
             downed_golem: false,
             downed_fishron: false,
             downed_deerclops: false,
+            // W4-f45: the downed-flag census (the C# statics start false,
+            // `NPC.cs:95228-95244`'s WorldClear family).
+            downed_clown: false,
+            downed_empress_of_light: false,
+            downed_halloween_king: false,
+            downed_halloween_tree: false,
+            downed_christmas_ice_queen: false,
+            downed_christmas_santank: false,
+            downed_christmas_tree: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
