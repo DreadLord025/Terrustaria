@@ -514,6 +514,42 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, 1225, range(rng, 20, 36));
             quick_spawn(rng, out, 3356, 1); // Mechanical Battery Piece
         }
+        // Plantera (`Player.cs:7433-7485`).
+        3328 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2109, 1); // Plantera Mask
+            }
+            quick_spawn(rng, out, 1141, 1); // Temple Key
+            quick_spawn(rng, out, 3336, 1); // Spore Sac (expert-exclusive)
+            if rng.next_max(15) == 0 {
+                quick_spawn(rng, out, 1182, 1); // Seedling
+            }
+            if rng.next_max(20) == 0 {
+                quick_spawn(rng, out, 1305, 1); // The Axe
+            }
+            if rng.next_max(2) == 0 {
+                quick_spawn(rng, out, 1157, 1); // Pygmy Staff
+            }
+            if rng.next_max(10) == 0 {
+                quick_spawn(rng, out, 3021, 1); // Thorn Hook
+            }
+            // `:7457-7484` — the weapon pick: Next(8); option 0 carries
+            // the Grenade Launcher 758 + the Rocket I 771 Next(50, 151).
+            match rng.next_max(8) {
+                0 => {
+                    quick_spawn(rng, out, 758, 1); // Grenade Launcher
+                    quick_spawn(rng, out, 771, range(rng, 50, 151)); // Rocket I
+                }
+                1 => quick_spawn(rng, out, 1255, 1), // Venus Magnum
+                2 => quick_spawn(rng, out, 788, 1),   // Nettle Burst
+                3 => quick_spawn(rng, out, 1178, 1), // Leaf Blower
+                4 => quick_spawn(rng, out, 1259, 1), // Flower Pow
+                5 => quick_spawn(rng, out, 1155, 1), // Wasp Gun
+                6 => quick_spawn(rng, out, 3018, 1), // Seedler
+                _ => quick_spawn(rng, out, 5477, 1), // Flower Whip
+            }
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1285,6 +1321,86 @@ mod tests {
             spawn_replay(&mut r, &mut want, 1225, r.next_range(20, 36));
             spawn_replay(&mut r, &mut want, 3356, 1);
             money_replay_on(&mut r, 127, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_plantera_bag_zero_script_grants_the_whole_arm() {
+        // The dev set leads, then the mask, the Temple Key, the Spore
+        // Sac, all four optionals hit (Seedling/Axe/Pygmy/Thorn Hook),
+        // the weapon pick 0 → Grenade Launcher + Rocket I 50 — coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3328, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..12],
+            [666, 667, 668, 665, 3287, 2109, 1141, 3336, 1182, 1305, 1157, 3021],
+            "{its:?}"
+        );
+        assert_eq!(its[12], 758, "the weapon pick 0");
+        assert_eq!(its[13], 771, "the rocket tail");
+        assert_eq!(out[13].stack, 50, "Rocket I Next(50,151) minimum");
+        assert!(its[14..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_plantera_bag_weapon_picks_one_through_seven() {
+        // The Next(8) pick: 1..7 grant exactly one weapon each (no
+        // rocket tail); the optionals all miss.
+        for (pick, weapon) in [
+            (1i32, 1255u16), (2, 788), (3, 1178), (4, 1259), (5, 1155), (6, 3018), (7, 5477),
+        ] {
+            let mut rng = ScriptRng::new(&[1, 6, 14, 19, 1, 9, pick]);
+            let mut out = Vec::new();
+            open_boss_bag(3328, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[..3], [1141, 3336, weapon], "pick {pick}: {its:?}");
+        }
+    }
+
+    #[test]
+    fn w4_f35_plantera_bag_replays_the_csharp_draw_order() {
+        for seed in [41i32, 262262] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3328, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            dev_armor_replay(&mut r, &mut want, false);
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 2109, 1);
+            }
+            spawn_replay(&mut r, &mut want, 1141, 1);
+            spawn_replay(&mut r, &mut want, 3336, 1);
+            if r.next_max(15) == 0 {
+                spawn_replay(&mut r, &mut want, 1182, 1);
+            }
+            if r.next_max(20) == 0 {
+                spawn_replay(&mut r, &mut want, 1305, 1);
+            }
+            if r.next_max(2) == 0 {
+                spawn_replay(&mut r, &mut want, 1157, 1);
+            }
+            if r.next_max(10) == 0 {
+                spawn_replay(&mut r, &mut want, 3021, 1);
+            }
+            match r.next_max(8) {
+                0 => {
+                    spawn_replay(&mut r, &mut want, 758, 1);
+                    spawn_replay(&mut r, &mut want, 771, r.next_range(50, 151));
+                }
+                1 => spawn_replay(&mut r, &mut want, 1255, 1),
+                2 => spawn_replay(&mut r, &mut want, 788, 1),
+                3 => spawn_replay(&mut r, &mut want, 1178, 1),
+                4 => spawn_replay(&mut r, &mut want, 1259, 1),
+                5 => spawn_replay(&mut r, &mut want, 1155, 1),
+                6 => spawn_replay(&mut r, &mut want, 3018, 1),
+                _ => spawn_replay(&mut r, &mut want, 5477, 1),
+            }
+            money_replay_on(&mut r, 262, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
         }
