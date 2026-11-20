@@ -254,6 +254,18 @@ pub mod id {
     /// send sites are the client placement hooks (`TEItemFrame.cs:25`
     /// etc.) — C2s-only.
     pub const TILE_ENTITY_PLACEMENT: u8 = 87;
+    /// `88 ItemTweaker` (`MessageID.cs:190`) — writer
+    /// `NetMessage.cs:1232-1296` (the two-BitsByte conditional stat
+    /// override), reader `MessageBuffer.cs:3306-3376` (client-only, the
+    /// `0..=400` slot gate). Host sends: the drop-rule tweaks
+    /// (`CommonCode.cs:67-92`). S2c-only.
+    pub const ITEM_TWEAKER: u8 = 88;
+    /// `89 ItemFrameTryPlacing` (`MessageID.cs:192`) — writer
+    /// `NetMessage.cs:1297-1306`, reader `MessageBuffer.cs:3377-3393`
+    /// (host-only `TEItemFrame.TryPlacing` under
+    /// `DefaultAssignNewItemsToPlayer`). Client send: `TEItemFrame.cs:150`.
+    /// C2s-only. The 123/133/149 twins share this exact body.
+    pub const ITEM_FRAME_TRY_PLACING: u8 = 89;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2007,6 +2019,61 @@ pub struct TileEntityPlacement {
     pub entity_type: u8,
 }
 
+/// `msg 88 ItemTweaker`'s body (`NetMessage.cs:1232-1296`): the item slot
+/// `(short)`, then two flag bytes gating the stat overrides. BitsByte 1:
+/// 0 color (`uint` packed), 1 damage (`ushort`), 2 knockback (`float`),
+/// 3 useAnimation (`ushort`), 4 useTime (`ushort`), 5 shoot (`short`),
+/// 6 shootSpeed (`float`), 7 = the second BitsByte rides. BitsByte 2:
+/// 0 width (`ushort` writer / `short` reader — the wire is two bytes
+/// either way), 1 height (same), 2 scale (`float`), 3 ammo (`short`),
+/// 4 useAmmo (`short`), 5 notAmmo (`bool`). Absent fields stay unset.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ItemTweaker {
+    pub slot: i16,
+    pub color: Option<u32>,
+    pub damage: Option<u16>,
+    pub knockback: Option<f32>,
+    pub use_animation: Option<u16>,
+    pub use_time: Option<u16>,
+    pub shoot: Option<i16>,
+    pub shoot_speed: Option<f32>,
+    pub width: Option<u16>,
+    pub height: Option<u16>,
+    pub scale: Option<f32>,
+    pub ammo: Option<i16>,
+    pub use_ammo: Option<i16>,
+    pub not_ammo: Option<bool>,
+}
+
+impl ItemTweaker {
+    /// The second BitsByte rides only when at least one of its six fields
+    /// is set (the writer's `bitsByte[7]` gate, `NetMessage.cs:1267`).
+    fn has_second(&self) -> bool {
+        self.width.is_some()
+            || self.height.is_some()
+            || self.scale.is_some()
+            || self.ammo.is_some()
+            || self.use_ammo.is_some()
+            || self.not_ammo.is_some()
+    }
+}
+
+/// `msg 89 ItemFrameTryPlacing`'s body (`NetMessage.cs:1297-1306`): the
+/// tile as two `(short)`s, the held item's `(short)` type, its prefix
+/// byte, and the `(short)` stack (`number5` — always 1 at the send site,
+/// `TEItemFrame.cs:150`). The player/slot indices (`number4`/`number3`)
+/// select the item on the WRITER side only; they never ride the wire.
+/// The 123 WeaponsRack / 133 FoodPlatter / 149 DeadCellsJar twins share
+/// this exact shape (`NetMessage.cs:1479-1488`/`:1545-1554`/`:1629-1638`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TryPlacingItem {
+    pub x: i16,
+    pub y: i16,
+    pub kind: i16,
+    pub prefix: u8,
+    pub stack: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2152,6 +2219,10 @@ pub enum C2s {
     /// (`TEItemFrame.cs:25` and the other placement hooks; host gate +
     /// `PlaceEntityNet`, `MessageBuffer.cs:3294-3305`). C2s-only.
     TileEntityPlacement(TileEntityPlacement),
+    /// `89 ItemFrameTryPlacing` — a client tries to place its held item
+    /// on an item frame (`TEItemFrame.cs:150`; host `TryPlacing`,
+    /// `MessageBuffer.cs:3377-3393`). C2s-only.
+    ItemFrameTryPlacing(TryPlacingItem),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2355,6 +2426,10 @@ pub enum S2c {
     /// (the placement hooks' host push, `TileEntityType.cs:19`; the
     /// client-only reader `MessageBuffer.cs:3272-3293`). S2c-only.
     TileEntitySharing(Box<TileEntitySharing>),
+    /// `88 ItemTweaker` — a drop's stat overrides (the drop-rule tweaks,
+    /// `CommonCode.cs:67-92`; client-only reader
+    /// `MessageBuffer.cs:3306-3376`). S2c-only.
+    ItemTweaker(ItemTweaker),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2417,6 +2492,7 @@ impl C2s {
             Self::PlaceObject(_) => id::PLACE_OBJECT,
             Self::QuickStackRequest(_) => id::QUICK_STACK_CHESTS,
             Self::TileEntityPlacement(_) => id::TILE_ENTITY_PLACEMENT,
+            Self::ItemFrameTryPlacing(_) => id::ITEM_FRAME_TRY_PLACING,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2520,6 +2596,11 @@ impl C2s {
             }
             // `NetMessage.cs:1227-1231`: (short)x + (short)y + (byte)type.
             Self::TileEntityPlacement(p) => w.i16(p.x).i16(p.y).u8(p.entity_type),
+            // `NetMessage.cs:1297-1306`: two (short)s + (short)type +
+            // prefix byte + (short)stack; the player/slot never ride.
+            Self::ItemFrameTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2704,6 +2785,15 @@ impl C2s {
                 y: r.i16()?,
                 entity_type: r.u8()?,
             }),
+            // `MessageBuffer.cs:3383-3387`: two ReadInt16 + ReadInt16 type
+            // + ReadByte prefix + ReadInt16 stack.
+            id::ITEM_FRAME_TRY_PLACING => Self::ItemFrameTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2877,6 +2967,7 @@ impl S2c {
             Self::PlaceObject(_) => id::PLACE_OBJECT,
             Self::QuickStackBlockedChests(_) => id::QUICK_STACK_CHESTS,
             Self::TileEntitySharing(_) => id::TILE_ENTITY_SHARING,
+            Self::ItemTweaker(_) => id::ITEM_TWEAKER,
         }
     }
 
@@ -3063,6 +3154,70 @@ impl S2c {
                     None => w,
                     Some(e) => e.write_extra(w.u8(e.type_id()).i16(t.x).i16(t.y)),
                 }
+            }
+            // `NetMessage.cs:1232-1296`: (short)slot + BitsByte 1, the
+            // gated fields in bit order, then BitsByte 2 + its gated tail.
+            Self::ItemTweaker(t) => {
+                let mut b1 = BitsByte::new();
+                b1.set(0, t.color.is_some());
+                b1.set(1, t.damage.is_some());
+                b1.set(2, t.knockback.is_some());
+                b1.set(3, t.use_animation.is_some());
+                b1.set(4, t.use_time.is_some());
+                b1.set(5, t.shoot.is_some());
+                b1.set(6, t.shoot_speed.is_some());
+                b1.set(7, t.has_second());
+                let mut w = w.i16(t.slot).bitsbyte(b1);
+                if let Some(v) = t.color {
+                    w = w.u32(v);
+                }
+                if let Some(v) = t.damage {
+                    w = w.u16(v);
+                }
+                if let Some(v) = t.knockback {
+                    w = w.f32(v);
+                }
+                if let Some(v) = t.use_animation {
+                    w = w.u16(v);
+                }
+                if let Some(v) = t.use_time {
+                    w = w.u16(v);
+                }
+                if let Some(v) = t.shoot {
+                    w = w.i16(v);
+                }
+                if let Some(v) = t.shoot_speed {
+                    w = w.f32(v);
+                }
+                if t.has_second() {
+                    let mut b2 = BitsByte::new();
+                    b2.set(0, t.width.is_some());
+                    b2.set(1, t.height.is_some());
+                    b2.set(2, t.scale.is_some());
+                    b2.set(3, t.ammo.is_some());
+                    b2.set(4, t.use_ammo.is_some());
+                    b2.set(5, t.not_ammo.is_some());
+                    w = w.bitsbyte(b2);
+                    if let Some(v) = t.width {
+                        w = w.u16(v);
+                    }
+                    if let Some(v) = t.height {
+                        w = w.u16(v);
+                    }
+                    if let Some(v) = t.scale {
+                        w = w.f32(v);
+                    }
+                    if let Some(v) = t.ammo {
+                        w = w.i16(v);
+                    }
+                    if let Some(v) = t.use_ammo {
+                        w = w.i16(v);
+                    }
+                    if let Some(v) = t.not_ammo {
+                        w = w.bool(v);
+                    }
+                }
+                w
             }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
@@ -3345,6 +3500,62 @@ impl S2c {
                         entity: Some(TileEntityData::read_extra(kind, r)?),
                     }))
                 }
+            }
+            // `MessageBuffer.cs:3312-3374`: ReadInt16 slot (the 0..=400
+            // gate is the apply arm's), BitsByte 1 + the gated reads, then
+            // BitsByte 2 + its tail. Width/height read as ReadInt16 here
+            // (`:3352`/`:3356`) vs the writer's ushort — the port decodes
+            // the raw two bytes unsigned, matching the writer's domain.
+            id::ITEM_TWEAKER => {
+                let slot = r.i16()?;
+                let b1 = r.bitsbyte()?;
+                let mut t = ItemTweaker {
+                    slot,
+                    ..Default::default()
+                };
+                if b1.get(0) {
+                    t.color = Some(r.u32()?);
+                }
+                if b1.get(1) {
+                    t.damage = Some(r.u16()?);
+                }
+                if b1.get(2) {
+                    t.knockback = Some(r.f32()?);
+                }
+                if b1.get(3) {
+                    t.use_animation = Some(r.u16()?);
+                }
+                if b1.get(4) {
+                    t.use_time = Some(r.u16()?);
+                }
+                if b1.get(5) {
+                    t.shoot = Some(r.i16()?);
+                }
+                if b1.get(6) {
+                    t.shoot_speed = Some(r.f32()?);
+                }
+                if b1.get(7) {
+                    let b2 = r.bitsbyte()?;
+                    if b2.get(0) {
+                        t.width = Some(r.u16()?);
+                    }
+                    if b2.get(1) {
+                        t.height = Some(r.u16()?);
+                    }
+                    if b2.get(2) {
+                        t.scale = Some(r.f32()?);
+                    }
+                    if b2.get(3) {
+                        t.ammo = Some(r.i16()?);
+                    }
+                    if b2.get(4) {
+                        t.use_ammo = Some(r.i16()?);
+                    }
+                    if b2.get(5) {
+                        t.not_ammo = Some(r.bool()?);
+                    }
+                }
+                Self::ItemTweaker(t)
             }
             _ => return None,
         })
@@ -6020,6 +6231,108 @@ mod tests {
             S2c::TileEntitySharing(d) => assert_eq!(*d, t),
             other => panic!("expected 86, got {:?}", other.msg_id()),
         }
+    }
+
+    #[test]
+    fn w4_f21_item_tweaker_round_trips() {
+        // `NetMessage.cs:1232-1296`: (short)slot + BitsByte 1 + gated
+        // fields; BitsByte 2 rides only under bit 7. The CommonCode.cs
+        // sends use number2 = 1f → damage-only (bit 1).
+        let dmg_only = ItemTweaker {
+            slot: 12,
+            damage: Some(50),
+            ..Default::default()
+        };
+        let f = S2c::ItemTweaker(dmg_only).encode();
+        assert_eq!(f[2], 88);
+        let mut body = 12i16.to_le_bytes().to_vec();
+        body.push(0b0000_0010); // bit 1: damage
+        body.extend_from_slice(&50u16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::ItemTweaker(d) => assert_eq!(d, dmg_only),
+            other => panic!("expected 88, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The full two-byte form: every field set.
+        let full = ItemTweaker {
+            slot: 400,
+            color: Some(0xFF_80_40_20),
+            damage: Some(999),
+            knockback: Some(7.5),
+            use_animation: Some(20),
+            use_time: Some(15),
+            shoot: Some(-3),
+            shoot_speed: Some(12.25),
+            width: Some(30),
+            height: Some(40),
+            scale: Some(1.5),
+            ammo: Some(40),
+            use_ammo: Some(97),
+            not_ammo: Some(true),
+        };
+        let f = S2c::ItemTweaker(full).encode();
+        let b = &f[3..];
+        assert_eq!(b[2], 0xFF); // all 8 bits of BitsByte 1
+        // b1 fields: color 4 + damage 2 + kb 4 + anim 2 + time 2 + shoot 2
+        // + speed 4 = 20 bytes, then BitsByte 2 at offset 2+1+20 = 23.
+        assert_eq!(b[23], 0b0011_1111); // all 6 bits of BitsByte 2
+        let mut r = NetReader::new(b);
+        match S2c::decode(88, &mut r).expect("decode") {
+            S2c::ItemTweaker(d) => assert_eq!(d, full),
+            other => panic!("expected 88, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The empty form: slot + a zero flag byte, no second byte.
+        let empty = ItemTweaker { slot: -1, ..Default::default() };
+        let f = S2c::ItemTweaker(empty).encode();
+        assert_eq!(&f[3..], &[0xFF, 0xFF, 0]);
+        match S2c::decode(88, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemTweaker(d) => assert_eq!(d, empty),
+            other => panic!("expected 88, got {:?}", other.msg_id()),
+        }
+        // A second-byte-only tweak still rides bit 7 + the byte.
+        let scale_only = ItemTweaker { slot: 0, scale: Some(2.0), ..Default::default() };
+        let f = S2c::ItemTweaker(scale_only).encode();
+        assert_eq!(&f[3..5], &[0, 0]);
+        assert_eq!(f[5], 0b1000_0000); // bit 7 only
+        assert_eq!(f[6], 0b0000_0100); // scale bit 2
+        // A truncated gated field must not decode.
+        assert!(S2c::decode(88, &mut NetReader::new(&[12, 0, 2, 50])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_item_frame_try_placing_round_trips() {
+        // `NetMessage.cs:1297-1306`: (short)x + (short)y + (short)type +
+        // prefix byte + (short)stack — the player/slot indices select the
+        // item on the writer side only, never on the wire.
+        let b = TryPlacingItem {
+            x: -2,
+            y: 700,
+            kind: 3093,
+            prefix: 81,
+            stack: 1,
+        };
+        let mut body = (-2i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&700i16.to_le_bytes());
+        body.extend_from_slice(&3093i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&1i16.to_le_bytes());
+        let f = C2s::ItemFrameTryPlacing(b).encode();
+        assert_eq!(f[2], 89);
+        assert_eq!(f.len(), 3 + 9);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::ItemFrameTryPlacing(d) => assert_eq!(d, b),
+            other => panic!("expected 89, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only: the reader is host-gated.
+        assert!(S2c::decode(89, &mut NetReader::new(&body)).is_none());
+        // A truncated stack must not decode.
+        assert!(C2s::decode(89, &mut NetReader::new(&body[..8])).is_none());
     }
 
     #[test]

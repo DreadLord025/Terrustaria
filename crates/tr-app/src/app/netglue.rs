@@ -841,6 +841,10 @@ impl App {
             // TileEntity.PlaceEntityNet (`MessageBuffer.cs:3294-3305`)
             // lands with the apply-wiring lanes (g48-g52) / S1-I-4.
             C2s::TileEntityPlacement(_) => {}
+            // S1-I-1 W4-f21: `89`'s host TEItemFrame.TryPlacing under
+            // DefaultAssignNewItemsToPlayer (`MessageBuffer.cs:3388-3391`)
+            // lands with the apply-wiring lanes (g48-g52) / S1-I-4.
+            C2s::ItemFrameTryPlacing(_) => {}
         }
     }
 
@@ -1910,6 +1914,10 @@ impl App {
             // (`MessageBuffer.cs:3279-3291`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             S2c::TileEntitySharing(_) => {}
+            // S1-I-1 W4-f21: `88`'s client slot-gated stat apply
+            // (`MessageBuffer.cs:3312-3374`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::ItemTweaker(_) => {}
         }
     }
 
