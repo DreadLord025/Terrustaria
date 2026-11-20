@@ -39244,3 +39244,43 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC death dust lane 2 (W4-g60, code-only)
+
+NPC.HitEffect's per-kind DEATH halves for the vanilla types 231-697
+(the g59 lane carries 1-230) are drawn by
+crates/tr-app/src/npc_death_dust.rs::death_dust_feed, called from
+world_sim/npcs.rs's death retain BEFORE the death cue (the C# runs
+HitEffect at `NPC.cs:81488`, ahead of checkDead's DeathSound
+`:81559` -> `:78186`). 121 ported kinds qualify under the g59 census
+convention (every top-level arm dust-bearing, dust-first, side-free);
+the 388/418 arms stay W4-c12's in-flight `style74_death_feed` (the
+merge reconciles the two feeds and the shared `Npc.last_hit_dir`
+field - both branches add the same shape).
+
+Recorded deviations:
+* **Stream**: the C# draws on the striking stage's stream; the port
+  batches deaths into UpdateNPCs (the S1-E-21c death-cue precedent).
+* **Carrier guard**: the feed rides the death events' carrier guard
+  (`NPC.cs:78040-78042`); the C# HitEffect itself runs per struck
+  segment - the batch model folds the segment draws onto the carrier's
+  death (the death-cue convention).
+* **Gore split**: the gore BODIES stay the d55/e5/f10 lane's; the gore
+  ARGUMENT draws (conditional-gore gates, type/velocity/count picks)
+  ARE consumed by this feed in C# order so the stream stays faithful -
+  the gore lane must NOT re-draw them (each site comment cites the
+  consumed arguments).
+* **663 Princess**: the `:88411` second arm is dead code - the
+  else-if chain's town arm (`:88046`) matches 663 first; only the
+  25-dust smoke burst + four tombstone picks fire.
+* **402 oldPos trail**: the port's Npc carries no trail array; the
+  all-zero 10-slot stand-in draws each `Next(4)` gate until the first
+  `== 0` breaks (`NPC.cs:83611-83620`) - exactly the C#'s draws for
+  an untrailed corpse. The live trail is the wiring wave's.
+* **373 Sharkron2**: the wrapper maps the kind to 373 explicitly (the
+  style71 adapter precedent - `cs_id`'s bestiary fallback folds it
+  onto the Sharkron 372 row; the shared arm covers both).
+
+Verification: code-only - 17 stream-replay witnesses WRITTEN NOT RUN
+(each replays the cited draws on a pre-call RNG clone and asserts
+stream equality + the slot writes); no cargo/tests invoked.
