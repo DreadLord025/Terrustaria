@@ -191,6 +191,11 @@ mod special_arrows;
 mod projectile_frost_shots;
 mod projectile_ai001_c;
 mod projectile_ai067_b;
+// W4-d13 — the aiStyle-124 pet family (650/882/888/895/896/898/957): the
+// keep-alive pins, the home-spot ladder, the flight/idle frame machines,
+// the 957 ground bounce and the 650 ore scan + steering tail
+// (`Projectile.cs:34970-35696`). Code-only — witnesses written not run.
+mod projectile_ai_pets124;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
