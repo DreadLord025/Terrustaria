@@ -157,6 +157,9 @@ mod npc_ai_cultist;
 mod npc_ai_pillar;
 mod npc_ai_style71;
 mod npc_target;
+// W4-g60: the NPC death dust lane 2 (HitEffect death halves, types
+// 231-697) — the death retain's feed (see the module doc).
+mod npc_death_dust;
 mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;

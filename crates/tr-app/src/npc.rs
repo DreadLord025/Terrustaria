@@ -1230,6 +1230,14 @@ pub struct Npc {
     /// per NPC update (`NPC.cs:90516`). NOT the ~11-tick `hurt_cd`
     /// cooldown (the retired `update_creeper` stand-in's W95 defect).
     pub just_hit: bool,
+    /// The last accepted strike's `hitDirection` (`NPC.StrikeNPC`'s
+    /// argument, `NPC.cs:81189`): the C# passes it straight to
+    /// `HitEffect(hitDirection, num)` (`:81488`); the port batches deaths
+    /// into the NPC pass (S1-E-21c), so the W4-g60 death dust feed reads
+    /// the recorded side. 0 = no strike / an argument-less `HitEffect()`
+    /// (`NPC.cs:81654`, the default `hitDirection = 0`). The W4-c12
+    /// branch adds the same field — the merge keeps one.
+    pub last_hit_dir: i32,
     /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
@@ -2931,6 +2939,7 @@ impl Npc {
             // `SetDefaults`' field reset (`NPC.cs:8506`) — also the
             // Hungry's strike-tick read (S1-D-3 W-1/W-2 shared field).
             just_hit: false,
+            last_hit_dir: 0,
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
@@ -4386,6 +4395,8 @@ impl Npc {
         self.just_hit = true;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        // W4-g60: the strike side for the death dust feed's HitEffect draws.
+        self.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             self.knock_back_resist(),
@@ -4439,6 +4450,8 @@ impl Npc {
         self.just_hit = true;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        // W4-g60: the strike side for the death dust feed's HitEffect draws.
+        self.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             self.knock_back_resist(),
@@ -4550,6 +4563,8 @@ impl Npc {
         n.just_hit = true;
         let (w, _) = n.size();
         let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
+        // W4-g60: the strike side for the death dust feed's HitEffect draws.
+        n.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             n.knock_back_resist(),

@@ -5016,6 +5016,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // single running event walks alone.
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
+        // W4-g60 — the death dust feed: the per-kind `HitEffect` DEATH
+        // halves for vanilla types 231-697 (`npc_death_dust.rs`, the
+        // census's dust-first side-free kinds), drawn in C# order on
+        // the UpdateNPCs stream (the S1-E-21c death-batch deviation).
+        // BEFORE the death cue: the C# runs HitEffect at `:81488`,
+        // ahead of checkDead's DeathSound (`:81559` → `:78186`). The
+        // 388/418 arms are W4-c12's in-flight feed (kept out); every
+        // other uncovered kind's HitEffect stays the documented skip.
+        crate::npc_death_dust::death_dust_feed(app, npc);
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
         // faithful case-4 path (S1-E-21 wave C): the volume arms + the
