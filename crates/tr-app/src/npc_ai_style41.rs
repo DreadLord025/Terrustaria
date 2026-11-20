@@ -16,22 +16,22 @@
 //!
 //! ## RNG order (by construction)
 //!
-//! The arm's `Main.rand` draws, in C# order, ALL ride emissions the port
-//! skips (the S1-D-3e/f/9 dust precedent — no NPC-side dust/gore feed):
-//! 1. the 378 fuse trail gate `Main.rand.Next(3)` (`:29916`) — the gate
-//!    OF the dust spawn; skipping the dust skips its gate draw.
-//! 2. the `ai[2] > 7` explosion burst (`:29939-29958`): 8 + 32x2
-//!    `Dust.NewDust` rolls, then 2 gore iterations of `Next(100)`,
-//!    `Next(100)`, `Next(61, 64)`, `Next(-10, 11)`, `Next(-10, 11)`
-//!    (`Gore.NewGore` draws its own rolls inside `Gore.cs`).
+//! W4-e2 wires the four dust sites through the S1-E-1 `DustPool` on the
+//! caller's `UpdateNPCs` stream (`rng` + `dust` + `dust_ctx` parameters):
+//! 1. the 378 fuse trail gate `Main.rand.Next(3)` (`:29916`) — on 0 the
+//!    type-6 `NewDust` body rolls (site 29919; the type-6 tweak adds the
+//!    `Next(-10, 6)` vy re-roll, `Dust.cs:215-219`).
+//! 2. the `ai[2] > 7` explosion burst (`:29939-29958`): 8 type-31 spawns
+//!    (site 29941), then 32 type-6 PAIRS (sites 29945/29948), then 2 gore
+//!    iterations — the ARGUMENT draws `Next(100)` ×2, `Next(61, 64)`,
+//!    `Next(-10, 11)` ×2 stay here in C# order (the `NewGore` bodies are
+//!    W4-d55's lane, the twins' split).
 //! 3. the sounds (`:29961` Item14, `:30083` style 29/124) — the port's
 //!    AI arms carry no audio (the `LegacySoundPlayer` pitch jitter draws
 //!    ride the audio pass, `LegacySoundPlayer.cs:613-632`).
 //!
-//! So the ported arm consumes ZERO draws and `style41_step` takes no RNG
-//! parameter — it cannot perturb any stream (the style-28 shape; witness
-//! `s1_d_3_s41_the_arm_is_deterministic_without_an_rng`). When the dust/
-//! gore/audio feeds land, the draws above must be re-armed in this order.
+//! The witnesses below replay the cited draws on a cloned stream
+//! (WRITTEN NOT RUN — code-only mode).
 //!
 //! ## The AI / integration split
 //!
@@ -65,15 +65,18 @@
 //! * `life = -1; HitEffect(); active = false` (`:29966-29968`) rides
 //!   the port's hp-0 death convention (the sim's retain drops it; the
 //!   `HitEffect` gore is the same documented skip).
-//! * The dust/gore/audio arms are the documented skips (the RNG
-//!   header); the `netOffset` add/subtract pairs net to zero and are
-//!   omitted.
+//! * The gore bodies (`:29954`) are W4-d55's lane (their ARGUMENT draws
+//!   are consumed here); the audio arms stay the documented skips (the
+//!   RNG header); the `netOffset` add/subtract pairs are kept verbatim
+//!   around the spawns (zero in single-player).
 #![allow(dead_code)] // wiring deferred (code-only mode) — the kinds + dispatch claim are the follow-up
 
 use crate::npc::{is_wet, Npc};
 use crate::npc_target::{target_closest, TargetCandidate};
 use crate::player::{collides_rect, Player};
-use tr_core::{World, TILE_PX};
+use glam::Vec2;
+use tr_core::particles::{Color, DustPool, SpawnCtx};
+use tr_core::{UnifiedRandom, World, TILE_PX};
 
 /// `NPC.gravity` / `maxFallSpeed` for these kinds
 /// (`UpdateNPC_UpdateGravity`, `NPC.cs:90880-90881` — no per-type
@@ -132,14 +135,22 @@ fn pick_target(npc: &mut Npc, world: &World, player: &Player) {
 /// the C# `this.type` (174/177/378); the npc's box rides `npc.size()`
 /// (the wiring's kinds carry the `SetDefaults` sizes; the 378 explosion
 /// writes `size_override`).
-pub fn style41_step(npc: &mut Npc, world: &World, player: &Player, npc_type: i32) {
+pub fn style41_step(
+    npc: &mut Npc,
+    world: &World,
+    player: &Player,
+    npc_type: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+) {
     // `NPC.wet` — the `CheckFacetedLiquid` cache (`NPC.cs:90474`'s write;
     // the swimmer's `is_wet` stand-in, `npc.rs:13821`), read with the
     // pre-resize box on the explosion tick.
     let (w0, h0) = npc.size();
     npc.wet = is_wet(world, npc.x, npc.y, w0, h0);
 
-    ai_041_body(npc, world, player, npc_type);
+    ai_041_body(npc, world, player, npc_type, rng, dust, dust_ctx);
 
     // The generic post-AI integration (`UpdateNPC`, `NPC.cs:90465-90503`)
     // — runs even on the AI's early-return paths, exactly like the
@@ -187,7 +198,15 @@ pub fn style41_step(npc: &mut Npc, world: &World, player: &Player, npc_type: i32
 /// The `AI()` aiStyle-41 block (`NPC.cs:29899-30159`). The `return`s
 /// mirror the C#'s exactly — they skip the rest of the AI, NOT the
 /// caller's integration.
-fn ai_041_body(npc: &mut Npc, world: &World, player: &Player, npc_type: i32) {
+fn ai_041_body(
+    npc: &mut Npc,
+    world: &World,
+    player: &Player,
+    npc_type: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+) {
     // `:29901-29904` — the cooldown decrement (stops at 1, never 0).
     if npc.ai[2] > 1.0 {
         npc.ai[2] -= 1.0;
@@ -202,9 +221,43 @@ fn ai_041_body(npc: &mut Npc, world: &World, player: &Player, npc_type: i32) {
     }
     // `:29912-29973` — the Chattering Teeth Bomb's own block.
     if npc_type == 378 {
-        // `:29914-29925` — the fuse dust trail: the `Next(3)` gate draw
-        // and the `Dust.NewDust` rolls are the documented skip (the
-        // module header, draw 1); the `netOffset` pair nets to zero.
+        // W4-e2 (site 29919) — `:29914-29925`: the fuse trail. vector72 =
+        // (-6·spriteDirection, -10); the `ai[1] != 5 && Next(3) == 0`
+        // gate (the C# && short-circuits — no draw on the explosion arm).
+        let mut vector72 = Vec2::new(-6.0, -10.0);
+        vector72.x *= npc.sprite_dir as f32;
+        if npc.ai[1] != 5.0 && rng.next_max(3) == 0 {
+            npc.x += npc.net_offset.x;
+            npc.y += npc.net_offset.y;
+            let (cx, cy) = npc.center();
+            // `:29919` — NewDust(Center + vector72 − (5, 5), 4, 4, 6):
+            // the 8-arg overload (speeds/alpha/color/scale default
+            // 0/0/default/1). The type-6 tweak rolls inside the pool.
+            let idx = dust.new_dust(
+                rng, dust_ctx, world,
+                Vec2::new(cx + vector72.x - 5.0, cy + vector72.y - 5.0),
+                4, 4, 6, 0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.scale = 1.5; // `:29920`
+            d.no_gravity = true; // `:29921`
+            // `:29922` — velocity ×0.25 + Normalize(vector72).
+            let len = (vector72.x * vector72.x + vector72.y * vector72.y).sqrt();
+            let (nx, ny) = if len > 0.0 {
+                (vector72.x / len, vector72.y / len)
+            } else {
+                (0.0, 0.0)
+            };
+            d.velocity = d.velocity * 0.25 + Vec2::new(nx, ny);
+            // `:29923` — RotatedBy(−π/2 · direction), the double cos/sin
+            // form (Utils.cs:1675-1684).
+            let a = (-(std::f32::consts::PI / 2.0) * npc.facing as f32) as f64;
+            let (cos, sin) = (a.cos() as f32, a.sin() as f32);
+            let (vx, vy) = (d.velocity.x, d.velocity.y);
+            d.velocity = Vec2::new(vx * cos - vy * sin, vx * sin + vy * cos);
+            npc.x -= npc.net_offset.x;
+            npc.y -= npc.net_offset.y;
+        }
         if npc.ai[1] == 5.0 {
             // `:29928-29935` — the explosion: velocity zero, the box
             // swells to 160x160 about the centre. The half-extent adds
@@ -220,8 +273,51 @@ fn ai_041_body(npc: &mut Npc, world: &World, player: &Player, npc_type: i32) {
             npc.x -= 160.0 / 2.0;
             npc.y -= 160.0 / 2.0;
             npc.dont_take_damage = true;
-            // `:29937-29963` — the `ai[2] > 7` dust/gore burst and the
-            // `== 9` Item14 sound: the documented skips (draws 2/3).
+            npc.x += npc.net_offset.x;
+            npc.y += npc.net_offset.y;
+            // W4-e2 (sites 29941/29945/29948) — `:29937-29963`: the
+            // ai[2] > 7 burst on the 160×160 box at position.
+            if npc.ai[2] > 7.0 {
+                // `:29939-29942` — 8 type-31 dusts, alpha 100, scale 1.5,
+                // NO post-writes.
+                for _ in 0..8 {
+                    dust.new_dust(
+                        rng, dust_ctx, world, Vec2::new(npc.x, npc.y),
+                        160, 160, 31, 0.0, 0.0, 100, Color::default(), 1.5,
+                    );
+                }
+                // `:29943-29951` — 32 type-6 pairs: scale 2.5 (noGravity,
+                // velocity ×3) then scale 1.5 (velocity ×2, noGravity).
+                for _ in 0..32 {
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world, Vec2::new(npc.x, npc.y),
+                        160, 160, 6, 0.0, 0.0, 100, Color::default(), 2.5,
+                    );
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true; // `:29946`
+                    d.velocity *= 3.0; // `:29947`
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world, Vec2::new(npc.x, npc.y),
+                        160, 160, 6, 0.0, 0.0, 100, Color::default(), 1.5,
+                    );
+                    let d = dust.slot_mut(idx);
+                    d.velocity *= 2.0; // `:29949`
+                    d.no_gravity = true; // `:29950`
+                }
+                // `:29952-29958` — the 2 gores: the ARGUMENT draws stay
+                // here in C# order (the NewGore bodies are d55's lane):
+                // per gore Next(100) ×2 (the offsets), Next(61, 64) (the
+                // type), Next(-10, 11) ×2 (the velocity nudges).
+                for _ in 0..2 {
+                    let _ox = (160 * rng.next_max(100)) as f32 / 100.0;
+                    let _oy = (160 * rng.next_max(100)) as f32 / 100.0;
+                    let _gore_type = rng.next_range(61, 64);
+                    let _nvx = rng.next_range(-10, 11) as f32 * 0.05;
+                    let _nvy = rng.next_range(-10, 11) as f32 * 0.05;
+                }
+                // `:29959-29962` — the == 9 Item14 sound: the audio pass
+                // owns it (the module header).
+            }
             if npc.ai[2] == 1.0 {
                 // `:29964-29969` — `life = -1; HitEffect(); active =
                 // false`: the port's hp-0 death convention (the sim's
@@ -229,6 +325,8 @@ fn ai_041_body(npc: &mut Npc, world: &World, player: &Player, npc_type: i32) {
                 // same documented skip).
                 npc.hp = 0;
             }
+            npc.x -= npc.net_offset.x;
+            npc.y -= npc.net_offset.y;
             // `:29971` — the explosion returns before the arming check
             // and the hop machine (the caller still integrates).
             return;
@@ -474,6 +572,20 @@ mod tests {
         p
     }
 
+    /// W4-e2: the permissive dust ctx for the witnesses — the whole world
+    /// on-screen, the full 6000 budget (the `npc::permissive_dust_ctx`
+    /// shape, local so the module keeps no npc.rs test dependency).
+    fn permissive_ctx(w: &World) -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// A stand-in carrier with the kind's `SetDefaults` box — the kinds
     /// have no `NpcKind` yet (the module header); the wiring's kinds
     /// carry these sizes natively. Grounded at the floor: the box's
@@ -500,7 +612,7 @@ mod tests {
         let player = player_at(&w, 100.0 * 16.0, 110.0 * 16.0);
         let mut n = hopper(174, 80.0 * 16.0);
         assert_eq!(n.target, 255);
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[2], 1.0, "the latch armed the cooldown");
         assert_eq!(n.target, 0, "TargetClosest committed the slot");
         assert_eq!(n.sprite_dir, n.facing);
@@ -509,7 +621,7 @@ mod tests {
         assert!(ai0 > -100.0 && ai0 < 0.0, "reset to -100 then windup: {ai0}");
         // The next tick: ai[2] stays 1 and ai[0] keeps climbing (no
         // second -100 reset).
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[2], 1.0);
         assert!(n.ai[0] > ai0, "the latch never re-fires");
     }
@@ -526,20 +638,20 @@ mod tests {
         n.ai[0] = -100000.0;
         n.ai[3] = n.x; // the big hop anchored here
         n.vx = 0.1; // ×0.8 = 0.08 < 0.1 → zeroed
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.facing, -1, "the stuck flip");
         assert_eq!(n.ai[2], 300.0, "the no-retarget cooldown");
         assert_eq!(n.ai[3], 0.0, "the anchor cleared");
         assert_eq!(n.vx, 0.0, "the deadband zeroed the walk");
         // The cooldown counts down 1/tick and never re-fires the latch.
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[2], 299.0);
         // A wide velocity survives the deadband: 1.0 × 0.8 = 0.8.
         let mut m = hopper(174, 80.0 * 16.0);
         m.ai[2] = 1.0;
         m.ai[0] = -100000.0;
         m.vx = 1.0;
-        style41_step(&mut m, &w, &player, 174);
+        style41_step(&mut m, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(m.vx, 0.8);
     }
 
@@ -559,7 +671,7 @@ mod tests {
         );
         n.ai[2] = 1.0;
         n.ai[0] = -1000.0;
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[0], -1000.0 + 5.0 + 5.0, "base 5 + (int)(400/800×10)");
         let mut d = hopper(177, 80.0 * 16.0);
         let (dcx, dcy) = d.center();
@@ -570,7 +682,7 @@ mod tests {
         );
         d.ai[2] = 1.0;
         d.ai[0] = -1000.0;
-        style41_step(&mut d, &w, &dplayer, 177);
+        style41_step(&mut d, &w, &dplayer, 177, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(d.ai[0], -1000.0 + 2.0 + 2.0, "base 2 + (int)(400/800×5)");
         // Near player: dist 100 → 4×10 = 40 → capped 30.
         let mut near = hopper(174, 80.0 * 16.0);
@@ -582,7 +694,7 @@ mod tests {
         );
         near.ai[2] = 1.0;
         near.ai[0] = -1000.0;
-        style41_step(&mut near, &w, &nplayer, 174);
+        style41_step(&mut near, &w, &nplayer, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(near.ai[0], -1000.0 + 5.0 + 30.0, "the 30 cap");
     }
 
@@ -602,7 +714,7 @@ mod tests {
             n.vx = 0.0;
             n.ai[0] = 0.0;
             let x0 = n.x;
-            style41_step(&mut n, &w, &player, 174);
+            style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
             if hop < 3 {
                 assert_eq!(n.vy, -5.0 + GRAVITY, "small hop + gravity");
                 assert_eq!(n.ai[0], -120.0);
@@ -631,7 +743,7 @@ mod tests {
             n.vy = 0.0;
             n.vx = 0.0;
             n.ai[0] = 0.0;
-            style41_step(&mut n, &w, &player, 177);
+            style41_step(&mut n, &w, &player, 177, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
             if hop < 2 {
                 assert_eq!(n.vy, -7.5 + GRAVITY);
                 assert_eq!(n.ai[0], -120.0);
@@ -660,7 +772,7 @@ mod tests {
             n.ai[2] = 1.0;
             n.ai[0] = 0.0;
             n.ai[1] = 3.0; // the big hop: vx += 3*dir (+band)
-            style41_step(&mut n, &w, &player, 174);
+            style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
             // The hop wrote 3+bonus; the airborne steer is skipped this
             // tick (vy was 0 at the branch) and the integration keeps vx.
             assert_eq!(n.vx, 3.0 + bonus, "dist {dist}");
@@ -684,7 +796,7 @@ mod tests {
         );
         n.ai[2] = 1.0;
         let (x0, y0) = (n.x, n.y);
-        style41_step(&mut n, &w, &player, 378);
+        style41_step(&mut n, &w, &player, 378, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[1], 5.0);
         assert_eq!(n.ai[2], 10.0);
         assert!(n.net_update);
@@ -699,7 +811,7 @@ mod tests {
         );
         m.ai[2] = 1.0;
         m.ai[0] = -100000.0;
-        style41_step(&mut m, &w, &far, 378);
+        style41_step(&mut m, &w, &far, 378, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(m.ai[1], 0.0, "outside the window the bomb keeps hopping");
     }
 
@@ -719,7 +831,7 @@ mod tests {
         n.ai[2] = 10.0;
         n.vx = 7.0;
         n.vy = 3.0;
-        style41_step(&mut n, &w, &player, 378);
+        style41_step(&mut n, &w, &player, 378, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[2], 9.0, "the head decrement ran first");
         assert_eq!(n.x, x0 + 10.0 - 80.0, "20/2 = 10 in, 160/2 = 80 out");
         // The centring (-67) then the post-return gravity fall (+0.3).
@@ -731,13 +843,13 @@ mod tests {
         // stable; each tick's velocity reset + gravity falls 0.3.
         let x1 = n.x;
         for _ in 0..7 {
-            style41_step(&mut n, &w, &player, 378);
+            style41_step(&mut n, &w, &player, 378, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         }
         assert_eq!(n.ai[2], 2.0);
         assert_eq!(n.x, x1, "the 160-box centring nets zero on X");
         assert!(n.hp > 0);
         // Tick 9: ai[2] 2 → 1, the death fires.
-        style41_step(&mut n, &w, &player, 378);
+        style41_step(&mut n, &w, &player, 378, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[2], 1.0);
         assert_eq!(n.hp, 0, "life = -1 / active = false → the hp-0 convention");
     }
@@ -768,7 +880,7 @@ mod tests {
         n.collide_x = true;
         n.collide_y = false;
         n.vy = 0.0;
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.facing, -1, "the dir *= -dir quirk is a SET TO -1");
         // The collideY bounce reads oldVelocity: rising → 5, then the
         // buoyancy (5 > 4 → ×0.95, -0.3) and the post-return gravity.
@@ -780,7 +892,7 @@ mod tests {
         m.collide_y = true;
         m.old_vy = -3.0; // was rising
         m.vy = 0.0;
-        style41_step(&mut m, &w, &player, 174);
+        style41_step(&mut m, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(m.vy, 5.0 * 0.95 - 0.3 + GRAVITY);
         // A falling oldVelocity takes the -2 arm instead.
         let mut f = hopper(174, 80.0 * 16.0);
@@ -790,7 +902,7 @@ mod tests {
         f.collide_y = true;
         f.old_vy = 3.0;
         f.vy = 0.0;
-        style41_step(&mut f, &w, &player, 174);
+        style41_step(&mut f, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(f.vy, -2.0 - 0.3 + GRAVITY, "the falling bounce -2, lift 0.3");
         // The buoyancy cap: a strong rise floors at -4 before gravity.
         let mut c = hopper(174, 80.0 * 16.0);
@@ -798,7 +910,7 @@ mod tests {
         c.ai[2] = 1.0;
         c.target = 0;
         c.vy = -10.0;
-        style41_step(&mut c, &w, &player, 174);
+        style41_step(&mut c, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(c.vy, -4.0 + GRAVITY, "the -4 cap");
         // The Derpling never runs the wet block.
         let mut d = hopper(177, 80.0 * 16.0);
@@ -808,7 +920,7 @@ mod tests {
         d.collide_x = true;
         d.facing = 1;
         d.vy = -10.0;
-        style41_step(&mut d, &w, &player, 177);
+        style41_step(&mut d, &w, &player, 177, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(d.facing, 1, "177 is excluded from the wet bounce");
         assert_eq!(d.vy, -10.0 + GRAVITY, "no buoyancy for the Derpling");
     }
@@ -828,7 +940,7 @@ mod tests {
         n.vy = -5.0;
         n.vx = 1.0;
         n.facing = 1;
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.vx, 1.2, "the 0.2 accel");
         // At the 3 cap: no steer at all.
         let mut capped = hopper(174, 80.0 * 16.0);
@@ -837,7 +949,7 @@ mod tests {
         capped.vy = -5.0;
         capped.vx = 3.0;
         capped.facing = 1;
-        style41_step(&mut capped, &w, &player, 174);
+        style41_step(&mut capped, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(capped.vx, 3.0, "the cap blocks the steer");
         // Moving backwards (dir 1, vx <= -0.1): the 0.93 damp.
         let mut back = hopper(174, 80.0 * 16.0);
@@ -846,7 +958,7 @@ mod tests {
         back.vy = -5.0;
         back.vx = -1.0;
         back.facing = 1;
-        style41_step(&mut back, &w, &player, 174);
+        style41_step(&mut back, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(back.vx, -1.0 * 0.93, "the backwards damp");
         // The Derpling's cap is 4.
         let mut d = hopper(177, 80.0 * 16.0);
@@ -855,7 +967,7 @@ mod tests {
         d.vy = -5.0;
         d.vx = 3.5;
         d.facing = 1;
-        style41_step(&mut d, &w, &player, 177);
+        style41_step(&mut d, &w, &player, 177, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(d.vx, 3.7, "the Derpling steers up to 4");
         // No target: the early return skips the steer (vx untouched)
         // but the caller still integrates the gravity.
@@ -864,7 +976,7 @@ mod tests {
         t.target = 255;
         t.vy = -5.0;
         t.vx = 1.0;
-        style41_step(&mut t, &w, &player, 174);
+        style41_step(&mut t, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(t.vx, 1.0, "no steer without a target");
         assert_eq!(t.vy, -5.0 + GRAVITY, "the integration still runs");
     }
@@ -883,7 +995,7 @@ mod tests {
         n.vy = -5.0;
         n.vx = 2.0;
         n.facing = 1;
-        style41_step(&mut n, &w, &player, 177);
+        style41_step(&mut n, &w, &player, 177, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         // vx: ×0.92 = 1.84 (no steer — flag49 blocks it).
         assert_eq!(n.vx, 2.0 * 0.92);
         // vy: ×0.9 +0.1 = -4.4, then gravity +0.3 = -4.1.
@@ -899,11 +1011,11 @@ mod tests {
         let mut n = hopper(174, 80.0 * 16.0);
         n.ai[2] = 1.0;
         n.ai[0] = -30.0; // +5 + bonus keeps it < 0 but >= -30
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai_action, 1);
         // A later hop tick never clears it.
         n.ai[0] = 0.0;
-        style41_step(&mut n, &w, &player, 174);
+        style41_step(&mut n, &w, &player, 174, &mut UnifiedRandom::new(0), &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai_action, 1, "the C# never clears aiAction here");
     }
 
@@ -921,31 +1033,136 @@ mod tests {
         assert_eq!(csharp_int_cast(-2147483648.0), i32::MIN);
     }
 
-    /// The RNG-order witness (the module header): the arm takes no RNG
-    /// parameter and every `Main.rand` draw rides a documented skip —
-    /// identical inputs produce identical state, and a same-seed stream
-    /// is untouched by 200 steps of every kind (incl. the bomb's full
-    /// fuse, the dustiest path).
+    /// W4-e2: the determinism witness re-armed — same-seed streams +
+    /// fresh pools produce identical state across 200 steps of every
+    /// kind (incl. the bomb's full fuse, the dustiest path), and the two
+    /// streams stay equal draw-for-draw.
     #[test]
     fn s1_d_3_s41_the_arm_is_deterministic_without_an_rng() {
         let w = arena();
+        let dc = permissive_ctx(&w);
         let player = player_at(&w, 100.0 * 16.0, 110.0 * 16.0);
-        let mut rng = UnifiedRandom::new(777);
         for npc_type in [174, 177, 378] {
             let mut a = hopper(npc_type, 80.0 * 16.0);
             let mut b = hopper(npc_type, 80.0 * 16.0);
+            let mut ra = UnifiedRandom::new(777);
+            let mut rb = UnifiedRandom::new(777);
+            let mut pa = DustPool::new();
+            let mut pb = DustPool::new();
             for _ in 0..200 {
-                style41_step(&mut a, &w, &player, npc_type);
-                style41_step(&mut b, &w, &player, npc_type);
+                style41_step(&mut a, &w, &player, npc_type, &mut ra, &mut pa, &dc);
+                style41_step(&mut b, &w, &player, npc_type, &mut rb, &mut pb, &dc);
                 assert_eq!((a.x, a.y, a.vx, a.vy), (b.x, b.y, b.vx, b.vy));
                 assert_eq!(a.ai, b.ai);
                 assert_eq!(a.hp, b.hp);
+                assert_eq!(ra, rb, "the streams stay equal");
             }
         }
-        // The stream never moved: the next draws equal a fresh seed's.
-        let mut fresh = UnifiedRandom::new(777);
-        for _ in 0..8 {
-            assert_eq!(rng.next_double(), fresh.next_double());
+    }
+
+    /// W4-e2 (site 29919) — the fuse trail: the `ai[1] != 5 && Next(3)`
+    /// gate draws ONLY on the non-explosion arm (the C# && short-circuit);
+    /// a passed gate rolls the type-6 body at Center + vector72 − (5, 5)
+    /// and the post-writes pin scale 1.5 / noGravity / the rotated
+    /// velocity. The mirror replays gate + body on a cloned stream.
+    #[test]
+    fn w4_e2_the_bomb_fuse_trail_gates_and_shapes() {
+        let w = arena();
+        let dc = permissive_ctx(&w);
+        let player = player_at(&w, 200.0 * 16.0, 110.0 * 16.0);
+        let mut n = hopper(378, 80.0 * 16.0);
+        n.ai[2] = 1.0;
+        n.ai[0] = -100000.0; // no hop this tick
+        n.sprite_dir = 1;
+        n.facing = 1;
+        let mut rng = UnifiedRandom::new(5);
+        let mut probe = rng.clone();
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        let (cx, cy) = n.center();
+        style41_step(&mut n, &w, &player, 378, &mut rng, &mut pool, &dc);
+        let g = probe.next_max(3); // the fuse gate (:29916)
+        if g == 0 {
+            // vector72 = (-6·1, -10); anchor Center + vector72 − (5, 5).
+            let idx = mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(cx - 11.0, cy - 15.0),
+                4, 4, 6, 0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = mpool.slot_mut(idx);
+            d.scale = 1.5;
+            d.no_gravity = true;
+            let len = (36.0f32 + 100.0).sqrt();
+            d.velocity = d.velocity * 0.25 + Vec2::new(-6.0 / len, -10.0 / len);
+            let a = (-(std::f32::consts::PI / 2.0)) as f64;
+            let (vx, vy) = (d.velocity.x, d.velocity.y);
+            d.velocity = Vec2::new(
+                vx * a.cos() as f32 - vy * a.sin() as f32,
+                vx * a.sin() as f32 + vy * a.cos() as f32,
+            );
+            let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+            assert_eq!(act.len(), 1, "one fuse dust");
+            let pd = pool.slot(act[0]);
+            assert_eq!(pd.scale, 1.5);
+            assert!(pd.no_gravity);
+            assert_eq!(pd.position, mpool.slot(idx).position);
+            assert_eq!(pd.velocity, mpool.slot(idx).velocity);
         }
+        assert_eq!(rng, probe, "gate + body draw order");
+        // The explosion arm (ai[1] == 5): the fuse gate NEVER draws.
+        let mut m = hopper(378, 80.0 * 16.0);
+        m.ai[1] = 5.0;
+        m.ai[2] = 5.0; // <= 7: no burst either
+        let mut rng2 = UnifiedRandom::new(6);
+        let mut probe2 = rng2.clone();
+        style41_step(&mut m, &w, &player, 378, &mut rng2, &mut DustPool::new(), &dc);
+        assert_eq!(rng2, probe2, "the explosion arm draws nothing at ai[2] <= 7");
+    }
+
+    /// W4-e2 (sites 29941/29945/29948) — the ai[2] > 7 explosion burst:
+    /// 8 type-31 spawns, then 32 type-6 pairs, then the 2 gores' argument
+    /// draws (5 each). The mirror replays every draw through the same
+    /// pool calls on a cloned stream and compares full state.
+    #[test]
+    fn w4_e2_the_bomb_burst_draw_order() {
+        let w = arena();
+        let dc = permissive_ctx(&w);
+        let player = player_at(&w, 200.0 * 16.0, 110.0 * 16.0);
+        let mut n = hopper(378, 80.0 * 16.0);
+        n.ai[1] = 5.0;
+        n.ai[2] = 10.0;
+        let mut rng = UnifiedRandom::new(11);
+        let mut probe = rng.clone();
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        style41_step(&mut n, &w, &player, 378, &mut rng, &mut pool, &dc);
+        // The 160-box centring: (x + 10 − 80, y + 13 − 80).
+        let (bx, by) = (80.0 * 16.0 + 10.0 - 80.0, 1920.0 - 26.0 + 13.0 - 80.0);
+        for _ in 0..8 {
+            mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(bx, by), 160, 160,
+                31, 0.0, 0.0, 100, Color::default(), 1.5,
+            );
+        }
+        for _ in 0..32 {
+            mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(bx, by), 160, 160,
+                6, 0.0, 0.0, 100, Color::default(), 2.5,
+            );
+            mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(bx, by), 160, 160,
+                6, 0.0, 0.0, 100, Color::default(), 1.5,
+            );
+        }
+        for _ in 0..2 {
+            probe.next_max(100); // the gore offset X (:29954)
+            probe.next_max(100); // the gore offset Y
+            probe.next_range(61, 64); // the gore type
+            probe.next_range(-10, 11); // the velocity nudge X (:29956)
+            probe.next_range(-10, 11); // the velocity nudge Y (:29957)
+        }
+        assert_eq!(rng, probe, "8 + 64 spawns + 10 gore args in C# order");
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        assert_eq!(act.len(), 72, "8 + 32×2 dusts (the permissive pool never culls)");
+        assert_eq!(n.ai[2], 9.0, "the head decrement ran first");
     }
 }

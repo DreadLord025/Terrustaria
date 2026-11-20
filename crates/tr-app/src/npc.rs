@@ -6056,7 +6056,7 @@ impl Npc {
             NpcKind::SolarDrakomireRider => {
                 unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
             }
-            NpcKind::SolarSroller => self.update_solar_sroller(world, player, rng),
+            NpcKind::SolarSroller => self.update_solar_sroller(world, player, rng, dust, dust_ctx),
             NpcKind::SolarCorite => self.update_solar_corite(world, player, rng),
             NpcKind::SolarSelenian => self.update_solar_selenian(world, player),
             // The nebula trio: the floater's aiStyle-97 teleport cycle, the
@@ -14585,9 +14585,17 @@ impl Npc {
     /// blocked axes zeroed, and in the ball state a block spends one
     /// revolution (`ai[2]--`), arms the FX layer (`ai[3] = 1`) and
     /// reflects the axis at ×-0.9 with the direction flip while
-    /// revolutions remain. The dust/gore spawns stay unmodelled INSIDE
-    /// the module (its arm-level draws are consumed there in C# order).
-    fn update_solar_sroller(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    /// revolutions remain. W4-e2: the dust spawns ride the live DustPool
+    /// INSIDE the module (sites 29214/29427/29540/29555/29558/29572); the
+    /// gore bodies stay d55's lane (their ARGUMENT draws consumed there).
+    fn update_solar_sroller(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let cand = crate::npc_target::TargetCandidate {
             active: true,
             dead: player.dead,
@@ -14610,7 +14618,7 @@ impl Npc {
             step_speed: self.step_speed,
             knockback_resist: self.knock_back_resist(),
         };
-        crate::npc_ai_style39::style39_step(self, world, &mut ctx, &[cand], rng);
+        crate::npc_ai_style39::style39_step(self, world, &mut ctx, &[cand], rng, dust, dust_ctx);
         self.gfx_off_y = ctx.gfx_off_y;
         self.step_speed = ctx.step_speed;
         self.kb_resist_override = Some(ctx.knockback_resist);
