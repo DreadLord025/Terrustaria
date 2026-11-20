@@ -792,6 +792,30 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_24",
         "NPC_Head_25",
         "NPC_Head_45",
+        // W4-f29 — the town heads the map overlay draws but the housing page
+        // does not (`TownNPCProfiles.GetHeadIndexSafe` →
+        // `NPC.TypeToDefaultHeadIndex`, `NPC.cs:7510-7553`): the Mechanic (8),
+        // Wizard (10), Dye Trader (14), Party Girl (15), Stylist (20),
+        // Travelling Merchant (21), Angler (22), Tax Collector (23),
+        // Golfer (25), Zoologist (26) and the pet/slime heads 27-53 the
+        // shimmered profiles swap in (`TownNPCProfiles.cs:211-214`).
+        "NPC_Head_12",
+        "NPC_Head_13",
+        "NPC_Head_16",
+        "NPC_Head_18",
+        "NPC_Head_19",
+        "NPC_Head_26",
+        "NPC_Head_27",
+        "NPC_Head_33",
+        "NPC_Head_39",
+        "NPC_Head_46",
+        "NPC_Head_47",
+        "NPC_Head_48",
+        "NPC_Head_49",
+        "NPC_Head_50",
+        "NPC_Head_51",
+        "NPC_Head_52",
+        "NPC_Head_53",
         "Heart",
         "Bubble",
         // `TextureAssets.Hb1`/`Hb2` (`AssetInitializer.cs:404-405`): the
@@ -800,6 +824,49 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "HealthBar1",
         "HealthBar2",
         "NPC_Head_Boss_7",
+        // W4-f29 — the boss map heads (`TextureAssets.NpcHeadBoss[40]`,
+        // `TextureAssets.cs:620`, `AssetInitializer.cs:410-413`): the
+        // `Main.DrawNPCMapIcons*` boss half draws the index
+        // `NPC.GetBossHeadTextureIndex` resolves (`NPC.cs:7557-7606`).
+        // Index 7 already rides the boss-bar row above.
+        "NPC_Head_Boss_0",
+        "NPC_Head_Boss_1",
+        "NPC_Head_Boss_2",
+        "NPC_Head_Boss_3",
+        "NPC_Head_Boss_4",
+        "NPC_Head_Boss_5",
+        "NPC_Head_Boss_6",
+        "NPC_Head_Boss_8",
+        "NPC_Head_Boss_9",
+        "NPC_Head_Boss_10",
+        "NPC_Head_Boss_11",
+        "NPC_Head_Boss_12",
+        "NPC_Head_Boss_13",
+        "NPC_Head_Boss_14",
+        "NPC_Head_Boss_15",
+        "NPC_Head_Boss_16",
+        "NPC_Head_Boss_17",
+        "NPC_Head_Boss_18",
+        "NPC_Head_Boss_19",
+        "NPC_Head_Boss_20",
+        "NPC_Head_Boss_21",
+        "NPC_Head_Boss_22",
+        "NPC_Head_Boss_23",
+        "NPC_Head_Boss_24",
+        "NPC_Head_Boss_25",
+        "NPC_Head_Boss_26",
+        "NPC_Head_Boss_27",
+        "NPC_Head_Boss_28",
+        "NPC_Head_Boss_29",
+        "NPC_Head_Boss_30",
+        "NPC_Head_Boss_32",
+        "NPC_Head_Boss_33",
+        "NPC_Head_Boss_34",
+        "NPC_Head_Boss_35",
+        "NPC_Head_Boss_36",
+        "NPC_Head_Boss_37",
+        "NPC_Head_Boss_38",
+        "NPC_Head_Boss_39",
         "UI/UI_BossBar",
         // The map overlay layers (`Main.cs:66551`'s `Main.MapIcons`): the
         // spawn/bed markers, the ping animation and the layer Extras
@@ -811,6 +878,23 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_282",
         "Extra_299",
         "Extra_305",
+        // W4-f29 — `Main.DrawMiscMapIcons` (`Main.cs:56466-56539`): the
+        // PotionOfReturn home portal (175), the exit portal (173) and the
+        // golf-ball marker ring (176); `DrawPlayerDeathMarker`
+        // (`Main.cs:56446-56464`) draws `TextureAssets.MapDeath`
+        // (`AssetInitializer.cs:338`); the revenge coin markers draw the
+        // 1x8 `Coin_<n>` animation sheets (`AssetInitializer.cs:369`), NOT
+        // the `Item_71..74` inventory icons; the town-head notification
+        // icon is `Images/UI/UI_quickicon1` (`Utils.cs:444`).
+        "Extra_173",
+        "Extra_175",
+        "Extra_176",
+        "MapDeath",
+        "Coin_0",
+        "Coin_1",
+        "Coin_2",
+        "Coin_3",
+        "UI/UI_quickicon1",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -1968,6 +2052,10 @@ pub struct Lookups {
     /// (`NPCHeadID`): the town heads the housing page draws. Absent entries are
     /// heads the port ships no NPC for.
     pub npc_heads: Vec<Option<tr_render::SheetRect>>,
+    /// `TextureAssets.NpcHeadBoss[40]` (`TextureAssets.cs:620`), indexed by
+    /// `NPC.GetBossHeadTextureIndex` (`NPC.cs:7557-7606`) — the boss map
+    /// heads (`Main.DrawNPCMapIcons*`, `Main.cs:56099-56292`). W4-f29.
+    pub npc_head_boss: Vec<Option<tr_render::SheetRect>>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
     /// The map overlay icons (`Main.MapIcons`' layers, `Main.cs:66551`).
@@ -1978,6 +2066,23 @@ pub struct Lookups {
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
+    /// W4-f29 — `Main.DrawMiscMapIcons`' portals + golf ring
+    /// (`Main.cs:56466-56539`): Extra_175 home, Extra_173 exit, Extra_176 golf.
+    pub extra_173: Option<tr_render::SheetRect>,
+    pub extra_175: Option<tr_render::SheetRect>,
+    pub extra_176: Option<tr_render::SheetRect>,
+    /// `TextureAssets.MapDeath` (`AssetInitializer.cs:338`) — the death
+    /// marker (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`). W4-f29.
+    pub map_death: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Coin[0..4]` (`AssetInitializer.cs:369`): the 1x8 coin
+    /// animation sheets the revenge map markers draw
+    /// (`CoinLossRevengeSystem.cs:262-264`) — distinct from the `Item_71..74`
+    /// inventory icons in [`Self::coins`]. W4-f29.
+    pub coin_anim: [Option<tr_render::SheetRect>; 4],
+    /// `Images/UI/UI_quickicon1` (`Utils.DrawNotificationIcon`,
+    /// `Utils.cs:444`) — the town-head dialogue indicator
+    /// (`Main.DrawNPCHeadFriendly`, `Main.cs:56556-56559`). W4-f29.
+    pub ui_quickicon1: Option<tr_render::SheetRect>,
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -2362,6 +2467,11 @@ impl Lookups {
             npc_heads: (0..crate::ui::housing::HEAD_COUNT)
                 .map(|h| atlas.sheet(&format!("NPC_Head_{h}")).copied())
                 .collect(),
+            // `TextureAssets.NpcHeadBoss` is a fixed 40-slot array
+            // (`TextureAssets.cs:620`). W4-f29.
+            npc_head_boss: (0..40)
+                .map(|h| atlas.sheet(&format!("NPC_Head_Boss_{h}")).copied())
+                .collect(),
             ui_font,
             item_font,
             death_font,
@@ -2401,6 +2511,12 @@ impl Lookups {
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
+            extra_173: atlas.sheet("Extra_173").copied(),
+            extra_175: atlas.sheet("Extra_175").copied(),
+            extra_176: atlas.sheet("Extra_176").copied(),
+            map_death: atlas.sheet("MapDeath").copied(),
+            coin_anim: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
+            ui_quickicon1: atlas.sheet("UI/UI_quickicon1").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
@@ -3653,6 +3769,42 @@ mod tests {
             );
         }
         assert!(lookups.npc_heads[0].is_none(), "the query cell has no head");
+    }
+
+    /// W4-f29 — the second-half map overlay sheets: the boss heads
+    /// (`TextureAssets.NpcHeadBoss[40]`), the death marker, the misc portals
+    /// + golf ring, the revenge coin animation sheets and the town-head
+    /// notification icon all reach the atlas.
+    #[test]
+    fn w4_f29_the_map_overlay_second_half_sheets_pack() {
+        let (_, lookups) = content_lookups();
+        assert_eq!(lookups.npc_head_boss.len(), 40, "TextureAssets.cs:620");
+        // King Slime (50) resolves head 7 (`NPCID.cs:10479`), the Eye (4)
+        // head 0, the Destroyer (134) head 25, Betsy (551) head 34.
+        for head in [0, 7, 25, 34] {
+            assert!(
+                lookups.npc_head_boss[head].is_some(),
+                "NPC_Head_Boss_{head} must reach the atlas"
+            );
+        }
+        assert!(lookups.map_death.is_some(), "MapDeath");
+        assert!(lookups.extra_173.is_some(), "the exit portal");
+        assert!(lookups.extra_175.is_some(), "the home portal");
+        assert!(lookups.extra_176.is_some(), "the golf ring");
+        for (i, sheet) in lookups.coin_anim.iter().enumerate() {
+            let sheet = sheet.unwrap_or_else(|| panic!("Coin_{i}"));
+            // The 1x8 animation strip (`value.Frame(1, 8)`,
+            // `CoinLossRevengeSystem.cs:263`): 8 rows.
+            assert_eq!(sheet.height % 8, 0, "Coin_{i} is an 8-row strip");
+        }
+        assert!(lookups.ui_quickicon1.is_some(), "UI/UI_quickicon1");
+        // The town heads the map draws beyond the housing page's set.
+        for head in [12, 13, 16, 18, 19, 26] {
+            assert!(
+                lookups.npc_heads[head].is_some(),
+                "NPC_Head_{head} (the map town heads)"
+            );
+        }
     }
 
     #[test]
