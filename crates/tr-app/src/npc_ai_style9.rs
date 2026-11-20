@@ -738,11 +738,12 @@ mod tests {
             let mut rng = UnifiedRandom::new(7);
             let mut probe = UnifiedRandom::new(7);
             let mut dust = tr_core::particles::DustPool::new();
+            // The spawn box reads the PRE-integration position.
+            let (pre_x, pre_y) = (ball.x, ball.y);
             sphere_family_step(&mut ball, &w, &player, Style9Flags::default(), &mut rng, &mut dust, &ctx);
-            // The launch velocity is dust-loop-constant; the integration
-            // moved the NPC AFTER the loop, so undo it for the spawn box.
+            // The launch velocity is dust-loop-constant (the integration
+            // never re-aims).
             let (vx, vy) = (ball.vx, ball.vy);
-            let (pre_x, pre_y) = (ball.x - vx, ball.y - vy);
             let (n, ty) = match kind {
                 NpcKind::ChaosBall => (12, 27),
                 NpcKind::WaterSphere => (8, 172),
