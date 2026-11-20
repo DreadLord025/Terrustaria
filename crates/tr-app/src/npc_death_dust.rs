@@ -196,6 +196,12 @@ pub(crate) fn death_dust_feed(app: &mut crate::app::App, npc: &Npc) {
     if !lane_covers(ty) {
         return;
     }
+    // `NPC.cs:87222-87225` — the Spore's gate is `life >= 0` (NOT the
+    // usual `life > 0`): at exactly life == 0 the arm returns with NO
+    // dust. The death retain picks hp <= 0, so the hp == 0 edge skips.
+    if ty == 265 && npc.hp == 0 {
+        return;
+    }
     let (w, h) = npc.size();
     let ctx = app.spawn_ctx();
     let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
