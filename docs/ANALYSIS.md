@@ -34183,3 +34183,109 @@ call sites checked by read/grep (`can_hit`/`can_hit_line`'s 9-arg shape,
 `UnifiedRandom`'s `next_max`/`next_range`/`next_float`/`next_double`,
 `ProjectilePool::spawn_with_data_owned`/`set_crit`/`set_no_drop_item`). The
 24 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## S1-P-i18 special bullets (2026-11-20, code-only)
+The eleven special-bullet projectile kinds (36 MeteorShot, 89
+CrystalBullet, 104 CursedBullet, 207 ChlorophyteBullet, 242
+BulletHighVelocity, 279 IchorBullet, 283 VenomBullet, 284 PartyBullet,
+285 NanoBullet, 286 ExplosiveBullet, 287 GoldenBullet) plus the 90
+CrystalShard spawn. Census + port: `docs/research/63-special-bullets-census.md`,
+branch `task/S1-P-i18-special-bullets`. **Code-only mode — no compiler
+invoked; the 13 `s1_p_i18_*` witnesses are WRITTEN NOT RUN.**
+**The structural finding.** At the base (`aa147ce0`) NONE of the eleven
+kinds had a `proj_data` row, so `spawn_with_data_ai_owned`'s
+`proj_data(kind)?` (`projectile.rs:13102`) returned `None` and the shoot
+wire's spawn (`editing.rs:1927`) silently declined every special bullet —
+the shots never spawned. The specials were therefore MISSING (not WRONG):
+there was no behaviour to diverge. Only 14 (musket ball) and 638
+(Luminite, S1-D-4's `projectile_ai_moonlord`, FAITHFUL) had rows. The fix
+is additive: the twelve `SetDefaults` rows + the per-type `AI_001` arms +
+the on-hit debuffs + the death hooks.
+**The split of labour (Lead coordination, `LEAD-I15-COORD.md`).** The Lead
+staged the data rows + constants + `ProjLight` colour arms + the pool-side
+death hooks (`special_bullet_kill` / `venom_burst_spread` /
+`exploding_bullet_burst`) + the HighVelocity gun override (`ammo.rs`,
+`Player.cs:47107-47118`) + the `npc_buffs` witness helpers; this worker
+ported `projectile_special_bullets.rs` (the per-type AI arms + the on-hit
+/ spread debuff arms). The two halves are kind-disjoint and compile
+together.
+**The Nanite ×1.25 is i15's, NOT this task's.** The i03 census A1
+double-scale (resolver `ammo.rs:680-685` + wire `editing.rs:1892-1897`)
+was fixed by i15 (`task/S1-P-i15-ammo-consumption`, `6df7e170`): the
+resolver returns the unscaled `num`, the wire carries the single fused
+`(int)(Damage * 1.25f)` after the add (`Player.cs:53552-53559`). That fix
+lives on i15's branch, not in this base. Per the Lead's coord note this
+task does NOT re-fix the scaling — re-fixing it here would conflict at
+merge. The 285 row + effects land here; the single fused scale lands with
+i15.
+**The per-type arms (`projectile_special_bullets.rs`).** `step` mirrors
+`AI_001`'s block order: the 242 speed fade (`:55660-55671`, the double
+sqrt cast back to float, the `(byte)(speed * 0.9)` truncation), the
+`flag3` counter (every special rests EXCEPT 207, which counts but its
+homing block consumes the gravity else-if chain), the 207 homing block
+(`:56778-56887`: the Manhattan-300 acquire with `Collision.CanHit`, the
+1-based `ai[1]` lock, the Manhattan-1000 hold validity with
+`CanBeChasedBy(ignoreDontTakeDamage: true) && !dontTakeDamage`, the
+`(v * 7 + d) / 8` steer at the LATCHED `localAI[0]` speed), the default
+rotation `Atan2(vy,vx) + 1.57f` (`:57748-57751`, no special has a
+per-type rotation arm) + the exact C# +16 clamp (`:57753-57768`, slice
+A/C's convention), then the `HandleMovement` probe with the 36 one-bounce
+reflect (`:19278-19298`, penetrate 2 → reflect + spend one → die at 1)
+and the 285 bounce (`:18563-18591`, `ai[1]++`, first bounce ×0.66 `(int)`,
+second kills BEFORE the reflect, then `FindTargetWithLineOfSight` re-aim
+at the latched speed). The on-hit debuffs (`bullet_on_hit_debuffs`) are
+the `StatusNPC` arms (`:11537-11551` + `:11665-11677`), called from
+`damage_pve`'s `special_bullet_status_npc` at `:13580`'s position (BEFORE
+`StrikeNPC` `:13649`); the 283 spread's debuff-only re-hit
+(`venom_burst_debuffs`) is the `type == 283 && !active` early arm
+(`:12810-12814`).
+**RNG (S1-A-10).** The AI arms take NO rng parameter — every `Main.rand`
+in these kinds' `AI_001` blocks feeds dust alone (the ai001_a/b/c
+dust-skip convention), so the flight is RNG-free by construction. The
+state-bearing draws ride the pool's `UpdateProjectiles` pass stream
+(`Main.cs:17775-17777`): the 285 Confused roll is ONE `Next(3)` per landed
+hit (`:11543`, 180 on a zero else 60) at the StatusNPC position; the 89
+split's 8 ranges (per shard `Next(40,70)` then `Next(-20,21)` for X, then
+the same pair for Y, `:75264-75265`, argument evaluation order) ride
+inline in `special_bullet_kill` (they place AND velocity the shard).
+**The death-burst dust/gore convention (the Lead's choice).** The 283's
+three 10-dust-171 loops (`:75913-75939`), the 284 confetti's 10 dust + 5
+gore (`:75977-75998`, purely visual — no state, no spawn, no damage), the
+286's 7 dust-31 + 6 dust-6 + 1 gore (`:76003-76018`) and the common arm's
+HitTiles + Item10 (`:76035-76039`) are SKIPPED with their layers — bodies
+AND draws. This is the ai001 convention (the pool has no dust/gore draw
+layer), NOT the `projectile_ai_misc` draw-census convention that keeps
+explicit visual draws. The 286 burst's DAMAGE half draws only the
+per-NPC `DamageVar` the boxed walk already spends. The choice is recorded
+here so a later dust-layer wiring knows these sites owe their draws.
+**Deliberate stand-ins.** (1) `appliesImmunityTimeOnSingleHits` (the
+286's `:3754`) has no `ProjData` field — the pool's idStatic gate reads a
+kind check (`max_penetrate != 1 || kind == EXPLODING_BULLET`) in both
+`damage_pve` and `damage_pve_boxed`. (2) The 283's `localAI[1] = -1f`
+(`:75942`) is a verbatim DEAD write (no C# reader) — ported for its shape.
+(3) The 285 PvP Confused arm (`StatusPlayer` `:12288-12298`) — no
+projectile-PVP layer (single-player); recorded, not ported. (4) The 207
+`Collision.CanHit` is the port's `can_hit` walk; the 285 re-target uses
+the shared `find_target_with_line_of_sight` (`:45627-45660`). (5) The
+movement probe kills without the C#'s final `position += velocity` on the
+blocked tick (the port-wide `ai_style1_flight` stand-in, byte-identical to
+slices A/B/C); the bounce arms integrate the reflected velocity on the
+bounce tick (the typhoon 409 precedent). (6) The 283 burst's
+`oldVelocity.ToRotation()` reads `p.vel` (no `oldVelocity` field); the
+bullet rests its counter and flies straight, so `oldVelocity == velocity`
+at death — faithful for every reachable 283. (7) The 90 shard flies the
+existing `ai_crystal_storm` arm — its generic 0.96/15-tick drag/fade IS
+the 90's C# arm (`:26004-26013`); the 1134 melee shard's first-tick
+sound/dust block (`:25938-25952`) is kind-gated to 1134, so the 90 skips
+it correctly. (8) The `Kill()` sound cues are skipped with the pool's
+death-hook sound convention (`moonlord_arrow_kill`); the 36 bounce's
+`SoundID.Item10` rides `wants_sound`.
+**Verification.** Code-only: every arm was re-read against the cited C#
+blocks (the SetDefaults rows, the flag3 list membership, the homing
+acquire/hold/steer, the bounce penetrate gates, the StatusNPC durations,
+the Kill death-effect chain's `!Main.projPet` outer gate). The cross-file
+seams were checked by read/grep: the `covers`/`step`/
+`bullet_on_hit_debuffs`/`venom_burst_debuffs` signatures against the
+pool's call sites, the `npc_center`/`find_target_with_line_of_sight`
+visibility bumps, the `SPECIAL_BULLET_KINDS` re-export through
+`pub use data::*`, the `has_buff`/`buff_time_of` helpers. The 13 witness
+tests are WRITTEN, NOT RUN — **no compiler invoked**.
