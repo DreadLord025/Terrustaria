@@ -160,6 +160,33 @@ pub const NPC_GLOW_RECORDS: &[NpcGlowRecord] = &[
     NpcGlowRecord { npc: 425, masks: &[150], line: 26141 },
     // :26148 — VortexSoldier 429, same.
     NpcGlowRecord { npc: 429, masks: &[151], line: 26148 },
+    // :26152/:26156 — SolarCorite 418: (255-alpha) grey a=255-alpha + 4
+    // ghosts (64,64,64,0), offset 0.25+|light-0.5|*0.25.
+    NpcGlowRecord { npc: 418, masks: &[161], line: 26152 },
+    // :26176 — the Crawltipede trio 412/413/414: mask = 157 + type - 412
+    // (:26165); the 414 tail's localAI[2] != 0 recolours to
+    // (255-n, n, n, 255-n), n = |localAI[2]| clamped via the <0 +128 form.
+    NpcGlowRecord { npc: 412, masks: &[157], line: 26176 },
+    NpcGlowRecord { npc: 413, masks: &[158], line: 26176 },
+    NpcGlowRecord { npc: 414, masks: &[159], line: 26176 },
+    // :26184/:26188 — SolarDrakomire 415, (255-alpha) a=255-alpha + 4
+    // ghosts, offset 0.5+|light-0.5|*0.5 (the rider 416 syncs onto it).
+    NpcGlowRecord { npc: 415, masks: &[155], line: 26184 },
+    // :26193/:26199/:26207 — SolarSolenian 419 body arm: (255-alpha)
+    // a=255-alpha; ai[2] >= -6 → 4 velocity ghosts (0.5+|light-0.5|*0.5),
+    // else 4 UnitX ghosts at radius 4.
+    NpcGlowRecord { npc: 419, masks: &[154], line: 26193 },
+    // :26213/:26217 — SolarSroller 417, (255-alpha) a=255-alpha + 4 ghosts,
+    // offset 0.25+|light-0.5|*0.25.
+    NpcGlowRecord { npc: 417, masks: &[160], line: 26213 },
+    // :26234/:26238 — SolarSpearman 518, (255-alpha) a=255-alpha + 4 ghosts
+    // (0.5+|light-0.5|*0.5), origin halfSize + (-10, 0).
+    NpcGlowRecord { npc: 518, masks: &[163], line: 26234 },
+    // :26243 — Everscream 344, (200,200,200,100)*0.5.
+    NpcGlowRecord { npc: 344, masks: &[253], line: 26243 },
+    // :26250/:26252 — SantaNK1 346: 4 UnitX ghosts radius 4 (64,64,64,0)
+    // then the body (200,200,200,100).
+    NpcGlowRecord { npc: 346, masks: &[254], line: 26250 },
 ];
 
 #[cfg(test)]
