@@ -39244,3 +39244,87 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-f14 cage furniture wiring (task/W4-f14-cage-furniture-wire, 2026-11-20, code-only mode)
+
+The cage half of the census furniture post-pass goes live: the landed
+`drawdata_furniture.rs` cage rewrites (S1-F-9 wave C) now read the landed
+`CritterCageAnimator` tables (W4-f14 phase 1) instead of the zero stand-in.
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked — the
+witnesses are WRITTEN, NOT RUN; the gate phase runs them.**
+
+### The seams
+
+- **Tick** (`app/frame/world.rs::animate_tiles_phase`):
+  `cages.animate_critter_cages(rng)` runs AFTER
+  `animator.animate_tiles(wind, rng, false)` inside the SAME
+  `tile_anim_step` closure on the SAME `rngs.global()` stream — the C#
+  `AnimateTiles` tail call `Main.AnimateTiles_CritterCages()`
+  (`Main.cs:19303`, after the tile-493 counter). The `critterCage` gate
+  (`Main.cs:13513-13516`) returns before ANY draw when no cage was in view,
+  so the `Main.rand` interleave stays bit-for-bit for cage-free play.
+- **Draw feed** (`render/tiles.rs::draw_tiles`): the walk's start clears
+  `cage_anim.critter_cage` — the port's stand-in for the non-solid layer's
+  `Main.critterCage = false` (`TileDrawing.cs:472-475`; the port fuses both
+  layers into ONE walk). Each active in-view cage cell sets the flag
+  (`:5672` etc.) and runs `furniture_post_pass` with `cage_anim.frame_of`
+  as the table lookup.
+- **Composite order (the load-bearing seam)**: the cage groups are the
+  FIRST `GetTileDrawData` switch's tail (`TileDrawing.cs:5629-5907`), so the
+  post-pass sits AFTER `draw_data` + slice B's delegated first-switch cases
+  and BEFORE slice A's SECOND switch (`:6049-6507`) — the 568/569/570/580
+  glow rects read `tileFrameY + addFrY` POST-cage (`:6085-6104`), and the
+  `:1007` source-rect resolve reads the final `addFrX/addFrY`. The cage half
+  REPLACES the static top-2 arms (`drawdata.rs`); with zeroed tables the
+  output is byte-equal to them (the wave-C pin
+  `zero_tables_reproduce_the_static_cage_arms`).
+- **G6 key** (`WorldFrameKey::cage_anim`): `CritterCageAnimator::anim_key()`
+  (FNV-1a over every `Main.*CageFrame` FRAME table; counters/modes are
+  animator internals the draw never reads) gated on an active cage kind in
+  the view rect (`is_cage_kind`, the `tile_anim` key's convention) — a
+  cage-free view keeps the pre-wiring cache behaviour bit-for-bit.
+- **Lifetime**: PROCESS state like the C# (`Main.cs:1445`) — the `:8393-8394`
+  world-load reset covers `tileFrame` only, so `enter_loaded_world` does NOT
+  re-zero the cage tables; `App::new` (and `swap_world`'s fresh App) runs
+  the 3600-tick `Initialize_TileAndNPCData2` warm-up (`Main.cs:6800-6807`)
+  on a fresh world-seed clone of `Main.rand` (the C# process stream is
+  `DateTime.Now.Ticks`-seeded, `:6463` — the documented stand-in).
+
+### Deliberate deviations / scope
+
+- The chest half of `furniture_post_pass` stays `chest_frame: None` at this
+  site — the `CacheSpecialDraws_Part2` position (`:993`) is owned by the
+  in-flight W4-d58 chest-frames wiring; `chest_draw_rewrite` is a no-op for
+  non-chest kinds and the cage kinds never overlap BasicChest (21/467).
+- The fused-layer flag clear rides the walk start instead of the non-solid
+  `Draw` head (the documented row-major fusion, research/09 deviation 1);
+  the set is per in-view cage cell exactly like the C# non-solid pass.
+- The `DrawSpecialTilesLegacy` tile-620 lid pass (`:8005`'s second
+  `critterCage = true` site) stays UNWIRED (S1-G-1e's deferred seam) — the
+  cage-frame input it needs now exists (`frame_of`), but the pass itself is
+  out of this task's scope.
+- The orange-squirrel table is stream-only in the C# draw (no tile reads
+  it); it rides `anim_key` anyway — key-only churn, no pixel effect.
+
+### Witnesses (WRITTEN, NOT RUN)
+
+- `render/tiles.rs`: `w4_f14_the_cage_post_pass_rides_the_first_switch_tail`
+  (source-scan: table < slice B < cage post-pass < slice A, one gated
+  dispatch, flag set before the rewrite, `frame_of` feed, `None` chest),
+  `w4_f14_the_walk_start_clears_the_cage_flag`.
+- `app/frame.rs`: `w4_f14_the_cage_tick_rides_the_animate_tiles_tail`
+  (one stepper, one stream, the tail order),
+  `w4_f14_the_cage_key_is_view_gated_and_the_draw_takes_the_animator`.
+- `app/mod.rs` frame_key: `cage_animator_state_changes_the_frame_key`
+  (an open-gate tick changes the key; the closed gate keeps it).
+- Phase 1's ten `drawdata_cages.rs` witnesses (gate/stream/warm-up/key/
+  frame_of/draw-feed/owl/fairy-jar/pufferfish-range/driver-order) ride along.
+
+### Screenshot recipe (gate phase)
+
+A terrarium row (bunny 275, butterfly jar 620, jellyfish 316) in view:
+`TR_SHOT=cages_f0.png` at frame 0 vs `TR_SHOT=cages_f600.png` after 600
+ticks — the addFrY rows must advance; `TR_NOCACHE=1` vs cached must be
+pixel-equal (the key-coverage A/B); a cage-free view must stay cache-hit
+(`TR_STATS=1` `world_reused`); two identical runs SHA256-equal at zoom
+1.0/1.5/2.0.
