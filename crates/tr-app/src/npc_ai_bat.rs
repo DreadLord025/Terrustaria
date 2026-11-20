@@ -20,15 +20,33 @@
 //! runs `ai_style_8_step`, folds them back out and drains the shoot intent into
 //! `wants_sphere`. Every other dispatch arm stays byte-identical.
 //!
-//! RNG order is by construction: every `Main.rand` draw this machine makes is
-//! the teleport search's `Next(targetTileX - range, targetTileX + range + 1)`
-//! then `Next(targetTileY - range, ...)` pair per attempt (`NPC.cs:18952-18953`,
-//! cited inline below). The per-type dust arms (`:21282`, `:21292`, `:21319`,
-//! `:21331`, `:21340`, `:21350`, `:21366`), the teleport bursts' `Next(1, 3)`
-//! scales (`:20867`/`:20936`), the Djinn's curse volley (`:21140-21141`) and
-//! the Rune Wizard's aim jitter (`:21268-21269`) all draw `Main.rand` too and
-//! are skipped wholesale — the dust system (S1-E-2/S1-E-3) and the unported
-//! kinds own them; the skip keeps the surviving stream's order exact.
+//! RNG order is by construction — W4-g5 DRAW-PARITY (the W4-d128 census's
+//! coordinated parity commit, policy A: every ARM-LEVEL `Main.rand` draw is
+//! consumed at its exact C# position; the `Dust.NewDust` INTERNAL draws stay
+//! the dust task's documented skip, S1-E-1). Per tick, in C# order:
+//!
+//! 1. The teleport-arrival bursts (`:20863-20922` + `:20932-20991`): types
+//!    29/45 pass `Next(1, 3)` as the scale ARGUMENT 50× per burst — the draw
+//!    happens even when `NewDust` culls — two bursts = exactly 100 draws on
+//!    the arrival tick; every other ported type's bursts draw 0.
+//! 2. The teleport search (`:18952-18953`): 2 draws per attempt (X then Y),
+//!    ≤100 attempts; the >2000-px Manhattan bail draws NOTHING. The radius
+//!    is the C# DEFAULT 20 for EVERY type (`:18937`/`:21097` — `num88` is
+//!    only the post-teleport windup, the W4-d128 L1 fix).
+//! 3. The Djinn volley search (`:21137-21160`): on the `% 30 == 0 &&
+//!    / 30 < 5` windup ticks (ai[1] = 120/90/60/30/0 AFTER the decrement),
+//!    2 draws per iteration (X then Y), ≤50 iterations, early-exit on the
+//!    first accepted tile; the >2000-px length gate draws NOTHING.
+//! 4. The ambient tail gates (`:21279-21374`): 29/45 `Next(5)` every tick,
+//!    32 `Next(3)` every tick, the else group (24) `Next(6)` every tick,
+//!    533 draws NOTHING (light only).
+//!
+//! The unported kinds' own draws (172's aim jitter `:21268-21269` + alpha
+//! dust `:21319-21325`, 281-286's `Next(2)` gates `:21331`/`:21340`/`:21350`,
+//! 693's light-only tail) stay cited skips with their kinds. This is the
+//! deliberate ONE-TIME stream shift the W4-d128 plan mandates — the golden
+//! outputs re-bless at the verification gate (ANALYSIS "The caster aiStyle-8
+//! draw-parity (W4-g5)").
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};
@@ -104,8 +122,11 @@ fn solid_tiles(world: &World, start_x: i32, end_x: i32, start_y: i32, end_y: i32
 }
 
 /// `NPC.AI_AttemptToFindTeleportSpot` (`NPC.cs:18937-19007`), the aiStyle-8
-/// call shape (`:21097`: `rangeFromTargetTile = num88`, the other parameters
-/// at their defaults — telefrag 5 tiles, fluff 1, not centered, not in air).
+/// call shape (`:21097` passes ONLY `(destination, num86, num87)` —
+/// `rangeFromTargetTile` takes its DEFAULT **20** for EVERY type (W4-g5,
+/// the W4-d128 L1 fix: `num88` is only the post-teleport windup,
+/// `:21101`); the other parameters at their defaults — telefrag 5 tiles,
+/// fluff 1, not centered, not in air).
 ///
 /// Per attempt: one X draw then one Y draw (`Main.rand.Next` at
 /// `:18952`/`:18953` — the ONLY two draws this machine makes), the column
@@ -232,6 +253,29 @@ pub struct CasterShot {
     pub ai3: f32,
 }
 
+/// The teleport-arrival dust bursts' ARM-LEVEL draws (`NPC.cs:20863-20922`
+/// and `:20932-20991`, W4-g5 draw-parity): types 29/45 pass
+/// `Main.rand.Next(1, 3)` as the scale argument 50× per burst — the draw
+/// happens even when `NewDust` culls. Every other ported type's burst arms
+/// use constant scales (0 draws). The `NewDust` internals stay the dust
+/// task's documented skip (policy A, ANALYSIS "The caster aiStyle-8
+/// draw-parity (W4-g5)").
+fn teleport_burst_draws(rng: &mut UnifiedRandom, kind: NpcKind) {
+    if matches!(kind, NpcKind::GoblinSorcerer | NpcKind::Tim) {
+        for _ in 0..50 {
+            let _ = rng.next_range(1, 3); // `:20867` / `:20936`
+        }
+    }
+}
+
+/// `Utils.ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)v >> 4` —
+/// truncate toward zero FIRST, then arithmetic-shift (negative coords
+/// floor, unlike the plain `/16`). The Djinn volley's tile points
+/// (`NPC.cs:21124-21125`) ride it, NOT the teleport call's `/16`.
+fn to_tile(v: f32) -> i32 {
+    (v as i32) >> 4
+}
+
 /// The whole `if (this.aiStyle == 8)` block (`NPC.cs:20817-21376`) for the
 /// ported kinds. State rides `npc.ai[0]` (the cycle counter), `npc.ai[1]`
 /// (the windup countdown), `npc.ai[2]`/`ai[3]` (the pending teleport tile —
@@ -292,9 +336,10 @@ pub fn ai_style_8_step(
     // `:20844-20854` — the type-172 alpha ramp: deferred (Rune Wizard is
     // not a ported kind).
     // `:20855-20992` — the pending teleport: place the body on the tile,
-    // zero the velocity, clear ai[2]/ai[3]. The two 50-dust bursts are
-    // skipped (the dust system is unported; only the 29/45 burst's
-    // `Next(1, 3)` scale drew Main.rand — `:20867`/`:20936`); S1-E-21g
+    // zero the velocity, clear ai[2]/ai[3]. W4-g5 draw-parity: the two
+    // 50-dust bursts' ARM-LEVEL draws are consumed (29/45's `Next(1, 3)`
+    // scale arguments, `:20867`/`:20936` — 100 draws on the arrival tick;
+    // the `NewDust` internals stay the dust task's skip); S1-E-21g
     // wires BOTH Item8 plays (`:20862` the departure at the OLD position
     // BEFORE the move, `:20931` the arrival AFTER it) — the queue keeps
     // the C#'s order around the placement.
@@ -306,6 +351,8 @@ pub fn ai_style_8_step(
             x: npc.x,
             y: npc.y,
         });
+        // `:20863-20922` — burst 1, at the OLD position.
+        teleport_burst_draws(rng, npc.kind);
         // `:20924-20925` — `(float)(base.width / 2)` is INTEGER division.
         npc.x = npc.ai[2] * 16.0 - (w as i32 / 2) as f32 + 8.0;
         npc.y = npc.ai[3] * 16.0 - h;
@@ -319,6 +366,8 @@ pub fn ai_style_8_step(
             x: npc.x,
             y: npc.y,
         });
+        // `:20932-20991` — burst 2, at the NEW position.
+        teleport_burst_draws(rng, npc.kind);
     }
     // `:20993` — the counter tick (the 693 localAI block `:20994-21005` is
     // deferred with its kind).
@@ -377,19 +426,21 @@ pub fn ai_style_8_step(
         // `:21086-21087` — `(int)player.Center.X / 16` (truncate first).
         let (pcx, pcy) = player.center();
         let target_tile = (pcx as i32 / 16, pcy as i32 / 16);
-        // `:21089-21093` — num88 = 20, the Fire Imp 5.
+        // `:21089-21093` — num88 = 20, the Fire Imp 5. It is ONLY the
+        // post-teleport windup (`ai[1] = num88`, `:21101`).
         let num88 = if npc.kind == NpcKind::FireImp { 5 } else { 20 };
         // `:21094` — the 693 near-books attempt is deferred with its kind.
         // `:21097` — the shared attempt; `AnyNPCs(35)` rides the sim's
         // live-head presence mirror (B-1: was the red-hat hands-count
-        // stand-in).
+        // stand-in). W4-g5 L1: the radius is the C# DEFAULT 20 for EVERY
+        // type — the old `num88` misuse shrank the Fire Imp's search to 5.
         if let Some((tx, ty)) = attempt_find_teleport_spot(
             world,
             rng,
             npc.kind,
             npc.center(),
             target_tile,
-            num88,
+            20,
             &TelefragPlayer::from_player(player),
             world.skeletron_head_present,
         ) {
@@ -408,9 +459,73 @@ pub fn ai_style_8_step(
         let num89 = 25.0f32;
         npc.ai[1] -= 1.0;
         if npc.kind == NpcKind::DesertDjinn {
-            // `:21117-21162` — the `% 30` curse volley draws Main.rand
-            // (`:21140-21141`) per shot and is skipped wholesale (the
-            // S1-E-5 RNG rule, recorded in ANALYSIS): the Djinn never fires.
+            // `:21117-21162` — the curse volley on the %30 ticks below the
+            // 5th (ai[1] = 120/90/60/30/0 AFTER the decrement). W4-g5
+            // draw-parity: the wholesale S1-E-5 skip is retired — the
+            // window's Item8 plays FIRST (`:21121`, even when the search
+            // is gated off), then the ≤50-iteration tile search consumes
+            // its X-then-Y pairs (`:21140-21141`) and the accepted tile
+            // queues the 596 curse (`:21155`, the sim drains
+            // `wants_djinn_curse` — damage 0, knockback 1, ai0 = target).
+            if npc.ai[1] % 30.0 == 0.0 && npc.ai[1] / 30.0 < 5.0 {
+                // `:21121` — the window puff (netMode-independent).
+                npc.wants_sound.push(crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Item8,
+                    x: npc.x,
+                    y: npc.y,
+                });
+                // `:21122` — netMode != 1 (the port is single-player/host).
+                let (scx, scy) = npc.center();
+                let (pcx, pcy) = player.center();
+                // `:21124-21125` — ToTileCoordinates (`(int)v >> 4`).
+                let self_pt = (to_tile(scx), to_tile(scy));
+                let tgt_pt = (to_tile(pcx), to_tile(pcy));
+                // `:21126-21136` — the >2000-px length gate draws NOTHING.
+                let (dx, dy) = (pcx - scx, pcy - scy);
+                if (dx * dx + dy * dy).sqrt() <= 2000.0 {
+                    for _ in 0..50 {
+                        // `:21140-21141` — X first, then Y (num90 = 6).
+                        let x = rng.next_range(tgt_pt.0 - 6, tgt_pt.0 + 6 + 1);
+                        let y = rng.next_range(tgt_pt.1 - 6, tgt_pt.1 + 6 + 1);
+                        // `:21142` — outside the target's ±2 box (num92)
+                        // AND the caster's ±6 box (num91), tile !nactive().
+                        let outside_target = y < tgt_pt.1 - 2
+                            || y > tgt_pt.1 + 2
+                            || x < tgt_pt.0 - 2
+                            || x > tgt_pt.0 + 2;
+                        let outside_self = y < self_pt.1 - 6
+                            || y > self_pt.1 + 6
+                            || x < self_pt.0 - 6
+                            || x > self_pt.0 + 6;
+                        if outside_target
+                            && outside_self
+                            && !world
+                                .tile(x, y)
+                                .is_some_and(|t| t.active() && !t.inactive())
+                        {
+                            // `:21145-21152` — no lava, no solid ±2 box
+                            // (num93 = 2).
+                            if world.tile(x, y).is_some_and(|t| {
+                                t.liquid > 0
+                                    && t.liquid_kind() == tr_core::tile::LiquidKind::Lava
+                            }) {
+                                continue;
+                            }
+                            if solid_tiles(world, x - 2, x + 2, y - 2, y + 2) {
+                                continue;
+                            }
+                            // `:21155` — the 596 curse at the tile centre;
+                            // ai0 = this.target, damage 0, knockback 1.
+                            npc.wants_djinn_curse.push((
+                                (x * 16 + 8) as f32,
+                                (y * 16 + 8) as f32,
+                                npc.target as f32,
+                            ));
+                            break;
+                        }
+                    }
+                }
+            }
         } else if npc.kind == NpcKind::FireImp {
             // `:21164-21173` — the imp spawns the Burning Sphere 25 at
             // ai[1] == 10, at `(int)pos.X + width/2 + direction*8,
@@ -474,8 +589,23 @@ pub fn ai_style_8_step(
         }
     }
     // `:21279-21374` — the per-type dust/light tail: the lights are the
-    // frame pass's feed (`npc_lights.rs::npc_light`, S1-E-5); every dust
-    // arm draws Main.rand and is skipped here (see the module note).
+    // frame pass's feed (`npc_lights.rs::npc_light`, S1-E-5). W4-g5
+    // draw-parity: the dust arms' GATE draws are consumed every tick at
+    // their C# positions (the `NewDust` internals stay the dust task's
+    // skip): 29/45 `Next(5)` (`:21282`), 32 `Next(3)` (`:21292`), the else
+    // group (24) `Next(6)` (`:21366`); 533 draws NOTHING (`:21358-21361`,
+    // light only). The unported kinds' arms (172/281-286/693) stay cited
+    // skips with their kinds.
+    if matches!(npc.kind, NpcKind::GoblinSorcerer | NpcKind::Tim) {
+        let _ = rng.next_max(5); // `:21282` — Next(5) == 0 gates the dust
+    } else if npc.kind == NpcKind::DarkCaster {
+        let _ = rng.next_max(3); // `:21292` — Next(3) != 0 gates the dust
+    } else if npc.kind == NpcKind::DesertDjinn {
+        // `:21358-21361` — light only, NO draw.
+    } else {
+        // `:21362-21373` — the else group: light + Next(6) == 0.
+        let _ = rng.next_max(6);
+    }
     // The generic movement tail — `NPC.UpdateNPC`'s gravity + collision
     // (`NPC.cs:90465-90493`) runs after `AI()` returns; the port applies it
     // at the end of this step (the ordering deviation is recorded in
@@ -622,10 +752,13 @@ mod tests {
 
     /// `NPC.cs:21031-21038` + `:21079-21082` — the Djinn's single 180
     /// trigger sets 181 (reads 180 after the same-tick decrement) and the
-    /// 360 wrap resets to 1 via the 650 block; the rand-drawing volley
-    /// never fires.
+    /// 360 wrap resets to 1 via the 650 block. W4-g5 draw-parity: the
+    /// curse volley is LIVE — the 5 window ticks (ai[1] = 120/90/60/30/0)
+    /// draw the search pairs and queue `wants_djinn_curse` (the old
+    /// never-fires witness is superseded by the parity round; the sphere
+    /// list stays empty — the Djinn fires a PROJECTILE, not a sphere).
     #[test]
-    fn the_djinn_triggers_at_180_wraps_at_360_and_never_fires() {
+    fn the_djinn_triggers_at_180_wraps_at_360_and_fires_curses() {
         let w = ground_air();
         let p = player_at(100.0 * 16.0, 116.0 * 16.0);
         let mut n = Npc::new(NpcKind::DesertDjinn, 96.0 * 16.0, 120.0 * 16.0 - 62.0, 1, 0.0);
@@ -637,17 +770,32 @@ mod tests {
         assert_eq!(n.ai[0], 180.0);
         assert_eq!(n.ai[1], 180.0, "181 minus the same-tick decrement");
         let mut wrapped = false;
+        let mut window_ticks = 0;
+        let mut curses = 0;
         for _ in 0..400 {
             let before = n.ai[0];
+            let before_windup = n.ai[1];
             let s = ai_style_8_step(&mut n, &w, &p, &mut rng);
-            assert!(s.is_none(), "the Djinn's volley stays skipped");
+            assert!(s.is_none(), "the Djinn never requests a sphere");
             assert!(n.ai[0] < 650.0, "the wrap keeps the counter under 650");
+            // The window ticks: ai[1] AFTER the decrement hits a %30
+            // multiple below the 5th (`:21119`).
+            if before_windup > 0.0 {
+                let after = n.ai[1];
+                if after % 30.0 == 0.0 && after / 30.0 < 5.0 && before_windup >= after {
+                    window_ticks += 1;
+                }
+            }
+            curses += n.wants_djinn_curse.len();
+            n.wants_djinn_curse.clear();
             if before == 359.0 {
                 assert_eq!(n.ai[0], 1.0, "360 -> 650 -> 1 in one tick");
                 wrapped = true;
             }
         }
         assert!(wrapped, "the Djinn wrapped at 360 within 400 ticks");
+        assert!(window_ticks > 0, "the 181 windup crossed %30 window ticks");
+        assert!(curses > 0, "the volley queued curse requests");
     }
 
     /// `NPC.cs:21061-21068` — the red-hat double-step: the unconditional
@@ -824,5 +972,172 @@ mod tests {
         assert_eq!(n.ai[2], 0.0);
         assert_eq!(n.ai[3], 0.0);
         assert_eq!(n.vy, 0.0, "the placement zeroes vy before the floor stop");
+    }
+
+    // ---- W4-g5 draw-parity witnesses (written, NOT run — code-only) ----
+
+    /// `NPC.cs:20863-20922` + `:20932-20991` + `:21282` — the Tim arrival
+    /// tick consumes EXACTLY 101 draws: 50 `Next(1, 3)` scale arguments
+    /// per burst × 2 bursts, then the ambient `Next(5)`. A mirror stream
+    /// replaying that sequence from the same seed must land on the arm's
+    /// stream state (the five-probe convention's exact-replay form).
+    #[test]
+    fn w4_g5_the_tim_arrival_tick_draws_100_burst_scales_plus_the_ambient() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::Tim, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 50.0; // mid-cycle: no trigger, no teleport search
+        n.ai[2] = 60.0;
+        n.ai[3] = 120.0;
+        let mut rng = UnifiedRandom::new(7);
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        let mut mirror = UnifiedRandom::new(7);
+        for _ in 0..100 {
+            let _ = mirror.next_range(1, 3); // the two bursts' scales
+        }
+        let _ = mirror.next_max(5); // the ambient gate
+        assert_eq!(rng, mirror, "exactly 100 Next(1,3) + one Next(5)");
+    }
+
+    /// `NPC.cs:20874-20879` + `:21292` — the Dark Caster's bursts use the
+    /// CONSTANT 1.5 scale (zero draws); the arrival tick spends only the
+    /// ambient `Next(3)`.
+    #[test]
+    fn w4_g5_the_dark_caster_arrival_draws_only_the_ambient_next3() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::DarkCaster, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 50.0;
+        n.ai[2] = 60.0;
+        n.ai[3] = 120.0;
+        let mut rng = UnifiedRandom::new(7);
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        let mut mirror = UnifiedRandom::new(7);
+        let _ = mirror.next_max(3);
+        assert_eq!(rng, mirror, "the 32 bursts draw nothing; one Next(3)");
+    }
+
+    /// `NPC.cs:21282`/`:21292`/`:21358-21366` — the plain-tick ambient
+    /// census: 29/45 one `Next(5)`, 32 one `Next(3)`, 24 one `Next(6)`,
+    /// 533 NOTHING (light only). No windup, no search on these ticks.
+    #[test]
+    fn w4_g5_the_ambient_gate_census_per_kind() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        for (kind, gate) in [
+            (NpcKind::GoblinSorcerer, Some(5)),
+            (NpcKind::Tim, Some(5)),
+            (NpcKind::DarkCaster, Some(3)),
+            (NpcKind::FireImp, Some(6)),
+            (NpcKind::DesertDjinn, None),
+        ] {
+            let mut n = Npc::new(kind, 96.0 * 16.0, 120.0 * 16.0 - 62.0, 1, 0.0);
+            n.hp = n.max_hp;
+            n.ai[0] = 10.0; // no trigger tick, no 650 search
+            let mut rng = UnifiedRandom::new(7);
+            ai_style_8_step(&mut n, &w, &p, &mut rng);
+            let mut mirror = UnifiedRandom::new(7);
+            if let Some(max) = gate {
+                let _ = mirror.next_max(max);
+            }
+            assert_eq!(rng, mirror, "{kind:?}'s ambient gate");
+        }
+    }
+
+    /// `NPC.cs:18937`/`:21097`/`:21101` — the W4-d128 L1 fix: the Fire
+    /// Imp's teleport search rides the DEFAULT radius 20 (the probe's
+    /// bounds are ±20, NOT num88 = 5), while the post-teleport windup
+    /// stays `ai[1] = 5`.
+    #[test]
+    fn w4_g5_the_fire_imp_searches_at_radius_20_and_winds_5() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::FireImp, 96.0 * 16.0, 120.0 * 16.0 - 40.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 649.0; // the ++ lands 650 → the teleport attempt
+        let mut rng = UnifiedRandom::new(7);
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.ai[0], 1.0, "the 650 block resets the counter");
+        assert_eq!(n.ai[1], 4.0, "num88 = 5 is the WINDUP only (minus the same-tick --)");
+        assert!(n.ai[2] != 0.0 && n.ai[3] != 0.0, "a spot was chosen");
+        // The stream proof: whole (X, Y) pairs in the ±20 bounds — the
+        // radius-5 bounds would desynchronize this probe. The ambient
+        // Next(6) rides AFTER the search.
+        let mut pairs = 0;
+        let mut probe = UnifiedRandom::new(7);
+        loop {
+            let _x = probe.next_range(80, 121);
+            let _y = probe.next_range(97, 138);
+            pairs += 1;
+            let mut with_ambient = probe.clone();
+            let _ = with_ambient.next_max(6);
+            if with_ambient == rng {
+                break;
+            }
+            assert!(pairs <= 100, "at most 100 attempts");
+        }
+        assert!(pairs >= 1);
+    }
+
+    /// `NPC.cs:21117-21160` — the volley window tick (ai[1] 121 → 120):
+    /// the search consumes whole X-then-Y pairs in the ±6 bounds until
+    /// the accepted tile; the queued curse sits at that tile's centre
+    /// with `ai0 = target`. The Djinn's ambient draws nothing, so the
+    /// window tick's whole spend is the search.
+    #[test]
+    fn w4_g5_the_volley_window_draws_pairs_and_queues_the_tile_centre() {
+        let w = ground_air();
+        let p = player_at(100.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::DesertDjinn, 80.0 * 16.0, 120.0 * 16.0 - 62.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 10.0;
+        n.ai[1] = 121.0; // the decrement lands 120 — a window tick
+        let mut rng = UnifiedRandom::new(7);
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(n.ai[1], 120.0);
+        assert_eq!(n.wants_sound.len(), 1, "the window's Item8 (:21121)");
+        let (cx, cy, ai0) = *n.wants_djinn_curse.first().expect("a curse queued");
+        assert_eq!(ai0, n.target as f32, "ai0 = this.target (:21155)");
+        // The tile centre: (x*16+8, y*16+8).
+        assert_eq!((cx as i32 - 8) % 16, 0);
+        assert_eq!((cy as i32 - 8) % 16, 0);
+        let tx = (cx as i32 - 8) / 16;
+        let ty = (cy as i32 - 8) / 16;
+        // The stream proof: replay the ±6 pairs; the LAST pair before
+        // the streams match is the accepted tile.
+        let mut probe = UnifiedRandom::new(7);
+        let mut last = (0, 0);
+        let mut iters = 0;
+        loop {
+            let x = probe.next_range(94, 107);
+            let y = probe.next_range(111, 124);
+            last = (x, y);
+            iters += 1;
+            if probe == rng {
+                break;
+            }
+            assert!(iters <= 50, "at most 50 iterations");
+        }
+        assert_eq!(last, (tx, ty), "the curse rides the LAST drawn pair");
+    }
+
+    /// `NPC.cs:21133-21136` — beyond 2000 px the volley's length gate
+    /// draws NOTHING (the Item8 still plays); no curse queues.
+    #[test]
+    fn w4_g5_the_far_volley_window_burns_no_draws() {
+        let w = ground_air();
+        let p = player_at(199.0 * 16.0, 116.0 * 16.0);
+        let mut n = Npc::new(NpcKind::DesertDjinn, 16.0, 120.0 * 16.0 - 62.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 10.0;
+        n.ai[1] = 121.0;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.clone();
+        ai_style_8_step(&mut n, &w, &p, &mut rng);
+        assert_eq!(rng, before, "the >2000 gate consumes no draws");
+        assert!(n.wants_djinn_curse.is_empty());
+        assert_eq!(n.wants_sound.len(), 1, "the puff plays regardless");
     }
 }

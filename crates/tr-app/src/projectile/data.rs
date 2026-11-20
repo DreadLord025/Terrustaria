@@ -186,6 +186,12 @@ pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// shot (the AI_003 shooter block's `num170 = 82` default,
 /// `NPC.cs:59403`); the hostile twin of the flame arrow 2.
 pub const FLAMING_ARROW_HOSTILE: u16 = 82;
+/// `ProjectileID.DesertDjinnCurse` (596, `ProjectileID.cs`) — the Djinn's
+/// curse volley (`NPC.cs:21155`, W4-g5): 8×8, aiStyle 107, hostile,
+/// alpha 255, ignoreWater, timeLeft 180, tileCollide false
+/// (`Projectile.cs:6450-6460`). The aiStyle-107 flight + the Kill explosion
+/// land with the projectile parity phase.
+pub const DJINN_CURSE: u16 = 596;
 /// S1-P-i17 — the special-arrow family (`ProjectileID.cs:556-2566`; the
 /// ammo items' `shoot` values, `itemdata.rs`). The per-kind effects live in
 /// `special_arrows.rs` (the AI_001 arms, the StatusNPC debuffs, the Kill()

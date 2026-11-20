@@ -1498,6 +1498,12 @@ pub struct Npc {
     /// point — the 4th slot carries `NPC.NewNPC`'s `ai3` argument
     /// (`NPC.cs:21246`'s `flag4 ? 1 : 0`; every other caller passes 0).
     pub wants_sphere: Vec<(NpcKind, f32, f32, f32)>,
+    /// The Djinn's curse-volley spawn requests (`NPC.cs:21155`, W4-g5
+    /// draw-parity): the accepted tile's CENTRE `(x*16+8, y*16+8)` and
+    /// `ai0 = this.target`. The sim drains them into the 596
+    /// DesertDjinnCurse (damage 0, knockback 1, zero velocity) after the
+    /// update pass (the `wants_sphere` borrow-safe shape).
+    pub wants_djinn_curse: Vec<(f32, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
     /// `NPC.ai[0..4]` — the EoC phase machine's state
@@ -2998,6 +3004,7 @@ impl Npc {
             step_speed: 0.0,
             kb_resist_override: None,
             wants_sphere: Vec::new(),
+            wants_djinn_curse: Vec::new(),
         local_ai: [0.0; 4],
             swim_phase: 0.0,
             worm_id: 0,
@@ -20686,9 +20693,9 @@ mod tests {
     fn the_desert_djinn_rides_its_own_trigger_and_wrap() {
         // `NPC.cs:21031-21038` — the Djinn's single trigger at `ai[0] == 180`
         // sets `ai[1] = 181` (not the standard 100/200/300 → 30); the wrap
-        // fires at 360 (`:21079-21082`), never at the standard 650. The
-        // curse volley draws `Main.rand` (`:21140-21141`/`:21195-21196`)
-        // and is skipped wholesale — the Djinn never requests a sphere.
+        // fires at 360 (`:21079-21082`), never at the standard 650. W4-g5
+        // draw-parity: the curse volley is LIVE — the Djinn fires the 596
+        // PROJECTILE through `wants_djinn_curse` (never a sphere).
         let mut w = ground_air();
         let mut player = surface_player(&w);
         let mut djinn = Npc::new(NpcKind::DesertDjinn, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
@@ -20705,7 +20712,7 @@ mod tests {
             djinn.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             assert!(
                 djinn.wants_sphere.is_empty(),
-                "the Djinn's rand-drawing volley stays skipped"
+                "the Djinn fires a projectile, never a sphere"
             );
             // The trigger tick: `ai[1] = 181` (`:21035`) then the same
             // tick's `ai[1]--` (`:21116`) — the windup reads 180 exactly
