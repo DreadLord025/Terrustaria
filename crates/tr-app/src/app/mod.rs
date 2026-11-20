@@ -2937,6 +2937,11 @@ impl App {
                         p.y = saved.y;
                     }
                     p.hp = saved.hp.clamp(1, p.max_hp);
+                    // W4-g89 — the permanent Aegis Fruit unlock rides the
+                    // sidecar's v7 line (`Player.usedAegisFruit` load,
+                    // `Player.cs:55256`); the booster pass re-adds the +4
+                    // every tick (`:12853-12856`).
+                    p.used_aegis_fruit = saved.used_aegis_fruit;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;

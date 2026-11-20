@@ -2127,6 +2127,12 @@ pub struct Player {
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
     /// ResetEffects — a permanent unlock (the player-file field).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit
+    /// permanent +4 defense (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45393-45398`, `UpdatePermanentBoosters` `:12853-12856`). NOT
+    /// cleared by ResetEffects — a permanent unlock (the player-file
+    /// field, ctor `:56079` false, save `:54782` / load `:55256`).
+    pub used_aegis_fruit: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2928,6 +2934,7 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_fruit: false, // `Player.cs:56079`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -6855,6 +6862,15 @@ impl Player {
         // `set_player_caps` form (the same three C# `if`s, same order,
         // same values). i27's `add_player_scalars` twin was dropped at the
         // gate (it would double the adds); the seam stays available.
+        // W4-g89 — `UpdatePermanentBoosters`' Aegis Fruit row
+        // (`Player.cs:12853-12856`, called at `:25644` right after
+        // `UpdateEquips` `:25633`): the permanent +4 defense. The C# adds
+        // 4, NOT 5 — the row is verbatim. Ahead of the Gummy Worm row
+        // (the C#'s own order inside the booster pass) and ahead of the
+        // `:25927` defense floor below.
+        if self.used_aegis_fruit {
+            self.stat_defense += 4;
+        }
         // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
         // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
         if self.used_gummy_worm {
@@ -12314,6 +12330,28 @@ mod tests {
         assert!(p.cactus_thorns);
         assert!(!p.turtle_thorns, "the turtle row is gone");
         assert_eq!(p.thorns_damage(20), 35, "20 from the potion + the flat 15");
+    }
+
+    /// W4-g89 — `UpdatePermanentBoosters`' Aegis Fruit row
+    /// (`Player.cs:12853-12856`, called at `:25644`): the permanent +4
+    /// defense, re-added EVERY tick after `ResetEffects` zeroes
+    /// `statDefense` (`:18327`) — the flag itself is never cleared (the
+    /// player-file field, ctor `:56079` false). The C# adds 4, NOT 5.
+    #[test]
+    fn w4_g89_the_aegis_fruit_adds_four_defense_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_aegis_fruit, "ctor false (`Player.cs:56079`)");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0, "no fruit, no bonus");
+        p.used_aegis_fruit = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 4, "the +4 row (`:12855`)");
+        // The next tick's ResetEffects zero + re-add: still exactly 4,
+        // never compounding — the unlock is a bool, not a stack.
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 4, "one +4 per tick, no compounding");
+        assert!(p.used_aegis_fruit, "ResetEffects never clears the unlock");
     }
 
     /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.

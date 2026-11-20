@@ -118,6 +118,10 @@ pub struct PlayerFile {
     /// favourites ride the same shape at release >= 322 (`:55315`/`:55336`)
     /// but have no port UI, so they are consumed and dropped.
     pub inv_favorites: u64,
+    /// `Player.usedAegisFruit` (`Player.cs:854`, load `:55256`, the 260+
+    /// six-unlock block's second bool) — W4-g89. Older releases (< 260)
+    /// carry no unlock block; the flag reads false.
+    pub used_aegis_fruit: bool,
     pub is_favorite: bool,
     pub revision: u32,
 }
@@ -324,6 +328,7 @@ fn read_player_fields(
     mana_max = mana_max.min(200); // `:55227-55230`
     mana = mana.min(400); // `:55231-55234`
     // The unlock/seed bools (`:55235-55262`).
+    let mut used_aegis_fruit = false; // W4-g89 — set by the 260+ block below
     let _extra = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
     if version >= 229 {
         r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
@@ -335,7 +340,15 @@ fn read_player_fields(
             r.boolean().ok_or(PlayerFileError::Truncated("extra324"))?; // `:55247-55250`
         }
         if version >= 260 {
-            for _ in 0..6 {
+            // The six shimmer/permanent unlocks (`:55255-55260`). W4-g89
+            // keeps the SECOND bool — `usedAegisFruit` (`:55256`); the
+            // other five stay consumed-and-dropped until their tasks land.
+            r.boolean()
+                .ok_or(PlayerFileError::Truncated("unlock"))?; // usedAegisCrystal `:55255`
+            used_aegis_fruit = r
+                .boolean()
+                .ok_or(PlayerFileError::Truncated("usedAegisFruit"))?; // `:55256`
+            for _ in 0..4 {
                 r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
             }
         }
@@ -434,6 +447,7 @@ fn read_player_fields(
             colors,
             inventory,
             inv_favorites,
+            used_aegis_fruit,
             is_favorite,
             revision,
         ));
@@ -493,6 +507,7 @@ fn read_player_fields(
             colors,
             inventory,
             inv_favorites,
+            used_aegis_fruit,
             is_favorite,
             revision,
         ));
@@ -645,6 +660,7 @@ fn read_player_fields(
         colors,
         inventory,
         inv_favorites,
+        used_aegis_fruit,
         is_favorite,
         revision,
     ))
@@ -665,6 +681,7 @@ fn finish_player_file(
     colors: [[u8; 3]; 7],
     inventory: [(i32, i32, u8); 58],
     inv_favorites: u64,
+    used_aegis_fruit: bool,
     is_favorite: bool,
     revision: u32,
 ) -> PlayerFile {
@@ -687,6 +704,7 @@ fn finish_player_file(
         shoe_color: colors[6],
         inventory,
         inv_favorites,
+        used_aegis_fruit,
         is_favorite,
         revision,
     }
@@ -782,6 +800,9 @@ fn read_legacy_port_subset(
         shoe_color: colors[6],
         inventory,
         inv_favorites,
+        // The port-only 279 subset predates the unlock modelling (W4-g89
+        // reads it only on the full 326 walk).
+        used_aegis_fruit: false,
         is_favorite,
         revision,
     })
@@ -810,6 +831,10 @@ pub struct PlayerFileWrite {
     /// `Item.favorited`'s per-inventory-slot bits — bit `i` is slot `i`'s
     /// (`Player.cs:54820-54824`). The App's `favorite_slots` flatten to it.
     pub inv_favorites: u64,
+    /// `Player.usedAegisFruit` (`Player.cs:854`, save `:54782`) — W4-g89.
+    /// The 5338 permanent +4 defense unlock persists through the vanilla
+    /// `Serialize` slot (previously hardcoded `false`).
+    pub used_aegis_fruit: bool,
     /// `DateTime.UtcNow.ToBinary()` at save time (`Player.cs:54909`) — the
     /// one wall-clock field in `Serialize`. The port does not track a clock,
     /// so the caller stamps it (0 = the port's historical "unknown" stamp);
@@ -869,7 +894,7 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.boolean(false); // `:54779` ateArtisanBread (ctor `:56077`)
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
     w.boolean(false); // `:54781` usedAegisCrystal (ctor `:56078`)
-    w.boolean(false); // `:54782` usedAegisFruit (`:56079`)
+    w.boolean(file.used_aegis_fruit); // `:54782` usedAegisFruit (`:56079`, W4-g89)
     w.boolean(false); // `:54783` usedArcaneCrystal (`:56080`)
     w.boolean(false); // `:54784` usedGalaxyPearl (`:56081`)
     w.boolean(false); // `:54785` usedGummyWorm (`:56082`)
@@ -1147,6 +1172,7 @@ mod tests {
             shoe_color: [160, 105, 60],
             inventory,
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
+            used_aegis_fruit: false,
             last_saved_binary: 0,
         }
     }
@@ -1211,6 +1237,30 @@ mod tests {
         // The empty slots read false — their favourited byte is consumed with
         // the rest of the triple (`:55363`).
         assert_eq!(file.inventory[30], (0, 0, 0));
+    }
+
+    /// W4-g89 — `usedAegisFruit` round-trips through the vanilla `Serialize`
+    /// slot (`Player.cs:54782` write / `:55256` read, the 260+ unlock block's
+    /// SECOND bool): the permanent unlock survives a .plr save + load, and
+    /// the surrounding five unlock bools stay aligned (the inventory and
+    /// favourites after the block read unchanged).
+    #[test]
+    fn w4_g89_the_aegis_fruit_unlock_round_trips_the_plr() {
+        let written = PlayerFileWrite {
+            used_aegis_fruit: true,
+            ..sample()
+        };
+        let bytes = write_player_bytes(&written);
+        let file = read_player_bytes(&cbc_decrypt(&bytes)).expect("the unlock file reads");
+        assert!(file.used_aegis_fruit, "the :54782 bool survived");
+        // The walk stayed aligned through the unlock block — the fields
+        // AFTER it match the sample's.
+        assert_eq!(file.inventory, sample().inventory);
+        assert_eq!(file.inv_favorites, sample().inv_favorites);
+        // The fresh sample writes false and reads false.
+        let plain_file =
+            read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(!plain_file.used_aegis_fruit);
     }
 
     /// The 322+ armour/dye favourited bytes are version-gated on read: a
@@ -1450,6 +1500,7 @@ mod tests {
             shoe_color: [160, 105, 60],
             inventory,
             inv_favorites: 1 << 3,
+            used_aegis_fruit: false, // the harness player used no upgrade
             // FixtureClock.UtcNow.ToBinary() (Shims/FixtureClock.cs):
             // 2026-11-18T00:00:00Z, DateTimeKind.Utc → kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.

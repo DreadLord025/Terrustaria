@@ -1653,6 +1653,52 @@ fn held_use_time_ticks(held: ItemSlot) -> i32 {
     registry::get(held.kind).map_or(0, |d| i32::from(d.use_time))
 }
 
+/// W4-g89 — `ItemCheck_UseShimmerPermanentItems`' Aegis Fruit arm
+/// (`Player.cs:45393-45398`, called from `ItemCheck_OwnerOnlyCode`
+/// `:43607`): the 5338 permanent unlock. The C# gate is
+/// `sItem.type == 5338 && itemAnimation > 0 && !usedAegisFruit &&
+/// ItemTimeIsZero` — the mid-swing window folds onto the press tick (the
+/// i37 food/potion convention; the caller's `use_press_edge` carries the
+/// animation/cooldown halves). The arm: `ApplyItemTime(sItem)` (the
+/// ACTION cadence re-arms — `SetItemTime` sets itemTime = itemTimeMax =
+/// useTime, `:4406-4418`; the swing keeps running), then
+/// `usedAegisFruit = true`. The `NetMessage.SendData(4)` player sync
+/// (`:45397`) has no single-player port. The generic consumable tail
+/// (`:43280-43326` — `Item.consumable` on the 5338 row) pays one per use;
+/// the TurnToAir fold matches the food arm above.
+fn use_aegis_fruit(app: &mut App, held: ItemSlot) -> bool {
+    if held.kind != 5338 {
+        return false;
+    }
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    if p.used_aegis_fruit {
+        return false; // `!this.usedAegisFruit` (`:45393`) — once ever
+    }
+    p.used_aegis_fruit = true; // `:45396`
+    // The use START (`ItemCheck_StartActualUse`, `:51678-51680`): the swing
+    // + the Item92 UseSound (`Item.cs:42351`) — the press tick's swing seam
+    // every consume arm rides (the boss-summon gate above starts it the
+    // same way before its mid-swing fire).
+    start_use_timers(app, held);
+    // `ApplyItemTime(sItem)` (`:45395`): the PREFIXED instance useTime
+    // (`Item.Prefix` scales useTime), the boss-summon arm's read shape.
+    app.item_time = crate::prefix::prefixed_stats(held.kind, held.prefix)
+        .map(|s| s.use_time)
+        .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
+        .filter(|t| *t > 0)
+        .map(|t| t as f32 * ONE_TICK_SECS)
+        .unwrap_or(app.swing_max);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
 /// Refresh the crack overlay's `mine_timer`/`mine_hardness` from the
 /// `HitTile` book's damage at the cell — the port's projection of the C#
 /// `HitTile` damage onto the 0..100 crack ladder (`render/tile_cracks.rs`,
@@ -2346,6 +2392,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // per-kind delays (`ApplyPotionDelay` `:51853-51886`), the Mana
         // Sickness grant (`:51938`) and the stack consume all live there.
         if crate::potions::use_potion_item(app, held) {
+            return;
+        }
+        // W4-g89 — `ItemCheck_UseShimmerPermanentItems`' Aegis Fruit arm
+        // (`Player.cs:45393-45398`, called from `ItemCheck_OwnerOnlyCode`
+        // `:43607`): the 5338 permanent +4 defense unlock. The mid-swing
+        // `ItemTimeIsZero && itemAnimation > 0` window folds onto the press
+        // tick (the i37 food/potion convention above).
+        if use_aegis_fruit(app, held) {
             return;
         }
         // (Resync keep-one: the gate's i19 inline mana-potion arm was
@@ -16783,6 +16837,58 @@ mod use_loop_tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
         assert_eq!(p.slots_minions, 1.0);
+    }
+
+    /// W4-g89 — the Aegis Fruit (5338) use arm
+    /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45393-45398`):
+    /// ONE press unlocks `usedAegisFruit` permanently, pays one from the
+    /// stack (the generic consumable tail `:43280-43326`) and re-arms the
+    /// action cadence at the 45-tick useTime (`ApplyItemTime` `:45395`,
+    /// `Item.cs:42350`). A second fruit is REFUSED — the `!usedAegisFruit`
+    /// gate (`:45393`) leaves the stack intact, once ever.
+    #[test]
+    fn w4_g89_the_aegis_fruit_unlocks_once_and_consumes_one() {
+        let mut app = app_with_staff(5338);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.player.as_ref().unwrap().used_aegis_fruit,
+            "the unlock latched (`:45396`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45395`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second fruit: the permanent gate refuses — no consume, no
+        // re-arm (`!this.usedAegisFruit`, `:45393`).
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_aegis_fruit(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+    }
+
+    /// W4-g89 — the last fruit in the stack TurnToAirs on the consume tick
+    /// (the food-arm fold of `:42824-42828`); the unlock still lands.
+    #[test]
+    fn w4_g89_the_last_fruit_empties_the_slot() {
+        let mut app = app_with_staff(5338);
+        let held = app.inventory[app.selected];
+        assert!(super::use_aegis_fruit(&mut app, held));
+        assert!(app.player.as_ref().unwrap().used_aegis_fruit);
+        assert_eq!(app.inventory[app.selected].count, 0);
+        assert_eq!(app.inventory[app.selected].kind, 0, "TurnToAir folded");
+        // A non-fruit item never enters the arm.
+        let mut other = app_with_staff(2); // Dirt Block
+        let dirt = other.inventory[other.selected];
+        assert!(!super::use_aegis_fruit(&mut other, dirt));
+        assert!(!other.player.as_ref().unwrap().used_aegis_fruit);
     }
 
     /// S1-P-i25 — the summon spawn arm books the UNSCALED item damage as

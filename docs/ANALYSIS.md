@@ -39244,3 +39244,54 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-g89 — the Aegis Fruit permanent upgrade (2026-11-21, code-only)
+
+The 5338 Aegis Fruit (shimmer-crafted) is a once-ever permanent +4 defense
+unlock — `Player.usedAegisFruit` (`Player.cs:854`). The C# adds **4, NOT
+5** (`UpdatePermanentBoosters` `:12853-12856`); the row is ported verbatim.
+
+- **The use path**: `ItemCheck_UseShimmerPermanentItems`' 5338 arm
+  (`Player.cs:45393-45398`, called from `ItemCheck_OwnerOnlyCode`
+  `:43607`) → `world_sim/editing.rs::use_aegis_fruit` under the i37
+  `use_press_edge` consumable block. The mid-swing
+  `ItemTimeIsZero && itemAnimation > 0` window folds onto the press tick
+  (the food/potion convention); the use-start swing seam runs, then
+  `ApplyItemTime` re-arms the 45-tick action cadence (prefix-aware), the
+  generic consumable tail pays one (`:43280-43326`), TurnToAir folds onto
+  the consume tick. The `NetMessage.SendData(4)` sync (`:45397`) has no
+  single-player port. A second fruit is refused by the `!usedAegisFruit`
+  gate — stack intact, once ever.
+- **The permanent flag**: `Player::used_aegis_fruit` (ctor false,
+  `Player.cs:56079`); NOT cleared by ResetEffects — the booster pass
+  re-adds +4 every tick after the `statDefense = 0` reset (`:18327`),
+  ahead of the Gummy Worm row (the C#'s own order inside the pass).
+- **The .plr persistence**: `PlayerFileWrite`/`PlayerFile.used_aegis_fruit`
+  ride the real `Serialize` slot (write `:54782`, read `:55256` — the
+  260+ six-unlock block's SECOND bool; the other five stay
+  consumed-and-dropped until their tasks land). The golden-fixture byte
+  equality is unaffected (the harness player's flag is false).
+- **The sidecar persistence**: `.trplayer` version 7 adds one 0/1 line
+  (`persist.rs`); v3-v6 files load with the unlock absent, and `App`'s
+  sidecar restore seeds `p.used_aegis_fruit` so the +4 resumes on world
+  reload. NOTE: the port applies no other .plr field to the live player
+  at world entry (the character-select card is appearance-only); the
+  sidecar is the live persistence carrier, the .plr slot is the
+  vanilla-format half.
+
+Deviations: none beyond the standing folds (press-tick window, TurnToAir,
+no net sync). Census: the a6/g87/g88 branches sat at main tip with zero
+pushed claims — the flag + booster row + call site found in-flight in
+this worktree were completed, not duplicated.
+
+### Verification (W4-g89)
+
+Code-only: every arm re-read against the cited C# windows (`Player.cs`
+`:45385-45423`, `:12851-12867`, `:43280-43326`, `:4406-4419`,
+`:54776-54787`, `:55235-55262`, `:56079`; `Item.cs:42346-42355`); **no
+cargo/rustc/rustfmt/tests/graphify invoked**. Six witness tests WRITTEN,
+NOT RUN: `editing.rs` use-loop ×2 (unlock-once + consume + cadence; the
+last-fruit TurnToAir + non-fruit refusal), `player.rs` ×1 (the +4 per
+tick, no compounding, flag survives ResetEffects), `persist.rs` ×2 (v7
+round-trip; v6 back-compat), `player_file.rs` ×1 (the :54782/:55256 bool
+round-trip with the walk alignment pinned).
