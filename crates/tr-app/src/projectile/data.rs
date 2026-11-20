@@ -98,6 +98,30 @@ pub const UNHOLY_WATER: u16 = 70;
 /// `ProjectileID.BloodWater` (621) — the crimson twin of the holy water
 /// (`Projectile.cs:1504-1511`).
 pub const BLOOD_WATER: u16 = 621;
+/// `ProjectileID.PurificationPowder` (10) — the aiStyle-6 purify cloud
+/// (`Projectile.cs:897-912`): the 64×64 box, the tile-scan `Convert(…, 11, 1)`
+/// (`:24193`).
+pub const PURIFICATION_POWDER: u16 = 10;
+/// `ProjectileID.VilePowder` (11) — the corruption twin of the powder
+/// (`Projectile.cs:913-923`, `Convert(…, 1, 1)` `:24197`).
+pub const VILE_POWDER: u16 = 11;
+/// `ProjectileID.ViciousPowder` (463) — the crimson twin of the powder
+/// (`Projectile.cs:5340-5350`, `Convert(…, 4, 1)` `:24201`; the dust type
+/// remaps 10+463 → 231, `:24115-24118`).
+pub const VICIOUS_POWDER: u16 = 463;
+/// `ProjectileID.Fertilizer` (1019) — the aiStyle-6 sapling-grow cloud
+/// (`Projectile.cs:9648-9658`): no conversion, the `flag2` tree-growth arm
+/// (`:24203-24220`) and the slow-velocity kill (`:24224-24227`).
+pub const FERTILIZER: u16 = 1019;
+/// `ProjectileID.SuperFertilizer` (1051) — the fertilizer's `flag` twin
+/// (`Projectile.cs:9967-9977`): the 50-dust burst with the per-dust
+/// `Next(3)` type pick (`:24124-24133`) and the +15 tree-height addon
+/// (`:24208-24211`).
+pub const SUPER_FERTILIZER: u16 = 1051;
+/// The aiStyle-6 powder/fertilizer family — the style's five rowed kinds
+/// (`Projectile.cs:24100-24228`'s inline arm; W4-d1).
+pub const POWDER_KINDS: [u16; 5] =
+    [PURIFICATION_POWDER, VILE_POWDER, VICIOUS_POWDER, FERTILIZER, SUPER_FERTILIZER];
 /// `ProjectileID.Grenade` (30) — the thrown aiStyle-16 bomb
 /// (`Projectile.cs:1122-1130`).
 pub const GRENADE: u16 = 30;
@@ -1737,6 +1761,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the death hook (`:77629-77645`), not the row.
             HOLY_WATER | UNHOLY_WATER | BLOOD_WATER => {
                 (14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d1 — the aiStyle-6 powder/fertilizer family. The five arms
+            // share the row shape: 64×64, aiStyle 6, friendly, penetrate
+            // −1, alpha 255, tileCollide false, ignoreWater (the overlay
+            // below); the stock timeLeft 3600 (`:787`) and extraUpdates 0
+            // (`:771`) stand. `Projectile.cs:897-912` (10) / `:913-923`
+            // (11) / `:5340-5350` (463) / `:9648-9658` (1019) /
+            // `:9967-9977` (1051). The 10's infectedSeed box growth
+            // (`:907-911`, width/height += /3*2 → 106×106) is applied at
+            // the data-carrying spawn (the `Main.infectedSeed` read is a
+            // world flag, not a row constant — `spawn_with_data_ai_owned`).
+            PURIFICATION_POWDER | VILE_POWDER | VICIOUS_POWDER | FERTILIZER
+            | SUPER_FERTILIZER => {
+                (64.0, 64.0, 6, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                    (false, -2, false, -1, 255, 1.0))
             }
             // `Projectile.cs:1122-1130` — the grenade (30): 14x14, aiStyle 16,
             // `penetrate = -1`; `NewProjectile` pins `timeLeft = 180`
@@ -4211,7 +4250,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d1 — the aiStyle-6 powder/fertilizer family's five arms
+            // all set `ignoreWater = true` (`Projectile.cs:906`/`:922`/
+            // `:5349`/`:9657`/`:9976`).
+            || POWDER_KINDS.contains(&kind),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

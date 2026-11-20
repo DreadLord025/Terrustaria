@@ -332,6 +332,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // W4-d1 — `Main.infectedSeed` as the PurificationPowder 10's spawn-time
+    // box growth reads it (`Projectile.cs:907-911`): the world's
+    // `SecretSeed.worldIsInfected` micro-seed flag (`WorldGen.cs:559-562`).
+    app.projectiles.set_infected_seed(
+        app.world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+    );
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and

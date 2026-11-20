@@ -14472,6 +14472,13 @@ pub struct ProjectilePool {
     /// [`ProjectilePool::set_disco`]; the default is `Main.Initialize`'s
     /// `DiscoR = 255` with G/B at 0.
     disco: [u8; 3],
+    /// W4-d1 — `Main.infectedSeed` (`WorldGen.cs:559-562`, the
+    /// `SecretSeed.worldIsInfected` flag): the PurificationPowder 10's
+    /// `SetDefaults` box growth (`Projectile.cs:907-911`, width/height +=
+    /// /3*2) reads it at spawn. The world-sim pass feeds it per tick
+    /// through [`ProjectilePool::set_infected_seed`] (the `set_disco`
+    /// precedent); the row keeps the plain 64×64 box.
+    infected_seed: bool,
     /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
     /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
@@ -14911,6 +14918,7 @@ impl ProjectilePool {
             wind_speed: 0.0,
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
+            infected_seed: false,
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
@@ -14994,6 +15002,14 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// W4-d1 — `Main.infectedSeed` as the PurificationPowder 10's spawn-time
+    /// box growth reads it (`Projectile.cs:907-911`). The world-sim pass
+    /// feeds the world's `SecretSeed.worldIsInfected` flag per tick (the
+    /// `set_disco` precedent); the pool only reads it.
+    pub fn set_infected_seed(&mut self, infected_seed: bool) {
+        self.infected_seed = infected_seed;
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -16045,6 +16061,15 @@ impl ProjectilePool {
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
+        // W4-d1 — the PurificationPowder 10's infectedSeed box growth
+        // (`Projectile.cs:907-911`): `width += width / 3 * 2` — INTEGER
+        // division (64 / 3 = 21, ×2 = 42 → 106×106). The row carries the
+        // plain 64×64; the world flag rides the pool snapshot.
+        if kind == PURIFICATION_POWDER && self.infected_seed {
+            let p = &mut self.slots[slot];
+            p.w += (p.w as i32 / 3 * 2) as f32;
+            p.h += (p.h as i32 / 3 * 2) as f32;
+        }
         // `NewProjectile`'s tail (`Projectile.cs:11094`): `FinalizeProjectile`
         // runs after the `ai0/ai1` arguments have landed (`:10921-10923`), so
         // the gem bolts' spawn-time bonuses read the packed features out of
@@ -30465,6 +30490,46 @@ mod phasmal_projectile_tests {
             assert_eq!(data.ai_style, ai_style, "the style for {}", kind);
             assert_eq!((data.w, data.h), (w, h), "the box for {}", kind);
         }
+    }
+
+    /// W4-d1 — the aiStyle-6 powder/fertilizer rows: the five arms share
+    /// the 64×64 box, aiStyle 6, penetrate −1, alpha 255, tileCollide false,
+    /// ignoreWater (`Projectile.cs:897-912`/`:913-923`/`:5340-5350`/
+    /// `:9648-9658`/`:9967-9977`). WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d1_the_powder_rows_match_set_defaults() {
+        for kind in POWDER_KINDS {
+            let d = proj_data(kind).expect("the powder row");
+            assert_eq!(d.ai_style, 6, "aiStyle 6 for {kind}");
+            assert_eq!((d.w, d.h), (64.0, 64.0), "the 64x64 box for {kind}");
+            assert_eq!(d.penetrate, -1, "penetrate -1 for {kind}");
+            assert_eq!(d.time_left, 3600, "the stock timeLeft for {kind}");
+            assert_eq!(d.extra_updates, 0, "the stock extraUpdates for {kind}");
+            assert!(!d.tile_collide, "tileCollide false for {kind}");
+            assert!(d.ignore_water, "ignoreWater for {kind}");
+            assert_eq!(d.alpha, 255, "alpha 255 for {kind}");
+            assert_eq!(d.scale, 1.0, "the stock scale for {kind}");
+        }
+        // The infectedSeed box growth (`Projectile.cs:907-911`): the 10's
+        // width/height += /3*2 is INTEGER division — 64/3 = 21, ×2 = 42 →
+        // 106×106 — applied at the data-carrying spawn, not in the row.
+        let mut pool = ProjectilePool::new();
+        pool.set_infected_seed(true);
+        let slot = pool
+            .spawn_with_data_ai(PURIFICATION_POWDER, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("the 10 spawns");
+        assert_eq!((pool.slots()[slot].w, pool.slots()[slot].h), (106.0, 106.0));
+        // The other four kinds keep the plain box even on the infected seed.
+        let slot = pool
+            .spawn_with_data_ai(VILE_POWDER, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("the 11 spawns");
+        assert_eq!((pool.slots()[slot].w, pool.slots()[slot].h), (64.0, 64.0));
+        // Without the flag the 10 keeps the row's 64×64.
+        pool.set_infected_seed(false);
+        let slot = pool
+            .spawn_with_data_ai(PURIFICATION_POWDER, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("the 10 spawns again");
+        assert_eq!((pool.slots()[slot].w, pool.slots()[slot].h), (64.0, 64.0));
     }
 
     #[test]
