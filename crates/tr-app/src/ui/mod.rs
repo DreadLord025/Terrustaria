@@ -20,6 +20,7 @@ pub mod cursor;
 pub mod ingame_options;
 pub mod housing;
 pub mod inventory;
+pub mod journey;
 pub mod keyboard;
 pub mod minimap;
 pub mod notifications;
@@ -716,6 +717,10 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // The Journey powers menu (W4-c24) — `CreativeUI.Draw`
+    // (`Main.cs:41704`): the toggle button draws for every Journey player
+    // (difficulty 3, unblocked), the window while `Enabled`.
+    journey: Option<(&journey::JourneyMenu, &crate::research::ResearchTracker, &crate::creative::CreativePowers)>,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1062,6 +1067,24 @@ pub fn draw_hud(
             x += advance;
         }
     }
+    // `Main.cs:41704`: `Main.CreativeMenu.Draw` runs at `DrawInventory`'s
+    // tail (the port draws it after the inventory/hotbar block; the crafting
+    // panel never coexists — opening the powers menu closes crafting,
+    // `CreativeUI.cs:206`).
+    let mut journey_hover: Option<journey::Hover> = None;
+    if let Some((jm, tracker, powers)) = journey {
+        journey_hover = Some(journey::draw(
+            r,
+            lookups,
+            screen,
+            mouse_pos,
+            jm,
+            tracker,
+            powers,
+            inventory_open,
+            pulse,
+        ));
+    }
     // Selected item name, centred on x=236 at y=0 like the original
     // (`GUIHotbarDrawInner`, `Main.cs:43593-43595`): `FontAssets.MouseText` at
     // scale 1, tinted `Color(Main.mouseTextColor x4)` — no shadow pass.
@@ -1154,6 +1177,10 @@ pub fn draw_hud(
         None
     } else if pvp_hover_text.is_some() || housing_hover_text.is_some() {
         None
+    } else if journey_hover.as_ref().is_some_and(|h| h.text_drawn) {
+        // A journey `MouseTextNoOverride` line already owns the hover text
+        // (`Main.mouseText` set, `Main.cs:20162`'s pending-text gate).
+        None
     } else if inventory_open {
         match open_hover {
             // `Main.cs:41462-41465`: the hovered tick shows `Lang.inter[58 +
@@ -1178,6 +1205,11 @@ pub fn draw_hud(
     // held item's own crit, which the tooltip's crit row subtracts
     // (`Main.cs:20701`).
     let held_crit = crate::registry::get(inventory[selected].kind).map_or(0, |d| d.crit);
+    // The journey grid's hovered cell (`UICreativeItemGrid.cs:22-29`): the
+    // freshly-defaulted item becomes `Main.HoverItem` — it beats the panel
+    // hover (the grid draws after the inventory).
+    let journey_item = journey_hover.as_ref().and_then(|h| h.item);
+    let hover_item = journey_item.as_ref().or(hover_item);
     tooltip::draw_item_tooltip(
         r,
         lookups,

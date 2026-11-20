@@ -12,6 +12,7 @@ pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
+pub(crate) mod journey_clicks;
 mod r#loop;
 pub(crate) mod net_npc_sync;
 pub(crate) mod netglue;
@@ -182,6 +183,15 @@ pub(crate) struct App {
     pub(crate) next_npc_uid: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
+    /// `Main.LocalPlayerCreativeTracker.ItemSacrifices`
+    /// (`ItemsSacrificedUnlocksTracker.cs`) — the per-world research counts
+    /// (W4-c24). In-memory for now; the save rides M6-SAVE's world sections
+    /// (the `Save`/`Load` codec, `:157-196`, is a later task).
+    pub(crate) research: crate::research::ResearchTracker,
+    /// `Main.CreativeMenu` (`CreativeUI.cs`) + `UICreativePowersMenu`'s state
+    /// (W4-c24): the toggle, the open category, the sacrifice slot and the
+    /// research animation.
+    pub(crate) journey: ui::journey::JourneyMenu,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
     /// Compiled only with the `debug` feature (see `tr-app/Cargo.toml`).
@@ -3604,6 +3614,8 @@ impl App {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
+            research: crate::research::ResearchTracker::default(),
+            journey: ui::journey::JourneyMenu::default(),
             #[cfg(feature = "debug")]
             debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),

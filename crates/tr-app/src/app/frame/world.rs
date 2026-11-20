@@ -36,9 +36,13 @@ impl App {
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest
     // slot, the shift transfer or a chest tile took it.
-    if !self.handle_chest_clicks() && !self.handle_crafting_clicks() {
+    if !self.handle_chest_clicks() && !self.handle_crafting_clicks() && !self.handle_journey_clicks() {
         self.handle_inventory_clicks();
     }
+    // The Journey menu's per-frame tail (W4-c24): the animation tick, the
+    // hover cues and the close rules (`CreativeUI.Update`/`Draw`,
+    // `Main.cs:17497`/`:45643-45664`).
+    self.journey_tick();
     // `Main.cs:62466-62473` — the stack-split decay, after the
     // interface's MouseUI pass.
     self.decay_stack_split();

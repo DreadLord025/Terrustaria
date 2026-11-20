@@ -335,6 +335,12 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // The Journey duplication grid's list scroll (W4-c24) —
+                // `UIList.ScrollWheel` (`UIList.cs:107-114`), before the
+                // hotbar cycle claims the notch.
+                if self.journey_wheel(d.round() as i32) {
+                    return;
+                }
                 // `UIList.ScrollWheel` through `UserInterface.Update`'s wheel
                 // arm (`:219-222`): while a list screen is live the `UIList`
                 // under the pointer owns the notch — `ViewPosition -=
@@ -728,6 +734,9 @@ impl App {
                 log::info!("light mode: {}", self.light_mode.label());
             }
             KeyCode::F9 => self.save_world(),
+            // `ToggleCreativeMenu` (`PlayerInput.cs:2087`, default `C`) →
+            // `Player.ToggleCreativeMenu` (`Player.cs:5091-5105`).
+            KeyCode::KeyC => self.toggle_creative_menu_key(),
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
                 // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
                 // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only

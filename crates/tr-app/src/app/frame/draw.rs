@@ -1780,6 +1780,16 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // The Journey powers menu (W4-c24) —
+                            // `CreativeUI.Draw`'s gate (`CreativeUI.cs:98-102`):
+                            // the difficulty-3 player, unblocked.
+                            (self.active_player_difficulty() == 3
+                                && !ui::journey::blocked(
+                                    self.talk_npc.is_some(),
+                                    panel_chest >= 0,
+                                    self.crafting_open,
+                                ))
+                                .then(|| (&self.journey, &self.research, &self.creative_powers)),
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
