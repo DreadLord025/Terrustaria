@@ -37,6 +37,7 @@
 //! | 108-110 | `:82362-82369` | the 566/567 DD2 Skeleton death: head + the first two coin-gates |
 //! | 111-114 | `:82373-82385` | the 566/567 DD2 Skeleton death: the remaining four coin-gates |
 //! | 115-120 | `:82406-82413` | the 576/577 DD2 Ogre FLIPPED death (6 gores, Next(5) type gate + π rotations) |
+//! | 121-126 | `:82417-82422` | the 576/577 DD2 Ogre NON-flipped death (6 gores, Next(5) type gate) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -366,6 +367,33 @@ fn ogre_flipped_death(
     gore.new_gore(rng, world, pos + Vec2::new(32.0, 90.0), vel, 1004, s); // :82413
 }
 
+/// The 576/577 DD2 Ogre NON-flipped death (`NPC.cs:82417-82422`, sites
+/// 121-126): the 20-dust type-273 burst, then the 6 non-flipped gores. The
+/// head type is `1005 + (Next(5) == 0 ? 1 : 0)` (`:82417`); unlike the
+/// flipped branch, the 1001/1002 gores get NO rotation write here.
+fn ogre_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 273, hit_direction, 20);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:82417` — the head's Next(5) type gate draws first.
+    let head = 1005 + if rng.next_max(5) == 0 { 1 } else { 0 };
+    gore.new_gore(rng, world, pos + Vec2::new(48.0, 0.0), vel, head, s);
+    gore.new_gore(rng, world, pos + Vec2::new(22.0, 28.0), vel, 1000, s); // :82418
+    gore.new_gore(rng, world, pos + Vec2::new(48.0, 70.0), vel, 1001, s); // :82419
+    gore.new_gore(rng, world, pos + Vec2::new(4.0, 28.0), vel, 1002, s); // :82420
+    gore.new_gore(rng, world, pos + Vec2::new(36.0, 90.0), vel, 1003, s); // :82421
+    gore.new_gore(rng, world, pos + Vec2::new(32.0, 90.0), vel, 1004, s); // :82422
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); only the death
@@ -415,11 +443,15 @@ pub fn hit_effect_c(
     if (npc_type == 566 || npc_type == 567) && npc.hp <= 0 {
         skeleton_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:82389-82425` — the 576/577 DD2 Ogre arm; this commit owns the
-    // FLIPPED (`spriteDirection == -1`) branch (sites 115-120); the
-    // non-flipped branch lands with the next batch.
-    if (npc_type == 576 || npc_type == 577) && npc.hp <= 0 && npc.sprite_dir == -1 {
-        ogre_flipped_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    // `:82389-82425` — the 576/577 DD2 Ogre arm: the FLIPPED branch
+    // (`spriteDirection == -1`, sites 115-120) vs the non-flipped branch
+    // (sites 121-126).
+    if (npc_type == 576 || npc_type == 577) && npc.hp <= 0 {
+        if npc.sprite_dir == -1 {
+            ogre_flipped_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+        } else {
+            ogre_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+        }
     }
 }
 
@@ -722,6 +754,26 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the ogre flipped death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:82417-82422` — the Ogre NON-flipped death: the Next(5) head
+    /// gate, the 6 non-flipped anchors, and NO rotation write on 1001/1002.
+    #[test]
+    fn w4_f10_the_ogre_non_flipped_death_has_no_rotation() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 96.0, 104.0);
+        n.sprite_dir = 1;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(37);
+        ogre_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert!(matches!(gore.slot(0).gore_type, 1005 | 1006));
+        assert_eq!(gore.slot(0).position, Vec2::new(148.0, 100.0));
+        assert_eq!(gore.slot(2).gore_type, 1001);
+        assert_eq!(gore.slot(2).rotation, 0.0); // no π write in this branch
+        assert_eq!(gore.slot(3).gore_type, 1002);
+        assert_eq!(gore.slot(3).rotation, 0.0);
+        assert_eq!(gore.slot(5).position, Vec2::new(132.0, 190.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
