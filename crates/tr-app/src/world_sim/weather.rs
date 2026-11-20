@@ -39,6 +39,11 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     // The snow spawn cap scales with the gfx quality (S1-B-6,
     // `Main.cs:13057`).
     app.rain.gfx_quality = app.gfx_quality.quality;
+    // W4-g67: the collision splashes drain into the shared `DustPool` (the
+    // d50 contract) — `Rain.Update`'s `Dust.NewDust` (`Rain.cs:122`) rides
+    // Rain's own stream inside `new_dust`, the ctx is the whole-App spawn
+    // snapshot (`Main` statics, `Dust.cs:77-98`).
+    let ctx = app.spawn_ctx();
     app.rain.update(
         &app.world,
         app.camera,
@@ -51,6 +56,7 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
         atmo,
         snow_tile_count,
         zone_rain,
+        Some((&mut app.dust, &ctx)),
     );
 }
 
@@ -790,6 +796,7 @@ mod tests {
             1.0,
             0,
             true,
+            None,
         );
         assert_eq!(app.rain.max_raining(), 0.8);
         app.wind.speed_current = 0.55;
@@ -829,6 +836,7 @@ mod tests {
             1.0,
             0,
             true,
+            None,
         );
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;

@@ -1092,11 +1092,17 @@ pub(crate) fn tick(
                 }
             } else if d.dust_type == 268 {
                 crate::sand::type_268_arm(d, show_sandstorm_visuals, player_vy, world);
+            } else {
+                // W4-g67: the rain collision splashes (`dustWater()`'s
+                // family) ride the shared loop's `Dust.cs:1834-1874` arm —
+                // it gates on the C#'s full member list (308/52/266
+                // included) and no-ops every other type.
+                crate::rain::water_splash_arm(d, world);
             }
-            // Both arms return false: the 213/268 arms are standalone
-            // statements of the C#'s FIRST ladder (between the `:477` move and
-            // the fresh `if (dust.type >= 130 ...)` chain head at `:2127`), so
-            // they do NOT exclude the second chain's final
+            // All three arms return false: the 213/268/splash arms are
+            // standalone statements of the C#'s FIRST ladder (between the
+            // `:477` move and the fresh `if (dust.type >= 130 ...)` chain head
+            // at `:2127`), so they do NOT exclude the second chain's final
             // `else if (type != 304 && noGravity)` tail (`:2335`) — a
             // no-gravity 213 takes its arm AND the tail, exactly like the C#.
             false
