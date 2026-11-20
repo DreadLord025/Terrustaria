@@ -158,6 +158,10 @@ mod npc_ai_style90;
 // the 483 kind + the axis arm wait on the roster wave (the style86
 // precedent; see the module doc).
 mod npc_ai_style91;
+// W4-d32 style 92: UNWIRED Target Dummy machine (NPC.cs:38810-38857) -
+// the 488 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style92;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
