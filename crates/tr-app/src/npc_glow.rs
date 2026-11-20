@@ -81,6 +81,23 @@ pub const NPC_GLOW_RECORDS: &[NpcGlowRecord] = &[
     NpcGlowRecord { npc: 416, masks: &[156], line: 25070 },
     // :25103 — MartianProbe 399 body, (127-alpha/2) grey a0.
     NpcGlowRecord { npc: 399, masks: &[100, 101], line: 25103 },
+    // :25152/:25169 — SolarSolenian 419, gate ai[2] <= -9: the oldPos trail
+    // re-frames GlowMask[154] rows (num205-3-i)%3 + 5, white *(10-i)/20 a0,
+    // scale Lerp(0.75, 1.2, (10-i)/10).
+    NpcGlowRecord { npc: 419, masks: &[154], line: 25152 },
+    // :25381 — NebulaHeadcrab 421, gate ai[0] == 5 (the latch-on-player
+    // arm): mask 146 at the PLAYER's Top/Bottom + direction*4, GetAlpha.
+    NpcGlowRecord { npc: 421, masks: &[146], line: 25381 },
+    // :25563 — FireImp 24, GetAlpha(White) full-frame overlay.
+    NpcGlowRecord { npc: 24, masks: &[360], line: 25563 },
+    // :25567 — the gem squirrels 639..645, GetAlpha(White).
+    NpcGlowRecord { npc: 639, masks: &[286], line: 25567 },
+    NpcGlowRecord { npc: 640, masks: &[286], line: 25567 },
+    NpcGlowRecord { npc: 641, masks: &[286], line: 25567 },
+    NpcGlowRecord { npc: 642, masks: &[286], line: 25567 },
+    NpcGlowRecord { npc: 643, masks: &[286], line: 25567 },
+    NpcGlowRecord { npc: 644, masks: &[286], line: 25567 },
+    NpcGlowRecord { npc: 645, masks: &[286], line: 25567 },
 ];
 
 #[cfg(test)]
