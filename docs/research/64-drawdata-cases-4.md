@@ -512,8 +512,13 @@ Audit notes (R4):
 - 485/489/490's static arms keep only `top = 2`; the full bodies run in
   `cases_b` BEFORE slice A — the C# first-switch order. The 489 no-wind path
   leaves `addFrY` at the prologue default in both.
-- No second-switch glow rows exist for any R4 id (637's glow row is audited
-  with its first-switch index in R5).
+- Glow cross-references (correction, found via the full second-switch label
+  census in R6): 100 has a glow row — `fx/36 == 0 && fy/36 == 27` →
+  `GlowMask[68]`, `_martianGlow`, rect `(fx, fy % 36, w, h)` (:6228-6235) —
+  ported at `cases_a.rs:414-418`; 33 has one — `fx/18 == 0 && fy/22 == 26` →
+  `GlowMask[61]`, `_martianGlow`, rect `(fx, fy % 22, w, h)` (:6236-6243, the
+  candle sheet's 22 px stride) — ported :421-425. Both produced, unconsumed
+  (`_glow`). No other R4 id has a second-switch row.
 
 ### R5 — plant/sapling tails + the 18-px group head: 61, 71, 110, 201, 637, 703, 20, 590, 595, 615, 16, 17, 26, 32, 69 (15 ids, indices 60-74)
 
@@ -597,6 +602,32 @@ Audit notes (R5):
   byte-identical; folding it into one Rust arm changes no behaviour.
 - No other R5 id has a second-switch row (638's row :6080-6084 belongs to
   index 126, audited in R9).
+
+### R6 — the 18-px group middle: 72, 77, 124, 137, 138, 352, 462, 487, 488, 574, 575, 576, 577, 578, 664 (15 ids, indices 75-89)
+
+C# `TileDrawing.cs:4885-4908` — every id is a label of the single
+`tileHeight = 18;` body quoted verbatim in R5. Port: `drawdata.rs:327-346`
+(the same 27-label arm; 574-578 spelled `574..=578`).
+
+| Id | C# label line | Kind | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 72 | :4885 | Hellforge | :327 arm | PORTED |
+| 77 | :4886 | WoodenBeam | :327 | PORTED |
+| 124 | :4887 | Traps (dart/gas) | :327 | PORTED |
+| 137 | :4888 | Boulder | :327 | PORTED |
+| 138 | :4889 | DjinnLamp | :327 | PORTED |
+| 352 | :4890 | PicnicTable | :327 | PORTED |
+| 462 | :4891 | FallenLog | :327 | PORTED |
+| 487 | :4892 | beams (echo) | :327 | PORTED |
+| 488 | :4893 | BouncyBoulder | :327 | PORTED |
+| 574-578 | :4894-4898 | altars/boulders family | `574..=578` :341 | PORTED |
+| 664 | :4899 | (1.4.5 furniture) | :342 | PORTED |
+
+Audit notes (R6):
+- Full second-switch label census (38 labels, :6049-6510): none of the R6 ids
+  appears — no glow rows to cross-reference.
+- The arm sets only `height`; width stays 16, top stays 0, `add_fr_y` keeps
+  the prologue `tileFrame * 38` — identical in C# and port for every id here.
 
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
