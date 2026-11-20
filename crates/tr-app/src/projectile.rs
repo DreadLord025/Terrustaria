@@ -7440,6 +7440,36 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s aiStyle-56 arm (`Projectile.cs:28845-28866`): the Flaming
+    /// Scythe 329 (W4-c6 style-59 — the style's only rowed kind). The
+    /// one-time latch copies the spawn `ai0`/`ai1` into
+    /// `rotation`/`spriteDirection` (the blade's fire-time pose,
+    /// `NPC.cs:33230`); the ×1.05 spin-up runs while the Manhattan speed
+    /// is under 16 (STRICTLY <); the direction follows the velocity's X
+    /// sign (0 reads +1) and the rotation advances by the speed × 0.025 ×
+    /// direction. RNG-free — no `Next` anywhere in the arm.
+    fn ai_flaming_scythe(&mut self, world: &World) {
+        // `:28847-28852` — the one-tick latch.
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.rot = self.ai[0];
+            self.sprite_direction = -(self.ai[1] as i32);
+        }
+        let speed = self.vel.x.abs() + self.vel.y.abs();
+        // `:28853-28856` — the spin-up gate.
+        if speed < 16.0 {
+            self.vel *= 1.05;
+        }
+        // `:28857-28864` — the direction (the else arm covers vx == 0).
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        // `:28865` — the rotation uses the POST-spin-up velocity.
+        self.rot +=
+            (self.vel.x.abs() + self.vel.y.abs()) * 0.025 * self.direction as f32;
+        // HandleMovement after the AI (`:17015`): `tileCollide = false`
+        // (`:4223`) — the free-move branch (`:20445`).
+        self.kill_step(world);
+    }
+
     /// `AI()`'s aiStyle-12 arm (`Projectile.cs:24501-24635`) — the Aqua
     /// Scepter's water stream (type 22). The 280/288 obsidian-skin arms
     /// (`:24508-24547`) are unported kinds. The type-22 constants
@@ -17270,6 +17300,17 @@ impl ProjectilePool {
                             self.slots[i].ai_bomb(world, &npcs[..], rng, local_owner);
                         }
                         18 => self.slots[i].ai_demon_scythe(world),
+                        // `AI()`'s `else if (this.aiStyle == 56)`
+                        // (`Projectile.cs:28845-28866`) — the Flaming Scythe
+                        // (329, W4-c6 style-59, the style's only rowed kind):
+                        // the one-tick rotation/sprite latch off ai0/ai1,
+                        // the ×1.05 spin-up under the 16-Manhattan gate and
+                        // the speed-scaled rotation. The style's arm does
+                        // NOT move the projectile — the C#'s HandleMovement
+                        // tail (`:17015`) owns it; the port's shared
+                        // `kill_step` rides the `tileCollide = false`
+                        // free-move branch (`:20445`).
+                        56 => self.slots[i].ai_flaming_scythe(world),
                         // `AI()`'s `else if (this.aiStyle == 12)`
                         // (`Projectile.cs:24501-24635`) — the Aqua Scepter's
                         // water stream (22): the scale decay, the gravity and

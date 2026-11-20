@@ -1784,6 +1784,15 @@ pub struct Npc {
     /// slot is missing/inactive/not aiStyle 58 — the `:33203` gate's
     /// damp + despawn. The solo `update_rng` path keeps `None` (no pool).
     pub pumpking_blade_carrier: Option<crate::npc_ai_style59::PumpkingCarrier>,
+    /// W4-c6 style-59 wiring: the Pumpking's one-time blade-pair spawn
+    /// request (`NPC.cs:33087-33104`'s `ai[0] == 0` init arm) — the sim
+    /// drains it after the tick, spawns the two 328s Bottom-placed at the
+    /// carrier's truncated centre (`NewNPC`, `NPC.cs:80770`), links each
+    /// through `carrier_uid` (the C#'s `ai[1] = whoAmI`) and copies the
+    /// carrier's post-`TargetClosest` target (the ForceBubble drain's
+    /// shape). The right blade carries the 150-tick `ai[3]` phase lead
+    /// (`:33101`).
+    pub wants_blade_pair: bool,
     /// The saucer core's crew spawn request (`AI`'s aiStyle-76 init arm:
     /// the 4 guns + the shell, `NPC.cs:36071-36092`) — the sim resolves.
     pub wants_saucer_crew: bool,
@@ -3123,6 +3132,7 @@ impl Npc {
             // W4-c6 style-59 wiring: the sim's carrier pre-pass stamps the
             // blade's linked-Pumpking facts; the ctor starts link-less.
             pumpking_blade_carrier: None,
+            wants_blade_pair: false,
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
