@@ -71,17 +71,17 @@ the C# call site), so no stream is invented.
 | --- | --- | --- | --- | --- |
 | H1 | `Place1x2` | `WorldGen.cs:46652-46679` | Herbs/Flowers (d105), temple-chair shape | landed 578b94ef |
 | H2 | `Place2x1` | `:47368-47406` | Hellforge furniture (d104/g37), Guide | landed 578b94ef |
-| H3 | `Place3x1` | `:52022-52065` | furniture passes | (this slice) |
-| H4 | `Place2x2` (general) | `:51330-51423` | Piles/Traps (d104) — the 411-only slice exists (`mini_biomes.rs:1673`) | (this slice) |
-| H5 | `Place2x2Style` | `:52198-52256` | furniture passes | (this slice) |
-| H6 | `Place3x2` (general) | `:52066-52196` | the 26-altar slice exists (`evil.rs:1925`) | (this slice) |
+| H3 | `Place3x1` | `:52022-52065` | furniture passes | landed 878e331e |
+| H4 | `Place2x2` (general) | `:51330-51423` | Piles/Traps (d104) — the 411-only slice exists (`mini_biomes.rs:1673`) | landed fefe5355 |
+| H5 | `Place2x2Style` | `:52198-52256` | furniture passes | landed fefe5355 |
+| H6 | `Place3x2` (general) | `:52066-52196` | the 26-altar slice exists (`evil.rs:1925`) | landed 3366169c |
 | H7 | `Place3x3` | `:53534-53634` | Statues (g37), Hellforge | landed f3b8665d |
-| H8 | `Place1x1` (general) | `:45188-45235` | the 141-only slice exists (`mini_biomes.rs:1653`); 324 seashell arm | (this slice) |
+| H8 | `Place1x1` (general) | `:45188-45235` | the 141-only slice exists (`mini_biomes.rs:1653`); 324 seashell arm | landed 878e331e |
 | H9 | `Place3x4` / `Place5x4` | `:51912-51961` / `:51963-52020` | Statues/large furniture | landed f3b8665d |
-| H10 | `Place4x2` / `Place6x3` | `:50514-50584` / `:50465-50512` | beds/benches (Floating Island Houses d103/d104) | (this slice) |
-| H11 | `Place3x2Wall` / `Place3x3Wall` / `Place2x3Wall` / `Place4x3Wall` / `Place6x4Wall` | `:44725-44756` / `:44254-44292` / `:44568-44599` / `:44854-44886` / `:44946-44979` | paintings (Floating Island Houses, temple) | (this slice) |
-| H12 | `PlaceOnTable1x1` / `PlaceLogicTiles` | `:45340-45378` / `:45309-45338` | Guide/house furniture | (this slice) |
-| H13 | `Place1xX` / `Place2xX` | `:39177-39522` / `:39663-39935` | the temple slices exist (`temple.rs:1880`); general banners/statues | pending |
+| H10 | `Place4x2` / `Place6x3` | `:50514-50584` / `:50465-50512` | beds/benches (Floating Island Houses d103/d104) | landed c32b3d79 |
+| H11 | `Place3x2Wall` / `Place3x3Wall` / `Place2x3Wall` / `Place4x3Wall` / `Place6x4Wall` | `:44725-44756` / `:44254-44292` / `:44568-44599` / `:44854-44886` / `:44946-44979` | paintings (Floating Island Houses, temple) | landed 27d73b83 |
+| H12 | `PlaceOnTable1x1` / `PlaceLogicTiles` | `:45340-45378` / `:45309-45338` | Guide/house furniture | landed b24483c2 |
+| H13 | `Place1xX` / `Place2xX` | `:39177-39211` / `:39663-39722` (bodies end there; the claim's :39522/:39935 tails were the following unrelated fns) | the temple slices exist (`temple.rs:1880`); general banners/statues | (this slice) |
 | H14 | `PlaceMan` / `PlaceWoman` | `:46302-46347` / `:46348-46393` | Guide (d105) | pending |
 | H15 | `SolidTileNoPlatforms` / `SolidTileAllowPlatformTopFrame` / `SolidTileAllowTopSlope` / `SolidTileAllowLeftSlope` / `SolidTileAllowRightSlope` | `:70191-70219` / `:70220-70319` / `:70320-70339` / `:70340-70359` / `:70360-70459` | placement floors for the pending passes | pending |
 

@@ -1034,6 +1034,111 @@ pub(crate) fn place_1x1(world: &mut World, rng: &mut Rng, x: i32, y: i32, kind: 
     }
 }
 
+/// `WorldGen.Place1xX` (`WorldGen.cs:39177-39211`): the one-wide,
+/// variable-height object bottom-anchored at `y` — height 3, or 6 for the
+/// lamp post (92, `:39181-39184`). The body `(x, y-h+1..=y)` must be
+/// inactive, and the liquid-refusing kind (93) also refuses any liquid in
+/// the body (`:39196-39199`); the floor needs `SolidTile2(x, y+1)`
+/// (`:39201`). Frames: `frameX = 0`,
+/// `frameY = j * 18 + h * (style * 18)` (`:39206` — the style stride is
+/// multiplied by the HEIGHT, so 92 strides 108 per style). The C#
+/// null-tile news (`:39188-39191`) are the fixed-grid stand-in: the port
+/// bounds-guards each body row; the floor read falls through
+/// `world.tile`'s `Option` (out-of-world reads solid).
+pub(crate) fn place_1x_x(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    let num = style * 18;
+    let height = if kind == 92 { 6 } else { 3 };
+    let mut flag = true;
+    for i in (y - height + 1)..(y + 1) {
+        if !in_world(world, x, i, 0) {
+            return;
+        }
+        let cell = world.tile(x, i);
+        if cell.is_some_and(|t| t.active()) {
+            flag = false;
+        }
+        if kind == 93 && cell.is_some_and(|t| t.liquid > 0) {
+            flag = false;
+        }
+    }
+    if flag && solid_tile2(world, x, y + 1) {
+        // `:39203-39209` — top row down, C# write order.
+        for j in 0..height {
+            let i = world.index(x, y - height + 1 + j);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.frame_y = (j * 18 + height * num) as i16;
+            t.frame_x = 0;
+            t.kind = kind;
+        }
+    }
+}
+
+/// `WorldGen.Place2xX` (`WorldGen.cs:39663-39722`): the two-wide,
+/// variable-height object bottom-anchored at `y` — height 3, or 5 for the
+/// grandfather clock (104, `:39680-39683`), or 4 for the water fountain
+/// (207, `:39684-39687`). The statue (105) remaps FIRST: style 34 becomes
+/// the Echo Chamber (349) style 0 with `num = 0` (`:39668-39673`); every
+/// other 105 style wraps every 55 sheet columns (`:39674-39679`):
+/// `num = style * 36 - 1980 * (style / 55)`, `frameY` base
+/// `54 * (style / 55)`. The body `(x..=x+1, y-h+1..=y)` must be inactive
+/// (no liquid veto here) and both floor columns need `SolidTile2`
+/// (`:39708`). Frames: left `frameX = num`, right `num + 18`,
+/// `frameY = base + j * 18` (`:39712-39719`). The C# null-tile news are
+/// the fixed-grid stand-in (the body-row bounds guard).
+pub(crate) fn place_2x_x(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    let mut kind = kind;
+    let mut style = style;
+    let mut num = style * 36;
+    let mut num2 = 0;
+    let mut height = 3;
+    // `:39668-39673` — the 105/34 → 349/0 remap precedes the wrap.
+    if kind == 105 && style == 34 {
+        kind = 349;
+        style = 0;
+        num = 0;
+    }
+    // `:39674-39679` — the statue's 55-per-sheet-row wrap.
+    if kind == 105 {
+        let num4 = style / 55;
+        num -= 1980 * num4;
+        num2 += 54 * num4;
+    }
+    if kind == 104 {
+        height = 5;
+    }
+    if kind == 207 {
+        height = 4;
+    }
+    let mut flag = true;
+    for i in (y - height + 1)..(y + 1) {
+        if !in_world(world, x, i, 0) || !in_world(world, x + 1, i, 0) {
+            return;
+        }
+        if world.tile(x, i).is_some_and(|t| t.active()) {
+            flag = false;
+        }
+        if world.tile(x + 1, i).is_some_and(|t| t.active()) {
+            flag = false;
+        }
+    }
+    if flag && solid_tile2(world, x, y + 1) && solid_tile2(world, x + 1, y + 1) {
+        // `:39710-39720` — top row down, left cell then right cell.
+        for j in 0..height {
+            let row = y - height + 1 + j;
+            let fy = (num2 + j * 18) as i16;
+            for (col, fx) in [(x, num as i16), (x + 1, (num + 18) as i16)] {
+                let i = world.index(col, row);
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.frame_y = fy;
+                t.frame_x = fx;
+                t.kind = kind;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1425,5 +1530,49 @@ mod tests {
         w2.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
         place_on_table_1x1(&mut w2, &mut rng, 26, 19, 78, 0);
         assert!(!w2.tile(26, 19).unwrap().active());
+    }
+
+    /// `Place1xX` lays the 3-tall body with the height-multiplied style
+    /// stride; 92 is 6 tall (108 per style); 93 refuses liquid.
+    /// `Place2xX` wraps the statue sheet at 55, remaps 105/34 to 349,
+    /// and the clock (104) is 5 tall.
+    #[test]
+    fn place_1x_x_and_2x_x_variable_height_bodies() {
+        let mut w = floor_world();
+        place_1x_x(&mut w, 10, 19, 93, 2);
+        // frameY = j*18 + 3*(2*18) → top 108, bottom 144.
+        assert!(w.tile(10, 17).unwrap().active());
+        assert_eq!(w.tile(10, 17).unwrap().frame_y, 108);
+        assert_eq!(w.tile(10, 19).unwrap().frame_y, 144);
+        assert_eq!(w.tile(10, 17).unwrap().frame_x, 0);
+        // 93 refuses a liquid body cell.
+        let i = w.index(12, 18);
+        w.tiles[i].liquid = 3;
+        place_1x_x(&mut w, 12, 19, 93, 0);
+        assert!(!w.tile(12, 17).unwrap().active());
+        // 92: six tall, stride 6 * 18 * style = 108 at style 1.
+        place_1x_x(&mut w, 20, 19, 92, 1);
+        assert!(w.tile(20, 14).unwrap().active());
+        assert_eq!(w.tile(20, 14).unwrap().frame_y, 108);
+        assert_eq!(w.tile(20, 19).unwrap().frame_y, 198); // 5*18 + 108
+        // 2xX: the statue wrap — style 55 → frameX 0, frameY base 54.
+        let mut w2 = floor_world();
+        place_2x_x(&mut w2, 10, 19, 105, 55);
+        let left = w2.tile(10, 17).unwrap();
+        assert!(left.active() && left.kind == 105);
+        assert_eq!(left.frame_x, 0); // 55*36 - 1980
+        assert_eq!(left.frame_y, 54);
+        assert_eq!(w2.tile(11, 19).unwrap().frame_x, 18);
+        assert_eq!(w2.tile(11, 19).unwrap().frame_y, 90); // 54 + 2*18
+        // The 105/34 remap: type 349, style 0, plain frames.
+        place_2x_x(&mut w2, 20, 19, 105, 34);
+        let t = w2.tile(20, 17).unwrap();
+        assert!(t.active() && t.kind == 349);
+        assert_eq!((t.frame_x, t.frame_y), (0, 0));
+        // The grandfather clock (104) is 5 tall, stride 36 per style.
+        place_2x_x(&mut w2, 30, 19, 104, 1);
+        assert!(w2.tile(30, 15).unwrap().active());
+        assert_eq!(w2.tile(30, 15).unwrap().frame_x, 36);
+        assert_eq!(w2.tile(31, 19).unwrap().frame_y, 72); // 4*18
     }
 }
