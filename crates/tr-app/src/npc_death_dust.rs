@@ -224,6 +224,7 @@ fn lane_covers(ty: u16) -> bool {
             | 576 | 577 | 564 | 565 | 572..=575 | 570 | 571 | 568 | 569 | 550 | 441
             | 588 | 589 | 633 | 368 | 353 | 354 | 369 | 376 | 663 | 342
             | 338..=340 | 343 | 348 | 349 | 350 | 351 | 489 | 490 | 305..=314
+            | 352 | 327 | 325 | 326 | 330 | 329 | 315 | 250 | 261 | 288
     )
 }
 
@@ -390,6 +391,83 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         305..=314 => {
             for _ in 0..60 {
                 fx.d_full(fx.pos, fx.w, fx.h, 194, 2.0 * hd, -2.0, 0, Color::default(), 1.1);
+            }
+        }
+        // `NPC.cs:84786-84793` — Flocko: 60×67 at `(2×hitDirection,
+        // -2)`, post-spawn noGravity; no gores.
+        352 => {
+            for _ in 0..60 {
+                let i = fx.d(67, 2.0 * hd, -2.0);
+                fx.dust.slot_mut(i).no_gravity = true;
+            }
+        }
+        // `NPC.cs:84826-84836` — Pumpking: 60×189 scale 1.1; the nine
+        // gores (476-484, velocity ×0) are constant-argument.
+        327 => {
+            for _ in 0..60 {
+                fx.d_full(fx.pos, fx.w, fx.h, 189, 2.0 * hd, -2.0, 0, Color::default(), 1.1);
+            }
+        }
+        // `NPC.cs:84847-84857` — Mourning Wood: 60×191 scale 1.1; the
+        // seven gores (469-475, velocity ×0) are constant-argument.
+        325 => {
+            for _ in 0..60 {
+                fx.d_full(fx.pos, fx.w, fx.h, 191, 2.0 * hd, -2.0, 0, Color::default(), 1.1);
+            }
+        }
+        // `NPC.cs:84901-84907` — Splinterling: 60×191 scale 1.1; no
+        // gores.
+        326 => {
+            for _ in 0..60 {
+                fx.d_full(fx.pos, fx.w, fx.h, 191, 2.0 * hd, -2.0, 0, Color::default(), 1.1);
+            }
+        }
+        // `NPC.cs:88994-89001` — Poltergeist (330; the 316 Pirate
+        // ghost shares the arm, no port kind): 50×192 at `(2×hd, -2)`,
+        // alpha 100, Color(100,100,100,100), post-spawn noGravity.
+        330 => {
+            for _ in 0..50 {
+                let i = fx.d_full(
+                    fx.pos, fx.w, fx.h, 192, 2.0 * hd, -2.0, 100,
+                    Color::new(100, 100, 100, 100), 1.0,
+                );
+                fx.dust.slot_mut(i).no_gravity = true;
+            }
+        }
+        // `NPC.cs:87745-87751` — Hellhound: 50×5; three constant gores.
+        329 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:89038-89051` — the Headless Horseman: the 20×54
+        // smoke loop, then three gore-99 calls + gore 446 — ALL
+        // constant-argument (`(hitDirection, 0)` velocities).
+        315 => fx.smoke54(20),
+        // `NPC.cs:88971-88982` — Angry Nimbus (250; the 82/158/159/253
+        // rows share the arm, g59's half / no port kinds): the 20×54
+        // smoke loop; three constant gore-99 calls.
+        250 => fx.smoke54(20),
+        // `NPC.cs:89065-89079` — Fungi Spore (261; the 254-260/634/635
+        // spore rows share the arm, no port kinds): 20×165 at (0,0),
+        // alpha 50, scale 1.5, velocity ×2 + noGravity. The three
+        // gores are `type != 261`-gated (`:89071`) — 261 spawns NONE.
+        261 => {
+            for _ in 0..20 {
+                let i = fx.d_full(fx.pos, fx.w, fx.h, 165, 0.0, 0.0, 50, Color::default(), 1.5);
+                let d = fx.dust.slot_mut(i);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
+        // `NPC.cs:85000-85009` — the Dungeon Spirit's death burst (the
+        // `npc_ai_style56.rs` cited skip, now drawn): `life <= 0`
+        // condition-gated arm; 50×180 at `(velocity.X, velocity.Y)`,
+        // then velocity ×2 + noGravity + scale = 1.4 (OVERWRITE — the
+        // rolled scale is consumed but replaced).
+        288 => {
+            for _ in 0..50 {
+                let i = fx.d(180, fx.vel.x, fx.vel.y);
+                let d = fx.dust.slot_mut(i);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+                d.scale = 1.4;
             }
         }
         _ => {}
@@ -709,6 +787,80 @@ mod tests {
         assert_eq!(rng, r, "60×6 internals, nothing else");
         assert!(pool.slot(59).active);
         assert!(!pool.slot(60).active);
+    }
+
+    /// `NPC.cs:85002-85008` — the Dungeon Spirit death burst: 50×180
+    /// at the NPC velocity, then velocity ×2 + noGravity + scale = 1.4
+    /// OVERWRITE (the rolled scale is consumed but replaced). The
+    /// style56 cited skip, now drawn.
+    #[test]
+    fn w4_g60_the_spirit_burst_overwrites_the_scale() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(81);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 288,
+            pos: Vec2::new(100.0, 100.0),
+            w: 20,
+            h: 20,
+            vel: Vec2::new(3.0, -1.0),
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        let rolls = replay_spawn(&mut r, 20, 20);
+        let d = pool.slot(0);
+        assert_eq!(d.dust_type, 180);
+        assert_eq!(d.scale, 1.4, "assignment, not the rolled scale");
+        assert_eq!(d.velocity.x, (rolls[2] as f32 * 0.1 + 3.0) * 2.0);
+        assert_eq!(d.velocity.y, (rolls[3] as f32 * 0.1 - 1.0) * 2.0);
+        assert!(d.no_gravity);
+        for _ in 1..50 {
+            replay_spawn(&mut r, 20, 20);
+        }
+        assert_eq!(rng, r, "50×6 internals, nothing else");
+        assert!(pool.slot(49).active);
+        assert!(!pool.slot(50).active);
+    }
+
+    /// `NPC.cs:89065-89079` — the Fungi Spore: 20×165 alpha 50 scale
+    /// 1.5, velocity ×2 + noGravity; the three gores are type!=261
+    /// gated so 261 spawns NONE (no argument draws).
+    #[test]
+    fn w4_g60_the_fungi_spore_smoke_has_no_gore_draws() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(82);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 261,
+            pos: Vec2::new(100.0, 100.0),
+            w: 30,
+            h: 30,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for _ in 0..20 {
+            replay_spawn(&mut r, 30, 30);
+        }
+        assert_eq!(rng, r, "20×6 internals, no gore draws");
+        let d = pool.slot(0);
+        assert_eq!(d.dust_type, 165);
+        assert_eq!(d.alpha, 50);
+        assert!(d.no_gravity);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
