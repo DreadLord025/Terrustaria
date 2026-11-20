@@ -604,6 +604,27 @@ pub(crate) struct JumpDust {
     pub(crate) cy: f32,
 }
 
+/// One queued `DashMovement` dust burst (`Player.cs:21259-21512`): the tick
+/// snapshots the box/velocity/facing at the C# moment and the drain
+/// (`player_dust::drain_dash_dust`) replays the arm's `Dust.NewDust` chain on
+/// the `UpdatePlayers` stream in source order. `active` is the `dashDelay < 0`
+/// trail (the per-tick arms, `:21259-21372`); `false` is the dash-start burst
+/// (`:21406-21512`). `mount` is `mount.Type` when active (`-1` unmounted) —
+/// the Bat/Pixie `DashDust` delegates and the Chillet colour pick read it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DashDust {
+    pub(crate) dash: i32,
+    pub(crate) active: bool,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    pub(crate) mount: i32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -1982,6 +2003,11 @@ pub struct Player {
     /// on the `UpdatePlayers` stream right after the chain's sound drain, so
     /// the sound-then-dust draw order is the source's (S1-A-10).
     pending_jump_dust: Option<JumpDust>,
+    /// W4-d51 — the tick's queued `DashMovement` dust bursts
+    /// (`Player.cs:21259-21512`): at most one per tick (the trail arms and the
+    /// start arms are exclusive branches). Same queue convention as
+    /// [`JumpDust`] — the drain replays on the `UpdatePlayers` stream.
+    pending_dash_dust: Option<DashDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2913,6 +2939,7 @@ impl Player {
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
             pending_jump_dust: None,
+            pending_dash_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3509,6 +3536,30 @@ impl Player {
         self.pending_jump_dust.take()
     }
 
+    /// W4-d51 — takes the `DashMovement` dust snapshot
+    /// (`Player.cs:21259-21512`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_dash_dust`).
+    pub(crate) fn take_dash_dust(&mut self) -> Option<DashDust> {
+        self.pending_dash_dust.take()
+    }
+
+    /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
+    /// velocity writes above each site have already landed).
+    fn queue_dash_dust(&mut self, active: bool) {
+        self.pending_dash_dust = Some(DashDust {
+            dash: self.dash,
+            active,
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            vx: self.vx,
+            vy: self.vy,
+            facing: self.facing,
+            mount: if self.mount.is_active() { self.mount.kind() } else { -1 },
+        });
+    }
+
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
     /// the seat tile re-decodes through `GetSittingTargetInfo` (`:56-61`),
     /// any control input / the mount / a facing mismatch stands up
@@ -3678,6 +3729,7 @@ impl Player {
         self.pending_cart_sounds.clear();
         self.pending_sticky_dust.clear();
         self.pending_jump_dust = None;
+        self.pending_dash_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -8782,7 +8834,11 @@ impl Player {
             let mut mid = 0.96f32;
             let mut cooldown = 20;
             match self.dash {
+                // `:21259-21270`: the Tabi trail (W4-d51 — the dust drain
+                // replays before the decay below, as the source does).
+                1 => self.queue_dash_dust(true),
                 // `:21271-21285`: the shield decays faster, cooldowns longer.
+                // Its dust loop is `for (m = 0; m < 0; …)` — dead, no queue.
                 2 => {
                     fast = 0.985;
                     mid = 0.94;
@@ -8790,12 +8846,15 @@ impl Player {
                 }
                 // `:21286-21307`: the Solar dash rides higher and longer.
                 3 => {
+                    self.queue_dash_dust(true);
                     threshold = 14.0;
                     fast = 0.985;
                     mid = 0.94;
                 }
+                // `:21328-21343`: the Vortex trail (no constant changes).
+                5 => self.queue_dash_dust(true),
                 // `:21346-21351`: a direction flip or losing the capability
-                // ends a mount dash at 30 with a damp.
+                // ends a mount dash at 30 with a damp — no dust that tick.
                 6 => {
                     if self.vx.signum() as i32 != self.facing || self.dash_type != 6 {
                         self.dash_delay = 30;
@@ -8803,6 +8862,8 @@ impl Player {
                         self.dash_time = 0;
                         return;
                     }
+                    // `:21354-21371`: the Chillet light + trail.
+                    self.queue_dash_dust(true);
                 }
                 _ => {}
             }
@@ -8855,6 +8916,15 @@ impl Player {
         self.dash_delay = -1;
         if self.dash == 2 {
             self.eoc_dash = 15;
+        }
+        // W4-d51 — the dash-start dust bursts (`:21419-21426` Tabi,
+        // `:21474-21484` Solar), queued after the velocity/flag writes exactly
+        // as the source reads them. The dash-2 start loop is dead (`m < 0`),
+        // the dash-6 start plays no dust; the Vortex start (`:21500-21510`)
+        // lands with the dashType-5 launch port (the speed match above has no
+        // 5 arm yet). The Tabi gore pair (`:21427-21434`) is W4-d55's.
+        if self.dash == 1 || self.dash == 3 {
+            self.queue_dash_dust(false);
         }
     }
 

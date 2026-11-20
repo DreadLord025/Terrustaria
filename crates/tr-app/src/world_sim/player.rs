@@ -1507,6 +1507,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_jump_dust() {
                 crate::player_dust::drain_jump_dust(app, burst);
             }
+            // W4-d51 — the `DashMovement` dust burst (`Player.cs:21259-21512`):
+            // the trail (active dash) or the start burst, snapshotted at the
+            // C# read moment; no sound rides the dash, so the drain follows
+            // the jump chain's on the same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_dash_dust() {
+                crate::player_dust::drain_dash_dust(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
