@@ -2171,6 +2171,77 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-c10 — the waterfowl family's own entries (the populator
+    // registers all eight: `FindEntryByNPCID(362/363/364/365/602/603/
+    // 608/609).Info`, `BestiaryDatabaseNPCsPopulator.cs:1191-1266`;
+    // `NPCID.Search.GetName` credits). The display names ride the
+    // localization rows: Duck2/DuckWhite/DuckWhite2 all read "Duck",
+    // Seagull2 "Seagull", Grebe2 "Grebe"
+    // (`Terraria.Localization.Content.en-US.NPCs.json`).
+    BestiaryEntryDef {
+        credit_id: "Duck",
+        net_id: 362,
+        kind: NpcKind::Duck,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    BestiaryEntryDef {
+        credit_id: "Duck2",
+        net_id: 363,
+        kind: NpcKind::Duck2,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    BestiaryEntryDef {
+        credit_id: "DuckWhite",
+        net_id: 364,
+        kind: NpcKind::DuckWhite,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    BestiaryEntryDef {
+        credit_id: "DuckWhite2",
+        net_id: 365,
+        kind: NpcKind::DuckWhite2,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    BestiaryEntryDef {
+        credit_id: "Seagull",
+        net_id: 602,
+        kind: NpcKind::Seagull,
+        variant: None,
+        quick_unlock: false,
+        name: "Seagull",
+    },
+    BestiaryEntryDef {
+        credit_id: "Seagull2",
+        net_id: 603,
+        kind: NpcKind::Seagull2,
+        variant: None,
+        quick_unlock: false,
+        name: "Seagull",
+    },
+    BestiaryEntryDef {
+        credit_id: "Grebe",
+        net_id: 608,
+        kind: NpcKind::Grebe,
+        variant: None,
+        quick_unlock: false,
+        name: "Grebe",
+    },
+    BestiaryEntryDef {
+        credit_id: "Grebe2",
+        net_id: 609,
+        kind: NpcKind::Grebe2,
+        variant: None,
+        quick_unlock: false,
+        name: "Grebe",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

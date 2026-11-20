@@ -3566,6 +3566,18 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-c10 — the waterfowl family (362-365/602/603/608/609): the
+        // net state overwrites the position below; the bare stats seed
+        // is enough (the Plantera minion arm's shape — the machines take
+        // over on the first tick).
+        crate::npc::NpcKind::Duck
+        | crate::npc::NpcKind::Duck2
+        | crate::npc::NpcKind::DuckWhite
+        | crate::npc::NpcKind::DuckWhite2
+        | crate::npc::NpcKind::Seagull
+        | crate::npc::NpcKind::Seagull2
+        | crate::npc::NpcKind::Grebe
+        | crate::npc::NpcKind::Grebe2 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
     })
 }
 

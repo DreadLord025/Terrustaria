@@ -586,6 +586,18 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-c10 — the waterfowl family keeps its vanilla ids (362-365/
+            // 602/603/608/609 are free in the protocol space — a to_u16 scan
+            // of the tree shows no arm on them). `NPCID.cs:11401-11407`/
+            // `:11881-11895`.
+            NpcKind::Duck => 362,
+            NpcKind::Duck2 => 363,
+            NpcKind::DuckWhite => 364,
+            NpcKind::DuckWhite2 => 365,
+            NpcKind::Seagull => 602,
+            NpcKind::Seagull2 => 603,
+            NpcKind::Grebe => 608,
+            NpcKind::Grebe2 => 609,
         }
     }
 
@@ -916,6 +928,15 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-c10 — the waterfowl family's vanilla ids (`to_u16` above).
+            362 => NpcKind::Duck,
+            363 => NpcKind::Duck2,
+            364 => NpcKind::DuckWhite,
+            365 => NpcKind::DuckWhite2,
+            602 => NpcKind::Seagull,
+            603 => NpcKind::Seagull2,
+            608 => NpcKind::Grebe,
+            609 => NpcKind::Grebe2,
             _ => return None,
         })
     }
@@ -1788,6 +1809,17 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-c10 — the waterfowl family's `SoundID.NPCHit1` rows
+            // (`NPC.cs:13621`/`:13633`/`:13645`/`:13657`/`:16747`/
+            // `:16759`/`:16817`/`:16829`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2124,17 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-c10 — the waterfowl family's `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13622`/`:13634`/`:13646`/`:13658`/`:16748`/
+            // `:16760`/`:16818`/`:16830`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2295,6 +2338,10 @@ impl NpcKind {
             NpcKind::Clothier | NpcKind::TravellingMerchant | NpcKind::Angler | NpcKind::Stylist | NpcKind::TaxCollector |
             NpcKind::Golfer | NpcKind::Zoologist | NpcKind::Princess | NpcKind::DyeTrader | NpcKind::PartyGirl |
             NpcKind::Wizard | NpcKind::Mechanic | NpcKind::GoblinTinkerer => 7,
+            // aiStyle 7 — W4-c10, the waterfowl WALKERS: `NPC.cs:13617`
+            // (362), `:13641` (364), `:16743` (602), `:16813` (608). The
+            // swimming "2" forms ride aiStyle 68 below.
+            NpcKind::Duck | NpcKind::DuckWhite | NpcKind::Seagull | NpcKind::Grebe => 7,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
@@ -2451,6 +2498,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // aiStyle 68 — W4-c10, the waterfowl SWIMMERS: `NPC.cs:13629`
+            // (363), `:13653` (365), `:16755` (603), `:16825` (609) — the
+            // four `this.aiStyle = 68;` rows of the SetDefaults census.
+            NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2 => 68,
         }
     }
 
@@ -2981,6 +3032,16 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-c10 — the waterfowl boxes: the walkers 22x26
+            // (`NPC.cs:13615-13616`/`:13639-13640`/`:16741-16742`/
+            // `:16811-16812`), the swimmers 28x22 (`:13627-13628`/
+            // `:13651-13652`/`:16753-16754`/`:16823-16824`).
+            NpcKind::Duck | NpcKind::DuckWhite | NpcKind::Seagull | NpcKind::Grebe => {
+                (22.0, 26.0)
+            }
+            NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2 => {
+                (28.0, 22.0)
+            }
         }
     }
 
@@ -3057,6 +3118,18 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            // W4-c10 — the waterfowl family's own bestiary credits (the
+            // populator registers all eight: `FindEntryByNPCID(362/363/
+            // 364/365/602/603/608/609)`, `BestiaryDatabaseNPCsPopulator.cs:
+            // 1191-1266`) — no fold needed, the vanilla ids ride.
+            NpcKind::Duck => 362,
+            NpcKind::Duck2 => 363,
+            NpcKind::DuckWhite => 364,
+            NpcKind::DuckWhite2 => 365,
+            NpcKind::Seagull => 602,
+            NpcKind::Seagull2 => 603,
+            NpcKind::Grebe => 608,
+            NpcKind::Grebe2 => 609,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3622,6 +3695,17 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-c10 — the waterfowl family's `lifeMax = 5` rows
+            // (`NPC.cs:13620`/`:13632`/`:13644`/`:13656`/`:16746`/
+            // `:16758`/`:16816`/`:16828`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => 5,
         }
     }
 
@@ -3986,6 +4070,17 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-c10 — the waterfowl family's `damage = 0` rows
+            // (`NPC.cs:13618`/`:13630`/`:13642`/`:13654`/`:16744`/
+            // `:16756`/`:16814`/`:16826`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => 0,
         }
     }
 }

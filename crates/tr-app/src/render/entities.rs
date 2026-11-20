@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(WATERFOWL_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1246,6 +1247,12 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// W4-c10 — the waterfowl family's own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `SMALL_KIND_SHEETS`. All eight are 15-row strips
+/// (`Main.npcFrameCount[362..365/602/603/608/609]` = 15, `Main.cs:67082`).
+pub(crate) const WATERFOWL_SHEETS: &[u32] = &[362, 363, 364, 365, 602, 603, 608, 609];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3170,6 +3177,25 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-c10 — the waterfowl family: each kind draws its own
+            // sheet (`WATERFOWL_SHEETS`) at `SetFrameSize`'s integer-
+            // division row height over `Main.npcFrameCount[type]` = 15
+            // (`Main.cs:67082`) with the generic centred anchor — the
+            // pumpkin arm's shape. The walkers' 4-tick walk strip and
+            // the swimmers' wet/still/flight poses ride `find_frame`
+            // (`NPC.cs:73747-73886`); the flight tilt rides the rotation
+            // whitelist below.
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3345,13 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-c10 — the waterfowl swimmers' flight tilt
+                    // (`FindFrame`'s `rotation = velocity.X * 0.1f`,
+                    // `NPC.cs:73802`/`:73870`); the walkers never rotate.
+                    | NpcKind::Duck2
+                    | NpcKind::DuckWhite2
+                    | NpcKind::Seagull2
+                    | NpcKind::Grebe2
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

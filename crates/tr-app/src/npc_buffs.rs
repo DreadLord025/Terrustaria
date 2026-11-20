@@ -484,6 +484,17 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-c10 — none of 362-365/602/603/608/609 has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+`'s dictionary carries
+        // no waterfowl keys) — the null-row else-branch, no immunity.
+        NpcKind::Duck
+        | NpcKind::Duck2
+        | NpcKind::DuckWhite
+        | NpcKind::DuckWhite2
+        | NpcKind::Seagull
+        | NpcKind::Seagull2
+        | NpcKind::Grebe
+        | NpcKind::Grebe2 => &[],
     }
 }
 

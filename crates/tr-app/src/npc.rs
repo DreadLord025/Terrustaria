@@ -1086,6 +1086,40 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.Duck` (362, `ID/NPCID.cs:11401`) — the waterfowl WALKER
+    /// (`aiStyle 7`): 22x26, dmg 0, def 0, 5 HP, catchItem 2122
+    /// (`NPC.cs:13613-13624`). W4-c10: the `update_guide` walk stand-in
+    /// plus the `AI_007` head's `Transform(type + 1)` takeoff gate
+    /// (`NPC.cs:53180-53184`); the swimming form is [`NpcKind::Duck2`].
+    Duck,
+    /// `NPCID.Duck2` (363, `ID/NPCID.cs:11403`) — the Duck's swimming
+    /// form (`aiStyle 68`): 28x22, the same zero-stat row, catchItem
+    /// 2122 (`NPC.cs:13625-13636`). WIRED by W4-c10: the style axis' 68
+    /// arm rides `npc_ai_style68::ai_style_68`; the dry landing
+    /// transforms back into the walker (`NPC.cs:34758-34761`).
+    Duck2,
+    /// `NPCID.DuckWhite` (364, `ID/NPCID.cs:11405`) — the white Duck
+    /// walker (`aiStyle 7`): 22x26, catchItem 2123
+    /// (`NPC.cs:13637-13648`).
+    DuckWhite,
+    /// `NPCID.DuckWhite2` (365, `ID/NPCID.cs:11407`) — the white Duck's
+    /// swimming form (`aiStyle 68`): 28x22, catchItem 2123
+    /// (`NPC.cs:13649-13660`).
+    DuckWhite2,
+    /// `NPCID.Seagull` (602) — the ocean waterfowl walker (`aiStyle 7`):
+    /// 22x26, catchItem 4359 (`NPC.cs:16739-16750`).
+    Seagull,
+    /// `NPCID.Seagull2` (603, `ID/NPCID.cs:11883`) — the Seagull's
+    /// swimming form (`aiStyle 68`): 28x22, catchItem 4359
+    /// (`NPC.cs:16751-16762`).
+    Seagull2,
+    /// `NPCID.Grebe` (608) — the desert-oasis waterfowl walker
+    /// (`aiStyle 7`): 22x26, catchItem 4374 (`NPC.cs:16809-16820`).
+    Grebe,
+    /// `NPCID.Grebe2` (609, `ID/NPCID.cs:11895`) — the Grebe's swimming
+    /// form (`aiStyle 68`): 28x22, catchItem 4374
+    /// (`NPC.cs:16821-16832`).
+    Grebe2,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3529,6 +3563,18 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-c10 — the waterfowl family writes NO knockBackResist row
+            // (`NPC.cs:13613-13636`/`:13637-13660`/`:16739-16762`/
+            // `:16809-16832`), so the class default 1f stands (`:8533`) —
+            // the stock `_ => 0.4` below never sees them.
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => 1.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3955,17 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-c10 — the waterfowl family's `defense = 0` rows
+            // (`NPC.cs:13619`/`:13631`/`:13643`/`:13655`/`:16745`/
+            // `:16757`/`:16815`/`:16827`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4338,16 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-c10 — the waterfowl family writes no value row (the
+            // head's `value = 0f`, `NPC.cs:8544`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6131,6 +6198,21 @@ impl Npc {
             }
             NpcKind::DungeonSpirit => {
                 unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
+            }
+            // W4-c10 — the waterfowl WALKERS (362/364/602/608, aiStyle 7):
+            // the town-walk stand-in (`update_guide`, the town roster's
+            // routing) plus the `AI_007` head's takeoff gate — the C#'s
+            // `Transform(this.type + 1)` when falling fast or wet
+            // (`NPC.cs:53180-53184`). The full `AI_007_TownEntities`
+            // migration is `npc_ai_town.rs`'s wiring step.
+            NpcKind::Duck | NpcKind::DuckWhite | NpcKind::Seagull | NpcKind::Grebe => {
+                self.waterfowl_walker_step(world, player, dt);
+            }
+            // W4-c10 — the waterfowl SWIMMERS (363/365/603/609, aiStyle
+            // 68): the axis' 68 arm claims them first (`ai_068_waterfowl`);
+            // this arm keeps the kind match exhaustive.
+            NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2 => {
+                unreachable!("aiStyle 68 rides the style axis (W4-c10)")
             }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
@@ -9040,6 +9122,73 @@ impl Npc {
                     }
                 }
             }
+            // W4-c10 — `case 362 : case 364 : case 608` + `case 602`
+            // (`NPC.cs:73747-73771`/`:73819-73841`, identical bodies):
+            // the walker's 4-tick walk strip — idle (vx == 0) pins row 0
+            // and zeroes the counter; walking advances one row per 4
+            // ticks, wrapping into the 3..9 band (`frame.Y >= num * 10`
+            // → `num * 3`, `< num * 3` → `num * 3`; the row-index form).
+            NpcKind::Duck | NpcKind::DuckWhite | NpcKind::Grebe | NpcKind::Seagull => {
+                self.sprite_dir = self.facing;
+                if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 10 {
+                        self.frame = 3;
+                    }
+                    if self.frame < 3 {
+                        self.frame = 3;
+                    }
+                }
+            }
+            // W4-c10 — `case 363 : case 365 : case 609` + `case 603`
+            // (`NPC.cs:73772-73818`/`:73842-73886`, identical bodies):
+            // the swimmer's three poses — wet: the 8-tick 1..2 paddle
+            // (`> num * 2` → `num`, `< num` → `num`), rotation 0; still
+            // (vx == 0 && vy == 0): row 1, counter 0, rotation 0; flying:
+            // rotation = velocity.X * 0.1, the 4-tick strip clamped into
+            // the 11..npcFrameCount-1 flight band (15 rows,
+            // `Main.cs:67082`).
+            NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Grebe2 | NpcKind::Seagull2 => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 2 {
+                        self.frame = 1;
+                    }
+                    if self.frame < 1 {
+                        self.frame = 1;
+                    }
+                    self.rotation = 0.0;
+                } else if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                    self.rotation = 0.0;
+                } else {
+                    self.rotation = self.vx * 0.1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.rows() {
+                        self.frame = 11;
+                    }
+                    if self.frame < 11 {
+                        self.frame = 11;
+                    }
+                }
+            }
         }
     }
 
@@ -10083,6 +10232,40 @@ impl Npc {
             self.y = (ty + 1) as f32 * TILE_PX;
             self.vy = 0.0;
         }
+    }
+
+    /// W4-c10 — the waterfowl WALKERS (362/364/602/608, aiStyle 7): the
+    /// `AI_007_TownEntities` head's takeoff gate (`NPC.cs:53180-53184`) —
+    /// `(type == 362 || 364 || 602 || 608) && Main.netMode != 1 &&
+    /// (velocity.Y > 4f || velocity.Y < -4f || base.wet)` transforms into
+    /// the swimming form (`Transform(this.type + 1)`, the default ai
+    /// arguments 0) and RETURNS. The C# reads `base.wet` latched by the
+    /// previous tick's `UpdateCollision`; the port re-derives it here
+    /// (the `update_swimmer` convention, `npc.rs`'s `is_wet` pass). The
+    /// walk itself rides the town stand-in (`update_guide` — the port's
+    /// documented aiStyle-7 routing until the `npc_ai_town.rs`
+    /// migration); the full `AI_007` body's other gates (the shimmer
+    /// state 25, the resting-spot scan, the flee ladder) are that
+    /// module's wiring step.
+    fn waterfowl_walker_step(&mut self, world: &World, player: &mut Player, dt: f32) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        // `:53180-53184` — the takeoff gate (the port runs netMode 0).
+        if self.vy > 4.0 || self.vy < -4.0 || self.wet {
+            let new_kind = match self.kind {
+                NpcKind::Duck => NpcKind::Duck2,
+                NpcKind::DuckWhite => NpcKind::DuckWhite2,
+                NpcKind::Seagull => NpcKind::Seagull2,
+                NpcKind::Grebe => NpcKind::Grebe2,
+                _ => unreachable!("only the waterfowl walkers reach this arm"),
+            };
+            // `NPC.Transform(type + 1)` with the default ai0..3 = 0
+            // (`NPC.cs:81084-81114`): the bottom-anchored reposition, the
+            // SetDefaults swap, TargetClosest, the integer life rescale.
+            self.transform_to_kind(world, player, new_kind);
+            return;
+        }
+        self.update_guide(world, dt);
     }
 
     /// `AI_003_Fighters` for the skeleton family (`NPC.cs:10586+`): the
@@ -18601,6 +18784,17 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-c10 — the waterfowl family's vanilla ids (362-365/602/
+            // 603/608/609 are unused by every arm above; the G6 key stays
+            // injective).
+            NpcKind::Duck => 362,
+            NpcKind::Duck2 => 363,
+            NpcKind::DuckWhite => 364,
+            NpcKind::DuckWhite2 => 365,
+            NpcKind::Seagull => 602,
+            NpcKind::Seagull2 => 603,
+            NpcKind::Grebe => 608,
+            NpcKind::Grebe2 => 609,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +23863,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 278] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24142,15 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-c10 — the waterfowl family (the enum's declaration order).
+        NpcKind::Duck,
+        NpcKind::Duck2,
+        NpcKind::DuckWhite,
+        NpcKind::DuckWhite2,
+        NpcKind::Seagull,
+        NpcKind::Seagull2,
+        NpcKind::Grebe,
+        NpcKind::Grebe2,
     ];
 
     #[test]
@@ -24041,6 +24244,62 @@ mod tests {
         assert_eq!(NpcKind::ForceBubble.to_u16(), 213);
         for (kind, _, _, _, _, _, _, _, _, _) in rows {
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-c10 — the waterfowl family's `SetDefaults` rows pin against the
+    /// C# (`NPC.cs:13613-13660` for 362-365, `:16739-16762` for 602/603,
+    /// `:16809-16832` for 608/609): the walkers 22x26 aiStyle 7, the
+    /// swimmers 28x22 aiStyle 68, all dmg 0 / def 0 / lifeMax 5 / value 0,
+    /// the class-default kb 1f (no row written, `NPC.cs:8533`), the
+    /// NPCHit1/NPCDeath1 cues, the vanilla protocol ids. WRITTEN, NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_c10_the_waterfowl_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, catchItem)
+        let rows = [
+            (NpcKind::Duck, 362u16, 7u8, 22.0, 26.0, 2122),
+            (NpcKind::Duck2, 363, 68, 28.0, 22.0, 2122),
+            (NpcKind::DuckWhite, 364, 7, 22.0, 26.0, 2123),
+            (NpcKind::DuckWhite2, 365, 68, 28.0, 22.0, 2123),
+            (NpcKind::Seagull, 602, 7, 22.0, 26.0, 4359),
+            (NpcKind::Seagull2, 603, 68, 28.0, 22.0, 4359),
+            (NpcKind::Grebe, 608, 7, 22.0, 26.0, 4374),
+            (NpcKind::Grebe2, 609, 68, 28.0, 22.0, 4374),
+        ];
+        for (kind, ty, ai, w, h, catch) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert_eq!(shell.defense(), 0, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, 5, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), 1.0, "{kind:?} kb class default");
+            assert_eq!(shell.value(), 0.0, "{kind:?} value");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit cue");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death cue");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla");
+            assert_eq!(NpcKind::from_u16(ty), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} bestiary net id");
+            assert_eq!(
+                crate::bug_net::catch_item(ty as i32, 0.0),
+                catch,
+                "{kind:?} catchItem"
+            );
+            assert!(crate::bug_net::npc_catchable(ty as i32), "{kind:?} catchable");
+            // The 15-row strips (`Main.npcFrameCount`, `Main.cs:67082`).
+            assert_eq!(crate::render::entities::npc_rows(ty), 15, "{kind:?} rows");
+        }
+        // The poop set: the four SWIMMERS are in BirdThatCanPoop
+        // (`NPCID.cs:10435`); the walkers are NOT.
+        for ty in [363, 365, 603, 609] {
+            assert!(crate::npc_ai_style24::bird_that_can_poop(ty));
+        }
+        for ty in [362, 364, 602, 608] {
+            assert!(!crate::npc_ai_style24::bird_that_can_poop(ty));
         }
     }
 

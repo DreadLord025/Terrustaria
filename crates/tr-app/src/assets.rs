@@ -1275,6 +1275,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-c10 — the waterfowl family's own sheets (`WATERFOWL_SHEETS`).
+        "NPC_362",
+        "NPC_363",
+        "NPC_364",
+        "NPC_365",
+        "NPC_602",
+        "NPC_603",
+        "NPC_608",
+        "NPC_609",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -2657,6 +2666,15 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
+                // W4-c10 — the waterfowl family's eight 15-row strips.
+                atlas.sheet("NPC_362").copied(),
+                atlas.sheet("NPC_363").copied(),
+                atlas.sheet("NPC_364").copied(),
+                atlas.sheet("NPC_365").copied(),
+                atlas.sheet("NPC_602").copied(),
+                atlas.sheet("NPC_603").copied(),
+                atlas.sheet("NPC_608").copied(),
+                atlas.sheet("NPC_609").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
