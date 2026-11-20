@@ -7360,12 +7360,34 @@ Deviations, all deliberate:
   add site, `NPC.cs:81568-81572`).
 - **The Torch God event is out** вЂ” the `happyFunTorchTime` /
   `torchGodCooldown` head of the scan and the `:18066-18086` trigger tail
-  are not ported; the `nearbyTorches` counter still runs.
-- **The temple zone is unmodelled** вЂ” the skip gate
-  `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) runs on dungeon only.
-- **`ZoneLihzhardTemple`-free torch inputs** вЂ” the zones ride a per-tick
-  `SceneMetrics::zones()` snapshot on the player (the `auras()` pattern),
-  refreshed beside `p.auras` in `world_sim/player.rs`.
+  (incl. the `unlockedBiomeTorches` flag and the item-5043 inventory gate)
+  are not ported; the `nearbyTorches` counter still runs and still resets
+  to 0 on every consume (`:18087`). The event/favour is W4-f33's separate
+  lane; W4-e27 ports the torch-luck FACTOR only.
+- **The temple skip gate is verbatim since W4-e27** вЂ” `!ZoneDungeon &&
+  !ZoneLihzhardTemple` (`:17923`) reads both flags: `Zones.temple` rides
+  `SceneMetrics.zone_lihzhard_temple` (wall 87, `SceneMetrics.cs:694`,
+  landed with the S1-D-3 Golem family). The old dungeon-only deviation is
+  retired; `e27_temple_zone_skips_the_whole_verdict_table` pins it.
+- **The zones ride a per-tick snapshot** вЂ” `SceneMetrics::zones()` on the
+  player (the `auras()` pattern), refreshed beside `p.auras` in
+  `world_sim/player.rs`.
+- **W4-e27 verbatim witnesses (written not run, code-only mode)** вЂ” nine
+  `e27_*` tests in `luck.rs` re-derive the biome-matching lane against the
+  C#: the verdict ladders (`num2 в‰Ґ 1 в†’ +1` capped regardless of correct-torch
+  count, `num в‰Ґ 2/в‰Ґ 1/> 0 в†’ в€’1.5/в€’1/в€’0.5`, `:18037-18056`), the no-verdict
+  styles (shimmer 23 is in `TorchID.Sets.IsABiomeTorch` `TorchID.cs:17` but
+  has NO luck arm; colour torches 1-6/10/12/14/15 and demon 7 likewise),
+  the unsnuffed `frameX < 66` count BEFORE the `TorchID.Count` gate
+  (`:17774-17786`) + the `nearbyTorches = 0` consume reset, the dry-coral
+  `liquid == 0 || liquidType() != 0` gate (`:17782`, `Tile.cs:235-238`
+  types 1/2/3 all read dry), the `oceanDepths` strict-`>`/380-band
+  boundaries (`WorldGen.cs:10963-10974`/`:4447`/`:86914`), the 1-row-per-
+  tick ±40 window with the inclusive bottom-row consume + re-anchor
+  (`:17749-17794`/`:17916`), the `Utils.Clamp` max-first fold on narrow
+  worlds (`Utils.cs:223-234`) and the out-of-range-row `continue` quirk
+  that skips the bottom-row consume check (`:17759-17762`), and the held
+  torch's `placeStyle < TorchID.Count` feed gate (`:17917-17920`).
 - **No kite-luck reset** вЂ” the C# never zeroes `kiteLuckLevel` (assigned
   only inside the buff-383 branch, `:9920-9924`); the port matches:
   stale-until-recomputed.
