@@ -1270,7 +1270,12 @@ fn resolve_melee_strike(
                         p.melee_npc_hit_cooldown.insert(uid, anim_ticks);
                     }
                     let max_ticks = ticks_of(app.swing_max);
-                    app.attack_cd = ((max_ticks as f64 * 0.33) as i32).max(1) as f32 / 60.0;
+                    // Keep-one (gate i04/i05): the shared ApplyAttackCooldown
+                    // helper — identical double-truncation semantics.
+                    app.attack_cd =
+                        crate::melee_swing::MeleeHitCooldowns::attack_cooldown_frames(max_ticks)
+                            as f32
+                            / 60.0;
                 }
                 // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
                 // the Destroyer body's probe gate (`:89266-89285`) — the
