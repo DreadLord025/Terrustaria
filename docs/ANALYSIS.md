@@ -39244,3 +39244,59 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Ammo Cycler + Sharp Barb stat folds (W4-a7 A6, task/W4-a7-ammo-cycler-sharpbarb, 2026-11-20, code-only mode)
+
+The two missing accessory halves of research/62 A6 (TR-WAVE4-TARGETS P0-8):
+
+- **`accAmmoCyclerDamage`** (`Player.cs:1222`) had NO port field. The four
+  Ammo Cycler accessories **6168/6169/6193/6194** each set it beside the
+  cycling mode (`ApplyEquipFunctional` `:14528-14543` — 6194 "no cycling"
+  sets it too, `:14542`; the task brief's "item 3107?" guess is wrong,
+  3107 is unrelated). The `UpdateEquips` post-loop fold
+  (`:12958-12961`) is **`rangedDamage += 0.08f` — ADDITIVE**, not a
+  multiplier: it joins every other ranged add (emblems, prefixes, sets)
+  and rides `weapon_damage_multiplier(_with_ammo)`'s ranged arms
+  (`player.rs`), so arrows/bullets/rockets/plain guns all scale while
+  melee/magic/minion are untouched. The flag is a bool: two cyclers fold
+  once. `ResetEffects` clears it (`:18523`).
+- **`accSharpBarb`'s crit half** (`Player.cs:1224`, 6160 `:14501`): the
+  `UpdateEquips` post-loop fold (`:12966-12969`) is **`rangedCrit += 8` —
+  ADDITIVE on the crit CHANCE**. The port's canonical per-hit model
+  (`projectile.rs`'s `Damage_PVE_Inner` block → `tr_core::damage::
+  projectile_hit_crit`, `Projectile.cs:12883-12917`) reads
+  `Player.ranged_crit` at HIT time, so the fold needs no spawn stamp and
+  **no new RNG draws**. The already-ported +1-arrow-ammo-damage half
+  (`:53548-53551`, `ammo.rs`'s resolver) is untouched.
+
+**Fold order / placement.** The C# statement order is cycler damage
+(`:12958`) → manaFlower (`:12962`) → Sharp Barb crit (`:12966`), all
+after the `ApplyEquipFunctional` loop (`:12946-12951`) and before the
+sky-stone bundle (`:12989`). The port grants the ammo-family flags in
+`world_sim/player.rs::grant_ammo_mastery` (the house clear+re-grant seam,
+which runs after `Player::update`'s own `ResetEffects`/`update_equips` in
+the fixed step); the two folds run at that seam's TAIL, cycler before
+barb, via `accessory_combat::apply_ammo_cycler_damage` /
+`apply_sharp_barb_crit` (the `apply_sky_stone_effects` precedent). The
+manaFlower fold stays in `player.rs`. The three adds touch disjoint
+stats (`rangedDamage` / `manaCost` / `rangedCrit`), so the split is
+order-identical to the C#; no existing fold was reordered. The per-tick
+crit/damage bases (4 / 1.0) re-clear in `Player::update` before the seam,
+so the folds never accumulate; unequipping clears the flags (`:18475`,
+`:18523`) and the stats return to base next tick.
+
+**No deviations.** Both halves are 1:1; no RNG stream touched (pure stat
+adds). The `misc_equips` superset host (a quiver/cycler in the port's
+8th+ accessory slot grants where vanilla would not) is the pre-existing
+documented deviation of the ammo-mastery seam, unchanged.
+
+**Verification.** Code-only: the C# windows re-read (`:12946-13003`,
+`:14490-14543`, `:18465-18529`, `:53542-53568`), the grant/clear/fold
+sites checked against the actual Rust by read/grep, the single `Player`
+literal (`spawn`) extended with the new field. 4 witness tests WRITTEN,
+NOT RUN (`accessory_combat.rs` 2 fold-fn units; `world_sim/player.rs`
+`a6_every_cycler_grants_the_flag_and_folds_8_percent_ranged_once` — all
+four kinds, ranged-only, bool-once, per-tick no-accumulation, unequip
+clear — and `a6_the_sharp_barb_folds_8_ranged_crit_and_clears_on_unequip`
+— +8 ranged-only crit, cycler+barb stack, clear). **No
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**

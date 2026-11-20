@@ -2083,8 +2083,18 @@ pub struct Player {
     /// damage (`:53537-53541`).
     pub has_molten_quiver: bool,
     /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
-    /// +1 ammo damage on arrows (`:53548`).
+    /// +1 ammo damage on arrows (`:53548`) AND +8 ranged crit (the
+    /// `UpdateEquips` post-loop fold, `:12966-12969` — A6, applied by
+    /// `accessory_combat::apply_sharp_barb_crit` at the ammo-mastery seam).
     pub acc_sharp_barb: bool,
+    /// `Player.accAmmoCyclerDamage` (`Player.cs:1222`): the four Ammo Cycler
+    /// accessories 6168/6169/6193/6194 (`:14528-14543`) each set it beside
+    /// the cycling mode — +8% ranged damage (the `UpdateEquips` post-loop
+    /// fold, `:12958-12961` — A6, applied by
+    /// `accessory_combat::apply_ammo_cycler_damage` at the ammo-mastery
+    /// seam). A bool: two cyclers still fold only once. `ResetEffects`
+    /// clears it (`:18523`).
+    pub acc_ammo_cycler_damage: bool,
     // S1-P-i35 — the fishing family (`Player.cs:1088-1102` region).
     /// `Player.fishingSkill` (`Player.cs:1092`): the +15 Fishing potion
     /// (buff 121, `UpdateBuffs` `:10146-10149`), the Angler armor pieces
@@ -2918,6 +2928,7 @@ impl Player {
             vampire_burning_in_sunlight: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
+            acc_ammo_cycler_damage: false,
             // S1-P-i35 — the fishing family's spawn defaults.
             fishing_skill: 0,
             crate_potion: false,

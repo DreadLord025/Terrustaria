@@ -44,6 +44,8 @@ pub(crate) fn grant_ammo_mastery(
     p.magic_quiver = false;
     p.has_molten_quiver = false;
     p.acc_sharp_barb = false;
+    // A6 — `ResetEffects`' `accAmmoCyclerDamage = false` (`Player.cs:18523`).
+    p.acc_ammo_cycler_damage = false;
     p.ammo_box = false;
     p.ammo_potion = false;
     p.huntress_ammo_cost90 = false;
@@ -123,12 +125,28 @@ pub(crate) fn grant_ammo_mastery(
             // `:14501` — the Sharp Barb.
             6160 => p.acc_sharp_barb = true,
             // `:14528-14544` — the cycler accessories grant the mode (a later
-            // matching slot wins, like the C#'s `switch` in slot order).
-            6168 => p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::AmmoSlots,
-            6169 => p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::FullInventory,
-            6193 => p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::Random,
-            // `:14541` — the "no cycling" accessory resets the mode.
-            6194 => p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::None,
+            // matching slot wins, like the C#'s `switch` in slot order) AND
+            // `accAmmoCyclerDamage` (A6 — every one of the four arms sets it,
+            // including 6194's "no cycling"; the +8% ranged fold rides the
+            // seam tail below).
+            6168 => {
+                p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::AmmoSlots;
+                p.acc_ammo_cycler_damage = true;
+            }
+            6169 => {
+                p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::FullInventory;
+                p.acc_ammo_cycler_damage = true;
+            }
+            6193 => {
+                p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::Random;
+                p.acc_ammo_cycler_damage = true;
+            }
+            // `:14540-14543` — the "no cycling" accessory resets the mode
+            // but STILL grants the damage flag (`:14542`).
+            6194 => {
+                p.ammo_cycling.mode = crate::ammo::AmmoCyclingMode::None;
+                p.acc_ammo_cycler_damage = true;
+            }
             _ => {}
         }
     }
@@ -140,6 +158,20 @@ pub(crate) fn grant_ammo_mastery(
     // port's clear above runs AFTER that update in the tick — so the grant
     // lives here, after the clear, before the shoot path reads the flags.
     crate::armor_sets::grant_set_ammo_flags(p, armor);
+    // A6 — the `UpdateEquips` post-loop stat folds for the flags granted
+    // above (`Player.cs:12958-12961` cycler +8% ranged, `:12966-12969`
+    // Sharp Barb +8 ranged crit), in the C#'s statement order. Both are
+    // ADDITIVE stat adds with no RNG; the barb's +1-arrow-damage half is
+    // the `ammo.rs` resolver's (`:53548-53551`), untouched here. The C#
+    // runs them between the manaFlower fold (`:12962-12965`, ported in
+    // `player.rs`) and the sky-stone bundle (`:12989`) — the adds touch
+    // disjoint stats, so the seam-tail position is order-identical.
+    if p.acc_ammo_cycler_damage {
+        crate::accessory_combat::apply_ammo_cycler_damage(p);
+    }
+    if p.acc_sharp_barb {
+        crate::accessory_combat::apply_sharp_barb_crit(p);
+    }
 }
 
 /// The mechanical-accessory half of `Player.UpdateEquips` (S1-P-i34) — the
@@ -2257,6 +2289,96 @@ mod tests {
             app.player.as_ref().unwrap().acc_sharp_barb,
             "6160 → accSharpBarb"
         );
+    }
+
+    /// A6 — every cycler accessory (6168/6169/6193/6194) grants
+    /// `accAmmoCyclerDamage` beside its mode (`Player.cs:14528-14543`) and
+    /// the seam tail folds ONE additive +8% ranged damage
+    /// (`:12958-12961`) — melee/magic/minion untouched, crits untouched.
+    /// Two cyclers still fold once (the flag is a bool). Taking them off
+    /// clears the flag (`ResetEffects` `:18523`) and the damage returns to
+    /// the 1.0 base.
+    #[test]
+    fn a6_every_cycler_grants_the_flag_and_folds_8_percent_ranged_once() {
+        for kind in [6168u16, 6169, 6193, 6194] {
+            let mut app = ammo_app();
+            app.equip.armor[3] = slot(kind);
+            tick_ammo(&mut app);
+            {
+                let p = app.player.as_ref().unwrap();
+                assert!(p.acc_ammo_cycler_damage, "kind {kind} grants the flag");
+                assert!(
+                    (p.ranged_damage - 1.08).abs() < 1e-4,
+                    "kind {kind}: +8% ranged"
+                );
+                assert!((p.melee_damage - 1.0).abs() < 1e-4, "melee {kind}");
+                assert!((p.magic_damage - 1.0).abs() < 1e-4, "magic {kind}");
+                assert!((p.minion_damage - 1.0).abs() < 1e-4, "minion {kind}");
+                assert_eq!(p.ranged_crit, 4, "no crit row on the cycler {kind}");
+            }
+            // A second tick re-clears and re-folds — no accumulation.
+            tick_ammo(&mut app);
+            assert!(
+                (app.player.as_ref().unwrap().ranged_damage - 1.08).abs() < 1e-4,
+                "kind {kind}: the fold is per-tick, not cumulative"
+            );
+            // Unequip: the clear + no grant returns the base.
+            app.equip.armor[3] = EMPTY_SLOT;
+            tick_ammo(&mut app);
+            let p = app.player.as_ref().unwrap();
+            assert!(!p.acc_ammo_cycler_damage, "off {kind} clears (:18523)");
+            assert!((p.ranged_damage - 1.0).abs() < 1e-4, "off {kind}");
+        }
+        // Two cyclers in two slots: the bool folds ONCE (+0.08, not +0.16).
+        let mut app = ammo_app();
+        app.equip.armor[3] = slot(6168);
+        app.equip.armor[4] = slot(6169);
+        tick_ammo(&mut app);
+        assert!(
+            (app.player.as_ref().unwrap().ranged_damage - 1.08).abs() < 1e-4,
+            "two cyclers still fold once — the flag is a bool (:12958)"
+        );
+    }
+
+    /// A6 — the Sharp Barb's missing half: +8 ranged crit folded at the
+    /// seam tail (`Player.cs:12966-12969`), additive on the crit CHANCE
+    /// (the per-hit roll reads `ranged_crit` — no spawn stamp, no draws).
+    /// The +1-arrow-ammo-damage half (`:53548-53551`) stays the `ammo.rs`
+    /// resolver's and is pinned separately there. Melee/magic crits and
+    /// every damage class stay at baseline; the clear (`:18475`) returns
+    /// the 4-point base when the barb comes off.
+    #[test]
+    fn a6_the_sharp_barb_folds_8_ranged_crit_and_clears_on_unequip() {
+        let mut app = ammo_app();
+        app.equip.armor[3] = slot(6160);
+        tick_ammo(&mut app);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(p.acc_sharp_barb, "6160 grants the flag (:14501)");
+            assert_eq!(p.ranged_crit, 12, "4 + 8 (:12968)");
+            assert_eq!((p.melee_crit, p.magic_crit), (4, 4), "ranged-only");
+            assert!((p.ranged_damage - 1.0).abs() < 1e-4, "no damage row");
+            assert!((p.melee_damage - 1.0).abs() < 1e-4);
+            assert!((p.magic_damage - 1.0).abs() < 1e-4);
+        }
+        // Re-tick: the per-tick crit base (4) + one fold — no accumulation.
+        tick_ammo(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().ranged_crit, 12);
+        // Both halves on one tick: a cycler + the barb stack their adds.
+        app.equip.armor[4] = slot(6168);
+        tick_ammo(&mut app);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!((p.ranged_damage - 1.08).abs() < 1e-4, "cycler +8%");
+            assert_eq!(p.ranged_crit, 12, "barb +8 crit");
+        }
+        // Unequip the barb: the crit returns to base, the cycler stays.
+        app.equip.armor[3] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.acc_sharp_barb, "the clear (:18475)");
+        assert_eq!(p.ranged_crit, 4, "back to the 4-point base");
+        assert!((p.ranged_damage - 1.08).abs() < 1e-4, "cycler still on");
     }
 
     /// DW-3.4 — the per-tick cycling tick (`Player.Update_AmmoCycler`,

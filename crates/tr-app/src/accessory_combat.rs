@@ -11,7 +11,12 @@
 //! the C# source order and leaves every non-family kind to the existing
 //! match. The bundle's flag arms are ported in
 //! [`set_sky_stone_flag`] and its `UpdateEquips` stat fold in
-//! [`apply_sky_stone_effects`] (`Player.cs:12989-13003`).
+//! [`apply_sky_stone_effects`] (`Player.cs:12989-13003`). A6 adds the two
+//! remaining `UpdateEquips` post-loop folds of the ammo family:
+//! [`apply_ammo_cycler_damage`] (`:12958-12961`, +8% ranged) and
+//! [`apply_sharp_barb_crit`] (`:12966-12969`, +8 ranged crit), called at
+//! the ammo-mastery seam tail (`world_sim/player.rs::grant_ammo_mastery`)
+//! where the flags grant.
 //!
 //! Deviations (also in ANALYSIS): `aggro` has no port field (no
 //! multiplayer aggro consumer — same precedent as the Scout Sling row
@@ -191,6 +196,33 @@ pub(crate) fn apply_sky_stone_effects(p: &mut Player) {
     p.pick_speed_bonus += 0.15;
     p.minion_damage += 0.1;
     p.minion_kb += 0.5;
+}
+
+/// The `UpdateEquips` post-loop Ammo Cycler fold (`Player.cs:12958-12961`):
+/// `rangedDamage += 0.08f` when `accAmmoCyclerDamage` — the flag the four
+/// cycler accessories 6168/6169/6193/6194 grant (`:14528-14543`, the
+/// ammo-mastery seam). ADDITIVE, like every other `rangedDamage` add: it
+/// rides `weapon_damage_multiplier`'s ranged arms, melee/magic/minion are
+/// untouched. A bool, so two cyclers fold once. Called at the tail of
+/// `grant_ammo_mastery` (the flags' home seam) after the grants, in the
+/// C#'s statement order — cycler damage BEFORE the Sharp Barb crit
+/// (`:12966`). The port's `manaFlower` fold (`:12962-12965`) sits between
+/// them in `player.rs`; the three adds touch disjoint stats, so the split
+/// is order-identical. No RNG.
+pub(crate) fn apply_ammo_cycler_damage(p: &mut Player) {
+    p.ranged_damage += 0.08;
+}
+
+/// The `UpdateEquips` post-loop Sharp Barb fold (`Player.cs:12966-12969`):
+/// `rangedCrit += 8` when `accSharpBarb` (6160, `:14501`). ADDITIVE on the
+/// crit CHANCE — the canonical per-hit model reads `Player.ranged_crit`
+/// inside `projectile_hit_crit` at hit time (`projectile.rs`'s per-hit
+/// block, `Projectile.cs:12883-12917`), so this is NOT a spawn stamp and
+/// adds no draws. The barb's OTHER half (+1 arrow ammo damage,
+/// `:53548-53551`) stays in `ammo.rs`'s resolver. Called after
+/// [`apply_ammo_cycler_damage`] at the ammo-mastery seam tail. No RNG.
+pub(crate) fn apply_sharp_barb_crit(p: &mut Player) {
+    p.ranged_crit += 8;
 }
 
 #[cfg(test)]
@@ -387,5 +419,32 @@ mod tests {
         assert_eq!(p.magic_crit, 6);
         assert!(near(p.pick_speed_bonus, 0.15));
         assert!(near(p.minion_kb, 0.5));
+    }
+
+    #[test]
+    fn the_ammo_cycler_fold_adds_8_percent_ranged_only() {
+        // `Player.cs:12958-12961` — ADDITIVE `rangedDamage += 0.08f`;
+        // melee/magic/minion and every crit stay at the spawn baseline.
+        let mut p = fresh();
+        apply_ammo_cycler_damage(&mut p);
+        assert!(near(p.ranged_damage, 1.08));
+        assert!(near(p.melee_damage, 1.0));
+        assert!(near(p.magic_damage, 1.0));
+        assert!(near(p.minion_damage, 1.0));
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (4, 4, 4));
+    }
+
+    #[test]
+    fn the_sharp_barb_fold_adds_8_ranged_crit_only() {
+        // `Player.cs:12966-12969` — ADDITIVE `rangedCrit += 8` on the crit
+        // CHANCE (the per-hit roll reads it); no damage row, no other crit.
+        let mut p = fresh();
+        apply_sharp_barb_crit(&mut p);
+        assert_eq!(p.ranged_crit, 12);
+        assert_eq!((p.melee_crit, p.magic_crit), (4, 4));
+        assert!(near(p.ranged_damage, 1.0));
+        assert!(near(p.melee_damage, 1.0));
+        assert!(near(p.magic_damage, 1.0));
+        assert!(near(p.minion_damage, 1.0));
     }
 }
