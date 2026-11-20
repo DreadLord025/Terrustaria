@@ -1180,6 +1180,57 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
     EowDig,
+    // W4-d80 — the tracked-sound entity loops (research/64): the DD2
+    // machines queue these like the legacy cues; the sim drain applies
+    // them against the tracked pool (`apply_npc_tracked_cue`) and writes
+    // the `SlotId` floats back into `Npc.local_ai` (the C# `localAI`
+    // dance). ZERO gameplay draws — the variation/pitch picks ride the
+    // two audio-only statics (the census' RNG contract).
+    /// `PlayTrackedSound(DD2_BetsyWindAttack, Center)` — the phase-2 entry
+    /// one-shot (`NPC.cs:61980-61983`). No slot storage.
+    BetsyWindAttack,
+    /// `PlayTrackedSound(DD2_BetsyFlameBreath, Center)` — the phase-3 dash
+    /// tick (`NPC.cs:62028`); the handle lands in `local_ai[2]`.
+    BetsyFlameBreath,
+    /// The phase-3 breath position-follow (`NPC.cs:61993-61997`): the live
+    /// handle's `Position = Center` every phase-3 tick.
+    BetsyBreathFollow,
+    /// The AI-tail dead-handle drop (`NPC.cs:62302-62305`):
+    /// `GetActiveSound == null` → `local_ai[2] = Invalid`.
+    BetsyBreathHandleDrop,
+    /// `PlayTrackedSound(DD2_EtherianPortalOpen, Center)` + the
+    /// `localAI[3] = Invalid` reset (`NPC.cs:40979-40983`, first tick).
+    PortalOpen,
+    /// The idle-loop ensure (`NPC.cs:40984-40987`): `GetActiveSound ==
+    /// null` → play into `local_ai[3]` (the `localAI[0] > 150` gate rides
+    /// the machine's queue site).
+    PortalIdleEnsure,
+    /// The fade ensure + volume (`NPC.cs:41029-41037`): ensure the idle
+    /// loop, then `Volume = scale` (the payload).
+    PortalFadeVolume(f32),
+    /// The portal death stop (`NPC.cs:41044`): `activeSound?.Stop()`.
+    PortalStop,
+    /// The kobold explode-entry stops (`NPC.cs:63206-63207`): both
+    /// `local_ai[0]`/`[1]` handles `?.Stop()`, every explode tick.
+    KoboldStopBoth,
+    /// `PlayTrackedSound(DD2_KoboldExplosion, Center)` — the death tick
+    /// (`NPC.cs:63256`). No slot storage.
+    KoboldExplosion,
+    /// The ignite ensure (`NPC.cs:63263-63268`): `!SlotId.IsValid` → play
+    /// `DD2_KoboldIgnite` into `local_ai[0]`.
+    KoboldIgniteEnsure,
+    /// The ignite-timer loops (`NPC.cs:63269-63274`): at `localAI[2] == 30`
+    /// play `DD2_KoboldIgniteLoop` / `DD2_KoboldScreamChargeLoop` into
+    /// `local_ai[0]` / `[1]`.
+    KoboldLoopsPlay,
+    /// The loops' ensure-or-follow (`NPC.cs:63288-63307`): null → re-play,
+    /// else `Position = Center` — both handles. Inert in the port's folded
+    /// walker (the census fold 3), ported verbatim.
+    KoboldLoopsEnsureFollow,
+    /// The wither-beast aura pulse (`NPC.cs:63380-63388`): null → play
+    /// `DD2_WitherBeastAuraPulse` into `local_ai[1]`, else follow. The
+    /// port fires it on every aura-active tick (the census fold 2).
+    WitherAuraEnsureFollow,
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position
@@ -12335,6 +12386,16 @@ impl Npc {
                 }
             }
         } else if self.ai[0] == 2.0 {
+            // W4-d80 — `NPC.cs:61980-61983`: the phase-2 entry tick
+            // (`ai[1] == 0`) plays `DD2_BetsyWindAttack` at the centre — a
+            // tracked one-shot, no slot storage, zero gameplay draws.
+            if self.ai[1] == 0.0 {
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::BetsyWindAttack,
+                    x: cx,
+                    y: cy,
+                });
+            }
             // The wind-attack pause (`NPC.cs:61931-61940`): the 30-tick
             // pause before the return to phase 1 (the flame breath rides
             // phase 3).
@@ -12345,6 +12406,14 @@ impl Npc {
                 self.ai[2] = 0.0;
             }
         } else if self.ai[0] == 3.0 {
+            // W4-d80 — `NPC.cs:61993-61997`: the live flame-breath handle
+            // follows the centre every phase-3 tick (the `localAI[2]`
+            // dance; the drain re-points `ActiveSound.Position`).
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::BetsyBreathFollow,
+                x: cx,
+                y: cy,
+            });
             // The flame breath (`NPC.cs:61942-61985`): the reposition to
             // the 600-px past-the-player offset at −250 (the 12-speed
             // approach, the 16-px snap), the 40-tick arrival, the dash
@@ -12373,6 +12442,14 @@ impl Npc {
                 self.sprite_dir = self.facing;
                 self.wants_hostile_shot
                     .push((687u16, cx, cy, self.vx, self.vy, 35));
+                // W4-d80 — `NPC.cs:62028`: the dash tick plays
+                // `DD2_BetsyFlameBreath` at the centre; the handle lands in
+                // `local_ai[2]` (the drain's write-back).
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::BetsyFlameBreath,
+                    x: cx,
+                    y: cy,
+                });
             } else if self.ai[1] >= 40.0 && (pcx - cx).abs() > 550.0 && self.vx.abs() < 20.0 {
                 self.vx += self.vx.signum() * 0.5;
             }
@@ -12537,6 +12614,14 @@ impl Npc {
         if num41 != 0.0 {
             self.rotation = angle_towards(self.rotation, num40, num41);
         }
+        // W4-d80 — `NPC.cs:62302-62305`: the AI tail drops the dead
+        // flame-breath handle to Invalid (the `GetActiveSound == null`
+        // test; the drain applies it).
+        self.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyBreathHandleDrop,
+            x: cx,
+            y: cy,
+        });
         // The flight (noGravity + noTileCollide).
         self.x += self.vx;
         self.y += self.vy;
@@ -13071,7 +13156,29 @@ impl Npc {
     fn update_dd2_lane(&mut self, world: &World, _player: &Player) {
         // `:40972`'s lane side.
         self.wants_lane_right = self.ai[2] == 1.0;
+        // W4-d80 — the centre snapshot for the tracked plays (the C# plays
+        // at `base.Center`, `:40981`/`:40986`/`:41031`).
+        let (cw, ch) = self.size();
+        let (cx, cy) = (self.x + cw * 0.5, self.y + ch * 0.5);
         if self.ai[1] == 0.0 {
+            // W4-d80 — `:40979-40987`: the first tick plays the open
+            // one-shot and resets `localAI[3]` to Invalid; past the 150
+            // idle ticks the idle loop ensures (the null test re-plays a
+            // died slot). The `caster_counter` IS `localAI[0]`.
+            if self.caster_counter == 0 {
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::PortalOpen,
+                    x: cx,
+                    y: cy,
+                });
+            }
+            if self.caster_counter > 150 {
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::PortalIdleEnsure,
+                    x: cx,
+                    y: cy,
+                });
+            }
             // `:40988-40991`'s counter, parked by `EnemySpawningIsOnHold`.
             if !crate::world_sim::npcs::enemy_spawning_on_hold(world) {
                 self.ai[0] += 1.0;
@@ -13108,9 +13215,22 @@ impl Npc {
             self.ai[0] += 1.0;
             let t = ((self.ai[0] - 500.0) / 100.0).clamp(0.0, 1.0);
             self.scale = 1.0 + (0.05 - 1.0) * t;
+            // W4-d80 — `:41029-41037`: the fade ensures the idle loop and
+            // rides the scale onto its `Volume` override every tick.
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::PortalFadeVolume(self.scale),
+                x: cx,
+                y: cy,
+            });
             if self.ai[0] >= 550.0 {
                 self.dont_take_damage = false;
                 self.hp = 0;
+                // W4-d80 — `:41044`: `activeSound?.Stop()` on the death.
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::PortalStop,
+                    x: cx,
+                    y: cy,
+                });
             }
         }
     }
@@ -15428,11 +15548,25 @@ impl Npc {
     /// `AI_107`'s 572/573 arm (`NPC.cs:63196-63347`) — the kobold walkers:
     /// the ignite-and-explode kamikaze with the 192-box blast.
     fn update_dd2_kobold_walker(&mut self, world: &World, player: &Player, dt: f32) {
+        // W4-d80 — `NPC.cs:63198-63202`: the spawn-in tick (`localAI[3] ==
+        // 0`, the port's `caster_counter`) resets both loop handles to
+        // Invalid. The C# tests BEFORE the explode arm.
+        if self.caster_counter == 0 {
+            self.local_ai[0] = tr_core::slot::SlotId::INVALID.to_float();
+            self.local_ai[1] = tr_core::slot::SlotId::INVALID.to_float();
+        }
         if self.ai[1] == 2.0 {
             // `:63204-63262`'s explode: the 192-box, the 80-damage blast and
             // the death at the third tick.
             let (w, h) = self.size();
             let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+            // W4-d80 — `:63206-63207`: both loop handles stop on the
+            // explode entry (every explode tick, the C#'s placement).
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::KoboldStopBoth,
+                x: cx,
+                y: cy,
+            });
             self.x = cx - 96.0;
             self.y = cy - 96.0;
             self.vx = 0.0;
@@ -15444,14 +15578,72 @@ impl Npc {
             }
             self.ai[0] += 1.0;
             if self.ai[0] >= 3.0 {
+                // W4-d80 — `:63256`: the death tick plays
+                // `DD2_KoboldExplosion` at the (resized) centre.
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::KoboldExplosion,
+                    x: self.x + 96.0,
+                    y: self.y + 96.0,
+                });
                 self.hp = 0;
             }
+            return;
+        }
+        // W4-d80 — `:63263-63274`: the lit state (`ai[0] > 0`, `ai[1] == 0`,
+        // alive) ensures the ignite one-shot (`!SlotId.IsValid` gate) and
+        // counts the 30-tick ignite timer (`local_ai[2]`); at 30 the two
+        // loop plays land in `local_ai[0]`/`[1]`.
+        if self.ai[0] > 0.0 && self.ai[1] == 0.0 && self.hp > 0 {
+            let (w, h) = self.size();
+            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::KoboldIgniteEnsure,
+                x: cx,
+                y: cy,
+            });
+            self.local_ai[2] += 1.0;
+            if self.local_ai[2] == 30.0 {
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::KoboldLoopsPlay,
+                    x: cx,
+                    y: cy,
+                });
+            }
+        }
+        // W4-d80 — `:63276-63282`: the `ai[1] == 1` latch converts to the
+        // explode and returns (the C#'s early return — the ensure-or-follow
+        // below never sees this tick).
+        if self.ai[0] > 0.0 && self.ai[1] == 1.0 {
+            self.ai[0] = 0.0;
+            self.ai[1] = 2.0;
             return;
         }
         // `:63276`'s latch: the lit state (`ai[0] == 1`) converts `ai[1]`
         // to 2 — the explode. `:63283-63309`'s ignite runs the sprint.
         if self.ai[0] == 1.0 {
             self.ai[1] = 2.0;
+        }
+        // W4-d80 — `:63288-63307`: the loops' ensure-or-follow. Inert in
+        // the port's folded walker (the `ai[0] == 1 → ai[1] = 2` latch
+        // above is immediate, S1-D-3 — the census fold 3); ported verbatim.
+        if self.ai[0] == 0.0 && self.ai[1] == 1.0 {
+            let (w, h) = self.size();
+            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::KoboldLoopsEnsureFollow,
+                x: cx,
+                y: cy,
+            });
+        }
+        // W4-d80 — `:63757-63769`'s `flag29` spawn-in (the kobold is in
+        // `FighterUsesDD2PortalAppearEffect`, `NPCID.cs:10444`): the
+        // `localAI[3]` counter (the port's `caster_counter`) ramps 0 → 60
+        // so the `== 0` handle-reset above fires ONCE, on the first tick.
+        // The alpha fade + the `Next(maxValue3)` dust draws are the port's
+        // standing dust deviation (skipped, no draw) — only the counter
+        // rides, exactly the goblin/skeleton materialize convention.
+        if self.caster_counter < 60 {
+            self.caster_counter += 1;
         }
         self.update_dd2_goblin(world, player, dt);
     }
@@ -15652,7 +15844,21 @@ impl Npc {
         );
         if self.ai[0] == 0.0 {
             self.ai[3] = 0.0;
+            // W4-d80 — `NPC.cs:63362-63365`: the idle state resets the aura
+            // handle to Invalid.
+            self.local_ai[1] = tr_core::slot::SlotId::INVALID.to_float();
         } else {
+            // W4-d80 — `NPC.cs:63380-63388`: the aura pulse's ensure-or-
+            // follow. The C# fires it on the single `ai[0] == 1` charge
+            // tick; the port's folded walker holds `ai[0] != 0` while the
+            // aura lives, so the ensure gate makes the overlap identical
+            // and the re-play cadence after it dies is the fold (the
+            // census fold 2, research/64).
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::WitherAuraEnsureFollow,
+                x: cx,
+                y: cy,
+            });
             // The aura pulse counter (`localAI[0]` → the port's `caster_counter`).
             self.caster_counter += 1;
             // The ring dust (the 400-px random radius) — the port's

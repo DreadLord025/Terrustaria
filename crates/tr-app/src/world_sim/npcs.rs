@@ -1095,8 +1095,8 @@ pub(crate) fn update_worms(app: &mut App) {
     // the dig roars): the same drain as the per-NPC loop, after the
     // pass's draws on the same UpdateNPCs stream.
     for n in app.npcs.iter_mut() {
-        for req in n.wants_sound.drain(..) {
-            play_npc_sound_request(&mut app.audio, req, rng);
+        for req in std::mem::take(&mut n.wants_sound) {
+            play_npc_sound_request(&mut app.audio, n, req, rng);
         }
     }
 }
@@ -1126,6 +1126,7 @@ pub(crate) struct WormHeadCtx {
 /// style façades (`:93-99`) consume it on the audio-only stream.
 fn play_npc_sound_request(
     audio: &mut crate::audio::Audio,
+    n: &mut Npc,
     req: crate::npc::NpcSoundRequest,
     rng: &mut UnifiedRandom,
 ) {
@@ -1161,6 +1162,130 @@ fn play_npc_sound_request(
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
         }
+        // W4-d80 — the tracked-sound entity loops (research/64): the queue
+        // preserves the C#'s intra-tick play order; the drain applies each
+        // intent against the tracked pool and writes the `SlotId` floats
+        // back into `local_ai` (the C# `localAI` dance). ZERO gameplay
+        // draws — the variation/pitch picks ride the two audio-only
+        // statics (the census' RNG contract).
+        cue => apply_npc_tracked_cue(audio, n, cue, req.x, req.y),
+    }
+}
+
+/// W4-d80 — one drained tracked-sound intent (`NpcSoundCue`'s DD2 arms):
+/// the ensure/play/follow/stop dance against the pool, the handle floats
+/// written back into `Npc.local_ai`. The C# sites play at `base.Center`;
+/// the queue carries the machine's centre snapshot (the one-tick position
+/// lag is the batch convention, ANALYSIS — the follow arms re-point it
+/// every tick anyway). The `GetActiveSound` null test is the pool's
+/// versioned-slot lookup (`SlotVector.Has`): a reaped slot reads null and
+/// the ensure re-plays.
+fn apply_npc_tracked_cue(
+    audio: &mut crate::audio::Audio,
+    n: &mut Npc,
+    cue: crate::npc::NpcSoundCue,
+    x: f32,
+    y: f32,
+) {
+    use crate::npc::NpcSoundCue;
+    use crate::tracked_sound::TrackedStyle;
+    use tr_core::slot::SlotId;
+    let play = |audio: &mut crate::audio::Audio, name: &str| -> SlotId {
+        let Some(style) = TrackedStyle::by_name(name) else {
+            return SlotId::INVALID;
+        };
+        audio.play_tracked(style, x, y, Default::default())
+    };
+    let handle = |n: &Npc, i: usize| SlotId::from_float(n.local_ai[i]);
+    match cue {
+        NpcSoundCue::BetsyWindAttack => {
+            // `NPC.cs:61982` — the one-shot, no slot storage.
+            let _ = play(audio, "DD2_BetsyWindAttack");
+        }
+        NpcSoundCue::BetsyFlameBreath => {
+            // `NPC.cs:62028` — the dash tick's handle into `localAI[2]`.
+            n.local_ai[2] = play(audio, "DD2_BetsyFlameBreath").to_float();
+        }
+        NpcSoundCue::BetsyBreathFollow => {
+            // `NPC.cs:61993-61997` — the live handle follows the centre.
+            if let Some(s) = audio.get_active_sound_mut(handle(n, 2)) {
+                s.position = (x, y);
+            }
+        }
+        NpcSoundCue::BetsyBreathHandleDrop => {
+            // `NPC.cs:62302-62305` — the dead handle drops to Invalid.
+            if audio.get_active_sound(handle(n, 2)).is_none() {
+                n.local_ai[2] = SlotId::INVALID.to_float();
+            }
+        }
+        NpcSoundCue::PortalOpen => {
+            // `NPC.cs:40981-40982` — the open one-shot + the handle reset.
+            let _ = play(audio, "DD2_EtherianPortalOpen");
+            n.local_ai[3] = SlotId::INVALID.to_float();
+        }
+        NpcSoundCue::PortalIdleEnsure => {
+            // `NPC.cs:40984-40987` — the idle-loop ensure into `localAI[3]`.
+            if audio.get_active_sound(handle(n, 3)).is_none() {
+                n.local_ai[3] = play(audio, "DD2_EtherianPortalIdleLoop").to_float();
+            }
+        }
+        NpcSoundCue::PortalFadeVolume(scale) => {
+            // `NPC.cs:41029-41037` — the fade ensure, then `Volume = scale`.
+            if audio.get_active_sound(handle(n, 3)).is_none() {
+                n.local_ai[3] = play(audio, "DD2_EtherianPortalIdleLoop").to_float();
+            }
+            if let Some(s) = audio.get_active_sound_mut(handle(n, 3)) {
+                s.volume = scale;
+            }
+        }
+        NpcSoundCue::PortalStop => {
+            // `NPC.cs:41044` — `activeSound?.Stop()`.
+            if let Some(s) = audio.get_active_sound_mut(handle(n, 3)) {
+                s.stop();
+            }
+        }
+        NpcSoundCue::KoboldStopBoth => {
+            // `NPC.cs:63206-63207` — both handles stop on the explode entry.
+            for i in [0, 1] {
+                if let Some(s) = audio.get_active_sound_mut(handle(n, i)) {
+                    s.stop();
+                }
+            }
+        }
+        NpcSoundCue::KoboldExplosion => {
+            // `NPC.cs:63256` — the death-tick one-shot, no slot storage.
+            let _ = play(audio, "DD2_KoboldExplosion");
+        }
+        NpcSoundCue::KoboldIgniteEnsure => {
+            // `NPC.cs:63265-63268` — the `!IsValid` gate (NOT the null test).
+            if !handle(n, 0).is_valid() {
+                n.local_ai[0] = play(audio, "DD2_KoboldIgnite").to_float();
+            }
+        }
+        NpcSoundCue::KoboldLoopsPlay => {
+            // `NPC.cs:63272-63273` — the 30-tick ignite timer's pair.
+            n.local_ai[0] = play(audio, "DD2_KoboldIgniteLoop").to_float();
+            n.local_ai[1] = play(audio, "DD2_KoboldScreamChargeLoop").to_float();
+        }
+        NpcSoundCue::KoboldLoopsEnsureFollow => {
+            // `NPC.cs:63288-63307` — null → re-play, else follow (both).
+            for (i, name) in [(0, "DD2_KoboldIgniteLoop"), (1, "DD2_KoboldScreamChargeLoop")] {
+                if audio.get_active_sound(handle(n, i)).is_none() {
+                    n.local_ai[i] = play(audio, name).to_float();
+                } else if let Some(s) = audio.get_active_sound_mut(handle(n, i)) {
+                    s.position = (x, y);
+                }
+            }
+        }
+        NpcSoundCue::WitherAuraEnsureFollow => {
+            // `NPC.cs:63380-63388` — the aura pulse's ensure-or-follow.
+            if audio.get_active_sound(handle(n, 1)).is_none() {
+                n.local_ai[1] = play(audio, "DD2_WitherBeastAuraPulse").to_float();
+            } else if let Some(s) = audio.get_active_sound_mut(handle(n, 1)) {
+                s.position = (x, y);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -4548,8 +4673,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // precedes both (`NPC.cs:90323`). Each play gates
                     // attenuation BEFORE any case draw (the E21e
                     // precedent); the draws ride the UpdateNPCs stream.
-                    for req in n.wants_sound.drain(..) {
-                        play_npc_sound_request(audio, req, npcs_rng);
+                    for req in std::mem::take(&mut n.wants_sound) {
+                        play_npc_sound_request(audio, n, req, npcs_rng);
                     }
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
@@ -5042,9 +5167,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // same recorded deviation as the death cue above. Roars draw
         // nothing, so the stream choice is unobservable here.
         if npc.kind == NpcKind::EyeOfCthulhu {
+            // W4-d80 — the drain now takes the NPC for the tracked-cue
+            // write-backs; the roar is a legacy cue (no `local_ai` touch),
+            // so a scratch clone carries the signature.
+            let mut scratch = npc.clone();
             let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
             play_npc_sound_request(
                 &mut app.audio,
+                &mut scratch,
                 crate::npc::NpcSoundRequest {
                     cue: crate::npc::NpcSoundCue::Roar(0),
                     x: npc.x,
@@ -5055,6 +5185,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
             play_npc_sound_request(
                 &mut app.audio,
+                &mut scratch,
                 crate::npc::NpcSoundRequest {
                     cue: crate::npc::NpcSoundCue::Roar(0),
                     x: npc.x,
@@ -17421,15 +17552,16 @@ mod dw3_tests {
         use crate::npc::{NpcSoundCue, NpcSoundRequest};
         let mut audio = crate::audio::Audio::new(None);
         let mut rng = UnifiedRandom::new(7);
+        let mut n = Npc::new(NpcKind::Slime, 0.0, 0.0, 1, 0.0);
         let req = |cue| NpcSoundRequest { cue, x: 100.0, y: 100.0 };
         // The caster pair (`NPC.cs:20862`/`:20931`): two case-2 pitches.
-        play_npc_sound_request(&mut audio, req(NpcSoundCue::Item8), &mut rng);
-        play_npc_sound_request(&mut audio, req(NpcSoundCue::Item8), &mut rng);
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::Item8), &mut rng);
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::Item8), &mut rng);
         // The tower cry (`:39059`, the int overload): one case-4 pitch.
-        play_npc_sound_request(&mut audio, req(NpcSoundCue::NpcDeath(22)), &mut rng);
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::NpcDeath(22)), &mut rng);
         // The roar + the EoW trackable: nothing.
-        play_npc_sound_request(&mut audio, req(NpcSoundCue::Roar(0)), &mut rng);
-        play_npc_sound_request(&mut audio, req(NpcSoundCue::EowDig), &mut rng);
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::Roar(0)), &mut rng);
+        play_npc_sound_request(&mut audio, &mut n, req(NpcSoundCue::EowDig), &mut rng);
         let mut witness = UnifiedRandom::new(7);
         let _ = witness.next_range(-6, 7);
         let _ = witness.next_range(-6, 7);
@@ -17461,7 +17593,7 @@ mod dw3_tests {
             NpcSoundCue::DashRoar(-1),
             NpcSoundCue::EowDig,
         ] {
-            play_npc_sound_request(&mut audio, req(cue), &mut rng);
+            play_npc_sound_request(&mut audio, &mut n, req(cue), &mut rng);
         }
         assert_eq!(rng.peek(), peek, "the muted drain is draw-free");
     }
@@ -18276,3 +18408,264 @@ mod king_slime_audit_tests {
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
     }
 }
+/// W4-d80 — the tracked-sound entity loops (research/64): the DD2
+/// machines' ensure/play/follow/stop dance through the drain, the
+/// `local_ai` handle write-backs and the RNG contract (zero gameplay
+/// draws — the variation/pitch picks ride the two audio-only statics).
+/// WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_tracked_npc_tests {
+    use super::*;
+    use crate::npc::{NpcSoundCue, NpcSoundRequest};
+    use tr_core::slot::SlotId;
+
+    /// The headless rig: the tracked cues seeded silent so the plays
+    /// resolve their asset and add a slot (no output device).
+    fn rig() -> (crate::audio::Audio, Npc) {
+        let mut audio = crate::audio::Audio::new(None);
+        for cue in [
+            "dd2_betsy_wind_attack_0",
+            "dd2_betsy_wind_attack_1",
+            "dd2_betsy_wind_attack_2",
+            "dd2_betsy_flame_breath",
+            "dd2_etherian_portal_open",
+            "dd2_etherian_portal_idle_loop",
+            "dd2_kobold_explosion_0",
+            "dd2_kobold_explosion_1",
+            "dd2_kobold_explosion_2",
+            "dd2_kobold_ignite",
+            "dd2_kobold_ignite_loop",
+            "dd2_kobold_scream_charge_loop",
+            "dd2_wither_beast_aura_pulse_0",
+            "dd2_wither_beast_aura_pulse_1",
+        ] {
+            audio.test_seed_tracked_cue(cue);
+        }
+        let n = Npc::new(NpcKind::DD2Betsy, 96.0, 96.0, 1, 0.0);
+        (audio, n)
+    }
+
+    fn drain(audio: &mut crate::audio::Audio, n: &mut Npc, rng: &mut UnifiedRandom) {
+        for req in std::mem::take(&mut n.wants_sound) {
+            play_npc_sound_request(audio, n, req, rng);
+        }
+    }
+
+    /// The RNG contract (the census' core claim): every tracked intent —
+    /// plays, follows, stops, handle drops — leaves the gameplay stream
+    /// pristine; the two audio-only statics move only on the plays.
+    #[test]
+    fn w4_d80_the_tracked_drain_is_gameplay_draw_free() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let (style_before, pitch_before) = audio.test_audio_streams();
+        for cue in [
+            NpcSoundCue::BetsyWindAttack,
+            NpcSoundCue::BetsyFlameBreath,
+            NpcSoundCue::BetsyBreathFollow,
+            NpcSoundCue::BetsyBreathHandleDrop,
+            NpcSoundCue::PortalOpen,
+            NpcSoundCue::PortalIdleEnsure,
+            NpcSoundCue::PortalFadeVolume(0.5),
+            NpcSoundCue::PortalStop,
+            NpcSoundCue::KoboldStopBoth,
+            NpcSoundCue::KoboldExplosion,
+            NpcSoundCue::KoboldIgniteEnsure,
+            NpcSoundCue::KoboldLoopsPlay,
+            NpcSoundCue::KoboldLoopsEnsureFollow,
+            NpcSoundCue::WitherAuraEnsureFollow,
+        ] {
+            n.wants_sound.push(NpcSoundRequest { cue, x: 100.0, y: 100.0 });
+        }
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the tracked path");
+        let (style_after, pitch_after) = audio.test_audio_streams();
+        assert_ne!(style_after, style_before, "the variation picks moved");
+        assert_ne!(pitch_after, pitch_before, "the pitch rolls moved");
+    }
+
+    /// Betsy: the flame-breath handle lands in `local_ai[2]`, the follow
+    /// re-points it, the tail drops the dead handle to Invalid
+    /// (`NPC.cs:62028`/`:61993-61997`/`:62302-62305`).
+    #[test]
+    fn w4_d80_betsy_breath_handle_follow_and_drop() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyFlameBreath, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let id = SlotId::from_float(n.local_ai[2]);
+        assert!(id.is_active(), "the dash tick stored a live handle");
+        audio.test_keep_tracked_alive(id);
+        // The follow re-points the live handle.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyBreathFollow, x: 200.0, y: 300.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(audio.get_active_sound(id).unwrap().position, (200.0, 300.0));
+        // The tail keeps a LIVE handle (`GetActiveSound != null`).
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyBreathHandleDrop, x: 0.0, y: 0.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[2]), id, "the live handle stays");
+        // A dead handle (a stale, never-active id) drops to Invalid.
+        n.local_ai[2] = SlotId(12345).to_float();
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::BetsyBreathHandleDrop, x: 0.0, y: 0.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(
+            SlotId::from_float(n.local_ai[2]),
+            SlotId::INVALID,
+            "the dead handle drops (`:62304`)"
+        );
+    }
+
+    /// The portal: the open resets `local_ai[3]`, the idle ensure plays
+    /// once (the null test holds while live), the fade rides the scale
+    /// onto the Volume override, the death stops it
+    /// (`NPC.cs:40979-41044`).
+    #[test]
+    fn w4_d80_portal_open_ensure_fade_and_stop() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.kind = NpcKind::DD2LanePortal;
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalOpen, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[3]), SlotId::INVALID);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalIdleEnsure, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let id = SlotId::from_float(n.local_ai[3]);
+        assert!(id.is_active(), "the idle loop ensured");
+        audio.test_keep_tracked_alive(id);
+        // The ensure is a no-op while the slot lives.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalIdleEnsure, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[3]), id, "no re-play while live");
+        // The fade rides the scale onto the Volume override.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalFadeVolume(0.3), x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert!((audio.get_active_sound(id).unwrap().volume - 0.3).abs() < 1e-6);
+        // The death stop runs against the live slot (headless the sink is
+        // absent — the `?.Stop()` shape keeps the slot addressable until
+        // the pool reaps it).
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::PortalStop, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert!(audio.get_active_sound(id).is_some(), "the slot stays until reaped");
+    }
+
+    /// The kobold: the ignite ensure's `!IsValid` gate, the 30-tick loop
+    /// pair, the explode-entry stops and the death one-shot
+    /// (`NPC.cs:63263-63274`/`:63206-63207`/`:63256`).
+    #[test]
+    fn w4_d80_kobold_ignite_loops_and_explode() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.kind = NpcKind::DD2KoboldWalkerT2;
+        // The spawn-in reset (`:63200-63201`).
+        n.local_ai[0] = SlotId::INVALID.to_float();
+        n.local_ai[1] = SlotId::INVALID.to_float();
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldIgniteEnsure, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let ignite = SlotId::from_float(n.local_ai[0]);
+        assert!(ignite.is_active(), "the ignite one-shot ensured");
+        // The `!IsValid` gate holds while the handle is valid (even dead).
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldIgniteEnsure, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[0]), ignite, "no re-ensure while valid");
+        // The 30-tick pair overwrites both handles.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldLoopsPlay, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let loop0 = SlotId::from_float(n.local_ai[0]);
+        let loop1 = SlotId::from_float(n.local_ai[1]);
+        assert!(loop0.is_active() && loop1.is_active());
+        assert_ne!(loop0, ignite, "the ignite loop replaced the one-shot handle");
+        audio.test_keep_tracked_alive(loop0);
+        audio.test_keep_tracked_alive(loop1);
+        // The ensure-or-follow follows the live pair.
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldLoopsEnsureFollow, x: 400.0, y: 500.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(audio.get_active_sound(loop0).unwrap().position, (400.0, 500.0));
+        assert_eq!(audio.get_active_sound(loop1).unwrap().position, (400.0, 500.0));
+        // The explode-entry stops + the death one-shot leave the handles
+        // untouched (the C# stops, never resets, `:63206-63207`).
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldStopBoth, x: 100.0, y: 100.0,
+        });
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::KoboldExplosion, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[0]), loop0);
+        assert_eq!(SlotId::from_float(n.local_ai[1]), loop1);
+    }
+
+    /// The wither beast: the aura ensure plays once, the follow re-points
+    /// the live pulse (`NPC.cs:63380-63388`); the idle reset is the
+    /// machine's own `local_ai[1] = Invalid` write (`:63362-63365`).
+    #[test]
+    fn w4_d80_wither_aura_ensure_follow_and_reset() {
+        let (mut audio, mut n) = rig();
+        let mut rng = UnifiedRandom::new(7);
+        n.kind = NpcKind::DD2WitherBeast;
+        n.local_ai[1] = SlotId::INVALID.to_float();
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::WitherAuraEnsureFollow, x: 100.0, y: 100.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        let id = SlotId::from_float(n.local_ai[1]);
+        assert!(id.is_active(), "the aura pulse ensured");
+        audio.test_keep_tracked_alive(id);
+        n.wants_sound.push(NpcSoundRequest {
+            cue: NpcSoundCue::WitherAuraEnsureFollow, x: 600.0, y: 700.0,
+        });
+        drain(&mut audio, &mut n, &mut rng);
+        assert_eq!(SlotId::from_float(n.local_ai[1]), id, "no re-play while live");
+        assert_eq!(audio.get_active_sound(id).unwrap().position, (600.0, 700.0));
+    }
+
+    /// The bank rows: every W4-d80 NPC tracked cue resolves its style in
+    /// the generated table (the `by_name` lookup cannot silently miss).
+    #[test]
+    fn w4_d80_the_npc_tracked_styles_resolve() {
+        use crate::tracked_sound::TrackedStyle;
+        for (name, cue, variations) in [
+            ("DD2_BetsyWindAttack", "dd2_betsy_wind_attack", 3u32),
+            ("DD2_BetsyFlameBreath", "dd2_betsy_flame_breath", 1),
+            ("DD2_EtherianPortalOpen", "dd2_etherian_portal_open", 1),
+            ("DD2_EtherianPortalIdleLoop", "dd2_etherian_portal_idle_loop", 1),
+            ("DD2_KoboldExplosion", "dd2_kobold_explosion", 3),
+            ("DD2_KoboldIgnite", "dd2_kobold_ignite", 1),
+            ("DD2_KoboldIgniteLoop", "dd2_kobold_ignite_loop", 1),
+            ("DD2_KoboldScreamChargeLoop", "dd2_kobold_scream_charge_loop", 1),
+            ("DD2_WitherBeastAuraPulse", "dd2_wither_beast_aura_pulse", 2),
+        ] {
+            let style = TrackedStyle::by_name(name).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(style.cue, cue, "{name}'s asset");
+            assert_eq!(style.variations, variations, "{name}'s variations");
+            assert_eq!(style.max_tracked_instances, 0, "{name} is uncapped");
+        }
+    }
+}
+

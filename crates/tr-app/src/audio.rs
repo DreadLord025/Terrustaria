@@ -490,6 +490,26 @@ const TRACKED_CUES: &[&str] = &[
     // `SoundID.AchievementComplete` (`SoundID.cs:1597`) — the unlock toast's
     // cue (`AchievementInitializer.cs:731-734`, S1-E-26 wave A).
     "achievement_complete",
+    // W4-d80 — the DD2 tracked-sound entity loops (research/64): Betsy's
+    // wind attack (`SoundID.cs:1616`, 3 variations) + flame breath
+    // (`:1611`), the lane portal's open/idle (`:1668-1669`), the kobold's
+    // explode (`:1639`, 3) / ignite / ignite-loop / scream-charge-loop
+    // (`:1641-1643`) and the wither beast's aura pulse (`:1659`, 2). The
+    // variation assets ride the tracked plays' `random_sound` pick.
+    "dd2_betsy_wind_attack_0",
+    "dd2_betsy_wind_attack_1",
+    "dd2_betsy_wind_attack_2",
+    "dd2_betsy_flame_breath",
+    "dd2_etherian_portal_open",
+    "dd2_etherian_portal_idle_loop",
+    "dd2_kobold_explosion_0",
+    "dd2_kobold_explosion_1",
+    "dd2_kobold_explosion_2",
+    "dd2_kobold_ignite",
+    "dd2_kobold_ignite_loop",
+    "dd2_kobold_scream_charge_loop",
+    "dd2_wither_beast_aura_pulse_0",
+    "dd2_wither_beast_aura_pulse_1",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names
@@ -2330,6 +2350,37 @@ impl Audio {
         style: &crate::tracked_sound::TrackedStyle,
     ) -> Option<&crate::tracked_sound::ActiveSound> {
         self.tracked.find_active_sound(style)
+    }
+
+    /// The test seam: seed a silent decoded cue so the headless tracked
+    /// plays (`Audio::new(None)` loads no assets) resolve their asset and
+    /// add a slot — the W4-d80 ensure/follow witnesses exercise the pool
+    /// dance without an output device.
+    #[cfg(test)]
+    pub(crate) fn test_seed_tracked_cue(&mut self, cue: &'static str) {
+        self.cues.insert(cue, (1, 22050, vec![0i16; 2205]));
+    }
+
+    /// The test seam: keep the headless tracked slot addressable across
+    /// `update_tracked` (no sink — the pool would reap it otherwise).
+    #[cfg(test)]
+    pub(crate) fn test_keep_tracked_alive(&mut self, id: tr_core::slot::SlotId) {
+        if let Some(sound) = self.tracked.get_active_sound_mut(id) {
+            sound.set_test_keep_alive(true);
+        }
+    }
+
+    /// The test seam: the two audio-only static streams' state (the
+    /// W4-d80 RNG-contract witnesses assert the gameplay stream stays
+    /// pristine while these move).
+    #[cfg(test)]
+    pub(crate) fn test_audio_streams(
+        &self,
+    ) -> (
+        tr_core::unified_random::UnifiedRandom,
+        tr_core::unified_random::UnifiedRandom,
+    ) {
+        (self.style_random.clone(), self.sound_style_random.clone())
     }
 }
 
