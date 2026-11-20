@@ -6113,7 +6113,7 @@ impl Npc {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
             NpcKind::KingSlime => self.update_king_slime(world, player, rng),
-            NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
+            NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player, rng, dust, dust_ctx),
             NpcKind::ServantOfCthulhu => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
@@ -9354,7 +9354,14 @@ impl Npc {
     /// port has neither difficulty flag) — the classic path is verbatim,
     /// the skips carry the C# cites. The movement integrates directly
     /// (`noTileCollide` + `noGravity`).
-    fn update_eye_of_cthulhu(&mut self, world: &World, player: &Player) {
+    fn update_eye_of_cthulhu(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let dead = player.hp <= 0;
@@ -9410,6 +9417,12 @@ impl Npc {
         if self.rotation > num6 - num7 && self.rotation < num6 + num7 {
             self.rotation = num6;
         }
+        // W4-d52 — the ambient blood drip (`NPC.cs:20062-20067`, site
+        // 20064): the Next(5) gate runs EVERY tick, after the rotation
+        // snap and BEFORE the dawn check.
+        crate::eoc_fight::ambient_drip(
+            self.x, self.y, w as i32, h, self.vx, rng, dust, dust_ctx, world,
+        );
         // `NPC.cs:20071-20074`: `Main.IsItDay() | dead` — the climb-away,
         // `velocity.Y -= 0.04f; EncourageDespawn(10)`. The 10-tick window is
         // the C#'s `timeLeft` cap (`:7249-7256`); the sim ticks it down and
@@ -9469,6 +9482,20 @@ impl Npc {
                         let num20 = 5.0 / (num18 * num18 + num19 * num19).sqrt();
                         let (vx, vy) = (num18 * num20, num19 * num20);
                         self.wants_servant = Some((cx + vx * 10.0, cy + vy * 10.0, vx, vy));
+                        // W4-d52 — the burst's ten type-5 dusts
+                        // (`NPC.cs:20189-20192`, site 20191): AFTER the
+                        // NewNPC + the int PlaySound(3) (the port's
+                        // wants_servant drain resolves the spawn; the
+                        // sound is the E21g queue's — the burst draws
+                        // ride the UpdateNPCs stream in-step).
+                        crate::eoc_fight::servant_burst_dust(
+                            (cx + vx * 10.0, cy + vy * 10.0),
+                            (vx, vy),
+                            rng,
+                            dust,
+                            dust_ctx,
+                            world,
+                        );
                     }
                 }
             } else if self.ai[1] == 1.0 {
@@ -9558,17 +9585,29 @@ impl Npc {
                     } else {
                         // S1-E-21g — `:20364-20375`'s hand-off pair: the
                         // int `PlaySound(3, pos)` (Style defaults 1) then
-                        // the case-15 roar `PlaySound(15, pos, 0)`. The
-                        // gore/dust burst between them draws Main.rand
-                        // (`:20367-20373`) — SKIPPED (the port's gore/dust
-                        // deviation), so the two plays queue back to back
-                        // (ANALYSIS, wave G). Neither play's position is
-                        // the centre — `base.position` (`:20364`/`:20375`).
+                        // the case-15 roar `PlaySound(15, pos, 0)`.
+                        // W4-d52 wires the gore/dust burst BETWEEN them
+                        // (sites 20373/20379): the gore argument draws +
+                        // NewGore kicks (the visuals are d55's) then the
+                        // 20 type-5 dusts, all on the UpdateNPCs stream.
+                        // Neither play's position is the centre —
+                        // `base.position` (`:20364`/`:20375`).
                         self.wants_sound.push(NpcSoundRequest {
                             cue: NpcSoundCue::NpcHit(1),
                             x: self.x,
                             y: self.y,
                         });
+                        crate::eoc_fight::spin_handoff_burst(
+                            self.x,
+                            self.y,
+                            w as i32,
+                            h as i32,
+                            !dust.child_safety.disabled,
+                            rng,
+                            dust,
+                            dust_ctx,
+                            world,
+                        );
                         self.wants_sound.push(NpcSoundRequest {
                             cue: NpcSoundCue::Roar(0),
                             x: self.x,
@@ -9577,6 +9616,12 @@ impl Npc {
                     }
                 }
             }
+            // W4-d52 — the per-tick spin drip (`NPC.cs:20379`, site
+            // 20379): one type-5 dust every spin tick, AFTER the
+            // hand-off block, before the 0.98 damp.
+            crate::eoc_fight::spin_tick_dust(
+                self.x, self.y, w as i32, h as i32, rng, dust, dust_ctx, world,
+            );
             self.vx *= 0.98;
             self.vy *= 0.98;
             if self.vx.abs() < 0.1 {
