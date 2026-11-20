@@ -987,13 +987,13 @@ mod tests {
     }
 
     /// The budget gate BREAKS before any draw: with the Deerclops throttle
-    /// num2 = 104/3 = 34 → cap 34×0.5 + 34×0.1 = 20.4; a pool already over
-    /// it spends nothing (the `Main.snowDust` stand-in reads the live 76
-    /// population, the `SandStormCount` pattern).
+    /// at cloudAlpha 0, num2 = 156/3 = 52 → cap 52×0.5 + 52×0.1 = 31.2; a
+    /// pool already over it spends nothing (the `Main.snowDust` stand-in
+    /// reads the live 76 population, the `SandStormCount` pattern).
     #[test]
     fn w4_g11_snowing_breaks_on_the_live_76_budget() {
         let (mut app, mut env) = snow_rig(1);
-        env.deerclops_near = true; // num2 = 104/3 = 34 → cap 20.4
+        env.deerclops_near = true; // num2 = 156/3 = 52 → cap 31.2
         for slot in app.dust.slots_mut()[..40].iter_mut() {
             slot.active = true;
             slot.dust_type = 76;
