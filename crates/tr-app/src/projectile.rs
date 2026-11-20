@@ -167,6 +167,16 @@ fn hit_time_damage(kind: u16, damage: i32) -> i32 {
         CORRUPT_WHIP | CRIMSON_WHIP | THORN_WHIP => (damage as f64 * 0.6) as i32,
         // `:13464-13466` — the Meteor Whip.
         METEOR_WHIP => (damage as f64 * 0.7) as i32,
+        // `:13467-13469` — the Bone Whip.
+        BONE_WHIP => (damage as f64 * 0.9) as i32,
+        // `:13470-13472` — the Fire Whip (Firecracker).
+        FIRE_WHIP => (damage as f64 * 0.66) as i32,
+        // `:13473-13475` — the Cool Whip.
+        COOL_WHIP => (damage as f64 * 0.7) as i32,
+        // `:13476-13478` — the Sword Whip (Durendal).
+        SWORD_WHIP => (damage as f64 * 0.8) as i32,
+        // `:13479-13481` — the Flower Whip.
+        FLOWER_WHIP => (damage as f64 * 0.85) as i32,
         _ => damage,
     }
 }
@@ -44766,6 +44776,32 @@ mod w4_a4_hit_time_tests {
             (CRIMSON_WHIP, 60, 36),
             (THORN_WHIP, 60, 36),
             (METEOR_WHIP, 70, 49),
+        ] {
+            let mut pool = whip_slot(kind, 100);
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m1, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[0] = 0;
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
+        }
+    }
+
+    /// `:13467-13481` — the Bone Whip ×0.9, the Fire Whip (Firecracker)
+    /// ×0.66, the Cool Whip ×0.7, the Sword Whip (Durendal) ×0.8 and the
+    /// Flower Whip ×0.85. The Firecracker's 0.66 is the `(double)` form
+    /// (66.0 → 66), unlike the Glacier Fang's `(float)` 0.66f.
+    #[test]
+    fn w4_a4_the_bone_fire_cool_sword_flower_whips_decay() {
+        for (kind, m1, m2) in [
+            (BONE_WHIP, 90, 81),
+            (FIRE_WHIP, 66, 43),
+            (COOL_WHIP, 70, 49),
+            (SWORD_WHIP, 80, 64),
+            (FLOWER_WHIP, 85, 72),
         ] {
             let mut pool = whip_slot(kind, 100);
             let mut npc = victim();
