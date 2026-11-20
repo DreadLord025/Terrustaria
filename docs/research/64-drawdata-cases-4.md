@@ -1144,6 +1144,87 @@ Audit notes (R12):
   the port keeps them separate arms.
 - No R12 id has a second-switch row.
 
+### R13 — crafting tail, forge, void vault, bubble, mushroom statue, fake chest: 304-308, 354, 355, 499, 377, 463, 464, 491, 379, 349, 441 (15 ids, indices 180-194)
+
+C# `TileDrawing.cs:5305-5356`. Verbatim (:5316-5356):
+
+```csharp
+		case 377:
+			addFrY = Main.tileFrame[typeCache] * 38;
+			tileTop = 2;
+			break;
+		case 463:
+		case 464:
+			addFrY = Main.tileFrame[typeCache] * 72;
+			tileTop = 2;
+			break;
+		case 491:
+			tileTop = 2;
+			addFrX = 54;
+			break;
+		case 379:
+			addFrY = Main.tileFrame[typeCache] * 90;
+			break;
+		case 349:
+		{
+			tileTop = 2;
+			int num45 = tileFrameX % 36;
+			if (Animation.GetTemporaryFrame(y: y - tileFrameY % 54 / 18, x: x - num45 / 18, frameData: out var frameData4))
+			{
+				tileFrameX = (short)(36 * frameData4 + num45);
+			}
+			break;
+		}
+		case 441:
+		case 468:
+		{
+			if (tileFrameY == 18)
+			{
+				tileHeight = 18;
+			}
+			int num43 = tileFrameX % 36;
+			int num44 = tileFrameY % 38;
+			if (Animation.GetTemporaryFrame(x - num43 / 18, y - num44 / 18, out var frameData3))
+			{
+				tileFrameY = (short)(38 * frameData3 + num44);
+			}
+			break;
+		}
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 304-308, 354, 355, 499 | `addFrY = tileFrame * 54; tileTop = 2;` (R12's crafting body) | :5305-5315 | `drawdata.rs:632-635` | PORTED |
+| 377 | `tileFrame * 38`, top 2 (SharpeningStation) | :5316-5319 | :638-641 | PORTED |
+| 463 | `tileFrame * 72`, top 2 (DefendersForge) | :5320-5324 | :644-647; glow :6152-6156 → `cases_a.rs:362` (GlowMask 243, rect `(fx, fy+addFrY)`, `(127,127,127,0)`) | PORTED (glow unconsumed) |
+| 464 | shares the forge arm (NO glow row) | :5321 | :644 | PORTED |
+| 491 | top 2; `addFrX = 54;` (VoidVault) | :5325-5328 | :649-652 | PORTED |
+| 379 | `tileFrame * 90` (Bubble, no top change) | :5329-5331 | :654-656 | PORTED |
+| 349 | top 2 + the temp-frame X rewrite | :5332-5341 | static top 2 :659-661; full body `cases_b.rs:297-303` around `temporary_frame` (None) | PORTED (registry deviation) |
+| 441 | row-18 height gate + the temp-frame Y rewrite | :5342-5356 | static :665-669 (height gate ONLY); glow :6294-6311 → `cases_a.rs:461-470` | DEVIATION (probe scaffolding absent, see note) |
+
+Audit notes (R13):
+- **441/468's first-switch temp-frame probe is not scaffolded anywhere.** The
+  C# computes `num43 = fx % 36`, `num44 = fy % 38` and rewrites
+  `tileFrameY = 38 * frameData + num44` when `Animation.GetTemporaryFrame`
+  hits. The port's static arm carries only the height gate; unlike 349 (whose
+  full body wraps the always-None `temporary_frame`, `cases_b.rs:297-303`),
+  no 441/468 arm exists in `cases_b` — the module doc (:50-52) records
+  "441/468's first-switch half is static-only with the registry empty".
+  Behaviour TODAY is identical (the registry is unported, so the C# probe
+  always takes the false path too); when the temporary-animation registry
+  lands, 441/468 need the probe arm added beside 349/593/594. Recorded as the
+  R13 residual (draw-side, registry-gated).
+- 349's probe origin is sheet-relative with the 54-row grid
+  (`y - fy % 54 / 18`, `x - (fx % 36) / 18`) and the rewrite keeps the
+  within-block column (`36 * f + num45`) — the port matches term-for-term;
+  `temp_animation_cases_match_the_static_fallback` (`cases_b.rs:673`) pins
+  the empty-registry equality.
+- 463's glow rect adds `addFrY` (the 72-stride animation row) — the port's
+  `rect_anim_y` reads the post-first-switch `add_fr_y`, the C# order.
+- No other R13 id has a second-switch row (468's glow is audited at its
+  index 195 in R14).
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
