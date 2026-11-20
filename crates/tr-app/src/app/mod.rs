@@ -936,6 +936,18 @@ pub(crate) struct App {
     /// the mining damage book: per-cell accumulated damage, 100 breaks the
     /// tile (`Player.PickTile` `Player.cs:53769`), 60-tick TTL decay.
     pub(crate) hit_tile: tr_core::hit_tile::HitTile,
+    /// `Player.poundRelease` (`Player.cs:1502`): the hammer's pound latch.
+    /// Set on the use-button release (`Player.cs:45635-45638`), consumed by
+    /// `ItemCheck_UseMiningTools_TryPoundingTile` (`:45969-46311`) on the
+    /// next press; cleared when the cursor tile is not a hammer target
+    /// (`:45608-45615`) or the pound refuses (`:45976-45985`).
+    pub(crate) pound_release: bool,
+    /// `ItemCheck_UseMiningTools_ActuallyUseMiningTool`'s `out canHitWalls`
+    /// (`Player.cs:45650`) — the mining tick's wall-pass gate, read by the
+    /// `:45639-45643` wall pass in `update_editing`. True unless a matching
+    /// tool hit its tile (`:45656-45659`), the tile is `tileHammer`
+    /// (`:45667`) or the pound arm ran (`:45986`).
+    pub(crate) mining_can_hit_walls: bool,
     /// Coin purse value in copper coins.
     pub(crate) coins: u64,
     /// The 1000-slot projectile pool (`Main.projectile`, `projectile.rs`).
@@ -3710,6 +3722,8 @@ impl App {
             item_time: 0.0,
             tool_time: 0.0,
             hit_tile: tr_core::hit_tile::HitTile::new(),
+            pound_release: false,
+            mining_can_hit_walls: true,
             coins,
             projectiles: ProjectilePool::new(),
             tomb_falls: Vec::new(),
