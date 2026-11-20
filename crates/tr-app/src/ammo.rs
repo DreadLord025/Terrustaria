@@ -664,6 +664,16 @@ pub fn resolve_projectile(
         proj = 2;
         num += 2;
     }
+    // S1-P-i18 — `Player.cs:47107-47118`: the three high-velocity weapons
+    // (1254 Sniper Rifle, 1255 Venus Magnum, 1265 Uzi) convert the musket
+    // ball's default projectile 14 into the High Velocity Bullet 242. In the
+    // C# this runs in `ItemCheck_Shoot` AFTER `PickAmmo` returns; the port
+    // folds it into the resolver's tail (the pair resolution is the same
+    // `projToShoot` local). Only the 14 default converts — a special bullet's
+    // own `shoot` already replaced it (`:53491-53494`).
+    if (weapon == 1254 || weapon == 1255 || weapon == 1265) && proj == 14 {
+        proj = 242;
+    }
     // The stat fuse, `:53542-53568`.
     let mut speed = weapon_shoot_speed + ammo_shoot_speed;
     if flags.magic_quiver && is_arrow_ammo(use_ammo) {

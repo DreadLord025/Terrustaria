@@ -364,6 +364,76 @@ pub const BOMB_SKELETRON: u16 = 102;
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
 pub const MUSKET_BALL: u16 = 14;
+/// `ProjectileID.MeteorShot` (36, `ProjectileID.cs:626`) — the Meteor Shot
+/// bullet: the one-bounce aiStyle-1 shot (`Projectile.cs:1182-1197`, the
+/// bounce `HandleMovement` `:19278-19298`). S1-P-i18.
+pub const METEOR_SHOT: u16 = 36;
+/// `ProjectileID.CrystalBullet` (89, `ProjectileID.cs:732`) — the Crystal
+/// Bullet: on death splits into two CrystalShard 90 (`Projectile.cs:1715-1728`,
+/// the split `Kill()` `:75250-75268`). S1-P-i18.
+pub const CRYSTAL_BULLET: u16 = 89;
+/// `ProjectileID.CrystalShard` (90, `ProjectileID.cs:734`) — the Crystal
+/// Bullet's death shard: aiStyle 24, `tileCollide = false`
+/// (`Projectile.cs:1729-1742`). S1-P-i18.
+pub const CRYSTAL_SHARD: u16 = 90;
+/// `ProjectileID.CursedBullet` (104, `ProjectileID.cs:762`) — the Cursed
+/// Bullet: inflicts CursedInferno 39 (`Projectile.cs:1915-1928`, `StatusNPC`
+/// `:11665-11668`). S1-P-i18.
+pub const CURSED_BULLET: u16 = 104;
+/// `ProjectileID.ChlorophyteBullet` (207, `ProjectileID.cs:968`) — the
+/// Chlorophyte Bullet: the homing aiStyle-1 shot (`Projectile.cs:2948-2961`,
+/// the homing `AI_001` `:56778-56887`). S1-P-i18.
+pub const CHLOROPHYTE_BULLET: u16 = 207;
+/// `ProjectileID.BulletHighVelocity` (242, `ProjectileID.cs:1038`) — the
+/// High Velocity Bullet: the fast pierce-3 shot the Sniper Rifle / Venus
+/// Magnum / Uzi convert the musket ball into (`Projectile.cs:3238-3254`, the
+/// conversion `Player.cs:47107-47118`, the speed fade `AI_001`
+/// `:55660-55671`). S1-P-i18.
+pub const HIGH_VELOCITY_BULLET: u16 = 242;
+/// `ProjectileID.IchorBullet` (279, `ProjectileID.cs:1112`) — the Ichor
+/// Bullet: inflicts Ichor 69 (`Projectile.cs:3650-3663`, `StatusNPC`
+/// `:11669-11672`). S1-P-i18.
+pub const ICHOR_BULLET: u16 = 279;
+/// `ProjectileID.VenomBullet` (283, `ProjectileID.cs:1120`) — the Venom
+/// Bullet: inflicts Venom 70 + PotentAcid 395 and bursts on death
+/// (`Projectile.cs:3699-3712`, `StatusNPC` `:11673-11677`, the burst `Kill()`
+/// `:75911-75974`). S1-P-i18.
+pub const VENOM_BULLET: u16 = 283;
+/// `ProjectileID.PartyBullet` (284, `ProjectileID.cs:1122`) — the Party
+/// Bullet: the confetti death burst (`Projectile.cs:3713-3726`, `Kill()`
+/// `:75975-75999`). S1-P-i18.
+pub const PARTY_BULLET: u16 = 284;
+/// `ProjectileID.NanoBullet` (285, `ProjectileID.cs:1124`) — the Nano Bullet:
+/// inflicts Confused 31, bounces once and re-targets (`Projectile.cs:3727-3740`,
+/// `StatusNPC` `:11541-11551`, the bounce `HandleMovement` `:18563-18591`, the
+/// `PickAmmo` ×1.25 `Player.cs:53556-53559`). S1-P-i18.
+pub const NANO_BULLET: u16 = 285;
+/// `ProjectileID.ExplosiveBullet` (286, `ProjectileID.cs:1126`; the ITEM is
+/// `ItemID.ExplodingBullet`) — the Exploding Bullet: the idStatic-60 AoE death
+/// burst (`Projectile.cs:3741-3757`, `Kill()` `:76000-76034`). S1-P-i18.
+pub const EXPLODING_BULLET: u16 = 286;
+/// `ProjectileID.GoldenBullet` (287, `ProjectileID.cs:1128`) — the Golden
+/// Bullet: inflicts Midas 72 (`Projectile.cs:3758-3771`, `StatusNPC`
+/// `:11537-11540`). S1-P-i18.
+pub const GOLDEN_BULLET: u16 = 287;
+/// The special-bullet kind set S1-P-i18 owns (the aiStyle-1 arms in
+/// `projectile_special_bullets`). Disjoint from the ai001 A/B/C kind lists,
+/// the riders and the moon-lord set. 90 CrystalShard is aiStyle 24 (the
+/// existing `ai_crystal_storm` arm) and 638 MoonlordBullet is S1-D-4's — both
+/// excluded here.
+pub const SPECIAL_BULLET_KINDS: [u16; 11] = [
+    METEOR_SHOT,
+    CRYSTAL_BULLET,
+    CURSED_BULLET,
+    CHLOROPHYTE_BULLET,
+    HIGH_VELOCITY_BULLET,
+    ICHOR_BULLET,
+    VENOM_BULLET,
+    PARTY_BULLET,
+    NANO_BULLET,
+    EXPLODING_BULLET,
+    GOLDEN_BULLET,
+];
 /// `ProjectileID.PoisonDartBlowgun`-family dart the Dart Trap fires
 /// (`Projectile.cs:1823-1832` — the Wiring emission uses 98, `Wiring.cs:1785`).
 pub const TRAP_DART: u16 = 98;
@@ -1061,6 +1131,18 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
         ILLUMINANT_HOOK => 0.3,                // `:5631`
         CRYSTAL_SHARD_MELEE => 0.5,            // `:10644`
+        // S1-P-i18 — the special bullets' `SetDefaults` light amounts.
+        METEOR_SHOT => 0.6,                    // `:1189`
+        CRYSTAL_BULLET | CRYSTAL_SHARD => 0.5, // `:1722` / `:1736`
+        CURSED_BULLET => 0.5,                  // `:1922`
+        CHLOROPHYTE_BULLET => 0.5,             // `:2955`
+        HIGH_VELOCITY_BULLET => 0.5,           // `:3245`
+        ICHOR_BULLET => 0.5,                   // `:3657`
+        VENOM_BULLET => 0.5,                   // `:3706`
+        PARTY_BULLET => 0.5,                   // `:3720`
+        NANO_BULLET => 0.5,                    // `:3734`
+        EXPLODING_BULLET => 0.5,               // `:3747`
+        GOLDEN_BULLET => 0.5,                  // `:3765`
         _ => 0.0,
     }
 }
@@ -1449,6 +1531,54 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             BOMB_SKELETRON => (22.0, 22.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false, RESET_STATE),
+            // S1-P-i18 — the special bullets' `SetDefaults` rows. Every one is
+            // a 4×4 aiStyle-1 friendly ranged shot with `alpha = 255` and
+            // `timeLeft = 600`; the per-kind slice is the penetrate /
+            // extraUpdates / scale / immunity pair, cited per row.
+            // `Projectile.cs:1182-1197` — MeteorShot 36: penetrate 2,
+            // extraUpdates 1, scale 1.4, the LOCAL-immunity 7 pair (the
+            // one-bounce shot, `HandleMovement` `:19278-19298`).
+            METEOR_SHOT => (4.0, 4.0, 1, 2, 600, 1, true, false, false, (true, 7, false, -1, 255, 1.4)),
+            // `Projectile.cs:1715-1728` — CrystalBullet 89: penetrate 1,
+            // extraUpdates 1, scale 1.2 (the death split spawns the 90 shards).
+            CRYSTAL_BULLET => (4.0, 4.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
+            // `Projectile.cs:1729-1742` — CrystalShard 90: 6×6, aiStyle **24**,
+            // penetrate 1, alpha 50, scale 1.2, `tileCollide = false` (the
+            // existing `ai_crystal_storm` arm flies it).
+            CRYSTAL_SHARD => (6.0, 6.0, 24, 1, 600, 0, false, false, false, (false, -2, false, -1, 50, 1.2)),
+            // `Projectile.cs:1915-1928` — CursedBullet 104: penetrate 1,
+            // extraUpdates 2, scale 1.2 (CursedInferno on hit).
+            CURSED_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.2)),
+            // `Projectile.cs:2948-2961` — ChlorophyteBullet 207: penetrate 1,
+            // extraUpdates 2, scale 1.2 (the homing arm).
+            CHLOROPHYTE_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.2)),
+            // `Projectile.cs:3238-3254` — BulletHighVelocity 242: penetrate 3,
+            // extraUpdates 7, scale 1.18, `ignoreWater`, the LOCAL-immunity −1
+            // pair (the speed-fade pierce shot).
+            HIGH_VELOCITY_BULLET => (4.0, 4.0, 1, 3, 600, 7, true, false, false, (true, -1, false, -1, 255, 1.18)),
+            // `Projectile.cs:3650-3663` — IchorBullet 279: penetrate 1,
+            // extraUpdates 2, scale 1.25 (Ichor on hit).
+            ICHOR_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.25)),
+            // `Projectile.cs:3699-3712` — VenomBullet 283: penetrate 1,
+            // extraUpdates 2, scale 1.25 (Venom + PotentAcid on hit, the
+            // debuff-spread death burst).
+            VENOM_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.25)),
+            // `Projectile.cs:3713-3726` — PartyBullet 284: penetrate 1,
+            // extraUpdates 2, scale 1.3 (the confetti death burst).
+            PARTY_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.3)),
+            // `Projectile.cs:3727-3740` — NanoBullet 285: penetrate 1,
+            // extraUpdates 2, scale 1.3 (Confused on hit, the bounce +
+            // re-target, the `PickAmmo` ×1.25).
+            NANO_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.3)),
+            // `Projectile.cs:3741-3757` — ExplosiveBullet 286: penetrate 1,
+            // extraUpdates 2, scale 1.3, the ID-STATIC-immunity 60 pair +
+            // `appliesImmunityTimeOnSingleHits` (the AoE death burst). The
+            // override flag has no `ProjData` field; the burst arms it through
+            // the `max_penetrate` stand-in (see `exploding_bullet_burst`).
+            EXPLODING_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, true, 60, 255, 1.3)),
+            // `Projectile.cs:3758-3771` — GoldenBullet 287: penetrate 1,
+            // extraUpdates 2, scale 1.3 (Midas on hit).
+            GOLDEN_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.3)),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts —
             // `penetrate = -1`, `trap = true`, aiStyle 1. (The spiky ball 185
             // left this group in S1-D-5/S1-D-4c: its own arm below carries
@@ -2935,7 +3065,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
-            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL),
+            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
+            // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
+            // `ignoreWater = true`.
+            || kind == HIGH_VELOCITY_BULLET,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
