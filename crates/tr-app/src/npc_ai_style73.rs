@@ -285,6 +285,23 @@ pub fn turret_materialize_dust_plan(ai1: f32, center: (f32, f32)) -> TurretMater
     TurretMaterializeDust { spin_factor, spin: (rx * 1.0, ry * 0.4), placements }
 }
 
+/// The arm's `Lighting.AddLight` source for the draw-side feed
+/// (`app/frame/draw.rs`, the ForceBubble precedent — the sim's outcome
+/// light is discarded, the feed recomputes from state): while
+/// `ai[1] < 120` the fade light scales by `ai[1] / 60` (`:35167`, the
+/// post-increment value the arm reads), else the constant
+/// (0.1, 0.5, 0.7) (`:35175`). Both sit at `((int)Center.X / 16,
+/// (int)(Center.Y - 10) / 16)` — the C# truncates each quotient. RNG-free.
+pub fn turret_light(ai1: f32, center: (f32, f32)) -> (i32, i32, [f32; 3]) {
+    let rgb = if ai1 < 120.0 {
+        let f = ai1 / 60.0;
+        [0.1 * f, 0.5 * f, 0.7 * f]
+    } else {
+        [0.1, 0.5, 0.7]
+    };
+    (center.0 as i32 / 16, (center.1 - 10.0) as i32 / 16, rgb)
+}
+
 /// One fixed step of the aiStyle-73 arm (`NPC.cs:35102-35217`), in C#
 /// order. `npc_type` is the vanilla id (387) until the roster kind
 /// lands; `just_hit` is `this.justHit` for this tick (the port's `Npc`
@@ -843,6 +860,28 @@ mod tests {
         // multiplies vector124 by -1 at the END of each pair).
         let p2 = plan.placements[2];
         assert!((p2.1 - (1000.0 - plan.spin.1 * 0.3 - 5.0)).abs() < 0.001);
+    }
+
+    /// `NPC.cs:35167`/`:35175` — the draw-side light feed: the fade
+    /// scales by ai[1]/60 below 120, then the constant (0.1, 0.5, 0.7);
+    /// both truncate EACH quotient ((int)Center.X / 16, not (int)(X/16)).
+    #[test]
+    fn the_light_feed_fades_then_pins_the_constant() {
+        // Fade at ai[1] = 30: factor 0.5; centre (1000.9, 1000.9) →
+        // (int)1000.9/16 = 62, (int)990.9/16 = 61.
+        let (x, y, rgb) = turret_light(30.0, (1000.9, 1000.9));
+        assert_eq!((x, y), (62, 61));
+        assert_eq!(rgb, [0.1 * 0.5, 0.5 * 0.5, 0.7 * 0.5]);
+        // The last fade tick (119) still scales; 120 pins the constant.
+        let f = 119.0f32 / 60.0;
+        let (_, _, rgb) = turret_light(119.0, (0.0, 0.0));
+        assert_eq!(rgb, [0.1 * f, 0.5 * f, 0.7 * f]);
+        let (x, y, rgb) = turret_light(120.0, (32.9, 26.5));
+        assert_eq!((x, y, rgb), (2, 1, [0.1, 0.5, 0.7]), ":35175 solid");
+        // Negative-centre truncation toward zero: (int)(-0.5) = 0 and
+        // (int)(-10.5)/16 = -10/16 = 0 (C# integer division truncates).
+        let (x, y, _) = turret_light(121.0, (-0.5, -0.5));
+        assert_eq!((x, y), (0, 0));
     }
 
     /// The RNG-by-construction witness: every non-shot path (the fade,

@@ -30674,10 +30674,36 @@ arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
 MartianTurret 387 (`SetDefaults` `:13922-13934`, `ID/NPCID.cs:11451`),
 the Martian Madness gun emplacement. CODE-ONLY MODE: no
 cargo/rustc/rustfmt invoked; the 14 witness tests are written, not run.
-Wiring deferred (the ForceBubble `npc_ai_style72.rs` / BlazingWheel
-precedent): no `NpcKind::MartianTurret` exists (the saucer's
-`MartianSaucerTurret` 393 is a different kind), so the style axis has no
-arm to claim; only the one-line `mod npc_ai_style73;` seam landed.
+
+**WIRED by W4-c11** (`task/W4-c11-style73-martian-turret`): the roster
+already carries `NpcKind::MartianTurret` (S1-F-13d, wire id 214), so the
+axis' 73 arm claims the style (`npc.rs::ai_073_martian_turret`): the
+session candidate, netMode 0, classic difficulty 1.0, ticker 0, the
+one-tick `just_hit` flag (the style-55 convention). The shot queues on
+`wants_hostile_shot` and the sim's drain spawns the 435
+`MARTIAN_TURRET_BOLT` row (`projectile/data.rs` — 10x10, aiStyle 1,
+hostile, `ignoreWater` overlay `Projectile.cs:5062`, `projFrames` 4
+`Main.cs:8532`; the stock penetrate 1 / tileCollide / timeLeft 3600).
+The tail: `body_gravity` (the depth-scaled 0.3, cap 10 — 387 writes no
+noGravity/noTileCollide) + the blocked-axis collision fold (the spore
+family's `:92538-92544` shape); the fade's `frameCounter` pin lands in
+the adapter (the field is private to npc.rs). The hold-still kind arm
+retires to `unreachable!`; FindFrame case 387 delegates to
+`turret_find_frame` (the BlazingWheel precedent). The light is the
+draw-side feed (`app/frame/draw.rs`, `turret_light` — the ForceBubble
+precedent). Two wiring witnesses: the axis run (fade → latch → the
+60-tick shot at classic 35 from the planted muzzle) + the retirement
+guard.
+
+**Dust deferral (unchanged by the wiring)**: the fade's eight
+`Dust.NewDust` calls per tick (`:35157`/`:35162`) remain the wholesale
+count-only skip (`turret_materialize_dust_plan` carries the geometry).
+The port's dust pool HAS landed since the module round (S1-E-2/S1-E-3),
+but restoring the ring must draw the `Dust.NewDust` internals
+(`Dust.cs:170-175`/`:190`) in C# order on the UpdateNPCs stream — a
+deliberate deferral, not an oversight: adding the draws now would move
+every stream downstream of a fading turret. The wiring wave that ports
+the ring owns that A/B.
 
 - **Census — exactly one NPC kind**: the whole-tree `aiStyle = 73;`
   census returns two hits: `NPC.cs:13926` (the `type == 387` branch) and
