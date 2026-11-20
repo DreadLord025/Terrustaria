@@ -5,11 +5,11 @@
 //!
 //! The static layer in `drawdata.rs` already carries every case's
 //! unconditional part; this module completes the engine-driven remainder for
-//! 16 case ids (disjoint from slice A `drawdata_cases_a.rs` — the merge
+//! 18 case ids (disjoint from slice A `drawdata_cases_a.rs` — the merge
 //! dedupe: A owns 518/529/530's first-switch world probes and 441/468's
-//! second-switch glow rows, so B skips those five ids — and from wave B's
-//! animator `drawdata_anim.rs` and wave C's cages/chests
-//! `drawdata_furniture.rs`):
+//! SECOND-switch glow rows; B owns 441/468's FIRST-switch temp-frame probe
+//! (W4-g34) — and from wave B's animator `drawdata_anim.rs` and wave C's
+//! cages/chests `drawdata_furniture.rs`):
 //!
 //! - `719` RainbowCloud      — `Main.GlobalTimeWrappedHourly` (TileDrawing.cs:4562-4570)
 //! - `579` RockGolemHead     — `Main.LocalPlayer.Center.X` (TileDrawing.cs:5104-5130)
@@ -24,9 +24,11 @@
 //! - `428` WeightedPressurePlate — `PressurePlateHelper.PressurePlatesPressed`
 //!   (TileDrawing.cs:5605-5611)
 //! - `455` PartyMonolith     — `BirthdayParty.PartyIsUp` (TileDrawing.cs:5397-5408)
-//! - `349` MushroomStatue, `593|594` Volcanoes —
-//!   the `Animation.GetTemporaryFrame` probe (TileDrawing.cs:5332-5341,
-//!   5445-5487; Animation.cs:186-196).
+//! - `349` MushroomStatue, `593|594` Volcanoes, `441|468` FakeContainers —
+//!   the `Animation.GetTemporaryFrame` probe (TileDrawing.cs:5332-5356,
+//!   5445-5487; Animation.cs:186-196). 441/468's first-switch probe is
+//!   scaffolded here (W4-g34, d63/d64 R13); slice A owns their second-switch
+//!   glow rows.
 //!
 //! Seam: [`case_draw_data`] takes the static table's output as `base` and
 //! returns `Some` only for the kinds above — the renderer
@@ -47,9 +49,10 @@
 //! - `Animation.GetTemporaryFrame` reads `Animation._temporaryAnimations`
 //!   (Animation.cs:186-196); the port has no temporary-animation registry
 //!   yet, so [`temporary_frame`] returns `None` — the C# `false` path. The
-//!   349/593/594 bodies are ported in full around that probe (441/468's
-//!   first-switch half is static-only with the registry empty — slice A
-//!   owns those ids' second-switch glow rows).
+//!   349/593/594 AND 441/468 bodies are ported in full around that probe
+//!   (W4-g34: 441/468's `38 * f + num44` `frame_y_override` is scaffolded,
+//!   behaviour-neutral while the registry is empty; slice A owns those ids'
+//!   second-switch glow rows).
 //! - `579` with no local player (`player_center_x = None`, menu frames)
 //!   takes `flag2 = false`; in-game the caller always passes the player's
 //!   center (`Main.LocalPlayer` always exists in C#).
@@ -301,6 +304,22 @@ pub fn case_draw_data(
                 data.frame_x_override = Some((36 * f + n45) as i16);
             }
         }
+        // `case 441 / 468` — FakeContainers: the static half (height 18 on
+        // `tileFrameY == 18`) rides `drawdata.rs`; this is the first-switch
+        // `tileFrameY` rewrite (`TileDrawing.cs:5342-5356`), the same
+        // `GetTemporaryFrame` probe pattern as 349. W4-g34 deviation fix
+        // (d63 summary / d64 R13): the probe arm was unscaffolded — with the
+        // registry empty it is behaviour-neutral (the `None` path keeps the
+        // static arm), and when the registry lands the `38 * f + num44`
+        // override is already in place. Slice A still owns these ids'
+        // SECOND-switch glow rows (:6294-6311).
+        441 | 468 => {
+            let n43 = fx % 36;
+            let n44 = fy % 38;
+            if let Some(f) = temporary_frame(x - n43 / 18, y - n44 / 18) {
+                data.frame_y_override = Some((38 * f + n44) as i16);
+            }
+        }
         // `case 593` — VolcanoSmall (TileDrawing.cs:5445-5465).
         593 => {
             if fx >= 18 {
@@ -337,11 +356,12 @@ pub fn case_draw_data(
 
 /// The case ids slice B owns (the coverage test pins the dispatch). Kept
 /// visible outside tests so the sibling slices can check disjointness.
-/// The merge dedupe removed A's five ids (518/529/530 first-switch probes,
-/// 441/468 second-switch glow rows) — `drawdata_cases_a.rs` owns them.
+/// The merge dedupe removed A's three first-switch world-probe ids
+/// (518/529/530); 441/468's FIRST-switch temp-frame probe rides B (W4-g34),
+/// their SECOND-switch glow rows stay A's.
 #[allow(dead_code)]
-pub const OWNED_KINDS: [u16; 16] = [
-    349, 428, 453, 455, 456, 485, 489, 490, 493, 507, 508, 541, 579, 593, 594, 719,
+pub const OWNED_KINDS: [u16; 18] = [
+    349, 428, 441, 453, 455, 456, 468, 485, 489, 490, 493, 507, 508, 541, 579, 593, 594, 719,
 ];
 
 #[cfg(test)]
@@ -671,15 +691,16 @@ mod tests {
 
     #[test]
     fn temp_animation_cases_match_the_static_fallback() {
-        // 349/593/594: the Animation registry is empty (the C#
-        // `GetTemporaryFrame == false` path), so the full bodies reproduce
-        // the static arms byte-for-byte at any tile_frame. (441/468 moved
-        // to slice A in the merge dedupe.)
+        // 349/593/594 + 441/468 (W4-g34): the Animation registry is empty
+        // (the C# `GetTemporaryFrame == false` path), so the full bodies
+        // reproduce the static arms byte-for-byte at any tile_frame. The
+        // 441/468 first-switch probe is now scaffolded here (d63/d64 R13);
+        // their second-switch glow rows stay slice A's.
         let w = world();
         let wind = wind();
         let wiring = Wiring::new();
         let e = env(&w, &wind, &wiring, CaseInputs::default());
-        for kind in [349u16, 593, 594] {
+        for kind in [349u16, 593, 594, 441, 468] {
             for (fx, fy) in [(0i16, 0i16), (18, 18), (36, 36), (54, 72)] {
                 for tf in [0, 2, 7] {
                     assert_eq!(

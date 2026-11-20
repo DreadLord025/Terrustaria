@@ -664,9 +664,13 @@ pub(crate) fn draw_tiles(
                 // `Main.tileFrame[kind]` (`TileDrawing.cs:4533`), fed from
                 // the wired animator (S1-G-1f, `drawdata_anim.rs`).
                 let dd = if active && marker.is_none() && !is_tree {
-                    let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
-                        t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
-                    });
+                    // W4-g34 deviation fix (d61/d64 R3): case 4's probe is the
+                    // FULL `WorldGen.SolidTile(x, y - 1)` (`WorldGen.cs:70111-
+                    // 70132`) — active + solid + not-solid-top + not-half-brick
+                    // + slope 0 + not-inactive, null-true — not the old
+                    // three-clause subset. The exact predicate already lives
+                    // in `drawdata_cases_a::solid_tile` (the 518 probe).
+                    let solid_above = crate::drawdata_cases_a::solid_tile(world, tx, ty - 1);
                     // The animator arrays are `[TileID.Count]`
                     // (`Main.cs:66976-66977`); an out-of-range kind keeps the
                     // vanilla t=0 row (the `solid` probe below bounds-checks
