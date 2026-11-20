@@ -151,6 +151,16 @@ pub(crate) struct App {
     pub(crate) bg_alpha_front: [f32; 16],
     /// `Main.bgAlphaFarBackLayer` (16 slots): per far-back (mountain) layer alpha.
     pub(crate) bg_alpha_far: [f32; 16],
+    /// `Main.treeMntBGSet1..4` as the animation leaves them: the live hill
+    /// ids of the four forest sets (`setBG` seeds them,
+    /// `DoUpdate_AnimateBackgrounds` steps the animated families in place).
+    pub(crate) forest_hills: [[i32; 2]; 4],
+    /// `Main.bgFrame`/`bgFrameCounter` for the four forest slots
+    /// (`DoUpdate_AnimateBackgrounds_UpdateForest`, `Main.cs:19658`).
+    pub(crate) forest_bg_anim: world_sim::bg_animation::ForestBgAnimation,
+    /// `WorldGen.BackgroundsCache` (`BackgroundChangeFlashInfo.cs`): the
+    /// style-change flash the `DrawChangeOverlay` passes read.
+    pub(crate) bg_flash: world_sim::bg_animation::BackgroundChangeFlash,
     pub(crate) stars: Vec<StarSprite>,
     pub(crate) player_assets: PlayerAssets,
     pub(crate) player: Option<Player>,
@@ -1556,11 +1566,9 @@ impl App {
     /// `Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`): the surface
     /// background style wanted by the biome around the scene centre.
     ///
-    /// Two deviations, both because the style they would select is not ported:
-    /// the forest sub-styles 10/11/12 need `Main.treeX[]` and the three extra
-    /// tree sets (only tree set 1 / `Background_50..52` is packed), and the
-    /// desert-variant styles 5/13/14 need `Main.desertBackgroundSet`. The forest
-    /// branch therefore stays 0 and the desert branch stays 2.
+    /// One deviation: the desert-variant styles 5/13/14 need
+    /// `Main.desertBackgroundSet`, so the desert branch stays 2. The forest
+    /// branch resolves 10/11/12 through `Main.treeX` (W4-g70).
     pub(crate) fn preferred_bg_style(&self) -> i32 {
         // `Main.SceneMetrics.Zone*`, read in the C#'s order.
         let m = &self.scene_metrics;
@@ -1601,7 +1609,23 @@ impl App {
         } else if m.zone_snow {
             7
         } else {
-            0
+            // `Main.cs:64249-64253`: the screen-centre column picks the
+            // forest set — `num2 = (screenPosition.X + screenWidth / 2) / 16`.
+            // The port's `camera` is the view centre, so `camera.x / 16` is
+            // that column (`screenPosition.X + screenWidth / 2 == camera.x`).
+            let num2 = (self.camera.x / TILE_PX) as i32;
+            let [x0, x1, x2] = self.world.tree_x;
+            if num2 >= x0 {
+                if num2 < x1 {
+                    10
+                } else if num2 >= x2 {
+                    12
+                } else {
+                    11
+                }
+            } else {
+                0
+            }
         }
     }
 
@@ -1629,6 +1653,19 @@ impl App {
             self.world.hallow_bg_style as i32,
             speed,
         );
+    }
+
+    /// `Main.DoUpdate_AnimateBackgrounds` (`Main.cs:19652-19655`, called at
+    /// `:17052`): step the four forest sets' animated hill families once per
+    /// world update, in slot order.
+    pub(crate) fn update_animate_backgrounds(&mut self) {
+        self.forest_bg_anim.update(&mut self.forest_hills);
+    }
+
+    /// `WorldGen.BackgroundsCache.UpdateFlashValues` (`Main.cs:17218`): the
+    /// 0.05-per-update decay of the style-change flashes.
+    pub(crate) fn update_bg_flash_values(&mut self) {
+        self.bg_flash.update_flash_values();
     }
 
     /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
@@ -3581,6 +3618,9 @@ impl App {
                 a[0] = 1.0;
                 a
             },
+            forest_hills: world_sim::bg_animation::hills_from_styles(&world.forest_bg_styles),
+            forest_bg_anim: world_sim::bg_animation::ForestBgAnimation::default(),
+            bg_flash: world_sim::bg_animation::BackgroundChangeFlash::default(),
             stars,
             player_assets,
             player,
@@ -4076,6 +4116,9 @@ impl App {
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
         app.wiring.seed_rand(world_seed | 1);
+        // `WorldGen.cs:7944`: the load-time `BackgroundsCache.UpdateCache`
+        // snapshot — a non-zero loaded style latches its change flash.
+        app.bg_flash.update_cache(&app.world);
         // `SetOngoingToTemps:169-172`: the sandstorm snapshot the load read out
         // of the flags block (`_tempSandstorm*`, `LoadWorldFlags:2277-2283`)
         // restores the event's live state, exactly as the rain triple above
@@ -5859,5 +5902,46 @@ mod s1_p_i44_tests {
         app.update_shop_close();
         assert!(app.shop_npc.is_none());
         assert!(app.shop_stock.is_empty());
+    }
+}
+
+/// W4-g70: `GetPreferredBGStyleForPlayer`'s forest arm (`Main.cs:64247-64254`)
+/// resolves the screen-centre column against `Main.treeX`. Written, not run.
+#[cfg(test)]
+mod w4_g70_forest_style_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    #[test]
+    fn the_tree_x_dividers_pick_the_forest_set() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.tree_x = [100, 200, 300];
+        // The port's camera is the view centre: `camera.x / 16` is the C#'s
+        // `(screenPosition.X + screenWidth / 2) / 16` column.
+        for (col, want) in [(99, 0), (100, 10), (199, 10), (200, 11), (299, 11), (300, 12), (900, 12)] {
+            app.camera = Vec2::new(col as f32 * TILE_PX, 0.0);
+            assert_eq!(app.preferred_bg_style(), want, "column {col}");
+        }
+    }
+
+    #[test]
+    fn the_reset_dividers_keep_every_column_on_set_zero() {
+        // `WorldGen.Reset` (`WorldGen.cs:7125-7127`): all three at maxTilesX.
+        let mut app = flow_app(None, vec![], vec![]);
+        let width = app.world.width;
+        assert_eq!(app.world.tree_x, [width, width, width]);
+        app.camera = Vec2::new((width - 1) as f32 * TILE_PX, 0.0);
+        assert_eq!(app.preferred_bg_style(), 0);
+    }
+
+    #[test]
+    fn a_biome_zone_wins_over_the_forest_dividers() {
+        // The zone ladder runs first (`Main.cs:64215-64246`): a snow column
+        // past treeX[2] still resolves 7, not 12.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.tree_x = [100, 200, 300];
+        app.camera = Vec2::new(900.0 * TILE_PX, 0.0);
+        app.scene_metrics.zone_snow = true;
+        assert_eq!(app.preferred_bg_style(), 7);
     }
 }

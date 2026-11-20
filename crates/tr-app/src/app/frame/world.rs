@@ -443,6 +443,10 @@ impl App {
     /// `Rain.MakeRain`, `:17228-17231`'s dayRate walks) — frozen while the
     /// pause gate holds, live on stepper-blocked frames.
     fn weather_cluster(&mut self, dt: f32, screen: Vec2) {
+                    // `WorldGen.BackgroundsCache.UpdateFlashValues`
+                    // (`Main.cs:17218`): the style-change flash decay, ahead
+                    // of the `Rain.MakeRain` slot (`:17220`).
+                    self.update_bg_flash_values();
                     self.phase("weather");
                     crate::world_sim::weather::update_world_tick(self, dt);
                     self.phase("rain");
@@ -621,6 +625,14 @@ impl App {
     self.gfx_quality = gfx;
     }
 
+    /// `Main.DoUpdate_AnimateBackgrounds` (`Main.cs:17052`): the four
+    /// forest-set hill animators, right before the gfx-quality budgets
+    /// (`:17056`) — outside the pause gate, like the C#.
+    fn animate_backgrounds_phase(&mut self) {
+    self.phase("animate_backgrounds");
+    self.update_animate_backgrounds();
+    }
+
     /// The in-world branch, phase by phase in the C#'s order — the
     /// orchestrator the S1-B-1 order pin walks. Every gate arm is the
     /// branch's own, unchanged.
@@ -647,6 +659,7 @@ impl App {
         // cluster, right after `DoUpdate_AnimateWalls` (`:17149`); the
         // waterfall pass above stands in for the walls animator's slot.
         self.animate_tiles_phase(dt);
+        self.animate_backgrounds_phase();
         if !paused {
             self.weather_cluster(dt, screen);
         }
