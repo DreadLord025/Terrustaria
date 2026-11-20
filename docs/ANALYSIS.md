@@ -34285,6 +34285,41 @@ against the `wants_mark_spawn` precedent and the wave-C drain order, and
 the four new bank assets were confirmed on disk. The 7 new `s1_e_21h_*`
 witness tests (5 pool/arm, 1 audio façade, 1 pass-stream) are WRITTEN,
 NOT RUN — **no compiler invoked**.
+
+### Part 1 (d75, 2026-11-20, code-only mode) — the first-tick latch batch
+
+`task/W4-d75-proj-sounds-1`, commit 1 of 2. **11 sites**, every one a
+first-tick/state latch on a ported arm, queued draw-free on the existing
+`wants_sound` → `pending_proj_sounds` seam (no new RNG draw in any arm —
+the latch cues' case-2 pitch rolls at the drain, the standing deviation):
+
+| C# site | cue | Rust seam |
+| --- | --- | --- |
+| `:23281`/`:23326` (aiStyle 2, kinds 162/281) | Item14 | `ai_style2`'s `ai[1]` latch |
+| `:23371` (aiStyle 2, kind 240) | Item14 | `ai_dutchman_shell`'s `ai[1]` latch |
+| `:23601` (aiStyle 2, kind 300) | Item1 | `ai_style2`'s `ai[0] == 0` gate (BEFORE the bump) |
+| `:23704` (aiStyle 4) | Item8 at Center | `ai_style4`'s `localAI[0]` latch (the 494 Item101 variant unported) |
+| `:24872` (aiStyle 14, kind 346) | Item1 | `projectile_ai_frostmoon::ornament`'s latch |
+| `:25372` (aiStyle 18, kind 44) | Item8 | `ai_demon_scythe`'s `ai[1]` latch (the 45 scythe never plays) |
+| `:33699` (aiStyle 88 ritual, 578/579) | Item117 | `ai_vortex_ritual`'s `localAI[1]` latch (`flag53` unconditional over the rows) |
+| `:33790` (ritual charge at `ai[0] == 90`) | Item113 | the same arm's 90th-tick payload (the `:33794` else-Item8 arm names only unported kinds) |
+| `:37274` (`AI_053_FrostHydra` placement) | Item46 | the aiStyle-53 dispatch's `localAI[0]` latch |
+| `:37864` (gem staff first tick) | style 205 (`StackableItem8ForRubyStaff`) | `ai_gem_staff`'s `soundDelay = -1` latch (the 1120 Item72 variant unported) |
+
+**The aiStyle-48 correction.** The in-flight draft gated `:28231`'s Item8
+on `HEAT_RAY` (260) — a misread: the C# arm is `type == 290`
+(`ShadowBeamHostile`, `ProjectileID.cs:1134`), an UNPORTED kind. The site
+is deferred; the ported 255/260/294 rows queue nothing (witness
+`s1_e_21h_d75_the_magnet_bolt_rows_play_nothing_on_tick_one`).
+
+Bank: `Item_46`/`Item_205` join `SFX_CUES` (both `.xnb` verified on disk);
+every other style the batch names was already registered.
+
+Witnesses (8 new `s1_e_21h_d75_*`, written NOT run): the style-2 latch
+family (4 kinds), the Vilethorn Center cue, the sickle latch, the
+magnet-bolt negative, the ritual 117/113 pair, the gem-staff 205 latch,
+the ornament latch (draw-free assertion) and the pool-level sentry
+placement drain (one cue, then silence).
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
 Audit source: `docs/research/53-audit-pillars.md` (branch
