@@ -1203,7 +1203,8 @@ mod tests {
         app.inventory[0] = slot(188, 3);
         app.selected = 0;
         app.player.as_mut().unwrap().hp = 50;
-        assert!(use_potion_item(&mut app, app.inventory[0]));
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.hp, 100);
         assert_eq!(p.potion_delay, 3600);
@@ -1230,7 +1231,8 @@ mod tests {
         app.selected = 0;
         app.player.as_mut().unwrap().hp = 50;
         app.player.as_mut().unwrap().potion_delay = 100;
-        assert!(!use_potion_item(&mut app, app.inventory[0]));
+        let held = app.inventory[0];
+        assert!(!use_potion_item(&mut app, held));
         assert_eq!(app.player.as_ref().unwrap().hp, 50);
         assert_eq!(app.inventory[0].count, 3, "no consume on a refused use");
         assert_eq!(
@@ -1248,7 +1250,8 @@ mod tests {
         app.inventory[0] = slot(292, 2);
         app.selected = 0;
         app.player.as_mut().unwrap().potion_delay = 3000;
-        assert!(use_potion_item(&mut app, app.inventory[0]));
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
         let p = app.player.as_ref().unwrap();
         let i = p.buffs.find_buff_index(5).expect("Ironskin granted");
         assert_eq!(p.buffs.buff_time[i], 28800, "the row's buffTime verbatim");
@@ -1264,7 +1267,8 @@ mod tests {
         let p = app.player.as_mut().unwrap();
         p.mana = 0;
         p.mana_max = 200;
-        assert!(use_potion_item(&mut app, app.inventory[0]));
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
         let p = app.player.as_mut().unwrap();
         assert_eq!(p.mana, 50);
         assert!(p.buffs.find_buff_index(MANA_SICKNESS).is_some());
@@ -1279,7 +1283,8 @@ mod tests {
         app.inventory[0] = slot(188, 1);
         app.selected = 0;
         app.player.as_mut().unwrap().hp = 50;
-        assert!(use_potion_item(&mut app, app.inventory[0]));
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
         assert_eq!(app.inventory[0], crate::item::EMPTY_SLOT);
     }
 
@@ -1308,7 +1313,8 @@ mod tests {
         let p = app.player.as_mut().unwrap();
         p.hp = 10;
         p.max_hp = 400; // headroom: the rolled heal must not clamp
-        assert!(use_potion_item(&mut app, app.inventory[0]));
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.potion_delay, 3707);
         assert_eq!(p.hp, 119, "10 + the rolled 109");
@@ -1334,7 +1340,8 @@ mod tests {
         let p = app.player.as_mut().unwrap();
         p.hp = 50;
         p.breath = 0;
-        assert!(use_potion_item(&mut app, app.inventory[0]));
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
         // The "Use" flag is shared (`AchievementsHelper.cs:347`'s
         // GetCondition(row, "Use")) — several rows complete; the pin is the
         // drowning row's membership, not an exclusive queue.
@@ -1348,7 +1355,8 @@ mod tests {
         app2.inventory[0] = slot(126, 2);
         app2.selected = 0;
         app2.player.as_mut().unwrap().hp = 50;
-        assert!(use_potion_item(&mut app2, app2.inventory[0]));
+        let held2 = app2.inventory[0];
+        assert!(use_potion_item(&mut app2, held2));
         assert!(app2.achievements.take_completed_events().is_empty());
     }
 
@@ -1359,7 +1367,8 @@ mod tests {
         app.selected = 0;
         app.player.as_mut().unwrap().hp = 50;
         app.player.as_mut().unwrap().buffs.add_buff(23, 600);
-        assert!(!use_potion_item(&mut app, app.inventory[0]));
+        let held = app.inventory[0];
+        assert!(!use_potion_item(&mut app, held));
         assert_eq!(app.inventory[0].count, 2);
     }
 

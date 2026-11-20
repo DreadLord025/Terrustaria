@@ -2352,6 +2352,7 @@ impl Player {
             wing_frame_counter: 0,
             pending_flap_sound: None,
             pending_mana_effect: None,
+            pending_heal_effect: None,
             pending_retaliate: None,
             pending_dismount: false,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
@@ -16682,6 +16683,7 @@ mod tests {
 #[cfg(test)]
 mod summon_tests {
     use super::*;
+    use super::tests::ground_world;
     use crate::item::EMPTY_SLOT;
 
     /// `Player.FindItem`'s stand-in: the inventory with the staff (4281) in

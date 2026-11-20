@@ -44,7 +44,7 @@ use tr_render::{SheetRect, SpriteRenderer};
 use crate::assets;
 use crate::inv;
 use crate::settings::Settings;
-use crate::item::{HOTBAR, INV, ItemSlot};
+use crate::item::{HOTBAR, INV, ItemSlot, EMPTY_SLOT};
 use crate::player::Player;
 
 /// The shared rect hit-test: XNA `Rectangle.Contains(Point)` as the UI reads it

@@ -2016,7 +2016,7 @@ impl App {
             return; // past the chest's slot window
         }
         let held = self.mouse_item;
-        let action = pick_item_movement_action(15, &held, slot, &shop_row_slot(&entry));
+        let action = pick_item_movement_action(15, &held, slot, &shop_row_slot(&entry), None);
         if left && action == 3 {
             self.handle_shop_buy(slot);
         } else if left && action == 4 {

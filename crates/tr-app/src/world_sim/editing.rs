@@ -558,6 +558,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // `!mine_down` write made the latch false on the press tick itself,
     // which shut every non-autoReuse weapon out of its own press.)
     let prev_mine_down = app.mine_prev_down;
+    // S1-P-i37's press-edge capture: the use-start gate (`:42733`) reads
+    // LAST frame's release latch, not this frame's freshly derived one.
+    let prev_mine_released = app.mine_released;
     app.mine_prev_down = app.mine_down;
     app.mine_released = !prev_mine_down;
     app.place_released = !app.place_down;

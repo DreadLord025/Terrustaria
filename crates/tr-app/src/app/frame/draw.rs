@@ -117,7 +117,7 @@ impl App {
             let chest_editing = self.chest_editing();
             let chest_edit_text = self.chest_edit_text().to_string();
             let chest_open = self.open_container();
-            let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open);
+            let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open).to_string();
             // `Chest.item.Length` (`ChestUI.cs:376-377`) — the open chest's own
             // per-chest slot count from the file (`Chest.maxItems`), the default
             // 40 for every port-created chest.
@@ -1692,7 +1692,7 @@ impl App {
                                     })
                                     .flatten(),
                                 editing: chest_editing,
-                                name: chest_stored_name,
+                                name: &chest_stored_name,
                                 max_items: chest_max_items,
                                 edit_text: &chest_edit_text,
                                 blinker: &mut self.text_blinker,

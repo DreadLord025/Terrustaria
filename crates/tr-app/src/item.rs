@@ -77,55 +77,9 @@ pub(crate) fn hold_style(kind: u16) -> u8 {
     registry::get(kind).map_or(0, |d| d.hold_style)
 }
 
-/// `Item.notAmmo` (`Item.SetDefaults`): the ten kinds the flag is set on —
-/// the acorn 27 (`Item.cs:1709`), the coins 71-74 (`:2225`/:2245/:2266/
-/// :2286), the sand block 169 (`:3464`), the ebonsand block 370 (`:5721`),
-/// the pearlsand block 408 (`:6146`), the crimsand block 1246 (`:15462`)
-/// and the Ale 353 (`:48384`). No other `SetDefaults` arm sets it. (The
-/// fallen star is 75, the gel 23, the dirtiest block 3822 — none of them
-/// notAmmo; S1-P-i43e's doc-name correction, the id list was always right.)
-pub(crate) fn not_ammo(kind: u16) -> bool {
-    matches!(kind, 27 | 71 | 72 | 73 | 74 | 169 | 353 | 370 | 408 | 1246)
-}
-
-/// `Item.FitsAmmoSlot` (`Item.cs:1369-1376`): the ammo/bait kinds pass, the
-/// three literal exceptions 530/849/353 pass, and anything else fails unless
-/// `notAmmo` clears it back to the 353 test. `PaintOrCoating` reads the
-/// stock paint fields (both 0 for every kind — no painted item instances in
-/// the port), so the arm is inert but cited.
-pub(crate) fn fits_ammo_slot(kind: u16) -> bool {
-    let Some(d) = registry::get(kind) else {
-        return false;
-    };
-    let paint_or_coating = d.paint > 0 || d.paint_coating > 0;
-    if (kind != 0 && d.ammo <= 0 && d.bait == 0 && kind != 530 && kind != 849 && !paint_or_coating)
-        || not_ammo(kind)
-    {
-        return kind == 353;
-    }
-    true
-}
-
-/// `Item.CanFillEmptyAmmoSlot` (`Item.cs:1378-1385`): the bait/paint kinds
-/// and the nine literal exceptions refuse; everything else passes unless
-/// `notAmmo`. The consumer is `GetItem`'s `CanFillEmptyAmmoSlot` empty-ammo
-/// arm (`Player.cs:39305-39326`) — a documented follow-up (the port's
-/// `loot_all`/`quick_transfer_from_slot` ride the occupied FillAmmo pre-pass
-/// only), so the seam is ported ahead of its caller.
-#[allow(dead_code)]
-pub(crate) fn can_fill_empty_ammo_slot(kind: u16) -> bool {
-    let Some(d) = registry::get(kind) else {
-        return false;
-    };
-    let paint_or_coating = d.paint > 0 || d.paint_coating > 0;
-    if d.bait == 0
-        && !paint_or_coating
-        && !matches!(kind, 353 | 849 | 169 | 75 | 23 | 408 | 370 | 1246)
-    {
-        return !not_ammo(kind);
-    }
-    false
-}
+// S1-P-i43's not_ammo/fits_ammo_slot/can_fill_empty_ammo_slot copies were
+// deduped at gate V4 — the S1-P-i47 canonical block below (the pickup
+// predicates section) carries the same Item.cs:1369-1385 seam.
 
 /// `Player.ItemCheck_StartActualUse`'s sound gate (`Player.cs:51681-51682`):
 /// `sItem.UseSound != null && !ItemID.Sets.SkipsInitialUseSound[sItem.type]`
@@ -1433,7 +1387,7 @@ mod tests {
         assert_ne!(i, 0, "the full stack refuses the merge");
     }
 
-    fn ground() -> World {
+    pub(super) fn ground() -> World {
         let mut w = World::new("items".into(), 32, 32);
         for x in 0..32 {
             for y in 20..32 {
@@ -1510,6 +1464,7 @@ mod tests {
 #[cfg(test)]
 mod s1_p_i47_tests {
     use super::*;
+    use super::tests::ground;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn slot(kind: u16, count: u32) -> ItemSlot {

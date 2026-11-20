@@ -2771,12 +2771,14 @@ mod tests {
                 slots: vec![chest_slot(9, 20)],
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
             WorldChest {
                 tile: (46, 45),
                 slots: vec![chest_slot(9, 20)],
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
@@ -2849,12 +2851,14 @@ mod tests {
                 slots: vec![chest_slot(9, 20)],
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
             WorldChest {
                 tile: (47, 45),
                 slots: vec![chest_slot(9, 20)],
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
         ];
         let found = chests_in_range(&w, &p, &chests, true);

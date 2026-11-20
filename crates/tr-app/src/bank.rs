@@ -962,7 +962,9 @@ mod tests {
         let mut inventory: [ItemSlot; crate::item::INV] =
             std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
-        loot_all(&mut container, &mut inventory, &mut coins, None);
+        let mut ammo = empty_vault_ammo();
+        let (mut audio, mut rng) = cue_rig();
+        loot_all(&mut container, &mut inventory, &mut coins, &mut ammo, None, &mut audio, &mut rng);
         assert_eq!(coins[3].count, 50, "the empty fill is DESCENDING (row 53)");
         assert_eq!(coins[0].count, 0, "row 50 stays empty");
         assert_eq!(container[0].count, 0);
@@ -971,7 +973,8 @@ mod tests {
         let mut inventory: [ItemSlot; crate::item::INV] =
             std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         let mut coins = [slot(71, 100), slot(71, 100), slot(71, 100), slot(71, 100)];
-        loot_all(&mut container, &mut inventory, &mut coins, None);
+        let (mut audio, mut rng) = cue_rig();
+        loot_all(&mut container, &mut inventory, &mut coins, &mut ammo, None, &mut audio, &mut rng);
         assert_eq!(inventory[49].kind, 71, "the grid overflow takes slot 49");
         assert_eq!(inventory[49].count, 50);
         assert_eq!(container[0].count, 0, "nothing stays while a grid slot is free");
@@ -982,7 +985,8 @@ mod tests {
             std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[12] = slot(71, 60);
         let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
-        loot_all(&mut container, &mut inventory, &mut coins, None);
+        let (mut audio, mut rng) = cue_rig();
+        loot_all(&mut container, &mut inventory, &mut coins, &mut ammo, None, &mut audio, &mut rng);
         // 60 + 50 = 110 → the occupied merge caps at 100, DoCoins converts
         // the row to 1 silver (the merge arm `:39519` + `:39503`), the 10
         // remainder rides the empty coin row 53.
@@ -1111,6 +1115,7 @@ mod tests {
         inventory[20] = slot(71, 30);
         let mut coins = [slot(71, 5), slot(0, 0), slot(0, 0), slot(0, 0)];
         let fav = |i: usize| i == 0; // favorite_slots = [0] — a grid index
+        let (mut audio, mut rng) = cue_rig();
         move_coins(&mut container, &mut inventory, &mut coins, &fav, &mut audio, &mut rng);
         // The favorited grid stack stays (:1054's own-flag check); the
         // unfavored grid stack and the coin row pull (10 + 30 + 5 = 45 — no

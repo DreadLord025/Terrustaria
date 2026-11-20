@@ -1048,7 +1048,8 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 .world
                 .tile(ox, oy)
                 .and_then(|t| unlock_progression(t.kind, t.frame_x / 36));
-            if !unlock_chest(&mut app.world, ox, oy, app.world.downed_plant_boss) {
+            let downed_plant = app.world.downed_plant_boss;
+            if !unlock_chest(&mut app.world, ox, oy, downed_plant) {
                 continue;
             }
             unlocked_by_inventory = true; // `:33182` — `flag15 = true`
@@ -1081,6 +1082,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // inventory one: the key decrements unless it is the shadow key
         // (`:33208`), the emptied slot turns to air, no trash mirror.
         if !unlocked_by_inventory && use_void_bag(app) {
+            let downed_plant = app.world.downed_plant_boss;
             let Some(p) = app.player.as_mut() else {
                 return true;
             };
@@ -1092,7 +1094,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                     .world
                     .tile(ox, oy)
                     .and_then(|t| unlock_progression(t.kind, t.frame_x / 36));
-                if !unlock_chest(&mut app.world, ox, oy, app.world.downed_plant_boss) {
+                if !unlock_chest(&mut app.world, ox, oy, downed_plant) {
                     continue;
                 }
                 if let Some(id) = progression {
