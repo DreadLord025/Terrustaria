@@ -2014,6 +2014,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let is_summon = matches!(
             held.kind,
             43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
+                | 4271 | 2767 | 29 | 109 | 1291
         );
         if is_summon && held.count > 0 {
             if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
@@ -2060,6 +2061,28 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             return;
         }
         if held.kind == 1958 && held.count > 0 && use_naughty_present(app) {
+            return;
+        }
+        // W4-c36 — `ItemCheck_UseEventItems`' Blood Moon Starter arm
+        // (`Player.cs:44009-44027`): the 4271 use at night with no blood moon
+        // fires progression 4 (no shipped row listens — the faithful no-op
+        // wire), raises the flag, bumps an empty moon phase to 5 and pays
+        // the stack. The `Main.NewText` row rides the chat broadcast.
+        if held.kind == 4271 && held.count > 0 && use_blood_moon_starter(app) {
+            return;
+        }
+        // W4-c36 — the Solar Tablet arm (`Player.cs:43988-44008`): the 2767
+        // use by day with no eclipse raises the flag (no achievement hook —
+        // the C# fires none on the item path).
+        if held.kind == 2767 && held.count > 0 && use_solar_tablet(app) {
+            return;
+        }
+        // W4-c36 — the permanent power-ups (`ItemCheck_UseManaCrystal`
+        // `Player.cs:45274-45288`, `ItemCheck_UseLifeFruit` `:45290-45304`,
+        // `ItemCheck_UseLifeCrystal` `:45306-45320`): the same mid-swing
+        // `ItemTimeIsZero && itemAnimation > 0` gate, the stat grant + the
+        // HealEffect/ManaEffect text + the HandleSpecialEvent hook.
+        if matches!(held.kind, 29 | 109 | 1291) && held.count > 0 && use_permanent_powerup(app) {
             return;
         }
         // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
@@ -2784,8 +2807,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     && (crate::projectile::PROJ_PET.contains(&proj)
                         || crate::projectile::LIGHT_PET_PROJ.contains(&proj))
                 {
-                    app.projectiles
-                        .free_up_pets_and_minions(p, proj, held.kind, app.local_id as u8);
+                    // W4-c36 — `Player.cs:51826-51829`: the free-up's 9-slot
+                    // test (`num + num2 >= 9f`) fires HandleSpecialEvent(6)
+                    // → YOU_AND_WHAT_ARMY's "Spawn" (`AchievementsHelper.cs:
+                    // 310-312`).
+                    if app.projectiles.free_up_pets_and_minions(
+                        p,
+                        proj,
+                        held.kind,
+                        app.local_id as u8,
+                    ) {
+                        let _ = app
+                            .achievements
+                            .complete_condition("YOU_AND_WHAT_ARMY", "Spawn");
+                    }
                 }
                 // S1-P-i20 — the shot body lives in `fire_non_ammo_shot` (the
                 // shared use-start + mid-swing volley seam — the i08
@@ -4253,6 +4288,23 @@ fn fire_non_ammo_shot(
     //   ammoCost75         → Next(4)==0   (`:43297`)
     // The three water bottles carry no `ranged` flag, so they skip the roll
     // chain and always consume.
+    // W4-c36 — `ItemCheck_Shoot`'s achievement tail (`Player.cs:49454-49461`):
+    // the spawned projectile's aiStyle 99 (the yoyos) fires THROWING_LINES
+    // ("Use"), aiStyle 160 (the kites) on a happy windy day fires
+    // FLY_A_KITE_ON_A_WINDY_DAY ("Use"). The kite family has no ported
+    // `proj_data` rows yet — the arm stands ready (the `drop_interrupt_actions`
+    // precedent, `world_sim/items.rs`).
+    match crate::projectile::proj_data(proj).map(|d| d.ai_style) {
+        Some(99) => {
+            let _ = app.achievements.complete_condition("THROWING_LINES", "Use");
+        }
+        Some(160) if app.wind.happy_windy_day => {
+            let _ = app
+                .achievements
+                .complete_condition("FLY_A_KITE_ON_A_WINDY_DAY", "Use");
+        }
+        _ => {}
+    }
     let mut consume = true;
     if def.ranged {
         if huntress90 && loot_rng.next_range(0, 10) == 0 {
@@ -16208,6 +16260,134 @@ pub(crate) fn use_naughty_present(app: &mut App) -> bool {
     true
 }
 
+/// W4-c36 — the Blood Moon Starter 4271 (`Player.ItemCheck_UseEventItems`,
+/// `Player.cs:44009-44027`): `!dayTime && !bloodMoon` — the refusal is free;
+/// otherwise progression 4 fires BEFORE the flag set (`:44015-44016`), an
+/// empty moon phase (`GetMoonPhase() == MoonPhase.Empty`, phase 0) bumps to
+/// 5 (`:44017-44020`), and the `Lang.misc[8]` broadcast rides the chat.
+pub(crate) fn use_blood_moon_starter(app: &mut App) -> bool {
+    if app.world.day_time || app.world.blood_moon {
+        return false;
+    }
+    // `:44011-44012`: the roar + `ApplyItemTime` precede the flag block.
+    apply_moon_item(app, 4271);
+    let _ = app.notify_progression_net(4);
+    app.world.blood_moon = true;
+    if app.world.moon_phase == 0 {
+        app.world.moon_phase = 5;
+    }
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        &crate::lang::text("LegacyMisc.8"),
+        crate::chat::COLOR_WORLD,
+    );
+    true
+}
+
+/// W4-c36 — the Solar Tablet 2767 (`Player.cs:43988-44008`): `dayTime &&
+/// !eclipse` — the flag set, the `Lang.misc[20]` broadcast (the remix
+/// `Lang.misc[106]` variant reads the world's REMIX seed bit), the stack
+/// pay. No achievement hook on this arm (the C# fires none).
+pub(crate) fn use_solar_tablet(app: &mut App) -> bool {
+    if !app.world.day_time || app.world.eclipse {
+        return false;
+    }
+    // `:43990-43991`: the roar + `ApplyItemTime` precede the flag block.
+    apply_moon_item(app, 2767);
+    app.world.eclipse = true;
+    let key = if app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        "LegacyMisc.106"
+    } else {
+        "LegacyMisc.20"
+    };
+    crate::chat::broadcast_death_text(&mut app.chat, &crate::lang::text(key), crate::chat::COLOR_WORLD);
+    true
+}
+
+/// W4-c36 — the permanent power-ups, in the C#'s call order:
+/// `ItemCheck_UseManaCrystal` (`Player.cs:45274-45288`, the 109 at
+/// `statManaMax < 200`), `ItemCheck_UseLifeFruit` (`:45290-45304`, the 1291
+/// at `400 <= statLifeMax < 500`), `ItemCheck_UseLifeCrystal` (`:45306-
+/// 45320`, the 29 at `statLifeMax < 400`). Each grants the stat pair +
+/// the live pool, spawns the HealEffect/ManaEffect text, pays the stack,
+/// re-arms `ApplyItemTime` and fires its `HandleSpecialEvent` hook
+/// (`AchievementsHelper.cs:290-303`): the mana crystal completes
+/// STAR_POWER (+ TOPPED_OFF at the 500/200 caps), the Life Fruit GET_A_LIFE
+/// (+ TOPPED_OFF), the Life Crystal event 0 (no arm — the C# switch has no
+/// case 0). The `statLifeMax2`/`statManaMax2` halves rebase per tick
+/// (`Player.cs:18389`), so the permanent-cap write covers both.
+pub(crate) fn use_permanent_powerup(app: &mut App) -> bool {
+    let held = app.inventory[app.selected];
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    let amount = match held.kind {
+        109 if p.mana_max_base < 200 => {
+            // `:45279-45281`: statManaMax += 20, statManaMax2 += 20,
+            // statMana += 20 (the live cap rebase reads the base next tick).
+            p.mana_max_base += 20;
+            p.mana_max += 20;
+            p.mana += 20;
+            20
+        }
+        1291 if (400..500).contains(&p.max_hp) => {
+            // `:45295-45297`: +5 to the cap pair and the live pool.
+            p.max_hp += 5;
+            p.hp += 5;
+            5
+        }
+        29 if p.max_hp < 400 => {
+            // `:45311-45313`: +20.
+            p.max_hp += 20;
+            p.hp += 20;
+            20
+        }
+        _ => return false,
+    };
+    let kind = held.kind;
+    // `ManaEffect(20)` (`:45284`) queues the HealMana text (the player's
+    // pending seam, drained by the items pass); the life pair's
+    // `HealEffect` (`:45300`/`:45316`) spawns the HealLife text directly.
+    if kind == 109 {
+        if let Some(p) = app.player.as_mut() {
+            p.queue_mana_effect(amount);
+        }
+    } else {
+        crate::potions::spawn_heal_text(app, amount);
+    }
+    // The stack pay + `ApplyItemTime` re-arm (`:45278` etc.).
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.item_time = crate::item::use_time_secs(kind);
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    // The achievement hooks (`AchievementsHelper.cs:290-303`).
+    let topped_off = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.max_hp == 500 && p.mana_max_base == 200);
+    match kind {
+        109 => {
+            let _ = app.achievements.complete_condition("STAR_POWER", "Use");
+            if topped_off {
+                let _ = app.achievements.complete_condition("TOPPED_OFF", "Use");
+            }
+        }
+        1291 => {
+            let _ = app.achievements.complete_condition("GET_A_LIFE", "Use");
+            if topped_off {
+                let _ = app.achievements.complete_condition("TOPPED_OFF", "Use");
+            }
+        }
+        // Event 0: the C# `HandleSpecialEvent(this, 0)` (`:45318`) matches
+        // no switch arm — a faithful no-op.
+        _ => {}
+    }
+    true
+}
+
 pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     let eye_alive = app
         .npcs
@@ -16242,6 +16422,106 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
 mod loot_summon_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-c36 — the permanent power-ups (`Player.cs:45274-45320`): the cap
+    /// gates, the stat grants, the stack pay and the named-row hooks.
+    #[test]
+    fn w4_c36_the_permanent_powerups_grant_and_complete_their_rows() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        let done = |app: &crate::app::App, name: &str| {
+            app.achievements.list.iter().any(|a| a.name == name && a.completed)
+        };
+        // The Mana Crystal: +20 to the base/live caps and the pool, the
+        // STAR_POWER row closes, the stack pays.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 109, name: "Mana Crystal".into(), count: 2, prefix: 0,
+        };
+        assert!(use_permanent_powerup(&mut app));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana_max_base, 40);
+        assert_eq!(p.mana_max, 40);
+        assert_eq!(p.mana, 40);
+        assert_eq!(app.inventory[app.selected].count, 1);
+        assert!(done(&app, "STAR_POWER"));
+        assert!(!done(&app, "TOPPED_OFF"));
+        // The Life Crystal: +20 life, event 0 fires no row.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 29, name: "Life Crystal".into(), count: 1, prefix: 0,
+        };
+        assert!(use_permanent_powerup(&mut app));
+        assert_eq!(app.player.as_ref().unwrap().max_hp, 120);
+        assert!(!done(&app, "GET_A_LIFE"));
+        // The Life Fruit refuses below 400 life (`:45292`).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1291, name: "Life Fruit".into(), count: 1, prefix: 0,
+        };
+        assert!(!use_permanent_powerup(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        // At 400+: +5 and GET_A_LIFE.
+        app.player.as_mut().unwrap().max_hp = 400;
+        assert!(use_permanent_powerup(&mut app));
+        assert_eq!(app.player.as_ref().unwrap().max_hp, 405);
+        assert!(done(&app, "GET_A_LIFE"));
+        // The 500/200 caps close TOPPED_OFF on the last fruit.
+        app.player.as_mut().unwrap().max_hp = 495;
+        app.player.as_mut().unwrap().mana_max_base = 200;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1291, name: "Life Fruit".into(), count: 1, prefix: 0,
+        };
+        assert!(use_permanent_powerup(&mut app));
+        assert!(done(&app, "TOPPED_OFF"));
+        // The 500 cap refuses further fruit; the 200 mana cap refuses the
+        // crystal.
+        assert!(!use_permanent_powerup(&mut app));
+        app.inventory[app.selected] = ItemSlot {
+            kind: 109, name: "Mana Crystal".into(), count: 1, prefix: 0,
+        };
+        assert!(!use_permanent_powerup(&mut app));
+    }
+
+    /// W4-c36 — the Blood Moon Starter / Solar Tablet
+    /// (`Player.cs:44009-44027`/`:43988-44008`): the clock gates, the flag
+    /// sets, the empty-phase bump and the stack pay.
+    #[test]
+    fn w4_c36_the_moon_starters_gate_on_the_clock_and_pay() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.inventory[app.selected] = ItemSlot {
+            kind: 4271, name: "Blood Moon Starter".into(), count: 1, prefix: 0,
+        };
+        // Day refuses free.
+        app.world.day_time = true;
+        assert!(!use_blood_moon_starter(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // Night with an empty phase: the flag rises, the phase bumps to 5.
+        app.world.day_time = false;
+        app.world.moon_phase = 0;
+        assert!(use_blood_moon_starter(&mut app));
+        assert!(app.world.blood_moon);
+        assert_eq!(app.world.moon_phase, 5);
+        assert_eq!(app.inventory[app.selected].count, 0);
+        // A live blood moon refuses.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 4271, name: "Blood Moon Starter".into(), count: 1, prefix: 0,
+        };
+        assert!(!use_blood_moon_starter(&mut app));
+        // The Solar Tablet: night refuses, day raises the eclipse.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 2767, name: "Solar Tablet".into(), count: 1, prefix: 0,
+        };
+        assert!(!use_solar_tablet(&mut app));
+        app.world.day_time = true;
+        assert!(use_solar_tablet(&mut app));
+        assert!(app.world.eclipse);
+        assert_eq!(app.inventory[app.selected].count, 0);
+    }
 
     #[test]
     fn the_boss_summon_items_gate_and_consume() {
