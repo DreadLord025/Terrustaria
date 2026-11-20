@@ -39244,3 +39244,75 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile Kill death-effect wave, part 1 (W4-d78, 2026-11-21, code-only mode)
+
+**Scope recovery.** The branch `task/W4-d78-ui-sounds-menus` carried no claim
+doc and no ROADMAP row (0 commits ahead of `a725acb0`), and the UI/menu
+`PlaySound` sites are consumed inline by the ui-element/screen lanes
+(d81-d88, g53-g58, f22/f23 port their own MenuTick/MenuOpen/MenuClose cues),
+so a separate ui-sounds lane would conflict. Per the Lead's fallback the lane
+takes the **next unclaimed `Projectile.cs` `Kill()`/death-effect sites**, with
+the `PlaySound` plays inside `Kill()` explicitly OUT (the d75-d77 line-order
+split owns them: d77 = sites 241-437, `:70978`-the `Kill()` tail).
+
+**In-flight probe (the claim census).** The `Kill()` tail's effect layers are
+already claimed by sibling lanes: the death DUST by `g65-proj-death-dust`
+(+ the d53/e3/f5 AI-side dust lanes), the death GORE by `g16-gore-projectile-sites`
+(+ d55/e5), the death SOUND by d75/d76/d77 (+ f1), the death LIGHT by c19/e6/f7.
+`e3` is actively writing `projectile_dust.rs` (AI-side sites 41-80, NOT Kill).
+So this lane takes the **non-sound, non-dust, non-gore, non-light GAMEPLAY
+death effects** вЂ” the resize + `Damage()` death-blast boxes, the child
+`NewProjectile` spawns, the tile/item death effects вЂ” that are unclaimed and
+unlanded.
+
+**This batch ports the friendly magic resize-blast family** (6 kinds, all
+rowed on main, all verified MISSING вЂ” no existing Kill hook touched them):
+
+| kind | C# arm | blast box | restore |
+| --- | --- | --- | --- |
+| 79 RainbowRodBullet | `:71257-71265` | `Resize(128,128)` | yes (`Resize(old,old)`) |
+| 16 MagicMissile | `:71329-71337` | `Resize(128,128)` | yes |
+| 34 Flamelash | `:71409-71417` | `Resize(96,96)` | yes |
+| 634/635 NebulaBlaze | `:72015-72021` | manual recentre 50Г—50 | NO (corpse keeps it) |
+| 661 OnyxBlaster black bolt | `:72226-72233` | manual recentre 160Г—160 | NO |
+
+`projectile.rs::magic_death_blast` ports the shared shape verbatim:
+`Resize(blast,blast)` keeps the centre (`Entity.cs` Center get/set:
+`pos = oldCentre в€’ new/2`), `maxPenetrate = penetrate = -1`, then `Damage()`
+through the resized box via the landed `damage_pve_boxed` seam (the rectangle
+walk, DamageVar + defence/crit + the per-type immunity arms вЂ” the Magic
+Missile's 8-tick window `:14032-14035` rides it). The 79/16/34 arms run the
+trailing `Resize(old,old)` (the C# saved the pre-blast BOX, so the restore
+keeps the same centre); the 634/635/661 arms have NO trailing restore. The
+call sits in the pool's once-per-death `!active` hook ahead of `gem_bolt_aoe`
+(the C# body order: `:71257`/`:71995`/`:72226` all precede `:75425`), kind- and
+owner-gated (`Damage()`'s PVE half runs only for `owner == Main.myPlayer`,
+`:12504`).
+
+**Deliberate skips (the sibling lanes', cited at the arm):** the dust/gore/
+sound bodies interleaved with these arms вЂ” the 79/16/34 oldPos dust trails
+(`:71266-71487`), the blaze `Utils.SelectRandom` dust-type picks
+(`:71997`/`:72009`/`:72024-72048`), the 661 dust rings (`:72234-72276`) and
+every `PlaySound` вЂ” are SKIPPED with their draws, the `gem_bolt_aoe` /
+`special_bullet_kill` convention (the dust lanes owe the draw re-adds at their
+bodies). No gameplay draw is added, removed or reordered: the blast's only
+draws are the `damage_pve_boxed` per-hit crit/DamageVar rolls, which fire only
+on a landed hit, in the C# order, on the pass's `UpdateProjectiles` stream.
+
+**Deferred (the next batches / other lanes):** the hostile resize-blasts
+452/454/448 (`:72987-73045`/`:73603-73631`) need `Damage()`'s EVP/player half
+(a different seam than the friendly PVE box); the child-spawn death arms
+(617 NebulaArcanum's 620-shard fan `:72278-72373`, 246 Stynger's 249 shrapnel
+`:76944-76986`, 117 BoneArrow's 1124 pair `:74734-74751`) need their unrowed
+child kinds' `proj_data` rows first; the tile/item death effects
+(`Kill_ExplodeTiles`' snow placement, the bobber/pot drops) are the g24/g25
+sound lanes' neighbours and stay out.
+
+**Verification.** Code-only: every arm re-read against its C# block (the
+Resize centre-keep, the penetrate open, the restore/no-restore split, the
+owner gate), the seam checked against `gem_bolt_aoe`/`damage_pve_boxed`, the
+six rows confirmed on main. The 5 `w4_d78_*` witness tests (the resize+restore
+reach, the no-restore corpse box, the foreign-owner zero-draw refusal, the
+unrelated-kind no-op, the Magic Missile 8-tick immunity) are WRITTEN, NOT RUN
+вЂ” **no cargo/rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).

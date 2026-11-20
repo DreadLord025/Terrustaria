@@ -19966,10 +19966,22 @@ impl ProjectilePool {
                 // dropped — main's i16 `dart_electro_firework_kill` below
                 // owns the 442 arm (:73528-73552), keeping both would
                 // double-spawn the sphere.)
+                // W4-d78 — `Kill()`'s magic resize-blast family (the C#
+                // body order: 79/16/34 `:71257-71488` and the 634/635/661
+                // blasts `:71995-72233` all precede the gem arm `:75425`):
+                // the guided spells' death explodes through the resized box.
+                let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                self.magic_death_blast(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    rng,
+                    luck,
+                    local_owner,
+                );
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
                 // runs at the same death hook the blast does.
-                let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
                 self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
                 // called from `Kill()` `:77258-77261`): the trio's death
@@ -21330,6 +21342,81 @@ impl ProjectilePool {
         p.w = 22.0;
         p.h = 22.0;
         p.pos = Vec2::new(cx - 11.0, cy - 11.0);
+    }
+
+    /// W4-d78 — `Kill()`'s magic resize-blast family: the guided spells'
+    /// death explodes through a temporarily (or permanently) resized box.
+    /// The C# arms, in body order:
+    /// - 79 RainbowRodBullet (`Projectile.cs:71257-71265`): `Resize(128,128)`,
+    ///   `maxPenetrate = penetrate = -1`, `Damage()`, `Resize(old, old)`.
+    /// - 16 MagicMissile (`:71329-71337`): the same shape at 128×128.
+    /// - 34 Flamelash (`:71409-71417`): the same shape at 96×96.
+    /// - 634/635 NebulaBlaze (`:72015-72021`): the manual
+    ///   `position = Center; width = height = 50; Center = position`
+    ///   (the `Resize(50,50)` centre-keep), `maxPenetrate = penetrate = -1`,
+    ///   `Damage()` — NO trailing restore, the corpse keeps the 50-box.
+    /// - 661 OnyxBlaster's black bolt (`:72226-72233`): the same manual
+    ///   recentre at 160×160, `maxPenetrate = penetrate = -1`, `Damage()`,
+    ///   no restore.
+    /// `Resize` (`:22353-22359`) keeps the centre: `position = Center`,
+    /// the new box, `Center = position` → `pos = oldCentre − new/2`.
+    /// The dust/gore/sound bodies interleaved with these arms (the 79/16/34
+    /// oldPos trails `:71266-71487`, the blaze `SelectRandom` dust-type picks
+    /// `:71997`/`:72009`/`:72024-72048`, the 661 rings `:72234-72276`) are the
+    /// g65/d77/g16 lanes' — SKIPPED with their draws, the `gem_bolt_aoe`
+    /// convention (the dust lanes owe the draw re-adds at their bodies).
+    /// Kind-gated + owner-gated (`Damage()`'s PVE half runs only for
+    /// `owner == Main.myPlayer`, `:12504`); a dead slot never returns to
+    /// active, so the blast fires at most once per death.
+    fn magic_death_blast(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        // (blast side, restore the old box afterwards)
+        let (blast, restore) = match self.slots[slot].kind {
+            MAGIC_MISSILE | RAINBOW_ROD_BULLET => (128.0, true),
+            FLAMELASH => (96.0, true),
+            NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => (50.0, false),
+            ONYX_BLACK_BOLT => (160.0, false),
+            _ => return,
+        };
+        if self.slots[slot].owner != local_owner {
+            return;
+        }
+        let (center, old_w, old_h) = {
+            let p = &self.slots[slot];
+            (
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                p.w,
+                p.h,
+            )
+        };
+        {
+            let p = &mut self.slots[slot];
+            // `Resize(blast, blast)` — the centre-keep.
+            p.w = blast;
+            p.h = blast;
+            p.pos = center - Vec2::splat(blast * 0.5);
+            p.max_penetrate = -1;
+            p.penetrate = -1;
+        }
+        // `Damage()` through the resized box (the gem-burst seam: the
+        // rectangle walk, DamageVar + defence/crit + the per-type immunity
+        // arms — the Magic Missile's 8-tick window included).
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        if restore {
+            // `Resize(newWidth, newHeight)` — the trailing restore keeps the
+            // SAME centre (the C# saved the pre-blast box, not the position).
+            let p = &mut self.slots[slot];
+            p.w = old_w;
+            p.h = old_h;
+            p.pos = center - Vec2::new(old_w * 0.5, old_h * 0.5);
+        }
     }
 
     /// The dedupe scan (`:41428-41438`): every other slot of the same kind
@@ -25224,6 +25311,206 @@ mod tests {
         );
     }
 }
+
+/// W4-d78 — `Kill()`'s magic resize-blast family (the guided spells' death
+/// AoE). Tests-as-code: WRITTEN NOT RUN (the task's code-only mode). The
+/// six kinds' `SetDefaults` rows are on main; the blast arms
+/// (`Projectile.cs:71257-71488` / `:71995-72233`) were MISSING — the death
+/// hook now resizes the box, opens the penetration and walks `Damage()`
+/// through it (`magic_death_blast`).
+#[cfg(test)]
+mod w4_d78_magic_death_blast_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn ground() -> World {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn one_npc(world: &World) -> Npc {
+        Npc::spawn_slime(world, 20).unwrap()
+    }
+
+    /// A dead slot of `kind` at the NPC's centre, damage 30, owner 0.
+    fn dead_at_npc(pool: &mut ProjectilePool, kind: u16, npc: &Npc) -> usize {
+        let slot = pool
+            .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 30, 5.0, 0.0, 0.0)
+            .unwrap();
+        // The death transition the pool's lifetime block performs.
+        pool.kill(slot);
+        slot
+    }
+
+    /// The 16/34/79 arms (`:71261-71265` / `:71333-71337` / `:71413-71417`):
+    /// the blast box is 128/128/96, the penetration opens to −1, `Damage()`
+    /// lands on an NPC the SMALL pre-blast box could not reach, and the
+    /// trailing `Resize(old, old)` restores the original box at the SAME
+    /// centre.
+    #[test]
+    fn w4_d78_the_guided_spells_blast_through_the_resized_box_and_restore() {
+        for kind in [MAGIC_MISSILE, RAINBOW_ROD_BULLET, FLAMELASH] {
+            let w = ground();
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = dead_at_npc(&mut pool, kind, &npc);
+            let (old_w, old_h) = {
+                let p = &pool.slots()[slot];
+                (p.w, p.h)
+            };
+            // Park the corpse 60 px LEFT of the NPC: the 32×32 box misses
+            // the slime's 24×18 rect, the blast box (half-side 64 for the
+            // 128 arms / 48 for the Flamelash's 96) reaches it.
+            let center = Vec2::new(npc.x - 60.0, npc.y + 9.0);
+            {
+                let p = &mut pool.slots_mut()[slot];
+                p.pos = center - Vec2::new(old_w * 0.5, old_h * 0.5);
+            }
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+            assert!(npc.hp < 10_000, "kind {kind}: the resized box reaches the NPC");
+            let p = &pool.slots()[slot];
+            assert_eq!((p.w, p.h), (old_w, old_h), "kind {kind}: the trailing Resize restores");
+            let got = p.pos + Vec2::new(p.w * 0.5, p.h * 0.5);
+            assert!((got - center).length() < 1e-4, "kind {kind}: the centre kept ({got:?})");
+            assert_eq!(p.penetrate, -1, "kind {kind}: the penetration opens");
+            assert_eq!(p.max_penetrate, -1, "kind {kind}");
+            assert!(!p.active, "kind {kind}: the corpse stays dead");
+        }
+    }
+
+    /// The 634/635 (`:72015-72021`) and 661 (`:72226-72233`) arms: the
+    /// manual recentre at 50/50/160, `maxPenetrate = penetrate = -1`,
+    /// `Damage()` — and NO trailing restore: the corpse keeps the blast box.
+    #[test]
+    fn w4_d78_the_blaze_and_black_bolt_keep_the_blast_box() {
+        for (kind, blast) in [(NEBULA_BLAZE_1, 50.0f32), (NEBULA_BLAZE_2, 50.0), (ONYX_BLACK_BOLT, 160.0)] {
+            let w = ground();
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = dead_at_npc(&mut pool, kind, &npc);
+            let center = Vec2::new(npc.x + 12.0, npc.y + 9.0);
+            {
+                let p = &mut pool.slots_mut()[slot];
+                p.pos = center - Vec2::new(p.w * 0.5, p.h * 0.5);
+            }
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+            assert!(npc.hp < 10_000, "kind {kind}: the blast lands");
+            let p = &pool.slots()[slot];
+            assert_eq!((p.w, p.h), (blast, blast), "kind {kind}: no trailing restore");
+            let got = p.pos + Vec2::splat(blast * 0.5);
+            assert!((got - center).length() < 1e-4, "kind {kind}: the centre kept ({got:?})");
+            assert_eq!(p.penetrate, -1, "kind {kind}");
+            assert_eq!(p.max_penetrate, -1, "kind {kind}");
+        }
+    }
+
+    /// The owner gate (`Damage()`'s PVE half, `:12504`): a foreign-owned
+    /// corpse rolls NOTHING — no strike, no draws, no resize.
+    #[test]
+    fn w4_d78_a_foreign_owned_corpse_blasts_nothing() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai_owned(MAGIC_MISSILE, 255, npc.x, npc.y, 0.0, 0.0, 30, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.kill(slot);
+        let (w0, h0, pos0) = {
+            let p = &pool.slots()[slot];
+            (p.w, p.h, p.pos)
+        };
+        struct CountRng {
+            draws: usize,
+        }
+        impl tr_core::loot::DropRng for CountRng {
+            fn next_range(&mut self, _min: i32, max: i32) -> i32 {
+                self.draws += 1;
+                max - 1
+            }
+            fn next_float(&mut self) -> f32 {
+                self.draws += 1;
+                0.5
+            }
+        }
+        let mut rng = CountRng { draws: 0 };
+        pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+        assert_eq!(npc.hp, 10_000, "the foreign corpse never strikes");
+        assert_eq!(rng.draws, 0, "the foreign corpse draws nothing");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h, p.pos), (w0, h0, pos0), "no resize on the refusal");
+    }
+
+    /// The kind gate: an unrelated rowed kind (the wooden arrow) passes
+    /// through untouched — no resize, no strike, no draws.
+    #[test]
+    fn w4_d78_an_unrelated_kind_is_untouched() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = dead_at_npc(&mut pool, WOODEN_ARROW, &npc);
+        let (w0, h0, pos0) = {
+            let p = &pool.slots()[slot];
+            (p.w, p.h, p.pos)
+        };
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+        assert_eq!(npc.hp, 10_000, "the arrow has no death blast");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h, p.pos), (w0, h0, pos0), "the arrow is untouched");
+    }
+
+    /// The Magic Missile's per-type immunity arm rides the blast's boxed
+    /// walk (`:14032-14035`, the W3-i11 census): the struck NPC carries the
+    /// 8-tick window, not the stock 10.
+    #[test]
+    fn w4_d78_the_missile_blast_carries_the_eight_tick_immunity() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = dead_at_npc(&mut pool, MAGIC_MISSILE, &npc);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+        assert!(npc.hp < 10_000, "the blast lands");
+        assert_eq!(npc.immune[0], 8, "the Magic Missile's per-type arm");
+    }
+}
+
 #[cfg(test)]
 mod falling_tests {
     use super::*;
