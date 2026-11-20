@@ -130,9 +130,9 @@ ports were byte-equivalent state machines and neither had a consumer yet.
 
 | row | class | status |
 | --- | --- | --- |
-| 1 | `AWorldListItem` | pending |
-| 2 | `EmoteButton` | pending |
-| 3 | `EmotesGroupListItem` | pending |
+| 1 | `AWorldListItem` | LANDED (missing halves `ui/world_select.rs`: `difficulty_text_with_ftw` full `:43-85` chain, `WorldIconFlags`/`seed_icon_name`/`first_icon_name`/`icon_name_list` `:87-200`, `GlitchAnimation` `:21-41` with injected `Main.rand` rolls; card geometry/difficulty draw pre-landed) |
+| 2 | `EmoteButton` | LANDED (re-audit: whole class pre-landed — blink counter `emotes.rs::button_frame` `:38-44`, frame pick + border tint + MouseText `ui/emotes.rs::draw` `:32-75`, hover sound-12 edge `app/loop.rs:600-619` `:77-88`, click+close `app/clicks.rs:1170-1197` `:90-95`) |
+| 3 | `EmotesGroupListItem` | LANDED (geometry `ui/emotes.rs`: `group_row_count`/`group_height`/`group_header_rect`/`group_separator_color`/`group_button_top_left`/`compare_group_order` `:11-94`; the flat-roster wheel draw pre-landed, group titles/separators a documented deviation) |
 | 4 | `GroupOptionButton` | colour state LANDED (`ui/elements.rs::GroupOptionButtonState`, batch 1); rest pending audit |
 | 5 | `PowerStripUIElement` | LANDED (`ui/elements.rs` strip layout/colours, batch 1) |
 | 6 | `UIAchievementListItem` | pending |
