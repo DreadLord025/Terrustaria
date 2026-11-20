@@ -576,6 +576,13 @@ pub(crate) struct App {
     pub(crate) autosave: f32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     pub(crate) mouse_item: ItemSlot,
+    /// `Player.releaseQuickMana` (`Player.cs:1768`): the quick-mana press
+    /// latch (S1-P-i37). `Player.Update` (`:24834-24845`) fires `QuickMana`
+    /// only while the latch stands (the key's press edge), then drops it
+    /// until the key releases. Starts false — the first held tick counts as
+    /// the edge. (The QuickHeal twin `releaseQuickHeal` `:1770` is the i54
+    /// hotbar worker's `quick_heal_prev` — not duplicated here.)
+    pub(crate) quick_mana_prev: bool,
     /// `Main.mouseNPCIndex` (`Main.cs:751`, default −1): the `Main.npc[]`
     /// slot whose head rides the cursor for a housing relocation; −1 with
     /// `mouse_npc_type == 0` is the housing query, −1/−1 is nothing.
@@ -3534,6 +3541,7 @@ impl App {
             music: audio::MusicSystem::new(assets::content_dir()),
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
+            quick_mana_prev: false,
             mouse_npc_index: -1,
             mouse_npc_type: -1,
             ui_left_press: false,

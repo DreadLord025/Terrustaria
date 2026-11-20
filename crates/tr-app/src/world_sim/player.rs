@@ -257,6 +257,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     let power_god_mode = app.creative_powers.god_mode();
     let power_far_placement = app.creative_powers.far_placement_range();
     let input = player_input(app, &binds, map_open, hold_right, hold_jump);
+    // `Player.cs:24834-24845`: the `controlQuickMana` press edge fires
+    // `QuickMana` once (the `releaseQuickMana` latch); the port keeps the
+    // edge on the App like `mine_prev_down`. The QuickHeal twin
+    // (`:24822-24833`) is the i54 hotbar worker's seam — not duplicated.
+    // The C# zeroes the movement controls while the map is fullscreen
+    // (`:24772-24808`) but NOT the quick-use controls, so the key stays
+    // live under the open map.
+    let mana_key = app
+        .keys
+        .iter()
+        .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::QuickMana, *k));
+    let mana_edge = mana_key && !app.quick_mana_prev;
+    app.quick_mana_prev = mana_key;
+    if mana_edge {
+        crate::potions::quick_mana(app);
+    }
     let (sw, sh) = app.screen_size();
     let mouse_world = Vec2::new(
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
@@ -2289,5 +2305,72 @@ mod tests {
             tick_ammo(&mut app);
             assert_eq!(app.player.as_ref().unwrap().max_minions, 1);
         }
+    }
+
+    // ---- S1-P-i37: the QuickMana key edge (WRITTEN NOT RUN) ----------------
+
+    /// S1-P-i37 — `Player.cs:24834-24845`: the `controlQuickMana` press edge
+    /// fires `QuickMana` once (the `releaseQuickMana` latch); holding the
+    /// key does not re-drink. The QuickHeal twin (`:24822-24833`) is the
+    /// i54 hotbar worker's seam — not duplicated here.
+    #[test]
+    fn s1_p_i37_the_quick_mana_key_drinks_once_per_press() {
+        let mut app = ammo_app();
+        app.inventory[7] = crate::item::ItemSlot {
+            kind: 110, // the Lesser Mana Potion (healMana 50)
+            name: "Lesser Mana Potion",
+            count: 5,
+            prefix: 0,
+        };
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana = 0;
+            p.mana_max = 200;
+        }
+        // The silent listener: the use-sound draws nothing, the HealMana
+        // text's two jitter draws are the only stream spend.
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.keys.insert(KeyCode::KeyJ); // the default cMana bind
+        tick_ammo(&mut app);
+        // The press drank: 50 restored, plus at most a few regen points the
+        // same tick's UpdateManaRegen may add (the rig's bar started empty).
+        let mana_after = app.player.as_ref().unwrap().mana;
+        assert!(
+            (50..=60).contains(&mana_after),
+            "the press drank 50 (+regen), got {mana_after}"
+        );
+        assert_eq!(app.inventory[7].count, 4);
+        assert!(app
+            .player
+            .as_ref()
+            .unwrap()
+            .buffs
+            .find_buff_index(94)
+            .is_some());
+        // Held: the latch dropped, no second drink.
+        for _ in 0..30 {
+            tick_ammo(&mut app);
+        }
+        assert_eq!(app.inventory[7].count, 4, "one drink per press edge");
+        // Release + re-press: the latch re-arms, the second drink lands.
+        app.keys.remove(&KeyCode::KeyJ);
+        tick_ammo(&mut app);
+        let mana_before = app.player.as_ref().unwrap().mana;
+        app.keys.insert(KeyCode::KeyJ);
+        tick_ammo(&mut app);
+        assert_eq!(app.inventory[7].count, 3, "the re-press drank again");
+        let mana_now = app.player.as_ref().unwrap().mana;
+        assert!(
+            mana_now >= mana_before + 50,
+            "the second drink restored 50: {mana_before} -> {mana_now}"
+        );
     }
 }

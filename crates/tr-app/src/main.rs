@@ -166,6 +166,7 @@ mod happiness;
 mod hurt_modifiers;
 mod player;
 mod player_file;
+mod potions;
 mod prefix;
 pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;
