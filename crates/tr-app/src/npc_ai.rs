@@ -51,17 +51,26 @@ impl WalkerParams {
     };
 }
 
-/// The flyer tunables.
+/// The flyer tunables — the RETIRED v1 archetype's shape. W4-b2b: the
+/// false `AI_002` citation is dead — neither 0.12 nor 3.0 appears in
+/// `AI_002_FloatingEye` (`NPC.cs:52274-52731`); the faithful eye machine
+/// is `npc_ai_eye::floating_eye_ai`, wired on the aiStyle-2 axis. These
+/// fields exist only for the test-only `flyer_step` A/B pin.
 #[derive(Clone, Copy, Debug)]
 pub struct FlyerParams {
-    /// The acceleration toward the player (`AI_002`'s 0.12).
+    /// The v1 stand-in's normalized-aim acceleration (INVENTED — not an
+    /// `AI_002` constant; the real arm steers 0.1/0.04 per axis).
     pub accel: f32,
-    /// The speed cap (`AI_002`'s 3.0 for the demon eyes).
+    /// The v1 stand-in's symmetric speed clamp (INVENTED — the real arm
+    /// clamps ±4 X / ±1.5 Y × `(2 − scale)`).
     pub max_speed: f32,
 }
 
 impl FlyerParams {
-    /// The demon-eye machine (`AI_002_FloatingEye`, `NPC.cs:52274+`).
+    /// The RETIRED v1 eye stand-in's numbers (W4-b2b killed the false
+    /// `AI_002_FloatingEye` citation — the A-1 audit, research/54 §2).
+    /// Test-only: `the_flyer_homes_and_bounces` pins the legacy archetype;
+    /// no live caller remains (`update_eye` retired with the wiring).
     pub const FLOATING_EYE: Self = Self {
         accel: 0.12,
         max_speed: 3.0,
@@ -419,11 +428,13 @@ pub fn walker_step_fighter(
     walker_integrate(npc, world, params, gravity, max_fall);
 }
 
-/// `AI_002_FloatingEye`'s fly-and-bob step (`NPC.cs:52274+`, the eye
-/// machine): accelerate toward the player, bounce off the tiles, the bob
-/// rides the anim clock. The last live caller (the bat stand-in) retired
-/// with the S1-D-3 reconcile — the archetype stays for the aiStyle-2
-/// slice's A/B pin (`the_flyer_homes_and_bounces`).
+/// The RETIRED v1 flyer archetype's fly-and-bob step (W4-b2b: was
+/// false-cited as `AI_002_FloatingEye`, `NPC.cs:52274+` — the normalized
+/// 0.12 aim, the ±3 clamp and the `sin(anim*3)*0.4` bob appear NOWHERE in
+/// the C# arm; the faithful machine is `npc_ai_eye::floating_eye_ai`,
+/// wired on the aiStyle-2 axis). Test-only: the last live caller
+/// (`update_eye`) retired with the wiring; the archetype stays for the
+/// A/B pin (`the_flyer_homes_and_bounces`).
 #[allow(dead_code)]
 pub fn flyer_step(
     npc: &mut Npc,

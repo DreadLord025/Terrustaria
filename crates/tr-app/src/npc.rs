@@ -4649,6 +4649,20 @@ impl Npc {
         // attribute is stable here).
         #[deny(unreachable_patterns)]
         match self.kind.ai_style() {
+            // `if (this.aiStyle == 2) { this.AI_002_FloatingEye(); return; }`
+            // (`NPC.cs:19950-19954`). W4-b2b wiring: the seven ported eye
+            // kinds (2/133/190-194) ride the faithful `npc_ai_eye.rs`
+            // re-port (S1-D-3-eye, audit A-1 seed A1-3); the retired
+            // `update_eye` stand-in's normalized-aim 0.12/±3 chase + the
+            // invented sin-bob + the aiStyle-13-cited sprite keep are GONE
+            // (the `FlyerParams::FLOATING_EYE` false citation died with
+            // it — neither constant appears in `:52274-52731`). RNG: one
+            // `Next(40)` per tick per eye kind (the `:52710` family dust
+            // gate, the burst's INTERNAL draws the S1-E-1 documented
+            // skip); the flee gate / TargetClosest / steering draw
+            // nothing. The stand-in drew ZERO — the draw delta is
+            // documented in ANALYSIS "The eye aiStyle-2 wiring (W4-b2b)".
+            2 => self.ai_002_eye_family(world, player, rng),
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
@@ -5686,9 +5700,9 @@ impl Npc {
             // S1-D-3ff wave A: the nine LOW-id slimes ride the same
             // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
             // for every slime type — the per-type rows are stats only),
-            // the five demon-eye variants the aiStyle-2 chase, and the
-            // ten zombie variants the aiStyle-3 walker (the documented
-            // stand-in routing, the pumpkin wave's precedent).
+            // and the ten zombie variants the aiStyle-3 walker (the
+            // documented stand-in routing, the pumpkin wave's precedent).
+            // The seven eye kinds ride the aiStyle-2 axis above (W4-b2b).
             NpcKind::Slime
             | NpcKind::MotherSlime
             | NpcKind::LavaSlime
@@ -5699,13 +5713,19 @@ impl Npc {
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
             | NpcKind::UmbrellaSlime => self.update_slime(world, player, dt),
+            // W4-b2b: the seven eye kinds' aiStyle 2 rides the style axis
+            // above (`ai_002_eye_family` → `npc_ai_eye::floating_eye_ai`);
+            // `ai_style()` maps them unconditionally, so the fallthrough
+            // never reaches them (the aiStyle-5/9 marker precedent).
             NpcKind::DemonEye
             | NpcKind::WanderingEye
             | NpcKind::CataractEye
             | NpcKind::SleepyEye
             | NpcKind::DialatedEye
             | NpcKind::GreenEye
-            | NpcKind::PurpleEye => self.update_eye(world, player, dt),
+            | NpcKind::PurpleEye => {
+                unreachable!("aiStyle 2 rides the style axis (W4-b2b eye wiring)")
+            }
             NpcKind::Zombie
             | NpcKind::DoctorBones
             | NpcKind::TheGroom
@@ -7885,8 +7905,15 @@ impl Npc {
                     };
                 }
                 if self.vx > 0.0 {
+                    // W4-b2b: the C# writes spriteDirection HERE
+                    // (`NPC.cs:74021`/case 133 `:74064`) — the retired
+                    // `update_eye` stand-in used to supply the flip; the
+                    // faithful site is FindFrame (the wave-A variants'
+                    // arm already carried it).
+                    self.sprite_dir = 1;
                     self.rotation = self.vy.atan2(self.vx);
                 } else if self.vx < 0.0 {
+                    self.sprite_dir = -1;
                     // The original adds the literal `3.14f`, not PI.
                     self.rotation = self.vy.atan2(self.vx) + 3.14;
                 }
@@ -9124,42 +9151,65 @@ impl Npc {
         }
     }
 
-    fn update_eye(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        // S1-D-3ff: the five eye variants share the 30x32 box, but read
-        // it off the kind like the C# arm does (`kind.size()` keeps the
-        // base DemonEye's behaviour byte-identical).
-        let (w, h) = self.kind.size();
-        let (pcx, pcy) = player.center();
-        let (cx, cy) = self.center();
-        let dx = pcx - cx;
-        let dy = pcy - cy;
-        let d = (dx * dx + dy * dy).sqrt().max(1.0);
-        self.vx = (self.vx + dx / d * 0.12).clamp(-3.0, 3.0);
-        self.vy = (self.vy + dy / d * 0.12).clamp(-3.0, 3.0);
-        let nx = self.x + self.vx;
-        if !collides_rect(world, nx, self.y, w, h) {
-            self.x = nx;
-        } else {
-            self.vx = -self.vx * 0.5;
-        }
-        let bob = (self.anim * 3.0).sin() * 0.4;
-        let ny = self.y + self.vy + bob;
-        if !collides_rect(world, self.x, ny, w, h) {
-            self.y = ny;
-        } else {
-            self.vy = -self.vy * 0.5;
-        }
-        self.facing = if dx >= 0.0 { 1 } else { -1 };
-        // `:22740-22752` (aiStyle 13) — the eye flips on the SAME
-        // `num215 = player.Center.X - width/2 - center.X` the rotation
-        // uses (its own aim, not the body's), and the write is inside the
-        // two one-sided `if`s, so a dead-centre aim keeps the previous
-        // flip.
-        self.sprite_dir = if dx != 0.0 {
-            self.facing
-        } else {
-            self.sprite_dir
+    /// W4-b2b wiring — the aiStyle-2 family arm: `NPC.AI()`'s
+    /// `if (this.aiStyle == 2)` block (`NPC.cs:19950-19954`) through the
+    /// faithful `npc_ai_eye::floating_eye_ai` (`AI_002_FloatingEye`,
+    /// `NPC.cs:52274-52731`, the S1-D-3-eye re-port). The retired
+    /// `update_eye` stand-in (the normalized-aim 0.12/±3 chase, the
+    /// invented `sin(anim*3)*0.4` bob, the aiStyle-13-cited sprite keep)
+    /// is GONE — neither 0.12 nor 3.0 appears in the C# arm. This adapter
+    /// owns only the seams the pure arm cannot (the `update_cave_bat`
+    /// precedent): this tick's `Entity.wet`, the session-player candidate
+    /// slice, and the no-gravity `UpdateCollision` tail
+    /// (`integrate_flyer_collision`, `NPC.cs:92523-92608` — the arm itself
+    /// never integrates position, the style31 precedent). The oldVelocity
+    /// capture there feeds the NEXT tick's `oldVelocity × −0.5` bounce
+    /// kicks (`:52285-52305`). The `EyeOut` side effects are the documented
+    /// skips: the family dust burst's INTERNAL draws (S1-E-1 — the arm's
+    /// `Next(40)` gate DRAW is not skipped), the Pigron moan's sound feed
+    /// (no Pigron kind yet), the 116 light (no kind yet), the phase's
+    /// noTileCollide (no Pigron kind). The off-world guard the stand-in
+    /// carried is the port's framework shape (`world_sim/npcs.rs:1852`'s
+    /// worm-tail precedent), kept verbatim.
+    fn ai_002_eye_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        // `Entity.wet` (`Collision.WetCollision`, `NPC.cs:90499` — the
+        // port latches it pre-AI, the `update_cave_bat` convention) — the
+        // wet tail (`:52718-52730`) reads it.
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        // The session player as slot 0 (the S1-D-3p convention); the
+        // per-kind `npcTypeNoAggro` flag rides `session_candidate_for`
+        // (the zombie wiring's seam).
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        let players = [cand];
+        // `ZoneGraveyard` — no player field yet; the module fold passes
+        // false (the style14 `players_wet` convention, module header).
+        let graves = [false];
+        let env = crate::npc_ai_eye::EyeEnv {
+            world,
+            players: &players,
+            player_graveyards: &graves,
+            // No `Npc.noTileCollide` field; false for every ported eye
+            // kind (the Pigron phase write rides `EyeOut`, no kind yet).
+            no_tile_collide: false,
+            // `Main.EverLastingTicker` — not plumbed into `Npc::update`
+            // (the zombie wiring's 0 stand-in).
+            ticker: 0,
         };
+        // The machine keys on the vanilla `NPCID` (the style10
+        // convention): `kind.net_id()` — 2/133/190-194 (the bestiary
+        // rows), NOT the port-local `to_u16` band the five variants ride.
+        let out = crate::npc_ai_eye::floating_eye_ai(self, self.kind.net_id(), &env, rng);
+        // The out feeds: dust = the S1-E-1 skip, moan/light = no kinds
+        // yet, no_tile_collide = None for every ported kind (the module's
+        // census). Discarded as a whole — the DRAW already ran.
+        let _ = out;
+        // The generic `NPC.UpdateNPC` tail for a noGravity flyer
+        // (`NPC.cs:92523-92608`): the collideX/Y latches feed the next
+        // tick's bounce kicks, oldVelocity captured pre-integration.
+        self.integrate_flyer_collision(world);
+        // The port's framework off-world guard (the stand-in's tail,
+        // `world_sim/npcs.rs:1852`'s precedent — not a C# arm line).
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
         }
@@ -26995,28 +27045,35 @@ mod tests {
         assert_eq!(n.sprite_dir, -1, "the flip carries both fields");
     }
 
-    /// BUG-07: aiStyle 13's two one-sided `if (num215 > 0)` /
-    /// `if (num215 < 0)` arms (`NPC.cs:22740-22752`) — the eye flips on its
-    /// OWN aim, so a target dead-centre (`num215 == 0`) leaves the previous
-    /// flip in place instead of snapping to the body's facing.
+    /// BUG-07 (W4-b2b repoint): the stand-in's aiStyle-13-cited own-aim
+    /// flip (`:22740-22752`) is RETIRED with `update_eye`. The faithful
+    /// aiStyle-2 arm has NO flip of its own — `FindFrame`'s case-2 group
+    /// writes `spriteDirection` off `velocity.X` (`NPC.cs:74019-74031`):
+    /// a moving eye flips with its flight, a `vx == 0` eye keeps the
+    /// previous flip (neither one-sided `if` fires).
     #[test]
     fn bug_07_the_demon_eye_keeps_its_flip_on_a_dead_centre_aim() {
-        let w = World::new("t".into(), 200, 100);
+        let mut w = World::new("t".into(), 200, 100);
+        w.day_time = false; // the dawn-flee gate must not fire
         let mut n = bare(NpcKind::DemonEye);
         n.x = 50.0 * 16.0;
         n.y = 50.0 * 16.0;
         let mut player = crate::player::Player::spawn(&w);
-        // A target to the left flips the eye left.
+        // A target to the left steers the eye left: vx < 0 → the flip.
         player.x = n.x - 120.0;
         player.y = n.y;
-        n.update_eye(&w, &mut player, 0.0);
-        assert_eq!(n.sprite_dir, -1, "the eye aims left");
-        // Snap the player onto the eye's centre: `num215 == 0` writes
-        // nothing, so the flip is preserved.
+        n.update_rng(&w, &mut player, 0.0, &mut UnifiedRandom::new(1));
+        assert!(n.vx < 0.0, "the eye steers left");
+        assert_eq!(n.sprite_dir, -1, "FindFrame flips with the flight");
+        // A dead-centre target steers nothing on a resting eye:
+        // `vx == 0` → neither one-sided `if` fires, the flip is preserved.
         player.x = n.x + n.size().0 * 0.5 - crate::player::WIDTH * 0.5;
-        player.y = n.y;
-        n.update_eye(&w, &mut player, 0.0);
-        assert_eq!(n.sprite_dir, -1, "a dead-centre aim keeps the flip");
+        player.y = n.y + n.size().1 * 0.5 - crate::player::HEIGHT * 0.5;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.update_rng(&w, &mut player, 0.0, &mut UnifiedRandom::new(1));
+        assert_eq!(n.vx, 0.0, "the dead-centre aim steers nothing");
+        assert_eq!(n.sprite_dir, -1, "a zero vx keeps the flip");
     }
 
     /// BUG-07: the WoF eye has NO flip of its own — `:26066-26068` copies the
