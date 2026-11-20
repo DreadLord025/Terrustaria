@@ -187,6 +187,26 @@ fn hit_time_damage(kind: u16, damage: i32) -> i32 {
         RAINBOW_WHIP => (damage as f64 * 0.8) as i32,
         // `:13494-13496` — the Constellation.
         CONSTELLATION_WHIP => (damage as f64 * 0.9) as i32,
+        // `:13497-13499` — the Moon Lord Whip (Kaleidoscope).
+        MOON_LORD_WHIP => (damage as f64 * 0.95) as i32,
+        // `:13500-13502` — the Fairy Queen's magic-item shot (Empress Blade).
+        931 => (damage as f64 * 0.8) as i32,
+        // `:13503-13505` — the High Velocity Bullet.
+        HIGH_VELOCITY_BULLET => (damage as f64 * 0.85) as i32,
+        // `:13506-13511` — the Stake / the Jester's Arrow.
+        323 | JESTERS_ARROW => (damage as f64 * 0.9) as i32,
+        // `:13512-13514` — the Unholy Arrow.
+        UNHOLY_ARROW => (damage as f64 * 0.95) as i32,
+        // `:13515-13520` — the friendly Frost Blast / the Terra Beam.
+        FROST_BLAST_FRIENDLY | TERRA_BEAM => (damage as f64 * 0.85) as i32,
+        // `:13521-13523` — the Terra Blade's second shot.
+        985 => (damage as f64 * 0.75) as i32,
+        // `:13524-13526` — the Princess Weapon (Resonance Scepter).
+        950 => (damage as f64 * 0.98) as i32,
+        // `:13527-13529` — the friendly Insanity Shadow.
+        964 => (damage as f64 * 0.85) as i32,
+        // `:13530-13532` — the Lightning Strike shot (the `(float)` cast).
+        1117 => (damage as f32 * 0.8) as i32,
         _ => damage,
     }
 }
@@ -44850,5 +44870,78 @@ mod w4_a4_hit_time_tests {
             assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
             assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
         }
+    }
+
+    /// `:13497-13532` — the switch's tail: the Moon Lord Whip ×0.95, the
+    /// Empress Blade ×0.8, the High Velocity Bullet ×0.85, the Stake /
+    /// Jester's Arrow ×0.9, the Unholy Arrow ×0.95, the Frost Blast / Terra
+    /// Beam ×0.85, the Terra Blade's second shot ×0.75, the Resonance
+    /// Scepter ×0.98, the Insanity Shadow ×0.85 and the Lightning Strike
+    /// ×0.8f. `(kind, hit1 store, hit2 store)` — the rowless kinds are
+    /// hand-built, the rowed ones spawn through the seam.
+    #[test]
+    fn w4_a4_the_switch_tail_decays_every_remaining_kind() {
+        // (kind, has_row, local_immunity_row, m1, m2)
+        let cases: &[(u16, bool, bool, i32, i32)] = &[
+            (MOON_LORD_WHIP, true, true, 95, 90),
+            (931, false, false, 80, 64),
+            (HIGH_VELOCITY_BULLET, true, true, 85, 72),
+            (323, true, false, 90, 81),
+            (JESTERS_ARROW, true, false, 90, 81),
+            (UNHOLY_ARROW, true, false, 95, 90),
+            (FROST_BLAST_FRIENDLY, true, false, 85, 72),
+            (TERRA_BEAM, true, true, 85, 72),
+            (985, false, false, 75, 56),
+            (950, false, false, 98, 96),
+            (964, false, false, 85, 72),
+            (1117, false, false, 80, 64),
+        ];
+        for &(kind, has_row, local_row, m1, m2) in cases {
+            let mut pool = if has_row {
+                let mut p = ProjectilePool::new();
+                let s = p
+                    .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+                    .unwrap();
+                if tr_core::whip::is_whip(kind) {
+                    p.set_whip_params(s, 0, 0, 30.0);
+                } else {
+                    // Open the penetrate budget so the re-hit passes (the
+                    // single-hit rows break the walk at penetrate 0).
+                    p.slots_mut()[s].penetrate = -1;
+                    p.slots_mut()[s].max_penetrate = -1;
+                }
+                p
+            } else {
+                rowless(kind, 100)
+            };
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m1, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            if local_row {
+                pool.local_immunity[0] = 0;
+            }
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
+        }
+    }
+
+    /// `:13530-13532` — the Lightning Strike's `(float)` 0.8f cast: at
+    /// store 10 the f32 product is 8.0000001 → 8 (the f64 0.8 also gives
+    /// 8 here), but at store 5 the f32 product is 4.0000001 → 4 while a
+    /// naive 0.8 double gives 4.0 → 4 too — the 15-store pin separates:
+    /// 15f·0.8f = 12.0000005 → 12, then 12f·0.8f = 9.6000004 → 9.
+    #[test]
+    fn w4_a4_the_lightning_strike_compounds_in_float() {
+        let mut pool = rowless(1117, 15);
+        let mut npc = victim();
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 12, "(int)(15f·0.8f) = 12");
+        npc.immune[0] = 0;
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 9, "(int)(12f·0.8f) = 9");
+        assert_eq!(10_000 - npc.hp, 27, "15 then 12");
     }
 }
