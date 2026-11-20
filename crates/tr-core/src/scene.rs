@@ -253,6 +253,10 @@ pub struct Auras {
     pub sunflower: bool,
     pub cat_bast: bool,
     pub shadow_candle: bool,
+    /// The Strong Wind grant gate (`Player.cs:25556-25559`):
+    /// `!behindBackWall && ZoneSandstorm` → `AddBuff(194, 2)`. Derived in
+    /// [`SceneMetrics::auras`] from the two scan flags (W4-c40).
+    pub sandstorm_wind: bool,
 }
 
 /// `SceneMetrics.AssumedConstantScreenSize` / `ZoneScanPadding` /
@@ -428,6 +432,9 @@ impl SceneMetrics {
             sunflower: self.has_sunflower,
             cat_bast: self.has_cat_bast,
             shadow_candle: self.shadow_candle_count > 0,
+            // `Player.cs:25556`: `!this.behindBackWall && this.ZoneSandstorm`
+            // (the player flags mirror the scan, `:16715`).
+            sandstorm_wind: !self.behind_backwall && self.zone_sandstorm,
         }
     }
 

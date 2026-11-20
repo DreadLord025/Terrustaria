@@ -1218,6 +1218,11 @@ pub struct Player {
     /// `Player.sandStorm` (`Player.cs:36298`): the Sandstorm-in-a-Bottle dash
     /// pose (leg row 0, body row 6, a 4-tick turn cadence).
     pub sand_storm: bool,
+    /// `Player.windPushed` (`Player.cs:2342`): the Strong Wind debuff (194)
+    /// flag — `ResetEffects` clears it (`:16970`), the buff arm re-grants
+    /// (`:11835-11838`), `HorizontalMovement`'s push arm reads it
+    /// (`:19795-19817`). W4-c40.
+    pub wind_pushed: bool,
     /// `Player.carpetFrame` (`Player.cs:1094`, init `-1`): the Magic Carpet
     /// glide pose (leg row 0, body row 6).
     pub carpet_frame: i32,
@@ -2647,6 +2652,7 @@ impl Player {
             shield_raised: false,
             sliding: false,
             sand_storm: false,
+            wind_pushed: false,
             carpet_frame: -1,
             legs_armor: 0,
             frame_inputs: FrameInputs::default(),
@@ -5897,6 +5903,9 @@ impl Player {
         self.chilled = false;
         self.frozen = false;
         self.webbed = false;
+        // `Player.cs:16970`: `ResetEffects` clears `windPushed` — the buff-194
+        // arm below re-grants it per tick (W4-c40).
+        self.wind_pushed = false;
         // S1-P-i41 — the water-mount / Cursed flag clears of `ResetEffects`:
         // `canFloatInWater = false` (`Player.cs:18332`), `accFlipper = false`
         // (`:18361`), `noItems = false` / `cursed = false` (`:18687-18688`),
@@ -6604,6 +6613,12 @@ impl Player {
                 // `accFlipper`/`cursed` too; the i35 duplicates folded in.)
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
+                // `Player.cs:11835-11838`: buff 194 (Strong Wind) —
+                // `windPushed = true`; `HorizontalMovement`'s push arm
+                // (`:19795-19817`) reads it. W4-c40. (The pure effect
+                // table `buff_effects_misc.rs:660` carries the same arm —
+                // this live loop is the wired path, keep-one.)
+                194 => self.wind_pushed = true,
                 // `:11001-11004`: the Sunflower buff's movement tier —
                 // `moveSpeed += 0.1f; moveSpeed *= 1.1f` per slot.
                 146 => {
@@ -6992,6 +7007,14 @@ impl Player {
         if self.auras.sunflower {
             self.buffs.add_buff(146, 2);
         }
+        // `Player.cs:25556-25559`: `!behindBackWall && ZoneSandstorm` →
+        // `AddBuff(194, 2)` — the Strong Wind indicator. The gate rides the
+        // scan snapshot (`Auras::sandstorm_wind`); the effect arm above
+        // reads the PREVIOUS tick's grant, exactly like the source
+        // (W4-c40).
+        if self.auras.sandstorm_wind {
+            self.buffs.add_buff(194, 2);
+        }
         // `Player.Update` → `UpdateLuck` (`Player.cs:25645` → `:29041`): the
         // decay timers + `RecalculateLuck`, after the buff effects derived
         // stinky/luckPotion/kiteLuckLevel above and before movement.
@@ -7156,7 +7179,10 @@ impl Player {
             // it — the two never fire together (no cart row in the mount
             // table; M2-MOUNT-3 bridges them).
             self.update_mount(world, raining, wind);
-            self.horizontal_movement(input);
+            // W4-c40: the Strong Wind push reads `Main.windSpeedCurrent`
+            // (`Player.cs:19797`); the calm default (no wind model) is 0.0.
+            let wind_speed_current = wind.map(|w| w.speed_current).unwrap_or(0.0);
+            self.horizontal_movement(input, wind_speed_current);
         }
         // `Player.cs:19637-19641` (`UpdateJumpHeight`'s tail): Dazed (160)
         // divides the jump statics — height /5, speed /2 — after the sticky
@@ -10279,17 +10305,80 @@ impl Player {
         }
     }
 
+    /// `Player.CanBePushedByWind` (`Player.cs:19751-19770`): the Strong Wind
+    /// push gate — a tile-locked player never drifts (`isLockedToATile` has
+    /// no port system, constant false — ANALYSIS W4-c40), the roller skates
+    /// grip the ground (`MountID.Sets.IsRollerSkates`), and a mounted player
+    /// pressing a direction key on the ground steers instead of drifting
+    /// (the C#'s non-short-circuit `&` is behaviourally the `&&` here — both
+    /// operands are side-effect-free). W4-c40.
+    fn can_be_pushed_by_wind(&self) -> bool {
+        let flag = self.control_left || self.control_right;
+        // `:19754-19757`: isLockedToATile — unported (constant false).
+        if self.mount.is_active() {
+            // `:19760-19763`: the roller skates refuse the push.
+            if crate::mount::is_roller_skates(self.mount.kind()) {
+                return false;
+            }
+            // `:19764-19767`: `(velocity.Y == 0f) & flag`.
+            if self.vy == 0.0 && flag {
+                return false;
+            }
+        }
+        true
+    }
+
     /// `Player.HorizontalMovement` (`Player.cs:19772-20090`), the exact if/else
     /// chain: the pending booster push applies pre-input and clamps
     /// (`:19818-19833`), the cart arms gate their accel on `velocity.Y == 0`
     /// (`:19849/:19907`), the off-track brakes pull the roll toward rest
     /// (`:19858-19865`, `:19948-19956`), the cart coast arm clamps ±max without
     /// on-track friction (`:20023-20058`), and the grounded/airborne friction
-    /// tails close the chain (`:20059-20087`).
-    fn horizontal_movement(&mut self, input: PlayerInput) {
+    /// tails close the chain (`:20059-20087`). `wind_speed_current` is
+    /// `Main.windSpeedCurrent` — the Strong Wind push arm (`:19795-19817`)
+    /// and its flag2 tail (`:20089-20107`) read it (W4-c40; the plain
+    /// `update` harness passes 0.0 = calm).
+    fn horizontal_movement(&mut self, input: PlayerInput, wind_speed_current: f32) {
         // `Player.cs:19779`: the fast-run threshold — halfway between the
         // boot top speed and the base run speed.
-        let fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
+        let mut fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
+        // `Player.cs:19778-19780`: `flag`/`num2`/`flag2` — the push arm's
+        // carry-outs to the threshold penalty and the velocity tail.
+        let flag = self.control_left || self.control_right;
+        let mut num2 = 0.0f32;
+        let mut flag2 = false;
+        // `Player.cs:19795-19817`: the Strong Wind push — `windPushed &&
+        // CanBePushedByWind()`. (The mount-43 basilisk hop arm `:19782-19794`
+        // ahead of it has no port mount row — it consumes nothing.)
+        if self.wind_pushed && self.can_be_pushed_by_wind() {
+            // `:19797`: `Math.Sign(windSpeedCurrent) * 0.06f`.
+            let wind_sign = (wind_speed_current > 0.0) as i32 - (wind_speed_current < 0.0) as i32;
+            num2 = wind_sign as f32 * 0.06;
+            // `:19798-19801`: the gale tier ×1.37.
+            if wind_speed_current.abs() > 0.5 {
+                num2 *= 1.37;
+            }
+            // `:19802-19805`: airborne ×1.5.
+            if self.vy != 0.0 {
+                num2 *= 1.5;
+            }
+            // `:19806-19811`: while steering, ×0.8 then clamp ±0.072.
+            if flag {
+                num2 *= 0.8;
+                let num4 = 0.072f32;
+                num2 = num2.clamp(0.0 - num4, num4);
+            }
+            flag2 = true;
+            // `:19813-19816`: facing against the push lowers the fast-run
+            // threshold by `|num2| * 40` — the C# compares
+            // `Math.Sign(direction)` to `Math.Sign(num2)` (Sign(0)=0 differs
+            // from a ±1 facing, but num2==0 makes the penalty a no-op).
+            let facing_sign = (self.facing > 0) as i32 - (self.facing < 0) as i32;
+            let push_sign = (num2 > 0.0) as i32 - (num2 < 0.0) as i32;
+            if facing_sign != push_sign {
+                fast_run_threshold -= num2.abs() * 40.0;
+            }
+        }
         // `Player.cs:19818-19833`: the boost applies before any input reads
         // the velocity, then clamps.
         if self.track_boost != 0.0 {
@@ -10506,6 +10595,26 @@ impl Player {
                 self.vx += self.run_slowdown * 0.5;
             } else {
                 self.vx = 0.0;
+            }
+        }
+        // `Player.cs:20089-20107`: the flag2 tail — the Strong Wind push
+        // approaches the velocity toward num2 ONE-SIDED: a leftward push
+        // only fires while `velocity.X > num2` (dragging rightward motion
+        // down to the wind speed, never accelerating past it), the mirror
+        // for a rightward push. The clamp lands exactly on num2 on the
+        // crossing tick. W4-c40.
+        if flag2 {
+            if num2 < 0.0 && self.vx > num2 {
+                self.vx += num2;
+                if self.vx < num2 {
+                    self.vx = num2;
+                }
+            }
+            if num2 > 0.0 && self.vx < num2 {
+                self.vx += num2;
+                if self.vx > num2 {
+                    self.vx = num2;
+                }
             }
         }
     }
@@ -20579,11 +20688,11 @@ mod s1_player_composite_tests {
         p.control_left = true;
         p.control_right = false;
         p.sand_storm = true;
-        p.horizontal_movement(PlayerInput::default());
+        p.horizontal_movement(PlayerInput::default(), 0.0);
         assert_eq!(p.facing, 1, "the sandstorm keeps the facing");
         // The flag down, the same press turns.
         p.sand_storm = false;
-        p.horizontal_movement(PlayerInput::default());
+        p.horizontal_movement(PlayerInput::default(), 0.0);
         assert_eq!(p.facing, -1);
     }
 
@@ -21280,24 +21389,222 @@ mod s1_p_i05_thrust_tests {
             item_in_use: true,
             held_use_turn: false,
             ..Default::default()
-        });
+        }, 0.0);
         assert_eq!(p.facing, 1, "the stab locks the facing");
         // useTurn (the pickaxe's row) turns mid-swing.
         p.horizontal_movement(PlayerInput {
             item_in_use: true,
             held_use_turn: true,
             ..Default::default()
-        });
+        }, 0.0);
         assert_eq!(p.facing, -1, "useTurn exempts the lock");
         // Idle (itemAnimation == 0) turns freely.
         p.facing = 1;
-        p.horizontal_movement(PlayerInput::default());
+        p.horizontal_movement(PlayerInput::default(), 0.0);
         assert_eq!(p.facing, -1, "the idle turn is unlocked");
         // The sandstorm dash owns the turn cadence (`:19837` !sandStorm).
         p.facing = 1;
         p.sand_storm = true;
-        p.horizontal_movement(PlayerInput::default());
+        p.horizontal_movement(PlayerInput::default(), 0.0);
         assert_eq!(p.facing, 1, "the sandstorm gates the run-key turn");
+    }
+
+    // ---- W4-c40: the Strong Wind push chain (written, NOT run) ----
+
+    /// `Player.cs:25556-25559` + `:11835-11838`: the scene grant arms buff
+    /// 194 from `Auras::sandstorm_wind`, and the NEXT tick's slot scan sets
+    /// `wind_pushed` (the effect reads the previous tick's grant, like the
+    /// sunflower precedent). The `ResetEffects` clear (`:16970`) drops the
+    /// flag when the aura leaves.
+    #[test]
+    fn w4_c40_the_sandstorm_aura_grants_the_wind_push_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.auras.sandstorm_wind = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.active_types().contains(&194), "the grant lands");
+        assert!(!p.wind_pushed, "the effect reads the PREVIOUS tick's grant");
+        p.update(&w, PlayerInput::default());
+        assert!(p.wind_pushed, "the second tick's scan arms the flag");
+        // The aura gone: the 2-tick buff expires and the reset clears.
+        p.auras.sandstorm_wind = false;
+        for _ in 0..4 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(!p.wind_pushed, "ResetEffects clears with no re-grant");
+        assert!(!p.buffs.active_types().contains(&194));
+    }
+
+    /// `Player.cs:19795-19817` + `:20089-20107`: the push maths, probed at
+    /// the movement seam directly. Grounded + idle + wind 0.7 (> 0.5):
+    /// num2 = 0.06 × 1.37 = 0.0822; friction zeroes vx first, then the
+    /// flag2 tail clamps to num2 on the crossing tick.
+    #[test]
+    fn w4_c40_the_push_accelerates_to_the_wind_speed() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wind_pushed = true;
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.control_left = false;
+        p.control_right = false;
+        p.horizontal_movement(PlayerInput::default(), 0.7);
+        // 0.06 * 1.37 — f32 exact: both operands are f32 literals.
+        let want = 0.06f32 * 1.37f32;
+        assert_eq!(p.vx, want, "the one-sided tail clamps onto num2");
+        // At the wind speed the tail no longer fires (vx == num2 fails the
+        // strict `<`), but grounded friction pulls it back under, and the
+        // tail re-clamps — the equilibrium oscillates within one slowdown.
+        let before = p.vx;
+        p.horizontal_movement(PlayerInput::default(), 0.7);
+        assert!(p.vx <= before, "never accelerates past num2");
+        assert!(p.vx > before - p.run_slowdown - 1e-6);
+    }
+
+    /// `Player.cs:19802-19811`: airborne ×1.5, steering ×0.8 + the ±0.072
+    /// clamp. Wind 0.7 airborne idle: 0.06×1.37×1.5 = 0.1233. Steering:
+    /// ×0.8 → 0.09864 → clamped to 0.072.
+    #[test]
+    fn w4_c40_the_push_tiers_airborne_and_steering() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wind_pushed = true;
+        p.vx = 0.0;
+        p.vy = -2.0; // airborne
+        p.control_left = false;
+        p.control_right = false;
+        p.horizontal_movement(PlayerInput::default(), 0.7);
+        let airborne = 0.06f32 * 1.37f32 * 1.5f32;
+        // Airborne friction (runSlowdown*0.5) zeroes the 0 vx, the tail
+        // adds num2 once — vx lands exactly on num2.
+        assert_eq!(p.vx, airborne, "airborne ×1.5");
+        // Steering: the clamp caps num2 at 0.072. Exact f32 replay of the
+        // C# statement order: the right-key airborne input arm
+        // (`:19907-19916`: vx < -runSlowdown → += runSlowdown, then
+        // += runAcceleration), then the flag2 tail approaches from below
+        // (`:20099-20106`: vx += num2, no clamp crossing).
+        let mut q = Player::spawn(&w);
+        for _ in 0..120 {
+            q.update(&w, PlayerInput::default());
+        }
+        q.wind_pushed = true;
+        q.vx = -1.0; // moving against the wind
+        q.vy = -2.0;
+        q.control_right = true;
+        let (slow, accel) = (q.run_slowdown, q.run_acceleration);
+        q.horizontal_movement(
+            PlayerInput { right: true, ..Default::default() },
+            0.7,
+        );
+        let mut want = -1.0f32;
+        want += slow;
+        want += accel;
+        want += 0.072;
+        assert_eq!(q.vx, want, "the clamped push adds exactly 0.072");
+        // Direct pin of the clamp maths (the C# literals).
+        let mut num2 = 0.06f32 * 1.37f32 * 1.5f32 * 0.8f32;
+        num2 = num2.clamp(-0.072, 0.072);
+        assert_eq!(num2, 0.072, "0.09864 clamps to 0.072");
+    }
+
+    /// `Player.cs:19751-19770`: `CanBePushedByWind` — the roller skates
+    /// refuse; a mounted player grounded WITH a direction key refuses;
+    /// mounted airborne or idle allows.
+    #[test]
+    fn w4_c40_can_be_pushed_by_wind_gates() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.vy = 0.0;
+        p.control_left = false;
+        p.control_right = false;
+        assert!(p.can_be_pushed_by_wind(), "unmounted idle");
+        p.control_right = true;
+        assert!(p.can_be_pushed_by_wind(), "unmounted steering still drifts");
+        // The roller skates (57) grip.
+        assert!(p.set_mount(57, false));
+        p.control_right = false;
+        assert!(!p.can_be_pushed_by_wind(), "the skates refuse");
+        // A flying mount (the Bat 56) grounded + steering refuses; airborne
+        // allows.
+        assert!(p.set_mount(56, false));
+        p.control_right = true;
+        p.vy = 0.0;
+        assert!(!p.can_be_pushed_by_wind(), "mounted grounded steering");
+        p.vy = -1.0;
+        assert!(p.can_be_pushed_by_wind(), "mounted airborne");
+        p.vy = 0.0;
+        p.control_right = false;
+        assert!(p.can_be_pushed_by_wind(), "mounted grounded idle");
+    }
+
+    /// `Player.cs:19813-19816`: facing against the push lowers the fast-run
+    /// threshold by |num2|×40 — the Hermes footstep arm (`:19987-19990`,
+    /// the port's `spawn_fast_run_particles` step-sound request) fires
+    /// earlier. With vx between the lowered and the normal threshold, the
+    /// request fires only when the facing opposes the push.
+    #[test]
+    fn w4_c40_the_facing_penalty_lowers_the_fast_run_threshold() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wind_pushed = true;
+        p.vy = 0.0;
+        p.control_left = true;
+        p.control_right = false;
+        let normal = (p.acc_run_speed + p.max_run_speed) / 2.0;
+        let num2 = (0.06f32 * 1.37f32 * 0.8f32).clamp(-0.072, 0.072); // steering
+        let lowered = normal - num2.abs() * 40.0;
+        assert!(lowered < normal, "the penalty is real when opposed");
+        // vx in the band (lowered, normal), running left (negative): the
+        // arm reads `vx < -threshold`. Facing +1 vs push +1: no penalty,
+        // no step request. Facing -1 vs push +1: penalty, request fires.
+        // (The C# reads `direction`, not the keys.)
+        p.vx = -(lowered + normal) / 2.0;
+        p.facing = 1;
+        p.run_sound_delay = 0;
+        p.pending_step_sound = None;
+        p.horizontal_movement(PlayerInput { left: true, ..Default::default() }, 0.7);
+        let same_dir = p.pending_step_sound.is_some();
+        p.vx = -(lowered + normal) / 2.0;
+        p.facing = -1;
+        p.run_sound_delay = 0;
+        p.pending_step_sound = None;
+        p.horizontal_movement(PlayerInput { left: true, ..Default::default() }, 0.7);
+        let opposed = p.pending_step_sound.is_some();
+        assert!(!same_dir, "the aligned facing keeps the normal threshold");
+        assert!(opposed, "the opposed facing fires the trail earlier");
+    }
+
+    /// W4-c40 RNG census: the whole push chain draws NOTHING — the grant,
+    /// the flag arm, the gate and both movement arms are pure. Twin ticks
+    /// with the flag on/off leave the stage stream at the same position.
+    #[test]
+    fn w4_c40_the_push_chain_draws_nothing() {
+        let w = ground_world();
+        let mut a = Player::spawn(&w);
+        let mut b = Player::spawn(&w);
+        for _ in 0..60 {
+            a.update(&w, PlayerInput::default());
+            b.update(&w, PlayerInput::default());
+        }
+        a.auras.sandstorm_wind = true;
+        let mut rng_a = DodgeRng::with_rolls(&[]);
+        let mut rng_b = DodgeRng::with_rolls(&[]);
+        for _ in 0..10 {
+            a.update_with_grapple(&w, PlayerInput::default(), &[], false, false, false, None, &mut rng_a);
+            b.update_with_grapple(&w, PlayerInput::default(), &[], false, false, false, None, &mut rng_b);
+        }
+        assert!(a.wind_pushed, "the grant armed by tick 2");
+        assert_eq!(rng_a.draws.len(), rng_b.draws.len(), "zero added draws");
+        assert_eq!(rng_a.draws, rng_b.draws, "the draw sequence is identical");
     }
 }
 
