@@ -871,6 +871,15 @@ pub(crate) struct App {
     /// `WorldFrameKey::tile_anim` covers every value it feeds the draw.
     pub(crate) tile_anim: tr_core::drawdata_anim::TileAnimator,
     pub(crate) tile_anim_step: FixedStepper,
+    /// W4-g33: `Main.*CageFrame` — the critter-cage animator
+    /// (`Main.AnimateTiles_CritterCages`, `Main.cs:13511-16596`), ticked at
+    /// the `AnimateTiles` tail (`Main.cs:19303`) inside
+    /// `animate_tiles_phase`. Process state in C# (the world-load reset
+    /// does NOT touch it) — warmed up once at construction
+    /// (`Initialize_TileAndNPCData2`, `Main.cs:6802-6807`) and never reset
+    /// on world entry. `WorldFrameKey::tile_anim` covers it via
+    /// `CageAnimator::anim_key` gated on `is_cage_kind`.
+    pub(crate) cage_anim: tr_core::drawdata_cages::CageAnimator,
     /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
@@ -3988,6 +3997,7 @@ impl App {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
+            cage_anim: tr_core::drawdata_cages::CageAnimator::new(),
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
@@ -4076,6 +4086,13 @@ impl App {
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
         app.wiring.seed_rand(world_seed | 1);
+        // W4-g33: `Main.Initialize_TileAndNPCData2`'s cage warm-up
+        // (`Main.cs:6802-6807`) — 3600 `AnimateTiles_CritterCages` calls on
+        // `Main.rand` before any world opens, so the cage tables are NOT
+        // all-zero at t=0. The port's bare-`Main.rand` stand-in is the
+        // world-seeded global stream (the documented determinism
+        // deviation, `rng.rs`); the warm-up rides it once per App.
+        app.cage_anim.warm_up(app.rngs.global());
         // `SetOngoingToTemps:169-172`: the sandstorm snapshot the load read out
         // of the flags block (`_tempSandstorm*`, `LoadWorldFlags:2277-2283`)
         // restores the event's live state, exactly as the rain triple above

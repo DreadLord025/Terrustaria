@@ -433,8 +433,16 @@ impl App {
     let rng = self.rngs.global();
     let step = &mut self.tile_anim_step;
     let animator = &mut self.tile_anim;
+    // W4-g33: `Main.AnimateTiles_CritterCages()` is the AnimateTiles TAIL
+    // (`Main.cs:19303`) — same tick, same `Main.rand`, right after the
+    // tile rows. The `critterCage` proximity flag was set by the previous
+    // frame's cage draws (`TileDrawing.cs:5672` etc., cleared at the
+    // non-solid Draw head `:474`); the animator early-returns without it
+    // (`Main.cs:13513`), drawing nothing.
+    let cages = &mut self.cage_anim;
     step.tick(dt, |_| {
         animator.animate_tiles(wind, rng, false);
+        cages.animate(rng);
     });
     step.cap_backlog();
     }

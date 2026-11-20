@@ -325,7 +325,19 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-g33: the critter-cage animator (`Main.*CageFrame`,
+    // `Main.AnimateTiles_CritterCages`, `Main.cs:13511-16596`). The cage
+    // case arms of the FIRST `GetTileDrawData` switch
+    // (`TileDrawing.cs:5629-5907`) read its tables; drawing a cage cell
+    // also sets `Main.critterCage` (`:5672` etc.), the proximity flag the
+    // next update's animator gates on. Cleared at the pass head like the
+    // non-solid `TileDrawing.Draw` (`:474`).
+    cage_anim: &mut tr_core::drawdata_cages::CageAnimator,
 ) -> TileDrawStats {
+    // `TileDrawing.Draw`'s non-solid head clears the proximity flag
+    // (`TileDrawing.cs:472-475`); the port's single combined pass clears
+    // it once here, then every drawn cage cell re-arms it below.
+    cage_anim.critter_cage = false;
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
     // per frame like the sparkle draws.
@@ -677,6 +689,28 @@ pub(crate) fn draw_tiles(
                         anim_row,
                         solid_above,
                     );
+                    // W4-g33: the critter-cage case arms of the FIRST
+                    // GetTileDrawData switch (TileDrawing.cs:5629-5907) —
+                    // `tileTop = 2; Main.critterCage = true;` plus the
+                    // per-animal `addFrY = Main.<table>[probe] * stride`
+                    // rewrite (the pufferfish also rewrites addFrX). The
+                    // arms REPLACE the static table's cage rows (the
+                    // drawdata_furniture wiring note); the animated
+                    // tables ride `CageAnimator::frame_of`. The C# sets
+                    // the proximity flag inside GetTileDrawData — before
+                    // any visibility gate — so the port sets it here too.
+                    if let Some(cage) = tr_core::drawdata_furniture::cage_draw_data(
+                        tile.kind,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        tr_core::drawdata_furniture::CAGE_FRAMES,
+                        |t, row, idx| cage_anim.frame_of(t, row, idx),
+                    ) {
+                        cage_anim.critter_cage = true;
+                        dd = cage;
+                    }
                     // The world-probing frame corrections C# applies in
                     // `GetTileDrawData` (palm biome row 323, dye plants 227)
                     // and `DrawSingleTile` (cactus 80, cog 272).
@@ -1871,6 +1905,63 @@ mod tests {
         assert_eq!(dd_block.matches("anim_row,").count(), 3);
         assert!(dd_block.contains("anim_counter,"));
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
+    }
+
+    /// W4-g33 wiring witness: the cage rewrite sits at the C# FIRST-switch
+    /// position — after `draw_data` (the static table), BEFORE
+    /// `apply_world_corrections`/`case_draw_data`/`apply_cases_a` (the C#
+    /// cage arms are arms of the first `GetTileDrawData` switch,
+    /// `TileDrawing.cs:5629-5907`, and the second/glow switch reads their
+    /// `addFrY` — e.g. the firefly jars 568-570's `rect_anim_y`).
+    #[test]
+    fn cage_rewrite_rides_the_first_switch_before_the_glow_switch() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_call = body.find("tr_core::drawdata::draw_data(").unwrap();
+        let cage = body.find("tr_core::drawdata_furniture::cage_draw_data(").unwrap();
+        let corrections = body.find("dd.apply_world_corrections(").unwrap();
+        let cases_b = body.find("crate::drawdata_cases_b::case_draw_data(").unwrap();
+        let cases_a = body.find("crate::drawdata_cases_a::apply_cases_a(").unwrap();
+        assert!(dd_call < cage, "the cage arms rewrite the static table's result");
+        assert!(cage < corrections && cage < cases_b && cage < cases_a,
+            "the cage arms are FIRST-switch arms — the glow switch reads their addFrY");
+        // The proximity flag: cleared at the pass head (TileDrawing.cs:474)
+        // and set inside the cage arm (the C# sets it in GetTileDrawData,
+        // before any visibility gate — :5672).
+        let clear = body.find("cage_anim.critter_cage = false;").unwrap();
+        let set = body.find("cage_anim.critter_cage = true;").unwrap();
+        assert!(clear < dd_call, "the Draw head clears the flag first");
+        assert!(set > cage && set < corrections, "the arm sets it while resolving");
+        // The animated tables ride frame_of, not a frozen zero lookup.
+        assert!(body.contains("cage_anim.frame_of(t, row, idx)"));
+    }
+
+    /// W4-g33 parity witness: with the vanilla t=0 tables the wired cage
+    /// rewrite is byte-equal to the static arms for every cage kind (the
+    /// census's frozen-row-0 finding — the wiring changes no pixel until
+    /// the animator moves the tables).
+    #[test]
+    fn wired_cage_rewrite_matches_the_static_arms_at_t0() {
+        let a = tr_core::drawdata_cages::CageAnimator::new();
+        let cages: &[u16] = &[
+            275, 276, 277, 278, 279, 280, 281, 296, 297, 309, 358, 359, 413, 414, 542, 550, 551,
+            553, 554, 558, 559, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611,
+            612, 632, 640, 643, 644, 645, 710, 285, 286, 298, 299, 310, 339, 361, 362, 363, 364,
+            391, 392, 393, 394, 532, 533, 538, 544, 555, 556, 582, 619, 629, 282, 505, 543, 598,
+            568, 569, 570, 288, 289, 290, 291, 292, 293, 294, 295, 360, 580, 620, 521, 522, 523,
+            524, 525, 526, 527, 316, 317, 318,
+        ];
+        for &kind in cages {
+            let static_arm = tr_core::drawdata::draw_data(kind, 13, 7, 18, 18, 0, false);
+            let wired = tr_core::drawdata_furniture::cage_draw_data(
+                kind, 13, 7, 18, 18,
+                tr_core::drawdata_furniture::CAGE_FRAMES,
+                |t, r, i| a.frame_of(t, r, i),
+            )
+            .unwrap();
+            assert_eq!(wired, static_arm, "kind {kind}");
+        }
     }
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain

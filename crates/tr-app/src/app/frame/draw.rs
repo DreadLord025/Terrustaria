@@ -997,21 +997,35 @@ impl App {
                             let vx1 = ((camera.x + vh.x) / TILE_PX).ceil() as i32 + 1;
                             let vy0 = ((camera.y - vh.y) / TILE_PX).floor() as i32 - 1;
                             let vy1 = ((camera.y + vh.y) / TILE_PX).ceil() as i32 + 1;
-                            let any_animated = (vy0..=vy1).any(|ty| {
-                                (vx0..=vx1).any(|tx| {
-                                    world.tile(tx, ty).is_some_and(|t| {
-                                        t.active()
-                                            && tr_core::drawdata_anim::TileAnimator::is_animated_kind(
-                                                t.kind,
-                                            )
-                                    })
-                                })
-                            });
-                            if any_animated {
+                            let mut any_animated = false;
+                            // W4-g33: a cage in the view rect keys the
+                            // CageAnimator tables too (the cage draw arms
+                            // read them every frame) — same gate shape.
+                            let mut any_cage = false;
+                            for ty in vy0..=vy1 {
+                                for tx in vx0..=vx1 {
+                                    if let Some(t) = world.tile(tx, ty) {
+                                        if t.active() {
+                                            any_animated |= tr_core::drawdata_anim::TileAnimator::is_animated_kind(t.kind);
+                                            any_cage |= tr_core::drawdata_cages::CageAnimator::is_cage_kind(t.kind);
+                                        }
+                                    }
+                                }
+                            }
+                            let mut k = if any_animated {
                                 self.tile_anim.anim_key()
                             } else {
                                 0
+                            };
+                            if any_cage {
+                                // FNV-1a mix — the two keys must not
+                                // collide into the same slot value.
+                                for b in self.cage_anim.anim_key().to_le_bytes() {
+                                    k ^= b as u64;
+                                    k = k.wrapping_mul(0x0000_0100_0000_01b3);
+                                }
                             }
+                            k
                         },
                         net_key: {
                             // FNV-1a over the peers' smoothed state and the NPC
@@ -1183,6 +1197,10 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-g33: the critter-cage tables + the
+                            // `Main.critterCage` proximity flag the draw
+                            // arms set (`TileDrawing.cs:5672` etc.).
+                            &mut self.cage_anim,
                         );
                         *world_key = Some(key);
                     }
