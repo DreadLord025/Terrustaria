@@ -7123,6 +7123,53 @@ stale npc.rs Wizard/Mechanic witnesses were re-derived onto the new
 conjuncts (the blood-moon-alone arm no longer adds the Spell Tome; the
 Rod needs the Angler). Witnesses written, not run (the code-only swarm).
 
+## The shop remainder census (W4-d122, third round)
+
+Census of ALL 25 `Chest.SetupShop` cases (`Chest.cs:1371-3470`) against
+both shop branches (d122 = 1/2/3/4/5/7/8 + prior 9/10/11/14; d123 tip
+`675744c0` = 12/13/15/16/17/18/20/21/25 + the shared `:3472-3541` tail):
+case 6 (Goblin Tinkerer) and case 19 (Travelling Merchant) were already
+verbatim; **`GenerateTravelMerchantInventory` does not exist in 1.4.5.8**
+(zero hits across the decompiled tree) — the RNG loot-slot generator is
+`Chest.SetupTravelShop` (`Chest.cs:1275-1358`, with `_GetItem`
+`:984-1273`/`_GetPainting` `:821-954`/`_AddToShop` `:708-795`), ported
+earlier with the seed-7/99 stock snapshots and the case-19 armor-gate +
+40-slot-walk witnesses. The real gaps were the three M4 classic-subset
+shops:
+
+* **22 (Golfer, `:3156-3262`)** — one wrong gate: the Golf Cart 4264 rode
+  a bare `DownedBoss3`, but the C# nests it INSIDE the
+  `golferScoreAccumulated > 2000` trophy block (`:3207-3222`). Fixed via
+  the `GOLFER_CART` conjunct; the mixed `>=`/`>` ladder
+  (500/1000/2000) was already faithful.
+* **23 (Zoologist, `:3263-3407`)** — the M4-TOWN-19 12-row subset became
+  the full 41-row case: the fairy-torch 4776 HEAD
+  (`BestiaryGirl_IsFairyTorchAvailable`, `:3544-3559` — all three fairy
+  critters 583/584/585 discovered; the critter provider reads the SIGHTS
+  tracker, `CritterUICollectionInfoProvider.cs:15-21`, NOT kills —
+  `bestiary.rs::fairy_torch_available` over `WorldBestiary.sights`; the
+  AI_112 nearby-sighting wiring (`NPC.cs:48642-48646`) is unported, so
+  the gate stays closed until it lands = the recorded deviation), the
+  Solar Monolith 4677 (`downedTowerSolar`), the full completion ladder
+  0.03/0.1/0.25/0.3/0.4/0.45/0.5/0.7/1.0 (the 4788 row's hardmode
+  conjunct), the hardmode-blood-moon 4736, the Plantera 4701, the party
+  5466 and the four moon-pair license tails (the 6/7 arm's 4560+4775).
+* **24 (Princess, `:3409-3470`)** — the tenth-anniversary block
+  (`:3436-3468`, the M4 constants-off deviation) lands: the 1309/1859/
+  1358 heads on `tenthAnniversaryWorld` alone, the `ZoneDesert` Magic
+  Carpet 857, the blood-moon 4144, and the hardmode+`downedPirates` pet
+  block with one exact moon-pair row (2584/854/855/905) — all between
+  the 5044 hat slot and the always 5088 tail.
+
+`ShopFlags` grows `fairy_torch_available`/`downed_tower_solar` (shop 23)
+and `zone_desert` (shop 24), wired at the open seam (+ `from_world` for
+the tower latch); `StockWhen` grows `FairyTorchAvailable`/
+`DownedTowerSolar`/`AnniversaryWorld`/`ZoneDesert`. Witnesses written,
+not run (code-only): the cart's score-0 exclusion + the 2000/2001
+boundary, the Zoologist classic 4-row list + tier/monolith/license
+order, the Princess classic 19-row list + the block's inner gates and
+pet pairs.
+
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
 Two late-roster town NPCs. Deviations: the Dye Trader's `item.dye > 0` scan
