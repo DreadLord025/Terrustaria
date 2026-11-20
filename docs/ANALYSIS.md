@@ -26670,6 +26670,57 @@ timer engine untouched. Deliberate deviations:
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
 
+## The fourth buff block (S1-E-7 wave E, 2026-11-20, code-only)
+
+`crates/tr-app/src/buff_effects_status.rs` ports the FOURTH missing block
+of the `Player.UpdateBuffs` chain — `Player.cs:11406-12012`, **37 ids**:
+the late pet family (84/61/154/65/66/42/45/50/51/52/53/54/55/56/85/81/82/
+57/60/127/136), the DoT/status tail (80/320/353/163/164/194/195/196/197/
+198/145/43), Werewolf (28) and the hunger tiers (333/334) + Hearty Meal
+(336). Claim + live-set census: `docs/research/28e-wave-e-claim.md`
+(commit `e2dc1fcf`); disjoint by C# line from c16 `:9914-10048`, c17
+`:10318-10461`, c18 `:10462-10976` and the landed waves A/B/C/D.
+Deliberate deviations:
+
+- **Wiring deferred** (the wave-B/D admission): `apply_status_effect_arm`
+  folds one slot's writes into a `StatusEffects` accumulator; the module
+  is test-only until the waves' merge step copies it onto the live
+  fields. No `player.rs`/`buffs.rs`/`buff_effects_misc.rs` edits — the
+  wave-D `PET_ARMS` rows for these ids stay as they are; the merge
+  reconciles the two table forms (this module's rows are the disjoint
+  witness form, like c18's summon-table plan).
+- **The slot driver is ported, not just the arms**:
+  `run_status_buff_chain` mirrors the C# `for j` loop's two delete
+  shapes — Werewolf's `DelBuff(j); j--` RESCANS the compacted slot
+  (`:11907-11908`), Shimmering's deletes `continue` WITHOUT the rescan
+  (`:11797`/`:11823`). Two driver witnesses pin the difference (the
+  compacted Blackout runs after a Werewolf delete, is skipped after a
+  Shimmering delete). The timer head stays `buffs.rs::update_buffs_tick`.
+- **Pet spawns are requests** (`pet_spawns: Vec<u16>` at the entity
+  centre, `:11417`'s `position + width/2, height/2`): the
+  `NewProjectile` init rolls ride the pool seam (the wired accessory
+  module's precedent). The 18000 pin, the flag set and the owned-count
+  gate are 1:1; Crystal Leaf's kill-walk (`:11663-11673`) is the
+  `crystal_leaf_dedupe` request with exact 0/1/>1 count gates.
+- **Shimmering's tile scan** (`:11807-11816`) is verbatim against the
+  caller's `SolidTile3` predicate, keeping the C#'s inclusive FLOAT loop
+  bounds (`(float)num <= (pos + size) / 16f` — a witness pins the
+  far-edge tile counting and the one-past exclusion). The underworld
+  gate compares `y / 16f > UnderworldLayer` as f32 like the C#.
+- **Werewolf's 0.051f** melee damage AND speed (not the fed tiers'
+  0.05) is pinned; the day/charmless/merman kill gates each request the
+  delete + rescan.
+- **Hunger `pickSpeed` sign** kept signed like the C# (Hungry/Starving
+  ADD — mines slower); no `moveSpeed` line exists in either arm (the
+  C# omits it; a witness pins the zero). Hearty Meal (336) is flag-only.
+- **RNG census: ZERO direct draws** in `:11406-12012` (the block's only
+  rolls are the pet-spawn init draws, deferred with the requests). The
+  apply signature carries no `UnifiedRandom`; a mirrored-stream witness
+  pins the pass byte-neutral.
+
+Tests: 19 `s1_e_7e_*` witnesses in the module — WRITTEN NOT RUN
+(code-only mode, no cargo/rustc invoked).
+
 ## Frost Moon boss wiring (S1-F-13c, W1-1 resolved, code-only mode, 2026-11-19)
 
 `task/S1-F-13c-wire-bosses` wires the three Frost Moon bosses — **Everscream
