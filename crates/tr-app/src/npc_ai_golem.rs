@@ -18,6 +18,7 @@
 //! `NPC.cs:31351-31586`). `SetDefaults` rows: `NPC.cs:12163-12220`.
 
 use tr_core::UnifiedRandom;
+use tr_core::World;
 
 /// `NPC.GetMyBalance` (`NPC.cs:18483-18491`): solo (<= 1 scaled player)
 /// returns 1f. The port is single-player, so the base is always 1.
@@ -514,6 +515,174 @@ pub fn free_head_blocked_lead(
     (lx, ly)
 }
 
+/// W4-d52 — the body's dead-part smoke (`NPC.cs:19589-19624`, sites
+/// 19591/19598 left, 19609/19616 right): while the part is DEAD and
+/// `!getGoodWorld` (the port passes false — the seed-only fold), one
+/// type-31 puff per tick at `(Center.X + dx*scale, Center.Y - 9)`, 8x8,
+/// alpha 100; the post-spawn draws (`Next(100)` alpha, `Next(10)` vy,
+/// `Next(10)` fadeIn) ride the caller's stream AFTER the pool's own
+/// rolls, then the `Next(10) == 0` gate opens the type-6 ember whose
+/// `Next(20) != 0` arm writes noGravity + `Next(10)` scale + vy--.
+/// All writes land on whatever slot `NewDust` returned — the sentinel
+/// included (the C#'s `Main.dust[num2]` shape).
+pub fn dead_part_smoke(
+    dx: f32,
+    center: (f32, f32),
+    scale: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+) {
+    use tr_core::particles::Color;
+    let pos = glam::Vec2::new(center.0 + dx * scale, center.1 - 9.0);
+    // `:19591` / `:19609` — the type-31 smoke.
+    let idx = dust.new_dust(rng, ctx, world, pos, 8, 8, 31, 0.0, 0.0, 100, Color::default(), 1.0);
+    {
+        let d = dust.slot_mut(idx);
+        // `:19592-19595` — alpha += Next(100), velocity *= 0.2,
+        // vy -= 0.5 + Next(10)*0.1, fadeIn = 0.5 + Next(10)*0.1.
+        d.alpha += rng.next_max(100);
+        d.velocity *= 0.2;
+        d.velocity.y -= 0.5 + rng.next_max(10) as f32 * 0.1;
+        d.fade_in = 0.5 + rng.next_max(10) as f32 * 0.1;
+    }
+    // `:19596` / `:19614` — the 1-in-10 ember gate.
+    if rng.next_max(10) == 0 {
+        // `:19598` / `:19616` — the type-6 ember, default args.
+        let idx =
+            dust.new_dust(rng, ctx, world, pos, 8, 8, 6, 0.0, 0.0, 0, Color::default(), 1.0);
+        // `:19599` / `:19617` — the 19-in-20 lift arm.
+        if rng.next_max(20) != 0 {
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale *= 1.0 + rng.next_max(10) as f32 * 0.1;
+            d.velocity.y -= 1.0;
+        }
+    }
+}
+
+/// W4-d52 — `Utils.NextVector2Circular` (`Utils.cs:1266-1269`): the unit
+/// draw (one `NextFloat`, `ToRotationVector2`'s double cos/sin) THEN a
+/// second `NextFloat` radius scale (the `npc_ai_empress` port's shape).
+fn next_vector2_circular(rng: &mut UnifiedRandom, half_w: f32, half_h: f32) -> (f32, f32) {
+    let angle = std::f32::consts::PI * 2.0 * rng.next_float();
+    let r = rng.next_float();
+    (
+        (angle as f64).cos() as f32 * half_w * r,
+        (angle as f64).sin() as f32 * half_h * r,
+    )
+}
+
+/// W4-d52 — the fist's wind-up charge dust (`NPC.cs:19337-19353`, site
+/// 19344): while `ai[1] <= 15`, one `NewDustPerfect(Center + v4 + v3 +
+/// v5, 228, v4)` per tick — v3 = Circular(80, 80), v4 = v3 * -0.05,
+/// v5 = Circular(20, 20) (the draw order: v3's two floats, then v5's
+/// two, then the pool's own rolls). fadeIn 1.5, scale 0.5, noGravity;
+/// the getGoodWorld noLight arm stays off (the port's seed-only fold).
+pub fn fist_windup_dust(
+    center: (f32, f32),
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+) {
+    let (v3x, v3y) = next_vector2_circular(rng, 80.0, 80.0);
+    let (v4x, v4y) = (v3x * -1.0 * 0.05, v3y * -1.0 * 0.05);
+    let (v5x, v5y) = next_vector2_circular(rng, 20.0, 20.0);
+    let pos = glam::Vec2::new(center.0 + v4x + v3x + v5x, center.1 + v4y + v3y + v5y);
+    let idx = dust.new_dust_perfect(
+        rng,
+        ctx,
+        world,
+        pos,
+        228,
+        Some(glam::Vec2::new(v4x, v4y)),
+        0,
+        tr_core::particles::Color::default(),
+        1.0,
+    );
+    // `:19345-19351` — the post-spawn writes (sentinel included).
+    let d = dust.slot_mut(idx);
+    d.fade_in = 1.5;
+    d.scale = 0.5;
+    d.no_gravity = true;
+}
+
+/// W4-d52 — the fist's dash trail (`NPC.cs:19417-19422`, site 19421):
+/// the `Next(2) == 0` gate EVERY dash tick (the draw runs even when the
+/// gate fails), then v7 = velocity * 0.5, v8 = Circular(20, 20),
+/// `NewDustPerfect(Center + v7 + v8, 306, v7, 0, Main.OurFavoriteColor)`
+/// with scale 2. `OurFavoriteColor = (255, 231, 69)` (`Main.cs:66748`).
+pub fn fist_dash_dust(
+    center: (f32, f32),
+    velocity: (f32, f32),
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+) {
+    // `:19417` — the gate draw, unconditional.
+    if rng.next_max(2) != 0 {
+        return;
+    }
+    let (v7x, v7y) = (velocity.0 * 0.5, velocity.1 * 0.5);
+    let (v8x, v8y) = next_vector2_circular(rng, 20.0, 20.0);
+    let pos = glam::Vec2::new(center.0 + v7x + v8x, center.1 + v7y + v8y);
+    let idx = dust.new_dust_perfect(
+        rng,
+        ctx,
+        world,
+        pos,
+        306,
+        Some(glam::Vec2::new(v7x, v7y)),
+        0,
+        tr_core::particles::Color::new(255, 231, 69, 255),
+        1.0,
+    );
+    // `:19421` — `.scale = 2f` (sentinel included).
+    dust.slot_mut(idx).scale = 2.0;
+}
+
+/// W4-d52 — the body's slam-landing dust + gore row (`NPC.cs:19710-19719`,
+/// site 19714): for `l` from `(int)x - 20` to `(int)x + width + 40` step
+/// 20, four type-31 puffs at `(x - 20, y + height)`, box `(width + 20, 4)`,
+/// alpha 100 scale 1.5, each `velocity *= 0.2`; then one gore whose TYPE
+/// argument draws `Next(61, 64)` and whose `NewGore` body draws the
+/// velocity kicks (`Gore.cs:1327-1328`: Y `Next(10,31)` then X
+/// `Next(-20,21)`). The gore VISUAL is the d55 task's — only its three
+/// draws stay on the stream (the plantera gore-burst precedent). Types
+/// 61-63 are `SafeGore`, so the ChildSafety arm draws nothing.
+pub fn body_landing_burst(
+    x: f32,
+    y: f32,
+    width: i32,
+    height: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+) {
+    use tr_core::particles::Color;
+    let pos = glam::Vec2::new(x - 20.0, y + height);
+    let mut l = x as i32 - 20;
+    while l < x as i32 + width + 40 {
+        // `:19712-19716` — the four type-31 puffs.
+        for _ in 0..4 {
+            let idx = dust.new_dust(
+                rng, ctx, world, pos, width + 20, 4, 31, 0.0, 0.0, 100, Color::default(), 1.5,
+            );
+            dust.slot_mut(idx).velocity *= 0.2;
+        }
+        // `:19717-19718` — the gore: the type-argument draw, then the
+        // NewGore-internal velocity kicks (stream-only, d55 owns the visual).
+        let _gore_type = rng.next_range(61, 64);
+        let _kick_y = rng.next_range(10, 31) as f32 * 0.1;
+        let _kick_x = rng.next_range(-20, 21) as f32 * 0.1;
+        l += 20;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Witness tests — WRITTEN, NOT RUN (the S1-D-3 golem round ran in
@@ -786,5 +955,237 @@ mod tests {
             free_head_barrage_step(base, 2.0, 1000, 15000, false),
             base + 16.0
         );
+    }
+
+    // ---- W4-d52 dust witnesses (WRITTEN, NOT RUN — code-only mode) ----
+
+    /// A permissive whole-world ctx (the `update_rng` house pattern): the
+    /// pool never culls, so every spawn lands and the draw census matches
+    /// the live empty-pool path.
+    fn dust_ctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// One `NewDust` default block on an empty pool under the 50 % band
+    /// (`Dust.cs:153-193`): the two position `Next(box-4)` rolls (the box
+    /// clamps to >= 5), the velocity `Next(-20,21)` pair, the frame
+    /// `Next(3)`, the scale `Next(-20,21)`; then the per-type tweak — the
+    /// 6/228 family adds one `Next(-10,6)` (`Dust.cs:214-220`), 31/306
+    /// add nothing. ChildSafety is disabled (the pool default).
+    fn new_dust_draws(r: &mut UnifiedRandom, dust_type: i32, box_w: i32, box_h: i32) {
+        r.next_max(box_w.max(5) - 4);
+        r.next_max(box_h.max(5) - 4);
+        r.next_range(-20, 21);
+        r.next_range(-20, 21);
+        r.next_max(3);
+        r.next_range(-20, 21);
+        if matches!(dust_type, 6 | 228) {
+            r.next_range(-10, 6);
+        }
+    }
+
+    /// `NPC.cs:19589-19605` — the dead-part smoke's full draw census: the
+    /// type-31 block, the three post rolls (alpha `Next(100)`, vy
+    /// `Next(10)`, fadeIn `Next(10)`), the `Next(10)` ember gate, and on a
+    /// pass the type-6 block + the `Next(20)` lift gate + the `Next(10)`
+    /// scale roll. The mirror replays 400 calls from one seed; the gate
+    /// arms fire ~40 times, exercising both branches.
+    #[test]
+    fn w4_d52_dead_part_smoke_draws_match_the_oracle() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(52);
+        let mut probe = UnifiedRandom::new(52);
+        let mut dust = tr_core::particles::DustPool::new();
+        for i in 0..400 {
+            dead_part_smoke(-80.0, (1600.0, 1600.0), 1.0, &mut rng, &mut dust, &ctx, &w);
+            new_dust_draws(&mut probe, 31, 8, 8);
+            probe.next_max(100);
+            probe.next_max(10);
+            probe.next_max(10);
+            if probe.next_max(10) == 0 {
+                new_dust_draws(&mut probe, 6, 8, 8);
+                if probe.next_max(20) != 0 {
+                    probe.next_max(10);
+                }
+            }
+            assert_eq!(rng.peek(), probe.peek(), "smoke stream @{i}");
+            // The pool drains between calls so the census stays on the
+            // empty-pool path (the live pool's pressure bands are the
+            // d50 chain's wiring-wave concern).
+            for s in dust.slots_mut() {
+                s.active = false;
+            }
+        }
+        assert_ne!(rng.peek(), UnifiedRandom::new(52).peek(), "the smoke drew");
+    }
+
+    /// `NPC.cs:19591-19595` — the smoke's post-spawn field writes land on
+    /// the returned slot: alpha 100 + the `Next(100)` roll, velocity
+    /// scaled 0.2 with the vy lift, fadeIn 0.5 + the `Next(10)` roll.
+    #[test]
+    fn w4_d52_dead_part_smoke_writes_the_puff_fields() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(52);
+        let mut probe = UnifiedRandom::new(52);
+        let mut dust = tr_core::particles::DustPool::new();
+        dead_part_smoke(-80.0, (1600.0, 1600.0), 1.0, &mut rng, &mut dust, &ctx, &w);
+        // Replay the block to recover the rolled values.
+        let px = 1600.0 - 80.0 + probe.next_max(4) as f32 + 4.0;
+        let py = 1600.0 - 9.0 + probe.next_max(4) as f32 + 4.0;
+        let vx = probe.next_range(-20, 21) as f32 * 0.1;
+        let vy = probe.next_range(-20, 21) as f32 * 0.1;
+        let _frame = probe.next_max(3);
+        let scale = 1.0 + probe.next_range(-20, 21) as f32 * 0.01;
+        let alpha_roll = probe.next_max(100);
+        let vy_roll = probe.next_max(10);
+        let fade_roll = probe.next_max(10);
+        let d = dust.slot(0);
+        assert!(d.active);
+        assert_eq!(d.dust_type, 31);
+        assert_eq!((d.position.x, d.position.y), (px, py));
+        assert_eq!(d.alpha, 100 + alpha_roll);
+        assert!((d.velocity.x - vx * 0.2).abs() < 1e-6);
+        assert!((d.velocity.y - (vy * 0.2 - 0.5 - vy_roll as f32 * 0.1)).abs() < 1e-5);
+        assert!((d.fade_in - (0.5 + fade_roll as f32 * 0.1)).abs() < 1e-6);
+        assert!((d.scale - scale).abs() < 1e-6);
+    }
+
+    /// `NPC.cs:19341-19351` — the wind-up's draw census: Circular(80,80)'s
+    /// two `NextFloat`s, Circular(20,20)'s two, then the 0x0-box
+    /// `NewDustPerfect` block (clamped 5x5) + the 228 tweak's
+    /// `Next(-10,6)`; the post writes are field-only (fadeIn 1.5, scale
+    /// 0.5, noGravity). The position is Centre + v4 + v3 + v5 with
+    /// v4 = v3 * -0.05.
+    #[test]
+    fn w4_d52_fist_windup_dust_draws_and_fields() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(52);
+        let mut probe = UnifiedRandom::new(52);
+        let mut dust = tr_core::particles::DustPool::new();
+        fist_windup_dust((1600.0, 1600.0), &mut rng, &mut dust, &ctx, &w);
+        let circ = |r: &mut UnifiedRandom, half: f32| {
+            let a = std::f32::consts::PI * 2.0 * r.next_float();
+            let rad = r.next_float();
+            ((a as f64).cos() as f32 * half * rad, (a as f64).sin() as f32 * half * rad)
+        };
+        let (v3x, v3y) = circ(&mut probe, 80.0);
+        let (v5x, v5y) = circ(&mut probe, 20.0);
+        new_dust_draws(&mut probe, 228, 0, 0);
+        assert_eq!(rng.peek(), probe.peek(), "wind-up stream");
+        let d = dust.slot(0);
+        assert!(d.active);
+        assert_eq!(d.dust_type, 228);
+        let ex = 1600.0 + v3x * -0.05 + v3x + v5x;
+        let ey = 1600.0 + v3y * -0.05 + v3y + v5y;
+        assert!((d.position.x - ex).abs() < 1e-3, "pos x {} vs {ex}", d.position.x);
+        assert!((d.position.y - ey).abs() < 1e-3);
+        assert!((d.velocity.x - v3x * -0.05).abs() < 1e-4);
+        assert!((d.velocity.y - v3y * -0.05).abs() < 1e-4);
+        assert_eq!(d.fade_in, 1.5);
+        assert_eq!(d.scale, 0.5);
+        assert!(d.no_gravity);
+    }
+
+    /// `NPC.cs:19417-19421` — the dash trail: the `Next(2)` gate draws
+    /// EVERY tick (the mirror replays 200 ticks, both gate outcomes); on
+    /// a pass, Circular(20,20)'s two floats + the 306 block (no tweak),
+    /// velocity = the parent's * 0.5, scale 2, OurFavoriteColor
+    /// (255, 231, 69) (`Main.cs:66748`).
+    #[test]
+    fn w4_d52_fist_dash_dust_gate_draws_every_tick() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(52);
+        let mut probe = UnifiedRandom::new(52);
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut passes = 0;
+        for i in 0..200 {
+            fist_dash_dust((1600.0, 1600.0), (8.0, -4.0), &mut rng, &mut dust, &ctx, &w);
+            if probe.next_max(2) == 0 {
+                passes += 1;
+                let a = std::f32::consts::PI * 2.0 * probe.next_float();
+                let rad = probe.next_float();
+                let _ = ((a as f64).cos() as f32 * 20.0 * rad, (a as f64).sin() as f32 * 20.0 * rad);
+                new_dust_draws(&mut probe, 306, 0, 0);
+            }
+            assert_eq!(rng.peek(), probe.peek(), "dash stream @{i}");
+            for s in dust.slots_mut() {
+                s.active = false;
+            }
+        }
+        assert!(passes > 50 && passes < 150, "the 1-in-2 gate fired {passes}/200");
+        // One pass's fields: velocity is the parent's half, scale 2, the
+        // favourite colour.
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(0);
+        loop {
+            fist_dash_dust((1600.0, 1600.0), (8.0, -4.0), &mut rng, &mut dust, &ctx, &w);
+            if dust.slot(0).active {
+                break;
+            }
+        }
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 306);
+        assert_eq!((d.velocity.x, d.velocity.y), (4.0, -2.0));
+        assert_eq!(d.scale, 2.0);
+        assert_eq!(d.color, tr_core::particles::Color::new(255, 231, 69, 255));
+    }
+
+    /// `NPC.cs:19710-19718` — the landing row: for a 100-wide body the
+    /// column walk `(int)x-20 .. (int)x+width+40` step 20 runs 8 columns;
+    /// each draws 4 type-31 blocks (box width+20 x 4, the height clamps
+    /// to 5) + the gore's three rolls (`Next(61,64)` type, the
+    /// `Gore.cs:1327-1328` Y/X kicks — 61-63 are SafeGore, no ChildSafety
+    /// draws). The mirror replays the whole row; the puffs' velocity is
+    /// the block roll * 0.2.
+    #[test]
+    fn w4_d52_body_landing_burst_draws_match_the_oracle() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(52);
+        let mut probe = UnifiedRandom::new(52);
+        let mut dust = tr_core::particles::DustPool::new();
+        body_landing_burst(1600.0, 1600.0, 100, 40.0, &mut rng, &mut dust, &ctx, &w);
+        let mut cols = 0;
+        let mut l = 1600 - 20;
+        while l < 1600 + 100 + 40 {
+            cols += 1;
+            for _ in 0..4 {
+                new_dust_draws(&mut probe, 31, 120, 4);
+            }
+            probe.next_range(61, 64);
+            probe.next_range(10, 31);
+            probe.next_range(-20, 21);
+            l += 20;
+        }
+        assert_eq!(cols, 8, "the 100-wide body's column count");
+        assert_eq!(rng.peek(), probe.peek(), "landing stream");
+        assert_eq!(dust.slots().iter().filter(|s| s.active).count(), 32);
+        // The first puff's fields: the block rolls replayed, velocity
+        // scaled 0.2 (`:19715`), alpha 100, scale 1.5 x the block roll.
+        let mut probe2 = UnifiedRandom::new(52);
+        let px = 1600.0 - 20.0 + probe2.next_max(116) as f32 + 4.0;
+        let py = 1600.0 + 40.0 + probe2.next_max(1) as f32 + 4.0;
+        let vx = probe2.next_range(-20, 21) as f32 * 0.1;
+        let vy = probe2.next_range(-20, 21) as f32 * 0.1;
+        let _frame = probe2.next_max(3);
+        let scale = (1.0 + probe2.next_range(-20, 21) as f32 * 0.01) * 1.5;
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 31);
+        assert_eq!(d.alpha, 100);
+        assert_eq!((d.position.x, d.position.y), (px, py));
+        assert!((d.velocity.x - vx * 0.2).abs() < 1e-6);
+        assert!((d.velocity.y - vy * 0.2).abs() < 1e-6);
+        assert!((d.scale - scale).abs() < 1e-6);
     }
 }

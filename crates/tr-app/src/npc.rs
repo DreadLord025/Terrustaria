@@ -4839,7 +4839,7 @@ impl Npc {
             // fists arm (the full-velocity anchor, the balance ladders,
             // the real collideX/Y exit, the state-3 hover) over the
             // npc_ai_style47 reference port's documented fold-outs.
-            47 => self.ai_047_golem_fist_family(world, player, rng),
+            47 => self.ai_047_golem_fist_family(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 55)` (`NPC.cs:32657-32741`) - the
             // Creeper (267), the style's only user. S1-D-3 W-2 wiring: the
             // faithful `npc_ai_style55::ai_055_step` replaces the retired
@@ -4930,7 +4930,7 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
-            _ => self.update_kind_ai(world, player, dt, rng),
+            _ => self.update_kind_ai(world, player, dt, rng, dust, dust_ctx),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
         // once per NPC update, AFTER the AI read it. The clear sits before
@@ -5681,7 +5681,15 @@ impl Npc {
     // saucer trio duplicate were purged here). One live arm per kind: a
     // duplicate is a hard error, the `to_u16` guard's precedent (S1-F-1).
     #[deny(unreachable_patterns)]
-    fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
+    fn update_kind_ai(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        dt: f32,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         match self.kind {
             // S1-D-3ff wave A: the nine LOW-id slimes ride the same
             // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
@@ -5852,7 +5860,7 @@ impl Npc {
             | NpcKind::GolemHead
             | NpcKind::GolemFistLeft
             | NpcKind::GolemFistRight
-            | NpcKind::GolemHeadFree => self.update_golem_rng(world, player, rng),
+            | NpcKind::GolemHeadFree => self.update_golem_rng(world, player, rng, dust, dust_ctx),
             NpcKind::Deerclops => self.update_deerclops(world, player, rng),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
@@ -17033,7 +17041,22 @@ impl Npc {
     /// draws (the beam triggers, the blocked-line lead) are restored.
     fn update_golem(&mut self, world: &World, player: &Player) {
         let mut scratch = UnifiedRandom::new(0);
-        self.update_golem_rng(world, player, &mut scratch);
+        // W4-d52: the direct-call entry runs the dust arms on a scratch
+        // pool with a permissive ctx (the `update_rng` house pattern) —
+        // the sim threads the live pool through `update_golem_rng`.
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(
+                world.width as f32 * TILE_PX,
+                world.height as f32 * TILE_PX,
+            ),
+            max_dust_to_draw: 6000,
+        };
+        self.update_golem_rng(world, player, &mut scratch, &mut dust, &ctx);
     }
 
     /// The aiStyle-47 axis arm's delegate (the three-way reconcile,
@@ -17043,8 +17066,15 @@ impl Npc {
     /// reference port, whose documented fold-outs (the dropped anchor Y,
     /// the never-set collide flags, the solo-only balance) it supersedes.
     /// The reference module + its witnesses stay as the audit cross-check.
-    fn ai_047_golem_fist_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        self.update_golem_rng(world, player, rng);
+    fn ai_047_golem_fist_family(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        self.update_golem_rng(world, player, rng, dust, dust_ctx);
     }
 
     /// The golem family's `TargetClosest` seam (R22 G2 / R23 G3): the
@@ -17064,7 +17094,14 @@ impl Npc {
         self.sprite_dir = self.facing;
     }
 
-    fn update_golem_rng(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn update_golem_rng(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -17137,9 +17174,24 @@ impl Npc {
                 // The part scan's flags ride the World (the sim's anchor
                 // pass scans the pool — `:19544-19566`); the shield
                 // `dontTakeDamage = flag` (`:19567`) rides the sim too.
-                // The dead-part dust rolls (`:19589-19624`) are SKIPPED
-                // (no dust layer in this machine — the RNG draws go with
-                // them, the port's standing cosmetic-skip pattern).
+                // W4-d52 — the dead-part smoke (`:19587-19625`, sites
+                // 19591/19598 left, 19609/19616 right): the !getGoodWorld
+                // gate (false — the seed-only fold) opens the per-tick
+                // type-31 puff + the gated type-6 ember for each DEAD
+                // fist, left before right, on the UpdateNPCs stream.
+                // The netOffset add/subtract pair (`:19586`/`:19626`)
+                // nets to zero in the single-player port (the field is
+                // never written).
+                if !world.golem_fist_left_alive {
+                    crate::npc_ai_golem::dead_part_smoke(
+                        -80.0, (cx, cy), self.scale, rng, dust, dust_ctx, world,
+                    );
+                }
+                if !world.golem_fist_right_alive {
+                    crate::npc_ai_golem::dead_part_smoke(
+                        62.0, (cx, cy), self.scale, rng, dust, dust_ctx, world,
+                    );
+                }
                 if self.ai[0] == 0.0 {
                     // The grounded charge (`:19638-19703`): the literal
                     // `velocity.Y == 0f` gate, the `num4` ladder (the v1
@@ -17177,9 +17229,19 @@ impl Npc {
                     }
                 } else if self.vy == 0.0 {
                     // `:19706-19719` — the landing returns the machine to
-                    // the charge state; the Item14 sound + the dust/gore
-                    // rows are SKIPPED (no sound/dust layer here).
+                    // the charge state; W4-d52 wires the dust/gore row
+                    // (site 19714 — the four type-31 puffs + the gore's
+                    // three draws per 20-px column). The Item14 sound
+                    // (`:19708`) queues BEFORE the row, the C# order.
+                    self.wants_sound.push(NpcSoundRequest {
+                        cue: NpcSoundCue::Item14,
+                        x: self.x,
+                        y: self.y,
+                    });
                     self.ai[0] = 0.0;
+                    crate::npc_ai_golem::body_landing_burst(
+                        self.x, self.y, w as i32, h, rng, dust, dust_ctx, world,
+                    );
                 } else {
                     // The flight (`:19721-19765`): the hitbox-span test,
                     // the balance-scaled sink and the `num7` cap ladder.
@@ -17475,6 +17537,15 @@ impl Npc {
                     self.vx = 0.0;
                     self.vy = 0.0;
                     self.ai[1] += 1.0;
+                    // W4-d52 — the wind-up charge dust (`:19337-19353`,
+                    // site 19344): while `ai[1] <= 15` after the ++, one
+                    // type-228 NewDustPerfect per tick at the SNAPPED
+                    // centre (the C# reads `base.Center` after `:19334`).
+                    if self.ai[1] <= 15.0 {
+                        crate::npc_ai_golem::fist_windup_dust(
+                            (anchor_x, anchor_y), rng, dust, dust_ctx, world,
+                        );
+                    }
                     if self.ai[1] >= 30.0 {
                         self.local_ai[0] = 1.0;
                         self.collide_x = false;
@@ -17504,9 +17575,7 @@ impl Npc {
                     // axis, the `>700 || collideX || collideY` exit.
                     self.ai[1] += 1.0;
                     // S1-E-21g — `NPC.cs:19412-19416`: the launch's first
-                    // tick plays Item14 (`ai[1] == 1` after the increment;
-                    // the Next(2) dust roll at `:19417` stays SKIPPED —
-                    // it draws AFTER the play, so the queue order holds).
+                    // tick plays Item14 (`ai[1] == 1` after the increment).
                     if self.ai[1] == 1.0 {
                         self.wants_sound.push(NpcSoundRequest {
                             cue: NpcSoundCue::Item14,
@@ -17514,6 +17583,13 @@ impl Npc {
                             y: self.y,
                         });
                     }
+                    // W4-d52 — the dash trail (`:19417-19422`, site
+                    // 19421): the Next(2) gate EVERY dash tick, then the
+                    // type-306 OurFavoriteColor puff. The gate draw runs
+                    // even when it fails (the C#'s `if (Next(2) == 0)`).
+                    crate::npc_ai_golem::fist_dash_dust(
+                        (cx, cy), (self.vx, self.vy), rng, dust, dust_ctx, world,
+                    );
                     if self.vx.abs() > self.vy.abs() {
                         if (self.vx > 0.0 && cx > pcx) || (self.vx < 0.0 && cx < pcx) {
                             self.local_ai[0] = 0.0;
@@ -32337,7 +32413,7 @@ mod s1_f_13c_wire_tests {
         let mut p = night_player(&w);
         let mut n = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
         let mut rng = UnifiedRandom::new(0);
-        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w));
     }
 
     /// The shot rows exist: the drained kinds resolve through `proj_data`
@@ -33298,6 +33374,19 @@ mod b1_skeletron_tests {
 mod s1_f_13d_tests {
     use super::*;
 
+    /// W4-d52 — a permissive dust ctx for the dust-wired arms' direct-call
+    /// tests (the `update_rng` house pattern).
+    fn dust_ctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// The two kinds' verbatim `SetDefaults` rows: the bubble
     /// (`NPC.cs:13882-13894`) and the turret (`:13922-13934`). The bubble
     /// carries no damage/kb/value rows — the head defaults 0 (`:8563`),
@@ -33536,7 +33625,7 @@ mod s1_f_13d_tests {
             n.hp = n.max_hp;
             let (x0, y0) = (n.x, n.y);
             for _ in 0..120 {
-                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng);
+                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w));
             }
             assert_eq!(n.x, x0, "{kind:?} stand-in holds its x");
             assert_eq!(n.y, y0, "{kind:?} stand-in holds its y");
