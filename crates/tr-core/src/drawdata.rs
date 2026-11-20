@@ -368,7 +368,9 @@ pub fn draw_data(
             data.add_fr_y = (tile_frame * 38 + 20 * n21) as i16;
         }
         // `case 711` — RainbowBoulder: 18 wide on later frame columns, 20 px
-        // tall; the glow out-params are TILE-DRAW-2 (TileDrawing.cs:4931-4939).
+        // tall (TileDrawing.cs:4931-4939). The first-switch glow record
+        // (:4937-4938) rides `drawdata_cases_a::glow_switch`'s 711 arm
+        // (TILE_SHEET_GLOW); binding it is TILE-DRAW-2 (W4-d62).
         711 => {
             if fx > 0 {
                 data.width = 18;

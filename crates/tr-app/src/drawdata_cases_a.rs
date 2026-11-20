@@ -18,6 +18,11 @@
 //!    (412, 657, 656, 701, 634, 637, 638, 568, 569, 570, 580, 564, 184,
 //!    463, 19, 90, 79, 89, 100, 33, 15, 497, 34, 21, 467, 441, 468, 10,
 //!    11, 88, 42, 87, 14, 93, 18, 101, 104, 172).
+//! 3. W4-d62: `case 711` RainbowBoulder's FIRST-switch glow
+//!    (`TileDrawing.cs:4937-4938`) — the only first-switch glow in the d62
+//!    census range; it has no second-switch case, so the record folds into
+//!    [`glow_switch`] with the [`TILE_SHEET_GLOW`] mask sentinel (the glow
+//!    texture is the boulder's own tile sheet).
 //!
 //! Seam: like the wave-B animator and wave-C furniture modules, this rides
 //! as a delegated pass AFTER `tr_core::drawdata::draw_data` +
@@ -111,6 +116,11 @@ pub fn martian_glow(martian_light: f32) -> [u8; 4] {
 
 /// `TileDrawing._meteorGlow` (`TileDrawing.cs:130`): `(100, 100, 100, 0)`.
 pub const METEOR_GLOW: [u8; 4] = [100, 100, 100, 0];
+/// [`GlowData::mask`] sentinel: the glow texture is the tile's OWN sheet
+/// (`TextureAssets.Tile[kind]`), not a `TextureAssets.GlowMask` entry —
+/// `case 711` RainbowBoulder's FIRST-switch glow (`TileDrawing.cs:4937`).
+/// The glow pass (TILE-DRAW-2) resolves the sheet from the cell's kind.
+pub const TILE_SHEET_GLOW: u16 = u16::MAX;
 /// `TileDrawing._lavaMossGlow` (`:132`): `(150, 100, 50, 0)`.
 pub const LAVA_MOSS_GLOW: [u8; 4] = [150, 100, 50, 0];
 /// `TileDrawing._kryptonMossGlow` (`TileDrawing.cs:134`): `(0, 200, 0, 0)`.
@@ -608,6 +618,15 @@ pub fn glow_switch(
                 out.glow = Some(GlowData { mask: 122, src, color: METEOR_GLOW });
             }
         }
+        // `case 711` (:4931-4939) — the FIRST switch's glow, folded in here:
+        // 711 has no second-switch case and no other pass writes its glow,
+        // so the record is identical at this seam. The texture is the
+        // boulder's own tile sheet (`TextureAssets.Tile[711]`, the
+        // TILE_SHEET_GLOW sentinel), the rect the framed spelling
+        // `(tileFrameX + addFrX, tileFrameY + addFrY, tileWidth, tileHeight)`
+        // (:4938), and `glowColor` keeps the :4538 default
+        // `Color.Transparent` = (255, 255, 255, 0) — the case never writes it.
+        711 => out.glow = Some(GlowData { mask: TILE_SHEET_GLOW, src: rect_framed(height), color: [255, 255, 255, 0] }),
         _ => {}
     }
     out
@@ -1109,6 +1128,30 @@ mod tests {
         assert!(dd(184, 0, 0, 88, 0).1.is_none());
         // The disco column 220 keeps its rect (colour parked).
         assert_eq!(dd(184, 0, 0, 220, 0).1.unwrap().mask, 127);
+    }
+
+    #[test]
+    fn test_DW_d62_rainbow_boulder_first_switch_glow() {
+        // case 711 (TileDrawing.cs:4931-4939): the glow texture is the
+        // boulder's own sheet (TILE_SHEET_GLOW), the rect is the framed
+        // spelling, glowColor stays Color.Transparent (255,255,255,0).
+        let (d, g) = dd(711, 0, 0, 0, 0);
+        let g = g.unwrap();
+        assert_eq!(g.mask, TILE_SHEET_GLOW);
+        assert_eq!(g.src, [0, 0, 16, 20]); // fx 0 keeps width 16
+        assert_eq!(g.color, [255, 255, 255, 0]);
+        assert_eq!((d.width, d.height), (16, 20));
+        // Later frame columns: width 18 rides the glow rect too (:4938
+        // reads the post-`tileWidth = 18` local).
+        let (d, g) = dd(711, 0, 0, 18, 0);
+        assert_eq!(g.unwrap().src, [18, 0, 18, 20]);
+        assert_eq!((d.width, d.height), (18, 20));
+        // The animator row folds into the rect Y (addFrY = tileFrame*38).
+        let w = World::new("t".into(), 64, 64);
+        let t = tile_of(711, 0, 0);
+        let mut d = draw_data(711, 0, 0, 0, 0, 2, false);
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0).unwrap();
+        assert_eq!(g.src, [0, 76, 16, 20]);
     }
 
     #[test]

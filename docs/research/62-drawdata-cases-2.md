@@ -225,3 +225,162 @@ kind, `drawdata.rs:121-125`). The boulder kinds' 18-px height is what lets the
 20-px-tall boulder sprite overhang the cell by 2 px like vanilla.
 
 Batch 2 verdict: **15/15 PORTED**, no draw-side gap.
+
+### Batch 3 — strides, the rainbow boulder and the chest seam: #96-110 (15 ids)
+
+Ids: 715, 716, 79, 90, 18, 711, 654, 14, 21, 411, 467, 469, 15, 497, 172.
+
+**715 / 716** — last two labels of the 18-px group (batch 1 quote,
+`TileDrawing.cs:4905-4908`): Ghoulder / BoulderThatSpawnsPet. Rust
+`712..=716` run. **PORTED**.
+
+**79 Beds** (`TileDrawing.cs:4909-4916`):
+
+```csharp
+		case 79:
+		{
+			tileHeight = 18;
+			int num23 = tileFrameY / 2016;
+			addFrY -= 2016 * num23;
+			addFrX += 144 * num23;
+			break;
+		}
+```
+
+Rust (`drawdata.rs:348-355`): `data.height = 18; let n23 = fy / 2016;
+data.add_fr_y = (tile_frame * 38 - 2016 * n23) as i16; data.add_fr_x = (144 * n23) as i16;`
+— the `-=` folds onto the `:4533` starting value `tileFrame * 38` exactly.
+Second switch (`:6191-6207`): rows 27/28 of the 36 grid → GlowMask 53 (martian) /
+114 (meteor), rect `(tileFrameX, tileFrameY % 36, w, h)` — ported verbatim in
+`drawdata_cases_a.rs:387-396` (gate reads the RAW fy, not the unwound row).
+**PORTED** (glow record unconsumed, `_glow` TILE-DRAW-2).
+
+**90 Bathtubs** (`TileDrawing.cs:4917-4923`):
+
+```csharp
+		case 90:
+		{
+			int num22 = tileFrameY / 2016;
+			addFrY -= 2016 * num22;
+			addFrX += 144 * num22;
+			break;
+		}
+```
+
+Rust (`drawdata.rs:356-362`): same stride, NO height write (the C# has none —
+bathtubs keep 16). Second switch (`:6174-6190`): rows 27/28 → masks 52/113,
+`cases_a.rs:376-385`. **PORTED**.
+
+**18 WorkBenches** (`TileDrawing.cs:4924-4930`):
+
+```csharp
+		case 18:
+		{
+			int num21 = tileFrameX / 2016;
+			addFrX -= 2016 * num21;
+			addFrY += 20 * num21;
+			break;
+		}
+```
+
+Rust (`drawdata.rs:363-369`): the stride lives in frame X here; `add_fr_y =
+(tile_frame * 38 + 20 * n21)` — the `+=` folds onto the same start. Second
+switch (`:6429-6445`): columns 27/28 of the 36 grid → masks 69/125, rect
+`(tileFrameX % 36, tileFrameY, w, h)`, `cases_a.rs:555-564`. **PORTED**.
+
+**711 RainbowBoulder** (`TileDrawing.cs:4931-4939`):
+
+```csharp
+		case 711:
+			if (tileFrameX > 0)
+			{
+				tileWidth = 18;
+			}
+			tileHeight = 20;
+			glowTexture = TextureAssets.Tile[711].Value;
+			glowSourceRect = new Rectangle(tileFrameX + addFrX, tileFrameY + addFrY, tileWidth, tileHeight);
+			break;
+```
+
+Rust static arm (`drawdata.rs:370-379`): the width/height half was faithful, but
+the two glow lines were parked ("the glow out-params are TILE-DRAW-2") — the
+FIRST-switch glow record was **the one genuinely unported draw-side piece in
+this range** (no second-switch 711 case exists; nothing else produced it).
+**FIXED in this batch**: `drawdata_cases_a::glow_switch` gains the 711 arm —
+`GlowData { mask: TILE_SHEET_GLOW, src: rect_framed(height), color: [255, 255, 255, 0] }`.
+`TILE_SHEET_GLOW` (u16::MAX) is the new sentinel for "the glow texture is
+`TextureAssets.Tile[kind]`, not a GlowMask entry"; the colour is the `:4538`
+default `Color.Transparent` = (255,255,255,0) — the case never writes glowColor.
+The rect reads the POST-width locals (`tileWidth` 18 on later columns), which
+the seam already carries (`apply_cases_a` passes `data.width/height` after the
+first switch). The `DoNotAdjustDrawPositionBasedOnTileWidth` centring skip
+(`TileID.cs` `CreateBoolSet(711)`, `TileDrawing.cs:1009-1012`) was already ported
+(`drawdata.rs:1449-1451` `no_width_adjust`, consumed `tiles.rs:1001`).
+Test `test_DW_d62_rainbow_boulder_first_switch_glow` pins fx-0/fx-18 rects and
+the animator-row fold. **PORTED** (record now produced; binding stays TILE-DRAW-2).
+
+**654 TNTBarrel** (`TileDrawing.cs:4940-4942`): `tileTop += 2; break;` —
+Rust `data.top += 2` (`drawdata.rs:380-383`). **PORTED**.
+
+**14 / 21 / 411 / 467 / 469** (`TileDrawing.cs:4943-4952`):
+
+```csharp
+		case 14:
+		case 21:
+		case 411:
+		case 467:
+		case 469:
+			if (tileFrameY == 18)
+			{
+				tileHeight = 18;
+			}
+			break;
+```
+
+Rust (`drawdata.rs:384-391`): `14 | 21 | 411 | 467 | 469 => { if fy == 18 { data.height = 18; } }`.
+**PORTED** — Tables / Containers / Detonator / Containers2 / Tables2.
+Second switch: 14 (`:6397-6413`, columns 31/32 of the 54 grid, masks 67/124,
+`cases_a.rs:532-541`) and 21/467 (`:6276-6293`, columns 48/49 of the 36 grid,
+masks 56/117, `cases_a.rs:450-459`) — verbatim, raw-fx gates.
+
+**Chest draw-side seam (21/467)** — `DrawSingleTile` runs
+`CacheSpecialDraws_Part2` AFTER `GetTileDrawData` (`:993` → `:4289-4330`): the
+sub-cell frame fold (`addFrX = num*18 - fx`, `addFrY = num4 - fy`), the open
+animation +38/+76 rows, the bottom-row 18-px clamp and the style-48/49 glow
+rect. This is ported TWICE — `drawdata_furniture::chest_draw_rewrite`
+(`tr-core/src/drawdata_furniture.rs:222-250`, minus the glow half) and
+`render/special_tiles.rs::chest_frame_adjust` (`:101-145`, with the glow rect) —
+and **UNWIRED both**: `furniture_post_pass` has zero callers in tr-app;
+`special_tiles.rs` is the S1-G-1e UNWIRED module whose doc defers the wiring to
+the d57/d58 special-tile merge step (contested `resolve_tile_frame` seam,
+`special_tiles.rs:7-16`). d62 does NOT wire it (scope: the seam belongs to
+d57 `tile-draw-te-furniture` / d58 `tile-draw-chest-frames`); recorded as
+**PORTED-UNWIRED**. Consequence today: chests draw their stored sub-cell frames
+without the open-animation row shift — the closed-chest t=0 draw is unaffected
+(the rewrite is the identity at frame 0 on the anchor grid).
+
+**15 / 497** (`TileDrawing.cs:4953-4959`):
+
+```csharp
+		case 15:
+		case 497:
+			if (tileFrameY % 40 == 18)
+			{
+				tileHeight = 18;
+			}
+			break;
+```
+
+Rust (`drawdata.rs:392-398`): `15 | 497 => { if fy % 40 == 18 { data.height = 18; } }`.
+Second switch (`:6244-6267`): the 2040 stride (51 rows of 40) unwinds for BOTH
+kinds, but only `typeCache == 15` glows (rows 32/33, masks 54/116) —
+`cases_a.rs:428-442` keeps the `kind == 15` gate verbatim. **PORTED** —
+Chairs / Toilets.
+
+**172 Sinks** (`TileDrawing.cs:4960-4966`, shared label with 376 — batch 4):
+`if (tileFrameY % 38 == 18) tileHeight = 18;` — Rust `172 | 376` arm
+(`drawdata.rs:399-405`). Second switch (`:6487-6506`): the 2014 stride (53 rows
+of 38) + rows 28/29 glow (masks 88/122), `cases_a.rs:598-610`. **PORTED**.
+
+Batch 3 verdict: **15/15 static arms PORTED**; 711's first-switch glow record
+FIXED (produced, unconsumed); 21/467 chest rewrite PORTED-UNWIRED (d57/d58 seam).
