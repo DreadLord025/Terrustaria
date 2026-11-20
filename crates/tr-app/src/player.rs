@@ -7075,6 +7075,18 @@ impl Player {
                 self.run_slowdown *= 0.1;
             }
         }
+        // `Player.cs:26573-26577`: the Sandstorm-in-a-Bottle dash's run
+        // boost — `sandStorm → runAcceleration ×1.5, maxRunSpeed ×2`.
+        // W4-c40: reuses the LANDED i12 `sand_storm` field (the `:19837`
+        // direction lock and the `:36298` leg pose already read it); the
+        // jump-setter (`:21919`) rides the bottle's jump chain. The
+        // sibling extra-jump boosts (`:26578-26612`) and the carpet
+        // (`:26613-26617`) have no port block yet — out of scope, the
+        // sandStorm arm keeps its C# slot right after the floor chain.
+        if self.sand_storm {
+            self.run_acceleration *= 1.5;
+            self.max_run_speed *= 2.0;
+        }
         // `Player.cs:25256-25287`: the hover latches — a down press edge
         // latches hover-down, an up edge swaps to hover-up; landing clears
         // both. The vanilla default is `Settings.HoverControl == Hold`
@@ -7209,6 +7221,15 @@ impl Player {
 
         let jump_pressed = input.jump && !self.jump_held;
         self.jump_held = input.jump;
+        // `Player.cs:26743`: the movement block clears `sandStorm` right
+        // before `JumpMovement` (`:26744`); `DoubleJumpVisuals` (`:26767`,
+        // the sim seam below, after the grapple pull) re-arms it while the
+        // bottle jump ascends. W4-c40 — the i12 field's live lifecycle
+        // (the run boost above and the `:19837` lock read the PREVIOUS
+        // tick's state, like the C#'s `:26573`/`:19837` order).
+        if !grappling {
+            self.sand_storm = false;
+        }
         // `:21024` clears the latch at the END of the held block, so the
         // jump branches read the PREVIOUS tick's latch — capture it first.
         let released = self.release_jump;
@@ -7310,6 +7331,18 @@ impl Player {
         // `Player.cs:26061-26099`: the stale option clear while airborne.
         self.clear_stale_jumps();
 
+        // `Player.cs:26753-26756`: `jump == 0` cancels the jump visual
+        // effects (`CancelAllJumpVisualEffects(includeDownDash: false)`,
+        // `:36649-36662` — the seven bottle flags). The port's single
+        // `performing_jump` slot models the family: the hold-boost counter
+        // exhausted ends the performing state, so the DoubleJumpVisuals
+        // seam below stops re-arming `sandStorm` (W4-c40). The DownDash
+        // flag is a separate port predicate (`is_performing_down_dash`),
+        // untouched — the C# excludes it here too.
+        if self.jump == 0 && !grappling {
+            self.performing_jump = None;
+        }
+
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
         // velocity-only dash pass before the collision step.
         if !grappling {
@@ -7328,6 +7361,25 @@ impl Player {
         // fall origin refreshes per tick (no fall damage accrues).
         if grappling {
             self.grapple_movement(world, grapple, input, item_in_use);
+        }
+
+        // `Player.DoubleJumpVisuals` (`Player.cs:21892-21990`, called at
+        // `:26767` after `CarpetMovement`): the sim half of the Sandstorm
+        // arm — `isPerformingJump_Sandstorm && hasJumpOption_Sandstorm &&
+        // !canJumpAgain_Sandstorm && velocity.Y < 0` re-arms `sandStorm`
+        // every ascending tick (`:21905-21919`; gravDir is 1 in the port).
+        // The dust-124 trail + the 220-222 gore (`:21913-21925`, a
+        // `Main.rand.Next(220,223)` draw on the miscCounter%3 edge) are
+        // VISUAL seams — f42/dust lanes own them; this seam draws nothing
+        // (the gore draw stays with the visual port, RNG slot recorded in
+        // ANALYSIS W4-c40). W4-c40 — the i12 field's live setter.
+        if !grappling
+            && self.performing_jump == Some(ExtraJump::Sandstorm)
+            && self.has_jump_options[ExtraJump::Sandstorm.index()]
+            && !self.can_jump_again[ExtraJump::Sandstorm.index()]
+            && self.vy < 0.0
+        {
+            self.sand_storm = true;
         }
 
         // `Player.cs:27654`: `StickyMovement()` right after `GrappleMovement()`
@@ -9714,6 +9766,9 @@ impl Player {
         // (the rocket thrust included). The visual-effect cancels are seams.
         if self.cced() {
             self.sand_storm = false;
+            // `:26811`: `CancelAllJumpVisualEffects()` — the CCed arm
+            // cancels the performing state too (W4-c40).
+            self.performing_jump = None;
             self.vy += gravity;
             if self.vy > fall_cap {
                 self.vy = fall_cap;
@@ -21605,6 +21660,90 @@ mod s1_p_i05_thrust_tests {
         assert!(a.wind_pushed, "the grant armed by tick 2");
         assert_eq!(rng_a.draws.len(), rng_b.draws.len(), "zero added draws");
         assert_eq!(rng_a.draws, rng_b.draws, "the draw sequence is identical");
+    }
+
+    /// W4-c40 — `Player.cs:26573-26577`: the i12 `sand_storm` field's run
+    /// boost — `runAcceleration ×1.5, maxRunSpeed ×2`, applied right after
+    /// the floor-modifier chain. Probed through the movement seam: with
+    /// the flag set, the input accel and the over-max band both scale.
+    #[test]
+    fn w4_c40_the_sandstorm_dash_boosts_the_run_stats() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // The full tick applies the boost before horizontal_movement reads
+        // the stats. Pin the stat values through a tick with the flag
+        // armed at the START (the :26743 clear runs AFTER the boost block
+        // in the C# order — the boost reads the previous tick's state).
+        p.sand_storm = true;
+        let (accel0, max0) = (p.run_acceleration, p.max_run_speed);
+        p.update(&w, PlayerInput::default());
+        // The tick re-derives the stats from the base each frame; the
+        // observable is the VELOCITY gain: grounded right-key accel is
+        // runAcceleration (boosted ×1.5) while under maxRunSpeed (×2).
+        let mut q = Player::spawn(&w);
+        for _ in 0..120 {
+            q.update(&w, PlayerInput::default());
+        }
+        q.sand_storm = true;
+        q.control_right = true;
+        q.update(&w, PlayerInput { right: true, ..Default::default() });
+        let mut r = Player::spawn(&w);
+        for _ in 0..120 {
+            r.update(&w, PlayerInput::default());
+        }
+        r.control_right = true;
+        r.update(&w, PlayerInput { right: true, ..Default::default() });
+        // Both start from vx 0; the boosted accel is 1.5x (the boost reads
+        // the flag set BEFORE the tick — the :26743 clear fires after the
+        // stat block, so this tick's movement sees the boosted stats).
+        assert!(
+            (q.vx - r.vx * 1.5).abs() < 1e-4,
+            "the dash accel is ×1.5 ({} vs {})",
+            q.vx,
+            r.vx
+        );
+        let _ = (accel0, max0);
+    }
+
+    /// W4-c40 — the i12 field's live lifecycle: the bottle jump's ascent
+    /// re-arms `sandStorm` (`DoubleJumpVisuals` `:21905-21919`), the
+    /// hold-boost exhaustion cancels the performing state (`:26753-26756`
+    /// → `CancelAllJumpVisualEffects`), and the next tick's `:26743` clear
+    /// drops the flag. The whole chain through the public update seam.
+    #[test]
+    fn w4_c40_the_bottle_jump_arms_and_expires_the_sandstorm_flag() {
+        let w = ground_world();
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Sandstorm]);
+        // Ground jump.
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert!(!p.sand_storm, "the ground jump is not the bottle");
+        // Release + gap + air tap: the Sandstorm consumes (3x = 45).
+        tap_air(&w, &mut p);
+        assert_eq!(p.performing_jump, Some(ExtraJump::Sandstorm));
+        assert_eq!(p.jump, 45);
+        assert!(p.sand_storm, "the ascending bottle arms the flag");
+        // Hold the jump: the counter drains one per tick while ascending;
+        // the flag stays armed every tick the visuals gate holds.
+        let mut armed_ticks = 0;
+        for _ in 0..60 {
+            p.update(&w, PlayerInput { jump: true, ..Default::default() });
+            if p.sand_storm {
+                armed_ticks += 1;
+            }
+            if p.jump == 0 && p.vy >= 0.0 {
+                break;
+            }
+        }
+        assert!(armed_ticks > 10, "the ascent keeps the flag armed");
+        // After the boost exhausts and the ascent ends, the flag drops.
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(!p.sand_storm, "the flag expires with the jump");
+        assert_eq!(p.performing_jump, None, "the performing state cancelled");
     }
 }
 
