@@ -34274,3 +34274,146 @@ air there.
 
 15 witness tests WRITTEN, NOT RUN (`world_sim/items.rs::drop_witness_tests`
 ×11, `death.rs` ×4) — **no compiler invoked**.
+## Heart & star pickups (S1-P-i52, 2026-11-20)
+
+Code-only round, branch `task/S1-P-i52-heart-star-pickup` pushed unmerged.
+**No compiler invoked; the tests are written, NOT run.**
+
+### The census (C# truth, 1.4.5.8)
+
+- **The families** (`Player.PickupItem`, `Player.cs:35059-35079`): the
+  heart trio {58 Heart, 1734 Candy Apple, 1867 Candy Cane} →
+  `PlaySound(7)` + `Heal(20)` + `TurnToAir`; the star trio {184 Star,
+  1735 Soul Cake, 1868 Sugar Plum} → `PlaySound(7)` + `statMana += 100`
+  + `TryApplyManaHeat(0.2f, 2f)` + `ManaEffect(100)` + the
+  `statManaMax2` cap + `TurnToAir`. `Heal` (`:35112-35123`) queues the
+  HealEffect text with the RAW amount BEFORE the `statLifeMax2` cap —
+  a heart at 95/100 heals 5 but prints 20; the star's cap likewise runs
+  AFTER `ManaEffect(100)` (`:35068-35077`).
+- **"Pickup refusal at full" — the census verdict is NO refusal.**
+  `ItemID.Sets.IsAPickup` (`ItemID.cs:493`) contains all six kinds, so
+  `Player.ItemSpace` returns `CanTakeItem: true` before any slot walk
+  (`:39155-39158`) and the direct `Hitbox.Intersects` pickup
+  (`:34917-34922`) has no stat gate: a full-life/full-mana (or
+  full-inventory) player still CONSUMES the drop, the heal/restore
+  capping at the max. The ONLY full-stat gate in the chain is the
+  star's PULL gate `else if (!flag2 || this.HeldItem.magic ||
+  this.statMana != this.statManaMax2)` (`:34947`): a star at full mana
+  with no manaMagnet and no magic weapon in hand is not pulled (it
+  lies on the ground until touched or mana is spent). Hearts have no
+  gate at all. The port implements exactly this; witnesses
+  `s1_p_i52_the_full_life_heart_is_consumed_not_refused` /
+  `s1_p_i52_the_full_mana_star_is_consumed_on_touch` /
+  `s1_p_i52_the_full_mana_star_pull_gate_follows_the_held_class` pin it.
+- **The reach accessories**: `GetItemGrabRange` (`:35130-35166`) adds
+  `Item.lifeGrabRange = 250` (`Item.cs:49964`) for hearts under
+  `lifeMagnet` (buff 105 Heartreach, `:10138-10141`) and
+  `Item.manaGrabRange = 300` (`:49963`) for stars under `manaMagnet`
+  (Celestial Magnet 2219 `:14940-14943`, Celestial Emblem 2220
+  `:14944-14948`, Celestial Cuffs 2221 `:14949-14953`, Magnet Flower
+  4000 `:14455-14458`). The magnet pulls are `PullItem_Pickup`
+  (`:35031-35041`): hearts 15/5, stars 12/5 — the unit direction scaled
+  to speed, blended `(vel*(acc-1)+pull)/acc`. `ResetEffects` clears
+  both flags (`:18491-18492`).
+- **The seasonal variants** (`Item.NewItem`, `Item.cs:49668-49714`):
+  anniversary first (ONE `NextFromList` = `Next(3)`, lists
+  {1734,1867,58}/{1735,1868,184}, `Utils.cs:1213-1216`), else
+  halloween AND xmas (one `Next(2)`), else halloween alone
+  (58→1734, 184→1735, draw-free) then xmas alone (58→1867, 184→1868,
+  draw-free). The star statue (`Wiring.cs:2401-2406`, style 2) and the
+  heart statue (`:2382-2387`, style 37) both spawn through `NewItem`,
+  so the remap applies at the statue drain; the `Item.MechSpawn` caps
+  (`Item.cs:49385-49412`) check the PRE-remap ids {58,1734,1867} /
+  {184,1735,1868} before the roll — a cap refusal consumes no draw.
+- **ManaHeat** (`TryApplyManaHeat`, `:52006-52014`): writes
+  `latestManaPotionDamageBonus = 0.2` / `latestManaPotionDuration =
+  120` then `AddBuff(396, 120)`.
+
+### What landed
+
+- `player.rs`: the `mana_magnet`/`life_magnet` flags (the four accessory
+  rows + the buff-105 arm + the ResetEffects clears), the
+  `latest_mana_potion_*` pair, `heal`/`take_heal_effect` (the
+  `pending_mana_effect` queue convention) and `try_apply_mana_heat`.
+- `item.rs`: `HEART_KINDS`/`STAR_KINDS`/`is_heart_or_star`,
+  `PickupContext`, `grab_range` (42+250/42+300), `pull_item_pickup`
+  (the verbatim blend), `ItemDrop::update_with_pickup` (the heart/star
+  arm: touch pickup regardless of gates, the `:34947` star pull gate,
+  the magnet blends; the legacy `update` delegates with the pre-i52
+  context so the generic-drop tests are untouched).
+- `world_sim/items.rs`: the heart/star pickup arms BEFORE the coin walk
+  (the C# `else if` order), the chime + text draws on `UpdatePlayers`;
+  `seasonal_pickup_kind` (the NewItem remap, flags + RNG injected).
+- `world_sim/wiring.rs`: the statue drain remaps 58/184 through
+  `seasonal_pickup_kind` on the wiring stream AFTER the caps.
+- `world_sim/npcs.rs::spawn_loot`: the same remap before the
+  velocity/prefix draws on `UpdateNPCs` (the flags snapshot from the
+  loot info).
+- `combat_text.rs`: `HEAL_LIFE = (100, 255, 100)` (`CombatText.cs:227`).
+
+### The RNG argument
+
+- The pickup chime (case 7, ONE `Next(-10,11)` pitch,
+  `LegacySoundPlayer.cs:725`) precedes the combat-text placement (TWO
+  `Next` draws, `CombatText.cs:88-89`) — the C# order `PlaySound(7)` →
+  `Heal`/`ManaEffect`. All ride `UpdatePlayers` (the `GrabItems` caller
+  under the `Main.cs:17754` swap; the E21f named-stream convention).
+  The attenuation gate precedes the chime draw (a muted pickup
+  consumes no pitch draw but the text still spawns — the text is not a
+  sound). Witness: the peek-twin
+  `s1_p_i52_the_heart_pickup_draws_ride_update_players_in_order`.
+- The seasonal remap draws ONLY in the anniversary/both-seasons arms,
+  at the spawn site's own stream: the wiring stream at the statue
+  drain (`Main.rand` at `HitWireSingle`, the M7-WIRE-1 stand-in),
+  `UpdateNPCs` at the loot spawn — BEFORE the velocity/prefix draws
+  (the C# remap precedes `Prefix` + the velocity rolls,
+  `Item.cs:49668-49750`). Classic worlds and the deterministic
+  single-season arms draw NOTHING (the pre-i52 streams are unchanged).
+- The cap-refused statue spawn consumes no remap roll (the `&&` chain
+  evaluates `MechSpawn` first).
+
+### Deviations
+
+1. **The buff-396 effect arm is deferred**: `manaHeat`'s per-tick decay
+   (`Player.cs:10328-10341`) and the `magicDamage *= manaHeat` consumer
+   (`:25906`) belong to the UpdateBuffs debuff-census / damage-recalc
+   seams; the port writes the latest pair + the buff (the pickup-side
+   contract) and the buff ticks down with no damage effect yet.
+2. **The unmagnetised heart/star pull keeps the radial stand-in**
+   (`PullItem_Common(0.75f)`'s port convention, ITEMS-2); only the
+   magnet arms run the verbatim 15/5 / 12/5 blends.
+3. **The 10 px touch radius** stands in for the `Hitbox.Intersects`
+   test (the ITEMS-2 convention); the drop box is the port's 14x14
+   (the C# heart/star box is 12x12, `Item.cs` SetDefaults).
+4. **The seasonal flags ride the endless micro seeds** (the standing
+   `Main.halloween`/`Main.xMas` stand-in, the loot-flag precedent);
+   the calendar windows are unported.
+5. **The nebula trio 3453-3455 and the ManaCloak star 4143** (the other
+   `IsAPickup` members, `PickupItem` `:35045-35058`/`:35080-35098`)
+   are out of scope — their pickup arms stay unported.
+6. **The direct-pickup held-item gate** (`inventory[selectedItem].type
+   != 0 || itemAnimation <= 0`, `:34919`) is not modelled — the port's
+   items pass has no itemAnimation snapshot (the standing ITEMS-2
+   seam); it only delays a pickup by the swing's duration in vanilla.
+
+### The witnesses (written, NOT run)
+
+`item.rs`: `s1_p_i52_the_grab_range_rows_add_the_magnet_bonuses`,
+`s1_p_i52_the_magnet_pull_blends_at_the_csharp_speed_and_acc`,
+`s1_p_i52_the_full_mana_star_pull_gate_follows_the_held_class`,
+`s1_p_i52_the_touch_pickup_fires_at_full_stats`,
+`s1_p_i52_the_heartreach_potion_extends_the_heart_reach`.
+`world_sim/items.rs`:
+`s1_p_i52_the_heart_heals_twenty_capped_and_never_enters_inventory`,
+`s1_p_i52_the_full_life_heart_is_consumed_not_refused`,
+`s1_p_i52_the_star_restores_hundred_mana_and_arms_mana_heat`,
+`s1_p_i52_the_full_mana_star_is_consumed_on_touch`,
+`s1_p_i52_the_heart_pickup_draws_ride_update_players_in_order`,
+`s1_p_i52_the_seasonal_remap_branches_and_draw_counts`.
+`player.rs`: `s1_p_i52_the_magnet_accessories_arm_mana_magnet`,
+`s1_p_i52_the_heartreach_buff_arms_life_magnet`,
+`s1_p_i52_heal_caps_after_the_text_and_mana_heat_gates_the_buff`.
+`world_sim/wiring.rs`:
+`s1_p_i52_the_statue_drops_remap_under_the_seasonal_seeds`,
+`s1_p_i52_the_both_seasons_statue_drop_draws_once_on_the_wiring_stream`,
+`s1_p_i52_the_capped_statue_spawn_draws_no_remap_roll`.

@@ -6870,8 +6870,27 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
     };
     let mut out = Vec::new();
     tr_core::loot::try_dropping(crate::loot_db::database(), net_id, &mut info, &mut out);
+    // S1-P-i52 — the seasonal flags snapshot (the `info.rng` borrow ends
+    // with `try_dropping`; the remap below draws on the same stream).
+    let (tenth, halloween, xmas) = (
+        info.flags.tenth_anniversary,
+        info.flags.halloween,
+        info.flags.xmas,
+    );
+    drop(info); // releases the `&mut *rng` reborrow + the get_text borrow
     for req in out {
         if req.item > 0 && crate::registry::get(req.item as u16).is_some() {
+            // S1-P-i52 — `Item.NewItem`'s heart/star seasonal remap
+            // (`Item.cs:49668-49714`) runs BEFORE the prefix/velocity
+            // draws; only the anniversary/both-seasons arms draw (one
+            // `Next(len)` on the same `UpdateNPCs` stream).
+            let kind = crate::world_sim::items::seasonal_pickup_kind(
+                req.item as u16,
+                tenth,
+                halloween,
+                xmas,
+                rng,
+            );
             // The velocity triplet rides the same stream (`Item.NewItem`'s
             // scatter); `Item.Prefix` uses `Main.rand` = the active swap
             // (`Item.cs:527`) — the prefix roll joins the `UpdateNPCs`
@@ -6880,9 +6899,9 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             let vy = -1.5 - rng.next_float();
             let phase = rng.next_float() * std::f32::consts::TAU;
             app.items.push(ItemDrop::new(
-                req.item as u16,
+                kind,
                 req.stack as u32,
-                crate::prefix::roll_prefix(req.item as u16, -1, rng),
+                crate::prefix::roll_prefix(kind, -1, rng),
                 x,
                 y,
                 vx,

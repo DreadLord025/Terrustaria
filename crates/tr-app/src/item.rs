@@ -614,6 +614,23 @@ pub(crate) const ITEM_GRAB_SPEED_MAX: f32 = 4.0;
 /// tile-break drops spawn `ReserveForLocalPlayer`, which in netMode 0 sets
 /// NO delay (`WorldItem.cs:295-305`).
 pub(crate) const DEFAULT_GRAB_DELAY: i32 = 100;
+/// `Player.PickupItem`'s heart family (`Player.cs:35059`): the Heart 58, the
+/// Candy Apple 1734 (Halloween) and the Candy Cane 1867 (Christmas) — the
+/// `Item.NewItem` seasonal remap's products (`Item.cs:49668-49714`).
+pub const HEART_KINDS: [u16; 3] = [58, 1734, 1867];
+/// `Player.PickupItem`'s star family (`Player.cs:35065`): the Mana Star 184,
+/// the Soul Cake 1735 and the Sugar Plum 1868.
+pub const STAR_KINDS: [u16; 3] = [184, 1735, 1868];
+/// `ItemID.Sets.IsAPickup`'s heart/star subset (`ItemID.cs:493` — the full
+/// set also holds the nebula trio 3453-3455 and the Mana Cloak star 4143,
+/// unported consume arms): `Player.ItemSpace` returns `CanTakeItem: true`
+/// unconditionally for them (`Player.cs:39155-39158`) — an inventory-full
+/// player still grabs them, and a FULL-life/full-mana player consumes them
+/// too (the heal/restore caps; only the star's PULL is gated at full mana,
+/// `Player.cs:34947`).
+pub fn is_heart_or_star(kind: u16) -> bool {
+    HEART_KINDS.contains(&kind) || STAR_KINDS.contains(&kind)
+}
 /// `Player.DoCoins` (`Player.cs:39246-39262`, S1-P-i50): a coin slot at
 /// exactly 100 of copper/silver/gold (71/72/73) converts to ONE of the next
 /// denomination — `SetDefaults(type + 1)` resets the stack to 1 and the
@@ -1924,38 +1941,111 @@ mod s1_p_i47_tests {
     /// coins ONLY.
     #[test]
     fn s1_p_i50_the_gold_ring_extends_the_coin_grab_range_only() {
-        assert_eq!(item_grab_range(71, false), 42.0);
-        assert_eq!(item_grab_range(71, true), 392.0, "42 + 350");
-        assert_eq!(item_grab_range(74, true), 392.0, "platinum is a coin too");
-        assert_eq!(item_grab_range(3, true), 42.0, "stone gets no extension");
-        assert_eq!(item_grab_range(75, true), 42.0, "fallen star is not a coin");
+        let plain = GrabFlags::default();
+        let gold = GrabFlags { gold_ring: true, ..plain };
+        assert_eq!(get_item_grab_range(71, plain), 42);
+        assert_eq!(get_item_grab_range(71, gold), 392, "42 + 350");
+        assert_eq!(get_item_grab_range(74, gold), 392, "platinum is a coin too");
+        assert_eq!(get_item_grab_range(3, gold), 42, "stone gets no extension");
+        assert_eq!(get_item_grab_range(75, gold), 42, "fallen star is not a coin");
     }
 
     /// The Gold Ring's pull (`GrabItems`, `Player.cs:34961-34963` →
     /// `PullItem_Pickup(12f, 5)`, `:35031-35041`): a coin 200 px out — far
-    /// beyond the base 42 — is pulled in, and the velocity is the 4:1
-    /// blend `(v*4 + pull)/5` with `pull = d * (12/dist)`.
+    /// beyond the base 42 — is pulled with the 4:1 blend
+    /// `(v*4 + pull)/5`, `pull = d * (12/dist)`; the grabbed tick applies
+    /// the velocity raw (`WorldItem.cs:425-435`). The end-to-end wiring
+    /// witness lives in `world_sim/items.rs`
+    /// (`s1_p_i50_the_gold_ring_collects_a_far_coin_in_the_world`).
     #[test]
     fn s1_p_i50_the_gold_ring_pulls_a_far_coin_with_the_pickup_blend() {
         let w = ground();
-        // Both in free air above the floor (row 20) so the collision pass
-        // cannot touch the velocity the pull just wrote.
-        let player = Vec2::new(10.0 * TILE_PX, 10.0 * TILE_PX);
-        // 200 px to the right of the player, same height.
-        let mut it = ItemDrop::new(71, 1, 0, player.x + 200.0, player.y, 0.0, 0.0, 0.0);
-        it.age = 1.0;
-        let range = item_grab_range(71, true);
-        let collected = it.update(&w, Some(player), 1.0 / 60.0, range, true);
-        assert!(!collected, "200 px out is not collected yet");
+        let pc = Vec2::new(10.0 * TILE_PX, 10.0 * TILE_PX);
+        // Centre 200 px to the right of the player, same height.
+        let mut it = ItemDrop::new(71, 1, 0, pc.x + 200.0 - SIZE * 0.5, pc.y - SIZE * 0.5, 0.0, 0.0, 0.0);
+        // The grab pass arms `being_grabbed` and writes the pull velocity.
+        it.being_grabbed = true;
+        pull_item_pickup(it.center(), &mut it.vel, pc, 12.0, 5);
         // pull = d * (12/200); v was 0 → v = pull/5 = d * 12/200/5.
         let expect_vx = -200.0f32 * (12.0 / 200.0) / 5.0;
         assert!((it.vel.x - expect_vx).abs() < 1e-4, "vx {}", it.vel.x);
         assert!(it.vel.y.abs() < 1e-6, "no vertical pull");
-        // Without the ring the same coin is out of range: no pull at all
-        // (it falls under gravity instead — vx stays 0).
-        let mut plain = ItemDrop::new(71, 1, 0, player.x + 200.0, player.y, 0.0, 0.0, 0.0);
-        plain.age = 1.0;
-        plain.update(&w, Some(player), 1.0 / 60.0, item_grab_range(71, false), false);
-        assert_eq!(plain.vel.x, 0.0, "the base magnet ignores it");
+        // The grabbed tick applies it raw — no gravity, no friction.
+        let before = it.pos;
+        it.update(&w, 1.0 / 60.0);
+        assert!((it.pos.x - (before.x + expect_vx)).abs() < 1e-4);
+        assert_eq!(it.pos.y, before.y, "no gravity on the grabbed tick");
+        assert!(!it.being_grabbed, "the flag cleared");
+    }
+
+    // ---- S1-P-i52 — the heart/star grab families (gate V4: re-derived on
+    // the merged S1-P-i47 GrabItems shape — the range rows ride GrabFlags,
+    // the pulls ride pull_item_pickup; the end-to-end arms live in
+    // world_sim/items.rs's pickup_tests) ----
+
+    /// `Player.GetItemGrabRange` (`Player.cs:35130-35166`): the 42 base
+    /// (`:57121`), +250 `Item.lifeGrabRange` (`Item.cs:49964`) for the heart
+    /// trio under `lifeMagnet` (`:35145-35148`), +300 `Item.manaGrabRange`
+    /// (`:49963`) for the star trio under `manaMagnet` (`:35137-35140`).
+    /// The candy variants ride the SAME rows — the C# tests the type lists,
+    /// not the base ids.
+    #[test]
+    fn s1_p_i52_the_grab_range_rows_add_the_magnet_bonuses() {
+        let plain = GrabFlags::default();
+        for k in HEART_KINDS {
+            assert_eq!(get_item_grab_range(k, plain), 42, "heart {k} plain");
+        }
+        for k in STAR_KINDS {
+            assert_eq!(get_item_grab_range(k, plain), 42, "star {k} plain");
+        }
+        let life = GrabFlags { life_magnet: true, ..plain };
+        for k in HEART_KINDS {
+            assert_eq!(get_item_grab_range(k, life), 292, "heart {k} + lifeMagnet");
+        }
+        for k in STAR_KINDS {
+            assert_eq!(get_item_grab_range(k, life), 42, "lifeMagnet ignores stars");
+        }
+        let mana = GrabFlags { mana_magnet: true, ..plain };
+        for k in STAR_KINDS {
+            assert_eq!(get_item_grab_range(k, mana), 342, "star {k} + manaMagnet");
+        }
+        for k in HEART_KINDS {
+            assert_eq!(get_item_grab_range(k, mana), 42, "manaMagnet ignores hearts");
+        }
+        // A generic kind never earns either bonus (`:35137`/`:35145`'s
+        // type gates).
+        let both = GrabFlags { life_magnet: true, mana_magnet: true, ..plain };
+        assert_eq!(get_item_grab_range(12, both), 42);
+    }
+
+    /// `Player.PullItem_Pickup` (`Player.cs:35031-35041`): a resting drop
+    /// 100 px to the RIGHT of the player, heart + lifeMagnet (speed 15,
+    /// acc 5): the pull vector is (-15, 0), the blend `(0*4 + (-15))/5` =
+    /// -3 — the first magnet tick moves the heart 3 px. The star +
+    /// manaMagnet arm (12/5) blends to -2.4. The grabbed tick
+    /// (`WorldItem.cs:425-435`) applies the velocity raw.
+    #[test]
+    fn s1_p_i52_the_magnet_pull_blends_at_the_csharp_speed_and_acc() {
+        let w = ground();
+        let pc = Vec2::new(200.0, 200.0);
+        // centre at (300, 200) — pos = centre - 7 (the 14x14 box).
+        let mut heart = ItemDrop::new(58, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        heart.being_grabbed = true;
+        pull_item_pickup(heart.center(), &mut heart.vel, pc, 15.0, 5);
+        // f32: 15/100 is inexact, so the blend lands within an ulp of -3
+        // (the C# runs the same f32 arithmetic).
+        assert!((heart.vel.x - -3.0).abs() < 1e-4, "15/5 blend from rest: {}", heart.vel.x);
+        assert_eq!(heart.vel.y, 0.0);
+        heart.update(&w, 1.0 / 60.0);
+        assert!((heart.pos.x - 290.0).abs() < 1e-3, "the blend moves the drop: {}", heart.pos.x);
+        assert_eq!(heart.pos.y, 193.0);
+        // The second tick blends again: (−3*4 + −15)/5 = −5.4.
+        heart.being_grabbed = true;
+        pull_item_pickup(heart.center(), &mut heart.vel, pc, 15.0, 5);
+        assert!((heart.vel.x - -5.4).abs() < 1e-4, "vel {}", heart.vel.x);
+        let mut star = ItemDrop::new(184, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        star.being_grabbed = true;
+        pull_item_pickup(star.center(), &mut star.vel, pc, 12.0, 5);
+        assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);
     }
 }

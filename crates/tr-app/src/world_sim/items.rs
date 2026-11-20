@@ -148,10 +148,10 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             // The `IsAPickup` consume-on-touch arms (`PickupItem`
-            // `:35045-35098`): hearts/stars ride i52, the nebula/4143 mana
-            // arms have no ported buff route — the kinds are not grabbed
-            // until those land (ANALYSIS S1-P-i47).
-            if crate::item::is_a_pickup(kind) {
+            // `:35045-35098`): hearts/stars ride the i52 arms below; the
+            // nebula/4143 mana arms have no ported buff route — those kinds
+            // are not grabbed until they land (ANALYSIS S1-P-i47/i52).
+            if crate::item::is_a_pickup(kind) && !crate::item::is_heart_or_star(kind) {
                 i += 1;
                 continue;
             }
@@ -174,6 +174,8 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             let expert_mode = pl.buffs.expert_mode;
             let flags = crate::item::GrabFlags {
                 gold_ring: pl.gold_ring,
+                mana_magnet: pl.mana_magnet,
+                life_magnet: pl.life_magnet,
                 journey_far_range: pl.far_placement_range,
                 ..Default::default()
             };
@@ -193,6 +195,97 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 // slot being non-air OR the swing finished (`:34919`).
                 if inventory[app.selected].kind == 0 && app.swing > 0.0 {
                     i += 1;
+                    continue;
+                }
+                // S1-P-i52 — `Player.PickupItem`'s heart/star arms
+                // (`Player.cs:35059-35079`), BEFORE the coin/inventory walk
+                // (the C#'s `else if` chain order). `ItemID.Sets.IsAPickup`
+                // (`ItemID.cs:493`) makes `ItemSpace` unconditionally true
+                // (`:39155-39158`) — the pickup fires even with a FULL
+                // inventory, and a full-life/full-mana player still consumes
+                // the drop (the heal/restore caps at the max). The
+                // `SyncItem` tail (`:35109`) is the MP send seam.
+                if crate::item::HEART_KINDS.contains(&kind) {
+                    // `:35059-35064`: `PlaySound(7)` (unpositioned), `Heal(20)`,
+                    // `TurnToAir`. The case-7 pitch draw rides `UpdatePlayers`
+                    // (the `GrabItems` caller under the `Main.cs:17754` swap).
+                    // The HealLife text spawns HERE, synchronously at the
+                    // pickup site (`Heal` → `HealEffect`, `:35112-35123` →
+                    // `:4522-4529`) — the text carries the RAW 20 even when
+                    // the cap eats part of the heal.
+                    audio.play_pickup_sound(
+                        false,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                    if let Some(p) = player.as_mut() {
+                        p.heal(20);
+                        if let Some(amount) = p.take_heal_effect() {
+                            let text = amount.to_string();
+                            let size = match app.lookups.combat_text_font.as_ref() {
+                                Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                                None => [text.chars().count() as f32 * 8.0, 10.0],
+                            };
+                            let location = crate::combat_text::Rect {
+                                x: p.x,
+                                y: p.y,
+                                width: crate::player::WIDTH,
+                                height: p.height,
+                            };
+                            crate::combat_text::spawn_amount(
+                                &mut app.combat_texts,
+                                location,
+                                crate::combat_text::HEAL_LIFE,
+                                amount,
+                                false,
+                                false,
+                                size,
+                                1.0,
+                                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                            );
+                        }
+                    }
+                    items.swap_remove(i);
+                    continue;
+                }
+                if crate::item::STAR_KINDS.contains(&kind) {
+                    // `:35065-35079`: `PlaySound(7)`, `statMana += 100`, the
+                    // local-player `TryApplyManaHeat(0.2f, 2f)` +
+                    // `ManaEffect(100)` (the RAW 100 — the cap comes AFTER
+                    // the text, `:35074-35077`), then `TurnToAir`.
+                    audio.play_pickup_sound(
+                        false,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                    if let Some(p) = player.as_mut() {
+                        p.mana += 100;
+                        p.try_apply_mana_heat(0.2, 2.0);
+                        let text = "100".to_string();
+                        let size = match app.lookups.combat_text_font.as_ref() {
+                            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                            None => [text.chars().count() as f32 * 8.0, 10.0],
+                        };
+                        let location = crate::combat_text::Rect {
+                            x: p.x,
+                            y: p.y,
+                            width: crate::player::WIDTH,
+                            height: p.height,
+                        };
+                        crate::combat_text::spawn_amount(
+                            &mut app.combat_texts,
+                            location,
+                            crate::combat_text::HEAL_MANA,
+                            100,
+                            false,
+                            false,
+                            size,
+                            1.0,
+                            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        );
+                        if p.mana > p.mana_max {
+                            p.mana = p.mana_max;
+                        }
+                    }
+                    items.swap_remove(i);
                     continue;
                 }
                 if registry::is_coin(kind) {
@@ -499,20 +592,27 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 i += 1;
                 continue;
             }
-            // `:34935-34972` — the pull arms. `flag2` = the heart/star
-            // family; at full mana without the Mana Magnet they are not
-            // pulled at all (`:34947`). The manaMagnet/lifeMagnet/treasure/
-            // nebula grants are the `GrabFlags` seam (unported equipment
-            // families); the Gold Ring's coin pull is live (S1-P-i50,
-            // `PullItem_Pickup(12f, 5)` `:34961-34963`).
+            // `:34935-34972` — the pull arms. `flag2` = the star family; at
+            // full mana without the Mana Magnet stars are not pulled at all
+            // (`:34947`). The C# arm order (`:34943-34971`): manaMagnet-star
+            // → lifeMagnet-heart → nebula → void-vault → goldRing-coin →
+            // journey far-range → common. The treasure magnet's RANGE row
+            // is live via GrabFlags; the nebula pull rides the unported
+            // consume arms (S1-P-i52).
             let drop = &mut items[i];
             drop.shimmered = false;
             drop.being_grabbed = true;
             let flag2 = matches!(kind, 184 | 1735 | 1868);
             let held_magic = registry::get(inventory[app.selected].kind)
                 .is_some_and(|d| d.magic);
-            if !flag2 || held_magic || mana != mana_max {
-                if status.to_void_vault {
+            if flags.mana_magnet && flag2 {
+                // `:34943-34946` — `PullItem_Pickup(worldItem, 12f, 5)`.
+                crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 12.0, 5);
+            } else if !flag2 || held_magic || mana != mana_max {
+                if flags.life_magnet && matches!(kind, 58 | 1734 | 1867) {
+                    // `:34949-34952` — `PullItem_Pickup(worldItem, 15f, 5)`.
+                    crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 15.0, 5);
+                } else if status.to_void_vault {
                     // `PullItem_ToVoidVault` (`:34978-34981`).
                     crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 12.0, 5);
                 } else if flags.gold_ring && registry::is_coin(kind) {
@@ -992,6 +1092,60 @@ fn spawn_player_drop(
     if items.len() > 300 {
         items.remove(0);
     }
+}
+
+/// `Item.NewItem`'s heart/star seasonal remap (`Item.cs:49668-49714`),
+/// S1-P-i52. The C# branch order: `tenthAnniversaryWorld` first (ONE
+/// `NextFromList` = `Next(len)` draw per remapped kind, `Utils.cs:1213-1216`),
+/// else halloween AND xMas (one `Next(2)`), else halloween alone (58→1734,
+/// 184→1735 — no draw) then xMas alone (58→1867, 184→1868 — no draw). Every
+/// other kind passes through untouched and draws NOTHING. The flags ride
+/// the port's standing seasonal stand-ins (`Main.halloween`/`Main.xMas` =
+/// the endless micro seeds, `world_sim/npcs.rs`'s loot-flag precedent; the
+/// calendar windows are unported).
+pub fn seasonal_pickup_kind(
+    kind: u16,
+    tenth_anniversary: bool,
+    halloween: bool,
+    xmas: bool,
+    rng: &mut UnifiedRandom,
+) -> u16 {
+    if tenth_anniversary {
+        // `:49668-49678` — the two independent `if`s, list order verbatim.
+        if kind == 58 {
+            return [1734u16, 1867, 58][rng.next_max(3) as usize];
+        }
+        if kind == 184 {
+            return [1735u16, 1868, 184][rng.next_max(3) as usize];
+        }
+    } else if halloween && xmas {
+        // `:49679-49689`.
+        if kind == 58 {
+            return [1734u16, 1867][rng.next_max(2) as usize];
+        }
+        if kind == 184 {
+            return [1735u16, 1868][rng.next_max(2) as usize];
+        }
+    } else {
+        // `:49692-49713` — the deterministic remaps, no draws.
+        if halloween {
+            if kind == 58 {
+                return 1734;
+            }
+            if kind == 184 {
+                return 1735;
+            }
+        }
+        if xmas {
+            if kind == 58 {
+                return 1867;
+            }
+            if kind == 184 {
+                return 1868;
+            }
+        }
+    }
+    kind
 }
 
 #[cfg(test)]
@@ -2303,5 +2457,210 @@ mod drop_witness_tests {
         app.chat.open = true;
         drop_item_check(&mut app, false);
         assert!(app.items.is_empty());
+    }
+
+    // ---- S1-P-i52 — the heart/star pickup arms (written, NOT run) ----
+
+    /// `Player.PickupItem`'s heart arm (`Player.cs:35059-35064`) + `Heal`
+    /// (`:35112-35123`): the drop heals 20 capped at `statLifeMax2`, the
+    /// HealLife text carries the RAW 20 (`HealEffect` runs BEFORE the cap),
+    /// the drop airs out and NEVER enters the inventory (`IsAPickup`,
+    /// `ItemID.cs:493` — the `:35059` arm precedes the `GetItem` walk).
+    /// All three heart kinds (58/1734/1867) ride the same arm.
+    #[test]
+    fn s1_p_i52_the_heart_heals_twenty_capped_and_never_enters_inventory() {
+        for kind in crate::item::HEART_KINDS {
+            let mut app = pickup_world();
+            {
+                let p = app.player.as_mut().unwrap();
+                p.max_hp = 100;
+                p.hp = 95; // the cap eats 15 of the 20
+            }
+            let pc = app.player.as_ref().unwrap().center();
+            app.items.push(collectable_drop(kind, 1, pc.0 - 4.0, pc.1 - 4.0));
+            update_items(&mut app, 1.0 / 60.0);
+            assert!(app.items.is_empty(), "kind {kind}: the heart aired out");
+            assert_eq!(app.player.as_ref().unwrap().hp, 100, "kind {kind}: capped");
+            assert!(
+                app.inventory.iter().all(|s| s.count == 0),
+                "kind {kind}: nothing entered the inventory"
+            );
+            // The HealLife text: RAW 20, the (100, 255, 100) colour.
+            let t = app
+                .combat_texts
+                .iter()
+                .find(|t| t.active)
+                .expect("the heal text spawned");
+            assert_eq!(t.text, "20");
+            assert_eq!(t.color, crate::combat_text::HEAL_LIFE);
+        }
+    }
+
+    /// The full-life heart is STILL consumed (`ItemSpace`'s `IsAPickup`
+    /// short-circuit, `Player.cs:39155-39158` — no `statLife` gate exists in
+    /// the grab chain): the heal caps at the max, the text still prints 20,
+    /// the drop vanishes. This pins the census verdict — the vanilla does
+    /// NOT leave a heart on the ground at full life.
+    #[test]
+    fn s1_p_i52_the_full_life_heart_is_consumed_not_refused() {
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.max_hp = 100;
+            p.hp = 100;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(58, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the heart is consumed at full life");
+        assert_eq!(app.player.as_ref().unwrap().hp, 100);
+        assert_eq!(
+            app.combat_texts.iter().find(|t| t.active).unwrap().text,
+            "20",
+            "the RAW amount prints even when the cap eats all of it"
+        );
+    }
+
+    /// `Player.PickupItem`'s star arm (`Player.cs:35065-35079`): +100 mana
+    /// capped at `statManaMax2`, `TryApplyManaHeat(0.2f, 2f)` writes the
+    /// latest pair (0.2, 120) and adds buff 396 for 120 ticks
+    /// (`:52006-52014`), the HealMana text carries the RAW 100 (the cap
+    /// comes after, `:35074-35077`). All three star kinds ride the arm.
+    #[test]
+    fn s1_p_i52_the_star_restores_hundred_mana_and_arms_mana_heat() {
+        for kind in crate::item::STAR_KINDS {
+            let mut app = pickup_world();
+            {
+                let p = app.player.as_mut().unwrap();
+                p.mana_max = 200;
+                p.mana = 150; // the cap eats 50 of the 100
+            }
+            let pc = app.player.as_ref().unwrap().center();
+            app.items.push(collectable_drop(kind, 1, pc.0 - 4.0, pc.1 - 4.0));
+            update_items(&mut app, 1.0 / 60.0);
+            assert!(app.items.is_empty(), "kind {kind}: the star aired out");
+            let p = app.player.as_ref().unwrap();
+            assert_eq!(p.mana, 200, "kind {kind}: capped at statManaMax2");
+            assert_eq!(p.latest_mana_potion_damage_bonus, 0.2);
+            assert!(
+                (p.latest_mana_potion_duration - 120.0).abs() < 1e-3,
+                "kind {kind}: 2 s = 120 ticks"
+            );
+            let i = p.buffs.find_buff_index(396).expect("ManaHeat added");
+            assert!(
+                (p.buffs.buff_time[i] - 120).abs() <= 1,
+                "(int)(2f * 60f) truncates to 120 or 119 (the C# f32 product): {}",
+                p.buffs.buff_time[i]
+            );
+            assert!(
+                app.inventory.iter().all(|s| s.count == 0),
+                "kind {kind}: nothing entered the inventory"
+            );
+            let t = app
+                .combat_texts
+                .iter()
+                .find(|t| t.active)
+                .expect("the mana text spawned");
+            assert_eq!(t.text, "100", "the RAW 100 prints before the cap");
+            assert_eq!(t.color, crate::combat_text::HEAL_MANA);
+        }
+    }
+
+    /// The full-mana star touched directly is consumed (`:34917-34922`'s
+    /// intersects arm has no full-mana gate; only the PULL at `:34947`
+    /// does): mana stays capped, buff 396 still refreshes.
+    #[test]
+    fn s1_p_i52_the_full_mana_star_is_consumed_on_touch() {
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 200;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(184, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the star is consumed at full mana");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 200);
+        assert!(p.buffs.find_buff_index(396).is_some());
+    }
+
+    /// The RNG order inside the heart pickup arm: the case-7 pitch draw
+    /// (`LegacySoundPlayer.cs:725`, ONE `Next(-10, 11)`) comes FIRST (the
+    /// `PlaySound(7)` at `:35061` precedes `Heal`), then the HealLife
+    /// text's TWO placement draws (`CombatText.cs:88-89`). All ride
+    /// `UpdatePlayers` (the `GrabItems` caller, the `Main.cs:17754` swap).
+    /// The peek-twin witness: a same-seeded stream consumes exactly those
+    /// three draws, in that order.
+    #[test]
+    fn s1_p_i52_the_heart_pickup_draws_ride_update_players_in_order() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.max_hp = 100;
+            p.hp = 50;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(58, 1, pc.0 - 4.0, pc.1 - 4.0));
+        // Re-seed the named stream so the twin starts from the same state.
+        let seed = 0x5152_5354i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let _pitch = witness.next_range(-10, 11); // case 7 (`:725`)
+        // The text placement (`CombatText.cs:88-89`) at the player's box:
+        // width 20 → Next(-10, 11); height 42 → Next(-21, 22).
+        let _dx = witness.next_range(-10, 11);
+        let _dy = witness.next_range(-21, 22);
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the chime + two placement draws, in the C# order"
+        );
+    }
+
+    /// `Item.NewItem`'s seasonal remap (`Item.cs:49668-49714`): the branch
+    /// order and the draw counts. Classic flags: no draw, no remap.
+    /// Halloween alone: 58→1734, 184→1735, draw-free. Christmas alone:
+    /// 58→1867, 184→1868, draw-free. Both: ONE `Next(2)` per remap.
+    /// Anniversary: ONE `Next(3)` per remap, and it wins over the seasons.
+    #[test]
+    fn s1_p_i52_the_seasonal_remap_branches_and_draw_counts() {
+        use tr_core::unified_random::UnifiedRandom;
+        // Classic: identity, zero draws.
+        let mut rng = UnifiedRandom::new(9);
+        let peek = rng.peek();
+        assert_eq!(seasonal_pickup_kind(58, false, false, false, &mut rng), 58);
+        assert_eq!(seasonal_pickup_kind(184, false, false, false, &mut rng), 184);
+        assert_eq!(seasonal_pickup_kind(12, false, true, true, &mut rng), 12);
+        assert_eq!(rng.peek(), peek, "the classic + non-pickup arms draw nothing");
+        // Halloween alone: deterministic, zero draws.
+        let peek = rng.peek();
+        assert_eq!(seasonal_pickup_kind(58, false, true, false, &mut rng), 1734);
+        assert_eq!(seasonal_pickup_kind(184, false, true, false, &mut rng), 1735);
+        assert_eq!(rng.peek(), peek);
+        // Christmas alone: deterministic, zero draws.
+        assert_eq!(seasonal_pickup_kind(58, false, false, true, &mut rng), 1867);
+        assert_eq!(seasonal_pickup_kind(184, false, false, true, &mut rng), 1868);
+        assert_eq!(rng.peek(), peek);
+        // Both seasons: one Next(2) each, list order {1734, 1867}/{1735, 1868}.
+        let mut rng = UnifiedRandom::new(9);
+        let mut twin = UnifiedRandom::new(9);
+        let h = seasonal_pickup_kind(58, false, true, true, &mut rng);
+        assert_eq!(h, [1734u16, 1867][twin.next_max(2) as usize]);
+        let s = seasonal_pickup_kind(184, false, true, true, &mut rng);
+        assert_eq!(s, [1735u16, 1868][twin.next_max(2) as usize]);
+        assert_eq!(rng.peek(), twin.peek(), "exactly two draws");
+        // Anniversary wins over both seasons: one Next(3), the C# list
+        // order {1734, 1867, 58}/{1735, 1868, 184} (`:49672`/`:49676`).
+        let mut rng = UnifiedRandom::new(9);
+        let mut twin = UnifiedRandom::new(9);
+        let h = seasonal_pickup_kind(58, true, true, true, &mut rng);
+        assert_eq!(h, [1734u16, 1867, 58][twin.next_max(3) as usize]);
+        let s = seasonal_pickup_kind(184, true, false, false, &mut rng);
+        assert_eq!(s, [1735u16, 1868, 184][twin.next_max(3) as usize]);
+        assert_eq!(rng.peek(), twin.peek(), "the anniversary arm draws once per kind");
     }
 }

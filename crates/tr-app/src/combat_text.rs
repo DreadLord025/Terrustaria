@@ -44,7 +44,7 @@ pub const OTHERS_DAMAGED_HOSTILE_CRIT: [u8; 4] = [102, 40, 12, 102];
 pub const HEAL_MANA: [u8; 4] = [100, 100, 255, 255];
 /// `CombatText.HealLife` — `new Color(100, 255, 100, 255)`
 /// (`CombatText.cs:227`); `Player.HealEffect` spawns with it
-/// (`Player.cs:4524`, S1-P-i37's potion heals).
+/// (`Player.cs:4524`, S1-P-i37's potion heals + S1-P-i52's heart pickup text).
 pub const HEAL_LIFE: [u8; 4] = [100, 255, 100, 255];
 
 /// The bar sheets decode at their retail 36x12 size

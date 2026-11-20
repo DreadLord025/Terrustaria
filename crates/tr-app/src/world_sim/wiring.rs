@@ -153,7 +153,10 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 } => {
                     // `Item.MechSpawn` (`Item.cs:49385-49406`): the same caps
                     // over the dropped items, rings 300/800 px, one exact type
-                    // per cap id (the seasonal ids ride along — F6).
+                    // per cap id (the seasonal ids ride along — F6). The caps
+                    // read the PRE-remap ids on the ground exactly as the C#
+                    // does (`Wiring.cs:2383` checks 58/1734/1867 before the
+                    // `NewItem` call).
                     let caps: Vec<u16> = cap_ids.iter().map(|&c| c as u16).collect();
                     if !crate::wiring_stub::item_mech_spawn(
                         app.items.iter().map(|d| (d.pos.x, d.pos.y, d.kind)),
@@ -164,8 +167,28 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     ) {
                         continue;
                     }
+                    // S1-P-i52 — `Item.NewItem`'s seasonal remap
+                    // (`Item.cs:49668-49714`): the heart statue drops the
+                    // Candy Apple/Candy Cane under the seasonal flags, the
+                    // star statue the Soul Cake/Sugar Plum. The remap draw
+                    // (only the anniversary/both-seasons arms draw) rides
+                    // the wiring stream — `Main.rand` at the `HitWireSingle`
+                    // site (the port's wiring-RNG stand-in, M7-WIRE-1).
+                    let kind = crate::world_sim::items::seasonal_pickup_kind(
+                        item_id as u16,
+                        app.world
+                            .seeds
+                            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+                        app.world
+                            .micro_seeds
+                            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
+                        app.world
+                            .micro_seeds
+                            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+                        app.wiring.rand_mut(),
+                    );
                     app.items.push(crate::item::ItemDrop {
-                        kind: item_id as u16,
+                        kind,
                         count: 1,
                         shimmer_time: 0.0,
                         shimmered: false,
@@ -783,6 +806,98 @@ mod tests {
         // The 600-tick cooldown holds the second trip.
         trip_and_tick(&mut app);
         assert_eq!(app.items.len(), 11, "the 600-tick cooldown holds");
+    }
+
+    // ---- S1-P-i52 — the statue drops' seasonal remap (written, NOT run) ----
+
+    /// `Item.NewItem`'s remap at the statue drain (`Item.cs:49668-49714`
+    /// via `Wiring.cs:2385`/`:2404`): the endless-Halloween world drops the
+    /// Candy Apple 1734 / Soul Cake 1735, the endless-Christmas world the
+    /// Candy Cane 1867 / Sugar Plum 1868 — deterministically, no wiring
+    /// draw. The classic world keeps 58/184 (the dw_4_3 pin).
+    #[test]
+    fn s1_p_i52_the_statue_drops_remap_under_the_seasonal_seeds() {
+        for (statue_style, halloween_kind, xmas_kind) in
+            [(37i16, 1734u16, 1867u16), (2, 1735, 1868)]
+        {
+            // Halloween alone.
+            let mut app = app_with(105, statue_style * 36, 0);
+            app.world
+                .micro_seeds
+                .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+            let peek = app.wiring.rand_mut().peek();
+            trip_and_tick(&mut app);
+            assert_eq!(app.items.len(), 1);
+            assert_eq!(app.items[0].kind, halloween_kind, "style {statue_style} halloween");
+            assert_eq!(app.wiring.rand_mut().peek(), peek, "the deterministic remap draws nothing");
+            // Christmas alone.
+            let mut app = app_with(105, statue_style * 36, 0);
+            app.world
+                .micro_seeds
+                .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+            let peek = app.wiring.rand_mut().peek();
+            trip_and_tick(&mut app);
+            assert_eq!(app.items[0].kind, xmas_kind, "style {statue_style} christmas");
+            assert_eq!(app.wiring.rand_mut().peek(), peek);
+        }
+    }
+
+    /// Both seasons: ONE `Next(2)` on the wiring stream per statue drop
+    /// (`Item.cs:49683`/`:49687` — `NextFromList`, `Utils.cs:1213-1216`),
+    /// consumed AFTER the caps passed. The anniversary seed wins with a
+    /// `Next(3)` (`:49672`/`:49676`).
+    #[test]
+    fn s1_p_i52_the_both_seasons_statue_drop_draws_once_on_the_wiring_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut app = app_with(105, 37 * 36, 0);
+        app.world
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        app.world
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        app.wiring.seed_rand(11);
+        let mut twin = UnifiedRandom::new(11);
+        let want = [1734u16, 1867][twin.next_max(2) as usize];
+        trip_and_tick(&mut app);
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].kind, want, "the Next(2) pick");
+        assert_eq!(app.wiring.rand_mut().peek(), twin.peek(), "exactly one draw");
+        // The anniversary world: Next(3), list {1734, 1867, 58}.
+        let mut app = app_with(105, 37 * 36, 0);
+        app.world
+            .seeds
+            .insert(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        app.wiring.seed_rand(11);
+        let mut twin = UnifiedRandom::new(11);
+        let want = [1734u16, 1867, 58][twin.next_max(3) as usize];
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].kind, want, "the anniversary Next(3) pick");
+        assert_eq!(app.wiring.rand_mut().peek(), twin.peek());
+    }
+
+    /// A CAP-blocked statue spawn consumes NO remap draw — the C# evaluates
+    /// `Item.MechSpawn` before `Item.NewItem` (`Wiring.cs:2383`'s `&&`
+    /// chain), so the seasonal roll never runs when the caps refuse.
+    #[test]
+    fn s1_p_i52_the_capped_statue_spawn_draws_no_remap_roll() {
+        let mut app = app_with(105, 37 * 36, 0);
+        app.world
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        app.world
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        // Ten hearts on the ground at the anchor: the global cap refuses.
+        for _ in 0..10 {
+            app.items.push(crate::item::ItemDrop::new(
+                58, 1, 0, 160.0, 320.0, 0.0, 0.0, 0.0,
+            ));
+        }
+        let peek = app.wiring.rand_mut().peek();
+        trip_and_tick(&mut app);
+        assert_eq!(app.items.len(), 10, "the cap refused the spawn");
+        assert_eq!(app.wiring.rand_mut().peek(), peek, "no remap draw on a refusal");
     }
 
     #[test]
