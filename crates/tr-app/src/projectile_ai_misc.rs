@@ -62,7 +62,9 @@ use tr_core::loot::DropRng;
 
 use crate::npc::Npc;
 use crate::projectile::{
-    Projectile, can_hit, chaseable, chaseable_held, get_lerp_value, rotate, safe_normalize,
+    Projectile, alpha_of, can_hit, chaseable, chaseable_held, get_lerp_value, npc_center,
+    opacity_of, remap, rotate, rotation_vector, safe_normalize, safe_normalize_or, solid_tiles,
+    wrap_angle,
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
@@ -697,6 +699,69 @@ fn create_ground_explosion(
 }
 
 // ---------------------------------------------------------------------------
+// W4-d20 — the aiStyle 191-200 census slice. The seven styles the W4-d19
+// wave left UNARMED (193/194/197 already landed): 191 TrueNightsEdge,
+// 192 JuminoAnimation, 195 JimsDrone, 196 Petal, 198 Flint, 199 MeteorOre,
+// 200 BirdDroppings. C# sources read WHOLE (the golden rule); the RNG
+// contract is the module's: every EXPLICIT `Main.rand` call-site draw stays
+// in order on the `UpdateProjectiles` stream, the dust/gore BODIES and the
+// `Dust.NewDust*` internal rolls are the documented skip (no dust layer).
+// `Lighting.AddLight` feeds the light layer only — skipped. Witnesses are
+// WRITTEN NOT RUN (code-only mode).
+
+/// `AI_200_BirdDroppings` (`Projectile.cs:39985-40017`) — the bird dropping
+/// (1080), a hostile falling mote. The 0.3 gravity with the 16 cap, the
+/// two-dust trail (type 329) and the player-contact `Kill()`.
+///
+/// RNG: per tick TWO iterations, each one `Next(2)` branch pick then one
+/// `NextFloat` scale (`:39996-40006`) — both branches draw the scale, so
+/// 2 range + 2 float draws. The `NewDust` body and its internal position
+/// rolls are the dust skip; the `velocity *= 0.1` / `+= velocity` blends
+/// feed only the skipped dust.
+///
+/// The stock `friendly`/`hostile` are both false (`SetDefaults :10078-10086`
+/// sets neither), so the generic PVE/PVP passes refuse it — the contact
+/// `Kill()` here is the C#'s own player-rectangle test, not a damage hit
+/// (the spawner passes damage 0, `NPC.cs:25322`).
+pub(crate) fn ai_bird_droppings(
+    p: &mut Projectile,
+    player: Option<&crate::player::Player>,
+    rng: &mut dyn DropRng,
+) {
+    // `:39987-39991` — the gravity and the 16 fall cap.
+    p.vel.y += 0.3;
+    if p.vel.y > 16.0 {
+        p.vel.y = 16.0;
+    }
+    // `:39992-40008` — the two-dust trail. Each iteration draws the
+    // `Next(2)` branch pick then the branch's `NextFloat` scale; the dust
+    // body (type 329, the velocity blends, noGravity) is the skip.
+    for _ in 0..2 {
+        if rng.next_range(0, 2) == 0 {
+            let _ = rng.next_float(); // scale = NextFloat * 0.5 + 0.5
+        } else {
+            let _ = rng.next_float(); // scale = NextFloat * 0.4 + 0.4
+        }
+    }
+    // `:40009-40016` — the player-contact kill: the `(int)` truncating
+    // projectile rect vs each active, living player's rect, XNA's strict
+    // `Intersects`. The port's single player rides slot 0.
+    let (px, py, pw, ph) = (p.pos.x as i32, p.pos.y as i32, p.w as i32, p.h as i32);
+    if let Some(pl) = player {
+        if !pl.dead {
+            let (qx, qy, qw, qh) =
+                (pl.x as i32, pl.y as i32, pl.width as i32, pl.height as i32);
+            let intersects = px < qx + qw && qx < px + pw && py < qy + qh && qy < py + ph;
+            if intersects {
+                p.kill_time_left = p.time_left;
+                p.active = false;
+                p.time_left = 0;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1233,5 +1298,94 @@ mod tests {
                 pool.slots()[s].kind
             );
         }
+    }
+
+    // ---- W4-d20 aiStyle 200 (BirdDroppings) — WRITTEN NOT RUN ----
+
+    /// The row carries the census slice (`Projectile.cs:10078-10086`):
+    /// 10x10, aiStyle 200, alpha 255, penetrate -1, ignoreWater, stock
+    /// tileCollide true.
+    #[test]
+    fn w4_d20_the_bird_dropping_row_carries_style_200() {
+        let d = proj_data(1080).unwrap();
+        assert_eq!(d.ai_style, 200);
+        assert_eq!((d.w, d.h), (10.0, 10.0), "`:10080-10081`");
+        assert_eq!(d.alpha, 255, "`:10083`");
+        assert_eq!(d.penetrate, -1, "`:10084`");
+        assert!(d.ignore_water, "`:10085`");
+        assert!(d.tile_collide, "the stock true (`:787`)");
+    }
+
+    /// The gravity ramp and the 16 cap (`:39987-39991`): +0.3 per tick,
+    /// clamped at 16. The RNG census: 2 range picks + 2 float scales per
+    /// tick (both branches draw the scale).
+    #[test]
+    fn w4_d20_the_bird_dropping_falls_with_the_cap_and_the_census() {
+        let mut p = proj(1080);
+        p.vel = Vec2::new(1.0, 0.0);
+        let mut rng = census();
+        ai_bird_droppings(&mut p, None, &mut rng);
+        assert_eq!(p.vel.y, 0.3, "`:39987`");
+        assert_eq!(rng.ranges, vec![(0, 2), (0, 2)], "the two branch picks");
+        assert_eq!(rng.floats, 2, "both branches draw the scale");
+        // The cap: a fast fall clamps at 16, never overshoots.
+        p.vel.y = 15.9;
+        ai_bird_droppings(&mut p, None, &mut census());
+        assert_eq!(p.vel.y, 16.0, "`:39988-39990`");
+    }
+
+    /// The player-contact kill (`:40009-40016`): the `(int)` truncating
+    /// rects, XNA's strict `Intersects`. An overlapping living player kills
+    /// the dropping; a dead player or a non-overlap keeps it alive.
+    #[test]
+    fn w4_d20_the_bird_dropping_kills_on_player_contact() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.x = 100.0;
+        pl.y = 100.0;
+        // Overlap: the dropping's box sits inside the player's.
+        let mut p = proj(1080);
+        p.pos = Vec2::new(105.0, 105.0);
+        ai_bird_droppings(&mut p, Some(&pl), &mut census());
+        assert!(!p.active, "the contact killed it");
+        // A dead player never kills.
+        let mut dead = crate::player::Player::spawn(&w);
+        dead.x = 100.0;
+        dead.y = 100.0;
+        dead.dead = true;
+        let mut p2 = proj(1080);
+        p2.pos = Vec2::new(105.0, 105.0);
+        ai_bird_droppings(&mut p2, Some(&dead), &mut census());
+        assert!(p2.active, "a dead player is skipped (`:40012`)");
+        // No overlap keeps it alive.
+        let mut p3 = proj(1080);
+        p3.pos = Vec2::new(500.0, 500.0);
+        ai_bird_droppings(&mut p3, Some(&pl), &mut census());
+        assert!(p3.active, "no overlap, no kill");
+    }
+
+    /// The dispatch wires style 200: one pool update advances the fall and
+    /// integrates the position (the tileCollide-true free move).
+    #[test]
+    fn w4_d20_the_dispatch_arms_style_200() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let s = pool.spawn_with_data(1080, 1600.0, 400.0, 2.0, 0.0, 0, 0.0).unwrap();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        let p = &pool.slots()[s];
+        assert_eq!(p.vel.y, 0.3, "the gravity ticked");
+        assert_ne!(p.pos, Vec2::new(1600.0, 400.0), "the movement ran");
     }
 }

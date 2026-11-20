@@ -3603,6 +3603,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ),
             DEAD_CELLS_BARNACLE => (42.0, 38.0, 197, 1, 36000, 0, true, false, false, RESET_STATE),
             DEAD_CELLS_BARNACLE_SHOT => (14.0, 14.0, 28, 1, 3600, 2, true, false, false, RESET_STATE), // Projectile.cs:9717
+            // W4-d20 — `Projectile.cs:10078-10086` (1080, the bird dropping):
+            // 10x10, aiStyle 200, alpha 255, penetrate -1, ignoreWater, stock
+            // tileCollide true. Stock friendly/hostile false — the arm's own
+            // player-contact Kill() is the only interaction (the debris
+            // precedent); the spawner passes damage 0 (NPC.cs:25322).
+            BIRD_DROPPINGS => (10.0, 10.0, 200, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -4211,7 +4217,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d20 — `Projectile.cs:10085`: the bird dropping (1080) sets
+            // `ignoreWater = true`.
+            || kind == BIRD_DROPPINGS,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4458,6 +4467,9 @@ pub const HOUNDIUS_SHOOTIUS: u16 = 966;
 pub const HOUNDIUS_SHOOTIUS_FIREBALL: u16 = 967;
 pub const DEAD_CELLS_BARNACLE: u16 = 1025;
 pub const DEAD_CELLS_BARNACLE_SHOT: u16 = 1026; // AI_197 follow-up
+/// `ProjectileID.BirdDroppings` (1080) — the bird dropping, aiStyle 200
+/// (`Projectile.cs:10078-10086`). W4-d20.
+pub const BIRD_DROPPINGS: u16 = 1080;
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,

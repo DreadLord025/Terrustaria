@@ -13166,19 +13166,19 @@ pub fn randomize_insanity_shadow_for(
 /// the setter writes `alpha = (int)Clamp((1 - value) * 255, 0, 255)`. The
 /// aiStyle-133 raise marker ramps it 0 → 1 → 0 over its 80 ticks
 /// (`:36442-36453`) and the aiStyle-157 spikes ride it (`:51442-51451`).
-fn opacity_of(alpha: i32) -> f32 {
+pub(crate) fn opacity_of(alpha: i32) -> f32 {
     1.0 - alpha as f32 / 255.0
 }
 
 /// `Projectile.Opacity`'s setter (`Projectile.cs:546-549`): the alpha the
 /// opacity value stands for.
-fn alpha_of(opacity: f32) -> i32 {
+pub(crate) fn alpha_of(opacity: f32) -> i32 {
     ((1.0 - opacity) * 255.0).clamp(0.0, 255.0) as i32
 }
 
 /// `Vector2.ToRotationVector2()` (XNA): the unit vector at the angle —
 /// `(cos, sin)`.
-fn rotation_vector(angle: f32) -> Vec2 {
+pub(crate) fn rotation_vector(angle: f32) -> Vec2 {
     let (s, c) = angle.sin_cos();
     Vec2::new(c, s)
 }
@@ -14136,7 +14136,7 @@ pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
 /// — `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
 /// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
 /// uses it for the turn rate and the close-range pull.
-fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+pub(crate) fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
@@ -14295,7 +14295,7 @@ fn aura_solid_at(world: &World, x: i32, y: i32) -> bool {
 /// explicit fallback — the Ballista's aim and the aura's arc read the C#'s
 /// `SafeNormalize(Vector2.UnitY)` form, where a zero delta keeps the unit-Y
 /// default instead of collapsing to zero.
-fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
+pub(crate) fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         default_value
     } else {
@@ -17336,6 +17336,21 @@ impl ProjectilePool {
                         193 => {
                             crate::projectile_ai_misc::ai_flamethrower(
                                 &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d20 — aiStyle 200, the bird dropping
+                        // (`AI_200_BirdDroppings` `:39985-40017`): the 0.3
+                        // gravity / 16 cap, the two-dust trail's draws and
+                        // the player-contact kill. The row keeps tileCollide
+                        // true; the blocked-move arm (`:18921-18928`) kills
+                        // on contact — `kill_step`'s shape.
+                        200 => {
+                            crate::projectile_ai_misc::ai_bird_droppings(
+                                &mut self.slots[i],
+                                player.as_deref(),
                                 rng,
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
