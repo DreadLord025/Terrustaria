@@ -248,6 +248,32 @@ pub struct PlayerFile {
     /// read at >= 220 (`Deserialize:55706-55709`). A fresh non-Journey player
     /// has all three reset (`ResetPowersForPlayer`, `:211-214`).
     pub powers: CreativePowersSave,
+    /// `Player.anglerQuestsFinished` (`Player.cs:1910`) — `Serialize:54894` /
+    /// `Deserialize:55624-55627`, gate 98.
+    pub angler_quests_finished: i32,
+    /// `Player.DpadRadial.Bindings[4]` (`Player.cs:800`, the Dpad4 ctor sets
+    /// all -1 `:618-621`) — `Serialize:54895-54898` / `Deserialize:55628-55634`,
+    /// gate 162.
+    pub dpad_bindings: [i32; 4],
+    /// `Player.builderAccStatus[12]` (`Player.cs:814`,
+    /// `BuilderAccToggleIDs.Count = 12`; the ctor's `[0] = 1` `:56092`) —
+    /// `Serialize:54899-54902` / `Deserialize:55635-55673`: the count gates
+    /// 8/10/11/12 at 164/167/197/230, then the < 210 `[0] = 1` and the
+    /// < 249 inventory-3611 `[1] = 1` fixups (state-only, no extra bytes).
+    pub builder_acc_status: [i32; 12],
+    /// `Player.bartenderQuestLog` (`Player.cs:1914`) — `Serialize:54903` /
+    /// `Deserialize:55675-55678`, gate 181.
+    pub bartender_quest_log: i32,
+    /// `Player.dead` (`Serialize:54904` / `Deserialize:55679-55686`, gate 200)
+    /// — the respawnTimer rides ONLY when dead.
+    pub dead: bool,
+    /// `Player.respawnTimer` (`Player.cs:1636`) — read with the
+    /// `Utils.Clamp(0, 60000)` (`:55684`) when dead; written verbatim only
+    /// when dead (`:54905-54908`).
+    pub respawn_timer: i32,
+    /// `Player.golferScoreAccumulated` (`Player.cs:1912`) — `Serialize:54910`
+    /// / `Deserialize:55692-55695`, gate 206.
+    pub golfer_score: i32,
 }
 
 /// The three `IPersistentPerPlayerContent` powers the `.plr` carries
@@ -784,17 +810,19 @@ fn read_player_fields(
     }
     // --- S1-J-5 increment 3: the Deserialize tail (`:55624-55762`) --------
     if version >= 98 {
-        r.i32().ok_or(PlayerFileError::Truncated("angler"))?; // `:55624-55627`
+        tail.angler_quests_finished =
+            r.i32().ok_or(PlayerFileError::Truncated("angler"))?; // `:55624-55627`
     }
     if version >= 162 {
-        for _ in 0..4 {
-            r.i32().ok_or(PlayerFileError::Truncated("dpad"))?; // `:55628-55634`
+        for binding in tail.dpad_bindings.iter_mut() {
+            *binding = r.i32().ok_or(PlayerFileError::Truncated("dpad"))?; // `:55628-55634`
         }
     }
     if version >= 164 {
         // The builderAccStatus count gate (`:55635-55653`): 8, then 10 at
-        // 167, 11 at 197, 12 at 230. The < 210 / < 249 fixups (`:55654-55673`)
-        // mutate state only — no extra bytes.
+        // 167, 11 at 197, 12 at 230. W4-f44 ph3: the slots ride; the
+        // < 210 / < 249 fixups (`:55654-55673`) mutate state only — no
+        // extra bytes.
         let mut count = 8;
         if version >= 167 {
             count = 10;
@@ -805,24 +833,37 @@ fn read_player_fields(
         if version >= 230 {
             count = 12;
         }
-        for _ in 0..count {
-            r.i32().ok_or(PlayerFileError::Truncated("builderAcc"))?;
+        for slot in tail.builder_acc_status[..count].iter_mut() {
+            *slot = r.i32().ok_or(PlayerFileError::Truncated("builderAcc"))?;
+        }
+        if version < 210 {
+            tail.builder_acc_status[0] = 1; // `:55654-55657`
+        }
+        if version < 249 {
+            // `:55658-55673`: the Terraprisma-in-inventory check (3611).
+            if inventory.iter().any(|(id, _, _)| *id == 3611) {
+                tail.builder_acc_status[1] = 1;
+            }
         }
     }
     if version >= 181 {
-        r.i32().ok_or(PlayerFileError::Truncated("bartender"))?; // `:55675-55678`
+        tail.bartender_quest_log =
+            r.i32().ok_or(PlayerFileError::Truncated("bartender"))?; // `:55675-55678`
     }
     if version >= 200 {
-        // dead + the conditional respawnTimer (`:55679-55686`).
-        if r.boolean().ok_or(PlayerFileError::Truncated("dead"))? {
-            r.i32().ok_or(PlayerFileError::Truncated("respawn"))?;
+        // dead + the conditional respawnTimer (`:55679-55686`); the timer
+        // reads through `Utils.Clamp(0, 60000)` (`:55684`).
+        tail.dead = r.boolean().ok_or(PlayerFileError::Truncated("dead"))?;
+        if tail.dead {
+            let timer = r.i32().ok_or(PlayerFileError::Truncated("respawn"))?;
+            tail.respawn_timer = timer.clamp(0, 60000);
         }
     }
     if version >= 202 {
         r.u64().ok_or(PlayerFileError::Truncated("lastSaved"))?; // `:55688-55691`
     }
     if version >= 206 {
-        r.i32().ok_or(PlayerFileError::Truncated("golfer"))?; // `:55692-55695`
+        tail.golfer_score = r.i32().ok_or(PlayerFileError::Truncated("golfer"))?; // `:55692-55695`
     }
     if version >= 218 {
         // creativeTracker.Load -> CreativeUnlocksTracker.Load
@@ -983,6 +1024,13 @@ struct PlayerTail {
     hide_misc: u8,
     hide_info: [bool; 13],
     powers: CreativePowersSave,
+    angler_quests_finished: i32,
+    dpad_bindings: [i32; 4],
+    builder_acc_status: [i32; 12],
+    bartender_quest_log: i32,
+    dead: bool,
+    respawn_timer: i32,
+    golfer_score: i32,
 }
 
 impl Default for PlayerTail {
@@ -1011,6 +1059,14 @@ impl Default for PlayerTail {
             hide_misc: 0,
             hide_info: [false; 13],
             powers: CreativePowersSave::default(),
+            angler_quests_finished: 0,
+            dpad_bindings: [-1; 4], // the Dpad4 ctor (`Player.cs:618-621`)
+            // The ctor's `builderAccStatus[0] = 1` (`Player.cs:56092`).
+            builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            bartender_quest_log: 0,
+            dead: false,
+            respawn_timer: 0,
+            golfer_score: 0,
         }
     }
 }
@@ -1081,6 +1137,13 @@ fn finish_player_file(
         hide_misc: tail.hide_misc,
         hide_info: tail.hide_info,
         powers,
+        angler_quests_finished: tail.angler_quests_finished,
+        dpad_bindings: tail.dpad_bindings,
+        builder_acc_status: tail.builder_acc_status,
+        bartender_quest_log: tail.bartender_quest_log,
+        dead: tail.dead,
+        respawn_timer: tail.respawn_timer,
+        golfer_score: tail.golfer_score,
     }
 }
 
@@ -1216,6 +1279,13 @@ fn read_legacy_port_subset(
         hide_misc: 0,
         hide_info: [false; 13],
         powers: CreativePowersSave::default(),
+        angler_quests_finished: 0,
+        dpad_bindings: [-1; 4],
+        builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        bartender_quest_log: 0,
+        dead: false,
+        respawn_timer: 0,
+        golfer_score: 0,
     })
 }
 
@@ -1301,6 +1371,20 @@ pub struct PlayerFileWrite {
     /// Defaults to [`CreativePowersSave::written_fresh`] — the non-Journey
     /// live state the golden fixture pinned.
     pub powers: CreativePowersSave,
+    /// `Player.anglerQuestsFinished` (`:54894`), default 0.
+    pub angler_quests_finished: i32,
+    /// `Player.DpadRadial.Bindings[4]` (`:54895-54898`), default all -1.
+    pub dpad_bindings: [i32; 4],
+    /// `Player.builderAccStatus[12]` (`:54899-54902`), default `[1, 0..]`.
+    pub builder_acc_status: [i32; 12],
+    /// `Player.bartenderQuestLog` (`:54903`), default 0.
+    pub bartender_quest_log: i32,
+    /// `Player.dead` (`:54904`) — the respawnTimer is written only when dead.
+    pub dead: bool,
+    /// `Player.respawnTimer` (`:54905-54908`, written verbatim when dead).
+    pub respawn_timer: i32,
+    /// `Player.golferScoreAccumulated` (`:54910`), default 0.
+    pub golfer_score: i32,
 }
 
 impl Default for PlayerFileWrite {
@@ -1346,6 +1430,13 @@ impl Default for PlayerFileWrite {
             hide_misc: 0,
             hide_info: [false; 13],
             powers: CreativePowersSave::written_fresh(),
+            angler_quests_finished: 0,
+            dpad_bindings: [-1; 4],
+            builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            bartender_quest_log: 0,
+            dead: false,
+            respawn_timer: 0,
+            golfer_score: 0,
         }
     }
 }
@@ -1524,28 +1615,29 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
         w.boolean(hide);
     }
     // --- S1-J-5 increment 3: the Serialize tail (`:54894-54933`) ----------
-    w.i32(0); // `:54894` anglerQuestsFinished (`Player.cs:1910`, default 0)
-              // `:54895-54898` DpadRadial.Bindings[4] (`Player.cs:800`): the Dpad4
-              // ctor sets all four to -1 (`Player.cs:618-621`).
-    for _ in 0..4 {
-        w.i32(-1);
+    w.i32(file.angler_quests_finished); // `:54894` anglerQuestsFinished (`:1910`)
+    // `:54895-54898` DpadRadial.Bindings[4] (`Player.cs:800`): the Dpad4
+    // ctor sets all four to -1 (`Player.cs:618-621`) — the caller's ride.
+    for binding in file.dpad_bindings {
+        w.i32(binding);
     }
     // `:54899-54902` builderAccStatus[12] (`Player.cs:814`,
     // `BuilderAccToggleIDs.Count = 12`, `Player.cs:47-75`): a fresh int[12]
-    // with the ctor's `builderAccStatus[0] = 1` (`:56092`, the ruler-line
-    // toggle starts ON).
-    w.i32(1);
-    for _ in 0..11 {
-        w.i32(0);
+    // with the ctor's `builderAccStatus[0] = 1` (`:56092`) — the caller's ride.
+    for status in file.builder_acc_status {
+        w.i32(status);
     }
-    w.i32(0); // `:54903` bartenderQuestLog (`Player.cs:1914`, default 0)
-              // `:54904-54908` dead (default false); the respawnTimer is written ONLY
-              // when dead — a fresh save emits the single bool.
-    w.boolean(false);
+    w.i32(file.bartender_quest_log); // `:54903` bartenderQuestLog (`:1914`)
+    // `:54904-54908` dead; the respawnTimer is written ONLY when dead —
+    // a fresh save emits the single bool.
+    w.boolean(file.dead);
+    if file.dead {
+        w.i32(file.respawn_timer);
+    }
     // `:54909` DateTime.UtcNow.ToBinary() — the wall-clock field, carried
     // by the caller (see `PlayerFileWrite::last_saved_binary`).
     w.u64(file.last_saved_binary as u64);
-    w.i32(0); // `:54910` golferScoreAccumulated (`Player.cs:1912`, default 0)
+    w.i32(file.golfer_score); // `:54910` golferScoreAccumulated (`:1912`)
               // `:54911` creativeTracker.Save -> CreativeUnlocksTracker.Save
               // (`CreativeUnlocksTracker.cs:9-12`) -> ItemsSacrificedUnlocksTracker.Save
               // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag
@@ -1811,6 +1903,131 @@ mod tests {
         // A fresh write keeps the golden zeros (`:54754-54757`).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: angler/dpad/builderAcc/bartender/dead/golfer round-trip;
+    /// the respawnTimer rides only when dead and clamps on read.
+    #[test]
+    fn the_quest_and_death_fields_round_trip() {
+        let written = PlayerFileWrite {
+            angler_quests_finished: 42,
+            dpad_bindings: [3, -1, 17, 0],
+            builder_acc_status: [0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1],
+            bartender_quest_log: 7,
+            dead: true,
+            respawn_timer: 1234,
+            golfer_score: -50,
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.angler_quests_finished, 42);
+        assert_eq!(file.dpad_bindings, [3, -1, 17, 0]);
+        assert_eq!(file.builder_acc_status, [0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1]);
+        assert_eq!(file.bartender_quest_log, 7);
+        assert!(file.dead);
+        assert_eq!(file.respawn_timer, 1234);
+        assert_eq!(file.golfer_score, -50);
+        // Alive: no respawnTimer bytes — the read keeps the default 0.
+        let alive = PlayerFileWrite { dead: false, respawn_timer: 999, ..sample() };
+        let plain = serialize_plaintext(&alive);
+        let file = read_player_bytes(&plain).unwrap();
+        assert!(!file.dead);
+        assert_eq!(file.respawn_timer, 0);
+        // The clamp: `Utils.Clamp(0, 60000)` (`:55684`).
+        let over = PlayerFileWrite { dead: true, respawn_timer: 99999, ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&over))).unwrap();
+        assert_eq!(file.respawn_timer, 60000);
+        let under = PlayerFileWrite { dead: true, respawn_timer: -5, ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&under))).unwrap();
+        assert_eq!(file.respawn_timer, 0);
+        // The fresh defaults keep the golden bytes (builderAcc [0]=1, dpad -1).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert_eq!(fresh.dpad_bindings, [-1; 4]);
+        assert_eq!(fresh.builder_acc_status, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert!(!fresh.dead);
+    }
+
+    /// The < 210 builderAcc[0] = 1 fixup and the < 249 inventory-3611
+    /// builderAcc[1] = 1 fixup (`Deserialize:55654-55673`): state-only, the
+    /// byte stream stays aligned. The 205 body is hand-built at its own
+    /// gates (no team/unlock-block/deaths/favourites, 22 buffs, 11 builder
+    /// slots, ends after the timestamp) — the same pattern as the legacy
+    /// subset witness.
+    #[test]
+    fn the_builder_acc_legacy_fixups_apply_without_extra_bytes() {
+        fn body_205(inventory: [(i32, i32, u8); 58]) -> Vec<u8> {
+            let mut w = Writer::new();
+            w.i32(205);
+            w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+            w.u32(0);
+            w.u64(0);
+            w.cs_string("Belsin");
+            w.u8(0); // difficulty
+            w.u64(0); // playtime
+            w.i32(0); // hair
+            w.u8(0); // hairDye — no team at 205 (< 283)
+            w.bytes(&[0, 0]); // hide BitsBytes
+            w.u8(0); // hideMisc
+            w.u8(0); // skinVariant
+            for v in [100, 100, 20, 20] {
+                w.i32(v);
+            }
+            w.boolean(false); // extraAccessory (125) — no 229 block at 205
+            w.boolean(false); // dd2 (182)
+            w.i32(0); // tax (128) — no deaths at 205 (< 254)
+            w.bytes(&[0; 21]); // colors
+            for _ in 0..30 {
+                w.i32(0); // armor + dye pairs, no favourited (< 322)
+                w.u8(0);
+            }
+            for (id, stack, prefix) in inventory {
+                w.i32(id);
+                w.i32(stack);
+                w.u8(prefix);
+                w.boolean(false);
+            }
+            for _ in 0..5 {
+                w.bytes(&[0; 10]); // misc pairs
+            }
+            for _ in 0..120 {
+                w.bytes(&[0; 9]); // bank + bank2 + bank3 triples
+            }
+            for _ in 0..40 {
+                w.bytes(&[0; 9]); // bank4, no favourited (< 255)
+            }
+            w.u8(0); // voidVaultInfo (199)
+            for _ in 0..22 {
+                w.i32(0); // buffs: 22 at 205 (< 252)
+                w.i32(0);
+            }
+            w.i32(-1); // spawn sentinel
+            w.boolean(false); // hbLocked
+            w.bytes(&[0; 13]); // hideInfo
+            w.i32(0); // angler (98)
+            for _ in 0..4 {
+                w.i32(-1); // dpad (162)
+            }
+            for _ in 0..11 {
+                w.i32(0); // builderAcc: 11 at 205 (>= 197, < 230)
+            }
+            w.i32(0); // bartender (181)
+            w.boolean(false); // dead (200)
+            w.u64(0); // timestamp (202) — the 205 file ends here
+            w.into_inner()
+        }
+        // builderAcc[0] reads 0 from the file; 205 < 210 forces it to 1.
+        let file = read_player_bytes(&body_205([(0, 0, 0); 58])).unwrap();
+        assert_eq!(file.builder_acc_status[0], 1);
+        // 205 < 249 and no 3611 in the inventory: [1] stays 0.
+        assert_eq!(file.builder_acc_status[1], 0);
+        assert_eq!(file.builder_acc_status[11], 0); // the 12th slot never read
+        // The same body with a 3611 in inventory slot 5: [1] forced to 1.
+        let mut inv = [(0i32, 0i32, 0u8); 58];
+        inv[5] = (3611, 1, 0);
+        let file = read_player_bytes(&body_205(inv)).unwrap();
+        assert_eq!(file.builder_acc_status[0], 1);
+        assert_eq!(file.builder_acc_status[1], 1);
+        assert_eq!(file.inventory[5], (3611, 1, 0));
     }
 
     /// W4-f44 ph3: spawn points round-trip in order, the write emits the
