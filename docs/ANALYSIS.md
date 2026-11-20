@@ -39244,49 +39244,48 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
-
 ## W4-d44 FindFrame low-band slice 1 (2026-11-20, code-only mode)
 
 `crates/tr-app/src/npc_findframe_low1.rs` ports the FIRST 12 missing
 `NPC.FindFrame` case ids of the low band (the wave census's `ff_missing`
 list: every C# top-level case id in `NPC.cs:66684-77370` whose port has no
-arm вЂ” the `npc.rs::find_frame` match kinds mapped through the bestiary net
+arm — the `npc.rs::find_frame` match kinds mapped through the bestiary net
 ids + the wave-A/wave-B module rosters, diffed against the switch's 602
 top-level `case` labels). Slice 2 (`task/W4-d45-findframe-low-2`) owns the
 second 12 (69/73/74/83/84/93/94/101/102/103/116/120); this module owns
 **37/43/46/47/48/56/57/61/62/63/64/67**, landed in two 6-kind commits.
-The kinds are NOT in `NpcKind` yet вЂ” the machines land as pure functions
+The kinds are NOT in `NpcKind` yet — the machines land as pure functions
 over `FrameState`/`FrameInput` (the S1-D-3 waves A/B and W4-d47 precedent),
 and the `find_frame` bridge is the wiring round. No arm draws `Main.rand`
 (the floater group's dust is types 60/634's), so the wiring cannot move a
 stream.
 
-Per-case notes (all verbatim, row-index convention вЂ” `num` cancels):
+Per-case notes (all verbatim, row-index convention — `num` cancels):
 
 * **37 OldMan** (`NPC.cs:68553` in the humanoid town case list,
   `:68634-69655`, 21 rows): town-like (`townNPC = true`, `:9199`), so
-  `num57 = ExtraFramesCount[37]` = 5 (`NPCID.cs:10464`) вЂ” the walk band
+  `num57 = ExtraFramesCount[37]` = 5 (`NPCID.cs:10464`) — the walk band
   wraps at row 16 (rows 2..15), NOT the full sheet. The idle snaps to
   row 0 (37 is not the 140/489 idle-row-1 pair), the air holds row 1 (37
   is NOT in the `:69647` pin list). The town `ai[0]` sit/talk/attack pose
-  zones (`:68662-69488`) are the documented skip вЂ” the port's town
+  zones (`:68662-69488`) are the documented skip — the port's town
   machines do not model them (the `npc.rs::humanoid_town_frame`
   precedent). The nested `case 37` labels at `:69446`/`:69460` are
   emote-bubble picks inside the chat zone, not frame poses.
 * **43/56 ManEater/Snatcher** (`:74970-74994`, the 175 group, 3 rows):
   the 0/1/2/1 chomp over the 1..23 counter (six ticks a phase). The reset
-  is EXACT `== 23` (`:74990`) вЂ” a fractional counter overshoots it, no
+  is EXACT `== 23` (`:74990`) — a fractional counter overshoots it, no
   band writes past 24 and the row HOLDS 1 forever; the quirk is kept
   verbatim and witnessed (the W4-d47 AngryTrapper sibling's identical
   shape).
 * **46/47 Bunny/CorruptBunny** (`:76851-76904`, the critter hop group, 7
-  rows): the grounded flip writes only on direction В±1; the idle snaps
+  rows): the grounded flip writes only on direction ±1; the idle snaps
   to row 0 + zero counter; the walk accumulates `|vx| * 1` THEN `++`
   (`:76882-76883`), steps at > 6 and wraps at the FULL 7 rows; the rise
   pins row 4 and the fall row 6, both zeroing the counter.
 * **48 Harpy** (`:74823-74885`, the floater group, 6 rows): faces by
   velocity sign (0 leaves the flip alone), tilts `vx * 0.1`, steps every
-  5 ticks (`num291` = 5 вЂ” the type-48 override at `:74871-74874`) over
+  5 ticks (`num291` = 5 — the type-48 override at `:74871-74874`) over
   the FULL 6 rows (the `num292--` list 49/51/60/634 does not carry 48).
   The group's dust spawns (60's flame, 634's `Next(10)`) and the 210/211
   double-increment + 0.2 tilt are other members', skipped with cites.
@@ -39299,25 +39298,25 @@ Per-case notes (all verbatim, row-index convention вЂ” `num` cancels):
 * **61 Vulture** (`:73537-73557`, 6 rows): the unconditional flip + the
   `vx * 0.1` tilt; the FULL still snap (`vx == 0 && vy == 0`) pins row 0
   + zero counter; otherwise the 25-tick cycle (`num147 * num148` = 5*5)
-  walks rows 1..5 (`(counter / 5) + 1` вЂ” the +1 lifts the strip off the
+  walks rows 1..5 (`(counter / 5) + 1` — the +1 lifts the strip off the
   still row).
 * **62 Demon** (`:73887-73902`, shared with the Voodoo Demon's 66 already
   in `npc.rs`, 5 rows): the same 25-tick cycle WITHOUT the still snap
-  and WITHOUT the +1 вЂ” rows 0..4. The still tick keeps cycling.
+  and WITHOUT the +1 — rows 0..4. The still tick keeps cycling.
 * **63/64 BlueJellyfish/PinkJellyfish** (`:73916-73960`, the
   103/242/256 group, 7 rows): the `ai[1] == 1` attack gate (63/64/103/242
-  вЂ” NOT 256) runs the >4 counter over rows 4..6 (BOTH clamps run every
+  — NOT 256) runs the >4 counter over rows 4..6 (BOTH clamps run every
   tick: >6 wraps to 4, <4 lifts to 4) and RETURNS before the normal
   strip; the normal strip walks the <6/<12/<18 bands over rows 0/1/2,
   the tail pins row 3 and the >= 23 reset zeroes the counter.
 * **67 Crab** (`:74571-74589`, the 217-219 group, 8 rows): the plain
-  6-tick strip; the flip rides the ground ONLY (`vy == 0` в†’
-  `spriteDirection = direction` unconditionally, 0 included) вЂ” the air
+  6-tick strip; the flip rides the ground ONLY (`vy == 0` →
+  `spriteDirection = direction` unconditionally, 0 included) — the air
   keeps animating but never flips.
 
 The 12 `Main.npcFrameCount` rows (`Main.cs:67087-67090`) were counted
 entry-by-entry and cross-checked against the port's own
 `render/entities.rs::NPC_FRAME_COUNT` table (37=21, 43=3, 46/47=7, 48=6,
 56=3, 57=6, 61=6, 62=5, 63/64=7, 67=8). 12 witness tests are WRITTEN, NOT
-RUN вЂ” **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (code-only
+RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (code-only
 mode).
