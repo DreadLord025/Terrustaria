@@ -381,3 +381,127 @@ absolute `add_fr_x = -18/-36` assigns (not `+=`). Same deviation class as 349
 pixel-identical while it is empty. The animator's 593/594 wrap-to-row-5 quirk
 (`Main.cs:19240-19257`) is ported and tested (`drawdata_anim.rs:421-422`, test
 :690-701). **DEVIATION (probe stub), wired.**
+
+### Batch 4 — dye vat / machines / teleporter / extractinators / firefly bottles: 228, 231, 243, 247, 244, 565, 235, 217, 218, 564, 219, 220, 642, 270, 271 (15 ids)
+
+C# `TileDrawing.cs:5491-5536` (the 270/271 body continues to :5563, shared with
+581 — batch 5 audits 581's index, the body is cited here once).
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 228 | shares the `tileTop = 2; addFrY = Main.tileFrame[typeCache] * 54;` group | :5491-5497 | `drawdata.rs:774-777` (`228 \| 231 \| 243 \| 247`) | PORTED |
+| 231 | shares the group | :5492 | :774-777 | PORTED |
+| 243 | shares the group | :5493 | :774-777 | PORTED |
+| 247 | shares the group | :5494 | :774-777 | PORTED |
+| 244 | top 2; `tileFrame * 36` below fx 54 else 0 | :5498-5508 | `drawdata.rs:780-783` | PORTED |
+| 565 | top 2; `tileFrame * 36` below fx 36 else 0 | :5509-5519 | `drawdata.rs:786-789` | PORTED |
+| 235 | `addFrY = Main.tileFrame[typeCache] * 18;` | :5520-5522 | `drawdata.rs:791-793` | PORTED |
+| 217 | shares `* 36` + top 2 | :5523-5528 | `drawdata.rs:796-799` (`217 \| 218`) | PORTED |
+| 218 | shares 217's arm | :5524 | :796-799 | PORTED |
+| 564 | shares 217's arm; second switch clears addFrY | :5525 + :6105-6113 | `drawdata.rs:803-806` (folded) + glow `cases_a.rs:337-342` | DEVIATION (glow rect, see below) |
+| 219 | shares `* 54` + top 2 | :5529-5534 | `drawdata.rs:809-812` (`219 \| 220 \| 642`) | PORTED |
+| 220 | shares 219's arm | :5530 | :809-812 | PORTED |
+| 642 | shares 219's arm | :5531 | :809-812 | PORTED |
+| 270 | parity-chain mod 6 (below) | :5535-5563 | `drawdata.rs:816-833` (`270 \| 271 \| 581`) | PORTED |
+| 271 | shares 270's arm | :5536 | :816-833 | PORTED |
+
+Animator coverage (all wired via `tiles.rs:661-678`): 228 `step_ge_ge(228,5,3)`
+(`drawdata_anim.rs:354`, `Main.cs:19053-19060`), 231 `(16,7)` (:301), 243 `(4,6)`
+(:304), 247 the `step_gt_ge` idiom (:228 doc, `Main.cs:18739-18748`), 244 `(4,6)`
+(:305), 565 `(4,5)` (:433, `Main.cs:19267-19275`), 235 `(20,4)` (:302), 217 `(4,5)`
+(:296), 218 `(4,2)` (:297), 564 `(5,36)` (:420, `Main.cs:19231-19239`), 219 `(4,10)`
+(:298), 220 `(4,4)` (:300), 642 `(4,6)` (:299), 270 `step_gt_gt(270,8,5)` (:309,
+`Main.cs:18769-18778`) with 271/581 mirroring 270's frame (:311-313,
+`Main.cs:18779-18781`; test :645-654).
+
+**244/565 machines** — C# verbatim, 244 (:5498-5508):
+
+```csharp
+		case 244:
+			tileTop = 2;
+			if (tileFrameX < 54)
+			{
+				addFrY = Main.tileFrame[typeCache] * 36;
+			}
+			else
+			{
+				addFrY = 0;
+			}
+			break;
+```
+
+565 (:5509-5519) is the same with the gate at 36. Ports `drawdata.rs:780-783` /
+:786-789 fold the if/else into one expression — same value. **PORTED.**
+
+**564 PlasmaLamp — the fold is net-correct but shifts the glow rect.** C# first
+switch: 564 shares the 217/218 arm (`addFrY = Main.tileFrame[564] * 36`, top 2).
+Second switch, verbatim (:6105-6113):
+
+```csharp
+		case 564:
+			if (tileCache.frameX < 36)
+			{
+				glowTexture = TextureAssets.GlowMask[267].Value;
+				glowSourceRect = new Rectangle(tileFrameX, tileFrameY + addFrY, tileWidth, tileHeight);
+				glowColor = new Color(200, 200, 200, 0) * ((float)(int)Main.mouseTextColor / 255f);
+			}
+			addFrY = 0;
+			break;
+```
+
+The port folds the trailing `addFrY = 0` into the static arm
+(`drawdata.rs:803-806`, documented at `cases_a.rs:274-275`), so the FINAL tile
+draw matches C# exactly (top 2, no animation offset). But the C# builds the glow
+rect BEFORE the clear — its y is `tileFrameY + tileFrame[564] * 36` — while the
+port's `glow_switch` receives the already-zeroed `add_fr_y` and emits
+`rect_anim_y(fx, height)` = `fy + 0` (`cases_a.rs:340`). While
+`tileFrame[564] != 0` (it cycles 0..35 every 5 ticks) the glow source rect is one
+animation row off. Latent today — the glow record is unconsumed (`tiles.rs:731`
+`_glow`, TILE-DRAW-2) — but the bind must either un-fold the clear (apply it in
+`glow_switch` after the rect, as C# orders it) or pass the pre-clear `addFrY` for
+564. The colour port is faithful: `(200 * pulse) as u8` per channel with
+`pulse = mouse_text_color / 255` (:304/:339), fed steady 255 (`tiles.rs:732` —
+the UI text pulse deviation). The gate reads `tileCache.frameX` (raw stored
+frame); the first switch never rewrites `tileFrameX` for 564, so the port's `fx`
+is the same value. **DEVIATION (glow rect y), final draw PORTED.**
+
+**270/271 Firefly/Lavafly bottles** — C# verbatim (:5535-5563, shared with 581):
+
+```csharp
+		case 270:
+		case 271:
+		case 581:
+		{
+			int num14 = Main.tileFrame[typeCache] + x % 6;
+			if (x % 2 == 0)
+			{
+				num14 += 3;
+			}
+			if (x % 3 == 0)
+			{
+				num14 += 3;
+			}
+			if (x % 4 == 0)
+			{
+				num14 += 3;
+			}
+			while (num14 > 5)
+			{
+				num14 -= 6;
+			}
+			addFrX = num14 * 18;
+			addFrY = 0;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		}
+```
+
+Port `drawdata.rs:816-833`: the three `+3` parity gates in the same order, the
+`while > 5` unwind (not `% 6` — C# keeps the loop, so does the port), absolute
+`add_fr_x = n14 * 18`, `add_fr_y = 0`, and `data.flip = flip_x` with
+`flip_x = x % 2 == 0` (:128) — the C# only SETS the flip on even x and leaves the
+default `None` otherwise, which is the same boolean. **PORTED.** (581's own index
+is batch 5; the arm is shared.)
