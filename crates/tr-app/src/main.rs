@@ -209,6 +209,11 @@ mod projectile_ai_golf;
 // S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
 // 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
 mod projectile_ai_darts;
+// W4-g65: the per-kind DEATH dust bursts inside Projectile.Kill() (the trail
+// dust is g63/g64; the i17/i18 special-arrow/bullet deaths stay with their
+// modules). The death hook queues resolved bodies; the world-sim pass drains
+// them onto the DustPool on the UpdateProjectiles stream (gallop-dust shape).
+mod projectile_death_dust;
 // S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
 // arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
 // 279/283/284/285/286/287), pure per-kind fns behind the `covers` gate.

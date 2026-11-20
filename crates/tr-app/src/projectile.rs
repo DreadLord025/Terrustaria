@@ -14532,6 +14532,15 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// W4-g65 — the per-kind `Kill()` death-dust SNAPSHOTS this tick
+    /// (`Projectile.cs:70642-77262`'s per-type bursts). The death hook records
+    /// the dying slot's corpse (kind/pos/box/velocity/scale) — NO draws there;
+    /// the world-sim pass drains them at its tail onto the real
+    /// `DustPool::new_dust` on the live `UpdateProjectiles` stream, taking every
+    /// explicit C# draw + the `new_dust` internals in order (the gallop-dust
+    /// queue→drain convention — the pool cannot borrow the App's dust pool or
+    /// hold the live stream alongside its `rng` parameter).
+    death_dust: Vec<crate::projectile_death_dust::DeathSnapshot>,
 }
 
 impl Default for ProjectilePool {
@@ -14921,6 +14930,7 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            death_dust: Vec::new(),
         }
     }
 
@@ -16203,6 +16213,15 @@ impl ProjectilePool {
     /// `update` (the `drain_mark_spawns` shape).
     pub fn drain_golf_effects(&mut self) -> Vec<crate::projectile_ai_golf::GolfEffect> {
         std::mem::take(&mut self.golf_effects)
+    }
+
+    /// W4-g65 — the per-kind `Kill()` death-dust snapshots, drained by the
+    /// world-sim pass after `update` onto the real `DustPool` on the live
+    /// `UpdateProjectiles` stream (the `drain_golf_effects` shape). The death
+    /// hook only recorded the corpse; the drain takes every explicit C# draw
+    /// + the `new_dust` internals (the gallop-dust pass-tail deviation).
+    pub fn drain_death_dust(&mut self) -> Vec<crate::projectile_death_dust::DeathSnapshot> {
+        std::mem::take(&mut self.death_dust)
     }
 
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
@@ -19957,6 +19976,18 @@ impl ProjectilePool {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
                     }
+                    // W4-g65 — `Kill()`'s per-kind DEATH dust bursts
+                    // (`Projectile.cs:70642-77262`). The death hook only
+                    // SNAPSHOTS the dying corpse (kind/pos/box/velocity/scale)
+                    // before any other hook mutates the slot; the world-sim
+                    // pass drains the snapshots at its tail onto the DustPool
+                    // on the live `UpdateProjectiles` stream, taking every
+                    // explicit C# draw + the `new_dust` internals in order (the
+                    // gallop-dust queue→drain convention). The out-of-world
+                    // guard's direct deactivate (`:16696`, no `Kill()`) never
+                    // reaches here — same gate as the channel cancel above.
+                    self.death_dust
+                        .push(crate::projectile_death_dust::DeathSnapshot::of(&self.slots[i]));
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the

@@ -408,6 +408,25 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
 
     }
+    // W4-g65 — the per-kind `Kill()` death-dust drain (`Projectile.cs:70642-
+    // 77262`). The death hook snapshotted each dying corpse this tick; here the
+    // pass resolves the C# arms onto the real DustPool on the LIVE
+    // `UpdateProjectiles` stream — every explicit `Main.rand` draw + the
+    // `new_dust` internals run in C# order, per death in slot order (the
+    // gallop-dust pass-tail convention, `world_sim/npcs.rs`; the pool cannot
+    // borrow the App's dust pool). The `spawn_ctx` carries the `Dust.cs:77-101`
+    // guards/cull; an empty snapshot list draws nothing.
+    let death_dust = app.projectiles.drain_death_dust();
+    if !death_dust.is_empty() {
+        let ctx = app.spawn_ctx();
+        crate::projectile_death_dust::drain(
+            &death_dust,
+            &mut app.dust,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            &ctx,
+            &app.world,
+        );
+    }
     // S1-P-i06 — the lances' channel-hold write-back (`SetDummyItemTime(third)`,
     // `Projectile.cs:45941` → `Player.cs:4432-4441`: `itemAnimation = itemTime =
     // frames`, `itemTimeMax = frames + 1`). The arm queued the tick count; the

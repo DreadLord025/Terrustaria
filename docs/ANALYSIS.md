@@ -39244,3 +39244,67 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile death dust (W4-g65, task/W4-g65-proj-death-dust, code-only)
+
+The per-kind dust bursts inside `Projectile.Kill()`
+(`Projectile.cs:70642-77262`) — the dust that fires ONCE when a slot dies,
+distinct from the per-tick TRAIL dust (the g63/g64 lanes) and from the i17/i18
+special-arrow/bullet deaths (which stay with their main-landed modules). Only
+UNCLAIMED arms are ported, in ~10-kind commits.
+
+### The seam (the gallop-dust queue→drain convention)
+
+`crates/tr-app/src/projectile_death_dust.rs` owns the per-kind arms. The pool
+cannot borrow the App's `DustPool` or hold the live `UpdateProjectiles` stream
+alongside its `rng: &mut dyn DropRng` parameter (the pool-only tests pass a
+`FastRandom`), so the wiring splits exactly like the Horseman gallop dust
+(`world_sim/npcs.rs`, "W-10 unicorn tails"):
+
+* **Death hook** (`projectile.rs`, the `!active` block, inside the
+  `!died_out_of_world` gate beside the channel cancel): SNAPSHOTS the dying
+  corpse (`DeathSnapshot::of` — kind/pos/box/velocity/scale) into
+  `ProjectilePool::death_dust`. NO draws there; the snapshot is taken before
+  any other death hook (gem/turret resize) mutates the slot, matching the C#
+  `Kill()` reading the live slot throughout its body. The out-of-world guard's
+  direct deactivate (`:16696`, no `Kill()`) never snapshots — same gate as the
+  channel cancel.
+* **Pass-tail drain** (`world_sim/projectiles.rs`, after the golf writeback):
+  `drain_death_dust()` hands the snapshots to `projectile_death_dust::drain`,
+  which resolves each C# arm onto the real `DustPool::new_dust` on the LIVE
+  `UpdateProjectiles` stream (`app.rngs.stream`), with the App's `spawn_ctx`
+  (the `Dust.cs:77-101` guards/cull). Every explicit `Main.rand` draw the arm
+  takes AND the `new_dust` internals run there, in C# order, per death in slot
+  order.
+
+### Deviations (recorded)
+
+* **Pass-tail draw placement.** The C# rolls the death dust mid-`Kill()`; the
+  port defers ALL death-dust draws (explicit + internals) to the pass tail —
+  the same recorded deviation as the gallop dust and the golf/celeb2 sound
+  drains. Stream-neutral for the port's per-consumer streams; the
+  `UpdateProjectiles` stream advances by the same total draw count, just at the
+  tail rather than mid-walk.
+* **The DustPool contract** (`origin/task/W4-d50-dust-type-table`): the bodies
+  ride the verbatim `new_dust` family (guards, cull, pressure bands, default
+  block, ChildSafety re-type, per-type tweak chain). The module only resolves
+  the arm's arguments + post-spawn writes (`noGravity`, `velocity *=`,
+  `scale *=`, `fadeIn`); the drain applies them to whatever slot `new_dust`
+  returned — the sentinel 6000 included (the C# writes `Main.dust[6000]` too).
+* **Sounds/gore skipped.** The `SoundEngine.PlaySound` cues and `Gore.NewGore`
+  bodies in the death arms are the sound/gore lanes' (the pool-wide skip); only
+  the dust is ported here. Where a gore draw sits BETWEEN dust draws in the C#
+  body, the arm is deferred to a later commit that ports the gore census too
+  (none in batch 1 — every batch-1 arm is dust-only).
+
+### Batch 1 (10 kinds, the plain `:76170-76297` bursts)
+
+17 (5× dust-0), 31/42 (5× dust-32 vel×0.6), 39 (5× dust-38 vel×0.6), 71 (5×
+dust-53 vel×0.6), 179 (5× dust-149 vel×0.6), 40 (5× dust-36 vel×0.6), 109 (5×
+dust-51 scale 0.6 vel×0.6), 21/471/532/1111 (10× dust-26 scale 0.8), 24 (10×
+dust-1 speed vel×0.1 scale 0.75), 38 (10× dust-42 speed vel×0.1). Every arm is
+dust-only with NO explicit `Main.rand` draw — the randomness is entirely the
+`new_dust` internals, so the death hook is stream-neutral and the drain spends
+the stream inside `new_dust`. Witnesses: `projectile_death_dust.rs::tests`
+(the burst counts/types/velocity writes, the unclaimed-kind inertness, the
+determinism pair) — WRITTEN NOT RUN (code-only mode).
