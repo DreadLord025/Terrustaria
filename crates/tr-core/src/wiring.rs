@@ -5909,6 +5909,31 @@ mod s1_l6_tests {
     }
 
     #[test]
+    fn the_wire_bulb_each_colour_steps_its_own_bit() {
+        // `Wiring.cs:1591-1609`: the four `_currentWireColor` arms — 1 → 18
+        // (bit 0), 2 → 72 (bit 2), 3 → 36 (bit 1), 4 → 144 (bit 3). The
+        // direction flips when that colour's bit is already set in
+        // `frameX / 18`. Each colour rides its own wire pass.
+        for (color, step) in [
+            (WireColor::Red, 18),
+            (WireColor::Blue, 72),
+            (WireColor::Green, 36),
+            (WireColor::Yellow, 144),
+        ] {
+            let mut w = world();
+            put(&mut w, 10, 20, 429, 0, 0);
+            for x in [8, 9, 10] {
+                w.wires.set(x, 20, color, true);
+            }
+            let mut wiring = Wiring::new();
+            wiring.trip_wire(&mut w, 8, 20, 1, 1);
+            assert_eq!(w.tile_frame_x(10, 20), step, "{color:?} steps +{step}");
+            wiring.trip_wire(&mut w, 8, 20, 1, 1);
+            assert_eq!(w.tile_frame_x(10, 20), 0, "{color:?} steps −{step} back");
+        }
+    }
+
+    #[test]
     fn the_type_pair_swap_toggles_255_262() {
         // `Wiring.cs:1033-1050`: types 255..261 step +7, 262..268 step −7.
         let mut w = wired_device(10, 20, 255, 0, 0);
@@ -5928,6 +5953,183 @@ mod s1_l6_tests {
         assert_eq!(w.tile_frame_x(10, 20), 18);
         wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert_eq!(w.tile_frame_x(10, 20), 0);
+    }
+
+    #[test]
+    fn the_hanging_lantern_flips_both_cells_and_skips_them() {
+        // `ToggleHangingLantern` (`Wiring.cs:2817-2841`): the 2-tall sprite's
+        // frameX ±18 keyed on the hit cell's frameX, SkipWire on both cells.
+        // The bottom cell (10, 21) is the wired hit; the anchor row is
+        // `frameY / 18` reduced below 2 → row 20.
+        let mut w = world();
+        put(&mut w, 10, 20, 42, 0, 0);
+        put(&mut w, 10, 21, 42, 0, 18);
+        for (x, y) in [(8, 21), (9, 21), (10, 21)] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 21, 1, 1);
+        assert_eq!(w.tile_frame_x(10, 20), 18, "the top cell flips +18");
+        assert_eq!(w.tile_frame_x(10, 21), 36, "the bottom cell flips +18");
+        assert!(wiring.skip.contains(&(10, 20)), "SkipWire the top cell");
+        assert!(wiring.skip.contains(&(10, 21)), "SkipWire the bottom cell");
+        // The return trip flips back (the hit cell's frameX 36 > 0 → −18).
+        wiring.trip_wire(&mut w, 8, 21, 1, 1);
+        assert_eq!(w.tile_frame_x(10, 20), 0);
+        assert_eq!(w.tile_frame_x(10, 21), 18);
+    }
+
+    #[test]
+    fn the_lamp_flips_three_cells_and_skips_them() {
+        // `ToggleLamp` (`Wiring.cs:2935-2961`): the 3-tall sprite's frameX ±18
+        // down its column, SkipWire per cell. The bottom cell (10, 22) is the
+        // wired hit; the anchor row is `frameY / 18` reduced below 3 → row 20.
+        let mut w = world();
+        put(&mut w, 10, 20, 93, 0, 0);
+        put(&mut w, 10, 21, 93, 0, 18);
+        put(&mut w, 10, 22, 93, 0, 36);
+        for (x, y) in [(8, 22), (9, 22), (10, 22)] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 22, 1, 1);
+        for row in 20..23 {
+            assert_eq!(w.tile_frame_x(10, row), 18, "row {row} flips +18");
+            assert!(wiring.skip.contains(&(10, row)), "SkipWire row {row}");
+        }
+    }
+
+    #[test]
+    fn the_2x2_light_family_flips_the_block_and_skips_it() {
+        // `Toggle2x2Light` (`Wiring.cs:2843-2877`): the 2×2 sprite's frameX
+        // ±36 keyed on the ANCHOR's frameX, SkipWire 2×2. Every kind of the
+        // family (95/100/126/173/564) rides the same helper. The bottom-right
+        // cell (11, 21) is the wired hit; the anchor is (10, 20).
+        for kind in [95u16, 100, 126, 173, 564] {
+            let mut w = world();
+            put(&mut w, 10, 20, kind, 0, 0);
+            put(&mut w, 11, 20, kind, 18, 0);
+            put(&mut w, 10, 21, kind, 0, 18);
+            put(&mut w, 11, 21, kind, 18, 18);
+            for (x, y) in [(8, 21), (9, 21), (10, 21), (11, 21)] {
+                w.wires.set(x, y, WireColor::Red, true);
+            }
+            let mut wiring = Wiring::new();
+            wiring.trip_wire(&mut w, 8, 21, 1, 1);
+            for (x, y) in [(10, 20), (11, 20), (10, 21), (11, 21)] {
+                let base = if x == 11 { 18 } else { 0 };
+                assert_eq!(w.tile_frame_x(x, y), base + 36, "kind {kind} cell ({x},{y})");
+                assert!(wiring.skip.contains(&(x, y)), "kind {kind} SkipWire ({x},{y})");
+            }
+        }
+    }
+
+    #[test]
+    fn the_chandelier_flips_the_3x3_and_skips_it() {
+        // `ToggleChandelier` (`Wiring.cs:2963-2998`): the 3×3 sprite's frameX
+        // ±54 keyed on the anchor's `frameX % 108`, SkipWire 3×3. The anchor
+        // column is `frameX % 108 / 18` (wrapped below 3), the row `frameY /
+        // 18` reduced below 3. The bottom-right cell (12, 22) is the wired hit.
+        let mut w = world();
+        for col in 0..3 {
+            for row in 0..3 {
+                put(&mut w, 10 + col, 20 + row, 34, (col * 18) as i16, (row * 18) as i16);
+            }
+        }
+        for (x, y) in [(8, 22), (9, 22), (10, 22), (11, 22), (12, 22)] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 22, 1, 1);
+        for col in 0..3 {
+            for row in 0..3 {
+                let (x, y) = (10 + col, 20 + row);
+                assert_eq!(w.tile_frame_x(x, y), col * 18 + 54, "cell ({x},{y})");
+                assert!(wiring.skip.contains(&(x, y)), "SkipWire ({x},{y})");
+            }
+        }
+    }
+
+    #[test]
+    fn the_lamp_post_flips_six_cells_and_skips_them() {
+        // `ToggleLampPost` (`Wiring.cs:2879-2901`): the 6-tall lamp's frameX
+        // ±18 down its column from `j - frameY / 18`, SkipWire per cell. The
+        // bottom cell (10, 25) is the wired hit (frameY 90 → anchor row 20).
+        let mut w = world();
+        for row in 0..6 {
+            put(&mut w, 10, 20 + row, 92, 0, (row * 18) as i16);
+        }
+        for (x, y) in [(8, 25), (9, 25), (10, 25)] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 25, 1, 1);
+        for row in 20..26 {
+            assert_eq!(w.tile_frame_x(10, row), 18, "row {row} flips +18");
+            assert!(wiring.skip.contains(&(10, row)), "SkipWire row {row}");
+        }
+    }
+
+    #[test]
+    fn the_holiday_light_flips_54() {
+        // `ToggleHolidayLight` (`Wiring.cs:2800-2815`): frameX < 54 → +54,
+        // else −54 (the lit/unlit pair).
+        let mut w = wired_device(10, 20, 149, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_x(10, 20), 54);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_x(10, 20), 0);
+    }
+
+    #[test]
+    fn the_pixel_box_frame_shift_flips_3x2_and_skips_it() {
+        // Case 244 (`Wiring.cs:1624-1650`): the 3×2 anchor from `frameX/Y / 18`
+        // reduced below 3, frameX ±54 keyed on the anchor's frameX, SkipWire
+        // 3×2. The bottom-right cell (12, 21) is the wired hit.
+        let mut w = world();
+        for col in 0..3 {
+            for row in 0..2 {
+                put(&mut w, 10 + col, 20 + row, 244, (col * 18) as i16, (row * 18) as i16);
+            }
+        }
+        for (x, y) in [(8, 21), (9, 21), (10, 21), (11, 21), (12, 21)] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 21, 1, 1);
+        for col in 0..3 {
+            for row in 0..2 {
+                let (x, y) = (10 + col, 20 + row);
+                assert_eq!(w.tile_frame_x(x, y), col * 18 + 54, "cell ({x},{y})");
+                assert!(wiring.skip.contains(&(x, y)), "SkipWire ({x},{y})");
+            }
+        }
+    }
+
+    #[test]
+    fn the_campfire_frame_shift_flips_2x2_and_skips_it() {
+        // Case 565 (`Wiring.cs:1652-1678`): the 2×2 anchor from `frameX/Y / 18`
+        // reduced below 2, frameX ±36 keyed on the anchor's frameX, SkipWire
+        // 2×2. The bottom-right cell (11, 21) is the wired hit.
+        let mut w = world();
+        for col in 0..2 {
+            for row in 0..2 {
+                put(&mut w, 10 + col, 20 + row, 565, (col * 18) as i16, (row * 18) as i16);
+            }
+        }
+        for (x, y) in [(8, 21), (9, 21), (10, 21), (11, 21)] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 21, 1, 1);
+        for col in 0..2 {
+            for row in 0..2 {
+                let (x, y) = (10 + col, 20 + row);
+                assert_eq!(w.tile_frame_x(x, y), col * 18 + 36, "cell ({x},{y})");
+                assert!(wiring.skip.contains(&(x, y)), "SkipWire ({x},{y})");
+            }
+        }
     }
 
     #[test]
