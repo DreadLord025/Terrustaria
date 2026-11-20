@@ -397,7 +397,8 @@ fn dd2_crystal_death(
 
 /// The wave-B dispatch tail — appended to wave A's `hit_effect` in source
 /// order (`NPC.cs:81942` onward). `npc.hp` is `this.life` at the call.
-/// Commit 1 scope: the 636 tail, 657, 658-660, 667.
+/// Scope: the 657/658-660/667 arms + the DD2 goblin/javeliner/kobold/
+/// crystal families (the 636 tail rides wave A's dispatch).
 pub(crate) fn hit_effect_b(
     npc: &mut Npc,
     npc_type: i32,
@@ -437,7 +438,7 @@ pub(crate) fn hit_effect_b(
         dd2_kobold_death(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world);
     }
     // `:82172-82218` — the 551 DD2 crystal: the CheckProgress gate on the
-    // HIT path (returned), the death arm's 10-gore body (sites 67-76).
+    // HIT path (returned), the death arm's 10-gore body (sites 67-86).
     if npc_type == 551 {
         // `:82174-82177` — the percent-crossing gate (netMode != 1 runs).
         if dd2_crystal_crossed_percent(npc.hp, npc.max_hp, dmg) {
