@@ -464,7 +464,7 @@ impl App {
                 // `SetKillCountDirectly`'s first-key hook
                 // (`NPCKillsTracker.cs:46-49`) — the client-side reach of
                 // `TryGrantingBestiary100PercentAchievement` (`:81-84`).
-                let _ = self.achievements.try_grant_bestiary_100(&self.bestiary.kills);
+                let _ = self.achievements.try_grant_bestiary_100(&self.bestiary);
             }
             _ => {}
         }
