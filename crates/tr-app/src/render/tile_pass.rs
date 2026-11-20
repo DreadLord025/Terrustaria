@@ -770,3 +770,489 @@ pub(crate) fn post_draw_tiles(solid_layer: bool, seams: &mut impl TilePassSeams)
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tr_core::tile::FLAG_ACTIVE;
+
+    fn world(w: i32, h: i32) -> World {
+        let mut world = World::new("t".into(), w, h);
+        world.compute_column_surface();
+        world.compute_chunks();
+        world
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i].kind = kind;
+        w.tiles[i].flags = FLAG_ACTIVE;
+    }
+
+    fn inputs(solid: bool) -> DrawLayerInputs {
+        DrawLayerInputs {
+            solid_layer: solid,
+            into_render_targets: false,
+            gfx_quality: 0.5,
+            dev_light_tiles_cheat: false,
+            martian_light: 0.0,
+            draw_to_screen: false,
+            off_screen_range: 192,
+            scaled_position: [320.0, 320.0],
+            scaled_size: [320.0, 320.0],
+            screen_position: [320.0, 320.0],
+            allow_emit_effects: true,
+            sway_enabled: true,
+            preview_gate: PlacementPreviewGate::default(),
+            preview_is_kite: false,
+            preview_hold_style: 0,
+            preview_frames_in_movement: 0,
+        }
+    }
+
+    /// The seam recorder: one log entry per C# call the driver sequences.
+    #[derive(Default)]
+    struct Recorder {
+        log: Vec<String>,
+        strips: Vec<BlackStrip>,
+    }
+
+    impl TilePassSeams for Recorder {
+        fn ensure_wind_grid_size(&mut self, w: i32, h: i32) {
+            self.log.push(format!("wind {w}x{h}"));
+        }
+        fn clear_legacy_cache(&mut self, step: LegacyCacheClear) {
+            self.log.push(format!("legacy {step:?}"));
+        }
+        fn clear_layer_cache(&mut self, step: LayerCacheClear) {
+            self.log.push(format!("layer {step:?}"));
+        }
+        fn rebuild_quality_light_tiers(&mut self, q: f32, cheat: bool) {
+            self.log.push(format!("tiers {q} {cheat}"));
+        }
+        fn reset_critter_cage(&mut self) {
+            self.log.push("critterCage".into());
+        }
+        fn set_martian_glow(&mut self, b: u8) {
+            self.log.push(format!("martian {b}"));
+        }
+        fn reset_paint_lookup_key(&mut self) {
+            self.log.push("paintKey".into());
+        }
+        fn draw_tile_liquid_behind(&mut self, x: i32, y: i32) {
+            self.log.push(format!("liquid {x},{y}"));
+        }
+        fn classify_and_draw_cell(&mut self, x: i32, y: i32, _b: &mut DrawBlackHelper) {
+            self.log.push(format!("cell {x},{y}"));
+        }
+        fn draw_black_strip(&mut self, strip: BlackStrip) {
+            self.log.push("blackStrip".into());
+            self.strips.push(strip);
+        }
+        fn restart_layered_batch(&mut self) {
+            self.log.push("restartLayered".into());
+        }
+        fn draw_tile_cracks(&mut self, site: CrackSite) {
+            self.log.push(format!("cracks {site:?}"));
+        }
+        fn restart_sprite_batch(&mut self) {
+            self.log.push("restartSprite".into());
+        }
+        fn draw_special_tiles_legacy(&mut self) {
+            self.log.push("legacyDraw".into());
+        }
+        fn draw_object_preview(&mut self, opacity: f32) {
+            self.log.push(format!("preview {opacity}"));
+        }
+        fn post_draw_pass(&mut self, step: PostDrawStep) {
+            self.log.push(format!("post {step:?}"));
+        }
+    }
+
+    /// Witness: the layer constants are the static ctor's values
+    /// (`TileDrawing.cs:791-794`) and the legacy cap is 1000 (`:70`).
+    #[test]
+    fn w4_g29_layer_constants_and_legacy_cap() {
+        assert_eq!(LAYER_LIQUID_BEHIND_TILES, 0);
+        assert_eq!(LAYER_BEHIND_TILES, 1);
+        assert_eq!(LAYER_TILES, 2);
+        assert_eq!(LAYER_OVER_TILES, 3);
+        assert_eq!(MAX_SPECIALS_LEGACY, 1000);
+    }
+
+    /// Witness: `GetScreenDrawArea` (`:6554-6557`) — the truncating casts,
+    /// the -1 near / +2/+5 far pads, and the offscreen offset both axes
+    /// (`:6553`). Camera at (320, 320), size 320, offScreenRange 192:
+    /// firstX = (320-192)/16 - 1 = 7, lastX = (320+320+192)/16 + 2 = 54,
+    /// firstY = 7, lastY = (832)/16 + 5 = 57.
+    #[test]
+    fn w4_g29_screen_area_pads_and_offset() {
+        let a = get_screen_draw_area(true, [320.0, 320.0], [320.0, 320.0], 192, 8400, 2400);
+        assert_eq!(a.draw_offset, [192.0, 192.0]);
+        assert_eq!((a.first_tile_x, a.last_tile_x), (7, 54));
+        assert_eq!((a.first_tile_y, a.last_tile_y), (7, 57));
+        // useOffscreenRange = false (:6553): zero offset, no pad.
+        let b = get_screen_draw_area(false, [320.0, 320.0], [320.0, 320.0], 192, 8400, 2400);
+        assert_eq!(b.draw_offset, [0.0, 0.0]);
+        assert_eq!((b.first_tile_x, b.last_tile_x), (19, 42));
+        assert_eq!((b.first_tile_y, b.last_tile_y), (19, 45));
+    }
+
+    /// Witness: the four world-edge clamps (`:6558-6573`) — floor 4 on
+    /// both near edges, `maxTiles - 4` on both far edges (NOT - 3).
+    #[test]
+    fn w4_g29_screen_area_clamps_at_the_four_cell_border() {
+        let a = get_screen_draw_area(false, [-1000.0, -1000.0], [16.0, 16.0], 0, 100, 80);
+        assert_eq!((a.first_tile_x, a.first_tile_y), (4, 4));
+        let b = get_screen_draw_area(false, [100000.0, 100000.0], [16.0, 16.0], 0, 100, 80);
+        assert_eq!((b.last_tile_x, b.last_tile_y), (96, 76));
+        // The truncating cast on a negative quotient: (-8)/16 - 1 = -1.5
+        // -> (int) = -1 (toward zero), then clamped to 4.
+        let c = get_screen_draw_area(false, [-8.0, 0.0], [16.0, 16.0], 0, 100, 80);
+        assert_eq!(c.first_tile_x, 4);
+    }
+
+    /// Witness: the Draw loop bounds (`:504-506`) — rows firstY ..<
+    /// lastY+4, columns firstX-2 ..< lastX+2 (the asymmetric padding).
+    #[test]
+    fn w4_g29_draw_loop_bounds_are_plus4_minus2() {
+        let a = get_screen_draw_area(false, [320.0, 320.0], [320.0, 320.0], 0, 8400, 2400);
+        let (x0, x1, y0, y1) = draw_loop_bounds(&a);
+        assert_eq!((x0, x1), (a.first_tile_x - 2, a.last_tile_x + 2));
+        assert_eq!((y0, y1), (a.first_tile_y, a.last_tile_y + 4));
+        assert_eq!((x0, x1, y0, y1), (17, 44, 19, 49));
+    }
+
+    /// Witness: the martian glow byte (`:498`) — (byte)(100 + 150*m):
+    /// m=0 -> 100, m=1 -> 250, m=0.5 -> 175. The net40 wrap is spelled
+    /// out: m=2 (unreachable, the updater clamps) -> (byte)400 = 144.
+    #[test]
+    fn w4_g29_martian_glow_byte_truncates_and_wraps() {
+        assert_eq!(martian_glow_byte(0.0), 100);
+        assert_eq!(martian_glow_byte(1.0), 250);
+        assert_eq!(martian_glow_byte(0.5), 175);
+        assert_eq!(martian_glow_byte(2.0), 144);
+    }
+
+    /// Witness: `DrawBlackHelper.DrawBlack` (`DrawBlackHelper.cs:17-28`)
+    /// — the same-row contiguous extension, the break flush, and the
+    /// `EndStrip` no-reset quirk (`:30-38`: a second call re-emits).
+    #[test]
+    fn w4_g29_black_helper_coalesces_and_flushes() {
+        let mut h = DrawBlackHelper::new(LAYER_TILES, [192.0, 192.0]);
+        let sp = [320.0, 320.0];
+        // A fresh helper has startX == endX == 0: nothing pending.
+        assert!(h.end_strip(sp).is_none());
+        // (10, 5), (11, 5), (12, 5) coalesce into one run.
+        assert!(h.draw_black(10, 5, sp).is_none());
+        assert!(h.draw_black(11, 5, sp).is_none());
+        assert!(h.draw_black(12, 5, sp).is_none());
+        // A gap on the same row breaks the run: flush (10..13, y 5).
+        let s = h.draw_black(14, 5, sp).unwrap();
+        assert_eq!(
+            s.position,
+            [10.0 * 16.0 - 320.0 + 192.0, 5.0 * 16.0 - 320.0 + 192.0]
+        );
+        assert_eq!(s.size, [48.0, 16.0]);
+        assert_eq!(s.layer, LAYER_TILES);
+        // A row change also breaks: flush the lone (14, 5).
+        let s2 = h.draw_black(14, 6, sp).unwrap();
+        assert_eq!(s2.size, [16.0, 16.0]);
+        // EndStrip does NOT reset (:30-38 leaves the fields): the same
+        // strip re-emits; the driver's single :728 call is the norm.
+        let s3 = h.end_strip(sp).unwrap();
+        assert_eq!(s3, s2);
+    }
+
+    /// Witness: `ClearLegacyCachedDraws`'s exact 7-step order
+    /// (`:6615-6621`) — chests first, the legacy count LAST.
+    #[test]
+    fn w4_g29_legacy_clear_order() {
+        assert_eq!(
+            LEGACY_CLEAR_ORDER,
+            [
+                LegacyCacheClear::ChestPositions,
+                LegacyCacheClear::TrainingDummyTileEntityPositions,
+                LegacyCacheClear::FoodPlatterTileEntityPositions,
+                LegacyCacheClear::ItemFrameTileEntityPositions,
+                LegacyCacheClear::DeadCellsDisplayJarTileEntityPositions,
+                LegacyCacheClear::WeaponRackTileEntityPositions,
+                LegacyCacheClear::SpecialTilesCount,
+            ]
+        );
+    }
+
+    /// Witness: `ClearCachedTileDraws` (`:6588-6599`) — solid clears the
+    /// two TE dictionaries (doll then hat rack), non-solid clears the
+    /// special-point registry (the g30 clear).
+    #[test]
+    fn w4_g29_layer_cache_clear_split() {
+        assert_eq!(
+            layer_cache_clears(true),
+            &[
+                LayerCacheClear::DisplayDollTileEntityPositions,
+                LayerCacheClear::HatRackTileEntityPositions,
+            ]
+        );
+        assert_eq!(
+            layer_cache_clears(false),
+            &[LayerCacheClear::SpecialBlockCounts]
+        );
+    }
+
+    /// Witness: `AddSpecialLegacyPoint` (`:6606-6611`) appends without
+    /// dedup and caps at 1000 (`:70`, `:100-102`); the clear resets the
+    /// count (`:6621`).
+    #[test]
+    fn w4_g29_legacy_points_append_and_cap() {
+        let mut p = LegacySpecialPoints::default();
+        p.add(1, 2);
+        p.add(1, 2);
+        assert_eq!(p.points, vec![(1, 2), (1, 2)]);
+        for i in 0..(MAX_SPECIALS_LEGACY + 5) {
+            p.add(i as i32, 0);
+        }
+        assert_eq!(p.points.len(), MAX_SPECIALS_LEGACY);
+        p.clear();
+        assert!(p.points.is_empty());
+    }
+
+    /// Witness: `PostDrawTiles(false)`'s 12-step order (`:421-433`) —
+    /// MultiTileVines FIRST, ReverseVines last of the draws, EndBatch
+    /// then NatureAfterAllObjects; solid = hat racks BEFORE dolls
+    /// (`:438-439`).
+    #[test]
+    fn w4_g29_post_draw_orders() {
+        assert_eq!(POST_DRAW_NON_SOLID[0], PostDrawStep::DrawMultiTileVines);
+        assert_eq!(POST_DRAW_NON_SOLID[9], PostDrawStep::DrawReverseVines);
+        assert_eq!(POST_DRAW_NON_SOLID[10], PostDrawStep::EndBatch);
+        assert_eq!(POST_DRAW_NON_SOLID[11], PostDrawStep::NatureAfterAllObjects);
+        assert_eq!(
+            POST_DRAW_SOLID,
+            [
+                PostDrawStep::DrawEntitiesHatRacks,
+                PostDrawStep::DrawEntitiesDisplayDolls
+            ]
+        );
+        let mut r = Recorder::default();
+        post_draw_tiles(false, &mut r);
+        assert_eq!(r.log.len(), 12);
+        assert_eq!(r.log[0], "post DrawMultiTileVines");
+        assert_eq!(r.log[11], "post NatureAfterAllObjects");
+        let mut r2 = Recorder::default();
+        post_draw_tiles(true, &mut r2);
+        assert_eq!(
+            r2.log,
+            vec!["post DrawEntitiesHatRacks", "post DrawEntitiesDisplayDolls"]
+        );
+    }
+
+    /// Witness: the preview gate (`:737`) — all three positives AND the
+    /// capture negative; `GetPlacementPreviewOpacity`
+    /// (`Player.cs:43389-43400`): non-kite 1, holdStyle kite 0, the
+    /// clamped 0..30 fade (frame 33 is already 0, the updater's clamp).
+    #[test]
+    fn w4_g29_preview_gate_and_kite_fade() {
+        let mut g = PlacementPreviewGate {
+            object_preview_active: true,
+            cursor_item_icon_enabled: true,
+            placement_preview: true,
+            capture_active: false,
+        };
+        assert!(g.draws());
+        g.capture_active = true;
+        assert!(!g.draws());
+        g.capture_active = false;
+        g.placement_preview = false;
+        assert!(!g.draws());
+        assert_eq!(placement_preview_opacity(false, 0, 0), 1.0);
+        assert_eq!(placement_preview_opacity(true, 1, 0), 0.0);
+        assert_eq!(placement_preview_opacity(true, 0, 0), 1.0);
+        assert_eq!(placement_preview_opacity(true, 0, 15), 0.5);
+        assert_eq!(placement_preview_opacity(true, 0, 30), 0.0);
+        assert_eq!(placement_preview_opacity(true, 0, 33), 0.0);
+    }
+
+    /// Witness: the frame-level order (`Main.cs:63272-63301`) — the
+    /// NON-SOLID layer draws before the solid one; the behind-tiles NPC
+    /// pass flips around the solid layer on detectCreature
+    /// (`:63290-63299`). The render-target path is the OPPOSITE layer
+    /// order (tileTarget solid first, `:57296-57306`).
+    #[test]
+    fn w4_g29_frame_order_and_detect_creature_flip() {
+        let plain = walls_tiles_npcs_order(false);
+        let i_non = plain
+            .iter()
+            .position(|s| *s == FrameTileStep::TilesNonSolid)
+            .unwrap();
+        let i_solid = plain
+            .iter()
+            .position(|s| *s == FrameTileStep::TilesSolid)
+            .unwrap();
+        let i_npc = plain
+            .iter()
+            .position(|s| *s == FrameTileStep::NpcsBehindTiles)
+            .unwrap();
+        assert!(i_non < i_npc && i_npc < i_solid);
+        let detect = walls_tiles_npcs_order(true);
+        let j_solid = detect
+            .iter()
+            .position(|s| *s == FrameTileStep::TilesSolid)
+            .unwrap();
+        let j_npc = detect
+            .iter()
+            .position(|s| *s == FrameTileStep::NpcsBehindTiles)
+            .unwrap();
+        assert!(j_solid < j_npc);
+        assert_eq!(detect.len(), plain.len());
+        assert_eq!(render_target_layer_order(), [true, false]);
+    }
+
+    /// Witness: the Draw prologue/epilogue order (`:465-741`) on an
+    /// empty world — non-solid: critterCage reset FIRST, wind grid, the
+    /// 7 legacy clears, the SpecialBlockCounts clear, tiers, martian,
+    /// paint key; epilogue: restartLayered, legacyDraw (NO cracks, NO
+    /// restartSprite on the non-solid layer). Solid: no critterCage,
+    /// the two TE clears, cracks hitReplace-then-hitTile + restartSprite
+    /// between restartLayered and legacyDraw.
+    #[test]
+    fn w4_g29_draw_layer_prologue_epilogue_order() {
+        // A tiny fresh world: the clamped area collapses to the 4-cell
+        // border and every cell in the padded walk is INACTIVE, so the
+        // :517 gate skips them all and the scaffolding is isolated.
+        let w = world(8, 8);
+        let solid_fn: fn(u16) -> bool = |_| false;
+        let mut r = Recorder::default();
+        draw_layer(&w, &inputs(false), solid_fn, &mut r);
+        assert_eq!(
+            r.log,
+            vec![
+                "critterCage",
+                "wind 0x0",
+                "legacy ChestPositions",
+                "legacy TrainingDummyTileEntityPositions",
+                "legacy FoodPlatterTileEntityPositions",
+                "legacy ItemFrameTileEntityPositions",
+                "legacy DeadCellsDisplayJarTileEntityPositions",
+                "legacy WeaponRackTileEntityPositions",
+                "legacy SpecialTilesCount",
+                "layer SpecialBlockCounts",
+                "tiers 0.5 false",
+                "martian 100",
+                "paintKey",
+                "restartLayered",
+                "legacyDraw",
+            ]
+        );
+        let mut r2 = Recorder::default();
+        draw_layer(&w, &inputs(true), solid_fn, &mut r2);
+        assert!(!r2.log.contains(&"critterCage".to_string()));
+        let i_doll = r2
+            .log
+            .iter()
+            .position(|s| s == "layer DisplayDollTileEntityPositions")
+            .unwrap();
+        let i_hat = r2
+            .log
+            .iter()
+            .position(|s| s == "layer HatRackTileEntityPositions")
+            .unwrap();
+        assert!(i_doll < i_hat);
+        let tail = &r2.log[r2.log.len() - 5..];
+        assert_eq!(
+            tail,
+            &[
+                "restartLayered",
+                "cracks HitReplace",
+                "cracks HitTile",
+                "restartSprite",
+                "legacyDraw"
+            ]
+        );
+    }
+
+    /// Witness: the per-cell gate + liquid front step (`:517-526`) —
+    /// only active, layer-matched cells reach the seam; the SOLID layer
+    /// prepends draw_tile_liquid_behind per cell; inactive cells and
+    /// wrong-layer cells are skipped. The :509-514 null arm is the
+    /// dense-array skip (out-of-bounds cells never call).
+    #[test]
+    fn w4_g29_cell_gate_and_solid_liquid_front_step() {
+        let mut w = world(64, 64);
+        put(&mut w, 20, 20, 1); // dirt: solid-layer
+        put(&mut w, 21, 20, 3); // grass-kind 3: non-solid (no override)
+        let i = w.index(22, 20);
+        w.tiles[i].kind = 1; // inactive dirt: skipped
+        let solid_fn: fn(u16) -> bool = |k| k == 1;
+        let mut inp = inputs(true);
+        // Camera tight on row 20 so the walk covers (20..23, 20).
+        inp.draw_to_screen = true;
+        inp.scaled_position = [336.0, 320.0];
+        inp.scaled_size = [16.0, 16.0];
+        let mut r = Recorder::default();
+        draw_layer(&w, &inp, solid_fn, &mut r);
+        let cells: Vec<&String> = r
+            .log
+            .iter()
+            .filter(|s| s.starts_with("cell ") || s.starts_with("liquid "))
+            .collect();
+        // The dirt cell: liquid front step THEN the cell; the inactive
+        // dirt and the non-solid kind never appear on the solid layer.
+        let i_liq = cells.iter().position(|s| *s == "liquid 20,20").unwrap();
+        let i_cell = cells.iter().position(|s| *s == "cell 20,20").unwrap();
+        assert!(i_liq < i_cell);
+        assert!(!cells.iter().any(|s| *s == "cell 21,20"));
+        assert!(!cells.iter().any(|s| *s == "cell 22,20"));
+        // Non-solid layer: kind 3 draws, NO liquid front step.
+        let mut inp2 = inputs(false);
+        inp2.draw_to_screen = true;
+        inp2.scaled_position = [336.0, 320.0];
+        inp2.scaled_size = [16.0, 16.0];
+        let mut r2 = Recorder::default();
+        draw_layer(&w, &inp2, solid_fn, &mut r2);
+        assert!(r2.log.contains(&"cell 21,20".to_string()));
+        assert!(!r2.log.iter().any(|s| s.starts_with("liquid ")));
+    }
+
+    /// Witness: `DrawLiquidBehindTiles` (`:444-463`) — the null-check-
+    /// ONLY gate: an INACTIVE cell still gets the liquid call (unlike
+    /// Draw's :517 gate), and the layer argument is always false.
+    #[test]
+    fn w4_g29_liquid_behind_tiles_has_no_active_gate() {
+        let mut w = world(64, 64);
+        let i = w.index(20, 20);
+        w.tiles[i].kind = 1; // inactive (no FLAG_ACTIVE)
+        let mut inp = inputs(true); // solid_layer is IGNORED here (:457)
+        inp.draw_to_screen = true;
+        inp.scaled_position = [336.0, 320.0];
+        inp.scaled_size = [16.0, 16.0];
+        let mut r = Recorder::default();
+        draw_liquid_behind_tiles(&w, &inp, &mut r);
+        assert!(r.log.contains(&"liquid 20,20".to_string()));
+        assert!(!r.log.iter().any(|s| s.starts_with("cell ")));
+    }
+
+    /// Witness: the preview tail fires only through the gate (`:737-
+    /// 741`) and passes the kite-fade opacity to the seam.
+    #[test]
+    fn w4_g29_preview_tail_fires_through_the_gate() {
+        let w = world(8, 8);
+        let solid_fn: fn(u16) -> bool = |_| false;
+        let mut inp = inputs(false);
+        inp.preview_gate = PlacementPreviewGate {
+            object_preview_active: true,
+            cursor_item_icon_enabled: true,
+            placement_preview: true,
+            capture_active: false,
+        };
+        inp.preview_is_kite = true;
+        inp.preview_frames_in_movement = 15;
+        let mut r = Recorder::default();
+        draw_layer(&w, &inp, solid_fn, &mut r);
+        assert_eq!(r.log.last().unwrap(), "preview 0.5");
+        inp.preview_gate.capture_active = true;
+        let mut r2 = Recorder::default();
+        draw_layer(&w, &inp, solid_fn, &mut r2);
+        assert!(!r2.log.iter().any(|s| s.starts_with("preview ")));
+    }
+}
