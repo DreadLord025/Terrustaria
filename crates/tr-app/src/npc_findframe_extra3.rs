@@ -8,11 +8,14 @@
 //! 37/43/46/47/48/56/61/62/63/64/67/69/73/74/83, e14
 //! 84/93/94/101/102/103/116/120/121/137/141/142/148/149/181; the
 //! wave-A/wave-B rosters on main cover the rest below 182). THIS
-//! module owns **182/185/195/196/198/199/201/202/203/204/205/209** —
-//! the Floaty Gross, the Snow Flinx, the Lost Girl, the Nymph, the
-//! Lihzahrd, the Lihzahrd Crawler, the three post-Plantera dungeon
-//! skeletons, the Spiked Jungle Slime, the Moth and the Cyborg
-//! (`ID/NPCID.cs:11041-11095`). Landed 6 kinds per commit.
+//! module owns the first 15 unclaimed — **182/185/195/196/198/199/
+//! 201/202/203/204/205/209/217/218/219** — the Floaty Gross, the Snow
+//! Flinx, the Lost Girl, the Nymph, the Lihzahrd, the Lihzahrd
+//! Crawler, the three post-Plantera dungeon skeletons, the Spiked
+//! Jungle Slime, the Moth, the Cyborg and the three dye beetles
+//! (`ID/NPCID.cs:11041-11115`). The next 15 (220/221/224/226/229/230/
+//! 231/232/…) ride `task/W4-f27-findframe-extra-4` (the co-lane).
+//! Landed 6 kinds per commit; batch 3 carries the last 3.
 //!
 //! Shape: the kinds are NOT in `NpcKind` yet (their AI/spawn machines
 //! are later rounds), so — like `npc_findframe_a.rs` /
@@ -94,6 +97,13 @@ pub enum FindFrameExtra3Kind {
     /// group (`case 209`, `NPC.cs:68584`; `townNPC = true`,
     /// `NPC.cs:11684`).
     Cyborg,
+    /// `NPCID.CochinealBeetle` = 217 (`NPCID.cs:11111`) — the crab
+    /// group (`case 67/217/218/219`, `NPC.cs:74571-74574`).
+    CochinealBeetle,
+    /// `NPCID.CyanBeetle` = 218 (`NPCID.cs:11113`) — the crab group.
+    CyanBeetle,
+    /// `NPCID.LacBeetle` = 219 (`NPCID.cs:11115`) — the crab group.
+    LacBeetle,
 }
 
 impl FindFrameExtra3Kind {
@@ -112,6 +122,9 @@ impl FindFrameExtra3Kind {
             Self::SpikedJungleSlime => 204,
             Self::Moth => 205,
             Self::Cyborg => 209,
+            Self::CochinealBeetle => 217,
+            Self::CyanBeetle => 218,
+            Self::LacBeetle => 219,
         }
     }
 
@@ -132,6 +145,9 @@ impl FindFrameExtra3Kind {
             Self::SpikedJungleSlime => 2,
             Self::Moth => 3,
             Self::Cyborg => 26,
+            Self::CochinealBeetle => 2,
+            Self::CyanBeetle => 2,
+            Self::LacBeetle => 2,
         }
     }
 }
@@ -152,6 +168,9 @@ pub fn find_frame_kind_extra3(vanilla_type: i16) -> Option<FindFrameExtra3Kind> 
         204 => FindFrameExtra3Kind::SpikedJungleSlime,
         205 => FindFrameExtra3Kind::Moth,
         209 => FindFrameExtra3Kind::Cyborg,
+        217 => FindFrameExtra3Kind::CochinealBeetle,
+        218 => FindFrameExtra3Kind::CyanBeetle,
+        219 => FindFrameExtra3Kind::LacBeetle,
         _ => return None,
     })
 }
@@ -440,6 +459,30 @@ pub fn find_frame_extra3(kind: FindFrameExtra3Kind, s: &mut FrameState, i: &Fram
                 s.row = 1;
             }
         }
+        // `case 67/217/218/219` — the crab group
+        // (`NPC.cs:74571-74589`; the Crab 67 is main's, the three dye
+        // beetles are this wave's). The grounded tick writes
+        // `spriteDirection = direction` UNCONDITIONALLY (0 included
+        // — not the humanoid ±1 gate), the airborne tick leaves the
+        // flip alone; the counter ticks EVERY tick (grounded or air)
+        // and the 6-tick stride walks the FULL 2-row sheet.
+        FindFrameExtra3Kind::CochinealBeetle
+        | FindFrameExtra3Kind::CyanBeetle
+        | FindFrameExtra3Kind::LacBeetle => {
+            // `:74575-74578`.
+            if i.vy == 0.0 {
+                s.sprite_dir = i.direction;
+            }
+            // `:74579-74588`.
+            s.counter += 1.0;
+            if s.counter >= 6.0 {
+                s.counter = 0.0;
+                s.row += 1;
+                if s.row >= count {
+                    s.row = 0;
+                }
+            }
+        }
     }
 }
 
@@ -479,6 +522,9 @@ mod tests {
             FindFrameExtra3Kind::SpikedJungleSlime,
             FindFrameExtra3Kind::Moth,
             FindFrameExtra3Kind::Cyborg,
+            FindFrameExtra3Kind::CochinealBeetle,
+            FindFrameExtra3Kind::CyanBeetle,
+            FindFrameExtra3Kind::LacBeetle,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -650,12 +696,47 @@ mod tests {
         assert_eq!(s.sprite_dir, -1);
     }
 
-    /// The seam maps exactly the 12 vanilla types and nothing else.
+    /// 217/218/219 the dye beetles: the crab group's 6-tick stride
+    /// over the full 2 rows, the grounded UNCONDITIONAL flip (0
+    /// included), the air tick keeps ticking but holds the flip
+    /// (`NPC.cs:74571-74589`).
+    #[test]
+    fn f26_dye_beetles_crab_group_six_tick_stride() {
+        for k in [
+            FindFrameExtra3Kind::CochinealBeetle,
+            FindFrameExtra3Kind::CyanBeetle,
+            FindFrameExtra3Kind::LacBeetle,
+        ] {
+            let rows = rows_over(k, input(1.0, 0.0), 13);
+            assert_eq!(
+                rows,
+                vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0],
+                "type {}",
+                k.vanilla_type()
+            );
+            // The air tick still strides (no air hold in this group).
+            let air = rows_over(k, input(1.0, -2.0), 7);
+            assert_eq!(air, vec![0, 0, 0, 0, 0, 1, 1]);
+        }
+        // Grounded direction 0 writes 0 (the unconditional snap).
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        let i = FrameInput { direction: 0, ..input(1.0, 0.0) };
+        find_frame_extra3(FindFrameExtra3Kind::CyanBeetle, &mut s, &i);
+        assert_eq!(s.sprite_dir, 0);
+        // Airborne leaves the flip alone.
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        find_frame_extra3(FindFrameExtra3Kind::CyanBeetle, &mut s, &input(1.0, 2.0));
+        assert_eq!(s.sprite_dir, -1);
+    }
+
+    /// The seam maps exactly the 15 vanilla types and nothing else.
     #[test]
     fn f26_seam_covers_exactly_the_slice() {
         for t in 0..697i16 {
             let k = find_frame_kind_extra3(t);
-            let claimed = [182, 185, 195, 196, 198, 199, 201, 202, 203, 204, 205, 209];
+            let claimed = [
+                182, 185, 195, 196, 198, 199, 201, 202, 203, 204, 205, 209, 217, 218, 219,
+            ];
             assert_eq!(k.is_some(), claimed.contains(&t), "type {t}");
             if let Some(k) = k {
                 assert_eq!(k.vanilla_type(), t);
