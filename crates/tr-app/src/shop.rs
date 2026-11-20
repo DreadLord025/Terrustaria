@@ -798,10 +798,10 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3259, StockWhen::DownedMartians),
             row(5104, StockWhen::Always),
         ],
-        // The Wizard's shop (index 7, `Chest.cs:2004-2032`): the nine
-        // magic rows always, the hardmode blood-moon deck (5461) and the
-        // halloween hat (1739) constants-off (the port has neither
-        // season).
+        // The Wizard's shop (index 7, `Chest.cs:2004-2032`, the registry
+        // `NPCInteractions.Shop(108, 7)`, `NPCInteractions.cs:494` —
+        // `NPCID.Wizard = 108`): the nine magic rows always, the
+        // hardmode-blood-moon Crystal Ball deck and the halloween hat.
         7 => vec![
             row(487, StockWhen::Always),
             row(496, StockWhen::Always),
@@ -812,6 +812,12 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(149, StockWhen::Always),
             row(576, StockWhen::Always),
             row(3186, StockWhen::Always),
+            // `:2023-2026`: `Main.hardMode && Main.bloodMoon` — the
+            // Spell Tome 5461.
+            row(5461, StockWhen::All(&[StockWhen::HardMode, StockWhen::BloodMoon])),
+            // `:2027-2031`: `Main.halloween` — the hat 1739 (constants-off,
+            // no season system).
+            row(1739, StockWhen::Halloween),
         ],
         // The Mechanic's shop (index 8, `Chest.cs:2033-2090`): the wire
         // family's rows; the graveyard goggles (4409) constants-off and

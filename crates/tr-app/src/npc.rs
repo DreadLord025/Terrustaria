@@ -24540,9 +24540,11 @@ mod tests {
         );
     }
 
-    /// `Chest.SetupShop`'s case 7 (`Chest.cs:2004-2032`): the Wizard's nine
-    /// magic rows always on; the hardmode blood-moon and halloween rows sit
-    /// constants-off.
+    /// `Chest.SetupShop`'s case 7 (`Chest.cs:2004-2032`, the registry
+    /// `NPCInteractions.Shop(108, 7)`, `NPCInteractions.cs:494`): the
+    /// Wizard's nine magic rows always on; the hardmode-blood-moon Spell
+    /// Tome needs BOTH flags (W4-d122 — verbatim); the halloween hat stays
+    /// constants-off. Updated for the shop-7 completion; written, not run.
     #[test]
     fn the_wizard_shop_carries_the_magic_rows() {
         let stock = crate::shop::resolve_stock(7, &crate::shop::ShopFlags::default(), &[]);
@@ -24556,7 +24558,9 @@ mod tests {
             "the hardmode blood-moon deck is off"
         );
         assert!(!stock.contains(&1739), "the halloween hat is off");
-        let empty = crate::shop::resolve_stock(
+        // The blood moon ALONE does not open the Spell Tome (`:2023`'s
+        // hardmode conjunct).
+        let bm = crate::shop::resolve_stock(
             7,
             &crate::shop::ShopFlags {
                 blood_moon: true,
@@ -24564,7 +24568,32 @@ mod tests {
             },
             &[],
         );
-        assert_eq!(empty, stock, "the flags do not add the off rows");
+        assert_eq!(bm, stock, "the blood moon alone adds nothing");
+        // Hardmode ALONE does not either.
+        let hm = crate::shop::resolve_stock(
+            7,
+            &crate::shop::ShopFlags {
+                hard_mode: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert_eq!(hm, stock, "hardmode alone adds nothing");
+        // BOTH flags append the Spell Tome 5461 as the tenth row.
+        let both = crate::shop::resolve_stock(
+            7,
+            &crate::shop::ShopFlags {
+                hard_mode: true,
+                blood_moon: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert_eq!(
+            both,
+            vec![487, 496, 500, 507, 508, 531, 149, 576, 3186, 5461],
+            "the exact num order (`:2005-2025`)"
+        );
     }
 
     /// `Chest.SetupShop`'s case 8 (`Chest.cs:2033-2090`): the wire family's
