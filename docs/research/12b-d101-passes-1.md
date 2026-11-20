@@ -81,7 +81,7 @@ stay in place untouched.
 | Dirt Wall Backgrounds | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Clay | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Small Holes | (this commit) | landed (code-only; hash re-pin deferred to gate) |
-| Dirt Layer Caves | — | pending |
+| Dirt Layer Caves | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Rock Layer Caves | — | pending |
 | Generate Ice Biome | — | pending |
 | Granite (own row) | — | pending |

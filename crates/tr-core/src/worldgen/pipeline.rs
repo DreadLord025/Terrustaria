@@ -1290,6 +1290,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The vanilla Small Holes slot (`WorldGen.cs:12008`): after Clay
     // (`:11959`) and before Dirt Layer Caves (`:12067`) — W4-d101 pass 5.
     step!("small holes", "Small Holes", step_small_holes),
+    // The vanilla Dirt Layer Caves slot (`WorldGen.cs:12067`): after Small
+    // Holes (`:12008`) and before Rock Layer Caves (`:12107`) — W4-d101
+    // pass 6.
+    step!("dirt layer caves", "Dirt Layer Caves", step_dirt_layer_caves),
     // The vanilla Surface Caves slot (`WorldGen.cs:12162`): after Dirt In
     // Rocks (`:11926`) and before Wavy Caves (`:12271`) — the
     // worldgen-caves slice's surface-opening tunnels. The step draws from
@@ -1930,6 +1934,20 @@ fn step_small_holes(
 ) {
     let layers = *gv.layers();
     passes1::pass_small_holes(world, &mut streams.pass_rng("Small Holes"), &layers, gv);
+}
+
+/// The vanilla Dirt Layer Caves slot (`WorldGen.cs:12067-12106`): the long
+/// dirt-band worms (W4-d101 pass 6).
+fn step_dirt_layer_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_dirt_layer_caves(world, &mut streams.pass_rng("Dirt Layer Caves"), &layers, gv);
 }
 
 fn step_surface_caves(
@@ -3261,7 +3279,9 @@ mod tests {
         // after `dirt-in-stone blobs`.
         // W4-d101 pass 5: + `small holes` (vanilla "Small Holes",
         // `WorldGen.cs:12008`) after `clay`.
-        assert_eq!(names.len(), 71);
+        // W4-d101 pass 6: + `dirt layer caves` (vanilla "Dirt Layer Caves",
+        // `WorldGen.cs:12067`) after `small holes`.
+        assert_eq!(names.len(), 72);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3312,6 +3332,7 @@ mod tests {
                 "dirt-in-stone blobs",
                 "clay",
                 "small holes",
+                "dirt layer caves",
                 "surface caves",
                 "wavy caves",
                 "dirt to mud",
@@ -3470,6 +3491,25 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Small Holes") == cpos("Clay") + 1);
         assert!(cpos("Dirt Layer Caves") == cpos("Small Holes") + 1);
+    }
+
+    /// W4-d101 pass 6: `dirt layer caves` sits in its vanilla slot
+    /// (`WorldGen.cs:12067`) — immediately after Small Holes (`:12008`)
+    /// and before Rock Layer Caves (`:12107`, the next lane pass).
+    #[test]
+    fn w4_d101_dirt_layer_caves_sits_after_small_holes() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dirt layer caves"), pos("small holes") + 1);
+        assert!(pos("dirt layer caves") < pos("surface caves"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dirt Layer Caves") == cpos("Small Holes") + 1);
+        assert!(cpos("Rock Layer Caves") == cpos("Dirt Layer Caves") + 1);
     }
 
     /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla

@@ -457,6 +457,59 @@ fn dig(
     );
 }
 
+/// The `Dirt Layer Caves` pass (`WorldGen.cs:12067-12106`): `area * 3E-05`
+/// big worms (remix ×2 count) through the dirt band
+/// `[worldSurfaceLow, rockLayerHigh + 1)`, strength `Next(5, 15)`, steps
+/// `Next(30, 200)` (remix ×1.1 / ×1.9), the `Next(6) == 0` water lottery.
+/// The rejection loop mirrors Small Holes' but the spawn middle is
+/// INCLUSIVE here (`>= 0.45·w && <= 0.55·w`, `:12090`) and the depth
+/// comparison uses `Main.worldSurface`. The whole loop body is gated on
+/// `rockLayerHigh <= maxTilesY` (`:12081`) — true on every real world.
+/// Draw order per worm: `Next(6)` → x → y → rejections → strength → steps.
+pub(crate) fn pass_dirt_layer_caves(
+    world: &mut World,
+    rng: &mut Rng,
+    layers: &Layers,
+    gv: &GenVars,
+) {
+    let (width, height) = (world.width, world.height);
+    let remix = world.seeds.contains(SeedFlags::REMIX);
+    let world_surface = layers.world_surface;
+    let surface_high = layers.surface_high;
+    let rock_high = layers.rock_high;
+    let mut count = ((width * height) as f64 * 3e-5) as i32;
+    if remix {
+        count *= 2;
+    }
+    for _ in 0..count {
+        if rock_high > height as f64 {
+            continue; // the C# `if` wraps the whole body incl. its draws
+        }
+        let kind = if rng.range(0, 6) == 0 { -2 } else { -1 };
+        let mut x = rng.range(0, width);
+        let mut y = rng.range(layers.surface_low as i32, rock_high as i32 + 1);
+        // The rejection gate (`:12090`) — the middle terms are inclusive.
+        let rejected = |x: i32, y: i32| {
+            ((x < SMALL_HOLES_BEACH_AVOIDANCE || x > width - SMALL_HOLES_BEACH_AVOIDANCE)
+                && (y as f64) < surface_high)
+                || ((x as f64) >= width as f64 * 0.45
+                    && (x as f64) <= width as f64 * 0.55
+                    && (y as f64) < world_surface)
+        };
+        while rejected(x, y) {
+            x = rng.range(0, width);
+            y = rng.range(layers.surface_low as i32, rock_high as i32 + 1);
+        }
+        let mut strength = rng.range(5, 15);
+        let mut steps = rng.range(30, 200);
+        if remix {
+            strength = (strength as f64 * 1.1) as i32;
+            steps = (steps as f64 * 1.9) as i32;
+        }
+        dig(world, rng, x, y, strength, steps, kind, layers, gv);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -699,5 +752,24 @@ mod tests {
             world.tiles
         };
         assert_eq!(run(), run());
+    }
+
+    /// Dirt Layer Caves: the long worms open air through the dirt band and
+    /// are deterministic for a seed (a == b). The 1000×400 canvas gives
+    /// `400000 * 3E-05 = 12` worms of 30..199 steps.
+    #[test]
+    fn dirt_layer_caves_open_long_passages_deterministically() {
+        let run = || {
+            let mut world = flat_world(1000, 400, 100);
+            let mut gv = GenVars::default();
+            gv.water_line = 200;
+            gv.lava_line = 300;
+            pass_dirt_layer_caves(&mut world, &mut Rng(0xD12C), &layers_for(100, 400), &gv);
+            world.tiles
+        };
+        let tiles = run();
+        assert_eq!(tiles, run());
+        let air = tiles.iter().filter(|t| !t.active()).count();
+        assert!(air > 100, "12 long worms open {air} cells");
     }
 }

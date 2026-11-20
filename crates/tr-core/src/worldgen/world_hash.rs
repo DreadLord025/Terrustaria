@@ -259,6 +259,8 @@ mod tests {
     // sweep move this pin BY DESIGN; deferred to the gate.
     // W4-d101 pass 5 (code-only): `Small Holes` (`:12008-12066`) — 393
     // paired diggers on the 512² world; deferred to the gate.
+    // W4-d101 pass 6 (code-only): `Dirt Layer Caves` (`:12067-12106`) — 7
+    // long worms on the 512² world; deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -314,6 +316,8 @@ mod tests {
     // the default size) + the tidy sweep — deferred to the gate.
     // W4-d101 pass 5 (code-only): Small Holes' 7560 paired diggers carve
     // the underground — deferred to the gate.
+    // W4-d101 pass 6 (code-only): Dirt Layer Caves' 151 long worms —
+    // deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
