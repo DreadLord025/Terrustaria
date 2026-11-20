@@ -2408,8 +2408,10 @@ mod tests {
         assert_eq!(e.expanded[2], 11);
         assert_eq!(e.sh, 115);
         // pos_y = 1840: num5 = 105, num6 = (1840+240)/16 + 10 = 140.
-        // ly = l - 11: valid while l <= 125 → rows 105..=125 land (ly
-        // 94..=114), l = 126 throws → columns 0..8 keep 21 rows each.
+        // ly = l - 11: valid while l <= 125 → column 0 writes rows
+        // 105..=125 (ly 94..=114), then l = 126 throws. The catch wraps the
+        // WHOLE double loop (`:680/714`) — the abort ends the block, so
+        // columns 1..8 get NOTHING (the single-chunk precedent).
         e.wof_gross_light(
             WofGrossLight { position_x: 1600.0, direction: 1 },
             1.0,
@@ -2419,23 +2421,14 @@ mod tests {
         for lx in 0..9 {
             for ly in 0..e.sh {
                 let lit = e.states[(lx * e.sh + ly) as usize].r2 > 0.0;
-                assert_eq!(lit, (94..=114).contains(&ly), "cell {lx},{ly}");
+                let expect = lx == 0 && (94..=114).contains(&ly);
+                assert_eq!(lit, expect, "cell {lx},{ly}");
             }
         }
         // A camera above the rect aborts at the FIRST row of column 0 —
         // num5 = 320/16 - 10 = 10 < expanded top 11 → ly = -1 throws
         // before any write.
-        let mut e2 = LegacyLighting::new(LightMode::White);
-        let (w2, pos2, size2) = export_world();
-        e2.process_area(
-            &w2,
-            pos2,
-            size2,
-            &LightParams::default(),
-            &LegacyInputs::default(),
-            &[],
-            None,
-        );
+        let (_w2, mut e2, _p2, size2) = gross_engine();
         e2.wof_gross_light(
             WofGrossLight { position_x: 1600.0, direction: 1 },
             1.0,

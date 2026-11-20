@@ -25211,8 +25211,9 @@ Deliberate deviations:
   (`Main.Map.UpdateLighting`), gated on `mapEnabled && renderCount == 3`.
   **Ported in wave B** (see "The legacy minimap light export (S1-E-19 wave B)"
   below), including the netplay `mapTime = 1` poke (`:341-344`).
-- The Wall-of-Flesh `gross` light block (`:678-717`) needs `Main.wofNPCIndex` +
-  `Player.gross`, neither ported; the gate is false in the port.
+- The Wall-of-Flesh `gross` light block (`:678-717`) needed `Main.wofNPCIndex` +
+  `Player.gross`, neither ported at wave A; the gate was false in the port.
+  **Ported in S1-E-19d** (see "The WoF gross light block (S1-E-19d)" below).
 - Mode 0 (`doColors_Mode0_Swipe`, `:1087-1190`) is unreachable through the mode
   selector (Color selects the NEW engine, `Lighting.cs:40-44`); only the Mode
   1/2/3 swipes are ported. The Mode-0 water/honey decay table (`:874-929`) is
@@ -30415,6 +30416,63 @@ the sky-air 22 arm with a wet-cell counterexample) + 1 `tr-app`
 `s1_e_19b_the_legacy_light_export_seam_borrows_tiles_and_counter` (the seam
 borrows, the countdown floor, the re-arm and tile-write persistence). The
 12 wave-A goldens are untouched and must stay green when later run.
+
+## The WoF gross light block (S1-E-19d, 2026-11-20, code-only mode)
+
+`PreRenderPhase`'s Wall-of-Flesh `gross` block (`LegacyLighting.cs:678-717`)
+is ported verbatim into `legacy.rs::LegacyLighting::wof_gross_light`, called
+between the working-set clear (`:663-677`) and the scanner export
+(`:718-727`) — the C#'s own position. While the local player is Horrified
+(`Player.gross`, buff 37, ported by S1-E-7c) and the WoF lives
+(`Main.wofNPCIndex >= 0`), a 9-column strip beside the boss raises the
+WORKING `R2/G2/B2` to a demon-torch-coloured floor:
+
+- `:682-683` rows: `(int)cameraY/16 - 10 ..= (int)(cameraY+screenH)/16 + 10`
+  (truncating casts, not floor — kept).
+- `:684-686` columns: `(int)npc.position.X/16`, then `+2` when
+  `direction <= 0` else `-3`, through `+8` inclusive (9 columns).
+- `:687-692` floors, verbatim factor order: R `(0.5*d + 1*(1-d)) * 0.2`,
+  G `0.3 * 0.1`, B `(1*d + 0.5*(1-d)) * 0.3` with `d = Main.demonTorch`
+  (`LightParams.demon_torch`). The f32 G product rounds to 0.030000001,
+  not the decimal 0.03 — the witnesses derive, not literalise.
+- `:699-710` per-channel raise-only (`if R2 < floor`), no flags touched.
+
+The C# indexing quirk is kept verbatim: `:695` reads `_states[k - num7]` —
+the strip's COLUMNS are screen-anchored at local 0..8 regardless of the
+WoF's world x/facing — while `:698`'s rows are world-anchored
+(`l - _expandedRectTop`). The scanner export that follows overwrites the
+floor wherever it seeds; the visible effect is the swipe spread from the
+strip's edges (and the floor surviving in unseeded cells).
+
+Seam: `LegacyInputs.wof_gross: Option<WofGrossLight>` (position_x +
+direction). The driver (`app/frame/draw.rs`) resolves the `:678` gate —
+`world.wof_npc_index >= 0 && player.gross` — and indexes `npcs` for the
+snapshot; an out-of-range index is the C# try's abort before any write
+(`:684`), i.e. `None`. `Main.wofNPCIndex` itself is the S1-D-3 W-1 mirror
+(`world_sim/npcs.rs`, `NPC.cs:25724`/`:8404-8407`).
+
+Deliberate deviations:
+- The `try/catch` (`:680/714`) becomes an abort-on-out-of-bounds early
+  return (the wave-B map-export precedent): the catch wraps the WHOLE
+  double loop, so the first bad index ends the block; cells written before
+  it persist and the rest of `PreRenderPhase` runs either way.
+- The block draws NO random numbers. A gated-ON run can still shift the
+  wet swipe draws DOWNSTREAM (the floor raises carries past White's 0.0185
+  cutoff into `WithModifier`/`Next(98,100)` arms) — the C# does the same;
+  only the block itself is RNG-free. Gate-off (`None`, the vanilla
+  single-player default without a Horrified player) is byte-identical to
+  the pre-port engine.
+
+Tests-as-code (written, NOT run — code-only mode): 7
+`legacy::tests::wof_gross_*` — the demon-torch-1 floor over the exact
+9x36 cell window, the screen-x/world-y anchoring quirk (two
+positions/facings write the same local cells; a 16px camera shift moves
+the row band), the demon-torch-0 ramp end, raise-only per channel, the
+catch-abort extent (mid-strip throw keeps column 0's prior rows only;
+above-rect throw writes nothing), the RNG-free block, and gate-off
+byte-identical determinism with wet swipe draws in play. The wave-A
+goldens and wave-B export tests are untouched.
+
 ## The Creeper family (S1-D-3 aiStyle-55, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/npc_ai_style55.rs` ports `NPC.AI`'s whole
