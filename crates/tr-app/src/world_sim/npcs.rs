@@ -6618,6 +6618,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     zone_jungle: app.scene_metrics.zone_jungle,
                     // `Player.ZoneEvil` = the corrupt or crimson zone.
                     zone_evil: app.scene_metrics.zone_corrupt || app.scene_metrics.zone_crimson,
+                    // The town gate's explicit `!ZoneCrimson` (`NPC.cs:799`,
+                    // W4-c41) — survives the infected-seed flag clear.
+                    zone_crimson: app.scene_metrics.zone_crimson,
+                    // `Main.infectedSeed` ← the world's `worldIsInfected`
+                    // micro seed (`NPC.cs:795-798`, W4-c41).
+                    infected_seed: app
+                        .world
+                        .micro_seeds
+                        .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
                     zone_temple: app.scene_metrics.zone_lihzhard_temple,
                     zone_underground_desert: app.scene_metrics.zone_underground_desert,
                     zone_meteor: app.scene_metrics.zone_meteor,

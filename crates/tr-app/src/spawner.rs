@@ -48,6 +48,11 @@ pub struct SpawnFlags {
     pub zone_underground_desert: bool,
     pub zone_jungle: bool,
     pub zone_evil: bool,
+    /// `Player.ZoneCrimson` — the town gate's explicit `!ZoneCrimson` term
+    /// (`NPC.cs:799`), which survives `Main.infectedSeed`'s clear of the
+    /// corrupt/crimson `flag` (`:794-798`). W4-c41: split out of `zone_evil`
+    /// so the infected-seed world opens the gate in corruption only.
+    pub zone_crimson: bool,
     pub zone_meteor: bool,
     pub zone_temple: bool,
     pub zone_hallow_deep: bool,
@@ -66,6 +71,11 @@ pub struct SpawnFlags {
     pub enemy_spawns: bool,
     /// `Main.wofNPCIndex >= 0` (the Wall of Flesh is alive).
     pub wof_active: bool,
+    /// `Main.infectedSeed` (`WorldGen.cs`'s `worldIsInfected` micro seed →
+    /// `MicroSeedFlags::WORLD_IS_INFECTED`): clears the town gate's
+    /// corrupt/crimson `flag` (`NPC.cs:795-798`) — the explicit
+    /// `!ZoneCrimson` term (`:799`) still closes it in crimson. W4-c41.
+    pub infected_seed: bool,
 }
 
 /// The wave-20 boss kinds the `Spawner` ctor weights (`NPC.cs:273-286`):
@@ -446,19 +456,23 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
     // (unless it is night), no evil/crimson zone, no meteor zone and no
     // Old-One-army zone, the town count picks a ladder and draws `Main.rand`
     // for the `noWorms` latch and the `spawnFriendly`/spawnRate rescale.
-    // `flag = ZoneCorrupt || ZoneCrimson` (`:794-798`) folded with the
-    // explicit `!ZoneCrimson` term is one `!corrupt && !crimson` check — the
-    // port's `zone_evil`. `ZoneOldOneArmy` has no scene source yet (S1-E-12)
-    // and `inRemixStartingArea` (`:801`, remix-only) is constants-off — both
+    // `flag = ZoneCorrupt || ZoneCrimson` (`:794`), cleared by
+    // `Main.infectedSeed` (`:795-798`, W4-c41) — but the gate's explicit
+    // `!this.ZoneCrimson` term (`:799`) survives the clear, so an infected
+    // world opens the gate in corruption and stays closed in crimson.
+    // `ZoneOldOneArmy` has no scene source yet (S1-E-12) and
+    // `inRemixStartingArea` (`:801`, remix-only) is constants-off — both
     // false. `WorldGen.Skyblock.lowTiles` (the underworld-1 guard `:805` /
     // surface-1 guard `:858`), the shadow candle's `townNPCs = 0`
     // (`:419-424`) and `Main.expertMode` (the World carries no game mode)
     // are constants-off too. The draws ride the caller's stream in the C#'s
     // order; `townNPCs == 0` matches no arm and draws nothing.
+    let flag = f.zone_evil && !f.infected_seed; // `:794-798`
     if !ctx.invaders
         && ((!f.blood_moon && !f.moon_event) || ctx.day_time)
         && (!f.eclipse || !ctx.day_time)
-        && !f.zone_evil
+        && !flag
+        && !f.zone_crimson
         && !f.zone_meteor
     {
         // `player.Center.Y / 16f > (float)Main.UnderworldLayer` (`:801`).
@@ -2396,10 +2410,10 @@ mod tests {
         // `NPC.cs:799`: `!invaders && ((!bloodMoon && !pumpkinMoon &&
         // !snowMoon) || dayTime) && (!eclipse || !dayTime) && !flag &&
         // !ZoneCrimson && !ZoneMeteor && !ZoneOldOneArmy` — each closure
-        // leaves the stream untouched and the flags false. The port's
-        // `zone_evil` folds `flag = ZoneCorrupt || ZoneCrimson` (`:794-798`)
-        // with the explicit `!ZoneCrimson` term into one `!corrupt &&
-        // !crimson` check.
+        // leaves the stream untouched and the flags false. The port reads
+        // `flag = zone_evil && !infected_seed` (`:794-798`, W4-c41) plus the
+        // explicit `!zone_crimson` term; on a classic world (`infected_seed`
+        // false) `zone_evil` alone closes the gate as before.
         let w = ground();
         let mut cases: Vec<SpawnContext<'_>> = Vec::new();
         let mut night_blood = ctx(&w, 25.0 * 16.0, false);
@@ -2619,6 +2633,252 @@ mod tests {
         c.invaders = true;
         let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+    }
+
+    // ---- W4-c41: the town-block + invaders re-verification census ----
+
+    #[test]
+    fn the_infected_seed_opens_the_town_gate_in_corruption_only() {
+        // `NPC.cs:794-799`: `flag = ZoneCorrupt || ZoneCrimson`, cleared by
+        // `Main.infectedSeed` (`:795-798`) — but the gate's explicit
+        // `!this.ZoneCrimson` term survives the clear. The pre-fix port
+        // folded both into `zone_evil` and closed the gate on an infected
+        // corruption world (the dirty case below).
+        let w = ground();
+        let cases = [
+            // (zone_evil, zone_crimson, infected_seed, gate_open)
+            (true, false, false, false), // classic corruption closes
+            (true, false, true, true),   // infected corruption OPENS (the fix)
+            (true, true, true, false),   // infected crimson stays closed
+            (false, true, false, false), // crimson alone closes
+            (false, true, true, false),  // infected crimson alone still closes
+        ];
+        for (i, (evil, crimson, infected, open)) in cases.into_iter().enumerate() {
+            let mut c = ctx(&w, 25.0 * 16.0, true);
+            c.town_npcs = 2;
+            c.flags.zone_evil = evil;
+            c.flags.zone_crimson = crimson;
+            c.flags.infected_seed = infected;
+            let seed = 11;
+            let got = post_draws(seed, |rng| {
+                let r = get_spawn_rate(&c, rng);
+                if open {
+                    assert!(r.no_worms, "case {i}: the surface latch (`:882`)");
+                } else {
+                    assert!(!r.no_worms && !r.spawn_friendly, "case {i} closed");
+                }
+            });
+            if open {
+                assert_ne!(got, fresh_draws(seed), "case {i}: the ladder drew");
+            } else {
+                assert_eq!(got, fresh_draws(seed), "case {i}: stream untouched");
+            }
+        }
+    }
+
+    #[test]
+    fn the_invaders_override_outranks_the_chain_but_yields_to_the_dungeon_ten() {
+        // The override (`NPC.cs:781-785`) runs AFTER the floor/cap
+        // (`:749-756`), so it overwrites whatever the chain produced; the
+        // pre-Skeletron dungeon arm (`:786-789`) runs AFTER it and takes
+        // the rate back to 10 while the override's max 11 stays.
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.flags.blood_moon = true; // the chain would give 108/10 (`:540-548`)
+        c.invaders = true;
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+        c.flags.zone_dungeon = true; // `:786-789` after the override
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (10, 11));
+        c.flags.downed_boss3 = true; // Skeletron down — the dungeon arm off
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+    }
+
+    #[test]
+    fn the_invaders_rate_stage_draws_nothing() {
+        // The override (`NPC.cs:781-785`) is pure arithmetic and the town
+        // gate's `!invaders` term (`:799`) closes the block — the whole
+        // rate stage consumes zero draws even with town NPCs and a
+        // graveyard up (the invasion ladder's draws come later, in
+        // `SpawnAnNPC`).
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, true);
+        c.invaders = true;
+        c.town_npcs = 3;
+        c.flags.zone_graveyard = true;
+        let seed = 7;
+        let got = post_draws(seed, |rng| {
+            let r = get_spawn_rate(&c, rng);
+            assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+            assert!(!r.no_worms && !r.spawn_friendly);
+        });
+        assert_eq!(got, fresh_draws(seed), "the rate stage must draw nothing");
+    }
+
+    /// One C#-transcribed reference run of the town block (`NPC.cs:799-923`):
+    /// consumes the arm's draws from `reference` in the vanilla order (the
+    /// census — every width and condition re-derived from the source, not
+    /// from the port) and returns the expected (rate, max, noWorms,
+    /// spawnFriendly). `base` is the (rate, max) pair the chain handed the
+    /// block (the candle modifiers already applied).
+    fn town_block_reference(
+        reference: &mut UnifiedRandom,
+        underworld: bool,
+        town: i32,
+        graveyard: bool,
+        peace_candle: bool,
+        base: (i32, i32),
+    ) -> (i32, i32, bool, bool) {
+        let (mut rate, mut max) = base;
+        let (mut nw, mut fr) = (false, false);
+        if underworld {
+            match town {
+                1 => {
+                    nw = reference.next_max(2) == 0; // `:807`
+                    if reference.next_max(10) == 0 {
+                        // `:811` — always drawn, the `if` is not an else-if
+                        fr = true;
+                        max = (max as f32 as f64 * 0.5) as i32; // `:814`
+                    } else {
+                        rate = (rate as f32 as f64 * 1.25) as i32; // `:818`
+                    }
+                }
+                2 => {
+                    nw = reference.next_max(4) != 0; // `:824`
+                    if reference.next_max(5) == 0 {
+                        // `:828`
+                        fr = true;
+                        max = (max as f32 as f64 * 0.5) as i32; // `:831`
+                    } else {
+                        rate = (rate as f32 as f64 * 1.5) as i32; // `:835`
+                    }
+                }
+                _ => {
+                    nw = reference.next_max(10) != 0; // `:840`
+                    if reference.next_max(3) == 0 {
+                        // `:844`
+                        fr = true;
+                        max = (max as f32 as f64 * 0.5) as i32; // `:847`
+                    } else {
+                        rate = (rate as f32 * 2.0) as i32; // `:851` `(float)x * 2f`
+                    }
+                }
+            }
+        } else {
+            nw = true; // `:857/:882/:904` — the unconditional surface latch
+            // `:860/:883/:905`: `ZoneGraveyard && (!ZonePeaceCandle ||
+            // Next(3) == 0)` — the gate draw fires only against a candle.
+            let graveyard_arm = graveyard && (!peace_candle || reference.next_max(3) == 0);
+            match town {
+                1 => {
+                    if graveyard_arm {
+                        rate = (rate as f32 as f64 * 1.66) as i32; // `:862`
+                        if reference.next_max(9) == 1 {
+                            // `:863`
+                            fr = true;
+                            max = (max as f32 as f64 * 0.6) as i32; // `:866`
+                        }
+                    } else if reference.next_max(3) == 1 {
+                        // `:869` — a SECOND Next(3) after a failed gate
+                        fr = true;
+                        max = (max as f32 as f64 * 0.6) as i32; // `:872`
+                    } else {
+                        rate = (rate as f32 * 2.0) as i32; // `:876`
+                    }
+                }
+                2 => {
+                    if graveyard_arm {
+                        rate = (rate as f32 as f64 * 2.33) as i32; // `:885`
+                        if reference.next_max(6) == 1 {
+                            // `:886`
+                            fr = true;
+                            max = (max as f32 as f64 * 0.6) as i32; // `:889`
+                        }
+                    } else if reference.next_max(3) != 0 {
+                        // `:892`
+                        fr = true;
+                        max = (max as f32 as f64 * 0.6) as i32; // `:895`
+                    } else {
+                        rate = (rate as f32 * 3.0) as i32; // `:899`
+                    }
+                }
+                _ => {
+                    if graveyard_arm {
+                        rate = (rate as f32 * 3.0) as i32; // `:907`
+                        if reference.next_max(3) == 1 {
+                            // `:908`
+                            fr = true;
+                            max = (max as f32 as f64 * 0.6) as i32; // `:911`
+                        }
+                    } else {
+                        fr = true; // `:918` (`Main.expertMode` off, `:916` draws nothing)
+                        max = (max as f32 as f64 * 0.6) as i32; // `:920`
+                    }
+                }
+            }
+        }
+        (rate, max, nw, fr)
+    }
+
+    #[test]
+    fn the_town_block_census_replays_the_c_draw_order_across_seeds() {
+        // The CRITICAL census: every town arm × depth × graveyard/candle
+        // combination, 63 seeds each — the port's `SpawnRate` AND its whole
+        // stream tail must equal the C#-transcribed reference (the draw
+        // widths, order and short-circuits of `NPC.cs:799-923`).
+        let w = ground();
+        // The graveyard ladders are surface-only (`NPC.cs:855-921`); the
+        // underworld arms (`:803-853`) never read the graveyard/candles.
+        const UNDERWORLD_COMBOS: &[(bool, bool)] = &[(false, false)];
+        const SURFACE_COMBOS: &[(bool, bool)] =
+            &[(false, false), (true, false), (true, true)];
+        for underworld in [false, true] {
+            let y = if underworld { 620.0 * 16.0 } else { 25.0 * 16.0 };
+            let combos = if underworld { UNDERWORLD_COMBOS } else { SURFACE_COMBOS };
+            for town in [1, 2, 3] {
+                for &(graveyard, peace) in combos {
+                    for seed in 1..64u64 {
+                        let mut c = ctx(&w, y, true);
+                        c.town_npcs = town;
+                        c.flags.zone_graveyard = graveyard;
+                        c.flags.zone_peace_candle = peace;
+                        // The chain ahead of the block: the peace candle
+                        // alone rescales 600→780 / 5→3 (`:738-739`); the
+                        // underworld depth ladder doubles the cap 5→10
+                        // (`:485`).
+                        let base = if underworld {
+                            (600, 10)
+                        } else if peace {
+                            (780, 3)
+                        } else {
+                            (600, 5)
+                        };
+                        let mut reference = UnifiedRandom::new(seed as i32);
+                        let want = town_block_reference(
+                            &mut reference,
+                            underworld,
+                            town,
+                            graveyard,
+                            peace,
+                            base,
+                        );
+                        let mut rng = UnifiedRandom::new(seed as i32);
+                        let r = get_spawn_rate(&c, &mut rng);
+                        let got = (r.spawn_rate, r.max_spawns, r.no_worms, r.spawn_friendly);
+                        assert_eq!(
+                            got, want,
+                            "underworld {underworld} town {town} graveyard {graveyard} peace {peace} seed {seed}"
+                        );
+                        assert_eq!(
+                            rng, reference,
+                            "the draw census: underworld {underworld} town {town} graveyard {graveyard} peace {peace} seed {seed}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     use super::*;
