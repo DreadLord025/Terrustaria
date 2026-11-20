@@ -18468,8 +18468,10 @@ Documented gaps, all deliberate:
 - **The Hallowed `onHitDodge` grant** (`:6938-6941`, buff 59's source) is an
   armor-set row вЂ” the buff can be granted only by tests/debug today.
 - **`long_invince` arming**: the Star Veil 862 (`:15147`) arms it with
-  S1-C-7 wave B; the other sources (item 6187 et al.,
-  `:14590/:14627/:15589`) ride later waves.
+  S1-C-7 wave B; the Cross Necklace 554 (`:15589`) and the Crossed Heart
+  Necklace 6187 (`:14627`) arm it with W4-f48; the Seraph Necklace 6180
+  (`:14590`) rides a later wave with its unported `accHarpyCharm`/
+  `accSeraphNecklace` halves.
 - **The panic/squire hurt buffs** (`:38242-38247`, `AddBuff(63, 480)` /
   `AddBuff(205, 300)`) ride S1-C-7 (wave B arms the 1578 honeycomb half only вЂ”
   the `panic` buff itself stays deferred, see "The hurt modifiers").
@@ -18495,6 +18497,13 @@ Documented gaps, all deliberate:
   `Player.cs:38197`) вЂ” a black belt eats spike, lava and fall damage
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
+- **The contact-lane parry extension** (W4-f48 census): after an NPC hit,
+  `Update_NPCCollision` runs `GiveImmuneTimeForCollisionAttack(longInvince ?
+  60 : 30)` + `AddBuff(198, 300)` under `flag3 = CanParryAgainst(...)`
+  (`Player.cs:31368/:31427-31431`) вЂ” the Tabi/Black-Belt parry machine and
+  the ParryDamageBuff (198) are unported families, so the Cross Necklace's
+  60/30 half has no consumer; its two ported halves (the accepted-hurt
+  80/40 window and the dodge pair's 120) land with the 554 equip arm.
 
 ## The magic cuffs (S1-C-7 wave A, 2026-11-18)
 

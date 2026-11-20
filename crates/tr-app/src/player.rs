@@ -1401,8 +1401,10 @@ pub struct Player {
     /// (`:15060`/`:15064`), 6189 (`:14633`), 3223 (`:15087` — the C# carries
     /// the `Item` reference, the port's bool is the armed-flag equivalent) and
     /// buff 59 (`:10075-10077`); `long_invince` arms from the Star Veil 862
-    /// (`:15147`, S1-C-7 wave B) — its other sources (6187 et al.) ride later
-    /// waves. `ResetEffects` clears them every
+    /// (`:15147`, S1-C-7 wave B), the Cross Necklace 554 (`:15587-15590`)
+    /// and the Crossed Heart Necklace 6187 (`:14625-14628`, W4-f48); the
+    /// Seraph Necklace 6180 (`:14590`) rides a later wave with its unported
+    /// `accHarpyCharm`/`accSeraphNecklace` halves. `ResetEffects` clears them every
     /// frame (`:18440/:18617/:18661-18662`/`:18719`) and the `Hurt` roll block
     /// (`:38214-38241`) consumes them.
     pub black_belt: bool,
@@ -5352,6 +5354,14 @@ impl Player {
                 self.magic_cuffs = true;
                 self.mana_magnet = true;
             }
+            // W4-f48 — the Cross Necklace 554 (`ApplyEquipFunctional`
+            // `Player.cs:15587-15590`): the bare `longInvince = true` — the
+            // accepted hit's immunity window doubles (40→80, 1-damage 20→40,
+            // `Hurt` `:38385`, the `iframes_for` pair the port already feeds)
+            // and the dodge handlers' `SetImmuneTimeForAllTypes` reads the
+            // same flag (120/80, `:38025`). `ResetEffects` clears it
+            // (`:18719`, the dodge-family clears above).
+            554 => self.long_invince = true,
             // The Lucky Coin family (`Player.cs:14975-14996`): 855 Lucky
             // Coin arms `hasLuckyCoin` + `hasLuck_LuckyCoin`; 3033 Gold Ring
             // arms `goldRing` alone; 3034 Coin Ring arms goldRing + the
@@ -15384,6 +15394,67 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!(!p.star_cloak && !p.honey_comb && !p.bee_cloak_override);
         assert!(!p.strong_bees && !p.snake_cloak_override);
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_arms_long_invince_and_clears() {
+        // `ApplyEquipFunctional` 554 (`Player.cs:15587-15590`): the bare
+        // `longInvince = true`; `ResetEffects` clears it (`:18719`) and the
+        // fold re-arms per tick.
+        let p = player_with_accessory(554);
+        assert!(p.long_invince, "the Cross Necklace arms longInvince (:15589)");
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.update(&w, PlayerInput::default());
+        assert!(p.long_invince);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.long_invince, "the clear re-folds without the source");
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_doubles_the_accepted_hurt_window() {
+        // `Hurt`'s `num7` (`Player.cs:38385`): damage != 1 → 80 : 40, exactly
+        // 1 → 40 : 20 — the port's `iframes_for` already reads `long_invince`;
+        // this pins the EQUIP source through the full hurt.
+        let w = ground_world();
+        let mut plain = Player::spawn(&w);
+        let mut cross = player_with_accessory(554);
+        assert!(plain.hurt(20, plain.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(plain.immune_time, 40);
+        assert!(cross.hurt(20, cross.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(cross.immune_time, 80, "the doubled normal window");
+        assert!((cross.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+        // The exactly-1 lane: 20 → 40.
+        plain.immune = false;
+        plain.hurt_cd = 0.0;
+        cross.immune = false;
+        cross.hurt_cd = 0.0;
+        assert!(plain.hurt(1, plain.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(plain.immune_time, 20);
+        assert!(cross.hurt(1, cross.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(cross.immune_time, 40, "the doubled 1-damage window");
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_lifts_the_dodge_pair_to_120_without_draws() {
+        // The dodge handlers' `SetImmuneTimeForAllTypes(longInvince ? 120 :
+        // 80)` (`Player.cs:38025`) reads the same flag; the necklace itself
+        // draws NOTHING (the belt's `Next(10)` stays the only roll).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.equipped[4] = 963;
+        p.update(&w, PlayerInput::default());
+        assert!(p.long_invince && p.black_belt);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(rng.draws, vec![(0, 10)], "the necklace adds no draw");
+        assert!(
+            (p.hurt_cd - 120.0 / 60.0).abs() < 1e-4,
+            "the long-invince dodge window"
+        );
     }
 
     #[test]
