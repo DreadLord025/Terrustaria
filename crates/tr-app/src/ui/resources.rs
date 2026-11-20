@@ -472,8 +472,9 @@ pub(crate) fn buff_tooltip(p: &Player, buff: i32) -> String {
 /// hovered buff is the Monster Banner (147), `Main.bannerMouseOver` is set and
 /// every banner type the player owns prints its NPC name under the tooltip.
 /// `HasNPCBannerBuff` is the port's `SceneMetrics::npc_banner_buff` scan
-/// (`Player.cs:44197`), and `BannerSystem.BannerToNPC` is
-/// `tr_core::bestiary::banner_to_npc`.
+/// (`Player.cs:44197`) — the `NPCtoBanner` index space, the same space the
+/// scan's -21-shifted decode writes (`SceneMetrics.cs:424-440`) — and
+/// `BannerSystem.BannerToNPC` is `tr_core::bestiary::banner_to_npc`.
 pub(crate) fn banner_hover_names(npc_banner_buff: &[bool]) -> Vec<String> {
     let mut out = Vec::new();
     for (banner, owned) in npc_banner_buff.iter().enumerate() {

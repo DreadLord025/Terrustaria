@@ -189,9 +189,11 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
             {
                 metrics.ocean_sand_tile_count += 1;
             }
-            // The M2-BUFF-8 banner arm (`SceneMetrics.cs:416-445`): tile 91
-            // decodes to the banner id; the strength-enabled ones raise the
-            // buff (the port's family banners all carry the 1.5/0.75 pair).
+            // The M2-BUFF-8 banner arm (`SceneMetrics.cs:410-443`): tile 91
+            // decodes to the `NPCBannerBuff` index (the C#'s `num3`, the
+            // -21-shifted `NPCtoBanner` space — `banner_num_from_frame`);
+            // the strength-enabled ones raise the buff (the port's family
+            // banners all carry the 1.5/0.75 pair).
             if tile.kind == 91 {
                 if let Some(banner) =
                     tr_core::bestiary::banner_num_from_frame(tile.frame_x, tile.frame_y)
@@ -655,6 +657,13 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
 
 #[cfg(test)]
 mod tests {
+    // W4-d129 census witnesses (written-not-run, code-only lane): the scan
+    // window census, the RNG-free property, the aura frame edges, the banner
+    // decode convention pin and the dungeon-zone gate. The banner pin rides
+    // the W4-f31 reconciliation (the C# num3 / NPCtoBanner index space).
+    #[path = "scene_scan_w4_d129.rs"]
+    mod scene_scan_w4_d129;
+
     /// A ground world with one aura tile set at `(x, y)`.
     fn aura_world(kind: u16, frame_x: i16, frame_y: i16) -> World {
         let mut w = World::new("t".into(), 200, 200);
@@ -678,6 +687,47 @@ mod tests {
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         w.compute_column_surface();
         w
+    }
+
+    #[test]
+    fn the_placed_banner_buff_lands_in_the_npc_to_banner_space() {
+        // W4-f31 (the d129 census finding's reconciliation): the C# tile-91
+        // arm (`SceneMetrics.cs:410-443`) indexes `NPCBannerBuff[num3]` —
+        // the -21-shifted decode, the `NPCtoBanner` space the placement
+        // style offsets from (`Item.cs:19230`'s `placeStyle = 22 + type -
+        // 1615` = banner + 21 over `BannerToItem`'s base band,
+        // `BannerSystem.cs:400`). The Slime Banner item 1683 places style
+        // 90 -> frameX 1620; the buff lands at `npc_to_banner(1)` = 69,
+        // NOT at the place style 90.
+        let m = scan_scene_at(
+            &aura_world(91, 1620, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
+        assert!(m.has_banner);
+        assert!(m.npc_banner_buff[69], "the buff rides the NPCtoBanner index");
+        assert!(!m.npc_banner_buff[90], "not the place-style index");
+        // The buff reader (`Player.GetBannerBuffEffect`, `Player.cs:20483`)
+        // and the hover list (`Main.cs:21360-21388`) read the same space.
+        assert_eq!(
+            crate::banners::banner_buff_for(&m, 1),
+            Some((1.5, 0.75)),
+            "the placed Slime banner arms the Blue Slime buff"
+        );
+        let names = crate::ui::resources::banner_hover_names(&m.npc_banner_buff);
+        assert_eq!(names.len(), 1, "{names:?}");
+        // A blank-strip cell (frameX < 396, frameY < 54) raises nothing.
+        let m = scan_scene_at(
+            &aura_world(91, 378, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
+        assert!(!m.has_banner);
+        assert!(m.npc_banner_buff.iter().all(|b| !b));
     }
 
     #[test]

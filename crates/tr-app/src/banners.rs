@@ -70,7 +70,11 @@ impl BannerSystem {
 
 /// `Player.GetBannerBuffEffect` (`Player.cs:20483-20493`) + the
 /// `BannerEffect` classic sample: `Some((1.5, 0.75))` when the NPC's banner
-/// stands in the scene window, `None` otherwise.
+/// stands in the scene window, `None` otherwise. `npc_banner_buff` lives
+/// in the `NPCtoBanner` index space — the C# scan writes
+/// `NPCBannerBuff[num3]` with the -21-shifted decode
+/// (`SceneMetrics.cs:424-440`, the port's `banner_num_from_frame`), the
+/// same space this reader's `npc_to_banner` lookup reads.
 pub fn banner_buff_for(
     metrics: &tr_core::scene::SceneMetrics,
     net_id: i32,
