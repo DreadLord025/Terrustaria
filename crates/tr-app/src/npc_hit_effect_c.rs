@@ -29,6 +29,8 @@
 //! | sites | C# lines | arm |
 //! | --- | --- | --- |
 //! | 71-80 | `:82206-82215` | the 551 Betsy FLIPPED branch (`spriteDirection == -1`) |
+//! | 81-85 | `:82237-82241` | the 572/573 DD2 Kobold Walker death (5 gores) |
+//! | 86-90 | `:82262-82266` | the 574/575 DD2 Kobold Flyer death (5 gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -140,6 +142,57 @@ fn betsy_flipped_death(
     gore.new_gore(rng, world, pos + Vec2::new(142.0, 36.0), vel, 1086, s); // :82215
 }
 
+/// The 572/573 DD2 Kobold Walker death (`NPC.cs:82232-82241`, sites 81-85):
+/// the 20-dust type-5 burst, then 5 gores 993/996/995/994/994 at
+/// `Center - (10,10)` (+0/+20/+20/+34/+34 Y). The two tracked-sound stops
+/// (`:82230-82231`, `localAI[0]`/`localAI[1]`) draw NO random numbers — the
+/// tracked-sound seam is the wiring wave's (the S1-D-4b convention).
+fn kobold_walker_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 20);
+    // `:82236` — vector6 = Center - (10,10).
+    let v6 = center(npc) - Vec2::new(10.0, 10.0);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, v6, vel, 993, s); // :82237
+    gore.new_gore(rng, world, Vec2::new(v6.x, v6.y + 20.0), vel, 996, s); // :82238
+    gore.new_gore(rng, world, Vec2::new(v6.x, v6.y + 20.0), vel, 995, s); // :82239
+    gore.new_gore(rng, world, Vec2::new(v6.x, v6.y + 34.0), vel, 994, s); // :82240
+    gore.new_gore(rng, world, Vec2::new(v6.x, v6.y + 34.0), vel, 994, s); // :82241
+}
+
+/// The 574/575 DD2 Kobold Flyer death (`NPC.cs:82256-82266`, sites 86-90):
+/// the 20-dust type-5 burst, then 5 gores 1050/1051/1052/1053/1054 at
+/// `Center - (30,10)` (+10/+30/+30/+0/+0 Y). The tracked-sound stop
+/// (`:82255`, `localAI[2]`) draws no random numbers (the wiring seam).
+fn kobold_flyer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 20);
+    // `:82260-82261` — num58 = 1050; vector7 = Center - (30,10).
+    let v7 = center(npc) - Vec2::new(30.0, 10.0);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, Vec2::new(v7.x, v7.y + 10.0), vel, 1050, s); // :82262
+    gore.new_gore(rng, world, Vec2::new(v7.x, v7.y + 30.0), vel, 1051, s); // :82263
+    gore.new_gore(rng, world, Vec2::new(v7.x, v7.y + 30.0), vel, 1052, s); // :82264
+    gore.new_gore(rng, world, Vec2::new(v7.x, v7.y), vel, 1053, s); // :82265
+    gore.new_gore(rng, world, Vec2::new(v7.x, v7.y), vel, 1054, s); // :82266
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); only the death
@@ -163,6 +216,14 @@ pub fn hit_effect_c(
     // is wave B's).
     if npc_type == 551 && npc.hp <= 0 && npc.sprite_dir == -1 {
         betsy_flipped_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82219-82243` — the 572/573 DD2 Kobold Walker arm (sites 81-85).
+    if (npc_type == 572 || npc_type == 573) && npc.hp <= 0 {
+        kobold_walker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82244-82268` — the 574/575 DD2 Kobold Flyer arm (sites 86-90).
+    if (npc_type == 574 || npc_type == 575) && npc.hp <= 0 {
+        kobold_flyer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -254,6 +315,75 @@ mod tests {
             let _kx = twin.next_range(-20, 21); // NewGore X kick
         }
         assert_eq!(rng.peek(), twin.peek(), "the flipped death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:82237-82241` — the Kobold Walker death: 5 gores
+    /// 993/996/995/994/994 at Center-(10,10) with the +0/+20/+20/+34/+34
+    /// Y ladder, after the 20-dust burst.
+    #[test]
+    fn w4_f10_the_kobold_walker_death_spawns_the_five_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 46.0);
+        n.vx = 1.5;
+        n.vy = -0.5;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(9);
+        kobold_walker_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, -1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![993, 996, 995, 994, 994]);
+        // Center = (120,123); vector6 = (110,113).
+        assert_eq!(gore.slot(0).position, Vec2::new(110.0, 113.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(110.0, 133.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(110.0, 147.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(110.0, 147.0));
+    }
+
+    /// `NPC.cs:82262-82266` — the Kobold Flyer death: 5 gores
+    /// 1050-1054 at Center-(30,10) with the +10/+30/+30/+0/+0 Y ladder.
+    #[test]
+    fn w4_f10_the_kobold_flyer_death_spawns_the_five_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 54.0, 44.0);
+        n.vx = -2.0;
+        n.vy = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(13);
+        kobold_flyer_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1050, 1051, 1052, 1053, 1054]);
+        // Center = (127,122); vector7 = (97,112).
+        assert_eq!(gore.slot(0).position, Vec2::new(97.0, 122.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(97.0, 142.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(97.0, 112.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(97.0, 112.0));
+    }
+
+    /// `NPC.cs:82219-82268` — both kobold arms draw the 20-dust census then
+    /// only the NewGore kicks (5 gores x 2); the twin replay pins the stream.
+    #[test]
+    fn w4_f10_the_kobold_deaths_mirror_the_csharp_draws() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 46.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(21);
+        kobold_walker_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let mut twin = UnifiedRandom::new(21);
+        for _ in 0..20 {
+            let _px = twin.next_max(36);
+            let _py = twin.next_max(42);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the walker death mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
