@@ -119,6 +119,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "lihzahrd temple" => PassMessage::Gen(70),
         // WorldGen.cs:16980.
         "cave houses" => PassMessage::Gen(30),
+        // WorldGen.cs:16857 (W4-g37 B1).
+        "statues" => PassMessage::Gen(29),
         // WorldGen.cs:20910 (Micro Biomes — the grouped steps).
         "campsites" | "sword shrines" | "mahogany trees" | "mining explosives" | "thin ice" => PassMessage::Gen(76),
         // WorldGen.cs:16309 (ShellPilesMarblePilesAndSpikePits — the

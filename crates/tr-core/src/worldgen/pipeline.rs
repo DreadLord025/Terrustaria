@@ -47,6 +47,7 @@ use super::micro_surface;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
+use super::passes_b;
 use super::spider_gem_moss;
 use super::structures;
 use super::surface;
@@ -1315,6 +1316,9 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("hell forts", "", step_hell_forts),
     step!("lihzahrd temple", "Jungle Temple", step_temple),
     step!("temple part 2", "Temple", step_temple_part2),
+    // The vanilla Statues slot (`WorldGen.cs:16853`): immediately before
+    // Buried Chests (`:16971`) — W4-g37 B1. Own `pass_rng("Statues")` stream.
+    step!("statues", "Statues", step_statues),
     step!("cave houses", "Buried Chests", step_cave_houses),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
@@ -2314,6 +2318,30 @@ fn step_cave_houses(
     );
 }
 
+/// The vanilla Statues slot (`WorldGen.cs:16853-16970`) — W4-g37 B1: the
+/// width-scaled statue cycle with the ocean-depths rejection search and the
+/// four trap-index wire arms. Own `pass_rng("Statues")` stream.
+fn step_statues(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let rock_layer = gv.layers().rock_layer;
+    // `SecretSeed.Variations.actuallyNoTrapsForRealIMeanIt`
+    // (`WorldGen.cs:293-303`): actuallyNoTraps && activeSecretSeedCount < 4.
+    let count = crate::seeds::active_secret_seed_count(opts.micro_flags, opts.flags);
+    let no_traps_for_real = opts
+        .micro_flags
+        .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS)
+        && count < 4;
+    let mut rng = streams.pass_rng("Statues");
+    passes_b::pass_statues(world, world_surface, rock_layer, no_traps_for_real, &mut rng);
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -2824,6 +2852,13 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[467] = true;
     world.frame_important[441] = true;
     world.frame_important[468] = true;
+    // W4-g37 B1: the statue family — the statue 105 (`Main.cs:7707`), the
+    // Lihzahrd statue 349 (`:7727`) and the pressure plate 135 (`:7721`) are
+    // frame-important, so the framer keeps the `Place2xX`/`Place1x1` frames
+    // the Statues pass writes.
+    world.frame_important[105] = true;
+    world.frame_important[349] = true;
+    world.frame_important[135] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -3140,7 +3175,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-g37 B1: + `statues` (vanilla "Statues", `WorldGen.cs:16853`)
+        // before `cave houses`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3214,6 +3251,9 @@ mod tests {
                 "hell forts",
                 "lihzahrd temple",
                 "temple part 2",
+                // W4-g37 B1: the vanilla Statues slot (`WorldGen.cs:16853`)
+                // precedes Buried Chests (`:16971`).
+                "statues",
                 "cave houses",
                 "thin ice",
                 "campsites",
@@ -3437,6 +3477,25 @@ mod tests {
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
+    }
+
+    /// W4-g37 B1: `statues` sits in its vanilla slot — immediately before
+    /// `cave houses` (the Buried Chests pass, `WorldGen.cs:16971`), after the
+    /// temple family (`:17701` is the port's later grouping; the Statues
+    /// anchor `:16853` precedes both in the vanilla chain).
+    #[test]
+    fn w4_g37_the_statues_step_precedes_the_cave_houses() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("statues") + 1, pos("cave houses"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Statues") < cpos("Buried Chests"));
+        assert!(cpos("Life Crystals") < cpos("Statues"));
     }
 
     #[test]

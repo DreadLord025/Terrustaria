@@ -238,6 +238,14 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-g37 B1 (code-only): the Statues pass (`WorldGen.cs:16853-16970`,
+    // `passes_b.rs::pass_statues`) lands before `cave houses`. On a 512-wide
+    // world the whole x band sits inside the ±380 `oceanDepths` beach margin
+    // (`x < 380 || x > 132` covers every roll), so all 17 candidates are
+    // rejected and no statue places — this pin is UNCHANGED by B1 alone (the
+    // isolated `pass_rng("Statues")` stream shifts no other ledger). The
+    // DEFAULT_WORLD pin below moves BY DESIGN; deferred to the gate. The
+    // a == b halves stay untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +289,10 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-g37 B1 (code-only): the Statues pass (see SEED42_512 above) places
+    // its 73-style cycle on the default 4200-wide world — the statue bodies,
+    // the four trap plates and their red wires move this pin BY DESIGN;
+    // deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
