@@ -3284,8 +3284,11 @@ is a `UserInterface` element in 1.4.5.8.
 * **Fidelity note.** The machine's delta is an `i32` (matching C#'s int
   `ScrollWheelDeltaForUI`), so the achievements arm now fires only when the rounded
   delta is non-zero. Previously it scrolled on sub-notch `PixelDelta` values
-  (`|d| < 0.5`), which C# cannot produce; the magnitude still passes through
-  unrounded (`scroll_achievements(d)`), so only that degenerate case changed.
+  (`|d| < 0.5`), which C# cannot produce. W4-g53: `scroll_achievements` now
+  rounds to notches and spends them at the C#'s 120 raw px per detent
+  (`UIList.cs:112` → `UIScrollbar.ViewPosition -=`), gated on the pointer
+  riding the list or the bar (`UIInnerList.ContainsPoint`, `UIList.cs:16-19`)
+  — the old row-height stand-in is gone.
 
 ## World select (S1-H-10, 2026-11-13)
 
@@ -14561,12 +14564,38 @@ powers/research вЂ” each needs its own scope.
   and the `MinWidth`/`MaxWidth` at 700/900. The in-game arm (`OnActivate`'s
   else) drops the container to `Top 120 / Height -120`; the menu arm keeps
   `220/-220`. The port picks the arm from whether the legacy menu is live.
-- **Deviations:** no word wrap (`CreateWrappedText`) вЂ” the row's description
-  shrinks to fit the text width instead of growing to a second line; the
-  progress bar is two flat quads rather than the `ColorBar` 9-slice + the
-  `MagicPixel` fill/blip splices; the scroll rides the mouse wheel instead of the
-  `UIScrollbar`; the gamepad link points (`SetupGamepadPoints`, ids 3000+) are
-  out of scope; there are no UI click sounds.
+- **W4-g53 (2026-11-21) completed the screen against the C#** (on the d81
+  `6d700ed7` pure-halves + e22 condition-table base): the `UIPanel`
+  `(12, 0, 12, 12)` inner padding now insets the list/scrollbar/category
+  strip (`UIPanel.cs:32` + `UIAchievementsMenu.cs:49`, resolved per
+  `UIElement.cs:287-288`); the attached `UIScrollbar` is real — draw
+  (`panel::draw_scrollbar`), handle-grab drag + track jump
+  (`UIScrollbar.cs:109-143`), the release latch, and the wheel at 120 raw
+  px per detent (`UIList.cs:112`); `FilterList` plays sound 12 and CLAMPS
+  the scroll into the new range instead of resetting it (`:163-175` →
+  `SetView`, `UIScrollbar.cs:75`); the list draws under its scissor
+  (`OverflowHidden`, `UIList.cs:59`); the menu panel/title/rows draw
+  through the `UIPanel` 9-slice with the byte-truncating colour pairs
+  (incl. the row's `MouseOver` border `(20, 30, 56)` and the Back's own
+  `*0.8` `FadedMouseOut`, `:159`); the `UIToggleImage` ON frame is the
+  sheet's TOP row (the ctor's `(on, off)` parameter order,
+  `UIToggleImage.cs:26-36`); the row's text geometry is re-derived from
+  `vector2`/`vector4` (`UIAchievementListItem.cs:87-133` — the splices
+  ride `innerY-2`/`innerY+27`, the category icon is `Frame(4,2,i)` at 0.5
+  scale, the splices tint `Gray`(128) idle); the progress bar is the real
+  `DrawProgressBar` (`:224-257`) on d81's `tracker_bar_geometry`/`colors`
+  — `ColorBar` centre-anchored body + caps, centre-out fill, the 2 px
+  alpha-127 blip, the black remainder, the readout in the name colour;
+  the category tooltip draws (`Draw` `:108-135`, the `screenW-460`
+  overflow literal included) and the Back hover sounds 12 once per edge.
+- **Deviations (remaining):** no word wrap (`CreateWrappedText`) — the row's
+  description shrinks to fit the text width instead of growing to a second
+  line (d81's `description_scale_y` pins the C#'s vertical clamp for when
+  wrap lands); the gamepad link points (`SetupGamepadPoints`, ids 3000+)
+  are out of scope; the scrollbar handle's own hover sound/tint
+  (`UIScrollbar.cs:116-122`) is not modelled (the shared
+  `panel::draw_scrollbar` draws the 0.85 handle); the `None`-category row
+  stays visible in every filtered view (the C# would throw, above).
 
 ## The achievement unlock popup (S1-E-26 wave A)
 
