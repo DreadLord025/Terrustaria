@@ -629,6 +629,95 @@ Audit notes (R6):
 - The arm sets only `height`; width stays 16, top stays 0, `add_fr_y` keeps
   the prologue `tileFrame * 38` — identical in C# and port for every id here.
 
+### R7 — 18-px tail, beds/bathtubs/workbenches strides, boulder, chest-row head: 695, 704, 712-716, 79, 90, 18, 711, 654, 14, 21, 411 (15 ids, indices 90-104)
+
+C# `TileDrawing.cs:4900-4952`. Verbatim (:4909-4952):
+
+```csharp
+		case 79:
+		{
+			tileHeight = 18;
+			int num23 = tileFrameY / 2016;
+			addFrY -= 2016 * num23;
+			addFrX += 144 * num23;
+			break;
+		}
+		case 90:
+		{
+			int num22 = tileFrameY / 2016;
+			addFrY -= 2016 * num22;
+			addFrX += 144 * num22;
+			break;
+		}
+		case 18:
+		{
+			int num21 = tileFrameX / 2016;
+			addFrX -= 2016 * num21;
+			addFrY += 20 * num21;
+			break;
+		}
+		case 711:
+			if (tileFrameX > 0)
+			{
+				tileWidth = 18;
+			}
+			tileHeight = 20;
+			glowTexture = TextureAssets.Tile[711].Value;
+			glowSourceRect = new Rectangle(tileFrameX + addFrX, tileFrameY + addFrY, tileWidth, tileHeight);
+			break;
+		case 654:
+			tileTop += 2;
+			break;
+		case 14:
+		case 21:
+		case 411:
+		case 467:
+		case 469:
+			if (tileFrameY == 18)
+			{
+				tileHeight = 18;
+			}
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 695, 704, 712-716 | `tileHeight = 18;` (18-px group tail) | :4900-4908 | `drawdata.rs:327-346` | PORTED |
+| 79 | 18 tall + the 2016 row stride (`-2016*n`, `+144*n`) | :4909-4916 | :350-355 (fold onto `tile_frame*38`); glow :6191-6207 → `cases_a.rs:387-396` (rows 27/28, masks 53/114, rect `(fx, fy%36)`) | PORTED (glow unconsumed) |
+| 90 | stride only, NO height change | :4917-4923 | :358-362; glow :6174-6190 → `cases_a.rs:376-385` (masks 52/113) | PORTED (glow unconsumed) |
+| 18 | stride in frame X (`fx/2016`), `+20*n` rows | :4924-4930 | :365-369; glow :6429-6445 → `cases_a.rs:555-564` (cols 27/28, masks 69/125, rect `(fx%36, fy)`) | PORTED (glow unconsumed) |
+| 711 | width 18 iff `fx > 0`; height 20; **glow in the FIRST switch** (`Tile[711]`, framed rect, colour stays `Color.Transparent`) | :4931-4939 | :372-377 (metrics only — glow NOT ported, see note) | DEVIATION (glow record missing) |
+| 654 | `tileTop += 2;` (TNTBarrel) | :4940-4942 | :379-381 | PORTED |
+| 14 | `if (tileFrameY == 18) tileHeight = 18;` | :4943-4952 | :385-389 (`14 \| 21 \| 411 \| 467 \| 469`); glow :6397-6413 → `cases_a.rs:532-541` (cols 31/32, masks 67/124, rect `(fx%54, fy)`, no stride) | PORTED (glow unconsumed) |
+| 21 | shares the row-18 arm | :4944 | :385; glow :6276-6293 → `cases_a.rs:450-459` (cols 48/49, masks 56/117, rect `(fx%36, fy)`) | PORTED (glow unconsumed) |
+| 411 | shares the row-18 arm (Detonator) | :4945 | :385 | PORTED |
+
+Audit notes (R7):
+- **711's first-switch glow is the one genuinely unported glow record found so
+  far.** The C# sets `glowTexture = TextureAssets.Tile[711].Value` +
+  `glowSourceRect = (tileFrameX + addFrX, tileFrameY + addFrY, tileWidth,
+  tileHeight)` with `glowColor` left at the prologue's `Color.Transparent`
+  (:4538). The port's arm carries only the metrics and cites the glow as
+  "TILE-DRAW-2" (`drawdata.rs:370-371`), but unlike 637 (which emits a `mask: 0`
+  record with the painted-sheet deviation, `cases_a.rs:46-48/:324`) NO record is
+  produced for 711 anywhere — `glow_switch` has no 711 arm (711 is absent from
+  the second-switch label census). Draw-side impact today: none (all glow
+  records are dropped at `tiles.rs:731`), and the transparent colour makes the
+  vanilla additive draw a no-op too; but the record shape should exist for the
+  glow pass. Seed: emit `GlowData { mask: 0 /* Tile[711] sheet */, src:
+  rect_framed, color: [0,0,0,0] }` from the first-switch port when TILE-DRAW-2
+  lands. Recorded here as the R7 residual.
+- 79/90/18's stride folds are the same prologue-default arithmetic as case 100
+  (R4): `-=` becomes `tile_frame*38 - stride*n`, `+=` on X becomes `0 + step*n`.
+  The second-switch gates read RAW fx/fy (never rewritten), matching
+  `cases_a.rs:30-34`'s convention; 18's first-switch stride is in X while its
+  glow gate is `fx/36` columns — both faithful.
+- 21/467 and 441/468 share identical chest glow bodies in C# (two separate
+  case groups, :6276-6293 / :6294-6311); the port keeps two arms with the same
+  values — label-faithful. 467/441/468's first-switch indices fall in R8/R13.
+- 14/21/411's `tileFrameY == 18` is an EXACT equality (not `%`): only the
+  second sheet row shrinks; the port matches (`fy == 18`).
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
