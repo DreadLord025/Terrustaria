@@ -948,7 +948,9 @@ pub struct PlayerInfo {
 impl PlayerInfo {
     /// The defaults the port sends: the name is the only field with a home
     /// today (`App.player_name`); every appearance field rides the wire as
-    /// vanilla-zero until the character milestone lands.
+    /// vanilla-zero until the character milestone lands. Note the read side
+    /// clamps `voiceVariant` into 1..4 (`MessageBuffer.cs:300`), so a decoded
+    /// `with_name` carries `voice_variant = 1`, not the written 0.
     pub fn with_name(player_id: u8, name: &str) -> Self {
         Self {
             player_id,
@@ -1017,12 +1019,23 @@ impl PlayerInfo {
         let flags3 = r.bitsbyte()?;
         Some(Self {
             player_id,
-            skin_variant,
-            voice_variant,
-            voice_pitch_offset,
-            // `hair >= 228` normalises to 0 (`MessageBuffer.cs:319`).
+            // `MathHelper.Clamp(skinVariant, 0, PlayerVariantID.Count - 1)`
+            // (`MessageBuffer.cs:298`; `PlayerVariantID.Count = 12`,
+            // `ID/PlayerVariantID.cs:55`).
+            skin_variant: skin_variant.min(11),
+            // `Utils.Clamp(voiceVariant, 1, 4)` (`MessageBuffer.cs:300`).
+            voice_variant: voice_variant.clamp(1, 4),
+            // NaN → 0, then `Utils.Clamp(voicePitchOffset, -1, 1)`
+            // (`MessageBuffer.cs:302-306`).
+            voice_pitch_offset: if voice_pitch_offset.is_nan() {
+                0.0
+            } else {
+                voice_pitch_offset.clamp(-1.0, 1.0)
+            },
+            // `hair >= 228` normalises to 0 (`MessageBuffer.cs:308-311`).
             hair: if hair >= 228 { 0 } else { hair },
-            name,
+            // `ReadString().Trim().Trim()` (`MessageBuffer.cs:312`).
+            name: name.trim().to_string(),
             hair_dye,
             hide_visible_accessory,
             hide_misc,
@@ -4009,6 +4022,36 @@ mod tests {
         let mut r = NetReader::new(&body[3..]);
         let back = PlayerInfo::read_from(&mut r).expect("player info");
         assert_eq!(back, pi);
+    }
+
+    /// The `case 4` read-side clamps (`MessageBuffer.cs:297-312`), verbatim:
+    /// skinVariant → 0..11, voiceVariant → 1..4, NaN pitch → 0 then ±1,
+    /// hair ≥ 228 → 0, name trimmed.
+    #[test]
+    fn w4_d96_player_info_read_clamps() {
+        let mut pi = PlayerInfo::with_name(3, "  Rusty  ");
+        pi.skin_variant = 200;
+        pi.voice_variant = 9;
+        pi.voice_pitch_offset = 2.5;
+        pi.hair = 250;
+        let body = pi.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
+        let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
+        assert_eq!(back.skin_variant, 11); // PlayerVariantID.Count - 1
+        assert_eq!(back.voice_variant, 4);
+        assert_eq!(back.voice_pitch_offset, 1.0);
+        assert_eq!(back.hair, 0);
+        assert_eq!(back.name, "Rusty");
+        // voiceVariant 0 clamps UP to 1 (`Utils.Clamp(voiceVariant, 1, 4)`).
+        let zero = PlayerInfo::with_name(3, "Ann");
+        let body = zero.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
+        let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
+        assert_eq!(back.voice_variant, 1);
+        // A NaN pitch normalises to 0 before the clamp (`:302-305`).
+        let mut nan = PlayerInfo::with_name(3, "Ann");
+        nan.voice_pitch_offset = f32::NAN;
+        let body = nan.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
+        let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
+        assert_eq!(back.voice_pitch_offset, 0.0);
     }
 
     #[test]
