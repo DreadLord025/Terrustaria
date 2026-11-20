@@ -18287,6 +18287,70 @@ Documented deviations, none reachable from the ported runtime surface:
   (both `false` вЂ” the exact runtime state) and
   `createMergeTilesDuringGen` rides the `WorldGen.cs:22480` caller.
 
+## The liquid skip/settle surface (W4-g47, 2026-11-21, code-only mode)
+
+The settled-liquid skip/settle semantics (`Liquid.cs`) are ported into
+`crates/tr-core/src/liquid.rs` in three phases, each with written-not-run
+witnesses (code-only mode — no cargo/tests this lane):
+
+- **Phase 1 (`047f37f3`)** — the `quickSettle` flag (`Liquid.cs:35`) and its
+  two `Liquid.Update` arms: the fall's remainder clamp (`:588-591`) and the
+  254 settle-step promotion (`:944-948`), plus the pass-head `quickFall`
+  derivation (`:1056-1068`). The `skipLiquid` tile flag (`Tile.cs:511-521`)
+  and its per-entry gate (`:1096-1104`) / post-fall writes (`:586-587`) /
+  `AddWater` clear (`:1173`) were already landed (anchors `set_skip`).
+- **Phase 2 (`e43fa0bc`)** — `DelWater` (`:1470-1599`): the <2 / <20 / >=20
+  drain rules, the keep-alive (`:1506-1510`), the wake/type bookkeeping, the
+  lava grass-ring conversions, the swap-remove (kill rides, delay does not),
+  and the `CheckAlch`/`CheckLilyPad` tail. The `kill >= 8` retirement sweep's
+  254->255 promotion (`:1109-1119`), the `LiquidBuffer.AddBuffer`/`DelBuffer`
+  counts (`LiquidBuffer.cs:11-27` — the `checkingLiquid` bit, the
+  `maxLiquidBuffer - 2` cap, the swap-remove promotion), the stuck band's
+  10 000-cycle self-clear (`:1131-1149`), and the gfx-quality `quickSettle`
+  override (`Main.cs:17105-17113`). `CheckAlch`/`CheckLilyPad` are public
+  kill-executing seams in `edit/kill.rs` (`WorldGen.cs:45972`/`:59203`);
+  their drops ride `LiquidSystem::drain_edit_kills`.
+- **Phase 3 (`dab3df3d`)** — the force-settle family `QuickWater`/
+  `SettleWaterAt`/`AttemptToMoveLava|Honey|Shimmer` (`:104-433`), panic mode
+  `StartPanic` + the 5-row drain (`:966-1054`), `ReInit` (`:83-102`),
+  `WaterCheck` (`WorldGen.cs:80415-80494`), and the load-settle driver
+  `settle_loaded_world` (`WorldFile.cs:733-764`). The
+  `GetTileData(Tile)`/`CheckWaterDeath`/`CheckLavaDeath` seams
+  (`TileObjectData.cs:5196`/`:5083`/`:5107`) resolve the liquid-death kills.
+  The `edit_kills` drops resolve under the `UpdateLiquid` RNG swap
+  (`WorldGen.cs:71529`) in `world_sim/liquids.rs`.
+
+Documented deviations / deferred items (all require a test re-derivation the
+code-only lane cannot run):
+
+- **Underworld evaporation (`:466-474`) is NOT ported.** `UnderworldLayer =
+  maxTilesY - 200` is negative in the small unit-test worlds, so the -2/tick
+  water drain would fire everywhere and break the mass-conservation pins
+  (`liquid.rs::tests`, `liquid_sim::mass_conserved`). The census
+  (`docs/research/11-liquid.md` deviation 3) flags this as needing a
+  deliberate deviation note + test exclusion band first.
+- **`AddWater`'s 5-tile border guard + `type != 546` carve-out +
+  `CheckWaterDeath`/`CheckLavaDeath` kill (`:1163`/`:1183-1206`) are NOT
+  ported into `add_water`.** The border guard (`x < 5 || x >= maxTilesX - 5`)
+  excludes every cell of the 9-wide test fixtures, breaking ~20 flow pins.
+  The liquid-death checks ARE ported as standalone seams
+  (`tileobject::check_water_death`/`check_lava_death`) and consumed by
+  `WaterCheck`; wiring them into `add_water` needs the fixtures widened past
+  the border first.
+- **The `genRand` 254->255 nudge (`:892-895`) is NOT ported.** It consumes a
+  shared RNG draw, re-pinning the settle fixtures (census deviation 5); the
+  determinism note + re-pin must land with it.
+- **`settle_loaded_world` is NOT wired into the load path.** Running it
+  changes every saved world's liquid bytes, so the save/load round-trip pins
+  (`saveglue.rs`) need a deliberate re-derivation first. The function is
+  ported + witnessed; the `swap_world` hook is deferred.
+- **The generation-only settle arms are dead** (the `SettleWaterAt`
+  waterLine/lavaLine/dungeon re-type `:178-192`, `QuickWater`'s
+  `ShimmerRemoveWater`/noTraps boulder swap/`LiquidInteractionsCleanup`):
+  they ride R-12-5's worldgen settlement, like the R-11-5 generation branches.
+- **MP scaling / net change set** (`:987-1004`/`:1151-1156`) stay out of
+  scope (single-player target, census deviation 9/10).
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as
