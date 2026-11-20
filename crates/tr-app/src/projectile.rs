@@ -14487,6 +14487,12 @@ pub struct ProjectilePool {
     /// `UpdateProjectiles` stream BEFORE the hit-sound drain — the C#'s
     /// mid-strike draw order under the S1-E-21c batch convention.
     pending_npc_damage_texts: Vec<(crate::combat_text::Rect, i32, bool, bool)>,
+    /// W4-d116 — the landed strikes' Destroyer-probe roll intents
+    /// (`NPC.cs:81488` → `:89266-89285`): the struck NPC index per landed
+    /// hit on a body. The world sim rolls `probe_launch_on_hit` AFTER the
+    /// damage-text drain (the C# draws the text before `HitEffect`), on the
+    /// same `UpdateProjectiles` stream.
+    pending_probe_rolls: Vec<usize>,
     /// S1-E-21h — the projectile-family cues the AI arms and the bomb kill
     /// path queued this tick: `(sound id, style, x, y, pitchOffset)` — the
     /// `SoundEngine.PlaySound` overload payload (`SoundEngine.cs:93-108`).
@@ -14920,6 +14926,7 @@ impl ProjectilePool {
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
             pending_npc_damage_texts: Vec::new(),
+            pending_probe_rolls: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
@@ -16146,6 +16153,14 @@ impl ProjectilePool {
         &mut self,
     ) -> Vec<(crate::combat_text::Rect, i32, bool, bool)> {
         std::mem::take(&mut self.pending_npc_damage_texts)
+    }
+
+    /// W4-d116 — the Destroyer-probe roll intents (the struck NPC indices).
+    /// The world sim rolls them AFTER the damage-text drain, on the
+    /// `UpdateProjectiles` stream — `HitEffect` follows `CombatText.NewText`
+    /// inside `StrikeNPC_Inner` (`NPC.cs:81250` → `:81488`).
+    pub fn drain_probe_rolls(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.pending_probe_rolls)
     }
 
     /// S1-E-21h — the projectile-family cue intents the AI arms and the
@@ -23056,15 +23071,15 @@ impl ProjectilePool {
                     .push((location, dealt, hit_crit, npcs[idx].friendly));
             }
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
-            // Destroyer body's probe launch gate (`:89266-89285`) — the
-            // Next(25) roll rides the strike's stream (the C# HitEffect runs
-            // inside StrikeNPC, under this pass's Main.rand swap).
-            if landed {
-                if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
-                    &mut npcs[idx], rng, false,
-                ) {
-                    npcs[idx].wants_probe = Some(anchor);
-                }
+            // Destroyer body's probe launch gate (`:89266-89285`). W4-d116:
+            // the C# draws the combat text FIRST (`:81250-81264`), then the
+            // probe's Next(25) — both inside the strike. The pool defers
+            // BOTH to the pass tail in that order (the text queue above;
+            // this probe intent queue — the S1-E-21c batch convention,
+            // ANALYSIS W4-d116). The roll used to ride here, ahead of the
+            // (missing) text draws — the census fix.
+            if landed && npcs[idx].kind == NpcKind::TheDestroyerBody {
+                self.pending_probe_rolls.push(idx);
             }
             // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`, S1-E-21
             // wave C): the landed strike queues the kind's `HitSound` at
@@ -23395,13 +23410,10 @@ impl ProjectilePool {
                 self.pending_npc_damage_texts.push((location, dealt, crit, npcs[idx].friendly));
             }
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
-            // Destroyer body's probe gate rides the strike's stream.
-            if dealt > 0 {
-                if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
-                    &mut npcs[idx], rng, false,
-                ) {
-                    npcs[idx].wants_probe = Some(anchor);
-                }
+            // Destroyer body's probe gate defers behind the text draws (the
+            // plain-walk twin, W4-d116).
+            if dealt > 0 && npcs[idx].kind == NpcKind::TheDestroyerBody {
+                self.pending_probe_rolls.push(idx);
             }
             // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`, S1-E-21
             // wave C) — the boxed walk queues it like the plain PVE pass.

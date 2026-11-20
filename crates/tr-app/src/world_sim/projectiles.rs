@@ -474,6 +474,17 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
         );
     }
+    // W4-d116 — the Destroyer-probe roll intents (`NPC.cs:81488` →
+    // `:89266-89285`): the landed body hits queue their index; the roll runs
+    // HERE, after the text draws above and before the hit-sound drain —
+    // the C#'s inside-the-strike order (text → HitEffect → HitSound).
+    for idx in app.projectiles.drain_probe_rolls() {
+        if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+            &mut app.npcs[idx], rng, false,
+        ) {
+            app.npcs[idx].wants_probe = Some(anchor);
+        }
+    }
     // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays
     // (`NPC.cs:81544-81553` via `Projectile.Damage` `Projectile.cs:13649`):
     // the case-3 volume arms + the `Main.rand.Next(-10, 11) * 0.01` pitch
