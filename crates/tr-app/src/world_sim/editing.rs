@@ -5548,15 +5548,19 @@ mod tests {
             .unwrap_or(0);
         assert_eq!(cd, 1, "the cooldown counts down with the animation");
         // A fresh press after the swing re-arms (ResetMeleeHitCooldowns,
-        // `:51679`): release one tick (the edge captures + the swing's
-        // last tick decays), then press. The rig never decays attack_cd
-        // (that pass lives in world_sim/npcs.rs) — clear it like the
-        // established `repress` helper does.
+        // `:51679`). M1 re-sync onto i12's landed end-of-tick latch
+        // (`releaseUseItem = !controlUseItem`, `Player.cs:42829`, the V4
+        // gate fix `mine_released = !prev_mine_down`): after a HELD swing
+        // the latch needs TWO released frames to propagate — the first
+        // released frame still writes `!prev_mine_down = false`, the
+        // second writes `true`, and only the next press reads it. The rig
+        // never decays attack_cd (that pass lives in world_sim/npcs.rs) —
+        // clear it like the established `repress` helper does.
         app.npcs[0].hp = app.npcs[0].max_hp; // park the life for the count
         app.npcs[0].hurt_cd = 0.0;
         app.attack_cd = 0.0;
         app.mine_down = false;
-        mine_frames(&mut app, 1);
+        mine_frames(&mut app, 2);
         app.mine_down = true;
         let hp_before2 = app.npcs[0].hp;
         mine_frames(&mut app, 23);
