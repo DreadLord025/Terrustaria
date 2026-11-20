@@ -182,6 +182,16 @@ pub(crate) fn grant_summon_caps(
             1833 => p.max_minions += 2,        // :13941-13945
             _ => {}
         }
+        // S1-P-i27 — the whip-range armor halves beside the cap rows:
+        // `:13852-13855` the Tiki Mask (1159) `whipRangeMultiplier +=
+        // 0.1f`; `:13876-13881` the Stardust Plate/Leggings (3382/3383)
+        // `+= 0.15f`. (The rows' `minionDamage` halves ride the
+        // `set_stats`/combat folds; the cap halves above.)
+        match slot.kind {
+            1159 => p.whip_range_multiplier += 0.1,
+            3382 | 3383 => p.whip_range_multiplier += 0.15,
+            _ => {}
+        }
     }
     // `ApplyEquipFunctional`'s held summon items (`:15322-15331`): the
     // Pygmy Necklace (1845) and the Papyrus Scarab (1864) — the 1167 row's
@@ -262,6 +272,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
         app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
     );
+    // S1-P-i27 — `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`), copied
+    // out before the player borrow (the rest-target command reads it).
+    let reversed_armor_bonuses = app.settings.reversed_armor_bonuses;
     let hook_type = crate::env::hook_type();
     // `TR_CART` pins the minecart mount (the granting item, QuickMount and the
     // TrackHook paths are M2-MOUNT-3) — mounted idempotently like the
@@ -851,10 +864,25 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // reset cooldown counts down one per tick; at 0 the swing
             // counter returns to −1 (the next whip throw is swing #0).
             p.update_snake_band();
-            // M4-PROJ-8 Phase 6 — `MinionRestTargetAim`'s invalidation half
-            // (`Player.cs:57009-57011`): an unchaseable or >3000-px whip
-            // target drops every tick.
-            p.invalidate_minion_target(&app.npcs);
+            // S1-P-i27 — `Player.UpdateMinionTarget` (`Player.cs:56999-57028`):
+            // the per-tick minion-target maintenance. The rest target drops
+            // past 1000 px (`:57005-57007`), the attack target drops when
+            // unchaseable or its HITBOX drifts past 3000 px (`:57009-57011`).
+            // (Replaces the old invalidation-only half, which measured
+            // centre-to-position instead of hitbox-to-centre.)
+            p.update_minion_target(&app.npcs);
+            // S1-P-i27 — the rest-target command's input edge
+            // (`Player.cs:25022-25073`, the down-cardinal double-tap/hold):
+            // the Forbidden set bonus aims the rest spot on the down
+            // double-tap, the Stardust/Forbidden bonuses clear it on a 60-tick
+            // down hold. `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`)
+            // flips the cardinal to UP, disabling the down command.
+            p.update_minion_rest_command(
+                &app.world,
+                mouse_world,
+                input.down,
+                reversed_armor_bonuses,
+            );
             // `Player.cs:27608-27614`: right after the NPC collision pass,
             // the tile-contact damage check (`GetHurtTile` +
             // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints,

@@ -233,7 +233,12 @@ fn point_in_rect(rx: f32, ry: f32, rw: f32, rh: f32, px: f32, py: f32) -> bool {
 /// `Rectangle.Distance(this Rectangle r, Vector2 point)`
 /// (`Utils.cs:1507-1542`): 0 inside (touching counts), the axis-band
 /// distances, then the four corner `Vector2.Distance`s.
-fn rect_distance(rx: i32, ry: i32, rw: i32, rh: i32, px: f32, py: f32) -> f32 {
+///
+/// `pub(crate)`: the minion target-command path shares it — the right-click
+/// aim (`Player.MinionNPCTargetAim`, `Player.cs:56920`) and the per-tick
+/// invalidation (`Player.UpdateMinionTarget`, `:57009`) both measure
+/// `NPC.Hitbox.Distance(point)`, NOT a centre-to-centre distance (S1-P-i27).
+pub(crate) fn rect_distance(rx: i32, ry: i32, rw: i32, rh: i32, px: f32, py: f32) -> f32 {
     let (l, t) = (rx as f32, ry as f32);
     let (r, b) = ((rx + rw) as f32, (ry + rh) as f32);
     if point_in_rect(l, t, rw as f32, rh as f32, px, py) {

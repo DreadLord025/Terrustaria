@@ -986,6 +986,10 @@ impl Projectile {
         }
         let mut flag_target = false;
         let mut num13: i32 = -1;
+        // S1-P-i27 — the C#'s `num12` ladder opens 400 / 300 (423) / 300 (613)
+        // (`:65291-65299`) but the UNCONDITIONAL `num12 = 2000f` (`:65300`)
+        // overwrites all three before the search; only the 963's 700
+        // (`:65301-65304`) survives — the port keeps the post-overwrite value.
         self.tile_collide = true;
         if matches!(self.kind, ABIGAIL | TEMPEST) {
             self.tile_collide = false;
@@ -998,57 +1002,108 @@ impl Projectile {
                 }
             }
         }
-        // The NPC aim point: `position + Size * 0.5`.
-        // `Projectile.cs:65323-65334` — the Tempest/UFO/Cell branch aims at
-        // `position + Size * (0.5, 0)`; the generic branch's `Center` is the
-        // same point for the ported boxes.
-        let npc_aim = |n: &Npc| {
+        // The NPC aim point — S1-P-i27 split (the old single `(x+w/2, y)`
+        // closure served BOTH branches; only the UFO's is y-top):
+        // * `Projectile.cs:65335-65339` — the Tempest/UFO/Cell branch's
+        //   `position + Size * vector2` with `vector2 = (0.5, 0.5)` and
+        //   `vector2.Y = 0f` ONLY for the UFO (423).
+        // * `:65379`/`:65386`/`:65401`/`:65408` — the generic branch
+        //   (Hornet/Imp/Abigail) aims at `nPC.Center` — BOTH halves.
+        let branch_aim = |n: &Npc| {
             let (w, h) = n.size();
-            Vec2::new(n.x + w * 0.5, n.y)
+            let fy = if self.kind == UFO_MINION { 0.0 } else { 0.5 };
+            Vec2::new(n.x + w * 0.5, n.y + h * fy)
         };
         let (ocx, ocy) = owner.as_ref().map_or((center.x, center.y), |p| p.center());
         let owner_center = Vec2::new(ocx, ocy);
-        // `:65322-65360` — the Tempest/UFO/Cell branch centres the distances on
-        // the OWNER; the generic branch (`:65362-65420`) on the minion itself.
         let whip = owner.as_ref().map_or(-1, |p| p.minion_attack_target_npc);
-        if whip >= 0 {
-            if let Some(n) = npcs.get(whip as usize) {
-                if n.can_be_chased_by() {
-                    let aim = npc_aim(n);
-                    let anchor = if matches!(self.kind, TEMPEST | STARDUST_CELL | UFO_MINION) {
-                        owner_center
-                    } else {
-                        center
-                    };
-                    let (nw, nh) = n.size();
-                    let d = (aim - anchor).length();
-                    if d < num12 * 3.0 && can_hit_line(world, center.x, center.y, self.w, self.h, aim.x, aim.y, nw, nh) {
-                        num12 = d;
-                        vector = aim;
-                        flag_target = true;
-                        num13 = whip;
+        if matches!(self.kind, TEMPEST | STARDUST_CELL | UFO_MINION) {
+            // `:65332-65373` — the owner-anchored branch: BOTH the whip arm
+            // and the scan measure from the OWNER's centre and aim at the
+            // branch point; the LOS probe keeps the minion's own box
+            // against the NPC's POSITION box (`:65346`/`:65363`).
+            if whip >= 0 {
+                if let Some(n) = npcs.get(whip as usize) {
+                    if n.can_be_chased_by() {
+                        let aim = branch_aim(n);
+                        let (nw, nh) = n.size();
+                        let d = (aim - owner_center).length();
+                        // `:65346` — `num15 < num14 && !flag` (flag is
+                        // false here, the arm runs once).
+                        if d < num12 * 3.0
+                            && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                        {
+                            num12 = d;
+                            vector = aim;
+                            flag_target = true;
+                            num13 = whip;
+                        }
                     }
                 }
             }
-        }
-        if !flag_target {
-            for (idx, n) in npcs.iter().enumerate() {
-                if !n.can_be_chased_by() {
-                    continue;
+            if !flag_target {
+                for (idx, n) in npcs.iter().enumerate() {
+                    if !n.can_be_chased_by() {
+                        continue;
+                    }
+                    let aim = branch_aim(n);
+                    let (nw, nh) = n.size();
+                    let d = (aim - owner_center).length();
+                    // `:65363` — `!(num16 >= num12)`.
+                    if d < num12
+                        && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                    {
+                        num12 = d;
+                        vector = aim;
+                        flag_target = true;
+                        num13 = idx as i32;
+                    }
                 }
-                let aim = npc_aim(n);
-                let anchor = if matches!(self.kind, TEMPEST | STARDUST_CELL | UFO_MINION) {
-                    owner_center
+            }
+        } else {
+            // `:65374-65415` — the generic branch: the distances centre on
+            // the MINION and the aim is `nPC.Center`. Abigail (963) swaps
+            // `CanHitLine` for `CanHit(base.Center, 1, 1, nPC.Center, 1, 1)`
+            // (`:65383`/`:65405`) — S1-P-i27, the old port ran the box LOS
+            // for her too.
+            let los = |n: &Npc| {
+                let aim = npc_center(n);
+                if self.kind == ABIGAIL {
+                    can_hit(world, center.x, center.y, 1.0, 1.0, aim.x, aim.y, 1.0, 1.0)
                 } else {
-                    center
-                };
-                let (nw, nh) = n.size();
-                let d = (aim - anchor).length();
-                if d < num12 && can_hit_line(world, center.x, center.y, self.w, self.h, aim.x, aim.y, nw, nh) {
-                    num12 = d;
-                    vector = aim;
-                    flag_target = true;
-                    num13 = idx as i32;
+                    let (nw, nh) = n.size();
+                    can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                }
+            };
+            if whip >= 0 {
+                if let Some(n) = npcs.get(whip as usize) {
+                    if n.can_be_chased_by() {
+                        let aim = npc_center(n);
+                        let d = (aim - center).length();
+                        // `:65380` — `num17 < num12 * 3f && !flag`.
+                        if d < num12 * 3.0 && los(n) {
+                            num12 = d;
+                            vector = aim;
+                            flag_target = true;
+                            num13 = whip;
+                        }
+                    }
+                }
+            }
+            if !flag_target {
+                for (idx, n) in npcs.iter().enumerate() {
+                    if !n.can_be_chased_by() {
+                        continue;
+                    }
+                    let aim = npc_center(n);
+                    let d = (aim - center).length();
+                    // `:65402` — `!(num19 >= num12)`.
+                    if d < num12 && los(n) {
+                        num12 = d;
+                        vector = aim;
+                        flag_target = true;
+                        num13 = idx as i32;
+                    }
                 }
             }
         }
@@ -1108,14 +1163,18 @@ impl Projectile {
             let mut num22 = v.length();
             v = v.normalize_or_zero();
             if self.kind == UFO_MINION {
-                // `:65527-65545` — the dash trigger over the aim point lifted
+                // `:65503-65521` — the dash trigger over the aim point lifted
                 // 80 px, with the solid-tile lift (two 16-px steps).
+                // S1-P-i27 — `:65507-65511`: the probe ROW clamps negative to
+                // 0 (`if (num23 < 0) num23 = 0;`); the old port skipped the
+                // probe entirely above the world. The second probe reads the
+                // raw row (no clamp, `:65515`).
                 let mut lifted = vector - Vec2::new(0.0, 80.0);
-                let ty = (lifted.y / 16.0) as i32;
-                if ty >= 0 && tile_solid_at(world, lifted.x, ty) {
+                let ty = ((lifted.y / 16.0) as i32).max(0);
+                if tile_solid_at(world, lifted.x, ty) {
                     lifted += Vec2::new(0.0, 16.0);
                     let ty2 = (lifted.y / 16.0) as i32;
-                    if ty2 >= 0 && tile_solid_at(world, lifted.x, ty2) {
+                    if tile_solid_at(world, lifted.x, ty2) {
                         lifted += Vec2::new(0.0, 16.0);
                     }
                 }
@@ -1124,7 +1183,10 @@ impl Projectile {
                 v = lifted.normalize_or_zero();
                 if num22 > 300.0 && num22 <= 800.0 && self.local_ai[0] == 0.0 {
                     self.ai[0] = 2.0;
-                    self.ai[1] = (num22 / 10.0) as f32;
+                    // `:65528` — `(int)(num22 / 10f)`: the dash length is an
+                    // INT; the fraction would never count down to the `!= 0f`
+                    // exit (`:65141`).
+                    self.ai[1] = (num22 / 10.0) as i32 as f32;
                     self.extra_updates = self.ai[1] as u32;
                     self.vel = v * 10.0;
                     self.local_ai[0] = 60.0;
@@ -1132,8 +1194,10 @@ impl Projectile {
                 }
             }
             if self.kind == STARDUST_CELL {
-                // `:65552-65590` — the Cell's dash trigger: the back-off of
-                // 60 px from the aim, the same solid lift.
+                // `:65532-65570` — the Cell's dash trigger: the back-off of
+                // 60 px from the aim, the same solid lift. S1-P-i27 —
+                // `:65544-65548`: the probe ROW clamps negative to 0, like
+                // the UFO's; the second probe reads the raw row (`:65552`).
                 let mut lifted = vector;
                 let mut back = center - lifted;
                 back = if back == Vec2::ZERO {
@@ -1142,11 +1206,11 @@ impl Projectile {
                     back.normalize()
                 };
                 lifted += back * 60.0;
-                let ty = (lifted.y / 16.0) as i32;
-                if ty >= 0 && tile_solid_at(world, lifted.x, ty) {
+                let ty = ((lifted.y / 16.0) as i32).max(0);
+                if tile_solid_at(world, lifted.x, ty) {
                     lifted += Vec2::new(0.0, 16.0);
                     let ty2 = (lifted.y / 16.0) as i32;
-                    if ty2 >= 0 && tile_solid_at(world, lifted.x, ty2) {
+                    if tile_solid_at(world, lifted.x, ty2) {
                         lifted += Vec2::new(0.0, 16.0);
                     }
                 }
@@ -1155,7 +1219,8 @@ impl Projectile {
                 v = lifted.normalize_or_zero();
                 if num22 > 400.0 && num22 <= 800.0 && self.local_ai[0] == 0.0 {
                     self.ai[0] = 2.0;
-                    self.ai[1] = (num22 / 10.0) as f32;
+                    // `:65565` — `(int)(num22 / 10f)`, the UFO's truncation.
+                    self.ai[1] = (num22 / 10.0) as i32 as f32;
                     self.extra_updates = self.ai[1] as u32;
                     self.vel = v * 10.0;
                     self.local_ai[0] = 60.0;
@@ -1212,9 +1277,13 @@ impl Projectile {
             }
         } else {
             // `:65662-65700` — the return branch.
+            // `:65646` — S1-P-i27: the no-LOS return probe is
+            // `CanHitLine(base.Center, 1, 1, player.Center, 1, 1)` — two
+            // 1×1 CENTRE boxes, not the minion's full box vs the owner's
+            // point (the old port's anchors differed by half a box).
             if self.ai[0] != 1.0
                 && self.kind != ABIGAIL
-                && !can_hit_line(world, center.x, center.y, self.w, self.h, owner_center.x, owner_center.y, 0.0, 0.0)
+                && !can_hit_line(world, center.x, center.y, 1.0, 1.0, owner_center.x, owner_center.y, 1.0, 1.0)
             {
                 self.ai[0] = 1.0;
             }
@@ -1962,9 +2031,10 @@ impl Projectile {
     /// shared sentry target search: the owner's whip target first (when it is
     /// chaseable, inside the `maxDistance` manhattan reach and behind line of
     /// sight), otherwise the nearest-eligible NPC scan. `straight_line`
-    /// selects the C#'s `CanHitLine` over `CanHit`; the port routes both to the
-    /// shared tile walk (`can_hit_line`, the `Collision.CanHitLine`
-    /// stand-in — ANALYSIS). Returns the target slot with the aim point.
+    /// selects the C#'s `CanHitLine` over `CanHit` (`:40209`/`:40232`) —
+    /// S1-P-i27 routes the two to their own walks (`can_hit_line` /
+    /// `can_hit`), both anchored at `position` and the NPC's CENTRE, size 0.
+    /// Returns the target slot with the aim point.
     pub fn sentry_npc_targeting(
         &self,
         world: &World,
@@ -1976,17 +2046,25 @@ impl Projectile {
     ) -> Option<(usize, f32, f32)> {
         let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
         let origin = center + firing_offset;
-        let _ = straight_line;
+        let los = |aim: Vec2| {
+            if straight_line {
+                can_hit_line(world, origin.x, origin.y, 0.0, 0.0, aim.x, aim.y, 0.0, 0.0)
+            } else {
+                can_hit(world, origin.x, origin.y, 0.0, 0.0, aim.x, aim.y, 0.0, 0.0)
+            }
+        };
         let mut best: Option<(usize, f32, f32)> = None;
         let mut reach = max_distance;
-        // `:40201-40219` — the whip target arm.
+        // `:40201-40219` — the whip target arm. S1-P-i27: the LOS probes
+        // run from `position` (the centre + firing offset) and the NPC's
+        // CENTRE, both size 0 (`:40209`/`:40232`) — the old port probed
+        // the sentry's own box against the NPC's box, a different anchor.
         if player_target >= 0 {
             if let Some(n) = npcs.get(player_target as usize) {
                 if n.can_be_chased_by() {
-                    let (w, h) = n.size();
-                    let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+                    let aim = npc_center(n);
                     let d = (origin.x - aim.x).abs() + (origin.y - aim.y).abs();
-                    if d < reach && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, w, h) {
+                    if d < reach && los(aim) {
                         reach = d;
                         best = Some((player_target as usize, aim.x, aim.y));
                     }
@@ -2002,10 +2080,9 @@ impl Projectile {
             if !n.can_be_chased_by() {
                 continue;
             }
-            let (w, h) = n.size();
-            let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+            let aim = npc_center(n);
             let d = (origin.x - aim.x).abs() + (origin.y - aim.y).abs();
-            if d < reach && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, w, h) {
+            if d < reach && los(aim) {
                 reach = d;
                 best = Some((idx, aim.x, aim.y));
             }
@@ -11109,13 +11186,18 @@ impl Projectile {
             }
         }
         // `:49004` — the view rect (`Utils.CenteredRectangle(player.Center,
-        // MaxWorldViewSize)` = 1920x1200, `Main.cs:677-681`).
+        // MaxWorldViewSize)` = 1920x1200, `Main.cs:66714`).
         let view = (
             pcx - 960.0,
             pcy - 600.0,
             pcx + 960.0,
             pcy + 600.0,
         );
+        // `:49005-49008` — the C#'s `if (attackTarget >= 0) return;` keeps
+        // a caller-held target (the ref parameter). Both ported callers
+        // (`:48784` the Baby Bird's fresh −1, `:49631` the pirate/frog
+        // arm's fresh −1) pass a fresh target, so the arm folds to the
+        // scan below (S1-P-i27 census note).
         let mut attack_target = -1;
         for (i, n) in npcs.iter().enumerate() {
             if !chaseable(n) {
@@ -14729,19 +14811,23 @@ impl ProjectilePool {
     /// * the `MinionAttackTargetNPC` retarget (`:14257-14263`) is OUTSIDE
     ///   both gates — every landed aiStyle-165 hit on an active NPC retargets
     ///   the minions, even one that dealt no damage or hit an immortal.
+    ///   `target_active` is the POST-strike liveness (`targetNPC.active`,
+    ///   `:14259` — a killing blow deactivated the victim inside
+    ///   `StrikeNPC`, S1-P-i27).
     fn whip_on_hit(
         &mut self,
         slot: usize,
         npc_idx: u16,
-        npc_active: bool,
         on_hit_effects_run: bool,
         mut player: Option<&mut crate::player::Player>,
+        target_active: bool,
     ) {
         let kind = self.slots[slot].kind;
         let tag_type = self.slots[slot].tag_effect_type;
-        // `:14257-14263`: every aiStyle-165 hit retargets the minions (the
-        // `targetNPC.active` guard is the C# arm's own).
-        if npc_active {
+        // `:14257-14263`: the aiStyle-165 retarget fires only while the victim
+        // is still active (`if (targetNPC.active)`, `:14259`) — a killing blow
+        // deactivated it inside `StrikeNPC` (S1-P-i27).
+        if target_active {
             if let Some(p) = player.as_deref_mut() {
                 p.minion_attack_target_npc = npc_idx as i32;
             }
@@ -18819,7 +18905,8 @@ impl ProjectilePool {
                 .unwrap_or(p.pos + Vec2::new(p.w * 0.5, p.h * 0.5));
             // `owner.whipRangeMultiplier` (`FillWhipControlPoints` `:48301`):
             // the Tiki/Stardust/Obsidian Outlaw/Mobius reach adds stretch the
-            // collision curve too (the C# reads the live player field).
+            // collision curve too (the C# reads the live player field;
+            // S1-P-i24/i27 both wired it — one seam).
             let range_mult = player
                 .as_deref()
                 .map(|pl| pl.whip_range_multiplier)
@@ -19071,14 +19158,26 @@ impl ProjectilePool {
                 // The retarget (`:14257-14263`) is OUTSIDE both gates.
                 if is_whip {
                     let on_hit_effects_run = !npc_immortal && strike_dmg > 0 && npc_life_max_gt5;
+                    // S1-P-i27 — `targetNPC.active` (`Projectile.cs:14259`):
+                    // a killing blow deactivates the NPC inside `StrikeNPC`
+                    // (`NPC.checkDead`, `NPC.cs:78225`), so the retarget only
+                    // fires while the victim is still alive. The port's
+                    // liveness is `hp > 0` (the `Npc` list carries no `active`
+                    // field — the `can_be_chased_by` precedent).
+                    let target_active = npcs[idx].hp > 0;
                     self.whip_on_hit(
                         slot,
                         idx as u16,
-                        npcs[idx].hp > 0,
                         on_hit_effects_run,
                         player.as_deref_mut(),
+                        target_active,
                     );
                 }
+                // Gate-merge note (i24 vs i27): the pre-strike whip debuffs +
+                // tag application live ONCE above the strike (the C# order,
+                // `:13579-13584` before `:13649` — i24's fix); i27's
+                // post-strike copies were dropped (they would double the
+                // ThornWhip poison draw and re-apply the tag).
                 // `:13658`: the tag stack's on-hit pass — the proc consume
                 // (and the Constellation's immediate proc enable, its
                 // `OnTaggedHit`). The port keeps this AFTER the per-type switch
@@ -31370,6 +31469,231 @@ mod minion_ai_tests {
             "the queue order follows the slot order"
         );
     }
+
+    /// S1-P-i27 — one pool tick with a live NPC list (the `tick` helper's
+    /// empty-list form cannot carry a target).
+    fn tick_with(
+        pool: &mut ProjectilePool,
+        w: &mut tr_core::World,
+        p: &mut Player,
+        npcs: &mut [Npc],
+    ) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    /// S1-P-i27 item 6a — the aim-point split (`Projectile.cs:65335-65339`
+    /// vs `:65379`/`:65401`): the Tempest/UFO/Cell branch aims at
+    /// `position + Size * (0.5, 0.5)` with Y=0 ONLY for the UFO; the generic
+    /// branch (Hornet/Imp/Abigail) aims at the FULL `nPC.Center`. A 100-px
+    /// tall NPC separates the two by 50 px of aim Y — the old single
+    /// `(x+w/2, y)` closure gave the Hornet the UFO's y-top point.
+    #[test]
+    fn s1_p_i27_the_branch_aim_splits_ufo_ytop_from_generic_center() {
+        let mut w = world();
+        let mut p = player(&w);
+        p.x = 400.0;
+        p.y = 400.0;
+        let (ocx, ocy) = p.center();
+        // The tall NPC: 40x100 at (600, 300) — UFO aim (620, 300),
+        // generic aim (620, 350).
+        let mut tall = npc_at(NpcKind::Zombie, 600.0, 300.0);
+        tall.size_override = Some((40.0, 100.0));
+        let mut npcs = vec![tall];
+        p.minion_attack_target_npc = 0;
+        // The UFO parked on the owner's centre: the whip arm's distance
+        // (~242) is inside 6000, the pursue lift keeps num22 ~291 (< 300,
+        // no dash) and > 200 (the shared steering runs).
+        p.max_minions = 5;
+        p.ufo_minion = true;
+        let mut pool = ProjectilePool::new();
+        let ufo = spawn_at(&mut pool, UFO_MINION, ocx - 14.0, ocy - 14.0);
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        let uv = pool.slots[ufo].vel;
+        assert!(uv.x > 0.0, "the UFO pursues right: {uv:?}");
+        // The steering aims at (620, 300) − centre, then the beam-align
+        // adds the (210, −461) direction — both steeply up-right.
+        assert!(
+            uv.y / uv.x < -0.8,
+            "the UFO's aim is the y-TOP point (:65337): {uv:?}"
+        );
+        // The Hornet at the same spot: the generic branch's aim is the
+        // full centre (620, 350) — the pursuit is much shallower.
+        p.ufo_minion = false;
+        p.hornet_minion = true;
+        let mut pool = ProjectilePool::new();
+        let hornet = spawn_at(&mut pool, HORNET, ocx - 12.0, ocy - 13.0);
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        let hv = pool.slots[hornet].vel;
+        assert!(hv.x > 0.0, "the Hornet pursues right: {hv:?}");
+        assert!(
+            hv.y / hv.x > -0.5 && hv.y / hv.x < 0.0,
+            "the generic aim is the full Centre (:65379), not y-top: {hv:?}"
+        );
+    }
+
+    /// S1-P-i27 item 6b — Abigail's LOS is `Collision.CanHit(Center, 1, 1,
+    /// nPC.Center, 1, 1)` (`Projectile.cs:65383`/`:65405`), NOT the box
+    /// `CanHitLine`: the Manhattan walk blocks only when BOTH flanks are
+    /// solid, so a single solid tile BESIDE a vertical sight line passes
+    /// for her while the Hornet's trio walk (`:65381`) blocks on it.
+    #[test]
+    fn s1_p_i27_abigails_los_is_canhit_not_canhitline() {
+        let mut w = world();
+        // One solid tile at (24, 31) — left of the vertical sight column 25.
+        let i = w.index(24, 31);
+        w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = player(&w);
+        p.x = 400.0;
+        p.y = 400.0;
+        let (ocx, ocy) = p.center();
+        // The NPC straight below: centre (400, 600), 200 px away.
+        let mut npcs = vec![npc_at(NpcKind::Zombie, 390.0, 590.0)];
+        p.minion_attack_target_npc = 0;
+        p.max_minions = 5;
+        // Abigail: the CanHit walk's flanks at row 31 are (solid, air) —
+        // not a full block — so the whip target lands and she pursues DOWN.
+        p.abigail_minion = true;
+        let mut pool = ProjectilePool::new();
+        let abigail = spawn_at(&mut pool, ABIGAIL, ocx - 15.0, ocy - 24.0);
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!(
+            pool.slots[abigail].vel.y > 0.05,
+            "the CanHit LOS passes the single flank tile (:65383): {:?}",
+            pool.slots[abigail].vel
+        );
+        // The Hornet over the same geometry: the CanHitLine trio sees the
+        // left tile and blocks — no target, the return hover steers UP.
+        p.abigail_minion = false;
+        p.hornet_minion = true;
+        let mut pool = ProjectilePool::new();
+        let hornet = spawn_at(&mut pool, HORNET, ocx - 12.0, ocy - 13.0);
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!(
+            pool.slots[hornet].vel.y < 0.0,
+            "the CanHitLine trio blocks on the flank tile (:65381): {:?}",
+            pool.slots[hornet].vel
+        );
+    }
+
+    /// S1-P-i27 item 6c — the UFO dash-lift probe ROW clamps negative to 0
+    /// (`Projectile.cs:65507-65511`): an aim point above the world still
+    /// probes row 0, and a solid there lifts the dash anchor 16 px. The
+    /// second probe reads the RAW row (`:65515`, null above the world).
+    /// Also pins the `(int)(num22 / 10f)` dash-length truncation
+    /// (`:65528`) — the fraction would never reach the `!= 0f` dash exit.
+    #[test]
+    fn s1_p_i27_the_ufo_dash_probe_clamps_the_row_and_truncates_the_length() {
+        let mut w = world();
+        // A solid at (38, 0) — the clamped row-0 probe column of the aim.
+        let i = w.index(38, 0);
+        w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = player(&w);
+        p.x = 400.0;
+        p.y = 400.0;
+        let (ocx, ocy) = p.center();
+        // The NPC near the world top: the UFO's y-top aim is (620, 40);
+        // lifted 80 px it sits at y = −40 → the raw row −2 clamps to 0.
+        let mut tall = npc_at(NpcKind::Zombie, 600.0, 40.0);
+        tall.size_override = Some((40.0, 20.0));
+        let mut npcs = vec![tall];
+        p.minion_attack_target_npc = 0;
+        p.max_minions = 5;
+        p.ufo_minion = true;
+        let mut pool = ProjectilePool::new();
+        let ufo = spawn_at(&mut pool, UFO_MINION, ocx - 14.0, ocy - 14.0);
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        // The lift: (620, −24) − centre (410, 421) = (210, −445),
+        // length √242125 ≈ 492.06 → (int)(49.206) = 49. WITHOUT the row
+        // clamp the anchor stays (620, −40): length ≈ 506.58 → 50.
+        assert_eq!(pool.slots[ufo].ai[0], 2.0, "the dash fires (:65526)");
+        assert_eq!(
+            pool.slots[ufo].ai[1], 49.0,
+            "the clamped lift + the int truncation (:65507-65511/:65528)"
+        );
+        assert_eq!(pool.slots[ufo].local_ai[0], 60.0, "the dash cooldown");
+    }
+
+    /// S1-P-i27 item 6d — the return branch's no-LOS probe is
+    /// `CanHitLine(base.Center, 1, 1, player.Center, 1, 1)`
+    /// (`Projectile.cs:65646`): two 1×1 CENTRE boxes. A solid row between
+    /// the minion and the owner flips `ai[0]` to the return state even
+    /// inside the 500-px owner-distance ladder.
+    #[test]
+    fn s1_p_i27_the_return_los_probes_two_centre_boxes() {
+        let mut w = world();
+        // A full solid row at tile y = 37 (592..608 px).
+        for x in 0..w.width {
+            let i = w.index(x, 37);
+            w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut p = player(&w);
+        p.x = 400.0;
+        p.y = 400.0;
+        let (ocx, ocy) = p.center();
+        p.max_minions = 5;
+        p.hornet_minion = true;
+        let mut pool = ProjectilePool::new();
+        // 379 px below the owner — inside the 500-px ladder, so ONLY the
+        // blocked centre-to-centre LOS can arm the return state.
+        let hornet = spawn_at(&mut pool, HORNET, ocx - 12.0, ocy + 379.0 - 13.0);
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(
+            pool.slots[hornet].ai[0], 1.0,
+            "the wall blocks the centre-box LOS (:65646)"
+        );
+        // The `tileCollide = false` write (`:65455`) runs AHEAD of the
+        // return branch's flip — it lands on the next tick, like the C#.
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!(!pool.slots[hornet].tile_collide, "the return state (:65455)");
+    }
+
+    /// S1-P-i27 — the far snap's Y quirk is PRESERVED (`Projectile.cs:65711-65712`):
+    /// BOTH axes subtract `width / 2` — the Y uses the WIDTH, not the height
+    /// (the Hornet's 24×26 box separates the two by 1 px).
+    #[test]
+    fn s1_p_i27_the_far_snap_subtracts_width_on_both_axes() {
+        let mut w = world();
+        let mut p = player(&w);
+        p.x = 400.0;
+        p.y = 400.0;
+        let (ocx, ocy) = p.center();
+        p.max_minions = 5;
+        p.hornet_minion = true;
+        let mut pool = ProjectilePool::new();
+        // > 2000 px from the owner: the snap lands, then the same tick's
+        // steering + the pool's integrate add exactly `vel`.
+        let hornet = spawn_at(&mut pool, HORNET, 100.0, 4000.0);
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        let s = &pool.slots[hornet];
+        let snapped_x = s.pos.x - s.vel.x;
+        let snapped_y = s.pos.y - s.vel.y;
+        assert!(
+            (snapped_x - (ocx - 12.0)).abs() < 1e-3,
+            "the X snap is owner.X − width/2: {snapped_x}"
+        );
+        assert!(
+            (snapped_y - (ocy - 12.0)).abs() < 1e-3,
+            "the Y snap is owner.Y − WIDTH/2 (:65712), not height/2: {snapped_y}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -32934,6 +33258,10 @@ mod use_path_tests {
     /// DW-6.3 — the right-click aim: the nearest chaseable NPC to the mouse
     /// wins, a second click on the same target clears it, no NPC → −1; the
     /// per-tick invalidation drops an unchaseable or far target.
+    ///
+    /// S1-P-i27: the aim takes the `doNotDisableIfTheTargetIsTheSame` flag
+    /// (false here, the use path's value) and the invalidation is the full
+    /// `UpdateMinionTarget` (hitbox-to-centre distance).
     #[test]
     fn test_DW_6_3_the_right_click_aim_and_invalidation() {
         let w = world();
@@ -32943,26 +33271,26 @@ mod use_path_tests {
             npc_at(NpcKind::DemonEye, 500.0, 300.0),
         ];
         // Mouse near the DemonEye.
-        p.minion_npc_target_aim(&npcs, Vec2::new(520.0, 310.0));
+        p.minion_npc_target_aim(&npcs, Vec2::new(520.0, 310.0), false);
         assert_eq!(p.minion_attack_target_npc, 1, "the nearest NPC to the mouse");
         // The same target again clears it.
-        p.minion_npc_target_aim(&npcs, Vec2::new(520.0, 310.0));
+        p.minion_npc_target_aim(&npcs, Vec2::new(520.0, 310.0), false);
         assert_eq!(p.minion_attack_target_npc, -1, "the toggle-off");
         // No chaseable NPC → −1.
         p.minion_attack_target_npc = 0;
         let mut cold = npc_at(NpcKind::Zombie, 900.0, 300.0);
         cold.chaseable = false;
-        p.invalidate_minion_target(&[cold.clone()]);
+        p.update_minion_target(&[cold.clone()]);
         assert_eq!(p.minion_attack_target_npc, -1, "the unchaseable drops");
         // The far target (> 3000 px) drops too.
         p.minion_attack_target_npc = 0;
         let far = npc_at(NpcKind::Zombie, p.x + 4000.0, p.y);
-        p.invalidate_minion_target(&[far]);
+        p.update_minion_target(&[far]);
         assert_eq!(p.minion_attack_target_npc, -1, "the far target drops");
         // A chaseable, near target survives.
         p.minion_attack_target_npc = 0;
         let near = npc_at(NpcKind::Zombie, p.x + 100.0, p.y);
-        p.invalidate_minion_target(&[near]);
+        p.update_minion_target(&[near]);
         assert_eq!(p.minion_attack_target_npc, 0, "the valid target holds");
     }
 
@@ -33011,6 +33339,166 @@ mod use_path_tests {
         n.max_hp = 40;
         n.hp = 40;
         n
+    }
+
+    /// S1-P-i27 — the right-click aim measures `NPC.Hitbox.Distance`
+    /// (`Player.cs:56920`, `Utils.cs:1507-1542`), NOT centre-to-centre:
+    /// a WIDE NPC whose edge touches the cursor (distance 0) beats a small
+    /// NPC whose centre is nearer than the wide one's centre.
+    #[test]
+    fn s1_p_i27_the_aim_prefers_the_hitbox_edge_over_the_centre() {
+        let w = world();
+        let mut p = player(&w);
+        // The wide box: 200x20 at (100, 300) — its centre is (200, 310).
+        let mut wide = npc_at(NpcKind::Zombie, 100.0, 300.0);
+        wide.size_override = Some((200.0, 20.0));
+        // The small box: 20x20 at (330, 300) — centre (340, 310).
+        let mut small = npc_at(NpcKind::Zombie, 330.0, 300.0);
+        small.size_override = Some((20.0, 20.0));
+        // The cursor at (295, 310): INSIDE the wide box (0), 35 px from
+        // the small box's left edge — while the small CENTRE (340) is
+        // nearer to the cursor than the wide CENTRE (200): 45 vs 95.
+        let npcs = vec![wide, small];
+        p.minion_npc_target_aim(&npcs, Vec2::new(295.0, 310.0), false);
+        assert_eq!(
+            p.minion_attack_target_npc, 0,
+            "the hitbox distance (0 < 35) wins over the centre distance (95 > 45)"
+        );
+    }
+
+    /// S1-P-i27 — the `doNotDisableIfTheTargetIsTheSame: true` form
+    /// (`Player.cs:56925`): a re-aim at the SAME target keeps it (the
+    /// toggle-off only fires when the flag is false).
+    #[test]
+    fn s1_p_i27_the_keep_same_flag_suppresses_the_toggle_off() {
+        let w = world();
+        let mut p = player(&w);
+        let npcs = vec![npc_at(NpcKind::Zombie, 500.0, 300.0)];
+        let mouse = Vec2::new(510.0, 310.0);
+        p.minion_npc_target_aim(&npcs, mouse, false);
+        assert_eq!(p.minion_attack_target_npc, 0);
+        // The same target with the flag: stays.
+        p.minion_npc_target_aim(&npcs, mouse, true);
+        assert_eq!(p.minion_attack_target_npc, 0, "(:56925) the flag keeps it");
+        // Without the flag: clears.
+        p.minion_npc_target_aim(&npcs, mouse, false);
+        assert_eq!(p.minion_attack_target_npc, -1);
+    }
+
+    /// S1-P-i27 — `UpdateMinionTarget`'s attack half measures
+    /// `Hitbox.Distance(base.Center)` (`Player.cs:57009`): a wide NPC whose
+    /// CENTRE is past 3000 px but whose EDGE is inside survives; the old
+    /// centre-to-position probe dropped it.
+    #[test]
+    fn s1_p_i27_the_invalidation_measures_the_hitbox_to_the_centre() {
+        let w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        // A 400-wide box centred 3100 px right of the player's centre:
+        // its left edge sits 2900 px away — inside the 3000-px gate.
+        let mut wide = npc_at(NpcKind::Zombie, cx + 2900.0, cy - 10.0);
+        wide.size_override = Some((400.0, 20.0));
+        p.minion_attack_target_npc = 0;
+        p.update_minion_target(&[wide]);
+        assert_eq!(
+            p.minion_attack_target_npc, 0,
+            "the edge (2900) is inside 3000 even though the centre (3100) is not"
+        );
+        // Shift the box 200 px further: the edge lands at 3100 — drops.
+        let mut far = npc_at(NpcKind::Zombie, cx + 3100.0, cy - 10.0);
+        far.size_override = Some((400.0, 20.0));
+        p.update_minion_target(&[far]);
+        assert_eq!(p.minion_attack_target_npc, -1, "(:57011)");
+    }
+
+    /// S1-P-i27 — the whip retarget's `targetNPC.active` gate
+    /// (`Projectile.cs:14259`): a landed hit on a live victim retargets
+    /// the minions; a KILLING blow (the victim deactivated inside
+    /// `StrikeNPC`, `NPC.cs:78225`) does not.
+    #[test]
+    fn s1_p_i27_the_whip_retarget_skips_a_dead_victim() {
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        let slot = pool
+            .spawn_with_data(FIRE_WHIP, 100.0, 100.0, 4.0, 0.0, 10, 2.0)
+            .expect("the whip row");
+        pool.set_whip_params(slot, 0, 0, 30.0);
+        p.minion_attack_target_npc = -1;
+        // The live victim: the retarget lands.
+        pool.whip_on_hit(slot, 3, false, Some(&mut p), true);
+        assert_eq!(p.minion_attack_target_npc, 3, "(:14261)");
+        // The dead victim: the write is skipped, the old mark holds.
+        pool.whip_on_hit(slot, 7, false, Some(&mut p), false);
+        assert_eq!(p.minion_attack_target_npc, 3, "(:14259) the active gate");
+    }
+
+    /// S1-P-i27 — the whip sweep reads the owner's `whipRangeMultiplier`
+    /// (`Projectile.cs:48301`): the control points scale with it (the old
+    /// port pinned 1f). Pure geometry witness — `fill_whip_control_points`
+    /// at 1.0 vs 1.1 over the same inputs.
+    #[test]
+    fn s1_p_i27_the_whip_range_multiplier_scales_the_sweep() {
+        let settings = tr_core::whip::get_whip_settings(841, 30.0, 2.0, 0.0, false);
+        let base = tr_core::whip::WhipCurveInputs {
+            kind: 841,
+            ai0: 15.0,
+            frame_offset: 0,
+            ai1: 1.0,
+            sprite_direction: 1,
+            rotation: 0.0,
+            arm_position: Vec2::new(100.0, 100.0),
+            held_use_animation: 30.0,
+            whip_range_multiplier: 1.0,
+            velocity_len: 10.0,
+            get_actual_collision_points: true,
+        };
+        let plain = tr_core::whip::fill_whip_control_points(&base, &settings);
+        let scaled = tr_core::whip::fill_whip_control_points(
+            &tr_core::whip::WhipCurveInputs { whip_range_multiplier: 1.1, ..base },
+            &settings,
+        );
+        assert_eq!(plain.len(), scaled.len());
+        // The arm anchor (point 0) is fixed; every later point rides the
+        // 1.1 reach — the tip's offset from the arm grows by ~10%.
+        let tip = plain.len() - 1;
+        let d0 = (plain[tip] - base.arm_position).length();
+        let d1 = (scaled[tip] - base.arm_position).length();
+        assert!(d1 > d0, "the scaled sweep reaches further: {d0} -> {d1}");
+        assert!((d1 / d0 - 1.1).abs() < 0.05, "~1.1x: {}", d1 / d0);
+    }
+
+    /// S1-P-i27 — the sentry targeting's LOS anchors: `position` (centre +
+    /// firing offset) to the NPC's CENTRE, both size 0
+    /// (`Projectile.cs:40209`/`:40232`) — an offset that moves the probe
+    /// past a wall changes the answer even though the sentry's own box
+    /// stays put.
+    #[test]
+    fn s1_p_i27_the_sentry_los_probes_from_the_offset_position() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        // A solid wall column at x=20 (tiles 320..336 px), rows 0..800.
+        for y in 0..800 {
+            let i = w.index(20, y);
+            w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let slot = pool
+            .spawn_with_data_ai_owned(FROST_HYDRA, 0, 100.0, 300.0, 0.0, 0.0, 26, 7.5, 0.0, 0.0)
+            .unwrap();
+        // The NPC beyond the wall.
+        let npcs = vec![npc_at(NpcKind::Zombie, 500.0, 300.0)];
+        let p = &pool.slots[slot];
+        // No offset: the probe walks from the sentry's centre (100-ish)
+        // through the wall — blocked.
+        let blocked = p.sentry_npc_targeting(&w, Vec2::ZERO, true, 1000.0, -1, &npcs);
+        assert!(blocked.is_none(), "the wall blocks the centre probe");
+        // The offset jumps the probe PAST the wall (x=400): the walk from
+        // 400 to the NPC at 500 never crosses x=320..336 — it hits.
+        let offset = Vec2::new(400.0 - (p.pos.x + p.w * 0.5), 0.0);
+        let through = p.sentry_npc_targeting(&w, offset, true, 1000.0, -1, &npcs);
+        assert!(through.is_some(), "the offset probe starts past the wall");
+        assert_eq!(through.unwrap().0, 0);
     }
 }
 

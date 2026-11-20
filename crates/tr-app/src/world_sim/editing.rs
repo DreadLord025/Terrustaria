@@ -1125,7 +1125,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
             );
             if let Some(p) = app.player.as_mut() {
-                p.minion_npc_target_aim(&app.npcs, mouse_world);
+                // `ItemCheck_MinionAltFeatureUse` passes
+                // `doNotDisableIfTheTargetIsTheSame: false` (`Player.cs:49777`).
+                p.minion_npc_target_aim(&app.npcs, mouse_world, false);
             }
         }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {

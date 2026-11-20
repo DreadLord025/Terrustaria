@@ -217,6 +217,12 @@ pub struct SetStats {
     pub dash_type: i32,
     /// `Player.manaCost -= x` (the casters' set bonuses).
     pub mana_cost: f32,
+    /// `Player.whipRangeMultiplier += x` (the Tiki head `Player.cs:13854`,
+    /// the Stardust body/legs `:13879`, the Tiki set
+    /// `ArmorSetBonuses.cs:15`, the Obsidian Outlaw set `:123`) — S1-P-i27
+    /// wired the consumer (the whip sweep, `Projectile.cs:48301`);
+    /// gate-merged with i24's identical field.
+    pub whip_range: f32,
     /// `Player.endurance += x` (the Turtle/Chlorophyte/Solar rows).
     pub endurance: f32,
     /// `Player.thorns` / `turtleThorns` / `cactusThorns` (the Turtle and
@@ -224,10 +230,6 @@ pub struct SetStats {
     pub thorns: f32,
     pub turtle_thorns: bool,
     pub cactus_thorns: bool,
-    /// `Player.whipRangeMultiplier += x` (the Tiki head `Player.cs:13854`,
-    /// the Stardust body/legs `:13879`, the Tiki set
-    /// `ArmorSetBonuses.cs:15`, the Obsidian Outlaw set `:123`).
-    pub whip_range: f32,
     /// `Player.whipUseTimeMultiplier *= x` — a MULTIPLIER (1.0 = no change),
     /// the Obsidian Outlaw set's `1/1.15` (`ArmorSetBonuses.cs:124`).
     pub whip_use_time_mult: f32,
@@ -249,11 +251,11 @@ const fn stats() -> SetStats {
         max_minions: 0,
         dash_type: 0,
         mana_cost: 0.0,
+        whip_range: 0.0,
         endurance: 0.0,
         thorns: 0.0,
         turtle_thorns: false,
         cactus_thorns: false,
-        whip_range: 0.0,
         whip_use_time_mult: 1.0,
     }
 }
@@ -490,8 +492,8 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
             ..stats()
         },
     ),
-    // `:475` Benefits.Tiki — `maxMinions++`, `whipRangeMultiplier += 0.2f`
-    // (`ArmorSetBonuses.cs:12-16`).
+    // `:475` Benefits.Tiki — `maxMinions++` + `whipRangeMultiplier +=
+    // 0.2f` (`:15`; S1-P-i27 wired the whip sweep's consumer).
     (
         "Tiki",
         (1159, 1160, 1161),
