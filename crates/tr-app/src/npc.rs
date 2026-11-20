@@ -4698,6 +4698,22 @@ impl Npc {
                 let _ = crate::npc_ai_style21::ai_style21(self, world, &[cand], 0, 255);
                 crate::npc_ai_style21::collision_move_blazing_wheel(self, world);
             }
+            // `else if (this.aiStyle == 22)` (`NPC.cs:24666-25234`) — the
+            // ghost/hover family (TEN vanilla members). W4-d24 census:
+            // the TWO ported kinds ride their landed machines here
+            // (verify-only — the S1-F-13b2 slice C / S1-D-3z machines
+            // are unchanged); the EIGHT unported members' verbatim arm
+            // lives in `npc_ai_style22.rs` (UNWIRED until their kinds
+            // land). The kind arms below become unreachable markers.
+            22 => match self.kind {
+                NpcKind::Poltergeist => {
+                    crate::npc_ai_poltergeist::poltergeist_ai(self, world, player, rng)
+                }
+                NpcKind::Drippler => {
+                    crate::npc_ai_drippler::drippler_ai(self, world, player, rng)
+                }
+                _ => unreachable!("only the ported aiStyle-22 kinds reach the axis arm"),
+            },
             // `if (this.aiStyle == 9) { ... }` (`NPC.cs:21377-21571`) -
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
             // new module's arm; the unported 112/666/516 branches wait
@@ -6225,17 +6241,20 @@ impl Npc {
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
             // slice C. In 1.4.5.8 the 330 path carries no shot; its offence
-            // is the 90-damage contact body.
+            // is the 90-damage contact body. W4-d24 axis census: the style
+            // axis claims 22 above — this arm is unreachable through
+            // `update_rng` (the machine unchanged, verify-only).
             NpcKind::Poltergeist => {
-                crate::npc_ai_poltergeist::poltergeist_ai(self, world, player, rng)
+                unreachable!("aiStyle 22 rides the style axis (W4-d24)")
             }
             // The Drippler (490): aiStyle 22's 490 branches (S1-D-3z,
             // `NPC.cs:24666-25234` — the day flee, the distance-scaled
             // floor probe, the 0.03/0.75 gravity, the 1.5/1 caps). The
             // Poltergeist machine stays byte-identical; 490 has tile
             // collision (no `noTileCollide`), so its integration differs.
+            // W4-d24 axis census: unreachable through `update_rng`.
             NpcKind::Drippler => {
-                crate::npc_ai_drippler::drippler_ai(self, world, player, rng)
+                unreachable!("aiStyle 22 rides the style axis (W4-d24)")
             }
             // The Mourning Wood (325, aiStyle 57) and the Pumpking (327,
             // aiStyle 58): S1-F-13b2 slice B landed their named machines
@@ -33774,5 +33793,97 @@ mod w4_d24_style21_census_tests {
         assert_eq!(n.direction_y, 1, "the directionY pin (:24620)");
         assert!((n.rotation - 0.13).abs() < 1e-5, "the first spin (:24626)");
         assert_eq!(rng, witness, "the wheel tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d24 — the aiStyles 15-22 axis census witnesses (style 22 slice).
+// WRITTEN, NOT RUN (code-only mode). 22 ghost family: the TWO ported
+// kinds (Poltergeist 330 / Drippler 490) LANDED -> verify-only axis
+// claim routing to their unchanged machines; the EIGHT unported
+// members' verbatim arm is npc_ai_style22.rs (UNWIRED).
+// =====================================================================
+#[cfg(test)]
+mod w4_d24_style22_census_tests {
+    use super::*;
+
+    /// The axis claims style 22 exactly once; both ported kind arms are
+    /// the unreachable markers.
+    #[test]
+    fn w4_d24_the_axis_claims_style_22_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "22" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 22 claimed once");
+        let markers = src.matches("aiStyle 22 rides the style axis (W4-d24)").count();
+        assert_eq!(markers, 2, "the Poltergeist + Drippler kind-arm markers");
+    }
+
+    /// The 22 claim is LIVE for the Poltergeist: a pumpkin-moon night
+    /// tick through `update_rng` runs the landed dwell machine — the
+    /// anchor latch (ai[0..1] = position, ai[2] = 0 → the window count)
+    /// — and draws NOTHING (the flee drift's Next(-1,2) is gated on
+    /// !pumpkinMoon, `NPC.cs:24670-24673`/`:24716-24720`).
+    #[test]
+    fn w4_d24_the_poltergeist_rides_the_22_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 100.0;
+        w.pumpkin_moon = true;
+        let mut p = Player::spawn(&w);
+        p.x = 110.0 * TILE_PX;
+        p.y = 150.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Poltergeist, 100.0 * TILE_PX, 150.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(22);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 100.0 * TILE_PX, "the anchor latched (:24758)");
+        assert_eq!(rng, witness, "the pumpkin-moon dwell draws nothing");
+    }
+
+    /// The 22 claim is LIVE for the Drippler: a NIGHT tick (no day flee)
+    /// runs the landed 490 machine draw-free; the DAY flee with a parked
+    /// body consumes exactly the one Next(-1,2) (`NPC.cs:24678-24681` +
+    /// `:24716-24720`).
+    #[test]
+    fn w4_d24_the_drippler_rides_the_22_axis_flee_census() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 100.0;
+        w.day_time = false;
+        let mut p = Player::spawn(&w);
+        p.x = 110.0 * TILE_PX;
+        p.y = 150.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Drippler, 100.0 * TILE_PX, 140.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(22);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "the night dwell draws nothing");
+        // The day flee: a parked body draws the one drift roll.
+        w.day_time = true;
+        let mut m = Npc::new(NpcKind::Drippler, 100.0 * TILE_PX, 140.0 * TILE_PX, 1, 0.0);
+        m.hp = m.max_hp;
+        m.vx = 0.0;
+        let mut rng2 = UnifiedRandom::new(22);
+        let mut mirror = UnifiedRandom::new(22);
+        let _want = mirror.next_range(-1, 2) as f32 * 1.5;
+        m.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng2);
+        assert_eq!(rng2, mirror, "exactly the one flee drift draw");
     }
 }
