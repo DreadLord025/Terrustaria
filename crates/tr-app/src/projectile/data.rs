@@ -1156,6 +1156,14 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
         ILLUMINANT_HOOK => 0.3,                // `:5631`
         CRYSTAL_SHARD_MELEE => 0.5,            // `:10644`
+        // S1-P-i13 — the bow-launch arrows' `SetDefaults` light: the
+        // UnholyArrow 4 (`Projectile.cs:844`), JestersArrow 5 (`:856`),
+        // HellfireArrow 41 (`:1246`), CursedArrow 103 (`:1911`),
+        // FrostburnArrow 172 (`:2586`) and IchorArrow 278 (`:3645`).
+        4 => 0.35,
+        5 => 0.4,
+        41 => 0.3,
+        103 | 172 | 278 => 1.0,
         _ => 0.0,
     }
 }
@@ -2465,6 +2473,66 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             485 => (24.0, 24.0, 1, -1, 1200, 0, true, true, false, RESET_STATE),
             495 => (10.0, 10.0, 1, 3, 1200, 0, true, true, false, RESET_STATE),
             819 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // S1-P-i13 — the bow-launch arrow family. The post-`PickAmmo`
+            // `projToShoot` overrides (`Player.cs:47157-47176`) and the arrow
+            // ammo's own `Item.shoot` resolve to these kinds; without a row the
+            // data-carrying spawn declines them. Every row is the `SetDefaults`
+            // body verbatim (the aiStyle-1 flight is the generic `ai_arrow`
+            // arm; the per-kind gravity/rotation hooks are the S1-D-5 slices).
+            // 120 the FrostArrow (`Projectile.cs:2093-2104`): the Ice Bow 725's
+            // override (`Player.cs:47165-47168`), `coldDamage`, extraUpdates 1.
+            120 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // 357 the PulseBolt (`Projectile.cs:4474-4486`): the Pulse Bow
+            // 2223's override (`Player.cs:47173-47176`), 4x4, penetrate 6,
+            // alpha 255, extraUpdates 2, scale 1.2, timeLeft 600. NOT `arrow`
+            // (the C# block sets no `this.arrow`).
+            357 => (4.0, 4.0, 1, 6, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.2)),
+            // 710 the DD2BetsyArrow (`Projectile.cs:7521-7535`): the Betsy Bow
+            // 3859's `Item.shoot`, extraUpdates 1, `timeLeft = extraUpdates *
+            // 60 * 5 = 300`, the LOCAL immunity pair with cooldown -1, alpha
+            // 255, `ignoreWater` (the overlay below).
+            710 => (10.0, 10.0, 1, 1, 300, 1, true, true, false, (true, -1, false, -1, 255, 1.0)),
+            // 323 the Stake (`Projectile.cs:4160-4171`): the Stake Launcher
+            // 1835's `Item.shoot` (useAmmo Stake), 14x14, penetrate 10,
+            // extraUpdates 3, alpha 255, scale 0.8. NOT `arrow` (the C# block
+            // sets no `this.arrow`); the stock timeLeft 3600.
+            323 => (14.0, 14.0, 1, 10, TIME_LEFT_DEFAULT, 3, true, false, false, (false, -2, false, -1, 255, 0.8)),
+            // The arrow-ammo family — the ammo's own `Item.shoot` the generic
+            // bow fires when no override applies. 4 UnholyArrow
+            // (`Projectile.cs:837-848`): penetrate 5, light 0.35.
+            4 => (10.0, 10.0, 1, 5, 1200, 0, true, true, false, RESET_STATE),
+            // 5 JestersArrow (`Projectile.cs:849-863`): penetrate -1, alpha
+            // 100, extraUpdates 1, timeLeft 120, `ignoreWater` (the overlay).
+            5 => (10.0, 10.0, 1, -1, 120, 1, true, true, false, (false, -2, false, -1, 100, 1.0)),
+            // 41 HellfireArrow (`Projectile.cs:1237-1247`): penetrate -1, the
+            // stock timeLeft 3600 (the block sets none), light 0.3.
+            41 => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false, RESET_STATE),
+            // 91 HolyArrow (`Projectile.cs:1743-1752`): the stock penetrate 1,
+            // timeLeft 1200.
+            91 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // 103 CursedArrow (`Projectile.cs:1904-1914`): light 1, timeLeft
+            // 1200, the stock penetrate 1.
+            103 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // 172 FrostburnArrow (`Projectile.cs:2579-2590`): light 1,
+            // `coldDamage`, timeLeft 1200, the stock penetrate 1.
+            172 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // 225 ChlorophyteArrow (`Projectile.cs:3100-3110`): extraUpdates 1,
+            // timeLeft 1200, the stock penetrate 1.
+            225 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // 278 IchorArrow (`Projectile.cs:3638-3649`): light 1, extraUpdates
+            // 1, timeLeft 1200, the stock penetrate 1.
+            278 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // 282 VenomArrow (`Projectile.cs:3688-3698`): extraUpdates 1,
+            // timeLeft 1200, the stock penetrate 1.
+            282 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // 474 BoneArrowFromMerchant (`Projectile.cs:5474-5484`): penetrate
+            // 2, timeLeft 1200 — the Skeleton Bow 4058 converts it to 117
+            // (`Player.cs:53511-53514`), but the row stands for the raw kind.
+            474 => (10.0, 10.0, 1, 2, 1200, 0, true, true, false, RESET_STATE),
+            // 1006 ShimmerArrow (`Projectile.cs:9570-9579`): timeLeft 1200, the
+            // stock penetrate 1; the `flag4` inversion + the 1/8 dust draw
+            // (`Projectile.cs:56034-56049`) are the S1-D-5 flight slice.
+            1006 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
             // The spray/ball ammo the not-consume windows resolve — the
             // Flamethrower's Flames (`:1660-1670`: 6x6, aiStyle 193, pen 4,
             // extraUpdates 2, `armorPenetration = 15` dropped; its immunity
@@ -3127,7 +3195,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
-            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL),
+            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
+            // S1-P-i13 — the bow-launch arrows that set `ignoreWater` in their
+            // `SetDefaults` bodies: the JestersArrow 5 (`Projectile.cs:859`)
+            // and the DD2BetsyArrow 710 (`:7529`).
+            || matches!(kind, 5 | 710),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

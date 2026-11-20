@@ -575,6 +575,12 @@ pub struct Projectile {
     pub tile_collide: bool,
     /// `Projectile.arrow`.
     pub arrow: bool,
+    /// `Projectile.noDropItem` (`Projectile.cs:314`, reset false `:746`): the
+    /// multi-shot bows stamp it on their spawned arrows so the kill path skips
+    /// the ammo-recovery drop (`Projectile.cs:77367`). The Tsunami 2624
+    /// (`Player.cs:47806`), the Chlorophyte Shotbow 1229 (`:48305`), the Blood
+    /// Rain Bow 4381 (`:47497`) and the Fairy Queen's non-932 shot (`:47955`).
+    pub no_drop_item: bool,
     /// `Projectile.trap`.
     pub trap: bool,
     /// `GrappleMovement`'s pull input: the attached aiStyle-7 hook's center
@@ -753,6 +759,7 @@ impl Default for Projectile {
             h: SIZE,
             tile_collide: true,
             arrow: false,
+            no_drop_item: false,
             trap: false,
             direction: 1,
             grapple_center: Vec2::ZERO,
@@ -13008,6 +13015,17 @@ impl ProjectilePool {
     pub fn set_crit(&mut self, slot: usize, crit: bool) {
         if let Some(p) = self.slots.get_mut(slot) {
             p.crit = crit;
+        }
+    }
+
+    /// `Main.projectile[num].noDropItem = true` — the multi-shot bows stamp it
+    /// on each spawned arrow right after `NewProjectile` (`Player.cs:47806`
+    /// the Tsunami, `:48305` the Chlorophyte Shotbow, `:47497` the Blood Rain
+    /// Bow, `:47955` the Fairy Queen's non-932 shot); the kill path's
+    /// ammo-recovery drop reads it (`Projectile.cs:77367`).
+    pub fn set_no_drop_item(&mut self, slot: usize, value: bool) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.no_drop_item = value;
         }
     }
 

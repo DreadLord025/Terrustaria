@@ -3,6 +3,7 @@
 
 mod accessory_defense;
 mod ammo;
+mod bow_launch;
 mod angler;
 mod armor_sets;
 mod app;
