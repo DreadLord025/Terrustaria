@@ -1186,6 +1186,104 @@ pub(crate) fn place_woman(world: &mut World, x: i32, y: i32, dir: i32) {
     place_mannequin(world, x, y, dir, 269);
 }
 
+/// `WorldGen.PlatformProperTopFrame` (`WorldGen.cs:70153-70165`): the
+/// flat-platform-segment test — `frameX / PlatformFrameWidth()` (tile 19's
+/// `CoordinateFullWidth` = 18, `TileObjectData.cs:5121-5124`) must land in
+/// 0..=7, 12..=16 or 25..=26.
+fn platform_proper_top_frame(frame_x: i16) -> bool {
+    let num = frame_x as i32 / 18;
+    if (num < 0 || num > 7) && (num < 12 || num > 16) {
+        if num >= 25 {
+            return num <= 26;
+        }
+        return false;
+    }
+    true
+}
+
+/// `WorldGen.SolidTileNoPlatforms(int, int)` (`WorldGen.cs:70196-70218`):
+/// out-of-world/null reads solid; active + NOT a platform + (`tileSolid`
+/// OR `tileSolidTop`) + not actuated-inactive. NOTE: no slope or
+/// half-brick terms — a sloped stone still passes.
+pub(crate) fn solid_tile_no_platforms(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 0) {
+        return true;
+    }
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && !crate::tiledata::SET_PLATFORMS.has(t.kind)
+        && (TILE_SOLID.has(t.kind) || TILE_SOLID_TOP.has(t.kind))
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowPlatformTopFrame` (`WorldGen.cs:70220-70242`):
+/// `SolidTileNoPlatforms` with the platform exemption — a platform passes
+/// when its `frameX` is a proper top frame (`PlatformProperTopFrame`).
+pub(crate) fn solid_tile_allow_platform_top_frame(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 0) {
+        return true;
+    }
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && (!crate::tiledata::SET_PLATFORMS.has(t.kind) || platform_proper_top_frame(t.frame_x))
+        && (TILE_SOLID.has(t.kind) || TILE_SOLID_TOP.has(t.kind))
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowTopSlope` (`WorldGen.cs:70320-70338`): NO
+/// `InWorld` gate in the C# (a null tile reads solid; an out-of-bounds
+/// read throws into the catch and returns FALSE — the port's `None`
+/// stands in for null only). Active + (`tileSolid` OR the minecart track
+/// bump 380) + the slope split: a non-platform must not be a bottomSlope
+/// (slope 3/4, `Tile.cs` bottomSlope), a platform must be a half brick;
+/// not actuated-inactive. Top slopes (1/2) pass for non-platforms.
+pub(crate) fn solid_tile_allow_top_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    let platform = crate::tiledata::SET_PLATFORMS.has(t.kind);
+    t.active()
+        && (TILE_SOLID.has(t.kind) || t.kind == 380)
+        && ((!platform && !matches!(t.slope(), 3 | 4)) || (platform && t.half_brick()))
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowLeftSlope` (`WorldGen.cs:70340-70358`): no
+/// `InWorld` gate (null reads solid). Active + `tileSolid` + no half
+/// brick + NOT a rightSlope (slope 1/3, `Tile.cs:320-328`) + not a
+/// platform + not actuated-inactive — the floor for objects leaning on a
+/// LEFT slope (2/4).
+pub(crate) fn solid_tile_allow_left_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && TILE_SOLID.has(t.kind)
+        && !t.half_brick()
+        && !matches!(t.slope(), 1 | 3)
+        && !crate::tiledata::SET_PLATFORMS.has(t.kind)
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowRightSlope` (`WorldGen.cs:70360-70378`): the
+/// mirror — NOT a leftSlope (slope 2/4, `Tile.cs:310-318`); every other
+/// term matches `SolidTileAllowLeftSlope`.
+pub(crate) fn solid_tile_allow_right_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && TILE_SOLID.has(t.kind)
+        && !t.half_brick()
+        && !matches!(t.slope(), 2 | 4)
+        && !crate::tiledata::SET_PLATFORMS.has(t.kind)
+        && !t.inactive()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1646,5 +1744,57 @@ mod tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         place_man(&mut w, 30, 19, 0);
         assert!(!w.tile(30, 17).unwrap().active());
+    }
+
+    /// The SolidTile variant family: NoPlatforms keeps sloped stone but
+    /// refuses platforms; AllowPlatformTopFrame admits flat-frame
+    /// platforms; AllowTopSlope splits platform/non-platform slope arms;
+    /// the left/right variants mirror the slope veto.
+    #[test]
+    fn solid_tile_variants_split_platforms_and_slopes() {
+        let mut w = World::new("ph".into(), 60, 60);
+        let set = |w: &mut World, x: i32, kind: u16, slope: u8, half: bool, fx: i16| {
+            let i = w.index(x, 20);
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            w.tiles[i].kind = kind;
+            w.tiles[i].set_slope(slope);
+            if half {
+                w.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
+            }
+            w.tiles[i].frame_x = fx;
+        };
+        // Sloped stone passes NoPlatforms (no slope term) …
+        set(&mut w, 10, 1, 2, false, 0);
+        assert!(solid_tile_no_platforms(&w, 10, 20));
+        // … a platform does not, unless its frameX is a proper top frame.
+        set(&mut w, 12, 19, 0, false, 90); // 90/18 = 5 ∈ 0..=7
+        assert!(!solid_tile_no_platforms(&w, 12, 20));
+        assert!(solid_tile_allow_platform_top_frame(&w, 12, 20));
+        set(&mut w, 14, 19, 0, false, 162); // 162/18 = 9 — refused
+        assert!(!solid_tile_allow_platform_top_frame(&w, 14, 20));
+        // Out-of-world reads solid for the gated pair.
+        assert!(solid_tile_no_platforms(&w, -1, 20));
+        assert!(solid_tile_allow_platform_top_frame(&w, -1, 20));
+        // AllowTopSlope: a top-sloped (1) stone passes, a bottom-sloped
+        // (3) stone refuses; a platform needs the half brick.
+        set(&mut w, 16, 1, 1, false, 0);
+        assert!(solid_tile_allow_top_slope(&w, 16, 20));
+        set(&mut w, 18, 1, 3, false, 0);
+        assert!(!solid_tile_allow_top_slope(&w, 18, 20));
+        set(&mut w, 20, 19, 0, true, 0);
+        assert!(solid_tile_allow_top_slope(&w, 20, 20));
+        // The left/right mirrors: slope 2 (left) passes AllowLeftSlope
+        // and refuses AllowRightSlope; slope 1 does the reverse.
+        set(&mut w, 22, 1, 2, false, 0);
+        assert!(solid_tile_allow_left_slope(&w, 22, 20));
+        assert!(!solid_tile_allow_right_slope(&w, 22, 20));
+        set(&mut w, 24, 1, 1, false, 0);
+        assert!(!solid_tile_allow_left_slope(&w, 24, 20));
+        assert!(solid_tile_allow_right_slope(&w, 24, 20));
+        // Both refuse platforms and half bricks outright.
+        set(&mut w, 26, 19, 0, false, 0);
+        assert!(!solid_tile_allow_left_slope(&w, 26, 20));
+        set(&mut w, 28, 1, 0, true, 0);
+        assert!(!solid_tile_allow_right_slope(&w, 28, 20));
     }
 }
