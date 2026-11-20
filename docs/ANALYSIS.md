@@ -39244,3 +39244,96 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Shop happiness UI (W4-g58, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/happiness.rs` + `ui/npc_chat.rs` + `ui/shop_happiness.rs`
+land the happiness dialogue, the shop price-multiplier chrome and the FULL
+preference DATA tables. **Code-only mode**: no compiler/tests invoked; the
+15 new witness tests are written not run, verified by re-reading the C#.
+
+What landed:
+
+- **The DATA tables** (`happiness.rs`): `biome_preferences_by_id` ports all
+  25 `PersonalityDatabasePopulator.Populate_BiomePreferences` rows
+  (`PersonalityDatabasePopulator.cs:27-147`) keyed on the C# NPCID — the
+  unported kinds (142 Santa, 160 Truffle, 178 Steampunker, 209 Cyborg,
+  229 Pirate, 550 Tavernkeep) carry their rows too;
+  `neighbor_preferences_by_id` ports the whole
+  `AllPersonalitiesModifier.ModifyShopPrice_Relationships` switch
+  (`AllPersonalitiesModifier.cs:41-505`) in the C# `if` order (the report
+  prepends, so the order is the read order). The kind-keyed views ride
+  `NpcKind::cs_id`; a neighbor row for an UNPORTED kind drops out (the
+  vanilla can never house that kind). `biome_name_key` maps the
+  `AShoppingBiome.NameKey` rows — the Underground key is
+  `NormalUnderground` (`UndergroundBiome.cs:7`).
+- **The mood pass** (`process_mood`): the crowd gate now reads the whole
+  town roster (`is_town_resident` minus `IsNotReallyTownNPC`'s 37/368/453,
+  `ShopHelper.cs:363-371`) instead of the Guide alone; the neighbor rows
+  push `MoodFlag::NpcAffection` and the universal LikePrincess row
+  (`AllPersonalitiesModifier.cs:37-40`, ×0.94 for every non-Princess with
+  a nearby Princess) lands; the evil-biome arm names the biome
+  (`HateBiomeNamed`, `_dangerousBiomes` order Corruption/Crimson/Dungeon,
+  `ShopHelper.cs:28-34`/`:353-356`).
+- **The report builder**: `ShoppingSettings` (`ShoppingSettings.cs:3-14`),
+  `shopping_settings` = `ShopHelper.GetShoppingSettings` (`:49-62`),
+  `happiness_report` folds the flags through `AddHappinessReportText`'s
+  PREPEND (`:188-196`: `text + report + " "`, the category
+  `TownNPCMood_{NPCID.Search.GetName(netID)}`, the `{BiomeName}`/
+  `{NPCName}` substitutes), `npc_full_name` = `NPC.GetFullnameByID`
+  (`NPC.cs:7010-7020` — the live resident's `Game.NPCTitle` given-name
+  title, else the type name), the LikePrincess row's dedicated
+  `LikeNPC_Princess` key (`ShopHelper.cs:252-259`).
+- **The dialogue button**: `App.set_talk_npc` ports `Player.SetTalkNPC`'s
+  `currentShoppingSettings` latch (`Player.cs:4375-4394` — the open runs
+  GetShoppingSettings, the close resets NotInShop); all six latch sites
+  repointed (talk open/close, the Close click, the two chest prologues,
+  the recall teleport). `ReportHappiness` (`NPCInteractions.cs:289-312`)
+  draws as the chat panel's second interaction: Condition =
+  `!NPC.CanShowHomelessText(talkNPC) && HappinessReport != ""`
+  (`NPC.cs:94828-94841`), label `UI.NPCCheckHappiness`, Interact = sound 12
+  + `npcChatText = HappinessReport` (the talk latch stays). The button-row
+  rect math generalizes `NPCChatPanel.DrawButtons` (`:93-135`): index 0
+  Close, index 1 Happiness, `x += width + 30`, wrap every 4.
+- **The shop chrome** (`ui/shop_happiness.rs`, `Main.cs:41790-41797`): the
+  `Lang.inter[28]` "Shop" label at (504, invBottom=258), the
+  `UI/NPCHappiness` 4-frame icon strip whose band rides the nested ternary
+  (≤0.82 → 0, ≤1 → 1, ≤1.1 → 2, else 3 — `:41794`), drawn at the
+  frame-centre origin at (504+12, invBottom+108), and the
+  `ToString("P0")` percent ("89 %") at (504+26, invBottom+98) — the
+  offsets are the `Main.cs:67266-67269` statics; the text rides
+  `Utils.DrawBorderStringFourWay`'s ±2 px ring tinted
+  `White * (mouseTextColor/255)`.
+
+Deviations (constants-off, each rides its own lane):
+
+- The Princess's random three-loves head (`AllPersonalitiesModifier.cs:
+  15-36`, `Main.rand.Next(list.Count)` per pick) and her HateLonely crowd
+  gate (`ShopHelper.cs:122-130`) — they draw the global RNG and ride her
+  AI lane; her static neighbor rows land.
+- The Zoologist's `altTexture == 2` shapeshift report suffix
+  (`ShopHelper.cs:191-194`) — no alt-texture state ported.
+- The Tavernkeep (550) is a town NPC but his kind ports as the DD2 event
+  Bartender (`cs_id` 109) — excluded from the crowd roster until his town
+  twin lands; his DATA rows are in the tables.
+- The pets' `housingCategory` filter
+  (`TownRoomManager.CanNPCsLiveWithEachOther_ShopHelper`,
+  `TownRoomManager.cs:153-161`) is inert — no pets ported.
+- `ItemSlot.DrawSavings`' coin pile (`Main.cs:41791`) rides the coin-slot
+  lane; the ≤0.82 achievement (`Player.cs:4391-4394`) rides the
+  achievement lane; the portrait hop (`DoNPCPortraitHop`) and the corner
+  item are unported (S1-E-10b's deferral).
+- The biome traits judge the HOME anchor's scene scan (the M4-TOWN-2
+  convention) while the C# `BiomePreferenceListTrait.ModifyShopPrice`
+  (`:38-53`) tests the PLAYER's zones and picks the HIGHEST affection
+  among the matching biomes — the port keeps the home-anchor judge (the
+  recorded M4-TOWN-2 deviation); the row-order/highest-affection pick is
+  moot for the two-row tables (a judge is in one biome at a time).
+
+Witnesses (WRITTEN NOT RUN): `happiness.rs::w4_g58_tests` ×9 (the 25-row
+biome table, the 25-case neighbor switch, the kind-view filter, the
+affection multipliers, the name keys, the report prepend order, the
+neighbor naming, the Princess key, the homeless gate),
+`ui/npc_chat.rs` ×3 (the button click replaces the chat text, the
+homeless Condition, the settings reset), `ui/shop_happiness.rs` ×3 (the
+icon bands, the P0 text, the chrome positions).
