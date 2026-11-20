@@ -73,7 +73,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | pass | commit | status |
 | --- | --- | --- |
 | range doc | 2d9cfcbb | claimed |
-| 28 Floating Island Houses | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
+| 28 Floating Island Houses | 93b1938e | landed (code-only; hash re-pin deferred to the gate) |
+| 29 Quick Cleanup | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
 
 ### Pass 28 — Floating Island Houses (landed)
 
@@ -124,10 +125,44 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   both pin tests are untouched** — plus the pass-level a==b witness
   `w4_d104_28_the_house_builds_and_replays_byte_equal`.
 
+### Pass 29 — Quick Cleanup (landed)
+
+* **C# read in full**: the pass body `WorldGen.cs:17875-17993` — the
+  `Skyblock.denyAllGeneration` gate (`:3131` — plain skyblock), the
+  `NotTheBees()` call (the seed lane's), the `tileSolid[137]/[130]`
+  false-window (`:17884-17885` → restore `:17991-17992`), the
+  `oceanDepths` lava→water swap, the beach sand drip (the per-check
+  `Next(4, 7)` condition draw — the C# re-rolls the bound on EVERY
+  condition evaluation, the port re-rolls per iteration), the
+  sandstone/hardened-sand wall retypes (59/123/224/368/367 → 397) + the
+  dualDungeons-gated liquid arms, the surface-sand ±3 wall inheritance
+  (the LAST walled column wins — the C# `break` exits only the inner
+  loop), the `SaveSlopes`/`Platforms`/`CanBeClearedDuringGeneration`
+  clear family (the 225-half-brick exemption, the 137-trap neighbour
+  veto). `oceanDepths` `:10963-10973` + `oceanLevel` `:4447`
+  (`(worldSurface + rockLayer)/2 + 40`), `Tile.ClearSlope`
+  `Tile.cs:130-134`, `SaveSlopes` `TileID.cs:468-471` (the tile_runner
+  `save_slopes` copy promoted `pub(crate)`).
+* **Rust**: `micro_finish.rs::pass_quick_cleanup` (the sweep + the
+  windowed `solid_tile_qc` predicate + 2 witnesses), `pipeline.rs`
+  (`step_quick_cleanup` after `floating island houses`, the skyblock
+  gate), `progress.rs` (`WorldGeneration.QuickCleanup` `:17879`).
+* **RNG**: only the beach drip draws (`Next(4, 7)` per condition check)
+  on the fresh `pass_rng("Quick Cleanup")` stream — no other ledger
+  shifts.
+* **Deviations**: the `NotTheBees()` whole-world conversion stays with
+  the seed lane (biomes.rs's documented scope); the static `tileSolid`
+  table carries the 137/130 window on the predicate (the temple
+  `spike_solid` precedent).
+* **Hash doc**: both pins gain the pass-29 stale-by-design notes (the
+  512 world's beach band covers the whole sweep width, so its pin moves
+  too). Re-pin DEFERRED to the gate; **a == b untouched** + the
+  pass-level witness `w4_d104_29_the_cleanup_sweep_replays_and_tidies`.
+
 ## Status
 
 - [x] 28 Floating Island Houses
-- [ ] 29 Quick Cleanup
+- [x] 29 Quick Cleanup
 - [ ] 30 Hellforge
 - [ ] 31 Spreading Grass
 - [ ] 32 Surface Ore and Stone

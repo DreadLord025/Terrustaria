@@ -1387,6 +1387,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Floating Island Houses",
         step_floating_island_houses
     ),
+    // The vanilla Quick Cleanup slot (`WorldGen.cs:17875`): right after
+    // Floating Island Houses, before Pots (`:17996`, the port's earlier
+    // `pots` step — a pre-scaffold deviation) — W4-d104 pass 29. The
+    // sweep's only draws are the beach sand drip's per-check `Next(4, 7)`
+    // on the fresh `pass_rng("Quick Cleanup")` stream.
+    step!("quick cleanup", "Quick Cleanup", step_quick_cleanup),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2615,6 +2621,32 @@ fn step_floating_island_houses(
     gv.island_house_slots = slots;
 }
 
+/// The `Quick Cleanup` pass (`WorldGen.cs:17875-17993`, W4-d104 pass 29):
+/// the full-world tidy sweep on the fresh `pass_rng("Quick Cleanup")`
+/// stream. The `Skyblock.denyAllGeneration` gate (`:3131`) rides here.
+fn step_quick_cleanup(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    micro_finish::pass_quick_cleanup(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Quick Cleanup"),
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3472,7 +3504,8 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("floating island houses"), pos("living trees") + 1);
-        assert_eq!(pos("floating island houses") + 1, pos("trees"));
+        assert_eq!(pos("floating island houses") + 1, pos("quick cleanup"));
+        assert!(pos("quick cleanup") < pos("trees"));
         assert!(pos("floating islands") < pos("floating island houses"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3482,6 +3515,8 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Floating Islands") < cpos("Floating Island Houses"));
         assert!(cpos("Floating Island Houses") < cpos("Planting Trees"));
+        // W4-d104 pass 29: Quick Cleanup follows the houses in the chain.
+        assert_eq!(cpos("Quick Cleanup"), cpos("Floating Island Houses") + 1);
     }
 
     /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's

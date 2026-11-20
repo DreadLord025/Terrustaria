@@ -135,6 +135,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:17863 (Floating Island Houses, W4-d104).
         "floating island houses" => PassMessage::Key("WorldGeneration.FloatingIslandHouses"),
+        // WorldGen.cs:17879 (Quick Cleanup, W4-d104).
+        "quick cleanup" => PassMessage::Key("WorldGeneration.QuickCleanup"),
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.

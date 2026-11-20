@@ -248,6 +248,16 @@ mod tests {
     // this pin is UNCHANGED by the pass itself — the sibling lanes' pins
     // still re-measure at the gate. The a == b determinism halves stay
     // untouched.
+    // W4-d104 pass 29 (2026-11-21, code-only): the `Quick Cleanup` pass
+    // (`WorldGen.cs:17875-17993`) lands after Floating Island Houses — the
+    // full-world tidy sweep (the ocean lava→water swap, the beach sand
+    // drip on the fresh `pass_rng("Quick Cleanup")` stream, the
+    // sandstone-wall retypes/liquid arms, the surface-sand wall
+    // inheritance, the slope/half-brick clear family under the
+    // 137/130-non-solid window). On a 512-wide world the beach band
+    // (`x < 380 || x > width - 380`) covers the whole sweep width, so the
+    // drip's draws and the slope clears move this pin BY DESIGN too —
+    // stale, the gate re-pins. The a == b halves stay untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -299,6 +309,11 @@ mod tests {
     // other step's ledger shifts). The re-pin is DEFERRED to the merge
     // gate (no compiler on this branch); the a == b determinism halves
     // stay untouched.
+    // W4-d104 pass 29 (2026-11-21, code-only): the `Quick Cleanup` sweep
+    // (above) moves this pin BY DESIGN — the slope/half-brick clears and
+    // the wall retypes fire across the default world, and the beach sand
+    // drip draws on the pass's own stream. Re-pin DEFERRED to the merge
+    // gate; the a == b halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
