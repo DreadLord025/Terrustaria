@@ -222,6 +222,7 @@ fn lane_covers(ty: u16) -> bool {
         ty,
         668 | 552..=554 | 561..=563 | 555..=557 | 551 | 558..=560 | 566 | 567
             | 576 | 577 | 564 | 565 | 572..=575 | 570 | 571 | 568 | 569 | 550 | 441
+            | 588 | 589 | 633 | 368 | 353 | 354 | 369 | 376 | 663 | 342
     )
 }
 
@@ -314,6 +315,46 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         // `NPC.cs:87685-87693` — the Tax Collector: the same 50×5; the
         // five shimmer-conditional gores are constant both ways.
         441 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:87972-87983` — the Golfer pair (588/589): 50×5; the
+        // altTexture==0 head gore + the four body gores are
+        // shimmer-conditional but constant both ways — zero draws.
+        588 | 589 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:87995-88021` — the Zoologist: 50×5; the altTexture/
+        // shimmer gore picks (`:87999-88015`) are data, not draws.
+        633 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:88033-88044` — the Travelling Merchant: 50×5; the
+        // altTexture/shimmer gores are constant both ways.
+        368 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:88208-88220` — the Stylist pair (353/354): 50×5; the
+        // altTexture/shimmer gores are constant both ways.
+        353 | 354 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:88048-88074` — the town smoke arm (369 Angler / 376
+        // Sleeping Angler / 663 Princess; the IsTownPet/695/696 rows
+        // have no port kinds yet): `life <= 0` gates the WHOLE arm;
+        // 25 type-31 dusts at (0,0), alpha 100, scale 2, then velocity
+        // ×1.4 + noLight + noGravity. The four tombstone gores
+        // (`:88058-88073`) each carry `Main.rand.Next(61, 64)` — FOUR
+        // argument draws consumed here in order (the gore bodies +
+        // their scale/velocity±1 writes stay the gore lane's). The
+        // 663's second arm (`:88411`) is dead code — this chain arm
+        // matches 663 first (the else-if at `:88046`).
+        369 | 376 | 663 => {
+            for _ in 0..25 {
+                let i = fx.d_full(fx.pos, fx.w, fx.h, 31, 0.0, 0.0, 100, Color::default(), 2.0);
+                let d = fx.dust.slot_mut(i);
+                d.velocity *= 1.4;
+                d.no_light = true;
+                d.no_gravity = true;
+            }
+            for _ in 0..4 {
+                // `:88058`/`:88062`/`:88066`/`:88070` — the tombstone
+                // type pick, argument-side.
+                fx.rng.next_range(61, 64);
+            }
+        }
+        // `NPC.cs:86858-86866` — the Gingerbread Man: 50×type-0 at
+        // `(2.5×hitDirection, -2.5)`; five constant gores.
+        342 => fx.burst(50, 0, 2.5 * hd, -2.5),
         _ => {}
     }
 }
@@ -516,6 +557,51 @@ mod tests {
         r.next_max(5);
         assert_eq!(rng, r, "20×6 internals + 1 head-gore pick");
         assert_eq!(pool.slot(0).dust_type, 273, "no ChildSafety re-type by default");
+    }
+
+    /// `NPC.cs:88050-88073` — the town smoke arm: 25 type-31 dusts
+    /// (alpha 100, scale 2, velocity ×1.4, noLight, noGravity) then
+    /// FOUR `Next(61,64)` tombstone argument draws. The 663 Princess
+    /// rides THIS arm — the `:88411` second arm is dead code.
+    #[test]
+    fn w4_g60_the_town_smoke_consumes_the_four_tombstone_picks() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(55);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 663,
+            pos: Vec2::new(100.0, 100.0),
+            w: 18,
+            h: 40,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for k in 0..2 {
+            let rolls = replay_spawn(&mut r, 18, 40);
+            let d = pool.slot(k);
+            assert_eq!(d.dust_type, 31);
+            assert_eq!(d.alpha, 100);
+            assert_eq!(d.scale, (1.0 + rolls[5] as f32 * 0.01) * 2.0);
+            assert_eq!(d.velocity.x, rolls[2] as f32 * 0.1 * 1.4);
+            assert!(d.no_light && d.no_gravity);
+        }
+        for _ in 2..25 {
+            replay_spawn(&mut r, 18, 40);
+        }
+        for _ in 0..4 {
+            r.next_range(61, 64);
+        }
+        assert_eq!(rng, r, "25×6 internals + 4 tombstone picks");
+        assert!(pool.slot(24).active);
+        assert!(!pool.slot(25).active);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
