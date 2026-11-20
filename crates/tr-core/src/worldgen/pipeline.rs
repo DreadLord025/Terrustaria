@@ -372,6 +372,11 @@ pub(crate) struct GenVars {
     /// `Floating Islands` pass records and the `Floating Island Houses`
     /// pass (`:17859`, W4-d104 pass 28) consumes.
     pub(crate) island_house_slots: Vec<super::island_houses::IslandHouseSlot>,
+    /// `GenVars.orePatchX[..numOrePatch]` (`GenVars.cs:240-244`,
+    /// `maxOrePatch = 50` `:461`, reset `WorldGen.cs:8323`) — the surface
+    /// ore-patch columns the `Surface Ore and Stone` pass (`:18447`,
+    /// W4-d104 pass 32) records and reads for the ±200/±100 spacing.
+    pub(crate) ore_patch_x: Vec<i32>,
 }
 
 impl Default for GenVars {
@@ -410,6 +415,7 @@ impl Default for GenVars {
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
             island_house_slots: Vec::new(),
+            ore_patch_x: Vec::new(),
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1403,6 +1409,15 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // W4-d104 pass 31. The classic arm draws no RNG; the remix arm is the
     // seed lane's.
     step!("spreading grass", "Spreading Grass", step_spreading_grass),
+    // The vanilla Surface Ore and Stone slot (`WorldGen.cs:18447`): after
+    // Spreading Grass (`:18237`), before Place Fallen Log (`:18513`) —
+    // W4-d104 pass 32. The scatter draws ride the fresh
+    // `pass_rng("Surface Ore and Stone")` stream.
+    step!(
+        "surface ore and stone",
+        "Surface Ore and Stone",
+        step_surface_ore_and_stone
+    ),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2709,6 +2724,38 @@ fn step_spreading_grass(
     );
 }
 
+/// The `Surface Ore and Stone` pass (`WorldGen.cs:18447-18511`, W4-d104
+/// pass 32): the ore/stone patch scatters on the fresh
+/// `pass_rng("Surface Ore and Stone")` stream. The
+/// `Skyblock.denyAllGeneration` gate rides here.
+fn step_surface_ore_and_stone(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let (surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_low, l.world_surface)
+    };
+    let copper = world.ore_tiers.copper as u16;
+    let iron = world.ore_tiers.iron as u16;
+    surface::pass_surface_ore_and_stone(
+        world,
+        surface_low,
+        world_surface,
+        copper,
+        iron,
+        &mut gv.ore_patch_x,
+        &mut streams.pass_rng("Surface Ore and Stone"),
+    );
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3569,7 +3616,8 @@ mod tests {
         assert_eq!(pos("floating island houses") + 1, pos("quick cleanup"));
         assert_eq!(pos("quick cleanup") + 1, pos("hellforge"));
         assert_eq!(pos("hellforge") + 1, pos("spreading grass"));
-        assert!(pos("spreading grass") < pos("trees"));
+        assert_eq!(pos("spreading grass") + 1, pos("surface ore and stone"));
+        assert!(pos("surface ore and stone") < pos("trees"));
         assert!(pos("floating islands") < pos("floating island houses"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()

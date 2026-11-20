@@ -141,6 +141,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "hellforge" => PassMessage::Gen(36),
         // WorldGen.cs:18241 — Lang.gen[37] (Spreading Grass, W4-d104).
         "spreading grass" => PassMessage::Gen(37),
+        // WorldGen.cs:18451 — the pass sets only progress.Set(1.0), no
+        // message (Surface Ore and Stone, W4-d104): absent from the table.
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.

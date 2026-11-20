@@ -76,7 +76,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | 28 Floating Island Houses | 93b1938e | landed (code-only; hash re-pin deferred to the gate) |
 | 29 Quick Cleanup | df067118 | landed (code-only; hash re-pin deferred to the gate) |
 | 30 Hellforge | 2ac7c298 | landed (code-only; hash re-pin deferred to the gate) |
-| 31 Spreading Grass | (this commit) | landed (code-only; classic arm, remix arm deferred to d107; hash re-pin deferred) |
+| 31 Spreading Grass | 3a101031 | landed (code-only; classic arm, remix arm deferred to d107; hash re-pin deferred) |
+| 32 Surface Ore and Stone | (this commit) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
 
 ### Pass 28 — Floating Island Houses (landed)
 
@@ -206,13 +207,49 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   surface cells move; no draws). Re-pin DEFERRED; **a == b untouched** +
   the pass-level witness `w4_d104_31_the_surface_dirt_takes_grass`.
 
+### Pass 32 — Surface Ore and Stone (landed)
+
+* **C# read in full**: the pass body `WorldGen.cs:18447-18511` (the ore
+  scatter `Next(width*5/4200, width*10/4200)` with the `width/420` retry
+  budget, the beach band `Next(380, width-380)`, the [0.48, 0.52] centre
+  re-roll, the `worldSurfaceLow..worldSurface` row, the ±200 spacing +
+  the `numOrePatch < maxOrePatch - 1` record; the stone scatter
+  `Next(1, width*7/4200)`, the [0.47, 0.53] band, the ±100 spacing),
+  `OrePatch` `:10579-10705` (the copper/iron `Next(3)` tier roll, the drop
+  scan, the grass-triplet/wall vetoes, the ±10×+7..+30 body scan, the
+  `Next(2)` sink, the seed write + `OreHelper`, the `Next(8, 13)`
+  re-roll-per-check vein walk with the side pockets, the drifting blob's
+  per-cell radii + the 1-in-8 double + the velocity clamps), `StonePatch`
+  `:10242-10324` (the same gates + the 199/23 veto, the blob retype, the
+  pile decor: the 186 `Place3x2` `Next(7, 13)` style + the two 185
+  `PlaceSmallPile` calls), `OreHelper` `:10228-10240`, `PlaceSmallPile`
+  `:46815-46873` (the `type` parameter generalised on the
+  spider_gem_moss copy; the 185 boulder seat veto inert during worldgen,
+  D20), `GenVars.cs:240-244`/`:461` (maxOrePatch 50), `Reset` `:8323`.
+* **Rust**: `surface.rs::pass_surface_ore_and_stone` + `ore_patch` +
+  `stone_patch` + `ore_helper` (+ the a==b witness),
+  `spider_gem_moss.rs::place_small_pile` gains the `type` parameter
+  (the spider calls pass 185 — unchanged) + promoted `pub(crate)`,
+  `pipeline.rs` (`GenVars.ore_patch_x`, `step_surface_ore_and_stone`
+  after `spreading grass`, the skyblock gate).
+* **RNG**: all draws on the fresh `pass_rng("Surface Ore and Stone")`
+  stream; the `NextDouble` draws map to `next_f64` (the ocean.rs
+  precedent). No other ledger shifts.
+* **Deviations**: the sub-vanilla width guard skips the pass before any
+  draw on ≤600-wide worlds (the C# `Next(1, width*7/4200)` throws
+  there); the `SquareTileFrame` follow-ups defer to the framing pass
+  (the port frames at the chain end).
+* **Hash doc**: `SEED42_512` UNCHANGED by this pass (the width guard);
+  `DEFAULT_WORLD` stale-by-design. Re-pin DEFERRED; **a == b untouched**
+  + the pass-level witness `w4_d104_32_the_patches_place_and_replay`.
+
 ## Status
 
 - [x] 28 Floating Island Houses
 - [x] 29 Quick Cleanup
 - [x] 30 Hellforge
 - [x] 31 Spreading Grass (classic arm; remix arm → d107)
-- [ ] 32 Surface Ore and Stone
+- [x] 32 Surface Ore and Stone
 - [ ] 33 Place Fallen Log
 - [ ] 34 Traps
 - [ ] 35 Piles

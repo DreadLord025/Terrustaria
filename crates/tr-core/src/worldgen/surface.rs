@@ -476,6 +476,350 @@ pub(crate) fn pass_spreading_grass(
     }
 }
 
+// --- Surface Ore and Stone (W4-d104 pass 32) --------------------------------
+
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70132`) — the patch
+/// scans' floor predicate; a null tile reads solid.
+fn solid_tile_patch(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
+}
+
+/// `Main.tileDungeon` (`Main.cs:7992-7997`) — the patch scans' dungeon
+/// veto.
+fn tile_dungeon(kind: u16) -> bool {
+    matches!(kind, 41 | 43 | 44 | 677 | 678 | 679)
+}
+
+/// `WorldGen.OreHelper` (`WorldGen.cs:10228-10240`): the ±1 box's stone
+/// 1 / snow 40 cells retype to dirt around every ore write.
+fn ore_helper(world: &mut World, x: i32, y: i32) {
+    for i in (x - 1)..=(x + 1) {
+        for j in (y - 1)..=(y + 1) {
+            if let Some(t) = world.tile_mut(i, j) {
+                if t.kind == 1 || t.kind == 40 {
+                    t.kind = 0;
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.OrePatch` (`WorldGen.cs:10579-10705`): the surface ore vein
+/// — the copper/iron tier roll, the drop scan, the grass-triplet + wall
+/// vetoes, the ±10×+7..+30 body scan, the `Next(2)` sink, the seed write,
+/// the `Next(8, 13)`-bounded vein walk (the per-step x/y drift + the
+/// 1-in-3 extra sink + the 1-in-4 side pocket), then the drifting-blob
+/// carve/ore pass (`num7` rounds of the ±4·num6 box, the per-cell
+/// `num8`/`num9` radii with the 1-in-8 double).
+fn ore_patch(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    world_surface: f64,
+    copper: u16,
+    iron: u16,
+    rng: &mut Rng,
+) -> bool {
+    // `:10581-10585`: the tier roll.
+    let kind = if rng.range(0, 3) == 0 { iron } else { copper };
+    let mut num = x;
+    let mut num2 = y;
+    // `:10588-10595`: the drop scan.
+    while !solid_tile_patch(world, num, num2) {
+        num2 += 1;
+        if num2 as f64 > world_surface {
+            return false;
+        }
+    }
+    // `:10596-10603`: the grass triplet + the wall veto.
+    let grass_at = |world: &World, px: i32| {
+        world
+            .tile(px, num2)
+            .is_some_and(|t| crate::tiledata::SET_GRASS.has(t.kind))
+    };
+    if !grass_at(world, num) || !grass_at(world, num - 1) || !grass_at(world, num + 1) {
+        return false;
+    }
+    if world.tile(num, num2).map(|t| t.wall).unwrap_or(0) > 0 {
+        return false;
+    }
+    // `:10604-10612`: the body scan.
+    for i in (num - 10)..=(num + 10) {
+        for j in (num2 + 7)..=(num2 + 30) {
+            let bad = world.tile(i, j).is_none_or(|t| {
+                !t.active()
+                    || tile_dungeon(t.kind)
+                    || crate::tiledata::SET_CLOUDS.has(t.kind)
+                    || crate::tiledata::SET_CONVERSION_SAND.has(t.kind)
+                    || t.wall == 0
+            });
+            if bad {
+                return false;
+            }
+        }
+    }
+    // `:10613-10616`: the sink + the seed write.
+    num2 += rng.range(0, 2);
+    if let Some(t) = world.tile_mut(num, num2) {
+        t.kind = kind;
+        t.flags |= FLAG_ACTIVE;
+    }
+    ore_helper(world, num, num2);
+    // `:10621-10649`: the vein walk — the bound re-rolls EVERY check.
+    let num3 = num2;
+    while num2 < num3 + rng.range(8, 13) {
+        num += rng.range(-1, 2);
+        num2 += rng.range(1, 3);
+        if rng.range(0, 3) == 0 {
+            num2 += 1;
+        }
+        if let Some(t) = world.tile_mut(num, num2) {
+            t.kind = kind;
+            t.flags |= FLAG_ACTIVE;
+        }
+        ore_helper(world, num, num2);
+        if rng.range(0, 4) == 0 {
+            let num4 = num + rng.range(-2, 3);
+            let num5 = num2 + rng.range(0, 2);
+            if let Some(t) = world.tile_mut(num4, num5) {
+                t.kind = kind;
+                t.flags |= FLAG_ACTIVE;
+            }
+            ore_helper(world, num4, num5);
+        }
+    }
+    // `:10650-10703`: the drifting blob.
+    let (mut cx, mut cy) = (num as f64, num2 as f64);
+    let mut vel_x = rng.next_f64() * 0.6 - 0.3;
+    let mut vel_y = rng.next_f64() * 0.5 + 0.5;
+    let mut num6 = rng.range(5, 9) as f64;
+    let mut num7 = rng.range(9, 14);
+    if rng.range(0, 3) == 0 {
+        num6 += rng.range(0, 2) as f64;
+    }
+    if rng.range(0, 3) == 0 {
+        num7 += rng.range(0, 2);
+    }
+    while num7 > 0 {
+        num7 -= 1;
+        let reach = (num6 as i32) * 4;
+        for k in (num - reach)..=(num + reach) {
+            for l in (num2 - reach)..=(num2 + reach) {
+                let num8 = num6 * (0.5 + rng.next_f64() * 0.5) * 0.1;
+                let mut num9 = num6 * (0.7 + rng.next_f64() * 0.6) * 0.3;
+                if rng.range(0, 8) == 0 {
+                    num9 *= 2.0;
+                }
+                let (dx, dy) = (cx - k as f64, cy - l as f64);
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < num8 {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.flags &= !FLAG_ACTIVE;
+                    }
+                } else if dist < num9 {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.kind = kind;
+                        if rng.range(0, 4) == 0 {
+                            t.flags |= FLAG_ACTIVE;
+                        }
+                    }
+                    ore_helper(world, k, l);
+                }
+            }
+        }
+        cx += vel_x;
+        cy += vel_y;
+        vel_x += rng.next_f64() * 0.2 - 0.1;
+        vel_y += rng.next_f64() * 0.2 - 0.1;
+        vel_x = vel_x.clamp(-0.3, 0.3);
+        vel_y = vel_y.clamp(0.5, 1.0);
+    }
+    true
+}
+
+/// `WorldGen.StonePatch` (`WorldGen.cs:10242-10324`): the surface stone
+/// blob — the same drop/grass/wall/body gates (the body scan adds the
+/// 199/23 evil veto), then the drifting-blob retype (the solid cells →
+/// stone 1) with the pile decor on the stone-floor air cells (the 186
+/// large pile `Next(7, 13)` style + the two 185 small piles).
+fn stone_patch(world: &mut World, x: i32, y: i32, world_surface: f64, rng: &mut Rng) -> bool {
+    let mut num = y;
+    while !solid_tile_patch(world, x, num) {
+        num += 1;
+        if num as f64 > world_surface {
+            return false;
+        }
+    }
+    let grass_at = |world: &World, px: i32| {
+        world
+            .tile(px, num)
+            .is_some_and(|t| crate::tiledata::SET_GRASS.has(t.kind))
+    };
+    if !grass_at(world, x) || !grass_at(world, x - 1) || !grass_at(world, x + 1) {
+        return false;
+    }
+    if world.tile(x, num).map(|t| t.wall).unwrap_or(0) > 0 {
+        return false;
+    }
+    for i in (x - 10)..=(x + 10) {
+        for j in (num + 7)..=(num + 30) {
+            let bad = world.tile(i, j).is_none_or(|t| {
+                !t.active()
+                    || tile_dungeon(t.kind)
+                    || crate::tiledata::SET_CLOUDS.has(t.kind)
+                    || crate::tiledata::SET_CONVERSION_SAND.has(t.kind)
+                    || t.wall == 0
+                    || t.kind == 199
+                    || t.kind == 23
+            });
+            if bad {
+                return false;
+            }
+        }
+    }
+    let (mut cx, mut cy) = (x as f64, num as f64);
+    let mut vel_x = rng.next_f64() * 0.6 - 0.3;
+    let mut vel_y = rng.next_f64() * 0.5 + 0.5;
+    let mut num2 = rng.range(13, 18) as f64;
+    let mut num3 = rng.range(13, 19);
+    if rng.range(0, 3) == 0 {
+        num2 += rng.range(0, 3) as f64;
+    }
+    if rng.range(0, 3) == 0 {
+        num3 += rng.range(0, 3);
+    }
+    while num3 > 0 {
+        num3 -= 1;
+        let reach = (num2 as i32) * 4;
+        for k in (x - reach)..=(x + reach) {
+            for l in (num - reach)..=(num + reach) {
+                let mut num4 = num2 * (0.7 + rng.next_f64() * 0.6) * 0.3;
+                if rng.range(0, 8) == 0 {
+                    num4 *= 2.0;
+                }
+                let (dx, dy) = (cx - k as f64, cy - l as f64);
+                let dist = (dx * dx + dy * dy).sqrt();
+                // The pile decor (`:10294-10306`): the air cell over a
+                // stone floor with solid flanks.
+                let pile_seat = dist < num4 * 2.0
+                    && !world.tile(k, l).is_some_and(|t| t.active())
+                    && world.tile(k, l + 1).is_some_and(|t| t.active() && t.kind == 1)
+                    && rng.range(0, 7) == 0
+                    && solid_tile_patch(world, k - 1, l + 1)
+                    && solid_tile_patch(world, k + 1, l + 1);
+                if pile_seat {
+                    if rng.range(0, 3) != 0 {
+                        // `PlaceTile(k, l, 186, style: Next(7, 13))` —
+                        // the `Place3x2` route (`:59993-60002`).
+                        super::evil::place_3x2(world, k, l, 186, rng.range(7, 13));
+                    }
+                    if rng.range(0, 3) != 0 {
+                        super::spider_gem_moss::place_small_pile(
+                            world, k, l, rng.range(0, 6), 1, 185,
+                        );
+                    }
+                    super::spider_gem_moss::place_small_pile(
+                        world, k, l, rng.range(0, 6), 0, 185,
+                    );
+                }
+                if dist < num4 {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        if crate::tiledata::TILE_SOLID.has(t.kind) {
+                            t.kind = 1;
+                        }
+                    }
+                }
+            }
+        }
+        cx += vel_x;
+        cy += vel_y;
+        vel_x += rng.next_f64() * 0.2 - 0.1;
+        vel_y += rng.next_f64() * 0.2 - 0.1;
+        vel_x = vel_x.clamp(-0.3, 0.3);
+        vel_y = vel_y.clamp(0.5, 1.0);
+    }
+    true
+}
+
+/// The `Surface Ore and Stone` pass (`WorldGen.cs:18447-18511`, W4-d104
+/// pass 32): the ore-patch scatter (`Next(width*5/4200, width*10/4200)`
+/// attempts, each a `width/420`-budget retry over the beach-excluded,
+/// centre-excluded [0.48, 0.52] column band, the `worldSurfaceLow..
+/// worldSurface` row, the ±200 spacing from the recorded ore patches)
+/// then the stone-patch scatter (`Next(1, width*7/4200)` attempts, the
+/// [0.47, 0.53] centre band, the ±100 spacing). The `GenVars.orePatchX/
+/// numOrePatch` ledger (`GenVars.cs:240-244`, `maxOrePatch = 50` `:461`)
+/// rides the caller's slice — the record only fires below `maxOrePatch -
+/// 1` (`:18475`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pass_surface_ore_and_stone(
+    world: &mut World,
+    surface_low: f64,
+    world_surface: f64,
+    copper: u16,
+    iron: u16,
+    ore_patch_x: &mut Vec<i32>,
+    rng: &mut Rng,
+) {
+    // The sub-vanilla width guard: the stone scatter's count draw
+    // `Next(1, width*7/4200)` throws on a ≤600-wide world (the C# never
+    // generates one), and the ore scatter's beach band
+    // `Next(380, width - 380)` collapses there too — the port skips the
+    // whole pass before any draw (the evil pass's width-gate precedent).
+    if world.width * 7 / 4200 <= 1 {
+        return;
+    }
+    // --- the ore patches (`:18452-18483`) ----------------------------------
+    let num = rng.range(world.width * 5 / 4200, world.width * 10 / 4200);
+    for _ in 0..num {
+        let mut num2 = world.width / 420;
+        while num2 > 0 {
+            num2 -= 1;
+            let mut num3 = rng.range(380, world.width - 380);
+            while (num3 as f64) >= world.width as f64 * 0.48
+                && (num3 as f64) <= world.width as f64 * 0.52
+            {
+                num3 = rng.range(380, world.width - 380);
+            }
+            let y = rng.range(surface_low as i32, world_surface as i32);
+            let flag = ore_patch_x.iter().any(|px| (num3 - px).abs() < 200);
+            if !flag && ore_patch(world, num3, y, world_surface, copper, iron, rng) {
+                if ore_patch_x.len() < 50 - 1 {
+                    ore_patch_x.push(num3);
+                }
+                break;
+            }
+        }
+    }
+    // --- the stone patches (`:18484-18509`) --------------------------------
+    let num = rng.range(1, world.width * 7 / 4200);
+    for _ in 0..num {
+        let mut num4 = world.width / 420;
+        while num4 > 0 {
+            num4 -= 1;
+            let mut num5 = rng.range(380, world.width - 380);
+            while (num5 as f64) >= world.width as f64 * 0.47
+                && (num5 as f64) <= world.width as f64 * 0.53
+            {
+                num5 = rng.range(380, world.width - 380);
+            }
+            let y2 = rng.range(surface_low as i32, world_surface as i32);
+            let flag2 = ore_patch_x.iter().any(|px| (num5 - px).abs() < 100);
+            if !flag2 && stone_patch(world, num5, y2, world_surface, rng) {
+                break;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -527,5 +871,41 @@ mod tests {
         w.tiles[i].kind = 1;
         pass_spreading_grass(&mut w, 100.0, 90.0, -1, -1);
         assert_eq!(w.tile(150, 60).unwrap().kind, 53, "the sand latch wins");
+    }
+
+    /// W4-d104 pass 32: the ore patch drops a vein into the grass floor
+    /// and the stone patch retypes the blob — two same-stream runs replay
+    /// byte-equal (a == b).
+    #[test]
+    fn w4_d104_32_the_patches_place_and_replay() {
+        let build = || {
+            let mut w = World::new("so".into(), 4200, 1200);
+            // A grass surface at row 300 with the dirt wall body below
+            // (the patch's ±10×+7..+30 scan needs walls).
+            for x in 0..w.width {
+                for y in 300..1200 {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = if y == 300 { 2 } else { 0 };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                    if y > 302 {
+                        w.tiles[i].wall = 2;
+                    }
+                }
+            }
+            w.world_surface = 325.0;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        let mut pa = Vec::new();
+        let mut pb = Vec::new();
+        pass_surface_ore_and_stone(&mut a, 300.0, 325.0, 7, 166, &mut pa, &mut crate::worldgen::noise::Rng(42));
+        pass_surface_ore_and_stone(&mut b, 300.0, 325.0, 7, 166, &mut pb, &mut crate::worldgen::noise::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b: the pass stream replays");
+        assert_eq!(pa, pb, "the ore-patch ledger replays");
+        assert!(
+            a.tiles.iter().any(|t| t.active() && (t.kind == 7 || t.kind == 166)),
+            "an ore vein landed"
+        );
     }
 }

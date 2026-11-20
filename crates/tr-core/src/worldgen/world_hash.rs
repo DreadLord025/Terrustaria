@@ -271,6 +271,14 @@ mod tests {
     // every world (the 512 included). No RNG draw (the classic arm is
     // draw-free), so only the tiles move. Stale-by-design; the gate
     // re-pins. The a == b halves stay untouched.
+    // W4-d104 pass 32 (2026-11-21, code-only): the `Surface Ore and
+    // Stone` pass (`WorldGen.cs:18447-18511` + `OrePatch` `:10579-10705`
+    // + `StonePatch` `:10242-10324`) lands — the ore/stone patch scatters
+    // on the fresh `pass_rng("Surface Ore and Stone")` stream. The
+    // 512-wide pin is UNCHANGED by this pass: the sub-vanilla width guard
+    // skips before any draw (the stone count `Next(1, width*7/4200)`
+    // throws there; the C# never generates a ≤600-wide world). The
+    // a == b halves stay untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -336,6 +344,10 @@ mod tests {
     // and the first-surface grass land across the default world. No RNG
     // draw; re-pin DEFERRED to the merge gate; the a == b halves stay
     // untouched.
+    // W4-d104 pass 32 (2026-11-21, code-only): the `Surface Ore and
+    // Stone` pass (above) moves this pin BY DESIGN — the default world's
+    // ore veins + stone blobs land on the surface band. Re-pin DEFERRED
+    // to the merge gate; the a == b halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
