@@ -10,6 +10,9 @@
 //! inserting a step shifts no existing step's draw ledger. The secret-seed
 //! arms are ported where they are pure multipliers/band swaps behind
 //! `World::seeds` / `World::micro_seeds`; a classic world reads no flag.
+//! The `!Skyblock.denyAllGeneration` outer gate (`WorldGen.cs:3131` —
+//! `skyblockWorldGen`) reads the port's `SeedFlags::SKYBLOCK` (the
+//! `islands.rs` precedent): a skyblock world skips the pass body whole.
 
 use super::noise::Rng;
 use super::tile_runner::{tile_runner, TileRunnerOpts};
@@ -546,6 +549,145 @@ fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
     x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
 }
 
+/// The Clean Up Dirt pass (`DirtWallCleanup`, `WorldGen.cs:15246-15359`):
+/// the two surface wall-scrub sweeps — left-to-right (`i` in `3..width-3`)
+/// then right-to-left (`width-5..=5`), each column walking `j` from 0 while
+/// `(double)j < worldSurface`. While `flag` is set the centre wall
+/// (2/40/64/86 first sweep, 2/40/64 second) zeroes; unless the cell is an
+/// active sand (53/112/234 first sweep, 53 only second) the six neighbour
+/// walls scrub too — ±1 unconditional, ±2/±3 gated on `Next(2) == 0` (the
+/// draw only fires when the neighbour wall test passes — the C# `&&`).
+/// An active cell clears `flag`; the else arm re-sets it once a 5-row
+/// zero-wall air pocket opens (`:15301`/`:15351`). The C#'s duplicated
+/// `== 40` terms in every neighbour test (`:15271` etc. — 64/86 absent
+/// there) are kept verbatim: the neighbour set is {2, 40}.
+///
+/// The `noSurface` micro-seed arm (`:15250-15253`) runs
+/// `DoNoSurfaceFillTheTop` instead. The port's baseline wall 2 under the
+/// solid rows IS the vanilla Dirt Wall Backgrounds wall the sweep scrubs
+/// (the equality tests read identically — no `BASELINE_WALLS` adaptation
+/// needed, unlike the `wall > 0` gates).
+pub(crate) fn pass_clean_up_dirt(world: &mut World, world_surface: f64, rng: &mut Rng) {
+    // `:15248` — the skyblock outer gate (module doc).
+    if world.seeds.contains(SeedFlags::SKYBLOCK) {
+        return;
+    }
+    if world.micro_seeds.contains(MicroSeedFlags::NO_SURFACE) {
+        do_no_surface_fill_the_top(world, rng);
+        return;
+    }
+    // The first sweep (`:15257-15306`).
+    for i in 3..world.width - 3 {
+        let mut flag = true;
+        let mut j = 0;
+        while (j as f64) < world_surface {
+            if flag {
+                let wall = world.tile(i, j).map_or(0, |t| t.wall);
+                if matches!(wall, 2 | 40 | 64 | 86) {
+                    world.tile_mut(i, j).unwrap().wall = 0;
+                }
+                let t = world.tile(i, j).unwrap();
+                if !t.active() || !matches!(t.kind, 53 | 112 | 234) {
+                    scrub_neighbours(world, rng, i, j);
+                    if world.tile(i, j).unwrap().active() {
+                        flag = false;
+                    }
+                }
+            } else if scrub_resume(world, i, j) {
+                flag = true;
+            }
+            j += 1;
+        }
+    }
+    // The second sweep (`:15307-15356`): right-to-left, the centre set
+    // loses 86 and the sand gate narrows to 53.
+    let mut num = world.width - 5;
+    while num >= 5 {
+        let mut flag2 = true;
+        let mut k = 0;
+        while (k as f64) < world_surface {
+            if flag2 {
+                let wall = world.tile(num, k).map_or(0, |t| t.wall);
+                if matches!(wall, 2 | 40 | 64) {
+                    world.tile_mut(num, k).unwrap().wall = 0;
+                }
+                let t = world.tile(num, k).unwrap();
+                if !t.active() || t.kind != 53 {
+                    scrub_neighbours(world, rng, num, k);
+                    if world.tile(num, k).unwrap().active() {
+                        flag2 = false;
+                    }
+                }
+            } else if scrub_resume(world, num, k) {
+                flag2 = true;
+            }
+            k += 1;
+        }
+        num -= 1;
+    }
+}
+
+/// The six neighbour scrubs (`:15271-15294` / `:15321-15344`), in the C#'s
+/// order: i-1 unconditional, i-2/i-3 `Next(2)`-gated, i+1 unconditional,
+/// i+2/i+3 gated. The wall test is {2, 40} — the C#'s `== 2 || == 40 ||
+/// == 40` duplication kept as the set it computes.
+fn scrub_neighbours(world: &mut World, rng: &mut Rng, i: i32, j: i32) {
+    for (dx, gated) in [(-1i32, false), (-2, true), (-3, true), (1, false), (2, true), (3, true)] {
+        let wall = world.tile(i + dx, j).map_or(0, |t| t.wall);
+        if matches!(wall, 2 | 40) && (!gated || rng.range(0, 2) == 0) {
+            world.tile_mut(i + dx, j).unwrap().wall = 0;
+        }
+    }
+}
+
+/// The flag-resume pocket test (`:15301` / `:15351`): the centre column's
+/// five walls (j..j+4) and the four side walls (±1/±2 at j) all zero, and
+/// the centre four tiles (j..j+3) inactive.
+fn scrub_resume(world: &World, i: i32, j: i32) -> bool {
+    let wall_zero = |x: i32, y: i32| world.tile(x, y).is_some_and(|t| t.wall == 0);
+    let inactive = |y: i32| world.tile(i, y).is_some_and(|t| !t.active());
+    wall_zero(i, j)
+        && wall_zero(i, j + 1)
+        && wall_zero(i, j + 2)
+        && wall_zero(i, j + 3)
+        && wall_zero(i, j + 4)
+        && wall_zero(i - 1, j)
+        && wall_zero(i + 1, j)
+        && wall_zero(i - 2, j)
+        && wall_zero(i + 2, j)
+        && inactive(j)
+        && inactive(j + 1)
+        && inactive(j + 2)
+        && inactive(j + 3)
+}
+
+/// `SecretSeed.DoNoSurfaceFillTheTop` (`WorldGen.cs:1055-1082`): per
+/// column, fill the top rows active — the loop bound `100 + Next(2)` is
+/// re-evaluated EVERY condition check (the C# `for` draws on each
+/// iteration test, so the column runs 100 or 101 rows and the final
+/// failing check still draws). Dungeon walls/tiles are exempt; jungle
+/// grass 60 and mushroom grass 70 retype to mud 59. The inner
+/// `skyblockWorldGen` guard (`:1057`) is redundant behind the pass's own
+/// `!denyAllGeneration` gate — the adapter never calls this on skyblock.
+fn do_no_surface_fill_the_top(world: &mut World, rng: &mut Rng) {
+    for i in 0..world.width {
+        let mut j = 0;
+        while j < 100 + rng.range(0, 2) {
+            let t = world.tile(i, j).unwrap();
+            if !WALL_DUNGEON.contains(&t.wall) {
+                if !TILE_DUNGEON.contains(&t.kind) {
+                    world.tile_mut(i, j).unwrap().flags |= FLAG_ACTIVE;
+                }
+                let kind = world.tile(i, j).unwrap().kind;
+                if kind == 60 || kind == 70 {
+                    world.tile_mut(i, j).unwrap().kind = 59;
+                }
+            }
+            j += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -812,5 +954,105 @@ mod tests {
             (0..w.height).any(|y| w.tile(101, y).is_some_and(|t| t.active() && t.kind == 53)),
             "sand slid into the gap"
         );
+    }
+
+    /// A sky band with dirt walls over an active dirt floor at row 40 —
+    /// the Clean Up Dirt canvas.
+    fn walled_sky_world() -> World {
+        // 120 tall: the noSurface fill arm reaches row 100/101
+        // (`100 + Next(2)`), so the canvas must clear that band.
+        let mut w = World::new("cleanup".into(), 100, 120);
+        for x in 0..100 {
+            for y in 0..40 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 2;
+            }
+            for y in 40..120 {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 0;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+                w.tiles[i].wall = 2;
+            }
+        }
+        w.world_surface = 60.0;
+        w
+    }
+
+    #[test]
+    fn the_scrub_clears_the_sky_walls_and_replays() {
+        let mut a = walled_sky_world();
+        let mut b = walled_sky_world();
+        pass_clean_up_dirt(&mut a, 60.0, &mut Rng(0xC1EA));
+        pass_clean_up_dirt(&mut b, 60.0, &mut Rng(0xC1EA));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        // The sky band above the floor scrubs clean (the ±1 unconditional
+        // arms reach every column from both sweeps).
+        for x in 3..97 {
+            for y in 0..39 {
+                assert_eq!(a.tile(x, y).unwrap().wall, 0, "sky wall at {x},{y}");
+            }
+        }
+        // The first active row's OWN wall zeroes too (the centre scrub at
+        // `:15265` runs before the flag clears); the rows BELOW the floor
+        // keep their walls — the flag stays false and the pocket never
+        // re-opens (the floor rows are solid).
+        assert_eq!(a.tile(50, 40).unwrap().wall, 0);
+        assert_eq!(a.tile(50, 41).unwrap().wall, 2);
+    }
+
+    #[test]
+    fn active_sand_keeps_the_flag_and_its_neighbours() {
+        // An active sand 53 cell does NOT enter the neighbour-scrub branch
+        // (`:15269`) — the flag stays true and the column keeps scrubbing
+        // below it; the sand cell's own wall still zeroes.
+        let mut w = walled_sky_world();
+        for y in 0..40 {
+            let i = w.index(50, y);
+            w.tiles[i].kind = 53;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        pass_clean_up_dirt(&mut w, 60.0, &mut Rng(0xC1EA));
+        assert_eq!(w.tile(50, 10).unwrap().wall, 0, "the centre wall zeroes");
+        assert_eq!(w.tile(50, 10).unwrap().kind, 53, "the sand stays");
+    }
+
+    #[test]
+    fn the_no_surface_arm_fills_the_top_and_replays() {
+        let mut a = walled_sky_world();
+        let mut b = walled_sky_world();
+        a.micro_seeds |= MicroSeedFlags::NO_SURFACE;
+        b.micro_seeds |= MicroSeedFlags::NO_SURFACE;
+        // A jungle-grass cell inside the fill band retypes to mud.
+        for w in [&mut a, &mut b] {
+            let i = w.index(10, 10);
+            w.tiles[i].kind = 60;
+        }
+        pass_clean_up_dirt(&mut a, 60.0, &mut Rng(0xC1EA));
+        pass_clean_up_dirt(&mut b, 60.0, &mut Rng(0xC1EA));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        // The top 100 rows are active everywhere (the band is 100/101).
+        for x in 0..100 {
+            for y in 0..100 {
+                assert!(a.tile(x, y).unwrap().active(), "fill at {x},{y}");
+            }
+        }
+        assert_eq!(a.tile(10, 10).unwrap().kind, 59, "jungle grass → mud");
+        // The walls are untouched by the fill arm — even below the surface
+        // line, where the scrub arm would have cleared them.
+        assert_eq!(a.tile(10, 10).unwrap().wall, 2);
+        assert_eq!(a.tile(10, 45).unwrap().wall, 2);
+    }
+
+    #[test]
+    fn the_no_surface_fill_exempts_dungeon_tiles() {
+        let mut w = walled_sky_world();
+        w.micro_seeds |= MicroSeedFlags::NO_SURFACE;
+        let i = w.index(10, 10);
+        w.tiles[i].kind = 41; // a dungeon brick
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        w.tiles[i].wall = 7; // a dungeon wall
+        pass_clean_up_dirt(&mut w, 60.0, &mut Rng(0xC1EA));
+        assert!(!w.tile(10, 10).unwrap().active(), "the dungeon wall exempts");
+        assert_eq!(w.tile(10, 10).unwrap().kind, 41);
     }
 }

@@ -1371,6 +1371,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `GenVars.shimmer_position`. The sub-vanilla valve skips the 512-wide
     // test worlds before any draw (the x band collapses).
     step!("shimmer", "Shimmer", step_shimmer),
+    // The vanilla Clean Up Dirt slot (`WorldGen.cs:15246`): after Shimmer
+    // (`:15195`) and before Pyramids (`:15360`) — W4-d102 pass 7. Own
+    // `pass_rng("Clean Up Dirt")` stream; the noSurface micro-seed arm
+    // fills the top instead of scrubbing.
+    step!("clean up dirt", "Clean Up Dirt", step_clean_up_dirt),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -1951,6 +1956,20 @@ fn step_shimmer(
         rock_layer,
         &mut streams.pass_rng("Shimmer"),
     );
+}
+
+/// The vanilla Clean Up Dirt slot (`WorldGen.cs:15246-15359`) — W4-d102
+/// pass 7: the two surface wall-scrub sweeps (the noSurface fill arm).
+fn step_clean_up_dirt(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_clean_up_dirt(world, world_surface, &mut streams.pass_rng("Clean Up Dirt"));
 }
 
 fn step_evil(
@@ -3361,8 +3380,11 @@ mod tests {
         // `:14697`) between `liquids` and `dungeon`; + `mountain caves`
         // (vanilla "Mountain Caves", `:14873`) between `constant lava
         // layer` and `beaches`; + `gems` (vanilla "Gems", `:15050`)
-        // between `gravitating sand` and `ocean caves`.
-        assert_eq!(names.len(), 71);
+        // between `gravitating sand` and `ocean caves`; + `shimmer`
+        // (vanilla "Shimmer", `:15195`) after `ocean caves` (the count
+        // bump the Shimmer landing missed); + `clean up dirt` (vanilla
+        // "Clean Up Dirt", `:15246`) after `shimmer`.
+        assert_eq!(names.len(), 73);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3426,6 +3448,7 @@ mod tests {
                 "gems",
                 "ocean caves",
                 "shimmer",
+                "clean up dirt",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
@@ -3787,7 +3810,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
-        assert_eq!(names[pos("shimmer") + 1], "fragile ice");
+        assert_eq!(names[pos("shimmer") + 1], "clean up dirt");
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())
@@ -3796,6 +3819,26 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Create Ocean Caves") < cpos("Shimmer"));
         assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+    }
+
+    /// W4-d102 pass 7: `clean up dirt` sits in its vanilla slot — after
+    /// `shimmer` (`WorldGen.cs:15195`) and before the port's `fragile ice`
+    /// step; the Clean Up Dirt anchor is `:15246`, Pyramids `:15360`
+    /// follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_clean_up_dirt_step_sits_after_the_shimmer() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("clean up dirt"), pos("shimmer") + 1);
+        assert_eq!(names[pos("clean up dirt") + 1], "fragile ice");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+        assert!(cpos("Clean Up Dirt") < cpos("Pyramids"));
     }
 
     #[test]

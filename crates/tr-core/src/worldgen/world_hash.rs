@@ -277,6 +277,14 @@ mod tests {
     // `Next(200, 0.2·512)` collapses) skips the pass BEFORE any draw, so
     // neither the tiles nor the stream move. The full-size worlds gain the
     // shimmer pool (DEFAULT_WORLD below); the merged tree re-pins.
+    // W4-d102 pass 7 (code-only): the Clean Up Dirt pass
+    // (`WorldGen.cs:15246-15359`, `passes2.rs::pass_clean_up_dirt`) lands
+    // after `shimmer` — the two wall-scrub sweeps clear the dirt-wall
+    // band the terrain/Dirt-Wall-Backgrounds model leaves in the surface
+    // rows (the ±1 unconditional neighbour arms reach the shallower
+    // columns beside every first-active row), so this pin moves BY
+    // DESIGN; deferred to the gate. The noSurface arm replaces the scrub
+    // with the top-100/101 fill (a classic world reads no flag).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -336,6 +344,9 @@ mod tests {
     // carves the shimmer pool + stone shell on every full-size world (the
     // 4200-wide default qualifies; only the sub-vanilla widths skip) —
     // this pin moves BY DESIGN; deferred to the gate.
+    // W4-d102 pass 7 (code-only): the Clean Up Dirt pass (see SEED42_512
+    // above) scrubs the surface dirt-wall band on every world — this pin
+    // moves BY DESIGN; deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
