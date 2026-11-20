@@ -21,6 +21,7 @@ mod buff_effects;
 mod buff_effects_misc;
 mod buffs;
 mod buff_effects_accessory;
+mod buff_effects_boosters;
 mod bug_net;
 mod chat;
 mod chest;
