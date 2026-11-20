@@ -270,6 +270,13 @@ mod tests {
     // `gravitating sand` and `ocean caves` — the six gem-kind runner bands
     // vein stone on every world and the sand-edge slide shuffles the
     // shore columns, so this pin moves BY DESIGN; deferred to the gate.
+    // W4-d102 pass 6 (code-only): the Shimmer pass
+    // (`WorldGen.cs:15195-15245` + ShimmerMakeBiome `:34853-35057`,
+    // `worldgen/shimmer.rs`) lands after `ocean caves` — UNCHANGED by this
+    // pass alone on the 512-wide world: the sub-vanilla valve (the x band
+    // `Next(200, 0.2·512)` collapses) skips the pass BEFORE any draw, so
+    // neither the tiles nor the stream move. The full-size worlds gain the
+    // shimmer pool (DEFAULT_WORLD below); the merged tree re-pins.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -325,6 +332,10 @@ mod tests {
     // this pass alone.
     // W4-d102 pass 5 (code-only): the Gems pass (see SEED42_512 above) —
     // the gem veins + sand slide move this pin BY DESIGN; deferred.
+    // W4-d102 pass 6 (code-only): the Shimmer pass (see SEED42_512 above)
+    // carves the shimmer pool + stone shell on every full-size world (the
+    // 4200-wide default qualifies; only the sub-vanilla widths skip) —
+    // this pin moves BY DESIGN; deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

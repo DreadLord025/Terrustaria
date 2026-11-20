@@ -48,6 +48,7 @@ use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
 use super::passes2;
+use super::shimmer;
 use super::spider_gem_moss;
 use super::structures;
 use super::surface;
@@ -389,6 +390,15 @@ pub(crate) struct GenVars {
     pub(crate) snow_bottom: i32,
     pub(crate) snow_min_x: Vec<i32>,
     pub(crate) snow_max_x: Vec<i32>,
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`, reset `Vector2D.Zero`
+    /// at `WorldGen.cs:7039`) — the Shimmer pass's placed site
+    /// (`WorldGen.cs:15241`). W4-d102 pass 6 publishes it; the later
+    /// consumers (the pyramid/altar/moss shimmer-exclusion distances,
+    /// `:15448`, `:15780`, `:17585`) read it once their lanes land. `None`
+    /// is the C# zero-vector "not placed" state (the skyblock skip and the
+    /// sub-vanilla valve).
+    #[allow(dead_code)] // consumed by the later lanes' exclusion gates
+    pub(crate) shimmer_position: Option<(i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -463,6 +473,9 @@ impl Default for GenVars {
             snow_bottom: 0,
             snow_min_x: Vec::new(),
             snow_max_x: Vec::new(),
+            // The C# resets shimmerPosition to Vector2D.Zero
+            // (`WorldGen.cs:7039`) — the port's None.
+            shimmer_position: None,
         }
     }
 }
@@ -1192,9 +1205,10 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// `Step::vanilla` values for those constants (`ID/GenPassNameID.cs:239-325`),
 /// which is where the two vocabularies meet.
 ///
-/// Two of the twelve have no executed step in the port yet (`Larva` —
-/// `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`); listing them keeps the
-/// table 1:1 with the C# so a future step cannot silently un-prune itself.
+/// One of the twelve has no executed step in the port yet (`Larva` —
+/// `GenPassNameID.BeeLarvaInBeehives`); listing it keeps the table 1:1 with
+/// the C# so a future step cannot silently un-prune itself. (`Shimmer`
+/// joined the executed chain in W4-d102 pass 6.)
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
@@ -1351,6 +1365,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // makes the relative order RNG-neutral.) Own `pass_rng("Gems")` stream.
     step!("gems", "Gems", step_gems),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
+    // The vanilla Shimmer slot (`WorldGen.cs:15195`): after Create Ocean
+    // Caves (`:15167`) and before Clean Up Dirt (`:15246`) — W4-d102 pass
+    // 6. Own `pass_rng("Shimmer")` stream; publishes
+    // `GenVars.shimmer_position`. The sub-vanilla valve skips the 512-wide
+    // test worlds before any draw (the x band collapses).
+    step!("shimmer", "Shimmer", step_shimmer),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -1908,6 +1928,28 @@ fn step_gems(
         world_surface,
         gv.underground_desert,
         &mut streams.pass_rng("Gems"),
+    );
+}
+
+/// The vanilla Shimmer slot (`WorldGen.cs:15195-15245`) — W4-d102 pass 6:
+/// the site search + `ShimmerMakeBiome`, publishing `GenVars.shimmerPosition`.
+fn step_shimmer(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    gv.shimmer_position = shimmer::pass_shimmer(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Shimmer"),
     );
 }
 
@@ -3383,6 +3425,7 @@ mod tests {
                 "gravitating sand",
                 "gems",
                 "ocean caves",
+                "shimmer",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
@@ -3735,6 +3778,26 @@ mod tests {
         assert!(cpos("Gems") < cpos("Create Ocean Caves"));
     }
 
+    /// W4-d102 pass 6: `shimmer` sits in its vanilla slot — after `ocean
+    /// caves` (Create Ocean Caves `WorldGen.cs:15167`) and before `fragile
+    /// ice` (the port's next executed step); the Shimmer anchor is
+    /// `:15195`, Clean Up Dirt `:15246` follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_shimmer_step_sits_after_the_ocean_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
+        assert_eq!(names[pos("shimmer") + 1], "fragile ice");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Create Ocean Caves") < cpos("Shimmer"));
+        assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+    }
+
     #[test]
     fn every_executed_step_maps_into_the_chain() {
         let classic_names: std::collections::HashSet<&str> = VANILLA_CHAIN
@@ -3999,12 +4062,12 @@ mod tests {
             ]
         );
         // The C# loop can only disable a pass that exists in `_passes`; every
-        // name must therefore be a real chain name — `Shimmer` is the one slot
-        // the port's chain does not declare yet (research/12's missing-pass
-        // list), so it is allowed to be absent and pruned vacuously.
+        // name must therefore be a real chain name. (`Shimmer` joined the
+        // executed chain in W4-d102 pass 6 — the dual-dungeons prune now
+        // reaches a live step.)
         for name in DUAL_DUNGEON_DISABLED_PASSES {
             assert!(
-                VANILLA_CHAIN.iter().any(|p| p.name == name) || name == "Shimmer",
+                VANILLA_CHAIN.iter().any(|p| p.name == name),
                 "'{name}' is not a vanilla chain pass"
             );
         }

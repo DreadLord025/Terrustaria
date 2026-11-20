@@ -39,6 +39,7 @@ mod ocean;
 mod passes2;
 pub mod pipeline;
 pub mod progress;
+mod shimmer;
 mod spider_gem_moss;
 mod structures;
 mod surface;

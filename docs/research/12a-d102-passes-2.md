@@ -60,8 +60,8 @@ stay in place untouched.
 | Webs | 96e4b92f | landed (code-only; GenVars mCave slots added — producer d101; hash re-pin deferred) |
 | Slush | d4fd0af0 | landed (code-only; GenVars snow slots added — producer d101, empty-rect no-op; pins unchanged by this pass) |
 | Mountain Caves | 665041f8 | landed (code-only; no-op while numMCaves==0 — producer d101; pins unchanged by this pass) |
-| Gems | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
-| Shimmer | — | pending |
+| Gems | 28ec5561 | landed (code-only; hash re-pin deferred to the gate) |
+| Shimmer | (this commit) | landed (code-only; `GenVars.shimmer_position` published; SEED42_512 unchanged — sub-vanilla valve; DEFAULT_WORLD re-pin deferred) |
 | Clean Up Dirt | — | pending |
 | Dirt Rock Wall Runner | — | pending |
 | Wood Tree Walls | — | pending |
