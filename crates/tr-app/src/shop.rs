@@ -1153,7 +1153,12 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4598, StockWhen::GolfScore(2000, false)),
             row(4597, StockWhen::GolfScore(2000, false)),
             row(4596, StockWhen::GolfScore(2000, false)),
-            row(4264, StockWhen::DownedBoss3),
+            // `:3217-3221`: the Golf Cart 4264 sits INSIDE the
+            // `golferScoreAccumulated > 2000` block — the `downedBoss3`
+            // conjunct alone is not enough (W4-d122 remainder census:
+            // the old bare `DownedBoss3` gate leaked the cart at any
+            // score once Skeletron fell).
+            row(4264, GOLFER_CART),
             row(4599, StockWhen::GolfScore(500, false)),
             row(4600, StockWhen::GolfScore(1000, true)),
             row(4601, StockWhen::GolfScore(2000, true)),
@@ -1400,6 +1405,15 @@ const CLOTHIER_GOLF_TAIL: StockWhen = StockWhen::GolfScore(2000, true);
 /// — the Mechanic's Rod 2295.
 const MECHANIC_ROD: StockWhen =
     StockWhen::All(&[StockWhen::AnglerPresent, StockWhen::MoonPhaseOdd]);
+
+// — W4-d122 (remainder census): the Golfer's cart conjunct
+// (`Chest.cs:3207-3222`). —
+
+/// `Chest.cs:3217`: `golferScoreAccumulated > 2000 && NPC.downedBoss3` —
+/// the Golf Cart 4264 INSIDE the `> 2000` trophy block (the score gate is
+/// the outer `if`, the Skeletron latch the inner one).
+const GOLFER_CART: StockWhen =
+    StockWhen::All(&[StockWhen::GolfScore(2000, false), StockWhen::DownedBoss3]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -4024,5 +4038,100 @@ mod s1_p_i44_tests {
         };
         assert!(can_bulk_buy(&shop_item, true));
         assert_eq!(bulk_buy_amount(&shop_item), 10);
+    }
+}
+
+#[cfg(test)]
+mod w4_d122_golfer_tests {
+    use super::*;
+
+    /// W4-d122 remainder census — shop 22 (`Chest.cs:3156-3262`): the Golf
+    /// Cart 4264 sits INSIDE the `golferScoreAccumulated > 2000` trophy
+    /// block (`:3207-3222`) — the old bare `DownedBoss3` gate leaked it at
+    /// any score once Skeletron fell. This witness pins the cart conjunct
+    /// and its num slot. Written, not run (code-only).
+    #[test]
+    fn the_golf_cart_needs_both_the_score_and_skeletron() {
+        // Skeletron down but score 0: the cart stays OUT (the C#'s outer
+        // `> 2000` if never opens) — the old gate failed exactly here.
+        let boss_only = ShopFlags {
+            downed_boss3: true,
+            ..Default::default()
+        };
+        let s = resolve_stock(22, &boss_only, &[]);
+        assert!(!s.contains(&4264), "no cart without the score: {s:?}");
+        // The `> 2000` boundary: exactly 2000 opens the paintings
+        // (`>= 2000`, `:3238`) but NOT the trophy block (`> 2000`, `:3207`)
+        // — so no cart even with Skeletron down.
+        let edge = ShopFlags {
+            golfer_score: 2000,
+            downed_boss3: true,
+            ..Default::default()
+        };
+        let e = resolve_stock_moon(22, &edge, &[], 0);
+        assert!(!e.contains(&4264) && !e.contains(&4595), "the > 2000 edge");
+        assert!(e.contains(&4658) && e.contains(&4601), "the >= 2000 rows");
+        // 2001 + Skeletron: the cart lands BETWEEN the 4596 trophy tail and
+        // the 4599 restock (`:3216-3225`'s num order).
+        let over = ShopFlags {
+            golfer_score: 2001,
+            ..edge
+        };
+        let o = resolve_stock_moon(22, &over, &[], 0);
+        let cart = o.iter().position(|v| *v == 4264).expect("the cart lands");
+        assert_eq!(o[cart - 1], 4596);
+        assert_eq!(o[cart + 1], 4599);
+        // 2001 WITHOUT Skeletron: the trophies land, the cart does not.
+        let no_boss = ShopFlags {
+            downed_boss3: false,
+            ..over
+        };
+        let n = resolve_stock_moon(22, &no_boss, &[], 0);
+        assert!(n.contains(&4595) && !n.contains(&4264));
+    }
+
+    /// The tier ladder (`Chest.cs:3169`/`:3186`/`:3202`/`:3223`/`:3228`):
+    /// `>= 500` opens the 4039 club set, `> 500` the 4265/4599 pair,
+    /// `> 1000` the 4591 set, `>= 1000` the 4600 flag — the C# mixes the
+    /// operators per row. Written, not run (code-only).
+    #[test]
+    fn the_golf_tier_boundaries_mix_ge_and_gt_verbatim() {
+        let at = |score: i32| {
+            resolve_stock_moon(
+                22,
+                &ShopFlags {
+                    golfer_score: score,
+                    downed_boss3: true,
+                    ..Default::default()
+                },
+                &[],
+                0,
+            )
+        };
+        let s499 = at(499);
+        assert!(!s499.contains(&4039) && !s499.contains(&4265));
+        let s500 = at(500);
+        assert!(s500.contains(&4039) && s500.contains(&4092), ">= 500");
+        assert!(!s500.contains(&4265) && !s500.contains(&4599), "> 500");
+        let s501 = at(501);
+        assert!(s501.contains(&4265) && s501.contains(&4599), "> 500");
+        let s1000 = at(1000);
+        assert!(s1000.contains(&4600), ">= 1000");
+        assert!(!s1000.contains(&4591), "> 1000");
+        let s1001 = at(1001);
+        assert!(s1001.contains(&4591) && s1001.contains(&4592), "> 1000");
+        // The painting pair rides the moon: phase 5 -> the 4660 pair-2 row
+        // closes the list (`:3250-3253`).
+        let p5 = resolve_stock_moon(
+            22,
+            &ShopFlags {
+                golfer_score: 2500,
+                ..Default::default()
+            },
+            &[],
+            5,
+        );
+        assert!(p5.contains(&4660) && !p5.contains(&4658));
+        assert_eq!(*p5.last().unwrap(), 4660, "the painting closes the list");
     }
 }
