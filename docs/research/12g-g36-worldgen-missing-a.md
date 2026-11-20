@@ -16,12 +16,21 @@
 - **d104** (2d9cfcbb, `12d`): claim only (#28-36).
 - **d105** (5bb4116e, `12e`): claim only (#37-45).
 - **d106** (ee0fcbef, `12f`): Grass Wall landed (R1); R2-R6 pending.
-- **f24 / f25**: at base a725acb0, nothing pushed — no claim docs.
-- **g37** (8ef3e111, `12h`): claim only — fixes the deterministic quartered
-  split of the 37-pass remainder (as of its claim time) over g36/g37/g38/g39:
-  **a = #1-9, b = #10-18, c = #19-27, d = #28-37**, and "nothing here touches
-  a pass a d10x lane has LANDED".
-- **g38 / g39**: at base, nothing pushed.
+- **f24**: still nothing pushed (no remote branch).
+- **f25** (fd098528, `12g-f25-settle-liquids.md`, committed 22:08:23 —
+  **94 s before this lane's claim**): orphan adoption of **Settle Liquids**
+  (`WorldGen.cs:16132-16210`), the one pass in no d10x lane's own ledger,
+  per the d106 Grass Wall precedent. Its claim predates ours → **this lane
+  yields A5 Settle Liquids to f25** (re-probe amendment below).
+- **g37** (8ef3e111 claim + 30f605c7 re-probe, `12h`): claim only — fixes the
+  deterministic quartered split of the 37-pass remainder (as of its claim
+  time) over g36/g37/g38/g39: **a = #1-9, b = #10-18, c = #19-27, d = #28-37**,
+  and "nothing here touches a pass a d10x lane has LANDED"; "If a sibling's
+  pushed claim differs, the merger reconciles".
+- **g38** (d32b13cc, `12i`): claim only — c-quarter minus Grass Wall.
+- **g39** (b24483c2 tip): H-helper ports (Place2x2/3x2/3x3/3x4/5x4/6x3/4x2,
+  wall-painting wrappers, PlaceLogicTiles) — no classic pass rows; d-quarter
+  passes still pending there.
 
 ## The gap this lane takes
 
@@ -31,12 +40,15 @@ Liquids, Wall Variety, Life Crystals. Since g37's claim, d102 has **landed**
 Mountain Caves (665041f8) and Gems (28ec5561) — per g37's own rule this lane
 does not touch them. The remaining census is 42 − 2 (d102) − 1 (d106 Grass
 Wall) = **34 unexecuted**; this lane takes the a-quarter minus the two
-delivered rows: **7 passes**, all still unlanded on every pushed branch.
-The d102/d103 *pending* overlap (Shimmer..Settle Liquids in d102's stated
+delivered rows, minus the f25 orphan claim of Settle Liquids (fd098528,
+22:08:23, earlier than this claim): **6 passes**, all still unlanded on every
+pushed branch and in no other lane's own ledger.
+The d102/d103 *pending* overlap (Shimmer..Wood Tree Walls in d102's stated
 range, Wall Variety/Life Crystals in d103's) is exactly what g37's mop-up
-split reassigns; the merger reconciles per `12h`.
+split reassigns; the merger reconciles per `12h`. Settle Liquids was in the
+a-slice but f25's earlier pushed orphan claim wins it — this lane drops A5.
 
-### This lane's seven passes (C# anchor order)
+### This lane's six passes (C# anchor order)
 
 | # | Pass (`VANILLA_CHAIN` name) | C# anchor | Rust home (planned) |
 | --- | --- | --- | --- |
@@ -44,7 +56,7 @@ split reassigns; the merger reconciles per `12h`.
 | A2 | Clean Up Dirt | `WorldGen.cs:15246` | `micro_finish.rs` |
 | A3 | Dirt Rock Wall Runner | `WorldGen.cs:15461` (+ `DirtyRockRunner` :77145) | `micro_finish.rs` |
 | A4 | Wood Tree Walls | `WorldGen.cs:15717` | `living_trees.rs` |
-| A5 | Settle Liquids | `WorldGen.cs:16132` | `liquids.rs` |
+| A5 | ~~Settle Liquids~~ | `WorldGen.cs:16132` | **yielded to f25** (fd098528 orphan claim, earlier) |
 | A6 | Wall Variety | `WorldGen.cs:16697` | `micro_finish.rs` |
 | A7 | Life Crystals | `WorldGen.cs:16755` | `structures.rs` |
 
@@ -74,6 +86,6 @@ Waterfalls :16610 (d103 landed), Statues :16853 (g37's B1).
 | A2 Clean Up Dirt | — | pending |
 | A3 Dirt Rock Wall Runner | — | pending |
 | A4 Wood Tree Walls | — | pending |
-| A5 Settle Liquids | — | pending |
+| A5 Settle Liquids | fd098528 (f25) | yielded — f25's earlier orphan claim wins |
 | A6 Wall Variety | — | pending |
 | A7 Life Crystals | — | pending |
