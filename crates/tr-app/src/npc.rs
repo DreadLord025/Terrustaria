@@ -4652,6 +4652,18 @@ impl Npc {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
+            // `if (this.aiStyle == 15) { this.AI_015_KingSlime(); return; }`
+            // (`NPC.cs:23487-23491`) — the King Slime (50), the style's only
+            // user (`SetDefaults` `:9387-9403`). W4-d24 verify-only census:
+            // the landed K-1..K-4 machine (`update_king_slime`,
+            // `NPC.cs:43121-43414`) is faithful — the despawn state gate,
+            // the teleport cache (50-candidate cap, `Next(0, size)`), the
+            // hp-ladder hop timer, the strict 5% batch cross with the ONE
+            // `Next(1, 4)` count draw (the per-minion 5-draw burst rides the
+            // sim's `king_slime_minion_batch` drain). The axis claims the
+            // style now (the S1-D-2 convention); the kind arm becomes the
+            // unreachable marker, the machine unchanged.
+            15 => self.update_king_slime(world, player, rng),
             // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
             // BlazingWheel (72), the style's only user. The small-kinds
             // wiring wave: the ricochet machine rides `npc_ai_style21`
@@ -6104,7 +6116,12 @@ impl Npc {
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
-            NpcKind::KingSlime => self.update_king_slime(world, player, rng),
+            // W4-d24 axis census: the King Slime (aiStyle 15) rides the
+            // style axis above (`15 => update_king_slime`) — this arm is
+            // unreachable through `update_rng` (the S1-D-2 axis precedent).
+            NpcKind::KingSlime => {
+                unreachable!("aiStyle 15 rides the style axis (W4-d24)")
+            }
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
@@ -33544,5 +33561,71 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+
+// =====================================================================
+// W4-d24 — the aiStyles 15-22 axis census witnesses (style 15 slice).
+// WRITTEN, NOT RUN (code-only mode: no cargo/rustc). Census verdict at
+// a725acb0: 15 KingSlime LANDED (kind-arm routed, K-1..K-4 fixes) ->
+// verify-only axis claim here; the machine is unchanged.
+// =====================================================================
+#[cfg(test)]
+mod w4_d24_style15_census_tests {
+    use super::*;
+
+    /// The axis claims style 15 exactly once, and the KingSlime kind arm
+    /// is the unreachable marker (the S1-D-2 convention, the W4-d28
+    /// source-scan witness shape).
+    #[test]
+    fn w4_d24_the_axis_claims_style_15_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "15" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 15 claimed once");
+        assert!(src.contains("aiStyle 15 rides the style axis (W4-d24)"));
+    }
+
+    /// The 15 claim is LIVE and RNG-census-faithful: one full-HP tick
+    /// through `update_rng` runs the landed machine — the one-shot init
+    /// (`ai[3] = lifeMax`, `king_slime_local[3] = 1`, `ai[0] = -100`),
+    /// the +2 hop-timer beat at full life, the flag-driven recentre to
+    /// the 122x115 truncated box — and draws NOTHING (the batch arm's
+    /// strict 5% cross `NPC.cs:43388` has not fired; the teleport's
+    /// `Next(0, size)` `:43099`/`:43108` needs `ai[2] >= 300`).
+    #[test]
+    fn w4_d24_the_king_slime_rides_the_15_axis_draw_free_at_full_hp() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 100.0;
+        let mut p = Player::spawn(&w);
+        p.x = 120.0 * TILE_PX;
+        p.y = 150.0 * TILE_PX;
+        let mut k = Npc::new(NpcKind::KingSlime, 100.0 * TILE_PX, 150.0 * TILE_PX, 1, 0.0);
+        k.hp = k.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        k.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(k.ai[3], k.max_hp as f32, "the hp latch (:43134-43137)");
+        assert_eq!(k.king_slime_local[3], 1.0, "the one-shot init");
+        assert_eq!(k.ai[0], -98.0, "-100 init + the full-life +2 beat");
+        assert!((k.scale - 1.25).abs() < 0.001, "the full-hp scale");
+        assert_eq!(k.size_override, Some((122.0, 115.0)), "the int box");
+        assert!(!k.wants_minion, "no batch at the full hp");
+        assert_eq!(rng, UnifiedRandom::new(7), "the quiet tick draws nothing");
     }
 }
