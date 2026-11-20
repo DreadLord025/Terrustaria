@@ -273,6 +273,14 @@ mod tests {
     // is narrow but non-empty IF the surface sits low enough; the size
     // guard skips before any draw otherwise. Unmeasured (no compiler on
     // this branch); stale-by-design if crystals place. a == b stays.
+    // W4-d103 pass 23 (2026-11-20, code-only): the `Statues` pass
+    // (`WorldGen.cs:16853-16970`) lands on a fresh `pass_rng("Statues")`
+    // stream after `life crystals`. The count is
+    // `(int)(73*2 * 512/4200)` = 17 on the 512 fixture; the size guard
+    // needs height − 300 above the y-band floor — 512 − 300 = 212, so the
+    // pass runs IF the band floor sits below 212 (unmeasured). The new
+    // 105/349/135 frame-important boot bits are inert without the kinds.
+    // Stale-by-design if statues place; the gate re-pins. a == b stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -342,6 +350,12 @@ mod tests {
     // The re-pin is DEFERRED to the merge gate (no compiler on this
     // branch); a == b stays green — the pass draws only its own fresh
     // stream.
+    // W4-d103 pass 23 (code-only): the Statues pass (146 statues on the
+    // 4200-wide default, the 3×2 tile-105/349 writes + the four wired
+    // pressure-plate traps) moves this pin BY DESIGN. The re-pin is
+    // DEFERRED to the merge gate (no compiler on this branch); a == b
+    // stays green — the pass draws only its own fresh stream (the wires
+    // are a side table, not hashed).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -49,6 +49,7 @@ use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
 use super::spider_gem_moss;
+use super::statues;
 use super::structures;
 use super::surface;
 use super::temple;
@@ -1405,6 +1406,9 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // The vanilla Life Crystals slot (`WorldGen.cs:16755`): after Wall
     // Variety (`:16697`), before Statues (`:16853`) — W4-d103 pass 22.
     step!("life crystals", "Life Crystals", step_life_crystals),
+    // The vanilla Statues slot (`WorldGen.cs:16853`): after Life Crystals
+    // (`:16755`), before the buried chests (`:16971`) — W4-d103 pass 23.
+    step!("statues", "Statues", step_statues),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2712,6 +2716,37 @@ fn step_life_crystals(
     );
 }
 
+/// The vanilla Statues slot (`WorldGen.cs:16853`): the statue cycle on a
+/// fresh `pass_rng("Statues")` stream. The `Skyblock.denySomeGeneration`
+/// gate (`:16855`) rides the skyblock flag; the no-traps ×15 count and the
+/// `actuallyNoTrapsForRealIMeanIt` plate veto ride their flags.
+fn step_statues(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    statues::pass_statues(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS),
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            || opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS),
+        &mut streams.pass_rng("Statues"),
+    );
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -2970,6 +3005,13 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[467] = true;
     world.frame_important[441] = true;
     world.frame_important[468] = true;
+    // The statues family (W4-d103 pass 23): the statue 105
+    // (`Main.cs:7707`), the jug 349 (`:7727`) and the pressure plate 135
+    // (`:7721`) are frame-important — the framer keeps the `Place2xX` /
+    // `Place1x1` stored frames the Statues pass writes.
+    world.frame_important[105] = true;
+    world.frame_important[349] = true;
+    world.frame_important[135] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -3290,8 +3332,9 @@ mod tests {
         // `remove water` and `shell piles`; + `waterfalls` (vanilla
         // "Waterfalls", `:16610`) after `living trees`; + `wall variety`
         // (vanilla "Wall Variety", `:16697`) after `waterfalls`; + `life
-        // crystals` (vanilla "Life Crystals", `:16755`) after `wall variety`.
-        assert_eq!(names.len(), 70);
+        // crystals` (vanilla "Life Crystals", `:16755`) after `wall variety`;
+        // + `statues` (vanilla "Statues", `:16853`) after `life crystals`.
+        assert_eq!(names.len(), 71);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3386,6 +3429,7 @@ mod tests {
                 "waterfalls",
                 "wall variety",
                 "life crystals",
+                "statues",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3479,7 +3523,8 @@ mod tests {
         assert_eq!(names[pos("living trees") + 1], "waterfalls");
         assert_eq!(names[pos("waterfalls") + 1], "wall variety");
         assert_eq!(names[pos("wall variety") + 1], "life crystals");
-        assert_eq!(names[pos("life crystals") + 1], "trees");
+        assert_eq!(names[pos("life crystals") + 1], "statues");
+        assert_eq!(names[pos("statues") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3506,9 +3551,11 @@ mod tests {
         assert!(cpos("Ice") < cpos("Wall Variety"));
         assert!(cpos("Wall Variety") < cpos("Life Crystals"));
         // W4-d103 pass 22: the vanilla Life Crystals pairs (`:16697` Wall
-        // Variety → `:16755` Life Crystals → `:16853` Statues — the Statues
-        // step is unported, the chain pair is the witness).
+        // Variety → `:16755` Life Crystals → `:16853` Statues).
         assert!(cpos("Life Crystals") < cpos("Statues"));
+        // W4-d103 pass 23: the vanilla Statues pairs (`:16755` Life
+        // Crystals → `:16853` Statues → `:16971` Buried Chests).
+        assert!(cpos("Statues") < cpos("Buried Chests"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 

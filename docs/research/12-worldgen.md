@@ -346,7 +346,8 @@ faithful `GraniteBiome` port) and `Surface Caves` (executed, WORLDGEN-CAVES)
 Landed: 19 Oasis (90b7eee6), 20 Waterfalls (`liquids.rs::pass_waterfalls`,
 2026-11-20, code-only), 21 Wall Variety (`wall_variety.rs::pass_wall_variety`,
 2026-11-20, code-only), 22 Life Crystals (`crystals.rs::pass_life_crystals`,
-2026-11-20, code-only — pin re-pins deferred to the merge gate).
+2026-11-20, code-only), 23 Statues (`statues.rs::pass_statues`, 2026-11-20,
+code-only — pin re-pins deferred to the merge gate).
 28 Quick Cleanup :17875 · 29 Hellforge :18187 · 30 Spreading Grass :18237 ·
 31 Surface Ore and Stone :18447 · 32 Place Fallen Log :18513 · 33 Traps :18657 ·
 34 Piles :18788 · 35 Spawn Point :19460 · 36 Grass Wall :19589 —
