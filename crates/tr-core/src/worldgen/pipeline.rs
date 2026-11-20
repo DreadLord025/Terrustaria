@@ -1981,6 +1981,19 @@ fn step_dungeon(
     let surface_row = gv.map().heights[dungeon_x as usize];
     let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
     dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
+    // W4-f45: the dungeon anchor the `.wld` flags block carries
+    // (`Main.dungeonX/dungeonY`, `WorldFile.cs:1279-1280`). The C# stamps the
+    // first open dungeon tile the `UpdateWorld` scan finds
+    // (`WorldGen.cs:72471-72489`); the port's generator knows its entrance
+    // column/row directly, so it stamps the same anchor at generation. The
+    // drunk arm pins the start row to `worldSurface + 70` (`dungeon.rs`'s
+    // `generate_dungeon` top), so the stamp mirrors that choice.
+    world.dungeon_x = dungeon_x;
+    world.dungeon_y = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        world.world_surface as i32 + 70
+    } else {
+        surface_row
+    };
 }
 
 fn step_ocean_caves(

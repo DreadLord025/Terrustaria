@@ -625,6 +625,55 @@ pub struct World {
     /// (`WorldFile.cs:1250` write, `:2044` read; S1-J-3b). 0 = unset/min —
     /// the port stamps no wall clock; a loaded file's value round-trips.
     pub creation_time: i64,
+
+    // --- W4-f45: the event snapshots + flavour (`.wld` flags block) ---------
+    /// `WorldFile._tempCultistDelay` = `CultistRitual.delay`
+    /// (`WorldFile.cs:1340` write / `:2197` read, `SetTempToOngoing:1047` /
+    /// `SetOngoingToTemps:163`). The live owner is `App.world_events`
+    /// (`world_events.rs`); the save snapshots it here, the load restores it.
+    pub cultist_delay: i32,
+    /// `WorldFile._tempPartyManual` = `BirthdayParty.ManualParty` (`:1361`).
+    pub party_manual: bool,
+    /// `WorldFile._tempPartyGenuine` = `BirthdayParty.GenuineParty` (`:1362`).
+    pub party_genuine: bool,
+    /// `WorldFile._tempPartyCooldown` = `BirthdayParty.PartyDaysOnCooldown`
+    /// (`:1363`).
+    pub party_cooldown: i32,
+    /// `WorldFile.TempPartyCelebratingNPCs` = `BirthdayParty.CelebratingNPCs`
+    /// (`:1364-1368`): the celebrating NPC slots. The port's live list indexes
+    /// the compacted `Vec<Npc>` (the recorded `world_events.rs` deviation);
+    /// the file carries the C#'s stable `Main.npc` slots.
+    pub party_celebrants: Vec<i32>,
+    /// `WorldFile._tempLanternNightCooldown` = `LanternNight.
+    /// LanternNightsOnCooldown` (`:1381`).
+    pub lantern_night_cooldown: i32,
+    /// `WorldFile._tempLanternNightGenuine` = `LanternNight.GenuineLanterns`
+    /// (`:1382`).
+    pub lantern_night_genuine: bool,
+    /// `WorldFile._tempLanternNightManual` = `LanternNight.ManualLanterns`
+    /// (`:1383`).
+    pub lantern_night_manual: bool,
+    /// `WorldFile._tempLanternNightNextNightIsGenuine` = `LanternNight.
+    /// NextNightIsLanternNight` (`:1384`).
+    pub lantern_night_next_night_is_genuine: bool,
+    /// `Main.windSpeedTarget` (`WorldFile.cs:1328` write / `:2146` read):
+    /// the live owner is `App.wind.speed_target` (`wind.rs`); the save
+    /// snapshots it here, the load restores both target and current
+    /// (`:2147` `windSpeedCurrent = windSpeedTarget`).
+    pub wind_speed_target: f32,
+    /// `NPC.savedBartender` (`NPC.cs:6283`, set at `:52960`'s
+    /// `AI_007_TownEntities_UpdateSavedStates`): the bound bartender's
+    /// rescue flag. The rescue path is unported, so the file round-trips.
+    pub saved_bartender: bool,
+    /// `WorldGen.crimson` (`WorldFile.cs:1281` write / `:2080` read): the
+    /// evil biome's flavour — the generation options' `crimson` choice
+    /// (`worldgen::GenOptions.crimson`), stamped at generation.
+    pub crimson: bool,
+    /// `Main.dungeonX`/`Main.dungeonY` (`WorldFile.cs:1279-1280` write /
+    /// `:2078-2079` read): the dungeon's entrance anchor — the generator
+    /// stamps the entrance column/row (`worldgen/dungeon.rs`).
+    pub dungeon_x: i32,
+    pub dungeon_y: i32,
 }
 
 impl World {
@@ -838,6 +887,23 @@ impl World {
             world_id: 0,
             last_played: 0,
             creation_time: 0,
+            // W4-f45: the event snapshots start at their `World::new` zeros
+            // (the C# temps' file-absent defaults, `WorldFile.cs:1030-1037`);
+            // the cultist delay's pre-108 load fallback is 86400 (`:2193`).
+            cultist_delay: 0,
+            party_manual: false,
+            party_genuine: false,
+            party_cooldown: 0,
+            party_celebrants: Vec::new(),
+            lantern_night_cooldown: 0,
+            lantern_night_genuine: false,
+            lantern_night_manual: false,
+            lantern_night_next_night_is_genuine: false,
+            wind_speed_target: 0.0,
+            saved_bartender: false,
+            crimson: false,
+            dungeon_x: 0,
+            dungeon_y: 0,
         }
     }
 

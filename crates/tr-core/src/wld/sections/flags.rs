@@ -54,7 +54,8 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(0); // jungleBackStyle — unowned
     w.i32(world.hell_back_style as i32);
     // WorldFile.cs:1270-1281: spawn, layer heights, the time snapshot, the
-    // moon phase, the blood moon/eclipse, the dungeon anchor.
+    // moon phase, the blood moon/eclipse, the dungeon anchor. W4-f45 claims
+    // the dungeon anchor + the evil flavour (the generator stamps them).
     w.i32(world.spawn_x);
     w.i32(world.spawn_y);
     w.f64(world.world_surface);
@@ -64,9 +65,9 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.moon_phase as i32);
     w.boolean(world.blood_moon);
     w.boolean(world.eclipse);
-    w.i32(0); // dungeonX — unowned
-    w.i32(0); // dungeonY — unowned
-    w.boolean(false); // WorldGen.crimson — the evil flavour is unowned state
+    w.i32(world.dungeon_x); // dungeonX (W4-f45)
+    w.i32(world.dungeon_y); // dungeonY (W4-f45)
+    w.boolean(world.crimson); // WorldGen.crimson (W4-f45)
     write_downed_flags(w, world);
     // WorldFile.cs:1299-1305: the orbs, the meteor, the altar count, the
     // hardmode switch and the post-plantera party.
@@ -107,11 +108,12 @@ pub fn write(w: &mut Writer, world: &World) {
     w.u8(world.crimson_bg_style); // setBG(5) crimsonBG
     w.u8(0); // setBG(6) desertBG
     w.u8(0); // setBG(7) oceanBG
-    // WorldFile.cs:1326-1332: clouds and wind — the cloud state is unowned
-    // and the wind engine lives in tr-app.
+    // WorldFile.cs:1326-1332: clouds and wind — the cloud state is unowned;
+    // W4-f45 claims the wind target (`App.wind.speed_target` snapshots into
+    // `World.wind_speed_target` at save, `saveglue.rs`).
     w.i32(0); // cloudBGActive
     w.i16(0); // numClouds
-    w.f32(0.0); // windSpeedTarget
+    w.f32(world.wind_speed_target); // windSpeedTarget (W4-f45)
     // WorldFile.cs:1333-1338: today's fisherman list (empty — the port collapses
     // `Main.anglerWhoFinishedToday` to the bool `World.angler_quest_turned_in`,
     // so the name list has no store), then the saved-NPC flags and the quest index.
@@ -122,7 +124,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.saved_tax_collector); // savedTaxCollector
     w.boolean(world.saved_golfer); // savedGolfer
     w.i32(world.invasion_size_start);
-    w.i32(0); // _tempCultistDelay — App-owned (`world_events.rs`), no World store
+    w.i32(world.cultist_delay); // _tempCultistDelay (W4-f45; App.world_events snapshots it)
               // WorldFile.cs:1341: `BannerSystem.Save` — the banner kill counts have
               // no port store, so both arrays are written at their C# length, all zero.
     w.i16(MAX_BANNER_TYPES);
@@ -159,13 +161,18 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.tower_active_nebula); // TowerActiveNebula
     w.boolean(world.tower_active_stardust); // TowerActiveStardust
     w.boolean(world.lunar_apocalypse_is_up); // LunarApocalypseIsUp
-    // WorldFile.cs:1363-1368: the party snapshot — the birthday party state is
-    // App-owned (`world_events.rs`), no World store: manual/genuine false, the
-    // cooldown 0 and the celebrant list empty.
-    w.boolean(false); // _tempPartyManual
-    w.boolean(false); // _tempPartyGenuine
-    w.i32(0); // _tempPartyCooldown
-    w.i32(0); // TempPartyCelebratingNPCs.Count
+    // WorldFile.cs:1363-1368: the party snapshot — W4-f45 claims it: the
+    // birthday party state (`App.world_events`) snapshots into the World
+    // fields at save (`SetTempToOngoing:1048-1052`). The celebrant list
+    // carries the C#'s stable `Main.npc` slots (the port's live list indexes
+    // the compacted vec — the recorded `world_events.rs` deviation).
+    w.boolean(world.party_manual); // _tempPartyManual
+    w.boolean(world.party_genuine); // _tempPartyGenuine
+    w.i32(world.party_cooldown); // _tempPartyCooldown
+    w.i32(world.party_celebrants.len() as i32); // TempPartyCelebratingNPCs.Count
+    for &slot in &world.party_celebrants {
+        w.i32(slot);
+    }
               // WorldFile.cs:1369-1372: the sandstorm snapshot. `SetTempToOngoing:1053-1056`
               // copies `Sandstorm.Happening`/`TimeLeft`/`Severity`/`IntendedSeverity`
               // in before the write and `SetOngoingToTemps:169-172` restores them.
@@ -175,10 +182,11 @@ pub fn write(w: &mut Writer, world: &World) {
     w.f32(world.sandstorm_intended_severity); // _tempSandstormIntendedSeverity
     // WorldFile.cs:1373-1375: `NPC.savedBartender` + `DD2Event.Save`'s three
     // tier flags (`DD2Event.cs:151-156`). The tiers are `World::dd2_downed_t*`
-    // (S1-E-12c: the victory latches persist); `savedBartender` stays unowned
-    // and `dd2_latches` is the wave-boss death latches (never saved by the C#
+    // (S1-E-12c: the victory latches persist); W4-f45 claims `savedBartender`
+    // (the rescue path is unported, the file round-trips the latch);
+    // `dd2_latches` is the wave-boss death latches (never saved by the C#
     // either), NOT the tiers.
-    w.boolean(false); // savedBartender
+    w.boolean(world.saved_bartender); // savedBartender (W4-f45)
     w.boolean(world.dd2_downed_t1); // DownedInvasionT1
     w.boolean(world.dd2_downed_t2); // DownedInvasionT2
     w.boolean(world.dd2_downed_t3); // DownedInvasionT3
@@ -191,11 +199,13 @@ pub fn write(w: &mut Writer, world: &World) {
     w.u8(0); // treeBG3
     w.u8(0); // treeBG4
     w.boolean(world.combat_book_was_used); // combatBookWasUsed
-                      // WorldFile.cs:1380-1384: the lantern night snapshot — unowned.
-    w.i32(0); // _tempLanternNightCooldown
-    w.boolean(false); // _tempLanternNightGenuine
-    w.boolean(false); // _tempLanternNightManual
-    w.boolean(false); // _tempLanternNightNextNightIsGenuine
+    // WorldFile.cs:1380-1384: the lantern night snapshot — W4-f45 claims it
+    // (`App.world_events` snapshots into the World fields at save,
+    // `SetTempToOngoing:1060-1063`).
+    w.i32(world.lantern_night_cooldown); // _tempLanternNightCooldown
+    w.boolean(world.lantern_night_genuine); // _tempLanternNightGenuine
+    w.boolean(world.lantern_night_manual); // _tempLanternNightManual
+    w.boolean(world.lantern_night_next_night_is_genuine); // _tempLanternNightNextNightIsGenuine
                       // WorldFile.cs:1385: `WorldGen.TreeTops.Save` — the tree-top variation
                       // table has no port state; written at its C# length, all zero.
     w.i32(TREE_TOP_VARIATIONS);
@@ -400,8 +410,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.moon_phase = (r.i32()? as u8) & 7;
     world.blood_moon = r.u8()? != 0;
     world.eclipse = r.u8()? != 0;
-    r.skip(2 * 4)?; // dungeonX/Y
-    r.skip(1)?; // WorldGen.crimson
+    world.dungeon_x = r.i32()?; // dungeonX (W4-f45, `:2078`)
+    world.dungeon_y = r.i32()?; // dungeonY (W4-f45, `:2079`)
+    world.crimson = r.bool()?; // WorldGen.crimson (W4-f45, `:2080`)
                 // WorldFile.cs:2084-2102 — the boss flags (with `downedSlimeKing` gated at 118).
     world.downed_eoc = r.bool()?; // downedBoss1
     world.downed_eow = r.bool()?; // downedBoss2
@@ -461,9 +472,11 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.hallow_bg_style = r.u8()?; // setBG(4) hallowBG
     world.crimson_bg_style = r.u8()?; // setBG(5) crimsonBG
     r.skip(2)?; // setBG(6..7) desertBG, oceanBG
-    r.skip(4)?; // cloudBGActive
+    r.skip(4)?; // cloudBGActive — the load re-rolls it (`:2144`), no store
     r.skip(2)?; // numClouds
-    r.skip(4)?; // windSpeedTarget
+    // W4-f45: the wind target lands; `:2147` sets `windSpeedCurrent` to it
+    // (the App restores both from this one field, `app/mod.rs`).
+    world.wind_speed_target = r.f32()?; // windSpeedTarget (`:2146`)
     if version < 95 {
         return Ok(());
     }
@@ -488,14 +501,35 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version >= 201 {
         world.saved_golfer = r.bool()?; // savedGolfer
     }
-    world.invasion_size_start = r.i32()?;
-    r.skip(4)?; // _tempCultistDelay
-                // WorldFile.cs:2157-2166 — `BannerSystem.Load` (the second array only from 289).
+    // WorldFile.cs:2180-2198 — the invasion-start + cultist-delay gates the
+    // S1-J-3b walk flattened: below 107 `invasionSizeStart` is not read at
+    // all (`FakeLoadInvasionStart` re-derives it from the invasion pair,
+    // `Main.cs:64488-64514`); below 108 the cultist delay defaults to 86400
+    // (`CultistRitual.delayStart`). W4-f45 restores both gates.
+    if version < 107 {
+        if world.invasion_type > 0 && world.invasion_size > 0 {
+            fake_load_invasion_start(world);
+        }
+    } else {
+        world.invasion_size_start = r.i32()?;
+    }
+    if version < 108 {
+        world.cultist_delay = 86400; // `CultistRitual.delayStart` (`:2193`)
+    } else {
+        world.cultist_delay = r.i32()?; // _tempCultistDelay (`:2197`, W4-f45)
+    }
+    if version < 109 {
+        return Ok(());
+    }
+    // WorldFile.cs:2157-2166 — `BannerSystem.Load` (the second array only from 289).
     let kill_counts = r.i16()? as i32;
     r.skip((kill_counts.max(0) as usize) * 4)?;
     if version >= 289 {
         let claimable = r.i16()? as i32;
         r.skip((claimable.max(0) as usize) * 2)?;
+    }
+    if version < 128 {
+        return Ok(());
     }
     world.fast_forward_to_dawn = r.bool()?;
     if version < 131 {
@@ -543,13 +577,18 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if world.tower_active_stardust {
         world.tower_shield_stardust = shield_max;
     }
-                // WorldFile.cs:2195-2206 — the party snapshot (cooldown i32, then a counted i32 list).
+    // WorldFile.cs:2251-2269 — the party snapshot (W4-f45): below 170 the
+    // four temps reset (`:2253-2256` — the World defaults already match),
+    // else manual/genuine/cooldown + a counted i32 slot list.
     if version >= 170 {
-        r.skip(1)?; // _tempPartyManual
-        r.skip(1)?; // _tempPartyGenuine
-        r.skip(4)?; // _tempPartyCooldown
+        world.party_manual = r.bool()?; // _tempPartyManual
+        world.party_genuine = r.bool()?; // _tempPartyGenuine
+        world.party_cooldown = r.i32()?; // _tempPartyCooldown
         let celebrants = r.i32()?;
-        r.skip((celebrants.max(0) as usize) * 4)?;
+        world.party_celebrants.clear();
+        for _ in 0..celebrants.max(0) {
+            world.party_celebrants.push(r.i32()?);
+        }
     }
     // WorldFile.cs:2277-2283 — the sandstorm snapshot: below 174 the four
     // temps are zeroed (`:2272-2275`), else read back.
@@ -563,7 +602,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     // (the C# clears the tiers below the gate, `DD2Event.cs:174` — the World
     // defaults already false).
     if version >= 178 {
-        r.skip(1)?; // savedBartender
+        world.saved_bartender = r.bool()?; // savedBartender (W4-f45)
         world.dd2_downed_t1 = r.bool()?; // DownedInvasionT1
         world.dd2_downed_t2 = r.bool()?; // DownedInvasionT2
         world.dd2_downed_t3 = r.bool()?; // DownedInvasionT3
@@ -581,12 +620,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version >= 204 {
         world.combat_book_was_used = r.bool()?; // combatBookWasUsed
     }
-    // WorldFile.cs:2234-2239 — the lantern night snapshot.
+    // WorldFile.cs:2317-2330 — the lantern night snapshot (W4-f45): below
+    // 207 the four temps reset (`:2319-2322` — the World defaults match).
     if version >= 207 {
-        r.skip(4)?; // _tempLanternNightCooldown
-        r.skip(1)?; // _tempLanternNightGenuine
-        r.skip(1)?; // _tempLanternNightManual
-        r.skip(1)?; // _tempLanternNightNextNightIsGenuine
+        world.lantern_night_cooldown = r.i32()?; // _tempLanternNightCooldown
+        world.lantern_night_genuine = r.bool()?; // _tempLanternNightGenuine
+        world.lantern_night_manual = r.bool()?; // _tempLanternNightManual
+        world.lantern_night_next_night_is_genuine = r.bool()?; // _tempLanternNightNextNightIsGenuine
     }
     // WorldFile.cs:2240-2243 — `TreeTops.Load`: below 211 nothing is read. The C# reads
     // `min(count, 13)` entries; skipping the full count keeps the byte cursor
@@ -731,4 +771,28 @@ fn skip_strings(r: &mut Reader, count: i32) -> Result<()> {
         skip_one_string(r)?;
     }
     Ok(())
+}
+
+/// `Main.FakeLoadInvasionStart` (`Main.cs:64488-64514`): the pre-107 load's
+/// `invasionSizeStart` re-derivation from the invasion pair — the per-type
+/// (base, step) ladder, then `base + ceil((size - base) / step) * step` when
+/// the ceiling is positive. W4-f45 (the `LoadWorldFlags:2180-2186` gate).
+fn fake_load_invasion_start(world: &mut World) {
+    let (base, step) = match world.invasion_type {
+        1 | 2 => (80, 40),
+        3 => (120, 60),
+        4 => (160, 40),
+        _ => (0, 0),
+    };
+    // The C# divides by `num2` unconditionally; the port guards the unknown
+    // type's zero step (the C# would throw there — an unreachable file shape).
+    let waves = if step > 0 {
+        ((world.invasion_size - base) as f32 / step as f32).ceil() as i32
+    } else {
+        0
+    };
+    world.invasion_size_start = base;
+    if waves > 0 {
+        world.invasion_size_start += waves * step;
+    }
 }

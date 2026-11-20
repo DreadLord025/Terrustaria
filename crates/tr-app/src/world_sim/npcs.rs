@@ -718,10 +718,10 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
     app.world.angler_quest_turned_in = false;
     let gates = crate::angler::QuestGates {
         hard_mode: app.world.hard_mode,
-        // `WorldGen.crimson` — the port has no evil-kind field, so the
-        // corruption default stands (the crimson quest rows 2457/2463/
-        // 2477/2485 then re-roll exactly like a corruption world).
-        crimson: false,
+        // `WorldGen.crimson` — W4-f45 claims the world's evil flavour
+        // (`WorldFile.cs:1281`), so the crimson quest rows (2457/2463/
+        // 2477/2485) now read the file's own flag.
+        crimson: app.world.crimson,
         downed_boss1: app.world.downed_eoc,
         downed_boss2: app.world.downed_eow,
         downed_boss3: app.world.downed_skeletron,

@@ -109,6 +109,32 @@ impl App {
         // the `.trwld` v11 section and the `.wld` flags block both read it
         // from `World.ore_tiers` (S1-J-3b).
         self.world.ore_tiers = self.ore_tiers;
+        // W4-f45 — `SetTempToOngoing` (`WorldFile.cs:1047-1063`): the event
+        // schedulers' live state (`App.world_events`) snapshots into the
+        // world's file payload — the cultist delay (`:1047`), the party
+        // quad + celebrant list (`:1048-1052`) and the lantern quad
+        // (`:1060-1063`). The wind target (`Main.windSpeedTarget`, `:1328`)
+        // snapshots from `App.wind`. The celebrant list carries the C#'s
+        // stable `Main.npc` slots; the port's live list indexes the compacted
+        // vec (the recorded `world_events.rs` deviation), so the slots are
+        // written as-is (the single-player roster's indices are stable enough
+        // for the round-trip; a compacted-list remap is the follow-up).
+        self.world.cultist_delay = self.world_events.cultist_delay;
+        self.world.party_manual = self.world_events.manual_party;
+        self.world.party_genuine = self.world_events.genuine_party;
+        self.world.party_cooldown = self.world_events.party_days_on_cooldown;
+        self.world.party_celebrants = self
+            .world_events
+            .celebrating_npcs
+            .iter()
+            .map(|&i| i as i32)
+            .collect();
+        self.world.lantern_night_cooldown = self.world_events.lantern_nights_on_cooldown;
+        self.world.lantern_night_genuine = self.world_events.genuine_lanterns;
+        self.world.lantern_night_manual = self.world_events.manual_lanterns;
+        self.world.lantern_night_next_night_is_genuine =
+            self.world_events.next_night_is_lantern_night;
+        self.world.wind_speed_target = self.wind.speed_target;
         // `SaveWorldFlags:1251`: the LastPlayed slot is `DateTime.UtcNow.
         // ToBinary()` at save time — the loaded file's value is never the
         // writer's source. Both format branches below read the field, so

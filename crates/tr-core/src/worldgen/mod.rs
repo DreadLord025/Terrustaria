@@ -148,6 +148,9 @@ pub fn generate_with_progress<'a>(
     let mut world = World::new(opts.name.clone(), width, height);
     world.seeds = opts.flags;
     world.micro_seeds = opts.micro_flags;
+    // W4-f45: `WorldGen.crimson` — the evil flavour the `.wld` flags block
+    // carries (`WorldFile.cs:1281`); the generation choice is its source.
+    world.crimson = opts.crimson;
     // The same boot the no-hook path runs (`generate_with_chest_stock`).
     pipeline::boot_statics(&mut world);
     let noise = Noise { seed: opts.seed };
@@ -176,6 +179,8 @@ pub fn generate_with_chest_stock<'a>(
     // special-world identity the passes generated with.
     world.seeds = opts.flags;
     world.micro_seeds = opts.micro_flags;
+    // W4-f45: `WorldGen.crimson` (`WorldFile.cs:1281`) — the generation choice.
+    world.crimson = opts.crimson;
     // The `Reset`-equivalent setup (vanilla runs `Reset` — the GenVars init
     // and the layout rolls — before `AddPasses`; it is not a pass):
     // the frame-important boot statics, the value noise and the three

@@ -2062,7 +2062,8 @@ impl App {
             ice_back_style: 0,
             jungle_back_style: 0,
             hell_back_style: w.hell_back_style,
-            wind_speed_target: 0.0,
+            // W4-f45: the wind target is World-owned now (`WorldFile.cs:1328`).
+            wind_speed_target: w.wind_speed_target,
             num_clouds: 0,
             tree_x: [0; 3],
             tree_style: [0; 4],
@@ -2078,8 +2079,10 @@ impl App {
             lobby_id: 0,
             sandstorm_severity: 0.0,
             extra_spawn_points: Vec::new(),
-            dungeon_x: 0,
-            dungeon_y: 0,
+            // W4-f45: the dungeon anchor is World-owned now (`WorldFile.cs:
+            // 1279-1280`); the wire carries it as the C#'s i16 pair.
+            dungeon_x: w.dungeon_x as i16,
+            dungeon_y: w.dungeon_y as i16,
         }
     }
 
