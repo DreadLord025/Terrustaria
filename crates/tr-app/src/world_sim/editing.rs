@@ -522,30 +522,33 @@ fn convert_grass_tile(app: &mut App, tx: i32, ty: i32, kind: u16) {
     app.world_key = None;
 }
 
-/// `Player.ItemCheck_StartActualUse`'s channel start for the drills
-/// (`Player.cs:51677` → `StartChanneling(sItem)` `:52958-52968`): a
-/// `channel` item with `pick > 0` (the drill family) spawns its drill
-/// projectile once on the press edge and latches `Player.channel`. The
-/// drill projectile's aiStyle-20 machine (`Projectile.cs:25481-25584`)
-/// holds the item animation via `SetDummyItemTime(2)` (`:25563`) and kills
-/// itself on the channel release (`:25549`). The port spawns the projectile
-/// here; the hold + release ride `update_editing`'s channel block.
+/// `Player.ItemCheck_StartActualUse`'s channel start for the drills AND
+/// chainsaws (`Player.cs:51677` → `StartChanneling(sItem)` `:52958-52968`):
+/// a `channel` item with `pick > 0` (the drill family) or `axe > 0` (the
+/// chainsaw family — S1-P-i30, `ItemID.Sets.IsChainsaw`, `ItemID.cs:495`)
+/// spawns its aiStyle-20 projectile once on the press edge and latches
+/// `Player.channel` (`DefaultToDrillOrChainsaw`, `Projectile.cs:10732-10742`
+/// — ONE machine for both families). The projectile's aiStyle-20 machine
+/// (`Projectile.cs:25481-25584`) holds the item animation via
+/// `SetDummyItemTime(2)` (`:25563`) and kills itself on the channel release
+/// (`:25549`). The port spawns the projectile here; the hold + release ride
+/// `update_editing`'s channel block.
 ///
-/// Returns whether a drill projectile is live for the local player (the
-/// hold gate). The spawn is idempotent — a live drill of the held kind is
-/// not re-spawned (the C# `ItemCheck_Shoot` fires once per use start, and
+/// Returns whether a drill/chainsaw projectile is live for the local player
+/// (the hold gate). The spawn is idempotent — a live tool of the held kind
+/// is not re-spawned (the C# `ItemCheck_Shoot` fires once per use start, and
 /// the channel holds the animation so no new use starts while held).
 fn drill_channel_start(app: &mut App, held: ItemSlot, world_pos: Vec2) -> bool {
     let Some(def) = registry::get(held.kind) else {
         return false;
     };
-    if !def.channel || def.pick == 0 {
+    if !def.channel || (def.pick == 0 && def.axe == 0) {
         return false;
     }
     let Some(proj) = def.projectile else {
         return false;
     };
-    // A live drill of this kind already holds the channel.
+    // A live drill/chainsaw of this kind already holds the channel.
     let live = app.projectiles.slots().iter().any(|p| {
         p.active && p.kind == proj && p.owner == app.local_id as u8
     });
@@ -618,14 +621,15 @@ fn drill_channel_start(app: &mut App, held: ItemSlot, world_pos: Vec2) -> bool {
     true
 }
 
-/// Whether a drill projectile is live for the local player — the channel
-/// hold gate (`Projectile.cs:25563`'s `SetDummyItemTime(2)` keeps the item
-/// animation alive while the drill lives).
+/// Whether a drill/chainsaw projectile is live for the local player — the
+/// channel hold gate (`Projectile.cs:25563`'s `SetDummyItemTime(2)` keeps
+/// the item animation alive while the tool lives; the chainsaws share the
+/// aiStyle-20 machine, S1-P-i30).
 fn drill_live(app: &App, held: ItemSlot) -> bool {
     let Some(def) = registry::get(held.kind) else {
         return false;
     };
-    if !def.channel || def.pick == 0 {
+    if !def.channel || (def.pick == 0 && def.axe == 0) {
         return false;
     }
     let Some(proj) = def.projectile else {
@@ -773,24 +777,17 @@ fn mining_tick(app: &mut App, dt: f32, tx: i32, ty: i32, held: ItemSlot) {
         }
         return;
     }
-    // The axe arm (`:45706-45771`) and the non-altar hammer tiles (the orb
-    // 31, the hearts 695/696) are the i30/i31 tasks — the port keeps the
-    // pre-i29 time-based axe pacing for the axe tiles so the existing
-    // cactus/tree tests stay green; the hammer tiles beyond the altar are
-    // not mined by this pass yet.
+    // The axe arm (`Player.cs:45706-45771`, S1-P-i30): the chop damage
+    // accumulates in the same `HitTile` book the pick arm uses — the shared
+    // `hitTile` field, one slot per (x, y, 1). The non-altar hammer tiles
+    // (the orb 31, the hearts 695/696) stay with the i31 task.
     if axe_match {
-        app.mine_timer += dt;
-        let base = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
-            0.55
-        } else {
-            0.25
-        };
-        let hardness = base * 7.0 / tool_axe.max(1) as f32;
-        app.mine_hardness = hardness;
-        if app.mine_timer >= hardness {
-            break_tile(app, tx, ty);
+        let broke = axe_tile_hit(app, tx, ty, tile.kind, tool_axe, held);
+        if broke {
             app.mine_target = None;
             app.mine_timer = 0.0;
+        } else {
+            sync_mine_crack_state(app, tx, ty);
         }
         return;
     }
@@ -798,6 +795,118 @@ fn mining_tick(app: &mut App, dt: f32, tx: i32, ty: i32, held: ItemSlot) {
     // this pass (the i31 task).
     app.mine_target = None;
     app.mine_timer = 0.0;
+}
+
+/// The axe arm's one chop — `ItemCheck_UseMiningTools_ActuallyUseMiningTool`
+/// (`Player.cs:45706-45771`, S1-P-i30). The damage line (`:45708-45712`)
+/// lives in [`tr_core::tool::axe_damage`] (the f32 1.2 scale, the cactus
+/// triple, the getGoodWorld 1.3); the `Main.tileNoFail` 100 head
+/// (`:45661-45664`) never fires for an axe tile (no `tileAxe` id is
+/// `tileNoFail`, `Main.cs:7189-7203` vs `:7208-7223`), so the base is 0.
+/// The accumulation rides the SAME `hitTile` book the pick arm uses
+/// (`:45660` `HitObject(x, y, 1)` runs before the arm split); at `>= 100`
+/// the cell breaks (`:45725-45755`), otherwise the fail tick
+/// (`KillTile(fail: true)`, `:45758` — the port's per-tick sound/dust is
+/// the recorded i29 deviation, the damage stays in the book). Returns
+/// whether the tile broke.
+fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held: ItemSlot) -> bool {
+    // `:45660` — the buffer slot for the cell (the shared book).
+    let buffer_index = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+    // `:45708-45712` — the damage ladder. `Main.getGoodWorld` = the
+    // For-the-Worthy seed (the `pick_world` mapping).
+    let get_good = app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let mut damage = tr_core::tool::axe_damage(kind, axe_power, 0, get_good);
+    // `:45717-45720` — a `CanKillTile` refusal zeroes the chop damage.
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        damage = 0;
+    }
+    // `:45721-45724` — the Don't Starve cactus chop hurts the chopper on
+    // EVERY damaging hit (not only the break): `Main.DamageVar(6f, 0f -
+    // this.luck)`, hitDirection 0 (no knockback), not quiet, no crit, the
+    // TileContactDamage cooldown. The port's single hurt lane folds the
+    // cooldown counters onto `hurt_cd` (the M4-HAZARD-1 admission,
+    // `touch_damage.rs`'s precedent) and `hitDirection 0` maps to the
+    // player's own centre (no directional kick). The damage draw rides the
+    // `UpdatePlayers` stream (the ItemCheck swap, `Main.cs:17754`), before
+    // the kill's own drop draws — the C# order.
+    if app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::DONT_STARVE)
+        && damage > 0
+        && kind == 80
+    {
+        let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let dmg = tr_core::damage::damage_var(rng, 6.0, -luck);
+        if let Some(p) = app.player.as_mut() {
+            let (cx, _) = p.center();
+            let _ = p.hurt(dmg, cx, rng, true);
+        }
+    }
+    // `:45725` — the accumulation; `>= 100` breaks.
+    let total = app.hit_tile.add_damage(buffer_index, damage, true);
+    if total >= 100 {
+        // `:45727-45742` — Lucy the Axe's (5095) chopped-tree chat bubble
+        // (`LucyAxeMessage`) has no port chat-bubble system: the recorded
+        // deviation, the chop itself is unchanged (ANALYSIS, S1-P-i30).
+        // `:45743` — `ClearMiningCacheAt(x, y, 1)` clears the hit slot
+        // (`Player.cs:53846-53850`; the port has no replacement book).
+        app.hit_tile
+            .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        // `:45744` — `IsBottomOfTreeTrunkNoRoots(x, y)` read BEFORE the kill
+        // (the Acorn Axe's replant gate).
+        let replant_base =
+            held.kind == 5295 && is_bottom_of_tree_trunk_no_roots(&app.world, tx, ty);
+        // `:45745` — `WorldGen.KillTile(x, y)`: the whole-tree fall rides
+        // the kill cascade (`tr_core::edit::kill_tile` → `CheckTree` /
+        // `CheckPalmTree` / `CheckCactus` / the case-72 support check).
+        break_tile(app, tx, ty);
+        // `:45750-45753` — the Staff of Regrowth's twin, the Acorn Axe
+        // (5295), replants an acorn sapling into the felled base cell.
+        if replant_base {
+            try_replanting_tree(app, tx, ty);
+        }
+        // `:45768` — `ApplyItemTime(sItem)`: `itemTime = useTime` verbatim
+        // (`Player.cs:4416-4419` — NO `pickSpeed` scale; the pick arm's
+        // `:45777-45780` re-arm is gated on `sItem.pick > 0`, which a pure
+        // axe never reaches; the Drax 579 carries both powers and takes
+        // that re-arm below, exactly like the C#).
+        rearm_axe_item_time(app, held);
+        return true;
+    }
+    // `:45758` — the fail tick (`KillTile(fail: true)`): the per-tick
+    // sound/dust is the recorded deviation; the damage stays in the book.
+    // `:45764-45767` — a non-zero damage prunes the book.
+    if damage != 0 {
+        app.hit_tile.prune(|x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    }
+    // `:45768` — the cadence re-arm on the fail tick too.
+    rearm_axe_item_time(app, held);
+    false
+}
+
+/// The axe arm's `ApplyItemTime(sItem)` (`Player.cs:45768` → `:4416-4419`):
+/// `itemTime = useTime` (prefix-aware — `Item.Prefix` scales the INSTANCE's
+/// `useTime`), then the shared `sItem.pick > 0` tail (`:45777-45780`)
+/// overrides it with `(int)(useTime * pickSpeed)` for the dual-power
+/// Drax/hamaxes.
+fn rearm_axe_item_time(app: &mut App, held: ItemSlot) {
+    let use_time = held_use_time_ticks(held);
+    let def = registry::get(held.kind);
+    if def.is_some_and(|d| d.pick > 0) {
+        let pick_speed = app.player.as_ref().map_or(1.0, |p| p.pick_speed());
+        app.item_time = ((use_time as f32 * pick_speed) as i32).max(0) as f32 * ONE_TICK_SECS;
+    } else {
+        app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+    }
 }
 
 /// The held item's `useTime` in ticks, prefix-aware (`Item.Prefix` scales
@@ -1227,15 +1336,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 p.minion_npc_target_aim(&app.npcs, mouse_world);
             }
         }
-        // S1-P-i29 — the drills (a `channel` item with `pick > 0`) are mining
-        // tools, not throws: their projectile spawns once via the channel
-        // start (`drill_channel_start`, `ItemCheck_StartActualUse` →
+        // S1-P-i29/i30 — the drills and chainsaws (a `channel` item with
+        // `pick > 0` or `axe > 0`) are mining tools, not throws: their
+        // projectile spawns once via the channel start
+        // (`drill_channel_start`, `ItemCheck_StartActualUse` →
         // `StartChanneling`, `Player.cs:51677`/`:52958`) and the aiStyle-20
-        // machine holds it. The generic throw would re-spawn a drill every
+        // machine holds it. The generic throw would re-spawn the tool every
         // swing — gate it out here (the C# `ItemCheck_Shoot` fires once per
         // use start, and the channel holds the animation so no new use
         // starts while held).
-        let drill_tool = registry::get(held.kind).is_some_and(|d| d.channel && d.pick > 0);
+        let drill_tool =
+            registry::get(held.kind).is_some_and(|d| d.channel && (d.pick > 0 || d.axe > 0));
         if app.attack_cd <= 0.0
             && app.reuse_delay <= 0.0
             && throw_ready
@@ -2726,6 +2837,21 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             cell.frame_x = frame_x;
         }
     }
+    // `TileFrameImportant`'s `case 72` canopy re-roll (`WorldGen.cs:
+    // 85855-85873`): the mushroom-tree top cell takes `genRand.Next(3)` →
+    // frame (18, 0/18/36). Same seam as the palm roll above.
+    for (mx, my) in &kill.mushroom_frame_rolls {
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(
+            app.rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .next() as u64,
+        );
+        let frame_y = (gen_stream.next(3) * 18) as i16;
+        if let Some(cell) = app.world.tile_mut(*mx, *my) {
+            cell.frame_x = 18;
+            cell.frame_y = frame_y;
+        }
+    }
     // The Coin Portal projectile of the pot loot (:57176-57182); the port
     // has no 518 family yet — `spawn_with_data` declines it and the break
     // still returns like the C# (recorded deviation, phase 5).
@@ -2947,6 +3073,29 @@ fn break_drop_events(
                     events.push((id, count, *x, *y));
                 }
             }
+            edit::TreeDropEvent::Gem {
+                x,
+                y,
+                frame_x,
+                frame_y,
+                gem,
+                seed,
+            } => {
+                for (id, count) in
+                    gem_tree_drops(*gem, *seed, *frame_x, *frame_y, main_rng)
+                {
+                    events.push((id, count, *x, *y));
+                }
+            }
+            edit::TreeDropEvent::Mushroom { x, y } => {
+                for (id, count) in mushroom_tree_drops(main_rng) {
+                    events.push((id, count, *x, *y));
+                }
+            }
+            edit::TreeDropEvent::Cactus { x, y } => {
+                // `case 80: dropItem = 276;` (`WorldGen.cs:64717-64719`).
+                events.push((276, 1, *x, *y));
+            }
         }
     }
     // `SpawnThingsFromPot` per pot event: one `UpdatePlayers` throw seeds the
@@ -3078,6 +3227,53 @@ fn trunk_tree_drops(
     drops
 }
 
+/// `KillTile_GetItemDrops`'s gem-tree cases (`WorldGen.cs:65699-65746`)
+/// through `SetGemTreeDrops` (`:66094-66108`), all `Main.rand`: the
+/// `Next(10) == 0` gem-or-stone roll, then the canopy marker's
+/// (`frameX >= 22 && frameY >= 198`) `Next(2) == 0` gemcorn roll, then — in
+/// the case body AFTER `SetGemTreeDrops` returns — the stone's
+/// `Next(1, 3)` stack. The seed roll runs even when the gem roll landed
+/// stone (it sits after the gem/stone choice, before the stack roll).
+fn gem_tree_drops(
+    gem: u16,
+    seed: u16,
+    frame_x: i16,
+    frame_y: i16,
+    main_rng: &mut UnifiedRandom,
+) -> Vec<(u16, u32)> {
+    let drop_item = if main_rng.next_max(10) == 0 { gem } else { 3 };
+    let mut secondary_item = 0u16;
+    if frame_x >= 22 && frame_y >= 198 && main_rng.next_max(2) == 0 {
+        secondary_item = seed;
+    }
+    let mut stack = 1u32;
+    if drop_item == 3 {
+        stack = main_rng.next_range(1, 3) as u32;
+    }
+    let mut drops = Vec::new();
+    if drop_item != 0 {
+        drops.push((drop_item, stack));
+    }
+    if secondary_item != 0 {
+        drops.push((secondary_item, 1));
+    }
+    drops
+}
+
+/// `KillTile_GetItemDrops`'s `case 71: case 72:` (`WorldGen.cs:65642-65652`),
+/// `Main.rand` only: `Next(40) == 0` → the Mushroom Grass Seeds 194, else
+/// `Next(2) == 0` → the Glowing Mushroom 183, else nothing. The second roll
+/// runs whenever the first misses (the C# `else if`).
+fn mushroom_tree_drops(main_rng: &mut UnifiedRandom) -> Vec<(u16, u32)> {
+    if main_rng.next_max(40) == 0 {
+        vec![(194, 1)]
+    } else if main_rng.next_max(2) == 0 {
+        vec![(183, 1)]
+    } else {
+        Vec::new()
+    }
+}
+
 /// `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`): only the
 /// sword-in-stone styles (origin `frameX` 918..=970) drop anything —
 /// `Main.rand.Next(30) == 0` mints the Terragrim 4144, otherwise the
@@ -3112,6 +3308,14 @@ fn cell_drops(
     let rolls: Vec<(u16, i32)> = match hit.kind {
         78 => vec![(222, 1)],
         380 => vec![((3215 + i32::from(hit.frame_y) / 18) as u16, 1)],
+        // S1-P-i30: the tree/cactus kinds drop through their per-cell kill
+        // records (`TreeDropEvent`, resolved in `break_drop_events`) — the
+        // hit cell included — so the generic per-cell arm must not double
+        // them. The trunk/palm kinds already resolve to `None` through
+        // `registry::tile_drop`; the gem trees 583-589, the mushroom tree 72
+        // and the cactus 80 (whose `tile_drop` row feeds the touch/plate
+        // lanes) are suppressed here (the records carry their drops).
+        5 | 72 | 80 | 323 | 583..=589 | 596 | 616 | 634 => Vec::new(),
         83 | 84 => herb_drops(
             hit.kind,
             i32::from(hit.frame_x) / 18,
@@ -4078,6 +4282,66 @@ fn try_replanting_herbs(app: &mut App, tx: i32, ty: i32, herb_style: i32) {
     }
 }
 
+/// `Player.IsBottomOfTreeTrunkNoRoots` (`Player.cs:45784-45802`): the cell is
+/// an active trunk (`TileID.Sets.IsATreeTrunk` or the palm 323) and NOT a
+/// root-row cell (frameY 132-176 with frameX 22/44 — the palm exempt). The
+/// Acorn Axe's replant gate reads it before the kill.
+fn is_bottom_of_tree_trunk_no_roots(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() {
+        return false;
+    }
+    if !td::SET_IS_A_TREE_TRUNK.has(t.kind) && t.kind != 323 {
+        return false;
+    }
+    if t.kind != 323
+        && (132..=176).contains(&t.frame_y)
+        && (t.frame_x == 22 || t.frame_x == 44)
+    {
+        return false;
+    }
+    true
+}
+
+/// `Player.TryReplantingTree` (`Player.cs:45804-45822`): the Acorn Axe's
+/// felled-base replant — `TileObject.CanPlace(tileTargetX, tileTargetY, 20,
+/// 0, direction)` then `TileObject.Place` + `SquareTileFrame`. No item is
+/// consumed (the axe is a tool, not the acorn); the placement rolls ride the
+/// world's placement stream (the `place_item_tile` seam, S1-F-7b).
+fn try_replanting_tree(app: &mut App, tx: i32, ty: i32) {
+    let Some(def) = tr_core::tileobject::def_for_tile(20) else {
+        return;
+    };
+    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+    let mut rand = std::mem::take(&mut app.world.place_rng);
+    let instance = tr_core::tileobject::can_place(
+        &app.world,
+        tx,
+        ty,
+        def,
+        0,
+        dir,
+        None,
+        &mut rand,
+        app.world.tile_object_random_cache,
+    );
+    app.world.place_rng = rand;
+    let Some(instance) = instance else {
+        return;
+    };
+    let placed = tr_core::tileobject::place(&mut app.world, &instance);
+    // `WorldGen.SquareTileFrame(tileTargetX, tileTargetY)` (:45813) runs
+    // unconditionally after the Place attempt (the C# calls it before the
+    // `if (flag)` net/placement-hook tail).
+    tr_core::framing::reframe_area(&mut app.world, tx, ty, 2, true);
+    if placed {
+        app.request_edit(tx, ty, 1, 20);
+        app.world_key = None;
+    }
+}
+
 /// `WorldGen.PlaceTile`'s placement-sound switch (`WorldGen.cs:60263-60282`)
 /// is `tr_core::edit::place_tile_sound` (the `SoundCue` pair); the play
 /// itself — the case-0 `Next(3)` variation + pitch jitter included — rides
@@ -4275,6 +4539,84 @@ mod tests {
             }
         }
         assert_eq!(jungle_acorns, 0, "the jungle tree never drops acorns");
+    }
+
+    /// S1-P-i30: the gem-tree drop order (`SetGemTreeDrops`,
+    /// `WorldGen.cs:66094-66108` + the case bodies `:65699-65746`): the
+    /// `Next(10)` gem-or-stone roll, the canopy marker's `Next(2)` gemcorn
+    /// roll, then the stone's `Next(1, 3)` stack — all `Main.rand`, in that
+    /// order. A non-marker stone cell spends exactly TWO draws (the gem roll
+    /// and the stack roll); the seed roll never runs off the marker.
+    #[test]
+    fn s1_p_i30_the_gem_drop_rolls_in_the_csharp_order() {
+        // Scan for a seed whose first Next(10) is NOT the gem (9 in 10 do).
+        let mut stone_seed = 0i32;
+        while tr_core::UnifiedRandom::new(stone_seed).next_max(10) == 0 {
+            stone_seed += 1;
+        }
+        // The real resolver on that stream: stone 3, then the stack draw.
+        let mut rng = tr_core::UnifiedRandom::new(stone_seed);
+        let drops = gem_tree_drops(180, 4851, 0, 0, &mut rng);
+        assert_eq!(drops.len(), 1, "a plain gem cell drops only the stone");
+        assert_eq!(drops[0].0, 3, "the non-gem roll drops Stone");
+        assert!((1..=2).contains(&drops[0].1), "the stone stack is Next(1,3)");
+        // The stream spent exactly the gem roll + the stack roll (no seed
+        // roll off the marker): a fresh clone advanced by those two draws
+        // matches the resolver's stream state.
+        let mut mirror = tr_core::UnifiedRandom::new(stone_seed);
+        let _ = mirror.next_max(10);
+        let _ = mirror.next_range(1, 3);
+        assert_eq!(rng, mirror, "two draws, in the C# order");
+        // The canopy marker spends the seed roll BETWEEN the gem and stack
+        // rolls (`:66104` sits inside `SetGemTreeDrops`, before the case
+        // body's stack roll).
+        let mut rng = tr_core::UnifiedRandom::new(stone_seed);
+        let drops = gem_tree_drops(180, 4851, 22, 198, &mut rng);
+        let mut mirror = tr_core::UnifiedRandom::new(stone_seed);
+        let gem_roll = mirror.next_max(10);
+        let seed_roll = mirror.next_max(2);
+        let stack = if gem_roll != 0 { mirror.next_range(1, 3) } else { 1 };
+        assert_eq!(rng, mirror, "the marker spends gem, seed, then stack");
+        assert_eq!(drops[0].0, if gem_roll == 0 { 180 } else { 3 });
+        assert_eq!(drops[0].1, stack as u32);
+        if seed_roll == 0 {
+            assert!(drops.iter().any(|(id, _)| *id == 4851), "the gemcorn");
+        } else {
+            assert!(!drops.iter().any(|(id, _)| *id == 4851));
+        }
+    }
+
+    /// S1-P-i30: the mushroom-tree drop (`case 71/72`,
+    /// `WorldGen.cs:65642-65652`): `Next(40) == 0` → the seeds 194, else
+    /// `Next(2) == 0` → the mushroom 183, else nothing. The second roll runs
+    /// only when the first misses (the `else if`).
+    #[test]
+    fn s1_p_i30_the_mushroom_drop_is_the_two_stage_roll() {
+        // Scan seeds for each outcome and mirror the draw count.
+        let mut saw_seeds = false;
+        let mut saw_shroom = false;
+        let mut saw_none = false;
+        for seed in 0..200i32 {
+            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let drops = mushroom_tree_drops(&mut rng);
+            let mut mirror = tr_core::UnifiedRandom::new(seed);
+            let r40 = mirror.next_max(40);
+            if r40 == 0 {
+                assert_eq!(drops, vec![(194, 1)], "the 1-in-40 seeds");
+                saw_seeds = true;
+            } else {
+                let r2 = mirror.next_max(2);
+                if r2 == 0 {
+                    assert_eq!(drops, vec![(183, 1)], "the 1-in-2 mushroom");
+                    saw_shroom = true;
+                } else {
+                    assert!(drops.is_empty(), "nothing");
+                    saw_none = true;
+                }
+            }
+            assert_eq!(rng, mirror, "the draw count matches the C# else-if");
+        }
+        assert!(saw_seeds && saw_shroom && saw_none, "all three arms reachable");
     }
 
     /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
@@ -6108,6 +6450,285 @@ mod tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
     }
 
+    /// S1-P-i30: a tree column at x = 30 over a ground row at y = 261, the
+    /// base cell (30, 260) the mining cursor targets. The canopy marker sits
+    /// on top; every other cell is a plain trunk frame.
+    fn axe_tree_world(kind: u16, ground: u16, height: i32) -> World {
+        let mut w = World::new("t".into(), 64, 800);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.frame_important[kind as usize] = true;
+        for x in 0..64 {
+            set_tile(&mut w, x, 261, ground);
+        }
+        for dy in 0..height {
+            let i = w.index(30, 260 - dy);
+            let (fx, fy) = if dy == height - 1 { (22, 198) } else { (0, 0) };
+            w.tiles[i] = Tile {
+                kind,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-P-i30: the axe arm chops the gem tree (583) — the `Main.tileAxe`
+    /// family was missing 583-589, so the pick gate refused them. With the
+    /// Iron Axe (axe 9 → 10 damage/hit, useTime 19) ten hits reach 100 and
+    /// the whole trunk collapses; every cell drops through the gem record
+    /// (`WorldGen.cs:65713-65719`). The 200-frame window covers the
+    /// ~173-frame break.
+    #[test]
+    fn s1_p_i30_the_axe_chops_the_gem_tree() {
+        // Stone ground (the gem ground test, `:30304-30315`).
+        let mut app = mining_app(axe_tree_world(583, 1, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        // A pick alone never chops an axe tile (`Player.cs:45656`).
+        let mut pick = mining_app(axe_tree_world(583, 1, 4), 30, 260);
+        pick.inventory[pick.selected].kind = 1; // the Iron Pickaxe
+        mine_frames(&mut pick, 60);
+        assert!(
+            pick.world.tile(30, 260).unwrap().active(),
+            "the pick cannot chop the gem tree"
+        );
+        mine_frames(&mut app, 200);
+        for dy in 0..4 {
+            assert!(
+                !app.world.tile(30, 260 - dy).unwrap().active(),
+                "the gem cell at dy {dy} survived the axe"
+            );
+        }
+        // One gem/stone drop per cell (4); the canopy marker MAY add a
+        // gemcorn (4851) on its `Next(2)` roll, so the count is 4 or 5.
+        assert!(
+            app.items.len() == 4 || app.items.len() == 5,
+            "one gem-record drop per cell (+ the canopy gemcorn), got {}",
+            app.items.len()
+        );
+        // Every drop is the gem (180), the stone (3) or the gemcorn (4851) —
+        // never the wood 9.
+        for item in app.items.iter() {
+            assert!(
+                item.kind == 180 || item.kind == 3 || item.kind == 4851,
+                "the gem cell drops gem/stone/gemcorn, got {}",
+                item.kind
+            );
+        }
+    }
+
+    /// S1-P-i30: the axe arm chops the cactus (80) and the whole plant
+    /// collapses, one Cactus 276 per segment (`WorldGen.CheckCactus`,
+    /// `:54116-54158`; the drop `case 80`, `:64717-64719`). The cactus takes
+    /// the TRIPLE axe damage (`Player.cs:45708`: `(int)(axe*3 * 1.2f)` = 32
+    /// for the Iron Axe), so four hits reach 128 — the 19-tick cadence puts
+    /// the break at frame ~60.
+    #[test]
+    fn s1_p_i30_the_axe_chops_the_cactus_whole() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        for x in 0..64 {
+            set_tile(&mut w, x, 261, 53); // the sand
+        }
+        for dy in 0..4 {
+            set_tile(&mut w, 30, 260 - dy, 80);
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe
+        mine_frames(&mut app, 60);
+        for dy in 0..4 {
+            assert!(
+                !app.world.tile(30, 260 - dy).unwrap().active(),
+                "the cactus segment at dy {dy} survived"
+            );
+        }
+        assert_eq!(app.items.len(), 4, "one cactus drop per segment");
+        assert!(app.items.iter().all(|i| i.kind == 276), "the Cactus item");
+    }
+
+    /// S1-P-i30: the Don't Starve cactus chop hurts the chopper
+    /// (`Player.cs:45721-45724`): `DamageVar(6, -luck)` on the chop tick,
+    /// only when the world carries the seed. A classic world chops free.
+    #[test]
+    fn s1_p_i30_the_dont_starve_cactus_chop_hurts() {
+        let cactus_world = || {
+            let mut w = World::new("t".into(), 64, 800);
+            w.frame_important = vec![false; td::TILE_COUNT];
+            for x in 0..64 {
+                set_tile(&mut w, x, 261, 53);
+            }
+            set_tile(&mut w, 30, 260, 80);
+            w.compute_column_surface();
+            w.compute_chunks();
+            w
+        };
+        // The classic world: no hurt. The cactus takes the triple axe
+        // damage (32/hit), four hits reach 128 — the break lands ~frame 59;
+        // the 80-frame window covers it.
+        let mut classic = mining_app(cactus_world(), 30, 260);
+        classic.inventory[classic.selected].kind = 10;
+        let hp_classic = classic.player.as_ref().unwrap().hp;
+        mine_frames(&mut classic, 80);
+        assert!(
+            !classic.world.tile(30, 260).unwrap().active(),
+            "the cactus fell"
+        );
+        assert_eq!(
+            classic.player.as_ref().unwrap().hp,
+            hp_classic,
+            "the classic chop is free"
+        );
+        // The Don't Starve world: the chop hurts.
+        let mut ds = mining_app(cactus_world(), 30, 260);
+        ds.inventory[ds.selected].kind = 10;
+        ds.world.seeds.insert(tr_core::seeds::SeedFlags::DONT_STARVE);
+        let hp_ds = ds.player.as_ref().unwrap().hp;
+        mine_frames(&mut ds, 80);
+        assert!(!ds.world.tile(30, 260).unwrap().active(), "the cactus fell");
+        assert!(
+            ds.player.as_ref().unwrap().hp < hp_ds,
+            "the Don't Starve chop hurts the chopper"
+        );
+    }
+
+    /// S1-P-i30: the Acorn Axe (5295) replants a sapling into the felled base
+    /// cell (`Player.cs:45744-45753` → `TryReplantingTree` `:45804-45822`);
+    /// a plain axe leaves the cell empty.
+    #[test]
+    fn s1_p_i30_the_acorn_axe_replants_the_felled_base() {
+        // A forest tree over dirt (the sapling's anchor tiles, D_20). The
+        // Acorn Axe (axe 25 → 30 damage/hit, useTime 12) breaks the base on
+        // the 4th hit (~frame 39); the 200-frame window covers it.
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 5295; // the Acorn Axe
+        mine_frames(&mut app, 200);
+        // The trunk above the sapling fell: the sapling (tile 20, 1x2 with
+        // origin (0,1)) occupies the base cell (30,260) AND the cell above
+        // it (30,259), so the first free trunk cell is (30,258).
+        assert!(
+            !app.world.tile(30, 258).unwrap().active(),
+            "the trunk above the sapling fell"
+        );
+        // The base cell now holds the replanted sapling (tile 20, 1x2 with
+        // origin (0,1) — the anchor row is the cursor cell).
+        let base = app.world.tile(30, 260).unwrap();
+        assert!(base.active() && base.kind == 20, "the sapling replanted");
+        assert!(
+            app.world.tile(30, 259).unwrap().active()
+                && app.world.tile(30, 259).unwrap().kind == 20,
+            "the sapling's top cell"
+        );
+        // The plain Iron Axe fells the same tree but replants nothing. The
+        // Iron Axe (axe 9 → 10 damage/hit, useTime 19) needs ten hits to
+        // reach 100 — the 200-frame window covers the ~173-frame break.
+        let mut plain = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        plain.inventory[plain.selected].kind = 10;
+        mine_frames(&mut plain, 200);
+        assert!(
+            !plain.world.tile(30, 259).unwrap().active(),
+            "the trunk fell"
+        );
+        assert!(
+            !plain.world.tile(30, 260).unwrap().active(),
+            "the plain axe leaves the base empty"
+        );
+    }
+
+    /// S1-P-i30: the axe hit-buffer model (`Player.cs:45706-45771`): the
+    /// chop damage accumulates in the shared `HitTile` book and the tile
+    /// breaks at 100 — NOT the old time-per-tile hardness. The Iron Axe
+    /// (axe 9) deals `(int)(9f * 1.2f) = 10` per hit (`:45708`), so the
+    /// forest trunk (kind 5) stands at 9 hits (90) and falls on the 10th.
+    /// The cadence is `ApplyItemTime(useTime)` = 19 ticks (`:45768`), so
+    /// the hits land at frames 2, 21, 40, … — frame 173 is the 10th.
+    #[test]
+    fn s1_p_i30_the_axe_damage_accumulates_in_the_hit_book() {
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        // After the first hit the trunk stands and the book carries 10.
+        mine_frames(&mut app, 2);
+        assert!(app.world.tile(30, 260).unwrap().active(), "the trunk stands after hit 1");
+        assert_eq!(hit_damage(&app, 30, 260), 10, "the first chop's 10");
+        // Nine hits accumulate to 90 — still standing. Hits 2..9 land at
+        // frames 21, 40, …, 154 (the 19-tick cadence); frame 154 is hit 9.
+        mine_frames(&mut app, 152); // frames 3..154
+        assert!(app.world.tile(30, 260).unwrap().active(), "the trunk stands at 90");
+        assert_eq!(hit_damage(&app, 30, 260), 90, "nine chops accumulate to 90");
+        // The 10th hit (frame 173) reaches 100 and fells the whole tree.
+        mine_frames(&mut app, 30);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the 10th chop fells the base");
+        assert_eq!(hit_damage(&app, 30, 260), 0, "the break clears the book");
+        // The wood dropped (the forest family's Wood 9).
+        assert!(app.items.iter().any(|it| it.kind == 9), "the wood dropped");
+    }
+
+    /// S1-P-i30: the chainsaw channel — the Cobalt Chainsaw (383, channel
+    /// true, axe 14, useTime 7 after the `IsChainsaw` epilogue) spawns its
+    /// aiStyle-20 projectile (57) on the press and chops continuously while
+    /// held; the release clears the channel and the projectile's machine
+    /// kills itself (`Projectile.cs:25549`). The chop damage is
+    /// `(int)(14f * 1.2f) = 16` per hit (`Player.cs:45708`), so the forest
+    /// trunk falls on the 7th hit (112 ≥ 100) — the 7-tick channel cadence
+    /// (`Player.cs:43582-43586`) lands it far faster than the Iron Axe.
+    #[test]
+    fn s1_p_i30_the_chainsaw_channels_and_chops_continuously() {
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 383; // the Cobalt Chainsaw
+        // The press: the chainsaw projectile spawns (kind 57) and the
+        // channel latches.
+        mine_frames(&mut app, 1);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 57),
+            "the chainsaw projectile spawned"
+        );
+        assert!(app.player.as_ref().unwrap().channel, "the channel latched");
+        // The chainsaw chops continuously: 16 damage/hit, 7-tick cadence →
+        // the 7th hit (112) fells the trunk well inside 60 frames.
+        mine_frames(&mut app, 60);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the chainsaw felled the trunk");
+        assert!(app.items.iter().any(|it| it.kind == 9), "the wood dropped");
+        // The release: the channel clears (the projectile's own Kill rides
+        // the aiStyle-20 machine on the next pool tick — asserted below
+        // through `update_projectiles`).
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        assert!(!app.player.as_ref().unwrap().channel, "the release clears the channel");
+        crate::world_sim::projectiles::update_projectiles(&mut app, ONE_TICK_SECS);
+        assert!(
+            !app.projectiles.slots().iter().any(|p| p.active && p.kind == 57),
+            "the release kills the chainsaw projectile"
+        );
+    }
+
+    /// S1-P-i30: the lunar chainsaws ride the `ITEM_CORRECTIONS` seam (the
+    /// GenItemData placeholder band left them zero rows): the Vortex
+    /// Chainsaw (2773) carries axe 27, channel true, useTime 4 (the
+    /// `IsChainsaw` epilogue's `(int)(7 * 0.6)`, `Item.cs:48899-48912`) and
+    /// shoot 427 — so it chops `(int)(27f * 1.2f) = 32` per hit and fells
+    /// the forest trunk on the 4th hit (128 ≥ 100).
+    #[test]
+    fn s1_p_i30_the_lunar_chainsaw_row_chops() {
+        let def = registry::get(2773).expect("the corrected Vortex Chainsaw row");
+        assert_eq!(def.axe, 27, "the corrected axe power");
+        assert!(def.channel, "the chainsaw channels");
+        assert_eq!(def.use_time, 4, "the IsChainsaw epilogue's useTime");
+        assert_eq!(def.projectile, Some(427), "the Vortex Chainsaw's shoot");
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 2773;
+        mine_frames(&mut app, 1);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 427),
+            "the Vortex Chainsaw projectile spawned"
+        );
+        mine_frames(&mut app, 40);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the lunar chainsaw felled the trunk");
+    }
+
     /// DW-1.1: with `frame_important` set — the exact condition the removed
     /// gate read — the closed door now runs the mining branch to `break_tile`:
     /// the whole object cascades away and the door item drops, the same result
@@ -6258,7 +6879,10 @@ mod tests {
     /// merged tool tiers restore vanilla's axe rule — kind 80 is `tileAxe`
     /// (`Main.cs:7210`), so the rig holds the Iron Axe: the cactus breaks,
     /// drops per cell and runs no object cascade (`check_object`'s
-    /// `_ => None`).
+    /// `_ => None`). S1-P-i30: the chop now rides the `HitTile` book — the
+    /// cactus takes the TRIPLE axe damage (`Player.cs:45708`:
+    /// `(int)(9*3 * 1.2f) = 32`), so four hits reach 128; the 19-tick
+    /// cadence puts the break at frame ~59 (the 80-frame window covers it).
     #[test]
     fn test_DW_1_2_cactus_80_still_breaks_with_the_per_cell_drop() {
         let mut w = object_world();
@@ -6266,7 +6890,7 @@ mod tests {
         set_tile(&mut w, 10, 19, 80);
         let mut app = mining_app(w, 10, 19);
         app.inventory[app.selected].kind = 10; // the Iron Axe (axe 9)
-        mine_frames(&mut app, 40);
+        mine_frames(&mut app, 80);
         assert!(!app.world.tile(10, 19).unwrap().active(), "cactus broke");
         assert!(
             app.world.tile(10, 20).unwrap().active(),
