@@ -34320,6 +34320,57 @@ family (4 kinds), the Vilethorn Center cue, the sickle latch, the
 magnet-bolt negative, the ritual 117/113 pair, the gem-staff 205 latch,
 the ornament latch (draw-free assertion) and the pool-level sentry
 placement drain (one cue, then silence).
+
+### Part 1 (d75) commit 2 — the cooldown/bounce batch (2026-11-20, code-only)
+
+**10 sites**, the `soundDelay` cooldown families and the tile-bounce
+cues. Two carry a NEW gameplay draw (the falling-star `Next(40)` re-arm,
+both rows) — threaded onto the pool's `UpdateProjectiles` rng seam
+(`Main.cs:17775`), the C# statement order (roll BEFORE the cue queues):
+
+| C# site | cue | Rust seam |
+| --- | --- | --- |
+| `:23884` (aiStyle 5, kinds 9/955) | Item9, `20 + Next(40)` re-arm | `ai_falling_star` (rng threaded) |
+| `:23884` (aiStyle 5, kind 92) | Item9, same re-arm | `special_arrows::falling_star_step` (rng threaded) |
+| `:25514`/`:25519` (aiStyle 20 drills/chainsaws) | Item190 + 15 (held pick > 0) / Item189 + 20 | `ai_drill`'s `soundDelay <= 0` gate, `YoyoInputs.held_pick_positive` snapshot |
+| `:66248` (`AI_075`'s 445 arm) | Item132 + 23 | the same shared arm, kind-gated (the draft's pick-read would have misfired on the Laser Drill) |
+| `:25604` (aiStyle 21 music note) | Item26, −1 latch | `ai_music_note` |
+| `:19575` (aiStyle 8 bounce, type ≠ 96) | Item10 | `ai_ball_of_fire`'s tile bounce (BEFORE the `ai[0]++`) |
+| `:19808` (Sword Beam 116 bounce) | Item10 | `unholy_step` (AFTER the `ai[2]` bump; the fourth impact kills cue-less) |
+| `:18050` (gem bounce, `flag7 & flag8`) | Dig (int id 0) | `gem_bolt_move`'s CanBounce arm (the FastThenSlow bypass keeps flag8 false — no cue) |
+| `:40249` (aiStyle-197 stuck latch) | Dig (int id 0) | `sentry_turret_step` |
+| `:40256` (1025 barnacle follow-up) | Item167 | the same latch — the LAST intent wins the one-cue-per-tick slot |
+
+Deviations (deliberate, recorded):
+- **The drill hum queues AHEAD of the orphan/channel gates** — the C#
+  plays at `:25510-25522` before its `Main.player[owner]` reads, so the
+  cue fires even on the release/orphan tick (the port's kill guard moved
+  below the hum block to keep the statement order).
+- **The music note's `Main.musicPitch = ai[0]` write** (`:25603`) is
+  dropped — the case-2 façade plays the music-box styles at pitch 0 with
+  the ×0.75 volume (the standing `sound.rs::item_use_case2` music-pitch
+  stand-in).
+- **The falling-star re-arm is the batch's only new gameplay draw** — it
+  rides the `UpdateProjectiles` stream in the C# order (the `20 +
+  Next(40)` roll, then the Item9 queue). The 92's dust/gore gates
+  (`:24054-24061`) stay skipped with their draws; the 1037/1049 gate is
+  unconditional over the ported rows.
+- **The turret pair folds to one cue per tick** (the `wants_sound`
+  single-intent slot): the 1025's Item167 REPLACES the Dig intent, the
+  same fold as the boomerang head + wall thud. The non-1025 rows keep
+  the Dig play.
+
+Bank: `Item_26/132/167/189/190` join `SFX_CUES` (all five `.xnb`
+verified on disk).
+
+Witnesses (7 new, written NOT run): the falling-star cooldown (the
+`UnifiedRandom` twin-stream roll witness + the expiry re-arm), the drill
+hum's four-row pick table (incl. the Laser Drill's pick-independence and
+the orphan-tick cue), the music-note latch, the gem bounce thud + bypass
+negative, the Sword Beam's three-impact budget, the aiStyle-8 bounce
+(the 96 pre-latched to isolate the bounce arm) and the turret pair's
+last-intent fold. The bounce fixtures sit at x 72 against the (5, 4)
+tile's 80-px edge — the probe's −0.01 inset keeps the flush edge out.
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
 Audit source: `docs/research/53-audit-pillars.md` (branch

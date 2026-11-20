@@ -169,6 +169,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             .player
             .as_ref()
             .map_or(1.0, |p| p.melee_speed(app.inventory[app.selected].kind)),
+        // S1-E-21h d75 — the drill hum's `inventory[selectedItem].pick > 0`
+        // read (`Projectile.cs:25512`), snapshotted off the held ItemDef.
+        held_pick_positive: crate::registry::item(app.inventory[app.selected].kind)
+            .is_some_and(|it| it.pick > 0),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)

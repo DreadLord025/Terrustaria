@@ -4123,11 +4123,16 @@ impl Projectile {
                     return;
                 }
                 // `:19803-19827` — the Sword Beam reflects full-axis for three
-                // impacts (`ai[2] < 4f`) and dies on the fourth; its sound and
-                // 30-dust burst are skipped.
+                // impacts (`ai[2] < 4f`) and dies on the fourth; the 30-dust
+                // burst is skipped, its 30 `Next(1,7)` rolls with it.
                 SWORD_BEAM => {
                     self.ai[2] += 1.0;
                     if self.ai[2] < 4.0 {
+                        // S1-E-21h d75 — `:19808`: the Item10 bounce cue at
+                        // `base.position`, AFTER the `ai[2]` bump, BEFORE the
+                        // dust burst and the reflect (the cue draws nothing
+                        // here — the drain rolls at the pass tail).
+                        self.wants_sound = Some((2, 10, self.pos.x, self.pos.y, 0.0));
                         if hit_x {
                             self.vel.x = -last.x;
                         }
@@ -5102,12 +5107,35 @@ impl Projectile {
         owner: Option<(f32, f32)>,
         aim: Option<(f32, f32)>,
         player: Option<&crate::player::Player>,
+        held_pick_positive: bool,
     ) {
         // `:25483` — the life pin.
         self.time_left = 60;
+        // S1-E-21h d75 — the hum. Two C# shapes ride this shared arm:
+        // the aiStyle-20 drills/chainsaws (`:25510-25522`) gate on
+        // `soundDelay <= 0` (NOT `== 0` — the C# reads `<=`) and pick by the
+        // held item's `pick > 0`: Item190 + the 15-tick cooldown over
+        // Item189 + 20. The Laser Drill 445 (`AI_075`'s 445 arm,
+        // `:66246-66250`) plays Item132 + 23 instead — no pick read. Both
+        // plays at `base.position` (the PRE-pin position), queued draw-free
+        // AHEAD of the channel gate — the C# plays before its
+        // `Main.player[owner]` reads, so the cue queues even on the
+        // orphan/release tick.
+        if self.sound_delay <= 0 {
+            let (style, delay) = if self.kind == LASER_DRILL {
+                (132, 23)
+            } else if held_pick_positive {
+                (190, 15)
+            } else {
+                (189, 20)
+            };
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
+            self.sound_delay = delay;
+        }
         let Some(p) = player else {
             // No owner resolved — the slot cannot track; kill it (the C#
-            // reads `Main.player[owner]` unconditionally).
+            // reads `Main.player[owner]` unconditionally). The hum already
+            // queued above (the C# statement order).
             self.active = false;
             self.time_left = 0;
             return;
@@ -6888,8 +6916,14 @@ impl Projectile {
     /// `tileCollide`). The 9's alpha ramps −15 to the 150/0 floor
     /// (`:23900-23913`); the 955's generic alpha bounce (`:23928-23945`).
     /// The rotation spins by `(|vx|+|vy|)·0.01·direction` (`:23952`). The
-    /// dust/gore rolls (`:23883/:23973/:23983/:24035/:24039`) are SKIPPED.
-    fn ai_falling_star(&mut self, world: &World) {
+    /// dust/gore rolls (`:23973/:23983/:24035/:24039`) are SKIPPED. The
+    /// `soundDelay` cooldown hum (`:23881-23885`) is ported (S1-E-21h d75):
+    /// its `20 + Next(40)` re-arm rides this arm's own rng seam.
+    fn ai_falling_star(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
         if self.kind == STARFURY {
             // `:23865-23868` — `tileCollide = base.Bottom.Y >= this.ai[1]`.
             self.tile_collide = self.pos.y + self.h >= self.ai[1];
@@ -6904,7 +6938,15 @@ impl Projectile {
                 self.tile_collide = true;
             }
         }
-        // `:23881-23885` — the soundDelay roll is SKIPPED (sound + RNG).
+        // S1-E-21h d75 — `:23881-23885`: the hum cooldown. The
+        // `type != 1037 && type != 1049` gate is unconditional over the
+        // ported rows (9/955); the `20 + Main.rand.Next(40)` re-arm rolls
+        // on the UpdateProjectiles stream BEFORE the cue queues (the C#
+        // statement order), the Item9 play at `base.position`.
+        if self.sound_delay == 0 {
+            self.sound_delay = 20 + rng.next_range(0, 40);
+            self.wants_sound = Some((2, 9, self.pos.x, self.pos.y, 0.0));
+        }
         if self.kind == STARFURY {
             // `:23900-23913` — alpha −15, floor 150 above the target / 0 at it.
             self.alpha -= 15;
@@ -6943,8 +6985,13 @@ impl Projectile {
     /// `AI()`'s aiStyle-21 music-note arm (`Projectile.cs:25585-25606`): the
     /// Magical Harp's 76/77/78. The rotation clamps `vx·0.1` to ±0.6; the
     /// speed decays by `ai[2]` per tick toward the `3·|ai[0]/2+0.5|` floor
-    /// (`:25589-25593`). The dust roll (`:25594`) and the sound latch
-    /// (`:25600-25605`) are SKIPPED. The bounce is the movement chain's
+    /// (`:25589-25593`). The dust roll (`:25594`) and its `Next(3)` gate are
+    /// SKIPPED (no dust layer). The sound latch (`:25600-25605`, S1-E-21h
+    /// d75) queues the Item26 cue. DEVIATION: the C#'s
+    /// `Main.musicPitch = ai[0]` write (`:25603`) is dropped — the port's
+    /// case-2 façade plays the music-box styles at pitch 0 with the ×0.75
+    /// volume (`sound.rs::item_use_case2`'s standing music-pitch stand-in,
+    /// ANALYSIS). The bounce is the movement chain's
     /// aiStyle-21 arm (`:19299-19309`: the blocked axis reverses).
     fn ai_music_note(&mut self, world: &World) {
         // `base.direction` is the velocity-sign stand-in (`:17016-17026`,
@@ -6960,6 +7007,15 @@ impl Projectile {
         if speed > floor {
             let angle = self.vel.y.atan2(self.vel.x);
             self.vel = Vec2::from_angle(angle) * (speed - self.ai[2]);
+        }
+        // S1-E-21h d75 — `:25600-25605`: the one-shot note cue. The
+        // `soundDelay = -1` latch stays down (the pool decrements only
+        // positives); the `Main.musicPitch` write is the recorded façade
+        // deviation (doc above). AFTER the dust gate's slot, at
+        // `base.position`.
+        if self.sound_delay == 0 {
+            self.sound_delay = -1;
+            self.wants_sound = Some((2, 26, self.pos.x, self.pos.y, 0.0));
         }
         // The movement: the aiStyle-21 bounce (`:19299-19309`) — the blocked
         // axis reverses at full speed (the port's per-axis probe stand-in).
@@ -7405,6 +7461,10 @@ impl Projectile {
                     self.kill_step(world);
                     return;
                 }
+                // S1-E-21h d75 — `:19575`: the Item10 bounce cue at
+                // `base.position`, BEFORE the `ai[0]++` bump (the C#
+                // statement order; the drain rolls at the pass tail).
+                self.wants_sound = Some((2, 10, self.pos.x, self.pos.y, 0.0));
                 self.ai[0] += 1.0;
                 // `:19577-19590`: the per-type bounce budget.
                 let limit = match self.kind {
@@ -8195,12 +8255,13 @@ impl Projectile {
     /// the port's per-arm collision model.
     ///
     /// SKIP list (each noted at its point): the per-tick gem dust
-    /// (`:37847-37855`), the per-gem light tints (`:37954-38000`), the
-    /// bounce's `HitTiles` plus impact sound (`:18047-18051`) and the Kill
-    /// burst's dust (`:75439-75463`). S1-E-21h d75 ports the first-tick
-    /// staff cue (`:37856-37864`, `StackableItem8ForRubyStaff` = style 205,
-    /// the `soundDelay = -1` latch) — it queues draw-free, so the arm keeps
-    /// its zero-RNG invariant (the dust's two `Next(5)` gates stay skipped).
+    /// (`:37847-37855`, its two `Next(5)` gates with it), the
+    /// per-gem light tints (`:37954-38000`), the bounce's `HitTiles`
+    /// (`:18049`) and the Kill burst's dust (`:75439-75463`). S1-E-21h d75
+    /// ports the two sound sites: the first-tick staff cue
+    /// (`:37856-37864`, `StackableItem8ForRubyStaff` = style 205, the
+    /// `soundDelay = -1` latch) and the bounce's Dig thud (`:18050`) — both
+    /// queue draw-free, so the arm keeps its zero-RNG invariant.
     fn ai_gem_staff(
         &mut self,
         world: &World,
@@ -8405,9 +8466,12 @@ impl Projectile {
                 }
                 self.ai[2] = (target + 1) as f32;
             }
-            // `:18047-18051`: `Collision.HitTiles` and the impact sound are
-            // SKIPPED (no tile-effect or sound layer in the pool), and the
-            // oldPos trail reset (`:18032-18038`) has no slot state.
+            // `:18047-18051`: S1-E-21h d75 — `flag7 & flag8` (the bounce
+            // arm keeps both true): the Dig thud (`PlaySound(0, …)`) queues
+            // at `base.position`; `Collision.HitTiles` stays skipped (no
+            // tile-effect layer) and the oldPos trail reset
+            // (`:18032-18038`) has no slot state.
+            self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
             // `:18052-18055`: a spent budget kills on the bounce tick — the
             // C# still runs `UpdatePosition` first (`:19858`), which the
             // `pos += vel` below mirrors.
@@ -9031,9 +9095,12 @@ impl Projectile {
 
     /// `HandleMovement`'s blocked-move arm for the aiStyle-197 ceiling/hover
     /// turret (`:18637-18643`): `AI_197_HandleTileCollision` (`:40246-40305`),
-    /// whose state half is `ai[0] = 1f` (`:40250`). The sound, the `HitTiles`
-    /// kick and the 1025 dust/gore burst (`:40248-40316`) are SKIPPED - the
-    /// pool has no sound, dust or gore layer. The move itself is
+    /// whose state half is `ai[0] = 1f` (`:40250`). S1-E-21h d75 — the Dig
+    /// thud (`:40249`, int id 0) and the 1025 barnacle's Item167 follow-up
+    /// (`:40256`) queue on the blocked tick (the LAST intent wins the slot —
+    /// the same one-cue-per-tick fold as the boomerang head + wall thud);
+    /// the `HitTiles` kick and the 1025 dust/gore burst (`:40258-40316`)
+    /// stay SKIPPED - the pool has no dust or gore layer. The move itself is
     /// `Collision.TileCollision` (`flag6 = true` at `:17536-17539`) then
     /// `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`).
     fn sentry_turret_step(&mut self, world: &World) {
@@ -9053,7 +9120,14 @@ impl Projectile {
         // only while the AI has not already latched (`:18639`, `ai[0] == 0`
         // is checked before the call, so the latch is one-shot per stuck run).
         if self.vel != before && self.ai[0] == 0.0 {
+            // `:40249` — the Dig thud at `base.position`, BEFORE the latch.
+            self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
             self.ai[0] = 1.0;
+            // `:40252-40256` — the 1025 barnacle's Item167 play follows the
+            // latch (the `type != 1025` early-return skips it for the rest).
+            if self.kind == DEAD_CELLS_BARNACLE {
+                self.wants_sound = Some((2, 167, self.pos.x, self.pos.y, 0.0));
+            }
         }
     }
 
@@ -14610,6 +14684,11 @@ pub struct YoyoInputs {
     pub player_dead: bool,
     /// `player.meleeSpeed` (`:67750`, `:67886-67887`).
     pub melee_speed: f32,
+    /// S1-E-21h d75 — `Main.player[owner].inventory[selectedItem].pick > 0`
+    /// (`Projectile.cs:25512`): the drill hum's cue pick — Item190 + the
+    /// 15-tick cooldown for a pick, Item189 + 20 otherwise. Snapshotted
+    /// from the held item's `ItemDef.pick` in `world_sim/projectiles.rs`.
+    pub held_pick_positive: bool,
 }
 
 impl Default for YoyoInputs {
@@ -14622,6 +14701,7 @@ impl Default for YoyoInputs {
             player_dead: false,
             player_cced: false,
             melee_speed: 1.0,
+            held_pick_positive: false,
         }
     }
 }
@@ -16987,9 +17067,10 @@ impl ProjectilePool {
                                 crate::special_arrows::falling_star_step(
                                     &mut self.slots[i],
                                     world,
+                                    rng,
                                 );
                             } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
-                                self.slots[i].ai_falling_star(world);
+                                self.slots[i].ai_falling_star(world, rng);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
@@ -17454,7 +17535,12 @@ impl ProjectilePool {
                         // mouse while the channel holds; the release kills
                         // it. The position is AI-set (the hand pin), so no
                         // `kill_step` runs.
-                        20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
+                        20 => self.slots[i].ai_drill(
+                            owner,
+                            inputs.aim,
+                            player.as_deref(),
+                            inputs.held_pick_positive,
+                        ),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
                         // S1-P-i14 (V5 gate) — `AI_078`
@@ -17767,7 +17853,12 @@ impl ProjectilePool {
                             // beam light — is a follow-up); the release kills
                             // it (`:66280-66283`).
                             } else if self.slots[i].kind == LASER_DRILL {
-                                self.slots[i].ai_drill(owner, inputs.aim, player.as_deref());
+                                self.slots[i].ai_drill(
+                                    owner,
+                                    inputs.aim,
+                                    player.as_deref(),
+                                    inputs.held_pick_positive,
+                                );
                             } else {
                                 let spawn =
                                     self.slots[i]
@@ -23858,6 +23949,38 @@ mod s1_e_21h_sound_tests {
         assert_eq!(p.wants_sound, None, "one cue per life");
     }
 
+    /// S1-E-21h d75 — the falling-star hum (`:23881-23885`): the
+    /// `20 + Next(40)` re-arm rolls on the arm's rng seam BEFORE the Item9
+    /// cue queues; the cooldown holds the following ticks. The 92's arm
+    /// (`special_arrows::falling_star_step`) carries the same contract.
+    #[test]
+    fn s1_e_21h_d75_the_falling_star_hums_on_the_cooldown() {
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: STAR_CANNON_STAR,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let mut witness = tr_core::UnifiedRandom::new(7);
+        let roll = witness.next_range(0, 40);
+        p.ai_falling_star(&w, &mut rng);
+        assert_eq!(p.sound_delay, 20 + roll, "the re-arm rides the pass stream");
+        assert_eq!(p.wants_sound, Some((2, 9, 64.0, 64.0, 0.0)));
+        for _ in 0..(20 + roll - 1) {
+            p.sound_delay -= 1; // the pool's per-update decrement
+            p.wants_sound = None;
+            p.ai_falling_star(&w, &mut rng);
+            assert_eq!(p.wants_sound, None, "the cooldown holds");
+        }
+        p.sound_delay -= 1;
+        p.ai_falling_star(&w, &mut rng);
+        assert!(p.wants_sound.is_some(), "the cooldown expired: the hum re-arms");
+    }
+
     /// S1-E-21h d75 — the Demon Sickle's latch cue (`:25369-25373`): the
     /// `ai[1] = 1` write THEN the Item8 play; the 45 scythe never plays.
     #[test]
@@ -23878,6 +24001,63 @@ mod s1_e_21h_sound_tests {
             p.ai_demon_scythe(&w);
             assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
         }
+    }
+
+    /// S1-E-21h d75 — the drill hum (`:25510-25522`): the `soundDelay <= 0`
+    /// gate picks Item190 + 15 for a held pick, Item189 + 20 otherwise, at
+    /// the PRE-pin `base.position`. The cue queues even on the release tick
+    /// (the C# plays ahead of the channel gate). The Laser Drill 445's
+    /// `AI_075` arm (`:66246-66250`) plays Item132 + 23 with NO pick read.
+    #[test]
+    fn s1_e_21h_d75_the_drill_hum_picks_by_the_held_pick() {
+        for (kind, pick, style, delay) in [
+            (DRILL_COBALT, true, 190i32, 15i32),
+            (DRILL_COBALT, false, 189, 20),
+            (LASER_DRILL, true, 132, 23),
+            (LASER_DRILL, false, 132, 23),
+        ] {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                tile_collide: false,
+                ..Default::default()
+            };
+            // No player link: the orphan kill runs AFTER the hum block —
+            // the cue still queues (the C# order), then the slot dies.
+            p.ai_drill(None, None, None, pick);
+            assert_eq!(p.wants_sound, Some((2, style, 64.0, 64.0, 0.0)), "kind {kind} pick {pick}");
+            assert_eq!(p.sound_delay, delay, "kind {kind} pick {pick}");
+            assert!(!p.active, "the orphan guard kills after the cue");
+            // The cooldown holds on a live re-run.
+            p.active = true;
+            p.wants_sound = None;
+            p.ai_drill(None, None, None, pick);
+            assert_eq!(p.wants_sound, None, "the cooldown holds");
+        }
+    }
+
+    /// S1-E-21h d75 — the music note's one-shot cue (`:25600-25605`): the
+    /// `soundDelay = -1` latch + Item26 at `base.position`, once per life.
+    /// (The `Main.musicPitch` write is the recorded façade deviation.)
+    #[test]
+    fn s1_e_21h_d75_the_music_note_latches_item26() {
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: QUARTER_NOTE,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_music_note(&w);
+        assert_eq!(p.sound_delay, -1, "the latch stays down");
+        assert_eq!(p.wants_sound, Some((2, 26, 64.0, 64.0, 0.0)));
+        p.wants_sound = None;
+        p.ai_music_note(&w);
+        assert_eq!(p.wants_sound, None, "one cue per life");
     }
 
     /// S1-E-21h d75 — the aiStyle-48 one-shot cue (`:28229-28232`) belongs
@@ -23952,6 +24132,153 @@ mod s1_e_21h_sound_tests {
         p.wants_sound = None;
         p.ai_gem_staff(&w, &[], None, None);
         assert_eq!(p.wants_sound, None, "one cue per life");
+    }
+
+    /// S1-E-21h d75 — the gem bounce's Dig thud (`:18047-18051`): the
+    /// CanBounce arm queues the int-id-0 play at `base.position` on every
+    /// bounce; the FastThenSlow bypass (`flag8 = false`) queues nothing.
+    #[test]
+    fn s1_e_21h_d75_the_gem_bounce_queues_the_dig_thud() {
+        let mut w = air();
+        // A solid tile at (5, 4): the bolt at x 72 flying right into it
+        // (the probe spans x 80..87.99 — the tile's 80..96 column).
+        let i = w.index(5, 4);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Projectile {
+            active: true,
+            kind: GEM_BOLT_RUBY,
+            owner: 0,
+            pos: Vec2::new(72.0, 64.0),
+            w: 8.0,
+            h: 8.0,
+            vel: Vec2::new(8.0, 0.0),
+            penetrate: 3,
+            tile_collide: true,
+            ai: [f32::from_bits(GemStaffFeatures::CAN_BOUNCE), 0.0, 0.0, 0.0],
+            ..Default::default()
+        };
+        let features = GemStaffFeatures::from_ai(p.ai[0]);
+        p.gem_bolt_move(&w, &[], &features);
+        assert_eq!(p.wants_sound, Some((0, 0, 72.0, 64.0, 0.0)), "the bounce thud");
+        // FastThenSlow: the bypass keeps flag8 false — no cue.
+        p.wants_sound = None;
+        p.pos = Vec2::new(72.0, 64.0);
+        p.vel = Vec2::new(8.0, 0.0);
+        p.ai[0] = f32::from_bits(GemStaffFeatures::FAST_THEN_SLOW);
+        let features = GemStaffFeatures::from_ai(p.ai[0]);
+        p.gem_bolt_move(&w, &[], &features);
+        assert_eq!(p.wants_sound, None, "the bypass plays nothing");
+    }
+
+    /// S1-E-21h d75 — the Sword Beam's bounce cue (`:19805-19808`): the
+    /// `ai[2]` bump THEN Item10 at `base.position`, three impacts; the
+    /// fourth dies cue-less.
+    #[test]
+    fn s1_e_21h_d75_the_sword_beam_bounce_queues_item10() {
+        let mut w = air();
+        // The wall tile (5, 4) spans x 80..96; the beam at x 72 probing
+        // x 80..87.99 hits it (the probe's −0.01 inset keeps the flush
+        // 80-edge out, the 80-step inside).
+        let i = w.index(5, 4);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Projectile {
+            active: true,
+            kind: SWORD_BEAM,
+            owner: 0,
+            pos: Vec2::new(72.0, 64.0),
+            w: 8.0,
+            h: 8.0,
+            vel: Vec2::new(8.0, 0.0),
+            tile_collide: true,
+            ..Default::default()
+        };
+        p.unholy_step(&w);
+        assert_eq!(p.ai[2], 1.0);
+        assert_eq!(p.wants_sound, Some((2, 10, 72.0, 64.0, 0.0)));
+        assert!(p.active, "the first impact reflects");
+        // The fourth impact kills — the kill path queues no cue of its own.
+        p.ai[2] = 3.0;
+        p.pos = Vec2::new(72.0, 64.0);
+        p.vel = Vec2::new(8.0, 0.0);
+        p.active = true; // the fixture re-arms the slot for the last impact
+        p.wants_sound = None;
+        p.unholy_step(&w);
+        assert_eq!(p.ai[2], 4.0);
+        assert!(!p.active, "the fourth impact kills");
+        assert_eq!(p.wants_sound, None, "no cue on the killing impact");
+    }
+
+    /// S1-E-21h d75 — the aiStyle-8 bounce cue (`:19575`): Item10 at
+    /// `base.position` BEFORE the `ai[0]++` bump; the hostile 96 falls to
+    /// the kill default and plays nothing.
+    #[test]
+    fn s1_e_21h_d75_the_style8_bounce_queues_item10() {
+        let mut w = air();
+        let i = w.index(5, 4);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        for (kind, plays) in [(WATER_BOLT, true), (CURSED_FLAME, false)] {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(72.0, 64.0),
+                w: 8.0,
+                h: 8.0,
+                vel: Vec2::new(8.0, 0.0),
+                tile_collide: true,
+                ..Default::default()
+            };
+            // The 96's own first-tick Item20 latch (`:24243`, the landed
+            // S1-E-21h site) already fired on an earlier tick — pre-latch
+            // it so this test isolates the bounce arm's cue contract.
+            p.local_ai[0] = 1.0;
+            p.ai_ball_of_fire(&w);
+            if plays {
+                assert_eq!(p.wants_sound, Some((2, 10, 72.0, 64.0, 0.0)), "kind {kind}");
+                assert_eq!(p.ai[0], 1.0, "the bump follows the cue");
+            } else {
+                assert_eq!(p.wants_sound, None, "kind {kind}: the kill default");
+                assert!(!p.active);
+            }
+        }
+    }
+
+    /// S1-E-21h d75 — the turret's blocked-move pair (`:40249`/`:40256`):
+    /// the Dig thud queues for every aiStyle-197 row; the 1025 barnacle's
+    /// Item167 follow-up REPLACES the intent (the one-cue-per-tick fold).
+    #[test]
+    fn s1_e_21h_d75_the_turret_stuck_latch_queues_its_cues() {
+        let mut w = air();
+        let i = w.index(5, 4);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        for (kind, style_id, style) in [(1026u16, 0u16, 0i32), (DEAD_CELLS_BARNACLE, 2, 167)] {
+            let mut p = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                // x 72 + 8 vel + 8 w = 88 > the tile's 80 left edge, while
+                // pos + w = 80 <= 80: the left-block arm clamps the step.
+                pos: Vec2::new(72.0, 64.0),
+                w: 8.0,
+                h: 8.0,
+                vel: Vec2::new(8.0, 0.0),
+                tile_collide: true,
+                ..Default::default()
+            };
+            p.sentry_turret_step(&w);
+            assert_eq!(p.ai[0], 1.0, "kind {kind}: the stuck latch");
+            assert_eq!(p.wants_sound, Some((style_id, style, 72.0, 64.0, 0.0)), "kind {kind}");
+            // The latch holds: a second blocked tick queues nothing.
+            p.wants_sound = None;
+            p.pos = Vec2::new(72.0, 64.0);
+            p.vel = Vec2::new(8.0, 0.0);
+            p.sentry_turret_step(&w);
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per stuck run");
+        }
     }
 }
 

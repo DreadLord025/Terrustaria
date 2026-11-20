@@ -334,12 +334,19 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_188", 2),
     ("Item_196", 2),
     ("Item_210", 2),
-    // S1-E-21h d75 — the projectile sound wave part 1's bank gaps, the
-    // first-tick latch batch (both `.xnb` assets verified on disk): the
-    // gem-staff first-tick cue (`StackableItem8ForRubyStaff` = id 2 style
-    // 205, `SoundID.cs:1589`, `Projectile.cs:37864`) and the sentry
-    // placement (`:37274`).
+    // S1-E-21h d75 — the projectile sound wave part 1's bank gaps (all seven
+    // `.xnb` assets verified on disk): the gem-staff first-tick cue
+    // (`StackableItem8ForRubyStaff` = id 2 style 205, `SoundID.cs:1589`,
+    // `Projectile.cs:37864`), the drill hum pair (`:25514`/`:25519`), the
+    // Laser Drill hum (`AI_075`'s 445 arm, `:66248`), the music note
+    // (`:25604`), the sentry placement (`:37274`) and the turret barnacle
+    // burst (`:40256`).
+    ("Item_26", 2),
     ("Item_46", 2),
+    ("Item_132", 2),
+    ("Item_167", 2),
+    ("Item_189", 2),
+    ("Item_190", 2),
     ("Item_205", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
