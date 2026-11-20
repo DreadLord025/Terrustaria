@@ -1013,6 +1013,9 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .npcs
             .iter()
             .any(|n| n.hp > 0 && n.kind == NpcKind::TaxCollector),
+        // W4-d122 shop 8: the Mechanic's Rod Angler scan
+        // (`Chest.cs:2085`'s `NPC.AnyNPCs(369)`).
+        angler_present: app.npcs.iter().any(|n| n.hp > 0 && n.kind == NpcKind::Angler),
     };
     let inv_ids: Vec<u16> = app
         .inventory

@@ -130,6 +130,9 @@ pub struct ShopFlags {
     /// Collector's presence (the live roster scan, like the Stylist's
     /// Party Girl gate).
     pub tax_collector_present: bool,
+    /// W4-d122 shop 8: `NPC.AnyNPCs(369)` (`Chest.cs:2085`) — the Angler's
+    /// presence gates the Mechanic's Rod with the odd moon phase.
+    pub angler_present: bool,
 }
 
 impl Default for ShopFlags {
@@ -183,6 +186,7 @@ impl Default for ShopFlags {
             downed_cultist: false,
             downed_frost: false,
             tax_collector_present: false,
+            angler_present: false,
         }
     }
 }
@@ -307,8 +311,12 @@ pub enum StockWhen {
     /// the C#'s `default:` arm (phases 6/7).
     MoonPhasePair(u8),
     /// The ODD moon phases only (`Chest.cs:2085`'s
-    /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
+    /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row (the
+    /// `AnyNPCs(369)` conjunct rides the `All` combinator on the row).
     MoonPhaseOdd,
+    /// W4-d122 shop 8: `NPC.AnyNPCs(369)` (`Chest.cs:2085`'s first
+    /// conjunct) — the Angler's presence (the live roster scan).
+    AnglerPresent,
     /// `statLifeMax >= 400` (`:2704`) — the Life Hair Dye row.
     LifeMax400,
     /// `statManaMax >= 200` (`:2709`) — the Mana Hair Dye row.
@@ -819,10 +827,10 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // no season system).
             row(1739, StockWhen::Halloween),
         ],
-        // The Mechanic's shop (index 8, `Chest.cs:2033-2090`): the wire
-        // family's rows; the graveyard goggles (4409) constants-off and
-        // the Mechanic's Rod (2295) rides the Angler-present moon-phase
-        // pair (1/3/5/7).
+        // The Mechanic's shop (index 8, `Chest.cs:2033-2090`, the registry
+        // `NPCInteractions.Shop(124, 8)`, `NPCInteractions.cs:495` —
+        // `NPCID.Mechanic = 124`): the 30 wire-family rows, the graveyard
+        // goggles and the Angler-present odd-moon-phase Rod.
         8 => vec![
             row(509, StockWhen::Always),
             row(850, StockWhen::Always),
@@ -854,9 +862,13 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(583, StockWhen::Always),
             row(4484, StockWhen::Always),
             row(4485, StockWhen::Always),
-            // `:2085`'s `NPC.AnyNPCs(369) && moonPhase % 2 == 1` — the
-            // port's town count reads the Angler's presence.
-            row(2295, StockWhen::MoonPhaseOdd),
+            // `:2080-2084`: `Main.player[Main.myPlayer].ZoneGraveyard` —
+            // the Spectre Goggles 4409.
+            row(4409, StockWhen::ZoneGraveyard),
+            // `:2085-2089`: `NPC.AnyNPCs(369) && (moonPhase == 1 || 3 ||
+            // 5 || 7)` — the Mechanic's Rod 2295 (the odd-phase
+            // disjunction collapses to `% 2 == 1` over the 0..7 range).
+            row(2295, MECHANIC_ROD),
         ],
         // Santa Claus's shop (index 9, `Chest.cs:2091-2111`, the registry
         // `NPCInteractions.Shop(142, 9)`, `NPCInteractions.cs:496` —
@@ -1380,6 +1392,13 @@ const CLOTHIER_FROST_NIGHT: StockWhen =
 /// `Chest.cs:1979`: `Main.LocalPlayer.golferScoreAccumulated >= 2000`
 /// (the `num < 38` half rides the `NumBelow` wrapper).
 const CLOTHIER_GOLF_TAIL: StockWhen = StockWhen::GolfScore(2000, true);
+
+// — W4-d122: the Mechanic's compound gate (`Chest.cs:2085`). —
+
+/// `Chest.cs:2085`: `NPC.AnyNPCs(369) && (moonPhase == 1 || 3 || 5 || 7)`
+/// — the Mechanic's Rod 2295.
+const MECHANIC_ROD: StockWhen =
+    StockWhen::All(&[StockWhen::AnglerPresent, StockWhen::MoonPhaseOdd]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -2139,6 +2158,7 @@ fn stock_gate(
             StockWhen::DownedCultist => flags.downed_cultist,
             StockWhen::DownedFrost => flags.downed_frost,
             StockWhen::TaxCollectorPresent => flags.tax_collector_present,
+            StockWhen::AnglerPresent => flags.angler_present,
             StockWhen::MoonPhaseExact(n) => moon_phase == n,
             // The combinators + the num guard are handled above — unreachable.
             StockWhen::All(_)

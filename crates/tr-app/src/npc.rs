@@ -24596,26 +24596,46 @@ mod tests {
         );
     }
 
-    /// `Chest.SetupShop`'s case 8 (`Chest.cs:2033-2090`): the wire family's
-    /// 30 rows and the Mechanic's Rod (2295) behind the moon-phase pair.
+    /// `Chest.SetupShop`'s case 8 (`Chest.cs:2033-2090`, the registry
+    /// `NPCInteractions.Shop(124, 8)`, `NPCInteractions.cs:495`): the wire
+    /// family's 30 rows, the graveyard goggles and the Mechanic's Rod
+    /// (2295) behind the Angler-present AND odd-moon-phase conjunct
+    /// (W4-d122 — verbatim). Updated for the shop-8 completion; written,
+    /// not run.
     #[test]
     fn the_mechanic_shop_carries_the_wire_rows_and_the_rod() {
         let stock = crate::shop::resolve_stock(8, &crate::shop::ShopFlags::default(), &[]);
         assert_eq!(stock.len(), 30, "the base wire rows: {stock:?}");
-        // The Rod rides the ODD phases (`:2085`'s 1/3/5/7), so phase 0 hides
-        // it and phase 1 shows it.
         for id in [509, 850, 510, 530, 513, 849, 1263, 583, 4484, 4485] {
             assert!(stock.contains(&id), "the {id} wire row");
         }
-        // The Rod rides the even moon phase (1/3/5/7 in the C#), so phase 0
-        // (the pair's mid) shows it and phase 2 hides it.
+        // `:2085`: the Rod needs the Angler AND an ODD phase (1/3/5/7).
+        // No Angler → no Rod even at phase 1.
         assert!(!stock.contains(&2295), "no Rod at moonPhase 0");
         let phase1 = crate::shop::resolve_stock_moon(8, &crate::shop::ShopFlags::default(), &[], 1);
-        let phase4 = crate::shop::resolve_stock_moon(8, &crate::shop::ShopFlags::default(), &[], 4);
-        assert!(phase1.contains(&2295), "the Rod at moonPhase 1");
-        assert!(!phase4.contains(&2295), "no Rod at moonPhase 5");
-        // The graveyard goggles sit constants-off.
-        assert!(!stock.contains(&4409));
+        assert!(!phase1.contains(&2295), "no Angler, no Rod at moonPhase 1");
+        let angler = crate::shop::ShopFlags {
+            angler_present: true,
+            ..Default::default()
+        };
+        let a1 = crate::shop::resolve_stock_moon(8, &angler, &[], 1);
+        assert!(a1.contains(&2295), "the Rod at moonPhase 1 with the Angler");
+        assert_eq!(a1.len(), 31);
+        assert_eq!(*a1.last().unwrap(), 2295, "the Rod is the last row");
+        let a4 = crate::shop::resolve_stock_moon(8, &angler, &[], 4);
+        assert!(!a4.contains(&2295), "no Rod at the even moonPhase 4");
+        let a7 = crate::shop::resolve_stock_moon(8, &angler, &[], 7);
+        assert!(a7.contains(&2295), "the Rod at moonPhase 7");
+        // `:2080`: the graveyard goggles ride the zone flag, BEFORE the
+        // Rod in the num order.
+        let grave = crate::shop::ShopFlags {
+            zone_graveyard: true,
+            ..angler
+        };
+        let g = crate::shop::resolve_stock_moon(8, &grave, &[], 3);
+        assert_eq!(g.len(), 32);
+        assert_eq!(&g[g.len() - 2..], &[4409, 2295], "the exact tail order");
+        assert!(!stock.contains(&4409), "no goggles outside the graveyard");
     }
 
     #[test]
