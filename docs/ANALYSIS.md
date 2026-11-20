@@ -39244,3 +39244,31 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The aiStyles 15-22 axis census (W4-d24)
+
+The `NPC.AI()` style-axis census for the 15-22 band (`NPC.cs:23487-25234`),
+one style per commit on `task/W4-d24-npc-ai-styles-15-22`. Verdicts at
+a725acb0:
+
+| style | C# arm | members (SetDefaults census) | verdict |
+| --- | --- | --- | --- |
+| 15 | `:23487-23491` → `AI_015_KingSlime` `:43121-43414` | KingSlime 50 (`:9387-9403`) | LANDED (K-1..K-4) → verify-only axis claim `15 => update_king_slime`; kind arm unreachable. RNG: the teleport `Next(0,size)` (`:43099`/`:43108`) + the batch `Next(1,4)` (`:43393`) + 5 draws/minion in the sim drain (`:43396-43407`); the full-HP tick draws nothing (witness). |
+| 16 | `:23492-24021` | 13 fish (55/57/58/65/102/157/241/465/592/607/615/688/692); ported trio 55/58/65 | LANDED+WIRED (S1-D-3 reconcile) → verify-only axis claim `16 => update_swimmer`; kind arm unreachable. RNG: the Dolphin `Next(300,1200)`/`Next(1,3)`/`Next(2)` + the dry flop triple `:23977-23979` (module witnesses). |
+| 17 | `:24022-24152` | Vulture 61 (`:9554-9566`), Raven 301 (`:12889-12901`) | MISSING → ported verbatim, `npc_ai_style17.rs`, UNWIRED. RNG-free by construction (witness). The perch/startle ±100 XNA box, the half-bounce clamps, the integer-half hover anchor. |
+| 18 | `:24153-24406` | BlueJellyfish 63, PinkJellyfish 64, GreenJellyfish 103, Squid 221, BloodJelly 242, FungoFish 256 | MISSING → ported verbatim, `npc_ai_style18.rs`, UNWIRED. RNG-free (witness). The expert zap-shield cycle, the INTEGER-half-HEIGHT glow quirk (`:24211` uses height/2 on BOTH axes), the chase damp ladder + the 221 ink latch. |
+| 19 | `:24407-24536` | Antlion 69 (`:9666-9679`) | MISSING → ported verbatim, `npc_ai_style19.rs`, UNWIRED. RNG: the airborne `Next(2)` dust gate + pool draws + the `Next(2)` tweak (`:24517-24527`); grounded draws nothing. The always-true OR quirk (`:24438`), the Item5-at-200 cooldown, the SandBall 31 aimed/conveyor shots. |
+| 20 | `:24537-24614` | SpikeBall 70 (`:9680-9696`) | MISSING → ported verbatim, `npc_ai_style20.rs`, UNWIRED. RNG: exactly ONE `Next(15)` on the init tick (`:24557`); draw-free afterwards (witness). The both-axis away-launch, the f32-truncated `(int)(speed/accel/2)` half-period, the pin-then-new-axis-accel bounce. |
+| 21 | `:24615-24665` | BlazingWheel 72 (`:9714-9731`) | LANDED+WIRED (S1-D-3-wire-smallkinds) → verify-only re-pin; RNG-free by construction (module + full-tick witnesses). |
+| 22 | `:24666-25234` | TEN: Pixie 75, Wraith 82, Gastropod 122, IceElemental 169, FloatyGross 182, Reaper 253, IchorSticker 268, Ghost 316, Poltergeist 330, Drippler 490 | 330/490 LANDED → verify-only axis claim `22 =>` kind-gated routing to the unchanged `npc_ai_poltergeist`/`npc_ai_drippler` machines (kind arms unreachable); the EIGHT others MISSING → ported verbatim, `npc_ai_style22.rs`, UNWIRED. RNG: the flee `Next(-1,2)`, the 122 two-`NextDouble` spin, the 75 `Next(6)`+`Next(40)`, the 169 `Next(3)`, the 268 `Next(60)` period + two jitters (per-type witnesses). |
+
+Deliberate folds (all cited in the modules): `Main.netMode != 1`/`!= 2`
+→ true (single-player); `NPC.Opacity` (the Ghost fade) rides a caller
+`&mut f32` until the kind lands; `npcTypeNoAggro` rides the
+`TargetCandidate`; the `Lighting.AddLight`/`PlaySound`/`NewProjectile`
+sites leave as effect requests (the established seams); the dust runs
+in-step on the caller's `DustPool` + `UpdateNPCs` stream (the style75
+convention). The eight new kinds + their axis/kind wiring are the
+follow-up wave — the machines are pure and reachable through their
+`ty` parameters today. All witnesses WRITTEN, NOT RUN (code-only mode:
+no cargo/rustc/tests/graphify invoked on this branch).
