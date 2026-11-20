@@ -2171,6 +2171,44 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-c4 (the style-44 swimmers): the four kinds' own entries — the
+    // populator attaches info to all four
+    // (`BestiaryDatabaseNPCsPopulator.cs:1133`/`:1523`/`:629`/`:1164`).
+    // The display names ride `en-US NPCs.json` (581 is "Antlion
+    // Swarmer", 509 "Giant Antlion Swarmer", 587 "Wandering Eye Fish" —
+    // NOT the credit-id spellings).
+    BestiaryEntryDef {
+        credit_id: "FlyingFish",
+        net_id: 224,
+        kind: NpcKind::FlyingFish,
+        variant: None,
+        quick_unlock: false,
+        name: "Flying Fish",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFlyingAntlion",
+        net_id: 509,
+        kind: NpcKind::GiantFlyingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Antlion Swarmer",
+    },
+    BestiaryEntryDef {
+        credit_id: "FlyingAntlion",
+        net_id: 581,
+        kind: NpcKind::FlyingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Swarmer",
+    },
+    BestiaryEntryDef {
+        credit_id: "EyeballFlyingFish",
+        net_id: 587,
+        kind: NpcKind::EyeballFlyingFish,
+        variant: None,
+        quick_unlock: false,
+        name: "Wandering Eye Fish",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

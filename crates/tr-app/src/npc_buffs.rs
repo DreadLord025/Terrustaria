@@ -484,6 +484,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-c4 (the style-44 swimmers): none of 224/509/581/587 has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+`'s dictionary carries
+        // no such keys) — the null-row else-branch, no immunity.
+        NpcKind::FlyingFish
+        | NpcKind::GiantFlyingAntlion
+        | NpcKind::FlyingAntlion
+        | NpcKind::EyeballFlyingFish => &[],
     }
 }
 

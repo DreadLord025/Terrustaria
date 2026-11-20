@@ -3428,7 +3428,14 @@ fn npc_seed(
         | crate::npc::NpcKind::BlazingWheel
         | crate::npc::NpcKind::AngryNimbus
         | crate::npc::NpcKind::DungeonSpirit
-        | crate::npc::NpcKind::ForceBubble => {
+        | crate::npc::NpcKind::ForceBubble
+        // W4-c4: the style-44 swimmers' relay seeds ride the same hover
+        // placement (the box comes from `kind.size()`; the steering
+        // machine takes over on the first tick).
+        | crate::npc::NpcKind::FlyingFish
+        | crate::npc::NpcKind::GiantFlyingAntlion
+        | crate::npc::NpcKind::FlyingAntlion
+        | crate::npc::NpcKind::EyeballFlyingFish => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

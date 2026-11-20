@@ -129,6 +129,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_30", 3),
     ("NPC_Hit_36", 3),
     ("NPC_Hit_43", 3),
+    // W4-c4 (the style-44 swimmers): the antlion pair's NPCHit32
+    // (`NPC.cs:14850`/`:14877`) — the `Sounds/NPC_Hit_32.xnb` asset
+    // exists; the S1-E-21 wave C bank-gap close.
+    ("NPC_Hit_32", 3),
     ("NPC_Hit_39", 3),
     ("NPC_Hit_40", 3),
     ("NPC_Hit_42", 3),
@@ -170,6 +174,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_33", 4),
     ("NPC_Killed_39", 4),
     ("NPC_Killed_45", 4),
+    // W4-c4 (the style-44 swimmers): the antlion pair's NPCDeath35
+    // (`NPC.cs:14851`/`:14878`) — the `Sounds/NPC_Killed_35.xnb` asset
+    // exists; the bank-gap close.
+    ("NPC_Killed_35", 4),
     ("NPC_Killed_42", 4),
     ("NPC_Killed_44", 4),
     // The Force Bubble's death cue (`NPC.cs:13890`'s `NPCDeath45`) and the

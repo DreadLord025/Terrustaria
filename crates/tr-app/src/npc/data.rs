@@ -586,6 +586,16 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-c4 (the style-44 swimmers): the FlyingFish's vanilla 224
+            // is the WyvernLegs' port-local slot above (`to_u16`'s
+            // bijection guard), so it takes the next free port-local id
+            // 354 (the BlazingWheel 353 precedent); 509/581/587 keep their
+            // vanilla ids (all three free). `NPC.cs:11885-11897` /
+            // `:14841-14853` / `:14868-14880` / `:16623-16637`.
+            NpcKind::FlyingFish => 354,
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::FlyingAntlion => 581,
+            NpcKind::EyeballFlyingFish => 587,
         }
     }
 
@@ -916,6 +926,13 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-c4 (the style-44 swimmers): 354 is the FlyingFish's
+            // port-local id (the vanilla 224 slot is the WyvernLegs');
+            // 509/581/587 keep their vanilla ids (`to_u16` above).
+            354 => NpcKind::FlyingFish,
+            509 => NpcKind::GiantFlyingAntlion,
+            581 => NpcKind::FlyingAntlion,
+            587 => NpcKind::EyeballFlyingFish,
             _ => return None,
         })
     }
@@ -1788,6 +1805,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-c4 (the style-44 swimmers): 224/587 NPCHit1
+            // (`NPC.cs:11893`/`:16631`), 509/581 NPCHit32
+            // (`:14850`/`:14877`).
+            NpcKind::FlyingFish | NpcKind::EyeballFlyingFish => "NPC_Hit_1",
+            NpcKind::GiantFlyingAntlion | NpcKind::FlyingAntlion => "NPC_Hit_32",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2114,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-c4 (the style-44 swimmers): 224/587 NPCDeath1
+            // (`NPC.cs:11895`/`:16633`), 509/581 NPCDeath35
+            // (`:14851`/`:14878`).
+            NpcKind::FlyingFish | NpcKind::EyeballFlyingFish => "NPC_Killed_1",
+            NpcKind::GiantFlyingAntlion | NpcKind::FlyingAntlion => "NPC_Killed_35",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2200,6 +2227,13 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-c4 (the style-44 swimmers) — the aiStyle-44 AI head sets
+            // `noGravity = true` every tick (`NPC.cs:30863`); kb 0.8/0.3/
+            // 0.5/0 (`:11894`/`:14849`/`:14876`/`:16632`).
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => true,
             _ => false,
         }
     }
@@ -2451,6 +2485,14 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-c4 (the style-44 swimmers): aiStyle 44 - NPC.cs:11889
+            // (the FlyingFish 224), :14845 (the GiantFlyingAntlion 509),
+            // :14872 (the FlyingAntlion 581), :16627 (the EyeballFlyingFish
+            // 587) - the census is exactly these four.
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => 44,
         }
     }
 
@@ -2981,6 +3023,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-c4 (the style-44 swimmers): 224 32x18 (`NPC.cs:11887-
+            // 11888`), 509 40x31 (`:14843-14844`), 581 30x22 (`:14870-
+            // 14871`), 587 32x18 (`:16625-16626`).
+            NpcKind::FlyingFish | NpcKind::EyeballFlyingFish => (32.0, 18.0),
+            NpcKind::GiantFlyingAntlion => (40.0, 31.0),
+            NpcKind::FlyingAntlion => (30.0, 22.0),
         }
     }
 
@@ -3057,6 +3105,14 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            // W4-c4 (the style-44 swimmers): the vanilla `NPC.type` ids
+            // (`NPCID.cs:11125`/`:11695`/`:11839`/`:11851`). The
+            // FlyingFish's protocol id is port-local 354, so its C#-type
+            // consumers (the style-44 arm's type gates) read 224 here.
+            NpcKind::FlyingFish => 224,
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::FlyingAntlion => 581,
+            NpcKind::EyeballFlyingFish => 587,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3622,6 +3678,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-c4 (the style-44 swimmers): 224 20 (`NPC.cs:11892`),
+            // 509 90 (`:14848`), 581 60 (`:14875`), 587 300 (`:16630`).
+            NpcKind::FlyingFish => 20,
+            NpcKind::GiantFlyingAntlion => 90,
+            NpcKind::FlyingAntlion => 60,
+            NpcKind::EyeballFlyingFish => 300,
         }
     }
 
@@ -3986,6 +4048,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-c4 (the style-44 swimmers): 224 9 (`NPC.cs:11890`),
+            // 509 34 (`:14846`), 581 29 (`:14873`), 587 35 (`:16628`).
+            NpcKind::FlyingFish => 9,
+            NpcKind::GiantFlyingAntlion => 34,
+            NpcKind::FlyingAntlion => 29,
+            NpcKind::EyeballFlyingFish => 35,
         }
     }
 }

@@ -1086,6 +1086,34 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.FlyingFish` (224, `NPCID.cs:11125`) — the rain swimmer
+    /// (`aiStyle 44`): 32x18, dmg 9, def 4, 20 HP, kb 0.8,
+    /// NPCHit1/NPCDeath1, value 300 (`NPC.cs:11885-11897`). WIRED
+    /// (W4-c4): the axis' 44 arm owns the flyer integration tail; the
+    /// steering machine runs in the world-sim pre-pass
+    /// (`npc_ai_style44::style44_step`, the style-56 seam). The protocol
+    /// id is 354 — the vanilla 224 slot is the WyvernLegs' port-local
+    /// band (`to_u16`'s guard).
+    FlyingFish,
+    /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11695`) — the
+    /// hardmode desert swarm's big flap (`aiStyle 44`): 40x31, dmg 34,
+    /// def 12, 90 HP, kb 0.3, NPCHit32/NPCDeath35, value 195
+    /// (`NPC.cs:14841-14853`). WIRED (W4-c4), the 224 seam.
+    GiantFlyingAntlion,
+    /// `NPCID.FlyingAntlion` (581, `NPCID.cs:11839`) — the desert
+    /// swarm's small flap (`aiStyle 44`): 30x22, dmg 29, def 8, 60 HP,
+    /// kb 0.5, NPCHit32/NPCDeath35, value 90, npcSlots 0.8
+    /// (`NPC.cs:14868-14880`). WIRED (W4-c4), the 224 seam; the draw's
+    /// `num46 = -6` anchor row (`Main.cs:23011-23013`) rides
+    /// `npc_anchor_nudge`.
+    FlyingAntlion,
+    /// `NPCID.EyeballFlyingFish` (587, `NPCID.cs:11851`) — the blood
+    /// moon's materializing fish (`aiStyle 44`): 32x18, dmg 35, def 18,
+    /// 300 HP, kb 0, NPCHit1/NPCDeath1, value 1000, alpha 255, rarity 1
+    /// (`NPC.cs:16623-16637`). WIRED (W4-c4), the 224 seam; the
+    /// materialize burst is the family's only RNG consumer (the
+    /// module's cited pool order on the `UpdateNPCs` stream).
+    EyeballFlyingFish,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3129,6 +3157,11 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-c4: the eyeball fish's `alpha = 255` row
+                            // (`NPC.cs:16635`) — the 17-tick materialize
+                            // fade starts at the ctor (the style-44 arm's
+                            // −15/tick block).
+                            NpcKind::EyeballFlyingFish => 255,
                             _ => 0,
                         }
                     }),
@@ -3529,6 +3562,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-c4 (the style-44 swimmers): 224 0.8 (`NPC.cs:11894`),
+            // 509 0.3 (`:14849`), 581 0.5 (`:14876`), 587 0 (`:16632`).
+            NpcKind::FlyingFish => 0.8,
+            NpcKind::GiantFlyingAntlion => 0.3,
+            NpcKind::FlyingAntlion => 0.5,
+            NpcKind::EyeballFlyingFish => 0.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3948,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-c4 (the style-44 swimmers): 224 4 (`NPC.cs:11891`),
+            // 509 12 (`:14847`), 581 8 (`:14874`), 587 18 (`:16629`).
+            NpcKind::FlyingFish => 4,
+            NpcKind::GiantFlyingAntlion => 12,
+            NpcKind::FlyingAntlion => 8,
+            NpcKind::EyeballFlyingFish => 18,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4326,13 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-c4 (the style-44 swimmers): 224 300 (`NPC.cs:11896`),
+            // 509 195 (`:14852`), 581 90 (`:14879`), 587 1000
+            // (`:16634`).
+            NpcKind::FlyingFish => 300.0,
+            NpcKind::GiantFlyingAntlion => 195.0,
+            NpcKind::FlyingAntlion => 90.0,
+            NpcKind::EyeballFlyingFish => 1000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -18601,6 +18653,15 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-c4 (the style-44 swimmers): the FlyingFish's vanilla 224
+            // is the WyvernLegs' key above, so its hash rides the
+            // port-local 354 band (the wyvern renumber's precedent —
+            // injective either way); 509/581/587 are unused by every arm
+            // above, so the G6 key stays injective.
+            NpcKind::FlyingFish => 354,
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::FlyingAntlion => 581,
+            NpcKind::EyeballFlyingFish => 587,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +23730,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 274] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24009,11 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-c4 — the style-44 swimmers.
+        NpcKind::FlyingFish,
+        NpcKind::GiantFlyingAntlion,
+        NpcKind::FlyingAntlion,
+        NpcKind::EyeballFlyingFish,
     ];
 
     #[test]
@@ -27559,8 +27625,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            274,
+            "every decodable kind resolves (the wire roster's size - 274 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-c4's four style-44 swimmers)"
         );
         assert!(
             covered > 43,
