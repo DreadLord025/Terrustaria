@@ -1569,6 +1569,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_floor_dust() {
                 crate::player_dust::drain_floor_dust(app, burst);
             }
+            // W4-f3 — the wing-glide dust (`Player.cs:27040-27337`): the glide
+            // arm queues the per-wing snapshot; the drain replays the gate rolls
+            // + the NewDust chains on the `UpdatePlayers` stream (the wings-4
+            // wingFrame machine + Item13 cadence are cited seams).
+            if let Some(burst) = p.take_wing_glide_dust() {
+                crate::player_dust::drain_wing_glide(app, burst);
+            }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.
             if let Some((idx, sx, sy)) = p.take_flap_sound() {

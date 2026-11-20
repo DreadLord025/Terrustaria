@@ -29,7 +29,7 @@
 //! `Main.rand` draw is a documented skip here.
 
 use crate::app::App;
-use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, StonedDust};
+use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, StonedDust, WingGlideDust};
 use glam::Vec2;
 use tr_core::particles::Color;
 
@@ -1123,6 +1123,159 @@ pub(crate) fn drain_floor_dust(app: &mut App, b: FloorDust) {
         }
         d.position.x -= num5;
     }
+}
+
+// ---- W4-f3: the wing-glide dust trail (`Player.cs:27040-27337`) -------------
+
+/// Drain the wing-glide dust trail (`Player.cs:27040-27337`). The per-wing arms
+/// run in source order; the gate rolls ride the `UpdatePlayers` stream even when
+/// they refuse. `noLightEmittance` (`wingsLogic != wings`, `:27036`) folds to
+/// false (the port's single wing field); the `cWings` shader is a dropped field.
+/// The wings-4 arm's `wingFrame` machine + `Item13` cadence (`:27149-27191`) are
+/// cited seams (the port's `WingFrame` owns the frame machine).
+pub(crate) fn drain_wing_glide(app: &mut App, b: WingGlideDust) {
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    // `:27040`: wings 10 — `Next(3) == 0`, one type-76 puff.
+    if b.wings == 10 && rng.next_max(3) == 0 {
+        glide_puff(app, &b, 4, -40, -15.0, 30, 30, 76, 50, 0.6, Color::default(), GlidePost::Fade03);
+    }
+    // `:27054`: wings 34 — the always-animated gate (vy != 0 on the glide) +
+    // `Next(3) == 0`, one type-261 puff.
+    if b.wings == 34 && b.vy != 0.0 && rng.next_max(3) == 0 {
+        glide_puff(app, &b, 4, -40, -15.0, 30, 30, 261, 50, 0.6, Color::default(), GlidePost::Fade03);
+    }
+    // `:27069`: wings 51 — `Next(5) == 0`, one type-261 puff, colour (230,130,55).
+    if b.wings == 51 && rng.next_max(5) == 0 {
+        glide_puff(app, &b, 4, -40, -15.0, 30, 30, 261, 50, 0.6, Color::new(230, 130, 55, 255), GlidePost::Fade03);
+    }
+    // `:27092`: wings 9 — `Next(3) == 0`, one type-6 puff (offset 8/-40).
+    if b.wings == 9 && rng.next_max(3) == 0 {
+        glide_puff(app, &b, 8, -40, -15.0, 30, 30, 6, 200, 2.0, Color::default(), GlidePost::NoGrav03);
+    }
+    // `:27105`: wings 29 — `Next(3) == 0`, one type-6 puff + the `Next(10)` fade.
+    if b.wings == 29 && rng.next_max(3) == 0 {
+        let idx = glide_spawn(app, &b, 8, -40, -15.0, 30, 30, 6, 100, 2.4, Color::default());
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 0.3;
+        if rng.next_max(10) == 0 {
+            d.fade_in = 2.0;
+        }
+    }
+    // `:27122-27148`: wings 6 (the `Next(10)` gate) / else wings 5 (the `Next(6)`
+    // gate) — the else-if pair.
+    if b.wings == 6 {
+        if rng.next_max(10) == 0 {
+            glide_puff(app, &b, 4, -40, -12.0, 30, 20, 55, 200, 1.0, Color::default(), GlidePost::Plain03);
+        }
+    } else if b.wings == 5 && rng.next_max(6) == 0 {
+        glide_puff(app, &b, 6, -30, 0.0, 18, b.height as i32, 58, 255, 1.2, Color::default(), GlidePost::Plain03);
+    }
+    // `:27149`: wings 4 — the rocket-boots glide puff (the wingFrame machine +
+    // Item13 cadence are cited seams). The `Next(2)` position pick draws always.
+    if b.wings == 4 {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let mut x3 = b.x + b.width * 0.5 + 16.0;
+        if b.facing > 0 {
+            x3 = b.x + b.width * 0.5 - 26.0;
+        }
+        let mut y3 = b.y + b.height - 18.0;
+        if rng.next_max(2) == 1 {
+            x3 = b.x + b.width * 0.5 + 8.0;
+            if b.facing > 0 {
+                x3 = b.x + b.width * 0.5 - 20.0;
+            }
+            y3 += 6.0;
+        }
+        let idx = nd(app, Vec2::new(x3, y3), 8, 8, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+        let d = app.dust.slot_mut(idx);
+        d.velocity.x *= 0.3;
+        d.velocity.y += 10.0;
+        d.no_gravity = true;
+    }
+    // `:27240`: wings 26 — one type-217 puff + the `Next(2)` second puff.
+    if b.wings == 26 {
+        glide_217(app, &b, 6, -30, 217, 18, b.height as i32, 100, 1.4);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        if rng.next_max(2) == 0 {
+            glide_217(app, &b, -24, 12, 217, 12, (b.height / 2.0) as i32, 100, 1.4);
+        }
+    }
+    // `:27274`: wings 37 — the colour `NextFloat` + the `SelectRandom(31,31,31)`
+    // roll, one type-31 puff + the `Next(3)` second puff.
+    if b.wings == 37 {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let t = rng.next_float();
+        // `Color.Lerp(Black, White, t)` — the XNA byte multiply rounds (`(byte)(v*t+0.5)`).
+        let c = (255.0 * t + 0.5) as u8;
+        let color = Color::new(c, c, c, 255);
+        let _ty = [31, 31, 31][rng.next_max(3) as usize]; // the SelectRandom roll
+        glide_217(app, &b, 6, -30, 31, 24, b.height as i32, 100, 0.7);
+        let _ = color; // the type-55 colour arm is dead (the type is always 31)
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        if rng.next_max(3) == 0 {
+            let _ty2 = [31, 31, 31][rng.next_max(3) as usize];
+            glide_217(app, &b, -24, 12, 31, 12, (b.height / 2.0) as i32, 140, 0.7);
+        }
+    }
+}
+
+/// The wing-glide post-arm shapes.
+#[derive(Clone, Copy)]
+enum GlidePost {
+    /// `fadeIn = 1.1`, `noGravity`, `noLight`, `velocity *= 0.3`.
+    Fade03,
+    /// `noGravity`, `velocity *= 0.3`.
+    NoGrav03,
+    /// `velocity *= 0.3`.
+    Plain03,
+}
+
+/// Spawn one wing-glide puff at the facing-mirrored offset and apply the post-arm.
+#[allow(clippy::too_many_arguments)]
+fn glide_puff(app: &mut App, b: &WingGlideDust, off_l: i32, off_r: i32, dy: f32, w: i32, h: i32, ty: i32, alpha: i32, scale: f32, color: Color, post: GlidePost) {
+    let idx = glide_spawn(app, b, off_l, off_r, dy, w, h, ty, alpha, scale, color);
+    let d = app.dust.slot_mut(idx);
+    match post {
+        GlidePost::Fade03 => {
+            d.fade_in = 1.1;
+            d.no_gravity = true;
+            d.no_light = true;
+            d.velocity *= 0.3;
+        }
+        GlidePost::NoGrav03 => {
+            d.no_gravity = true;
+            d.velocity *= 0.3;
+        }
+        GlidePost::Plain03 => {
+            d.velocity *= 0.3;
+        }
+    }
+}
+
+/// Spawn one wing-glide puff at `(x + width/2 + offset, y + height/2 + dy)`,
+/// the offset mirrored by facing (`direction == 1` takes the right value).
+#[allow(clippy::too_many_arguments)]
+fn glide_spawn(app: &mut App, b: &WingGlideDust, off_l: i32, off_r: i32, dy: f32, w: i32, h: i32, ty: i32, alpha: i32, scale: f32, color: Color) -> usize {
+    let off = if b.facing == 1 { off_r } else { off_l };
+    let pos = Vec2::new(b.x + b.width * 0.5 + off as f32, b.y + b.height * 0.5 + dy);
+    nd(app, pos, w, h, ty, 0.0, 0.0, alpha, color, scale)
+}
+
+/// The wings-26/37 type-217/31 puff at `(x + width/2 + offset, y)` (the second
+/// puff's `y + height/2` gravDir fold collapses to `y`), `noGravity`/`noLight`,
+/// `velocity /= 4` then `- base.velocity`.
+#[allow(clippy::too_many_arguments)]
+fn glide_217(app: &mut App, b: &WingGlideDust, off_l: i32, off_r: i32, ty: i32, w: i32, h: i32, alpha: i32, scale: f32) {
+    let off = if b.facing == 1 { off_r } else { off_l };
+    let pos = Vec2::new(b.x + b.width * 0.5 + off as f32, b.y);
+    let idx = nd(app, pos, w, h, ty, 0.0, 0.0, alpha, Color::default(), scale);
+    let d = app.dust.slot_mut(idx);
+    d.no_gravity = true;
+    d.no_light = true;
+    d.velocity /= 4.0;
+    d.velocity -= Vec2::new(b.vx, b.vy);
 }
 
 #[cfg(test)]
@@ -2293,5 +2446,110 @@ mod tests {
         drain_floor_dust(&mut app, b);
         assert!(live(&app).is_empty());
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 0));
+    }
+
+    // ---- W4-f3: wing-glide witnesses ----------------------------------------
+
+    fn glide_burst(wings: i32) -> WingGlideDust {
+        WingGlideDust {
+            wings,
+            x: 300.0,
+            y: 600.0,
+            width: 20.0,
+            height: 42.0,
+            vx: 3.0,
+            vy: 2.0,
+            facing: 1,
+        }
+    }
+
+    /// `:27040-27053` — wings 10: the `Next(3)` gate, then one type-76 puff with
+    /// the fadeIn/noGravity/noLight/×0.3 post-arms.
+    #[test]
+    fn w4_f3_the_wings_10_glide_gates_on_next_three() {
+        let mut app = rig(0x5EED);
+        let b = glide_burst(10);
+        drain_wing_glide(&mut app, b);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let gate = rng.next_max(3);
+        if gate == 0 {
+            let slots = live(&app);
+            assert_eq!(slots.len(), 1);
+            let d = slots[0];
+            assert_eq!(d.dust_type, 76);
+            assert!(d.no_gravity);
+            assert!(d.no_light);
+            assert_eq!(d.fade_in, 1.1);
+            let (v, _) = default_six(&mut rng, 30, 30, 0.0, 0.0, 0.6);
+            assert_eq!(d.velocity, v * 0.3);
+        } else {
+            assert!(live(&app).is_empty());
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:27149-27191` — wings 4: the `Next(2)` position pick draws always, one
+    /// type-6 puff with `velocity.X *= 0.3`, `velocity.Y += 10`, noGravity.
+    #[test]
+    fn w4_f3_the_wings_4_rocket_puff_always_draws() {
+        let mut app = rig(0x5EED);
+        let b = glide_burst(4);
+        drain_wing_glide(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let pick = rng.next_max(2);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 6);
+        assert!(d.no_gravity);
+        // The position pick: facing 1, pick==1 → x = center - 20, y + 6.
+        let (px, py) = if pick == 1 {
+            (b.x + b.width * 0.5 - 20.0, b.y + b.height - 18.0 + 6.0)
+        } else {
+            (b.x + b.width * 0.5 - 26.0, b.y + b.height - 18.0)
+        };
+        let ex = px + rng.next_max(8 - 4) as f32 + 4.0;
+        let ey = py + rng.next_max(8 - 4) as f32 + 4.0;
+        assert_eq!(d.position, Vec2::new(ex, ey));
+        let vx = rng.next_range(-20, 21) as f32 * 0.1;
+        let _vy = rng.next_range(-20, 21) as f32 * 0.1;
+        let _ = rng.next_max(3);
+        let _ = rng.next_range(-20, 21);
+        // The type-6 tweak (`Dust.cs:214-227`): velocity.y = Next(-10,6)*0.1,
+        // velocity.x *= 0.3, scale *= 0.7 — then the glide post-arms.
+        let tweak_vy = rng.next_range(-10, 6) as f32 * 0.1;
+        assert_eq!(d.velocity, Vec2::new(vx * 0.3 * 0.3, tweak_vy + 10.0));
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:27240-27273` — wings 26: one type-217 puff + the `Next(2)` second puff,
+    /// `velocity /= 4` then `- base.velocity`.
+    #[test]
+    fn w4_f3_the_wings_26_glide_trails_217() {
+        let mut app = rig(0x5EED);
+        let b = glide_burst(26);
+        drain_wing_glide(&mut app, b);
+        let slots = live(&app);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let v = Vec2::new(b.vx, b.vy);
+        // The first puff (always).
+        assert!(!slots.is_empty());
+        let d = slots[0];
+        assert_eq!(d.dust_type, 217);
+        assert!(d.no_gravity);
+        assert!(d.no_light);
+        let (vel, _) = default_six(&mut rng, 18, b.height as i32, 0.0, 0.0, 1.4);
+        assert_eq!(d.velocity, vel / 4.0 - v);
+        // The second puff gates on Next(2).
+        let second = rng.next_max(2);
+        if second == 0 {
+            assert_eq!(slots.len(), 2);
+            let d2 = slots[1];
+            let (vel2, _) = default_six(&mut rng, 12, (b.height / 2.0) as i32, 0.0, 0.0, 1.4);
+            assert_eq!(d2.velocity, vel2 / 4.0 - v);
+        } else {
+            assert_eq!(slots.len(), 1);
+        }
+        assert_eq!(stream_of(&mut app), rng);
     }
 }

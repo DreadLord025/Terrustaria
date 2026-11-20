@@ -717,6 +717,26 @@ pub(crate) struct FloorDust {
     pub(crate) vy: f32,
 }
 
+/// One queued wing-glide dust trail (`Player.cs:27040-27337`): the tick
+/// snapshots the wing id / box / velocity / facing at the C# read moment (the
+/// glide arm, jump held while falling); the drain
+/// (`player_dust::drain_wing_glide`) replays the per-wing `Dust.NewDust` chain
+/// on the `UpdatePlayers` stream. `no_light_emittance` is `wingsLogic != wings`
+/// (`:27036`); the port's single wing field folds it to false. The wings-4
+/// rocket arm's `wingFrame` machine + `Item13` cadence (`:27149-27191`) are
+/// cited seams (the port's `WingFrame` owns the frame machine).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WingGlideDust {
+    pub(crate) wings: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2133,6 +2153,10 @@ pub struct Player {
     /// one snapshot per `FloorVisuals` call (dry, non-cart), drained on the
     /// `UpdatePlayers` stream (`player_dust::drain_floor_dust`).
     pending_floor_dust: Option<FloorDust>,
+    /// W4-f3 — the tick's queued wing-glide dust trail (`Player.cs:27040-27337`):
+    /// one snapshot per glide tick, drained on the `UpdatePlayers` stream
+    /// (`player_dust::drain_wing_glide`).
+    pending_wing_glide_dust: Option<WingGlideDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3076,6 +3100,7 @@ impl Player {
             pending_stoned_dust: None,
             pending_drown_bubble: None,
             pending_floor_dust: None,
+            pending_wing_glide_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3714,6 +3739,13 @@ impl Player {
         self.pending_floor_dust.take()
     }
 
+    /// W4-f3 — takes the wing-glide dust snapshot (`Player.cs:27040-27337`);
+    /// the caller owns `Main.dust` and the `UpdatePlayers` stream
+    /// (`player_dust::drain_wing_glide`).
+    pub(crate) fn take_wing_glide_dust(&mut self) -> Option<WingGlideDust> {
+        self.pending_wing_glide_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3906,6 +3938,7 @@ impl Player {
         self.pending_stoned_dust = None;
         self.pending_drown_bubble = None;
         self.pending_floor_dust = None;
+        self.pending_wing_glide_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -10372,15 +10405,28 @@ impl Player {
             }
             // `:27034-27350`: the wing glide — jump held while falling: the
             // fall origin refreshes per tick (`:27037`, no fall damage
-            // accrues), the per-wing glide dust rolls (`:27040-27337`) are
-            // visual seams, then gravity / 3 and the fall cap / 3 — the cap
-            // SKIPS while hover-down (`:27342`, the dampening owns the float).
+            // accrues), the per-wing glide dust rolls (`:27040-27337`) queue
+            // their snapshot here (W4-f3), then gravity / 3 and the fall cap / 3
+            // — the cap SKIPS while hover-down (`:27342`, the dampening owns the
+            // float).
             if self.wings_logic > 0
                 && self.control_jump
                 && self.vy > 0.0
                 && !self.is_performing_down_dash()
             {
                 self.fall_start = (self.y / TILE_PX) as i32;
+                // W4-f3 — the glide dust snapshot at the C# read moment (before
+                // the gravity write); the drain replays the per-wing chain.
+                self.pending_wing_glide_dust = Some(WingGlideDust {
+                    wings: self.wings_logic,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    vx: self.vx,
+                    vy: self.vy,
+                    facing: self.facing,
+                });
                 self.vy += gravity / 3.0;
                 if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                     self.vy = fall_cap / 3.0;
