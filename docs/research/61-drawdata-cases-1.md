@@ -352,3 +352,81 @@ half-brick, slope or actuated block therefore hangs (top 4) where vanilla stands
 gap: point `tiles.rs:654` at the same predicate (needs the null-edge decision for
 the top world row). The arm itself is verbatim; the group tail (378/457/466/520/
 651/652) is audited in batch 6 against this same body.
+
+### Batch 6 — top-2 group tail / candelabra (+glow) / oasis plants / echo / larva: 378, 457, 466, 520, 651, 652, 100, 530, 705, 485 (10 ids)
+
+C# `TileDrawing.cs:4689-4730` (42-line window), verbatim key bodies:
+
+```csharp
+		case 100:
+		{
+			tileTop = 2;
+			int num41 = tileFrameY / 2016;
+			addFrY -= 2016 * num41;
+			addFrX += 72 * num41;
+			break;
+		}
+		case 530:
+		{
+			int num35 = y - tileFrameY % 36 / 18 + 2;
+			int num36 = x - tileFrameX % 54 / 18;
+			WorldGen.GetBiomeInfluence(num36, num36 + 3, num35, num35, out var corruptCount2, out var crimsonCount2, out var hallowedCount2);
+			int num37 = corruptCount2;
+			if (num37 < crimsonCount2)
+			{
+				num37 = crimsonCount2;
+			}
+			if (num37 < hallowedCount2)
+			{
+				num37 = hallowedCount2;
+			}
+			int num38 = 0;
+			addFrY += 36 * ((corruptCount2 != 0 || crimsonCount2 != 0 || hallowedCount2 != 0) ? ((hallowedCount2 == num37) ? 1 : ((crimsonCount2 != num37) ? 3 : 2)) : 0);
+			tileTop = 2;
+			break;
+		}
+		case 705:
+			tileTop = 2;
+			break;
+		case 485:
+			tileTop = 2;
+			addFrY = (Main.tileFrameCounter[typeCache] / 5 + (y - tileFrameY / 18 + (x - tileFrameX / 18))) % 4 * 36;
+			break;
+```
+
+100's second-switch glow row (`TileDrawing.cs:6228-6235`), verbatim:
+
+```csharp
+		case 100:
+			if (tileFrameX / 36 == 0 && tileFrameY / 36 == 27)
+			{
+				glowTexture = TextureAssets.GlowMask[68].Value;
+				glowSourceRect = new Rectangle(tileFrameX, tileFrameY % 36, tileWidth, tileHeight);
+				glowColor = this._martianGlow;
+			}
+			break;
+```
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 378 | top-2 group (batch 5 head) | :4689-4696 | `drawdata.rs:256-258` | PORTED |
+| 457 | shares the group | :4690 | :256-258 | PORTED |
+| 466 | shares the group | :4691 | :256-258 | PORTED |
+| 520 | shares the group | :4692 | :256-258 | PORTED |
+| 651 | shares the group | :4693 | :256-258 | PORTED |
+| 652 | shares the group | :4694 | :256-258 | PORTED |
+| 100 | top 2 + 2016 stride unwind (`-= 2016*n41`, `+= 72*n41`); glow row 27 col 0 → mask 68, `_martianGlow` | :4697-4704, :6228-6235 | `drawdata.rs:261-266` (default `tile_frame*38`/0 makes `-=`/`+=` the same absolute form); glow `cases_a.rs:414-418` (`rect_plain(fx, fy % 36, height)`, martian) | PORTED; glow PORTED-UNWIRED (`_glow`) |
+| 530 | 4-cell band influence probe + hallow/crimson/corrupt pick, `addFrY += 36*pick`, top 2 | :4705-4723 | static top `drawdata.rs:270-272` + full probe `cases_a.rs:207-230` (`oasis_plants_add_fr_y`, tie order hallow→crimson→corrupt preserved; `biome_influence` :182-200 ≈ `WorldGen.cs:47750-47777`), folded at `cases_a.rs:644-648` | PORTED |
+| 705 | `tileTop = 2` | :4724-4726 | `drawdata.rs:274-276` | PORTED |
+| 485 | top 2 + `(counter/5 + (y - fy/18 + (x - fx/18))) % 4 * 36` | :4727-4730 | static top `drawdata.rs:280-282` + full body `cases_b.rs:171-174` (counter = wired `tile_frame_counter`, `tiles.rs:666-670`) | PORTED |
+
+Notes: the `drawdata.rs:277-279` (485) and `:267-269` (530) "documented deviation"
+comments are STALE — the full bodies live in `cases_b`/`cases_a` and are wired
+(`tiles.rs:700-712`, `:731-733`); same stale-comment pattern d63 found for 455/428.
+C#'s dead `int num38 = 0` (:4719) has no effect and is correctly absent. The 530
+probe rectangle is the single row `num35` across `num36..num36+3` inclusive — the
+port's `biome_influence(world, num36, num36 + 3, num35, num35)` matches the
+inclusive C# loop. 100's glow gate reads RAW fx/fy (`glow_switch` inputs are the
+stored framing, `cases_a.rs:636-637`) — correct, the second switch never rewrites
+frames; the rect's `fy % 36` is the raw row, not the unwound one, exactly as
+`:6232`.
