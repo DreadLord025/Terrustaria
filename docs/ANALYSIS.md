@@ -39244,3 +39244,94 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The tile-draw light family (W4-e8, second tile batch, 2026-11-20, code-only)
+
+`crates/tr-app/src/tile_lights.rs` ports the tile-anchored draw-side
+`Lighting.AddLight` sources that the item/NPC/proj/dust/player families
+(S1-E-5) left: **all five Main.cs sites** (the file's complete census, f9
+`c2740784` + g18's oracle + g19's freeze concur), the TileDrawing
+mushroom-tree flicker and the five `DelegateMethods` tile-cast delegates
+the `Utils.PlotTileLine` laser/hook lights ride.
+
+**The five Main.cs sites** (verified line-for-line against
+`Main.cs:28990-29199` + `Lighting.cs:135-163`):
+* `christmas_hook_chain_lights` - the type-332 walk (`:28993-29044`):
+  centre init, the `< 30f` / NaN exits BEFORE the light, the
+  truncate-then-divide anchor `(int)vector19.X / 16` (`:29012-29013`,
+  NOT the Vector2 quotient form), the four colour rows in source order
+  (`:29016/29020/29024/29028`), the `16f / num115` step + mounted-centre
+  re-aim, the `num112` wrap after 3; the light samples the PRE-step link.
+* `illuminant_hook_chain_lights` - the type-488 arm of the shared chain
+  walk (`:29046-29199`): `num116 = Chains[488-486].Height`, NO `num117`
+  offset (the switch `:29097-29111` lists 383/446/489/487 only) and no
+  383-style bend, the NaN double-gates (`:29123-29130`), the
+  `Length() < num116 + 1f` exit checked BEFORE the step, normalize - step
+  - re-aim, the light at the STEPPED `center2` via the Vector2 quotient
+  overload (`Lighting.cs:140-143`). `normalize_or_zero` matches XNA
+  `Normalize` (a zero aim cannot reach the step: the length gate exits).
+
+**The mushroom flicker** (`TileDrawing.cs:8122-8134` top /
+`:8167-8179` frameX-44 / `:8215-8227` frameX-66 - three IDENTICAL arms,
+one port): `treeStyle == 14` (the glowing-mushroom ground,
+`WorldGen.cs:62924`) draws ONE `_rand.Next(28, 42)` then
+`num = draw * 0.005f + (270 - Main.mouseTextColor) / 1000f`; unpainted
+`(0.1, 0.2 + num/2, 0.7 + num)`, painted `WorldGen.paintColor` bytes
+`/ 255f` (the `tile_light::paint_color` table). **RNG rule:** `_rand`
+is the DRAW-pass foliage stream (the `tiles.rs:332` pinned per-frame
+`FastRandom`), not `Main.rand` - no fixed-step stream moves;
+non-mushroom markers consume nothing (the draw sits inside the style gate).
+The draw happens even for painted tiles (the C# computes `num` before
+the paint branch) - pinned by the twin-stream witness.
+
+**The five casts** (`DelegateMethods.cs:712-816`, statics `v3_1`/
+`v2_1`/`f_1` at `:417-421` carried as the explicit `CastLightEnv`):
+* `cast_light` `:712-724` - bounds/null gate then UNCONDITIONAL light
+  (solids light too).
+* `cast_light_open` `:726-741` - the open-test
+  (`!active() || inActive() || tileSolidTop || !tileSolid`) gates the
+  LIGHT, not the return: in bounds always true.
+* `cast_light_open_stop_for_solids` `:781-799` - open lights + true,
+  solid false (the walk stops); the dead `new Vector2(x, y)` (`:794`)
+  dropped.
+* `cast_light_open_stop_scale` `:761-779` - the open-stop cast scaled
+  by `MathHelper.Lerp(0.65f, 1f, Distance / f_1)`: **unclamped** (past the
+  range the scale exceeds 1), f32 op order `0.65 + (1 - 0.65) * t`.
+* `spread_light_open_stop` `:801-816` - THREE kept C# quirks: NO bounds
+  check (an out-of-array tile within the radius is `tile == null` ->
+  lit), the condition's `tile.active()` term is POSITIVE (an active solid
+  stone LIGHTS, unlike every CastLightOpen* arm), and a plain absent
+  solid-kind tile is the one in-bounds false case.
+
+**Anchors:** `vector_tile` = the `Lighting.AddLight(Vector2, ...)`
+quotient truncation `(int)(v / 16f)` (`Lighting.cs:140-143`);
+`shift_tile` = `Utils.ToTileCoordinates`' `(int)v >> 4`
+(`Utils.cs:1807-1810`, arithmetic shift = floor below zero). The two
+differ below zero - pinned by the anchor witness.
+
+**Deliberate unwired scope (code-only mode):** the module is pure with
+`#![allow(dead_code)]` (the npc_ai_* precedent). The chain lights ride
+the grapple-chain DRAW, which is unported (`grapple.rs` documents the
+chain-rendering drop) - the light halves take the walk inputs (centre,
+mounted centre, sheet height) as parameters. The flicker rides
+`foliage.rs`'s leaf pass wiring (the pinned `_rand` stream is already
+there); the casts ride the laser/hook `Utils.PlotTileLine` wiring wave.
+No `EntityLights` feed is added here - the wiring wave connects the
+outputs to the ONE list pair like every other family.
+
+### Verification
+
+Code-only: the port was re-read line-for-line against the cited C#
+windows (`Main.cs:28985-29199`, `TileDrawing.cs:8115-8234`,
+`DelegateMethods.cs:58-87`/`:412-421`/`:712-822`,
+`Lighting.cs:133-164`, `Utils.cs:1805-1812`, `WorldGen.cs:62920-62927`)
+and the tr-core API surface checked by read/grep (`FastRandom::new`/
+`next_range`, `paint_color`, `World::tile`/`tile_mut`/`width`/
+`height`, `Tile::active`/`inactive`/`kind`, `TILE_SOLID`/
+`TILE_SOLID_TOP.has`). 11 witness tests (6 pre-existing walk/flicker/
+anchor + 5 new cast witnesses) are WRITTEN, NOT RUN - **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The cast witnesses pin
+their fixture kinds against the generated tables so a regen that moves a
+membership fails loudly. The merger keeps THIS tile_lights.rs as the
+single port copy of the five Main.cs sites (f9/g18/g19 census+oracle+
+freeze landed docs-only).
