@@ -39299,5 +39299,12 @@ ogre-stomp tile gore is the SAME row as the ground explosion (keep-one
 onto `ground_explosion_tile_gore`). `Utils.RandomVector2` draws TWO
 `NextDouble` (`Utils.cs:2431-2434`); the Betsy type roll evaluates AFTER
 the position argument (C# left-to-right).
-Remainder: sites 52-165 (waves F+), the UpdateProjectiles slot dispatch
+Wave F (sites 52-63): `projectile_gore_f.rs`, 5 witnesses written not run.
+The goblin-bomb four and the 590 triple are consecutive blocks kept intact
+(12 sites). `SelectRandom` over a ONE-element list still draws `Next(1)`
+(the 856 pick). The DD2 loop's count/box-resize ride the caller
+(`setApprenticeT3`, `:71832-71846`); its row adds the `Next(2)` Y-drop gate
+to the fire-explosion shape. The 590 scale float is drawn ONCE before the
+triple; the 375-377 alpha=100 is the pool's sticky arm.
+Remainder: sites 64-165 (waves G+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
