@@ -323,6 +323,42 @@ Every row below was re-read from code; ROADMAP `DONE` rows are treated as claims
     `DungeonX/Y` or the beach `shellStart*` quartet's full C# set finds no slot.
     Severity: behavioural (future work). Admitted: partially, per-feature.
 
+## W4-d10x lane split — unexecuted passes (2026-11-20)
+
+The six `task/W4-d10{1..6}-worldgen-passes-N` lanes port the passes that have
+no `EXECUTED_PIPELINE` step, **in C# registration order** (`VANILLA_CHAIN`
+anchors). Census at base `a725acb0` (67 executed steps): the audit's 52-name
+list minus `Granite` (folded into the `"Marble"` step, `biomes.rs:1496+` — a
+faithful `GraniteBiome` port) and `Surface Caves` (executed, WORLDGEN-CAVES)
+= **50 unexecuted passes**, ordered by `WorldGen.cs` anchor:
+
+1 Sand Patches :11689 · 2 Mount Caves :11784 · 3 Dirt Wall Backgrounds :11858 ·
+4 Clay :11959 · 5 Small Holes :12008 · 6 Dirt Layer Caves :12067 ·
+7 Rock Layer Caves :12107 · 8 Generate Ice Biome :12312 · 9 Silt :13143 —
+**d101 range (1-9)**.
+10 Webs :13607 · 11 Slush :14697 · 12 Mountain Caves :14873 · 13 Gems :15050 ·
+14 Shimmer :15195 · 15 Clean Up Dirt :15246 · 16 Dirt Rock Wall Runner :15461 ·
+17 Wood Tree Walls :15717 · 18 Settle Liquids :16132 — **d102 range (10-18)**.
+19 Oasis :16243 · 20 Waterfalls :16610 · 21 Wall Variety :16697 ·
+22 Life Crystals :16755 · 23 Statues :16853 · 24 Surface Chests :17130 ·
+25 Water Chests :17245 · 26 Cave Walls :17711 · 27 Floating Island Houses
+:17859 — **d103 range (19-27, this branch)**.
+28 Quick Cleanup :17875 · 29 Hellforge :18187 · 30 Spreading Grass :18237 ·
+31 Surface Ore and Stone :18447 · 32 Place Fallen Log :18513 · 33 Traps :18657 ·
+34 Piles :18788 · 35 Spawn Point :19460 · 36 Grass Wall :19589 —
+**d104 range (28-36)**.
+37 Guide :19685 · 38 Sunflowers :19898 · 39 Herbs :19964 · 40 Dye Plants :19981 ·
+41 Flowers :20447 · 42 Mushrooms :20599 · 43 Random Gems :20729 ·
+44 Moss Grass :20769 · 45 Larva :20868 — **d105 range (37-45)**.
+46 Settle Liquids Again :21246 · 47 Tile Cleanup :21520 · 48 Stalac :22038 ·
+49 Remove Broken Traps :22121 · 50 Final Cleanup :22141 —
+**d106 range (46-50)**.
+
+Lane rules: verbatim ports into the pipeline at the vanilla slots, per-pass
+`pass_rng` streams (insertions are RNG-neutral for other steps), one commit
+per pass, hash re-pins documented (code-only lanes defer the measured re-pin
+to the merge gate — the `a == b` determinism asserts stay in place).
+
 ## Task seeds
 
 - **S — Fix the doc-level lies (30 min).** Rename
