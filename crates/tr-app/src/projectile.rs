@@ -6912,6 +6912,73 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// W4-f48 — `AI()`'s aiStyle-5 cloak-star arm (`Projectile.cs:23845-
+    /// 23856`/`:23914-23927`/`:23946-23953`/`:23988-24031`): the five kinds
+    /// 723/724/725/726/1133 the star cloak's retaliate block spawns
+    /// (`Player.cs:38469-38479`, ai1 = the hurt player's position.Y).
+    /// `owner_top_y` is `Main.player[this.owner].Top.Y` — the 723
+    /// fall-through arm's read (`:23847`); the port passes the local
+    /// player's top (the stars are local-owned). The dust/gore trail rolls
+    /// (`:23988-24031`) are SKIPPED with their on-screen gates (no screen
+    /// model in the pool — the `ai_falling_star` precedent), so the arm
+    /// draws NOTHING — the twinkle's `Next(40)` delay roll is the arm's
+    /// only gameplay draw, on the pass's `UpdateProjectiles` stream.
+    fn ai_cloak_star(&mut self, world: &World, owner_top_y: Option<f32>, rng: &mut dyn tr_core::loot::DropRng) {
+        // `:23847-23852` — the Mana Cloak star's fall-through arm: once
+        // below its owner's top AND `ai[2] == 1` (the magic-hit proc's
+        // payload, `Projectile.cs:13849` — the retaliate spawn passes no
+        // ai2, so the hurt-spawned 723s never enter), the star collides and
+        // takes the manual fall-through path. `decidesManualFallThrough`
+        // has no slot field (the ProjData-only flag, the summon rows) —
+        // the `should_fall_through = false` half rides; the platform
+        // pass-through half is recorded in ANALYSIS.
+        if self.kind == MANA_CLOAK_STAR
+            && owner_top_y.is_some_and(|top| self.pos.y + self.h > top)
+            && self.ai[2] == 1.0
+        {
+            self.tile_collide = true;
+            self.should_fall_through = false;
+        }
+        // `:23853-23856` — the shared latch: below the target height the
+        // star turns solid (it phases through tiles until then).
+        if self.pos.y + self.h * 0.5 > self.ai[1] {
+            self.tile_collide = true;
+        }
+        // `:23881-23885` — the Item9 twinkle: `soundDelay = 20 + Next(40)`
+        // then the positional play, once per cooldown expiry. The roll
+        // rides the pass's `UpdateProjectiles` stream inline (the C# draws
+        // mid-AI); the play itself queues (`wants_sound`, the S1-E-21h
+        // batch convention — the drain plays after the attenuation gate).
+        if self.sound_delay == 0 {
+            self.sound_delay = 20 + rng.next_range(0, 40);
+            if self.wants_sound.is_none() {
+                self.wants_sound = Some((2, 9, self.pos.x, self.pos.y, 0.0));
+            }
+        }
+        // `:23914-23927` — alpha −15, floor 100 above the target / 0 at it;
+        // the spin accumulator feeds `localAI[0]`. Both spin writes read
+        // the PRE-movement `base.direction` (the C# updates it after
+        // `HandleMovement`, `:17016-17026` — the AI runs first).
+        self.alpha -= 15;
+        let floor = if self.pos.y + self.h * 0.5 >= self.ai[1] { 0 } else { 100 };
+        if self.alpha < floor {
+            self.alpha = floor;
+        }
+        let spin = (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        self.local_ai[0] += spin;
+        // `:23950-23953` — the generic rotation arm (the 503/1037/1049
+        // velocity-angle arm is not these kinds).
+        self.rot += spin;
+        // The movement: `HandleMovement`'s default tile arm (`:19849-
+        // 19853`) — the blocked hit kills. The latch above arms
+        // `tileCollide` only below the target height.
+        self.kill_step(world);
+        // `AutomaticallyChangesDirection` (`:17281-17288`, true for
+        // aiStyle 5) + `:17016-17026`: the direction follows velocity.X's
+        // sign AFTER the move — the next tick's spin reads it.
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+    }
+
     /// `AI()`'s aiStyle-21 music-note arm (`Projectile.cs:25585-25606`): the
     /// Magical Harp's 76/77/78. The rotation clamps `vx·0.1` to ±0.6; the
     /// speed decays by `ai[2]` per tick toward the `3·|ai[0]/2+0.5|` floor
@@ -15364,9 +15431,11 @@ impl ProjectilePool {
         }
     }
 
-    /// The spawn-site `ai[1]` payload setter — the star cloak's falling
-    /// stars carry `ai1 = position.Y` (`Player.cs:38478`, S1-C-7 wave B);
-    /// the plain `spawn` has no ai arguments (the `set_crit` convention).
+    /// The spawn-site `ai[1]` payload setter (the `set_crit` convention).
+    /// The star cloak's stars moved onto `spawn_with_data_ai_owned` with
+    /// W4-f48 (their `proj_data` rows landed, `Projectile.cs:7646-7658`);
+    /// the setter stays for the rowless-spawn callers.
+    #[allow(dead_code)]
     pub fn set_ai1(&mut self, slot: usize, value: f32) {
         if let Some(p) = self.slots.get_mut(slot) {
             p.ai[1] = value;
@@ -16933,9 +17002,13 @@ impl ProjectilePool {
                         // i17 slice; the Starfury star 9 + the Star Cannon
                         // star 955 (S1-P-i22) ride the fuller i22 arm (the
                         // tileCollide latches + the alpha ramps + the spin).
-                        // The other aiStyle-5 kinds (12/503/723-726/1037/
-                        // 1049/1133) have no rows yet — the arm stays
-                        // kind-gated so they keep the no-op fall-through.
+                        // W4-f48 — the five cloak stars (723-726/1133) ride
+                        // their own arm (`ai_cloak_star`, the shared
+                        // `:23845-23856` latch + the 100-floor alpha ramp +
+                        // the Item9 twinkle). The other aiStyle-5 kinds
+                        // (12/503/1037/1049) have no rows yet — the arm
+                        // stays kind-gated so they keep the no-op
+                        // fall-through.
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(
@@ -16944,6 +17017,17 @@ impl ProjectilePool {
                                 );
                             } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
                                 self.slots[i].ai_falling_star(world);
+                            } else if CLOAK_STARS.contains(&self.slots[i].kind) {
+                                // `Main.player[this.owner].Top.Y` — the
+                                // local player's top (the stars spawn
+                                // local-owned; a foreign owner reads an
+                                // inactive player, the golf precedent).
+                                let owner_top_y = if self.slots[i].owner == local_owner {
+                                    player.as_deref().map(|p| p.y)
+                                } else {
+                                    None
+                                };
+                                self.slots[i].ai_cloak_star(world, owner_top_y, rng);
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
@@ -44382,5 +44466,189 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+#[cfg(test)]
+mod w4_f48_cloak_star_tests {
+    //! W4-f48 — the star-cloak family's rows + aiStyle-5 arm
+    //! (`Projectile.cs:7646-7658` the shared `SetDefaults`,
+    //! `:23845-23856`/`:23914-23927`/`:23946-23953` the AI, the Item9
+    //! twinkle `:23881-23885`). The retaliate drain (`Player.cs:38469-
+    //! 38479`) now spawns through the data seam with arpen 25.
+    use super::*;
+
+    /// The scripted stream (the dragon `CensusRng` shape): every draw
+    /// recorded, `next_range` returns the scripted roll.
+    struct ScriptRng {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl ScriptRng {
+        fn with(rolls: &[i32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for ScriptRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            self.rolls.remove(0)
+        }
+        fn next_float(&mut self) -> f32 {
+            0.0
+        }
+    }
+
+    fn star(kind: u16) -> Projectile {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(kind, 0, 400.0, 100.0, 0.0, 10.0, 75, 5.0, 0.0, 300.0)
+            .unwrap();
+        pool.slots()[slot].clone()
+    }
+
+    #[test]
+    fn w4_f48_the_five_cloak_stars_share_the_set_defaults_row() {
+        // `Projectile.cs:7646-7658`: 24x24, aiStyle 5, friendly (the port
+        // default), penetrate 2, alpha 50, tileCollide false, the local
+        // immunity pair (true, 10); no damage-class flag.
+        for kind in CLOAK_STARS {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("the {kind} row"));
+            assert_eq!((d.w, d.h), (24.0, 24.0), "{kind}");
+            assert_eq!(d.ai_style, 5, "{kind}");
+            assert_eq!(d.penetrate, 2, "{kind}");
+            assert_eq!(d.alpha, 50, "{kind}");
+            assert!(!d.tile_collide, "{kind} — the AI arms it below ai1");
+            assert!(d.uses_local_immunity, "{kind}");
+            assert_eq!(d.local_hit_cooldown, 10, "{kind}");
+            assert!(!d.melee && !d.ranged && !d.magic, "{kind}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "{kind} — the stock life");
+        }
+    }
+
+    #[test]
+    fn w4_f48_the_latch_arms_tile_collide_only_below_the_target() {
+        // `:23853-23856`: `Center.Y > ai[1]` — the star phases through
+        // tiles until its centre passes the hurt player's position.Y.
+        let w = World::new("t".into(), 64, 64);
+        let mut p = star(STAR_VEIL_STAR);
+        // Centre 112 < ai1 300 — stays non-solid, moves freely.
+        let mut rng = ScriptRng::with(&[7, 7]);
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert!(!p.tile_collide);
+        assert_eq!(p.pos, Vec2::new(400.0, 110.0), "the free fall");
+        // Centre 312 > ai1 300 — solid from this tick.
+        p.pos.y = 300.0;
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert!(p.tile_collide);
+    }
+
+    #[test]
+    fn w4_f48_the_alpha_fade_floors_at_100_above_and_0_at_the_target() {
+        // `:23914-23927`: alpha −15 per tick, floor 100 while
+        // `Center.Y < ai[1]`, floor 0 at/below it.
+        let w = World::new("t".into(), 64, 64);
+        let mut p = star(STAR_CLOAK_STAR);
+        let mut rng = ScriptRng::with(&[7, 7]);
+        // 50 − 15 = 35 < 100 → the floor LIFTS it back to 100.
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert_eq!(p.alpha, 100, "the 100 floor above the target (:23917)");
+        // At the target the floor drops to 0.
+        p.pos.y = 300.0;
+        p.alpha = 10;
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert_eq!(p.alpha, 0, "10 − 15 → the 0 floor (:23918-23921)");
+    }
+
+    #[test]
+    fn w4_f48_the_spin_reads_the_pre_move_direction_and_updates_after() {
+        // `:23926`/`:23952`: localAI[0] and rotation both add
+        // (|vx|+|vy|)·0.01·direction with the PRE-movement direction;
+        // `:17016-17026` re-derives direction = sign(vx) AFTER the move.
+        let w = World::new("t".into(), 64, 64);
+        let mut p = star(BEE_CLOAK_STAR);
+        p.vel = Vec2::new(-3.0, 4.0);
+        let mut rng = ScriptRng::with(&[7, 7]);
+        // Tick 1: the spawn default direction +1 feeds the spin.
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert!((p.local_ai[0] - 0.07).abs() < 1e-6, "(3+4)·0.01·+1");
+        assert!((p.rot - 0.07).abs() < 1e-6);
+        assert_eq!(p.direction, -1, "the post-move sign update");
+        // Tick 2: the −1 direction feeds both accumulators.
+        p.pos = Vec2::new(400.0, 100.0);
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert!((p.local_ai[0]).abs() < 1e-6, "0.07 − 0.07");
+        assert!(p.rot.abs() < 1e-6);
+    }
+
+    #[test]
+    fn w4_f48_the_item9_twinkle_rolls_the_delay_and_queues_once() {
+        // `:23881-23885`: soundDelay == 0 → `20 + Next(40)` + the Item9
+        // play. The roll rides the pass stream; the play queues
+        // (`wants_sound`, the S1-E-21h convention). A live cooldown draws
+        // nothing.
+        let w = World::new("t".into(), 64, 64);
+        let mut p = star(STAR_VEIL_STAR);
+        let mut rng = ScriptRng::with(&[13]);
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert_eq!(rng.draws, vec![(0, 40)], "the one Next(40)");
+        assert_eq!(p.sound_delay, 33, "20 + 13");
+        assert_eq!(p.wants_sound, Some((2, 9, 400.0, 100.0, 0.0)));
+        // The cooldown ticks (the pool head does it); a positive delay
+        // consumes no draw.
+        p.sound_delay = 5;
+        p.wants_sound = None;
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert_eq!(rng.draws.len(), 1, "no second roll while cooling");
+        assert!(p.wants_sound.is_none());
+    }
+
+    #[test]
+    fn w4_f48_the_mana_star_fall_through_needs_ai2_and_the_owner_top() {
+        // `:23847-23852`: 723 only, `Bottom.Y > player.Top.Y` AND
+        // `ai[2] == 1` — the magic-proc payload. The hurt-spawned stars
+        // carry ai2 = 0 and never enter.
+        let w = World::new("t".into(), 64, 64);
+        let mut p = star(MANA_CLOAK_STAR);
+        p.pos.y = 300.0; // bottom 324 > owner top 300
+        let mut rng = ScriptRng::with(&[7, 7, 7]);
+        // ai2 = 0 (the retaliate spawn): no fall-through write.
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert!(p.tile_collide, "the shared latch still arms (centre 312 > 300)");
+        assert!(!p.should_fall_through);
+        // ai2 = 1 + above the owner: the arm runs (the flag stays false).
+        let mut q = star(MANA_CLOAK_STAR);
+        q.pos.y = 300.0;
+        q.ai[2] = 1.0;
+        q.ai_cloak_star(&w, Some(200.0), &mut rng);
+        assert!(q.tile_collide && !q.should_fall_through);
+        // No owner resolved: the arm's read is skipped.
+        let mut r = star(MANA_CLOAK_STAR);
+        r.pos.y = 300.0;
+        r.ai[2] = 1.0;
+        r.ai_cloak_star(&w, None, &mut rng);
+        assert!(r.tile_collide, "only the shared latch");
+    }
+
+    #[test]
+    fn w4_f48_the_solid_star_dies_on_a_blocked_move() {
+        // `HandleMovement`'s default tile arm (`:19849-19853`): below the
+        // target the star is solid and a blocked step kills it.
+        let mut w = World::new("t".into(), 64, 64);
+        // A floor row at tile y 20 (world y 320).
+        for tx in 0..64 {
+            if let Some(t) = w.tile_mut(tx, 20) {
+                t.kind = 1;
+                t.flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut p = star(SNAKE_CLOAK_STAR);
+        p.pos = Vec2::new(320.0, 294.0); // centre 306 > ai1 300 → solid
+        p.vel = Vec2::new(0.0, 10.0); // lands inside the floor this step
+        let mut rng = ScriptRng::with(&[7]);
+        p.ai_cloak_star(&w, Some(300.0), &mut rng);
+        assert!(p.tile_collide);
+        assert!(!p.active, "the blocked move kills (:19852)");
+        assert_eq!(p.time_left, 0);
     }
 }

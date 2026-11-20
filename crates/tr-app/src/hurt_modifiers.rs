@@ -189,17 +189,26 @@ pub fn drain_retaliate(
             dx += rng.next_range(-100, 101) as f32;
             let scale = 23.0 / (dx * dx + dy * dy).sqrt();
             // `:38478`: `NewProjectile(.., type, num12, 5f, whoAmI, 0f,
-            // position.Y)` — kb 5, ai1 = the player's position.Y.
-            if let Some(slot) = pool.spawn(
+            // position.Y)` — kb 5, ai1 = the player's position.Y. W4-f48:
+            // the five kinds now carry `proj_data` rows (`Projectile.cs:
+            // 7646-7658` — the 24x24 box, penetrate 2, alpha 50, the local
+            // immunity 10), so the spawn routes through the data seam (the
+            // C# `NewProjectile` runs `SetDefaults`); `armorPenetration =
+            // 25` (`:7657`) rides the typed setter (the gun_launch
+            // precedent — no `ProjData` field).
+            if let Some(slot) = pool.spawn_with_data_ai_owned(
                 kind,
                 owner,
-                Vec2::new(x, y),
-                Vec2::new(dx * scale, dy * scale),
+                x,
+                y,
+                dx * scale,
+                dy * scale,
                 damage_out,
                 5.0,
-                false,
+                0.0,
+                req.y,
             ) {
-                pool.set_ai1(slot, req.y);
+                pool.set_armor_penetration(slot, 25);
             }
         }
     }
@@ -447,6 +456,16 @@ mod tests {
         assert_eq!(s0.damage, 75);
         assert_eq!(s0.knock_back, 5.0);
         assert_eq!(s0.pos, Vec2::new(p.x, p.y - 500.0));
+        // W4-f48: the data-carrying spawn (`Projectile.cs:7646-7658`) —
+        // the 24x24 box, penetrate 2, alpha 50, tileCollide off, the local
+        // immunity 10 and the arpen-25 setter (`:7657`).
+        assert_eq!((s0.w, s0.h), (24.0, 24.0));
+        assert_eq!(s0.penetrate, 2);
+        assert_eq!(s0.alpha, 50);
+        assert!(!s0.tile_collide);
+        assert!(s0.uses_local_immunity);
+        assert_eq!(s0.local_hit_cooldown, 10);
+        assert_eq!(s0.armor_penetration, 25);
         // dx = center.x - x, dy = center.y - (y-500); speed 23.
         let (pcx, pcy) = p.center();
         let dx = pcx - p.x;

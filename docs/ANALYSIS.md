@@ -18656,6 +18656,36 @@ expert scaling, the source order, the dismount drain) + `player.rs`'s
 `s1_c_7b_*` Г—4 (the crit maths, the queue snapshot, the dismount set gate,
 the equip arms/clears).
 
+### The cloak stars land (W4-f48, 2026-11-21)
+
+The retaliate block's five star kinds (723/724/725/726/1133) gain their
+`proj_data` row (`Projectile.cs:7646-7658` вЂ” one shared arm: 24Г—24,
+aiStyle 5, penetrate 2, alpha 50, `tileCollide = false`, local immunity
+10) and their aiStyle-5 AI arm (`projectile.rs::ai_cloak_star`,
+`Projectile.cs:23845-23856`/`:23914-23927`/`:23946-23953`): the
+`Center.Y > ai[1]` solidity latch, the 723 fall-through arm (owner-top +
+`ai[2] == 1`, the magic-proc payload `:13849` вЂ” the hurt-spawned stars
+carry ai2 = 0 and never enter), the alpha в€'15 ramp with the 100/0 floors,
+the spin accumulators reading the PRE-movement direction (the C# updates
+`base.direction` after `HandleMovement`, `:17016-17026`), and the
+`kill_step` default tile arm. The drain spawns through
+`spawn_with_data_ai_owned` (ai1 = position.Y as before) + the arpen-25
+setter (`:7657`, no `ProjData` field вЂ” the gun_launch precedent); the
+`set_ai1` setter stays `#[allow(dead_code)]` for rowless callers.
+Deviations: the dust/gore trail rolls (`:23988-24031`) are SKIPPED with
+their on-screen gates (no screen model in the pool вЂ” the
+`ai_falling_star` precedent), so the arm's only gameplay draw is the
+Item9 twinkle's `soundDelay = 20 + Next(40)` (`:23881-23885`) on the
+`UpdateProjectiles` stream, the play queued through `wants_sound` (the
+S1-E-21h batch convention); the 723's `decidesManualFallThrough = true`
+half has no slot field (the `should_fall_through = false` write rides;
+the platform pass-through is inert); the Kill-time dust/gore/star-drop
+burst (`:75159-75201`, the 4143 Star in a Bottle drop on the ai2 = 1
+proc) rides the death-effects waves; the draw layer (`Main.cs:31333+`,
+the Extra[91] glow trail) rides the tile-draw waves. 7
+`w4_f48_cloak_star_tests` witnesses + the strengthened star-spawn row
+assertions (written, NOT run вЂ” code-only mode).
+
 ## The respawn fidelity (R-03-5, 2026-11-13)
 
 `Player.Spawn`'s revive half (`Player.cs:37598-37668`) is ported into
