@@ -497,6 +497,9 @@ re-implement something that already exists, or to port the wrong file.
 | `NetMessage.SendData` case 23/28 fan-out (`NetMessage.cs:1719-1762`, `:102-107`) | `app/net_npc_sync.rs::send_state` / `server_relay_strike` | done (S1-I-4b) |
 | `NPC.AddBuff`/`DelBuff`/`RequestBuffRemoval` send sites (`NPC.cs:89926-90023`) | `app/net_npc_sync.rs::add_buff`/`del_buff`/`request_buff_removal` | done (S1-I-4b — `137` gated off, `BuffID.cs:48` empty set) |
 | `NPC.ApplyEelWhipDoT` (`NPC.cs:91843-91862`) | `app/net_npc_sync.rs::eel_whip_dot` | done (S1-I-4b) |
+| `Player.TrySyncingInput` (`Player.cs:6852-6916`) + `Main.TrySyncingMyPlayer` (`Main.cs:17545-17703`) + `Main.UpdateClient`'s counter (`Main.cs:64522-64536`) | `app/net_player_sync.rs` (`try_syncing_input`/`try_syncing_my_player_tail`/`update_client_beat`/`ClientClone`) → WIRED by `app/netglue.rs::player_sync_cadence` + `drain_player_outbox` | done (W4-c28 SWAP — the old 10 Hz change-test + 42-call heartbeat deleted; code-only, witnesses written not run) |
+| `ItemSlot`/`ChestUI`/`ItemSorting`'s `32 SyncChestItem` send sites (`ItemSlot.cs:1014`/`:1750`/`:808`/`:3359-3362`, `ChestUI.cs:813-819`, `ItemSorting.cs:1673-1678`, `NetMessage.cs:864-877`) | `app/netglue.rs::send_chest_item`/`send_chest_item_diff` + the `app/clicks.rs`/`chest.rs` mutation sites | done (W4-c28 — the client send path the port lacked; event-driven per changed slot) |
+| `WorldGen.KillTile`/`PlaceTile`'s `SendData(17)`/`SendTileSquare` (`Player.cs:53783`/`:40152`, `WorldGen.cs:63937`) | `app/netglue.rs::request_edit` (event-driven immediate, the editing.rs sites) | done (pre-existing; W4-c28 witness pins the no-cadence-tick send) |
 
 ## Content decoding (`crates/tr-content`) — ReLogic/XNA container formats
 

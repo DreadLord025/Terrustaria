@@ -28669,6 +28669,85 @@ Verification: code-only mode — no compiler/test run this wave; the decision
 layers' landed per-site tests (`net_npc_sync` 20, `net_proj_sync` 10) plus the
 four new wiring witnesses are the tests-as-code. C# cross-reads cited per block.
 
+## The player-state / container / tile-edit send cadences (W4-c28, code-only mode, 2026-11-21)
+
+S1-I-4's remaining send families. The projectile cadence already landed (wave C/D,
+`net_proj_sync` wired at 60 Hz); this wave maps the player-state, container and
+tile-edit cadences and swaps the player-state one into the live loop.
+
+**Player-state (`net_player_sync.rs`, the SWAP).** The C# client fans its own state
+over three paths, ported as pure decision functions and drained through the existing
+wires at 10 Hz (the decisions run at 60 Hz on `App.net_sync_cadence_timer`):
+- `Player.TrySyncingInput` (`Player.cs:6852-6916`, called `:6732`): the 12-field
+  compare vs `Main.clientPlayer`; ONE `13` per changed tick.
+- `Main.TrySyncingMyPlayer` (`Main.cs:17545-17703`, called `:17192` at netMode 1):
+  the `5` array diffs FIRST (`:17547-17574`), then the scalar tail in source order —
+  `33` close-flush, `40`, `36`, `16`/`42` (60-tick `netLife`/`netMana` throttles),
+  `50`+`13`, `99`/`115`, three separate `13`s (direction/shield/snapstone), `138`.
+- `Main.UpdateClient` (`Main.cs:64516-64553`): `netPlayCounter++` wrap `>3600`;
+  `%420` → one `13`; `%900` → `36`,`16`,`40` in that order.
+The old 10 Hz change-test + 42-call heartbeat (`netglue.rs::net_tick`, `net_beat`,
+`NET_HEARTBEAT_TICKS`) is DELETED — wiring both would double-send.
+
+**Fidelity decisions (re-derived from source, over the in-flight draft):**
+1. `ClientClone` starts at `new Player()` (`Main.cs:67158`): `statLife=statLifeMax=100`
+   (`Player.cs:1924-1928`), `statMana=0`/`statManaMax=20` (`:1930`+ctor), `direction=1`
+   (`Entity.cs:20`), `chest=-1` (`:2876`), `talkNPC=-1` (ctor), `MinionAttackTargetNPC=-1`
+   (`:3008`) — NOT an all-zero Default, so a zero-hp player compares different on tick 1.
+2. The `33` close body carries the LIVE (negative) chest index, so the writer's
+   `number > -1` coord read (`NetMessage.cs:884-889`) never runs — x/y are 0/0. The
+   named arm's text reads `Main.chest[player.chest]` — the CLONE's chest (`Main.cs:17581`),
+   with the null-slot nameless fallback (`:17585-17587`).
+3. Missing clone-item entries compare as AIR (`clientCloneItem` starts `new Item()`,
+   `Player.cs:54517-54523`) — kills the join-time `5`-spam on every empty slot.
+4. The render-extension `13` snapshots at DECISION time, not per 60 Hz step until the
+   10 Hz drain (else 6 duplicate sends per change).
+5. `chest::tick_open`'s S1-P-i43 close-flush is REMOVED — the cadence owns the `33`;
+   `HandleBeingInChestRange` (`Player.cs:31015-31097`) has no SendData. The
+   `prev_synced_chest` snapshot still updates (the open-click flush's name fallback).
+
+**Container (`32 SyncChestItem`, event-driven).** The port had the host-side `32`
+handler but NO client send path. Wired the C#'s per-changed-slot sends:
+`send_chest_item` (the `NetMessage.cs:864-877` body read back from the store;
+client-only, world chests only — banks ride the `5` sync) + `send_chest_item_diff`
+(the bulk-pass stamp diff, `ChestUI.cs:813-819` / `ItemSorting.cs:1673-1678`). Sites:
+`ItemSlot.cs:1014` left-click, `:1750` right-click split, `:808` shift-take,
+`:3359-3362` SwapEquip tail, the HasItemSwap cycle; ChestUI's bulk transfers
+(LootAll/DepositAll/QuickStack/Restock via the post-pass diff) and SortChest;
+`chest::try_placing_from`'s shift-deposit (pre-pass snapshot diff).
+
+**Tile-edit (event-driven immediate).** `WorldGen.KillTile`/`PlaceTile`'s
+`SendData(17)`/`SendTileSquare` fire at the EDIT SITE (`Player.cs:53783`/`:40152`,
+`WorldGen.cs:63937`), not on a timer. The port's `request_edit` already sends the
+client `Edit` immediately (`client.send` pushes straight to the wire buffer); the
+10 Hz `net_tick` carries no tile-edit batch. A witness pins the no-cadence-tick send.
+
+**Deliberate deviations / unported bodies (recorded, not silent):**
+1. **The render-extension `13`.** The C# server simulates every peer's movement from
+   the relayed controls and derives anim/hp locally; the port simulates remote players
+   nowhere, so a change in the wire body's position/anim/hp extension arms one more
+   `13` (a superset — never a missing update). The extension fields ride `net::PlayerState`.
+2. **Unported control channels.** `controlDownHold`/`controlDash`/`isOperatingAnotherEntity`/
+   `shieldRaised`/`accSnappingStoneLightUp` have no port input channel — they ride their
+   defaults in `ControlState` (the `13` bits stay false). `controlUseItem` reads the held
+   left button (`mouse_down || mine_down`).
+3. **The `36 SyncPlayerZone` / `18 SetTime` BODIES** are W4-c27's lane (`net.rs`'s
+   `PlayerZone`/`SetTime`); this module carries the send DECISIONS only. `35`/`40`/`84`/
+   `99`/`115`/`138`/`142`/`122` have no port wire yet — the decisions are recorded, the
+   sends land with their bodies (M6-NET-5). The zone BitsBytes pack the ported zones
+   (`zone_bytes`); unported zones (meteor/beach/graveyard/…) ride 0.
+4. **The `5` array layout** is the port's u8 wire subset (`client_send_identity`'s
+   layout), NOT the C#'s full `PlayerItemSlotID` (58 grid + mouse + loadouts). The port's
+   layout collides bank3 slot 0 with TRASH (both 179); `net_item_at_wire_slot` resolves
+   179 to the trash, so bank3[0] is skipped in the diff (the id layout is c27's lane).
+   Trash emits between bank2 and bank3 per `Main.cs:17556-17567`.
+5. **The minion targets** (`99`/`115`) and the loadout `147` decision helpers are ported
+   but their bodies/callers are unported (`MinionRestTargetPoint`/`MinionAttackTargetNPC`
+   ride -1/(0,0); the port has no loadouts).
+Verification: code-only mode — no cargo/rustc/tests run; the `net_player_sync` per-site
+tests + the netglue cadence/container/tile-edit witnesses are the tests-as-code
+(WRITTEN NOT RUN). C# cross-reads cited per block.
+
 ## The aiStyle-10 family (S1-D-3-s10, code-only mode, 2026-11-18)
 `crates/tr-app/src/npc_ai_style10.rs` (`style10_ai`) ports `NPC.AI()`'s
 `if (this.aiStyle == 10)` arm (`NPC.cs:21572-21918`) вЂ” the Cursed Skull
