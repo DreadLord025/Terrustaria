@@ -63,6 +63,7 @@ pub mod wld;
 pub mod world;
 pub mod worldgen;
 pub mod worldgen_dust;
+pub mod worldgen_dust_tile;
 pub mod worldgen_dust_wall;
 
 pub use tile::Tile;
