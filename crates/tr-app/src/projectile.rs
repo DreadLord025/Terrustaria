@@ -22252,6 +22252,89 @@ impl ProjectilePool {
         (idle_spot, idle_rotation)
     }
 
+    /// W4-a9 — `AI_164_StormTigerGem` (`Projectile.cs:46593-46644`, the
+    /// dispatch `:36619-36622`): the Storm Tiger Staff's gem (831) and
+    /// Abigail's counter (970), the style's ONLY SetDefaults rows
+    /// (`:8067-8081`/`:9182-9196`). A pool-side step — the group index
+    /// reads the sibling slots (`AI_GetMyGroupIndexAndFillBlackList`,
+    /// `:51895-51911`; neither kind trips the 759/1119 cohort gates).
+    ///
+    /// RNG: ZERO draws — the machine is pure state + the home pin.
+    /// Skips (ANALYSIS): the 970 upgrade cue `SoundID.AbigailUpgrade`
+    /// (`:46621`) is a `CreateTrackable` custom style (`SoundID.cs:1702`)
+    /// with no `(id, style)` row in the pool's legacy sound queue — the
+    /// `localAI[0]` one-shot latch stays, the play is the documented skip.
+    /// The `_ai164_blacklistedTargets` static list (`:512`/`:46640-46641`)
+    /// is never `.Add`ed in the C# — it folds to EMPTY (the 156 precedent).
+    fn storm_tiger_gem_step(
+        &mut self,
+        i: usize,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        // `:46595` — `Main.player[this.owner]`; no owner-inactive kill in
+        // the C# arm — an unresolved owner folds the machine away (the
+        // bat_of_light_step precedent) and the dispatch still integrates.
+        let Some(pl) = player else {
+            return;
+        };
+        let kind = self.slots[i].kind;
+        // `:46596` — the localAI[1] tick runs for BOTH kinds, ahead of the
+        // type gates.
+        self.slots[i].local_ai[1] += 1.0;
+        if kind == 831 {
+            // `:46599-46606` — death clears the summon flag; the live flag
+            // pins `timeLeft = 2`.
+            if pl.dead {
+                pl.storm_tiger = false;
+            }
+            if pl.storm_tiger {
+                self.slots[i].time_left = 2;
+            }
+            // `:46607-46614` — the 4-tick pulse, wrapping at the literal 6.
+            let p = &mut self.slots[i];
+            p.frame_counter += 1;
+            if p.frame_counter >= 4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= 6 {
+                    p.frame = 0;
+                }
+            }
+        }
+        if kind == 970 {
+            // `:46618-46622` — the upgrade one-shot: a second counter in
+            // the owner's count latches localAI[0] = 1 and plays the
+            // AbigailUpgrade cue (the documented skip, the doc block).
+            if pl.owned_projectile_counts[kind as usize] > 1
+                && self.slots[i].local_ai[0] == 0.0
+            {
+                self.slots[i].local_ai[0] = 1.0;
+            }
+            // `:46623-46630` — the counter's keep-alive pair.
+            if pl.dead {
+                pl.abigail_minion = false;
+            }
+            if pl.abigail_minion {
+                self.slots[i].time_left = 2;
+            }
+            // `:46631-46638` — the same 4-tick 6-frame pulse.
+            let p = &mut self.slots[i];
+            p.frame_counter += 1;
+            if p.frame_counter >= 4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= 6 {
+                    p.frame = 0;
+                }
+            }
+        }
+        // `:46640-46643` — the blacklist clear (EMPTY, the doc block), the
+        // group index, and the home pin.
+        let (index, total) = self.group_index_and_total(i);
+        let home = ai_164_home_location(pl, index, total);
+        self.slots[i].set_center(home);
+    }
+
     /// `((ProjectileKey)this.ai[0]).TryGetActive(ProjectileID.Sets
     /// .StardustDragon, out proj)` + the 625/626/627 type gate
     /// (`Projectile.cs:43007-43008`, `ProjectileKey.cs:96-108`): the key's
