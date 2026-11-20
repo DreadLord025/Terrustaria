@@ -4383,12 +4383,14 @@ mod tests {
                 shimmer: false,
                 release_owner: 255,
             })),
-            // The life width switch: the > 127 and > 32767 arms.
+            // The life width switch: the > 127 and > 32767 arms. Kind 50 =
+            // TheDestroyer (max_hp 80000): decode re-derives life_max from the
+            // kind, so the width-4 arm survives the re-encode byte-equality.
             S2c::NpcInfo(Box::new(NpcInfo {
                 slot: 4,
                 generation: 1,
                 spawn: true,
-                kind: -1,
+                kind: 50,
                 x: 0.0,
                 y: 0.0,
                 vx: 0.0,
@@ -4399,7 +4401,7 @@ mod tests {
                 sprite_right: false,
                 life_full: false,
                 hp: 9000,
-                life_max: 40000,
+                life_max: 80000,
                 ai: [0.0; 4],
                 spawned_from_statue: false,
                 difficulty: 1.0,
@@ -4617,7 +4619,7 @@ mod tests {
         let full = NpcInfo { life_full: true, hp: 25, ..n };
         let ff = S2c::NpcInfo(Box::new(full)).encode();
         assert_eq!(ff.len(), f.len() - 2);
-        assert_eq!(ff[3 + 22], 0xE9); // flags1 b7 set
+        assert_eq!(ff[3 + 20], 0xE9); // flags1 b7 set (body: 2+16+2 header)
     }
 
     #[test]
@@ -4648,8 +4650,8 @@ mod tests {
         };
         let f = S2c::NpcInfo(Box::new(guide)).encode();
         // flags2: b1 statue + b2 difficulty + b3 spawn + b4 shimmer = 0x1E.
-        assert_eq!(f[3 + 23], 0x1E);
-        let tail = &f[3 + 24..]; // after flags2: no ai, then netID
+        assert_eq!(f[3 + 21], 0x1E);
+        let tail = &f[3 + 22..]; // after flags2: no ai, then netID
         assert_eq!(&tail[..2], &5i16.to_le_bytes());
         assert_eq!(&tail[2..6], &2.0f32.to_le_bytes()); // difficulty
         assert_eq!(tail[6], 2); // lifeMax 250 > 127 → short width
@@ -4658,7 +4660,7 @@ mod tests {
         // > 32767 → width 4 + int (`NetMessage.cs:751-753`).
         let big = NpcInfo { kind: -1, hp: 40000, life_max: 40000, ..guide };
         let bf = S2c::NpcInfo(Box::new(big)).encode();
-        let bt = &bf[3 + 24..];
+        let bt = &bf[3 + 22..];
         assert_eq!(bt[6], 4);
         assert_eq!(&bt[7..11], &40000i32.to_le_bytes());
         // The catchable trailing byte: protocol 22 = Goldfish, vanilla 55
@@ -4671,8 +4673,8 @@ mod tests {
         // The player-count byte (flags2 b0) is consumed on decode
         // (`MessageBuffer.cs:1589-1593`) even though the port never sends it.
         let mut body = f[3..].to_vec();
-        body[23] |= 0x01; // set flags2 b0
-        body.insert(26, 3); // the byte rides after the netID, before difficulty
+        body[21] |= 0x01; // set flags2 b0
+        body.insert(24, 3); // the byte rides after the netID, before difficulty
         let mut r = NetReader::new(&body);
         let d = NpcInfo::read_from(&mut r).expect("decode with player count");
         assert_eq!(d.kind, 5);
