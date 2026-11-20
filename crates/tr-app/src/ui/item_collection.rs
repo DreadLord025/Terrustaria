@@ -70,7 +70,13 @@ pub fn grid_parameters(
 }
 
 /// `GetItemSlotHitbox` (`:75-79`): slot `i`'s 44×44 rect in the visible window.
-pub fn item_slot_hitbox(start_x: i32, start_y: i32, start_index: i32, i: i32, per_line: i32) -> [i32; 4] {
+pub fn item_slot_hitbox(
+    start_x: i32,
+    start_y: i32,
+    start_index: i32,
+    i: i32,
+    per_line: i32,
+) -> [i32; 4] {
     let num = i - start_index;
     [
         start_x + num % per_line * SLOT,
@@ -136,7 +142,11 @@ mod tests {
     fn the_size_pins_columns_and_min_height() {
         assert_eq!(update_size(400.0, 20), (9, 132.0));
         assert_eq!(update_size(440.0, 10), (10, 44.0));
-        assert_eq!(update_size(43.9, 5), (0, 0.0), "under one column: no layout");
+        assert_eq!(
+            update_size(43.9, 5),
+            (0, 0.0),
+            "under one column: no layout"
+        );
         assert_eq!(inventory_scale(), 3465.0 / 4095.0);
     }
 

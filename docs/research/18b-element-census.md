@@ -142,6 +142,14 @@ ports — the lane keeps them (no re-split) and ports only their *missing halves
 | 33 | `UIHeader` | LANDED (S1-E-17 draw + `ui/chrome_elements.rs::HeaderText` setter) |
 | 34 | `UIHorizontalSeparator` | LANDED (ctor pick + hit override `ui/chrome_elements.rs`; draw pre-landed) |
 
+**Lane closed 2026-11-20:** all 13 rows LANDED across batches 1-3
+(`484c2529`/`eefc3b05`/`53912fa0`), 8 anchors + 21 witness tests written not
+run; docs landed (ANALYSIS "The UIElement band d82", PORT_MAP row, ROADMAP
+module-18 row, research/18 annotations). **Cross-lane note:** d81's batch 1
+(`0b815a62`) independently ports `UICyclingImage` + `UICreativePowerButton`
+in `ui/elements.rs` (pushed after this census); the merge owner keeps one
+copy — see ANALYSIS.
+
 ## Conventions (landed style, per research/18 + S1-E-26 wave B)
 
 Code-only lane: ports are **pure helpers + tests-as-code** (written, not run —

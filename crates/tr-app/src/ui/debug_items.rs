@@ -118,7 +118,11 @@ pub fn position_items(
     horizontal_end: f32,
     vertical: f32,
 ) -> ([f32; 3], Vec<f32>) {
-    let container = [horizontal_start, horizontal_end - horizontal_start, vertical];
+    let container = [
+        horizontal_start,
+        horizontal_end - horizontal_start,
+        vertical,
+    ];
     let aligns = (0..count)
         .map(|i| {
             if count > 1 {
@@ -135,10 +139,10 @@ pub fn position_items(
 /// first-5 inventory band, the ammo band (slots 54-57), the first-3 armor band,
 /// the vanity/accessory band (armor 3-9). Each is `(start, end, vertical)`.
 pub const LOADOUT_BANDS: [[f32; 3]; 4] = [
-    [0.1, 0.3, 0.75],  // `:88` list  (inventory 0-4)
+    [0.1, 0.3, 0.75],   // `:88` list  (inventory 0-4)
     [0.35, 0.45, 0.75], // `:89` list2 (inventory 54-57)
     [0.65, 0.75, 0.25], // `:90` list3 (armor 0-2)
-    [0.6, 0.9, 0.75],  // `:91` list4 (armor 3-9)
+    [0.6, 0.9, 0.75],   // `:91` list4 (armor 3-9)
 ];
 
 #[cfg(test)]
@@ -206,4 +210,3 @@ mod tests {
         assert_eq!(LOADOUT_BANDS[3], [0.6, 0.9, 0.75]);
     }
 }
-

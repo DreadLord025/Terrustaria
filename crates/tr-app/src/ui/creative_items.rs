@@ -102,8 +102,14 @@ mod tests {
         assert_eq!(strip_size(11), (440.0, 40.0, 4.0));
         assert_eq!(tab_left(3), 120.0);
         assert_eq!(ColorTheme::default(), ColorTheme::Blue);
-        assert_eq!(ColorTheme::Blue.tabs_asset(), "Images/UI/Creative/Infinite_Tabs_B");
-        assert_eq!(ColorTheme::Cyan.tabs_asset(), "Images/UI/Creative/Infinite_Tabs_B_2");
+        assert_eq!(
+            ColorTheme::Blue.tabs_asset(),
+            "Images/UI/Creative/Infinite_Tabs_B"
+        );
+        assert_eq!(
+            ColorTheme::Cyan.tabs_asset(),
+            "Images/UI/Creative/Infinite_Tabs_B_2"
+        );
         assert_eq!(icon_color(true), [255, 255, 255, 255]);
         // White * 0.5 truncates (`ui::color::mul`).
         assert_eq!(icon_color(false), crate::ui::color::mul([255; 4], 0.5));

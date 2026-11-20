@@ -271,7 +271,10 @@ mod tests {
         assert_eq!(description_text(true, 0, false, 0, 0, &mut mem), "???");
         // A live slot with numbers shows the pair and forgets the memory.
         mem.remember(8, 50, 100);
-        assert_eq!(description_text(true, 8, true, 60, 100, &mut mem), "(60/100)");
+        assert_eq!(
+            description_text(true, 8, true, 60, 100, &mut mem),
+            "(60/100)"
+        );
         assert_eq!(mem.item_id, 0);
         // No numbers → X; a carried item forces a forget first.
         assert_eq!(description_text(false, 0, false, 0, 0, &mut mem), "???");
@@ -281,17 +284,34 @@ mod tests {
     /// The sacrifice outcome + rebuild gate (`:441-458`, `:505-529`).
     #[test]
     fn the_sacrifice_outcome_and_rebuild_gate() {
-        let (anim, done, rem) = sacrifice_outcome(SacrificeResult::SacrificedAndDone, 8, 50, 50, 100);
+        let (anim, done, rem) =
+            sacrifice_outcome(SacrificeResult::SacrificedAndDone, 8, 50, 50, 100);
         assert!(anim && done);
         assert_eq!(rem, Some((8, 100, 100)));
-        let (anim2, done2, _) = sacrifice_outcome(SacrificeResult::SacrificedButNotDone, 8, 50, 10, 100);
+        let (anim2, done2, _) =
+            sacrifice_outcome(SacrificeResult::SacrificedButNotDone, 8, 50, 10, 100);
         assert!(anim2 && !done2);
-        assert_eq!(sacrifice_outcome(SacrificeResult::CannotSacrifice, 8, 50, 0, 100), (false, false, None));
+        assert_eq!(
+            sacrifice_outcome(SacrificeResult::CannotSacrifice, 8, 50, 0, 100),
+            (false, false, None)
+        );
         let mut checked = -1;
-        assert!(needs_rebuild(0, &mut checked, false), "the first edit rebuilds");
-        assert!(!needs_rebuild(0, &mut checked, false), "no edit: no rebuild");
-        assert!(needs_rebuild(1, &mut checked, false), "a new edit id rebuilds");
-        assert!(needs_rebuild(1, &mut checked, true), "a tracker swap forces it");
+        assert!(
+            needs_rebuild(0, &mut checked, false),
+            "the first edit rebuilds"
+        );
+        assert!(
+            !needs_rebuild(0, &mut checked, false),
+            "no edit: no rebuild"
+        );
+        assert!(
+            needs_rebuild(1, &mut checked, false),
+            "a new edit id rebuilds"
+        );
+        assert!(
+            needs_rebuild(1, &mut checked, true),
+            "a tracker swap forces it"
+        );
         assert_eq!(show_sacrifices(Page::InfiniteItemsResearch), true);
         assert_eq!(show_sacrifices(Page::InfiniteItemsPickup), false);
     }
