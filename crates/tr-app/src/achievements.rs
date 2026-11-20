@@ -425,8 +425,51 @@ impl AchievementManager {
 
     /// The `CustomFlagCondition` hook shape (`AchievementsHelper.cs:347`'s
     /// `GetCondition("I_AM_LOOT", "Peek").Complete()`).
+    ///
+    /// W4-c36: this broadcast form completes EVERY row listening on the flag
+    /// — the C# hooks never broadcast; they name ONE row's condition through
+    /// [`Self::complete_condition`]. Kept for the event-shape callers; the
+    /// `HandleSpecialEvent`/`HandleOnEquip`/`OnPlayerEnteredWorld` sites use
+    /// the row-targeted form.
     pub fn notify_custom(&mut self, flag: &'static str) -> Option<&'static str> {
         self.notify(CondKind::Custom(flag))
+    }
+
+    /// `Main.Achievements.GetCondition(name, conditionName).Complete()`
+    /// (`AchievementManager.cs:214-222` + `AchievementCondition.cs:37-47`):
+    /// complete ONE named condition of ONE row — the shape every
+    /// `AchievementsHelper.HandleSpecialEvent` arm (`AchievementsHelper.cs:
+    /// 282-380`), `HandleOnEquip` (`:239-280`) and `OnPlayerEnteredWorld`
+    /// (`:94-198`) uses. `Complete()` is idempotent and sets the tracker to
+    /// its maximum; the row completes (save + event, `AchievementManager.cs:
+    /// 180-187`) only when its LAST condition closes. An unknown row or
+    /// condition name is a no-op (the C# `GetCondition` would throw; the
+    /// port's callers name shipped rows only).
+    pub fn complete_condition(&mut self, row: &str, cond: &str) -> Option<&'static str> {
+        let a = self.list.iter_mut().find(|a| a.name == row)?;
+        if a.completed {
+            return None;
+        }
+        {
+            let c = a.conditions.iter_mut().find(|c| c.name == cond)?;
+            if c.completed {
+                return None;
+            }
+            // `AchievementCondition.Complete()` (`:37-47`): the tracker jumps
+            // to its max, the fraction clears, the flag latches.
+            c.value = c.max;
+            c.frac = 0.0;
+            c.completed = true;
+        }
+        if a.is_completed() {
+            a.completed = true;
+            let name = a.name;
+            self.save();
+            self.completed_events.push(name);
+            Some(name)
+        } else {
+            None
+        }
     }
 
     /// `((CustomIntCondition)Main.Achievements.GetCondition(row, name)).Value++`
@@ -902,6 +945,51 @@ mod tests {
         // The queue drained — a repeat kill fires nothing.
         assert_eq!(m.notify(CondKind::NpcKilled(50)), None);
         assert!(m.take_completed_events().is_empty());
+    }
+
+    /// W4-c36: `GetCondition(row, cond).Complete()` names ONE row — the
+    /// `HandleSpecialEvent` arms never broadcast. A "Use" completion on
+    /// DRINK_BOTTLED_WATER_WHILE_DROWNING must leave STAR_POWER/GET_A_LIFE/
+    /// TOPPED_OFF open (the old `notify_custom("Use")` closed all four).
+    #[test]
+    fn the_row_targeted_complete_closes_only_the_named_row() {
+        let mut m = AchievementManager::registry();
+        assert_eq!(
+            m.complete_condition("DRINK_BOTTLED_WATER_WHILE_DROWNING", "Use"),
+            Some("DRINK_BOTTLED_WATER_WHILE_DROWNING")
+        );
+        for open in ["STAR_POWER", "GET_A_LIFE", "TOPPED_OFF", "NOT_THE_BEES"] {
+            assert!(
+                !m.list.iter().any(|a| a.name == open && a.completed),
+                "{open} stays open"
+            );
+        }
+        // Idempotent: a second Complete() fires no event (`AchievementCondition
+        // .cs:39`'s `!_isCompleted` guard).
+        m.take_completed_events();
+        assert_eq!(
+            m.complete_condition("DRINK_BOTTLED_WATER_WHILE_DROWNING", "Use"),
+            None
+        );
+        assert!(m.take_completed_events().is_empty());
+        // Unknown row/condition names are no-ops.
+        assert_eq!(m.complete_condition("NO_SUCH_ROW", "Use"), None);
+        assert_eq!(m.complete_condition("STAR_POWER", "Nope"), None);
+        // The angler's flag row completes by name; the four `Finish` counters
+        // are untouched by it.
+        assert_eq!(
+            m.complete_condition("SERVANT_IN_TRAINING", "Finish"),
+            Some("SERVANT_IN_TRAINING")
+        );
+        let slave = m.list.iter().find(|a| a.name == "GOOD_LITTLE_SLAVE").unwrap();
+        assert_eq!(slave.conditions[0].value, 0);
+        // A multi-condition row completes only when its LAST condition closes
+        // (`Achievement.OnConditionComplete`, `Achievement.cs:93-108`).
+        assert_eq!(m.complete_condition("DUNGEON_HEIST", "ITEM_PICKUP_327"), None);
+        assert_eq!(
+            m.complete_condition("DUNGEON_HEIST", "PROGRESSION_EVENT_19"),
+            Some("DUNGEON_HEIST")
+        );
     }
 
     #[test]

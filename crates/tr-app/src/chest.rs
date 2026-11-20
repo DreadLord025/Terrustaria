@@ -930,7 +930,10 @@ pub(crate) fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: i32) -> u32 
             .tile(x, y)
             .is_some_and(|t| (36..72).contains(&i32::from(t.frame_x)))
         {
-            let _ = app.achievements.notify_custom("Peek");
+            // W4-c36: the row-targeted `GetCondition("I_AM_LOOT", "Peek")
+            // .Complete()` (`AchievementsHelper.cs:346-348`) — the broadcast
+            // form would also close any future "Peek" row.
+            let _ = app.achievements.complete_condition("I_AM_LOOT", "Peek");
         }
         10 // `:33242`
     } else {

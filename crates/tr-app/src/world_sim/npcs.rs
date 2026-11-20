@@ -646,11 +646,15 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
         app.world.angler_quest_finished = true;
         app.world.angler_quest_turned_in = true;
         // `AchievementsHelper.HandleAnglerService` (`:40260`,
-        // `AchievementsHelper.cs:411-418`): SERVANT_IN_TRAINING (the `Finish`
-        // flag) and the four `Finish` counters. The rows share the condition
-        // name `Finish`, so the one `notify_custom_int` dispatch advances all
-        // four (`matches_kind` keys on the name).
-        let _ = app.achievements.notify_custom("Finish");
+        // `AchievementsHelper.cs:411-418`): SERVANT_IN_TRAINING's `Finish`
+        // flag completes by name (W4-c36 — the C# `GetCondition(row,
+        // "Finish").Complete()`), then the four `Finish` counters each take
+        // `Value++`; the rows share the condition name `Finish`, so the one
+        // `notify_custom_int` dispatch advances all four (`matches_kind`
+        // keys on the name — the four `Value++` lines' faithful fold).
+        let _ = app
+            .achievements
+            .complete_condition("SERVANT_IN_TRAINING", "Finish");
         let _ = app.achievements.notify_custom_int("Finish", 1);
     }
     true
