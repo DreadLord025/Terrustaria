@@ -20,6 +20,7 @@ mod biomes;
 pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;
+pub mod dungeon_styles;
 mod caves;
 mod config;
 mod desert;
