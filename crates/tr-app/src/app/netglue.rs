@@ -41,10 +41,9 @@ const TXT_INVALID_OP: &str = "Invalid operation at this state.";
 /// it.
 const SMOOTHING_RANGE: f32 = 300.0;
 
-/// The `13` heartbeat span in `net_tick` calls: the C#'s
-/// `netPlayCounter % 420 == 0` at 60 Hz = 7 s (`Main.cs:64522-64529`); the
-/// port's tick runs at 10 Hz, so 42 calls cover the same span.
-const NET_HEARTBEAT_TICKS: u32 = 42;
+/// W4-c28: the `13` heartbeat is the C#'s own `netPlayCounter % 420` at
+/// 60 Hz (`Main.cs:64527-64529`) — `net_player_sync::update_client_beat`
+/// owns it; the old 10 Hz 42-call stand-in is gone.
 
 const TXT_WRONG_VERSION: &str = "You are not using the same version as this server.";
 const TXT_BAD_PASSWORD: &str = "Incorrect password.";
@@ -2110,6 +2109,403 @@ impl App {
         }
     }
 
+    /// W4-c28: the live `ControlState` the cadence compares — the port's
+    /// fields the C# `TrySyncingInput` reads (`Player.cs:6858-6905`). The
+    /// fields with no port channel ride their defaults (down-hold/dash/
+    /// operating-entity/shield/snapstone — recorded in ANALYSIS).
+    fn control_state_of(&self) -> crate::app::net_player_sync::ControlState {
+        use crate::app::net_player_sync::ControlState;
+        let p = self.player.as_ref();
+        ControlState {
+            up: p.is_some_and(|p| p.control_up),
+            down: p.is_some_and(|p| p.control_down),
+            left: p.is_some_and(|p| p.control_left),
+            right: p.is_some_and(|p| p.control_right),
+            jump: p.is_some_and(|p| p.control_jump),
+            // `controlUseItem` — the held left button (loop.rs's `mine_down`
+            // is the left press; `mouse_down` is the UI-side left hold).
+            use_item: self.mouse_down || self.mine_down,
+            selected_item: self.selected as i32,
+            auto_reuse_all: self.settings.auto_reuse_all,
+            last_use_success: self.swing > 0.0,
+            direction: p.map_or(1, |p| p.facing),
+            ..Default::default()
+        }
+    }
+
+    /// W4-c28: the CLIENT's 60 Hz player-state cadence — the C#'s three send
+    /// paths in their per-tick order: `TrySyncingInput` (the control compare,
+    /// `Player.cs:6732`), `TrySyncingMyPlayer` (the clone-compare tail,
+    /// `Main.cs:17192`), `UpdateClient` (the counter beats,
+    /// `Main.cs:64522-64536`). Fills `net_player_outbox`; the 10 Hz drain
+    /// sends. Host/SP: a no-op (the host's own `13` rides the cadence tick).
+    fn player_sync_cadence(&mut self) {
+        use crate::app::net_player_sync::{self as nps, PlayerSend};
+        if self.net_mode() != 1 || self.net_state < net::client_state::IN_WORLD {
+            return;
+        }
+        let Some(p) = self.player.as_ref() else {
+            return;
+        };
+        let mut out = Vec::new();
+        let controls = self.control_state_of();
+        // 1. `TrySyncingInput` (`Player.cs:6852-6916`): the 12-field compare;
+        // the send copies the controls into the clone (`NetMessage.cs:511`).
+        if nps::try_syncing_input(&controls, &self.net_client_clone.controls, 1) {
+            out.push(PlayerSend::Controls);
+            self.net_client_clone.controls = controls;
+        }
+        // The port's render-extension producer (recorded in ANALYSIS): the
+        // C# server simulates every peer's movement from the relayed controls
+        // and derives the anim frames locally; the port simulates remote
+        // players nowhere, so a change in the wire body's position/anim/hp
+        // extension arms one more `13` (a superset — never a missing update).
+        // The reference snapshots HERE, at decision time: the drain runs at
+        // 10 Hz, so gating against the last DRAIN would re-arm every 60 Hz
+        // step in between (6 duplicate sends per change).
+        {
+            let last = &self.net_ps_last;
+            let ext_changed = (p.x - last.x).abs() > 0.5
+                || (p.y - last.y).abs() > 0.5
+                || p.facing != if last.flags_a.get(6) { 1 } else { -1 }
+                || self.selected as u8 != last.selected_item
+                || p.leg_frame != last.leg_frame
+                || p.body_frame != last.body_frame
+                || p.on_ground != last.on_ground
+                || p.hp != last.hp
+                || p.max_hp != last.max_hp;
+            if ext_changed {
+                if !out.contains(&PlayerSend::Controls) {
+                    out.push(PlayerSend::Controls);
+                }
+                let pn = net::PlayerNet {
+                    id: self.local_id,
+                    x: p.x,
+                    y: p.y,
+                    vx: p.vx,
+                    vy: p.vy,
+                    hp: p.hp,
+                    max_hp: p.max_hp,
+                    facing: p.facing,
+                    selected: self.selected as u16,
+                    on_ground: p.on_ground,
+                    leg_frame: p.leg_frame,
+                    body_frame: p.body_frame,
+                    ..Default::default()
+                };
+                let mut ps = self.player_state_of(&pn);
+                nps::apply_control_bits(&mut ps, &controls);
+                self.net_ps_last = ps;
+            }
+        }
+        // 2. `TrySyncingMyPlayer` (`Main.cs:17545-17574`): the `5` array diffs
+        // FIRST, then the scalar tail. The port walks the same slot layout
+        // `client_send_identity` pushes, in the C#'s array order: the 58 grid
+        // rows, armour, dye, misc, misc-dye, bank, bank2, TRASH, bank3, bank4
+        // (the loadout arrays `:17568-17573` have no port loadouts — recorded).
+        // A missing clone entry compares as AIR: `Main.clientPlayer`'s items
+        // start `new Item()` (`clientCloneItem` copies type/stack/prefix/
+        // favorited only), so an empty live slot is NOT a change.
+        let mut synced_any = false;
+        let mut changed: Vec<(i16, (u16, u32, u16, bool))> = Vec::new();
+        {
+            let mut diff = |slot: i16, it: &crate::item::ItemSlot, fav: bool| {
+                let st = nps::item_net_state(it, fav);
+                let prev = self.net_clone_items.get(&slot).copied().unwrap_or((0, 0, 0, false));
+                if prev != st {
+                    changed.push((slot, st));
+                    synced_any = true;
+                }
+            };
+            for (i, slot) in self.inventory.iter().enumerate() {
+                diff(i as i16, slot, self.favorite_slots.contains(&i));
+            }
+            for i in 0..self.equip.coins.len() {
+                diff(50 + i as i16, &self.equip.coins[i], false);
+            }
+            for i in 0..self.equip.ammo.len() {
+                diff(54 + i as i16, &self.equip.ammo[i], false);
+            }
+            for i in 0..p.equipped.len() {
+                let it = crate::item::ItemSlot {
+                    kind: p.equipped[i],
+                    name: crate::registry::name(p.equipped[i]),
+                    count: u32::from(p.equipped[i] != 0),
+                    prefix: p.equipped_prefix[i],
+                };
+                diff(player_item_slot::ARMOR_0 + i as i16, &it, false);
+            }
+            for i in 0..p.dye_slots.len() {
+                let it = crate::item::ItemSlot {
+                    kind: p.dye_slots[i],
+                    name: crate::registry::name(p.dye_slots[i]),
+                    count: u32::from(p.dye_slots[i] != 0),
+                    prefix: 0,
+                };
+                diff(player_item_slot::DYE_0 + i as i16, &it, false);
+            }
+            for (i, slot) in self.equip.misc_equips.iter().enumerate() {
+                diff(player_item_slot::MISC_0 + i as i16, slot, false);
+            }
+            for (i, slot) in p.misc_dye_slots.iter().enumerate() {
+                let it = crate::item::ItemSlot {
+                    kind: *slot,
+                    name: crate::registry::name(*slot),
+                    count: u32::from(*slot != 0),
+                    prefix: 0,
+                };
+                diff(player_item_slot::MISC_DYE_0 + i as i16, &it, false);
+            }
+            for (b, vault) in p.banks.iter().enumerate() {
+                for (i, slot) in vault.iter().enumerate() {
+                    let ws = player_item_slot::bank_1_0(b) + i as i16;
+                    // The port's u8 wire layout collides bank3 slot 0 with
+                    // TRASH (both 179); `net_item_at_wire_slot` resolves 179
+                    // to the trash, so bank3[0] is unsendable — skip it here
+                    // or the two fight over clone key 179 every tick (the
+                    // join push already loses it). The id layout is c27's lane.
+                    if ws == player_item_slot::TRASH {
+                        continue;
+                    }
+                    diff(ws, slot, false);
+                }
+                // The C# order is bank, bank2, TRASH, bank3, bank4
+                // (`Main.cs:17556-17567`).
+                if b == 1 {
+                    diff(player_item_slot::TRASH, &self.equip.trash, false);
+                }
+            }
+        }
+        for (slot, st) in changed {
+            self.net_clone_items.insert(slot, st);
+            out.push(PlayerSend::Inventory { slot });
+        }
+        // The scalar tail (`Main.cs:17575-17702`).
+        let zones = nps::zone_bytes(&p.zones, self.scene_metrics.zone_shimmer);
+        let (hp, max_hp, mana, max_mana) = (p.hp, p.max_hp, p.mana, p.mana_max);
+        let buffs = p.buffs.clone();
+        let (live_chest, edited) = (p.chest, p.edited_chest_name);
+        let clone_chest_before = self.net_client_clone.chest;
+        // `Main.cs:17581` — the named arm reads `Main.chest[player.chest]`,
+        // the CLONE's chest (the one the rename landed on before the close);
+        // a null array slot (`:17585-17587`) sends the nameless 33 instead.
+        let close_name = (clone_chest_before >= 0
+            && self
+                .world_chests
+                .get(clone_chest_before as usize)
+                .is_some_and(|c| c.tile != crate::chest::removed_tile()))
+        .then(|| crate::chest::chest_name(self, clone_chest_before).to_string());
+        let talk = self.talk_npc.map_or(-1, |i| i as i32);
+        nps::try_syncing_my_player_tail(
+            &mut self.net_client_clone,
+            zones,
+            hp,
+            max_hp,
+            mana,
+            max_mana,
+            &buffs,
+            live_chest,
+            edited,
+            || close_name.clone(),
+            talk,
+            (0.0, 0.0), // MinionRestTargetPoint — unported (M6-NET-5)
+            -1,         // MinionAttackTargetNPC — unported
+            &controls,
+            synced_any,
+            &mut out,
+        );
+        if edited && live_chest < 0 && clone_chest_before >= 0 {
+            // The flush consumed the flag (`Main.cs:17583`/`:17591`).
+            if let Some(p) = self.player.as_mut() {
+                p.edited_chest_name = false;
+            }
+        }
+        // 3. `UpdateClient`'s counter (`Main.cs:64522-64536`): the 420-tick
+        // `13` beat, then the 900-tick 36/16/40 trio in that order.
+        let (beat13, trio) = nps::update_client_beat(&mut self.net_client_counter);
+        if beat13 {
+            out.push(PlayerSend::Controls);
+        }
+        if trio {
+            let (zone1, zone2, zone3, zone4, zone5, town_npcs) = zones;
+            out.push(PlayerSend::Zone { zone1, zone2, zone3, zone4, zone5, town_npcs });
+            out.push(PlayerSend::Life {
+                hp: hp.clamp(0, i16::MAX as i32) as i16,
+                max_hp: max_hp.clamp(0, i16::MAX as i32) as i16,
+            });
+            out.push(PlayerSend::TalkNpc {
+                npc: talk.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+            });
+        }
+        self.net_player_outbox.extend(out);
+    }
+
+    /// W4-c28: drain the player-state outbox through the existing wires
+    /// (client). `Controls` carries the port's render-extension change test
+    /// on top of the C# decision: the body is only re-sent when the wire
+    /// fields changed OR the decision came from a beat/event (the C# sends
+    /// unconditionally at its sites; the port's 60 Hz compare already gates).
+    fn drain_player_outbox(&mut self) {
+        use crate::app::net_player_sync::PlayerSend;
+        let outbox = std::mem::take(&mut self.net_player_outbox);
+        if outbox.is_empty() {
+            return;
+        }
+        let NetRole::Client(client) = &self.net else {
+            return;
+        };
+        let me = self.local_id as u8;
+        for send in outbox {
+            match send {
+                PlayerSend::Controls => {
+                    if let Some(p) = self.player.as_ref() {
+                        let pn = net::PlayerNet {
+                            id: self.local_id,
+                            x: p.x,
+                            y: p.y,
+                            vx: p.vx,
+                            vy: p.vy,
+                            hp: p.hp,
+                            max_hp: p.max_hp,
+                            facing: p.facing,
+                            selected: self.selected as u16,
+                            on_ground: p.on_ground,
+                            leg_frame: p.leg_frame,
+                            body_frame: p.body_frame,
+                            ..Default::default()
+                        };
+                        let mut ps = self.player_state_of(&pn);
+                        let c = self.control_state_of();
+                        crate::app::net_player_sync::apply_control_bits(&mut ps, &c);
+                        client.send(&C2s::PlayerState(ps.clone()));
+                        self.net_ps_last = ps;
+                    }
+                }
+                PlayerSend::Life { hp, max_hp } => {
+                    client.send(&C2s::PlayerHp { player_id: me, hp, max_hp });
+                }
+                PlayerSend::Mana { mana, max_mana } => {
+                    client.send(&C2s::PlayerMana(net::PlayerMana {
+                        player_id: me,
+                        mana,
+                        max_mana,
+                    }));
+                }
+                PlayerSend::Buffs { ids } => {
+                    client.send(&C2s::PlayerBuffs(net::PlayerBuffs {
+                        player_id: me,
+                        buffs: ids,
+                    }));
+                }
+                PlayerSend::Inventory { slot } => {
+                    if let Some(item) = self.net_item_at_wire_slot(slot) {
+                        client.send(&C2s::Inventory { slot, item });
+                    }
+                }
+                PlayerSend::ChestClose { chest, name } => {
+                    // `NetMessage.cs` case 33: `number` is the LIVE chest
+                    // (negative on this arm), so the `number > -1` coord read
+                    // (`:884-889`) never runs — x/y are 0. The named arm
+                    // (`number2 == 1f`, `:890-901`) writes the length byte
+                    // (255 for an empty/too-long name) then the text only
+                    // when accepted; the nameless arm writes 0.
+                    let (name_len, name) = match name {
+                        Some(n) => {
+                            let len = n.chars().count();
+                            if len == 0 || len > 20 {
+                                (255, String::new())
+                            } else {
+                                (len as u8, n)
+                            }
+                        }
+                        None => (0, String::new()),
+                    };
+                    client.send(&C2s::PlayerChest(net::PlayerChest {
+                        chest,
+                        x: 0,
+                        y: 0,
+                        name_len,
+                        name,
+                    }));
+                }
+                PlayerSend::Loadout { loadout, hide_accessory } => {
+                    client.send(&C2s::SyncLoadout(net::SyncLoadout {
+                        player_id: me,
+                        loadout,
+                        hide_accessory,
+                    }));
+                }
+                // The 36 zone body is W4-c27's `PlayerZone` (its net.rs lane);
+                // 35/40/84/99/115/138 have no port wire yet — the decisions
+                // are recorded, the sends land with their bodies (ANALYSIS).
+                PlayerSend::Zone { .. }
+                | PlayerSend::Heal { .. }
+                | PlayerSend::TalkNpc { .. }
+                | PlayerSend::Stealth { .. }
+                | PlayerSend::MinionTarget { .. }
+                | PlayerSend::InventorySynced => {}
+            }
+        }
+    }
+
+    /// W4-c28: the `NetItem` at one `PlayerItemSlotID` wire slot — the same
+    /// layout `client_send_identity` pushes (the `5` diff's body source).
+    fn net_item_at_wire_slot(&self, slot: i16) -> Option<net::NetItem> {
+        use player_item_slot as ps;
+        let p = self.player.as_ref();
+        if (0..50).contains(&slot) {
+            let i = slot as usize;
+            return Some(self.net_item(&self.inventory[i], self.favorite_slots.contains(&i)));
+        }
+        if (50..54).contains(&slot) {
+            return Some(self.net_item(&self.equip.coins[(slot - 50) as usize], false));
+        }
+        if (54..58).contains(&slot) {
+            return Some(self.net_item(&self.equip.ammo[(slot - 54) as usize], false));
+        }
+        if slot == ps::TRASH {
+            return Some(self.net_item(&self.equip.trash, false));
+        }
+        let p = p?;
+        if (ps::ARMOR_0..ps::ARMOR_0 + 20).contains(&slot) {
+            let i = (slot - ps::ARMOR_0) as usize;
+            return Some(net::NetItem {
+                kind: p.equipped[i] as i16,
+                stack: i16::from(p.equipped[i] != 0),
+                prefix: p.equipped_prefix[i].min(255) as u8,
+                favorited: false,
+            });
+        }
+        if (ps::DYE_0..ps::DYE_0 + 10).contains(&slot) {
+            let i = (slot - ps::DYE_0) as usize;
+            return Some(net::NetItem {
+                kind: p.dye_slots[i] as i16,
+                stack: i16::from(p.dye_slots[i] != 0),
+                prefix: 0,
+                favorited: false,
+            });
+        }
+        if (ps::MISC_0..ps::MISC_0 + 5).contains(&slot) {
+            return Some(self.net_item(&self.equip.misc_equips[(slot - ps::MISC_0) as usize], false));
+        }
+        if (ps::MISC_DYE_0..ps::MISC_DYE_0 + 5).contains(&slot) {
+            let i = (slot - ps::MISC_DYE_0) as usize;
+            return Some(net::NetItem {
+                kind: p.misc_dye_slots[i] as i16,
+                stack: i16::from(p.misc_dye_slots[i] != 0),
+                prefix: 0,
+                favorited: false,
+            });
+        }
+        for b in 0..4 {
+            let base = ps::bank_1_0(b);
+            if (base..base + 40).contains(&slot) {
+                return Some(self.net_item(&p.banks[b][(slot - base) as usize], false));
+            }
+        }
+        None
+    }
+
     /// S1-I-4d: the `23` body for one NPC (`NetMessage.cs:686-748`), the same
     /// shape the old whole-set broadcast wrote. `slot` is the CURRENT Vec index
     /// (the wire `whoAmI`); `spawn`/`generation` ride the caller's bump logic.
@@ -2609,6 +3005,10 @@ impl App {
             self.net_sync_cadence_timer -= 1.0 / 60.0;
             self.npc_sync_cadence();
             self.proj_sync_cadence();
+            // W4-c28: the client's player-state cadence runs on the same
+            // 60 Hz step (`Player.Update` → `TrySyncingInput`,
+            // `Main.DoUpdate` → `TrySyncingMyPlayer`/`UpdateClient`).
+            self.player_sync_cadence();
             steps += 1;
         }
         if self.net_sync_cadence_timer > 8.0 / 60.0 {
@@ -2732,34 +3132,16 @@ impl App {
                     day: self.world.day_time,
                 });
             }
-            NetRole::Client(client) => {
+            NetRole::Client(_client) => {
                 // S1-I-4d: the client's own projectiles already drained through
                 // `drain_proj_outbox` above (`Projectile.cs:17210-17244`'s owner
                 // machine → `27`, despawns → `29`).
-                // The C#'s `TrySyncingInput` change-driven send plus the
-                // 420-tick heartbeat (`Player.cs:6852-6916`,
-                // `Main.cs:64522-64529`); the port's control flags are not
-                // synced (each peer simulates its own player), so the change
-                // test covers position, animation, selection and health.
-                if self.net_state >= net::client_state::IN_WORLD {
-                    let mut changed = (me.x - self.net_ps_last.x).abs() > 0.5
-                        || (me.y - self.net_ps_last.y).abs() > 0.5
-                        || me.facing != self.net_ps_last_facing()
-                        || me.selected != self.net_ps_last.selected_item as u16
-                        || me.leg_frame != self.net_ps_last.leg_frame
-                        || me.body_frame != self.net_ps_last.body_frame
-                        || me.on_ground != self.net_ps_last.on_ground
-                        || me.hp != self.net_ps_last.hp
-                        || me.max_hp != self.net_ps_last.max_hp;
-                    self.net_beat = self.net_beat.wrapping_add(1);
-                    if !changed && self.net_beat % NET_HEARTBEAT_TICKS == 0 {
-                        changed = true; // the heartbeat (420 ticks ≈ 7 s)
-                    }
-                    if changed {
-                        client.send(&C2s::PlayerState(self.player_state_of(&me)));
-                        self.net_ps_last = self.player_state_of(&me);
-                    }
-                }
+                // W4-c28 SWAP: the old 10 Hz change-test + 42-call heartbeat is
+                // gone — the C#'s `TrySyncingInput` / `TrySyncingMyPlayer` /
+                // `UpdateClient` decisions run at 60 Hz in
+                // `player_sync_cadence` (`Player.cs:6852-6916`,
+                // `Main.cs:17545-17703`/`:64522-64536`); drain the outbox.
+                self.drain_player_outbox();
             }
             NetRole::Off => {}
         }
@@ -3075,15 +3457,6 @@ impl App {
                 hit_direction: if from_right { 1 } else { -1 },
                 crit,
             }));
-        }
-    }
-
-    /// The stored `13` snapshot's facing (`flags_a` bit 6).
-    fn net_ps_last_facing(&self) -> i32 {
-        if self.net_ps_last.flags_a.get(6) {
-            1
-        } else {
-            -1
         }
     }
 
@@ -5204,5 +5577,218 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+
+    // --- W4-c28: the player-state send cadence (the SWAP witnesses) ---------
+
+    use crate::app::net_player_sync::PlayerSend;
+
+    /// The 60 Hz decision layer on a joined client with a live player.
+    fn cadence_client() -> App {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // Drain the join burst so the cadence tests see only their own sends.
+        pump(&mut host_app, &mut client_app, 12);
+        client_app.net_player_outbox.clear();
+        client_app
+    }
+
+    #[test]
+    fn the_cadence_quiesces_once_the_clone_matches() {
+        let mut app = cadence_client();
+        // One pass seeds the clone (the extension `13` for the spawn
+        // position vs the all-zero snapshot, the mana 20-vs-0 report).
+        app.player_sync_cadence();
+        assert!(
+            app.net_player_outbox.contains(&PlayerSend::Controls),
+            "the first observation sends the spawn-state 13"
+        );
+        app.net_player_outbox.clear();
+        // 100 unchanged ticks: no input change, no stat change, no beat
+        // (the counter is far from 420) — the C# sends NOTHING.
+        for _ in 0..100 {
+            app.player_sync_cadence();
+        }
+        assert!(
+            app.net_player_outbox.is_empty(),
+            "an unchanged player produces no sends: {:?}",
+            app.net_player_outbox
+        );
+    }
+
+    #[test]
+    fn the_cadence_sends_one_13_per_input_change_not_per_tick() {
+        let mut app = cadence_client();
+        app.player_sync_cadence();
+        app.net_player_outbox.clear();
+        // Hold jump: ONE 13 on the change tick, then silence while held.
+        app.player.as_mut().unwrap().control_jump = true;
+        for _ in 0..30 {
+            app.player_sync_cadence();
+        }
+        let controls: Vec<_> = app
+            .net_player_outbox
+            .iter()
+            .filter(|s| matches!(s, PlayerSend::Controls))
+            .collect();
+        assert_eq!(controls.len(), 1, "one 13 for the whole held window");
+    }
+
+    #[test]
+    fn the_stat_report_throttles_to_one_per_60_ticks_under_continuous_change() {
+        let mut app = cadence_client();
+        app.player_sync_cadence();
+        app.net_player_outbox.clear();
+        // One mana change held constant: the report parks while the window
+        // from the FIRST pass's report (time 60) drains, then fires once at
+        // the boundary (`Main.cs:17649-17661`). Over 120 ticks exactly one
+        // boundary is crossed, so exactly ONE report — not one per tick.
+        app.player.as_mut().unwrap().mana = 10;
+        let mut reports = 0;
+        for _ in 0..120 {
+            let before = app.net_player_outbox.len();
+            app.player_sync_cadence();
+            reports += app.net_player_outbox[before..]
+                .iter()
+                .filter(|s| matches!(s, PlayerSend::Mana { .. }))
+                .count();
+        }
+        assert_eq!(reports, 1, "one report at the window boundary, not per tick");
+        // A fresh change right after the boundary parks (the window re-armed
+        // to 60) — the next few ticks send nothing.
+        app.net_player_outbox.clear();
+        app.player.as_mut().unwrap().mana = 5;
+        for _ in 0..5 {
+            app.player_sync_cadence();
+        }
+        assert!(
+            !app.net_player_outbox.iter().any(|s| matches!(s, PlayerSend::Mana { .. })),
+            "the fresh window suppresses the new change"
+        );
+    }
+
+    #[test]
+    fn the_420_beat_and_the_900_trio_ride_the_client_counter() {
+        let mut app = cadence_client();
+        app.player_sync_cadence();
+        app.net_player_outbox.clear();
+        // Park the counter one tick before the 420 beat.
+        app.net_client_counter = 419;
+        app.player_sync_cadence();
+        assert_eq!(
+            app.net_player_outbox,
+            vec![PlayerSend::Controls],
+            "tick 420 sends exactly the heartbeat 13"
+        );
+        app.net_player_outbox.clear();
+        // Park one tick before 900: the trio is 36, 16, 40 in that order
+        // (`Main.cs:64531-64536`); 900 % 420 != 0, so no 13 rides it.
+        app.net_client_counter = 899;
+        app.player_sync_cadence();
+        assert_eq!(app.net_player_outbox.len(), 3);
+        assert!(matches!(app.net_player_outbox[0], PlayerSend::Zone { .. }));
+        assert!(matches!(app.net_player_outbox[1], PlayerSend::Life { .. }));
+        assert!(matches!(app.net_player_outbox[2], PlayerSend::TalkNpc { .. }));
+    }
+
+    #[test]
+    fn the_inventory_diff_sends_only_changed_slots_and_the_empty_clone_is_air() {
+        let mut app = cadence_client();
+        app.player_sync_cadence();
+        app.net_player_outbox.clear();
+        // The empty-grid join: every live slot is air and the clone's
+        // missing entries compare as air (`new Item()`) — NO 5 spam.
+        for _ in 0..10 {
+            app.player_sync_cadence();
+        }
+        assert!(
+            !app.net_player_outbox.iter().any(|s| matches!(s, PlayerSend::Inventory { .. })),
+            "an empty inventory diffs clean against the air clone"
+        );
+        // Put one item in slot 3: exactly ONE 5 for slot 3, then silence.
+        app.inventory[3] = crate::item::ItemSlot {
+            kind: 9,
+            name: crate::registry::name(9),
+            count: 5,
+            prefix: 0,
+        };
+        app.player_sync_cadence();
+        let inv: Vec<_> = app
+            .net_player_outbox
+            .iter()
+            .filter_map(|s| match s {
+                PlayerSend::Inventory { slot } => Some(*slot),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(inv, vec![3], "one 5 for the one changed slot");
+        app.net_player_outbox.clear();
+        for _ in 0..10 {
+            app.player_sync_cadence();
+        }
+        assert!(
+            !app.net_player_outbox.iter().any(|s| matches!(s, PlayerSend::Inventory { .. })),
+            "the clone absorbed the change"
+        );
+    }
+
+    #[test]
+    fn the_close_transition_33_carries_the_live_index_and_the_clone_name() {
+        let mut app = cadence_client();
+        // A chest the clone has seen open (index 0, named).
+        app.world_chests.push(crate::chest::WorldChest {
+            tile: (3, 5),
+            name: "Loot".into(),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        });
+        app.player.as_mut().unwrap().chest = 0;
+        app.player_sync_cadence(); // the clone records chest 0
+        app.net_player_outbox.clear();
+        // The close: live -1, clone 0, the rename flag latched.
+        let p = app.player.as_mut().unwrap();
+        p.chest = -1;
+        p.edited_chest_name = true;
+        app.player_sync_cadence();
+        let close = app
+            .net_player_outbox
+            .iter()
+            .find_map(|s| match s {
+                PlayerSend::ChestClose { chest, name } => Some((*chest, name.clone())),
+                _ => None,
+            })
+            .expect("the close-transition 33 fired");
+        assert_eq!(close.0, -1, "the writer carries the LIVE (closed) index");
+        assert_eq!(close.1.as_deref(), Some("Loot"), "the name reads the clone's chest");
+        assert!(
+            !app.player.as_ref().unwrap().edited_chest_name,
+            "the flush consumed the flag (Main.cs:17583)"
+        );
+        // The next pass: no second 33 (the clone absorbed the close).
+        app.net_player_outbox.clear();
+        app.player_sync_cadence();
+        assert!(
+            !app.net_player_outbox.iter().any(|s| matches!(s, PlayerSend::ChestClose { .. })),
+            "the close edge fires once"
+        );
+    }
+
+    #[test]
+    fn the_extension_change_arms_one_13_not_one_per_60hz_step() {
+        let mut app = cadence_client();
+        app.player_sync_cadence();
+        app.net_player_outbox.clear();
+        // Move the player once, then hold still for a whole 10 Hz window:
+        // the decision-time snapshot must not re-arm every 60 Hz step.
+        app.player.as_mut().unwrap().x += 40.0;
+        for _ in 0..6 {
+            app.player_sync_cadence();
+        }
+        let controls = app
+            .net_player_outbox
+            .iter()
+            .filter(|s| matches!(s, PlayerSend::Controls))
+            .count();
+        assert_eq!(controls, 1, "one extension 13 per change, not per step");
     }
 }

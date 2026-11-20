@@ -14,6 +14,7 @@ pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
 pub(crate) mod net_npc_sync;
+pub(crate) mod net_player_sync;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
 pub(crate) mod net_proj_sync;
@@ -541,10 +542,23 @@ pub(crate) struct App {
     pub(crate) net_item_last: HashMap<i16, net::ItemState>,
     /// The client's `22 ItemOwner` reservations: slot → (reserver, hold ticks).
     pub(crate) net_reserved: HashMap<i16, (u8, u32)>,
-    /// The client's last-sent `13 PlayerState` — the change-driven send test.
+    /// The client's last-sent `13 PlayerState` — the port's render-extension
+    /// change test (position/anim/hp ride the wire body, not the C# clone).
     pub(crate) net_ps_last: net::PlayerState,
-    /// The heartbeat counter for the `13` cadence (`net_tick` calls).
-    pub(crate) net_beat: u32,
+    /// W4-c28: `Main.clientPlayer`'s port — the clone `TrySyncingInput` /
+    /// `TrySyncingMyPlayer` compare against (`Main.cs:17545-17703`,
+    /// `Player.cs:6852-6916`), updated by the `clientClone` tail.
+    pub(crate) net_client_clone: crate::app::net_player_sync::ClientClone,
+    /// W4-c28: the clone's `5`-diff reference — `(wire slot → (kind, stack,
+    /// prefix, favorited))` (`Item.IsNetStateDifferent`'s four fields,
+    /// `Player.clientCloneItem` `Player.cs:54517-54523`).
+    pub(crate) net_clone_items: HashMap<i16, (u16, u32, u16, bool)>,
+    /// W4-c28: the CLIENT's `Main.netPlayCounter` (`Main.cs:64522-64526`):
+    /// ++ per 60 Hz tick, wrap `> 3600`; `%420` → `13`, `%900` → `36/16/40`.
+    pub(crate) net_client_counter: u32,
+    /// W4-c28: the pending `PlayerSend` outbox the 60 Hz client cadence fills
+    /// (`net_player_sync`); `net_tick` drains it through the existing wires.
+    pub(crate) net_player_outbox: Vec<crate::app::net_player_sync::PlayerSend>,
     /// `Main.netPlayCounter` (`Main.cs:64557`): the host's per-tick server
     /// counter, wrapping at 3600 (`Main.cs:64558-64562`).
     pub(crate) net_play_counter: u32,
@@ -3850,7 +3864,10 @@ impl App {
             net_item_last: HashMap::new(),
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
-            net_beat: 0,
+            net_client_clone: crate::app::net_player_sync::ClientClone::default(),
+            net_clone_items: HashMap::new(),
+            net_client_counter: 0,
+            net_player_outbox: Vec::new(),
             net_play_counter: 0,
             last_item_update: 0,
             net_npc_slots: Vec::new(),
