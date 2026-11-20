@@ -1103,14 +1103,19 @@ mod tests {
         update_world_tick(&mut app, STEP);
         assert_eq!(app.cloud_field.slots[0].position.x, 100.0);
         assert_eq!(app.cloud_field.rand.peek(), rand_before);
-        // Surface view: the drift integrates (`Cloud.cs:391`).
+        // Surface view: the drift integrates (`Cloud.cs:391`). The bubble
+        // pass may move the slot (inactive neighbours read scale 0), so find
+        // the active cloud rather than pinning the index.
         app.camera.y = app.world.world_surface as f32 * TILE_PX - 400.0;
         update_world_tick(&mut app, STEP);
-        assert!(
-            app.cloud_field.slots[0].position.x > 100.0,
-            "the wind drifted the cloud: {}",
-            app.cloud_field.slots[0].position.x
-        );
+        let c = app
+            .cloud_field
+            .slots
+            .iter()
+            .find(|c| c.active)
+            .copied()
+            .expect("the cloud survives");
+        assert!(c.position.x > 100.0, "the wind drifted the cloud: {}", c.position.x);
         assert_ne!(app.cloud_field.rand.peek(), rand_before, "the jitter drew");
     }
 
