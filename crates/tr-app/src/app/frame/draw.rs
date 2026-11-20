@@ -1926,6 +1926,17 @@ impl App {
                                         ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
                                     )
                                 });
+                                // `Main.cs:55782-55913`: the hovered map
+                                // cell's name (chests/dressers/legend) is
+                                // the hover text's base; the icon layers'
+                                // `ref text` writes (`:55922-55923`) win.
+                                let tile_hover = crate::map::fullscreen_hover_name(
+                                    world,
+                                    map,
+                                    &self.world_chests,
+                                    self.mouse_pos,
+                                    screen,
+                                );
                                 let hover = crate::map_layers::map_layers_draw(
                                     renderer,
                                     lookups,
@@ -1948,7 +1959,7 @@ impl App {
                                     map_draw_scale,
                                     1.0,
                                 );
-                                if let Some(t) = hover {
+                                if let Some(t) = hover.or(tile_hover) {
                                     crate::ui::text::hud_text(
                                         renderer,
                                         lookups,
