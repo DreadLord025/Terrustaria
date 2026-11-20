@@ -817,7 +817,7 @@ mod tests {
         // arrow's resolved 1.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 39, 1, 9.1, 9, 2.0, , cursor, 30, 29);
+        fire(&mut app, 39, 1, 9.1, 9, 2.0, cursor, 30, 29);
         let shots = live(&app);
         assert_eq!(shots.len(), 1, "one arrow");
         assert_eq!(shots[0].kind, 1, "the wooden arrow");
@@ -836,7 +836,7 @@ mod tests {
         // The Marrow 682's override → 117, then the generic tail.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 682, 1, 14.0, 48, 4.7, , cursor, 19, 18);
+        fire(&mut app, 682, 1, 14.0, 48, 4.7, cursor, 19, 18);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 117, "the Bone Arrow override (`:47163`)");
@@ -846,7 +846,7 @@ mod tests {
     fn s1_p_i13_the_ice_bow_fires_the_frost_arrow() {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 725, 1, 13.0, 46, 4.5, , cursor, 14, 13);
+        fire(&mut app, 725, 1, 13.0, 46, 4.5, cursor, 14, 13);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 120, "the FrostArrow override (`:47167`)");
@@ -856,7 +856,7 @@ mod tests {
     fn s1_p_i13_the_pulse_bow_fires_the_pulse_bolt() {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 2223, 1, 10.75, 85, 3.0, , cursor, 20, 19);
+        fire(&mut app, 2223, 1, 10.75, 85, 3.0, cursor, 20, 19);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 357, "the PulseBolt override (`:47175`)");
@@ -867,7 +867,7 @@ mod tests {
         // The without-quiver path: proj 1 → 2 (`:47157-47160`).
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 120, 1, 11.0, 36, 2.0, , cursor, 22, 21);
+        fire(&mut app, 120, 1, 11.0, 36, 2.0, cursor, 22, 21);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 2, "the FireArrow (`:47159`)");
@@ -881,7 +881,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let (cx, cy) = app.player.as_ref().unwrap().center();
         let cursor = Vec2::new(cx - 80.0, cy);
-        fire(&mut app, 39, 1, 9.1, 9, 2.0, , cursor, 30, 29);
+        fire(&mut app, 39, 1, 9.1, 9, 2.0, cursor, 30, 29);
         assert_eq!(app.player.as_ref().unwrap().facing, -1, "faces left");
         let shots = live(&app);
         assert!(shots[0].vel.x < 0.0, "the arrow flies left");
@@ -896,7 +896,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let seed_stream = stream_of(&mut app);
-        fire(&mut app, 2624, 1, 13.0, 58, 2.0, , cursor, 24, 23);
+        fire(&mut app, 2624, 1, 13.0, 58, 2.0, cursor, 24, 23);
         let shots = live(&app);
         assert_eq!(shots.len(), 5, "the Tsunami's five arrows");
         for s in &shots {
@@ -923,7 +923,7 @@ mod tests {
         // adds one ±0.04 pair, shot 2 two pairs. Every arrow noDropItem.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 1229, 1, 14.5, 39, 2.75, , cursor, 19, 18);
+        fire(&mut app, 1229, 1, 14.5, 39, 2.75, cursor, 19, 18);
         let shots = live(&app);
         assert!(shots.len() == 2 || shots.len() == 3, "2 or 3 arrows");
         for s in &shots {
@@ -957,7 +957,7 @@ mod tests {
         // Replay the count roll to know the shot count.
         let mut probe = UnifiedRandom::new(0x5EED);
         let count = if probe.next_max(3) == 0 { 3 } else { 2 };
-        fire(&mut app, 1229, 1, 14.5, 39, 2.75, , cursor, 19, 18);
+        fire(&mut app, 1229, 1, 14.5, 39, 2.75, cursor, 19, 18);
         // Shot k spends 2 draws per true condition among {k>0, k>1, k>2} =
         // 2*min(k,3); the count is 2 or 3, so the spread total is
         // 2*(0+1+…+(count-1)) = count*(count-1).
@@ -978,7 +978,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let seed_stream = stream_of(&mut app);
-        fire(&mut app, 3859, 1, 14.0, 43, 4.5, , cursor, 30, 29);
+        fire(&mut app, 3859, 1, 14.0, 43, 4.5, cursor, 30, 29);
         let shots = live(&app);
         assert_eq!(shots.len(), 6, "the six-iteration fan loop");
         for s in &shots {
@@ -1001,7 +1001,7 @@ mod tests {
         // RotatedByRandom(π/16) for the velocity (2 NextDouble) = 4 draws.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 3019, 485, 9.0, 27, 5.5, , cursor, 13, 12);
+        fire(&mut app, 3019, 485, 9.0, 27, 5.5, cursor, 13, 12);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 485);
@@ -1023,7 +1023,7 @@ mod tests {
         let run = || {
             let mut app = rig(0xB0A);
             let cursor = cursor_right(&app);
-            fire(&mut app, 3019, 485, 9.0, 27, 5.5, , cursor, 13, 12);
+            fire(&mut app, 3019, 485, 9.0, 27, 5.5, cursor, 13, 12);
             let s = live(&app)[0];
             (s.vel, s.ai[0], s.ai[1])
         };
@@ -1039,7 +1039,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let (mcx, mcy) = app.player.as_ref().unwrap().mounted_center();
-        fire(&mut app, 3029, 1, 15.5, 43, 2.25, , cursor, 19, 18);
+        fire(&mut app, 3029, 1, 15.5, 43, 2.25, cursor, 19, 18);
         let shots = live(&app);
         assert!(shots.len() >= 2 && shots.len() <= 4, "2-4 rain arrows");
         for s in &shots {
@@ -1066,7 +1066,7 @@ mod tests {
         // The wooden arrow (proj 1) is NOT in {91,4,5,41}, so the else branch:
         // count = 3 + (Next(3)==0 ? 1 : 0).
         let count = if probe.next_max(3) == 0 { 4 } else { 3 };
-        fire(&mut app, 3029, 1, 15.5, 43, 2.25, , cursor, 19, 18);
+        fire(&mut app, 3029, 1, 15.5, 43, 2.25, cursor, 19, 18);
         assert_eq!(live(&app).len(), count as usize);
         assert_eq!(
             stream_of(&mut app),
@@ -1082,7 +1082,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let (_, mcy) = app.player.as_ref().unwrap().mounted_center();
-        fire(&mut app, 4381, 819, 12.0, 19, 3.0, , cursor, 19, 18);
+        fire(&mut app, 4381, 819, 12.0, 19, 3.0, cursor, 19, 18);
         let shots = live(&app);
         assert!(shots.len() >= 1 && shots.len() <= 3, "1-3 blood arrows");
         for s in &shots {
@@ -1104,7 +1104,7 @@ mod tests {
         if probe.next_max(3) == 0 {
             count += 1;
         }
-        fire(&mut app, 4381, 819, 12.0, 19, 3.0, , cursor, 19, 18);
+        fire(&mut app, 4381, 819, 12.0, 19, 3.0, cursor, 19, 18);
         assert_eq!(live(&app).len(), count as usize);
         assert_eq!(
             stream_of(&mut app),
@@ -1122,7 +1122,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         // anim 30, remaining 29 → num61 = 0.
-        fire(&mut app, 4953, 2, 13.0, 55, 2.0, , cursor, 30, 29);
+        fire(&mut app, 4953, 2, 13.0, 55, 2.0, cursor, 30, 29);
         let shots = live(&app);
         assert_eq!(shots.len(), 1, "one shot per fire tick");
         assert_eq!(shots[0].kind, 2, "the resolved flaming arrow (num61 != 2)");
@@ -1136,7 +1136,7 @@ mod tests {
         let mut app = rig(0x5EED);
         app.player.as_mut().unwrap().misc_counter = 150; // miscNorm = 0.5
         let cursor = cursor_right(&app);
-        fire(&mut app, 4953, 2, 13.0, 55, 2.0, , cursor, 30, 25);
+        fire(&mut app, 4953, 2, 13.0, 55, 2.0, cursor, 30, 25);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 932, "the prism (`:47946`)");

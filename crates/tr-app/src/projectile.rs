@@ -14766,6 +14766,8 @@ impl ProjectilePool {
                                     world,
                                     npcs,
                                     &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
+                            }
                             // S1-P-i28 — the Javelin (507, `AI_001`'s
                             // 507/508/662/680/685 gravity arm
                             // `Projectile.cs:57471-57478`): kind-disjoint from
