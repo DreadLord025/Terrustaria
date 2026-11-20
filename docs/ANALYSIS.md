@@ -39326,5 +39326,11 @@ The tombstone/lava-boulder offsets use INTEGER `width / 2` (the int
 division truncates before the float cast). The 723 `NewGoreDirect(...).
 velocity *= 2` doubles the KICKED velocity. The :75204/:75221 row is one
 keep-one fn with the 907 halving flag.
-Remainder: sites 97-165 (waves J+), the UpdateProjectiles slot dispatch
+Wave J (sites 97-109): `projectile_gore_j.rs`, 4 witnesses written not run.
+The 503 type override keeps the `Next(16,18)` draw (`:75729-75733`). The
+281 head gores draw TWO `Next(-20,21)` velocity rolls each; their corner
+four comes AFTER the dust loops (the wiring keeps that stream order). The
+281/162 corner rows are one magnitude-parameter keep-one (±1 / ±1.5, both
+after ×0.4 — distinct from the 1053 boulder row, which has no ×0.4).
+Remainder: sites 110-165 (waves K+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
