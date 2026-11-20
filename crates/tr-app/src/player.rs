@@ -678,6 +678,48 @@ pub struct Player {
     pub silence: bool,
     /// Buff 160 (Dazed): the jump statics /5 and /2 (`:10047`, `:19637-19641`).
     pub dazed: bool,
+    /// `Player.noItems` (`Player.cs:2332`): Cursed (23) locks item use
+    /// (`:11733`); `ResetEffects` clears (`:18687`). The transformation-mount
+    /// exemption (`ItemCheck_CheckCanUse_Inner` `:52140-52148`) and
+    /// `Dismount`'s restore (`Mount.cs:6152-6155`) read it.
+    pub no_items: bool,
+    /// `Player.cursed` (`Player.cs:2334`): the Cursed (23) flag pair
+    /// (`:11734`); `ResetEffects` clears (`:18688`).
+    pub cursed: bool,
+    /// `Player.empressBrooch` (`Player.cs:14773`): the Empress Brooch (4989)
+    /// grant; `ResetEffects` clears (`:18455`). The Velociraptor mount's
+    /// per-tick flight refill reads it (`Mount.cs:2993-2996`).
+    pub empress_brooch: bool,
+    /// `Player.ignoreWater` (`Player.cs`): the water mounts' swim grant
+    /// (`UpdateBuffs` `:9887`/`:9892`/`:9902`/`:9907`); `ResetEffects` clears
+    /// (`:18756`). Flag only until the swim-collision consumer lands.
+    pub ignore_water: bool,
+    /// `Player.accFlipper` (`Player.cs`): the flipper grant the water mounts
+    /// share (`:9888`/`:9893`/`:9898`/`:9903`/`:9908`); `ResetEffects` clears
+    /// (`:18361`).
+    pub acc_flipper: bool,
+    /// `Player.canFloatInWater` (`Player.cs`): the Water Strider's (buff 265)
+    /// float grant (`:9897`); `ResetEffects` clears (`:18332`).
+    /// `ShouldFloatInWater` (`:3872-3885`) reads it.
+    pub can_float_in_water: bool,
+    /// `Player.lavaVision` (`Player.cs`): the Lava Shark's (buff 305) grant
+    /// (`:9910`); `ResetEffects` clears (`:18757`). Draw-side, flag only.
+    pub lava_vision: bool,
+    /// `Player.spikedBoots` (`Player.cs`): the Rat mount's wall-slide grant
+    /// (`Mount.UpdateAfterEquips` `Mount.cs:3002`); `ResetEffects` clears
+    /// (`:18660`). The slide consumer is unported — flag only.
+    pub spiked_boots: i32,
+    /// `Player.slideDir` (`Player.cs:28084` reset, `:28242-28252` writes):
+    /// the slope-slide direction the Rat's rotation lerp reads
+    /// (`Mount.cs:3004-3033`).
+    pub slide_dir: i32,
+    /// `Player.FailedNoSpaceCount` / `FailedNoSpaceLocation`
+    /// (`Player.cs:6053-6054`): the QuickMount no-space ladder — two refused
+    /// dismounts play the tink + dust, the third forces the dismount and the
+    /// no-space teleport (`:6049-6070`); `UpdateFailedDismount`
+    /// (`:6037-6043`) clears the count on death/dismount/moved-tile.
+    pub failed_no_space_count: i32,
+    pub failed_no_space_location: (i32, i32),
     /// The per-slot Weak count — `meleeDamage -= 0.051f` and
     /// `moveSpeed -= 0.1f` per slot (`Player.cs:11873-11878`); the
     /// `statDefense -= 4` half has no player-defense consumer yet
@@ -1173,6 +1215,14 @@ pub struct Player {
     /// The live hitbox height — `Player.height`: `HEIGHT` (42) normally,
     /// `42 + heightBoost` while mounted (`SetMount` `Mount.cs:6264-6277`).
     pub height: f32,
+    /// The live hitbox width — `Player.width` (`Entity.width`): `WIDTH` (20)
+    /// normally; the transformation mounts' `PlayerSize` delegates shrink it
+    /// (Rat 14, Pixie 8 — `Mount.cs:6244-6263`, `DelegateMethods.cs:164-194`),
+    /// and `Dismount` restores 20 (`Mount.cs:6176-6193`). The sim's collision,
+    /// centre and mount probes read it; the cross-system contact rects
+    /// (`npc.rs` et al.) still read the `WIDTH` constant (ANALYSIS "Mount
+    /// hitbox width (S1-P-i41)").
+    pub width: f32,
     /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
     last_stoned: bool,
     /// `Player.dashType` (`Player.cs:1044`): the equipped dash capability.
@@ -1371,6 +1421,26 @@ pub struct Player {
     /// mount is active. `Mount.TryDismount` needs `&World`, so the tick hands
     /// the request over (the `pending_switch_trip` convention).
     pending_dismount: bool,
+    /// S1-P-i41 — the Chillet mount's `SoundID.PalChillet` play
+    /// (`Mount.SetMount` `Mount.cs:6283-6286`, `SoundEngine.PlaySound(
+    /// SoundID.PalChillet, mountedPlayer.Center)`): `(position.X,
+    /// position.Y)` — the case-42 trackable façade draws its NextFloat on
+    /// the audio-only stream (the `pending_flap_sound` convention).
+    pending_chillet_sound: Option<(f32, f32)>,
+    /// S1-P-i41 — the QuickMount no-space ladder's `SoundEngine.PlaySound(0,
+    /// (int)position.X, (int)position.Y)` (`Player.cs:6057`): `(x, y)` — the
+    /// case-0 Dig play draws its variation + pitch on the `UpdatePlayers`
+    /// stream (the `play_place_sound` contract).
+    pending_no_space_sound: Option<(f32, f32)>,
+    /// S1-P-i41 — the third-fail `PlayerNoSpaceTeleport` request
+    /// (`Player.cs:6061-6066`): the forced dismount ran, the tick owns
+    /// `&World` for the spot scan (`TeleportHelpers.FindClosestTeleportSpotNoSpace`).
+    pending_no_space_teleport: bool,
+    /// S1-P-i41 — the `Shellphone_Spawn` invalid-area force-clear request
+    /// (`Player.cs:56169-56172`, `Spawn_ForceClearArea` `:37914-37935`):
+    /// `(floor_x, floor_y)` — the kills + liquid wipes need `&mut World` and
+    /// the cascade's drop rolls, so the drain runs them (`editing`).
+    pending_force_clear: Option<(i32, i32)>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -2101,6 +2171,7 @@ impl Player {
             auto_jump: false,
             just_jumped: false,
             height: HEIGHT,
+            width: WIDTH,
             last_stoned: false,
             dash_type: 0,
             dash: 0,
@@ -2161,6 +2232,10 @@ impl Player {
             pending_mana_effect: None,
             pending_retaliate: None,
             pending_dismount: false,
+            pending_chillet_sound: None,
+            pending_no_space_sound: None,
+            pending_no_space_teleport: false,
+            pending_force_clear: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -2224,6 +2299,17 @@ impl Player {
             confused: false,
             silence: false,
             dazed: false,
+            no_items: false,
+            cursed: false,
+            empress_brooch: false,
+            ignore_water: false,
+            acc_flipper: false,
+            can_float_in_water: false,
+            lava_vision: false,
+            spiked_boots: 0,
+            slide_dir: 0,
+            failed_no_space_count: 0,
+            failed_no_space_location: (0, 0),
             ammo_cycling: crate::ammo::AmmoCycling::default(),
             yoyo_hit_counter: -1,
         }
@@ -2248,6 +2334,7 @@ impl Player {
                     continue;
                 };
                 if !t.active()
+                    || t.inactive()
                     || !tr_core::tiledata::TILE_SOLID.has(t.kind)
                     || tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
                 {
@@ -2269,16 +2356,39 @@ impl Player {
     }
 
     /// `Player.CanSnapToPosition` (`Player.cs:33401-33417`): the snap box
-    /// (`position + offset`, the live 20x42) must be free of solid tiles.
-    /// The mount-size override branch is unreachable for the port's mounts.
+    /// (`position + offset`, the LIVE width/height) must be free of solid
+    /// tiles. A mounted transformation row (PlayerSize < 20×42,
+    /// `:33404-33414`) additionally probes the DEFAULT 20×42 box through
+    /// `CanFitInSpaceWithSize`. (The `Collision.CanHit` reach half `:33420`
+    /// and its fallbacks are the standing stand-in deviation.)
     pub fn can_snap_to(&self, world: &World, offset_x: f32, offset_y: f32) -> bool {
-        !Player::solid_collision(
+        if Player::solid_collision(
             world,
             self.x + offset_x,
             self.y + offset_y,
-            WIDTH,
+            self.width,
             self.height,
-        )
+        ) {
+            return false;
+        }
+        // `:33404-33414` — the shrunken transformation mounts re-probe the
+        // default box (Rat 14×14, Bat 20×18, Pixie 8×14 all qualify).
+        if self.mount.is_active()
+            && self
+                .mount
+                .data()
+                .and_then(|d| d.player_size_override)
+                .is_some_and(|(w, h)| w < WIDTH || h < HEIGHT)
+        {
+            // `CanFitInSpaceWithSize(DefaultSize, offset)` (`:6108-6111`).
+            let probe_x = self.x + self.width * 0.5 - WIDTH / 2.0 + self.vx + offset_x;
+            let probe_y = self.y + self.height - HEIGHT + self.vy + offset_y;
+            if !collision::is_clear_spot_test(world, [probe_x, probe_y], 16.0, WIDTH, HEIGHT, true, true)
+            {
+                return false;
+            }
+        }
+        true
     }
 
     /// `PlayerSittingHelper.SitDown` (`PlayerSittingHelper.cs:104-142`): the
@@ -2295,7 +2405,7 @@ impl Player {
         direction: i32,
         seat_offset: (f32, f32),
     ) {
-        let bottom_x = self.x + WIDTH as f32 * 0.5;
+        let bottom_x = self.x + self.width * 0.5;
         let bottom_y = self.y + self.height;
         if !self.can_snap_to(world, seat_x - bottom_x, seat_y - bottom_y) {
             return;
@@ -2305,7 +2415,7 @@ impl Player {
             return;
         }
         self.grappling_active = false;
-        self.x = seat_x - WIDTH as f32 * 0.5;
+        self.x = seat_x - self.width * 0.5;
         self.y = seat_y - self.height;
         self.facing = direction;
         self.sitting = true;
@@ -2341,7 +2451,7 @@ impl Player {
         direction: i32,
         bed_style: u32,
     ) {
-        let bottom_x = self.x + WIDTH as f32 * 0.5;
+        let bottom_x = self.x + self.width * 0.5;
         let bottom_y = self.y + self.height;
         if !self.can_snap_to(world, anchor_x - bottom_x, anchor_y - bottom_y) {
             return;
@@ -2361,7 +2471,7 @@ impl Player {
         if self.cart_mounted || self.mount.is_active() {
             let _ = self.dismount(world, false);
         }
-        self.x = anchor_x - WIDTH as f32 * 0.5;
+        self.x = anchor_x - self.width * 0.5;
         self.y = anchor_y - self.height;
         self.facing = direction;
         self.sleeping = true;
@@ -2399,7 +2509,7 @@ impl Player {
         if danger_near || (world.blood_moon && !world.day_time) || item_in_use {
             self.sleep_time = 0;
         }
-        let bx = self.x + WIDTH as f32 * 0.5;
+        let bx = self.x + self.width * 0.5;
         let by = self.y + self.height - 2.0;
         let tx = (bx / 16.0).floor() as i32;
         let ty = (by / 16.0).floor() as i32;
@@ -2487,7 +2597,7 @@ impl Player {
         collision::try_changing_size_from_bottom_center(
             world,
             [self.x, self.y],
-            [WIDTH, self.body_height()],
+            [self.width, self.body_height()],
             [WIDTH, HEIGHT],
         )
         .is_some()
@@ -2586,6 +2696,30 @@ impl Player {
         self.pending_flap_sound.take()
     }
 
+    /// S1-P-i41 — takes the Chillet mount's `SoundID.PalChillet` play
+    /// (`Mount.cs:6285`) — `(position.X, position.Y)` = `mountedPlayer.Center`.
+    pub(crate) fn take_chillet_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_chillet_sound.take()
+    }
+
+    /// S1-P-i41 — takes the QuickMount no-space tink (`Player.cs:6057`) —
+    /// `(x, y)`, the truncated position; the case-0 draws ride the drain.
+    pub(crate) fn take_no_space_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_no_space_sound.take()
+    }
+
+    /// S1-P-i41 — takes the third-fail no-space teleport request
+    /// (`Player.cs:6061-6066`); the caller owns `&World` for the spot scan.
+    pub(crate) fn take_no_space_teleport(&mut self) -> bool {
+        std::mem::take(&mut self.pending_no_space_teleport)
+    }
+
+    /// S1-P-i41 — takes the `Shellphone_Spawn` force-clear request
+    /// (`Player.cs:56171`) — `(floor_x, floor_y)` of the invalid spawn area.
+    pub(crate) fn take_force_clear(&mut self) -> Option<(i32, i32)> {
+        self.pending_force_clear.take()
+    }
+
     /// Takes the queued mana-restore text amount (`Player.ManaEffect`,
     /// `Player.cs:4531-4538`) — the caller owns `Main.combatText`.
     pub(crate) fn take_mana_effect(&mut self) -> Option<i32> {
@@ -2645,7 +2779,7 @@ impl Player {
         }
         // `TryGetSittingBlock` (`:33-48`): the tile at the bottom - 2 px
         // re-decodes as a sit-able seat.
-        let bx = self.x + WIDTH as f32 * 0.5;
+        let bx = self.x + self.width * 0.5;
         let by = self.y + self.height - 2.0;
         let tx = (bx / 16.0).floor() as i32;
         let ty = (by / 16.0).floor() as i32;
@@ -2799,6 +2933,7 @@ impl Player {
             self.clear_buff_type(buff);
         }
         self.height = HEIGHT;
+        self.width = WIDTH;
         // `Player.Spawn`'s `StopVanityActions` (`Player.cs:37556`): the
         // revive clears the sit/sleep state.
         self.sit_up();
@@ -2946,18 +3081,23 @@ impl Player {
 
     /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
     /// right-click removal — non-debuffs only, and not Petrified 60 /
-    /// Webbed 151; the mount's own buff dismounts instead of removing the
-    /// buff (`Mount.CheckBuff`, `Mount.cs` — `data.buff == b`). The
+    /// Webbed 151; the mount's own buff (`Mount.CheckBuff` = `data.buff == b`,
+    /// `Mount.cs:2933-2936`) dismounts through `TryDismount` (`:43377`) —
+    /// a FAILED dismount (CCed / no space) leaves `flag` false and the slot
+    /// is `DelBuff`'d anyway (`:43383-43386`). The
     /// `TryRemovingBuff_CheckBuffHideMisc` arms (`:43391-43402`) ride the
     /// misc-equips pets (unported). Returns whether the arm entered (the
-    /// caller plays `SoundEngine.PlaySound(12)`'s MenuTick cue).
-    pub fn try_removing_buff(&mut self, i: usize, b: i32) -> bool {
+    /// caller plays `SoundEngine.PlaySound(12)`'s MenuTick cue, `:43382`).
+    pub fn try_removing_buff(&mut self, world: &World, i: usize, b: i32) -> bool {
         if !crate::buffs::is_debuff(b) && b != 60 && b != 151 {
+            let mut flag = false;
             if self.mount.is_active() && self.mount.data().map(|d| d.buff) == Some(b) {
-                if let Some(buff) = self.mount.dismount() {
-                    self.clear_buff_type(buff);
-                }
-            } else {
+                // `:43377` — `TryDismount` (the gated path), not `Dismount`.
+                flag = self.try_dismount(world);
+            }
+            // `:43383-43386` — a successful mount dismount skips the DelBuff;
+            // everything else (including a failed dismount) removes the slot.
+            if !flag {
                 self.buffs.del_buff(i);
             }
             return true;
@@ -3177,7 +3317,7 @@ impl Player {
                             .spawn_with_data_ai_owned(
                                 BABY_BIRD,
                                 0,
-                                self.x + WIDTH * 0.5,
+                                self.x + self.width * 0.5,
                                 self.y,
                                 0.0,
                                 0.0,
@@ -3528,7 +3668,7 @@ impl Player {
             && !self.no_knockback
             && (!self.mount.is_active() || !crate::mount::is_cart(self.mount.kind()))
         {
-            let dir = if self.x + WIDTH * 0.5 >= from_x {
+            let dir = if self.x + self.width * 0.5 >= from_x {
                 1.0
             } else {
                 -1.0
@@ -3553,7 +3693,7 @@ impl Player {
         // landing ignores the i-frames the contact/lava lanes armed.
         self.immune = false;
         self.hurt_cd = 0.0;
-        let cx = self.x + WIDTH * 0.5;
+        let cx = self.x + self.width * 0.5;
         // The landing hit keeps `Hurt`'s default `dodgeable = true` — a
         // black-belt dodge eats fall damage in the vanilla (research S1-C-1
         // §1.4).
@@ -3587,7 +3727,7 @@ impl Player {
     }
 
     pub fn center(&self) -> (f32, f32) {
-        (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
+        (self.x + self.width * 0.5, self.y + self.height * 0.5)
     }
 
     /// `Player.meleeSpeed` (`Player.cs:2458`, reset to 1f at `:18335`): the
@@ -3618,7 +3758,7 @@ impl Player {
     /// offsets), so both fold to the body's top-centre — kept as its own
     /// accessor so the sentry-backpack reposition cites the C# point.
     pub fn mounted_top(&self) -> (f32, f32) {
-        (self.x + WIDTH * 0.5, self.y)
+        (self.x + self.width * 0.5, self.y)
     }
 
     /// `Player.ApplyHeadOffsetFromMount` (`Player.cs:51544-51645`): the
@@ -3687,7 +3827,7 @@ impl Player {
     pub fn rotated_relative_point(&self, pos: Vec2, push_from_origin_hack: i32) -> Vec2 {
         let num = if self.sleeping { 0.0 } else { self.full_rotation };
         // `base.Bottom + (0, gfxOffY)`.
-        let bottom = Vec2::new(self.x + WIDTH * 0.5, self.y + self.height);
+        let bottom = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
         let vector = bottom + Vec2::new(0.0, self.gfx_off_y);
         // `mount.PlayerOffset / 2 + 4 + pushFromOriginHack` — integer division.
         let num2 = (self.mount.player_offset() / 2 + 4 + push_from_origin_hack) as f32;
@@ -3748,6 +3888,46 @@ impl Player {
             }
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
             self.apply_equip_functional(m, kind);
+        }
+        // `Player.UpdateEquips`' tail (`Player.cs:13097-13100`):
+        // `mount.UpdateAfterEquips(this)` — the Velociraptor's selective-fly
+        // permission (`Mount.cs:2989-2997`, the empress-brooch refill reads
+        // `empressBrooch` + `wingTimeMax`) and the Rat's wall-slide grants
+        // (`:2998-3033`).
+        if self.mount.is_active() {
+            self.mount.update_selective_flight(
+                self.wings_logic,
+                self.empress_brooch,
+                self.wing_time_max,
+            );
+            // `:3002-3003` — the Rat (55) grants a spiked-boot level and
+            // centres the full rotation on the (shrunk) body.
+            if self.mount.kind() == 55 {
+                self.spiked_boots += 1;
+                self.full_rotation_origin = (self.width / 2.0, self.height / 2.0);
+                // `:3004-3033` — the slide-direction rotation lerp. The
+                // port's `slide_dir` rides the slope collision's writes.
+                let half_pi = std::f32::consts::FRAC_PI_2;
+                if self.slide_dir >= 1 {
+                    if half_pi - self.full_rotation.abs() <= 0.1 {
+                        self.full_rotation = -half_pi;
+                    } else {
+                        self.full_rotation =
+                            crate::npc::angle_lerp(self.full_rotation, -half_pi, 0.5);
+                    }
+                } else if self.slide_dir <= -1 {
+                    if half_pi - self.full_rotation.abs() <= 0.1 {
+                        self.full_rotation = half_pi;
+                    } else {
+                        self.full_rotation =
+                            crate::npc::angle_lerp(self.full_rotation, half_pi, 0.5);
+                    }
+                } else if self.full_rotation.abs() <= 0.1 {
+                    self.full_rotation = 0.0;
+                } else {
+                    self.full_rotation = crate::npc::angle_lerp(self.full_rotation, 0.0, 0.5);
+                }
+            }
         }
     }
 
@@ -3930,7 +4110,12 @@ impl Player {
             // the damage row lands here (the C# total counts once).
             1864 => self.minion_damage += 0.15,
             1845 => self.minion_damage += 0.1,
-            4989 => self.move_speed += 0.075,
+            4989 => {
+                // `Player.cs:14771-14774`: `empressBrooch = true;
+                // moveSpeed += 0.075f` — the mount refill reads the flag.
+                self.empress_brooch = true;
+                self.move_speed += 0.075;
+            }
             // The penetration rows: the Shark Tooth Necklace (3212,
             // `:13286-13289`) and the Honey Comb (4007, `:14485-14489`)
             // add a flat 5 each.
@@ -4223,6 +4408,9 @@ impl Player {
         // `Player.Update` → `UpdateImmunity` (`Player.cs:25456`): the spawn
         // i-frames count down before the AI.
         self.update_immunity();
+        // `Player.cs:24728` — `UpdateFailedDismount`: the QuickMount no-space
+        // strike count clears on death / dismount / moving off the tile.
+        self.update_failed_dismount();
         // `Player.cs:25625-25628`: the Cute Fishron's special window decays
         // one per tick; `Mount.UpdateEffects` re-arms it later in the tick.
         if self.mount_fishron_special_counter > 0.0 {
@@ -4231,20 +4419,44 @@ impl Player {
         // `Player.cs:24591`: the tag stack's update right after the buff head —
         // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
         self.tag_effects.update_tick();
-        // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
-        // tick and holds `buffTime = 10` — the buff is the source of truth.
-        // (The vanilla re-calls `SetMount` with the live type, which is the
-        // `Mount.cs:6198` no-op guard; the real re-equip runs when the buff
-        // re-appears on its own.)
+        // `Player.cs:9881-9913`: a mount-type buff re-affirms its mount every
+        // tick (`SetMount` — the `Mount.cs:6198` same-type no-op guard makes
+        // the re-call a no-op while it is already up) and holds
+        // `buffTime = 10` — the buff is the source of truth. The five
+        // water-mount sub-arms (`:9885-9912`) grant their swim flags.
         for bt in self.buffs.active_types() {
             if let (Some(m), Some(i)) = (
                 crate::mount::mount_type_of_buff(bt),
                 self.buffs.find_buff_index(bt),
             ) {
+                let wet = self.wet;
+                self.set_mount(m, wet);
                 self.buffs.buff_time[i] = 10;
-                if !self.mount.is_active() {
-                    let wet = self.wet;
-                    self.set_mount(m, wet);
+                // `:9885-9912` — the per-buff water grants (the C# else-if
+                // chain; each sets the same flag pair, the Lava Shark adds
+                // the full lava suite).
+                match bt {
+                    // `:9885-9889` (131), `:9890-9894` (168), `:9900-9904`
+                    // (279): `ignoreWater = true; accFlipper = true`.
+                    131 | 168 | 279 => {
+                        self.ignore_water = true;
+                        self.acc_flipper = true;
+                    }
+                    // `:9895-9899` (265): `canFloatInWater = true;
+                    // accFlipper = true`.
+                    265 => {
+                        self.can_float_in_water = true;
+                        self.acc_flipper = true;
+                    }
+                    // `:9905-9912` (305, the Lava Shark): the full lava suite.
+                    305 => {
+                        self.ignore_water = true;
+                        self.acc_flipper = true;
+                        self.lava_immune = true;
+                        self.lava_vision = true;
+                        self.fire_walk = true;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -4420,6 +4632,22 @@ impl Player {
         self.chilled = false;
         self.frozen = false;
         self.webbed = false;
+        // S1-P-i41 — the water-mount / Cursed flag clears of `ResetEffects`:
+        // `canFloatInWater = false` (`Player.cs:18332`), `accFlipper = false`
+        // (`:18361`), `noItems = false` / `cursed = false` (`:18687-18688`),
+        // `spikedBoots = 0` (`:18660`), `ignoreWater = false` /
+        // `lavaVision = false` (`:18756-18757`). The mount buff arm
+        // (`:9881-9913`) and the Cursed (23) debuff arm (`:11733-11734`)
+        // re-grant them per tick.
+        self.can_float_in_water = false;
+        self.acc_flipper = false;
+        self.no_items = false;
+        self.cursed = false;
+        // `Player.cs:18455`: `empressBrooch = false`.
+        self.empress_brooch = false;
+        self.spiked_boots = 0;
+        self.ignore_water = false;
+        self.lava_vision = false;
         // `Player.cs:18786`: justJumped clears at the tick head; the auto-jump
         // flag re-derives per tick from the mount head-set (`Mount.cs:4797`).
         self.just_jumped = false;
@@ -4772,6 +5000,15 @@ impl Player {
                     self.lava_immune = true;
                     self.fire_walk = true;
                     self.buffs.buff_immune[24] = true;
+                }
+                // S1-P-i41 — `:11731-11735` — Cursed (23): `noItems = true;
+                // cursed = true`. The item-use lock (`ItemCheck_CheckCanUse_Inner`
+                // `:52145-52148`) and the transformation-mount exemption read
+                // the pair. (The debuff block's own arm — the flag grant is
+                // the same write either way.)
+                23 => {
+                    self.no_items = true;
+                    self.cursed = true;
                 }
                 // `:9952-9955` — Swiftness (3): `moveSpeed += 0.25f`.
                 3 => self.move_speed += 0.25,
@@ -5597,7 +5834,7 @@ impl Player {
         // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
         let stoned = self.buffs.find_buff_index(156).is_some();
         if stoned && !self.last_stoned {
-            let cx = self.x + WIDTH * 0.5;
+            let cx = self.x + self.width * 0.5;
             self.hurt_inner(20, cx, false, rng, true, false, None, true);
         }
         self.last_stoned = stoned;
@@ -5634,7 +5871,7 @@ impl Player {
             // (`Player.cs:25325-25345`): the tile row under the feet across
             // the hitbox's x-extent.
             let tx0 = (self.x / TILE_PX) as i32;
-            let tx1 = ((self.x + WIDTH) / TILE_PX) as i32;
+            let tx1 = ((self.x + self.width) / TILE_PX) as i32;
             // `Player.cs:25321` reads `base.height` — the live hitbox height
             // (the mount framework's equip for its mounts; the cart's 52) scans
             // the tile row, not the row above it.
@@ -5657,7 +5894,7 @@ impl Player {
                 // ignored, and the immunity clears AFTER the hit.
                 let dmg = (fell - 2) * 20;
                 if dmg > 0 {
-                    let cx = self.x + WIDTH * 0.5;
+                    let cx = self.x + self.width * 0.5;
                     self.hurt_inner(dmg, cx, false, rng, true, false, None, true);
                     self.hurt_cd = 0.0;
                 }
@@ -5698,7 +5935,7 @@ impl Player {
             self.x = 0.0;
             self.vx = 0.0;
         }
-        let max_x = (world.width as f32 * TILE_PX) - WIDTH;
+        let max_x = (world.width as f32 * TILE_PX) - self.width;
         if self.x > max_x {
             self.x = max_x;
             self.vx = 0.0;
@@ -5745,7 +5982,7 @@ impl Player {
             world,
             [self.x, self.y],
             [0.0, 4.0],
-            WIDTH,
+            self.width,
             self.height,
             false,
             false,
@@ -6419,11 +6656,17 @@ impl Player {
     }
 
     /// `Player.ShouldFloatInWater` (`Player.cs:3872-3885`): `canFloatInWater`
-    /// (flippers or the merman buff) while not holding down; mounted, only the
-    /// Water Strider's mount (37) floats. No accessory grants
-    /// `canFloatInWater` in the port yet, so this stays false and the pose arm
-    /// is coded but unreachable.
+    /// (the Water Strider's buff-265 grant, `:9897`, or the flippers/merman)
+    /// while not holding down; mounted, only the Water Strider's mount (37)
+    /// floats. The buff arm now grants `can_float_in_water`, so the pose arm
+    /// is reachable.
     fn should_float_in_water(&self) -> bool {
+        if self.can_float_in_water && !self.control_down {
+            if self.mount.is_active() {
+                return self.mount.kind() == 37;
+            }
+            return true;
+        }
         false
     }
 
@@ -6908,9 +7151,9 @@ impl Player {
     /// (`Player.cs:21412-21414`): the hitbox's leading edge at the upper
     /// body and the center rows.
     fn solid_ahead(&self, world: &World, dir: i32) -> bool {
-        let cx = self.x + WIDTH * 0.5;
+        let cx = self.x + self.width * 0.5;
         let cy = self.y + self.height * 0.5;
-        let tx = ((cx + dir as f32 * (WIDTH * 0.5 + 2.0)) / TILE_PX) as i32;
+        let tx = ((cx + dir as f32 * (self.width * 0.5 + 2.0)) / TILE_PX) as i32;
         let ty0 = ((cy - self.height * 0.5 + 2.0) / TILE_PX) as i32;
         let ty1 = (cy / TILE_PX) as i32;
         [ty0, ty1].into_iter().any(|ty| {
@@ -7078,9 +7321,10 @@ impl Player {
 
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
     /// swap, the buff clear/add (`:6203`/`:6226`), the swap resets
-    /// (`:6205-6213`), the pirate-ship dash reset (`:6228-6235`) and the
-    /// bottom-anchored hitbox growth (`:6264-6277` — no PlayerSize delegate
-    /// exists in this set; the type-44 row does exist, so its reset fires).
+    /// (`:6205-6213`), the pirate-ship dash reset (`:6228-6235`), the
+    /// PlayerSize-delegate resize (`:6244-6263` — Rat 14×14, Bat 20×18,
+    /// Pixie 8×14) or the bottom-anchored `42 + heightBoost` growth
+    /// (`:6264-6277`), and the Chillet sound queue (`:6283-6286`).
     pub fn set_mount(&mut self, m: i32, wet: bool) -> bool {
         let Some(equip) = self.mount.set_mount(m, wet) else {
             return false;
@@ -7109,11 +7353,33 @@ impl Player {
             self.dash_delay = 0;
             self.dash_time = 0;
         }
-        self.grow_hitbox(HEIGHT + equip.height_boost as f32);
+        if let Some((w, h)) = equip.size_override {
+            // `:6244-6263` — the PlayerSize delegate branch: the bottom
+            // point is captured BEFORE the resize, then the new box is
+            // bottom-center anchored on it (`position = (bottom.X - w/2,
+            // bottom.Y - h)`). The shadowPos loops have no port counterpart
+            // (no advanced shadows) — the position maths is the observable.
+            let bottom_x = self.x + self.width * 0.5;
+            let bottom_y = self.y + self.height;
+            self.width = w;
+            self.height = h;
+            self.x = bottom_x - w / 2.0;
+            self.y = bottom_y - h;
+        } else {
+            // `:6264-6277` — the height-boost growth, bottom-anchored.
+            self.grow_hitbox(HEIGHT + equip.height_boost as f32);
+        }
         // `:6279-6282` — the UFO (7) and the drill (8) centre the full
-        // rotation on the grown box.
+        // rotation on the grown box (`width / 2, height / 2`).
         if m == 7 || m == 8 {
-            self.full_rotation_origin = (WIDTH as f32 / 2.0, self.height as f32 / 2.0);
+            self.full_rotation_origin = (self.width / 2.0, self.height / 2.0);
+        }
+        // `:6283-6286` — the Chillemt family (62-65) plays
+        // `SoundID.PalChillet` at `mountedPlayer.Center`; the queue drains
+        // on the tick's audio seam (the `pending_flap_sound` convention).
+        if matches!(m, 62..=65) {
+            let (cx, cy) = self.center();
+            self.pending_chillet_sound = Some((cx, cy));
         }
         true
     }
@@ -7126,17 +7392,36 @@ impl Player {
         self.y -= self.height;
     }
 
-    /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear,
-    /// the full-rotation reset (`:6161-6162`) and the hitbox restore.
+    /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
+    /// (`:6150`), the transformation mounts' `noItems` restore (`:6152-6155`),
+    /// the cart flip/boost clears (`:6156-6160`), the full-rotation reset
+    /// (`:6161-6162`) and the 20×42 hitbox restore (`:6176-6193`).
     /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
-    /// system yet); the `noItems` restore (`:6152-6155`) needs the `noItems` /
-    /// `cursed` pair the port does not carry — constants-off.
+    /// system yet). The petting stop (`:6163-6166`) has no port counterpart.
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
+        // `:6148` — `bool cart = this.Cart` is read BEFORE the state clears
+        // (`Mount.Cart` = `Minecart && _active`, `Mount.cs:530-540`).
+        let was_cart = self.mount.is_active()
+            && self
+                .mount
+                .data()
+                .is_some_and(|d| d.minecart);
+        let was_type = self.mount.kind();
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
         let _ = ignore_effect;
         self.clear_buff_type(buff);
+        // `:6152-6155` — the Rat (55) / Bat (56) transformation mounts free
+        // the item lock unless Cursed keeps it.
+        if matches!(was_type, 55 | 56) && self.no_items && !self.cursed {
+            self.no_items = false;
+        }
+        // `:6156-6160` — a cart dismount clears the flip and the last boost.
+        if was_cart {
+            self.cart_flip = false;
+            self.last_boost = (0, 0);
+        }
         // `:6161-6162` — the dismount clears the full rotation.
         self.full_rotation = 0.0;
         self.full_rotation_origin = (0.0, 0.0);
@@ -7144,54 +7429,104 @@ impl Player {
         // on failure the Y patch accepts the overlap (the collision step
         // resolves it next tick, as in the original). The resize goes through
         // the single `TryChangingSizeFromBottomCenter` port (world-aware).
-        if let Some([_, ny]) = collision::try_changing_size_from_bottom_center(
+        // The C# restores BOTH width and height (`:6180-6181`/`:6190-6191`).
+        if let Some([nx, ny]) = collision::try_changing_size_from_bottom_center(
             world,
             [self.x, self.y],
-            [WIDTH, self.height],
+            [self.width, self.height],
             [WIDTH, HEIGHT],
         ) {
+            self.x = nx;
             self.y = ny;
+            self.width = WIDTH;
             self.height = HEIGHT;
         } else {
             self.y += self.height;
+            self.width = WIDTH;
             self.height = HEIGHT;
             self.y -= self.height;
         }
         true
     }
 
-    /// `Mount.TryDismount` (`Mount.cs:6127-6140`) with `CanDismountWithResult`
-    /// (`:6611-6624`): the CC gate cannot fire on this table (no row sets
-    /// `DontDismountWhenCCed`) and the shrink probe always fits, so the
-    /// dismount runs; Phase 3's quick-mount counts the failures.
+    /// `Mount.CanDismountWithResult` (`Mount.cs:6611-6624`): the
+    /// `DontDismountWhenCCed` gate ({55, 56, 61}, `MountID.cs:47`) refuses
+    /// while CCed; otherwise the 20×42 shrink probe decides. A shrink always
+    /// fits vertically, but the transformation mounts GROW in width on the
+    /// restore (Pixie 8 → 20), so the probe can genuinely fail.
+    pub fn can_dismount_with_result(&self, world: &World) -> crate::mount::DismountCheck {
+        if crate::mount::dont_dismount_when_cced(self.mount.kind()) && self.cced() {
+            return crate::mount::DismountCheck::FailedCCed;
+        }
+        if collision::try_changing_size_from_bottom_center(
+            world,
+            [self.x, self.y],
+            [self.width, self.height],
+            [WIDTH, HEIGHT],
+        )
+        .is_none()
+        {
+            return crate::mount::DismountCheck::FailedNoSpace;
+        }
+        crate::mount::DismountCheck::Succeeded
+    }
+
+    /// `Mount.TryDismount` (`Mount.cs:6127-6140`) → `TryDismountWithResult`:
+    /// dismount only when `CanDismountWithResult` succeeds.
     pub fn try_dismount(&mut self, world: &World) -> bool {
-        self.dismount(world, false)
+        if self.can_dismount_with_result(world) == crate::mount::DismountCheck::Succeeded {
+            self.dismount(world, false)
+        } else {
+            false
+        }
+    }
+
+    /// `Mount.TryEarlyDismount` (`Mount.cs:6626-6632`): the item-use dismount
+    /// — active, `dismountsOnItemUse` and the space check passes.
+    pub fn try_early_dismount(&mut self, world: &World) {
+        if self.mount.is_active()
+            && self.mount.dismount_on_item_use()
+            && self.can_dismount_with_result(world) == crate::mount::DismountCheck::Succeeded
+        {
+            self.dismount(world, false);
+        }
     }
 
     /// `Mount.CanMount` (`Mount.cs:6581-6604`): the grown box must fit in
-    /// space (`CanFitInSpaceWithSize` -> `Collision.IsClearSpotTest`, stand-in
-    /// [`collision::collides_rect`]), the bat (56) refuses water (`:6595`) and
-    /// a grapple in flight blocks every mount outside `Cart`/`CanUseHooks`
-    /// (`:6599-6601`). The PlayerSize-delegate arm cannot fire on this table.
+    /// space (`CanFitInSpaceWithSize` → `Collision.IsClearSpotTest`, the four
+    /// cardinal 16-px sweeps), the bat (56) refuses water (`:6595`) and a
+    /// grapple in flight blocks every mount outside `Cart`/`CanUseHooks`
+    /// (`:6599-6601`). The PlayerSize delegate (Rat/Bat/Pixie) overrides the
+    /// probe size (`:6585-6590`).
     pub(crate) fn can_mount(&self, world: &World, m: i32) -> bool {
         let Some(row) = crate::mount::mount_data(m) else {
             return false;
         };
-        let size_h = self.height + row.height_boost as f32;
-        if collides_rect(world, self.x, self.y + self.height - size_h, WIDTH, size_h) {
+        // `:6584` — `Size + (0, heightBoost)`; the delegate (`:6585-6590`)
+        // replaces both components with its own size.
+        let (size_w, size_h) = match row.player_size_override {
+            Some((w, h)) => (w, h),
+            None => (self.width, self.height + row.height_boost as f32),
+        };
+        // `Player.CanFitInSpaceWithSize` (`Player.cs:6108-6111`): the probe
+        // top-left is `(Center.X - size.X/2, Bottom.Y - size.Y) + velocity`,
+        // the four cardinal 16-px sweeps with fallThrough/fall2 true.
+        let probe_x = self.x + self.width * 0.5 - size_w / 2.0 + self.vx;
+        let probe_y = self.y + self.height - size_h + self.vy;
+        if !collision::is_clear_spot_test(world, [probe_x, probe_y], 16.0, size_w, size_h, true, true)
+        {
             return false;
         }
-        // `:6595`: `Collision.WetCollision(Bottom - size * 0.5, size)` - the
-        // probe is the grown box centred on the body's bottom point.
+        // `:6595`: `Collision.WetCollision(Bottom - size * 0.5, size)` — the
+        // probe is the sized box centred on the body's bottom point.
         if m == 56
             && (self.wet
                 || self.dripping()
-                // `Bottom.X - size.X / 2` = `position.X` for the fixed width.
                 || wet_collision(
                     world,
-                    self.x,
+                    self.x + self.width * 0.5 - size_w / 2.0,
                     self.y + self.height - size_h / 2.0,
-                    WIDTH,
+                    size_w,
                     size_h,
                 ))
         {
@@ -7218,7 +7553,7 @@ impl Player {
         };
         let x0 = (self.x / TILE_PX) as i32;
         let y0 = (self.y / TILE_PX) as i32;
-        let x1 = ((self.x + WIDTH) / TILE_PX) as i32;
+        let x1 = ((self.x + self.width) / TILE_PX) as i32;
         let y1 = ((self.y + self.height) / TILE_PX) as i32;
         wind.in_a_place_with_wind(world, x0, y0, 1 + x1 - x0, 1 + y1 - y0)
     }
@@ -7243,45 +7578,212 @@ impl Player {
         true
     }
 
-    /// `Player.QuickMount` (`Player.cs:6045-6100`): the toggle — dismount, or
-    /// equip the first saddle in the inventory. `QuickMount_GetItemToUse`
-    /// (`:6179-6198`) walks the inventory (the `miscEquips[3]` slot is not
-    /// ported — M3-EQUIP); the cart items are skipped by the table itself (no
-    /// cart rows) and the `QuickMinecart` fallback waits for M2-MOUNT-3. The
-    /// FailedNoSpace branch (`:6052-6070` — the 3-fail force + the
-    /// `PlayerNoSpaceTeleport`) is unreachable for this set: every row's
-    /// `heightBoost >= 0` makes the dismount probe a shrink, which always
-    /// fits. Returns the saddle item kind used (for the use animation).
+    /// `Player.ItemCheck_CheckCanUse_Inner`'s noItems gate (`Player.cs:52140-
+    /// 52148`): `flag3 = ignoreCursed`, widened when a dismounts-on-item-use
+    /// mount is up, can dismount, and the player is Cursed-lock free; the
+    /// `noItems && !flag3` pair refuses the use. The mount item-use arm and
+    /// `QuickMount`'s `ItemCheck_TryStartUse` both ride it.
+    pub(crate) fn can_use_item_past_no_items(&self, world: &World, ignore_cursed: bool) -> bool {
+        let mut flag3 = ignore_cursed;
+        if self.mount.is_active()
+            && self.mount.dismount_on_item_use()
+            && self.can_dismount_with_result(world) == crate::mount::DismountCheck::Succeeded
+            && self.no_items
+            && !self.cursed
+        {
+            flag3 = true;
+        }
+        !(self.no_items && !flag3)
+    }
+
+    /// `Player.QuickMount` (`Player.cs:6045-6100`): the toggle — dismount
+    /// (with the FailedNoSpace 3-strike ladder, `:6049-6070`), or equip the
+    /// first non-cart saddle (`QuickMount_GetItemToUse` `:6179-6198`: the
+    /// `miscEquips[3]` slot first, then the inventory). The `QuickMinecartSnap`
+    /// track-hook branch (`:6081`, `:6145-6177`) and the `QuickMinecart`
+    /// fallback (`:6097`) are unported (M2-MOUNT-3 / grapple) — constants-off,
+    /// so `flag` stays true. `trying_to_use_item` is the caller's
+    /// `TryingToUseItem()` read (`:6082`); the `DismountsOnItemUse` mount
+    /// refuses to equip while an item use is in flight. Returns the saddle
+    /// item kind used (for the use animation).
     pub fn quick_mount(
         &mut self,
         world: &World,
         inventory: &[crate::item::ItemSlot],
+        misc_equips: &[crate::item::ItemSlot],
+        trying_to_use_item: bool,
     ) -> Option<u16> {
         if self.mount.is_active() {
-            self.try_dismount(world);
+            // `:6049-6052`: a successful (or CCed-refused) dismount returns;
+            // only FailedNoSpace falls into the ladder.
+            let result = self.can_dismount_with_result(world);
+            if result == crate::mount::DismountCheck::Succeeded {
+                self.dismount(world, false);
+                return None;
+            }
+            if result != crate::mount::DismountCheck::FailedNoSpace {
+                return None;
+            }
+            // `:6053-6060`: the no-space ladder — record the tile, count the
+            // strike; the first two play the tink + dust and keep the mount.
+            self.failed_no_space_location =
+                ((self.x / TILE_PX) as i32, (self.y / TILE_PX) as i32);
+            self.failed_no_space_count += 1;
+            if self.failed_no_space_count < 3 {
+                // `:6057` — `PlaySound(0, (int)position.X, (int)position.Y)`;
+                // the case-0 Dig draws ride the drain's stream. The
+                // `DoFailedDismountDust` (`:6058`) is a visual seam (no dust
+                // request channel for mounts yet — ANALYSIS).
+                self.pending_no_space_sound = Some((self.x.trunc(), self.y.trunc()));
+                return None;
+            }
+            // `:6061-6066`: the third strike forces the dismount
+            // (ignoreEffect) and teleports to the nearest open spot.
+            self.dismount(world, true);
+            self.failed_no_space_count = 0;
+            self.pending_no_space_teleport = true;
             return None;
         }
-        // `:6074-6077`: the guards (tongued/gravDir/noItems have no port arms).
-        if self.cced() || self.dead {
+        // `:6074-6077`: CCed / tongued / gravDir==-1 / dead / noItems refuse.
+        // The port keeps gravDir = 1 (no flip), so that arm folds out.
+        if self.cced() || self.tongued || self.dead || self.no_items {
             return None;
         }
-        let item = inventory
-            .iter()
-            .find(|slot| slot.count > 0 && crate::mount::mount_type_of_item(slot.kind).is_some());
-        let Some(slot) = item else {
+        // `QuickMount_GetItemToUse` (`:6179-6198`): miscEquips[3] first (a
+        // non-cart mount), then the inventory scan skipping cart rows.
+        let pick = misc_equips
+            .get(3)
+            .filter(|s| s.count > 0)
+            .and_then(|s| crate::mount::mount_type_of_item(s.kind).map(|m| (s.kind, m)))
+            .filter(|(_, m)| !crate::mount::is_cart(*m))
+            .or_else(|| {
+                inventory.iter().find_map(|s| {
+                    if s.count == 0 {
+                        return None;
+                    }
+                    let m = crate::mount::mount_type_of_item(s.kind)?;
+                    if crate::mount::is_cart(m) {
+                        return None;
+                    }
+                    Some((s.kind, m))
+                })
+            });
+        let Some((kind, m)) = pick else {
             return None; // `:6097` `QuickMinecart` — M2-MOUNT-3
         };
-        let Some(m) = crate::mount::mount_type_of_item(slot.kind) else {
-            return None;
-        };
-        if !self.can_mount(world, m) {
+        // `:6079`: `CanMount && ItemCheck_TryStartUse`. For a saddle the
+        // TryStartUse cascade reduces to the noItems gate (no mana/potion/
+        // shoot) — the full cascade rides the editing.rs use path.
+        if !self.can_mount(world, m) || !self.can_use_item_past_no_items(world, false) {
             return None;
         }
-        if self.set_mount(m, self.wet) {
-            Some(slot.kind)
+        // `:6081-6085`: `flag = !QuickMinecartSnap()` (unported → true); a
+        // dismounts-on-item-use mount refuses while an item use is in flight.
+        let mut flag = true;
+        if crate::mount::mount_data(m).is_some_and(|d| d.dismounts_on_item_use)
+            && trying_to_use_item
+        {
+            flag = false;
+        }
+        if flag && self.set_mount(m, self.wet) {
+            // `:6089-6092` — `item.UseSound` plays at `base.Center`; the
+            // caller's use-animation seam plays it (`start_swing_extras`).
+            Some(kind)
         } else {
             None
         }
+    }
+
+    /// `Player.UpdateFailedDismount` (`Player.cs:6037-6043`): the no-space
+    /// strike count clears on death, a dismount, or moving off the recorded
+    /// tile. Called from the player tick (`:24728`).
+    pub fn update_failed_dismount(&mut self) {
+        if self.failed_no_space_count > 0
+            && (self.dead
+                || !self.mount.is_active()
+                || self.failed_no_space_location
+                    != ((self.x / TILE_PX) as i32, (self.y / TILE_PX) as i32))
+        {
+            self.failed_no_space_count = 0;
+        }
+    }
+
+    /// `Player.PlayerNoSpaceTeleport` (`Player.cs:6019-6035`): the third
+    /// no-space strike — find the closest open spot and teleport there
+    /// (style 11), else fall back to the world spawn (`Shellphone_Spawn`).
+    /// The net sends (`:6025-6029`) have no port counterpart.
+    /// The invalid-area force-clear (`Spawn_ForceClearArea`) rewrites tiles
+    /// and rolls drops, so it rides the pending-request convention — the
+    /// drain (`world_sim/player.rs`) runs `editing::spawn_force_clear_area`
+    /// the same tick; the teleport reads no tiles, so the deferral is
+    /// observation-identical.
+    pub fn player_no_space_teleport(&mut self, world: &World) {
+        self.failed_no_space_count = 0;
+        if let Some((nx, ny)) = find_closest_teleport_spot_no_space(world, self) {
+            self.teleport_style(nx, ny, 11);
+        } else {
+            self.shellphone_spawn(world);
+        }
+    }
+
+    /// `Player.Teleport` (`Player.cs:37414-37496`) — the movement-relevant
+    /// core: `RemoveAllGrapplingHooks` (style != 10), `StopVanityActions`,
+    /// the shimmer strip, the position write, the fall-origin reset and the
+    /// `oldPosition` sync. The camera/effect/map halves are render seams.
+    /// The velocity is NOT zeroed here — the C# scan zeroes it before the
+    /// call (`TeleportHelpers.cs:12`) and `Shellphone_Spawn` after (`:56175`).
+    pub fn teleport_style(&mut self, new_x: f32, new_y: f32, style: i32) {
+        // `:37420-37423` — every style but 10 removes the hooks.
+        if style != 10 {
+            self.release_grappling_hooks = true;
+            self.grappling_active = false;
+        }
+        // `:37424` — `StopVanityActions` (the petting stop is unported).
+        self.sit_up();
+        self.stop_sleeping();
+        // `:37425-37431` — the shimmering / shimmerWet strip. The port has no
+        // `Player.shimmering` (the absorbed state, S1-E-16), so only the
+        // ported `shimmer_wet` half fires; the `shimmering = false` write and
+        // the buff-353 clear ride that state's own task (ANALYSIS).
+        if self.shimmer_wet {
+            self.shimmer_wet = false;
+            self.wet = false;
+            self.clear_buff_type(353);
+        }
+        // `:37446`/`:37455`/`:37488` — position, fall origin, oldPosition.
+        self.x = new_x;
+        self.y = new_y;
+        self.fall_start = (new_y / TILE_PX) as i32;
+        self.prev_x = new_x;
+        self.prev_y = new_y;
+    }
+
+    /// `Player.Shellphone_Spawn` (`Player.cs:56164-56181`): the world-spawn
+    /// fallback — `Spawn_GetPositionAtWorldSpawn` finds the floor, the area
+    /// is force-cleared when invalid, then the teleport (style 11) and the
+    /// velocity zero. The port's `World` spawn fields are the tile coords;
+    /// the `netMode != 1` gate folds to always-clear (SP only). The
+    /// force-clear rewrites tiles + rolls drops, so it queues as a pending
+    /// request (`pending_force_clear`) — the drain runs it the same tick.
+    pub fn shellphone_spawn(&mut self, world: &World) {
+        let (floor_x, floor_y) =
+            spawn_get_position_at_world_spawn(world, world.spawn_x, world.spawn_y);
+        // `:56169-56172` — the invalid area force-clears BEFORE the teleport.
+        if !spawn_is_area_valid_spawn(world, floor_x, floor_y) {
+            self.pending_force_clear = Some((floor_x, floor_y));
+        }
+        // `:56173` — `ToWorldCoordinates(8, 0) - (width/2, height)`.
+        let new_x = floor_x as f32 * TILE_PX + 8.0 - self.width / 2.0;
+        let new_y = floor_y as f32 * TILE_PX - self.height;
+        self.teleport_style(new_x, new_y, 11);
+        self.vx = 0.0;
+        self.vy = 0.0;
+    }
+
+    /// `Player.UsingSuperCart` (`Player.cs:3966-3980`): the Super Cart counts
+    /// only when it is both unlocked and enabled.
+    pub fn using_super_cart(&self) -> bool {
+        self.unlocked_super_cart && self.enabled_super_cart
     }
 
     /// The per-tick mount block — `Player.cs:26623-26688` with the
@@ -7290,12 +7792,6 @@ impl Player {
     /// runs those at :25656/:26011, both before the run-speed merge — the
     /// combined method keeps their relative order. Only reachable while not
     /// grappling (the caller's `:26622` branch).
-/// `Player.UsingSuperCart` (`Player.cs:3966-3980`): the Super Cart counts
-    /// only when it is both unlocked and enabled.
-    pub fn using_super_cart(&self) -> bool {
-        self.unlocked_super_cart && self.enabled_super_cart
-    }
-
     fn update_mount(&mut self, world: &World, raining: bool, wind: Option<&tr_core::wind::Wind>) {
         if !self.mount.is_active() {
             return;
@@ -7321,6 +7817,14 @@ impl Player {
         // `Mount.cs:4982-5008` (`UpdateEffects` case 12): the Cute Fishron
         // re-arms its special window when hurt or standing in water/rain.
         if self.mount.kind() == 12 {
+            // `:4983-5000` — while `MountFishronSpecial`, every damage class
+            // gains 0.15 (the AddLight halves are the draw's light seam).
+            if self.mount_fishron_special(world, raining, wind) {
+                self.melee_damage += 0.15;
+                self.ranged_damage += 0.15;
+                self.magic_damage += 0.15;
+                self.minion_damage += 0.15;
+            }
             if self.hp <= self.max_hp / 2 {
                 self.mount_fishron_special_counter = 60.0;
             }
@@ -7328,11 +7832,21 @@ impl Player {
                 self.mount_fishron_special_counter = 420.0;
             }
         }
+        // `Mount.cs:5137-5145` (`UpdateEffects` cases 55/56/61): the
+        // transformation mounts lock item use every tick
+        // (`IsAllowedToHoldItems = false` rides the draw's
+        // `mounted_blocks_hold`; the Pixie's dust tail `:5146-5160` is the
+        // visual seam).
+        if matches!(self.mount.kind(), 55 | 56 | 61) {
+            self.no_items = true;
+        }
         // `Mount.cs:4949-4981`: the ground-dash mounts arm their extra jumps
         // (the PHYS-8 priority chain consumes them) and pin knockback off
-        // above the charge speed.
+        // above the charge speed. The Santank's (46) jump rides the
+        // ability case's head (`:4882-4884`), before the target scan.
         match self.mount.kind() {
             10 => self.has_jump_options[ExtraJump::Unicorn.index()] = true,
+            46 => self.has_jump_options[ExtraJump::Santank.index()] = true,
             47 => self.has_jump_options[ExtraJump::WallOfFleshGoat.index()] = true,
             14 => self.has_jump_options[ExtraJump::Basilisk.index()] = true,
             _ => {}
@@ -7420,7 +7934,7 @@ impl Player {
         // mount flight budget refills with it (`mount.ResetFlightTime`).
         if (self.vy == 0.0 && self.release_jump) || (self.auto_jump && self.just_jumped) {
             self.wing_time = self.wing_time_max as f32;
-            self.mount.reset_flight_time(self.vx);
+            self.mount.reset_flight_time(self.vx, self.wing_time_max);
         }
         // `Player.cs:24761`: every resting tick recovers 2 hover fatigue.
         if self.vy == 0.0 {
@@ -7838,7 +8352,7 @@ impl Player {
         // hook's rotation (only the Squirrel Hook reads it).
         let pull = crate::grapple::grapple_pull(
             hooks,
-            Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5),
+            Vec2::new(self.x + self.width * 0.5, self.y + self.height * 0.5),
             // `PlayerInput` has no `up` arm (nothing consumes it in the
             // port); the C# reads `controlUp` here.
             crate::grapple::steering_stick(input.left, input.right, false, input.down),
@@ -8134,7 +8648,7 @@ impl Player {
     /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
     /// the slope dust carve-out stay with the particle tasks.
     fn floor_visuals(&mut self, world: &World) {
-        let x = ((self.x + WIDTH * 0.5) / TILE_PX) as i32;
+        let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
         // the live hitbox height (the mount framework's equip; the cart's 52).
         let y = ((self.y + self.body_height()) / TILE_PX) as i32;
@@ -8300,7 +8814,7 @@ impl Player {
             world,
             self.x,
             self.y,
-            WIDTH as i32,
+            self.width as i32,
             self.body_height() as i32,
             -1.0,
             false,
@@ -8359,7 +8873,7 @@ impl Player {
             world,
             self.x,
             self.y - 0.01,
-            WIDTH,
+            self.width,
             self.body_height(),
             self.vx,
             self.vy,
@@ -8456,12 +8970,12 @@ impl Player {
         }
         // `:23034-23081`: the puff sits on the side the body's centre is away
         // from; one row, then the two rows below it while they are still 229.
-        let centre_x = self.x + WIDTH * 0.5;
+        let centre_x = self.x + self.width * 0.5;
         // `(num3*16) < position.X + width/2` picks the left puff (`:23034`).
         let puff_x = if ((num3 * 16) as f32) < centre_x {
             self.x - 4.0
         } else {
-            self.x + WIDTH - 2.0
+            self.x + self.width - 2.0
         };
         // `Dust.NewDust(pos, 4, 16, 153, 0f, 0f, 50)` (`:23036`) + the
         // `Next(0,6)`/`velocity *= 0.1`/`noGravity` tail (`:23037-23039`).
@@ -8547,7 +9061,7 @@ impl Player {
             if self.lava_time > 0 {
                 self.lava_time -= 1;
             } else if self.hurt_cd <= 0.0 {
-                let cx = self.x + WIDTH * 0.5;
+                let cx = self.x + self.width * 0.5;
                 // `Player.cs:27687-27707`: the hit's damage/burn pair —
                 // 80/420 classic, halved by the Ash Wood set
                 // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
@@ -8613,6 +9127,15 @@ impl Player {
 
         let mut pos = [self.x, self.y];
         let mut vel = [self.vx, self.vy];
+        // `Player.cs:28082-28084`: the pre-movement velocity snapshot and the
+        // slideDir reset — the post-SlopingCollision compare (`:28242-28252`)
+        // re-arms the Rat mount's wall-slide direction.
+        let pre_move_vx = self.vx;
+        self.slide_dir = 0;
+        // The live hitbox width (`Player.width`): the transformation mounts
+        // shrink it (Rat 14, Pixie 8 — `Mount.cs:6244-6263`), so the collision
+        // body reads it, not the 20 constant.
+        let body_w = self.width;
         // `Player.cs` runs the step helpers on the pre-collision velocity (which
         // still carries this tick's gravity), then resolves the AABB. The wet
         // path never steps — `WetCollision` goes straight to `TileCollision`
@@ -8627,7 +9150,7 @@ impl Player {
                 world,
                 &mut pos,
                 &mut vel,
-                WIDTH,
+                body_w,
                 body_h,
                 &mut self.step_speed,
                 &mut self.gfx_off_y,
@@ -8638,7 +9161,7 @@ impl Player {
                 world,
                 &mut pos,
                 &mut vel,
-                WIDTH,
+                body_w,
                 body_h,
                 &mut self.step_speed,
                 &mut self.gfx_off_y,
@@ -8656,7 +9179,7 @@ impl Player {
         } else {
             (false, false)
         };
-        let tc = collision::tile_collision(world, pos, vel, WIDTH, col_h, fall_through, fall2);
+        let tc = collision::tile_collision(world, pos, vel, body_w, col_h, fall_through, fall2);
         if tc.up {
             self.jump = 0;
         }
@@ -8687,7 +9210,7 @@ impl Player {
             world,
             pos,
             vel,
-            WIDTH,
+            body_w,
             body_h,
             self.cart_mounted || self.stair_fall,
         );
@@ -8707,7 +9230,7 @@ impl Player {
             collision::step_conveyor_belt_player(
                 world,
                 &mut pos,
-                WIDTH as i32,
+                body_w as i32,
                 body_h as i32,
                 1.0,
                 self.gfx_off_y,
@@ -8715,6 +9238,15 @@ impl Player {
                 self.pulley,
                 self.on_track,
             );
+        }
+        // `Player.cs:28242-28252`: the slide direction — the pre-movement
+        // velocity's sign when the collision changed the X axis.
+        if pre_move_vx != vel[0] {
+            if pre_move_vx < 0.0 {
+                self.slide_dir = -1;
+            } else if pre_move_vx > 0.0 {
+                self.slide_dir = 1;
+            }
         }
         self.x = pos[0];
         self.y = pos[1];
@@ -8843,6 +9375,334 @@ pub fn wet_collision(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
         }
     }
     false
+}
+
+/// `Collision.LavaCollision` (`Collision.cs:1653-1684`): true when a LAVA
+/// tile's surface overlaps the full probe rectangle (no inset — unlike
+/// `WetCollision`). The no-space teleport scan refuses lava spots
+/// (`TeleportHelpers.cs:34`).
+pub fn lava_collision(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+    let max_y = (world.height - 40).max(0);
+    let x0 = (((x / TILE_PX) as i32) - 1).clamp(0, world.width - 1);
+    let x1 = ((((x + w) / TILE_PX) as i32) + 2).clamp(0, world.width - 1);
+    let y0 = (((y / TILE_PX) as i32) - 1).clamp(0, max_y);
+    let y1 = ((((y + h) / TILE_PX) as i32) + 2).clamp(0, max_y);
+    for tx in x0..x1 {
+        for ty in y0..y1 {
+            let Some(t) = world.tile(tx, ty) else {
+                continue;
+            };
+            if t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava {
+                let left = tx as f32 * TILE_PX;
+                let num3 = (256 - t.liquid as i32) as f32 / 32.0;
+                let top = ty as f32 * TILE_PX + num3 * 2.0;
+                let depth = 16.0 - (num3 * 2.0) as i32 as f32;
+                if x + w > left && x < left + 16.0 && y + h > top && y < top + depth {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.InWorld(x, y, fluff)` (`WorldGen.cs:9688-9695`).
+fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
+/// `Main.wallDungeon` (`Main.cs:10598-10606`): the nine dungeon wall ids.
+fn wall_dungeon(wall: u16) -> bool {
+    matches!(wall, 7 | 8 | 9 | 94 | 95 | 96 | 97 | 98 | 99)
+}
+
+/// `TeleportHelpers.TileIsDangerous` (`TeleportHelpers.cs:241-261`): lava,
+/// the pre-Plantera dungeon wall 87, the pre-Skeletron dungeon walls, and
+/// any hurting tile. The world's seed flags feed `CanTileHurt`'s 230/80 arms.
+fn teleport_tile_is_dangerous(world: &World, x: i32, y: i32, fire_walk: bool) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava {
+        return true;
+    }
+    if t.wall == 87 && (y as f64) > world.world_surface && !world.downed_plant_boss {
+        return true;
+    }
+    if wall_dungeon(t.wall) && (y as f64) > world.world_surface && !world.downed_skeletron {
+        return true;
+    }
+    let good_world = world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let dont_starve = world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+    if t.active() && crate::touch_damage::can_tile_hurt(t.kind, good_world, dont_starve, fire_walk) {
+        return true;
+    }
+    false
+}
+
+/// `Utils.Clamp` (`Utils.cs`): the C# compares against MAX first, then min —
+/// unlike Rust's `.clamp` it never panics when `min > max` (a small world's
+/// `40 .. width-40` window can invert).
+fn utils_clamp(value: i32, min: i32, max: i32) -> i32 {
+    if value > max {
+        max
+    } else if value < min {
+        min
+    } else {
+        value
+    }
+}
+
+/// `TeleportHelpers.FindClosestTeleportSpotNoSpace` (`TeleportHelpers.cs:8-47`):
+/// the ±25-tile scan around the body's bottom for the closest open landing
+/// spot — a free cell over a solid dry floor, no lava / hurting tiles / solid
+/// overlap. Zeroes the velocity as a side effect (`:12`), like the C#.
+pub fn find_closest_teleport_spot_no_space(world: &World, player: &mut Player) -> Option<(f32, f32)> {
+    player.vx = 0.0;
+    player.vy = 0.0;
+    let half_w = player.width * 0.5;
+    let h = player.height;
+    let bottom_x = player.x + half_w;
+    let bottom_y = player.y + h;
+    let px = (bottom_x / TILE_PX) as i32;
+    let py = (bottom_y / TILE_PX) as i32;
+    let x0 = utils_clamp(px - 25, 40, world.width - 40);
+    let x1 = utils_clamp(px + 25, 40, world.width - 40);
+    let y0 = utils_clamp(py - 25, 40, world.height - 40);
+    let y1 = utils_clamp(py + 25, 40, world.height - 40);
+    let good_world = world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let dont_starve = world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+    let mut best: Option<(f32, f32)> = None;
+    let mut best_dist = f32::MAX;
+    for i in x0..x1 {
+        for j in y0..y1 {
+            // `:29` — the candidate top-left: cell centre-x, floor-top-y.
+            let cx = i as f32 * TILE_PX + 8.0 - half_w;
+            let cy = j as f32 * TILE_PX + 15.0 - h;
+            let Some(tile) = world.tile(i, j) else { continue };
+            let Some(tile2) = world.tile(i, j + 1) else { continue };
+            let flag = collision::solid_or_sloped_tile(tile, false) || tile.liquid > 0;
+            let flag2 = collision::solid_or_sloped_tile(tile2, false) && tile2.liquid == 0;
+            if !teleport_tile_is_dangerous(world, i, j, player.fire_walk)
+                && !flag
+                && flag2
+                && !lava_collision(world, cx, cy, player.width, h)
+                // `Collision.AnyHurtingTiles` (`Collision.cs:3110-3113`)
+                // calls `HurtTiles(..., null)` — a NULL player: the hot-tile
+                // arm (`CanTileHurt` `:3220`, `player == null || !fireWalk`)
+                // always hurts, so fire_walk = false here.
+                && crate::touch_damage::hurt_tiles(
+                    world,
+                    cx,
+                    cy,
+                    player.width as i32,
+                    h as i32,
+                    good_world,
+                    dont_starve,
+                    false,
+                )
+                .is_none()
+                && !Player::solid_collision(world, cx, cy, player.width, h)
+            {
+                let dist = Vec2::new(cx - bottom_x, cy - bottom_y).length();
+                if dist < best_dist {
+                    best = Some((cx, cy));
+                    best_dist = dist;
+                }
+            }
+        }
+    }
+    best
+}
+
+/// `Player.Spawn_IsAreaValidSpawn` (`Player.cs:37937-37985`): the 3×3 area
+/// above the floor cell free of solids / liquid / pressure plates / hurting
+/// tiles. The `generatingSpawn` dual-dungeons arm (`:37978`) is unported.
+fn spawn_is_area_valid_spawn(world: &World, floor_x: i32, floor_y: i32) -> bool {
+    let good_world = world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let dont_starve = world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+    for i in floor_x - 1..floor_x + 2 {
+        for j in floor_y - 3..floor_y {
+            if !in_world(world, i, j, 5) {
+                continue;
+            }
+            let Some(tile) = world.tile(i, j) else { continue };
+            if j == floor_y - 1 {
+                if let Some(tile2) = world.tile(i, j + 1) {
+                    if tile2.active() {
+                        if tile2.kind == 135 {
+                            return false;
+                        }
+                        // `CanTileHurt(..., null)` — fire_walk = false.
+                        if crate::touch_damage::can_tile_hurt(tile2.kind, good_world, dont_starve, false)
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if tile.active() && !tile.inactive() {
+                if tile.kind == 135 {
+                    return false;
+                }
+                if td::TILE_SOLID.has(tile.kind) && !td::TILE_SOLID_TOP.has(tile.kind) {
+                    return false;
+                }
+            }
+            if tile.liquid > 0 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// `Player.Spawn_ValidSpawnFloor` (`Player.cs:37896-37912`): a solid
+/// non-solid-top tile, a platform, or tile 380 — but never 379 or a plate.
+/// The C# reads `tile.nactive()` (active && !inActive, `Tile.cs:240-247`).
+fn spawn_valid_spawn_floor(world: &World, tx: i32, ty: i32) -> bool {
+    let Some(tile) = world.tile(tx, ty) else {
+        return false;
+    };
+    if tile.active() && tile.kind == 135 {
+        return false;
+    }
+    let nactive = tile.active() && !tile.inactive();
+    if nactive
+        && ((td::TILE_SOLID.has(tile.kind) && !td::TILE_SOLID_TOP.has(tile.kind))
+            || td::SET_PLATFORMS.has(tile.kind)
+            || tile.kind == 380)
+    {
+        return tile.kind != 379;
+    }
+    false
+}
+
+/// `Player.Spawn_DescendFromDefaultSpace_Inner` (`Player.cs:37831-37894`):
+/// the 50-row descent for a valid 3-wide floor, with the single-block
+/// fallback. Returns `(point, valid_space)`.
+fn spawn_descend_inner(world: &World, x: i32, y: i32, single_block_allowed: bool) -> ((i32, i32), bool) {
+    let mut x = x;
+    for i in 0..50 {
+        let mut flag = false;
+        let mut flag2 = false;
+        let mut flag3 = false;
+        let num = y + i;
+        let mut num2 = 0;
+        for j in -1..=1 {
+            let num3 = x + j + num2;
+            if !in_world(world, num3, num, 5) || world.tile(num3, num - 1).is_none() {
+                continue;
+            }
+            if let Some(tile) = world.tile(num3, num) {
+                if tile.active() && !tile.inactive() && tile.kind == 135 {
+                    return ((x, y), false);
+                }
+            }
+            if spawn_valid_spawn_floor(world, num3, num) && spawn_is_area_valid_spawn(world, num3, num) {
+                match j {
+                    -1 => flag = true,
+                    1 => flag3 = true,
+                    _ => flag2 = true,
+                }
+            }
+        }
+        if !flag2
+            && (single_block_allowed || flag)
+            && spawn_valid_spawn_floor(world, x - 2, num)
+            && spawn_is_area_valid_spawn(world, x - 1, num)
+        {
+            flag = true;
+            flag2 = true;
+            flag3 = false;
+            num2 -= 1;
+        } else if !flag2
+            && (single_block_allowed || flag3)
+            && spawn_valid_spawn_floor(world, x + 2, num)
+            && spawn_is_area_valid_spawn(world, x + 1, num)
+        {
+            flag = false;
+            flag2 = true;
+            flag3 = true;
+            num2 += 1;
+        }
+        if flag2 && (single_block_allowed || flag || flag3) {
+            x += num2;
+            return ((x, y + i), true);
+        }
+    }
+    ((x, y), false)
+}
+
+/// `Player.Spawn_DescendFromDefaultSpace` (`Player.cs:37818-37829`).
+fn spawn_descend_from_default_space(world: &World, x: i32, y: i32) -> (i32, i32) {
+    let (point, valid) = spawn_descend_inner(world, x, y, false);
+    if !valid {
+        let (point, _) = spawn_descend_inner(world, x, y, true);
+        return point;
+    }
+    point
+}
+
+/// `Player.Spawn_GetPositionAtSpawn` (`Player.cs:37723-37804`): the spawn
+/// floor search — the ±30-row up/down scan when the area is invalid, then
+/// the descent. Returns the floor cell.
+fn spawn_get_position_at_spawn(world: &World, spawn_x: i32, spawn_y: i32) -> (i32, i32) {
+    let mut num = spawn_x;
+    let mut num2 = spawn_y;
+    if !spawn_is_area_valid_spawn(world, num, num2) {
+        let mut flag2 = false;
+        for i in 0..30 {
+            if spawn_is_area_valid_spawn(world, num, num2 - i) {
+                num2 -= i;
+                flag2 = true;
+                break;
+            }
+            if spawn_is_area_valid_spawn(world, num - 1, num2 - i) {
+                num -= 1;
+                num2 -= i;
+                flag2 = true;
+                break;
+            }
+            if spawn_is_area_valid_spawn(world, num + 1, num2 - i) {
+                num += 1;
+                num2 -= i;
+                flag2 = true;
+                break;
+            }
+        }
+        if !flag2 {
+            for j in 0..30 {
+                if spawn_is_area_valid_spawn(world, num, num2 + j) {
+                    num2 += j;
+                    flag2 = true;
+                    break;
+                }
+                if spawn_is_area_valid_spawn(world, num - 1, num2 + j) {
+                    num -= 1;
+                    num2 += j;
+                    flag2 = true;
+                    break;
+                }
+                if spawn_is_area_valid_spawn(world, num + 1, num2 + j) {
+                    num += 1;
+                    num2 += j;
+                    flag2 = true;
+                    break;
+                }
+            }
+        }
+        if flag2 {
+            return spawn_descend_from_default_space(world, num, num2);
+        }
+        return (num, num2);
+    }
+    spawn_descend_from_default_space(world, num, num2)
+}
+
+/// `Player.Spawn_GetPositionAtWorldSpawn` (`Player.cs:37718-37721`).
+fn spawn_get_position_at_world_spawn(world: &World, spawn_x: i32, spawn_y: i32) -> (i32, i32) {
+    spawn_get_position_at_spawn(world, spawn_x, spawn_y)
 }
 
 fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slopes: bool) -> bool {
@@ -10378,8 +11238,8 @@ mod tests {
         p.buffs.add_buff(20, 3600); // Poisoned — a debuff
         let poison = p.buffs.find_buff_index(20).unwrap();
         let iron = p.buffs.find_buff_index(5).unwrap();
-        assert!(!p.try_removing_buff(poison, 20), "a debuff refuses");
-        assert!(p.try_removing_buff(iron, 5), "the non-debuff removes");
+        assert!(!p.try_removing_buff(&w, poison, 20), "a debuff refuses");
+        assert!(p.try_removing_buff(&w, iron, 5), "the non-debuff removes");
         assert_eq!(p.buffs.find_buff_index(5), None);
     }
 
@@ -10393,7 +11253,7 @@ mod tests {
         let mount_buff = p.mount.data().unwrap().buff;
         p.buffs.add_buff(mount_buff, 3600);
         let slot = p.buffs.find_buff_index(mount_buff).unwrap();
-        assert!(p.try_removing_buff(slot, mount_buff), "the arm entered");
+        assert!(p.try_removing_buff(&w, slot, mount_buff), "the arm entered");
         assert!(!p.mount.is_active(), "the mount dismounted");
     }
 
@@ -14674,7 +15534,7 @@ mod tests {
         }
         let inv = [saddle(3260), EMPTY_ITEM_SLOT];
         assert_eq!(
-            p.quick_mount(&w, &inv),
+            p.quick_mount(&w, &inv, &[], false),
             Some(3260),
             "the Blessed Apple equips"
         );
@@ -14735,16 +15595,16 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let none = [EMPTY_ITEM_SLOT];
-        assert_eq!(p.quick_mount(&w, &none), None, "no saddle -> nothing");
+        assert_eq!(p.quick_mount(&w, &none, &[], false), None, "no saddle -> nothing");
         let inv = [saddle(2430)]; // Slimy Saddle -> Slime 3
-        assert_eq!(p.quick_mount(&w, &inv), Some(2430));
+        assert_eq!(p.quick_mount(&w, &inv, &[], false), Some(2430));
         assert!(p.mount.is_active());
-        assert_eq!(p.quick_mount(&w, &inv), None, "mounted -> dismount");
+        assert_eq!(p.quick_mount(&w, &inv, &[], false), None, "mounted -> dismount");
         assert!(!p.mount.is_active());
         // the CC guard (`:6074-6077`)
         p.buffs.add_buff(47, 100); // Frozen
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.quick_mount(&w, &inv), None, "CCed cannot mount");
+        assert_eq!(p.quick_mount(&w, &inv, &[], false), None, "CCed cannot mount");
     }
 
     #[test]
@@ -15584,6 +16444,483 @@ mod tests {
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 299);
         p.respawn();
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 0);
+    }
+
+    // -- S1-P-i41: mount item use + data witnesses ---------------------------
+
+    #[test]
+    fn s1_p_i41_the_player_size_delegates_resize_the_hitbox_bottom_center() {
+        // `Mount.SetMount`'s PlayerSize branch (`Mount.cs:6244-6263`) + the
+        // three delegates (`DelegateMethods.cs:164-194`): Rat 14×14, Bat
+        // 20×18, Pixie 8×14 — bottom-center anchored, NOT 42+heightBoost.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let bottom_x = p.x + p.width * 0.5;
+        let bottom_y = p.y + p.height;
+        // The Pixie (61) shrinks to 8×14.
+        assert!(p.set_mount(61, false));
+        assert_eq!((p.width, p.height), (8.0, 14.0));
+        assert!((p.x - (bottom_x - 4.0)).abs() < 1e-4, "bottom-center X");
+        assert!((p.y - (bottom_y - 14.0)).abs() < 1e-4, "bottom-center Y");
+        // The buff is granted (`:6226`).
+        assert!(p.buffs.find_buff_index(384).is_some());
+        // Dismount restores 20×42 (`Mount.cs:6176-6193`).
+        assert!(p.dismount(&w, false));
+        assert_eq!((p.width, p.height), (WIDTH, HEIGHT));
+        // The Rat (55) is 14×14; the Bat (56) is 20×18.
+        assert!(p.set_mount(55, false));
+        assert_eq!((p.width, p.height), (14.0, 14.0));
+        p.dismount(&w, false);
+        assert!(p.set_mount(56, false));
+        assert_eq!((p.width, p.height), (20.0, 18.0));
+        p.dismount(&w, false);
+        // A non-delegate mount still grows by heightBoost (Unicorn 34).
+        assert!(p.set_mount(10, false));
+        assert_eq!((p.width, p.height), (WIDTH, HEIGHT + 34.0));
+    }
+
+    #[test]
+    fn s1_p_i41_the_cc_set_refuses_the_transformation_dismount() {
+        // `Mount.CanDismountWithResult` (`Mount.cs:6611-6624`): the
+        // `DontDismountWhenCCed` set {55,56,61} (`MountID.cs:47`) refuses
+        // while CCed; the buff-removal path then DelBuff's the slot anyway
+        // (`Main.cs:43383-43386`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(55, false)); // the Rat
+        assert!(crate::mount::dont_dismount_when_cced(55));
+        assert!(!crate::mount::dont_dismount_when_cced(10));
+        // Frozen (47) → CCed.
+        p.frozen = true;
+        assert_eq!(
+            p.can_dismount_with_result(&w),
+            crate::mount::DismountCheck::FailedCCed
+        );
+        assert!(!p.try_dismount(&w), "CCed refuses the dismount");
+        assert!(p.mount.is_active(), "the mount stays up");
+        // The buff-bar removal: TryDismount fails → the slot is DelBuff'd.
+        let slot = p.buffs.find_buff_index(374).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 374));
+        assert!(p.buffs.find_buff_index(374).is_none(), "the slot removed");
+        assert!(p.mount.is_active(), "the mount survived the failed dismount");
+        // Un-CCed: the dismount succeeds.
+        p.frozen = false;
+        assert!(p.try_dismount(&w));
+        assert!(!p.mount.is_active());
+    }
+
+    #[test]
+    fn s1_p_i41_the_velociraptor_borrows_the_wing_budget() {
+        // `Mount.CanFly`'s type-54 branch (`Mount.cs:2866-2869`) +
+        // `UpdateAfterEquips` (`:2989-2992`) + `ResetFlightTime` (`:5269-5272`).
+        let mut m = crate::mount::MountState::default();
+        m.set_mount(54, false);
+        // No wings → not allowed to fly (flightTimeMax is 0).
+        assert!(!m.can_fly());
+        m.update_selective_flight(0, false, 0);
+        assert!(!m.can_fly());
+        // Wings equipped → allowed, and the budget borrows wingTimeMax.
+        m.update_selective_flight(22, false, 42);
+        assert!(m.can_fly());
+        m.reset_flight_time(0.0, 42);
+        assert_eq!(m.fly_time(), 42, "the raptor borrows the wing budget");
+        // The empress brooch refills the budget every tick (`:2993-2996`).
+        m.flight();
+        assert_eq!(m.fly_time(), 41);
+        m.update_selective_flight(22, true, 42);
+        assert_eq!(m.fly_time(), 42, "the brooch refills");
+        // A non-54 mount ignores the selective permission.
+        m.dismount();
+        m.set_mount(10, false);
+        m.update_selective_flight(22, true, 42);
+        assert!(!m.can_fly(), "the Unicorn has flightTimeMax 0");
+    }
+
+    #[test]
+    fn s1_p_i41_the_water_mount_buffs_grant_their_swim_flags() {
+        // `Player.UpdateBuffs`' mount sub-arms (`Player.cs:9885-9912`): the
+        // five water buffs grant ignoreWater/accFlipper (131/168/279),
+        // canFloatInWater/accFlipper (265), the full lava suite (305).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The Turtle (buff 131): ignoreWater + accFlipper.
+        p.buffs.add_buff(131, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.ignore_water && p.acc_flipper);
+        assert!(p.mount.is_active() && p.mount.kind() == 4);
+        assert!(!p.can_float_in_water);
+        // The Water Strider (buff 265): canFloatInWater + accFlipper.
+        p.buffs.add_buff(265, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.can_float_in_water && p.acc_flipper);
+        // The Lava Shark (buff 305): the full lava suite.
+        p.buffs.add_buff(305, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.ignore_water && p.acc_flipper);
+        assert!(p.lava_immune && p.lava_vision && p.fire_walk);
+        // ShouldFloatInWater (`:3872-3885`): the Strider's canFloatInWater
+        // grant floats unmounted; mounted, only type 37 does.
+        p.dismount(&w, false);
+        p.can_float_in_water = true;
+        p.control_down = false;
+        assert!(p.should_float_in_water());
+        p.control_down = true;
+        assert!(!p.should_float_in_water(), "holding down sinks");
+    }
+
+    #[test]
+    fn s1_p_i41_the_dismount_restores_no_items_unless_cursed() {
+        // `Mount.Dismount`'s noItems restore (`Mount.cs:6152-6155`): the Rat
+        // (55) / Bat (56) free the item lock unless Cursed keeps it.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(55, false));
+        p.no_items = true;
+        p.cursed = false;
+        p.dismount(&w, false);
+        assert!(!p.no_items, "the Rat dismount frees the lock");
+        // Cursed keeps it.
+        assert!(p.set_mount(56, false));
+        p.no_items = true;
+        p.cursed = true;
+        p.dismount(&w, false);
+        assert!(p.no_items, "Cursed keeps the lock");
+        // A non-transformation mount never touches noItems.
+        assert!(p.set_mount(10, false));
+        p.no_items = true;
+        p.cursed = false;
+        p.dismount(&w, false);
+        assert!(p.no_items, "the Unicorn leaves the lock alone");
+    }
+
+    #[test]
+    fn s1_p_i41_the_cursed_buff_locks_item_use_with_the_mount_exemption() {
+        // `Player.cs:11731-11735` (Cursed 23 → noItems+cursed) + the
+        // `ItemCheck_CheckCanUse_Inner` exemption (`:52140-52148`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(23, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.no_items && p.cursed);
+        // No mount: the lock refuses (ignoreCursed = false).
+        assert!(!p.can_use_item_past_no_items(&w, false));
+        // ignoreCursed = true bypasses.
+        assert!(p.can_use_item_past_no_items(&w, true));
+        // A dismounts-on-item-use mount that can dismount widens the gate —
+        // but Cursed keeps it locked (`!this.cursed` conjunct).
+        p.set_mount(55, false);
+        assert!(!p.can_use_item_past_no_items(&w, false), "cursed keeps it");
+        // Drop the cursed flag (keep noItems): the exemption opens.
+        p.cursed = false;
+        assert!(p.can_use_item_past_no_items(&w, false));
+    }
+
+    #[test]
+    fn s1_p_i41_quick_mount_skips_cart_rows_and_reads_misc_equip_3() {
+        // `QuickMount_GetItemToUse` (`Player.cs:6179-6198`): miscEquips[3]
+        // first (non-cart), then the inventory skipping cart rows.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // A cart item in the inventory is skipped; the saddle behind it wins.
+        let inv = [saddle(2343), saddle(3260)]; // Minecart 6, then Unicorn 10
+        assert_eq!(p.quick_mount(&w, &inv, &[], false), Some(3260));
+        assert_eq!(p.mount.kind(), 10);
+        p.dismount(&w, false);
+        // miscEquips[3] wins over the inventory.
+        let misc = [EMPTY_ITEM_SLOT, EMPTY_ITEM_SLOT, EMPTY_ITEM_SLOT, saddle(2430)];
+        assert_eq!(p.quick_mount(&w, &inv, &misc, false), Some(2430));
+        assert_eq!(p.mount.kind(), 3);
+    }
+
+    #[test]
+    fn s1_p_i41_quick_mount_refuses_a_dismounts_on_use_mount_mid_use() {
+        // `Player.QuickMount` (`Player.cs:6082-6085`): a dismounts-on-item-use
+        // mount refuses to equip while `TryingToUseItem()` is true.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let inv = [saddle(5525)]; // the Rat (55), dismountsOnItemUse
+        assert_eq!(p.quick_mount(&w, &inv, &[], true), None, "mid-use refuses");
+        assert!(!p.mount.is_active());
+        assert_eq!(p.quick_mount(&w, &inv, &[], false), Some(5525));
+        assert!(p.mount.is_active());
+    }
+
+    #[test]
+    fn s1_p_i41_the_no_space_ladder_counts_three_strikes_then_teleports() {
+        // `Player.QuickMount`'s FailedNoSpace ladder (`Player.cs:6049-6070`):
+        // two refused dismounts queue the tink, the third forces the dismount
+        // and the no-space teleport. `UpdateFailedDismount` (`:6037-6043`)
+        // clears the count on a moved tile.
+        let mut w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Force a FailedNoSpace: a Pixie (8 wide) restoring to 20 in a slot
+        // too narrow — build walls hugging the body.
+        assert!(p.set_mount(61, false));
+        // Wall the sides so the 8→20 width growth has no room.
+        let col_l = ((p.x - 16.0) / TILE_PX) as i32;
+        let col_r = ((p.x + p.width + 16.0) / TILE_PX) as i32;
+        let row = ((p.y + p.height - 1.0) / TILE_PX) as i32;
+        for c in [col_l, col_r] {
+            for r in row - 3..=row {
+                let i = w.index(c, r);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The probe now fails (the 20-wide restore overlaps the walls).
+        assert_eq!(
+            p.can_dismount_with_result(&w),
+            crate::mount::DismountCheck::FailedNoSpace
+        );
+        // Strike 1 and 2: the tink queues, the mount stays.
+        assert_eq!(p.quick_mount(&w, &[], &[], false), None);
+        assert_eq!(p.failed_no_space_count, 1);
+        assert!(p.take_no_space_sound().is_some());
+        assert!(p.mount.is_active());
+        assert_eq!(p.quick_mount(&w, &[], &[], false), None);
+        assert_eq!(p.failed_no_space_count, 2);
+        assert!(p.take_no_space_sound().is_some());
+        // Strike 3: the forced dismount + the teleport request.
+        assert_eq!(p.quick_mount(&w, &[], &[], false), None);
+        assert!(!p.mount.is_active(), "the third strike forces the dismount");
+        assert_eq!(p.failed_no_space_count, 0);
+        assert!(p.take_no_space_teleport(), "the teleport request queued");
+    }
+
+    #[test]
+    fn s1_p_i41_update_failed_dismount_clears_on_a_moved_tile() {
+        // `Player.UpdateFailedDismount` (`Player.cs:6037-6043`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(10, false);
+        p.failed_no_space_count = 2;
+        p.failed_no_space_location = ((p.x / TILE_PX) as i32, (p.y / TILE_PX) as i32);
+        p.update_failed_dismount();
+        assert_eq!(p.failed_no_space_count, 2, "same tile keeps the count");
+        p.x += TILE_PX * 2.0;
+        p.update_failed_dismount();
+        assert_eq!(p.failed_no_space_count, 0, "a moved tile clears it");
+        // A dismount clears it too.
+        p.failed_no_space_count = 2;
+        p.failed_no_space_location = ((p.x / TILE_PX) as i32, (p.y / TILE_PX) as i32);
+        p.dismount(&w, false);
+        p.update_failed_dismount();
+        assert_eq!(p.failed_no_space_count, 0);
+    }
+
+    #[test]
+    fn s1_p_i41_the_chillet_equip_queues_the_pal_chillet_cue() {
+        // `Mount.SetMount` (`Mount.cs:6283-6286`): types 62-65 play
+        // `SoundID.PalChillet` at `mountedPlayer.Center`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(62, false));
+        let (cx, cy) = p.center();
+        assert_eq!(p.take_chillet_sound(), Some((cx, cy)));
+        assert!(p.take_chillet_sound().is_none(), "the queue drains once");
+        // A non-Chillet mount queues nothing.
+        p.dismount(&w, false);
+        assert!(p.set_mount(10, false));
+        assert!(p.take_chillet_sound().is_none());
+    }
+
+    #[test]
+    fn s1_p_i41_the_no_space_teleport_finds_an_open_spot() {
+        // `TeleportHelpers.FindClosestTeleportSpotNoSpace`
+        // (`TeleportHelpers.cs:8-47`): the closest free cell over a solid dry
+        // floor; the velocity zeroes (`:12`). The scan window clamps to
+        // `40 .. width-40` (`:20-21`), so the fixture needs a world wider
+        // than 80 tiles (the 64-wide `ground_world` collapses it to empty).
+        let mut w = World::new("wide".into(), 128, 128);
+        for x in 0..128 {
+            for y in 60..128 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 64;
+        w.spawn_y = 40;
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.vx = 5.0;
+        p.vy = 3.0;
+        let spot = find_closest_teleport_spot_no_space(&w, &mut p);
+        assert!(spot.is_some(), "an open spot exists over the ground");
+        assert_eq!((p.vx, p.vy), (0.0, 0.0), "the scan zeroes the velocity");
+        let (sx, sy) = spot.unwrap();
+        // The spot rests on the ground row 60: the candidate bottom is
+        // `j*16+15` with `j = 59` (`:29`) — one pixel above the floor top.
+        assert!((sy + p.height - (60.0 * TILE_PX - 1.0)).abs() < TILE_PX);
+        // The teleport writes the position + fall origin (`Player.cs:37446`).
+        p.teleport_style(sx, sy, 11);
+        assert_eq!((p.x, p.y), (sx, sy));
+        assert_eq!(p.fall_start, (sy / TILE_PX) as i32);
+    }
+
+    #[test]
+    fn s1_p_i41_the_transformation_mounts_lock_items_every_tick() {
+        // `Mount.UpdateEffects` cases 55/56/61 (`Mount.cs:5137-5145`):
+        // `noItems = true` re-arms every tick (ResetEffects clears it,
+        // `Player.cs:18687`). The use gate (`:52140-52148`) widens only when
+        // the dismounts-on-item-use mount CAN dismount — CCed closes it
+        // (`DontDismountWhenCCed`, `MountID.cs:47`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.set_mount(61, false)); // the Pixie
+        p.update(&w, PlayerInput::default());
+        assert!(p.no_items, "the Pixie locks item use");
+        // Open space: the exemption widens (the use dismounts first).
+        assert!(p.can_use_item_past_no_items(&w, false));
+        assert!(p.can_use_item_past_no_items(&w, true), "ignoreCursed widens");
+        // CCed: the dismount refuses, so the lock holds every use.
+        p.frozen = true;
+        assert!(!p.can_use_item_past_no_items(&w, false));
+        assert!(p.can_use_item_past_no_items(&w, true));
+        // The quick-mount toggle refuses the CCed dismount (`:6049-6052`).
+        let inv = [saddle(3260), EMPTY_ITEM_SLOT];
+        assert_eq!(p.quick_mount(&w, &inv, &[], false), None);
+        assert!(p.mount.is_active(), "the CCed mount stays up");
+        p.frozen = false;
+        // The Rat (55) and Bat (56) lock too; the Unicorn (10) does not.
+        p.dismount(&w, false);
+        assert!(p.set_mount(55, false));
+        p.update(&w, PlayerInput::default());
+        assert!(p.no_items);
+        p.dismount(&w, false);
+        assert!(p.set_mount(56, false));
+        p.update(&w, PlayerInput::default());
+        assert!(p.no_items);
+        p.dismount(&w, false);
+        assert!(p.set_mount(10, false));
+        p.update(&w, PlayerInput::default());
+        assert!(!p.no_items, "the Unicorn holds items");
+    }
+
+    #[test]
+    fn s1_p_i41_the_cute_fishron_special_grants_the_damage_bonus() {
+        // `Mount.UpdateEffects` case 12 (`Mount.cs:4983-4999`): while
+        // `MountFishronSpecial` (`Player.cs:4044-4056`), every class gains
+        // 0.15. Healthy + dry + no window + no rain → NOT special: no grant.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(12, false));
+        p.hp = p.max_hp;
+        p.mount_fishron_special_counter = 0.0;
+        p.update_mount(&w, false, None);
+        assert_eq!(p.melee_damage, 1.0, "no special → no bonus");
+        assert_eq!(p.minion_damage, 1.0);
+        // Hurt arms the special (the getter's `statLife >= statLifeMax2 / 2`
+        // fails only STRICTLY below half; `:5001-5003` sets the 60-tick
+        // window after the damage read, like the C# case order).
+        p.melee_damage = 1.0;
+        p.ranged_damage = 1.0;
+        p.magic_damage = 1.0;
+        p.minion_damage = 1.0;
+        p.hp = p.max_hp / 2 - 1;
+        p.update_mount(&w, false, None);
+        assert_eq!(p.melee_damage, 1.15, "the special grants +0.15 melee");
+        assert_eq!(p.ranged_damage, 1.15);
+        assert_eq!(p.magic_damage, 1.15);
+        assert_eq!(p.minion_damage, 1.15);
+        assert_eq!(p.mount_fishron_special_counter, 60.0, "hurt arms 60");
+    }
+
+    #[test]
+    fn s1_p_i41_the_santank_arms_its_extra_jump() {
+        // `Mount.UpdateEffects` case 46's head (`Mount.cs:4882-4884`):
+        // `hasJumpOption_Santank = true` before the target scan.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(46, false));
+        p.has_jump_options[ExtraJump::Santank.index()] = false;
+        p.update_mount(&w, false, None);
+        assert!(
+            p.has_jump_options[ExtraJump::Santank.index()],
+            "the Santank jump armed"
+        );
+    }
+
+    #[test]
+    fn s1_p_i41_the_empress_brooch_grants_and_the_tick_clears_it() {
+        // `ApplyEquipFunctional` (`Player.cs:14771-14774`): the worn Empress
+        // Brooch (4989) sets `empressBrooch` + `moveSpeed += 0.075`;
+        // `ResetEffects` (`:18455`) clears the flag every tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 4989;
+        p.update(&w, PlayerInput::default());
+        assert!(p.empress_brooch, "the worn brooch grants");
+        // The raptor's refill reads it (`Mount.cs:2993-2996`): wings + the
+        // brooch refill the borrowed budget every UpdateEquips tail. The
+        // worn wings (1866, slot 22) re-derive the budget from the slot.
+        assert!(p.set_mount(54, false));
+        p.equipped[4] = 1866;
+        p.update_equips();
+        let budget = p.wing_time_max;
+        assert!(budget > 0, "the worn wings set the budget");
+        p.mount.reset_flight_time(0.0, budget);
+        p.mount.flight();
+        p.update_equips();
+        assert_eq!(p.mount.fly_time(), budget, "the brooch refills the raptor");
+        // Unequipped: the flag clears and the refill stops (the wing slot
+        // still holds the budget; only the brooch flag went away). The tail
+        // call avoids the tick's resting wing refill masking the probe.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.empress_brooch);
+        p.mount.reset_flight_time(0.0, p.wing_time_max);
+        p.mount.flight();
+        p.update_equips();
+        assert_eq!(
+            p.mount.fly_time(),
+            p.wing_time_max - 1,
+            "no refill without the brooch"
+        );
+    }
+
+    #[test]
+    fn s1_p_i41_shellphone_spawn_falls_back_and_queues_the_force_clear() {
+        // `Player.Shellphone_Spawn` (`Player.cs:56164-56181`): the world
+        // spawn floor search, the invalid-area force-clear request, the
+        // style-11 teleport and the velocity zero.
+        let mut w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.vx = 4.0;
+        p.vy = -2.0;
+        p.shellphone_spawn(&w);
+        // The spawn (10, 40) sits over open air down to the row-60 ground:
+        // the descent lands the feet at the floor top.
+        assert_eq!(p.y, 60.0 * TILE_PX - p.height);
+        assert_eq!((p.vx, p.vy), (0.0, 0.0));
+        assert!(p.take_force_clear().is_none(), "the valid area needs no clear");
+        // Wall the spawn column solid from row 0 to the ground: the ±30
+        // scan and both descents fail, the floor stays (10, 40) — invalid →
+        // the force-clear queues (`Spawn_GetPositionAtSpawn` `:37723-37804`).
+        for x in 8..=12 {
+            for y in 0..60 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        p.shellphone_spawn(&w);
+        assert!(p.take_force_clear().is_some(), "the invalid area queues");
+        assert!(p.take_force_clear().is_none(), "the queue drains once");
     }
 
     /// The player-vitals slice: `Player.Hurt`'s i-frame write, the fall/lava

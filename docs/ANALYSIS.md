@@ -32870,3 +32870,121 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The mount item-use path (S1-P-i41, code-only mode, 2026-11-20)
+
+Task `task/S1-P-i41-mount-items` (base origin/main aa147ce0). Census + fix/port
+of the mount USE path and per-item data: the `Player.ItemCheck` mount arm
+(`:42733`/`:42768-42771`), the mount-buff grants (`:9881-9913`), dismount on
+hurt / buff-remove, and the mount hitbox change. **No compiler invoked; the
+witnesses are WRITTEN, NOT RUN.**
+
+### Census verdicts (C#-verified)
+
+- `mount.rs::MOUNT_ITEMS` wrongly mapped **5524→55** (5524 is the Chlorophyte
+  Visor, `Item.cs:43504-43509`; only 5525 is the Rat Saddle `:43511-43512`),
+  **5599→57** (Retro Monolith, `:44051-44053`; 5600 is the skates `:44056`),
+  **5638/5639→58** (the Torch God music boxes, `:44293-44297`; 5640-5642 are
+  the skates `:44300`/`:44313`/`:44326`). Removed — 69→65 entries.
+  `itemdata.rs` already carried -1 for those ids (no change).
+- All 66 `MountData` rows re-verified row-by-row against `Mount.cs:696-2567`
+  + the `SetAs*` helpers: buffs / heightBoost / flight / run / dash / jump /
+  accel / fallDamage / fatigue / dismountsOnItemUse all match (RAT 55 / BAT 56 /
+  PIXIE 61 dismountsOnItemUse=true; the horses' buff 275-277 heightBoost 34;
+  the carts' `SetAsMinecart` buffs; the Chillet family 62-65).
+- Already-correct paths confirmed: dismount-on-hit ({877,878,879},
+  `ProjectileID.cs:546` — S1-C-7b's pending_dismount drain), `CheckMountBuff`
+  via ResetEffects (`Player.cs:18832` → `Mount.cs:5275-5281`), the buff-refresh
+  `SetMount` loop (`Mount.cs:6198` same-type no-op), the cart Track-Hook transfer.
+
+### What landed
+
+- **PlayerSize delegates** (`DelegateMethods.cs:164-194`): Rat 14×14, Bat 20×18,
+  Pixie 8×14 — `SetMount`'s bottom-center resize (`Mount.cs:6244-6263`) and the
+  live `Player.width` field threaded through the player-generic collision /
+  centre / probe reads (the 20-constant reads became `self.width`; carts never
+  change width, so their reads are behaviour-identical). `CanSnapToPosition`
+  (`Player.cs:33401-33414`) re-probes the DEFAULT 20×42 box through
+  `CanFitInSpaceWithSize` when a shrunken transformation mount is up.
+- **DismountCheck** enum + `DontDismountWhenCCed` {55,56,61} (`MountID.cs:47`),
+  `CanDismountWithResult` (`Mount.cs:6611-6624`), `TryEarlyDismount`
+  (`:6626-6632`), `TryDismount`/`TryDismountWithResult` (`:6127-6140`).
+- **CanMount** via `IsClearSpotTest`'s four cardinal 16-px sweeps + the velocity
+  offset (`Player.cs:6108-6111`, `Collision.cs:2534-2587`) — replaces the
+  `collides_rect` stand-in.
+- **Selective flight** (raptor 54, `Mount.cs:2866-2869`/`:2989-2997`/`:5269-5272`):
+  `update_selective_flight(wings_logic, empress_brooch, wing_time_max)`; the
+  Empress Brooch (4989) grant (`Player.cs:14771-14774`) + ResetEffects clear
+  (`:18455`) landed so the `:2993-2996` refill is live (was constants-off).
+- **QuickMount** (`Player.cs:6045-6100`): the toggle, the CCed/tongued/dead/noItems
+  refusals (`:6074`), `QuickMount_GetItemToUse`'s miscEquips[3]-then-inventory
+  pick skipping carts (`:6179-6198`), the dismounts-on-item-use mid-use refusal
+  (`:6081-6085`), and the **FailedNoSpace 3-strike ladder** (`:6049-6070`):
+  strikes 1-2 queue the tink (`PlaySound(0)`), the third forces
+  `Dismount(ignoreEffect:true)` + `PlayerNoSpaceTeleport` (`:6019-6035`) →
+  `TeleportHelpers.FindClosestTeleportSpotNoSpace` (`TeleportHelpers.cs:8-47`,
+  the ±25-tile scan, the velocity zero) → `Shellphone_Spawn` fallback
+  (`:56164-56181`) incl. **Spawn_ForceClearArea** (`:37914-37935` — the 3×3
+  strip's non-top solids die through the kill cascade, liquids zero + lava flag
+  clears, `SquareTileFrame`). `UpdateFailedDismount` (`:6037-6043`) clears
+  the count on death / dismount / moved tile.
+- **noItems / cursed**: the per-tick transformation lock (`Mount.cs:5137-5145`),
+  the Cursed (23) debuff pair (`Player.cs:11733-11734`), the ResetEffects clears
+  (`:18687-18688`), and `ItemCheck_CheckCanUse_Inner`'s gate (`:52140-52148`)
+  as `can_use_item_past_no_items` — the use head runs `TryEarlyDismount` FIRST
+  (`TryingToUseItem` reads ignoreCursed:true, `Player.cs:24992`/`:31695`),
+  then the refusal; a surviving mount cancels the use (`:31698-31701`).
+  `Dismount` restores noItems only for 55/56 (`Mount.cs:6152`
+  `(uint)(_type-55)<=1u`), NOT 61 — the Pixie's lock survives until the next
+  ResetEffects.
+- **Water-mount buff grants** (`Player.cs:9885-9912`): 131/168/279 ignoreWater +
+  accFlipper, 265 canFloatInWater + accFlipper, 305 the full lava suite.
+- **TryRemovingBuff** via `TryDismount` (`Main.cs:43375-43386`): a failed
+  dismount (CCed / no-space) still DelBuff's the slot.
+- **Per-tick grants**: Fishron special +0.15 all-class damage
+  (`Mount.cs:4996-4999`), Santank (46) extra jump (`:4882-4884`), the Chillet
+  +0.1 (`:4806-4814`, was live).
+- **Audio**: the Chillet `PalChillet` equip cue (`Mount.cs:6283-6286`, case-42
+  trackable, the NextFloat on the audio-only stream) and the no-space Dig tink
+  (`Player.cs:6057`, case-0 `Next(3)` + `Next(-10,11)*0.01` on UpdatePlayers).
+- **utils_clamp** (`Utils.cs` Clamp): compares MAX first — unlike Rust `.clamp`
+  it never panics when min>max (the 64-wide test world inverts the 40..width-40
+  scan window). The teleport scan passes fire_walk=false — `AnyHurtingTiles`
+  calls `HurtTiles(null player)` so the hot-tile arm always hurts
+  (`Collision.cs:3110-3113`/`:3220`); `TileIsDangerous` DOES pass the player.
+
+### Deliberate deviations / deferred
+
+- **Cross-system WIDTH reads**: the player-generic `self.x + WIDTH` reads became
+  `self.width`, but OTHER systems (npc.rs targeting, projectile collision,
+  render) still read the `WIDTH` constant — a Pixie's 8-wide body is narrower
+  than those probes assume. Threading the live width through every consumer is
+  out of scope (the mount hitbox change is the player's own physics/probes).
+- **QuickMinecart / QuickMinecartSnap** (`Player.cs:6081`/`:6097`/`:6113-6177`):
+  unported (M2-MOUNT-3 / the track-hook seam) — constants-off, `flag` stays true.
+- **DoSpawnDust / DoFailedDismountDust**: the mount dust bursts have no request
+  channel yet (visual seam, the S1-E-1 convention).
+- **Shellphone force-clear latency**: the clear queues as `pending_force_clear`
+  and drains after the player tick (the kills need `&mut App`); the C# clears
+  before the teleport. Same tick, nothing probes the spawn area in between —
+  observation-identical. The `netMode != 1` gate folds to always-clear (SP).
+- **Teleport shimmer strip**: only the ported `shimmer_wet` half fires; the
+  `shimmering` absorbed-state write + buff-353 clear ride S1-E-16.
+- **CanSnapToPosition's Collision.CanHit reach half** (`:33420`) + fallbacks:
+  the standing stand-in (the solid-box + default-box probes are the ported core).
+- **Early-dismount cursor gate**: the C# runs `TryEarlyDismount` from
+  `Player.Update` (`:24992`) regardless of cursor reach; the port folds item
+  use into `update_editing`, so the dismount fires only when the cursor passes
+  the reach gate (the editing path's documented stand-in).
+- **RNG**: the mount use path itself is draw-free. The only new draws are the
+  cited Dig variation/pitch (UpdatePlayers, after the attenuation gate) and the
+  PalChillet NextFloat (audio-only `sound_style_random`, before the gate —
+  `SoundEngine.cs:93-99` computes the pitch first). No gameplay-stream order
+  changed for existing consumers.
+
+**Verification.** Code-only: every ported block re-read against the cited C#
+(`Mount.cs`/`Player.cs`/`Item.cs`/`Collision.cs`/`TeleportHelpers.cs`/
+`MountID.cs`/`BuffID.cs`/`DelegateMethods.cs`/`Main.cs`); the seam call sites
+checked against the actual Rust signatures by read/grep. The witnesses
+(`s1_p_i41_*` across player.rs / mount.rs / editing.rs / audio.rs) are WRITTEN,
+NOT RUN — **no compiler invoked**.
