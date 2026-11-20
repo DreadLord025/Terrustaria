@@ -77,6 +77,8 @@ pub struct GroupOptionButtonState {
     pub border_color: [u8; 4],
     /// `FadeFromBlack = 1f` (`:30`).
     pub fade_from_black: f32,
+    /// `InnerHighlightRim = 7` (`:32`) — the selected rim's inset.
+    pub inner_highlight_rim: f32,
     /// `_whiteLerp = 0.7f` (`:34`).
     pub white_lerp: f32,
     /// `_UseOverrideColors` (`:44`) — set by `SetColorsBasedOnSelectionState`.
@@ -96,6 +98,7 @@ impl Default for GroupOptionButtonState {
             opacity: 0.7,                            // `:36`
             border_color: [255, 255, 255, 255],      // `:120`
             fade_from_black: 1.0,                    // `:30`
+            inner_highlight_rim: 7.0,                // `:32`
             white_lerp: 0.7,                         // `:34`
             use_override: false,
             override_picked: [255, 255, 255, 255], // `:46-48`
@@ -163,6 +166,79 @@ impl GroupOptionButtonState {
         let lerped = super::char_creation::lerp_rgb(c, [255, 255, 255, 255], self.white_lerp);
         color::mul(lerped, opacity)
     }
+
+    /// The hovered border's colour (`GroupOptionButton.cs:238-241`): the
+    /// plain `_borderColor`, no opacity multiply — the border draws over the
+    /// rim when both states hold.
+    pub fn hover_border_color(&self) -> [u8; 4] {
+        self.border_color
+    }
+
+    /// The icon tint (`GroupOptionButton.cs:242-249`): `IconColor` while
+    /// hovered or selected (`:244-245`'s gate inverted), else
+    /// `Color.Lerp(color, IconColor, _whiteLerp) * opacity` (`:247`).
+    pub fn icon_tint(&self, selected: bool, hovered: bool, icon_color: [u8; 4]) -> [u8; 4] {
+        if hovered || selected {
+            return icon_color;
+        }
+        let (c, opacity) = self.effective(selected);
+        let lerped = super::char_creation::lerp_rgb(c, icon_color, self.white_lerp);
+        color::mul(lerped, opacity)
+    }
+
+    /// The selected rim's inset rect (`GroupOptionButton.cs:236`):
+    /// `X/Y + InnerHighlightRim`, `Width/Height - InnerHighlightRim * 2`.
+    pub fn highlight_rect(&self, dims: [f32; 4]) -> [f32; 4] {
+        let rim = self.inner_highlight_rim;
+        [
+            dims[0] + rim,
+            dims[1] + rim,
+            dims[2] - rim * 2.0,
+            dims[3] - rim * 2.0,
+        ]
+    }
+
+    /// The `DrawSelf` hover-sound latch (`GroupOptionButton.cs:212-223`):
+    /// sound 12 fires once on the hovered edge (`!_soundedHover`), the latch
+    /// holds while hovered and clears on mouse-out. Returns whether to play.
+    /// (The same one-shot d82's `HoverSoundLatch` ports for the difficulty/
+    /// hair buttons — the merge owner may fold the two into one helper.)
+    pub fn hover_sound_tick(hovered: bool, sounded_hover: &mut bool) -> bool {
+        if hovered {
+            let play = !*sounded_hover; // `:214-217`
+            *sounded_hover = true; // `:218`
+            play
+        } else {
+            *sounded_hover = false; // `:222`
+            false
+        }
+    }
+}
+
+/// The ctor's element size (`GroupOptionButton.cs:124-125`):
+/// `Width 44`, `Height 34`.
+#[allow(dead_code)] // wiring lands with the bestiary grids (W4-d81)
+pub const GROUP_OPTION_SIZE: [f32; 2] = [44.0, 34.0];
+
+/// The title `UIText`'s rect inside the button (`GroupOptionButton.cs:136-142`
+/// / `SetText` `:155-161`): `Width (-title_width_reduction, 1)`, `HAlign
+/// title_alignment_x`, `VAlign 0.5`, `Top 0` — the text box is the button
+/// minus the reduction, centred vertically; the ctor defaults are
+/// `titleAlignmentX = 0.5`, `titleWidthReduction = 10` (`:118`).
+#[allow(dead_code)] // wiring lands with the bestiary grids (W4-d81)
+pub fn group_option_title_rect(
+    dims: [f32; 4],
+    title_height: f32,
+    title_alignment_x: f32,
+    title_width_reduction: f32,
+) -> [f32; 4] {
+    let w = dims[2] - title_width_reduction;
+    [
+        dims[0] + (dims[2] - w) * title_alignment_x,
+        dims[1] + (dims[3] - title_height) * 0.5,
+        w,
+        title_height,
+    ]
 }
 
 // --- ExtraBestiaryInfoPageInformation -----------------------------------------
@@ -321,5 +397,80 @@ mod tests {
         assert_eq!(compare_manual_order(1, 2), std::cmp::Ordering::Less);
         assert_eq!(compare_manual_order(2, 2), std::cmp::Ordering::Equal);
         assert_eq!(compare_manual_order(3, 2), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn the_hover_sound_latch_fires_once_per_hover() {
+        // `GroupOptionButton.cs:212-223`: sound 12 on the hovered edge only.
+        let mut sounded = false;
+        assert!(GroupOptionButtonState::hover_sound_tick(true, &mut sounded));
+        assert!(!GroupOptionButtonState::hover_sound_tick(
+            true,
+            &mut sounded
+        ));
+        // Mouse-out clears the latch (`:222`), the next hover fires again.
+        assert!(!GroupOptionButtonState::hover_sound_tick(
+            false,
+            &mut sounded
+        ));
+        assert!(GroupOptionButtonState::hover_sound_tick(true, &mut sounded));
+    }
+
+    #[test]
+    fn the_icon_tint_gates_on_hover_or_selection() {
+        // `GroupOptionButton.cs:242-249`: IconColor raw while hovered or
+        // selected; the idle tint is Lerp(color, IconColor, 0.7) * 0.7.
+        let s = GroupOptionButtonState::default();
+        let icon = [200, 100, 50, 255];
+        assert_eq!(s.icon_tint(true, false, icon), icon);
+        assert_eq!(s.icon_tint(false, true, icon), icon);
+        let idle = s.icon_tint(false, false, icon);
+        assert_eq!(
+            idle,
+            color::mul(
+                super::super::char_creation::lerp_rgb(uistate::INVENTORY_DEFAULT_COLOR, icon, 0.7),
+                0.7
+            )
+        );
+        // The override pair feeds the idle tint too (`:228-232`).
+        let mut o = s;
+        o.set_colors_based_on_selection_state([10, 20, 30, 255], [40, 50, 60, 255], 1.0, 0.5);
+        assert_eq!(
+            o.icon_tint(false, false, icon),
+            color::mul(
+                super::super::char_creation::lerp_rgb([40, 50, 60, 255], icon, 0.7),
+                0.5
+            )
+        );
+    }
+
+    #[test]
+    fn the_highlight_rect_insets_by_the_rim_and_the_border_is_raw() {
+        // `:236`: +7 inset, -14 size; `:240`: the plain `_borderColor`.
+        let s = GroupOptionButtonState::default();
+        assert_eq!(
+            s.highlight_rect([100.0, 50.0, 44.0, 34.0]),
+            [107.0, 57.0, 30.0, 20.0]
+        );
+        assert_eq!(s.hover_border_color(), [255, 255, 255, 255]);
+        let mut b = s;
+        b.set_border_color([1, 2, 3, 4]);
+        assert_eq!(b.hover_border_color(), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn the_ctor_size_and_title_box_match_the_source() {
+        // `:124-125`: 44x34. `:136-142`: Width (-10, 1), HAlign 0.5, VAlign 0.5.
+        assert_eq!(GROUP_OPTION_SIZE, [44.0, 34.0]);
+        let dims = [100.0, 50.0, 44.0, 34.0];
+        assert_eq!(
+            group_option_title_rect(dims, 16.0, 0.5, 10.0),
+            [105.0, 59.0, 34.0, 16.0]
+        );
+        // The non-default alignment (`:118`'s titleAlignmentX parameter).
+        assert_eq!(
+            group_option_title_rect(dims, 16.0, 0.0, 10.0),
+            [100.0, 59.0, 34.0, 16.0]
+        );
     }
 }

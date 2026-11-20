@@ -133,9 +133,9 @@ ports were byte-equivalent state machines and neither had a consumer yet.
 | 1 | `AWorldListItem` | LANDED (missing halves `ui/world_select.rs`: `difficulty_text_with_ftw` full `:43-85` chain, `WorldIconFlags`/`seed_icon_name`/`first_icon_name`/`icon_name_list` `:87-200`, `GlitchAnimation` `:21-41` with injected `Main.rand` rolls; card geometry/difficulty draw pre-landed) |
 | 2 | `EmoteButton` | LANDED (re-audit: whole class pre-landed — blink counter `emotes.rs::button_frame` `:38-44`, frame pick + border tint + MouseText `ui/emotes.rs::draw` `:32-75`, hover sound-12 edge `app/loop.rs:600-619` `:77-88`, click+close `app/clicks.rs:1170-1197` `:90-95`) |
 | 3 | `EmotesGroupListItem` | LANDED (geometry `ui/emotes.rs`: `group_row_count`/`group_height`/`group_header_rect`/`group_separator_color`/`group_button_top_left`/`compare_group_order` `:11-94`; the flat-roster wheel draw pre-landed, group titles/separators a documented deviation) |
-| 4 | `GroupOptionButton` | colour state LANDED (`ui/elements.rs::GroupOptionButtonState`, batch 1); rest pending audit |
-| 5 | `PowerStripUIElement` | LANDED (`ui/elements.rs` strip layout/colours, batch 1) |
-| 6 | `UIAchievementListItem` | pending |
+| 4 | `GroupOptionButton` | LANDED (colour state batch 1; missing halves `ui/elements.rs`: `InnerHighlightRim`/`highlight_rect` `:32`/`:236`, `hover_border_color` `:240`, `icon_tint` `:242-249`, `hover_sound_tick` `:212-223`, `GROUP_OPTION_SIZE`/`group_option_title_rect` `:124-125`/`:136-142`; the world-creation draw pre-landed `option_button_colors`) |
+| 5 | `PowerStripUIElement` | LANDED (`ui/elements.rs` strip layout/colours, batch 1; re-audit: ctor `:13-43` fully covered minus the unported gamepad snap points) |
+| 6 | `UIAchievementListItem` | LANDED (draw/geometry/hover pair/sort pre-landed `ui/achievements.rs::draw_row` + `sorted_indices`; missing halves: `row_height`/`icon_offsets` small-language branch `:49-53`, `icon_frame_rect` `:57-61`/`:155-169`, `description_scale_y` `:101-112`, `tracker_bar_geometry`/`tracker_bar_colors` `:139-149`/`:241-256` — the flat-bar draw + horizontal shrink stay documented stand-ins) |
 | 7 | `UIBestiaryEntryButton` | pending |
 | 8 | `UIBestiaryEntryGrid` | pending |
 | 9 | `UIBestiaryEntryIcon` | pending |
