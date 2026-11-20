@@ -1255,10 +1255,29 @@ impl App {
                     // rides the tile batch after the liquids, under the
                     // over-wire entities (the port draws it before the
                     // projectiles, matching `DrawCachedProjsOverWiresUI`).
+                    // `WiresUI.Settings.DrawWires` gates the whole pass
+                    // (`CaptureInterface.cs:1088`/`:1170` set `CaptureMech`):
+                    // a held mech tool or the lens/kite draws it, else nothing.
                     draw_phase("wires");
-                    crate::render::wires::draw_wires(
-                        renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
-                    );
+                    let held = inventory.get(*selected).copied().unwrap_or(crate::item::EMPTY_SLOT);
+                    let held_mech = crate::registry::get(held.kind).is_some_and(|d| d.mech);
+                    let wire_view = player.as_ref().and_then(|p| {
+                        crate::render::wires::wire_view(
+                            held.kind,
+                            held.count,
+                            held_mech,
+                            p.info_acc_mech_show_wires,
+                            &p.builder_acc_status,
+                            world.seeds.contains(tr_core::seeds::SeedFlags::NO_TRAPS),
+                            world.downed_skeletron,
+                        )
+                    });
+                    if let Some(view) = wire_view {
+                        crate::render::wires::draw_wires(
+                            renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
+                            &view,
+                        );
+                    }
                     // `Main.cs:63276-63277` (`DoDraw_WallsTilesNPCs`): the Moon
                     // Lord's death drama pieces + blasts, after the walls and the
                     // WoF/back gore, under the non-solid tiles.

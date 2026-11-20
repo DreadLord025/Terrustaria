@@ -142,6 +142,65 @@ pub(crate) fn grant_ammo_mastery(
     crate::armor_sets::grant_set_ammo_flags(p, armor);
 }
 
+/// The mechanical-accessory half of `Player.UpdateEquips` (S1-P-i34) — the
+/// wire-visibility goggles and the auto-actuator. The flags clear in
+/// `ResetEffects` (`Player.cs:18524`/`:18534`, run inside `Player::update`)
+/// and re-derive here from this tick's equipment, in the C#'s scan order.
+///
+/// `RefreshMechanicalAccsFromItemType` (`Player.cs:12799-12820`) is called
+/// from three places: the 58-slot inventory scan (`UpdateEquips`,
+/// `:12900-12914`), `GrantArmorBenefits` over the ten functional armor slots
+/// (`:12919-12930` → `:13103-13107`), and `ApplyEquipFunctional` over the
+/// accessory slots (`:12946-12951`). The port folds the inventory + armor
+/// scopes into one pass (the flags are idempotent ORs, so order is immaterial);
+/// the held-item arm (`ApplyEquipFunctional`'s `currentItem.type == 3624`,
+/// `:15295-15298`) runs on the selected slot.
+///
+/// Scope: the Mechanical Lens (3619) and Wire Kite (3611) grant
+/// `InfoAccMechShowWires` (`:12801-12804`); the Actuation Accessory (3624)
+/// grants `autoActuator` (`:12817-12820`). The Wire Kite's ruler-line/grid
+/// halves (`:12805-12812`) and the auto-paint family are out of this wiring
+/// wave. The `autoActuator` placement consumer
+/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a recorded
+/// follow-up — the flag is granted and read by the visibility gate, but the
+/// auto-place-on-build pass is not ported (ANALYSIS "The wiring tools").
+pub(crate) fn grant_mechanical_accs(
+    p: &mut Player,
+    inventory: &[ItemSlot],
+    armor: &[ItemSlot; ARMOR],
+    held_kind: u16,
+) {
+    // The inventory scan (`UpdateEquips`, `Player.cs:12900-12914`): the port's
+    // 50-slot grid plus the coin/ammo rows the C# keeps in the same 58-slot
+    // array. The caller hands the grid; the coin/ammo rows carry no mech
+    // accessory, so the grid scan is the whole reachable set.
+    for slot in inventory {
+        refresh_mechanical_acc_from_item_type(p, slot.kind);
+    }
+    // `GrantArmorBenefits` over the ten functional armor slots
+    // (`GetEffectiveArmor(0..10)`, `Player.cs:12919-12930`): 3 armor + 7
+    // accessories. The vanity half (slots 10..20) grants nothing here.
+    for slot in &armor[..10] {
+        refresh_mechanical_acc_from_item_type(p, slot.kind);
+    }
+    // The held-item arm (`ApplyEquipFunctional`, `Player.cs:15295-15298`):
+    // the Actuation Accessory in hand also grants `autoActuator`.
+    refresh_mechanical_acc_from_item_type(p, held_kind);
+}
+
+/// `Player.RefreshMechanicalAccsFromItemType` (`Player.cs:12799-12820`),
+/// the wiring-relevant arms only.
+fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
+    // `:12801-12804` — the Mechanical Lens / Wire Kite show the wires.
+    if kind == 3619 || kind == 3611 {
+        p.info_acc_mech_show_wires = true;
+    }
+    // `:12817-12820` — the Actuation Accessory auto-places actuators.
+    if kind == 3624 {
+        p.auto_actuator = true;
+    }
+}
+
 /// The summon-cap half of `Player.UpdateEquips` (M4-PROJ-8 phase 2): the
 /// armor rows (`GrantArmorBenefits` over `GetEffectiveArmor(0..10)`,
 /// `Player.cs:13258-13948`) and the held items (`ApplyEquipFunctional` over
@@ -292,6 +351,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // holds `app` — they go out once it releases the borrow.
     let mut switch_sends: Vec<(i32, i32)> = Vec::new();
     if let Some(p) = app.player.as_mut() {
+        // `Player.cs:18802-18804`: `ResetEffects` clears the Actuation Rod's
+        // lock ONLY while `releaseUseItem` rides. `releaseUseItem` is
+        // `!controlUseItem` latched at the tail of the previous ItemCheck
+        // (`:42829`); the port's `mine_released` holds that state (refreshed
+        // every tick by `update_editing`). A held button keeps the lock across
+        // ticks — one actuation per hold, not per tick (the v1 cleared it
+        // unconditionally, which let a held rod re-flip every tick).
+        if app.mine_released {
+            p.actuation_rod_lock = false;
+        }
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
         // tile-range toggle (`:18815-18828`).
@@ -814,6 +883,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // tick's equipment and buffs, then the cycler's cooldown decrements
             // — both inside the fixed step, BEFORE the shoot path reads them.
             grant_ammo_mastery(p, &app.equip.armor, &app.equip.misc_equips);
+            // The mechanical-accessory half of `UpdateEquips` (S1-P-i34): the
+            // wire-visibility goggles + the auto-actuator flag, re-derived from
+            // this tick's inventory/armor/held item (`Player.cs:12799-12820`).
+            grant_mechanical_accs(
+                p,
+                &app.inventory,
+                &app.equip.armor,
+                app.inventory[app.selected].kind,
+            );
             // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
             grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
@@ -1456,6 +1534,50 @@ mod tests {
             let p = app.player.as_ref().unwrap();
             assert!(p.magic_quiver && p.has_molten_quiver, "6181 Phoenix Quiver");
         }
+    }
+
+    /// S1-P-i34 — the mechanical-accessory grant seam
+    /// (`RefreshMechanicalAccsFromItemType`, `Player.cs:12799-12820`): the
+    /// Mechanical Lens (3619) / Wire Kite (3611) grant `InfoAccMechShowWires`,
+    /// the Actuation Accessory (3624) grants `autoActuator`; the per-tick
+    /// `ResetEffects` clear (`:18524`/`:18534`) wipes them once unequipped.
+    #[test]
+    fn the_mechanical_accessories_grant_the_wire_flags_and_clear_per_tick() {
+        let mut app = ammo_app();
+        // The lens in an accessory slot grants the wire-visibility flag.
+        app.equip.armor[3] = slot(3619);
+        tick_ammo(&mut app);
+        assert!(
+            app.player.as_ref().unwrap().info_acc_mech_show_wires,
+            "3619 Mechanical Lens shows the wires"
+        );
+        // Unequip: the clear wipes it.
+        app.equip.armor[3] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        assert!(
+            !app.player.as_ref().unwrap().info_acc_mech_show_wires,
+            "the seam clears per tick"
+        );
+        // The Wire Kite (3611) grants the same flag.
+        app.equip.armor[4] = slot(3611);
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().info_acc_mech_show_wires, "3611 Wire Kite");
+        app.equip.armor[4] = EMPTY_SLOT;
+        // The Actuation Accessory (3624) in an accessory slot grants autoActuator.
+        app.equip.armor[5] = slot(3624);
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().auto_actuator, "3624 equipped");
+        app.equip.armor[5] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().auto_actuator, "cleared");
+        // The held-item arm (`ApplyEquipFunctional`, `:15295-15298`): 3624 in
+        // hand also grants autoActuator.
+        app.inventory[app.selected] = slot(3624);
+        tick_ammo(&mut app);
+        assert!(
+            app.player.as_ref().unwrap().auto_actuator,
+            "3624 held grants autoActuator"
+        );
     }
 
     /// DW-3.3 (the buff half) — the three buff-granted flags (16 Archery,

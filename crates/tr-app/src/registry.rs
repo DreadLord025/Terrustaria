@@ -250,6 +250,32 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         78 => Some(222),
         // `case 380: dropItem = 3215 + tileCache.frameY / 18;` (:65211-65213).
         380 => Some((3215 + i32::from(frame_y) / 18) as u16),
+        // `case 135` (`WorldGen.cs:65569-65599`): the standard pressure plate
+        // drops the item of its frame row (`frameY / 18`): 0 red 529, 1 green
+        // 541, 2 gray 542, 3 brown 543, 4 blue 852, 5 yellow 853, 6 Lihzahrd
+        // 1151. Row 7 (the orange plate 4261 places it) has no C# drop arm —
+        // the vanilla leaves `dropItem = 0`, so the port drops nothing too.
+        135 => match i32::from(frame_y) / 18 {
+            0 => Some(529),
+            1 => Some(541),
+            2 => Some(542),
+            3 => Some(543),
+            4 => Some(852),
+            5 => Some(853),
+            6 => Some(1151),
+            _ => None,
+        },
+        // `case 428` (`WorldGen.cs:65311-65328`): the weighted pressure plate
+        // drops by frame row: 0 orange 3630, 1 cyan 3632, 2 purple 3631,
+        // 3 pink 3626. The `PressurePlateHelper.DestroyPlate` side effect
+        // (:65327) is app-side — `break_tile` releases the pressed plate.
+        428 => match i32::from(frame_y) / 18 {
+            0 => Some(3630),
+            1 => Some(3632),
+            2 => Some(3631),
+            3 => Some(3626),
+            _ => None,
+        },
         // The sunflower's per-cell case is in the empty group (:65759+); 63 is
         // what the cascade's `CheckSunflower` record spawns
         // (`Item.NewItem(…, 63)`, `WorldGen.cs:53787-53791`).
@@ -394,6 +420,32 @@ pub fn migrate_kind(old: u16) -> u16 {
 mod tests {
     #![allow(non_snake_case)] // DW-IDs are part of the test names (traceability)
     use super::*;
+
+    /// S1-P-i34 — the pressure plates drop the item of their frame row
+    /// (`KillTile_GetItemDrops`, `WorldGen.cs:65569-65599` for 135,
+    /// `:65311-65328` for 428). The v1 `by_tile` fallback returned the first
+    /// placing item regardless of style.
+    #[test]
+    fn the_pressure_plates_drop_by_frame_row() {
+        // Tile 135: rows 0..6 → 529/541/542/543/852/853/1151; row 7 (the orange
+        // plate 4261 places it) has no C# drop arm.
+        for (row, item) in [
+            (0i16, 529u16),
+            (1, 541),
+            (2, 542),
+            (3, 543),
+            (4, 852),
+            (5, 853),
+            (6, 1151),
+        ] {
+            assert_eq!(tile_drop(135, row * 18), Some(item), "135 row {row}");
+        }
+        assert_eq!(tile_drop(135, 7 * 18), None, "135 row 7 drops nothing");
+        // Tile 428: rows 0..3 → 3630/3632/3631/3626.
+        for (row, item) in [(0i16, 3630u16), (1, 3632), (2, 3631), (3, 3626)] {
+            assert_eq!(tile_drop(428, row * 18), Some(item), "428 row {row}");
+        }
+    }
 
     #[test]
     fn use_timings_match_item_setdefaults() {
