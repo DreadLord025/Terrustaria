@@ -20687,8 +20687,8 @@ mod tests {
         // `NPC.cs:21031-21038` — the Djinn's single trigger at `ai[0] == 180`
         // sets `ai[1] = 181` (not the standard 100/200/300 → 30); the wrap
         // fires at 360 (`:21079-21082`), never at the standard 650. The
-        // curse volley draws `Main.rand` (`:21140-21141`/`:21195-21196`)
-        // and is skipped wholesale — the Djinn never requests a sphere.
+        // curse volley (W4-f42) rides `wants_hostile_shot_ai` (the 596),
+        // never `wants_sphere` — the sphere lane stays empty.
         let mut w = ground_air();
         let mut player = surface_player(&w);
         let mut djinn = Npc::new(NpcKind::DesertDjinn, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
@@ -20705,7 +20705,7 @@ mod tests {
             djinn.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             assert!(
                 djinn.wants_sphere.is_empty(),
-                "the Djinn's rand-drawing volley stays skipped"
+                "the Djinn's curse rides the hostile-shot lane, never a sphere"
             );
             // The trigger tick: `ai[1] = 181` (`:21035`) then the same
             // tick's `ai[1]--` (`:21116`) — the windup reads 180 exactly

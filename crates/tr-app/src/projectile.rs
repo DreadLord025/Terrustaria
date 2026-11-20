@@ -19775,6 +19775,21 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // W4-f42 — `AI()`'s `else if (this.aiStyle == 107)`
+                        // (`Projectile.cs:33553-33678`): the Desert Djinn's
+                        // curse (596). The 575 NebulaSphere branch is an
+                        // unported kind; the 596 arm owns the fade/frame/
+                        // orbit gates, the timeLeft<4 burst resize and the
+                        // shared homing tail. KIND-gated so any future
+                        // style-107 kind keeps the fall-through.
+                        107 if self.slots[i].kind == DESERT_DJINN_CURSE => {
+                            crate::projectile_ai_djinn::curse_ai(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                rng,
+                            );
+                        }
                         _ => {}
                     }
                     }
@@ -19958,6 +19973,10 @@ impl ProjectilePool {
                         self.try_cancel_channel(i, p);
                     }
                 }
+                // W4-f42 — `Kill()`'s 596 arm (`Projectile.cs:72470-72501`)
+                // sits ahead of every 73xxx+ arm in the C# body order; the
+                // kinds are disjoint so only one death arm fires per slot.
+                self.djinn_curse_kill(i, player.as_deref_mut(), rng);
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
@@ -23436,6 +23455,51 @@ impl ProjectilePool {
         player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
+    }
+
+    /// W4-f42 — `Kill()`'s 596 arm (`Projectile.cs:72470-72501`): the
+    /// Djinn curse's death burst. The resize keeps the old centre
+    /// (`position = Center; width = height = 60; Center = position`),
+    /// damage 30 (expert 22), `Damage()` hurts through the resized box
+    /// (the hostile lane — the boxed player-contact test, the
+    /// `damage_player` proxy widened to the slot's own box), the Item14
+    /// blast plays, and the three dust loops' explicit draw census rides
+    /// the `UpdateProjectiles` stream. The dust bodies are the
+    /// projectile-arm skip (`projectile_ai_djinn` module doc).
+    fn djinn_curse_kill(
+        &mut self,
+        slot: usize,
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        if self.slots[slot].kind != DESERT_DJINN_CURSE {
+            return;
+        }
+        let expert = player.as_ref().is_some_and(|p| p.buffs.expert_mode);
+        crate::projectile_ai_djinn::curse_kill_resize(&mut self.slots[slot], expert);
+        // `:72481` — `Damage()`: the hostile box walk against the player.
+        if let Some(player) = player {
+            let p = &self.slots[slot];
+            if p.damage > 0 {
+                let cx = p.pos.x + p.w * 0.5;
+                let cy = p.pos.y + p.h * 0.5;
+                let inside = p.pos.x < player.x + crate::player::WIDTH
+                    && p.pos.x + p.w > player.x
+                    && p.pos.y < player.y + crate::player::HEIGHT
+                    && p.pos.y + p.h > player.y;
+                if inside {
+                    player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+                }
+            }
+        }
+        // `:72482` — `SoundEngine.PlaySound(SoundID.Item14, position)`:
+        // the Item-style case-2 play (the `wants_sound` (2, 14) shape);
+        // the death hook sits past the per-sub-step forward, so the cue
+        // parks straight in the pool queue.
+        let (sx, sy) = (self.slots[slot].pos.x, self.slots[slot].pos.y);
+        self.pending_proj_sounds.push((2, 14, sx, sy, 0.0));
+        // `:72483-72501` — the three dust loops' explicit draws.
+        crate::projectile_ai_djinn::curse_kill_draws(rng);
     }
 }
 

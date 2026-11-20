@@ -227,6 +227,11 @@ pub const SHADOWFLAME_ARROW: u16 = 495;
 pub const BLOOD_ARROW: u16 = 819;
 /// `ProjectileID.ShimmerArrow` (`ProjectileID.cs:2566`).
 pub const SHIMMER_ARROW: u16 = 1006;
+/// `ProjectileID.DesertDjinnCurse` (596, `ProjectileID.cs:1746`) — the
+/// Djinn's curse volley (`NPC.cs:21155`), aiStyle 107
+/// (`Projectile.cs:6450-6460`: 8×8, hostile, alpha 255, ignoreWater,
+/// timeLeft 180, tileCollide false).
+pub const DESERT_DJINN_CURSE: u16 = 596;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
 /// `ProjectileID.SnowBallHostile` (109) — the Snow Balla's (net 145,
@@ -3969,6 +3974,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // `Projectile.cs:6450-6460` — the Desert Djinn's curse (596):
+            // 8×8, aiStyle 107, hostile, `alpha = 255`, `ignoreWater`,
+            // `timeLeft = 180`, `tileCollide = false`. The stock penetrate 1
+            // (`:774`) stands — the curse is a single-hit area burst (the
+            // `timeLeft < 4` resize + `Damage()` arm, `:33631-33651`).
+            DESERT_DJINN_CURSE => {
+                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4174,6 +4187,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
             // (`Projectile.cs:4672`/`:4694`).
             || matches!(kind, FORCE_BUBBLE | CTHULUNADO)
+            // W4-f42: the Djinn's curse sets `ignoreWater = true`
+            // (`Projectile.cs:6457`).
+            || kind == DESERT_DJINN_CURSE
             // S1-P-i21: the Nimbus Rod's raining cloud sets `ignoreWater`
             // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
             // keep the stock false.

@@ -5945,12 +5945,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
     for shot in ai_shots {
+        // W4-f42 — the Djinn curse's call site passes KnockBack 1f
+        // (`NPC.cs:21155`); every other ai-payload shot keeps the lane's
+        // stock 0 (the kind-keyed override, the `time_left` pattern above).
+        let kb = if shot.kind == crate::projectile::DESERT_DJINN_CURSE {
+            1.0
+        } else {
+            0.0
+        };
         let slot = app.projectiles.spawn_hostile_ai(
             shot.kind,
             Vec2::new(shot.x, shot.y),
             Vec2::new(shot.vx, shot.vy),
             shot.damage,
-            0.0,
+            kb,
             shot.ai0,
             shot.ai1,
         );
