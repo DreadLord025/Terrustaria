@@ -150,6 +150,8 @@ pub mod id {
     // ---- W4-c27: the entity-state ids (apply/relay arms land with them) ----
     pub const SET_TIME: u8 = 18; // MessageID.cs:45 / NetMessage.cs:531-536 / MessageBuffer.cs:1290-1298
     pub const SYNC_PLAYER_ZONE: u8 = 36; // MessageID.cs:83 / NetMessage.cs:933-944 / MessageBuffer.cs:2178-2202
+    pub const ITEM_ANIM: u8 = 41; // MessageID.cs:93 ItemRotationAndAnimation / NetMessage.cs:956-960 / MessageBuffer.cs:2271-2289
+    pub const MANA_EFFECT: u8 = 43; // MessageID.cs:97 / NetMessage.cs:966-969 / MessageBuffer.cs:2307-2324
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -582,6 +584,12 @@ pub struct PlayerNet {
     /// `Main.player[id].zone1..5` + `townNPCs`, fed by `36 SyncPlayerZone`
     /// (`MessageBuffer.cs:2187-2192`). W4-c27.
     pub zone: PlayerZone,
+    /// `Player.itemRotation`/`itemAnimation`, fed by `41
+    /// ItemRotationAndAnimation` (`MessageBuffer.cs:2281-2282`); `channel`
+    /// re-derived from the selected inventory item (`:2283`). W4-c27.
+    pub item_rotation: f32,
+    pub item_animation: i16,
+    pub channel: bool,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1574,6 +1582,30 @@ pub struct PlayerZone {
     pub town_npcs: u8,
 }
 
+/// `msg 41 ItemRotationAndAnimation`'s body (`NetMessage.cs:956-960`): the
+/// player id, the `itemRotation` float (`Player.cs:1498`) then
+/// `(short)itemAnimation` (`Player.cs:3014` is an `int`; the writer
+/// truncates). The host forces the id to the sender
+/// (`MessageBuffer.cs:2273-2277`), stores both fields, re-derives `channel`
+/// from the selected item (`:2283`) and relays (`:2286`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ItemAnim {
+    pub player_id: u8,
+    pub rotation: f32,
+    pub animation: i16,
+}
+
+/// `msg 43 ManaEffect`'s body (`NetMessage.cs:966-969`): the player id then
+/// `(short)number2` — the mana-restore amount `Player.ManaEffect` passes
+/// (`Player.cs:4531-4538`). The host forces the id to the sender
+/// (`MessageBuffer.cs:2309-2313`), the receiver spawns the HealMana text for
+/// anyone but itself (`:2315-2318`) and the host relays (`:2321`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ManaEffect {
+    pub player_id: u8,
+    pub amount: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1689,6 +1721,14 @@ pub enum C2s {
     /// test `Main.cs:17634`, the 900-tick heartbeat `:64533`;
     /// `MessageBuffer.cs:2178-2202` forces the id to the sender and relays).
     PlayerZone(PlayerZone),
+    /// `41 ItemRotationAndAnimation` - a client's aimed-item rotation
+    /// (`Player.cs:43693`/`:47374`/`:47380` beside a `13`;
+    /// `MessageBuffer.cs:2271-2289`). W4-c27.
+    ItemAnim(ItemAnim),
+    /// `43 ManaEffect` - a client's mana-restore text amount
+    /// (`Player.ManaEffect`'s send, `Player.cs:4534-4537`;
+    /// `MessageBuffer.cs:2307-2324`). W4-c27.
+    ManaEffect(ManaEffect),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1818,6 +1858,12 @@ pub enum S2c {
     /// `36 SyncPlayerZone` - a peer's zone flags, relayed by the host
     /// (`MessageBuffer.cs:2199`). W4-c27.
     PlayerZone(PlayerZone),
+    /// `41 ItemRotationAndAnimation` - a peer's aimed-item rotation, relayed
+    /// by the host (`MessageBuffer.cs:2286`). W4-c27.
+    ItemAnim(ItemAnim),
+    /// `43 ManaEffect` - a peer's mana-restore text amount, relayed by the
+    /// host (`MessageBuffer.cs:2321`). W4-c27.
+    ManaEffect(ManaEffect),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1907,6 +1953,8 @@ impl C2s {
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::PlayerZone(_) => id::SYNC_PLAYER_ZONE,
+            Self::ItemAnim(_) => id::ITEM_ANIM,
+            Self::ManaEffect(_) => id::MANA_EFFECT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1984,6 +2032,11 @@ impl C2s {
                 .u8(z.zone4)
                 .u8(z.zone5)
                 .u8(z.town_npcs),
+            // `NetMessage.cs:956-960`: (byte)number + itemRotation +
+            // (short)itemAnimation.
+            Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
+            // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+            Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2115,6 +2168,17 @@ impl C2s {
                 zone4: r.u8()?,
                 zone5: r.u8()?,
                 town_npcs: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2273-2282`: (byte)id + float + (short).
+            id::ITEM_ANIM => Self::ItemAnim(ItemAnim {
+                player_id: r.u8()?,
+                rotation: r.f32()?,
+                animation: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2309-2314`: (byte)id + (short)amount.
+            id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
+                player_id: r.u8()?,
+                amount: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2278,6 +2342,8 @@ impl S2c {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::SetTime(_) => id::SET_TIME,
             Self::PlayerZone(_) => id::SYNC_PLAYER_ZONE,
+            Self::ItemAnim(_) => id::ITEM_ANIM,
+            Self::ManaEffect(_) => id::MANA_EFFECT,
         }
     }
 
@@ -2436,6 +2502,11 @@ impl S2c {
                 .u8(z.zone4)
                 .u8(z.zone5)
                 .u8(z.town_npcs),
+            // `NetMessage.cs:956-960`: (byte)number + itemRotation +
+            // (short)itemAnimation.
+            Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
+            // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+            Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2654,6 +2725,17 @@ impl S2c {
                 zone4: r.u8()?,
                 zone5: r.u8()?,
                 town_npcs: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2273-2282`: (byte)id + float + (short).
+            id::ITEM_ANIM => Self::ItemAnim(ItemAnim {
+                player_id: r.u8()?,
+                rotation: r.f32()?,
+                animation: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2309-2314`: (byte)id + (short)amount.
+            id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
+                player_id: r.u8()?,
+                amount: r.i16()?,
             }),
             _ => return None,
         })
@@ -4881,5 +4963,60 @@ mod tests {
             other => panic!("expected 36, got {:?}", other.msg_id()),
         }
         assert!(C2s::decode(36, &mut NetReader::new(&body[..6])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_item_anim_round_trips() {
+        // `NetMessage.cs:956-960`: (byte)number + itemRotation float +
+        // (short)itemAnimation.
+        let a = ItemAnim {
+            player_id: 2,
+            rotation: -1.25,
+            animation: 17,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&(-1.25f32).to_le_bytes());
+        body.extend_from_slice(&17i16.to_le_bytes());
+        let f = S2c::ItemAnim(a).encode();
+        assert_eq!(f[2], 41);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
+        }
+        let c = C2s::ItemAnim(a).encode();
+        assert_eq!(c[2], 41);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(41, &mut NetReader::new(&body[..6])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_mana_effect_round_trips() {
+        // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+        let m = ManaEffect {
+            player_id: 5,
+            amount: -40,
+        };
+        let mut body = vec![5u8];
+        body.extend_from_slice(&(-40i16).to_le_bytes());
+        let f = S2c::ManaEffect(m).encode();
+        assert_eq!(f[2], 43);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        }
+        let c = C2s::ManaEffect(m).encode();
+        assert_eq!(c[2], 43);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(43, &mut NetReader::new(&[5])).is_none());
     }
 }

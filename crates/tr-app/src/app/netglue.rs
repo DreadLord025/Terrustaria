@@ -819,6 +819,31 @@ impl App {
                 self.remote_players.entry(id).or_default().zone = z;
                 server.broadcast_except(&S2c::PlayerZone(z), id); // `:2199`
             }
+            // `case 41` — a client's aimed-item rotation/animation
+            // (`MessageBuffer.cs:2271-2289`). The host forces the subject to
+            // the sender (`:2274-2277`), stores both fields (`:2281-2282`),
+            // re-derives `channel` from the sender's selected inventory item
+            // (`:2283`) and relays (`:2286`).
+            C2s::ItemAnim(mut a) => {
+                a.player_id = id as u8; // `:2276`
+                let entry = self.remote_players.entry(id).or_default();
+                entry.item_rotation = a.rotation;
+                entry.item_animation = a.animation;
+                entry.channel = Self::peer_channel(entry); // `:2283`
+                server.broadcast_except(&S2c::ItemAnim(a), id); // `:2286`
+            }
+            // `case 43` — a client's mana-restore amount
+            // (`MessageBuffer.cs:2307-2324`). The host forces the subject to
+            // the sender (`:2310-2313`), spawns the HealMana text for anyone
+            // but itself (`:2315-2318`, `Player.ManaEffect`,
+            // `Player.cs:4531-4538`) and relays (`:2321`).
+            C2s::ManaEffect(mut m) => {
+                m.player_id = id as u8; // `:2312`
+                if m.player_id as u32 != self.local_id {
+                    self.spawn_peer_mana_text(m.player_id, m.amount as i32);
+                }
+                server.broadcast_except(&S2c::ManaEffect(m), id); // `:2321`
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -834,6 +859,55 @@ impl App {
     /// The join bundle when a slot reaches `IN_WORLD` (the port's
     /// `SyncConnectedPlayer`, `NetMessage.cs:2806-2822`): the newcomer learns
     // the peers, the peers learn the newcomer.
+
+    /// `MessageBuffer.cs:2283` — `player.channel =
+    /// player.inventory[player.selectedItem].channel`: the `41` reader
+    /// re-derives the channel flag from the peer's selected item. The peer's
+    /// inventory rides `5 PlayerInventory` into `PlayerNet.inventory`; an
+    /// unknown slot/kind reads `false` (the C#'s empty `Item` has
+    /// `channel = false`). W4-c27.
+    fn peer_channel(p: &net::PlayerNet) -> bool {
+        let slot = (p.selected as u8).min(58);
+        p.inventory
+            .get(&slot)
+            .and_then(|it| crate::registry::get(it.kind.max(0) as u16))
+            .is_some_and(|def| def.channel)
+    }
+
+    /// `Player.ManaEffect` (`Player.cs:4531-4538`) on a peer: the HealMana
+    /// text at the peer's position (`CombatText.NewText`, `:4533`). The net
+    /// handlers run outside every RNG swap, so the placement draws ride the
+    /// bare stream (the `play_switch_click` precedent). The peer body is the
+    /// C#'s 20x42 (`Player.cs:29210-29211`); the font measure falls back like
+    /// the local drain (`world_sim/player.rs`). W4-c27.
+    fn spawn_peer_mana_text(&mut self, player_id: u8, amount: i32) {
+        let Some(p) = self.remote_players.get(&(player_id as u32)) else {
+            return;
+        };
+        let (x, y) = (p.x, p.y);
+        let text = amount.to_string();
+        let size = match self.lookups.combat_text_font.as_ref() {
+            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+            None => [text.chars().count() as f32 * 8.0, 10.0],
+        };
+        let location = crate::combat_text::Rect {
+            x,
+            y,
+            width: 20.0,
+            height: 42.0,
+        };
+        crate::combat_text::spawn_amount(
+            &mut self.combat_texts,
+            location,
+            crate::combat_text::HEAL_MANA,
+            amount,
+            false,
+            false,
+            size,
+            1.0,
+            self.rngs.global(),
+        );
+    }
 
     /// Streams the world to a spawning client as `10 TileBlock` sections —
     /// the C#'s join-time box (`MessageBuffer.cs:692-811`): 5 sections wide
@@ -1870,6 +1944,27 @@ impl App {
                     .entry(z.player_id as u32)
                     .or_default()
                     .zone = z;
+            }
+            // `case 41` — a peer's aimed-item rotation/animation
+            // (`MessageBuffer.cs:2271-2289`, the `netMode == 1` half keeps the
+            // wire id): stored on the peer record, `channel` re-derived from
+            // the peer's selected inventory item (`:2283`).
+            S2c::ItemAnim(a) => {
+                let entry = self
+                    .remote_players
+                    .entry(a.player_id as u32)
+                    .or_default();
+                entry.item_rotation = a.rotation;
+                entry.item_animation = a.animation;
+                entry.channel = Self::peer_channel(entry); // `:2283`
+            }
+            // `case 43` — a peer's mana-restore amount
+            // (`MessageBuffer.cs:2307-2324`): the HealMana text spawns for
+            // anyone but ourselves (`:2315-2318`).
+            S2c::ManaEffect(m) => {
+                if m.player_id as u32 != self.local_id {
+                    self.spawn_peer_mana_text(m.player_id, m.amount as i32);
+                }
             }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
@@ -5287,5 +5382,60 @@ mod message_family_tests {
         // client never sees its own zone echo — its peer record for itself
         // stays absent, exactly the C#'s ignore-own shape.
         assert!(client_app.remote_players.get(&1).is_none());
+    }
+
+    /// W4-c27 `41 ItemRotationAndAnimation` — the host forces the subject to
+    /// the sender (`MessageBuffer.cs:2274-2277`), stores rotation/animation
+    /// (`:2281-2282`), re-derives `channel` from the selected item (`:2283`)
+    /// and relays (`:2286`).
+    #[test]
+    fn w4_c27_item_anim_relays_with_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let a = net::ItemAnim {
+            player_id: 200, // spoofed — the host must override it to 1
+            rotation: 0.75,
+            animation: 12,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ItemAnim(a));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let stored = host_app.remote_players.get(&1).expect("peer stored");
+        assert_eq!(stored.item_rotation, 0.75);
+        assert_eq!(stored.item_animation, 12);
+        // No inventory synced yet: the selected slot's kind is unknown, so
+        // the channel re-derive reads false (`:2283`).
+        assert!(!stored.channel);
+        assert!(client_app.remote_players.get(&1).is_none());
+    }
+
+    /// W4-c27 `43 ManaEffect` — the host forces the subject to the sender
+    /// (`MessageBuffer.cs:2310-2313`) and spawns the HealMana text for anyone
+    /// but itself (`:2315-2318`); the client does the same on the relay.
+    #[test]
+    fn w4_c27_mana_effect_spawns_the_peers_text() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Seed the client's peer record on the host so the text has a spot.
+        host_app
+            .remote_players
+            .entry(1)
+            .or_default()
+            .x = 100.0;
+        host_app.remote_players.get_mut(&1).unwrap().y = 200.0;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ManaEffect(net::ManaEffect {
+                player_id: 200, // spoofed — forced to 1
+                amount: 50,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let texts: Vec<_> = host_app
+            .combat_texts
+            .iter()
+            .filter(|t| t.active && t.text == "50")
+            .collect();
+        assert_eq!(texts.len(), 1, "one HealMana text for the peer");
+        assert_eq!(texts[0].color, crate::combat_text::HEAL_MANA);
+        assert_eq!(texts[0].position[0], 100.0);
     }
 }
