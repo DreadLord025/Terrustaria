@@ -1312,6 +1312,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // dualDungeons prune (`DUAL_DUNGEON_DISABLED_PASSES`) now finds a real
     // step to skip.
     step!("shimmer", "Shimmer", step_shimmer),
+    // The vanilla Clean Up Dirt slot (`WorldGen.cs:15246`): immediately
+    // after Shimmer (`:15195`), before Pyramids (`:15360`) — W4-g36 A2.
+    // Own `pass_rng("Clean Up Dirt")` stream.
+    step!("clean up dirt", "Clean Up Dirt", step_clean_up_dirt),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -2066,6 +2070,32 @@ fn step_shimmer(
     // `structures.AddProtectedStructure(Rectangle(x-100, y-100, 200, 200))`
     // (`:15242-15243`).
     gv.protected_structures.push((x - 100, y - 100, 200, 200));
+}
+
+/// The vanilla Clean Up Dirt slot (`WorldGen.cs:15246-15359`) — W4-g36
+/// A2: the two surface dirt-wall clean sweeps (or the noSurface top fill)
+/// on the pass's own stream. The `Skyblock.denyAllGeneration` gate
+/// (`:15248`) lives here.
+fn step_clean_up_dirt(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `!Skyblock.denyAllGeneration` (`:15248`).
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    let no_surface = opts.micro_flags.contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
+    micro_finish::pass_clean_up_dirt(
+        world,
+        world_surface,
+        &mut streams.pass_rng("Clean Up Dirt"),
+        no_surface,
+    );
 }
 
 fn step_fragile_ice(
@@ -3204,7 +3234,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-g36 A1: + `shimmer` (vanilla "Shimmer", `WorldGen.cs:15195`)
         // between `ocean caves` and `fragile ice`.
-        assert_eq!(names.len(), 67);
+        // W4-g36 A2: + `clean up dirt` (vanilla "Clean Up Dirt",
+        // `WorldGen.cs:15246`) between `shimmer` and `fragile ice`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3263,6 +3295,7 @@ mod tests {
                 "gravitating sand",
                 "ocean caves",
                 "shimmer",
+                "clean up dirt",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
@@ -3504,16 +3537,18 @@ mod tests {
         assert!(pos("thin ice") < pos("mahogany trees"));
     }
 
-    /// W4-g36 A1: `shimmer` sits in its vanilla slot — immediately after
-    /// `ocean caves` (Create Ocean Caves `WorldGen.cs:15167` → Shimmer
-    /// `:15195`) and before `fragile ice` (the port's Ice stand-in; the
-    /// vanilla Clean Up Dirt `:15246` lands as W4-g36 A2).
+    /// W4-g36 A1/A2: `shimmer` + `clean up dirt` sit in their vanilla
+    /// slots — Create Ocean Caves (`WorldGen.cs:15167`) → Shimmer
+    /// (`:15195`) → Clean Up Dirt (`:15246`) → Pyramids (`:15360`, the
+    /// port's pyramids step sits later in the grouped chain); the port's
+    /// `fragile ice` follows as the nearest executed neighbour.
     #[test]
     fn w4_g36_a1_the_shimmer_step_sits_after_the_ocean_caves() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
-        assert_eq!(names[pos("shimmer") + 1], "fragile ice");
+        assert_eq!(pos("clean up dirt"), pos("shimmer") + 1);
+        assert_eq!(names[pos("clean up dirt") + 1], "fragile ice");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3523,6 +3558,7 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Create Ocean Caves") < cpos("Shimmer"));
         assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+        assert!(cpos("Clean Up Dirt") < cpos("Pyramids"));
     }
 
     #[test]

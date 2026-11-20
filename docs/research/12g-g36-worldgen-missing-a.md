@@ -83,8 +83,8 @@ Waterfalls :16610 (d103 landed), Statues :16853 (g37's B1).
 | --- | --- | --- |
 | range claim (this doc) | 0b01c170 | claimed |
 | claim amendment (f25 yield + re-probe) | f474adc1 | claimed |
-| A1 Shimmer | (this commit) | landed (code-only; sub-vanilla width guard — SEED42_512 unchanged; DEFAULT_WORLD re-pin deferred to the gate) |
-| A2 Clean Up Dirt | — | pending |
+| A1 Shimmer | 702e1e75 | landed (code-only; sub-vanilla width guard — SEED42_512 unchanged; DEFAULT_WORLD re-pin deferred to the gate) |
+| A2 Clean Up Dirt | (this commit) | landed (code-only; both pins move by design — re-pin deferred to the gate) |
 | A3 Dirt Rock Wall Runner | — | pending |
 | A4 Wood Tree Walls | — | pending |
 | A5 Settle Liquids | fd098528 (f25) | yielded — f25's earlier orphan claim wins |

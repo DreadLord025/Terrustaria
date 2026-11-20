@@ -99,6 +99,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "gravitating sand" => PassMessage::Gen(24),
         // WorldGen.cs:15180.
         "ocean caves" => PassMessage::Gen(90),
+        // WorldGen.cs:15256 (W4-g36 A2).
+        "clean up dirt" => PassMessage::Gen(25),
         // WorldGen.cs:17845 (Jungle Trees).
         "underground jungle trees" => PassMessage::Gen(83),
         // WorldGen.cs:17215.

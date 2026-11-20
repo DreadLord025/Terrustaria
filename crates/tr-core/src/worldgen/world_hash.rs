@@ -245,6 +245,11 @@ mod tests {
     // 512-wide world (the x-band `Next(200, (int)(0.11*512))` is empty —
     // the C# throws there; the `pass_mining_explosives` width-guard
     // precedent). The DEFAULT_WORLD re-pin is deferred to the gate.
+    // W4-g36 A2 (code-only): the Clean Up Dirt pass
+    // (`WorldGen.cs:15246-15359`, `micro_finish.rs::pass_clean_up_dirt`)
+    // lands after `shimmer` — the two surface sweeps strip the exposed
+    // dirt walls (2/40/64/86) above the surface on EVERY world, so this
+    // pin moves BY DESIGN; deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -293,6 +298,10 @@ mod tests {
     // shimmer pool, the gem trees and the two openings move this pin BY
     // DESIGN; the re-pin is deferred to the gate. The pass draws only its
     // own `pass_rng("Shimmer")` stream, so no other step's ledger shifts.
+    // W4-g36 A2 (code-only): the Clean Up Dirt pass (see SEED42_512 above)
+    // strips the exposed surface dirt walls on every world — this pin
+    // moves BY DESIGN too; deferred. Own `pass_rng("Clean Up Dirt")`
+    // stream; the `a == b` halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

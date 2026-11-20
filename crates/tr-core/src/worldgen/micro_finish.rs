@@ -452,9 +452,231 @@ pub(crate) fn no_spider_caves_i_lied(world: &mut World) {
     }
 }
 
+// --- Clean Up Dirt (W4-g36 A2) ------------------------------------------------
+
+/// `SecretSeed.DoNoSurfaceFillTheTop` (`WorldGen.cs:1055-1082`): the
+/// noSurface seed's top fill — every column's first `100 + Next(2)` rows
+/// activate (unless dungeon brick/wall) and retype jungle/mushroom grass
+/// (60/70) to mud (59). The `skyblockWorldGen` early-return is the caller's
+/// gate (the pass body already skips skyblock). Draws one `Next(2)` per
+/// column, in C# order.
+fn no_surface_fill_the_top(world: &mut World, rng: &mut super::Rng) {
+    // `Main.tileDungeon` (`Main.cs:7992-7997`) — the six dungeon bricks.
+    const TILE_DUNGEON: [u16; 6] = [41, 43, 44, 677, 678, 679];
+    // `Main.wallDungeon` (`Main.cs`) — the nine dungeon walls.
+    const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
+    for i in 0..world.width {
+        let rows = 100 + rng.range(0, 2);
+        for j in 0..rows {
+            let Some(t) = world.tile(i, j) else { continue };
+            if WALL_DUNGEON.contains(&t.wall) {
+                continue;
+            }
+            let kind = t.kind;
+            let idx = world.index(i, j);
+            if !TILE_DUNGEON.contains(&kind) {
+                world.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+            }
+            if kind == 60 || kind == 70 {
+                world.tiles[idx].kind = 59;
+            }
+        }
+    }
+}
+
+/// The wall-clean predicate for a NEIGHBOUR cell. The C# writes
+/// `wall == 2 || wall == 40 || wall == 40` (the third disjunct duplicates
+/// 40 — a decompile quirk that drops 64/86 from the neighbour test); the
+/// port keeps it verbatim (`WorldGen.cs:15271-15293`, `:15321-15343`).
+fn dirt_wall_neighbor(wall: u16) -> bool {
+    wall == 2 || wall == 40 || wall == 40
+}
+
+/// One column's top-down wall-clean sweep, shared by the forward
+/// (`WorldGen.cs:15257-15306`) and reverse (`:15307-15356`) passes. `self_walls`
+/// is the SELF-cell wall set (forward adds 86, reverse does not); the
+/// neighbour set is always [`dirt_wall_neighbor`]. `sand_only` selects the
+/// reverse pass's narrower "keep going" gate (`type != 53` only, `:15319`)
+/// vs the forward pass's sand/pearlsand/crimsand trio (`:15269`).
+///
+/// The `flag` state machine: while `flag` is set, clean the self wall, and
+/// if the cell is not a sand-family block, clean the ±1/±2/±3 neighbours
+/// (the ±2/±3 at 1/2 each) and drop `flag` when the cell is active. Once
+/// `flag` is clear, a fully-walled-and-air 5-row window re-arms it.
+fn clean_dirt_column(
+    world: &mut World,
+    i: i32,
+    world_surface: f64,
+    rng: &mut super::Rng,
+    self_walls: &[u16],
+    sand_only: bool,
+) {
+    let mut flag = true;
+    let mut j = 0i32;
+    while (j as f64) < world_surface {
+        if flag {
+            // The self-cell wall clean (`:15265-15268` / `:15315-15318`).
+            if self_walls.contains(&wall_at(world, i, j)) {
+                if let Some(t) = world.tile_mut(i, j) {
+                    t.wall = 0;
+                }
+            }
+            // The "keep cleaning" gate (`:15269` / `:15319`).
+            let keep = if sand_only {
+                !active_at(world, i, j) || kind_at(world, i, j) != 53
+            } else {
+                !active_at(world, i, j)
+                    || !matches!(kind_at(world, i, j), 53 | 112 | 234)
+            };
+            if keep {
+                // ±1: unconditional clean. ±2/±3: 1/2 each. The draw order
+                // is -1, -2, -3, +1, +2, +3 (the C# statement order).
+                for (dx, gated) in [(-1i32, false), (-2, true), (-3, true), (1, false), (2, true), (3, true)] {
+                    let nx = i + dx;
+                    if dirt_wall_neighbor(wall_at(world, nx, j)) && (!gated || rng.range(0, 2) == 0) {
+                        if let Some(t) = world.tile_mut(nx, j) {
+                            t.wall = 0;
+                        }
+                    }
+                }
+                if active_at(world, i, j) {
+                    flag = false;
+                }
+            }
+        } else if wall_at(world, i, j) == 0
+            && wall_at(world, i, j + 1) == 0
+            && wall_at(world, i, j + 2) == 0
+            && wall_at(world, i, j + 3) == 0
+            && wall_at(world, i, j + 4) == 0
+            && wall_at(world, i - 1, j) == 0
+            && wall_at(world, i + 1, j) == 0
+            && wall_at(world, i - 2, j) == 0
+            && wall_at(world, i + 2, j) == 0
+            && !active_at(world, i, j)
+            && !active_at(world, i, j + 1)
+            && !active_at(world, i, j + 2)
+            && !active_at(world, i, j + 3)
+        {
+            flag = true;
+        }
+        j += 1;
+    }
+}
+
+/// The Clean Up Dirt pass (`GenPassNameID.DirtWallCleanup`,
+/// `WorldGen.cs:15246-15359`): the two surface dirt-wall clean sweeps.
+/// The `Skyblock.denyAllGeneration` gate is the caller's. The noSurface
+/// seed takes `DoNoSurfaceFillTheTop` instead (`:15250-15253`); a classic
+/// world runs the forward (left→right, `:15257`) then reverse (right→left,
+/// `:15307`) sweeps. Own `pass_rng("Clean Up Dirt")` stream.
+pub(crate) fn pass_clean_up_dirt(
+    world: &mut World,
+    world_surface: f64,
+    rng: &mut super::Rng,
+    no_surface: bool,
+) {
+    if no_surface {
+        no_surface_fill_the_top(world, rng);
+        return;
+    }
+    // Forward sweep (`:15257-15306`): self walls {2,40,64,86}, sand trio.
+    for i in 3..world.width - 3 {
+        clean_dirt_column(world, i, world_surface, rng, &[2, 40, 64, 86], false);
+    }
+    // Reverse sweep (`:15307-15356`): self walls {2,40,64} (no 86), sand only.
+    let mut num = world.width - 5;
+    while num >= 5 {
+        clean_dirt_column(world, num, world_surface, rng, &[2, 40, 64], true);
+        num -= 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-g36 A2: the forward sweep clears the exposed dirt walls above
+    /// the first active non-sand tile and stops there; the reverse sweep
+    /// then re-cleans right-to-left. Hand-built world, exact scope.
+    #[test]
+    fn a2_the_sweeps_clear_exposed_dirt_walls() {
+        use crate::tile::Tile;
+        let mut w = World::new("dirt".into(), 64, 64);
+        // A dirt-wall band rows 0..10 across the middle columns, with a
+        // stone floor at row 10 (active, non-sand — the sweep stops).
+        for x in 5..59 {
+            for y in 0..10 {
+                let idx = w.index(x, y);
+                w.tiles[idx] = Tile::default();
+                w.tiles[idx].wall = 2;
+            }
+            let idx = w.index(x, 10);
+            w.tiles[idx].kind = 1;
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        }
+        pass_clean_up_dirt(&mut w, 30.0, &mut super::super::Rng(42), false);
+        // Every band wall in the sweep's column range is cleared.
+        for x in 6..58 {
+            for y in 0..10 {
+                assert_eq!(w.tile(x, y).unwrap().wall, 0, "({x},{y})");
+            }
+        }
+        // The floor survives.
+        assert!(w.tile(30, 10).unwrap().active());
+    }
+
+    /// W4-g36 A2: the sand gate's observable is the flag state machine —
+    /// an active NON-sand tile drops `flag` (the sweep stops cleaning
+    /// below it until the 5-row re-arm window), while active SAND keeps
+    /// `flag` set (the sweep cleans on below). The pass replays a == b.
+    #[test]
+    fn a2_sand_keeps_the_sweep_going_and_the_pass_replays() {
+        use crate::tile::Tile;
+        // `floor_kind` at row 10, dirt walls rows 11..20 below it.
+        let build = |floor_kind: u16| {
+            let mut w = World::new("dirt".into(), 64, 64);
+            for y in 0..20 {
+                let idx = w.index(30, y);
+                w.tiles[idx] = Tile::default();
+                w.tiles[idx].wall = 2;
+            }
+            let idx = w.index(30, 10);
+            w.tiles[idx].kind = floor_kind;
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+            w
+        };
+        // Stone floor: flag drops at row 10; the walls below survive (the
+        // re-arm window needs wall-0 rows, these carry wall 2).
+        let mut stone = build(1);
+        pass_clean_up_dirt(&mut stone, 30.0, &mut super::super::Rng(7), false);
+        assert_eq!(stone.tile(30, 15).unwrap().wall, 2, "stone stops the sweep");
+        // Sand floor: flag stays set; the walls below are cleaned.
+        let mut sand = build(53);
+        pass_clean_up_dirt(&mut sand, 30.0, &mut super::super::Rng(7), false);
+        assert_eq!(sand.tile(30, 15).unwrap().wall, 0, "sand keeps the sweep going");
+        // a == b on the same seed.
+        let mut a = build(1);
+        let mut b = build(1);
+        pass_clean_up_dirt(&mut a, 30.0, &mut super::super::Rng(7), false);
+        pass_clean_up_dirt(&mut b, 30.0, &mut super::super::Rng(7), false);
+        assert_eq!(a.tiles, b.tiles, "a == b");
+    }
+
+    /// W4-g36 A2: the noSurface arm fills the top 100+Next(2) rows and
+    /// retypes jungle grass to mud (`WorldGen.cs:1055-1082`).
+    #[test]
+    fn a2_the_no_surface_arm_fills_the_top() {
+        use crate::tile::Tile;
+        let mut w = World::new("dirt".into(), 64, 200);
+        let idx = w.index(10, 5);
+        w.tiles[idx] = Tile::default();
+        w.tiles[idx].kind = 60; // jungle grass
+        pass_clean_up_dirt(&mut w, 30.0, &mut super::super::Rng(3), true);
+        assert!(w.tile(10, 5).unwrap().active(), "the top rows activate");
+        assert_eq!(w.tile(10, 5).unwrap().kind, 59, "jungle grass → mud");
+        // Row 150 is beyond the 100+Next(2) fill — untouched.
+        assert!(!w.tile(10, 150).unwrap().active());
+    }
 
     fn opts(micro: MicroSeedFlags) -> GenOptions {
         GenOptions {
