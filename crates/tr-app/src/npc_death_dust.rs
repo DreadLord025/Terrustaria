@@ -227,6 +227,7 @@ fn lane_covers(ty: u16) -> bool {
             | 352 | 327 | 325 | 326 | 330 | 329 | 315 | 250 | 261 | 288
             | 344 | 262..=264 | 265 | 266 | 267 | 370 | 372 | 373
             | 439 | 381 | 382 | 390 | 383 | 384 | 385 | 386 | 387 | 389
+            | 391 | 392..=395 | 399 | 520 | 341 | 471 | 533
     )
 }
 
@@ -584,6 +585,50 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         // `NPC.cs:84459-84468` — Giga Zapper: 30×227; three constant
         // gores (904-906).
         389 => fx.burst(30, 227, 2.5 * hd, -2.5),
+        // `NPC.cs:84543-84552` — Scutlix: 30×227; three constant gores
+        // (607/608 at position + width/2, 609).
+        391 => fx.burst(30, 227, 2.5 * hd, -2.5),
+        // `NPC.cs:84565-84590` — the Martian Saucer family (392/393/
+        // 394/395): 30×228 at `(-1.5×hd, -1.5)`, scale = 0.5 OVERWRITE
+        // (228's NewDust tweak — vy re-roll, vx ×0.3, scale ×0.7 —
+        // rolls INSIDE new_dust BEFORE the overwrite). The 395's six
+        // gores / 393's 616 / 394's 617 are constant-argument; the
+        // base 392 spawns no gores.
+        392..=395 => {
+            let hd2 = fx.hit_dir as f32;
+            for _ in 0..30 {
+                let i = fx.d(228, -1.5 * hd2, -1.5);
+                fx.dust.slot_mut(i).scale = 0.5;
+            }
+        }
+        // `NPC.cs:84513-84532` — the Martian Probe: 10×226 at
+        // `(-2.5×hd, -2.5)`, scale = 0.5; the two gores (898/899) ride
+        // the ai[0]==3 implosion velocity (argument-free — the gore
+        // lane reads `Npc.ai[0]`/`rotation`/`sprite_dir` itself).
+        399 => fx.burst226(10, 2.5),
+        // `NPC.cs:84436-84448` — the Martian Walker: 30×226 at
+        // `(-1.5×hd, -1.5)`, scale = 0.5; five constant gores
+        // (851/852/848/849/850).
+        520 => fx.burst226(30, 1.5),
+        // `NPC.cs:88755-88764` — the Present Mimic: 20×196 (the
+        // `num706 = 196` constant, `:88746`) at (0,0); the three gores
+        // (61/62/63) carry `(hitDirection, 0)` velocities — data, no
+        // draws; the ×0.3 writes are gore-side.
+        341 => fx.burst(20, 196, 0.0, 0.0),
+        // `NPC.cs:89617-89625` — the Goblin Summoner: 50×5 at
+        // `(2.5×hd, -2.5)`; five constant gores (675-678).
+        471 => fx.burst(50, 5, 2.5 * hd, -2.5),
+        // `NPC.cs:83878-83887` — the Desert Djinn: 40×27 at (0,0),
+        // alpha 50, scale 1.5, then velocity ×2 + noGravity + fadeIn 1.
+        533 => {
+            for _ in 0..40 {
+                let i = fx.d_full(fx.pos, fx.w, fx.h, 27, 0.0, 0.0, 50, Color::default(), 1.5);
+                let d = fx.dust.slot_mut(i);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+                d.fade_in = 1.0;
+            }
+        }
         _ => {}
     }
 }
@@ -1087,6 +1132,50 @@ mod tests {
         assert_eq!(rng, r, "40×6 internals + 1 count + n picks");
         assert!(pool.slot(39).active);
         assert!(!pool.slot(40).active);
+    }
+
+    /// `NPC.cs:84567-84571` — the Saucer family: 30×228 with the
+    /// NewDust 228 tweak (vy re-roll `Next(-10,6)×0.1`, vx ×0.3, scale
+    /// ×0.7 — THREE extra internals, `Dust.cs:214-220`) then the
+    /// scale = 0.5 OVERWRITE. The witness replays the 9-draw spawn.
+    #[test]
+    fn w4_g60_the_saucer_228_tweak_rolls_before_the_overwrite() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(111);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 392,
+            pos: Vec2::new(100.0, 100.0),
+            w: 80,
+            h: 40,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for k in 0..2 {
+            let rolls = replay_spawn(&mut r, 80, 40);
+            // The 228 tweak: vy = Next(-10,6)*0.1, vx *= 0.3, scale *= 0.7.
+            let tweak_vy = r.next_range(-10, 6);
+            let d = pool.slot(k);
+            assert_eq!(d.dust_type, 228);
+            assert_eq!(d.scale, 0.5, "the overwrite replaces roll×0.7");
+            assert_eq!(d.velocity.x, (rolls[2] as f32 * 0.1 - 1.5) * 0.3);
+            assert_eq!(d.velocity.y, tweak_vy as f32 * 0.1, "the re-roll, not roll-1.5");
+        }
+        for _ in 2..30 {
+            replay_spawn(&mut r, 80, 40);
+            r.next_range(-10, 6);
+        }
+        assert_eq!(rng, r, "30 × (6 internals + 1 tweak re-roll)");
+        assert!(pool.slot(29).active);
+        assert!(!pool.slot(30).active);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
