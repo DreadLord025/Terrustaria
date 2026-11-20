@@ -430,3 +430,80 @@ inclusive C# loop. 100's glow gate reads RAW fx/fy (`glow_switch` inputs are the
 stored framing, `cases_a.rs:636-637`) — correct, the second switch never rewrites
 frames; the rect's `fy % 36` is the raw row, not the unwound one, exactly as
 `:6232`.
+
+### Batch 7 — pinwheel / weather vane / candles (+glow) / sea oats / plants head: 489, 490, 33, 49, 174, 372, 646, 529, 3, 24 (10 ids)
+
+C# `TileDrawing.cs:4731-4741` + `:4811-4818` (490 tail) and `:4819-4849`, verbatim
+key bodies (490's two 8-arm bob tables at :4752-4778 strong / :4782-4808 calm
+audited arm-by-arm below):
+
+```csharp
+		case 489:
+		{
+			tileTop = 2;
+			int num32 = y - tileFrameY / 18;
+			int num33 = x - tileFrameX / 18;
+			if (this.InAPlaceWithWind(num33, num32, 2, 3))
+			{
+				addFrY = (Main.tileFrameCounter[typeCache] / 5 + (num32 + num33)) % 16 * 54;
+			}
+			break;
+		}
+		case 490:
+		{
+			tileTop = 2;
+			bool flag = this.InAPlaceWithWind(y: y - tileFrameY / 18, x: x - tileFrameX / 18, width: 2, height: 2);
+			int num12 = (flag ? Main.tileFrame[typeCache] : 0);
+			int num13 = 0;
+			if (flag)
+			{
+				if (Math.Abs(Main.WindForVisuals) > 0.5f)
+				{ /* switch (Main.weatherVaneBobframe): 0,1,2,1,0,-1,-2,-1 */ }
+				else
+				{ /* switch (Main.weatherVaneBobframe): 0,1,0,-1,0,1,0,-1 */ }
+			}
+			num12 += num13;
+			if (num12 < 0)
+			{
+				num12 += 12;
+			}
+			addFrY = num12 % 12 * 36;
+			break;
+		}
+		case 33:
+		case 49:
+		case 174:
+		case 372:
+		case 646:
+			tileHeight = 20;
+			tileTop = -4;
+			break;
+```
+
+529 (`:4827-4848`): single-cell influence probe at `(x, y+1)`, pick 1 on the beach
+band (`x < WorldGen.beachDistance || x > Main.maxTilesX - WorldGen.beachDistance`)
+when all counts 0, else 2 hallow / 4 corrupt / 3 crimson;
+`addFrY += 34 * pick - tileFrameY; tileHeight = 32; tileTop = -14;` + parity flip.
+33's glow row (`:6236-6243`): `tileFrameX / 18 == 0 && tileFrameY / 22 == 26` →
+GlowMask 61, `Rectangle(tileFrameX, tileFrameY % 22, w, h)`, `_martianGlow`.
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 489 | top 2; wind probe `(num33, num32, 2, 3)`; `(counter/5 + (num32+num33)) % 16 * 54` | :4731-4741 | static top `drawdata.rs:286-288` + full body `cases_b.rs:178-185` (probe `wind.rs:340-357` ≈ `WorldGen.cs:86858-86879`; `TileDrawing.InAPlaceWithWind` is a pure forwarder, `:4522-4525`) | PORTED |
+| 490 | top 2; probe 2x2; `num12 = flag ? tileFrame : 0`; two bob tables; negative wrap +12; `% 12 * 36` | :4742-4818 | static top `drawdata.rs:293-295` + full body `cases_b.rs:189-242` — both tables match arm-for-arm (strong 0,1,2,1,0,-1,-2,-1 / calm 0,1,0,-1,0,1,0,-1); `WindForVisuals => windSpeedCurrent` (`Main.cs:2823`) = `wind.speed_current` (`wind.rs:50-51`); bobframe wired via `TileAnimator` (S1-G-1f) | PORTED |
+| 33 | height 20, top −4 group; glow col 0 row 26 of the 22 grid → mask 61 martian | :4819-4826, :6236-6243 | `drawdata.rs:298-301`; glow `cases_a.rs:421-425` (`rect_plain(fx, fy % 22, height)`) | PORTED; glow PORTED-UNWIRED (`_glow`) |
+| 49 | shares the candle group | :4820 | :298-301 | PORTED |
+| 174 | shares the group | :4821 | :298-301 | PORTED |
+| 372 | shares the group | :4822 | :298-301 | PORTED |
+| 646 | shares the group | :4823 | :298-301 | PORTED |
+| 529 | beach/evil pick `34*pick − fy` + height 32 / top −14 / flip | :4827-4849 | static sizes+flip `drawdata.rs:306-310` + full probe `cases_a.rs:238-261` (`sea_oats_add_fr_y`, beach 380 passed at `cases_a.rs:649-655` ≈ `WorldGen.cs:86914`), fold `+=` via `wrapping_add` | PORTED |
+| 3 | height 20 + parity flip plant group | :4850-4863 | `drawdata.rs:313-316` (`3 \| 24 \| 61 \| 71 \| 110 \| 201 \| 637 \| 703`) | PORTED |
+| 24 | shares the group | :4851 | :313-316 | PORTED |
+
+Notes: 490's `num13` default when `weatherVaneBobframe` is outside 0..=7 — the C#
+switches leave `num13 = 0` (no default arm); the port's `_ => 0`
+(`cases_b.rs:234`) matches. The `drawdata.rs:283-292` "documented deviation"
+comments for 489/490 are STALE (full bodies wired in `cases_b`). 529's pick maps
+hallow→2, corrupt→4, crimson→3 — note this DIFFERS from 530's 1/3/2 numbering;
+both ported verbatim. 33's glow rect uses the candle sheet's own 22 px stride
+(`fy % 22`), not 18 — preserved.
