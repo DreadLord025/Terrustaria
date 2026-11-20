@@ -1021,6 +1021,9 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // and the Solar Pillar latch (`:3304`).
         fairy_torch_available: crate::bestiary::fairy_torch_available(&app.bestiary),
         downed_tower_solar: app.world.downed_tower_solar,
+        // W4-d122 remainder census, shop 24: the anniversary block's
+        // desert gate (`Chest.cs:3441`) — the scene metrics' zone flag.
+        zone_desert: app.scene_metrics.zone_desert,
     };
     let inv_ids: Vec<u16> = app
         .inventory

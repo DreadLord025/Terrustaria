@@ -143,6 +143,10 @@ pub struct ShopFlags {
     /// (`Chest.cs:3304`) — the Solar Monolith 4677. Fed from
     /// `World.downed_tower_solar`.
     pub downed_tower_solar: bool,
+    /// W4-d122 remainder census, shop 24: `Main.player[Main.myPlayer].ZoneDesert`
+    /// (`Chest.cs:3441`) — the anniversary block's Magic Carpet 857. The
+    /// scene metrics feed it at the open seam.
+    pub zone_desert: bool,
 }
 
 impl Default for ShopFlags {
@@ -199,6 +203,7 @@ impl Default for ShopFlags {
             angler_present: false,
             fairy_torch_available: false,
             downed_tower_solar: false,
+            zone_desert: false,
         }
     }
 }
@@ -485,6 +490,13 @@ pub enum StockWhen {
     /// W4-d122 remainder census, shop 23: `NPC.downedTowerSolar`
     /// (`Chest.cs:3304`) — the Solar Monolith 4677.
     DownedTowerSolar,
+    /// W4-d122 remainder census, shop 24: `Main.tenthAnniversaryWorld`
+    /// ALONE (`Chest.cs:3436`) — the anniversary block's outer gate (the
+    /// 1309/1859/1358 heads; the inner rows AND their own gates onto it).
+    AnniversaryWorld,
+    /// W4-d122 remainder census, shop 24: `Main.player[Main.myPlayer].ZoneDesert`
+    /// (`Chest.cs:3441`) — the Magic Carpet 857 inside the anniversary block.
+    ZoneDesert,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The first half
@@ -1139,9 +1151,14 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // The vampirism tail (`Chest.cs:3403-3406`).
             row(8, StockWhen::VampirismNotInfected),
         ],
-        // The Princess's shop (index 24, `Chest.cs:3409-3471`): the
-        /// 17 vanity dresses + the two slime-kings row + the Moon Lord's
-        /// hat (the tenth-anniversary rows sit constants-off).
+        // The Princess's shop (index 24, `Chest.cs:3409-3470`, the registry
+        // `NPCInteractions.Shop(663, 24)`, `NPCInteractions.cs:511`): the
+        // 18 always vanity rows, the two-slime-king 5266, the Moon Lord's
+        // hat 5044, then the TENTH-ANNIVERSARY block (`:3436-3468` — the
+        // 1309/1859/1358 heads, the desert Magic Carpet 857, the blood-moon
+        // 4144 and the hardmode+pirate moon-pair pets) BEFORE the always
+        // 5088 tail. W4-d122 remainder census: the block replaces the
+        // M4-TOWN-19 constants-off deviation.
         24 => vec![
             row(5071, StockWhen::Always),
             row(5072, StockWhen::Always),
@@ -1161,9 +1178,21 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(5310, StockWhen::Always),
             row(5222, StockWhen::Always),
             row(5228, StockWhen::Always),
-            row(5266, StockWhen::DownedBothSlimes),
-            row(5044, StockWhen::HardModeMoonlord),
-            row(5088, StockWhen::Always),
+            row(5266, StockWhen::DownedBothSlimes),  // `:3428-3431`
+            row(5044, StockWhen::HardModeMoonlord),  // `:3432-3435`
+            // The anniversary block (`:3436-3468`).
+            row(1309, StockWhen::AnniversaryWorld),  // `:3438`
+            row(1859, StockWhen::AnniversaryWorld),  // `:3439`
+            row(1358, StockWhen::AnniversaryWorld),  // `:3440`
+            row(857, PRINCESS_ANN_DESERT),           // `:3441-3444`
+            row(4144, PRINCESS_ANN_BLOOD),           // `:3445-3448`
+            // `:3449-3467`: hardmode + downedPirates, then one pet per
+            // moon pair — 2584/854/855/905.
+            row(2584, PRINCESS_ANN_PET_PAIR0),
+            row(854, PRINCESS_ANN_PET_PAIR1),
+            row(855, PRINCESS_ANN_PET_PAIR2),
+            row(905, PRINCESS_ANN_PET_PAIR3),
+            row(5088, StockWhen::Always),            // `:3469` the tail
         ],
         // The Golfer's shop (index 22, `Chest.cs:3156-3262`): the golf
         // gear — the clubs, the cup flags, the tees/balls, the signs, the
@@ -1479,6 +1508,31 @@ const ZOO_HARD_BESTIARY_30: StockWhen =
 /// `Chest.cs:3344`: `Main.hardMode && Main.bloodMoon` — the 4736 row.
 const ZOO_HARD_BLOOD: StockWhen =
     StockWhen::All(&[StockWhen::HardMode, StockWhen::BloodMoon]);
+
+// — W4-d122 (remainder census): the Princess's anniversary block
+// (`Chest.cs:3436-3468`) — every row ANDs onto `tenthAnniversaryWorld`. —
+
+/// `Chest.cs:3441`: anniversary + `ZoneDesert` — the Magic Carpet 857.
+const PRINCESS_ANN_DESERT: StockWhen =
+    StockWhen::All(&[StockWhen::AnniversaryWorld, StockWhen::ZoneDesert]);
+/// `Chest.cs:3445`: anniversary + `bloodMoon` — the 4144 row.
+const PRINCESS_ANN_BLOOD: StockWhen =
+    StockWhen::All(&[StockWhen::AnniversaryWorld, StockWhen::BloodMoon]);
+/// `Chest.cs:3449-3451`: anniversary + hardmode + `downedPirates` — the
+/// pet block's outer conjunct (the moon pair ANDs onto it per row).
+const PRINCESS_ANN_PET: StockWhen = StockWhen::All(&[
+    StockWhen::AnniversaryWorld,
+    StockWhen::HardMode,
+    StockWhen::DownedPirates,
+]);
+const PRINCESS_ANN_PET_PAIR0: StockWhen =
+    StockWhen::All(&[PRINCESS_ANN_PET, StockWhen::MoonPhasePair(0)]);
+const PRINCESS_ANN_PET_PAIR1: StockWhen =
+    StockWhen::All(&[PRINCESS_ANN_PET, StockWhen::MoonPhasePair(1)]);
+const PRINCESS_ANN_PET_PAIR2: StockWhen =
+    StockWhen::All(&[PRINCESS_ANN_PET, StockWhen::MoonPhasePair(2)]);
+const PRINCESS_ANN_PET_PAIR3: StockWhen =
+    StockWhen::All(&[PRINCESS_ANN_PET, StockWhen::MoonPhasePair(3)]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -2243,6 +2297,9 @@ fn stock_gate(
             // W4-d122 remainder census, shop 23 (`Chest.cs:3266`/:3304).
             StockWhen::FairyTorchAvailable => flags.fairy_torch_available,
             StockWhen::DownedTowerSolar => flags.downed_tower_solar,
+            // W4-d122 remainder census, shop 24 (`Chest.cs:3436`/:3441).
+            StockWhen::AnniversaryWorld => flags.anniversary_world,
+            StockWhen::ZoneDesert => flags.zone_desert,
             // The combinators + the num guard are handled above — unreachable.
             StockWhen::All(_)
             | StockWhen::Any(_)
@@ -4315,5 +4372,79 @@ mod w4_d122_zoologist_tests {
             ..Default::default()
         };
         assert!(!resolve_stock_moon(23, &hm, &[], 0).contains(&4736));
+    }
+}
+
+#[cfg(test)]
+mod w4_d122_princess_tests {
+    use super::*;
+
+    /// W4-d122 remainder census — shop 24 (`Chest.cs:3409-3470`): the
+    /// tenth-anniversary block lands BETWEEN the 5044 hat slot and the
+    /// always 5088 tail. A classic world keeps the 21-row M4 list; the
+    /// anniversary heads ride the seed flag alone. Written, not run.
+    #[test]
+    fn the_princess_anniversary_heads_ride_the_seed_flag() {
+        // Classic: the block is fully off, the 5088 tail closes the list.
+        let classic = resolve_stock(24, &ShopFlags::default(), &[]);
+        assert_eq!(classic.len(), 19, "18 always + the 5088 tail");
+        assert_eq!(*classic.last().unwrap(), 5088);
+        for id in [1309, 1859, 1358, 857, 4144, 2584, 854, 855, 905] {
+            assert!(!classic.contains(&id), "the anniversary row {id} leaked");
+        }
+        // Anniversary alone: the three heads land before the tail.
+        let ann = ShopFlags {
+            anniversary_world: true,
+            ..Default::default()
+        };
+        let a = resolve_stock_moon(24, &ann, &[], 0);
+        assert_eq!(&a[a.len() - 4..], &[1309, 1859, 1358, 5088]);
+        // The desert/blood-moon inner gates stay off.
+        assert!(!a.contains(&857) && !a.contains(&4144));
+    }
+
+    /// The inner gates (`Chest.cs:3441-3467`): the desert carpet needs
+    /// ZoneDesert, the 4144 the blood moon, the pets the hardmode+pirate
+    /// conjunct AND one exact moon pair. Written, not run (code-only).
+    #[test]
+    fn the_princess_anniversary_inner_gates_and_pet_pairs() {
+        let base = ShopFlags {
+            anniversary_world: true,
+            zone_desert: true,
+            blood_moon: true,
+            hard_mode: true,
+            downed_pirates: true,
+            ..Default::default()
+        };
+        // Phase 0: the 2584 pet only, in the block's num order.
+        let p0 = resolve_stock_moon(24, &base, &[], 0);
+        let i1358 = p0.iter().position(|v| *v == 1358).unwrap();
+        assert_eq!(&p0[i1358 + 1..], &[857, 4144, 2584, 5088]);
+        // One pet per pair: phase 3 -> 854, phase 5 -> 855, phase 7 -> 905.
+        for (phase, pet) in [(3u32, 854u16), (5, 855), (7, 905)] {
+            let s = resolve_stock_moon(24, &base, &[], phase);
+            assert!(s.contains(&pet), "the phase-{phase} pet {pet}");
+            assert!(!s.contains(&2584), "the pair-0 pet stays out");
+            assert_eq!(*s.last().unwrap(), 5088);
+        }
+        // The pirates latch is required: without it no pet at any phase.
+        let no_pirates = ShopFlags {
+            downed_pirates: false,
+            ..base
+        };
+        let n = resolve_stock_moon(24, &no_pirates, &[], 0);
+        assert!(!n.contains(&2584) && n.contains(&857) && n.contains(&4144));
+        // Hardmode alone (no anniversary) opens NOTHING of the block.
+        let hm = ShopFlags {
+            hard_mode: true,
+            downed_pirates: true,
+            blood_moon: true,
+            zone_desert: true,
+            ..Default::default()
+        };
+        let h = resolve_stock_moon(24, &hm, &[], 0);
+        for id in [1309, 857, 4144, 2584] {
+            assert!(!h.contains(&id), "no block without the seed: {id}");
+        }
     }
 }
