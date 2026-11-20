@@ -5134,6 +5134,32 @@ impl Npc {
             // (the sibling heal resolve rides the sim seam, the dust rings
             // are the documented visual skip). RNG-free at arm level.
             82 => self.update_moon_leech_blob(world, player),
+            // W4-d32 axis census (research/25 row 85): the hover/attach
+            // family — `else if (this.aiStyle == 85)` (`NPC.cs:36930-37220`).
+            // The census's three kinds: StardustCellBig 405 (`NPC.cs:15026`),
+            // BrainSuckler 421 (`:15134`), DeadlySphere 467 (`:15564` — no
+            // ported kind yet, the roster wave). The two ported machines
+            // claim the style here (the S1-D-2 migration step, machines
+            // UNCHANGED verify-only — both are the documented PARTIAL
+            // stand-ins, the row-85 audit stays open); the kind arms below
+            // are `unreachable!` markers (the W4-d31 precedent).
+            85 => match self.kind {
+                NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
+                NpcKind::BrainSuckler => self.update_brain_suckler(world, player, rng),
+                _ => unreachable!("no other ported kind carries aiStyle 85"),
+            },
+            // W4-d32 axis census (research/25 row 93): the Flying
+            // Dutchman — `else if (this.aiStyle == 93)`
+            // (`NPC.cs:38858-38967`). The census's only kind is the
+            // FlyingDutchman 491 (`NPC.cs:14637`); its cannons 492
+            // ride aiStyle 75 (already claimed above). The ported
+            // machine claims the style here (the S1-D-2 migration
+            // step, machine UNCHANGED verify-only — the row-93
+            // verbatim audit stays open: the stand-in's init latch /
+            // crew count / ai[0] counter deviations are documented
+            // at `update_flying_dutchman`); the kind arm below is an
+            // `unreachable!` marker (the W4-d31 precedent).
+            93 => self.update_flying_dutchman(world, player, rng),
             // aiStyle 83 (the cultist ritual, `NPC.cs:36757-36925`) has no
             // ported kind yet (437/438 wait on the roster wave) — the
             // faithful unwired module is `npc_ai_style83.rs` (W4-d31, the
