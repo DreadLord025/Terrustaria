@@ -31,6 +31,8 @@
 //! | 71-80 | `:82206-82215` | the 551 Betsy FLIPPED branch (`spriteDirection == -1`) |
 //! | 81-85 | `:82237-82241` | the 572/573 DD2 Kobold Walker death (5 gores) |
 //! | 86-90 | `:82262-82266` | the 574/575 DD2 Kobold Flyer death (5 gores) |
+//! | 91-95 | `:82285-82289` | the 570/571 DD2 Drakin death (5 gores, per-tier base) |
+//! | 96-100 | `:82307-82311` | the 568/569 DD2 Wither Beast death (5 gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -193,6 +195,57 @@ fn kobold_flyer_death(
     gore.new_gore(rng, world, Vec2::new(v7.x, v7.y), vel, 1054, s); // :82266
 }
 
+/// The 570/571 DD2 Drakin death (`NPC.cs:82280-82289`, sites 91-95): the
+/// 20-dust type-5 burst, then 5 gores at the per-tier base
+/// (`num61 = type == 570 ? 1075 : 979`, `:82284`) with the type order
+/// `num61 / +2 / +2 / +3 / +1` at the +0/+20/+20/+20/+34 Y ladder.
+fn drakin_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 20);
+    // `:82284` — the per-tier base.
+    let num61 = if npc_type == 570 { 1075 } else { 979 };
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, num61, s); // :82285
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num61 + 2, s); // :82286
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num61 + 2, s); // :82287
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num61 + 3, s); // :82288
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, num61 + 1, s); // :82289
+}
+
+/// The 568/569 DD2 Wither Beast death (`NPC.cs:82302-82311`, sites 96-100):
+/// the 20-dust type-5 burst, then the 5 fixed gores 1020/1021/1023/1022/1022
+/// at the +0/+20/+20/+34/+34 Y ladder (the type order is NOT a base+offset
+/// ladder — 1023 precedes the 1022 pair, `:82309-82311`).
+fn wither_beast_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    death_dust_loop(npc, dust, dust_ctx, rng, world, 5, hit_direction, 20);
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 1020, s); // :82307
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1021, s); // :82308
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 1023, s); // :82309
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1022, s); // :82310
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 1022, s); // :82311
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); only the death
@@ -224,6 +277,14 @@ pub fn hit_effect_c(
     // `:82244-82268` — the 574/575 DD2 Kobold Flyer arm (sites 86-90).
     if (npc_type == 574 || npc_type == 575) && npc.hp <= 0 {
         kobold_flyer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82269-82291` — the 570/571 DD2 Drakin arm (sites 91-95).
+    if (npc_type == 570 || npc_type == 571) && npc.hp <= 0 {
+        drakin_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82292-82313` — the 568/569 DD2 Wither Beast arm (sites 96-100).
+    if (npc_type == 568 || npc_type == 569) && npc.hp <= 0 {
+        wither_beast_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -384,6 +445,45 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the walker death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:82284-82289` — the Drakin death's per-tier base: 570 rides
+    /// 1075, 571 rides 979; the type order is base/+2/+2/+3/+1.
+    #[test]
+    fn w4_f10_the_drakin_death_uses_the_per_tier_base() {
+        let w = air();
+        for (ty, base) in [(570, 1075), (571, 979)] {
+            let n = boss(100.0, 100.0, 60.0, 48.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(17);
+            drakin_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(
+                types,
+                vec![base, base + 2, base + 2, base + 3, base + 1],
+                "tier {ty}"
+            );
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
+        }
+    }
+
+    /// `NPC.cs:82307-82311` — the Wither Beast death: the fixed type order
+    /// 1020/1021/1023/1022/1022 (1023 precedes the 1022 pair).
+    #[test]
+    fn w4_f10_the_wither_beast_death_keeps_the_fixed_type_order() {
+        let w = air();
+        let n = boss(100.0, 100.0, 66.0, 52.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(19);
+        wither_beast_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, -1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1020, 1021, 1023, 1022, 1022]);
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
