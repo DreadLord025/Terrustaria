@@ -599,41 +599,37 @@ pub(crate) struct UsePose {
 /// is the written π/4 approximation, `-PI/2`/`-PI/4`/`PI/2` the casts.
 pub(crate) fn supported_use_poses(use_style: u8) -> &'static [UsePose] {
     const P: f32 = std::f32::consts::PI;
+    // :56-60 — the swing family, five poses down the use fraction.
+    const SWING: &[UsePose] = &[
+        UsePose { pose: DollPose::Use1, item_anim_percent: 1.0, item_aim_radians: None },
+        UsePose { pose: DollPose::Use2, item_anim_percent: 0.8, item_aim_radians: None },
+        UsePose { pose: DollPose::Use3, item_anim_percent: 0.6, item_aim_radians: None },
+        UsePose { pose: DollPose::Use4, item_anim_percent: 0.4143, item_aim_radians: None },
+        UsePose { pose: DollPose::Use5, item_anim_percent: 0.2, item_aim_radians: None },
+    ];
+    // :61-63, :69-73 — the single-pose use styles.
+    const SINGLE: &[UsePose] = &[
+        UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: None },
+    ];
+    // :64-68 / :77-81 — the gun (5) and spear (13) aim ladders.
+    const AIM_LADDER: &[UsePose] = &[
+        UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: Some(-P / 2.0) },
+        UsePose { pose: DollPose::Use2, item_anim_percent: 0.5, item_aim_radians: Some(-P / 4.0) },
+        UsePose { pose: DollPose::Use3, item_anim_percent: 0.5, item_aim_radians: Some(0.0) },
+        UsePose { pose: DollPose::Use4, item_anim_percent: 0.5, item_aim_radians: Some(0.7853981) },
+        UsePose { pose: DollPose::Use5, item_anim_percent: 0.5, item_aim_radians: Some(P / 2.0) },
+    ];
+    // :74-76 — the drink tilt (useStyle 12).
+    const DRINK: &[UsePose] = &[
+        UsePose { pose: DollPose::Use1, item_anim_percent: 0.75, item_aim_radians: None },
+        UsePose { pose: DollPose::Use2, item_anim_percent: 0.5, item_aim_radians: None },
+        UsePose { pose: DollPose::Use3, item_anim_percent: 0.25, item_aim_radians: None },
+    ];
     match use_style {
-        // :56-60 — the swing family, five poses down the use fraction.
-        1 => &[
-            UsePose { pose: DollPose::Use1, item_anim_percent: 1.0, item_aim_radians: None },
-            UsePose { pose: DollPose::Use2, item_anim_percent: 0.8, item_aim_radians: None },
-            UsePose { pose: DollPose::Use3, item_anim_percent: 0.6, item_aim_radians: None },
-            UsePose { pose: DollPose::Use4, item_anim_percent: 0.4143, item_aim_radians: None },
-            UsePose { pose: DollPose::Use5, item_anim_percent: 0.2, item_aim_radians: None },
-        ],
-        // :61-63, :69-73 — the single-pose use styles.
-        7 | 3 | 4 | 6 | 2 | 8 | 9 | 11 | 14 | 15 => &[
-            UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: None },
-        ],
-        // :64-68 — the gun aim ladder (useStyle 5).
-        5 => &[
-            UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: Some(-P / 2.0) },
-            UsePose { pose: DollPose::Use2, item_anim_percent: 0.5, item_aim_radians: Some(-P / 4.0) },
-            UsePose { pose: DollPose::Use3, item_anim_percent: 0.5, item_aim_radians: Some(0.0) },
-            UsePose { pose: DollPose::Use4, item_anim_percent: 0.5, item_aim_radians: Some(0.7853981) },
-            UsePose { pose: DollPose::Use5, item_anim_percent: 0.5, item_aim_radians: Some(P / 2.0) },
-        ],
-        // :74-76 — the drink tilt (useStyle 12).
-        12 => &[
-            UsePose { pose: DollPose::Use1, item_anim_percent: 0.75, item_aim_radians: None },
-            UsePose { pose: DollPose::Use2, item_anim_percent: 0.5, item_aim_radians: None },
-            UsePose { pose: DollPose::Use3, item_anim_percent: 0.25, item_aim_radians: None },
-        ],
-        // :77-81 — the spear aim ladder (useStyle 13), same radians as 5.
-        13 => &[
-            UsePose { pose: DollPose::Use1, item_anim_percent: 0.5, item_aim_radians: Some(-P / 2.0) },
-            UsePose { pose: DollPose::Use2, item_anim_percent: 0.5, item_aim_radians: Some(-P / 4.0) },
-            UsePose { pose: DollPose::Use3, item_anim_percent: 0.5, item_aim_radians: Some(0.0) },
-            UsePose { pose: DollPose::Use4, item_anim_percent: 0.5, item_aim_radians: Some(0.7853981) },
-            UsePose { pose: DollPose::Use5, item_anim_percent: 0.5, item_aim_radians: Some(P / 2.0) },
-        ],
+        1 => SWING,
+        7 | 3 | 4 | 6 | 2 | 8 | 9 | 11 | 14 | 15 => SINGLE,
+        5 | 13 => AIM_LADDER,
+        12 => DRINK,
         _ => &[],
     }
 }
