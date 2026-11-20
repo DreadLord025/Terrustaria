@@ -47,6 +47,7 @@ use super::micro_surface;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
+use super::passes2;
 use super::spider_gem_moss;
 use super::structures;
 use super::surface;
@@ -1264,6 +1265,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (a classic world runs the step and draws nothing).
     step!("wavy caves", "Wavy Caves", step_wavy_caves),
     step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
+    // The vanilla Silt slot (`WorldGen.cs:13143`): after Dirt To Mud
+    // (`:13123`) and before Shinies (`:13182`) — W4-d102 pass 1. The step
+    // draws from its own `pass_rng("Silt")` stream, so the insertion shifts
+    // no other step's ledger.
+    step!("silt", "Silt", step_silt),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
     // The vanilla Corruption slot (`WorldGen.cs:13866`): after Shinies
@@ -1741,6 +1747,30 @@ fn step_dirt_to_mud(
         lava_line,
         world_surface,
         &mut streams.pass_rng("Dirt To Mud"),
+    );
+}
+
+/// The vanilla Silt slot (`WorldGen.cs:13143-13181`) — W4-d102 pass 1: the
+/// two kind-123 TileRunner loops over `GenVars.rockLayerHigh..maxTilesY`
+/// (the remix band swap to `worldSurface..rockLayer` rides the pass fn).
+fn step_silt(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (rock_high, world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.rock_high, l.world_surface, l.rock_layer)
+    };
+    passes2::pass_silt(
+        world,
+        rock_high,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Silt"),
     );
 }
 
@@ -3140,7 +3170,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-d102: + `silt` (vanilla "Silt", `WorldGen.cs:13143`) between
+        // `dirt to mud` and `ash blobs`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3189,6 +3221,7 @@ mod tests {
                 "surface caves",
                 "wavy caves",
                 "dirt to mud",
+                "silt",
                 "ash blobs",
                 "ores and gems",
                 "evil",
@@ -3258,7 +3291,8 @@ mod tests {
         // + surface caves (WORLDGEN-CAVES, the vanilla SurfaceCaves slot
         // `WorldGen.cs:12162`) + wavy caves (M5-SEED-1).
         assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 3);
-        assert_eq!(names[pos("dirt to mud") + 1], "ash blobs");
+        // + silt (W4-d102, the vanilla Silt slot `WorldGen.cs:13143`).
+        assert_eq!(names[pos("dirt to mud") + 2], "ash blobs");
         // The vanilla chain carries both passes in the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3437,6 +3471,29 @@ mod tests {
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
+    }
+
+    /// W4-d102 pass 1: `silt` sits in its vanilla slot — after `dirt to mud`
+    /// (Dirt To Mud `WorldGen.cs:13123`) and before `ash blobs` (Underworld
+    /// `:13645`) / `ores and gems` (Shinies `:13182`); the Silt anchor is
+    /// `:13143`.
+    #[test]
+    fn w4_d102_the_silt_step_sits_between_dirt_to_mud_and_shinies() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("silt"), pos("dirt to mud") + 1);
+        assert_eq!(names[pos("silt") + 1], "ash blobs");
+        assert!(pos("silt") < pos("ores and gems"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dirt To Mud") < cpos("Silt"));
+        assert!(cpos("Silt") < cpos("Shinies"));
+        assert!(cpos("Silt") < cpos("Underworld"));
     }
 
     #[test]

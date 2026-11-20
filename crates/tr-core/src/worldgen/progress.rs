@@ -82,6 +82,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "wavy caves" => PassMessage::Key("WorldGeneration.WavyCaves"),
         // WorldGen.cs:13127.
         "dirt to mud" => PassMessage::Gen(14),
+        // WorldGen.cs:13147 (W4-d102).
+        "silt" => PassMessage::Gen(15),
         // WorldGen.cs:13649.
         "ash blobs" => PassMessage::Gen(18),
         // WorldGen.cs:13186.

@@ -55,8 +55,8 @@ stay in place untouched.
 
 | pass | commit | status |
 | --- | --- | --- |
-| range doc | (this commit) | claimed |
-| Silt | — | pending |
+| range doc | f8c69c72 | claimed |
+| Silt | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
 | Webs | — | pending |
 | Slush | — | pending |
 | Mountain Caves | — | pending |
