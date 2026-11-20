@@ -116,24 +116,32 @@ use glam::Vec2;
 
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
-    BRAIN_SCRAMBLER, CHARGED_BLASTER_ORB, ELECTROSPHERE_MISSILE, NEBULA_BLAZE_1, NEBULA_BLAZE_2,
-    RAY_GUNNER, SAUCER_LASER,
+    BRAIN_SCRAMBLER, CHARGED_BLASTER_ORB, ELECTROSPHERE_MISSILE, FLAMING_WOOD, LASER_DRILL, MISSILE,
+    NEBULA_BLAZE_1, NEBULA_BLAZE_2, RAY_GUNNER, SAUCER_LASER, STARDUST_CELL,
 };
 
 /// The AI-arm `AddLight` sources this projectile contributes for one frame,
 /// in C# call order (the tower arms append two), or an empty list.
 ///
 /// `pos`/`w`/`h` are the slot's post-step box; `alpha` is `Projectile.alpha`
-/// (the 442 gate). Pure — no arm draws RNG and none mutates the slot, so
-/// the feed's placement cannot move any stream.
+/// (the 442 gate); `local_ai0` is `localAI[0]` (the 445 colour cycle);
+/// `hand` is the owner's `RotatedRelativePoint(MountedCenter)` — the 445
+/// distance gate's anchor (`AI_075`'s `vector`, `Projectile.cs:66135`),
+/// `None` when no owner player resolves (the C# reads `Main.player[owner]`
+/// unconditionally; the port skips the arm, the `ai_drill` no-owner kill
+/// precedent). Pure — no arm draws RNG and none mutates the slot, so the
+/// feed's placement cannot move any stream.
 pub(crate) fn proj_ai_lights(
     kind: u16,
     pos: Vec2,
     w: f32,
     h: f32,
     alpha: i32,
+    local_ai0: f32,
+    hand: Option<Vec2>,
 ) -> Vec<(i32, i32, [f32; 3])> {
     let mut out = Vec::new();
+    let center = Vec2::new(pos.x + w * 0.5, pos.y + h * 0.5);
     // `AI_001`'s per-type arms, in source order.
     if kind == BRAIN_SCRAMBLER {
         // `:54173` — `AddLight((int)Center.X / 16, (int)Center.Y / 16,
@@ -191,6 +199,81 @@ pub(crate) fn proj_ai_lights(
             tile_y(pos, h, XAnchor::CenterTruncated),
             [0.4, 0.1, 0.2],
         ));
+    } else if kind == MISSILE || kind == FLAMING_WOOD {
+        // `:55130-55137` (350) / `:55164-55171` (325) — the twin arms:
+        // `(int)Center/16`, (0.9, 0.6, 0.2). The `alpha == 0` dust halves
+        // (`:55138-55157` / `:55172-…`) draw `Main.rand` and are skipped;
+        // the light itself is unconditional.
+        out.push((
+            tile_x(pos, w, XAnchor::CenterTruncated),
+            tile_y(pos, h, XAnchor::CenterTruncated),
+            [0.9, 0.6, 0.2],
+        ));
+    } else if kind == crate::projectile::BLOOD_ARROW {
+        // `:56388-56421` — the 819 arm's tail: `AddLight(base.Center,
+        // 0.3f, 0.05f, 0.05f)`. The dust arms above it are skipped.
+        out.push((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [0.3, 0.05, 0.05],
+        ));
+    }
+    // `AI_026`'s foxsparks pair (`:58203-58227`): the light is
+    // unconditional inside each type block (the dead-player flag clear
+    // and the `timeLeft = 2` refresh are sim writes; `DoPalAppearEffect`
+    // is the dust/visual arm, skipped).
+    if kind == 1094 || kind == 1113 {
+        // `:58213` (1094) / `:58226` (1113) — `AddLight(base.Center,
+        // 0.5f, 0.3f, 0.1f)`.
+        out.push((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [0.5, 0.3, 0.1],
+        ));
+    }
+    if kind == STARDUST_CELL {
+        // `AI_062`'s 613 arm (`:65110-65125`): `AddLight(base.Center,
+        // 0.2f, 0.6f, 0.7f)` (`:65120`), unconditional inside the block.
+        out.push((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [0.2, 0.6, 0.7],
+        ));
+    }
+    if kind == LASER_DRILL {
+        // `AI_075`'s 445 arm (`:66244-66273`): the light sits inside
+        // `if (Vector2.Distance(vector, base.Center) >= 5f)` (`:66256`),
+        // `vector` = the owner's `RotatedRelativePoint(MountedCenter)`
+        // (`:66135`). The colour is the `localAI[0]/60` triangle wave:
+        // `num12 = localAI[0] / 60f; if (num12 > 0.5f) num12 = 1f - num12;`
+        // (`:66258-66262`), then `Vector3.Lerp((0,1,0.7), (0,0.7,1),
+        // 1f - num12 * 2f) * 0.5f` (`:66263`). `Vector3.Lerp` is UNCLAMPED
+        // (`value1 + (value2 - value1) * amount`); the `localAI[0]++` /
+        // wrap-60 cycle (`:66251-66255`) is an AI-side writer — the port's
+        // `ai_drill` stand-in does not run it, so the slot reads the stock
+        // 0 and the colour stays at the wave's `localAI[0] == 0` point
+        // (the WaterBolt dead-arm precedent, module docs). The
+        // `>= 30f` `PlotTileLine` flood half (`:66264-66271`) is the
+        // light-map write with no port — skipped, the 870 precedent.
+        if let Some(hand) = hand {
+            if hand.distance(center) >= 5.0 {
+                let mut num12 = local_ai0 / 60.0;
+                if num12 > 0.5 {
+                    num12 = 1.0 - num12;
+                }
+                let t = 1.0 - num12 * 2.0;
+                let lerp = |a: f32, b: f32| a + (b - a) * t;
+                out.push((
+                    tile_x(pos, w, XAnchor::CenterTruncated),
+                    tile_y(pos, h, XAnchor::CenterTruncated),
+                    [
+                        lerp(0.0, 0.0) * 0.5,
+                        lerp(1.0, 0.7) * 0.5,
+                        lerp(0.7, 1.0) * 0.5,
+                    ],
+                ));
+            }
+        }
     }
     out
 }
@@ -200,7 +283,7 @@ mod tests {
     use super::*;
 
     fn at(kind: u16) -> Vec<(i32, i32, [f32; 3])> {
-        proj_ai_lights(kind, Vec2::new(160.0, 176.0), 16.0, 16.0, 0)
+        proj_ai_lights(kind, Vec2::new(160.0, 176.0), 16.0, 16.0, 0, 0.0, None)
     }
 
     #[test]
@@ -236,6 +319,8 @@ mod tests {
             14.0,
             14.0,
             255,
+            0.0,
+            None,
         )
         .is_empty());
         let got = at(ELECTROSPHERE_MISSILE);
@@ -263,8 +348,8 @@ mod tests {
             let px = i as f32 * 3.7 - 60.0;
             let py = i as f32 * 2.3 - 45.0;
             let pos = Vec2::new(px, py);
-            let trunc = proj_ai_lights(BRAIN_SCRAMBLER, pos, 16.0, 16.0, 0);
-            let quot = proj_ai_lights(NEBULA_BLAZE_1, pos, 16.0, 16.0, 0);
+            let trunc = proj_ai_lights(BRAIN_SCRAMBLER, pos, 16.0, 16.0, 0, 0.0, None);
+            let quot = proj_ai_lights(NEBULA_BLAZE_1, pos, 16.0, 16.0, 0, 0.0, None);
             let cx = px + 8.0;
             let cy = py + 8.0;
             assert_eq!((trunc[0].0, trunc[0].1), (cx as i32 / 16, cy as i32 / 16));
@@ -274,6 +359,77 @@ mod tests {
             );
             assert_eq!((trunc[0].0, trunc[0].1), (quot[0].0, quot[0].1));
         }
+    }
+
+    #[test]
+    fn the_missile_and_flaming_wood_share_the_orange_arm() {
+        // `:55137` (350) / `:55171` (325) — (0.9, 0.6, 0.2) at
+        // `(int)Center/16`, unconditional (the dust halves are skipped).
+        assert_eq!(at(MISSILE)[0], (10, 11, [0.9, 0.6, 0.2]));
+        assert_eq!(at(FLAMING_WOOD)[0], (10, 11, [0.9, 0.6, 0.2]));
+    }
+
+    #[test]
+    fn the_blood_arrow_lights_its_centre_red() {
+        // `:56421` — 819 `AddLight(Center, 0.3, 0.05, 0.05)`.
+        assert_eq!(
+            at(crate::projectile::BLOOD_ARROW)[0],
+            (10, 11, [0.3, 0.05, 0.05])
+        );
+    }
+
+    #[test]
+    fn the_foxsparks_pair_lights_the_same_warm_colour() {
+        // `:58213` (1094) / `:58226` (1113) — `AddLight(Center,
+        // 0.5, 0.3, 0.1)`, unconditional inside each type block.
+        assert_eq!(at(1094)[0], (10, 11, [0.5, 0.3, 0.1]));
+        assert_eq!(at(1113)[0], (10, 11, [0.5, 0.3, 0.1]));
+    }
+
+    #[test]
+    fn the_stardust_cell_lights_cyan() {
+        // `:65120` — 613 `AddLight(Center, 0.2, 0.6, 0.7)`.
+        assert_eq!(at(STARDUST_CELL)[0], (10, 11, [0.2, 0.6, 0.7]));
+    }
+
+    #[test]
+    fn the_laser_drill_gates_on_the_hand_distance() {
+        // `:66256` — the light needs `Distance(hand, Center) >= 5f`. The
+        // 16x16 box centres on (168, 184).
+        let pos = Vec2::new(160.0, 176.0);
+        // No owner resolves → no light (the ai_drill no-owner precedent).
+        assert!(proj_ai_lights(LASER_DRILL, pos, 16.0, 16.0, 0, 0.0, None).is_empty());
+        // The hand on the centre (the port's ai_drill pin) → distance 0,
+        // the gate fails — the recorded dark-in-the-port deviation.
+        let on_centre = Vec2::new(168.0, 184.0);
+        assert!(
+            proj_ai_lights(LASER_DRILL, pos, 16.0, 16.0, 0, 0.0, Some(on_centre)).is_empty()
+        );
+        // A hand 5+ px away passes the gate.
+        let far = Vec2::new(168.0, 178.0); // distance 6
+        let got = proj_ai_lights(LASER_DRILL, pos, 16.0, 16.0, 0, 0.0, Some(far));
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].0, got[0].1), (10, 11));
+    }
+
+    #[test]
+    fn the_laser_drill_colour_is_the_local_ai0_triangle_wave() {
+        // `:66258-66263` — num12 = localAI[0]/60, folded above 0.5, then
+        // Lerp((0,1,0.7),(0,0.7,1), 1-num12*2) * 0.5. At localAI[0] == 0:
+        // num12 = 0, t = 1 → the (0, 0.7, 1) end * 0.5 = (0, 0.35, 0.5).
+        let pos = Vec2::new(160.0, 176.0);
+        let far = Vec2::new(168.0, 178.0);
+        let zero = proj_ai_lights(LASER_DRILL, pos, 16.0, 16.0, 0, 0.0, Some(far));
+        assert_eq!(zero[0].2, [0.0, 0.35, 0.5]);
+        // At localAI[0] == 30: num12 = 0.5, t = 0 → the (0, 1, 0.7) start
+        // * 0.5 = (0, 0.5, 0.35).
+        let mid = proj_ai_lights(LASER_DRILL, pos, 16.0, 16.0, 0, 30.0, Some(far));
+        assert_eq!(mid[0].2, [0.0, 0.5, 0.35]);
+        // At localAI[0] == 60 the C# wraps to 0 before the next tick; the
+        // feed reads the slot verbatim (num12 = 1 → folded to 0 → t = 1),
+        // the same colour as 0 — the triangle wave's symmetry.
+        let end = proj_ai_lights(LASER_DRILL, pos, 16.0, 16.0, 0, 60.0, Some(far));
+        assert_eq!(end[0].2, [0.0, 0.35, 0.5]);
     }
 
     #[test]
@@ -288,6 +444,13 @@ mod tests {
             ELECTROSPHERE_MISSILE,
             SAUCER_LASER,
             RAY_GUNNER,
+            MISSILE,
+            FLAMING_WOOD,
+            crate::projectile::BLOOD_ARROW,
+            1094,
+            1113,
+            STARDUST_CELL,
+            LASER_DRILL,
         ] {
             assert!(
                 crate::projectile::proj_data(kind).is_some(),

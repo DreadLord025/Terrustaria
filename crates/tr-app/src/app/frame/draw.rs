@@ -584,9 +584,28 @@ impl App {
                     // placement leaves the UpdateProjectiles stream
                     // untouched.
                     for p in projectiles.slots().iter().filter(|p| p.active) {
-                        for (x, y, rgb) in
-                            crate::proj_ai_lights::proj_ai_lights(p.kind, p.pos, p.w, p.h, p.alpha)
-                        {
+                        // The 445 LaserDrill's distance gate reads the
+                        // owner's `RotatedRelativePoint(MountedCenter)`
+                        // (`AI_075`'s `vector`, `Projectile.cs:66135`).
+                        // The port is single-player: `owner == 0` resolves
+                        // the local player (the `map_layers.rs` /
+                        // `ai_drill` precedent); every other owner has no
+                        // player slot, so the hand stays `None` and the
+                        // arm skips (the C# reads `Main.player[owner]`
+                        // unconditionally — the no-owner kill precedent).
+                        let hand = player.as_ref().filter(|_| p.owner == 0).map(|pl| {
+                            let (mx, my) = pl.mounted_center();
+                            pl.rotated_relative_point(Vec2::new(mx, my), 0)
+                        });
+                        for (x, y, rgb) in crate::proj_ai_lights::proj_ai_lights(
+                            p.kind,
+                            p.pos,
+                            p.w,
+                            p.h,
+                            p.alpha,
+                            p.local_ai[0],
+                            hand,
+                        ) {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
