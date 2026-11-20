@@ -13166,13 +13166,13 @@ pub fn randomize_insanity_shadow_for(
 /// the setter writes `alpha = (int)Clamp((1 - value) * 255, 0, 255)`. The
 /// aiStyle-133 raise marker ramps it 0 → 1 → 0 over its 80 ticks
 /// (`:36442-36453`) and the aiStyle-157 spikes ride it (`:51442-51451`).
-fn opacity_of(alpha: i32) -> f32 {
+pub(crate) fn opacity_of(alpha: i32) -> f32 {
     1.0 - alpha as f32 / 255.0
 }
 
 /// `Projectile.Opacity`'s setter (`Projectile.cs:546-549`): the alpha the
 /// opacity value stands for.
-fn alpha_of(opacity: f32) -> i32 {
+pub(crate) fn alpha_of(opacity: f32) -> i32 {
     ((1.0 - opacity) * 255.0).clamp(0.0, 255.0) as i32
 }
 
@@ -17367,6 +17367,21 @@ impl ProjectilePool {
                                 &mut self.slots[i],
                                 rng,
                                 self.screen_view,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d16 — aiStyle 152, the four slashes
+                        // (`AI_152_SuperStarSlash` `:22230-22351`): the
+                        // 729 cannon slash, the Zenith's 977/976, the
+                        // Moon Lord whip's 1045. The arm pins
+                        // tileCollide false (`:22350`) — the kill_step
+                        // is the free integrate.
+                        152 => {
+                            crate::projectile_ai_misc::ai_super_star_slash(
+                                &mut self.slots[i],
+                                world,
+                                rng,
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);

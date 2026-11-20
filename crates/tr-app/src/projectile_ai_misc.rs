@@ -771,6 +771,161 @@ pub(crate) fn ai_super_star(
     }
 }
 
+/// `AI_152_SuperStarSlash` (`Projectile.cs:22230-22351`) — the four
+/// aiStyle-152 slashes: the Super Star Cannon's 729, the Zenith's
+/// Muramasa 977 + Blade-of-Grass 976, the Moon Lord whip's proc 1045.
+///
+/// The alpha ladder (the 976 skips it; the 1045 ramps −50 to 0, the rest
+/// −10 to 100), the per-kind cue latch (977/1045 Item1 once, 976 silent,
+/// the rest the `20 + Next(40)` Item9 re-arm), the `ai[0]` velocity spin
+/// (the 976 spins the FULL angle, the rest `ai[0] / (num4·MaxUpdates)`),
+/// the 977/1045 ×0.96 drag + 1-in-8 centre dust, the 976's lava kill +
+/// 7-frame cycle + the Remap speed/opacity envelope + the one-shot
+/// 10-dust burst, and the shared `rotation = velocity.ToRotation() + num`
+/// + `tileCollide = false` tail.
+///
+/// RNG: the cue `Next(40)` (the else arm only), the 977/1045 dust gates'
+/// `Next(8)` + the taken branch's `NextVector2Circular(1,1)` pair (TWO
+/// floats, `Utils.cs:1266-1269` — the dust body's velocity is REWRITTEN
+/// from it, so the draws are call-site state), the 976's `Next(3)` gate
+/// and the one-shot burst's per-dust `NextFloat` pair (the rotated
+/// velocity's angle + speed, `:22345`). The `NewDustDirect` bodies +
+/// their internal rolls go with the dust layer.
+pub(crate) fn ai_super_star_slash(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
+    use crate::projectile::{MOON_LORD_WHIP_PROC, ZENITH_GRASS_SLASH, ZENITH_MURAMASA_SLASH, alpha_of};
+    // `:22232-22237` — the rotation offset and the alpha-ladder flag.
+    let mut num = std::f32::consts::FRAC_PI_2;
+    let flag = p.kind != ZENITH_GRASS_SLASH;
+    // `:22238-22252` — the alpha ladder.
+    if flag {
+        let (mut num2, mut num3) = (10, 100);
+        if p.kind == MOON_LORD_WHIP_PROC {
+            num3 = 0;
+            num2 = 50;
+        }
+        p.alpha -= num2;
+        if p.alpha < num3 {
+            p.alpha = num3;
+        }
+    }
+    // `:22253-22257` — the spin divisor base.
+    let num4 = if p.kind == MOON_LORD_WHIP_PROC { 24 } else { 10 };
+    // `:22258-22279` — the cue ladder.
+    if p.sound_delay == 0 {
+        if p.kind == ZENITH_MURAMASA_SLASH || p.kind == MOON_LORD_WHIP_PROC {
+            p.sound_delay = -1;
+            p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0));
+        } else if p.kind == ZENITH_GRASS_SLASH {
+            p.sound_delay = -1; // the silent latch (`:22270-22273`)
+        } else {
+            p.sound_delay = 20 + rng.next_range(0, 40);
+            p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0));
+        }
+    }
+    // `:22280-22291` — the ai[0] spin.
+    if p.ai[0] != 0.0 {
+        if p.kind == ZENITH_GRASS_SLASH {
+            p.vel = crate::bow_launch::rotated_by(p.vel, p.ai[0] as f64);
+        } else {
+            let num5 = num4 * (p.extra_updates + 1) as i32;
+            p.vel = crate::bow_launch::rotated_by(p.vel, (p.ai[0] / num5 as f32) as f64);
+        }
+    }
+    // `:22292-22313` — the 977/1045 drag + centre dust (the two kinds
+    // differ only in the dust TYPE — 172 vs 229 — the draws are the same).
+    if p.kind == ZENITH_MURAMASA_SLASH || p.kind == MOON_LORD_WHIP_PROC {
+        p.vel *= 0.96;
+        if rng.next_range(0, 8) == 0 {
+            // The dust body is skipped; its REWRITTEN velocity reads
+            // `NextVector2Circular(1,1)` — two floats stay on the stream.
+            let _ = (rng.next_float(), rng.next_float());
+        }
+    }
+    // `:22314-22348` — the 976's machine.
+    if p.kind == ZENITH_GRASS_SLASH {
+        // `:22316-22320` — `Collision.LavaCollision` over the box.
+        if lava_collision(world, p.pos, p.w, p.h) {
+            p.active = false;
+            p.time_left = 0;
+            return;
+        }
+        // `:22321-22328` — the 2-tick frame cycle over the 7-frame sheet.
+        p.frame_counter += 1;
+        if p.frame_counter >= 2 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= 7 {
+                p.frame = 0;
+            }
+        }
+        // `:22329-22332` — the age envelope: the speed Remap pair and the
+        // opacity fade-in/out (the `Opacity` property is the alpha view).
+        let from_value = 60.0 - p.time_left as f32;
+        let num6 = remap_clamped(from_value, p.ai[1], p.ai[1] + 20.0, 0.0, 1.0)
+            * remap_clamped(from_value, p.ai[1], p.ai[1] + 60.0, 1.0, 0.0);
+        let unit = crate::bow_launch::safe_normalize(p.vel, Vec2::Y);
+        p.vel = unit * (4.0 + 12.0 * (1.0 - num6));
+        let opacity = remap_clamped(from_value, 0.0, 10.0, 0.0, 1.0)
+            * remap_clamped(from_value, 30.0, 60.0, 1.0, 0.0);
+        p.alpha = alpha_of(opacity);
+        num = 0.0;
+        // `:22334-22339` — the 1-in-3 trail dust (no draws inside the
+        // body — the velocity is `base.velocity * 0.5f`).
+        if rng.next_range(0, 3) == 0 {
+            // The dust spawn — SKIPPED.
+        }
+        // `:22340-22347` — the one-shot 10-dust burst: per dust the
+        // rotated velocity's angle `NextFloat` + speed `NextFloat`
+        // (`RotatedBy(NextFloat() * 2π * 0.25) * (NextFloat() * 3)`).
+        if p.local_ai[1] == 0.0 {
+            p.local_ai[1] = 1.0;
+            for _ in 0..10 {
+                let _ = rng.next_float(); // the angle
+                let _ = rng.next_float(); // the speed
+            }
+        }
+    }
+    // `:22349-22350` — the shared tail.
+    p.rot = p.vel.y.atan2(p.vel.x) + num;
+    p.tile_collide = false;
+}
+
+/// `Utils.Remap` (`Utils.cs:345-348`, clamped by default) over the port's
+/// `get_lerp_value` — XNA's `a + (b - a) * amount` lerp.
+fn remap_clamped(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
+}
+
+/// `Collision.LavaCollision` (`Collision.cs:1653-1684`) — the clamped
+/// box scan (`[x/16−1, (x+w)/16+2)` × `[y/16−1, (y+h)/16+2)`, the y-range
+/// capped at `maxTilesY−40`): any lava cell whose liquid surface
+/// (`(256−liquid)/32·2` px down from the cell top) the box overlaps.
+fn lava_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+    let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
+    let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
+    let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
+    let y1 = (((pos.y + h) / 16.0) as i32 + 2).clamp(0, (world.height - 40).max(0));
+    for tx in x0..x1 {
+        for ty in y0..y1 {
+            let Some(t) = world.tile(tx, ty) else { continue };
+            if t.liquid == 0 || t.liquid_kind() != tr_core::tile::LiquidKind::Lava {
+                continue;
+            }
+            let surface = (256.0 - t.liquid as f32) / 32.0 * 2.0;
+            let top = ty as f32 * 16.0 + surface;
+            let height = 16.0 - surface as i32 as f32;
+            if pos.x + w > tx as f32 * 16.0
+                && pos.x < tx as f32 * 16.0 + 16.0
+                && pos.y + h > top
+                && pos.y < top + height
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
@@ -1463,5 +1618,236 @@ mod w4_d16_151_tests {
         assert_eq!(p.time_left, 3599, "the lifetime block");
         // screen_view None in the pool-only test: no Next(6).
         assert_eq!(rng.ranges, vec![(0, 40), (0, 8), (0, 8)]);
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_152_tests {
+    //! W4-d16 — aiStyle 152 (`AI_152_SuperStarSlash`,
+    //! `Projectile.cs:22230-22351`, the dispatch `:36571-36574`). WRITTEN
+    //! NOT RUN (code-only mode). The four rows (729/977/976/1045), the
+    //! alpha ladders, the cue latches, the ai[0] spin's per-kind divisor,
+    //! the 977/1045 drag + dust census, the 976 lava kill + frame cycle +
+    //! Remap envelope + one-shot burst census, the shared rotation tail.
+    use super::*;
+    use crate::projectile::{
+        FlailInputs, MOON_LORD_WHIP_PROC, ProjectilePool, SUPER_STAR_SLASH, YoyoInputs,
+        ZENITH_GRASS_SLASH, ZENITH_MURAMASA_SLASH, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn slash(kind: u16) -> Projectile {
+        let d = proj_data(kind).expect("the rowed slash");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p.extra_updates = d.extra_updates;
+        p
+    }
+
+    /// The four rows (`:7672-7687`/`:9208-9224`/`:9270-9286`/`:9890-9907`).
+    #[test]
+    fn w4_d16_152_the_four_rows_match_set_defaults() {
+        let d = proj_data(SUPER_STAR_SLASH).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (20.0, 20.0, 152));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (-1, 30, 2), "10*MaxUpdates");
+        assert!(d.uses_id_static_immunity && d.id_static_hit_cooldown == 10);
+        assert!(d.ranged && d.ignore_water && !d.tile_collide);
+        let d = proj_data(ZENITH_MURAMASA_SLASH).unwrap();
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 30, 2));
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+        assert!(d.melee && d.ignore_water);
+        let d = proj_data(ZENITH_GRASS_SLASH).unwrap();
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (2, 60, 0), "60*MaxUpdates");
+        assert!(d.melee);
+        let d = proj_data(MOON_LORD_WHIP_PROC).unwrap();
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates, d.alpha), (1, 48, 1, 255), "24*MaxUpdates");
+        assert!(d.melee);
+    }
+
+    /// The 729: the −10 alpha ramp to 100, the Item9 `20 + Next(40)`
+    /// re-arm, the ai[0]/(10·3) spin, the π/2 rotation offset, the
+    /// tileCollide pin. NO other draws (the 729 has no dust branch).
+    #[test]
+    fn w4_d16_152_the_cannon_slash_ramp_spin_and_cue() {
+        let mut p = slash(SUPER_STAR_SLASH);
+        p.alpha = 255; // the spawn seam's stock 0 — the C# row leaves 0;
+        // the witness drives the ramp from a visible value.
+        p.vel = Vec2::new(10.0, 0.0);
+        p.ai[0] = 30.0; // one full divisor turn: 30/(10*3) = 1 rad
+        let mut rng = census();
+        let w = World::new("t".into(), 300, 200);
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 245);
+        assert_eq!(p.sound_delay, 20, "20 + Next(40)=0");
+        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0)));
+        assert_eq!(rng.ranges, vec![(0, 40)], "the cue draw only");
+        // The spin: RotatedBy(1 rad) of (10,0) — cos/sin in double.
+        let c = 1.0f64.cos() as f32;
+        let s = 1.0f64.sin() as f32;
+        assert!((p.vel.x - 10.0 * c).abs() < 1e-4 && (p.vel.y - 10.0 * s).abs() < 1e-4);
+        assert!((p.rot - (p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2)).abs() < 1e-6);
+        assert!(!p.tile_collide, ":22350");
+        // The alpha floor.
+        p.alpha = 105;
+        p.sound_delay = -1;
+        ai_super_star_slash(&mut p, &w, &mut census());
+        assert_eq!(p.alpha, 100);
+    }
+
+    /// The 977: the Item1 one-cue latch, the ×0.96 drag, the 1-in-8 dust
+    /// gate + the taken branch's NextVector2Circular pair (two floats).
+    #[test]
+    fn w4_d16_152_the_muramasa_drag_and_dust_census() {
+        let mut p = slash(ZENITH_MURAMASA_SLASH);
+        p.vel = Vec2::new(10.0, 0.0);
+        let mut rng = census();
+        let w = World::new("t".into(), 300, 200);
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert_eq!(p.sound_delay, -1, "the one-cue latch");
+        assert_eq!(p.wants_sound, Some((2, 1, 1600.0, 800.0, 0.0)), "Item1");
+        assert!((p.vel.x - 9.6).abs() < 1e-5, "the ×0.96 drag");
+        assert_eq!(rng.ranges, vec![(0, 8)]);
+        assert_eq!(rng.floats, 2, "NextVector2Circular(1,1) — the rewritten velocity");
+        // The latch holds: no second cue, the gate still rolls.
+        let mut rng2 = census();
+        ai_super_star_slash(&mut p, &w, &mut rng2);
+        assert_eq!(rng2.ranges, vec![(0, 8)]);
+        assert_eq!(rng2.floats, 2);
+    }
+
+    /// The 1045: the −50 ramp to 0, the 24-base divisor (24·2 = 48), the
+    /// Item1 latch + the same dust census as the 977.
+    #[test]
+    fn w4_d16_152_the_whip_proc_ramp_and_divisor() {
+        let mut p = slash(MOON_LORD_WHIP_PROC);
+        p.vel = Vec2::new(10.0, 0.0);
+        p.ai[0] = 48.0; // 48/48 = 1 rad
+        let mut rng = census();
+        let w = World::new("t".into(), 300, 200);
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 205, "255 − 50");
+        assert_eq!(p.sound_delay, -1);
+        assert_eq!(rng.ranges, vec![(0, 8)], "no Next(40) — the Item1 arm");
+        assert_eq!(rng.floats, 2);
+        let c = 1.0f64.cos() as f32;
+        // The drag runs AFTER the spin: 10·cos(1)·0.96.
+        assert!((p.vel.x - 10.0 * c * 0.96).abs() < 1e-4);
+        // The floor at 0.
+        p.alpha = 30;
+        ai_super_star_slash(&mut p, &w, &mut census());
+        assert_eq!(p.alpha, 0);
+    }
+
+    /// The 976: the silent latch (NO cue draw), the full-angle spin, the
+    /// frame cycle, the Remap speed envelope (ai[1] = 0, timeLeft 60 →
+    /// fromValue 0 → num6 = 0 → speed 16), the opacity fade-in start
+    /// (alpha 255), the Next(3) gate + the one-shot 10-dust burst's 20
+    /// floats, the zero rotation offset.
+    #[test]
+    fn w4_d16_152_the_grass_slash_envelope_and_burst() {
+        let mut p = slash(ZENITH_GRASS_SLASH);
+        p.vel = Vec2::new(10.0, 0.0);
+        p.ai[0] = 0.5; // the FULL angle (no divisor)
+        let mut rng = census();
+        let w = World::new("t".into(), 300, 200);
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert_eq!(p.sound_delay, -1, "the silent latch");
+        assert_eq!(p.wants_sound, None, "no cue");
+        assert_eq!(p.alpha, 255, "Opacity 0 at fromValue 0");
+        assert!((p.vel.length() - 16.0).abs() < 1e-4, "4 + 12·(1−0)");
+        assert_eq!(p.frame, 0, "frameCounter 1 < 2");
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(p.local_ai[1], 1.0, "the burst latch");
+        assert_eq!(rng.ranges, vec![(0, 3)], "the trail gate only — no cue draw");
+        assert_eq!(rng.floats, 20, "10 dust × (angle + speed)");
+        assert!((p.rot - p.vel.y.atan2(p.vel.x)).abs() < 1e-6, "num = 0");
+        // Second tick: the frame advances, the burst does NOT re-fire.
+        let mut rng2 = census();
+        ai_super_star_slash(&mut p, &w, &mut rng2);
+        assert_eq!(p.frame, 1);
+        assert_eq!(p.frame_counter, 0);
+        assert_eq!(rng2.floats, 0, "the one-shot latch");
+        // The speed at fromValue 30 (timeLeft 30): num6 = Remap(30,0,20→
+        // clamped 1)·Remap(30,0,60,1→0 = 0.5) = 0.5 → speed 10.
+        p.time_left = 30;
+        ai_super_star_slash(&mut p, &w, &mut census());
+        assert!((p.vel.length() - 10.0).abs() < 1e-4);
+    }
+
+    /// The 976 lava kill (`:22316-22320`): a full lava cell under the box
+    /// kills BEFORE the frame/envelope work — zero draws.
+    #[test]
+    fn w4_d16_152_the_grass_slash_dies_in_lava() {
+        let mut w = World::new("t".into(), 300, 200);
+        let i = w.index(100, 50);
+        w.tiles[i].liquid = 255;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let mut p = slash(ZENITH_GRASS_SLASH);
+        p.pos = Vec2::new(100.0 * 16.0, 50.0 * 16.0 - 10.0);
+        let mut rng = census();
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert!(!p.active, "the lava kill");
+        assert_eq!(p.time_left, 0);
+        assert_eq!(rng.ranges, Vec::new(), "the kill precedes every draw");
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// The dispatch wiring: one pool update runs the 729 arm (3 sub-steps
+    /// — extraUpdates 2) and the free integrate moves the slot.
+    #[test]
+    fn w4_d16_152_the_dispatch_arms_the_slashes() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(SUPER_STAR_SLASH, 1600.0, 800.0, 10.0, 0.0, 40, 2.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.sound_delay, 20, "the first sub-step's cue re-arm");
+        assert_eq!(p.time_left, 27, "30 − 3 sub-steps");
+        assert!((p.pos.x - 1630.0).abs() < 1e-3, "3 × 10 px");
+        // The cue draws ONCE (the re-arm holds across the sub-steps).
+        assert_eq!(rng.ranges, vec![(0, 40)]);
     }
 }

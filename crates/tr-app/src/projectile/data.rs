@@ -1177,6 +1177,18 @@ pub const GOLF_CLUB_HELPER: u16 = 722;
 /// `ProjectileID.SuperStar` (728, `ProjectileID.cs`'s row) — the Super
 /// Star Cannon's star, aiStyle 151 (`Projectile.cs:7659-7671`). W4-d16.
 pub const SUPER_STAR: u16 = 728;
+/// `ProjectileID.SuperStarSlash` (729) — the cannon's slash, aiStyle 152
+/// (`Projectile.cs:7672-7687`). W4-d16.
+pub const SUPER_STAR_SLASH: u16 = 729;
+/// `ProjectileID.BladeOfGrass` (976) — the Zenith component's grass-blade
+/// slash, aiStyle 152 (`Projectile.cs:9270-9286`). W4-d16.
+pub const ZENITH_GRASS_SLASH: u16 = 976;
+/// `ProjectileID.Muramasa` (977) — the Zenith component's Muramasa slash,
+/// aiStyle 152 (`Projectile.cs:9208-9224`). W4-d16.
+pub const ZENITH_MURAMASA_SLASH: u16 = 977;
+/// `ProjectileID.MoonLordWhipProc` (1045) — the Moon Lord whip's proc
+/// slash, aiStyle 152 (`Projectile.cs:9890-9907`). W4-d16.
+pub const MOON_LORD_WHIP_PROC: u16 = 1045;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -3979,6 +3991,43 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             SUPER_STAR => {
                 (24.0, 24.0, 151, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, -1, false, -1, 255, 1.0))
             }
+            // W4-d16 — `Projectile.cs:7672-7687` (729, the Super Star
+            // Cannon's slash): 20x20, aiStyle 152, friendly, tileCollide
+            // false, ignoreWater (the overlay), ranged (the overlay),
+            // penetrate -1, extraUpdates 2, timeLeft 10*MaxUpdates = 30,
+            // the idStatic pair (10, `:7685-7686`). The `scale = 1f +
+            // Next(30)*0.01f` (`:7682`) is a spawn-time draw — the row
+            // carries the 1f base (the Horseman-pumpkin precedent).
+            SUPER_STAR_SLASH => {
+                (20.0, 20.0, 152, -1, 30, 2, false, false, false, (false, -2, true, 10, 0, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:9208-9224` (977, the Zenith's
+            // Muramasa slash): 20x20, aiStyle 152, friendly, tileCollide
+            // false, ignoreWater, melee (the overlay), penetrate 1, the
+            // LOCAL pair (-1), extraUpdates 2, timeLeft 10*MaxUpdates =
+            // 30; armorPenetration 5 (`:9220`, no port row field — the
+            // 864 precedent); the scale roll (`:9221`) is spawn-time.
+            ZENITH_MURAMASA_SLASH => {
+                (20.0, 20.0, 152, 1, 30, 2, false, false, false, (true, -1, false, -1, 0, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:9270-9286` (976, the Zenith's
+            // Blade-of-Grass slash): 20x20, aiStyle 152, friendly,
+            // tileCollide false, ignoreWater, melee, penetrate 2, the
+            // LOCAL pair (-1), extraUpdates 0, timeLeft 60*MaxUpdates =
+            // 60; armorPenetration 20 (`:9285`, dropped); the scale roll
+            // (`:9282`) is spawn-time.
+            ZENITH_GRASS_SLASH => {
+                (20.0, 20.0, 152, 2, 60, 0, false, false, false, (true, -1, false, -1, 0, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:9890-9907` (1045, the Moon Lord
+            // whip's proc slash): 20x20, aiStyle 152, friendly,
+            // tileCollide false, ignoreWater, melee, penetrate 1, the
+            // LOCAL pair (-1), extraUpdates 1, timeLeft 24*MaxUpdates =
+            // 48, alpha 255 (`:9905`); armorPenetration 50 (`:9906`,
+            // dropped); the scale roll (`:9902`) is spawn-time.
+            MOON_LORD_WHIP_PROC => {
+                (20.0, 20.0, 152, 1, 48, 1, false, false, false, (true, -1, false, -1, 255, 1.0))
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4219,6 +4268,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
             || kind == HIGH_VELOCITY_BULLET
+            // W4-d16 — `Projectile.cs:7679`/`:9215`/`:9277`/`:9897`: the
+            // four aiStyle-152 slashes set `ignoreWater = true`.
+            || matches!(kind, SUPER_STAR_SLASH | ZENITH_MURAMASA_SLASH | ZENITH_GRASS_SLASH | MOON_LORD_WHIP_PROC)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
@@ -4256,12 +4308,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d16 — the three melee aiStyle-152 slashes: the
+                    // Muramasa (`:9216`), the Blade of Grass (`:9278`),
+                    // the Moon Lord whip proc (`:9898`).
+                    | ZENITH_MURAMASA_SLASH | ZENITH_GRASS_SLASH | MOON_LORD_WHIP_PROC
             ),
         ranged: matches!(
             kind,
-            // W4-d16 — `Projectile.cs:7666`: the Super Star (728) sets
-            // `ranged = true` (the aiStyle-151 row).
-            SUPER_STAR |
+            // W4-d16 — `Projectile.cs:7666`/`:7680`: the Super Star (728)
+            // and its slash (729) set `ranged = true` (the 151/152 rows).
+            SUPER_STAR | SUPER_STAR_SLASH |
             // The arrows/bullets (1/2/14, `:814`/`:825`/`:961`), the thrown
             // kinds (3/48/166, `:835`/`:1317`/`:2555`), the moon-lord drop
             // shots (638/639/640, `:6867`/`:6880`/`:6895`), the DD2 kobold
