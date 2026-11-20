@@ -152,7 +152,7 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 
 | row | class | status |
 | --- | --- | --- |
-| 35 | `UIIconTextButton` | pending |
+| 35 | `UIIconTextButton` | LANDED (`ui/buttons.rs::IconTextButton`, colour/opacity machine + SetText resize + icon geometry `UIIconTextButton.cs:36-132`; hover latch shared with rows 29/32; dead ctor params + `_hoverColor` documented) |
 | 36 | `UIImage` | LANDED (`ui/images.rs::ImageElement`/`ImageDraw`, draw geometry `UIImage.cs:70-99` + SetImage resize) |
 | 37 | `UIImageFramed` | LANDED (`ui/images.rs::FramedImage`, ctor/SetFrame/grid slice `:16-43` via `Utils.cs:1344/1328`) |
 | 38 | `UIImageWithBorder` | LANDED (`ui/images.rs::BorderedImage`, SetBorder resize + border draw `:26-67`) |
