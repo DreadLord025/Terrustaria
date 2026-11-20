@@ -558,6 +558,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.net_update = true;
         app.npcs.push(n);
     }
+    // W4-d1 — the aiStyle-6 fertilizer cloud's sapling growth
+    // (`Projectile.cs:24213-24220`'s `AttemptToGrowTreeFromSapling` calls):
+    // the growth draws `WorldGen.genRand`, so the pool arm parked the
+    // requests and the pass resolves them on the `UpdateWorldGen` stream
+    // (the `palm_frame_rolls` deferral precedent, `world_sim/editing.rs`).
+    // The `treeHeightAddon` / `ignoreWalls` args park in the growth port
+    // today (`growth/trees.rs`, M5-SEED-1) — the request carries them.
+    for (x, y, underground, _addon) in app.projectiles.drain_sapling_grows() {
+        let _ = tr_core::growth::attempt_grow_tree_from_sapling(
+            &mut app.world,
+            x,
+            y,
+            underground,
+            app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+        );
+    }
     // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
     // case 19's playing guard refuses BEFORE the one pitch draw, on the
     // `UpdateProjectiles` stream (the C# plays inline mid-`AI_061`; the port

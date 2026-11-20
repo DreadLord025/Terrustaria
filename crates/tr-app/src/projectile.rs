@@ -656,6 +656,18 @@ pub struct Projectile {
     /// ai[1] - 1)`): (x, y, vx, vy, ai1). The sim re-spawns the same kind
     /// with ai0 = 10 (the pool cannot spawn from a slot arm mid-iteration).
     pub wants_cloud_segment: Option<(f32, f32, f32, f32, f32)>,
+    /// W4-d1 — the aiStyle-6 fertilizer cloud's sapling-growth requests
+    /// (`Projectile.cs:24213-24220`'s `WorldGen.AttemptToGrowTreeFromSapling`
+    /// calls): `(x, y, underground, treeHeightAddon)` per overlapping
+    /// CommonSapling cell. The growth draws `WorldGen.genRand` — the pool
+    /// arm runs on the `UpdateProjectiles` stream, so the request rides out
+    /// to the world-sim pass which owns the `UpdateWorldGen` genRand stream
+    /// (the `palm_frame_rolls` deferral precedent, `world_sim/editing.rs`).
+    /// The SuperFertilizer 1051's +15 addon (`:24208-24211`) and the
+    /// `ignoreWalls: true` argument ride the tuple; the growth port parks
+    /// both args today (`growth/trees.rs`, M5-SEED-1) — the request keeps
+    /// them for when it lands them.
+    pub wants_sapling_grow: Vec<(i32, i32, bool, i32)>,
     /// The aiStyle-50 one-shot (`Projectile.cs:74341-74350`'s `Kill()` arm):
     /// the Inferno Fork bolt 295 spawns its blast 296 exactly once, however
     /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
@@ -829,6 +841,7 @@ impl Default for Projectile {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_sapling_grow: Vec::new(),
             minion: false,
             sentry: false,
             minion_slots: 0.0,
@@ -16145,6 +16158,19 @@ impl ProjectilePool {
         out
     }
 
+    /// W4-d1 — the aiStyle-6 fertilizer cloud's sapling-growth requests
+    /// (`Projectile.cs:24213-24220`): `(x, y, underground, treeHeightAddon)`
+    /// per overlapping CommonSapling cell, in the scan's row-major order.
+    /// The world-sim pass resolves them on the `UpdateWorldGen` genRand
+    /// stream (the `palm_frame_rolls` deferral precedent).
+    pub fn drain_sapling_grows(&mut self) -> Vec<(i32, i32, bool, i32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            out.append(&mut p.wants_sapling_grow);
+        }
+        out
+    }
+
     /// S1-E-21 wave C — the landed strikes' hit-sound intents
     /// (`NPC.StrikeNPC` `NPC.cs:81544-81553`, reached from
     /// `Projectile.Damage` `Projectile.cs:13649`): the world sim drains and
@@ -16989,6 +17015,28 @@ impl ProjectilePool {
                             } else if DUNGEON_DEBRIS.contains(&self.slots[i].kind) {
                                 self.slots[i].ai_dungeon_debris(world, rng, local_owner);
                             }
+                        }
+                        // W4-d1 — `AI()`'s `else if (this.aiStyle == 6)`
+                        // (`Projectile.cs:24100-24228`): the powder /
+                        // fertilizer cloud (10/11/463/1019/1051). The
+                        // 0.95 velocity decay, the 180-tick kill, the
+                        // one-shot dust burst, the owner-gated tile scan
+                        // (`WorldGen.Convert` types 11/1/4) and the
+                        // fertilizer sapling growth. The tile writes
+                        // reborrow `world` mutably at the call site (the
+                        // `ai_ice_block` / `ai_dungeon_debris` carve-out);
+                        // the genRand-drawing growth defers to the pass
+                        // (`wants_sapling_grow`). The arm owns its
+                        // integration (the row's `tileCollide = false`,
+                        // `UpdatePosition` `:20445` — style 6 is not on
+                        // the skip list `:20435`).
+                        6 => {
+                            crate::projectile_ai_powder::step(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                                local_owner,
+                            );
                         }
                         // `AI()`'s `else if (this.aiStyle == 7)`
                         // (`Projectile.cs:24230-24233`) ->
@@ -30441,6 +30489,7 @@ mod phasmal_projectile_tests {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_sapling_grow: Vec::new(),
             w: 14.0,
             h: 14.0,
             tile_collide: true,
@@ -30890,6 +30939,7 @@ mod ritual_projectile_tests {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_sapling_grow: Vec::new(),
             w: 32.0,
             h: 32.0,
             tile_collide: false,

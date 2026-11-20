@@ -209,6 +209,12 @@ mod projectile_ai_golf;
 // S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
 // 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
 mod projectile_ai_darts;
+// W4-d1: the aiStyle-6 powder/fertilizer cloud (10/11/463/1019/1051 —
+// Projectile.cs:24100-24228): the 0.95 decay + 180-tick kill, the one-shot
+// dust burst (the 1051's 50 Next(3) draws stay), the owner-gated Convert
+// tile scan (types 11/1/4) + the fertilizer sapling growth (genRand defers
+// to the pass). The rows + the dispatch arm are wired in projectile.rs.
+mod projectile_ai_powder;
 // S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
 // arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
 // 279/283/284/285/286/287), pure per-kind fns behind the `covers` gate.
