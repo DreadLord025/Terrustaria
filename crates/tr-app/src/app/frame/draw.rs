@@ -413,6 +413,19 @@ impl App {
                     // step instead, `item_lights.rs`), so the placement relative
                     // to the sim leaves the stream untouched.
                     for drop in items.iter() {
+                        // `WorldItem.UpdateShimmer`'s shimmered glow
+                        // (`WorldItem.cs:482`, W4-g20) — RNG-free (the
+                        // `Next(30)` dust branch `:459-481` stays skipped
+                        // wholesale), fed ahead of the visual-effects light
+                        // like the C#'s `:403` before `:436` call order.
+                        if let Some((x, y, rgb)) = crate::entity_lights::shimmer_light(
+                            drop.shimmered,
+                            drop.shimmer_time,
+                            drop.pos,
+                            crate::item::SIZE,
+                        ) {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                         let Some(def) = crate::registry::get(drop.kind) else {
                             continue;
                         };
