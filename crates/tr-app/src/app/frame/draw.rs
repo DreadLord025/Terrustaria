@@ -1304,8 +1304,7 @@ impl App {
                     });
                     if let Some(view) = wire_view {
                         crate::render::wires::draw_wires(
-                            renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
-                            &view,
+                            renderer, world, light, &style, draw_cam, world_zoom, screen, &view,
                         );
                     }
                     // `Main.cs:63276-63277` (`DoDraw_WallsTilesNPCs`): the Moon
