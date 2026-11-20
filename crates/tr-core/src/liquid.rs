@@ -349,7 +349,36 @@ impl LiquidSystem {
     ) -> (u16, u8) {
         let i = world.index(x, y);
         let start = world.tiles[i];
-        if self.tile_is_solid(&start) || start.liquid == 0 {
+        // `Liquid.cs:457-463` — the solid kill precedes everything (the
+        // delay is untouched on this early return).
+        if self.tile_is_solid(&start) {
+            return (KILL_DEAD, delay);
+        }
+        // `Liquid.cs:466-474` — underworld evaporation: below
+        // `Main.UnderworldLayer` (`Main.cs:2790`, `maxTilesY - 200`) water
+        // loses `min(2, liquid)` per visit, before the zero kill of `:475`.
+        // Water only — lava/honey/shimmer are exempt. The C# writes the
+        // amount straight to the tile; the port marks the chunk + `dirty`
+        // like `set_level` so the render cache sees the change (the C#'s
+        // own change consumer, `_netChangeSet`, is MP and unported). The
+        // `underworld_layer >= 0` guard keeps the band non-negative:
+        // vanilla worlds are >= 1200 tiles tall so the layer always
+        // exists; a sub-200 fixture world would put the C# layer below
+        // row 0 and evaporate every cell — the ported water witnesses
+        // pin the flow there (ANALYSIS "The liquid reactions", W4-c34).
+        let underworld_layer = self.height - 200;
+        if underworld_layer >= 0
+            && y > underworld_layer
+            && start.liquid_kind() == LiquidKind::Water
+            && start.liquid > 0
+        {
+            world.tiles[i].liquid -= start.liquid.min(2);
+            world.mark_chunk(x, y);
+            self.dirty = true;
+        }
+        // `Liquid.cs:475-479` — the zero kill reads the post-evaporation
+        // amount; a cell that just evaporated dry retires immediately.
+        if world.tiles[i].liquid == 0 {
             return (KILL_DEAD, delay);
         }
         let kind = kind_code(start.liquid_kind());
@@ -1775,5 +1804,233 @@ mod liquid_sim {
             prev = now;
         }
         assert!(prev > 0, "the film survives (decayed to {prev})");
+    }
+}
+
+/// W4-c34 — the non-water cadence and evaporation pins: the per-entry
+/// `delay` throttle (lava 1-in-6, honey 1-in-11), the `quickFall` bypass,
+/// the underworld water evaporation, the down-arm sub-24 drain and the
+/// shimmer-side merge arms the R-11-5 suite left open. Written, NOT run
+/// (code-only mode).
+#[cfg(test)]
+mod liquid_merge_cadence {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    /// A stone floor row at `floor_y` (the `basin` fixture shape, tall
+    /// enough for the underworld band when `height >= 200`).
+    fn floor_world(width: i32, height: i32, floor_y: i32) -> World {
+        let mut w = World::new("cadence".into(), width, height);
+        for x in 0..width {
+            let i = w.index(x, floor_y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// A one-wide walled shaft: only the down arm can run, so a falling
+    /// column's position is a direct cadence clock.
+    fn shaft(width: i32, height: i32, floor_y: i32, cx: i32) -> World {
+        let mut w = floor_world(width, height, floor_y);
+        for y in 0..floor_y {
+            for x in [cx - 1, cx + 1] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    fn run(sys: &mut LiquidSystem, w: &mut World, n: usize) {
+        for _ in 0..n {
+            sys.update(w);
+        }
+    }
+
+    #[test]
+    fn lava_falls_once_every_six_visits() {
+        // `Liquid.cs:484-490`: the lava arm returns while `delay < 5`
+        // (five throttle visits), then resets `delay = 0` and flows — one
+        // down-transfer per six visits. A short active list is re-walked
+        // every update (`:1077-1082`), so 12 updates = 12 visits = exactly
+        // two falls: the column sits at y = 2, not y = 12 (an ungated flow).
+        let mut w = shaft(5, 120, 30, 2);
+        put_as(&mut w, 2, 0, 255, 1);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 2, 0);
+        run(&mut sys, &mut w, 12);
+        assert_eq!(w.tiles[w.index(2, 2)].liquid, 255, "two falls in twelve visits");
+        assert_eq!(w.tiles[w.index(2, 12)].liquid, 0, "no ungated flow");
+        // The next fall lands on visit 19: visit 6's fall marks (2,1)
+        // skipLiquid (`:586-587`), so visit 7 only clears the flag
+        // (`:1096-1104`); visits 8-13 throttle, visit 14 flows, visits
+        // 15-18 throttle, visit 19 flows.
+        run(&mut sys, &mut w, 7);
+        assert_eq!(w.tiles[w.index(2, 3)].liquid, 255, "the third fall on visit 19");
+    }
+
+    #[test]
+    fn honey_falls_once_every_eleven_visits() {
+        // `Liquid.cs:513-522`: the honey arm returns while `delay < 10`,
+        // so the first fall lands on the eleventh visit and the second on
+        // the twenty-second.
+        let mut w = shaft(5, 120, 30, 2);
+        put_as(&mut w, 2, 0, 255, 2);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 2, 0);
+        run(&mut sys, &mut w, 10);
+        assert_eq!(w.tiles[w.index(2, 0)].liquid, 255, "ten throttled visits");
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tiles[w.index(2, 1)].liquid, 255, "the first fall on visit 11");
+        // Visit 12 clears the fall's skipLiquid flag (`:1096-1104`),
+        // visits 13-22 throttle, visit 23 flows — the second fall.
+        run(&mut sys, &mut w, 12);
+        assert_eq!(w.tiles[w.index(2, 2)].liquid, 255, "the second fall on visit 23");
+    }
+
+    #[test]
+    fn quick_fall_bypasses_the_delay_gate() {
+        // `Liquid.cs:1083-1090`: the quickFall loop forces `delay = 10`
+        // before every Update, so the lava arm's `delay < 5` gate never
+        // fires — the column falls every visit like water. The quickFall
+        // loop also clears the fall's skipLiquid flag right after the
+        // update (`:1089`), so no visit is lost to it.
+        let mut w = shaft(5, 120, 30, 2);
+        put_as(&mut w, 2, 0, 255, 1);
+        let mut sys = LiquidSystem::new(&w);
+        sys.quick_fall = true;
+        sys.add_water(&w, 2, 0);
+        run(&mut sys, &mut w, 12);
+        assert_eq!(w.tiles[w.index(2, 12)].liquid, 255, "quickFall flows every visit");
+    }
+
+    #[test]
+    fn the_delay_gate_never_throttles_the_merge() {
+        // `Liquid.cs:480-490`: `LavaCheck` runs BEFORE the delay gate —
+        // the merge lands on the very first visit even though the flow
+        // would be throttled for five more.
+        let mut w = floor_world(9, 120, 8);
+        put_as(&mut w, 4, 4, 30, 1);
+        put_as(&mut w, 5, 4, 30, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tiles[w.index(4, 4)].kind, 56, "the merge ignores the delay");
+    }
+
+    #[test]
+    fn water_evaporates_two_per_visit_below_the_underworld_layer() {
+        // `Liquid.cs:466-474`: below `UnderworldLayer` (= height - 200,
+        // `Main.cs:2790`) water loses min(2, liquid) per visit. A 400-tall
+        // world puts the layer at 200; the cell at y = 300 sits in a
+        // one-wide shaft, so only evaporation runs (no fall, no row arm).
+        let mut w = shaft(5, 400, 350, 2);
+        put_as(&mut w, 2, 300, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 2, 300);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tiles[w.index(2, 300)].liquid, 98, "two units per visit");
+        run(&mut sys, &mut w, 49);
+        assert_eq!(w.tiles[w.index(2, 300)].liquid, 0, "fifty visits drain it dry");
+        assert_eq!(sys.active_len(), 0, "the zero kill retires the entry (`:475`)");
+    }
+
+    #[test]
+    fn lava_honey_shimmer_never_evaporate() {
+        // `Liquid.cs:466`'s `liquidType() == 0` gate: the non-water kinds
+        // keep every unit below the layer (the honey/lava columns also sit
+        // in their delay gates, so nothing moves at all).
+        let mut w = floor_world(12, 400, 301);
+        put_as(&mut w, 3, 300, 100, 1);
+        put_as(&mut w, 6, 300, 100, 2);
+        put_as(&mut w, 9, 300, 100, 3);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 3, 300);
+        sys.add_water(&w, 6, 300);
+        sys.add_water(&w, 9, 300);
+        run(&mut sys, &mut w, 30);
+        assert_eq!(w.tiles[w.index(3, 300)].liquid, 100, "lava keeps its mass");
+        assert_eq!(w.tiles[w.index(6, 300)].liquid, 100, "honey keeps its mass");
+        assert_eq!(w.tiles[w.index(9, 300)].liquid, 100, "shimmer keeps its mass");
+    }
+
+    #[test]
+    fn water_at_the_underworld_layer_row_does_not_evaporate() {
+        // `Liquid.cs:466` is a strict `y > UnderworldLayer`: the layer row
+        // itself (y = 200 in a 400-tall world) keeps its water. The floor
+        // at y = 201 pins the cell, and the stone walls at x = 3/5 fence
+        // the row arms, so only the evaporation gate is tested.
+        let mut w = shaft(9, 400, 201, 4);
+        put_as(&mut w, 4, 200, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 200);
+        run(&mut sys, &mut w, 5);
+        assert_eq!(w.tiles[w.index(4, 200)].liquid, 100, "the layer row is exempt");
+    }
+
+    #[test]
+    fn the_down_arm_drains_a_sub_24_cell_into_the_liquid_below() {
+        // `Liquid.cs:1290-1298`: the down arm's `tile5.liquid < 24` branch
+        // zeroes the checking cell AND re-types it water (`liquidType(0)`)
+        // — no merge tile; the liquid below survives untouched.
+        let mut w = floor_world(9, 120, 8);
+        put_as(&mut w, 4, 4, 20, 1);
+        put_as(&mut w, 4, 5, 30, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.liquid_check(&mut w, 4, 4, 1, false);
+        assert_eq!(w.tiles[w.index(4, 4)].liquid, 0, "the sub-24 cell drained");
+        assert_eq!(kind_code(w.tiles[w.index(4, 4)].liquid_kind()), 0, "re-typed water");
+        assert_eq!(w.tiles[w.index(4, 5)].liquid, 30, "the pool below survives");
+        assert_eq!(w.tiles[w.index(4, 5)].kind, 0, "no merge tile");
+        assert!(sys.drain_merge_events().is_empty(), "the drain is silent");
+    }
+
+    #[test]
+    fn the_water_cell_down_arm_burns_no_plant() {
+        // `Liquid.cs:1278`'s `thisLiquidType != 0` gate: water does not
+        // burn the cut plant below; the sub-24 drain still runs.
+        let mut w = floor_world(9, 120, 8);
+        let plant = w.index(4, 5);
+        w.tiles[plant] = Tile { kind: 3, ..Default::default() };
+        w.tiles[plant].flags |= FLAG_ACTIVE;
+        w.tiles[plant].liquid = 30;
+        set_kind(&mut w.tiles[plant], 1);
+        put_as(&mut w, 4, 4, 20, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.liquid_check(&mut w, 4, 4, 0, false);
+        assert_eq!(w.tiles[plant].kind, 3, "the plant survives water");
+        assert!(w.tiles[plant].active(), "still active");
+        assert_eq!(w.tiles[w.index(4, 4)].liquid, 0, "the drain ran");
+    }
+
+    #[test]
+    fn shimmer_merges_with_lava_and_honey_into_659() {
+        // `Liquid.cs:1395-1409`/`:1411-1426`: the shimmer cell's lava arm
+        // and honey arm both land 659 (`GetLiquidMergeTypes`' shimmer
+        // rows), consuming the pooled neighbour.
+        for other in [1u8, 2] {
+            let mut w = floor_world(9, 120, 8);
+            put_as(&mut w, 4, 4, 30, 3);
+            put_as(&mut w, 5, 4, 30, other);
+            let mut sys = LiquidSystem::new(&w);
+            sys.add_water(&w, 4, 4);
+            run(&mut sys, &mut w, 1);
+            assert_eq!(w.tiles[w.index(4, 4)].kind, 659, "shimmer + {other} -> 659");
+            assert_eq!(w.tiles[w.index(5, 4)].liquid, 0, "the pool consumed");
+        }
     }
 }
