@@ -259,7 +259,7 @@ pub struct Layout {
 /// exactly like Task 7's `name_w` — it feeds only the draw's text placement.
 pub fn layout(screen: Vec2, plate_w: f32) -> Layout {
     let _ = plate_w; // the plate rect chain is `(-132, 1)` of the info inner; see `draw`.
-    let full = [0.0, 0.0, screen.x, screen.y];
+    let full = super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]); // `UIState.cs:9-11`
     // The root: `Width 500, Height 434+18, Top 170-18, HAlign .5, VAlign 0`
     // (`:166-176`), `SetPadding(0)` (`:175`).
     let root = uistate::resolve(

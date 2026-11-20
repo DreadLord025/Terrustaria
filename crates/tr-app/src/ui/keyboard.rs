@@ -321,7 +321,7 @@ pub struct Layout {
 /// textbox/label sit at their unshifted pixel tops; without it, `outerLayer2`
 /// and the `+50` shift (`:716-725`).
 pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
-    let root = [0.0, 0.0, screen.x, screen.y];
+    let root = super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]); // `UIState.cs:9-11`
     // `outerLayer1` == `outerLayer2` — the identical initializer (`:180-195`).
     let layer = uistate::resolve(
         root,

@@ -61,7 +61,7 @@ const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 0.5];
 /// the faithful form, so the panel now ends at `screenH − 40`.
 pub fn panel_rect(screen: Vec2) -> [f32; 4] {
     uistate::resolve(
-        [0.0, 0.0, screen.x, screen.y], // the `UIState` root (`UIState.cs:9-11`)
+        super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]), // the `UIState` root (`UIState.cs:9-11`)
         Style::px(0.0),                 // `Left` unset (`StyleDimension.Empty`)
         Style::px(180.0),               // `Top.Set(180f, 0f)` (`:74`)
         Style::new(0.0, 0.875),         // `Width.Set(0f, 0.875f)` (`:71`)

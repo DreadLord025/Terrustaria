@@ -10,7 +10,14 @@
 //! root rects; this is the shared pure helper they can adopt, plus the
 //! gamepad gate as data (gamepad navigation itself is unported — research/18
 //! deviation 10, Stage-1 exclusion).
-#![allow(dead_code)] // wiring lands with the screens' root-rect adoption
+//!
+//! Wiring census (W4-f23 wiring pass): the nine landed full-screen root
+//! rects adopt [`root_rect`] (keep-one — achievements, bestiary, emotes,
+//! keyboard, char_creation, world_creation, world_load ×2, char_select).
+//! `StateRoot`/`no_gamepad_blocks_navigation` stay parked data: the only
+//! `NoGamepadSupport` setter is `UIWorldGenDebug`'s ctor (d86 scope-out) and
+//! the navigator itself is unported, so the gate has no live consumer.
+#![allow(dead_code)] // the parked gamepad half (StateRoot + the navigator arm)
 
 use super::uistate::{self, Style};
 

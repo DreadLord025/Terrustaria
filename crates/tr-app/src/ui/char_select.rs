@@ -161,7 +161,7 @@ impl Layout {
 /// `MaxWidth 650`, `Top 220`, `Height (-220, 1)`, `HAlign 0.5`.
 fn root_rect(screen: Vec2) -> [f32; 4] {
     uistate::resolve(
-        [0.0, 0.0, screen.x, screen.y],
+        super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]), // `UIState.cs:9-11`
         Style::px(0.0),          // Left unset (`StyleDimension.Empty`)
         Style::px(220.0),        // `uIElement.Top.Set(220f, 0f)` (`:40`)
         Style::new(0.0, 0.8),    // `Width.Set(0f, 0.8f)` (`:38`)

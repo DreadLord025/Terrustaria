@@ -42,7 +42,7 @@ pub fn panel_rect(screen: Vec2, in_game: bool) -> [f32; 4] {
         (220.0, Style::new(-220.0, 1.0))
     };
     uistate::resolve(
-        [0.0, 0.0, screen.x, screen.y], // the `UIState` root (`UIState.cs:9-11`)
+        super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]), // the `UIState` root (`UIState.cs:9-11`)
         Style::px(0.0),                // `Left` unset
         Style::px(top),                // `_outerContainer.Top` (`:39`/`:41`)
         Style::px(590.0),              // `Width.Set(590f, 0f)` (`:48`)
