@@ -146,6 +146,43 @@ pub mod id {
     pub const MISC_EVENT_VALUES: u8 = 140;
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
+    /// `157 TeamChangeFromUI` (`MessageID.cs:328`) — the writer shares 45's
+    /// case (`NetMessage.cs:970-974`) so the body is the same `TeamChange`;
+    /// the reader adds the team-spawn tail (`MessageBuffer.cs:2355-2363`:
+    /// `teamBasedSpawnsSeed` + an extra spawn point → `CheckSection` +
+    /// `158 ExtraSpawnSectionLoaded`).
+    pub const TEAM_CHANGE_UI: u8 = 157;
+
+    // ---- S1-I-1 wave B: the world-sync region (section send / tile square /
+    // spawn tile), census against `MessageID.cs` — bodies + codecs only, the
+    // dispatcher apply/relay arms and the send fan-out are S1-I-4. ----
+    /// `17 TileManipulation` (`MessageID.cs:43`) — the single-tile edit,
+    /// still live: writer `NetMessage.cs:524-530`, reader
+    /// `MessageBuffer.cs:1119-1288` (host relay `:1285`, the `20` fallback
+    /// `SendTileSquare(-1, x, y, 5)` when a placement survives, `:1281`).
+    /// research/17 called it superseded by 20 — wrong, both are sent; the
+    /// port's internal `INT_EDIT` stand-in is unchanged by this body.
+    pub const TILE_EDIT: u8 = 17;
+    /// `11 TileFrameSection` (`MessageID.cs:29-30`) — marked deprecated and
+    /// never sent (`grep SendData(11` = 0 sites), but `GetData` still reads
+    /// it at `netMode == 1` (`MessageBuffer.cs:895-900` →
+    /// `WorldGen.SectionTileFrame`, `WorldGen.cs:80343`): four `short`s.
+    pub const TILE_FRAME_SECTION: u8 = 11;
+    pub const DOOR_TOGGLE: u8 = 19; // MessageID.cs:47 / NetMessage.cs:537-542 / MessageBuffer.cs:1299-1334
+    pub const TILE_PAINT: u8 = 63; // MessageID.cs:139 / NetMessage.cs:1081-1087 / MessageBuffer.cs:2909-2928
+    pub const WALL_PAINT: u8 = 64; // MessageID.cs:141 / NetMessage.cs:1081-1087 / MessageBuffer.cs:2929-2948
+    pub const TILE_PICKING: u8 = 125; // MessageID.cs:264 / NetMessage.cs:1509-1514 / MessageBuffer.cs:4023-4042
+    /// `158 ExtraSpawnSectionLoaded` (`MessageID.cs:330`) — the team-swap
+    /// respawn after the extra spawn section streamed in
+    /// (`NetMessage.cs:1659-1661`; reader `MessageBuffer.cs:4450-4456`
+    /// calls `Spawn(PlayerSpawnContext.TeamSwap)`).
+    pub const EXTRA_SPAWN_LOADED: u8 = 158;
+    /// `159 RequestSection` (`MessageID.cs:332`) — the client asks for a
+    /// section (`NetMessage.cs:1662-1665` writes `short`s; the reader reads
+    /// `ushort`s, `MessageBuffer.cs:4457-4462` → `SendSection`). The port
+    /// streams unrequested (`host_stream_sections`); this is the body for
+    /// the on-request path.
+    pub const SECTION_REQUEST: u8 = 159;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1434,8 +1471,9 @@ pub struct PlayerMana {
 
 /// `msg 45 TeamChange`'s body (`NetMessage.cs:970-974`): the player id then
 /// `Player.team` as a byte (`MessageBuffer.cs:2325-2336`). `157
-/// TeamChangeFromUI` shares the body but adds the team-spawn tail
-/// (`:2355-2363`); it is not a join-bundle id and stays unported.
+/// TeamChangeFromUI` shares the case and the body (`NetMessage.cs:970-971`)
+/// but adds the team-spawn tail (`MessageBuffer.cs:2355-2363` → `158`);
+/// its id + codec landed with wave B (`id::TEAM_CHANGE_UI`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TeamChange {
     pub player_id: u8,
@@ -1535,6 +1573,81 @@ pub struct SyncLoadout {
     pub player_id: u8,
     pub loadout: u8,
     pub hide_accessory: u16,
+}
+
+// ---- S1-I-1 wave B: the world-sync region's payload bodies ----
+
+/// `msg 17 TileManipulation`'s body (`NetMessage.cs:524-530`): the edit kind
+/// byte, the tile as two `short`s, the `short` payload and a `byte` style.
+/// The reader (`MessageBuffer.cs:1119-1288`) dispatches kinds 0-23
+/// (KillTile/PlaceTile/KillWall/PlaceWall/wires/slope/actuator/gates/replace,
+/// `:1157-1275`); the host counts spam (`:1141-1146`), forces `fail` when the
+/// section was never sent (`:1148-1151`) and relays as `17` — or a
+/// `SendTileSquare(-1, x, y, 5)` when the placement survived (`:1281`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileEdit {
+    /// `b13` — the edit kind (`MessageBuffer.cs:1157-1275`).
+    pub kind: u8,
+    pub x: i16,
+    pub y: i16,
+    /// `num152` — the tile/wall type or the slope id; kind 14's slope.
+    pub value: i16,
+    /// `num153` — `PlaceTile`'s style (`MessageBuffer.cs:1173`).
+    pub style: u8,
+}
+
+/// `msg 11 TileFrameSection`'s body (`NetMessage.cs:427-432`): four `short`s
+/// naming the rectangle to re-frame (`MessageBuffer.cs:895-900` →
+/// `WorldGen.SectionTileFrame(startX, startY, endXInclusive, endYInclusive)`,
+/// `WorldGen.cs:80343`). Deprecated, never sent — the body exists so the
+/// reader arm is 1:1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileFrameSection {
+    pub start_x: i16,
+    pub start_y: i16,
+    pub end_x: i16,
+    pub end_y: i16,
+}
+
+/// `msg 19 ToggleDoorState`'s body (`NetMessage.cs:537-542`): the action
+/// byte, the tile and `number4 == 1f` → a direction byte (1 = right/down).
+/// The reader maps 0/1 open/close door, 2/3 trapdoor up/down, 4/5 tall gate
+/// open/close and relays with the normalised direction
+/// (`MessageBuffer.cs:1299-1334`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DoorToggle {
+    /// `b5` — 0 open, 1 close, 2/3 trapdoor, 4/5 tall gate.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+    /// `num47`: the reader reads `!= 0` → 1 else -1; the wire byte is 0/1.
+    pub direction: u8,
+}
+
+/// `msg 63/64 SyncTilePaintOrCoating / SyncWallPaintOrCoating`'s shared body
+/// (`NetMessage.cs:1081-1087`): the tile, the paint id byte and the coat flag
+/// byte — `coat == 0` paints (`WorldGen.paintTile`/`paintWall`), anything
+/// else coats (`paintCoatTile`/`paintCoatWall`,
+/// `MessageBuffer.cs:2909-2948`), then the host relays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TilePaint {
+    pub x: i16,
+    pub y: i16,
+    pub paint: u8,
+    /// `b12`/`b10`: 0 = paint, non-zero = illuminant coat.
+    pub coat: u8,
+}
+
+/// `msg 125 SyncTilePicking`'s body (`NetMessage.cs:1509-1514`): the player
+/// id (host-overridden to the sender), the picked tile and the pick damage
+/// byte (`Player.GetOtherPlayersPickTile`, `Player.cs:53751`; the host
+/// relays to the others, `MessageBuffer.cs:4023-4042`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TilePicking {
+    pub player_id: u8,
+    pub x: i16,
+    pub y: i16,
+    pub damage: u8,
 }
 
 // ===========================================================================
