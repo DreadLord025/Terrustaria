@@ -173,8 +173,14 @@ pub fn update_buff_frame(
     debuff_e.thorns = p.thorns; // the Dryad's Ward clamp is per-slot sequential
 
     let underworld = (world.height - 200) as f32; // Main.UnderworldLayer
+    // Snapshot the owned-projectile counts: the contexts borrow them, and the
+    // loop below mutates `p` (a live borrow of `p.owned_projectile_counts`
+    // would conflict). The recount ran at the seam (`update_projectile_caches`);
+    // the pet spawns this pass makes do not change the counts the arms read
+    // (the C# reads the same per-tick recount snapshot).
+    let owned_counts = p.owned_projectile_counts.to_vec();
     let status_ctx = StatusEffectContext {
-        owned_projectile_counts: &p.owned_projectile_counts,
+        owned_projectile_counts: &owned_counts,
         day_time: inputs.day_time,
         wolf_acc: false, // the Moon Charm accessory lane is unported
         merman: p.merman,
@@ -188,7 +194,7 @@ pub fn update_buff_frame(
     };
 
     let misc_ctx = MiscEffectContext {
-        owned_projectile_counts: &p.owned_projectile_counts,
+        owned_projectile_counts: &owned_counts,
         day_time: inputs.day_time,
         wolf_acc: false,
         merman: p.merman,
