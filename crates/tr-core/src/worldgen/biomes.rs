@@ -1598,9 +1598,14 @@ const BEACH_DISTANCE: i32 = 380;
 /// The granite cave pass (`Granite`, `WorldGen.cs:12839-12926`):
 /// `Count` (4..8 scaled by world width) pressure-simulated magma caves. The
 /// candidates are collected with the `CanPlace` gate (an inactive origin tile
-/// plus `BiomeTileCheck`) and the `WorldGen.cs:12897-12915` retry, then placed
-/// in a second phase.
-pub(crate) fn pass_granite(world: &mut World, rock_layer: f64, rng: &mut super::Rng) {
+/// plus `BiomeTileCheck`) and the `WorldGen.cs:12897-12917` retry, then placed
+/// in a second phase. `lava_line` is `GenVars.lavaLine` for `ShouldUseLava`.
+pub(crate) fn pass_granite(
+    world: &mut World,
+    rock_layer: f64,
+    lava_line: i32,
+    rng: &mut super::Rng,
+) {
     let width = world.width as f64 / 4200.0;
     let min = (4.0 * width) as i32;
     let max = (8.0 * width) as i32;
@@ -1614,9 +1619,12 @@ pub(crate) fn pass_granite(world: &mut World, rock_layer: f64, rng: &mut super::
     let mut placed = 0i32;
     let mut attempts = 0i32;
     while placed < caves {
-        let num5 = placed as f64 / caves as f64;
+        // `:12855` — the C# fraction is a FLOAT here (the marble pass uses
+        // double): `(float)num4 / (float)num`, then
+        // `(int)(num5 * (float)(maxTilesX - 200))`.
+        let num5 = placed as f32 / caves as f32;
         // RandomRectanglePoint(band x, rockLayer + 20, band, depth).
-        let mut x = (num5 * (w as f64 - 200.0)) as i32 + 100 + rng.range(0, band);
+        let mut x = (num5 * (w - 200) as f32) as i32 + 100 + rng.range(0, band);
         let y = rock_layer as i32
             + 20
             + rng.range(
@@ -1628,60 +1636,68 @@ pub(crate) fn pass_granite(world: &mut World, rock_layer: f64, rng: &mut super::
             x = rng.range(BEACH_DISTANCE, w - BEACH_DISTANCE);
         }
         attempts += 1;
-        // `GraniteBiome.CanPlace` (`GraniteBiome.cs:53-60`): inactive origin
-        // plus the shared BiomeTileCheck.
+        // `GraniteBiome.CanPlace` (`GraniteBiome.cs:53-60`): the shared
+        // BiomeTileCheck, then the inactive origin.
         let in_cave = !world.tile(x, y).is_some_and(|t| t.active());
-        if in_cave && !biome_tile_check(world, x, y) {
+        if !biome_tile_check(world, x, y) && in_cave {
             points.push((x, y));
             placed += 1;
-            attempts = 0;
+            // `:12907-12911` — the success arm does NOT reset `num3` (the
+            // marble pass does): the give-up budget accumulates across the
+            // whole collection phase.
         } else if attempts > w * 10 {
+            // `:12912-12917` — `num = num4; num4++` ends the loop.
             caves = placed;
             attempts = 0;
         }
     }
     for (x, y) in points {
-        granite_place(world, x, y);
+        granite_place(world, x, y, lava_line);
     }
 }
 
 /// `GraniteBiome.Place` (`GraniteBiome.cs:62-77`): the 200x200 magma map, the
-/// pressure simulation, the granite placement and the cleanup. The magma
-/// map's first index is the world X and the second the world Y
-/// (`BuildMagmaMap`'s `i2 = i + tileOrigin.X`).
-fn granite_place(world: &mut World, origin_x: i32, origin_y: i32) -> bool {
-    // `GraniteBiome.CanPlace` (`GraniteBiome.cs:53-60`): the origin tile must
-    // be inactive — the cave the granite chamber grows out of — plus the
-    // shared `BiomeTileCheck`. The port's pipeline now runs granite after the
-    // cave carving (the vanilla order), so the gate holds.
-    if world.tile(origin_x, origin_y).is_some_and(|t| t.active())
-        || biome_tile_check(world, origin_x, origin_y)
-    {
+/// pressure simulation, the granite placement, the cleanup and the
+/// decorations. The magma map's first index is the world X and the second
+/// the world Y (`BuildMagmaMap`'s `i2 = i + tileOrigin.X`).
+fn granite_place(world: &mut World, origin_x: i32, origin_y: i32, lava_line: i32) -> bool {
+    // `:64-67` — Place re-checks ONLY the origin's active bit (the
+    // `BiomeTileCheck` ran once at collection time in `CanPlace`; a chamber
+    // painted by an earlier placement does not veto a later one).
+    if world.tile(origin_x, origin_y).is_some_and(|t| t.active()) {
         return false;
     }
     // The origin is offset by half the map (`Place`'s centring).
     let (ox, oy) = (origin_x - 100, origin_y - 100);
     // `BuildMagmaMap` (`GraniteBiome.cs:79-93`): resistance 1 for non-solid,
-    // 4 for solid.
+    // 4 for solid — `WorldGen.SolidTile`, so half-bricks/slopes read
+    // non-solid and a null tile reads solid.
     let side = 200usize;
     let mut source: Vec<MagmaCell> = vec![MagmaCell::empty(1.0); side * side];
     for mx in 0..side {
         for my in 0..side {
-            let solid = world
-                .tile(ox + mx as i32, oy + my as i32)
-                .is_some_and(|t| t.active());
+            let solid = solid_tile(world, ox + mx as i32, oy + my as i32);
             source[my * side + mx] = MagmaCell::empty(if solid { 4.0 } else { 1.0 });
         }
     }
     let mut target = source.clone();
     let vecs = normalised_vectors();
-    // The active box starts 0x0 at the centre and grows (`SimulatePressure`).
+    // The active box starts 0x0 at the centre and grows (`SimulatePressure`,
+    // `GraniteBiome.cs:95-169`). The C# outer loop is the FIRST index (world
+    // X, `j`), the inner the second (world Y, `k`) — the mid-iteration box
+    // growth reads the same order.
     let (mut mx0, mut mx1, mut my0, mut my1) = (side / 2, side / 2, side / 2, side / 2);
     for iter in 0..300 {
-        for my in my0..=my1 {
-            for mx in mx0..=mx1 {
+        // The C# `for` conditions re-read the growing box bounds every
+        // iteration (`j <= num4`, `k <= num6`) — a Rust range-for would
+        // capture them once, so the walks are while-loops.
+        let mut mx = mx0;
+        while mx <= mx1 {
+            let mut my = my0;
+            while my <= my1 {
                 let cell = source[my * side + mx];
                 if !cell.active {
+                    my += 1;
                     continue;
                 }
                 let mut sum = 0.0f64;
@@ -1718,14 +1734,19 @@ fn granite_place(world: &mut World, origin_x: i32, origin_y: i32) -> bool {
                 sum /= 8.0;
                 if sum > cell.resistance {
                     let gradient = (grad_x * grad_x + grad_y * grad_y).sqrt() / 8.0;
-                    let flow = (sum - gradient - cell.pressure).max(0.0)
+                    // `:157` — num9 = Max(0, ...) BEFORE the resistance
+                    // decay reads it (`:158`).
+                    let flow = ((sum - gradient - cell.pressure).max(0.0)
                         + gradient
                         + cell.pressure * 0.875
-                        - cell.resistance;
+                        - cell.resistance)
+                        .max(0.0);
                     target[my * side + mx] =
-                        MagmaCell::flow(flow.max(0.0), (cell.resistance - flow * 0.02).max(0.0));
+                        MagmaCell::flow(flow, (cell.resistance - flow * 0.02).max(0.0));
                 }
+                my += 1;
             }
+            mx += 1;
         }
         if iter < 2 {
             target[(side / 2) * side + side / 2] = MagmaCell::flow(25.0, 0.0);
@@ -1733,8 +1754,11 @@ fn granite_place(world: &mut World, origin_x: i32, origin_y: i32) -> bool {
         std::mem::swap(&mut source, &mut target);
     }
     let area = (mx0, mx1, my0, my1);
-    granite_place_tiles(world, ox, oy, &source, area);
+    granite_place_tiles(world, ox, oy, &source, area, lava_line);
     granite_cleanup(world, ox, oy, &source, area);
+    granite_decorations(world, ox, oy, &source, area);
+    // `structures.AddStructure(effectedMapArea.Modified(...), 8)` — no
+    // StructureMap in the port (deviation, ANALYSIS).
     true
 }
 
@@ -1791,56 +1815,100 @@ fn normalised_vectors() -> Vec<(f64, f64)> {
     v
 }
 
-/// `GraniteBiome.PlaceGranite` (`GraniteBiome.cs:171-245`): the sine-gated
-/// placement, the ore preservation and the lava flag.
+/// `GraniteBiome.ShouldUseLava` (`GraniteBiome.cs:171-196`): the chamber
+/// centre within 30 of `GenVars.lavaLine`, and no snow/ice (147/161-163) or
+/// ice-furniture 200 in the 100x100 scan around it.
+fn granite_should_use_lava(world: &World, ox: i32, oy: i32, lava_line: i32) -> bool {
+    if oy + 100 <= lava_line - 30 {
+        return false;
+    }
+    for i in -50..50 {
+        for j in -50..50 {
+            let (x, y) = (ox + 100 + i, oy + 100 + j);
+            if !in_world(world, x, y, 10) {
+                continue;
+            }
+            if let Some(t) = world.tile(x, y) {
+                if t.active() && (t.kind == 147 || (161..=163).contains(&t.kind) || t.kind == 200)
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// `WorldGen.InWorld` (`WorldGen.cs:9688-9695`) with the fluff margin.
+fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
+/// `GraniteBiome.PlaceGranite` (`GraniteBiome.cs:198-245`): the sine-gated
+/// placement, the ore preservation (`ResetToType` both arms — the ore arm
+/// keeps the kind but still resets the tile and repaints the wall), the
+/// resistance-0 clear arm and the lava retype.
 fn granite_place_tiles(
     world: &mut World,
     ox: i32,
     oy: i32,
     map: &[MagmaCell],
     area: (usize, usize, usize, usize),
+    lava_line: i32,
 ) {
+    // `:200-207` — the drunk world swaps granite for marble.
+    let use_lava = granite_should_use_lava(world, ox, oy, lava_line);
+    let (kind, wall) = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        (TILE_MARBLE, WALL_MARBLE)
+    } else {
+        (TILE_GRANITE, WALL_GRANITE)
+    };
     let side = 200usize;
     let (mx0, mx1, my0, my1) = area;
-    for my in my0..=my1 {
-        for mx in mx0..=mx1 {
+    // The C# loops are X-major (`i` over Left..Right, `j` over Top..Bottom).
+    for mx in mx0..=mx1 {
+        for my in my0..=my1 {
+            let (x, y) = (ox + mx as i32, oy + my as i32);
+            if !in_world(world, x, y, 10) {
+                continue;
+            }
             let cell = map[my * side + mx];
             if !cell.active {
                 continue;
             }
-            let (x, y) = (ox + mx as i32, oy + my as i32);
-            if !world.in_bounds(x, y) {
-                continue;
-            }
-            // The C# `ShouldUseLava` slice: the lava-line test plus the tile
-            // family scan. The port's lava line is not tracked yet, so the
-            // lava arm rides off (deviation, ANALYSIS).
+            // `:222` — the sine gate; the sqrt argument is clamped at 0, so
+            // a zero excess gives 0.5/0 = +Infinity (the C# double divide),
+            // which drives the gate to -Infinity and the pressure term wins.
             let pressure = (cell.pressure - cell.resistance).max(0.0).sqrt();
-            let gate =
-                1.0 - ((y as f64 * 0.4).sin() * 0.7 + 1.2) * (0.2 + 0.5 / pressure.max(1e-12));
-            let threshold = 0.35
-                + if world.tile(x, y).is_some_and(|t| t.active()) {
-                    0.0
-                } else {
-                    0.5
-                };
+            let gate = 1.0 - ((y as f64 * 0.4).sin() * 0.7 + 1.2) * (0.2 + 0.5 / pressure);
+            let threshold = 0.35 + if solid_tile(world, x, y) { 0.0 } else { 0.5 };
             if gate.max(cell.pressure / 15.0) > threshold {
                 let kind_now = world.tile(x, y).map(|t| t.kind).unwrap_or(0);
-                if !tile_is_ore(kind_now) {
-                    if let Some(t) = world.tile_mut(x, y) {
-                        t.kind = TILE_GRANITE;
-                        t.frame_x = -1;
-                        t.frame_y = -1;
-                        t.wall = WALL_GRANITE;
-                    }
+                let target_kind = if tile_is_ore(kind_now) { kind_now } else { kind };
+                if let Some(t) = world.tile_mut(x, y) {
+                    reset_to_type(t, target_kind);
+                    t.wall = wall;
+                }
+            } else if cell.resistance < 0.01 {
+                // `:234-238` — the fully-flowed cell clears to air.
+                clear_tile_keep(world, x, y);
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.wall = wall;
+                }
+            }
+            // `:239-242` — the lava retype: `(liquid > 0) & flag`.
+            if let Some(t) = world.tile_mut(x, y) {
+                if t.liquid > 0 && use_lava {
+                    t.set_liquid_kind(LiquidKind::Lava);
                 }
             }
         }
     }
 }
 
-/// `GraniteBiome.CleanupTiles` (`GraniteBiome.cs:247-294`): solid granite with
-/// fewer than 3 solid neighbours is cleared.
+/// `GraniteBiome.CleanupTiles` (`GraniteBiome.cs:247-294`): solid cells with
+/// fewer than 3 solid neighbours in the 3x3 are cleared (the wall painted
+/// after). The census is `WorldGen.SolidTile`, not the active bit.
 fn granite_cleanup(
     world: &mut World,
     ox: i32,
@@ -1848,22 +1916,27 @@ fn granite_cleanup(
     map: &[MagmaCell],
     area: (usize, usize, usize, usize),
 ) {
+    let wall = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        WALL_MARBLE
+    } else {
+        WALL_GRANITE
+    };
     let side = 200usize;
     let (mx0, mx1, my0, my1) = area;
     let mut clear: Vec<(i32, i32)> = Vec::new();
-    for my in my0..=my1 {
-        for mx in mx0..=mx1 {
+    for mx in mx0..=mx1 {
+        for my in my0..=my1 {
             if !map[my * side + mx].active {
                 continue;
             }
             let (x, y) = (ox + mx as i32, oy + my as i32);
-            if !world.in_bounds(x, y) {
+            if !in_world(world, x, y, 10) || !solid_tile(world, x, y) {
                 continue;
             }
             let mut solid = 0;
             for k in -1..=1i32 {
                 for l in -1..=1i32 {
-                    if world.tile(x + k, y + l).is_some_and(|t| t.active()) {
+                    if solid_tile(world, x + k, y + l) {
                         solid += 1;
                     }
                 }
@@ -1874,9 +1947,58 @@ fn granite_cleanup(
         }
     }
     for (x, y) in clear {
+        // `WorldUtils.ClearTile(x, y, frameNeighbors: true)` — the reframe
+        // rides the deferred framing seam (ANALYSIS).
+        clear_tile_keep(world, x, y);
         if let Some(t) = world.tile_mut(x, y) {
-            t.flags &= !FLAG_ACTIVE;
-            t.wall = WALL_GRANITE;
+            t.wall = wall;
+        }
+    }
+}
+
+/// `GraniteBiome.PlaceDecorations` (`GraniteBiome.cs:296-330`): the
+/// world-seed-keyed `FastRandom` stalactite pass — `WithModifier(65440)`
+/// once per chamber, then a per-cell `WithModifier(x, y)` copy: `Next(8)`
+/// gates the active-cell stalactite pair (below first, then above — each
+/// with its own `Next(2)` small roll and `Next(3)` variation), then the
+/// unconditional `Next(2)` slope-smoothing roll. No worldgen-stream draw.
+fn granite_decorations(
+    world: &mut World,
+    ox: i32,
+    oy: i32,
+    map: &[MagmaCell],
+    area: (usize, usize, usize, usize),
+) {
+    // `Main.ActiveWorldFileData.Seed` is an int — the `FastRandom(int)`
+    // constructor (`FastRandom.cs:21-25`), the hive precedent's cast.
+    let fast = FastRandom::new(world.seed as i32 as u64).with_modifier_u64(65440);
+    let side = 200usize;
+    let (mx0, mx1, my0, my1) = area;
+    for mx in mx0..=mx1 {
+        for my in my0..=my1 {
+            let cell = map[my * side + mx];
+            let (x, y) = (ox + mx as i32, oy + my as i32);
+            if !in_world(world, x, y, 10) || !cell.active {
+                continue;
+            }
+            // `WorldUtils.TileFrame`/`SquareWallFrame` (`:310-311`) ride the
+            // deferred framing seam (ANALYSIS).
+            let mut fast2 = fast.with_modifier(x, y);
+            if fast2.next(8) == 0 && world.tile(x, y).is_some_and(|t| t.active()) {
+                if !world.tile(x, y + 1).is_some_and(|t| t.active()) {
+                    let small = fast2.next(2) == 0;
+                    let variation = fast2.next(3);
+                    place_unchecked_stalactite(world, x, y + 1, small, variation, false);
+                }
+                if !world.tile(x, y - 1).is_some_and(|t| t.active()) {
+                    let small = fast2.next(2) == 0;
+                    let variation = fast2.next(3);
+                    place_unchecked_stalactite(world, x, y - 1, small, variation, false);
+                }
+            }
+            if fast2.next(2) == 0 {
+                tile_smooth_slope(world, x, y);
+            }
         }
     }
 }

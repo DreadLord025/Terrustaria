@@ -1802,9 +1802,13 @@ fn step_granite_marble(
         gv.layers().rock_layer,
         &mut streams.pass_rng("Marble"),
     );
+    // `GenVars.lavaLine` (the Terrain step's `TerrainPass.cs:211-236` pair)
+    // feeds `GraniteBiome.ShouldUseLava` (`GraniteBiome.cs:177`).
+    let lava_line = gv.lava_line;
     biomes::pass_granite(
         world,
         gv.layers().rock_layer,
+        lava_line,
         &mut streams.pass_rng("Granite"),
     );
 }
