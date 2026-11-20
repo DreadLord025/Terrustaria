@@ -7060,6 +7060,33 @@ Deviations:
   seeded stream is untouched.
 
 ## Zoologist/Princess (M4-TOWN-19)
+## Santa/Truffle/Steampunker/Cyborg shops (W4-d122)
+
+The four unclaimed first-half `Chest.SetupShop` cases — 9 (Santa Claus,
+`Chest.cs:2091-2111`), 10 (Truffle, `:2112-2134`), 11 (Steampunker,
+`:2135-2245`) and 14 (Cyborg, `:2360-2442`) — land as row lists with verbatim
+condition gates. The registry is `NPCInteractions.cs:488-512`
+(`Shop(142, 9)`/`Shop(160, 10)`/`Shop(178, 11)`/`Shop(209, 14)`); this
+decompilation has no `NPC.GetShops`. `StockWhen` grows the `All`/`Any`/`Not`
+combinators so the C#'s compound `&&`/`||`/`else` chains keep their exact
+shape (the Steampunker's Jetpack/outfit split and the solution else-chain
+share ONE condition object per branch); the filter match became the
+recursive `stock_gate` evaluator, behaviour-identical for the existing arms.
+`ShopFlags` grows `downed_plant_boss`, the remix/anniversary/getGoodWorld
+trio (fed from `World.seeds`, `WorldGen.cs:11118-11121`), `eclipse`,
+`downed_boss1` (the world's `downed_eoc`), `downed_golem`, `zone_graveyard`,
+`zone_sky_height` and `zone_hallow` — all fed live at the shop-open seam.
+Deviations: the halloween rows (`Main.halloween`, the Steampunk Goggles 1742
+and the Cyborg outfit 1743-1745) stay constants-off (no season system);
+`crimson_world` still rides the caller's field (the port persists no
+world-evil type — the Steampunker's Vaat/Lesion and Red/Purple splits read
+it). The NPCs themselves (SantaClaus/Truffle/Steampunker/Cyborg kinds, their
+arrivals and `shop_index_for_kind` arms) are NOT in this lane — the shops
+resolve through `setup_shop(index, ...)` today; cases 17 (Pirate), 20
+(Tavernkeep), 21 (Skeleton Merchant) and 25 (Painter decor) stay unclaimed
+(the OOA/medal co-lanes own 20/21's currency territory). Witnesses written,
+not run (the code-only swarm).
+
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
 Two late-roster town NPCs. Deviations: the Dye Trader's `item.dye > 0` scan
