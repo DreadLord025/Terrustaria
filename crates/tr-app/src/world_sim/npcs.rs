@@ -4295,6 +4295,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
         let dust = &mut app.dust;
+        // W4-d22: the EoC's spin hand-off gore burst (`NPC.cs:20365-20370`)
+        // draws Main.rand through the live gore pool on the UpdateNPCs
+        // stream — threaded alongside the dust pool (the S1-F-13c shape).
+        let gore = &mut app.gore;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -4464,7 +4468,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // so the Everscream/Santa dust arms reach the live pool.
                     let is_style75 = npcs[i].kind.ai_style() == 75;
                     if !is_style75 {
-                        npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                        npcs[i].update_rng_dust_gore(world, player, step, npcs_rng, dust, &dust_spawn_ctx, gore);
                     } else {
                         npcs[i].update_preamble(step);
                         let ctx = crate::npc_ai_style75::Style75Ctx {

@@ -4628,6 +4628,34 @@ impl Npc {
         dust: &mut tr_core::particles::DustPool,
         dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
+        // W4-d22: the scratch-gore wrapper — the EoC's spin hand-off gore
+        // burst (`NPC.cs:20365-20370`) needs a pool; the tests' and the
+        // gore-free kinds' entry runs it on a scratch pool (the dust
+        // wrapper's convention). The live sim threads `app.gore` through
+        // [`Npc::update_rng_dust_gore`].
+        let mut gore = tr_core::gore::GorePool::new();
+        self.update_rng_dust_gore(world, player, dt, rng, dust, dust_ctx, &mut gore);
+    }
+
+    /// The full step with the caller's RNG stream AND the live dust + gore
+    /// pools (W4-d22): the EoC's per-tick `Next(5)` dust gate
+    /// (`NPC.cs:20062`), the spin-phase dust/gore draws (`:20365-20379`)
+    /// and the servant-burst dust (`:20189-20192`) ride the SAME
+    /// `UpdateNPCs` stream the AI draws ride (`Main.cs:17767`'s swap wraps
+    /// `NPC.UpdateNPC`, dust AND gore included — `Dust.NewDust`/
+    /// `Gore.NewGore` draw `Main.rand`). The live sim
+    /// (`world_sim/npcs.rs::update_npcs`) threads `app.dust` + `app.gore`
+    /// + the frame's `spawn_ctx` here.
+    pub fn update_rng_dust_gore(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        dt: f32,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+        gore: &mut tr_core::gore::GorePool,
+    ) {
         // The shared `NPC.Update` preamble (the aiStyle-75 pooled wrapper
         // runs the same block — the family machine is a POOL step, so the
         // sim calls it directly over `App::npcs`).
@@ -4660,6 +4688,14 @@ impl Npc {
             3 if crate::npc_ai_style3::claims(self.kind) => {
                 crate::npc_ai_style3::fighter_core_step(self, world, player);
             }
+            // `if (this.aiStyle == 4)` (`NPC.cs:19960-20801`) — the Eye of
+            // Cthulhu. W4-d22: the machine rides the axis with the caller's
+            // stream + the live dust/gore pools — the per-tick `Next(5)`
+            // dust gate (`:20062`), the spin hand-off's 6 gore + 21 dust
+            // draws (`:20365-20379`) and the servant burst's 10 dust
+            // (`:20189-20192`) were SKIPPED by the kind-arm entry (no rng),
+            // desyncing the UpdateNPCs stream every tick.
+            4 => self.update_eye_of_cthulhu(world, player, rng, dust, dust_ctx, gore),
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
@@ -6098,7 +6134,9 @@ impl Npc {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
             NpcKind::KingSlime => self.update_king_slime(world, player, rng),
-            NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
+            NpcKind::EyeOfCthulhu => {
+                unreachable!("aiStyle 4 rides the style axis (W4-d22)")
+            }
             NpcKind::ServantOfCthulhu => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
@@ -9329,21 +9367,41 @@ impl Npc {
         }
     }
 
-    /// Simplified `AI_015_KingSlime`: big hops toward the player, a teleport when the
-    /// player escapes, and a burst of blue slimes when it lands. Minion spawning is
-    /// reported through `spawn_minion` so the app can add them to its NPC list.
     /// `AI()`'s aiStyle-4 block — the Eye of Cthulhu's phase machine
-    /// (`NPC.cs`'s aiStyle-4 `if` in `AI()`, 841 C# lines). The state:
-    /// `ai[0]` the phase (0 the hover, 1/2 the spins, 3 the final),
-    /// `ai[1]` the sub-state, `ai[2]` the timer, `ai[3]` the dash/servant
-    /// counter. The expert-mode and `getGoodWorld` branches are out (the
-    /// port has neither difficulty flag) — the classic path is verbatim,
-    /// the skips carry the C# cites. The movement integrates directly
-    /// (`noTileCollide` + `noGravity`).
-    fn update_eye_of_cthulhu(&mut self, world: &World, player: &Player) {
+    /// (`NPC.cs:19960-20801`). The state: `ai[0]` the phase (0 the hover,
+    /// 1/2 the spins, 3 the final), `ai[1]` the sub-state, `ai[2]` the
+    /// timer, `ai[3]` the dash/servant counter. The expert-mode and
+    /// `getGoodWorld` branches are out (the port has neither difficulty
+    /// flag) — the classic path is verbatim, the skips carry the C# cites.
+    /// The movement integrates directly (`noTileCollide` + `noGravity`).
+    ///
+    /// W4-d22 (RNG census): the machine draws on the caller's `UpdateNPCs`
+    /// stream — the per-tick `Next(5)` dust gate (`:20062`, EVERY tick
+    /// before the dawn-flee return), the servant burst's 10 dust
+    /// (`:20189-20192`), the spin hand-off's 6 gore + 20 dust + the
+    /// per-tick spin dust pair (`:20365-20379`). The dust/gore pools carry
+    /// the C#'s own slot/pressure rolls (`Dust.cs:75-252`, `Gore.cs:1286-
+    /// 1456`); the sound plays queue on `wants_sound` (the sim drains them
+    /// at the C# call position, the S1-E-21g convention).
+    fn update_eye_of_cthulhu(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+        gore: &mut tr_core::gore::GorePool,
+    ) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let dead = player.hp <= 0;
+        // `:19977-19980` — the target re-pick when unset/dead/inactive.
+        // The port's single session player is always slot 0; the C#'s
+        // TargetClosest scan picks it (the S1-D-3p candidate seam).
+        if self.target < 0 || self.target == 255 || dead {
+            let cand = crate::npc_target::session_candidate_for(player, self.kind);
+            crate::npc_target::target_closest(self, world, &[cand], true, 4, 0);
+        }
         // `num6`: the aim angle — `Math.Atan2(y: bottom - 59 - target.Y - h/2,
         // x: center.X - target.X - w/2) + 1.57` wrapped to 2π.
         let mut num6 = (self.y + h - 59.0 - pcy).atan2(self.x + w * 0.5 - pcx) + 1.57;
@@ -9396,6 +9454,33 @@ impl Npc {
         if self.rotation > num6 - num7 && self.rotation < num6 + num7 {
             self.rotation = num6;
         }
+        // `:20062-20067` — the per-tick 1-in-5 dust gate: the `Next(5)`
+        // draw is consumed EVERY tick (the gate rolls before the dawn-flee
+        // return); on 0 the type-5 dust spawns at (x, y + h*0.25) over the
+        // width × h*0.5 box at the eye's velocity, then velocity.X *= 0.5
+        // / velocity.Y *= 0.1. W4-d22: the draw was skipped (no rng) — the
+        // UpdateNPCs stream desynced every tick.
+        if rng.next_max(5) == 0 {
+            let idx = dust.new_dust(
+                rng,
+                dust_ctx,
+                world,
+                Vec2::new(self.x, self.y + h * 0.25),
+                w as i32,
+                (h * 0.5) as i32,
+                5,
+                self.vx,
+                2.0,
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            );
+            if idx != tr_core::particles::DUST_SENTINEL {
+                let d = dust.slot_mut(idx);
+                d.velocity.x *= 0.5;
+                d.velocity.y *= 0.1;
+            }
+        }
         // `NPC.cs:20071-20074`: `Main.IsItDay() | dead` — the climb-away,
         // `velocity.Y -= 0.04f; EncourageDespawn(10)`. The 10-tick window is
         // the C#'s `timeLeft` cap (`:7249-7256`); the sim ticks it down and
@@ -9444,6 +9529,9 @@ impl Npc {
                     self.ai[1] = 1.0;
                     self.ai[2] = 0.0;
                     self.ai[3] = 0.0;
+                    // `:20142` — ClearTarget on the hover→dash flip.
+                    self.target = 255;
+                    self.net_update = true;
                 } else if (self.y + h < player.y && num14 < 500.0) && !dead {
                     self.ai[3] += 1.0;
                     if crate::eoc_fight::servant_due(self.ai[3], false) {
@@ -9454,7 +9542,34 @@ impl Npc {
                         let num19 = pcy - cy;
                         let num20 = 5.0 / (num18 * num18 + num19 * num19).sqrt();
                         let (vx, vy) = (num18 * num20, num19 * num20);
-                        self.wants_servant = Some((cx + vx * 10.0, cy + vy * 10.0, vx, vy));
+                        let (sx, sy) = (cx + vx * 10.0, cy + vy * 10.0);
+                        self.wants_servant = Some((sx, sy, vx, vy));
+                        // `:20188` — the int PlaySound(3) at the spawn point
+                        // (Style defaults 1; the sim drains it on the
+                        // UpdateNPCs stream, the S1-E-21g convention).
+                        self.wants_sound.push(NpcSoundRequest {
+                            cue: NpcSoundCue::NpcHit(1),
+                            x: sx,
+                            y: sy,
+                        });
+                        // `:20189-20192` — the 10-dust burst at the spawn
+                        // point, 20×20 box, type 5, velocity ×0.4.
+                        for _ in 0..10 {
+                            dust.new_dust(
+                                rng,
+                                dust_ctx,
+                                world,
+                                Vec2::new(sx, sy),
+                                20,
+                                20,
+                                5,
+                                vx * 0.4,
+                                vy * 0.4,
+                                0,
+                                tr_core::particles::Color::default(),
+                                1.0,
+                            );
+                        }
                     }
                 }
             } else if self.ai[1] == 1.0 {
@@ -9542,19 +9657,61 @@ impl Npc {
                     if self.ai[0] == 3.0 {
                         self.ai[2] = 0.0;
                     } else {
-                        // S1-E-21g — `:20364-20375`'s hand-off pair: the
-                        // int `PlaySound(3, pos)` (Style defaults 1) then
-                        // the case-15 roar `PlaySound(15, pos, 0)`. The
-                        // gore/dust burst between them draws Main.rand
-                        // (`:20367-20373`) — SKIPPED (the port's gore/dust
-                        // deviation), so the two plays queue back to back
-                        // (ANALYSIS, wave G). Neither play's position is
-                        // the centre — `base.position` (`:20364`/`:20375`).
+                        // `:20364-20375`'s hand-off: the int PlaySound(3)
+                        // (Style defaults 1), the 2×3 gore burst (types
+                        // 8/7/6, the Next(-30,31)×0.2 velocity pair each),
+                        // the 20-dust loop (the same pair), then the
+                        // case-15 roar. W4-d22: the gore/dust draws were
+                        // SKIPPED — restored on the caller's stream.
+                        //
+                        // ORDER DEVIATION (documented, ANALYSIS W4-d22):
+                        // the C# plays the hit cue BEFORE the gore/dust
+                        // draws; the port queues both plays on
+                        // `wants_sound` and the sim drains them AFTER the
+                        // machine's draws (the S1-E-21g convention) — the
+                        // hit cue's case-3 pitch draw lands after the
+                        // burst's rolls instead of before. The draw COUNT
+                        // is exact; the within-tick order of that one
+                        // pitch draw is the deferred sound-inline seam.
                         self.wants_sound.push(NpcSoundRequest {
                             cue: NpcSoundCue::NpcHit(1),
                             x: self.x,
                             y: self.y,
                         });
+                        // `:20365-20370` — 2 passes × 3 gores (8, 7, 6).
+                        for _ in 0..2 {
+                            for gore_type in [8, 7, 6] {
+                                let gvx = rng.next_range(-30, 31) as f32 * 0.2;
+                                let gvy = rng.next_range(-30, 31) as f32 * 0.2;
+                                gore.new_gore(
+                                    rng,
+                                    world,
+                                    Vec2::new(self.x, self.y),
+                                    Vec2::new(gvx, gvy),
+                                    gore_type,
+                                    1.0,
+                                );
+                            }
+                        }
+                        // `:20371-20374` — the 20-dust loop.
+                        for _ in 0..20 {
+                            let dvx = rng.next_range(-30, 31) as f32 * 0.2;
+                            let dvy = rng.next_range(-30, 31) as f32 * 0.2;
+                            dust.new_dust(
+                                rng,
+                                dust_ctx,
+                                world,
+                                Vec2::new(self.x, self.y),
+                                w as i32,
+                                h as i32,
+                                5,
+                                dvx,
+                                dvy,
+                                0,
+                                tr_core::particles::Color::default(),
+                                1.0,
+                            );
+                        }
                         self.wants_sound.push(NpcSoundRequest {
                             cue: NpcSoundCue::Roar(0),
                             x: self.x,
@@ -9562,6 +9719,26 @@ impl Npc {
                         });
                     }
                 }
+            }
+            // `:20379` — the per-tick spin dust: the Next(-30,31)×0.2
+            // velocity pair draws EVERY spin tick (outside the hand-off).
+            {
+                let dvx = rng.next_range(-30, 31) as f32 * 0.2;
+                let dvy = rng.next_range(-30, 31) as f32 * 0.2;
+                dust.new_dust(
+                    rng,
+                    dust_ctx,
+                    world,
+                    Vec2::new(self.x, self.y),
+                    w as i32,
+                    h as i32,
+                    5,
+                    dvx,
+                    dvy,
+                    0,
+                    tr_core::particles::Color::default(),
+                    1.0,
+                );
             }
             self.vx *= 0.98;
             self.vy *= 0.98;
@@ -9620,6 +9797,9 @@ impl Npc {
                 self.ai[1] = 1.0;
                 self.ai[2] = 0.0;
                 self.ai[3] = 0.0;
+                // `:20486-20487` — ClearTarget + netUpdate on the flip.
+                self.target = 255;
+                self.net_update = true;
             }
         } else if self.ai[1] == 1.0 {
             // S1-E-21g — `NPC.cs:20500`: the dash wind-up's case-36 roar
@@ -9657,6 +9837,8 @@ impl Npc {
             if self.ai[2] >= 130.0 {
                 self.ai[3] += 1.0;
                 self.ai[2] = 0.0;
+                // `:20561` — ClearTarget on the dash-chain reset.
+                self.target = 255;
                 self.rotation = num6;
                 if self.ai[3] >= 3.0 {
                     self.ai[1] = 0.0;
@@ -21708,6 +21890,52 @@ mod tests {
         servant.update(&w, &mut player, 1.0 / 60.0);
         assert!(servant.hp > 0);
     }
+
+    /// W4-d22 (style-4 RNG census): a plain hover tick draws exactly ONE
+    /// `Next(5)` (the dust gate, `NPC.cs:20062`) on the caller's stream —
+    /// the gate rolls EVERY tick before the dawn-flee return. The witness
+    /// replays the draw against a same-seeded twin: the axis passes the
+    /// caller's stream through (the pre-W4-d22 kind-arm entry took no rng
+    /// and skipped the gate, desyncing UpdateNPCs every tick).
+    #[test]
+    fn w4_d22_the_eoc_hover_tick_draws_the_one_dust_gate() {
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        let mut eye = Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
+        eye.hp = eye.max_hp;
+        // Park the eye in the hover, far from the servant-burst window.
+        eye.ai = [0.0, 0.0, 0.0, 0.0];
+        eye.x = 80.0 * TILE_PX;
+        eye.y = 40.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = rng.clone();
+        let _gate = witness.next_max(5);
+        eye.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "one Next(5) gate draw, nothing else");
+        assert_eq!(eye.ai[2], 1.0, "the hover counter climbed");
+    }
+
+    /// W4-d22: the dawn-flee tick STILL draws the `Next(5)` gate (the C#
+    /// rolls it at `:20062` before the `:20069` day/dead return) — the
+    /// climb-away does not skip the draw.
+    #[test]
+    fn w4_d22_the_eoc_dawn_flee_tick_still_draws_the_gate() {
+        let mut w = ground_air();
+        w.day_time = true; // the dawn flee
+        let mut player = surface_player(&w);
+        let mut eye = Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
+        eye.hp = eye.max_hp;
+        let mut rng = UnifiedRandom::new(11);
+        let mut witness = rng.clone();
+        let _gate = witness.next_max(5);
+        eye.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "the flee tick draws the gate too");
+        assert!(eye.despawn_timer >= 0, "EncourageDespawn(10) armed");
+    }
+
     fn the_witch_doctor_arrival_gate_and_shop() {
         // The arrival: the downedQueenBee gate (constants-off in the port).
         assert!(!crate::spawner::spawn_allowed_witch_doctor(false));

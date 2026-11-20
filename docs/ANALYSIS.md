@@ -39286,3 +39286,49 @@ Deliberate folds (documented):
 Verification: code-only — every phase re-read against the cited C# windows;
 the seam signatures checked by read/grep. The witness tests
 (`npc_ai_style3.rs`) are WRITTEN, NOT RUN — no cargo/tests invoked.
+## W4-d22 — the aiStyle-4 EoC RNG census + fix (code-only)
+
+The Eye of Cthulhu (`NPC.cs:19960-20801`) rode the kind-match arm
+(`update_eye_of_cthulhu(world, player)`) with NO rng parameter — every
+`Main.rand` draw in the C# block was skipped, desyncing the `UpdateNPCs`
+stream on EVERY tick the eye lives. The census (the classic path; the
+expert/getGood arms are constants-off):
+
+- `:20062` — `Next(5)` EVERY tick (the 1-in-5 type-5 dust gate), rolled
+  BEFORE the `:20069` dawn-flee return. The dominant per-tick draw.
+- `:20188-20192` — the servant burst: `PlaySound(3)` (case-3 pitch draw)
+  + 10 `Dust.NewDust` (each 6+ pool rolls).
+- `:20318-20319` — the expert spin servant burst's `Next(-200,200)` pair
+  (expert-only, constants-off).
+- `:20365-20374` — the spin hand-off (phase 1→2): 2×3 `Gore.NewGore`
+  (types 8/7/6, each a `Next(-30,31)`×0.2 velocity pair + 2 pool rolls)
+  + 20 `Dust.NewDust` (the same pair + pool rolls).
+- `:20379` — the per-tick spin dust: a `Next(-30,31)`×0.2 pair EVERY
+  spin tick.
+- `:20570/:20618-20651/:20792` — the expert rage sub-states' draws
+  (expert-only, constants-off).
+
+The fix: the machine rides the aiStyle-4 axis arm with the caller's
+stream + the live dust/gore pools (`update_rng_dust_gore`, the sim threads
+`app.gore` alongside `app.dust`). The dust/gore pools carry the C#'s own
+slot/pressure rolls (`Dust.cs:75-252`, `Gore.cs:1286-1456` — the faithful
+S1-E-1/S1-E-4 ports). The sound plays queue on `wants_sound` (the sim
+drains them at the C# call position). Also restored: the `ClearTarget`
+sites (`:20142/:20486/:20561`), the `netUpdate` flags, and the
+`:19977-19980` target re-pick.
+
+ORDER DEVIATION (documented): the C# plays the spin hand-off's hit cue
+(`:20364`) BEFORE the gore/dust draws; the port queues both plays on
+`wants_sound` and the sim drains them AFTER the machine's draws (the
+S1-E-21g convention) — the hit cue's case-3 pitch draw lands after the
+burst's rolls instead of before. The draw COUNT is exact; the within-tick
+order of that one pitch draw is the deferred sound-inline seam (the same
+deviation the wave-G hand-off already carried).
+
+The expert/getGood arms stay constants-off (the port has no difficulty
+flag) — their draws (`:20318-20319`, `:20570`, `:20618-20651`, `:20792`)
+are unreachable in classic, so the census is complete for the live path.
+
+Verification: code-only — every draw site re-read against the cited C#
+windows; the pool signatures checked by read/grep. The 2 stream-parity
+witnesses (`npc.rs`) are WRITTEN, NOT RUN — no cargo/tests invoked.
