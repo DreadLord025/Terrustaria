@@ -4439,21 +4439,24 @@ impl Projectile {
         }
         // `:66615-66636` — the fire window: the mana pays only on the
         // interval ticks (`flag10 = !flag8 || CheckMana(mana, pay: true)`,
-        // `Player.cs:52576-52594`'s pay arm at the 1f multiplier), and the
-        // channel gate spawns the six beams at `ai[0] == 1` or kills.
+        // `Player.cs:52576-52617`). Under the shipped ManaV2
+        // (`DebugOptions.cs:85`, S1-P-i19) CheckMana never refuses: enough
+        // mana pays `(int)(mana * manaCost)`, not enough drains to 0 and
+        // arms `slowMagicUse` — the channel keeps burning at 0 mana, the
+        // Kill arm only fires on release/CC. The `noItems` gate has no port
+        // field (`:4364`'s fold).
         let mut spawn = None;
         if fire_window && self.owner == 0 {
             if let Some(p) = player.as_deref_mut() {
                 let mana_ok = !interval_tick
                     || match item {
-                        Some(item) => {
-                            if p.mana >= item.mana {
-                                p.mana -= item.mana;
-                                true
-                            } else {
-                                false
-                            }
-                        }
+                        Some(item) => crate::regen::check_mana(
+                            &mut p.mana,
+                            &mut p.slow_magic_use,
+                            item.mana,
+                            p.mana_cost,
+                            true,
+                        ),
                         None => true,
                     };
                 if p.channel && mana_ok && !p.cced() {
@@ -26876,10 +26879,17 @@ mod magic_ai_tests {
         }
         assert!(pool.slots()[holder].active, "no interval tick yet");
         step_player(&mut pool, &mut w, &mut player);
+        // S1-P-i19: under the shipped ManaV2 (`DebugOptions.cs:85`) the
+        // 30th tick's `CheckMana` does NOT refuse (`Player.cs:52610-52614`):
+        // 11 < 12 drains the bar to 0, arms `slowMagicUse` and returns true
+        // — the channel keeps burning. The Kill arm only fires on the
+        // release/CC gates (`:66614`), never on low mana.
         assert!(
-            !pool.slots()[holder].active,
-            "the 30th tick's failed `CheckMana` kills (`:66617-66621`)"
+            pool.slots()[holder].active,
+            "ManaV2: the empty-bar pay keeps the channel alive"
         );
+        assert_eq!(player.mana, 0, "the bar drained to 0");
+        assert!(player.slow_magic_use, "DoRunOutOfManaEffect armed the slow cast");
 
         let (mut w, mut pool, mut player, holder) = prism_rig();
         player.mana = 12;
@@ -26889,6 +26899,7 @@ mod magic_ai_tests {
         let p = &pool.slots()[holder];
         assert!(p.active, "12 mana pays exactly (`statMana >= num`)");
         assert_eq!(player.mana, 0, "the pay zeroes the mana");
+        assert!(!player.slow_magic_use, "the exact pay never arms the slow cast");
     }
 
     #[test]

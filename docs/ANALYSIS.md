@@ -6710,7 +6710,11 @@ Deviations:
   (see "DoT debuffs (M2-BUFF-3)" below).
 - **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
   deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
-- **TheDebugOptions.ManaV2 block** is a debug cheat and is not ported.
+- **The `DebugOptions.ManaV2` block is the SHIPPED mana machine** — S1-P-i19
+  corrected the earlier "debug cheat, not ported" reading: the static ctor
+  sets `ManaV2 = true` (`Testing/DebugOptions.cs:85`) and nothing in the
+  decompile ever writes it false, so the 1.4.5 mana rework is the default
+  behaviour. See "The mana machinery (S1-P-i19)" below.
 - **Integration-test pace corrected** вЂ” `health_regenerates_after_a_delay`
   bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
   `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
@@ -32870,3 +32874,159 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## The mana machinery (S1-P-i19)
+
+**Headline finding — `DebugOptions.ManaV2` is the SHIPPED mana machine.** The
+static ctor sets `ManaV2 = true` (`Testing/DebugOptions.cs:85`) and a census of
+the whole decompile (game + ReLogic) finds NO write that ever sets it false —
+no command, no config, no menu. The earlier ANALYSIS note ("a debug cheat, not
+ported") was wrong: the 1.4.5 mana rework IS the default behaviour, and the
+port's pre-i19 `CheckMana` implemented the legacy V1 refusal the source never
+uses. `regen.rs::MANA_V2` folds the flag to a `true` constant; the V1 lanes
+stay unreachable exactly as in the source.
+
+### The census (C# → port verdicts)
+
+Mana-cost modifiers (`Player.manaCost`, reset 1f `Player.cs:18334`):
+- Buff 29 Magic Power −0.02 (`:11891`) — was ported (`player.rs` buff scan). OK.
+- `manaFlower` −0.08 ONCE after the equip loop (`:12962-12965`) — was WRONG:
+  the port folded −0.08 per flower item (555/4001), so two flowers stacked
+  −0.16 and the Arcane Flower 3991 / Magnet Flower 4000 granted nothing.
+  Fixed: a `mana_flower` bool armed by 555 (`:15591-15594`), 3991
+  (`:14405-14410`, also +5 magic crit / +5% magic damage), 4000
+  (`:14455-14457`) and 4001 (`:14459-14463`); the ONE −0.08 row applies
+  post-loop; `ResetEffects` clears (`:18721`).
+- Nature's Gift 223 −0.06 (`:15110-15113`) — was ported. OK.
+- Armor pieces: robes 1282-1287 (−0.05…−0.15, `:13722-13751`), Amber Robe
+  4256 shares 1286 (`:13742`), Mystic Robe 2279 −0.1 (`:13302-13307`),
+  Apprentice 3797 −0.1 (`:13132-13136`), Dark Artist 3875 −0.15
+  (`:13204-13208`), Crystal Assassin 4982 −0.1 (`:13621-13627`), Spectre
+  Hood 1003 −0.17 (`:13651-13656`), Spectre Mask 2189 −0.13
+  (`:13679-13685`), Nebula Helmet 2760 −0.15 (`:13918-13924`). The port
+  had all but 4256 and 2760 — added.
+- Caster sets: Jungle −0.16, Cobalt −0.14, Mythril −0.17, Adamantite −0.19
+  (`ArmorSetBonuses.cs:278/166/181/196`) — were ported (`tr-core` SET_STATS). OK.
+- Prefixes: `Item.Prefix`'s `mcst` (`Item.cs:845-899`) rounds the item's
+  `mana` by banker's rounding (`Item.cs:580`) — was ported
+  (`prefix.rs::prefixed_stats`). OK.
+
+`statManaMax2` (effective max):
+- WRONG (accumulation): the port's `mana_max` never rebased, so the per-tick
+  `+=` rows (set +60, buff 29 +20) grew unbounded. Fixed: `mana_max_base`
+  (= `statManaMax`, 20 at creation `:56075`) + the `ResetEffects` rebase
+  `statManaMax2 = statManaMax` (`:18389`).
+- MISSING rows added: the per-piece `statManaMax2 +=` table
+  (`:13274-13924`: jungle/ancient-cobalt 228/229/230 + 960/961/962, caster
+  heads 371/376/400/1207/1212/1217/558/4898, spectre 1003/2189, robes
+  1282-1287/4256, nebula 2760, ancient battle 3777/3778) and the accessory
+  switch (`:14922-14935`: Band of Starpower 111 + cuffs 1595/2221 +40; Mana
+  Regeneration Band 982 / Restoration Shield 6188 / Mystic Arts Sash 6189
+  +40 AND `manaRegenBonus += 60`).
+- The Mana Crystal use arm (`ItemCheck_UseManaCrystal` `:45274-45288`,
+  `statManaMax += 20`) is UNPORTED — the whole crystal consumable-stat family
+  (Life Crystal `:45306` too) has no port seam; the base stays 20. Recorded
+  gap, not a regression.
+
+`CheckMana` / the pay path (`:52576-52617`, `ItemCheck_ActuallyPayMana`
+`:52638-52655`):
+- WRONG (the headline): the port refused the use when `mana < cost`. Under
+  ManaV2 the check NEVER refuses — enough mana pays `(int)(amount*manaCost)`
+  (`:52579-52586`); not enough drains the bar to 0, arms `slowMagicUse`
+  (`DoRunOutOfManaEffect` `:52619-52622`) and returns true (`:52610-52614`;
+  the manaFlower lane `:52588-52608` lands the same V2 arm after its
+  QuickMana). Fixed: `regen.rs::check_mana` + the weapon pay block
+  (`world_sim/editing.rs`) and the Last Prism channel pay
+  (`projectile.rs::ai_last_prism`, `Projectile.cs:66613`).
+- The slow cast: `ApplyItemAnimation`'s ManaV2 arm (`:4478-4483`) stretches
+  the use animation ×2.5 (`GetSlowMagicMultiplier` `:47046-47049`); the same
+  multiplier rides `ApplyItemTime` at the shoot (`:47187-47194`). The port's
+  non-ammo mana weapons fire at the use start, so the stretched swing IS the
+  cadence — applied at the swing arm. `UndoSlowMagicUse` (`:51954-51966`)
+  scales the four timers by 1/2.5 floored at 2 ticks on a mid-swing potion
+  drink. The `slowMagicUse` field is NOT reset by ResetEffects (only
+  `CheckMana`'s entry `:52578`, the skip arm `:52647` and Undo clear it).
+- The Silenced refusal (`:52221-52224`) is upstream of CheckMana and survives
+  ManaV2 — kept. The spaceGun skip (`:52695-52698`) clears `slowMagicUse`
+  (`:52645-52648`) and pays nothing — kept.
+
+Mana regen delay (`ApplyManaRegenerationDelay` `:19396-19416`,
+`UpdateManaRegen` `:19418-19563`):
+- WRONG: the port applied the delay once per cast. The C# re-arms it EVERY
+  animation tick of a mana item (`ItemCheck` `:42808-42813` →
+  `ItemCheck_ApplyManaRegenDelay` `:50587-50593`), not once. Fixed: a per-tick
+  site at the `update_editing` head (the `app.swing > 0` stand-in) + the
+  use-start re-arm from the post-pay mana.
+- WRONG: the port passed `buff = false`. The C# reads `manaRegenBuff`
+  (`:19399`). Fixed: both sites pass `p.mana_regen_buff`.
+- MISSING (ManaV2): the delay cap (`:19403-19415`) — cap 4, then mana > 0
+  pins 4; only the empty bar keeps the `((1−mana/max)·240+45)·0.7` curve.
+  Added to `apply_mana_regen_delay`.
+- MISSING (ManaV2): the sub-4 window (`:19437-19441`) counts as expired with
+  flag3, scaling the regen line ×0.05 (`:19470-19475`); the floor of 2 still
+  applies. Added to `update_mana_regen`.
+- MISSING (ManaV2): the animation gate (`:19542-19545`) clears flag4 AFTER
+  the point was granted — the bar still fills mid-animation, only the
+  full-bar sound/dust (`:19550-19560`) is suppressed. Added via
+  `ManaRegenFlags::item_in_use` (the C# `flag = itemAnimation > 0 ||
+  reuseDelay > 0`, `:19420`), fed by the sim from `app.swing`/`app.reuse_delay`.
+- The full-bar trigger now fires only when a point was granted THIS chunk
+  (flag4), matching `:19550` — an idling full bar no longer re-fires.
+- `manaRegenDelayBonus` has NO grant source in the source (`:18656` is its
+  only write) and the arcane crystal is unported — both stay folded out.
+
+Mana Sickness (buff 94) — **not for weapons**:
+- `CheckMana` has NO buff grant; the ONLY grant site is `ApplyLifeAndOrMana`
+  (`:51933-51943`, `manaSickTime = 300` `:57101`) on a mana potion drink.
+  Added the potion drink arm (`world_sim/editing.rs`): restore `healMana`
+  capped at max, grant buff 94 for 300 (additive cap 600, `buffs.rs`), queue
+  `ManaEffect`. The stock mana potions are `potion: false` (`Item.cs:2680`),
+  so no Potion Sickness gate rides them.
+- The buff arm (`:10318-10326`) sets `manaSick` + `manaSickReduction =
+  0.25·buffTime/300` (ASSIGN, one slot per type); the recalc multiplies
+  `magicDamage *= 1 − reduction` (`:25900-25902`). Added to the `player.rs`
+  buff scan + a post-grant multiply. `ResetEffects` clears `manaSick`
+  (`:18592`).
+- `ApplyManaPotionManaHeat` (`:51968-52003`) has NO caller in the source —
+  dead code, not ported. The `manaHeat` multiply (`:25904-25911`) stays ×1
+  (the star-pickup heat `:35071` has no port seam). The
+  `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
+  false in the shipped statics (`DebugOptions.cs:86`) — folded out.
+
+### Deliberate folds / gaps (recorded)
+- The QuickMana potion seam (`QuickMana` `:5598-5627`,
+  `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
+  manaFlower lane lands the same empty-bar arm as the plain lane, so
+  `check_mana` folds the flower branch into the V2 arm. The quick-mana
+  keybind (`Action::QuickMana`) has no sim consumer yet.
+- The other `CheckMana` projectile sites — Glacier Fang (`Projectile.cs:36943`,
+  AI_208), Life Drain (`:42662`, AI_185), Medusa (`:44567`, AI_100), the
+  aiStyle-75 Clinger/Shadowbeam members (`:66204`/`:66479`) — have no ported
+  AI arms; only the Last Prism (633) is ported and was fixed. The Forbidden
+  Storm command (`Player.cs:56870`) and the QuickBuff mana pay (`:5881-5884`)
+  have no port seam.
+- The star pickup (`PickupItem` `:35065-35078`, +100 mana + heat) and the
+  Mana/Life Crystal use arms are unported consumable/pickup families.
+- The slow-cast ×2.5 is applied to the swing (animation) at the use start;
+  the port's non-ammo mana weapons fire there, so the separate `ApplyItemTime`
+  site (`:47187`) coincides. Ammo shooters with mana (none stock) would need
+  the `item_time` stretch too — recorded.
+
+### RNG order
+No new RNG draws. `check_mana`, `apply_mana_regen_delay` and
+`update_mana_regen` are pure arithmetic; the full-bar dust's 5×
+`Main.rand.Next(20,26)` (`:19555`) stays deferred to M6-AUDIO (the trigger
+is returned, not drawn). The potion drink's `ManaEffect` combat text draws
+ride the existing `UpdatePlayers` stream through the cuffs' drain
+convention — no new stream, no reorder. The weapon pay's crit/spawn rolls
+are unchanged (the pay now always succeeds, so the downstream rolls run on
+every cast exactly as the C#'s ManaV2 does).
+
+**Verification.** Code-only: every C# site was re-read line-by-line
+(`Player.cs:52549-52708`, `:19396-19563`, `:42808-42813`, `:50587-50593`,
+`:51888-51966`, `:10318-10326`, `:25900-25911`, `:14922-14935`,
+`:12962-12965`, `DebugOptions.cs:74-91`); the port seams were checked by
+read/grep (the `Player` field additions, the `update_survival` feed, the
+`BuffSlots::add_buff` cap, the `prefix.rs` rounding). The witness tests
+(`regen.rs` ×6, `player.rs` ×3, `world_sim/editing.rs` ×6, the rewritten
+`projectile.rs` Last Prism pair) are WRITTEN, NOT RUN — **no compiler
+invoked**.

@@ -956,7 +956,48 @@ pub struct Player {
     /// subtract from it. `CheckMana` pays `(int)(item.mana * manaCost)`
     /// (`:5881-5884`).
     pub mana_cost: f32,
+    /// `Player.statManaMax2` — the EFFECTIVE max, reset to [`Self::mana_max_base`]
+    /// every tick by `ResetEffects` (`Player.cs:18389`) and re-added by the
+    /// armor pieces / accessories / set bonuses / Magic Power below.
     pub mana_max: i32,
+    /// `Player.statManaMax` — the BASE max a character owns (20 at creation,
+    /// `Player.cs:56075`; +20 per Mana Crystal used, `ItemCheck_UseManaCrystal`
+    /// `:45274-45288` — the crystal-use arm is unported, so the base stays 20).
+    /// `ResetEffects` rebases `statManaMax2 = statManaMax` (`:18389`); without
+    /// this the per-tick `mana_max +=` rows would accumulate unbounded.
+    pub mana_max_base: i32,
+    /// `Player.manaFlower` (`Player.cs:1876`-adjacent field, armed by the Mana
+    /// Flower 555 `:15591-15594`, Arcane Flower 3991 `:14405-14406`, Magnet
+    /// Flower 4000 `:14455-14457` and Mana Cloak 4001 `:14459-14460`). The
+    /// `manaCost -= 0.08f` row applies ONCE after the equip loop
+    /// (`UpdateEquips` `:12962-12965`) — a bool, so two flowers do not stack.
+    /// `ResetEffects` clears it (`:18721`). It also gates `CheckMana`'s
+    /// QuickMana lane (`:52588`), which under ManaV2 lands the same empty-bar
+    /// arm as the plain lane (the potion seam is unported).
+    pub mana_flower: bool,
+    /// `Player.slowMagicUse` (`Player.cs:978`): the ManaV2 out-of-mana cast
+    /// flag. `CheckMana` clears it on entry (`:52578`) and arms it when the
+    /// bar drains to 0 (`DoRunOutOfManaEffect` `:52619-52622`); while armed a
+    /// mana item's use animation/time stretch ×2.5 (`ApplyItemAnimation`
+    /// `:4478-4483`, `ItemCheck_Shoot` `:47187-47194`, `GetSlowMagicMultiplier`
+    /// `:47046-47049`). A mana potion drunk mid-swing undoes it
+    /// (`UndoSlowMagicUse` `:51954-51966`).
+    pub slow_magic_use: bool,
+    /// `Player.manaSick` / `manaSickReduction` (`Player.cs:974-976`): the Mana
+    /// Sickness debuff (buff 94). ONLY mana potions grant it
+    /// (`ApplyLifeAndOrMana` `:51933-51943`, `manaSickTime = 300` `:57101`) —
+    /// never a weapon (`CheckMana` has no buff grant). The buff arm
+    /// (`UpdateBuffs` `:10318-10326`) sets `manaSickReduction = 0.25 *
+    /// buffTime / 300`, and the damage recalc multiplies `magicDamage *=
+    /// 1 - manaSickReduction` (`:25900-25902`). `ResetEffects` clears
+    /// `manaSick` (`:18592`).
+    pub mana_sick: bool,
+    pub mana_sick_reduction: f32,
+    /// `Player.cs:19420`'s `flag = itemAnimation > 0 || reuseDelay > 0` —
+    /// the ManaV2 animation gate on the mana refill (`:19542-19545`). The
+    /// sim caller feeds the App's swing/reuse timers each tick (the
+    /// `frame_inputs` convention); the bare `update` callers keep false.
+    pub mana_regen_item_in_use: bool,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -2040,6 +2081,12 @@ impl Player {
             mana: 20,
             mana_cost: 1.0,
             mana_max: 20,
+            mana_max_base: 20,
+            mana_flower: false,
+            slow_magic_use: false,
+            mana_sick: false,
+            mana_sick_reduction: 0.0,
+            mana_regen_item_in_use: false,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             black_belt: false,
@@ -2590,6 +2637,14 @@ impl Player {
     /// `Player.cs:4531-4538`) — the caller owns `Main.combatText`.
     pub(crate) fn take_mana_effect(&mut self) -> Option<i32> {
         self.pending_mana_effect.take()
+    }
+
+    /// `Player.ManaEffect` (`Player.cs:4531-4538`): queue the HealMana
+    /// combat-text amount. The cuffs' `Hurt` arm writes the field directly
+    /// (`:38299`); the potion drink (`ApplyLifeAndOrMana` `:51950`) and the
+    /// star pickups (`:35072`) call the method — this is its port.
+    pub(crate) fn queue_mana_effect(&mut self, amount: i32) {
+        self.pending_mana_effect = Some(amount);
     }
 
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
@@ -3768,6 +3823,20 @@ impl Player {
         if crate::accessory_combat::apply_combat_accessory(kind, self) {
             return;
         }
+        // `ApplyEquipFunctional`'s mana stat switch (`Player.cs:14922-14935`,
+        // a `switch` INDEPENDENT of the per-type `if` chain the match below
+        // ports — both run per slot): the Band of Starpower 111 and the
+        // cuffs 1595/2221 add +40 `statManaMax2`; the Mana Regeneration Band
+        // 982, the Restoration Shield 6188 and the Mystic Arts Sash 6189 add
+        // +40 AND `manaRegenBonus += 60` (`:14933`).
+        match kind {
+            111 | 1595 | 2221 => self.mana_max += 40,
+            982 | 6188 | 6189 => {
+                self.mana_max += 40;
+                self.mana_regen_bonus += 60;
+            }
+            _ => {}
+        }
         match kind {
             // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
             53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
@@ -3946,9 +4015,20 @@ impl Player {
             908 => self.lava_max += 420,
             // The Worm Scarf (`:15081-15084`): +17% endurance.
             3224 => self.endurance += 0.17,
-            // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
-            // Nature's Gift (`:15110-15113`, −0.06).
-            555 => self.mana_cost -= 0.08,
+            // The Mana Flower (`:15591-15594`), the Arcane Flower
+            // (`:14405-14410` — also +5 magic crit / +5% magic damage; the
+            // aggro -400 has no port consumer), the Magnet Flower
+            // (`:14455-14457`, its manaMagnet half unported) and the Mana
+            // Cloak (`:14459-14460`) arm `manaFlower`; the ONE -0.08
+            // `manaCost` row applies after the equip loop (`:12962-12965`),
+            // so two flowers do not stack. Nature's Gift (`:15110-15113`)
+            // keeps its own per-item -0.06 row.
+            555 | 4000 => self.mana_flower = true,
+            3991 => {
+                self.mana_flower = true;
+                self.magic_crit += 5;
+                self.magic_damage += 0.05;
+            }
             223 => self.mana_cost -= 0.06,
             // The Ice Skates (`:15089-15092`).
             950 => self.ice_skate = true,
@@ -4005,8 +4085,9 @@ impl Player {
             // The Magic Cuffs (1595, `ApplyEquipFunctional`
             // `Player.cs:14936-14939`) and the Celestial Cuffs (2221,
             // `:14949-14953`) arm `magicCuffs`. Their +40 `statManaMax2`
-            // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
-            // (`:14951`) is a separate unported family.
+            // rows ride the stat arms below (the C# switch `:14922-14928`
+            // and these `if`s are independent — both run per slot). 2221's
+            // `manaMagnet` half (`:14951`) is a separate unported family.
             1595 | 2221 => self.magic_cuffs = true,
             // The S1-C-7 wave B retaliate family (`Player.Hurt`
             // `:38401-38517`): the star cloak + its four override kinds, the
@@ -4030,10 +4111,11 @@ impl Player {
                 self.bee_cloak_override = true;
             }
             // Mana Cloak 4001 (`:14459-14463`): `manaFlower` + the cloak +
-            // the manaCloak override (star type 723). The port folds
-            // `manaFlower` to its -0.08 `manaCost` row (the 555 convention).
+            // the manaCloak override (star type 723). The flower flag arms
+            // here; the ONE -0.08 `manaCost` row rides the post-loop
+            // `mana_flower` fold (`:12962-12965`, the 555 convention).
             4001 => {
-                self.mana_cost -= 0.08;
+                self.mana_flower = true;
                 self.star_cloak = true;
                 self.mana_cloak_override = true;
             }
@@ -4527,6 +4609,16 @@ impl Player {
         self.stat_defense = 0;
         // `:18334`: `manaCost = 1f` — the reductions re-apply below.
         self.mana_cost = 1.0;
+        // `:18389`: `statManaMax2 = statManaMax` — the effective max rebases
+        // to the owned base every tick; the piece/accessory/set/buff rows
+        // below re-add (without this they accumulated per tick).
+        self.mana_max = self.mana_max_base;
+        // `:18721`: `manaFlower = false` — the flower accessories re-arm it
+        // in the equip pass; the ONE -0.08 row applies after the loop.
+        self.mana_flower = false;
+        // `:18592`: `manaSick = false` — the buff-94 arm re-arms per tick
+        // (the reduction value itself is only written by that arm, `:10326`).
+        self.mana_sick = false;
         // `:18497`: `endurance = 0f` — the rows below re-apply.
         self.endurance = 0.0;
         // `:18323-18324`: the penetration reset.
@@ -4618,22 +4710,51 @@ impl Player {
             }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
             // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
-            // Hat robes (1282-1287, −0.05…−0.15 by tier), the Crystal
-            // Assassin head (4982, −0.1), the Spectre hood/mask (1003 −0.17,
-            // 2189 −0.13), the Mystic Robe (2279, −0.1), the Apprentice/
-            // Dark Artist rows (3797 −0.1, 3875 −0.15).
+            // Hat robes (1282-1287, −0.05…−0.15 by tier; the Amber Robe 4256
+            // shares the 1286 row, `:13742-13746`), the Crystal Assassin
+            // head (4982, −0.1), the Spectre hood/mask (1003 −0.17, 2189
+            // −0.13), the Mystic Robe (2279, −0.1), the Apprentice/Dark
+            // Artist rows (3797 −0.1, 3875 −0.15), the Nebula Helmet (2760,
+            // −0.15, `:13918-13924`).
             self.mana_cost -= match kind {
                 1282 => 0.05,
                 1283 => 0.07,
                 1284 => 0.09,
                 1285 => 0.11,
-                1286 => 0.13,
+                1286 | 4256 => 0.13,
                 1287 => 0.15,
                 2279 | 3797 | 4982 => 0.1,
                 2189 => 0.13,
-                3875 => 0.15,
+                3875 | 2760 => 0.15,
                 1003 => 0.17,
                 _ => 0.0,
+            };
+            // `GrantArmorBenefits`' per-piece `statManaMax2 +=` rows
+            // (`Player.cs:13274-13924`): the caster heads and the jungle/
+            // ancient-cobalt pieces. The set bonuses' own +60 rows ride
+            // `set_stats` below (once per completed set).
+            self.mana_max += match kind {
+                228 | 960 => 40,   // `:13343-13347` Jungle Hat / Ancient Cobalt Helmet
+                229 | 961 => 20,   // `:13348-13352` Jungle Shirt / Ancient Cobalt Breastplate
+                230 | 962 => 20,   // `:13353-13357` Jungle Pants / Ancient Cobalt Leggings
+                371 => 40,         // `:13389-13394` Cobalt Hat
+                376 => 60,         // `:13419-13423` Mythril Hood
+                400 => 80,         // `:13451-13456` Adamantite Headgear
+                1207 => 60,        // `:13491-13496` Palladium Headgear
+                1212 => 80,        // `:13528-13532` Orichalcum Headgear
+                1217 => 100,       // `:13558-13563` Titanium Headgear
+                558 | 4898 => 100, // `:13585-13590` Hallowed Headgear / Ancient Hallowed Headgear
+                1003 => 80,        // `:13651-13656` Spectre Hood
+                2189 => 60,        // `:13679-13685` Spectre Mask
+                1282 => 20,        // `:13722-13726` Amethyst Robe
+                1283 => 40,        // `:13727-13731` Topaz Robe
+                1284 => 40,        // `:13732-13736` Sapphire Robe
+                1285 => 60,        // `:13737-13741` Emerald Robe
+                1286 | 4256 => 60, // `:13742-13746` Ruby Robe / Amber Robe
+                1287 => 80,        // `:13747-13751` Diamond Robe
+                2760 => 60,        // `:13918-13924` Nebula Helmet
+                3777 | 3778 => 40, // `:13274-13285` Ancient Battle Armor Shirt/Pants
+                _ => 0,
             };
         }
         // `:12988-13003`: the Celestial Stone bundle — S1-C-12 wave E
@@ -4879,6 +5000,22 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
+                // `:10318-10326` — Mana Sickness (94): ONLY mana potions
+                // grant it (`ApplyLifeAndOrMana` `:51938`, 300 ticks
+                // `manaSickTime` `:57101`) — never a weapon. The arm arms
+                // `manaSick` and ASSIGNS (not adds — one slot per type,
+                // `AddBuff` merges) `manaSickReduction = 0.25 * buffTime /
+                // 300`; the damage recalc consumes it below
+                // (`:25900-25902`). The `DebugOptions.ManaPotionDelay`
+                // half (`:10320-10323`) is false in the shipped statics
+                // (`DebugOptions.cs:86`) — folded out.
+                94 => {
+                    if let Some(i) = self.buffs.find_buff_index(94) {
+                        self.mana_sick = true;
+                        self.mana_sick_reduction =
+                            0.25 * (self.buffs.buff_time[i] as f32 / 300.0);
+                    }
+                }
                 // The WellFed tiers (`:11931-11969`): the per-slot stat adds —
                 // the defense rows (26 +2, 206 +3, 207 +4) since M3-EQUIP-5;
                 // the minion halves wait for M4-MINION.
@@ -5010,6 +5147,13 @@ impl Player {
         // OR grants with no RNG draw — a second pass over the same slots
         // is order-identical to the C#'s interleaved rows.
         crate::accessory_defense::apply_defense_accessories(self);
+        // `UpdateEquips`' post-loop `manaFlower` fold (`Player.cs:12962-
+        // 12965`): ONE `manaCost -= 0.08f` for the flag the four flower
+        // accessories armed (555/3991/4000/4001) — a bool, so stacking two
+        // flowers still costs only 0.08.
+        if self.mana_flower {
+            self.mana_cost -= 0.08;
+        }
         // S1-C-12 wave D — `Player.UpdateArmorSets` (`Player.cs:25685` →
         // `:16304-16306`: `ArmorSetBonuses.GetCompleteSet(...)?.Effect`):
         // the completed LOW-tier set's FLAG halves (shadow/crimson/meteor/
@@ -5021,6 +5165,16 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // `Player.cs:25900-25902` — the Mana Sickness damage cut: after every
+        // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
+        // multiplies `magicDamage *= 1 - manaSickReduction`. The `manaHeat`
+        // multiply (`:25904-25911`) stays ×1 — the heat sources (mana potions
+        // `ApplyManaPotionManaHeat` `:51968-52003` is itself uncalled in the
+        // source, and the star pickup `:35071`) have no port seam yet
+        // (ANALYSIS "The mana machinery (S1-P-i19)").
+        if self.mana_sick {
+            self.magic_damage *= 1.0 - self.mana_sick_reduction;
+        }
         // `UpdateJumpHeight` (`Player.cs:19618`): the flat jump-speed add
         // rides after the grants (the Amphibian Boots' +1.6); a non-additive
         // mount still overwrites the pair in `update_mount` (`:19628-19629`).
@@ -8530,7 +8684,14 @@ impl Player {
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
-            update_mana_regen(&mut self.regen, &in_, &mut self.mana);
+            update_mana_regen(
+                &mut self.regen,
+                &in_,
+                &mut self.mana,
+                crate::regen::ManaRegenFlags {
+                    item_in_use: self.mana_regen_item_in_use,
+                },
+            );
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
@@ -9621,6 +9782,80 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert!((p.mana_cost - (1.0 - 0.17 - 0.02)).abs() < 1e-4);
+    }
+
+    /// S1-P-i19 — `statManaMax2` rebases to `statManaMax` every tick
+    /// (`ResetEffects` `Player.cs:18389`); the piece/accessory/set/buff rows
+    /// re-add once per tick, never accumulate.
+    #[test]
+    fn s1_p_i19_the_mana_max_rebases_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The Band of Starpower (+40, `:14924-14928`) + Magic Power (+20,
+        // `:11890`): 20 base + 40 + 20 = 80, stable across ticks.
+        p.equipped[3] = 111;
+        p.buffs.add_buff(29, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 80);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 80, "no per-tick accumulation");
+        // Taking the band off drops the max back to base + buff next tick.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 40);
+        // The base itself is the owned 20 (`:56075`); the crystal-use arm
+        // (`:45274-45288`) is unported, so it never grows here.
+        assert_eq!(p.mana_max_base, 20);
+    }
+
+    /// S1-P-i19 — the `manaFlower` flag's ONE −0.08 row (`UpdateEquips`
+    /// `Player.cs:12962-12965`): two flowers do not stack, and the Arcane
+    /// Flower's own +5 crit / +5% damage rows (`:14405-14410`) ride along.
+    #[test]
+    fn s1_p_i19_the_flower_fold_applies_once_and_the_arcane_rows_ride() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 555; // Mana Flower
+        p.equipped[4] = 4001; // Mana Cloak (also manaFlower)
+        p.update(&w, PlayerInput::default());
+        assert!(p.mana_flower);
+        assert!(
+            (p.mana_cost - 0.92).abs() < 1e-4,
+            "two flowers still cost only 0.08, got {}",
+            p.mana_cost
+        );
+        // The Arcane Flower keeps its crit/damage halves.
+        let mut q = Player::spawn(&w);
+        q.equipped[3] = 3991;
+        q.update(&w, PlayerInput::default());
+        assert!(q.mana_flower);
+        assert!((q.mana_cost - 0.92).abs() < 1e-4);
+        assert_eq!(q.magic_crit, 4 + 5);
+        assert!((q.magic_damage - 1.05).abs() < 1e-4);
+        // The flag clears when the flowers come off (`:18721`).
+        q.equipped[3] = 0;
+        q.update(&w, PlayerInput::default());
+        assert!(!q.mana_flower);
+        assert!((q.mana_cost - 1.0).abs() < 1e-4);
+    }
+
+    /// S1-P-i19 — the mana-regen accessory rows (`ApplyEquipFunctional`
+    /// `Player.cs:14929-14934`): the Mana Regeneration Band 982 adds +40
+    /// max AND +60 `manaRegenBonus`; the cuffs' +40 max rows landed too.
+    #[test]
+    fn s1_p_i19_the_mana_regen_band_grants_max_and_bonus() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 982;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 20 + 40);
+        assert_eq!(p.mana_regen_bonus, 60);
+        // The Magic Cuffs keep their flag AND gain the +40 max row.
+        let mut q = Player::spawn(&w);
+        q.equipped[3] = 1595;
+        q.update(&w, PlayerInput::default());
+        assert!(q.magic_cuffs);
+        assert_eq!(q.mana_max, 20 + 40);
     }
 
     /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the
