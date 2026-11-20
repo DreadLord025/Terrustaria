@@ -156,9 +156,9 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 36 | `UIImage` | LANDED (`ui/images.rs::ImageElement`/`ImageDraw`, draw geometry `UIImage.cs:70-99` + SetImage resize) |
 | 37 | `UIImageFramed` | LANDED (`ui/images.rs::FramedImage`, ctor/SetFrame/grid slice `:16-43` via `Utils.cs:1344/1328`) |
 | 38 | `UIImageWithBorder` | LANDED (`ui/images.rs::BorderedImage`, SetBorder resize + border draw `:26-67`) |
-| 39 | `UIItemIcon` | pending |
-| 40 | `UIKeybindingCycleListItem` | pending |
-| 41 | `UIKeybindingListItem` | pending |
+| 39 | `UIItemIcon` | LANDED (`ui/item_collection.rs::ItemIconElement`, 32×32 ctor + context-31 centre draw + blackout tint `UIItemIcon.cs:13-25`; icon draw pre-landed `slot.rs::draw_item_icon`) |
+| 40 | `UIKeybindingCycleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingCycleRow`, shared row chrome + "???" fallbacks + value GlyphsScale 0.85 window `:18-46`; dead `X -= 17` documented) |
+| 41 | `UIKeybindingListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingRow`, click listen-latch `:28-41`, GenInput join `:80-112`, GetFriendlyName table `:114-176`, listening Gold / unbound (80,80,80) arms + gamepad -3 shift `:43-78`; GlyphTagHandler.GenerateTag table `GlyphTagHandler.cs:169-289`) |
 | 42 | `UIKeybindingSimpleListItem` | pending |
 | 43 | `UIKeybindingSliderItem` | pending |
 | 44 | `UIKeybindingToggleListItem` | pending |

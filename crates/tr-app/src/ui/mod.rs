@@ -28,6 +28,7 @@ pub mod housing;
 pub mod images;
 pub mod inventory;
 pub mod item_collection;
+pub mod keybinding_rows;
 pub mod keyboard;
 pub mod minimap;
 pub mod notifications;
