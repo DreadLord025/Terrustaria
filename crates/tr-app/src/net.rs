@@ -98,6 +98,14 @@ pub mod id {
     pub const PLAYER_CHEST_INDEX: u8 = 80; // MessageBuffer.cs:3216-3227 / NetMessage.cs:1175-1178
     pub const CHEST_SIZE: u8 = 155; // MessageBuffer.cs:4429-4438 / NetMessage.cs:1650-1653
     pub const CHEST_NAME: u8 = 69; // MessageBuffer.cs:3059-3078 / NetMessage.cs:1334-1341
+    /// `81 CombatTextInt` (S1-I-1 wave I): a peer's damage number —
+    /// `(float)x, (float)y, RGB, (int)amount` (`NetMessage.cs:1179-1186`,
+    /// `MessageBuffer.cs:3227-3233`, host→client only).
+    pub const COMBAT_TEXT_INT: u8 = 81;
+    /// `119 CombatTextString` (W4-g50, S1-I-4): a peer's combat text —
+    /// `(float)x, (float)y, RGB, NetworkText` (`NetMessage.cs:1188-1196`,
+    /// `MessageBuffer.cs:3235-3242`, host→client only; the 81 string twin).
+    pub const COMBAT_TEXT_STRING: u8 = 119;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -1537,6 +1545,34 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+/// `msg 81 CombatTextInt`'s body (`NetMessage.cs:1179-1186`, S1-I-1 wave I):
+/// two floats, `WriteRGB`'s three bytes and the `(int)` amount. The client
+/// truncates the floats and spawns `CombatText.NewText` at
+/// `Rectangle(x, y, 0, 0)` (`MessageBuffer.cs:3227-3233`); the one C# send
+/// site is `NPC.HealEffect`'s broadcast (`NPC.cs:77440-77443`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CombatTextInt {
+    pub x: f32,
+    pub y: f32,
+    pub color: Rgb,
+    pub amount: i32,
+}
+
+/// `msg 119 CombatTextString`'s body (`NetMessage.cs:1188-1196`, W4-g50):
+/// the 81 twin with a `NetworkText` in place of the int — two floats,
+/// `WriteRGB`'s three bytes, then `text.Serialize(writer)`. The client
+/// truncates the floats and spawns `CombatText.NewText` with
+/// `NetworkText.Deserialize(...).ToString()` at `Rectangle(x, y, 0, 0)`
+/// (`MessageBuffer.cs:3235-3242`); the C# send sites are the death-message
+/// and crit broadcasts (`NetMessage.SendCombatText`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CombatTextString {
+    pub x: f32,
+    pub y: f32,
+    pub color: Rgb,
+    pub text: NetText,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1771,6 +1807,12 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `81 CombatTextInt` - a peer's heal number (`NPC.HealEffect`'s
+    /// broadcast, `NPC.cs:77440-77443`; S1-I-1 wave I).
+    CombatTextInt(CombatTextInt),
+    /// `119 CombatTextString` - a peer's combat text, the 81 string twin
+    /// (`NetMessage.SendCombatText`; W4-g50).
+    CombatTextString(CombatTextString),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2209,6 +2251,8 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::CombatTextInt(_) => id::COMBAT_TEXT_INT,
+            Self::CombatTextString(_) => id::COMBAT_TEXT_STRING,
         }
     }
 
@@ -2351,6 +2395,13 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1179-1186` — float pair, RGB, int amount.
+            Self::CombatTextInt(t) => w.f32(t.x).f32(t.y).rgb(t.color).i32(t.amount),
+            // `NetMessage.cs:1188-1196` — float pair, RGB, NetworkText.
+            Self::CombatTextString(t) => {
+                let w = w.f32(t.x).f32(t.y).rgb(t.color);
+                t.text.clone().write_to(w)
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2552,6 +2603,20 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:3227-3233` — float pair, RGB, int amount.
+            id::COMBAT_TEXT_INT => Self::CombatTextInt(CombatTextInt {
+                x: r.f32()?,
+                y: r.f32()?,
+                color: r.rgb()?,
+                amount: r.i32()?,
+            }),
+            // `MessageBuffer.cs:3235-3242` — float pair, RGB, NetworkText.
+            id::COMBAT_TEXT_STRING => Self::CombatTextString(CombatTextString {
+                x: r.f32()?,
+                y: r.f32()?,
+                color: r.rgb()?,
+                text: NetText::read_from(r)?,
             }),
             _ => return None,
         })
@@ -4709,5 +4774,69 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    // ---- W4-g50 (S1-I-4 lane 3): the 81-120 apply region ----
+    // WRITTEN NOT RUN (code-only swarm, no compiler) — the byte pins follow
+    // the d89-d100 convention: the frame's id byte + the exact C# body bytes.
+
+    /// `81 CombatTextInt` (`NetMessage.cs:1179-1186`): float x, float y,
+    /// `WriteRGB`'s R/G/B bytes (`Utils.cs:1369-1374`), `(int)` amount.
+    /// Host→client only — no `C2s` arm (`MessageBuffer.cs:3227-3233` reads
+    /// it at `netMode == 1` only).
+    #[test]
+    fn w4_g50_combat_text_int_round_trips() {
+        let t = CombatTextInt {
+            x: 1234.5,
+            y: -678.25,
+            color: Rgb(100, 255, 100), // CombatText.HealLife
+            amount: 42,
+        };
+        let f = S2c::CombatTextInt(t).encode();
+        assert_eq!(f[2], 81);
+        let mut body = Vec::new();
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-678.25f32).to_le_bytes());
+        body.extend_from_slice(&[100, 255, 100]);
+        body.extend_from_slice(&42i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CombatTextInt(d) => assert_eq!(d, t),
+            other => panic!("expected 81, got {:?}", other.msg_id()),
+        }
+        // The reader truncates the floats to the Rectangle's ints
+        // (`MessageBuffer.cs:3230-3231`'s `(int)ReadSingle()`).
+        assert_eq!(t.x as i32, 1234);
+        assert_eq!(t.y as i32, -678);
+    }
+
+    /// `119 CombatTextString` (`NetMessage.cs:1188-1196`): the 81 twin —
+    /// float x, float y, RGB, then the `NetworkText` (literal mode: the mode
+    /// byte 0 + `BinaryWriter.Write(string)`). Host→client only
+    /// (`MessageBuffer.cs:3235-3242`).
+    #[test]
+    fn w4_g50_combat_text_string_round_trips() {
+        let t = CombatTextString {
+            x: -12.5,
+            y: 900.75,
+            color: Rgb(255, 160, 80), // CombatText.DamagedHostile
+            text: NetText("Belsin was slain...".into()),
+        };
+        let f = S2c::CombatTextString(t.clone()).encode();
+        assert_eq!(f[2], 119);
+        let mut body = Vec::new();
+        body.extend_from_slice(&(-12.5f32).to_le_bytes());
+        body.extend_from_slice(&900.75f32.to_le_bytes());
+        body.extend_from_slice(&[255, 160, 80]);
+        body.push(0); // NetworkText literal mode (`NetworkText.cs:65-70`)
+        body.push(20); // the 7-bit length of "Belsin was slain..."
+        body.extend_from_slice(b"Belsin was slain...");
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CombatTextString(d) => assert_eq!(d, t),
+            other => panic!("expected 119, got {:?}", other.msg_id()),
+        }
+        // A truncated body (no text) is malformed, not a partial frame.
+        assert!(S2c::decode(119, &mut NetReader::new(&body[..11])).is_none());
     }
 }

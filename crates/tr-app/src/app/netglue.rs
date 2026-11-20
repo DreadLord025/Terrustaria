@@ -1841,6 +1841,65 @@ impl App {
                     }
                 }
             }
+            // `case 81` — a peer's heal number (S1-I-1 wave I,
+            // `MessageBuffer.cs:3227-3233`): the floats truncate to the
+            // Rectangle's ints (width/height 0), the RGB bytes gain alpha
+            // 255 (`Color(byte,byte,byte)`, `Utils.cs:1387-1390`), and
+            // `CombatText.NewText` spawns with the default
+            // dramatic/dot = false. The draws ride `Main.rand` — the bare
+            // global stream, like the message-time cue replays (S1-E-21i).
+            S2c::CombatTextInt(t) => {
+                let text = t.amount.to_string();
+                let size = match self.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                let location = crate::combat_text::Rect {
+                    x: t.x as i32 as f32,
+                    y: t.y as i32 as f32,
+                    width: 0.0,
+                    height: 0.0,
+                };
+                crate::combat_text::spawn_amount(
+                    &mut self.combat_texts,
+                    location,
+                    [t.color.0, t.color.1, t.color.2, 255],
+                    t.amount,
+                    false,
+                    false,
+                    size,
+                    1.0, // the port keeps gravDir = 1 (`player.rs:4693`)
+                    self.rngs.global(),
+                );
+            }
+            // `case 119` — the 81 string twin (W4-g50,
+            // `MessageBuffer.cs:3235-3242`): the same truncation/alpha, the
+            // text is `NetworkText.Deserialize(...).ToString()` — the port's
+            // literal-mode `NetText` already carries the resolved string.
+            S2c::CombatTextString(t) => {
+                let text = t.text.0.clone();
+                let size = match self.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                let location = crate::combat_text::Rect {
+                    x: t.x as i32 as f32,
+                    y: t.y as i32 as f32,
+                    width: 0.0,
+                    height: 0.0,
+                };
+                crate::combat_text::spawn(
+                    &mut self.combat_texts,
+                    location,
+                    [t.color.0, t.color.1, t.color.2, 255],
+                    text,
+                    false,
+                    false,
+                    size,
+                    1.0, // the port keeps gravDir = 1 (`player.rs:4693`)
+                    self.rngs.global(),
+                );
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -5204,5 +5263,58 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+
+    // ---- W4-g50 (S1-I-4 lane 3): the 81-120 apply arms ----
+    // WRITTEN NOT RUN (code-only swarm, no compiler).
+
+    /// `case 81` (`MessageBuffer.cs:3227-3233`): the heal number spawns a
+    /// combat text at the truncated float point with alpha-255 RGB.
+    #[test]
+    fn w4_g50_the_81_heal_number_spawns_a_combat_text() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::CombatTextInt(net::CombatTextInt {
+                x: 321.9,
+                y: 654.1,
+                color: net::Rgb(100, 255, 100),
+                amount: 25,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let t = client_app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the 81 spawned a text");
+        assert_eq!(t.text, "25");
+        assert_eq!(t.color, [100, 255, 100, 255], "the RGB gains alpha 255");
+        // The spawn point is the truncated floats minus half the measured
+        // size (`CombatText.cs:86-87`); the width/height-0 rect adds no jitter.
+        assert!(t.position[0] <= 321.0 && t.position[1] <= 654.0);
+    }
+
+    /// `case 119` (`MessageBuffer.cs:3235-3242`): the string twin spawns the
+    /// resolved NetworkText at the truncated point.
+    #[test]
+    fn w4_g50_the_119_combat_string_spawns_the_resolved_text() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::CombatTextString(net::CombatTextString {
+                x: -8.5,
+                y: 100.9,
+                color: net::Rgb(255, 160, 80),
+                text: net::NetText("Belsin was slain...".into()),
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let t = client_app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the 119 spawned a text");
+        assert_eq!(t.text, "Belsin was slain...");
+        assert_eq!(t.color, [255, 160, 80, 255]);
+        assert!(t.position[0] <= -8.0 && t.position[1] <= 100.0);
     }
 }
