@@ -48,6 +48,21 @@ pub struct ShopFlags {
     pub remix_world: bool,
     pub anniversary_world: bool,
     pub get_good_world: bool,
+    /// `Main.eclipse` (`Chest.cs:2209`/`:2368-2377`) — the Steampunker's
+    /// solution split and the Cyborg's rocket tiers.
+    pub eclipse: bool,
+    /// `NPC.downedBoss1` (`Chest.cs:2174`) — the Steampunk Boiler's
+    /// all-three-pre-hardmode-bosses gate (the port's `downed_eoc`).
+    pub downed_boss1: bool,
+    /// `NPC.downedGolemBoss` (`Chest.cs:2151`/`:2195`) — the Steampunk
+    /// Wings and the jungle Lihzahrd Furnace.
+    pub downed_golem: bool,
+    /// `Main.player[Main.myPlayer].ZoneGraveyard` (`Chest.cs:2186`).
+    pub zone_graveyard: bool,
+    /// `Main.player[Main.myPlayer].ZoneSkyHeight` (`Chest.cs:2203`).
+    pub zone_sky_height: bool,
+    /// `Main.player[Main.myPlayer].ZoneHallow` (`Chest.cs:2220`).
+    pub zone_hallow: bool,
     /// `Main.LocalPlayer.golferScoreAccumulated` (`Chest.cs:3158`): the
     /// Golfer shop's score gates — the port has no golf system yet, so it
     /// reads 0 until one lands (the gated rows stay hidden).
@@ -102,6 +117,12 @@ impl Default for ShopFlags {
             remix_world: false,
             anniversary_world: false,
             get_good_world: false,
+            eclipse: false,
+            downed_boss1: false,
+            downed_golem: false,
+            zone_graveyard: false,
+            zone_sky_height: false,
+            zone_hallow: false,
             golfer_score: 0,
             bestiary_completion: 0.0,
             unlocked_princess: false,
@@ -148,6 +169,9 @@ impl ShopFlags {
             get_good_world: world
                 .seeds
                 .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            eclipse: world.eclipse,
+            downed_boss1: world.downed_eoc,
+            downed_golem: world.downed_golem,
             ..Self::default()
         }
     }
@@ -270,6 +294,42 @@ pub enum StockWhen {
     /// `Main.hardMode || !Main.getGoodWorld` (`Chest.cs:2170`) — the
     /// Blend-O-Matic 995.
     HardModeOrNotGood,
+    /// `Main.eclipse` (`Chest.cs:2209`/`:2373`) — the bare event flag.
+    Eclipse,
+    /// `NPC.downedGolemBoss` (`Chest.cs:2151`) — the bare Golem flag.
+    DownedGolem,
+    /// `NPC.downedBoss1 && NPC.downedBoss2 && NPC.downedBoss3`
+    /// (`Chest.cs:2174`) — the Steampunk Boiler 2203.
+    DownedAllPreHardBosses,
+    /// `WorldGen.crimson` (`Chest.cs:2178`) — the Flesh Cloning Vaat 2193
+    /// over the Lesion Station 4142 split.
+    CrimsonWorld,
+    /// `Main.player[Main.myPlayer].ZoneGraveyard` (`Chest.cs:2186`).
+    ZoneGraveyard,
+    /// `Main.player[Main.myPlayer].ZoneSkyHeight` (`Chest.cs:2203`).
+    ZoneSkyHeight,
+    /// `Main.player[Main.myPlayer].ZoneHallow` (`Chest.cs:2220`).
+    ZoneHallow,
+    /// `NPC.downedMoonlord` (`Chest.cs:2228`) — the bare Moon Lord flag
+    /// (the solution trio 5392/5393/5394; NOT the hardmode conjunct).
+    DownedMoonlord,
+    /// `Main.halloween` (`Chest.cs:2240`) — constants-off: the port has no
+    /// season system yet (the Steampunk Goggles 1742 stay hidden).
+    Halloween,
+    /// `Main.moonPhase >= 4` (`Chest.cs:2141`'s first conjunct) — the
+    /// Steampunker's Jetpack-vs-outfit split reads it with HardMode.
+    MoonPhaseAtLeast(u32),
+    /// The conjunction of the child gates — the C#'s `&&` chains
+    /// (`Chest.cs:2141`'s `moonPhase >= 4 && hardMode`, `:2195`'s
+    /// `zoneJungle && downedGolemBoss`). The children evaluate in order.
+    All(&'static [StockWhen]),
+    /// The disjunction of the child gates — the C#'s `||` chains
+    /// (`Chest.cs:2209`'s `eclipse || bloodMoon`).
+    Any(&'static [StockWhen]),
+    /// The negation — the C#'s `else` arms (`Chest.cs:2145-2150`'s outfit
+    /// trio is the NOT of the Jetpack gate; `:2224-2227`'s Green Solution
+    /// is the NOT of both prior branches).
+    Not(&'static StockWhen),
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -552,6 +612,79 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // && !Main.getGoodWorld)` — the Dark Blue Solution 783.
             row(783, StockWhen::NotRemixOrAnniversary),
         ],
+        // The Steampunker's shop (index 11, `Chest.cs:2135-2245`, the
+        // registry `NPCInteractions.Shop(178, 11)`, `NPCInteractions.cs:498`
+        // — `NPCID.Steampunker = 178`, `NPCID.cs:11033`): the Clentaminator,
+        // the Jetpack/outfit split, the logic gates, the crafting-station
+        // biome rows and the solution if/else chain — every gate verbatim.
+        11 => vec![
+            // `:2137-2140`: the remix gate — the Clentaminator 779.
+            row(779, StockWhen::NotRemixOrAnniversary),
+            // `:2141-2150`: `moonPhase >= 4 && hardMode` → the Jetpack 748,
+            // ELSE the steampunk outfit 839/840/841 (the NOT arm).
+            row(748, STEAM_JETPACK),
+            row(839, StockWhen::Not(&STEAM_JETPACK)),
+            row(840, StockWhen::Not(&STEAM_JETPACK)),
+            row(841, StockWhen::Not(&STEAM_JETPACK)),
+            // `:2151-2154`: `NPC.downedGolemBoss` — the Steampunk Wings 948.
+            row(948, StockWhen::DownedGolem),
+            // `:2155-2158`: hardmode — the Static Hook 3623.
+            row(3623, StockWhen::HardMode),
+            // `:2159-2169`: the always rows in the C#'s num order — the
+            // logic gates AND/OR/XOR/NAND/NOR/NXOR, the On lamp, the Off
+            // lamp, the Faulty lamp, the two conveyor belts.
+            row(3603, StockWhen::Always),
+            row(3604, StockWhen::Always),
+            row(3607, StockWhen::Always),
+            row(3605, StockWhen::Always),
+            row(3606, StockWhen::Always),
+            row(3608, StockWhen::Always),
+            row(3618, StockWhen::Always),
+            row(3602, StockWhen::Always),
+            row(3663, StockWhen::Always),
+            row(3609, StockWhen::Always),
+            row(3610, StockWhen::Always),
+            // `:2170-2173`: `hardMode || !getGoodWorld` — Blend-O-Matic 995.
+            row(995, StockWhen::HardModeOrNotGood),
+            // `:2174-2177`: all three pre-hardmode bosses — the Steampunk
+            // Boiler 2203.
+            row(2203, StockWhen::DownedAllPreHardBosses),
+            // `:2178-2185`: `WorldGen.crimson` → the Flesh Cloning Vaat
+            // 2193, ELSE the Lesion Station 4142.
+            row(2193, StockWhen::CrimsonWorld),
+            row(4142, StockWhen::Not(&StockWhen::CrimsonWorld)),
+            // `:2186-2189`: the graveyard — the Bone Welder 2192.
+            row(2192, StockWhen::ZoneGraveyard),
+            // `:2190-2194`: the jungle — the Honey Dispenser 2204.
+            row(2204, StockWhen::ZoneJungle),
+            // `:2195-2198`: `zoneJungle && downedGolemBoss` — the Lihzahrd
+            // Furnace 2195.
+            row(2195, STEAM_JUNGLE_GOLEM),
+            // `:2199-2202`: the snow biome — the Ice Machine 2198.
+            row(2198, StockWhen::ZoneSnow),
+            // `:2203-2206`: the sky height — the Sky Mill 2197.
+            row(2197, StockWhen::ZoneSkyHeight),
+            // `:2207-2234`: the whole solution block rides the remix gate.
+            // The if/else chain: `eclipse || bloodMoon` → the evil split
+            // (crimson 784 / corrupt 782), ELSE `ZoneHallow` → 781, ELSE
+            // the Green Solution 780.
+            row(784, STEAM_SOLUTION_RED),
+            row(782, STEAM_SOLUTION_PURPLE),
+            row(781, STEAM_SOLUTION_BLUE),
+            row(780, STEAM_SOLUTION_GREEN),
+            // `:2228-2233`: `NPC.downedMoonlord` inside the same remix
+            // block — the Sand/Snow/Dirt solutions 5392/5393/5394.
+            row(5392, STEAM_MOONLORD_SOLUTIONS),
+            row(5393, STEAM_MOONLORD_SOLUTIONS),
+            row(5394, STEAM_MOONLORD_SOLUTIONS),
+            // `:2235-2239`: hardmode — the Cog 1344 + the Steampunk
+            // Minecart 4472.
+            row(1344, StockWhen::HardMode),
+            row(4472, StockWhen::HardMode),
+            // `:2240-2243`: `Main.halloween` — the Steampunk Goggles 1742
+            // (constants-off, no season system).
+            row(1742, StockWhen::Halloween),
+        ],
         // The Dye Trader's shop (index 12, `Chest.cs:case 12`): the two
         // always rows, the halloween rows (constants-off), the day/night
         // moon-phase 0 pair, the blood-moon-night row and the graveyard
@@ -720,6 +853,47 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
 /// `Chest.cs:2794`'s gate list — the Palworld-collab items that put the
 /// Pal Metal armor (5735/5736) into the merchant's stock.
 const TRAVEL_ARMOR_GATES: [u16; 10] = [5667, 5663, 5664, 5665, 5666, 6174, 6148, 6149, 6150, 6151];
+
+// — W4-d122: the Steampunker's compound gates (`Chest.cs:2135-2245`),
+// named once so the if/else arms share ONE condition object (the `Not`
+// arms negate the exact same expression the C# `else` negates). —
+
+/// `Chest.cs:2141`: `Main.moonPhase >= 4 && Main.hardMode` — the Jetpack.
+const STEAM_JETPACK: StockWhen =
+    StockWhen::All(&[StockWhen::MoonPhaseAtLeast(4), StockWhen::HardMode]);
+/// `Chest.cs:2195`: `zoneJungle && NPC.downedGolemBoss` — Lihzahrd Furnace.
+const STEAM_JUNGLE_GOLEM: StockWhen =
+    StockWhen::All(&[StockWhen::ZoneJungle, StockWhen::DownedGolem]);
+/// `Chest.cs:2207-2209`: the remix gate AND `(eclipse || bloodMoon)`.
+const STEAM_SOLUTION_EVIL: StockWhen = StockWhen::All(&[
+    StockWhen::NotRemixOrAnniversary,
+    StockWhen::Any(&[StockWhen::Eclipse, StockWhen::BloodMoon]),
+]);
+/// `:2211-2218`'s crimson half — the Red Solution 784.
+const STEAM_SOLUTION_RED: StockWhen =
+    StockWhen::All(&[STEAM_SOLUTION_EVIL, StockWhen::CrimsonWorld]);
+/// `:2215-2218`'s corruption half — the Purple Solution 782.
+const STEAM_SOLUTION_PURPLE: StockWhen = StockWhen::All(&[
+    STEAM_SOLUTION_EVIL,
+    StockWhen::Not(&StockWhen::CrimsonWorld),
+]);
+/// `:2220-2223`: the remix gate AND NOT the evil branch AND `ZoneHallow`
+/// — the Blue Solution 781.
+const STEAM_SOLUTION_BLUE: StockWhen = StockWhen::All(&[
+    StockWhen::NotRemixOrAnniversary,
+    StockWhen::Not(&StockWhen::Any(&[StockWhen::Eclipse, StockWhen::BloodMoon])),
+    StockWhen::ZoneHallow,
+]);
+/// `:2224-2227`: the final else — neither the evil branch nor the hallow
+/// one — the Green Solution 780.
+const STEAM_SOLUTION_GREEN: StockWhen = StockWhen::All(&[
+    StockWhen::NotRemixOrAnniversary,
+    StockWhen::Not(&StockWhen::Any(&[StockWhen::Eclipse, StockWhen::BloodMoon])),
+    StockWhen::Not(&StockWhen::ZoneHallow),
+]);
+/// `:2228-2233`: the remix gate AND `NPC.downedMoonlord` — the solution trio.
+const STEAM_MOONLORD_SOLUTIONS: StockWhen =
+    StockWhen::All(&[StockWhen::NotRemixOrAnniversary, StockWhen::DownedMoonlord]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -1337,7 +1511,24 @@ pub fn resolve_stock_entries_moon(
 ) -> Vec<ShopEntry> {
     setup_shop(shop_index, inventory_ids, flags)
         .into_iter()
-        .filter(|e| match e.when {
+        .filter(|e| stock_gate(&e.when, flags, inventory_ids, moon_phase))
+        .collect()
+}
+
+/// One `StockWhen` gate against the live state — the `SetupShop` if-arms'
+/// conditions, verbatim. The combinators (`All`/`Any`/`Not`) evaluate their
+/// children recursively so the C#'s compound `&&`/`||`/`else` chains keep
+/// their exact shape (W4-d122).
+fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_phase: u32) -> bool {
+    match when {
+        StockWhen::All(children) => children
+            .iter()
+            .all(|c| stock_gate(c, flags, inventory_ids, moon_phase)),
+        StockWhen::Any(children) => children
+            .iter()
+            .any(|c| stock_gate(c, flags, inventory_ids, moon_phase)),
+        StockWhen::Not(child) => !stock_gate(child, flags, inventory_ids, moon_phase),
+        _ => match *when {
             StockWhen::Always => true,
             StockWhen::HardMode => flags.hard_mode,
             StockWhen::Night => flags.night,
@@ -1399,8 +1590,25 @@ pub fn resolve_stock_entries_moon(
             }
             // `Chest.cs:2170` verbatim.
             StockWhen::HardModeOrNotGood => flags.hard_mode || !flags.get_good_world,
-        })
-        .collect()
+            StockWhen::Eclipse => flags.eclipse,
+            StockWhen::DownedGolem => flags.downed_golem,
+            // `Chest.cs:2174` verbatim.
+            StockWhen::DownedAllPreHardBosses => {
+                flags.downed_boss1 && flags.downed_boss2 && flags.downed_boss3
+            }
+            StockWhen::CrimsonWorld => flags.crimson_world,
+            StockWhen::ZoneGraveyard => flags.zone_graveyard,
+            StockWhen::ZoneSkyHeight => flags.zone_sky_height,
+            StockWhen::ZoneHallow => flags.zone_hallow,
+            StockWhen::DownedMoonlord => flags.downed_moon_lord,
+            // The season system is unported — the halloween rows stay
+            // constants-off (the recorded deviation).
+            StockWhen::Halloween => false,
+            StockWhen::MoonPhaseAtLeast(n) => moon_phase >= n,
+            // The combinators are handled above — unreachable here.
+            StockWhen::All(_) | StockWhen::Any(_) | StockWhen::Not(_) => unreachable!(),
+        },
+    }
 }
 
 /// `Item.GetStoreValue` (`Item.cs:49901-49908`): the per-row
@@ -2303,7 +2511,10 @@ mod town5_tests {
             downed_mech_any: true,
             ..Default::default()
         };
-        assert_eq!(resolve_stock(10, &mech, &[]), vec![756, 787, 868, 1181, 5231, 783]);
+        assert_eq!(
+            resolve_stock(10, &mech, &[]),
+            vec![756, 787, 868, 1181, 5231, 783]
+        );
         // Plantera adds the Autohammer in its num slot (after 868).
         let plant = ShopFlags {
             downed_plant_boss: true,
@@ -2315,12 +2526,130 @@ mod town5_tests {
         );
         // `:2130`: remix ON kills 783; anniversary+remix (not getGood)
         // brings it back; getGood on top kills it again.
-        let remix = ShopFlags { remix_world: true, ..plant };
+        let remix = ShopFlags {
+            remix_world: true,
+            ..plant
+        };
         assert!(!resolve_stock(10, &remix, &[]).contains(&783));
-        let anni = ShopFlags { anniversary_world: true, ..remix };
+        let anni = ShopFlags {
+            anniversary_world: true,
+            ..remix
+        };
         assert!(resolve_stock(10, &anni, &[]).contains(&783));
-        let good = ShopFlags { get_good_world: true, ..anni };
+        let good = ShopFlags {
+            get_good_world: true,
+            ..anni
+        };
         assert!(!resolve_stock(10, &good, &[]).contains(&783));
+    }
+
+    /// W4-d122 shop 11 — the Steampunker (`Chest.cs:2135-2245`,
+    /// `NPCInteractions.Shop(178, 11)`): the Jetpack/outfit moon-phase
+    /// split, the solution if/else chain and the crafting-station biome
+    /// rows, verbatim. Written, not run (code-only).
+    #[test]
+    fn the_steampunker_stock_splits_the_jetpack_and_the_solutions() {
+        // Classic day, phase 0: the outfit trio (the NOT-Jetpack arm), the
+        // logic-gate block, the Blend-O-Matic (not-getGood), the Lesion
+        // Station (not-crimson) and the Green Solution (the final else).
+        let base = resolve_stock_moon(11, &ShopFlags::default(), &[], 0);
+        let mut expect = vec![779u16, 839, 840, 841];
+        expect.extend([
+            3603, 3604, 3607, 3605, 3606, 3608, 3618, 3602, 3663, 3609, 3610, 995, 4142, 780,
+        ]);
+        assert_eq!(base, expect, "the exact num order");
+        // Phase 4 + hardmode: the Jetpack REPLACES the outfit trio in its
+        // num slot; hardmode adds the Static Hook + the Cog + the minecart.
+        let jet = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let p4 = resolve_stock_moon(11, &jet, &[], 4);
+        assert_eq!(&p4[..2], &[779, 748], "the Jetpack takes the slot");
+        assert!(!p4.contains(&839) && !p4.contains(&840) && !p4.contains(&841));
+        assert!(p4.contains(&3623) && p4.contains(&1344) && p4.contains(&4472));
+        // The same hardmode at phase 3 keeps the outfit (`moonPhase >= 4`).
+        let p3 = resolve_stock_moon(11, &jet, &[], 3);
+        assert!(p3.contains(&839) && !p3.contains(&748));
+        // The evil branch: blood moon + corruption → 782 (not 780/781);
+        // crimson flips it to 784 (and the Vaat replaces the Lesion Station).
+        let bm = ShopFlags {
+            blood_moon: true,
+            ..Default::default()
+        };
+        let evil = resolve_stock_moon(11, &bm, &[], 0);
+        assert!(evil.contains(&782) && !evil.contains(&780) && !evil.contains(&781));
+        let crimson = ShopFlags {
+            crimson_world: true,
+            ..bm
+        };
+        let red = resolve_stock_moon(11, &crimson, &[], 0);
+        assert!(red.contains(&784) && red.contains(&2193) && !red.contains(&4142));
+        // The eclipse alone opens the same evil branch (`:2209`'s ||).
+        let ecl = ShopFlags {
+            eclipse: true,
+            ..Default::default()
+        };
+        assert!(resolve_stock_moon(11, &ecl, &[], 0).contains(&782));
+        // The hallow else-if: no evil event → the Blue Solution 781.
+        let hallow = ShopFlags {
+            zone_hallow: true,
+            ..Default::default()
+        };
+        let blue = resolve_stock_moon(11, &hallow, &[], 0);
+        assert!(blue.contains(&781) && !blue.contains(&780));
+        // The evil event WINS over the hallow (the if precedes the else-if).
+        let both = ShopFlags {
+            blood_moon: true,
+            ..hallow
+        };
+        let won = resolve_stock_moon(11, &both, &[], 0);
+        assert!(won.contains(&782) && !won.contains(&781));
+        // The Moon Lord trio rides the remix gate + the bare downed flag.
+        let ml = ShopFlags {
+            downed_moon_lord: true,
+            ..Default::default()
+        };
+        let trio = resolve_stock_moon(11, &ml, &[], 0);
+        for id in [5392u16, 5393, 5394] {
+            assert!(trio.contains(&id), "the moonlord solution {id}");
+        }
+        let remix = ShopFlags {
+            remix_world: true,
+            ..ml
+        };
+        let cut = resolve_stock_moon(11, &remix, &[], 0);
+        assert!(!cut.contains(&779) && !cut.contains(&780) && !cut.contains(&5392));
+        // The station rows: all-three-bosses Boiler, jungle Dispenser,
+        // jungle+Golem Furnace, snow Ice Machine, sky Mill, graveyard Welder.
+        let stations = ShopFlags {
+            downed_boss1: true,
+            downed_boss2: true,
+            downed_boss3: true,
+            downed_golem: true,
+            zone_jungle: true,
+            zone_snow: true,
+            zone_sky_height: true,
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let st = resolve_stock_moon(11, &stations, &[], 0);
+        for id in [2203u16, 2204, 2195, 2198, 2197, 2192, 948] {
+            assert!(st.contains(&id), "the station row {id}");
+        }
+        // The Golem alone (no jungle) gives the Wings but NOT the Furnace.
+        let golem_only = ShopFlags {
+            downed_golem: true,
+            ..Default::default()
+        };
+        let go = resolve_stock_moon(11, &golem_only, &[], 0);
+        assert!(go.contains(&948) && !go.contains(&2195));
+        // getGoodWorld (pre-hardmode) cuts the Blend-O-Matic (`:2170`).
+        let ftw = ShopFlags {
+            get_good_world: true,
+            ..Default::default()
+        };
+        assert!(!resolve_stock_moon(11, &ftw, &[], 0).contains(&995));
     }
 }
 

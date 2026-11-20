@@ -962,6 +962,14 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .world
             .seeds
             .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        // W4-d122 shop 11: the Steampunker's scene/event gates
+        // (`Chest.cs:2151-2233`).
+        eclipse: app.world.eclipse,
+        downed_boss1: app.world.downed_eoc,
+        downed_golem: app.world.downed_golem,
+        zone_graveyard: app.scene_metrics.zone_graveyard,
+        zone_sky_height: app.scene_metrics.zone_sky_height,
+        zone_hallow: app.scene_metrics.zone_hallow,
         // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
         // (`WorldGen.cs:555-562`) — `Chest.SetupShop`'s Dryad and Bestiary
         // Girl vampirism rows (`shop.rs`'s `Vampirism*` gates). The world's
