@@ -7342,20 +7342,20 @@ melee `DamageVar` passes the raw value (`Player.cs:44342`), and
 (`Main.cs:64668`).
 
 Deviations, all deliberate:
-- **Absent writers are neutral-default inputs, terms stay live**: lantern
-  night (`LanternNight.LanternsUp` вЂ” M4-EVENT-4), the garden gnome
-  (tile-567 SceneMetrics count, M4), `usedGalaxyPearl` (item 5340), the
-  broken-mirror writer (projectile 1085 / item 5577), the accessory bonus
-  (clover 5574-5576 / horseshoe 158 / lucky coin 855 вЂ” M3-EQUIP) and the
-  kite items (`IsAKite`) all default to 0/false; `RecalculateLuck` applies
-  every term in the original order so those tasks only fill the inputs.
+- **Absent writers are neutral-default inputs, terms stay live**:
+  `usedGalaxyPearl` (item 5340), the broken-mirror writer (projectile 1085 /
+  item 5577) and the kite items (`IsAKite`) all default to 0/false;
+  `RecalculateLuck` applies every term in the original order so those tasks
+  only fill the inputs. (W4-e26 wired the lantern-night, gnome, equipment
+  and ladybug/town inputs — see "The W4-e26 factor census" below.)
 - **`usedGalaxyPearl` is not persisted** вЂ” the C# writes it to the player
   file (`Player.cs:54784/:55258`); the port has no player-file writer yet.
-- **The ladybug/coin writers have no live caller** вЂ” the ladybug NPC
-  (604/605) and gold critters are the M4 critter row, the town NPCs the M6
-  row; the setters (`on_lady_bug_killed/nearby`, `on_town_npc_death`,
-  `add_coin_luck`) are unit-tested callables. `on_lady_bug_killed` returns
-  the raw `ladyBugRainTime` add for the future `rain.rs` writer instead of
+- **The ladybug/coin writers** вЂ” W4-e26 wired the town-death arm
+  (`checkDead`) and the 604/605 nearby window (`CheckActive`, inert until
+  the M4 critter kinds land); the fishing-bait kill writer rides S1-P-i35.
+  `add_coin_luck` stays a unit-tested callable (the coin-shimmer chain is
+  unported). `on_lady_bug_killed` returns
+  the raw `ladyBugRainTime` add for the `rain.rs` writer instead of
   touching `Main.ladyBugRainBoost` (the C# applies the 18000 cap at the
   add site, `NPC.cs:81568-81572`).
 - **The Torch God event is out** вЂ” the `happyFunTorchTime` /
@@ -7380,6 +7380,46 @@ Deviations, all deliberate:
 - **C# float widening quirks preserved** вЂ” the coin tier compare
   `(double)coinLuck > 2.49` returns 0.075 at `coinLuck = 2.49f` (the
   widened float exceeds the f64 literal), pinned in the tier-matrix test.
+
+### The W4-e26 factor census (luck inputs wired)
+
+The remaining neutral-default inputs are now driven (code-only mode, no
+compiler invoked — witnesses written, not run):
+- **Equipment luck** (`Player.cs:13050-13069`): the four `hasLuck_*` flags
+  (`:2652-2658`) plus the lucky coin accumulate in the C# tail order —
+  clover +0.03, wilted clover −0.1, raven feather −0.1, horseshoe +0.05,
+  coin +0.05 — each ONCE per family (bool ORs). The nine horseshoe carriers
+  (158/396/1250/1251/1252/3250/3251/3252/5331) arm the flag beside their
+  `noFallDmg` rows; the balloon arms were split from the shared
+  fall-immunity row so first-match-wins cannot eat either half.
+  `ResetEffects` clears all four (`:18763-18766`).
+- **The carried clover family** (`RefreshInfoAccsFromItemType`
+  `:12723-12734` via `UpdateEquips`' first loop `:12900-12914`): 5574/5575/
+  5576 are NOT accessories — the per-tick `carried_kinds` snapshot (grid +
+  coin/ammo rows, the port's halves of inventory[0..58]) arms the flags.
+  The void-bag re-scan (`:12931-12941`) only admits `WorksInVoidBag` kinds
+  ({4346, 5095}, `ItemID.cs:350`) — no luck kind, so the vault never arms
+  the family (the pass is a no-op here, recorded).
+- **Lantern night**: `LuckState.lantern_night` copies
+  `world_events::lanterns_up` per tick (the S1-F-14 scheduler already
+  lands; only the luck copy was missing).
+- **Garden gnome**: `LuckState.has_garden_gnome_nearby` copies the
+  SceneMetrics tile-567 marker (phase 1, `Player.cs:16726-16730`).
+- **Ladybug/town writers**: `checkDead`'s town-NPC arm (`NPC.cs:78138-
+  78143`) runs `on_town_npc_death` in the death pass (host path skips like
+  the C# `netMode != 2`); the `CheckActive` 604/605 window (`:77930-77938`)
+  runs `on_lady_bug_nearby` over the screen-size rect intersect — inert
+  until the critter kinds land (roster gap, the wiring is the seam). The
+  fishing-bait kill writer (S1-P-i35) already feeds `rain.rs`.
+- **Potion factor**: the 4477/4478/4479 drink rows (buff 257 at
+  18000/36000/54000) ride the i37 `use_potion_item` seam unchanged; the
+  tier boundaries (>36000 → 3, >18000 → 2, else 1) are witnessed after the
+  timer head's decrement, expiry clears via `ResetEffects` (`:18814`).
+- Still neutral-default: `usedGalaxyPearl` (no player-file writer), the
+  broken-mirror writer (projectile 1085), the kite items.
+- RNG: every added path is draw-free (bool flags, f32 adds, i32 timers) —
+  no stream moves, no world-hash change. The f32 accumulation order is
+  pinned bit-for-bit by `w4_e26_the_luck_tail_accumulates_in_the_csharp_order`.
 
 ## Mounts framework (M2-MOUNT-1)
 
