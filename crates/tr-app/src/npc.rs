@@ -33546,3 +33546,122 @@ mod s1_f_13d_tests {
         }
     }
 }
+
+/// W4-d33 (research/25 rows 95-127, code-only — WRITTEN NOT RUN): the
+/// aiStyle-95..127 axis census. The band splits four ways:
+/// * PORTED kinds: 95/96/97 (the stardust/nebula trio, `npc.rs`),
+///   105-110 (the DD2 family), 123 (the Deerclops) — pinned below;
+/// * PORTED UNWIRED machine: 120 (the Empress of Light,
+///   `npc_ai_empress.rs` — no `NpcKind` yet, the S1-D-3 empress census);
+/// * MISSING families: 99-104, 111-119, 121, 122, 125-127 — the faithful
+///   unwired modules land one style per commit (the style73 precedent);
+/// * DEAD arms: 98 (`NPC.cs:39620-39926`, the ~300-line swimmer) and 124
+///   (`AI_124_ElderSlimeChest`, `:43683-43686`, the one-line gravity fall)
+///   — NO `SetDefaults` row assigns either style (the whole-tree census
+///   of `this.aiStyle = 98;` / `= 124;` hits only `Projectile.cs` — a
+///   different machine in projectile space). No kind can ride them; the
+///   census documents them, nothing ports (research/25 row 98's "MISSING
+///   (dead code)" verdict, re-verified).
+#[cfg(test)]
+mod w4_d33_axis_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: every ported kind in the 95-127 band carries its
+    /// `SetDefaults` aiStyle row (the citations are the
+    /// `this.aiStyle = N;` lines in `NPC.cs`).
+    #[test]
+    fn w4_d33_the_band_kinds_carry_their_csharp_styles() {
+        let rows: &[(NpcKind, u8)] = &[
+            // aiStyle 95/96/97 — the CellSmall 406 / Jellyfish 407 /
+            // NebulaFloater 420 (`NPC.cs:15040`/`:15091`/`:15161`).
+            (NpcKind::StardustCellSmall, 95),
+            (NpcKind::StardustJellyfishBig, 96),
+            (NpcKind::NebulaFloater, 97),
+            // aiStyle 105/106 — the crystal 548 / the lane portal 549
+            // (`NPC.cs:16002`/`:16040`).
+            (NpcKind::DD2EterniaCrystal, 105),
+            (NpcKind::DD2LanePortal, 106),
+            // aiStyle 107 — the 19 ported walkers of the C#'s 20
+            // (`NPC.cs:16061-16435` + `:16957`; the 20th, the GoblinShark
+            // 620, has no roster row — the census gap below).
+            (NpcKind::DD2GoblinT1, 107),
+            (NpcKind::DD2GoblinT2, 107),
+            (NpcKind::DD2GoblinT3, 107),
+            (NpcKind::DD2GoblinBomberT1, 107),
+            (NpcKind::DD2GoblinBomberT2, 107),
+            (NpcKind::DD2GoblinBomberT3, 107),
+            (NpcKind::DD2JavelinT1, 107),
+            (NpcKind::DD2JavelinT2, 107),
+            (NpcKind::DD2JavelinT3, 107),
+            (NpcKind::DD2SkeletonT1, 107),
+            (NpcKind::DD2SkeletonT3, 107),
+            (NpcKind::DD2WitherBeastT3, 107),
+            (NpcKind::DD2DrakinT2, 107),
+            (NpcKind::DD2DrakinT3, 107),
+            (NpcKind::DD2KoboldWalkerT2, 107),
+            (NpcKind::DD2KoboldWalkerT3, 107),
+            (NpcKind::DD2OgreT2, 107),
+            (NpcKind::DD2OgreT3, 107),
+            (NpcKind::DD2WitherBeast, 107),
+            // aiStyle 108 — the five diving flyers (`NPC.cs:16211`,
+            // :16229, :16247, :16485, :16503).
+            (NpcKind::DD2WyvernT1, 108),
+            (NpcKind::DD2WyvernT2, 108),
+            (NpcKind::DD2WyvernT3, 108),
+            (NpcKind::DD2KoboldFlyerT2, 108),
+            (NpcKind::DD2KoboldFlyerT3, 108),
+            // aiStyle 109 — the Dark Mage T1/T3 (`NPC.cs:16452`/`:16470`).
+            (NpcKind::DD2DarkMage, 109),
+            (NpcKind::DD2DarkMageT3, 109),
+            // aiStyle 110 — Betsy 551 (`NPC.cs:16524`).
+            (NpcKind::DD2Betsy, 110),
+            // aiStyle 123 — the Deerclops 668 (`NPC.cs:17453`).
+            (NpcKind::Deerclops, 123),
+        ];
+        for &(kind, style) in rows {
+            assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
+        }
+    }
+
+    /// The census gaps: the MISSING families have no ported kind — the
+    /// unwired modules key on the vanilla `npc_type` until the roster
+    /// wave (the style73 precedent). 98/124 are the DEAD arms (no
+    /// `SetDefaults` user anywhere in the tree); 120's machine is ported
+    /// unwired (`npc_ai_empress.rs`) but the HallowBoss 636 kind is not
+    /// in the roster.
+    #[test]
+    fn w4_d33_the_missing_styles_have_no_kind() {
+        for style in [98u8, 99, 100, 101, 102, 103, 104, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 124, 125, 126, 127] {
+            assert!(
+                !ALL_KINDS.iter().any(|k| k.ai_style() == style),
+                "no kind claims aiStyle {style} until the roster wave"
+            );
+        }
+        // The 107 band's 20th C# user (the GoblinShark 620,
+        // `NPC.cs:16957`) is the one walker the roster lacks — the
+        // `update_dd2_goblin` family covers 19 of 20 (research/25 row
+        // 107's "PORTED (19 of 20 types)" verdict).
+        assert!(!ALL_KINDS.iter().any(|k| k.cs_id() == 620));
+    }
+
+    /// The zero-draw census, direct: the aiStyle-95 growth arm
+    /// (`NPC.cs:39384-39429`) draws NOTHING at arm level in the port —
+    /// the 226-dust ring (`:39403-39427`) is the documented visual skip
+    /// (`update_stardust_cell`'s deviation note), and the growth/transform
+    /// path has no other `Main.rand` site. 301 ticks through the whole
+    /// ramp + the Transform(405) leave the stream untouched.
+    #[test]
+    fn w4_d33_the_95_arm_draws_nothing() {
+        let w = ground();
+        let p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(95);
+        let mut cell = Npc::new(NpcKind::StardustCellSmall, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        cell.hp = cell.max_hp;
+        for _ in 0..301 {
+            cell.update_stardust_cell(&w, &p);
+        }
+        assert_eq!(cell.kind, NpcKind::StardustCellBig, "the 300-tick Transform(405)");
+        assert_eq!(rng.peek(), UnifiedRandom::new(95).peek(), "the 95 arm is draw-free");
+    }
+}
