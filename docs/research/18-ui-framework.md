@@ -156,7 +156,7 @@ Screens already covered by immediate ports are listed for completeness at the en
 
 | C# state (file) | Lines | Rust counterpart | Notes |
 | --- | --- | --- | --- |
-| `UIWorkshopHub` | 13 | none | Steam Workshop hub |
+| `UIWorkshopHub` | 13 | `ui/workshop_hub.rs` (`FrontScreen::WorkshopHub`) | PORTED (W4-d84 row 1; no Steam — the menu row keeps the ResourcePacks branch, `TR_UI=wshub` is the screenshot entry; Logs is a notice, d85 row 10) |
 | `UIWorkshopSelectResourcePackToPublish` | 17 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishPacks`) | PORTED (W4-d84 row 2; the publish tail is a notice — the Steam form is out of range) |
 | `UIWorkshopSelectWorldToPublish` | 16 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishWorlds`) | PORTED (W4-d84 row 3; the publish tail is a notice — the Steam form is out of range) |
 | `UIWorkshopWorldImport` | 18 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopImportWorlds`) | PORTED (W4-d84 row 4; no Steam — the subscribed list is always empty, the import rows are ported for the record) |

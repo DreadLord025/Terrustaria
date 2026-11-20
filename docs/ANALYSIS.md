@@ -36089,6 +36089,33 @@ Deviations (cluster-wide):
   twin), not `ChatManager.LayoutSnippets`' snippet walk; plain pack
   descriptions wrap identically.
 
+### UIWorkshopHub (row 1)
+
+`ui/workshop_hub.rs` + `FrontScreen::WorkshopHub`. The 600-wide root at
+Top 250 (`UIWorkshopHub.cs:48-57`), the 260 px panel, the 154 px 2x2
+`MakeFancyButton` grid (`(-3, 0.5)` panels, `:252-253`), the separator
+(`Utils.DrawPanel` edge-2 strip at the creation screens' colour), the
+CategoryPanelHighlight description panel (LightGray*0.7, the wrapped
+UIText at Top 5 / padding 20/6) and the Back/Logs fat pair (the hub's
+`FadedMouseOut` bg is `(63,82,151)*0.8`, `:311` — not the lists' 0.7).
+
+- **No-Steam deviation**: the menuMode 11 row opens the hub only when
+  `SocialAPI.Workshop != null` (`Main.cs:48937-48947`); the port keeps the
+  ResourcePacks else branch (row 5's entry) and reaches the hub through
+  `TR_UI=wshub` (the screenshot entry, null back target like the ctor).
+- The four openers (`Click_Open*`, `:128-174`) play 10 and park the live
+  hub as the child screen's back target (`FlowClick::HubOpen*`); Use
+  Packs routes through `Main.OpenResourcePacksMenu(this)` — the
+  pack-selection screen re-lists from the config on entry.
+- The hover description (`ShowOptionDescription`, `:186-209`) swaps the
+  wrapped text per hovered button; leaving restores
+  `Workshop.HubDescriptionDefault` (`:211-214`).
+- Logs (`GoLogsClick`, `:295-300`) opens `UIReportsPage` — d85 row 10,
+  out of range: the click plays 10 and sets the `front_hint` notice.
+- Back (`HandleBackButtonUsage`, `:329-339`): the null target (the menu
+  row) closes to `menuMode = 0`, a parked target returns verbatim;
+  sound 11.
+
 ### UIWorkshopSelectResourcePackToPublish (row 2)
 
 `ui/workshop_publish.rs` + `FrontScreen::WorkshopPublishPacks`. The shared

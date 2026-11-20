@@ -2493,6 +2493,11 @@ impl App {
                 ui::workshop_publish::sort_publish_worlds(&mut state.worlds);
                 state.scroll = 0.0;
             }
+            // `UIWorkshopHub` has no `OnActivate` override — `EnterHub`
+            // (`:40-43`) fires the empty `OnWorkshopHubMenuOpened` event
+            // (`:368-373`); no re-list. The back target rode in from the
+            // opener (null from the menu row).
+            FrontScreen::WorkshopHub(_) => {}
         }
         self.park_menu();
         self.front = Some(front);

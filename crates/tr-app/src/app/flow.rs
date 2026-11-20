@@ -93,6 +93,13 @@ pub(crate) enum FrontScreen {
     /// (`OnActivate`, `:131-140` — `UpdateWorkshopWorldList` is always empty
     /// without Steam, `:142-153`).
     WorkshopImportWorlds(Box<ui::workshop_publish::ImportWorldsState>),
+    /// W4-d84 row 1's `UIWorkshopHub` (`UIWorkshopHub.cs:13`) — the 2x2
+    /// button grid over the workshop screens. The menuMode 11 row opens it
+    /// only with Steam (`Main.cs:48937-48947`); the no-Steam port reaches
+    /// it through `TR_UI=wshub`. The payload is `_previousUIState`
+    /// (`:15`) — null from the menu row, so Back closes to `menuMode = 0`
+    /// (`HandleBackButtonUsage`, `:329-339`).
+    WorkshopHub(Box<ui::workshop_hub::HubState>),
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -222,6 +229,24 @@ pub(crate) enum FlowClick {
     /// sound 11 + `SetState(_menuToGoBackTo)` — the parked hub returns
     /// verbatim (no `OnActivate` re-list on the hub).
     WorkshopListBack,
+    /// `UIWorkshopHub.HandleBackButtonUsage` (`UIWorkshopHub.cs:329-339`):
+    /// the `_previousUIState` target, or `menuMode = 0` when null (the
+    /// menu row's ctor passes null, `Main.cs:48944`). Sound 11.
+    WorkshopHubBack,
+    /// `Click_OpenWorldImportMenu` (`UIWorkshopHub.cs:142-146`): sound 10 +
+    /// `SetState(new UIWorkshopWorldImport(this))` — the hub parks as the
+    /// import screen's back target.
+    HubOpenImport,
+    /// `Click_OpenWorldPublishMenu` (`:170-174`): sound 10 + the world
+    /// publish screen over the parked hub.
+    HubOpenPublishWorlds,
+    /// `Click_OpenResourcePackPublishMenu` (`:156-160`): sound 10 + the
+    /// pack publish screen over the parked hub.
+    HubOpenPublishPacks,
+    /// `Click_OpenResourcePacksMenu` (`:128-132`): sound 10 +
+    /// `Main.OpenResourcePacksMenu(this)` (`Main.cs:52371-52375`) — the
+    /// pack-selection screen with the hub parked as its back target.
+    HubOpenUsePacks,
 }
 
 /// One hop of the `Main.menuMode` alternation as a pure table — the plan's
@@ -361,6 +386,48 @@ pub(crate) fn next_flow_state(
                 None => (None, None, Some(P::Main)),
             }
         }
+        // `UIWorkshopHub.HandleBackButtonUsage` (`:329-339`): the parked
+        // target returns, or `menuMode = 0` when null (the live menu-row
+        // entry). Sound 11 rides the click table's cue arm.
+        FlowClick::WorkshopHubBack => {
+            let back = match &front {
+                Some(FrontScreen::WorkshopHub(state)) => state.back.as_deref().cloned(),
+                _ => None,
+            };
+            match back {
+                Some(target) => (Some(target), None, None),
+                None => (None, None, Some(P::Main)),
+            }
+        }
+        // The hub's three workshop openers (`:142-174`): each parks the
+        // live hub as the new screen's back target. The Use-Packs opener
+        // (`Click_OpenResourcePacksMenu`, `:128-132`) routes through
+        // `Main.OpenResourcePacksMenu(this)` — the pack-selection screen
+        // with the hub parked (`enter_front` re-lists from the config).
+        FlowClick::HubOpenImport
+        | FlowClick::HubOpenPublishWorlds
+        | FlowClick::HubOpenPublishPacks
+        | FlowClick::HubOpenUsePacks => {
+            let Some(current @ FrontScreen::WorkshopHub(_)) = front.clone() else {
+                return (front, backup, page);
+            };
+            let parked = Some(Box::new(current));
+            let next = match click {
+                FlowClick::HubOpenImport => FrontScreen::WorkshopImportWorlds(Box::new(
+                    ui::workshop_publish::ImportWorldsState { back: parked, ..Default::default() },
+                )),
+                FlowClick::HubOpenPublishWorlds => FrontScreen::WorkshopPublishWorlds(Box::new(
+                    ui::workshop_publish::PublishWorldsState { back: parked, ..Default::default() },
+                )),
+                FlowClick::HubOpenUsePacks => FrontScreen::ResourcePackSelection(Box::new(
+                    ui::resource_packs::PackSelectionState { back: parked, ..Default::default() },
+                )),
+                _ => FrontScreen::WorkshopPublishPacks(Box::new(
+                    ui::workshop_publish::PublishPacksState { back: parked, ..Default::default() },
+                )),
+            };
+            (Some(next), None, None)
+        }
         // Any other combination is a no-op (a click kind its screen never
         // sends); the state passes through unchanged.
         _ => (front, backup, page),
@@ -383,6 +450,9 @@ pub(crate) enum TrUiPreset {
     WorldLoad,
     /// W4-d84 row 5's pack-selection screen (`UIResourcePackSelectionMenu`).
     Packs,
+    /// W4-d84 row 1's workshop hub (`UIWorkshopHub`) — the no-Steam port's
+    /// screenshot entry (the menu row needs Steam, `Main.cs:48937`).
+    WsHub,
     /// menuMode 3000.
     Credits,
     /// menuMode 5.
@@ -405,6 +475,7 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
         "vk" => TrUiPreset::Keyboard,
         "worldload" => TrUiPreset::WorldLoad,
         "packs" => TrUiPreset::Packs,
+        "wshub" => TrUiPreset::WsHub,
         "credits" => TrUiPreset::Credits,
         "delplayer" => TrUiPreset::DelPlayer,
         "delworld" => TrUiPreset::DelWorld,
@@ -681,6 +752,11 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.screen,
                     d.mouse,
                 );
+            }
+            FrontScreen::WorkshopHub(_) => {
+                // `UIWorkshopHub.Draw` (`:341-345`): the grid, the hover
+                // description, the title, Back/Logs.
+                ui::workshop_hub::draw(d.renderer, d.lookups, d.screen, d.mouse);
             }
         }
     }
@@ -1491,6 +1567,42 @@ impl FrontScreenBehaviours for FrontScreen {
                     _ => None,
                 }
             }
+            FrontScreen::WorkshopHub(_) => {
+                // The hub's handlers (`UIWorkshopHub.cs:128-174`,
+                // `:289-300`). The grid openers play 10 themselves; Back
+                // plays 11 (`:292` + `:338` — the vanilla plays it twice,
+                // the port once through the cue arm); Logs plays 10 and
+                // opens the reports page (d85 row 10 — the notice).
+                let title = crate::lang::text("UI.WorkshopHub");
+                let title_w = app.front_header_w(&title);
+                let sep_h = app.lookups.ui_separator.map_or(2.0, |s| s.height as f32);
+                let l = ui::workshop_hub::layout(screen, title_w, sep_h);
+                match ui::workshop_hub::click_at(&l, mouse) {
+                    ui::workshop_hub::Click::Back => Some(FlowClick::WorkshopHubBack),
+                    ui::workshop_hub::Click::Logs => {
+                        // `GoLogsClick` (`:295-300`): IssueReporterIndicator.
+                        // Hide + OpenReportsMenu — out of the d84 range.
+                        app.audio.play("Menu_Open");
+                        app.front_hint = Some(
+                            "The Workshop logs page is not ported yet".to_string(),
+                        );
+                        None
+                    }
+                    ui::workshop_hub::Click::Button(ui::workshop_hub::BTN_IMPORT) => {
+                        Some(FlowClick::HubOpenImport)
+                    }
+                    ui::workshop_hub::Click::Button(ui::workshop_hub::BTN_USE) => {
+                        Some(FlowClick::HubOpenUsePacks)
+                    }
+                    ui::workshop_hub::Click::Button(ui::workshop_hub::BTN_PUBLISH_WORLDS) => {
+                        Some(FlowClick::HubOpenPublishWorlds)
+                    }
+                    ui::workshop_hub::Click::Button(ui::workshop_hub::BTN_PUBLISH_PACKS) => {
+                        Some(FlowClick::HubOpenPublishPacks)
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -2068,6 +2180,15 @@ impl App {
                     self.mouse_pos,
                 )
             }
+            FrontScreen::WorkshopHub(_) => {
+                // The hub's hover-tick identity (`FadedMouseOver` /
+                // `SetColorsToHovered` play 12 on the enter edge).
+                let title = crate::lang::text("UI.WorkshopHub");
+                let title_w = self.front_header_w(&title);
+                let sep_h = self.lookups.ui_separator.map_or(2.0, |s| s.height as f32);
+                let l = ui::workshop_hub::layout(screen, title_w, sep_h);
+                ui::workshop_hub::hit_element(&l, self.mouse_pos)
+            }
             _ => None,
         }
     }
@@ -2124,6 +2245,7 @@ impl App {
                     | FlowClick::WorldCreateBack
                     | FlowClick::ConfirmNo
                     | FlowClick::WorkshopListBack
+                    | FlowClick::WorkshopHubBack
             ) {
                 self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
             } else {
@@ -2464,8 +2586,8 @@ pub(crate) mod front_flow_tests {
             next_flow_state(Some(null_back), None, None, FlowClick::PackSelectionBack);
         assert!(front.is_none() && backup.is_none());
         assert_eq!(page, Some(P::Main), "the null target opens menuMode 0");
-        // A parked char-select target (the hub lands with row 1; any
-        // FrontScreen rides the same back slot).
+        // A parked char-select target (any FrontScreen rides the back slot;
+        // the live openers park the row-1 hub).
         let mut state = ui::resource_packs::PackSelectionState::new();
         state.back = Some(Box::new(FrontScreen::CharSelect));
         let parked = FrontScreen::ResourcePackSelection(Box::new(state));
@@ -2479,8 +2601,8 @@ pub(crate) mod front_flow_tests {
     fn workshop_list_back_returns_to_the_parked_target_or_menu() {
         // `HandleBackButtonUsage` (`UIWorkshopSelectResourcePackToPublish.cs:
         // 109-113`): sound 11 + `SetState(_menuToGoBackTo)` — the parked
-        // hub returns verbatim. The hub lands with row 1; until then any
-        // FrontScreen rides the same back slot.
+        // hub returns verbatim (the row-1 hub parks through the HubOpen*
+        // rows; any FrontScreen rides the same back slot).
         let mut state = ui::workshop_publish::PublishPacksState::default();
         state.back = Some(Box::new(FrontScreen::CharSelect));
         let parked = FrontScreen::WorkshopPublishPacks(Box::new(state));
@@ -2515,6 +2637,55 @@ pub(crate) mod front_flow_tests {
             next_flow_state(Some(parked), None, None, FlowClick::WorkshopListBack);
         assert_eq!(front, Some(FrontScreen::CharSelect));
         assert!(backup.is_none() && page.is_none());
+    }
+
+    #[test]
+    fn the_hub_openers_park_the_hub_and_back_restores_it() {
+        // `Click_Open*` (`UIWorkshopHub.cs:128-174`): each opener parks the
+        // live hub as the new screen's back target; the lists' Back
+        // (`WorkshopListBack`) restores it verbatim.
+        let hub = FrontScreen::WorkshopHub(Box::new(ui::workshop_hub::HubState::default()));
+        for click in [
+            FlowClick::HubOpenImport,
+            FlowClick::HubOpenPublishWorlds,
+            FlowClick::HubOpenPublishPacks,
+            FlowClick::HubOpenUsePacks,
+        ] {
+            let (front, backup, page) =
+                next_flow_state(Some(hub.clone()), None, None, click);
+            assert!(backup.is_none() && page.is_none());
+            let back_target = match &front {
+                Some(FrontScreen::WorkshopImportWorlds(s)) => s.back.as_deref(),
+                Some(FrontScreen::WorkshopPublishWorlds(s)) => s.back.as_deref(),
+                Some(FrontScreen::WorkshopPublishPacks(s)) => s.back.as_deref(),
+                Some(FrontScreen::ResourcePackSelection(s)) => s.back.as_deref(),
+                other => panic!("{click:?} opened {other:?}"),
+            };
+            assert_eq!(back_target, Some(&hub), "the exact hub parks");
+            // The list Back restores the hub verbatim (the selection
+            // screen's Back rides PackSelectionBack).
+            let back_click = if matches!(front, Some(FrontScreen::ResourcePackSelection(_))) {
+                FlowClick::PackSelectionBack
+            } else {
+                FlowClick::WorkshopListBack
+            };
+            let (front, _, page) = next_flow_state(front, None, None, back_click);
+            assert_eq!(front, Some(hub.clone()));
+            assert!(page.is_none());
+        }
+        // `HandleBackButtonUsage` (`:329-339`): the null target (the menu
+        // row's ctor) closes to menuMode 0; a parked target returns.
+        let (front, _, page) =
+            next_flow_state(Some(hub.clone()), None, None, FlowClick::WorkshopHubBack);
+        assert!(front.is_none());
+        assert_eq!(page, Some(P::Main));
+        let parked_hub = FrontScreen::WorkshopHub(Box::new(ui::workshop_hub::HubState {
+            back: Some(Box::new(FrontScreen::CharSelect)),
+        }));
+        let (front, _, page) =
+            next_flow_state(Some(parked_hub), None, None, FlowClick::WorkshopHubBack);
+        assert_eq!(front, Some(FrontScreen::CharSelect));
+        assert!(page.is_none());
     }
 
     #[test]
@@ -2676,6 +2847,10 @@ pub(crate) mod front_flow_tests {
             Some(FrontScreen::WorkshopImportWorlds(Box::new(
                 ui::workshop_publish::ImportWorldsState::default(),
             ))),
+            // W4-d84 row 1: the workshop hub joins the matrix.
+            Some(FrontScreen::WorkshopHub(Box::new(
+                ui::workshop_hub::HubState::default(),
+            ))),
         ];
         let backs = [
             None,
@@ -2714,6 +2889,11 @@ pub(crate) mod front_flow_tests {
             FlowClick::PackSelectionBack,
             FlowClick::PackInfo(0),
             FlowClick::WorkshopListBack,
+            FlowClick::WorkshopHubBack,
+            FlowClick::HubOpenImport,
+            FlowClick::HubOpenPublishWorlds,
+            FlowClick::HubOpenPublishPacks,
+            FlowClick::HubOpenUsePacks,
         ];
         for front in &fronts {
             for backup in &backs {

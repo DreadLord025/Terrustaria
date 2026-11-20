@@ -81,6 +81,15 @@ impl App {
                     ui::resource_packs::PackSelectionState::new(),
                 )));
             }
+            TrUiPreset::WsHub => {
+                // The workshop-hub screenshot (`TR_UI=wshub`): the menu row
+                // constructs `new UIWorkshopHub(null)` (`Main.cs:48944`) —
+                // the null back target closes to menuMode 0. The live row
+                // needs Steam; this is the port's screenshot entry.
+                self.enter_front(FrontScreen::WorkshopHub(Box::new(
+                    ui::workshop_hub::HubState::default(),
+                )));
+            }
             TrUiPreset::Credits => {
                 self.front = None;
                 self.front_backup = None;

@@ -388,6 +388,7 @@ re-implement something that already exists, or to port the wrong file.
 | `Rain.cs` (the drop field/visuals), `Cloud.cs` | `crates/tr-app/src/rain.rs` (field + draw), the visual tick in `world_sim/weather.rs` | partial |
 | `Map/*` (client-side map view) | `crates/tr-app/src/map.rs` | partial |
 | `UI/*` (UIState screens) | `crates/tr-app/src/ui/uistate.rs` (the element kit) + `app/flow.rs` (`FrontScreen`/`FrontScreenBehaviours` ≈ `UIState`) | partial |
+| `UIWorkshopHub` (UIState) | `crates/tr-app/src/ui/workshop_hub.rs` (`FrontScreen::WorkshopHub`) + `ui/workshop_kit.rs` | ported (W4-d84; no Steam — the menu row keeps the ResourcePacks branch, `TR_UI=wshub` opens the hub) |
 | `UIWorkshopSelectResourcePackToPublish` (UIState) | `crates/tr-app/src/ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishPacks`) + `ui/workshop_kit.rs` | ported (W4-d84) |
 | `UIWorkshopSelectWorldToPublish` (UIState) | `crates/tr-app/src/ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishWorlds`) + `ui/workshop_kit.rs` | ported (W4-d84) |
 | `UIWorkshopWorldImport` (UIState) | `crates/tr-app/src/ui/workshop_publish.rs` (`FrontScreen::WorkshopImportWorlds`) + `ui/workshop_kit.rs` | ported (W4-d84; no Steam — the subscribed list is always empty) |
