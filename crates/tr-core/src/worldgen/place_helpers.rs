@@ -1139,6 +1139,53 @@ pub(crate) fn place_2x_x(world: &mut World, x: i32, y: i32, kind: u16, style: i3
     }
 }
 
+/// The shared mannequin core (`WorldGen.PlaceMan`/`PlaceWoman` —
+/// `WorldGen.cs:46302-46346`/`:46348-46392`): the two bodies are identical
+/// except the tile type. The 2-wide, 3-tall body `(x..=x+1, y-2..=y)` must
+/// be inactive (column-major scan, `:46304-46313`), both floor columns
+/// need `SolidTile2` (`:46314`). `dir == 1` flips to the right-facing
+/// sheet half (`frameX += 36`, `:46316-46320`). Writes: the LEFT column
+/// top-down first, then the right column top-down (`:46321-46344`),
+/// `frameX = b` / `18 + b`, `frameY = row * 18`. The C# body reads have no
+/// null guard (a null tile would throw); the port bounds-guards the rect.
+fn place_mannequin(world: &mut World, x: i32, y: i32, dir: i32, kind: u16) {
+    for k in x..(x + 2) {
+        for l in (y - 2)..(y + 1) {
+            if !in_world(world, k, l, 0) {
+                return;
+            }
+            if world.tile(k, l).is_some_and(|t| t.active()) {
+                return;
+            }
+        }
+    }
+    if solid_tile2(world, x, y + 1) && solid_tile2(world, x + 1, y + 1) {
+        let b: i16 = if dir == 1 { 36 } else { 0 };
+        for (col, fx) in [(x, b), (x + 1, 18 + b)] {
+            for row in 0..3 {
+                let i = world.index(col, y - 2 + row);
+                let t = &mut world.tiles[i];
+                t.flags |= FLAG_ACTIVE;
+                t.frame_y = (row * 18) as i16;
+                t.frame_x = fx;
+                t.kind = kind;
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlaceMan` (`WorldGen.cs:46302-46346`): the male mannequin
+/// (128) — see `place_mannequin` for the shared body.
+pub(crate) fn place_man(world: &mut World, x: i32, y: i32, dir: i32) {
+    place_mannequin(world, x, y, dir, 128);
+}
+
+/// `WorldGen.PlaceWoman` (`WorldGen.cs:46348-46392`): the female
+/// mannequin (269) — the same body, only the type differs.
+pub(crate) fn place_woman(world: &mut World, x: i32, y: i32, dir: i32) {
+    place_mannequin(world, x, y, dir, 269);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1574,5 +1621,30 @@ mod tests {
         assert!(w2.tile(30, 15).unwrap().active());
         assert_eq!(w2.tile(30, 15).unwrap().frame_x, 36);
         assert_eq!(w2.tile(31, 19).unwrap().frame_y, 72); // 4*18
+    }
+
+    /// `PlaceMan`/`PlaceWoman` lay the 2×3 mannequin, dir 1 flips +36,
+    /// and an occupied body cell refuses the whole placement.
+    #[test]
+    fn mannequins_lay_the_2x3_body_with_the_direction_flip() {
+        let mut w = floor_world();
+        place_man(&mut w, 10, 19, 0);
+        let head = w.tile(10, 17).unwrap();
+        assert!(head.active() && head.kind == 128);
+        assert_eq!((head.frame_x, head.frame_y), (0, 0));
+        assert_eq!(w.tile(11, 19).unwrap().frame_x, 18);
+        assert_eq!(w.tile(11, 19).unwrap().frame_y, 36);
+        // dir 1: the +36 sheet half on both columns.
+        place_woman(&mut w, 20, 19, 1);
+        let t = w.tile(20, 17).unwrap();
+        assert!(t.active() && t.kind == 269);
+        assert_eq!(t.frame_x, 36);
+        assert_eq!(w.tile(21, 18).unwrap().frame_x, 54);
+        assert_eq!(w.tile(21, 18).unwrap().frame_y, 18);
+        // An occupied body cell refuses.
+        let i = w.index(31, 18);
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        place_man(&mut w, 30, 19, 0);
+        assert!(!w.tile(30, 17).unwrap().active());
     }
 }

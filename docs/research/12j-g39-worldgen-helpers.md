@@ -82,7 +82,7 @@ the C# call site), so no stream is invented.
 | H11 | `Place3x2Wall` / `Place3x3Wall` / `Place2x3Wall` / `Place4x3Wall` / `Place6x4Wall` | `:44725-44756` / `:44254-44292` / `:44568-44599` / `:44854-44886` / `:44946-44979` | paintings (Floating Island Houses, temple) | landed 27d73b83 |
 | H12 | `PlaceOnTable1x1` / `PlaceLogicTiles` | `:45340-45378` / `:45309-45338` | Guide/house furniture | landed b24483c2 |
 | H13 | `Place1xX` / `Place2xX` | `:39177-39211` / `:39663-39722` (bodies end there; the claim's :39522/:39935 tails were the following unrelated fns) | the temple slices exist (`temple.rs:1880`); general banners/statues | (this slice) |
-| H14 | `PlaceMan` / `PlaceWoman` | `:46302-46347` / `:46348-46393` | Guide (d105) | pending |
+| H14 | `PlaceMan` / `PlaceWoman` | `:46302-46346` / `:46348-46392` | Guide (d105) | (this slice) |
 | H15 | `SolidTileNoPlatforms` / `SolidTileAllowPlatformTopFrame` / `SolidTileAllowTopSlope` / `SolidTileAllowLeftSlope` / `SolidTileAllowRightSlope` | `:70191-70219` / `:70220-70319` / `:70320-70339` / `:70340-70359` / `:70360-70459` | placement floors for the pending passes | pending |
 
 Not claimed here (runtime-side or already covered): `PlaceObject`
