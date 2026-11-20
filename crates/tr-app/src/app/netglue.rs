@@ -825,6 +825,10 @@ impl App {
             // ack decrement) + 73 RequestTeleport (`:3127-3146` conch/
             // potion/shellphone dispatch) — same wave, same parking.
             C2s::TeleportEntity(_) | C2s::RequestTeleport(_) => {}
+            // 75 AnglerQuestFinished (`MessageBuffer.cs:3154-3163` adds the
+            // sender's name to anglerWhoFinishedToday) — same wave, same
+            // parking.
+            C2s::AnglerQuestFinished => {}
         }
     }
 
@@ -1875,6 +1879,9 @@ impl App {
             // Teleport + netOffset zero + the nearest-peer chat) — same
             // wave, same parking.
             S2c::TeleportEntity(_) => {}
+            // 77 SyncTilePicking (`MessageBuffer.cs:3183-3185`
+            // Animation.NewTemporaryAnimation) — same wave, same parking.
+            S2c::TemporaryAnimation(_) => {}
         }
     }
 

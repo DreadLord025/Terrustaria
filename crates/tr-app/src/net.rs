@@ -1657,6 +1657,20 @@ pub struct RequestTeleport {
     pub kind: u8,
 }
 
+/// `msg 77 SyncTilePicking`'s body (`NetMessage.cs:1154-1159`):
+/// `(short)` animationType, `(ushort)` tileType, `(short)` x, `(short)` y —
+/// `Animation.NewTemporaryAnimation`'s four args verbatim
+/// (`MessageBuffer.cs:3183-3185`). Sent only by the host's
+/// `SendTemporaryAnimation` (`NetMessage.cs:2590-2596`, `netMode == 2`) to
+/// one client; server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TemporaryAnimation {
+    pub animation_type: i16,
+    pub tile_type: u16,
+    pub x: i16,
+    pub y: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1780,6 +1794,10 @@ pub enum C2s {
     /// `73 RequestTeleport` - a client used a conch/potion/shellphone
     /// (`MessageBuffer.cs:3127-3146` runs it on the sender).
     RequestTeleport(RequestTeleport),
+    /// `75 AnglerQuestFinished` - a client finished today's angler quest,
+    /// no body (`MessageBuffer.cs:3154-3163` adds the sender's name;
+    /// `Main.cs:40254`).
+    AnglerQuestFinished,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1909,6 +1927,9 @@ pub enum S2c {
     /// `65 TeleportEntity` - the host's player/NPC teleport broadcast
     /// (`MessageBuffer.cs:2989`/`:3008`, `NPC.cs:81056`).
     TeleportEntity(TeleportEntity),
+    /// `77 SyncTilePicking` - a temporary tile animation for one client
+    /// (`NetMessage.SendTemporaryAnimation`, `MessageBuffer.cs:3183-3185`).
+    TemporaryAnimation(TemporaryAnimation),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2001,6 +2022,7 @@ impl C2s {
             Self::SpawnBossEvent(_) => id::SPAWN_BOSS_EVENT,
             Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
             Self::RequestTeleport(_) => id::REQUEST_TELEPORT,
+            Self::AnglerQuestFinished => id::ANGLER_QUEST_FINISHED,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2089,6 +2111,8 @@ impl C2s {
             }
             // `NetMessage.cs:1142-1144`: (byte)kind.
             Self::RequestTeleport(q) => w.u8(q.kind),
+            // No writer arm — bodyless (`MessageBuffer.cs:3154-3163`).
+            Self::AnglerQuestFinished => w,
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2221,6 +2245,7 @@ impl C2s {
             }),
             id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
             id::REQUEST_TELEPORT => Self::RequestTeleport(RequestTeleport { kind: r.u8()? }),
+            id::ANGLER_QUEST_FINISHED => Self::AnglerQuestFinished,
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2412,6 +2437,7 @@ impl S2c {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
             Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
+            Self::TemporaryAnimation(_) => id::TEMPORARY_ANIMATION,
         }
     }
 
@@ -2571,6 +2597,13 @@ impl S2c {
                     None => w,
                 }
             }
+            // `NetMessage.cs:1154-1159`: (short)animationType +
+            // (ushort)tileType + (short)x + (short)y.
+            Self::TemporaryAnimation(a) => w
+                .i16(a.animation_type)
+                .u16(a.tile_type)
+                .i16(a.x)
+                .i16(a.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2778,6 +2811,12 @@ impl S2c {
                 kind: r.u8()?,
             }),
             id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
+            id::TEMPORARY_ANIMATION => Self::TemporaryAnimation(TemporaryAnimation {
+                animation_type: r.i16()?,
+                tile_type: r.u16()?,
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
             _ => return None,
         })
     }
@@ -5076,6 +5115,48 @@ mod tests {
                 C2s::RequestTeleport(d) => assert_eq!(d, q),
                 other => panic!("expected 73, got {:?}", other.msg_id()),
             }
+        }
+    }
+
+    #[test]
+    fn w4_d99_angler_quest_finished_is_bodyless() {
+        // No `case 75` writer arm in NetMessage.cs and the reader consumes
+        // nothing (`MessageBuffer.cs:3154-3163` — it only adds the sender's
+        // name on the host): the frame is exactly [len=3][75].
+        let f = C2s::AnglerQuestFinished.encode();
+        assert_eq!(f, vec![3, 0, 75]);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::AnglerQuestFinished => {}
+            other => panic!("expected 75, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_d99_temporary_animation_round_trips() {
+        // `NetMessage.cs:1154-1159` (case 77), verbatim: (short)number
+        // (animationType), (ushort)number2 (tileType), (short)number3 (x),
+        // (short)number4 (y) — `SendTemporaryAnimation`'s argument order
+        // (`:2594`); the reader feeds Animation.NewTemporaryAnimation
+        // (`MessageBuffer.cs:3184`). Server→client, one addressee.
+        let a = TemporaryAnimation {
+            animation_type: 3,
+            tile_type: 593, // the campfire toggle (`Wiring.cs:1704`)
+            x: 1234,
+            y: -56,
+        };
+        let f = S2c::TemporaryAnimation(a).encode();
+        assert_eq!(f[2], 77);
+        let mut body = Vec::new();
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&593u16.to_le_bytes());
+        body.extend_from_slice(&1234i16.to_le_bytes());
+        body.extend_from_slice(&(-56i16).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TemporaryAnimation(d) => assert_eq!(d, a),
+            other => panic!("expected 77, got {:?}", other.msg_id()),
         }
     }
 }
