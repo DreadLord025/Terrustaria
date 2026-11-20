@@ -744,6 +744,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(7);
         let mut n = mimic(100.0, 100.0);
         n.ai = [2.0, 5.0, 6.0, 1.0];
+        n.target = 0; // the dead slot-0 player (the C# gate reads it)
         let mut e = env(&w, &players, &mut rng);
         let _ = style87_step(&mut n, 473, &mut e);
         assert_eq!(n.ai[0], 7.0);
