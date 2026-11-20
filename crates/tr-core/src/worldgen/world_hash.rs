@@ -301,6 +301,13 @@ mod tests {
     // will draw only under `MicroSeedFlags::DUAL_DUNGEONS`, so a classic
     // world keeps the byte-identical ledger; the affected seed's hash moves
     // by design and rides an a == b witness (written NOT run).
+    // W4-f24 B2: `dungeon_control_line.rs` ports `DungeonControlLine`
+    // (`DungeonControlLine.cs:9-285`) — CanPaint's tangent/normal blend,
+    // the Bayer style-transition + edge dither (the NextFloat/Next(3)/
+    // Next(2)/Next(4) rarity rolls), Paint's brick+wall+unbreakable-tier
+    // stamp, IsSelfIntersecting/AdjustTangents, IsInsideBorder and
+    // GetPotentialRoomPosition. Still UNWIRED (B6 lands the gated step) —
+    // no classic draw, both pins stay, a == b untouched.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
