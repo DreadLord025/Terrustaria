@@ -6618,6 +6618,32 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-g6 mid-2 — the bridge into `npc_findframe_mid2`'s pure
+    /// machines: the four fields both ways; `localAI[0]` is INPUT-only
+    /// here (the CorruptPenguin's colour bank reads it,
+    /// `NPC.cs:76398-76409` — no slice-2 arm writes it, so the module's
+    /// `FrameState` does not carry it).
+    fn find_frame_wave_mid2(&mut self, kind: crate::npc_findframe_mid2::FindFrameMid2Kind) {
+        let mut s = crate::npc_findframe_mid2::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_mid2::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            local_ai0: self.local_ai[0],
+        };
+        crate::npc_findframe_mid2::find_frame_mid2(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // W4-g6 low-1 — the `cs_id`-keyed hook into the low-band wave's
         // pure machines (`npc_findframe_low1.rs`, the FIRST-12 missing
@@ -6629,6 +6655,16 @@ impl Npc {
             crate::npc_findframe_low1::find_frame_kind_for_cs_id(self.kind.cs_id())
         {
             self.find_frame_wave_low1(kind);
+            return;
+        }
+        // W4-g6 mid-2 — the hook into `npc_findframe_mid2.rs` (the
+        // W4-d47 module, the SECOND-12 mid-band set 166/168/169/170/171/
+        // 172/173/175/176/178/179/180). Stream-inert on the same proof;
+        // the arms draw no RNG.
+        if let Some(kind) =
+            crate::npc_findframe_mid2::find_frame_kind_for_cs_id(self.kind.cs_id())
+        {
+            self.find_frame_wave_mid2(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -33400,6 +33436,79 @@ mod w4_g6_low1_tests {
         n.ai[1] = 1.0;
         n.find_frame_wave_low1(crate::npc_findframe_low1::FindFrameLow1Kind::BlueJellyfish);
         assert_eq!((n.frame, n.frame_counter), (4, 0.0), "the <4 clamp lifts");
+    }
+}
+
+#[cfg(test)]
+mod w4_g6_mid2_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g6 mid-2 — the `find_frame` hook into `npc_findframe_mid2` ----
+    // The pure machines carry their own 13 pinned witnesses in
+    // `npc_findframe_mid2.rs`; these pin the NPC-side seam. WRITTEN NOT
+    // RUN (code-only mode — no compiler invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (verified statically over the hand rows AND the bestiary
+    /// `net_id` fallback — no value in the 166..180 set appears).
+    #[test]
+    fn w4_g6_the_mid2_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_mid2::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the mid-2 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies the four fields both ways and feeds
+    /// local_ai[0]/ai through as INPUTS — pinned on the CorruptPenguin's
+    /// colour bank (`NPC.cs:76398-76409`), the SwampThing's +2 idle
+    /// counter (`:75629-75642`), the IceElemental's 8-tick strip with NO
+    /// sprite write (`:74044-74058`) and the RuneWizard's cast/air pose
+    /// rows (`:77041-77049`).
+    #[test]
+    fn w4_g6_the_mid2_bridge_copies_the_four_fields_and_feeds_the_bank() {
+        let mut n = bare(NpcKind::Piranha);
+        // The CorruptPenguin: localAI[0] = 2 → the +3 bank; the idle
+        // snaps to row 3, the grounded flip writes facing.
+        n.frame = 9;
+        n.frame_counter = 4.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.local_ai = [2.0, 0.0, 0.0, 0.0];
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::CorruptPenguin);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (3, 0.0, -1));
+        // The air pins row 2 + bank = 5 (both vy signs, `:76446-76455`).
+        n.vy = 1.0;
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::CorruptPenguin);
+        assert_eq!((n.frame, n.frame_counter), (5, 0.0));
+        // The SwampThing idle: the +2 counter steps at >7 — preset 6 →
+        // 8 steps row 0 → 1 and zeroes.
+        n.vy = 0.0;
+        n.frame = 0;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::SwampThing);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        // The IceElemental: the 8-tick strip, NO spriteDirection write
+        // (169 is in neither flip list) — the preset -1 stands.
+        n.frame = 0;
+        n.frame_counter = 7.0;
+        n.sprite_dir = -1;
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::IceElemental);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 0.0, -1));
+        // The RuneWizard: ai[1] > 0 casts on row 1; the air wins (row 2).
+        n.ai = [0.0, 1.0, 0.0, 0.0];
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::RuneWizard);
+        assert_eq!(n.frame, 1, "the cast pose");
+        n.vy = -1.0;
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::RuneWizard);
+        assert_eq!(n.frame, 2, "the air gate wins over the cast");
     }
 }
 
