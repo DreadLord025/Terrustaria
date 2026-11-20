@@ -2469,6 +2469,20 @@ impl App {
                 state.populate();
                 state.scroll = 0.0;
             }
+            // `UIWorkshopSelectWorldToPublish.OnActivate` (`:125-132`) →
+            // `PopulateEntries` (`:134-149`): `Main.LoadWorlds`, drop
+            // `!IsValid`, the favourite/name/file sort — NOT the world
+            // select's Journey-first sort. The back target rode in from the
+            // hub's opener.
+            FrontScreen::WorkshopPublishWorlds(ref mut state) => {
+                let fakes = crate::env::fake_count("TR_FAKE_WORLDS");
+                let dir = save::default_world_dir().unwrap_or_default();
+                let mut worlds = ui::save_list::list_worlds(&dir, fakes);
+                worlds.retain(|w| w.valid);
+                ui::workshop_publish::sort_publish_worlds(&mut worlds);
+                state.worlds = worlds;
+                state.scroll = 0.0;
+            }
         }
         self.park_menu();
         self.front = Some(front);

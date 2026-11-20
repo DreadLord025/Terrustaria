@@ -509,7 +509,6 @@ fn draw_plate_text(
 /// (`UIWorkshopPublishWorldListItem.cs:128-131`,
 /// `UIWorkshopImportWorldListItem.cs:182-185`):
 /// `!GameCulture.English.IsActive`.
-#[allow(dead_code)] // row 3's world rows consume it
 pub(crate) fn size_plate_extra() -> f32 {
     if crate::lang::active_culture() == tr_core::localization::GameCulture::English {
         0.0
@@ -521,7 +520,6 @@ pub(crate) fn size_plate_extra() -> f32 {
 /// `UIWorkshopSelectWorldToPublish.PopulateEntries` (`:134-149`):
 /// `Main.LoadWorlds`, drop `!IsValid`, `orderby IsFavorite descending,
 /// Name, GetFileName()` — NOT the world-select sort (no Journey key).
-#[allow(dead_code)] // row 3's populate consumes it
 pub(crate) fn sort_publish_worlds(worlds: &mut [save_list::WorldEntry]) {
     worlds.sort_by(|a, b| {
         b.is_favorite
@@ -533,6 +531,86 @@ pub(crate) fn sort_publish_worlds(worlds: &mut [save_list::WorldEntry]) {
                 fa.cmp(&fb)
             })
     });
+}
+
+// --- The world-publish screen (row 3) ----------------------------------------
+
+/// `UIWorkshopSelectWorldToPublish`'s own state — the `_entryList` rows
+/// (`PopulateEntries`, `:134-149`: `Main.LoadWorlds`, drop `!IsValid`,
+/// the favourite/name/file sort), the list scroll and the
+/// `_menuToGoBackTo` target (`:28`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct PublishWorldsState {
+    /// The valid worlds in `PopulateEntries` order.
+    pub worlds: Vec<save_list::WorldEntry>,
+    /// The list's `UIScrollbar.ViewPosition`.
+    pub scroll: f32,
+    /// `_menuToGoBackTo` (`:28`) — the hub.
+    pub back: Option<Box<crate::app::flow::FrontScreen>>,
+}
+
+/// The world row's Publish button rect for the click table / hit ids.
+pub(crate) fn world_action_rect(lookups: &assets::Lookups, row_rect: [f32; 4], i: usize) -> [f32; 4] {
+    publish_row(
+        row_rect, i, 60.0, 58.0,
+        publish_button_size_headless(lookups),
+        size_plate_extra(),
+    )
+    .publish
+}
+
+/// `UIWorkshopSelectWorldToPublish.Draw` (`:151-160` → `base.Draw`): the
+/// shared chrome plus one `UIWorkshopPublishWorldListItem` per valid
+/// world (`:107-139`'s DrawSelf — the name, the difficulty/size plates,
+/// the Publish button).
+pub(crate) fn draw_publish_worlds(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    state: &PublishWorldsState,
+    screen: Vec2,
+    mouse: Vec2,
+) {
+    let l = list_layout(screen, state.worlds.len(), 82.0);
+    draw_chrome(r, lookups, &l, "UI.WorkshopSelectWorldToPublishMenuTitle", mouse);
+    let btn = kit::publish_button_size(r, lookups);
+    let extra = size_plate_extra();
+    let row_rect = [l.list[0], l.list[1] - state.scroll, l.list[2], l.list[3]];
+    for (i, entry) in state.worlds.iter().enumerate() {
+        let row = publish_row(row_rect, i, 60.0, 58.0, btn, extra);
+        if row.card[1] + row.card[3] <= l.list[1] || row.card[1] >= l.list[1] + l.list[3] {
+            continue;
+        }
+        let hover = crate::ui::in_rect(mouse, row.card);
+        // The world twin has no grey arm (`:61-71`) — every valid row
+        // publishes.
+        let (bg, border) = publish_row_colors(hover, true);
+        panel::draw_panel(r, lookups, lookups.ui_panel_bg, row.card, color::tint(bg));
+        panel::draw_panel(r, lookups, lookups.ui_panel_border, row.card, color::tint(border));
+        // The 60x58 world icon (`GetIconElement`, `AWorldListItem.cs:181-184`)
+        // — the fixed IconCrimson sheet (the world-select deviation: no
+        // evil/hardmode data, no cycling).
+        if let Some(sheet) = lookups.ui_world_icon {
+            crate::ui::push_whole(r, lookups, &sheet, row.icon, [1.0; 4]);
+        }
+        // The name (`:113`): White (the rows are all valid — the Gray arm
+        // is unreachable after PopulateEntries' RemoveAll), cropped at
+        // 494 px (`GetWorldName(allowCropping: true)`, `WorldFileData.cs:
+        // 109-121`) — the port's names are short, the crop is a no-op.
+        text::border_string(r, lookups, row.name_pos[0], row.name_pos[1], [1.0; 4], &entry.name);
+        // The difficulty plate (`:119-125`): GetDifficulty's label+colour.
+        kit::draw_info_plate(r, lookups, row.plate1);
+        let (diff_text, diff_color) = crate::ui::world_select::difficulty_text(entry.difficulty);
+        draw_plate_text(r, lookups, row.plate1, &diff_text, color::tint(diff_color));
+        // The size plate (`:126-137`): "{0} World", White.
+        kit::draw_info_plate(r, lookups, row.plate2);
+        let size_text = crate::lang::text_args(
+            "UI.WorldSizeFormat",
+            &[crate::ui::world_select::size_name(entry.size_id)],
+        );
+        draw_plate_text(r, lookups, row.plate2, &size_text, [1.0; 4]);
+        kit::draw_publish_button(r, lookups, row.publish, hover && crate::ui::in_rect(mouse, row.publish));
+    }
+    draw_list_scrollbar(r, lookups, &l, state.worlds.len(), 82.0, state.scroll);
 }
 
 #[cfg(test)]

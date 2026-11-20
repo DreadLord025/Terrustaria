@@ -36117,6 +36117,31 @@ filter (always true without Steam) + the stable `orderby IsCompressed`
 - Back (`HandleBackButtonUsage`, `:109-113`) plays 11 and restores the
   parked hub verbatim (`FlowClick::WorkshopListBack`).
 
+### UIWorkshopSelectWorldToPublish (row 3)
+
+`ui/workshop_publish.rs` + `FrontScreen::WorkshopPublishWorlds`. The same
+shared chrome as row 2 (`UIWorkshopSelectWorldToPublish.cs:37-99` — the
+identical `OnInitialize`/`Recalculate`). `PopulateEntries` (`:134-149`)
+re-lists on `OnActivate`: `Main.LoadWorlds`, `RemoveAll(!IsValid)`,
+`orderby IsFavorite descending, Name, GetFileName()` — **not** the world
+select's Journey-first sort (`sort_publish_worlds`, pinned by tests).
+
+- The rows are the 82 px `UIWorkshopPublishWorldListItem` (`:25-140`):
+  the 60x58 world icon (`GetIconElement` — the fixed `IconCrimson` sheet,
+  the world-select deviation: no evil/hardmode data, no cycling), the
+  name at `(icon right + 6, inner.Y + 3)`, the difficulty/size plates
+  (`num2` split like the pack twin; the size plate grows 40 px
+  off-English, `:128-131`) and the same `UIIconTextButton` Publish.
+- The world twin has no grey arm (`:61-71`) — every row is valid after
+  the RemoveAll, so the Gray name branch (`:113`) is unreachable. The
+  name crop (`GetWorldName(allowCropping: true)`, 494 px) is a no-op for
+  the port's short names.
+- The Publish tail is the `front_hint` notice (cluster deviation —
+  `WorkshopPublishInfoStateForWorld`, `:77`, is out of range); the button
+  plays 12 itself, the icon/body double-click is silent.
+- Back (`HandleBackButtonUsage`, `:106-110`) plays 11 and restores the
+  parked hub (`FlowClick::WorkshopListBack`, the row-2 table arm).
+
 ### UIResourcePackInfoMenu (row 6)
 
 `ui/resource_pack_info.rs` + `FrontScreen::ResourcePackInfo`. The payload

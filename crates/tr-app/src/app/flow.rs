@@ -76,6 +76,15 @@ pub(crate) enum FrontScreen {
     /// scroll + the `_menuToGoBackTo` target); `enter_front` re-lists
     /// (`OnActivate` → `PopulateEntries`, `:128-151`).
     WorkshopPublishPacks(Box<ui::workshop_publish::PublishPacksState>),
+    /// W4-d84 row 3's `UIWorkshopSelectWorldToPublish`
+    /// (`UIWorkshopSelectWorldToPublish.cs:16`) — the valid-world publish
+    /// list the hub's Publish-Worlds button opens
+    /// (`Click_OpenWorldPublishMenu`, `UIWorkshopHub.cs:170-174`). The
+    /// payload is the screen's own state (`_entryList` + the list scroll +
+    /// the `_menuToGoBackTo` target); `enter_front` re-lists (`OnActivate`
+    /// → `PopulateEntries`, `:125-149`: `Main.LoadWorlds`, drop `!IsValid`,
+    /// the favourite/name/file sort).
+    WorkshopPublishWorlds(Box<ui::workshop_publish::PublishWorldsState>),
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -329,6 +338,7 @@ pub(crate) fn next_flow_state(
         FlowClick::WorkshopListBack => {
             let back = match &front {
                 Some(FrontScreen::WorkshopPublishPacks(state)) => state.back.as_deref().cloned(),
+                Some(FrontScreen::WorkshopPublishWorlds(state)) => state.back.as_deref().cloned(),
                 _ => None,
             };
             match back {
@@ -628,6 +638,17 @@ impl FrontScreenBehaviours for FrontScreen {
                 // `UIWorkshopSelectResourcePackToPublish.Draw` (`:153-162`):
                 // the chrome + the publishable pack rows.
                 ui::workshop_publish::draw_publish_packs(
+                    d.renderer,
+                    d.lookups,
+                    state,
+                    d.screen,
+                    d.mouse,
+                );
+            }
+            FrontScreen::WorkshopPublishWorlds(state) => {
+                // `UIWorkshopSelectWorldToPublish.Draw` (`:151-160`):
+                // the chrome + the valid-world publish rows.
+                ui::workshop_publish::draw_publish_worlds(
                     d.renderer,
                     d.lookups,
                     state,
@@ -1344,6 +1365,55 @@ impl FrontScreenBehaviours for FrontScreen {
                     _ => None,
                 }
             }
+            FrontScreen::WorkshopPublishWorlds(_) => {
+                // `GoBackClick` (`UIWorkshopSelectWorldToPublish.cs:101-104`)
+                // + the Publish button / card double-click
+                // (`PublishButtonClick_ImportWorldToLocalFiles`,
+                // `UIWorkshopPublishWorldListItem.cs:35/:41/:42`). The tail
+                // is the documented notice (`WorkshopPublishInfoStateForWorld`,
+                // `:77`, is out of the d84 range).
+                let Some(FrontScreen::WorkshopPublishWorlds(state)) = app.front.as_mut() else {
+                    return None;
+                };
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                let scroll = state.scroll;
+                let lookups = &app.lookups;
+                let action = |rr: [f32; 4], i: usize| {
+                    ui::workshop_publish::world_action_rect(lookups, rr, i)
+                };
+                let click = ui::workshop_publish::click_at(
+                    &l, rows, 82.0, scroll, action, mouse, double_click, false,
+                );
+                match click {
+                    ui::workshop_publish::Click::Back => Some(FlowClick::WorkshopListBack),
+                    ui::workshop_publish::Click::Publish(row) => {
+                        // `:75` — the `evt.Target` gate: the button's own
+                        // click or the icon/body double-click. Every row is
+                        // valid (PopulateEntries' RemoveAll, `:139`), so no
+                        // IsValid gate here. The 12 cue is the button's
+                        // `LeftMouseDown` (`UIIconTextButton.cs:102-106`).
+                        let hit = ui::workshop_publish::hit_element(
+                            &l, rows, 82.0, scroll, action, mouse,
+                        );
+                        if hit.is_some_and(|id| {
+                            id >= ui::workshop_publish::ROW_BASE
+                                && (id - ui::workshop_publish::ROW_BASE) % 2
+                                    == ui::workshop_publish::PART_ACTION
+                        }) {
+                            app.audio.play("Menu_Tick");
+                        }
+                        let name = state.worlds.get(row)
+                            .map(|w| w.name.clone())
+                            .unwrap_or_default();
+                        app.front_hint = Some(format!(
+                            "Publishing \"{name}\" is not ported yet (no Steam Workshop)"
+                        ));
+                        None
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -1727,6 +1797,12 @@ impl App {
                 wheel(&l, rows, 82.0, &mut state.scroll);
                 true
             }
+            Some(FrontScreen::WorkshopPublishWorlds(state)) => {
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                wheel(&l, rows, 82.0, &mut state.scroll);
+                true
+            }
             _ => false,
         }
     }
@@ -1771,6 +1847,22 @@ impl App {
                 }
                 false
             }
+            Some(FrontScreen::WorkshopPublishWorlds(state)) => {
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                if !l.attached {
+                    return false;
+                }
+                let content = ui::workshop_publish::content_height(rows, 82.0);
+                if let Some((scroll, drag)) =
+                    bar_press(l.scrollbar, l.list[3], content, state.scroll)
+                {
+                    state.scroll = scroll;
+                    self.front_scroll_drag = drag;
+                    return true;
+                }
+                false
+            }
             _ => false,
         }
     }
@@ -1784,6 +1876,17 @@ impl App {
         match self.front.as_mut() {
             Some(FrontScreen::WorkshopPublishPacks(state)) => {
                 let rows = state.rows().len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                if !l.attached {
+                    return false;
+                }
+                let content = ui::workshop_publish::content_height(rows, 82.0);
+                state.scroll =
+                    ui::panel::scrollbar_drag_value(l.scrollbar, l.list[3], content, offset, mouse_y);
+                true
+            }
+            Some(FrontScreen::WorkshopPublishWorlds(state)) => {
+                let rows = state.worlds.len();
                 let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
                 if !l.attached {
                     return false;
@@ -1830,6 +1933,17 @@ impl App {
                 ui::workshop_publish::hit_element(
                     &l, rows, 82.0, state.scroll,
                     |rr, i| ui::workshop_publish::pack_action_rect(&self.lookups, rr, i),
+                    self.mouse_pos,
+                )
+            }
+            FrontScreen::WorkshopPublishWorlds(state) => {
+                // The world publish rows' double-click identity
+                // (`UIWorkshopPublishWorldListItem.cs:35/:42`).
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 82.0);
+                ui::workshop_publish::hit_element(
+                    &l, rows, 82.0, state.scroll,
+                    |rr, i| ui::workshop_publish::world_action_rect(&self.lookups, rr, i),
                     self.mouse_pos,
                 )
             }
@@ -2262,6 +2376,15 @@ pub(crate) mod front_flow_tests {
             next_flow_state(Some(orphan), None, None, FlowClick::WorkshopListBack);
         assert!(front.is_none());
         assert_eq!(page, Some(P::Main));
+        // Row 3's twin (`UIWorkshopSelectWorldToPublish.cs:106-110`) rides
+        // the same FlowClick and the same parked-target slot.
+        let mut worlds = ui::workshop_publish::PublishWorldsState::default();
+        worlds.back = Some(Box::new(FrontScreen::CharSelect));
+        let parked = FrontScreen::WorkshopPublishWorlds(Box::new(worlds));
+        let (front, backup, page) =
+            next_flow_state(Some(parked), None, None, FlowClick::WorkshopListBack);
+        assert_eq!(front, Some(FrontScreen::CharSelect));
+        assert!(backup.is_none() && page.is_none());
     }
 
     #[test]
@@ -2414,6 +2537,10 @@ pub(crate) mod front_flow_tests {
             // W4-d84 row 2: the pack-publish screen joins the matrix.
             Some(FrontScreen::WorkshopPublishPacks(Box::new(
                 ui::workshop_publish::PublishPacksState::default(),
+            ))),
+            // W4-d84 row 3: the world-publish screen joins the matrix.
+            Some(FrontScreen::WorkshopPublishWorlds(Box::new(
+                ui::workshop_publish::PublishWorldsState::default(),
             ))),
         ];
         let backs = [
