@@ -228,6 +228,7 @@ fn lane_covers(ty: u16) -> bool {
             | 344 | 262..=264 | 265 | 266 | 267 | 370 | 372 | 373
             | 439 | 381 | 382 | 390 | 383 | 384 | 385 | 386 | 387 | 389
             | 391 | 392..=395 | 399 | 520 | 341 | 471 | 533
+            | 518 | 416 | 419 | 412..=414 | 415 | 417 | 427 | 425
     )
 }
 
@@ -629,6 +630,58 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
                 d.fade_in = 1.0;
             }
         }
+        // `NPC.cs:82802-82821` — Solar Spearman / Drakomire Rider
+        // (518/416): 20 × (241 + `Next(3)==0`-gated 6 full-write);
+        // five constant gores (844/845/847/835/836).
+        518 | 416 => fx.pair_loop(20, 3, 241, 6),
+        // `NPC.cs:82840-82860` — Solar Selenian: the same 20×(241+6)
+        // gated pair; six constant gores (844/845/846×2/847×2).
+        419 => fx.pair_loop(20, 3, 241, 6),
+        // `NPC.cs:82871-82882` — the Solar Crawltipede family (412/
+        // 413/414): 6×241 at `(2.5×hd, -2.5)` then 2×6 at the same
+        // speeds, alpha 100, Color.Transparent, scale 2 (NO post
+        // writes — the C# passes the full arguments). One gore
+        // (`type - 412 + 828`, Scale-default) — constant-argument.
+        412..=414 => {
+            let hd25 = 2.5 * fx.hit_dir as f32;
+            fx.burst(6, 241, hd25, -2.5);
+            for _ in 0..2 {
+                fx.d_full(fx.pos, fx.w, fx.h, 6, hd25, -2.5, 100, Color::TRANSPARENT, 2.0);
+            }
+        }
+        // `NPC.cs:82901-82916` — Solar Drakomire: 40 × (241 + 6
+        // UNCONDITIONAL full-write pair); four constant gores at
+        // Center (831/832 ×0.8, 833/834 ×0.9).
+        415 => fx.pair_loop(40, 0, 241, 6),
+        // `NPC.cs:82935-82957` — Solar Sroller: 30 × (241 +
+        // `Next(2)==0`-gated 6); eight constant gores (837/838×3/
+        // 839×2/840×2).
+        417 => fx.pair_loop(30, 2, 241, 6),
+        // `NPC.cs:83103-83123` — Vortex Alien: 10×241 at `(hd, -1)`,
+        // then 20 × (`SelectRandom(229,229,240)` — ONE `Next(3)` pick
+        // BEFORE the spawn, `Utils.cs:2459-2462` — then noGravity,
+        // scale = 1.25 + NextFloat, fadeIn 0.25, velocity ×3, noLight).
+        // Four constant gores at Center (802-805).
+        427 => {
+            let hd1 = fx.hit_dir as f32;
+            fx.burst(10, 241, hd1, -1.0);
+            for _ in 0..20 {
+                let pick = fx.rng.next_max(3);
+                let ty = [229, 229, 240][pick as usize];
+                let i = fx.d(ty, 0.0, 0.0);
+                let extra = fx.rng.next_float();
+                let d = fx.dust.slot_mut(i);
+                d.no_gravity = true;
+                d.scale = 1.25 + extra;
+                d.fade_in = 0.25;
+                d.velocity *= 3.0;
+                d.no_light = true;
+            }
+        }
+        // `NPC.cs:83224-83245` — Vortex Rifleman: 20 × (241 +
+        // `Next(3)==0`-gated 229 full-write); seven constant gores
+        // (796/797/798/809×2/810×2).
+        425 => fx.pair_loop(20, 3, 241, 229),
         _ => {}
     }
 }
@@ -1176,6 +1229,94 @@ mod tests {
         assert_eq!(rng, r, "30 × (6 internals + 1 tweak re-roll)");
         assert!(pool.slot(29).active);
         assert!(!pool.slot(30).active);
+    }
+
+    /// `NPC.cs:83105-83118` — Vortex Alien: 10×241 then 20 ×
+    /// (SelectRandom `Next(3)` pick BEFORE the spawn, then the 229/240
+    /// internals, then scale `1.25 + NextFloat`). The pick precedes
+    /// the spawn (argument evaluation order).
+    #[test]
+    fn w4_g60_the_vortex_alien_pick_precedes_the_spawn() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(121);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 427,
+            pos: Vec2::new(100.0, 100.0),
+            w: 34,
+            h: 34,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for _ in 0..10 {
+            replay_spawn(&mut r, 34, 34);
+        }
+        for k in 10..30 {
+            let pick = r.next_max(3);
+            let ty = [229, 229, 240][pick as usize];
+            replay_spawn(&mut r, 34, 34);
+            let extra = r.next_float();
+            let d = pool.slot(k);
+            assert_eq!(d.dust_type, ty);
+            assert_eq!(d.scale, 1.25 + extra);
+            assert_eq!(d.fade_in, 0.25);
+            assert!(d.no_gravity && d.no_light);
+        }
+        assert_eq!(rng, r, "10×6 + 20×(1 pick + 6 internals + 1 scale)");
+        assert!(pool.slot(29).active);
+        assert!(!pool.slot(30).active);
+    }
+
+    /// `NPC.cs:82873-82880` — the Crawltipede family: 6×241 then 2×6
+    /// with FULL arguments (alpha 100, Transparent, scale 2) — the 6
+    /// hits the NewDust tweak (vy re-roll, vx ×0.3, scale ×0.7) but
+    /// the C# passes scale 2 as the argument so the rolled×0.7×2 is
+    /// the result; NO post writes. The witness pins the 6's tweak.
+    #[test]
+    fn w4_g60_the_crawltipede_six_dusts_carry_full_args() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(122);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 412,
+            pos: Vec2::new(100.0, 100.0),
+            w: 30,
+            h: 30,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for _ in 0..6 {
+            replay_spawn(&mut r, 30, 30);
+        }
+        for k in 6..8 {
+            let rolls = replay_spawn(&mut r, 30, 30);
+            let tweak_vy = r.next_range(-10, 6); // the type-6 tweak
+            let d = pool.slot(k);
+            assert_eq!(d.dust_type, 6);
+            assert_eq!(d.alpha, 100);
+            assert_eq!(d.color, Color::TRANSPARENT);
+            assert_eq!(d.scale, (1.0 + rolls[5] as f32 * 0.01) * 2.0 * 0.7);
+            assert_eq!(d.velocity.y, tweak_vy as f32 * 0.1);
+        }
+        assert_eq!(rng, r, "6×6 + 2×(6+1 tweak)");
+        assert!(pool.slot(7).active);
+        assert!(!pool.slot(8).active);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
