@@ -1498,6 +1498,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-d51 — the extra-jump chain's dust burst (`Player.cs:
+            // 20818-21012`): the tick snapshotted the box/velocity AFTER the
+            // ascent write; the drain replays the arm's `Dust.NewDust` chain
+            // here, right after the sound drain, so the sound-then-dust draw
+            // order matches the source (the `Main.cs:17754` `UpdatePlayers`
+            // swap covers both). Sandstorm / Blizzard queue no dust.
+            if let Some(burst) = p.take_jump_dust() {
+                crate::player_dust::drain_jump_dust(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and

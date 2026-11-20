@@ -584,6 +584,26 @@ pub(crate) struct StickyDust {
     pub(crate) post_arms: bool,
 }
 
+/// One queued extra-jump dust burst (`Player.JumpMovement`,
+/// `Player.cs:20818-21012`): the tick snapshots the box/velocity/centre at the
+/// C# moment (AFTER the ascent-velocity write) and the drain
+/// (`player_dust::drain_jump_dust`) replays each arm's `Dust.NewDust` chain on
+/// the `UpdatePlayers` stream in source order. `height` is `base.height` (the
+/// `gravDir == -1 → 0` fold collapses to `height`, gravDir 1); `cx`/`cy` are
+/// `base.Center` for the ring arms.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct JumpDust {
+    pub(crate) kind: ExtraJump,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) cx: f32,
+    pub(crate) cy: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -1955,6 +1975,13 @@ pub struct Player {
     /// the RNG order is unchanged (S1-A-10). The type-153 `velocity *= 0.1`
     /// and `noGravity` post-arms ride the drain too.
     pending_sticky_dust: Vec<StickyDust>,
+    /// W4-d51 — the tick's queued extra-jump dust burst (`Player.JumpMovement`,
+    /// `Player.cs:20818-21012`): one [`JumpDust`] snapshot per triggered arm,
+    /// taken AFTER the ascent-velocity write. The drain
+    /// (`player_dust::drain_jump_dust`) replays the arm's `Dust.NewDust` chain
+    /// on the `UpdatePlayers` stream right after the chain's sound drain, so
+    /// the sound-then-dust draw order is the source's (S1-A-10).
+    pending_jump_dust: Option<JumpDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2885,6 +2912,7 @@ impl Player {
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
+            pending_jump_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3474,6 +3502,13 @@ impl Player {
         std::mem::take(&mut self.pending_sticky_dust)
     }
 
+    /// W4-d51 — takes the extra-jump chain's queued dust snapshot
+    /// (`Player.cs:20818-21012`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_jump_dust`).
+    pub(crate) fn take_jump_dust(&mut self) -> Option<JumpDust> {
+        self.pending_jump_dust.take()
+    }
+
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
     /// the seat tile re-decodes through `GetSittingTargetInfo` (`:56-61`),
     /// any control input / the mount / a facing mismatch stands up
@@ -3642,6 +3677,7 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.pending_sticky_dust.clear();
+        self.pending_jump_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -7265,6 +7301,25 @@ impl Player {
                     }
                     self.vy = -self.jump_speed;
                     self.jump = (self.jump_height as f32 * j.hold_multiplier()) as i32;
+                    // W4-d51 — the dust snapshot, taken AFTER the velocity
+                    // write (`Player.cs:20816`/`:20847`/...): the dust sites
+                    // read `base.velocity` at this moment. `height` is the
+                    // gravDir-1 fold of the arms' `num` (gravDir == -1 → 0,
+                    // no gravity flip in the port); `center()` is
+                    // `base.Center` for the mount rings. Sandstorm / Blizzard
+                    // play no dust (`:20787-20806`) — the drain skips them.
+                    let (cx, cy) = self.center();
+                    self.pending_jump_dust = Some(JumpDust {
+                        kind: j,
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        vx: self.vx,
+                        vy: self.vy,
+                        cx,
+                        cy,
+                    });
                 } else {
                     // `:20746`: the Cloud fall-through consumed even when
                     // unarmed — the can flag clears all the same.
