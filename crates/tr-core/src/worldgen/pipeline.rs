@@ -1343,6 +1343,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Gravitating Sand",
         step_gravitating_sand
     ),
+    // The vanilla Gems slot (`WorldGen.cs:15050`): the lane plan groups it
+    // after the port's `gravitating sand` step (the GravitatingSandCleanup
+    // `:15138`) and before `ocean caves` (`:15167`) — W4-d102 pass 5. (The
+    // C# anchor order is Gems `:15050` < sand cleanup `:15138`; the port's
+    // grouping keeps the sand family together, and the isolated stream
+    // makes the relative order RNG-neutral.) Own `pass_rng("Gems")` stream.
+    step!("gems", "Gems", step_gems),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
@@ -1882,6 +1889,25 @@ fn step_mountain_caves(
         &gv.m_cave_x,
         &gv.m_cave_y,
         &mut streams.pass_rng("Mountain Caves"),
+    );
+}
+
+/// The vanilla Gems slot (`WorldGen.cs:15050-15137`) — W4-d102 pass 5:
+/// the six gem-kind runner bands + the two-direction sand-edge slide.
+fn step_gems(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_gems(
+        world,
+        world_surface,
+        gv.underground_desert,
+        &mut streams.pass_rng("Gems"),
     );
 }
 
@@ -3292,8 +3318,9 @@ mod tests {
         // between `ores and gems` and `evil`; + `slush` (vanilla "Slush",
         // `:14697`) between `liquids` and `dungeon`; + `mountain caves`
         // (vanilla "Mountain Caves", `:14873`) between `constant lava
-        // layer` and `beaches`.
-        assert_eq!(names.len(), 70);
+        // layer` and `beaches`; + `gems` (vanilla "Gems", `:15050`)
+        // between `gravitating sand` and `ocean caves`.
+        assert_eq!(names.len(), 71);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3354,6 +3381,7 @@ mod tests {
                 "mountain caves",
                 "beaches",
                 "gravitating sand",
+                "gems",
                 "ocean caves",
                 "fragile ice",
                 "underground jungle trees",
@@ -3446,7 +3474,8 @@ mod tests {
         // (W4-d102, the vanilla MountainCaveOpenings slot `:14873`).
         assert_eq!(pos("beaches"), pos("dungeon") + 3);
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
-        assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
+        // + gems (W4-d102, the vanilla Gems slot `WorldGen.cs:15050`).
+        assert_eq!(names[pos("gravitating sand") + 2], "ocean caves");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3684,6 +3713,26 @@ mod tests {
         // The producer/consumer pair: Mount Caves (d101) writes the
         // anchors this pass reads.
         assert!(cpos("Mount Caves") < cpos("Mountain Caves"));
+    }
+
+    /// W4-d102 pass 5: `gems` sits between `gravitating sand` and `ocean
+    /// caves` (the lane plan's grouping; the vanilla Gems anchor
+    /// `WorldGen.cs:15050` precedes the sand cleanup `:15138` and Create
+    /// Ocean Caves `:15167`).
+    #[test]
+    fn w4_d102_the_gems_step_sits_before_the_ocean_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("gems"), pos("gravitating sand") + 1);
+        assert_eq!(names[pos("gems") + 1], "ocean caves");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Beaches") < cpos("Gems"));
+        assert!(cpos("Gems") < cpos("Create Ocean Caves"));
     }
 
     #[test]

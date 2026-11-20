@@ -417,6 +417,135 @@ fn cavinator(world: &mut World, rng: &mut Rng, i: i32, j: i32, steps: i32, rock_
     }
 }
 
+/// `Main.tileSand` (`Main.cs:7228-7231`) — the four sand kinds the Gems
+/// pass's edge slide moves.
+const TILE_SAND_SET: [u16; 4] = [53, 112, 116, 234];
+
+/// The Gems pass (`WorldGen.cs:15050-15137`): the six gem-kind TileRunner
+/// bands (63..68, densities 0.3/0.1/0.25/0.45/0.5/0.05 × width × 0.2) with
+/// the 3-attempt stone-site do-while, then the two-direction sand-edge
+/// slide (the desert rect's columns are exempt). The C#'s
+/// `Main.tileSolid[484] = false` poke (`:15055`) is a load-order detail
+/// the port's tile data does not model (the `desert.rs` precedent).
+pub(crate) fn pass_gems(
+    world: &mut World,
+    world_surface: f64,
+    underground_desert: Option<super::desert::Rect>,
+    rng: &mut Rng,
+) {
+    let opts = TileRunnerOpts::for_world(world);
+    for i in 63..=68 {
+        // The density table (`:15060-15080`), then `num *= 0.2`.
+        let mut num = match i {
+            67 => world.width as f64 * 0.5,
+            66 => world.width as f64 * 0.45,
+            63 => world.width as f64 * 0.3,
+            65 => world.width as f64 * 0.25,
+            64 => world.width as f64 * 0.1,
+            68 => world.width as f64 * 0.05,
+            _ => 0.0,
+        };
+        num *= 0.2;
+        let mut j = 0;
+        while (j as f64) < num {
+            j += 1;
+            // The do-while (`:15084-15092`): up to 3 draws, the decrement
+            // only on a non-stone site (the C#'s `&&` short-circuit).
+            let mut num2 = 3;
+            let (mut x, mut y) = (0, 0);
+            loop {
+                x = rng.range(0, world.width);
+                y = rng.range(world_surface as i32, world.height);
+                let stone = world.tile(x, y).is_some_and(|t| t.active() && t.kind == 1);
+                if stone {
+                    break;
+                }
+                num2 -= 1;
+                if num2 <= 0 {
+                    break;
+                }
+            }
+            if num2 != 0 {
+                let strength = rng.range(2, 6);
+                let steps = rng.range(3, 7);
+                tile_runner(
+                    world,
+                    rng,
+                    x,
+                    y,
+                    strength as f64,
+                    steps,
+                    i,
+                    world_surface,
+                    &opts,
+                );
+            }
+        }
+    }
+    // The sand-edge slide (`:15099-15135`).
+    gems_sand_edge_slide(world, underground_desert);
+}
+
+/// The Gems pass's two-direction sand-edge slide
+/// (`WorldGen.cs:15099-15135`): left-to-right then right-to-left, the
+/// desert rect's columns exempt (the C#'s `Rectangle.Empty` — the port's
+/// `None` — exempts nothing: `l <= 0 || l >= 0` is always true). Draws
+/// nothing.
+fn gems_sand_edge_slide(world: &mut World, underground_desert: Option<super::desert::Rect>) {
+    let (desert_left, desert_right) = match underground_desert {
+        Some(r) => (r.left(), r.right()),
+        None => (0, 0),
+    };
+    for k in 0..2 {
+        let (num5, num6, num7) = if k == 1 {
+            (-1, world.width - 5, 5)
+        } else {
+            (1, 5, world.width - 5)
+        };
+        let mut l = num6;
+        while l != num7 {
+            if l <= desert_left || l >= desert_right {
+                for m in 10..(world.height - 10) {
+                    let top = world.tile(l, m);
+                    let below = world.tile(l, m + 1);
+                    let sand_pair = top.is_some_and(|t| t.active() && TILE_SAND_SET.contains(&t.kind))
+                        && below.is_some_and(|t| t.active() && TILE_SAND_SET.contains(&t.kind));
+                    if sand_pair {
+                        let kind = top.unwrap().kind;
+                        let num8 = l + num5;
+                        let mut n = m + 1;
+                        if !world.tile(num8, m).is_some_and(|t| t.active())
+                            && !world.tile(num8, n).is_some_and(|t| t.active())
+                        {
+                            // The fall (`:15123-15126`): down while
+                            // inactive, inside the 10-tile world margin.
+                            while !world.tile(num8, n).is_some_and(|t| t.active())
+                                && in_world(world, num8, n, 10)
+                            {
+                                n += 1;
+                            }
+                            n -= 1;
+                            if let Some(t) = world.tile_mut(l, m) {
+                                t.flags &= !FLAG_ACTIVE;
+                            }
+                            if let Some(t) = world.tile_mut(num8, n) {
+                                t.flags |= FLAG_ACTIVE;
+                                t.kind = kind;
+                            }
+                        }
+                    }
+                }
+            }
+            l += num5;
+        }
+    }
+}
+
+/// `WorldGen.InWorld(x, y, fluff)` (`WorldGen.cs:9688-9695`).
+fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,5 +760,57 @@ mod tests {
         for y in 100..w.height {
             assert!(w.tile(320, y).unwrap().active(), "dungeon brick carved");
         }
+    }
+
+    #[test]
+    fn gems_vein_the_stone_and_replay() {
+        let mut a = stone_world(600, 600);
+        let mut b = stone_world(600, 600);
+        pass_gems(&mut a, 100.0, None, &mut Rng(0x6E35));
+        pass_gems(&mut b, 100.0, None, &mut Rng(0x6E35));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        let gems = a
+            .tiles
+            .iter()
+            .filter(|t| t.active() && (63..=68).contains(&t.kind))
+            .count();
+        assert!(gems > 0, "the pass veins gems");
+    }
+
+    #[test]
+    fn the_sand_edge_slide_conserves_sand_and_replays() {
+        // A sand column at x=100 beside an air gap at x=101 with a floor:
+        // the two-direction slide shuffles the paired cells into the gap
+        // and back, conserving the sand count (each move deactivates one
+        // cell and activates one). No RNG — deterministic by construction.
+        let mut w = World::new("gems".into(), 200, 200);
+        for y in 10..150 {
+            let i = w.index(100, y);
+            w.tiles[i].kind = 53;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let i = w.index(101, 150);
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let sand_before = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 53)
+            .count();
+        let mut twin = w.clone();
+        gems_sand_edge_slide(&mut w, None);
+        gems_sand_edge_slide(&mut twin, None);
+        assert_eq!(w.tiles, twin.tiles, "a == b");
+        let sand_after = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 53)
+            .count();
+        assert_eq!(sand_before, sand_after, "the slide conserves sand");
+        // Some sand reached the gap column.
+        assert!(
+            (0..w.height).any(|y| w.tile(101, y).is_some_and(|t| t.active() && t.kind == 53)),
+            "sand slid into the gap"
+        );
     }
 }

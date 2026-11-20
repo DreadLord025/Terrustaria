@@ -265,6 +265,11 @@ mod tests {
     // `GenVars.numMCaves == 0` (d101's Mount Caves producer not yet on
     // this branch), so this pin is UNCHANGED by this pass alone; the
     // merged tree re-pins once the anchors exist.
+    // W4-d102 pass 5 (code-only): the Gems pass
+    // (`WorldGen.cs:15050-15137`, `passes2.rs::pass_gems`) lands between
+    // `gravitating sand` and `ocean caves` — the six gem-kind runner bands
+    // vein stone on every world and the sand-edge slide shuffles the
+    // shore columns, so this pin moves BY DESIGN; deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -318,6 +323,8 @@ mod tests {
     // W4-d102 pass 4 (code-only): the Mountain Caves openings (see
     // SEED42_512 above) are a no-op while numMCaves == 0 — UNCHANGED by
     // this pass alone.
+    // W4-d102 pass 5 (code-only): the Gems pass (see SEED42_512 above) —
+    // the gem veins + sand slide move this pin BY DESIGN; deferred.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
