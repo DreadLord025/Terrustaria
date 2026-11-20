@@ -487,7 +487,12 @@ impl App {
                 return;
             }
             if left_click_movement(&mut held, &mut target) {
-                self.audio.play("Grab");
+                // W4-d79 — case-7 Grab: one `Next(-10, 11) * 0.01` pitch draw
+                // (`LegacySoundPlayer.cs:725`) + the single-voice Stop/re-create
+                // (`:718-722`), on the bare stream (the click handler runs
+                // outside every SwapRandom block, `ItemSlot.cs:1010`).
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
             }
             self.mouse_item = held;
         } else if can_take {
@@ -607,13 +612,19 @@ impl App {
             match pick_item_movement_action(context, &held, idx, &target, equip_ctx) {
                 1 => {
                     if equip_left_click(&mut held, &mut target) {
-                        self.audio.play("Grab"); // `:1023,1057,1075,1083`
+                        // W4-d79 — case-7 Grab pitch + pool, bare stream
+                        // (`ItemSlot.cs:1023,1057,1075,1083`).
+                        self.audio
+                            .play_grab_sound(-1.0, -1.0, self.rngs.global());
                     }
                 }
                 2 => {
                     let held_dye = registry::get(held.kind).is_some_and(|d| d.dye > 0);
                     if dye_left_click(&mut held, &mut target, held_dye) {
-                        self.audio.play("Grab"); // `:1125,1161,1179,1186`
+                        // W4-d79 — case-7 Grab pitch + pool, bare stream
+                        // (`ItemSlot.cs:1125,1161,1179,1186`).
+                        self.audio
+                            .play_grab_sound(-1.0, -1.0, self.rngs.global());
                     }
                 }
                 _ => {}
@@ -737,7 +748,10 @@ impl App {
             SwapTarget::Misc(_) => crate::ui::inventory::EQUIP_PAGE_MISC,
             _ => 0,
         };
-        self.audio.play("Grab"); // `SoundEngine.PlaySound(7)` on every arm
+        // W4-d79 — case-7 Grab pitch + pool on the bare stream
+        // (`SoundEngine.PlaySound(7)` on every swap arm, `ItemSlot.cs`).
+        self.audio
+            .play_grab_sound(-1.0, -1.0, self.rngs.global());
         true
     }
 
@@ -757,7 +771,9 @@ impl App {
             return; // `:1874-1877`
         }
         self.equip.armor.swap(slot, real);
-        self.audio.play("Grab"); // `:1879` — `SoundEngine.PlaySound(7)`
+        // W4-d79 — case-7 Grab pitch + pool, bare stream (`ItemSlot.cs:1879`).
+        self.audio
+            .play_grab_sound(-1.0, -1.0, self.rngs.global());
     }
 
     /// `MinimapFrameManager.DrawTo` -> `MinimapFrame.Update`
@@ -1043,7 +1059,11 @@ impl App {
             }
             // `SoundEngine.PlaySound(7)` — the grant sound
             // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
-            self.audio.play("Grab");
+            // W4-d79 — case-7 Grab pitch + pool; the craft runs in
+            // `UpdateInventory` outside every SwapRandom block, so the draw
+            // rides the bare-`Main.rand` stand-in (`rngs.global()`).
+            self.audio
+                .play_grab_sound(-1.0, -1.0, self.rngs.global());
             // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
             // crafted item's id rides the event, so `BENCHED`'s workbench set
             // matches the crafted item and not any craft.
@@ -1793,7 +1813,10 @@ impl App {
         {
             self.trash_swap();
             if self.mouse_item.count > 0 || self.equip.trash.count > 0 {
-                self.audio.play("Grab");
+                // W4-d79 — case-7 Grab pitch + pool, bare stream
+                // (`ItemSlot.cs:1010`).
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
             }
             return;
         }
@@ -1865,12 +1888,28 @@ impl App {
             // `OverrideLeftClick`'s cursor-6 arm (`ItemSlot.cs:759-775`): the
             // stack moves to the trash (REPLACING its contents) and the slot
             // turns to air. The research exception (`:762`) rides the Journey
-            // research (unported); the cues are `TrashItem` (`:764`, no port
-            // cue — the recorded gap) then `Grab` (`:765`).
+            // research (unported); the cues are `TrashItem` (`:764`, the
+            // case-42 trackable — W4-d79 closes the bank gap) then `Grab`
+            // (`:766`, the case-7 pitch + pool).
             self.equip.trash = self.inventory[slot].clone();
             self.inventory[slot] = EMPTY_SLOT;
-            self.audio.play("TrashItem"); // no port cue — the recorded gap
-            self.audio.play("Grab");
+            // W4-d79 — `SoundID.TrashItem` (`ItemSlot.cs:764`,
+            // `SoundID.cs:1738`'s `CreateTrackable("trash_item", 2)
+            // .WithVolume(0.55).WithPitchVariance(0.25)`): the case-42 style
+            // façade — the GetRandomPitch NextFloat rides the audio-only
+            // stream, the pinned `_0` variation (the D3 pin), no gameplay
+            // draw. Closes the recorded TrashItem bank gap (research/32 D7).
+            if let Some(idx) = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.name == "TrashItem")
+            {
+                self.audio
+                    .play_use_sound(idx as u16, -1.0, -1.0, 0.0, self.rngs.global());
+            }
+            // W4-d79 — case-7 Grab pitch + pool, bare stream
+            // (`ItemSlot.cs:766`).
+            self.audio
+                .play_grab_sound(-1.0, -1.0, self.rngs.global());
             return;
         }
         if left && self.cursor_override == CURSOR_SELL {
@@ -1939,7 +1978,10 @@ impl App {
             // (`left_click_movement`); the C# plays 7 when an item sits on
             // either side after the move (`ItemSlot.cs:1004-1011`).
             if left_click_movement(&mut held, &mut target) {
-                self.audio.play("Grab");
+                // W4-d79 — case-7 Grab pitch + pool, bare stream
+                // (`ItemSlot.cs:1004-1011`).
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
             }
             self.mouse_item = held;
             self.inventory[slot] = target;
@@ -2033,8 +2075,18 @@ impl App {
                     &item,
                 );
                 self.mouse_item = EMPTY_SLOT;
-                // `SoundEngine.PlaySound(18)` on the sale, 7 on the giveaway.
-                self.audio.play(if paid > 0 { "Coins" } else { "Grab" });
+                // `SoundEngine.PlaySound(18)` on the sale, 7 on the giveaway
+                // (`ItemSlot.cs:1229`/:1236). W4-d79 — case 18 Coins is
+                // draw-free (overwrite-no-Stop, `LegacySoundPlayer.cs:866`);
+                // case 7 Grab draws one `Next(-10, 11) * 0.01` pitch + the
+                // single-voice pool (`:718-725`). Bare stream (the click
+                // handler runs outside every SwapRandom block).
+                if paid > 0 {
+                    self.audio.play_single_voice("Coins", -1.0, -1.0);
+                } else {
+                    self.audio
+                        .play_grab_sound(-1.0, -1.0, self.rngs.global());
+                }
             }
             self.stack_split = 9999; // `:1239`
         } else if right {
@@ -2083,8 +2135,15 @@ impl App {
                 continue; // `:2060-2063` — the purse gate / the depleted row
             }
             if i == 0 {
-                // `:2064-2073` — sound 18 on a valued row, else 7.
-                self.audio.play(if value > 0 { "Coins" } else { "Grab" });
+                // `:2064-2073` — sound 18 on a valued row, else 7. W4-d79 —
+                // case 18 Coins draw-free (no-Stop pool), case 7 Grab one
+                // pitch draw + pool, bare stream (`ItemSlot.cs:2068`/:2072).
+                if value > 0 {
+                    self.audio.play_single_voice("Coins", -1.0, -1.0);
+                } else {
+                    self.audio
+                        .play_grab_sound(-1.0, -1.0, self.rngs.global());
+                }
             }
             // `RefreshStackSplitCooldown` (`:1774-1784`, `:2089`).
             self.stack_split = if self.stack_split == 0 {
@@ -2108,7 +2167,15 @@ impl App {
         if paid > 0 || crate::itemdata::ITEMS[item.kind as usize].value == 0 {
             crate::shop::add_item_to_shop(&mut self.shop_stock, &mut self.shop_sellback, &item);
             self.inventory[slot] = EMPTY_SLOT;
-            self.audio.play(if paid > 0 { "Coins" } else { "Grab" });
+            // W4-d79 — sound 18 on the sale (Coins, draw-free no-Stop pool),
+            // 7 on the giveaway (Grab pitch + pool), bare stream
+            // (`ItemSlot.cs:859`/:866).
+            if paid > 0 {
+                self.audio.play_single_voice("Coins", -1.0, -1.0);
+            } else {
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
+            }
         }
     }
 
@@ -2154,11 +2221,16 @@ impl App {
                                 ..item
                             };
                             self.inventory[slot].count -= 1;
-                            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
+                            // W4-d79 — case-7 Grab pitch + pool, bare stream
+                            // (`SoundEngine.PlaySound(7)`, the reforge place-one).
+                            self.audio
+                                .play_grab_sound(-1.0, -1.0, self.rngs.global());
                         }
                     } else if item.count == 1 {
                         std::mem::swap(&mut self.inventory[slot], &mut self.reforge_slot);
-                        self.audio.play("Grab");
+                        // W4-d79 — case-7 Grab pitch + pool, bare stream.
+                        self.audio
+                            .play_grab_sound(-1.0, -1.0, self.rngs.global());
                     }
                 }
                 self.ui_left_press = false;
@@ -2503,7 +2575,10 @@ impl App {
             // `PickItemMovementAction` ctx 3 → action 0 (`ItemSlot.cs:1505-1507`)
             // — the shared movement.
             if left_click_movement(&mut held, &mut target) {
-                self.audio.play("Grab"); // `:1010` — `SoundEngine.PlaySound(7)`
+                // W4-d79 — case-7 Grab pitch + pool, bare stream
+                // (`ItemSlot.cs:1010`).
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
             }
             // `:976-979` — the emptied slot turns to air (the air-normalizing
             // write; the moved-in item keeps its prefix).

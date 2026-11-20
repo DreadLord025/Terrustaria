@@ -5146,7 +5146,12 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     destroy_oldest_proximity_mines_over_cap(app, app.local_id as u8, 20);
                 }
             }
-            app.audio.play_at("Item_1", pcx, pcy, 1.0);
+            // W4-d79 — the launch is SILENT: `Player.ItemCheck_Shoot`
+            // (`Player.cs:47056-49468`) carries NO `PlaySound` (the census is
+            // zero hits); the launcher's `UseSound` plays once at the USE
+            // START (`:51696`, the wire's `start_swing_extras`). The pre-wave
+            // per-shot `Item_1` was a phantom duplicate (the gun/bow lanes
+            // retired theirs in S1-P-i14 / W4-d79).
         }
         // `ApplyItemTime` (`Player.cs:47184-47193` → `SetItemTime(useTime)`,
         // `:4416-4419`): the shot re-arms the action cadence, so the next shot

@@ -490,6 +490,10 @@ const TRACKED_CUES: &[&str] = &[
 /// variation (`_0`) of the multi-variation families — the variation pick
 /// rides `LegacySoundStyle.Random` in the C#, an audio-only stream.
 pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
+    // W4-d79 — the trash cue (`SoundID.TrashItem`, `SoundID.cs:1738`'s
+    // `CreateTrackable("trash_item", 2)`): the pinned first variation of the
+    // two-variation family (`ItemSlot.cs:764`/:1008, research/32 D7 closure).
+    "trash_item_0",
     // S1-P-i45: the reforge's top-tier cue (`SoundID.BestReforge`,
     // `Main.cs:41909`; `Sounds/Custom/best_reforge.xnb`, one variation).
     "best_reforge",
@@ -4092,6 +4096,125 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
+    }
+
+    /// W4-d79 — the minecart cues' case-2 contract: the landing/bumper/rolling
+    /// plays (`DelegateMethods.cs:248-256`, `Player.cs:19870`/:19928) are
+    /// `SoundID.Item53/55/56` STYLE façades — the GetRandomPitch NextFloat on
+    /// the audio-only stream, then ONE gameplay pitch draw per play in the
+    /// per-cue window (`LegacySoundPlayer.cs:612-616`: 53 `Next(-20,-11)*0.02`,
+    /// 55 the mirrored negation, 56 the default `Next(-6,7)*0.01`), only after
+    /// the attenuation gate passed. The drain passes the `UpdatePlayers`
+    /// stream (`Player.HorizontalMovement` under the `Main.cs:17754` swap).
+    #[test]
+    fn w4_d79_the_minecart_cues_draw_the_case2_windows_on_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        for (style, window) in [(53, (-20, -11)), (55, (-20, -11)), (56, (-6, 7))] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _ = witness.next_range(window.0, window.1);
+            let style_before = audio.sound_style_random.clone();
+            let cue = audio
+                .play_npc_item_cue(style, 100.0, 200.0, &mut rng)
+                .unwrap_or_else(|| panic!("Item{style} resolves"));
+            assert_eq!(cue, format!("Item_{style}"));
+            assert_eq!(rng.peek(), witness.peek(), "style {style}: one gameplay draw");
+            assert_ne!(
+                audio.sound_style_random, style_before,
+                "style {style}: the façade's NextFloat rides the audio stream"
+            );
+        }
+        // The 53/55 playing guards (`:559-562`) refuse a LIVE slot before the
+        // pitch draw; headless the slots never play, so the guard passes (the
+        // fresh-instance table convention — the refusal itself is pinned in
+        // sound.rs::w4_d79_item_case2_guards_the_live_slots_and_picks_the_pool_arm).
+        // Muted: the gate refuses before any draw (`:369-372`).
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(audio.play_npc_item_cue(53, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted cart play is draw-free");
+        assert_ne!(
+            audio.sound_style_random, style_before,
+            "the façade's NextFloat is consumed before the gate (SoundEngine.cs:99)"
+        );
+    }
+
+    /// W4-d79 — the case-7 Grab play (`LegacySoundPlayer.cs:717-727`): ONE
+    /// `Next(-10, 11) * 0.01` pitch draw (`:725`) on the caller's stream after
+    /// the gate, the Grab single-voice Stop/re-create (`:718-722`). The
+    /// unpositioned flag arm (`x == -1`) still checks the volume slider.
+    #[test]
+    fn w4_d79_the_grab_play_draws_one_pitch_and_gates_first() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let roll = witness.next_range(-10, 11);
+        assert_eq!(audio.play_grab_sound(-1.0, -1.0, &mut rng), Some("Grab"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!((-0.1..=0.1).contains(&(roll as f32 * 0.01)));
+        // Muted: draw-free (`:369-372` precedes the switch).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_grab_sound(-1.0, -1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted Grab is draw-free");
+    }
+
+    /// W4-d79 — the draw-free single-voice cues (cases 10/11/12/18/22,
+    /// `LegacySoundPlayer.cs:750-782`/:865-870/:937-946): the attenuation gate
+    /// is the only refusal; no `Main.rand` draw and no NextFloat (the int
+    /// overload). The pool Stop/detach flags ride [`SINGLE_SLOT_CUES`].
+    #[test]
+    fn w4_d79_the_single_voice_cues_are_stream_neutral() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let style_before = audio.sound_style_random.clone();
+        for cue in ["Menu_Open", "Menu_Close", "Menu_Tick", "Coins", "Unlock"] {
+            assert_eq!(audio.play_single_voice(cue, -1.0, -1.0), Some(cue));
+        }
+        assert_eq!(rng.peek(), peek, "the single voices draw nothing");
+        assert_eq!(audio.sound_style_random, style_before, "no NextFloat either");
+        // An unlisted name refuses draw-free (the bank-gap guard).
+        assert_eq!(audio.play_single_voice("Dig_0", -1.0, -1.0), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// W4-d79 — the TrashItem trackable (`SoundID.cs:1738`,
+    /// `CreateTrackable("trash_item", 2).WithVolume(0.55).WithPitchVariance(0.25)`):
+    /// case 42 (`LegacySoundPlayer.cs:1376-1381`) — the façade's NextFloat on
+    /// the audio-only stream (variance 0.25), NO gameplay draw, the pinned
+    /// `_0` variation, the style's own 0.55 volume. Closes research/32 D7.
+    #[test]
+    fn w4_d79_the_trash_item_trackable_resolves_and_draws_no_gameplay_rng() {
+        use tr_core::unified_random::UnifiedRandom;
+        let idx = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == "TrashItem")
+            .expect("the TrashItem row") as u16;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_use_sound(idx, -1.0, -1.0, 0.0, &mut rng),
+            Some("trash_item_0"),
+            "the pinned first variation of the two-variation family"
+        );
+        assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+        assert_ne!(audio.sound_style_random, style_before, "the NextFloat is consumed");
+        // The bank carries the asset name (the load loop reads ITEM_CUSTOM_CUES).
+        assert!(ITEM_CUSTOM_CUES.contains(&"trash_item_0"));
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract

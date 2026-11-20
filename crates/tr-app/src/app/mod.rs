@@ -1821,7 +1821,13 @@ impl App {
             false
         };
         if moved {
-            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
+            // W4-d79 — case-7 Grab: one `Next(-10, 11) * 0.01` pitch draw
+            // (`LegacySoundPlayer.cs:725`) + the single-voice Stop/re-create
+            // (`:718-722`), on the bare stream (`SoundEngine.PlaySound(7)`,
+            // `ItemSlot.cs:1515-1520`'s ctx-5 — the reforge click runs outside
+            // every SwapRandom block).
+            self.audio
+                .play_grab_sound(-1.0, -1.0, self.rngs.global());
         }
     }
 

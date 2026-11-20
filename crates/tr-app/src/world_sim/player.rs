@@ -1351,8 +1351,29 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     );
                 }
             }
+            // W4-d79 — the minecart cues are `SoundID.ItemNN` STYLE plays
+            // (`DelegateMethods.cs:248-256` LandingSound Item53 / BumperSound
+            // Item56, `Player.cs:19870`/:19928 the rolling Item55): the
+            // `SoundEngine.cs:93-99` façade consumes the GetRandomPitch
+            // NextFloat on the audio-only stream, then case 2's per-cue pitch
+            // draw + the 53/55 playing guards + the instance pool
+            // (`LegacySoundPlayer.cs:552-562`/`:612-616`) ride the
+            // `UpdatePlayers` stream — `Player.HorizontalMovement` runs in
+            // `Player.Update` under the `Main.cs:17754` swap. The bare
+            // `play_at` stand-in drew nothing and stacked voices (D1/D4).
             for cue in p.take_cart_sounds() {
-                app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                let style_num: i32 = match cue.cue {
+                    "Item_53" => 53,
+                    "Item_55" => 55,
+                    "Item_56" => 56,
+                    _ => continue,
+                };
+                app.audio.play_npc_item_cue(
+                    style_num,
+                    cue.x,
+                    cue.y,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
             // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
