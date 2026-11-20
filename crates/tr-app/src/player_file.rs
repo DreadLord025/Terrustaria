@@ -27,9 +27,13 @@
 //! [`PlayerFileWrite::last_saved_binary`] exactly like the `.wld` writer's
 //! CreationTime policy (ANALYSIS "The C#-written golden fixture").
 //!
-//! **Default-value policy.** The port models only the character-card state
+//! **Default-value policy.** The port models the character-card state
 //! (name, difficulty, appearance, life/mana, the 58-slot inventory and its
-//! favourited bits). Every other field written so far is emitted with the
+//! favourited bits) plus, since W4-f44, the three per-player payloads the
+//! `.plr` carries: the equipment loadouts (`CurrentLoadoutIndex` +
+//! `Loadouts[3]`, `:54919-54923`), the void vault (`bank4[40]` +
+//! `voidVaultInfo`, `:54856-54863`) and the Journey research pairs
+//! (`creativeTracker`, `:54911`). Every other field is emitted with the
 //! value a *fresh vanilla player* carries — the `Player` ctor
 //! (`Player.cs:56036-56096`) and the field initializers — never omitted:
 //! omission shifts every later section and breaks byte-comparability. The
@@ -120,6 +124,47 @@ pub struct PlayerFile {
     pub inv_favorites: u64,
     pub is_favorite: bool,
     pub revision: u32,
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, read `:55722`, clamped
+    /// to `0..Loadouts.Length-1`). The port has no loadout-switch UI, but the
+    /// index rides the file so a vanilla character's selection survives.
+    pub current_loadout: i32,
+    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`, `EquipmentLoadout.cs:8-18`),
+    /// read at release >= 262 (`:55720-55727`). Persisted verbatim so the
+    /// stored equipment is not lost on a port re-save.
+    pub loadouts: [LoadoutData; 3],
+    /// `Player.voidVaultInfo` (`Player.cs:1590`, a `BitsByte`; bit 0 is
+    /// `IsVoidVaultEnabled`, `:3900-3910`). Read at >= 199 (`:55501-55504`).
+    pub void_vault_info: u8,
+    /// `Player.bank4` (the Void Bag's 40 slots, `Player.cs:1591`), each
+    /// `(type, stack, prefix, favorited)` — read at >= 198 with the favourited
+    /// bool gated >= 255 (`:55488-55500`).
+    pub bank4: [(i32, i32, u8, bool); 40],
+    /// `Player.creativeTracker.ItemSacrifices`' `(persistentId, count)` pairs
+    /// (`ItemsSacrificedUnlocksTracker.cs:157-169`), the Journey research the
+    /// `.plr` carries per-player (`:54911` save / `:55696-55699` load).
+    pub research: Vec<(String, i32)>,
+}
+
+/// One `EquipmentLoadout`'s persisted slots (`EquipmentLoadout.cs:8-18`):
+/// `Armor[20]` + `Dye[10]` as `Item.Serialize(writeFavorite: true)` records
+/// `(type, stack, prefix, favorited)` (`Item.cs:49910-49919`), then `Hide[10]`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LoadoutData {
+    pub armor: [(i32, i32, u8, bool); 20],
+    pub dye: [(i32, i32, u8, bool); 10],
+    pub hide: [bool; 10],
+}
+
+impl Default for LoadoutData {
+    /// A fresh `EquipmentLoadout` (`EquipmentLoadout.cs:14-19`): every slot a
+    /// `new Item()` = `(0, 0, 0, false)`, every hide false.
+    fn default() -> Self {
+        LoadoutData {
+            armor: [(0, 0, 0, false); 20],
+            dye: [(0, 0, 0, false); 10],
+            hide: [false; 10],
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -408,18 +453,37 @@ fn read_player_fields(
             read_item_triple(r, "bank3")?; // `:55479-55487`
         }
     }
+    // `Player.bank4` — the Void Bag's 40 slots (`:55488-55500`); the C#
+    // `netDefaults(type)` airs a type >= ItemID.Count AFTER reading the whole
+    // record (`Item.DeserializeFrom`, `Item.cs:49930-49933`), so the port
+    // airs the slot but consumes the same bytes.
+    let mut bank4 = [(0i32, 0i32, 0u8, false); 40];
     if version >= 198 {
-        for _ in 0..40 {
-            read_item_triple(r, "bank4")?; // `:55488-55500`
+        for slot in bank4.iter_mut() {
+            let id = r.i32().ok_or(PlayerFileError::Truncated("bank4"))?;
+            let stack = r.i32().ok_or(PlayerFileError::Truncated("bank4Stack"))?;
+            let prefix = r.u8().ok_or(PlayerFileError::Truncated("bank4Prefix"))?;
+            let mut fav = false;
             if version >= 255 {
-                r.boolean().ok_or(PlayerFileError::Truncated("bank4Fav"))?;
+                fav = r.boolean().ok_or(PlayerFileError::Truncated("bank4Fav"))?;
+            }
+            if id < ITEM_ID_COUNT {
+                *slot = (id, stack, prefix, fav);
             }
         }
     }
+    let mut void_vault_info = 0u8;
     if version >= 199 {
-        let _void_vault = r.u8().ok_or(PlayerFileError::Truncated("voidVault"))?;
+        void_vault_info = r.u8().ok_or(PlayerFileError::Truncated("voidVault"))?;
         // `:55501-55504`
     }
+    // The per-player tail the walk captures as it goes (defaults for the
+    // sections a shallower port-only depth never reaches).
+    let mut tail = PlayerTail {
+        void_vault_info,
+        bank4,
+        ..PlayerTail::default()
+    };
     if depth <= 1 {
         // The port-only retry for increment-1 files (see `read_player_bytes`).
         return Ok(finish_player_file(
@@ -436,6 +500,7 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
+            tail,
         ));
     }
     // --- S1-J-5 increment 2: buffs through hideInfo (`:55578-55623`) ------
@@ -495,6 +560,7 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
+            tail,
         ));
     }
     // --- S1-J-5 increment 3: the Deserialize tail (`:55624-55762`) --------
@@ -549,8 +615,9 @@ fn read_player_fields(
         }
         let n = r.i32().ok_or(PlayerFileError::Truncated("sacrCount"))?;
         for _ in 0..n {
-            r.cs_string().ok_or(PlayerFileError::Truncated("sacrKey"))?;
-            r.i32().ok_or(PlayerFileError::Truncated("sacrVal"))?;
+            let key = r.cs_string().ok_or(PlayerFileError::Truncated("sacrKey"))?;
+            let val = r.i32().ok_or(PlayerFileError::Truncated("sacrVal"))?;
+            tail.research.push((key, val));
         }
     }
     if version >= 214 {
@@ -594,19 +661,30 @@ fn read_player_fields(
         // CurrentLoadoutIndex + the three loadouts (`:55720-55727`);
         // EquipmentLoadout.Deserialize (`EquipmentLoadout.cs:47-61`):
         // 20 armor + 10 dye x (type, stack, prefix[, favorited >= 322])
-        // then Hide[10] bools.
-        r.i32().ok_or(PlayerFileError::Truncated("loadoutIdx"))?;
-        for _ in 0..3 {
-            for _ in 0..30 {
-                read_item_triple(r, "loadoutItem")?;
+        // then Hide[10] bools. `Item.DeserializeFrom` airs a type >=
+        // ItemID.Count after the whole record is consumed (`Item.cs:49930`).
+        let idx = r.i32().ok_or(PlayerFileError::Truncated("loadoutIdx"))?;
+        // `Utils.Clamp(idx, 0, Loadouts.Length - 1)` (`:55722`).
+        tail.current_loadout = idx.clamp(0, 2);
+        for loadout in tail.loadouts.iter_mut() {
+            for slot in loadout.armor.iter_mut().chain(loadout.dye.iter_mut()) {
+                let id = r.i32().ok_or(PlayerFileError::Truncated("loadoutItem"))?;
+                let stack = r
+                    .i32()
+                    .ok_or(PlayerFileError::Truncated("loadoutStack"))?;
+                let prefix = r
+                    .u8()
+                    .ok_or(PlayerFileError::Truncated("loadoutPrefix"))?;
+                let mut fav = false;
                 if version >= 322 {
-                    r.boolean()
-                        .ok_or(PlayerFileError::Truncated("loadoutFav"))?;
+                    fav = r.boolean().ok_or(PlayerFileError::Truncated("loadoutFav"))?;
+                }
+                if id < ITEM_ID_COUNT {
+                    *slot = (id, stack, prefix, fav);
                 }
             }
-            for _ in 0..10 {
-                r.boolean()
-                    .ok_or(PlayerFileError::Truncated("loadoutHide"))?;
+            for hide in loadout.hide.iter_mut() {
+                *hide = r.boolean().ok_or(PlayerFileError::Truncated("loadoutHide"))?;
             }
         }
     }
@@ -647,7 +725,21 @@ fn read_player_fields(
         inv_favorites,
         is_favorite,
         revision,
+        tail,
     ))
+}
+
+/// The per-player payloads the walk captures past the character-card state —
+/// the void vault (bank4 + the info byte), the Journey research pairs and the
+/// three equipment loadouts. Defaults for the sections a shallower port-only
+/// depth (or an older release gate) never reaches.
+#[derive(Default)]
+struct PlayerTail {
+    current_loadout: i32,
+    loadouts: [LoadoutData; 3],
+    void_vault_info: u8,
+    bank4: [(i32, i32, u8, bool); 40],
+    research: Vec<(String, i32)>,
 }
 
 /// The shared tail of both walk depths: the `LoadPlayer_LastMinuteFixes`
@@ -667,6 +759,7 @@ fn finish_player_file(
     inv_favorites: u64,
     is_favorite: bool,
     revision: u32,
+    tail: PlayerTail,
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
     PlayerFile {
@@ -689,6 +782,11 @@ fn finish_player_file(
         inv_favorites,
         is_favorite,
         revision,
+        current_loadout: tail.current_loadout,
+        loadouts: tail.loadouts,
+        void_vault_info: tail.void_vault_info,
+        bank4: tail.bank4,
+        research: tail.research,
     }
 }
 
@@ -784,6 +882,13 @@ fn read_legacy_port_subset(
         inv_favorites,
         is_favorite,
         revision,
+        // The subset files end after the inventory — the per-player tail was
+        // never written; the fresh defaults stand in (the back-compat gate).
+        current_loadout: 0,
+        loadouts: Default::default(),
+        void_vault_info: 0,
+        bank4: [(0, 0, 0, false); 40],
+        research: Vec::new(),
     })
 }
 
@@ -816,6 +921,51 @@ pub struct PlayerFileWrite {
     /// the golden-fixture test pins the harness's `FixtureClock` value
     /// (2026-11-18T00:00:00Z, kind Utc → kind bits 01, no offset).
     pub last_saved_binary: i64,
+    /// `Player.CurrentLoadoutIndex` (`:54919`) — clamped to 0..2 on write
+    /// like the load clamp (`:55722`).
+    pub current_loadout: i32,
+    /// `Player.Loadouts[3]` (`:54920-54923`, `EquipmentLoadout.Serialize`,
+    /// `EquipmentLoadout.cs:31-45`).
+    pub loadouts: [LoadoutData; 3],
+    /// `Player.voidVaultInfo` (`:54863`) — bit 0 the vault-enabled flag.
+    pub void_vault_info: u8,
+    /// `Player.bank4`'s 40 slots (`:54856-54862`).
+    pub bank4: [(i32, i32, u8, bool); 40],
+    /// The Journey research pairs (`:54911` -> `ItemsSacrificedUnlocksTracker
+    /// .Save`, `ItemsSacrificedUnlocksTracker.cs:157-169`).
+    pub research: Vec<(String, i32)>,
+}
+
+impl Default for PlayerFileWrite {
+    /// The fresh-vanilla defaults for every field — the same values the
+    /// pre-model writer hardcoded (the module-level default-value policy).
+    fn default() -> Self {
+        PlayerFileWrite {
+            name: String::new(),
+            difficulty: 0,
+            skin_variant: 0,
+            hair: 0,
+            life: 100,
+            life_max: 100,
+            mana: 20,
+            mana_max: 20,
+            hair_color: [0; 3],
+            skin_color: [0; 3],
+            eye_color: [0; 3],
+            shirt_color: [0; 3],
+            undershirt_color: [0; 3],
+            pants_color: [0; 3],
+            shoe_color: [0; 3],
+            inventory: [(0, 0, 0); 58],
+            inv_favorites: 0,
+            last_saved_binary: 0,
+            current_loadout: 0,
+            loadouts: Default::default(),
+            void_vault_info: 0,
+            bank4: [(0, 0, 0, false); 40],
+            research: Vec::new(),
+        }
+    }
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54742`): release 326, the
@@ -933,15 +1083,17 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     }
     // bank4 (the void bag): 40 x (type, stack, prefix, favorited)
     // (`:54856-54862`); the favourited bool reads at >= 255 (`:55495`).
-    for _ in 0..40 {
-        w.i32(0);
-        w.i32(0);
-        w.u8(0);
-        w.boolean(false);
+    // The caller's slots ride verbatim (a fresh player's are all-air).
+    for (id, stack, prefix, fav) in file.bank4 {
+        w.i32(id);
+        w.i32(stack);
+        w.u8(prefix);
+        w.boolean(fav);
     }
     // voidVaultInfo: one BitsByte (`:54863`), default 0 (`Player.cs:1590`);
-    // read at >= 199 (`Deserialize:55501-55504`).
-    w.u8(0);
+    // read at >= 199 (`Deserialize:55501-55504`). Bit 0 is IsVoidVaultEnabled
+    // (`Player.cs:3900-3910`).
+    w.u8(file.void_vault_info);
     // --- S1-J-5 increment 2: buffs through hideInfo (`:54864-54893`) ------
     // buffs: maxBuffs = 44 (`Player.cs:57106`) x (buffType, buffTime)
     // (`:54864-54876`). Fresh buffType/buffTime are all-zero (`:1510-1512`)
@@ -987,10 +1139,16 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(0); // `:54910` golferScoreAccumulated (`Player.cs:1912`, default 0)
               // `:54911` creativeTracker.Save -> CreativeUnlocksTracker.Save
               // (`CreativeUnlocksTracker.cs:9-12`) -> ItemsSacrificedUnlocksTracker.Save
-              // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag then the
-              // sacrifice-pair count — a fresh tracker has none.
+              // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag
+              // (`AnyNewUnlocksFromTeammates`, always written false) then the
+              // sacrifice-pair count + the (persistentId, count) pairs — the
+              // Journey research the caller carries (a fresh tracker has none).
     w.boolean(false);
-    w.i32(0);
+    w.i32(file.research.len() as i32);
+    for (key, count) in &file.research {
+        w.cs_string(key);
+        w.i32(*count);
+    }
     // `:54912` SaveTemporaryItemSlotContents (`Player.cs:54935-54959`): one
     // BitsByte over mouseItem / CreativeMenu.GetItemByIndex(0) / guideItem /
     // reforgeItem IsAir — the port models none of the four global slots, so
@@ -1018,21 +1176,23 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // (`Player.cs:2052`, default false), bit1 enabledSuperCart
     // (`Player.cs:2054`, default **true**) → 0b10 = 2.
     w.u8(2);
-    w.i32(0); // `:54919` CurrentLoadoutIndex (`Player.cs:3207`, default 0)
-              // `:54920-54923` Loadouts[3].Serialize (`Player.cs:3200-3204`;
-              // `EquipmentLoadout.cs:31-45`): Armor[20] + Dye[10] each
-              // Item.Serialize(writeFavorite: true) = (type, stack, prefix, favorited)
-              // — fresh `Item()`s are (0, 0, 0, false) (`EquipmentLoadout.cs:14-19`) —
-              // then Hide[10] bools, all false.
-    for _ in 0..3 {
-        for _ in 0..30 {
-            w.i32(0);
-            w.i32(0);
-            w.u8(0);
-            w.boolean(false);
+    // `:54919` CurrentLoadoutIndex (`Player.cs:3207`, default 0) — the load
+    // clamp is 0..Loadouts.Length-1 (`:55722`); the writer clamps the same.
+    w.i32(file.current_loadout.clamp(0, 2));
+    // `:54920-54923` Loadouts[3].Serialize (`Player.cs:3200-3204`;
+    // `EquipmentLoadout.cs:31-45`): Armor[20] + Dye[10] each
+    // Item.Serialize(writeFavorite: true) = (type, stack, prefix, favorited)
+    // — fresh `Item()`s are (0, 0, 0, false) (`EquipmentLoadout.cs:14-19`) —
+    // then Hide[10] bools. The caller's slots ride verbatim.
+    for loadout in &file.loadouts {
+        for (id, stack, prefix, fav) in loadout.armor.iter().chain(loadout.dye.iter()) {
+            w.i32(*id);
+            w.i32(*stack);
+            w.u8(*prefix);
+            w.boolean(*fav);
         }
-        for _ in 0..10 {
-            w.boolean(false);
+        for hide in loadout.hide {
+            w.boolean(hide);
         }
     }
     w.u8(1); // `:54924` (byte)voiceVariant — the ctor sets 1 (`Player.cs:56045`)
@@ -1148,6 +1308,7 @@ mod tests {
             inventory,
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             last_saved_binary: 0,
+            ..Default::default()
         }
     }
 
@@ -1454,6 +1615,10 @@ mod tests {
             // 2026-11-18T00:00:00Z, DateTimeKind.Utc → kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.
             last_saved_binary: 0x48DF_4506_E391_C000,
+            // The harness's player is fresh — the per-player tail stays at
+            // the vanilla defaults (all-air loadouts/bank4, vault off, no
+            // research), which is what the C# fixture wrote.
+            ..Default::default()
         };
         let plain = serialize_plaintext(&file);
         let fixture_raw = include_bytes!("../../../assets/test/golden.plr");
@@ -1695,5 +1860,131 @@ mod tests {
             b'h', 0, b'3', 0, b'y', 0, b'_', 0, b'g', 0, b'U', 0, b'y', 0, b'Z', 0,
         ];
         assert_eq!(ENCRYPTION_KEY, expected);
+    }
+
+    // --- W4-f44: the per-player payloads (loadouts / void vault / research) --
+
+    /// A file carrying all three per-player payloads round-trips them: the
+    /// loadout index + slots (`:54919-54923` / `:55720-55727`), the void
+    /// vault's bank4 + info byte (`:54856-54863` / `:55488-55504`) and the
+    /// Journey research pairs (`:54911` / `:55696-55699`).
+    #[test]
+    fn the_per_player_tail_round_trips() {
+        let mut file = sample();
+        file.current_loadout = 2;
+        file.loadouts[2].armor[3] = (908, 1, 81, true); // Lava Waders, warding, starred
+        file.loadouts[2].dye[0] = (1007, 1, 0, false);
+        file.loadouts[2].hide[4] = true;
+        file.loadouts[0].armor[0] = (89, 1, 0, false); // a second loadout keeps its own
+        file.void_vault_info = 1; // IsVoidVaultEnabled (`Player.cs:3900-3910`)
+        file.bank4[0] = (71, 250, 0, true); // copper coins, starred
+        file.bank4[39] = (2, 999, 0, false);
+        file.research = vec![("Torch".into(), 100), ("DirtBlock".into(), 37)];
+        let bytes = write_player_bytes(&file);
+        let read = read_player_bytes(&cbc_decrypt(&bytes)).expect("the tail file must read");
+        assert_eq!(read.current_loadout, 2);
+        assert_eq!(read.loadouts[2].armor[3], (908, 1, 81, true));
+        assert_eq!(read.loadouts[2].dye[0], (1007, 1, 0, false));
+        assert!(read.loadouts[2].hide[4]);
+        assert!(!read.loadouts[2].hide[3]);
+        assert_eq!(read.loadouts[0].armor[0], (89, 1, 0, false));
+        assert_eq!(read.loadouts[1], LoadoutData::default(), "the untouched loadout stays fresh");
+        assert_eq!(read.void_vault_info, 1);
+        assert_eq!(read.bank4[0], (71, 250, 0, true));
+        assert_eq!(read.bank4[39], (2, 999, 0, false));
+        assert_eq!(read.bank4[1], (0, 0, 0, false));
+        assert_eq!(read.research, vec![("Torch".into(), 100), ("DirtBlock".into(), 37)]);
+        // The card state is unaffected by the tail.
+        assert_eq!(read.inventory, file.inventory);
+        assert_eq!(read.inv_favorites, file.inv_favorites);
+    }
+
+    /// The write side is byte-faithful: with a non-default tail the plaintext
+    /// differs from the fresh file ONLY inside the three payload spans, and
+    /// the fresh-default write still reproduces the C# golden fixture
+    /// byte-for-byte (the default-value policy holds).
+    #[test]
+    fn the_tail_write_is_byte_faithful() {
+        let fresh = serialize_plaintext(&sample());
+        let mut file = sample();
+        file.void_vault_info = 1;
+        let with_vault = serialize_plaintext(&file);
+        assert_eq!(fresh.len(), with_vault.len(), "the info byte swaps in place");
+        // voidVaultInfo's offset: hideInfo ends at 2772 (the golden-layout
+        // witness), the inc2 tail is 1055 bytes and the buffs..hideInfo block
+        // 370 — so the inc1 cut is 2402 and the info byte sits at 2401.
+        let diffs: Vec<usize> = fresh
+            .iter()
+            .zip(with_vault.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(diffs, vec![2401], "exactly the voidVaultInfo byte moved");
+        // The load clamp: an out-of-range index writes clamped (`:55722`).
+        file = sample();
+        file.current_loadout = 9;
+        let clamped = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(clamped.current_loadout, 2);
+        file.current_loadout = -3;
+        let clamped = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(clamped.current_loadout, 0);
+    }
+
+    /// Back-compat: the C# golden fixture (a fresh player) reads the tail as
+    /// the fresh defaults — all-air loadouts/bank4, vault off, no research —
+    /// through the same walk that now captures them.
+    #[test]
+    fn the_golden_fixture_tail_reads_fresh() {
+        let plain = cbc_decrypt(include_bytes!("../../../assets/test/golden.plr"));
+        let file = read_player_bytes(&plain).expect("the C# fixture must read");
+        assert_eq!(file.current_loadout, 0);
+        assert_eq!(file.loadouts, Default::default());
+        assert_eq!(file.void_vault_info, 0);
+        assert_eq!(file.bank4, [(0, 0, 0, false); 40]);
+        assert!(file.research.is_empty());
+    }
+
+    /// Back-compat gates: the port-only shallow retries (inc1 at the vault
+    /// byte, inc2 at hideInfo) still load, and carry the sections they reached
+    /// — inc1 has bank4 + the vault byte but no research/loadouts; inc2 the
+    /// same; the legacy 279 subset has none of the tail.
+    #[test]
+    fn the_shallow_retries_keep_their_reached_tail() {
+        let mut file = sample();
+        file.void_vault_info = 1;
+        file.bank4[7] = (8, 99, 0, true);
+        file.research = vec![("Torch".into(), 100)];
+        file.loadouts[1].armor[2] = (90, 1, 0, false);
+        let plain = serialize_plaintext(&file);
+        // inc1: cut after the voidVaultInfo byte (offset 2402).
+        let inc1 = read_player_bytes(&plain[..2402]).expect("inc1 reads");
+        assert_eq!(inc1.void_vault_info, 1);
+        assert_eq!(inc1.bank4[7], (8, 99, 0, true));
+        assert!(inc1.research.is_empty(), "inc1 never reached the research");
+        assert_eq!(inc1.loadouts, Default::default());
+        // inc2: cut after hideInfo (offset 2772).
+        let inc2 = read_player_bytes(&plain[..2772]).expect("inc2 reads");
+        assert_eq!(inc2.void_vault_info, 1);
+        assert_eq!(inc2.bank4[7], (8, 99, 0, true));
+        assert!(inc2.research.is_empty());
+        assert_eq!(inc2.loadouts, Default::default());
+    }
+
+    /// An over-count item type in bank4/loadouts airs the slot after the full
+    /// record is consumed (`Item.DeserializeFrom`, `Item.cs:49930-49933`) —
+    /// the walk stays aligned and the later sections still read.
+    #[test]
+    fn over_count_tail_items_air_without_desyncing() {
+        let mut file = sample();
+        file.bank4[0] = (ITEM_ID_COUNT, 5, 0, false); // >= Count → air
+        file.loadouts[0].dye[9] = (ITEM_ID_COUNT + 10, 1, 3, true); // → air
+        file.loadouts[2].armor[19] = (89, 1, 0, false); // a real item AFTER the aired one
+        file.research = vec![("Torch".into(), 100)];
+        let read = read_player_bytes(&cbc_decrypt(&write_player_bytes(&file))).unwrap();
+        assert_eq!(read.bank4[0], (0, 0, 0, false));
+        assert_eq!(read.loadouts[0].dye[9], (0, 0, 0, false));
+        assert_eq!(read.loadouts[2].armor[19], (89, 1, 0, false));
+        assert_eq!(read.research, vec![("Torch".into(), 100)], "the tail past the loadouts still reads");
     }
 }
