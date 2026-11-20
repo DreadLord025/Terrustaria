@@ -147,6 +147,19 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- W4-d96 (S1-I-1 player-family first half): the low-region ids ----
+    // The census + the d96/d97/c27 lane split live in
+    // `docs/research/17-netcode.md` ("W4 player-family census"). Bodies +
+    // codecs only; the dispatcher apply/relay arms stay parked (S1-I-4).
+    /// `35 PlayerHeal` (`MessageID.cs:81`) — the heal combat-text relay
+    /// (`NetMessage.cs:929-932`, `MessageBuffer.cs:2160-2177`; the send site
+    /// is `Player.HealEffect`, `Player.cs:4522-4529`).
+    pub const PLAYER_HEAL: u8 = 35;
+    /// `40 SyncTalkNPC` (`MessageID.cs:91`) — which NPC a player talks to
+    /// (`NetMessage.cs:952-955`, `MessageBuffer.cs:2256-2270`;
+    /// `Player.SetTalkNPC`, `Player.cs:4375`).
+    pub const TALK_NPC: u8 = 40;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1277,10 +1290,14 @@ pub struct SpawnRequest {
     pub team: u8,
 }
 
-/// `msg 12 PlayerSpawn`'s body (`MessageBuffer.cs:908-920`): where the player
-/// spawned, the respawn timer, the death counters and the team.
+/// `msg 12 PlayerSpawn`'s body (`NetMessage.cs:433-445`; the read side is
+/// `MessageBuffer.cs:901-951`): the player id first, then where the player
+/// spawned, the respawn timer, the death counters, the team and the spawn
+/// context. The server forces the id to the sender (`MessageBuffer.cs:903-907`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlayerSpawn {
+    /// `Player.whoAmI`; server-forced on read (`MessageBuffer.cs:903-907`).
+    pub player_id: u8,
     pub x: i16,
     pub y: i16,
     pub respawn_timer: i32,
@@ -1537,6 +1554,30 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+// ---- W4-d96 (S1-I-1 player-family first half): the low-region bodies ----
+// Bodies + codecs only; the dispatcher apply/relay arms stay parked (S1-I-4).
+
+/// `msg 35 PlayerHeal`'s body (`NetMessage.cs:929-932`): the player id then
+/// the heal amount as a `short`. The server forces the id to the sender
+/// (`MessageBuffer.cs:2162-2166`); the read side raises `HealEffect` for a
+/// peer (`:2168-2171`) and relays (`:2172-2175`). The send site is
+/// `Player.HealEffect` (`Player.cs:4522-4529`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerHeal {
+    pub player_id: u8,
+    pub amount: i16,
+}
+
+/// `msg 40 SyncTalkNPC`'s body (`NetMessage.cs:952-955`): the player id then
+/// `Player.talkNPC` as a `short` (`-1` = not talking). The server forces the
+/// id to the sender (`MessageBuffer.cs:2258-2262`), applies `SetTalkNPC`
+/// (`Player.cs:4375`) and relays (`:2265-2268`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TalkNpc {
+    pub player_id: u8,
+    pub npc: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1648,6 +1689,12 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `35 PlayerHeal` - a client's heal effect (`Player.HealEffect`'s
+    /// broadcast, `Player.cs:4522-4529`; `MessageBuffer.cs:2160-2177`).
+    PlayerHeal(PlayerHeal),
+    /// `40 SyncTalkNPC` - a client started/stopped talking to an NPC
+    /// (`Player.SetTalkNPC`, `Player.cs:4375`; `MessageBuffer.cs:2256-2270`).
+    TalkNpc(TalkNpc),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1696,6 +1743,9 @@ pub enum S2c {
         player_id: u8,
         active: bool,
     },
+    /// `12 PlayerSpawn` — a peer spawned in (`NetMessage.cs:433-445`; the
+    /// host relays it once the slot is in-world, `MessageBuffer.cs:936`/`:948`).
+    PlayerSpawn(PlayerSpawn),
     /// `16 PlayerHP` — another peer's health.
     PlayerHp {
         player_id: u8,
@@ -1771,6 +1821,12 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `35 PlayerHeal` - a peer's heal effect, relayed by the host
+    /// (`MessageBuffer.cs:2172-2175`).
+    PlayerHeal(PlayerHeal),
+    /// `40 SyncTalkNPC` - a peer's talk NPC, relayed by the host
+    /// (`MessageBuffer.cs:2265-2268`).
+    TalkNpc(TalkNpc),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1859,6 +1915,8 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::PlayerHeal(_) => id::PLAYER_HEAL,
+            Self::TalkNpc(_) => id::TALK_NPC,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1927,8 +1985,14 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:929-932`: (byte)number + (short)number2.
+            Self::PlayerHeal(h) => w.u8(h.player_id).i16(h.amount),
+            // `NetMessage.cs:952-955`: (byte)number + (short)talkNPC.
+            Self::TalkNpc(t) => w.u8(t.player_id).i16(t.npc),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
+            // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
             Self::PlayerSpawn(s) => w
+                .u8(s.player_id)
                 .i16(s.x)
                 .i16(s.y)
                 .i32(s.respawn_timer)
@@ -2049,12 +2113,24 @@ impl C2s {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // `MessageBuffer.cs:2162-2167`: (byte)id + (short)amount.
+            id::PLAYER_HEAL => Self::PlayerHeal(PlayerHeal {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2258-2263`: (byte)id + (short)talkNPC.
+            id::TALK_NPC => Self::TalkNpc(TalkNpc {
+                player_id: r.u8()?,
+                npc: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
                 team: r.u8()?,
             }),
+            // `MessageBuffer.cs:903-919`: the id byte leads the body.
             id::PLAYER_SPAWN => Self::PlayerSpawn(PlayerSpawn {
+                player_id: r.u8()?,
                 x: r.i16()?,
                 y: r.i16()?,
                 respawn_timer: r.i32()?,
@@ -2179,6 +2255,7 @@ impl S2c {
             Self::NpcKilled { .. } => id::NPC_KILLED,
             Self::ProgressionEvent { .. } => id::PROGRESSION_EVENT,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
+            Self::PlayerSpawn(_) => id::PLAYER_SPAWN,
             Self::PlayerHp { .. } => id::PLAYER_HP,
             Self::NpcInfo(_) => id::NPC_INFO,
             Self::ItemState(_) => id::ITEM_DROP,
@@ -2209,6 +2286,8 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::PlayerHeal(_) => id::PLAYER_HEAL,
+            Self::TalkNpc(_) => id::TALK_NPC,
         }
     }
 
@@ -2262,6 +2341,16 @@ impl S2c {
             Self::NpcKilled { npc } => w.i16(*npc),
             Self::ProgressionEvent { event_id } => w.i16(*event_id),
             Self::PlayerActive { player_id, active } => w.u8(*player_id).u8(u8::from(*active)),
+            // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
+            Self::PlayerSpawn(s) => w
+                .u8(s.player_id)
+                .i16(s.x)
+                .i16(s.y)
+                .i32(s.respawn_timer)
+                .i16(s.deaths_pve)
+                .i16(s.deaths_pvp)
+                .u8(s.team)
+                .u8(s.spawn_context),
             Self::PlayerHp {
                 player_id,
                 hp,
@@ -2351,6 +2440,10 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:929-932`: (byte)number + (short)number2.
+            Self::PlayerHeal(h) => w.u8(h.player_id).i16(h.amount),
+            // `NetMessage.cs:952-955`: (byte)number + (short)talkNPC.
+            Self::TalkNpc(t) => w.u8(t.player_id).i16(t.npc),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2419,6 +2512,17 @@ impl S2c {
                 player_id: r.u8()?,
                 active: r.u8()? != 0,
             },
+            // `MessageBuffer.cs:903-919`: the id byte leads the body.
+            id::PLAYER_SPAWN => Self::PlayerSpawn(PlayerSpawn {
+                player_id: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                respawn_timer: r.i32()?,
+                deaths_pve: r.i16()?,
+                deaths_pvp: r.i16()?,
+                team: r.u8()?,
+                spawn_context: r.u8()?,
+            }),
             id::PLAYER_HP => Self::PlayerHp {
                 player_id: r.u8()?,
                 hp: r.i16()?,
@@ -2552,6 +2656,16 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:2162-2167`: (byte)id + (short)amount.
+            id::PLAYER_HEAL => Self::PlayerHeal(PlayerHeal {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2258-2263`: (byte)id + (short)talkNPC.
+            id::TALK_NPC => Self::TalkNpc(TalkNpc {
+                player_id: r.u8()?,
+                npc: r.i16()?,
             }),
             _ => return None,
         })
@@ -3952,6 +4066,7 @@ mod tests {
                 team: 2,
             }),
             C2s::PlayerSpawn(PlayerSpawn {
+                player_id: 5,
                 x: 1,
                 y: 2,
                 respawn_timer: 0,
@@ -4389,6 +4504,7 @@ mod tests {
         // the context byte (`Player.cs:37578-37581`), so the join answer must
         // carry 1, not `ReviveFromDeath`'s 0.
         let spawn = C2s::PlayerSpawn(PlayerSpawn {
+            player_id: 0,
             x: 1,
             y: 2,
             respawn_timer: 0,
@@ -4708,6 +4824,114 @@ mod tests {
         assert_eq!(packed, hide);
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
+        }
+    }
+
+    // ---- W4-d96 (S1-I-1 player-family first half): per-id round trips ----
+    // Each test pins the frame's id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    /// `12 PlayerSpawn` (`NetMessage.cs:433-445`): the id byte leads —
+    /// `(byte)number, (short)SpawnX, (short)SpawnY, (int)respawnTimer,
+    /// (short)deathsPVE, (short)deathsPVP, (byte)team, (byte)context`.
+    #[test]
+    fn w4_d96_player_spawn_leads_with_the_id_byte() {
+        let s = PlayerSpawn {
+            player_id: 6,
+            x: 4200,
+            y: 1100,
+            respawn_timer: 300,
+            deaths_pve: 3,
+            deaths_pvp: 1,
+            team: 2,
+            spawn_context: 1,
+        };
+        let mut body = vec![6];
+        body.extend_from_slice(&4200i16.to_le_bytes());
+        body.extend_from_slice(&1100i16.to_le_bytes());
+        body.extend_from_slice(&300i32.to_le_bytes());
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&1i16.to_le_bytes());
+        body.push(2);
+        body.push(1);
+        let c = C2s::PlayerSpawn(s).encode();
+        assert_eq!(c[2], 12);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerSpawn(d) => assert_eq!(d, s),
+            other => panic!("expected 12, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerSpawn(s).encode();
+        assert_eq!(f[2], 12);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerSpawn(d) => assert_eq!(d, s),
+            other => panic!("expected 12, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `35 PlayerHeal` (`NetMessage.cs:929-932`): `(byte)number +
+    /// (short)number2`, both directions (`MessageBuffer.cs:2160-2177`).
+    #[test]
+    fn w4_d96_player_heal_round_trips() {
+        let h = PlayerHeal {
+            player_id: 3,
+            amount: 42,
+        };
+        let mut body = vec![3];
+        body.extend_from_slice(&42i16.to_le_bytes());
+        let f = S2c::PlayerHeal(h).encode();
+        assert_eq!(f[2], 35);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerHeal(d) => assert_eq!(d, h),
+            other => panic!("expected 35, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerHeal(h).encode();
+        assert_eq!(c[2], 35);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerHeal(d) => assert_eq!(d, h),
+            other => panic!("expected 35, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `40 SyncTalkNPC` (`NetMessage.cs:952-955`): `(byte)number +
+    /// (short)talkNPC`; `-1` = not talking (`MessageBuffer.cs:2256-2270`).
+    #[test]
+    fn w4_d96_talk_npc_round_trips() {
+        let t = TalkNpc {
+            player_id: 2,
+            npc: 17,
+        };
+        let mut body = vec![2];
+        body.extend_from_slice(&17i16.to_le_bytes());
+        let f = S2c::TalkNpc(t).encode();
+        assert_eq!(f[2], 40);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TalkNpc(d) => assert_eq!(d, t),
+            other => panic!("expected 40, got {:?}", other.msg_id()),
+        }
+        let c = C2s::TalkNpc(t).encode();
+        assert_eq!(c[2], 40);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TalkNpc(d) => assert_eq!(d, t),
+            other => panic!("expected 40, got {:?}", other.msg_id()),
+        }
+        // The close-conversation value (`Player.SetTalkNPC(-1)`).
+        let off = TalkNpc {
+            player_id: 2,
+            npc: -1,
+        };
+        let mut body = vec![2];
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        let c = C2s::TalkNpc(off).encode();
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TalkNpc(d) => assert_eq!(d, off),
+            other => panic!("expected 40, got {:?}", other.msg_id()),
         }
     }
 }

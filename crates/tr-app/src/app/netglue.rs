@@ -816,6 +816,10 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
+            // `net.rs`; the host apply/relay arms (`MessageBuffer.cs:2160-2177`,
+            // `:2256-2270`) land with the send-path pass (S1-I-4).
+            C2s::PlayerHeal(_) | C2s::TalkNpc(_) => {}
         }
     }
 
@@ -1289,6 +1293,7 @@ impl App {
                         let (sx, sy) = (self.world.spawn_x as i16, self.world.spawn_y as i16);
                         self.net_state = net::client_state::IN_WORLD;
                         client.send(&C2s::PlayerSpawn(net::PlayerSpawn {
+                            player_id: self.local_id as u8,
                             x: sx,
                             y: sy,
                             respawn_timer: 0,
@@ -1858,6 +1863,11 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
+            // `net.rs`; the client read sites (`MessageBuffer.cs:901-951`,
+            // `:2160-2177`, `:2256-2270`) land with the send-path pass
+            // (S1-I-4) — nothing sends them yet.
+            S2c::PlayerSpawn(_) | S2c::PlayerHeal(_) | S2c::TalkNpc(_) => {}
         }
     }
 
