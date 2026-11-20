@@ -6521,6 +6521,14 @@ impl Player {
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
                 // +12 armor penetration.
                 159 => self.melee_armor_penetration += 12,
+                // W4-f41 — `:9935-9939` — `BuffID.SugarRush` (192, the cake
+                // slice's buff, `Player.cs:32603`): `pickSpeed -= 0.2f;
+                // moveSpeed += 0.2f` (the port's positive-bonus convention
+                // for the pick half, the Mining-104 precedent).
+                192 => {
+                    self.pick_speed_bonus += 0.2;
+                    self.move_speed += 0.2;
+                }
                 // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
                 // Shell): +25% while at or below half life.
                 62 => {
@@ -12696,6 +12704,36 @@ mod tests {
         // The base itself is the owned 20 (`:56075`); the crystal-use arm
         // (`:45274-45288`) is unported, so it never grows here.
         assert_eq!(p.mana_max_base, 20);
+    }
+
+    /// W4-f41 — SugarRush (192, the cake slice's buff): `pickSpeed -= 0.2f;
+    /// moveSpeed += 0.2f` (`Player.cs:9935-9939`), rebased every tick like
+    /// every buff row (no accumulation), and gone when the buff expires.
+    #[test]
+    fn w4_f41_sugar_rush_speeds_the_pick_and_the_run() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let base_move = p.move_speed;
+        let base_pick = p.pick_speed();
+        p.buffs.add_buff(192, 7200);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - (base_move + 0.2)).abs() < 1e-4, "+0.2 move");
+        assert!(
+            (p.pick_speed() - (base_pick - 0.2)).abs() < 1e-4,
+            "-0.2 pickSpeed (the bonus convention)"
+        );
+        // The rebase: a second tick holds the same values, never doubles.
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - (base_move + 0.2)).abs() < 1e-4);
+        assert!((p.pick_speed() - (base_pick - 0.2)).abs() < 1e-4);
+        // The buff's expiry drops both rows back to the base.
+        let bi = p.buffs.find_buff_index(192).unwrap();
+        p.buffs.buff_time[bi] = 0;
+        p.buffs.buff_type[bi] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - base_move).abs() < 1e-4);
+        assert!((p.pick_speed() - base_pick).abs() < 1e-4);
     }
 
     /// S1-P-i19 — the `manaFlower` flag's ONE −0.08 row (`UpdateEquips`
