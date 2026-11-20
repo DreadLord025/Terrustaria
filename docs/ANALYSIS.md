@@ -913,6 +913,23 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   sparkle beside the stream (velocity zeroed). The sparkles ride the rain module's dust
   drawing (`Dust` frame 43, scale 0.5) and fade with the generic dust decay
   (`alpha -= 25` per tick) вЂ” the type's own AI is not ported.
+- Lavafall ambience scan (W4-g74, code-only): `DrawWaterfall`'s kind-1 arm
+  (`WaterfallManager.cs:685-707`) accumulates `Main.ambientLavafallStrength` вЂ” per
+  lava segment inside the 2Г—-screen box, `1 - dist/(screenWidth*0.75)` when positive вЂ”
+  and tracks the nearest segment's cell-centre world pixels (`x*16+8` / `y*16+8`) into
+  `ambientLavafallX/Y`. The port keeps the original's verbatim quirk at `:702-705`:
+  the Y-distance arm tests `num36` but stores `num35` (the X distance) into the Y
+  sentinel. The triple is stored per pass (`:963-965`, last active pass wins; the
+  water-style triple `:960-962` stays with the waterfall co-lane) and rides
+  `AmbientScan` out of `WaterfallManager::draw` into `App::ambient_lavafall` вЂ” the
+  lavafall loop's volume/pan inputs (`Main.Ambience`, `Main.cs:13488-13508`). The
+  `Main.drewLava` gates (`:354`/`:368`/`:531`) are ported as the `drew_lava` parameter;
+  `Draw()` clears the flag at `:1125` before the first pass, so every pass of a call
+  sees false regardless of the call-site state. The rain-arm view cull (`:381`) reads
+  the raw `Main.screenPosition`/`screenWidth` (`ScreenInfo`), not the scan rectangle.
+  Witnesses: `lavafall_scan_sums_strength_and_tracks_the_nearest_cell`,
+  `water_falls_leave_the_lavafall_triple_at_the_reset`,
+  `the_last_active_pass_overwrites_the_lavafall_triple` (written, not run вЂ” code-only).
 - `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid never
   takes the normal liquid path вЂ” every type-3 cell draws twice, the base quad with
   per-corner `GetShimmerBaseColor` wave colours (self-luminous: the light map is
