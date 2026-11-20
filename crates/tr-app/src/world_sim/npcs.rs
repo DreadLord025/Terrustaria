@@ -1003,6 +1003,16 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // W4-d122 shop 4: the Demolitionist's Land Mine triple conjunct
         // (`Chest.cs:1766`).
         downed_pirates: app.world.downed_pirates,
+        // W4-d122 shop 5: the Clothier's latches + the Tax Collector scan
+        // (`Chest.cs:1849-1953`). `downed_clown` stays false — the port
+        // persists no clown bit (the recorded deviation).
+        downed_clown: false,
+        downed_cultist: app.world.downed_ancient_cultist,
+        downed_frost: app.world.downed_frost,
+        tax_collector_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::TaxCollector),
     };
     let inv_ids: Vec<u16> = app
         .inventory

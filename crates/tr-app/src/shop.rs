@@ -116,6 +116,20 @@ pub struct ShopFlags {
     /// Demolitionist's Holy Hand Grenade 937 triple conjunct. Fed from
     /// `World.downed_pirates`.
     pub downed_pirates: bool,
+    /// W4-d122 shop 5: `NPC.downedClown` (`Chest.cs:1849`) — the port
+    /// persists no clown latch, so the caller fills it (false until the
+    /// hardmode blood-moon clown kill lands a bit).
+    pub downed_clown: bool,
+    /// W4-d122 shop 5: `NPC.downedAncientCultist` (`Chest.cs:1868`) —
+    /// fed from `World.downed_ancient_cultist`.
+    pub downed_cultist: bool,
+    /// W4-d122 shop 5: `NPC.downedFrost` (`Chest.cs:1953`) — fed from
+    /// `World.downed_frost`.
+    pub downed_frost: bool,
+    /// W4-d122 shop 5: `NPC.AnyNPCs(441)` (`Chest.cs:1881`) — the Tax
+    /// Collector's presence (the live roster scan, like the Stylist's
+    /// Party Girl gate).
+    pub tax_collector_present: bool,
 }
 
 impl Default for ShopFlags {
@@ -165,6 +179,10 @@ impl Default for ShopFlags {
             zone_underworld: false,
             zone_glowshroom: false,
             downed_pirates: false,
+            downed_clown: false,
+            downed_cultist: false,
+            downed_frost: false,
+            tax_collector_present: false,
         }
     }
 }
@@ -215,6 +233,9 @@ impl ShopFlags {
             silver_ore_tier: world.ore_tiers.silver,
             // W4-d122 shop 4: `NPC.downedPirates` — the world's latch.
             downed_pirates: world.downed_pirates,
+            // W4-d122 shop 5: the Clothier's cultist/frost latches.
+            downed_cultist: world.downed_ancient_cultist,
+            downed_frost: world.downed_frost,
             ..Self::default()
         }
     }
@@ -412,6 +433,28 @@ pub enum StockWhen {
     /// Plantera). The port's `World.downed_pirates` feeds it; no other
     /// shop case reads the flag alone yet.
     DownedPirates,
+    /// W4-d122 shop 5: `NPC.downedClown` (`Chest.cs:1849`) — the clown
+    /// outfit trio. The port persists no `downedClown` latch (the world
+    /// file has no bit for it), so the flag rides the caller like
+    /// `crimson_world` and stays false until one lands.
+    DownedClown,
+    /// W4-d122 shop 5: `NPC.downedAncientCultist` (`Chest.cs:1868`) —
+    /// the cultist robe day/night split.
+    DownedCultist,
+    /// W4-d122 shop 5: `NPC.downedFrost` (`Chest.cs:1953`) — the Eskimo
+    /// hood day/night split.
+    DownedFrost,
+    /// W4-d122 shop 5: `NPC.AnyNPCs(441)` (`Chest.cs:1881`) — the Tax
+    /// Collector's presence opens the tam-o'-shanter trio.
+    TaxCollectorPresent,
+    /// W4-d122 shop 5: the EXACT moon phase (`Chest.cs:1824`/`:1836`/
+    /// `:1910-1951`'s `moonPhase == n` — NOT the `/2` pairs).
+    MoonPhaseExact(u32),
+    /// W4-d122 shop 5: the `num < N` guard (`Chest.cs:1979`/`:1984`) —
+    /// the row lands only while FEWER than N rows have resolved so far.
+    /// The resolve loop counts the accepted rows and checks this BEFORE
+    /// the child gate (the C# evaluates `num < 38` first).
+    NumBelow(u32, &'static StockWhen),
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -556,16 +599,99 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         // Imbuing Station 1160?/1161, the 1339/1171/1162 rows) sit
         // constants-off until their flags land.
         16 => vec![row(1430, StockWhen::Always), row(986, StockWhen::Always)],
-        // The Clothier (`Chest.cs:1814-1989`): the base 254/981; the day
-        // 242; the moon-phase hats; the full set in the tail — the v1
-        // carries the always-on rows (the moon-phase and the clown rows
-        // land with their flags).
+        // The Clothier (`Chest.cs:1814-1988`, the registry
+        // `NPCInteractions.Shop(54, 5)`, `NPCInteractions.cs:492` —
+        // `NPCID.Clothier = 54`): the day/night + moon-phase hats, the
+        // clown/cultist/frost splits, the Tax Collector trio, the
+        // graveyard set, the hardmode moon-phase costumes, the party
+        // block and the two `num < 38` tail guards — every gate verbatim.
         5 => vec![
-            row(254, StockWhen::Always),
-            row(981, StockWhen::Always),
-            row(269, StockWhen::Always),
+            row(254, StockWhen::Always), // `:1815`
+            row(981, StockWhen::Always), // `:1817`
+            // `:1819-1823`: `Main.dayTime` — the Plumber's Hat 242.
+            row(242, StockWhen::Not(&StockWhen::Night)),
+            // `:1824-1835`: `moonPhase == 0` — the Familiar set 245/246,
+            // plus the night-only Wig pair 1288/1289.
+            row(245, StockWhen::MoonPhaseExact(0)),
+            row(246, StockWhen::MoonPhaseExact(0)),
+            row(1288, CLOTHIER_PHASE0_NIGHT),
+            row(1289, CLOTHIER_PHASE0_NIGHT),
+            // `:1836-1842`'s else-if: `moonPhase == 1` — the The Doctor's
+            // set 325/326 (the exact phases make the arms exclusive).
+            row(325, StockWhen::MoonPhaseExact(1)),
+            row(326, StockWhen::MoonPhaseExact(1)),
+            row(269, StockWhen::Always), // `:1843-1848`
             row(270, StockWhen::Always),
             row(271, StockWhen::Always),
+            // `:1849-1857`: `NPC.downedClown` — the clown outfit trio.
+            row(503, StockWhen::DownedClown),
+            row(504, StockWhen::DownedClown),
+            row(505, StockWhen::DownedClown),
+            // `:1858-1867`: `bloodMoon` — the Mime Mask 322, plus the
+            // night-only Gem robe pair 3362/3363.
+            row(322, StockWhen::BloodMoon),
+            row(3362, CLOTHIER_BM_NIGHT),
+            row(3363, CLOTHIER_BM_NIGHT),
+            // `:1868-1880`: `NPC.downedAncientCultist` — the day
+            // (2856/2858) / night (2857/2859) robe split.
+            row(2856, CLOTHIER_CULTIST_DAY),
+            row(2858, CLOTHIER_CULTIST_DAY),
+            row(2857, CLOTHIER_CULTIST_NIGHT),
+            row(2859, CLOTHIER_CULTIST_NIGHT),
+            // `:1881-1886`: `NPC.AnyNPCs(441)` — the Tax Collector's
+            // tam-o'-shanter trio 3242/3243/3244.
+            row(3242, StockWhen::TaxCollectorPresent),
+            row(3243, StockWhen::TaxCollectorPresent),
+            row(3244, StockWhen::TaxCollectorPresent),
+            // `:1887-1897`: the graveyard — the eight funeral rows.
+            row(4685, StockWhen::ZoneGraveyard),
+            row(4686, StockWhen::ZoneGraveyard),
+            row(4704, StockWhen::ZoneGraveyard),
+            row(4705, StockWhen::ZoneGraveyard),
+            row(4706, StockWhen::ZoneGraveyard),
+            row(4707, StockWhen::ZoneGraveyard),
+            row(4708, StockWhen::ZoneGraveyard),
+            row(4709, StockWhen::ZoneGraveyard),
+            // `:1898-1902`: the snow biome — the Eskimo set 1429.
+            row(1429, StockWhen::ZoneSnow),
+            // `:1903-1907`: `Main.halloween` — the Bride of Frankenstein
+            // mask 1740 (constants-off, no season system).
+            row(1740, StockWhen::Halloween),
+            // `:1908-1952`: hardmode — the EXACT-phase costume sets
+            // (2 → 869, 3 → 4994/4997, 4 → 864/865, 5 → 4995/4998,
+            // 6 → 873/874/875, 7 → 4996/4999).
+            row(869, CLOTHIER_HM_PHASE2),
+            row(4994, CLOTHIER_HM_PHASE3),
+            row(4997, CLOTHIER_HM_PHASE3),
+            row(864, CLOTHIER_HM_PHASE4),
+            row(865, CLOTHIER_HM_PHASE4),
+            row(4995, CLOTHIER_HM_PHASE5),
+            row(4998, CLOTHIER_HM_PHASE5),
+            row(873, CLOTHIER_HM_PHASE6),
+            row(874, CLOTHIER_HM_PHASE6),
+            row(875, CLOTHIER_HM_PHASE6),
+            row(4996, CLOTHIER_HM_PHASE7),
+            row(4999, CLOTHIER_HM_PHASE7),
+            // `:1953-1965`: `NPC.downedFrost` — the day (1275) / night
+            // (1276) hood split.
+            row(1275, CLOTHIER_FROST_DAY),
+            row(1276, CLOTHIER_FROST_NIGHT),
+            // `:1966-1970`: `Main.halloween` — the Cat Ears/Bunny Hood
+            // pair (constants-off).
+            row(3246, StockWhen::Halloween),
+            row(3247, StockWhen::Halloween),
+            // `:1971-1978`: `BirthdayParty.PartyIsUp` — the party set.
+            row(3730, StockWhen::PartyIsUp),
+            row(3731, StockWhen::PartyIsUp),
+            row(3733, StockWhen::PartyIsUp),
+            row(3734, StockWhen::PartyIsUp),
+            row(3735, StockWhen::PartyIsUp),
+            // `:1979-1982`: `num < 38 && golferScoreAccumulated >= 2000`
+            // — the Golf Ball painting 4744.
+            row(4744, StockWhen::NumBelow(38, &CLOTHIER_GOLF_TAIL)),
+            row(5308, StockWhen::Always), // `:1983`
+            // `:1984-1987`: `num < 38` — the Pretty Mirror 5630.
+            row(5630, StockWhen::NumBelow(38, &StockWhen::Always)),
         ],
         // The Dryad (`Chest.cs:1568-1745`, the registry
         // `NPCInteractions.Shop(20, 3)`, `NPCInteractions.cs:490` —
@@ -1210,6 +1336,45 @@ const DEMO_LAND_MINE: StockWhen = StockWhen::All(&[
     StockWhen::DownedPirates,
 ]);
 
+// — W4-d122: the Clothier's compound gates (`Chest.cs:1814-1988`). —
+
+/// `Chest.cs:1824-1834`: `moonPhase == 0 && !dayTime` — the Wig pair.
+const CLOTHIER_PHASE0_NIGHT: StockWhen =
+    StockWhen::All(&[StockWhen::MoonPhaseExact(0), StockWhen::Night]);
+/// `Chest.cs:1858-1866`: `bloodMoon && !dayTime` — the Gem robe pair.
+const CLOTHIER_BM_NIGHT: StockWhen =
+    StockWhen::All(&[StockWhen::BloodMoon, StockWhen::Night]);
+/// `Chest.cs:1868-1874`: `downedAncientCultist && dayTime` — the day robes.
+const CLOTHIER_CULTIST_DAY: StockWhen = StockWhen::All(&[
+    StockWhen::DownedCultist,
+    StockWhen::Not(&StockWhen::Night),
+]);
+/// `:1875-1879`'s else arm — the night robes.
+const CLOTHIER_CULTIST_NIGHT: StockWhen =
+    StockWhen::All(&[StockWhen::DownedCultist, StockWhen::Night]);
+/// `Chest.cs:1908-1951`: `hardMode && moonPhase == n` — the costume sets.
+const CLOTHIER_HM_PHASE2: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(2)]);
+const CLOTHIER_HM_PHASE3: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(3)]);
+const CLOTHIER_HM_PHASE4: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(4)]);
+const CLOTHIER_HM_PHASE5: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(5)]);
+const CLOTHIER_HM_PHASE6: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(6)]);
+const CLOTHIER_HM_PHASE7: StockWhen =
+    StockWhen::All(&[StockWhen::HardMode, StockWhen::MoonPhaseExact(7)]);
+/// `Chest.cs:1953-1959`: `downedFrost && dayTime` — the day hood 1275.
+const CLOTHIER_FROST_DAY: StockWhen =
+    StockWhen::All(&[StockWhen::DownedFrost, StockWhen::Not(&StockWhen::Night)]);
+/// `:1960-1964`'s else arm — the night hood 1276.
+const CLOTHIER_FROST_NIGHT: StockWhen =
+    StockWhen::All(&[StockWhen::DownedFrost, StockWhen::Night]);
+/// `Chest.cs:1979`: `Main.LocalPlayer.golferScoreAccumulated >= 2000`
+/// (the `num < 38` half rides the `NumBelow` wrapper).
+const CLOTHIER_GOLF_TAIL: StockWhen = StockWhen::GolfScore(2000, true);
+
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
 /// chance is `1 / range` with the luck narrowing/widening the range.
@@ -1824,25 +1989,44 @@ pub fn resolve_stock_entries_moon(
     inventory_ids: &[u16],
     moon_phase: u32,
 ) -> Vec<ShopEntry> {
-    setup_shop(shop_index, inventory_ids, flags)
-        .into_iter()
-        .filter(|e| stock_gate(&e.when, flags, inventory_ids, moon_phase))
-        .collect()
+    // The C#'s `num` — the count of the rows that RESOLVED so far; the
+    // `num < 38` guards (`Chest.cs:1979`/`:1984`) read it live as the
+    // case walks, so the port counts the accepted rows the same way.
+    let mut num = 0u32;
+    let mut out = Vec::new();
+    for e in setup_shop(shop_index, inventory_ids, flags) {
+        if stock_gate(&e.when, flags, inventory_ids, moon_phase, num) {
+            num += 1;
+            out.push(e);
+        }
+    }
+    out
 }
 
 /// One `StockWhen` gate against the live state — the `SetupShop` if-arms'
 /// conditions, verbatim. The combinators (`All`/`Any`/`Not`) evaluate their
 /// children recursively so the C#'s compound `&&`/`||`/`else` chains keep
-/// their exact shape (W4-d122).
-fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_phase: u32) -> bool {
+/// their exact shape (W4-d122). `num` is the resolved-row count so far —
+/// only the `NumBelow` guards read it.
+fn stock_gate(
+    when: &StockWhen,
+    flags: &ShopFlags,
+    inventory_ids: &[u16],
+    moon_phase: u32,
+    num: u32,
+) -> bool {
     match when {
         StockWhen::All(children) => children
             .iter()
-            .all(|c| stock_gate(c, flags, inventory_ids, moon_phase)),
+            .all(|c| stock_gate(c, flags, inventory_ids, moon_phase, num)),
         StockWhen::Any(children) => children
             .iter()
-            .any(|c| stock_gate(c, flags, inventory_ids, moon_phase)),
-        StockWhen::Not(child) => !stock_gate(child, flags, inventory_ids, moon_phase),
+            .any(|c| stock_gate(c, flags, inventory_ids, moon_phase, num)),
+        StockWhen::Not(child) => !stock_gate(child, flags, inventory_ids, moon_phase, num),
+        // `Chest.cs:1979`'s short-circuit order: `num < 38` FIRST.
+        StockWhen::NumBelow(n, child) => {
+            num < *n && stock_gate(child, flags, inventory_ids, moon_phase, num)
+        }
         _ => match *when {
             StockWhen::Always => true,
             StockWhen::HardMode => flags.hard_mode,
@@ -1945,8 +2129,16 @@ fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_p
                 (flags.downed_boss1 || flags.downed_slime_king) && flags.night
             }
             StockWhen::DownedPirates => flags.downed_pirates,
-            // The combinators are handled above — unreachable here.
-            StockWhen::All(_) | StockWhen::Any(_) | StockWhen::Not(_) => unreachable!(),
+            StockWhen::DownedClown => flags.downed_clown,
+            StockWhen::DownedCultist => flags.downed_cultist,
+            StockWhen::DownedFrost => flags.downed_frost,
+            StockWhen::TaxCollectorPresent => flags.tax_collector_present,
+            StockWhen::MoonPhaseExact(n) => moon_phase == n,
+            // The combinators + the num guard are handled above — unreachable.
+            StockWhen::All(_)
+            | StockWhen::Any(_)
+            | StockWhen::Not(_)
+            | StockWhen::NumBelow(_, _) => unreachable!(),
         },
     }
 }
@@ -2815,6 +3007,146 @@ mod tests {
             vec![168, 166, 5542, 167, 265, 5481, 5464, 937, 1347, 4827, 4824, 4825, 4826],
             "the exact num order (`:1748-1811`)"
         );
+    }
+
+    /// W4-d122 shop 5 — the Clothier (`Chest.cs:1814-1988`, the registry
+    /// `NPCInteractions.Shop(54, 5)`, `NPCInteractions.cs:492`): the
+    /// day/night + exact-moon-phase hats, the cultist/frost day-night
+    /// splits, the Tax Collector trio, the hardmode costume sets, the
+    /// party block and the two `num < 38` tail guards — verbatim.
+    /// Written, not run (code-only).
+    #[test]
+    fn the_clothier_full_stock_pins_the_splits_and_the_num_guards() {
+        // Classic DAY, phase 0: the day hat + the Familiar set + the base
+        // trio + the two tail rows (num stays well under 38).
+        let base = resolve_stock_moon(5, &ShopFlags::default(), &[], 0);
+        assert_eq!(
+            base,
+            vec![254, 981, 242, 245, 246, 269, 270, 271, 5308, 5630],
+            "the exact num order (`:1815-1987`, day phase 0)"
+        );
+        // NIGHT phase 0: no day hat, the Wig pair enters.
+        let night = ShopFlags {
+            night: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock_moon(5, &night, &[], 0),
+            vec![254, 981, 245, 246, 1288, 1289, 269, 270, 271, 5308, 5630]
+        );
+        // Phase 1: the Doctor's set REPLACES the Familiar set (`:1836`).
+        let p1 = resolve_stock_moon(5, &ShopFlags::default(), &[], 1);
+        assert_eq!(
+            p1,
+            vec![254, 981, 242, 325, 326, 269, 270, 271, 5308, 5630]
+        );
+        // `:1849`: the clown latch opens the outfit trio after the 271 row.
+        let clown = ShopFlags {
+            downed_clown: true,
+            ..Default::default()
+        };
+        let c = resolve_stock_moon(5, &clown, &[], 2);
+        let i271 = c.iter().position(|v| *v == 271).unwrap();
+        assert_eq!(&c[i271 + 1..i271 + 4], &[503, 504, 505]);
+        // `:1858`: the blood moon opens the Mime Mask; night adds the pair.
+        let bm = ShopFlags {
+            blood_moon: true,
+            night: true,
+            ..Default::default()
+        };
+        let b = resolve_stock_moon(5, &bm, &[], 2);
+        let i322 = b.iter().position(|v| *v == 322).unwrap();
+        assert_eq!(&b[i322 + 1..i322 + 3], &[3362, 3363]);
+        // `:1868`: the cultist day/night split.
+        let cult_day = ShopFlags {
+            downed_cultist: true,
+            ..Default::default()
+        };
+        let cd = resolve_stock_moon(5, &cult_day, &[], 2);
+        assert!(cd.contains(&2856) && cd.contains(&2858) && !cd.contains(&2857));
+        let cult_night = ShopFlags {
+            night: true,
+            ..cult_day
+        };
+        let cn = resolve_stock_moon(5, &cult_night, &[], 2);
+        assert!(cn.contains(&2857) && cn.contains(&2859) && !cn.contains(&2856));
+        // `:1881`: the Tax Collector trio.
+        let tax = ShopFlags {
+            tax_collector_present: true,
+            ..Default::default()
+        };
+        let t = resolve_stock_moon(5, &tax, &[], 2);
+        assert!(t.contains(&3242) && t.contains(&3243) && t.contains(&3244));
+        // `:1887`: the graveyard octet; `:1898`: the snow set.
+        let grave = ShopFlags {
+            zone_graveyard: true,
+            zone_snow: true,
+            ..Default::default()
+        };
+        let g = resolve_stock_moon(5, &grave, &[], 2);
+        for id in [4685, 4686, 4704, 4705, 4706, 4707, 4708, 4709, 1429] {
+            assert!(g.contains(&id), "the grave/snow row {id}");
+        }
+        // `:1908-1951`: the hardmode EXACT-phase costumes — phase 6 carries
+        // the trio, phase 4 the pair, and the non-hardmode twins stay out.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let h6 = resolve_stock_moon(5, &hm, &[], 6);
+        assert!(h6.contains(&873) && h6.contains(&874) && h6.contains(&875));
+        assert!(!h6.contains(&864), "phase 4's set stays out");
+        let p6 = resolve_stock_moon(5, &ShopFlags::default(), &[], 6);
+        assert!(!p6.contains(&873), "no costume without hardmode");
+        // `:1953`: the frost day/night split.
+        let frost = ShopFlags {
+            downed_frost: true,
+            ..Default::default()
+        };
+        let fd = resolve_stock_moon(5, &frost, &[], 2);
+        assert!(fd.contains(&1275) && !fd.contains(&1276));
+        let fn_ = ShopFlags {
+            night: true,
+            ..frost
+        };
+        let fnn = resolve_stock_moon(5, &fn_, &[], 2);
+        assert!(fnn.contains(&1276) && !fnn.contains(&1275));
+        // The `num < 38` guards (`:1979`/`:1984`): the LOUD world at
+        // NIGHT + phase 0 resolves 35 rows before the golf tail — 4744
+        // lands (36), 5308 (37), then 5630's `num < 38` FAILS (num == 38)
+        // and the mirror drops out.
+        let loud = ShopFlags {
+            night: true,
+            blood_moon: true,
+            hard_mode: true,
+            downed_clown: true,
+            downed_cultist: true,
+            downed_frost: true,
+            tax_collector_present: true,
+            zone_graveyard: true,
+            zone_snow: true,
+            party_is_up: true,
+            golfer_score: 2500,
+            ..Default::default()
+        };
+        let l = resolve_stock_moon(5, &loud, &[], 0);
+        assert_eq!(l.len(), 37, "the second guard drops the mirror");
+        assert!(l.contains(&4744), "the golf tail had room (num 35 < 38)");
+        assert!(!l.contains(&5630), "num == 38 blocks the mirror");
+        assert_eq!(*l.last().unwrap(), 5308, "the unguarded row lands last");
+        // Phase 7 resolves one costume PAIR instead of the four phase-0
+        // rows (num 33 before the tail), so BOTH guarded rows land.
+        let p7 = resolve_stock_moon(5, &loud, &[], 7);
+        assert_eq!(p7.len(), 36);
+        assert_eq!(&p7[p7.len() - 3..], &[4744, 5308, 5630]);
+        // The golf gate itself: under 2000 the 4744 row stays out even
+        // with room, and the mirror still lands (num 34 < 38).
+        let poor = ShopFlags {
+            golfer_score: 1999,
+            ..loud
+        };
+        let pr = resolve_stock_moon(5, &poor, &[], 7);
+        assert!(!pr.contains(&4744) && pr.contains(&5630));
     }
 
     /// `Chest.SetupTravelShop` (`Chest.cs:1275-1358`): the visit's stock —
