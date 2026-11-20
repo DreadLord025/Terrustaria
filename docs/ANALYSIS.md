@@ -39244,3 +39244,52 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The Main.cs sound sites wave, part 2 (W4-g22, 2026-11-21, code-only mode) — sites 91-105
+
+**Claim read**: g21's claim commit `7e8a7946` (`task/W4-g21-sounds-main-1`,
+pushed) fixes the line-order thirds of the 271-site `Main.cs` `PlaySound`
+census: **g22 owns sites 91-180, lines `:44118`-`:49727`** (re-derived by
+`Select-String 'SoundEngine\.PlaySound\('` over the direct file path —
+271 total, 90 in the window). g23's branch exists locally at the wave-3 base
+with no claim commit; no co-lane overlap inside the window.
+
+**Batch 1 (sites 91-105)** — the in-game-window cue machines, landed as pure
+helpers in `crates/tr-app/src/main_sounds.rs` (module wired in `main.rs`)
+behind witnesses, the `npc_ai_style59` unwired precedent (the stylist hair
+window has no screen, the dresser UI is `chest.rs`'s documented
+out-of-scope, the builder/info-acc toggle rows are unported HUD):
+
+| site | C# | port |
+| --- | --- | --- |
+| 91 `:44118` | hair-cell pick 12 | `main_sounds::hair_cell_pick` (rect+edge; the 12 is the caller's) |
+| 92 `:44152` | OpenClothesWindow 10 | `open_clothes_window_cue(false)` |
+| 93 `:44176` | CancelClothesWindow 11 | `cancel_clothes_window_cue` (open && !quiet) |
+| 94 `:44197` | SaveClothesWindow 7 | `save_clothes_window_cue` (unconditional Grab) |
+| 95/96 `:44285`/`:44294` | Change-button hover enter/leave 12 | `clothes_window_text_hover` |
+| 97/98 `:44343`/`:44352` | Cancel-button hover enter/leave 12 | `clothes_window_text_hover` (shared latch shape) |
+| 99 `:44541` | colour-slot cell pick 12 | `clothes_window_click` (strict rect + edge) |
+| 100 `:44617` | player-dummy cycle 12 | `clothes_window_click` (Contains rect + edge) |
+| 101 `:45178` | TryMovingNPC 12 | LANDED earlier — `app/clicks.rs::handle_carried_housing_head` `Menu_Tick` on `moved` |
+| 102 `:45225` | carried-head right-drop 12 | LANDED earlier — same fn, `right_edge` arm |
+| 103 `:45601` | Settings-button hover-enter 12 | `settings_button_tick` WIRED in `app/frame.rs` after `refresh_button` (prev-frame `button_mouse_over` is the `ref mouseOver`; the `IgnoreMouseInterface`/`mouseInterface` gates are constants-on — the port's HUD hover does not model them) |
+| 104 `:47201` | hideInfo toggle 12 | `info_acc_hide_toggle` (pure flip; cue constant 12) |
+| 105 `:47413` | wire-mode toggle 12 | `builder_acc_toggle(8, s)` |
+
+The hair-window scroll machine (`hair_window_scroll`, `Main.cs:
+43726-43785`) rides along — its wheel/button sites `:43735`/`:43740`/
+`:43759`/`:43773` are g21's (<= `:43936`), recorded here because the
+clamp tail and the cell pick share the window.
+
+**RNG**: every batch-1 site is draw-free (ids 10/11/12/7-int-overload; the
+case-7 Grab pitch draw belongs to the `Audio::play_pickup_sound` seam that
+already landed S1-E-21f — the unwired save cue will ride it). No gameplay
+stream touched.
+
+**Menu seams staged** (`menu/mod.rs` `pending_cue` + `take_cue`,
+`menu/actions.rs` activation reset + Nav cue): the per-site cue queue the
+later batches drain; the App drain lands with batch 2.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+every helper re-read against the cited C# windows; 15 witness tests in
+`main_sounds.rs` WRITTEN NOT RUN.
+
