@@ -229,6 +229,7 @@ fn lane_covers(ty: u16) -> bool {
             | 439 | 381 | 382 | 390 | 383 | 384 | 385 | 386 | 387 | 389
             | 391 | 392..=395 | 399 | 520 | 341 | 471 | 533
             | 518 | 416 | 419 | 412..=414 | 415 | 417 | 427 | 425
+            | 428 | 424 | 423 | 421 | 420 | 409 | 410 | 407 | 411 | 402
     )
 }
 
@@ -682,6 +683,77 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         // `Next(3)==0`-gated 229 full-write); seven constant gores
         // (796/797/798/809×2/810×2).
         425 => fx.pair_loop(20, 3, 241, 229),
+        // `NPC.cs:83256-83272` — Vortex Headcrab: 10 × (241 + a
+        // `Next(2)`-gated EITHER 229 OR 240 — the gate draws, then the
+        // branch picks the type, NO post writes); two constant gores
+        // (806/807, velocity ×0.8).
+        428 => {
+            let hd1 = fx.hit_dir as f32;
+            for _ in 0..10 {
+                fx.d(241, hd1, -1.0);
+                if fx.rng.next_max(2) == 0 {
+                    fx.d(229, 0.0, 0.0);
+                } else {
+                    fx.d(240, 0.0, 0.0);
+                }
+            }
+        }
+        // `NPC.cs:83291-83310` — Predictor: 20 × (249 +
+        // `Next(3)==0`-gated 242 full-write); five constant gores
+        // (793/794×2/795×2).
+        424 => fx.pair_loop(20, 3, 249, 242),
+        // `NPC.cs:83329-83343` — Nebula Beast: 20 × (249 + 242
+        // UNCONDITIONAL full-write); three constant Center gores
+        // (790/791 ×0.8, 792 ×0.9).
+        423 => fx.pair_loop(20, 0, 249, 242),
+        // `NPC.cs:83362-83376` — Brain Suckler: 10 × (249 + 242
+        // unconditional); three constant Center gores (785-787).
+        421 => fx.pair_loop(10, 0, 249, 242),
+        // `NPC.cs:83395-83409` — Nebula Floater: 10 × (249 + 242
+        // unconditional); three constant Center gores (782-784).
+        420 => fx.pair_loop(10, 0, 249, 242),
+        // `NPC.cs:83494-83506` — Stardust Spider (big): 20 × (17 +
+        // 229 noGravity/×3 — the LIGHT stardust shape); three constant
+        // Center gores (775/776 ×0.8, 777 ×0.9).
+        409 => fx.stardust_loop(20, 0, false),
+        // `NPC.cs:83521-83530` — Stardust Spider (small): 5 × (17 +
+        // 229); no gores.
+        410 => fx.stardust_loop(5, 0, false),
+        // `NPC.cs:83545-83563` — Stardust Jellyfish: 20 × (`Next(3)
+        // != 0`-gated 17 + ALWAYS 229); six constant gores (778/779
+        // Top ×0.8, 780/781/780/781 Center ×0.9).
+        407 => fx.stardust_loop(20, 3, true),
+        // `NPC.cs:83647-83662` — Stardust Soldier: 20 × (17 + a
+        // `Next(2)==0`-gated 229 with noGravity ONLY — no ×3); five
+        // constant gores (772/773×2/774×2).
+        411 => {
+            let hd1 = fx.hit_dir as f32;
+            for _ in 0..20 {
+                fx.d(17, hd1, -1.0);
+                if fx.rng.next_max(2) == 0 {
+                    let i = fx.d(229, 0.0, 0.0);
+                    fx.dust.slot_mut(i).no_gravity = true;
+                }
+            }
+        }
+        // `NPC.cs:83599-83632` — the Stardust Worm Head: 5 ×
+        // (`Next(3)==0`-gated 17 + ALWAYS 229 noGravity/×3), then the
+        // oldPos trail loop over the C#'s 10 slots (`NPC.cs:6119`):
+        // each slot draws `Next(4)`, `!= 0` continues, `== 0` reads
+        // the slot — the port carries NO trail array, so the all-zero
+        // stand-in BREAKS at the first `== 0` (the documented
+        // module-header deviation; the gate draws until then are
+        // exactly the C#'s for an untrailed corpse).
+        402 => {
+            fx.stardust_loop(5, 3, false);
+            for _ in 0..10 {
+                if fx.rng.next_max(4) == 0 {
+                    // `:83617-83620` — oldPos[i] == Vector2.Zero →
+                    // break (the port's array is all-zero).
+                    break;
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -1317,6 +1389,53 @@ mod tests {
         assert_eq!(rng, r, "6×6 + 2×(6+1 tweak)");
         assert!(pool.slot(7).active);
         assert!(!pool.slot(8).active);
+    }
+
+    /// `NPC.cs:83601-83631` — the Stardust Worm Head: 5 × (gate + 17?
+    /// + 229) then the oldPos loop's `Next(4)` gates until the first
+    /// `== 0` breaks (the all-zero trail stand-in).
+    #[test]
+    fn w4_g60_the_worm_head_trail_gates_until_the_zero_break() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(131);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 402,
+            pos: Vec2::new(100.0, 100.0),
+            w: 32,
+            h: 32,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        let mut spawned = 0usize;
+        for _ in 0..5 {
+            let g = r.next_max(3);
+            if g == 0 {
+                replay_spawn(&mut r, 32, 32);
+                spawned += 1;
+            }
+            replay_spawn(&mut r, 32, 32); // the always-229
+            spawned += 1;
+        }
+        // The trail gates: draw until the first == 0 (max 10).
+        let mut gates = 0;
+        for _ in 0..10 {
+            gates += 1;
+            if r.next_max(4) == 0 {
+                break;
+            }
+        }
+        assert_eq!(rng, r, "5 pair iterations + {gates} trail gates");
+        assert!(pool.slot(spawned - 1).active);
+        assert!(!pool.slot(spawned).active);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
