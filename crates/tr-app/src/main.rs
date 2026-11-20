@@ -17,6 +17,7 @@ mod bank;
 mod banners;
 mod bestiary;
 mod biome;
+mod boss_bags;
 mod buff_effects;
 mod buff_effects_misc;
 mod buffs;
