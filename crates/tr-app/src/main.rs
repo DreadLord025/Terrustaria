@@ -154,6 +154,10 @@ mod npc_ai_style89;
 // the 479 kind + the axis arm wait on the roster wave (the style86
 // precedent; see the module doc).
 mod npc_ai_style90;
+// W4-d32 style 91: UNWIRED Granite Flyer machine (NPC.cs:38629-38809) -
+// the 483 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style91;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
