@@ -22,7 +22,9 @@
 //! 924 (FairyQueenHymn) are NOT spawned by `AI_120` — 871's only spawner is
 //! the Queen Slime's gore-adjacent path (`NPC.cs:83753` is a different 871 —
 //! a dust id; no `NewProjectile(871)` exists in `NPC.cs`/`Player.cs`) and 924
-//! has no `SetDefaults` arm at all (an unused id). Both stay unclaimed.
+//! has no `SetDefaults` arm at all (an unused id). Both stay unclaimed BY
+//! THIS GATE — W4-d18 rowed 871 with its own aiStyle-172 arm
+//! (`projectile_ai_misc::ai_pellet_storm`); 924 stays unrowed.
 //!
 //! Boundaries honoured: R56 owns aiStyle 194 (untouched); R19b owns the
 //! ai001 slice-C kinds (none of these five is aiStyle 1); the style-171
@@ -500,8 +502,9 @@ mod tests {
             assert!(d.ignore_water, "kind {kind} ignoreWater");
             assert_eq!(d.extra_updates, 0, "kind {kind} extraUpdates");
         }
-        // The unclaimed neighbours stay unrowed (871/924 — module doc).
-        assert!(proj_data(871).is_none());
+        // The unclaimed neighbours: 924 stays unrowed; 871 was rowed by
+        // W4-d18 with its OWN style-172 arm — this gate still does not
+        // claim it (the gate witness below).
         assert!(proj_data(924).is_none());
     }
 

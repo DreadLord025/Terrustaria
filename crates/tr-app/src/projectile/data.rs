@@ -783,6 +783,11 @@ pub const LIGHTS_BANE: u16 = 974;
 // `npc_ai_empress.rs` `EmpressRequest::Projectile` set). Ids verified against
 // `ID/ProjectileID.cs`; the aiStyle + box + flags against each `SetDefaults`
 // arm. The AI cores live in `projectile_ai_empress.rs` (unwired, code-only).
+/// `ProjectileID.HallowBossSplitShotCore` (871, `ProjectileID.cs:2296`) —
+/// the pellet-storm core, aiStyle 172 (`Projectile.cs:8380-8392`). W4-d18:
+/// the empress module's census left it unclaimed (no `AI_120` spawner);
+/// the AI arm is `projectile_ai_misc::ai_pellet_storm`.
+pub const HALLOW_BOSS_SPLIT_SHOT_CORE: u16 = 871;
 /// `ProjectileID.HallowBossLastingRainbow` (872, `ProjectileID.cs:2298`) —
 /// the lasting-rainbow ring bolt, aiStyle 173 (`Projectile.cs:8403-8415`).
 pub const HALLOW_BOSS_LASTING_RAINBOW: u16 = 872;
@@ -3730,6 +3735,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // alpha 255, timeLeft 840.
             CTHULUNADO => (150.0, 42.0, 64, -1, 840, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // ===== S1-D-4: the Empress of Light's projectiles =====
+            // W4-d18 — `Projectile.cs:8380-8392`: the Split-Shot Core (871):
+            // 30x30, aiStyle 172, `alpha = 255`, `penetrate = -1`, hostile,
+            // `timeLeft = 240`, `tileCollide = false`, `ignoreWater = true`
+            // (the overlay below). The AI is the pellet-storm machine.
+            HALLOW_BOSS_SPLIT_SHOT_CORE => (
+                30.0, 30.0, 172, -1, 240, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
             // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile
             // (`friendly = false` rides the pool's `!friendly` proxy),
@@ -4182,7 +4195,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
                 kind,
-                HALLOW_BOSS_LASTING_RAINBOW
+                HALLOW_BOSS_SPLIT_SHOT_CORE
+                    | HALLOW_BOSS_LASTING_RAINBOW
                     | HALLOW_BOSS_RAINBOW_STREAK
                     | HALLOW_BOSS_DEATH_AURORA
                     | FAIRY_QUEEN_LANCE

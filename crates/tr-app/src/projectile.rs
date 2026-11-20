@@ -17341,6 +17341,19 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d18 — `AI()`'s `else if (this.aiStyle == 172)`
+                        // (`Projectile.cs:36651-36654`) ->
+                        // `AI_172_HallowBossRainbowPelletStorm` (`:45569-45604`):
+                        // the Split-Shot Core (871), the style's ONLY SetDefaults
+                        // row (`:8380-8392`), so no kind gate. The 91-tick grow-in,
+                        // the 210-tick storm life and the six three-bullet fans.
+                        // The empress gate does NOT claim 871 (its own arm serves
+                        // it — `projectile_ai_empress` module doc). ZERO rand draws.
+                        172 => {
+                            crate::projectile_ai_misc::ai_pellet_storm(&mut self.slots[i]);
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the

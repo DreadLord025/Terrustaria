@@ -1235,3 +1235,307 @@ mod tests {
         }
     }
 }
+
+/// `Projectile.Opacity`'s setter (`Projectile.cs:546-549`):
+/// `alpha = (int)Clamp((1 - value) * 255, 0, 255)` — the empress module's
+/// helper, re-stated here (that one is private to its file).
+fn set_opacity(p: &mut Projectile, opacity: f32) {
+    p.alpha = ((1.0 - opacity) * 255.0).clamp(0.0, 255.0) as i32;
+}
+
+/// `AI_172_GetPelletStormsCount` (`Projectile.cs:45606-45609`) — a constant 6.
+const PELLET_STORMS_COUNT: i32 = 6;
+
+/// `HallowBossPelletStormInfo` (`Projectile.cs:197-237`) — one storm's
+/// fan parameters. The port keeps the four fields the AI reads; the
+/// hitbox helper (`GetBulletHitbox`, `:233-236`) is the damage-side slice
+/// that stays with the wiring (module precedent: the empress doc).
+pub(crate) struct PelletStormInfo {
+    pub start_angle: f32,
+    pub angle_per_bullet: f32,
+    pub bullets_in_storm: i32,
+    pub progress_start: f32,
+    pub progress_bonus_by_index: f32,
+    pub storm_total_range: f32,
+    pub bullet_size: Vec2,
+}
+
+impl PelletStormInfo {
+    /// `GetBulletProgress` (`Projectile.cs:213-216`).
+    fn bullet_progress(&self, bullet_index: i32) -> f32 {
+        self.progress_start + self.progress_bonus_by_index * bullet_index as f32
+    }
+
+    /// `IsValid` (`Projectile.cs:218-226`) — progress in [0, 1].
+    fn is_valid(&self, bullet_index: i32) -> bool {
+        let progress = self.bullet_progress(bullet_index);
+        progress >= 0.0 && progress <= 1.0
+    }
+
+    /// `GetBulletPosition` (`Projectile.cs:228-231`): the centre plus the
+    /// UnitX fan ray scaled by the range and the progress. The C# computes
+    /// the position but the AI DISCARDS it (`:45600` — no assignment); the
+    /// hitbox consumer reads it later, so the port keeps the maths.
+    fn bullet_position(&self, bullet_index: i32, center: Vec2) -> Vec2 {
+        let angle = self.start_angle + self.angle_per_bullet * bullet_index as f32;
+        // `RotatedBy` (`Utils.cs:1675-1684`): the double cos/sin cast to
+        // float, then the float multiply-add (the empress precedent).
+        let c = (angle as f64).cos() as f32;
+        let s = (angle as f64).sin() as f32;
+        center + Vec2::new(c, s) * self.storm_total_range * self.bullet_progress(bullet_index)
+    }
+}
+
+/// `AI_172_GetPelletStormInfo` (`Projectile.cs:45611-45625`) — the storm
+/// fan for `storm_index`: the start angle
+/// `i·π/3 − π/2 + i·π/5`, the 2π/3 per-bullet spread, 3 bullets, the
+/// progress ramp over `[10i, 90 + 10i]` of `localAI[0]`, the 500-px range
+/// and the 16×16 bullet box.
+fn pellet_storm_info(storm_index: i32, age: f32) -> PelletStormInfo {
+    let num = 0.0 + storm_index as f32 * 10.0;
+    let to = 90.0 + storm_index as f32 * 10.0;
+    PelletStormInfo {
+        start_angle: storm_index as f32 * (std::f32::consts::PI / 3.0)
+            - std::f32::consts::PI / 2.0
+            + storm_index as f32 * (std::f32::consts::PI / 5.0),
+        angle_per_bullet: std::f32::consts::PI * 2.0 / 3.0,
+        bullets_in_storm: 3,
+        progress_start: get_lerp_value(num, to, age),
+        progress_bonus_by_index: 0.0,
+        storm_total_range: 500.0,
+        bullet_size: Vec2::new(16.0, 16.0),
+    }
+}
+
+/// `AI_172_HallowBossRainbowPelletStorm` (`Projectile.cs:45569-45604`) —
+/// the Split-Shot Core (871, the style's only kind). A 91-tick grow-in
+/// (`localAI[1]` 0→91, the scale 5→1 and the squared opacity ramp), then
+/// the storm phase: `localAI[0]` counts to `150 + 10·6 = 210` and kills,
+/// the velocity zeroes and the rotation pins 0 every tick, and the six
+/// three-bullet fans' positions are computed (the C# discards them —
+/// the hitbox consumer is the damage-side slice). ZERO `Main.rand` draws
+/// by construction (the grow-in and the fan maths roll nothing).
+pub(crate) fn ai_pellet_storm(p: &mut Projectile) {
+    // `:45571-45580` — the grow-in: `localAI[1] <= 90` keeps ticking.
+    if p.local_ai[1] <= 90.0 {
+        p.local_ai[1] += 1.0;
+        p.scale = 0.5;
+        set_opacity(p, 0.5);
+        let lerp_value = get_lerp_value(0.0, 90.0, p.local_ai[1]);
+        // `:45577` — MathHelper.Lerp(5, 1, t) = 5 + (1 − 5)·t.
+        p.scale = 5.0 + (1.0 - 5.0) * lerp_value;
+        // `:45578` — Opacity = 1 − (1 − t²) = t².
+        set_opacity(p, 1.0 - (1.0 - lerp_value * lerp_value));
+        return;
+    }
+    // `:45581-45582` — the storm phase pins scale 1, opacity 1.
+    p.scale = 1.0;
+    set_opacity(p, 1.0);
+    // `:45583-45589` — the life cap: 150 + 10·count, then Kill + return.
+    let num = 150.0 + 10.0 * PELLET_STORMS_COUNT as f32;
+    p.local_ai[0] += 1.0;
+    if p.local_ai[0] >= num {
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:45590-45591` — the still core.
+    p.vel = Vec2::ZERO;
+    p.rot = 0.0;
+    // `:45592-45603` — the fan walk. The C# computes each valid bullet's
+    // position and DISCARDS it (`GetBulletPosition`'s return is unused);
+    // the port keeps the walk + the maths (the hitbox slice reads it).
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    for i in 0..PELLET_STORMS_COUNT {
+        let storm = pellet_storm_info(i, p.local_ai[0]);
+        for j in 0..storm.bullets_in_storm {
+            if storm.is_valid(j) {
+                let _ = storm.bullet_position(j, center);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod w4_d18_172_tests {
+    //! W4-d18 — aiStyle 172 (`AI_172_HallowBossRainbowPelletStorm`,
+    //! `Projectile.cs:45569-45604`, the dispatch `:36651-36654`). WRITTEN
+    //! NOT RUN (code-only mode). The row, the 91-tick grow-in ladder, the
+    //! storm-phase pins, the 210-tick kill and the fan maths.
+    use super::*;
+    use crate::projectile::{
+        FlailInputs, HALLOW_BOSS_SPLIT_SHOT_CORE, ProjectilePool, YoyoInputs, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn core() -> Projectile {
+        let d = proj_data(HALLOW_BOSS_SPLIT_SHOT_CORE).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = HALLOW_BOSS_SPLIT_SHOT_CORE;
+        p.owner = 255;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.friendly = false;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.alpha = d.alpha;
+        p.scale = d.scale;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:8380-8392`): 30x30, aiStyle 172, alpha 255,
+    /// penetrate -1, timeLeft 240, tileCollide false, ignoreWater.
+    #[test]
+    fn w4_d18_172_the_row_matches_set_defaults() {
+        let d = proj_data(HALLOW_BOSS_SPLIT_SHOT_CORE).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (30.0, 30.0, 172));
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.time_left, 240);
+        assert_eq!(d.alpha, 255);
+        assert!(!d.tile_collide && d.ignore_water);
+        assert_eq!(d.extra_updates, 0);
+        // The empress gate still does NOT claim 871 (its own arm serves it).
+        assert!(!crate::projectile_ai_empress::handles(HALLOW_BOSS_SPLIT_SHOT_CORE));
+    }
+
+    /// The grow-in (`:45571-45580`): tick 1 → localAI[1] = 1, scale
+    /// Lerp(5,1,1/90), opacity (1/90)²; the alpha rides the Opacity
+    /// setter. Zero draws.
+    #[test]
+    fn w4_d18_172_the_grow_in_ladder() {
+        let mut p = core();
+        let mut rng = census();
+        ai_pellet_storm(&mut p);
+        assert_eq!(p.local_ai[1], 1.0);
+        assert_eq!(p.local_ai[0], 0.0, "the storm counter stays down");
+        let t = 1.0f32 / 90.0;
+        assert_eq!(p.scale, 5.0 + (1.0 - 5.0) * t);
+        let opacity = t * t;
+        assert_eq!(p.alpha, ((1.0 - opacity) * 255.0) as i32);
+        assert!(rng.ranges.is_empty() && rng.floats == 0);
+        // Tick 91 is the LAST grow-in tick (localAI[1] 90 ≤ 90 holds).
+        let mut p2 = core();
+        p2.local_ai[1] = 90.0;
+        ai_pellet_storm(&mut p2);
+        assert_eq!(p2.local_ai[1], 91.0);
+        assert_eq!(p2.scale, 1.0);
+        assert_eq!(p2.alpha, 0, "opacity 1 → alpha 0");
+    }
+
+    /// The storm phase (`:45581-45591`): scale/opacity pin 1, the counter
+    /// climbs, velocity zeroes, rotation pins 0 — even with a spawn drift.
+    #[test]
+    fn w4_d18_172_the_storm_phase_pins() {
+        let mut p = core();
+        p.local_ai[1] = 91.0;
+        p.local_ai[0] = 100.0;
+        p.vel = Vec2::new(3.0, -2.0);
+        p.rot = 1.0;
+        let mut rng = census();
+        ai_pellet_storm(&mut p);
+        assert_eq!(p.local_ai[0], 101.0);
+        assert_eq!(p.scale, 1.0);
+        assert_eq!(p.alpha, 0);
+        assert_eq!(p.vel, Vec2::ZERO);
+        assert_eq!(p.rot, 0.0);
+        assert!(rng.ranges.is_empty() && rng.floats == 0);
+    }
+
+    /// The kill (`:45585-45589`): localAI[0] reaches 210 → dead, the
+    /// velocity/rotation tail skips. 209 is the last live tick.
+    #[test]
+    fn w4_d18_172_the_210_tick_kill() {
+        let mut p = core();
+        p.local_ai[1] = 91.0;
+        p.local_ai[0] = 209.0;
+        p.vel = Vec2::new(3.0, 0.0);
+        ai_pellet_storm(&mut p);
+        assert!(!p.active);
+        assert_eq!(p.time_left, 0);
+        assert_eq!(p.local_ai[0], 210.0);
+        assert_eq!(p.vel, Vec2::new(3.0, 0.0), "the kill returns before the zero");
+        let mut p2 = core();
+        p2.local_ai[1] = 91.0;
+        p2.local_ai[0] = 208.0;
+        ai_pellet_storm(&mut p2);
+        assert!(p2.active);
+        assert_eq!(p2.local_ai[0], 209.0);
+    }
+
+    /// The fan maths (`:45611-45625` + `:213-231`): storm 0's start angle
+    /// −π/2, the 2π/3 spread, the progress ramp and the 500-px ray.
+    #[test]
+    fn w4_d18_172_the_fan_geometry() {
+        use std::f32::consts::PI;
+        let s0 = pellet_storm_info(0, 45.0);
+        assert_eq!(s0.start_angle, -PI / 2.0);
+        assert_eq!(s0.angle_per_bullet, PI * 2.0 / 3.0);
+        assert_eq!(s0.bullets_in_storm, 3);
+        assert_eq!(s0.progress_start, 0.5, "GetLerpValue(0,90,45)");
+        assert_eq!(s0.storm_total_range, 500.0);
+        assert_eq!(s0.bullet_size, Vec2::new(16.0, 16.0));
+        assert!(s0.is_valid(0) && s0.is_valid(2));
+        // Bullet 0 sits straight up at half range: (0, −250).
+        let pos = s0.bullet_position(0, Vec2::new(100.0, 100.0));
+        assert!((pos.x - 100.0).abs() < 1e-3);
+        assert!((pos.y - (100.0 - 250.0)).abs() < 1e-3);
+        // Storm 5's window is [50, 140]: at age 45 nothing is valid yet.
+        let s5 = pellet_storm_info(5, 45.0);
+        assert_eq!(s5.progress_start, 0.0);
+        assert!(s5.is_valid(0), "progress 0 is the inclusive floor");
+        // Past the window every bullet clamps to 1 (still valid).
+        let s0_late = pellet_storm_info(0, 200.0);
+        assert_eq!(s0_late.progress_start, 1.0);
+        assert!(s0_late.is_valid(2));
+    }
+
+    /// The dispatch wiring: one pool update runs the grow-in tick.
+    #[test]
+    fn w4_d18_172_the_dispatch_arms_the_storm() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(HALLOW_BOSS_SPLIT_SHOT_CORE, 1600.0, 800.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            255,
+            true,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.local_ai[1], 1.0);
+        assert_eq!(p.local_ai[0], 0.0);
+        assert!(rng.ranges.is_empty() && rng.floats == 0);
+    }
+}
