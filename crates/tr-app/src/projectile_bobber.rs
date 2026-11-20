@@ -628,10 +628,15 @@ mod tests {
         let mut rng = FastRandom::new(3);
         let mut ins = inputs();
         ins.final_level = 300;
-        let mut p = bobber(30.0 * 16.0, 110.0 * 16.0);
+        // Gate V3: `bobber_step` computes velocity only (the pool integrates
+        // position). To probe the SETTLED bite accumulator, park the bobber's
+        // centre exactly on the water line: column 30, the pond's top row 110
+        // (liquid 255) gives waterLine = (110+1)*16 − 255/16 = 1761. Centre.Y
+        // = pos.Y + h/2 = 1761 → pos.Y = 1754. Then `cy > waterLine` is false,
+        // vel.Y = waterLine − cy = 0 → settled, and the bite timer accumulates.
+        let mut p = bobber(30.0 * 16.0, 1754.0);
         p.wet = true;
         p.vel = glam::Vec2::ZERO;
-        // Force the settled gate: ai[1] == 0 and wet with vel.y ~ 0.
         let mut fired = false;
         for _ in 0..200 {
             bobber_step(&mut p, &w, Some((30.0 * 16.0, 100.0 * 16.0)), &ins, &mut rng);

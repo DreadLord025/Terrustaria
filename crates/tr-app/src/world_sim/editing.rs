@@ -6700,6 +6700,11 @@ mod tests {
         // 1326-1336`), so the dispatch routes it to the glowstick arm.
         let mut app = shooter_rig(282, "Glowstick", &[]);
         app.inventory[app.selected].count = 5;
+        // Gate V3: the glowstick is NOT autoReuse — the throw fires on the
+        // press edge (`Player.cs:42733` controlUseItem && releaseUseItem).
+        // Arm the released state so the first held frame reads as a press.
+        app.mine_released = true;
+        app.mine_prev_down = false;
         let (sw, sh) = app.screen_size();
         let screen = Vec2::new(sw, sh);
         update_editing(&mut app, 1.0 / 60.0, screen);
@@ -6731,6 +6736,9 @@ mod tests {
         // projectile (the Flare 931's shoot 163), the speed = the weapon's
         // 6 + the ammo's 6 = 12, and the flare stack drains one.
         let mut app = shooter_rig(930, "Flare Gun", &[(0, 931, 7)]);
+        // Gate V3: the Flare Gun is NOT autoReuse — arm the press edge.
+        app.mine_released = true;
+        app.mine_prev_down = false;
         let (sw, sh) = app.screen_size();
         let screen = Vec2::new(sw, sh);
         update_editing(&mut app, 1.0 / 60.0, screen);

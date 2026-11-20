@@ -18522,18 +18522,30 @@ mod s1_player_composite_tests {
         }
         assert!(q.wet, "the player settles in the water");
         assert!(q.merman, "wet + shell: merman");
-        // The hover dampening refuses while merman: a hover wing's descent
-        // is NOT dampened (CanUseWingAbilities false, `:3994`).
+        // Gate V3: probe the hover-damp gate DIRECTLY (`hover_dampening`,
+        // `Player.cs:27404-27425` gated on `CanUseWingAbilities` `:3994`).
+        // A full `update` tick would run the merman swim (the wet jump arm
+        // rewrites vy), masking the damp gate this witness pins. Set the
+        // hover state by hand and call the damp fn: merman refuses it, so
+        // the descent vy is NOT dampened into the float band.
         q.equipped[3] = 1866; // Bee Wings (slot 22, hover)
         q.equipped[4] = 497;
         q.update(&wet, PlayerInput::default());
-        q.wing_time = 170.0;
-        q.vy = 3.0;
-        let held = PlayerInput { jump: true, down: true, ..Default::default() };
-        q.update(&wet, held);
         assert!(q.merman, "still merman");
-        // Without the dampening the vy stays above the dampened float band.
-        assert!(q.vy > 1.0, "merman blocks the hover damp: vy={}", q.vy);
+        q.wings_logic = 22;
+        q.wing_time = 170.0;
+        q.control_jump = true;
+        q.control_down = true;
+        q.vy = 3.0;
+        q.hover_dampening();
+        // Merman blocks the damp: vy stays 3.0 (a non-merman hover would
+        // damp it to 3.0*0.9 = 2.7, then the float band snaps it to 1e-5).
+        assert_eq!(q.vy, 3.0, "merman blocks the hover damp: vy={}", q.vy);
+        // Control: a non-merman player with the same hover state IS dampened.
+        q.merman = false;
+        q.vy = 3.0;
+        q.hover_dampening();
+        assert!(q.vy < 3.0, "non-merman hover damps the descent: vy={}", q.vy);
     }
 
     /// `Player.cs:27418-27425`: Betsy's wings (37) apply a SECOND ×0.92 damp

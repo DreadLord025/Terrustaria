@@ -1006,24 +1006,26 @@ mod tests {
     fn the_recall_spawn_prefers_a_valid_bed() {
         // `Spawn`'s bed path (`Player.cs:37621-37626`): a valid bed spawn
         // overrides the world spawn (Spawn_SetPosition, no descend). The room
-        // is the proven furnished-room fixture (town.rs's
-        // `build_furnished_room(60, 100, 12, 9)` on `ground()`); the bed (79)
-        // sits on its floor row (108) at column 65, the spawn cell (65, 108)
-        // — the bed tile above is (65, 107), the 3×3 scan box (64..66,
-        // 105..107) is the room's air interior.
+        // is the furnished-room fixture (`build_furnished_room(60, 100, 12,
+        // 9)`); its furniture row (107) carries chair/table/torch/door at
+        // columns 61..64. Gate V3: the bed goes at column 67 — clear of the
+        // door (10, solid-non-top) at 64, which would otherwise sit inside
+        // the bed's 3x3 obstruction box (`CheckSpawn`, `Player.cs:54556-
+        // 54569`) and refuse the spawn. The spawn cell (67, 108) is the floor
+        // row; the bed tile above is (67, 107).
         let mut app = rig(RECALL_POTION, 5);
         crate::test_world_helpers::build_furnished_room(&mut app.world, 60, 100, 12, 9);
-        let i = app.world.index(65, 107);
+        let i = app.world.index(67, 107);
         app.world.tiles[i] = Tile { kind: 79, frame_x: 0, frame_y: 0, ..Default::default() };
         app.world.tiles[i].flags |= FLAG_ACTIVE;
-        app.world.bed_spawn = Some((65, 108));
+        app.world.bed_spawn = Some((67, 108));
         assert!(
-            bed_spawn_valid(&app.world, 65, 108).is_ok(),
+            bed_spawn_valid(&app.world, 67, 108).is_ok(),
             "the bed validates through CheckSpawn's room check"
         );
         spawn_recall(&mut app);
         let p = app.player.as_ref().unwrap();
-        assert_eq!(p.x, 65.0 * TILE_PX + 8.0 - WIDTH * 0.5, "bed spawn X");
+        assert_eq!(p.x, 67.0 * TILE_PX + 8.0 - WIDTH * 0.5, "bed spawn X");
         assert_eq!(p.y, 108.0 * TILE_PX - HEIGHT, "bed spawn feet");
     }
 
