@@ -560,6 +560,12 @@ pub struct Projectile {
     pub tile_collide: bool,
     /// `Projectile.arrow`.
     pub arrow: bool,
+    /// `Projectile.noDropItem` (`Projectile.cs:314`, reset false `:746`): the
+    /// multi-shot bows stamp it on their spawned arrows so the kill path skips
+    /// the ammo-recovery drop (`Projectile.cs:77367`). The Tsunami 2624
+    /// (`Player.cs:47806`), the Chlorophyte Shotbow 1229 (`:48305`), the Blood
+    /// Rain Bow 4381 (`:47497`) and the Fairy Queen's non-932 shot (`:47955`).
+    pub no_drop_item: bool,
     /// `Projectile.trap`.
     pub trap: bool,
     /// `GrappleMovement`'s pull input: the attached aiStyle-7 hook's center
@@ -729,6 +735,7 @@ impl Default for Projectile {
             h: SIZE,
             tile_collide: true,
             arrow: false,
+            no_drop_item: false,
             trap: false,
             direction: 1,
             grapple_center: Vec2::ZERO,
@@ -11520,7 +11527,8 @@ pub(crate) fn chaseable_held(n: &Npc) -> bool {
 }
 
 /// `NPC.Center` (`Entity.cs`: `position + Size / 2f`) for the pool's slots.
-fn npc_center(n: &Npc) -> Vec2 {
+/// `pub(crate)`: S1-P-i18's special-bullet homing / re-target arms read it.
+pub(crate) fn npc_center(n: &Npc) -> Vec2 {
     let (w, h) = n.size();
     Vec2::new(n.x + w * 0.5, n.y + h * 0.5)
 }
@@ -11752,8 +11760,9 @@ fn line_solid(t: &tr_core::tile::Tile) -> bool {
 /// `immune` is the C#'s `projectile.localNPCImmunity[i] != 0` skip
 /// (`:45645-45648`) — the row lives on the pool's per-slot array, which the
 /// arm signature cannot reach, so the gem arm passes it empty and the
-/// deviation is recorded there.
-fn find_target_with_line_of_sight(
+/// deviation is recorded there. `pub(crate)`: S1-P-i18's NanoBullet re-target
+/// passes its own slot's local-immunity row.
+pub(crate) fn find_target_with_line_of_sight(
     world: &World,
     npcs: &[Npc],
     pos: Vec2,
@@ -12594,6 +12603,17 @@ impl ProjectilePool {
         }
     }
 
+    /// `Main.projectile[num].noDropItem = true` — the multi-shot bows stamp it
+    /// on each spawned arrow right after `NewProjectile` (`Player.cs:47806`
+    /// the Tsunami, `:48305` the Chlorophyte Shotbow, `:47497` the Blood Rain
+    /// Bow, `:47955` the Fairy Queen's non-932 shot); the kill path's
+    /// ammo-recovery drop reads it (`Projectile.cs:77367`).
+    pub fn set_no_drop_item(&mut self, slot: usize, value: bool) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.no_drop_item = value;
+        }
+    }
+
     /// `ApplyStatsFromSource`'s armor-penetration copy
     /// (`Projectile.cs:11128`): the firing item's `armorPenetration` (the
     /// prefix's `arpen` row, `Item.cs:586`) joins the slot at spawn — the
@@ -12623,12 +12643,23 @@ impl ProjectilePool {
         }
     }
 
+    /// S1-P-i14 — the spawn-site `localAI[1]` payload setter: the Xenopopper
+    /// bubble's deferred fused speed (`Player.cs:47623`,
+    /// `Main.projectile[num26].localAI[1] = speed`; the `set_local_ai0`
+    /// convention). The bubble's AI_078 releases the resolved bullet
+    /// (`localAI[0]`) at this speed.
+    pub fn set_local_ai1(&mut self, slot: usize, value: f32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.local_ai[1] = value;
+        }
+    }
+
     pub fn slots(&self) -> &[Projectile] {
         &self.slots
     }
 
     #[cfg(test)]
-    fn slots_mut(&mut self) -> &mut [Projectile] {
+    pub(crate) fn slots_mut(&mut self) -> &mut [Projectile] {
         &mut self.slots
     }
 
@@ -13485,6 +13516,22 @@ impl ProjectilePool {
             _ => {}
         }
     }
+
+    /// S1-P-i18 — `StatusNPC`'s special-bullet debuff arms
+    /// (`Projectile.cs:11173-11726`), called from `Damage_PVE_Inner` at
+    /// `:13580` BEFORE `StrikeNPC` (`:13649`). Delegates to the module's
+    /// [`crate::projectile_special_bullets::bullet_on_hit_debuffs`] (the
+    /// per-type durations + the 285's one-draw Confused roll). The nano's
+    /// roll rides the pass's `UpdateProjectiles` stream; every other arm is
+    /// draw-free. `NPC.AddBuff` itself is rand-free.
+    fn special_bullet_status_npc(
+        &self,
+        slot: usize,
+        npc: &mut Npc,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        crate::projectile_special_bullets::bullet_on_hit_debuffs(self.slots[slot].kind, npc, rng);
+    }
     /// The aiStyle-165 on-hit arms after the tag application, inside
     /// `Damage_PVE_Inner` (`Projectile.cs:13904-14263`): the `MinionAttackTargetNPC`
     /// override (`:14257-14263`) and the per-type whip switch
@@ -13795,6 +13842,21 @@ impl ProjectilePool {
                             kind if crate::projectile_ai_moonlord::covers(kind) => {
                                 crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
                             }
+                            // S1-P-i18 — the special bullets' per-type
+                            // `AI_001` arms + `HandleMovement` bounces
+                            // (36/89/104/207/242/279/283/284/285/286/287,
+                            // `projectile_special_bullets`), gated to its own
+                            // kind list ONLY (disjoint from A/B/C, the riders,
+                            // the frostmoon and moonlord sets): every other
+                            // kind keeps its existing arm byte-identical.
+                            kind if crate::projectile_special_bullets::covers(kind) => {
+                                crate::projectile_special_bullets::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => self.slots[i].ai_boomerang(world, owner),
@@ -14026,6 +14088,48 @@ impl ProjectilePool {
                         22 => self.slots[i].ai_ice_block(world),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
+                        // S1-P-i14 (V5 gate) — `AI_078`
+                        // (`Projectile.cs:30762-30790`): the Xenopopper
+                        // bubble 444's steer-toward-`ai[0]` flight — the
+                        // alpha fade, the ±π-wrapped 5% rotation blend, the
+                        // ×0.96 drag, the velocity rotation − π/2 and the
+                        // owner-gated 60-tick life clamp. Draw-free. The
+                        // death release (`Kill()` `:73398-73419`) rides the
+                        // pool's death hook (`xenopopper_bubble_kill`).
+                        78 => {
+                            let p = &mut self.slots[i];
+                            if p.alpha > 0 {
+                                p.alpha -= 30;
+                            }
+                            if p.alpha < 0 {
+                                p.alpha = 0;
+                            }
+                            // `v2 = ai[0].ToRotationVector2()`; the angle
+                            // delta `v2.ToRotation() - velocity.ToRotation()`
+                            // is `ai[0] - vel.ToRotation()` (both round-trip
+                            // the same f32), wrapped to ±π (`:30774-30782`).
+                            let mut delta =
+                                (p.ai[0] - p.vel.y.atan2(p.vel.x)) as f64;
+                            if delta > std::f64::consts::PI {
+                                delta -= std::f64::consts::PI * 2.0;
+                            }
+                            if delta < -std::f64::consts::PI {
+                                delta += std::f64::consts::PI * 2.0;
+                            }
+                            // `:30783-30785` — the f64 literal 0.05000000074505806
+                            // (the f32 0.05f promoted), the ×0.96f drag, the
+                            // rotation minus the f32 π/2.
+                            p.vel = crate::bow_launch::rotated_by(
+                                p.vel,
+                                delta * 0.05000000074505806,
+                            ) * 0.96;
+                            p.rot = p.vel.y.atan2(p.vel.x)
+                                - std::f32::consts::FRAC_PI_2;
+                            // `:30786-30789` — the owner-gated life clamp.
+                            if p.owner == local_owner && p.time_left > 60 {
+                                p.time_left = 60;
+                            }
+                        }
                         28 => self.slots[i].ai_frost_bolt(world),
                         50 => self.slots[i].ai_inferno_fork(world),
                         // The aiStyle-27 followup caster family
@@ -16167,6 +16271,25 @@ impl ProjectilePool {
                 // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
                 // S1-D-4): the 639's death spawns its 640 trail.
                 self.moonlord_arrow_kill(i);
+                // S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
+                // (`Projectile.cs:73398-73419`): the 444's death releases
+                // its deferred payload (`localAI[0]` bullet kind,
+                // `localAI[1]` speed) toward the mouse.
+                self.xenopopper_bubble_kill(i, inputs.aim, local_owner);
+                // S1-P-i18 — `Kill()`'s special-bullet arms
+                // (`Projectile.cs:75250-75268` the 89 split, `:75911-75974` the
+                // 283 debuff-spread burst, `:75975-75999` the 284 confetti,
+                // `:76000-76034` the 286 AoE burst, `:76035-76039` the common
+                // HitTiles+Item10 arm). Kind-gated; a dead slot never returns
+                // to active, so each fires at most once per death.
+                self.special_bullet_kill(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    rng,
+                    luck,
+                    local_owner,
+                );
             }
         }
     }
@@ -16607,6 +16730,295 @@ impl ProjectilePool {
             // `:73451` — the ai1 payload rides after the slot-order bump.
             self.slots[new_slot].ai[1] = delay as f32;
         }
+    }
+
+    /// S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
+    /// (`Projectile.cs:73398-73419`): the 444's death releases the deferred
+    /// payload the launch stamped (`localAI[0]` = the resolved bullet kind,
+    /// `localAI[1]` = the fused speed, `Player.cs:47622-47623`) as a NEW
+    /// projectile aimed from the bubble's centre toward the mouse world
+    /// point at `localAI[1]` speed, carrying the bubble's damage/knockback/
+    /// owner. The Item96 cue + the `Next(5,9)` dust-171 burst are the
+    /// documented visual skips (the dust layer's draws go with it). The
+    /// `owner == Main.myPlayer` gate folds to `local_owner`; the release is
+    /// draw-free. `aim` is the pass's mouse-world snapshot (`YoyoInputs.aim`,
+    /// the `Main.MouseWorld` read `:73411`); `None` (no local player) declines
+    /// the release, the C#'s owner gate's shape.
+    fn xenopopper_bubble_kill(
+        &mut self,
+        slot: usize,
+        aim: Option<(f32, f32)>,
+        local_owner: u8,
+    ) {
+        let p = &self.slots[slot];
+        if p.kind != XENOPOPPER_BUBBLE || p.owner != local_owner {
+            return;
+        }
+        let Some((mx, my)) = aim else {
+            return;
+        };
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        // `vector45 = Normalize(MouseWorld - Center) * localAI[1]` (`:73416-73417`).
+        let dir = (Vec2::new(mx, my) - center).normalize_or_zero() * p.local_ai[1];
+        let kind = p.local_ai[0] as u16;
+        let (damage, kb, owner) = (p.damage, p.knock_back, p.owner);
+        // `GetNextSlot` ran while the bubble was STILL active — lift the
+        // corpse flag for the scan so the bullet takes the NEXT free slot
+        // (the moonlord precedent), then restore.
+        self.slots[slot].active = true;
+        // The C# passes the CENTRE; the port's spawn takes the top-left
+        // (the inferno-blast precedent) — recentre by the resolved row's box.
+        let (w, h) = proj_data(kind).map_or((0.0, 0.0), |d| (d.w, d.h));
+        self.spawn_with_data_ai_owned(
+            kind,
+            owner,
+            center.x - w * 0.5,
+            center.y - h * 0.5,
+            dir.x,
+            dir.y,
+            damage,
+            kb,
+            0.0,
+            0.0,
+        );
+        self.slots[slot].active = false;
+    }
+
+    /// S1-P-i18 — `Kill()`'s special-bullet arms (`Projectile.cs:75250-76039`),
+    /// run from the pool's death hook. Kind-gated; a dead slot never returns to
+    /// `active`, so each fires at most once per death (the `moonlord_arrow_kill`
+    /// precedent). The `owner == Main.myPlayer` gates fold to the simulated-slot
+    /// set (the pool only updates local-owned slots). The dust/gore BODIES and
+    /// the `Kill()` sound cues are SKIPPED with their layers (the module's RNG
+    /// note); the 89 split's state-bearing draws ride the pass stream inline
+    /// below, and the 286 burst's per-NPC `DamageVar` rides the boxed walk.
+    fn special_bullet_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        let kind = self.slots[slot].kind;
+        match kind {
+            // `:75250-75268` — the CrystalBullet's death split: sound 0 + 5
+            // dust-68 (skipped), then TWO 90 CrystalShard spawns at
+            // `pos + (num651, num652)` with velocity `(num651, num652)`, damage
+            // `(int)((double)damage * 0.5)`, knockback 0, the same owner. The
+            // split draws are state-bearing (they place AND velocity the
+            // shard), so they ride the stream here.
+            CRYSTAL_BULLET => {
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                let (pos, vel, damage, owner) = {
+                    let p = &self.slots[slot];
+                    (p.pos, p.vel, p.damage, p.owner)
+                };
+                let shard_damage = (damage as f64 * 0.5) as i32;
+                // `:75262-75266` — per shard the C# draws `Next(40, 70)` then
+                // `Next(-20, 21)` for X, then the same pair for Y, in the
+                // argument evaluation order (shard 0's four before shard 1's).
+                // `num651 = (0f - vel.X) * Next(40,70) * 0.01f + Next(-20,21)
+                // * 0.4f` (the left-to-right float association); the shard
+                // spawns at `pos + (num651, num652)` with velocity
+                // `(num651, num652)`. These draws are STATE-BEARING (they place
+                // AND velocity the shard), so they ride the pass stream here.
+                let mut offsets = [(0.0f32, 0.0f32); 2];
+                for shard in offsets.iter_mut() {
+                    let n = rng.next_range(40, 70) as f32;
+                    let j = rng.next_range(-20, 21) as f32;
+                    let x = (0.0 - vel.x) * n * 0.01 + j * 0.4;
+                    let n = rng.next_range(40, 70) as f32;
+                    let j = rng.next_range(-20, 21) as f32;
+                    let y = (0.0 - vel.y) * n * 0.01 + j * 0.4;
+                    *shard = (x, y);
+                }
+                // `GetNextSlot` ran while the bullet was STILL active (the C#
+                // `Kill()`'s `active = false` lands after this arm); lift the
+                // corpse flag for the scan so the shards take the NEXT free
+                // slots, then restore (the moonlord precedent).
+                self.slots[slot].active = true;
+                for (ox, oy) in offsets {
+                    // `NewProjectile`'s spawn recentre (`:10876-10877`):
+                    // the C# passes `pos + (num651, num652)` as the CENTRE;
+                    // the port's seam takes the top-left, so the 6×6 shard
+                    // box lands at `pos + offset − 3` on each axis.
+                    self.spawn_with_data_ai_owned(
+                        CRYSTAL_SHARD,
+                        owner,
+                        pos.x + ox - 3.0,
+                        pos.y + oy - 3.0,
+                        ox,
+                        oy,
+                        shard_damage,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                }
+                self.slots[slot].active = false;
+            }
+            // `:75911-75974` — the VenomBullet's death: sound Item10 + the three
+            // 10-dust-171 loops (dust-only draws, SKIPPED with the dust layer —
+            // the module's RNG note), then the owner-gated debuff-spread burst.
+            // The burst's `Damage()` re-hits the already-dead bullet's victim
+            // through `Damage_PVE_Inner`'s `type == 283 && !active` arm
+            // (`:12810-12814` → `StatusNPC`), spreading Venom + PotentAcid
+            // across the 80×80 box and two +60px steps along the flight
+            // direction. The C# flips `active = false` around the three
+            // `Damage()` calls and restores it; the port's corpse is already
+            // inactive, so the spread walk runs directly.
+            VENOM_BULLET => {
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                self.venom_burst_spread(slot, npcs, dolls);
+            }
+            // `:75975-75999` — the PartyBullet's confetti: 10 dust + 5 gore, no
+            // `Damage()`. Purely visual — the whole arm is a documented skip
+            // (no state, no spawn, no damage; its draws go with the layers).
+            PARTY_BULLET => {}
+            // `:76000-76034` — the ExplodingBullet's death: sound Item14 + 7
+            // dust-31 + 3×2 dust-6 + 1 gore (dust/gore-only draws, SKIPPED with
+            // the layers), then the owner-gated 80×80 AoE `Damage()` burst.
+            EXPLODING_BULLET => {
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                self.exploding_bullet_burst(slot, npcs, dolls, rng, luck);
+            }
+            // `:76035-76039` — the common bullet arm (36/104/207/242/279/285/287
+            // and the unrowed siblings): `Collision.HitTiles` dust + Item10,
+            // both skipped, no explicit draw, no state.
+            METEOR_SHOT | CURSED_BULLET | CHLOROPHYTE_BULLET | HIGH_VELOCITY_BULLET
+            | ICHOR_BULLET | NANO_BULLET | GOLDEN_BULLET => {}
+            _ => {}
+        }
+    }
+
+    /// The 283 VenomBullet's debuff-spread burst (`Projectile.cs:75940-75973`):
+    /// `localAI[1] = -1`, `penetrate = 1`, the recentred 80×80 resize, the
+    /// idStatic cooldown capture (`expectedTime = GameUpdateCount + cooldown`)
+    /// and temporary set to 5, then THREE `Damage()` walks — the second and
+    /// third stepped `+oldVelocity.ToRotation().ToRotationVector2() * width *
+    /// 0.75` (= +60px along the flight direction) — then
+    /// `ResetStaticImmunityMatching(expectedTime)`. The bullet RESTS its counter
+    /// and flies straight, so `oldVelocity == velocity` at death (the port reads
+    /// `p.vel`, documented). The spread's `Damage()` re-hits through the
+    /// `type == 283 && !active` arm (`:12810`), so each walk applies `StatusNPC`
+    /// (Venom + PotentAcid) to every NPC in the box — the port's
+    /// [`ProjectilePool::venom_spread_walk`] replicates that without the strike.
+    fn venom_burst_spread(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
+        let (center, vel, expected_time) = {
+            let p = &self.slots[slot];
+            (
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                p.vel,
+                self.update_count + p.id_static_hit_cooldown as u64,
+            )
+        };
+        let p = &mut self.slots[slot];
+        p.local_ai[1] = -1.0;
+        p.penetrate = 1;
+        p.w = 80.0;
+        p.h = 80.0;
+        p.pos = center - Vec2::splat(40.0);
+        p.id_static_hit_cooldown = 5;
+        // The three spread walks, the 2nd/3rd stepped +60px along the flight.
+        let dir = if vel == Vec2::ZERO || vel.is_nan() {
+            Vec2::ZERO
+        } else {
+            vel.normalize()
+        };
+        for step in 0..3 {
+            self.venom_spread_walk(slot, npcs, dolls);
+            if step < 2 {
+                self.slots[slot].pos += dir * 80.0 * 0.75;
+            }
+        }
+        // `ResetStaticImmunityMatching(expectedTime)` (`:621-630`): clear every
+        // idStatic entry of this kind whose stamp equals the captured time.
+        self.id_static
+            .retain(|&(k, _), stamp| !(k == VENOM_BULLET && *stamp == expected_time));
+    }
+
+    /// One `Damage()` walk of the 283's spread burst: the `type == 283 &&
+    /// !active` arm (`Projectile.cs:12810-12814`) runs `StatusNPC` (Venom 70/600
+    /// + PotentAcid 395/120) on every NPC the 80×80 box overlaps that passes the
+    /// `Damage_PVE` gate (`:12578`, the idStatic cooldown) — NO strike, NO
+    /// penetrate change (the arm returns before both). The bullet is inactive,
+    /// so the port's normal `damage_pve` (which the update loop gates on active)
+    /// cannot run it; this walk replicates the debuff-only path.
+    fn venom_spread_walk(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
+        let (px, py, pw, ph) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y, p.w, p.h)
+        };
+        for idx in 0..npcs.len() {
+            let n = &npcs[idx];
+            if n.hp <= 0 || n.dont_take_damage {
+                continue;
+            }
+            // `Damage_PVE_Inner`'s friendly refusal (`:12601-12611`).
+            if refuses_friendly(n, VENOM_BULLET, dolls.0, dolls.1) {
+                continue;
+            }
+            // `Damage_PVE`'s gate (`:12578`): the idStatic cooldown.
+            if !self.target_allowed(slot, &self.slots[slot], idx as u16) {
+                continue;
+            }
+            let (nw, nh) = n.size();
+            let hit = px < n.x + nw && px + pw > n.x && py < n.y + nh && py + ph > n.y;
+            if !hit {
+                continue;
+            }
+            // `:12810-12814` → `StatusNPC`: the Venom + PotentAcid spread, and
+            // NOTHING else — the early arm returns before the strike, the
+            // crit/variance rolls and the rest of StatusNPC. Draw-free. No new
+            // idStatic stamp is written here (the early return skips the
+            // immunity application); the original hit's stamp (captured as
+            // `expectedTime`, temporarily 5 during the burst) gates re-hits,
+            // and `ResetStaticImmunityMatching` clears it after.
+            crate::projectile_special_bullets::venom_burst_debuffs(&mut npcs[idx]);
+        }
+    }
+
+    /// The 286 ExplodingBullet's AoE death burst (`Projectile.cs:76019-76033`):
+    /// `localAI[1] = -1`, `penetrate = 1`, the recentred 80×80 resize, the
+    /// idStatic cooldown capture + temporary set to 5, ONE `Damage()` walk
+    /// through the resized box, then `ResetStaticImmunityMatching(expectedTime)`.
+    /// The `Damage()` rides the box walk (`damage_pve_boxed`, the gem_bolt_aoe
+    /// precedent). The 286's `appliesImmunityTimeOnSingleHits` (`:3754`) makes
+    /// the idStatic stamp land even at penetrate 1 — the boxed walk carries the
+    /// same override.
+    fn exploding_bullet_burst(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let (center, expected_time) = {
+            let p = &self.slots[slot];
+            (
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                self.update_count + p.id_static_hit_cooldown as u64,
+            )
+        };
+        let p = &mut self.slots[slot];
+        p.local_ai[1] = -1.0;
+        p.penetrate = 1;
+        p.w = 80.0;
+        p.h = 80.0;
+        p.pos = center - Vec2::splat(40.0);
+        p.id_static_hit_cooldown = 5;
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        self.id_static
+            .retain(|&(k, _), stamp| !(k == EXPLODING_BULLET && *stamp == expected_time));
     }
 
     /// `Kill()`'s gem arm (`Projectile.cs:75425-75484`): the gem bolts' death
@@ -17304,6 +17716,11 @@ impl ProjectilePool {
                 );
             }
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
+            // `:13580` — `StatusNPC(victimIndex)` runs BEFORE `StrikeNPC`
+            // (`:13649`): the special bullets' per-type debuffs (S1-P-i18).
+            // The nano's `Next(3)` Confused roll rides this pass's stream in
+            // the C#'s order (ahead of the strike's own rolls).
+            self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
             let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8));
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
             // Destroyer body's probe launch gate (`:89266-89285`) — the
@@ -17325,11 +17742,20 @@ impl ProjectilePool {
                     self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
                 }
             }
-            // `:14087-14119`: the immunity application.
+            // `:14087-14119`: the immunity application. The 286 ExplosiveBullet
+            // sets `appliesImmunityTimeOnSingleHits` (`:3754`), so its idStatic
+            // stamp lands even at penetrate 1 (`:13969`'s `penetrate != 1 ||
+            // appliesImmunityTimeOnSingleHits` gate) — S1-P-i18. No other
+            // ported row sets the override flag (the C# setters `:2568`/`:10643`
+            // are the 167-170 confetti / 1134 melee shard, unrowed here).
+            let applies_on_single = self.slots[slot].kind == EXPLODING_BULLET;
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 npcs[idx].immune[owner_idx] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
-            } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
+            } else if uses_id_static
+                && self.slots[slot].id_static_hit_cooldown > 0
+                && (max_penetrate != 1 || applies_on_single)
+            {
                 npcs[idx].immune[owner_idx] = 0;
                 self.id_static.insert(
                     (self.slots[slot].kind, idx as u16),
@@ -17451,6 +17877,11 @@ impl ProjectilePool {
             // applies DamageVar and defense/crit like the plain PVE pass.
             let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
+            // `:13580` — `StatusNPC` before `StrikeNPC` (S1-P-i18): the 286
+            // burst's box walk carries no per-type debuff of its own, but the
+            // shared call keeps the order for any special bullet that reaches
+            // the boxed walk.
+            self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
             let landed = Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8));
             // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
             // Destroyer body's probe gate rides the strike's stream.
@@ -17471,13 +17902,16 @@ impl ProjectilePool {
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 npcs[idx].immune[owner] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
-            } else if uses_id_static && max_penetrate != 1 {
+            } else if uses_id_static
+                && (max_penetrate != 1 || self.slots[slot].kind == EXPLODING_BULLET)
+            {
                 // `:13967-13973` — the idStatic application's
-                // `penetrate != 1 || appliesImmunityTimeOnSingleHits` gate
-                // (no ported row sets the override flag — the three C#
-                // setters `:2568`/`:3754`/`:10643` are unported kinds),
-                // then the stamp `GameUpdateCount + (uint)cooldown` — a −1
-                // cooldown wraps to u32::MAX (the block-forever sentinel,
+                // `penetrate != 1 || appliesImmunityTimeOnSingleHits` gate.
+                // S1-P-i18: the 286 ExplosiveBullet sets the override flag
+                // (`:3754`), so its stamp lands even at penetrate 1 (the AoE
+                // death burst). The other C# setters `:2568`/`:10643` are
+                // unported kinds. The stamp is `GameUpdateCount + (uint)cooldown`
+                // — a −1 cooldown wraps to u32::MAX (the block-forever sentinel,
                 // the 644 shard burst's stock pair).
                 npcs[idx].immune[owner] = 0;
                 self.id_static.insert(
@@ -22685,6 +23119,7 @@ mod phasmal_projectile_tests {
             rot: 0.0,
             damage: 30,
             knock_back: 0.0,
+            no_drop_item: false,
             frame: 0,
             frame_counter: 0,
             old_position: Vec2::ZERO,
@@ -23079,6 +23514,7 @@ mod ritual_projectile_tests {
             rot: 0.0,
             damage: 0,
             knock_back: 0.0,
+            no_drop_item: false,
             frame: 0,
             frame_counter: 0,
             old_position: Vec2::ZERO,
