@@ -471,7 +471,7 @@ impl App {
                 // `NPC.StrikeNPC` (`NPC.cs:81189-81563`): the strike lands on
                 // the carrier's life pool when the hit NPC is a linked
                 // segment (`NPC.realLife`, `NPC.cs:81374-81378`).
-                crate::npc::Npc::strike_melee(
+                let landed = crate::npc::Npc::strike_melee(
                     &mut self.npcs,
                     slot,
                     st.damage.max(0) as i32,
@@ -483,6 +483,38 @@ impl App {
                     // persisted yet (DropCtx's note); the classic default.
                     false,
                 );
+                // W4-c13 — the host runs the FULL `StrikeNPC_Inner`
+                // (`MessageBuffer.cs:1797`), sound section included
+                // (`NPC.cs:81476-81554`): the HitEffect cues, then the
+                // hit/voice cue. `CheckBytes` runs outside every
+                // `SwapRandom` (`Main.cs:16895`), so every draw rides
+                // the bare-`Main.rand` stand-in (the wave-C client
+                // precedent). The host's listener is the server guard
+                // (`LegacySoundPlayer.cs:386`) — the plays gate to
+                // silence but the chicken roll still spends its draw.
+                if landed {
+                    let reqs: Vec<_> = self.npcs[slot].wants_sound.drain(..).collect();
+                    for req in reqs {
+                        let rng = self.rngs.global();
+                        crate::world_sim::npcs::play_npc_sound_request(
+                            &mut self.audio, req, rng,
+                        );
+                    }
+                    let (hx, hy) = (self.npcs[slot].x, self.npcs[slot].y);
+                    let rng = self.rngs.global();
+                    let cue = self.npcs[slot].strike_hit_cue(rng);
+                    match cue {
+                        Some(crate::npc::NpcHitCue::Kind(c)) => {
+                            let rng = self.rngs.global();
+                            self.audio.play_npc_hit_sound(c, hx, hy, rng);
+                        }
+                        Some(crate::npc::NpcHitCue::Voice(s)) => {
+                            let rng = self.rngs.global();
+                            self.audio.play_npc_voice_hit(s, hx, hy, rng);
+                        }
+                        None => {}
+                    }
+                }
                 let dead = self.npcs[slot].hp <= 0;
                 // The relay carries the validated values to everyone else.
                 server.broadcast_except(&S2c::NpcStrike(st), id);
@@ -1484,16 +1516,39 @@ impl App {
                     npc.hurt_cd = 0.18;
                     self.net_npcs_dirty = true;
                     // The C# runs the full `StrikeNPC_Inner` on the client
-                    // (`MessageBuffer.cs:1797`), which plays `this.HitSound`
-                    // at `base.position` (`NPC.cs:81551-81553`) — S1-E-21
-                    // wave C. `CheckBytes` runs from `Main.Update`
+                    // (`MessageBuffer.cs:1797`), sound section included
+                    // (`NPC.cs:81476-81554`) — S1-E-21 wave C + W4-c13:
+                    // the HitEffect cues (the bubble/sphere arms), then
+                    // the type-1 voice switch / `this.HitSound` at
+                    // `base.position`. `CheckBytes` runs from `Main.Update`
                     // (`Main.cs:16895`) outside every `SwapRandom`, so the
-                    // pitch draw rides the bare-`Main.rand` stand-in.
+                    // chicken roll + the pitch draws ride the
+                    // bare-`Main.rand` stand-in. The client store's `ai[]`
+                    // has no sync yet (the NpcInfo deviation) — a voice
+                    // slime reads ai[1] == 0 and falls to the default
+                    // HitSound arm until the ai sync lands.
                     if st.damage >= 0 {
-                        if let Some(cue) = npc.kind.hit_sound() {
-                            let (x, y) = (npc.x, npc.y);
+                        npc.queue_hit_effect_sound();
+                        let reqs: Vec<_> = npc.wants_sound.drain(..).collect();
+                        for req in reqs {
                             let rng = self.rngs.global();
-                            self.audio.play_npc_hit_sound(cue, x, y, rng);
+                            crate::world_sim::npcs::play_npc_sound_request(
+                                &mut self.audio, req, rng,
+                            );
+                        }
+                        let (x, y) = (npc.x, npc.y);
+                        let rng = self.rngs.global();
+                        let cue = npc.strike_hit_cue(rng);
+                        match cue {
+                            Some(crate::npc::NpcHitCue::Kind(c)) => {
+                                let rng = self.rngs.global();
+                                self.audio.play_npc_hit_sound(c, x, y, rng);
+                            }
+                            Some(crate::npc::NpcHitCue::Voice(s)) => {
+                                let rng = self.rngs.global();
+                                self.audio.play_npc_voice_hit(s, x, y, rng);
+                            }
+                            None => {}
                         }
                     }
                 }

@@ -268,6 +268,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_31", 2),
     ("Item_32", 2),
     ("Item_34", 2),
+    // W4-c13 — the Bell voice arm's asset (`SoundID.BellHurt` is the
+    // legacy id-2 style 35, `SoundID.cs:1745`; `NPC.cs:81511`).
+    ("Item_35", 2),
     ("Item_36", 2),
     // S1-P-i45: the reforge's non-top-tier cue (`SoundID.Item37`,
     // `Main.cs:41931`; `Sounds/Item_37.xnb`).
@@ -455,6 +458,18 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // S1-E-21g — the EoW head's dig rumble (`SoundID.EOWDiggin`,
     // `SoundID.cs:1763`'s `CreateTrackable("eow_dig")`, one variation).
     "eow_dig",
+    // W4-c13 — the type-1 slime voice-override hit cues
+    // (`NPC.StrikeNPC`'s switch, `NPC.cs:81490-81549`): the
+    // `SoundID.*Hurt` trackables (`SoundID.cs:1746-1761`, one variation
+    // each, variance 0.4). The Bell arm is NOT here — `BellHurt` is the
+    // legacy id-2 style 35 (`SoundID.cs:1745`), `Item_35` in SFX_CUES.
+    // Commit 1 lands the first five switch arms; the rest join in the
+    // follow-up commits (the 5-sites-per-commit cadence).
+    "player_hit_balloon",
+    "player_hit_cat",
+    "player_hit_chicken",
+    "player_hit_chicken_rare",
+    "player_hit_crow",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
@@ -1233,6 +1248,63 @@ impl Audio {
         self.npc_hit_play(cue, style, pitch_offset, x, y, rng)
     }
 
+    /// W4-c13 — one type-1 slime voice-override hit play
+    /// (`NPC.StrikeNPC`'s `switch ((int)this.ai[1])`, `NPC.cs:81490-81549`):
+    /// the `SoundID.*Hurt` style façade (`SoundEngine.cs:93-99`) — the
+    /// `GetRandomPitch` NextFloat rides the audio-only stream (every
+    /// voice style carries variance 0.4, `SoundID.cs:1745-1761`), then
+    /// the attenuation gate, then case 42 (`LegacySoundPlayer.cs:1376-
+    /// 1381`): the style's own volume, NO gameplay draw, the one-variation
+    /// trackable pinned like wave A. The Bell arm is the exception —
+    /// `BellHurt` is the legacy id-2 style 35 (`SoundID.cs:1745`), so it
+    /// rides wave A's case-2 path: ONE `Main.rand.Next(-6, 7) * 0.01`
+    /// draw on the strike's stream, then the `:635-638` overwrite —
+    /// ×0.75 volume, `Main.musicPitch` (the port's 0 stand-in, the
+    /// item-use wave convention). The chicken rare/common roll
+    /// (`Main.rand.Next(5)`, `:81501`) is the CALLER's — it precedes the
+    /// play and draws even when the gate refuses.
+    /// Returns the cue played; `None` when the gate refused or the name
+    /// is not a voice row.
+    pub fn play_npc_voice_hit(
+        &mut self,
+        style_name: &str,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // `SoundEngine.cs:88-91` — the Vector2 façade truncates.
+        let (x, y) = (x.trunc(), y.trunc());
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.name == style_name)?;
+        if style.sound_id == 2 {
+            // The Bell arm (`BellHurt`, style 35) — wave A's façade.
+            let idx = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.name == style_name)?;
+            return self.play_use_sound(idx as u16, x, y, 0.0, rng);
+        }
+        if style.sound_id != 42 {
+            return None;
+        }
+        // `SoundEngine.cs:99` — the NextFloat is consumed even at
+        // variance 0 (`SoundStyle.cs:42`), before the legacy gate.
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        if sound::play_sound(42, x, y, self.listener, style.volume).is_none() {
+            return None;
+        }
+        let cue = style.trackable?;
+        if !NPC_CUSTOM_CUES.contains(&cue) {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Case 42 (`:1376-1381`): no volume tweak, no pitch draw — the
+        // caller's offset only, clamped at `:1410`.
+        self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
     /// S1-E-21g — the int-overload peer of [`Audio::play_npc_hit_sound`]
     /// (`SoundEngine.cs:102-108`: `PlaySound(int type, int x, int y,
     /// int Style)` calls the legacy player DIRECTLY — NO `GetRandomPitch`
@@ -1362,7 +1434,10 @@ impl Audio {
     /// (`SoundEngine.cs:102-108` — NO `GetRandomPitch` NextFloat). The
     /// wave-G call sites: the tower dissolve's `PlaySound(4, Center, 22)`
     /// (`NPC.cs:39059`) and the Moon parts' laser wind-up
-    /// `PlaySound(4, pos, 6)` (`NPC.cs:41838`/`:42338`/`:42611`).
+    /// `PlaySound(4, pos, 6)` (`NPC.cs:41838`/`:42338`/`:42611`). W4-c13
+    /// adds style 3 — the Detonating Bubble's EVERY-strike `HitEffect`
+    /// cue (`NPC.cs:84231`, the 371 arm plays live or dead, ahead of the
+    /// strike's own NPCHit3).
     pub fn play_npc_death_int(
         &mut self,
         style_num: i32,
@@ -1374,6 +1449,7 @@ impl Audio {
         // Center via `:83-85`) — truncate here.
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
+            3 => "NPC_Killed_3",
             6 => "NPC_Killed_6",
             22 => "NPC_Killed_22",
             _ => return None,

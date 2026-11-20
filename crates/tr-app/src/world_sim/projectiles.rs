@@ -441,14 +441,17 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
         );
     }
-    // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays
-    // (`NPC.cs:81544-81553` via `Projectile.Damage` `Projectile.cs:13649`):
+    // S1-E-21 wave C — the landed strikes' sound plays
+    // (`NPC.cs:81476-81554` via `Projectile.Damage` `Projectile.cs:13649`):
     // the case-3 volume arms + the `Main.rand.Next(-10, 11) * 0.01` pitch
     // draw ride the `UpdateProjectiles` stream (`Main.cs:17775`), only
     // after each play's attenuation gate passed. The C# draws mid-walk;
-    // the port drains at the pass tail (ANALYSIS, S1-E-21c).
-    for (cue, x, y) in app.projectiles.drain_npc_hit_sounds() {
-        app.audio.play_npc_hit_sound(cue, x, y, rng);
+    // the port drains at the pass tail (ANALYSIS, S1-E-21c). W4-c13: the
+    // requests carry the HitEffect cues (the bubble's int-4 style-3, the
+    // spheres' Item10) ahead of each hit/voice cue — the shared
+    // dispatcher keeps the C#'s per-strike order and case maths.
+    for req in app.projectiles.drain_npc_hit_sounds() {
+        crate::world_sim::npcs::play_npc_sound_request(&mut app.audio, req, rng);
     }
     // S1-E-21h — the projectile-family cue plays (the AI arms' first-tick
     // latches, the boomerang whoosh, the missile hum, the bomb blast): the

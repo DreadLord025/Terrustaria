@@ -14472,14 +14472,18 @@ pub struct ProjectilePool {
     /// [`ProjectilePool::set_disco`]; the default is `Main.Initialize`'s
     /// `DiscoR = 255` with G/B at 0.
     disco: [u8; 3],
-    /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
+    /// S1-E-21 wave C — the landed strikes' sound intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
-    /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
-    /// by the world sim which owns the audio + the `UpdateProjectiles`
-    /// stream (the `take_cart_sounds` precedent). The C# draws the pitch
-    /// mid-damage-walk; the port defers the draws to the pass tail — the
-    /// recorded deviation (ANALYSIS, S1-E-21c).
-    pending_npc_hit_sounds: Vec<(&'static str, f32, f32)>,
+    /// `Projectile.cs:13649`), drained by the world sim which owns the
+    /// audio + the `UpdateProjectiles` stream (the `take_cart_sounds`
+    /// precedent). The C# draws the pitch mid-damage-walk; the port
+    /// defers the draws to the pass tail — the recorded deviation
+    /// (ANALYSIS, S1-E-21c). W4-c13: the element is the shared
+    /// `NpcSoundRequest` — the strike tail drains the NPC's
+    /// `wants_sound` (the `HitEffect` bubble/sphere cues,
+    /// `NPC.cs:84231`/`:89528`/`:89540`/`:89692`) FIRST, then queues the
+    /// hit/voice cue, keeping the C#'s per-strike play order.
+    pending_npc_hit_sounds: Vec<crate::npc::NpcSoundRequest>,
     /// S1-E-21h — the projectile-family cues the AI arms and the bomb kill
     /// path queued this tick: `(sound id, style, x, y, pitchOffset)` — the
     /// `SoundEngine.PlaySound` overload payload (`SoundEngine.cs:93-108`).
@@ -16123,9 +16127,11 @@ impl ProjectilePool {
     /// S1-E-21 wave C — the landed strikes' hit-sound intents
     /// (`NPC.StrikeNPC` `NPC.cs:81544-81553`, reached from
     /// `Projectile.Damage` `Projectile.cs:13649`): the world sim drains and
-    /// plays them through `Audio::play_npc_hit_sound` on the
-    /// `UpdateProjectiles` stream (`Main.cs:17775`).
-    pub fn drain_npc_hit_sounds(&mut self) -> Vec<(&'static str, f32, f32)> {
+    /// plays them through the shared cue dispatcher on the
+    /// `UpdateProjectiles` stream (`Main.cs:17775`). W4-c13: the
+    /// requests carry the `HitEffect` cues ahead of each hit cue (the
+    /// C#'s `:81488` → `:81546` order).
+    pub fn drain_npc_hit_sounds(&mut self) -> Vec<crate::npc::NpcSoundRequest> {
         std::mem::take(&mut self.pending_npc_hit_sounds)
     }
 
@@ -23016,24 +23022,39 @@ impl ProjectilePool {
             let landed = Npc::strike_projectile(
                 npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
             );
-            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
-            // Destroyer body's probe launch gate (`:89266-89285`) — the
-            // Next(25) roll rides the strike's stream (the C# HitEffect runs
-            // inside StrikeNPC, under this pass's Main.rand swap).
+            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+            // W4-c13 — the sound cues FIRST (`strike_pooled` queued them
+            // onto `wants_sound` — the bubble's int-4 style-3 `:84231`,
+            // the spheres' Item10 `:89528`/`:89540`/`:89692`; the C#'s
+            // sound sits at HitEffect's head), THEN the Destroyer body's
+            // probe launch gate (`:89266-89285`) — the Next(25) roll
+            // rides the strike's stream (the C# HitEffect runs inside
+            // StrikeNPC, under this pass's Main.rand swap).
             if landed {
+                self.pending_npc_hit_sounds
+                    .extend(npcs[idx].wants_sound.drain(..));
                 if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
                     &mut npcs[idx], rng, false,
                 ) {
                     npcs[idx].wants_probe = Some(anchor);
                 }
             }
-            // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`, S1-E-21
-            // wave C): the landed strike queues the kind's `HitSound` at
-            // `base.position` — the world sim plays it on the
-            // `UpdateProjectiles` stream.
+            // `NPC.StrikeNPC`'s hit/voice cue (`NPC.cs:81490-81554`, S1-E-21
+            // wave C + W4-c13) at `base.position`, AFTER the HitEffect
+            // cues — the world sim plays them in order on the
+            // `UpdateProjectiles` stream. The chicken roll (`:81501`)
+            // rides THIS walk's stream here, ahead of every gate.
             if landed {
-                if let Some(cue) = npcs[idx].kind.hit_sound() {
-                    self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
+                let (hx, hy) = (npcs[idx].x, npcs[idx].y);
+                if let Some(cue) = npcs[idx].strike_hit_cue(rng) {
+                    self.pending_npc_hit_sounds.push(crate::npc::NpcSoundRequest {
+                        cue: match cue {
+                            crate::npc::NpcHitCue::Kind(c) => crate::npc::NpcSoundCue::KindHit(c),
+                            crate::npc::NpcHitCue::Voice(s) => crate::npc::NpcSoundCue::VoiceHit(s),
+                        },
+                        x: hx,
+                        y: hy,
+                    });
                 }
             }
             // `Projectile.cs:13967-14119`: the immunity application, in the
@@ -23342,20 +23363,33 @@ impl ProjectilePool {
             self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
             let landed =
                 Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8), false);
-            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
-            // Destroyer body's probe gate rides the strike's stream.
+            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+            // W4-c13 — the sound cues first (the queue drain), then the
+            // Destroyer body's probe gate rides the strike's stream —
+            // the C#'s sound-before-probe order (the plain walk's note).
             if landed {
+                self.pending_npc_hit_sounds
+                    .extend(npcs[idx].wants_sound.drain(..));
                 if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
                     &mut npcs[idx], rng, false,
                 ) {
                     npcs[idx].wants_probe = Some(anchor);
                 }
             }
-            // `NPC.StrikeNPC`'s hit-sound arm (`NPC.cs:81544-81553`, S1-E-21
-            // wave C) — the boxed walk queues it like the plain PVE pass.
+            // `NPC.StrikeNPC`'s hit/voice cue (`NPC.cs:81490-81554`, S1-E-21
+            // wave C + W4-c13) — the boxed walk queues it after the
+            // HitEffect cues like the plain PVE pass.
             if landed {
-                if let Some(cue) = npcs[idx].kind.hit_sound() {
-                    self.pending_npc_hit_sounds.push((cue, npcs[idx].x, npcs[idx].y));
+                let (hx, hy) = (npcs[idx].x, npcs[idx].y);
+                if let Some(cue) = npcs[idx].strike_hit_cue(rng) {
+                    self.pending_npc_hit_sounds.push(crate::npc::NpcSoundRequest {
+                        cue: match cue {
+                            crate::npc::NpcHitCue::Kind(c) => crate::npc::NpcSoundCue::KindHit(c),
+                            crate::npc::NpcHitCue::Voice(s) => crate::npc::NpcSoundCue::VoiceHit(s),
+                        },
+                        x: hx,
+                        y: hy,
+                    });
                 }
             }
             // `Projectile.cs:13967-14119` — the same if/else order as the
