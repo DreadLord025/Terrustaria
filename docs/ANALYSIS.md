@@ -39244,3 +39244,32 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The aiStyles 9-14 axis census (W4-d23)
+
+The `NPC.AI()` style-axis census for the 9-14 band (`NPC.cs:21377-23486`,
+style 10 excluded — the Cursed Skull is `task/W4-c3-style10-cursed-skull`),
+one style per commit on `task/W4-d23-npc-ai-styles-9-14`. Verdicts at
+a725acb0:
+
+| style | C# arm | members (SetDefaults census) | verdict |
+| --- | --- | --- | --- |
+| 9 | `:21377-21571` inline | 7 types: BurningSphere 25 (`:9093-9107`), WaterSphere 33 (`:9135-9149`), VileSpit 112 (`:10326-10341`), SolarFlare 516 (`:15394-15408`), ChaosBall 30 (`:15699-15713`), ChaosBallTim 665 (`:17403-17417`, folded into ChaosBall), VileSpitEoW 666 (`:17418-17433`); ported trio 25/30+665/33 | LANDED+WIRED (S1-D-3-s9) → verify-only re-pin of `sphere_family_step` + the census FIX: the ctor's SetDefaults alpha rows (25/30/665 → 100, 33 → 255 — `:9106`/`:15711`/`:17415`/`:9147`; the stock-0 ctor drew every sphere opaque and the Chaos Ball's first tick jumped 0→255 instead of the C#'s 100→255). RNG: the ported arm draws NOTHING (the dust emissions incl. type 33's `Next(5)` `:21545` are the documented skip); the 516 launch's NextDouble/NextDouble/NextFloat order stays pinned in the module helper. |
+| 11 | `:21919-22299` inline | Skeletron 35 (`:9166-9182`); the Dungeon Guardian 68 shares the C# arm but has no port kind | LANDED (the B-1 audit `update_skeletron`, S1-S9/S11) → verify-only axis claim `11 => update_skeletron(.., false)`; kind arm unreachable. RNG: the expert skull shot's 4 draws (`:21995-22003`) + the red-hat taunt `Next(2,6)` (`:22038`) + the ftw Dark-Caster spawn scan (`:22141-22142`) are all gated off on the classic night hover / day rage (witnesses draw-free). |
+| 12 | `:22300-22614` inline | SkeletronHand 36 (`:9183-9196`) | LANDED (the H1-H11 `update_skeletron_hand`) → verify-only axis claim `12 => update_skeletron_hand(.., false)`; kind arm unreachable. RNG-free by construction (the hand has no rand site; the docked/transition/headless witnesses pin it). |
+| 13 | `:22615-22847` inline | SIX: ManEater 43 (`:9293-9307`), Snatcher 56 (`:9474-9488`), Clinger 101 (`:10186-10201`), AngryTrapper 175 (`:11208-11222`), FungiBulb 259 (`:12332-12347`), GiantFungiBulb 260 (`:12348-12363`) — NONE ported | MISSING → ported verbatim, `npc_ai_style13.rs`, UNWIRED (the W4-d24 style17/20 precedent). The tile-anchor guards (5-fluff InWorld, inactive-anchor death), the per-type accel/range pairs + the `(int)((double)range*1.3)` enrage ladder, the INTEGER-half aim + reciprocal clamp, the 1.5× sign-flip steering, the −0.7 bounce floors, the Clinger CursedFlame 96 shot (120-tick timer, 100 park) + the 260 FungiSpore 261 spawn (150-tick timer, the `num221` steering-delta lift quirk `:22828-22832`, 130 park). RNG: ONLY the two shot/spawn `Next(-10,11)` X-then-Y pairs on qualifying ticks; everything else draw-free (11 witnesses). |
+| 14 | `:22849-23486` inline | 17 types (`npc_ai_style14`'s header census); ported four CaveBat 49 / JungleBat 51 / Hellbat 60 / VoodooDemon 66 | LANDED+WIRED (the S1-D-3 bat/fish reconcile, W44 audit FAITHFUL) → verify-only axis claim `14 => update_cave_bat`; the four-kind arm unreachable. RNG: the bats draw NOTHING; the 62/66 shot arm draws the two `Next(-100,101)` jitters X-then-Y on the 20/40/60/80 ticks, else ONE short-circuit `Next(300)` past 300 with the firing-distance flag (`:23453`) — axis-level witnesses pin all three paths. |
+
+Deliberate folds (all cited in the code): `Main.netMode != 1`/`!= 2` →
+true (single-player); `Main.expertMode` → the classic solo seam (the
+style31 `CLASSIC_SOLO` precedent); `Main.getGoodWorld` stays parked on
+the style-9 wiring (no runtime flag) but rides the style-13 module's
+parameter (the 43 rows are table-complete); `FixExploitManEaters.
+ProtectSpot` is a cited skip (no port registry, no RNG, no AI-visible
+state); the style-13 shot/spawn leave as `Style13Out` requests (the
+`wants_hostile_shot`/`wants_sphere` shape — the spore's `NewNPC` Bottom
+semantics are the wiring's resolve). The six style-13 kinds + their
+axis/kind wiring are the follow-up wave — the machine is pure and
+reachable through its `npc_type` parameter today. All witnesses
+WRITTEN, NOT RUN (code-only mode: no cargo/rustc/tests/graphify invoked
+on this branch).
