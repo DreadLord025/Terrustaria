@@ -6580,7 +6580,8 @@ at whatever still uses it) and the aiStyle-13-cited sprite-dir keep.
 `crates/tr-app/src/npc_ai_town.rs` ports `AI_007_TownEntities`
 (`NPC.cs:52965-55561`, dispatch `:20812-20815`) with its helpers
 (`:52765-52963`, `:55563-55785`) as pure fns over a `TownEnv`/`TownOutputs`
-seam, landed UNWIRED (the `npc_ai_caster.rs` precedent) — **code-only
+seam, landed UNWIRED (the `npc_ai_caster.rs` precedent; **WIRED phase 1
+by W4-b3 — see the wiring census below**) — **code-only
 mode: no compiler invoked; the witness tests are WRITTEN NOT RUN.** The
 module IS registered (`mod npc_ai_town;` beside `mod npc_ai_caster;` in
 `main.rs`) so the witnesses compile with the crate, but no live dispatch
@@ -6596,7 +6597,8 @@ payload, the safe-rect int truncation and the Skeletons set; the
 witness tests now account for the social ladder's seven gates drawing
 after the state arms. The folds below reflect the reconciled state.
 
-Census of the port's town routing (2026-11-19): the live town walk is
+Census of the port's town routing (2026-11-19; superseded by the W4-b3
+wiring census below): the live town walk is
 `npc.rs::update_guide` (`:7471`) — a 240-tick fixed flip at a constant
 0.5 px/tick with an invented −6.2 jump; a STAND-IN, not the C# arm
 (`npc.rs::update_rng`'s aiStyle axis claims 5/9/31/47/57/58 only; style 7
@@ -6693,6 +6695,100 @@ Deliberate folds (code-only remainders for the wiring round):
   int, the Skeletons set matches `ID/NPCID.cs:10478`, and the witness
   tests account for the social ladder's seven gates drawing after the
   state arms.
+
+### The town-NPC aiStyle-7 wiring (W4-b3) — phase 1 + the draw-delta census
+
+**WIRED phase 1** (`task/W4-b3-npc-ai-town-wire`, code-only mode: no
+compiler invoked; the wiring witnesses are WRITTEN NOT RUN). The
+aiStyle axis in `npc.rs::update_rng_dust` now claims
+`7 => self.ai_007_town_family(world, player, rng)` (`NPC.cs:20812-20815`),
+routing all 21 town kinds through `npc_ai_town::town_npc_ai`. The
+`update_guide` stand-in is DELETED — the kind-match fallthrough arm is an
+`unreachable!` marker (the aiStyle-5/9 precedent; `ai_style()` maps the
+town kinds unconditionally). The adapter (`Npc::ai_007_town_family`) owns
+only the seams the pure arm cannot:
+
+* `Entity.wet` latched pre-AI (`is_wet`, the eye convention).
+* ONE session player (`npc_target::session_candidate`), `talk_npc: -1`
+  (`Player.talkNPC` lives on the App — phase 2 threads it), buff-120
+  stinky, `sitting`, `can_be_talked_to = !dead && stealth == 0.0` (the
+  port's inverted stealth sense; `ShouldNotDraw` unported → false).
+* The classic-solo `TownEnv`: empty NPC list, the world's live flags
+  (day/rain/eclipse/slime-rain, the downed-boss ladder, hard mode,
+  zenith-seed infected), the unported statics folded false (storming,
+  combat book two, party, skyblock, only-shimmer-ocean, xMas, empress),
+  `net_mode: 0` host, expert from `player.buffs.expert_mode`, master
+  false, `town_damage_multiplier: 1.0`, `homeless` folded to
+  `home.is_none()`, `breath: 200` stock, `shimmering: false`.
+* `TownKindStats` from the port's kind tables (`max_hp()`/`defense()`).
+* The door latch registered on `Npc` (`town_door_close/x/y`,
+  `NPC.cs:6511-6513`), copied into `TownDoorLatch` before the arm and
+  back after (the open-success latch + the close pass survive ticks).
+* A NO-OP `TownDoorOps` (`NoOpTownDoors`): every attempt fails, so the
+  arm takes the C#'s all-fail direction flip (`NPC.cs:54047-54078`) —
+  tick-exact against a world where no door mutation runs yet. The door
+  gate's `Next(10)` (`:54043`) still draws. Phase 2 implements the trait
+  over `tr_core::edit::{open_door, close_door}` (`edit.rs:704`/`:826`);
+  `shift_tall_gate` stays false even then (`WorldGen.ShiftTallGate`
+  UNPORTED — tall gates 388/389 never open/close).
+* `TownOutputs` DISCARDED (`let _ = out`, the eye wiring precedent) but
+  every DRAW already ran on the caller's `UpdateNPCs` stream. Phase 2
+  drains shots/strikes/partner writes/home updates/saved states.
+* The generic `UpdateNPC` tail the arm never runs
+  (`Npc::integrate_town_collision`, `NPC.cs:90465-90498` +
+  `UpdateCollision` `:92523-92608`): depth-scaled `body_gravity` (wet
+  0.2/7 override), the ±0.005 DOUBLE X deadband, the `oldVelocity`
+  latch + collide-flag reset, `TileCollision`'s velocity clip
+  (fallThrough false — the DecideFallThroughPlatforms arm is the
+  recorded fold), then the dry/wet move pair (wet: clipped axes at full
+  speed, free axes halved; dry: the ceiling bump's 0.01 + full-speed
+  integration). The slope/stair pass stays the recorded flat-tile fold
+  (the bat/fish tail convention).
+
+**Draw-delta census** (the `UpdateNPCs` stream, per NPC tick): the
+retired stand-in drew ZERO `Main.rand`; the wired arm draws the module
+header's ladder (`npc_ai_town.rs` items 1-11, `NPC.cs:52965-55561` in
+UpdateNPCs order). The delta is therefore the WHOLE ladder — no draw
+was displaced, only added. Representative ticks:
+
+* **Idle day tick at the resting spot** (state 0, timer live, player
+  inside the safe rect): the wander `Next(80)` (`:53782`'s else-if
+  position, `localAI[3] == 0`) + the social ladder's SEVEN reached
+  gates in else-if order — talk `Next(300)`, gossip `Next(1800)`,
+  party `Next(1200)`, bartender `Next(600)`, small-talk `Next(1800)`,
+  tax `Next(600)`, player-talk `Next(1200)` (`:55197-55357`; the
+  sit/interact gates need `ai[0] == 1`). The attack-chance ladder draws
+  NOTHING for the Guide (AttackType 1: the type-0 else-if
+  short-circuits before its draw, the type-2/3 `if`s fail on type,
+  flag32 false). EIGHT draws vs the stand-in's ZERO. The preamble,
+  `humanoid_town_frame` and the town-kind contact guard draw nothing,
+  so a mirrored-oracle witness covers the whole live tick.
+* **Night go-home start** (away from home, state 0 → 1): the go-home
+  flag flips (`:52983-52985`), the walk starts with `Next(200)`
+  (`:53688`) + faces home; the walk arm does NOT run the same tick (one
+  if/else-if chain — walk-end/door/ledge/stuck draws unreached); the
+  wander gate is skipped whole (night + not-at-rest fails its
+  `!flag || IsInAGoodRestingSpot` guard); the ai[0]==0 social gates
+  short-circuit, only the walk-up sit `Next(300)` (`c.num > 0`) and the
+  interact `Next(600)` draw. THREE draws.
+* **Walking ticks** add the state-1 ladder as reached: the door gate
+  `Next(10)` whenever the door tile matches (the non-short-circuit `|`,
+  `:54043`), the ledge bail `Next(50)`, the stuck flip `Next(300)`, the
+  walk-end `Next(300)`+`Next(900)` — the module header pins each.
+
+The two WIRING witnesses (`npc.rs::w4_b3_town_wiring_witnesses`) pin
+these two ticks end-to-end through the LIVE `update_rng` path with
+seed-searched non-zero gate rolls + fresh-stream mirrors
+(`assert_eq!(rng, oracle)`), plus the tail's floor clip
+(`collide_y`/`on_ground`, the pre-clip `old_vy` the next tick's stuck
+test reads). WRITTEN NOT RUN — code-only mode. The pure arm's own
+per-state witnesses in `npc_ai_town.rs` are unchanged.
+
+Phase 2 remainder: the `TownOutputs` drain (spawn/strike/housing/saved
+seams), the real `TownDoorOps`, the live NPC list + `App.talk_npc`,
+`HomeTileUpdate` through `TownRooms` + message 60, the homeless/breath/
+shimmering latch fields. Contested pieces untouched: `town.rs` housing,
+`npc_chat` selection, the caster aiStyle-8 arm.
 
 ## Buff slots (M2-BUFF-1)
 
