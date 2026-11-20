@@ -367,6 +367,15 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.numMCaves`/`mCaveX`/`mCaveY` (`GenVars.cs:228-232`, the
+    /// `[30]` arrays allocated in `ResetGenerator`, `:457-458`): the Mount
+    /// Caves pass's mountain-top anchors (`WorldGen.cs:11847-11849`).
+    /// W4-d101 pass 2 publishes them; d102's Mountain Caves (`:14873`) and
+    /// Webs (`:13607`) consume them. Zero-init like the C# statics; the
+    /// pass re-zeroes the counter at its head (`:11788`).
+    pub(crate) num_m_caves: i32,
+    pub(crate) m_cave_x: [i32; 30],
+    pub(crate) m_cave_y: [i32; 30],
 }
 
 impl Default for GenVars {
@@ -404,6 +413,11 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            // The C# zero-inits the mountain-cave statics; the arrays are
+            // allocated (zeroed) in ResetGenerator (`GenVars.cs:457-458`).
+            num_m_caves: 0,
+            m_cave_x: [0; 30],
+            m_cave_y: [0; 30],
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1250,6 +1264,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `pass_rng("Sand Patches")` stream shifts no other step's ledger.
     step!("sand patches", "Sand Patches", step_sand_patches),
     step!("cave fields", "Tunnels", step_cave_fields),
+    // The vanilla Mount Caves slot (`WorldGen.cs:11784`): after Tunnels
+    // (`:11718`) and before Rocks In Dirt (`:11896`) — W4-d101 pass 2. The
+    // mountain anchors (`GenVars.numMCaves/mCaveX/mCaveY`) feed d102's
+    // Mountain Caves (`:14873`) and Webs (`:13607`).
+    step!("mount caves", "Mount Caves", step_mount_caves),
     // The vanilla order is Caves (~:11100-12600) -> Marble (:12757) ->
     // Granite (:12839): the granite caves recruit into pre-carved caves
     // (the `GraniteBiome.CanPlace` inactive-origin gate feeds the
@@ -1843,6 +1862,20 @@ fn step_sand_patches(
         &mut streams.pass_rng("Sand Patches"),
         gv.layers(),
     );
+}
+
+/// The vanilla Mount Caves slot (`WorldGen.cs:11784-11857`): the dirt
+/// mountains + their GenVars anchors (W4-d101 pass 2).
+fn step_mount_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    passes1::pass_mount_caves(world, gv, &mut streams.pass_rng("Mount Caves"), &layers);
 }
 
 fn step_surface_caves(
@@ -3166,7 +3199,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-d101 pass 1: + `sand patches` (vanilla "Sand Patches",
         // `WorldGen.cs:11689`) before `cave fields`.
-        assert_eq!(names.len(), 67);
+        // W4-d101 pass 2: + `mount caves` (vanilla "Mount Caves",
+        // `WorldGen.cs:11784`) after `cave fields`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3207,6 +3242,7 @@ mod tests {
                 "mushroom patches",
                 "sand patches",
                 "cave fields",
+                "mount caves",
                 // M5-BIOME-2: granite moved after the cave carve (the vanilla
                 // order) — the `GraniteBiome.CanPlace` inactive-origin gate
                 // needs the pre-carved caves.
@@ -3289,6 +3325,29 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Sand Patches") == cpos("Tunnels") - 1);
         assert!(cpos("Ocean Sand") < cpos("Sand Patches"));
+    }
+
+    /// W4-d101 pass 2: `mount caves` sits in the vanilla Mount Caves slot
+    /// (`WorldGen.cs:11784`) — immediately after the Tunnels step
+    /// (`cave fields`, `:11718`) and before Rocks In Dirt (`:11896`, the
+    /// port's `stone-in-dirt blobs`).
+    #[test]
+    fn w4_d101_mount_caves_sits_between_tunnels_and_rocks_in_dirt() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mount caves"), pos("cave fields") + 1);
+        assert_eq!(names[pos("mount caves") + 1], "stone-in-dirt blobs");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Mount Caves") == cpos("Tunnels") + 1);
+        assert!(cpos("Mount Caves") < cpos("Rocks In Dirt"));
+        // The later Mountain Caves opener pass (`:14873`, d102's lane) is
+        // a DIFFERENT declaration — the anchors this step publishes feed it.
+        assert!(cpos("Mountain Caves") > cpos("Dungeon"));
     }
 
     /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla
@@ -3626,6 +3685,11 @@ mod tests {
         assert_eq!(gv.right_beach_start, 0);
         assert_eq!(gv.water_line, 0);
         assert_eq!(gv.lava_line, 0);
+        // W4-d101: the mountain-cave statics zero-init (`GenVars.cs:228-232`,
+        // the [30] arrays allocated zeroed at `:457-458`).
+        assert_eq!(gv.num_m_caves, 0);
+        assert_eq!(gv.m_cave_x, [0; 30]);
+        assert_eq!(gv.m_cave_y, [0; 30]);
     }
 
     // --- Phase 6: temple stub -------------------------------------------------

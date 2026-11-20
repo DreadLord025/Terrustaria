@@ -245,6 +245,11 @@ mod tests {
     // surface-to-rock band, so this pin moves BY DESIGN. The re-pin is
     // DEFERRED to the merge gate (no compiler on this branch); the a == b
     // determinism assert stays in place.
+    // W4-d101 pass 2 (code-only): `Mount Caves` (`WorldGen.cs:11784-11857`,
+    // `passes1.rs::pass_mount_caves`) raises `(512 * 0.001) as i32 = 0`
+    // mountains on a 512-wide world — the count truncates to zero, so this
+    // pass draws NOTHING and the pin does not move from it (the pass-1
+    // re-pin above still stands).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -291,6 +296,9 @@ mod tests {
     // W4-d101 pass 1 (code-only): the Sand Patches blobs (54 on a 4200-wide
     // world) retype the surface-to-rock band, so this pin moves BY DESIGN
     // too — deferred to the gate with the SEED42_512 note above.
+    // W4-d101 pass 2 (code-only): Mount Caves raises 4 dirt mountains on a
+    // 4200-wide world (`Mountinater`, the climbing circle) — this pin moves
+    // BY DESIGN too; deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
