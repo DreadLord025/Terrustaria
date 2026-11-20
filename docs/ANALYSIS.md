@@ -6483,6 +6483,11 @@ live arm folds it into `ChaosBall` вЂ” the wiring decides); the wiring
 round must also supply `player_velocities` (the telefrag union) and the
 `any_skeletron`/`any_npcs_113`/`get_good_world` flags. The live
 `caster_cycle` keeps running byte-identical until then.
+**(Superseded 2026-11-20, W4-d128: the live arm is now
+`npc_ai_bat::ai_style_8_step` — `caster_cycle` is retired — and the
+module swap is EXCLUDED as a determinism break; see "The caster
+aiStyle-8 reference census (W4-d128, docs-only)" for the per-kind
+divergence table + the draw-parity plan.)**
 
 ### The eye aiStyle-2 re-port (S1-D-3, code-only mode)
 
