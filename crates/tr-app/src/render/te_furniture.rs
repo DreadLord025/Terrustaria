@@ -865,7 +865,7 @@ pub(crate) fn hat_rack_draw(
 /// `ProjectileID.Sets.DisplayDollDrawUseStyle` (`ID/ProjectileID.cs:188`):
 /// every listed projectile previews under useStyle 5 (the gun aim ladder)
 /// regardless of its item's own useStyle; the default is -1.
-const DISPLAY_DOLL_DRAW_USE_STYLE: [u16; 67] = [
+const DISPLAY_DOLL_DRAW_USE_STYLE: [u16; 66] = [
     301, 933, 1100, 6, 19, 33, 52, 106, 113, 182, 272, 320, 333, 383, 866, 867, 902, 1000,
     1052, 491, 273, 481, 636, 3, 21, 48, 54, 69, 70, 621, 93, 166, 304, 318, 330, 370, 371,
     497, 510, 520, 599, 861, 868, 869, 936, 996, 1085, 507, 598, 28, 29, 37, 470, 516, 519,
@@ -2039,7 +2039,7 @@ mod tests {
         assert_eq!(display_doll_draw_use_style(301), 5);
         assert_eq!(display_doll_draw_use_style(507), 5);
         assert_eq!(display_doll_draw_use_style(1), -1);
-        assert_eq!(DISPLAY_DOLL_DRAW_USE_STYLE.len(), 67);
+        assert_eq!(DISPLAY_DOLL_DRAW_USE_STYLE.len(), 66);
     }
 
     #[test]
