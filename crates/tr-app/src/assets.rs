@@ -882,6 +882,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Creative/Research_GearA",
         "UI/Creative/Research_GearB",
         "UI/Creative/Research_GearC",
+        // The piston spark (`UICreativeInfiniteItemsDisplay.cs:219`) and the
+        // BLUE search magnifier (`UIWrappedSearchBar.cs:97` — the duplication
+        // window keeps the Blue theme).
+        "UI/Creative/Research_Spark",
+        "UI/Bestiary/Button_Search",
         "Text_Back",
         // S1-E-10b: the town-chatter bubble (`TextureAssets.Chat`,
         // `Main.DrawNPCChatBubble` `Main.cs:43158`) and the dialogue
@@ -2114,6 +2119,12 @@ pub struct Lookups {
     /// `UI/Creative/Research_GearA/B/C`: the research cogs, big → small
     /// (`UICreativeInfiniteItemsDisplay.cs:320-322`).
     pub ui_research_gears: [Option<tr_render::SheetRect>; 3],
+    /// `UI/Creative/Research_Spark`: the piston particle
+    /// (`UICreativeInfiniteItemsDisplay.cs:219`).
+    pub ui_research_spark: Option<tr_render::SheetRect>,
+    /// `UI/Bestiary/Button_Search`: the BLUE-theme search magnifier
+    /// (`UIWrappedSearchBar.cs:97` — the duplication window's search bar).
+    pub ui_search_icon_blue: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Button_Search_2`: the search-bar icon button
     /// (`UIWrappedSearchBar.cs:100`).
     pub ui_search_icon: Option<tr_render::SheetRect>,
@@ -2487,6 +2498,8 @@ impl Lookups {
                 atlas.sheet("UI/Creative/Research_GearB").copied(),
                 atlas.sheet("UI/Creative/Research_GearC").copied(),
             ],
+            ui_research_spark: atlas.sheet("UI/Creative/Research_Spark").copied(),
+            ui_search_icon_blue: atlas.sheet("UI/Bestiary/Button_Search").copied(),
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
             ui_emote_button: atlas.sheet("UI/Emotes").copied(),
             ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
