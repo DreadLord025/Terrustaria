@@ -39274,3 +39274,47 @@ pool's `!active` death hook (`projectile.rs`), the same seam the gem/bullet/
 arrow death arms use. RNG draws keep their exact slots on the C# statement
 order; the case-2 `Main.rand` pitch rides `UpdateProjectiles`, the int-id Dig
 variation+pitch ride the same stream through the `play_place_sound` id-0 arm.
+
+### The port (commit `8579732d`, 57 sites)
+
+**57 of the 120 sites ported** — every site whose kind has a `proj_data` row
+(the 48 ROWED + 9 PART; the PART arms gate to their rowed kinds only). The 63
+NONE sites (unrowed kinds — no death arm exists) are DEFERRED with the census,
+exactly as the landed wave deferred its unported kinds. The seam is ONE helper,
+`ProjectilePool::kill_sound_cue` (`projectile.rs`), called at the death hook
+BEFORE the death arms mutate the slot — so it reads the PRE-resize
+`base.position` every C# arm plays at (the 932's `base.Center` is the one
+exception). The cue pushes DIRECTLY into `pending_proj_sounds` (the golf
+`tick.sounds` seam): the death hook runs AFTER the AI dispatch's `wants_sound`
+forwarding, so a slot-parked intent would never be forwarded. The death hook
+fires once per death (a dead slot never returns to `active`), so no latch flag
+is needed. The cue list is kind-disjoint from the landed bomb blasts and d77's
+in-flight selection.
+
+The cue families: the id-2 `SoundID.ItemN` styles (Item10/14/27/45/51/54/94/
+96/110/167), the id-0 Dig thud (`PlaySound(0, pos)` — the arrow/dart/seed/
+thrown families), the id-13 Shatter (the Molotov `:73923`) and the id-4
+NPCDeath style-6 (the Phantasmal Sphere `:73016`). `Audio::play_proj_sound`
+gains the id-0/13/4 routes, each delegating to its landed façade
+(`play_place_sound`/`play_wall_break_sound`/`play_npc_death_int`) — attenuation
+BEFORE the case draws, the int overload draws NO `GetRandomPitch` NextFloat.
+The Ice Block's `ai[0] >= 0f` gate (`:75535`) is the one conditional cue.
+
+Bank: `Item_45/51/54/94/96/110/167` join `SFX_CUES` (all seven `.xnb` assets
+verified on disk); every other style the batch names was already registered.
+
+**Deviations (deliberate, recorded):** the dust/gore BODIES stay skipped with
+their layers (the module's RNG note) — the cue itself is draw-free at the queue
+site, its case draw rides the drain. The C# plays inline mid-`Kill()`; the
+port's batch drain moves the draw to the pass tail (the same recorded deviation
+as the landed wave and wave C — relative order among the tick's sound draws is
+preserved, the interleaving with gameplay draws is not). The 63 NONE sites and
+the fifth-batch tail (`:76252`-`:78505`) are the recorded deferrals.
+
+**Verification.** Code-only: every ported cue re-read against its C# window
+(≤100-line windows, direct-path reads through the `decompiled/` junction — no
+junction recursion): the kind gates, the position reads (`base.position` vs
+`base.Center`), the play-before-resize order, the Ice Block's `ai[0]` gate, the
+PART arms' rowed-kind gating. The 4 new `s1_e_21h_f1_*` witness tests (2 pool
+cue-table, 1 audio façade/bank, 1 pass-stream) are WRITTEN, NOT RUN — **no
+compiler invoked**.
