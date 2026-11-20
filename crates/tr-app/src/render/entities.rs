@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(PUMPKING_BLADE_SHEET)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1113,6 +1114,12 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-c6 style-59 wiring: the blade's bestiary credit folds onto the
+        // Pumpking (Hide=true), but its DRAW sheet is its own NPC_328
+        // (`TextureAssets.Npc[328]`) — the fishron-hazard / ForceBubble
+        // precedent. `net_id()` would read the folded 327, so the explicit
+        // row keeps the blade on its own art.
+        NpcKind::PumpkingBlade => 328,
         _ => kind.net_id() as u16,
     }
 }
@@ -1246,6 +1253,12 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// W4-c6 style-59 wiring: the Pumpking blade's own sheet
+/// (`TextureAssets.Npc[328]`), keyed by the vanilla net id in
+/// [`NpcAssets::npc_sheet`] — the bestiary credit folds onto the Pumpking
+/// (Hide=true) but the DRAW sheet is its own (the fishron-hazard precedent).
+pub(crate) const PUMPKING_BLADE_SHEET: &[u32] = &[328];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3170,6 +3183,15 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-c6 style-59 wiring: the blade draws its OWN NPC_328 sheet
+            // (`TextureAssets.Npc[328]`, `Main.npcFrameCount[328]` = 1,
+            // `Main.cs:67116` col 9) at the generic centred anchor — the
+            // pumpkin arm's shape. The visual spin is the rotation (the
+            // whitelist below) + the two-link PumpkingArm chain draw
+            // (`Main.cs:22669-22700`, the draw-side feed's follow-up).
+            NpcKind::PumpkingBlade => {
+                pumpkin_moon_draw(assets.npc_sheet(328), npc_rows(328), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3341,12 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-c6 style-59 wiring: the blade's hover/dive/sweep
+                    // aim rotation (`npc_ai_style59`'s atan2 + 1.57 writes,
+                    // `NPC.cs:33294-33297`/`:33304`/`:33341`) — the C#'s
+                    // generic draw rotates by `npc.rotation`
+                    // (`Main.cs:26632`).
+                    | NpcKind::PumpkingBlade
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
@@ -3700,6 +3728,16 @@ mod anchor_tests {
             ML_EYE_SHEET,
         ] {
             assert!(packed(name), "{name} is asked for by the Moon Lord's parts");
+        }
+        // W4-c6 style-59 wiring: the blade's draw arm asks `npc_sheet(328)`
+        // — the packing list must carry it (the M4-NPC-3v audit, blade
+        // edition).
+        for &id in PUMPKING_BLADE_SHEET {
+            let name = format!("NPC_{id}");
+            assert!(
+                packed(&name),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
         }
         // Every lunar kind must resolve to a sheet the pillar set carries —
         // `npc_sheet(texture_net_id(kind))` is the draw's only source.

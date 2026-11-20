@@ -2292,6 +2292,11 @@ pub fn try_entry_for_npc(
         // kill credit is "Sharkron" — only the UI provider maps onto 370,
         // `BestiaryDatabaseNPCsPopulator.cs:691`).
         NpcKind::DetonatingBubble | NpcKind::Sharkron2 => NpcKind::DukeFishron,
+        // W4-c6 style-59 wiring: the blade's bestiary draw modifiers are
+        // Hide=true (`NPCID.cs:3398-3403`) — the credit folds onto the
+        // Pumpking (the fishron-hazard precedent). The DRAW sheet stays
+        // NPC_328 through `texture_net_id`'s own row.
+        NpcKind::PumpkingBlade => NpcKind::Pumpking,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2363,6 +2368,14 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-c6 style-59 wiring: the blade's Hide=true draw modifiers
+        // (`NPCID.cs:3398-3403`) — no entry of its own; the credit folds
+        // onto the Pumpking (the ForceBubble/fishron-hazard precedent).
+        // The populator DOES attach invasion-spawn info to entry 328
+        // (`BestiaryDatabaseNPCsPopulator.cs:1655`) — the entry exists in
+        // the vanilla DB but is hidden from the grid; the port's fold
+        // keeps the credit on the boss row like every Hide=true rider.
+        NpcKind::PumpkingBlade => NpcKind::Pumpking,
         other => other,
     };
     ENTRIES

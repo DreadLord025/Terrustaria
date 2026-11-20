@@ -406,6 +406,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::HeadlessHorseman => &[20, 24, 31, 323],
         NpcKind::MourningWood => &[20, 31],
         NpcKind::Pumpking => &[20, 24, 31, 323],
+        // W4-c6 style-59 wiring: the blade's `Sets.DebuffImmunitySets` row
+        // (`NPCID.cs:8002-8008`): {20, 24, 31, 323} — the carrier's row.
+        NpcKind::PumpkingBlade => &[20, 24, 31, 323],
         NpcKind::Hellhound => &[20, 24, 323],
         // The Frost Moon family (`S1-F-13c` slice B — `Sets.DebuffImmunitySets`,
         // `NPCID.cs:8104-8141`): 345/346/352 the ({20, 31, 44, 324}) row

@@ -24427,10 +24427,23 @@ recorded seam as the 57/58 arms — boundary-tick divergence only). The
 the `SendData(28)` net arm is the wiring's fan-out. The `ai[1]` slot
 clamp is the caller's (the seam's `None` = missing/inactive/non-58).
 
-**Wiring deferred** (the `npc_ai_style21.rs` precedent): no
-`NpcKind::PumpkingBlade` exists (the Pumpking itself rides the hover
-stand-in on main), so there is no style-59 dispatch arm to claim. The
-follow-up needs: the kind row + defaults table, the aiStyle-axis claim,
+**Wiring — Phase 1 landed (W4-c6 style-59, 2026-11-20, code-only mode).**
+`NpcKind::PumpkingBlade` (328) rides the roster with the verbatim
+`SetDefaults` row through the port's piecewise tables (`npc.rs`'s
+kb/defense/value arms, `npc/data.rs`'s to_u16/from_u16/ai_style/size/
+max_hp/contact_damage/sound/no_gravity rows, `npc_buffs.rs`'s
+{20,24,31,323} immunity row `NPCID.cs:8002-8008`, the `dontTakeDamage`
+ctor row). The aiStyle axis claims 59 (`npc.rs`'s `update_rng_dust`
+match): the SOLO path passes `None` (no pool) — the blade damps +
+despawns; the shot queues on `wants_hostile_shot_ai` (the ai0/ai1 seam),
+and the noGravity/noTileCollide integration tail runs the raw add. The
+kind arm is an `unreachable!` marker (the ForceBubble precedent). The
+bestiary credit FOLDS onto the Pumpking (Hide=true, `NPCID.cs:3398-3403`)
+— `cs_id` rides the folded net id 327 (the s1_f_3 invariant, the
+fishron-hazard L-B precedent), while `texture_net_id` keeps the DRAW
+sheet NPC_328 (packed via `PUMPKING_BLADE_SHEET`). The wave-ladder family
+map keeps 328 OUT (the blade spawns only from the carrier's init); the
+boss-cap row weighs 0 (`npcSlots = 0f`). The remaining wiring (Phase 2):
 the carrier-slot resolution + the `PumpkingCarrier` feed, the
 `BladeShot` spawn drain (329's own aiStyle-56 arm is S1-D-4 territory),
 the two carrier-side `NewNPC` spawns (`:33093-33103` — keep the ORDER:
