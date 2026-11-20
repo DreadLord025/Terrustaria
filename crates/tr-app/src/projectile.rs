@@ -4782,6 +4782,36 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `AI()`'s aiStyle-56 block (`Projectile.cs:28845-28866`) — the
+    /// Pumpking blade's FlamingScythe (329, `NPC.cs:33230`'s volley): the
+    /// first-tick latch copies `ai[0]` (the blade's rotation at fire time)
+    /// into `rotation` and `-ai[1]` (the blade's spriteDirection) into
+    /// `spriteDirection`; the Manhattan speed under 16 accelerates ×1.05
+    /// per tick; the direction follows `velocity.X`'s sign and the spin
+    /// adds `(|vx| + |vy|) * 0.025 * direction` every tick. Zero
+    /// `Main.rand` draws. The row keeps `tileCollide = false` (`:4223`) —
+    /// the arm owns the free integration (HandleMovement after the AI).
+    /// The hostile row's `friendly = false` (`:4221`) is held explicitly
+    /// (the pool slot defaults true — the `ai_dungeon_debris` precedent).
+    fn ai_flaming_scythe(&mut self) {
+        self.friendly = false;
+        // `:28847-28852` — the one-shot spawn latch.
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.rot = self.ai[0];
+            self.sprite_direction = -(self.ai[1] as i32);
+        }
+        // `:28853-28856` — the sub-16 acceleration.
+        if self.vel.x.abs() + self.vel.y.abs() < 16.0 {
+            self.vel *= 1.05;
+        }
+        // `:28857-28864` — the direction sign and the spin.
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.025 * self.direction as f32;
+        // The free integrate (`:4223` tileCollide false).
+        self.pos += self.vel;
+    }
+
     /// `AI()`'s aiStyle-118 block (`Projectile.cs:34638-34807`) — the Nebula
     /// Arcanum (617). Two flight modes picked per tick off the speed: above
     /// 4.0 the fast spin (`rotation -= PI/30`, the 0.98 decay + the 0.0074468083
@@ -17645,6 +17675,14 @@ impl ProjectilePool {
                         // `tileCollide = false`, `:4146`).
                         55 => {
                             self.slots[i].ai_flaming_jack(world, &npcs[..]);
+                        }
+                        // W4-d6 — `AI()`'s `else if (this.aiStyle == 56)`
+                        // (`Projectile.cs:28845-28866`): the Pumpking
+                        // blade's FlamingScythe (329), the style's only
+                        // rowed kind. The arm owns its integration (the
+                        // row's `tileCollide = false`, `:4223`).
+                        56 => {
+                            self.slots[i].ai_flaming_scythe();
                         }
                         // The Spectre Wrath (`:28938-28993`): the hostile
                         // window, the uniform re-pick (one rng draw) and the
@@ -34554,6 +34592,86 @@ mod magic_ai_tests {
         assert_eq!(d.penetrate, 1);
         assert_eq!(d.time_left, 3600);
         assert_eq!(d.extra_updates, 0);
+    }
+
+    #[test]
+    fn test_w4_d6_style_56_the_scythe_latches_the_blade_pose_then_spins_at_0p025() {
+        // `:28847-28852`: localAI[0]'s one-shot latch copies ai[0] →
+        // rotation and -ai[1] → spriteDirection. `:28853-28865`: the
+        // sub-16 ×1.05 acceleration then the (|vx|+|vy|)·0.025·dir spin.
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai(
+                FLAMING_SCYTHE,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::new(4.0, 0.0),
+                60,
+                0.0,
+                1.25,
+                -1.0,
+            )
+            .unwrap();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.local_ai[0], 1.0, "the latch fires once");
+        assert_eq!(p.sprite_direction, 1, "-(ai[1] = -1)");
+        assert!(!p.friendly, "the hostile row (`:4221`)");
+        // The first tick: v = (4, 0) → ×1.05 = (4.2, 0); rot = 1.25 + 4.2·0.025.
+        assert!((p.vel.x - 4.2).abs() < 1e-5, "the sub-16 ×1.05");
+        assert!((p.rot - (1.25 + 4.2 * 0.025)).abs() < 1e-5, "the latch then the spin");
+        assert_eq!(p.direction, 1);
+        // The latch never re-fires: a changed ai[0] leaves rotation alone.
+        pool.slots_mut()[slot].ai[0] = 9.0;
+        let rot_before = pool.slots()[slot].rot;
+        let vx = pool.slots()[slot].vel.x;
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        let expected_rot = rot_before + (vx * 1.05) * 0.025;
+        assert!((p.rot - expected_rot).abs() < 1e-4, "no re-latch, spin only");
+        // The -X flight spins negative.
+        pool.slots_mut()[slot].vel = Vec2::new(-4.0, 0.0);
+        let rot_before = pool.slots()[slot].rot;
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.direction, -1);
+        assert!((p.rot - (rot_before - 4.2 * 0.025)).abs() < 1e-5, "the negative spin");
+    }
+
+    #[test]
+    fn test_w4_d6_style_56_the_accel_stops_at_manhattan_16() {
+        // `:28853`: `|vx| + |vy| < 16` gates the ×1.05 — a 16-Manhattan
+        // flight keeps its speed exactly (the spin still runs).
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai(
+                FLAMING_SCYTHE,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::new(10.0, 6.0),
+                60,
+                0.0,
+                0.0,
+                1.0,
+            )
+            .unwrap();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel, Vec2::new(10.0, 6.0), "16 is not < 16");
+        assert!((p.rot - 16.0 * 0.025).abs() < 1e-6, "the spin reads the speed");
+    }
+
+    #[test]
+    fn test_w4_d6_style_56_the_scythe_row_is_verbatim() {
+        // `:4215-4225`: 80x80, aiStyle 56, light 0.25, hostile, penetrate
+        // -1, tileCollide false, timeLeft 420.
+        let d = proj_data(FLAMING_SCYTHE).unwrap();
+        assert_eq!((d.w, d.h), (80.0, 80.0));
+        assert_eq!(d.ai_style, 56);
+        assert_eq!(d.light, 0.25);
+        assert_eq!(d.penetrate, -1);
+        assert!(!d.tile_collide);
+        assert_eq!(d.time_left, 420);
     }
 
     #[test]

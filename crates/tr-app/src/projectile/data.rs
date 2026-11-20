@@ -1576,6 +1576,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         MAGNET_SPHERE_BALL => 0.5,             // `:3376`
         GOLEM_EYE_BEAM => 0.3,                 // `:3436`
         CHRISTMAS_HOOK => 0.5,                 // `:4256`
+        FLAMING_SCYTHE => 0.25,                // `:4219` (W4-d6)
         MINI_RETINA_LASER => 0.75,             // `:4736`
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
         ILLUMINANT_HOOK => 0.3,                // `:5631`
@@ -2843,6 +2844,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // friendly, melee, `tileCollide = false`, `ignoreWater` (the
             // overlay below). The stock penetrate 1 / timeLeft 3600 stand.
             FLAMING_JACK => (30.0, 30.0, 55, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // W4-d6 — `:4215-4225` FlamingScythe (329): 80x80, aiStyle 56,
+            // hostile (the spawn_hostile seam), `penetrate = -1`,
+            // `tileCollide = false`, `timeLeft = 420`, `light = 0.25f`
+            // (`set_defaults_light` below). ai0/ai1 carry the blade's
+            // rotation/spriteDirection (`NPC.cs:33230`'s trailing args).
+            FLAMING_SCYTHE => (80.0, 80.0, 56, -1, 420, 0, false, false, false, RESET_STATE),
             // `:4903-4915` Typhoon — 30x30, aiStyle 71, `penetrate = -1`,
             // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
             // dropped.
