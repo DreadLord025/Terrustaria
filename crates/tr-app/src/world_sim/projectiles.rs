@@ -321,11 +321,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
     for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
-        // S1-P-i08 — the aiStyle-3 wall thud (`Projectile.cs:19571`'s
-        // `PlaySound(0, (int)X, (int)Y)`) is the int-id Dig play: case 0's
-        // `Next(3)` variation + `Next(-10, 11)` pitch ride the same stream
-        // (the `play_place_sound` façade's id-0 arm, `LegacySoundPlayer.cs:
-        // 440-452`); the id-2 styles keep the wave-A façade.
+        // S1-P-i08 + W3-i39 — the aiStyle-3 wall thud (`Projectile.cs:19571`)
+        // and `AI_007`'s latch dig cue (`Projectile.cs:52757`:
+        // `PlaySound(0, i*16, j*16)`) are the int-id Dig play: case 0's
+        // `Next(3)` variation + `Next(-10, 11)*0.01` pitch ride the same
+        // stream, attenuation gate first (the `play_place_sound` façade's
+        // id-0 arm, `LegacySoundPlayer.cs:440-452`, S1-E-21 wave B); the
+        // id-2 styles keep the wave-A façade.
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
         } else {

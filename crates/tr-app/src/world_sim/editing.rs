@@ -1133,6 +1133,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // `weaponDamage` (the class multiplier) and the item's knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
+                // `Item.SetDefaults`' hook epilogue (`Item.cs:48893-48898`):
+                // every hook item (`Main.projHook[shoot]`, aiStyle 7) has
+                // `useStyle = useTime = useAnimation = 0`, so it NEVER fires
+                // through `ItemCheck_Shoot`'s LMB swing — the hook launches
+                // only via `QuickGrapple` (the `controlHook` edge,
+                // `Player.cs:27482-27487`). The port's generic shoot path must
+                // skip the hook projectiles (the `TR_HOOK`/item fire lives in
+                // `world_sim/player.rs`). The aiStyle-7 test is the
+                // authoritative `Main.projHook` (`Main.cs:6620-6624`).
+                if crate::grapple::is_hook_projectile(proj) {
+                    return;
+                }
                 // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
                 // `Player.FreeUpPetsAndMinions` frees the budget at the use
                 // tick (`Player.cs:42780`) BEFORE the spawn, and the

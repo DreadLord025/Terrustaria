@@ -14993,6 +14993,125 @@ Deferred to their own rows: the chain/sprite rendering and the `light` /
 `Minecart.FrameTrack` (the track switch table needs `Tile.FrontTrack` /
 `Tile.BackTrack`, which the decompile does not carry) and the net messages
 (13/17/29).
+
+### The grapple census (W3-i39, code-only — tests written NOT run)
+
+A line-by-line re-read of `AI_007_GrapplingHooks` (`Projectile.cs:52565-52866`),
+`QuickGrapple` (`Player.cs:6296-6478`), `GrappleMovement` (`:22613-22740`) and
+`GetGrapplingForces` (`:22757-22856`) against the port. The hook `UseSound`
+(S1-E-21f, `:6408`) is KEPT untouched. Fixes, each C#-cited:
+
+- **`ai_hook` statement order.** The source runs: dead‖CCed kill (`:52567`) →
+  rotation `atan2 − 1.57f` (`:52577`, the literal 1.57, NOT π/2) → Squirrel
+  banker's quarter-turn snap (`:52581`, `Math.Round` → `round_bankers`) →
+  cracked-brick `Next(16)` break (`:52583-52595`, `nactive()` gate, BEFORE the
+  cap) → 2500 cap (`:52596`) → 256 `+3.9250002f` offset (`:52600`) → 652 7-tick
+  frame machine (`:52615`, `projFrames[652]=6`) → the state machine. The port
+  had the cap before the crack (RNG order), π/2 for the rotation, half-away
+  rounding, and skipped the 256 offset + 652 frames.
+- **The Fly latch scan runs on the distance-flip tick.** The scan (`:52663`)
+  sits INSIDE the `ai[0]==0` block, after the distance if/else — it is NOT
+  re-gated on the state, so a hook that just flipped to Retract still scans and
+  can latch the same tick. The upper bound is EXCLUSIVE (`i < num8`, `:52689`).
+  The port gated the scan on `ai[0]==0` after the flip (missed the same-tick
+  latch) and used an inclusive bound.
+- **The attached re-validation has NO blacklist.** `:52852` calls
+  `CanTileBeLatchedOnTo` only; the port passed the blacklist (a blacklisted tile
+  the hook sits on would wrongly detach).
+- **`can_latch` reads `Tile.nactive()`** (`Tile.cs:240-247`: active bit set AND
+  inactive bit clear) — an actuated solid tile is not latchable. The port checked
+  `active()` only.
+- **The latch dig cue** `PlaySound(0, i*16, j*16)` (`:52757`) rides the
+  `UpdateProjectiles` stream (case-0 `Next(3)` + `Next(-10,11)` pitch,
+  attenuation-gated) via the `wants_sound` → `pending_proj_sounds` drain.
+- **The pull cap has no epsilon** (`:22852-22855`: `num8 > num9 ? num9/num8 : 1`).
+  The port's `dist > 0.001` guard zeroed tiny pulls.
+- **`GrappleMovement`**: `flag`/`flag2` read the PRE-pull velocity (`:22627-22628`,
+  `base.wet` = ANY liquid); the jump-off gate is `flag3 && !controlUp` (`:22717`,
+  NOT `!controlJump`); `GoingDownWithGrapple` is cleared per tick by
+  `ResetEffects` (`:18506`) and SET only on a down pull (`:22655`). The port
+  added `PlayerInput.up` / `Player.control_up` (the Confused swap `:24996-25004`
+  now writes it), the carpet/wing/rocket head (`:22624-22644`), and the reset.
+- **`QuickGrapple` order**: the recycle (`:6416`) reads `num7` of the ORIGINAL
+  `item.shoot` BEFORE the Dual (`:6420`) / Lunar (`:6430`) kind cycles; the spawn
+  reads `item.shootSpeed/damage/knockBack` (`:6413-6415`, not a hardcoded 16/0/0);
+  the blacklist rebuilds at fire (`:6407`); the Lunar scan keeps the FIRST slot on
+  a `timeLeft` tie (`num9 < timeLeft`, strict); the `CCed‖tongued‖dead` gate
+  (`:6298`). The port cycled before recycling, hardcoded the stats, and used
+  `max_by_key` (last-wins tie).
+- **Hook items never fire via LMB.** `Item.SetDefaults`' epilogue
+  (`Item.cs:48893-48898`) zeroes `useStyle/useTime/useAnimation` for every
+  `Main.projHook[shoot]` item, so `ItemCheck_Shoot` never fires them — the hook
+  launches only via `QuickGrapple` (the `controlHook` edge). The port's generic
+  editing shoot path now skips aiStyle-7 projectiles.
+- **`spawn_hook` centres the box** (`Projectile.cs:10876-10877`:
+  `position = X − width/2`); the port passed the center as the top-left.
+- **The Track Hook (403) has no distance row** (`:52648`): its Fly state never
+  distance-retracts (it latches the rail it spawns on, `LaunchMinecartHook`
+  `Player.cs:33553-33559`); `hook_spec(403).max_distance = ∞`.
+- **The blacklist 5x5 track/platform reads have no `active()` gate**
+  (`Framing.GetTileSafely` `:6230`/`:6241` reads `tile.type` directly).
+
+RNG order: the crack `Next(16)` and the latch dig cue ride `UpdateProjectiles`
+(`Main.cs:17775-17777`); the rotation/snap/frames/latch are RNG-free; the
+`QuickGrapple` `UseSound` rides `UpdatePlayers` (kept from S1-E-21f). The crack
+draw stays gated by `nactive() && CrackedBricks` (short-circuit), now before the
+cap — the draw count per tick is unchanged for a live hook.
+
+Deferred (out of grapple-core scope): the 446/646-649 `AddLight`/`PlotTileLine`
+(`:52604-52645`, render seam), the chain rendering, the net messages, the
+`oldStyleParkour` jump-height halving (`:22724`), and the
+`noItems`/`cursed`/mount-`DismountOnItemUse` QuickGrapple gates (`:6326-6341`,
+those player flags are unported).
+
+#### W3-i39 retry — the second-pass census fixes (code-only, tests written NOT run)
+
+A retry worker re-read the landed `48e3bc73` diff line-by-line against the C# and
+fixed the remaining deviations (the wings-4/30 overrides moved OUT of deferred —
+they landed):
+
+- **The fire-gate `return` no longer aborts the player tick.** The port's
+  `if !fire_allowed { return; }` sat inside `update_player`, so a refused budget
+  skipped the rest of `Player.Update` (movement, the mount key, the pull bridge).
+  The C# `return` (`Player.cs:6401`) exits `QuickGrapple` ONLY. The fire tail is
+  now wrapped in the gate's positive form.
+- **The mount dismount sits INSIDE the `CCed‖tongued‖dead` gate.** The port
+  dismounted before the gate; the C# returns at `:6298-6301` before reaching
+  `TryDismount` (`:6334-6337`), so a CCed/tongued/dead player keeps the mount.
+- **`GoingDownWithGrapple` now forces platform fall-through.** The flag was
+  computed but never consumed. `Player.cs:28085-28092` ORs it into `flag31`,
+  which sets `fallThrough`/`ignorePlats` both true for `DryCollision`/
+  `TileCollision`; `move_vanilla` now feeds it (and the pulley) into the
+  collision args, and `SlopingCollision`'s `stairFall` arms on
+  `ignorePlats‖controlDown‖grappling[0]>=0` (`:23679`).
+- **`RemoveAllGrapplingHooks` clears the blacklist + registration.** The C#
+  (`:33562-33574`) calls `ClearGrapplingBlacklist` (`:33563`) and resets
+  `grappling[0] = -1; grapCount = 0` (`:33564-33565`) before the kill sweep. The
+  pool's `remove_all_grappling_hooks` carries all three; the world-sim removal
+  request calls it.
+- **The Webbed (149) buff detaches the hooks.** `Player.cs:11880` calls
+  `RemoveAllGrapplingHooks` in the webbed arm; the port raises the same
+  `release_grappling_hooks` request.
+- **`GrappleMovement` runs `StopVanityActions`** (`:22619` → `:33458-33463`):
+  `sit_up` + `stop_sleeping` (the port carries sitting/sleeping; petting is
+  unported). The wings-4/30 frame overrides (`:22633-22640`) also landed.
+- **The latch recycle runs BEFORE the blacklist rebuild + Queen Slime teleport.**
+  The C# order is recycle (`:52711-52754`) → `UpdateBlacklistedTilesForGrappling`
+  (`:52771`) → teleport (`:52772-52775`); the port had the rebuild/teleport first.
+- **The PlayerFrame centroid averages only the REGISTERED attached hooks**
+  (`grappling[0..grapCount]`, `Player.cs:36497-36503`), not every aiStyle-7 slot —
+  an in-flight hook does not lean the body.
+- **The latch scan bounds use `ToTileCoordinates` faithfully** (`Utils.cs:1809`:
+  `(int)vec >> 4`, no pre-clamp) with the upper clamped to `maxTiles` (not
+  `maxTiles-1`), so the last in-bounds column is scanned; the attached
+  re-validation uses the same `tile_coord`.
+
+RNG order unchanged by the retry: the crack `Next(16)` and the latch dig cue ride
+`UpdateProjectiles`; the `QuickGrapple` `UseSound` rides `UpdatePlayers` (kept).
+6 new `i39_*` witnesses (the fire-gate fall-through is behavioural, witnessed via
+the platform drop; the removal/blacklist/registration, webbed detach, vanity stop,
+scan edge column and `tile_coord` shift).
+
 ## Thorn bushes + the wall-brick conversion tables (M5-SPREAD-2c)
 
 The M5-SPREAD-2 row's deferred "next slice".
