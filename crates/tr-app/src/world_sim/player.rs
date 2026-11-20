@@ -1477,6 +1477,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-d51 — the fast-run trail (`Player.cs:20217-20298`): the dust
+            // arm follows the footstep sound on the same stream — the
+            // source's sound-then-dust order inside `SpawnFastRunParticles`
+            // (which runs in `HorizontalMovement`, BEFORE the jump/dash
+            // chains below).
+            if let Some(burst) = p.take_fast_run_dust() {
+                crate::player_dust::drain_fast_run(app, burst);
+            }
             // S1-E-21f — the extra-jump chain's plays: case 16's one
             // `Next(-10, 11) * 0.01` pitch (`LegacySoundPlayer.cs:851`) rides
             // the `UpdatePlayers` stream after the gate; the Fart's Item-16

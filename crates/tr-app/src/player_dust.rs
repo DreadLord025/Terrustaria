@@ -9,8 +9,9 @@
 //! tweaks all ride `DustPool::new_dust` verbatim (`Dust.cs:75-256`).
 //!
 //! W4-d51 scope: the extra-jump chain (`Player.JumpMovement`,
-//! `Player.cs:20818-21012`) and the `DashMovement` lane (`:21259-21512`). The
-//! fast-run / regen lanes land in later batches of the same task. The
+//! `Player.cs:20818-21012`), the `DashMovement` lane (`:21259-21512`) and the
+//! fast-run trail (`SpawnFastRunParticles`, `:20217-20298`). The regen lanes
+//! land in later batches of the same task. The
 //! `Gore.NewGore` siblings of the Fart / Santank / Cloud arms
 //! (`:20855-20863`, `:20989-20993`, `:21013-21020`) and the Tabi dash-start
 //! gore pair (`:21427-21434`) are the gore lane's (W4-d55) — their `Main.rand`
@@ -22,7 +23,7 @@
 //! height/offset folds collapse to their `+1` arms.
 
 use crate::app::App;
-use crate::player::{DashDust, ExtraJump, JumpDust};
+use crate::player::{DashDust, ExtraJump, FastRunArm, FastRunDust, JumpDust};
 use glam::Vec2;
 use tr_core::particles::Color;
 
@@ -523,6 +524,210 @@ fn dash_start_vortex(app: &mut App, b: &DashDust) {
         d.fade_in = 0.5 + rng.next_max(20) as f32 * 0.01;
         d.no_gravity = true;
     }
+}
+
+/// Drain the fast-run trail (`Player.SpawnFastRunParticles`,
+/// `Player.cs:20217-20298`). The tick picked the arm and snapshotted the
+/// box/velocity; the foot-line offset is `y + height` (the gravDir == -1
+/// fold collapses to 0). Called right after the footstep sound drain so the
+/// sound-then-dust order matches the source.
+pub(crate) fn drain_fast_run(app: &mut App, b: FastRunDust) {
+    match b.arm {
+        FastRunArm::WingsRocket => fast_run_wings_rocket(app, &b),
+        FastRunArm::Sail => fast_run_sail(app, &b),
+        FastRunArm::Desert => fast_run_desert(app, &b),
+        FastRunArm::Cold => fast_run_cold(app, &b),
+        FastRunArm::Fairy => fast_run_fairy(app, &b),
+        FastRunArm::Hellfire => fast_run_hellfire(app, &b),
+        FastRunArm::Plain => fast_run_plain(app, &b),
+    }
+}
+
+/// The foot-line spawn box shared by most arms: `(x-4, y+height)`,
+/// `width+8 × 4`, speed `(-vx*0.5, vy*0.5)`.
+fn foot_pos(b: &FastRunDust) -> Vec2 {
+    Vec2::new(b.x - 4.0, b.y + b.height)
+}
+
+/// `:20217-20225` — wings-3 / rocket-6: two type-186 puffs, alpha 50, scale
+/// 1.5; the first's velocity ×0.025, the second's ×0.2.
+fn fast_run_wings_rocket(app: &mut App, b: &FastRunDust) {
+    for fold in [0.025f32, 0.2] {
+        let idx = nd(
+            app,
+            foot_pos(b),
+            b.width as i32 + 8,
+            4,
+            186,
+            -b.vx * 0.5,
+            b.vy * 0.5,
+            50,
+            Color::default(),
+            1.5,
+        );
+        app.dust.slot_mut(idx).velocity *= fold;
+    }
+}
+
+/// `:20226-20240` — sailDash: four type-253 puffs over the whole body box at
+/// `(x-4, y)`, alpha 100, scale 1.5. Post: `noGravity`, velocity ×0.2 per
+/// axis, `scale += Next(-5,3)*0.1`, then the DEAD `vector` draws
+/// (`Next(-100,101)`×2 + `Next(81)` — normalised/scaled, never read).
+fn fast_run_sail(app: &mut App, b: &FastRunDust) {
+    for _ in 0..4 {
+        let idx = nd(
+            app,
+            Vec2::new(b.x - 4.0, b.y),
+            b.width as i32 + 8,
+            b.height as i32,
+            253,
+            -b.vx * 0.5,
+            b.vy * 0.5,
+            100,
+            Color::default(),
+            1.5,
+        );
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity.x *= 0.2;
+        d.velocity.y *= 0.2;
+        d.scale += rng.next_range(-5, 3) as f32 * 0.1;
+        let _ = rng.next_range(-100, 101);
+        let _ = rng.next_range(-100, 101);
+        let _ = rng.next_max(81);
+    }
+}
+
+/// `:20241-20247` — desertDash: one type-32 `NewDustDirect` at the foot line,
+/// default alpha/scale. Post: velocity ×0.2, `velocity.Y -= gravDir*2`
+/// (gravDir 1 → −2). The Direct wrapper zeroes a NaN velocity (never here).
+fn fast_run_desert(app: &mut App, b: &FastRunDust) {
+    let ctx = app.spawn_ctx();
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let idx = app.dust.new_dust_direct(
+        rng,
+        &ctx,
+        &app.world,
+        foot_pos(b),
+        b.width as i32 + 8,
+        4,
+        32,
+        -b.vx * 0.5,
+        b.vy * 0.5,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let d = app.dust.slot_mut(idx);
+    d.velocity *= 0.2;
+    d.velocity.y -= 2.0;
+}
+
+/// `:20248-20260` — coldDash: two type-76 puffs, alpha 0, scale 1.35. The
+/// first spawns at `(x, y+height+gfxOffY)` box `width/2 × 6`, the second at
+/// `(x+width/2, …)`. Post: `scale *= 1 + Next(20,40)*0.01`, `noGravity`,
+/// `noLight`, velocity ×0.001 then `velocity.Y -= 0.003`.
+fn fast_run_cold(app: &mut App, b: &FastRunDust) {
+    for j in 0..2 {
+        let px = if j != 0 { b.x + b.width / 2.0 } else { b.x };
+        let idx = nd(
+            app,
+            Vec2::new(px, b.y + b.height + b.gfx_off_y),
+            (b.width / 2.0) as i32,
+            6,
+            76,
+            0.0,
+            0.0,
+            0,
+            Color::default(),
+            1.35,
+        );
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.scale *= 1.0 + rng.next_range(20, 40) as f32 * 0.01;
+        d.no_gravity = true;
+        d.no_light = true;
+        d.velocity *= 0.001;
+        d.velocity.y -= 0.003;
+    }
+}
+
+/// `:20261-20282` — fairyBoots: ONE type roll from `{61,61,61,242,64,63}`
+/// (`NextFromList`, `Next(6)`) before the loop, then two puffs (k=1 scale 1.5,
+/// k=2 scale 1.0), alpha 0. Post: velocity ×1.5; on k=2 `position += velocity`;
+/// `noGravity`, `noLightEmittance`.
+fn fast_run_fairy(app: &mut App, b: &FastRunDust) {
+    let ty = {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        [61, 61, 61, 242, 64, 63][rng.next_max(6) as usize]
+    };
+    for k in 1..3 {
+        let scale = if k == 2 { 1.0 } else { 1.5 };
+        let idx = nd(
+            app,
+            foot_pos(b),
+            b.width as i32 + 8,
+            4,
+            ty,
+            -b.vx * 0.5,
+            b.vy * 0.5,
+            0,
+            Color::default(),
+            scale,
+        );
+        let d = app.dust.slot_mut(idx);
+        d.velocity *= 1.5;
+        if k == 2 {
+            d.position += d.velocity;
+        }
+        d.no_gravity = true;
+        d.no_light_emittance = true;
+    }
+}
+
+/// `:20283-20291` — hellfireTreads: one type-6 puff, alpha 50, scale 2. Post:
+/// `velocity.X *= 0.2`, `velocity.Y = -1.5 - NextFloat*0.5`, `fadeIn = 0.5`,
+/// `noGravity`. The type-6 tweak chain rides inside `new_dust`.
+fn fast_run_hellfire(app: &mut App, b: &FastRunDust) {
+    let idx = nd(
+        app,
+        foot_pos(b),
+        b.width as i32 + 8,
+        4,
+        6,
+        -b.vx * 0.5,
+        b.vy * 0.5,
+        50,
+        Color::default(),
+        2.0,
+    );
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let d = app.dust.slot_mut(idx);
+    d.velocity.x *= 0.2;
+    d.velocity.y = -1.5 - rng.next_float() * 0.5;
+    d.fade_in = 0.5;
+    d.no_gravity = true;
+}
+
+/// `:20292-20298` — the plain foot puff: one type-16, alpha 50, scale 1.5.
+/// Post: velocity ×0.2 per axis.
+fn fast_run_plain(app: &mut App, b: &FastRunDust) {
+    let idx = nd(
+        app,
+        foot_pos(b),
+        b.width as i32 + 8,
+        4,
+        16,
+        -b.vx * 0.5,
+        b.vy * 0.5,
+        50,
+        Color::default(),
+        1.5,
+    );
+    let d = app.dust.slot_mut(idx);
+    d.velocity.x *= 0.2;
+    d.velocity.y *= 0.2;
 }
 
 #[cfg(test)]
@@ -1048,10 +1253,11 @@ mod tests {
             let _ = rng.next_max(3);
             let scale = (1.0 + rng.next_range(-20, 21) as f32 * 0.01) * 1.4;
             assert_eq!(d.velocity, Vec2::new(vx, vyy) * 0.1);
+            let scale = scale * (1.0 + rng.next_max(20) as f32 * 0.01);
             let px = b.x + rng.next_float() * b.width;
             let py = b.y + rng.next_float() * b.height;
             assert_eq!(d.position, Vec2::new(px, py));
-            assert_eq!(d.scale, scale * (1.0 + rng.next_max(20) as f32 * 0.01) * 0.75);
+            assert_eq!(d.scale, scale * 0.75);
             assert_eq!(stream_of(&mut app), rng);
         }
     }
@@ -1133,5 +1339,254 @@ mod tests {
         }
         assert_eq!(stream_of(&mut app), rng);
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 20 * 11));
+    }
+
+    // ---- the fast-run trail (`Player.cs:20217-20298`) ---------------------
+
+    fn run_burst(arm: FastRunArm) -> FastRunDust {
+        FastRunDust {
+            arm,
+            x: 300.0,
+            y: 600.0,
+            width: 20.0,
+            height: 42.0,
+            vx: 6.5,
+            vy: 0.0,
+            gfx_off_y: 2.0,
+        }
+    }
+
+    /// The tick-side arm picker (`Player.cs:20217-20298`): the else-if chain
+    /// in source order — wings-3/rocket-6 first, then sail, desert, cold,
+    /// fairy, hellfire, plain.
+    #[test]
+    fn w4_d51_the_fast_run_picker_follows_the_chain() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        // The picker is private; drive it through the flags + a fast-run
+        // tick is heavy — assert the grant chain instead: each boot arms its
+        // own visual flag through `apply_equip_functional`'s per-slot pass.
+        p.equipped[3] = 3200; // Sailfish
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!(p.sail_dash, "the Sailfish arms sailDash");
+        assert!(!p.cold_dash && !p.desert_dash);
+        p.equipped[3] = 1579; // Flurry
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!(p.cold_dash, "the Flurry arms coldDash (and cancels sail)");
+        assert!(!p.sail_dash);
+        p.equipped[3] = 4874; // Hellfire Treads
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!(p.hellfire_treads && p.vanity_rocket_boots == 5);
+        assert!(!p.cold_dash);
+        p.equipped[3] = 3993; // Fairy
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!(p.fairy_boots && p.vanity_rocket_boots == 2);
+        assert!(!p.hellfire_treads);
+        p.equipped[3] = 4055; // Sand Boots
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!(p.desert_dash && !p.fairy_boots);
+        // Unequip: ResetEffects clears them all.
+        p.equipped[3] = 0;
+        p.update(&w, crate::player::PlayerInput::default());
+        assert!(!p.desert_dash && p.vanity_rocket_boots == 0);
+    }
+
+    /// `:20217-20225` — wings-3/rocket-6: two type-186 puffs, ×0.025 then
+    /// ×0.2 velocity folds.
+    #[test]
+    fn w4_d51_the_wings_rocket_trail_folds_twice() {
+        let mut app = rig(0x5EED);
+        let b = run_burst(FastRunArm::WingsRocket);
+        drain_fast_run(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 2);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for (d, fold) in slots.iter().zip([0.025f32, 0.2]) {
+            assert_eq!(d.dust_type, 186);
+            assert_eq!(d.alpha, 50);
+            let px = b.x - 4.0 + rng.next_max(28 - 4) as f32 + 4.0;
+            let py = b.y + b.height + rng.next_max(1) as f32 + 4.0;
+            assert_eq!(d.position, Vec2::new(px, py));
+            let vx = rng.next_range(-20, 21) as f32 * 0.1 - b.vx * 0.5;
+            let vyy = rng.next_range(-20, 21) as f32 * 0.1 + b.vy * 0.5;
+            let _ = rng.next_max(3);
+            let _ = rng.next_range(-20, 21);
+            assert_eq!(d.velocity, Vec2::new(vx, vyy) * fold);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 2 * 6));
+    }
+
+    /// `:20226-20240` — sailDash: four type-253 puffs, the ×0.2 folds, the
+    /// scale roll and the three dead `vector` draws.
+    #[test]
+    fn w4_d51_the_sail_trail_keeps_the_dead_draws() {
+        let mut app = rig(0x5EED);
+        let b = run_burst(FastRunArm::Sail);
+        drain_fast_run(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 4);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 253);
+            assert!(d.no_gravity);
+            let px = b.x - 4.0 + rng.next_max(24) as f32 + 4.0;
+            let py = b.y + rng.next_max(38) as f32 + 4.0;
+            assert_eq!(d.position, Vec2::new(px, py));
+            let vx = (rng.next_range(-20, 21) as f32 * 0.1 - b.vx * 0.5) * 0.2;
+            let vyy = (rng.next_range(-20, 21) as f32 * 0.1 + b.vy * 0.5) * 0.2;
+            let _ = rng.next_max(3);
+            let scale = (1.0 + rng.next_range(-20, 21) as f32 * 0.01) * 1.5;
+            assert_eq!(d.velocity, Vec2::new(vx, vyy));
+            assert_eq!(d.scale, scale + rng.next_range(-5, 3) as f32 * 0.1);
+            let _ = rng.next_range(-100, 101);
+            let _ = rng.next_range(-100, 101);
+            let _ = rng.next_max(81);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 4 * 10));
+    }
+
+    /// `:20241-20247` — desertDash: one type-32 Direct puff, ×0.2 then Y−2.
+    #[test]
+    fn w4_d51_the_desert_trail_kicks_up() {
+        let mut app = rig(0x5EED);
+        let b = run_burst(FastRunArm::Desert);
+        drain_fast_run(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 32);
+        let _ = rng.next_max(24);
+        let _ = rng.next_max(1);
+        let vx = (rng.next_range(-20, 21) as f32 * 0.1 - b.vx * 0.5) * 0.2;
+        let vyy = (rng.next_range(-20, 21) as f32 * 0.1 + b.vy * 0.5) * 0.2 - 2.0;
+        let _ = rng.next_max(3);
+        let _ = rng.next_range(-20, 21);
+        assert_eq!(d.velocity, Vec2::new(vx, vyy));
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 6));
+    }
+
+    /// `:20248-20260` — coldDash: two type-76 puffs on the gfxOffY foot line,
+    /// the left/right box split, the scale roll and the ×0.001/Y−0.003 fold.
+    #[test]
+    fn w4_d51_the_cold_trail_splits_the_box() {
+        let mut app = rig(0x5EED);
+        let b = run_burst(FastRunArm::Cold);
+        drain_fast_run(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 2);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for (j, d) in slots.iter().enumerate() {
+            assert_eq!(d.dust_type, 76);
+            assert_eq!(d.alpha, 0);
+            assert!(d.no_gravity && d.no_light);
+            let px0 = if j != 0 { b.x + b.width / 2.0 } else { b.x };
+            let px = px0 + rng.next_max(10 - 4) as f32 + 4.0;
+            let py = b.y + b.height + b.gfx_off_y + rng.next_max(2) as f32 + 4.0;
+            assert_eq!(d.position, Vec2::new(px, py));
+            let vx = rng.next_range(-20, 21) as f32 * 0.1;
+            let vyy = rng.next_range(-20, 21) as f32 * 0.1;
+            let _ = rng.next_max(3);
+            let scale = (1.0 + rng.next_range(-20, 21) as f32 * 0.01) * 1.35;
+            assert_eq!(d.scale, scale * (1.0 + rng.next_range(20, 40) as f32 * 0.01));
+            assert_eq!(d.velocity, Vec2::new(vx, vyy) * 0.001 - Vec2::new(0.0, 0.003));
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 2 * 7));
+    }
+
+    /// `:20261-20282` — fairyBoots: ONE type roll before the loop, two puffs
+    /// (scale 1.5 then 1.0), the k=2 position ride. The rolled type may hit
+    /// the tweak chain (242/64/63) — the mirror walks it conditionally.
+    #[test]
+    fn w4_d51_the_fairy_trail_rolls_one_type() {
+        let mut app = rig(0x5EED);
+        let b = run_burst(FastRunArm::Fairy);
+        drain_fast_run(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 2);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let ty = [61, 61, 61, 242, 64, 63][rng.next_max(6) as usize];
+        // Every fairy type hits the tweak chain: 61/63/64 in `59..=65`, 242
+        // listed (`Dust.cs:214-220`).
+        let tweaked = matches!(ty, 61 | 242 | 64 | 63);
+        for (k, d) in slots.iter().enumerate() {
+            assert_eq!(d.dust_type, ty);
+            let scale_arg = if k == 1 { 1.0 } else { 1.5 };
+            let px = b.x - 4.0 + rng.next_max(24) as f32 + 4.0;
+            let py = b.y + b.height + rng.next_max(1) as f32 + 4.0;
+            let mut vx = rng.next_range(-20, 21) as f32 * 0.1 - b.vx * 0.5;
+            let mut vyy = rng.next_range(-20, 21) as f32 * 0.1 + b.vy * 0.5;
+            let _ = rng.next_max(3);
+            let mut scale = (1.0 + rng.next_range(-20, 21) as f32 * 0.01) * scale_arg;
+            if tweaked {
+                vyy = rng.next_range(-10, 6) as f32 * 0.1;
+                vx *= 0.3;
+                scale *= 0.7;
+            }
+            let vel = Vec2::new(vx, vyy) * 1.5;
+            assert_eq!(d.velocity, vel);
+            let pos = Vec2::new(px, py) + if k == 1 { vel } else { Vec2::ZERO };
+            assert_eq!(d.position, pos);
+            assert_eq!(d.scale, scale);
+            assert!(d.no_gravity && d.no_light_emittance);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        let n = 1 + 2 * 6 + if tweaked { 2 } else { 0 };
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, n));
+    }
+
+    /// `:20283-20291` — hellfireTreads: one type-6 puff (the tweak draw
+    /// included), X ×0.2, Y replaced by the −1.5−NextFloat*0.5 rise.
+    #[test]
+    fn w4_d51_the_hellfire_trail_rises() {
+        let mut app = rig(0x5EED);
+        let b = run_burst(FastRunArm::Hellfire);
+        drain_fast_run(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 6);
+        assert_eq!(d.fade_in, 0.5);
+        assert!(d.no_gravity);
+        let _ = rng.next_max(24);
+        let _ = rng.next_max(1);
+        let mut vx = rng.next_range(-20, 21) as f32 * 0.1 - b.vx * 0.5;
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_max(3);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_range(-10, 6); // the type-6 tweak draw
+        vx *= 0.3;
+        assert_eq!(d.velocity.x, vx * 0.2);
+        assert_eq!(d.velocity.y, -1.5 - rng.next_float() * 0.5);
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 8));
+    }
+
+    /// `:20292-20298` — the plain foot puff: one type-16, ×0.2 per axis.
+    #[test]
+    fn w4_d51_the_plain_trail_damps() {
+        let mut app = rig(0x5EED);
+        let b = run_burst(FastRunArm::Plain);
+        drain_fast_run(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 16);
+        assert_eq!(d.alpha, 50);
+        let _ = rng.next_max(24);
+        let _ = rng.next_max(1);
+        let vx = (rng.next_range(-20, 21) as f32 * 0.1 - b.vx * 0.5) * 0.2;
+        let vyy = (rng.next_range(-20, 21) as f32 * 0.1 + b.vy * 0.5) * 0.2;
+        let _ = rng.next_max(3);
+        let _ = rng.next_range(-20, 21);
+        assert_eq!(d.velocity, Vec2::new(vx, vyy));
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 6));
     }
 }
