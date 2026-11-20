@@ -39269,7 +39269,10 @@ NOTHING. The anniversary 12/955 arm draws BOTH SelectRandom picks
 (`:23975-23978`), the second value wins. The `:23990` inner gate lists
 726 twice and omits 724 — the wiring dispatch must reproduce that quirk.
 
-Wave A (sites 1-10): `projectile_gore_a.rs`, 5 witnesses written not run.
+Wave A (sites 1-11): `projectile_gore_a.rs`, 5 witnesses written not run.
+The `:24037` type-9 trail was missed by the first wave-A pass and filled
+in the gap commit — the grep census (165 sites) is authoritative over the
+wave tables; the later waves' site numbers shift by one accordingly.
 Wave B (sites 11-20): `projectile_gore_b.rs`, 5 witnesses written not run.
 `NextVector2Square`/`RotatedByRandom` draw TWO `NextDouble` each
 (`Utils.cs:1251-1254`/`:1697-1700`) — NOT `NextFloat`; the witnesses replay

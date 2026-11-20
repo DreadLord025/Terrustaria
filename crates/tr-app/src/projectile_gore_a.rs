@@ -1,6 +1,7 @@
-//! `Projectile.cs`'s `Gore.NewGore*` spawn sites — wave A: the FIRST 10
+//! `Projectile.cs`'s `Gore.NewGore*` spawn sites — wave A: the FIRST 11
 //! sites in source order (`:17452`, `:22155`, `:23312`-`:23402`,
-//! `:23965`-`:24060`).
+//! `:23965`-`:24060`). The `:24037` type-9 trail was missed by the first
+//! wave-A pass and filled in the gap commit (the census is authoritative).
 //!
 //! The pool itself is already ported (`tr_core::gore::GorePool::new_gore`,
 //! S1-E-4); this module is the projectile-side spawn table the pool feeds.
@@ -10,7 +11,7 @@
 //! precedent. The NPC-file sites are d55/e5/f10's; the `Main.cs` world and
 //! `Player.cs` sites are g17's. Every site here lives in `Projectile.cs`.
 //!
-//! ## Scope — the first 10 gore sites (source order)
+//! ## Scope — the first 11 gore sites (source order)
 //!
 //! | # | C# site | arm |
 //! | --- | --- | --- |
@@ -23,9 +24,10 @@
 //! | 7 | `:23980` | `AI()` type 12/955 trail (anniversary arm) |
 //! | 8 | `:23995` | `AI()` type 725/726/1133 trail |
 //! | 9 | `:24018` | `AI()` type 723 trail |
-//! | 10 | `:24060` | `AI()` `ai[1] == 1`/type 92 trail |
+//! | 10 | `:24037` | `AI()` type 9 trail (the gap fill) |
+//! | 11 | `:24060` | `AI()` `ai[1] == 1`/type 92 trail |
 //!
-//! Sites 11+ (`:24267` onward) are wave B (`projectile_gore_b.rs`) and
+//! Sites 12+ (`:24267` onward) are wave B (`projectile_gore_b.rs`) and
 //! later; the full 165-site census lives in docs/ANALYSIS.md
 //! "The Projectile gore sites (W4-g16)".
 //!
@@ -238,7 +240,23 @@ pub fn ai723_trail(
     }
 }
 
-/// Site 10 — the `AI()` `ai[1] == 1 || type == 92` trail gore
+/// Site 10 — the `AI()` type-9 trail gore (`Projectile.cs:24034-24038`):
+/// the screen gate, `Next(20)`, `Next(16, 18)` at velocity ×0.2. The
+/// `Next(4)` dust gate after is the dust lane's. (The wave-A gap fill.)
+pub fn ai9_trail(
+    p: &Projectile,
+    ctx: &TrailCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    if ctx.on_screen && rng.next_max(20) == 0 {
+        let ty = rng.next_range(16, 18);
+        gore.new_gore(rng, world, p.pos, p.vel * 0.2, ty, 1.0);
+    }
+}
+
+/// Site 11 — the `AI()` `ai[1] == 1 || type == 92` trail gore
 /// (`Projectile.cs:24058-24061`): the `Next(20)` gate (NO screen gate on
 /// this arm), `Next(16, 18)` at velocity ×0.2. The `Next(10)` dust gate
 /// before it is the dust lane's.
@@ -459,6 +477,21 @@ mod tests {
         let mut gore = GorePool::new();
         let mut rng = UnifiedRandom::new(seed);
         ai_style2_gore(&p, &mut gore, &mut rng, &w);
+        let mut twin = UnifiedRandom::new(seed);
+        let _ = twin.next_max(20);
+        let ty = twin.next_range(16, 18);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek());
+        assert_eq!(gore.slot(0).gore_type, ty);
+        // Type 9 (the gap fill): Next(20) + Next(16,18) + kicks, screen-gated.
+        let mut seed = 0;
+        while UnifiedRandom::new(seed).next_max(20) != 0 {
+            seed += 1;
+        }
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(seed);
+        ai9_trail(&p, &on, &mut gore, &mut rng, &w);
         let mut twin = UnifiedRandom::new(seed);
         let _ = twin.next_max(20);
         let ty = twin.next_range(16, 18);
