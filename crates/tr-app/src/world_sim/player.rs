@@ -1561,6 +1561,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some((mouth, width)) = p.take_drown_bubble() {
                 crate::player_dust::drain_drown_bubble(app, mouth, width);
             }
+            // W4-f3 — the floor dust (`Player.cs:23790-24043`, `MakeFloorDust`):
+            // the `FloorVisuals` call (`:28271`) queues the floor-tile snapshot;
+            // the drain replays the per-iteration gate rolls + the NewDust chain
+            // on the `UpdatePlayers` stream (the shimmer orchestrator + Item177
+            // cue are cited seams).
+            if let Some(burst) = p.take_floor_dust() {
+                crate::player_dust::drain_floor_dust(app, burst);
+            }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.
             if let Some((idx, sx, sy)) = p.take_flap_sound() {

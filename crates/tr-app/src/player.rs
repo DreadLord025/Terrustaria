@@ -694,6 +694,29 @@ pub(crate) struct StonedDust {
     pub(crate) height: f32,
 }
 
+/// One queued `MakeFloorDust` request (`Player.cs:23790-24043`): the tick
+/// snapshots the floor tile (kind / frameX / frameY / paint), the `Falling`
+/// flag and the box/velocity at the C# read moment; the drain
+/// (`player_dust::drain_floor_dust`) replays the per-iteration gate rolls + the
+/// `Dust.NewDust` chain on the `UpdatePlayers` stream. `falling` is the C#'s
+/// `velocity.Y > gravity || velocity.Y < -gravity` latch (`:28073-28081`); the
+/// `Item177` landing cue (`:23830`, tiles 666/712) and the shimmer-block
+/// orchestrator arm (`:23792-23818`) are cited seams.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FloorDust {
+    pub(crate) kind: i32,
+    pub(crate) frame_x: i32,
+    pub(crate) frame_y: i32,
+    pub(crate) paint: i32,
+    pub(crate) falling: bool,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2106,6 +2129,10 @@ pub struct Player {
     /// `(mouth position, base.width)` when the `Next(20)` gate passes, drained on
     /// the `UpdatePlayers` stream (`player_dust::drain_drown_bubble`).
     pending_drown_bubble: Option<(Vec2, f32)>,
+    /// W4-f3 — the tick's queued `MakeFloorDust` request (`Player.cs:23790-24043`):
+    /// one snapshot per `FloorVisuals` call (dry, non-cart), drained on the
+    /// `UpdatePlayers` stream (`player_dust::drain_floor_dust`).
+    pending_floor_dust: Option<FloorDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3048,6 +3075,7 @@ impl Player {
             pending_double_jump_dust: None,
             pending_stoned_dust: None,
             pending_drown_bubble: None,
+            pending_floor_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3679,6 +3707,13 @@ impl Player {
         self.pending_drown_bubble.take()
     }
 
+    /// W4-f3 — takes the `MakeFloorDust` snapshot (`Player.cs:23790-24043`);
+    /// the caller owns `Main.dust` and the `UpdatePlayers` stream
+    /// (`player_dust::drain_floor_dust`).
+    pub(crate) fn take_floor_dust(&mut self) -> Option<FloorDust> {
+        self.pending_floor_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3870,6 +3905,7 @@ impl Player {
         self.pending_double_jump_dust = None;
         self.pending_stoned_dust = None;
         self.pending_drown_bubble = None;
+        self.pending_floor_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -7933,7 +7969,11 @@ impl Player {
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
         // the movement block reads the flags next tick (one tick stale).
         if self.vy == 0.0 && !grappling {
-            self.floor_visuals(world);
+            // `Player.cs:28073-28081`: the `falling` latch — `velocity.Y` beyond
+            // ±gravity. At rest (vy == 0) it is false; the `TryBouncingBlocks`
+            // call site (`:34861`) is unported, so only the rest path rides here.
+            let falling = self.vy > gravity || self.vy < -gravity;
+            self.floor_visuals(world, falling);
         }
 
         self.update_survival(world, rng);
@@ -10944,23 +10984,24 @@ impl Player {
 
     /// `Player.FloorVisuals` (`Player.cs:23708-23743`) + `GetFloorTile`
     /// (`:23755-23783`): the tile row at the feet, center column first, then
-    /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
-    /// the slope dust carve-out stay with the particle tasks.
-    fn floor_visuals(&mut self, world: &World) {
+    /// the neighbors, solid tiles only. W4-f3: the slope carve-out (`:23736`)
+    /// and the dry/non-cart `MakeFloorDust` call (`:23740-23742`) now ride here;
+    /// the buff-120 grant (`:23732-23735`, tiles 666/712) is a cited seam.
+    fn floor_visuals(&mut self, world: &World, falling: bool) {
         let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
         // the live hitbox height (the mount framework's equip; the cart's 52).
         let y = ((self.y + self.body_height()) / TILE_PX) as i32;
-        let mut kind = None;
+        let mut floor: Option<tr_core::tile::Tile> = None;
         for tx in [x, x - 1, x + 1] {
             if let Some(t) = world.tile(tx, y) {
                 if t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind) {
-                    kind = Some(t.kind);
+                    floor = Some(*t);
                     break;
                 }
             }
         }
-        let Some(kind) = kind else {
+        let Some(tile) = floor else {
             self.sticky = false;
             self.slippy = false;
             self.slippy2 = false;
@@ -10968,16 +11009,56 @@ impl Player {
             self.running_on_sand = false;
             return;
         };
+        let kind = tile.kind as i32;
         // `Player.cs:23727-23731`: cobweb 229, the IceSkateSlippery set
         // (`TileID.cs:481`), FrozenSlimeBlock 197, Asphalt 198, and the sand
         // conversions (`TileID.cs:92-94`).
         self.sticky = kind == 229;
-        self.slippy = tr_core::tiledata::SET_ICE_SKATE_SLIPPERY.has(kind);
+        self.slippy = tr_core::tiledata::SET_ICE_SKATE_SLIPPERY.has(tile.kind);
         self.slippy2 = kind == 197;
         self.powerrun = kind == 198;
-        self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
-            || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
-            || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+        self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(tile.kind)
+            || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(tile.kind)
+            || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(tile.kind);
+        // `Player.cs:23736-23739`: a slope in the three-tile window carves the
+        // dust kind out (the flags above keep the real tile).
+        let mut dust_kind = kind;
+        let sloped = [x - 1, x, x + 1]
+            .iter()
+            .any(|&tx| world.tile(tx, y).map_or(false, |t| t.slope() != 0));
+        if sloped {
+            dust_kind = -1;
+        }
+        // `Player.cs:23740-23742`: `!base.wet && !mount.Cart` → MakeFloorDust.
+        // The port's `wet` is water-only (the C#'s `base.wet` is the any-liquid
+        // union); the cart gate uses the mount's cart flag.
+        let cart = self.mount.is_active() && crate::mount::is_cart(self.mount.kind());
+        if !self.wet && !cart {
+            self.make_floor_dust(falling, dust_kind, tile.frame_x as i32, tile.frame_y as i32, tile.paint() as i32);
+        }
+    }
+
+    /// `Player.MakeFloorDust` (`Player.cs:23790-24043`): the floor-tile dust.
+    /// The tick snapshots the tile + box/velocity + `Falling` flag; the drain
+    /// (`player_dust::drain_floor_dust`) replays the per-iteration gate rolls +
+    /// the `Dust.NewDust` chain on the `UpdatePlayers` stream. The shimmer-block
+    /// orchestrator arm (`:23792-23818`, tiles 659/667) is a cited seam (the
+    /// ParticleOrchestrator is unported — its 4 draws stay with that lane); the
+    /// `Item177` landing cue (`:23830`, tiles 666/712) is an audio seam.
+    fn make_floor_dust(&mut self, falling: bool, kind: i32, frame_x: i32, frame_y: i32, paint: i32) {
+        self.pending_floor_dust = Some(FloorDust {
+            kind,
+            frame_x,
+            frame_y,
+            paint,
+            falling,
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            vx: self.vx,
+            vy: self.vy,
+        });
     }
 
     /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read

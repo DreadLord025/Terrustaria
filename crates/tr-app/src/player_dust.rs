@@ -29,7 +29,7 @@
 //! `Main.rand` draw is a documented skip here.
 
 use crate::app::App;
-use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, JumpDust, StonedDust};
+use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, StonedDust};
 use glam::Vec2;
 use tr_core::particles::Color;
 
@@ -977,6 +977,152 @@ pub(crate) fn drain_stoned_dust(app: &mut App, b: StonedDust) {
 /// `DustPool::new_dust` verbatim (`Dust.cs:248-250`).
 pub(crate) fn drain_drown_bubble(app: &mut App, pos: Vec2, width: f32) {
     nd(app, pos, width as i32 - 8, 8, 34, 0.0, 0.0, 0, Color::default(), 1.2);
+}
+
+// ---- W4-f3: MakeFloorDust (`Player.cs:23790-24043`) -------------------------
+
+/// The floor-tile → dust-type map (`Player.cs:23836-23920`), default 76.
+fn floor_dust_type(kind: i32, frame_y: i32) -> i32 {
+    let platform49 = kind == 19 && frame_y / 18 == 49;
+    match kind {
+        666 | 712 => 322,
+        53 => 32,
+        189 => 16,
+        19 if platform49 => 16,
+        717 => 326,
+        718 => 327,
+        719 => 328,
+        0 => 0,
+        123 => 53,
+        57 => 36,
+        112 => 14,
+        234 => 122,
+        116 => 51,
+        196 | 460 => 108,
+        193 | 197 => 4,
+        195 | 199 => 5,
+        229 => 153,
+        371 => 243,
+        25 => 37,
+        _ => 76,
+    }
+}
+
+/// The floor-dust allow-list (`Player.cs:23819-23823`): the kinds that spawn
+/// dust at all (the platform-49 carve-out included).
+fn floor_dust_allowed(kind: i32, frame_y: i32) -> bool {
+    let platform49 = kind == 19 && frame_y / 18 == 49;
+    matches!(
+        kind,
+        147 | 25 | 53 | 189 | 0 | 123 | 57 | 112 | 116 | 196 | 193 | 195 | 197
+            | 199 | 229 | 234 | 371 | 460 | 666 | 712 | 717 | 718 | 719
+    ) || platform49
+}
+
+/// Drain the `MakeFloorDust` request (`Player.cs:23790-24043`). The shimmer-block
+/// orchestrator arm (`:23792-23818`, tiles 659/667) is a cited seam (the
+/// ParticleOrchestrator is unported); the `Item177` landing cue (`:23830`) is an
+/// audio seam. The per-iteration gate rolls + the `Dust.NewDust` chain ride the
+/// `UpdatePlayers` stream in source order.
+pub(crate) fn drain_floor_dust(app: &mut App, b: FloorDust) {
+    if !floor_dust_allowed(b.kind, b.frame_y) {
+        return;
+    }
+    let num2 = if b.falling { 20 } else { 1 };
+    for _ in 0..num2 {
+        // `:23837-23844`: the 666/712 painted-tile break (no draws).
+        if (b.kind == 666 || b.kind == 712) && b.paint != 0 {
+            break;
+        }
+        let num3 = floor_dust_type(b.kind, b.frame_y);
+        let mut flag3 = true;
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        // `:23921-23944`: the per-type gate rolls (only the matching arm draws).
+        if num3 == 32 && rng.next_max(2) == 0 {
+            flag3 = false;
+        }
+        if num3 == 14 && rng.next_max(2) == 0 {
+            flag3 = false;
+        }
+        if num3 == 51 && rng.next_max(2) == 0 {
+            flag3 = false;
+        }
+        if num3 == 36 && rng.next_max(2) == 0 {
+            flag3 = false;
+        }
+        if num3 == 0 && rng.next_max(3) != 0 {
+            flag3 = false;
+        }
+        if num3 == 53 && rng.next_max(3) != 0 {
+            flag3 = false;
+        }
+        // `:23945-23957`: the per-kind colour.
+        let color = match b.kind {
+            193 => Color::new(30, 100, 255, 100),
+            197 => Color::new(97, 200, 255, 100),
+            460 => Color::new(100, 150, 130, 100),
+            _ => Color::default(),
+        };
+        // `:23958-23965`: the walking gate (not falling) — `Next(100)`.
+        if !b.falling {
+            let num4 = b.vx.abs() / 3.0;
+            if rng.next_max(100) as f32 > num4 * 100.0 {
+                flag3 = false;
+            }
+        }
+        if !flag3 {
+            continue;
+        }
+        // `:23970-23982`: the clamped vx + the walking-effects gate (no draws).
+        let num5 = b.vx.clamp(-6.0, 6.0);
+        let walking = b.vx.abs() + b.vy.abs() > 1.0;
+        if !(walking || b.falling) {
+            continue;
+        }
+        // `:23983`: the NewDust (6 default draws), then the post-arms.
+        let pos = Vec2::new(b.x, b.y + b.height - 2.0);
+        let idx = nd(app, pos, b.width as i32, 6, num3, 0.0, 0.0, 50, color, 1.0);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        if num3 == 76 {
+            d.scale += rng.next_max(3) as f32 * 0.1;
+            d.no_light = true;
+        }
+        if matches!(num3, 16 | 108 | 153 | 326 | 327 | 328) {
+            d.scale += rng.next_max(6) as f32 * 0.1;
+        }
+        if num3 == 37 {
+            d.scale += 0.25;
+            d.alpha = 50;
+        }
+        if num3 == 5 {
+            d.scale += rng.next_range(2, 8) as f32 * 0.1;
+        }
+        d.no_gravity = true;
+        if num3 == 322 {
+            if rng.next_max(4) == 0 {
+                d.no_gravity = false;
+                d.scale *= 1.1;
+            } else {
+                d.scale *= 1.2;
+            }
+        }
+        if num2 > 1 {
+            d.velocity.x *= 1.2;
+            d.velocity.y *= 0.8;
+            d.velocity.y -= 1.0;
+            d.velocity *= 0.8;
+            d.scale += rng.next_max(3) as f32 * 0.1;
+            d.velocity.x = (d.position.x - (b.x + b.width * 0.5)) * 0.2;
+            if d.velocity.y > 0.0 {
+                d.velocity.y *= -1.0;
+            }
+            d.velocity.x += num5 * 0.3;
+        } else {
+            d.velocity *= 0.2;
+        }
+        d.position.x -= num5;
+    }
 }
 
 #[cfg(test)]
@@ -2040,5 +2186,112 @@ mod tests {
         assert!(live(&app).is_empty(), "the dry probe kills the type-34 bubble");
         assert_eq!(stream_of(&mut app), rng);
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 6));
+    }
+
+    // ---- W4-f3: MakeFloorDust witnesses -------------------------------------
+
+    fn floor_burst(kind: i32, falling: bool, vx: f32) -> FloorDust {
+        FloorDust {
+            kind,
+            frame_x: 0,
+            frame_y: 0,
+            paint: 0,
+            falling,
+            x: 300.0,
+            y: 600.0,
+            width: 20.0,
+            height: 42.0,
+            vx,
+            vy: 0.0,
+        }
+    }
+
+    /// `:23836` + `:23983-24037` — a plain snow floor (147 → type 76), walking:
+    /// one puff, the `Next(100)` walking gate + the `Next(3)` scale arm.
+    #[test]
+    fn w4_f3_the_snow_floor_puffs_one_type_76() {
+        let mut app = rig(0x5EED);
+        let b = floor_burst(147, false, 3.0);
+        drain_floor_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        // The walking gate: Next(100) > |vx|/3*100 = 100 → never refuses at vx 3.
+        let _ = rng.next_max(100);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 76);
+        assert!(d.no_light);
+        assert!(d.no_gravity);
+        let (v, mut scale) = default_six(&mut rng, b.width as i32, 6, 0.0, 0.0, 1.0);
+        scale += rng.next_max(3) as f32 * 0.1;
+        assert_eq!(d.scale, scale);
+        assert_eq!(d.velocity, v * 0.2);
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:23845-23847` + `:23921` — a sand floor (53 → type 32): the `Next(2)`
+    /// gate can refuse the puff; the walking gate still draws.
+    #[test]
+    fn w4_f3_the_sand_floor_gates_on_next_two() {
+        let mut app = rig(0x5EED);
+        let b = floor_burst(53, false, 3.0);
+        drain_floor_dust(&mut app, b);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let gate = rng.next_max(2);
+        let _ = rng.next_max(100); // the walking gate draws regardless
+        if gate == 0 {
+            assert!(live(&app).is_empty(), "Next(2)==0 refuses the sand puff");
+        } else {
+            let slots = live(&app);
+            assert_eq!(slots.len(), 1);
+            assert_eq!(slots[0].dust_type, 32);
+            let _ = default_six(&mut rng, b.width as i32, 6, 0.0, 0.0, 1.0);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:23825-23827` + `:24019-24031` — a falling landing on snow: 20 puffs,
+    /// the falling velocity post-arms (no walking gate).
+    #[test]
+    fn w4_f3_the_falling_landing_bursts_twenty() {
+        let mut app = rig(0x5EED);
+        let b = floor_burst(147, true, 3.0);
+        drain_floor_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 20);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let num5 = b.vx.clamp(-6.0, 6.0);
+        for d in &slots {
+            assert_eq!(d.dust_type, 76);
+            let (v, mut scale) = default_six(&mut rng, b.width as i32, 6, 0.0, 0.0, 1.0);
+            scale += rng.next_max(3) as f32 * 0.1; // the 76 arm
+            // The falling post-arms (`:24019-24031`).
+            let mut vel = v;
+            vel.x *= 1.2;
+            vel.y *= 0.8;
+            vel.y -= 1.0;
+            vel *= 0.8;
+            scale += rng.next_max(3) as f32 * 0.1;
+            vel.x = (d.position.x - (b.x + b.width * 0.5)) * 0.2;
+            if vel.y > 0.0 {
+                vel.y *= -1.0;
+            }
+            vel.x += num5 * 0.3;
+            assert_eq!(d.scale, scale);
+            assert_eq!(d.velocity, vel);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:23837-23844` — a painted shimmer-adjacent tile (666, paint != 0) breaks
+    /// the loop before any draw.
+    #[test]
+    fn w4_f3_the_painted_666_breaks_without_draws() {
+        let mut app = rig(0x5EED);
+        let mut b = floor_burst(666, true, 3.0);
+        b.paint = 5;
+        drain_floor_dust(&mut app, b);
+        assert!(live(&app).is_empty());
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 0));
     }
 }
