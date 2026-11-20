@@ -41,7 +41,8 @@ pub(crate) struct WorldEvents {
     pub genuine_party: bool,
     /// `NPC.freeCake` (`BirthdayParty.cs:106`) — the Party Girl's cake
     /// gift latch: a natural party sets it, the FreeCakeDialogue's
-    /// `GetChatAndClearCondition` consumes it (`talk_to_npc`).
+    /// `GetChatAndClearCondition` consumes it (`talk_to_npc`), and EVERY
+    /// dusk clears it (`Main.cs:65222`, `world_sim/clock.rs`).
     pub free_cake: bool,
     /// `BirthdayParty.PartyDaysOnCooldown`.
     pub party_days_on_cooldown: i32,
@@ -320,7 +321,7 @@ pub(crate) fn world_clear(ev: &mut WorldEvents) {
     ev.party_days_on_cooldown = 0;
     ev.celebrating_npcs.clear();
     ev.was_celebrating = false;
-    // `NPC.freeCake = false` (`NPC.cs:95165`, the SetDefaults family).
+    // `NPC.freeCake = false` (`WorldGen.cs:6945`, the clearWorld family).
     ev.free_cake = false;
     // The ritual's `delay`/`recheck` are NOT in the WorldClear family — they
     // ride the world-file load (`WorldFile.cs:163`'s `_tempCultistDelay`
@@ -444,7 +445,7 @@ mod tests {
         assert!(!ev.manual_lanterns && !ev.genuine_lanterns);
         assert_eq!(ev.lantern_nights_on_cooldown, 0);
         assert!(!ev.manual_party && !ev.genuine_party);
-        assert!(!ev.free_cake, "`NPC.cs:95165`");
+        assert!(!ev.free_cake, "`WorldGen.cs:6945`");
         assert!(ev.celebrating_npcs.is_empty());
         // The ritual's delay survives the clear (the world-file restore owns
         // it — `WorldFile.cs:163`).

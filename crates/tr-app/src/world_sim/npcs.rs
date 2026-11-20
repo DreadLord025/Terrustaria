@@ -219,8 +219,10 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     // draw fires AFTER the gift (`:60-63`).
     if app.npcs[i].kind == NpcKind::PartyGirl && app.world_events.free_cake {
         app.world_events.free_cake = false;
-        // The cake (3750) never stacks past 1 and carries no prefix (the
-        // Item-variant QuickSpawnItem — no `Prefix(-1)` roll).
+        // The cake (3750) stacks to `Item.CommonMaxStack` = 9999 (case 3750
+        // writes no maxStack, `Item.cs:33214-33226` → `:49017`) and carries
+        // no prefix (the Item-variant QuickSpawnItem — no `Prefix(-1)`
+        // roll); the overflow drop's `RequestNewItem` keeps prefix 0.
         let slot = crate::item::slot_for_pickup(&mut app.inventory, 3750, 0);
         match slot {
             Some(s) => app.inventory[s].count += 1,
@@ -252,21 +254,55 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     let slime_rain = app.world.slime_rain;
     let hard_mode = app.world.hard_mode;
     let moon_phase = app.world.moon_phase;
-    let raining = app.world.raining;
-    let (life, life_max, deaths) = app
+    // `Main.raining` — the LIVE rain latch (`Rain.is_raining`, the
+    // `Main.cs:64649/:64725` writers); `world.raining` only mirrors it at
+    // save (`saveglue.rs:99`), so the talk reads the event state.
+    let raining = app.rain.is_raining();
+    let (life, life_max, deaths, defense, head) = app
         .player
         .as_ref()
-        .map(|p| (p.hp, p.max_hp, p.deaths_pve as i32))
-        .unwrap_or((0, 0, 0));
+        .map(|p| {
+            // `Player.head` (`Player.cs:35765`): the vanity head's slot when
+            // one is worn, else the armor head's — `GetEffectiveArmor(10/0)
+            // .headSlot`, -1 for air (`Item.cs:48998`'s SetDefaults row).
+            // The port has no loadouts, so the slot itself is the source.
+            let vanity = crate::registry::get(app.equip.armor[10].kind)
+                .map_or(-1, |d| d.head_slot);
+            let head = if vanity >= 0 {
+                vanity
+            } else {
+                crate::registry::get(p.equipped[0]).map_or(-1, |d| d.head_slot)
+            };
+            (p.hp, p.max_hp, p.deaths_pve as i32, p.stat_defense, head)
+        })
+        .unwrap_or((0, 0, 0, 0, -1));
+    // `Player.NormalizedLuck` (`Player.cs:4107-4122`) — the clamped ±cap
+    // ratio the wizard's luck-band gate reads.
+    let luck = app
+        .player
+        .as_ref()
+        .map_or(0.0, |p| crate::npc_chat::normalized_luck(p.luck()));
+    // `Player.Male` (`Player.cs:3405-3409` — `PlayerVariantID.Sets.Male`):
+    // the session draft's cloth style decides; a fresh spawn is variant 0
+    // (male), the same default the render pass documents.
+    let male = app
+        .session_draft
+        .as_ref()
+        .map_or(true, |d| crate::ui::char_creation::is_male(d.skin_variant));
     let angler_quests = app
         .player
         .as_ref()
         .map(|p| p.angler_quests_finished)
         .unwrap_or(0);
     let golfer_score = app.player.as_ref().map(|p| p.golfer_score).unwrap_or(0);
-    // `Player.HasItem(5275)` — the cola the Dryad's line asks about; the
-    // port scans the inventory slots (no equipment scans yet).
-    let has_cola = app.inventory.iter().any(|s| s.kind == 5275);
+    // `Player.HasItem(5275)` (`Player.cs:55894-55904`): the inventory
+    // 0..58 walk with `stack > 0` — the port's grid + trash (the cola is
+    // neither coin nor ammo, so those slots can never hold it).
+    let has_cola = app
+        .inventory
+        .iter()
+        .chain(std::iter::once(&app.equip.trash))
+        .any(|s| s.kind == 5275 && s.count > 0);
     // `DD2Event.DownedInvasionT1/2` — the persisted tier-victory latches
     // (S1-E-12c), NOT the per-run wave-boss death latches.
     let dd2_t1 = app.world.dd2_downed_t1;
@@ -312,13 +348,13 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         player_life: life,
         player_life_max: life_max,
         player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max
-        player_defense: 0,   // `Player.statDefense` — no defense field yet
-        player_male: true,   // `Player.Male` — the spawn default
-        player_head: 0,      // `Player.head` — no armor slots yet
+        player_defense: defense, // `Player.statDefense` (M3-EQUIP-2)
+        player_male: male,       // `Player.Male` — the session draft's cloth style
+        player_head: head,       // `Player.head` — the vanity/armor head slot
         player_deaths_pve: deaths,
-        player_luck: 0.0,    // `Player.NormalizedLuck` — no luck feed yet
+        player_luck: luck,       // `Player.NormalizedLuck` — the clamped ±cap ratio
         player_has_cola: has_cola,
-        angler_quest_finished: false, // `Main.anglerQuestFinished` — unported
+        angler_quest_finished: app.world.angler_quest_finished, // `Main.anglerQuestFinished`
         angler_quests_finished: angler_quests,
         golfer_score,
     };

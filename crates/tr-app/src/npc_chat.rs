@@ -39,9 +39,9 @@ pub struct ChatContext<'a> {
     pub party_is_up: bool,
     /// `WorldGen.crimson`.
     pub crimson: bool,
-    /// `NPC.downedBoss1` (the King Slime).
+    /// `NPC.downedBoss1` (the Eye of Cthulhu).
     pub downed_boss1: bool,
-    /// `NPC.downedBoss2` (the Eye of Cthulhu).
+    /// `NPC.downedBoss2` (the Eater of Worlds / Brain of Cthulhu).
     pub downed_boss2: bool,
     /// `NPC.downedBoss3` (the Skeletron).
     pub downed_boss3: bool,
@@ -92,6 +92,21 @@ impl ChatContext<'_> {
     fn next_range(&mut self, min: i32, max: i32) -> i32 {
         min + self.next(max - min)
     }
+}
+
+/// `Player.NormalizedLuck` (`Player.cs:4107-4122`): the raw `Player.luck`
+/// divided by its sign's cap (`luckMaximumCap = 1f`, `luckMinimumCap =
+/// -0.7f`, `:3088-3090`), clamped to [-1, 1]. The wizard's luck-band gate
+/// (`NPC.cs:94848`) reads THIS value, not the raw unclamped luck.
+pub(crate) fn normalized_luck(luck: f32) -> f32 {
+    let value = if luck > 0.0 {
+        luck / 1.0
+    } else if luck < 0.0 {
+        0.0 - luck / -0.7
+    } else {
+        0.0
+    };
+    value.clamp(-1.0, 1.0)
 }
 
 /// The seventeen presence flags (`NPC.cs:93788-93864`): which town NPCs
@@ -1294,5 +1309,407 @@ mod tests {
             crate::npc_chat::format_chat_lines("short line", 460),
             vec!["short line".to_string()]
         );
+    }
+
+    // ---- W4-d120: the chatter re-pin witnesses --------------------------
+    //
+    // Each test drives the queued draw values AND records the requested
+    // maxes — the C#'s draw census (`Main.rand.Next(n)` order) is behaviour,
+    // so a wrong gate order shows up as a wrong max sequence even when the
+    // returned line happens to match.
+
+    /// A draw stream that hands out the queued values (last repeats) and
+    /// records every requested max into `log`.
+    fn census<'a>(
+        values: &'static [i32],
+        log: &'a mut Vec<i32>,
+    ) -> impl FnMut(i32) -> i32 + 'a {
+        let mut i = 0usize;
+        move |n| {
+            log.push(n);
+            let v = values[i.min(values.len() - 1)];
+            i += 1;
+            v
+        }
+    }
+
+    /// The owned-values census: for the tests whose draw targets depend on
+    /// the live dialog-filter count (the `{Bartender}`/`{WorldName}` rows
+    /// only count while their substitutions resolve), so the expected maxes
+    /// are computed, not hardcoded.
+    fn census_vec(values: Vec<i32>, log: &mut Vec<i32>) -> impl FnMut(i32) -> i32 + '_ {
+        let mut i = 0usize;
+        move |n| {
+            log.push(n);
+            let v = values[i.min(values.len() - 1)];
+            i += 1;
+            v
+        }
+    }
+
+    /// `NPC.cs:94863-94882` + `:94886-94895` — the event census: the 1/3
+    /// roll fires only while the event is active, a passed roll ALWAYS pays
+    /// the `Next(count)` category draw, and the pick is the REVERSE index
+    /// (`LanguageManager.cs:403-409`: index 0 answers the LAST row). The
+    /// Guide's party category is one row (`GuideSpecialText.Party`).
+    #[test]
+    fn the_event_text_pays_the_count_draw_and_picks_in_reverse() {
+        init_lang();
+        let guide = npc(NpcKind::Guide);
+        let npcs = [guide];
+        let mut log = Vec::new();
+        let mut rng = census(&[0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.party_is_up = true;
+        let chat = get_chat(&npcs[0], &mut ctx);
+        assert_eq!(
+            chat,
+            "Never been to a party before? You might want to check around with the others. People sometimes bring out special party favors."
+        );
+        assert_eq!(log, vec![3, 1], "the 1/3 roll, then Next(count=1)");
+        // An EMPTY category still pays its Next(0) (`UnifiedRandom.cs:140`
+        // draws Sample() even at max 0) and declines the event.
+        let mut log = Vec::new();
+        let mut rng = census(&[0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.zone_graveyard = true;
+        assert!(special_event_text(&mut ctx, "NoSuchCategory", 22).is_none());
+        assert_eq!(log, vec![3, 0], "the roll passes, Next(0) still fires");
+    }
+
+    /// `NPC.cs:94867` — the party's `HasNoPartyText` gate (`NPCID.cs:10461`:
+    /// 441/453) sits AFTER the 1/3 roll: the Tax Collector pays the roll but
+    /// never the category draw. `:94778` — his `(roll == 0) & flag` arms use
+    /// the NON-short-circuit `&`, so all four `Next(6)` draws fire even with
+    /// every neighbour absent.
+    #[test]
+    fn the_tax_collector_pays_the_party_roll_but_never_its_category_draw() {
+        init_lang();
+        let tax = npc(NpcKind::TaxCollector);
+        let npcs = [tax];
+        let mut log = Vec::new();
+        let mut rng = census(&[0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.party_is_up = true;
+        let chat = get_chat(&npcs[0], &mut ctx);
+        assert_eq!(chat, crate::lang::dialog(364), "the Next(364, 371) band");
+        assert_eq!(
+            log,
+            vec![3, 6, 6, 6, 6, 7],
+            "party roll (no category draw), four unconditional Next(6), Next(7)"
+        );
+    }
+
+    /// `NPC.cs:94871/:94879` — the rain arm gates on `raining &&
+    /// !IsItStorming`; a storm answers the Storm category instead. Both
+    /// picks are the reverse index over the two-row categories.
+    #[test]
+    fn the_weather_arms_split_rain_from_storm() {
+        init_lang();
+        let guide = npc(NpcKind::Guide);
+        let npcs = [guide];
+        let mut log = Vec::new();
+        let mut rng = census(&[0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.raining = true;
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "Don't be alarmed, it is just water. I hear certain species of fish can fly when it rains!",
+            "reverse index 0 = Rain2"
+        );
+        assert_eq!(log, vec![3, 2]);
+        let mut log = Vec::new();
+        let mut rng = census(&[0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.raining = true;
+        ctx.storming = true;
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "Lightning is no joke, very powerful fiends come out in this weather.",
+            "the storm skips the rain arm — Storm2"
+        );
+        assert_eq!(log, vec![3, 2], "one roll only: the rain gate is off");
+    }
+
+    /// `NPC.cs:94410-94456` — the REAL Party Girl (208) ladder: `Next(7)`
+    /// fires UP FRONT (before the event text), then the DD2/male/Stylist
+    /// gates, then the seven fixed lines (265/266/267/269/270/271/272 —
+    /// 268 is the male-gate line, NOT a switch arm).
+    #[test]
+    fn the_party_girl_rolls_seven_up_front() {
+        init_lang();
+        let pg = npc(NpcKind::PartyGirl);
+        let npcs = [pg];
+        let mut log = Vec::new();
+        let mut rng = census(&[3], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.player_male = false; // isolate the up-front draw (the male gate rolls Next(5))
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "Put up a disco ball and then I'll show you how to party.",
+            "num11 = 3 → dialog 269"
+        );
+        assert_eq!(log, vec![7], "no gates passed: only the up-front draw");
+        // The party event still answers — but AFTER the Next(7) was paid.
+        let mut log = Vec::new();
+        let mut rng = census(&[0, 0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.party_is_up = true;
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "At last, my time has come!",
+            "reverse index 0 over Party_1/Party_2 = Party_2"
+        );
+        assert_eq!(log, vec![7, 3, 2], "Next(7) precedes the event census");
+    }
+
+    /// `NPC.cs:94796-94799` — the lycantrope check is PURE and short-circuits
+    /// the event text (`||`): a blood-moon night Zoologist pays NO event
+    /// rolls, only the lycantrope category's `Next(2)` (reverse pick).
+    #[test]
+    fn the_lycantrope_zoologist_skips_the_event_census() {
+        init_lang();
+        let zoo = npc(NpcKind::Zoologist);
+        let npcs = [zoo];
+        let mut log = Vec::new();
+        let mut rng = census(&[0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.blood_moon = true;
+        ctx.day_time = false;
+        ctx.party_is_up = true;
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "Rawgh! Roo! Danger. Me. Wraaaath!",
+            "reverse index 0 = the LAST lycantrope row"
+        );
+        assert_eq!(log, vec![2], "no 1/3 rolls: the event text never ran");
+    }
+
+    /// `NPC.cs:93976-93984` — the Nurse's mixed arm: `Next(4 + FindAll.len)`
+    /// with the FORWARD row for indices >= 4 (NurseChatter has one row),
+    /// the low indices the four fixed lines 48..51.
+    #[test]
+    fn the_nurse_mixed_arm_walks_findall_forward() {
+        init_lang();
+        let nurse = npc(NpcKind::Nurse);
+        let npcs = [nurse];
+        // The row carries `{Bartender}` — it only counts while that
+        // substitution resolves, so the census computes the count live.
+        let count = crate::lang::dialog_count("NurseChatter.") as i32;
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![1, 1, 4], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        let chat = get_chat(&npcs[0], &mut ctx);
+        if count > 0 {
+            assert_eq!(chat, crate::lang::dialog_row("NurseChatter.", 0));
+        }
+        assert_eq!(log, vec![5, 3, 4 + count], "Next(5) deaths, Next(3), Next(4+len)");
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![1, 1, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "Turn your head and cough.",
+            "index 0 → dialog 48"
+        );
+        assert_eq!(log, vec![5, 3, 4 + count]);
+    }
+
+    /// `NPC.cs:94682-94748` — the Stylist's moon-phase band: phases 0-2
+    /// carry five fixed lines (287/288/289/290/294), 3-7 four; the mixed
+    /// draw is `Next(fixed + StylistChatter.len)`. The flag conjunctions
+    /// (`:94666`) sit LEFT of `&&`, so absent neighbours skip the draws.
+    #[test]
+    fn the_stylist_moon_band_sizes_the_mixed_draw() {
+        init_lang();
+        let stylist = npc(NpcKind::Stylist);
+        let npcs = [stylist];
+        // The chatter row carries `{Bartender}` — count it live.
+        let count = crate::lang::dialog_count("StylistChatter.") as i32;
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![1, 1, 5], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        let chat = get_chat(&npcs[0], &mut ctx);
+        if count > 0 {
+            assert_eq!(chat, crate::lang::dialog_row("StylistChatter.", 0));
+        } else {
+            assert_eq!(chat, "Sit down for a second and I'll have you steppin' razor.");
+        }
+        assert_eq!(log, vec![3, 3, 5 + count], "morning + male rolls, then Next(5+len)");
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![1, 1, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.moon_phase = 3;
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "Either you have style, or you get styled.",
+            "phase 3: four fixed lines, index 0 → dialog 295"
+        );
+        assert_eq!(log, vec![3, 3, 4 + count], "the fixed band shrinks to 4");
+    }
+
+    /// `NPC.cs:94784-94787` → `Lang.BartenderChat` (`Lang.cs:331-338`): the
+    /// 1/5 tier line reads T3 first, then T2, then the !T1 default.
+    #[test]
+    fn the_bartender_tier_line_reads_t3_first() {
+        init_lang();
+        let bar = npc(NpcKind::DD2Bartender);
+        let npcs = [bar];
+        let mut log = Vec::new();
+        let mut rng = census(&[0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.dd2_downed_t3 = true;
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "You really kept the full force of the Old One's Army at bay? Maybe you should visit Etheria some time."
+        );
+        assert_eq!(log, vec![5]);
+        let mut log = Vec::new();
+        let mut rng = census(&[0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "We should really do something about the Old One's Army. Ask me about the Eternia Crystal if you want to learn more.",
+            "no tiers downed → BeforeDD2Tier1"
+        );
+        assert_eq!(log, vec![5]);
+    }
+
+    /// `NPC.cs:94760` — the Angler's blood-moon fishing filter carries NO
+    /// trailing dot (`AnglerSpecialText.BloodMoonFishing` matches
+    /// `BloodMoonFishing1/2`); the pick is the reverse index.
+    #[test]
+    fn the_angler_blood_moon_filter_has_no_trailing_dot() {
+        init_lang();
+        let angler = npc(NpcKind::Angler);
+        let npcs = [angler];
+        let mut log = Vec::new();
+        let mut rng = census(&[1, 0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.blood_moon = true;
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "You should try fishing when the water is all bloody! It's to die for!",
+            "reverse index 0 = BloodMoonFishing2"
+        );
+        assert_eq!(log, vec![5, 3, 2], "quest roll, 1/3 roll, Next(count=2)");
+    }
+
+    /// `NPC.cs:94843-94858` — the wizard's luck gate: the 1/3 roll, the
+    /// NormalizedLuck band, then the dot-less filter's reverse pick. The
+    /// cursed rows carry `{WorldName}` in row 2 — count them live.
+    #[test]
+    fn the_wizard_luck_band_picks_the_cursed_rows_in_reverse() {
+        init_lang();
+        let mut wizard = npc(NpcKind::Wizard);
+        wizard.home = Some((10, 10)); // housed — the homeless arm is separate
+        let npcs = [wizard];
+        let count = crate::lang::dialog_count("WizardSpecialText.LuckIsCursed") as i32;
+        assert!(count >= 1, "LuckIsCursed1 carries no variables");
+        let mut log = Vec::new();
+        let mut rng = census_vec(vec![0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.player_luck = -1.0; // NormalizedLuck -1 → LuckIsCursed
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            crate::lang::select_dialog("WizardSpecialText.LuckIsCursed", 0),
+            "reverse index 0 = the LAST matching cursed row"
+        );
+        assert_eq!(log, vec![3, count]);
+    }
+
+    /// `Player.NormalizedLuck` (`Player.cs:4107-4122`): the ±cap ratio
+    /// (`luckMaximumCap = 1f`, `luckMinimumCap = -0.7f`) clamped to [-1, 1].
+    #[test]
+    fn normalized_luck_divides_by_the_sign_cap_and_clamps() {
+        assert_eq!(normalized_luck(0.0), 0.0);
+        assert_eq!(normalized_luck(0.5), 0.5);
+        assert_eq!(normalized_luck(1.0), 1.0);
+        assert_eq!(normalized_luck(2.0), 1.0, "the +1 cap clamps");
+        assert!((normalized_luck(-0.35) - -0.5).abs() < 1e-6, "0 - (-0.35 / -0.7)");
+        assert!((normalized_luck(-0.7) - -1.0).abs() < 1e-6, "the -0.7 cap");
+        assert_eq!(normalized_luck(-1.4), -1.0, "the -1 clamp");
+    }
+
+    /// `ConditionalDialogue.cs:51-66` — the FreeCakeDialogue talk arm: the
+    /// latch clears, the cake (3750) rides `QuickSpawnItem` → the inventory
+    /// slot walk (useStyle 1 → the hotbar forward pass), and the text's
+    /// `Next(1, 4)` draw fires AFTER the gift. The draw rides the bare
+    /// `Main.rand` stream — the flow app's world-seed-0 global.
+    #[test]
+    fn the_party_girl_gifts_the_cake_then_draws_the_text() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_ref().unwrap();
+        let mut pg = npc(NpcKind::PartyGirl);
+        pg.x = p.x + 16.0;
+        pg.y = p.y;
+        app.npcs.push(pg);
+        app.world_events.free_cake = true;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false)
+            .expect("the cake dialogue answers");
+        let n = tr_core::UnifiedRandom::new(0).next_range(1, 4);
+        assert_eq!(
+            text,
+            crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}")),
+            "the Next(1, 4) text draw rides the seed-0 global stream"
+        );
+        assert!(!app.world_events.free_cake, "`:60` clears the latch");
+        assert_eq!(app.inventory[0].kind, 3750, "the hotbar forward pass");
+        assert_eq!(app.inventory[0].count, 1);
+        assert_eq!(app.npc_chat_text, text, "`Main.cs:43082`");
+        // The same NPC re-clicked falls through (`Main.cs:43077`).
+        assert!(crate::world_sim::npcs::talk_to_npc(&mut app, false).is_none());
+    }
+
+    /// `Player.cs:7193-7199` — `GetOrDropItem`: a full inventory overflows
+    /// to `Item.RequestNewItem` at the player centre (the bobber-catch
+    /// shape); the gift still clears the latch and answers the text.
+    #[test]
+    fn a_full_inventory_overflows_the_cake_to_a_world_drop() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        for slot in app.inventory.iter_mut() {
+            *slot = crate::item::ItemSlot {
+                kind: 2, // Dirt Block — a full 9999 stack never merges
+                name: crate::registry::name(2),
+                count: 9999,
+                prefix: 0,
+            };
+        }
+        let mut pg = npc(NpcKind::PartyGirl);
+        pg.x = cx + 16.0;
+        pg.y = cy;
+        app.npcs.push(pg);
+        app.world_events.free_cake = true;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false)
+            .expect("the overflow still answers the cake text");
+        // The overflow drop pays the velocity/phase triplet first (the cake
+        // is not prefixable — `roll_prefix` draws nothing), THEN the text's
+        // Next(1, 4) — all on the same seed-0 global stream.
+        let mut expect = tr_core::UnifiedRandom::new(0);
+        expect.next_float();
+        expect.next_float();
+        expect.next_float();
+        let n = expect.next_range(1, 4);
+        assert_eq!(
+            text,
+            crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"))
+        );
+        assert!(!app.world_events.free_cake);
+        assert_eq!(app.items.len(), 1, "the overflow drop");
+        assert_eq!(app.items[0].kind, 3750);
+        assert_eq!(app.items[0].count, 1);
+        assert_eq!(app.items[0].prefix, 0, "the gift carries no prefix roll");
+        // The port's pinned spawn shape: top-left = centre + (1, 0) — the
+        // same offset every `spawn_item_drop_px` site uses (the C# centres
+        // the 14x14 box on the player centre; the 1-px x-shift is the
+        // recorded port convention, `world_sim/items.rs`).
+        assert_eq!(app.items[0].pos, glam::Vec2::new(cx + 1.0, cy));
     }
 }
