@@ -81,3 +81,168 @@ from the C# verbatim rather than trusting the comment tags.
 Filled in per batch below (15 ids per commit). Verdict key: **PORTED** (arm faithful,
 wired), **PORTED-UNWIRED** (arm faithful, no live caller), **DEVIATION** (documented
 approximation — static part only), **MISSING** (no arm anywhere).
+
+### Batch 2 — crafting stations / statue / fake chests / chimney / balloon machine: 355, 499, 377, 463, 464, 491, 379, 349, 441, 468, 390, 412, 36, 406, 452 (15 ids)
+
+C# `TileDrawing.cs:5311-5396`. The static-station group head, verbatim (:5311-5331 —
+labels 300-308/354 at :5301-5310 fall in d62's quarter; the shared body cited once):
+
+```csharp
+		case 355:
+		case 499:
+			addFrY = Main.tileFrame[typeCache] * 54;
+			tileTop = 2;
+			break;
+		case 377:
+			addFrY = Main.tileFrame[typeCache] * 38;
+			tileTop = 2;
+			break;
+		case 463:
+		case 464:
+			addFrY = Main.tileFrame[typeCache] * 72;
+			tileTop = 2;
+			break;
+		case 491:
+			tileTop = 2;
+			addFrX = 54;
+			break;
+		case 379:
+			addFrY = Main.tileFrame[typeCache] * 90;
+			break;
+```
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 355 | shares the `* 54` + top 2 station body | :5311-5315 | `drawdata.rs:632-635` (`300..=308 \| 354 \| 355 \| 499`) | PORTED |
+| 499 | shares the `* 54` + top 2 station body | :5312-5315 | :632-635 | PORTED |
+| 377 | `addFrY = Main.tileFrame[typeCache] * 38; tileTop = 2;` | :5316-5319 | `drawdata.rs:638-641` | PORTED |
+| 463 | `* 72` + top 2 | :5320-5324 | `drawdata.rs:644-647` (`463 \| 464`) | PORTED |
+| 464 | shares 463's arm | :5321 | :644-647 | PORTED |
+| 491 | `tileTop = 2; addFrX = 54;` (absolute assign, not `+=`) | :5325-5328 | `drawdata.rs:649-652` (`data.add_fr_x = 54`) | PORTED |
+| 379 | `addFrY = Main.tileFrame[typeCache] * 90;` (no top change) | :5329-5331 | `drawdata.rs:654-656` | PORTED |
+| 349 | top 2 + `GetTemporaryFrame` tileFrameX rewrite | :5332-5341 | static `drawdata.rs:659-661` + full body `cases_b.rs:297-303` | DEVIATION (probe stub) |
+| 441 | height 18 on `tileFrameY == 18` + temp-frame tileFrameY rewrite | :5342-5356 | static `drawdata.rs:665-669`; rewrite unported | DEVIATION (static half) |
+| 468 | shares 441's arm | :5343 | :665-669 | DEVIATION (static half) |
+| 390 | `addFrY = Main.tileFrame[typeCache] * 36;` | :5357-5359 | `drawdata.rs:671-673` | PORTED |
+| 412 | `addFrY = 0; tileTop = 2;` | :5360-5363 | `drawdata.rs:676-679` | PORTED |
+| 36 | `tileTop = 2;` | :5364-5366 | `drawdata.rs:681-683` | PORTED |
+| 406 | chimney band fold (below) | :5367-5386 | `drawdata.rs:686-698` | PORTED |
+| 452 | `num34 = Main.tileFrame[typeCache]; if (tileFrameX >= 54) num34 = 0; addFrY = num34 * 54;` | :5387-5396 | `drawdata.rs:701-707` | PORTED |
+
+All static arms are wired: `render/tiles.rs:671-679` calls `draw_data` with
+`tile_anim.animation_row(kind)`; the animator steps these kinds
+(`drawdata_anim.rs:350-359/:409-410` — 355 mirrors 354 per `Main.cs:19024`, 377/379/390/
+406/452/499/463/464 each `step_ge_ge` with the C# frame counts).
+
+**349 MushroomStatue** — C# verbatim (:5332-5341):
+
+```csharp
+		case 349:
+		{
+			tileTop = 2;
+			int num45 = tileFrameX % 36;
+			if (Animation.GetTemporaryFrame(y: y - tileFrameY % 54 / 18, x: x - num45 / 18, frameData: out var frameData4))
+			{
+				tileFrameX = (short)(36 * frameData4 + num45);
+			}
+			break;
+		}
+```
+
+Port `cases_b.rs:297-303` carries the full body — `n45 = fx % 36`, probe
+`temporary_frame(x - n45 / 18, y - fy % 54 / 18)` (the C# named args reordered to
+positional, same coordinates), `frame_x_override = Some(36 * f + n45)`. The probe
+(`cases_b.rs:97-99`) returns `None` — `Animation._temporaryAnimations`
+(`Animation.cs:186-196`, verbatim below) is not ported, so the C# `false` path is taken:
+
+```csharp
+	public static bool GetTemporaryFrame(int x, int y, out int frameData)
+	{
+		Point16 key = new Point16(x, y);
+		if (!Animation._temporaryAnimations.TryGetValue(key, out var value))
+		{
+			frameData = 0;
+			return false;
+		}
+		frameData = value._frameData[value._frame];
+		return true;
+	}
+```
+
+Pixel-identical while the registry is empty (statues only animate after a player
+activates them); the deviation is documented at `cases_b.rs:47-52`. Wired at
+`tiles.rs:700-712`.
+
+**441/468 FakeContainers** — C# verbatim (:5342-5356):
+
+```csharp
+		case 441:
+		case 468:
+		{
+			if (tileFrameY == 18)
+			{
+				tileHeight = 18;
+			}
+			int num43 = tileFrameX % 36;
+			int num44 = tileFrameY % 38;
+			if (Animation.GetTemporaryFrame(x - num43 / 18, y - num44 / 18, out var frameData3))
+			{
+				tileFrameY = (short)(38 * frameData3 + num44);
+			}
+			break;
+		}
+```
+
+The static arm (`drawdata.rs:665-669`) ports only the height gate. Unlike 349, the
+temp-frame rewrite has NO stubbed body in `cases_b` — the merge dedupe gave 441/468 to
+slice A (`cases_b.rs:9-10/:50-52`, `OWNED_KINDS` :343-345 excludes them) and slice A
+owns only their SECOND-switch glow rows. With the registry empty the rewrite never
+fires in C# either, so today's pixels match; when the temporary-animation registry
+lands, 441/468 need the `38 * f + num44` `frame_y_override` added (the 349 pattern at
+`cases_b.rs:300-302`). Tests pin the static half: `drawdata.rs:1947-1952`.
+
+Second-switch glow halves (d63 owns these ids' index; d64's doc defers them here):
+- **441/468** (:6294-6311): `num46 = tileFrameX / 36`; col 48 → `GlowMask[56]`
+  `_martianGlow`, col 49 → `GlowMask[117]` `_meteorGlow`, rect
+  `(tileFrameX % 36, tileFrameY, w, h)` — ported `cases_a.rs:461-470`, term-for-term
+  (identical to the 21/467 chest rows :6276-6293 → `cases_a.rs:450-459`).
+- **463** (:6152-6156): unconditional `GlowMask[243]`, rect
+  `(tileFrameX, tileFrameY + addFrY, w, h)`, `new Color(127, 127, 127, 0)` — ported
+  `cases_a.rs:362` (`rect_anim_y` = `fy + add_fr_y`).
+- **412** (:6051-6055): unconditional `GlowMask[202]`, rect `(fx, fy + addFrY, w, h)`,
+  `new Color(255, 255, 255, 255)` (opaque white — the one glow with alpha 255) —
+  ported `cases_a.rs:307`.
+
+All three glow records are produced but unconsumed (`tiles.rs:731` binds `_glow`;
+TILE-DRAW-2 owns the bind) — draw-side deviation, not a case gap. Martian glow rides
+`martian_light = 0.0` (`tiles.rs:732`, unported event state).
+
+**406 Chimney** — C# verbatim (:5367-5386):
+
+```csharp
+		case 406:
+		{
+			tileHeight = 16;
+			if (tileFrameY % 54 >= 36)
+			{
+				tileHeight = 18;
+			}
+			int num39 = Main.tileFrame[typeCache];
+			if (tileFrameY >= 108)
+			{
+				num39 = 6 - tileFrameY / 54;
+			}
+			else if (tileFrameY >= 54)
+			{
+				num39 = Main.tileFrame[typeCache] - 1;
+			}
+			addFrY = num39 * 56;
+			addFrY += tileFrameY / 54 * 2;
+			break;
+		}
+```
+
+Port `drawdata.rs:686-698`: same gate order (height 16 → 18 on `fy % 54 >= 36`;
+`n39` band select `>= 108` first, `>= 54` second), the two `addFrY` statements fused
+into `n39 * 56 + fy / 54 * 2` — same value, no intermediate observable. Tests pin all
+five bands (`drawdata.rs:2125-2134`). **PORTED.**
