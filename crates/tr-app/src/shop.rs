@@ -313,6 +313,10 @@ pub enum StockWhen {
     /// `NPC.downedMoonlord` (`Chest.cs:2228`) — the bare Moon Lord flag
     /// (the solution trio 5392/5393/5394; NOT the hardmode conjunct).
     DownedMoonlord,
+    /// `NPC.downedMartians` ALONE (`Chest.cs:2378`/`:2430` — the Cyborg's
+    /// cluster rockets and the HiTek/NightVision pair; no hardmode
+    /// conjunct in the C#, unlike the Stylist's `DownedMartians`).
+    DownedMartiansBare,
     /// `Main.halloween` (`Chest.cs:2240`) — constants-off: the port has no
     /// season system yet (the Steampunk Goggles 1742 stay hidden).
     Halloween,
@@ -685,6 +689,46 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // (constants-off, no season system).
             row(1742, StockWhen::Halloween),
         ],
+        // The Cyborg's shop (index 14, `Chest.cs:2360-2442`, the registry
+        // `NPCInteractions.Shop(209, 14)`, `NPCInteractions.cs:501` —
+        // `NPCID.Cyborg = 209`, `NPCID.cs:11095`): the rocket tiers, the
+        // martian rows, the hardmode set, the graveyard pair, the halloween
+        // outfit and the Portal-Gun-station inventory scan.
+        14 => vec![
+            row(771, StockWhen::Always),    // `:2361` Rocket I
+            row(772, StockWhen::BloodMoon), // `:2363-2367` Rocket II
+            // `:2368-2372`: `!Main.dayTime || Main.eclipse` — Rocket III.
+            row(773, CYBORG_ROCKET_III),
+            row(774, StockWhen::Eclipse), // `:2373-2377` Rocket IV
+            // `:2378-2385`: `NPC.downedMartians` (bare) — the Cluster
+            // Rocket I, and the II under `bloodMoon || eclipse` on top.
+            row(4445, StockWhen::DownedMartiansBare),
+            row(4446, CYBORG_CLUSTER_II),
+            row(4459, StockWhen::HardMode), // `:2386-2390` Dry Rocket
+            row(760, StockWhen::HardMode),  // `:2391-2395` Proximity Mine Launcher
+            row(1346, StockWhen::HardMode), // `:2396-2400` Nanites
+            // `:2401-2406`: hardmode — Jim's Drone Visor/Drone + the RC Car.
+            row(5452, StockWhen::HardMode),
+            row(5451, StockWhen::HardMode),
+            row(5738, StockWhen::HardMode),
+            row(5598, StockWhen::Always), // `:2407` CRT Monolith
+            row(5599, StockWhen::Always), // `:2409` Retro Monolith
+            // `:2411-2420`: the graveyard — Spectre Goggles + Echo Block.
+            row(4409, StockWhen::ZoneGraveyard),
+            row(4392, StockWhen::ZoneGraveyard),
+            // `:2421-2429`: halloween — the cyborg outfit (constants-off).
+            row(1743, StockWhen::Halloween),
+            row(1744, StockWhen::Halloween),
+            row(1745, StockWhen::Halloween),
+            // `:2430-2434`: `NPC.downedMartians` again — the HiTek
+            // Sunglasses + the Night Vision Helmet.
+            row(2862, StockWhen::DownedMartiansBare),
+            row(3109, StockWhen::DownedMartiansBare),
+            // `:2435-2439`: `HasItem(3384) || HasItem(3664)` — the Portal
+            // Gun Station 3664 (the inventory-scan gate).
+            row(3664, CYBORG_PORTAL_STATION),
+            row(5928, StockWhen::Always), // `:2440` Toy Breaker Block
+        ],
         // The Dye Trader's shop (index 12, `Chest.cs:case 12`): the two
         // always rows, the halloween rows (constants-off), the day/night
         // moon-phase 0 pair, the blood-moon-night row and the graveyard
@@ -894,6 +938,24 @@ const STEAM_SOLUTION_GREEN: StockWhen = StockWhen::All(&[
 /// `:2228-2233`: the remix gate AND `NPC.downedMoonlord` — the solution trio.
 const STEAM_MOONLORD_SOLUTIONS: StockWhen =
     StockWhen::All(&[StockWhen::NotRemixOrAnniversary, StockWhen::DownedMoonlord]);
+
+// — W4-d122: the Cyborg's compound gates (`Chest.cs:2360-2442`). —
+
+/// `Chest.cs:2368`: `!Main.dayTime || Main.eclipse` — the Rocket III 773
+/// (`Night` is `!dayTime` on the flags).
+const CYBORG_ROCKET_III: StockWhen = StockWhen::Any(&[StockWhen::Night, StockWhen::Eclipse]);
+/// `Chest.cs:2378-2384`: `downedMartians && (bloodMoon || eclipse)` — the
+/// Cluster Rocket II 4446.
+const CYBORG_CLUSTER_II: StockWhen = StockWhen::All(&[
+    StockWhen::DownedMartiansBare,
+    StockWhen::Any(&[StockWhen::BloodMoon, StockWhen::Eclipse]),
+]);
+/// `Chest.cs:2435`: `HasItem(3384) || HasItem(3664)` — the Portal Gun
+/// Station 3664 row.
+const CYBORG_PORTAL_STATION: StockWhen = StockWhen::Any(&[
+    StockWhen::PlayerHasItem(3384),
+    StockWhen::PlayerHasItem(3664),
+]);
 
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
@@ -1601,6 +1663,7 @@ fn stock_gate(when: &StockWhen, flags: &ShopFlags, inventory_ids: &[u16], moon_p
             StockWhen::ZoneSkyHeight => flags.zone_sky_height,
             StockWhen::ZoneHallow => flags.zone_hallow,
             StockWhen::DownedMoonlord => flags.downed_moon_lord,
+            StockWhen::DownedMartiansBare => flags.downed_martians,
             // The season system is unported — the halloween rows stay
             // constants-off (the recorded deviation).
             StockWhen::Halloween => false,
@@ -2650,6 +2713,96 @@ mod town5_tests {
             ..Default::default()
         };
         assert!(!resolve_stock_moon(11, &ftw, &[], 0).contains(&995));
+    }
+
+    /// W4-d122 shop 14 — the Cyborg (`Chest.cs:2360-2442`,
+    /// `NPCInteractions.Shop(209, 14)`): the rocket-tier ladder, the bare
+    /// martian gates, the graveyard pair and the Portal-Gun-station scan
+    /// (`Player.HasItem` — the port's inventory-ids view, the same seam
+    /// the Merchant's Flower Boots rows use). Written, not run (code-only).
+    #[test]
+    fn the_cyborg_stock_ladders_the_rockets_and_the_martian_rows() {
+        // Classic day: Rocket I + the two monoliths + the Toy Breaker Block.
+        let base = resolve_stock(14, &ShopFlags::default(), &[]);
+        assert_eq!(base, vec![771, 5598, 5599, 5928]);
+        // Night opens Rocket III (`!dayTime || eclipse`); the blood moon
+        // opens II (and III through the night half).
+        let night = ShopFlags {
+            night: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(14, &night, &[]),
+            vec![771, 773, 5598, 5599, 5928]
+        );
+        let bm = ShopFlags {
+            blood_moon: true,
+            night: true,
+            ..Default::default()
+        };
+        let bmstock = resolve_stock(14, &bm, &[]);
+        assert!(bmstock.contains(&772) && bmstock.contains(&773));
+        // The DAYTIME eclipse still opens III and IV (`:2368`'s || arm).
+        let ecl = ShopFlags {
+            eclipse: true,
+            ..Default::default()
+        };
+        let est = resolve_stock(14, &ecl, &[]);
+        assert!(est.contains(&773) && est.contains(&774) && !est.contains(&772));
+        // Bare martians (NO hardmode): Cluster I + the HiTek/NightVision
+        // pair; the Cluster II needs the blood-moon/eclipse conjunct.
+        let mart = ShopFlags {
+            downed_martians: true,
+            ..Default::default()
+        };
+        let m = resolve_stock(14, &mart, &[]);
+        assert!(m.contains(&4445) && m.contains(&2862) && m.contains(&3109));
+        assert!(!m.contains(&4446), "the Cluster II needs the event");
+        let mart_bm = ShopFlags {
+            blood_moon: true,
+            ..mart
+        };
+        assert!(resolve_stock(14, &mart_bm, &[]).contains(&4446));
+        // Hardmode adds the Dry Rocket / launcher / Nanites / Jim's set /
+        // the RC car in their num order.
+        let hm = ShopFlags {
+            hard_mode: true,
+            ..Default::default()
+        };
+        let h = resolve_stock(14, &hm, &[]);
+        assert_eq!(
+            h,
+            vec![771, 4459, 760, 1346, 5452, 5451, 5738, 5598, 5599, 5928]
+        );
+        // The graveyard pair; the Portal Gun Station needs either carried
+        // item (3384 or 3664).
+        let grave = ShopFlags {
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let g = resolve_stock(14, &grave, &[3384]);
+        assert!(g.contains(&4409) && g.contains(&4392) && g.contains(&3664));
+        let g2 = resolve_stock(14, &grave, &[3664]);
+        assert!(g2.contains(&3664), "either scan id opens the station");
+        assert!(!resolve_stock(14, &grave, &[]).contains(&3664));
+        // The full-order pin: hardmode + martians + blood moon + night +
+        // graveyard + the portal gun carried.
+        let full = ShopFlags {
+            hard_mode: true,
+            downed_martians: true,
+            blood_moon: true,
+            night: true,
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_stock(14, &full, &[3384]),
+            vec![
+                771, 772, 773, 4445, 4446, 4459, 760, 1346, 5452, 5451, 5738, 5598, 5599, 4409,
+                4392, 2862, 3109, 3664, 5928
+            ],
+            "the exact num order (`:2361-2441`; the halloween trio stays off)"
+        );
     }
 }
 
