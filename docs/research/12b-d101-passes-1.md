@@ -83,5 +83,5 @@ stay in place untouched.
 | Small Holes | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Dirt Layer Caves | (this commit) | landed (code-only; hash re-pin deferred to gate) |
 | Rock Layer Caves | (this commit) | landed (code-only; hash re-pin deferred to gate) |
-| Generate Ice Biome | — | pending |
+| Generate Ice Biome | (this commit) | landed (code-only; hash re-pin deferred; DUAL_DUNGEON table "Ice"→"Generate Ice Biome" corrected per GenPassNameID.cs:239) |
 | Granite (own row) | — | pending |

@@ -38,6 +38,7 @@ use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
+use super::ice_biome;
 use super::islands;
 use super::liquids;
 use super::living_trees;
@@ -376,6 +377,23 @@ pub(crate) struct GenVars {
     pub(crate) num_m_caves: i32,
     pub(crate) m_cave_x: [i32; 30],
     pub(crate) m_cave_y: [i32; 30],
+    /// `GenVars.snowOriginLeft/Right` (`GenVars.cs:82-84`, drawn in Reset
+    /// `WorldGen.cs:11401-11414`): the ice walk's starting column pair.
+    /// W4-d101 pass 8: drawn in `reset_genvars` after `crimson_left` (the
+    /// existing consumers re-copy the stream and read only that first
+    /// draw, so no ledger shifts).
+    pub(crate) snow_origin_left: i32,
+    pub(crate) snow_origin_right: i32,
+    /// `GenVars.snowTop/snowBottom` (`GenVars.cs:78-80`, reset 0 at
+    /// `WorldGen.cs:11180-11181`) and the per-row bound arrays
+    /// `snowMinX/snowMaxX` (`GenVars.cs:86-88`, allocated `[maxTilesY]` at
+    /// `:11178-11179`). Written by the Generate Ice Biome walk
+    /// (`:12317`, `:12351-12352`, `:12416-12419`); consumed by d102's
+    /// Slush sweep (`:14697`). Empty until the pass sizes them.
+    pub(crate) snow_top: i32,
+    pub(crate) snow_bottom: i32,
+    pub(crate) snow_min_x: Vec<i32>,
+    pub(crate) snow_max_x: Vec<i32>,
 }
 
 impl Default for GenVars {
@@ -418,6 +436,15 @@ impl Default for GenVars {
             num_m_caves: 0,
             m_cave_x: [0; 30],
             m_cave_y: [0; 30],
+            // The C# zeroes the snow origins in Reset
+            // (`WorldGen.cs:11208-11209`) before drawing them; the arrays
+            // are null until allocated (`GenVars.snowMinX = new int[..]`).
+            snow_origin_left: 0,
+            snow_origin_right: 0,
+            snow_top: 0,
+            snow_bottom: 0,
+            snow_min_x: Vec::new(),
+            snow_max_x: Vec::new(),
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1174,7 +1201,13 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`); listing them keeps the
 /// table 1:1 with the C# so a future step cannot silently un-prune itself.
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
-    "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
+    // W4-d101 pass 8: `GenPassNameID.IceBiome` IS "Generate Ice Biome"
+    // (`GenPassNameID.cs:239`) — the `:12312` biome generator this lane
+    // ports. The pre-pass-8 table said "Ice", which is
+    // `FragileIceOverIceBiomeWater` (`:280`, the `:16667` pass the C# does
+    // NOT prune) — corrected to the C# string now that the real step
+    // exists.
+    "Generate Ice Biome",      // GenPassNameID.IceBiome            "Generate Ice Biome"
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
     "Jungle",                  // GenPassNameID.Jungle              "Jungle"
     "Jungle Chests",           // GenPassNameID.JungleShrines       "Jungle Chests"
@@ -1309,6 +1342,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // M5-SEED-1's Don't Starve pass, whose body exists only for that seed
     // (a classic world runs the step and draws nothing).
     step!("wavy caves", "Wavy Caves", step_wavy_caves),
+    // The vanilla Generate Ice Biome slot (`WorldGen.cs:12312`): after
+    // Wavy Caves (`:12271`) and before Grass (`:12423`, the port's
+    // `micro grass` step sits earlier in the pinned order — the slot's
+    // neighbours here are the cave family and `dirt to mud`). W4-d101
+    // pass 8: the snow walk publishes GenVars.snowTop/Bottom/MinX/MaxX
+    // for d102's Slush sweep.
+    step!("generate ice biome", "Generate Ice Biome", step_generate_ice_biome),
     step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
@@ -1966,6 +2006,21 @@ fn step_rock_layer_caves(
 ) {
     let layers = *gv.layers();
     passes1::pass_rock_layer_caves(world, &mut streams.pass_rng("Rock Layer Caves"), &layers, gv);
+}
+
+/// The vanilla Generate Ice Biome slot (`WorldGen.cs:12312-12422`): the
+/// snow column walk (W4-d101 pass 8). The late `"Ice"` step (`:16667`,
+/// FragileIce) is a DIFFERENT pass — this one generates the biome itself.
+fn step_generate_ice_biome(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    ice_biome::pass_ice_biome(world, gv, &mut streams.pass_rng("Generate Ice Biome"), &layers);
 }
 
 fn step_surface_caves(
@@ -2998,6 +3053,39 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
     let mut reset_rng = core.pass_rng("Reset");
     gv.crimson_left = reset_rng.range(0, 2) == 1;
     gv.flip_infections = opts.flags.flip_infections();
+    // W4-d101 pass 8: the snow-origin draws (`WorldGen.cs:11378-11414`),
+    // appended AFTER the crimson roll so every existing consumer (which
+    // re-copies the stream and reads only the first draw) is untouched.
+    // `num7 = Next(maxTilesX)` rejected into the dungeon-opposite band;
+    // the port pins dungeon Right (the beach-anchor convention), so the
+    // `DungeonSide.Right` arm `[0.6, 0.75]·width` always runs
+    // (`:11383-11389`). The drunk side-flips (`:11379`, `:11397-11400`)
+    // stay with the drunk-seed lane. Then the origin pair:
+    // `num8 = Next(50, 90)`, `num9 = maxTilesX / 4200.0`,
+    // `left = num7 - (num8 + (int)(Next(20,40)*num9) + (int)(Next(20,40)*num9))`,
+    // `right = num7 + (Next(50,90) + two scaled terms)` (`:11401-11404`),
+    // clamped to `[0, maxTilesX]` (`:11405-11412`).
+    {
+        let width = opts.width.max(512);
+        let mut num7 = reset_rng.range(0, width);
+        while (num7 as f64) < width as f64 * 0.6 || (num7 as f64) > width as f64 * 0.75 {
+            num7 = reset_rng.range(0, width);
+        }
+        let num8 = reset_rng.range(50, 90);
+        let num9 = width as f64 / 4200.0;
+        let mut left = num7
+            - (num8
+                + (reset_rng.range(20, 40) as f64 * num9) as i32
+                + (reset_rng.range(20, 40) as f64 * num9) as i32);
+        let mut right = num7
+            + (reset_rng.range(50, 90)
+                + (reset_rng.range(20, 40) as f64 * num9) as i32
+                + (reset_rng.range(20, 40) as f64 * num9) as i32);
+        left = left.max(0);
+        right = right.min(width);
+        gv.snow_origin_left = left;
+        gv.snow_origin_right = right;
+    }
     gv
 }
 
@@ -3301,7 +3389,9 @@ mod tests {
         // `WorldGen.cs:12067`) after `small holes`.
         // W4-d101 pass 7: + `rock layer caves` (vanilla "Rock Layer Caves",
         // `WorldGen.cs:12107`) after `dirt layer caves`.
-        assert_eq!(names.len(), 73);
+        // W4-d101 pass 8: + `generate ice biome` (vanilla "Generate Ice
+        // Biome", `WorldGen.cs:12312`) after `wavy caves`.
+        assert_eq!(names.len(), 74);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3356,6 +3446,7 @@ mod tests {
                 "rock layer caves",
                 "surface caves",
                 "wavy caves",
+                "generate ice biome",
                 "dirt to mud",
                 "ash blobs",
                 "ores and gems",
@@ -3550,6 +3641,29 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Rock Layer Caves") == cpos("Dirt Layer Caves") + 1);
         assert!(cpos("Surface Caves") == cpos("Rock Layer Caves") + 1);
+    }
+
+    /// W4-d101 pass 8: `generate ice biome` sits in its vanilla slot
+    /// (`WorldGen.cs:12312`) — immediately after Wavy Caves (`:12271`)
+    /// and before Grass (`:12423`). The port's `micro grass` step sits
+    /// earlier (the pinned pre-scaffold order), so the forward neighbour
+    /// asserted is `dirt to mud`; the chain carries the vanilla pair.
+    #[test]
+    fn w4_d101_generate_ice_biome_sits_after_wavy_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("generate ice biome"), pos("wavy caves") + 1);
+        assert_eq!(names[pos("generate ice biome") + 1], "dirt to mud");
+        // The late FragileIce "Ice" step is a different pass, far later.
+        assert!(pos("generate ice biome") < pos("fragile ice"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Generate Ice Biome") == cpos("Wavy Caves") + 1);
+        assert!(cpos("Grass") == cpos("Generate Ice Biome") + 1);
     }
 
     /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla
@@ -3892,6 +4006,14 @@ mod tests {
         assert_eq!(gv.num_m_caves, 0);
         assert_eq!(gv.m_cave_x, [0; 30]);
         assert_eq!(gv.m_cave_y, [0; 30]);
+        // W4-d101 pass 8: the snow statics zero/null-init
+        // (`WorldGen.cs:11180-11181`, `:11208-11209`).
+        assert_eq!(gv.snow_top, 0);
+        assert_eq!(gv.snow_bottom, 0);
+        assert_eq!(gv.snow_origin_left, 0);
+        assert_eq!(gv.snow_origin_right, 0);
+        assert!(gv.snow_min_x.is_empty());
+        assert!(gv.snow_max_x.is_empty());
     }
 
     // --- Phase 6: temple stub -------------------------------------------------
@@ -4003,7 +4125,7 @@ mod tests {
         assert_eq!(
             DUAL_DUNGEON_DISABLED_PASSES,
             [
-                "Ice",
+                "Generate Ice Biome",
                 "Full Desert",
                 "Jungle",
                 "Jungle Chests",

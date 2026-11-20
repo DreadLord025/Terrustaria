@@ -74,6 +74,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "dirt layer caves" => PassMessage::Gen(8),
         // WorldGen.cs:12111 (Rock Layer Caves, W4-d101 — Lang.gen[9]).
         "rock layer caves" => PassMessage::Gen(9),
+        // WorldGen.cs:12316 (Generate Ice Biome, W4-d101 — Lang.gen[56]).
+        "generate ice biome" => PassMessage::Gen(56),
         // JunglePass.cs:21.
         "jungle" => PassMessage::Gen(11),
         // WorldGen.cs:12472.
