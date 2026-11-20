@@ -21,6 +21,9 @@ pub(crate) mod sky;
 // in-flight S1-G-1 siblings; wiring is the family's merge step.
 pub(crate) mod special_tiles;
 pub(crate) mod tile_cracks;
+// TILE-DRAW-2 (W4-f15): the DrawSingleTile glow bind (:1343-1403) — the
+// second GetTileDrawData switch's record drawn after the cell sprite.
+pub(crate) mod tile_glow;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;
