@@ -1545,6 +1545,10 @@ pub(crate) fn draw_sky(
             cave_parallax,
             anim_time,
             hell_black_box_bottom,
+            // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`): the port
+            // has no Echo Monolith / see-invisible accessory, so the wall-parallax
+            // gate rides the `TR_SHOW_INVISIBLE` A/B pin (false in normal play).
+            crate::env::show_invisible(),
         );
     }
 }

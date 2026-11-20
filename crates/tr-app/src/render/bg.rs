@@ -234,25 +234,48 @@ fn back_texture(sky: &SkyAssets, id: usize) -> Option<&BgTex> {
     }
 }
 
-/// `Main.WallLightAt` (`Main.cs:55160`): `Main.wallLight[tile.wall]`. The
-/// `tile.invisibleWall()` escape is never set anywhere in the original (see the
-/// `WALL_ECHO` note), so the table alone decides.
-fn wall_light_at(world: &World, x: i32, y: i32) -> bool {
+/// `Main.WallLightAt(i, j, showInvisibleWalls)` (`Main.cs:55169-55181`): a wall
+/// transmits sky light when `Main.wallLight[tile.wall]` holds; otherwise the cell
+/// still counts while it carries the Echo coating (`tile.invisibleWall()`) and the
+/// invisible walls are NOT being shown. The coating IS set in the original —
+/// `WorldGen.DoCoatEverythingEcho` (`WorldGen.cs:966/970/976`) and the `.wld` load
+/// (`IO/WorldFile.cs:2672`) — so the old "never set, table alone decides" shortcut
+/// dropped the arm; an Echo-coated wall must keep lighting the parallax backdrop
+/// exactly like a lit wall does. `show_invisible_walls` is
+/// `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023-58030`): the port has no
+/// Echo Monolith / see-invisible accessory yet, so it rides the `TR_SHOW_INVISIBLE`
+/// A/B pin (`env::show_invisible`), false in normal play.
+fn wall_light_at(world: &World, x: i32, y: i32, show_invisible_walls: bool) -> bool {
     use tr_core::tiledata::{WALL_COUNT, WALL_LIGHT};
-    world
-        .tile(x, y)
-        .is_some_and(|t| (t.wall as usize) < WALL_COUNT && WALL_LIGHT[t.wall as usize])
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if (t.wall as usize) < WALL_COUNT && WALL_LIGHT[t.wall as usize] {
+        return true; // Main.cs:55172-55180: wallLight[wall] -> true
+    }
+    if !show_invisible_walls {
+        return world.invisible_wall(x, y); // Main.cs:55176: tile.invisibleWall()
+    }
+    false // Main.cs:55178
 }
 
-/// `Main.ShouldDrawBackgroundTileAt` (`Main.cs:55136`): with a non-zero parallax the
-/// wall light of the horizontal neighbours counts too.
-fn should_draw_background_tile_at(world: &World, x: i32, y: i32, cave_parallax: f32) -> bool {
+/// `Main.ShouldDrawBackgroundTileAt` (`Main.cs:55136-55162`): with a non-zero
+/// parallax the wall light of the horizontal neighbours counts too (`:55152`);
+/// at zero parallax only the cell itself (`:55157`). Both arms read the same
+/// `WallLightAt(i, j, ShouldShowInvisibleBlocksAndWalls())` (`:55164-55167`).
+fn should_draw_background_tile_at(
+    world: &World,
+    x: i32,
+    y: i32,
+    cave_parallax: f32,
+    show_invisible_walls: bool,
+) -> bool {
     if cave_parallax != 0.0 {
-        wall_light_at(world, x, y)
-            || wall_light_at(world, x - 1, y)
-            || wall_light_at(world, x + 1, y)
+        wall_light_at(world, x, y, show_invisible_walls)
+            || wall_light_at(world, x - 1, y, show_invisible_walls)
+            || wall_light_at(world, x + 1, y, show_invisible_walls)
     } else {
-        wall_light_at(world, x, y)
+        wall_light_at(world, x, y, show_invisible_walls)
     }
 }
 
@@ -365,6 +388,10 @@ pub(crate) fn draw_background(
     // `Main.hellBlackBoxBottom` (`Main.cs:2463`): carried across frames — the black
     // box consumes the value the previous frame's magma pass produced.
     hell_black_box_bottom: &mut f32,
+    // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023-58030`): the Echo
+    // coating's see-invisible gate the wall-parallax `WallLightAt` reads. The port
+    // has no Echo Monolith / accessory yet, so it rides the `TR_SHOW_INVISIBLE` pin.
+    show_invisible_walls: bool,
 ) {
     let Some(dirt) = sky.underground else {
         return;
@@ -464,6 +491,7 @@ pub(crate) fn draw_background(
         rock_transition_point,
         cave_parallax,
         frame,
+        show_invisible_walls,
     );
     draw_background_draw_magma_layer(
         r,
@@ -484,6 +512,7 @@ pub(crate) fn draw_background(
         cave_parallax,
         frame,
         hell_black_box_bottom,
+        show_invisible_walls,
     );
 }
 
@@ -747,6 +776,7 @@ fn draw_background_draw_rock_layer(
     rock_transition_point: f32,
     cave_parallax: f32,
     magma_bg_frame: usize,
+    show_invisible_walls: bool,
 ) {
     let _ = (q1, q2, local_shimmer_alpha, draw_offset);
     // The 9-slice/4-slice smoothing branches (`Main.cs:53156-53320`) are collapsed to
@@ -806,8 +836,8 @@ fn draw_background_draw_rock_layer(
                     }
                     let c = light.get(tx, ty);
                     if rock_cell_skipped(
-                        should_draw_background_tile_at(world, tx, ty, cave_parallax),
-                        wall_light_at(world, tx, ty),
+                        should_draw_background_tile_at(world, tx, ty, cave_parallax, show_invisible_walls),
+                        wall_light_at(world, tx, ty, show_invisible_walls),
                         cave_parallax,
                         c,
                         bg_brightness,
@@ -932,6 +962,7 @@ fn draw_background_draw_magma_layer(
     cave_parallax: f32,
     magma_bg_frame: usize,
     hell_black_box_bottom: &mut f32,
+    show_invisible_walls: bool,
 ) {
     let _ = (q1, q2, draw_offset);
     // The 9-slice/4-slice smoothing branches (`Main.cs:52910-53049`) are collapsed to
@@ -988,8 +1019,8 @@ fn draw_background_draw_magma_layer(
                     }
                     let c = light.get(tx, ty);
                     if magma_cell_skipped(
-                        should_draw_background_tile_at(world, tx, ty, cave_parallax),
-                        wall_light_at(world, tx, ty),
+                        should_draw_background_tile_at(world, tx, ty, cave_parallax, show_invisible_walls),
+                        wall_light_at(world, tx, ty, show_invisible_walls),
                         cave_parallax,
                         c,
                         bg_brightness,
@@ -1547,6 +1578,68 @@ mod underground_bg_tests {
         assert!(!wall_visible(WALL_ECHO));
         assert!(wall_visible(1));
         assert!(wall_visible(350));
+    }
+
+    #[test]
+    fn wall_light_at_reads_the_walllight_table() {
+        // `Main.WallLightAt` (`Main.cs:55169-55181`): `wallLight[wall]` decides.
+        // Wall 21 transmits (`Main.cs:10579`), wall 1 does not; an empty cell
+        // (wall 0) transmits too (`Main.cs:10578`, `wallLight[0] = true`).
+        let mut w = world();
+        w.tile_mut(10, 10).unwrap().wall = 21;
+        w.tile_mut(11, 10).unwrap().wall = 1;
+        assert!(wall_light_at(&w, 10, 10, false));
+        assert!(!wall_light_at(&w, 11, 10, false));
+        assert!(wall_light_at(&w, 12, 10, false)); // wall 0 -> wallLight[0]
+        // Out-of-world cells have no tile -> false (the C# would null-fill a
+        // `new Tile()` whose wall 0 transmits, but the bg passes gate on
+        // `InWorld(.., 1)` first, so the port never asks outside).
+        assert!(!wall_light_at(&w, -1, 10, false));
+    }
+
+    #[test]
+    fn wall_light_at_keeps_the_echo_coating_arm() {
+        // `Main.cs:55172-55179`: a NON-light wall still counts while it carries the
+        // Echo coating (`tile.invisibleWall()`) and the invisible walls are hidden.
+        // The coating IS set in the original (`WorldGen.cs:966/970/976`,
+        // `IO/WorldFile.cs:2672`) — the old "never set" shortcut dropped this arm.
+        let mut w = world();
+        w.tile_mut(10, 10).unwrap().wall = 1; // wallLight[1] == false
+        assert!(!wall_light_at(&w, 10, 10, false));
+        w.set_invisible_wall(10, 10, true);
+        // Coated + hidden -> the backdrop still lights through it (`:55176`).
+        assert!(wall_light_at(&w, 10, 10, false));
+        // Coated + SHOWING invisible walls -> the escape closes (`:55178`).
+        assert!(!wall_light_at(&w, 10, 10, true));
+        // A light wall stays lit regardless of the coating / the show flag.
+        w.tile_mut(11, 10).unwrap().wall = 21;
+        w.set_invisible_wall(11, 10, true);
+        assert!(wall_light_at(&w, 11, 10, false));
+        assert!(wall_light_at(&w, 11, 10, true));
+    }
+
+    #[test]
+    fn should_draw_background_tile_at_spreads_wall_light_under_parallax() {
+        // `Main.ShouldDrawBackgroundTileAt` (`Main.cs:55136-55162`): non-zero
+        // parallax counts the horizontal neighbours' wall light (`:55152`); zero
+        // parallax only the cell itself (`:55157`).
+        let mut w = world();
+        // A light wall at x=11, the probe cell x=10 has none.
+        w.tile_mut(11, 10).unwrap().wall = 21;
+        // Parallax on: the right neighbour keeps the cell drawn.
+        assert!(should_draw_background_tile_at(&w, 10, 10, 0.88, false));
+        // Parallax off: only the cell's own (absent) wall light counts.
+        assert!(!should_draw_background_tile_at(&w, 10, 10, 0.0, false));
+        // The left neighbour counts too (`:55152`'s `i - 1` arm).
+        let mut w2 = world();
+        w2.tile_mut(9, 10).unwrap().wall = 21;
+        assert!(should_draw_background_tile_at(&w2, 10, 10, 0.88, false));
+        // The Echo coating on a neighbour spreads the same way under parallax.
+        let mut w3 = world();
+        w3.tile_mut(11, 10).unwrap().wall = 1;
+        w3.set_invisible_wall(11, 10, true);
+        assert!(should_draw_background_tile_at(&w3, 10, 10, 0.88, false));
+        assert!(!should_draw_background_tile_at(&w3, 10, 10, 0.88, true));
     }
 
     #[test]
