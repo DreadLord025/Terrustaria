@@ -56,6 +56,13 @@ mod loot_db;
 mod loot_db_gen;
 mod map;
 mod map_layers;
+// W4-g23: the Main.cs PlaySound census batch 3 (sites 181-271 of 271,
+// :49734-:66248) — the DrawMenu inline-cue census (the rows are landed, the
+// per-site cue seam is g22's in-flight Menu::pending_cue) + the tail sites'
+// pure cue-decision halves (colour/volume hover ticks, star-game hit pair,
+// click-pan toggle, unity-map hover, fullscreen-map close, NewText tail,
+// SelectPlayer/password/IP arms). Code-only — witnesses written not run.
+mod main_sounds_batch3;
 mod melee_swing;
 mod menu;
 mod minecart;

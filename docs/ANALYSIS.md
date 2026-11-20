@@ -39244,3 +39244,63 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The Main.cs sound sites wave, part 3 (W4-g23, 2026-11-21, code-only mode)
+
+**Scope.** Batch 3 of the 271-site `Main.cs` `PlaySound` census (the W4-g21
+line-order split, `7e8a7946`): g23 owns sites **181-271** (`:49734`-`:66248`),
+91 sites. Probe at start: g21 had pushed its claim only; g22's seam
+(`Menu::pending_cue` + `main_sounds.rs`) was **uncommitted in-flight** in
+`../TR-W4-g22` (read, not depended on). All three branch from `a725acb0`.
+
+**Two populations, two treatments.**
+
+1. **The 75 `DrawMenu` inline cues** (`:49734`-`:51052`). Every site is a
+   menu-row activation playing legacy id 10/11/12. The rows and toggles are
+   ALREADY ported (`menu/pages.rs` + `menu/actions.rs` — verified row-by-row:
+   qaStyle→`Toggle::Quality`, ChildSafety→`Toggle::Blood`, the three-state
+   quick-trash, the portrait cycle, etc.). The per-site cue seam that replaces
+   the blanket `Menu_Tick` is **g22's in-flight `Menu::pending_cue`** — this
+   lane does NOT re-port it (the W4-g18 `e8`-keeps-the-single-copy precedent).
+   Instead `main_sounds_batch3.rs::DRAW_MENU_CUE_CENSUS` records all 75 sites
+   (line, menuMode, id, ported) as a census the merger replays against g22's
+   mapping. **Four rows are unported in the legacy menu** (`ported: false`):
+   menuMode 16 (`:50984`/`:51005`, world-size) and 1000000/1000001
+   (`:51020`/`:51052`, status/rejection) — the port replaces these with the
+   `ui/world_creation.rs` size row and the front-screen rejection notice
+   (`app/flow.rs:379-384`), so their cues ride the front-end seam, not the
+   legacy `Page`. The other 71 are ported rows awaiting g22's cue wiring.
+
+2. **The 16 tail sites** (`:51276`-`:66248`). Two are landed: thunder
+   (`:58761`, `rain.rs::thunder_step` + `ambient_sound::thunder_cue_pick`) and
+   the menu-row hover tick (`:51835`, `app/loop.rs`'s `m.hover != before`).
+   The other 14 are ported here as their *pure* cue-decision halves, unwired
+   behind witnesses (the `npc_ai_style59` precedent): colour-focus tick
+   (`:51276`), colour +/- button hover (`:51388`), value-bar hover (`:51575`),
+   password-cancel (`:51952`) and IP-submit (`:52059`) arms, unity-potion map
+   hover (`:55965`), fullscreen-map close (`:56031`), click-pan toggle
+   (`:62798`), the `NewText` tail (`:64635`/`:64641`) and `SelectPlayer`
+   (`:66224`/`:66248`, landed-by-equivalent via `app/flow.rs:1269`), and the
+   star-game hit pair (`:63168`/`:63169`).
+
+**RNG slot.** The only gameplay draws in the window are the star-game hit
+pair: case 38 then case 37, in `DrawStar` statement order (`Main.cs:63168`
+before `:63169`), on `Main.rand` (the sky draw pass). Case 38 draws
+`[Next(5), Next(-40,41)*0.002]` (slot then pitch — the landed
+`sound::coin_pickup_case38`, re-exported); case 37 draws
+`[Next(57,59), Next(-40,41)*0.01]` — its OWN arm, NOT the case-2 item family
+(`legacy_family_pitch`'s `Item(_)` default is `Next(-6,7)*0.01`). Both gate on
+audibility BEFORE drawing (`LegacySoundPlayer.cs:369` — `soundVolume == 0`
+returns null for type > 35, so a silent hit draws NOTHING). Every other g23
+site is a draw-free legacy id (10/11/12) or the landed case-43 thunder; the
+hover ticks and cue arms draw nothing. No gameplay stream is touched by this
+batch's wiring (the machines land unwired).
+
+**Verification.** Code-only mode (the Lead's constraint): no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked. The 17 witness tests in
+`main_sounds_batch3.rs` are WRITTEN, NOT RUN — hand-derived fixtures (the
+star-pair four-draw order, the case-37 ×0.01 vs case-38 ×0.002 windows, the
+reflect normalize×10 + down-flip, the census line-order/id spot-checks, the
+hover-edge gates). Structural checks performed: brace balance (129/129), no
+duplicate pub-fn names, no symbol collisions with existing modules, the
+`crate::sound::coin_pickup_case38` cross-call matches `audio.rs`'s pattern,
+and the census+tail union covers all 91 census lines exactly.
