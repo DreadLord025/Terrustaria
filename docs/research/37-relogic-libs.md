@@ -133,7 +133,7 @@ switches content sources for resource packs.
 | XNA `Texture2DReader` — DXT1/3/5 | block-compressed surfaces | `tr-content/src/dxt.rs::dxt1_block:122`, `dxt3_block:169`, `dxt5_block:208` | PARTIAL | 23 retail `.xnb` files still fail (multi-mip / unhandled surface format, `ANALYSIS.md:1408-1411`) |
 | `DynamicSpriteFontReader` (DynamicSpriteFontReader.cs:8-29) | reads the `.xnb` font (pages, glyphs, padding, chars, kerning) | `tr-content/src/font.rs::load_font:69`, `read_page:120`, `read_rect_list:237`, `read_char_list:268`, `read_vector3_list:304` | PORTED (with a documented divergence) | the shipped binary differs from `decompiled-libs`: UTF-8 char list, extra page-header fields (`ANALYSIS.md:1470-1475`); the Rust parser discovers the tables *structurally* instead of following the decompiled field order |
 | `DynamicSpriteFont` / `FontPage` metrics + `DrawString` | glyph metrics, kerning, line spacing | `tr-render/src/font_atlas.rs::FontAtlas::build:114`, `FontPageData:24`, `PageRect:33`; `tr-app/src/assets.rs::UiFont:991`, `glyph:999`, `build_ui_font:1139` | PARTIAL | metrics are ported and the text draws; the `DrawString` line-break/kerning path is approximated |
-| `ReLogic.Text.WrappedTextBuilder` (151) + `StringReaderWrapExtension` (116) | word wrap for long labels/tooltips | none — no `fn …wrap…` helper exists in `crates/` (grep over all `.rs`) | MISSING | long item names/tooltips will not wrap like the original |
+| `ReLogic.Text.WrappedTextBuilder` (151) + `StringReaderWrapExtension` (116) | word wrap for long labels/tooltips | `tr-app/src/ui/text_wrap.rs` (`create_wrapped_text`/`wordwrap_string`/`measure_string`, W4-d121) — the builder + culture break rules ported 1:1; `ui::npc_chat::panel_lines` consumes it | PORTED (W4-d121, code-only) | the bitmap fallback estimates 8 px/char; `MeasureString`'s `Padding.Height` floor stands in with the glyph's drawn `h` (ANALYSIS "Overhead chat + text wrap (W4-d121)") |
 | `PngReader` (53) | `.png` textures (resource packs) | `tr-app/src/assets.rs::load_png:962`, `load_misc_png:966`; `image` crate in the workspace deps | PORTED (as a path, not a reader) | the `image` crate replaces GDI+/FNA PNG decoding |
 | `FxReader` (Terraria side) + `.fx` assets | compiled effects | `tr-content/src/effect.rs::load_effect_pass_names:13`, `pass_names_from_payload:27` | PARTIAL | only the **pass-name table** is parsed (22 passes, `ANALYSIS.md:1106`); the effect bytecode is not executed — the Rust filter is a hand-written WGSL mirror (`tr-render/src/post.rs`) |
 | Music/sound assets (XACT `.xsb`/`.xwb`, `TerrariaMusic.xgs`) | music + SFX banks | `tr-content/src/xact.rs::parse_sound_bank:332`, `parse_wave_bank_entries:337`, `XactWaveBank::open:182`, `XactSoundBank::load:271`, `get_cue:318`, `music_track:327`; `adpcm.rs::decode_msadpcm:31`; `sound.rs::load_sound:20`; playback via `rodio` | PARTIAL | readers are ported; playback/mixing parity is module 32's subject |
@@ -267,9 +267,15 @@ has no ReLogic counterpart. (Not inspected line-by-line in this pass.)
    not guaranteed per pass). The Rust screen filter mirrors `ScreenShader.fx`'s named
    techniques with a WGSL module and a 22-entry `PASS_TABLE`
    (`ANALYSIS.md:1106`), it does not execute the compiled effect.
-6. **Text wrapping is not ported** — severity: **behavioural** (UI). `ReLogic.Text`
+6. **Text wrapping is not ported** — severity: **behavioural** (UI). ~~`ReLogic.Text`
    has no Rust counterpart (no `wrap` helper in `crates/`), so long labels/tooltips
-   will not break like the original. Not mentioned in ANALYSIS.
+   will not break like the original. Not mentioned in ANALYSIS.~~ **LANDED
+   2026-11-20 (W4-d121, code-only)**: `tr-app/src/ui/text_wrap.rs` ports
+   `WrappedTextBuilder` + `StringReaderWrapExtension` 1:1 (culture break rules,
+   hyphen hard-breaks, `MeasureString` twin); the dialogue panel
+   (`ui::npc_chat::panel_lines`) consumes it. ANALYSIS "Overhead chat + text
+   wrap (W4-d121)". Remaining consumers (item tooltips, the chat monitor's
+   width-limit re-parse) still ride flat rows.
 7. **Chroma / RGB peripherals not ported** — severity: **none** for pixel parity
    (feature gap only).
 8. **Stale/incorrect doc citations** — severity: **cosmetic**:
@@ -298,10 +304,12 @@ has no ReLogic counterpart. (Not inspected line-by-line in this pass.)
   ("Asset pipeline" / "Content pipeline" sections): the XNB/LZX/DXT stack is a
   reimplementation validated against retail files, not a 1:1 port.
   No dependencies.
-- **M** — Port `ReLogic.Text.WrappedTextBuilder` + `StringReaderWrapExtension`
+- **M** — ~~Port `ReLogic.Text.WrappedTextBuilder` + `StringReaderWrapExtension`
   (word wrap with the original's line-breaking rules) into the Rust UI text path
   (`tr-app/src/ui/text.rs`) and check long item names / tooltips against the original.
-  Depends on the UI modules (18/20) being in their final shape.
+  Depends on the UI modules (18/20) being in their final shape.~~ **DONE
+  (W4-d121)** — landed as `tr-app/src/ui/text_wrap.rs`; the tooltip/monitor
+  consumers remain open.
 - **M** — Make the font parser's structural discovery explicit: document the
   page-header offsets it assumes, pin them with a test against
   `Fonts/Mouse_Text.xnb` + `Fonts/Item_Stack.xnb`, and align the kerning/line-break

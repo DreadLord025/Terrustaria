@@ -661,6 +661,16 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   interaction buttons, the portrait, the corner item, the sign/IME blinker,
   the Dryad Stardew override and the gamepad arms — `docs/ANALYSIS.md` →
   "Town chatter UI (S1-E-10b)".
+* Overhead chat + text wrap (W4-d121): `ui::chat_overhead` draws the local
+  player's chat text above the head (`Main.DrawPlayerChatBubbles`,
+  `Main.cs:63248-63263`) — the 400-tick `Player.chat_overhead`
+  (`Player.cs:765-784`), the `GetChatDrawPosition` anchor (`:63243-63246`)
+  and the ±2 px four-way shadow; the Say path arms it through
+  `ChatMonitor.pending_overhead` (`ChatHelper.cs:86-87`). `ui::text_wrap`
+  ports the ReLogic `WrappedTextBuilder` word wrap (research/37's MISSING
+  row) and the dialogue panel's 460 px/10-line wrap now rides it. Deferred:
+  remote players' overheads, the snippet markup, `hideUI` —
+  `docs/ANALYSIS.md` → "Overhead chat + text wrap (W4-d121)".
 
 ## Dev hooks and verification
 

@@ -263,9 +263,13 @@ impl<'a> WrappedTextBuilder<'a> {
         let chars: Vec<char> = text.chars().collect();
         let spacing = char_spacing(self.font);
         let hyphen_w = kerned_width(self.font, '-');
-        let mut i = 0usize;
-        while i < chars.len() {
-            let c = chars[i];
+        // The C#'s `i` is a signed int — the two `i--` push-backs can take
+        // it to −1 before the loop's `i++` re-reads char 0; the port keeps
+        // the signed walk (a usize would underflow on the narrow-glyph
+        // edge where the hyphen alone busts the width).
+        let mut i: isize = 0;
+        while (i as usize) < chars.len() {
+            let c = chars[i as usize];
             let num = if !self.working.is_empty() {
                 self.working_width + spacing + kerned_width(self.font, c)
             } else {
