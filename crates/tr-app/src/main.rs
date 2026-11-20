@@ -88,6 +88,7 @@ mod npc_ai_style14;
 mod npc_ai_style16;
 mod npc_ai_style17;
 mod npc_ai_style18;
+mod npc_ai_style19;
 mod npc_ai_style24;
 mod npc_ai_style28;
 mod npc_ai_style29;
