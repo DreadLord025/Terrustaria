@@ -165,9 +165,9 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 45 | `UIParticleLayer` | LANDED (`ui/particles.rs::ParticleLayer`, ToRectangle-truncated anchor + percents/pixels offsets `:28-33`, IgnoresMouseInteraction pin `:18`; ParticleRenderer unported, caller's seam) |
 | 46 | `UIProgressBar` | LANDED (`ui/progress.rs::ProgressBar`, 0.95/0.05 ease + snap-down SetProgress + Blue MagicPixel fill `UIProgressBar.cs:31-45`; distinct from row 31's UIGenProgressBar) |
 | 47 | `UIResourcePack` | LANDED (`ui/resource_packs.rs::ResourcePackCard` + `pack_child_layout`, static colour pairs *0.8 truncation `:135-141`, hover swap, icon/border stack + workshop badge geometry `:98-114`, BuildChildren top walk `:57-96`; planned home `ui/resources.rs` taken by the HUD module — renamed, no re-split) |
-| 48 | `UIResourcePackInfoButton` | pending |
-| 49 | `UISearchBar` | pending |
-| 50 | `UISelectableTextPanel` | pending |
+| 48 | `UIResourcePackInfoButton` | LANDED (`ui/text_panels.rs::PackInfoButton`, PanelGrayscale splice Lerp(Black,_color,0.8)*0.5 + White CategoryPanelBorder hover `:36-50`) |
+| 49 | `UISearchBar` | LANDED (`ui/search_bar.rs::SearchBar`, SetContents placeholder/cap/read-back `:67-89`, int-edge display-trim loop `:91-114`, input latch `:169-196`; shared Utils.TrimUserString/TrimLastCharacter UTF-16 helpers `Utils.cs:2839-2855`; IME/GetInputText caller's seam) |
+| 50 | `UISelectableTextPanel` | LANDED (`ui/text_panels.rs::SelectableTextPanel`, base splice + 4px-inset selected splice Lerp(_color,White,0.7)*0.5 + hover border stack `:36-55`) |
 | 51 | `UISlicedImage` | pending |
 | 52 | `UISliderBase` | pending |
 | 53 | `UIText` | pending |
