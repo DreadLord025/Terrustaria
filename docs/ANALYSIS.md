@@ -36055,6 +36055,47 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The orb keep-one prep (W4-g27, 2026-11-20)
+
+Five branches implemented the 18 lunar-orb `UpdateBuffs` arms
+(`Player.cs:10342-10461` + `UpdateBuffs_NebulaBuffs` `:12070-12079`):
+c16 (`buff_effects_orbs.rs`, request accumulator), c17
+(`buff_effects_potions_sets.rs`, slot driver), c18 (no orb arms — the
+summon block), d73 (`buff_effects_boosters.rs`, direct slot mutation),
+d74 (`buff_effects_tail.rs`, request accumulator). The keep-one decision
+(the full per-quirk diff + the merger contract) lives in
+`docs/research/W4-g27-orb-keep-one.md`; the canonical module is
+`crates/tr-app/src/buff_effects_orbs.rs` on `task/W4-g27-orb-keep-one-prep`.
+
+- **Pick: d73's arm core** — the only implementation preserving the
+  adjusted-`j` double-delete quirk verbatim (the downgrade's `j--` feeds
+  the gate-failure's second delete; the C# `DelBuff(-1)` crash path is
+  guarded, a documented deviation). c17 collapses it to one rescan;
+  c16/d74's unadjusted delete requests would replay it at the wrong slot.
+- **Correction ported: c17's zero-seeding.** `ResetEffects` zeroes
+  `beetleOrbs`/`solarShields`/the nebula trio every frame
+  (`Player.cs:18501`/`:18505`/`:18755`) — d73's `BoosterState` "persists
+  across ticks" claim is WRONG; the canonical `OrbScanState::reset_effects()`
+  makes the per-frame zeroing explicit.
+- **Request vocabulary kept for the accumulator-shaped mergers**:
+  `orb_arm_requests` derives the c16/d74 request view from the SAME arm
+  core on a one-slot scratch bar (no second implementation); `next_index`
+  is the authoritative quirk encoding, `purge_band` is inclusive-of-self
+  with no outer `j--`.
+- **Deliberate deviations**: the negative-index delete guard (the C#
+  throws `IndexOutOfRangeException`; unreachable in retail play — the
+  counters reset to 0 every frame, so a downgrade needs an earlier kept
+  slot whose own set flag was on). The set flags
+  (`beetleDefense`/`beetleOffense`/`setSolar`) stay false until the
+  armor-set lane lands (`ApplySetBonus_*` `:16366`/`:16499`/`:16529`
+  unported) — the arms then zero + delete exactly like the C# without the
+  set. c17's swapped chestpiece doc (Scale Mail ↔ Shell) is corrected to
+  c16's mapping.
+- **RNG census**: zero draws in the whole block — stream-neutral.
+- Code-only: 22 `w4_g27_*` witnesses WRITTEN, NOT RUN — no
+  cargo/rustc/rustfmt/tests/graphify invoked. The f12/merger step wires
+  the module and drops the four duplicate orb copies.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
