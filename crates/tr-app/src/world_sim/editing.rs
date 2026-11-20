@@ -1044,6 +1044,59 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             let off = Vec2::from_angle(angle) * 12.0 * loot_rng.next_float();
                             leaf_spawn += off - Vec2::new(vx, vy);
                         }
+                        // `Player.cs:49413-49425` — the dual-flail sibling
+                        // launch: throwing the Blue Moon 26 / Sunfury 35
+                        // while the OTHER flail sits in the inventory spawns
+                        // it too, at the MIRRORED velocity (`0f - num4, 0f -
+                        // num5`), with that item's own GetWeaponDamage /
+                        // GetWeaponKnockback and `ai2 = 1f` (the drawLayer
+                        // flag). The scan walks inventory slots 0..50 for the
+                        // first non-air item whose shoot is the other flail,
+                        // and runs BEFORE the primary spawn (`:49437`).
+                        if proj == crate::projectile::BLUE_MOON || proj == crate::projectile::SUNFURY {
+                            for sib in app.inventory.iter().take(50) {
+                                if sib.count == 0 {
+                                    continue; // `!item.IsAir`
+                                }
+                                let Some(sib_proj) = registry::projectile(sib.kind) else {
+                                    continue;
+                                };
+                                if sib_proj == proj
+                                    || (sib_proj != crate::projectile::BLUE_MOON
+                                        && sib_proj != crate::projectile::SUNFURY)
+                                {
+                                    continue;
+                                }
+                                let sib_def = registry::get(sib.kind);
+                                let sib_fx = crate::prefix::prefixed_stats(sib.kind, sib.prefix);
+                                let (sib_dmg, sib_kb_base, sib_class) = match (sib_def, sib_fx) {
+                                    (Some(d), Some(fx)) => (fx.damage, fx.knock_back, d.class),
+                                    (Some(d), None) => (d.damage, d.knock_back, d.class),
+                                    (None, _) => continue,
+                                };
+                                // `GetWeaponDamage` (`Player.cs:53421-53429`):
+                                // `(int)(damage * multiplier + 5E-06f)`.
+                                let sib_dmg = (sib_dmg as f32
+                                    * p.weapon_damage_multiplier(sib_class)
+                                    + 5.0e-6) as i32;
+                                let sib_kb = p.weapon_knockback(sib_class, sib_kb_base);
+                                if let Some(sib_slot) = app.projectiles.spawn_with_data_ai(
+                                    sib_proj,
+                                    leaf_spawn.x,
+                                    leaf_spawn.y,
+                                    -vx,
+                                    -vy,
+                                    sib_dmg,
+                                    sib_kb,
+                                    0.0,
+                                    0.0,
+                                ) {
+                                    // `ai9 = 1f` → the sibling's `ai[2]`.
+                                    app.projectiles.set_ai2(sib_slot, 1.0);
+                                }
+                                break;
+                            }
+                        }
                         let slot = app.projectiles.spawn_with_data_ai(
                             proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
                         );
@@ -4828,6 +4881,58 @@ mod tests {
         };
         app.mine_down = true;
         app
+    }
+
+    #[test]
+    fn s1_p_i07_the_dual_flail_launches_the_inventory_sibling() {
+        // `Player.cs:49413-49425`: throwing the Blue Moon (item 163, shoot
+        // 26) while the Sunfury (item 220, shoot 35) sits in the inventory
+        // spawns the Sunfury too, at the MIRRORED velocity, with `ai[2] = 1`
+        // (the `ai9` drawLayer flag) and its own GetWeaponDamage /
+        // GetWeaponKnockback. The sibling spawn runs BEFORE the primary
+        // (`:49437`). The old port never launched the sibling.
+        let mut app = shooter_app();
+        // Hold the Blue Moon; park the Sunfury in a grid slot.
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 163,
+            name: "Blue Moon",
+            count: 1,
+            prefix: 0,
+        };
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 220,
+            name: "Sunfury",
+            count: 1,
+            prefix: 0,
+        };
+        let (sw, sh) = app.screen_size();
+        // Aim right of the player so the throw velocity is +x.
+        app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let moon = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::BLUE_MOON);
+        let sunfury = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::SUNFURY);
+        assert!(moon.is_some(), "the held Blue Moon launches");
+        let sunfury = sunfury.expect("the inventory Sunfury launches as the sibling");
+        let moon = moon.unwrap();
+        assert!(
+            (sunfury.vel.x + moon.vel.x).abs() < 1e-3 && (sunfury.vel.y + moon.vel.y).abs() < 1e-3,
+            "the sibling rides the mirrored velocity (moon {:?}, sunfury {:?})",
+            moon.vel,
+            sunfury.vel
+        );
+        assert_eq!(sunfury.ai[2], 1.0, "the sibling carries ai2 = 1 (the drawLayer flag)");
+        // The Sunfury's base damage 32 (Item.cs:4133) at the default ×1
+        // melee multiplier; the Blue Moon's is 27 — the sibling uses its OWN.
+        assert_eq!(sunfury.damage, 32, "the sibling uses its own GetWeaponDamage");
     }
 
     #[test]

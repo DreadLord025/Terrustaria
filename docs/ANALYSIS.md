@@ -33266,3 +33266,75 @@ folds), the swung path, the line-rect distance, the RNG clone replay);
 `player.rs::s1_player_composite_tests` 3 direction-gate witnesses;
 `mount.rs` 1 Scutlix gate witness; `render/player_layers.rs` 2 draw
 witnesses (the raw-counter boundaries, the per-item specials).
+### S1-P-i07 — the flail physics census (2026-11-20)
+A line-by-line census of `AI_015_Flails` + `AI_015_HandleMovementCollision`
++ the `Player.ItemCheck_Shoot` launch arm against the M4-PROJ-3b port found
+and fixed the following WRONGs (all C#-cited, tests written not run —
+code-only swarm):
+1. **Reel-in overshoot kill sign-flipped** (`:44011`). The C# dot is
+   `vector4 · Utils.DirectionFrom(Target: Center+velocity, Origin:
+   mountedCenter)`, and `Utils.DirectionFrom(Origin, Target)` =
+   `Normalize(Origin - Target)` (`Utils.cs:1960-1963`) — the BACK vector.
+   The port computed `ahead - mounted` (forward), killing approaching
+   flails and sparing overshot ones. Fixed to `mounted - (head + vel)`.
+2. **Flight/retract ×2 damage missing** (`:14462-14465`). States 1 and 2
+   deal double; the port applied no multiplier. Added.
+3. **Dual ×0.8 discount leaked out of the held state** (`:14450-14460`).
+   The sibling scan sits inside the `ai[0]==0` arm; the port applied it in
+   every state. Moved inside.
+4. **`ResetLocalNPCHitImmunity` zeroed the wrong field** (`:43883` →
+   `:43719-43722`). The C# clears `localNPCImmunity` (the per-slot NPC
+   immunity array); the port zeroed `localAI[1]` (the orbit counter). Now
+   rides `FlailTick.reset_immunity` → the pool clears the array; the orbit
+   counter survives the release.
+5. **Re-grab arms read `channel` instead of `controlUseItem`**
+   (`:43905/43942/43959/44035`). `FlailInputs` gains `control_use_item`
+   (the raw `mine_down`); `channel` stays for the state-0 release gate only.
+6. **State-3/6 bail `break`s fell through** (`:43964`, `:44040`). The C#
+   `break`s skip the orbit physics / gravity / `ChangeDir` on the bail
+   tick; the port ran them. Restructured to if/else.
+7. **State-3 `tileCollide` latch not re-armed per tick** (`:43967`). The
+   C# sets `tileCollide = ai[1]==1` every tick before the flag4 compare;
+   the port only wrote on the compare. Fixed.
+8. **`mapFullscreen` kill missing** (`:43732-43736`). `FlailInputs` gains
+   `map_fullscreen` (`app.map.open`); the local owner's flails die.
+9. **Wet drag missing** (`HandleMovement` `:17612-17655`, `UpdatePosition`
+   `:20439-20446`). Water ×0.5 / honey ×0.25 / shimmer ×0.375 position
+   advance. Ported via `flail_wet_factor` (mid-tile idiom); the C# scales
+   the velocity before the probe and restores a blocked component — the
+   port probes full then scales the surviving displacement (the family's
+   documented liquid approximation).
+10. **Shimmer gravity skip missing** (`:44042`). State 6 adds +0.8 Y only
+    when `!shimmerWet`; ported via `flail_shimmer_wet`.
+11. **Flower Pow scan used a partial gate** (`:44121`). Now
+    `Npc::can_be_chased_by` (`NPC.cs:90030-90041`: chaseable && lifeMax>5
+    && !dontTakeDamage && !friendly && !immortal) instead of hp>0 &&
+    !dontTakeDamage.
+12. **`player.itemRotation` never written** (`:44162-44167`). Rides
+    `FlailTick.item_rotation` (DirectionFrom + the left-of-mount π +
+    WrapAngle); the dispatch applies it. `spriteDirection` now mirrors
+    `direction` (`:44145`, `:44074`).
+13. **`flag5` ignored the selected-item gate** (`:43850`). The dual-flail
+    sibling flag only arms when `inventory[selectedItem].shoot != type`;
+    `FlailInputs` gains `selected_shoot`.
+14. **Dual-flail sibling launch missing** (`Player.cs:49413-49425`).
+    Throwing Blue Moon/Sunfury with the other in the inventory now spawns
+    it at the mirrored velocity, its own GetWeaponDamage/GetWeaponKnockback
+    (`Player::weapon_knockback` added, `Player.cs:53346-53369`), `ai[2]=1`,
+    before the primary spawn.
+15. **Flairon bubble jitter used f32 `next_float`** (`:44093`). The C#
+    `NextDouble()` is f64; `DropRng` gains `next_double` (one Sample draw,
+    same stream) and the jitter multiplies in f64 before the f32 cast.
+16. **`netUpdate` writes missing** on the state transitions / bounce
+    (`:43882/43909/43922/43946/43963/43973/44024/44039`, `:43691/43701/
+    43711`). Added (the pool's `clear_net_update_flags` owns the reset).
+Remaining deviations (unchanged, decor/render follow-ups): the dust /
+impact-explosion / HitTiles / sound arms, `player.heldProj` /
+`SetDummyItemTime`, `ownerHitCheck` / `drawLayer`, the `noItems` gate, the
+chain render, and the Flairon head 404 (aiStyle 69, a separate family that
+spawns the 1058 flail — out of the aiStyle-15 scope). The `setVortex`
+knockback arm (`Player.cs:53364`) has no port field. RNG order is
+unchanged: the Flairon cadence `Next(3,6)` → `Next(45,65)` → `NextDouble`
+draws stay in sequence on the pool's `UpdateProjectiles` stream; the
+`next_double` addition consumes the same single Sample the old
+`next_float` did.

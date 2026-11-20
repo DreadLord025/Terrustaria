@@ -3749,6 +3749,29 @@ impl Player {
         1.0 + self.melee_speed_bonus
     }
 
+    /// `Player.GetWeaponKnockback` (`Player.cs:53346-53369`): the summon
+    /// `minionKB` add, the melee `kbGlove` ×2, the `kbBuff` ×1.5, and the
+    /// ranged stealth scalings (shroomite / Vortex). The port has no
+    /// `setVortex` field (the Vortex stealth set is unported), so that arm
+    /// stays a note; the shroomite arm reads the ported `shroomite_stealth`.
+    pub fn weapon_knockback(&self, class: registry::DamageClass, base_kb: f32) -> f32 {
+        let mut kb = base_kb;
+        if class == registry::DamageClass::Summon {
+            kb += self.minion_kb;
+        }
+        if class == registry::DamageClass::Melee && self.kb_glove {
+            kb *= 2.0;
+        }
+        if self.kb_buff {
+            kb *= 1.5;
+        }
+        if class == registry::DamageClass::Ranged && self.shroomite_stealth {
+            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
+        }
+        // `sItem.ranged && this.setVortex` (`:53364-53367`) — no port field.
+        kb
+    }
+
     /// `Player.MountedCenter` (`Player.cs:3335-3343`):
     /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
     /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount

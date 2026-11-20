@@ -169,9 +169,23 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         |p| {
             let (cx, cy) = p.center();
             let (mx, my) = p.mounted_center();
+            // `Main.LocalPlayer.inventory[selectedItem].shoot` (`:43850`) —
+            // the dual-flail flag5's selected-item gate.
+            let held = app.inventory[app.selected];
+            let selected_shoot = if held.count > 0 {
+                registry::projectile(held.kind)
+            } else {
+                None
+            };
             FlailInputs {
                 aim: inputs.aim,
                 channel: inputs.channel,
+                // `Player.controlUseItem` — the raw use button (the port's
+                // `mine_down`), NOT the channel state: the flight/retract/
+                // spin re-grab arms read the button even when `channel` is
+                // false (`Projectile.cs:43905/43942/43959/44035`).
+                control_use_item: app.mine_down,
+                map_fullscreen: app.map.as_ref().is_some_and(|m| m.open),
                 player_dead: false,
                 player_cced: p.cced(),
                 mounted_center: Some((mx, my)),
@@ -180,6 +194,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 player_dir: p.facing,
                 melee_speed: p.melee_speed(),
                 local_owner: app.local_id as u8,
+                selected_shoot,
             }
         },
     );
