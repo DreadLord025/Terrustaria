@@ -1587,6 +1587,116 @@ pub struct MinionAttackTarget {
     pub npc: i16,
 }
 
+/// `msg 101 UpdateTowerShieldStrengths`'s body (`NetMessage.cs:1371-1376`):
+/// the four `NPC.ShieldStrengthTower*` statics as `ushort`s in the written
+/// order Solar, Vortex, Nebula, Stardust. Sent by the 629 bolt's shield chip
+/// (`Projectile.cs:72944-72978`), the apocalypse start (`WorldGen.cs:86689`)
+/// and the join push (`MessageBuffer.cs:869`). The reader clamps each to
+/// `0..LunarShieldPowerMax` (= 100, `NPC.cs:95252`) — that clamp is the apply
+/// arm's job (`MessageBuffer.cs:3611-3651`, parked for S1-I-4); the codec
+/// carries the raw ushorts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TowerShields {
+    pub solar: u16,
+    pub vortex: u16,
+    pub nebula: u16,
+    pub stardust: u16,
+}
+
+/// `HalfTypeHelper.Convert(float)` — the FNA/XNA float32→float16 pack
+/// (FNA `src/Graphics/PackedVector/HalfTypeHelper.cs`, the code Terraria's
+/// `HalfVector2` rides; not in the decompiled trees, which stop at the game
+/// assemblies). Verbatim: the round-to-nearest-even mantissa adds and the
+/// subnormal/overflow arms, sign in bit 15.
+pub fn half_pack(f: f32) -> u16 {
+    let i = f.to_bits() as i32;
+    let s = (i >> 16) & 0x0000_8000;
+    let mut e = ((i >> 23) & 0x0000_00ff) - (127 - 15);
+    let mut m = i & 0x007f_ffff;
+    if e <= 0 {
+        if e < -10 {
+            return s as u16;
+        }
+        m |= 0x0080_0000;
+        let t = 14 - e;
+        let a = (1 << (t - 1)) - 1;
+        let b = (m >> t) & 1;
+        m = (m + a + b) >> t;
+        (s | m) as u16
+    } else if e == 0xff - (127 - 15) {
+        if m == 0 {
+            (s | 0x7c00) as u16
+        } else {
+            m >>= 13;
+            (s | 0x7c00 | m | if m == 0 { 1 } else { 0 }) as u16
+        }
+    } else {
+        m += 0x0000_0fff + ((m >> 13) & 1);
+        if (m & 0x0080_0000) != 0 {
+            m = 0;
+            e += 1;
+        }
+        if e > 30 {
+            return (s | 0x7c00) as u16;
+        }
+        (s | (e << 10) | (m >> 13)) as u16
+    }
+}
+
+/// `HalfTypeHelper.Convert(ushort)` — the float16→float32 expand, verbatim
+/// (the subnormal normalize loop, `exp` starting at -14). Inf/NaN expand
+/// bit-for-bit (exp field 31 → 0xff, the payload rides the mantissa shift).
+pub fn half_unpack(value: u16) -> f32 {
+    let mut mantissa = (value & 1023) as u32;
+    let mut exp: u32 = 0xffff_fff2; // -14
+    let rst = if (value & 0x7c00) == 0 {
+        if mantissa != 0 {
+            while (mantissa & 1024) == 0 {
+                exp = exp.wrapping_sub(1);
+                mantissa <<= 1;
+            }
+            mantissa &= 0xffff_fbff;
+            (((value as u32 & 0x8000) << 16) | (exp.wrapping_add(127) << 23))
+                | (mantissa << 13)
+        } else {
+            (value as u32 & 0x8000) << 16
+        }
+    } else {
+        (((value as u32 & 0x8000) << 16)
+            | (((((value as u32 >> 10) & 0x1f).wrapping_sub(15)).wrapping_add(127)) << 23))
+            | (mantissa << 13)
+    };
+    f32::from_bits(rst)
+}
+
+/// `HalfVector2.PackHelper` (`HalfVector2.cs:94-97` in the FNA tree): x in
+/// the low 16 bits, y in the high 16.
+pub fn pack_half_vector2(x: f32, y: f32) -> u32 {
+    half_pack(x) as u32 | ((half_pack(y) as u32) << 16)
+}
+
+/// `HalfVector2.ToVector2` (`HalfVector2.cs:37-43`): the inverse split.
+pub fn unpack_half_vector2(packed: u32) -> (f32, f32) {
+    (
+        half_unpack(packed as u16),
+        half_unpack((packed >> 16) as u16),
+    )
+}
+
+/// `msg 106 PoofOfSmoke`'s body (`NetMessage.cs:1400-1402`): one `uint` —
+/// `new HalfVector2(number, number2).PackedValue`, the poof position in two
+/// float16s. Sent by the host at the slime-transform poof
+/// (`Projectile.cs:14742-14746`), the critter poof (`NPC.cs:79882-79887`)
+/// and the wiring lamps (`Wiring.cs:826`, `:2276`, `:2330`, `:2398`); the
+/// client replays `Utils.PoofOfSmoke` (`MessageBuffer.cs:3742-3751`,
+/// `Utils.cs:1078-1093` — the gore/dust burst, parked for S1-I-4). The
+/// payload keeps the packed bits so the wire is byte-exact; use
+/// [`pack_half_vector2`]/[`unpack_half_vector2`] at the seams.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PoofOfSmoke {
+    pub packed: u32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1842,6 +1952,14 @@ pub enum S2c {
     /// `115 MinionAttackTargetUpdate` - a peer's minion attack target,
     /// relayed (`MessageBuffer.cs:3594`).
     MinionAttackTarget(MinionAttackTarget),
+    /// `101 UpdateTowerShieldStrengths` - the four tower shields
+    /// (`Projectile.cs:72978`, `WorldGen.cs:86689`, join push
+    /// `MessageBuffer.cs:869`; client clamps `:3611-3651`).
+    TowerShields(TowerShields),
+    /// `106 PoofOfSmoke` - a smoke poof at a half-float position
+    /// (`Projectile.cs:14746`, `NPC.cs:79887`, `Wiring.cs:826` et al.;
+    /// client replays `Utils.PoofOfSmoke`, `MessageBuffer.cs:3742-3751`).
+    PoofOfSmoke(PoofOfSmoke),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2305,6 +2423,8 @@ impl S2c {
             Self::HealPlayer(_) => id::HEAL_PLAYER,
             Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
             Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
+            Self::TowerShields(_) => id::TOWER_SHIELDS,
+            Self::PoofOfSmoke(_) => id::POOF_OF_SMOKE,
         }
     }
 
@@ -2453,6 +2573,11 @@ impl S2c {
             Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
             // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
             Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
+            // `NetMessage.cs:1371-1376`: four ushorts, Solar/Vortex/Nebula/
+            // Stardust order.
+            Self::TowerShields(t) => w.u16(t.solar).u16(t.vortex).u16(t.nebula).u16(t.stardust),
+            // `NetMessage.cs:1400-1402`: the HalfVector2's PackedValue.
+            Self::PoofOfSmoke(p) => w.u32(p.packed),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2668,6 +2793,13 @@ impl S2c {
                 player_id: r.u8()?,
                 npc: r.i16()?,
             }),
+            id::TOWER_SHIELDS => Self::TowerShields(TowerShields {
+                solar: r.u16()?,
+                vortex: r.u16()?,
+                nebula: r.u16()?,
+                stardust: r.u16()?,
+            }),
+            id::POOF_OF_SMOKE => Self::PoofOfSmoke(PoofOfSmoke { packed: r.u32()? }),
             _ => return None,
         })
     }
@@ -4912,5 +5044,82 @@ mod tests {
             C2s::MinionAttackTarget(d) => assert_eq!(d, m2),
             other => panic!("expected 115, got {:?}", other.msg_id()),
         }
+    }
+
+    #[test]
+    fn s1_i_1_d94_tower_shields_round_trips() {
+        // `NetMessage.cs:1371-1376`: four ushorts in the written order —
+        // Solar, Vortex, Nebula, Stardust (`NPC.ShieldStrengthTower*`).
+        let t = TowerShields {
+            solar: 100,
+            vortex: 63,
+            nebula: 0,
+            stardust: 42,
+        };
+        let f = S2c::TowerShields(t).encode();
+        assert_eq!(f[2], 101);
+        let mut body = Vec::new();
+        for v in [100u16, 63, 0, 42] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TowerShields(d) => assert_eq!(d, t),
+            other => panic!("expected 101, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_poof_of_smoke_round_trips() {
+        // `NetMessage.cs:1400-1402`: one uint, the HalfVector2 PackedValue.
+        // 1024.0 packs to 0x6400, -2.5 to 0xc100 (sign|exp|mantissa fields).
+        let packed = pack_half_vector2(1024.0, -2.5);
+        assert_eq!(packed, 0x6400 | (0xc100u32 << 16));
+        let p = PoofOfSmoke { packed };
+        let f = S2c::PoofOfSmoke(p).encode();
+        assert_eq!(f[2], 106);
+        assert_eq!(&f[3..], &packed.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PoofOfSmoke(d) => assert_eq!(d, p),
+            other => panic!("expected 106, got {:?}", other.msg_id()),
+        }
+        assert_eq!(unpack_half_vector2(packed), (1024.0, -2.5));
+    }
+
+    #[test]
+    fn s1_i_1_d94_half_codec_pins() {
+        // HalfTypeHelper.Convert both ways (FNA's verbatim tables):
+        // exact powers, the round-to-nearest-even tie, subnormals, zero,
+        // overflow-to-inf and NaN-keep.
+        assert_eq!(half_pack(0.0), 0x0000);
+        assert_eq!(half_pack(-0.0), 0x8000);
+        assert_eq!(half_pack(1.0), 0x3c00);
+        assert_eq!(half_pack(-2.0), 0xc000);
+        assert_eq!(half_pack(0.5), 0x3800);
+        assert_eq!(half_pack(65504.0), 0x7bff); // the largest finite half
+        assert_eq!(half_pack(65536.0), 0x7c00); // overflow -> +inf
+        assert_eq!(half_pack(f32::INFINITY), 0x7c00);
+        assert_eq!(half_pack(f32::NEG_INFINITY), 0xfc00);
+        assert!(half_pack(f32::NAN) & 0x7c00 == 0x7c00); // stays NaN
+        assert_ne!(half_pack(f32::NAN) & 0x03ff, 0); // payload kept
+        // The smallest positive subnormal: 2^-24 -> 0x0001; half of it ties
+        // to even (down to 0), 1.5x of it ties up to 0x0002.
+        let tiny = f32::from_bits((127 - 24) << 23); // 2^-24
+        assert_eq!(half_pack(tiny), 0x0001);
+        assert_eq!(half_pack(tiny * 0.5), 0x0000); // tie -> even
+        assert_eq!(half_pack(tiny * 1.5), 0x0002); // tie -> even
+        assert_eq!(half_pack(tiny * 0.25), 0x0000); // below half, flush
+        // Round trips on every finite half bit pattern.
+        for bits in 0u16..=0xffff {
+            if bits & 0x7c00 == 0x7c00 {
+                continue; // inf/NaN: not finite, compared by bits below
+            }
+            let f = half_unpack(bits);
+            assert_eq!(half_pack(f), bits, "half round trip {bits:#06x}");
+        }
+        // Inf/NaN expand to the exact float bit patterns.
+        assert_eq!(half_unpack(0x7c00).to_bits(), f32::INFINITY.to_bits());
+        assert_eq!(half_unpack(0xfc00).to_bits(), f32::NEG_INFINITY.to_bits());
+        assert!(half_unpack(0x7e00).is_nan());
     }
 }

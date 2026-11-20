@@ -1868,6 +1868,9 @@ impl App {
             // bodies + codecs (`net.rs`); the client read sites land with
             // the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::HealPlayer(_) | S2c::MinionRestTarget(_) | S2c::MinionAttackTarget(_) => {}
+            // 101 tower shields (`:3611-3651` clamp) + 106 smoke poof
+            // (`:3742-3751` Utils.PoofOfSmoke) — same wave, same parking.
+            S2c::TowerShields(_) | S2c::PoofOfSmoke(_) => {}
         }
     }
 
