@@ -187,7 +187,30 @@ pub const NPC_GLOW_RECORDS: &[NpcGlowRecord] = &[
     // :26250/:26252 — SantaNK1 346: 4 UnitX ghosts radius 4 (64,64,64,0)
     // then the body (200,200,200,100).
     NpcGlowRecord { npc: 346, masks: &[254], line: 26250 },
+    // :26260/:26262 — HeadlessHorseman 315: 4 UnitX ghosts radius 2 then
+    // the body (200,200,200,200).
+    NpcGlowRecord { npc: 315, masks: &[255], line: 26260 },
+    // :26266 — DesertGhoulCorruption 525, (200,200,200,100).
+    NpcGlowRecord { npc: 525, masks: &[169], line: 26266 },
+    // :26269 — DesertGhoulCrimson 526, same.
+    NpcGlowRecord { npc: 526, masks: &[170], line: 26269 },
+    // :26272 — DesertGhoulHallow 527, same.
+    NpcGlowRecord { npc: 527, masks: &[171], line: 26272 },
+    // :26275 — DesertDjinn 533, (255,255,255,100).
+    NpcGlowRecord { npc: 533, masks: &[172], line: 26275 },
+    // :26280 — Truffle 160: townNpcVariationIndex != 1 → mask 166, else
+    // 352; (128-alpha/2) grey a0, shimmerTransparency dims RGB (:26282-87).
+    NpcGlowRecord { npc: 160, masks: &[166, 352], line: 26280 },
+    // :26294 — Cyborg 209: variation != 1 → 167, else altTexture != 1 →
+    // 350, else 351; (128-alpha/2) grey a0.
+    NpcGlowRecord { npc: 209, masks: &[167, 350, 351], line: 26294 },
 ];
+// The census is COMPLETE for `Main.DrawNPC`'s GlowMask draws
+// (`Main.cs:23406-26297`): 76 records over 74 npc types. The named-sheet
+// arms (Firefly/Lightningbug, Prime's Bone_Eyes/Bone_Laser/EyeLaser/Probe,
+// the Golem extras, the Wraith/Reaper eyes) and the non-glow twins (393,
+// 382, 516) are documented in the module header.
+
 
 #[cfg(test)]
 mod tests {
@@ -205,5 +228,28 @@ mod tests {
         assert_eq!(n421.len(), 2);
         assert_eq!(n421[0].line, 25381);
         assert_eq!(n421[1].line, 26133);
+    }
+
+    #[test]
+    fn w4_g35_the_npc_census_is_complete() {
+        assert_eq!(NPC_GLOW_RECORDS.len(), 76);
+        let mut types: Vec<u16> = NPC_GLOW_RECORDS.iter().map(|r| r.npc).collect();
+        types.sort_unstable();
+        types.dedup();
+        assert_eq!(types.len(), 74);
+        // 419 and 421 are the two dual-arm types.
+        for &t in &[419u16, 421] {
+            assert_eq!(NPC_GLOW_RECORDS.iter().filter(|r| r.npc == t).count(), 2);
+        }
+        // Every mask id is inside GlowMaskID.Count = 384 (GlowMaskID.cs:781).
+        for r in NPC_GLOW_RECORDS {
+            for &m in r.masks {
+                assert!(m < 384, "npc {} mask {m} out of range", r.npc);
+            }
+        }
+        // The town variants carry their alternates.
+        let r = |npc| NPC_GLOW_RECORDS.iter().find(|r| r.npc == npc).unwrap();
+        assert_eq!(r(160).masks, &[166, 352]);
+        assert_eq!(r(209).masks, &[167, 350, 351]);
     }
 }
