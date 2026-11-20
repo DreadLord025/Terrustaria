@@ -21918,6 +21918,52 @@ machinery and the two roster ladders are new:
   `Next(n)`s); the walks, start/stop, the dawn stop and the triggers draw
   nothing.
 
+**W4-c41 re-verification (2026-11-20, code-only)**: the town-NPC `Main.rand`
+block (`NPC.cs:799-923`, S1-F-11) and the `invaders` rate override
+(`NPC.cs:781-785`, S1-F-12) were re-derived against the source in ≤100-line
+windows; one 1:1 drift fixed, four census witnesses landed:
+
+- **The infected-seed town gate** (`NPC.cs:794-799`): `flag = ZoneCorrupt ||
+  ZoneCrimson` is cleared by `Main.infectedSeed` (`:795-798`, the
+  `worldIsInfected` micro seed → `WorldGen.cs:561`), but the gate's explicit
+  `!this.ZoneCrimson` term (`:799`) survives the clear. The pre-fix port
+  folded both into one `!zone_evil` check and wrongly closed the gate on an
+  infected-seed corruption world (the seed IS modelled —
+  `MicroSeedFlags::WORLD_IS_INFECTED`, already read by shop/npcs/worldgen).
+  Now `SpawnFlags` carries `zone_crimson` + `infected_seed`, the gate reads
+  `!(zone_evil && !infected_seed) && !zone_crimson`, and the production
+  context feeds both (`world_sim/npcs.rs`). Classic worlds are unchanged
+  (`infected_seed` false ⇒ the fold is exact). Witness
+  `the_infected_seed_opens_the_town_gate_in_corruption_only` pins all five
+  (evil, crimson, infected) combinations with stream fingerprints.
+- **The override precedence** (`NPC.cs:749-789`): the invaders branch runs
+  AFTER the floor/cap (it overwrites the chain's 108/10 blood-moon pair with
+  20/11) and BEFORE the pre-Skeletron dungeon arm (which takes the rate back
+  to 10 while the override's max 11 stays). Witness
+  `the_invaders_override_outranks_the_chain_but_yields_to_the_dungeon_ten`.
+- **The rate stage draws nothing under invaders**: the override is pure
+  arithmetic and `!invaders` closes the town block — zero draws even with
+  town NPCs + a graveyard up (the ladder's draws come later in
+  `SpawnAnNPC`). Witness `the_invaders_rate_stage_draws_nothing`.
+- **The RNG census (CRITICAL)**: `the_town_block_census_replays_the_c_draw_order_across_seeds`
+  replays every town arm × depth × graveyard/candle combination over 63
+  seeds against a C#-transcribed reference (`town_block_reference`) — both
+  the `SpawnRate` tuple AND the whole `UnifiedRandom` state must match
+  (widths, order, the graveyard+peace-candle double `Next(3)`, the
+  always-drawn underworld `Next(2)`/`Next(4)`/`Next(10)` first rolls, the
+  `(double)(float)x` vs `(float)x` cast widths).
+- **Verified unchanged**: the invaders ladder (`invasion_spawn_pick`,
+  `NPC.cs:1424-1541` — the per-type `Next(n)` order, the type-4 bitwise-`&`
+  quirk draws `:1508/:1514`, the Walker re-roll `:1547`), the one-stream
+  wiring (`spawn_npc_call` → rate draws → `Next(spawnRate)` → the
+  50-candidate scan → `Next(7)` → the ladder, `world_sim/npcs.rs`), the
+  `noWorms`/`spawnFriendly` consumers (skyMob `:980/:984`, piranha `:1929`,
+  Devourer `:3701`, Giant Worm `:4816`). Constants-off inside the block
+  stay as documented (skyblock `lowTiles`, shadow candle, `expertMode`,
+  `ZoneOldOneArmy`, `inRemixStartingArea`, the luck tail `:924-928`); the
+  DD2 reset arm (`:776-779`) stays out (no `ZoneOldOneArmy` scene source).
+  Tests written NOT run — code-only mode, no compiler invoked.
+
 ## The Dark Mage's machine (S1-D-3o, 2026-11-16)
 
 `AI_109_DarkMage` (`NPC.cs:65791-66186`) carries the Old One's Army's
