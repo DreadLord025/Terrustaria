@@ -189,6 +189,22 @@ pub mod id {
     /// (`MessageBuffer.cs:3905-3918`) — no relay arm, so this id has no
     /// S2c side.
     pub const EMOJI: u8 = 120;
+    /// `134 UpdatePlayerLuckFactors` (`MessageID.cs:282`) — `(byte)` player,
+    /// `(int)` ladyBugLuckTimeLeft, `(float)` torchLuck, `(byte)` luckPotion,
+    /// `(bool)` HasGardenGnomeNearby, `(bool)` brokenMirrorBadLuck,
+    /// `(float)` equipmentBasedLuckBonus, `(float)` coinLuck,
+    /// `(byte)` kiteLuckLevel (`NetMessage.cs:1555-1567`). The client send
+    /// site is `Player.UpdateLuck`'s `luckNeedsSync` latch
+    /// (`Player.cs:29045-29048`); the host applies all eight fields +
+    /// `RecalculateLuck` and relays (`MessageBuffer.cs:4164-4193`).
+    pub const UPDATE_PLAYER_LUCK_FACTORS: u8 = 134;
+    /// `150 SpectatePlayer` (`MessageID.cs:314`) — `(byte)` player,
+    /// `(short)` target (-1 stops spectating, `NetMessage.cs:1639-1642`;
+    /// send sites `Player.SetOrRequestSpectating`, `Player.cs:17252`/`:17271`).
+    /// The host runs `SetOrRequestSpectating` for a real target, else clears
+    /// `spectating` to -1 and relays the stop (`MessageBuffer.cs:4361-4384`);
+    /// the client only applies a peer's value (or its own stop, `:4380-4383`).
+    pub const SPECTATE_PLAYER: u8 = 150;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1815,6 +1831,64 @@ pub struct Emoji {
     pub emote_id: u8,
 }
 
+/// `msg 134 UpdatePlayerLuckFactors`'s body (`NetMessage.cs:1555-1567`):
+/// `(byte)number`, then the eight `Player` luck fields in writer order —
+/// `ladyBugLuckTimeLeft` (int, `Player.cs:3084`), `torchLuck` (float,
+/// `:3062`), `luckPotion` (byte, `:1134`), `HasGardenGnomeNearby` (bool,
+/// `:2076`), `brokenMirrorBadLuck` (bool, `:2078`),
+/// `equipmentBasedLuckBonus` (float, `:2774`), `coinLuck` (float, `:3092`),
+/// `kiteLuckLevel` (byte, `:3094`). The reader mirrors the order
+/// (`MessageBuffer.cs:4166-4174`) and applies + `RecalculateLuck` (`:4188`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UpdatePlayerLuckFactors {
+    pub player_id: u8,
+    pub ladybug_luck_time_left: i32,
+    pub torch_luck: f32,
+    pub luck_potion: u8,
+    pub has_garden_gnome_nearby: bool,
+    pub broken_mirror_bad_luck: bool,
+    pub equipment_based_luck_bonus: f32,
+    pub coin_luck: f32,
+    pub kite_luck_level: u8,
+}
+
+impl UpdatePlayerLuckFactors {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        w.u8(self.player_id)
+            .i32(self.ladybug_luck_time_left)
+            .f32(self.torch_luck)
+            .u8(self.luck_potion)
+            .bool(self.has_garden_gnome_nearby)
+            .bool(self.broken_mirror_bad_luck)
+            .f32(self.equipment_based_luck_bonus)
+            .f32(self.coin_luck)
+            .u8(self.kite_luck_level)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            player_id: r.u8()?,
+            ladybug_luck_time_left: r.i32()?,
+            torch_luck: r.f32()?,
+            luck_potion: r.u8()?,
+            has_garden_gnome_nearby: r.bool()?,
+            broken_mirror_bad_luck: r.bool()?,
+            equipment_based_luck_bonus: r.f32()?,
+            coin_luck: r.f32()?,
+            kite_luck_level: r.u8()?,
+        })
+    }
+}
+
+/// `msg 150 SpectatePlayer`'s body (`NetMessage.cs:1639-1642`):
+/// `(byte)number` the spectating player, `(short)number2` the target —
+/// -1 stops spectating (`MessageBuffer.cs:4372-4378`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpectatePlayer {
+    pub player_id: u8,
+    pub target: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1942,6 +2016,14 @@ pub enum C2s {
     /// `UI/EmoteBubble.cs:289`; the host spawns the bubble,
     /// `MessageBuffer.cs:3905-3918` — no relay).
     Emoji(Emoji),
+    /// `134 UpdatePlayerLuckFactors` - a client's luck factors
+    /// (`Player.UpdateLuck`'s `luckNeedsSync` send, `Player.cs:29048`; the
+    /// host applies + relays, `MessageBuffer.cs:4164-4193`).
+    UpdatePlayerLuckFactors(UpdatePlayerLuckFactors),
+    /// `150 SpectatePlayer` - a client (re)targets spectating
+    /// (`Player.SetOrRequestSpectating`, `Player.cs:17252`; the host arm
+    /// `MessageBuffer.cs:4361-4384`).
+    SpectatePlayer(SpectatePlayer),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2077,6 +2159,15 @@ pub enum S2c {
     /// `SendPlayerDeath` (`MessageBuffer.cs:3901`); the client runs
     /// `Player.KillMe` (`:3898`).
     PlayerDeathV2(PlayerDeathV2),
+    /// `134 UpdatePlayerLuckFactors` - a peer's luck factors, relayed by the
+    /// host (`MessageBuffer.cs:4191`); the client applies the eight fields +
+    /// `RecalculateLuck` (`:4180-4188`).
+    UpdatePlayerLuckFactors(UpdatePlayerLuckFactors),
+    /// `150 SpectatePlayer` - a peer's spectate target, relayed by the host
+    /// on a stop (`MessageBuffer.cs:4378`) or sent from the host's own
+    /// `SetOrRequestSpectating` (`Player.cs:17271`); the client applies a
+    /// peer's value or its own stop (`:4380-4383`).
+    SpectatePlayer(SpectatePlayer),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2169,6 +2260,8 @@ impl C2s {
             Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
             Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
             Self::Emoji(_) => id::EMOJI,
+            Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
+            Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2248,6 +2341,10 @@ impl C2s {
             Self::PlayerDeathV2(d) => d.write_to(w),
             // `NetMessage.cs:1454-1457`: (byte)number, (byte)number2.
             Self::Emoji(e) => w.u8(e.player_id).u8(e.emote_id),
+            // `NetMessage.cs:1555-1567`: the eight luck fields in writer order.
+            Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
+            // `NetMessage.cs:1639-1642`: (byte)number, (short)number2.
+            Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2389,6 +2486,17 @@ impl C2s {
             id::EMOJI => Self::Emoji(Emoji {
                 player_id: r.u8()?,
                 emote_id: r.u8()?,
+            }),
+            // `MessageBuffer.cs:4166-4174`: the eight luck fields in reader
+            // order; the host's forced whoAmI override (`:4175-4178`) is the
+            // dispatcher's, not the codec's.
+            id::UPDATE_PLAYER_LUCK_FACTORS => {
+                Self::UpdatePlayerLuckFactors(UpdatePlayerLuckFactors::read_from(r)?)
+            }
+            // `MessageBuffer.cs:4363-4368`: (byte)player, (short)target.
+            id::SPECTATE_PLAYER => Self::SpectatePlayer(SpectatePlayer {
+                player_id: r.u8()?,
+                target: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2553,6 +2661,8 @@ impl S2c {
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
             Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
             Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
+            Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
+            Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
         }
     }
 
@@ -2704,6 +2814,10 @@ impl S2c {
             Self::PlayerHurtV2(h) => h.write_to(w),
             // `NetMessage.cs:1447-1453` via `SendPlayerDeath` (`:2607-2613`).
             Self::PlayerDeathV2(d) => d.write_to(w),
+            // `NetMessage.cs:1555-1567`: the eight luck fields in writer order.
+            Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
+            // `NetMessage.cs:1639-1642`: (byte)number, (short)number2.
+            Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2920,6 +3034,15 @@ impl S2c {
             // `MessageBuffer.cs:3889-3897`: the direction byte minus 1, the
             // pvp-only BitsByte — no cooldown sbyte follows.
             id::PLAYER_DEATH_V2 => Self::PlayerDeathV2(PlayerDeathV2::read_from(r)?),
+            // `MessageBuffer.cs:4166-4174`: the eight luck fields in reader order.
+            id::UPDATE_PLAYER_LUCK_FACTORS => {
+                Self::UpdatePlayerLuckFactors(UpdatePlayerLuckFactors::read_from(r)?)
+            }
+            // `MessageBuffer.cs:4363-4368`: (byte)player, (short)target.
+            id::SPECTATE_PLAYER => Self::SpectatePlayer(SpectatePlayer {
+                player_id: r.u8()?,
+                target: r.i16()?,
+            }),
             _ => return None,
         })
     }
@@ -5289,5 +5412,80 @@ mod tests {
         // 120 is host-consumed only (`MessageBuffer.cs:3905-3918` has no
         // relay): the client decoder must not accept it.
         assert!(S2c::decode(120, &mut NetReader::new(&body)).is_none());
+    }
+
+    #[test]
+    fn w4_d97_update_player_luck_factors_byte_pin() {
+        // `NetMessage.cs:1555-1567`: (byte)number, then ladyBugLuckTimeLeft
+        // (int), torchLuck (float), luckPotion (byte), HasGardenGnomeNearby
+        // (bool), brokenMirrorBadLuck (bool), equipmentBasedLuckBonus
+        // (float), coinLuck (float), kiteLuckLevel (byte).
+        let l = UpdatePlayerLuckFactors {
+            player_id: 7,
+            ladybug_luck_time_left: 12345,
+            torch_luck: -0.4,
+            luck_potion: 2,
+            has_garden_gnome_nearby: true,
+            broken_mirror_bad_luck: false,
+            equipment_based_luck_bonus: 0.15,
+            coin_luck: 0.25,
+            kite_luck_level: 3,
+        };
+        let mut body = vec![7];
+        body.extend_from_slice(&12345i32.to_le_bytes());
+        body.extend_from_slice(&(-0.4f32).to_bits().to_le_bytes());
+        body.push(2); // luckPotion
+        body.push(1); // HasGardenGnomeNearby
+        body.push(0); // brokenMirrorBadLuck
+        body.extend_from_slice(&0.15f32.to_bits().to_le_bytes());
+        body.extend_from_slice(&0.25f32.to_bits().to_le_bytes());
+        body.push(3); // kiteLuckLevel
+        let f = C2s::UpdatePlayerLuckFactors(l).encode();
+        assert_eq!(f[2], 134);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::UpdatePlayerLuckFactors(d) => assert_eq!(d, l),
+            other => panic!("expected 134, got {:?}", other.msg_id()),
+        }
+        // The host relay re-reads the fields off the player
+        // (`MessageBuffer.cs:4191` re-sends 134) — same body bytes.
+        let s = S2c::UpdatePlayerLuckFactors(l).encode();
+        assert_eq!(s[2], 134);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::UpdatePlayerLuckFactors(d) => assert_eq!(d, l),
+            other => panic!("expected 134, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d97_spectate_player_byte_pin() {
+        // `NetMessage.cs:1639-1642`: (byte)number, (short)number2.
+        let s = SpectatePlayer {
+            player_id: 255,
+            target: 6,
+        };
+        let mut body = vec![255];
+        body.extend_from_slice(&6i16.to_le_bytes());
+        let f = C2s::SpectatePlayer(s).encode();
+        assert_eq!(f[2], 150);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::SpectatePlayer(d) => assert_eq!(d, s),
+            other => panic!("expected 150, got {:?}", other.msg_id()),
+        }
+        // The stop target -1 (`MessageBuffer.cs:4377-4378` clears
+        // `spectating` and relays) rides as the two's-complement short.
+        let stop = SpectatePlayer {
+            player_id: 3,
+            target: -1,
+        };
+        let f = S2c::SpectatePlayer(stop).encode();
+        assert_eq!(f[2], 150);
+        assert_eq!(&f[3..], &[3, 0xFF, 0xFF]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SpectatePlayer(d) => assert_eq!(d, stop),
+            other => panic!("expected 150, got {:?}", other.msg_id()),
+        }
     }
 }

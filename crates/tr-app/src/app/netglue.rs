@@ -826,6 +826,11 @@ impl App {
             // (`:3905-3918`, `EmoteID.Count` gate + 360-tick bubble) land
             // with the send-path pass (S1-I-4).
             C2s::PlayerDeathV2(_) | C2s::Emoji(_) => {}
+            // W4-d97 batch 3: the host luck apply+relay arm
+            // (`MessageBuffer.cs:4164-4193`, `RecalculateLuck` :4188) and
+            // the spectate arm (`:4361-4384`, `SetOrRequestSpectating` /
+            // the stop relay :4378) land with the send-path pass (S1-I-4).
+            C2s::UpdatePlayerLuckFactors(_) | C2s::SpectatePlayer(_) => {}
         }
     }
 
@@ -1878,6 +1883,10 @@ impl App {
             // (S1-I-4). 120 Emoji has no S2c side — the host consumes it
             // without relaying (`:3905-3918`).
             S2c::PlayerDeathV2(_) => {}
+            // W4-d97 batch 3: the client luck-field apply (`:4180-4188`) and
+            // the peer-spectate apply (`MessageBuffer.cs:4380-4383`) land
+            // with the send-path pass (S1-I-4).
+            S2c::UpdatePlayerLuckFactors(_) | S2c::SpectatePlayer(_) => {}
         }
     }
 
