@@ -2611,12 +2611,36 @@ mod tests {
 
     #[test]
     fn moon_event_forces_the_raid_pacing() {
-        // NPC.cs:792-796: maxSpawns = 5 x (2 + 0.3x1) = 11, spawnRate = 20.
+        // NPC.cs:771-775: maxSpawns = 5 x (2 + 0.3x1) = 11, spawnRate = 20 —
+        // gated on the player above the surface line (25 < worldSurface 30).
         let w = ground();
         let mut c = ctx(&w, 25.0 * 16.0, false);
         c.flags.moon_event = true;
         let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+    }
+
+    #[test]
+    fn the_moon_pacing_keeps_the_unpaced_rate_underground() {
+        // `NPC.cs:771`: `(Main.pumpkinMoon || Main.snowMoon) &&
+        // (Main.remixWorld || player.position.Y < Main.worldSurface * 16.0)`
+        // — an UNDERGROUND player during a moon event keeps the un-paced
+        // rate (research 24's errata; the port had applied it everywhere).
+        // y = 600 px = tile 37.5 >= worldSurface 30, but below the depth
+        // band's `worldSurface*16 + sHeight` = 1680 px, so the plain night
+        // arm applies: 600 x0.6 = 360, (float)6.5 -> 6. The inner night
+        // moon arm (`:542-546`) carries the same `< worldSurface*16` gate,
+        // so neither the x0.2/x2 nor the 20/11 override fires.
+        let w = ground();
+        let mut c = ctx(&w, 600.0, false);
+        c.flags.moon_event = true;
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (360, 6));
+        // The boundary is STRICT `<`: exactly on the line stays un-paced.
+        let mut on_line = ctx(&w, 30.0 * 16.0, false);
+        on_line.flags.moon_event = true;
+        let r = get_spawn_rate(&on_line, &mut UnifiedRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (360, 6));
     }
 
     #[test]
@@ -4655,5 +4679,180 @@ mod tests {
         assert_eq!((rate.spawn_rate, rate.max_spawns), (360, 6));
         let rate = get_spawn_rate(&day, &mut UnifiedRandom::new(1));
         assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
+    }
+
+    // ---- W4-c38: the moon-roster re-verification witnesses ----
+
+    /// The pumpkin wave-4 quirk (`NPC.cs:3510-3522`): the leading arm rolls
+    /// `Next(8) == 0 && !AnyNPCs(325)` but SPAWNS 330 — the cap counts the
+    /// GATE kind 325, not the spawned 330 (the pre-fix port counted the
+    /// wrong family through `moon_chain`'s generic count-by-kind).
+    #[test]
+    fn the_pumpkin_wave_4_gate_counts_325_not_the_spawned_330() {
+        let w = moon_world(4, false);
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        // A seed whose first ladder roll (Next(8)) hits.
+        let hit_seed = (1..=100u64)
+            .find(|&s| UnifiedRandom::new(s as i32).next_max(8) == 0)
+            .unwrap();
+        // (a) One live Mourning Wood (325) closes the gate — the roll still
+        // draws, the chain advances (the vanilla `&&` order), the second
+        // arm's Next(2) decides 326 vs the scarecrow band.
+        let roster = [325u16];
+        c.moon_npc_counts = &roster;
+        let mut rng = UnifiedRandom::new(hit_seed as i32);
+        let picked = pumpkin_moon_ladder(&c, &mut rng);
+        let mut r#ref = UnifiedRandom::new(hit_seed as i32);
+        let _gate = r#ref.next_max(8); // drawn behind the closed gate
+        let expect = if r#ref.next_max(2) == 0 {
+            Some(326u16)
+        } else {
+            Some(305 + r#ref.next_max(10) as u16)
+        };
+        assert_eq!(picked, expect, "the closed 325 gate suppresses the 330 arm");
+        assert_ne!(picked, Some(330), "one live 325 refuses the arm");
+        assert_eq!(rng.peek(), r#ref.peek(), "the stream replays the C# order");
+        // (b) A live Poltergeist (330) does NOT close the gate — the count
+        // reads 325, so the arm still fires and spawns 330.
+        let roster2 = [330u16];
+        c.moon_npc_counts = &roster2;
+        let mut rng2 = UnifiedRandom::new(hit_seed as i32);
+        assert_eq!(
+            pumpkin_moon_ladder(&c, &mut rng2),
+            Some(330),
+            "a live 330 leaves the !AnyNPCs(325) gate open"
+        );
+        let mut ref2 = UnifiedRandom::new(hit_seed as i32);
+        let _ = ref2.next_max(8);
+        assert_eq!(rng2.peek(), ref2.peek(), "the hit consumes only its Next(8)");
+        // (c) The open gate fires 330 on the same seed.
+        c.moon_npc_counts = &[];
+        let mut rng3 = UnifiedRandom::new(hit_seed as i32);
+        assert_eq!(pumpkin_moon_ladder(&c, &mut rng3), Some(330));
+    }
+
+    /// The separate-327 quirk (`NPC.cs:3263-3278`/`:3281-3300`/`:3325-3344`/
+    /// `:3347-3374`, cases 18/17/15/14): the leading 327 `if` is its own
+    /// statement — its roll ALWAYS draws even when it fires, and the chain
+    /// after it draws too. The picker keeps the first pick (the C#'s second
+    /// spawn is the documented deviation, ANALYSIS "the pumpkin-327 quirk");
+    /// the stream must stay 1:1 with BOTH rolls consumed.
+    #[test]
+    fn the_pumpkin_327_lead_draws_even_when_it_fires() {
+        // Case 18: Next(7)==0 && CountNPCS(327)<2 → 327, then the chain
+        // Next(7) 325 / Next(7) 315 / else 330 — all rolls drawn.
+        let hit_seed = (1..=100u64)
+            .find(|&s| UnifiedRandom::new(s as i32).next_max(7) == 0)
+            .unwrap();
+        let w = moon_world(18, false);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        let mut rng = UnifiedRandom::new(hit_seed as i32);
+        assert_eq!(pumpkin_moon_ladder(&c, &mut rng), Some(327));
+        let mut r#ref = UnifiedRandom::new(hit_seed as i32);
+        let _lead = r#ref.next_max(7); // the 327 arm — fired
+        let n325 = r#ref.next_max(7); // the chain STILL draws (`:3267`)
+        if n325 != 0 {
+            let _n315 = r#ref.next_max(7); // `:3271` (the count gates are open)
+        }
+        assert_eq!(
+            rng.peek(), r#ref.peek(),
+            "the fired 327 lead does not skip the chain's rolls"
+        );
+        // A seed sweep: the full stream (lead + chain) replays per seed.
+        for seed in 1..=100u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let _ = pumpkin_moon_ladder(&c, &mut rng);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let lead = r#ref.next_max(7);
+            let n325 = r#ref.next_max(7);
+            if n325 != 0 {
+                let n315 = r#ref.next_max(7);
+                let _ = (lead, n315); // both arms' rolls consumed either way
+            }
+            assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: lead + chain");
+        }
+    }
+
+    /// The frost wave-14 chain (`NPC.cs:2958-2975`) has NO final `else`:
+    /// when all four arms miss their rolls the C# spawns nothing — and the
+    /// stream holds exactly the four Next(10)/Next(10)/Next(10)/Next(3).
+    #[test]
+    fn the_frost_wave_14_all_miss_spawns_nothing() {
+        let w = moon_world(14, true);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        let mut saw_none = 0;
+        for seed in 1..=200u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let picked = frost_moon_ladder(&c, &mut rng);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let head = r#ref.next_max(30); // the 341 head (`:2807`)
+            let expect = if head == 0 {
+                Some(341u16)
+            } else {
+                let a = r#ref.next_max(10); // 345 (`:2959`)
+                if a == 0 {
+                    Some(345)
+                } else {
+                    let b = r#ref.next_max(10); // 346 (`:2963`)
+                    if b == 0 {
+                        Some(346)
+                    } else {
+                        let d = r#ref.next_max(10); // 344 (`:2967`)
+                        if d == 0 {
+                            Some(344)
+                        } else if r#ref.next_max(3) == 0 {
+                            Some(343) // `:2971`
+                        } else {
+                            None // the missing `else` (`:2975` break)
+                        }
+                    }
+                }
+            };
+            assert_eq!(picked, expect, "seed {seed}: the wave-14 chain");
+            if expect.is_none() {
+                saw_none += 1;
+            }
+            assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: the draw order");
+        }
+        assert!(saw_none > 0, "the all-miss no-spawn outcome must occur");
+    }
+
+    /// The frost wave-12 fallback (`NPC.cs:3019-3021`): the final `else`
+    /// spawns `Main.rand.Next(338, 341)` — the DRAW ITSELF is the type
+    /// (338/339/340 the Gingerbread family), one extra slot consumed.
+    #[test]
+    fn the_frost_wave_12_fallback_draw_is_the_gingerbread_type() {
+        let w = moon_world(12, true);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        let mut band = std::collections::BTreeSet::new();
+        for seed in 1..=300u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let picked = frost_moon_ladder(&c, &mut rng);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let head = r#ref.next_max(30);
+            let expect = if head == 0 {
+                Some(341u16)
+            } else if r#ref.next_max(10) == 0 {
+                Some(345) // `:3003`
+            } else if r#ref.next_max(10) == 0 {
+                Some(344) // `:3007`
+            } else if r#ref.next_max(8) == 0 {
+                Some(343) // `:3011`
+            } else if r#ref.next_max(3) == 0 {
+                Some(342) // `:3015`
+            } else {
+                Some(338 + r#ref.next_max(3) as u16) // `:3021`
+            };
+            assert_eq!(picked, expect, "seed {seed}: the wave-12 chain");
+            assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: the draw order");
+            if let Some(ty @ 338..=340) = picked {
+                band.insert(ty);
+            }
+        }
+        assert_eq!(
+            band,
+            [338u16, 339, 340].into_iter().collect(),
+            "the Next(338, 341) band spreads across its three kinds"
+        );
     }
 }
