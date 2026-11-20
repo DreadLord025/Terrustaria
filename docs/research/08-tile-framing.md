@@ -82,8 +82,8 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | `wallFrameLookup` / `centerWallFrameLookup` | PORTED | `framing.rs:1069-1093` | 20×3 table + the mask-15 offset add |
 | phlebas/lazure wall lookups (`Framing.cs:35-39`, `:378-387`) | NOT-FOUND | — | large-frame walls keep the generic mask |
 | `TileObjectData` registry | PARTIAL | `tileobject.rs:293-330` | 36 defs registered out of the C#'s full registry (`Initialize` `:2110`); ROADMAP:1319 admits "remaining: the full-registry generator" |
-| `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5312`) | PARTIAL | `tileobject.rs::base_def` + `edit.rs:2600-2612` | base/style routing ported; dynamic stalactite/detritus arms not found |
-| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263` |
+| `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5327`) | PORTED | `tileobject.rs::get_tile_data_for_tile` + `resolve_from_frames` (W4-e11) | the frameY override arms + the `[Style, Style+RandomStyleRange]` bands (:5249-5258); witnesses `tileobject_frame_resolution_witness.rs` (written-not-run) |
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED | `tileobject.rs` (`get_tile_data`, `get_tile_data_for_tile` :5196-5261, `try_get_tile_bounds` :5163-5194, `check_water_death`/`check_lava_death` :5083-5119 — W4-e11) | `CoordinateFullWidth/Height` `:256-263`; the `Liquid.cs:1190` settlement-kill wiring is the liquid task's seam |
 | `tiledata` sets | PARTIAL | `tiledata/sets.rs` | 46 `TileSet`s vs 152 `Factory.CreateBoolSet(` sites in `TileID.cs` (upper bound: nested/Conversion sets) |
 | `tiledata` merge relation | PORTED | `tiledata/merge.rs` | dense 754×12-word bitset, generated |
 | emissive tile/wall tables | PORTED | `tiledata/emissive.rs` | full coverage 754 + 367 |
@@ -169,6 +169,13 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   alternation arms `GetStyle_Detritus/SmallPiles/Stalactite` (`:5294-5312`) and
   `RandomStyleRange` alternation. (Depends on the S tasks above only insofar as
   `reframe_area` must keep object frames — already tested by `test_DW_1_6`.)
+  **DONE**: the generator landed with S1-F-7 wave A (389 tiles/604 defs,
+  d111 census proved it complete); the `RandomStyleRange` runtime hook with
+  wave B (S1-F-7b); the tile-based `GetTileData(Tile)` frameY resolution
+  (:5196-5261, the override arms :5294-5327) with **W4-e11** —
+  `tileobject::get_tile_data_for_tile` + `try_get_tile_bounds` + the
+  tile-based `check_water_death`/`check_lava_death`, witnessed by
+  `tests/tileobject_frame_resolution_witness.rs` (written-not-run).
 - **S** — Audit `tiledata` coverage: list `TileID.Sets.*` actually consumed across
   `crates/`, diff against `tiledata/sets.rs`, migrate hand-copied sets (e.g.
   `wind.rs`'s `SwaysInWindBasic`) into the generator.
