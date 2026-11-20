@@ -409,6 +409,39 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             }
             quick_spawn(rng, out, 3223, 1); // Brain of Confusion (expert-exclusive)
         }
+        // Queen Bee (`Player.cs:7315-7357`).
+        3322 => {
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2108, 1); // Bee Mask
+            }
+            // `:7321-7334` — the weapon pick: Next(3) → 1121/1123/2888
+            // (the Bee Gun / Bee Keeper / Blowgun).
+            let num7 = match rng.next_max(3) {
+                0 => 1121,
+                1 => 1123,
+                _ => 2888,
+            };
+            quick_spawn(rng, out, num7, 1);
+            quick_spawn(rng, out, 3333, 1); // Hive Backpack (expert-exclusive)
+            if rng.next_max(3) == 0 {
+                quick_spawn(rng, out, 1132, 1); // Honey Comb
+            }
+            if rng.next_max(9) == 0 {
+                quick_spawn(rng, out, 1170, 1); // Nectar
+            }
+            if rng.next_max(9) == 0 {
+                quick_spawn(rng, out, 2502, 1); // Honeyed Goggles
+            }
+            if rng.next_max(9) == 0 {
+                quick_spawn(rng, out, 5483, 1); // Bee Hat… the 5483 row
+            }
+            quick_spawn(rng, out, 1129, 1); // Hive Wand
+            // `:7353` — the bottle pick: Next(842, 845).
+            quick_spawn(rng, out, range(rng, 842, 845), 1);
+            // `:7354-7355` — the Beenades Next(10, 31), the Wax Next(17, 31).
+            quick_spawn(rng, out, 1130, range(rng, 10, 31));
+            quick_spawn(rng, out, 2431, range(rng, 17, 31));
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -823,6 +856,82 @@ mod tests {
                 assert_eq!(got, want, "master {master} seed {seed}");
                 assert_eq!(got_rng, r, "master {master} seed {seed} stream");
             }
+        }
+    }
+
+    #[test]
+    fn w4_f35_queen_bee_bag_zero_script_grants_the_whole_arm() {
+        // The zero script: mask hits, weapon pick 0 → the Bee Gun 1121,
+        // the Hive Backpack, all four 1/3+1/9×3 optionals hit, the Hive
+        // Wand, the bottle pick 842, Beenades 10, Wax 17 — then coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3322, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..10],
+            [2108, 1121, 3333, 1132, 1170, 2502, 5483, 1129, 842, 1130],
+            "{its:?}"
+        );
+        assert_eq!(its[10], 2431);
+        assert_eq!(out[9].stack, 10, "Beenades Next(10,31) minimum");
+        assert_eq!(out[10].stack, 17, "Wax Next(17,31) minimum");
+        assert!(its[11..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_queen_bee_bag_weapon_and_bottle_picks() {
+        // The weapon Next(3): 1 → the Bee Keeper 1123, 2 → the Blowgun
+        // 2888; the bottle Next(842,845): 2 → 844.
+        for (pick, weapon) in [(1i32, 1123u16), (2, 2888)] {
+            let mut rng = ScriptRng::new(&[6, pick, 2, 8, 8, 8, 2]);
+            let mut out = Vec::new();
+            open_boss_bag(3322, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[0], weapon, "pick {pick}");
+            assert_eq!(its[1], 3333, "the backpack follows the weapon");
+            assert_eq!(its[2], 1129, "the optionals all missed");
+            assert_eq!(its[3], 844, "the bottle pick 2 → 844");
+        }
+    }
+
+    #[test]
+    fn w4_f35_queen_bee_bag_replays_the_csharp_draw_order() {
+        for seed in [17i32, 808] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3322, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 2108, 1);
+            }
+            let num7 = match r.next_max(3) {
+                0 => 1121,
+                1 => 1123,
+                _ => 2888,
+            };
+            spawn_replay(&mut r, &mut want, num7, 1);
+            spawn_replay(&mut r, &mut want, 3333, 1);
+            if r.next_max(3) == 0 {
+                spawn_replay(&mut r, &mut want, 1132, 1);
+            }
+            if r.next_max(9) == 0 {
+                spawn_replay(&mut r, &mut want, 1170, 1);
+            }
+            if r.next_max(9) == 0 {
+                spawn_replay(&mut r, &mut want, 2502, 1);
+            }
+            if r.next_max(9) == 0 {
+                spawn_replay(&mut r, &mut want, 5483, 1);
+            }
+            spawn_replay(&mut r, &mut want, 1129, 1);
+            spawn_replay(&mut r, &mut want, r.next_range(842, 845), 1);
+            spawn_replay(&mut r, &mut want, 1130, r.next_range(10, 31));
+            spawn_replay(&mut r, &mut want, 2431, r.next_range(17, 31));
+            money_replay_on(&mut r, 222, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
         }
     }
 
