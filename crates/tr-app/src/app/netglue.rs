@@ -308,7 +308,7 @@ impl App {
             // (`:409-412`), stores it in that client's copy of the
             // inventory and relays it to the other clients (`:454-457`,
             // `PlayerItemSlotID.CanRelay`).
-            C2s::Inventory { slot, item } => {
+            C2s::Inventory { slot, item, .. } => {
                 let peer = id as u8;
                 server.set_slot_inventory(id, slot as u8, item);
                 if player_item_slot::can_relay(slot) {
@@ -1895,6 +1895,7 @@ impl App {
         // The 59 grid slots, in `PlayerItemSlotID.Inventory0..58` order.
         for (i, slot) in self.inventory.iter().enumerate() {
             client.send(&C2s::Inventory {
+                player_id: me,
                 slot: i as i16,
                 item: self.net_item(slot, self.favorite_slots.contains(&i)),
             });
@@ -1904,6 +1905,7 @@ impl App {
         if let Some(p) = self.player.as_ref() {
             for i in 0..p.equipped.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::ARMOR_0 + i as i16,
                     item: net::NetItem {
                         kind: p.equipped[i] as i16,
@@ -1915,6 +1917,7 @@ impl App {
             }
             for i in 0..p.dye_slots.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::DYE_0 + i as i16,
                     item: net::NetItem {
                         kind: p.dye_slots[i] as i16,
@@ -1926,6 +1929,7 @@ impl App {
             }
             for i in 0..p.misc_dye_slots.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::MISC_DYE_0 + i as i16,
                     item: net::NetItem {
                         kind: p.misc_dye_slots[i] as i16,
@@ -1938,6 +1942,7 @@ impl App {
             for (b, vault) in p.banks.iter().enumerate() {
                 for (i, slot) in vault.iter().enumerate() {
                     client.send(&C2s::Inventory {
+                        player_id: me,
                         slot: player_item_slot::bank_1_0(b) + i as i16,
                         item: self.net_item(slot, false),
                     });
@@ -1947,12 +1952,14 @@ impl App {
         // The misc equips (`PlayerItemSlotID.Misc0..`) ride `App.equip`.
         for (i, slot) in self.equip.misc_equips.iter().enumerate() {
             client.send(&C2s::Inventory {
+                player_id: me,
                 slot: player_item_slot::MISC_0 + i as i16,
                 item: self.net_item(slot, false),
             });
         }
         // The trash slot (`PlayerItemSlotID.TrashItem`).
         client.send(&C2s::Inventory {
+            player_id: me,
             slot: player_item_slot::TRASH,
             item: self.net_item(&self.equip.trash, false),
         });

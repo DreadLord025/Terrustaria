@@ -1592,8 +1592,11 @@ pub enum C2s {
     Password(String),
     /// `4 PlayerInfo` — this client's identity.
     PlayerInfo(PlayerInfo),
-    /// `5 PlayerInventory` — one inventory slot.
+    /// `5 PlayerInventory` — one inventory slot. The wire carries the
+    /// sender's id first (`NetMessage.cs:201`); the server forces it to the
+    /// sender on read (`MessageBuffer.cs:409-412`).
     Inventory {
+        player_id: u8,
         slot: i16,
         item: NetItem,
     },
@@ -1928,7 +1931,13 @@ impl C2s {
             Self::Connect(v) => w.str(v),
             Self::Password(v) => w.str(v),
             Self::PlayerInfo(pi) => pi.write_to(w),
-            Self::Inventory { slot, item } => w
+            // `NetMessage.cs:199-222`: (byte)number leads the slot body.
+            Self::Inventory {
+                player_id,
+                slot,
+                item,
+            } => w
+                .u8(*player_id)
                 .i16(*slot)
                 .i16(item.stack)
                 .u8(item.prefix)
@@ -2036,16 +2045,19 @@ impl C2s {
             id::PASSWORD => Self::Password(r.str()?),
             id::PLAYER_INFO => Self::PlayerInfo(PlayerInfo::read_from(r)?),
             id::PLAYER_INVENTORY => {
+                // `MessageBuffer.cs:401-406`: the id byte leads the body.
+                let player_id = r.u8()?;
                 let slot = r.i16()?;
                 let stack = r.i16()?;
                 let prefix = r.u8()?;
                 let kind = r.i16()?;
                 let flags = r.bitsbyte()?;
                 Self::Inventory {
+                    player_id,
                     slot,
                     item: NetItem {
                         kind,
-                        // The C# clamps the stack to ≥ 0 (`MessageBuffer.cs:400`).
+                        // The C# clamps the stack to ≥ 0 (`NetMessage.cs:210-213`).
                         stack: stack.max(0),
                         prefix,
                         favorited: flags.get(0),
@@ -2139,9 +2151,11 @@ impl C2s {
                 team: r.u8()?,
                 spawn_context: r.u8()?,
             }),
+            // `MessageBuffer.cs:1063-1081`: the active byte is tested `== 1`
+            // (`:1070`), anything else deactivates.
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
-                active: r.u8()? != 0,
+                active: r.u8()? == 1,
             },
             id::PLAYER_HP => Self::PlayerHp {
                 player_id: r.u8()?,
@@ -2508,9 +2522,11 @@ impl S2c {
             id::PROGRESSION_EVENT => Self::ProgressionEvent {
                 event_id: r.i16()?,
             },
+            // `MessageBuffer.cs:1063-1081`: the active byte is tested `== 1`
+            // (`:1070`), anything else deactivates.
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
-                active: r.u8()? != 0,
+                active: r.u8()? == 1,
             },
             // `MessageBuffer.cs:903-919`: the id byte leads the body.
             id::PLAYER_SPAWN => Self::PlayerSpawn(PlayerSpawn {
@@ -4051,6 +4067,7 @@ mod tests {
             C2s::Password("secret".into()),
             C2s::PlayerInfo(PlayerInfo::with_name(5, "Ann")),
             C2s::Inventory {
+                player_id: 5,
                 slot: 12,
                 item: NetItem {
                     kind: 42,
@@ -4830,6 +4847,106 @@ mod tests {
     // ---- W4-d96 (S1-I-1 player-family first half): per-id round trips ----
     // Each test pins the frame's id byte, the exact C# body bytes
     // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    /// `5 SyncEquipment` (`NetMessage.cs:199-222`): the id byte leads —
+    /// `(byte)number, (short)slot, (short)stack, (byte)prefix, (short)type,
+    /// BitsByte{favorited, blocked}`. The stack clamp (`:210-213`) and the
+    /// `== 1` active test of 14 are pinned here too.
+    #[test]
+    fn w4_d96_inventory_leads_with_the_id_byte() {
+        let item = NetItem {
+            kind: 757,
+            stack: 1,
+            prefix: 81,
+            favorited: true,
+        };
+        let mut body = vec![4];
+        body.extend_from_slice(&12i16.to_le_bytes());
+        body.extend_from_slice(&1i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&757i16.to_le_bytes());
+        body.push(1); // bit 0 favorited; bit 1 (blocked) clear
+        let c = C2s::Inventory {
+            player_id: 4,
+            slot: 12,
+            item,
+        }
+        .encode();
+        assert_eq!(c[2], 5);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::Inventory {
+                player_id,
+                slot,
+                item: d,
+            } => {
+                assert_eq!(player_id, 4);
+                assert_eq!(slot, 12);
+                assert_eq!(d, item);
+            }
+            other => panic!("expected 5, got {:?}", other.msg_id()),
+        }
+        // The S2c relay carries the same leading id (`NetMessage.cs:201`).
+        let f = S2c::Inventory {
+            player_id: 4,
+            slot: 12,
+            item,
+        }
+        .encode();
+        assert_eq!(f[2], 5);
+        assert_eq!(&f[3..], &body);
+        // A negative stack clamps to 0 on read (`NetMessage.cs:210-213`).
+        let mut neg = vec![4];
+        neg.extend_from_slice(&12i16.to_le_bytes());
+        neg.extend_from_slice(&(-5i16).to_le_bytes());
+        neg.push(0);
+        neg.extend_from_slice(&757i16.to_le_bytes());
+        neg.push(0);
+        match C2s::decode(5, &mut NetReader::new(&neg)).expect("decode") {
+            C2s::Inventory { item: d, .. } => assert_eq!(d.stack, 0),
+            other => panic!("expected 5, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `14 PlayerActive` (`NetMessage.cs:515-518`): `(byte)number +
+    /// (byte)number2`; the read side tests the byte `== 1`
+    /// (`MessageBuffer.cs:1070`), so 2 deactivates.
+    #[test]
+    fn w4_d96_player_active_tests_the_byte_equals_one() {
+        let f = S2c::PlayerActive {
+            player_id: 3,
+            active: true,
+        }
+        .encode();
+        assert_eq!(f[2], 14);
+        assert_eq!(&f[3..], &[3, 1]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerActive { player_id, active } => {
+                assert_eq!(player_id, 3);
+                assert!(active);
+            }
+            other => panic!("expected 14, got {:?}", other.msg_id()),
+        }
+        // `num233 == 1` only (`MessageBuffer.cs:1070`): 2 is NOT active.
+        match S2c::decode(14, &mut NetReader::new(&[3, 2])).expect("decode") {
+            S2c::PlayerActive { active, .. } => assert!(!active),
+            other => panic!("expected 14, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerActive {
+            player_id: 3,
+            active: false,
+        }
+        .encode();
+        assert_eq!(c[2], 14);
+        assert_eq!(&c[3..], &[3, 0]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerActive { player_id, active } => {
+                assert_eq!(player_id, 3);
+                assert!(!active);
+            }
+            other => panic!("expected 14, got {:?}", other.msg_id()),
+        }
+    }
 
     /// `12 PlayerSpawn` (`NetMessage.cs:433-445`): the id byte leads —
     /// `(byte)number, (short)SpawnX, (short)SpawnY, (int)respawnTimer,
