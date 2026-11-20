@@ -536,6 +536,127 @@ pub fn info_item_shows_tooltip(hovered: bool, hide_mouse_over: bool) -> bool {
     hovered && !hide_mouse_over
 }
 
+// --- UIBestiaryInfoLine (W4-d81 census row 13) -----------------------------------
+//
+// `compare_manual_order` (elements.rs, batch 1) ports `CompareTo` (`:92-99`).
+
+/// `SetText` (`UIBestiaryInfoLine.cs:73-81`): the measured size is
+/// `(MouseText.MeasureString(text).X, 16) * textScale`; the element's
+/// `MinWidth/MinHeight` are the size plus the padding pair. Returns
+/// `(text_size, min_width, min_height)` for a measured text width and the
+/// four paddings.
+#[allow(dead_code)] // the immediate stat rows keep their own pitch
+pub fn info_line_text_size(
+    measured_w: f32,
+    text_scale: f32,
+    padding: [f32; 4],
+) -> ([f32; 2], f32, f32) {
+    let size = [measured_w * text_scale, 16.0 * text_scale]; // `:75`
+    (
+        size,
+        size[0] + padding[0] + padding[2], // `MinWidth` (`:79`)
+        size[1] + padding[1] + padding[3], // `MinHeight` (`:80`)
+    )
+}
+
+/// `DrawSelf`'s text position (`UIBestiaryInfoLine.cs:83-90`):
+/// `pos = inner.Position()`, `Y -= 2 * textScale`, `X += (inner.Width -
+/// textSize.X) * 0.5` — the line centres its text horizontally and rides
+/// 2 px up per scale unit.
+#[allow(dead_code)] // the immediate stat rows keep their own placement
+pub fn info_line_text_pos(inner: [f32; 4], text_size: [f32; 2], text_scale: f32) -> [f32; 2] {
+    [
+        inner[0] + (inner[2] - text_size[0]) * 0.5, // `:88`
+        inner[1] - 2.0 * text_scale,                // `:87`
+    ]
+}
+
+// --- UIBestiaryNPCEntryPortrait (W4-d81 census row 14) ---------------------------
+//
+// The port's info-page portrait card (`draw_info_page`) draws the 216 px
+// stand-in; these pin the C# element's own geometry for the adoption.
+
+/// The ctor's size (`UIBestiaryNPCEntryPortrait.cs:17-18`): 193x112,
+/// `SetPadding(0)`.
+#[allow(dead_code)] // the info page draws its 216 px stand-in card
+pub const NPC_PORTRAIT_SIZE: [f32; 2] = [193.0, 112.0];
+
+/// The inner container (`UIBestiaryNPCEntryPortrait.cs:20-28`):
+/// `Width/Height (-4, 1)`, centred, `OverflowHidden` — the same 2 px inset
+/// box the entry button uses, over the 193x112 card.
+#[allow(dead_code)] // the info page draws its 216 px stand-in card
+pub fn npc_portrait_inner(card: [f32; 4]) -> [f32; 4] {
+    [card[0] + 2.0, card[1] + 2.0, card[2] - 4.0, card[3] - 4.0]
+}
+
+/// The overlay tint fallback (`UIBestiaryNPCEntryPortrait.cs:53`): an
+/// overlay without its own colour takes `Color.Lerp(Color.White,
+/// portraitColor, 0.5)`.
+#[allow(dead_code)] // the port's entries carry no background overlays yet
+pub fn npc_portrait_overlay_color(
+    overlay_color: Option<[u8; 4]>,
+    portrait_color: [u8; 4],
+) -> [u8; 4] {
+    overlay_color.unwrap_or_else(|| {
+        super::char_creation::lerp_rgb([255, 255, 255, 255], portrait_color, 0.5)
+    })
+}
+
+// --- UIBestiarySortingOptionsGrid (W4-d81 census row 15) -------------------------
+
+/// `BuildGrid`'s container (`UIBestiarySortingOptionsGrid.cs:37-61`):
+/// `num = 2`, `num2 = 28` pitch; the panel is `Width 126`,
+/// `Height = visible_count * 28 + 5 + 3`, `HAlign 1`, `Left -118`. Only
+/// steps with `!HiddenFromSortOptions` count (`:42-48`). Returns
+/// `(width, height)`.
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_grid_container_size(visible_count: usize) -> [f32; 2] {
+    [126.0, visible_count as f32 * 28.0 + 5.0 + 3.0] // `:51-52`
+}
+
+/// Sort button `n`'s rect inside the container
+/// (`UIBestiarySortingOptionsGrid.cs:68-74`): `Width 114`, `Height 26`
+/// (`num2 - num`), `HAlign 0.5`, `Top = 5 + 28 * n`.
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_button_rect(container: [f32; 4], n: usize) -> [f32; 4] {
+    [
+        container[0] + (container[2] - 114.0) * 0.5,
+        container[1] + 5.0 + 28.0 * n as f32,
+        114.0,
+        26.0,
+    ]
+}
+
+/// `ClickOption` (`UIBestiarySortingOptionsGrid.cs:89-115`): clicking the
+/// already-selected step falls back to `_defaultStepIndex` (`:92-95`);
+/// the clicked step takes `(152, 175, 235)` at opacity 1, the rest the
+/// `InventoryDefaultColor` at 0.7 (`:96-108` — the same pair the filtering
+/// grid's `UpdateButtonSelections` uses). Returns the new selected index.
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_click_option(clicked: i32, current_selected: i32, default_step: i32) -> i32 {
+    if clicked == current_selected {
+        default_step // `:92-95`
+    } else {
+        clicked
+    }
+}
+
+/// The sort button's colour pair (`UIBestiarySortingOptionsGrid.cs:100-107`)
+/// — the C# duplicates the filtering grid's `UpdateButtonSelections` walk
+/// per class; the port shares the one helper (house style).
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_button_colors(selected: bool) -> ([u8; 4], f32) {
+    let (color, opacity, _) = filter_button_selection(selected, 0);
+    (color, opacity)
+}
+
+/// `GetEntriesToShow` (`UIBestiarySortingOptionsGrid.cs:117-122`): one
+/// column, one row per visible button.
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_grid_entries_to_show(visible_count: usize) -> (usize, usize, usize) {
+    (1, visible_count, visible_count)
+}
+
 /// The completion bar's rect — `FillProgressBottomBar`
 /// (`UIBestiaryTest.cs:158-179`): the `UIColoredSliderSimple` fills the
 /// bottom strip (`Width (0, 1)`, `Height 15`, `VAlign 1`, `:168-171`); the
@@ -2464,6 +2585,58 @@ mod tests {
         );
         assert_eq!(bestiary_notes(&[]), "");
         assert_eq!(bestiary_notes(&[None, Some("")]), "");
+    }
+
+    #[test]
+    fn the_info_line_measures_and_centres_its_text() {
+        // `SetText` (`UIBestiaryInfoLine.cs:73-81`): (measured, 16) * scale,
+        // MinWidth/Height add the padding pair.
+        let (size, min_w, min_h) = info_line_text_size(100.0, 0.8, [2.0, 4.0, 2.0, 4.0]);
+        assert_eq!(size, [80.0, 12.8]);
+        assert_eq!(min_w, 84.0);
+        assert_eq!(min_h, 20.8);
+        // `DrawSelf` (`:83-90`): centred X, Y rides 2*scale up.
+        let pos = info_line_text_pos([100.0, 50.0, 200.0, 20.0], [80.0, 12.8], 0.8);
+        assert_eq!(pos, [160.0, 48.4]);
+    }
+
+    #[test]
+    fn the_npc_portrait_card_pins_the_ctor_geometry() {
+        // `UIBestiaryNPCEntryPortrait.cs:17-28`: 193x112, the 2 px inset box.
+        assert_eq!(NPC_PORTRAIT_SIZE, [193.0, 112.0]);
+        let card = [0.0, 0.0, 193.0, 112.0];
+        assert_eq!(npc_portrait_inner(card), [2.0, 2.0, 189.0, 108.0]);
+        // The overlay fallback (`:53`): Lerp(White, portraitColor, 0.5).
+        let portrait = [63, 65, 151, 255];
+        assert_eq!(
+            npc_portrait_overlay_color(Some([1, 2, 3, 4]), portrait),
+            [1, 2, 3, 4]
+        );
+        assert_eq!(
+            npc_portrait_overlay_color(None, portrait),
+            super::super::char_creation::lerp_rgb([255, 255, 255, 255], portrait, 0.5)
+        );
+    }
+
+    #[test]
+    fn the_sort_grid_lays_out_the_visible_steps() {
+        // `BuildGrid` (`UIBestiarySortingOptionsGrid.cs:37-74`): 126 wide,
+        // count*28+8 tall, buttons 114x26 at Top 5+28n, HAlign 0.5.
+        assert_eq!(sort_grid_container_size(4), [126.0, 120.0]);
+        let container = [100.0, 50.0, 126.0, 120.0];
+        assert_eq!(sort_button_rect(container, 0), [106.0, 55.0, 114.0, 26.0]);
+        assert_eq!(sort_button_rect(container, 2), [106.0, 111.0, 114.0, 26.0]);
+        // `ClickOption` (`:89-115`): re-click falls back to the default.
+        assert_eq!(sort_click_option(3, 3, 0), 0);
+        assert_eq!(sort_click_option(2, 3, 0), 2);
+        // The colour pair is the filtering grid's shared walk (`:100-107`).
+        assert_eq!(sort_button_colors(true), ([152, 175, 235, 255], 1.0));
+        assert_eq!(
+            sort_button_colors(false),
+            (uistate::INVENTORY_DEFAULT_COLOR, 0.7)
+        );
+        // `GetEntriesToShow` (`:117-122`): one column.
+        assert_eq!(sort_grid_entries_to_show(4), (1, 4, 4));
     }
 
     #[test]

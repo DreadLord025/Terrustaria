@@ -142,9 +142,9 @@ ports were byte-equivalent state machines and neither had a consumer yet.
 | 10 | `UIBestiaryEntryInfoPage` | LANDED (stat rows/drop lines pre-landed `draw_info_page` + `drop_rate_text`; missing halves `ui/bestiary.rs`: `info_page_colors`/`INFO_PAGE_LIST_PADDING`/`info_page_scrollbar_rect`/`info_page_scroll`/`info_page_check_scrollbar` `:28-109`, `BestiaryInfoCategory` + `bestiary_info_category` + `info_page_row_order` `:11-20`/`:128-201` — the immediate row order stays the documented stand-in) |
 | 11 | `UIBestiaryFilteringOptionsGrid` | LANDED (`ui/bestiary.rs`: `filter_grid_display_settings`/`filter_grid_container_size`/`filter_button_top_left` `:43-60`/`:159-173` with the dead sqrt/centring walks pinned, `filter_button_selection` `:175-190`, `filter_is_available` `:192-207`, `unavailable_filter_button` `:118-146`; the filter UI itself lands with the filters/sort work) |
 | 12 | `UIBestiaryInfoItemLine` | LANDED (`drop_rate_text` pre-landed `GetDropInfo` `:78-110`; missing halves `ui/bestiary.rs`: `info_item_line_rect` `:26-31`, `info_item_locked_icon_rect` `:36-55`, `info_item_line_border` `:34`/`:158-167`, `bestiary_notes` `:137-156`, `info_item_shows_tooltip` `:112-126`; CompareTo = the batch-1 `compare_manual_order`) |
-| 13 | `UIBestiaryInfoLine` | pending |
-| 14 | `UIBestiaryNPCEntryPortrait` | pending |
-| 15 | `UIBestiarySortingOptionsGrid` | pending |
+| 13 | `UIBestiaryInfoLine` | LANDED (`compare_manual_order` batch 1 = `CompareTo` `:92-99`; missing halves `ui/bestiary.rs`: `info_line_text_size` `SetText` `:73-81`, `info_line_text_pos` `DrawSelf` `:83-90`) |
+| 14 | `UIBestiaryNPCEntryPortrait` | LANDED (portrait draw pre-landed `draw_portrait`/`portrait_layout`; missing halves `ui/bestiary.rs`: `NPC_PORTRAIT_SIZE`/`npc_portrait_inner` `:17-28`, `npc_portrait_overlay_color` `:53` — the 216 px info-page card stays the documented stand-in) |
+| 15 | `UIBestiarySortingOptionsGrid` | LANDED (`ui/bestiary.rs`: `sort_grid_container_size`/`sort_button_rect` `BuildGrid` `:37-74`, `sort_click_option` re-click fallback `:89-95`, `sort_button_colors` shares `filter_button_selection` `:100-107`, `sort_grid_entries_to_show` `:117-122`; the sort UI lands with the filters/sort work) |
 | 16 | `UICharacter` | pending |
 | 17 | `UICharacterListItem` | pending |
 | 18 | `UICharacterNameButton` | pending |
