@@ -39306,5 +39306,11 @@ The goblin-bomb four and the 590 triple are consecutive blocks kept intact
 (`setApprenticeT3`, `:71832-71846`); its row adds the `Next(2)` Y-drop gate
 to the fire-explosion shape. The 590 scale float is drawn ONCE before the
 triple; the 375-377 alpha=100 is the pool's sticky arm.
-Remainder: sites 64-165 (waves G+), the UpdateProjectiles slot dispatch
+Wave G (sites 64-74): `projectile_gore_g.rs`, 4 witnesses written not run.
+The coin pile's four loops are intact (50 gores, two floats each). The
+cursed-flame position rolls are `Next(width)`/`Next(height)` on the GROWN
+box (NOT the ×Next(100)/100 shape); its 5th gore takes the switch default
+(-,-). The 483 kicks are INTEGER `Next(-1,2)`. The 459/709 count is 0
+below scale 1 (the delegation draws nothing at count 0).
+Remainder: sites 75-165 (waves H+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
