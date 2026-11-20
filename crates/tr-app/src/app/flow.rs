@@ -2149,6 +2149,7 @@ pub(crate) mod front_flow_tests {
             achievements_categories: [true; 4],
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
+            emote_scroll_drag: None,
             banners: crate::banners::BannerSystem::default(),
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),

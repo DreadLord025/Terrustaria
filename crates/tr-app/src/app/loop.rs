@@ -373,16 +373,24 @@ impl ApplicationHandler for App {
                         _ => 0,
                     };
                     // `UIList.ScrollWheel`: the emotes wheel scrolls while it is
-                    // open, clamped at the roster's end (`UIScrollbar.cs:37-47`).
+                    // open — `ViewPosition -= evt.ScrollWheelValue` in PIXELS
+                    // (`UIList.cs:107-114`), clamped by the setter
+                    // (`UIScrollbar.cs:45`). The wheel delta is the raw
+                    // `PlayerInput.ScrollWheelDeltaForUI` (XNA 120/notch,
+                    // `PlayerInput.cs:898-899`); the port's notch stand-in
+                    // scales it to the 36 px cell stride (W4-g54).
                     if ui_delta != 0
                         && self.menu.is_none()
                         && self.front.is_none()
                         && self.emotes.menu_open
                     {
                         let (sw, sh) = self.screen_size();
-                        let grid = crate::ui::emotes::grid_rect(Vec2::new(sw, sh));
+                        let screen = Vec2::new(sw, sh);
+                        let panel = crate::ui::emotes::panel_rect(screen, true);
+                        let list = crate::ui::emotes::list_rect(&panel, true);
+                        let max = crate::ui::emotes::max_scroll(&self.emotes.groups, &list);
                         self.emotes
-                            .scroll_by(ui_delta, crate::ui::emotes::visible_rows(&grid));
+                            .scroll_by(ui_delta as f32 * crate::ui::emotes::CELL, max);
                     }
                     // `Main.DoScrollingInInventory`'s chest arm
                     // (`Main.cs:17435-17452`): the wheel scrolls the chest
@@ -509,6 +517,9 @@ impl ApplicationHandler for App {
                         if !pressed {
                             #[cfg(feature = "debug")]
                             crate::debug_panel::end_drag(self);
+                            // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
+                            // the wheel bar's drag latch clears on release.
+                            self.emote_scroll_drag = None;
                             // S1-P-i54 — `TriggersSet.CopyInto`
                             // (`TriggersSet.cs:844-847`): the left release
                             // clears `Main.blockMouse`, so the next press
@@ -606,6 +617,7 @@ impl ApplicationHandler for App {
                     let hit = crate::ui::emotes::card_at(
                         Vec2::new(sw, sh),
                         self.mouse_pos,
+                        &self.emotes.groups,
                         self.emotes.scroll,
                     );
                     if hit != self.emotes.hover {
@@ -616,6 +628,30 @@ impl ApplicationHandler for App {
                     }
                 } else {
                     self.emotes.hover = None;
+                }
+                // `UIScrollbar.DrawSelf`'s drag (`UIScrollbar.cs:109-112`):
+                // while the wheel's handle is held the view follows the
+                // pointer — the same latch the front screens use
+                // (`front_scrollbar_drag`).
+                if let Some(offset) = self.emote_scroll_drag {
+                    if self.emotes.menu_open {
+                        let (sw, sh) = self.screen_size();
+                        let panel = crate::ui::emotes::panel_rect(Vec2::new(sw, sh), true);
+                        let sb = crate::ui::emotes::scrollbar_rect(&panel);
+                        let list = crate::ui::emotes::list_rect(&panel, true);
+                        let content = crate::ui::emotes::list_content_height(&self.emotes.groups);
+                        let max = crate::ui::emotes::max_scroll(&self.emotes.groups, &list);
+                        let value = crate::ui::panel::scrollbar_drag_value(
+                            sb,
+                            list[3],
+                            content,
+                            offset,
+                            pointer.y,
+                        );
+                        self.emotes.scroll_to(value, max);
+                    } else {
+                        self.emote_scroll_drag = None;
+                    }
                 }
                 // The middle-button world-camera drag is suppressed while the map is
                 // fullscreen, like the other world controls (`Player.cs:24798`).

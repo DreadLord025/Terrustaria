@@ -295,6 +295,9 @@ pub(crate) struct App {
     pub(crate) chat: chat::ChatMonitor,
     /// `EmoteBubble.byID` + the wheel state (M6-EMOTE-1).
     pub(crate) emotes: emotes::EmoteSystem,
+    /// `UIScrollbar._isDragging`'s `_dragYOffset` for the emote wheel's bar
+    /// (`UIScrollbar.cs:23-27`, `LeftMouseDown` `:131-135`) — W4-g54.
+    pub(crate) emote_scroll_drag: Option<f32>,
     /// `BannerSystem`'s kill tally (M2-BUFF-8).
     pub(crate) banners: banners::BannerSystem,
     /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
@@ -3754,14 +3757,17 @@ impl App {
             // (`InGameNotificationsTracker.cs:109-112`).
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: {
-                // `TR_EMOTES` opens the wheel for the screenshot runs.
+                // `TR_EMOTES` opens the wheel for the screenshot runs —
+                // through the same `OnActivate` rebuild the click arm uses
+                // (W4-g54: the page needs its groups, not just the flag).
                 let mut sys = emotes::EmoteSystem::default();
                 if crate::env::emotes_open() {
-                    sys.menu_open = true;
+                    sys.open();
                     sys.new_bubble(0);
                 }
                 sys
             },
+            emote_scroll_drag: None,
             banners: {
                 let mut banners = banners::BannerSystem::default();
                 banners.load_pairs(seeded_banners);
