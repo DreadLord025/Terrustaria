@@ -536,18 +536,15 @@ impl App {
                 server.broadcast_except(&S2c::Projectile(ps.clone()), id);
             }
             // `case 29` — a peer's projectile is gone; the host drops the slot
-            // and relays (`MessageBuffer.cs:1844-1847`).
-            C2s::ProjectileDead { key } => {
+            // and relays the key + position verbatim (`MessageBuffer.cs:1825-1850`,
+            // the relay `:1847` forwards `position3.X/Y`). A finite position
+            // snaps the slot there before the kill (`:1835-1839`), NaN/Inf
+            // deactivates silently (`:1840-1843`).
+            C2s::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
-                self.projectiles.kill_remote(slot, owner, generation);
-                server.broadcast_except(
-                    &S2c::ProjectileDead {
-                        key,
-                        x: f32::NAN,
-                        y: f32::NAN,
-                    },
-                    id,
-                );
+                self.projectiles
+                    .kill_remote_at(slot, owner, generation, x, y);
+                server.broadcast_except(&S2c::ProjectileDead { key, x, y }, id);
             }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
@@ -1452,9 +1449,10 @@ impl App {
             // `case 29` — the projectile is gone; a finite position means the
             // slot dies there, NaN deactivates it silently
             // (`MessageBuffer.cs:1825-1850`).
-            S2c::ProjectileDead { key, .. } => {
+            S2c::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
-                self.projectiles.kill_remote(slot, owner, generation);
+                self.projectiles
+                    .kill_remote_at(slot, owner, generation, x, y);
             }
             // `case 28` — a peer's strike: the local flash (the C# applies the
             // full `StrikeNPC_Inner` on every client — the port keeps the
@@ -2572,7 +2570,9 @@ impl App {
                         ProjSend::SyncTo { state, .. } => {
                             client.send(&C2s::Projectile(Box::new(state)))
                         }
-                        ProjSend::Kill { key, .. } => client.send(&C2s::ProjectileDead { key }),
+                        ProjSend::Kill { key, x, y } => {
+                            client.send(&C2s::ProjectileDead { key, x, y })
+                        }
                     }
                 }
             }

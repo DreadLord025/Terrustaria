@@ -1713,9 +1713,14 @@ pub enum C2s {
     /// `27 Projectile` — this client's own projectile state (the owner's
     /// machine simulates and sends, `Projectile.cs:17210-17244`).
     Projectile(Box<ProjectileState>),
-    /// `29` — one of this client's projectiles is gone.
+    /// `29` — one of this client's projectiles is gone
+    /// (`NetMessage.cs:852-855`): the key plus the position — the Kill tail
+    /// sends the ENTRY snapshot (`Projectile.cs:77256`), the owner-lost
+    /// despawn sends NaN/NaN (`Projectile.cs:16697`).
     ProjectileDead {
         key: i32,
+        x: f32,
+        y: f32,
     },
     /// `154 Ping` - this client's RTT probe, no body (`Net/Ping.cs:31`).
     Ping,
@@ -2063,11 +2068,11 @@ impl C2s {
                 w.i32(*x).i32(*y).i16(*npc_type).u8(*style)
             }
             Self::Projectile(p) => return p.frame(),
-            Self::ProjectileDead { key } => {
+            Self::ProjectileDead { key, x, y } => {
                 return NetWriter::open(id::PROJECTILE_DEAD)
                     .i32(*key)
-                    .f32(f32::NAN)
-                    .f32(f32::NAN)
+                    .f32(*x)
+                    .f32(*y)
                     .finish();
             }
         };
@@ -2204,7 +2209,11 @@ impl C2s {
                 style: r.u8()?,
             },
             id::PROJECTILE => Self::Projectile(Box::new(ProjectileState::read_from(r)?)),
-            id::PROJECTILE_DEAD => Self::ProjectileDead { key: r.i32()? },
+            id::PROJECTILE_DEAD => Self::ProjectileDead {
+                key: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            },
             _ => return None,
         })
     }
@@ -4111,6 +4120,8 @@ mod tests {
             })),
             C2s::ProjectileDead {
                 key: projectile_key(255, 7, 1),
+                x: 12.5,
+                y: -3.0,
             },
             C2s::Ping,
             // `31-33`, `46-47`, `50`, `53`, `59` — the message families of
@@ -4712,6 +4723,133 @@ mod tests {
             other => panic!("expected 23, got {:?}", other.msg_id()),
         }
         assert_eq!(back.encode(), f);
+    }
+
+    #[test]
+    fn s1_i_1_projectile_verbatim_body() {
+        // `NetMessage.cs:776-841` — key, position, velocity, (short)type,
+        // flags1, the optional flags2 (ai[2]), then the flag-gated fields in
+        // C# order: ai0, ai1, banner, damage, knockBack, originalDamage, ai2.
+        let key = projectile_key(2, 5, 3);
+        let p = ProjectileState {
+            key,
+            x: 10.0,
+            y: 20.0,
+            vx: 1.0,
+            vy: -1.0,
+            kind: 7,
+            ai0: Some(0.5),
+            ai1: None,
+            banner_id: 42,
+            damage: 15,
+            knock_back: 2.5,
+            original_damage: 20,
+            ai2: Some(-3.0),
+        };
+        let f = S2c::Projectile(Box::new(p)).encode();
+        assert_eq!(f[2], 27);
+        let mut expect: Vec<u8> = Vec::new();
+        expect.extend_from_slice(&key.to_le_bytes());
+        for v in [10.0f32, 20.0, 1.0, -1.0] {
+            expect.extend_from_slice(&v.to_le_bytes());
+        }
+        expect.extend_from_slice(&7i16.to_le_bytes());
+        // flags1: b0 ai0 + b2 ai2-present + b3 banner + b4 damage + b5 kb
+        // + b6 originalDamage = 0x7D; flags2 = 0x01 (ai[2]).
+        expect.push(0x7D);
+        expect.push(0x01);
+        expect.extend_from_slice(&0.5f32.to_le_bytes());
+        expect.extend_from_slice(&42u16.to_le_bytes());
+        expect.extend_from_slice(&15i16.to_le_bytes());
+        expect.extend_from_slice(&2.5f32.to_le_bytes());
+        expect.extend_from_slice(&20i16.to_le_bytes());
+        expect.extend_from_slice(&(-3.0f32).to_le_bytes());
+        assert_eq!(&f[3..], &expect[..]);
+        assert_eq!(S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap().encode(), f);
+        let c = C2s::Projectile(Box::new(p)).encode();
+        assert_eq!(c, f, "27's body is identical in both directions");
+        // The all-zero minimal body: no flags2, no conditional fields.
+        let bare = ProjectileState {
+            ai0: None,
+            ai1: None,
+            ai2: None,
+            banner_id: 0,
+            damage: 0,
+            knock_back: 0.0,
+            original_damage: 0,
+            ..p
+        };
+        let bf = S2c::Projectile(Box::new(bare)).encode();
+        assert_eq!(bf.len(), 3 + 4 + 16 + 2 + 1);
+        assert_eq!(bf[3 + 22], 0);
+    }
+
+    #[test]
+    fn s1_i_1_npc_strike_verbatim_body() {
+        // `NetMessage.cs:844-850` — (byte)slot, generation, (short)damage,
+        // knockback float, (byte)(hitDirection + 1), (byte)crit.
+        let st = NpcStrike {
+            npc: 9,
+            generation: 4,
+            damage: 37,
+            knock_back: 3.5,
+            hit_direction: -1,
+            crit: true,
+        };
+        let f = S2c::NpcStrike(st).encode();
+        assert_eq!(f[2], 28);
+        let mut expect: Vec<u8> = vec![9, 4];
+        expect.extend_from_slice(&37i16.to_le_bytes());
+        expect.extend_from_slice(&3.5f32.to_le_bytes());
+        expect.push(0); // -1 + 1 = 0
+        expect.push(1);
+        assert_eq!(&f[3..], &expect[..]);
+        assert_eq!(S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap().encode(), f);
+        let c = C2s::NpcStrike(st).encode();
+        assert_eq!(c, f);
+        // The -1 direction sentinel wraps through the byte (`:849`): the
+        // reader's `(byte) - 1` recovers it (`MessageBuffer.cs:1776`).
+        let back = NpcStrike::read_from(&mut NetReader::new(&f[3..])).unwrap();
+        assert_eq!(back.hit_direction, -1);
+        // The instant-kill send rides damage -1 (`NPC.cs:25947`).
+        let kill = NpcStrike { damage: -1, crit: false, ..st };
+        let kf = C2s::NpcStrike(kill).encode();
+        assert_eq!(&kf[5..7], &(-1i16).to_le_bytes());
+        assert_eq!(NpcStrike::read_from(&mut NetReader::new(&kf[3..])).unwrap().damage, -1);
+    }
+
+    #[test]
+    fn s1_i_1_projectile_dead_verbatim_body() {
+        // `NetMessage.cs:852-855` — (int)key + Vector2(number2, number3).
+        // The Kill tail sends the entry position (`Projectile.cs:77256`);
+        // the owner-lost despawn sends NaN/NaN (`Projectile.cs:16697`).
+        let key = projectile_key(1, 4, 3);
+        let f = S2c::ProjectileDead { key, x: 8.0, y: 9.0 }.encode();
+        assert_eq!(f[2], 29);
+        let mut expect: Vec<u8> = Vec::new();
+        expect.extend_from_slice(&key.to_le_bytes());
+        expect.extend_from_slice(&8.0f32.to_le_bytes());
+        expect.extend_from_slice(&9.0f32.to_le_bytes());
+        assert_eq!(&f[3..], &expect[..]);
+        assert_eq!(S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap().encode(), f);
+        // The client→host body carries the same position (the entry snapshot).
+        let c = C2s::ProjectileDead { key, x: 8.0, y: 9.0 }.encode();
+        assert_eq!(c, f);
+        let back = C2s::decode(c[2], &mut NetReader::new(&c[3..])).unwrap();
+        match back {
+            C2s::ProjectileDead { key: k, x, y } => {
+                assert_eq!(k, key);
+                assert_eq!(x, 8.0);
+                assert_eq!(y, 9.0);
+            }
+            other => panic!("expected 29, got {:?}", other.msg_id()),
+        }
+        // NaN rides verbatim (the bit pattern, not a canonicalised NaN).
+        let nan = C2s::ProjectileDead { key, x: f32::NAN, y: f32::NAN }.encode();
+        let mut r = NetReader::new(&nan[3..]);
+        assert_eq!(r.i32(), Some(key));
+        assert!(r.f32().unwrap().is_nan());
+        assert!(r.f32().unwrap().is_nan());
     }
 
     #[test]

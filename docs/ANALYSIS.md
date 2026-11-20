@@ -26537,6 +26537,62 @@ the send-path pass (S1-I-4), so the live net message order is unchanged. The
 per-id round-trip tests `net::tests::s1_i_1_*` (11) pin the frame's id byte,
 the exact C# body bytes and the decode round trip; the travel shop test also
 pins the fixed 40-slot length (a 39-slot body fails to decode).
+
+## The NPC-family net ids, first half (S1-I-1 d91, 2026-11-20)
+
+The 23/24/27/28/29 region, censused against `MessageID.cs` and re-verified
+byte-for-byte against `NetMessage.cs`'s writer arms + `MessageBuffer.cs`'s
+readers (the second half is d92; 18/36/41/43/51/55/62/84 belong to c27):
+
+- **`23 NPCInfo` — the body is now verbatim** (`NetMessage.cs:686-763`):
+  the ai[0..4] flag-gated floats ride BEFORE the `(short)netID` (flags1
+  b2..b5), the `(ushort)target` is real (was a hard 0), the life width byte
+  keys on `lifeMax` (was keyed on the current life — wrong for a damaged
+  high-max NPC), flags2 carries `SpawnedFromStatue`/`difficulty != 1`/
+  `spawnNeedsSyncing`/the shimmer bit, the catchable kinds append the
+  `releaseOwner` byte, and King Slime's position rides the
+  `Size * SyncAnchor[50]` offset (`NPCID.cs:10457` — the only non-zero row).
+  The wire `kind` stays the port-local protocol id, so both per-type
+  predicates map through `cs_id` (the `NPCID.Count` bounds gate included).
+  Remaining defaults: the player-count scaling byte (flags2 b0) is consumed
+  on decode but never written (no multiplayer stat scaling yet), and
+  `difficulty` rides 1.0 until the world-mode state is persisted. The
+  SyncAnchor uses the kind's base `size()`, not King Slime's hp-scaled live
+  `Size` (the wire snapshot carries no scale). The client apply arm now
+  lands target/directionY/spriteDirection/ai/statue/shimmer/releaseOwner
+  (`MessageBuffer.cs:1649-1699`); the pending-damage merge (`GetPendingDamage`,
+  `:1668-1676`) stays an I-4 follow-up.
+- **`24 UnusedMeleeStrike` — dead, deliberately unported.** The writer arm
+  exists (`NetMessage.cs:765-768`: `(short)number + (byte)number2`) but no
+  `SendData(24)` call site exists anywhere in the decompilation, and the
+  reader is `Invariant.Assert(condition: false, "UnusedMeleeStrike")`
+  (`MessageBuffer.cs:1706-1708`). The census's "no body arm" claim was
+  wrong about the writer; the id is still dead on the wire.
+- **`27 SyncProjectile` — re-verified verbatim** (`NetMessage.cs:776-841`):
+  key, position, velocity, `(short)type`, flags1, the optional flags2 byte
+  (ai[2] present), then ai0/ai1/banner/damage/knockBack/originalDamage/ai2
+  in flag order. The existing codec already matched; a byte-pin test now
+  locks it. `bannerIdToRespondTo` still rides 0 from the pool (no banner
+  field yet, `net_proj_sync.rs::state_of`).
+- **`28 DamageNPC` — re-verified verbatim** (`NetMessage.cs:844-850`):
+  `(byte)slot`, generation, `(short)damage`, knockback float,
+  `(byte)(hitDirection + 1)`, `(byte)crit`. The `-1` direction sentinel
+  wraps through the byte and back (`MessageBuffer.cs:1776`). Byte-pin test.
+- **`29 KillProjectile` — the position now rides both directions**
+  (`NetMessage.cs:852-855`: `(int)key + Vector2`). The C2s body used to
+  hard-write NaN/NaN and drop the received position; now the client's
+  Kill-tail sends the ENTRY-position snapshot (`Projectile.cs:77256`, the
+  `ProjSend::Kill { key, x, y }` the decision layer already produced) and
+  the host relays the received position verbatim (`MessageBuffer.cs:1847`).
+  A finite position snaps the slot before the kill, NaN/Inf deactivates
+  silently (`:1835-1843`) — `projectile.rs::kill_remote_at`. The NaN
+  owner-lost despawn (`Projectile.cs:16697`) still rides NaN bit-exact.
+
+Six byte-pin tests `net::tests::s1_i_1_npc_info_*` /
+`s1_i_1_projectile_verbatim_body` / `s1_i_1_npc_strike_verbatim_body` /
+`s1_i_1_projectile_dead_verbatim_body` lock the id bytes + the exact C#
+body bytes + the round trips (written, not run — the lane is code-only).
+
 ## The buff misc block (S1-E-7 wave D, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
