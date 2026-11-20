@@ -531,6 +531,11 @@ pub struct Projectile {
     /// rides the data-carrying spawn; the aiStyle-24 arm rewrites it every
     /// tick (`:25953`, `ai_crystal_storm`).
     pub light: f32,
+    /// `Projectile.glowMask` (`:332`, reset −1 `:780`) — the glow-sheet id
+    /// the draw pass overlays (`Main.cs:34855-34942`); −1 = none (W4-g35).
+    /// The `SetDefaults` slice rides the data-carrying spawn
+    /// (`projectile/data.rs::set_defaults_glow_mask`).
+    pub glow_mask: i16,
     /// `Projectile.frame` (`:331`, reset `:786`) — the animation sheet row the
     /// per-type arms index into `Main.projFrames[type]` and the render pass
     /// slices by. Only the Typhoon's `localAI[1] / 3 % 3` writes it today
@@ -799,6 +804,7 @@ impl Default for Projectile {
             alpha: 0,
             scale: 1.0,
             light: 0.0,
+            glow_mask: -1, // `Projectile.cs:780` — the reset stock
             frame: 0,
             frame_counter: 0,
             old_position: Vec2::ZERO,
@@ -16007,6 +16013,7 @@ impl ProjectilePool {
             alpha: data.alpha,
             scale: data.scale,
             light: data.light,
+            glow_mask: data.glow_mask,
             w: data.w,
             h: data.h,
             tile_collide: data.tile_collide,
