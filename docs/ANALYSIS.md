@@ -39244,3 +39244,70 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Draw orchestration (W4-g29 pass 2)
+
+`TileDrawing.Draw` (`TileDrawing.cs:465-742`) is more than its per-cell
+body: a fixed prologue (the non-solid `Main.critterCage = false` reset
+`:472-475`, `EnsureWindGridSize` `:476`/`:7773-7777` with its OWN
+`GetScreenDrawArea` probe, `ClearLegacyCachedDraws` `:477`/`:6613-6622`
+in the exact 7-step order, `ClearCachedTileDraws(solidLayer)` `:478`/
+`:6588-6599` - solid clears the doll/hat-rack dictionaries, non-solid
+clears the special-point registry, the tier rebuild `:479-495`, the
+martian glow byte `:498-499`, the paint-key reset `:500-503`), the
+padded row-major walk (`:504-506`: rows `firstY ..< lastY+4`, columns
+`firstX-2 ..< lastX+2`), and a fixed epilogue (`:728-741`: the black
+flush, `RestartLayeredBatch`, the SOLID-only crack pair - hitReplace
+FIRST then hitTile - plus `RestartSpriteBatch`,
+`DrawSpecialTilesLegacy`, the 4-condition object-preview gate with
+`GetPlacementPreviewOpacity`'s kite fade `Player.cs:43389-43400`).
+Research/09 pass row 2 marks this MISSING - the port fuses both layers
+into one `draw_tiles` loop. `render/tile_pass.rs` ports the structure
+UNWIRED (the `special_tiles.rs:35` convention): the driver owns the
+order/bounds/gates/black coalescing and delegates every draw through
+`TilePassSeams` - the family merge binds g28's `quality_light_tiers`,
+g30's `classify_tile`/`apply_cell_class`, the g31/g32 drains, the
+already-ported liquids/cracks/special-tiles/pylons/vines/foliage passes.
+
+* **The two-layer order flips by path.** Draw-to-screen
+  (`Main.cs:63265-63301`): NON-solid first (`:63280`), then the
+  behind-tiles NPCs (before the solid layer when `!detectCreature`,
+  after when `detectCreature` - the `:63290-63299` flip), then solid
+  (`:63295`); each `DoDraw_Tiles_*` runs `DrawTiles(layer)` then
+  `PostDrawTiles(layer)` (`:63322-63382`, `:21758-21761`). The
+  render-target refresh path (`:57296-57306`) is the OPPOSITE:
+  `tileTarget` (solid, `RenderTiles` `:57329-57348`) before `tile2Target`
+  (non-solid, `RenderTiles2` `:57350-57368`). Both orders are pinned as
+  data (`walls_tiles_npcs_order`, `render_target_layer_order`).
+* **`GetScreenDrawArea`** (`:6549-6573`): truncating `(int)` casts (the
+  camera can sit negative near the world edge), the -1 near / +2/+5 far
+  pads, the offscreen offset `(offScreenRange, offScreenRange)` when
+  `!drawToScreen`, and the four 4-cell clamps (`maxTiles - 4`, NOT -3).
+  The section-framing side effects (`:6574-6585`) stay the framing
+  family's seam - the port has no `sectionManager`.
+* **`DrawBlackHelper`** (`DrawBlackHelper.cs:5-38`) ports verbatim: the
+  same-row contiguous extension (`y == this.y && x == endX`), the
+  break-flush, the i32 `<< 4` shifts BEFORE the float math, and the
+  `EndStrip` no-reset quirk (a second call re-emits the same strip; the
+  Draw epilogue calls it once). The port returns the strip rect instead
+  of drawing it.
+* **`DrawLiquidBehindTiles`** (`:444-463`) has a DIFFERENT gate from
+  `Draw`: null-check only (`:454`), no `active()`/layer gate - inactive
+  cells still get the liquid-behind call, always `solidLayer: false`.
+* **The martian glow byte** (`:498`): `(byte)(100f + 150f *
+  martianLight)` - the net40 unchecked cast wraps (the g28 finding);
+  the updater clamps `martianLight` to 0..1 (`Main.cs:18251-18259`) so
+  the wrap is unreachable in vanilla, spelled out anyway.
+* **`PostDrawTiles`** (`:414-442`): the non-solid 12-step order
+  (MultiTileVines, MultiTileGrass, VoidLenses, Pylons, Trophies, Grass,
+  AnyDirectionalGrass, Trees, Vines, ReverseVines, EndBatch,
+  NatureAfterAllObjects - the nature hook runs AFTER the batch end);
+  solid = hat racks BEFORE display dolls.
+* Deviations: the null-tile lazy-alloc arm (`:509-514`, `mapTime += 60`)
+  is the dense-array skip (the g30 convention); TimeLogger counters
+  dropped (profiler-only); `ShowUnbreakableWall`/`hideTiles`/`hideTiles2`
+  have no port toggles; the legacy 1000-slot cap (`:70`) drops the
+  excess instead of throwing. The G6 cached range is untouched - the
+  +4/-2 margins here are C#'s loop bounds, the wiring step keeps the
+  `WorldFrameKey` intact. 15 witness tests WRITTEN NOT RUN - no
+  cargo/rustc/rustfmt/tests/graphify invoked.
