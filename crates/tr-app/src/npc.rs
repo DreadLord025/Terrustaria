@@ -4829,13 +4829,33 @@ impl Npc {
                 rng,
                 &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
             ),
+            // `else if (this.aiStyle == 32)` (`NPC.cs:27626-27942`) —
+            // the Skeletron Prime head (127), the style's only user.
+            // W4-d26: the faithful `npc_ai_style32::style32_step` arm
+            // claims the axis; the v1 `update_prime` stand-in (the
+            // invented spawn latch, the missing re-targets / the
+            // EncourageDespawn(500), the per-tick facing write) is
+            // retired for the head. RNG-free by construction — the
+            // block draws no `Main.rand` (the two PlaySound(15)s are
+            // the sound skip). Expert rides the player's difficulty
+            // flag (the style30 wiring precedent).
+            32 => self.ai_032_prime_head_family(world, player),
+            // `else if (this.aiStyle == 33)` (`NPC.cs:27943-28244`) — the
+            // Prime Saw (129), the style's only user. W4-d26: the faithful
+            // `npc_ai_style33.rs` arm (the S1-D-3 module, unwired until
+            // now) claims the axis; the v1 `update_prime_limb` tether
+            // stand-in is retired for the saw (the cannon/vice/laser
+            // precedent below). RNG-free by construction — the arm draws
+            // no `Main.rand` (the module's census; the despawn's gore is
+            // the cosmetic skip).
+            33 => self.ai_033_prime_saw_family(world, player),
             // `else if (this.aiStyle == 34/35/36)` (`NPC.cs:28245-28521` /
             // `:28522-28756` / `:28757-28990`) — the Prime Vice (130),
             // Cannon (128) and Laser (131). S1-D-3 prime wiring: the
             // faithful `npc_ai_prime_limbs.rs` arms claim these styles
             // (each style's ONLY user in `SetDefaults` is its limb —
-            // `npc/data.rs`'s ai_style rows); the saw (129, style 33)
-            // and the head (127, style 32) keep their kind-match arms.
+            // `npc/data.rs`'s ai_style rows); the head (127, style 32)
+            // keeps its kind-match arm.
             34 | 35 | 36 => self.ai_prime_limb_family(world, player, rng),
             // `else if (this.aiStyle == 43)` (`NPC.cs:30190-30860`) —
             // the Queen Bee (222), the style's only user. S1-D-3 W-3:
@@ -5263,6 +5283,81 @@ impl Npc {
             // write (`:32662`) already landed on the NPC inside the arm.
             self.encourage_despawn(0);
         }
+    }
+
+    /// W4-d26: the aiStyle-32 family arm — the Skeletron Prime head
+    /// (`NPC.cs:27626-27942`) rides the faithful
+    /// `npc_ai_style32::style32_step` (the v1 `update_prime` stand-in
+    /// is retired). The seam feeds the session player as slot 0 (the
+    /// limb family's mapping) and owns the post-AI integration the
+    /// pure fn leaves to the caller (`UpdateNPC`, `NPC.cs:90498` —
+    /// the head is noGravity/noTileCollide, `SetDefaults`
+    /// `:10566-10567`). RNG: the arm draws nothing (the module's
+    /// census), so no stream parameter.
+    fn ai_032_prime_head_family(&mut self, world: &World, player: &Player) {
+        let cand = crate::npc_target::session_candidate(player);
+        // The unacquired-target stand-in (the limb family's mapping):
+        // the C#'s 255-slot `Main.player` reads an INACTIVE slot.
+        if self.target as usize >= 1 {
+            self.target = 0;
+        }
+        let env = crate::npc_ai_style32::Style32Env {
+            expert: player.buffs.expert_mode,
+            // Single-player (`Main.netMode == 0`): the init gate passes.
+            net_mode: 0,
+            // `EverLastingTicker` is not plumbed into `Npc::update` yet
+            // (the `update_zombie` stand-in, the limb family's fold).
+            ticker: 0,
+        };
+        crate::npc_ai_style32::style32_step(self, world, &[cand], &env);
+        // `NPC.UpdateNPC`'s integration after `AI()` (`NPC.cs:90498`):
+        // noTileCollide + noGravity — the raw `position += velocity`.
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    /// W4-d26: the aiStyle-33 family arm — the Prime Saw (`NPC.cs:
+    /// 27943-28244`) rides the faithful `npc_ai_style33::style33_step`
+    /// (the S1-D-3 module, landed unwired; the v1 `update_prime_limb`
+    /// tether stand-in is retired for the saw). The seam fills the
+    /// module's `Style33Context` from the sim's head write-through
+    /// (`world_sim/npcs.rs`'s `prime_head_*` pass — the
+    /// `ai_prime_limb_family` feed shape) and owns the post-AI
+    /// integration the pure fn leaves to the caller (`UpdateNPC`,
+    /// `NPC.cs:90498` — the saw is noGravity/noTileCollide,
+    /// `SetDefaults` `:10588-10602`). RNG: the arm draws nothing
+    /// (the module's census — the despawn's `HitEffect` gore is the
+    /// cosmetic skip), so no stream parameter.
+    fn ai_033_prime_saw_family(&mut self, world: &World, player: &Player) {
+        let ctx = crate::npc_ai_style33::Style33Context {
+            head_active: world.prime_present,
+            // The write-through only ever anchors a live SkeletronPrime
+            // (aiStyle 32) — a missing head reads the C#'s
+            // `!active || aiStyle != 32` despawn gate (`:27961`).
+            head_ai_style: if world.prime_present { 32 } else { -1 },
+            head_x: world.prime_head_x,
+            head_y: world.prime_y,
+            head_width: world.prime_head_width,
+            head_ai1: world.prime_head_ai1,
+            // Single-player (`Main.netMode == 0`): the head-gone despawn
+            // kills on the first tick (`!= 2`, `:27964`).
+            net_mode: 0,
+            // `EverLastingTicker` is not plumbed into `Npc::update` yet
+            // (the `update_zombie` stand-in, the limb family's fold).
+            ticker: 0,
+        };
+        let cand = crate::npc_target::session_candidate(player);
+        // The unacquired-target stand-in: the C#'s 255-slot `Main.player`
+        // reads an INACTIVE slot; the port's slice has one (the
+        // `ai_prime_limb_family` mapping).
+        if self.target as usize >= 1 {
+            self.target = 0;
+        }
+        crate::npc_ai_style33::style33_step(self, world, &ctx, &[cand]);
+        // `NPC.UpdateNPC`'s integration after `AI()` (`NPC.cs:90498`):
+        // noTileCollide + noGravity — the raw `position += velocity`.
+        self.x += self.vx;
+        self.y += self.vy;
     }
 
     /// S1-D-3 prime wiring: the aiStyle-34/35/36 family arm — `NPC.AI()`'s
@@ -5819,11 +5914,14 @@ impl Npc {
             NpcKind::WallOfFleshEye => {
                 unreachable!("aiStyle 28 rides the style axis (S1-D-3 W-1)")
             }
-            // S1-D-3 prime wiring: the cannon/vice/laser (aiStyles
-            // 35/34/36) ride the style axis (`ai_prime_limb_family`) —
-            // only the saw (129, aiStyle 33) still rides the v1 shared
-            // stand-in until its own wiring round claims style 33.
-            NpcKind::PrimeSaw => self.update_prime_limb(world, player),
+            // S1-D-3 prime wiring + W4-d26: ALL four limbs ride the style
+            // axis — the cannon/vice/laser (aiStyles 35/34/36) through
+            // `ai_prime_limb_family`, the saw (129, aiStyle 33) through
+            // `ai_033_prime_saw_family`. The v1 `update_prime_limb` stays
+            // only as the direct-call reference the old pins read.
+            NpcKind::PrimeSaw => {
+                unreachable!("aiStyle 33 rides the style axis (W4-d26)")
+            }
             NpcKind::PrimeCannon | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
                 unreachable!("aiStyles 34/35/36 ride the style axis (S1-D-3 prime wiring)")
             }
@@ -5843,7 +5941,12 @@ impl Npc {
             // sim's `update_destroyers`); this arm keeps the kind match
             // exhaustive.
             NpcKind::Probe => {}
-            NpcKind::SkeletronPrime => self.update_prime(world, player),
+            // W4-d26: the head (127, aiStyle 32) rides the style axis
+            // (`ai_032_prime_head_family`) — the v1 `update_prime` stays
+            // only as the direct-call reference the old pins read.
+            NpcKind::SkeletronPrime => {
+                unreachable!("aiStyle 32 rides the style axis (W4-d26)")
+            }
             // The Retinazer (125) is claimed by the aiStyle-30 axis
             // above (S1-D-3 wire-retinazer - the mislabeled
             // `update_retinazer` retired); this arm keeps the kind
@@ -20209,43 +20312,66 @@ mod tests {
         }
     }
 
-    /// The saw (129, aiStyle 33) is UNTOUCHED: its dispatch still rides
-    /// the v1 `update_prime_limb` byte-identical — the direct call and
-    /// the `update_rng` route agree on every field the stand-in writes.
+    /// The saw (129, aiStyle 33) is RETIRED from the stand-in (W4-d26):
+    /// the axis arm runs the faithful seven-state machine — the rise
+    /// (`NPC.cs:28153-28178`) damps X at 0.95 and accelerates Y −0.1 to
+    /// the −8 cap, then crossing `head.Y − 200` dashes at 22. RNG
+    /// parity: ZERO draws (`:27943-28244` has no `Main.rand`; the
+    /// despawn's HitEffect gore is the cosmetic skip).
     #[test]
-    fn the_saw_still_rides_the_stand_in_byte_identical() {
+    fn the_wired_saw_rises_and_dashes_at_22_with_zero_draws() {
         let w = prime_wired_world();
         let mut player = surface_player(&w);
         player.x = 300.0;
         player.y = 300.0;
-        let mut direct = Npc::new(NpcKind::PrimeSaw, 1600.0, 1280.0, 1, 0.0);
-        direct.hp = direct.max_hp;
-        direct.ai[0] = 1.0;
-        direct.ai[2] = 1.0; // the rise state
-        direct.update_prime_limb(&w, &player);
-        let mut routed = Npc::new(NpcKind::PrimeSaw, 1600.0, 1280.0, 1, 0.0);
-        routed.hp = routed.max_hp;
-        routed.ai[0] = 1.0;
-        routed.ai[2] = 1.0;
+        // The +1 seat's dock: centre (1440, 1030). The saw sits 30 px
+        // right of it (centre (1470, 1030)) — a nonzero dock vector, the
+        // no-epsilon normaliser stays finite.
+        let mut saw = Npc::new(NpcKind::PrimeSaw, 1444.0, 1004.0, 1, 0.0);
+        saw.hp = saw.max_hp;
+        saw.ai[0] = 1.0;
+        saw.ai[2] = 1.0; // the rise state
+        saw.target = 0;
+        saw.vx = 2.0;
+        saw.vy = -7.95;
         let mut rng = tr_core::UnifiedRandom::new(77);
         let before = rng.clone();
-        routed.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
-        assert_eq!(routed.x, direct.x);
-        assert_eq!(routed.y, direct.y);
-        assert_eq!(routed.vx, direct.vx);
-        assert_eq!(routed.vy, direct.vy);
-        assert_eq!(routed.ai, direct.ai);
-        assert_eq!(routed.rotation, direct.rotation);
-        assert_eq!(routed.sprite_dir, direct.sprite_dir);
-        assert_eq!(routed.wants_hostile_shot, direct.wants_hostile_shot);
+        // Below the gate (y 1004 > head.Y − 200 = 600): still rising.
+        let (x0, y0) = (saw.x, saw.y);
+        saw.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(saw.ai[2], 1.0, "the rise holds (:28166)");
+        assert!((saw.vx - 1.9).abs() < 1e-5, "the 0.95 damp (:28160)");
+        assert_eq!(saw.vy, -8.0, "the −8 cap (:28162-28165)");
+        assert_eq!(saw.sprite_dir, -1, "-(int)ai[0] (:27960)");
+        // The caller-owned integration (`UpdateNPC :90498`): the raw
+        // `position += velocity` after the AI's writes.
+        assert_eq!(saw.x, x0 + saw.vx);
+        assert_eq!(saw.y, y0 + saw.vy);
+        // The dock aim rotation: computed INSIDE the arm, pre-integration.
+        let (scx, scy) = (x0 + 26.0, y0 + 26.0);
+        let expected = (1030.0 - scy).atan2(1440.0 - scx) + 1.57;
+        assert!((saw.rotation - expected).abs() < 0.001, "the dock aim (:28159)");
+        // Above the gate (y 599 < 600): the 22-speed dash at the player.
+        let mut dash = Npc::new(NpcKind::PrimeSaw, 1444.0, 599.0, 1, 0.0);
+        dash.hp = dash.max_hp;
+        dash.ai[0] = 1.0;
+        dash.ai[2] = 1.0;
+        dash.target = 0;
+        dash.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(dash.ai[2], 2.0, "the dash arms (:28169)");
+        let sp = (dash.vx * dash.vx + dash.vy * dash.vy).sqrt();
+        assert!((sp - 22.0).abs() < 1e-3, "the 22 dash ({sp})");
+        assert!(dash.net_update);
         assert_eq!(rng, before, "the saw arm draws zero");
     }
 
-    /// The head (127, aiStyle 32) is UNTOUCHED: `update_prime` still
-    /// owns it — the first tick's limb-spawn latch fires through the
-    /// kind match, not the axis.
+    /// The head (127, aiStyle 32) is RETIRED from the stand-in (W4-d26):
+    /// the axis arm runs the faithful init — `TargetClosest`, the
+    /// `ai[0]` 0 → 1 latch and the limb request (`NPC.cs:27635-27660`),
+    /// NOT the v1's `caster_counter`/`cast_windup` pair. RNG parity:
+    /// ZERO draws (the block has no `Main.rand`).
     #[test]
-    fn the_head_still_rides_update_prime() {
+    fn the_wired_head_targets_and_arms_the_limbs_on_the_ai0_latch() {
         let w = prime_wired_world();
         let mut player = surface_player(&w);
         player.x = 1600.0;
@@ -20253,9 +20379,17 @@ mod tests {
         let mut head = Npc::new(NpcKind::SkeletronPrime, 1600.0, 800.0, 1, 0.0);
         head.hp = head.max_hp;
         let mut rng = tr_core::UnifiedRandom::new(77);
+        let before = rng.clone();
         head.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         assert!(head.wants_limbs, "the AI_032 init latch (:27635-27661)");
-        assert_eq!(head.caster_counter, 1);
+        assert_eq!(head.ai[0], 1.0, "the C#'s ai[0] latch, not caster_counter");
+        assert_eq!(head.caster_counter, 0, "the v1 latch fields stay untouched");
+        assert_eq!(head.target, 0, "the init TargetClosest (:27637)");
+        // The second tick never re-arms.
+        head.wants_limbs = false;
+        head.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert!(!head.wants_limbs);
+        assert_eq!(rng, before, "the head arm draws zero");
     }
 
     #[test]
