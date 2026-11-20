@@ -39308,3 +39308,19 @@ dust-only with NO explicit `Main.rand` draw — the randomness is entirely the
 the stream inside `new_dust`. Witnesses: `projectile_death_dust.rs::tests`
 (the burst counts/types/velocity writes, the unclaimed-kind inertness, the
 determinism pair) — WRITTEN NOT RUN (code-only mode).
+
+### Batch 2 (10 kinds, the explicit-draw `:74236-75680` bursts)
+
+103 (20× dust-75 alpha 100, `Next(2)` gate → scale×2.5/noGravity/vel×5), 278
+(20× dust-169 alpha 100, `Next(2)` gate → scale×1.5/noGravity/vel×5), 5 (60×
+dust, `Next(3)` type pick {15,57,58}, speed vel×0.5 alpha 150 scale 1.5), 93
+(10× dust-57 alpha 100, noGravity/fadeIn 1/vel×2 then `NextFloat()*1.5` Y kick),
+318 (10× dust-30, `Next(2)` gate → noGravity), 378 (10× dust-30, same gate),
+346 (20× dust, type 10 or 4 when ai[1]==1, noGravity), 335 (20× dust, type
+90−(int)ai[1], noLight/scale 0.8), 76/77/78 (5× dust-27 alpha 80 scale 1.5
+noGravity), 55/719 (5× dust-18 scale 1.5 noGravity). The gate/pick/kick draws
+ride the drain's `rng` AFTER each `new_dust` (the C# rolls them after the
+spawn); the 5's type pick rides BEFORE its spawn. The `DeathSnapshot` gains
+`old_vel`/`ai1` for the ai[1]-driven picks (the 346/335). Witnesses: the
+gated-burst stream census (internals + 20 gates), the Jesters type-pick set,
+the 93 Y kick, the ai[1] picks + noGravity bursts — WRITTEN NOT RUN.
