@@ -47,6 +47,7 @@ use super::micro_surface;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
+use super::passes1;
 use super::spider_gem_moss;
 use super::structures;
 use super::surface;
@@ -1242,6 +1243,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // M5-DESERT-structures underground desert.
     step!("full desert", "Full Desert", step_full_desert),
     step!("mushroom patches", "Mushroom Patches", step_mushroom),
+    // The vanilla Sand Patches slot (`WorldGen.cs:11689`): after Ocean Sand
+    // (`:11580`) and before Tunnels (`:11718`) — the port's grouped
+    // surface-biome steps sit earlier (the pinned pre-scaffold order), so
+    // the step lands right before `cave fields`. W4-d101 pass 1: its own
+    // `pass_rng("Sand Patches")` stream shifts no other step's ledger.
+    step!("sand patches", "Sand Patches", step_sand_patches),
     step!("cave fields", "Tunnels", step_cave_fields),
     // The vanilla order is Caves (~:11100-12600) -> Marble (:12757) ->
     // Granite (:12839): the granite caves recruit into pre-carved caves
@@ -1819,6 +1826,23 @@ fn step_cave_fields(
 ) {
     let (width, heights, hell_top) = (world.width, &gv.map().heights, gv.layers().hell_top);
     caves::carve_caves(world, width, noise, heights, hell_top);
+}
+
+/// The vanilla Sand Patches slot (`WorldGen.cs:11689-11717`): the sand-blob
+/// scatter between the surface and rock lines (W4-d101 pass 1).
+fn step_sand_patches(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    passes1::pass_sand_patches(
+        world,
+        &mut streams.pass_rng("Sand Patches"),
+        gv.layers(),
+    );
 }
 
 fn step_surface_caves(
@@ -3140,7 +3164,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-d101 pass 1: + `sand patches` (vanilla "Sand Patches",
+        // `WorldGen.cs:11689`) before `cave fields`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3179,6 +3205,7 @@ mod tests {
                 "mud caves to grass",
                 "full desert",
                 "mushroom patches",
+                "sand patches",
                 "cave fields",
                 // M5-BIOME-2: granite moved after the cave carve (the vanilla
                 // order) — the `GraniteBiome.CanPlace` inactive-origin gate
@@ -3240,6 +3267,28 @@ mod tests {
                 "seed finish",
             ]
         );
+    }
+
+    /// W4-d101 pass 1: `sand patches` sits in the vanilla Sand Patches slot
+    /// (`WorldGen.cs:11689`) — after Ocean Sand (`:11580`) and immediately
+    /// before the Tunnels step (`cave fields`, `:11718`). The port's grouped
+    /// surface-biome steps sit earlier (the pinned pre-scaffold order), so
+    /// the adjacency asserted is the Tunnels one; the chain order is the
+    /// vanilla fact.
+    #[test]
+    fn w4_d101_sand_patches_sits_before_the_tunnel_step() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("sand patches") + 1, pos("cave fields"));
+        assert!(pos("ocean sand") < pos("sand patches"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Sand Patches") == cpos("Tunnels") - 1);
+        assert!(cpos("Ocean Sand") < cpos("Sand Patches"));
     }
 
     /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla

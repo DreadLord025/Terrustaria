@@ -60,6 +60,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "dunes" => PassMessage::Gen(1),
         // WorldGen.cs:11584.
         "ocean sand" => PassMessage::Key("WorldGeneration.OceanSand"),
+        // WorldGen.cs:11693 (Sand Patches, W4-d101).
+        "sand patches" => PassMessage::Key("WorldGeneration.SandPatches"),
         // JunglePass.cs:21.
         "jungle" => PassMessage::Gen(11),
         // WorldGen.cs:12472.

@@ -76,7 +76,7 @@ stay in place untouched.
 | pass | commit | status |
 | --- | --- | --- |
 | census + range doc | (this commit) | claimed |
-| Sand Patches | — | pending |
+| Sand Patches | (next commit) | landed (code-only; hash re-pin deferred to gate) |
 | Mount Caves | — | pending |
 | Dirt Wall Backgrounds | — | pending |
 | Clay | — | pending |

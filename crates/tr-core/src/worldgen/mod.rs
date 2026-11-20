@@ -36,6 +36,7 @@ mod micro_surface;
 mod mini_biomes;
 mod noise;
 mod ocean;
+mod passes1;
 pub mod pipeline;
 pub mod progress;
 mod spider_gem_moss;
