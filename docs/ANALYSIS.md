@@ -39244,3 +39244,102 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The SendData host relay gating (W4-g52)
+
+Code-only round (no compiler invoked; witness tests WRITTEN NOT RUN). The
+host-side RELAY lane of the net census: the `NetMessage.SendData` fan-out
+tail (`NetMessage.cs:1692-1826`, the `remoteClient == -1` switch) and the
+per-message relay arms, ported verbatim onto the landed netglue. The
+apply arms are g48-g51's lane, the send cadences c28's — this round owns
+ONLY the relay/send gating. The in-flight base (the `Slot.broadcast`
+flag, the check-time grid, `section_range`/`is_section_active`/
+`mark_section_checked`, the default-arm fan-out) was probed first and
+kept; the missing arms landed on top.
+
+**The relay census (NetMessage.cs:1692-1826), arm by arm:**
+
+| arm | C# | filter | port |
+| --- | --- | --- | --- |
+| 34/69 | `:1696-1707` | `!ignore && broadcast && IsConnected` — the plain gate, NO section filter, NO State-3 bypass | `Server::fanout` (the default predicate covers it: the bypass only fires for id 10); `69 ChestName` rides `broadcast_except`. `34 ChestUpdates` has no port body (remainder) |
+| 20 | `:1708-1718` | plain gate + `SectionRange((int)Math.Max(number3, number4), number, (int)number2)` — the four-corner LATCH test (`RemoteClient.cs:191-218`), not the check-time grid | `Server::relay_tile_square` → `fanout_filtered`'s `SECTION_RANGE` arm; both netglue edit sites (`C2s::Edit`, `request_edit`) switched from `broadcast` |
+| 23 | `:1719-1749` | `flag4` priority (boss/netAlways/town/!active/life<=0/spawnNeedsSyncing) clears the counters (`:1725-1730`); non-priority skips a section-inactive client up to 4 times (`playerNetSyncState[i].skippedSyncs`, `:1740-1744`) | the decision layer `net_npc_sync::send_state` (S1-I-4b) owns the counters and emits targeted sends; the event-site priority pushes (strike cascade/death/carrier) ride `netglue::send_npc_state_broadcast`, which also runs the `:1725-1730` clear on the port's `NpcNetState` |
+| 28 | `:1751-1762` | plain gate + `(nPC5.life <= 0 \|\| IsSectionActive(nPC5.NetSectionCoordinates))` | `Server::relay_strike(RelayCtx::Strike { dead, section }, now)`; the netglue strike arm passes the NPC's section + the post-strike life |
+| 13 | `:1763-1773` | the plain gate | `Server::fanout` (default predicate) |
+| 27 | `:1774-1800` | `flag3` (`type == 12 \|\| Main.projPet[type] \|\| aiStyle == 11 \|\| netImportant`, `:1777`) clears the skipped flags; otherwise a section-inactive client is skipped and remembered (`netSyncSkippedForPlayer[i] = true`, `:1792`), an active one's flag clears (`:1795`); the ignoreClient leg (`:1784`) never touches the sender's flag | `Server::relay_projectile(RelayCtx::Projectile { ignores_sections, section }, now)` + `ProjSync::note_broadcast` at the same site (the `C2s::Projectile` arm and `drain_proj_outbox`); the not-connected/not-broadcast legs' flags are snapshot-restored around the motion (the C# `continue` runs BEFORE the flag write); the targeted `SyncTo` clears the flag (`:1821-1823`) |
+| default | `:1801-1811` | `!ignore && (broadcast \|\| (State >= 3 && msgType == 10)) && IsConnected` | `Server::fanout` — the in-flight base, kept verbatim |
+| targeted | `:1814-1825` | `IsConnected` only; 23 resets `playerNetSyncState[remoteClient]`, 27 clears `netSyncSkippedForPlayer[remoteClient]` | `Server::send` + the decision layer's targeted arms / `SyncTo`'s flag clear |
+
+**The gates' data:**
+
+* `NetMessage.buffer[id].broadcast` (`MessageBuffer.cs:35`/`:81`, set
+  `:928`): the `12 PlayerSpawn` arm raises State 3 -> 10 and opens the
+  fan-out gate in the same step; `Reset` (`:81`) clears it on reuse. The
+  port's `Server::set_state` sets it at `>= IN_WORLD` (the in-flight
+  base).
+* `RemoteClient.TileSectionsCheckTime` (`RemoteClient.cs:33`) +
+  `IsSectionActive` (`:220-224`): `checkTime + SectionInactiveTime >=
+  Main.GameUpdateCount`, the uint add wraps (`section_active_at`'s
+  `wrapping_add`), `SectionInactiveTime = 60` (`ActiveSections.cs:65`),
+  coords clamp to `[0, maxSections]` (`ActiveSections.cs:53-56`). The
+  stamp is `CheckSection_ForClient` (`RemoteClient.cs:165`) over the
+  fluff-1 box, driven per-tick by `Main.cs:64620-64623` — the port's
+  `host_check_sections` runs it per fixed step ahead of the cadences.
+* `RemoteClient.SectionRange` (`:191-218`): the four corners
+  `(0,0)/(size,0)/(0,size)/(size,size)` in the STREAMED latch
+  (`TileSections`), NOT the check-time grid. The port refuses
+  out-of-grid corners (the C# throws inside `SendData`'s try;
+  `TrySendData` swallows it).
+* `Main.projPet` (`Main.cs:8728-8852`): all 126 write sites landed
+  verbatim as `projectile/data.rs::proj_pet` — the `flag3` table the
+  `net_proj_sync::sync_ignores_sections` parameter was waiting for
+  (hardcoded `false` before).
+
+**The netglue wiring (this round):**
+
+* The `28` strike path: the `spawnNeedsSyncing` `23`-cascade
+  (`NetMessage.cs:102-107`) fires BEFORE the strike apply (the body must
+  carry the pre-strike life; the C# sends it inside `TrySendData(28)`
+  after `StrikeNPC`, but the port runs the whole send path in the
+  dispatcher — the recorded order deviation), then the section-culled
+  relay, then the death `23` + the carrier's `23` when the shared pool
+  died (`MessageBuffer.cs:1808-1815`, `NPC.realLife` via
+  `Npc::carrier_index`).
+* The `27` arms: `C2s::Projectile` (ignoreClient = sender) and
+  `drain_proj_outbox`'s `Sync` (no ignore) both run the flag motion +
+  the filtered relay; `SyncTo` clears the target's flag.
+* The NPC cadence's `section_active` switched from the streamed latch
+  to the check-time grid (`NetMessage.cs:1740` reads `IsSectionActive`,
+  not `TileSections`) — the old diff's latch read was a census WRONG.
+
+**Deviations (deliberate).**
+
+* The `21` pre-switch (`NetMessage.cs:89-100` — `instanced` returns,
+  `IsAir` rewrites to 151) is unported: the port's item cadence already
+  emits `151` for dead slots and has no `instanced` field (the
+  per-player loot split is unported).
+* The `162` damage-ack (`MessageBuffer.cs:1770`, the server's
+  `TrySendData(162, whoAmI)` before every strike read) has no port
+  body — the client's `NPC.AckDamage` damage-queue is unported.
+* The `28` cascade's send order (above): pre-apply in the port,
+  post-apply in the C#; the wire bytes are the pre-strike body either
+  way (the C# `SendData(23)` at `:105` runs inside the `28` send, which
+  the reader dispatches after `StrikeNPC` — the port's dispatcher
+  applies the strike itself, so the cascade must lead to carry the
+  same body).
+* `host_check_sections` stamps only the remote peers (the C# stamps
+  client 0 too — never connected, so the flag is inert); the stream
+  half of `CheckSection_ForClient` (`:177-188`) stays on the 10 Hz
+  `pending_sections` batch (the port's standing shape).
+* The `23` priority clear at the event sites clears the port's
+  `NpcNetState` directly; the decision layer's own `send_state` clear
+  runs on the cadence path (the two never both fire for one send).
+
+**Verification.** Code-only: every relay arm re-read line-by-line
+(`NetMessage.cs:1692-1826`, `RemoteClient.cs:126-224`,
+`ActiveSections.cs:15-66`, `MessageBuffer.cs:915-934`/`:1766-1850`,
+`Main.cs:64606-64624`/`:8728-8852`); the `projPet` census grep-diffed
+(126 rows). 13 witness tests WRITTEN NOT RUN (6 `net.rs::w4_g52_*`
+relay-arm tests over raw sockets, 6 `netglue.rs::w4_g52_relay_tests`
+end-to-end, 1 `projectile/data.rs` census pin) — **no compiler
+invoked**.
+
