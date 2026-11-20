@@ -24,6 +24,11 @@ pub struct ShopFlags {
     pub blood_moon: bool,
     pub zone_snow: bool,
     pub zone_jungle: bool,
+    /// `Main.player[Main.myPlayer].ZoneGraveyard` — W4-d123's second-half
+    /// shops read it (the Dye Trader's 4662 `Chest.cs:2269`, the Party
+    /// Girl's 4682 `:2305`, the Cyborg's 4409/4392 `:2411-2420`, the
+    /// Painter's 4668/5344 `:2471-2480`, the Pirate's 5926 `:2684`).
+    pub zone_graveyard: bool,
     pub downed_boss2: bool,
     pub downed_boss3: bool,
     /// The Stylist shop's gates (`Chest.cs:2704-2783`): the player's life
@@ -77,6 +82,7 @@ impl Default for ShopFlags {
             blood_moon: false,
             zone_snow: false,
             zone_jungle: false,
+            zone_graveyard: false,
             downed_boss2: false,
             downed_boss3: false,
             life_max_400: false,
@@ -194,6 +200,12 @@ pub enum StockWhen {
     /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
     /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
     MoonPhasePair(u8),
+    /// W4-d123: `Main.moonPhase == n` EXACTLY (`Chest.cs:2260`'s Dye Trader
+    /// pair) — unlike [`StockWhen::MoonPhasePair`], phase 1 does not match 0.
+    MoonPhaseIs(u8),
+    /// W4-d123: `Main.player[Main.myPlayer].ZoneGraveyard` (`Chest.cs:2269`
+    /// and the second-half shops' graveyard tails).
+    ZoneGraveyard,
     /// The ODD moon phases only (`Chest.cs:2085`'s
     /// `moonPhase == 1 || 3 || 5 || 7`): the Mechanic's Rod row.
     MoonPhaseOdd,
@@ -474,18 +486,22 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             // port's town count reads the Angler's presence.
             row(2295, StockWhen::MoonPhaseOdd),
         ],
-        // The Dye Trader's shop (index 12, `Chest.cs:case 12`): the two
-        // always rows, the halloween rows (constants-off), the day/night
-        // moon-phase 0 pair, the blood-moon-night row and the graveyard
-        /// goggles (constants-off); the multiplayer-only row is off.
+        // The Dye Trader's shop (index 12, `Chest.cs:2246-2273`, W4-d123):
+        // the four always rows, the EXACT moon-phase-0 pair (`:2260`), the
+        // blood-moon-night row (`:2265`) and the graveyard goggles (`:2269`).
+        // The halloween pair (3248/1741, `:2249-2253`) and the netMode==1
+        // row (1969, `:2256-2259`) sit constants-off (no season / no MP).
         12 => vec![
             row(1120, StockWhen::Always),
             row(5920, StockWhen::Always),
             row(1037, StockWhen::Always),
             row(2874, StockWhen::Always),
-            row(2871, StockWhen::MoonPhasePair(0)),
-            row(2872, StockWhen::MoonPhasePair(0)),
+            // `:2260` — `Main.moonPhase == 0`, NOT the /2 pair.
+            row(2871, StockWhen::MoonPhaseIs(0)),
+            row(2872, StockWhen::MoonPhaseIs(0)),
             row(4663, StockWhen::BloodMoonNight),
+            // `:2269-2272` — the graveyard goggles.
+            row(4662, StockWhen::ZoneGraveyard),
         ],
         // The Party Girl's shop (index 13, `Chest.cs:case 13`): the
         /// 18 always rows (the food/party set) + the graveyard goggles
@@ -1284,6 +1300,9 @@ pub fn resolve_stock_entries_moon(
             }
             StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
+            // W4-d123: `Chest.cs:2260`'s exact-phase compare.
+            StockWhen::MoonPhaseIs(n) => moon_phase == n as u32,
+            StockWhen::ZoneGraveyard => flags.zone_graveyard,
             StockWhen::MoonPhaseOdd => moon_phase % 2 == 1,
             StockWhen::LifeMax400 => flags.life_max_400,
             StockWhen::ManaMax200 => flags.mana_max_200,

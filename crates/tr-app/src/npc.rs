@@ -24119,6 +24119,12 @@ mod tests {
         let phase2 =
             crate::shop::resolve_stock_moon(12, &crate::shop::ShopFlags::default(), &[], 4);
         assert!(!phase2.contains(&2871), "no moon-phase row at phase 4");
+        // W4-d123: `Chest.cs:2260` is `moonPhase == 0` EXACTLY — phase 1 (the
+        // other half of the /2 pair) must NOT carry it.
+        let phase1 =
+            crate::shop::resolve_stock_moon(12, &crate::shop::ShopFlags::default(), &[], 1);
+        assert!(!phase1.contains(&2871), "no moon-phase row at phase 1 (exact ==0)");
+        assert!(!phase1.contains(&2872), "its pair at phase 1");
         // The blood-moon-night row.
         let night = crate::shop::ShopFlags {
             night: true,
@@ -24127,9 +24133,16 @@ mod tests {
         };
         let rows = crate::shop::resolve_stock(12, &night, &[]);
         assert!(rows.contains(&4663), "the blood-moon row");
-        // The halloween and graveyard rows stay constants-off.
+        // The halloween row stays constants-off.
         assert!(!rows.contains(&3248), "no halloween hat");
-        assert!(!rows.contains(&4662), "no graveyard goggles");
+        // W4-d123: the graveyard goggles (`Chest.cs:2269`) ride ZoneGraveyard.
+        assert!(!rows.contains(&4662), "no graveyard goggles off-zone");
+        let grave = crate::shop::ShopFlags {
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let grave_rows = crate::shop::resolve_stock(12, &grave, &[]);
+        assert!(grave_rows.contains(&4662), "the graveyard goggles on-zone");
     }
 
     /// The Party Girl's shop (`case 13`): the eighteen always rows.
