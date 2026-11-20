@@ -26176,6 +26176,55 @@ double integer division `statLifeMax / 5 / 20 * 20`). Deliberate deviations:
   no open-dialogue field yet; the luck flag is already live in `player.rs`).
 
 Tests: 19 `s1_e_7b_*` per-buff tests in the module.
+
+## Buff effect table, wave C second block (S1-E-7 c17, code-only)
+
+The MANA-POTION / ARMOR-SET tier block (`Player.cs:10318-10461`, 20 ids:
+94, 396, 95-97, 170-172, 98-100, 176-178, 173-175, 179-181, plus the
+`UpdateBuffs_NebulaBuffs` helper `:12070-12079`) is ported in
+`crates/tr-app/src/buff_effects_potions_sets.rs`. The claim + live-set census
+are in `docs/research/28c-wave-c-claim.md` (c16 owns `:9914-10048`, c18
+`:10486-10972` — disjoint by C# line). Shape: the simple arms (94, 396) fold
+into a `PotionSetEffects` accumulator via `apply_potion_set_effect_arm` (the
+wave-B seam); the set-tier arms read AND write the whole buff bar, so they
+ride the slot-ordered `update_potion_set_buff_arms` driver over
+`&mut BuffSlots` + the accumulator with the C# `DelBuff(j); j--` rescan (the
+`update_summon_buff_arms` convention). Deliberate notes:
+
+* **Code-only, test-only until the merge**: no `player.rs` code, no live-tick
+  wiring. The wiring step copies `latest_mana_potion_*` into
+  `PotionEffectContext`, runs the driver AFTER `update_buffs_tick` (the driver
+  does not decrement — the `:9871-9874` tick already ran), then folds the
+  accumulator: `mana_heat +=`, the stat adds `+=`, the orb/shield/level fields
+  `=` (ResetEffects zeroes them every frame, `:18501-18505`/`:18755`).
+* **Buff 94 is a MIRROR, not a second owner**: the live half already runs via
+  `potions::apply_mana_sickness_arm` (`player.rs:6501`); the table arm matches
+  it bit-for-bit (witness `s1_e_7c17_buff_94_mirrors_the_live_sickness_arm`)
+  and must not be wired twice. The `DebugOptions.ManaPotionDelay` mirror
+  (`:10320-10323`) is constants-off, same as the potions module.
+* **396's zero-duration floor writes the PLAYER field** (`:10331-10334`); the
+  accumulator records it as `mana_potion_duration_floored` for the wiring.
+* **The double-delete path is unreachable in retail play** (the downgrade
+  branch AND the set-flag-off branch on one slot would drive the C# `j`
+  negative): the tier fields reset to 0 every frame, a kept earlier slot's
+  set flag is on, the two beetle flags are mutually exclusive (one
+  chestpiece), and the off-family buff is purged on the first tick after an
+  armor swap. The driver's one-rescan-per-arm shape is therefore exact; the
+  proof sketch rides the driver's doc comment.
+* **The upgrade walk includes the current slot** (`:10357`'s range is
+  `base..=base+num-1`, and `buffType[j] == base+num-1`): after the walk the
+  chain ADVANCES (no rescan in that branch), skipping the compacted foreign
+  buff at `j` for this pass — pinned by
+  `s1_e_7c17_beetle_upgrade_walk_deletes_the_lower_tiers_including_j`.
+* **Beetle Might adds BEFORE the gate** (`:10431-10432` precede `:10433`): a
+  dropped Might buff still adds its damage/speed for the tick. No `buffTime
+  = 5` pin in the Might arm (unlike Endurance/Solar).
+* **RNG census: ZERO draws** in `:10318-10461` + `:12070-12079`. The Nebula
+  downgrade is deterministic timer arithmetic (`buffTime == 2 && level > 1`
+  → level−1, id−1, time 480); no stream or fixed-step-order change.
+
+Tests: 17 `s1_e_7c17_*` witnesses in the module — WRITTEN NOT RUN (code-only
+worker contract; compile-by-inspection).
 ## The NPC aiStyle dispatch axis (S1-D-2, 2026-11-18)
 
 The C# dispatches NPC AI on `aiStyle` first (`NPC.AI`, `NPC.cs:19819-41132`:
