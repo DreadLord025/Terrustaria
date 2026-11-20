@@ -1867,7 +1867,7 @@ mod tests {
                 let idx = a.index(x, y);
                 let v = ((x + y) % 3) as usize;
                 assert_eq!(a.wall_frame_number(idx) as usize, v, "stored variant kept");
-                let mask = 15 + CENTER_WALL_FRAMES[x % 3][y % 3] as usize;
+                let mask = 15 + CENTER_WALL_FRAMES[(x % 3) as usize][(y % 3) as usize] as usize;
                 let (col, row) = WALL_FRAMES[mask][v];
                 let t = a.tile(x as i32, y as i32).unwrap();
                 assert_eq!((t.wall_col(), t.wall_row()), (col, row));
