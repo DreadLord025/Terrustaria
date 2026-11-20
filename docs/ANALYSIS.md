@@ -39378,3 +39378,27 @@ BEFORE the `Next(3,6)` type — C# Position/Velocity/Type argument
 order). The KillMe drop pipeline is `death.rs`'s; the item-type /
 melee-flag gates are the caller's. 3 witnesses written, NOT run
 (code-only mode).
+
+## The player gore sites (W4-g17, wave E — census complete)
+
+`player_gore_e.rs`: `ItemCheck_GetMeleeHitboxParticles`' item-1450
+sparkle ladder (`Player.cs:45050-45080`) — the `Next(3)` outer gate,
+the position rolls `Next(rect.Width)`/`Next(rect.Height)`, then the
+500/250/80/10/3 if-else-if CHAIN spawning ONE of 415/414/413/412/411
+at scale `Next(51,101)*0.01` (each gate draws only when every earlier
+gate missed), the `num >= 0` post-write `+direction*2` X / ×0.3 Y.
+The 411-430 `NewGore` arm (`Gore.cs:1407-1421`) is asset-gated — the
+pool draws NOTHING for it (`gore.rs:506-508` documented drop); the
+witness mirrors the pool's stream. `ItemCheck_ApplyUseStyle`'s
+useStyle-5 item-4262 lantern mote (`:51109-51125`) — the `Next(20)`
+gate, type `Next(570,573)` FIRST, then the wind velocity's two
+`Next(-50,51)` multipliers, scale 0.8; the 570-572 arm RESTORES the
+passed velocity pool-side (`Gore.cs:1367-1370`, kicks discarded); the
+-8/-4 position nudges are data. The `DontHoldItems` mount gate
+(`MountID.cs:46`: 55/56/61) and the `itemLocation`/`MountedCenter`
+writes are the caller's.
+
+**Census complete**: Main.cs 0 sites (verified), WorldGen.cs 36
+(`world_gore_a`/`world_gore_b`), Player.cs 32 (`player_gore_a`..`e`).
+68 `Gore.NewGore*` sites ported across 9 commits, ≤10 sites each.
+3 witnesses written, NOT run (code-only mode).

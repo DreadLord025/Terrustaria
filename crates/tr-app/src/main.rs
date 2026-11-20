@@ -280,6 +280,10 @@ mod player_gore_c;
 // visuals (Player.cs:38869-45027); the KillMe/ItemCheck dispatch
 // claims are the wiring wave.
 mod player_gore_d;
+// W4-g17 player wave E (code-only, FINAL): the melee-hitbox sparkle
+// ladder + use-style-5 lantern mote (Player.cs:45048-51125); completes
+// the Player.cs census (32 sites). ItemCheck dispatch deferred.
+mod player_gore_e;
 // W4-g17 (code-only): the world-side Gore.NewGore sites, wave A — the
 // TreeGrowFX trunk/leaf column + ash shake (WorldGen.cs:29600-29672)
 // and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /
