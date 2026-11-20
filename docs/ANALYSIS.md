@@ -9991,7 +9991,9 @@ swing + `item_time` + `shot_fired = false`); the shot fires at
 not-consume roll в†’ the drain в†’ the projectile = the ammo's `Item.shoot`,
 the damage = the weapon's + the ammo's through the class multiplier
 (`:53541-53546`), the speed = the weapon's + the ammo's `shootSpeed`
-(`:53544`). No ammo в†’ a dry swing (the use plays, nothing spawns).
+(`:53544`). No ammo в†’ the use is refused at the start (`HasAmmo`,
+`Player.cs:52316-52319` вЂ” S1-P-i15 fixed the original "dry swing"
+divergence; see "Ammo mastery layer (M3-ITEM-6)" below).
 
 The reach gate's player borrow was restructured: the old single `&app.player`
 borrow spanned the whole `update_editing` body and blocked the shooter's
@@ -9999,14 +10001,14 @@ mutable `App` access вЂ” the reach check became `player_in_reach` via
 `is_some_and` (the borrow ends at the statement) and the food/potion/melee
 arms re-borrow through `app.player`.
 
-Deviations: the specific-pair table (`PickAmmo_TryFindingSpecificMatches`,
-`Player.cs:53448`) waits for its combo items; the ammo-cycling modes are
-M3-STORE-2's; the accessory ammo saves (the magic quiver, the ammo box,
-the ammo potion, the Chlorophyte 80%) wait for their accessories/buffs;
-the volley specials (the Clockwork's 3-shot volley, the Fairy Queen's
-first-8-ticks window) have no port volley state вЂ” every shot is the
-first, so those items consume every shot (documented); the gunProj
-`dontConsume` covers only 4 endgame items (`ItemID.cs:1327`).
+Deviations (historical, M3-ITEM-3): the specific-pair table
+(`PickAmmo_TryFindingSpecificMatches`, `Player.cs:53448`), the ammo-cycling
+modes, the accessory ammo saves and the volley specials all landed with
+M3-ITEM-6 (see "Ammo mastery layer (M3-ITEM-6)" below); the gunProj
+`dontConsume` covers only 4 endgame items (`ItemID.cs:1327`). The S1-P-i15
+re-census (2026-11-19) fixed the three remaining pick/consume defects: the
+`item.consumable` drain gate, the use-start `HasAmmo` refusal and the two
+missing roll arms (3821 live, 1319 remix).
 ## Minecart riding (M2-PHYS-7)
 
 The 1.4.5.8 minecart (tile 314 riding) landed as the crate-root leaf
@@ -11585,17 +11587,42 @@ the ammo-cycling modes. Deliberate deviations and traps:
   save is discarded вЂ” the arms run unconditionally (`:53579-53594`) вЂ” so the
   golden-stream test pins 0 draws for the 434 arm and 1 for each roll-carrying
   shooter.
-- **Dead and parked arms:** the Ale Throwing Glove 3821's 69% roll never fires
-  (`useAmmo = 0` в†’ `PickAmmo` never runs) вЂ” not ported; the Snowball Cannon
-  1319's remix arm is parked (no celebration-seed stand-in in the port); the
-  1946/3930 projectile formulas (`:53475-53482`) are covered by the pair table
-  and not ported.
+- **Dead and parked arms (S1-P-i15 re-census, 2026-11-19):** the Ale Throwing
+  Glove 3821's `Next(100) < 69` roll (`Player.cs:53639-53641`) is LIVE and now
+  ported — the old "`useAmmo = 0` → dead" note was wrong: the item's `useAmmo`
+  is 353 (Ale, `Item.cs:33927`), so `PickAmmo` runs for it. The Snowball Cannon
+  1319's remix arm (`:53659-53661`) is un-parked and ported: `World.seeds`
+  carries `SeedFlags::REMIX`, the shoot wire derives `VolleyWindows::remix_world`
+  and the chain reads it (a plain world spends no draw — the `&&`
+  short-circuit). The 1946/3930 projectile formulas (`:53475-53482`) stay
+  unported: the pair table covers both launchers for all twelve rocket kinds
+  (`AmmoID.cs:78-113`), so those arms are unreachable in 1.4.5.8.
+- **The `item.consumable` drain gate (S1-P-i15):** `PickAmmo`'s drain is
+  `if (!flag && item.consumable)` (`Player.cs:53675`) — the Endless Quiver
+  3103 / Endless Musket Pouch 3104 never set `consumable`
+  (`Item.cs:28700-28723`, stock false `:49007`), so they are picked and fired
+  but never drained. `ammo::drain` now carries the gate; the wire no longer
+  refuses the shot when `drain` returns false (the old refusal made the
+  endless kinds fire nothing).
+- **The use-start `HasAmmo` gate (S1-P-i15):** `ItemCheck_CheckCanUse_Inner`
+  runs `Player.HasAmmo` (`Player.cs:52316-52319`, `:53431-53446`) — with no
+  matching stack anywhere the use is REFUSED before any swing starts. The
+  port's old "dry swing" (the swing played, the shot declined) was a
+  divergence; `ammo::has_ammo` now gates the shooter start block. The
+  mid-swing `canShoot = false` early-return (`:47147`) remains for the
+  last-ammo-drained case.
 - **The fuse multipliers stay 1.0-based in `resolve_projectile`:**
   `GetWeaponDamageMultiplier`'s bow/gun/specialist scalars (`:53386-53416`) need
   the quiver/archery systems (M3-EQUIP-3/M2-BUFF); the magicQuiver knockback
   Г—1.1 scales the weapon's own value only (it precedes `KnockBack +=
-  item.knockBack`, `:53568`) and the NanoBullet 285's Г—1.25 scales the FUSED
-  damage (the wire applies the weapon's part too).
+  item.knockBack`, `:53568`).
+- **The Nanite-bullet Г—1.25 is ONE fused scale (S1-P-i15 / i03 census A1):**
+  `Player.cs:53552-53559` adds `(int)(num * mult)` to `Damage` THEN scales the
+  FUSED value `(int)(Damage * 1.25f)`. The old port scaled the ammo half in
+  `resolve_projectile` AND the fused value at the wire — Г—1.5625 on the ammo
+  half. The resolver now returns the unscaled `num`; the wire's fuse site
+  carries the single `(damage * 1.25) as i32` after the add (the `(int)`
+  truncation the old float `damage *= 1.25` also lacked).
 - **The projectile rows land with the unported AI styles** (147 Celebration,
   75/10/181/193/31 the rest) as stand-ins per the house `projectile.rs` pattern
   вЂ” the rows stop the silent `spawn_with_data` no-op; the AI ports are M4-PROJ's
@@ -11607,6 +11634,20 @@ the ammo-cycling modes. Deliberate deviations and traps:
   the resolution chain and the roll chain share the module); the plan's
   fallback split behind the same `pub` surface is deferred to a refactor-shaped
   follow-up.
+- **Out of the S1-P-i15 pick/consume scope** (recorded by the i03 census,
+  `docs/research/62-ammo-potion-census.md` on `task/S1-P-i03-ammo-potion-census`):
+  A4 — the consumable WEAPON's own-stack consume rolls (`Player.cs:43280-43326`,
+  the throw path, not `PickAmmo`); A5 — `FillAmmo` pickup routing; A6 — the
+  Ammo Cycler +8% ranged damage / Sharp Barb +8 crit stat halves. The launch
+  paths ride i13/i14, the special-ammo behaviours i17. **Census observation
+  (fuse-side, unaddressed):** the ammo-side add evaluates
+  `GetWeaponDamageMultiplier(item)` on the AMMO item (`Player.cs:53554`),
+  whose `useAmmo` is 0 — the Sandgun's sand blocks (`class None`) and the
+  Clentaminator's solutions take the `1f` fall-through (`:53418`), while the
+  wire reuses the WEAPON's dispatch (`editing.rs`, the `mult` read); the two
+  diverge only when `rocketDamage`/`rangedDamage` ≠ 1 (the specialist
+  weapons' own ammo categories). A fuse-task follow-up, not a pick/consume
+  defect.
 ## Smart cursor (M7-SMARTCURSOR-1)
 
 `tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
@@ -33526,6 +33567,407 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
 
+## The bow launch (S1-P-i13)
+
+**Mode.** Code-only: no `cargo`/`rustc`/`rustfmt`/test runs, no dotnet, no
+graphify — file reads/writes + git only. The C# arms were re-read whole and
+compared line-by-line against the landed Rust; the 24 witness tests are
+WRITTEN, NOT RUN. **No compiler invoked.**
+
+**Assignment.** The bow use (`useAmmo=true`, `ammoType Arrow`) — the
+`Player.ItemCheck_Shoot` bow launch arms vs the port. Scope: the bow LAUNCH
+only. The arrow flight (aiStyle 1, `AI_001`) already landed with the
+projectile-AI tasks; the ammo consumption is the i15 task's.
+
+**Census (the WRONGs and the MISSING).** The pre-i13 shooter wire
+(`world_sim/editing.rs`) fired every arrow/stake shooter through one generic
+spawn: `center + dir*10`, the aim normalized to the fused speed, no per-bow
+arm. Against `Player.cs:47056-49468` that was WRONG on three counts and
+MISSING the whole special-arm family:
+
+* **WRONG — the spawn anchor.** The C# spawns at
+  `pointPosition = RotatedRelativePoint(MountedCenter)` (`:47196`), not the
+  body centre + 10 px. For a stationary unmounted player the two coincide
+  (`fullRotation=0`, `gfxOffY=0`, `mount.PlayerOffset=0` fold the rotation to
+  the identity), but a mounted/rotated player diverges. The bow path now
+  reads the real anchor.
+* **WRONG — the facing flip.** The C# flips `base.direction` toward the
+  cursor via `Dot(UnitX.RotatedBy(fullRotation), normalize(MouseWorld −
+  pointPosition))` (`:47202-47224`) before the aim. The wire never flipped.
+* **WRONG — the post-pick `projToShoot` overrides.** `:47157-47176` runs
+  AFTER `PickAmmo` resolved the ammo's own `shoot`: the Molten Fury 120
+  converts the wooden-arrow default 1 → the FireArrow 2 (the without-quiver
+  path; the Molten Quiver's `:53537` already did it when armed), the Marrow
+  682 → the Bone Arrow 117, the Ice Bow 725 → the FrostArrow 120, the Pulse
+  Bow 2223 → the PulseBolt 357 — all unconditional except the Molten Fury's
+  `proj == 1` gate. The wire fired the raw resolved kind, so the Marrow fired
+  a wooden arrow, the Ice Bow a wooden arrow, the Pulse Bow a wooden arrow.
+* **MISSING — the per-bow launch arms.** The Tsunami 2624's five-arrow π/10
+  fan (`:47784-47809`), the Daedalus Stormbow 3029's rain (`:47424-47465`),
+  the Blood Rain Bow 4381's rain (`:47466-47500`), the Hellwing 3019's dual
+  `RotatedByRandom` (`:47573-47579`), the Chlorophyte Shotbow 1229's
+  cumulative spread (`:48278-48308`), the DD2 Betsy Bow 3859's six-arrow fan
+  forcing 710 (`:48748-48760`), the Fairy Queen 4953's aimed shot with the
+  fan index and the `num61 == 2` prism double (`:47910-47957`). All fired as
+  a single generic arrow before.
+* **MISSING — the arrow `proj_data` rows.** The overrides and the arrow
+  ammo's own `Item.shoot` resolve to kinds with NO row, so the data-carrying
+  spawn declined them (the Marrow's 117 existed, but 120/357/710/323 and the
+  arrow-ammo family 4/5/41/91/103/172/225/278/282/474/1006 did not). Added
+  field-cited from the `SetDefaults` bodies (`Projectile.cs:837-863`,
+  `:1237-1247`, `:1743-1752`, `:1904-1914`, `:2093-2104`, `:2579-2590`,
+  `:3100-3110`, `:3638-3698`, `:4160-4171`, `:4474-4486`, `:5474-5484`,
+  `:7521-7535`, `:9570-9579`), with the `ignoreWater` (5/710) and `light`
+  (4/5/41/103/172/278) overlays.
+
+**The port.** `crates/tr-app/src/bow_launch.rs` — `fire` applies the
+post-pick overrides, builds the launch frame (the anchor, the facing flip,
+the aim normalized to `speed` with the zero/NaN direction fallback
+`:47291-47296`), dispatches the per-bow arm and spawns the arrows. The wire
+routes arrow/stake shooters (`is_arrow_shooter`) through it; the `gunProj`
+four and the non-arrow shooters keep the generic spawn (their launch arms
+are their own tasks). `Projectile.no_drop_item` + `set_no_drop_item` carry
+the multi-shot stamp (`Player.cs:47806`/`:48305`/`:47497`/`:47955`), which
+the kill path's ammo-recovery drop reads (`Projectile.cs:77367`).
+
+**RNG order.** The port rolls the crit at THROW time (the established
+`world_sim` convention, a documented deviation from the C#'s hit-time
+`Projectile.Damage` roll); that one draw precedes the launch arm's draws.
+Within each arm the `Main.rand` draws are consumed in the C#'s exact order:
+the Stormbow's count `Next(3)` then six per shot (`Next(201)`,
+`Next(-100,101)`, `Next(-40,41)` vx, `Next(-40,41)` vy, `Next(75,150)`,
+`Next(-50,51)`); the Blood Rain's `Next(1,3)` + `Next(3)` then seven per shot
+(`Next(61)`, `Next(-30,31)`, `NextFloat`, `Next(-20,21)`, `Next(-40,41)`,
+`Next(55,80)`, `Next(-50,51)`); the Chlorophyte's `Next(3)` then two per
+spread shot; the Hellwing's FOUR `NextDouble` (the π/8 ai-spin pair then the
+π/16 velocity pair, `Utils.cs:1697-1700`). The Tsunami/Betsy/Fairy Queen
+draw NOTHING. The draw-count witness tests pin each against a replayed
+stream.
+
+**Documented folds.** `gravDir = 1` (no gravity flip) — the `:47285-47288`
+reverse-gravity aim arm folds to a plain add. `ChangeDir`'s pulley
+reposition (`Player.cs:42097-42110`) and its `itemRotation`/composite-arm
+mirrors (`:42112-42115`) are transient in the port: `item_rotation` is
+recomputed from `swing_aim` each frame (`world_sim/player.rs`) and the
+composite arms are re-set by `ApplyUseStyle`, so only the persistent
+`base.direction = dir` (`:42111`) lands. `MountedCenter == center` and
+`ApplyItemPositionOffsetFromMount` is a no-op without an active mount
+(`Player.cs:51387-51390`).
+
+**Out of scope (recorded, not changed).** `GetWeaponKnockback`
+(`Player.cs:53346-53369`: the summon `minionKB`, the `kbGlove`/`kbBuff`,
+the Shroomite/Vortex stealth scales) is not called by the shooter wire — a
+pre-existing deviation affecting ALL shooters, not the bow geometry; the
+bow launch reads the knockback the wire already fused. The arrow flight's
+per-kind gravity/rotation hooks (`AI_001`'s 142 per-type arms) are the
+S1-D-5 slices; the new rows ride the generic `ai_arrow` arm until those
+land. The 4058 Skeleton Bow is `ItemID.Sets.Deprecated` (`ItemID.cs:1316`),
+so its id-0 registry row is correct and the `resolve_projectile` 4058 arm
+(`Player.cs:53511-53514`) is dead-but-faithful — no correction.
+
+**Retry correction (the `gunProj` BOWS' launch geometry).** The first pass
+left the two `gunProj` BOWS — the Phantasm 3540 (→ 630) and the DD2 Phoenix
+Bow 3854 (→ 705) — on the wire's pre-i13 generic spawn (`center + dir*10`,
+no facing flip), reasoning the deviation was shared with the bullet/rocket
+`gunProj` items. That is the i01 census's U24 (invented +10 px offset) and
+U25 (no `ChangeDir`) WRONG, and these two are BOWS (`useAmmo Arrow`), so the
+bow-launch scope owns their geometry. `ItemCheck_Shoot` runs the shared
+`RotatedRelativePoint(MountedCenter)` anchor + the `ChangeDir` aim-dot flip
++ the aim normalized from the anchor (`:47196-47307`) for EVERY shooter
+before the per-item arms; the Phantasm's arm then fires the fixed 630 at
+that anchor with `num4/num5` (`:48996-48999`), the Phoenix's the fixed 705
+(`:49014-49017`). The retry routes the arrow `gunProj` two through
+`bow_launch::fire`'s generic single tail, passing `g.projectile` (the
+fixed-projectile reset) instead of the resolved arrow — the post-pick
+overrides are all non-matching for 3540/3854 and neither has a per-bow arm,
+so the generic tail IS their C# launch. For a stationary unmounted player
+the rotated anchor folds to `center()`, so the bolt spawns AT the centre
+(the +10 px is gone) and the facing flips toward the cursor. The
+bullet/rocket `gunProj` two (the Vortex Beater 3475, the Celebration Mk2
+3930) and the non-arrow shooters keep the generic spawn — their launch
+arms are the i14/i16 tasks'. The Phantasm's multi-arrow volley is the 630
+holder bolt's own `AI_075` (`Projectile.cs:67142-67233`: the charge-gated
+24/22/20/18-tick cadence, the four-arrow `NextFloat` speed + `RandomVector2`
+jitter fan, the `phantasmTime` latch) — the projectile's flight AI, out of
+the bow-LAUNCH scope (recorded for the aiStyle-75 holder task; the 630 row
+already exists, `projectile/data.rs`). Witness
+`s1_p_i13_the_gun_prog_bows_fire_from_the_rotated_anchor_with_the_facing_flip`
+pins the anchor, the facing flip, the fixed bolt and the raw shootSpeed for
+both. WRITTEN, NOT RUN.
+
+**Verification.** Code-only: every bow arm re-read whole against
+`Player.cs:47424-47957`/`:48278-48308`/`:48748-48760`/`:49437`, the shared
+geometry against `:47151-47307`, the helpers against `Utils.cs`; the seam
+call sites checked by read/grep (`can_hit`/`can_hit_line`'s 9-arg shape,
+`Player`'s `mounted_center`/`rotated_relative_point`/`facing`/`misc_counter`,
+`UnifiedRandom`'s `next_max`/`next_range`/`next_float`/`next_double`,
+`ProjectilePool::spawn_with_data_owned`/`set_crit`/`set_no_drop_item`). The
+24 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The gun launch (S1-P-i14)
+
+**Mode.** Code-only: no `cargo`/`rustc`/`rustfmt`/test runs, no dotnet, no
+graphify — file reads/writes + git only. The C# arms were re-read whole and
+compared line-by-line against the landed Rust; the 18 witness tests are
+WRITTEN, NOT RUN. **No compiler invoked.**
+
+**Assignment.** The gun use (`useAmmo == AmmoID.Bullet` 97) — the
+`Player.ItemCheck_Shoot` bullet launch arms vs the port, PLUS the CRITICAL
+Revolver 2269 per-tick `Next(3)` crit charge/decay draw (`Player.cs:42677-42703`,
+the i01 census's determinism P0 — MISSING from the port). Scope: the gun LAUNCH
+only. The bullet flight (aiStyle 1/2/78) is the projectile-AI task's; the ammo
+consumption (`HasAmmo`/consumable-drain/Nanite-single-scale) is i15's; the
+special-bullet rows/AI are i18's; the rocket/dart launchers (and the Celebration
+Mk2 3930, `useAmmo` Rocket) are i16's.
+
+**Census (the MISSING).** The pre-i14 shooter wire fired every bullet shooter
+through the generic non-arrow spawn (`center + dir*10`, no per-gun arm, a wrong
+`Item_1` launch cue). Against `Player.cs:47056-49468` the whole per-gun arm
+family was MISSING, and the shared geometry the bow half landed in i13 had not
+reached the guns. The 24 bullet guns (`use_ammo: 97` + Ranged in the generated
+item table): 95 Flintlock, 96 Musket, 98 Minishark, 164 Handgun, 219 Phoenix
+Blaster, 434 Clockwork, 533 Megashark, 534 Shotgun, 679 Tactical Shotgun, 800
+Undertaker, 964 Boomstick, 1254 Sniper, 1255 Venus Magnum, 1265 Uzi, 1553 SDMG,
+1870 Red Ryder, 1929 Chain Gun, 2269 Revolver, 2270 Gatligator, 2797 Xenopopper,
+3475 Vortex Beater (gunProj), 3788 Onyx Blaster, 4703 Quad-Barrel, 5117 Pew-matic
+Horn. (1319 Snowball Cannon ends `useAmmo` Snowball 949; 3107 Nail Gun is
+`useAmmo` Nail — neither is a bullet gun.)
+
+**The shared geometry INHERITED, not re-fixed.** i13 fixed the shooter-spawn
+anchor (`RotatedRelativePoint(MountedCenter)` `:47196`), the facing flip
+(`Dot`→`ChangeDir` `:47202-47224`) and the aim-origin normalization
+(`MouseWorld − pointPosition`, fused speed, zero/NaN fallback `:47277-47307`)
+for the bow half. `ItemCheck_Shoot` runs that SAME frame for EVERY shooter before
+the per-item arms, so the gun half inherits it verbatim: the frame construction
+was extracted from `bow_launch::fire` into `bow_launch::launch_frame`
+(`pub(crate)`, returning the `Frame` + the Fairy Queen's `misc_counter`), and
+`gun_launch::fire` calls it. The `Frame`/`rotated_by`/`safe_normalize` seams went
+`pub(crate)` for the reuse. No anchor/facing/aim re-fix — the i13 work is the
+single source.
+
+**The per-gun arms (verbatim, C# cites).** Minishark 98/Megashark 533 ±40×0.01
+(`:47501-47504`); Chain Gun 1929 ±40×0.03 (`:47810-47813`); SDMG 1553 ±40×0.005
+(`:47815-47818`); Uzi 1265 ±30×0.03 (`:47827-47832`); Gatligator 2270 ±40×0.05
+then a 1/3 `Next(3)` roll scaling both axes ×(1+Next(-30,31)×0.02)
+(`:47627-47637`); the Chain Gun 1929 / Gatligator 2270 ALSO carry the
+pre-normalization aim jitter `num4/num5 += Next(-50,51)×0.03/num6`
+(`:47301-47305`, applied after the `num6` fallback and before `num4 *= num6` —
+ported via the `launch_frame` jitter hook, two draws in the frame's stream slot
+ahead of the spread arms); Shotgun 534 `Next(4,6)` shots ±40×0.05 (`:47958-47967`);
+Quad-Barrel 4703 one straight + 7 perpendicular-jitter shots
+(`RotatedBy(π/2×NextFloat)×NextFloatDirection×5`, renormalized to |v|, then
+±40×0.05, `:47969-47982`); Boomstick 964 `Next(3,5)` ±35×0.04 (`:48146-48155`);
+Tactical 679 six shots ±40×0.05 (`:48355-48363`); Clockwork 434 the
+animation-window spread — `itemAnimation<5` ±40×0.01 then ×1.1, `<10` ±20×0.01
+then ×1.05, else plain (`:48415-48434`); Xenopopper 2797 the muzzle advance
+`Normalize(aim)×40×sItem.scale` when `CanHit`, `Next(4,5)`+`Next(4)==0` bubbles
+(type 444) each `RotatedBy(2π/3×(NextDouble−0.5))×(NextDouble×0.2+0.05)`,
+`ai[0]=aim.ToRotation()`, `localAI[0]=projToShoot`, `localAI[1]=speed`
+(`:47603-47625`); Onyx Blaster 3788 two ±π/4 jitter pairs (4 bullets) + one 661
+black bolt at `SafeNormalize(v, UnitX×direction)×speed×1.3` with ×2 damage
+(`:48828-48838`); Vortex Beater 3475 the fixed 615 + `ai[0]=5×Next(0,20)`
+(`:48986-48989`); Pew-matic Horn 5117 ±15×0.075 + `ai[1]=Next(projFrames[968]=24)`
+(`:47639-47645`), the post-pick override →968 (`:47177-47180`); the Sniper
+1254/Venus 1255/Uzi 1265 `projToShoot==14→242` conversion (`:47107-47118`); the
+generic single tail (`:49437`) for the plain guns (95/96/164/219/800/1870/2269).
+
+**The 3-round burst.** The Clockwork's burst is the `useTime 4 < useAnimation 12`
+volley the shooter wire ALREADY ports (`ApplyItemTime` re-arm, `Player.cs:47184-
+47193`): three shots per swing at animation ticks 11/7/3, pinned by the existing
+`test_DW_4_1_the_clockwork_swing_drains_one_ammo_of_three_shots`. i14 adds the
+per-shot animation-window spread arm (`:48415`) so the three shots tighten
+(plain → ×1.05 → ×1.1) as the swing progresses — the burst's cadence was already
+correct, its per-shot spread was missing.
+
+**The Revolver per-tick draw (determinism P0).** `Player.ItemCheck`
+(`Player.cs:42677-42703`) runs EVERY tick for EVERY held item: holding the
+Revolver 2269 with the button released mid-swing (`itemAnimation>0 &&
+!controlUseItem`) charges `revolverCritChanceBonus` +1 and cancels one extra
+animation/action tick (NO draw); otherwise a 1/3 `Main.rand.Next(3)` roll decays
+the bonus −2 — the non-2269 else arm (`:42700-42703`) draws UNCONDITIONALLY, so
+the draw fires even for an empty hand. The Revolver then clamps `item.crit +
+bonus` to `[crt, 20+crt]` (`:42697-42698`, `crt` = the prefix's additive crit).
+This draw was MISSING from the port — every downstream `UpdatePlayers` draw sat
+one roll early. It now lands in `world_sim/player.rs`'s fixed-step tick closure
+at the `ItemCheck` slot (after the movement/hurt/buff draws, matching the C#'s
+`:31827` `ItemCheck` call after the update body), gated on `!CCed`
+(`Player.cs:42598-42602`) and alive-only (the dead path returns earlier). The
+shot reads the bonus through the throw-time crit roll
+(`Projectile.ApplyStatsFromSource` `Projectile.cs:11129-11132` → the port's
+crit-at-throw convention). New seams: `Player.revolver_crit_chance_bonus`
+(`Player.cs:2456`), `prefix::prefix_crit_bonus` (the `crt` out-param). The spike
+test's exact-stream pin was updated to carry the new `Next(3)` (it was asserting
+the pre-fix, one-draw-short stream).
+
+**useSound per gun — already correct, the wrong launch cue removed.** The per-gun
+`UseSound` plays at the USE START (`ItemCheck_StartActualUse`,
+`Player.cs:51681-51698`), not per shot — the wire's `start_swing_extras` →
+`item::initial_use_sound` already plays the registry's per-gun `use_sound` row.
+Verified the generated rows against `Item.cs`/`SoundID.cs`: 95→Item184,
+96→Item183, 98/533/800/1265/1870→Item11, 164/219/1255/1929/2269/2270→Item41,
+434→Item31, 534/964/3788/4703→Item36, 679→Item38, 1254/1553→Item40,
+2797→Item95, 5117→Item61, 3475/3930→null. The generic launch's `play_at("Item_1")`
+was WRONG for guns (a second, incorrect cue) — removed from the bullet path; the
+launch arms are silent.
+
+**GetWeaponKnockback.** `Player.cs:47151` → `:53346-53369`: the `kbBuff` ×1.5
+(every item) and the shroomite-stealth ×(1+(1−stealth)×0.5) (ranged) arms added
+to the shooter fuse. The `setVortex` twin (`:53364-53367`) reads a field the port
+has not granted yet (the Vortex set's stealth half) — inert until the armor-set
+grant lands. The summon/melee-glove arms are not ranged shooters.
+
+**The bullet proj_data rows.** The gun-specific projectiles the arms fire were
+MISSING (a kind without a row makes `spawn_with_data` decline silently): 242
+HighVelocityBullet (`Projectile.cs:3238-3254`, aiStyle 1, penetrate 3,
+extraUpdates 7, scale 1.18, local immunity −1), 444 Xenopopper bubble
+(`:5150-5161`, aiStyle 78), 661 Onyx black bolt (`:7108-7121`, aiStyle 1,
+timeLeft 40, local immunity −1), 968 Pew-matic shot (`:9160-9168`, aiStyle 2,
+the 24-frame sheet). Added field-cited with the `ignoreWater`/light overlays;
+`ProjectilePool::set_local_ai1` carries the Xenopopper's deferred speed. The
+special-bullet AMMO rows (89/104/279/283/284/285/286/287/207/180/302/638) are
+i18's, NOT added here. The base bullet 14 (`MUSKET_BALL`) already existed.
+
+**Competing-writer incident (recorded for the Lead).** Mid-session, the newly
+created `gun_launch.rs` was overwritten by a DIFFERENT, partial implementation
+(a CandyCorn-scoped variant with an unwired `revolver_tick` seam, only the 3475
+arm, the wrong `Item_1` cue kept, and an 8-arg `fire` incompatible with this
+task's 10-arg dispatch). Detected by reading the file back (foreign symbols
+`tick_rig`/`revolver_tick`/`.peek()`). Per the endanger-other protocol, three
+mtime probes over ~5 minutes showed NO growth, no new commits, no other file
+touched — a single stale overwrite, not an active writer (the abort criterion,
+mtime growing <2 min, was NOT met). All eight of this task's other edited files
+survived intact. The foreign content was preserved as
+`I14-FOREIGN-GUN_LAUNCH.rs.bak` (SHA256
+3A74E974807E824B589ECF48838C9F25193ACF22464E0354CA9155193115B75B) and superseded
+by this task's complete implementation. The Lead should reconcile whether a
+sibling i14 worker is still dispatched; this branch carries the full port.
+
+**Verification.** Code-only: every gun arm re-read whole against
+`Player.cs:47501-47514`/`:47603-47645`/`:47810-47832`/`:47958-47982`/`:48146-
+48155`/`:48355-48363`/`:48415-48434`/`:48828-48838`/`:48986-48989`/`:49437`, the
+shared geometry against `:47196-47307`, the Revolver block against
+`:42677-42703`, the knockback against `:53346-53369`, the projectile rows against
+`Projectile.cs`; the seam call sites checked by read/grep (`launch_frame`'s
+`(Frame, u32)` return, `can_hit`'s 9-arg shape, `proj_frames(968)=24`,
+`UnifiedRandom`'s `next_max`/`next_range`/`next_float`/`next_float_direction`/
+`next_double` each advancing one `internal_sample`, `spawn_with_data_owned`/
+`set_crit`/`set_local_ai0`/`set_local_ai1`, `Player.cced()`). The 18 witness
+tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## S1-P-i18 special bullets (2026-11-20, code-only)
+
+The eleven special-bullet projectile kinds (36 MeteorShot, 89
+CrystalBullet, 104 CursedBullet, 207 ChlorophyteBullet, 242
+BulletHighVelocity, 279 IchorBullet, 283 VenomBullet, 284 PartyBullet,
+285 NanoBullet, 286 ExplosiveBullet, 287 GoldenBullet) plus the 90
+CrystalShard spawn. Census + port: `docs/research/63-special-bullets-census.md`,
+branch `task/S1-P-i18-special-bullets`. **Code-only mode — no compiler
+invoked; the 13 `s1_p_i18_*` witnesses are WRITTEN NOT RUN.**
+
+**The structural finding.** At the base (`aa147ce0`) NONE of the eleven
+kinds had a `proj_data` row, so `spawn_with_data_ai_owned`'s
+`proj_data(kind)?` (`projectile.rs:13102`) returned `None` and the shoot
+wire's spawn (`editing.rs:1927`) silently declined every special bullet —
+the shots never spawned. The specials were therefore MISSING (not WRONG):
+there was no behaviour to diverge. Only 14 (musket ball) and 638
+(Luminite, S1-D-4's `projectile_ai_moonlord`, FAITHFUL) had rows. The fix
+is additive: the twelve `SetDefaults` rows + the per-type `AI_001` arms +
+the on-hit debuffs + the death hooks.
+
+**The split of labour (Lead coordination, `LEAD-I15-COORD.md`).** The Lead
+staged the data rows + constants + `ProjLight` colour arms + the pool-side
+death hooks (`special_bullet_kill` / `venom_burst_spread` /
+`exploding_bullet_burst`) + the HighVelocity gun override (`ammo.rs`,
+`Player.cs:47107-47118`) + the `npc_buffs` witness helpers; this worker
+ported `projectile_special_bullets.rs` (the per-type AI arms + the on-hit
+/ spread debuff arms). The two halves are kind-disjoint and compile
+together.
+
+**The Nanite ×1.25 is i15's, NOT this task's.** The i03 census A1
+double-scale (resolver `ammo.rs:680-685` + wire `editing.rs:1892-1897`)
+was fixed by i15 (`task/S1-P-i15-ammo-consumption`, `6df7e170`): the
+resolver returns the unscaled `num`, the wire carries the single fused
+`(int)(Damage * 1.25f)` after the add (`Player.cs:53552-53559`). That fix
+lives on i15's branch, not in this base. Per the Lead's coord note this
+task does NOT re-fix the scaling — re-fixing it here would conflict at
+merge. The 285 row + effects land here; the single fused scale lands with
+i15.
+
+**The per-type arms (`projectile_special_bullets.rs`).** `step` mirrors
+`AI_001`'s block order: the 242 speed fade (`:55660-55671`, the double
+sqrt cast back to float, the `(byte)(speed * 0.9)` truncation), the
+`flag3` counter (every special rests EXCEPT 207, which counts but its
+homing block consumes the gravity else-if chain), the 207 homing block
+(`:56778-56887`: the Manhattan-300 acquire with `Collision.CanHit`, the
+1-based `ai[1]` lock, the Manhattan-1000 hold validity with
+`CanBeChasedBy(ignoreDontTakeDamage: true) && !dontTakeDamage`, the
+`(v * 7 + d) / 8` steer at the LATCHED `localAI[0]` speed), the default
+rotation `Atan2(vy,vx) + 1.57f` (`:57748-57751`, no special has a
+per-type rotation arm) + the exact C# +16 clamp (`:57753-57768`, slice
+A/C's convention), then the `HandleMovement` probe with the 36 one-bounce
+reflect (`:19278-19298`, penetrate 2 → reflect + spend one → die at 1)
+and the 285 bounce (`:18563-18591`, `ai[1]++`, first bounce ×0.66 `(int)`,
+second kills BEFORE the reflect, then `FindTargetWithLineOfSight` re-aim
+at the latched speed). The on-hit debuffs (`bullet_on_hit_debuffs`) are
+the `StatusNPC` arms (`:11537-11551` + `:11665-11677`), called from
+`damage_pve`'s `special_bullet_status_npc` at `:13580`'s position (BEFORE
+`StrikeNPC` `:13649`); the 283 spread's debuff-only re-hit
+(`venom_burst_debuffs`) is the `type == 283 && !active` early arm
+(`:12810-12814`).
+
+**RNG (S1-A-10).** The AI arms take NO rng parameter — every `Main.rand`
+in these kinds' `AI_001` blocks feeds dust alone (the ai001_a/b/c
+dust-skip convention), so the flight is RNG-free by construction. The
+state-bearing draws ride the pool's `UpdateProjectiles` pass stream
+(`Main.cs:17775-17777`): the 285 Confused roll is ONE `Next(3)` per landed
+hit (`:11543`, 180 on a zero else 60) at the StatusNPC position; the 89
+split's 8 ranges (per shard `Next(40,70)` then `Next(-20,21)` for X, then
+the same pair for Y, `:75264-75265`, argument evaluation order) ride
+inline in `special_bullet_kill` (they place AND velocity the shard).
+
+**The death-burst dust/gore convention (the Lead's choice).** The 283's
+three 10-dust-171 loops (`:75913-75939`), the 284 confetti's 10 dust + 5
+gore (`:75977-75998`, purely visual — no state, no spawn, no damage), the
+286's 7 dust-31 + 6 dust-6 + 1 gore (`:76003-76018`) and the common arm's
+HitTiles + Item10 (`:76035-76039`) are SKIPPED with their layers — bodies
+AND draws. This is the ai001 convention (the pool has no dust/gore draw
+layer), NOT the `projectile_ai_misc` draw-census convention that keeps
+explicit visual draws. The 286 burst's DAMAGE half draws only the
+per-NPC `DamageVar` the boxed walk already spends. The choice is recorded
+here so a later dust-layer wiring knows these sites owe their draws.
+
+**Deliberate stand-ins.** (1) `appliesImmunityTimeOnSingleHits` (the
+286's `:3754`) has no `ProjData` field — the pool's idStatic gate reads a
+kind check (`max_penetrate != 1 || kind == EXPLODING_BULLET`) in both
+`damage_pve` and `damage_pve_boxed`. (2) The 283's `localAI[1] = -1f`
+(`:75942`) is a verbatim DEAD write (no C# reader) — ported for its shape.
+(3) The 285 PvP Confused arm (`StatusPlayer` `:12288-12298`) — no
+projectile-PVP layer (single-player); recorded, not ported. (4) The 207
+`Collision.CanHit` is the port's `can_hit` walk; the 285 re-target uses
+the shared `find_target_with_line_of_sight` (`:45627-45660`). (5) The
+movement probe kills without the C#'s final `position += velocity` on the
+blocked tick (the port-wide `ai_style1_flight` stand-in, byte-identical to
+slices A/B/C); the bounce arms integrate the reflected velocity on the
+bounce tick (the typhoon 409 precedent). (6) The 283 burst's
+`oldVelocity.ToRotation()` reads `p.vel` (no `oldVelocity` field); the
+bullet rests its counter and flies straight, so `oldVelocity == velocity`
+at death — faithful for every reachable 283. (7) The 90 shard flies the
+existing `ai_crystal_storm` arm — its generic 0.96/15-tick drag/fade IS
+the 90's C# arm (`:26004-26013`); the 1134 melee shard's first-tick
+sound/dust block (`:25938-25952`) is kind-gated to 1134, so the 90 skips
+it correctly. (8) The `Kill()` sound cues are skipped with the pool's
+death-hook sound convention (`moonlord_arrow_kill`); the 36 bounce's
+`SoundID.Item10` rides `wants_sound`.
+
+**Verification.** Code-only: every arm was re-read against the cited C#
+blocks (the SetDefaults rows, the flag3 list membership, the homing
+acquire/hold/steer, the bounce penetrate gates, the StatusNPC durations,
+the Kill death-effect chain's `!Main.projPet` outer gate). The cross-file
+seams were checked by read/grep: the `covers`/`step`/
+`bullet_on_hit_debuffs`/`venom_burst_debuffs` signatures against the
+pool's call sites, the `npc_center`/`find_target_with_line_of_sight`
+visibility bumps, the `SPECIAL_BULLET_KINDS` re-export through
+`pub use data::*`, the `has_buff`/`buff_time_of` helpers. The 13 witness
+tests are WRITTEN, NOT RUN — **no compiler invoked**.
 ## The item-use timing machinery (S1-P-i12, task/S1-P-i12-autoswing-usetime, 2026-11-20, code-only mode)
 
 The useTime/useAnimation/autoReuse fidelity slice from the i01 census

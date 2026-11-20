@@ -3,6 +3,8 @@
 
 mod accessory_defense;
 mod ammo;
+mod bow_launch;
+mod gun_launch;
 mod angler;
 mod armor_sets;
 mod app;
@@ -187,6 +189,10 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
+// arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
+// 279/283/284/285/286/287), pure per-kind fns behind the `covers` gate.
+mod projectile_special_bullets;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs

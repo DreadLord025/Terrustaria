@@ -1321,6 +1321,62 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.mana = p.mana_max;
                 p.breath = crate::player::BREATH_MAX;
             }
+            // S1-P-i14 — the Revolver 2269's per-tick crit charge/decay
+            // (`Player.ItemCheck`, `Player.cs:42677-42703`). The C# runs it
+            // EVERY tick for EVERY held item, inside `ItemCheck` (`:31827`,
+            // after the movement/hurt/buff draws above) under the
+            // `UpdatePlayers` swap — the i01 census's determinism P0: the
+            // `Main.rand.Next(3)` draw was MISSING from the port, so every
+            // downstream draw sat one roll early.
+            //
+            // Holding the Revolver with the button RELEASED mid-swing
+            // (`itemAnimation > 0 && !controlUseItem`, `:42679`) charges the
+            // bonus +1 and cancels the swing one tick early (the extra
+            // `itemAnimation--`/`itemTime--`, `:42681-42690`) — NO draw on that
+            // path. Otherwise a 1/3 `Next(3)` roll decays the bonus −2
+            // (`:42693-42696` for the Revolver, `:42700-42703` for EVERY other
+            // item — the else arm draws unconditionally). The Revolver then
+            // clamps `item.crit + bonus` to `[crt, 20 + crt]` (`:42697-42698`,
+            // `crt` = the prefix's additive crit). The shot reads the bonus
+            // through the throw-time crit roll (`world_sim/editing.rs`,
+            // `Projectile.cs:11129-11132`).
+            //
+            // `ItemCheck` returns early when `CCed` (`Player.cs:42598-42602`:
+            // frozen/webbed/stoned), so the whole block — draw included — skips
+            // on a CCed tick. The dead player never reaches `ItemCheck` either
+            // (`Player.Update`'s `UpdateDead` return, `:24749-24754`); the
+            // port's dead path returns above, so this closure is alive-only.
+            if !p.cced() {
+                let held = app.inventory[app.selected];
+                // The C# compares `itemAnimation > 0` as an INTEGER
+                // (`:42679`); the port derives the tick count the same way the
+                // shooter wire does (`ticks_of`, `world_sim/editing.rs`).
+                let anim_ticks = (app.swing * 60.0).round() as i32;
+                let revolver_charging =
+                    held.kind == 2269 && anim_ticks > 0 && !app.mine_down;
+                if revolver_charging {
+                    // The cancelled-swing decrement (`:42681-42690`): one extra
+                    // tick off both timers, clamped at zero. The port's timers
+                    // are seconds decaying per frame; one 60 Hz tick is `dt`.
+                    app.swing = (app.swing - dt).max(0.0);
+                    app.item_time = (app.item_time - dt).max(0.0);
+                    p.revolver_crit_chance_bonus += 1;
+                } else if app.rngs.stream(crate::app::RngKey::UpdatePlayers).next_max(3) == 0 {
+                    p.revolver_crit_chance_bonus -= 2;
+                }
+                if held.kind == 2269 {
+                    // `Utils.Clamp(item.crit + bonus, crt, 20 + crt) - item.crit`
+                    // (`:42698`): `item.crit` is the prefixed instance crit
+                    // (`Item.Prefix`, `Item.cs:584` `crit += crt`), `crt` the
+                    // prefix's additive bonus alone.
+                    let crt = crate::prefix::prefix_crit_bonus(held.prefix);
+                    let item_crit = crate::prefix::prefixed_stats(2269, held.prefix)
+                        .map_or(0, |s| s.crit);
+                    p.revolver_crit_chance_bonus =
+                        (item_crit + p.revolver_crit_chance_bonus).clamp(crt, 20 + crt)
+                            - item_crit;
+                }
+            }
         });
         app.player_step.drop_backlog();
         if run_pixels > 0.0 {
@@ -1474,6 +1530,11 @@ mod tests {
         // .cs:505`) rides the same stream AFTER the damage draws (the
         // `Hurt` tail runs last).
         let _expected_hit_slot = expect.next_range(0, 3);
+        // S1-P-i14 — the Revolver per-tick `Next(3)` decay draw
+        // (`Player.cs:42700-42703`) runs in `ItemCheck` AFTER the hurt draws,
+        // for EVERY held item (the empty hand included). It was MISSING from
+        // the port (the i01 determinism P0); the stream now carries it.
+        let _expected_revolver_decay = expect.next_max(3);
         assert_eq!(
             app.player.as_ref().unwrap().hp,
             hp_0 - expected_dmg,

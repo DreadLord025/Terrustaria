@@ -375,6 +375,15 @@ pub struct PrefixedStats {
     pub value: i32,
 }
 
+/// The prefix's ADDITIVE crit bonus — the `crt` out-parameter of
+/// `Item.TryGetPrefixStatMultipliersForItem` (`Item.cs:709-1078`), NOT the
+/// prefixed item's total crit. The Revolver's per-tick clamp reads it
+/// (`Player.cs:42697-42698`: `Clamp(item.crit + bonus, crt, 20 + crt)`);
+/// prefix 0 and the accessory ids grant 0.
+pub fn prefix_crit_bonus(prefix: u16) -> i32 {
+    Multipliers::stat_switch(prefix).crt
+}
+
 /// The prefixed stats of `kind` (`Item.Prefix` on a fresh `SetDefaults`
 /// item). Returns `None` for the unregistered kinds. The base row rides
 /// `registry::item` — the M4-PROJ-6 corrections seam (the corrected

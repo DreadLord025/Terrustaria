@@ -673,10 +673,8 @@ pub struct Player {
     /// (`:14730-14733`); `TryAllowingItemReuse` treats it like the
     /// auto-reuse-all setting.
     pub stress_ball: bool,
-    /// `Player.revolverCritChanceBonus` (`Player.cs:42691-42698`): the
-    /// Revolver (2269) builds +1 crit per early-release tick and decays −2
-    /// on a 1/3 roll each `ItemCheck` tick.
-    pub revolver_crit_chance_bonus: i32,
+    // `Player.revolverCritChanceBonus` — declared below (S1-P-i14's field;
+    // the V5 gate dropped S1-P-i12's duplicate seed).
     /// `inventory[selectedItem].type` — the held kind snapshot the
     /// `CanUseStressBall` gate reads (`Player.cs:14352`); the world-sim
     /// fills it each tick before the grant pass.
@@ -1224,6 +1222,18 @@ pub struct Player {
     /// (no `ResetEffects` arm, no death/throw reset), so the port doesn't
     /// either — the -1 start makes the first hit skip every effect.
     pub yoyo_hit_counter: i32,
+    /// `Player.revolverCritChanceBonus` (`Player.cs:2456`): the Revolver 2269's
+    /// hold-to-charge crit bonus. The per-tick `ItemCheck` block
+    /// (`Player.cs:42677-42703`) charges it while the button is released mid-
+    /// swing (+1 per cancelled tick) and decays it −2 on a 1/3 `Main.rand.Next(3)`
+    /// roll otherwise — the roll fires EVERY tick for EVERY held item (the
+    /// non-2269 else arm, `:42700-42703`), so the draw rides the fixed-step
+    /// `UpdatePlayers` stream unconditionally (`world_sim/player.rs`). The clamp
+    /// (`:42697-42698`) bounds `item.crit + bonus` to `[crt, 20 + crt]` (the
+    /// prefix's crit add). The shot reads it through the spawn source
+    /// (`Projectile.ApplyStatsFromSource`, `Projectile.cs:11129-11132`); the port
+    /// folds it into the throw-time crit roll (`world_sim/editing.rs`).
+    pub revolver_crit_chance_bonus: i32,
     /// The `Player.ZoneSnow`-family flags the torch-luck table reads
     /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
     /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
@@ -2053,7 +2063,6 @@ impl Player {
             wall_speed_bonus: 0.0,
             auto_reuse_glove: false,
             stress_ball: false,
-            revolver_crit_chance_bonus: 0,
             held_item_kind: 0,
             slow: false,
             chilled: false,
@@ -2429,6 +2438,9 @@ impl Player {
             dazed: false,
             ammo_cycling: crate::ammo::AmmoCycling::default(),
             yoyo_hit_counter: -1,
+            // `Player.revolverCritChanceBonus` (`Player.cs:2456`): the int field
+            // defaults to 0 (no charge at spawn).
+            revolver_crit_chance_bonus: 0,
         }
     }
 
@@ -16887,6 +16899,9 @@ mod tests {
 #[cfg(test)]
 mod summon_tests {
     use super::*;
+    // S1-P-i12's mirror witnesses reuse the main test module's world fixture
+    // (the V4/V5 first-compile fix — the coder referenced it without the import;
+    // both gates added the same import, deduped to one at the M5 sync merge).
     use super::tests::ground_world;
     use crate::item::EMPTY_SLOT;
 

@@ -579,6 +579,20 @@ impl NpcBuffs {
         (0..NPC_MAX_BUFFS).find(|&i| self.buff_time[i] >= 1 && self.buff_type[i] == buff_type)
     }
 
+    /// S1-P-i18 — whether the buff is active (the `FindBuffIndex` gate: the
+    /// immune table hides it, then a slot with time left). The special-bullet
+    /// debuff witnesses read it.
+    pub fn has_buff(&self, buff_type: i32) -> bool {
+        self.find_buff_index(buff_type).is_some()
+    }
+
+    /// S1-P-i18 — the buff's remaining ticks (0 when absent). The nano's
+    /// Confused-roll witness pins the 180/60 branch through it.
+    pub fn buff_time_of(&self, buff_type: i32) -> i32 {
+        self.find_buff_index(buff_type)
+            .map_or(0, |i| self.buff_time[i])
+    }
+
     /// `NPC.DelBuff` (`NPC.cs:90002-90023`). Unlike `Player.DelBuff` (which
     /// compacts every non-empty slot to the front), the NPC version shifts the
     /// tail left by one per empty slot, scanned left to right without
