@@ -26530,6 +26530,34 @@ the send-path pass (S1-I-4), so the live net message order is unchanged. The
 per-id round-trip tests `net::tests::s1_i_1_*` (11) pin the frame's id byte,
 the exact C# body bytes and the decode round trip; the travel shop test also
 pins the fixed 40-slot length (a 39-slot body fails to decode).
+
+## The join/lobby 1-16 region census (S1-I-1 wave B, W4-d89, 2026-11-20)
+
+Wave B re-censuses the `MessageID.cs:9-41` region (ids 1..=16) against
+`net.rs::id` and closes the two gaps wave A's join-bundle tier left:
+
+- `11 TileFrameSection` — four `(short)`s: `startX, startY, endXInclusive,
+  endYInclusive` (`NetMessage.cs:427-432`); the client feeds them to
+  `WorldGen.SectionTileFrame` (`MessageBuffer.cs:895-899`,
+  `WorldGen.cs:80343`). **research/17's map row said "no SendData arm" —
+  wrong**: the writer arm exists; what is absent is any `SendData(11)` call
+  site (the id is `[Old]`, `MessageID.cs:29-30` — framing happens after
+  TileSection). `id::TILE_FRAME_SECTION` + `S2c::TileFrameSection` carry the
+  verbatim body; the netglue arm is parked (the port's framing pass is not
+  net-wired, and no C# site sends it).
+- `15 Unknown15` — `[Old("Deprecated.")]` (`MessageID.cs:38-39`), no writer
+  arm, no body; the reader's ignore group (`MessageBuffer.cs:4483-4490`,
+  shared with 25/26/44/67/83/93) accepts and drops it. `id::UNKNOWN_15` +
+  `S2c::Unknown15` mirror that exactly (a bare 3-byte frame).
+
+The InitialSpawn semantics fix needs no new code: `49` already carries the
+C# meaning (`State 6 → 10` + `12 PlayerSpawn` with `SpawningIntoWorld`,
+S1-E-28, research/17 deviation 3). Wave B only purges the last stale
+`49 WorldComplete` doc comment (`net.rs` `client_state::IN_WORLD`) so the
+wrong reading cannot resurface. Tests `net::tests::s1_i_1b_*` (3) pin the
+11-body bytes + truncation failure, the 15 bare frame, and the full 1..=16
+constant census. Code-only wave: tests written, NOT run (no cargo).
+
 ## The buff misc block (S1-E-7 wave D, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
