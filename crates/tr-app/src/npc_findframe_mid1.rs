@@ -75,7 +75,7 @@
 
 /// The wave mid-1 kinds, keyed by their VANILLA `NPC.type`
 /// (`ID/NPCID.cs`'s `public const short` rows — the port-local `NpcKind`
-/// ids do not exist for them yet). Batch 1 carries the first six.
+/// ids do not exist for them yet).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FindFrameMid1Kind {
     /// `NPCID.IceBat` = 150 (`NPCID.cs:10977`) — the bat flap group.
@@ -90,6 +90,19 @@ pub enum FindFrameMid1Kind {
     Arapaima,
     /// `NPCID.VampireBat` = 158 (`NPCID.cs:10993`) — the bat flap group.
     VampireBat,
+    /// `NPCID.Vampire` = 159 (`NPCID.cs:10995`) — the humanoid-group arm.
+    Vampire,
+    /// `NPCID.Truffle` = 160 (`NPCID.cs:10997`) — the humanoid-group arm
+    /// (the town member, `ExtraFramesCount` 7).
+    Truffle,
+    /// `NPCID.Frankenstein` = 162 (`NPCID.cs:11001`) — the humanoid-group arm.
+    Frankenstein,
+    /// `NPCID.BlackRecluse` = 163 (`NPCID.cs:11003`) — `case 163`.
+    BlackRecluse,
+    /// `NPCID.WallCreeper` = 164 (`NPCID.cs:11005`) — `case 164`.
+    WallCreeper,
+    /// `NPCID.WallCreeperWall` = 165 (`NPCID.cs:11007`) — `case 165`.
+    WallCreeperWall,
 }
 
 impl FindFrameMid1Kind {
@@ -102,6 +115,12 @@ impl FindFrameMid1Kind {
             Self::RedDevil => 156,
             Self::Arapaima => 157,
             Self::VampireBat => 158,
+            Self::Vampire => 159,
+            Self::Truffle => 160,
+            Self::Frankenstein => 162,
+            Self::BlackRecluse => 163,
+            Self::WallCreeper => 164,
+            Self::WallCreeperWall => 165,
         }
     }
 
@@ -118,6 +137,14 @@ impl FindFrameMid1Kind {
             Self::RedDevil => 5,
             Self::Arapaima => 6,
             Self::VampireBat => 4,
+            // Main.cs:67099-67100 (entries 159-165): 159 = 15, 160 = 23,
+            // 162 = 15, 163 = 8, 164 = 5, 165 = 4.
+            Self::Vampire => 15,
+            Self::Truffle => 23,
+            Self::Frankenstein => 15,
+            Self::BlackRecluse => 8,
+            Self::WallCreeper => 5,
+            Self::WallCreeperWall => 4,
         }
     }
 }
@@ -134,6 +161,12 @@ pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameMid1Kind> {
         156 => FindFrameMid1Kind::RedDevil,
         157 => FindFrameMid1Kind::Arapaima,
         158 => FindFrameMid1Kind::VampireBat,
+        159 => FindFrameMid1Kind::Vampire,
+        160 => FindFrameMid1Kind::Truffle,
+        162 => FindFrameMid1Kind::Frankenstein,
+        163 => FindFrameMid1Kind::BlackRecluse,
+        164 => FindFrameMid1Kind::WallCreeper,
+        165 => FindFrameMid1Kind::WallCreeperWall,
         _ => return None,
     })
 }
@@ -250,6 +283,148 @@ pub fn find_frame_mid1(kind: FindFrameMid1Kind, s: &mut FrameState, i: &FrameInp
                 s.counter = 0.0;
             }
         }
+        // The humanoid-group case list (`NPC.cs:68569-68571` carries
+        // 159/160/162) → the shared fighter/town walk
+        // (`NPC.cs:68647-69655`). None is `IsTownSlime`, so `num108` = 6
+        // and `num109` = row 2 for all three. `num57` =
+        // `isLikeATownNPC ? ExtraFramesCount[type] : 0` (`:68635`): the
+        // Truffle (160) is `townNPC` (`SetDefaults` `:11005`) with
+        // `ExtraFramesCount[160]` = 7 (`NPCID.cs:10464`), so its walk
+        // wraps at 23 - 7 = 16; the Vampire (159) and Frankenstein (162)
+        // are not town-like, so `num57` = 0 and they wrap at the full 15.
+        // The airborne pin list (`:69647`) carries 159 (row 0) but NOT
+        // 160/162 (the group's row 1).
+        FindFrameMid1Kind::Vampire
+        | FindFrameMid1Kind::Truffle
+        | FindFrameMid1Kind::Frankenstein => {
+            let extra = if kind == FindFrameMid1Kind::Truffle { 7 } else { 0 };
+            let air_row0 = kind == FindFrameMid1Kind::Vampire;
+            humanoid_frame_mid1(s, i, kind.frame_count(), extra, air_row0);
+        }
+        // `case 163` (`NPC.cs:73227-73267`): the BlackRecluse. The air
+        // pins the counter to -12 and the row to 5 (rising) / 6
+        // (falling); the ground faces by `direction`, accumulates
+        // `|vx| * 1.1`, and the bands pick rows 6/7/1/2/3 with the
+        // `else` resetting the counter WITHOUT writing the row (the
+        // vanilla quirk — the row holds for that tick). Rows 0/4 of the
+        // 8-row sheet are never written by this machine.
+        FindFrameMid1Kind::BlackRecluse => {
+            if i.vy != 0.0 {
+                s.counter = -12.0;
+                s.row = if i.vy < 0.0 { 5 } else { 6 };
+            } else {
+                s.sprite_dir = i.direction;
+                s.counter += i.vx.abs() * 1.1;
+                if s.counter < -6.0 {
+                    s.row = 6;
+                } else if s.counter < 0.0 {
+                    s.row = 7;
+                } else if s.counter < 6.0 {
+                    s.row = 1;
+                } else if s.counter < 12.0 {
+                    s.row = 2;
+                } else if s.counter < 18.0 {
+                    s.row = 3;
+                } else {
+                    s.counter = 0.0;
+                }
+            }
+        }
+        // `case 164` (`NPC.cs:73083-73111`, shared with 236/239/530):
+        // the WallCreeper. The air zeroes the counter and pins row 4
+        // (rising) / 0 (falling); the ground faces by `direction`,
+        // accumulates `|vx| * 1.1`, and the WHILE loop steps a row per
+        // 6 (keeping the remainder, possibly several rows a tick),
+        // wrapping past row 3 back to 0.
+        FindFrameMid1Kind::WallCreeper => {
+            if i.vy != 0.0 {
+                s.counter = 0.0;
+                s.row = if i.vy < 0.0 { 4 } else { 0 };
+            } else {
+                s.sprite_dir = i.direction;
+                s.counter += i.vx.abs() * 1.1;
+                while s.counter >= 6.0 {
+                    s.counter -= 6.0;
+                    s.row += 1;
+                    if s.row > 3 {
+                        s.row = 0;
+                    }
+                }
+            }
+        }
+        // `case 165` (`NPC.cs:73112-73145`, shared with 237/238/240/531):
+        // the WallCreeperWall. `num194` = 0.5 (the 0.4 is type 531's,
+        // not this wave's); the counter accumulates
+        // `(|vx| + |vy|) * 0.5` and the bands pick rows 0/1/2/3 with the
+        // `else` resetting the counter WITHOUT writing the row (the
+        // vanilla quirk). No sprite/rotation write.
+        FindFrameMid1Kind::WallCreeperWall => {
+            let num194 = 0.5f32;
+            s.counter += (i.vx.abs() + i.vy.abs()) * num194;
+            if s.counter < 6.0 {
+                s.row = 0;
+            } else if s.counter < 12.0 {
+                s.row = 1;
+            } else if s.counter < 18.0 {
+                s.row = 2;
+            } else if s.counter < 24.0 {
+                s.row = 3;
+            } else {
+                s.counter = 0.0;
+            }
+        }
+    }
+}
+
+/// The humanoid-group walk (`NPC.cs:68647-69655`) for the mid-1
+/// members: the grounded flip (`:68649-68656` — only `direction` ±1
+/// writes), the idle snap to row 0 (`:69515-69519` — none of these is
+/// the 140/489 idle-row-1 quirk), the `|vx| * 2 + 1` accumulator
+/// (`:69552-69553`) stepping every > 6 (`num108` = 6) over rows
+/// 2..count-1-extra (`num109` = row 2, the wrap at
+/// `npcFrameCount - num57`, `:69581`), and the airborne row 1 → pin-0
+/// tail (`:69642-69650`). The town `ai[0]` pose zones
+/// (`:68662-69488`) are a documented skip (see the header).
+fn humanoid_frame_mid1(
+    s: &mut FrameState,
+    i: &FrameInput,
+    count: u32,
+    extra: u32,
+    air_row0: bool,
+) {
+    if i.vy == 0.0 {
+        if i.direction == 1 {
+            s.sprite_dir = 1;
+        }
+        if i.direction == -1 {
+            s.sprite_dir = -1;
+        }
+        if i.vx == 0.0 {
+            // `NPC.cs:69515-69519`: the idle row 0.
+            s.row = 0;
+            s.counter = 0.0;
+        } else {
+            // `NPC.cs:69552-69553`: the accumulator.
+            s.counter += i.vx.abs() * 2.0;
+            s.counter += 1.0;
+            // `:69572-69575`: the walk band's floor (row 2).
+            if s.row < 2 {
+                s.row = 2;
+            }
+            // `:69576-69580`: the step.
+            if s.counter > 6.0 {
+                s.row += 1;
+                s.counter = 0.0;
+            }
+            // `:69581-69584`: the wrap at `npcFrameCount - num57`.
+            if s.row >= count.saturating_sub(extra) {
+                s.row = 2;
+            }
+        }
+    } else {
+        // `NPC.cs:69642-69650`: the group's air row 1, then the pin list.
+        s.counter = 0.0;
+        s.row = if air_row0 { 0 } else { 1 };
     }
 }
 
@@ -271,11 +446,11 @@ mod tests {
         out
     }
 
-    /// The batch-1 `Main.npcFrameCount` rows, counted entry-by-entry out
-    /// of the `Main.cs:67082` initializer and cross-checked against the
+    /// The 12 `Main.npcFrameCount` rows, counted entry-by-entry out of
+    /// the `Main.cs:67082` initializer and cross-checked against the
     /// port's `NPC_FRAME_COUNT` table.
     #[test]
-    fn the_mid1_batch1_frame_counts_match_the_main_initializer() {
+    fn the_mid1_frame_counts_match_the_main_initializer() {
         let table = [
             (FindFrameMid1Kind::IceBat, 150, 4),
             (FindFrameMid1Kind::Lavabat, 151, 4),
@@ -283,6 +458,12 @@ mod tests {
             (FindFrameMid1Kind::RedDevil, 156, 5),
             (FindFrameMid1Kind::Arapaima, 157, 6),
             (FindFrameMid1Kind::VampireBat, 158, 4),
+            (FindFrameMid1Kind::Vampire, 159, 15),
+            (FindFrameMid1Kind::Truffle, 160, 23),
+            (FindFrameMid1Kind::Frankenstein, 162, 15),
+            (FindFrameMid1Kind::BlackRecluse, 163, 8),
+            (FindFrameMid1Kind::WallCreeper, 164, 5),
+            (FindFrameMid1Kind::WallCreeperWall, 165, 4),
         ];
         for (kind, vanilla, count) in table {
             assert_eq!(kind.vanilla_type(), vanilla, "{kind:?} id");
@@ -296,13 +477,16 @@ mod tests {
         }
     }
 
-    /// The `cs_id` hook maps exactly the batch-1 ids and nothing else —
+    /// The `cs_id` hook maps exactly the twelve ids and nothing else —
     /// the inertness seam (no current kind's `cs_id` is in the set).
     #[test]
-    fn the_cs_id_hook_maps_only_the_batch1_ids() {
+    fn the_cs_id_hook_maps_only_the_twelve_mid1_ids() {
         for id in 0u16..=697 {
             let mapped = find_frame_kind_for_cs_id(id);
-            let in_set = matches!(id, 150 | 151 | 152 | 156 | 157 | 158);
+            let in_set = matches!(
+                id,
+                150 | 151 | 152 | 156 | 157 | 158 | 159 | 160 | 162 | 163 | 164 | 165
+            );
             assert_eq!(mapped.is_some(), in_set, "cs_id {id}");
         }
     }
@@ -396,5 +580,166 @@ mod tests {
         let mut s = FrameState::default();
         find_frame_mid1(FindFrameMid1Kind::Arapaima, &mut s, &i);
         assert_eq!(s.sprite_dir, -1);
+    }
+
+    /// The humanoid group's idle/air split: the Vampire's air row is
+    /// pinned to 0 (`NPC.cs:69647`), the Truffle/Frankenstein keep the
+    /// group's row 1; the idle stands row 0; the airborne tick never
+    /// writes `spriteDirection`.
+    #[test]
+    fn the_humanoid_group_idle_and_air_rows_follow_the_pin_list() {
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        find_frame_mid1(FindFrameMid1Kind::Vampire, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+        // The idle tick ran with direction 1 → the grounded flip wrote
+        // +1; the air tick itself never writes the flip.
+        find_frame_mid1(FindFrameMid1Kind::Vampire, &mut s, &input(0.0, 2.0));
+        assert_eq!((s.row, s.counter, s.sprite_dir), (0, 0.0, 1));
+        for kind in [FindFrameMid1Kind::Truffle, FindFrameMid1Kind::Frankenstein] {
+            find_frame_mid1(kind, &mut s, &input(0.0, 1.0));
+            assert_eq!(s.row, 1, "{kind:?} air row");
+        }
+    }
+
+    /// The Vampire/Frankenstein walk (`NPC.cs:69552-69584`): `|vx|*2+1`
+    /// = 3 a tick at vx 1, the step at > 6 (every 3rd tick), the floor
+    /// row 2 and the wrap at the full 15 back to 2 (num57 = 0).
+    #[test]
+    fn the_vampire_walk_wraps_at_the_full_fifteen_rows() {
+        for kind in [FindFrameMid1Kind::Vampire, FindFrameMid1Kind::Frankenstein] {
+            let mut s = FrameState::default();
+            let i = input(1.0, 0.0);
+            let mut rows = Vec::new();
+            for _ in 0..6 {
+                find_frame_mid1(kind, &mut s, &i);
+                rows.push(s.row);
+            }
+            assert_eq!(rows, [2, 2, 3, 3, 3, 4], "{kind:?}");
+            // Row 14 + one step = 15 → the wrap to 2.
+            s.row = 14;
+            s.counter = 6.0;
+            find_frame_mid1(kind, &mut s, &i);
+            assert_eq!(s.row, 2, "{kind:?} wrap");
+        }
+    }
+
+    /// The Truffle walk (`NPC.cs:69581`'s `num57` = ExtraFramesCount[160]
+    /// = 7): the wrap band stops at 23 - 7 = 16, so row 15 + one step =
+    /// 16 wraps to 2 — the attack rows 16..22 are never walked.
+    #[test]
+    fn the_truffle_walk_wraps_before_its_seven_attack_rows() {
+        let mut s = FrameState::default();
+        let i = input(1.0, 0.0);
+        s.row = 15;
+        s.counter = 6.0;
+        find_frame_mid1(FindFrameMid1Kind::Truffle, &mut s, &i);
+        assert_eq!(s.row, 2, "the wrap at 23 - 7 = 16");
+        // The grounded flip rides direction ±1 only.
+        let mut s = FrameState { sprite_dir: -1, ..Default::default() };
+        let mut i = input(1.0, 0.0);
+        i.direction = 0;
+        find_frame_mid1(FindFrameMid1Kind::Truffle, &mut s, &i);
+        assert_eq!(s.sprite_dir, -1, "direction 0 leaves the flip");
+    }
+
+    /// The BlackRecluse (`NPC.cs:73227-73267`): the air pins counter -12
+    /// and rows 5/6; the ground's `|vx|*1.1` bands pick rows 6/7/1/2/3
+    /// from the -12 start, and the `else` reset holds the row.
+    #[test]
+    fn the_black_recluse_lands_from_minus_twelve_through_the_bands() {
+        // Air rising → row 5, counter -12.
+        let mut s = FrameState::default();
+        find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &input(0.0, -1.0));
+        assert_eq!((s.row, s.counter), (5, -12.0));
+        // Air falling → row 6.
+        find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &input(0.0, 1.0));
+        assert_eq!((s.row, s.counter), (6, -12.0));
+        // Ground at vx 0 adds NOTHING (`|vx| * 1.1` = 0): the -12
+        // landing counter parks in the `< -6` band (row 6) forever.
+        let ground = input(0.0, 0.0);
+        let mut s = FrameState { counter: -12.0, ..Default::default() };
+        for _ in 0..8 {
+            find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &ground);
+            assert_eq!((s.row, s.counter), (6, -12.0));
+        }
+        // The band boundaries (`:73243-73266`): preset counters ride
+        // rows 6 (<-6), 7 (-6..0), 1 (0..6), 2 (6..12), 3 (12..18);
+        // >= 18 resets the counter and HOLDS the row.
+        for (counter, row) in
+            [(-12.0, 6u32), (-6.0, 7), (-0.5, 7), (0.0, 1), (6.0, 2), (12.0, 3)]
+        {
+            let mut s = FrameState { counter, row: 0, ..Default::default() };
+            find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &ground);
+            assert_eq!((s.row, s.counter), (row, counter), "counter {counter}");
+        }
+        let mut s = FrameState { counter: 18.0, row: 3, ..Default::default() };
+        find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &ground);
+        assert_eq!((s.row, s.counter), (3, 0.0), "the else holds the row");
+        // The walk at vx 10 (`10 * 1.1f` = 11.0 exactly in f32): from
+        // the -12 landing, tick 1 → -1 (row 7), tick 2 → 10 (row 2),
+        // tick 3 → 21 → the reset (row holds 2, counter 0).
+        let run = input(10.0, 0.0);
+        let mut s = FrameState { counter: -12.0, ..Default::default() };
+        find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &run);
+        assert_eq!((s.row, s.counter), (7, -1.0));
+        find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &run);
+        assert_eq!((s.row, s.counter), (2, 10.0));
+        find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &run);
+        assert_eq!((s.row, s.counter), (2, 0.0));
+        // The direction flip on the ground.
+        let mut i = input(0.0, 0.0);
+        i.direction = -1;
+        let mut s = FrameState::default();
+        find_frame_mid1(FindFrameMid1Kind::BlackRecluse, &mut s, &i);
+        assert_eq!(s.sprite_dir, -1);
+    }
+
+    /// The WallCreeper (`NPC.cs:73083-73111`): the air pins rows 4/0
+    /// with counter 0; the ground's WHILE loop steps a row per 6 keeping
+    /// the remainder, wrapping past row 3 to 0.
+    #[test]
+    fn the_wall_creeper_while_loop_keeps_the_remainder() {
+        // Air rising → row 4; falling → row 0.
+        let mut s = FrameState::default();
+        find_frame_mid1(FindFrameMid1Kind::WallCreeper, &mut s, &input(0.0, -1.0));
+        assert_eq!((s.row, s.counter), (4, 0.0));
+        find_frame_mid1(FindFrameMid1Kind::WallCreeper, &mut s, &input(0.0, 1.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+        // Ground at vx 6: 6.6 a tick → one step a tick (remainder 0.6
+        // accumulates); from row 0 the rows climb 1,2,3,0,1,…
+        let run = input(6.0, 0.0);
+        let mut s = FrameState::default();
+        let mut rows = Vec::new();
+        for _ in 0..5 {
+            find_frame_mid1(FindFrameMid1Kind::WallCreeper, &mut s, &run);
+            rows.push(s.row);
+        }
+        assert_eq!(rows, [1, 2, 3, 0, 1]);
+        // A fast tick steps several rows at once: counter 0 + |vx|*1.1
+        // = 26.4 → four steps (26.4-6*4 = 2.4), row 0 → 1 → 2 → 3 → 0.
+        let mut s = FrameState::default();
+        find_frame_mid1(FindFrameMid1Kind::WallCreeper, &mut s, &input(24.0, 0.0));
+        assert_eq!(s.row, 0);
+        assert!((s.counter - 2.4).abs() < 1e-4, "remainder {}", s.counter);
+    }
+
+    /// The WallCreeperWall (`NPC.cs:73112-73145`): the
+    /// `(|vx|+|vy|)*0.5` accumulator's 6/12/18/24 bands over rows
+    /// 0/1/2/3, the `else` reset holding the row, no sprite write.
+    #[test]
+    fn the_wall_creeper_wall_climbs_four_bands_and_holds_the_reset() {
+        let mut s = FrameState { sprite_dir: -1, rotation: 0.5, ..Default::default() };
+        // (|vx|+|vy|) = 4 → +2 a tick: counter 2,4,6,…,24.
+        let i = input(2.0, 2.0);
+        let mut rows = Vec::new();
+        for _ in 0..13 {
+            find_frame_mid1(FindFrameMid1Kind::WallCreeperWall, &mut s, &i);
+            rows.push(s.row);
+        }
+        // 2,4 → 0; 6,8,10 → 1; 12,14,16 → 2; 18,20,22 → 3; 24 → reset
+        // (row holds 3); then 2 → 0.
+        assert_eq!(rows, [0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 0]);
+        assert_eq!(s.sprite_dir, -1, "no flip write");
+        assert_eq!(s.rotation, 0.5, "no rotation write");
     }
 }
