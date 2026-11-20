@@ -18327,6 +18327,64 @@ and completed:
   water-cell no-burn gate (`:1278`) and the shimmer+lava/honey -> 659 merges
   (`:1395-1426`). The water-flow witnesses are untouched.
 
+### W4-g45 addendum (2026-11-21, code-only mode)
+
+The delay *machinery* around the gates — the retirement lifecycle that the
+per-entry `delay` counter lives in — re-verified against `Liquid.cs:1106-1150`
+/ `:1470-1599` and completed (the gates themselves landed R-11-5/c34):
+
+- **`Liquid.DelWater`** (`Liquid.cs:1470-1599`) is ported as
+  `liquid.rs::del_water`: the sub-2 dry + side wakes (`:1478-1498`), the
+  sub-20 drain (`:1499-1505`), the >=20 keep-alive (`kill = 0`, `:1506-1510`),
+  the above/side wakes (`:1511-1528`), the type reaction on the retired cell
+  plus the lava grass-burn ring (2/23/109/199/477/492 -> 0, 60/70/661/662 ->
+  59, `:1532-1560`), and the alch/lily-pad tail (`:1580-1598`). The tail's
+  `CheckAlch`/`CheckLilyPad` ride new `edit::check_alch_tile` /
+  `edit::check_lily_pad` (`WorldGen.cs:45972-46092` / `:59203-59310`).
+- **The retirement sweep** (`Liquid.cs:1109-1119`) is now the C#'s reverse
+  `DelWater` walk with the 254->255 promotion (`:1113-1116`), replacing the
+  port's plain `kill` filter. **The swap-remove copies `x`/`y`/`kill` but NOT
+  `delay`** (`:1577-1579`): the slot keeps its own delay field, so the moved
+  entry INHERITS the retired cell's throttle counter — the delay-counter
+  lifecycle the gates ride. The stuck window (`:1131-1149`, +/-50 for 10 000
+  cycle-ends -> force-clear with `stuck` up so keep-alive cannot rescue) and
+  the buffer promotion (`:1125-1130`, `checkingLiquid(false)` then `AddWater`
+  with fresh `delay = 0`, `DelBuffer` swap-remove) are ported; `add_water`'s
+  overflow now marks `checkingLiquid` and caps at `maxLiquidBuffer - 2`
+  (`LiquidBuffer.cs:11-20`) with the `curMaxLiquid - 1` active cap (`:1167`).
+- **The `genRand` 254->255 nudge** (`Liquid.cs:892-895`) is now ported in the
+  3-neighbour arm: a settled 254 rolls `WorldGen.genRand.Next(30)` and
+  promotes to 255 on a zero. **RNG census:** the draw rides `World.frame_rng`
+  (the port's `genRand` stand-in — the same stream `SquareTileFrame`'s centre
+  re-roll consumes, `world.rs:54-60`), advances exactly when the C# does
+  (only on a 254), and is the ONLY random draw in the whole liquid engine.
+  Seed 35's first `Next(30)` = 0 (promote), seed 0's = 21 (keep), verified
+  against the `UnifiedRandom` golden peek/next (seed 42: peek -712735937,
+  next 1434747710). This closes research/11 deviation 5.
+- **The extra wake passes** (`Liquid.cs:748-771` / `:821-836`) are ported in
+  the 7/5-neighbour arms: each neighbour is re-queued when the centre differs
+  from the average, run BEFORE the conditional centre write. Post-`set_level`
+  the neighbours all hold `avg`, so the neighbour clause is dead and the pass
+  reduces to the centre-diff test — but it re-queues an already-settled
+  neighbour that `set_level` left unqueued, fixing the queue-order deviation
+  (research/11 deviation 6).
+- **Determinism:** the merge surface stays RNG-free; the single `genRand`
+  nudge is the only draw and is pinned above. The DelWater tail's
+  `SquareTileFrame`/`KillTile` cascades consume `frame_rng` centre re-rolls
+  exactly as the C#'s `SquareTileFrame` does (the same stand-in), and the
+  herb/lily-pad drop rolls ride the discarded `TileKill` event records (the
+  engine is pure — the same deviation as `liquid_check`'s `tileCut` burn).
+- **Witnesses** (`liquid.rs::liquid_delwater` + `liquid_nudge_wakes`, written
+  NOT run): the delay-inheriting swap, the 254->255 sweep promotion, the
+  keep-alive rescue, the lava grass-burn ring, the alch/lily-pad tail, the
+  buffer `checkingLiquid` promotion, the stuck force-clear, the nudge
+  promote/keep/stream-advance pins and the extra-wake re-queue.
+- **Still out of scope (own task seeds):** `quickSettle` (the force-settle
+  family, R-11-7 / W4-g47), the `AddWater` 5-tile border + `type != 546`
+  carve-out + `CheckWaterDeath/CheckLavaDeath` kill (research/11 deviation 7),
+  panic mode + `QuickWater`/`SettleWaterAt` (R-11-7), and the MP cycle/kill
+  scaling + `_netChangeSet` (module 17).
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as

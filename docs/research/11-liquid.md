@@ -90,14 +90,15 @@ still open items in ROADMAP §3.
 | --- | --- | --- | --- |
 | Statics & constants (`maxLiquid`, `maxLiquidBuffer`, `cycles`) | PORTED | `liquid.rs:15-19` | 25000 / 50000 / 10 — matches `Liquid.cs:1671-1673` exactly |
 | `AddWater` queue + `checkingLiquid` dedupe | PARTIAL | `liquid.rs:93-109` | Dedupe + cap → buffer ported; the 5-tile border guard, `type != 546` carve-out and the `CheckWaterDeath/CheckLavaDeath` kill are gone (`Liquid.cs:1163`, `:1188-1206`) |
-| Pass driver (`UpdateLiquid`) | PARTIAL | `liquid.rs:123-178` | Fixed window `ceil(len/10)` per update vs the C# 2500-slot stride; no `tilesIgnoreWater`, no stuck detection, no panic/quick-settle, no net broadcast (`Liquid.cs:983-1158`) |
-| Per-cell update (`Liquid.Update`) | PARTIAL | `liquid.rs::update_tile` | Fall + ±1/±2/±3 averaging ported 1:1 including banker's rounding; `kill` bookkeeping matches; R-11-5 landed the reaction block + `delay` gate; W4-c34 landed the underworld evaporation (`Liquid.cs:466-474`). Still missing: `genRand` 254→255 nudge (`:892-895`), the extra wake calls (`:748-771`/`:821-836`), `quickSettle` (`:588-591`/`:944-948`) |
+| Pass driver (`UpdateLiquid`) | PARTIAL | `liquid.rs::update`/`end_pass` | Fixed `curMaxLiquid/cycles` stride + the `numLiquid` clamp (S1-A-8); `tilesIgnoreWater`/Bubble-379 (S1-L-14); W4-g45 landed the `DelWater` retirement sweep + 254→255 promotion (`Liquid.cs:1109-1119`), the buffer `checkingLiquid` promotion (`:1125-1130`) and the stuck window (`:1131-1149`). No panic/quick-settle, no net broadcast (`Liquid.cs:983-1158`) |
+| Per-cell update (`Liquid.Update`) | PORTED | `liquid.rs::update_tile` | Fall + ±1/±2/±3 averaging ported 1:1 including banker's rounding; `kill` bookkeeping matches; R-11-5 landed the reaction block + `delay` gate; W4-c34 landed the underworld evaporation (`Liquid.cs:466-474`); W4-g45 landed the `genRand` 254→255 nudge (`:892-895`), the extra wake calls (`:748-771`/`:821-836`) and the `DelWater` retirement lifecycle. `quickSettle` (`:588-591`/`:944-948`) rides W4-g47 |
 | `skipLiquid` skip flag | PORTED | `liquid.rs` (`skip` bitvec, `set_skip`/`is_skip`) | The two writes after a down-transfer (`Liquid.cs:586-587`) + the pass-loop gate (`:1096-1104`) + the quickFall clear (`:1089`); anchors.txt row `set_skip` |
 | `delay` (lava 5 / honey 10 / quickFall 10) | PORTED | `liquid.rs` (`Entry.delay`, the reaction block) | R-11-5: the gate throttles only the flow, reactions run every visit (`Liquid.cs:484-490`/`:513-522`); `quickFall` forces 10 in the pass loop (`:1086-1089`); W4-c34 pins the cadence (`liquid_merge_cadence` witnesses, written not run) |
 | `quickSettle` / `quickFall` | PARTIAL | `liquid.rs` (`quick_fall` field + the pass-loop arm) | `quickFall` ported (`Liquid.cs:1083-1090`); the `quickSettle` writers (`:35`, `:588-591`, `:944-948`, `:1063-1068`) ride the unported force-settle family (R-11-7) |
 | Liquid reactions (`Lava/Honey/ShimmerCheck` → `LiquidCheck` → merge tiles) | PORTED | `liquid.rs` (`lava_check`/`honey_check`/`shimmer_check`/`liquid_check`/`create_liquid_merge_tile`/`get_liquid_merge_types`/`liquid_overwrite_strip`) | R-11-5 (`Liquid.cs:1225-1468`): merge tiles 56/229/230/659 at `num >= 24`, the `tileCut` burns, the container override, the generation strip branch; W4-c34 adds the shimmer+lava/honey 659 and sub-24 down-arm drain witnesses (written not run). Deviations in ANALYSIS "The liquid reactions" |
 | Underworld water evaporation | PORTED | `liquid.rs::update_tile` (the `underworld_layer` block) | W4-c34: `Liquid.cs:466-474` — `min(2, liquid)` per visit below `UnderworldLayer` (`Main.cs:2790`, `maxTilesY - 200`), water only, before the zero kill (`:475`); the `underworld_layer >= 0` guard keeps sub-200 fixture worlds out of the band (ANALYSIS W4-c34 note); witnesses written not run |
-| Stuck detection + panic mode + `QuickWater` | MISSING | — | `Liquid.cs:966-1054`, `:1131-1149`, `:104-435`; also the post-load settle `WorldFile.cs:735-760` |
+| `Liquid.DelWater` retirement (`Liquid.cs:1470-1599`) | PORTED | `liquid.rs::del_water` + `retire_sweep` | W4-g45: the sub-2 dry, sub-20 drain, >=20 keep-alive, the lava grass-burn ring, the alch/lily-pad tail (`edit::check_alch_tile`/`check_lily_pad`), the swap-remove that copies x/y/kill but NOT delay (`:1577-1579`); witnesses written not run |
+| Stuck detection + panic mode + `QuickWater` | PARTIAL | `liquid.rs` (`stuck`/`stuck_count`/`stuck_amount`) | W4-g45 landed the stuck window (`Liquid.cs:1131-1149`); panic mode + `QuickWater`/`SettleWaterAt` (`:966-1054`, `:104-435`) and the post-load settle `WorldFile.cs:735-760` stay R-11-7 |
 | Kill threshold 8 / MP `10+players/3` | PARTIAL | `liquid.rs:21` | 8 hardcoded (correct for single player; MP variant absent) |
 | `.wld` liquid bytes | PORTED | `wld/sections/tiles.rs:85-100`, `:237-242` | Liquid amount then kind byte, per the cited `WorldFile.cs:1480-1491`; the liquid byte participates in the RLE key exactly as `bTileHeader` does in the writer |
 | Render side (`liquid_draw`, `render/liquids`, waterfall) | PORTED | `liquid_draw.rs:88`, `world_sim/liquids.rs:27-44`, `waterfall/` | Water styles + shimmer draw are ROADMAP-M1.5-LIQUID-2/3 ✅ (re-verified: `liquid_draw.rs::build` builds the per-tile liquid instances, `liquid_type` maps the 4 kinds) |
@@ -120,6 +121,14 @@ still open items in ROADMAP §3.
 - No tests exist for: stuck/panic, kill thresholds, or a `.wld` liquid-byte
   round-trip (`chest.rs:3393`'s DW-3.4 covers the whole-file cycle, not the
   liquid bytes specifically).
+- `crates/tr-core/src/liquid.rs::liquid_delwater` + `liquid_nudge_wakes`
+  (W4-g45, written NOT run — code-only mode): the delay-inheriting swap-remove
+  (`Liquid.cs:1577-1579`), the 254→255 sweep promotion (`:1113-1116`), the
+  keep-alive rescue (`:1506-1510`), the lava grass-burn ring (`:1532-1560`),
+  the alch/lily-pad tail (`:1580-1598`), the buffer `checkingLiquid` promotion
+  (`:1125-1130`), the stuck force-clear (`:1131-1149`), the `genRand` nudge
+  promote/keep/stream-advance pins (`:892-895`) and the extra-wake re-queue
+  (`:748-771`/`:821-836`).
 - `crates/tr-core/src/liquid.rs::liquid_merge_cadence` (W4-c34, written NOT
   run — code-only mode): the lava 1-in-6 / honey 1-in-11 shaft cadences
   (including the skipLiquid visit between falls), the `quickFall` bypass, the
@@ -161,15 +170,18 @@ still open items in ROADMAP §3.
    **(b) FIXED 2026-11-13 (S1-A-8):** the port now walks the fixed `curMaxLiquid / cycles`
    stride with the `numLiquid` clamp (`liquid.rs::LiquidSystem::update`), matching
    `Liquid.cs:1069-1106`; (a) `skipLiquid` is still unported.
-5. **Missing `genRand` nudge (determinism, low-med).** `Liquid.cs:892-895`
-   (`num == 254 && WorldGen.genRand.Next(30) == 0 → 255`) is absent; the C# call also
-   consumes a shared RNG draw, so settled-surface levels differ by 1 unit on ~1/30 of
-   cells. Not admitted.
-6. **Missing extra wake calls (determinism, low).** In the 7- and 5-neighbour arms the
-   original re-queues ±1/±2/±3 whenever the neighbour *or the centre* changed
-   (`Liquid.cs:748-771`, `:821-836`); the port only queues on an actual write
-   (`set_level`, `liquid.rs:329-351`). Queue order (and hence update order within a pass)
-   therefore differs.
+5. **Missing `genRand` nudge (determinism, low-med).** — **FIXED (W4-g45).**
+   `Liquid.cs:892-895` (`num == 254 && WorldGen.genRand.Next(30) == 0 → 255`)
+   is ported in the 3-neighbour arm; the draw rides `World.frame_rng` (the
+   port's `genRand` stand-in) and advances exactly when the C# does (only on
+   a 254). RNG census: seed 35 first `Next(30)`=0, seed 0 first=21, verified
+   against the `UnifiedRandom` golden peek/next. ANALYSIS "The liquid
+   reactions" W4-g45 addendum.
+6. **Missing extra wake calls (determinism, low).** — **FIXED (W4-g45).** In
+   the 7- and 5-neighbour arms the original re-queues ±1/±2/±3 whenever the
+   neighbour *or the centre* changed (`Liquid.cs:748-771`, `:821-836`); the
+   port now runs the same centre-diff wake pass before the conditional centre
+   write, re-queueing an already-settled neighbour `set_level` left unqueued.
 7. **`AddWater` guards (behavioural, low-med).** The 5-tile world-border exclusion
    (`Liquid.cs:1163`), the `tile.type != 546` carve-out, and the
    `CheckWaterDeath/CheckLavaDeath` → `KillTile` of plants/breakables submerged in liquid
