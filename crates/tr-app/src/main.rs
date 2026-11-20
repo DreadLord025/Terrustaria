@@ -264,6 +264,10 @@ mod town_arrival;
 mod tracked_sound;
 mod touch_damage;
 mod ui;
+// W4-g17 player wave A (code-only): the extra-jump gore bursts —
+// Fart/Santank/Cloud (Player.cs:20838-21022); the extra-jump chain
+// dispatch is the wiring wave.
+mod player_gore_a;
 // W4-g17 (code-only): the world-side Gore.NewGore sites, wave A — the
 // TreeGrowFX trunk/leaf column + ash shake (WorldGen.cs:29600-29672)
 // and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /

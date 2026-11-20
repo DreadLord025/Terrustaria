@@ -39296,3 +39296,24 @@ the event here. The `genRand` rows (25-36) draw their type picks on a
 SEPARATE stream from the kicks' `Main.rand` — the port has no runtime
 genRand (`edit.rs:900`), the caller hands it in. 7 witnesses written,
 NOT run (code-only mode).
+
+## The player gore sites (W4-g17, wave A)
+
+`player_gore_a.rs`: `Player.JumpMovement`'s extra-jump visual tails
+(`Player.cs:20531-21032`) — the Fart arm's 10 type-188 puffs + 3
+`Next(435,438)` gores (`:20849-20863`), the Santank arm's 15×2 dust
+pairs (type 4 + type 6 with the even-iteration fadeIn roll) + the
+3-gore `Next(61,63)` loop at `Bottom.Y - 22` with the Circular(1,1)
+velocity add (`:20960-20994`), the Cloud fall-through's 10 type-16
+puffs + 3 `Next(11,14)` gores (`:21007-21021`).
+
+The state snapshot carries the POST-jump velocity (the arms run after
+the `:20847-20848` writes) and `gravDir` (the port's Player has only
+`grav_control`); the `num9`/`num20`/`num25` height pick is `height` or
+0 under reversed gravity — but the Santank gore row reads `Bottom.Y`
+FULL height regardless (the C# does not use num20 there).
+`(float)(base.width / 2)` keeps the C# INT division. The dust draws
+ride `DustPool::new_dust` (type 6 hits the `Dust.cs:214` tweak: +1
+`Next(-10,6)`); the post-spawn writes land on the sentinel included.
+The arm gates / isPerformingJump latch / sound / velocity writes are
+the movement lane's. 4 witnesses written, NOT run (code-only mode).
