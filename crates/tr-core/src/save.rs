@@ -65,7 +65,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -428,6 +428,14 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `:79349`) — S1-D-3 W-9 fishron wiring; the v15 queen-slime byte's
     // shape.
     w.write_all(&[u8::from(world.downed_fishron)])?;
+    // v18: the forest-set block (W4-g70) — the three `Main.treeX` dividers
+    // then the four `WorldGen.treeBG1..4` style bytes (`WorldFile.cs:1255-1258`
+    // / `:1319`, `:1376-1379`). The vanilla rides them in the flags block;
+    // the port's own tail, same values, same order.
+    for x in world.tree_x {
+        w.write_all(&x.to_le_bytes())?;
+    }
+    w.write_all(&world.forest_bg_styles)?;
     Ok(())
 }
 
@@ -810,6 +818,17 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
+    // v18: the forest-set block (see the writer's citation). A pre-v18 file
+    // keeps the `WorldGen.Reset` defaults (`World::new`): all dividers at
+    // `maxTilesX`, all four styles 0.
+    if version >= 18 {
+        for x in &mut world.tree_x {
+            *x = r.i32()?;
+        }
+        for s in &mut world.forest_bg_styles {
+            *s = r.u8()?;
+        }
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -1054,8 +1073,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[17, 0, 0, 0],
-            "the writer emits the current v17"
+            &[18, 0, 0, 0],
+            "the writer emits the current v18"
         );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
@@ -1082,13 +1101,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v17 (the downedFishron
-        // byte, S1-D-3 W-9) is now the current format, so the gate pins 17.
+        // current one (`save.rs` version gate). v18 (the forest-set block,
+        // W4-g70) is now the current format, so the gate pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&18u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 18 is unsupported");
+        buf[8..12].copy_from_slice(&19u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 19 is unsupported");
     }
 
     #[test]
@@ -1166,8 +1185,9 @@ mod tests {
         // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +16: the v18 forest-set block (3 i32 + 4 u8), W4-g70.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 16 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1277,9 +1297,9 @@ mod tests {
         let cur_len = buf.len();
         let mut v12 = buf.clone();
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
-        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5)
-        // and the v17 fishron flag (1).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1;
+        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
+        // the v17 fishron flag (1) and the v18 forest block (16).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 16;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1306,8 +1326,9 @@ mod tests {
     const EMPTY_V13_TAIL: usize = 8;
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
     /// for an empty rain event), the v15 Queen Slime flag byte, the v16
-    /// five style bytes and the v17 downedFishron byte (S1-D-3 W-9).
-    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1;
+    /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
+    /// v18 forest-set block (3 i32 + 4 u8 = 16, W4-g70).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 16;
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL;
@@ -1493,10 +1514,10 @@ mod tests {
         assert!(back.downed_queen_slime, "the flag survives the reload");
         // A pre-v15 file (the tail truncated, the version patched) loads
         // with the flag down — the vanilla's own reset arm (`:2376`).
-        // The v16 style bytes + the v17 fishron byte ride behind the v15
-        // flag (6 bytes).
+        // The v16 style bytes + the v17 fishron byte + the v18 forest block
+        // ride behind the v15 flag (22 bytes).
         let mut v14 = buf.clone();
-        v14.truncate(v14.len() - 1 - 5 - 1);
+        v14.truncate(v14.len() - 1 - 5 - 1 - 16);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
@@ -1515,8 +1536,9 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         // The v6 tail of an empty-wire/entity world: the fixed flags block +
         // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4));
+        // (+1: the v17 downedFishron byte rides the flags block's tail;
+        // +16: the v18 forest-set block, W4-g70.)
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 16 + 4 * 4 + 4));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -1602,8 +1624,8 @@ mod tests {
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[17, 0, 0, 0],
-            "the writer emits the current v17"
+            &[18, 0, 0, 0],
+            "the writer emits the current v18"
         );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
@@ -2165,5 +2187,32 @@ mod tests {
             crate::world::surface_bg_texture_ids(8, 2),
             Some([234, 235, 236])
         );
+    }
+
+    #[test]
+    fn w4_g70_the_forest_set_block_round_trips_in_v18() {
+        // `Main.treeX[0..3]` + `WorldGen.treeBG1..4` ride the vanilla flags
+        // block (`WorldFile.cs:1255-1258` / `:1319`, `:1376-1379`); the
+        // port's v18 tail carries the same values, same order.
+        let mut w = World::new("Test".into(), 64, 48);
+        w.tree_x = [17, 33, 49];
+        w.forest_bg_styles = [1, 11, 12, 13];
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.tree_x, [17, 33, 49]);
+        assert_eq!(back.forest_bg_styles, [1, 11, 12, 13]);
+        // The styles resolve through `SetForestBGSet`.
+        assert_eq!(back.forest_bg(0), ([7, 8], [50, 51, 52]));
+        assert_eq!(back.forest_bg(3), ([7, -1], [343, 342, 341]));
+        // A pre-v18 file (the 16-byte block truncated, the version patched)
+        // keeps the `WorldGen.Reset` defaults (`World::new`): dividers at
+        // maxTilesX, all four styles 0.
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - 16);
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&v17).unwrap();
+        assert_eq!(back.tree_x, [64, 64, 64]);
+        assert_eq!(back.forest_bg_styles, [0; 4]);
     }
 }

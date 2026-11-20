@@ -121,6 +121,22 @@ pub struct World {
     pub hallow_bg_style: u8,
     pub crimson_bg_style: u8,
     pub mushroom_bg_style: u8,
+    // The four forest tree-set styles (`WorldGen.treeBG1..4`, `setBG` slots
+    // 0/10/11/12 — `WorldGen.cs:7219-7234`). `WorldGen.SetForestBGSet`
+    // (`WorldGen.cs:7639-7768`) expands each into its three tree-line ids and
+    // its two hill ids — see [`forest_bg_sets`]. The vanilla rolls them per
+    // world in `RandomizeBackgrounds` (`WorldGen.cs:8121-8166` rolls the
+    // `treeX` dividers too); the port fixes style 0 for all four like the
+    // five variants' constants-off defaults, and loads the real styles from
+    // a `.wld`.
+    pub forest_bg_styles: [u8; 4],
+    /// `Main.treeX[0..3]` (`Main.cs:555` family): the tile-x dividers between
+    /// the four forest sets, consumed by `GetPreferredBGStyleForPlayer`
+    /// (`Main.cs:64247-64254`). The vanilla reset pins all three to
+    /// `maxTilesX` (`WorldGen.cs:7125-7127`) — one forest set everywhere —
+    /// until `RandomizeBackgrounds` rolls them; the port keeps the reset
+    /// values for generated worlds and loads the real ones from a `.wld`.
+    pub tree_x: [i32; 3],
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -697,6 +713,8 @@ impl World {
             hallow_bg_style: 0,
             crimson_bg_style: 0,
             mushroom_bg_style: 0,
+            forest_bg_styles: [0; 4],
+            tree_x: [width, width, width],
             column_surface: Vec::new(),
             chunks_x: 0,
             chunks_y: 0,
@@ -1422,12 +1440,103 @@ pub fn surface_bg_texture_ids(bg: i32, style: i32) -> Option<[i32; 3]> {
 }
 
 impl World {
+    /// `WorldGen.SetForestBGSet(style, mountainSet, treeSet)`
+    /// (`WorldGen.cs:7639-7768`): the two hill ids (`Main.treeMntBGSetN`)
+    /// and three tree-line ids (`Main.treeBGSetN`) of one forest style.
+    /// Both sets start at `[7, 8]`; the switch replaces them per style.
+    /// `-1` is a layer the C# never draws.
+    pub fn forest_bg_set(style: i32) -> ([i32; 2], [i32; 3]) {
+        let mut mnt = [7, 8];
+        let tree = match style {
+            1 => [50, 51, 52],
+            2 => [53, 54, 55],
+            3 => {
+                mnt[1] = 90;
+                [91, -1, 92]
+            }
+            31 => {
+                mnt[1] = 90;
+                [91, -1, 11]
+            }
+            4 => {
+                mnt = [93, 94];
+                [-1, -1, -1]
+            }
+            5 => {
+                mnt = [93, 94];
+                [-1, -1, 55]
+            }
+            51 => {
+                mnt = [93, 94];
+                [-1, -1, 11]
+            }
+            6 => {
+                mnt = [171, 172];
+                [173, -1, -1]
+            }
+            7 => {
+                mnt = [176, 177];
+                [178, -1, -1]
+            }
+            71 => {
+                mnt = [176, 177];
+                [178, -1, 11]
+            }
+            72 => {
+                mnt = [176, 177];
+                [178, -1, 52]
+            }
+            73 => {
+                mnt = [176, 177];
+                [178, -1, 55]
+            }
+            8 => {
+                mnt = [179, 180];
+                [184, -1, -1]
+            }
+            9 => {
+                mnt = [277, 278];
+                [279, -1, -1]
+            }
+            10 => {
+                mnt = [280, 281];
+                [282, -1, -1]
+            }
+            11 => {
+                mnt[1] = 331;
+                [330, 329, 328]
+            }
+            12 => {
+                mnt[1] = 336;
+                [335, 334, 333]
+            }
+            13 => {
+                mnt[1] = -1;
+                [343, 342, 341]
+            }
+            _ => [9, 10, 11],
+        };
+        (mnt, tree)
+    }
+
+    /// The forest set of `setBG` slot `n` (0/1/2/3 ↔ `treeBG1..4`, i.e.
+    /// `setBG(0/10/11/12)`): `(hill ids, tree ids)` for this world's style.
+    pub fn forest_bg(&self, n: usize) -> ([i32; 2], [i32; 3]) {
+        Self::forest_bg_set(self.forest_bg_styles[n] as i32)
+    }
+
     /// `WorldGen.setBG(bg, style)` for the five surface variants the port owns
     /// (`WorldGen.cs:7235-7274`, `7276-7316`, `7424-7459`, `7460-7500`,
-    /// `7578-7608`). Unknown slots are ignored — their tables are unported.
+    /// `7578-7608`) and the four forest slots 0/10/11/12
+    /// (`WorldGen.cs:7219-7234`). Unknown slots are ignored — their tables
+    /// are unported.
     pub fn set_surface_bg_style(&mut self, bg: i32, style: i32) {
         let style = style as u8;
         match bg {
+            0 => self.forest_bg_styles[0] = style,
+            10 => self.forest_bg_styles[1] = style,
+            11 => self.forest_bg_styles[2] = style,
+            12 => self.forest_bg_styles[3] = style,
             1 => self.corrupt_bg_style = style,
             2 => self.jungle_bg_style = style,
             4 => self.hallow_bg_style = style,
@@ -1480,6 +1589,54 @@ mod tests {
         assert_eq!(w.crimson_bg_style, 6);
         w.set_surface_bg_style(3, 1); // unowned slot: unchanged
         assert_eq!(w.crimson_bg_style, 6);
+    }
+
+    #[test]
+    fn forest_bg_sets_match_set_forest_bg_set() {
+        // `WorldGen.SetForestBGSet` (`WorldGen.cs:7639-7768`), every arm.
+        // The `[7, 8]` reset survives wherever the switch leaves it alone.
+        let f = World::forest_bg_set;
+        assert_eq!(f(0), ([7, 8], [9, 10, 11]));
+        assert_eq!(f(1), ([7, 8], [50, 51, 52]));
+        assert_eq!(f(2), ([7, 8], [53, 54, 55]));
+        assert_eq!(f(3), ([7, 90], [91, -1, 92]));
+        assert_eq!(f(31), ([7, 90], [91, -1, 11]));
+        assert_eq!(f(4), ([93, 94], [-1, -1, -1]));
+        assert_eq!(f(5), ([93, 94], [-1, -1, 55]));
+        assert_eq!(f(51), ([93, 94], [-1, -1, 11]));
+        assert_eq!(f(6), ([171, 172], [173, -1, -1]));
+        assert_eq!(f(7), ([176, 177], [178, -1, -1]));
+        assert_eq!(f(71), ([176, 177], [178, -1, 11]));
+        assert_eq!(f(72), ([176, 177], [178, -1, 52]));
+        assert_eq!(f(73), ([176, 177], [178, -1, 55]));
+        assert_eq!(f(8), ([179, 180], [184, -1, -1]));
+        assert_eq!(f(9), ([277, 278], [279, -1, -1]));
+        assert_eq!(f(10), ([280, 281], [282, -1, -1]));
+        assert_eq!(f(11), ([7, 331], [330, 329, 328]));
+        assert_eq!(f(12), ([7, 336], [335, 334, 333]));
+        assert_eq!(f(13), ([7, -1], [343, 342, 341]));
+        // `default:` — unknown styles keep the reset hills and the 9/10/11 row.
+        assert_eq!(f(99), ([7, 8], [9, 10, 11]));
+
+        // `setBG(0/10/11/12)` slots write the four styles (`WorldGen.cs:7219-7234`).
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(0, 1);
+        w.set_surface_bg_style(10, 11);
+        w.set_surface_bg_style(11, 12);
+        w.set_surface_bg_style(12, 13);
+        assert_eq!(w.forest_bg(0), ([7, 8], [50, 51, 52]));
+        assert_eq!(w.forest_bg(1), ([7, 331], [330, 329, 328]));
+        assert_eq!(w.forest_bg(2), ([7, 336], [335, 334, 333]));
+        assert_eq!(w.forest_bg(3), ([7, -1], [343, 342, 341]));
+    }
+
+    #[test]
+    fn tree_x_defaults_to_the_reset_max_tiles() {
+        // `WorldGen.Reset` pins all three dividers to `maxTilesX`
+        // (`WorldGen.cs:7125-7127`): every column resolves to forest set 0.
+        let w = World::new("t".into(), 8400, 2400);
+        assert_eq!(w.tree_x, [8400, 8400, 8400]);
+        assert_eq!(w.forest_bg_styles, [0; 4]);
     }
 
     #[test]
