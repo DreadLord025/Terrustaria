@@ -20,9 +20,9 @@
 use std::path::PathBuf;
 
 /// FNV-1a (64-bit) over the concatenated non-comment lines, joined by `\n`.
-/// Re-pinned for S1-E-21 wave A (the `use_sound`/`use_sound_pitch` fields
-/// added to every generated row — the item-use sound wave).
-const DATA_FNV1A64: u64 = 0x8874_21a2_baf1_014e;
+/// Re-pinned for W4-g35 (the `glow_mask` field added to every generated
+/// row — the glow-mask records wave).
+const DATA_FNV1A64: u64 = 0xae7a_5686_e5e7_733b;
 /// `ItemID.Count` (`ItemID.cs:14861`) — the number of `ItemDef` rows.
 const ROWS: usize = 6196;
 

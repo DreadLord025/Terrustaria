@@ -395,7 +395,6 @@ def parse_call_args(argstr):
 THIS_SKIP_FIELDS = {
     # field: reason (value not represented in ItemDef)
     "color": "Color not provisioned",
-    "glowMask": "glow-mask id not provisioned",
     "stringColor": "fishing-line colour not provisioned",
     "tileWand": "tile-wand id not provisioned",
     "expert": "expert flag not provisioned",
@@ -1791,6 +1790,8 @@ def stock_row():
         "dye": 0,
         "paint": 0,
         "paintCoating": 0,
+        # ResetStats stock (Item.cs:49006 glowMask = -1) — the glow-sheet id.
+        "glowMask": -1,
         "mech": False,
         "mountType": -1,
         "vanity": False,
@@ -2321,6 +2322,7 @@ RUST_FIELDS = [
     ("mount_type", "mountType", "i32"),
     ("paint", "paint", "i32"),
     ("paint_coating", "paintCoating", "i32"),
+    ("glow_mask", "glowMask", "i16"),
     ("use_sound", "UseSound", "sound"),
     ("use_sound_pitch", "useSoundPitch", "f32"),
 ]
@@ -2534,6 +2536,10 @@ pub struct ItemDef {
     pub paint: i32,
     /// `Item.paintCoating` (`Item.cs:48965`, stock 0).
     pub paint_coating: i32,
+    /// `Item.glowMask` (`Item.cs:195`, stock −1 — `ResetStats` `:49006`):
+    /// the `TextureAssets.GlowMask` sheet the world-item draw overlays
+    /// (`Main.cs:38636`/`:38772-38775`); −1 = none (W4-g35).
+    pub glow_mask: i16,
     /// `Item.UseSound` (`Item.cs:199`, a `LegacySoundStyle`): the index into
     /// [`crate::soundid::SOUND_STYLES`] (`SoundID.cs`'s static ctor order),
     /// `None` = the C# `null` (stock `ResetStats`, `Item.cs:49027`). The
