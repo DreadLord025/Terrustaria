@@ -16012,6 +16012,41 @@ mod summon_tests {
         p.update(&w, PlayerInput::default());
         assert!(!p.deadly_sphere_minion);
     }
+
+    /// S1-P-i25 round 2 — `Player.GetWeaponKnockback` (`Player.cs:53346-53369`):
+    /// the summon `minionKB` add FIRST, then the melee glove's ×2, the Titan
+    /// buff's ×1.5 and the shroomite-stealth ranged scale, in that order.
+    #[test]
+    fn i25_get_weapon_knockback_folds_the_bonuses_in_order() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let summon = crate::registry::get(2364).unwrap(); // Hornet Staff (summon)
+        let melee = crate::registry::get(1).unwrap(); // Iron Pickaxe (melee)
+        let ranged = crate::registry::get(435).unwrap(); // Cobalt Repeater (ranged)
+        // The summon add: minionKB rides a summon item, not a melee one.
+        p.minion_kb = 2.0;
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the summon minionKB add");
+        assert_eq!(p.weapon_knockback(melee, 5.0), 5.0, "no add for melee");
+        // The melee glove ×2 (melee only).
+        p.kb_glove = true;
+        assert_eq!(p.weapon_knockback(melee, 5.0), 10.0, "the glove doubles melee");
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the glove skips summon");
+        // The Titan buff ×1.5 rides everything, AFTER the add/glove.
+        p.kb_buff = true;
+        assert_eq!(p.weapon_knockback(summon, 5.0), 10.5, "(5+2)*1.5");
+        assert_eq!(p.weapon_knockback(melee, 5.0), 15.0, "5*2*1.5");
+        // The shroomite-stealth ranged scale (ranged only): 1 + (1-stealth)*0.5.
+        p.kb_buff = false;
+        p.kb_glove = false;
+        p.shroomite_stealth = true;
+        p.stealth = 0.5;
+        assert_eq!(
+            p.weapon_knockback(ranged, 4.0),
+            4.0 * 1.25,
+            "the stealth scale at stealth 0.5"
+        );
+        assert_eq!(p.weapon_knockback(summon, 5.0), 7.0, "the stealth scale skips summon");
+    }
 }
 
 #[cfg(test)]

@@ -13178,25 +13178,86 @@ gap-filled. Verdicts + cites:
   the AI machines stay the documented dispatch no-ops (aiStyle 26/54/156/164/169/
   206). The `is_summon_shot` flag now books for minion/sentry spawns (the whip
   `CanRunHitEffects` gate).
-- **RNG**: the only new draws are the Pygmy `Next(191,195)` and Pirate `Next(3)`
-  kind picks, on the `UpdatePlayers` stream at the spawn site (the C#
-  `ItemCheck_Shoot` runs under `UpdatePlayers`, `Main.cs:17754`); the generic
-  crit roll precedes them (it is a no-op for Summon — `class_crit(Summon) = 0`,
-  but the C# `Projectile.Damage` rolls crit on HIT, not spawn — the port's
-  spawn-time roll is the documented stand-in). The spider cycle and the ai seeds
-  draw nothing. Witnesses WRITTEN NOT RUN (`use_loop_tests::i25_*`,
+- **RNG**: the only draws the summon arm spends are the Pygmy `Next(191,195)` and
+  Pirate `Next(3)` kind picks, on the `UpdatePlayers` stream at the spawn site (the C#
+  `ItemCheck_Shoot` runs under `UpdatePlayers`, `Main.cs:17754`). The spider cycle and
+  the ai seeds draw nothing. **Round 2 removed the summon crit draw**: the C# has NO
+  spawn-time crit roll — `Projectile.Damage` rolls at HIT and only for the
+  melee/ranged/magic flags (`Projectile.cs:12890-12901`); the minion/sentry rows carry
+  none, and `DefaultToWhip` (`:10704-10718`) sets none either (the whip's crit rides its
+  tag effect's hit roll, `WhipTagEffect.cs:69`). The port rolls crit at throw time for
+  the three classes (its documented stand-in); the summon arm now SKIPS that draw
+  (`crit = false`, no roll) so the stream is faithful — a plain minion staff's use
+  leaves `UpdatePlayers` untouched, the Pygmy spends exactly its kind pick. No existing
+  stream pin covers a summon shot (leaf=3, blaze=4, prism=1, bow=1/2 all non-summon), so
+  the skip breaks no pin. Witnesses WRITTEN NOT RUN (`use_loop_tests::i25_*`,
   `test_DW_6_1/6_2` corrected to the ascending order); no compiler invoked.
+
+#### Round 2 (2026-11-20, same branch): the sentry arm, the Clay Pot, centring, kb wiring
+
+A second distrust-verbatim pass over the use path found four more defects, all fixed
+in `world_sim/editing.rs` (witnesses WRITTEN NOT RUN, no compiler invoked):
+
+- **The sentry spawn arm was MISSING** — the sentry staves (1572/2366/3571/3569/5119/
+  5463) fell through to the generic flight. The C# arm (`Player.cs:48189-48211`) calls
+  `PickSentryLandingSpot` (`:49525-49543` — the cursor column + its two neighbours
+  scanned down to the first `WorldGen.SolidTile2` row, one above, at `row*16-24`; the
+  3571/3569/5463 staves SKIP the scan), drops the shot at `vy=15` (the 5463 barnacle
+  lands at the cursor's exact world Y, `vy=0`, `:48203-48206`), seeds `ai0=60` for the
+  1572 Frost Hydra / `90` for the 5119 Houndius / `0` else (`:48195-48207`), spawns the
+  SCALED `Damage` and overrides `originalDamage = damage` (UNSCALED, `:48209`), then runs
+  `UpdateMaxTurrets` (`:48210`). The helpers `pick_sentry_landing_spot`/`sentry_solid_tile2`
+  were already ported (round 1) but never called; the arm now wires them, gated
+  `def.summon && proj_data(proj).sentry`. The shared tail's `update_max_turrets` sweep
+  (already present) covers the cap. The `AI_053` init latch overwrites `ai0→120` on the
+  first tick (`projectile.rs`), so the spawn seed is passed verbatim but transient.
+- **The Clay Pot (6161) was in the WRONG arm** — round 1 gave it a `SpawnMinionOnCursor`
+  cursor spawn, but the C# has NO such arm for 6161: it rides the generic tail
+  (`Player.cs:49437` — player-centre spawn, aim velocity, SCALED `Damage`) and only
+  overrides `originalDamage = damage` (`:49442-49444`). Removed the cursor arm; the
+  override now rides the generic spawn. (6161's shoot 1118 is a minion row, so the
+  generic spawn's `original_damage` init already books the SCALED value — the override
+  corrects it to UNSCALED for the pool's `minionDamage` recompute.)
+- **The cursor spawns missed the half-box subtraction** — `NewProjectile` takes the
+  CENTRE and subtracts `width/2, height/2` (`Projectile.cs:10876-10877`); the port's
+  `spawn_with_data_ai*` seam takes the TOP-LEFT. The minion cursor spawns (and the new
+  sentry spawn) now subtract the per-kind half-box (the inferno-blast precedent,
+  `projectile.rs`). The GENERIC spawn sites keep their existing centre-ish convention
+  (a port-wide stand-in; changing them would break the pinned leaf/blaze/prism tests).
+- **`GetWeaponKnockback` was only wired into the minion arm** — the C# runs it ONCE at
+  `:47151` for EVERY shoot (after the ammo fuse / gunProj reset). Now folded into the
+  shared throw block (`fx_kb`) and the ammo path (`knock_back`), so the gem/spirit/sky/
+  blaze/generic/whip shots all carry the glove/Titan/stealth scales. Behaviour-neutral
+  today: the only live `minion_kb` writer is the sky-stone accessory (+0.5) and the
+  kb-glove; `kb_buff`/`shroomite_stealth` have NO live writers (the DebuffEffects/
+  MiscEffects tables never reach the Player), and the gunProj four are Ranged with no
+  stealth armed (the DW-4.2 raw-knockback pins hold). The whip (`summon=true`) takes the
+  `minionKB` add faithfully.
+- **The summon crit draw was removed** (see the RNG bullet above): the C# never
+  spawn-crits a summon shot; the port's throw-time roll now skips `def.summon`.
+
+Deferred / noted (not ported this wave):
+- **`MinionRespawner`** (`Player.cs:38815`/`:37704`, `MinionSpawnFromInventoryItem`) —
+  the death/respawn re-summon path; deferred (the minion AI machines' follow-up).
+- **The Foxsparks ability gate** (`Player.cs:43347`/`:42774`) — the 5664/6149 right-click
+  dash ability; unported (the spawn + `localAI[0]=30` land, the ability is a follow-up).
+- **`Player.stealth` init** — the port inits 0.0 vs the C# default 1f (`Player.cs:1562`);
+  the frost seam already folds 1f when shroomite is off (`npc_ai_frost_mob.rs`), so the
+  kb wiring's stealth scale is unaffected today. Left as-is (no live shroomite writer).
 
 Deviations and notes:
 
-- **The 0-time summon grant is a ghost.** The summon staves' `Item.buffTime` rows are 0
-  (itemdata, the C# `Item.SetDefaults` cases set only `buffType`), so `ItemCheck`'s grant
-  (`Player.cs:42879`) adds a 0-time buff вЂ” and the C#'s arm guard (`Player.cs:9868`,
-  `buffTime[j] <= 0` skips) plus the expired sweep (`:25611`) drop it on the next tick.
-  The port repeats this verbatim: a freshly-granted minion buff is swept one tick later,
-  and the arm's 18000 refresh only reaches buffs that entered with a non-zero time (the
-  regression tests seed one). The minion itself lives on its row's `timeLeft * 5` and the
-  pool's cap check either way.
+- **The 0-time `item.buffTime` grant is a ghost — but the 3600 `ApplyPetBuffs` grant
+  is NOT.** The summon staves' `Item.buffTime` rows are 0 (itemdata, the C#
+  `Item.SetDefaults` cases set only `buffType`), so `ItemCheck`'s `:42879` grant adds a
+  0-time buff — and the C#'s arm guard (`Player.cs:9868`, `buffTime[j] <= 0` skips) plus
+  the expired sweep (`:25611`) drop it on the next tick. The port repeats THAT verbatim.
+  The persistence does NOT ride it: `ItemCheck_ApplyPetBuffs` (`:42766` → `:53190-53281`)
+  grants `AddBuff(buffType, 3600)` at the use-start for the 28 summon-staff types
+  (`MINION_STAFF_PET_BUFF_ITEMS`), and the keep-alive arm's 18000 refresh pins THAT buff
+  while the minion lives. (Round 1 added the 3600 grant; the earlier "the minion buff is
+  swept one tick later" reading was the MISSING-grant bug, not a C# behaviour — the
+  regression tests now assert the 3600 grant survives and refreshes to 18000.)
 - **The port's arms run after the player tick's expiry sweep** (the Phase-2 seam): the C#
   runs them inside `UpdateBuffs` between the reset and the sweep. The consequence is the
   ghost above; the cap effects (110/150/348) still land after `ResetEffects` zeroed the

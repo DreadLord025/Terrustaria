@@ -807,6 +807,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
                             (s.damage, s.shoot_speed, s.knock_back)
                         });
+                    // `Player.cs:47151` — `KnockBack = GetWeaponKnockback(sItem,
+                    // KnockBack)` runs ONCE here, after the ammo fuse / gunProj
+                    // reset and BEFORE every spawn arm: the summon `minionKB`
+                    // add (`:53348-53351`), the melee glove's ×2 (`:53352`), the
+                    // Titan buff's ×1.5 (`:53356`) and the shroomite-stealth
+                    // ranged scale (`:53360`). Every arm below reads the folded
+                    // value — the gem arm's RepeatsGem `+1` (`:49303`) rides it,
+                    // and the whip (`summon = true`, `Item.cs`'s DefaultToWhip
+                    // items) takes the `minionKB` add too.
+                    let fx_kb = p.weapon_knockback(def, fx_kb);
                     // `if (sItem.melee && !ProjectileID.Sets
                     // .NoMeleeSpeedVelocityScaling[projToShoot]) speed /=
                     // this.meleeSpeed` (`:47060-47063`) — no ported kind rides
@@ -832,8 +842,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // `UpdatePlayers` swap (`Main.cs:17754`), so the roll
                     // rides `stream(UpdatePlayers)`.
                     let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    let crit =
-                        tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit);
+                    // S1-P-i25 round 2 — the summon shot NEVER rolls crit: the
+                    // C# has no spawn-time crit roll at all (`Projectile.Damage`
+                    // rolls at HIT, and only for the melee/ranged/magic flags,
+                    // `Projectile.cs:12890-12901`); the minion/sentry rows carry
+                    // none of them, and `DefaultToWhip` (`:10704-10718`) sets
+                    // none either — the whip's own crit rides its tag effect's
+                    // hit roll (`WhipTagEffect.cs:69`), not this seam. The port
+                    // rolls crit at throw time for the three classes (its
+                    // documented convention); the summon arm skips the draw so
+                    // the stream stays faithful (no summon shot pins a draw).
+                    let crit = if def.summon {
+                        false
+                    } else {
+                        tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit)
+                    };
                     // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
                     // 20% roll upgrades the bolt (634→635) at triple damage —
                     // `Damage *= 3` on the weapon-damage int (`:42653`'s
@@ -875,9 +898,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     if def.summon
                         && crate::projectile::proj_data(proj).is_some_and(|d| d.minion)
                     {
-                        // `GetWeaponKnockback` (`:53346-53369`) — the summon
-                        // `minionKB` add, then the glove/Titan/stealth scales.
-                        let minion_kb = p.weapon_knockback(def, fx_kb);
                         // `SpawnMinionOnCursor`'s cursor point + reach clamp
                         // (`:49575-49577`).
                         let cursor =
@@ -886,6 +906,31 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         // UNSCALED item damage (`fx_dmg`), the C# local `damage`.
                         let unscaled = fx_dmg;
                         let owner = app.local_id as u8;
+                        // `NewProjectile` takes the CENTRE and subtracts the
+                        // half-box (`Projectile.cs:10876-10877`); the port's
+                        // spawn seam takes the top-left, so the cursor point is
+                        // re-centred per spawned kind (the inferno precedent,
+                        // `projectile.rs`'s blast spawn). `fx_kb` already carries
+                        // `GetWeaponKnockback`'s fold (`:47151`, above).
+                        let spawn_minion = |projectiles: &mut crate::projectile::ProjectilePool,
+                                            kind: u16,
+                                            ai0: f32,
+                                            ai1: f32|
+                         -> Option<usize> {
+                            let row = crate::projectile::proj_data(kind)?;
+                            projectiles.spawn_with_data_ai_owned(
+                                kind,
+                                owner,
+                                cursor.x - row.w * 0.5,
+                                cursor.y - row.h * 0.5,
+                                0.0,
+                                0.0,
+                                unscaled,
+                                fx_kb,
+                                ai0,
+                                ai1,
+                            )
+                        };
                         if held.kind == 3531 {
                             // The Stardust Dragon Staff's chain spawn
                             // (`:48498-48554`) needs the aiStyle-121 dragon chain
@@ -897,9 +942,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             // `Main.rand.Next(191, 195)` kind pick, ai1 = 60
                             // (`:49584-49585`), then `localAI[0] = 30`.
                             let kind = loot_rng.next_range(191, 195) as u16;
-                            if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
-                                kind, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 60.0,
-                            ) {
+                            if let Some(slot) = spawn_minion(&mut app.projectiles, kind, 0.0, 60.0) {
                                 app.projectiles.set_local_ai0(slot, 30.0);
                             }
                         } else if held.kind == 2535 {
@@ -907,55 +950,84 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             // (387 + 388) at the cursor, zero velocity (the
                             // `RotatedBy` of `Vector2.Zero`), ai1 = 1 (`:49589`).
                             for k in [proj, proj + 1] {
-                                let _ = app.projectiles.spawn_with_data_ai_owned(
-                                    k, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 1.0,
-                                );
+                                let _ = spawn_minion(&mut app.projectiles, k, 0.0, 1.0);
                             }
                         } else if held.kind == 2551 {
                             // `:48476-48481` — the Spider Staff cycles
                             // 390/391/392 via `nextCycledSpiderMinionType` (never
                             // reset, `Player.cs:1280`), then increments mod 3.
                             let kind = (proj as i32 + p.next_cycled_spider_minion_type) as u16;
-                            let _ = app.projectiles.spawn_with_data_ai_owned(
-                                kind, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 0.0,
-                            );
+                            let _ = spawn_minion(&mut app.projectiles, kind, 0.0, 0.0);
                             p.next_cycled_spider_minion_type += 1;
                             p.next_cycled_spider_minion_type %= 3;
                         } else if held.kind == 2584 {
                             // `:48483-48486` — the Pirate Staff: one
                             // `Main.rand.Next(3)` offset onto 393/394/395.
                             let kind = proj + loot_rng.next_range(0, 3) as u16;
-                            let _ = app.projectiles.spawn_with_data_ai_owned(
-                                kind, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 0.0,
-                            );
+                            let _ = spawn_minion(&mut app.projectiles, kind, 0.0, 0.0);
                         } else if held.kind == 5664 || held.kind == 6149 {
                             // `:48452-48456` — the Foxsparks staves spawn then
                             // set `localAI[0] = 30`.
-                            if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
-                                proj, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 0.0,
-                            ) {
+                            if let Some(slot) = spawn_minion(&mut app.projectiles, proj, 0.0, 0.0) {
                                 app.projectiles.set_local_ai0(slot, 30.0);
                             }
-                        } else if held.kind == 6161 {
-                            // `:49442-49444` — the Clay Pot's generic-tail spawn
-                            // writes `originalDamage = damage` (the spawn seam
-                            // already books it for a minion row).
-                            let _ = app.projectiles.spawn_with_data_ai_owned(
-                                proj, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, 0.0, 0.0,
-                            );
                         } else {
                             // The plain `SpawnMinionOnCursor` staves. The ai1
-                            // seed is 1 for 2364/2365/2621/2749/3474
+                            // seed is 1 for 2364/2365/2535/2621/2749/3474
                             // (`:49587-49593`), the ai0 seed 45 for 6164
                             // (`:49595-49596`); every other staff keeps 0/0.
                             let (ai0, ai1) = match held.kind {
-                                2364 | 2365 | 2621 | 2749 | 3474 => (0.0, 1.0),
+                                2364 | 2365 | 2535 | 2621 | 2749 | 3474 => (0.0, 1.0),
                                 6164 => (45.0, 0.0),
                                 _ => (0.0, 0.0),
                             };
-                            let _ = app.projectiles.spawn_with_data_ai_owned(
-                                proj, owner, cursor.x, cursor.y, 0.0, 0.0, unscaled, minion_kb, ai0, ai1,
-                            );
+                            let _ = spawn_minion(&mut app.projectiles, proj, ai0, ai1);
+                        }
+                    } else if def.summon
+                        && crate::projectile::proj_data(proj).is_some_and(|d| d.sentry)
+                    {
+                        // S1-P-i25 round 2 — the sentry-staff spawn arm
+                        // (`Player.cs:48189-48211`): `PickSentryLandingSpot`
+                        // picks the landing point (the cursor column scanned to
+                        // the first solid row, one above; the 3571/3569/5463
+                        // staves skip the scan), the shot drops at `vy = 15`
+                        // (the 5463 barnacle lands at the cursor row, `vy = 0`),
+                        // the `ai0` seed is 60 for the 1572 Frost Hydra / 90 for
+                        // the 5119 Houndius / 0 else, the damage is the SCALED
+                        // `Damage` (`raw`) and `originalDamage` the UNSCALED
+                        // `damage` (`fx_dmg`, `:48209`). The `UpdateMaxTurrets`
+                        // sweep (`:48210`) rides the shared tail below.
+                        let (sx, mut sy) = pick_sentry_landing_spot(&app.world, held.kind, world_pos);
+                        let mut vy = 15.0f32;
+                        let ai0 = match held.kind {
+                            1572 => 60.0,
+                            5119 => 90.0,
+                            5463 => {
+                                // `:48203-48206` — the barnacle lands at the
+                                // cursor's exact world Y, zero fall speed.
+                                sy = world_pos.y;
+                                vy = 0.0;
+                                0.0
+                            }
+                            _ => 0.0,
+                        };
+                        // `NewProjectile`'s half-box subtraction
+                        // (`Projectile.cs:10876-10877`) — the seam takes top-left.
+                        let row = crate::projectile::proj_data(proj);
+                        let (hw, hh) = row.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                        if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
+                            proj,
+                            app.local_id as u8,
+                            sx - hw,
+                            sy - hh,
+                            0.0,
+                            vy,
+                            raw as i32,
+                            fx_kb,
+                            ai0,
+                            0.0,
+                        ) {
+                            app.projectiles.set_original_damage(slot, fx_dmg);
                         }
                     } else if GEM_STAFF_BOLTS.contains(&proj) {
                         // `Player.cs:49262-49375` - the gem-staff shoot.
@@ -1209,6 +1281,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         );
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
+                            // S1-P-i25 round 2 — `Player.cs:49442-49444`: the
+                            // Clay Pot (6161) rides THIS generic tail (no
+                            // `SpawnMinionOnCursor` arm — player-centre spawn,
+                            // aim velocity, SCALED `Damage`), then overrides
+                            // `originalDamage = damage` (the UNSCALED item
+                            // damage) so the pool's `summon_tick_block`
+                            // (`Projectile.cs:16707`) recomputes off it.
+                            if held.kind == 6161 {
+                                app.projectiles.set_original_damage(slot, fx_dmg);
+                            }
                             // `ApplyStatsFromSource` (`Projectile.cs:11119-11141`):
                             // the whip's tag row off the firing item + the
                             // prefix's `bonusTagDamage`, plus `AI_165_Whip`'s
@@ -2079,6 +2161,13 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 }
                 knock_back += resolved.knock_back;
             }
+            // `Player.cs:47151` — `GetWeaponKnockback` runs AFTER the ammo fuse
+            // and the gunProj reset (`:47077-47082`), on the fused value: the
+            // melee glove's ×2 / the Titan buff's ×1.5 / the shroomite-stealth
+            // ranged scale (`:53352-53363`). The gunProj four are Ranged with no
+            // stealth armed in the rigs, so this is the identity there (the
+            // DW-4.2 raw-knockback pins hold).
+            let knock_back = p.weapon_knockback(weapon_def, knock_back);
             let (pcx, pcy) = p.center();
             let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
             if dir == Vec2::ZERO {
@@ -7486,6 +7575,75 @@ mod tests {
             "the crit's draw only"
         );
     }
+
+    /// S1-P-i25 round 2 — `WorldGen.SolidTile2` (`WorldGen.cs:70492-70509`):
+    /// an active solid flat block is solid; a half-brick, an actuated-off tile
+    /// and a sloped block are not; a null (out-of-bounds) tile reads true.
+    #[test]
+    fn i25_sentry_solid_tile2_matches_the_source_predicate() {
+        let mut w = World::new("t".into(), 64, 800);
+        let put = |w: &mut World, x: i32, y: i32, t: Tile| {
+            let i = w.index(x, y);
+            w.tiles[i] = t;
+        };
+        // A flat full stone block: solid.
+        let mut flat = Tile { kind: 1, ..Default::default() };
+        flat.flags |= FLAG_ACTIVE;
+        put(&mut w, 10, 10, flat);
+        assert!(sentry_solid_tile2(&w, 10, 10), "the flat block");
+        // A half-brick: NOT solid (the `!halfBrick()` term).
+        let mut half = flat;
+        half.flags |= tr_core::tile::FLAG_HALF_BRICK;
+        put(&mut w, 11, 10, half);
+        assert!(!sentry_solid_tile2(&w, 11, 10), "the half-brick");
+        // Actuated off: NOT solid (the `!inActive()` term).
+        let mut off = flat;
+        off.flags |= tr_core::tile::FLAG_INACTIVE;
+        put(&mut w, 12, 10, off);
+        assert!(!sentry_solid_tile2(&w, 12, 10), "the actuated-off block");
+        // A sloped block: NOT solid (the `slope() == 0` term).
+        let mut sloped = flat;
+        sloped.set_slope(1);
+        put(&mut w, 13, 10, sloped);
+        assert!(!sentry_solid_tile2(&w, 13, 10), "the sloped block");
+        // Inactive (no FLAG_ACTIVE): NOT solid.
+        put(&mut w, 14, 10, Tile { kind: 1, ..Default::default() });
+        assert!(!sentry_solid_tile2(&w, 14, 10), "the inactive cell");
+        // Out of bounds: the null arm reads true.
+        assert!(sentry_solid_tile2(&w, -1, 10), "the null tile");
+    }
+
+    /// S1-P-i25 round 2 — `PickSentryLandingSpot` (`Player.cs:49525-49543`):
+    /// the scan walks the cursor column (and its two neighbours) down to the
+    /// first solid row, steps back one, and returns `row * 16 - 24` at the
+    /// cursor's exact X. The 3571/3569/5463 staves skip the scan.
+    #[test]
+    fn i25_pick_sentry_landing_spot_scans_to_the_floor() {
+        let mut w = World::new("t".into(), 64, 800);
+        // A floor at row 300 across the three scan columns.
+        for x in 29..=31 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // The cursor high above the floor: the scan drops to row 299.
+        let (sx, sy) = pick_sentry_landing_spot(&w, 1572, Vec2::new(480.0, 4000.0));
+        assert_eq!(sx, 480.0, "the cursor's exact X");
+        assert_eq!(sy, 299.0 * 16.0 - 24.0, "one row above the floor");
+        // A side-column solid stops the scan too (the three-column test):
+        // only column 31 solid at row 250 → the scan stops at 250, back to 249.
+        let i = w.index(31, 250);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let (_, sy2) = pick_sentry_landing_spot(&w, 2366, Vec2::new(480.0, 3000.0));
+        assert_eq!(sy2, 249.0 * 16.0 - 24.0, "the side column stops the scan");
+        // The skip-scan trio lands at the cursor row (no floor walk).
+        for item in [3571u16, 3569, 5463] {
+            let (_, sy3) = pick_sentry_landing_spot(&w, item, Vec2::new(480.0, 4000.0));
+            let row = (4000.0f32 / 16.0) as i32;
+            assert_eq!(sy3, row as f32 * 16.0 - 24.0, "item {item} skips the scan");
+        }
+    }
 }
 
 /// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
@@ -8248,11 +8406,6 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
 
 /// The full use-loop integration — a Slime Staff in hand fires through
 /// `update_editing`: the buff grant, the free-up, the spawn, then the pool's
-/// next tick books the slot.
-#[cfg(test)]
-
-/// The full use-loop integration — a Slime Staff in hand fires through
-/// `update_editing`: the buff grant, the free-up, the spawn, then the pool's
 /// next tick books the slot, and the player tick's arm keeps the buff alive.
 #[cfg(test)]
 mod use_loop_tests {
@@ -8457,6 +8610,283 @@ mod use_loop_tests {
         let b = p.buffs.find_buff_index(125).expect("buff 125 kept");
         assert_eq!(p.buffs.buff_time[b], 18000, "the keep-alive refresh");
         assert!(p.hornet_minion, "the arm's flag");
+    }
+
+    /// S1-P-i25 round 2 — the cursor minion spawn subtracts the half-box:
+    /// `NewProjectile` takes the CENTRE (`Projectile.cs:10876-10877`), the
+    /// port's seam the top-left, so the Hornet's 24x26 box centres on the
+    /// cursor (the reach clamp is the identity here — the cursor sits at the
+    /// player centre).
+    #[test]
+    fn i25_the_minion_cursor_spawn_is_centred_on_the_cursor() {
+        let mut app = app_with_staff(2364); // Hornet Staff — shoot 373 (24x26)
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let (sw, sh) = app.screen_size();
+        let cursor = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 373)
+            .expect("the Hornet spawned");
+        let p = &app.projectiles.slots()[slot];
+        assert_eq!(p.pos.x, cursor.x - 12.0, "centre X minus width/2");
+        assert_eq!(p.pos.y, cursor.y - 13.0, "centre Y minus height/2");
+    }
+
+    /// S1-P-i25 round 2 — the Optic twins centre on the cursor too (each 40x20,
+    /// `Projectile.cs`'s RETANIMINI/SPAZMAMINI slice).
+    #[test]
+    fn i25_the_optic_twins_centre_on_the_cursor() {
+        let mut app = app_with_staff(2535); // Optic Staff — shoot 387
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let (sw, sh) = app.screen_size();
+        let cursor = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+        for s in app.projectiles.slots().iter().filter(|s| s.active && s.minion) {
+            assert_eq!(s.pos.x, cursor.x - 20.0, "the twin's centre X minus 20");
+            assert_eq!(s.pos.y, cursor.y - 10.0, "the twin's centre Y minus 10");
+        }
+    }
+
+    /// S1-P-i25 round 2 — the Clay Pot (6161) has NO `SpawnMinionOnCursor` arm:
+    /// it rides the generic tail (`Player.cs:49437`) — player-centre spawn, aim
+    /// velocity at `shootSpeed`, SCALED damage — then overrides
+    /// `originalDamage = damage` (UNSCALED, `:49442-49444`).
+    #[test]
+    fn i25_the_clay_pot_rides_the_generic_tail_with_the_unscaled_override() {
+        let mut app = app_with_staff(6161); // Clay Pot — shoot 1118, damage 5, speed 10
+        app.player.as_mut().unwrap().minion_damage = 3.0;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 1118)
+            .expect("the Clay Pot minion spawned");
+        let p = &app.projectiles.slots()[slot];
+        assert_eq!(p.damage, 15, "the SCALED spawn damage (5 * 3)");
+        assert_eq!(p.original_damage, 5, "the UNSCALED override (`:49444`)");
+        // The generic aim velocity — NOT the cursor arm's zero. The cursor sits
+        // at the player centre, so the aim folds to the facing (+x).
+        assert!(p.vel.length() > 0.0, "the generic aim velocity, not zero");
+        assert!((p.vel.length() - 10.0).abs() < 1e-3, "shootSpeed 10");
+    }
+
+    /// S1-P-i25 round 2 — the summon shot spends NO crit draw: the C# rolls
+    /// crit at HIT only for melee/ranged/magic (`Projectile.cs:12890-12901`),
+    /// never at spawn for a summon. The plain minion staff's whole use leaves
+    /// the `UpdatePlayers` stream untouched.
+    #[test]
+    fn i25_the_summon_shot_spends_no_crit_draw() {
+        let mut app = app_with_staff(2364); // Hornet Staff — no kind pick
+        let seed = 0x51A7;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.projectiles.slots().iter().any(|s| s.active && s.kind == 373),
+            "the Hornet spawned"
+        );
+        let mut want = tr_core::UnifiedRandom::new(seed);
+        // Zero draws: the stream is byte-equal to its fresh state.
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            want,
+            "the summon shot rolls no crit (no draw)"
+        );
+        // The Pygmy's kind pick is the ONE draw the summon arm spends.
+        let mut pygmy = app_with_staff(1157);
+        *pygmy.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        pygmy.mine_down = true;
+        pygmy.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut pygmy, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        want.next_range(191, 195);
+        assert_eq!(
+            pygmy.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            want,
+            "the Pygmy spends exactly the kind pick, no crit"
+        );
+    }
+
+    /// S1-P-i25 round 2 — the summon staff's knockback takes `GetWeaponKnockback`'s
+    /// `minionKB` add (`Player.cs:47151`/`:53348-53351`): the Hornet's registry base
+    /// plus the accessory's `minionKB`.
+    #[test]
+    fn i25_the_minion_knockback_takes_the_minion_kb_add() {
+        let mut app = app_with_staff(2364); // Hornet Staff
+        app.player.as_mut().unwrap().minion_kb = 2.0;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let p = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 373)
+            .expect("the Hornet spawned");
+        let base = crate::registry::get(2364).unwrap().knock_back;
+        assert_eq!(p.knock_back, base + 2.0, "the minionKB add rides the spawn");
+    }
+
+    /// A staged world for the sentry landing scan: 64 wide, a solid floor row
+    /// at `floor_y`, the player + camera + cursor near column 30 (the reach
+    /// gate passes). The cursor's world point is returned for the assertions.
+    fn sentry_app(item: u16, floor_y: i32, cursor_dy: f32) -> (crate::app::App, Vec2) {
+        let mut w = tr_core::World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, floor_y);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.local_id = 0;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 33.0 * 16.0;
+        player.y = (floor_y - 3) as f32 * 16.0;
+        player.max_turrets = 5;
+        player.max_turrets_old = 5;
+        app.player = Some(player);
+        app.camera = Vec2::new(30.0 * 16.0 + 8.0, (floor_y - 3) as f32 * 16.0 + 8.0);
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = Vec2::new(sw * 0.5, sh * 0.5 + cursor_dy);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: item,
+            name: crate::registry::name(item),
+            count: 1,
+            prefix: 0,
+        };
+        let cursor = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+        (app, cursor)
+    }
+
+    /// One fresh press of the held sentry staff.
+    fn sentry_fire(app: &mut crate::app::App) {
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        let (sw, sh) = app.screen_size();
+        crate::world_sim::editing::update_editing(app, 1.0 / 60.0, Vec2::new(sw, sh));
+    }
+
+    /// S1-P-i25 round 2 — the Frost Hydra (1572 → 308) lands one row above the
+    /// first solid row of the cursor column (`PickSentryLandingSpot`,
+    /// `Player.cs:49525-49543`), drops at `vy = 15`, seeds `ai0 = 60`
+    /// (`:48197-48198`), carries the SCALED damage + the UNSCALED
+    /// `originalDamage` (`:48208-48209`), and centres its 80x74 box.
+    #[test]
+    fn i25_the_frost_hydra_lands_above_the_floor_with_the_ai0_seed() {
+        let (mut app, cursor) = sentry_app(1572, 300, -160.0); // cursor row 287, floor 300
+        app.player.as_mut().unwrap().minion_damage = 2.0;
+        sentry_fire(&mut app);
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 308)
+            .expect("the Frost Hydra spawned");
+        let p = &app.projectiles.slots()[slot];
+        // The scan stops at the floor row 300, steps back to 299: spawnY =
+        // 299*16 - 24 = 4760; the half-box (74/2 = 37) gives top-left 4723.
+        assert_eq!(p.pos.y, 299.0 * 16.0 - 24.0 - 37.0, "one row above the floor, centred");
+        assert_eq!(p.pos.x, cursor.x - 40.0, "the cursor X, centred (80/2)");
+        assert_eq!((p.vel.x, p.vel.y), (0.0, 15.0), "the vy = 15 drop");
+        assert_eq!(p.ai[0], 60.0, "the Frost Hydra ai0 seed (`:48198`)");
+        assert_eq!(p.damage, 200, "the SCALED damage (100 * 2)");
+        assert_eq!(p.original_damage, 100, "the UNSCALED originalDamage (`:48209`)");
+        assert!(p.sentry, "the sentry identification");
+    }
+
+    /// S1-P-i25 round 2 — the Houndius Shootius (5119 → 966) seeds `ai0 = 90`
+    /// (`:48200-48201`) and lands above the floor like the Hydra.
+    #[test]
+    fn i25_the_houndius_seeds_ai0_90() {
+        let (mut app, _cursor) = sentry_app(5119, 300, -160.0);
+        sentry_fire(&mut app);
+        let p = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 966)
+            .expect("the Houndius spawned");
+        assert_eq!(p.ai[0], 90.0, "the Houndius ai0 seed (`:48201`)");
+        assert_eq!(p.vel.y, 15.0, "the vy = 15 drop");
+        assert_eq!(p.pos.y, 299.0 * 16.0 - 24.0 - 30.0, "above the floor, centred (60/2)");
+    }
+
+    /// S1-P-i25 round 2 — the Rainbow Crystal (3571 → 643) SKIPS the landing
+    /// scan (`:49527`'s `num`): it lands at the cursor ROW even with solid
+    /// floor below, `ai0 = 0`, `vy = 15`.
+    #[test]
+    fn i25_the_rainbow_crystal_skips_the_scan_to_the_cursor_row() {
+        let (mut app, cursor) = sentry_app(3571, 300, -160.0); // cursor row 287
+        sentry_fire(&mut app);
+        let p = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 643)
+            .expect("the Rainbow Crystal spawned");
+        let cursor_row = (cursor.y / 16.0) as i32;
+        assert_eq!(
+            p.pos.y,
+            cursor_row as f32 * 16.0 - 24.0 - 16.0,
+            "the cursor row (no scan), centred (32/2)"
+        );
+        assert_eq!(p.ai[0], 0.0, "no ai0 seed for the crystal");
+        assert_eq!(p.vel.y, 15.0, "the vy = 15 drop");
+    }
+
+    /// S1-P-i25 round 2 — the Dead Cells Barnacle (5463 → 1025) lands at the
+    /// cursor's exact world Y with `vy = 0` (`:48203-48206`), `ai0 = 0`.
+    #[test]
+    fn i25_the_barnacle_lands_at_the_cursor_row_with_zero_velocity() {
+        let (mut app, cursor) = sentry_app(5463, 300, -160.0);
+        sentry_fire(&mut app);
+        let p = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 1025)
+            .expect("the Barnacle spawned");
+        assert_eq!(p.pos.y, cursor.y - 19.0, "the cursor Y, centred (38/2)");
+        assert_eq!(p.pos.x, cursor.x - 21.0, "the cursor X, centred (42/2)");
+        assert_eq!((p.vel.x, p.vel.y), (0.0, 0.0), "the vy = 0 barnacle");
+        assert_eq!(p.ai[0], 0.0, "no ai0 seed for the barnacle");
+    }
+
+    /// S1-P-i25 round 2 — the sentry spawn runs `UpdateMaxTurrets` right after
+    /// (`Player.cs:48210`): over `max_turrets` the lowest-`timeLeft` wipable
+    /// sentry dies. Two fresh Hydras at the cap of 1 leave only the newest.
+    #[test]
+    fn i25_the_sentry_spawn_runs_the_turret_cap_sweep() {
+        let (mut app, _cursor) = sentry_app(1572, 300, -160.0);
+        app.player.as_mut().unwrap().max_turrets = 1;
+        // An older Hydra with a lower timeLeft — the sweep's victim.
+        let old = app
+            .projectiles
+            .spawn_with_data_ai_owned(308, 0, 100.0, 100.0, 0.0, 0.0, 100, 7.5, 60.0, 0.0)
+            .unwrap();
+        app.projectiles.slots_mut()[old].time_left = 100;
+        sentry_fire(&mut app);
+        assert!(!app.projectiles.slots()[old].active, "the oldest (lowest timeLeft) evicted");
+        let live = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|s| s.active && s.kind == 308)
+            .count();
+        assert_eq!(live, 1, "the cap of 1 holds after the spawn");
     }
 }
 
