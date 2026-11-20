@@ -33917,3 +33917,206 @@ against the decompiled C# (0 mismatches); the f32→f64 ladder boundaries
 were computed with exact f32 rounding (the six diverging prefixes pinned
 in the witness). The 5 new/updated witness tests are WRITTEN, NOT RUN —
 **no compiler invoked**.
+## The coin pickup/denomination wave (S1-P-i50, task/S1-P-i50-coin-greed, 2026-11-20, code-only mode)
+
+The coin grab census (`Player.cs` GrabItems/GetItem/DoCoins + `Item.cs`
+coin logic) against the port, and the WRONGs fixed verbatim. **No compiler
+invoked — the witness tests are WRITTEN, NOT RUN.**
+
+### The census verdicts
+
+- **`Item.IsACoin`** (`Item.cs:373-383`, `(uint)(type - 71) <= 3`) — the
+  port's `registry::is_coin` (`71..=74`) is exact. OK.
+- **The coin item defaults** (`Item.cs:2218-2300`): copper/silver/gold
+  `maxStack 100`, platinum `maxStack 9999` (the `ResetStats`
+  `CommonMaxStack`, `:49017`/`:49966` — platinum has NO `maxStack` override),
+  `ammo = AmmoID.Coin (71)`, `notAmmo = true`, `value` 5/500/50000/5000000
+  (the SELL value, 5x the copper worth). The generated `itemdata.rs` rows
+  71-74 carry all of these. OK.
+- **`DoCoins`** (`Player.cs:39246-39262`) — was UNPORTED everywhere (the
+  `chest.rs:1120`/`:1365` comments admitted it). NOW PORTED
+  (`item.rs::do_coins`): a slot at exactly 100 of 71/72/73 converts to ONE
+  of the next denomination (`SetDefaults(type+1)` resets stack to 1 and
+  prefix to 0), then merges into the first OTHER same-type slot below 54
+  with room (`stack++`, source `TurnToAir`, recursive `DoCoins(j)`).
+  Platinum never converts; the merge scan never reaches the ammo slots
+  54-57. The port's split storage (grid 0..50 / coins 50..54 / ammo 54..58)
+  is walked in C# index order via `carry_slots_mut`; the tail recursion is
+  a loop (after a merge the source is air, so the C#'s continued scan can
+  never fire again). Wired at the world-pickup coin block, `bank::loot_all`
+  and `chest::quick_transfer_from_slot` (the `GetItem` fill sites
+  `:39503`/`:39519`/`:39569`). The `FillAmmo` sites (`:39286`/`:39301`/
+  `:39319`) stay out with the unported ammo-accept pre-pass.
+- **The coin slot priority** — the task brief said "54-57"; the C# coin
+  slots are **50-53** (`Main.cs:41753-41764` draws them at `slot = num67 +
+  50`; 54-57 are the AMMO slots, `:41771-41782`). The port's `inv.rs`
+  numbering already matched; the world pickup now routes coins through the
+  `GetItem` isACoin arm (`Player.cs:39340-39344`: `num2 = -4`, `num = 54`)
+  — occupied coin rows ascending, occupied grid ascending, empty coin rows
+  DESCENDING, empty grid descending (the `!isACoin` gate `:39365` skips the
+  coin hotbar-first empty pass). The surplus stays a world drop
+  (`PickupItem`'s `ReplaceWith`, `:35102-35103`); the vault is the last
+  resort (`:39395-39398`, `PickupItemFromWorld`'s `CanGoIntoVoidVault: true`,
+  `GetItemSettings.cs:57`).
+- **The Gold Ring family** (`goldRing`, `Player.cs:2642`): 3033 Gold Ring /
+  3034 Coin Ring / 3035 Greedy Ring arm it (`ApplyEquipFunctional`
+  `:14980-14996`); `ResetEffects` clears it (`:18504`). The grab range
+  (`GetItemGrabRange` `:35133-35136`) adds `Item.coinGrabRange = 350`
+  (`Item.cs:49962`) to the base 42 for coins ONLY; the pull arm
+  (`GrabItems` `:34961-34963`) uses `PullItem_Pickup(12f, 5)` — the
+  `(v*(acc-1) + pull)/acc` blend with `pull = d * (speed/dist)`
+  (`:35031-35041`). NOW PORTED (`item.rs::item_grab_range` + the
+  `ItemDrop::update` gold-ring branch). The plain magnet keeps the port's
+  recorded 8/4-speed stand-in for non-ring drops; the collect gate stays
+  the 10 px centre stand-in for the C# hitbox intersection.
+- **The Lucky Coin family** (`hasLuckyCoin`/`hasLuck_LuckyCoin`,
+  `Player.cs:2638`/`:2650`): 855 Lucky Coin / 3034 / 3035 arm both flags
+  together (`:14975-14996`); `ResetEffects` clears both (`:18760`/`:18762`).
+  The port carries ONE bool (`has_lucky_coin`) — the flags are never set
+  apart. The +0.05 `equipmentBasedLuckBonus` add is the `UpdateEquips` TAIL's
+  single `hasLuck_LuckyCoin` gate (`:13066-13069`), applied ONCE after the
+  slot loop (two rings still add 0.05) — NOT per accessory. The melee proc
+  (`ApplyNPCOnHitEffects` `:44537-44549`): `npc.value > 0 && hasLuckyCoin &&
+  Next(5) == 0` → type 71, upgraded to 72 on `Next(10) == 0` and to 73 on
+  `Next(100) == 0` (independent rolls, gold wins), then
+  `RequestNewItem(stack: Next(1, 11), velocity: (Next(10, 31)*0.2*direction,
+  Next(-20, 1)*0.2), center: npc.Center, prefix: 0)`. NOW PORTED in
+  `world_sim/editing.rs` AFTER the strike + combat text + hit cue (the C#
+  `:44404` order), on a landed hit regardless of the kill. The Greedy Ring's
+  `discountEquipped` half has no port consumer (the shop-price lane).
+- **The revenge coin-suck** (`WorldItem.GetPickedUpByMonsters_Money`
+  `:1118-1201`) — the port had FIVE WRONGs, all fixed verbatim:
+  1. **`hp > 5` → `max_hp > 5`** (`:1124` reads `lifeMax`, not `life`).
+  2. **Missing gates**: `!friendly && !immortal && !dontTakeDamage &&
+     !CantTakeLunchMoney[type]` (`:1124`, the 39-id set `NPCID.cs:10133`).
+  3. **Missing expert gate**: the whole arm is `Main.expertMode && IsACoin`
+     (`:408-410`) — classic mode never sucks.
+  4. **The 16x24 centre window → the hitbox intersection** (`:1155`'s
+     `rectangle.Intersects(nPC.Hitbox)`, truncated int boxes).
+  5. **The `count == 1` RNG short-circuit removed** — a 1-stack draws the
+     same `Next(50, 76)` + copper `Next(51)` / silver `Next(26)` pair
+     (`:1157-1165`); the clamp `(int)(stack*num5)` 1..stack (`:1170-1178`)
+     already yields 1 for a 1-stack. Also: the C# processes EVERY
+     intersecting NPC (no break) and redirects the budget/deposit to the
+     `realLife` CARRIER (`:1143-1154`, the port's `Npc::carrier_index`); the
+     `extraValue < value && extraValue + value < 999000000` compares are f32
+     widenings (`:1155`).
+- **The coin pickup sound pitch** — `SoundID.CoinPickup = 38`
+  (`SoundID.cs:98`), case 38 (`LegacySoundPlayer.cs:1337-1350`):
+  `Next(5)` slot THEN `Next(-40, 41) * 0.002` pitch (TWO draws, slot first);
+  the Grab (7) chime is one `Next(-10, 11) * 0.01` (`:725`). The port's
+  `sound::coin_pickup_case38` + `Audio::play_pickup_sound` already carried
+  these (S1-E-21f); the coin routing now plays ONE 38-chime PER accepted
+  slot (the C# per-fill-site shape) on the `UpdatePlayers` stream, and the
+  revenge `moneyPing` (38 at the drop's top-left, `NPC.cs:90052-90054`)
+  rides `UpdateItems` right after the share draws. OK (verified, no change
+  to the case maths).
+- **The coin luck** (`AddCoinLuck`/`UpdateCoinLuck`/`CalculateCoinLuck`,
+  `Player.cs:18090-18153`) — already ported verbatim in `luck.rs` (the
+  1000 px window, the 1e6 cap, the 0.9999^dayRate decay with the 0.25 floor,
+  the tier ladder incl. the duplicated unreachable `> 24900` branch and the
+  `(double)` widening quirks). The shimmer-coin feed (`WorldItem.cs:1715`)
+  is its only C# caller and is wired. OK (verified, no change).
+
+### Deliberate deviations (recorded)
+
+- **The `App.coins` purse stays a value mirror.** The C# has NO aggregate
+  purse — `Utils.CoinsCount` walks the inventory stacks. The port's
+  shop/reforge/death/save lanes read the copper total `App.coins`, so the
+  world coin pickup now credits the mirror with the copper value of what
+  the INVENTORY stacks take (the vault remainder excluded — the bank is not
+  spendable) while the stacks are the 1:1 storage. The full reconciliation
+  (deriving the purse from the stacks everywhere) is the recorded follow-up;
+  it touches the shop/death/save lanes outside this coins-only slice.
+- **The plain magnet's 8/4-speed pull + the 10 px collect gate** stay the
+  port's stand-ins for non-Gold-Ring drops (the C# `PullItem_Common`
+  `:34983-35029` + the hitbox intersection); only the Gold Ring's coin pull
+  is the verbatim `PullItem_Pickup(12f, 5)` blend.
+- **The Lucky Coin proc's `enemyGrabDelayTime = 100`** (`Item.cs:49757-49760`,
+  `WorldItem.DefaultGrabDelay`, `WorldItem.cs:110`) has no port field — the
+  player pickup delay (0.35 s) is the standing stand-in; the revenge arm's
+  expert gate keeps the proc's coin safe in classic mode regardless.
+- **The projectile-side Lucky Coin proc** (`Projectile.cs:13685`, the
+  `Next(1, 11)` draw discarded, stack 1) is its own unported row.
+
+### RNG order (the pitch/share/proc rolls)
+
+- The revenge share: `Next(50, 76)` then copper `Next(51)` / silver `Next(26)`
+  (NO count-1 shortcut), then the moneyPing case-38 pair `Next(5)` +
+  `Next(-40, 41)` — all on `UpdateItems` (`WorldItem.UpdateItem` under the
+  `Main.cs:18024` swap), per intersecting NPC in index order.
+- The coin pickup chime: case-38 `Next(5)` + `Next(-40, 41)` per accepted
+  slot, on `UpdatePlayers` (the `GrabItems` caller, `Main.cs:17754`).
+- The Lucky Coin melee proc: `Next(5)` gate, then (on 0) `Next(10)`,
+  `Next(100)`, `Next(1, 11)`, `Next(10, 31)`, `Next(-20, 1)` — six draws
+  when it fires, one when it refuses — on `UpdatePlayers`, AFTER the
+  strike/crit/DamageVar/probe/combat-text/hit-cue draws. The explicit
+  velocity skips `Item.NewItem`'s spread draws (`Item.cs:49738-49740`) and
+  `prefix: 0` draws nothing.
+
+### Witnesses (WRITTEN, NOT RUN)
+
+`item.rs`: `s1_p_i50_do_coins_*` (the conversion, the merge + air-out, the
+recursive chain, the exact-100 guard, the <54 scan bound),
+`s1_p_i50_the_gold_ring_*` (the grab range, the pull blend).
+`player.rs`: `s1_p_i50_the_coin_ring_family_arms_its_flags` (the equip
+grants, the once-only +0.05 luck tail, the per-tick reset).
+`world_sim/items.rs`: `s1_p_i50_a_coin_drop_*` (the coin-row priority, the
+partial merge), `s1_p_i50_pickup_converts_*` / `s1_p_i50_the_conversion_chain_*`
+(DoCoins on pickup, the platinum floor), `s1_p_i50_the_gold_ring_collects_*`
+(the far coin), the expert/classic revenge twins.
+`world_sim/editing.rs`: `s1_p_i50_the_lucky_coin_proc_draws_and_spawns_on_a_landed_hit`
+(the differential RNG witness: the ring's stream is the no-ring's advanced
+by exactly 1 or 6 draws; the spawn shape pinned when the gate fires).
+
+### The retry round (W3-i50b, 2026-11-20 — the original run went silent mid-flight)
+
+The original worker's implementation landed as `d0deb3b8` while the retry
+census was running; the retry re-audited the committed state against the C#
+and fixed THREE residual WRONGs (all coin-lane, all test-visible):
+
+1. **The deferred `DoCoins` sweep changed slot placement.** The first round
+   ran `do_coins_sweep` AFTER all fills, claiming "conversions commute with
+   the fills". FALSE: `Player.DoCoins` fires INSIDE each fill
+   (`Player.cs:39503` full-fit / `:39519` cap-fill / `:39569` empty-fill), so
+   a conversion can merge-and-air a coin row that the LATER empty pass
+   (`:39387-39394`, descending) then refills. Concrete divergence: 55 copper
+   onto row 50 = 95 copper + row 51 = 99 silver (rows 52/53 platinum): the
+   C# fills row 50 to 100 → 1 silver → merges into row 51 → 100 silver →
+   1 gold, airs row 50, and the 50-copper remainder refills the AIRED row 50;
+   the deferred sweep left row 50 full at empty-pass time and parked the
+   remainder in the grid. FIX: all three fill sites (`world_sim/items.rs`
+   coin block, `bank::loot_all`, `chest::quick_transfer_from_slot`) now walk
+   the `carry_slots_mut` view in C# index order (occupied `i = -4..50` →
+   coin rows 50-53 then grid 0-49; empty `i = 53..0` descending) and call
+   `do_coins(i)` IMMEDIATELY per fill. `do_coins_sweep` is REMOVED (its
+   doc claim was the defect).
+2. **`bank::loot_all` filled empty coin rows ASCENDING and had no grid
+   passes.** The C# `GetItem` empty scan is `num - 1 ..= 0` over 0..54
+   (`Player.cs:39387-39394`): row 53 first, and coins overflow into the grid
+   when the four rows are full. The first round's `loot_all` put the stack
+   in row 0 and kept the overflow in the container even with free grid
+   slots. FIX: the same carry-view walk as (1). The two DW-3.1 clicks
+   witnesses and the vault witness now assert row 53 (the descending fill).
+3. **A purse-mirror witness mis-seeded the purse.**
+   `s1_p_i50_pickup_converts_a_full_coin_row_via_do_coins` pre-seeded a
+   95-copper row but left `app.coins = 0`, then asserted the mirror read 100
+   after a 5-copper pickup — the mirror credits only what the DROP carries
+   (5), so the assertion could never hold. FIX: the fixture seeds
+   `app.coins = 95` (the pre-existing stacks' value), the assertion stays
+   100.
+
+New witnesses (WRITTEN, NOT RUN): `bank.rs::
+s1_p_i50_loot_all_fills_the_coin_rows_descending_and_overflows_to_the_grid`
+(the descending empty fill, the grid overflow, the occupied-grid merge +
+immediate conversion), `world_sim/items.rs::
+s1_p_i50_the_immediate_do_coins_lets_the_empty_pass_refill_the_aired_row`
+(the discriminating placement case above — a deferred sweep fails it).
+The retry verified the rest of `d0deb3b8` against the C# unchanged: the
+`do_coins` guard/merge/chain (`Player.cs:39246-39262`), the Gold Ring range
++ pull blend (`:35133`/`:35031-35041`, `Item.cs:49962`), the Lucky Coin
+equip grants + once-only luck tail (`:14975-14996`/`:13066-13069`), the
+melee proc's six-draw order (`:44537-44549`), the revenge arm's five fixes
+(`WorldItem.cs:1118-1201`), the case-38 pitch maths
+(`LegacySoundPlayer.cs:1337-1350`) and the coin-luck ladder
+(`Player.cs:18115-18153`). **No compiler invoked — tests written, not run.**

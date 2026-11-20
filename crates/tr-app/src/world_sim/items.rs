@@ -19,6 +19,17 @@ const LAVA_IMMUNE: &[u16] = &[
     318, 312, 173, 174, 175, 4422, 2701, 205, 206, 207, 1128, 2340, 2739, 2492, 1127, 85, 581, 582,
 ];
 
+/// `NPCID.Sets.CantTakeLunchMoney` (`NPCID.cs:10133`):
+/// `CreateBoolSet(394, 393, 392, 690, 492, 491, 662, 384, 478, 535, 658,
+/// 659, 660, 128, 131, 129, 130, 139, 267, 247, 248, 246, 249, 245, 409,
+/// 410, 397, 396, 401, 400, 440, 68, 534, 316, 259, 260, 43, 175, 101)` —
+/// the NPCs the revenge coin-suck refuses (`WorldItem.cs:1124`).
+const CANT_TAKE_LUNCH_MONEY: &[u16] = &[
+    394, 393, 392, 690, 492, 491, 662, 384, 478, 535, 658, 659, 660, 128, 131, 129, 130, 139, 267,
+    247, 248, 246, 249, 245, 409, 410, 397, 396, 401, 400, 440, 68, 534, 316, 259, 260, 43, 175,
+    101,
+];
+
 pub(crate) fn update_items(app: &mut App, dt: f32) {
     if app.is_client() {
         // The host owns the drops: ask it to collect whatever lies in our
@@ -84,6 +95,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let items = &mut app.items;
     let coins = &mut app.coins;
     let inventory = &mut app.inventory;
+    let equip = &mut app.equip;
     let audio = &mut app.audio;
     let mut voodoo: Option<(Vec2, u32)> = None;
     // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
@@ -142,7 +154,11 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             let pc = Vec2::new(pl.center().0, pl.center().1);
             let (mana, mana_max) = (pl.mana, pl.mana_max);
             let vault_enabled = pl.void_vault_enabled;
+            // `Main.expertMode` — the port's `buffs.expert_mode` mirror;
+            // gates the revenge coin-suck (`WorldItem.cs:408-411`).
+            let expert_mode = pl.buffs.expert_mode;
             let flags = crate::item::GrabFlags {
+                gold_ring: pl.gold_ring,
                 journey_far_range: pl.far_placement_range,
                 ..Default::default()
             };
@@ -165,71 +181,215 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     continue;
                 }
                 if registry::is_coin(kind) {
-                    // The coin wallet path (the port's `App.coins` purse —
-                    // the coin-slot routing is i50's). The revenge suck
-                    // (`WorldItem.cs:1125-1200`) runs here on the pickup,
-                    // the port's recorded placement deviation: a nearby
-                    // hostile NPC (lifeMax > 5, not statue-spawned) takes
-                    // 50-75% of the stack into `extraValue`.
+                    // S1-P-i50 — the revenge pickup arm
+                    // (`WorldItem.GetPickedUpByMonsters_Money`,
+                    // `WorldItem.cs:1118-1201`): EXPERT-ONLY (`:408-410` —
+                    // `Main.expertMode && this.IsACoin`), a nearby hostile
+                    // NPC (`lifeMax > 5`, not friendly/immortal/
+                    // dontTakeDamage/statue-spawned, not
+                    // `NPCID.Sets.CantTakeLunchMoney`, `:1124`) whose
+                    // hitbox intersects the drop's sucks 50-75% of the
+                    // stack into `extraValue` while the CARRIER's
+                    // `extraValue < value && extraValue + value <
+                    // 999000000` (`realLife` redirect, `:1143-1155`).
                     let mut drop = items[i].clone();
-                    let coin_copper = registry::coin_value(kind) * drop.count as u64;
-                    let mut picked = 0u64;
-                    if let Some(npc) = app.npcs.iter_mut().find(|n| {
-                        n.hp > 5
-                            && !n.spawned_from_statue
-                            && (n.center().0 - drop.center().x).abs() < 16.0
-                            && (n.center().1 - drop.center().y).abs() < 24.0
-                            && n.extra_value < coin_copper
-                            && n.extra_value + coin_copper < 999_000_000
-                    }) {
-                        // `num5 = Main.rand.Next(50, 76) * 0.01f` + the
-                        // copper (71) `Next(51)` and silver (72) `Next(26)`
-                        // extras, clamped at 1f; `num6 = (int)(stack * num5)`
-                        // clamped 1..stack (`WorldItem.cs:1158-1172`). The
-                        // draws ride the `UpdateItems` stream (the port's
-                        // pickup lives in the items pass).
-                        let share = if drop.count == 1 {
-                            1
-                        } else {
-                            let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
-                            let mut num5 = rng.next_range(50, 76) as f32 * 0.01;
-                            if kind == 71 {
-                                num5 += rng.next_max(51) as f32 * 0.01;
+                    if expert_mode {
+                        let coin_copper = registry::coin_value(kind) * drop.count as u64;
+                        // The C# walks Main.npc in index order and processes
+                        // EVERY intersecting NPC (no break, `:1121-1200`);
+                        // the port's compacted list keeps the same order.
+                        let (dx0, dy0) = (drop.pos.x as i32, drop.pos.y as i32);
+                        let dsz = crate::item::SIZE as i32;
+                        let mut n_idx = 0;
+                        while n_idx < app.npcs.len() && drop.count > 0 {
+                            let eligible = {
+                                let n = &app.npcs[n_idx];
+                                let (nw, nh) = n.size();
+                                // `:1124`'s gate row + `:1155`'s rectangle
+                                // intersection (truncated int boxes).
+                                n.max_hp > 5
+                                    && !n.friendly
+                                    && !n.immortal
+                                    && !n.dont_take_damage
+                                    && !n.spawned_from_statue
+                                    && !CANT_TAKE_LUNCH_MONEY.contains(&n.kind.cs_id())
+                                    && dx0 < (n.x as i32) + nw as i32
+                                    && dx0 + dsz > n.x as i32
+                                    && dy0 < (n.y as i32) + nh as i32
+                                    && dy0 + dsz > n.y as i32
+                            };
+                            if eligible {
+                                // `:1143-1154` — the realLife redirect: the
+                                // carrier's extraValue is the budget and the
+                                // deposit target (`Npc::carrier_index`, the
+                                // port's stable worm_id/seg_index link).
+                                let target = crate::npc::Npc::carrier_index(&app.npcs, n_idx)
+                                    .unwrap_or(n_idx);
+                                let extra = app.npcs[target].extra_value;
+                                // `:1155` — the f32 compares, widened exactly.
+                                if (extra as f32) < coin_copper as f32
+                                    && (extra as f32 + coin_copper as f32) < 999_000_000.0
+                                {
+                                    // `num5 = Main.rand.Next(50, 76) * 0.01f`
+                                    // + the copper (71) `Next(51)` and silver
+                                    // (72) `Next(26)` extras, clamped at 1f;
+                                    // `num6 = (int)(stack * num5)` clamped
+                                    // 1..stack (`WorldItem.cs:1157-1178`). NO
+                                    // count==1 short-circuit — a 1-stack draws
+                                    // the same pair. The draws ride the
+                                    // `UpdateItems` stream (`Main.cs:18024`).
+                                    let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+                                    let mut num5 = rng.next_range(50, 76) as f32 * 0.01;
+                                    if kind == 71 {
+                                        num5 += rng.next_max(51) as f32 * 0.01;
+                                    }
+                                    if kind == 72 {
+                                        num5 += rng.next_max(26) as f32 * 0.01;
+                                    }
+                                    num5 = num5.min(1.0);
+                                    let share =
+                                        ((drop.count as f32 * num5) as u32).clamp(1, drop.count);
+                                    let picked = registry::coin_value(kind) * share as u64;
+                                    app.npcs[target].extra_value += picked;
+                                    drop.count -= share;
+                                    // S1-E-21f — `NPC.moneyPing` (`NPC.cs:
+                                    // 90052-90054`, `WorldItem.cs:1189`):
+                                    // `PlaySound(38, base.position)` at the
+                                    // DROP's top-left, right after the share
+                                    // draws on the same `UpdateItems` stream.
+                                    audio.play_coin_ping(
+                                        drop.pos.x,
+                                        drop.pos.y,
+                                        app.rngs.stream(crate::app::RngKey::UpdateItems),
+                                    );
+                                }
                             }
-                            if kind == 72 {
-                                num5 += rng.next_max(26) as f32 * 0.01;
-                            }
-                            num5 = num5.min(1.0);
-                            ((drop.count as f32 * num5) as u32).clamp(1, drop.count)
-                        };
-                        picked = registry::coin_value(kind) * share as u64;
-                        npc.extra_value += picked;
-                        drop.count -= share;
+                            n_idx += 1;
+                        }
+                        if drop.count == 0 {
+                            // `:1195-1198` — `TurnToAir`.
+                            items.swap_remove(i);
+                            continue;
+                        }
                     }
-                    if picked > 0 {
-                        // S1-E-21f — `NPC.moneyPing` (`NPC.cs:90052-90054`,
-                        // `WorldItem.cs:1189`): case 38's two draws ride the
-                        // `UpdateItems` stream, right after the share draws.
-                        audio.play_coin_ping(
-                            drop.pos.x,
-                            drop.pos.y,
-                            app.rngs.stream(crate::app::RngKey::UpdateItems),
+                    // S1-P-i50 — the coin routing: `Player.GetItem`'s isACoin
+                    // arm (`Player.cs:39330-39344`) fills the coin slots 50-53
+                    // first (occupied merges ascending, then empty fills
+                    // DESCENDING — the `num = 54` reverse scan `:39387-39394`),
+                    // then the grid 0..49 occupied merges (`:39353-39364`), then
+                    // the grid empty fills descending. Coins have `useStyle 1`
+                    // but the `!isACoin` gate (`:39365`) skips their
+                    // hotbar-first empty pass. The stacks are the 1:1 storage;
+                    // the `App.coins` purse stays a mirror for the
+                    // shop/death/save lanes (the recorded deviation, ANALYSIS
+                    // S1-P-i50).
+                    let mut remaining = drop.count;
+                    let cap = registry::max_stack(kind);
+                    // The purse mirror credits what the INVENTORY stacks take
+                    // (the vault remainder is banked, not spendable).
+                    let purse_before = remaining;
+                    {
+                        // The carry view in C# `Player.inventory` index order
+                        // (grid 0..50, coin rows 50..54; the ammo rows 54..58
+                        // are never touched — coins are `notAmmo`, so
+                        // `FitsAmmoSlot` is false and both `GetItem` scans
+                        // stop at 54). S1-P-i50 retry: `DoCoins` runs
+                        // IMMEDIATELY per fill (`Player.cs:39503`/`:39519`/
+                        // `:39569`), NOT as a post-sweep — a conversion can
+                        // merge-and-air a coin row the later empty pass then
+                        // refills, so the deferred sweep changed slot
+                        // placement. The conversion is RNG-free; the chime
+                        // fires per accepted slot BEFORE the fill (`:39491`/
+                        // `:39559`, S1-P-i43's faithful-cue decision), on the
+                        // `UpdatePlayers` stream (the GrabItems caller).
+                        let mut slots =
+                            crate::item::carry_slots_mut(inventory, &mut equip.coins, None);
+                        let n = slots.len(); // INV + COINS = 54
+                        // Occupied pass, C# `i = -4..50` (`num2 = -4`,
+                        // `:39353-39364`): coin rows 50-53 first, then the
+                        // grid 0-49, ascending.
+                        for i in (crate::item::INV..n).chain(0..crate::item::INV) {
+                            if remaining == 0 {
+                                break;
+                            }
+                            let s = &mut *slots[i];
+                            if s.count > 0
+                                && s.kind == kind
+                                && s.prefix == drop.prefix
+                                && s.count < cap
+                            {
+                                let room = cap - s.count;
+                                audio.play_pickup_sound(
+                                    true,
+                                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                                ); // `:39491` — before the fill
+                                if remaining <= room {
+                                    s.count += remaining;
+                                    remaining = 0;
+                                    crate::item::do_coins(&mut slots, i); // `:39503`
+                                    break;
+                                }
+                                s.count = cap;
+                                remaining -= room;
+                                crate::item::do_coins(&mut slots, i); // `:39519`
+                            }
+                        }
+                        // Empty pass, C# `i = 53..0` DESCENDING (the
+                        // non-favorited reverse scan `:39387-39394`; the
+                        // `!isACoin` gate `:39365` skips the coin hotbar-first
+                        // empty pass; world drops are never favorited).
+                        for i in (0..n).rev() {
+                            if remaining == 0 {
+                                break;
+                            }
+                            if slots[i].count == 0 {
+                                audio.play_pickup_sound(
+                                    true,
+                                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                                ); // `:39559`
+                                *slots[i] = crate::item::ItemSlot {
+                                    kind,
+                                    name: registry::name(kind),
+                                    count: remaining,
+                                    prefix: drop.prefix,
+                                };
+                                remaining = 0;
+                                crate::item::do_coins(&mut slots, i); // `:39569`
+                            }
+                        }
+                    }
+                    let into_inventory = purse_before - remaining;
+                    if into_inventory > 0 {
+                        *coins = (*coins)
+                            .saturating_add(registry::coin_value(kind) * into_inventory as u64);
+                    }
+                    // The vault last resort (`Player.cs:39395-39398`,
+                    // `PickupItemFromWorld`'s `CanGoIntoVoidVault: true`,
+                    // `GetItemSettings.cs:57`) — coins included; the fills
+                    // chime per accepted slot INSIDE the helper (`:39444`/
+                    // `:39534`, S1-P-i43) on the `UpdatePlayers` stream.
+                    if remaining > 0 && vault_enabled && crate::bank::can_void_vault_accept(kind)
+                    {
+                        let taken = crate::bank::void_vault_take(
+                            &mut player.as_mut().unwrap().banks[3],
+                            kind,
+                            drop.prefix,
+                            remaining,
+                            cap,
+                            true,
+                            audio,
+                            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                         );
+                        remaining -= taken;
                     }
-                    if drop.count == 0 {
+                    if remaining == 0 {
                         items.swap_remove(i);
                         continue;
                     }
-                    *coins = (*coins)
-                        .saturating_add(registry::coin_value(kind) * drop.count as u64);
-                    // S1-E-21f — the coin chime (`Player.cs:39444`:
-                    // `PlaySound(newItem.IsACoin ? 38 : 7)`, UNPOSITIONED)
-                    // on the `UpdatePlayers` stream (the GrabItems caller).
-                    audio.play_pickup_sound(
-                        true,
-                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    );
-                    items.swap_remove(i);
+                    // `PickupItem`'s `ReplaceWith(item)` (`Player.cs:
+                    // 35102-35103`) — the surplus stays a world drop.
+                    items[i].count = remaining;
+                    i += 1;
                     continue;
                 }
                 // `PickupItem`'s inventory arm (`:35099-35108`): `GetItem`
@@ -326,8 +486,10 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             }
             // `:34935-34972` — the pull arms. `flag2` = the heart/star
             // family; at full mana without the Mana Magnet they are not
-            // pulled at all (`:34947`). The accessory grants are the
-            // `GrabFlags` seam (unported equipment families).
+            // pulled at all (`:34947`). The manaMagnet/lifeMagnet/treasure/
+            // nebula grants are the `GrabFlags` seam (unported equipment
+            // families); the Gold Ring's coin pull is live (S1-P-i50,
+            // `PullItem_Pickup(12f, 5)` `:34961-34963`).
             let drop = &mut items[i];
             drop.shimmered = false;
             drop.being_grabbed = true;
@@ -338,6 +500,14 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 if status.to_void_vault {
                     // `PullItem_ToVoidVault` (`:34978-34981`).
                     crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 12.0, 5);
+                } else if flags.gold_ring && registry::is_coin(kind) {
+                    // `:34961-34963` — the Gold Ring's coin pull, the
+                    // 4:1 velocity blend `(v*4 + pull)/5`.
+                    crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 12.0, 5);
+                } else if flags.journey_far_range {
+                    // `:34965-34967` — the Journey far-range pull,
+                    // `PullItem_Pickup(7f, 1)` (no blend).
+                    crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 7.0, 1);
                 } else {
                     crate::item::pull_item_common(drop.center(), &mut drop.vel, pc, pvx, 0.75);
                 }
@@ -923,23 +1093,27 @@ mod spawn_rng_tests {
     }
 
     /// The revenge coin-suck's faithful share shape
-    /// (`WorldItem.cs:1158-1172`): `Next(50, 76) * 0.01f` plus the copper (71)
+    /// (`WorldItem.cs:1157-1178`): `Next(50, 76) * 0.01f` plus the copper (71)
     /// `Next(51)` and silver (72) `Next(26)` extras on the `UpdateItems`
-    /// stream — a copper stack spends exactly two draws.
+    /// stream — a copper stack spends exactly two draws. S1-P-i50: the arm
+    /// is EXPERT-ONLY (`WorldItem.cs:408-410`), so the fixture arms
+    /// `buffs.expert_mode`; the classic-mode twin draws nothing.
     #[test]
     fn the_revenge_share_draws_next_50_76_plus_the_coin_extras() {
         let mut app = flow_app(None, vec![], vec![]);
         let mut w = crate::test_world_helpers::ground();
         w.compute_column_surface();
         app.world = w;
-        app.player = Some(Player::spawn(&app.world));
+        let mut player = Player::spawn(&app.world);
+        player.buffs.expert_mode = true; // `Main.expertMode` (`:408`)
+        app.player = Some(player);
         let (px, py) = app.player.as_ref().unwrap().center();
         // A copper coin stack at the player's feet (the pickup magnet range).
         let mut drop = ItemDrop::new(71, 10, 0, px, py, 0.0, 0.0, 0.0);
         drop.age = 1.0;
         // A hostile NPC straddling the drop's box (lifeMax > 5, not
-        // statue-spawned, within the 16x24 px window): its center pinned to
-        // the drop's.
+        // friendly/immortal/statue-spawned, hitbox intersection `:1155`):
+        // its center pinned to the drop's.
         let mut zombie = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
         zombie.hp = zombie.max_hp;
         let (zw, zh) = zombie.size();
@@ -958,7 +1132,6 @@ mod spawn_rng_tests {
         // then S1-E-21f's moneyPing case-38 pair (Next(5) slot, Next(-40,41)
         // pitch — `NPC.cs:90054`, the same UpdateItems stream) when the
         // revenge arm ran.
-        let sucked = app.npcs[0].extra_value;
         let mut expect = UnifiedRandom::new(4242);
         if sucked > 0 {
             expect.next_range(50, 76);
@@ -970,6 +1143,32 @@ mod spawn_rng_tests {
             *app.rngs.stream(RngKey::UpdateItems),
             expect,
             "the share pair + the ping pair when sucked, else draw-free"
+        );
+        // The classic-mode twin: the arm never runs (`:408`'s expert gate),
+        // the whole stack rides the player pickup, zero revenge draws.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = crate::test_world_helpers::ground();
+        w.compute_column_surface();
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world)); // expert_mode false
+        let (px, py) = app.player.as_ref().unwrap().center();
+        let mut drop = ItemDrop::new(71, 10, 0, px, py, 0.0, 0.0, 0.0);
+        drop.age = 1.0;
+        let mut zombie = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        let (zw, zh) = zombie.size();
+        let dc = drop.center();
+        zombie.x = dc.x - zw * 0.5;
+        zombie.y = dc.y - zh * 0.5;
+        app.npcs.push(zombie);
+        app.items.push(drop);
+        *app.rngs.stream(RngKey::UpdateItems) = UnifiedRandom::new(4242);
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs[0].extra_value, 0, "classic mode: no suck");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateItems),
+            UnifiedRandom::new(4242),
+            "the classic-mode revenge arm is draw-free"
         );
     }
 }
@@ -1357,5 +1556,191 @@ mod pickup_tests {
         assert_eq!(app.equip.ammo[0].kind, 40);
         assert_eq!(app.equip.ammo[0].count, 12);
         assert!(app.inventory.iter().all(|s| s.count == 0), "the grid stayed out");
+    }
+
+    // --- S1-P-i50: the coin pickup routing + DoCoins ----------------------
+
+    /// `Player.GetItem`'s isACoin arm (`Player.cs:39340-39344`): a coin
+    /// drop fills the coin rows 50-53, NOT the hotbar/grid — the occupied
+    /// merge first, then the empty fill DESCENDING (row 53 first).
+    #[test]
+    fn s1_p_i50_a_coin_drop_fills_the_coin_rows_not_the_grid() {
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(71, 30, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the coin was collected");
+        // Empty coin rows fill descending: row 53 (index 3) takes it.
+        assert_eq!(app.equip.coins[3].kind, 71);
+        assert_eq!(app.equip.coins[3].count, 30);
+        assert!(
+            app.inventory.iter().all(|s| s.kind != 71),
+            "no coin landed in the grid/hotbar"
+        );
+        // The purse mirror credits the copper value.
+        assert_eq!(app.coins, 30, "30 copper into the purse mirror");
+    }
+
+    /// The occupied coin-row merge (`num2 = -4`, ascending): a partial row
+    /// 50 soaks the drop before any empty row is touched.
+    #[test]
+    fn s1_p_i50_a_coin_drop_merges_into_a_partial_coin_row_first() {
+        let mut app = pickup_world();
+        app.equip.coins[0] = crate::item::ItemSlot {
+            kind: 71,
+            name: crate::registry::name(71),
+            count: 40,
+            prefix: 0,
+        };
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(71, 30, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.equip.coins[0].count, 70, "40 + 30 into row 50");
+        assert_eq!(app.equip.coins[3].count, 0, "no empty row touched");
+    }
+
+    /// `DoCoins` on pickup (`Player.cs:39503`/`:39569`): a drop that fills a
+    /// coin row to exactly 100 converts it to one of the next denomination.
+    #[test]
+    fn s1_p_i50_pickup_converts_a_full_coin_row_via_do_coins() {
+        let mut app = pickup_world();
+        app.equip.coins[0] = crate::item::ItemSlot {
+            kind: 71,
+            name: crate::registry::name(71),
+            count: 95,
+            prefix: 0,
+        };
+        // The mirror starts where the pre-seeded stacks' value stands (the
+        // retry fix: the pickup credits only what the DROP carries — the
+        // pre-existing 95 copper are already the mirror's, the C# has no
+        // separate purse at all).
+        app.coins = 95;
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(71, 5, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        // 95 + 5 = 100 copper → 1 silver in row 50.
+        assert_eq!(app.equip.coins[0].kind, 72, "the row converted to silver");
+        assert_eq!(app.equip.coins[0].count, 1);
+        // The mirror credits the drop's 5 copper on top of the seeded 95.
+        assert_eq!(app.coins, 100, "the mirror is value-based, not stack-based");
+    }
+
+    /// The 100:1 chain across denominations: 100 silver → 1 gold, and a
+    /// platinum row never converts (`DoCoins`' guard excludes 74).
+    #[test]
+    fn s1_p_i50_the_conversion_chain_and_the_platinum_floor() {
+        let mut app = pickup_world();
+        app.equip.coins[1] = crate::item::ItemSlot {
+            kind: 72,
+            name: crate::registry::name(72),
+            count: 99,
+            prefix: 0,
+        };
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(72, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.equip.coins[1].kind, 73, "100 silver → gold");
+        assert_eq!(app.equip.coins[1].count, 1);
+        // Platinum: a full 9999 row stays platinum (no type 75).
+        let mut app = pickup_world();
+        app.equip.coins[2] = crate::item::ItemSlot {
+            kind: 74,
+            name: crate::registry::name(74),
+            count: 9998,
+            prefix: 0,
+        };
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(74, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.equip.coins[2].kind, 74, "platinum never converts");
+        assert_eq!(app.equip.coins[2].count, 9999);
+    }
+
+    /// S1-P-i50 (retry) — the immediate per-fill `DoCoins` ordering
+    /// (`Player.cs:39503`/`:39519` fire INSIDE the occupied pass, before the
+    /// empty pass `:39387-39394`): a 55-copper drop onto row 50 = 95 copper
+    /// + row 51 = 99 silver (rows 52/53 occupied by platinum) fills row 50
+    /// to 100 → converts to 1 silver → MERGES into row 51 (99 + 1 = 100
+    /// silver → 1 gold), airing row 50 — and the 50-copper remainder then
+    /// refills the AIRED row 50 in the descending empty pass (53/52/51 all
+    /// occupied, 50 the first air). A deferred post-sweep would park the
+    /// remainder in the GRID instead (row 50 still full at empty-pass time)
+    /// — the placement differs, so the conversion must run per fill,
+    /// exactly the C#.
+    #[test]
+    fn s1_p_i50_the_immediate_do_coins_lets_the_empty_pass_refill_the_aired_row() {
+        let mut app = pickup_world();
+        app.equip.coins[0] = crate::item::ItemSlot {
+            kind: 71,
+            name: crate::registry::name(71),
+            count: 95,
+            prefix: 0,
+        };
+        app.equip.coins[1] = crate::item::ItemSlot {
+            kind: 72,
+            name: crate::registry::name(72),
+            count: 99,
+            prefix: 0,
+        };
+        // Rows 52/53 occupied (platinum never merges with copper) so the
+        // descending empty pass reaches the aired row 50 first.
+        for k in [2usize, 3] {
+            app.equip.coins[k] = crate::item::ItemSlot {
+                kind: 74,
+                name: crate::registry::name(74),
+                count: 1,
+                prefix: 0,
+            };
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(71, 55, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the whole 55-stack was placed");
+        // Row 51: 99 silver + the converted 1 → 100 silver → 1 gold.
+        assert_eq!(app.equip.coins[1].kind, 73, "the chain reached gold");
+        assert_eq!(app.equip.coins[1].count, 1);
+        // Row 50: aired by the merge, then REFILLED by the empty pass with
+        // the 50-copper remainder (the descending scan's first air).
+        assert_eq!(app.equip.coins[0].kind, 71, "the remainder refilled row 50");
+        assert_eq!(app.equip.coins[0].count, 50);
+        assert!(
+            app.inventory.iter().all(|s| s.kind != 71),
+            "the deferred sweep would have parked it in the grid"
+        );
+        // The purse mirror: the full 55 copper value.
+        assert_eq!(app.coins, 55);
+    }
+
+    /// The Gold Ring's grab range on the world pickup (`GetItemGrabRange`,
+    /// `Player.cs:35133`): a coin 200 px out is collected with the ring,
+    /// ignored without it. The drop sits in free air (above the floor) so
+    /// the pull is not fought by ground friction.
+    #[test]
+    fn s1_p_i50_the_gold_ring_collects_a_far_coin_in_the_world() {
+        // With the ring: the coin 200 px away is pulled and (over ticks)
+        // collected.
+        let mut app = pickup_world();
+        app.player.as_mut().unwrap().gold_ring = true;
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(71, 5, pc.0 + 200.0, pc.1 - 60.0));
+        for _ in 0..240 {
+            update_items(&mut app, 1.0 / 60.0);
+            if app.items.is_empty() {
+                break;
+            }
+        }
+        assert!(app.items.is_empty(), "the ring pulled the far coin in");
+        assert!(
+            app.equip.coins.iter().any(|s| s.kind == 71 && s.count == 5),
+            "the coin landed in the coin rows"
+        );
+        // Without the ring: 200 px is beyond the base 42 — never collected.
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(71, 5, pc.0 + 200.0, pc.1 - 60.0));
+        for _ in 0..240 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(app.items.len(), 1, "the base magnet never reaches it");
     }
 }

@@ -189,9 +189,8 @@ pub(crate) fn loot_all(
         // (`:39353-39364`, coins start at pInv 50 via `num2 = -4`), the
         // hotbar-first usable empty arm (`:39365-39374`), the reverse empty
         // walk (`:39387-39394`, coins scan pInv 53..0), then the void vault
-        // (`:39395-39398`). S1-P-i43: the coin arm now rides the SAME GetItem
-        // shape as `quick_transfer_from_slot` (the old coin-only shortcut
-        // skipped the grid merge and filled the empty coin rows ascending).
+        // (`:39395-39398`). S1-P-i43: the coin arm rides the SAME GetItem
+        // shape as `quick_transfer_from_slot`.
         // The FillAmmo pre-pass (`:39264-39327`): ammo kinds merge into the
         // occupied ammo rows first (`FitsAmmoSlot`, `Item.cs:1369-1376` —
         // the canonical `item::fits_ammo_slot` seam, the notAmmo family
@@ -211,16 +210,40 @@ pub(crate) fn loot_all(
         }
         // The occupied walk: coins merge into the coin rows (pInv 50-53)
         // first, then the grid 0-49; non-coins walk the grid only.
+        // S1-P-i50 — the coin fills carry `DoCoins(i)` IMMEDIATELY after
+        // every accepted fill (`Player.cs:39503` full-fit / `:39519`
+        // cap-fill): a conversion merges-and-airs a coin row the later
+        // empty pass then refills, so the deferred sweep changed slot
+        // placement. The conversion is RNG-free — the cue order is
+        // unchanged (S1-P-i43's per-slot chime stays at `:39491`).
         if is_coin {
-            for cs in coins.iter_mut() {
-                if merge_into(cs, &mut item, true, audio, rng) {
+            let coin_cap = crate::registry::max_stack(item.kind);
+            let mut slots = crate::item::carry_slots_mut(inventory, coins, None);
+            let n = slots.len(); // INV + COINS = 54
+            // C# i = -4..50 → port indices 50..54 then 0..50.
+            for i in (crate::item::INV..n).chain(0..crate::item::INV) {
+                if item.count == 0 {
                     break;
+                }
+                let s = &mut *slots[i];
+                if s.count > 0 && s.count < coin_cap && can_stack(s, &item) {
+                    audio.play_pickup_sound(true, rng); // `:39491`
+                    if item.count + s.count <= coin_cap {
+                        s.count += item.count;
+                        item.count = 0;
+                        crate::item::do_coins(&mut slots, i); // `:39503`
+                        break;
+                    }
+                    let num = coin_cap - s.count;
+                    item.count -= num;
+                    s.count = coin_cap;
+                    crate::item::do_coins(&mut slots, i); // `:39519`
                 }
             }
         }
-        if item.count > 0 {
+        if item.count > 0 && !is_coin {
             for s in inventory.iter_mut() {
-                if merge_into(s, &mut item, is_coin, audio, rng) {
+                if merge_into(s, &mut item, false, audio, rng) {
                     break;
                 }
             }
@@ -229,7 +252,7 @@ pub(crate) fn loot_all(
         // (`!isACoin && useStyle != 0`, `:39365-39374`).
         if item.count > 0 && !is_coin && crate::item::use_style(item.kind) != 0 {
             for s in inventory[..crate::item::HOTBAR].iter_mut() {
-                if fill_empty(s, &mut item, is_coin, audio, rng) {
+                if fill_empty(s, &mut item, false, audio, rng) {
                     break;
                 }
             }
@@ -238,10 +261,21 @@ pub(crate) fn loot_all(
         // descending first (`num = 54`), then the grid 49..0; non-coins the
         // grid only. (The favorited forward arm `:39375-39384` is unreachable
         // — chest/bank items cannot be favorited, `can_favorite_at`.)
+        // S1-P-i50 — every coin empty fill carries `DoCoins(i)` immediately
+        // (`Player.cs:39569`), the conversion RNG-free.
         if item.count > 0 && is_coin {
-            for cs in coins.iter_mut().rev() {
-                if fill_empty(cs, &mut item, true, audio, rng) {
+            let mut slots = crate::item::carry_slots_mut(inventory, coins, None);
+            let n = slots.len(); // INV + COINS = 54
+            // C# i = 53..0 descending — one pass covers coin rows then grid.
+            for i in (0..n).rev() {
+                if item.count == 0 {
                     break;
+                }
+                if slots[i].count == 0 {
+                    audio.play_pickup_sound(true, rng); // `:39559`
+                    *slots[i] = item;
+                    item.count = 0;
+                    crate::item::do_coins(&mut slots, i); // `:39569`
                 }
             }
         }
@@ -880,6 +914,8 @@ mod tests {
         let mut ammo = empty_vault_ammo();
         let (mut audio, mut rng) = cue_rig();
         loot_all(&mut container, &mut inventory, &mut coins, &mut ammo, Some(&mut vault), &mut audio, &mut rng);
+        // S1-P-i50 retry: the empty coin rows fill DESCENDING (row 53 first,
+        // `GetItem`'s `num = 54` reverse scan, `Player.cs:39387-39394`).
         assert_eq!(coins[3].count, 50, "the empty coin fill is DESCENDING (pInv 53, `:39387`)");
         assert_eq!(coins[0].count, 0, "row 0 stays empty");
         assert_eq!(container[0].count, 0, "the vault took the whole wood stack");
@@ -910,6 +946,50 @@ mod tests {
         loot_all(&mut container, &mut inventory, &mut coins, &mut ammo, Some(&mut vault), &mut audio, &mut rng);
         assert_eq!(container[0].count, 5, "CanVoidVaultAccept refused");
         assert_eq!(vault[0].count, 0);
+    }
+
+    /// S1-P-i50 (retry) — `Player.GetItem`'s isACoin empty-fill order
+    /// (`Player.cs:39387-39394`, the `num = 54` reverse scan): with every
+    /// coin row EMPTY the stack lands in row 53 (the LAST row), not row 50;
+    /// and when all four coin rows are FULL the coins overflow into the grid
+    /// (the empty grid 49-0 descending), never back into the container while
+    /// a grid slot is free. The pre-retry port filled row 0 first and had no
+    /// grid passes — the C# walks `i = num - 1 .. 0` over 0..54.
+    #[test]
+    fn s1_p_i50_loot_all_fills_the_coin_rows_descending_and_overflows_to_the_grid() {
+        // All rows empty: row 53 takes the stack.
+        let mut container = [slot(71, 50)];
+        let mut inventory: [ItemSlot; crate::item::INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        loot_all(&mut container, &mut inventory, &mut coins, None);
+        assert_eq!(coins[3].count, 50, "the empty fill is DESCENDING (row 53)");
+        assert_eq!(coins[0].count, 0, "row 50 stays empty");
+        assert_eq!(container[0].count, 0);
+        // All four coin rows full: the overflow rides the grid's LAST slot.
+        let mut container = [slot(71, 50)];
+        let mut inventory: [ItemSlot; crate::item::INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let mut coins = [slot(71, 100), slot(71, 100), slot(71, 100), slot(71, 100)];
+        loot_all(&mut container, &mut inventory, &mut coins, None);
+        assert_eq!(inventory[49].kind, 71, "the grid overflow takes slot 49");
+        assert_eq!(inventory[49].count, 50);
+        assert_eq!(container[0].count, 0, "nothing stays while a grid slot is free");
+        // The occupied grid merge precedes the empty fills (`:39353-39364`):
+        // a partial grid copper soaks the drop before any empty row is used.
+        let mut container = [slot(71, 50)];
+        let mut inventory: [ItemSlot; crate::item::INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        inventory[12] = slot(71, 60);
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        loot_all(&mut container, &mut inventory, &mut coins, None);
+        // 60 + 50 = 110 → the occupied merge caps at 100, DoCoins converts
+        // the row to 1 silver (the merge arm `:39519` + `:39503`), the 10
+        // remainder rides the empty coin row 53.
+        assert_eq!(inventory[12].kind, 72, "the 100-copper row converted");
+        assert_eq!(inventory[12].count, 1);
+        assert_eq!(coins[3].count, 10, "the remainder rides row 53");
+        assert_eq!(container[0].count, 0);
     }
 
     #[test]

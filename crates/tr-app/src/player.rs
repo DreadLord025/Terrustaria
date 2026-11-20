@@ -1087,6 +1087,24 @@ pub struct Player {
     /// The items' +40 `statManaMax2` stat rows ride C-12 (the accessory stat
     /// chain); 2221's `manaMagnet` half is its own unported family.
     pub magic_cuffs: bool,
+    /// `Player.goldRing` (`Player.cs:2642`) — the Gold Ring family's coin
+    /// grab-range/pull flag: 3033 Gold Ring (`:14980-14983`), 3034 Coin Ring
+    /// (`:14984-14989`, + the lucky coin), 3035 Greedy Ring (`:14990-14996`,
+    /// + the lucky coin + `discountEquipped` — the discount half has no port
+    /// consumer yet, the shop-price lane). `ResetEffects` clears it
+    /// (`:18504`); the consumers are `GetItemGrabRange` (`:35133`) and
+    /// `GrabItems`' pull arm (`:34961`).
+    pub gold_ring: bool,
+    /// `Player.hasLuckyCoin` (`Player.cs:2638`) — the Lucky Coin family's
+    /// melee-hit coin proc flag: 855 Lucky Coin (`:14975-14979`), 3034 Coin
+    /// Ring (`:14987`), 3035 Greedy Ring (`:14993`). `ResetEffects` clears it
+    /// (`:18760`). The consumer is `ApplyNPCOnHitEffects`' tail
+    /// (`:44537-44549`): `npc.value > 0 && hasLuckyCoin && Next(5) == 0`
+    /// drops 1-10 coins (the 1/10 silver + 1/100 gold upgrades). The
+    /// `hasLuck_LuckyCoin` luck twin (`:2650`) is always set/cleared with
+    /// this flag, so one bool carries both — the +0.05 equipment-luck add
+    /// is `update_equips`' tail gate (`:13066-13069`).
+    pub has_lucky_coin: bool,
     /// The S1-C-7 wave B retaliate family (`Player.Hurt`, `Player.cs:38401-
     /// 38517`). The C# carries `Item` references (`starCloakItem`,
     /// `honeyCombItem`, the four `starCloakItem_*OverrideItem`s); the port
@@ -2168,6 +2186,8 @@ impl Player {
             shadow_dodge: false,
             long_invince: false,
             magic_cuffs: false,
+            gold_ring: false,
+            has_lucky_coin: false,
             star_cloak: false,
             star_veil_override: false,
             bee_cloak_override: false,
@@ -3985,6 +4005,15 @@ impl Player {
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
             self.apply_equip_functional(m, kind);
         }
+        // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
+        // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
+        // the Lucky Coin family arms (855/3034/3035); two rings still add
+        // 0.05 once. (`Main.myPlayer`-only in the C# — the port's single
+        // player.) The clover/horseshoe/raven-feather siblings
+        // (`:13050-13065`) are unported families.
+        if self.has_lucky_coin {
+            self.luck_state.equipment_based_luck_bonus += 0.05;
+        }
     }
 
     /// `Player.ApplyEquipFunctional` (`Player.cs:14368-15560`): the per-kind
@@ -4275,6 +4304,26 @@ impl Player {
             // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
             // (`:14951`) is a separate unported family.
             1595 | 2221 => self.magic_cuffs = true,
+            // The Lucky Coin family (`Player.cs:14975-14996`): 855 Lucky
+            // Coin arms `hasLuckyCoin` + `hasLuck_LuckyCoin`; 3033 Gold Ring
+            // arms `goldRing` alone; 3034 Coin Ring arms goldRing + the
+            // lucky coin; 3035 Greedy Ring adds `discountEquipped` (no port
+            // consumer — the shop-price lane). The two lucky flags are
+            // always set/cleared together (`:14977-14978`/`:14987-14988`/
+            // `:14993-14994`, `:18760`/`:18762`), so one bool carries both;
+            // the +0.05 luck add is the UpdateEquips TAIL's single
+            // `hasLuck_LuckyCoin` gate (`:13066-13069`), applied once after
+            // the slot loop — NOT per accessory (two rings still add 0.05).
+            855 => self.has_lucky_coin = true,
+            3033 => self.gold_ring = true,
+            3034 => {
+                self.gold_ring = true;
+                self.has_lucky_coin = true;
+            }
+            3035 => {
+                self.gold_ring = true;
+                self.has_lucky_coin = true;
+            }
             // The S1-C-7 wave B retaliate family (`Player.Hurt`
             // `:38401-38517`): the star cloak + its four override kinds, the
             // honeycomb family and the strong-bee flag. The C# carries Item
@@ -5323,6 +5372,10 @@ impl Player {
         self.update_dye_cache();
         self.jump_boost = false;
         self.no_fall_dmg = false;
+        // `:18504` goldRing, `:18760` hasLuckyCoin — the Gold/Lucky Coin
+        // family's per-tick clears (the equip pass below re-arms them).
+        self.gold_ring = false;
+        self.has_lucky_coin = false;
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
@@ -12272,6 +12325,51 @@ mod tests {
         let from = p.x + 100.0;
         assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
         assert!(p.vx != 0.0);
+    }
+
+    /// S1-P-i50 — the Gold/Lucky Coin family's equip grants
+    /// (`ApplyEquipFunctional`, `Player.cs:14975-14996`): 855 Lucky Coin
+    /// arms `hasLuckyCoin` only; 3033 Gold Ring arms `goldRing` only; 3034
+    /// Coin Ring and 3035 Greedy Ring arm both. The +0.05 equipment-luck
+    /// add is the UpdateEquips TAIL's single `hasLuck_LuckyCoin` gate
+    /// (`:13066-13069`) — once, not per ring.
+    #[test]
+    fn s1_p_i50_the_coin_ring_family_arms_its_flags() {
+        let p = player_with_accessory(855);
+        assert!(p.has_lucky_coin, "Lucky Coin");
+        assert!(!p.gold_ring, "no grab range from the Lucky Coin");
+        let p = player_with_accessory(3033);
+        assert!(p.gold_ring, "Gold Ring");
+        assert!(!p.has_lucky_coin, "no proc from the Gold Ring");
+        for kind in [3034u16, 3035] {
+            let p = player_with_accessory(kind);
+            assert!(p.gold_ring, "{kind} arms goldRing");
+            assert!(p.has_lucky_coin, "{kind} arms the lucky coin");
+        }
+        // The luck add: +0.05 once for any lucky-coin carrier.
+        let p = player_with_accessory(855);
+        assert!((p.luck_state.equipment_based_luck_bonus - 0.05).abs() < 1e-6);
+        // Two rings still add 0.05 ONCE (the tail gate is a bool, not a sum).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3034;
+        p.equipped[4] = 3035;
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(
+            (p.luck_state.equipment_based_luck_bonus - 0.05).abs() < 1e-6,
+            "two rings, one +0.05: {}",
+            p.luck_state.equipment_based_luck_bonus
+        );
+        // The per-tick reset clears both flags when the ring comes off
+        // (`ResetEffects`, `:18504`/`:18760`).
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.gold_ring);
+        assert!(!p.has_lucky_coin);
+        assert_eq!(p.luck_state.equipment_based_luck_bonus, 0.0);
     }
 
     #[test]

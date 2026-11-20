@@ -614,6 +614,85 @@ pub(crate) const ITEM_GRAB_SPEED_MAX: f32 = 4.0;
 /// tile-break drops spawn `ReserveForLocalPlayer`, which in netMode 0 sets
 /// NO delay (`WorldItem.cs:295-305`).
 pub(crate) const DEFAULT_GRAB_DELAY: i32 = 100;
+/// `Player.DoCoins` (`Player.cs:39246-39262`, S1-P-i50): a coin slot at
+/// exactly 100 of copper/silver/gold (71/72/73) converts to ONE of the next
+/// denomination — `SetDefaults(type + 1)` resets the stack to 1 and the
+/// prefix to 0 (`Item.cs:49022`/`:48968`) — then merges into the first OTHER
+/// same-type slot below 54 that has room (`stack++`, the source `TurnToAir`'d,
+/// the merge re-run recursively). Platinum (74) never converts (the C# guard
+/// excludes it), and the merge scan never reaches the ammo slots 54-57.
+/// `i` is the C# `Player.inventory` index (grid 0..50, coins 50..54, ammo
+/// 54..58); `slots` is the port's split storage in that same order
+/// ([`carry_slots_mut`]). The recursive call is a loop: after a merge the
+/// source is air (type 0), so the C#'s continued no-break scan can only
+/// match further EMPTY slots (`type 0 == type 0`, `stack 0 < maxStack`) and
+/// bump their stack to 1 while the type stays 0 — `IsAir` (`Item.cs:385-395`)
+/// still reads them air and every consumer treats type 0 as empty, so the
+/// quirk is invisible; the port's `break` + tail-loop keeps the visible
+/// state identical (the merged slot becomes the new `i`, exactly the tail
+/// recursion).
+pub(crate) fn do_coins(slots: &mut [&mut ItemSlot], mut i: usize) {
+    loop {
+        // `:39248` — `stack != 100 || (type != 71 && type != 72 && type != 73)`.
+        if slots[i].count != 100 || !matches!(slots[i].kind, 71 | 72 | 73) {
+            return;
+        }
+        // `:39252` — `SetDefaults(type + 1)`: one coin of the next
+        // denomination, prefix cleared (`ResetStats`, `Item.cs:48968`).
+        let upgraded = slots[i].kind + 1;
+        *slots[i] = ItemSlot {
+            kind: upgraded,
+            name: registry::name(upgraded),
+            count: 1,
+            prefix: 0,
+        };
+        // `:39253-39261` — the `j < 54` merge scan, ascending.
+        let mut merged = None;
+        for j in 0..crate::item::INV + crate::inv::COINS {
+            if j == i
+                || slots[j].kind != upgraded
+                || slots[j].count >= registry::max_stack(upgraded)
+            {
+                continue;
+            }
+            // `inventory[j].stack++`, `inventory[i].TurnToAir()`, `DoCoins(j)`.
+            slots[j].count += 1;
+            *slots[i] = EMPTY_SLOT;
+            merged = Some(j);
+            break;
+        }
+        match merged {
+            Some(j) => i = j,
+            None => return,
+        }
+    }
+}
+
+/// The carry slots in C# `Player.inventory` index order — grid 0..50, coin
+/// rows 50..54, ammo rows 54..58 (the port's split storage; `Player.cs:1576`'s
+/// single 59-slot array, the trash 58 excluded). [`do_coins`] walks this
+/// view; the ammo tail is optional (the bank transfers hold no ammo rows —
+/// `DoCoins`' merge scan never reads past 54 anyway).
+pub(crate) fn carry_slots_mut<'a>(
+    inventory: &'a mut [ItemSlot],
+    coins: &'a mut [ItemSlot],
+    ammo: Option<&'a mut [ItemSlot]>,
+) -> Vec<&'a mut ItemSlot> {
+    let mut v: Vec<&'a mut ItemSlot> = inventory.iter_mut().chain(coins.iter_mut()).collect();
+    if let Some(ammo) = ammo {
+        v.extend(ammo.iter_mut());
+    }
+    v
+}
+
+// S1-P-i50 retry note: the former `do_coins_sweep` (a post-fill conversion
+// sweep) is REMOVED — its "conversions commute with the fills" claim was
+// false. `Player.DoCoins` runs IMMEDIATELY per fill (`Player.cs:39503`/
+// `:39519`/`:39569`): a conversion can merge-and-air a coin row that the
+// later empty pass (`:39387-39394`, descending) then refills, so a deferred
+// sweep changes slot placement. Every fill site now calls [`do_coins`] on
+// the slot it just filled, over the [`carry_slots_mut`] view.
+
 /// `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`):
 /// `float gravity = 0.1f; float maxFallSpeed = 7f;` — the wet/shimmer/honey
 /// arms override them (`:380-396`), the air case is this pair.
@@ -1738,5 +1817,133 @@ mod s1_p_i47_tests {
         // The direct hitbox: strict overlap.
         assert!(rects_intersect(100.0, 100.0, 20.0, 42.0, 110.0, 120.0, 14.0, 14.0));
         assert!(!rects_intersect(100.0, 100.0, 20.0, 42.0, 120.0, 120.0, 14.0, 14.0));
+    }
+
+    // --- S1-P-i50: DoCoins + the Gold Ring grab range ---------------------
+
+    fn coin_slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        }
+    }
+
+    /// `Player.DoCoins` (`Player.cs:39246-39262`): 100 copper → 1 silver,
+    /// the source slot converts in place when no merge target exists.
+    #[test]
+    fn s1_p_i50_do_coins_converts_100_copper_to_one_silver() {
+        let mut inv: [ItemSlot; INV] = std::array::from_fn(|_| EMPTY_SLOT);
+        let mut equip = crate::inv::EquipSlots::empty();
+        equip.coins[0] = coin_slot(71, 100);
+        let mut slots = carry_slots_mut(&mut inv, &mut equip.coins, Some(&mut equip.ammo));
+        do_coins(&mut slots, INV); // C# index 50
+        assert_eq!(equip.coins[0].kind, 72, "SetDefaults(type + 1)");
+        assert_eq!(equip.coins[0].count, 1, "the stack resets to 1");
+        assert_eq!(equip.coins[0].prefix, 0, "ResetStats clears the prefix");
+    }
+
+    /// The merge arm (`:39253-39261`): the converted coin joins the first
+    /// other same-type slot below 54 with room, the source airs out.
+    #[test]
+    fn s1_p_i50_do_coins_merges_into_the_first_roomy_slot_and_airs_the_source() {
+        let mut inv: [ItemSlot; INV] = std::array::from_fn(|_| EMPTY_SLOT);
+        inv[7] = coin_slot(72, 40); // a grid silver partial — the merge target
+        let mut equip = crate::inv::EquipSlots::empty();
+        equip.coins[0] = coin_slot(71, 100);
+        let mut slots = carry_slots_mut(&mut inv, &mut equip.coins, Some(&mut equip.ammo));
+        do_coins(&mut slots, INV);
+        assert_eq!(inv[7].count, 41, "stack++ on the target");
+        assert_eq!(equip.coins[0], EMPTY_SLOT, "TurnToAir on the source");
+    }
+
+    /// The chain (`:39259`'s recursive `DoCoins(j)`): 100 copper → silver
+    /// merges into a 99-silver → 100 silver → 1 gold.
+    #[test]
+    fn s1_p_i50_do_coins_chains_through_the_recursive_merge() {
+        let mut inv: [ItemSlot; INV] = std::array::from_fn(|_| EMPTY_SLOT);
+        inv[3] = coin_slot(72, 99);
+        let mut equip = crate::inv::EquipSlots::empty();
+        equip.coins[0] = coin_slot(71, 100);
+        let mut slots = carry_slots_mut(&mut inv, &mut equip.coins, Some(&mut equip.ammo));
+        do_coins(&mut slots, INV);
+        assert_eq!(inv[3].kind, 73, "the 100th silver converts to gold");
+        assert_eq!(inv[3].count, 1);
+        assert_eq!(equip.coins[0], EMPTY_SLOT);
+    }
+
+    /// The guard (`:39248`): only exactly 100 of 71/72/73 converts —
+    /// platinum (74) never does, 99/101 never do, non-coins never do.
+    #[test]
+    fn s1_p_i50_do_coins_guard_is_exact_100_of_71_72_73() {
+        for (kind, count) in [(71u16, 99u32), (71, 101), (74, 100), (72, 100), (73, 100), (3, 100)] {
+            let mut inv: [ItemSlot; INV] = std::array::from_fn(|_| EMPTY_SLOT);
+            let mut equip = crate::inv::EquipSlots::empty();
+            equip.coins[0] = coin_slot(kind, count);
+            let before = equip.coins[0];
+            let mut slots = carry_slots_mut(&mut inv, &mut equip.coins, Some(&mut equip.ammo));
+            do_coins(&mut slots, INV);
+            if matches!(kind, 72 | 73) && count == 100 {
+                assert_eq!(equip.coins[0].kind, kind + 1, "{kind} x100 converts");
+            } else {
+                assert_eq!(equip.coins[0], before, "{kind} x{count} stays");
+            }
+        }
+    }
+
+    /// The merge scan never reaches the ammo slots 54-57 (`j < 54`,
+    /// `:39253`): a silver in ammo row 0 is NOT a merge target.
+    #[test]
+    fn s1_p_i50_do_coins_merge_scan_stops_below_54() {
+        let mut inv: [ItemSlot; INV] = std::array::from_fn(|_| EMPTY_SLOT);
+        let mut equip = crate::inv::EquipSlots::empty();
+        equip.ammo[0] = coin_slot(72, 40); // C# index 54 — out of the scan
+        equip.coins[0] = coin_slot(71, 100);
+        let mut slots = carry_slots_mut(&mut inv, &mut equip.coins, Some(&mut equip.ammo));
+        do_coins(&mut slots, INV);
+        assert_eq!(equip.ammo[0].count, 40, "the ammo silver untouched");
+        assert_eq!(equip.coins[0].kind, 72, "the conversion stays in place");
+        assert_eq!(equip.coins[0].count, 1);
+    }
+
+    /// `Player.GetItemGrabRange` (`Player.cs:35130-35166`): base 42, the
+    /// Gold Ring adds `Item.coinGrabRange = 350` (`Item.cs:49962`) for
+    /// coins ONLY.
+    #[test]
+    fn s1_p_i50_the_gold_ring_extends_the_coin_grab_range_only() {
+        assert_eq!(item_grab_range(71, false), 42.0);
+        assert_eq!(item_grab_range(71, true), 392.0, "42 + 350");
+        assert_eq!(item_grab_range(74, true), 392.0, "platinum is a coin too");
+        assert_eq!(item_grab_range(3, true), 42.0, "stone gets no extension");
+        assert_eq!(item_grab_range(75, true), 42.0, "fallen star is not a coin");
+    }
+
+    /// The Gold Ring's pull (`GrabItems`, `Player.cs:34961-34963` →
+    /// `PullItem_Pickup(12f, 5)`, `:35031-35041`): a coin 200 px out — far
+    /// beyond the base 42 — is pulled in, and the velocity is the 4:1
+    /// blend `(v*4 + pull)/5` with `pull = d * (12/dist)`.
+    #[test]
+    fn s1_p_i50_the_gold_ring_pulls_a_far_coin_with_the_pickup_blend() {
+        let w = ground();
+        // Both in free air above the floor (row 20) so the collision pass
+        // cannot touch the velocity the pull just wrote.
+        let player = Vec2::new(10.0 * TILE_PX, 10.0 * TILE_PX);
+        // 200 px to the right of the player, same height.
+        let mut it = ItemDrop::new(71, 1, 0, player.x + 200.0, player.y, 0.0, 0.0, 0.0);
+        it.age = 1.0;
+        let range = item_grab_range(71, true);
+        let collected = it.update(&w, Some(player), 1.0 / 60.0, range, true);
+        assert!(!collected, "200 px out is not collected yet");
+        // pull = d * (12/200); v was 0 → v = pull/5 = d * 12/200/5.
+        let expect_vx = -200.0f32 * (12.0 / 200.0) / 5.0;
+        assert!((it.vel.x - expect_vx).abs() < 1e-4, "vx {}", it.vel.x);
+        assert!(it.vel.y.abs() < 1e-6, "no vertical pull");
+        // Without the ring the same coin is out of range: no pull at all
+        // (it falls under gravity instead — vx stays 0).
+        let mut plain = ItemDrop::new(71, 1, 0, player.x + 200.0, player.y, 0.0, 0.0, 0.0);
+        plain.age = 1.0;
+        plain.update(&w, Some(player), 1.0 / 60.0, item_grab_range(71, false), false);
+        assert_eq!(plain.vel.x, 0.0, "the base magnet ignores it");
     }
 }

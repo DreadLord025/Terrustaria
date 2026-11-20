@@ -1396,7 +1396,8 @@ fn in_interaction_range_to_multi_tile_hitbox(
 // Out: the bank containers (M3-STORE-1 — `GetCurrentContainer`'s chest < -1
 // arms and the bank-only `IsBlockedFromTransferIntoChest`, `ChestUI.cs:
 // 1291-1302`), the net messages 32/38 (`:1247`/:1258/:1283, `ItemSlot.cs:808`),
-// `DoCoins`' roll-over (`Player.cs:39567-39569` — unported everywhere), the
+// `DoCoins`' roll-over (`Player.cs:39567-39569`) landed with S1-P-i50
+// (`item.rs::do_coins`, wired at the transfer tails), the
 // cursor-override texture draw (see `App.cursor_override`).
 
 /// Reads chest slot `slot` of the store entry `idx` with the implicit-air
@@ -1669,8 +1670,10 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
 /// NoText-only. The remainder stays in the chest slot. Out: the
 /// `FitsAmmoSlot`/`FillAmmo` pre-pass (`Player.cs:39345-39352` — the
 /// `item::fits_ammo_slot` registry seam landed with S1-P-i43's `loot_all`;
-/// this cursor-8 single-slot take awaits the same pre-pass as a follow-up),
-/// `DoCoins` (`:39567-39569`), the void vault (`:39395-39398`).
+/// this cursor-8 single-slot take awaits the same pre-pass as a follow-up)
+/// and the void vault (`:39395-39398`); `DoCoins` (`:39567-39569`) landed
+/// with S1-P-i50 (immediate per-fill calls, the retry fix — not a deferred
+/// sweep).
 pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     /// `GetItem_FillIntoOccupiedSlot`'s merge step (`Player.cs:39485-39524`):
     /// as much of `remainder` as a partial slot accepts — the accept gate is
@@ -1731,52 +1734,64 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     } = app;
     // The occupied-slot pass (`Player.cs:39353-39364`): coins start at the C#
     // coin slots 50-53 (the `num2 = -4` arm, `:39340-39343`), then the grid.
-    // `:39444` — `IsACoin ? 38 : 7` per accepted slot.
+    // `:39444` — `IsACoin ? 38 : 7` per accepted slot. S1-P-i50 retry: coins
+    // walk the carry view in C# index order with `DoCoins` IMMEDIATELY per
+    // fill (`:39503`/`:39519`) — a conversion can merge-and-air a coin row
+    // the later empty pass then refills, so the deferred sweep changed slot
+    // placement.
     if is_coin {
-        for s in equip.coins.iter_mut() {
+        let mut slots = crate::item::carry_slots_mut(inventory, &mut equip.coins, None);
+        let n = slots.len(); // INV + COINS = 54
+        // Occupied pass, C# `i = -4..50`: coin rows 50-53, then grid 0-49.
+        for i in (crate::item::INV..n).chain(0..crate::item::INV) {
+            if remainder == 0 {
+                break;
+            }
+            if merge_into(&mut slots[i], &src, &mut remainder) > 0 {
+                audio.play_pickup_sound(true, &mut pickup_rng); // `:39491`
+                crate::item::do_coins(&mut slots, i); // `:39503`/`:39519`
+            }
+        }
+        // Empty pass, C# `i = 53..0` DESCENDING (`:39387-39394`; the
+        // `!isACoin` gate `:39365` skips the coin hotbar-first empty pass).
+        for i in (0..n).rev() {
+            if remainder == 0 {
+                break;
+            }
+            if fill_empty(&mut slots[i], &src, &mut remainder) {
+                audio.play_pickup_sound(true, &mut pickup_rng); // `:39559`
+                crate::item::do_coins(&mut slots, i); // `:39569`
+                break;
+            }
+        }
+    } else {
+        for s in inventory[..INV].iter_mut() {
             if merge_into(s, &src, &mut remainder) > 0 {
-                audio.play_pickup_sound(true, &mut pickup_rng);
+                audio.play_pickup_sound(false, &mut pickup_rng); // `:39491`
             }
             if remainder == 0 {
                 break;
             }
         }
-    }
-    for s in inventory[..INV].iter_mut() {
-        if merge_into(s, &src, &mut remainder) > 0 {
-            audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39444`
-        }
-        if remainder == 0 {
-            break;
-        }
-    }
-    // The empty-slot passes (`Player.cs:39365-39394`): the hotbar-first arm
-    // for usable kinds (`useStyle != 0`, `:39365-39374`), then the
-    // non-favorited REVERSE scan (`:39387-39394`; chest items cannot be
-    // favorited — [`can_favorite_at`] excludes ctx 3 — so the favorited
-    // forward arm `:39375-39384` is unreachable here). Coins scan the coin
-    // slots descending first (`num = 54`).
-    if remainder > 0 && crate::item::use_style(src.kind) != 0 {
-        for s in inventory[..HOTBAR].iter_mut() {
-            if fill_empty(s, &src, &mut remainder) {
-                audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39559`
-                break;
+        // The empty-slot passes (`Player.cs:39365-39394`): the hotbar-first
+        // arm for usable kinds (`useStyle != 0`, `:39365-39374`), then the
+        // non-favorited REVERSE scan (`:39387-39394`; chest items cannot be
+        // favorited — [`can_favorite_at`] excludes ctx 3 — so the favorited
+        // forward arm `:39375-39384` is unreachable here).
+        if remainder > 0 && crate::item::use_style(src.kind) != 0 {
+            for s in inventory[..HOTBAR].iter_mut() {
+                if fill_empty(s, &src, &mut remainder) {
+                    audio.play_pickup_sound(false, &mut pickup_rng); // `:39559`
+                    break;
+                }
             }
         }
-    }
-    if remainder > 0 && is_coin {
-        for s in equip.coins.iter_mut().rev() {
-            if fill_empty(s, &src, &mut remainder) {
-                audio.play_pickup_sound(true, &mut pickup_rng); // `:39559`
-                break;
-            }
-        }
-    }
-    if remainder > 0 {
-        for s in inventory[..INV].iter_mut().rev() {
-            if fill_empty(s, &src, &mut remainder) {
-                audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39559`
-                break;
+        if remainder > 0 {
+            for s in inventory[..INV].iter_mut().rev() {
+                if fill_empty(s, &src, &mut remainder) {
+                    audio.play_pickup_sound(false, &mut pickup_rng); // `:39559`
+                    break;
+                }
             }
         }
     }
