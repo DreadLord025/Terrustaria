@@ -5932,4 +5932,37 @@ mod message_family_tests {
             "the unchanged slot sent nothing (the host keeps its own item)"
         );
     }
+
+    // --- W4-c28: the tile-edit cadence is EVENT-driven (immediate) ----------
+
+    /// `WorldGen.KillTile`/`PlaceTile`'s `SendData(17)` / `SendTileSquare`
+    /// fire at the EDIT SITE (`Player.cs:53783`/`:40152`, `WorldGen.cs:63937`),
+    /// not on a timer. The port's `request_edit` sends the client `Edit`
+    /// immediately (`client.send` pushes straight to the wire buffer); the
+    /// 10 Hz `net_tick` carries no tile-edit batch. This pins that the send
+    /// lands WITHOUT a cadence tick — the host applies it on the next poll.
+    #[test]
+    fn a_tile_edit_sends_at_the_edit_site_not_on_the_cadence_tick() {
+        let (mut host_app, mut client_app) = big_world_pair();
+        mark(&mut client_app.world, 60, 60, 6);
+        // The client breaks the tile locally, then asks for the replication
+        // (the editing.rs shape: mutate, then request_edit). NO net_tick.
+        let _ = crate::world_sim::editing::apply_edit(&mut client_app.world, 60, 60, 0, 6);
+        client_app.request_edit(60, 60, 0, 6);
+        // Only poll — the edit was already queued by request_edit, so the
+        // host applies it without any 10 Hz cadence step on the client.
+        for _ in 0..30 {
+            host_app.poll_net();
+            client_app.poll_net();
+            if host_app.world.tile(60, 60).map_or(0, |t| t.kind) == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(
+            host_app.world.tile(60, 60).map_or(0, |t| t.kind),
+            0,
+            "the edit reached the host with no cadence tick (event-driven)"
+        );
+    }
 }
