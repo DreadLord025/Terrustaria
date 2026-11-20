@@ -138,6 +138,10 @@ mod npc_ai_style73;
 mod npc_ai_style74;
 mod npc_ai_style75;
 mod npc_ai_style86;
+// W4-d32 style 87: UNWIRED Big Mimic machine (NPC.cs:37471-37826) -
+// the 473-476 kinds + the axis arm wait on the roster wave (the
+// style86 precedent; see the module doc).
+mod npc_ai_style87;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
