@@ -168,9 +168,9 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 48 | `UIResourcePackInfoButton` | LANDED (`ui/text_panels.rs::PackInfoButton`, PanelGrayscale splice Lerp(Black,_color,0.8)*0.5 + White CategoryPanelBorder hover `:36-50`) |
 | 49 | `UISearchBar` | LANDED (`ui/search_bar.rs::SearchBar`, SetContents placeholder/cap/read-back `:67-89`, int-edge display-trim loop `:91-114`, input latch `:169-196`; shared Utils.TrimUserString/TrimLastCharacter UTF-16 helpers `Utils.cs:2839-2855`; IME/GetInputText caller's seam) |
 | 50 | `UISelectableTextPanel` | LANDED (`ui/text_panels.rs::SelectableTextPanel`, base splice + 4px-inset selected splice Lerp(_color,White,0.7)*0.5 + hover border stack `:36-55`) |
-| 51 | `UISlicedImage` | pending |
-| 52 | `UISliderBase` | pending |
-| 53 | `UIText` | pending |
+| 51 | `UISlicedImage` | LANDED (`ui/images.rs::SlicedImage`, ctor-only resize + transparent default(Color) + top/bottom-first SetSliceDepths + int-truncated spliced draw `UISlicedImage.cs:34-66`; pieces ride `uistate::spliced_rects`) |
+| 52 | `UISliderBase` | LANDED (`ui/sliders.rs::SliderLocks`, id-keyed CurrentLocked/AimedSlider statics + GetUsageLevel 0/1/2 + EscapeElements `UISliderBase.cs:13-35`; HSL-bar mirror pre-landed `char_creation.rs`) |
+| 53 | `UIText` | LANDED (`ui/text.rs::TextElement`, InternalSetText metrics (16/32*scale vs wrapped +20*scale, MinWidth 0 for wrapped/dynamic) + DrawSelf geometry (-2/-10*scale shift, origin centring, dynamic shrink, shadow*textAlpha) `UIText.cs:82-194`; snippet layout caller's, wrap = `bestiary.rs::wrap_text`) |
 | 54 | `UITextBox` | pending |
 | 55 | `UIToggleImage` | pending |
 | 56 | `UIVerticalSeparator` | pending |

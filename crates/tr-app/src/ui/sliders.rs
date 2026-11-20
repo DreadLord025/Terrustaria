@@ -463,9 +463,67 @@ fn draw_blip_bar(
     }
 }
 
+/// `UISliderBase` (`GameContent/UI/Elements/UISliderBase.cs:5-36`),
+/// research/18b row 52 (W4-d83): the shared lock/aim statics every slider
+/// reads. The C# keeps two `static UIElement` pointers; the port keys them
+/// by the caller's slider id (`Option<usize>`, `None` = null). The
+/// `char_creation.rs` HSL bars already mirror the same pair for their three
+/// bars (`CurrentLockedSlider` at `:172`, the `!Main.mouseLeft` release at
+/// `:1183`); this is the element-level form the vertical sliders (row 57)
+/// and any future slider share.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SliderLocks {
+    /// `CurrentLockedSlider` (`UISliderBase.cs:13`).
+    pub locked: Option<usize>,
+    /// `CurrentAimedSlider` (`:15`).
+    pub aimed: Option<usize>,
+}
+
+/// `GetUsageLevel`'s three states (`UISliderBase.cs:7-11`).
+pub const USAGE_NOT_SELECTED: i32 = 0;
+pub const USAGE_SELECTED_AND_LOCKED: i32 = 1;
+pub const USAGE_OTHER_ELEMENT_IS_LOCKED: i32 = 2;
+
+impl SliderLocks {
+    /// `GetUsageLevel` (`:17-29`): this slider locked → 1; another locked →
+    /// 2; none → 0.
+    pub fn usage_level(&self, id: usize) -> i32 {
+        if self.locked == Some(id) {
+            USAGE_SELECTED_AND_LOCKED
+        } else if self.locked.is_some() {
+            USAGE_OTHER_ELEMENT_IS_LOCKED
+        } else {
+            USAGE_NOT_SELECTED
+        }
+    }
+
+    /// `EscapeElements` (`:31-35`): both statics null — the Escape key's
+    /// release (`UIColoredSlider`/`UIVerticalSlider` call it).
+    pub fn escape_elements(&mut self) {
+        self.locked = None;
+        self.aimed = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `GetUsageLevel`/`EscapeElements` (`UISliderBase.cs:17-35`): own lock
+    /// → 1, other lock → 2, free → 0; escape clears both statics.
+    #[test]
+    fn the_slider_locks_report_the_three_usage_levels() {
+        let mut locks = SliderLocks::default();
+        assert_eq!(locks.usage_level(0), USAGE_NOT_SELECTED);
+        locks.locked = Some(0);
+        locks.aimed = Some(1);
+        assert_eq!(locks.usage_level(0), USAGE_SELECTED_AND_LOCKED);
+        assert_eq!(locks.usage_level(1), USAGE_OTHER_ELEMENT_IS_LOCKED);
+        locks.escape_elements();
+        assert_eq!(locks.locked, None);
+        assert_eq!(locks.aimed, None);
+        assert_eq!(locks.usage_level(0), USAGE_NOT_SELECTED);
+    }
 
     // Expected values derived from `IngameOptions.cs:1537-1580` /
     // `Main.cs:51102-51284` / `Utils.cs:102-105` — never from this code.

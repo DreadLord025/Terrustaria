@@ -346,9 +346,77 @@ impl BorderedImage {
     }
 }
 
+/// `UISlicedImage` (`GameContent/UI/Elements/UISlicedImage.cs:8-67`),
+/// research/18b row 51 (W4-d83): a 9-slice image whose draw is one
+/// `Utils.DrawSplicedPanel` (`:46-50`, the `uistate::spliced_rects` table).
+/// Unlike `UIImage.SetImage`, its `SetImage` (`:41-44`) swaps the texture
+/// **without** resizing — only the ctor pins the size (`:37-38`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SlicedImage {
+    /// `Width`/`Height` — the ctor's texture size (`:37-38`).
+    pub size: [f32; 2],
+    /// `_color` (`:12`) — **no initializer**: the C# field defaults to
+    /// `default(Color)` = transparent black `(0,0,0,0)`, so an un-set
+    /// sliced image draws nothing visible. Not White.
+    pub color: [u8; 4],
+    /// `_leftSliceDepth`/`_rightSliceDepth`/`_topSliceDepth`/
+    /// `_bottomSliceDepth` (`:14-20`), all 0 until a `SetSliceDepths`.
+    pub slices: [i32; 4], // [left, right, top, bottom]
+}
+
+impl SlicedImage {
+    /// The ctor (`:34-39`): size = texture, colour transparent, slices 0.
+    pub fn new(texture_size: [f32; 2]) -> Self {
+        Self {
+            size: texture_size,
+            color: [0, 0, 0, 0],
+            slices: [0; 4],
+        }
+    }
+
+    /// `SetSliceDepths(top, bottom, left, right)` (`:52-58`) — note the
+    /// parameter order is **top/bottom first**, the fields left/right first.
+    pub fn set_slice_depths(&mut self, top: i32, bottom: i32, left: i32, right: i32) {
+        self.slices = [left, right, top, bottom];
+    }
+
+    /// `SetSliceDepths(fluff)` (`:60-66`): all four the same.
+    pub fn set_slice_fluff(&mut self, fluff: i32) {
+        self.slices = [fluff; 4];
+    }
+
+    /// `DrawSelf` (`:46-50`): the int-truncated rect through
+    /// `uistate::spliced_rects` with the four depths and `_color`. Returns
+    /// the truncated rect + depths in the helper's `(l, r, t, b)` order.
+    pub fn draw_rect(&self, rect: [f32; 4]) -> ([i32; 4], [i32; 4]) {
+        (
+            [rect[0] as i32, rect[1] as i32, rect[2] as i32, rect[3] as i32],
+            self.slices,
+        )
+    }
+}
+
 #[cfg(test)]
 mod element_tests {
     use super::*;
+
+    /// `UISlicedImage` (`UISlicedImage.cs:34-66`): the ctor sizes to the
+    /// texture and leaves the colour transparent; the 4-arg setter takes
+    /// top/bottom first; the draw truncates the rect.
+    #[test]
+    fn the_sliced_image_defaults_transparent_and_orders_top_first() {
+        let mut s = SlicedImage::new([44.0, 44.0]);
+        assert_eq!(s.size, [44.0, 44.0]);
+        assert_eq!(s.color, [0, 0, 0, 0], "default(Color), not White (`:12`)");
+        s.set_slice_depths(1, 2, 3, 4); // top, bottom, left, right
+        assert_eq!(s.slices, [3, 4, 1, 2]); // [left, right, top, bottom]
+        s.set_slice_fluff(10);
+        assert_eq!(s.slices, [10; 4]);
+        let (r, d) = s.draw_rect([10.9, 20.8, 100.7, 30.2]);
+        assert_eq!(r, [10, 20, 100, 30]);
+        assert_eq!(d, [10; 4]);
+    }
+
 
     /// The default draw (`UIImage.cs:93-98`): scale 1, origin 0 — the position
     /// is the element position untouched, the origin zero; `SetImage` sizes
