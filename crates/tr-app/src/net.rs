@@ -5024,4 +5024,246 @@ mod tests {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
     }
+
+    // ---- S1-I-1 wave B: per-id round trips for the world-sync region ----
+    // Same convention as wave A: pin the id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    #[test]
+    fn s1_i_1b_tile_edit_round_trips() {
+        // `NetMessage.cs:524-530`: (byte)kind + (short)x + (short)y +
+        // (short)value + (byte)style.
+        let t = TileEdit {
+            kind: 1,
+            x: 4180,
+            y: 1130,
+            value: 30,
+            style: 2,
+        };
+        let f = S2c::TileEdit(t).encode();
+        assert_eq!(f[2], 17);
+        let mut body = vec![1];
+        body.extend_from_slice(&4180i16.to_le_bytes());
+        body.extend_from_slice(&1130i16.to_le_bytes());
+        body.extend_from_slice(&30i16.to_le_bytes());
+        body.push(2);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileEdit(d) => assert_eq!(d, t),
+            other => panic!("expected 17, got {:?}", other.msg_id()),
+        }
+        let c = C2s::TileEdit(t).encode();
+        assert_eq!(c[2], 17);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TileEdit(d) => assert_eq!(d, t),
+            other => panic!("expected 17, got {:?}", other.msg_id()),
+        }
+        // Kind 0 (KillTile) with the fail flag riding `value` = 1
+        // (`DelegateMethods.cs:571`'s `1f` → the host relay's num152).
+        let kill = TileEdit { kind: 0, x: -3, y: 0, value: 1, style: 0 };
+        let k = C2s::TileEdit(kill).encode();
+        match C2s::decode(k[2], &mut NetReader::new(&k[3..])).expect("decode") {
+            C2s::TileEdit(d) => assert_eq!(d, kill),
+            other => panic!("expected 17, got {:?}", other.msg_id()),
+        }
+        // A truncated body (4 of 8 bytes) must not decode.
+        assert!(C2s::decode(17, &mut NetReader::new(&body[..4])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_tile_frame_section_round_trips() {
+        // `NetMessage.cs:427-432`: four shorts; the reader feeds
+        // `WorldGen.SectionTileFrame(startX, startY, endXInclusive,
+        // endYInclusive)` (`MessageBuffer.cs:898`, `WorldGen.cs:80343`).
+        let f = TileFrameSection {
+            start_x: 200,
+            start_y: 150,
+            end_x: 399,
+            end_y: 299,
+        };
+        let frame = S2c::TileFrameSection(f).encode();
+        assert_eq!(frame[2], 11);
+        let mut body = Vec::new();
+        for v in [200i16, 150, 399, 299] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&frame[3..], &body);
+        match S2c::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode") {
+            S2c::TileFrameSection(d) => assert_eq!(d, f),
+            other => panic!("expected 11, got {:?}", other.msg_id()),
+        }
+        // Read-side only (deprecated, 0 SendData sites) — no C2s codec.
+        assert!(C2s::decode(11, &mut NetReader::new(&body)).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_door_toggle_round_trips() {
+        // `NetMessage.cs:537-542`: (byte)action + (short)x + (short)y +
+        // ((number4 == 1f) ? 1 : 0).
+        let d = DoorToggle {
+            action: 0,
+            x: 4200,
+            y: 1100,
+            direction: 1,
+        };
+        let f = S2c::DoorToggle(d).encode();
+        assert_eq!(f[2], 19);
+        let mut body = vec![0];
+        body.extend_from_slice(&4200i16.to_le_bytes());
+        body.extend_from_slice(&1100i16.to_le_bytes());
+        body.push(1);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::DoorToggle(dd) => assert_eq!(dd, d),
+            other => panic!("expected 19, got {:?}", other.msg_id()),
+        }
+        let c = C2s::DoorToggle(d).encode();
+        assert_eq!(c[2], 19);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::DoorToggle(dd) => assert_eq!(dd, d),
+            other => panic!("expected 19, got {:?}", other.msg_id()),
+        }
+        // The tall-gate close (action 5) rides direction 0 — the reader
+        // maps `!= 0` to 1 else -1 (`MessageBuffer.cs:1306`).
+        let gate = DoorToggle { action: 5, x: 10, y: 20, direction: 0 };
+        let g = C2s::DoorToggle(gate).encode();
+        assert_eq!(g[3], 5);
+        assert_eq!(*g.last().unwrap(), 0);
+    }
+
+    #[test]
+    fn s1_i_1b_tile_and_wall_paint_round_trip() {
+        // `NetMessage.cs:1081-1087` — 63 and 64 share the case: (short)x +
+        // (short)y + (byte)paint + (byte)coat.
+        let p = TilePaint {
+            x: 4210,
+            y: 1120,
+            paint: 13,
+            coat: 1,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&4210i16.to_le_bytes());
+        body.extend_from_slice(&1120i16.to_le_bytes());
+        body.push(13);
+        body.push(1);
+        for (mk, sid, rid) in [
+            (C2s::TilePaint as fn(TilePaint) -> C2s, 63u8, 63u8),
+            (C2s::WallPaint as fn(TilePaint) -> C2s, 64, 64),
+        ] {
+            let c = mk(p).encode();
+            assert_eq!(c[2], sid);
+            assert_eq!(&c[3..], &body);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+                C2s::TilePaint(d) if rid == 63 => assert_eq!(d, p),
+                C2s::WallPaint(d) if rid == 64 => assert_eq!(d, p),
+                other => panic!("expected {rid}, got {:?}", other.msg_id()),
+            }
+        }
+        for (mk, sid) in [
+            (S2c::TilePaint as fn(TilePaint) -> S2c, 63u8),
+            (S2c::WallPaint as fn(TilePaint) -> S2c, 64),
+        ] {
+            let f = mk(p).encode();
+            assert_eq!(f[2], sid);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::TilePaint(d) if sid == 63 => assert_eq!(d, p),
+                S2c::WallPaint(d) if sid == 64 => assert_eq!(d, p),
+                other => panic!("expected {sid}, got {:?}", other.msg_id()),
+            }
+        }
+        // coat == 0 is the plain-paint arm (`MessageBuffer.cs:2915-2922`).
+        let plain = TilePaint { coat: 0, ..p };
+        let c = C2s::TilePaint(plain).encode();
+        assert_eq!(*c.last().unwrap(), 0);
+    }
+
+    #[test]
+    fn s1_i_1b_tile_picking_round_trips() {
+        // `NetMessage.cs:1509-1514`: (byte)player + (short)x + (short)y +
+        // (byte)damage.
+        let p = TilePicking {
+            player_id: 6,
+            x: 4220,
+            y: 1140,
+            damage: 35,
+        };
+        let mut body = vec![6];
+        body.extend_from_slice(&4220i16.to_le_bytes());
+        body.extend_from_slice(&1140i16.to_le_bytes());
+        body.push(35);
+        let c = C2s::TilePicking(p).encode();
+        assert_eq!(c[2], 125);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TilePicking(d) => assert_eq!(d, p),
+            other => panic!("expected 125, got {:?}", other.msg_id()),
+        }
+        let f = S2c::TilePicking(p).encode();
+        assert_eq!(f[2], 125);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TilePicking(d) => assert_eq!(d, p),
+            other => panic!("expected 125, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1b_team_change_ui_shares_the_45_body() {
+        // `NetMessage.cs:970-974` — 157 shares 45's writer case: (byte)player
+        // + (byte)team. The reader tail (`MessageBuffer.cs:2355-2363`) is the
+        // dispatcher's job (S1-I-4).
+        let t = TeamChange { player_id: 3, team: 2 };
+        let c = C2s::TeamChangeUi(t).encode();
+        assert_eq!(c[2], 157);
+        assert_eq!(&c[3..], &[3, 2]);
+        // Byte-identical body to the 45 codec, only the id byte differs.
+        let plain = C2s::TeamChange(t).encode();
+        assert_eq!(&c[3..], &plain[3..]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TeamChangeUi(d) => assert_eq!(d, t),
+            other => panic!("expected 157, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1b_extra_spawn_loaded_round_trips() {
+        // `NetMessage.cs:1659-1661`: one (byte)player; the reader spawns with
+        // `PlayerSpawnContext.TeamSwap` = 3 (`MessageBuffer.cs:4453-4454`,
+        // `PlayerSpawnContext.cs:5-8`).
+        let f = S2c::ExtraSpawnLoaded { player_id: 4 }.encode();
+        assert_eq!(f[2], 158);
+        assert_eq!(&f[3..], &[4]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ExtraSpawnLoaded { player_id } => assert_eq!(player_id, 4),
+            other => panic!("expected 158, got {:?}", other.msg_id()),
+        }
+        // Read-side only — the C# sends it from the server's 157 tail.
+        assert!(C2s::decode(158, &mut NetReader::new(&[4])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_section_request_round_trips() {
+        // `NetMessage.cs:1662-1665` writes two (short)s; the reader reads two
+        // ReadUInt16 (`MessageBuffer.cs:4460`) — the non-negative section
+        // indices are the same bytes either way.
+        let c = C2s::SectionRequest { section_x: 21, section_y: 7 }.encode();
+        assert_eq!(c[2], 159);
+        let mut body = Vec::new();
+        body.extend_from_slice(&21u16.to_le_bytes());
+        body.extend_from_slice(&7u16.to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SectionRequest { section_x, section_y } => {
+                assert_eq!((section_x, section_y), (21, 7));
+            }
+            other => panic!("expected 159, got {:?}", other.msg_id()),
+        }
+        // The section math the request keys on: `Netplay.GetSectionX/Y`
+        // (`Netplay.cs:770-777`) = the port's `section_x/y` — a spawn at
+        // tile (4200, 1100) asks for section (21, 7).
+        assert_eq!(section_x(4200), 21);
+        assert_eq!(section_y(1100), 7);
+        // Truncated body must not decode.
+        assert!(C2s::decode(159, &mut NetReader::new(&body[..3])).is_none());
+    }
 }
