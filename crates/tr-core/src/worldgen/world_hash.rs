@@ -322,6 +322,14 @@ mod tests {
     // GenerateDungeonDitherSnake (paint each line into the outer hitbox) and
     // ApplyPass's two-dungeon loop. Still UNWIRED (B5 publishes the producer
     // GenVars, B6 lands the gated step) — both pins stay, a == b untouched.
+    // W4-f24 B5: `dungeon_genvars.rs` ports the producer chain —
+    // SetupDungeonGenVarVariables's colour roll + drunk wall re-roll
+    // (DungeonCrawler.cs:56-108), CreatePotentialDungeonBounds
+    // (DungeonUtils.cs:2067-2087), the dual style quads (:111-128) with the
+    // paint fields of the four statics c32 deferred (Cavern/Corruption/
+    // Jungle/Temple) + Snow/Desert/Hallow + the GetCurrentDungeonStyle
+    // wrapper (DungeonGenerationStyles.cs:95-135). The setup draws only
+    // under DUAL_DUNGEONS (B6 wires it) — both classic pins stay.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

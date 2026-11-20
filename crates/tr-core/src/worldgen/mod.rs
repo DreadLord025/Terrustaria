@@ -29,6 +29,7 @@ mod desert_entrances;
 // (the f64 Vector2D/Utils math + the clamped DungeonBounds rectangle).
 mod dungeon_bounds;
 mod dungeon_control_line;
+mod dungeon_genvars;
 mod dither_snake;
 mod snake_math;
 pub mod evil;
