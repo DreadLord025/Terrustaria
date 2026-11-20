@@ -234,8 +234,51 @@ impl CageAnimator {
         for i in 0..N {
             step_frog(&mut self.frog, i, rand); // :15623-15723
         }
-        // The remaining table loops (mouse … jellyfish, Main.cs:15724-16595)
-        // land with their step functions in the following batches.
+        for i in 0..N {
+            step_mouse(&mut self.mouse, i, rand); // :15724-15829
+        }
+        for i in 0..N {
+            step_worm(&mut self.worm, i, rand); // :15830-15858
+        }
+        // :15859-15885 — the slug rows' wrap limits num33 = 24/31/34.
+        for r in 0..3 {
+            let wrap = match r {
+                0 => 24,
+                1 => 31,
+                _ => 34,
+            };
+            for i in 0..N {
+                self.slug.counter[r][i] += 1;
+                if self.slug.counter[r][i] >= rand.next_range(5, 15) {
+                    self.slug.counter[r][i] = 0;
+                    self.slug.frame[r][i] += 1;
+                    if self.slug.frame[r][i] >= wrap {
+                        self.slug.frame[r][i] = 0;
+                    }
+                }
+            }
+        }
+        for i in 0..N {
+            step_grasshopper(&mut self.grasshopper, i, rand); // :15886-15948
+        }
+        for i in 0..N {
+            step_maggot(&mut self.maggot, i, rand); // :15949-15985
+        }
+        for i in 0..N {
+            step_ladybug(&mut self.ladybug, i, rand); // :15986-16049
+        }
+        for i in 0..N {
+            step_rat(&mut self.rat, i, rand); // :16050-16156
+        }
+        for i in 0..N {
+            step_water_strider(&mut self.water_strider, i, rand); // :16157-16196
+        }
+        step_fairy_jar(&mut self.fairy_jar); // :16197-16227 (RNG-free)
+        for i in 0..N {
+            step_fish_bowl(&mut self.fish_bowl, &mut self.fish_bowl_mode, i, rand); // :16228-16384
+        }
+        // The remaining table loops (lavaFishBowl … jellyfish,
+        // Main.cs:16385-16595) land with their step functions next.
     }
 
     /// G6 key input (the `TileAnimator::anim_key` convention): FNV-1a over
@@ -1515,6 +1558,484 @@ fn step_frog(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
     }
 }
 
+/// `Main.mouseCageFrame[num31]` (`Main.cs:15726-15828`).
+fn step_mouse(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
+    let f = t.frame[i];
+    if (0..=1).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.frame[i] += 1;
+            if t.frame[i] > 1 {
+                t.frame[i] = 0;
+            }
+            t.counter[i] = 0;
+            if rand.next_max(15) == 0 {
+                t.frame[i] = 4;
+            }
+        }
+    } else if (4..=7).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.counter[i] = 0;
+            t.frame[i] += 1;
+        }
+        if t.frame[i] > 7 {
+            t.frame[i] = 2;
+        }
+    } else if (2..=3).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.frame[i] += 1;
+            if t.frame[i] > 3 {
+                t.frame[i] = 2;
+            }
+            t.counter[i] = 0;
+            if rand.next_max(15) == 0 {
+                t.frame[i] = 8;
+            } else if rand.next_max(15) == 0 {
+                t.frame[i] = 12;
+            }
+        }
+    } else if (8..=11).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.counter[i] = 0;
+            t.frame[i] += 1;
+        }
+        if t.frame[i] > 11 {
+            t.frame[i] = 0;
+        }
+    } else if (12..=13).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.counter[i] = 0;
+            t.frame[i] += 1;
+        }
+    } else if (14..=17).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.counter[i] = 0;
+            t.frame[i] += 1;
+            if t.frame[i] > 17 && rand.next_max(20) != 0 {
+                t.frame[i] = 14;
+            }
+        }
+    } else {
+        if !(18..=19).contains(&f) {
+            return;
+        }
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.counter[i] = 0;
+            t.frame[i] += 1;
+            if t.frame[i] > 19 {
+                t.frame[i] = 0;
+            }
+        }
+    }
+}
+
+/// `Main.wormCageFrame[num32]` (`Main.cs:15832-15857`): the counter rolls
+/// Next(30,91) EVERY tick; the 1/4 gate then steps, with the frame-9 coin
+/// flip and the >18 wrap.
+fn step_worm(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
+    t.counter[i] += 1;
+    if t.counter[i] < rand.next_range(30, 91) {
+        return;
+    }
+    t.counter[i] = 0;
+    if rand.next_max(4) != 0 {
+        return;
+    }
+    t.frame[i] += 1;
+    if t.frame[i] == 9 && rand.next_max(2) == 0 {
+        t.frame[i] = 0;
+    }
+    if t.frame[i] > 18 {
+        if rand.next_max(2) == 0 {
+            t.frame[i] = 9;
+        } else {
+            t.frame[i] = 0;
+        }
+    }
+}
+
+/// `Main.grasshopperCageFrame[num36]` (`Main.cs:15888-15947`).
+fn step_grasshopper(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
+    let f = t.frame[i];
+    if (0..=1).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.frame[i] += 1;
+            if t.frame[i] > 1 {
+                t.frame[i] = 0;
+            }
+            t.counter[i] = 0;
+            if rand.next_max(15) == 0 {
+                t.frame[i] = 2;
+            }
+        }
+    } else if (2..=5).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.counter[i] = 0;
+            t.frame[i] += 1;
+        }
+        if t.frame[i] > 5 {
+            t.frame[i] = 6;
+        }
+    } else if (6..=7).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.frame[i] += 1;
+            if t.frame[i] > 7 {
+                t.frame[i] = 6;
+            }
+            t.counter[i] = 0;
+            if rand.next_max(15) == 0 {
+                t.frame[i] = 8;
+            }
+        }
+    } else if (8..=11).contains(&f) {
+        t.counter[i] += 1;
+        if t.counter[i] >= 5 {
+            t.counter[i] = 0;
+            t.frame[i] += 1;
+        }
+        if t.frame[i] > 11 {
+            t.frame[i] = 0;
+        }
+    }
+}
+
+/// `Main.maggotCageFrame[num37]` (`Main.cs:15951-15984`): unconditional
+/// counter tick; idle 0/6/18 rolls 100-140, else limit 8.
+fn step_maggot(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
+    t.counter[i] += 1;
+    let f = t.frame[i];
+    let idle = f == 0 || f == 6 || f == 18;
+    let mut limit = 8;
+    if idle {
+        limit = rand.next_range(100, 140);
+    }
+    if t.counter[i] < limit {
+        return;
+    }
+    t.counter[i] = 0;
+    if t.frame[i] == 0 {
+        if rand.next_max(3) == 0 {
+            t.frame[i] = 13;
+        } else {
+            t.frame[i] = 1;
+        }
+        return;
+    }
+    if t.frame[i] == 12 {
+        t.frame[i] = 0;
+        return;
+    }
+    t.frame[i] += 1;
+    if t.frame[i] > 23 {
+        t.frame[i] = 6;
+    }
+}
+
+/// `Main.ladybugCageFrame[num40]` (`Main.cs:15988-16048`): the limit roll
+/// order is 18 → (160,241), else 3/7/>=17 → (198,206), else 8-16 → 5, else
+/// (10,12) — the base Next(10,12) is drawn UNCONDITIONALLY first
+/// (`:15990`), then overwritten by the state arms.
+fn step_ladybug(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
+    t.counter[i] += 1;
+    let f = t.frame[i];
+    let idle = f == 3 || f == 7 || f >= 17;
+    let mut limit = rand.next_range(10, 12);
+    if f == 18 {
+        limit = rand.next_range(160, 241);
+    } else if idle {
+        limit = rand.next_range(198, 206);
+    } else if (8..=16).contains(&f) {
+        limit = 5;
+    }
+    if t.counter[i] < limit {
+        return;
+    }
+    t.counter[i] = 0;
+    if t.frame[i] < 18 {
+        if (t.frame[i] == 2 || t.frame[i] == 5) && rand.next_max(3) == 0 {
+            t.frame[i] = 17;
+        } else if t.frame[i] == 3 || t.frame[i] == 12 {
+            match rand.next_max(3) {
+                0 | 1 => t.frame[i] = 4,
+                _ => t.frame[i] = 13,
+            }
+        } else if t.frame[i] == 7 || t.frame[i] == 16 {
+            match rand.next_max(3) {
+                0 | 1 => t.frame[i] = 0,
+                _ => t.frame[i] = 8,
+            }
+        } else {
+            t.frame[i] += 1;
+        }
+    } else {
+        t.frame[i] = if rand.next_max(2) == 0 { 13 } else { 4 };
+    }
+}
+
+/// `Main.ratCageFrame[num42]` (`Main.cs:16052-16155`): the >11 sleep band
+/// re-derives its frame from `counter % 90` every tick; the 8-11 groom
+/// band steps on `counter % 10 == 0`.
+fn step_rat(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
+    t.counter[i] += 1;
+    let f = t.frame[i];
+    let idle = f == 0 || f == 4;
+    let groom = f == 8 || f == 9 || f == 10 || f == 11;
+    let sleep = f > 11;
+    let mut limit = 5;
+    if idle {
+        limit = rand.next_range(40, 70);
+    }
+    if groom {
+        limit = rand.next_range(70, 110);
+    }
+    if sleep {
+        limit = 180;
+    }
+    if t.counter[i] >= limit {
+        t.counter[i] = 0;
+        if t.frame[i] == 0 && rand.next_max(2) == 0 {
+            if rand.next_max(3) != 0 {
+                t.frame[i] = 12;
+            } else {
+                t.frame[i] = 8;
+            }
+            return;
+        }
+        if t.frame[i] == 4 && rand.next_max(2) == 0 {
+            t.frame[i] = 10;
+            return;
+        }
+        if t.frame[i] == 7 || t.frame[i] == 9 || t.frame[i] == 12 {
+            t.frame[i] = 0;
+            return;
+        }
+        if t.frame[i] == 11 {
+            t.frame[i] = 4;
+            return;
+        }
+        t.frame[i] += 1;
+        if t.frame[i] > 16 {
+            t.frame[i] = 0;
+        }
+    } else if t.frame[i] > 11 {
+        let n = t.counter[i] % 90;
+        t.frame[i] = if n > 80 {
+            12
+        } else if n > 70 {
+            13
+        } else if n > 60 {
+            14
+        } else if n > 50 {
+            15
+        } else if n > 40 {
+            16
+        } else if n > 30 {
+            15
+        } else if n > 20 {
+            14
+        } else if n > 10 {
+            13
+        } else {
+            12
+        };
+    } else if t.counter[i] % 10 == 0 {
+        if t.frame[i] == 8 || t.frame[i] == 10 {
+            t.frame[i] += 1;
+        } else if t.frame[i] == 9 || t.frame[i] == 11 {
+            t.frame[i] -= 1;
+        }
+    }
+}
+
+/// `Main.waterStriderCageFrame[num46]` (`Main.cs:16159-16195`).
+fn step_water_strider(t: &mut CageTable, i: usize, rand: &mut UnifiedRandom) {
+    t.counter[i] += 1;
+    let f = t.frame[i];
+    let idle = f == 0 || f == 8;
+    let pose = f == 17 || f == 20;
+    let mut limit = 5;
+    if idle {
+        limit = rand.next_range(110, 210);
+    }
+    if pose {
+        limit = rand.next_range(150, 260);
+    }
+    if t.counter[i] < limit {
+        return;
+    }
+    t.counter[i] = 0;
+    if t.frame[i] == 0 && rand.next_max(2) == 0 {
+        t.frame[i] = 16;
+        return;
+    }
+    if t.frame[i] == 8 && rand.next_max(2) == 0 {
+        t.frame[i] = 19;
+        return;
+    }
+    if t.frame[i] == 15 || t.frame[i] == 18 {
+        t.frame[i] = 0;
+        return;
+    }
+    t.frame[i] += 1;
+    if t.frame[i] > 21 {
+        t.frame[i] = 8;
+    }
+}
+
+/// `Main.fairyJarFrame` (`Main.cs:16197-16227`): slot 0 is the master
+/// 12-frame cycle (6-tick step); slots 1-24 derive from it with the
+/// `%2/%5/%8` offsets and the while-wrap. RNG-free.
+fn step_fairy_jar(t: &mut CageTable) {
+    t.counter[0] += 1;
+    if t.counter[0] > 5 {
+        t.counter[0] = 0;
+        t.frame[0] += 1;
+        if t.frame[0] > 11 {
+            t.frame[0] = 0;
+        }
+    }
+    for i in 1..N {
+        let mut num50 = t.frame[0] + (i as i32) % 12;
+        if i % 2 == 0 {
+            num50 += 1;
+        }
+        if i % 5 == 0 {
+            num50 += 1;
+        }
+        if i % 8 == 0 {
+            num50 += 1;
+        }
+        while num50 >= 12 {
+            num50 -= 12;
+        }
+        t.frame[i] = num50;
+    }
+}
+
+/// `Main.fishBowlFrame[num51]` + `fishBowlFrameMode[num51]`
+/// (`Main.cs:16230-16383`): modes 1/2/3 are the three swim speeds (the
+/// mode re-roll gates differ), mode 0 with frame <= 10 is the default
+/// swim; 11/14-16 is the blow-bubble band, 12/13 the surface band.
+fn step_fish_bowl(
+    t: &mut CageTable,
+    mode: &mut [u8; N],
+    i: usize,
+    rand: &mut UnifiedRandom,
+) {
+    let max_value = 5;
+    if mode[i] == 1 {
+        if rand.next_max(900) == 0 {
+            mode[i] = rand.next_max(max_value) as u8;
+        }
+        t.counter[i] += 1;
+        if t.counter[i] < 5 {
+            return;
+        }
+        t.counter[i] = 0;
+        if t.frame[i] == 10 {
+            if rand.next_max(20) == 0 {
+                t.frame[i] = 11;
+                mode[i] = 0;
+            } else {
+                t.frame[i] = 1;
+            }
+        } else {
+            t.frame[i] += 1;
+        }
+    } else if mode[i] == 2 {
+        if rand.next_max(3600) == 0 {
+            mode[i] = rand.next_max(max_value) as u8;
+        }
+        t.counter[i] += 1;
+        if t.counter[i] < 20 {
+            return;
+        }
+        t.counter[i] = 0;
+        if t.frame[i] == 10 {
+            if rand.next_max(20) == 0 {
+                t.frame[i] = 11;
+                mode[i] = 0;
+            } else {
+                t.frame[i] = 1;
+            }
+        } else {
+            t.frame[i] += 1;
+        }
+    } else if mode[i] == 3 {
+        if rand.next_max(3600) == 0 {
+            mode[i] = rand.next_max(max_value) as u8;
+        }
+        t.counter[i] += 1;
+        if t.counter[i] < rand.next_range(5, 3600) {
+            return;
+        }
+        t.counter[i] = 0;
+        if t.frame[i] == 10 {
+            if rand.next_max(20) == 0 {
+                t.frame[i] = 11;
+                mode[i] = 0;
+            } else {
+                t.frame[i] = 1;
+            }
+        } else {
+            t.frame[i] += 1;
+        }
+    } else if t.frame[i] <= 10 {
+        if rand.next_max(3600) == 0 {
+            mode[i] = rand.next_max(max_value) as u8;
+        }
+        t.counter[i] += 1;
+        if t.counter[i] < 10 {
+            return;
+        }
+        t.counter[i] = 0;
+        if t.frame[i] == 10 {
+            if rand.next_max(12) == 0 {
+                t.frame[i] = 11;
+            } else {
+                t.frame[i] = 1;
+            }
+        } else {
+            t.frame[i] += 1;
+        }
+    } else if t.frame[i] == 12 || t.frame[i] == 13 {
+        t.counter[i] += 1;
+        if t.counter[i] < 10 {
+            return;
+        }
+        t.counter[i] = 0;
+        t.frame[i] += 1;
+        if t.frame[i] > 13 {
+            if rand.next_max(20) == 0 {
+                t.frame[i] = 14;
+            } else {
+                t.frame[i] = 12;
+            }
+        }
+    } else {
+        if t.frame[i] < 11 {
+            return;
+        }
+        t.counter[i] += 1;
+        if t.counter[i] >= 10 {
+            t.counter[i] = 0;
+            t.frame[i] += 1;
+            if t.frame[i] > 16 {
+                t.frame[i] = 4;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1959,5 +2480,236 @@ mod tests {
         t.counter[0] = 0;
         step_frog(&mut t, 0, &mut r);
         assert_eq!(t.frame[0], 17, "no wrap roll below the 5-tick gate");
+    }
+
+    // ---- batch 3: mouse … fishBowl ----
+
+    #[test]
+    fn mouse_idle_band_can_hop_to_4_after_the_wrap() {
+        // Main.cs:15726-15741: the 0/1 walk wraps to 0 THEN rolls the 1/15
+        // hop to 4 — the roll happens even when the wrap fired.
+        let mut t = CageTable::default();
+        let mut r = rng();
+        let mut saw4 = false;
+        for _ in 0..400 {
+            t.frame[0] = 1;
+            t.counter[0] = 4;
+            step_mouse(&mut t, 0, &mut r);
+            match t.frame[0] {
+                0 => {}
+                4 => saw4 = true,
+                other => panic!("unexpected {other}"),
+            }
+        }
+        assert!(saw4);
+        // The 2/3 band's chained 1/15s: 8 then 12 (:15767-15774).
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..2000 {
+            t.frame[0] = 3;
+            t.counter[0] = 4;
+            step_mouse(&mut t, 0, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&8) && saw.contains(&12) && saw.contains(&2));
+    }
+
+    #[test]
+    fn worm_frame9_coin_and_18_wrap() {
+        // Main.cs:15842-15856: the step to 9 rolls Next(2)==0 → 0; > 18
+        // rolls 9 or 0. Drive the gate deterministically: counter 100 is
+        // past any Next(30,91); the 1/4 gate still rolls — run many.
+        let mut t = CageTable::default();
+        let mut r = rng();
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..2000 {
+            t.frame[0] = 8;
+            t.counter[0] = 100;
+            step_worm(&mut t, 0, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&0) && saw.contains(&9), "the 9-coin fires both ways");
+        saw.clear();
+        for _ in 0..2000 {
+            t.frame[0] = 18;
+            t.counter[0] = 100;
+            step_worm(&mut t, 0, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&0) && saw.contains(&9) && saw.contains(&19) == false);
+    }
+
+    #[test]
+    fn slug_rows_wrap_at_24_31_34() {
+        // Main.cs:15859-15884: num33 = 24/31/34 per row, >= wrap → 0.
+        let mut a = CageAnimator::new();
+        a.critter_cage = true;
+        let mut r = rng();
+        for row in 0..3 {
+            let wrap = [24, 31, 34][row];
+            a.slug.frame[row][0] = wrap - 1;
+            a.slug.counter[row][0] = 100; // past any Next(5,15)
+        }
+        // One full animate call touches every table; pin only the slug.
+        a.animate(&mut r);
+        for row in 0..3 {
+            assert_eq!(a.slug.frame[row][0], 0, "row {row} wraps");
+            assert_eq!(a.slug.counter[row][0], 0);
+        }
+    }
+
+    #[test]
+    fn grasshopper_hop_bands_mirror_the_mouse_shape() {
+        // Main.cs:15888-15947: 0/1 → 1/15 hop to 2; 6/7 → 1/15 hop to 8.
+        let mut t = CageTable::default();
+        let mut r = rng();
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..400 {
+            t.frame[0] = 1;
+            t.counter[0] = 4;
+            step_grasshopper(&mut t, 0, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&0) && saw.contains(&2));
+        saw.clear();
+        for _ in 0..400 {
+            t.frame[0] = 7;
+            t.counter[0] = 4;
+            step_grasshopper(&mut t, 0, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&6) && saw.contains(&8));
+    }
+
+    #[test]
+    fn maggot_idle_0_picks_13_or_1_and_12_resets() {
+        // Main.cs:15963-15979.
+        let mut t = CageTable::default();
+        let mut r = rng();
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..300 {
+            t.frame[0] = 0;
+            t.counter[0] = 200; // past any Next(100,140)
+            step_maggot(&mut t, 0, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert_eq!(saw, [1, 13].into_iter().collect());
+        t.frame[0] = 12;
+        t.counter[0] = 200;
+        step_maggot(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 0);
+        // The > 23 wrap lands on 6 (:15981-15983).
+        t.frame[0] = 23;
+        t.counter[0] = 200;
+        step_maggot(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 6);
+    }
+
+    #[test]
+    fn ladybug_base_limit_draw_is_unconditional() {
+        // Main.cs:15990: Next(10,12) draws even for the 8-16 band (limit
+        // overwritten to 5) — pin the stream: one tick of a frame-8 slot
+        // consumes exactly the base draw (no state draw).
+        let mut t = CageTable::default();
+        t.frame[0] = 8;
+        let mut r = rng();
+        step_ladybug(&mut t, 0, &mut r);
+        let mut r2 = rng();
+        r2.next_range(10, 12);
+        assert_eq!(r.next(), r2.next(), "exactly the base Next(10,12)");
+        // Frame 18 draws base + (160,241) (:15991-15993).
+        t.frame[0] = 18;
+        t.counter[0] = 0;
+        let mut r3 = rng();
+        step_ladybug(&mut t, 0, &mut r3);
+        let mut r4 = rng();
+        r4.next_range(10, 12);
+        r4.next_range(160, 241);
+        assert_eq!(r3.next(), r4.next());
+    }
+
+    #[test]
+    fn rat_sleep_band_ladder_and_groom_mod10() {
+        // Main.cs:16105-16155: the >11 band maps counter%90; the groom
+        // band steps only on counter%10==0 (8/10 ++, 9/11 --).
+        let mut t = CageTable::default();
+        let mut r = rng();
+        t.frame[0] = 12;
+        t.counter[0] = 80; // ++ → 81 → n=81 > 80 → 12
+        step_rat(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 12);
+        t.counter[0] = 70; // ++ → 71 → 13
+        step_rat(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 13);
+        t.frame[0] = 8;
+        t.counter[0] = 9; // ++ → 10, %10==0 → 9
+        step_rat(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 9);
+        t.counter[0] = 10; // ++ → 11, %10!=0 → hold
+        step_rat(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 9);
+        t.counter[0] = 19; // ++ → 20 → 9-- → 8
+        step_rat(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 8);
+    }
+
+    #[test]
+    fn water_strider_15_18_reset_and_21_wrap() {
+        // Main.cs:16186-16195.
+        let mut t = CageTable::default();
+        let mut r = rng();
+        t.frame[0] = 15;
+        t.counter[0] = 10;
+        step_water_strider(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 0);
+        t.frame[0] = 21;
+        t.counter[0] = 10;
+        step_water_strider(&mut t, 0, &mut r);
+        assert_eq!(t.frame[0], 8, "> 21 wraps to 8");
+    }
+
+    #[test]
+    fn fairy_jar_slots_derive_from_the_master_with_offsets() {
+        // Main.cs:16197-16227: slot 0 steps every 6 ticks; slot i =
+        // (master + i%12 + [i%2==0] + [i%5==0] + [i%8==0]) wrapped 12.
+        let mut t = CageTable::default();
+        for _ in 0..6 {
+            step_fairy_jar(&mut t);
+        }
+        assert_eq!((t.frame[0], t.counter[0]), (1, 0));
+        // i=8: 1 + 8 + 1 + 0 + 1 = 11; i=10: 1 + 10 + 1 + 1 + 0 = 13 → 1.
+        assert_eq!(t.frame[8], 11);
+        assert_eq!(t.frame[10], 1);
+        // i=1: 1 + 1 = 2 (no offsets).
+        assert_eq!(t.frame[1], 2);
+        // The master wraps 11 → 0 after 12 steps (72 ticks).
+        for _ in 0..66 {
+            step_fairy_jar(&mut t);
+        }
+        assert_eq!(t.frame[0], 0);
+    }
+
+    #[test]
+    fn fish_bowl_mode0_frame10_bubble_uses_next12_not_next20() {
+        // Main.cs:16330-16339: the default swim's bubble roll is 1/12
+        // (the mode arms use 1/20 AND reset the mode). Pin the stream
+        // shape: a forced pass at frame 10 draws gate + 1/12 only.
+        let mut t = CageTable::default();
+        let mut mode = [0u8; N];
+        t.frame[0] = 10;
+        t.counter[0] = 9; // ++ → 10, passes the < 10 gate
+        let mut r = rng();
+        step_fish_bowl(&mut t, &mut mode, 0, &mut r);
+        // Outcome: 11 (bubble) or 1 (wrap); mode stays 0 either way.
+        assert!(matches!(t.frame[0], 1 | 11));
+        assert_eq!(mode[0], 0, "the default arm never writes the mode");
+        // The 12/13 surface band wraps > 13 with the 1/20 → 14 roll.
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..400 {
+            t.frame[0] = 13;
+            t.counter[0] = 9;
+            step_fish_bowl(&mut t, &mut mode, 0, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert_eq!(saw, [12, 14].into_iter().collect());
     }
 }
