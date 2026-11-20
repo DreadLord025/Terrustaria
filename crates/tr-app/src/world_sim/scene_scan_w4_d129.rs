@@ -69,7 +69,7 @@ fn w4_d129_the_scan_is_rng_free_and_repeatable() {
     assert_eq!(a, b, "the scan is deterministic and RNG-free");
     // The wind walk's stream is not consumed by the scan: a Wind built from
     // the same seed keeps its counter/target pair across scans.
-    let mut wind = tr_core::wind::Wind::new(7);
+    let wind = tr_core::wind::Wind::new(7);
     let before = (wind.wind_counter(), wind.speed_target.to_bits());
     let _ = scan_scene_at(&world, center, false, false, false);
     let _ = scan_scene_at(&world, center, true, true, false);

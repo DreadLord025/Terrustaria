@@ -64,25 +64,29 @@ fn w4_d129_the_jungle_zone_refuses_the_underworld() {
 #[test]
 fn w4_d129_the_shimmer_window_and_the_dungeon_refusal() {
     // `SceneMetrics.cs:704`: `Y > worldSurface + 84 && Y < maxTilesY - 396`
-    // — both edges exclusive. Surface 100, height 500: rows 185..103.
+    // — both edges exclusive. Surface 100, height 1200: rows 185..803.
     let mut m = metrics_at(100, 184);
     m.shimmer_tile_count = thresholds::SHIMMER_TILE;
-    m.calculate_zones(100.0, 400, 200.0, 1000, 500, false, false);
+    m.calculate_zones(100.0, 1000, 200.0, 1000, 1200, false, false);
     assert!(!m.underground_for_shimmering, "184 == surface+84 is outside");
     let mut m = metrics_at(100, 185);
     m.shimmer_tile_count = thresholds::SHIMMER_TILE;
-    m.calculate_zones(100.0, 400, 200.0, 1000, 500, false, false);
+    m.calculate_zones(100.0, 1000, 200.0, 1000, 1200, false, false);
     assert!(m.underground_for_shimmering);
     assert!(m.zone_shimmer);
-    let mut m = metrics_at(100, 104);
+    let mut m = metrics_at(100, 804);
     m.shimmer_tile_count = thresholds::SHIMMER_TILE;
-    m.calculate_zones(100.0, 400, 200.0, 1000, 500, false, false);
-    assert!(!m.underground_for_shimmering, "104 == maxTilesY-396 is outside");
+    m.calculate_zones(100.0, 1000, 200.0, 1000, 1200, false, false);
+    assert!(!m.underground_for_shimmering, "804 == maxTilesY-396 is outside");
+    let mut m = metrics_at(100, 803);
+    m.shimmer_tile_count = thresholds::SHIMMER_TILE;
+    m.calculate_zones(100.0, 1000, 200.0, 1000, 1200, false, false);
+    assert!(m.underground_for_shimmering);
     // `:705`: `!ZoneDungeon` — the driver-set dungeon flag refuses shimmer.
     let mut m = metrics_at(100, 185);
     m.shimmer_tile_count = thresholds::SHIMMER_TILE;
     m.zone_dungeon = true;
-    m.calculate_zones(100.0, 400, 200.0, 1000, 500, false, false);
+    m.calculate_zones(100.0, 1000, 200.0, 1000, 1200, false, false);
     assert!(!m.zone_shimmer);
 }
 
