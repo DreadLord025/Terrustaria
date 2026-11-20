@@ -27,6 +27,7 @@ mod desert_dunes;
 mod desert_entrances;
 pub mod evil;
 mod islands;
+mod island_houses;
 mod liquids;
 mod living_trees;
 pub mod meteor;

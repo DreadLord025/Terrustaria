@@ -1916,33 +1916,42 @@ fn is_tile_nearby(world: &World, x: i32, y: i32, kind: u16, distance: i32) -> bo
     false
 }
 
-/// `WorldGen.Place3x2` (`WorldGen.cs:52066-52196`), the `type == 26` path the
-/// evil pass calls — no RNG: the bounds guard, the clear scan over the 3x2
-/// body, the solid floor under every column (`SolidTile2`), then the frame
-/// write (`frameX = 54 * style + dx * 18`, `frameY = dy * 18`). The boulder
-/// check (`TileID.Sets.Boulders`) is skipped — no boulder tiles exist during
-/// worldgen in the port (D20).
-fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+/// `WorldGen.Place3x2` (`WorldGen.cs:52066-52196`) — the bounds guard, the
+/// clear scan over the 3x2 body (the campfire 215 liquid veto —
+/// `TileID.Sets.Campfires = {215}`, `TileID.cs:616`), the solid floor under
+/// every column (`SolidTile2`), then the frame write (`frameX = 54 * style
+/// + dx * 18`, `frameY = dy * 18`). The 14-style-25 arm scans/writes one
+/// row (`:52073-52080`, `:52151-52170`). The boulder check
+/// (`TileID.Sets.Boulders`) is skipped — no boulder tiles exist during
+/// worldgen in the port (D20); the 88 chest-table and 186/187 pile arms
+/// stay with their callers. Shared with the island houses (W4-d104).
+pub(crate) fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
     if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
         return;
     }
+    let flag = kind == 14 && style == 25;
     let mut flag2 = true;
-    let num = y - 1;
+    let num = if flag { y } else { y - 1 };
     for i in (x - 1)..(x + 2) {
         for j in num..(y + 1) {
-            if world.tile(i, j).is_some_and(|t| t.active()) {
-                flag2 = false;
+            if let Some(t) = world.tile(i, j) {
+                if t.active() {
+                    flag2 = false;
+                }
+                if kind == 215 && t.liquid > 0 {
+                    flag2 = false;
+                }
             }
         }
-        // The `default` case for type 26 (`:52104-52112`): the boulder check
-        // (D20) and the all-columns solid floor.
+        // The `default` case (`:52104-52112`): the boulder check (D20) and
+        // the all-columns solid floor.
         if !solid_tile2(world, i, y + 1) {
             flag2 = false;
         }
     }
     if flag2 {
         let num2 = (54 * style) as i16;
-        // The 3x2 frame write (`:52181-52195`), in the C# row-major order.
+        // The frame writes (`:52151-52195`), in the C# row-major order.
         let write = |world: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16| {
             if let Some(t) = world.tile_mut(x, y) {
                 t.flags |= FLAG_ACTIVE;
@@ -1951,6 +1960,12 @@ fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
                 t.frame_y = frame_y;
             }
         };
+        if flag {
+            write(world, x - 1, y, num2, 0);
+            write(world, x, y, num2 + 18, 0);
+            write(world, x + 1, y, num2 + 36, 0);
+            return;
+        }
         write(world, x - 1, y - 1, num2, 0);
         write(world, x, y - 1, num2 + 18, 0);
         write(world, x + 1, y - 1, num2 + 36, 0);

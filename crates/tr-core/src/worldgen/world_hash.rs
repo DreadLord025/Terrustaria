@@ -238,6 +238,16 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-d104 pass 28 (2026-11-20, code-only): the `Floating Island
+    // Houses` pass (`WorldGen.cs:17859-17874` + `IslandHouse`
+    // `:79203-79484`) lands — the compact islands pass's inline plank box
+    // retires for the faithful sunplate house at the vanilla slot, on the
+    // fresh `pass_rng("Floating Island Houses")` stream. Any world whose
+    // islands placed moves BY DESIGN (the house tiles/walls/frames swap);
+    // a 512-wide world's island band collapses (the sky-band guard), so
+    // this pin is UNCHANGED by the pass itself — the sibling lanes' pins
+    // still re-measure at the gate. The a == b determinism halves stay
+    // untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +291,14 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-d104 pass 28 (2026-11-20, code-only): the faithful `Floating
+    // Island Houses` pass (above) moves this pin BY DESIGN — the default
+    // 4200-wide world's 3-4 islands swap their plank-box houses for the
+    // sunplate shells/interiors/furniture, and the house draws move off
+    // the shared `drng` (the islands pass was its last consumer, so no
+    // other step's ledger shifts). The re-pin is DEFERRED to the merge
+    // gate (no compiler on this branch); the a == b determinism halves
+    // stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

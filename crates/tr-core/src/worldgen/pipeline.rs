@@ -38,6 +38,7 @@ use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
+use super::island_houses;
 use super::islands;
 use super::liquids;
 use super::living_trees;
@@ -366,6 +367,11 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.floatingIslandHouseX/Y/Style` + `skyLake`
+    /// (`WorldGen.cs:13108-13111`) — the house-slot ledger the
+    /// `Floating Islands` pass records and the `Floating Island Houses`
+    /// pass (`:17859`, W4-d104 pass 28) consumes.
+    pub(crate) island_house_slots: Vec<super::island_houses::IslandHouseSlot>,
 }
 
 impl Default for GenVars {
@@ -403,6 +409,7 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            island_house_slots: Vec::new(),
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1369,6 +1376,17 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Floating Island Houses slot (`WorldGen.cs:17859`):
+    // after the `Living Trees` block (`:16419` region, the port's compact
+    // chain order) and before Planting Trees (`:19940`) — W4-d104 pass 28.
+    // The house draws move off the shared `drng` (the islands pass was its
+    // last consumer) onto the fresh per-pass stream, so the insertion
+    // shifts no other step's ledger.
+    step!(
+        "floating island houses",
+        "Floating Island Houses",
+        step_floating_island_houses
+    ),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2547,7 +2565,7 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2556,10 +2574,45 @@ fn step_floating_islands(
         world,
         &heights,
         &mut streams.drng,
+        &mut gv.island_house_slots,
+    );
+}
+
+/// The `Floating Island Houses` pass (`WorldGen.cs:17859-17874`, W4-d104
+/// pass 28): the sunplate houses over the island-slot ledger, on the
+/// fresh `pass_rng("Floating Island Houses")` stream. The
+/// `Skyblock.denyFloatingIslands` gate (`:17861`, `:3087-3096`:
+/// skyblock && !extraFloatingIslands) rides the step.
+fn step_floating_island_houses(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK)
+        && !world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::EXTRA_FLOATING_ISLANDS)
+    {
+        return;
+    }
+    let slots = std::mem::take(&mut gv.island_house_slots);
+    island_houses::pass_floating_island_houses(
+        world,
+        &slots,
+        &mut streams.pass_rng("Floating Island Houses"),
         streams.chest_stock.as_deref_mut(),
         opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        opts.flags.contains(crate::seeds::SeedFlags::DRUNK),
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        opts.crimson,
+        gv.crimson_left,
         &mut gv.sky_island_house_count,
     );
+    gv.island_house_slots = slots;
 }
 
 fn step_slopes(
@@ -3408,6 +3461,27 @@ mod tests {
         assert!(cpos("Moss") == cpos("Gem Caves") + 1);
         assert!(cpos("Temple") == cpos("Moss") + 1);
         assert!(cpos("Webs And Honey") < cpos("Glowing Mushrooms and Jungle Plants"));
+    }
+
+    /// W4-d104 pass 28: `floating island houses` sits between the
+    /// `living trees` block and `trees` (Planting Trees,
+    /// `WorldGen.cs:19940`); the vanilla chain carries Floating Island
+    /// Houses (`:17859`) before Planting Trees too.
+    #[test]
+    fn w4_d104_28_the_island_houses_step_sits_before_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("floating island houses"), pos("living trees") + 1);
+        assert_eq!(pos("floating island houses") + 1, pos("trees"));
+        assert!(pos("floating islands") < pos("floating island houses"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Floating Islands") < cpos("Floating Island Houses"));
+        assert!(cpos("Floating Island Houses") < cpos("Planting Trees"));
     }
 
     /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's

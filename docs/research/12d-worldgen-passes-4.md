@@ -50,9 +50,83 @@ sit in lane 3's numeric range but are also claimed by
   at the gate.
 - Commit + push per pass; docs + `anchors.txt` row per pass.
 
+## Insertion point (derived against the current `pipeline.rs`)
+
+All nine passes sit in vanilla between the `Remove Water From Sand` /
+`Shell Piles` / `Smooth World` / `Living Trees` block (`:15476-16419`) and
+`Planting Trees` (`:19940`). The executed chain runs that block as
+`remove water` → `shell piles` → `slopes` → `living trees`, then `trees`
+(Planting Trees). So the nine rows insert **between `living trees` and
+`trees`**, in C# order. (`Pots` `:17996` sits inside the range but is
+already executed as the earlier `pots` step — a pre-scaffold deviation,
+not re-added.) `Spawn Point` (`:19460`) lifts the compact spawn out of
+`step_world_tail` into its own row; the tail keeps only the moon/hell
+draws that must stay last.
+
+RNG neutrality: `floating islands` is the LAST `streams.drng` consumer,
+so pass 28 moving the house draws off `drng` onto the fresh
+`pass_rng("Floating Island Houses")` stream shifts no other step. Every
+other new pass draws only its own `pass_rng("<vanilla name>")` stream.
+
+## Landing ledger (ONE pass per commit+push)
+
+| pass | commit | status |
+| --- | --- | --- |
+| range doc | 2d9cfcbb | claimed |
+| 28 Floating Island Houses | (this commit) | landed (code-only; hash re-pin deferred to the gate) |
+
+### Pass 28 — Floating Island Houses (landed)
+
+* **C# read in full**: the pass body `WorldGen.cs:17859-17874` (the
+  `Skyblock.denyFloatingIslands` gate `:3087-3096` — skyblock &&
+  !extraFloatingIslands — rides the step adapter), `IslandHouse`
+  `:79203-79484` (wall veto, drunk half-split, direction/width/height
+  rolls, floor scan, sunplate shell + interior, door-side clearance,
+  door, far column, chest main-item cycle + `AddBuriedChest`, fountain,
+  windows, table/chairs + left-chair frameX bump, banners, style-1
+  palms), `Place1x2` `:46652-46679`, `Place2xX` `:39663-39722` (the
+  207→num3=4 arm), `Place3x2` `:52066-52196` (the shared evil.rs copy
+  generalised: the campfire-215 liquid veto + the 14-style-25 row arm —
+  behaviour-identical for the evil pass's type-26 calls), `SwitchFountain`
+  `:51150-51193` (the `Wiring.running` half never fires during worldgen),
+  `TryGrowingTreeByType` `:30343-30354` (323 → `GrowPalmTree(x, y, 0,
+  false)` — the ocean.rs port), the `AddBuriedChest` sky-band slice
+  `:35871-36210` (the 231/altar vetoes, the `SolidTile` floor walk, the
+  `(i-1, k-1)` `PlaceChest` + the S1-A-4 stocking hook).
+* **Rust**: `worldgen/island_houses.rs` (new — the verbatim port + the
+  helpers + 2 witnesses), `islands.rs` (the inline plank `build_house`
+  retires; the pass records the `GenVars.floatingIslandHouseX/Y/Style/
+  skyLake` ledger `:13108-13111`, lakes included, the post-loop
+  `num3 * 2` cap `:13117-13119` truncates the ledger), `pipeline.rs`
+  (`GenVars.island_house_slots`, `step_floating_island_houses` between
+  `living trees` and `trees`, the skyblock gate), `progress.rs`
+  (`WorldGeneration.FloatingIslandHouses` message `:17863`),
+  `evil.rs::place_3x2` promoted `pub(crate)` + generalised,
+  `temple.rs::place_temple_door` promoted `pub(crate)`.
+* **RNG neutrality**: the islands pass was the LAST `streams.drng`
+  consumer; the house draws move onto the fresh
+  `pass_rng("Floating Island Houses")` stream — no other step's ledger
+  shifts. The compact islands pass also loses its inline `Next(4,7)` /
+  `Next(3,5)` / main-item draws from `drng` (the accepted world change —
+  `drng` has no later consumer).
+* **Deviations** (module doc + ANALYSIS pointer): the compact island
+  model records its own anchors (`cx`, disc top row) and style 0 for
+  classic worlds — the fountain (`islandStyle > 0`) and palm
+  (`islandStyle == 1`) arms never fire classically but are ported
+  verbatim for the seed lanes; the chest rides the compact
+  `AddBuriedChest` sky-band slice (the full loot-branch tree is the chest
+  lane's); the `anyShimmer` veto defers with the shimmer lane.
+* **Hash doc**: `world_hash.rs` gains the pass-28 stale-by-design notes
+  on BOTH pins (`SEED42_512` unchanged by this pass — the 512 island band
+  collapses; `DEFAULT_WORLD` moves by design — the sunplate houses
+  replace the plank boxes). Re-pin values DEFERRED to the merge gate
+  (no compiler on this branch). **The `a == b` determinism halves of
+  both pin tests are untouched** — plus the pass-level a==b witness
+  `w4_d104_28_the_house_builds_and_replays_byte_equal`.
+
 ## Status
 
-- [ ] 28 Floating Island Houses
+- [x] 28 Floating Island Houses
 - [ ] 29 Quick Cleanup
 - [ ] 30 Hellforge
 - [ ] 31 Spreading Grass
