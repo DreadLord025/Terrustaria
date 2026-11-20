@@ -20770,8 +20770,13 @@ Deliberate deviations:
    dual-dungeons temple check of the same gate still needs a seed the port
    does not carry.
 3. The C#'s wire-removal dust (five dust-50 particles,
-   `WorldGen.cs:58133-58135`) and the net messages are out вЂ” the port's dust
+   `WorldGen.cs:58133-58135`) and the net messages are out — the port's dust
    pool has no per-wire removal cue and the local wire state is the truth.
+   **W4-d54 (2026-11-21): the dust half landed** — `world_dust::cutter_burst`
+   replays the five type-50 `NewDust` blocks on the `UpdatePlayers` stream
+   after the drop, for the actuator arm and all four wire colours
+   (`WorldGen.cs:58032-58035`/`:58132-58135`/`:58162-58165`/`:58192-58195`/
+   `:58222-58225`). The net messages stay out (single-player port).
 4. The C#'s cursor-item icon (`Main.ItemIconCacheUpdate`) rides the port's
    existing cursor-icon path.
 
