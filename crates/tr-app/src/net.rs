@@ -5194,4 +5194,88 @@ mod tests {
         assert_eq!(z.zone5 & 1, 0);
         assert_eq!(PlayerZone { zone5: 1, ..z }.zone5 & 1, 1);
     }
+
+    /// `22 ItemOwner` (`NetMessage.cs:675-685`): short slot, byte
+    /// reserved-for, 7-bit hold, byte grab player, 7-bit grab delay, the
+    /// position pair — `hold`/`grab_delay` at 300 pin the TWO-byte varint
+    /// form (`0xAC 0x02`); the reader mirrors (`MessageBuffer.cs:1552-1562`).
+    #[test]
+    fn s1_i_1_item_owner_round_trips() {
+        let o = ItemOwner {
+            slot: 5,
+            reserved_for: 2,
+            hold: 300,
+            grab_delay_player: 255,
+            grab_delay: 300,
+            x: 16.0,
+            y: -32.5,
+        };
+        let f = S2c::ItemOwner(Box::new(o)).encode();
+        assert_eq!(f[2], 22);
+        let mut body = Vec::new();
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&[2, 0xAC, 0x02, 255, 0xAC, 0x02]);
+        body.extend_from_slice(&16.0f32.to_le_bytes());
+        body.extend_from_slice(&(-32.5f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemOwner(back) => assert_eq!(*back, o),
+            other => panic!("expected 22, got {:?}", other.msg_id()),
+        }
+        // The one-byte varint form: hold 15 / grab delay 100 (`:681`/`:683`).
+        let small = ItemOwner { hold: 15, grab_delay: 100, ..o };
+        let f = S2c::ItemOwner(Box::new(small)).encode();
+        assert_eq!(&f[5..10], &[2, 15, 255, 100]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemOwner(back) => assert_eq!(*back, small),
+            other => panic!("expected 22, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `31 RequestChestOpen` (`NetMessage.cs:860-863`): two shorts, the
+    /// chest tile's top-left; the host reads them at
+    /// `MessageBuffer.cs:1873-1874`. Client→host only.
+    #[test]
+    fn s1_i_1_chest_open_request_round_trips() {
+        let q = ChestOpenRequest { x: 100, y: -200 };
+        let f = C2s::ChestOpenRequest(q).encode();
+        assert_eq!(f[2], 31);
+        let mut body = Vec::new();
+        body.extend_from_slice(&100i16.to_le_bytes());
+        body.extend_from_slice(&(-200i16).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::ChestOpenRequest(d) => assert_eq!(d, q),
+            other => panic!("expected 31, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `32 SyncChestItem` (`NetMessage.cs:864-877`): short chest, byte slot,
+    /// short stack, byte prefix, short type — the stack comes BEFORE the
+    /// prefix, the type last (the name-null zeroing is the writer's job).
+    /// Both directions share the layout (`MessageBuffer.cs:1899-1903`).
+    #[test]
+    fn s1_i_1_chest_item_round_trips() {
+        let c = ChestItem { chest: 2, slot: 9, stack: 250, prefix: 81, kind: 757 };
+        let mut body = Vec::new();
+        body.extend_from_slice(&2i16.to_le_bytes());
+        body.push(9);
+        body.extend_from_slice(&250i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&757i16.to_le_bytes());
+        let f = C2s::ChestItem(c).encode();
+        assert_eq!(f[2], 32);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::ChestItem(d) => assert_eq!(d, c),
+            other => panic!("expected 32, got {:?}", other.msg_id()),
+        }
+        let f = S2c::ChestItem(c).encode();
+        assert_eq!(f[2], 32);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ChestItem(d) => assert_eq!(d, c),
+            other => panic!("expected 32, got {:?}", other.msg_id()),
+        }
+    }
 }
