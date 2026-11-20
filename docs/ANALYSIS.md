@@ -39244,3 +39244,22 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC lights, first half (W4-c20, S1-E-5 wave 4, 2026-11-20, code-only)
+
+**Claim map (probed in-flight before work, 2026-11-20).** NPC.cs carries
+exactly 80 `Lighting.AddLight` call sites (full-file grep). This lane
+(`task/W4-c20-addlight-npcs-tiles`) owns the **FIRST 40**
+(`:21307`-`:48641`); the SECOND 40 (`:49929`-`:92412`) are claimed by
+W4-e7's in-flight `npc_lights_b.rs` (its header names this branch as the
+first-half owner). The Main.cs tile sites (5: `:29016`/`:29020`/
+`:29024`/`:29028`/`:29186`) are ALL claimed by W4-e8's in-flight
+`tile_lights.rs` (W4-f9's census `c2740784`); the TileDrawing
+mushroom-flicker + CastLight delegates ride the same e8 module. W4-g18/g19
+probed clean; W4-c19/e6/g20 are the projectile/item families. No overlap.
+
+Port: `crates/tr-app/src/npc_lights_a.rs` (the first-half module; the
+landed `npc_lights.rs` keeps the aiStyle-8 533/else tail, deduped at the
+feed). Status: IN FLIGHT - the per-site port table lands with the code
+commits below. **Code-only mode: no cargo/rustc/rustfmt/tests/graphify
+invoked; witnesses written-not-run.**
