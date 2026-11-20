@@ -238,6 +238,22 @@ pub mod id {
     /// (`WriteBlockedChestList`, `:323-330` + `:277`'s send). Reader
     /// `MessageBuffer.cs:3261-3271` mirrors the split.
     pub const QUICK_STACK_CHESTS: u8 = 85;
+    /// `86 TileEntitySharing` (`MessageID.cs:186`) — writer
+    /// `NetMessage.cs:1216-1226` (`int id + bool exists`, then
+    /// `TileEntity.Write(networkSend: true)`), reader
+    /// `MessageBuffer.cs:3272-3293` (client-only: `false` removes the
+    /// entity, `true` reads it via `TileEntity.Read(reader, 326, true)` and
+    /// re-adds under the frame's id). Host sends: the placement hooks
+    /// (`TileEntityType.cs:19`, `TELeashedEntityAnchor.cs:11`) + the
+    /// training-dummy (de)activation (`TETrainingDummy.cs:143`/`:156`).
+    pub const TILE_ENTITY_SHARING: u8 = 86;
+    /// `87 TileEntityPlacement` (`MessageID.cs:188`) — writer
+    /// `NetMessage.cs:1227-1231` (`(short)x + (short)y + (byte)type`);
+    /// reader `MessageBuffer.cs:3294-3305` is host-only:
+    /// `InWorld + !TryGetAt` gate then `TileEntity.PlaceEntityNet`. All
+    /// send sites are the client placement hooks (`TEItemFrame.cs:25`
+    /// etc.) — C2s-only.
+    pub const TILE_ENTITY_PLACEMENT: u8 = 87;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1750,6 +1766,247 @@ pub struct QuickStackBlockedChests {
     pub chests: Vec<u16>,
 }
 
+/// One `(short)type + (byte)prefix + (short)stack` item triple — the shape
+/// every tile-entity `WriteExtraData` uses for a non-air slot
+/// (`TEItemFrame.cs:42-44` and its five twins).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TeItem {
+    pub kind: i16,
+    pub prefix: u8,
+    pub stack: i16,
+}
+
+impl TeItem {
+    fn write_to(self, w: NetWriter) -> NetWriter {
+        w.i16(self.kind).u8(self.prefix).i16(self.stack)
+    }
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            kind: r.i16()?,
+            prefix: r.u8()?,
+            stack: r.i16()?,
+        })
+    }
+    /// C#'s `IsAir` (`Item.cs:385-394`): `type <= 0 || stack <= 0`.
+    fn is_air(self) -> bool {
+        self.kind <= 0 || self.stack <= 0
+    }
+}
+
+/// The per-kind extra data of a tile entity on the `networkSend: true`
+/// path — the manager's registration order IS the type byte
+/// (`TileEntitiesManager.cs:26-39`): 0 TrainingDummy, 1 ItemFrame,
+/// 2 LogicSensor, 3 DisplayDoll, 4 WeaponsRack, 5 HatRack, 6 FoodPlatter,
+/// 7 TeleportationPylon, 8 DeadCellsDisplayJar, 9 KiteAnchor,
+/// 10 CritterAnchor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TileEntityData {
+    /// 0 — `(short)npc` (`TETrainingDummy.cs:119-127`).
+    TrainingDummy { npc: i16 },
+    /// 1 — one item triple (`TEItemFrame.cs:40-53`).
+    ItemFrame(TeItem),
+    /// 2 — NOTHING on the net path: `WriteExtraData` is
+    /// `if (!networkSend)`-gated (`TELogicSensor.cs:380-396`).
+    LogicSensor,
+    /// 3 — the doll's three flag bytes + pose + the non-air triples
+    /// (`TEDisplayDoll.cs:157-278`): equip bits 0-7, dye bits 0-7, pose
+    /// byte, then bits3 (misc[0], equip[8], dye[8]); the reader folds
+    /// bits3[1]/[2] into the 9th equip/dye slots (`:236`/`:248`).
+    DisplayDoll {
+        equip: [TeItem; 9],
+        dyes: [TeItem; 9],
+        misc: [TeItem; 1],
+        pose: u8,
+    },
+    /// 4 — one item triple (`TEWeaponsRack.cs:53-66`).
+    WeaponsRack(TeItem),
+    /// 5 — one flag byte (items 0/1, dyes 0/1) + the non-air triples
+    /// (`TEHatRack.cs:56-110`).
+    HatRack { items: [TeItem; 2], dyes: [TeItem; 2] },
+    /// 6 — one item triple (`TEFoodPlatter.cs:41-54`).
+    FoodPlatter(TeItem),
+    /// 7 — no `WriteExtraData` override: the base no-op
+    /// (`TETeleportationPylon.cs`, `TileEntity.cs:209-215`).
+    TeleportationPylon,
+    /// 8 — one item triple (`TEDeadCellsDisplayJar.cs:40-53`).
+    DeadCellsDisplayJar(TeItem),
+    /// 9 — `(short)itemType` (`TEKiteAnchor` inherits
+    /// `TELeashedEntityAnchorWithItem.cs:10-18`).
+    KiteAnchor { item_type: i16 },
+    /// 10 — `(short)itemType` (the same base, `TECritterAnchor.cs:7`).
+    CritterAnchor { item_type: i16 },
+}
+
+impl TileEntityData {
+    /// The manager's type byte (`TileEntitiesManager.RegisterAll` order).
+    pub fn type_id(&self) -> u8 {
+        match self {
+            Self::TrainingDummy { .. } => 0,
+            Self::ItemFrame(_) => 1,
+            Self::LogicSensor => 2,
+            Self::DisplayDoll { .. } => 3,
+            Self::WeaponsRack(_) => 4,
+            Self::HatRack { .. } => 5,
+            Self::FoodPlatter(_) => 6,
+            Self::TeleportationPylon => 7,
+            Self::DeadCellsDisplayJar(_) => 8,
+            Self::KiteAnchor { .. } => 9,
+            Self::CritterAnchor { .. } => 10,
+        }
+    }
+
+    /// `WriteExtraData(writer, networkSend: true)` — the per-kind tail.
+    fn write_extra(&self, w: NetWriter) -> NetWriter {
+        match self {
+            Self::TrainingDummy { npc } => w.i16(*npc),
+            Self::ItemFrame(i) | Self::WeaponsRack(i) | Self::FoodPlatter(i) => i.write_to(w),
+            Self::DeadCellsDisplayJar(i) => i.write_to(w),
+            Self::LogicSensor | Self::TeleportationPylon => w,
+            Self::KiteAnchor { item_type } | Self::CritterAnchor { item_type } => w.i16(*item_type),
+            Self::DisplayDoll {
+                equip,
+                dyes,
+                misc,
+                pose,
+            } => {
+                // `TEDisplayDoll.cs:159-184`: equip bits, dye bits, pose,
+                // then bits3 = misc[0] | equip[8]<<1 | dyes[8]<<2.
+                let mut b1 = BitsByte::new();
+                let mut b2 = BitsByte::new();
+                let mut b3 = BitsByte::new();
+                for i in 0..8 {
+                    b1.set(i, !equip[i].is_air());
+                    b2.set(i, !dyes[i].is_air());
+                }
+                b3.set(0, !misc[0].is_air());
+                b3.set(1, !equip[8].is_air());
+                b3.set(2, !dyes[8].is_air());
+                let mut w = w.bitsbyte(b1).bitsbyte(b2).u8(*pose).bitsbyte(b3);
+                // The triples ride in array order, non-air only
+                // (`:185-214`): all 9 equips, all 9 dyes, the 1 misc.
+                for i in equip.iter().chain(dyes.iter()).chain(misc.iter()) {
+                    if !i.is_air() {
+                        w = i.write_to(w);
+                    }
+                }
+                w
+            }
+            Self::HatRack { items, dyes } => {
+                // `TEHatRack.cs:58-83`: one flag byte (items 0/1 then
+                // dyes 0/1), then the non-air triples items-first.
+                let mut b = BitsByte::new();
+                b.set(0, !items[0].is_air());
+                b.set(1, !items[1].is_air());
+                b.set(2, !dyes[0].is_air());
+                b.set(3, !dyes[1].is_air());
+                let mut w = w.bitsbyte(b);
+                for i in items.iter().chain(dyes.iter()) {
+                    if !i.is_air() {
+                        w = i.write_to(w);
+                    }
+                }
+                w
+            }
+        }
+    }
+
+    /// `ReadExtraData(reader, gameVersion: 326, networkSend: true)` — the
+    /// per-kind read (`MessageBuffer.cs:3288` passes 326, so the doll's
+    /// `>= 307`/`>= 308` gates are both live and the `== 311` quirk is
+    /// dead). Absent slots decode as air (the C# `new Item()` default).
+    fn read_extra(kind: u8, r: &mut NetReader) -> Option<Self> {
+        Some(match kind {
+            0 => Self::TrainingDummy { npc: r.i16()? },
+            1 => Self::ItemFrame(TeItem::read_from(r)?),
+            2 => Self::LogicSensor,
+            4 => Self::WeaponsRack(TeItem::read_from(r)?),
+            6 => Self::FoodPlatter(TeItem::read_from(r)?),
+            7 => Self::TeleportationPylon,
+            8 => Self::DeadCellsDisplayJar(TeItem::read_from(r)?),
+            9 => Self::KiteAnchor {
+                item_type: r.i16()?,
+            },
+            10 => Self::CritterAnchor {
+                item_type: r.i16()?,
+            },
+            3 => {
+                let b1 = r.bitsbyte()?;
+                let b2 = r.bitsbyte()?;
+                let pose = r.u8()?; // gameVersion 326 >= 307
+                let b3 = r.bitsbyte()?; // 326 >= 308; the == 311 quirk is dead
+                let mut equip = [TeItem::default(); 9];
+                let mut dyes = [TeItem::default(); 9];
+                let mut misc = [TeItem::default(); 1];
+                // `:236`: the equip mask folds b3[1] into slot 8.
+                for (i, slot) in equip.iter_mut().enumerate() {
+                    if b1.get(i) || (i == 8 && b3.get(1)) {
+                        *slot = TeItem::read_from(r)?;
+                    }
+                }
+                // `:248`: the dye mask folds b3[2] into slot 8.
+                for (i, slot) in dyes.iter_mut().enumerate() {
+                    if b2.get(i) || (i == 8 && b3.get(2)) {
+                        *slot = TeItem::read_from(r)?;
+                    }
+                }
+                if b3.get(0) {
+                    misc[0] = TeItem::read_from(r)?;
+                }
+                Self::DisplayDoll {
+                    equip,
+                    dyes,
+                    misc,
+                    pose,
+                }
+            }
+            5 => {
+                let b = r.bitsbyte()?;
+                let mut items = [TeItem::default(); 2];
+                let mut dyes = [TeItem::default(); 2];
+                for (i, slot) in items.iter_mut().enumerate() {
+                    if b.get(i) {
+                        *slot = TeItem::read_from(r)?;
+                    }
+                }
+                for (i, slot) in dyes.iter_mut().enumerate() {
+                    if b.get(i + 2) {
+                        *slot = TeItem::read_from(r)?;
+                    }
+                }
+                Self::HatRack { items, dyes }
+            }
+            _ => return None, // InvalidEntityID (TileEntitiesManager.cs:17-24)
+        })
+    }
+}
+
+/// `msg 86 TileEntitySharing`'s body (`NetMessage.cs:1216-1226`): the
+/// entity `int` id, the `TryGet` bool, and — when present —
+/// `TileEntity.Write(networkSend: true)` (`TileEntity.cs:173-197`): the
+/// type byte, the `(short)` position pair (the id is NOT re-written on the
+/// net path), then the per-kind extra data. `exists == false` is the
+/// removal frame (the reader's `TileEntity.Remove`,
+/// `MessageBuffer.cs:3279-3285`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TileEntitySharing {
+    pub id: i32,
+    pub x: i16,
+    pub y: i16,
+    /// `None` = the removal frame (`flag2 == false`).
+    pub entity: Option<TileEntityData>,
+}
+
+/// `msg 87 TileEntityPlacement`'s body (`NetMessage.cs:1227-1231`): the
+/// tile as two `(short)`s and the entity type byte (the manager's
+/// registration id). The host validates the tile + emptiness before
+/// `PlaceEntityNet` (`MessageBuffer.cs:3300-3303`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileEntityPlacement {
+    pub x: i16,
+    pub y: i16,
+    pub entity_type: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1891,6 +2148,10 @@ pub enum C2s {
     /// `netMode == 1` writer half, `NetMessage.cs:1206-1210`;
     /// `QuickStacking.cs:296`).
     QuickStackRequest(QuickStackRequest),
+    /// `87 TileEntityPlacement` — a client placed a tile entity
+    /// (`TEItemFrame.cs:25` and the other placement hooks; host gate +
+    /// `PlaceEntityNet`, `MessageBuffer.cs:3294-3305`). C2s-only.
+    TileEntityPlacement(TileEntityPlacement),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2090,6 +2351,10 @@ pub enum S2c {
     /// `85 QuickStackChests` — the blocked-chest list (the host writer
     /// half, `NetMessage.cs:1213`; `QuickStacking.cs:277`).
     QuickStackBlockedChests(QuickStackBlockedChests),
+    /// `86 TileEntitySharing` — one tile entity's full state or removal
+    /// (the placement hooks' host push, `TileEntityType.cs:19`; the
+    /// client-only reader `MessageBuffer.cs:3272-3293`). S2c-only.
+    TileEntitySharing(Box<TileEntitySharing>),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2151,6 +2416,7 @@ impl C2s {
             Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
             Self::PlaceObject(_) => id::PLACE_OBJECT,
             Self::QuickStackRequest(_) => id::QUICK_STACK_CHESTS,
+            Self::TileEntityPlacement(_) => id::TILE_ENTITY_PLACEMENT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2252,6 +2518,8 @@ impl C2s {
                 }
                 w.bool(q.smart_stack)
             }
+            // `NetMessage.cs:1227-1231`: (short)x + (short)y + (byte)type.
+            Self::TileEntityPlacement(p) => w.i16(p.x).i16(p.y).u8(p.entity_type),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2430,6 +2698,12 @@ impl C2s {
                     smart_stack: r.bool()?,
                 })
             }
+            // `MessageBuffer.cs:3297-3299`: two ReadInt16 + ReadByte.
+            id::TILE_ENTITY_PLACEMENT => Self::TileEntityPlacement(TileEntityPlacement {
+                x: r.i16()?,
+                y: r.i16()?,
+                entity_type: r.u8()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2602,6 +2876,7 @@ impl S2c {
             Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
             Self::PlaceObject(_) => id::PLACE_OBJECT,
             Self::QuickStackBlockedChests(_) => id::QUICK_STACK_CHESTS,
+            Self::TileEntitySharing(_) => id::TILE_ENTITY_SHARING,
         }
     }
 
@@ -2777,6 +3052,17 @@ impl S2c {
                     w = w.u16(*c);
                 }
                 w
+            }
+            // `NetMessage.cs:1216-1226`: int id + bool exists; when present,
+            // `TileEntity.Write(networkSend: true)` (`TileEntity.cs:173-197`):
+            // type byte + (short) position pair (NO id on the net path) +
+            // the per-kind extra data.
+            Self::TileEntitySharing(t) => {
+                let w = w.i32(t.id).bool(t.entity.is_some());
+                match &t.entity {
+                    None => w,
+                    Some(e) => e.write_extra(w.u8(e.type_id()).i16(t.x).i16(t.y)),
+                }
             }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
@@ -3034,6 +3320,31 @@ impl S2c {
                     chests.push(r.u16()?);
                 }
                 Self::QuickStackBlockedChests(QuickStackBlockedChests { chests })
+            }
+            // `MessageBuffer.cs:3278-3291`: int id + bool; false removes
+            // (no tail read), true reads `TileEntity.Read(reader, 326,
+            // networkSend: true)` — type byte + position pair + extra data.
+            id::TILE_ENTITY_SHARING => {
+                let id = r.i32()?;
+                let exists = r.bool()?;
+                if !exists {
+                    Self::TileEntitySharing(Box::new(TileEntitySharing {
+                        id,
+                        x: 0,
+                        y: 0,
+                        entity: None,
+                    }))
+                } else {
+                    let kind = r.u8()?;
+                    let x = r.i16()?;
+                    let y = r.i16()?;
+                    Self::TileEntitySharing(Box::new(TileEntitySharing {
+                        id,
+                        x,
+                        y,
+                        entity: Some(TileEntityData::read_extra(kind, r)?),
+                    }))
+                }
             }
             _ => return None,
         })
@@ -5535,6 +5846,180 @@ mod tests {
         assert_eq!(&f[3..], &[0, 0, 0, 0]);
         // A truncated slot list must not decode.
         assert!(C2s::decode(85, &mut NetReader::new(&[2, 0, 0, 0, 1, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_tile_entity_placement_round_trips() {
+        // `NetMessage.cs:1227-1231`: (short)x + (short)y + (byte)type —
+        // the type is the manager's registration id
+        // (`TileEntitiesManager.cs:26-39`: ItemFrame = 1).
+        let b = TileEntityPlacement {
+            x: -8,
+            y: 900,
+            entity_type: 1,
+        };
+        let mut body = (-8i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&900i16.to_le_bytes());
+        body.push(1);
+        let f = C2s::TileEntityPlacement(b).encode();
+        assert_eq!(f[2], 87);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::TileEntityPlacement(d) => assert_eq!(d, b),
+            other => panic!("expected 87, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only: the reader is host-gated, no S2c variant.
+        assert!(S2c::decode(87, &mut NetReader::new(&body)).is_none());
+        // A truncated type byte must not decode.
+        assert!(C2s::decode(87, &mut NetReader::new(&body[..4])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_tile_entity_sharing_item_frame_round_trips() {
+        // `NetMessage.cs:1216-1226` + `TileEntity.cs:173-197` (net path):
+        // int id + bool + type byte + (short)x + (short)y + extra data.
+        // ItemFrame's extra is one (short)type + (byte)prefix + (short)stack
+        // (`TEItemFrame.cs:40-45`).
+        let t = TileEntitySharing {
+            id: 42,
+            x: 100,
+            y: 200,
+            entity: Some(TileEntityData::ItemFrame(TeItem {
+                kind: 3093,
+                prefix: 81,
+                stack: 1,
+            })),
+        };
+        let mut body = 42i32.to_le_bytes().to_vec();
+        body.push(1); // exists
+        body.push(1); // type: ItemFrame
+        body.extend_from_slice(&100i16.to_le_bytes());
+        body.extend_from_slice(&200i16.to_le_bytes());
+        body.extend_from_slice(&3093i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&1i16.to_le_bytes());
+        let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+        assert_eq!(f[2], 86);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The removal frame: id + false, NO tail (`MessageBuffer.cs:3279`).
+        let rm = TileEntitySharing {
+            id: 42,
+            x: 0,
+            y: 0,
+            entity: None,
+        };
+        let f = S2c::TileEntitySharing(Box::new(rm.clone())).encode();
+        let mut body = 42i32.to_le_bytes().to_vec();
+        body.push(0);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(86, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, rm),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        // An invalid type id fails the read (InvalidEntityID).
+        let mut bad = 1i32.to_le_bytes().to_vec();
+        bad.push(1);
+        bad.push(11); // one past CritterAnchor
+        bad.extend_from_slice(&[0, 0, 0, 0]);
+        assert!(S2c::decode(86, &mut NetReader::new(&bad)).is_none());
+    }
+
+    #[test]
+    fn w4_f21_tile_entity_sharing_doll_hat_rack_flags() {
+        // The doll's three flag bytes + pose (`TEDisplayDoll.cs:159-184`):
+        // equip[0] + equip[8] (bits3[1]) + dyes[8] (bits3[2]) + misc[0]
+        // (bits3[0]) non-air; the triples ride equips→dyes→misc in order.
+        let mut equip = [TeItem::default(); 9];
+        let mut dyes = [TeItem::default(); 9];
+        let mut misc = [TeItem::default(); 1];
+        equip[0] = TeItem { kind: 100, prefix: 0, stack: 1 };
+        equip[8] = TeItem { kind: 200, prefix: 5, stack: 1 };
+        dyes[8] = TeItem { kind: 300, prefix: 0, stack: 1 };
+        misc[0] = TeItem { kind: 400, prefix: 2, stack: 1 };
+        let t = TileEntitySharing {
+            id: 7,
+            x: 10,
+            y: 20,
+            entity: Some(TileEntityData::DisplayDoll { equip, dyes, misc, pose: 3 }),
+        };
+        let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+        assert_eq!(f[2], 86);
+        // body: id(4) + exists(1) + type(1) + x(2) + y(2) + b1(1) + b2(1)
+        // + pose(1) + b3(1) + 4 triples x 5 bytes.
+        let b = &f[3..];
+        assert_eq!(b[4], 1); // exists
+        assert_eq!(b[5], 3); // DisplayDoll
+        assert_eq!(b[10], 0b0000_0001); // b1: equip[0]
+        assert_eq!(b[11], 0); // b2: no low dyes
+        assert_eq!(b[12], 3); // pose
+        assert_eq!(b[13], 0b0000_0111); // b3: misc + equip8 + dye8
+        assert_eq!(f.len(), 3 + 14 + 20);
+        let mut r = NetReader::new(b);
+        match S2c::decode(86, &mut r).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The hat rack's single flag byte (`TEHatRack.cs:58-63`): items[1]
+        // + dyes[0] non-air → bits 1 and 2.
+        let t = TileEntitySharing {
+            id: 8,
+            x: 1,
+            y: 2,
+            entity: Some(TileEntityData::HatRack {
+                items: [
+                    TeItem::default(),
+                    TeItem { kind: 500, prefix: 0, stack: 1 },
+                ],
+                dyes: [
+                    TeItem { kind: 600, prefix: 1, stack: 1 },
+                    TeItem::default(),
+                ],
+            }),
+        };
+        let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+        let b = &f[3..];
+        assert_eq!(b[5], 5); // HatRack
+        assert_eq!(b[10], 0b0000_0110); // items[1] | dyes[0]
+        assert_eq!(f.len(), 3 + 11 + 10);
+        match S2c::decode(86, &mut NetReader::new(b)).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        // LogicSensor writes NOTHING on the net path
+        // (`TELogicSensor.cs:380-387`'s !networkSend gate); the pylon has
+        // no override at all.
+        for e in [TileEntityData::LogicSensor, TileEntityData::TeleportationPylon] {
+            let t = TileEntitySharing { id: 9, x: 3, y: 4, entity: Some(e) };
+            let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+            assert_eq!(f.len(), 3 + 10); // id + bool + type + position only
+            match S2c::decode(86, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+                other => panic!("expected 86, got {:?}", other.msg_id()),
+            }
+        }
+        // The leashed anchors' (short)itemType tail
+        // (`TELeashedEntityAnchorWithItem.cs:10-13`).
+        let t = TileEntitySharing {
+            id: 10,
+            x: 5,
+            y: 6,
+            entity: Some(TileEntityData::KiteAnchor { item_type: 4765 }),
+        };
+        let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+        assert_eq!(&f[3 + 10..], &4765i16.to_le_bytes());
+        match S2c::decode(86, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
     }
 
     #[test]

@@ -837,6 +837,10 @@ impl App {
             // QuickStackToNearbyChests (`:3262-3266`) land with the
             // apply-wiring lanes (g48-g52) / S1-I-4.
             C2s::PlaceObject(_) | C2s::QuickStackRequest(_) => {}
+            // S1-I-1 W4-f21: `87`'s host InWorld + emptiness gate +
+            // TileEntity.PlaceEntityNet (`MessageBuffer.cs:3294-3305`)
+            // lands with the apply-wiring lanes (g48-g52) / S1-I-4.
+            C2s::TileEntityPlacement(_) => {}
         }
     }
 
@@ -1902,6 +1906,10 @@ impl App {
             // (`:3267-3270`) land with the apply-wiring lanes (g48-g52) /
             // S1-I-4.
             S2c::PlaceObject(_) | S2c::QuickStackBlockedChests(_) => {}
+            // S1-I-1 W4-f21: `86`'s client TileEntity.Remove / Read+Add
+            // (`MessageBuffer.cs:3279-3291`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::TileEntitySharing(_) => {}
         }
     }
 
