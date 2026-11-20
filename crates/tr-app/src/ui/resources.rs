@@ -455,16 +455,33 @@ pub(crate) fn buff_text(p: &Player, slot: usize) -> Option<String> {
 
 /// `Main.GetBuffTooltip` (`Main.cs:43254-43289`): the buff description with
 /// its per-buff overrides. The three WellFed tiers swap to their `_Expert`
-/// rows under `Main.expertMode`; the `ManaSickness` (94) and `ManaHeat` (396)
-/// `switch` arms append a player-computed percentage and are documented drops
-/// — the port has no `Player.manaSickReduction` / `Player.manaHeat`.
+/// rows under `Main.expertMode`. The `ManaSickness` (94) arm appends
+/// `(int)(manaSickReduction * 100f) + 1` percent (`:43282`) and `ManaHeat`
+/// (396) appends `(int)(Math.Ceiling(manaHeat * 100f) - 100.0)` percent
+/// (`:43285`) — both fields now exist on the port's Player (i19/i52), so
+/// the S1-E-6 documented drops are closed. `DebugOptions.ManaPotionDelay`
+/// (`:43278-43281`, `Testing/DebugOptions.cs` — the developer test toggle)
+/// has no port counterpart and stays false, so the plain arm always runs.
 pub(crate) fn buff_tooltip(p: &Player, buff: i32) -> String {
     let expert = p.buffs.expert_mode;
-    match buff {
+    let text = match buff {
         26 if expert => crate::lang::text("BuffDescription.WellFed_Expert"),
         206 if expert => crate::lang::text("BuffDescription.WellFed2_Expert"),
         207 if expert => crate::lang::text("BuffDescription.WellFed3_Expert"),
         _ => crate::lang::buff_description(buff),
+    };
+    match buff {
+        // `:43282` — the C# string-concats the int then a literal "%"; the
+        // truncating cast is `as i32`, the `+ 1` rides AFTER it.
+        94 => format!("{text}{}%", (p.mana_sick_reduction * 100.0) as i32 + 1),
+        // `:43285` — `manaHeat * 100f` multiplies in f32, `Math.Ceiling`
+        // promotes the product to double, minus the double 100.0, then the
+        // `(int)` truncation (the ceil of an integral double is exact).
+        396 => format!(
+            "{text}{}%",
+            ((p.mana_heat * 100.0f32) as f64).ceil() as i32 - 100
+        ),
+        _ => text,
     }
 }
 
@@ -528,15 +545,28 @@ pub(crate) fn draw_buff_hover(
     crate::ui::tooltip::draw_mouse_text_block(r, lookups, mouse, &lines, screen, pulse);
 }
 
+/// `Main.DrawBuffIcon`'s icon-text selection (`Main.cs:43316-43324`): the
+/// `BuffTextHandlers` counter wins when the handler yields one, else the
+/// duration when `TryGetBuffTime` passes and the tick count is over 2,
+/// formatted at second resolution (`buffTimeValue / 60`). Split out of the
+/// draw so the gates witness without a renderer.
+pub(crate) fn buff_icon_text(p: &Player, slot: usize, vampire_seed: bool) -> Option<String> {
+    buff_text(p, slot).or_else(|| {
+        try_get_buff_time(p, slot, vampire_seed)
+            .filter(|t| *t > 2)
+            .map(|t| localized_duration(t / 60))
+    })
+}
+
 /// `Main.DrawBuffIcon` (`Main.cs:43307-43368`) + the grid walk of
 /// `DrawInterface_Resources_Buffs` (`:43203-43250`). The icons tint by the
 /// per-slot alpha (`Main.buffAlpha` — the port's `buff_alpha`), the hover
 /// raises it 0.1 and the rest decays 0.05 clamped to [0.4, 1]; the
 /// right-click (`Main.mouseRight && Main.mouseRightRelease`, `:43333`)
 /// pushes the slot onto `removals` (the C# removes in
-/// the draw — the port drains the request in the tick). The icon text is the
-/// `BuffID.Sets.BuffTextHandlers` counter when the buff has one
-/// (`:43317-43320`), else the duration when over 2 ticks (`:43321-43324`).
+/// the draw — the port drains the request in the tick). The icon text is
+/// [`buff_icon_text`] (`:43316-43327`), drawn on `FontAssets.ItemStack` at
+/// 0.8 under the icon in the same slot-alpha colour (`:43327`).
 /// Returns the hovered slot — the C#'s `drawBuffText` — which the caller turns
 /// into the name/tooltip block (`:43234-43251`).
 /// The fullscreen-map second call site (`:41335`) rides the map tasks.
@@ -575,16 +605,13 @@ pub fn draw_buffs(
         // The icon (`:43311`): the full sheet tinted by the slot alpha.
         let a = buff_alpha[i];
         r.push_ui_sprite([x, y], [w, h], uv, [a, a, a, a]);
-        // The icon text (`:43316-43327`): the `BuffTextHandlers` counter wins
-        // when the handler yields one, else the duration over 2 ticks —
-        // `FontAssets.ItemStack` at 0.8 under the icon.
-        let text = buff_text(player, i).or_else(|| {
-            try_get_buff_time(player, i, vampire_seed)
-                .filter(|t| *t > 2)
-                .map(|t| localized_duration(t / 60))
-        });
-        if let Some(text) = text {
-            crate::ui::text::hud_text(r, lookups, x, y + h, 0.85, [1.0; 4], &text);
+        // The icon text (`:43316-43327`): `buff_icon_text` picks the counter
+        // or the duration — `FontAssets.ItemStack` at 0.8 under the icon,
+        // tinted by the SAME slot-alpha colour as the icon (`:43314`'s
+        // `color`, reused at `:43327`). The S1-E-6 pass drew it white at
+        // 0.85 on the Mouse_Text font — three verbatim deltas, fixed here.
+        if let Some(text) = buff_icon_text(player, i, vampire_seed) {
+            crate::ui::text::hud_item_text(r, lookups, x, y + h, 0.8, [a, a, a, a], &text);
         }
         // The hover + the right-click removal (`:43329-43349`). The C#'s
         // `!PlayerInput.IgnoreMouseInterface` gate has no port counterpart.
