@@ -646,6 +646,27 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 list.remove(index);
             }
         }
+        // Betsy (`Player.cs:7578-7604`).
+        3860 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 3863, 1); // Betsy Mask
+            }
+            // `:7584-7598` — the weapon pick: Next(4) → 3859/3827/3870/
+            // 3858 (Betsy's Bow / the Squire's Betsy sword / the
+            // Apprentice's T3 staff / the Monk's T3 staff).
+            match rng.next_max(4) {
+                0 => quick_spawn(rng, out, 3859, 1), // DD2 Betsy Bow
+                1 => quick_spawn(rng, out, 3827, 1), // DD2 Squire Betsy Sword
+                2 => quick_spawn(rng, out, 3870, 1), // Apprentice Staff T3
+                _ => quick_spawn(rng, out, 3858, 1), // Monk Staff T3
+            }
+            if rng.next_max(4) == 0 {
+                quick_spawn(rng, out, 3883, 1); // Betsy Wings
+            }
+            // `:7603` — the Defender Medals Next(30, 51).
+            quick_spawn(rng, out, 3817, range(rng, 30, 51));
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1775,6 +1796,63 @@ mod tests {
                 assert_eq!(got, want, "owned {owned} seed {seed}");
                 assert_eq!(got_rng, r, "owned {owned} seed {seed} stream");
             }
+        }
+    }
+
+    #[test]
+    fn w4_f35_betsy_bag_zero_script_grants_the_whole_arm() {
+        // The dev set leads, then the mask 1/7, the weapon pick 0 →
+        // Betsy's Bow, the wings 1/4, the medals 30. Betsy's value is
+        // 0f — the money tail draws its 5 gates and mints NOTHING.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3860, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its,
+            [666, 667, 668, 665, 3287, 3863, 3859, 3883, 3817],
+            "{its:?}"
+        );
+        assert_eq!(out[8].stack, 30, "Medals Next(30,51) minimum");
+    }
+
+    #[test]
+    fn w4_f35_betsy_bag_weapon_picks() {
+        for (pick, weapon) in [(1i32, 3827u16), (2, 3870), (3, 3858)] {
+            // dev miss, mask miss, pick k, wings miss.
+            let mut rng = ScriptRng::new(&[1, 6, pick, 3]);
+            let mut out = Vec::new();
+            open_boss_bag(3860, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[..2], [weapon, 3817], "pick {pick}: {its:?}");
+        }
+    }
+
+    #[test]
+    fn w4_f35_betsy_bag_replays_the_csharp_draw_order() {
+        for seed in [61i32, 551551] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3860, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            dev_armor_replay(&mut r, &mut want, false);
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 3863, 1);
+            }
+            match r.next_max(4) {
+                0 => spawn_replay(&mut r, &mut want, 3859, 1),
+                1 => spawn_replay(&mut r, &mut want, 3827, 1),
+                2 => spawn_replay(&mut r, &mut want, 3870, 1),
+                _ => spawn_replay(&mut r, &mut want, 3858, 1),
+            }
+            if r.next_max(4) == 0 {
+                spawn_replay(&mut r, &mut want, 3883, 1);
+            }
+            spawn_replay(&mut r, &mut want, 3817, r.next_range(30, 51));
+            money_replay_on(&mut r, 551, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
         }
     }
 
