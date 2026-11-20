@@ -695,13 +695,14 @@ pub fn draw_hud(
     // the accessory column (`Main.cs:41425-41460`).
     hide_visible_accessory: &[bool; 10],
     // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
-    // the per-slot alpha (`Main.buffAlpha`), the right-release edge
-    // (`Main.mouseRightRelease`) and the removal requests — the C# removes
-    // in the draw pass, the port drains them in the tick. `vampireSeed`
-    // gates the sub-10 duration hides (`Main.cs:43298`).
+    // the per-slot alpha (`Main.buffAlpha`), the cancel gate
+    // (`Main.mouseRight && Main.mouseRightRelease`, `:43333`) and the
+    // removal requests — the C# removes in the draw pass, the port drains
+    // them in the tick. `vampireSeed` gates the sub-10 duration hides
+    // (`Main.cs:43298`).
     buff_alpha: &mut [f32; crate::buffs::MAX_BUFFS],
     buff_removals: &mut Vec<usize>,
-    right_release: bool,
+    buff_right_click: bool,
     vampire_seed: bool,
     // `Player.HasNPCBannerBuff`'s table (`Player.cs:44197`): the banner list
     // the Monster Banner's buff tooltip prints (`Main.cs:21360-21388`).
@@ -727,7 +728,7 @@ pub fn draw_hud(
             p,
             buff_alpha,
             mouse_pos,
-            right_release,
+            buff_right_click,
             buff_removals,
             vampire_seed,
         );

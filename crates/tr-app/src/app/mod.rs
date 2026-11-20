@@ -630,6 +630,15 @@ pub(crate) struct App {
     /// hover sites are unported, so nothing arms it today — the field keeps
     /// the check's shape.
     pub(crate) no_throw: i32,
+    /// `Main.mouseRightRelease` as the vanilla recomputes it at the END of
+    /// every interface draw (`Main.cs:62458-62465`: `!Main.mouseRight`) —
+    /// the buff bar's cancel reads `mouseRight && mouseRightRelease`
+    /// (`:43333`), which is the press-after-release frame. Starts true
+    /// (the button starts released, `Main.cs:1689`'s false static would be
+    /// set true by the first menu draw; the port's first in-world frame
+    /// with the button already held has no prior release — matching the
+    /// vanilla's menu-drawn latch).
+    pub(crate) ui_right_release_latch: bool,
     /// `Main.mouseLeftRelease`'s in-world arm — the left button's release
     /// edge the achievement popup's click reads (`InGamePopups.cs:124`'s
     /// `Main.mouseLeft && Main.mouseLeftRelease`), consumed per frame.
@@ -3814,6 +3823,7 @@ impl App {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
+            ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),

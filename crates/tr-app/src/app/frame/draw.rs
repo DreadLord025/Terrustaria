@@ -36,6 +36,17 @@ use crate::ui::text::{border_string, hud_text, hud_text_width};
 use super::draw_phase;
 
 impl App {
+    /// The buff bar's cancel gate — `Main.mouseRight && Main.mouseRightRelease`
+    /// (`Main.cs:43333`) with the vanilla's end-of-draw latch recompute
+    /// (`:62458-62465`: `mouseRightRelease = !mouseRight`). Called once per
+    /// interface draw; the conjunction is true only on the press frame
+    /// after a released frame, never while held.
+    pub(crate) fn buff_cancel_gate(&mut self) -> bool {
+        let gate = self.place_down && self.ui_right_release_latch;
+        self.ui_right_release_latch = !self.place_down; // `:62458-62465`
+        gate
+    }
+
     /// The draw region, verbatim from the pre-snapshot locals through the
     /// present: one borrow region as landed (the 55-field destructure and
     /// the gpu/renderer gate move with it unchanged). Returns the frame's
@@ -132,10 +143,20 @@ impl App {
                 Vec::new()
             };
             // The buff bar's inputs (`Main.DrawInterface_Resources_Buffs`,
-            // `Main.cs:43203`): the right-release edge (`Main.mouseRightRelease`)
-            // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
-            // `:43298`). The removals drain in the tick.
-            let right_release = std::mem::take(&mut self.ui_right_release);
+            // `Main.cs:43203`): the cancel gate is `Main.mouseRight &&
+            // Main.mouseRightRelease` (`:43333`). The vanilla latch is
+            // recomputed at the END of every interface draw (`:62458-62465`:
+            // false while held, true otherwise), so the conjunction fires on
+            // the PRESS frame after a released frame and never while held.
+            // The port mirrors the latch (`ui_right_release_latch`, updated
+            // per draw below — the button state cannot change mid-draw, so
+            // the head-of-draw update equals the C#'s tail-of-draw one); the
+            // bare release edge the port used fired one frame late, on the
+            // RELEASE frame. The vampire-seed gate (`Main.vampireSeed`)
+            // drives the duration hides (`:43298`). The removals drain in
+            // the tick.
+            let _right_release_edge = std::mem::take(&mut self.ui_right_release);
+            let buff_right_click = self.buff_cancel_gate();
             // `Main.mouseLeftRelease` — the achievement popup's click edge
             // (`InGamePopups.cs:124`), consumed per frame like the right one.
             let left_release = std::mem::take(&mut self.ui_left_release);
@@ -1716,7 +1737,7 @@ impl App {
                             // The buff bar (`Main.DrawInterface_Resources_Buffs`).
                             &mut self.buff_alpha,
                             &mut self.buff_removals,
-                            right_release,
+                            buff_right_click,
                             vampire_seed,
                             // `Player.HasNPCBannerBuff`'s table — the Monster
                             // Banner's hover list (`Main.cs:21360-21388`).
@@ -2161,5 +2182,37 @@ impl App {
             self.open_achievements_and_goto(name);
         }
         Some((stats, tile_stats))
+    }
+}
+
+#[cfg(test)]
+mod s1_p_i53_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// S1-P-i53 — the buff cancel gate is `Main.mouseRight &&
+    /// Main.mouseRightRelease` (`Main.cs:43333`) with the end-of-draw latch
+    /// (`:62458-62465`): it fires on the PRESS frame after a released
+    /// frame, never on held frames, and never on the release frame (the
+    /// bare-edge port fired one frame late).
+    #[test]
+    fn s1_p_i53_the_cancel_gate_fires_on_press_not_on_release() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Released frames: no gate, latch stays true.
+        app.place_down = false;
+        assert!(!app.buff_cancel_gate());
+        assert!(!app.buff_cancel_gate());
+        // The press frame: mouseRight true + the latch still true → fire.
+        app.place_down = true;
+        assert!(app.buff_cancel_gate(), "the press-after-release frame");
+        // Held frames: the latch went false — no repeat.
+        assert!(!app.buff_cancel_gate());
+        assert!(!app.buff_cancel_gate());
+        // The release frame: mouseRight false → no gate (the old bare-edge
+        // port fired HERE), and the latch re-arms.
+        app.place_down = false;
+        assert!(!app.buff_cancel_gate(), "the release frame never cancels");
+        // The next press fires again.
+        app.place_down = true;
+        assert!(app.buff_cancel_gate());
     }
 }

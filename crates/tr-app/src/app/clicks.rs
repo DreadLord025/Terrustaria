@@ -650,6 +650,10 @@ impl App {
                     }
                     return;
                 }
+                // The C#'s `:1685-1697` `SwapEquip` arm covers contexts
+                // 0/3/4/32 ONLY — an equip cell (8/10/12/16-20/33) right-
+                // clicks straight into the pickup block below (unequip is
+                // the SHIFT arm, `GetAlternateClickAction` `:700-715`).
             }
             // `:1700-1713` — the paced one-per-transfer split.
             let can_take = held.count == 0
@@ -2544,8 +2548,11 @@ impl App {
     /// then `mouseItem.stack++` / `slot--` (`:1738-1742`); the emptied slot
     /// turns to air (`:1743-1746`). Returns false when the `:1707` gate
     /// refuses (an air slot, or an alien/full cursor). The `:1728-1735`
-    /// favourite carry is unreachable here — the port's right-click slots
-    /// cannot be favourited.
+    /// favourite carry (a favourited stack of 1 moves its flag onto the
+    /// cursor clone) is unrepresentable in the port's slot-positional
+    /// favourite model — the grid slots CAN be favourited (`toggle_favorite`),
+    /// but the cursor carries no flag; the recorded research/20 §4 deviation
+    /// (favourites follow the slot, not the item).
     fn pickup_one_into_mouse(&mut self, slot: &mut ItemSlot) -> bool {
         if slot.kind == 0 || slot.count == 0 {
             return false;
@@ -5151,6 +5158,39 @@ mod tests {
         );
         assert_eq!(app.equip.armor[3].count, 0);
         assert_eq!(app.stack_split, 30, "`AfterItemSwap` `:2007`");
+    }
+
+    /// S1-P-i53 — the accessory vanity pair swaps through the ctx-11 arm
+    /// too (`ItemSlot.cs:1678-1684`): a real accessory in `armor[3]` and a
+    /// vanity one in `armor[13]` trade on the vanity cell's right-click —
+    /// `CanEquipAccessoryInSlot` (`:3531-3538`) admits the swap while no
+    /// OTHER slot carries an incompatible accessory.
+    #[test]
+    fn s1_p_i53_right_click_swaps_the_accessory_vanity_pair() {
+        let mut app = inv_app();
+        app.equip.armor[3] = slot(15, 1); // Copper Watch — real accessory
+        app.equip.armor[13] = slot(16, 1); // Aglet — vanity accessory
+        app.mouse_pos = equip_mouse(&app, 0, 11, 13);
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[3], slot(16, 1), "the real row took the aglet");
+        assert_eq!(app.equip.armor[13], slot(15, 1), "the vanity row the watch");
+    }
+
+    /// S1-P-i53 — the ammo row (ctx 2) has NO `SwapEquip` arm: the C#'s
+    /// `:1685-1697` switch covers contexts 0/3/4/32 only (`InventoryAmmo =
+    /// 2`, `ItemSlot.cs:48`), so a single ammo stack right-clicks into the
+    /// paced pickup — no "quick-equip" jump exists in the source.
+    #[test]
+    fn s1_p_i53_the_ammo_row_right_click_only_splits() {
+        let mut app = inv_app();
+        app.equip.ammo[0] = slot(40, 1); // Wooden Arrow
+        app.mouse_pos = AMMO_SLOT_0;
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(40, 1), "one onto the cursor (`:1707`)");
+        assert_eq!(app.equip.ammo[0].count, 0, "the cell drained, nothing equipped");
+        assert_eq!(app.equip_page_selected, 0, "no equip-page jump");
     }
 }
 

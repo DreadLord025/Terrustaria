@@ -2319,6 +2319,7 @@ pub(crate) mod front_flow_tests {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
+            ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),

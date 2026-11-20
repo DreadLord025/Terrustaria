@@ -16679,11 +16679,83 @@ Deliberate sequencing (not silent gaps):
   `GetBuffTooltip`) stays out of this pass вЂ” it rides the localization
   tooltip work. `TryRemovingBuff`'s `CheckBuffHideMisc` arms
   (`:43391-43402`) ride the misc-equips pets (no `miscEquips` yet).
+  **SUPERSEDED by S1-P-i53 below** вЂ” the arms landed with the cancel census.
 - **The fullscreen-map call site** (`:41335`'s column layout) rides the
   map tasks (S1-L-3/4).
 - The buff icons pack into the atlas by enumeration (`Buff_<id>.xnb`,
   sorted ids like the items), so an id whose texture is absent simply
   never draws an icon (the alpha keeps its state).
+
+## The buff cancel / right-click census (S1-P-i53, 2026-11-20)
+
+The cancel/right-click surface re-audited against the C#; five WRONGs fixed
+verbatim, witnesses WRITTEN NOT RUN (code-only mode):
+
+- **The alive-player drain.** The `buff_removals` drain sat INSIDE
+  `update_player`'s `p.dead` branch (`world_sim/player.rs`), so a living
+  player's cancel requests were never applied вЂ” the C# draw has no dead gate
+  (`Main.cs:43329-43349`). The drain moved before the dead branch.
+- **The cancel gate.** `DrawBuffIcon` reads `Main.mouseRight &&
+  Main.mouseRightRelease` (`Main.cs:43333`) with the vanilla's end-of-draw
+  latch recompute (`:62458-62465`: `mouseRightRelease = !mouseRight`) вЂ” the
+  conjunction fires on the PRESS frame after a released frame. The port
+  passed the bare winit release edge, firing one frame late on the RELEASE
+  frame. `App::ui_right_release_latch` + `App::buff_cancel_gate` mirror the
+  latch (the button state cannot change mid-draw, so the head-of-draw
+  recompute equals the C#'s tail-of-draw one).
+- **The mount arm's refused dismount.** `TryRemovingBuff` (`Main.cs:43375-
+  43386`) latches `flag = true` on the `CheckBuff` match REGARDLESS of the
+  `TryDismount` result вЂ” a refused dismount keeps the buff (no `DelBuff`).
+  The port called the ungated `MountState::dismount` and never checked
+  `CanDismountWithResult` (`Mount.cs:6611-6624`). Now: `try_dismount` runs
+  the CC gate (`DontDismountWhenCCed` 55/56/61, `MountID.cs:47` вЂ” the old
+  "no row sets it" claim was false, the rows exist) and the shrink probe;
+  the cart ride routes through `try_cart_dismount` (its state lives outside
+  `MountState`). The `flag` latch keeps `del_buff` out on refusal.
+- **`CheckBuffHideMisc`.** The arms (`Main.cs:43390-43404`) landed:
+  `Player.hide_misc: [bool; 2]` (`Player.cs:1710`'s BitsByte вЂ” only bits 0/1
+  have writers), fed `miscEquips[0..2].buffType` from the App's arrays; the
+  101/102 light buffs also match the Fairy Bell's legacy `buffType == 27`
+  (`:43395-43398`, `Item.cs:6342`). No consumer re-shows the visual yet вЂ”
+  `UpdatePet`/`UpdatePetLight` (`Player.cs:17298-17340`) and the
+  `TogglePet`/`ToggleLight` re-show halves (`:17342-17363`) are unported;
+  the flag is write-only until they land (the pet-grant task's seam).
+- **`ClearBuff`'s gates.** `Player::clear_buff_type` looped
+  `find_buff_index`, inheriting `FindBuffIndex`'s `buffImmune` /
+  `buffTime >= 1` gates (`Player.cs:5249-5255`); the C# `ClearBuff`
+  (`:5472-5481`) walks the RAW `buffType` slots with no gates. Now delegates
+  to `buffs.clear_buff`. Also `Mount.Dismount`'s cart arm (`Mount.cs:6156-
+  6160`) clears `cartFlip`/`lastBoost` on the `Mount.Cart` rows (`:530-539`)
+  вЂ” the framework `Player::dismount` now does too (the ride-only
+  `cart_dismount` already did).
+
+Right-click item actions census (no change needed):
+
+- **Accessory vanity toggle** вЂ” `RightClick`'s ctx-9/11 arm (`ItemSlot.cs:
+  1678-1684` в†’ `SwapVanityEquip` `:1867-1899`) is ported
+  (`clicks.rs::vanity_swap` + `equip_swap::vanity_swap_allowed`), including
+  the accessory-compatibility legs. A witness pins the ctx-11 pair swap.
+- **"Ammo quick-equip"** вЂ” NO such arm exists in the C#: `RightClick`'s
+  `SwapEquip` switch covers contexts 0/3/4/32 only (`ItemSlot.cs:1685-
+  1697`); the ammo row is context 2 (`:48`) and right-clicks straight into
+  the paced pickup. The port matches (a witness pins it). Unequip is the
+  SHIFT arm (`GetAlternateClickAction` `:700-715`), out of this scope.
+- **Favoriting lock** вЂ” Alt+left toggles (`ToggleFavorited`, `ItemSlot.cs:
+  873-877`); a favorited slot refuses the shift-transfer
+  (`GetAlternateClickAction`'s head guard `:631-634`) but NOT direct moves
+  or the right-click split вЂ” the port matches (`test_DW_4_1_*`,
+  `test_DW_4_3_*`). The `PickupItemIntoMouse` favourite carry (`:1728-1735`)
+  stays unrepresentable in the slot-positional model (research/20 В§4); the
+  stale "right-click slots cannot be favourited" comment was corrected.
+- The debuff table (`buffs.rs::DEBUFF_IDS`, 76 ids) re-verified against
+  `Main.cs:8865-8940`'s writes вЂ” exact match; 60/151 are not debuffs, the
+  explicit guards carry them.
+
+RNG: the cancel path draws nothing (`TryRemovingBuff`/`DelBuff`/
+`CheckBuffHideMisc`/`TryDismount` are state-only); a twin-tick witness pins
+every stage stream's position across a queued cancel. The dismount dust
+(`Mount.cs:6167-6170`) stays a documented drop (no dust system on this
+path), so no stream moves.
 
 ## The Nurse rules (S1-E-8, 2026-11-13)
 
