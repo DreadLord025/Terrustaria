@@ -1007,10 +1007,41 @@ impl App {
                                     })
                                 })
                             });
-                            if any_animated {
+                            let base = if any_animated {
                                 self.tile_anim.anim_key()
                             } else {
                                 0
+                            };
+                            // W4-g34 lane 2: the second-half critter-cage ids
+                            // animate through the SEPARATE cage tables
+                            // (`AnimateTiles_CritterCages`), not `tileFrame`,
+                            // and none is in `is_animated_kind`'s gate set — so
+                            // they need their own contribution. Gated on a
+                            // lane-2 cage being active in the view rect (the
+                            // same convention); a cage-free view keeps the
+                            // pre-wiring key bit-for-bit.
+                            let any_cage = (vy0..=vy1).any(|ty| {
+                                (vx0..=vx1).any(|tx| {
+                                    world.tile(tx, ty).is_some_and(|t| {
+                                        t.active()
+                                            && tr_core::drawdata_furniture::is_lane2_cage_kind(
+                                                t.kind,
+                                            )
+                                    })
+                                })
+                            });
+                            if any_cage {
+                                // Mix the cage key into the tile-animator key
+                                // with one more FNV round so the two inputs
+                                // cannot collide with a tile-only state.
+                                let mut h = base;
+                                for b in self.cage_anim.anim_key().to_le_bytes() {
+                                    h ^= b as u64;
+                                    h = h.wrapping_mul(0x0000_0100_0000_01b3);
+                                }
+                                h
+                            } else {
+                                base
                             }
                         },
                         net_key: {
@@ -1183,6 +1214,11 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-g34 lane 2: the critter-cage animator's tables
+                            // + the `Main.critterCage` proximity flag the pass
+                            // raises (`TileDrawing.cs:474`/`:5672`).
+                            &self.cage_anim,
+                            &mut self.critter_cage,
                         );
                         *world_key = Some(key);
                     }

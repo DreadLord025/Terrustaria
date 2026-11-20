@@ -433,8 +433,15 @@ impl App {
     let rng = self.rngs.global();
     let step = &mut self.tile_anim_step;
     let animator = &mut self.tile_anim;
+    // W4-g34: `AnimateTiles`' trailing `AnimateTiles_CritterCages()`
+    // (`Main.cs:19303`) — same 60 Hz tick, same `Main.rand` stream, gated
+    // on the `Main.critterCage` proximity flag the tile draw raised last
+    // frame (`TileDrawing.cs:474` clears it at the non-solid pass head).
+    let cage_anim = &mut self.cage_anim;
+    let critter_cage = self.critter_cage;
     step.tick(dt, |_| {
         animator.animate_tiles(wind, rng, false);
+        cage_anim.animate(critter_cage, rng);
     });
     step.cap_backlog();
     }

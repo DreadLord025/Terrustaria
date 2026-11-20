@@ -871,6 +871,20 @@ pub(crate) struct App {
     /// `WorldFrameKey::tile_anim` covers every value it feeds the draw.
     pub(crate) tile_anim: tr_core::drawdata_anim::TileAnimator,
     pub(crate) tile_anim_step: FixedStepper,
+    /// `Main.*CageFrame`/`*CageFrameCounter` + the mode bytes
+    /// (`Main.cs:66902-66972`) — the critter-cage animator
+    /// (`Main.AnimateTiles_CritterCages`, `Main.cs:13511-16596`), ticked in
+    /// the same `animate_tiles_phase` as the tile animator (the C# calls it
+    /// at the tail of `AnimateTiles`, `Main.cs:19303`), gated on the
+    /// `critter_cage` proximity flag the tile draw raises (W4-g34 lane 2).
+    /// `draw_tiles` reads its tables through `cage_draw_data`'s `frame_of`;
+    /// the G6 `WorldFrameKey::tile_anim` covers it via `cage_anim_key`.
+    pub(crate) cage_anim: tr_core::critter_cage_anim::CritterCageAnimator,
+    /// `Main.critterCage` (`Main.cs:1445`): set by the tile draw when a cage
+    /// cell is drawn (`TileDrawing.cs:5672` etc.), cleared at the non-solid
+    /// pass head (`:474`). The port's single row-major pass raises it during
+    /// `draw_tiles` and the animator consumes the previous frame's value.
+    pub(crate) critter_cage: bool,
     /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
@@ -2309,6 +2323,11 @@ impl App {
         // `weatherVaneBobframe = 0` at `:67242`).
         self.tile_anim.reset();
         self.tile_anim_step = FixedStepper::new(1.0 / 60.0, 8);
+        // W4-g34: the cage tables reset with the tile animator on world load
+        // (the C# re-allocates them zeroed in `Initialize_TileAndNPCData`,
+        // `Main.cs:66902-66972`); the proximity flag clears too.
+        self.cage_anim.reset();
+        self.critter_cage = false;
         // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
         // the legacy engine owns the counter in the port (S1-E-19 wave B,
         // `LegacyLighting.cs:345-348`).
@@ -3988,6 +4007,8 @@ impl App {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
+            cage_anim: tr_core::critter_cage_anim::CritterCageAnimator::new(),
+            critter_cage: false,
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),

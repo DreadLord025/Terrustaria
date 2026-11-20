@@ -2416,6 +2416,8 @@ pub(crate) mod front_flow_tests {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
+            cage_anim: tr_core::critter_cage_anim::CritterCageAnimator::new(),
+            critter_cage: false,
             wiring: tr_core::wiring::Wiring::new(),
             golf_state: tr_core::golf_state::GolfState::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),

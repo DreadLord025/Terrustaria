@@ -325,6 +325,15 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-g34 lane 2: the critter-cage animator's tables
+    // (`Main.*CageFrame`, `Main.cs:66902-66972`) — the second-half cage ids'
+    // `addFrY = Main.<table>[idx] * stride` rewrite
+    // (`TileDrawing.cs:5783-5907`) reads them through `cage_draw_data`'s
+    // `frame_of`. `critter_cage` is `Main.critterCage` (`Main.cs:1445`):
+    // cleared at the pass head (`TileDrawing.cs:474`), raised for every cage
+    // cell drawn (`:5672` etc.), read back by the caller for the animator gate.
+    cage_anim: &tr_core::critter_cage_anim::CritterCageAnimator,
+    critter_cage: &mut bool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -413,6 +422,10 @@ pub(crate) fn draw_tiles(
 
     let width = world.width as usize;
     let white = r.white_uv();
+    // `TileDrawing.Draw`'s non-solid-pass head clears `Main.critterCage`
+    // (`TileDrawing.cs:474`); the port's single row-major pass clears it
+    // here and the cage cells below re-raise it (W4-g34).
+    *critter_cage = false;
     let mut stats = TileDrawStats {
         lit_tiles: light.lit_tiles,
         light_ms,
@@ -731,10 +744,45 @@ pub(crate) fn draw_tiles(
                     let _glow = crate::drawdata_cases_a::apply_cases_a(
                         &mut dd, world, tile, tx, ty, cell_bytes, 255, 0.0,
                     );
+                    // W4-g34 lane 2: the second-half critter-cage rewrite
+                    // (`TileDrawing.cs:5783-5907`, the small-animal tail +
+                    // water/jellyfish groups) — `cage_draw_data` replaces the
+                    // static fallback arm with `top = 2` + the per-animal
+                    // `addFrY = Main.<table>[idx] * stride` read from the
+                    // wired cage animator (`AnimateTiles_CritterCages`,
+                    // `Main.cs:13511-16596`). The big-cage ids + snail 285
+                    // are g33's half; the chest rewrite stays with the chest
+                    // lane (W4-d58). The `Main.critterCage = true` side
+                    // effect (`:5781` etc.) is raised for EVERY cage kind
+                    // below — it gates the whole animator, not just this half.
+                    if tr_core::drawdata_furniture::is_lane2_cage_kind(tile.kind) {
+                        if let Some(cage) = tr_core::drawdata_furniture::cage_draw_data(
+                            tile.kind,
+                            tx,
+                            ty,
+                            tile.frame_x,
+                            tile.frame_y,
+                            tr_core::drawdata_furniture::CAGE_FRAMES,
+                            |table, row, idx| cage_anim.frame_of(table, row, idx),
+                        ) {
+                            dd = cage;
+                        }
+                    }
                     dd
                 } else {
                     tr_core::drawdata::TileDrawData::default()
                 };
+
+                // `Main.critterCage = true` (`TileDrawing.cs:5672`/`:5781`/
+                // `:5838` etc.): every drawn cage cell raises the proximity
+                // flag that gates `AnimateTiles_CritterCages`. The port's
+                // single row-major pass raises it here for ANY cage kind;
+                // the caller reads it back after the pass and the animator
+                // consumes it on the next tick (the C# clears it at the
+                // non-solid pass head, `:474`).
+                if active && tr_core::drawdata_furniture::is_cage_kind(tile.kind) {
+                    *critter_cage = true;
+                }
 
                 // Resolve the drawn tile frame once; reused for opacity and drawing.
                 let mut tile_frame = None;
@@ -1871,6 +1919,53 @@ mod tests {
         assert_eq!(dd_block.matches("anim_row,").count(), 3);
         assert!(dd_block.contains("anim_counter,"));
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
+    }
+
+    /// W4-g34 lane-2 draw-feed witness (WRITTEN NOT RUN — code-only mode):
+    /// the second-half cage rewrite reads the wired cage animator through
+    /// `cage_draw_data`'s `frame_of` AFTER the drawdata dispatch (the C#
+    /// `GetTileDrawData` cage arms, `TileDrawing.cs:5783-5907`), gated on
+    /// `is_lane2_cage_kind`; the `Main.critterCage` flag is cleared at the
+    /// pass head (`:474`) and raised for every cage cell (`:5672` etc.).
+    #[test]
+    fn the_lane2_cage_rewrite_feeds_from_the_cage_animator() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        // The rewrite is gated on the lane-2 half and reads the animator.
+        assert!(
+            dd_block.contains("is_lane2_cage_kind(tile.kind)"),
+            "the rewrite covers only the second-half cage ids"
+        );
+        assert!(
+            dd_block.contains("cage_anim.frame_of(table, row, idx)"),
+            "the cage frame rides the wired animator's tables"
+        );
+        assert!(
+            dd_block.contains("cage_draw_data("),
+            "the rewrite goes through the furniture cage arm"
+        );
+        // The rewrite sits AFTER the second-switch glow pass (the C# cage
+        // arms are in the FIRST switch, but the port applies the table
+        // rewrite last so it replaces the static fallback wholesale).
+        let glow = dd_block.find("apply_cases_a(").unwrap();
+        let cage = dd_block.find("is_lane2_cage_kind").unwrap();
+        assert!(cage > glow, "the cage rewrite follows the glow pass");
+        // The proximity flag: cleared at the head, raised per cage cell.
+        assert!(
+            body.contains("*critter_cage = false;"),
+            "the pass head clears Main.critterCage (TileDrawing.cs:474)"
+        );
+        assert!(
+            body.contains("*critter_cage = true;"),
+            "a drawn cage cell raises Main.critterCage (TileDrawing.cs:5672)"
+        );
+        assert!(
+            body.contains("is_cage_kind(tile.kind)"),
+            "the flag covers EVERY cage kind (the animator is whole)"
+        );
     }
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain

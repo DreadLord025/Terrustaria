@@ -205,6 +205,47 @@ pub fn is_basic_chest(kind: u16) -> bool {
     kind == 21 || kind == 467
 }
 
+/// Whether `kind` is one of the 92 critter-cage kinds (any of the four
+/// `case` groups, `TileDrawing.cs:5629-5907`). The tile draw raises
+/// `Main.critterCage = true` for every cage cell (`:5672`/`:5781`/`:5838`
+/// etc.), gating `AnimateTiles_CritterCages`; the port's draw seam uses
+/// this to set the flag for ANY cage kind (the animator is whole, W4-g34).
+pub fn is_cage_kind(kind: u16) -> bool {
+    cage_table(kind).is_some()
+}
+
+/// The W4-g34 lane-2 draw-wiring half: the small-animal cage tail (d64
+/// batch 2, `TileDrawing.cs:5783-5830`) plus the water-animal + jellyfish
+/// cages (d64 batch 3, `:5833-5907`). The big-cage ids + snail 285 (the d63
+/// quarter list) are g33's half. The 50 ids here are exactly the second
+/// half of the census's PORTED-UNWIRED list.
+pub fn is_lane2_cage_kind(kind: u16) -> bool {
+    matches!(
+        kind,
+        // Small-animal tail (batch 2): snail2 286/582, frog 298/361,
+        // grasshopper 339/362, mouse 299/363, worm 310/364/391/619,
+        // slug 392-394, maggot 532, rat 533, ladybug 538/544/629,
+        // water-strider 555/556.
+        286 | 582
+            | 298 | 361
+            | 339 | 362
+            | 299 | 363
+            | 310 | 364 | 391 | 619
+            | 392..=394
+            | 532 | 533
+            | 538 | 544 | 629
+            | 555 | 556
+            // Water-animal + jellyfish (batch 3): fish bowl 282/505/543,
+            // lava fish bowl 598, fairy jar 568-570, butterfly 288-295 +
+            // 360/580/620, dragonfly 521-527, jellyfish 316-318.
+            | 282 | 505 | 543 | 598
+            | 568..=570
+            | 288..=295 | 360 | 580 | 620
+            | 521..=527
+            | 316..=318
+    )
+}
+
 /// The chest half of `CacheSpecialDraws_Part2` (TileDrawing.cs:4289-4330),
 /// which `DrawSingleTile` runs AFTER `GetTileDrawData` (:993): the source
 /// rect folds back to the chest's sheet origin per sub-cell, the opening
@@ -570,6 +611,53 @@ mod tests {
     }
 
     // ---- per-case tests over the STATIC furniture arms (draw_data) ----
+
+    /// W4-g34 witness (WRITTEN NOT RUN — code-only mode): the lane split —
+    /// `is_cage_kind` covers all 92 cage ids, `is_lane2_cage_kind` covers
+    /// exactly the 50 second-half ids (d64 batches 2-3), and the two halves
+    /// are disjoint and exhaustive over the cage set.
+    #[test]
+    fn lane2_cage_split_is_disjoint_and_exhaustive() {
+        const LANE2: &[u16] = &[
+            // Small-animal tail (d64 batch 2).
+            286, 582, 298, 361, 339, 362, 299, 363, 310, 364, 391, 619, 392, 393, 394, 532,
+            533, 538, 544, 629, 555, 556,
+            // Water-animal + jellyfish (d64 batch 3).
+            282, 505, 543, 598, 568, 569, 570, 288, 289, 290, 291, 292, 293, 294, 295, 360,
+            580, 620, 521, 522, 523, 524, 525, 526, 527, 316, 317, 318,
+        ];
+        assert_eq!(LANE2.len(), 50);
+        // The 92-id cage set (the zero_tables_reproduce_the_static_cage_arms
+        // list): lane 2 is a subset, and the complement is g33's half.
+        let mut cage_count = 0;
+        let mut lane2_count = 0;
+        for kind in 0..=u16::MAX {
+            if is_cage_kind(kind) {
+                cage_count += 1;
+                let in_lane2 = LANE2.contains(&kind);
+                assert_eq!(
+                    is_lane2_cage_kind(kind),
+                    in_lane2,
+                    "kind {kind}: predicate vs the census list"
+                );
+                if in_lane2 {
+                    lane2_count += 1;
+                }
+            } else {
+                assert!(!is_lane2_cage_kind(kind), "kind {kind} is not a cage");
+            }
+        }
+        assert_eq!(cage_count, 92);
+        assert_eq!(lane2_count, 50);
+        // g33's half: the 41 big-cage ids + snail 285 (43 total).
+        assert_eq!(cage_count - lane2_count, 42);
+        // Spot-check the boundary ids: 285 (snail) is g33, 286 (snail2) g34.
+        assert!(is_cage_kind(285) && !is_lane2_cage_kind(285));
+        assert!(is_cage_kind(286) && is_lane2_cage_kind(286));
+        // 275 (bunny, big) is g33; 316 (jellyfish) is g34.
+        assert!(is_cage_kind(275) && !is_lane2_cage_kind(275));
+        assert!(is_cage_kind(316) && is_lane2_cage_kind(316));
+    }
 
     #[test]
     fn tables_chests_containers_are_18_on_the_seam_row() {
