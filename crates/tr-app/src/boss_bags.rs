@@ -578,7 +578,37 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 _ => quick_spawn(rng, out, 1297, 1), // Golem Fist
             }
             // `:7526` — the Beetle Husks Next(18, 24).
-            quick_spawn(rng, out, 2218, range(rng, 18, 24));        }
+            quick_spawn(rng, out, 2218, range(rng, 18, 24));
+        }
+        // Duke Fishron (`Player.cs:7528-7570`).
+        3330 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            quick_spawn(rng, out, 3367, 1); // Shrimpy Truffle (expert-exclusive)
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2588, 1); // Duke Fishron Mask
+            }
+            if rng.next_max(10) == 0 {
+                quick_spawn(rng, out, 2609, 1); // Fishron Wings
+            }
+            // `:7539-7569` — the weapon pick: Next(7); option 6 is the
+            // remix-seed swap (the Aqua Scepter 157 vs the Bubble Gun
+            // 2623).
+            match rng.next_max(7) {
+                0 => quick_spawn(rng, out, 5526, 1), // Flairon
+                1 => quick_spawn(rng, out, 2624, 1), // Tsunami
+                2 => quick_spawn(rng, out, 2622, 1), // Razorblade Typhoon
+                3 => quick_spawn(rng, out, 2621, 1), // Tempest Staff
+                4 => quick_spawn(rng, out, 5478, 1), // Eel Whip
+                5 => quick_spawn(rng, out, 3291, 1), // Kraken
+                _ => {
+                    if env.remix {
+                        quick_spawn(rng, out, 157, 1); // Aqua Scepter
+                    } else {
+                        quick_spawn(rng, out, 2623, 1); // Bubble Gun
+                    }
+                }
+            }
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1504,6 +1534,86 @@ mod tests {
             money_replay_on(&mut r, 245, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_fishron_bag_zero_script_grants_the_whole_arm() {
+        // The dev set leads, then the Shrimpy Truffle (always), the
+        // mask 1/7, the wings 1/10, the weapon pick 0 → Flairon — coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3330, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..8],
+            [666, 667, 668, 665, 3287, 3367, 2588, 2609],
+            "{its:?}"
+        );
+        assert_eq!(its[8], 5526, "the weapon pick 0");
+        assert!(its[9..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_fishron_bag_option_six_swaps_on_the_remix_seed() {
+        // `:7560-7567` — option 6: remix → the Aqua Scepter 157, else
+        // the Bubble Gun 2623. The other options never swap.
+        for (remix, want) in [(false, 2623u16), (true, 157)] {
+            let env = BagEnv { remix, ..Default::default() };
+            // dev miss, mask miss, wings miss, pick 6.
+            let mut rng = ScriptRng::new(&[1, 6, 9, 6]);
+            let mut out = Vec::new();
+            open_boss_bag(3330, &env, &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[..2], [3367, want], "remix {remix}: {its:?}");
+        }
+        // Option 3 (the Tempest Staff) is the same in both worlds.
+        for remix in [false, true] {
+            let env = BagEnv { remix, ..Default::default() };
+            let mut rng = ScriptRng::new(&[1, 6, 9, 3]);
+            let mut out = Vec::new();
+            open_boss_bag(3330, &env, &mut rng, &mut out);
+            assert_eq!(items(&out)[1], 2621, "remix {remix}");
+        }
+    }
+
+    #[test]
+    fn w4_f35_fishron_bag_replays_the_csharp_draw_order_both_seeds() {
+        for remix in [false, true] {
+            for seed in [47i32, 370370] {
+                let env = BagEnv { remix, ..Default::default() };
+                let mut got_rng = UnifiedRandom::new(seed);
+                let mut got = Vec::new();
+                open_boss_bag(3330, &env, &mut got_rng, &mut got);
+                let mut r = UnifiedRandom::new(seed);
+                let mut want: Vec<BagGrant> = Vec::new();
+                dev_armor_replay(&mut r, &mut want, false);
+                spawn_replay(&mut r, &mut want, 3367, 1);
+                if r.next_max(7) == 0 {
+                    spawn_replay(&mut r, &mut want, 2588, 1);
+                }
+                if r.next_max(10) == 0 {
+                    spawn_replay(&mut r, &mut want, 2609, 1);
+                }
+                match r.next_max(7) {
+                    0 => spawn_replay(&mut r, &mut want, 5526, 1),
+                    1 => spawn_replay(&mut r, &mut want, 2624, 1),
+                    2 => spawn_replay(&mut r, &mut want, 2622, 1),
+                    3 => spawn_replay(&mut r, &mut want, 2621, 1),
+                    4 => spawn_replay(&mut r, &mut want, 5478, 1),
+                    5 => spawn_replay(&mut r, &mut want, 3291, 1),
+                    _ => {
+                        if remix {
+                            spawn_replay(&mut r, &mut want, 157, 1);
+                        } else {
+                            spawn_replay(&mut r, &mut want, 2623, 1);
+                        }
+                    }
+                }
+                money_replay_on(&mut r, 370, 1.0, &mut want);
+                assert_eq!(got, want, "remix {remix} seed {seed}");
+                assert_eq!(got_rng, r, "remix {remix} seed {seed} stream");
+            }
         }
     }
 
