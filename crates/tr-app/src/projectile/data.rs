@@ -1602,6 +1602,13 @@ pub(crate) fn set_defaults_glow_mask(kind: u16) -> i16 {
         987 => 318,
         988 => 319,
         989 => 320,
+        990 => 321,
+        991 => 322,
+        992 => 323,
+        993 => 324,
+        // The phaseblade/phasersaber boomerangs (`:10017-10020`/`:10033-36`).
+        1101 => 372,
+        1102 => 373,
         _ => -1, // the `:780` reset stock
     }
 }
@@ -4761,6 +4768,17 @@ mod tests {
         assert_eq!(set_defaults_glow_mask(987), 318);
         assert_eq!(set_defaults_glow_mask(988), 319);
         assert_eq!(set_defaults_glow_mask(989), 320);
+        assert_eq!(set_defaults_glow_mask(990), 321);
+        assert_eq!(set_defaults_glow_mask(991), 322);
+        assert_eq!(set_defaults_glow_mask(992), 323);
+        assert_eq!(set_defaults_glow_mask(993), 324);
+        // The Rainbow phaseblade/phasersaber (the :10006/:10022 shared
+        // boomerang arms' inner type gates).
+        assert_eq!(set_defaults_glow_mask(1101), 372);
+        assert_eq!(set_defaults_glow_mask(1102), 373);
+        // Their non-glowing arm-mates keep −1.
+        assert_eq!(set_defaults_glow_mask(1059), -1);
+        assert_eq!(set_defaults_glow_mask(1065), -1);
         // The unlisted kinds stay dark.
         assert_eq!(set_defaults_glow_mask(WOODEN_ARROW), -1);
         assert_eq!(set_defaults_glow_mask(GLOWSTICK), -1);
