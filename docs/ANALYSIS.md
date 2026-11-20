@@ -39302,3 +39302,47 @@ Wiring remainder: the `StrikeNPC_Inner` `:81482`/`:81488` dispatch + the
 AI-arm `HitEffect()` calls (`:22309` etc.), the roster seams (the daybreak
 sweep, the 594 slave), the World unlock flag, and waves B/C (the rest of
 the 636 arm + `:81956` onward).
+
+# The NPC HitEffect gore table (W4-e5, wave B, code-only)
+
+Wave B (`crates/tr-app/src/npc_hit_effect_b.rs`) continues wave A
+(`npc_hit_effect_a.rs`, ec78d152) with the NEXT 40 `Gore.NewGore`
+death sites in source order (`NPC.cs:81942-82240`), appended to wave
+A's dispatch (`hit_effect_b` runs after wave A's last arm):
+
+- the 636 Empress 8-gore tail (`:81942-81949`, sites 31-38) -
+  `npc_hit_effect_a::empress_tail_gores`, types 1263-1268 (+the 1267/
+  1268 twins), velocity x0.6, kicks only;
+- the 657 Queen Slime death (`:81956-81958`, sites 39-41): 2x1259 at
+  scale 0.8 (the second at `position + Size*0.5`) + 1258 at
+  `this.scale`, BEFORE the 150-dust type-4 burst; per dust the
+  `AI_121_QueenSlime_GetDustColor` pair (`NPC.cs:45121-45124`, ported
+  as `queen_slime_dust_color` - the INNER lerp amount draws first, C#
+  argument order; `Color.Lerp` through `tr_core::dust_table::
+  lerp_color`, now pub), then `8*NextFloatDirection` /
+  `-2+6*NextFloatDirection` / `1+NextFloat*0.5`, the pool rolls, the
+  x0.65/+velocity x0.5 writes and the `Next(5)==0` noGravity gate;
+- the 658-660 crystal family (`:81991-82024`, sites 42-43): only the
+  660 death spawns gores (2x1260), BEFORE the shared dust loop (7 hit /
+  40 death; type 4/243; colours (78,136,255,150)/default/(150,100,200,
+  150); alpha 80; `Next(3)!=0` noGravity). The hit half's dust loop
+  runs here (no gore sites, but its draws precede later arms);
+- the 667 death (`:82035-82039`, sites 44-51): 8x1218 at
+  `(position.X, Center.Y-10)`, velocity Zero, then the slot velocity
+  OVERWRITE (`Next(1,10)*0.3*2.5*hitDirection`, `-(3+Next(4)*0.3)`)
+  - the NewGore kicks draw first and are discarded; the 40-dust type-10
+  loop runs after. The hit arm's 3-gore twin (`:82045-82046`) is wave
+  C.
+
+Deviations / stand-ins (cited at their sites): `hitDirection` rides an
+explicit parameter (wave A's `hit_effect` gained it, the C# default 0);
+the hit-half dmg-scaled dust loops stay with the wiring wave's dust pass
+(wave A's convention) EXCEPT the 658-660 shared loop and the 551
+`DD2Event.CheckProgress` gate (RETURNED,
+`HitEffectOutcome::dd2_crystal_check_progress`); the 636 dust loop
+keeps wave A's draw-census skip; the 572/573 `localAI[0/1]` and 574/575
+`localAI[2]` sound stops are RETURNED (`dd2_flyer_sound_stops` /
+`dd2_mage_sound_stop`) - the tracked-sound seam is the wiring wave's.
+
+RNG: the strike's stream, wave A's contract; the witnesses replay the
+cited draws on twin streams (WRITTEN, NOT RUN - code-only mode).
