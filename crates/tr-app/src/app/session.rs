@@ -264,9 +264,13 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // live `favorite_slots`, flattened (`App::favorite_bits`); a fresh
         // character has none.
         inv_favorites: favorites,
-        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
-        // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
-        last_saved_binary: 0,
+        // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — `Serialize`
+        // stamps the save-time clock on every write, `CreateAndSave`
+        // included (`PlayerFileData.cs:58` → `SavePlayer`). W4-c43.
+        last_saved_binary: tr_core::clock::utc_now_binary(),
+        // `CreateAndSave`'s fresh `FromCurrentSettings` metadata
+        // (`PlayerFileData.cs:53`): revision 0.
+        revision: 0,
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {
