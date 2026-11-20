@@ -21,6 +21,13 @@ pub(crate) mod sky;
 // in-flight S1-G-1 siblings; wiring is the family's merge step.
 pub(crate) mod special_tiles;
 pub(crate) mod tile_cracks;
+// W4-g31 pass 4: UNWIRED deferred bucket drains (TileDrawing.cs PostDrawTiles
+// :414-442 bodies — DrawMultiTileVines(InWind)/DrawMultiTileGrass(InWind)/
+// DrawGrass/DrawAnyDirectionalGrass/DrawReverseVines + ClimbCatTail). The
+// draw_tiles seam is contested by the in-flight pass siblings (g28-g32,
+// d56-d60); wiring is the family's merge step (the module doc lists the
+// intended call sites + the DrainBuckets/DrainCellLight/PortedBodyDrain seams).
+pub(crate) mod tile_drains;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;
