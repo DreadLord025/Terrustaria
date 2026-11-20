@@ -160,6 +160,13 @@ impl ShopFlags {
             downed_moon_lord: world.downed_moon_lord,
             night: !world.day_time,
             blood_moon: world.blood_moon,
+            // W4-d123: the second-half shops' world-side gates — the
+            // Cyborg's eclipse (`Chest.cs:2368-2381`), the Party Girl's
+            // Golem row (`:2322`) and the Witch Doctor's / Painter's
+            // Plantera gates (`:2630`/`:2475`).
+            eclipse: world.eclipse,
+            downed_golem: world.downed_golem,
+            downed_plant_boss: world.downed_plant_boss,
             vampirism: world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
@@ -308,12 +315,9 @@ pub enum StockWhen {
     /// W4-d123: `Main.hardMode && ZoneJungle && !Main.dayTime &&
     /// NPC.downedPlantBoss` (`Chest.cs:2644`'s Witch Doctor 1162 row).
     HardModeJungleNightPlantBoss,
-    /// W4-d123: `NPC.downedPlantBoss || NPC.AnyNPCs(124)` (`Chest.cs:2475`'s
-    /// Painter 5344 row) — the disjunction itself; the graveyard conjunct
-    /// rides the row's own gate below.
-    PlantBossOrMechanic,
     /// W4-d123: `ZoneGraveyard && (NPC.downedPlantBoss || NPC.AnyNPCs(124))`
-    /// (`Chest.cs:2471-2480`'s Painter 5344 row — the graveyard conjunct).
+    /// (`Chest.cs:2471-2480`'s Painter 5344 row — the graveyard conjunct
+    /// folds the `:2475` disjunction; no row reads the disjunction alone).
     GraveyardPlantBossOrMechanic,
     /// W4-d123: `NPC.AnyNPCs(108)` (`Chest.cs:2618`'s Witch Doctor 2999
     /// row) — the Wizard's presence.
@@ -1573,7 +1577,6 @@ pub fn resolve_stock_entries_moon(
             StockWhen::HardModeJungleNightPlantBoss => {
                 flags.hard_mode && flags.zone_jungle && flags.night && flags.downed_plant_boss
             }
-            StockWhen::PlantBossOrMechanic => flags.downed_plant_boss || flags.mechanic_present,
             StockWhen::GraveyardPlantBossOrMechanic => {
                 flags.zone_graveyard && (flags.downed_plant_boss || flags.mechanic_present)
             }
