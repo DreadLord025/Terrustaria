@@ -1606,6 +1606,12 @@ fn portrait_data(
         (NpcKind::Wraith, _) => (sheet_i, 44.0, 24.0, 44.0, white),
         (NpcKind::CursedHammer, _) => (sheet_i, 40.0, 40.0, 40.0, white),
         (NpcKind::EnchantedSword, _) => (sheet_i, 40.0, 40.0, 40.0, white),
+        // W4-d35 (C): the 85/86/93/94/95 portraits rest the SetDefaults box.
+        (NpcKind::Mimic, _) => (sheet_i, 24.0, 24.0, 24.0, white),
+        (NpcKind::Unicorn, _) => (sheet_i, 42.0, 46.0, 42.0, white),
+        (NpcKind::GiantBat, _) => (sheet_i, 20.0, 26.0, 20.0, white),
+        (NpcKind::Corruptor, _) => (sheet_i, 44.0, 44.0, 44.0, white),
+        (NpcKind::DiggerHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

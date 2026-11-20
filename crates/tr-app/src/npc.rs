@@ -1126,6 +1126,26 @@ pub enum NpcKind {
     /// 40x40, aiStyle 23, dmg 80, def 18, 200 HP,
     /// kb 0.4, value 1000. UNWIRED (data-only; the AI lands with its wave).
     EnchantedSword,
+    /// `NPCID.Mimic` (85) - W4-d35 data wave (`NPC.cs:9905-9925`):
+    /// 24x24, aiStyle 25, dmg 80, def 30, 500 HP,
+    /// kb 0.3, value 100000; rarity 4. UNWIRED (data-only; the AI lands with its wave).
+    Mimic,
+    /// `NPCID.Unicorn` (86) - W4-d35 data wave (`NPC.cs:9926-9938`):
+    /// 46x42, aiStyle 26, dmg 65, def 30, 400 HP,
+    /// kb 0.3, value 1000. UNWIRED (data-only; the AI lands with its wave).
+    Unicorn,
+    /// `NPCID.GiantBat` (93) - W4-d35 data wave (`NPC.cs:10047-10060`):
+    /// 26x20, aiStyle 14, dmg 45, def 16, 100 HP,
+    /// kb 0.75, value 400, noGravity. UNWIRED (data-only; the AI lands with its wave).
+    GiantBat,
+    /// `NPCID.Corruptor` (94) - W4-d35 data wave (`NPC.cs:10061-10075`):
+    /// 44x44, aiStyle 5, dmg 60, def 32, 230 HP,
+    /// kb 0.55, value 500, noGravity. UNWIRED (data-only; the AI lands with its wave).
+    Corruptor,
+    /// `NPCID.DiggerHead` (95) - W4-d35 data wave (`NPC.cs:10076-10093`):
+    /// 22x22, aiStyle 6, dmg 45, def 10, 200 HP,
+    /// kb 0.0, value 300, noGravity, noTileCollide, behindTiles, netAlways. UNWIRED (data-only; the AI lands with its wave).
+    DiggerHead,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2996,6 +3016,10 @@ impl Npc {
                     NpcKind::GoblinScout => Some(0.95),
                     _ => None,
                 })
+                .or_else(|| match kind {
+                    NpcKind::DiggerHead => Some(0.9),
+                    _ => None,
+                })
                 .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
@@ -3587,6 +3611,13 @@ impl Npc {
             NpcKind::Wraith => 0.7,
             NpcKind::CursedHammer => 0.4,
             NpcKind::EnchantedSword => 0.4,
+            // W4-d35 (C): the 85/86/93/94/95 knockBackResist rows
+            // (the no-row kinds keep the head's 1f, NPC.cs:8533).
+            NpcKind::Mimic => 0.3,
+            NpcKind::Unicorn => 0.3,
+            NpcKind::GiantBat => 0.75,
+            NpcKind::Corruptor => 0.55,
+            NpcKind::DiggerHead => 0.0,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -3979,6 +4010,12 @@ impl Npc {
             NpcKind::Wraith => 16,
             NpcKind::CursedHammer => 18,
             NpcKind::EnchantedSword => 18,
+            // W4-d35 (C): the 85/86/93/94/95 defense rows.
+            NpcKind::Mimic => 30,
+            NpcKind::Unicorn => 30,
+            NpcKind::GiantBat => 16,
+            NpcKind::Corruptor => 32,
+            NpcKind::DiggerHead => 10,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4363,6 +4400,12 @@ impl Npc {
             NpcKind::Wraith => 500.0,
             NpcKind::CursedHammer => 1000.0,
             NpcKind::EnchantedSword => 1000.0,
+            // W4-d35 (C): the 85/86/93/94/95 value rows (copper).
+            NpcKind::Mimic => 100000.0,
+            NpcKind::Unicorn => 1000.0,
+            NpcKind::GiantBat => 400.0,
+            NpcKind::Corruptor => 500.0,
+            NpcKind::DiggerHead => 300.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -4734,7 +4777,10 @@ impl Npc {
         match self.kind.ai_style() {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
-            5 => self.ai_005_hover_family(world, player),
+            // W4-d35 (C): the 94 data-only kinds skip the
+            // aiStyle-5 family (it would run AI); they fall through to
+            // the update_kind_ai no-op until the AI wave.
+            5 if !matches!(self.kind, NpcKind::Corruptor) => self.ai_005_hover_family(world, player),
             // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
             // BlazingWheel (72), the style's only user. The small-kinds
             // wiring wave: the ricochet machine rides `npc_ai_style21`
@@ -5230,6 +5276,9 @@ impl Npc {
             // shot needs the hostile-shot seam); the per-NPC step is the
             // family no-op (the Destroyer precedent).
             NpcKind::Probe => {}
+            // W4-d35 (C): the 94 data-only no-op (the Probe
+            // precedent); the axis guard keeps it off the live path.
+            NpcKind::Corruptor => {}
             _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
         }
     }
@@ -6383,6 +6432,13 @@ impl Npc {
             | NpcKind::Wraith
             | NpcKind::CursedHammer
             | NpcKind::EnchantedSword => {}
+            // W4-d35 (C): the 85/86/93/94/95 kinds are UNWIRED (data-only);
+            // the AI lands with its wave (the wyvern no-op precedent).
+            NpcKind::Mimic
+            | NpcKind::Unicorn
+            | NpcKind::GiantBat
+            | NpcKind::Corruptor
+            | NpcKind::DiggerHead => {}
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
     }
@@ -9151,6 +9207,13 @@ impl Npc {
             | NpcKind::Wraith
             | NpcKind::CursedHammer
             | NpcKind::EnchantedSword => {}
+            // W4-d35 (C): the 85/86/93/94/95 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Mimic
+            | NpcKind::Unicorn
+            | NpcKind::GiantBat
+            | NpcKind::Corruptor
+            | NpcKind::DiggerHead => {}
         }
     }
 
@@ -18723,6 +18786,12 @@ impl Npc {
             NpcKind::Wraith => 436,
             NpcKind::CursedHammer => 437,
             NpcKind::EnchantedSword => 438,
+            // W4-d35 (C): the port-local band (to_u16's ids).
+            NpcKind::Mimic => 439,
+            NpcKind::Unicorn => 440,
+            NpcKind::GiantBat => 441,
+            NpcKind::Corruptor => 442,
+            NpcKind::DiggerHead => 443,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23792,7 +23861,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 280] = [
+    pub(super) const ALL_KINDS: [NpcKind; 285] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24082,6 +24151,12 @@ mod tests {
         NpcKind::Wraith,
         NpcKind::CursedHammer,
         NpcKind::EnchantedSword,
+        // W4-d35 (C): the 85/86/93/94/95 data-wave kinds.
+        NpcKind::Mimic,
+        NpcKind::Unicorn,
+        NpcKind::GiantBat,
+        NpcKind::Corruptor,
+        NpcKind::DiggerHead,
         NpcKind::WyvernTail,
     ];
 
@@ -27694,7 +27769,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            280,
+            285,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31348,6 +31423,12 @@ mod s1_d_2_tests {
         (NpcKind::Wraith, 22),
         (NpcKind::CursedHammer, 23),
         (NpcKind::EnchantedSword, 23),
+        // W4-d35 (C).
+        (NpcKind::Mimic, 25),
+        (NpcKind::Unicorn, 26),
+        (NpcKind::GiantBat, 14),
+        (NpcKind::Corruptor, 5),
+        (NpcKind::DiggerHead, 6),
         (NpcKind::WyvernTail, 6),
     ];
 
@@ -31374,7 +31455,8 @@ mod s1_d_2_tests {
                 NpcKind::ServantOfCthulhu,
                 NpcKind::Bee,
                 NpcKind::BeeSmall,
-                NpcKind::Probe
+                NpcKind::Probe,
+                NpcKind::Corruptor
             ]
         );
     }
@@ -33920,5 +34002,116 @@ mod w4_d35_b_tests {
         assert_eq!(e.credit_id, "EnchantedSword", "EnchantedSword credit");
         assert_eq!(e.name, "Enchanted Sword", "EnchantedSword name");
         assert_eq!(NpcKind::EnchantedSword.cs_id(), 84, "EnchantedSword cs_id");
+    }
+}
+
+#[cfg(test)]
+mod w4_d35_c_tests {
+    //! W4-d35 batch C (85/86/93/94/95) - the data-only SetDefaults wave.
+    //! Every row pins verbatim to the C# (`NPC.cs:9905-9925`, `NPC.cs:9926-9938`, `NPC.cs:10047-10060`, `NPC.cs:10061-10075`, `NPC.cs:10076-10093`). WRITTEN, NOT RUN
+    //! (code-only mode); the smallkinds-witness precedent.
+    use super::*;
+
+    #[test]
+    fn w4_d35_c_the_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value, scale, alpha)
+        let rows = [
+            (NpcKind::Mimic, 85u16, 25u8, 24.0, 24.0, 80, 30, 500, 0.3f32, 100000.0f32, 1.0f32, 0u8),
+            (NpcKind::Unicorn, 86u16, 26u8, 46.0, 42.0, 65, 30, 400, 0.3f32, 1000.0f32, 1.0f32, 0u8),
+            (NpcKind::GiantBat, 93u16, 14u8, 26.0, 20.0, 45, 16, 100, 0.75f32, 400.0f32, 1.0f32, 0u8),
+            (NpcKind::Corruptor, 94u16, 5u8, 44.0, 44.0, 60, 32, 230, 0.55f32, 500.0f32, 1.0f32, 0u8),
+            (NpcKind::DiggerHead, 95u16, 6u8, 22.0, 22.0, 45, 10, 200, 0.0f32, 300.0f32, 0.9f32, 0u8),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value, scale, alpha) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // cs_id: visible kinds ride their own vanilla id; the Hide
+            // kinds fold to the head (the fallback reads the head entry).
+            if crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            }
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, scale, "{kind:?} scale");
+            assert_eq!(shell.alpha, alpha, "{kind:?} alpha");
+        }
+        // sounds
+        assert_eq!(NpcKind::Mimic.hit_sound(), Some("NPC_Hit_4"), "Mimic hit");
+        assert_eq!(NpcKind::Mimic.death_sound(), Some("NPC_Killed_6"), "Mimic death");
+        assert_eq!(NpcKind::Unicorn.hit_sound(), Some("NPC_Hit_12"), "Unicorn hit");
+        assert_eq!(NpcKind::Unicorn.death_sound(), Some("NPC_Killed_18"), "Unicorn death");
+        assert_eq!(NpcKind::GiantBat.hit_sound(), Some("NPC_Hit_1"), "GiantBat hit");
+        assert_eq!(NpcKind::GiantBat.death_sound(), Some("NPC_Killed_4"), "GiantBat death");
+        assert_eq!(NpcKind::Corruptor.hit_sound(), Some("NPC_Hit_1"), "Corruptor hit");
+        assert_eq!(NpcKind::Corruptor.death_sound(), Some("NPC_Killed_1"), "Corruptor death");
+        assert_eq!(NpcKind::DiggerHead.hit_sound(), Some("NPC_Hit_1"), "DiggerHead hit");
+        assert_eq!(NpcKind::DiggerHead.death_sound(), Some("NPC_Killed_1"), "DiggerHead death");
+        // protocol band (port-local 429..; the vanilla ids collide)
+        assert_eq!(NpcKind::Mimic.to_u16(), 439, "Mimic proto");
+        assert_eq!(NpcKind::from_u16(439), Some(NpcKind::Mimic), "Mimic decode");
+        assert_eq!(NpcKind::Unicorn.to_u16(), 440, "Unicorn proto");
+        assert_eq!(NpcKind::from_u16(440), Some(NpcKind::Unicorn), "Unicorn decode");
+        assert_eq!(NpcKind::GiantBat.to_u16(), 441, "GiantBat proto");
+        assert_eq!(NpcKind::from_u16(441), Some(NpcKind::GiantBat), "GiantBat decode");
+        assert_eq!(NpcKind::Corruptor.to_u16(), 442, "Corruptor proto");
+        assert_eq!(NpcKind::from_u16(442), Some(NpcKind::Corruptor), "Corruptor decode");
+        assert_eq!(NpcKind::DiggerHead.to_u16(), 443, "DiggerHead proto");
+        assert_eq!(NpcKind::from_u16(443), Some(NpcKind::DiggerHead), "DiggerHead decode");
+        // flags
+        assert_eq!(NpcKind::Mimic.behind_tiles(), false, "Mimic behindTiles");
+        assert_eq!(NpcKind::Mimic.no_gravity(), false, "Mimic noGravity");
+        assert_eq!(NpcKind::Unicorn.behind_tiles(), false, "Unicorn behindTiles");
+        assert_eq!(NpcKind::Unicorn.no_gravity(), false, "Unicorn noGravity");
+        assert_eq!(NpcKind::GiantBat.behind_tiles(), false, "GiantBat behindTiles");
+        assert_eq!(NpcKind::GiantBat.no_gravity(), true, "GiantBat noGravity");
+        assert_eq!(NpcKind::Corruptor.behind_tiles(), false, "Corruptor behindTiles");
+        assert_eq!(NpcKind::Corruptor.no_gravity(), true, "Corruptor noGravity");
+        assert_eq!(NpcKind::DiggerHead.behind_tiles(), true, "DiggerHead behindTiles");
+        assert_eq!(NpcKind::DiggerHead.no_gravity(), false, "DiggerHead noGravity");
+        // debuff immunities (NPCID.cs DebuffImmunitySets)
+        let b = NpcBuffs::for_kind(NpcKind::Mimic);
+        assert!(b.buff_immune[20], "Mimic immune 20");
+        assert!(b.buff_immune[31], "Mimic immune 31");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "Mimic derived 20");
+        let b = NpcBuffs::for_kind(NpcKind::Unicorn);
+        assert!(b.buff_immune.iter().all(|&i| !i), "Unicorn null entry");
+        let b = NpcBuffs::for_kind(NpcKind::GiantBat);
+        assert!(b.buff_immune.iter().all(|&i| !i), "GiantBat null entry");
+        let b = NpcBuffs::for_kind(NpcKind::Corruptor);
+        assert!(b.buff_immune[31], "Corruptor immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::DiggerHead);
+        assert!(b.buff_immune[31], "DiggerHead immune 31");
+        // bestiary entries / Hide folds
+        let e = crate::bestiary::entry_for_npc(NpcKind::Mimic, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 85, "Mimic net");
+        assert_eq!(e.credit_id, "Mimic", "Mimic credit");
+        assert_eq!(e.name, "Mimic", "Mimic name");
+        assert_eq!(NpcKind::Mimic.cs_id(), 85, "Mimic cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Unicorn, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 86, "Unicorn net");
+        assert_eq!(e.credit_id, "Unicorn", "Unicorn credit");
+        assert_eq!(e.name, "Unicorn", "Unicorn name");
+        assert_eq!(NpcKind::Unicorn.cs_id(), 86, "Unicorn cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::GiantBat, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 93, "GiantBat net");
+        assert_eq!(e.credit_id, "GiantBat", "GiantBat credit");
+        assert_eq!(e.name, "Giant Bat", "GiantBat name");
+        assert_eq!(NpcKind::GiantBat.cs_id(), 93, "GiantBat cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Corruptor, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 94, "Corruptor net");
+        assert_eq!(e.credit_id, "Corruptor", "Corruptor credit");
+        assert_eq!(e.name, "Corruptor", "Corruptor name");
+        assert_eq!(NpcKind::Corruptor.cs_id(), 94, "Corruptor cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::DiggerHead, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 95, "DiggerHead net");
+        assert_eq!(e.credit_id, "DiggerHead", "DiggerHead credit");
+        assert_eq!(e.name, "Digger", "DiggerHead name");
+        assert_eq!(NpcKind::DiggerHead.cs_id(), 95, "DiggerHead cs_id");
     }
 }

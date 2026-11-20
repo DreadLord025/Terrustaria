@@ -603,6 +603,15 @@ impl NpcKind {
             NpcKind::Wraith => 436,
             NpcKind::CursedHammer => 437,
             NpcKind::EnchantedSword => 438,
+            // W4-d35 (C): the 85/86/93/94/95 band - port-local protocol ids
+            // 429.. (the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::Mimic => 439,
+            NpcKind::Unicorn => 440,
+            NpcKind::GiantBat => 441,
+            NpcKind::Corruptor => 442,
+            NpcKind::DiggerHead => 443,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -943,6 +952,11 @@ impl NpcKind {
             436 => NpcKind::Wraith,
             437 => NpcKind::CursedHammer,
             438 => NpcKind::EnchantedSword,
+            439 => NpcKind::Mimic,
+            440 => NpcKind::Unicorn,
+            441 => NpcKind::GiantBat,
+            442 => NpcKind::Corruptor,
+            443 => NpcKind::DiggerHead,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1047,6 +1061,9 @@ impl NpcKind {
                 | NpcKind::WyvernBody
                 | NpcKind::WyvernBody2
                 | NpcKind::WyvernBody3
+                // W4-d35 (C): the 95 worm chain shares the
+                // head's life pool (NPC.cs:51305-51363). Inert until wiring.
+                | NpcKind::DiggerHead
                 | NpcKind::WyvernTail
         )
     }
@@ -1824,6 +1841,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d35 (C): the 85/86/93/94/95 HitSound rows.
+            NpcKind::Mimic => "NPC_Hit_4",
+            NpcKind::Unicorn => "NPC_Hit_12",
+            NpcKind::GiantBat => "NPC_Hit_1",
+            NpcKind::Corruptor => "NPC_Hit_1",
+            NpcKind::DiggerHead => "NPC_Hit_1",
             // W4-d35 (B): the 79/80/82/83/84 HitSound rows.
             NpcKind::DarkMummy => "NPC_Hit_1",
             NpcKind::LightMummy => "NPC_Hit_1",
@@ -2140,6 +2163,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d35 (C): the 85/86/93/94/95 DeathSound rows.
+            NpcKind::Mimic => "NPC_Killed_6",
+            NpcKind::Unicorn => "NPC_Killed_18",
+            NpcKind::GiantBat => "NPC_Killed_4",
+            NpcKind::Corruptor => "NPC_Killed_1",
+            NpcKind::DiggerHead => "NPC_Killed_1",
             // W4-d35 (B): the 79/80/82/83/84 DeathSound rows.
             NpcKind::DarkMummy => "NPC_Killed_6",
             NpcKind::LightMummy => "NPC_Killed_6",
@@ -2255,6 +2284,9 @@ impl NpcKind {
             NpcKind::Pixie => true,
             // W4-d35 (B): the 82 noGravity flyers (kb>0).
             NpcKind::Wraith => true,
+            // W4-d35 (C): the 93/94 noGravity flyers (kb>0).
+            NpcKind::GiantBat
+            | NpcKind::Corruptor => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2522,6 +2554,16 @@ impl NpcKind {
             // aiStyle 23 - W4-d35 (B; NPC.cs :9879, :9892).
             NpcKind::CursedHammer
             | NpcKind::EnchantedSword => 23,
+            // aiStyle 5 - W4-d35 (C; NPC.cs :10061).
+            NpcKind::Corruptor => 5,
+            // aiStyle 6 - W4-d35 (C; NPC.cs :10076).
+            NpcKind::DiggerHead => 6,
+            // aiStyle 14 - W4-d35 (C; NPC.cs :10047).
+            NpcKind::GiantBat => 14,
+            // aiStyle 25 - W4-d35 (C; NPC.cs :9905).
+            NpcKind::Mimic => 25,
+            // aiStyle 26 - W4-d35 (C; NPC.cs :9926).
+            NpcKind::Unicorn => 26,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3064,6 +3106,12 @@ impl NpcKind {
             NpcKind::Wraith => (24.0, 44.0),
             NpcKind::CursedHammer => (40.0, 40.0),
             NpcKind::EnchantedSword => (40.0, 40.0),
+            // W4-d35 (C): the 85/86/93/94/95 SetDefaults boxes.
+            NpcKind::Mimic => (24.0, 24.0),
+            NpcKind::Unicorn => (46.0, 42.0),
+            NpcKind::GiantBat => (26.0, 20.0),
+            NpcKind::Corruptor => (44.0, 44.0),
+            NpcKind::DiggerHead => (22.0, 22.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3149,6 +3197,12 @@ impl NpcKind {
             NpcKind::Wraith => 82,
             NpcKind::CursedHammer => 83,
             NpcKind::EnchantedSword => 84,
+            // W4-d35 (C): the 85/86/93/94/95 vanilla NPC.type rows.
+            NpcKind::Mimic => 85,
+            NpcKind::Unicorn => 86,
+            NpcKind::GiantBat => 93,
+            NpcKind::Corruptor => 94,
+            NpcKind::DiggerHead => 95,
             NpcKind::BlazingWheel => 72,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
@@ -3296,6 +3350,8 @@ impl NpcKind {
                 | NpcKind::TheDestroyerTail
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
+                // W4-d35 (C): the 95 behindTiles rows.
+                | NpcKind::DiggerHead
                 | NpcKind::BlazingWheel
         )
     }
@@ -3729,6 +3785,12 @@ impl NpcKind {
             NpcKind::Wraith => 160,
             NpcKind::CursedHammer => 200,
             NpcKind::EnchantedSword => 200,
+            // W4-d35 (C): the 85/86/93/94/95 lifeMax rows.
+            NpcKind::Mimic => 500,
+            NpcKind::Unicorn => 400,
+            NpcKind::GiantBat => 100,
+            NpcKind::Corruptor => 230,
+            NpcKind::DiggerHead => 200,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4105,6 +4167,12 @@ impl NpcKind {
             NpcKind::Wraith => 65,
             NpcKind::CursedHammer => 80,
             NpcKind::EnchantedSword => 80,
+            // W4-d35 (C): the 85/86/93/94/95 damage rows.
+            NpcKind::Mimic => 80,
+            NpcKind::Unicorn => 65,
+            NpcKind::GiantBat => 45,
+            NpcKind::Corruptor => 60,
+            NpcKind::DiggerHead => 45,
             NpcKind::DungeonSpirit => 70,
         }
     }

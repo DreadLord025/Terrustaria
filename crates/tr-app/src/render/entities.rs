@@ -3185,6 +3185,15 @@ pub(crate) fn draw_npcs(
             NpcKind::Wraith => generic_anchor(assets.npc_sheet(82), 4, n, w, h),
             NpcKind::CursedHammer => generic_anchor(assets.npc_sheet(83), 6, n, w, h),
             NpcKind::EnchantedSword => generic_anchor(assets.npc_sheet(84), 6, n, w, h),
+            // W4-d35 (C): the 85/86/93/94/95 draw arms. **Sheet deferral**:
+            // NPC_85/86/93/94/95 are NOT packed (the atlas stands at the 8192
+            // strict-GPU bound - the wyvern precedent); npc_sheet returns
+            // None and the draw skips. The packing rides the atlas-repack wave.
+            NpcKind::Mimic => generic_anchor(assets.npc_sheet(85), 18, n, w, h),
+            NpcKind::Unicorn => generic_anchor(assets.npc_sheet(86), 16, n, w, h),
+            NpcKind::GiantBat => generic_anchor(assets.npc_sheet(93), 4, n, w, h),
+            NpcKind::Corruptor => generic_anchor(assets.npc_sheet(94), 3, n, w, h),
+            NpcKind::DiggerHead => generic_anchor(assets.npc_sheet(95), 1, n, w, h),
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3289,6 +3298,8 @@ pub(crate) fn draw_npcs(
                     | NpcKind::WyvernBody2
                     | NpcKind::WyvernBody3
                     | NpcKind::WyvernTail
+                    // W4-d35 (C): the 95 chain/spin rotations.
+                    | NpcKind::DiggerHead
                     // W4-d35 (B): the 83/84 chain/spin rotations.
                     | NpcKind::CursedHammer
                     | NpcKind::EnchantedSword
