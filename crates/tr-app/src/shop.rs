@@ -465,10 +465,11 @@ pub enum StockWhen {
     NumBelow(u32, &'static StockWhen),
 }
 
-/// `Chest.SetupShop`'s stock list for one shop index. The port carries the
-/// Merchant's shop (index 1, `Chest.cs:1371-1483`); the other indexes land
-/// with their NPCs (M4-TOWN umbrella). The order is the vanilla's `num`
-/// order (the UI fills the slots left to right).
+/// `Chest.SetupShop`'s stock list for one shop index. The first half
+/// (cases 1-11/14, `Chest.cs:1371-2442`) is complete with verbatim gates
+/// (W4-d122); the second-half indexes land with their lanes (d123 owns
+/// 12/13/15/16/17, the OOA/medal co-lanes 20/21). The order is the
+/// vanilla's `num` order (the UI fills the slots left to right).
 pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> Vec<ShopEntry> {
     let _ = inventory_ids;
     match shop_index {
@@ -3138,9 +3139,10 @@ mod tests {
         let fnn = resolve_stock_moon(5, &fn_, &[], 2);
         assert!(fnn.contains(&1276) && !fnn.contains(&1275));
         // The `num < 38` guards (`:1979`/`:1984`): the LOUD world at
-        // NIGHT + phase 0 resolves 35 rows before the golf tail — 4744
-        // lands (36), 5308 (37), then 5630's `num < 38` FAILS (num == 38)
-        // and the mirror drops out.
+        // NIGHT + phase 0 resolves the MAXIMUM 35 rows before the golf
+        // tail (the halloween trio that would push the vanilla to 38 is
+        // constants-off), so 4744 lands (36), 5308 (37) and 5630's
+        // `num < 38` still passes (37 < 38) — the full 38-row list.
         let loud = ShopFlags {
             night: true,
             blood_moon: true,
@@ -3156,23 +3158,34 @@ mod tests {
             ..Default::default()
         };
         let l = resolve_stock_moon(5, &loud, &[], 0);
-        assert_eq!(l.len(), 37, "the second guard drops the mirror");
-        assert!(l.contains(&4744), "the golf tail had room (num 35 < 38)");
-        assert!(!l.contains(&5630), "num == 38 blocks the mirror");
-        assert_eq!(*l.last().unwrap(), 5308, "the unguarded row lands last");
+        assert_eq!(l.len(), 38, "the max list with the halloween rows off");
+        assert_eq!(&l[l.len() - 3..], &[4744, 5308, 5630]);
         // Phase 7 resolves one costume PAIR instead of the four phase-0
-        // rows (num 33 before the tail), so BOTH guarded rows land.
+        // rows (33 pre-tail) — both guarded rows land with room to spare.
         let p7 = resolve_stock_moon(5, &loud, &[], 7);
         assert_eq!(p7.len(), 36);
         assert_eq!(&p7[p7.len() - 3..], &[4744, 5308, 5630]);
         // The golf gate itself: under 2000 the 4744 row stays out even
-        // with room, and the mirror still lands (num 34 < 38).
+        // with room, and the mirror still lands.
         let poor = ShopFlags {
             golfer_score: 1999,
             ..loud
         };
         let pr = resolve_stock_moon(5, &poor, &[], 7);
         assert!(!pr.contains(&4744) && pr.contains(&5630));
+        // The guard MECHANISM pinned directly (the row list cannot reach
+        // num == 38 pre-tail while the halloween rows are off): the
+        // boundary is `num < 38`, and the child gate still applies.
+        let f = ShopFlags::default();
+        assert!(stock_gate(&StockWhen::NumBelow(38, &StockWhen::Always), &f, &[], 0, 37));
+        assert!(!stock_gate(&StockWhen::NumBelow(38, &StockWhen::Always), &f, &[], 0, 38));
+        assert!(!stock_gate(
+            &StockWhen::NumBelow(38, &CLOTHIER_GOLF_TAIL),
+            &f,
+            &[],
+            0,
+            0
+        ), "the golf child gate still gates at num 0");
     }
 
     /// `Chest.SetupTravelShop` (`Chest.cs:1275-1358`): the visit's stock —

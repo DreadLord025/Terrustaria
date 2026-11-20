@@ -21781,12 +21781,23 @@ mod tests {
         // port).
         assert!(!crate::spawner::spawn_allowed_clothier(false));
         assert!(crate::spawner::spawn_allowed_clothier(true));
-        // The shop index 5: the always-on rows.
+        // The shop index 5: the always-on rows + the DAY hat (the default
+        // flags are day — W4-d122's verbatim `:1819` gate includes 242).
         let stock = crate::shop::resolve_stock(5, &crate::shop::ShopFlags::default(), &[]);
         for id in [254, 981, 269, 270, 271] {
             assert!(stock.contains(&id), "the clothier row {id} missing");
         }
-        assert!(!stock.contains(&242), "the day row leaks");
+        assert!(stock.contains(&242), "the day hat rides the day flags");
+        // Night hides it (`Chest.cs:1819`'s `Main.dayTime`).
+        let night = crate::shop::resolve_stock(
+            5,
+            &crate::shop::ShopFlags {
+                night: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert!(!night.contains(&242), "the day row hides at night");
     }
 
     #[test]
