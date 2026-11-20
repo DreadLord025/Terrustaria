@@ -361,3 +361,81 @@ behavioural and neither currently recorded in the roadmap or ANALYSIS.
 - **L — Legacy `.map` migration**: port `DecompressChunk` + `LoadMapVersion1` /
   `LoadMapVersionCompressed` (`MapHelper.cs:3325-3747`) so old sidecars upgrade to v326 instead of
   being rejected. Fixes D13.
+
+## W4-f29 map-overlay census (2026-11-20, code-only)
+
+Full inventory of every overlay piece `Main.DrawMap` (`Main.cs:55279-56074`) paints on the
+fullscreen map and the minimap, against the port at main `a725acb0`. The e17 sibling branch
+(`task/W4-e17-map-overlay-layers`) was still at main (0 commits) at census time — nothing claimed.
+`task/W4-c35-map-update-queue` touches `map.rs` (the update queue), not the overlay draws.
+
+### Landed + verified (S1-L-4 second pass, `map_layers.rs`)
+
+| Piece | C# | Port |
+| --- | --- | --- |
+| MapIconOverlay walk + context | `MapIconOverlay.cs:16-23`, `MapOverlayDrawContext.cs:34-65` | `map_layers.rs:181-339` — FAITHFUL (transform, clip, aligned origin, hover rect) |
+| SpawnMapLayer (world + bed) | `SpawnMapLayer.cs:10-23` | `map_layers.rs:246-270` — FAITHFUL (`bed_spawn` stand-in for `Player.SpawnX/Y`, documented) |
+| BossBagMapLayer | `BossBagMapLayer.cs:9-23`, `ItemID.cs:1383` | `map_layers.rs:228-244` — FAITHFUL 21-kind set |
+| DigtoiseMapLayer | `DigtoiseMapLayer.cs:11-27` | `map_layers.rs:204-226` + `digtoise_marker` — FAITHFUL |
+| TeamBasedSpawnMapLayer | `TeamBasedSpawnMapLayer.cs:11-21` | gated stub (`teamBasedSpawnsSeed` unported, M5-SEED-2) — VERIFIED gate |
+| PingMapLayer | `PingMapLayer.cs:26-41` | `map_layers.rs:318-337` + `map.rs` pool — FAITHFUL (100 cap, 15 s, 1x5 10 Hz) |
+| Pylon MARKERS (not lines) | `TeleportPylonsMapLayer.cs:65-89` | `map_layers.rs:282-316` — marker anchor/dim/reveal FAITHFUL |
+| Fullscreen player head | `Main.cs:55931-55954` | `frame/draw.rs:1962-1980` + `entities.rs:1904` — local player only, singleplayer border |
+| MapBG backdrop | `Main.cs:56342-56444` | `map.rs::map_bg_index` — landed earlier |
+
+### UNCLAIMED (this task ports them)
+
+1. **Pylon network lines** — `TeleportPylonsMapLayer.cs:45-64` + `DrawLine` `:18-28`: fullscreen +
+   `Main.MapPylonTile != (-1,-1)`, one black 6px + one white 2px line from the hovered pylon's
+   `GetUnclampedDrawRegion` centre to every OTHER revealed pylon; <=5-segment `Vector2.Lerp`
+   stretch of BlackTile, origin `(0, w/2)`, scale `(len/segments/16, width/16)`. MISSING.
+2. **Pylon hover/click state** — `MapPylonTile` set by the pylon tile right-click
+   (`Player.cs:32180-32212`: anchor `x - frameX/18%3, y - frameY/18%4`, the reveal-inclusive rect
+   inflate-20 recentre + scale fit), cleared by `TryOpeningFullscreenMap` (`:29113`) and the
+   inventory map icon (`Main.cs:41102`); marker click teleports (`:90-109`,
+   `handle_teleport_request` already in `tr-core/pylons.rs`) or pans to an offscreen pylon
+   (`DrawClamped` `MapOverlayDrawContext.cs:118-216`, Extra_299 arrow frame (2,1) of 3x3, border 10).
+   MISSING (marker hover text exists; no click, no clamped offscreen icons, no lines).
+3. **Boss head icons** — `DrawNPCMapIcons`/`2`/`3` (`Main.cs:56099-56292`) boss half +
+   `GetBossHeadTextureIndex` (`NPC.cs:7557-7606`, the `NPCID.Sets.BossHeadTextures` table
+   `NPCID.cs:10479` + the 7 type overrides), `GetBossHeadRotation` (`:7608-7632`),
+   `GetBossHeadSpriteEffects` (`:7634-7642`), the Destroyer 134 segment-average (`:56125-56137`),
+   `DrawNPCHeadBoss` (`:56562-56565`) → `OutlinedTextureRenderer` rings
+   (`AnOutlinedDrawRenderTargetContent.cs:38-62`: 8 black @Manhattan-4 + 4 border @2). MISSING.
+4. **Town NPC head icons** — same three functions' townie half + `TownNPCProfiles.GetHeadIndexSafe`
+   (`TownNPCProfiles.cs:200-207`), `DrawNPCHeadFriendly` (`Main.cs:56553-56560`, the
+   `nextDialogue.ShowIndicator` notification icon), `direction > 0` flip, `Center + gfxOffY +
+   netOffset`, per-mode offsets (fullscreen `-10*scale`; minimap `-2*scale/5` + clip
+   `(miniMapX+12, +10, W-16, H-14)`), hover names (`FullName` / `GivenOrTypeName`). MISSING.
+5. **Player death markers** — `DrawPlayerDeathMarker` (`Main.cs:56446-56464`) + the three call
+   sites (`:55672-55691` overlay, `:55742-55765` minimap, `:55977-55987` fullscreen),
+   `lastDeathPostion/lastDeathTime/showLastDeath` (`Player.cs:846-850`, set in `KillMe`
+   `:38846-38848`), MapDeath texture centred origin, `-(2 - scale/5*2)` y-offset, hover
+   `Game.PlayerDeathTime` via `Lang.LocalizedDuration`. MISSING (no `last_death` fields at all).
+6. **Revenge coin markers** — `RevengeMarker.DrawMapIcon` (`CoinLossRevengeSystem.cs:252-266`:
+   coin tier <100c copper / <10000c silver / >=1000000c platinum / else gold, `Frame(1,8)`,
+   centred) + `DrawMapIcons` (`:482-496`) + `UseMouseOver` (`:268-273`, `ItemSlot.DrawMoney` at
+   `MouseScreen/drawScale + (-28) + (4,0)`), three call sites `Main.cs:55626/55705/55922`.
+   The marker SYSTEM is ported (`revenge.rs`) but draws nothing on the map. MISSING.
+7. **Misc map icons** — `DrawMiscMapIcons` (`Main.cs:56466-56539`): PotionOfReturn home portal
+   (Extra_175) + exit portal (Extra_173) at `pos + (0, -height/2)`, floored, `GameUI.PotionOfReturn*`
+   hover; last golf ball (Extra_176 + the projectile texture on top, ball name hover). The player
+   fields exist (`player.rs:1279-1283`), `GolfState.get_last_hit_ball` exists — no map draws. MISSING.
+8. **Minimap player heads** — `Main.cs:55712-55741` (the port draws the fullscreen local head only;
+   the minimap head loop with its clip margins `(x+6, y+6, W-16, H-14)` is absent). MISSING.
+9. **Fullscreen hover tile/chest names** — `Main.cs:55784-55913` (`Light > 40` gate, chest 21/441/
+   467/468 + dresser 88 origin decode, `DrawMap_FindChestName` `:56631-56643`,
+   `Lang.GetMapObjectName`). `lang.rs::map_object_name_for_tile` exists but no call site. MISSING.
+
+### Verify-only (out of scope, recorded)
+
+- `DrawDebugMapOverlays` (`Main.cs:56299-56340`) — DebugOptions gates, dev-only.
+- The map-style-2 whole-screen overlay (`Main.cs:55617-55695`) — the port's `map_style == 2`
+  draws nothing (P4 Uncertainty 7, recorded); its icon calls ride the same helpers ported here.
+- Unity-potion teleport hover (`Main.cs:55960-55975`) — MP-only, `HasUnityPotion` unported.
+- `DrawPlayerMapIcon_CanBeSeen` (`:56076-56097`) — singleplayer collapses to `true`; ported
+  implicitly, re-verified.
+- Quest fish map markers: NO such overlay exists in `Main.DrawMap`/`MapHelper`/the six
+  `IMapLayer`s (grep `Quest|Fish` over `Map/*.cs` = 0 hits; the quest fish live only in the
+  fishing drop rules + the angler chat). The task seed's "quest fish markers" is a phantom —
+  recorded here so no future census re-hunts it.
