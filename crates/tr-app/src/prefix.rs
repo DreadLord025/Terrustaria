@@ -1,7 +1,7 @@
-//! Item prefixes — `Item.Prefix` (`Item.cs:504-610`), the per-category roll
+//! Item prefixes — `Item.Prefix` (`Item.cs:504-618`), the per-category roll
 //! tables (`PrefixLegacy.cs`), the stat multipliers
-//! (`Item.TryGetPrefixStatMultipliersForItem`, `Item.cs:709-1082`) and the
-//! equipment pass (`Player.GrantPrefixBenefits`, `Player.cs:13953-14044`).
+//! (`Item.TryGetPrefixStatMultipliersForItem`, `Item.cs:709-1080`) and the
+//! equipment pass (`Player.GrantPrefixBenefits`, `Player.cs:13953-14047`).
 //!
 //! The port recomputes the prefixed stats from the kind's defaults on demand
 //! (`prefixed_stats`) instead of mutating an instance: a natural drop is a
@@ -15,7 +15,7 @@
 //! (`UnifiedRandom`) stream (`S1-A-5`); the worldgen chest seam still feeds the
 //! splitmix stream until S1-A-4 migrates it ([`roll_prefix_splitmix`]).
 
-use crate::itemdata::{self, ItemDef};
+use crate::itemdata::ItemDef;
 use crate::player::Player;
 use tr_core::UnifiedRandom;
 use tr_core::damage::round_bankers;
@@ -130,14 +130,14 @@ pub(crate) fn in_set(set: &[u16], kind: u16) -> bool {
     set.binary_search(&kind).is_ok()
 }
 
-/// `Item.CanHavePrefixes` (`Item.cs:1136-1140`): the kind has a rollable
+/// `Item.CanHavePrefixes` (`Item.cs:493-496`): the kind has a rollable
 /// prefix table at all. The crafting cursor gate reads it
 /// (`Main.CursorHasSpaceToCraftRecipe`, `Main.cs:42325`).
 pub(crate) fn can_have_prefixes(kind: u16) -> bool {
     rollable_prefixes(kind).is_some()
 }
 
-/// `Item.GetRollablePrefixes` (`Item.cs:1101-1140`): the check order decides
+/// `Item.GetRollablePrefixes` (`Item.cs:1101-1137`): the check order decides
 /// the table for kinds that sit in several sets.
 pub(crate) fn rollable_prefixes(kind: u16) -> Option<&'static [u16]> {
     if in_set(SWORDS_HAMMERS_AXES_PICKS, kind) {
@@ -161,11 +161,16 @@ pub(crate) fn rollable_prefixes(kind: u16) -> Option<&'static [u16]> {
     if in_set(ITEMS_THAT_CAN_HAVE_LEGENDARY_2, kind) {
         return Some(PREFIXES_FOR_TERRARIAN);
     }
-    // `IsAPrefixableAccessory` (`Item.cs:1165-1171`): `accessory && !vanity
-    // && CanGetPrefixes[type]`. The port does not model the vanity flag yet —
-    // the denial list already covers the vanity-only accessory ids.
-    let def = itemdata::ITEMS.get(kind as usize)?;
-    if def.accessory && !in_set(CAN_GET_PREFIXES_EXCLUDED, kind) {
+    // `IsAPrefixableAccessory` (`Item.cs:1150-1157`): `accessory && !vanity
+    // && CanGetPrefixes[type]`. The vanity flag is the C#'s own `Item.vanity`
+    // (the generated row) — the capes/rings/monoliths/tails sit in the
+    // accessory family but take no prefix, and the denial list alone does
+    // not cover them (only the music boxes/dyes/pet licenses are on it).
+    // S1-P-i45/i49 seam: read the CORRECTED registry::item row (the 6171
+    // Bejeweled Staff zero-row leak), which layers ITEM_CORRECTIONS over
+    // the generated table.
+    let def = crate::registry::item(kind)?;
+    if def.accessory && !def.vanity && !in_set(CAN_GET_PREFIXES_EXCLUDED, kind) {
         return Some(PREFIXES_FOR_ACCESSORIES);
     }
     None
@@ -297,9 +302,9 @@ impl Multipliers {
         }
     }
 
-    /// `Item.cs:1079`: the value multiplier the rarity ladder and the price
+    /// `Item.cs:1046`: the value multiplier the rarity ladder and the price
     /// both read. The accessory ids (62-80) carry no stat multipliers, only
-    /// these bumps (`Item.cs:1081-1097`).
+    /// these bumps (`Item.cs:1047-1062`).
     fn value_multiplier(prefix: u16, m: &Multipliers) -> f32 {
         let mut v = 1.0_f32 * m.dmg * (2.0 - m.spd) * (2.0 - m.mcst) * m.size * m.kb * m.shtspd
             * (1.0 + m.crt as f32 * 0.02)
@@ -320,7 +325,7 @@ impl Multipliers {
         v
     }
 
-    /// `TryGetPrefixStatMultipliersForItem`'s tail (`Item.cs:1067-1080`): a
+    /// `TryGetPrefixStatMultipliersForItem`'s tail (`Item.cs:1063-1078`): a
     /// prefix whose rounded change is invisible on this item is rejected (the
     /// caller retries with a fresh roll).
     fn rejected(&self, def: &ItemDef) -> bool {
@@ -348,7 +353,7 @@ impl Multipliers {
 }
 
 /// The effective per-instance stats of a prefixed item — `Item.Prefix`'s
-/// application block (`Item.cs:575-598`) computed from the kind's defaults.
+/// application block (`Item.cs:576-586`) computed from the kind's defaults.
 /// `prefix == 0` returns the defaults unchanged.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PrefixedStats {
@@ -368,6 +373,15 @@ pub struct PrefixedStats {
     pub rare: i32,
     /// `Item.value` after the ×value² price multiplier.
     pub value: i32,
+}
+
+/// The prefix's ADDITIVE crit bonus — the `crt` out-parameter of
+/// `Item.TryGetPrefixStatMultipliersForItem` (`Item.cs:709-1078`), NOT the
+/// prefixed item's total crit. The Revolver's per-tick clamp reads it
+/// (`Player.cs:42697-42698`: `Clamp(item.crit + bonus, crt, 20 + crt)`);
+/// prefix 0 and the accessory ids grant 0.
+pub fn prefix_crit_bonus(prefix: u16) -> i32 {
+    Multipliers::stat_switch(prefix).crt
 }
 
 /// The prefixed stats of `kind` (`Item.Prefix` on a fresh `SetDefaults`
@@ -411,10 +425,15 @@ pub fn prefixed_stats(kind: u16, prefix: u16) -> Option<PrefixedStats> {
     })
 }
 
-/// The rarity ladder + clamp (`Item.cs:588-605`): the value multiplier shifts
+/// The rarity ladder + clamp (`Item.cs:587-613`): the value multiplier shifts
 /// `rare` by ±1/±2 and the band clamps to [-1, 11] (a quest-fish −11 stays).
+/// The C# compares `(double)num2` — the f32 multiplier promoted to f64 —
+/// against DOUBLE literals, so the compares run in f64: `1.05f` is
+/// 1.04999995 (< 1.05, no +1 — the Quick 45 and the ×1.05 accessory tier
+/// 62/69/73/77 stay put) and `0.8f` is 0.80000001 (> 0.8, the Weak-knockback
+/// 56 takes −1, not −2). An f32-vs-f32-literal compare flips all six.
 fn shift_rare(rare: i32, prefix: u16, m: &Multipliers) -> i32 {
-    let num2 = Multipliers::value_multiplier(prefix, m);
+    let num2 = Multipliers::value_multiplier(prefix, m) as f64;
     let mut rare = if num2 >= 1.2 {
         rare + 2
     } else if num2 >= 1.05 {
@@ -479,13 +498,13 @@ impl PrefixRandom for SplitMixPrefix<'_> {
     }
 }
 
-/// `Item.Prefix(prefixWeWant)` (`Item.cs:504-610`): returns the rolled prefix
+/// `Item.Prefix(prefixWeWant)` (`Item.cs:504-618`): returns the rolled prefix
 /// (0 = none). The caller reads the applied stats with [`prefixed_stats`].
 ///
 /// The modes: an exact id applies directly (a rejected multiplier set retries
 /// from the category table); `-1` is the natural spawn roll (1/4 no prefix,
 /// the reduced set 1/3 none); `-2` rolls a non-zero prefix (the best-value
-/// marker feeds `rolledPrefixIsTopTier`, which the port does not need); `-3`
+/// marker feeds `rolledPrefixIsTopTier`, which [`reforge_roll`] returns); `-3`
 /// keeps the current prefix (a no-op here); `-4` clears to none.
 pub fn roll_prefix<T: PrefixRandom + ?Sized>(
     kind: u16,
@@ -499,7 +518,7 @@ pub fn roll_prefix<T: PrefixRandom + ?Sized>(
     if prefix_want == 0 || prefix_want == -3 {
         return 0;
     }
-    let def = match itemdata::ITEMS.get(kind as usize) {
+    let def = match crate::registry::item(kind) {
         Some(d) => d,
         None => return 0,
     };
@@ -512,7 +531,7 @@ pub fn roll_prefix<T: PrefixRandom + ?Sized>(
             rolled = -1;
         }
         if (-3..=-1).contains(&rolled) {
-            // `RollAPrefix` (`Item.cs:1141-1153`).
+            // `RollAPrefix` (`Item.cs:1139-1148`).
             rolled = rollable[rng.next_max(rollable.len() as i32) as usize] as i32;
         }
         if prefix_want == -1
@@ -527,7 +546,7 @@ pub fn roll_prefix<T: PrefixRandom + ?Sized>(
         let m = Multipliers::stat_switch(rolled as u16);
         if rolled != 0 && m.rejected(def) {
             // `flag = true; rolledPrefix = -1` — the retry rolls again
-            // (including the natural 1/4 gate, `Item.cs:552-555`).
+            // (including the natural 1/4 gate, `Item.cs:564-568`).
             rolled = -1;
             continue;
         }
@@ -547,7 +566,7 @@ pub(crate) fn best_prefix_value(kind: u16) -> f32 {
     let Some(rollable) = rollable_prefixes(kind) else {
         return 0.0;
     };
-    let Some(def) = itemdata::ITEMS.get(kind as usize) else {
+    let Some(def) = crate::registry::item(kind) else {
         return 0.0;
     };
     let mut best = 0.0_f32;
@@ -566,7 +585,13 @@ pub(crate) fn best_prefix_value(kind: u16) -> f32 {
 /// so the reset is the prefix field write), then rolls `Prefix(-2)`; the
 /// bool is `rolledPrefixIsTopTier` — the rolled value multiplier equals the
 /// table's best (`Item.cs:575`), which drives the BestReforge sound and the
-/// 60-tick cooldown.
+/// 60-tick cooldown (`Main.cs:41907-41910`).
+///
+/// The `best > 0.0` guard is the port's safety net for a non-prefixable kind
+/// (best 0, rolled 0): the C# never reaches `ReforgeItemInReforgeSlot` with
+/// one — the slot's `CanHavePrefixes` gate (`ItemSlot.cs:1515-1520`) keeps it
+/// out — so for every reachable prefixable kind `best > 0` and the equality
+/// is the verbatim `num2 == num`.
 pub(crate) fn reforge_roll(kind: u16, rng: &mut impl PrefixRandom) -> (u16, bool) {
     let rolled = roll_prefix(kind, -2, rng);
     let m = Multipliers::stat_switch(rolled);
@@ -575,6 +600,131 @@ pub(crate) fn reforge_roll(kind: u16, rng: &mut impl PrefixRandom) -> (u16, bool
         rolled,
         best > 0.0 && Multipliers::value_multiplier(rolled, &m) == best,
     )
+}
+
+// --- The reforge presentation tail (S1-P-i45) -------------------------------
+//
+// `Main.ReforgeItemInReforgeSlot` (`Main.cs:41902-41933`) plays a sound and
+// spawns particles AFTER the `Prefix(-2)` roll, all drawing the shared
+// `Main.rand`. The port consumes those draws on the bare-`Main.rand` stand-in
+// (`NamedRngs::global`) in the C#'s order so the shared-stream interleave
+// stays exact; the particle VISUALS are the documented skip (the
+// `npc_ai_empress.rs::do_magic_effect_draws` convention — the port has no
+// `ParticleOrchestrator` renderer). The sounds play through the existing
+// `Audio::play_use_sound` façade (the audio-only `GetRandomPitch` draw rides
+// `sound_style_random`, never the gameplay stream).
+
+/// `Utils.NextVector2Circular` (`Utils.cs:1266-1269`): the unit draw
+/// (`NextVector2Unit`, one `NextFloat`) THEN a second `NextFloat` radius
+/// scale — two gameplay draws. The vector value is unused (the visuals are
+/// skipped); only the stream advances.
+fn reforge_circular_draws(rng: &mut UnifiedRandom) {
+    rng.next_float(); // NextVector2Unit's angle, Utils.cs:1261-1264
+    rng.next_float(); // the radius scale, Utils.cs:1268
+}
+
+/// `Dust.NewDust`'s RNG consumption (`Dust.cs:170-175`, `:190`) under the
+/// documented pool assumption (no skip draws, no early-out): `Next(max(w,5)-4)`,
+/// `Next(max(h,5)-4)`, `Next(-20,21)` ×2, `Next(3)`, `Next(-20,21)` — six
+/// draws, in order. `NewDustPerfect` forwards w/h = 0 → clamped 5
+/// (`Dust.cs:54-63`); `CloneDust` re-rolls a fresh `NewDust` (`Dust.cs:269`).
+fn reforge_new_dust_draws(rng: &mut UnifiedRandom) {
+    rng.next_max(1); // :170 — position.X, max(0,5)-4 = 1
+    rng.next_max(1); // :171 — position.Y
+    rng.next_range(-20, 21); // :172 — velocity.X
+    rng.next_range(-20, 21); // :173 — velocity.Y
+    rng.next_max(3); // :175 — frame.Y
+    rng.next_range(-20, 21); // :190 — scale
+}
+
+/// `ParticleOrchestrator.Spawn_RainbowRodHit`'s RNG consumption
+/// (`ParticleOrchestrator.cs:3444-3492`): 2 head floats (`:3446`/`:3448`),
+/// then 6 sparkle iterations (`num2 = 6`, `:3447`/`:3449`) each drawing
+/// `NextFloatDirection` (`:3451`) + `NextFloat` scale (`:3452`) + `NextFloat`
+/// angle (`:3453`) + `NextVector2Circular(8,8)` (`:3457`, 2) + 2 colour
+/// `NextFloat`s (`:3461`) = 7, then 12 dust iterations (`:3476`) each drawing
+/// 2 colour `NextFloat`s (`:3478`) + `NewDust`'s 6 + `NextVector2Circular(1,1)`
+/// (`:3479`, 2) + `NextFloatDirection` (`:3480`) + `NextFloat` scale (`:3482`)
+/// + `NextFloat` fadeIn (`:3483`) + `CloneDust`'s `NewDust` 6 (`:3486`) = 19.
+/// Total 2 + 6×7 + 12×19 = 272 draws (the settings' own circular is drawn by
+/// the caller, `Main.cs:41914`/`:41919`, BEFORE this spawn).
+fn reforge_rainbow_rod_hit_draws(rng: &mut UnifiedRandom) {
+    rng.next_float(); // :3446 — num
+    rng.next_float(); // :3448 — num3
+    for _ in 0..6 {
+        rng.next_float_direction(); // :3451
+        rng.next_float(); // :3452 — vector2 scale
+        rng.next_float(); // :3453 — f angle
+        reforge_circular_draws(rng); // :3457 — NextVector2Circular(8,8)
+        rng.next_float(); // :3461 — colour hue
+        rng.next_float(); // :3461 — colour lightness
+    }
+    for _ in 0..12 {
+        rng.next_float(); // :3478 — colour hue
+        rng.next_float(); // :3478 — colour lightness
+        reforge_new_dust_draws(rng); // :3478 — NewDust(..., 0, 0, 267)
+        reforge_circular_draws(rng); // :3479 — NextVector2Circular(1,1)
+        rng.next_float_direction(); // :3480
+        rng.next_float(); // :3482 — scale
+        rng.next_float(); // :3483 — fadeIn
+        reforge_new_dust_draws(rng); // :3486 — CloneDust → NewDust
+    }
+}
+
+/// `ParticleOrchestrator.Spawn_BestReforge`'s RNG consumption
+/// (`ParticleOrchestrator.cs:3069-3087`): 8 iterations (`:3073`) each drawing
+/// `NextVector2Circular(3,4)` (`:3075`, 2) = 16 draws. The settings' own
+/// circular is drawn by the caller (`Main.cs:41925`) BEFORE this spawn.
+fn reforge_best_reforge_particle_draws(rng: &mut UnifiedRandom) {
+    for _ in 0..8 {
+        reforge_circular_draws(rng); // :3075
+    }
+}
+
+/// The reforge presentation tail (`Main.ReforgeItemInReforgeSlot`,
+/// `Main.cs:41906-41932`): the draws + sounds that follow the `Prefix(-2)`
+/// roll, in the C#'s order on the shared `Main.rand` (the port's `global()`).
+/// `top_tier` selects the branch:
+/// - top: `BestReforge` sound (`:41909`, a trackable — no gameplay draw), the
+///   60-tick cooldown (`:41910`, set by the caller), then two `RainbowRodHit`
+///   spawns (settings circular `:41914`/`:41919` + the spawn body) and three
+///   `BestReforge` spawns (settings circular `:41925` + the spawn body);
+/// - non-top: `Item37` sound (`:41931`, case-2's one `Next(-6,7)` pitch draw).
+/// `PopupText.NewText` (`:41906`) draws no `Main.rand` at spawn for the reforge
+/// contexts (`PopupText.cs:194-412` — the effects are `ItemCraft`-only), so it
+/// adds no draw. The particle visuals are the documented skip.
+pub(crate) fn reforge_presentation_tail(top_tier: bool, rng: &mut UnifiedRandom, audio: &mut crate::audio::Audio) {
+    if top_tier {
+        // `:41909` — SoundID.BestReforge (trackable id 42, no gameplay draw;
+        // the GetRandomPitch NextFloat rides the audio-only stream).
+        if let Some(idx) = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == "BestReforge")
+        {
+            audio.play_use_sound(idx as u16, -1.0, -1.0, 0.0, rng);
+        }
+        // `:41911-41915` — RainbowRodHit #1: the settings' MovementVector
+        // circular (`:41914`) then the spawn body.
+        reforge_circular_draws(rng); // :41914 — NextVector2Circular(16,16)
+        reforge_rainbow_rod_hit_draws(rng);
+        // `:41916-41920` — RainbowRodHit #2.
+        reforge_circular_draws(rng); // :41919 — NextVector2Circular(5,5)
+        reforge_rainbow_rod_hit_draws(rng);
+        // `:41921-41927` — three BestReforge spawns.
+        for _ in 0..3 {
+            reforge_circular_draws(rng); // :41925 — NextVector2Circular(16,16)
+            reforge_best_reforge_particle_draws(rng);
+        }
+    } else {
+        // `:41931` — SoundID.Item37 (case 2: the GetRandomPitch audio draw,
+        // then ONE Main.rand.Next(-6,7) pitch roll after the attenuation gate).
+        if let Some(idx) = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == "Item37")
+        {
+            audio.play_use_sound(idx as u16, -1.0, -1.0, 0.0, rng);
+        }
+    }
 }
 
 /// The worldgen chest seam's entry (`chest_gen.rs`): the same engine over the
@@ -649,6 +799,7 @@ pub(crate) fn grant_prefix_benefits(prefix: u16, p: &mut Player) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::itemdata;
 
     /// The C# `Main.rand` stand-in: `new UnifiedRandom(seed)` (`S1-A-5`).
     fn test_rng(seed: i32) -> UnifiedRandom {
@@ -803,6 +954,100 @@ mod tests {
         // an accessory) is on the denial list.
         assert_eq!(rollable_prefixes(950), Some(PREFIXES_FOR_ACCESSORIES));
         assert_eq!(rollable_prefixes(267), None);
+        // The `!vanity` gate (`IsAPrefixableAccessory`, `Item.cs:1150-1157`):
+        // the Jungle Rose (208), the Diamond Ring (2276), the Winter Cape
+        // (2287) and the Solar Monolith (3539) are vanity accessories — the
+        // denial list does NOT carry them, the flag refuses the table (and
+        // with it every draw: `CanHavePrefixes` returns before any roll).
+        for vanity in [208u16, 2276, 2287, 3539, 4822, 5075] {
+            assert_eq!(rollable_prefixes(vanity), None, "vanity {vanity}");
+        }
+        // The functional pair still prefixes: the Aglet (285) and the
+        // Band of Regeneration (49).
+        assert_eq!(rollable_prefixes(285), Some(PREFIXES_FOR_ACCESSORIES));
+        assert_eq!(rollable_prefixes(49), Some(PREFIXES_FOR_ACCESSORIES));
+    }
+
+    #[test]
+    fn vanity_accessories_have_no_prefix_table() {
+        // `IsAPrefixableAccessory` (`Item.cs:1150-1157`): `accessory &&
+        // !vanity && CanGetPrefixes[type]`. The Jungle Rose (208) and the
+        // voice-change items (5499 family, `DefaultToVoiceOverrideAccessory`
+        // sets `vanity = true`, `Item.cs:47794-47795`) are vanity accessories
+        // OUTSIDE the denial list — the old port let them roll; the C# never
+        // does. The gate reads the generated `vanity` flag verbatim.
+        let rose = crate::registry::item(208).unwrap();
+        assert!(rose.accessory && rose.vanity);
+        assert_eq!(rollable_prefixes(208), None);
+        assert_eq!(rollable_prefixes(5499), None);
+        assert_eq!(rollable_prefixes(5534), None);
+        // The Whoopie Cushion (215) — vanity, not on the denial list either.
+        assert_eq!(rollable_prefixes(215), None);
+        // A NON-vanity accessory still rolls (950 Ice Skates).
+        assert_eq!(rollable_prefixes(950), Some(PREFIXES_FOR_ACCESSORIES));
+        // And the gate consumes no draws for the vanity kinds — the
+        // `CanHavePrefixes` early return (`Item.cs:515-518`).
+        let mut rng = test_rng(9);
+        let before = rng.peek();
+        for kind in [208, 215, 5499, 5534] {
+            assert_eq!(roll_prefix(kind, -1, &mut rng), 0);
+            assert_eq!(roll_prefix(kind, -2, &mut rng), 0);
+        }
+        assert_eq!(rng.peek(), before, "the vanity gate draws nothing");
+    }
+
+    #[test]
+    fn the_roll_engine_reads_the_corrected_registry_row() {
+        // The M4-PROJ-6 seam: `roll_prefix`/`best_prefix_value` read
+        // `registry::item` (the corrections included), not the raw generated
+        // row. The Bejeweled Staff (6171) is the corrections band's zero row
+        // in `itemdata` (damage -1, mana 0) but the corrected row carries
+        // damage 27 / mana 15 — the invisible-change rejection must read the
+        // CORRECTED stats. Adept (28: dmg 1.15, kb 1.05, mcst 0.85) on 27
+        // damage rounds 31.05 → 31 ≠ 27 (visible); on the raw -1 damage it
+        // would round -1 → -1 (invisible → rejected). The exact-id mode
+        // applies it only through the corrected row.
+        assert_eq!(crate::registry::item(6171).unwrap().damage, 27);
+        let mut rng = test_rng(5);
+        assert_eq!(roll_prefix(6171, 28, &mut rng), 28);
+        // The best value over the magic table also reads the corrected row:
+        // Mythical (83) clears the rejection (27×1.15 → 31 visible, 15×0.9
+        // → 14 visible after banker's rounding of 13.5) and its multiplier
+        // 1.15×1.1×1.1×(2−0.9)×(2−0.9)×1.1 is the table's max.
+        let best = best_prefix_value(6171);
+        let m = Multipliers::stat_switch(83);
+        assert_eq!(best, Multipliers::value_multiplier(83, &m));
+    }
+
+    #[test]
+    fn accessory_reforge_rolls_the_accessory_pool_and_flags_the_top_tier() {
+        // The accessory reforge (`Prefix(-2)` on a non-vanity accessory):
+        // every landing sits in the 62-80 pool, never 0, and the top tier is
+        // the ×1.2 value group (65/72/76/80/68, `Item.cs:1059-1062`) — the
+        // accessory ids carry no stat multipliers, so none is ever rejected
+        // and the roll takes exactly ONE `Next(19)` per attempt.
+        let mut rng = test_rng(0xACCE55);
+        let mut tops = 0;
+        for _ in 0..500 {
+            let (p, top) = reforge_roll(950, &mut rng);
+            assert_ne!(p, 0, "Prefix(-2) never lands none");
+            assert!(PREFIXES_FOR_ACCESSORIES.contains(&p));
+            if top {
+                tops += 1;
+                assert!(matches!(p, 65 | 72 | 76 | 80 | 68), "the ×1.2 tier");
+            }
+        }
+        assert!(tops > 0, "the seeded stream must land the top tier");
+        // One draw per roll: the accessory pool has no rejection, so 100
+        // rolls consume exactly 100 draws (the stream state matches a
+        // 100-draw replay).
+        let mut a = test_rng(77);
+        let mut b = test_rng(77);
+        for _ in 0..100 {
+            reforge_roll(950, &mut a);
+            b.next_max(19);
+        }
+        assert_eq!(a.peek(), b.peek(), "one Next(19) per accessory reforge");
     }
 
     #[test]
@@ -919,13 +1164,90 @@ mod tests {
     fn accessory_prefixes_bump_value_only() {
         // 66 (the ×1.15 value tier — 64/71/75/79/66) grants no item stats:
         // the Ice Skates' (950) stats ride unchanged, the value ×1.3225,
-        // and the ladder's ≥1.05 bar shifts the rare +1.
+        // and the ladder's ≥1.05 bar shifts the rare +1 (1.15f = 1.14999998
+        // clears the double 1.05).
         let skates = itemdata::ITEMS[950];
         let s = prefixed_stats(950, 66).unwrap();
         assert_eq!(s.damage, skates.damage);
         assert_eq!(s.crit, skates.crit);
         assert_eq!(s.value, (skates.value as f32 * 1.15 * 1.15) as i32);
         assert_eq!(s.rare, skates.rare + 1);
+    }
+
+    #[test]
+    fn rare_ladder_compares_the_promoted_double_not_the_f32_literal() {
+        // `Item.cs:587-602` compares `(double)num2` against DOUBLE literals.
+        // The ×1.05 tier's f32 product is 1.04999995 — BELOW the double 1.05
+        // — so the Quick (45) and the Hard/Jagged/Brisk/Wild accessories
+        // (62/69/73/77) shift the rare by 0, not +1. An f32-vs-1.05f compare
+        // (1.05f rounds to the same 1.04999995) would say `>=` and bump.
+        for p in [45u16, 62, 69, 73, 77] {
+            let m = Multipliers::stat_switch(p);
+            let vm = Multipliers::value_multiplier(p, &m);
+            assert!(
+                (vm as f64) < 1.05,
+                "prefix {p}: the f32 product {vm} promotes below the double 1.05"
+            );
+            assert_eq!(shift_rare(3, p, &m), 3, "prefix {p}: no rare shift");
+        }
+        // The Weak-knockback (56): kb 0.8f = 0.80000001 — ABOVE the double
+        // 0.8 — so the ≤0.8 −2 arm refuses and the ≤0.95 −1 arm takes it.
+        let m = Multipliers::stat_switch(56);
+        let vm = Multipliers::value_multiplier(56, &m);
+        assert!((vm as f64) > 0.8);
+        assert_eq!(shift_rare(3, 56, &m), 2, "56: −1, not −2");
+        // The Sluggish (48): spd 1.2 → vm = 2 − 1.2f = 0.79999995, BELOW the
+        // double 0.8 — the −2 arm takes it (both compare forms agree here;
+        // the pin keeps the pair honest).
+        let m = Multipliers::stat_switch(48);
+        assert_eq!(shift_rare(3, 48, &m), 1, "48: −2");
+        // The ×1.2 tier (65/68/72/76/80): 1.2f = 1.20000005 clears the
+        // double 1.2 → +2, capped at 11.
+        for p in [65u16, 68, 72, 76, 80] {
+            let m = Multipliers::stat_switch(p);
+            assert_eq!(shift_rare(3, p, &m), 5, "prefix {p}: +2");
+        }
+        // The ×1.15 tier (64/66/71/75/79): 1.15f = 1.14999998 clears the
+        // double 1.05 but not 1.2 → +1.
+        for p in [64u16, 66, 71, 75, 79] {
+            let m = Multipliers::stat_switch(p);
+            assert_eq!(shift_rare(3, p, &m), 4, "prefix {p}: +1");
+        }
+        // The clamp floor: a shifted rare inside the band clamps to −1.
+        assert_eq!(shift_rare(0, 39, &Multipliers::stat_switch(39)), -1);
+        // The quest-fish exemption (`Item.cs:603`'s `if (this.rare > -11)`
+        // gate) reads the POST-SHIFT value: a −11 base shifted to −13 by
+        // the ≤0.8 arm stays BELOW the gate (−13 > −11 is false), so the
+        // clamp never runs and −13 survives (gate V4 re-pin: the i49
+        // witness expected −11 — neither the pre- nor post-shift value
+        // the C# produces).
+        assert_eq!(shift_rare(-11, 39, &Multipliers::stat_switch(39)), -13);
+        // A prefix that leaves −11 untouched keeps it (the neutral arm —
+        // the actual quest-fish shape: −11 is not > −11, clamp skipped).
+        assert_eq!(shift_rare(-11, 0, &Multipliers::stat_switch(0)), -11);
+    }
+
+    #[test]
+    fn the_rejection_and_best_value_read_the_corrected_registry_row() {
+        // `roll_prefix`/`best_prefix_value` resolve the base row through
+        // `registry::item` — the M4-PROJ-6 corrections seam. The Bejeweled
+        // Staff (6171) is the band's zero row in the generated table
+        // (damage −1, kb 0); the correction carries damage 27 / kb 6
+        // (`Item.cs:47550-47555`). The raw row would reject EVERY
+        // knockback-only prefix (kb 0) and every damage row rounding back
+        // to −1; the corrected row keeps them.
+        let corrected = crate::registry::item(6171).unwrap();
+        assert_eq!(corrected.damage, 27);
+        // Heavy (38, kb ×1.15) survives on the corrected kb 6 — the raw
+        // row's kb 0 would reject it (`Item.cs:1075-1078`).
+        let mut rng = test_rng(5);
+        assert_eq!(roll_prefix(6171, 38, &mut rng), 38);
+        // The best value scans the corrected rows too: the staff's magic
+        // table top (83, Mythical) beats the identity 0 the raw-row
+        // rejection funnel would leave for the kb-only tiers.
+        let best = best_prefix_value(6171);
+        let m83 = Multipliers::stat_switch(83);
+        assert!(best >= Multipliers::value_multiplier(83, &m83));
     }
 
     #[test]
@@ -997,5 +1319,148 @@ mod tests {
         for _ in 0..100 {
             assert_ne!(roll_prefix(1, -2, &mut rng), 0);
         }
+    }
+
+    #[test]
+    fn the_roll_engine_reads_the_corrected_registry_seam() {
+        // M4-PROJ-6: kind 6171 (Bejeweled Staff) is a MAGIC-table kind whose
+        // generated row is a placeholder (damage −1, mana 0) while
+        // `registry::item` carries the corrected stats (damage 27, mana 15).
+        // The roll engine's rejection + the best-value marker must read the
+        // SAME corrected seam `prefixed_stats` reads — the raw placeholder
+        // would reject every dmg multiplier (round(−1×m) == −1) and every
+        // mana multiplier (round(0×m) == 0), leaving only the crit-only ids.
+        assert_eq!(rollable_prefixes(6171), Some(PREFIXES_FOR_MAGIC));
+        let corrected = crate::registry::item(6171).unwrap();
+        assert_eq!(corrected.damage, 27);
+        assert_eq!(corrected.mana, 15);
+        // The best value is computed over the corrected stats: the magic
+        // top tier 83 (dmg 1.15, kb 1.15, crt 5, spd 0.9, mcst 0.9) survives
+        // the rejection on damage 27 / mana 15 and beats the crit-only ids.
+        let best = best_prefix_value(6171);
+        let m83 = Multipliers::stat_switch(83);
+        assert!(!m83.rejected(corrected), "83 is visible on the corrected staff");
+        assert_eq!(best, Multipliers::value_multiplier(83, &m83));
+        // A reforge never lands none; the top-tier flag fires exactly when
+        // the rolled multiplier equals the best (the verbatim `num2 == num`,
+        // `Item.cs:575`) — checked per roll, no fragile "the seed must land
+        // it" assumption.
+        let mut rng = test_rng(0x5EED);
+        for _ in 0..400 {
+            let (p, top) = reforge_roll(6171, &mut rng);
+            assert_ne!(p, 0);
+            assert!(PREFIXES_FOR_MAGIC.contains(&p));
+            let mp = Multipliers::stat_switch(p);
+            assert_eq!(top, Multipliers::value_multiplier(p, &mp) == best);
+            if top {
+                assert_eq!(p, 83, "83 is the staff's unique top tier");
+            }
+        }
+    }
+
+    #[test]
+    fn vanity_accessories_are_not_prefixable() {
+        // `IsAPrefixableAccessory` (`Item.cs:1150-1157`): `accessory &&
+        // !vanity && CanGetPrefixes[type]`. The Jungle Rose (208) is an
+        // accessory with `vanity = true` (`Item.cs:3987-3994`), so it has no
+        // rollable table even though it is absent from the denial list.
+        assert!(itemdata::ITEMS[208].accessory);
+        assert!(itemdata::ITEMS[208].vanity);
+        assert_eq!(rollable_prefixes(208), None);
+        assert!(!can_have_prefixes(208));
+        // A non-vanity accessory (950 Ice Skates) still prefixes.
+        assert!(!itemdata::ITEMS[950].vanity);
+        assert_eq!(rollable_prefixes(950), Some(PREFIXES_FOR_ACCESSORIES));
+        // The denial-list guide doll (267) stays excluded regardless.
+        assert_eq!(rollable_prefixes(267), None);
+    }
+
+    #[test]
+    fn the_reforge_tail_consumes_the_cited_draws() {
+        // The top-tier tail (`Main.cs:41909-41927`): BestReforge sound (no
+        // gameplay draw — trackable), then 2×(settings circular 2 +
+        // RainbowRodHit body 272) + 3×(settings circular 2 + BestReforge body
+        // 16) = 2×274 + 3×18 = 602 gameplay draws. The non-top tail
+        // (`Main.cs:41931`): Item37's case-2 pitch roll = 1 draw. Each helper
+        // is replayed against a hand-built draw sequence on a twin stream —
+        // state equality pins both the count AND the order.
+        // RainbowRodHit body: 2 + 6×7 + 12×19 = 272 (ParticleOrchestrator.cs
+        // :3446-3491).
+        let mut a = test_rng(0x7A11);
+        let mut b = test_rng(0x7A11);
+        reforge_rainbow_rod_hit_draws(&mut a);
+        b.next_float(); // :3446
+        b.next_float(); // :3448
+        for _ in 0..6 {
+            b.next_float_direction(); // :3451
+            b.next_float(); // :3452
+            b.next_float(); // :3453
+            b.next_float(); // :3457 circular unit
+            b.next_float(); // :3457 circular radius
+            b.next_float(); // :3461 hue
+            b.next_float(); // :3461 lightness
+        }
+        for _ in 0..12 {
+            b.next_float(); // :3478 hue
+            b.next_float(); // :3478 lightness
+            for _ in 0..2 {
+                // NewDust + CloneDust's NewDust, 6 each.
+                b.next_max(1);
+                b.next_max(1);
+                b.next_range(-20, 21);
+                b.next_range(-20, 21);
+                b.next_max(3);
+                b.next_range(-20, 21);
+            }
+            b.next_float(); // :3479 circular unit
+            b.next_float(); // :3479 circular radius
+            b.next_float_direction(); // :3480
+            b.next_float(); // :3482 scale
+            b.next_float(); // :3483 fadeIn
+        }
+        assert_eq!(a, b, "Spawn_RainbowRodHit = 272 draws in the cited order");
+        // Spawn_BestReforge: 8×NextVector2Circular(2) = 16.
+        let mut a = test_rng(123);
+        let mut b = test_rng(123);
+        reforge_best_reforge_particle_draws(&mut a);
+        for _ in 0..16 {
+            b.next_float();
+        }
+        assert_eq!(a, b, "Spawn_BestReforge = 8×NextVector2Circular(2) = 16");
+        // The settings circular is 2 draws.
+        let mut a = test_rng(99);
+        let mut b = test_rng(99);
+        reforge_circular_draws(&mut a);
+        b.next_float();
+        b.next_float();
+        assert_eq!(a, b, "NextVector2Circular = unit + radius = 2");
+        // NewDust is 6 draws in the cited order.
+        let mut a = test_rng(7);
+        let mut b = test_rng(7);
+        reforge_new_dust_draws(&mut a);
+        b.next_max(1);
+        b.next_max(1);
+        b.next_range(-20, 21);
+        b.next_range(-20, 21);
+        b.next_max(3);
+        b.next_range(-20, 21);
+        assert_eq!(a, b, "NewDust = 6 draws (Dust.cs:170-175,:190)");
+    }
+
+    #[test]
+    fn the_reforge_tail_branches_on_top_tier() {
+        // The non-top branch plays Item37 (one case-2 pitch draw on the
+        // gameplay stream); the top branch plays BestReforge (no gameplay
+        // sound draw) + the particle draws. Both run on the caller's stream.
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = test_rng(0xB0B);
+        let before = rng.peek();
+        reforge_presentation_tail(false, &mut rng, &mut audio);
+        assert_ne!(rng.peek(), before, "Item37's case-2 pitch roll drew");
+        // The top branch draws far more (the particle tail).
+        let mut rng_top = test_rng(0xB0B);
+        reforge_presentation_tail(true, &mut rng_top, &mut audio);
+        // The two branches diverge (different draw counts).
+        assert_ne!(rng, rng_top, "the top-tier tail draws the particles");
     }
 }

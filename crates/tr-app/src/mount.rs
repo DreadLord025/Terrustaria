@@ -121,6 +121,14 @@ pub(crate) struct MountData {
     pub body_frame: i32,
     pub player_head_offset: i32,
     pub player_x_offset: i32,
+    /// `MountData.delegations.PlayerSize` (`Mount.cs:116`) — the three
+    /// transformation rows override the mounted hitbox size: Rat 55 → 14×14
+    /// (`DelegateMethods.Mount.RatPlayerSize`, `DelegateMethods.cs:190-194`,
+    /// wired `Mount.cs:2366`), Bat 56 → 20×18 (`BatPlayerSize`,
+    /// `DelegateMethods.cs:164-168`, `Mount.cs:2421`), Pixie 61 → 8×14
+    /// (`PixiePlayerSize`, `DelegateMethods.cs:170-174`, `Mount.cs:2484`).
+    /// `None` = no delegate (the `42 + heightBoost` growth, `Mount.cs:6264-6277`).
+    pub player_size_override: Option<(f32, f32)>,
 }
 
 /// The `MountData` field defaults (C# initializer values, `Mount.cs:129-266`):
@@ -215,6 +223,8 @@ const BASE: MountData = MountData {
     body_frame: 0,
     player_head_offset: 0,
     player_x_offset: 0,
+    // `MountDelegatesData.PlayerSize` defaults to null (`Mount.cs:116`).
+    player_size_override: None,
 };
 
 // -- Per-type rows (Mount.Initialize, `Mount.cs:696-2567`) -------------------
@@ -1150,6 +1160,9 @@ const BAT: MountData = MountData {
     player_y_offsets: &[0; 16],
     body_frame: 3,
     player_head_offset: -24,
+    // `DelegateMethods.Mount.BatPlayerSize` (`Mount.cs:2421` →
+    // `DelegateMethods.cs:164-168`): the bat body is 20×18.
+    player_size_override: Some((20.0, 18.0)),
     ..BASE
 };
 
@@ -1186,6 +1199,9 @@ const PIXIE: MountData = MountData {
     player_y_offsets: &[0; 4],
     body_frame: 0,
     player_head_offset: -24,
+    // `DelegateMethods.Mount.PixiePlayerSize` (`Mount.cs:2484` →
+    // `DelegateMethods.cs:170-174`): the pixie body is 8×14.
+    player_size_override: Some((8.0, 14.0)),
     ..BASE
 };
 // -- Minecart rows (M2-MOUNT-3, `Mount.cs:912-1110` `SetAsMinecart`) -----------
@@ -1697,6 +1713,9 @@ const RAT: MountData = MountData {
     player_y_offsets: &[0; 16],
     body_frame: 3,
     player_head_offset: -30,
+    // `DelegateMethods.Mount.RatPlayerSize` (`Mount.cs:2366` →
+    // `DelegateMethods.cs:190-194`): the rat body is 14×14.
+    player_size_override: Some((14.0, 14.0)),
     ..BASE
 };
 
@@ -1854,7 +1873,7 @@ pub(crate) static MOUNTS: &[MountData] = &[
 /// 4785-4787 -> 40-42, `:39395` Pogo Stick 4791 -> 43, `:39413` Wall Of
 /// Flesh Goat Mount Item 4795 -> 44 + (4795 - 4792) = 47, `:40133` Queen
 /// Slime Mount Saddle 4981 -> 50.
-const MOUNT_ITEMS: [(u16, i32); 69] = [
+const MOUNT_ITEMS: [(u16, i32); 65] = [
     (1914, 0),
     (2428, 1),
     (2430, 3),
@@ -1922,10 +1941,12 @@ const MOUNT_ITEMS: [(u16, i32); 69] = [
     // 2491 -> 4, `:36685` Golf Cart 4264 -> 17, `:38778` Flamingo Feather
     // 4716 -> 37, `:39413` the `44 + type - 4792` run (4793 -> 45, 4794 ->
     // 46), `:41600` Wolf Mount 5130 -> 52, `:43366` Velociraptor 5510 ->
-    // 54, `:43512` Rat 5524/5525 -> 55, `:44056` Roller Skates 5599/5600
-    // -> 57, `:44300` 5638/5639/5640 -> 58, `:44313` 5641 -> 59, `:44326`
-    // 5642 -> 60, `:44519` Chillet 5665 -> 62, `:44531` 5666 -> 63,
-    // `:47394` 6150 -> 64, `:47407` 6151 -> 65.
+    // 54, `:43512` Rat 5525 -> 55 (S1-P-i41: 5524 is the Chlorophyte Visor,
+    // `:43504-43509` headSlot 283 — NOT a saddle), `:44056` Roller Skates
+    // 5600 -> 57 (5599 is the Retro Monolith, `:44051-44053`), `:44300`
+    // 5640 -> 58 (5638/5639 are the Torch God music boxes, `:44293-44297`),
+    // `:44313` 5641 -> 59, `:44326` 5642 -> 60, `:44519` Chillet 5665 -> 62,
+    // `:44531` 5666 -> 63, `:47394` 6150 -> 64, `:47407` 6151 -> 65.
     (2491, 4),
     (4264, 17),
     (4716, 37),
@@ -1933,12 +1954,8 @@ const MOUNT_ITEMS: [(u16, i32); 69] = [
     (4794, 46),
     (5130, 52),
     (5510, 54),
-    (5524, 55),
     (5525, 55),
-    (5599, 57),
     (5600, 57),
-    (5638, 58),
-    (5639, 58),
     (5640, 58),
     (5641, 59),
     (5642, 60),
@@ -1975,10 +1992,26 @@ pub(crate) fn is_cart(id: i32) -> bool {
     )
 }
 
-/// `MountID.Sets.CanUseHooks` (`MountID.cs:30`): the mounts that keep a hook
+/// `MountID.Sets.CanUseHooks` (`MountID.cs:36`): the mounts that keep a hook
 /// usable while ridden — the second half of the `CanMount` grapple exemption.
 pub(crate) fn can_use_hooks(id: i32) -> bool {
     matches!(id, 54 | 57..=60)
+}
+
+/// `MountID.Sets.DontDismountWhenCCed` (`MountID.cs:47`): the Rat 55, the
+/// Bat 56 and the Pixie 61 — `Mount.CanDismountWithResult` (`Mount.cs:6615`)
+/// refuses the dismount while the rider is `CCed`.
+pub(crate) fn dont_dismount_when_cced(id: i32) -> bool {
+    matches!(id, 55 | 56 | 61)
+}
+
+/// `Mount.DismountCheckResult` (`Mount.cs:268-273`) — the dismount gate's
+/// outcome; `QuickMount`'s no-space ladder reads it (`Player.cs:6049`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DismountCheck {
+    Succeeded,
+    FailedCCed,
+    FailedNoSpace,
 }
 
 pub(crate) fn mount_type_of_item(item: u16) -> Option<i32> {
@@ -2026,7 +2059,7 @@ const SUPER_CART_JUMP_SPEED: f32 = 5.15;
 /// What the caller must apply after a successful [`MountState::set_mount`]:
 /// the buff swap plus the hitbox growth (`SetMount` `Mount.cs:6226`,
 /// :6264-6277 — the PlayerSize-delegate branch does not exist in this set).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Equip {
     /// `ClearBuff(old data.buff)` on a swap (:6203).
     pub clear_buff: Option<i32>,
@@ -2042,6 +2075,11 @@ pub(crate) struct Equip {
     /// or a minecart-track rider (the roller skates). Only meaningful with
     /// `was_active`.
     pub track_rider: bool,
+    /// The NEW row's `PlayerSize` delegate result (`Mount.cs:6244-6263`):
+    /// `Some((w, h))` replaces the `42 + heightBoost` growth with the
+    /// bottom-center resize to that exact size (Rat 14×14, Bat 20×18,
+    /// Pixie 8×14); `None` takes the height-boost growth branch.
+    pub size_override: Option<(f32, f32)>,
 }
 
 /// The mount instance state — `Mount` (`Mount.cs:325-383`). Plain data so the
@@ -2073,6 +2111,13 @@ pub(crate) struct MountState {
     aiming: bool,
     should_super_cart: bool,
     walking_grace_time_left: i32,
+    /// `SelectiveFlyingMountData.allowedToFly` (`Mount.cs:70-80`) — the
+    /// Velociraptor's (54) `_mountSpecificData` payload: `UpdateAfterEquips`
+    /// (`Mount.cs:2989-2997`) sets it to `wingsLogic > 0` every tick;
+    /// `CanFly` (`:2866-2869`) reads it BEFORE the `flightTimeMax` gate.
+    /// The other `_mountSpecificData` payloads (Drill 8, ExtraFrame 35 —
+    /// `SetMount` `:6287-6294`) are M2-MOUNT-4 state and not carried yet.
+    selective_allowed_to_fly: bool,
     #[cfg(test)]
     test_can_use_wings: Option<bool>,
     #[cfg(test)]
@@ -2111,6 +2156,7 @@ impl Default for MountState {
             aiming: false,
             should_super_cart: false,
             walking_grace_time_left: 0,
+            selective_allowed_to_fly: false,
             #[cfg(test)]
             test_can_use_wings: None,
             #[cfg(test)]
@@ -2164,6 +2210,10 @@ impl MountState {
         self.aiming = false;
         self.should_super_cart = false;
         self.walking_grace_time_left = 0;
+        // `SetMount` builds a fresh `SelectiveFlyingMountData`
+        // (`Mount.cs:6295-6298` → `:76-80`, `allowedToFly = false`); the
+        // reset mirrors the fresh-payload default.
+        self.selective_allowed_to_fly = false;
     }
 
     pub(crate) fn is_active(&self) -> bool {
@@ -2419,6 +2469,20 @@ impl MountState {
         mount_data(self.kind)
     }
 
+    /// `Mount.AllowDirectionChange` (`Mount.cs:630-639`): true for every
+    /// mount except the Scutlix (9), whose ability cooldown must be under
+    /// half the row's (`_abilityCooldown < _data.abilityCooldown / 2`).
+    /// An inactive mount allows the change (`_type == -1` never equals 9).
+    /// S1-P-i05: the run-key direction lock (`Player.cs:19837`) reads it.
+    pub(crate) fn allow_direction_change(&self) -> bool {
+        if self.kind == 9 {
+            return self
+                .data()
+                .is_some_and(|d| self.ability_cooldown < d.ability_cooldown / 2);
+        }
+        true
+    }
+
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) — the state transitions; the
     /// buff add/clear and the hitbox growth are returned for the caller
     /// (the net SendData(13) :6222-6225 and the sound/dust effects have no port
@@ -2457,6 +2521,7 @@ impl MountState {
             height_boost: row.height_boost,
             was_active,
             track_rider,
+            size_override: row.player_size_override,
         })
     }
 
@@ -2570,11 +2635,21 @@ impl MountState {
         num
     }
 
-    /// `Mount.CanFly` (`Mount.cs:2860-2879`) — the type-54 selective-fly branch
-    /// needs `_mountSpecificData` (M2-MOUNT-4) and cannot fire on this table.
+    /// `Mount.CanFly` (`Mount.cs:2860-2879`) — the type-54 selective-fly
+    /// branch reads the `SelectiveFlyingMountData.allowedToFly` payload
+    /// (`UpdateAfterEquips` arms it from `wingsLogic > 0`, `:2989-2992`)
+    /// BEFORE the `flightTimeMax == 0` refusal.
+    /// Gate merge (i40 ⨉ i41): the i41 latched-payload shape wins over the
+    /// i40 derive-live `can_fly(wings_logic)` copy — same semantics, but the
+    /// latch is the C# structure (`_mountSpecificData`).
     pub(crate) fn can_fly(&self) -> bool {
         if !self.active {
             return false;
+        }
+        // `:2866-2869` — the raptor flies while wings are equipped even
+        // though its own `flightTimeMax` is 0.
+        if self.kind == 54 && self.selective_allowed_to_fly {
+            return true;
         }
         let Some(row) = self.data() else { return false };
         if row.flight_time_max == 0 {
@@ -2586,9 +2661,29 @@ impl MountState {
         true
     }
 
-    /// `Mount.ResetFlightTime` (`Mount.cs:5262-5273`) — the type-0 |v|*20 bonus
-    /// and the type-54 wings borrow need the Player (Phase 2 passes velocity).
-    pub(crate) fn reset_flight_time(&mut self, x_velocity: f32) {
+    /// `Mount.UpdateAfterEquips`' type-54 arm (`Mount.cs:2989-2997`): the
+    /// selective-fly permission mirrors `wingsLogic > 0`; with the Empress
+    /// Brooch (`Player.cs:14771-14774` grants `empressBrooch`), the flight
+    /// budget refills to `wingTimeMax` every tick while wings are equipped
+    /// (`:2993-2996`).
+    pub(crate) fn update_selective_flight(
+        &mut self,
+        wings_logic: i32,
+        empress_brooch: bool,
+        wing_time_max: i32,
+    ) {
+        if !self.active || self.kind != 54 {
+            return;
+        }
+        self.selective_allowed_to_fly = wings_logic > 0;
+        if self.selective_allowed_to_fly && empress_brooch {
+            self.fly_time = wing_time_max;
+        }
+    }
+
+    /// `Mount.ResetFlightTime` (`Mount.cs:5262-5273`) — the type-0 |v|*20
+    /// bonus and the type-54 wings borrow (`_flyTime = wingTimeMax`).
+    pub(crate) fn reset_flight_time(&mut self, x_velocity: f32, wing_time_max: i32) {
         self.fly_time = if self.active {
             mount_data(self.kind).map_or(0, |d| d.flight_time_max)
         } else {
@@ -2597,11 +2692,20 @@ impl MountState {
         if self.kind == 0 {
             self.fly_time += (x_velocity.abs() * 20.0) as i32;
         }
+        // `:5269-5272` — the Velociraptor borrows the wing budget outright.
+        if self.kind == 54 {
+            self.fly_time = wing_time_max;
+        }
     }
 
     pub(crate) fn flight_time_max(&self) -> i32 {
         self.data().map_or(0, |d| d.flight_time_max)
     }
+
+    // Gate merge (i40 ⨉ i41): the i40 `refill_wing_flight` duplicate is
+    // folded into `update_selective_flight` above — the i41 copy is the
+    // canonical `UpdateAfterEquips` type-54 arm (permission latch + brooch
+    // refill in one call, `Mount.cs:2989-2997`); one grant path.
 
     /// `Mount.Flight` (`Mount.cs:2973-2981`): one tick of budget per call.
     pub(crate) fn flight(&mut self) -> bool {
@@ -2896,6 +3000,61 @@ pub(crate) struct TestOverrides {
 
 #[cfg(test)]
 mod tests {
+    // Both gate witnesses survive the M1 keep-one (i05's `allow_direction_change`
+    // is the single fn): the i04 boundary probe (direct cooldown writes) and
+    // the i12 recovery-decrement mirror.
+
+    /// S1-P-i04 — `Mount.AllowDirectionChange` (`Mount.cs:630-640`): only
+    /// the Scutlix (9) gates on the ability cooldown's half-max window
+    /// (`abilityCooldown = 20`, `Mount.cs:1343-1421` — the row's
+    /// `ability_cooldown`); every other mount allows the turn.
+    #[test]
+    fn s1_p_i04_only_the_scutlix_gates_the_direction_change() {
+        let mut m = MountState::default();
+        assert!(m.allow_direction_change(), "no mount allows the turn");
+        m.set_mount(10, false); // the Unicorn
+        assert!(m.allow_direction_change(), "the Unicorn allows it");
+        m.set_mount(9, false); // the Scutlix
+        // `SetMount` floors the Scutlix cooldown at 20 (`Mount.cs:6236-
+        // 6243`, the port's `set_mount`): 20 >= 20/2 → LOCKED on equip.
+        assert!(!m.allow_direction_change(), "the equip floor locks it");
+        m.ability_cooldown = 11;
+        assert!(!m.allow_direction_change(), "11 >= 10 stays locked");
+        m.ability_cooldown = 10;
+        assert!(!m.allow_direction_change(), "10 >= 10 locks");
+        m.ability_cooldown = 9;
+        assert!(m.allow_direction_change(), "9 < 10 opens the window");
+        m.ability_cooldown = 0;
+        assert!(m.allow_direction_change());
+    }
+
+    /// S1-P-i12 — `Mount.AllowDirectionChange` (`Mount.cs:630-640`): the
+    /// Scutlix (type 9) reads `_abilityCooldown < _data.abilityCooldown / 2`
+    /// (20/2 = 10, integer division); every other type returns true. The
+    /// witness drives the cooldown through the real `SetMount` floor
+    /// (`:6236-6243`) and the `AbilityRecovery` per-tick decrement
+    /// (`:2938-2959`). Mirror clone, written not run.
+    #[test]
+    fn i12_allow_direction_change_is_the_scutlix_half_cooldown_gate() {
+        let mut m = super::MountState::default();
+        // No mount / a non-Scutlix type: always true (`:638`).
+        assert!(m.allow_direction_change());
+        assert!(m.set_mount(10, false).is_some());
+        assert!(m.allow_direction_change(), "the Unicorn always allows");
+        // The Scutlix floors its cooldown at 20 on equip (`:6236-6243`):
+        // 20 < 10 is false — the fresh mount locks the turn.
+        assert!(m.set_mount(9, false).is_some());
+        assert!(!m.allow_direction_change(), "the fresh Scutlix locks");
+        // Tick the cooldown down past the half-max boundary: 10 still
+        // locks (`<` is strict), 9 allows.
+        for _ in 0..10 {
+            m.ability_recovery();
+        }
+        assert!(!m.allow_direction_change(), "10 is not < 10");
+        m.ability_recovery();
+        assert!(m.allow_direction_change(), "9 < 10 allows the turn");
+    }
+
     #[test]
     fn the_cart_rows_carry_the_setas_minecart_body() {
         // `Mount.SetAsMinecart` (`Mount.cs:2747-2799`): the shared body plus
@@ -3021,7 +3180,7 @@ mod tests {
         // The grounded refill restores the budget (`ResetFlightTime`), then
         // the flight seconds burn before the fatigue builds again.
         m.test_set_fatigue(0.0);
-        m.reset_flight_time(0.0);
+        m.reset_flight_time(0.0, 0);
         assert_eq!(m.fly_time(), 320);
         let vy = m.hover_integrate(-4.0, false, true, false, 0.4);
         assert_eq!(m.fly_time(), 319);
@@ -3048,6 +3207,31 @@ mod tests {
     }
 
     use super::*;
+
+    /// S1-P-i05 — the Scutlix's `AllowDirectionChange` (`Mount.cs:630-639`):
+    /// the ability cooldown must drop under half the row's 20; every other
+    /// mount (and the inactive state) allows the change. The run-key
+    /// direction lock (`Player.cs:19837`) reads it. WRITTEN NOT RUN.
+    #[test]
+    fn s1_p_i05_the_scutlix_cooldown_gates_the_direction_change() {
+        let mut m = MountState::default();
+        assert!(m.allow_direction_change(), "no mount allows the change");
+        m.set_mount(9, false);
+        m.ability_cooldown = 20;
+        assert!(!m.allow_direction_change(), "the full cooldown locks it");
+        m.ability_cooldown = 10;
+        assert!(!m.allow_direction_change(), "10 == 20/2 is still locked");
+        m.ability_cooldown = 9;
+        assert!(m.allow_direction_change(), "under half unlocks it");
+        // A non-Scutlix mount always allows it (the `_type == 9` gate).
+        // The Drill (8, `Mount.cs:1273-1341`) — a ported row with no
+        // ability-cooldown direction gate; even a pinned cooldown never
+        // locks it.
+        let mut drill = MountState::default();
+        drill.set_mount(8, false);
+        drill.ability_cooldown = 100;
+        assert!(drill.allow_direction_change(), "the drill never locks");
+    }
 
     #[test]
     fn the_twelve_ground_rows_carry_the_exact_c_constants() {
@@ -3118,6 +3302,7 @@ mod tests {
                 height_boost: 34,
                 was_active: false,
                 track_rider: false,
+                size_override: None,
             }
         );
         assert!(m.is_active());
@@ -3135,6 +3320,7 @@ mod tests {
                 height_boost: 34,
                 was_active: true,
                 track_rider: false,
+                size_override: None,
             }
         );
         assert_eq!(m.kind(), 40);
@@ -3184,7 +3370,7 @@ mod tests {
         assert!(m.can_fly(), "flightTimeMax 80 (:2197)");
         m.dismount();
         m.set_mount(1, false);
-        assert!(!m.can_fly(), "flightTimeMax 0 (:2867-2869)");
+        assert!(!m.can_fly(), "flightTimeMax 0 (:2870-2873)");
         assert_eq!(m.run_speed(), 4.0);
     }
 
@@ -3475,12 +3661,17 @@ mod tests {
         assert_eq!(mount_type_of_item(4794), Some(46)); // :39413
         assert_eq!(mount_type_of_item(5130), Some(52)); // :41600
         assert_eq!(mount_type_of_item(5510), Some(54)); // :43366
-        assert_eq!(mount_type_of_item(5524), Some(55)); // :43512
+        // S1-P-i41: only 5525 is the rat saddle (`:43511-43512`); 5524 is
+        // the Chlorophyte Visor (`:43504-43509`).
+        assert_eq!(mount_type_of_item(5524), None);
         assert_eq!(mount_type_of_item(5525), Some(55)); // :43512
-        assert_eq!(mount_type_of_item(5599), Some(57)); // :44056
+        // 5599 is the Retro Monolith (`:44051-44053`); 5600 the skates.
+        assert_eq!(mount_type_of_item(5599), None);
         assert_eq!(mount_type_of_item(5600), Some(57)); // :44056
-        assert_eq!(mount_type_of_item(5638), Some(58)); // :44300
-        assert_eq!(mount_type_of_item(5639), Some(58)); // :44300
+        // 5638/5639 are the Torch God music boxes (`:44293-44297`); only
+        // 5640 is the green-skate saddle.
+        assert_eq!(mount_type_of_item(5638), None);
+        assert_eq!(mount_type_of_item(5639), None);
         assert_eq!(mount_type_of_item(5640), Some(58)); // :44300
         assert_eq!(mount_type_of_item(5641), Some(59)); // :44313
         assert_eq!(mount_type_of_item(5642), Some(60)); // :44326

@@ -150,6 +150,19 @@ impl App {
         if self.team_cooldown > 0 {
             self.team_cooldown -= 1;
         }
+        // `Main.DrawInventory`'s reforge head (`Main.cs:41557-41578`): the
+        // button's hover-scale animation, the unhovered cooldown clear and
+        // the force-close gate. Runs every frame the menu is open (the C#
+        // block sits in `DrawInventory`, which runs whenever `playerInventory`).
+        self.update_reforge_menu();
+        // `Main.DrawInterface_26_InterfaceLogic3` (`Main.cs:45676-45683`):
+        // with the inventory closed, `InReforgeMenu = false` and the slot
+        // item returns through `dropItemCheck` (`Player.cs:5123-5127`).
+        if !self.inventory_open && self.in_reforge_menu {
+            self.in_reforge_menu = false;
+            self.mouse_reforge = false;
+            self.return_reforge_slot();
+        }
         // `IngameOptions.Draw`'s per-frame hover/animation state and its
         // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
         // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame

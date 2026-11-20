@@ -544,6 +544,56 @@ pub fn tile_collision_in_steps_of_16(
     amount
 }
 
+/// `WorldGen.SolidOrSlopedTile(tile, includePlatforms = false)`
+/// (`WorldGen.cs:69985-70010`): an active solid tile that is not solid-top
+/// (or, with `includePlatforms`, a solid-top platform), and not actuated.
+/// The no-space teleport scan's floor probes read it (`TeleportHelpers.cs:32-33`).
+pub fn solid_or_sloped_tile(t: &Tile, include_platforms: bool) -> bool {
+    if !t.active() || !td::TILE_SOLID.has(t.kind) {
+        return false;
+    }
+    let solid_top = td::TILE_SOLID_TOP.has(t.kind);
+    if !include_platforms {
+        if solid_top {
+            return false;
+        }
+    } else if solid_top && !td::SET_PLATFORMS.has(t.kind) {
+        return false;
+    }
+    !t.inactive()
+}
+
+/// `Collision.IsClearSpotTest` (`Collision.cs:2534-2587`) with
+/// `checkCardinals = true`, `checkSlopes = false`, `gravDir = 1`: the four
+/// cardinal 16-px sweeps must all pass unimpeded. `Player.CanFitInSpaceWithSize`
+/// (`Player.cs:6108-6111`) probes the grown mount box this way (the
+/// `fallThrough`/`fall2` pair true).
+pub fn is_clear_spot_test(
+    world: &World,
+    pos: [f32; 2],
+    test_magnitude: f32,
+    width: f32,
+    height: f32,
+    fall_through: bool,
+    fall2: bool,
+) -> bool {
+    // `:2538-2557`: +X, -X, +Y, -Y — each sweep starts one magnitude AWAY
+    // from the probe position and moves back through it.
+    for vector in [
+        [test_magnitude, 0.0],
+        [-test_magnitude, 0.0],
+        [0.0, test_magnitude],
+        [0.0, -test_magnitude],
+    ] {
+        let start = [pos[0] - vector[0], pos[1] - vector[1]];
+        let tc = tile_collision(world, start, vector, width, height, fall_through, fall2);
+        if tc.vel != vector {
+            return false;
+        }
+    }
+    true
+}
+
 /// `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2545`):
 /// resize the hitbox to `target` keeping the bottom-center fixed. Returns the
 /// new top-left, or `None` when a growth has no room (`FailedNoSpace`). A

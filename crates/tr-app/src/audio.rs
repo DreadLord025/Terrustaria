@@ -269,6 +269,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_32", 2),
     ("Item_34", 2),
     ("Item_36", 2),
+    // S1-P-i45: the reforge's non-top-tier cue (`SoundID.Item37`,
+    // `Main.cs:41931`; `Sounds/Item_37.xnb`).
+    ("Item_37", 2),
     ("Item_38", 2),
     ("Item_39", 2),
     ("Item_40", 2),
@@ -487,6 +490,9 @@ const TRACKED_CUES: &[&str] = &[
 /// variation (`_0`) of the multi-variation families — the variation pick
 /// rides `LegacySoundStyle.Random` in the C#, an audio-only stream.
 pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
+    // S1-P-i45: the reforge's top-tier cue (`SoundID.BestReforge`,
+    // `Main.cs:41909`; `Sounds/Custom/best_reforge.xnb`, one variation).
+    "best_reforge",
     "dd2_defense_tower_spawn",
     "dd2_betsy_fireball_shot_0",
     "dd2_book_staff_cast_0",
@@ -499,6 +505,12 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
     "deadcells_barrel_launcher_fire",
     "deadcells_mushroom_summon",
 ];
+
+/// S1-P-i41 — the `Sounds/Custom/` trackables the mount system plays:
+/// `SoundID.PalChillet = CreateTrackable("pal_chillet").WithVolume(0.35f)`
+/// (`SoundID.cs:1716`), the Chillemt mounts' equip cue (`Mount.cs:6285`).
+/// One variation, pinned like the item-use trackables.
+pub(crate) const MOUNT_CUSTOM_CUES: &[&str] = &["pal_chillet"];
 
 /// Whether the cue name is in the SFX bank (the item-use coverage test's
 /// seam, S1-E-21 wave A).
@@ -539,7 +551,7 @@ fn sound_type(cue: &str) -> u32 {
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
         .or_else(|| {
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }
@@ -690,6 +702,7 @@ impl Audio {
                     .chain(TRACKED_CUES.iter())
                     .chain(NPC_CUSTOM_CUES.iter())
                     .chain(ITEM_CUSTOM_CUES.iter())
+                    .chain(MOUNT_CUSTOM_CUES.iter())
                 {
                     let path = custom.join(format!("{name}.xnb"));
                     match load_sound(&path) {
@@ -1096,6 +1109,59 @@ impl Audio {
         let Some(name) = name else { return None };
         self.emit(name, x, y, volume_scale, pitch);
         Some(name)
+    }
+
+    /// S1-P-i41 — the Chillemt mounts' equip cue (`Mount.SetMount`
+    /// `Mount.cs:6283-6286`: `SoundEngine.PlaySound(SoundID.PalChillet,
+    /// mountedPlayer.Center)`). The style façade (`SoundEngine.cs:93-99`)
+    /// consumes the `GetRandomPitch` NextFloat on the audio-only stream
+    /// (variance 0 — the draw still happens), then case 42
+    /// (`LegacySoundPlayer.cs:1376-1381`): no volume tweak, no pitch switch,
+    /// the style's own 0.35 volume, the one-variation trackable asset.
+    pub fn play_chillet_sound(&mut self, x: f32, y: f32) -> Option<&'static str> {
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.name == "PalChillet")?;
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        if sound::play_sound(u32::from(style.sound_id), x, y, self.listener, style.volume)
+            .is_none()
+        {
+            return None;
+        }
+        let cue = "pal_chillet";
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`:
+    /// `SoundEngine.PlaySound(0, (int)position.X, (int)position.Y)`). The int
+    /// overload (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat;
+    /// case 0 (`LegacySoundPlayer.cs:440-452`) draws `Main.rand.Next(3)` for
+    /// the Dig variation and `Next(-10, 11) * 0.01` for the pitch — both ride
+    /// the caller's stream (the player tick runs under the `Main.cs:17754`
+    /// `UpdatePlayers` swap) and only AFTER the attenuation gate passed.
+    pub fn play_no_space_sound(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if sound::play_sound(0, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let variation = rng.next_range(0, 3);
+        let pitch =
+            sound::legacy_family_pitch(sound::Family::Dig, &mut |lo, hi| rng.next_range(lo, hi));
+        let cue = match variation {
+            0 => "Dig_0",
+            1 => "Dig_1",
+            _ => "Dig_2",
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        Some(cue)
     }
 
     /// The shared output tail of the pitched play paths: prepare (attenuate +
@@ -1808,6 +1874,33 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit(cue, -1.0, -1.0, tweak, pitch.clamp(-1.0, 1.0));
         Some(cue)
+    }
+
+    /// S1-P-i43 — the chest eat-animation chime (`Chest.UpdateChestFrames`,
+    /// `Chest.cs:3628-3631`: `PlaySound(7, new Vector2(chest.x * 16 + 16,
+    /// chest.y * 16 + 16))` at `eatingAnimationTime == 9 && frame == 1`) —
+    /// POSITIONED case 7: the attenuation gate first, then the same
+    /// `Next(-10, 11) * 0.01` pitch draw as [`Audio::play_pickup_sound`].
+    /// The `Main.cs:17810` call site sits outside every SwapRandom block, so
+    /// the caller passes the bare-`Main.rand` stand-in (`rngs.global()`, the
+    /// Lead's faithful-cue decision). Dormant until the eat timer's producer
+    /// (`AskForChestToEatItem`) lands. Returns the cue played; `None` when
+    /// the gate refused (no draw spent).
+    pub fn play_chest_eat_sound(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The attenuation gate first (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(7, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let pitch =
+            sound::legacy_family_pitch(sound::Family::Grab, &mut |lo, hi| rng.next_range(lo, hi));
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("Grab", x, y, 1.0, pitch.clamp(-1.0, 1.0));
+        Some("Grab")
     }
 
     /// S1-E-21f — the revenge pickup's coin ping (`NPC.moneyPing`,
@@ -3147,6 +3240,59 @@ mod tests {
         assert_eq!(rng.peek(), peek, "the inaudible play is draw-free");
     }
 
+    /// S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`): the int
+    /// overload (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch`
+    /// NextFloat; case 0 (`LegacySoundPlayer.cs:440-452`) draws `Next(3)`
+    /// then `Next(-10, 11)` on the caller's stream, only past the gate.
+    #[test]
+    fn s1_p_i41_the_no_space_tink_draws_variation_then_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let variation = witness.next_range(0, 3);
+        let _pitch = witness.next_range(-10, 11);
+        let cue = audio.play_no_space_sound(0.0, 0.0, &mut rng);
+        let want = match variation {
+            0 => "Dig_0",
+            1 => "Dig_1",
+            _ => "Dig_2",
+        };
+        assert_eq!(cue, Some(want), "the Next(3) pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // Muted / inaudible: the gate precedes the switch — no draws.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_no_space_sound(50000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the inaudible play is draw-free");
+    }
+
+    /// S1-P-i41 — the Chillemt equip cue (`Mount.cs:6283-6286`): the style
+    /// façade's `GetRandomPitch` NextFloat rides the audio-only stream
+    /// (variance 0 — the draw still happens); the gameplay stream stays
+    /// untouched, and the cue resolves against the trackable bank.
+    #[test]
+    fn s1_p_i41_the_chillet_cue_draws_on_the_audio_only_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let style_peek = audio.sound_style_random.peek();
+        assert_eq!(audio.play_chillet_sound(0.0, 0.0), Some("pal_chillet"));
+        assert_eq!(rng.peek(), peek, "no gameplay draw");
+        assert_ne!(
+            audio.sound_style_random.peek(),
+            style_peek,
+            "the GetRandomPitch NextFloat consumed"
+        );
+        // Inaudible: the façade's NextFloat fires BEFORE the gate
+        // (`SoundEngine.cs:93-99` computes the pitch, then the legacy player
+        // refuses) — the audio stream still advances, the cue is None.
+        let style_peek = audio.sound_style_random.peek();
+        assert_eq!(audio.play_chillet_sound(50000.0, 0.0), None);
+        assert_ne!(audio.sound_style_random.peek(), style_peek);
+    }
+
     /// A headless system (no sinks) — `decide_new_music` only touches the
     /// fade table and the picked ids.
     fn system() -> MusicSystem {
@@ -4317,6 +4463,36 @@ mod tests {
             assert_eq!(audio.play_pickup_sound(coin, &mut rng), None);
             assert_eq!(rng.peek(), peek);
         }
+    }
+
+    /// S1-P-i43 — the chest eat-animation chime (`Chest.cs:3628-3631`,
+    /// `PlaySound(7, chest centre)`): POSITIONED case 7 — one
+    /// `Next(-10, 11)` pitch draw on the caller's bare stream when the
+    /// attenuation passes, none when it refuses (the Lead's faithful-cue
+    /// decision applied to the lid animator's dormant chime).
+    #[test]
+    fn s1_p_i43_the_chest_eat_chime_draws_one_case7_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // In range (the listener sits at the origin): one draw.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_chest_eat_sound(16.0, 16.0, &mut rng), Some("Grab"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Out of range: the gate refuses, no draw.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_chest_eat_sound(5000.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the out-of-range chime is draw-free");
+        // Muted: draw-free too.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_chest_eat_sound(16.0, 16.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 }
 

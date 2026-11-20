@@ -32,11 +32,13 @@
 //!   `Main.rand.Next(28, 42)` inside the chain — neither kind has a
 //!   `proj_data` row, so no slot can carry their light; the arms are not
 //!   ported and the stream is untouched.
-//! * The disco arms 993 (`:16194-16198`), 1089 (`:16434-16439`) and 251
-//!   (`:16630-16641`) are **deferred**: their kinds have no rows, but
-//!   `LightParams::disco` exists, so they are cheap follow-ups. The 79
-//!   Rainbow Rod bullet (`:16505-16510`) IS a ported row — its colour rides
-//!   the same params.
+//! * The disco arms 993 (`:16194-16198`) and 251 (`:16630-16641`) are
+//!   **deferred**: their kinds have no rows. The 79 Rainbow Rod bullet
+//!   (`:16505-16510`) and the 1089 Rainbow Glowstick (`:16434-16439`,
+//!   S1-P-i42) ARE ported rows — their colour rides `LightParams::disco`.
+//! * The glowstick family's six arms (50/515/870/53/473/1089,
+//!   `:16408-16439`) landed with S1-P-i42; the 870 `FloodFillTile` spread
+//!   (`:16648-16655`) is the documented skip (the centre `AddLight` lands).
 //! * The 211 Shadowbeam arm (`:16601-16614`) **writes** `this.light`
 //!   (1.5/1.0 by `localAI[0]`); the kind has no row, and a write inside a
 //!   draw-pass feed would be a state mutation — it lands with its AI.
@@ -56,13 +58,17 @@ use tr_core::lighting::LightParams;
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
     ANTI_GRAVITY_HOOK, BALL_OF_FIRE, BALL_OF_FROST, BULLET_SNOWMAN, CHRISTMAS_HOOK,
-    CRYSTAL_SHARD_MELEE, CRYSTAL_STORM, CURSED_FLAME, CURSED_FLAME_FRIENDLY, DEMON_SCYTHE,
+    CHLOROPHYTE_BULLET, CRYSTAL_BULLET, CRYSTAL_SHARD, CRYSTAL_SHARD_MELEE, CRYSTAL_STORM,
+    CURSED_BULLET, CURSED_FLAME, CURSED_FLAME_FRIENDLY, DEMON_SCYTHE,
     DEMON_SICKLE,
-    DESTROYER_LASER, DUAL_HOOK_BLUE, DUAL_HOOK_RED, ENCHANTED_BEAM, EYE_LASER, FLAMELASH,
-    FLAME_ARROW, FROST_HYDRA, GOLEM_EYE_BEAM, GREEN_LASER, ICE_BLOCK, ICE_BOOMERANG,
-    ILLUMINANT_HOOK, LIGHT_BEAM, MAGIC_MISSILE, MAGNET_SPHERE_BALL, MINI_RETINA_LASER,
-    MUSKET_BALL, NIGHT_BEAM, PIRATE_ARROW, PURPLE_LASER, RAINBOW_ROD_BULLET, SWORD_BEAM,
-    TERRA_BEAM, UNHOLY_TRIDENT, UNHOLY_TRIDENT_HOSTILE, WATER_BOLT,
+    DESTROYER_LASER, DUAL_HOOK_BLUE, DUAL_HOOK_RED, ENCHANTED_BEAM, EXPLODING_BULLET, EYE_LASER,
+    FLAMELASH,
+    FLAME_ARROW, FROST_HYDRA, GOLDEN_BULLET, GOLEM_EYE_BEAM, GREEN_LASER, HIGH_VELOCITY_BULLET,
+    ICE_BLOCK, ICE_BOOMERANG, ICHOR_BULLET,
+    ILLUMINANT_HOOK, LIGHT_BEAM, MAGIC_MISSILE, MAGNET_SPHERE_BALL, METEOR_SHOT, MINI_RETINA_LASER,
+    MUSKET_BALL, NANO_BULLET, NIGHT_BEAM, PARTY_BULLET, PIRATE_ARROW, PURPLE_LASER,
+    RAINBOW_ROD_BULLET, SWORD_BEAM,
+    TERRA_BEAM, UNHOLY_TRIDENT, UNHOLY_TRIDENT_HOSTILE, VENOM_BULLET, WATER_BOLT,
 };
 
 /// `Projectile.ProjLight` (`Projectile.cs:16153-16661`): the `AddLight`
@@ -136,9 +142,10 @@ pub(crate) fn proj_light(
         // `:16283-16287` — 94: `num *= 0.5f; num2 *= 0f;`.
         r *= 0.5;
         g *= 0.0;
-    } else if kind == CURSED_FLAME_FRIENDLY || kind == CURSED_FLAME {
-        // `:16294-16299` — 95/96 (the 103/104 water bolts have no rows):
-        // `num *= 0.35f; num2 *= 1f; num3 *= 0f;`.
+    } else if kind == CURSED_FLAME_FRIENDLY || kind == CURSED_FLAME || kind == CURSED_BULLET {
+        // `:16294-16299` — 95/96/103/104 (the 103 water bolt has no row; the
+        // 104 CursedBullet joins via S1-P-i18): `num *= 0.35f; num2 *= 1f;
+        // num3 *= 0f;`.
         r *= 0.35;
         g *= 1.0;
         b *= 0.0;
@@ -148,9 +155,12 @@ pub(crate) fn proj_light(
         r = 0.3;
         b = 0.25;
         g = 0.0;
-    } else if kind == MUSKET_BALL || kind == BULLET_SNOWMAN || kind == PIRATE_ARROW {
-        // `:16338-16342` — 14/110/180 (the 242/302 bullets have no rows):
-        // `num2 *= 0.7f; num3 *= 0.1f;`.
+    } else if kind == MUSKET_BALL || kind == BULLET_SNOWMAN || kind == PIRATE_ARROW
+        || kind == HIGH_VELOCITY_BULLET
+    {
+        // `:16338-16342` — 14/110/180/242/302 (the 302 sniper bullet has no
+        // row; the 242 HighVelocity joins via S1-P-i18): `num2 *= 0.7f;
+        // num3 *= 0.1f;`.
         g *= 0.7;
         b *= 0.1;
     } else if kind == BALL_OF_FIRE {
@@ -176,11 +186,47 @@ pub(crate) fn proj_light(
         // `:16386-16390` — 34: `num2 *= 0.1f; num3 *= 0.1f;`.
         g *= 0.1;
         b *= 0.1;
+    } else if kind == METEOR_SHOT {
+        // `:16391-16396` — 36 (S1-P-i18): `num = 0.8f; num2 *= 0.2f;
+        // num3 *= 0.6f;` — the red channel is absolute.
+        r = 0.8;
+        g *= 0.2;
+        b *= 0.6;
     } else if kind == DEMON_SICKLE || kind == DEMON_SCYTHE {
         // `:16402-16407` — 44/45: `num3 = 1f; num *= 0.6f; num2 *= 0.1f;`.
         b = 1.0;
         r *= 0.6;
         g *= 0.1;
+    } else if kind == crate::projectile::GLOWSTICK {
+        // `:16408-16412` — 50: `num *= 0.7f; num3 *= 0.8f;` (S1-P-i42).
+        r *= 0.7;
+        b *= 0.8;
+    } else if kind == crate::projectile::BOUNCY_GLOWSTICK {
+        // `:16413-16417` — 515: `num2 *= 0.6f; num3 *= 0.85f;`.
+        g *= 0.6;
+        b *= 0.85;
+    } else if kind == crate::projectile::FAIRY_GLOWSTICK {
+        // `:16418-16422` — 870: `num *= 0.9f; num2 = 0.35f;`. The
+        // `FloodFillTile` spread (`:16648-16655`) is the documented skip
+        // (the entity-list `AddLight` at the centre lands, the flood-fill
+        // light-map write has no port — the player_lights 4776 precedent).
+        r *= 0.9;
+        g = 0.35;
+    } else if kind == crate::projectile::STICKY_GLOWSTICK {
+        // `:16423-16427` — 53: `num *= 0.7f; num2 *= 0.8f;`.
+        r *= 0.7;
+        g *= 0.8;
+    } else if kind == crate::projectile::SPELUNKER_GLOWSTICK {
+        // `:16428-16433` — 473: `num *= 1.05f; num2 *= 0.95f; num3 *= 0.55f;`.
+        r *= 1.05;
+        g *= 0.95;
+        b *= 0.55;
+    } else if kind == crate::projectile::RAINBOW_GLOWSTICK {
+        // `:16434-16439` — 1089: absolute `Main.DiscoR/G/B / 255f` (the
+        // amount is ignored past the gate, the 79 precedent).
+        r = p.disco[0] as f32 / 255.0;
+        g = p.disco[1] as f32 / 255.0;
+        b = p.disco[2] as f32 / 255.0;
     } else if kind == DUAL_HOOK_BLUE {
         // `:16458-16463` — 73: `num *= 0.4f; num2 *= 0.6f; num3 *= 1f;`.
         r *= 0.4;
@@ -191,6 +237,35 @@ pub(crate) fn proj_light(
         r *= 1.0;
         g *= 0.4;
         b *= 0.6;
+    } else if kind == PARTY_BULLET {
+        // `:16470-16475` — 284 (S1-P-i18): `num *= 1f; num2 *= 0.1f;
+        // num3 *= 0.8f;`.
+        r *= 1.0;
+        g *= 0.1;
+        b *= 0.8;
+    } else if kind == NANO_BULLET {
+        // `:16476-16481` — 285 (S1-P-i18): `num *= 0.1f; num2 *= 0.5f;
+        // num3 *= 1f;`.
+        r *= 0.1;
+        g *= 0.5;
+        b *= 1.0;
+    } else if kind == EXPLODING_BULLET {
+        // `:16482-16487` — 286 (S1-P-i18): `num *= 1f; num2 *= 0.5f;
+        // num3 *= 0.1f;`.
+        r *= 1.0;
+        g *= 0.5;
+        b *= 0.1;
+    } else if kind == GOLDEN_BULLET {
+        // `:16488-16493` — 287 (S1-P-i18): `num *= 0.9f; num2 *= 1f;
+        // num3 *= 0.4f;`.
+        r *= 0.9;
+        g *= 1.0;
+        b *= 0.4;
+    } else if kind == VENOM_BULLET {
+        // `:16494-16498` — 283 (S1-P-i18): `num *= 0.8f; num2 *= 0.1f;` — the
+        // blue channel keeps the amount (no `num3` line in the C# block).
+        r *= 0.8;
+        g *= 0.1;
     } else if kind == RAINBOW_ROD_BULLET {
         // `:16505-16510` — 79: absolute `Main.DiscoR/G/B / 255f` — the
         // amount is ignored past the gate.
@@ -218,6 +293,12 @@ pub(crate) fn proj_light(
         r *= 0.8;
         g *= 0.0;
         b *= 0.5;
+    } else if kind == CRYSTAL_BULLET || kind == CRYSTAL_SHARD {
+        // `:16535-16540` — 89/90 (S1-P-i18): `num2 *= 0.2f; num3 *= 1f;
+        // num *= 0.05f;`.
+        g *= 0.2;
+        b *= 1.0;
+        r *= 0.05;
     } else if kind == CRYSTAL_SHARD_MELEE {
         // `:16541-16546` — 1134: `num2 *= 0.2f; num3 *= 0.9f; num *= 0.5f;`.
         g *= 0.2;
@@ -251,10 +332,21 @@ pub(crate) fn proj_light(
         r *= 0.3;
         b *= 1.0;
         g = 0.4;
+    } else if kind == CHLOROPHYTE_BULLET {
+        // `:16591-16595` — 207 (S1-P-i18): `num *= 0.4f; num3 *= 0.4f;` — the
+        // green channel keeps the amount (no `num2` line in the C# block).
+        r *= 0.4;
+        b *= 0.4;
     } else if kind == BALL_OF_FROST {
         // `:16596-16600` — 253: `num = 0f; num2 *= 0.4f;`.
         r = 0.0;
         g *= 0.4;
+    } else if kind == ICHOR_BULLET {
+        // `:16642-16647` — 278/279 (the 278 ichor arrow has no row; the 279
+        // IchorBullet joins via S1-P-i18): `num *= 1f; num2 *= 1f; num3 *= 0f;`.
+        r *= 1.0;
+        g *= 1.0;
+        b *= 0.0;
     }
     // Kinds with no chain arm (the 6 Enchanted Boomerang, the plain hooks
     // 13/32 and their riders) keep num/num2/num3 at the amount on all three
@@ -425,6 +517,59 @@ mod tests {
         // 332 (`:16229-16233`): (l, 0.6l, 0.1l) at 0.5 (`:4256`).
         let c = 0.5f32;
         assert_eq!(at(CHRISTMAS_HOOK, c).unwrap().2, [c, c * 0.6, c * 0.1]);
+    }
+
+    #[test]
+    fn the_glowstick_family_arms_match_the_csharp_colours() {
+        // S1-P-i42 — `Projectile.cs:16408-16439`, the six glowstick arms at
+        // light = 1 (`set_defaults_light`). The expectations are the f32
+        // PRODUCTS (the C# multiplies the f32 amount), not rounded literals.
+        let l = 1.0f32;
+        // 50 (`:16410-16411`): (0.7l, l, 0.8l).
+        assert_eq!(
+            at(crate::projectile::GLOWSTICK, l).unwrap().2,
+            [l * 0.7, l, l * 0.8]
+        );
+        // 515 (`:16415-16416`): (l, 0.6l, 0.85l).
+        assert_eq!(
+            at(crate::projectile::BOUNCY_GLOWSTICK, l).unwrap().2,
+            [l, l * 0.6, l * 0.85]
+        );
+        // 870 (`:16420-16421`): (0.9l, 0.35, l) — g absolute.
+        assert_eq!(
+            at(crate::projectile::FAIRY_GLOWSTICK, l).unwrap().2,
+            [l * 0.9, 0.35, l]
+        );
+        // 53 (`:16425-16426`): (0.7l, 0.8l, l).
+        assert_eq!(
+            at(crate::projectile::STICKY_GLOWSTICK, l).unwrap().2,
+            [l * 0.7, l * 0.8, l]
+        );
+        // 473 (`:16430-16432`): (1.05l, 0.95l, 0.55l).
+        assert_eq!(
+            at(crate::projectile::SPELUNKER_GLOWSTICK, l).unwrap().2,
+            [l * 1.05, l * 0.95, l * 0.55]
+        );
+    }
+
+    #[test]
+    fn the_rainbow_glowstick_rides_the_disco_params() {
+        // `:16434-16439` — 1089: absolute Main.DiscoR/G/B / 255f.
+        let p = LightParams {
+            disco: [255, 128, 0],
+            ..Default::default()
+        };
+        let got = proj_light(
+            crate::projectile::RAINBOW_GLOWSTICK,
+            1.0,
+            Vec2::new(160.0, 176.0),
+            6.0,
+            6.0,
+            false,
+            &p,
+        )
+        .expect("the rainbow glowstick lights");
+        assert_eq!(got.2, [1.0, 128.0 / 255.0, 0.0]);
     }
 
     #[test]

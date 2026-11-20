@@ -867,8 +867,10 @@ pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
 
 /// `Chest.cs:2714-2746`'s copper total over the 54-slot inventory scan — the
 /// Stylist's Money Hair Dye gate reads it (the cap at 9,999,999,999 stands).
-fn coin_total(inventory: &[crate::item::ItemSlot]) -> i64 {
-    let mut total: i64 = 0;
+/// The port's coin model keeps the purse aggregate (`App.coins`) beside the
+/// grid's coin stacks, so both feed the total (the recorded purse deviation).
+fn coin_total(inventory: &[crate::item::ItemSlot], purse: u64) -> i64 {
+    let mut total: i64 = purse as i64;
     for sl in inventory.iter() {
         if sl.count == 0 {
             continue;
@@ -917,12 +919,15 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         blood_moon: app.world.blood_moon,
         zone_snow: app.scene_metrics.zone_snow,
         zone_jungle: app.scene_metrics.zone_jungle,
-        downed_boss2: false,
-        downed_boss3: false,
+        // `NPC.downedBoss2`/`downedBoss3` — the world's own latches (the
+        // chat context reads the same pair, `npc_chat`'s `downed_boss2/3`).
+        downed_boss2: app.world.downed_eow,
+        downed_boss3: app.world.downed_skeletron,
         // The Stylist shop's player-side gates (`Chest.cs:2704-2783`): the
         // life/mana maxima, the copper purse, the Party Girl's presence and
         // the mech/martian flags.
-        golfer_score: 0, // the golf system is not ported (M4-GOLF-1)
+        // `Main.LocalPlayer.golferScoreAccumulated` (`Chest.cs:3158`).
+        golfer_score: app.player.as_ref().map_or(0, |p| p.golfer_score),
         // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
         // port's tracker over the ENTRIES' unlock states.
         bestiary_completion: crate::bestiary::completion_percent(&app.bestiary.kills),
@@ -931,8 +936,12 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         unlocked_princess: false,
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
-        coins_over_gold: coin_total(&app.inventory) >= 1_000_000,
-        party_girl_present: false, // the Party Girl (208) is not ported yet
+        coins_over_gold: coin_total(&app.inventory, app.coins) >= 1_000_000,
+        // `NPC.AnyNPCs(208)` (`Chest.cs:2762`) — the live roster scan.
+        party_girl_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::PartyGirl),
         downed_mech_any: app.world.downed_mech_boss1
             || app.world.downed_mech_boss2
             || app.world.downed_mech_boss3,
@@ -962,9 +971,30 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         .filter(|sl| sl.kind != 0 && sl.count > 0)
         .map(|sl| sl.kind)
         .collect();
-    app.shop_stock = crate::shop::resolve_stock_entries(shop, &flags, &inv_ids);
+    // `Main.OpenShop` (`Main.cs:40459-40467`): the inventory opens, the
+    // stack-split locks (`stackSplit = 9999`), the chat text clears, the
+    // shop index arms and `SetupShop` rebuilds the stock from the LIVE
+    // world state (the per-open refresh — the time/biome/progression
+    // gates re-resolve on every open). `SetNPCShopIndex`'s index change
+    // clears the sellback memo (`Main.UpdateOldNPCShop`,
+    // `Main.cs:18204-18211`); the re-open of the SAME shop keeps it (the
+    // C# `npcShop != oldNPCShop` gate).
+    let same_shop = app.shop_npc == Some(idx);
+    app.inventory_open = true; // `Main.playerInventory = true` (`:40461`)
+    app.stack_split = 9999; // `:40462`
+    app.npc_chat_text.clear(); // `Main.npcChatText = ""` (`:40463`)
+    app.shop_stock = crate::shop::resolve_stock_entries_moon(
+        shop,
+        &flags,
+        &inv_ids,
+        app.world.moon_phase as u32,
+    );
     app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
+    if !same_shop {
+        app.shop_sellback.clear();
+    }
+    crate::chest::play_menu_sound(app, 12); // `SoundEngine.PlaySound(12)` (`:40466`)
     // `TinkererReforge` (`NPCInteractions.cs:407-423`) opens the reforge
     // menu beside the shop (`NPCChatText_TinkererReforge`,
     // `Main.cs:40022-40029`).
@@ -3185,10 +3215,12 @@ pub(crate) fn wipe_dd2_entities(app: &mut App) {
     app.npcs
         .retain(|n| !dd2_pool_id(n.kind).is_some_and(tr_core::dd2::belongs_to_ooa));
     // `ClearAllDD2EnergyCrystalsInChests` (`:666-692`): the currently
-    // open chests only — the 3822 stacks turn to air.
+    // open chests only — the 3822 stacks turn to air. The open set is
+    // `Chest.GetCurrentlyOpenChests()` (`:672`, `Chest.cs:283-294`), the
+    // single-player reading (S1-P-i43).
     let open = app.player.as_ref().map(|p| p.chest).unwrap_or(-1);
-    if open >= 0 {
-        if let Some(chest) = app.world_chests.get_mut(open as usize) {
+    for idx in crate::chest::currently_open_chests(open) {
+        if let Some(chest) = app.world_chests.get_mut(idx) {
             for slot in chest.slots.iter_mut() {
                 if slot.kind == tr_core::dd2::ENERGY_CRYSTAL_ITEM && slot.count > 0 {
                     *slot = crate::item::EMPTY_SLOT;
@@ -3419,13 +3451,23 @@ fn invasion_spawn_pick(
 /// ported kinds — the shimmer slime 676, the shimmered town NPC 677 and the
 /// rainbow slime 681 wait for the M4-NPC roster).
 pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32) -> bool {
-    let Some(kind) = NpcKind::from_u16(npc_type) else {
+    // S1-P-i36 repair: the C# `NPC.ReleaseNPC` types live in the vanilla
+    // `NPC.type` space (the bestiary NET id) — `NpcKind::from_u16` maps the
+    // port's internal protocol ids and would decode a wrong kind (55 is
+    // BrainOfCthulhu there, not the Goldfish).
+    let Some((kind, slime)) = crate::npc::kind_from_net_id(npc_type as i32) else {
         // The roster gap: the C#'s `ReleaseNPC` still spawns, but the port has
         // no model for the type — the arm's accounting still runs.
         return false;
     };
     let mut npc = Npc::new(kind, x, y, 1, 0.0);
+    npc.slime = slime;
     npc.shimmer_transparency = 1.0;
+    // `WorldItem.GetShimmered` releases through `NPC.ReleaseNPC`
+    // (`WorldItem.cs:1776`), whose every arm writes `releaseOwner = who`
+    // (`NPC.cs:80121+`) — the shimmer-released critter is NOT wild, so
+    // the 90-tick friendly window never arms (S1-P-i36).
+    npc.release_owner = app.local_id as u8;
     app.npcs.push(npc);
     true
 }
@@ -4363,6 +4405,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         if n.sound_delay > 0 {
                             n.sound_delay -= 1;
                         }
+                        // S1-P-i36 — `SubAI_HandleTemporaryCatchableNPC
+                        // PlayerInvulnerability` (`NPC.cs:90424` →
+                        // `:90534-90556`): the wild critter's 90-tick
+                        // friendly window ticks down pre-AI, in slot order.
+                        crate::bug_net::tick_catchable_immunity(n);
                         if crate::ambient_sound::fighter_walker_kind(n.kind) {
                             let (nw, nh) = n.size();
                             let player_intersects = n.x < player.x + crate::player::WIDTH
@@ -6415,7 +6462,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // death moment; the respawn TIMER then runs in `update_player`
         // (M2-DEATH-2's `UpdateDead` port) and revives on expiry.
         if player.hp <= 0 && !player.dead {
-            let (dx, dy) = player.center();
+            // `KillMe`'s drops read `base.position` (the TOP-LEFT) —
+            // `TryDroppingSingleItem`'s `(int)position.X/Y + Width/2,
+            // Height/2` centre (`Player.cs:54373`, `Item.cs:49651`).
+            let (dx, dy) = (player.x, player.y);
             let boss_near = player.boss_hinders(&app.npcs);
             // `KillMe` → `GetDeathText` runs inside `Player.Update` — the
             // `UpdatePlayers` swap (`Main.cs:17754`). The C# variant roll is
@@ -6835,8 +6885,27 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
     };
     let mut out = Vec::new();
     tr_core::loot::try_dropping(crate::loot_db::database(), net_id, &mut info, &mut out);
+    // S1-P-i52 — the seasonal flags snapshot (the `info.rng` borrow ends
+    // with `try_dropping`; the remap below draws on the same stream).
+    let (tenth, halloween, xmas) = (
+        info.flags.tenth_anniversary,
+        info.flags.halloween,
+        info.flags.xmas,
+    );
+    drop(info); // releases the `&mut *rng` reborrow + the get_text borrow
     for req in out {
         if req.item > 0 && crate::registry::get(req.item as u16).is_some() {
+            // S1-P-i52 — `Item.NewItem`'s heart/star seasonal remap
+            // (`Item.cs:49668-49714`) runs BEFORE the prefix/velocity
+            // draws; only the anniversary/both-seasons arms draw (one
+            // `Next(len)` on the same `UpdateNPCs` stream).
+            let kind = crate::world_sim::items::seasonal_pickup_kind(
+                req.item as u16,
+                tenth,
+                halloween,
+                xmas,
+                rng,
+            );
             // The velocity triplet rides the same stream (`Item.NewItem`'s
             // scatter); `Item.Prefix` uses `Main.rand` = the active swap
             // (`Item.cs:527`) — the prefix roll joins the `UpdateNPCs`
@@ -6845,9 +6914,9 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             let vy = -1.5 - rng.next_float();
             let phase = rng.next_float() * std::f32::consts::TAU;
             app.items.push(ItemDrop::new(
-                req.item as u16,
+                kind,
                 req.stack as u32,
-                crate::prefix::roll_prefix(req.item as u16, -1, rng),
+                crate::prefix::roll_prefix(kind, -1, rng),
                 x,
                 y,
                 vx,
@@ -10894,7 +10963,7 @@ mod wof_wire_tests {
         // The strike tick: hurt() arms just_hit; the next update reads it
         // (ai[1] = 10) then the tail clears the flag.
         let from_x = app.npcs[idx].x + 100.0;
-        assert!(app.npcs[idx].hurt(5, from_x, 0.0, false));
+        assert!(app.npcs[idx].hurt(5, from_x, 0.0, false, false));
         assert!(app.npcs[idx].just_hit, "the strike arms the flag");
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.npcs[idx].ai[1], 9.0, "the recoil pause armed then ticked");
@@ -12238,6 +12307,7 @@ mod dd2_loss_tests {
             ],
             name: String::new(),
             max_items: 40,
+            ..Default::default()
         });
         app.player.as_mut().unwrap().chest = 0;
         update_npcs(&mut app, 1.0 / 60.0);
@@ -12280,6 +12350,7 @@ mod dd2_loss_tests {
             }],
             name: String::new(),
             max_items: 40,
+            ..Default::default()
         });
         // No chest open (p.chest == -1).
         wipe_dd2_entities(&mut app);
@@ -13023,7 +13094,7 @@ mod pillar_shield_loop_tests {
         assert!(app.npcs[ti].dont_take_damage, "the shield stands");
         let hp = app.npcs[ti].hp;
         assert!(
-            !app.npcs[ti].hurt(500, 0.0, 0.0, false),
+            !app.npcs[ti].hurt(500, 0.0, 0.0, false, false),
             "the shielded pillar refuses the hit"
         );
         assert_eq!(app.npcs[ti].hp, hp);
@@ -13034,7 +13105,7 @@ mod pillar_shield_loop_tests {
         assert_eq!(app.world.tower_shield_solar, 0);
         apply_tower_shield_gates(&mut app);
         assert!(!app.npcs[ti].dont_take_damage, "the broken shield opens");
-        assert!(app.npcs[ti].hurt(500, 0.0, 0.0, false), "the bare pillar takes the hit");
+        assert!(app.npcs[ti].hurt(500, 0.0, 0.0, false, false), "the bare pillar takes the hit");
         assert_eq!(app.npcs[ti].hp, hp - 500);
         // The other pillars stay gated on their own shields.
         let ni = live_tower(&mut app, NpcKind::NebulaTower);
@@ -13490,7 +13561,7 @@ mod worm_tests {
         assert_eq!(npcs[tail].kind, NpcKind::SolarCrawltipedeTail);
         let tail_x = npcs[tail].x;
         assert!(Npc::strike_melee(
-            &mut npcs, tail, 7, tail_x, 0.0, false, None
+            &mut npcs, tail, 7, tail_x, 0.0, false, None, false
         ));
         assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
     }
@@ -14084,7 +14155,7 @@ mod worm_tests {
         let tail = npcs.len() - 1;
         let tail_x = npcs[tail].x;
         assert!(Npc::strike_melee(
-            &mut npcs, tail, 9, tail_x, 0.0, false, None
+            &mut npcs, tail, 9, tail_x, 0.0, false, None, false
         ));
         assert_eq!(npcs[0].hp, pool - 9, "the tail hits the head's pool");
         assert_eq!(npcs[tail].hp, pool - 9, "the tail mirrors the carrier");
@@ -17727,7 +17798,7 @@ mod fishron_wiring_tests {
         bubble.target = 0;
         bubble.ai[3] = 1.0;
         let mut npcs = vec![bubble];
-        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0)));
+        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0), false));
         assert_eq!(npcs[0].hp, npcs[0].max_hp, "life restored");
         assert_eq!(npcs[0].ai[0], 1.0);
         assert_eq!(npcs[0].ai[1], 4.0);

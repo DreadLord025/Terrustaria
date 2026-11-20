@@ -301,6 +301,15 @@ pub struct World {
     /// `WorldItem.cs:1720-1735`) — a `Main`-global in the C#; a world field is
     /// the port's standing-in (ANALYSIS "Shimmer transforms").
     pub unlocked_slime_rainbow_spawn: bool,
+    /// `NPC.unlockedSlimeRedSpawn` (`Player.cs:52429-52432` — the fished-out
+    /// 682 raises it; `Projectile.cs:20819`'s enemy roll gates on it) — the
+    /// same Main-global standing-in (S1-P-i35).
+    pub unlocked_slime_red_spawn: bool,
+    /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
+    /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
+    /// `PrepareFishingContext` context) — the world-field standing-in
+    /// (S1-P-i35).
+    pub combat_book_was_used: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -671,6 +680,8 @@ impl World {
             golem_fist_left_alive: false,
             golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
+            unlocked_slime_red_spawn: false,
+            combat_book_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,

@@ -36,6 +36,17 @@ use crate::ui::text::{border_string, hud_text, hud_text_width};
 use super::draw_phase;
 
 impl App {
+    /// The buff bar's cancel gate — `Main.mouseRight && Main.mouseRightRelease`
+    /// (`Main.cs:43333`) with the vanilla's end-of-draw latch recompute
+    /// (`:62458-62465`: `mouseRightRelease = !mouseRight`). Called once per
+    /// interface draw; the conjunction is true only on the press frame
+    /// after a released frame, never while held.
+    pub(crate) fn buff_cancel_gate(&mut self) -> bool {
+        let gate = self.place_down && self.ui_right_release_latch;
+        self.ui_right_release_latch = !self.place_down; // `:62458-62465`
+        gate
+    }
+
     /// The draw region, verbatim from the pre-snapshot locals through the
     /// present: one borrow region as landed (the 55-field destructure and
     /// the gpu/renderer gate move with it unchanged). Returns the frame's
@@ -106,7 +117,7 @@ impl App {
             let chest_editing = self.chest_editing();
             let chest_edit_text = self.chest_edit_text().to_string();
             let chest_open = self.open_container();
-            let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open);
+            let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open).to_string();
             // `Chest.item.Length` (`ChestUI.cs:376-377`) — the open chest's own
             // per-chest slot count from the file (`Chest.maxItems`), the default
             // 40 for every port-created chest.
@@ -132,10 +143,20 @@ impl App {
                 Vec::new()
             };
             // The buff bar's inputs (`Main.DrawInterface_Resources_Buffs`,
-            // `Main.cs:43203`): the right-release edge (`Main.mouseRightRelease`)
-            // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
-            // `:43298`). The removals drain in the tick.
-            let right_release = std::mem::take(&mut self.ui_right_release);
+            // `Main.cs:43203`): the cancel gate is `Main.mouseRight &&
+            // Main.mouseRightRelease` (`:43333`). The vanilla latch is
+            // recomputed at the END of every interface draw (`:62458-62465`:
+            // false while held, true otherwise), so the conjunction fires on
+            // the PRESS frame after a released frame and never while held.
+            // The port mirrors the latch (`ui_right_release_latch`, updated
+            // per draw below — the button state cannot change mid-draw, so
+            // the head-of-draw update equals the C#'s tail-of-draw one); the
+            // bare release edge the port used fired one frame late, on the
+            // RELEASE frame. The vampire-seed gate (`Main.vampireSeed`)
+            // drives the duration hides (`:43298`). The removals drain in
+            // the tick.
+            let _right_release_edge = std::mem::take(&mut self.ui_right_release);
+            let buff_right_click = self.buff_cancel_gate();
             // `Main.mouseLeftRelease` — the achievement popup's click edge
             // (`InGamePopups.cs:124`), consumed per frame like the right one.
             let left_release = std::mem::take(&mut self.ui_left_release);
@@ -939,17 +960,20 @@ impl App {
                         npc_key,
                         items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15),
                         hand_key: {
-                            let held = inventory
-                                .get(*selected)
-                                .filter(|s| s.count > 0)
-                                .map_or(0, |s| s.kind as u32);
+                            let slot = inventory.get(*selected).filter(|s| s.count > 0);
+                            let held = slot.map_or(0, |s| s.kind as u32);
                             let phase = if *swing > 0.0 {
                                 (((1.0 - *swing / self.swing_max.max(f32::EPSILON)) * 40.0) as u32)
                                     .min(40)
                             } else {
                                 0
                             };
-                            held | (phase << 16)
+                            // S1-P-i05: the prefix rides the key — the
+                            // thrust's `GetAdjustedItemScale` reads the
+                            // PREFIXED scale (`Player.cs:42566`), so a
+                            // reforge changes the held item's pixels.
+                            let prefix = slot.map_or(0, |s| s.prefix as u32);
+                            held | (phase << 16) | (prefix << 24)
                         },
                         light_generation: light.generation(),
                         // S1-H-15: `shade` multiplies every tile tint by the style's
@@ -1109,8 +1133,14 @@ impl App {
                                         .map(|slot| {
                                             // The builders consume the remaining
                                             // use fraction (`itemAnimation /
-                                            // itemAnimationMax`).
-                                            (slot.kind, *swing / self.swing_max.max(f32::EPSILON))
+                                            // itemAnimationMax`); the prefix
+                                            // rides along for the thrust's
+                                            // `GetAdjustedItemScale` (S1-P-i05).
+                                            (
+                                                slot.kind,
+                                                *swing / self.swing_max.max(f32::EPSILON),
+                                                slot.prefix,
+                                            )
                                         })
                                 }
                                 _ => None,
@@ -1255,10 +1285,29 @@ impl App {
                     // rides the tile batch after the liquids, under the
                     // over-wire entities (the port draws it before the
                     // projectiles, matching `DrawCachedProjsOverWiresUI`).
+                    // `WiresUI.Settings.DrawWires` gates the whole pass
+                    // (`CaptureInterface.cs:1088`/`:1170` set `CaptureMech`):
+                    // a held mech tool or the lens/kite draws it, else nothing.
                     draw_phase("wires");
-                    crate::render::wires::draw_wires(
-                        renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
-                    );
+                    let held = inventory.get(*selected).copied().unwrap_or(crate::item::EMPTY_SLOT);
+                    let held_mech = crate::registry::get(held.kind).is_some_and(|d| d.mech);
+                    let wire_view = player.as_ref().and_then(|p| {
+                        crate::render::wires::wire_view(
+                            held.kind,
+                            held.count,
+                            held_mech,
+                            p.info_acc_mech_show_wires,
+                            &p.builder_acc_status,
+                            world.seeds.contains(tr_core::seeds::SeedFlags::NO_TRAPS),
+                            world.downed_skeletron,
+                        )
+                    });
+                    if let Some(view) = wire_view {
+                        crate::render::wires::draw_wires(
+                            renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
+                            &view,
+                        );
+                    }
                     // `Main.cs:63276-63277` (`DoDraw_WallsTilesNPCs`): the Moon
                     // Lord's death drama pieces + blasts, after the walls and the
                     // WoF/back gore, under the non-solid tiles.
@@ -1577,6 +1626,7 @@ impl App {
                             // recipes whose product passes the filterer.
                             self.craft_filters.shown(craft::available_with_gates(
                                 inventory,
+                                &self.equip,
                                 &self.world_chests,
                                 &in_range,
                                 &adj,
@@ -1670,7 +1720,7 @@ impl App {
                                     })
                                     .flatten(),
                                 editing: chest_editing,
-                                name: chest_stored_name,
+                                name: &chest_stored_name,
                                 max_items: chest_max_items,
                                 edit_text: &chest_edit_text,
                                 blinker: &mut self.text_blinker,
@@ -1694,6 +1744,7 @@ impl App {
                                             .unwrap_or(0),
                                             self.reforge_slot.count.max(1),
                                             self.shop_mood,
+                                            self.discount_available,
                                         )
                                     })
                                     .unwrap_or(0);
@@ -1714,7 +1765,7 @@ impl App {
                             // The buff bar (`Main.DrawInterface_Resources_Buffs`).
                             &mut self.buff_alpha,
                             &mut self.buff_removals,
-                            right_release,
+                            buff_right_click,
                             vampire_seed,
                             // `Player.HasNPCBannerBuff`'s table — the Monster
                             // Banner's hover list (`Main.cs:21360-21388`).
@@ -2159,5 +2210,37 @@ impl App {
             self.open_achievements_and_goto(name);
         }
         Some((stats, tile_stats))
+    }
+}
+
+#[cfg(test)]
+mod s1_p_i53_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// S1-P-i53 — the buff cancel gate is `Main.mouseRight &&
+    /// Main.mouseRightRelease` (`Main.cs:43333`) with the end-of-draw latch
+    /// (`:62458-62465`): it fires on the PRESS frame after a released
+    /// frame, never on held frames, and never on the release frame (the
+    /// bare-edge port fired one frame late).
+    #[test]
+    fn s1_p_i53_the_cancel_gate_fires_on_press_not_on_release() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Released frames: no gate, latch stays true.
+        app.place_down = false;
+        assert!(!app.buff_cancel_gate());
+        assert!(!app.buff_cancel_gate());
+        // The press frame: mouseRight true + the latch still true → fire.
+        app.place_down = true;
+        assert!(app.buff_cancel_gate(), "the press-after-release frame");
+        // Held frames: the latch went false — no repeat.
+        assert!(!app.buff_cancel_gate());
+        assert!(!app.buff_cancel_gate());
+        // The release frame: mouseRight false → no gate (the old bare-edge
+        // port fired HERE), and the latch re-arms.
+        app.place_down = false;
+        assert!(!app.buff_cancel_gate(), "the release frame never cancels");
+        // The next press fires again.
+        app.place_down = true;
+        assert!(app.buff_cancel_gate());
     }
 }

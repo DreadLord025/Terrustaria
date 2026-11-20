@@ -91,13 +91,25 @@ pub fn strike_npc_damage(damage: i32, defense: i32, crit: bool) -> i32 {
     num as i32
 }
 
-/// `NPC.StrikeNPC_Inner`'s knockback section (`NPC.cs:81389-81458`): the
-/// soft caps 8/10/12/14/16, the crit x1.4, the damage gate
-/// (`damage * 10 > lifeMax` — expert `* 15`) gating the X push, and the Y pop
-/// (`-kb * 0.75`, `* 0.5` for no-gravity flyers). Returns the new velocity.
+/// `NPC.StrikeNPC_Inner`'s knockback section (`NPC.cs:81387-81475`): the
+/// `onFire2` x1.1 (`:81390-81393`), the soft caps 8/10/12/14/16
+/// (`:81394-81413`), the crit x1.4 (`:81414-81417`), then the damage gate
+/// `num4 = damage * 10 > lifeMax` (expert `* 15`, `:81418-81422`).
+///
+/// STRONG hit (`num4 > lifeMax`, `:81423-81462`): the X push-away
+/// (`:81425-81448`) AND the Y pop (`:81453-81461`, `-num3 * 0.75`, `* 0.5`
+/// for no-gravity flyers) — the Y pop lives INSIDE the gate, not outside it.
+/// The type-185 x1.5 (`:81449-81452`) has no ported `NpcKind` (SnowFlinx,
+/// `NPCID.cs:11047`) and is skipped.
+///
+/// WEAK hit (else, `:81463-81474`): the velocity is SET outright —
+/// `Y = -num3 * 0.75 * knockBackResist` (no-gravity `* 0.5 * knockBackResist`)
+/// and `X = num3 * hitDirection * knockBackResist` (the resist multiplies a
+/// second time, verbatim). Returns the new velocity.
 pub fn knock_back_npc(
     knock_back: f32,
     knock_back_resist: f32,
+    on_fire2: bool,
     crit: bool,
     damage: i32,
     life_max: i32,
@@ -109,6 +121,11 @@ pub fn knock_back_npc(
     let (mut vx, mut vy) = velocity;
     if knock_back > 0.0 && knock_back_resist > 0.0 {
         let mut num3 = knock_back * knock_back_resist;
+        // `NPC.cs:81390-81393` — the Cursed Inferno debuff lifts the impulse
+        // by 10 % BEFORE the soft caps.
+        if on_fire2 {
+            num3 *= 1.1;
+        }
         if num3 > 8.0 {
             num3 = 8.0 + (num3 - 8.0) * 0.9;
         }
@@ -128,9 +145,9 @@ pub fn knock_back_npc(
             num3 *= 1.4;
         }
         let num4 = damage * if expert { 15 } else { 10 };
-        // The X push-away runs only when the hit is strong for the target
-        // (`num4 > lifeMax`); the shape resists an existing drift away.
         if num4 > life_max {
+            // The X push-away (`NPC.cs:81425-81448`); the shape resists an
+            // existing drift away.
             if hit_direction < 0 && vx > -num3 {
                 if vx > 0.0 {
                     vx -= num3;
@@ -148,19 +165,24 @@ pub fn knock_back_npc(
                     vx = num3;
                 }
             }
-        }
-        // The Y pop always runs (inside the kb/resist gate): upward unless the
-        // target is a no-gravity flyer, which gets pushed down at 0.5.
-        let pop = if no_gravity {
-            num3 * -0.5
-        } else {
-            num3 * -0.75
-        };
-        if vy > pop {
-            vy += pop;
-            if vy < pop {
-                vy = pop;
+            // The Y pop (`NPC.cs:81453-81461`) — INSIDE the strong-hit gate:
+            // upward unless the target is a no-gravity flyer (pushed at 0.5).
+            let pop = if no_gravity { num3 * -0.5 } else { num3 * -0.75 };
+            if vy > pop {
+                vy += pop;
+                if vy < pop {
+                    vy = pop;
+                }
             }
+        } else {
+            // The weak-hit branch (`NPC.cs:81463-81474`): the velocity is set
+            // outright, the resist multiplying a second time (verbatim).
+            vy = if !no_gravity {
+                (0.0 - num3) * 0.75 * knock_back_resist
+            } else {
+                (0.0 - num3) * 0.5 * knock_back_resist
+            };
+            vx = num3 * hit_direction as f32 * knock_back_resist;
         }
     }
     (vx, vy)
@@ -185,6 +207,39 @@ pub fn iframes_for(damage: i32, pvp: bool, long_invince: bool) -> i32 {
 /// per class at `Player.cs:2430`): `crit` is the percentage chance.
 pub fn crit_roll(rng: &mut dyn DropRng, crit: i32) -> bool {
     rng.next_range(1, 101) <= crit
+}
+
+/// `Projectile.Damage_PVE_Inner`'s per-hit crit block (`Projectile.cs:12883-
+/// 12917`), run on the `UpdateProjectiles` stream at HIT time (NOT at spawn).
+/// Each set class flag rolls an independent `Next(1, 101) <= classCrit +
+/// bonusCritChance`; a hit on ANY flag crits. The melee/ranged/magic arms
+/// fire in that order, each consuming its draw only when its flag is set
+/// (`:12890`/`:12894`/`:12898`). `TryConsumingTimerCrit` (`:12902`) and the
+/// monk-set / sentry-backpack arms (`:12903-12916`) are unported accessories
+/// (no port state) and consume nothing. The type-1130 force-false and the
+/// tag's forced crit are applied by the caller around this block.
+pub fn projectile_hit_crit(
+    rng: &mut dyn DropRng,
+    melee: bool,
+    ranged: bool,
+    magic: bool,
+    melee_crit: i32,
+    ranged_crit: i32,
+    magic_crit: i32,
+    bonus_crit_chance: i32,
+) -> bool {
+    let mut crit = false;
+    let bonus = if bonus_crit_chance > 0 { bonus_crit_chance } else { 0 };
+    if melee && rng.next_range(1, 101) <= melee_crit + bonus {
+        crit = true;
+    }
+    if ranged && rng.next_range(1, 101) <= ranged_crit + bonus {
+        crit = true;
+    }
+    if magic && rng.next_range(1, 101) <= magic_crit + bonus {
+        crit = true;
+    }
+    crit
 }
 
 #[cfg(test)]
@@ -292,6 +347,139 @@ mod tests {
         let mut rng = FastRandom::new(1);
         for _ in 0..50 {
             assert!(crit_roll(&mut rng, 100));
+        }
+    }
+
+    #[test]
+    fn knockback_weak_hit_sets_velocity_outright() {
+        // NPC.cs:81463-81474 — when `damage * 10 <= lifeMax` the velocity is
+        // SET, not nudged: X = num3 * hitDirection * resist, Y = -num3 * 0.75
+        // * resist (no-gravity 0.5). The resist multiplies a SECOND time.
+        // kb 5, resist 0.8 -> num3 = 4; damage 2 -> num4 = 20 <= lifeMax 100.
+        let (vx, vy) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), 1, false, false);
+        assert!((vx - 4.0 * 1.0 * 0.8).abs() < 1e-5, "vx {vx}");
+        assert!((vy - (-4.0 * 0.75 * 0.8)).abs() < 1e-5, "vy {vy}");
+        // The no-gravity flyer's weak branch uses 0.5 (`:81471`).
+        let (_, vy) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), 1, true, false);
+        assert!((vy - (-4.0 * 0.5 * 0.8)).abs() < 1e-5, "vy {vy}");
+        // The hit direction flips the X sign (`:81473`).
+        let (vx, _) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), -1, false, false);
+        assert!((vx - (-4.0 * 0.8)).abs() < 1e-5, "vx {vx}");
+    }
+
+    #[test]
+    fn knockback_strong_hit_pops_y_inside_the_gate() {
+        // NPC.cs:81423-81461 — the Y pop runs only when `num4 > lifeMax`.
+        // kb 5, resist 1 -> num3 = 5; damage 20 -> num4 = 200 > lifeMax 100.
+        // Starting vy 0 > pop -3.75, so vy += -3.75 -> -3.75.
+        let (vx, vy) = knock_back_npc(5.0, 1.0, false, false, 20, 100, (0.0, 0.0), 1, false, false);
+        assert!((vx - 5.0).abs() < 1e-5, "vx {vx}");
+        assert!((vy - (-5.0 * 0.75)).abs() < 1e-5, "vy {vy}");
+        // A WEAK hit with the same velocity must NOT pop Y (the gate): the
+        // old port popped unconditionally — this pins the fix.
+        let (_, vy) = knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 0.0), 1, false, false);
+        // Weak branch sets vy = -5 * 0.75 * 1 = -3.75 too, but via the SET
+        // path; the distinguishing case is a falling target (vy > 0): the
+        // strong path ADDS the pop, the weak path OVERWRITES.
+        let (_, vy_strong) =
+            knock_back_npc(5.0, 1.0, false, false, 20, 100, (0.0, 2.0), 1, false, false);
+        let (_, vy_weak) =
+            knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 2.0), 1, false, false);
+        assert!((vy_strong - (2.0 - 3.75)).abs() < 1e-5, "strong adds: {vy_strong}");
+        assert!((vy_weak - (-3.75)).abs() < 1e-5, "weak overwrites: {vy_weak}");
+    }
+
+    #[test]
+    fn knockback_on_fire2_lifts_the_impulse_ten_percent() {
+        // NPC.cs:81390-81393 — onFire2 multiplies num3 by 1.1 BEFORE the caps.
+        // kb 5, resist 1 -> num3 = 5 -> 5.5; weak hit sets vy = -5.5*0.75.
+        let (_, vy) = knock_back_npc(5.0, 1.0, true, false, 2, 100, (0.0, 0.0), 1, false, false);
+        assert!((vy - (-5.0 * 1.1 * 0.75)).abs() < 1e-4, "vy {vy}");
+        // Without the debuff the impulse is the plain 5.
+        let (_, vy_plain) =
+            knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 0.0), 1, false, false);
+        assert!((vy_plain - (-5.0 * 0.75)).abs() < 1e-5, "vy {vy_plain}");
+    }
+
+    #[test]
+    fn knockback_crit_multiplies_after_the_soft_caps() {
+        // NPC.cs:81414-81417 — the crit x1.4 lands after the cap chain. A
+        // capped impulse (num3 = 16) crits to 22.4, NOT capped again.
+        // kb 30, resist 1 -> raw 30 -> caps to 16; weak hit vy = -16*1.4*0.75.
+        let (_, vy) = knock_back_npc(30.0, 1.0, false, true, 2, 100, (0.0, 0.0), 1, false, false);
+        assert!((vy - (-16.0 * 1.4 * 0.75)).abs() < 1e-4, "vy {vy}");
+    }
+
+    #[test]
+    fn knockback_expert_uses_the_fifteen_times_gate() {
+        // NPC.cs:81418-81422 — expert mode reads `num * 15`, classic `* 10`.
+        // damage 8: classic num4 = 80 <= lifeMax 100 (weak), expert 120 > 100
+        // (strong). The strong path adds the pop to vy 2; the weak overwrites.
+        let (_, vy_classic) =
+            knock_back_npc(5.0, 1.0, false, false, 8, 100, (0.0, 2.0), 1, false, false);
+        let (_, vy_expert) =
+            knock_back_npc(5.0, 1.0, false, false, 8, 100, (0.0, 2.0), 1, false, true);
+        assert!((vy_classic - (-3.75)).abs() < 1e-5, "classic weak: {vy_classic}");
+        assert!((vy_expert - (2.0 - 3.75)).abs() < 1e-5, "expert strong: {vy_expert}");
+    }
+
+    #[test]
+    fn projectile_hit_crit_rolls_one_draw_per_set_flag() {
+        // Projectile.cs:12890-12898 — each set class flag rolls an independent
+        // Next(1, 101); a hit on ANY flag crits. The draw count is the number
+        // of set flags, in melee/ranged/magic order.
+        // No flags: no draw, no crit.
+        let mut rng = FastRandom::new(3);
+        let before = rng.seed;
+        assert!(!projectile_hit_crit(&mut rng, false, false, false, 100, 100, 100, 0));
+        assert_eq!(rng.seed, before, "no flag spends no draw");
+        // crit 100 on the one set flag always crits; the other flags' crits
+        // are irrelevant (their draws are not spent).
+        let mut rng = FastRandom::new(3);
+        assert!(projectile_hit_crit(&mut rng, true, false, false, 100, 0, 0, 0));
+        // crit 0 never crits even with the flag set.
+        let mut rng = FastRandom::new(3);
+        for _ in 0..30 {
+            assert!(!projectile_hit_crit(&mut rng, false, true, false, 0, 0, 0, 0));
+        }
+        // The bonus adds to the class crit (`:12886-12889`): a 0 class crit
+        // with +100 bonus always crits.
+        let mut rng = FastRandom::new(3);
+        assert!(projectile_hit_crit(&mut rng, false, false, true, 0, 0, 0, 100));
+        // A negative bonus is clamped to 0 (`:12886`'s `> 0` gate).
+        let mut rng = FastRandom::new(3);
+        for _ in 0..30 {
+            assert!(!projectile_hit_crit(&mut rng, true, false, false, 0, 0, 0, -50));
+        }
+    }
+
+    #[test]
+    fn projectile_hit_crit_draw_count_matches_the_flag_count() {
+        // The stream advance is exactly one Next(1, 101) per set flag — the
+        // RNG-order invariant (the crit rides the strike stream before
+        // DamageVar). Replay the same draws against a fresh stream.
+        for (melee, ranged, magic) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+            (true, true, false),
+            (true, true, true),
+        ] {
+            let mut a = FastRandom::new(11);
+            let got = projectile_hit_crit(&mut a, melee, ranged, magic, 50, 50, 50, 0);
+            let mut b = FastRandom::new(11);
+            let mut want = false;
+            if melee && b.next_range(1, 101) <= 50 {
+                want = true;
+            }
+            if ranged && b.next_range(1, 101) <= 50 {
+                want = true;
+            }
+            if magic && b.next_range(1, 101) <= 50 {
+                want = true;
+            }
+            assert_eq!(got, want, "flags {melee}/{ranged}/{magic}");
+            assert_eq!(a.seed, b.seed, "the draw count matches the flag count");
         }
     }
 }

@@ -1183,6 +1183,22 @@ fn wall_reset_roll(rng: &mut crate::unified_random::UnifiedRandom, wall: u16) ->
     rolled
 }
 
+/// `Framing.WallFrame`'s neighbour test (`Framing.cs:345-376`): a neighbour
+/// joins the mask when it carries a wall OR is an active `TruncatesWalls`
+/// tile (`TileID.cs:595`: 54/328/459/748 — glass & co. cut the wall edge), and
+/// is not echo-coated invisible (`tile2.invisibleWall()`, `Tile.cs:545-548`).
+/// The `Main.ShouldShowInvisibleBlocksAndWalls()` override (`Main.cs:58023-
+/// 58030`: the EchoMonolith / the 4409 accessory) is unmodelled — the port
+/// reads it as false (the `render/tile_cracks.rs` precedent), so an invisible
+/// wall never joins a neighbour's mask.
+fn wall_mask_neighbour(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    (t.wall != 0 || (t.active() && td::SET_TRUNCATES_WALLS.has(t.kind)))
+        && !world.invisible_wall(x, y)
+}
+
 /// `Framing.WallFrame` for one tile, with the caller's `wallFrameNumber`
 /// variant (the reset roll or the stored read). Returns the 36 px cell and the
 /// effective variant (the large-frame lookups replace it), which the caller
@@ -1193,16 +1209,16 @@ fn wall_frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Optio
         return None;
     }
     let mut mask = 0u8;
-    if world.tile(x, y - 1).is_some_and(|t| t.wall != 0) {
+    if wall_mask_neighbour(world, x, y - 1) {
         mask |= 1;
     }
-    if world.tile(x - 1, y).is_some_and(|t| t.wall != 0) {
+    if wall_mask_neighbour(world, x - 1, y) {
         mask |= 2;
     }
-    if world.tile(x + 1, y).is_some_and(|t| t.wall != 0) {
+    if wall_mask_neighbour(world, x + 1, y) {
         mask |= 4;
     }
-    if world.tile(x, y + 1).is_some_and(|t| t.wall != 0) {
+    if wall_mask_neighbour(world, x, y + 1) {
         mask |= 8;
     }
     if mask == 15 {
@@ -1428,6 +1444,60 @@ mod tests {
         frame_world(&mut w);
         let t = *w.tile(3, 3).unwrap();
         assert_eq!((t.frame_x, t.frame_y), (22, 44));
+    }
+
+    /// S1-P-i33 — `Framing.WallFrame`'s neighbour test (`Framing.cs:345-376`):
+    /// an active `TruncatesWalls` tile (54/328/459/748, `TileID.cs:595`) joins
+    /// the wall mask even with no wall of its own; an echo-coated invisible
+    /// wall drops out. Code-only: written NOT run.
+    #[test]
+    fn s1_p_i33_truncates_walls_tiles_join_the_wall_mask() {
+        // A lone wall at (4,4); a glass tile (54) above it at (4,3).
+        let mut w = World::new("t".into(), 9, 9);
+        let i = w.index(4, 4);
+        w.tiles[i].wall = 2;
+        let g = w.index(4, 3);
+        w.tiles[g] = crate::tile::Tile { kind: 54, ..Default::default() };
+        w.tiles[g].flags |= crate::tile::FLAG_ACTIVE;
+        frame_walls(&mut w);
+        // The up-neighbour (the glass) joins the mask → bit 1 set. With no
+        // other neighbour the mask is 1 → WALL_FRAMES[1] (row 3, not the
+        // isolated row 4 the wall-less mask 0 would pick).
+        let t = *w.tile(4, 4).unwrap();
+        assert_eq!(t.wall_row(), 3, "the glass truncates the wall's top edge");
+        // A NON-truncating active tile (stone 1) does NOT join the mask.
+        let mut w2 = World::new("t".into(), 9, 9);
+        let j = w2.index(4, 4);
+        w2.tiles[j].wall = 2;
+        let s = w2.index(4, 3);
+        w2.tiles[s] = crate::tile::Tile { kind: 1, ..Default::default() };
+        w2.tiles[s].flags |= crate::tile::FLAG_ACTIVE;
+        frame_walls(&mut w2);
+        let t2 = *w2.tile(4, 4).unwrap();
+        // Gate V3: the isolated-cell mask 0 picks WALL_FRAMES[0] = (9,3) —
+        // row 3 (`Framing.cs:119` AddWallFrameLookup(0, 9,3,...)), not row 4.
+        assert_eq!(t2.wall_row(), 3, "stone does not truncate the wall");
+    }
+
+    /// S1-P-i33 — an echo-coated invisible wall (`Tile.invisibleWall`,
+    /// `Tile.cs:545-548`) drops out of its neighbours' masks
+    /// (`Framing.cs:348`'s `!tile2.invisibleWall()` term). The
+    /// `ShouldShowInvisibleBlocksAndWalls` override is unmodelled (false).
+    #[test]
+    fn s1_p_i33_an_invisible_wall_drops_out_of_the_mask() {
+        // Two adjacent walls; the right one is echo-coated invisible.
+        let mut w = World::new("t".into(), 9, 9);
+        let a = w.index(4, 4);
+        w.tiles[a].wall = 2;
+        let b = w.index(5, 4);
+        w.tiles[b].wall = 2;
+        w.set_invisible_wall(5, 4, true);
+        frame_walls(&mut w);
+        // The left wall (4,4) sees its right neighbour as invisible → the
+        // right bit (4) is NOT set; with no other neighbour the mask is 0 →
+        // the isolated cell WALL_FRAMES[0] = (9,3), row 3 (`Framing.cs:119`).
+        let t = *w.tile(4, 4).unwrap();
+        assert_eq!(t.wall_row(), 3, "the invisible neighbour does not connect");
     }
 
     #[test]

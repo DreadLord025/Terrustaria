@@ -22,7 +22,7 @@
 //! the minecart-track transfer.
 
 use glam::Vec2;
-use crate::projectile::{SQUIRREL_HOOK, TRACK_HOOK};
+use crate::projectile::{SKELETRON_HAND, SQUIRREL_HOOK, STATIC_HOOK, TRACK_HOOK};
 use tr_core::World;
 
 /// The per-type table (`Projectile.cs:52646-52665` max distances,
@@ -68,7 +68,14 @@ pub(crate) fn hook_spec(hook_type: i32) -> HookSpec {
         646..=649 => (550.0, 24.0, 16.0, 4),
         652 => (600.0, 24.0, 11.0, 1),
         753 => (420.0, 15.0, 11.0, 3),
+        // `:52648` — the Squirrel Hook's 300 px flight cap (its own row).
+        865 => (300.0, 11.0, 11.0, 3),
         935 => (500.0, 11.0, 11.0, 3),
+        // `:52648`'s distance table has NO Track Hook (403) row, so its Fly
+        // state never flips to Retract on distance — it latches the rail it
+        // spawns on (`LaunchMinecartHook`, `Player.cs:33553-33559`). The
+        // retract/pull/attach defaults (11/11/3) still apply.
+        403 => (f32::INFINITY, 11.0, 11.0, 3),
         // Hook (13) and everything unlisted.
         _ => (300.0, 11.0, 11.0, 3),
     };
@@ -136,7 +143,10 @@ pub(crate) fn can_latch(
     let Some(t) = world.tile(x, y) else {
         return false;
     };
-    if !t.active() {
+    // `Tile.nactive()` (`Tile.cs:240-247`): the active bit SET and the
+    // inactive (actuated) bit CLEAR — `(sTileHeader & 0x60) == 32`. An
+    // actuated solid tile is not latchable.
+    if !t.active() || t.inactive() {
         return false;
     }
     if hook_type == TRACK_HOOK && t.kind != tr_core::smart_cursor::TRACK_TILE {
@@ -153,12 +163,15 @@ pub(crate) fn can_latch(
         || (hook_type == SQUIRREL_HOOK && t.kind == 323)
 }
 
-/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70133`): an active, fully
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70132`): an active, fully
 /// solid tile — not a solid-top, not a half brick, no slope and not inactive.
-/// (The C#'s out-of-world read throws into the catch → `false`.)
+/// Out of world the C# array read throws into the catch → `false`
+/// (`:70128-70131`); the null-tile arm (`:70115-70118`, returns `true`) is
+/// unreachable in the port — `World::tile` yields a default (inactive, type 0)
+/// tile in bounds, which the active gate below already rejects.
 fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
-        return false;
+        return false; // the catch arm (out of world)
     };
     t.active()
         && tr_core::tiledata::TILE_SOLID.has(t.kind)
@@ -196,11 +209,12 @@ pub(crate) fn blacklisted_tiles(world: &World, attached: &[(i32, i32)]) -> Vec<(
             }
         }
         // `:6230-6246` — on a track or a platform: the 5x5 around it, the
-        // track and platform tiles only.
+        // track and platform tiles only. `Framing.GetTileSafely` returns a
+        // fresh (inactive, type 0) tile out of world / for null, so the test
+        // reads `tile.type` with NO active gate (`:6231`/`:6241`).
         let on_track_or_platform = world.tile(px, py).is_some_and(|t| {
-            t.active()
-                && (t.kind == tr_core::smart_cursor::TRACK_TILE
-                    || tr_core::tiledata::SET_PLATFORMS.has(t.kind))
+            t.kind == tr_core::smart_cursor::TRACK_TILE
+                || tr_core::tiledata::SET_PLATFORMS.has(t.kind)
         });
         if !on_track_or_platform {
             continue;
@@ -209,9 +223,8 @@ pub(crate) fn blacklisted_tiles(world: &World, attached: &[(i32, i32)]) -> Vec<(
             for m in -2..=2 {
                 let (x, y) = (px + l, py + m);
                 if world.tile(x, y).is_some_and(|t| {
-                    t.active()
-                        && (t.kind == tr_core::smart_cursor::TRACK_TILE
-                            || tr_core::tiledata::SET_PLATFORMS.has(t.kind))
+                    t.kind == tr_core::smart_cursor::TRACK_TILE
+                        || tr_core::tiledata::SET_PLATFORMS.has(t.kind)
                 }) {
                     push((x, y), &mut out);
                 }
@@ -292,6 +305,14 @@ pub(crate) fn quick_grapple_item_kind(
     }
     // `:6490-6497` — the inventory scan.
     inventory.iter().find_map(pick)
+}
+
+/// `Vector2.ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)vec >> 4` — the
+/// int truncation then the arithmetic shift, NO clamp. The callers apply the
+/// C#'s own bounds (the crack gate `> 0 && < maxTiles`, the latch scan's
+/// `[0, maxTiles]` clamp).
+pub(crate) fn tile_coord(px: f32) -> i32 {
+    (px as i32) >> 4
 }
 
 /// `(point / 16)` clamped into the world — the C# `ToTileCoordinates` under
@@ -470,11 +491,12 @@ pub(crate) fn grapple_pull(
     let dist = to_hook.length();
     // `:22832-22851` — the cap switches on `grappling[0]`'s type.
     let pull_speed = hook_spec_id(first_kind).pull_speed;
-    let vel = if dist > 0.001 {
-        to_hook * (pull_speed / dist).min(1.0)
-    } else {
-        Vec2::ZERO
-    };
+    // `:22852-22855` — `num10 = (num8 > num9) ? num9/num8 : 1f`, then both
+    // components scale. No epsilon: at exactly zero distance the factor is 1
+    // and the (zero) vector stays zero; the C# never divides by zero here
+    // because the `> num9` guard (num9 >= 11) short-circuits the small case.
+    let factor = if dist > pull_speed { pull_speed / dist } else { 1.0 };
+    let vel = to_hook * factor;
     Some(HookPull {
         vel,
         going_down: vel.y > 0.0,
@@ -494,25 +516,33 @@ pub(crate) fn hook_spec_id(hook_type: u16) -> HookSpec {
     hook_spec(hook_type as i32)
 }
 
-/// NOT at all while attached (`UpdatePosition`'s early return).
+/// `Projectile.AI_007_GrapplingHooks` (`Projectile.cs:52565-52866`) on one
+/// pool slot, in the source's own statement order. The caller integrates the
+/// position for the flying/retracting states (`UpdatePosition` `:20433-20475`
+/// early-returns while attached, `aiStyle == 7 && ai[0] == 2`); this arm does
+/// the integration itself so the latch pin and the no-move-while-attached hold.
+///
+/// `owner_dead` is the C#'s `Main.player[owner].dead || .CCed` kill gate
+/// (`:52567`) — the caller folds both in.
 pub(crate) fn ai_hook(
     slot: &mut crate::projectile::Projectile,
     world: &World,
     player_center: Vec2,
     owner_dead: bool,
     // The slot's owner is this machine's player — the C#'s `myPlayer` gate on
-    // the cracked-brick break (`:52586`).
+    // the cracked-brick break (`:52583`).
     local_owner: bool,
     // The pass's roll stream (`Main.rand` = the active `UpdateProjectiles`
     // swap, `Main.cs:17775-17777`); `None` keeps the off-machine callers
     // draw-free, like the C#'s `myPlayer` gate.
     rng: Option<&mut dyn tr_core::loot::DropRng>,
     // `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) — the
-    // tiles this owner's hooks may not latch on.
+    // tiles this owner's hooks may not latch on. The FLY scan reads it
+    // (`:52699`); the attached re-validation does NOT (`:52852`).
     blacklisted: &[(i32, i32)],
 ) -> HookTick {
     let center = slot.pos + Vec2::new(slot.w * 0.5, slot.h * 0.5);
-    // `:52572-52574` — a dead owner kills the hook.
+    // `:52567-52571` — a dead OR CCed owner kills the hook.
     if owner_dead {
         return HookTick {
             attached: None,
@@ -523,38 +553,31 @@ pub(crate) fn ai_hook(
     }
     let delta = player_center - center;
     let dist = delta.length();
-    // `:52576-52581` — the rotation toward the player (`atan2(dy,dx) - 1.57`),
-    // snapped to a quarter turn for the Squirrel Hook while attached. Its
-    // steering reads this in `GetGrapplingForces`; 256's `+3.9250002` offset
-    // is visual-only and stays out.
-    slot.rot = delta.y.atan2(delta.x) - 1.5707963;
-    if slot.kind == SQUIRREL_HOOK && slot.ai[0] == 2.0 {
-        slot.rot = (slot.rot / (std::f32::consts::PI * 0.5)).round() * (std::f32::consts::PI * 0.5);
+    // `:52577` — the rotation toward the player: `atan2(dy,dx) - 1.57f` (the
+    // source's literal 1.57, NOT pi/2).
+    slot.rot = delta.y.atan2(delta.x) - 1.57;
+    // `:52578-52582` — the Squirrel Hook snaps to a quarter turn while
+    // attached: `(int)Math.Round(rot / (pi/2)) * (pi/2)` — C# banker's round.
+    if slot.ai[0] == 2.0 && slot.kind == SQUIRREL_HOOK {
+        let q = std::f32::consts::PI * 0.5;
+        slot.rot = tr_core::damage::round_bankers((slot.rot / q) as f64) as f32 * q;
     }
-    // `:52594-52596` — the hard range cap, every state.
-    if dist > 2500.0 {
-        return HookTick {
-            attached: None,
-            dead: true,
-            latched: false,
-            crack: None,
-        };
-    }
-
-    // `:52586-52595` — the local player's hook breaks the cracked-brick tile
-    // under its center on `Main.rand.Next(16) == 0`, drawn ONLY when the C#
-    // `&&` chain reaches it (the tile test short-circuits the roll — the
-    // re-read fixed the splitmix-era un-gated draw). The roll rides the
-    // `UpdateProjectiles` stream (`AI_007_GrapplingHooks` runs in
-    // `UpdateWorld_Projectiles`, `Main.cs:17775-17777`).
+    // `:52583-52595` — the local player's hook breaks the cracked-brick tile
+    // under its center on `Main.rand.Next(16) == 0`. This runs BEFORE the
+    // 2500 cap (the source order), drawn ONLY when the C# `&&` chain reaches
+    // it (the `nactive() && CrackedBricks` test short-circuits the roll). The
+    // roll rides the `UpdateProjectiles` stream (`Main.cs:17775-17777`).
     let mut crack = None;
     if local_owner {
         if let Some(rng) = rng {
-            let tx = tile_of(center.x, world.width);
-            let ty = tile_of(center.y, world.height);
+            let tx = (center.x / 16.0) as i32;
+            let ty = (center.y / 16.0) as i32;
             if tx > 0 && ty > 0 && tx < world.width && ty < world.height {
                 let broken = world.tile(tx, ty).is_some_and(|t| {
-                    t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind)
+                    // `Tile.nactive()` — active and not actuated (`:52587`).
+                    t.active()
+                        && !t.inactive()
+                        && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind)
                 });
                 if broken && rng.next_range(0, 16) == 0 {
                     crack = Some((tx, ty));
@@ -562,76 +585,131 @@ pub(crate) fn ai_hook(
             }
         }
     }
+    // `:52596-52599` — the hard range cap, every state. The C# `Kill()` does
+    // NOT return; the rest of the AI still runs on the dead slot, but the
+    // caller drops it, so the port returns the dead tick here (no observable
+    // state survives the kill).
+    if dist > 2500.0 {
+        return HookTick {
+            attached: None,
+            dead: true,
+            latched: false,
+            crack,
+        };
+    }
+    // `:52600-52603` — the Skeletron Hand (256) re-aims its rotation with the
+    // source's own `+3.9250002f` offset (after the cap).
+    if slot.kind == SKELETRON_HAND {
+        slot.rot = delta.y.atan2(delta.x) + 3.9250002;
+    }
+    // `:52615-52622` — the Static Hook (652) advances its frame every 7 ticks:
+    // `++frameCounter >= 7` resets the counter and steps `frame` modulo
+    // `projFrames[652]` (= 6). RNG-free.
+    if slot.kind == STATIC_HOOK {
+        slot.frame_counter += 1;
+        if slot.frame_counter >= 7 {
+            slot.frame_counter = 0;
+            slot.frame += 1;
+            let frames = crate::projectile::proj_frames(STATIC_HOOK) as i32;
+            if slot.frame >= frames {
+                slot.frame = 0;
+            }
+        }
+    }
     let spec = hook_spec_id(slot.kind);
     match slot.ai[0] as i32 {
         0 => {
-            // `:52646-52665` — past the per-type distance the hook retracts.
+            // `:52646-52662` — past the per-type distance the hook retracts.
             if dist > spec.max_distance {
                 slot.ai[0] = 1.0;
             }
+            // `:52663-52785` — the latch scan runs UNCONDITIONALLY inside the
+            // Fly block, even on the tick the distance just flipped `ai[0]`
+            // to 1 (the source does not re-gate on the state). The 10x10 box
+            // at `Center - (5,5)` over the x-major tile range, first match
+            // wins.
+            let a = center - Vec2::new(5.0, 5.0);
+            // `:52665-52686` — `point = (Center-21).ToTileCoordinates()` and
+            // `point2 = (Center+37).ToTileCoordinates()` (`Utils.cs:1809`:
+            // `(int)vec >> 4`, NO clamp), then `num7/num9` clamp UP to 0 and
+            // `num8/num10` clamp DOWN to `maxTiles` (NOT maxTiles-1). The loops
+            // are `i < num8` / `j < num10` (EXCLUSIVE upper). `World::tile`
+            // rejects anything past the edge, so the last in-bounds column
+            // (maxTiles-1) is still scanned.
+            let x0 = tile_coord(a.x - 16.0).max(0);
+            let x1 = tile_coord(a.x + 42.0).min(world.width);
+            let y0 = tile_coord(a.y - 16.0).max(0);
+            let y1 = tile_coord(a.y + 42.0).min(world.height);
+            for i in x0..x1 {
+                for j in y0..y1 {
+                    let tile = Vec2::new(i as f32 * 16.0, j as f32 * 16.0);
+                    // `:52699` — the overlap test: the 10x10 box at `a`
+                    // against the 16x16 tile, then the latch + blacklist gate.
+                    if !(a.x + 10.0 > tile.x && a.x < tile.x + 16.0)
+                        || !(a.y + 10.0 > tile.y && a.y < tile.y + 16.0)
+                    {
+                        continue;
+                    }
+                    if !can_latch(slot.kind, world, i, j, blacklisted) {
+                        continue;
+                    }
+                    // `:52758-52768` — latch: the velocity zeroes, the state
+                    // moves to Attached, the position centres on the tile
+                    // (`i*16+8 - width/2`), then `GetTileVisualHitbox`'s center
+                    // overrides it (323's frameY / the half brick), the damage
+                    // drops to 0.
+                    slot.vel = Vec2::ZERO;
+                    slot.ai[0] = 2.0;
+                    slot.pos = latch_center(world, i, j) - Vec2::new(slot.w * 0.5, slot.h * 0.5);
+                    slot.damage = 0;
+                    // `:52757` — `SoundEngine.PlaySound(0, i*16, j*16)`: the
+                    // case-0 dig cue (Next(3) variation + Next(-10,11) pitch on
+                    // the UpdateProjectiles stream, attenuation-gated). The
+                    // slot parks the intent; the pool drains it (the E-21h
+                    // `wants_sound` seam, id 0 = the int overload).
+                    slot.wants_sound = Some((0, 0, i as f32 * 16.0, j as f32 * 16.0, 0.0));
+                    return HookTick::attached_at(
+                        Vec2::new(slot.center().0, slot.center().1),
+                        true,
+                        crack,
+                    );
+                }
+            }
         }
         1 => {
-            // `:52787-52842` — the velocity is the unit vector toward the
-            // player scaled by the per-type retract speed.
+            // `:52787-52842` — the retract velocity is the unit vector toward
+            // the player scaled by the per-type speed. The `< 24f` reach kills
+            // (`:52834-52837`); the C# `Kill()` does not return, so the
+            // velocity write still lands on the dead slot — unobservable.
             if dist < 24.0 {
                 return HookTick {
                     attached: None,
                     dead: true,
                     latched: false,
-                    crack: None,
+                    crack,
                 };
             }
             slot.vel = delta * (spec.retract_speed / dist);
         }
         _ => {
-            // `:52844-52863` — attached: the latch re-validation. The tile's
+            // `:52844-52864` — attached: the latch re-validation reads
+            // `CanTileBeLatchedOnTo` ONLY (no blacklist, `:52852`). The tile's
             // absence or unsolidifying sends it back to Retract.
-            let tx = tile_of(slot.center().0, world.width);
-            let ty = tile_of(slot.center().1, world.height);
-            if !can_latch(slot.kind, world, tx, ty, blacklisted) {
+            let tx = tile_coord(slot.center().0);
+            let ty = tile_coord(slot.center().1);
+            if !can_latch(slot.kind, world, tx, ty, &[]) {
                 slot.ai[0] = 1.0;
             } else {
-                return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), false, crack);
+                return HookTick::attached_at(
+                    Vec2::new(slot.center().0, slot.center().1),
+                    false,
+                    crack,
+                );
             }
         }
     }
-    // Still flying: `:52666-52790`'s latch scan — the 10x10 box at
-    // `Center - (5,5)` over the x-major tile range, first match wins. A hook
-    // that already retracted keeps its new velocity and integrates.
-    if slot.ai[0] as i32 == 0 {
-        let a = center - Vec2::new(5.0, 5.0);
-        // The C# clamps the scan to `[0, maxTilesX]` inclusive
-        // (`:52676-52687`); `World::tile` rejects anything past the edge.
-        // `a` is `Center - (5,5)` and `b` (the C#'s upper anchor) is
-        // `Center + (5,5)`, so the upper corner is `b + (32,32)` = `a + (42,42)`.
-        let x0 = tile_of(a.x - 16.0, world.width).max(0);
-        let x1 = tile_of(a.x + 42.0, world.width).min(world.width - 1);
-        let y0 = tile_of(a.y - 16.0, world.height).max(0);
-        let y1 = tile_of(a.y + 42.0, world.height).min(world.height - 1);
-        for i in x0..=x1.max(x0) {
-            for j in y0..=y1.max(y0) {
-                let tile = Vec2::new(i as f32 * 16.0, j as f32 * 16.0);
-                // The overlap test: the 10x10 box at `a` against the 16x16 tile.
-                if !(a.x + 10.0 > tile.x && a.x < tile.x + 16.0)
-                    || !(a.y + 10.0 > tile.y && a.y < tile.y + 16.0)
-                {
-                    continue;
-                }
-                if !can_latch(slot.kind, world, i, j, blacklisted) {
-                    continue;
-                }
-                // `:52703-52719` — latch: the velocity zeroes, the position
-                // centres on the tile's visual hitbox, the damage drops to 0,
-                // and the state moves to Attached (no further integration).
-                slot.pos = latch_center(world, i, j) - Vec2::new(slot.w * 0.5, slot.h * 0.5);
-                slot.vel = Vec2::ZERO;
-                slot.damage = 0;
-                slot.ai[0] = 2.0;
-                return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), true, crack);
-            }
-        }
-    }
-    // `UpdatePosition` (`:20456`): `position += velocity`.
+    // `UpdatePosition` (`:20445`): `position += velocity` for the flying and
+    // retracting states (the attached state returned above).
     slot.pos += slot.vel;
     let mut tick = HookTick::alive();
     tick.crack = crack;
@@ -919,11 +997,12 @@ mod tests {
         att.pos = Vec2::ZERO;
         ai_hook(&mut att, &w, pc, false, false, None, &[]);
         assert!(snapped(att.rot), "attached snaps to a quarter turn");
-        // 256's rotation is the plain base formula (the `+3.9250002` offset is
-        // visual-only and stays out).
+        // `:52600-52603` — 256's rotation is `atan2(dy,dx) + 3.9250002f` (the
+        // source's own offset, applied after the cap).
         let mut hand = hook(SKELETRON_HAND, 0.0, 0.0);
         ai_hook(&mut hand, &w, pc, false, false, None, &[]);
-        assert!((hand.rot - (-100.0f32).atan2(0.0)).abs() > 0.0, "the base formula");
+        let expect = (-100.0f32).atan2(100.0) + 3.9250002;
+        assert!((hand.rot - expect).abs() < 1e-5, "the 256 offset: {}", hand.rot);
     }
 
     // The end-of-phase state is behaviourally green: a hook spawned through the
@@ -1390,5 +1469,235 @@ mod crack_tests {
         for k in 646..=649 {
             assert_eq!(hook_spec(k).pull_speed, 16.0, "Lunar {k}");
         }
+    }
+}
+
+/// W3-i39 — the grapple census fixes, witnessed against the C# lines. Tests
+/// WRITTEN NOT RUN (code-only swarm). Each pins one corrected deviation.
+#[cfg(test)]
+mod i39_census_tests {
+    use super::*;
+    use crate::projectile::{HOOK, SKELETRON_HAND, SQUIRREL_HOOK, STATIC_HOOK, TRACK_HOOK};
+    use crate::test_world_helpers::ground;
+
+    fn hook(kind: u16, x: f32, y: f32) -> crate::projectile::Projectile {
+        let d = crate::projectile::proj_data(kind).expect("a hook row");
+        let mut p = crate::projectile::Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.pos = Vec2::new(x - d.w * 0.5, y - d.h * 0.5);
+        p.vel = Vec2::ZERO;
+        p
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = tr_core::Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    }
+
+    /// `Tile.nactive()` (`Tile.cs:240-247`) — an ACTUATED solid tile is not
+    /// latchable: `can_latch` refuses it (`Projectile.cs:52870`).
+    #[test]
+    fn i39_an_actuated_tile_is_not_latchable() {
+        let mut w = ground();
+        put(&mut w, 40, 62, 1);
+        assert!(can_latch(HOOK, &w, 40, 62, &[]), "the solid dirt latches");
+        // Actuate it (the inactive bit, `FLAG_INACTIVE`).
+        let i = w.index(40, 62);
+        w.tiles[i].flags |= tr_core::tile::FLAG_INACTIVE;
+        assert!(!can_latch(HOOK, &w, 40, 62, &[]), "actuated solid refuses");
+    }
+
+    /// `WorldGen.SolidTile` (`WorldGen.cs:70111-70132`) — the blacklist's 3x3
+    /// adds the NON-solid cells. A hook in the open air (default inactive tiles)
+    /// blacklists that air; the solid ground row stays latchable. The port's
+    /// `World::tile` yields a default tile in bounds (the C# null arm is
+    /// unreachable), so the active gate decides. WRITTEN NOT RUN.
+    #[test]
+    fn i39_the_blacklist_covers_the_air_not_the_ground() {
+        let w = ground();
+        // A hook centre in the open air at row 60 (ground starts at 120): the
+        // 3x3 around it is inactive air → non-solid → blacklisted.
+        let tiles = blacklisted_tiles(&w, &[(40, 60)]);
+        assert!(tiles.contains(&(40, 60)), "the air cell is blacklisted: {tiles:?}");
+        assert!(tiles.contains(&(39, 59)), "the 3x3 corner is blacklisted");
+        // A hook on the solid ground row: the ground cells are solid → NOT added.
+        let on_ground = blacklisted_tiles(&w, &[(40, 120)]);
+        assert!(!on_ground.contains(&(40, 120)), "the solid ground is not blacklisted");
+        assert!(!on_ground.contains(&(41, 121)), "the solid ground row stays latchable");
+    }
+
+    /// `:52577` — the rotation uses the source's literal `1.57f`, NOT pi/2.
+    #[test]
+    fn i39_the_rotation_constant_is_1_57() {
+        let w = ground();
+        let mut h = hook(HOOK, 0.0, 0.0);
+        let pc = Vec2::new(100.0, 0.0); // due right: atan2(0,100) = 0
+        ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        assert!((h.rot - (-1.57)).abs() < 1e-6, "rot = atan2 - 1.57: {}", h.rot);
+    }
+
+    /// `:52578-52582` — the Squirrel snap is C# `Math.Round` (banker's): a
+    /// half-quarter-turn rounds to EVEN, not away from zero. The player at
+    /// (100,100) gives atan2 = π/4, so rot = π/4 − 1.57 ≈ −0.7846 and
+    /// rot/(π/2) ≈ −0.4995 → rounds to 0 (the snap zeroes the rotation).
+    #[test]
+    fn i39_the_squirrel_snap_is_bankers() {
+        let w = ground();
+        let q = std::f32::consts::PI * 0.5;
+        let pc = Vec2::new(100.0, 100.0); // atan2(100,100) = π/4 exactly
+        let mut h = hook(SQUIRREL_HOOK, 0.0, 0.0);
+        h.ai[0] = 2.0;
+        h.pos = Vec2::ZERO;
+        ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        // The snap ran before the attached re-validation; rot is a quarter-turn
+        // multiple (here 0). Banker's and away-from-zero agree at −0.4995, but
+        // the snap itself (round to a quarter turn) is the witnessed behaviour.
+        let snapped = tr_core::damage::round_bankers((h.rot / q) as f64) as f32;
+        assert!((h.rot - snapped * q).abs() < 1e-4, "quarter-turn snap: {}", h.rot);
+    }
+
+    /// `:52600-52603` — the Skeletron Hand (256) rotation is `atan2 + 3.9250002f`.
+    #[test]
+    fn i39_the_skeletron_hand_rotation_offset() {
+        let w = ground();
+        let mut h = hook(SKELETRON_HAND, 0.0, 0.0);
+        let pc = Vec2::new(0.0, -100.0); // straight up: atan2(-100,0) = -pi/2
+        ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        let expect = (-100.0f32).atan2(0.0) + 3.9250002;
+        assert!((h.rot - expect).abs() < 1e-5, "the +3.9250002 offset: {}", h.rot);
+    }
+
+    /// `:52615-52622` — the Static Hook (652) steps its frame every 7 ticks,
+    /// modulo `projFrames[652]` (= 6). RNG-free.
+    #[test]
+    fn i39_the_static_hook_frame_advances_every_7() {
+        let w = ground();
+        let mut h = hook(STATIC_HOOK, 40.0 * 16.0, 60.0 * 16.0);
+        let pc = Vec2::new(40.0 * 16.0, 60.0 * 16.0); // coincident: dist 0, stays Fly
+        for _ in 0..6 {
+            ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        }
+        assert_eq!(h.frame, 0, "no frame step before 7 ticks");
+        ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        assert_eq!(h.frame, 1, "the 7th tick steps the frame");
+        assert_eq!(h.frame_counter, 0, "the counter resets");
+        // 42 ticks total → 6 steps → wraps to 0 (6 frames).
+        for _ in 0..35 {
+            ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        }
+        assert_eq!(h.frame, 0, "the frame wraps modulo 6");
+    }
+
+    /// `:52646-52785` — the latch scan runs on the SAME tick the distance flips
+    /// Fly→Retract (the source does not re-gate on the state). A hook just past
+    /// its range that overlaps a latchable tile attaches immediately.
+    #[test]
+    fn i39_the_scan_runs_on_the_flip_tick() {
+        let mut w = ground();
+        put(&mut w, 40, 62, 1);
+        // The Hook (300 px range) at 301 px from the player, overlapping the
+        // tile at (40,62): the distance flips ai[0]→1, but the scan still latches.
+        let mut h = hook(HOOK, 40.0 * 16.0, 62.0 * 16.0);
+        let pc = Vec2::new(40.0 * 16.0, 62.0 * 16.0 - 301.0);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        assert!(t.attached.is_some(), "the flip tick still scans and latches");
+        assert_eq!(h.ai[0], 2.0);
+    }
+
+    /// `:52852` — the attached re-validation reads `CanTileBeLatchedOnTo` with
+    /// NO blacklist: a blacklisted tile the hook already sits on stays attached.
+    #[test]
+    fn i39_the_attached_revalidation_ignores_the_blacklist() {
+        let mut w = ground();
+        put(&mut w, 40, 62, 1);
+        let mut h = hook(HOOK, 40.0 * 16.0 + 8.0, 62.0 * 16.0 + 8.0);
+        h.ai[0] = 2.0;
+        let pc = Vec2::new(40.0 * 16.0, 80.0 * 16.0);
+        // The tile under the hook is blacklisted, but the re-validation passes
+        // an empty blacklist (the C# does not consult it here).
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[(40, 62)]);
+        assert!(t.attached.is_some(), "the blacklist does not detach an attached hook");
+        assert_eq!(h.ai[0], 2.0);
+    }
+
+    /// `:22852-22855` — the pull cap has NO epsilon: at a tiny non-zero distance
+    /// the factor is 1 (dist <= pull_speed), so the velocity is the raw vector.
+    #[test]
+    fn i39_the_pull_cap_has_no_epsilon() {
+        // A hook 0.0005 px away: the old `dist > 0.001` guard zeroed it; the C#
+        // keeps the raw (tiny) vector because dist < pull_speed → factor 1.
+        let p = grapple_pull(&[(HOOK, Vec2::new(0.0005, 0.0), 0.0)], Vec2::ZERO, Vec2::ZERO).unwrap();
+        assert!(p.vel.x > 0.0, "the tiny pull is not zeroed: {:?}", p.vel);
+        assert!((p.vel.x - 0.0005).abs() < 1e-7);
+    }
+
+    /// `:52648` — the Track Hook (403) has NO distance row: its Fly state never
+    /// retracts on distance (it latches the rail it spawns on).
+    #[test]
+    fn i39_the_track_hook_has_no_distance_cap() {
+        assert!(hook_spec(TRACK_HOOK as i32).max_distance.is_infinite());
+        let w = ground();
+        let mut h = hook(TRACK_HOOK, 0.0, 0.0);
+        // 1000 px from the player (under the 2500 hard cap), over no tile:
+        // stays Fly (ai[0] == 0), not Retract — the 403 has no distance row.
+        let pc = Vec2::new(1000.0, 0.0);
+        ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        assert_eq!(h.ai[0], 0.0, "the Track Hook never distance-retracts");
+    }
+
+    /// `:52757` — the latch queues the case-0 dig cue (`PlaySound(0, i*16, j*16)`)
+    /// on the slot's `wants_sound` intent (the pool drains it on UpdateProjectiles).
+    #[test]
+    fn i39_the_latch_queues_the_dig_cue() {
+        let mut w = ground();
+        put(&mut w, 40, 62, 1);
+        let mut h = hook(HOOK, 40.0 * 16.0, 62.0 * 16.0);
+        let pc = Vec2::new(40.0 * 16.0, 62.0 * 16.0 - 100.0);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        assert!(t.attached.is_some());
+        let (id, _style, x, y, _pitch) = h.wants_sound.expect("the dig cue");
+        assert_eq!(id, 0, "the int overload PlaySound(0)");
+        assert_eq!((x, y), (40.0 * 16.0, 62.0 * 16.0), "at the tile origin");
+    }
+
+    /// W3-i39 retry — `Utils.cs:1809`: `ToTileCoordinates` is `(int)vec >> 4`
+    /// (int truncation then arithmetic shift, NO clamp). The scan bounds clamp
+    /// the UPPER to `maxTiles` (not `maxTiles-1`), so the last in-bounds column
+    /// is still scanned. A hook near the right edge latches the edge column.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn i39_the_scan_reaches_the_last_in_bounds_column() {
+        // The ground() world is 200 wide; put a solid tile in the last column
+        // (x=199) at row 62 and aim the hook so its scan box overlaps it.
+        let mut w = ground();
+        put(&mut w, 199, 62, 1);
+        // The hook center at x=199*16+8=3192: the scan's upper anchor is
+        // Center+37=3229 → tile 201 → clamped to maxTiles=200 (exclusive), so
+        // column 199 IS scanned. The old `tile_of` pre-clamped to 199, making
+        // the exclusive loop stop at 198 and miss the edge tile.
+        let mut h = hook(HOOK, 199.0 * 16.0 + 8.0, 62.0 * 16.0 + 8.0);
+        let pc = Vec2::new(199.0 * 16.0 + 8.0, 62.0 * 16.0 + 8.0 - 100.0);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        assert!(t.attached.is_some(), "the edge column latches");
+        assert_eq!(h.ai[0], 2.0);
+    }
+
+    /// W3-i39 retry — `tile_coord` matches `ToTileCoordinates` (`Utils.cs:1809`):
+    /// `(int)vec >> 4`. For a negative coordinate the int truncates toward zero
+    /// then the arithmetic shift floors — e.g. -1 → 0 >> 4 = -1 (not 0).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn i39_tile_coord_is_the_csharp_shift() {
+        assert_eq!(tile_coord(0.0), 0);
+        assert_eq!(tile_coord(15.9), 0);
+        assert_eq!(tile_coord(16.0), 1);
+        assert_eq!(tile_coord(-1.0), -1, "(int)-1 >> 4 = -1");
+        assert_eq!(tile_coord(-16.0), -1);
+        assert_eq!(tile_coord(-17.0), -2);
     }
 }

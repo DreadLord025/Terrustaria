@@ -314,6 +314,15 @@ impl GolfState {
     pub fn last_swing_position(&self) -> Vec2 {
         self.last_swing_position
     }
+
+    /// The stored `_lastHitGolfBall` snapshot (`:24`) WITHOUT the live
+    /// re-validation - the caller (the projectile pool) uses `who_am_i` to
+    /// find the live slot and hands it back through [`Self::update`] /
+    /// [`Self::reset_golf_ball`], where the four `GetLastHitBall` guards
+    /// (`:104`) run. `None` = the C# null field.
+    pub fn last_hit_golf_ball(&self) -> Option<GolfBall> {
+        self.last_hit_golf_ball
+    }
 }
 
 #[cfg(test)]
