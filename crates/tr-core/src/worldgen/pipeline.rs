@@ -1316,6 +1316,15 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // after Shimmer (`:15195`), before Pyramids (`:15360`) — W4-g36 A2.
     // Own `pass_rng("Clean Up Dirt")` stream.
     step!("clean up dirt", "Clean Up Dirt", step_clean_up_dirt),
+    // The vanilla Dirt Rock Wall Runner slot (`WorldGen.cs:15461`): after
+    // Pyramids (`:15360`, the port's pyramids step sits later in the
+    // grouped chain), before Living Trees (`:15476`) — W4-g36 A3. Own
+    // `pass_rng("Dirt Rock Wall Runner")` stream.
+    step!(
+        "dirt rock wall runner",
+        "Dirt Rock Wall Runner",
+        step_dirt_rock_wall_runner
+    ),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -2095,6 +2104,30 @@ fn step_clean_up_dirt(
         world_surface,
         &mut streams.pass_rng("Clean Up Dirt"),
         no_surface,
+    );
+}
+
+/// The vanilla Dirt Rock Wall Runner slot (`WorldGen.cs:15461-15475`) —
+/// W4-g36 A3: the per-column random surface sites + `DirtyRockRunner`
+/// (`:77145-77210`) on the pass's own stream. The
+/// `Skyblock.denyAllGeneration` gate (`:15463`) lives here.
+fn step_dirt_rock_wall_runner(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `!Skyblock.denyAllGeneration` (`:15463`).
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    micro_finish::pass_dirt_rock_wall_runner(
+        world,
+        world_surface,
+        &mut streams.pass_rng("Dirt Rock Wall Runner"),
     );
 }
 
@@ -3236,7 +3269,9 @@ mod tests {
         // between `ocean caves` and `fragile ice`.
         // W4-g36 A2: + `clean up dirt` (vanilla "Clean Up Dirt",
         // `WorldGen.cs:15246`) between `shimmer` and `fragile ice`.
-        assert_eq!(names.len(), 68);
+        // W4-g36 A3: + `dirt rock wall runner` (vanilla "Dirt Rock Wall
+        // Runner", `WorldGen.cs:15461`) after `clean up dirt`.
+        assert_eq!(names.len(), 69);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3296,6 +3331,7 @@ mod tests {
                 "ocean caves",
                 "shimmer",
                 "clean up dirt",
+                "dirt rock wall runner",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
@@ -3537,18 +3573,21 @@ mod tests {
         assert!(pos("thin ice") < pos("mahogany trees"));
     }
 
-    /// W4-g36 A1/A2: `shimmer` + `clean up dirt` sit in their vanilla
-    /// slots — Create Ocean Caves (`WorldGen.cs:15167`) → Shimmer
-    /// (`:15195`) → Clean Up Dirt (`:15246`) → Pyramids (`:15360`, the
-    /// port's pyramids step sits later in the grouped chain); the port's
-    /// `fragile ice` follows as the nearest executed neighbour.
+    /// W4-g36 A1/A2/A3: `shimmer` + `clean up dirt` + `dirt rock wall
+    /// runner` sit in their vanilla relative order — Create Ocean Caves
+    /// (`WorldGen.cs:15167`) → Shimmer (`:15195`) → Clean Up Dirt
+    /// (`:15246`) → Pyramids (`:15360`, the port's pyramids step sits
+    /// later in the grouped chain) → Dirt Rock Wall Runner (`:15461`) →
+    /// Living Trees (`:15476`, likewise later); the port's `fragile ice`
+    /// follows as the nearest executed neighbour.
     #[test]
     fn w4_g36_a1_the_shimmer_step_sits_after_the_ocean_caves() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
         assert_eq!(pos("clean up dirt"), pos("shimmer") + 1);
-        assert_eq!(names[pos("clean up dirt") + 1], "fragile ice");
+        assert_eq!(pos("dirt rock wall runner"), pos("clean up dirt") + 1);
+        assert_eq!(names[pos("dirt rock wall runner") + 1], "fragile ice");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3559,6 +3598,8 @@ mod tests {
         assert!(cpos("Create Ocean Caves") < cpos("Shimmer"));
         assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
         assert!(cpos("Clean Up Dirt") < cpos("Pyramids"));
+        assert!(cpos("Pyramids") < cpos("Dirt Rock Wall Runner"));
+        assert!(cpos("Dirt Rock Wall Runner") < cpos("Living Trees"));
     }
 
     #[test]

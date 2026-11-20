@@ -591,9 +591,127 @@ pub(crate) fn pass_clean_up_dirt(
     }
 }
 
+// --- Dirt Rock Wall Runner (W4-g36 A3) ----------------------------------------
+
+/// `WorldGen.DirtyRockRunner` (`WorldGen.cs:77145-77210`): the
+/// Manhattan-disc wall walker — strength `Next(2, 6)`, steps `Next(5, 50)`,
+/// the ±1.0-clamped velocity jitter, and the per-cell `Next(-10, 11)`
+/// threshold roll converting wall 2 (DirtUnsafe) → 59 (Cave6Unsafe).
+/// The threshold reads the FULL strength `num * 0.5` (not the shrinking
+/// `num4` — the C# quirk at `:77184`), the box clamps to `[0, maxTilesX]`
+/// / `[0, maxTilesY]` (`:77164-77179`), and the walk shrinks `num3` once
+/// per iteration (`:77159`).
+fn dirty_rock_runner(world: &mut World, i: i32, j: i32, rng: &mut super::Rng) {
+    let num = rng.range(2, 6) as f64;
+    let num2 = rng.range(5, 50) as f64;
+    let mut num3 = num2;
+    let mut pos = (i as f64, j as f64);
+    let mut vel = (
+        rng.range(-10, 11) as f64 * 0.1,
+        rng.range(-10, 11) as f64 * 0.1,
+    );
+    while num > 0.0 && num3 > 0.0 {
+        let num4 = num * (num3 / num2);
+        num3 -= 1.0;
+        let x0 = ((pos.0 - num4 * 0.5) as i32).max(0);
+        let x1 = ((pos.0 + num4 * 0.5) as i32).min(world.width);
+        let y0 = ((pos.1 - num4 * 0.5) as i32).max(0);
+        let y1 = ((pos.1 + num4 * 0.5) as i32).min(world.height);
+        for k in x0..x1 {
+            for l in y0..y1 {
+                // `:77184` — the threshold draw happens per cell BEFORE
+                // the wall test (the `&&` left operand).
+                let threshold = num * 0.5 * (1.0 + rng.range(-10, 11) as f64 * 0.015);
+                if (k as f64 - pos.0).abs() + (l as f64 - pos.1).abs() < threshold
+                    && wall_at(world, k, l) == 2
+                {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.wall = 59;
+                    }
+                }
+            }
+        }
+        pos = (pos.0 + vel.0, pos.1 + vel.1);
+        vel.0 = (vel.0 + rng.range(-10, 11) as f64 * 0.05).clamp(-1.0, 1.0);
+        vel.1 = (vel.1 + rng.range(-10, 11) as f64 * 0.05).clamp(-1.0, 1.0);
+    }
+}
+
+/// The Dirt Rock Wall Runner pass (`GenPassNameID.DirtRockWallRunner`,
+/// `WorldGen.cs:15461-15475`): one random surface site per column —
+/// `Next(10, maxTilesX - 10)` × `Next(10, (int)worldSurface)` — and a
+/// `DirtyRockRunner` when the site carries wall 2. The
+/// `Skyblock.denyAllGeneration` gate is the caller's. Own
+/// `pass_rng("Dirt Rock Wall Runner")` stream.
+pub(crate) fn pass_dirt_rock_wall_runner(
+    world: &mut World,
+    world_surface: f64,
+    rng: &mut super::Rng,
+) {
+    for _ in 0..world.width {
+        let num = rng.range(10, world.width - 10);
+        let num2 = rng.range(10, world_surface as i32);
+        if wall_at(world, num, num2) == 2 {
+            dirty_rock_runner(world, num, num2, rng);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-g36 A3: the runner converts the wall-2 pocket around its origin
+    /// to 59 and leaves other walls alone; the pass replays a == b.
+    #[test]
+    fn a3_the_runner_converts_the_dirt_wall_pocket() {
+        use crate::tile::Tile;
+        let build = || {
+            let mut w = World::new("rock".into(), 120, 120);
+            for x in 20..100 {
+                for y in 20..100 {
+                    let idx = w.index(x, y);
+                    w.tiles[idx] = Tile::default();
+                    w.tiles[idx].wall = 2;
+                }
+            }
+            // A stone-wall cell inside the pocket — never converted.
+            w.tiles[w.index(60, 60)].wall = 1;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        dirty_rock_runner(&mut a, 60, 60, &mut super::super::Rng(42));
+        dirty_rock_runner(&mut b, 60, 60, &mut super::super::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        assert!(
+            a.tiles.iter().any(|t| t.wall == 59),
+            "the runner must convert some dirt walls"
+        );
+        assert_eq!(a.tile(60, 60).unwrap().wall, 1, "the stone wall survives");
+    }
+
+    /// W4-g36 A3: the pass draws two anchors per column and only runs the
+    /// walker on wall-2 sites (`WorldGen.cs:15467-15472`).
+    #[test]
+    fn a3_the_pass_runs_only_on_wall_two_sites() {
+        use crate::tile::Tile;
+        let mut w = World::new("rock".into(), 120, 120);
+        // No wall-2 anywhere: the pass draws 2×width anchors, writes nothing.
+        let before = w.tiles.clone();
+        pass_dirt_rock_wall_runner(&mut w, 60.0, &mut super::super::Rng(9));
+        assert_eq!(w.tiles, before);
+        // A full wall-2 surface band: the walkers convert.
+        for x in 0..120 {
+            for y in 0..60 {
+                let idx = w.index(x, y);
+                w.tiles[idx] = Tile::default();
+                w.tiles[idx].wall = 2;
+            }
+        }
+        pass_dirt_rock_wall_runner(&mut w, 60.0, &mut super::super::Rng(9));
+        assert!(w.tiles.iter().any(|t| t.wall == 59));
+    }
 
     /// W4-g36 A2: the forward sweep clears the exposed dirt walls above
     /// the first active non-sand tile and stops there; the reverse sweep

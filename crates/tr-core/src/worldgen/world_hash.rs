@@ -250,6 +250,12 @@ mod tests {
     // lands after `shimmer` — the two surface sweeps strip the exposed
     // dirt walls (2/40/64/86) above the surface on EVERY world, so this
     // pin moves BY DESIGN; deferred to the gate.
+    // W4-g36 A3 (code-only): the Dirt Rock Wall Runner pass
+    // (`WorldGen.cs:15461-15475` + `DirtyRockRunner` `:77145-77210`,
+    // `micro_finish.rs::pass_dirt_rock_wall_runner`) lands after
+    // `clean up dirt` — the per-column walkers convert wall 2 → 59 on
+    // every world with surface dirt walls, so this pin moves BY DESIGN;
+    // deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -302,6 +308,9 @@ mod tests {
     // strips the exposed surface dirt walls on every world — this pin
     // moves BY DESIGN too; deferred. Own `pass_rng("Clean Up Dirt")`
     // stream; the `a == b` halves stay untouched.
+    // W4-g36 A3 (code-only): the Dirt Rock Wall Runner pass (see
+    // SEED42_512 above) — the wall 2 → 59 conversions move this pin BY
+    // DESIGN; deferred. Own `pass_rng("Dirt Rock Wall Runner")` stream.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
