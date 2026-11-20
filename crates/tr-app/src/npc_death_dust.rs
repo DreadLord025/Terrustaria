@@ -226,6 +226,7 @@ fn lane_covers(ty: u16) -> bool {
             | 338..=340 | 343 | 348 | 349 | 350 | 351 | 489 | 490 | 305..=314
             | 352 | 327 | 325 | 326 | 330 | 329 | 315 | 250 | 261 | 288
             | 344 | 262..=264 | 265 | 266 | 267 | 370 | 372 | 373
+            | 439 | 381 | 382 | 390 | 383 | 384 | 385 | 386 | 387 | 389
     )
 }
 
@@ -537,6 +538,52 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
                 fx.dust.slot_mut(i).velocity /= 2.0;
             }
         }
+        // `NPC.cs:84138-84159` — the Ancient Cultist: 30×5 at
+        // `(2.5×hd, -2.5)`, then 10×16 at (0,0) scale 1.5 with
+        // velocity ×2 + noGravity. The hood-gore loop: ONE `Next(1,4)`
+        // count draw (`:84150`), then per gore ONE `Next(11,14)` type
+        // pick (`:84153`) — the count gates how many picks are drawn;
+        // the velocity `(hitDirection, 0)` + the ×0.8 write are
+        // argument-free/gore-side. The four body gores (902/903/901×2)
+        // are constant.
+        439 => {
+            fx.burst(30, 5, 2.5 * hd, -2.5);
+            for _ in 0..10 {
+                let i = fx.d_full(fx.pos, fx.w, fx.h, 16, 0.0, 0.0, 0, Color::default(), 1.5);
+                let d = fx.dust.slot_mut(i);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+            let n = fx.rng.next_range(1, 4);
+            for _ in 0..n {
+                fx.rng.next_range(11, 14);
+            }
+        }
+        // `NPC.cs:84290-84300` — Brain Scrambler: 30×227 at
+        // `(2.5×hd, -2.5)`; four constant gores (587/590/588/589).
+        381 => fx.burst(30, 227, 2.5 * hd, -2.5),
+        // `NPC.cs:84311-84320` — Ray Gunner / Scutlix Rider (382/390):
+        // 30×227; three constant gores (591-593).
+        382 | 390 => fx.burst(30, 227, 2.5 * hd, -2.5),
+        // `NPC.cs:84331-84340` — Martian Officer: 30×227; three
+        // constant gores (594-596).
+        383 => fx.burst(30, 227, 2.5 * hd, -2.5),
+        // `NPC.cs:84353-84360` — Force Bubble: 70×226 at
+        // `(-2.5×hd, -2.5)`, scale = 0.5 OVERWRITE; no gores.
+        384 => fx.burst226(70, 2.5),
+        // `NPC.cs:84371-84380` — Gray Grunt: 30×227; three constant
+        // gores (597-599).
+        385 => fx.burst(30, 227, 2.5 * hd, -2.5),
+        // `NPC.cs:84391-84400` — Martian Engineer: 30×227; three
+        // constant gores (600-602).
+        386 => fx.burst(30, 227, 2.5 * hd, -2.5),
+        // `NPC.cs:84413-84423` — Martian Turret (Tesla): 30×226 at
+        // `(-1.5×hd, -1.5)`, scale = 0.5; three constant gores
+        // (603×2/604).
+        387 => fx.burst226(30, 1.5),
+        // `NPC.cs:84459-84468` — Giga Zapper: 30×227; three constant
+        // gores (904-906).
+        389 => fx.burst(30, 227, 2.5 * hd, -2.5),
         _ => {}
     }
 }
@@ -997,6 +1044,49 @@ mod tests {
         assert_eq!(rng, r, "15 × (1 gate + 6 internals)");
         assert!(pool.slot(14).active);
         assert!(!pool.slot(15).active);
+    }
+
+    /// `NPC.cs:84140-84155` — the Cultist: 30×5 + 10×16 (scale 1.5,
+    /// velocity ×2, noGravity), then ONE `Next(1,4)` hood count and
+    /// that many `Next(11,14)` type picks.
+    #[test]
+    fn w4_g60_the_cultist_hood_count_gates_the_type_picks() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(101);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 439,
+            pos: Vec2::new(100.0, 100.0),
+            w: 30,
+            h: 50,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for _ in 0..30 {
+            replay_spawn(&mut r, 30, 50);
+        }
+        for k in 30..40 {
+            let rolls = replay_spawn(&mut r, 30, 50);
+            let d = pool.slot(k);
+            assert_eq!(d.dust_type, 16);
+            assert_eq!(d.scale, (1.0 + rolls[5] as f32 * 0.01) * 1.5);
+            assert!(d.no_gravity);
+        }
+        let n = r.next_range(1, 4);
+        for _ in 0..n {
+            r.next_range(11, 14);
+        }
+        assert_eq!(rng, r, "40×6 internals + 1 count + n picks");
+        assert!(pool.slot(39).active);
+        assert!(!pool.slot(40).active);
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
