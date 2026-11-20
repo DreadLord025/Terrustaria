@@ -1046,6 +1046,9 @@ pub const SPECTRE_WRATH: u16 = 356;
 /// `ProjectileID.Typhoon` (409) — the Razorblade Typhoon's vortex (aiStyle
 /// 71, 30x30, `penetrate = -1`, `timeLeft = 300`).
 pub const TYPHOON: u16 = 409;
+/// `ProjectileID.DryadsWardCircle` (586, `ProjectileID.cs:1726`) — the
+/// Dryad's ward ring (aiStyle 111, `AI_111_DryadsWard`). W4-d12.
+pub const DRYADS_WARD_CIRCLE: u16 = 586;
 /// `ProjectileID.NebulaArcanum` (617) — the Arcanum's homing bolt (aiStyle
 /// 118, local-immunity 8).
 pub const NEBULA_ARCANUM: u16 = 617;
@@ -2813,6 +2816,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
             // dropped.
             TYPHOON => (30.0, 30.0, 71, -1, 300, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d12 — `:6358-6366` DryadsWardCircle — 26x26, aiStyle 111,
+            // alpha 255, friendly, `penetrate = -1`; the stock 3600 life
+            // (`:787`) and tileCollide (`:775`) stand — the AI's 570-tick
+            // kill (`:41236-41239`) ends the ring long before either.
+            DRYADS_WARD_CIRCLE => (26.0, 26.0, 111, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:6644-6657` NebulaArcanum — 32x32, aiStyle 118, alpha 255,
             // `penetrate = 3`, local-immunity with the 8-tick cooldown
             // (`ignoreWater`/`drawLayer` dropped).

@@ -10878,6 +10878,162 @@ impl Projectile {
         (target, distance_to_closest)
     }
 
+    /// `AI_111_DryadsWard` (`Projectile.cs:41134-41240`, the dispatch
+    /// `:34110-34113`) — the Dryad's ward ring (586), the style's ONLY
+    /// SetDefaults row (`:6358-6366`). The ring lives on its summoner: the
+    /// head reads `Main.npc[ai[1]]` and kills itself unless that slot is the
+    /// live Dryad (type 20) in her ward state (`ai[0] == 14f`).
+    ///
+    /// RNG census (the `UpdateProjectiles` stream, the `ai_flamethrower`
+    /// precedent): while `ai[2] == 1f` one `NextFloat` colour gate
+    /// (`:41168`); the ring gate `Next(4)` (`:41173`) and, taken, the
+    /// `Next(-10, 11)` pair + `Next(3, 9)` speed + the `Next(8)` velocity
+    /// pick (`:41176-41182`); the inner gate `Next(2)` (`:41192`) and,
+    /// taken, the same four draws (`:41194-41200`). The `Dust.NewDust`
+    /// bodies and their internal rolls go with the dust layer (ANALYSIS
+    /// "Dust & gore").
+    ///
+    /// Skips (ANALYSIS): the dust spawns, the `Main.netMode` gates fold to
+    /// the single-player pass (both `!= 2` and `!= 1` hold), and
+    /// `Main.player[Main.myPlayer]` is the port's local player channel.
+    /// The 488 (TargetDummy) exclusion keeps its verbatim type test — no
+    /// ported `NpcKind` carries 488, so it never fires.
+    fn ai_dryads_ward(
+        &mut self,
+        world: &World,
+        npcs: &mut [Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn DropRng,
+    ) {
+        // `:41136-41140` — the summoner probe: the Dryad must be live, type
+        // 20 and in the ward state (`ai[0] == 14f`), else `Kill()`.
+        let host = npcs.get(self.ai[1] as usize);
+        if !host.is_some_and(|n| {
+            n.hp > 0 && n.kind == NpcKind::Dryad && n.ai[0] == 14.0
+        }) {
+            self.kill();
+            return;
+        }
+        // `:41141-41148` — the age, the spin, the 100-tick scale ramp and
+        // the alpha it drives.
+        self.ai[0] += 1.0;
+        self.rot += std::f32::consts::PI / 300.0;
+        self.scale = self.ai[0] / 100.0;
+        if self.scale > 1.0 {
+            self.scale = 1.0;
+        }
+        self.alpha = (255.0 * (1.0 - self.scale)) as i32;
+        // `:41149-41157` — the radius: 300 until tick 100, then the
+        // 300→600 lerp over 200 ticks, capped at 600.
+        let mut num = 300.0f32;
+        if self.ai[0] >= 100.0 {
+            num = 300.0 + (600.0 - 300.0) * ((self.ai[0] - 100.0) / 200.0);
+        }
+        if num > 600.0 {
+            num = 600.0;
+        }
+        // `:41158-41163` — the fade-out window (tick 500+): the alpha
+        // ramps back to 255 over 100 ticks, the radius lerps 600→1200 and
+        // the spin doubles.
+        if self.ai[0] >= 500.0 {
+            self.alpha = (255.0 * ((self.ai[0] - 500.0) / 100.0)) as i32;
+            num = 600.0 + (1200.0 - 600.0) * ((self.ai[0] - 500.0) / 100.0);
+            self.rot += std::f32::consts::PI / 300.0;
+        }
+        // `:41164-41172` — the dust colour gate: `ai[2] == 1f` rolls the
+        // 120-tick sine pulse; the draw stays, the colour feeds only dust.
+        let mut num2 = 163;
+        if self.ai[2] == 1.0 {
+            let num3 = (self.ai[0] % 120.0 * (std::f32::consts::PI * 2.0) / 120.0).sin()
+                * 0.5
+                + 0.5;
+            if rng.next_float() < num3 {
+                num2 = 70;
+            }
+        }
+        let _ = num2; // the dust colour — SKIPPED with the dust layer
+        // `:41173-41191` — the ring dust gate (1-in-4): the direction pair,
+        // the speed roll and the 1-in-8 velocity pick stay on the stream.
+        if rng.next_range(0, 4) == 0 {
+            let _ = rng.next_range(-10, 11); // `:41176` vector.X
+            let _ = rng.next_range(-10, 11); // `:41176` vector.Y
+            let _ = rng.next_range(3, 9); // `:41177` num5
+            let _ = rng.next_range(0, 8); // `:41182` the velocity pick
+        }
+        // `:41192-41209` — the inner dust gate (1-in-2): the same four
+        // draws at the 30-px ring.
+        if rng.next_range(0, 2) == 0 {
+            let _ = rng.next_range(-10, 11); // `:41194` vector2.X
+            let _ = rng.next_range(-10, 11); // `:41194` vector2.Y
+            let _ = rng.next_range(3, 9); // `:41195` num7
+            let _ = rng.next_range(0, 8); // `:41200` the velocity pick
+        }
+        let center = Vec2::from(self.center());
+        // `:41210-41217` — the player's Dryad's Ward (buff 165): tick 30+,
+        // alive, inside the radius and not already warded → 120 ticks.
+        // `netMode != 2` folds true (single-player).
+        if self.ai[0] >= 30.0 {
+            if let Some(pl) = player {
+                let (pcx, pcy) = pl.center();
+                let dist = center.distance(Vec2::new(pcx, pcy));
+                if !pl.dead && dist <= num && pl.buffs.find_buff_index(165).is_none() {
+                    pl.buffs.add_buff(165, 120);
+                }
+            }
+        }
+        // `:41218-41235` — the NPC grants, every 10th tick from 30:
+        // `netMode != 1` folds true. The 488 (TargetDummy) exclusion is
+        // verbatim; no ported kind is 488.
+        if self.ai[0] >= 30.0 && self.ai[0] % 10.0 == 0.0 {
+            for n in npcs.iter_mut() {
+                // `:41223` — `type != 488 && active && Distance <= num`.
+                if n.hp <= 0 {
+                    continue;
+                }
+                if npc_center(n).distance(center) > num {
+                    continue;
+                }
+                // `:41225-41228` — the town NPC's ward refresh: absent or
+                // ≤ 20 ticks left → re-grant 120. `townNPC` is the vanilla
+                // flag (`is_town_npc_like` — the housing subset plus the
+                // sellers, `npc/data.rs:1144`).
+                if n.kind.is_town_npc_like() {
+                    let low = n
+                        .buffs
+                        .find_buff_index(165)
+                        .is_none_or(|i| n.buffs.buff_time[i] <= 20);
+                    if low {
+                        n.buffs.add_buff(165, 120);
+                    }
+                } else if !n.friendly
+                    && n.max_hp > 5
+                    && !n.dont_take_damage
+                    && n.buffs
+                        .find_buff_index(186)
+                        .is_none_or(|i| n.buffs.buff_time[i] <= 20)
+                {
+                    // `:41229-41232` — Dryad's Bane (186): the `dryadBane`
+                    // flag is the buff-186 latch (`NPC.cs:92093-92096`), so
+                    // an already-baned NPC skips the line-of-sight probe;
+                    // otherwise `Collision.CanHit` gates the grant.
+                    let baned = n.buffs.find_buff_index(186).is_some();
+                    let (nw, nh) = n.size();
+                    if baned
+                        || can_hit(
+                            world, center.x, center.y, 1.0, 1.0, n.x, n.y, nw, nh,
+                        )
+                    {
+                        n.buffs.add_buff(186, 120);
+                    }
+                }
+            }
+        }
+        // `:41236-41239` — the 570-tick life.
+        if self.ai[0] >= 570.0 {
+            self.kill();
+        }
+    }
+
     /// `AI_120_StardustGuardian` (`Projectile.cs:44634-44963`) — the Stardust
     /// Guardian (623), the 0-slot summon pet's idle / rest-hover / attack-dash
     /// / teleport-return machine (`ai[0]` 0/1/2/3). `who_am_i` is the pool
@@ -17576,6 +17732,27 @@ impl ProjectilePool {
                                 &mut self.slots[i],
                                 world,
                             );
+                        }
+                        // W4-d12 — `AI()`'s `else if (this.aiStyle == 111)`
+                        // (`Projectile.cs:34110-34113`) ->
+                        // `AI_111_DryadsWard` (`:41134-41240`): the Dryad's
+                        // ward ring (586), the style's ONLY SetDefaults row
+                        // (`:6358-6366`). The summoner probe reads the NPC
+                        // vec; the buff grants write it and the local
+                        // player channel.
+                        111 => {
+                            self.slots[i].ai_dryads_ward(
+                                world,
+                                npcs,
+                                player.as_deref_mut(),
+                                rng,
+                            );
+                            // `HandleMovement` (`:17015`): the row keeps the
+                            // stock `tileCollide = true` (`:775`) and the
+                            // ring's velocity is zero, so the generic
+                            // blocked-move probe stands (the 147/181/193
+                            // `kill_step` precedent).
+                            self.slots[i].kill_step(world);
                         }
                         // aiStyle 113: the Bone javelin (598)
                         // (`AI_113_TargetSticker` `:40562-40899`). The stick
@@ -44382,5 +44559,275 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+/// W4-d12 — the Dryad's Ward ring (`AI_111_DryadsWard`,
+/// `Projectile.cs:41134-41240`, the dispatch `:34110-34113`). WRITTEN NOT
+/// RUN (code-only mode). The witnesses pin the row, the summoner probe,
+/// the scale/alpha/radius ramps, the buff grants and the RNG census
+/// (every explicit `Main.rand` draw at the call sites stays; the dust
+/// bodies go with the dust layer).
+#[cfg(test)]
+mod w4_d12_dryads_ward_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The scripted stream: records every draw (the i56 `CensusRng` shape).
+    /// `next_range` returns `max - 1` so the 1-in-N gates never fire;
+    /// `next_float` returns 0.5.
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    /// A ward ring by CENTRE, `ai[1]` = the Dryad's slot index.
+    fn ring_at(cx: f32, cy: f32, host: f32) -> Projectile {
+        let d = proj_data(DRYADS_WARD_CIRCLE).unwrap();
+        Projectile {
+            active: true,
+            kind: DRYADS_WARD_CIRCLE,
+            owner: 0,
+            pos: Vec2::new(cx - d.w * 0.5, cy - d.h * 0.5),
+            w: d.w,
+            h: d.h,
+            time_left: d.time_left,
+            max_penetrate: d.penetrate,
+            penetrate: d.penetrate,
+            alpha: d.alpha,
+            ai: [0.0, host, 0.0, 0.0],
+            ..Default::default()
+        }
+    }
+
+    /// The Dryad in her ward state (`ai[0] == 14f`) at a centre.
+    fn dryad(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Dryad, 0.0, 0.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let (w, h) = n.size();
+        n.x = cx - w * 0.5;
+        n.y = cy - h * 0.5;
+        n.ai[0] = 14.0;
+        n
+    }
+
+    /// The row pin (`Projectile.cs:6358-6366`).
+    #[test]
+    fn w4_d12_the_586_row_matches_set_defaults() {
+        let d = proj_data(DRYADS_WARD_CIRCLE).unwrap();
+        assert_eq!((d.w, d.h), (26.0, 26.0), ":6360-6361");
+        assert_eq!(d.ai_style, 111, ":6362");
+        assert_eq!(d.alpha, 255, ":6363");
+        assert_eq!(d.penetrate, -1, ":6365");
+        assert_eq!(d.time_left, 3600, "the stock life (:787)");
+        assert!(d.tile_collide, "the stock tileCollide (:775)");
+        assert_eq!(proj_frames(DRYADS_WARD_CIRCLE), 1, "Main.cs:8441 init");
+    }
+
+    /// The summoner probe (`:41136-41140`): no Dryad / wrong type / wrong
+    /// state kills the ring before any state moves.
+    #[test]
+    fn w4_d12_the_missing_summoner_kills_the_ring() {
+        let w = world();
+        let mut p = ring_at(400.0, 300.0, 0.0);
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        // Empty NPC vec — the host slot is inactive.
+        p.ai_dryads_ward(&w, &mut [], None, &mut rng);
+        assert!(!p.active, ":41138");
+        assert_eq!(p.time_left, 0, "the port's kill() convention");
+        assert_eq!(p.ai[0], 0.0, "the age never advances on the kill tick");
+        assert!(rng.draws.is_empty() && rng.floats == 0, "no draws before the probe");
+        // A live non-Dryad host also kills.
+        let mut zombie = Npc::new(NpcKind::Zombie, 380.0, 280.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        zombie.ai[0] = 14.0;
+        let mut p2 = ring_at(400.0, 300.0, 0.0);
+        p2.ai_dryads_ward(&w, &mut [zombie], None, &mut rng);
+        assert!(!p2.active, "type != 20 (:41136)");
+        // A Dryad outside the ward state (ai[0] != 14) kills too.
+        let mut d = dryad(400.0, 300.0);
+        d.ai[0] = 0.0;
+        let mut p3 = ring_at(400.0, 300.0, 0.0);
+        p3.ai_dryads_ward(&w, &mut [d], None, &mut rng);
+        assert!(!p3.active, "ai[0] != 14f (:41136)");
+    }
+
+    /// The first tick (`:41141-41148`): age 1, rotation π/300, scale 0.01,
+    /// alpha 252 — and the two gate draws (the colour gate is silent
+    /// while `ai[2] == 0`).
+    #[test]
+    fn w4_d12_the_first_tick_ramps_the_scale_and_alpha() {
+        let w = world();
+        let mut npcs = [dryad(400.0, 300.0)];
+        let mut p = ring_at(400.0, 300.0, 0.0);
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        assert!(p.active);
+        assert_eq!(p.ai[0], 1.0, ":41141");
+        assert!((p.rot - std::f32::consts::PI / 300.0).abs() < 1e-6, ":41142");
+        assert_eq!(p.scale, 0.01, ":41143");
+        assert_eq!(p.alpha, 252, "(int)(255·0.99) (:41148)");
+        // The census: Next(4) then Next(2), no floats (ai[2] == 0).
+        assert_eq!(rng.draws, vec![(0, 4), (0, 2)], ":41173/:41192");
+        assert_eq!(rng.floats, 0, "the colour gate needs ai[2] == 1 (:41165)");
+    }
+
+    /// The taken gates' draw census (`:41173-41209`): with both gates
+    /// forced open the stream carries the direction pair, the speed roll
+    /// and the velocity pick for EACH gate, in the C# order.
+    #[test]
+    fn w4_d12_the_taken_dust_gates_keep_their_draws() {
+        let w = world();
+        let mut npcs = [dryad(400.0, 300.0)];
+        let mut p = ring_at(400.0, 300.0, 0.0);
+        p.ai[2] = 1.0; // the colour gate arms too
+        // A stream that opens every gate: Next(4)/Next(2)/Next(8) return 0.
+        struct OpenRng {
+            draws: Vec<(i32, i32)>,
+            floats: usize,
+        }
+        impl DropRng for OpenRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.draws.push((min, max));
+                if max == 4 || max == 2 || max == 8 { 0 } else { min }
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0 // < the sine pulse — the colour flips to 70
+            }
+        }
+        let mut rng = OpenRng { draws: Vec::new(), floats: 0 };
+        p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        assert_eq!(rng.floats, 1, "the colour NextFloat (:41168)");
+        assert_eq!(
+            rng.draws,
+            vec![
+                (0, 4), (-10, 11), (-10, 11), (3, 9), (0, 8), // the ring gate
+                (0, 2), (-10, 11), (-10, 11), (3, 9), (0, 8), // the inner gate
+            ],
+            ":41173-41200 — the C# draw order"
+        );
+    }
+
+    /// The scale clamp + the fade-out window (`:41144-41163`): tick 100
+    /// clamps the scale at 1 (alpha 0); tick 500 arms the fade (the alpha
+    /// ramps back up, the spin doubles).
+    #[test]
+    fn w4_d12_the_scale_clamp_and_fade_window() {
+        let w = world();
+        let mut npcs = [dryad(400.0, 300.0)];
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        // Tick 100: scale clamps at 1, alpha 0.
+        let mut p = ring_at(400.0, 300.0, 0.0);
+        p.ai[0] = 99.0;
+        p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        assert_eq!(p.scale, 1.0, ":41144-41147");
+        assert_eq!(p.alpha, 0, ":41148");
+        // Tick 500: the fade-out arms — alpha (int)(255·0) = 0 and the
+        // DOUBLE spin step.
+        let mut p2 = ring_at(400.0, 300.0, 0.0);
+        p2.ai[0] = 499.0;
+        let rot_before = 499.0 * std::f32::consts::PI / 300.0;
+        p2.rot = rot_before;
+        p2.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        assert_eq!(p2.ai[0], 500.0);
+        assert_eq!(p2.alpha, 0, "(int)(255·(0/100)) (:41160)");
+        let expected = rot_before + 2.0 * std::f32::consts::PI / 300.0;
+        assert!((p2.rot - expected).abs() < 1e-4, "the doubled spin (:41142/:41162)");
+        // Tick 550: alpha 127.
+        let mut p3 = ring_at(400.0, 300.0, 0.0);
+        p3.ai[0] = 549.0;
+        p3.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        assert_eq!(p3.alpha, 127, "(int)(255·0.5) (:41160)");
+    }
+
+    /// The 570-tick kill (`:41236-41239`).
+    #[test]
+    fn w4_d12_the_ring_dies_at_570() {
+        let w = world();
+        let mut npcs = [dryad(400.0, 300.0)];
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        let mut p = ring_at(400.0, 300.0, 0.0);
+        p.ai[0] = 569.0;
+        p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        assert!(!p.active, ":41238");
+        assert_eq!(p.time_left, 0);
+    }
+
+    /// The player's ward grant (`:41210-41217`): tick 30+, alive, inside
+    /// the radius, buff 165 absent → AddBuff(165, 120).
+    #[test]
+    fn w4_d12_the_player_gets_the_ward_buff() {
+        let w = world();
+        let mut npcs = [dryad(400.0, 300.0)];
+        let mut pl = Player::spawn(&w);
+        pl.x = 400.0;
+        pl.y = 300.0;
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        let mut p = ring_at(400.0, 300.0, 0.0);
+        p.ai[0] = 29.0; // the tick lands on 30
+        p.ai_dryads_ward(&w, &mut npcs, Some(&mut pl), &mut rng);
+        let idx = pl.buffs.find_buff_index(165).expect("the ward buff (:41215)");
+        assert_eq!(pl.buffs.buff_time[idx], 120, ":41215");
+        // A second grant inside the window does NOT stack (the C# gate is
+        // FindBuffIndex == -1).
+        p.ai[0] = 39.0;
+        p.ai_dryads_ward(&w, &mut npcs, Some(&mut pl), &mut rng);
+        assert_eq!(pl.buffs.buff_time[idx], 120, "the existing buff blocks (:41213)");
+    }
+
+    /// The NPC grants (`:41218-41235`): every 10th tick from 30 the town
+    /// NPC gets 165 and the chaseable enemy gets 186 (the CanHit probe
+    /// passes in the open air).
+    #[test]
+    fn w4_d12_the_npc_grants_ride_the_ten_tick_cadence() {
+        let w = world();
+        let mut zombie = Npc::new(NpcKind::Zombie, 420.0, 300.0, 1, 0.0);
+        zombie.hp = 40;
+        zombie.max_hp = 40;
+        let mut npcs = [dryad(400.0, 300.0), zombie];
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        let mut p = ring_at(400.0, 300.0, 0.0);
+        p.ai[0] = 29.0; // tick 30 — the first grant window
+        p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        assert!(npcs[0].buffs.find_buff_index(165).is_some(), "the town Dryad's ward (:41227)");
+        assert!(npcs[1].buffs.find_buff_index(186).is_some(), "the enemy's bane (:41231)");
+        // A non-cadence tick grants nothing new: drain the buffs and run
+        // tick 31.
+        npcs[0].buffs.buff_time = [0; 20];
+        npcs[0].buffs.buff_type = [0; 20];
+        npcs[1].buffs.buff_time = [0; 20];
+        npcs[1].buffs.buff_type = [0; 20];
+        p.ai_dryads_ward(&w, &mut npcs, None, &mut rng); // tick 31
+        assert!(npcs[0].buffs.find_buff_index(165).is_none(), "31 % 10 != 0 (:41218)");
+        assert!(npcs[1].buffs.find_buff_index(186).is_none());
+        // The ≤20-tick refresh: a ward at 15 ticks re-grants to 120.
+        npcs[0].buffs.add_buff(165, 15);
+        p.ai[0] = 39.0; // tick 40
+        p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        let i = npcs[0].buffs.find_buff_index(165).unwrap();
+        assert_eq!(npcs[0].buffs.buff_time[i], 120, "the ≤20 refresh (:41225-41227)");
+        // The dryadBane short-circuit: an already-baned enemy skips the
+        // CanHit probe (the flag is the buff-186 latch, NPC.cs:92093).
+        npcs[1].buffs.add_buff(186, 15);
+        p.ai[0] = 49.0; // tick 50
+        p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
+        let j = npcs[1].buffs.find_buff_index(186).unwrap();
+        assert_eq!(npcs[1].buffs.buff_time[j], 120, "the bane refresh (:41229-41231)");
     }
 }
