@@ -389,7 +389,7 @@ fn gem_cave(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
 // --- the spider cave ---------------------------------------------------------
 
 /// `WorldGen.PlaceTight` (`WorldGen.cs:38303-38325`) → the stalactite.
-fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) {
+pub(crate) fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) {
     let blocked = world
         .tile(x, y)
         .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer);
@@ -406,7 +406,7 @@ fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) 
 /// support-type frame table. The port keeps the arms the port's world can
 /// actually produce (spiders, the ice family, stone/moss, hive, the sandstone
 /// pair, granite and marble); the paint copy is the port's `frame_x` write.
-fn place_unchecked_stalactite(
+pub(crate) fn place_unchecked_stalactite(
     world: &mut World,
     x: i32,
     y: i32,
@@ -428,34 +428,35 @@ fn place_unchecked_stalactite(
             write_stalactite(world, x, y + 1, frame, 18);
             return;
         }
-        if matches!(support, TILE_SNOW | TILE_ICE | 163 | 164 | 200) {
-            let frame = variation * 18;
-            if prefer_small {
-                write_stalactite(world, x, y, frame, 72);
-            } else {
-                write_stalactite(world, x, y, frame, 0);
-                write_stalactite(world, x, y + 1, frame, 18);
-            }
+        // The independent C# `if` arms (`:38351/:38380/:38409/:38419/
+        // :38448/:38477`) — the granite 368 (`:38448-38476`) and marble 367
+        // (`:38477-38505`) ceiling arms landed with the marble/granite decor
+        // residual (W4-g40); a support kind matches at most one arm, so the
+        // else-chain is equivalent.
+        let frame = if matches!(support, TILE_SNOW | TILE_ICE | 163 | 164 | 200) {
+            variation * 18
         } else if support == TILE_HIVE {
-            // `:38518` — the hive stalactite is always the small one.
+            // `:38409` — the hive stalactite is always the small one.
             write_stalactite(world, x, y, 162 + variation * 18, 72);
-        } else if is_moss || matches!(support, TILE_STONE | TILE_PEARLSTONE | TILE_EBONSTONE | TILE_CRIMSTONE)
+            return;
+        } else if is_moss
+            || matches!(support, TILE_STONE | TILE_PEARLSTONE | TILE_EBONSTONE | TILE_CRIMSTONE)
         {
-            let frame = 54 + variation * 18;
-            if prefer_small {
-                write_stalactite(world, x, y, frame, 72);
-            } else {
-                write_stalactite(world, x, y, frame, 0);
-                write_stalactite(world, x, y + 1, frame, 18);
-            }
+            54 + variation * 18
         } else if matches!(support, 396 | 397) {
-            let frame = 378 + variation * 18;
-            if prefer_small {
-                write_stalactite(world, x, y, frame, 72);
-            } else {
-                write_stalactite(world, x, y, frame, 0);
-                write_stalactite(world, x, y + 1, frame, 18);
-            }
+            378 + variation * 18
+        } else if support == TILE_GRANITE {
+            432 + variation * 18
+        } else if support == TILE_MARBLE {
+            486 + variation * 18
+        } else {
+            return;
+        };
+        if prefer_small {
+            write_stalactite(world, x, y, frame, 72);
+        } else {
+            write_stalactite(world, x, y, frame, 0);
+            write_stalactite(world, x, y + 1, frame, 18);
         }
         return;
     }
@@ -467,22 +468,32 @@ fn place_unchecked_stalactite(
     if rising {
         let support = world.tile(x, y + 1).map(|t| t.kind).unwrap_or(0);
         let is_moss = MOSS_TILES.contains(&support) || NEON_MOSS.contains(&support) || support == 381;
-        let frame = if matches!(support, 396 | 397) {
-            378 + variation * 18
-        } else if support == TILE_GRANITE {
-            432 + variation * 18
-        } else if support == TILE_MARBLE {
-            486 + variation * 18
-        } else if is_moss || matches!(support, TILE_STONE | TILE_PEARLSTONE | TILE_EBONSTONE | TILE_CRIMSTONE) {
-            54 + variation * 18
+        if matches!(support, TILE_HIVE) {
+            // `:38543-38552` — the hive rising arm is always the small one.
+            write_stalactite(world, x, y, 162 + variation * 18, 90);
         } else {
-            return;
-        };
-        if prefer_small {
-            write_stalactite(world, x, y, frame, 90);
-        } else {
-            write_stalactite(world, x, y - 1, frame, 36);
-            write_stalactite(world, x, y, frame, 54);
+            // The independent C# `if` arms (`:38514/:38553/:38582/:38611`) —
+            // a support kind matches at most one, so the else-chain is
+            // equivalent.
+            let frame = if matches!(support, 396 | 397) {
+                378 + variation * 18
+            } else if support == TILE_GRANITE {
+                432 + variation * 18
+            } else if support == TILE_MARBLE {
+                486 + variation * 18
+            } else if is_moss
+                || matches!(support, TILE_STONE | TILE_PEARLSTONE | TILE_EBONSTONE | TILE_CRIMSTONE)
+            {
+                54 + variation * 18
+            } else {
+                return;
+            };
+            if prefer_small {
+                write_stalactite(world, x, y, frame, 90);
+            } else {
+                write_stalactite(world, x, y - 1, frame, 36);
+                write_stalactite(world, x, y, frame, 54);
+            }
         }
     }
 }

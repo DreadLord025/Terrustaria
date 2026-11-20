@@ -706,7 +706,7 @@ fn set_tile_clear(world: &mut World, x: i32, y: i32, kind: u16) {
 /// the kind, wall, frames and liquid survive (unlike the micro passes'
 /// whole-tile `clear`). The `frameNeighbors` re-framing rides the deferred
 /// framing seam.
-fn clear_tile_keep(world: &mut World, x: i32, y: i32) {
+pub(crate) fn clear_tile_keep(world: &mut World, x: i32, y: i32) {
     let Some(t) = world.tile_mut(x, y) else {
         return;
     };

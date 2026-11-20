@@ -399,7 +399,7 @@ pub(crate) fn beaches(world: &mut World, gv: &mut GenVars, rng: &mut Rng) {
 /// `Tile.ResetToType` (`Tile.cs:249-259`): liquid 0, `sTileHeader = 32` (the
 /// active bit alone — the liquid amount/type and the slope bits in
 /// `sTileHeader` all clear), the paint/colored headers 0, frames 0, type set.
-fn reset_to_type(t: &mut Tile, kind: u16) {
+pub(crate) fn reset_to_type(t: &mut Tile, kind: u16) {
     t.liquid = 0;
     t.flags = FLAG_ACTIVE;
     t.meta = 0;
