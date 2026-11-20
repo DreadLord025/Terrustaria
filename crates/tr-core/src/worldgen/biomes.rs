@@ -23,9 +23,14 @@
 //! chests are the follow-up tasks; the hallow is the hardmode strip
 //! (M5-HARDFORCE).
 
+use super::mini_biomes::clear_tile_keep;
+use super::ocean::reset_to_type;
+use super::spider_gem_moss::{place_tight, place_unchecked_stalactite};
 use super::tile_runner::{tile_runner, TileRunnerOpts};
 use super::{Rng, TILE_DIRT, TILE_GRASS, TILE_SAND, TILE_SNOW, TILE_STONE, WALL_DIRT, WALL_STONE};
-use crate::tile::{Tile, FLAG_ACTIVE};
+use crate::tile::{LiquidKind, Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
+use crate::tile_light::FastRandom;
+use crate::tiledata::{TILE_SOLID, TILE_SOLID_TOP};
 use crate::world::World;
 
 pub(crate) const TILE_MUD: u16 = 59;
@@ -1257,13 +1262,15 @@ fn marble_place(
     let num3 = (num2 * 3 - rng.range(20, 30)) / 3;
     origin_x -= num * 3 / 2;
     origin_y -= num2 * 3 / 2;
-    // `_slabs` — (num + 2) x (num2 + 2) cells of (solid, hasWall).
+    // `_slabs` — (num + 2) x (num2 + 2) cells of (state, hasWall). The C#
+    // keeps a persistent 56x26 array (`:187`); every cell the walk reads is
+    // written first, so a fresh grid is equivalent.
     let gw = (num + 2) as usize;
     let gh = (num2 + 2) as usize;
-    let mut slabs: Vec<(bool, bool)> = vec![(false, true); gw * gh];
-    let slab = |slabs: &[(bool, bool)], x: i32, y: i32| -> (bool, bool) {
+    let mut slabs: Vec<(SlabState, bool)> = vec![(SlabState::Empty, true); gw * gh];
+    let slab = |slabs: &[(SlabState, bool)], x: i32, y: i32| -> (SlabState, bool) {
         if x < 0 || y < 0 || x as usize >= gw || y as usize >= gh {
-            (false, false)
+            (SlabState::Empty, false)
         } else {
             slabs[y as usize * gw + x as usize]
         }
@@ -1273,16 +1280,14 @@ fn marble_place(
         let num5 = (((0.5 - (num4 - 0.5).abs()) * 5.0) as i32) - 2;
         for j in -1..(num2 + 1) {
             let (mut has_wall, mut flag) = (true, false);
-            // `IsGroupSolid(i * 3 + origin.X, j * 3 + origin.Y, 3)`.
+            // `IsGroupSolid(i * 3 + origin.X, j * 3 + origin.Y, 3)`
+            // (`MarbleBiome.cs:163-177`): the `SolidOrSlopedTile` census.
             let gx = i * 3 + origin_x;
             let gy = j * 3 + origin_y;
             let mut solid_count = 0;
             for a in 0..3 {
                 for b in 0..3 {
-                    if world
-                        .tile(gx + a, gy + b)
-                        .is_some_and(|t| t.active() && (t.slope() != 0 || !t.half_brick()))
-                    {
+                    if solid_or_sloped(world, gx + a, gy + b) {
                         solid_count += 1;
                     }
                 }
@@ -1302,7 +1307,10 @@ fn marble_place(
                 has_wall = false;
                 flag = false;
             }
-            slabs[(j + 1) as usize * gw + (i + 1) as usize] = (flag, has_wall);
+            slabs[(j + 1) as usize * gw + (i + 1) as usize] = (
+                if flag { SlabState::Solid } else { SlabState::Empty },
+                has_wall,
+            );
         }
     }
     // The slope smoothing over the interior.
@@ -1343,44 +1351,88 @@ fn marble_place(
     true
 }
 
+/// `MarbleBiome.SlabStates` (`MarbleBiome.cs:12-48`): the seven per-cell
+/// active patterns the smoothed slab grid carries. `IsSolid` (`:56`) is
+/// "not Empty" — every filled pattern counts for the neighbour census.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SlabState {
+    Empty,
+    Solid,
+    HalfBrick,
+    BottomRightFilled,
+    BottomLeftFilled,
+    TopRightFilled,
+    TopLeftFilled,
+}
+
+impl SlabState {
+    /// The delegate body (`MarbleBiome.cs:14-47`) at cell `(x, y)` of a
+    /// `scale`-wide slab.
+    fn active_at(self, x: i32, y: i32, scale: i32) -> bool {
+        match self {
+            SlabState::Empty => false,
+            SlabState::Solid => true,
+            SlabState::HalfBrick => y >= scale / 2,
+            SlabState::BottomRightFilled => x >= scale - y,
+            SlabState::BottomLeftFilled => x < y,
+            SlabState::TopRightFilled => x > y,
+            SlabState::TopLeftFilled => x < scale - y,
+        }
+    }
+}
+
 /// `MarbleBiome.SmoothSlope` (`MarbleBiome.cs:79-110`): the four-neighbour
-/// bitmask maps a solid slab to the corner/half-brick states.
-fn marble_smooth(slabs: &mut [(bool, bool)], x: i32, y: i32, gw: i32, gh: i32) {
-    let at = |slabs: &[(bool, bool)], x: i32, y: i32| -> bool {
+/// bitmask maps a solid slab to the corner/half-brick states (the default
+/// arm re-solidifies).
+fn marble_smooth(slabs: &mut [(SlabState, bool)], x: i32, y: i32, gw: i32, gh: i32) {
+    let at = |slabs: &[(SlabState, bool)], x: i32, y: i32| -> bool {
         if x < 0 || y < 0 || x >= gw || y >= gh {
             false
         } else {
-            slabs[y as usize * gw as usize + x as usize].0
+            slabs[y as usize * gw as usize + x as usize].0 != SlabState::Empty
         }
     };
-    if !at(slabs, x, y) {
+    let idx = y as usize * gw as usize + x as usize;
+    if slabs[idx].0 == SlabState::Empty {
         return;
     }
     let mask = ((at(slabs, x, y - 1) as i32) << 3)
         | ((at(slabs, x, y + 1) as i32) << 2)
         | ((at(slabs, x - 1, y) as i32) << 1)
         | (at(slabs, x + 1, y) as i32);
-    // The port keeps the state as the active pattern: the corner states carry
-    // no C#-equivalent tile flag, so the shape stays solid/empty here and the
-    // visual slope comes from the per-tile `Tile.SmoothSlope` inside
-    // `PlaceSlab` (documented in ANALYSIS).
-    let _ = mask;
+    let state = match mask {
+        10 => SlabState::TopLeftFilled,
+        9 => SlabState::TopRightFilled,
+        6 => SlabState::BottomLeftFilled,
+        5 => SlabState::BottomRightFilled,
+        4 => SlabState::HalfBrick,
+        _ => SlabState::Solid,
+    };
+    slabs[idx].0 = state;
 }
 
 /// `MarbleBiome.PlaceSlab` (`MarbleBiome.cs:112-161`): the edge-column skips,
-/// the extent jitter, the ore preservation, the wall and the per-tile
-/// `Tile.SmoothSlope`.
+/// the extent jitter, the `ResetToType` ore preservation, the per-cell state
+/// pattern, the wall, the per-tile `Tile.SmoothSlope` and the two
+/// `Next(4)`-gated `PlaceTight` speleothem arms.
 fn marble_place_slab(
     world: &mut World,
-    slab: (bool, bool),
+    slab: (SlabState, bool),
     origin_x: i32,
     origin_y: i32,
     rng: &mut super::Rng,
 ) {
-    let (mut num4, mut num5) = (-1i32, 0i32);
-    let (scale_lo, scale_hi) = (-1, 4);
-    for i in scale_lo..scale_hi {
-        if (i == -1 || i == scale_hi - 1) && rng.chance(2) {
+    // `:114-120` — the drunk world swaps marble for granite.
+    let (num, wall) = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        (TILE_GRANITE, WALL_GRANITE)
+    } else {
+        (TILE_MARBLE, WALL_MARBLE)
+    };
+    let scale = 3;
+    let (num2, num3) = (-1i32, scale + 1);
+    let (mut num4, mut num5) = (0i32, scale);
+    for i in num2..num3 {
+        if (i == num2 || i == num3 - 1) && rng.chance(2) {
             continue;
         }
         if rng.chance(2) {
@@ -1394,48 +1446,131 @@ fn marble_place_slab(
             let Some(t) = world.tile_mut(x, y) else {
                 continue;
             };
-            // `ResetToType` keeps the ore tiles (`TileID.Sets.Ore`).
-            if !tile_is_ore(t.kind) {
-                t.kind = TILE_MARBLE;
-                t.frame_x = -1;
-                t.frame_y = -1;
-            }
-            t.flags = if slab.0 {
-                t.flags | FLAG_ACTIVE
+            // `ResetToType(TileID.Sets.Ore[tile.type] ? tile.type : num)`
+            // (`:142`) — the reset clears liquid/flags/frames, the wall rides.
+            let kind = if tile_is_ore(t.kind) { t.kind } else { num };
+            reset_to_type(t, kind);
+            if slab.0.active_at(i, j, scale) {
+                t.flags |= FLAG_ACTIVE;
             } else {
-                t.flags & !FLAG_ACTIVE
-            };
-            if slab.1 {
-                t.wall = WALL_MARBLE;
+                t.flags &= !FLAG_ACTIVE;
             }
-            // The vanilla's pots (`PlaceTight`) have no port tile yet.
+            if slab.1 {
+                t.wall = wall;
+            }
+            // `WorldUtils.TileFrame`/`SquareWallFrame` (`:148-149`) ride the
+            // port's deferred end-of-pipeline framing seam (ANALYSIS).
+            tile_smooth_slope(world, x, y);
+            // `:151-158` — the two speleothem arms: the SolidTile gate draws
+            // the Next(4) only when it passes (the C# short-circuit order).
+            if solid_tile(world, x, y - 1) && rng.chance(4) {
+                place_tight(world, rng, x, y, false);
+            }
+            if solid_tile(world, x, y) && rng.chance(4) {
+                place_tight(world, rng, x, y - 1, false);
+            }
         }
     }
 }
 
-/// The C#'s `TileID.Sets.Ore` check (`TileID.cs`) — the slab keeps the ores.
+/// `TileID.Sets.Ore` (`TileID.cs:614`) verbatim — the slab keeps the ores.
 fn tile_is_ore(kind: u16) -> bool {
     matches!(
         kind,
-        7 | 6
-            | 8
-            | 9
-            | 166
-            | 167
-            | 168
-            | 169
-            | 170
-            | 171
-            | 172
-            | 174
-            | 176
-            | 408
-            | 221
-            | 222
-            | 223
-            | 224
-            | 403
+        7 | 166 | 6 | 167 | 9 | 168 | 8 | 169 | 22 | 204 | 37 | 58 | 107 | 221 | 108 | 222
+            | 111 | 223 | 211
     )
+}
+
+/// `WorldGen.SolidTile` (`WorldGen.cs:70111-70131`) — a null tile reads solid
+/// (`Main.tile[i, j] == null → true`); the `noDoors` arm never fires here.
+fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && TILE_SOLID.has(t.kind)
+        && !TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidOrSlopedTile` (`WorldGen.cs:69985-70009`,
+/// `includePlatforms: false`): active, `tileSolid`, not `tileSolidTop`, not
+/// wired-inactive — the slope/half-brick states stay solid.
+fn solid_or_sloped(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active() && TILE_SOLID.has(t.kind) && !TILE_SOLID_TOP.has(t.kind) && !t.inactive()
+    })
+}
+
+/// `WorldGen.TileEmpty` (`WorldGen.cs:69976-69983`): absent or actuated-off
+/// reads empty.
+fn tile_empty(world: &World, x: i32, y: i32) -> bool {
+    !world.tile(x, y).is_some_and(|t| t.active() && !t.inactive())
+}
+
+/// `Tile.SmoothSlope(x, y)` (`Tile.cs:792-865`, `applyToNeighbors: true`):
+/// the four neighbours smooth first (each with `applyToNeighbors: false`),
+/// then the cell itself. No RNG. The `sync` net arm never fires in worldgen.
+fn tile_smooth_slope(world: &mut World, x: i32, y: i32) {
+    for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] {
+        tile_smooth_slope_one(world, nx, ny);
+    }
+    tile_smooth_slope_one(world, x, y);
+}
+
+/// The single-cell `Tile.SmoothSlope` body (`Tile.cs:801-846`): the
+/// `CanPoundTile` + `SolidOrSlopedTile` gate, then the neighbour-mask
+/// slope/half-brick map.
+fn tile_smooth_slope_one(world: &mut World, x: i32, y: i32) {
+    if !crate::edit::can_pound_tile(world, x, y, true, |_, _| false)
+        || !solid_or_sloped(world, x, y)
+    {
+        return;
+    }
+    let flag = !tile_empty(world, x, y - 1);
+    let flag2 = !solid_or_sloped(world, x, y - 1) && flag;
+    let flag3 = solid_or_sloped(world, x, y + 1);
+    let flag4 = solid_or_sloped(world, x - 1, y);
+    let flag5 = solid_or_sloped(world, x + 1, y);
+    let mask = ((flag as i32) << 3) | ((flag3 as i32) << 2) | ((flag4 as i32) << 1) | (flag5 as i32);
+    let Some(t) = world.tile_mut(x, y) else {
+        return;
+    };
+    match mask {
+        // `:816-829` — the flag2 veto breaks WITHOUT a write (the default
+        // arm does not run).
+        10 => {
+            if !flag2 {
+                t.flags &= !FLAG_HALF_BRICK;
+                t.set_slope(3);
+            }
+        }
+        9 => {
+            if !flag2 {
+                t.flags &= !FLAG_HALF_BRICK;
+                t.set_slope(4);
+            }
+        }
+        6 => {
+            t.flags &= !FLAG_HALF_BRICK;
+            t.set_slope(1);
+        }
+        5 => {
+            t.flags &= !FLAG_HALF_BRICK;
+            t.set_slope(2);
+        }
+        4 => {
+            t.set_slope(0);
+            t.flags |= FLAG_HALF_BRICK;
+        }
+        _ => {
+            t.flags &= !FLAG_HALF_BRICK;
+            t.set_slope(0);
+        }
+    }
 }
 
 /// `WorldGen.BiomeTileCheck` (`WorldGen.cs:10934-10961`): a 50-tile radius box
