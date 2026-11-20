@@ -7,7 +7,7 @@
 //! (`npc_lights.rs`) and every other family (one list pair per engine,
 //! `LightingEngine.cs:36-38`, max-merged one frame late `:208-235`).
 //!
-//! ## The first three slices, sites 41-67, in C# source order
+//! ## Sites 41-75, in C# source order
 //!
 //! | # | site | arm | port |
 //! |---|------|-----|------|
@@ -38,6 +38,14 @@
 //! | 65 | `:61130` | ShimmerSlime 676 torch 23 | [`slime_lights`] |
 //! | 66 | `:61454` | LavaSlime 59 | [`slime_lights`] |
 //! | 67 | `:62420` | HeadlessHorseman gallop | landed W-10 (`npc_ai_unicorn_b::horseman_light`) — no double-feed |
+//! | 68 | `:90841` | trail mode 4 (120/137/138) | [`trail_light`] |
+//! | 69 | `:91247` | OnFire! 24 | [`buff_vfx_lights`] |
+//! | 70 | `:91264` | Hellfire 323 | [`buff_vfx_lights`] |
+//! | 71 | `:91280` | Daybreak 189 | [`buff_vfx_lights`] |
+//! | 72 | `:91295` | Betsy's Curse 203 | [`buff_vfx_lights`] |
+//! | 73 | `:91480` | Frostburn 44 | [`buff_vfx_lights`] |
+//! | 74 | `:91496` | Frostfire 324 | [`buff_vfx_lights`] |
+//! | 75 | `:91512` | Cursed Inferno 39 | [`buff_vfx_lights`] |
 //!
 //! ## RNG census — why the feed is draw-side
 //!
@@ -46,7 +54,8 @@
 //! shimmer-state dust (`:53231`/`:53233`/`:53237`), Medusa's charge dust
 //! (`:56409-56417`, `:56442-56455`), the torch zombies' `Next(30)` dust
 //! (`:56926`/`:56940`/`:56956`/`:56964`) and the slime dust gates
-//! (`:60347`, `:60892`, `:61113`, `:61131`, `:61455`). Skipping an arm
+//! (`:60347`, `:60892`, `:61113`, `:61131`, `:61455`), and every
+//! `UpdateNPC_BuffApplyVFX` dust arm (`:91150-91511`). Skipping an arm
 //! wholesale leaves the `Main.rand` stream untouched, so the fixed-step
 //! order stays exact.
 //!
@@ -60,6 +69,9 @@
 //! Hungry II, the town arms (`AI_007` has ZERO), the fighter tail
 //! (`:58402-58421` unwrapped) and the slime arms except 59 read the RAW
 //! position.
+//! * `UpdateNPC_BuffApplyVFX` adds it once at the head (`:91149`).
+//! * `UpdateNPC_UpdateTrails`' mode-4 light reads the RAW position
+//!   (`:90841` — only `oldPos[0]` gets the offset, `:90843`).
 //!
 //! ## Folds and cited skips (ANALYSIS "The NPC lights, second half")
 //!
@@ -94,6 +106,16 @@
 //!   ported behind its gate (unreachable until the init lands, the
 //!   module's own census); the ore arm additionally needs `NPC.color`
 //!   (no port field) and the herb arm its content gate — both cited.
+//! * `canDisplayBuffs` (`NPC.cs:6199`) is cleared ONLY by the Golem
+//!   245/246/247/248 rows inside `getGoodAdjustments` (`:18010`/`:18015`/
+//!   `:18020`), which runs only under `Main.getGoodWorld` (`:17843`). The
+//!   port's machines run stock (`get_good_world: false`), so the flag
+//!   folds to TRUE — but it IS read at `:91145` (the BuffApplyVFX gate),
+//!   kept explicit in [`can_display_buffs`] for the future FTW wiring.
+//! * TrailingMode 4's nine duplicate lights per tick (`:90838-90842`
+//!   loops `oldPos.Length - 1 = 9` times over the SAME raw-position
+//!   tile) are kept verbatim — the list is max-merged, but the count is
+//!   part of the C#'s per-frame list.
 
 use tr_core::lighting::LightParams;
 use tr_core::tile_light::hsl_to_rgb;
@@ -590,6 +612,133 @@ pub(crate) fn slime_lights(n: &Npc, p: &LightParams) -> Vec<Light> {
 /// pass (`app/frame/draw.rs`). NO double-feed here — the site is recorded
 /// for the census only.
 
+/// `NPCID.Sets.TrailingMode` (`NPCID.cs:10430`, `CreateIntSet(-1, ...)`):
+/// mode 4 is exactly {120 ChaosElemental, 137 IlluminantBat, 138
+/// IlluminantSlime}. Every other ported kind defaults -1 (no trail).
+fn trailing_mode(t: i32) -> i32 {
+    match t {
+        120 | 137 | 138 => 4,
+        _ => -1,
+    }
+}
+
+/// Site 68 — `UpdateNPC_UpdateTrails`' mode-4 light (`NPC.cs:90836-90844`):
+/// the shift loop adds (0.3, 0, 0.2) at the RAW-position tile
+/// (`(int)position.X / 16`, `(int)position.Y / 16` — truncate before
+/// dividing) NINE times per tick (`oldPos.Length - 1`, `NPC.cs:6119`:
+/// `new Vector2[10]`). The duplicates are verbatim — the engine
+/// max-merges, but the list count is the C#'s. Only the IlluminantSlime
+/// 138 has a port kind (the 120/137 rows wait on their roster wave).
+pub(crate) fn trail_light(n: &Npc) -> Vec<Light> {
+    if trailing_mode(cs_type(n)) != 4 {
+        return Vec::new();
+    }
+    let x = n.x as i32 / 16;
+    let y = n.y as i32 / 16;
+    vec![(x, y, [0.3, 0.0, 0.2]); 9]
+}
+
+/// `NPC.canDisplayBuffs` (`NPC.cs:6199`, default true; reset true at
+/// `:8491`): the ONLY clears are the Golem 245/246/247/248 rows inside
+/// `getGoodAdjustments` (`:18010`/`:18015`/`:18020`), which `SetDefaults`
+/// runs only under `Main.getGoodWorld` (`:17843-17846`). The port's NPC
+/// machines run the stock config (`get_good_world: false` — the
+/// `npc_ai_golem.rs`/`npc_ai_style37.rs` convention), so the flag folds
+/// to TRUE for every kind here. The `:91145` gate below is kept explicit
+/// so the FTW wiring has its seam (the flag IS read there — the draft's
+/// "no other reader" claim was wrong).
+fn can_display_buffs(_n: &Npc) -> bool {
+    true
+}
+
+/// Sites 69-75 — `UpdateNPC_BuffApplyVFX`'s seven fire lights
+/// (`NPC.cs:91233-91513`), in C# order: OnFire! 24 / Hellfire 323 /
+/// Daybreak 189 light (1, 0.3, 0.1); Betsy's Curse 203 lights
+/// (0.6, 0.1, 0.9); Frostburn 44 / Frostfire 324 light (0.1, 0.6, 1);
+/// Cursed Inferno 39 lights (1, 0.3, 0.1). All at
+/// `((int)(position.X / 16f), (int)(position.Y / 16f + 1f))` — the +1
+/// rides INSIDE the truncation. The C# adds `netOffset` once at the
+/// method head (`:91149`) and the `canDisplayBuffs` gate (`:91145`)
+/// returns early (the fold above). The buff flags are derived from the
+/// live buff slots (`npc_buffs.rs`'s `set_flags_tick` map,
+/// `NPC.cs:92009-92132`); every dust arm is the wholesale skip.
+pub(crate) fn buff_vfx_lights(n: &Npc) -> Vec<Light> {
+    let mut out = Vec::new();
+    if !can_display_buffs(n) {
+        return out; // `:91145-91148`
+    }
+    let pos = n_pos(n) + n.net_offset;
+    let x = (pos.x / 16.0) as i32;
+    let y = (pos.y / 16.0 + 1.0) as i32;
+    let b = &n.buffs;
+    if b.has_buff(24) {
+        out.push((x, y, [1.0, 0.3, 0.1])); // `:91247`
+    }
+    if b.has_buff(323) {
+        out.push((x, y, [1.0, 0.3, 0.1])); // `:91264`
+    }
+    if b.has_buff(189) {
+        out.push((x, y, [1.0, 0.3, 0.1])); // `:91280`
+    }
+    if b.has_buff(203) {
+        out.push((x, y, [0.6, 0.1, 0.9])); // `:91295`
+    }
+    if b.has_buff(44) {
+        out.push((x, y, [0.1, 0.6, 1.0])); // `:91480`
+    }
+    if b.has_buff(324) {
+        out.push((x, y, [0.1, 0.6, 1.0])); // `:91496`
+    }
+    if b.has_buff(39) {
+        out.push((x, y, [1.0, 0.3, 0.1])); // `:91512`
+    }
+    out
+}
+
+/// The whole second-half feed for one NPC, in `UpdateNPC`'s call order
+/// (`NPC.cs:90378` BuffApplyVFX → `:90423` AI → `:90512` UpdateTrails;
+/// the `:90320` CastLights head lands with sites 76-80). The AI arms are
+/// mutually exclusive by aiStyle/type in the C#; the port evaluates each
+/// gate independently (the same set fires). No arm draws RNG — the feed
+/// is draw-side safe.
+pub(crate) fn npc_lights_b(n: &Npc, world: &World, p: &LightParams) -> Vec<Light> {
+    let mut out = Vec::new();
+    out.extend(buff_vfx_lights(n));
+    if let Some(l) = destroyer_light(n, world) {
+        out.push(l);
+    }
+    if let Some(l) = probe_light(n, world) {
+        out.push(l);
+    }
+    if let Some(l) = town_shimmer_light(n, p) {
+        out.push(l);
+    }
+    if let Some(l) = town_magic_light(n) {
+        out.push(l);
+    }
+    if let Some(l) = town_arrival_light(n) {
+        out.push(l);
+    }
+    if let Some(l) = town_slime_light(n, p) {
+        out.push(l);
+    }
+    if let Some(l) = medusa_light(n) {
+        out.push(l);
+    }
+    if let Some(l) = torch_zombie_light(n, world) {
+        out.push(l);
+    }
+    if let Some(l) = armed_torch_zombie_light(n) {
+        out.push(l);
+    }
+    if let Some(l) = fighter_tail_light(n) {
+        out.push(l);
+    }
+    out.extend(slime_lights(n, p));
+    out.extend(trail_light(n));
+    out
+}
+
 /// The raw top-left as a `Vec2` for the shared anchor helpers.
 fn n_pos(n: &Npc) -> glam::Vec2 {
     glam::Vec2::new(n.x, n.y)
@@ -811,5 +960,36 @@ mod tests {
         let neg = glam::Vec2::new(-1.0, -1.0);
         assert_eq!(tile_x(neg, 0.0, XAnchor::CenterTruncated), 0);
         assert_eq!(tile_x(neg, 0.0, XAnchor::Center), 0);
+    }
+
+    #[test]
+    fn illuminant_slime_trail_emits_nine_duplicates() {
+        // `:90838-90842` — mode 4 (138) loops oldPos.Length-1 = 9 times
+        // over the SAME raw tile. The 24×18 box at (160.9, 176.9):
+        // (int)160.9/16 = 10, (int)176.9/16 = 11.
+        let n = Npc::new(NpcKind::IlluminantSlime, 160.9, 176.9, 1, 0.0);
+        let ls = trail_light(&n);
+        assert_eq!(ls.len(), 9);
+        assert!(ls.iter().all(|&l| l == (10, 11, [0.3, 0.0, 0.2])));
+        // A non-trail kind emits nothing.
+        let z = Npc::new(NpcKind::Zombie, 160.0, 176.0, 1, 0.0);
+        assert!(trail_light(&z).is_empty());
+    }
+
+    #[test]
+    fn buff_vfx_lights_the_offset_tile_plus_one_row() {
+        // `:91247` — OnFire! 24 at ((int)(x/16), (int)(y/16 + 1)). The
+        // zombie at (160, 160) + offset (0, 16): x = 10, y = (176/16+1)
+        // = 12. The +1 rides INSIDE the truncation.
+        let mut n = Npc::new(NpcKind::Zombie, 160.0, 160.0, 1, 0.0);
+        n.net_offset = glam::Vec2::new(0.0, 16.0);
+        assert!(buff_vfx_lights(&n).is_empty(), "no buff, no light");
+        n.buffs.add_buff(24, 600);
+        let ls = buff_vfx_lights(&n);
+        assert_eq!(ls, vec![(10, 12, [1.0, 0.3, 0.1])]);
+        // Betsy's Curse 203 is the purple one.
+        let mut m = Npc::new(NpcKind::Zombie, 160.0, 160.0, 1, 0.0);
+        m.buffs.add_buff(203, 600);
+        assert_eq!(buff_vfx_lights(&m)[0].2, [0.6, 0.1, 0.9]);
     }
 }
