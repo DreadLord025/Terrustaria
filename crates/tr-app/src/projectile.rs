@@ -4641,6 +4641,70 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `AI()`'s aiStyle-52 block (`Projectile.cs:28504-28559`) — the heal
+    /// orbs: the Spectre set bonus's SpiritHeal (298) and the Vampire
+    /// Knives' VampireHeal (305). `ai[0]` is the target player index,
+    /// `ai[1]` the heal amount. The orb steers toward the player's centre
+    /// at speed 4 through the `(v * 15 + d) / 16` blend; on the < 50 px
+    /// box-overlap contact the local owner's orb heals (`HealEffect` RAW
+    /// text, `statLife +=`, the `statLifeMax2` cap — `Player.Heal`'s order)
+    /// unless the target carries MoonLeech (buff 145), then `Kill()`s.
+    /// The C# `Kill()` has NO return — the blend still runs on the dead
+    /// slot and `HandleMovement` integrates it (`:17015` before the
+    /// `!active` return `:17027`); the rows keep `tileCollide = false`
+    /// (`:3890`/`:3971`), so the movement is a plain integration.
+    ///
+    /// The per-kind dust trails (`:28533-28558` — the 305's 3× dust 183,
+    /// every other kind's 5× dust 175) roll no `Main.rand` — SKIPPED whole
+    /// (no dust layer). The `NetMessage.SendData(66)` heal broadcast
+    /// (`:28524`) is MP-only. The port's single player maps
+    /// `Main.player[ai[0]]` at index `local_owner`; a foreign index reads
+    /// as the C#'s inactive player — no heal, no steering (the
+    /// `ai_spectre_shot` precedent), but the integration still runs.
+    fn ai_heal_orb(&mut self, player: Option<&mut crate::player::Player>, local_owner: u8) {
+        // The stock friendly = false (`:788` — neither row sets it), held
+        // for the slot's whole life: the orb damages nothing (the pool's
+        // slot default is true — the `ai_dungeon_debris` precedent).
+        self.friendly = false;
+        // `:28506-28511` — the target centre and the distance.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let target_player = player.filter(|_| self.ai[0] == local_owner as f32);
+        if let Some(p) = target_player {
+            let (pcx, pcy) = p.center();
+            let target = Vec2::new(pcx, pcy);
+            let delta = target - center;
+            let dist = delta.length();
+            // `:28513-28527` — the < 50f + box-overlap contact.
+            let overlap = dist < 50.0
+                && self.pos.x < p.x + crate::player::WIDTH
+                && self.pos.x + self.w > p.x
+                && self.pos.y < p.y + p.height
+                && self.pos.y + self.h > p.y;
+            if overlap {
+                // `:28515-28525` — the owner-gated heal, refused under
+                // MoonLeech (`Player.moonLeech` is UpdateBuffs' buff-145
+                // flag, `Player.cs:11859-11862`; the port reads the live
+                // buff slot).
+                if self.owner == local_owner && p.buffs.find_buff_index(145).is_none() {
+                    let heal = self.ai[1] as i32;
+                    // HealEffect(num383, broadcast: false) → statLife +=
+                    // → the statLifeMax2 cap — `Player.heal`'s order (the
+                    // RAW text survives the cap).
+                    p.heal(heal);
+                }
+                // `:28526` — Kill(); no return (the blend below still runs).
+                self.active = false;
+                self.time_left = 0;
+            }
+            // `:28528-28532` — the speed-4 `(v * 15 + d) / 16` blend; the
+            // epsilon guard is the pool's coincident-centre convention.
+            self.steer_blend(target, center, 4.0, 16.0);
+        }
+        // The dust trails — SKIPPED (no rolls). HandleMovement's free
+        // integrate runs even on the kill tick (`:17015`/`:17027`).
+        self.pos += self.vel;
+    }
+
     /// `AI()`'s aiStyle-118 block (`Projectile.cs:34638-34807`) — the Nebula
     /// Arcanum (617). Two flight modes picked per tick off the speed: above
     /// 4.0 the fast spin (`rotation -= PI/30`, the 0.98 decay + the 0.0074468083
@@ -17467,6 +17531,16 @@ impl ProjectilePool {
                         // `player` for the dead gate).
                         51 => {
                             self.slots[i].ai_spectre_shot(world, &npcs[..], owner, player.as_deref())
+                        }
+                        // W4-d6 — `AI()`'s `else if (this.aiStyle == 52)`
+                        // (`Projectile.cs:28504-28559`): the heal orbs
+                        // (SpiritHeal 298 / VampireHeal 305). The heal write
+                        // rides the mutable player channel; the arm owns its
+                        // integration (the rows' `tileCollide = false`,
+                        // `:3890`/`:3971` — HandleMovement runs after the AI
+                        // even on the contact-kill tick, `:17015`/`:17027`).
+                        52 => {
+                            self.slots[i].ai_heal_orb(player.as_deref_mut(), local_owner);
                         }
                         // The Spectre Wrath (`:28938-28993`): the hostile
                         // window, the uniform re-pick (one rng draw) and the
@@ -34191,6 +34265,108 @@ mod magic_ai_tests {
             (pool.slots()[slot].vel.x - 1.0).abs() < 1e-9,
             "a dead player is unhunted"
         );
+    }
+
+    /// W4-d6 — one pool update with the local player channel armed.
+    fn step_player(pool: &mut ProjectilePool, w: &mut World, p: &mut crate::player::Player) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(w, &mut [], None, None, Some(p), YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+    }
+
+    #[test]
+    fn test_w4_d6_style_52_the_heal_orb_blends_at_16_and_heals_on_the_50px_contact() {
+        // `:28528-28532`: the speed-4 `(v*15 + d)/16` blend, one per sub-step
+        // (the 298's `extraUpdates = 3` → four). `:28513-28526`: the < 50f
+        // box-overlap contact heals ai[1] and kills; the HealEffect text
+        // carries the RAW amount even when the cap eats part of it
+        // (`Player.heal`'s order).
+        let mut w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        // 100 px left of the player centre — out of the 50f contact.
+        let slot = pool
+            .spawn_with_data_ai_owned(SPIRIT_HEAL, 0, pcx - 103.0, pcy - 3.0, 0.0, 0.0, 0, 0.0, 0.0, 5.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "100f is outside the contact");
+        let mut v = 0.0f32;
+        for _ in 0..4 {
+            v = (v * 15.0 + 4.0) / 16.0;
+        }
+        assert!((p.vel.x - v).abs() < 1e-5, "four speed-4 blends from rest");
+        assert!(p.vel.y.abs() < 1e-9, "the colinear steer leaves y alone");
+        // The contact: spawn overlapping the player at 95/100 hp, heal 20.
+        player.hp = 95;
+        player.max_hp = 100;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(SPIRIT_HEAL, 0, pcx - 3.0, pcy - 3.0, 0.0, 0.0, 0, 0.0, 0.0, 20.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[slot].active, "the contact kills (`:28526`)");
+        assert_eq!(player.hp, 100, "the statLifeMax2 cap");
+        assert_eq!(player.take_heal_effect(), Some(20), "the RAW heal text survives the cap");
+    }
+
+    #[test]
+    fn test_w4_d6_style_52_moon_leech_refuses_the_heal_but_the_contact_still_kills() {
+        // `:28515`: `owner == Main.myPlayer && !Main.player[myPlayer].moonLeech`
+        // gates ONLY the heal — the Kill() at `:28526` runs either way.
+        let mut w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.buffs.add_buff(145, 840); // MoonLeech (`Player.cs:11859-11862`)
+        player.hp = 50;
+        player.max_hp = 100;
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(VAMPIRE_HEAL, 0, pcx - 3.0, pcy - 3.0, 0.0, 0.0, 0, 0.0, 0.0, 20.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[slot].active, "the contact kills regardless");
+        assert_eq!(player.hp, 50, "MoonLeech refuses the heal");
+        assert_eq!(player.take_heal_effect(), None, "no heal text either");
+        // The 305 row runs ELEVEN sub-steps (`extraUpdates = 10`, `:3972`):
+        // from 60 px out the approach accelerates through the (v*15+4)/16
+        // blend each sub-step; the leech still refuses every contact heal.
+        player.hp = 50;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(VAMPIRE_HEAL, 0, pcx - 63.0, pcy - 3.0, 0.0, 0.0, 0, 0.0, 0.0, 7.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        let p = &pool.slots()[slot];
+        let mut v = 0.0f32;
+        for _ in 0..11 {
+            v = (v * 15.0 + 4.0) / 16.0;
+        }
+        assert!(
+            !p.active || (p.vel.x - v).abs() < 1e-4,
+            "eleven sub-steps of the speed-4 approach (or the contact landed)"
+        );
+        assert_eq!(player.hp, 50, "the leech holds through the approach");
+    }
+
+    #[test]
+    fn test_w4_d6_style_52_the_heal_orb_rows_are_verbatim() {
+        // `:3883-3892` (298) / `:3965-3973` (305): 6x6, aiStyle 52, alpha
+        // 255, tileCollide false; extraUpdates 3 vs 10; the stock
+        // penetrate 1 / timeLeft 3600; friendly stays false (`:788`).
+        let d = proj_data(SPIRIT_HEAL).unwrap();
+        assert_eq!((d.w, d.h), (6.0, 6.0));
+        assert_eq!(d.ai_style, 52);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.extra_updates, 3);
+        assert!(!d.tile_collide);
+        assert!(d.magic, "`:3889`");
+        let d = proj_data(VAMPIRE_HEAL).unwrap();
+        assert_eq!(d.ai_style, 52);
+        assert_eq!(d.extra_updates, 10);
+        assert!(!d.magic, "the 305 arm sets no class (`:3965-3973`)");
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, 3600);
     }
 
     #[test]

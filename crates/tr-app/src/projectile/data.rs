@@ -1043,6 +1043,27 @@ pub const LOST_SOUL: u16 = 297;
 /// `ProjectileID.SpectreWrath` (356) — the set-bonus's ghost shot (aiStyle
 /// 59, `tileCollide = false`, `extraUpdates = 3`).
 pub const SPECTRE_WRATH: u16 = 356;
+/// `ProjectileID.SpiritHeal` (298, `ProjectileID.cs:1150`) — the Spectre
+/// set bonus's heal orb (aiStyle 52, W4-d6).
+pub const SPIRIT_HEAL: u16 = 298;
+/// `ProjectileID.VampireHeal` (305, `ProjectileID.cs:1164`) — the Vampire
+/// Knives' heal orb (aiStyle 52, W4-d6).
+pub const VAMPIRE_HEAL: u16 = 305;
+/// `ProjectileID.FlamingJack` (321, `ProjectileID.cs:1196`) — the
+/// Pumpking's homing jack head (aiStyle 55, W4-d6).
+pub const FLAMING_JACK: u16 = 321;
+/// `ProjectileID.FlamingScythe` (329, `ProjectileID.cs:1212`) — the
+/// Pumpking blade's spinning scythe (aiStyle 56, W4-d6).
+pub const FLAMING_SCYTHE: u16 = 329;
+/// `ProjectileID.WaterGun` (358, `ProjectileID.cs:1270`) — the Water Gun's
+/// stream blob (aiStyle 60, W4-d6).
+pub const WATER_GUN: u16 = 358;
+/// `ProjectileID.SlimeGun` (406, `ProjectileID.cs:1366`) — the Slime Gun's
+/// stream blob (aiStyle 60, W4-d6).
+pub const SLIME_GUN: u16 = 406;
+/// `ProjectileID.ShimmerGunStream` (1042, `ProjectileID.cs:2638`) — the
+/// Shimmer Gun's stream blob (aiStyle 60, W4-d6).
+pub const SHIMMER_GUN_STREAM: u16 = 1042;
 /// `ProjectileID.Typhoon` (409) — the Razorblade Typhoon's vortex (aiStyle
 /// 71, 30x30, `penetrate = -1`, `timeLeft = 300`).
 pub const TYPHOON: u16 = 409;
@@ -2809,6 +2830,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // stock `penetrate = 1` and the 3600 reset (the ghostHurt spawn
             // is Phase 3's documented skip).
             SPECTRE_WRATH => (6.0, 6.0, 59, 1, TIME_LEFT_DEFAULT, 3, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:3883-3892` SpiritHeal (298): 6x6, aiStyle 52,
+            // alpha 255, magic, `tileCollide = false`, `extraUpdates = 3`.
+            // `friendly` stays the reset false (`:788` — the heal orb hits
+            // nothing); the stock penetrate 1 / timeLeft 3600 stand.
+            SPIRIT_HEAL => (6.0, 6.0, 52, 1, TIME_LEFT_DEFAULT, 3, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:3965-3973` VampireHeal (305): 6x6, aiStyle 52,
+            // alpha 255, `tileCollide = false`, `extraUpdates = 10`. NO
+            // magic flag (the C# arm sets none — the heal is classless).
+            VAMPIRE_HEAL => (6.0, 6.0, 52, 1, TIME_LEFT_DEFAULT, 10, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:4903-4915` Typhoon — 30x30, aiStyle 71, `penetrate = -1`,
             // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
             // dropped.
@@ -4304,6 +4334,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | UNHOLY_TRIDENT | UNHOLY_TRIDENT_HOSTILE
                 | BALL_OF_FROST | MAGNET_SPHERE_BALL | MAGNET_SPHERE_BOLT
                 | INFERNO_FORK_BOLT | INFERNO_BLAST | LOST_SOUL | SPECTRE_WRATH
+                // W4-d6 — the SpiritHeal's `magic = true` (`:3889`); the
+                // VampireHeal 305 sets none (classless, `:3965-3973`).
+                | SPIRIT_HEAL
                 | VENOM_FANG | FROST_BOLT | TYPHOON | LEAF
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
