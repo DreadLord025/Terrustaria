@@ -1166,6 +1166,26 @@ pub enum NpcKind {
     /// 22x22, aiStyle 6, dmg 40, def 44, 500 HP,
     /// kb 0.0, value 700, noGravity, noTileCollide, behindTiles, netAlways. UNWIRED (data-only; the AI lands with its wave). Bestiary folds onto SeekerHead (Hide=true).
     SeekerTail,
+    /// `NPCID.Clinger` (101) - W4-d35 data wave (`NPC.cs:10186-10201`):
+    /// 30x30, aiStyle 13, dmg 70, def 30, 320 HP,
+    /// kb 0.2, value 600, noGravity, noTileCollide, behindTiles. UNWIRED (data-only; the AI lands with its wave).
+    Clinger,
+    /// `NPCID.AnglerFish` (102) - W4-d35 data wave (`NPC.cs:10202-10215`):
+    /// 18x20, aiStyle 16, dmg 80, def 22, 90 HP,
+    /// kb 1.0, value 500, noGravity. UNWIRED (data-only; the AI lands with its wave).
+    AnglerFish,
+    /// `NPCID.GreenJellyfish` (103) - W4-d35 data wave (`NPC.cs:10216-10229`):
+    /// 26x26, aiStyle 18, dmg 80, def 30, 120 HP,
+    /// kb 1.0, value 800, noGravity. UNWIRED (data-only; the AI lands with its wave).
+    GreenJellyfish,
+    /// `NPCID.Werewolf` (104) - W4-d35 data wave (`NPC.cs:10230-10242`):
+    /// 18x40, aiStyle 3, dmg 70, def 38, 350 HP,
+    /// kb 0.4, value 1000. UNWIRED (data-only; the AI lands with its wave).
+    Werewolf,
+    /// `NPCID.Clown` (109) - W4-d35 data wave (`NPC.cs:10299-10312`):
+    /// 34x78, aiStyle 3, dmg 60, def 25, 800 HP,
+    /// kb 0.2, value 10000. UNWIRED (data-only; the AI lands with its wave).
+    Clown,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3223,6 +3243,7 @@ impl Npc {
                                 255
                             }
                             NpcKind::Wraith => 100,
+                            NpcKind::GreenJellyfish => 20,
                             _ => 0,
                         }
                     }),
@@ -3650,6 +3671,13 @@ impl Npc {
             NpcKind::SeekerHead => 0.0,
             NpcKind::SeekerBody => 0.0,
             NpcKind::SeekerTail => 0.0,
+            // W4-d35 (E): the 101/102/103/104/109 knockBackResist rows
+            // (the no-row kinds keep the head's 1f, NPC.cs:8533).
+            NpcKind::Clinger => 0.2,
+            NpcKind::AnglerFish => 1.0,
+            NpcKind::GreenJellyfish => 1.0,
+            NpcKind::Werewolf => 0.4,
+            NpcKind::Clown => 0.2,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4054,6 +4082,12 @@ impl Npc {
             NpcKind::SeekerHead => 36,
             NpcKind::SeekerBody => 40,
             NpcKind::SeekerTail => 44,
+            // W4-d35 (E): the 101/102/103/104/109 defense rows.
+            NpcKind::Clinger => 30,
+            NpcKind::AnglerFish => 22,
+            NpcKind::GreenJellyfish => 30,
+            NpcKind::Werewolf => 38,
+            NpcKind::Clown => 25,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4450,6 +4484,12 @@ impl Npc {
             NpcKind::SeekerHead => 700.0,
             NpcKind::SeekerBody => 700.0,
             NpcKind::SeekerTail => 700.0,
+            // W4-d35 (E): the 101/102/103/104/109 value rows (copper).
+            NpcKind::Clinger => 600.0,
+            NpcKind::AnglerFish => 500.0,
+            NpcKind::GreenJellyfish => 800.0,
+            NpcKind::Werewolf => 1000.0,
+            NpcKind::Clown => 10000.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6490,6 +6530,13 @@ impl Npc {
             | NpcKind::SeekerHead
             | NpcKind::SeekerBody
             | NpcKind::SeekerTail => {}
+            // W4-d35 (E): the 101/102/103/104/109 kinds are UNWIRED (data-only);
+            // the AI lands with its wave (the wyvern no-op precedent).
+            NpcKind::Clinger
+            | NpcKind::AnglerFish
+            | NpcKind::GreenJellyfish
+            | NpcKind::Werewolf
+            | NpcKind::Clown => {}
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
     }
@@ -9272,6 +9319,13 @@ impl Npc {
             | NpcKind::SeekerHead
             | NpcKind::SeekerBody
             | NpcKind::SeekerTail => {}
+            // W4-d35 (E): the 101/102/103/104/109 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Clinger
+            | NpcKind::AnglerFish
+            | NpcKind::GreenJellyfish
+            | NpcKind::Werewolf
+            | NpcKind::Clown => {}
         }
     }
 
@@ -18856,6 +18910,12 @@ impl Npc {
             NpcKind::SeekerHead => 446,
             NpcKind::SeekerBody => 447,
             NpcKind::SeekerTail => 448,
+            // W4-d35 (E): the port-local band (to_u16's ids).
+            NpcKind::Clinger => 449,
+            NpcKind::AnglerFish => 450,
+            NpcKind::GreenJellyfish => 451,
+            NpcKind::Werewolf => 452,
+            NpcKind::Clown => 453,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23925,7 +23985,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 290] = [
+    pub(super) const ALL_KINDS: [NpcKind; 295] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24227,6 +24287,12 @@ mod tests {
         NpcKind::SeekerHead,
         NpcKind::SeekerBody,
         NpcKind::SeekerTail,
+        // W4-d35 (E): the 101/102/103/104/109 data-wave kinds.
+        NpcKind::Clinger,
+        NpcKind::AnglerFish,
+        NpcKind::GreenJellyfish,
+        NpcKind::Werewolf,
+        NpcKind::Clown,
         NpcKind::WyvernTail,
     ];
 
@@ -27839,7 +27905,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            290,
+            295,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31505,6 +31571,12 @@ mod s1_d_2_tests {
         (NpcKind::SeekerHead, 6),
         (NpcKind::SeekerBody, 6),
         (NpcKind::SeekerTail, 6),
+        // W4-d35 (E).
+        (NpcKind::Clinger, 13),
+        (NpcKind::AnglerFish, 16),
+        (NpcKind::GreenJellyfish, 18),
+        (NpcKind::Werewolf, 3),
+        (NpcKind::Clown, 3),
         (NpcKind::WyvernTail, 6),
     ];
 
@@ -34298,5 +34370,115 @@ mod w4_d35_d_tests {
         assert_eq!(e.kind, NpcKind::SeekerHead, "SeekerTail folds to SeekerHead");
         assert_eq!(NpcKind::SeekerTail.net_id(), e.net_id, "SeekerTail net reads the fold");
         assert_eq!(crate::render::entities::texture_net_id(NpcKind::SeekerTail), 100, "SeekerTail draw sheet stays own");
+    }
+}
+
+#[cfg(test)]
+mod w4_d35_e_tests {
+    //! W4-d35 batch E (101/102/103/104/109) - the data-only SetDefaults wave.
+    //! Every row pins verbatim to the C# (`NPC.cs:10186-10201`, `NPC.cs:10202-10215`, `NPC.cs:10216-10229`, `NPC.cs:10230-10242`, `NPC.cs:10299-10312`). WRITTEN, NOT RUN
+    //! (code-only mode); the smallkinds-witness precedent.
+    use super::*;
+
+    #[test]
+    fn w4_d35_e_the_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value, scale, alpha)
+        let rows = [
+            (NpcKind::Clinger, 101u16, 13u8, 30.0, 30.0, 70, 30, 320, 0.2f32, 600.0f32, 1.0f32, 0u8),
+            (NpcKind::AnglerFish, 102u16, 16u8, 18.0, 20.0, 80, 22, 90, 1.0f32, 500.0f32, 1.0f32, 0u8),
+            (NpcKind::GreenJellyfish, 103u16, 18u8, 26.0, 26.0, 80, 30, 120, 1.0f32, 800.0f32, 1.0f32, 20u8),
+            (NpcKind::Werewolf, 104u16, 3u8, 18.0, 40.0, 70, 38, 350, 0.4f32, 1000.0f32, 1.0f32, 0u8),
+            (NpcKind::Clown, 109u16, 3u8, 34.0, 78.0, 60, 25, 800, 0.2f32, 10000.0f32, 1.0f32, 0u8),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value, scale, alpha) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // cs_id: visible kinds ride their own vanilla id; the Hide
+            // kinds fold to the head (the fallback reads the head entry).
+            if crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            }
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, scale, "{kind:?} scale");
+            assert_eq!(shell.alpha, alpha, "{kind:?} alpha");
+        }
+        // sounds
+        assert_eq!(NpcKind::Clinger.hit_sound(), Some("NPC_Hit_1"), "Clinger hit");
+        assert_eq!(NpcKind::Clinger.death_sound(), Some("NPC_Killed_1"), "Clinger death");
+        assert_eq!(NpcKind::AnglerFish.hit_sound(), Some("NPC_Hit_1"), "AnglerFish hit");
+        assert_eq!(NpcKind::AnglerFish.death_sound(), Some("NPC_Killed_1"), "AnglerFish death");
+        assert_eq!(NpcKind::GreenJellyfish.hit_sound(), Some("NPC_Hit_25"), "GreenJellyfish hit");
+        assert_eq!(NpcKind::GreenJellyfish.death_sound(), Some("NPC_Killed_28"), "GreenJellyfish death");
+        assert_eq!(NpcKind::Werewolf.hit_sound(), Some("NPC_Hit_6"), "Werewolf hit");
+        assert_eq!(NpcKind::Werewolf.death_sound(), Some("NPC_Killed_1"), "Werewolf death");
+        assert_eq!(NpcKind::Clown.hit_sound(), Some("NPC_Hit_1"), "Clown hit");
+        assert_eq!(NpcKind::Clown.death_sound(), Some("NPC_Killed_2"), "Clown death");
+        // protocol band (port-local 429..; the vanilla ids collide)
+        assert_eq!(NpcKind::Clinger.to_u16(), 449, "Clinger proto");
+        assert_eq!(NpcKind::from_u16(449), Some(NpcKind::Clinger), "Clinger decode");
+        assert_eq!(NpcKind::AnglerFish.to_u16(), 450, "AnglerFish proto");
+        assert_eq!(NpcKind::from_u16(450), Some(NpcKind::AnglerFish), "AnglerFish decode");
+        assert_eq!(NpcKind::GreenJellyfish.to_u16(), 451, "GreenJellyfish proto");
+        assert_eq!(NpcKind::from_u16(451), Some(NpcKind::GreenJellyfish), "GreenJellyfish decode");
+        assert_eq!(NpcKind::Werewolf.to_u16(), 452, "Werewolf proto");
+        assert_eq!(NpcKind::from_u16(452), Some(NpcKind::Werewolf), "Werewolf decode");
+        assert_eq!(NpcKind::Clown.to_u16(), 453, "Clown proto");
+        assert_eq!(NpcKind::from_u16(453), Some(NpcKind::Clown), "Clown decode");
+        // flags
+        assert_eq!(NpcKind::Clinger.behind_tiles(), true, "Clinger behindTiles");
+        assert_eq!(NpcKind::Clinger.no_gravity(), true, "Clinger noGravity");
+        assert_eq!(NpcKind::AnglerFish.behind_tiles(), false, "AnglerFish behindTiles");
+        assert_eq!(NpcKind::AnglerFish.no_gravity(), true, "AnglerFish noGravity");
+        assert_eq!(NpcKind::GreenJellyfish.behind_tiles(), false, "GreenJellyfish behindTiles");
+        assert_eq!(NpcKind::GreenJellyfish.no_gravity(), true, "GreenJellyfish noGravity");
+        assert_eq!(NpcKind::Werewolf.behind_tiles(), false, "Werewolf behindTiles");
+        assert_eq!(NpcKind::Werewolf.no_gravity(), false, "Werewolf noGravity");
+        assert_eq!(NpcKind::Clown.behind_tiles(), false, "Clown behindTiles");
+        assert_eq!(NpcKind::Clown.no_gravity(), false, "Clown noGravity");
+        // debuff immunities (NPCID.cs DebuffImmunitySets)
+        let b = NpcBuffs::for_kind(NpcKind::Clinger);
+        assert!(b.buff_immune[39], "Clinger immune 39");
+        assert!(b.buff_immune[31], "Clinger immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::AnglerFish);
+        assert!(b.buff_immune[31], "AnglerFish immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::GreenJellyfish);
+        assert!(b.buff_immune[31], "GreenJellyfish immune 31");
+        let b = NpcBuffs::for_kind(NpcKind::Werewolf);
+        assert!(b.buff_immune.iter().all(|&i| !i), "Werewolf null entry");
+        let b = NpcBuffs::for_kind(NpcKind::Clown);
+        assert!(b.buff_immune[31], "Clown immune 31");
+        // bestiary entries / Hide folds
+        let e = crate::bestiary::entry_for_npc(NpcKind::Clinger, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 101, "Clinger net");
+        assert_eq!(e.credit_id, "Clinger", "Clinger credit");
+        assert_eq!(e.name, "Clinger", "Clinger name");
+        assert_eq!(NpcKind::Clinger.cs_id(), 101, "Clinger cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::AnglerFish, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 102, "AnglerFish net");
+        assert_eq!(e.credit_id, "AnglerFish", "AnglerFish credit");
+        assert_eq!(e.name, "Angler Fish", "AnglerFish name");
+        assert_eq!(NpcKind::AnglerFish.cs_id(), 102, "AnglerFish cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::GreenJellyfish, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 103, "GreenJellyfish net");
+        assert_eq!(e.credit_id, "GreenJellyfish", "GreenJellyfish credit");
+        assert_eq!(e.name, "Green Jellyfish", "GreenJellyfish name");
+        assert_eq!(NpcKind::GreenJellyfish.cs_id(), 103, "GreenJellyfish cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Werewolf, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 104, "Werewolf net");
+        assert_eq!(e.credit_id, "Werewolf", "Werewolf credit");
+        assert_eq!(e.name, "Werewolf", "Werewolf name");
+        assert_eq!(NpcKind::Werewolf.cs_id(), 104, "Werewolf cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Clown, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 109, "Clown net");
+        assert_eq!(e.credit_id, "Clown", "Clown credit");
+        assert_eq!(e.name, "Clown", "Clown name");
+        assert_eq!(NpcKind::Clown.cs_id(), 109, "Clown cs_id");
     }
 }

@@ -621,6 +621,15 @@ impl NpcKind {
             NpcKind::SeekerHead => 446,
             NpcKind::SeekerBody => 447,
             NpcKind::SeekerTail => 448,
+            // W4-d35 (E): the 101/102/103/104/109 band - port-local protocol ids
+            // 429.. (the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::Clinger => 449,
+            NpcKind::AnglerFish => 450,
+            NpcKind::GreenJellyfish => 451,
+            NpcKind::Werewolf => 452,
+            NpcKind::Clown => 453,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -971,6 +980,11 @@ impl NpcKind {
             446 => NpcKind::SeekerHead,
             447 => NpcKind::SeekerBody,
             448 => NpcKind::SeekerTail,
+            449 => NpcKind::Clinger,
+            450 => NpcKind::AnglerFish,
+            451 => NpcKind::GreenJellyfish,
+            452 => NpcKind::Werewolf,
+            453 => NpcKind::Clown,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1862,6 +1876,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d35 (E): the 101/102/103/104/109 HitSound rows.
+            NpcKind::Clinger => "NPC_Hit_1",
+            NpcKind::AnglerFish => "NPC_Hit_1",
+            NpcKind::GreenJellyfish => "NPC_Hit_25",
+            NpcKind::Werewolf => "NPC_Hit_6",
+            NpcKind::Clown => "NPC_Hit_1",
             // W4-d35 (D): the 96/97/98/99/100 HitSound rows.
             NpcKind::DiggerBody => "NPC_Hit_1",
             NpcKind::DiggerTail => "NPC_Hit_1",
@@ -2190,6 +2210,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d35 (E): the 101/102/103/104/109 DeathSound rows.
+            NpcKind::Clinger => "NPC_Killed_1",
+            NpcKind::AnglerFish => "NPC_Killed_1",
+            NpcKind::GreenJellyfish => "NPC_Killed_28",
+            NpcKind::Werewolf => "NPC_Killed_1",
+            NpcKind::Clown => "NPC_Killed_2",
             // W4-d35 (D): the 96/97/98/99/100 DeathSound rows.
             NpcKind::DiggerBody => "NPC_Killed_1",
             NpcKind::DiggerTail => "NPC_Killed_1",
@@ -2320,6 +2346,10 @@ impl NpcKind {
             // W4-d35 (C): the 93/94 noGravity flyers (kb>0).
             NpcKind::GiantBat
             | NpcKind::Corruptor => true,
+            // W4-d35 (E): the 101/102/103 noGravity flyers (kb>0).
+            NpcKind::Clinger
+            | NpcKind::AnglerFish
+            | NpcKind::GreenJellyfish => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2603,6 +2633,15 @@ impl NpcKind {
             | NpcKind::SeekerHead
             | NpcKind::SeekerBody
             | NpcKind::SeekerTail => 6,
+            // aiStyle 3 - W4-d35 (E; NPC.cs :10230, :10299).
+            NpcKind::Werewolf
+            | NpcKind::Clown => 3,
+            // aiStyle 13 - W4-d35 (E; NPC.cs :10186).
+            NpcKind::Clinger => 13,
+            // aiStyle 16 - W4-d35 (E; NPC.cs :10202).
+            NpcKind::AnglerFish => 16,
+            // aiStyle 18 - W4-d35 (E; NPC.cs :10216).
+            NpcKind::GreenJellyfish => 18,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3157,6 +3196,12 @@ impl NpcKind {
             NpcKind::SeekerHead => (22.0, 22.0),
             NpcKind::SeekerBody => (22.0, 22.0),
             NpcKind::SeekerTail => (22.0, 22.0),
+            // W4-d35 (E): the 101/102/103/104/109 SetDefaults boxes.
+            NpcKind::Clinger => (30.0, 30.0),
+            NpcKind::AnglerFish => (18.0, 20.0),
+            NpcKind::GreenJellyfish => (26.0, 26.0),
+            NpcKind::Werewolf => (18.0, 40.0),
+            NpcKind::Clown => (34.0, 78.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3250,6 +3295,12 @@ impl NpcKind {
             NpcKind::DiggerHead => 95,
             // W4-d35 (D): the 98 vanilla NPC.type rows.
             NpcKind::SeekerHead => 98,
+            // W4-d35 (E): the 101/102/103/104/109 vanilla NPC.type rows.
+            NpcKind::Clinger => 101,
+            NpcKind::AnglerFish => 102,
+            NpcKind::GreenJellyfish => 103,
+            NpcKind::Werewolf => 104,
+            NpcKind::Clown => 109,
             NpcKind::BlazingWheel => 72,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
@@ -3405,6 +3456,8 @@ impl NpcKind {
                 | NpcKind::SeekerHead
                 | NpcKind::SeekerBody
                 | NpcKind::SeekerTail
+                // W4-d35 (E): the 101 behindTiles rows.
+                | NpcKind::Clinger
                 | NpcKind::BlazingWheel
         )
     }
@@ -3850,6 +3903,12 @@ impl NpcKind {
             NpcKind::SeekerHead => 500,
             NpcKind::SeekerBody => 500,
             NpcKind::SeekerTail => 500,
+            // W4-d35 (E): the 101/102/103/104/109 lifeMax rows.
+            NpcKind::Clinger => 320,
+            NpcKind::AnglerFish => 90,
+            NpcKind::GreenJellyfish => 120,
+            NpcKind::Werewolf => 350,
+            NpcKind::Clown => 800,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4238,6 +4297,12 @@ impl NpcKind {
             NpcKind::SeekerHead => 70,
             NpcKind::SeekerBody => 55,
             NpcKind::SeekerTail => 40,
+            // W4-d35 (E): the 101/102/103/104/109 damage rows.
+            NpcKind::Clinger => 70,
+            NpcKind::AnglerFish => 80,
+            NpcKind::GreenJellyfish => 80,
+            NpcKind::Werewolf => 70,
+            NpcKind::Clown => 60,
             NpcKind::DungeonSpirit => 70,
         }
     }

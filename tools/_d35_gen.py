@@ -218,10 +218,11 @@ def apply_batch(ks, label):
         rep(NPC, old, new)
     al=[k for k in ks if k['alpha']!=0]
     if al:
-        old="                            NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {\n                                255\n                            }\n                            _ => 0,"
-        new=("                            NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {\n                                255\n                            }\n"
-             + "".join(f"                            NpcKind::{k['v']} => {k['alpha']},\n" for k in al)
-             + "                            _ => 0,")
+        # Insert before the innermost alpha-match wildcard (28-space `_ => 0,`,
+        # unique to the ctor alpha match; robust to prior batches' alpha rows).
+        old="                            _ => 0,\n                        }\n                    }),"
+        new=("".join(f"                            NpcKind::{k['v']} => {k['alpha']},\n" for k in al)
+             + "                            _ => 0,\n                        }\n                    }),")
         rep(NPC, old, new)
     # 14. ALL_KINDS + count
     ins(NPC, "        NpcKind::WyvernTail,\n    ];",

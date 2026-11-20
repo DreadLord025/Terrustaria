@@ -1618,6 +1618,12 @@ fn portrait_data(
         (NpcKind::SeekerHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::SeekerBody, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::SeekerTail, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        // W4-d35 (E): the 101/102/103/104/109 portraits rest the SetDefaults box.
+        (NpcKind::Clinger, _) => (sheet_i, 30.0, 30.0, 30.0, white),
+        (NpcKind::AnglerFish, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        (NpcKind::GreenJellyfish, _) => (sheet_i, 26.0, 26.0, 26.0, white),
+        (NpcKind::Werewolf, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Clown, _) => (sheet_i, 78.0, 34.0, 78.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

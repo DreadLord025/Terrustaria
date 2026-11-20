@@ -3209,6 +3209,15 @@ pub(crate) fn draw_npcs(
             NpcKind::SeekerHead => generic_anchor(assets.npc_sheet(98), 1, n, w, h),
             NpcKind::SeekerBody => generic_anchor(assets.npc_sheet(99), 1, n, w, h),
             NpcKind::SeekerTail => generic_anchor(assets.npc_sheet(100), 1, n, w, h),
+            // W4-d35 (E): the 101/102/103/104/109 draw arms. **Sheet deferral**:
+            // NPC_101/102/103/104/109 are NOT packed (the atlas stands at the 8192
+            // strict-GPU bound - the wyvern precedent); npc_sheet returns
+            // None and the draw skips. The packing rides the atlas-repack wave.
+            NpcKind::Clinger => generic_anchor(assets.npc_sheet(101), 5, n, w, h),
+            NpcKind::AnglerFish => generic_anchor(assets.npc_sheet(102), 6, n, w, h),
+            NpcKind::GreenJellyfish => generic_anchor(assets.npc_sheet(103), 7, n, w, h),
+            NpcKind::Werewolf => humanoid_draw(assets.npc_sheet(104), 16, n, w, h),
+            NpcKind::Clown => humanoid_draw(assets.npc_sheet(109), 12, n, w, h),
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3313,6 +3322,8 @@ pub(crate) fn draw_npcs(
                     | NpcKind::WyvernBody2
                     | NpcKind::WyvernBody3
                     | NpcKind::WyvernTail
+                    // W4-d35 (E): the 101 chain/spin rotations.
+                    | NpcKind::Clinger
                     // W4-d35 (D): the 96/97/98/99/100 chain/spin rotations.
                     | NpcKind::DiggerBody
                     | NpcKind::DiggerTail
