@@ -37,6 +37,7 @@ mod mini_biomes;
 mod noise;
 mod ocean;
 pub mod pipeline;
+mod place_helpers;
 pub mod progress;
 mod spider_gem_moss;
 mod structures;
