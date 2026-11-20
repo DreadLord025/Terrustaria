@@ -231,3 +231,64 @@ and `tiles.rs:641` routes every one of them through the tree path with per-varia
 sheets (`tree.rs:321-327`); the metrics arm is live. 129's DrawSingleTile companion
 (`:1088-1107`: alpha 100/255, transparent for `fx >= 324`, ±2 px nudge by frame row)
 is ported at `drawdata.rs:1410-1418` — the `src_alpha` field feeds the flat draw.
+
+### Batch 4 — tree variants tail / ash tree (+glow) / golf hole / palm: 585, 586, 587, 588, 589, 596, 616, 634, 476, 323 (10 ids)
+
+C# `TileDrawing.cs:4652-4671` (20-line window), verbatim:
+
+```csharp
+		case 585:
+		case 586:
+		case 587:
+		case 588:
+		case 589:
+		case 596:
+		case 616:
+		case 634:
+			tileWidth = 20;
+			tileHeight = 20;
+			break;
+		case 476:
+			tileWidth = 20;
+			tileHeight = 18;
+			break;
+		case 323:
+			tileWidth = 20;
+			tileHeight = 20;
+			tileFrameY = (short)(22 * this.GetPalmTreeBiome(x, y));
+			break;
+```
+
+634's second-switch glow row (`TileDrawing.cs:6070-6074`), verbatim:
+
+```csharp
+		case 634:
+			glowTexture = TextureAssets.GlowMask[315].Value;
+			glowSourceRect = new Rectangle(tileFrameX, tileFrameY + addFrY, tileWidth, tileHeight);
+			glowColor = Color.White;
+			break;
+```
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 585 | 20x20 tree-variant group | :4652-4662 | `drawdata.rs:227-230` (`583..=589 \| 596 \| 616 \| 634`) | PORTED |
+| 586 | shares the group | :4653 | :227-230 | PORTED |
+| 587 | shares the group | :4654 | :227-230 | PORTED |
+| 588 | shares the group | :4655 | :227-230 | PORTED |
+| 589 | shares the group | :4656 | :227-230 | PORTED |
+| 596 | shares the group; vanity sheet style 29 (`tree.rs:327`) | :4657 | :227-230 | PORTED |
+| 616 | shares the group; vanity sheet style 30 | :4658 | :227-230 | PORTED |
+| 634 | shares the group + glow row GlowMask 315, `Rectangle(tileFrameX, tileFrameY + addFrY, w, h)`, `Color.White` | :4659, :6070-6074 | metrics :227-230; glow `cases_a.rs:319-320` (`mask: 315, rect_anim_y(fx, height), [255,255,255,255]`) | PORTED; glow record PORTED-UNWIRED (`_glow`, TILE-DRAW-2) |
+| 476 | `tileWidth = 20; tileHeight = 18;` | :4663-4666 | `drawdata.rs:232-235` | PORTED |
+| 323 | 20x20 + `tileFrameY = 22 * GetPalmTreeBiome(x, y)` (replacement, not `+=`) | :4667-4671 | static `drawdata.rs:239-242` + `apply_world_corrections` `drawdata.rs:1310-1312` (`palm_frame_y(palm_tree_biome(...))`) | PORTED |
+
+323's DrawSingleTile companion (`TileDrawing.cs:1152-1158`): the frond columns
+`frameX 88..=132` `return` (canopy comes from the tree pass) and every other cell
+shifts `vector.X += tileCache.frameY` (the RAW stored row). Ported at
+`drawdata.rs:1432-1438` — the gate reads the raw `frame_x` argument and the nudge
+adds raw `frame_y`, matching the C#'s `tileCache` reads exactly (the rewritten
+`tileFrameY` is NOT used here). 634's glow rect uses raw `fx` + post-first-switch
+`addFrY` (`rect_anim_y`), matching `:6072`; the first switch never rewrites 634's
+frame, so raw == local. Same wiring-gap pattern as d63 batch 4's 564: the glow
+record is computed faithfully but rides `_glow` (`tiles.rs:731`) until TILE-DRAW-2
+binds the glow pass — a wiring gap, not a case gap.
