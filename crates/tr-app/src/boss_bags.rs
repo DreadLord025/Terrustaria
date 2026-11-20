@@ -442,6 +442,17 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             quick_spawn(rng, out, 1130, range(rng, 10, 31));
             quick_spawn(rng, out, 2431, range(rng, 17, 31));
         }
+        // Skeletron (`Player.cs:7358-7372`).
+        3323 => {
+            quick_spawn(rng, out, 3245, 1); // Bone Glove (expert-exclusive)
+            // `:7360-7371` — the weapon pick: Next(3) → 1281/1273/1313
+            // (the Skeletron Mask / Hand / Book of Skulls).
+            match rng.next_max(3) {
+                0 => quick_spawn(rng, out, 1281, 1),
+                1 => quick_spawn(rng, out, 1273, 1),
+                _ => quick_spawn(rng, out, 1313, 1),
+            }
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -930,6 +941,42 @@ mod tests {
             spawn_replay(&mut r, &mut want, 1130, r.next_range(10, 31));
             spawn_replay(&mut r, &mut want, 2431, r.next_range(17, 31));
             money_replay_on(&mut r, 222, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_skeletron_bag_grants_the_glove_then_one_weapon() {
+        // The Bone Glove ALWAYS, then exactly ONE of the three weapons
+        // by Next(3) — then coins. The glove is an accessory (prefix
+        // draws), the weapons vary; the item ORDER is the pin.
+        for (pick, weapon) in [(0i32, 1281u16), (1, 1273), (2, 1313)] {
+            let mut rng = ScriptRng::new(&[pick]);
+            let mut out = Vec::new();
+            open_boss_bag(3323, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[0], 3245, "the Bone Glove leads");
+            assert_eq!(its[1], weapon, "pick {pick}");
+            assert!(its[2..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+        }
+    }
+
+    #[test]
+    fn w4_f35_skeletron_bag_replays_the_csharp_draw_order() {
+        for seed in [19i32, 313] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3323, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            spawn_replay(&mut r, &mut want, 3245, 1);
+            match r.next_max(3) {
+                0 => spawn_replay(&mut r, &mut want, 1281, 1),
+                1 => spawn_replay(&mut r, &mut want, 1273, 1),
+                _ => spawn_replay(&mut r, &mut want, 1313, 1),
+            }
+            money_replay_on(&mut r, 35, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
         }
