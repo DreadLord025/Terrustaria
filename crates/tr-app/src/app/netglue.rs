@@ -882,6 +882,14 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // `case 109` — the host runs `Wiring.MassWireOperation` under a
+            // temporary ToolMode swap for the SENDER (`MessageBuffer.cs:
+            // 3774-3788`, `Wiring.cs:419-453`) and bills it with two `110`s
+            // (`Wiring.cs:441-442`). The port's mass operation is unported
+            // (the Multicolor Wrench / Grand Design are outside the wiring
+            // tool set, `world_sim/editing/wiring.rs:27-29`), so the arm is
+            // parked for S1-I-4.
+            C2s::MassWireOperation(_) => {}
         }
     }
 
@@ -1945,6 +1953,11 @@ impl App {
             // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
             // the relay lands here until then (S1-I-4).
             | S2c::GolfBallInCup(_) => {}
+            // `case 110`'s client half (`MessageBuffer.cs:3789-3807`): when
+            // the bill is the local player's, consume `count` of `item_type`
+            // and clear `wireOperationsCooldown`. Parked with the 109 host
+            // arm (the mass operation is unported) for S1-I-4.
+            S2c::MassWireOperationPay(_) => {}
         }
     }
 

@@ -170,6 +170,21 @@ pub mod id {
     /// `ignoreClient = owner` resend); the client runs the cup text/effects
     /// (`PutBallInCup_TextAndEffects`, the golf FX of M4-GOLF-1).
     pub const GOLF_BALL_IN_CUP: u8 = 128;
+    /// `109 MassWireOperation` (`MessageID.cs:232`) — the Grand Design's
+    /// wire-drag (projectile 651, `Projectile.cs:72053-72066`) or the
+    /// Multicolor Wrench's (`Player.cs:46911`): `(short)ps.X + (short)ps.Y +
+    /// (short)pe.X + (short)pe.Y + (byte)WiresUI.Settings.ToolMode`
+    /// (`NetMessage.cs:1412-1418`). Client→server only — the host runs
+    /// `Wiring.MassWireOperation` under a temporary ToolMode swap and never
+    /// relays the 109 (`MessageBuffer.cs:3774-3788`).
+    pub const MASS_WIRE_OPERATION: u8 = 109;
+    /// `110 MassWireOperationPay` (`MessageID.cs:234`) — the host's wire/
+    /// actuator bill after a mass operation: `(short)itemType + (short)count
+    /// + (byte)player` (`NetMessage.cs:1419-1423`), sent twice — 530 Wire and
+    /// 849 Actuator (`Wiring.cs:439-443`). Server→client only; the client
+    /// consumes the items and clears `wireOperationsCooldown` when the bill
+    /// is its own (`MessageBuffer.cs:3789-3807`).
+    pub const MASS_WIRE_OPERATION_PAY: u8 = 110;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1462,6 +1477,33 @@ pub struct GolfBallInCup {
     pub ball_type: u16,
 }
 
+/// `msg 109 MassWireOperation`'s body (`NetMessage.cs:1412-1418`, S1-I-1
+/// W4-d93): the drag's start/end tile points as four `(short)`s, then the
+/// `(byte)` tool mode — the `WiresUI.Settings.MultiToolMode` flags
+/// (`WiresUI.cs:13-21`: Red 1 / Green 2 / Blue 4 / Yellow 8 / Actuator 0x10 /
+/// Cutter 0x20). The reader runs the operation under a temporary ToolMode
+/// swap and restores it (`MessageBuffer.cs:3781-3786`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MassWireOperation {
+    pub start_x: i16,
+    pub start_y: i16,
+    pub end_x: i16,
+    pub end_y: i16,
+    pub tool_mode: u8,
+}
+
+/// `msg 110 MassWireOperationPay`'s body (`NetMessage.cs:1419-1423`, S1-I-1
+/// W4-d93): `(short)number` (the item type — 530 Wire or 849 Actuator),
+/// `(short)number2` (the consumed count) and `(byte)number3` (the billed
+/// player). The client only pays when `number3 == Main.myPlayer`
+/// (`MessageBuffer.cs:3797`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MassWireOperationPay {
+    pub item_type: i16,
+    pub count: i16,
+    pub player: u8,
+}
+
 /// `msg 42 Unknown42`'s body (`NetMessage.cs:961-965`): the player id,
 /// `statMana` and `statManaMax`, both `short` (`MessageBuffer.cs:2290-2306`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1667,6 +1709,10 @@ pub enum C2s {
     /// `netMode == 1` only); the host relays it with `ignoreClient = owner`
     /// (`MessageBuffer.cs:4058-4074`).
     GolfBallInCup(GolfBallInCup),
+    /// `109 MassWireOperation` — this client's Grand Design / Multicolor
+    /// Wrench drag (`Projectile.cs:72060`, `Player.cs:46911`); the host runs
+    /// the operation for the sender (`MessageBuffer.cs:3774-3788`).
+    MassWireOperation(MassWireOperation),
     /// `154 Ping` - this client's RTT probe, no body (`Net/Ping.cs:31`).
     Ping,
     /// `31 RequestChestOpen` - ask the host for a chest's contents
@@ -1831,6 +1877,11 @@ pub enum S2c {
     /// to everyone but the owner (`MessageBuffer.cs:4067`); the client runs
     /// the cup text/effects (`:4071`, M4-GOLF-1).
     GolfBallInCup(GolfBallInCup),
+    /// `110 MassWireOperationPay` - the host's wire/actuator bill for a mass
+    /// operation, sent to the billed player only (`Wiring.cs:439-443`); the
+    /// client consumes the items when the bill is its own
+    /// (`MessageBuffer.cs:3789-3807`).
+    MassWireOperationPay(MassWireOperationPay),
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
@@ -1910,6 +1961,7 @@ impl C2s {
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
             Self::MurderPortal { .. } => id::MURDER_PORTAL,
             Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
+            Self::MassWireOperation(_) => id::MASS_WIRE_OPERATION,
             Self::Ping => id::PING,
             Self::ChestOpenRequest(_) => id::CHEST_OPEN_REQUEST,
             Self::ChestItem(_) => id::CHEST_ITEM,
@@ -2033,6 +2085,13 @@ impl C2s {
             // `NetMessage.cs:1521-1527` — owner byte, then the four ushorts
             // in the WRITER's order (x, y, hits, type — not the arg order).
             Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
+            // `NetMessage.cs:1412-1418` — four (short)s, then the (byte) mode.
+            Self::MassWireOperation(m) => w
+                .i16(m.start_x)
+                .i16(m.start_y)
+                .i16(m.end_x)
+                .i16(m.end_y)
+                .u8(m.tool_mode),
         };
         w.finish()
     }
@@ -2186,6 +2245,14 @@ impl C2s {
                 hits: r.u16()?,
                 ball_type: r.u16()?,
             }),
+            // `MessageBuffer.cs:3777-3781` — the four shorts + the mode byte.
+            id::MASS_WIRE_OPERATION => Self::MassWireOperation(MassWireOperation {
+                start_x: r.i16()?,
+                start_y: r.i16()?,
+                end_x: r.i16()?,
+                end_y: r.i16()?,
+                tool_mode: r.u8()?,
+            }),
             _ => return None,
         })
     }
@@ -2299,6 +2366,7 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
+            Self::MassWireOperationPay(_) => id::MASS_WIRE_OPERATION_PAY,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
         }
     }
@@ -2444,6 +2512,8 @@ impl S2c {
             // `NetMessage.cs:1521-1527` — the relay writes the same case-128
             // arm (`MessageBuffer.cs:4067` re-sends with number5/6 = x/y).
             Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
+            // `NetMessage.cs:1419-1423` — (short)type, (short)count, (byte)plr.
+            Self::MassWireOperationPay(p) => w.i16(p.item_type).i16(p.count).u8(p.player),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
@@ -2654,6 +2724,12 @@ impl S2c {
                 y: r.u16()?,
                 hits: r.u16()?,
                 ball_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:3795-3797` — type, count, player.
+            id::MASS_WIRE_OPERATION_PAY => Self::MassWireOperationPay(MassWireOperationPay {
+                item_type: r.i16()?,
+                count: r.i16()?,
+                player: r.u8()?,
             }),
             _ => return None,
         })
@@ -5038,5 +5114,73 @@ mod tests {
             C2s::GolfBallInCup(d) => assert_eq!(d, g2),
             other => panic!("expected 128, got {:?}", other.msg_id()),
         }
+    }
+
+    #[test]
+    fn s1_i_1d93_mass_wire_operation_body_bytes() {
+        // `NetMessage.cs:1412-1418` (case 109): (short)ps.X, (short)ps.Y,
+        // (short)pe.X, (short)pe.Y, (byte)ToolMode. Client→server only — the
+        // host arm (`MessageBuffer.cs:3774-3788`) runs the operation and
+        // never relays the 109.
+        let m = MassWireOperation {
+            start_x: -12,
+            start_y: 300,
+            end_x: 45,
+            end_y: -7,
+            tool_mode: 0x21, // Red | Cutter (`WiresUI.cs:13-21`)
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&(-12i16).to_le_bytes());
+        body.extend_from_slice(&300i16.to_le_bytes());
+        body.extend_from_slice(&45i16.to_le_bytes());
+        body.extend_from_slice(&(-7i16).to_le_bytes());
+        body.push(0x21);
+        let c = C2s::MassWireOperation(m).encode();
+        assert_eq!(c[2], 109);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MassWireOperation(d) => assert_eq!(d, m),
+            other => panic!("expected 109, got {:?}", other.msg_id()),
+        }
+        // The C# has no server→client 109 send site.
+        assert!(S2c::decode(109, &mut NetReader::new(&body)).is_none());
+    }
+
+    #[test]
+    fn s1_i_1d93_mass_wire_operation_pay_body_bytes() {
+        // `NetMessage.cs:1419-1423` (case 110): (short)itemType,
+        // (short)count, (byte)player. Server→client only — the host bills
+        // 530 then 849 (`Wiring.cs:441-442`); the client pays only its own
+        // (`MessageBuffer.cs:3798`).
+        let p = MassWireOperationPay {
+            item_type: 530,
+            count: 17,
+            player: 2,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&530i16.to_le_bytes());
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.push(2);
+        let s = S2c::MassWireOperationPay(p).encode();
+        assert_eq!(s[2], 110);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::MassWireOperationPay(d) => assert_eq!(d, p),
+            other => panic!("expected 110, got {:?}", other.msg_id()),
+        }
+        // The actuator twin — the second bill of the pair.
+        let p2 = MassWireOperationPay {
+            item_type: 849,
+            count: 0,
+            player: 255,
+        };
+        let s2 = S2c::MassWireOperationPay(p2).encode();
+        assert_eq!(&s2[3..], &[0x51, 0x03, 0, 0, 255]);
+        match S2c::decode(s2[2], &mut NetReader::new(&s2[3..])).expect("decode") {
+            S2c::MassWireOperationPay(d) => assert_eq!(d, p2),
+            other => panic!("expected 110, got {:?}", other.msg_id()),
+        }
+        // The C# has no client→server 110 send site.
+        assert!(C2s::decode(110, &mut NetReader::new(&body)).is_none());
     }
 }
