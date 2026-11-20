@@ -4903,6 +4903,14 @@ impl Npc {
             // the Sharkron pair 372/373. The faithful
             // `npc_ai_style71::ai_style71` arm (80fcb43b).
             71 => self.ai_071_sharkron(world, player),
+            // `else if (this.aiStyle == 84) { this.AI_084_LunaticCultist(); }`
+            // (`NPC.cs:36926-36929`; the machine `:64414-65388`). W4-c1
+            // wiring: the CultistBoss 439 is the style's only ported kind
+            // (the 440 clone has no port kind yet — the solo path, the
+            // style-75 solo precedent). The faithful pure core
+            // (`npc_ai_cultist::cultist_ai_step`) claims the arm; states
+            // 4/7/8 stay deferred (the step reports + holds them).
+            84 => self.ai_084_cultist(world, player, rng),
             // S1-D-3 W-6 (census slice W-6): the Frost Moon MOBS' named
             // machines. aiStyle 25's only ported kind is the PresentMimic
             // (341, `NPC.cs:13318`); aiStyle 62's only kind is the
@@ -5672,6 +5680,149 @@ impl Npc {
         }
     }
 
+    /// W4-c1 wiring — the aiStyle-84 adapter: the Lunatic Cultist's
+    /// faithful arm (`npc_ai_cultist::cultist_ai_step`,
+    /// `AI_084_LunaticCultist`, `NPC.cs:64414-65388`; the dispatch
+    /// `NPC.cs:36926-36929`). The CultistBoss 439 is the style's only
+    /// ported kind — the 440 clone has no port kind yet, so this is the
+    /// SOLO path over an empty clone view (the style-75 solo precedent);
+    /// the `CultistEffects` clone arms (spawns/purge/interrupt) are
+    /// documented no-ops until kind 440 lands. RNG: the step consumes
+    /// the module's cited draws on the caller's UpdateNPCs stream
+    /// (the idle-sound gate + the fireball 3-draw shapes); states
+    /// 4/7/8 stay DEFERRED (`CultistOut::deferred_state` — the step
+    /// holds the state untouched, the module doc's ledger).
+    ///
+    /// Seams: `Main.expertMode` → `player.buffs.expert_mode`,
+    /// `Main.getGoodWorld` → `SeedFlags::FOR_THE_WORTHY`, difficulty
+    /// Classic 1 (the port's stock), `justHit` → the one-tick
+    /// `self.just_hit` flag (`NPC.cs:81274`, NOT the `hurt_cd`
+    /// stand-in). The `TargetClosest(faceTarget: false)` calls are
+    /// COUNTED in-step and replayed here in C# order after the step
+    /// (the fishron precedent's recorded deviation — the mid-tick
+    /// re-pick reads the same single session player). The 464/467/468
+    /// shots queue on `wants_hostile_shot_ai` (the sim's drain spawns
+    /// them when their `proj_data` rows land); the 440 clone spawns
+    /// and the 490 ritual spawn are documented skips (no port kinds —
+    /// the `ai[2]` ritual key stays 0, `ritual_center` reads None).
+    fn ai_084_cultist(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        use crate::npc_ai_cultist::{
+            cultist_ai_step, CultistEffects, CultistEnv, CultistState, CULTIST_DEF_DEFENSE,
+        };
+        let cand = crate::npc_target::session_candidate(player);
+        let (pcx, pcy) = player.center();
+        let env = CultistEnv {
+            expert: player.buffs.expert_mode,
+            get_good_world: world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            difficulty: 1.0, // Classic — the port's difficulty fold
+            target: self.target,
+            player_active: true,
+            player_dead: player.dead,
+            player_cx: pcx,
+            player_cy: pcy,
+            player_vx: player.vx,
+            player_vy: player.vy,
+            // The 490 ritual has no port kind — no active ritual
+            // projectile to resolve (`TryGetActive(490)` reads absent).
+            ritual_center: None,
+            // The boss-only solo path: the clone-mirror env is ignored
+            // (`flag2 = type == 439` is true).
+            boss_present: false,
+            boss_ai0: 0.0,
+            boss_ai1: 0.0,
+            // `NPC.CountNPCS(523)` — the Ancient Doom has no port kind.
+            ancient_doom_count: 0,
+        };
+        let mut s = CultistState {
+            npc_type: 439,
+            who_am_i: self.slot as i32,
+            ai0: self.ai[0],
+            ai1: self.ai[1],
+            ai2: self.ai[2],
+            ai3: self.ai[3],
+            local_ai0: self.local_ai[0],
+            local_ai1: self.local_ai[1],
+            local_ai2: self.local_ai[2],
+            x: self.x,
+            y: self.y,
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            sprite_direction: self.sprite_dir,
+            rotation: self.rotation,
+            alpha: self.alpha as i32,
+            life: self.hp,
+            life_max: self.max_hp,
+            defense: self.defense(),
+            def_defense: CULTIST_DEF_DEFENSE,
+            just_hit: self.just_hit,
+            dont_take_damage: self.dont_take_damage,
+            chaseable: self.chaseable,
+        };
+        let mut fx = CultistEffects::default();
+        // The SOLO step: no live 440 clones (the module's empty-view
+        // witnesses).
+        let out = cultist_ai_step(&mut s, &env, &mut [], &mut fx, rng);
+        // The counted `TargetClosest(faceTarget: false)` calls
+        // (`:64558` then `:64642`), replayed in C# order.
+        for _ in 0..out.target_closest_calls {
+            crate::npc_target::target_closest(self, world, &[cand], false, 84, 0);
+        }
+        // The state writes back (the C#'s field writes).
+        self.ai = [s.ai0, s.ai1, s.ai2, s.ai3];
+        self.local_ai[0] = s.local_ai0;
+        self.local_ai[1] = s.local_ai1;
+        self.local_ai[2] = s.local_ai2;
+        self.x = s.x;
+        self.y = s.y;
+        self.vx = s.vx;
+        self.vy = s.vy;
+        // `noTileCollide` + `noGravity` (SetDefaults 439,
+        // `NPC.cs:14212-14229`): the raw `UpdateNPC` integration
+        // (`NPC.cs:90490-90498`, the fishron adapter's convention).
+        self.integrate_no_tile_collide();
+        self.facing = s.direction;
+        self.sprite_dir = s.sprite_direction;
+        self.rotation = s.rotation;
+        self.alpha = s.alpha.clamp(0, 255) as u8;
+        // The despawn arm's `life = 0` (`:64564`) — the death retain
+        // owns the removal (`out.despawn` rides `s.life`).
+        self.hp = s.life;
+        // The half-hp defense fold rides the override seam (the
+        // fishron convention).
+        self.defense_override = Some(s.defense);
+        self.dont_take_damage = s.dont_take_damage;
+        self.chaseable = s.chaseable;
+        if out.net_update {
+            self.net_update = true;
+        }
+        // The 464/467 shots → the sim's hostile-shot drain (the C#
+        // emission order: clones first — none solo — then the boss).
+        for p in fx.projectiles {
+            self.wants_hostile_shot_ai.push(HostileShotAi {
+                kind: p.proj_type as u16,
+                x: p.x,
+                y: p.y,
+                vx: p.vx,
+                vy: p.vy,
+                damage: p.damage,
+                ai0: p.ai0,
+                ai1: p.ai1,
+                scale: None,
+            });
+        }
+        // `fx.clone_spawns` / `fx.killed_clones` / `fx.boss_interrupt`
+        // are empty on the solo path (kind 440 unported).
+        // `fx.ritual_spawn` (`:65132`): the 490 ritual projectile has
+        // no port kind — the spawn + the `ai[2]` key write-back
+        // (`:65133`) are the documented skip until it lands.
+        // `fx.ritual_cancel`: likewise no live 490 to cancel.
+        // `out.deferred_state`: states 4/7/8 held untouched (the
+        // module's deferred ledger) — no extra work here.
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -5980,10 +6131,13 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
-            // S1-D-3b: AncientCultist (CultistBoss 439) is aiStyle 84
-            // (NPC.cs:14216, AI_084_LunaticCultist :64414), not the pillar
-            // aiStyle 94 row (422/507/517/493).
-            NpcKind::AncientCultist => self.update_lunatic_cultist(world, player, rng),
+            // W4-c1: AncientCultist (CultistBoss 439) rides the style axis
+            // (`ai_084_cultist`, aiStyle 84 — `NPC.cs:36926-36929`,
+            // `AI_084_LunaticCultist` :64414); this arm is unreachable
+            // through `update_rng` (the axis claims style 84 first).
+            NpcKind::AncientCultist => {
+                unreachable!("aiStyle 84 rides the style axis (W4-c1 cultist wiring)")
+            }
             // The Old One's Army's lane gate: aiStyle 106 — the sim's
             // gate pass owns its spawn timer (it needs the pool + the
             // dd2 state), the machine here is the idle body.
@@ -10652,40 +10806,6 @@ impl Npc {
             self.ai[2] = 0.0;
         }
         // target/despawn checks (56710-56717) are handled by the outer sim.
-    }
-
-    /// Lunatic Cultist (439). C# `NPC.cs:14216` SetDefaults aiStyle 84,
-    /// `AI_084_LunaticCultist` (`NPC.cs:64414`). (S1-D-3b: was mis-routed to the
-    /// pillar aiStyle 94 machine / type-422 row.)
-    fn update_lunatic_cultist(&mut self, _world: &World, player: &Player, _rng: &mut UnifiedRandom) {
-        // AI_084 core: spawn-in fade/despawn gate (NPC.cs:64554-64585,
-        // 64587-64621). The full ritual/attack cycle is not yet ported.
-        let (pcx, pcy) = player.center();
-        let (cx, cy) = self.center();
-        if self.ai[0] == 0.0 && self.ai[1] == 0.0 && self.ai[2] == 0.0 {
-            self.ai[0] = -1.0;
-        }
-        if self.ai[0] == -1.0 {
-            if self.alpha > 5 {
-                self.alpha = self.alpha.saturating_sub(5);
-            } else {
-                self.alpha = 0;
-            }
-            self.ai[1] += 1.0;
-            if self.ai[1] >= 420.0 {
-                self.ai[0] = 0.0;
-                self.ai[1] = 0.0;
-            } else if self.ai[1] > 360.0 {
-                self.vx *= 0.95;
-                self.vy *= 0.95;
-            }
-            return;
-        }
-        let num10 = 5600.0f32;
-        if player.hp <= 0 || (pcx - cx).hypot(pcy - cy) > num10 {
-            // NPC.cs:64562-64585
-            self.hp = 0;
-        }
     }
 
     /// `NPC.RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:66671-66682`):
