@@ -10481,11 +10481,16 @@ mod s1_p_i08_throw_tests {
     }
 
     #[test]
-    fn s1_p_i08_the_throw_draws_exactly_one_crit_roll() {
-        // RNG census: the boomerang throw's only gameplay draw is the
-        // throw-time crit roll (`Main.rand.Next(1, 101)`, the shared
-        // `UpdatePlayers` stream). Two identical seeds give byte-equal
-        // spawns; the stream advances by exactly the crit draw.
+    fn s1_p_i08_the_throw_spends_no_updateplayers_draw() {
+        // RNG census (gate reconciliation i08×i11): the boomerang throw
+        // spends NO `UpdatePlayers` draw. The C# rolls the projectile crit
+        // PER HIT in `Damage_PVE_Inner` (`Projectile.cs:12883-12917`) on the
+        // `UpdateProjectiles` stream — `ItemCheck_Shoot`'s generic tail
+        // (`Player.cs:49437`) carries no crit roll (the only throw-time
+        // crit in the shoot path is the Zenith's melee arm, `:48859`).
+        // S1-P-i11 moved the port's spawn-time roll to the hit; the i08
+        // witness's "one crit draw" pinned the pre-i11 deviation. Two
+        // identical seeds give byte-equal spawns; the stream is untouched.
         //
         // The Item126 use sound's case-2 pitch draws only AFTER the
         // attenuation gate passed. The listener is pinned FAR from the
@@ -10524,6 +10529,6 @@ mod s1_p_i08_throw_tests {
         seed_stream(&mut app, 0xB00B);
         fire_once(&mut app);
         let after = stream_of(&mut app);
-        assert_eq!(after, draws_after(0xB00B, 1), "the crit roll alone");
+        assert_eq!(after, draws_after(0xB00B, 0), "the throw spends no draw (crit is per-hit)");
     }
 }

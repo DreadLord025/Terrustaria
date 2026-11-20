@@ -19481,11 +19481,14 @@ impl ProjectilePool {
             // `velocity = (npc.Center - Center) * 0.75`. The C# arm sits
             // AFTER DamageVar (`:12938`) and BEFORE the Hellfire clamp
             // (`:13252`) / StatusNPC / StrikeNPC, so the Daybroken gate
-            // below reads the fresh pin. The scalars are copied so the
-            // `p` borrow ends before the mutation (E0502).
+            // below reads the fresh pin. ALL scalars are copied before the
+            // mutation so the `p` borrow ends here (E0502).
+            let pkind = p.kind;
+            let (ppx, ppy, pw, ph) = (p.pos.x, p.pos.y, p.w, p.h);
+            let hellfire_clamp = p.kind == HELLFIRE_ARROW && p.time_left > 1;
             if p.kind == BONE_JAVELIN && p.ai[0] < 2.0 {
                 let (ncx, ncy) = n.center();
-                let (pcx, pcy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                let (pcx, pcy) = (ppx + pw * 0.5, ppy + ph * 0.5);
                 let pin_vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
                 let pj = &mut self.slots[slot];
                 pj.ai[0] = 1.0;
@@ -19496,9 +19499,6 @@ impl ProjectilePool {
             // (`Projectile.cs:13252-13255`): the 41's contact pins
             // `timeLeft = 1` (the C# site sits between DamageVar `:12938`
             // and the yoyo doublings `:13389`, ABOVE the strike).
-            let hellfire_clamp = p.kind == HELLFIRE_ARROW && p.time_left > 1;
-            let pkind = p.kind;
-            let (ppx, ppy, pw, ph) = (p.pos.x, p.pos.y, p.w, p.h);
             if hellfire_clamp {
                 self.slots[slot].time_left = 1;
             }
