@@ -1509,6 +1509,62 @@ impl App {
                                 num46,
                                 1.0,
                             );
+                            // `Main.DrawNPCMapIcons2` (`Main.cs:55709` →
+                            // `:56144-56220`): the town + boss heads in the
+                            // minimap's transform space. `X2/Y2` are the raw
+                            // panel origin (`num3/num4`), `left/top` the
+                            // `(num12, num13)` window, `xOff/yOff` the sub-tile
+                            // centres (`num10/num11`); the clip is
+                            // `(miniMapX+12, miniMapY+10, W-16, H-14)`
+                            // (`:56165`). The whole pass rides
+                            // `Matrix.CreateScale(MapScale)` (`:55708`), so
+                            // positions/sizes scale on the way to the screen
+                            // and the mouse divides by it (`:55512-55513`).
+                            let mm_origin = ui::minimap::minimap_origin_raw(screen, map_scale);
+                            let mm_scale = m.minimap_scale.clamp(0.2, 3.0);
+                            let win = 240.0 / mm_scale;
+                            let mm_left_top = [
+                                view_center[0].floor() - win * 0.5,
+                                view_center[1].floor() - win * 0.5,
+                            ];
+                            let mm_sub = [
+                                -(view_center[0] - view_center[0].floor()) * mm_scale,
+                                -(view_center[1] - view_center[1].floor()) * mm_scale,
+                            ];
+                            let mm_clip = [
+                                mm_origin[0] + 12.0,
+                                mm_origin[1] + 10.0,
+                                mm_origin[0] + 240.0 - 16.0,
+                                mm_origin[1] + 240.0 - 14.0,
+                            ];
+                            let mm_head_hover = crate::map_overlay::draw_npc_map_icons(
+                                renderer,
+                                lookups,
+                                &crate::map_overlay::HeadIconInputs {
+                                    npcs,
+                                    mode: crate::map_overlay::HeadMode::Minimap,
+                                    origin: mm_origin,
+                                    left_top: mm_left_top,
+                                    sub_offset: mm_sub,
+                                    clip: Some(mm_clip),
+                                    scale: mm_scale,
+                                    head_scale: num46,
+                                    present_scale: map_scale,
+                                    alpha: 255,
+                                    mouse: self.mouse_pos / map_scale,
+                                },
+                            );
+                            if let Some(t) = mm_head_hover {
+                                crate::ui::text::hud_text(
+                                    renderer,
+                                    lookups,
+                                    self.mouse_pos.x + 12.0,
+                                    self.mouse_pos.y + 12.0,
+                                    0.85,
+                                    [1.0; 4],
+                                    &t,
+                                );
+                            }
                             // The hover highlight is `MinimapFrame.Update`'s
                             // `buttonUnderMouse.IsHighlighted`
                             // (`MinimapFrame.cs:163`), resolved per frame in
@@ -1949,6 +2005,41 @@ impl App {
                                     1.0,
                                 );
                                 if let Some(t) = hover {
+                                    crate::ui::text::hud_text(
+                                        renderer,
+                                        lookups,
+                                        self.mouse_pos.x + 12.0,
+                                        self.mouse_pos.y + 12.0,
+                                        0.85,
+                                        [1.0; 4],
+                                        &t,
+                                    );
+                                }
+                                // `Main.DrawNPCMapIcons` (`Main.cs:55926` →
+                                // `:56222-56292`): the town + boss head icons,
+                                // `num77 = Main.UIScale` (`:55915-55921`, the
+                                // dead `num77 = 1f` overwrite kept as the
+                                // applied UI scale). W4-f29.
+                                let head_hover = crate::map_overlay::draw_npc_map_icons(
+                                    renderer,
+                                    lookups,
+                                    &crate::map_overlay::HeadIconInputs {
+                                        npcs,
+                                        mode: crate::map_overlay::HeadMode::Fullscreen,
+                                        origin: map::map_origin(map.pos, map.scale, screen),
+                                        left_top: [0.0, 0.0],
+                                        sub_offset: [0.0, 0.0],
+                                        clip: None,
+                                        scale: map.scale,
+                                        head_scale: self
+                                            .settings
+                                            .applied_ui_scale(screen.x, screen.y),
+                                        present_scale: 1.0,
+                                        alpha: 255,
+                                        mouse: self.mouse_pos,
+                                    },
+                                );
+                                if let Some(t) = head_hover {
                                     crate::ui::text::hud_text(
                                         renderer,
                                         lookups,
