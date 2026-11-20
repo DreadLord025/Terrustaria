@@ -6623,6 +6623,34 @@ impl Npc {
         self.local_ai[0] = s.local_ai0;
     }
 
+    /// W4-g7 wire-2 (f26 extra-3) — the bridge into
+    /// `npc_findframe_extra3`'s pure machines: copy the four
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_a` precedent). `direction` is `facing` (the
+    /// C#'s `Entity.direction`); `ai` rides the NPC's own field (the
+    /// LostGirl ladder reads `ai[0]`), `ai_action` the SpikedJungleSlime's
+    /// `num2` motion class (`NPC.cs:66696-66704`).
+    fn find_frame_wave_extra3(&mut self, kind: crate::npc_findframe_extra3::FindFrameExtra3Kind) {
+        let mut s = crate::npc_findframe_extra3::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra3::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            ai_action: self.ai_action,
+        };
+        crate::npc_findframe_extra3::find_frame_extra3(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // W4-g7 wire-2 (e14 extra-2) — the `cs_id`-keyed hook into the
         // extra wave's pure machines (`npc_findframe_extra2.rs`), the
@@ -6640,6 +6668,23 @@ impl Npc {
         {
             self.find_frame_wave_extra2(kind);
             return;
+        }
+        // W4-g7 wire-2 (f26 extra-3) — the `cs_id`-keyed hook into the
+        // extra wave's pure machines (`npc_findframe_extra3.rs`), the
+        // FIRST 9 of its 15 ids: 182/185/195/196/198/199/201/202/203
+        // (the remaining 204/205/209/217/218/219 ride the next commit
+        // — the 10-kinds-per-commit rule). The e13 extra-1 wave's
+        // 182/185/195/196/198/199/201/202 twins dedupe onto this hook
+        // (keep-one, the arms verified verbatim identical). NO current
+        // kind's `cs_id` lands in the set (verified over the hand rows
+        // + all 249 bestiary net ids), so this is stream-inert today;
+        // the arms themselves draw no RNG. The d45/e13 hook precedent.
+        let cs = self.kind.cs_id();
+        if matches!(cs, 182 | 185 | 195 | 196 | 198 | 199 | 201 | 202 | 203) {
+            if let Some(kind) = crate::npc_findframe_extra3::find_frame_kind_extra3(cs as i16) {
+                self.find_frame_wave_extra3(kind);
+                return;
+            }
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
@@ -33678,5 +33723,73 @@ mod w4_g7_wire2_extra2_tests {
         assert_eq!(n.frame, 6, "the bank-3 idle row");
         assert_eq!(n.frame_counter, 0.0, "the idle counter zero");
         assert_eq!(n.local_ai[0], 3.0, "the bank flag copies back unchanged");
+    }
+}
+
+#[cfg(test)]
+mod w4_g7_wire2_extra3_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g7 wire-2 (f26 extra-3) — the `find_frame` hook into
+    // `npc_findframe_extra3` ---- The pure machines carry their own 12
+    // pinned witnesses in `npc_findframe_extra3.rs`; these pin the
+    // NPC-side seam. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster waves have not added the extra-3 kinds; verified
+    /// over the hand `cs_id` rows + all 249 bestiary net ids).
+    #[test]
+    fn w4_g7_the_extra3_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra3::find_frame_kind_extra3(kind.cs_id() as i16),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-3 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation both ways and
+    /// feeds vx/vy/facing/ai/ai_action through — pinned on the
+    /// FloatyGross floater (`NPC.cs:74850-74883`) and the LostGirl
+    /// ladder (`:73146-73171`).
+    #[test]
+    fn w4_g7_the_extra3_bridge_copies_the_four_fields_both_ways() {
+        let mut n = bare(NpcKind::Slime);
+        // The floater: vx-sign flip (not facing), vx * 0.1 tilt, the
+        // 6-tick counter walks the FULL 5 rows.
+        n.frame = 4;
+        n.frame_counter = 5.0;
+        n.sprite_dir = -1;
+        n.facing = -1;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.rotation = 0.0;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::FloatyGross);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "row 4 + step wraps");
+        assert_eq!(n.sprite_dir, 1, "the velocity-sign flip");
+        assert_eq!(n.rotation, 0.2, "the vx * 0.1 tilt");
+        // The LostGirl ladder reads ai[0] and never touches the rest.
+        n.ai[0] = 12.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::LostGirl);
+        assert_eq!(n.frame, 4, "ai[0] 12 → row 4");
+        assert_eq!(n.frame_counter, 0.0, "the ladder holds the counter");
+        assert_eq!(n.sprite_dir, -1, "no sprite write");
+        assert_eq!(n.rotation, 0.5, "no rotation write");
+        // The 201/202 air pin-0 pair rides the wave-B fighter helper
+        // (`NPC.cs:69647`) — the air snaps row 0, not the group's 1.
+        n.vy = -2.0;
+        n.find_frame_wave_extra3(
+            crate::npc_findframe_extra3::FindFrameExtra3Kind::HeadacheSkeleton,
+        );
+        assert_eq!(n.frame, 0, "the :69647 air pin-0");
+        // …while the SnowFlinx (185, NOT in the pin list) holds row 1.
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SnowFlinx);
+        assert_eq!(n.frame, 1, "the group's air row 1");
     }
 }
