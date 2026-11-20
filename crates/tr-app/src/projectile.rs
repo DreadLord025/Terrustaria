@@ -592,7 +592,7 @@ pub struct Projectile {
     /// the yoyo rotation spins by it (`Projectile.cs:68096`) and the pose
     /// block writes it from the owner-relative X comparison (`:67841`/`:67846`).
     pub direction: i32,
-    bounces: u8,
+    pub(crate) bounces: u8,
     /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
     /// per tick and places the tile on landing.
@@ -648,7 +648,7 @@ pub struct Projectile {
     /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
     /// The flag also keeps the blast itself — which rides the same style —
     /// from ever spawning a second one.
-    blast_spawned: bool,
+    pub(crate) blast_spawned: bool,
     /// The summon identification (M4-PROJ-8): `Projectile.minion` /
     /// `Projectile.sentry` (the stock false, `Projectile.cs:700`/`:775`) —
     /// the flags the pool's per-tick minion/sentry block (`:16704-16740`,
