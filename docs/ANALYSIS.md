@@ -10441,14 +10441,231 @@ Out (unchanged): QuickStackAllChests (the 600 px scan), Sort/ItemSorting
 (anchor 4 stays label-less), Cursor_8/9 + cursorOverride display,
 persistence (M6-SAVE), net syncs, chest loot (M5), favorited sell/drop
 rules, remote opens (Void Lens/Money Trough), the keyboard overlay rework,
-the lid animation, `IsBlockedFromTransferIntoChest` (`ChestUI.cs:1291-1302`,
-bank-only вЂ” noted at `chest.rs`).
+`IsBlockedFromTransferIntoChest` (`ChestUI.cs:1291-1302`,
+bank-only вЂ” noted at `chest.rs`). (The lid animation — `UpdateChestFrames` —
+landed with S1-P-i43 below.)
 
 The stale notes flipped with this landing (located by content): the
 M3-CHEST-UI entry's "`ChestSlot` carries no prefix byte (the port's player
 items have none)" clause and its "Favorites are stateless" bullet now point
 at the landed implementation, and the M3-STORE-3 ROADMAP row's right-click
 favorite wording is corrected the same way.
+
+## Chest USE census + fixes (S1-P-i43)
+
+Code-only census of the chest-USE surface (`Player.cs` open/close/range/keys,
+`Chest.cs` entity + animation, the `ChestUI.cs` transfers, the bank personal
+storage) against the port, 2026-11-19 (`task/S1-P-i43-chest-interaction`,
+no compiler invoked — tests WRITTEN NOT RUN). The M3-CHEST-UI/INT +
+M3-STORE-1/2/3 landings already cover the bulk 1:1; this pass fixed the
+remaining WRONGs and ported the missing USE-side pieces verbatim:
+
+- **The range close reads the LIVE tile reach.** `tick_open`'s
+  `IsInInteractionRangeToMultiTileHitbox` port hardcoded the Simple region
+  at the bare 5/3 defaults; the C# reads the per-tick `Player.tileRangeX/Y`
+  statics (`TileReachCheckSettings.GetRanges`, `TileReachCheckSettings.cs:20-34`)
+  after the journey power (`Player.cs:18815-18828`), the
+  `equippedAnyTileRangeAcc` +3/+2 (Extendo Grip 2215 / Architect's Gizmo Pack
+  3061 / 5126, `:13040-13044` set at `:15267-15294`) and the equipped
+  Toolbox 1923 +1/+1 (`ApplyEquipFunctional`, `:14954-14958`), clamped at
+  `TileReachLimit = 20`. New `Player::tile_interaction_reach` delegates to
+  the existing `craft::tile_reach` (one formula, no second copy); the
+  accessory scan is the `UpdateEquips` loop 3..10 (`:12946-12952`).
+- **`Main.stackSplit = 600` on every resolved container** (`Player.cs:33232`):
+  `toggle_open` arms the transfer cooldown before the three-way branch —
+  the fresh open, the switch AND the same-index close (the port dropped it).
+- **The open prologue clears the chatter** (`Player.cs:33087-33090`):
+  `try_open_chest_at_cursor` now clears `talk_npc` (`SetTalkNPC(-1)`) and
+  `npc_chat_text` beside the shop close. (`CloseSign`'s sign half and
+  `npcChatCornerItem` have no port state.)
+- **The Plantera gate reads the world flag.** The locked-chest key walk
+  passed `true` to `unlock_chest` (the recorded fallback); it now reads
+  `World.downed_plant_boss` (`Chest.cs:376`/:397), so a biome key does not
+  unlock a pre-Plantera biome chest and is not consumed.
+- **The void-bag key fallback landed** (`Player.cs:33200-33221`): with no
+  inventory key (`!flag15`) and the Void Bag 4131 carried (`useVoidBag`,
+  `:23171-23181`, scan `inventory[0..58]` — grid + coin/ammo rows, not the
+  trash slot 58), the bank4 walk unlocks and decrements the key (the shadow
+  key 329 stays unconsumed, `:33208`). New `chest::use_void_bag` helper.
+- **The rigged Dead Man's Chest trips the wiring** (`Player.cs:33233`/
+  `:33253-33258`): opening (or closing) a 467 style-4 chest
+  (`WorldGen.IsChestRigged`, `WorldGen.cs:35746-35753`) fires
+  `Wiring.HitSwitch` at the CLICKED cell + the `59` send, after the
+  open/close branch; the Mech-28 click rides the `UpdatePlayers` stream
+  (the doors.rs precedent). The death-achievement window
+  (`_framesLeftEligibleForDeadmansChestDeathAchievement = 600`) has no port
+  tracker — recorded deviation.
+- **The lid animation landed** (`Chest.UpdateChestFrames`,
+  `Chest.cs:3603-3662`, call site `Main.cs:17810`): `WorldChest` gains
+  `frame_counter`/`frame`/`eating_animation_time` (`Chest.cs:84-88`);
+  `update_chest_frames` steps the counter +1 in use / −1 idle, floors at the
+  eat timer then 0, caps at 10, maps 0→frame 0 / 10→frame 2 / else frame 1,
+  and reports the eat chime (`:3628-3631`, `PlaySound(7)` at the chest
+  centre) before the timer decays. Wired at the head of `camera_scene_tail`
+  (the step-gated tail, after `UpdateWorld_ServerOrClient`, before the camera
+  walks — the C# slot). The eat timer's producer (`AskForChestToEatItem`,
+  the ItemTransfer particle `ParticleOrchestrator.cs:2683`) is unported, so
+  the timer stays 0 and the chime dormant — the animator itself is whole.
+  The draw-side consumer (`render/special_tiles.rs::chest_frame_adjust`) is
+  ported + tested but not yet bound into the tile draw (the S1-G-1 render
+  seam); the frame values are now live on the entity for it.
+- **`GetCurrentlyOpenChests` landed** (`Chest.cs:283-294`): the `> -1` gate
+  admits world chests only (banks excluded); the DD2 crystal wipe
+  (`DD2Event.cs:672`) now reads it instead of the direct index.
+- **The dead tick closes the container** (`Player.UpdateDead`,
+  `Player.cs:17020`): `update_dead` now writes `chest = -1` silently (no
+  sound 11 — the range close never fires on the dead path), `chestX/Y` stay;
+  the world chest and the banks both close. This flips the M3-CHEST-INT
+  "UpdateDead reset not ported" deviation.
+- **The coin half of `ItemSpace`** (`Player.cs:39163-39167`): a coin's
+  shift-out cursor (`inventory_has_room_for`) now counts the coin rows
+  (pInv 50-53, `num = 54`) — a free/partial coin row answers true even with
+  a full grid.
+- **The dresser TOP-row storage open landed** (`Player.cs:32864-32925`):
+  `chest::try_open_dresser_at_cursor` opens the chest at the 3×2 anchor
+  (`num50 = myX - frameX / 18 % 3`, `:32867`) through the shared open block
+  (sounds 10/11/12, `stackSplit = 600`) with NO create-on-miss (`FindChest` +
+  the `num52 != -1` gate, `:32905-32906`); the bottom row (`frameY != 0`) is
+  the clothes window (`:32927-32937`, unported — the click falls through).
+  Wired beside the chest interception in `editing.rs` and the open-inventory
+  right-click route in `clicks.rs`.
+- **`DestroyChest`'s silent close-on-destroy landed** (`Chest.cs:625-645`,
+  called from `CheckTileBreakability2_ShouldTileSurvive`,
+  `WorldGen.cs:62506`/:62514): `break_tile` now tombstones the broken chest's
+  store entry (21/467 2-wide, 88 3-wide, the `can_kill_tile` anchor decode)
+  and closes the local player's open index SILENTLY (`:640-643` — `chest = -1`,
+  no sound 11). The port previously relied on `tick_open`'s dead-tile close
+  (sound 11) — the C# closes at the break, silent.
+- **The transfer cues landed (the Lead's faithful-cue decision).** The C#
+  `PlaySound(7/38)` int-overload consumes one case-7/38 pitch draw per play;
+  omitting them desyncs the bare stream. `loot_all`/`deposit_all`/
+  `quick_stack`/`restock`/`move_coins` now take `audio` + `rng` and play the
+  cues at the C# sites (`loot_all` per accepted slot `:39491`/:39559, the
+  vault fills `:39444`/:39534; `deposit_all` the merge `:490`/:525 + the empty
+  placement `:587` et al.; `quick_stack` the merge `:750` + the placement
+  `:782`; `restock` the single `if (flag)` `:991-994`; `move_coins` the
+  `if (flag)` `:1197-1200`). The dispatch snapshots the bare stream across the
+  player borrow (the `quick_transfer_from_slot` precedent) and writes it back.
+- **The LootAll coin arm rides the full `GetItem` order** (`Player.cs:39330-39400`):
+  the old coin-only shortcut (occupied coin rows → empty coin rows ASCENDING)
+  skipped the occupied GRID merge and the descending empty-coin fill. The
+  rewrite is the C# pass order — the FillAmmo pre-pass (`:39345-39352`, the
+  canonical `item::fits_ammo_slot` seam), occupied coin rows → occupied grid
+  (`:39353-39364`, `num2 = -4`), the hotbar-first usable empty arm
+  (`:39365-39374`), the reverse empty walk (coins pInv 53..0, `:39387-39394`),
+  then the void vault (`:39395-39398`). The `item.rs` ammo-accept registry
+  (`not_ammo`/`fits_ammo_slot`/`can_fill_empty_ammo_slot`, `Item.cs:1369-1385`,
+  all ten `notAmmo` sites) is the seam the pre-pass reads.
+- **The QuickStack coin-row favorite gate** (`ChestUI.cs:728`): the merge
+  phase now checks `is_favorite(50 + j)` on the coin-row sources (the empty
+  phase already did).
+- **The Restock partial-list removal** (`ChestUI.cs:946-954`): a demand
+  partial that FILLS to maxStack leaves `list` (`RemoveAt(j); j--`), so a
+  later supply stack sees fewer candidates — the index walk mirrors it.
+- **The Restock gates round 2** (the resume audit): the demand gate now reads
+  `!favorited || !OnlyNeedOneInInventory()` (`ChestUI.cs:908`) through the
+  new `bank::only_need_one_in_inventory` (the full
+  `ItemID.Sets.OnlyNeedOneInInventoryOverride` table, `ItemID.cs:1387-1444` —
+  22 `true` rows AND the 6 `false` rows 205-207/1128/267/849, then
+  `!consumable && (useStyle != 0 || CanBeEquipped())`; the `shoot`-hook /
+  pet-buff arms of `CanBeEquipped` are a cited inert slice, no port fields).
+  The partial fill and the ammo-into-empty bonus now run the
+  `ItemSlot.PickItemMovementAction` context gate (`ChestUI.cs:934`/:975,
+  `ItemSlot.cs:1503-1508`): a non-`FitsAmmoSlot` supply never pours into an
+  ammo-row partial and the bonus SKIPS (without consuming) the ammo empty
+  rows for it — this flips the recorded "restock notAmmo empty-slot
+  destination" deviation (the C# lands it on the grid).
+- **The QuickStack `list4` prune + one queue** (`ChestUI.cs:761-770`): the
+  merge-drained sources leave the dictionary before the empty phase, and
+  the empty phase walks ONE pInv-ordered queue (grid 10..49 then coins
+  50..53) — the old two separate walks re-checked `types`/favorite per slot
+  instead of riding the pruned dictionary; behaviour-equal on every legal
+  state, now structurally 1:1.
+- **The void-vault fills are per-slot** (`Player.cs:39402-39423`): the old
+  `void_vault_take` spread the surplus across empty slots with ONE chime
+  total; the C# occupied fill returns on the whole fit and ONE empty slot
+  takes the WHOLE remainder (`inv[i] = returnItem`, `:39539`), each accepted
+  slot chiming `IsACoin ? 38 : 7` BEFORE the fill (`:39444`/`:39534`). The
+  helper now takes `is_coin` + `audio` + `rng` and mirrors both passes
+  exactly; the `loot_all` vault arm and the `world_sim/items.rs` GrabItems
+  vault arm ride it (the latter on the `UpdatePlayers` stream — one chime
+  per accepted vault slot now, not per pickup event).
+- **The lid animator's eat chime draws** (`Chest.cs:3628-3631`): the
+  `PlaySound(7, chest centre)` int overload consumes one case-7
+  `Next(-10, 11)` pitch draw; the `Main.cs:17810` call site sits outside
+  every SwapRandom block, so it rides the bare stream (the Lead's
+  faithful-cue decision extended to the dormant chime). New
+  `Audio::play_chest_eat_sound` (positioned case 7, gate-first); the timer's
+  producer is unported so the arm stays dormant but exact.
+- **The MP rename chain landed** (`ChestUI.cs:855-859` →
+  `Player.cs:33097-33101`/`:32883-32887` → `Main.cs:17575-17593`):
+  `Player.edited_chest_name` latches on a client rename write,
+  `chest::flush_edited_chest_name` sends the `33` name arm (the CURRENT
+  index; the close-transition site reads the LAST-SYNCED chest's name,
+  `Main.cs:17581` — `Player.prev_synced_chest` snapshots it in `tick_open`
+  AFTER the range close, the `TrySyncingMyPlayer` order) at the chest-click
+  + dresser-click prologues and the per-tick close transition. The host's
+  `33` handler applies the rename to the SENDER's tracked chest
+  (`MessageBuffer.cs:1974` — `Main.player[whoAmI].chest`, not the message
+  index; the 255 refusal byte still applies the empty name, `:1926-1936`).
+  The client `31` sends arm `Main.stackSplit = 600` after the send
+  (`:33117`, the dresser twin `:32897`); the dresser's MP client arm
+  (local close / `31` request) landed with it.
+- **The panel default names read the live localization**
+  (`ChestUI.cs:124-140`): the "Legacy JSON not on disk" claim was WRONG —
+  `decompiled/Terraria.Localization.Content.en-US.Legacy.json:1077+` carries
+  every `LegacyChestType`/`LegacyChestType2`/`LegacyDresserType` row.
+  `default_chest_name` now reads `lang::chest_type`/`chest_type2`/
+  `dresser_type` (the `{ItemName.*}` copy commands expand through the
+  manager) and `Lang.GetItemNameValue(3988)` for the Dead Man's Chest —
+  "Dead Man's Chest" WITH the apostrophe (`en-US.Items.json:4232`); the
+  generated identifier split ("Dead Mans Chest") stays as the resource-less
+  fallback only. Style 13 of tile 467 now names "Locked Desert Chest"
+  (`LegacyChestType2.13`), not the empty string.
+- **The stale notes retired**: `is_locked_or_in_use`'s bank early-false is
+  vacuous (the banks are `Player.banks`, never store entries — the
+  M3-STORE-1 "must restore" note is gone); `unlock_chest`'s `plant_boss`
+  doc reads the world flag; the `chest_holds_items` "store stays empty"
+  note is gone (M3-CHEST-UI landed); the phase-2 module header's "out" list
+  reflects the S1-P-i43 landings (the net `52` key-walk sends and the
+  death-achievement window remain out).
+
+Deliberate deviations kept (unchanged from M3-CHEST-INT, re-verified against
+source): `DoCoins`' roll-over (`Player.cs:39567-39569`), the void-vault take
+in the shift-out cursor, the `move_coins` single-pass largest-first refill
+(`ChestUI.cs:1090-1196`), the two-panel ownership, and the slot-positional
+favorite model. The `move_coins` player pull omits the ammo rows 54-57
+(`ChestUI.cs:1052-1054`'s 0..58 walk) — coin stacks can never occupy an ammo
+row (`fits_ammo_slot` refuses the notAmmo coin family), behaviour-equal,
+cited. The `quick_transfer_from_slot` FillAmmo pre-pass stays out (its
+GetItem shape is the cursor-8 single-slot take, the ammo-accept registry now
+exists for a follow-up). The net messages 31/32/33/52/69/80/155 are
+S1-E-27's (landed); the `52 LockAndUnlock` key-walk sends
+(`:33195-33198`/:33216-33219) have no port message — out.
+
+Witnesses (WRITTEN NOT RUN): `chest.rs::s1_p_i43_*` (the lid counter ladder +
+eat chime, `GetCurrentlyOpenChests`' bank exclusion, the 600 cooldown on all
+three toggle arms, the chatter clear, the Plantera-gated biome key, the
+void-bag fallback + `useVoidBag`'s 0..57 scan, the rigged-chest wire trip
+observed through a wired lamp swap, the accessory-widened range close, the
+coin-row `ItemSpace`, the dresser top-row open + no-create-on-miss, the
+localized default-name chain under the lang lock);
+`bank.rs::s1_p_i43_*` (the LootAll coin grid-merge + descending empty-coin
+fill, the per-stack case-7 cue draws, the QuickStack coin-row favorite gate
++ the `list4` prune/one-queue witness, the Restock filled-partial removal +
+the ammo-row `FitsAmmoSlot` gates + the favorited one-needed demand gate,
+the per-slot vault fills with their cue count);
+`editing.rs::s1_p_i43_breaking_the_open_chest_closes_it_silently`;
+`player.rs::s1_p_i43_the_dead_tick_closes_the_open_container`;
+`audio.rs::s1_p_i43_the_chest_eat_chime_draws_one_case7_pitch`;
+`netglue.rs::a_client_rename_flushes_through_the_33_name_arm` (the MP
+latch → flush → host-apply round trip). RNG: the
+transfer cues ride the bare-`Main.rand` stand-in (`rngs.global()`, the
+click-handler convention) — one case-7/38 draw per C# play, in emission order;
+the rigged trip's Mech-28 pitch rides the existing `UpdatePlayers` stream
+(the tile-use swap); the lid animator's dormant eat chime draws one case-7
+pitch on the bare stream when it fires; the GrabItems vault fills ride
+`UpdatePlayers` per accepted slot.
 
 ## Multiplayer protocol core (M6-NET-1)
 

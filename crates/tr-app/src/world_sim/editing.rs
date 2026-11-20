@@ -2016,6 +2016,16 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     {
         return;
     }
+    // The dresser top-row storage open (`Player.cs:32864-32925`, S1-P-i43):
+    // the same right-click priority as the chest route, before the furniture
+    // dispatch (the dresser has no `interact_at` interaction of its own).
+    if app.place_down
+        && !prev_place_down
+        && !app.inventory_open
+        && crate::chest::try_open_dresser_at_cursor(app, world_pos)
+    {
+        return;
+    }
     if app.place_down && !prev_place_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
     }
@@ -2461,8 +2471,8 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
 /// `Chest.CanDestroyChest`'s item scan (`Chest.cs:609-623`) against the
 /// app's in-memory chest store: any slot with a positive stack at the
 /// anchor refuses the break. The C#'s `type > 0` half is implied — the
-/// store only holds real stacks. The store stays empty until the
-/// M3-CHEST-UI seam fills it, so the refusal passes today.
+/// store only holds real stacks. (M3-CHEST-UI landed the store; the
+/// refusal is live — S1-P-i43 retired the stale "stays empty" note.)
 fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
     move |x, y| {
         app.world_chests
@@ -2554,6 +2564,33 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
+    // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
+    // `CheckTileBreakability2_ShouldTileSurvive`, `WorldGen.cs:62506`/:62514):
+    // a broken chest 21/467 (2 wide) or dresser 88 (3 wide) loses its store
+    // entry, and the local player browsing it closes SILENTLY (`:640-643` —
+    // `chest = -1`, no sound; the range close's 11 never fires). The anchor
+    // is the object's top-left cell, the same decode `can_kill_tile` uses
+    // (`kill.rs:2640-2641`). S1-P-i43: the port previously relied on
+    // `tick_open`'s dead-tile close (sound 11) — the C# closes here, silent.
+    if let Some(hit) = &hit {
+        let wide: i32 = match hit.kind {
+            21 | 467 => 2,
+            88 => 3,
+            _ => 0,
+        };
+        if wide > 0 {
+            let anchor_x = hit.x - i32::from(hit.frame_x) / 18 % wide;
+            let anchor_y = hit.y - i32::from(hit.frame_y) / 18;
+            if let Some(idx) = crate::chest::find_chest(&app.world_chests, anchor_x, anchor_y) {
+                crate::chest::remove_chest(&mut app.world_chests, idx);
+                if let Some(p) = app.player.as_mut() {
+                    if p.chest == idx as i32 {
+                        p.chest = crate::bank::CHEST_CLOSED; // `:642` — silent
+                    }
+                }
+            }
+        }
+    }
     // `WorldGen.KillTile_PlaySounds(i, j, fail, tileCache)` (`WorldGen.cs:
     // 66427-66575`) for the hit cell, played before the cascade's loot — the
     // C# calls it at the top of `KillTile` (:63558) and the tile is always a
@@ -5889,6 +5926,7 @@ mod tests {
             }],
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         });
         mine_frames(&mut app, 40);
         for x in [10, 11] {
@@ -5912,6 +5950,42 @@ mod tests {
         }
         assert_eq!(app.items.len(), 1);
         assert_eq!(app.items[0].kind, 48, "the chest item");
+    }
+
+    /// S1-P-i43 — `Chest.DestroyChest`'s silent close-on-destroy
+    /// (`Chest.cs:640-643`, called from `CheckTileBreakability2_ShouldTileSurvive`,
+    /// `WorldGen.cs:62506`): breaking the open chest's tile removes the store
+    /// entry and closes the player index WITHOUT sound 11 (the range close's
+    /// menu-close never fires — the C# writes `chest = -1` directly).
+    #[test]
+    fn s1_p_i43_breaking_the_open_chest_closes_it_silently() {
+        let mut w = object_world();
+        assert!(edit::place_item_tile(&mut w, 10, 19, 21, 0, 1));
+        let mut app = mining_app(w, 10, 18);
+        let idx = crate::chest::create_chest(&mut app.world_chests, 10, 18);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.chest = idx as i32;
+            p.chest_x = 10;
+            p.chest_y = 18;
+        }
+        break_tile(&mut app, 10, 18);
+        // The store entry is tombstoned and the open index closed silently.
+        assert_eq!(
+            crate::chest::find_chest(&app.world_chests, 10, 18),
+            None,
+            "DestroyChest removed the entry (:639)"
+        );
+        assert_eq!(
+            app.player.as_ref().unwrap().chest, -1,
+            "the open index closed (:642)"
+        );
+        // The chest cells cascaded away (the break ran).
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(!app.world.tile(x, y).unwrap().active(), "chest cell ({x}, {y}) broke");
+            }
+        }
     }
 
     /// M1.4-TO-6: the locked golden door refuses `break_tile`

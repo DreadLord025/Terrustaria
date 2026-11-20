@@ -1562,12 +1562,14 @@ mod tests {
                 slots: vec![chest_slot(9, 20)],
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
             WorldChest {
                 tile: (42, 40),
                 slots: Vec::new(),
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
@@ -1593,6 +1595,7 @@ mod tests {
             slots: vec![chest_slot(9, 6), chest_slot(619, 4)],
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 in the inventory + 10 in the chest.
@@ -1650,6 +1653,7 @@ mod tests {
             slots: vec![chest_slot(9, 6)],
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 from the inventory drain the chest
@@ -1704,12 +1708,14 @@ mod tests {
                 slots: vec![chest_slot(9, 20)],
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
             WorldChest {
                 tile: (60, 60),
                 slots: Vec::new(),
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
@@ -1730,6 +1736,7 @@ mod tests {
             slots: vec![chest_slot(9, 20)],
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }];
         let inv = inv_with(&[(9, 4)]);
         let adj = dry_adj();

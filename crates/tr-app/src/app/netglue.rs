@@ -630,21 +630,34 @@ impl App {
             }
             // `case 33` — the open chest / its rename (`MessageBuffer.cs:1920-1982`).
             C2s::PlayerChest(pc) => {
-                if pc.name_len != 0 && pc.name_len != 255 {
-                    // `:1974-1977` — the rename: rewrite the chest and relay
-                    // `69` to the others.
-                    if let Some(chest) = self.world_chests.get_mut(pc.chest.max(0) as usize) {
-                        chest.name = pc.name.clone();
-                        let (tx, ty) = chest.tile;
-                        server.broadcast_except(
-                            &S2c::ChestName(net::ChestName {
-                                chest: pc.chest,
-                                x: tx as i16,
-                                y: ty as i16,
-                                name: pc.name.clone(),
-                            }),
-                            id,
-                        );
+                if pc.name_len != 0 {
+                    // `:1972-1977` — the rename: the target is the SENDER's
+                    // tracked open chest (`Main.player[whoAmI].chest`,
+                    // `:1974`), not the message's index — a close-transition
+                    // flush carries -1 while the name belongs to the chest
+                    // the player just closed (S1-P-i43). The 255 refusal
+                    // byte still APPLIES (the C# reader keeps `name = ""`
+                    // for it, `:1926-1936` — the default-name reset rides
+                    // this arm). Rewrite + relay `69` to the others.
+                    let tracked = self
+                        .remote_players
+                        .get(&id)
+                        .and_then(|p| p.chest)
+                        .unwrap_or(pc.chest);
+                    if tracked >= 0 {
+                        if let Some(chest) = self.world_chests.get_mut(tracked as usize) {
+                            chest.name = pc.name.clone();
+                            let (tx, ty) = chest.tile;
+                            server.broadcast_except(
+                                &S2c::ChestName(net::ChestName {
+                                    chest: tracked,
+                                    x: tx as i16,
+                                    y: ty as i16,
+                                    name: pc.name.clone(),
+                                }),
+                                id,
+                            );
+                        }
                     }
                 }
                 self.remote_players
@@ -4832,6 +4845,60 @@ mod message_family_tests {
         // `80` told the other players the asker's chest index; here the
         // host's own record (`:1886`).
         assert_eq!(host_app.remote_players.get(&1).map(|p| p.chest), Some(Some(0)));
+    }
+
+    /// S1-P-i43 — the `editedChestName` chain (`ChestUI.cs:855-859` →
+    /// `Player.cs:33097-33101`): a client's rename latches the flag, the
+    /// open-click flush sends `33` with the CURRENT chest index + the name
+    /// (`NetMessage.cs` case 33's `number2 == 1f` arm), the host rewrites its
+    /// own store and relays `69`. A no-change submit never latches.
+    #[test]
+    fn a_client_rename_flushes_through_the_33_name_arm() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // The chest exists on both sides (the world load carries it; here
+        // the fixture plants matching entries directly).
+        for app in [&mut host_app, &mut client_app] {
+            let mut chest = crate::chest::WorldChest {
+                tile: (3, 5),
+                max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            };
+            chest.slots.resize(crate::chest::DEFAULT_MAX_ITEMS as usize, crate::item::EMPTY_SLOT);
+            app.world_chests.push(chest);
+        }
+        // The client browses chest 0 (the shared open block's state).
+        crate::chest::toggle_open(&mut client_app, 3, 5, 0);
+        assert_eq!(client_app.player.as_ref().unwrap().chest, 0);
+        // The rename submit writes + latches (netMode 1).
+        assert_eq!(crate::chest::rename_submit(&mut client_app, "Booty"), 12);
+        assert!(client_app.player.as_ref().unwrap().edited_chest_name);
+        assert_eq!(crate::chest::chest_name(&client_app, 0), "Booty");
+        // An unchanged re-submit keeps the flag but does not re-latch a
+        // cleared one (the write-if-different guard).
+        client_app.player.as_mut().unwrap().edited_chest_name = false;
+        crate::chest::rename_submit(&mut client_app, "Booty");
+        assert!(!client_app.player.as_ref().unwrap().edited_chest_name);
+        // Re-latch, then the flush (the open click's `:33097` seam) sends
+        // the `33` name arm and clears the flag.
+        crate::chest::rename_submit(&mut client_app, "Treasure");
+        assert!(client_app.player.as_ref().unwrap().edited_chest_name);
+        crate::chest::flush_edited_chest_name(&mut client_app);
+        assert!(!client_app.player.as_ref().unwrap().edited_chest_name, "cleared on the send");
+        let mut renamed = false;
+        for _ in 0..60 {
+            host_app.poll_net();
+            client_app.poll_net();
+            renamed = host_app.world_chests.first().is_some_and(|c| c.name == "Treasure");
+            if renamed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(renamed, "the host's store took the 33 rename (:1974-1977)");
+        // A second flush is a no-op (the flag is clear).
+        crate::chest::flush_edited_chest_name(&mut client_app);
+        assert!(!client_app.player.as_ref().unwrap().edited_chest_name);
     }
 
     /// `case 59` — a client's switch trip replays on the host and relays to

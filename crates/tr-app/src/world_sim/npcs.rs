@@ -3185,10 +3185,12 @@ pub(crate) fn wipe_dd2_entities(app: &mut App) {
     app.npcs
         .retain(|n| !dd2_pool_id(n.kind).is_some_and(tr_core::dd2::belongs_to_ooa));
     // `ClearAllDD2EnergyCrystalsInChests` (`:666-692`): the currently
-    // open chests only — the 3822 stacks turn to air.
+    // open chests only — the 3822 stacks turn to air. The open set is
+    // `Chest.GetCurrentlyOpenChests()` (`:672`, `Chest.cs:283-294`), the
+    // single-player reading (S1-P-i43).
     let open = app.player.as_ref().map(|p| p.chest).unwrap_or(-1);
-    if open >= 0 {
-        if let Some(chest) = app.world_chests.get_mut(open as usize) {
+    for idx in crate::chest::currently_open_chests(open) {
+        if let Some(chest) = app.world_chests.get_mut(idx) {
             for slot in chest.slots.iter_mut() {
                 if slot.kind == tr_core::dd2::ENERGY_CRYSTAL_ITEM && slot.count > 0 {
                     *slot = crate::item::EMPTY_SLOT;
@@ -12238,6 +12240,7 @@ mod dd2_loss_tests {
             ],
             name: String::new(),
             max_items: 40,
+            ..Default::default()
         });
         app.player.as_mut().unwrap().chest = 0;
         update_npcs(&mut app, 1.0 / 60.0);
@@ -12280,6 +12283,7 @@ mod dd2_loss_tests {
             }],
             name: String::new(),
             max_items: 40,
+            ..Default::default()
         });
         // No chest open (p.chest == -1).
         wipe_dd2_entities(&mut app);

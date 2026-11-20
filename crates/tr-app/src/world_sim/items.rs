@@ -220,12 +220,18 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     {
                         let def = registry::get(drop.kind);
                         let max_stack = def.map(|d| d.max_stack).unwrap_or(999);
+                        // S1-P-i43 — the fills chime per accepted slot INSIDE
+                        // the helper (`Player.cs:39444`/`:39534`), on the
+                        // `UpdatePlayers` stream (the GrabItems caller).
                         let taken = crate::bank::void_vault_take(
                             &mut p.banks[3],
                             drop.kind,
                             drop.prefix,
                             drop.count,
                             max_stack,
+                            registry::is_coin(drop.kind),
+                            audio,
+                            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                         );
                         if taken == drop.count {
                             into_vault = true;
@@ -235,14 +241,6 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     }
                 }
                 if into_vault {
-                    // S1-E-21f — `GetItem_VoidVault`'s fills play the same
-                    // `IsACoin ? 38 : 7` chime (`Player.cs:39444`'s void-bag
-                    // twins `GetItem_FillIntoOccupiedSlot_VoidBag`), unpositioned,
-                    // on the `UpdatePlayers` stream (the GrabItems caller).
-                    audio.play_pickup_sound(
-                        false,
-                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    );
                     items.swap_remove(i);
                     continue;
                 }

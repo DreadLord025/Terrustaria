@@ -534,6 +534,27 @@ impl App {
     /// The world-branch tail's camera walks (`Main.cs:17814-17815`, S1-B-4)
     /// and `SceneState.Update` (`:17816`) — they freeze with the world step.
     fn camera_scene_tail(&mut self, dt: f32, screen: Vec2) {
+                    // `Chest.UpdateChestFrames()` (`Main.cs:17810`): the lid
+                    // animation ticks after `UpdateWorld_ServerOrClient` and
+                    // before the camera walks — the port's slot is the head
+                    // of this step-gated tail (S1-P-i43). The eat chime
+                    // (`Chest.cs:3628-3631`, `PlaySound(7, chest centre)`)
+                    // plays for every cue the walk reports — the int overload
+                    // consumes one case-7 `Next(-10, 11)` pitch draw on the
+                    // BARE stream (the `:17810` call site sits outside every
+                    // SwapRandom block, the Lead's faithful-cue decision).
+                    // Dormant until the eat timer's producer lands.
+                    let open = self.open_container();
+                    let eat_cues =
+                        crate::chest::update_chest_frames(&mut self.world_chests, open);
+                    for j in eat_cues {
+                        let (cx, cy) = self.world_chests[j].tile;
+                        self.audio.play_chest_eat_sound(
+                            cx as f32 * 16.0 + 16.0,
+                            cy as f32 * 16.0 + 16.0,
+                            self.rngs.global(),
+                        );
+                    }
                     let mut camera_state = std::mem::take(&mut self.camera_state);
                     crate::world_sim::camera::update_camera_pan(self, &mut camera_state);
                     crate::world_sim::camera::update_camera_lerp(self, &mut camera_state);
