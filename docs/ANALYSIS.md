@@ -39244,3 +39244,74 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The dust physics chain (W4-d50, task/W4-d50-dust-type-table, 2026-11-20, code-only mode)
+
+The dust foundation was PARTIAL on main: the `Dust` record + `DustPool` + the
+verbatim `NewDust` family (`particles.rs`, S1-E-1), the generic `UpdateDust`
+skeleton with its `type_arm` hook (S1-E-3), the colour/fade table
+(`dust_table.rs`, S1-E-2) and the `DUST_ID` names (`id_tables.rs`, S1-F-6) all
+landed. The missing piece вЂ” the ROADMAP S1-E-2/E-3 remainder "E-2's if-chain
+arms at `:467-2334`" вЂ” is the **per-type physics chain** the hook dispatches.
+Only 213/268 were hand-dispatched (`minecart::tick`); every other type fell
+through to the generic gravity tail.
+
+`crates/tr-core/src/dust_physics.rs` ports `Dust.cs:467-2334` verbatim as a
+pure, UNWIRED module (the `npc_ai_*` code-only precedent), sibling to
+`dust_table`'s colour half:
+
+* `pre_move` (`:468-476`) вЂ” the 299/300/301/305 family shrink+lift and the 35
+  lava-bubble counter, which the C# runs BEFORE `position += velocity` (`:477`).
+* `type_chain` (`:478-2334`) вЂ” the whole post-move if-chain over a
+  `DustPhysicsEnv` seam (the `solid_collision`/`wet_collision`/`light_color`
+  probes, the player velocity/wet/centre snapshot, the sandstorm-visuals flag,
+  the child-spawn sink, the `SandStormCount` delta). The hook's `bool` is the
+  SECOND-chain match (`:2130-2334`), so the skeleton's final
+  `else if (type != 304 && noGravity)` gravity tail (`:2335`) is suppressed
+  exactly as the C#'s else-if structure does; the FIRST-ladder standalone arms
+  (213/268 included) return `false` and take the tail alongside вЂ” the corrected
+  S1-E-3 chain reading.
+
+**RNG `NewDust` census.** Every `Main.rand` draw in the chain is preserved in
+per-slot C# order on the caller's stream (the module header carries the full
+table): 235's dead `vector3` two `Next(-100,101)` (`:817`, computed never used вЂ”
+the draws kept), the 159/164/173/160/162 jitter pairs + child-spawn gates
+(`Next(5)`/`Next(10)`/`Next(50)`), the 168 pair, the 34/35/152 wet `Next(2)` +
+`Next(-10,10)` (dry path draws nothing), and the 41/44 jitter pairs. The five
+child `NewDust` requests are recorded in `DustPhysicsEnv::spawns` and drained by
+the caller after the pass (the `wants_*` sink precedent); the deferral is
+stream-neutral for every current consumer (only 213/268 are live, neither spawns
+children). A scripted-RNG witness pins each census order exactly; 38 `w4_d50_*`
+tests incl. a full-pool integration (pre_move + move + type_chain + tail).
+
+**Deliberate deviations / drops (each cited at its arm):**
+
+* **Lights** вЂ” every `Lighting.AddLight` in the chain is the S1-E-5 column
+  (`tr-app::dust_lights`, which already feeds the 42 RNG-free FIRST-ladder arms).
+  The physics mutations land here; the light feed must read the POST-update
+  record. **Wiring-wave reconciliation owed:** `dust_lights` currently applies a
+  LOCAL decrement to its copy for 206 (`:766`), 174 (`:807`) and 230 (`:639`) to
+  recover the post-mutation scale; once the physics chain is wired those local
+  compensations must be RETIRED (the pool record already carries the mutation)
+  or the light double-counts the decrement. 309 (`:486`) and 261 (`:695-704`)
+  likewise read post-mutation scale.
+* **`customData`** вЂ” dropped with the field (`particles.rs`'s `Dust` record): the
+  Player/Projectile/NPC/Vector2/Color/int/float follower halves never fire. The
+  31 `else if (noGravity)` arm (`:1297`) becomes reachable BECAUSE the NPC
+  `customData` branch (`:1277`) is dropped вЂ” noted at the arm.
+* **`Main.snowDust`** (`:1747`, the 76 arm) вЂ” a `Main` static (`Main.cs:621`), not
+  a `Dust` one; the pool does not carry it (the skeleton's documented drop).
+* **43's death check** reads the PRE-ramp scale (`:1406-1414` precedes `:1415`),
+  ported in that order; the `light_color` probe is the real `Lighting.GetColor`
+  sample at the wiring wave (until then the caller passes the bright default, so
+  43 never spuriously dies).
+
+**Wiring (the d51-54 / e1-e4 sites' wave):** the generic loop calls `pre_move`
+over the active slots before the move, then `update_dust` with `type_chain` as
+the hook, then adds the `SandStormCount` delta and drains the child-spawn sink
+through `DustPool::new_dust` (post-write `no_gravity = true; scale = spawn.scale`).
+The `minecart::tick` 213/268 hand-dispatch and `sand::type_268_arm` retire into
+the chain at that wave (their bodies are already the chain's 213/268 arms).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 38 witnesses are owed a compile window before merge.
+
