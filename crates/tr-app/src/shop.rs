@@ -80,6 +80,17 @@ pub struct ShopFlags {
     /// W4-d123: `NPC.AnyNPCs(108)` — the Wizard's presence (the Witch
     /// Doctor's 2999 row, `Chest.cs:2618`).
     pub wizard_present: bool,
+    /// W4-d123: `Main.remixWorld` (`World.seeds`' REMIX bit) — the Skeleton
+    /// Merchant's phase-2 split (`Chest.cs:2822-2831`) and the pylon tail's
+    /// remix arms (`:3476-3533`).
+    pub remix_world: bool,
+    /// W4-d123: `Main.time` — the Skeleton Merchant's 3004/8 clock row
+    /// (`Chest.cs:2887`'s `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0`).
+    pub world_time: f64,
+    /// W4-d123: `Main.player[Main.myPlayer].ateArtisanBread`
+    /// (`Player.cs:2048`) — the Skeleton Merchant's 5326 row
+    /// (`Chest.cs:2958`).
+    pub ate_artisan_bread: bool,
     /// M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
     /// `SecretSeed.vampirism.Enabled` write) — the Dryad's and the Bestiary
     /// Girl's vampirism rows (`Chest.cs:1733`/`:3403`).
@@ -133,6 +144,9 @@ impl Default for ShopFlags {
             downed_plant_boss: false,
             mechanic_present: false,
             wizard_present: false,
+            remix_world: false,
+            world_time: 0.0,
+            ate_artisan_bread: false,
             vampirism: false,
             infected_seed: false,
             crimson_world: false,
@@ -167,6 +181,11 @@ impl ShopFlags {
             eclipse: world.eclipse,
             downed_golem: world.downed_golem,
             downed_plant_boss: world.downed_plant_boss,
+            // W4-d123: the Skeleton Merchant's world-side gates — the
+            // remix phase-2 split (`Chest.cs:2822-2831`) and the clock row
+            // (`:2887`).
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            world_time: world.time,
             vampirism: world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
@@ -322,9 +341,62 @@ pub enum StockWhen {
     /// W4-d123: `NPC.AnyNPCs(108)` (`Chest.cs:2618`'s Witch Doctor 2999
     /// row) — the Wizard's presence.
     WizardPresent,
+    /// W4-d123: `Main.moonPhase == 2 && !Main.remixWorld` (`Chest.cs:2822`'s
+    /// Skeleton Merchant 3069 row).
+    MoonPhase2NotRemix,
+    /// W4-d123: `Main.moonPhase == 2 && Main.remixWorld` (`Chest.cs:2827`'s
+    /// Skeleton Merchant 517 row).
+    MoonPhase2Remix,
+    /// W4-d123: `Main.moonPhase % 2 == 0` (`Chest.cs:2857`'s Skeleton
+    /// Merchant 3001 row).
+    MoonPhaseEven,
+    /// W4-d123: `Main.moonPhase % 2 != 0 && Main.hardMode`
+    /// (`Chest.cs:2867`'s Skeleton Merchant 188 row).
+    MoonPhaseOddHardMode,
+    /// W4-d123: `!Main.dayTime || Main.moonPhase == 0` (`Chest.cs:2872`'s
+    /// Skeleton Merchant 3002 arm — the 5377 restock rides the same gate
+    /// PLUS the carried Flower Boots).
+    NightOrMoonPhase0,
+    /// W4-d123: the `:2872` arm PLUS `HasItem(930)` (`Chest.cs:2876`'s
+    /// Skeleton Merchant 5377 restock — the Flower Boots scan).
+    NightOrMoonPhase0HasBoots,
+    /// W4-d123: `Main.dayTime && Main.moonPhase != 0` (`Chest.cs:2882`'s
+    /// Skeleton Merchant 282 else-arm — the exact complement of
+    /// [`StockWhen::NightOrMoonPhase0`]).
+    DayNotMoonPhase0,
+    /// W4-d123: `Main.time % 60.0 * 60.0 * 6.0 <= 10800.0`
+    /// (`Chest.cs:2887`'s Skeleton Merchant 3004 arm; the else stamps 8).
+    TimeEarly,
+    /// W4-d123: the `:2887` else — the SAME row slot stamps the Torch 8.
+    TimeLate,
+    /// W4-d123: `Main.moonPhase == 0 || 1 || 4 || 5` (`Chest.cs:2896`'s
+    /// Skeleton Merchant 3003 arm; the else stamps 40).
+    MoonPhase0145,
+    /// W4-d123: the `:2896` else — the SAME row slot stamps the Rope 40.
+    MoonPhaseNot0145,
+    /// W4-d123: `Main.moonPhase % 4 == n` (`Chest.cs:2905-2920`'s Skeleton
+    /// Merchant 3310/3313/3312/3311 ladder — exactly one of four).
+    MoonPhaseMod4(u8),
+    /// W4-d123: `Main.moonPhase == 1 || Main.moonPhase == 2`
+    /// (`Chest.cs:2921`'s Skeleton Merchant 5640 row).
+    MoonPhase1Or2,
+    /// W4-d123: `Main.moonPhase == 3 || Main.moonPhase == 5`
+    /// (`Chest.cs:2925`'s Skeleton Merchant 5641 row).
+    MoonPhase3Or5,
+    /// W4-d123: `Main.moonPhase == 6 || Main.moonPhase == 7`
+    /// (`Chest.cs:2929`'s Skeleton Merchant 5642 row).
+    MoonPhase6Or7,
+    /// W4-d123: `Main.hardMode && Main.bloodMoon` (`Chest.cs:2947`'s
+    /// Skeleton Merchant 3258 row — inside the hardmode block).
+    HardModeBloodMoon,
+    /// W4-d123: `!ateArtisanBread && Main.moonPhase >= 3 && Main.moonPhase
+    /// <= 5` (`Chest.cs:2958`'s Skeleton Merchant 5326 row).
+    ArtisanBreadPhases345,
     /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
     DownedMechAll,
-    /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
+    /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`; also the Skeleton
+    /// Merchant's 5540 `Chest.cs:2942` and the Tavernkeep's tier gates
+    /// `:2965`).
     DownedMechAny,
     /// `Main.hardMode && NPC.downedMartians` (`:2777`) — the two rows.
     DownedMartians,
@@ -892,6 +964,64 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             }
             rows
         }
+        // The Skeleton Merchant's shop (index 20, `Chest.cs:2811-2962`,
+        // W4-d123): the eight exact-phase head rows (the phase-2 pair
+        // splits on remixWorld, `:2822-2831`), the even/odd pair 3001/28
+        // (+ the odd+hardmode 188), the night-or-phase-0 arm (3002 + the
+        // carried-Flower-Boots 5377 restock) vs the day 282 else, the two
+        // clock/phase else-pairs (3004|8 `:2887`, 3003|40 `:2896`), the
+        // mod-4 ladder 3310/3313/3312/3311 (`:2905-2920`), the 5640/5641/
+        // 5642 phase pairs, the always 166/965, the hardmode block
+        // (3316/3334 + mech-any 5540 + blood-moon 3258), the phase-0 night
+        // 3043 and the artisan-bread 5326 tail.
+        20 => vec![
+            row(284, StockWhen::MoonPhaseIs(0)),
+            row(946, StockWhen::MoonPhaseIs(1)),
+            // `:2822-2831` — the phase-2 remix split.
+            row(3069, StockWhen::MoonPhase2NotRemix),
+            row(517, StockWhen::MoonPhase2Remix),
+            row(4341, StockWhen::MoonPhaseIs(3)),
+            row(285, StockWhen::MoonPhaseIs(4)),
+            row(953, StockWhen::MoonPhaseIs(5)),
+            row(3068, StockWhen::MoonPhaseIs(6)),
+            row(3084, StockWhen::MoonPhaseIs(7)),
+            // `:2857-2871` — the parity pair + the odd+hardmode row.
+            row(3001, StockWhen::MoonPhaseEven),
+            row(28, StockWhen::MoonPhaseOdd),
+            row(188, StockWhen::MoonPhaseOddHardMode),
+            // `:2872-2886` — the night-or-phase-0 arm (3002 + the 930
+            // restock 5377) vs the day 282 else.
+            row(3002, StockWhen::NightOrMoonPhase0),
+            row(5377, StockWhen::NightOrMoonPhase0HasBoots),
+            row(282, StockWhen::DayNotMoonPhase0),
+            // `:2887-2895` — the clock else-pair (ONE row slot).
+            row(3004, StockWhen::TimeEarly),
+            row(8, StockWhen::TimeLate),
+            // `:2896-2904` — the phase else-pair (ONE row slot).
+            row(3003, StockWhen::MoonPhase0145),
+            row(40, StockWhen::MoonPhaseNot0145),
+            // `:2905-2920` — the mod-4 ladder (ONE row slot).
+            row(3310, StockWhen::MoonPhaseMod4(0)),
+            row(3313, StockWhen::MoonPhaseMod4(1)),
+            row(3312, StockWhen::MoonPhaseMod4(2)),
+            row(3311, StockWhen::MoonPhaseMod4(3)),
+            // `:2921-2932` — the phase-pair trio (at most one row).
+            row(5640, StockWhen::MoonPhase1Or2),
+            row(5641, StockWhen::MoonPhase3Or5),
+            row(5642, StockWhen::MoonPhase6Or7),
+            // `:2933-2936` — the always pair.
+            row(166, StockWhen::Always),
+            row(965, StockWhen::Always),
+            // `:2937-2952` — the hardmode block.
+            row(3316, StockWhen::HardMode),
+            row(3334, StockWhen::HardMode),
+            row(5540, StockWhen::DownedMechAny),
+            row(3258, StockWhen::HardModeBloodMoon),
+            // `:2953-2957` — the phase-0 night row.
+            row(3043, StockWhen::MoonPhaseNight0),
+            // `:2958-2961` — the artisan-bread tail.
+            row(5326, StockWhen::ArtisanBreadPhases345),
+        ],
         _ => Vec::new(),
     }
 }
@@ -1584,6 +1714,30 @@ pub fn resolve_stock_entries_moon(
                 flags.zone_graveyard && (flags.downed_plant_boss || flags.mechanic_present)
             }
             StockWhen::WizardPresent => flags.wizard_present,
+            // W4-d123: the Skeleton Merchant's gates (`Chest.cs:2811-2962`).
+            StockWhen::MoonPhase2NotRemix => moon_phase == 2 && !flags.remix_world,
+            StockWhen::MoonPhase2Remix => moon_phase == 2 && flags.remix_world,
+            StockWhen::MoonPhaseEven => moon_phase % 2 == 0,
+            StockWhen::MoonPhaseOddHardMode => moon_phase % 2 != 0 && flags.hard_mode,
+            StockWhen::NightOrMoonPhase0 => flags.night || moon_phase == 0,
+            StockWhen::NightOrMoonPhase0HasBoots => {
+                (flags.night || moon_phase == 0) && inventory_ids.contains(&930)
+            }
+            StockWhen::DayNotMoonPhase0 => !flags.night && moon_phase != 0,
+            // `:2887` — `(Main.time % 60.0) * 60.0 * 6.0 <= 10800.0` (the
+            // mod binds tighter than the multiplies; f64 like `Main.time`).
+            StockWhen::TimeEarly => (flags.world_time % 60.0) * 60.0 * 6.0 <= 10800.0,
+            StockWhen::TimeLate => (flags.world_time % 60.0) * 60.0 * 6.0 > 10800.0,
+            StockWhen::MoonPhase0145 => matches!(moon_phase, 0 | 1 | 4 | 5),
+            StockWhen::MoonPhaseNot0145 => !matches!(moon_phase, 0 | 1 | 4 | 5),
+            StockWhen::MoonPhaseMod4(n) => moon_phase % 4 == n as u32,
+            StockWhen::MoonPhase1Or2 => matches!(moon_phase, 1 | 2),
+            StockWhen::MoonPhase3Or5 => matches!(moon_phase, 3 | 5),
+            StockWhen::MoonPhase6Or7 => matches!(moon_phase, 6 | 7),
+            StockWhen::HardModeBloodMoon => flags.hard_mode && flags.blood_moon,
+            StockWhen::ArtisanBreadPhases345 => {
+                !flags.ate_artisan_bread && (3..=5).contains(&moon_phase)
+            }
             StockWhen::DownedMechAll => {
                 flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
             }

@@ -962,6 +962,18 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .npcs
             .iter()
             .any(|n| n.hp > 0 && n.kind == NpcKind::Wizard),
+        // W4-d123: the Skeleton Merchant's world-side gates
+        // (`Chest.cs:2822-2831`/`:2887`/`:2958`) — the remix bit, the
+        // live clock and the player's artisan-bread latch.
+        remix_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::REMIX),
+        world_time: app.world.time,
+        ate_artisan_bread: app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.ate_artisan_bread),
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
         coins_over_gold: coin_total(&app.inventory, app.coins) >= 1_000_000,

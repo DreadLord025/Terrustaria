@@ -24359,6 +24359,82 @@ mod tests {
         assert!(crate::shop::resolve_stock(17, &three, &[]).contains(&1337));
     }
 
+    /// The Skeleton Merchant's shop (`case 20`, W4-d123,
+    /// `Chest.cs:2811-2962`): the exact-phase head, the remix phase-2
+    /// split, the parity pair, the night/day arms, the two else-pairs,
+    /// the mod-4 ladder, the phase-pair trio, the hardmode block and the
+    /// artisan-bread tail.
+    #[test]
+    fn the_skeleton_merchant_shop_walks_the_moon_phases() {
+        // Phase 0 by day (the `resolve_stock_moon(_, _, _, 0)` view):
+        // 284 head, 3001 even, the phase-0 arm's 3002, the early clock
+        // 3004 (time 0), 3003 (phase 0 in {0,1,4,5}), 3310 (mod-4 0),
+        // the always 166/965. NO 3043 (day), no 5640-family, no 188.
+        let day0 = crate::shop::resolve_stock_moon(20, &crate::shop::ShopFlags::default(), &[], 0);
+        assert_eq!(
+            day0,
+            vec![284, 3001, 3002, 3004, 3003, 3310, 166, 965],
+            "the phase-0 day stock"
+        );
+        // The phase-0 NIGHT adds 3043 (`:2953`) — and the 5377 restock
+        // needs the carried Flower Boots (`:2876`).
+        let night = crate::shop::ShopFlags { night: true, ..Default::default() };
+        let n0 = crate::shop::resolve_stock_moon(20, &night, &[], 0);
+        assert!(n0.contains(&3043) && !n0.contains(&282));
+        assert!(!n0.contains(&5377), "no restock without the boots");
+        let n0b = crate::shop::resolve_stock_moon(20, &night, &[930], 0);
+        assert!(n0b.contains(&5377), "the boots restock");
+        // Phase 2 by day: 3069 (classic) vs 517 (remix) — the parity row
+        // stays 3001, the clock late arm stamps 8 (`:2887`'s else at time
+        // 31: 31*360 = 11160 > 10800), 40 replaces 3003, 3312 (mod-4 2),
+        // 5640 (phase 1|2).
+        let late = crate::shop::ShopFlags { world_time: 31.0, ..Default::default() };
+        let p2 = crate::shop::resolve_stock_moon(20, &late, &[], 2);
+        assert_eq!(
+            p2,
+            vec![3069, 3001, 282, 8, 40, 3312, 5640, 166, 965],
+            "the phase-2 late-clock stock"
+        );
+        let remix = crate::shop::ShopFlags { remix_world: true, world_time: 31.0, ..Default::default() };
+        let p2r = crate::shop::resolve_stock_moon(20, &remix, &[], 2);
+        assert!(p2r.contains(&517) && !p2r.contains(&3069), "the remix split");
+        // Phase 3 by night: 4341 head, 28 odd, 3002 (night), 3311 (mod-4
+        // 3), 5641 (phase 3|5), 5326 (the bread tail, phases 3..5). The
+        // odd+hardmode 188 needs hardmode; the bread row vanishes once
+        // the loaf was eaten.
+        let p3 = crate::shop::resolve_stock_moon(20, &night, &[], 3);
+        for id in [4341, 28, 3002, 3311, 5641, 5326] {
+            assert!(p3.contains(&id), "the phase-3 night row {id}");
+        }
+        assert!(!p3.contains(&188), "no hardmode row pre-hardmode");
+        let hard = crate::shop::ShopFlags { night: true, hard_mode: true, ..Default::default() };
+        let p3h = crate::shop::resolve_stock_moon(20, &hard, &[], 3);
+        assert!(p3h.contains(&188), "the odd+hardmode row");
+        assert!(p3h.contains(&3316) && p3h.contains(&3334), "the hardmode pair");
+        assert!(!p3h.contains(&5540), "no mech row without the latch");
+        let mech = crate::shop::ShopFlags { downed_mech_any: true, ..hard };
+        assert!(crate::shop::resolve_stock_moon(20, &mech, &[], 3).contains(&5540));
+        let blood = crate::shop::ShopFlags { blood_moon: true, ..hard };
+        assert!(crate::shop::resolve_stock_moon(20, &blood, &[], 3).contains(&3258));
+        let eaten = crate::shop::ShopFlags { ate_artisan_bread: true, ..night };
+        assert!(!crate::shop::resolve_stock_moon(20, &eaten, &[], 3).contains(&5326));
+        // The mod-4 ladder + the phase-pair trio across all eight phases
+        // (day flags): exactly one ladder row, at most one trio row.
+        for (phase, ladder, trio) in [
+            (0u32, 3310u16, None), (1, 3313, Some(5640u16)), (2, 3312, Some(5640)),
+            (3, 3311, Some(5641)), (4, 3310, None), (5, 3313, Some(5641)),
+            (6, 3312, Some(5642)), (7, 3311, Some(5642)),
+        ] {
+            let s = crate::shop::resolve_stock_moon(20, &crate::shop::ShopFlags::default(), &[], phase);
+            for id in [3310, 3313, 3312, 3311] {
+                assert_eq!(s.contains(&id), id == ladder, "phase {phase} ladder {id}");
+            }
+            for id in [5640, 5641, 5642] {
+                assert_eq!(s.contains(&id), Some(id) == trio, "phase {phase} trio {id}");
+            }
+        }
+    }
+
     #[test]
     fn the_zoologist_and_princess_kinds_stats_roundtrip_and_shops() {
         // `SetDefaults` 633 (`NPC.cs:17147`) and 663 (`:17384-17397`): the
