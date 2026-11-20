@@ -864,9 +864,11 @@ fn pick_tile_hit(app: &mut App, tx: i32, ty: i32, pick_power: i32) -> bool {
         }
         return true;
     }
-    // `:53815` — the fail tick (`KillTile(fail: true)`): the port's
-    // per-tick sound/dust is the recorded deviation; the damage stays in
-    // the book. `:53822-53825` — a non-zero damage prunes the book.
+    // `:53815` - the fail tick (`KillTile(fail: true)`): W4-c14 plays the
+    // entry's `KillTile_PlaySounds(fail: true)` cue (the dust stays the
+    // recorded visual skip); the damage stays in the book. `:53822-53825`
+    // - a non-zero damage prunes the book.
+    play_kill_fail_cue(app, tx, ty);
     if damage != 0 {
         app.hit_tile.prune(|x, y| {
             app.world.tile(x, y).is_some_and(|t| t.active())
@@ -1314,9 +1316,14 @@ fn hammer_tile_hit(
             app.world_key = None;
         }
     }
-    // `:45698-45701` — a non-zero damage prunes the book AFTER both
+    // `:45690-45697` - the fail arm (`KillTile(fail: true)`): W4-c14 plays
+    // the entry's fail cue (the dust stays the recorded visual skip).
+    if total < 100 {
+        play_kill_fail_cue(app, tx, ty);
+    }
+    // `:45698-45701` - a non-zero damage prunes the book AFTER both
     // branches (the break tick prunes TWICE: the ClearMiningCacheAt prune
-    // above + this tail — the C# order, kept).
+    // above + this tail - the C# order, kept).
     if damage != 0 {
         app.hit_tile.prune(|x, y| {
             app.world.tile(x, y).is_some_and(|t| t.active())
@@ -1612,15 +1619,17 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
         rearm_axe_item_time(app, held);
         return true;
     }
-    // `:45758` — the fail tick (`KillTile(fail: true)`): the per-tick
-    // sound/dust is the recorded deviation; the damage stays in the book.
-    // `:45764-45767` — a non-zero damage prunes the book.
+    // `:45756-45763` - the fail tick (`KillTile(fail: true)`): W4-c14 plays
+    // the entry's fail cue (the dust stays the recorded visual skip); the
+    // damage stays in the book. `:45764-45767` - a non-zero damage prunes
+    // the book.
+    play_kill_fail_cue(app, tx, ty);
     if damage != 0 {
         app.hit_tile.prune(|x, y| {
             app.world.tile(x, y).is_some_and(|t| t.active())
         }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
     }
-    // `:45768` — the cadence re-arm on the fail tick too.
+    // `:45768` - the cadence re-arm on the fail tick too.
     rearm_axe_item_time(app, held);
     false
 }
@@ -5549,6 +5558,33 @@ pub(crate) fn kill_cue((id, style): edit::SoundCue) -> Option<(&'static str, f32
     })
 }
 
+/// W4-c14 - one mining fail-tick cue: the `WorldGen.KillTile(x, y, fail:
+/// true)` entry's `KillTile_PlaySounds(fail: true)` (`WorldGen.cs:63558`,
+/// the pick's fail arm `Player.cs:53815`, the hammer's `:45692`, the axe's
+/// `:45758`). The `CheckTileBreakability` refusal (`:63542-63545`'s `num ==
+/// 2`) returns BEFORE the sound - the port's `can_kill_tile` stands in for
+/// it (the `break_tile` refusal convention). The cue table is the landed
+/// S1-E-21c `kill_tile_sound` with `fail: true` (no shatter tail); the
+/// pinned `kill_cue` map plays it (the D3 pin - no gameplay draws).
+pub(crate) fn play_kill_fail_cue(app: &mut App, tx: i32, ty: i32) {
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        return;
+    }
+    let Some(t) = app.world.tile(tx, ty).filter(|t| t.active()).copied() else {
+        return;
+    };
+    let sounds = edit::kill_tile_sound(t.kind, t.frame_x, true);
+    let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+    for cue in [sounds.primary, sounds.extra, sounds.shatter]
+        .into_iter()
+        .flatten()
+    {
+        if let Some((name, volume)) = kill_cue(cue) {
+            app.audio.play_at(name, px, py, volume);
+        }
+    }
+}
+
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // The three `CanKillTile` refusals (`WorldGen.cs:62219-62326`) gate
     // every break source — the C# `KillTile` entry duplicates them through
@@ -5646,6 +5682,18 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
                 event.y as f32 * TILE_PX,
                 volume,
             );
+        }
+    }
+    // W4-c14 - the `Check*` routines' own tail sounds (`CheckOrb`
+    // `WorldGen.cs:54335-54342`: the crimson Heart's killed 4 / the Shatter
+    // 13; `Check2x1`'s piggy arm `:47235`: Shatter 13), at the checked cell
+    // after the kill loop - the C# plays them at the check's tail, after
+    // the cascade's own `KillTile_PlaySounds` cues above. The pinned
+    // `kill_cue` map (the D3 convention) resolves them.
+    for &(id, style, sx, sy) in &kill.check_sounds {
+        if let Some((name, volume)) = kill_cue((id, style)) {
+            app.audio
+                .play_at(name, sx as f32 * TILE_PX, sy as f32 * TILE_PX, volume);
         }
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
@@ -9287,6 +9335,62 @@ mod tests {
             app.audio.played_count() - before,
             1,
             "one break cue, no per-drop sound"
+        );
+    }
+
+    /// W4-c14 - the mining fail ticks play the `KillTile(fail: true)`
+    /// entry's cue (`Player.cs:53815`/`:45692`/`:45758` →
+    /// `WorldGen.cs:63558`): a sub-100 pick hit on stone queues ONE Tink
+    /// (the `kill_tile_sound` dirt/stone arm, `:66500-66504`), the break
+    /// tick plays its own cue exactly once (no double), and a
+    /// `CanKillTile`-refused cell stays silent (`:63542-63545`'s `num ==
+    /// 2` returns before the sound).
+    #[test]
+    fn w4_c14_the_mining_fail_tick_plays_the_kill_fail_cue() {
+        let mut w = World::new("t".into(), 40, 40);
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = mining_app(w, 20, 20);
+        // The Iron Pickaxe's 40 damage < 100: the first hit is a fail tick.
+        let before = app.audio.played_count();
+        let broke = pick_tile_hit(&mut app, 20, 20, 40);
+        assert!(!broke, "40 < 100: the tile stands");
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "the fail tick plays the stone Tink once"
+        );
+        // The break tick (the accumulated 120 >= 100) plays its own cue
+        // once - the fail arm never fires on it.
+        assert!(!pick_tile_hit(&mut app, 20, 20, 40), "80 < 100: still standing");
+        let before = app.audio.played_count();
+        assert!(pick_tile_hit(&mut app, 20, 20, 40), "the third hit breaks");
+        assert_eq!(app.audio.played_count() - before, 1, "one break cue");
+        // A locked-door refusal is silent: `can_kill_tile` false maps the
+        // C#'s `CheckTileBreakability` 2-return (before the sound).
+        let mut app2 = mining_app(World::new("t".into(), 40, 40), 20, 20);
+        let i = app2.world.index(20, 20);
+        app2.world.tiles[i] = Tile {
+            kind: 10,
+            frame_x: 0,
+            frame_y: 594, // the locked golden door's frame family
+            ..Default::default()
+        };
+        app2.world.tiles[i].flags |= FLAG_ACTIVE;
+        let before = app2.audio.played_count();
+        play_kill_fail_cue(&mut app2, 20, 20);
+        assert_eq!(
+            app2.audio.played_count() - before,
+            0,
+            "the refused cell plays nothing"
         );
     }
 

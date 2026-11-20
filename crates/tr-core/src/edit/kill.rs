@@ -158,8 +158,16 @@ pub struct TileKill {
     pub palm_frame_rolls: Vec<(i32, i32)>,
     /// The mushroom-tree top cells whose canopy frame the C# re-rolls
     /// (`TileFrameImportant`'s `case 72`, `WorldGen.cs:85855-85873`:
-    /// `genRand.Next(3)` picks frame (18, 0/18/36)) — the app resolves it.
+    /// `genRand.Next(3)` picks frame (18, 0/18/36)) - the app resolves it.
     pub mushroom_frame_rolls: Vec<(i32, i32)>,
+    /// The `Check*` routines' own break sounds (W4-c14): the `CheckOrb`
+    /// tail (`WorldGen.cs:54335-54342` - the crimson Heart plays the
+    /// killed sound 4, everything else Shatter 13) and `Check2x1`'s
+    /// piggy-bank arm (`:47235` - Shatter 13). `(legacy id, style, x, y)`
+    /// in play order; the app plays them through the pitched kill paths
+    /// AFTER the hit cell's `KillTile_PlaySounds` cue (the C# order:
+    /// `KillTile`'s entry sound precedes the `SquareTileFrame` cascade).
+    pub check_sounds: Vec<(u16, u16, i32, i32)>,
 }
 
 // The ring walk's re-entrancy cap (`square_tile_frame` → the check → the
@@ -500,6 +508,13 @@ fn square_tile_frame(
         } else {
             kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill);
         }
+        // The check's own tail sound (W4-c14): played at the CHECKED cell
+        // after the kill loop (`CheckOrb` `WorldGen.cs:54335-54342`,
+        // `Check2x1`'s piggy arm `:47235`). The app drains it through the
+        // pitched kill paths on the break's stream.
+        if let Some((id, style)) = plan.sound {
+            kill.check_sounds.push((id, style, cx, cy));
+        }
         // The `Check*` tail's `TileFrame` ring (`WorldGen.cs:49841-49849`,
         // :50161-50168, :47499-47506): walked with `destroyObject` reset so a
         // neighbouring piece whose anchor died inside this sweep reaches its
@@ -569,6 +584,7 @@ fn kill_plan_cells(
             kill.tree_events.extend(inner.tree_events);
             kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
             kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+            kill.check_sounds.extend(inner.check_sounds);
         }
     }
 }
@@ -622,6 +638,10 @@ struct CheckPlan {
     /// no tail, so their remainders float until a later break, the vanilla
     /// deferred-pop semantics).
     ring: Option<((i32, i32), (i32, i32))>,
+    /// The check's own break sound (W4-c14): `(legacy id, style)` played at
+    /// the CHECKED cell after the kill loop - `CheckOrb`'s tail
+    /// (`WorldGen.cs:54335-54342`) and `Check2x1`'s piggy arm (`:47235`).
+    sound: Option<(u16, u16)>,
 }
 
 /// The `TileFrameImportant` object dispatch (`WorldGen.cs:84962`): runs the
@@ -971,6 +991,7 @@ fn kill_tree_cell(
         kill.tree_events.extend(inner.tree_events);
         kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
         kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+        kill.check_sounds.extend(inner.check_sounds);
     }
 }
 
@@ -1161,7 +1182,7 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     // spawn at the object centre).
     let cx = ox + 1;
     let cy = oy + 1;
-    // `:54292-54293`'s flags (outside the drop switch — all three kinds
+    // `:54292-54293`'s flags (outside the drop switch - all three kinds
     // count toward the same world counter).
     world.shadow_orb_smashed = true;
     world.shadow_orb_count += 1;
@@ -1177,6 +1198,10 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        // `:54335-54342` - the tail sound at the CHECKED cell: the crimson
+        // Heart (`flag` = frameX >= 36, `:54177-54180`) plays the killed
+        // sound 4 style 1, everything else Shatter 13.
+        sound: Some(if crimson { (4, 1) } else { (13, 1) }),
     })
 }
 
@@ -1224,6 +1249,10 @@ fn check_piggy(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pile_event: None,
         ring: None,
         // floats until a later break (`WorldGen.cs`'s Check2x1 tail).
+        // `:47232-47236` - the type-29 arm drops the bank (item 87, the
+        // `ObjectDrop` above carries no item - the loot seam) and plays
+        // Shatter 13 at the checked cell.
+        sound: Some((13, 1)),
     })
 }
 
@@ -1273,6 +1302,7 @@ fn check_lamp(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_lamp).
     })
 }
@@ -1337,6 +1367,7 @@ fn check_clock(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_clock).
     })
 }
@@ -1394,6 +1425,7 @@ fn check_bookcase(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: Some(region_ring(&region)),
+        sound: None,
     })
 }
 
@@ -1448,6 +1480,7 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_lantern).
     })
 }
@@ -1514,6 +1547,7 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: Some(region_ring(&region)),
+        sound: None,
     })
 }
 
@@ -1578,6 +1612,7 @@ fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan>
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
     })
 }
@@ -1647,6 +1682,7 @@ fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s Check3x3 has no tail).
     })
 }
@@ -1709,6 +1745,7 @@ fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_chandelier).
     })
 }
@@ -1774,6 +1811,7 @@ fn check_door_closed(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_door_closed).
     })
 }
@@ -1823,6 +1861,7 @@ fn check_door_open(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_door_open).
     })
 }
@@ -2000,6 +2039,7 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         herb_event: None,
         pile_event,
         ring: Some(region_ring(&region)),
+        sound: None,
     })
 }
 
@@ -2039,6 +2079,7 @@ fn check_chair(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_chair).
     })
 }
@@ -2078,6 +2119,7 @@ fn check_bench(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_bench).
     })
 }
@@ -2133,6 +2175,7 @@ fn check_chest(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
         // floats until a later break (`WorldGen.cs`'s check_chest).
     })
 }
@@ -2225,6 +2268,7 @@ fn check_sunflower(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
     })
 }
 
@@ -2405,6 +2449,7 @@ fn check_pot(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
     })
 }
 
@@ -2430,9 +2475,10 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             herb_event: None,
             pile_event: None,
             ring: None,
+            sound: None,
         });
     }
-    // :46904-46913 — only 185 carries the ground rules (the echo 649 is out
+    // :46904-46913 - only 185 carries the ground rules (the echo 649 is out
     // of scope); a dead ground cell below returns without a kill.
     if t.kind != 185 {
         return None;
@@ -2463,6 +2509,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
     })
 }
 
@@ -2573,6 +2620,7 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
         herb_event: None,
         pile_event,
         ring: None,
+        sound: None,
     })
 }
 
@@ -2658,6 +2706,7 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         herb_event: None,
         pile_event: None,
         ring: None,
+        sound: None,
     })
 }
 
@@ -2736,6 +2785,7 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         pile_event: None,
         ring: None,
+        sound: None,
     })
 }
 
@@ -5018,6 +5068,61 @@ mod tests {
         );
         // The tiles are gone.
         assert!(!w.tile(100, 100).unwrap().active());
+    }
+
+    /// W4-c14 - the `CheckOrb` tail sound (`WorldGen.cs:54335-54342`) and
+    /// `Check2x1`'s piggy arm (`:47235`): the check's own cue rides the
+    /// `TileKill::check_sounds` side channel at the CHECKED cell, after the
+    /// kill loop. The crimson Heart (`frameX >= 36`, `:54177-54180`) plays
+    /// the killed sound 4 style 1; the Shadow Orb / the piggy play Shatter
+    /// 13. The cue is recorded even on a `noItem` break (the C#'s sound
+    /// gate is `!dedServ && !generating && !gameMenu`, not `noItem`).
+    #[test]
+    fn w4_c14_the_check_tail_sounds_ride_the_kill_record() {
+        use crate::worldgen::evil::add_shadow_orb;
+        let orb_world = |crimson: bool| {
+            let mut w = World::new("t".into(), 200, 200);
+            for x in 0..200 {
+                for y in 0..200 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = crate::tile::Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+                }
+            }
+            w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+            w.frame_important[31] = true;
+            w.frame_important[12] = true;
+            w.frame_important[639] = true;
+            add_shadow_orb(&mut w, 100, 100, crimson);
+            w
+        };
+        // The Shadow Orb: Shatter 13 at the checked cell - the cascade's
+        // 3x3 walk around the hit (99,99) frames the orb's (100,100) cell.
+        let mut w = orb_world(false);
+        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
+        assert_eq!(kill.check_sounds, vec![(13, 1, 100, 100)]);
+        // The Crimson Heart: the killed sound 4 style 1.
+        let mut w = orb_world(true);
+        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
+        assert_eq!(kill.check_sounds, vec![(4, 1, 100, 100)]);
+        // The piggy bank: the hit on the right cell (11,20) frames the
+        // left (10,20) first - the check's tail plays Shatter 13 there
+        // (`:47235` - the C# `i`, not the pair anchor `num`).
+        let mut w = soil_world(2);
+        set_object_cell(&mut w, 10, 21, 14, 0, 0);
+        set_object_cell(&mut w, 11, 21, 14, 18, 0);
+        set_object_cell(&mut w, 12, 21, 14, 36, 0);
+        set_object_cell(&mut w, 10, 20, 29, 0, 0);
+        set_object_cell(&mut w, 11, 20, 29, 18, 0);
+        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        assert!(
+            kill.check_sounds.contains(&(13, 1, 10, 20)),
+            "the piggy's own Shatter tail: {:?}",
+            kill.check_sounds
+        );
     }
 
     #[test]
