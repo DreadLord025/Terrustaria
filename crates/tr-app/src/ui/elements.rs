@@ -1,8 +1,9 @@
 //! The small shared `GameContent/UI/Elements` classes with no screen of their
-//! own (W4-d81, research/18 gap list): the three marker interfaces
+//! own (W4-d81, research/18b census): the three marker interfaces
 //! (`IColorable`, `IGroupOptionButton`, `IManuallyOrderedUIElement`), the
-//! `ExtraBestiaryInfoPageInformation` carrier, `PowerStripUIElement`'s strip
-//! layout, `UICyclingImage`'s frame cycler and the empty `UICreativePowerButton`.
+//! `ExtraBestiaryInfoPageInformation` carrier and `PowerStripUIElement`'s strip
+//! layout. (`UICyclingImage`/`UICreativePowerButton` are d82 rows — they live
+//! in `ui/images.rs`/`ui/creative_powers.rs` on that lane.)
 //!
 //! Immediate-mode ruling (research/18, ANALYSIS "UIElement framework"): no
 //! retained tree — the classes port as pure layout/state helpers the screens
@@ -235,72 +236,11 @@ pub fn power_strip_colors() -> ([u8; 4], [u8; 4]) {
     )
 }
 
-// --- UICyclingImage -------------------------------------------------------------
-
-/// `UICyclingImage` (`UICyclingImage.cs:8-38`): a `UIImage` that cycles its
-/// texture list every `FramesPerCycle` update ticks. The world-select card
-/// icon (`AWorldListItem.GetIconElement`) is the consumer; the port's card
-/// currently pins one icon (world_select.rs's documented deviation), so the
-/// cycler lands here ready for the evil/hardmode icon list.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CyclingImage {
-    /// `FramesPerCycle = 45` (`:20`).
-    pub frames_per_cycle: i32,
-    /// `_currentTextureIndex` (`:14`).
-    current_index: usize,
-    /// `_framesCounted` (`:16`).
-    frames_counted: i32,
-}
-
-impl Default for CyclingImage {
-    fn default() -> Self {
-        // The ctor (`:18-23`): 45 frames per cycle, index 0 shown first.
-        Self {
-            frames_per_cycle: 45,
-            current_index: 0,
-            frames_counted: 0,
-        }
-    }
-}
-
-impl CyclingImage {
-    /// The texture index the ctor's `SetImage` shows (`:22`).
-    pub fn current_index(&self) -> usize {
-        self.current_index
-    }
-
-    /// `Update` (`:25-37`): `++_framesCounted >= FramesPerCycle` resets the
-    /// counter and advances the index, wrapping at the list's count; the
-    /// advance calls `SetImage`. Returns `Some(new_index)` on the tick the
-    /// texture changes (the caller re-resolves the sheet), `None` otherwise.
-    /// `asset_count == 0` never advances (the C# would throw; the port's
-    /// callers always pass a non-empty `GetIcons()` list).
-    pub fn update(&mut self, asset_count: usize) -> Option<usize> {
-        self.frames_counted += 1; // `++this._framesCounted` (`:28`)
-        if self.frames_counted >= self.frames_per_cycle {
-            self.frames_counted = 0; // `:30`
-            if asset_count == 0 {
-                return None;
-            }
-            self.current_index += 1; // `++this._currentTextureIndex` (`:31`)
-            if self.current_index >= asset_count {
-                self.current_index = 0; // `:33`
-            }
-            return Some(self.current_index); // `SetImage` (`:35`)
-        }
-        None
-    }
-}
-
-// --- UICreativePowerButton -------------------------------------------------------
-
-/// `UICreativePowerButton` (`UICreativePowerButton.cs:5-7`): an **empty**
-/// `UIElement` subclass — the journey powers menu's buttons carry no behaviour
-/// of their own (the power state lives in `crate::creative::CreativePowers`,
-/// the strip layout in [`power_strip_button_rect`]). The marker keeps the
-/// class's place in the port map.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CreativePowerButton;
+// UICyclingImage (census row 26) and UICreativePowerButton (row 25) were
+// ported here in batch 1 before the 18b split was published; they belong to
+// the d82 band and landed there independently (`ui/images.rs::CyclingImage`,
+// `ui/creative_powers.rs::CreativePowerButton`, W4-d82 batch 1). Removed here
+// per the keep-one ruling — the d82 copies are the survivors (18b census).
 
 #[cfg(test)]
 mod tests {
@@ -334,24 +274,6 @@ mod tests {
         let (border, bg) = power_strip_colors();
         assert_eq!(border, [80, 104, 191, 229]);
         assert_eq!(bg, [65, 84, 153, 229]);
-    }
-
-    #[test]
-    fn the_cycler_advances_every_45_ticks_and_wraps() {
-        // `UICyclingImage.cs:28-35`: ticks 1..44 stay, tick 45 advances.
-        let mut img = CyclingImage::default();
-        for _ in 0..44 {
-            assert_eq!(img.update(3), None);
-        }
-        assert_eq!(img.update(3), Some(1));
-        for _ in 0..44 {
-            assert_eq!(img.update(3), None);
-        }
-        assert_eq!(img.update(3), Some(2));
-        for _ in 0..44 {
-            assert_eq!(img.update(3), None);
-        }
-        assert_eq!(img.update(3), Some(0), "the index wraps at the list count");
     }
 
     #[test]

@@ -118,6 +118,40 @@ d83 = rows 35–64 (30 classes, the "rest" per charter).
 | 33 | `UIHeader` | pending |
 | 34 | `UIHorizontalSeparator` | pending |
 
+## d81 progress (task/W4-d81-ui-elements-1)
+
+**Keep-one dedupe (2026-11-20):** d81's batch 1 (`0b815a62`, written before this
+census was published) ported `UICyclingImage` (row 26) and
+`UICreativePowerButton` (row 25) into `ui/elements.rs`. Both are **d82 rows**;
+d82 landed them independently (`ui/images.rs::CyclingImage`,
+`ui/creative_powers.rs::CreativePowerButton`, `484c2529`). The d81 copies are
+**removed** — the d82 modules are the survivors. No behaviour change: the two
+ports were byte-equivalent state machines and neither had a consumer yet.
+
+| row | class | status |
+| --- | --- | --- |
+| 1 | `AWorldListItem` | pending |
+| 2 | `EmoteButton` | pending |
+| 3 | `EmotesGroupListItem` | pending |
+| 4 | `GroupOptionButton` | colour state LANDED (`ui/elements.rs::GroupOptionButtonState`, batch 1); rest pending audit |
+| 5 | `PowerStripUIElement` | LANDED (`ui/elements.rs` strip layout/colours, batch 1) |
+| 6 | `UIAchievementListItem` | pending |
+| 7 | `UIBestiaryEntryButton` | pending |
+| 8 | `UIBestiaryEntryGrid` | pending |
+| 9 | `UIBestiaryEntryIcon` | pending |
+| 10 | `UIBestiaryEntryInfoPage` | pending |
+| 11 | `UIBestiaryFilteringOptionsGrid` | pending |
+| 12 | `UIBestiaryInfoItemLine` | pending |
+| 13 | `UIBestiaryInfoLine` | pending |
+| 14 | `UIBestiaryNPCEntryPortrait` | pending |
+| 15 | `UIBestiarySortingOptionsGrid` | pending |
+| 16 | `UICharacter` | pending |
+| 17 | `UICharacterListItem` | pending |
+| 18 | `UICharacterNameButton` | pending |
+| 19 | `UIClothStyleButton` | pending |
+| 20 | `UIColoredSlider` | pending |
+| 21 | `UIColoredSliderSimple` | pending |
+
 ## Conventions (landed style, per research/18 + S1-E-26 wave B)
 
 Code-only lane: ports are **pure helpers + tests-as-code** (written, not run —
