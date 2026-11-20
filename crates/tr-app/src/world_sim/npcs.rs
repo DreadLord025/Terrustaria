@@ -4466,7 +4466,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // pitch) rides `play_fighter_moan`, attenuation
                     // BEFORE any case draw. The dead skip is `UpdateNPC`'s
                     // `life <= 0` early return (`:90385-90392`), which
-                    // precedes the call.
+                    // precedes the call. The cs_id() key (the hand table +
+                    // bestiary fallback, the fighter-moan precedent) — NOT
+                    // to_u16 (the internal protocol space, the MERGER-L7
+                    // sphere mis-route).
                     if npcs[i].hp > 0 {
                         let (ix, iy) = (npcs[i].x, npcs[i].y);
                         let mut idle_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
