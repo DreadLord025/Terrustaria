@@ -24202,6 +24202,58 @@ mod tests {
         assert!(!crate::shop::resolve_stock(13, &under, &[]).contains(&4743));
     }
 
+    /// The Cyborg's shop (`case 14`, W4-d123, `Chest.cs:2360-2442`): the
+    /// rocket family's event/martians/hardmode/graveyard gates.
+    #[test]
+    fn the_cyborg_shop_carries_the_rocket_rows() {
+        let stock = crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[]);
+        // The always rows (`:2361`/`:2407-2410`/`:2440`).
+        for id in [771, 5598, 5599, 5928] {
+            assert!(stock.contains(&id), "the {id} always row");
+        }
+        // The default (day, no events) carries none of the gated rows.
+        for id in [772, 773, 774, 4445, 4446, 4459, 760, 1346, 5452, 5451, 5738, 4409, 4392, 2862, 3109, 3664] {
+            assert!(!stock.contains(&id), "the gated row {id} leaked");
+        }
+        // The night row (`:2368`) appears by night.
+        let night = crate::shop::ShopFlags { night: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(14, &night, &[]).contains(&773));
+        // The eclipse rows (`:2368`/`:2373`) — the eclipse alone (day) opens
+        // both 773 and 774.
+        let eclipse = crate::shop::ShopFlags { eclipse: true, ..Default::default() };
+        let er = crate::shop::resolve_stock(14, &eclipse, &[]);
+        assert!(er.contains(&773) && er.contains(&774));
+        // The blood-moon row (`:2363`).
+        let blood = crate::shop::ShopFlags { blood_moon: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(14, &blood, &[]).contains(&772));
+        // The plain martians rows (`:2378`/`:2430`) — NO hardmode conjunct.
+        let martians = crate::shop::ShopFlags { downed_martians: true, ..Default::default() };
+        let mr = crate::shop::resolve_stock(14, &martians, &[]);
+        for id in [4445, 2862, 3109] {
+            assert!(mr.contains(&id), "the plain martians row {id}");
+        }
+        // 4446 needs martians AND an event (`:2381`).
+        assert!(!mr.contains(&4446), "no event tail without blood/eclipse");
+        let martians_blood = crate::shop::ShopFlags {
+            downed_martians: true, blood_moon: true, ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(14, &martians_blood, &[]).contains(&4446));
+        // The hardmode cluster (`:2386-2406`).
+        let hard = crate::shop::ShopFlags { hard_mode: true, ..Default::default() };
+        let hr = crate::shop::resolve_stock(14, &hard, &[]);
+        for id in [4459, 760, 1346, 5452, 5451, 5738] {
+            assert!(hr.contains(&id), "the hardmode row {id}");
+        }
+        // The graveyard pair (`:2411-2420`).
+        let grave = crate::shop::ShopFlags { zone_graveyard: true, ..Default::default() };
+        let gr = crate::shop::resolve_stock(14, &grave, &[]);
+        assert!(gr.contains(&4409) && gr.contains(&4392));
+        // The carried-portal-gun restock (`:2435`) — either id opens 3664.
+        assert!(crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[3384]).contains(&3664));
+        assert!(crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[3664]).contains(&3664));
+        assert!(!crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[999]).contains(&3664));
+    }
+
     #[test]
     fn the_zoologist_and_princess_kinds_stats_roundtrip_and_shops() {
         // `SetDefaults` 633 (`NPC.cs:17147`) and 663 (`:17384-17397`): the

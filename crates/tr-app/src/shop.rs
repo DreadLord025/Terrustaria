@@ -65,6 +65,9 @@ pub struct ShopFlags {
     /// W4-d123: `BirthdayParty.PartyIsUp` (`BirthdayParty.cs:25-32`) — the
     /// Party Girl's party block (`Chest.cs:2345-2358`).
     pub party_is_up: bool,
+    /// W4-d123: `Main.eclipse` — the Cyborg shop's event gates
+    /// (`Chest.cs:2368-2381`).
+    pub eclipse: bool,
     /// M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`'s
     /// `SecretSeed.vampirism.Enabled` write) — the Dryad's and the Bestiary
     /// Girl's vampirism rows (`Chest.cs:1733`/`:3403`).
@@ -113,6 +116,7 @@ impl Default for ShopFlags {
             pirate_present: false,
             downed_golem: false,
             party_is_up: false,
+            eclipse: false,
             vampirism: false,
             infected_seed: false,
             crimson_world: false,
@@ -253,6 +257,22 @@ pub enum StockWhen {
     /// W4-d123: `BirthdayParty.PartyIsUp` (`Chest.cs:2345`'s Party Girl
     /// party block) — the world-events scheduler's genuine/manual party.
     PartyIsUp,
+    /// W4-d123: `Main.eclipse` (`Chest.cs:2373`'s Cyborg 774 row).
+    Eclipse,
+    /// W4-d123: `!Main.dayTime || Main.eclipse` (`Chest.cs:2368`'s Cyborg
+    /// 773 row).
+    NightOrEclipse,
+    /// W4-d123: `NPC.downedMartians && (Main.bloodMoon || Main.eclipse)`
+    /// (`Chest.cs:2381`'s Cyborg 4446 row — the event tail INSIDE the
+    /// downedMartians arm).
+    MartiansAndEvent,
+    /// W4-d123: `NPC.downedMartians` PLAIN (`Chest.cs:2378`/`:2430`'s
+    /// Cyborg rows) — unlike [`StockWhen::DownedMartians`] (the Stylist's
+    /// `hardMode &&` form), no hardmode conjunct.
+    DownedMartiansPlain,
+    /// W4-d123: `HasItem(a) || HasItem(b)` (`Chest.cs:2435`'s Cyborg 3664
+    /// row — the two carried-portal-gun ids).
+    PlayerHasEither(u16, u16),
     /// `Main.hardMode && downedMechBoss1/2/3` (`:2767`).
     DownedMechAll,
     /// `Main.hardMode && NPC.downedMechBossAny` (`:2772`).
@@ -337,6 +357,43 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3108, StockWhen::PlayerHasItem(3107)),
             row(1783, StockWhen::PlayerHasItem(1782)),
             row(1785, StockWhen::PlayerHasItem(1784)),
+        ],
+        // The Cyborg's shop (index 14, `Chest.cs:2360-2442`, W4-d123): the
+        // rocket family — the blood-moon/eclipse event rows, the
+        // downedMartians rows (PLAIN, no hardmode conjunct), the hardmode
+        // cluster, the graveyard pair and the carried-portal-gun restock.
+        // The halloween trio (1743/1744/1745, `:2421-2429`) sits
+        // constants-off (no season).
+        14 => vec![
+            row(771, StockWhen::Always),
+            // `:2363-2367` — `Main.bloodMoon`.
+            row(772, StockWhen::BloodMoon),
+            // `:2368-2372` — `!Main.dayTime || Main.eclipse`.
+            row(773, StockWhen::NightOrEclipse),
+            // `:2373-2377` — `Main.eclipse`.
+            row(774, StockWhen::Eclipse),
+            // `:2378-2385` — `NPC.downedMartians` (plain), then the
+            // blood-moon/eclipse tail inside it.
+            row(4445, StockWhen::DownedMartiansPlain),
+            row(4446, StockWhen::MartiansAndEvent),
+            // `:2386-2406` — the hardmode cluster.
+            row(4459, StockWhen::HardMode),
+            row(760, StockWhen::HardMode),
+            row(1346, StockWhen::HardMode),
+            row(5452, StockWhen::HardMode),
+            row(5451, StockWhen::HardMode),
+            row(5738, StockWhen::HardMode),
+            row(5598, StockWhen::Always),
+            row(5599, StockWhen::Always),
+            // `:2411-2420` — the two graveyard rows.
+            row(4409, StockWhen::ZoneGraveyard),
+            row(4392, StockWhen::ZoneGraveyard),
+            // `:2430-2434` — the second downedMartians pair (plain).
+            row(2862, StockWhen::DownedMartiansPlain),
+            row(3109, StockWhen::DownedMartiansPlain),
+            // `:2435-2439` — `HasItem(3384) || HasItem(3664)` restocks 3664.
+            row(3664, StockWhen::PlayerHasEither(3384, 3664)),
+            row(5928, StockWhen::Always),
         ],
         // The Painter (`Chest.cs:2443-2483`): the paint rollers and the
         // paintings (1071/1072/1100/1097/1099/1098/1966); the moon-phase
@@ -1380,6 +1437,16 @@ pub fn resolve_stock_entries_moon(
             StockWhen::PiratePresent => flags.pirate_present,
             StockWhen::DownedGolem => flags.downed_golem,
             StockWhen::PartyIsUp => flags.party_is_up,
+            // W4-d123: the Cyborg's event/martians gates (`Chest.cs:2363-2435`).
+            StockWhen::Eclipse => flags.eclipse,
+            StockWhen::NightOrEclipse => flags.night || flags.eclipse,
+            StockWhen::MartiansAndEvent => {
+                flags.downed_martians && (flags.blood_moon || flags.eclipse)
+            }
+            StockWhen::DownedMartiansPlain => flags.downed_martians,
+            StockWhen::PlayerHasEither(a, b) => {
+                inventory_ids.contains(&a) || inventory_ids.contains(&b)
+            }
             StockWhen::DownedMechAll => {
                 flags.hard_mode && flags.downed_mech_1 && flags.downed_mech_2 && flags.downed_mech_3
             }
