@@ -209,9 +209,10 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
     // The context off the live state. The world flags the port does not
-    // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
-    // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
-    // default off — each noted at its field.
+    // carry yet (the storm clock, the happy-windy-day, the remix world,
+    // `WorldGen.crimson`) default off — each noted at its field. W4-f38:
+    // the party/lantern flags and the Moon Lord latch now read the live
+    // schedulers (`world_events`) and the world.
     let day_time = app.world.day_time;
     let time = app.world.time;
     let blood_moon = app.world.blood_moon;
@@ -256,16 +257,16 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         storming: false,       // `Main.cloudAlpha`'s storm — no storm clock yet
         windy_day: false,      // `Main.IsItAHappyWindyDay` — no wind-day state
         zone_graveyard: false, // `Player.ZoneGraveyard` — the zone rides the biome pass
-        party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
         crimson: false,        // `WorldGen.crimson` — the world-evil flag
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
-        downed_moonlord: false, // `NPC.downedMoonlord` — unported
+        downed_moonlord: app.world.downed_moon_lord, // `NPC.downedMoonlord`
         dd2_downed_t1: dd2_t1,
         dd2_downed_t2: dd2_t2,
         dd2_ongoing,
-        lanterns_up: false, // `LanternNight.LanternsUp` — unported
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         player_life: life,
         player_life_max: life_max,
         player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max
@@ -280,6 +281,43 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         golfer_score,
     };
     let text = crate::npc_chat::get_chat(&app.npcs[i], &mut ctx);
+    // `FreeCakeDialogue.GetChatAndClearCondition`'s side effects
+    // (`ConditionalDialogue.cs:58-66`), AFTER the text draw: the condition
+    // clears (`NPC.freeCake = false`), the pending row with it, and the
+    // Slice Of Cake (3750) gift rides `QuickSpawnItem(GiftRecieved)` →
+    // `GetOrDropItem` — the inventory fills first, the overflow drops at
+    // the player centre (the bobber-catch seam, `Player.cs:7187-7200`).
+    // The `SendData(51, …, 10f)` net sync has no single-player consumer.
+    if app.npcs[i].next_dialogue {
+        app.world_events.free_cake = false;
+        app.npcs[i].next_dialogue = false;
+        let max_stack = crate::registry::max_stack(3750);
+        let mut pending = 1u32;
+        while pending > 0 {
+            let Some(slot) = crate::item::slot_for_pickup(&mut app.inventory, 3750, 0) else {
+                break;
+            };
+            let room = max_stack.saturating_sub(app.inventory[slot].count);
+            if room == 0 {
+                break;
+            }
+            let take = pending.min(room);
+            app.inventory[slot].count += take;
+            pending -= take;
+        }
+        if pending > 0 {
+            if let Some(p) = app.player.as_ref() {
+                let (cx, cy) = p.center();
+                crate::world_sim::items::spawn_item_drop_px(
+                    &mut app.items,
+                    app.rngs.stream(RngKey::UpdateItems),
+                    3750,
+                    pending,
+                    glam::Vec2::new(cx, cy),
+                );
+            }
+        }
+    }
     app.npc_chat_text = text.clone(); // `:43082` — `Main.npcChatText = GetChat()`
     Some(text)
 }
@@ -3817,6 +3855,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
         app.next_npc_uid = next;
+    }
+    // `NPC.CheckDialogue` (`NPC.cs:90510`/`:90519-90532`): the conditional
+    // dialogue probe — every 10th tick per NPC, else the failed-condition
+    // clear. The C# runs it inside each NPC's own `UpdateNPC` after the AI;
+    // the port batches it at the phase head (the pre-pass convention — the
+    // only consumer is the right-click `GetChat`, a separate input path, so
+    // the intra-tick position is unobservable). `who` = the stable uid.
+    {
+        let free_cake = app.world_events.free_cake;
+        let count = app.game_update_count;
+        for n in app.npcs.iter_mut() {
+            crate::npc_chat::check_dialogue(n, count, n.uid, free_cake);
+        }
     }
     // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
     // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead
