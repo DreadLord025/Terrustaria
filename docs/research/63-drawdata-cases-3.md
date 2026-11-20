@@ -246,3 +246,138 @@ Port `drawdata.rs:686-698`: same gate order (height 16 → 18 on `fy % 54 >= 36`
 `n39` band select `>= 108` first, `>= 54` second), the two `addFrY` statements fused
 into `n39 * 56 + fy / 54 * 2` — same value, no intermediate observable. Tests pin all
 five bands (`drawdata.rs:2125-2134`). **PORTED.**
+
+### Batch 3 — party monolith / pigronata / balloons / fireplace / crystals / volcanoes: 455, 454, 453, 456, 405, 12, 31, 96, 639, 665, 696, 238, 593, 594, 592 (15 ids)
+
+C# `TileDrawing.cs:5397-5490`.
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 455 | `num31 = 1 + Main.tileFrame[typeCache]; if (!BirthdayParty.PartyIsUp) num31 = 0; addFrY = num31 * 54;` + top 2 | :5397-5408 | static `drawdata.rs:711-714` + full body `cases_b.rs:287-294` | PORTED (wired) |
+| 454 | `addFrY = Main.tileFrame[typeCache] * 54;` | :5409-5411 | `drawdata.rs:716-718` | PORTED (row frozen — see note) |
+| 453 | `addFrY = (Main.tileFrameCounter[typeCache] / 20 + (y - tileFrameY / 18 + x)) % 3 * 54;` | :5412-5414 | `cases_b.rs:150-152` | PORTED (wired) |
+| 456 | `addFrY = (Main.tileFrameCounter[typeCache] / 20 + (y - tileFrameY / 18 + (x - tileFrameX / 18))) % 4 * 54;` | :5415-5417 | `cases_b.rs:155-157` | PORTED (wired) |
+| 405 | fireplace height gate + column drop (below) | :5418-5432 | `drawdata.rs:725-735` | PORTED |
+| 12 | shares the `* 36` crystal/orb group | :5433-5440 | `drawdata.rs:739-741` (`12 \| 31 \| 96 \| 639 \| 665 \| 696`) | PORTED |
+| 31 | shares the group | :5434 | :739-741 | PORTED |
+| 96 | shares the group | :5435 | :739-741 | PORTED |
+| 639 | shares the group | :5436 | :739-741 | PORTED |
+| 665 | shares the group | :5437 | :739-741 | PORTED |
+| 696 | shares the group | :5438 | :739-741 | PORTED |
+| 238 | `tileTop = 2; addFrY = Main.tileFrame[typeCache] * 36;` | :5441-5444 | `drawdata.rs:744-747` | PORTED |
+| 593 | volcano small: addFrX -18 / top 2 / temp-frame probe + fallbacks | :5445-5465 | static `drawdata.rs:751-757` + full body `cases_b.rs:304-317` | DEVIATION (probe stub) |
+| 594 | volcano large: addFrX -36 / top 2 / probe + fallbacks | :5466-5487 | static `drawdata.rs:760-766` + full body `cases_b.rs:318-332` | DEVIATION (probe stub) |
+| 592 | `addFrY = Main.tileFrame[typeCache] * 54;` | :5488-5490 | `drawdata.rs:769-771` | PORTED |
+
+**455 PartyMonolith** — C# verbatim (:5397-5408):
+
+```csharp
+		case 455:
+		{
+			addFrY = 0;
+			tileTop = 2;
+			int num31 = 1 + Main.tileFrame[typeCache];
+			if (!BirthdayParty.PartyIsUp)
+			{
+				num31 = 0;
+			}
+			addFrY = num31 * 54;
+			break;
+		}
+```
+
+Port `cases_b.rs:287-294` is term-for-term (`n31 = 1 + tile_frame`, zeroed unless
+`env.inputs.party_is_up`, `* 54`, top 2). The static arm's comment
+(`drawdata.rs:708-710`, "treats as always false") is STALE as a behaviour claim: the
+live path runs `cases_b` after the static table (`tiles.rs:700-712`) and
+`party_is_up` is fed from the ported event state (`frame/draw.rs:1181` →
+`world_events::party_is_up`, `tiles.rs:320/:357`). The animator steps 455
+(`drawdata_anim.rs:358`, `Main.cs:19085-19092`). **PORTED, wired.**
+
+**454 Pigronata — frozen row is faithful, not a gap.** The arm reads
+`Main.tileFrame[454]`, but a whole-decompilation search finds NO writer of
+`tileFrame[454]` outside the zero-init (`Main.cs:8393`): `AnimateTiles` has no 454
+block (453/455/456 each have one, `Main.cs:19109-19126`/`:19085-19092`), and no
+variable-index write covers it. So C# draws row 0 forever; the port's
+`is_animated_kind` gate set (`drawdata_anim.rs:103-203`) correctly excludes 454 and
+`animation_row(454) ≡ 0` — pixel-identical. (The pigronata's visible sway in-game is
+the tile's own framing, not this array.)
+
+**453/456 balloons** — the counter-driven bodies are ported verbatim in `cases_b`
+(above table); `counter` rides `tile_anim.tile_frame_counter[kind]`
+(`tiles.rs:666-670`), and the animator replays the C# random drift draw-for-draw
+(`drawdata_anim.rs:361-389`, `Main.cs:19109-19113`/`:19118-19126`; the replay test
+:725-748 pins both counters against a cloned `Main.rand` stream, including the
+`isGeneratingOrLoadingWorld` gate on the `Next(3)` draw). Note 453 uses RAW `x`
+(not sheet-relative) while 456 subtracts `tileFrameX / 18` — the port keeps that
+asymmetry (`cases_b.rs:151` vs :156). The static table has no arm for either
+(`drawdata.rs:719-721` documents the delegation). **PORTED, wired.**
+
+**405 Fireplace** — C# verbatim (:5418-5432):
+
+```csharp
+		case 405:
+		{
+			tileHeight = 16;
+			if (tileFrameY > 0)
+			{
+				tileHeight = 18;
+			}
+			int num27 = Main.tileFrame[typeCache];
+			if (tileFrameX >= 54)
+			{
+				num27 = 0;
+			}
+			addFrY = num27 * 38;
+			break;
+		}
+```
+
+Port `drawdata.rs:725-735`: same gate order (`fy > 0` — strictly greater, unlike
+406's `% 54 >= 36`), column drop at `fx >= 54`, stride 38. Animator steps 405
+(`drawdata_anim.rs:355`, `Main.cs:19061-19068`). **PORTED.**
+
+**12/31/96/639/665/696 group** — C# verbatim (:5433-5440): six labels, one body
+`addFrY = Main.tileFrame[typeCache] * 36;` (no top change). Port
+`drawdata.rs:739-741`. Animator coverage: 665 mirrors BOTH arrays of 12
+(`drawdata_anim.rs:282-283`, `Main.cs:18528-18529`), 696 mirrors 31's frame only
+(:290, `Main.cs:18588` — counter stays 0, test :620-631), 639 steps
+`step_gt_ge(639, 5, 10)` (:284, `Main.cs:18530-18539`); 12/31/96 step in the
+heart/orb/pot blocks. All six in the gate set. **PORTED.**
+
+**593/594 volcanoes** — C# verbatim, 593 (:5445-5465):
+
+```csharp
+		case 593:
+		{
+			if (tileFrameX >= 18)
+			{
+				addFrX = -18;
+			}
+			tileTop = 2;
+			if (Animation.GetTemporaryFrame(x, y, out var frameData2))
+			{
+				addFrY = (short)(18 * frameData2);
+			}
+			else if (tileFrameX < 18)
+			{
+				addFrY = Main.tileFrame[typeCache] * 18;
+			}
+			else
+			{
+				addFrY = 0;
+			}
+			break;
+		}
+```
+
+594 (:5466-5487) is the same shape with 36: `addFrX = -36` at `fx >= 36`,
+`num20 = tileFrameX % 36`, probe at `(x - num20 / 18, y - tileFrameY % 36 / 18)`
+(named args reordered), `36 * frameData`, fallback `tileFrame * 36` below 36 else 0.
+Ports: static fallbacks `drawdata.rs:751-757`/:760-766 (the C# `false` path), full
+bodies around the stubbed probe `cases_b.rs:304-317`/:319-332 — including the
+absolute `add_fr_x = -18/-36` assigns (not `+=`). Same deviation class as 349
+(batch 2): the temporary-animation registry is unported, probe returns `None`,
+pixel-identical while it is empty. The animator's 593/594 wrap-to-row-5 quirk
+(`Main.cs:19240-19257`) is ported and tested (`drawdata_anim.rs:421-422`, test
+:690-701). **DEVIATION (probe stub), wired.**
