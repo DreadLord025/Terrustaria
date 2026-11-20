@@ -324,14 +324,29 @@ impl ApplicationHandler for App {
                 if self.achievements_open {
                     // `UserInterface.Update`'s scroll arm (`:219-223`): the
                     // machine owns `PlayerInput.ScrollWheelDeltaForUI`
-                    // (accumulated, then consumed once). The overlay's `UIList`
-                    // is the element under the pointer.
-                    self.pointer.queue_scroll(d.round() as i32);
-                    if matches!(
-                        self.pointer.scroll_wheel(Some(SCROLL_UI)),
-                        Some(PointerEvent::ScrollWheel { .. })
-                    ) {
-                        self.scroll_achievements(d);
+                    // (accumulated, then consumed once whatever the hit). The
+                    // wheel reaches the list only through `GetElementAt` —
+                    // a point inside the list rect lands on the inner list
+                    // (`UIList.cs:16-19`'s `ContainsPoint => true`), whose
+                    // `ScrollWheel` bubbles to the `UIList`; the scrollbar is
+                    // a panel child, so a wheel over it bubbles past the list.
+                    let step = d.round() as i32;
+                    self.pointer.queue_scroll(step);
+                    let hit = if step != 0 {
+                        let (sw, sh) = self.screen_size();
+                        let panel = crate::ui::achievements::panel_rect(
+                            Vec2::new(sw, sh),
+                            self.menu.is_some(),
+                        );
+                        crate::ui::achievements::wheel_target(&panel, self.mouse_pos)
+                            .then_some(SCROLL_UI)
+                    } else {
+                        None
+                    };
+                    if let Some(PointerEvent::ScrollWheel { delta }) =
+                        self.pointer.scroll_wheel(hit)
+                    {
+                        self.scroll_achievements(delta);
                     }
                     return;
                 }

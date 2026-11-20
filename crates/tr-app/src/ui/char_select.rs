@@ -298,7 +298,10 @@ pub fn detached_list_width(screen: Vec2) -> f32 {
 
 /// The `UIList` content height (`UIList.cs:120-128`): every row's outer height
 /// plus one `ListPadding` per row (`:122`'s per-item `num2`; the single-row list
-/// drops it). N cards = N*(96+5); one card = 96; none = 0.
+/// drops it). N cards = N*(96+5); one card = 96; none = 0. The shared port is
+/// `uistate::list_total_height`; the uniform-height closed form below is its
+/// exact sum (`n*(CARD_H+5)` for n≥2) without the per-draw allocation — the
+/// `scrollbar_branch_attaches_at_six_cards` witness pins the equivalence.
 pub fn list_content_height(cards: usize) -> f32 {
     match cards {
         0 => 0.0,
@@ -1076,11 +1079,18 @@ mod tests {
         // on a synthetic tall list, not deleted.
         let l = layout(SCREEN, 100.0, detached_list_width(SCREEN));
         assert_eq!(l.list[2], 626.0);
-        // The `UIList` content heights (`UIList.cs:120-128`).
+        // The `UIList` content heights (`UIList.cs:120-128`) — the closed form
+        // is the verbatim `list_total_height` sum's exact value.
         assert_eq!(list_content_height(0), 0.0);
         assert_eq!(list_content_height(1), 96.0);
         assert_eq!(list_content_height(5), 505.0);
         assert_eq!(list_content_height(6), 606.0);
+        for n in [0usize, 1, 2, 5, 6, 8] {
+            assert_eq!(
+                list_content_height(n),
+                uistate::list_total_height(&vec![CARD_H; n], LIST_PADDING)
+            );
+        }
         // 5 cards: 505 < 546 — `SetView` clamps the view onto the content, so
         // `CanScroll` is false (`UIScrollbar.cs:78`, `:49`) — it never attaches
         // below 6 cards.
