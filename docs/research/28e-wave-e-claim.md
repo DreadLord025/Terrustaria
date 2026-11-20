@@ -69,7 +69,7 @@ order they form the FOURTH missing block plus the tail of wave B's range:
 | 127 | `:11679` | Zephyr Fish pet 380 | none |
 | 136 | `:11693` | Mini Minotaur pet 398 | none |
 | 80 | `:11727` | Blackout | none |
-| 320 | `:11756` | Oozed (drippingSparkleSlime) | none |
+| 320 | `:11756` | Gel Balloon (drippingSparkleSlime) | none |
 | 353 | `:11784` | Shimmering | clear-only (`player.rs` shimmer state) |
 | 163 | `:11826` | Obstructed | none |
 | 164 | `:11831` | Distorted (vortexDebuff) | none |
@@ -83,7 +83,7 @@ order they form the FOURTH missing block plus the tail of wave B's range:
 | 28 | `:11893` | Werewolf | none |
 | 333 | `:11979` | Hungry | fed-state only (`potions.rs`) |
 | 334 | `:11994` | Starving | fed-state only |
-| 336 | `:12009` | Sugar Crash | none |
+| 336 | `:12009` | Hearty Meal (`BuffID.cs:850`) | none |
 
 (205 Ballista Panic `:11843` is LIVE — `player.rs`'s match arm — excluded;
 149 Webbed `:11863`, 29 `:11886`, 33 `:11911`, 25 `:11918`, 26 `:11931`,
