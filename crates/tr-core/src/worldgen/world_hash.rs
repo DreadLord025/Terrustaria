@@ -254,6 +254,9 @@ mod tests {
     // (`WorldGen.cs:11858-11895`) re-paints the surface band's walls (the
     // snow-40 arm over the eastern-third snow skin, the per-column stop
     // walk) — this pin moves BY DESIGN; deferred to the gate.
+    // W4-d101 pass 4 (code-only): `Clay` (`WorldGen.cs:11959-12007`) —
+    // `512*512*2E-05 = 5` + `*5E-05 = 13` + 5 clay blobs plus the tidy
+    // sweep move this pin BY DESIGN; deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -305,6 +308,8 @@ mod tests {
     // BY DESIGN too; deferred to the gate.
     // W4-d101 pass 3 (code-only): the Dirt Wall Backgrounds sweep moves the
     // surface-band wall fields — deferred to the gate.
+    // W4-d101 pass 4 (code-only): the Clay bands (100 + 252 + 100 blobs on
+    // the default size) + the tidy sweep — deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

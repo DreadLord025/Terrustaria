@@ -265,6 +265,79 @@ pub(crate) fn pass_dirt_wall_backgrounds(world: &mut World, rng: &mut Rng, layer
     }
 }
 
+/// The `Clay` pass (`WorldGen.cs:11959-12007`): three clay-40 TileRunner
+/// bands — `area * 2E-05` blobs above `worldSurfaceLow`, `area * 5E-05` in
+/// `[worldSurfaceLow, worldSurfaceHigh + 1)`, `area * 2E-05` in
+/// `[worldSurfaceHigh, rockLayerHigh + 1)` (remix replaces the last two
+/// with one `area * 7E-05` band `[rockLayer - 25, maxTilesY - 350)`) — then
+/// the surface tidy sweep: under every column's first active tile above
+/// `worldSurface - 1`, clay in the next five rows reverts to dirt
+/// (`:11989-12005`). The runner's own `case 53` protection keeps clay out
+/// of sand (`tile_runner.rs`, `WorldGen.cs:76934`). Draw order per blob:
+/// x → y → strength → steps.
+pub(crate) fn pass_clay(world: &mut World, rng: &mut Rng, layers: &Layers) {
+    let (width, height) = (world.width, world.height);
+    let remix = world.seeds.contains(SeedFlags::REMIX);
+    let world_surface = layers.world_surface;
+    let area = (width * height) as f64;
+    let surface_low = layers.surface_low as i32;
+    let surface_high = layers.surface_high as i32;
+    let rock_high = layers.rock_high as i32;
+    // (y-band lo/hi, strength lo/hi, steps lo/hi, density) — the C#'s three
+    // loops (`:11964-11987`); the hi bounds keep the C#'s +1s verbatim.
+    let bands: [(i32, i32, i32, i32, i32, i32, f64); 3] = if remix {
+        let lo = layers.rock_layer as i32 - 25;
+        [
+            (0, surface_low, 4, 14, 10, 50, 2e-5),
+            (lo, (height - 350).max(lo), 8, 15, 5, 50, 7e-5),
+            (0, 0, 0, 0, 0, 0, 0.0), // the third loop does not exist in remix
+        ]
+    } else {
+        [
+            (0, surface_low, 4, 14, 10, 50, 2e-5),
+            (surface_low, surface_high + 1, 8, 14, 15, 45, 5e-5),
+            (surface_high, rock_high + 1, 8, 15, 5, 50, 2e-5),
+        ]
+    };
+    for &(y0, y1, s0, s1, t0, t1, density) in &bands {
+        let count = (area * density) as i32;
+        for _ in 0..count {
+            let x = rng.range(0, width);
+            let y = rng.range(y0, y1);
+            let strength = rng.range(s0, s1);
+            let steps = rng.range(t0, t1);
+            tile_runner(
+                world,
+                rng,
+                x,
+                y,
+                strength as f64,
+                steps,
+                40,
+                world_surface,
+                &TileRunnerOpts::for_world(world),
+            );
+        }
+    }
+    // The surface tidy sweep (`:11989-12005`): the first active tile of
+    // each column (scanning rows 1..worldSurface-1) clears clay in the
+    // five rows starting AT it. No RNG.
+    for m in 5..width - 5 {
+        for n in 1..world_surface as i32 - 1 {
+            if world.tile(m, n).is_some_and(|t| t.active()) {
+                for num in n..n + 5 {
+                    if let Some(t) = world.tile_mut(m, num) {
+                        if t.kind == 40 {
+                            t.kind = TILE_DIRT;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +499,46 @@ mod tests {
             }
         }
         assert!(painted > 0, "no walls painted");
+    }
+
+    /// Clay: the blobs land (the 4200×1200 canvas gives 100 + 252 + 100
+    /// runners) and the tidy sweep leaves no clay in the five rows under
+    /// any column's first active tile (`WorldGen.cs:11989-12005`).
+    #[test]
+    fn clay_blobs_land_and_the_surface_sweep_clears_the_top_rows() {
+        let (w, h) = (1000, 400);
+        let surface = 100;
+        let mut world = flat_world(w, h, surface);
+        let layers = layers_for(surface, h);
+        pass_clay(&mut world, &mut Rng(0xC1A0), &layers);
+        assert!(
+            world.tiles.iter().any(|t| t.active() && t.kind == 40),
+            "no clay placed"
+        );
+        // The sweep's own postcondition: rows n..n+5 under the first
+        // active tile carry no clay (columns 5..w-5, n < worldSurface-1).
+        for m in 5..w - 5 {
+            if let Some(n) = (1..layers.world_surface as i32 - 1)
+                .find(|&n| world.tile(m, n).is_some_and(|t| t.active()))
+            {
+                for num in n..n + 5 {
+                    assert!(
+                        !world.tile(m, num).is_some_and(|t| t.kind == 40),
+                        "clay survives the sweep at ({m},{num})"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Clay is deterministic for a seed (the a == b contract).
+    #[test]
+    fn clay_is_deterministic_for_a_seed() {
+        let run = || {
+            let mut world = flat_world(600, 240, 50);
+            pass_clay(&mut world, &mut Rng(0xC1A0), &layers_for(50, 240));
+            world.tiles
+        };
+        assert_eq!(run(), run());
     }
 }
