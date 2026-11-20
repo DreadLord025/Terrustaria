@@ -265,6 +265,7 @@ mod tracked_sound;
 mod touch_damage;
 mod ui;
 mod world_dust;
+mod world_dust_main;
 mod world_dust_tile;
 mod world_dust_wall;
 mod world_sim;
