@@ -17438,6 +17438,34 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d18 — `AI()`'s `else if (this.aiStyle == 177)`
+                        // (`Projectile.cs:36671-36674`) ->
+                        // `AI_177_IceWhipSlicer` (`:45117-45265`): the Cool
+                        // Whip snowflake (917) + the Weather Pain twister
+                        // (969), the style's ONLY SetDefaults rows
+                        // (`:8701-8713`/`:9169-9181`), so no kind gate. The
+                        // 969 sibling-sync scan runs AFTER the core (the
+                        // pool borrow the slot arm cannot take — the
+                        // minion_separation pattern).
+                        177 => {
+                            let sync = crate::projectile_ai_misc::ai_ice_whip_slicer(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            if sync {
+                                crate::projectile_ai_misc::weather_pain_sync_siblings(
+                                    &mut self.slots,
+                                    i,
+                                );
+                            }
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the

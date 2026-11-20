@@ -62,7 +62,8 @@ use tr_core::loot::DropRng;
 
 use crate::npc::Npc;
 use crate::projectile::{
-    Projectile, can_hit, chaseable, chaseable_held, get_lerp_value, rotate, safe_normalize,
+    Projectile, can_hit, can_hit_line, chaseable, chaseable_held, get_lerp_value, rotate,
+    safe_normalize,
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
@@ -1720,21 +1721,37 @@ pub(crate) fn ai_titanium_storm_shard(
 /// `Projectile.FindTargetWithinRange` (`Projectile.cs:45097-45115`) —
 /// the nearest chaseable NPC within `max_range` whose local-immunity
 /// entry is 0. NOT the line-of-sight variant (`:45632-45660`): the
-/// default `checkCanHit = false` skips the `Collision.CanHitLine` test,
-/// so no world is needed. The strict `!(num <= num2)` keeps the FIRST
-/// nearest on ties (the scan order is the NPC index). Returns −1 for no
-/// target (the C# null). Shared by the 176 bolt and the 177 slicers.
+/// default `checkCanHit = false` skips the `Collision.CanHitLine` test.
+/// When `check_can_hit` is true (the 969 twister, `:45178-45181`) the
+/// `CanHitLine` box test joins the eligibility gate, so a `world` rides
+/// along. The strict `!(num <= num2)` keeps the FIRST nearest on ties
+/// (the scan order is the NPC index). Returns −1 for no target (the C#
+/// null). Shared by the 176 bolt and the 177 slicers.
 pub(crate) fn find_target_within_range(
-    center: Vec2,
+    pos: Vec2,
+    w: f32,
+    h: f32,
     npcs: &[Npc],
     immune: &[i32],
     max_range: f32,
+    world: Option<&World>,
+    check_can_hit: bool,
 ) -> i32 {
+    let center = Vec2::new(pos.x + w * 0.5, pos.y + h * 0.5);
     let mut num = max_range;
     let mut result: i32 = -1;
     for (i, n) in npcs.iter().enumerate() {
         if !chaseable(n) || immune.get(i).is_some_and(|v| *v != 0) {
             continue;
+        }
+        // `:45104` — the optional `Collision.CanHitLine` eligibility term.
+        if check_can_hit {
+            if let Some(wr) = world {
+                let (nw, nh) = n.size();
+                if !can_hit_line(wr, pos.x, pos.y, w, h, n.x, n.y, nw, nh) {
+                    continue;
+                }
+            }
         }
         let num2 = center.distance(crate::projectile::npc_center(n));
         if !(num <= num2) {
@@ -1775,7 +1792,7 @@ pub(crate) fn ai_edgy_lightning(
     // `:45066-45075` — the acquire: the nearest within 400 px latches
     // `ai[0] = whoAmI + 1` and flags the net update.
     if num == -1 {
-        let target = find_target_within_range(center, npcs, immune, 400.0);
+        let target = find_target_within_range(p.pos, p.w, p.h, npcs, immune, 400.0, None, false);
         if target != -1 {
             num = target;
             p.ai[0] = num as f32 + 1.0;
@@ -1803,6 +1820,194 @@ pub(crate) fn ai_edgy_lightning(
         // `:45091-45094` — no target: `Kill()`.
         p.active = false;
         p.time_left = 0;
+    }
+}
+
+/// `AI_177_IceWhipSlicer` (`Projectile.cs:45117-45265`) — the Cool Whip's
+/// snowflake slicer (917) and the Weather Pain's twister (969). The
+/// 917 buff-gated kill/keep-alive, the 969 twister lifetime (the 555-tick
+/// sibling-sync floor, the >560 alpha fade, the 570 kill), the owner-gated
+/// target latch/acquire (the 969 adds the `CanHitLine` test), the
+/// per-kind steering constants (917: 18 px / 0.1 lerp; 969: 8 px / 0.075
+/// lerp / 25-px dead zone), the no-target arms (969 self-direction lerp,
+/// 917 ×0.92 decay) and the per-kind rotation/frame/dust tails.
+///
+/// Returns `true` when the 969 sibling-sync scan must run (the dispatch
+/// pre-scans the pool — the slot arm cannot see the other slots, the
+/// `minion_separation` borrow pattern). The sync pins every older
+/// same-owner same-kind twister with `ai[1] < 555` up to 555.
+///
+/// RNG: the 917 tail rolls `Next(3)` every tick; the taken branch's
+/// `NextVector2Circular(1,1)` pair stays (the dust body is the skip).
+/// The 969 tail rolls nothing explicit — its `timeLeft % 3` dust gate's
+/// `NextVector2Circular` pairs are `Dust.NewDust*` call-site velocity
+/// writes, kept as draws (the flamethrower precedent): one pair + two
+/// pairs per gated tick. The sound slot (`localAI[1]`, `:45132-45146`)
+/// has no tracked-sound layer — the slot-id bookkeeping is skipped and
+/// `localAI[1]` stays 0 (recorded here).
+pub(crate) fn ai_ice_whip_slicer(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    immune: &[i32],
+    player: Option<&mut crate::player::Player>,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) -> bool {
+    let mut sync_siblings = false;
+    // `:45119-45129` — the 917 buff gate: an absent/dead owner clears
+    // coolWhipBuff and kills; a standing buff pins timeLeft 2.
+    if p.kind == crate::projectile::COOL_WHIP_PROJ {
+        match player.as_deref_mut() {
+            None => {
+                p.active = false;
+                p.time_left = 0;
+                return false;
+            }
+            Some(pl) => {
+                if pl.dead {
+                    pl.cool_whip_buff = false;
+                    p.active = false;
+                    p.time_left = 0;
+                    return false;
+                }
+                if pl.cool_whip_buff {
+                    p.time_left = 2;
+                }
+            }
+        }
+    }
+    // `:45130-45165` — the 969 twister lifetime. The tracked-sound block
+    // (`:45132-45146`) has no sound layer — skipped (module doc).
+    if p.kind == crate::projectile::WEATHER_PAIN_SHOT {
+        p.ai[1] += 1.0;
+        if p.ai[1] > 560.0 {
+            // `:45150` — `(int)MathHelper.Lerp(0, 250, (ai[1]−560)/10)`.
+            p.alpha = (0.0f32 + (250.0f32 - 0.0f32) * ((p.ai[1] - 560.0) / 10.0)) as i32;
+        }
+        if p.ai[1] >= 570.0 {
+            p.active = false;
+            p.time_left = 0;
+        }
+        // `:45156-45164` — the sibling-sync scan runs in the dispatch.
+        sync_siblings = true;
+    }
+    // `:45166-45190` — the owner-gated target latch/acquire.
+    let mut num2 = p.ai[0] as i32 - 1;
+    if p.owner == local_owner {
+        if num2 != -1 {
+            let gone = npcs.get(num2 as usize).map_or(true, |n| !chaseable(n));
+            // `:45169` — the 177 re-validation uses `> 0` (NOT `!= 0`):
+            // the −1 sentinel keeps the lock.
+            let immune_hit = immune.get(num2 as usize).is_some_and(|v| *v > 0);
+            if gone || immune_hit {
+                p.ai[0] = 0.0;
+                num2 = -1;
+                p.net_update = true;
+            }
+        }
+        if num2 == -1 {
+            let check_can_hit = p.kind == crate::projectile::WEATHER_PAIN_SHOT;
+            let target = find_target_within_range(
+                p.pos, p.w, p.h, npcs, immune, 400.0, Some(world), check_can_hit,
+            );
+            if target != -1 {
+                num2 = target;
+                p.ai[0] = num2 as f32 + 1.0;
+                p.net_update = true;
+            }
+        }
+    }
+    // `:45191-45199` — the per-kind steering constants.
+    let mut num3 = 18.0f32;
+    let mut amount = 0.1f32;
+    let mut num4 = 0.0f32;
+    if p.kind == crate::projectile::WEATHER_PAIN_SHOT {
+        num3 = 8.0;
+        amount = 0.075;
+        num4 = 25.0;
+    }
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    if num2 != -1 {
+        // `:45200-45213` — the chase: the speed clamps to the distance,
+        // the lerp runs only outside the dead zone with a valid direction.
+        let n = &npcs[num2 as usize];
+        let nc = crate::projectile::npc_center(n);
+        let num5 = center.distance(nc);
+        if num3 > num5 {
+            num3 = num5;
+        }
+        let delta = nc - center;
+        if !delta.is_nan() && delta != Vec2::ZERO && num5 >= num4 {
+            let vector = delta.normalize();
+            p.vel = p.vel.lerp(vector * num3, amount);
+        }
+    } else if p.kind == crate::projectile::WEATHER_PAIN_SHOT {
+        // `:45214-45221` — the twister's self-direction lerp:
+        // `DirectionTo(Center + velocity)` = the velocity's own heading.
+        let delta = p.vel;
+        if !delta.is_nan() && delta != Vec2::ZERO {
+            let vector2 = delta.normalize();
+            p.vel = p.vel.lerp(vector2 * num3, amount);
+        }
+    } else {
+        // `:45222-45225` — the snowflake's no-target decay.
+        p.vel *= 0.92;
+    }
+    if p.kind == crate::projectile::WEATHER_PAIN_SHOT {
+        // `:45226-45252` — the twister tail: the X-scaled rotation, the
+        // 5-tick frame wrap and the %3 dust gate (the explicit velocity
+        // draws stay; the dust bodies are the skip).
+        p.rot = p.vel.x * 0.0125;
+        p.frame_counter += 1;
+        if p.frame_counter > 4 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= crate::projectile::proj_frames(p.kind) as i32 {
+                p.frame = 0;
+            }
+        }
+        if p.time_left % 3 == 0 {
+            // `:45243` — the first dust's NextVector2Circular(2,2) pair.
+            let _ = (rng.next_float(), rng.next_float());
+            // `:45244-45251` — the two direct dusts' pairs.
+            for _ in 0..2 {
+                let _ = (rng.next_float(), rng.next_float());
+            }
+        }
+    } else {
+        // `:45254-45264` — the snowflake tail: the spin and the 1-in-3
+        // dust gate (the taken branch's NextVector2Circular(1,1) pair).
+        p.rot += 0.020943953 + p.vel.x.abs() * 0.2;
+        if rng.next_range(0, 3) == 0 {
+            let _ = (rng.next_float(), rng.next_float());
+        }
+    }
+    sync_siblings
+}
+
+/// The 969 sibling-sync scan (`AI_177`'s `:45156-45164`): every OTHER
+/// active same-owner same-kind twister with a SHORTER life and
+/// `ai[1] < 555` gets its `ai[1]` pinned to 555 (the netUpdate rides).
+/// The dispatch runs it after the core (the pool borrow the slot arm
+/// cannot take). `me` is the twister's own slot index.
+pub(crate) fn weather_pain_sync_siblings(slots: &mut [Projectile], me: usize) {
+    let (owner, kind, time_left) = {
+        let p = &slots[me];
+        (p.owner, p.kind, p.time_left)
+    };
+    let num = 555.0f32;
+    for (i, other) in slots.iter_mut().enumerate() {
+        if i != me
+            && other.active
+            && other.owner == owner
+            && other.kind == kind
+            && time_left > other.time_left
+            && other.ai[1] < num
+        {
+            other.ai[1] = num;
+            other.net_update = true;
+        }
     }
 }
 
@@ -2400,5 +2605,229 @@ mod w4_d18_176_tests {
         assert_eq!(p.ai[0], 1.0, "the acquire ran through the dispatch");
         // extraUpdates 2 → 3 sub-steps → the frame machine rolled once.
         assert_eq!(rng.ranges, vec![(0, 6)]);
+    }
+}
+
+#[cfg(test)]
+mod w4_d18_177_tests {
+    //! W4-d18 — aiStyle 177 (`AI_177_IceWhipSlicer`,
+    //! `Projectile.cs:45117-45265`, the dispatch `:36671-36674`). WRITTEN
+    //! NOT RUN (code-only mode). The rows, the 917 buff gate, the 969
+    //! lifetime + sibling sync, the steering constants and the draw census.
+    use super::*;
+    use crate::npc::NpcKind;
+    use crate::player::Player;
+    use crate::projectile::{
+        COOL_WHIP_PROJ, FlailInputs, ProjectilePool, WEATHER_PAIN_SHOT, YoyoInputs, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    fn owner(w: &World) -> Player {
+        let mut pl = Player::spawn(w);
+        pl.x = 1600.0;
+        pl.y = 800.0;
+        pl
+    }
+
+    fn slicer(kind: u16, x: f32, y: f32) -> Projectile {
+        let d = proj_data(kind).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(x, y);
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    fn npc_at(x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// The rows (`Projectile.cs:8701-8713`/`:9169-9181`).
+    #[test]
+    fn w4_d18_177_the_rows_match_set_defaults() {
+        let d = proj_data(COOL_WHIP_PROJ).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (30.0, 30.0, 177));
+        assert_eq!(d.penetrate, -1);
+        assert!(!d.tile_collide);
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == 20);
+        let d2 = proj_data(WEATHER_PAIN_SHOT).unwrap();
+        assert_eq!((d2.w, d2.h, d2.ai_style), (56.0, 64.0, 177));
+        assert_eq!(d2.penetrate, 15);
+        assert!(d2.tile_collide && d2.magic);
+        assert!(d2.uses_id_static_immunity && d2.id_static_hit_cooldown == 25);
+        assert_eq!(crate::projectile::proj_frames(WEATHER_PAIN_SHOT), 8);
+        assert_eq!(crate::projectile::proj_frames(COOL_WHIP_PROJ), 1);
+    }
+
+    /// `:45119-45129` — the 917 buff gate: absent/dead owner kills and
+    /// clears the flag; a standing buff pins timeLeft 2.
+    #[test]
+    fn w4_d18_177_the_cool_whip_buff_gate() {
+        let w = world();
+        let mut pl = owner(&w);
+        let npcs: Vec<Npc> = Vec::new();
+        let immune = [0i32; 256];
+        let mut rng = census();
+        let mut p = slicer(COOL_WHIP_PROJ, 1600.0, 800.0);
+        let sync = ai_ice_whip_slicer(&mut p, &w, &npcs, &immune, None, 0, &mut rng);
+        assert!(!p.active && !sync, "the absent owner kills");
+        pl.cool_whip_buff = true;
+        let mut p2 = slicer(COOL_WHIP_PROJ, 1600.0, 800.0);
+        ai_ice_whip_slicer(&mut p2, &w, &npcs, &immune, Some(&mut pl), 0, &mut rng);
+        assert_eq!(p2.time_left, 2, "the standing buff pins");
+        pl.dead = true;
+        let mut p3 = slicer(COOL_WHIP_PROJ, 1600.0, 800.0);
+        ai_ice_whip_slicer(&mut p3, &w, &npcs, &immune, Some(&mut pl), 0, &mut rng);
+        assert!(!p3.active && !pl.cool_whip_buff, "death clears + kills");
+    }
+
+    /// `:45147-45155` — the 969 lifetime: ai[1] counts, the >560 alpha
+    /// fade and the 570 kill.
+    #[test]
+    fn w4_d18_177_the_twister_lifetime() {
+        let w = world();
+        let npcs: Vec<Npc> = Vec::new();
+        let immune = [0i32; 256];
+        let mut rng = census();
+        let mut p = slicer(WEATHER_PAIN_SHOT, 1600.0, 800.0);
+        p.ai[1] = 560.0;
+        let sync = ai_ice_whip_slicer(&mut p, &w, &npcs, &immune, None, 0, &mut rng);
+        assert!(sync, "the 969 always requests the sibling scan");
+        assert_eq!(p.ai[1], 561.0);
+        assert_eq!(p.alpha, 25, "Lerp(0,250,1/10) = 25");
+        assert!(p.active);
+        let mut p2 = slicer(WEATHER_PAIN_SHOT, 1600.0, 800.0);
+        p2.ai[1] = 569.0;
+        ai_ice_whip_slicer(&mut p2, &w, &npcs, &immune, None, 0, &mut rng);
+        assert_eq!(p2.ai[1], 570.0);
+        assert!(!p2.active && p2.time_left == 0, "the 570 kill");
+    }
+
+    /// `:45156-45164` — the sibling sync pins older-living twisters'
+    /// ai[1] up to 555 (the shorter-life / already-past ones stay).
+    #[test]
+    fn w4_d18_177_the_sibling_sync() {
+        let mut slots = vec![Projectile::default(); 4];
+        for (i, s) in slots.iter_mut().enumerate() {
+            s.active = true;
+            s.kind = WEATHER_PAIN_SHOT;
+            s.owner = 0;
+            s.time_left = 100;
+            s.ai[1] = 10.0;
+            if i == 0 {
+                s.time_left = 200; // the caller outlives the rest
+            }
+        }
+        slots[2].ai[1] = 600.0; // already past 555 — stays
+        slots[3].owner = 1; // a foreign owner — stays
+        weather_pain_sync_siblings(&mut slots, 0);
+        assert_eq!(slots[1].ai[1], 555.0, "the younger sibling pinned");
+        assert!(slots[1].net_update);
+        assert_eq!(slots[2].ai[1], 600.0, "the past-555 sibling stays");
+        assert_eq!(slots[3].ai[1], 10.0, "the foreign owner stays");
+        assert_eq!(slots[0].ai[1], 10.0, "the caller itself stays");
+    }
+
+    /// `:45191-45225` — the steering: the 917 no-target ×0.92 decay and
+    /// the 1-in-3 dust gate's draw census; the 969 self-direction lerp.
+    #[test]
+    fn w4_d18_177_the_no_target_arms_and_draws() {
+        let w = world();
+        let npcs: Vec<Npc> = Vec::new();
+        let immune = [0i32; 256];
+        let mut rng = census();
+        let mut p = slicer(COOL_WHIP_PROJ, 1600.0, 800.0);
+        p.vel = Vec2::new(10.0, 0.0);
+        ai_ice_whip_slicer(&mut p, &w, &npcs, &immune, None, 0, &mut rng);
+        assert!((p.vel.x - 9.2).abs() < 1e-4, "the 0.92 decay");
+        // CensusRng returns min 0 → the 1-in-3 gate TAKEN → one pair.
+        assert_eq!(rng.ranges, vec![(0, 3)]);
+        assert_eq!(rng.floats, 2, "the taken branch's circular pair");
+        assert!((p.rot - (0.020943953 + 9.2 * 0.2)).abs() < 1e-5, "the spin");
+        // The 969 self-lerp: velocity (8,0) lerps 0.075 toward (8,0) —
+        // unchanged; the %3 dust gate rolls 3 pairs at timeLeft 3600.
+        let mut p2 = slicer(WEATHER_PAIN_SHOT, 1600.0, 800.0);
+        p2.vel = Vec2::new(8.0, 0.0);
+        let mut rng2 = census();
+        ai_ice_whip_slicer(&mut p2, &w, &npcs, &immune, None, 0, &mut rng2);
+        assert!((p2.vel.x - 8.0).abs() < 1e-4);
+        assert_eq!(p2.rot, 8.0 * 0.0125, "the X-scaled rotation");
+        assert_eq!(rng2.floats, 6, "the %3 gate's three circular pairs");
+        assert!(rng2.ranges.is_empty(), "the 969 rolls no ranges");
+    }
+
+    /// The dispatch wiring: a 917 with a buffed owner pins through the
+    /// pool update; a 969 runs its lifetime counter.
+    #[test]
+    fn w4_d18_177_the_dispatch_arms_the_slicers() {
+        let mut w = world();
+        let mut pl = owner(&w);
+        pl.cool_whip_buff = true;
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(COOL_WHIP_PROJ, 1600.0, 800.0, 0.0, 0.0, 10, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        assert!(pool.slots()[slot].active);
+        assert_eq!(pool.slots()[slot].time_left, 1, "the pin 2 minus the tick");
+        let slot2 = pool
+            .spawn_with_data(WEATHER_PAIN_SHOT, 1600.0, 900.0, 0.0, 0.0, 10, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        assert_eq!(pool.slots()[slot2].ai[1], 1.0, "the twister counter ran");
     }
 }
