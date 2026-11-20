@@ -205,6 +205,15 @@ pub mod id {
     /// `spectating` to -1 and relays the stop (`MessageBuffer.cs:4361-4384`);
     /// the client only applies a peer's value (or its own stop, `:4380-4383`).
     pub const SPECTATE_PLAYER: u8 = 150;
+    /// `157 TeamChangeFromUI` (`MessageID.cs:328`) — the team-UI click's
+    /// send (`Main.cs:42763-42766`), sharing 45's body verbatim:
+    /// `(byte)` player, `(byte)Player.team` (`NetMessage.cs:970-974`'s
+    /// `case 45: case 157:` fall-through). The reader is the shared
+    /// `case 45: case 157:` arm (`MessageBuffer.cs:2325-2364`): the host
+    /// relays as **45** (`:2342`) plus the team chat fan-out (`:2343-2354`),
+    /// and only 157 adds the team-based-spawns tail — an extra spawn point
+    /// triggers `CheckSection` + `SendData(158)` (`:2355-2363`).
+    pub const TEAM_CHANGE_FROM_UI: u8 = 157;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1493,8 +1502,9 @@ pub struct PlayerMana {
 
 /// `msg 45 TeamChange`'s body (`NetMessage.cs:970-974`): the player id then
 /// `Player.team` as a byte (`MessageBuffer.cs:2325-2336`). `157
-/// TeamChangeFromUI` shares the body but adds the team-spawn tail
-/// (`:2355-2363`); it is not a join-bundle id and stays unported.
+/// TeamChangeFromUI` shares the body byte-for-byte (the writer's
+/// `case 45: case 157:` fall-through) and adds the host-side team-spawn tail
+/// (`:2355-2363`); its codecs landed with W4-d97 batch 4.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TeamChange {
     pub player_id: u8,
@@ -1994,6 +2004,10 @@ pub enum C2s {
     PlayerMana(PlayerMana),
     /// `45 TeamChange` - a client changed team (`MessageBuffer.cs:2325-2364`).
     TeamChange(TeamChange),
+    /// `157 TeamChangeFromUI` - a client clicked the team UI
+    /// (`Main.cs:42766`); the shared reader arm relays as 45 and runs the
+    /// team-spawn tail for 157 (`MessageBuffer.cs:2342`/`:2355-2363`).
+    TeamChangeFromUi(TeamChange),
     /// `142 SyncProjectileTrackers` - a client's piggy-bank / void-lens
     /// trackers (`MessageBuffer.cs:4282-4297` relays them).
     ProjectileTrackers(ProjectileTrackers),
@@ -2254,6 +2268,7 @@ impl C2s {
             Self::TogglePvp(_) => id::TOGGLE_PVP,
             Self::PlayerMana(_) => id::PLAYER_MANA,
             Self::TeamChange(_) => id::TEAM_CHANGE,
+            Self::TeamChangeFromUi(_) => id::TEAM_CHANGE_FROM_UI,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
@@ -2323,6 +2338,9 @@ impl C2s {
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
+            // `NetMessage.cs:970-974`'s `case 45: case 157:` fall-through —
+            // 157 writes the identical two bytes.
+            Self::TeamChangeFromUi(t) => w.u8(t.player_id).u8(t.team),
             Self::ProjectileTrackers(t) => w
                 .u8(t.player_id)
                 .i32(t.piggy_bank.key)
@@ -2448,6 +2466,13 @@ impl C2s {
                 max_mana: r.i16()?,
             }),
             id::TEAM_CHANGE => Self::TeamChange(TeamChange {
+                player_id: r.u8()?,
+                team: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2325-2336`'s `case 45: case 157:` shared
+            // reader — the same two bytes; the team-spawn tail (:2355-2363)
+            // is the host arm's, not the codec's.
+            id::TEAM_CHANGE_FROM_UI => Self::TeamChangeFromUi(TeamChange {
                 player_id: r.u8()?,
                 team: r.u8()?,
             }),
@@ -5487,5 +5512,31 @@ mod tests {
             S2c::SpectatePlayer(d) => assert_eq!(d, stop),
             other => panic!("expected 150, got {:?}", other.msg_id()),
         }
+    }
+
+    #[test]
+    fn w4_d97_team_change_from_ui_byte_pin() {
+        // `NetMessage.cs:970-974`'s `case 45: case 157:` fall-through: the
+        // identical (byte)player, (byte)team pair — only the id byte differs.
+        let t = TeamChange {
+            player_id: 5,
+            team: 3,
+        };
+        let body = [5u8, 3];
+        let f = C2s::TeamChangeFromUi(t).encode();
+        assert_eq!(f[2], 157);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::TeamChangeFromUi(d) => assert_eq!(d, t),
+            other => panic!("expected 157, got {:?}", other.msg_id()),
+        }
+        // Byte-identical to 45's frame apart from the id
+        // (`MessageBuffer.cs:2325-2336`'s shared reader).
+        let f45 = C2s::TeamChange(t).encode();
+        assert_eq!(f45[2], 45);
+        assert_eq!(&f45[3..], &f[3..]);
+        // The host relay rides 45 (`MessageBuffer.cs:2342`), never 157:
+        // the client decoder must not accept the UI id.
+        assert!(S2c::decode(157, &mut NetReader::new(&body)).is_none());
     }
 }

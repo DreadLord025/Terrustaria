@@ -831,6 +831,11 @@ impl App {
             // the spectate arm (`:4361-4384`, `SetOrRequestSpectating` /
             // the stop relay :4378) land with the send-path pass (S1-I-4).
             C2s::UpdatePlayerLuckFactors(_) | C2s::SpectatePlayer(_) => {}
+            // W4-d97 batch 4: the shared team arm's 157 side — relay as 45,
+            // the team chat fan-out and the team-based-spawns tail
+            // (`MessageBuffer.cs:2342-2363`) land with the send-path pass
+            // (S1-I-4).
+            C2s::TeamChangeFromUi(_) => {}
         }
     }
 
