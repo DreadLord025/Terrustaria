@@ -6008,16 +6008,24 @@ impl Projectile {
                 self.vel.x = (lcg.next_float() - 0.5) * 5.0;
                 self.ai[1] = 1.0;
                 // The bounce's dust/gore (`:24575-24587`) are SKIPPED; the
-                // `Main.rand.Next(3)` gore gate (`:24581`) still draws.
-                let _ = rng.next_range(0, 3);
+                // `Main.rand.Next(3)` gore gate (`:24581`) still draws, and
+                // the taken branch's `Gore.NewGore` type roll `Next(61, 64)`
+                // (`:24583`) stays on the stream (the gore-type-roll
+                // convention, `ai_freaking_pirates`' `Next(580,583)`).
+                if rng.next_range(0, 3) == 0 {
+                    let _ = rng.next_range(61, 64);
+                }
             }
         }
-        // `:24591-24595`: the scale decay and the zero-scale kill.
+        // `:24591-24595`: the scale decay and the zero-scale kill. The C#
+        // `Kill()` does NOT return from `AI()` — the gravity arm below still
+        // runs on the dying sub-step (its dust gates still draw on the pass's
+        // stream); only the post-movement tail skips the dead (`:17027-17030`).
+        // The port marks the slot dead and falls through to keep the draws.
         self.scale -= scale_decay;
         if self.scale <= 0.0 {
             self.active = false;
             self.time_left = 0;
-            return;
         }
         // `:24596-24634`: the gravity arm (`ai[0] > 3f`) or the counter.
         if self.ai[0] > 3.0 {
@@ -6027,7 +6035,9 @@ impl Projectile {
                 // dust 31 SKIPPED.
             }
             // `:24604-24607`: `ai[1] != 0f && Next(2) != 0` returns early
-            // (the trailing dust is skipped, the movement below still runs).
+            // (the trailing dust is skipped, the movement below still runs —
+            // the C# `return` leaves AI(), not Update(), and HandleMovement
+            // runs at `:17015` regardless of `active`).
             if self.ai[1] != 0.0 && rng.next_range(0, 2) != 0 {
                 self.kill_step(world);
                 return;
@@ -6040,7 +6050,9 @@ impl Projectile {
             self.ai[0] += 1.0;
         }
         // `HandleMovement`'s default arm (`:19851-19852`): the stream dies on
-        // the first solid tile (no aiStyle-12 bounce branch).
+        // the first solid tile (no aiStyle-12 bounce branch). Runs even on the
+        // scale-killed slot — C# HandleMovement has no `active` guard and
+        // `Kill()` is idempotent (`:17015`, `:70644-70648`).
         self.kill_step(world);
     }
 

@@ -12623,6 +12623,85 @@ KnockBack). The witnesses replay the exact draw sequence.
   use path never fires it (`registry::is_weapon` is false). No ManageShoot arm
   exists to port; the witness pins that it fires nothing.
 
+**The ItemTimeIsZero volley tick (the i01 census item, 2026-11-20):** the
+pre-fix port fired every non-ammo shooter ONCE per swing — the spawn chain ran
+only in the use-start block. The C# fires the shot from the `itemAnimation > 0
+&& ItemTimeIsZero` gate (`Player.cs:43544-43570`) on EVERY tick the action timer
+hits zero mid-swing, and `ItemCheck_Shoot`'s `ApplyItemTime` (`:47185-47194` →
+`SetItemTime(useTime)`, `:4416-4419`) re-arms `itemTime = useTime` after EACH
+shot. A `useTime < useAnimation` staff therefore fires its whole volley inside
+one swing: the **Aqua Scepter** (`useTime 8 < useAnimation 16`,
+`Item.cs:3252-3268`) fires 2 shots/swing (press tick + 8 ticks later), not 1.
+
+The fix extracts the non-ammo spawn chain into a shared nested helper
+`fire_non_ammo_shot` (called from the use-start block AND a new mid-swing volley
+gate that mirrors the ammo fire block's tick semantics — integer counts off the
+60 Hz-rounded timers via `ticks_of`, never a raw float compare). The helper
+re-borrows `p = app.player.as_ref()` inside (read-only) rather than taking it as
+a parameter: the chain touches only `app` fields disjoint from `app.player`
+(projectiles/rngs/inventory/world/local_id), so the split borrow compiles where
+a passed-in `&Player` alongside `&mut App` would be E0502. It returns whether the
+aim was non-zero (the port's `dir != ZERO` gate) so the caller keeps the swing
+tail gated; the swing tail (`ApplyItemAnimation`, `:51680`) stays on the
+use-start path only — a mid-swing volley shot must NOT restart the swing. The
+press path re-arms `item_time = useTime` after the first shot (`ApplyItemTime`);
+the volley gate re-arms after each subsequent shot. Mana is paid ONCE per swing
+(`ItemCheck_TryStartUse` / `ActuallyPayMana`, `:52021-52040`/`:52638`), NOT per
+volley shot — the pay stays in the start block.
+
+The volley gate carries the C# `flag`/`flag4` exclusions verbatim:
+- **Coins** (`sItem.IsACoin` → `canShoot = false`, `:47103-47106`): never fire.
+- **`shootsEveryUse`** (`:43560-43562`, `flag4 = ItemAnimationJustStarted`): the
+  set {190, 273, 368, 674, 675, 757, 1226, 1826, 5382} fires once per use. All
+  have `useTime == useAnimation`, so the exclusion is belt-and-suspenders.
+- **Channel items** (the drills/chainsaws, the aimed spells, the Last Prism):
+  fire once per use, then the channel holds the projectile; the C# keeps their
+  `itemTime` armed via the channel/mining cadence (`toolTime`, `:43576-43587`),
+  so they never reach a mid-swing re-fire. The port skips them (`d.channel`).
+  None of the nine listed staves is a channel item, so this excludes no target.
+- **The animation-window limits** (`:43491`/`:43502`/`:43506`/`:43514`): the
+  Zenith 4956 / True Copper 5669 fire inside `useTime*3` (their `useTime =
+  useAnimation/3`, so the window spans the whole swing — all 3 shots fire); the
+  Fairy Queen magic 4952 / Book Staff 3852 / Daybloom 6152 inside `useTime*4`.
+  The 4953 limit is the ammo path's.
+
+**Blast radius:** among the ported `useTime < useAnimation` non-ammo shooters,
+the general gate gives the Leaf Blower 1178 (5<15) and Sky Fracture 3787 (4<12)
+faithful volleys they lacked. The existing Leaf Blower witnesses are all
+single-tick (`fire_once`), so they are unaffected; no Sky Fracture volley test
+existed. The drills/chainsaws are channel items (excluded). The gem staves,
+whips and Last Prism have `useTime == useAnimation` (no mid-swing re-fire).
+
+**The Flamelash wet gate (`Player.cs:52112-52115`):** a wet (non-lava) player
+refuses the fire spells `{85, 15, 34, 1122}` — the Flamelash (shoot 34) among the
+listed staves. `base.wet` is `WetCollision` (ANY liquid, `Collision.cs:1605-1645`
+returns true for water/honey/shimmer); the port splits the kinds
+(`player.rs:4315-4358`), so the gate reads the water/honey/shimmer union
+`(p.wet || p.honey_wet || p.shimmer_wet) && !p.lava_wet`. It sits at the USE START
+(`ItemCheck_CheckCanUse_Inner` via `TryStartUse`, `:52023`), after the silence
+check — the mid-swing shot gate (`:43544`) does NOT re-check wet, so a player who
+enters water mid-swing keeps firing until the swing ends (faithful). The refusal
+returns before the mana pay and the swing start: no shot, no mana, no swing.
+
+**The Aqua Scepter aiStyle-12 RNG-order fixes (2026-11-20):** two defects in the
+new arm were corrected against `Projectile.cs:24501-24635`:
+1. The scale-death early `return` was removed — the C# `Kill()` (`:24594`) does
+   NOT return from `AI()`; the gravity arm (`:24596-24634`) still runs on the
+   dying sub-step and its dust gates still draw. The port marks the slot dead
+   and falls through (the `kill_step` movement tail runs regardless — C#
+   `HandleMovement` has no `active` guard, `:17015`).
+2. The lava-bounce taken branch now draws the gore-type roll `Next(61, 64)`
+   (`:24583`) after the `Next(3) == 0` gate (`:24581`) — the house
+   gore-type-roll convention (`ai_freaking_pirates`' `Next(580,583)`). The
+   pre-fix port drew only the gate, dropping the taken branch's draw.
+
+**Volley witnesses (WRITTEN NOT RUN):** `s1_p_i20_the_aqua_scepter_fires_a_two_shot_volley_per_swing`
+(2 shots at swing ticks 16/8, one mana pay), `s1_p_i20_the_aqua_volley_rolls_crit_and_seed_per_shot`
+(per-shot crit `Next(1,101)` + LCG seed `Next(0,20000)`, draw-exact stream),
+`s1_p_i20_the_wet_flamelash_refuses_the_use` (water/honey/shimmer each: no shot,
+no mana, no swing), `s1_p_i20_the_lava_wet_flamelash_still_fires` (the `!lavaWet`
+exclusion), `s1_p_i20_the_dry_flamelash_fires_and_channels` (the control).
+
 ## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
 
 **Code-only mode**: this slice was written without invoking any compiler
