@@ -160,3 +160,22 @@ draw path knows them, `assets.rs:706-708`, the AI does not). A counterweight
 spawned today silently no-ops in `_ => {}`-equivalent fashion (no row → the
 spawn itself no-ops). Claimed by `task/W4-d10-proj-ai-91-100` (99 ∈ 91-100);
 recorded here so the d10 port covers the sub-arm, not just the yoyo half.
+
+## Finding F2 — four rowed styles lack arms, OUTSIDE the 1-105 census range
+
+The summon-lane wave-3 landing added data rows whose aiStyles have no dispatch
+arm (they ride `_ => {}` today — inert if forced active):
+
+| style | kinds (rows) | C# arm | row cites (`projectile/data.rs`) | claim |
+| --- | --- | --- | --- | --- |
+| 156 | 755 Sanguine bat, 946 Empress Blade | `AI_156_BatOfLight` (`:36587-36590`) | :3400, :3414 | d16 (151-160) |
+| 164 | 831/970 Storm Tiger gems | `AI_164_StormTigerGem` (`:36619-36622`) | :3404, :3422 | d17 (161-170) |
+| 169 | 864 Smolstar | `AI_169_Smolstars` (`:36639-36642`) | :3409 | d17 (161-170) |
+| 206 | 1119 | inline (`:36787+`) | :3443 | d21 (201-210) |
+
+All four styles are CLAIMED by live d-wave branches (d16/d17/d21 worktrees
+exist at `a725acb0`). Not ported here (outside the 1-105 scope AND claimed);
+recorded so the wave ports know the rows already exist. The neighbouring
+Empress styles 171/173/179/180 are NOT missing — their five kinds ride the
+kind-guarded empress arm (`projectile.rs:19584`); the style-171 weapon variants
+931/1039 have no rows yet (the arm comment at `:19577-19579` says so).
