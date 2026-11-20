@@ -816,6 +816,11 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // S1-I-1 wave E: 51 MiscDataSync (`MessageBuffer.cs:2482-2530`
+            // subject forcing + the kind ladder) + 61 SpawnBossInvader
+            // (`:2740-2878`'s selector ladder) — bodies + codecs in `net.rs`;
+            // the apply/relay arms land with the send-path pass (S1-I-4).
+            C2s::MiscDataSync(_) | C2s::SpawnBossEvent(_) => {}
         }
     }
 
@@ -1858,6 +1863,10 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // S1-I-1 wave E: 51's kind-2 rod-sound echo
+            // (`MessageBuffer.cs:2500-2503` SoundID.Item1) — same wave, same
+            // parking.
+            S2c::MiscDataSync(_) => {}
         }
     }
 

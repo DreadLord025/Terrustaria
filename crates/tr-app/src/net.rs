@@ -151,17 +151,24 @@ pub mod id {
     // The census after the d89-d98 lanes' named regions: the weather-adjacent
     // 51 MiscDataSync (sundial/moondial; the slime rain itself rides 61's
     // -19), the invasion/event ids 61/78/112/113/114/116/143, the moon/lunar
-    // ids 101/103, the teleport family 65/73/95/96/100 (+ module 8's pylon
-    // body in `netmodules.rs`), and the misc leftovers 75/77/106/127/141.
+    // 103, the teleport family 65/73/96 (+ module 8's pylon body in
+    // `netmodules.rs`), and the misc leftovers 75/77/127/141.
     // Bodies + codecs only; the apply/relay arms and send fan-out stay
-    // S1-I-4. Not taken (other d-lanes' regions): 17/19/63/64/79/86/87/89/
-    // 105/108/109/110/121-125/133/149/156 tile edit+entities+wiring (d95),
-    // 18/57/136/158/159 clock+world sync (d90), 34/35/39/41/52/85/88/90/104/
-    // 130/131/146/160 items+containers+shops (d98), 36/43/55/62/66/84/99/
-    // 102/115/117/118/120/134/150 player (d96/97), 56/92/137/153 NPC (d91/
-    // 92), 81/91/107/119 combat text+emote bubbles+chat (UI lanes), 68/139/
-    // 161/162 join/lobby (d89), 94 dev commands, 128 golf, 132 sounds
-    // (c-lanes), 157 team tail (d96/97).
+    // S1-I-4. Coordination corrections to the first census draft: 95
+    // MurderSomeoneElsesPortal rides d93 (`112e3c99`); 100/101/106 (NPC
+    // portal teleport / tower shields / smoke poof) ride d94 (`68f4713d`,
+    // `de1d2b82`) — their constants and bodies land there, not here. 96's
+    // player twin is claimed by NO in-flight player lane (d96/d97's
+    // research/17 census leaves 84-96 NOT-FOUND; full remote-branch sweep
+    // 2026-11-20 found no other claim), so the event lane takes it beside
+    // the rest of the portal family. Not taken (other d-lanes' regions):
+    // 17/19/63/64/79/86/87/89/105/108/109/110/121-125/133/149/156 tile
+    // edit+entities+wiring (d95), 18/57/136/158/159 clock+world sync (d90),
+    // 34/35/39/41/52/85/88/90/104/130/131/146/160 items+containers+shops
+    // (d98), 36/43/55/62/66/84/99/102/115/117/118/120/134/150 player
+    // (d96/97), 56/92/137/153 NPC (d91/92), 81/91/107/119 combat text+emote
+    // bubbles+chat (UI lanes), 68/139/161/162 join/lobby (d89), 94 dev
+    // commands, 128 golf, 132 sounds (c-lanes), 157 team tail (d96/97).
     pub const MISC_DATA_SYNC: u8 = 51; // MessageID.cs:115 / NetMessage.cs:1010-1013 / MessageBuffer.cs:2482-2530
     pub const SPAWN_BOSS_EVENT: u8 = 61; // MessageID.cs:135 / NetMessage.cs:1073-1076 / MessageBuffer.cs:2740-2878
     pub const TELEPORT_ENTITY: u8 = 65; // MessageID.cs:143 / NetMessage.cs:1088-1109 / MessageBuffer.cs:2949-3035
@@ -169,12 +176,8 @@ pub mod id {
     pub const ANGLER_QUEST_FINISHED: u8 = 75; // MessageID.cs:163 — no body either side (MessageBuffer.cs:3154-3163)
     pub const TEMPORARY_ANIMATION: u8 = 77; // MessageID.cs:167 / NetMessage.cs:1154-1159 / MessageBuffer.cs:3183-3185
     pub const INVASION_PROGRESS: u8 = 78; // MessageID.cs:169 / NetMessage.cs:1160-1165 / MessageBuffer.cs:3186-3191
-    pub const MURDER_PORTAL: u8 = 95; // MessageID.cs:204 / NetMessage.cs:1333-1336 / MessageBuffer.cs:3519-3537
     pub const TELEPORT_PLAYER_PORTAL: u8 = 96; // MessageID.cs:206 / NetMessage.cs:1337-1346 / MessageBuffer.cs:3538-3557
-    pub const TELEPORT_NPC_PORTAL: u8 = 100; // MessageID.cs:214 / NetMessage.cs:1361-1370 / MessageBuffer.cs:3598-3610
-    pub const TOWER_SHIELDS: u8 = 101; // MessageID.cs:216 / NetMessage.cs:1371-1376 / MessageBuffer.cs:3611-3651
     pub const MOONLORD_COUNTDOWN: u8 = 103; // MessageID.cs:220 / NetMessage.cs:1383-1386 / MessageBuffer.cs:3708-3714
-    pub const POOF_OF_SMOKE: u8 = 106; // MessageID.cs:226 / NetMessage.cs:1400-1402 / MessageBuffer.cs:3742-3751
     pub const SPECIAL_FX: u8 = 112; // MessageID.cs:238 / NetMessage.cs:1424-1431 / MessageBuffer.cs:3815-3840
     pub const CRYSTAL_INVASION_START: u8 = 113; // MessageID.cs:240 / NetMessage.cs:1432-1435 / MessageBuffer.cs:3841-3854
     pub const CRYSTAL_INVASION_WIPE: u8 = 114; // MessageID.cs:242 — no body (DD2Event.cs:636, MessageBuffer.cs:3855-3860)
@@ -1573,6 +1576,39 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+// ---- S1-I-1 wave E: the event/misc tail bodies (W4-d99) ----
+
+/// `msg 51 MiscDataSync`'s body (`NetMessage.cs:1010-1013`): the subject byte
+/// then the kind byte. Subjects are a player slot for kinds 1/2/3/6 (the
+/// Skeletron summon `Player.cs:6411`-adjacent rod use, the rod's sound relay,
+/// the sundial `Main.cs:6175`, the moondial `:6190`) and an NPC slot for
+/// kind 4 (the big mimic's spawn smoke, `NPC.cs:77498`); kind 5 registers the
+/// bestiary kill (`MessageBuffer.cs:2514-2520`). The host forces the subject
+/// to the sender for player kinds (`:2485-2488`) and only kind 2 relays
+/// (`:2498`) — the apply/relay arms are parked for S1-I-4. Both directions
+/// (the client asks, the host echoes kind 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MiscDataSync {
+    pub subject: u8,
+    pub kind: u8,
+}
+
+/// `msg 61 SpawnBossInvader`'s body (`NetMessage.cs:1073-1076`): two shorts —
+/// the player to spawn on and the event selector. Positive selectors are
+/// `NPCID` boss types gated by `NPCID.Sets.MPAllowedEnemies`
+/// (`MessageBuffer.cs:2748-2753`); negatives are the event ladder: -1/-2/-3
+/// invasions, -4 pumpkin moon, -5 frost moon, -6 eclipse, -7 martians, -8
+/// impending doom, -10 blood moon, -11/-17 combat books, -12..-15 pet
+/// licenses, -16 Mechdusa (`NPC.cs:19794`), -18 peddler's satchel, -19 slime
+/// rain (`Main.cs:64752`), other negatives fall through to
+/// `StartInvasion(-selector)` (`:2862-2875`). Client→server only — every
+/// send site is a `netMode == 1` arm; the host answers with `7`/`78` pushes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpawnBossEvent {
+    pub player: i16,
+    pub event: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1684,6 +1720,12 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `51 MiscDataSync` - a client's sundial/moondial/rod/mimic ask
+    /// (`MessageBuffer.cs:2482-2530`; kind 2 echoes back).
+    MiscDataSync(MiscDataSync),
+    /// `61 SpawnBossInvader` - a client used a boss/event summon item
+    /// (`MessageBuffer.cs:2740-2878`'s selector ladder).
+    SpawnBossEvent(SpawnBossEvent),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1807,6 +1849,9 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `51 MiscDataSync` - the host's kind-2 rod-sound echo
+    /// (`MessageBuffer.cs:2498`).
+    MiscDataSync(MiscDataSync),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1895,6 +1940,8 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::SpawnBossEvent(_) => id::SPAWN_BOSS_EVENT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1963,6 +2010,10 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1010-1013`: (byte)subject + (byte)kind.
+            Self::MiscDataSync(m) => w.u8(m.subject).u8(m.kind),
+            // `NetMessage.cs:1073-1076`: (short)player + (short)event.
+            Self::SpawnBossEvent(e) => w.i16(e.player).i16(e.event),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2084,6 +2135,14 @@ impl C2s {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                subject: r.u8()?,
+                kind: r.u8()?,
+            }),
+            id::SPAWN_BOSS_EVENT => Self::SpawnBossEvent(SpawnBossEvent {
+                player: r.i16()?,
+                event: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2245,6 +2304,7 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
         }
     }
 
@@ -2387,6 +2447,9 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1010-1013`: (byte)subject + (byte)kind — the
+            // host's kind-2 echo (`MessageBuffer.cs:2498`).
+            Self::MiscDataSync(m) => w.u8(m.subject).u8(m.kind),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2588,6 +2651,10 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                subject: r.u8()?,
+                kind: r.u8()?,
             }),
             _ => return None,
         })
@@ -4744,6 +4811,59 @@ mod tests {
         assert_eq!(packed, hide);
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
+        }
+    }
+
+    #[test]
+    fn w4_d99_misc_data_sync_round_trips() {
+        // `NetMessage.cs:1010-1013` (case 51), verbatim: (byte)number
+        // (subject) then (byte)number2 (kind). Kind 3 = the sundial ask
+        // (`Main.cs:6175`, subject Main.myPlayer); the host forces the
+        // subject to the sender (`MessageBuffer.cs:2485-2488`) and only
+        // kind 2 echoes (`:2498`) — both directions carry the same layout.
+        let m = MiscDataSync { subject: 2, kind: 3 };
+        let f = C2s::MiscDataSync(m).encode();
+        assert_eq!(f[2], 51);
+        assert_eq!(&f[3..], &[2u8, 3]);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::MiscDataSync(d) => assert_eq!(d, m),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+        // The host's kind-2 rod-sound echo (`MessageBuffer.cs:2498`).
+        let echo = MiscDataSync { subject: 2, kind: 2 };
+        let s = S2c::MiscDataSync(echo).encode();
+        assert_eq!(s[2], 51);
+        assert_eq!(&s[3..], &[2u8, 2]);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::MiscDataSync(d) => assert_eq!(d, echo),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+        // Kind 4's subject is an NPC slot (the big mimic smoke,
+        // `NPC.cs:77498`) — the byte rides verbatim either way.
+        let mimic = MiscDataSync { subject: 199, kind: 4 };
+        let f = S2c::MiscDataSync(mimic).encode();
+        assert_eq!(&f[3..], &[199u8, 4]);
+    }
+
+    #[test]
+    fn w4_d99_spawn_boss_event_round_trips() {
+        // `NetMessage.cs:1073-1076` (case 61), verbatim: (short)number (the
+        // player to spawn on) + (short)number2 (the selector). Positive =
+        // an NPCID boss (Eye of Cthulhu 4, `Player.cs:43782`); negative =
+        // the event ladder — pin -19 (slime rain, `Main.cs:64752`) so the
+        // sign bit survives the i16 round trip. Client→server only.
+        for (player, event) in [(1i16, 4i16), (0, -19), (2, -16)] {
+            let e = SpawnBossEvent { player, event };
+            let f = C2s::SpawnBossEvent(e).encode();
+            assert_eq!(f[2], 61);
+            let mut body = Vec::new();
+            body.extend_from_slice(&player.to_le_bytes());
+            body.extend_from_slice(&event.to_le_bytes());
+            assert_eq!(&f[3..], &body);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::SpawnBossEvent(d) => assert_eq!(d, e),
+                other => panic!("expected 61, got {:?}", other.msg_id()),
+            }
         }
     }
 }
