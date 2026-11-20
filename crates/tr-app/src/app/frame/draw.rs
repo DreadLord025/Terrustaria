@@ -1843,6 +1843,7 @@ impl App {
                             &self.achievements_categories,
                             self.mouse_pos,
                             menu.is_some(),
+                            self.mouse_text_color,
                         );
                     }
                     // `DrawInterface_13_AchievementCompletePopups`

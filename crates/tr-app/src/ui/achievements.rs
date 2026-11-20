@@ -7,9 +7,16 @@
 //! Geometry follows the source: the outer container's `Width 0.8`,
 //! `MaxWidth 900`/`MinWidth 700`, `Top 220` in the game menu (`OnActivate`'s
 //! `Main.gameMenu` arm lowers it to 120 in-game), the `UIPanel`'s `-110`
-//! height, the list's `-25/-50` insets with `ListPadding 5`, the `66 + 16 +
-//! 20 = 102` row height of `largeForOtherLanguages = true` and the
-//! 8-per-row 64 px icons at a 66 px stride (the locked copy rides +528 px).
+//! height and `(12, 0, 12, 12)` inner padding, the list's `-25/-50` insets
+//! with `ListPadding 5`, the `66 + 16 + 20 = 102` row height of
+//! `largeForOtherLanguages = true` and the 8-per-row 64 px icons at a 66 px
+//! stride (the locked copy rides +528 px).
+//!
+//! W4-g53 completes the screen against the C#: the `UIPanel` 9-slices and
+//! byte-truncated colour pairs, the attached `UIScrollbar` (draw + drag +
+//! track jump + the 120 px wheel), the list scissor, the category tooltip,
+//! the `UIToggleImage` frame polarity, the row's real inner-panel origins
+//! and the centre-out `ColorBar` progress bar (d81's pure halves wired in).
 //!
 //! The port adds the same overlay treatment the bestiary uses: the state
 //! draws over the menu/world backdrop, dimmed, with its own scroll and
@@ -21,7 +28,7 @@ use tr_render::SpriteRenderer;
 use super::text;
 use super::uistate::{self, Style};
 use crate::achievements::{Achievement, AchievementManager, Category};
-use crate::assets::{self, Lookups};
+use crate::assets::Lookups;
 use crate::lang;
 
 /// `UI.Achievements` — the title panel's key (`UIAchievementsMenu.cs`'s
@@ -42,11 +49,13 @@ pub const ROW_H: f32 = 102.0;
 
 // --- UIAchievementListItem's pure halves (W4-d81 census row 6) ------------------
 //
-// The draw/geometry/hover pair/sort are pre-landed (`draw_row`, `ROW_BG*`,
+// The draw/geometry/hover pair/sort are pre-landed (`draw_row`,
 // `AchievementManager::sorted_indices` = `CompareTo` `:259-274`). These port
 // the remaining stateless pieces: the small-language layout branch, the icon
 // frame pick, the description's vertical scale clamp and the tracker bar's
-// centre-out geometry (the flat-bar draw above is the documented stand-in).
+// centre-out geometry. W4-g53 wires `tracker_bar_geometry`/`tracker_bar_colors`
+// into `draw_progress` (the flat-bar stand-in is gone); the small-language
+// branch stays pinned (`LARGE = true` for every shipped culture).
 
 /// The ctor's height (`UIAchievementListItem.cs:49-53`):
 /// `num = 16 + large*20`, `Height = 66 + num` — 102 large, 82 small.
@@ -96,7 +105,6 @@ pub fn description_scale_y(wrapped_height: f32, large: bool) -> f32 {
 /// fill is `width * num` wide, the black remainder `width * (1 - num)` from
 /// the same anchor, the 2 px blip draws only when `progress != 0` (`:252`).
 /// Returns `(anchor, fill_w, remainder_w, blip)`.
-#[allow(dead_code)] // the flat-bar draw is the port's documented stand-in
 pub fn tracker_bar_geometry(
     spot: [f32; 2],
     width: f32,
@@ -112,7 +120,6 @@ pub fn tracker_bar_geometry(
 /// The tracker readout's colours (`UIAchievementListItem.cs:139-148`):
 /// fill `(100, 255, 100)`, track White, both `Lerp(c, Black, 0.25)` when not
 /// hovered; the blip is the fill at alpha 0.5 (`:149`'s `MultiplyRGBA`).
-#[allow(dead_code)] // the flat-bar draw keeps its own float pins
 pub fn tracker_bar_colors(hovered: bool) -> ([u8; 4], [u8; 4], [u8; 4]) {
     let dim = |c: [u8; 4]| {
         if hovered {
@@ -161,22 +168,14 @@ const LARGE_TOP: f32 = 12.0;
 /// state draws over the live world with `IngameFancyUI`'s blur).
 const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 0.5];
 
-/// The item panel's colours (`UIAchievementListItem`'s constructor):
-/// `BackgroundColor = new Color(26, 40, 89) * 0.8f`, hover
-/// `new Color(46, 60, 119)`.
-const ROW_BG: [f32; 4] = [26.0 / 255.0 * 0.8, 40.0 / 255.0 * 0.8, 89.0 / 255.0 * 0.8, 0.8];
-const ROW_BG_HOVER: [f32; 4] = [46.0 / 255.0, 60.0 / 255.0, 119.0 / 255.0, 1.0];
-
-/// `UIAchievementsMenu`'s `UIPanel` colour: `new Color(33, 43, 79) * 0.8f`
-/// (`:…`), the same tone the bestiary's panel draws.
-const PANEL_BG: [f32; 4] = [33.0 / 255.0 * 0.8, 43.0 / 255.0 * 0.8, 79.0 / 255.0 * 0.8, 0.8];
-
-/// `new Color(73, 94, 171)` — the title panel's `BackgroundColor`.
-const TITLE_BG: [f32; 4] = [73.0 / 255.0, 94.0 / 255.0, 171.0 / 255.0, 1.0];
-
-/// The `UIPanel` default border (the port's panel helper draws it with
-/// `ui_panel_border`); `UITextPanel`'s is `Color.Black`.
-const TITLE_BORDER: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+// The panel colour pairs draw through `color::mul`/`color::tint` at the draw
+// sites now (the byte-truncating XNA multiply — the old float constants
+// rounded differently): the menu panel `(33, 43, 79)*0.8`
+// (`UIAchievementsMenu.cs:48`), the row `(26, 40, 89)*0.8` /
+// `(13, 20, 44)*0.8` with the `MouseOver` pair `(46, 60, 119)` /
+// `(20, 30, 56)` (`UIAchievementListItem.cs:47-48`, `:188-196`), the title
+// `(73, 94, 171)` (`UIAchievementsMenu.cs:61`), the tracker colours via
+// d81's `tracker_bar_colors` (`:139-149`).
 
 /// The unlocked/locked name tints — `Color.Lerp(Silver/Gold, White, hover)`.
 const SILVER: [f32; 4] = [0.753, 0.753, 0.753, 1.0];
@@ -185,11 +184,10 @@ const DESCRIPTION_LOCKED: [f32; 4] = [0.663, 0.663, 0.663, 1.0]; // `Color.DarkG
 const DESCRIPTION_OPEN: [f32; 4] = [0.753, 0.753, 0.753, 1.0]; // `Color.Silver`
 const CATEGORY_ICON_TINT: [f32; 4] = [0.753, 0.753, 0.753, 1.0];
 
-/// The progress bar's colours (`DrawProgressBar`'s `color2`/`color3`):
-/// `new Color(100, 255, 100)` fill, `new Color(255, 255, 255)` track — the
-/// hover arm lerps them 25 % toward black.
-const BAR_FILL: [f32; 4] = [100.0 / 255.0, 1.0, 100.0 / 255.0, 1.0];
-const BAR_TRACK: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+/// `Color.Gray` — the inner-panel splices' unhovered tint
+/// (`UIAchievementListItem.cs:115`). XNA Gray is (128, 128, 128), unlike
+/// Silver's (192, 192, 192).
+const GRAY: [f32; 4] = [128.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0, 1.0];
 
 /// The tracker readout's width — `float num4 = 80f`.
 const BAR_W: f32 = 80.0;
@@ -233,20 +231,46 @@ pub fn panel_rect(screen: Vec2, game_menu: bool) -> [f32; 4] {
 }
 
 /// The `UIPanel` inside the container — `Width 1`, `Height -110`
-/// (`:…`), which the category strip and the scrollbar hang off.
+/// (`UIAchievementsMenu.cs:45-50`), which the category strip and the scrollbar
+/// hang off.
 pub fn inner_panel(panel: &[f32; 4]) -> [f32; 4] {
     [panel[0], panel[1], panel[2], panel[3] - 110.0]
 }
 
-/// The `UIList` — `Width -25`, `Height -50`, `Top 50`, `ListPadding 5`.
+/// The `UIPanel`'s padding: the ctor's `SetPadding(12)`
+/// (`UIPanel.cs:32`) with `PaddingTop = 0f` overwritten
+/// (`UIAchievementsMenu.cs:49`) — `(left, top, right, bottom)`.
+pub const PANEL_PADDING: [f32; 4] = [12.0, 0.0, 12.0, 12.0];
+
+/// The `UIList` — `Width -25`, `Height -50`, `Top 50`, `ListPadding 5`
+/// (`UIAchievementsMenu.cs:51-56`), resolved against the panel's INNER rect
+/// (`UIElement.Recalculate`, `UIElement.cs:287-288`): the 12 px side padding
+/// insets X and width; the zeroed top leaves Y at the panel's own top.
 pub fn list_rect(panel: &[f32; 4]) -> [f32; 4] {
-    let inner = inner_panel(panel);
+    let inner = uistate::inner(inner_panel(panel), PANEL_PADDING);
     [
         inner[0],
         inner[1] + 50.0,
         inner[2] - 25.0,
         (inner[3] - 50.0).max(0.0),
     ]
+}
+
+/// The `UIScrollbar` — `Width 20` (`UIScrollbar.cs:59-60`), `Height -50`,
+/// `Top 50`, `HAlign 1` (`UIAchievementsMenu.cs:81-86`), against the same
+/// panel-inner rect: its right edge rides the panel's 12 px right padding.
+pub fn scrollbar_rect(panel: &[f32; 4]) -> [f32; 4] {
+    let inner = uistate::inner(inner_panel(panel), PANEL_PADDING);
+    let h = (inner[3] - 50.0).max(0.0);
+    [inner[0] + inner[2] - 20.0, inner[1] + 50.0, 20.0, h]
+}
+
+/// The category strip's container — `Width 1`, `Height 32`, `Top 10`
+/// (`UIAchievementsMenu.cs:88-91`), a plain `UIElement` (no padding), so the
+/// toggles resolve against the panel-inner rect directly.
+pub fn category_strip_rect(panel: &[f32; 4]) -> [f32; 4] {
+    let inner = uistate::inner(inner_panel(panel), PANEL_PADDING);
+    [inner[0], inner[1] + 10.0, inner[2], 32.0]
 }
 
 /// The row rect at `index` inside the list — each row is `ROW_H` tall with
@@ -284,18 +308,31 @@ pub fn title_rect(panel: &[f32; 4], width: f32) -> [f32; 4] {
     ]
 }
 
-/// The four category toggles — the 32 px strip `Top 10` inside the
-/// `UIPanel`, with `Left = j * 36 + 8`.
+/// The four category toggles — 32 px buttons inside the strip with
+/// `Left = j * 36 + 8` (`UIAchievementsMenu.cs:95-96`), resolved against the
+/// strip (which itself rides the panel's 12 px left padding).
 pub fn category_rects(panel: &[f32; 4]) -> [[f32; 4]; 4] {
-    let inner = inner_panel(panel);
+    let strip = category_strip_rect(panel);
     std::array::from_fn(|j| {
         [
-            inner[0] + (j as f32 * 36.0 + 8.0),
-            inner[1] + 10.0,
+            strip[0] + (j as f32 * 36.0 + 8.0),
+            strip[1],
             CAT_SIZE,
             CAT_SIZE,
         ]
     })
+}
+
+/// The `UIList` content height (`UIList.RecalculateChildren`,
+/// `UIList.cs:116-128`): every row's outer height plus one `ListPadding` per
+/// row (`:122`'s per-item `num2`; the single-row list drops it). N rows =
+/// N*(ROW_H+5); one row = ROW_H; none = 0.
+pub fn list_content_height(rows: usize) -> f32 {
+    match rows {
+        0 => 0.0,
+        1 => ROW_H,
+        n => n as f32 * (ROW_H + 5.0),
+    }
 }
 
 /// Rows per viewport — the list's height over the row stride.
@@ -303,14 +340,69 @@ pub fn rows_on_screen(list: &[f32; 4]) -> usize {
     ((list[3] + 5.0) / (ROW_H + 5.0)).floor().max(1.0) as usize
 }
 
-/// The scroll range: total list height minus the viewport.
+/// The scroll range — `UIScrollbar.SetView`'s clamp upper bound
+/// `maxViewSize - viewSize` (`UIScrollbar.cs:72-78`): the `UIList` content
+/// height (`UIList.cs:130-137`) minus the list's own inner height.
 pub fn max_scroll(rows: usize, list: &[f32; 4]) -> f32 {
-    (rows as f32 * (ROW_H + 5.0) - list[3] - 5.0).max(0.0)
+    (list_content_height(rows) - list[3]).max(0.0)
 }
 
-/// `FilterList` (`:…`): a row shows when its category's toggle is on. The
-/// secret `None` row has no toggle — vanilla's `_categoryButtons[-1]` would
-/// throw, so the port keeps it visible in every view (documented deviation).
+/// `UIList.ScrollWheel` (`UIList.cs:107-114`): `_scrollbar.ViewPosition -=
+/// evt.ScrollWheelValue` — one detent is 120 raw units
+/// (`char_select::WHEEL_STEP`, `PlayerInput.cs:898-899`), clamped by
+/// `SetView`. `delta` is in notches (positive = wheel up).
+pub fn scroll_wheel(scroll: f32, delta: i32, rows: usize, list: &[f32; 4]) -> f32 {
+    (scroll - delta as f32 * super::char_select::WHEEL_STEP)
+        .clamp(0.0, max_scroll(rows, list))
+}
+
+/// What a press on the scrollbar does (`UIScrollbar.LeftMouseDown`,
+/// `UIScrollbar.cs:126-143`): `(new view position, drag latch)` — the same
+/// shape `char_select::scrollbar_press` ports. `Some(offset)` is the
+/// `_dragYOffset = mouse.Y - handle.Y` grab (`:134-135`); `None` inside is
+/// the track jump (`:137-141`); `None` as a whole means the press missed
+/// the bar.
+pub fn scrollbar_press(
+    panel: &[f32; 4],
+    rows: usize,
+    scroll: f32,
+    mouse: Vec2,
+) -> Option<(f32, Option<f32>)> {
+    let bar = scrollbar_rect(panel);
+    let list = list_rect(panel);
+    let content = list_content_height(rows);
+    if !super::panel::scrollbar_can_scroll(list[3].min(content), content)
+        || !in_rect(bar, mouse)
+    {
+        return None;
+    }
+    let handle = super::panel::scrollbar_handle_at(bar, list[3], content, scroll);
+    if in_rect(handle, mouse) {
+        return Some((scroll, Some(mouse.y - handle[1])));
+    }
+    Some((
+        super::panel::scrollbar_jump_value(bar, list[3], content, handle[3], mouse.y),
+        None,
+    ))
+}
+
+/// The drag frame (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:109-112`).
+pub fn scrollbar_drag(panel: &[f32; 4], rows: usize, drag_offset: f32, mouse_y: f32) -> f32 {
+    let bar = scrollbar_rect(panel);
+    let list = list_rect(panel);
+    super::panel::scrollbar_drag_value(
+        bar,
+        list[3],
+        list_content_height(rows),
+        drag_offset,
+        mouse_y,
+    )
+}
+
+/// `FilterList` (`UIAchievementsMenu.cs:163-175`): a row shows when its
+/// category's toggle is on. The secret `None` row has no toggle — vanilla's
+/// `_categoryButtons[-1]` would throw, so the port keeps it visible in every
+/// view (documented deviation).
 pub fn filter_visible(categories: &[bool; 4], category: Category) -> bool {
     match category.index() {
         -1 => true,
@@ -367,6 +459,9 @@ pub fn visible_rows(manager: &AchievementManager, categories: &[bool; 4]) -> Vec
 }
 
 /// `UIAchievementsMenu.Draw`, with the port's overlay treatment.
+/// `mouse_text_color` is `Main.mouseTextColor` (the cycling 225±30 grey the
+/// category tooltip draws with, `UIAchievementsMenu.cs:132`).
+#[allow(clippy::too_many_arguments)]
 pub fn draw_screen(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -376,39 +471,97 @@ pub fn draw_screen(
     categories: &[bool; 4],
     mouse: Vec2,
     game_menu: bool,
+    mouse_text_color: u8,
 ) {
     let panel = panel_rect(screen, game_menu);
     r.push_ui_sprite([0.0, 0.0], [screen.x, screen.y], r.white_uv(), BACKDROP);
 
-    // The `UIPanel` body (`new Color(33, 43, 79) * 0.8f`).
+    // The `UIPanel` body — `BackgroundColor = (33, 43, 79) * 0.8f`
+    // (`UIAchievementsMenu.cs:48`) through the 9-slice, plus the `UIPanel`
+    // default black border (`UIPanel.cs:18`); the byte multiply truncates
+    // exactly (`color::mul`).
     let inner = inner_panel(&panel);
-    r.push_ui_sprite(
-        [inner[0], inner[1]],
-        [inner[2], inner[3]],
-        r.white_uv(),
-        PANEL_BG,
+    let bg = super::color::mul([33, 43, 79, 255], 0.8);
+    super::panel::draw_panel(r, lookups, lookups.ui_panel_bg, inner, super::color::tint(bg));
+    super::panel::draw_panel(
+        r,
+        lookups,
+        lookups.ui_panel_border,
+        inner,
+        super::color::tint(uistate::TEXT_PANEL_BORDER),
     );
 
     draw_title(r, lookups, &panel);
     draw_categories(r, lookups, &panel, categories, mouse);
     draw_back(r, lookups, &panel, mouse);
-    draw_list(r, lookups, &panel, manager, scroll, categories, mouse);
+    let rows = visible_rows(manager, categories);
+    draw_list(r, lookups, &panel, manager, &rows, scroll, mouse);
+    // The `UIScrollbar` (`InitializePage`'s `SetView(100f, 1000f)` placeholder
+    // is overwritten by `SetScrollbar`'s `UpdateScrollbar`, `UIList.cs:139-143`:
+    // view = the list height, max = the content height). `AutoHide` stays
+    // false (`UIScrollbar.cs:29`), so the bar draws even on a short list.
+    super::panel::draw_scrollbar(
+        r,
+        lookups,
+        scrollbar_rect(&panel),
+        list_rect(&panel)[3],
+        list_content_height(rows.len()),
+        scroll,
+        false,
+    );
+    draw_category_tooltip(r, lookups, screen, &panel, mouse, mouse_text_color);
+}
+
+/// `UIAchievementsMenu.Draw`'s tooltip arm (`:108-135`): the FIRST hovered
+/// category button (the loop `break`s) draws its `Achievements.*Category`
+/// label at `mouse + (16, 16)`, clamped `Y <= screenH - 30` and — when it
+/// would run off the right edge — `X = screenW - 460` (the C#'s literal,
+/// `:130`). `Utils.DrawBorderStringFourWay` through the Mouse font in
+/// `Main.mouseTextColor` grey with the black ±2 px ring (`Utils.cs:2464-2496`).
+fn draw_category_tooltip(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    screen: Vec2,
+    panel: &[f32; 4],
+    mouse: Vec2,
+    mouse_text_color: u8,
+) {
+    let Some(j) = category_at(panel, mouse) else {
+        return;
+    };
+    let label = lang::text(Category::FILTERS[j].tooltip_key());
+    let w = text::ui_font_width(lookups, &label, 1.0).unwrap_or(100.0);
+    let mut pos = mouse + Vec2::splat(16.0); // `:123`
+    if pos.y > screen.y - 30.0 {
+        pos.y = screen.y - 30.0; // `:124-127`
+    }
+    if pos.x > screen.x - w {
+        pos.x = screen.x - 460.0; // `:128-131`
+    }
+    let c = mouse_text_color as f32 / 255.0;
+    text::draw_border_string(
+        r,
+        lookups,
+        text::BorderFont::Ui,
+        pos.x,
+        pos.y,
+        1.0,
+        &[[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]],
+        [c, c, c, c], // `new Color(mtc, mtc, mtc, mtc)` — alpha rides too (`:132`)
+        &label,
+    );
 }
 
 /// The `UITextPanel` title — `UI.Achievements` at scale 1.0 through the
 /// large (Death) font, the panel's `(73, 94, 171)` background and black
-/// border, `SetPadding(13)`.
+/// border, `SetPadding(13)` (`UIAchievementsMenu.cs:57-61`).
 fn draw_title(r: &mut SpriteRenderer, lookups: &Lookups, panel: &[f32; 4]) {
     let label = lang::text(TITLE_KEY);
-    let rect = title_rect(panel, label_width(lookups, &label));
-    // The port's panel helper splices `UI/PanelBackground`; the C# state's
-    // own `UITextPanel` colour pair is drawn as the flat panel beneath it.
-    r.push_ui_sprite(
-        [rect[0], rect[1]],
-        [rect[2], rect[3]],
-        r.white_uv(),
-        TITLE_BG,
-    );
+    // `SetText`'s MinWidth = measured.X + PaddingLeft + PaddingRight
+    // (`UITextPanel.cs:132-133`) — the panel is the label plus the 13 px
+    // padding on both sides.
+    let w = label_width(lookups, &label) + 13.0 * 2.0;
+    let rect = title_rect(panel, w);
     super::uistate::draw_text_panel(
         r,
         lookups,
@@ -418,17 +571,18 @@ fn draw_title(r: &mut SpriteRenderer, lookups: &Lookups, panel: &[f32; 4]) {
         label_width(lookups, &label),
         false,
     );
-    let _ = TITLE_BORDER;
 }
 
-/// The large-title style — `UITextPanel`'s `large: true` scale-1 form.
+/// The large-title style — `UITextPanel`'s `large: true` scale-1 form with
+/// the ctor's `BackgroundColor = new Color(73, 94, 171)` (`:61`) over the
+/// `UIPanel` default black border.
 fn title_style() -> uistate::TextPanelStyle {
     uistate::TextPanelStyle {
         text_scale: 1.0,
         large: true,
         padding: 13.0,
-        bg: [0, 0, 0, 0],
-        border: [0, 0, 0, 0],
+        bg: [73, 94, 171, 255],
+        border: uistate::TEXT_PANEL_BORDER,
     }
 }
 
@@ -440,8 +594,12 @@ fn label_width(lookups: &Lookups, label: &str) -> f32 {
     }
 }
 
-/// The four `UIToggleImage` filter buttons with their tooltips
-/// (`Draw`'s category switch, `:…`).
+/// The four `UIToggleImage` filter buttons (`Draw`'s category switch,
+/// `UIAchievementsMenu.cs:93-101`). The ctor's `Point(34*j, 0)` lands in
+/// `onTextureOffset` and `Point(34*j, 34)` in `offTextureOffset`
+/// (`UIToggleImage.cs:26-36` — the parameter order is `(on, off)` while the
+/// call site passes them row-0-first), so the ON frame is the sheet's TOP
+/// row. `DrawSelf` tints `White` on hover, `Silver` otherwise (`:53`).
 fn draw_categories(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -451,15 +609,14 @@ fn draw_categories(
 ) {
     for (j, rect) in category_rects(panel).iter().enumerate() {
         let hovered = in_rect(*rect, mouse);
-        // `UIToggleImage`'s off/on frames: `Point(34 * j, 0)` / `Point(34 * j, 34)`.
-        let frame_y = if categories[j] { CAT_CELL } else { 0.0 };
+        let frame_y = if categories[j] { 0.0 } else { CAT_CELL };
         draw_category_frame(
             r,
             lookups,
             j,
             frame_y,
             [rect[0], rect[1], CAT_SIZE, CAT_SIZE],
-            if hovered { [1.0; 4] } else { [0.75, 0.75, 0.75, 1.0] },
+            if hovered { [1.0; 4] } else { SILVER },
         );
     }
 }
@@ -488,13 +645,41 @@ fn draw_category_frame(
     r.push_ui_sprite([dst[0], dst[1]], [dst[2], dst[3]], uv, tint);
 }
 
-/// The Back panel — `UITextPanel("UI.Back", 0.7f, large: true)` with the
-/// `FadedMouseOver`/`FadedMouseOut` colour pair.
+/// The row's category icon — `Frame(4, 2, category)` at scale 0.5
+/// (`UIAchievementListItem.cs:121`): the source cell is the sheet's
+/// `width/4 x height/2` quarter (`Utils.cs:1344-1348`), drawn at half size.
+fn draw_category_frame_scaled(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    col: usize,
+    dst: [f32; 4],
+    tint: [f32; 4],
+) {
+    let Some(sheet) = lookups.ach_categories else {
+        return;
+    };
+    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+    let cw = (sheet.width / 4) as f32;
+    let ch = (sheet.height / 2) as f32;
+    let x0 = sheet.x as f32 + col as f32 * cw;
+    let y0 = sheet.y as f32;
+    let uv = [x0 / aw, y0 / ah, (x0 + cw) / aw, (y0 + ch) / ah];
+    r.push_ui_sprite([dst[0], dst[1]], [dst[2], dst[3]], uv, tint);
+}
+
+/// The Back panel — `UITextPanel("UI.Back", 0.7f, large: true)`
+/// (`UIAchievementsMenu.cs:63-73`) with this state's OWN
+/// `FadedMouseOver`/`FadedMouseOut` pair (`:150-161`): hover
+/// `(73, 94, 171)` / `Colors.FancyUIFatButtonMouseOver`, idle
+/// `(63, 82, 151) * 0.8f` / Black — note the 0.8, not the shared
+/// fat-button style's 0.7.
 fn draw_back(r: &mut SpriteRenderer, lookups: &Lookups, panel: &[f32; 4], mouse: Vec2) {
     let rect = back_rect(panel);
     let label = lang::text(BACK_KEY);
-    let style = super::cards::fat_button_style();
-    let text_w = text::hud_text_width(r, lookups, &label, style.text_scale);
+    let mut style = super::cards::fat_button_style();
+    style.bg = super::color::mul([63, 82, 151, 255], 0.8); // `:159`
+    // `SetText` measures through the LARGE (Death) font (`UITextPanel.cs:80-90`).
+    let text_w = text::large_text_width(r, lookups, &label) * style.text_scale;
     // `FadedMouseOver` paints `(73, 94, 171)` with the fat-button hover
     // border; the draw helper's hover flag carries the same pair.
     super::uistate::draw_text_panel(
@@ -508,18 +693,23 @@ fn draw_back(r: &mut SpriteRenderer, lookups: &Lookups, panel: &[f32; 4], mouse:
     );
 }
 
-/// The filtered, sorted list (`FilterList` + `UpdateOrder`).
+/// The filtered, sorted list (`FilterList` + `UpdateOrder`): the rows ride
+/// `_innerList.Top = -ViewPosition` (`UIList.DrawSelf`, `UIList.cs:177-184`)
+/// under the list's scissor (`OverflowHidden = true`, `UIList.cs:59` —
+/// `UIInnerList.GetViewCullingArea` returns the list rect, `:34-37`); only
+/// the rows whose boxes overlap the viewport draw (`UIInnerList.
+/// DrawChildren`'s AABB gate, `UIList.cs:21-32`).
 fn draw_list(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     panel: &[f32; 4],
     manager: &AchievementManager,
+    rows: &[usize],
     scroll: f32,
-    categories: &[bool; 4],
     mouse: Vec2,
 ) {
     let list = list_rect(panel);
-    let rows = visible_rows(manager, categories);
+    r.push_clip(list);
     let first = ((scroll / (ROW_H + 5.0)).floor()).max(0.0) as usize;
     let count = rows_on_screen(&list);
     for slot in 0..=count {
@@ -530,8 +720,12 @@ fn draw_list(
         let rect = row_rect(&list, first + slot);
         let shifted = [rect[0], rect[1] - scroll, rect[2], rect[3]];
         let a = &manager.list[idx];
-        draw_row(r, lookups, &shifted, a, in_rect(shifted, mouse));
+        // Hover is the row's own box (`IsMouseHovering`) intersected with the
+        // viewport — a row half-scrolled-out only hovers on its visible half.
+        let hover = in_rect(shifted, mouse) && in_rect(list, mouse);
+        draw_row(r, lookups, &shifted, a, hover);
     }
+    r.pop_clip();
 }
 
 /// One `UIAchievementListItem` — the panel, the icon + border, the category
@@ -544,54 +738,82 @@ fn draw_row(
     hover: bool,
 ) {
     let locked = !a.completed;
-    // The item panel (`BackgroundColor`/hover pair).
-    r.push_ui_sprite(
-        [rect[0], rect[1]],
-        [rect[2], rect[3]],
-        r.white_uv(),
-        if hover { ROW_BG_HOVER } else { ROW_BG },
+    // The item panel — `UIAchievementListItem` IS a `UIPanel`, so the
+    // background/border pair draws through the 9-slice: ctor
+    // `(26, 40, 89)*0.8` / `(13, 20, 44)*0.8` (`UIAchievementListItem.cs:47-48`),
+    // `MouseOver` `(46, 60, 119)` / `(20, 30, 56)` (`:188-189`); the byte
+    // multiplies truncate exactly.
+    let (bg, border) = if hover {
+        ([46, 60, 119, 255], [20, 30, 56, 255])
+    } else {
+        (
+            super::color::mul([26, 40, 89, 255], 0.8),
+            super::color::mul([13, 20, 44, 255], 0.8),
+        )
+    };
+    super::panel::draw_panel(r, lookups, lookups.ui_panel_bg, *rect, super::color::tint(bg));
+    super::panel::draw_panel(
+        r,
+        lookups,
+        lookups.ui_panel_border,
+        *rect,
+        super::color::tint(border),
     );
 
-    // `PaddingTop 8` / `PaddingLeft 9`.
+    // `PaddingTop 8` / `PaddingLeft 9` (`:55-56`).
     let ix = rect[0] + 9.0 + LARGE_LEFT;
     let iy = rect[1] + 8.0 + LARGE_TOP;
 
-    // The icon — locked frame until the row completes.
+    // The icon — locked frame until the row completes (`UpdateIconFrame`).
     draw_icon(r, lookups, ix, iy, a.icon, locked);
 
-    // The border, 4 px out on both axes.
+    // The border, 4 px out on both axes (`:68-69`). `UIImage.Color` stays
+    // `Color.White` (`UIImage.cs:20`) — no hover tint on this element.
     if let Some(sheet) = lookups.ach_borders {
         super::push_whole(
             r,
             lookups,
             &sheet,
             [ix - 4.0, iy - 4.0, sheet.width as f32, sheet.height as f32],
-            if hover { [1.0; 4] } else { [0.75, 0.75, 0.75, 1.0] },
+            [1.0; 4],
         );
     }
 
     let border_w = lookups.ach_borders.map_or(72.0, |s| s.width as f32);
-    // `vector2 = border dimensions' right edge + 7` and
-    // `num2 = inner width - border width + 1 - (large ? 12 : 0)`.
-    let text_x = ix + border_w + 7.0 + LARGE_LEFT;
-    let text_w = (rect[2] - 18.0 - LARGE_LEFT) - border_w + 1.0 - 12.0;
+    // `vector2 = border dimensions' right edge + 7` (`:92`) and
+    // `num2 = innerWidth - borderWidth + 1 - num*2` (`:99`); the inner width
+    // is the row minus the 9 px left + 12 px right `UIPanel` padding
+    // (`UIPanel.cs:32` — the ctor only overwrites Top/Left). The borders'
+    // Left is `-4 + num2` off the inner X (`:68`).
+    let inner_x = rect[0] + 9.0;
+    let inner_y = rect[1] + 8.0;
+    let inner_w = rect[2] - 9.0 - 12.0;
+    let text_x = inner_x + (LARGE_LEFT - 4.0) + border_w + 7.0 + LARGE_LEFT;
+    let text_w = inner_w - border_w + 1.0 - LARGE_LEFT * 2.0;
 
-    // The name row — `Color.Lerp(Silver/Gold, White, hover 0.5)`.
-    let name_y = iy - 2.0;
-    draw_inner_panel_top(r, lookups, text_x, name_y, text_w);
-    // The category icon at 0.5 scale, `Frame(4, 2, category)`.
+    // `color = IsMouseHovering ? White : Gray` (`:115`) — the inner-panel
+    // splices' tint. `Color.Gray` is (128, 128, 128), NOT Silver's 192.
+    let panel_tint = if hover { [1.0; 4] } else { GRAY };
+
+    // The name row — `vector4 = vector2 - UnitY*2 + vector` (`:116`) with
+    // `vector = (num, 0)` (`:87`): vector2.Y is the INNER top (PaddingTop 8),
+    // so the splice rides innerY - 2, above the icon's own +12 top.
+    let name_y = inner_y - 2.0;
+    draw_inner_panel_top(r, lookups, text_x, name_y, text_w, panel_tint);
+    // The category icon — `Frame(4, 2, category)` at scale 0.5 (`:121`):
+    // a 34x34 source cell drawn 17x17. `Frame(4, 2, i)` reads column i of
+    // row 0 (`Utils.cs:1344-1348` — the third arg is frameX).
     let cat_x = text_x + 4.0;
     let cat_y = name_y + 2.0;
-    draw_category_frame(
+    draw_category_frame_scaled(
         r,
         lookups,
         a.category.index().max(0) as usize,
-        0.0,
-        [cat_x, cat_y, CAT_SIZE, CAT_SIZE],
+        [cat_x, cat_y, CAT_CELL * 0.5, CAT_CELL * 0.5],
         if hover { [1.0; 4] } else { CATEGORY_ICON_TINT },
     );
-    // `vector4.X += 4; vector4.X += 17`
-    let name_x = cat_x + 17.0;
+    // `vector4.X += 4; vector4.X += 17` (`:122-123`)
+    let name_x = cat_x + 4.0 + 17.0;
     let name = lang::text(&name_key(a.name));
     let name_color = lerp(if locked { SILVER } else { GOLD }, [1.0; 4], if hover { 0.5 } else { 0.0 });
     push_clipped_text(
@@ -605,16 +827,18 @@ fn draw_row(
         text_w - (name_x - text_x),
     );
 
-    // The description row — 27 px under the name row.
-    let desc_y = iy + 27.0;
-    draw_inner_panel_bottom(r, lookups, text_x + 8.0, desc_y + 4.0, text_w);
+    // The description row — `position = vector2 + UnitY*27 + vector`
+    // (`:126`), the bottom splice at that origin, then the text at +8/+4
+    // (`:128-130`). Same vector2.Y base as the name row (the vector's Y is 0).
+    let desc_panel_y = inner_y + 27.0;
+    draw_inner_panel_bottom(r, lookups, text_x, desc_panel_y, text_w, panel_tint);
     let desc_color = lerp(if locked { DESCRIPTION_LOCKED } else { DESCRIPTION_OPEN }, [1.0; 4], if hover { 1.0 } else { 0.0 });
     let desc = lang::text(&desc_key(a.name));
     push_clipped_text(
         r,
         lookups,
         text_x + 8.0,
-        desc_y + 4.0,
+        desc_panel_y + 4.0,
         0.92,
         desc_color,
         &desc,
@@ -622,10 +846,12 @@ fn draw_row(
     );
 
     // The tracker bar — only while locked and only with a tracker
-    // (`flag = (Item1 != 0 || Item2 != 0) && _locked`).
+    // (`flag = (Item1 != 0 || Item2 != 0) && _locked`, `:93-98`). The anchor
+    // is `vector4` AFTER the name walk (`:133`): the name origin + num2 on X
+    // (the `:125` `-= 17` cancels the second `+= 17`), +1 on Y.
     if let Some((value, max)) = a.tracker_values() {
         if locked && (value != 0 || max != 0) {
-            draw_progress(r, lookups, name_x, name_y, text_w, value, max, hover);
+            draw_progress(r, lookups, cat_x + 4.0 + text_w, cat_y + 1.0, value, max, name_color, hover);
         }
     }
 }
@@ -657,14 +883,16 @@ fn draw_icon(
     r.push_ui_sprite([x, y], [ICON, ICON], uv, [1.0; 4]);
 }
 
-/// `DrawPanelTop` — three 2 px-wide splices of
-/// `Achievement_InnerPanelTop`, the middle stretched to `width - 4`.
+/// `DrawPanelTop` (`UIAchievementListItem.cs:171-176`) — three 2 px-wide
+/// splices of `Achievement_InnerPanelTop`, the middle stretched to
+/// `(width - 4) / 2`, all tinted by the hover `color` (`:115`).
 fn draw_inner_panel_top(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     x: f32,
     y: f32,
     width: f32,
+    tint: [f32; 4],
 ) {
     let Some(sheet) = lookups.ach_inner_top else {
         return;
@@ -673,7 +901,7 @@ fn draw_inner_panel_top(
     let h = sheet.height as f32;
     let base_y = sheet.y as f32;
     // The left cap.
-    splice(r, lookups, sheet.x as f32, base_y, 2.0, h, x, y, 2.0, h, aw, ah);
+    splice(r, lookups, sheet.x as f32, base_y, 2.0, h, x, y, 2.0, h, aw, ah, tint);
     // The stretched middle: `(width - 4) / 2` horizontally.
     let mid_w = (width - 4.0) / 2.0;
     splice(
@@ -689,6 +917,7 @@ fn draw_inner_panel_top(
         h,
         aw,
         ah,
+        tint,
     );
     // The right cap.
     splice(
@@ -704,17 +933,20 @@ fn draw_inner_panel_top(
         h,
         aw,
         ah,
+        tint,
     );
 }
 
-/// `DrawPanelBottom` — the 6/7/6 px splices of
-/// `Achievement_InnerPanelBottom` (the `_Large` variant while large).
+/// `DrawPanelBottom` (`UIAchievementListItem.cs:178-183`) — the 6/7/6 px
+/// splices of `Achievement_InnerPanelBottom` (the `_Large` variant while
+/// large, `:72-79`), tinted by the same hover `color`.
 fn draw_inner_panel_bottom(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     x: f32,
     y: f32,
     width: f32,
+    tint: [f32; 4],
 ) {
     let Some(sheet) = lookups.ach_inner_bottom_large.or(lookups.ach_inner_bottom) else {
         return;
@@ -736,6 +968,7 @@ fn draw_inner_panel_bottom(
         h,
         aw,
         ah,
+        tint,
     );
     // Middle: `Rectangle(6, 0, 7, h)` stretched `(width - 12) / 7`.
     let mid_w = (width - 12.0) / 7.0;
@@ -752,6 +985,7 @@ fn draw_inner_panel_bottom(
         h,
         aw,
         ah,
+        tint,
     );
     // Right cap: `Rectangle(13, 0, 6, h)`.
     splice(
@@ -767,6 +1001,7 @@ fn draw_inner_panel_bottom(
         h,
         aw,
         ah,
+        tint,
     );
 }
 
@@ -785,48 +1020,79 @@ fn splice(
     dh: f32,
     aw: f32,
     ah: f32,
+    tint: [f32; 4],
 ) {
     let uv = [sx / aw, sy / ah, (sx + sw) / aw, (sy + sh) / ah];
-    r.push_ui_sprite([dx, dy], [dw, dh], uv, [1.0; 4]);
+    r.push_ui_sprite([dx, dy], [dw, dh], uv, tint);
 }
 
-/// `DrawProgressBar` with `Width = 80`: the `ColorBar` track, the
-/// `MagicPixel` fill and the bar, then the `value / max` readout at scale
-/// 0.75 (`num6 = new Vector2(0.75f)`).
+/// `DrawProgressBar` with `Width = 80` (`UIAchievementListItem.cs:131-151`,
+/// `:224-257`), built on d81's pure `tracker_bar_geometry`/`tracker_bar_colors`
+/// halves: the `ColorBar` track (centre-anchored stretched body + the 5/4 px
+/// end caps, `:246-248`), then the centre-out `MagicPixel` fill, the 2 px
+/// blip and the black remainder (`:249-256`), then the `value / max` readout
+/// at scale 0.75 in the NAME colour (`baseColor`, `:151` — not white).
+/// `anchor` is `vector5` (`:133`); the flat-bar stand-in is gone.
+#[allow(clippy::too_many_arguments)]
 fn draw_progress(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
-    name_x: f32,
-    name_y: f32,
-    text_w: f32,
+    anchor_x: f32,
+    anchor_y: f32,
     value: i32,
     max: i32,
+    name_color: [f32; 4],
     hover: bool,
 ) {
-    let progress = if max > 0 {
-        (value as f32 / max as f32).clamp(0.0, 1.0)
+    let progress = if max != 0 {
+        value as f32 / max as f32
     } else {
         0.0
     };
-    // `vector5 = name position + UnitX*num2 + UnitY`.
-    let mut x = name_x + text_w + 1.0;
-    let y = name_y + 1.0;
     let readout = format!("{value}/{max}");
     let readout_w = text::hud_item_text_width(r, lookups, &readout, 0.75);
-    // The bar rides `vector5 - UnitX * num4 * 0.7f`.
-    let bar_x = x - BAR_W * 0.7;
-    let fill = if hover { BAR_FILL } else { lerp(BAR_FILL, [0.0; 4], 0.25) };
-    let track = if hover { BAR_TRACK } else { lerp(BAR_TRACK, [0.0; 4], 0.25) };
-    r.push_ui_sprite([bar_x, y], [BAR_W, BAR_H], r.white_uv(), track);
-    r.push_ui_sprite(
-        [bar_x, y],
-        [BAR_W * progress, BAR_H],
-        r.white_uv(),
-        fill,
+    // `spot = vector5 - UnitX * num4 * 0.7f` (`:149`).
+    let spot = [anchor_x - BAR_W * 0.7, anchor_y];
+    let (track, fill, blip) = tracker_bar_colors(hover);
+    let (track, fill, blip) = (
+        super::color::tint(track),
+        super::color::tint(fill),
+        super::color::tint(blip),
     );
-    // The readout at `vector5.X -= num4 * 1.4f + stringSize2.X`.
-    x -= BAR_W * 1.4 + readout_w;
-    text::hud_item_text(r, lookups, x, y, 0.75, [1.0; 4], &readout);
+    // The `ColorBar` track: `num4 = Width / 169` scale, the body drawn from
+    // `Rectangle(5, 0, W-9, H)` with origin (84.5, 0) — i.e. centred on
+    // `spot.X` — and the 5 px / 4 px caps at `spot.X - num4*84.5 - 5` and
+    // `spot.X + num4*84.5` (`:244-248`). At Width 80 the half-span is
+    // `80/169*84.5 = 40`, so the caps ride the bar's own ends.
+    if let Some(sheet) = lookups.ui_color_bar {
+        let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+        let (sw, sh) = (sheet.width as f32, sheet.height as f32);
+        let half = BAR_W / 169.0 * 84.5;
+        let body_w = (sw - 9.0) * (BAR_W / 169.0);
+        let sx = sheet.x as f32;
+        let sy = sheet.y as f32;
+        // The stretched body (`:246`).
+        splice(r, lookups, sx + 5.0, sy, sw - 9.0, sh, spot[0] - half, spot[1], body_w, sh, aw, ah, track);
+        // The left cap (`:247`).
+        splice(r, lookups, sx, sy, 5.0, sh, spot[0] - half - 5.0, spot[1], 5.0, sh, aw, ah, track);
+        // The right cap (`:248`).
+        splice(r, lookups, sx + sw - 4.0, sy, 4.0, sh, spot[0] + half, spot[1], 4.0, sh, aw, ah, track);
+    }
+    // The fill/blip/remainder from the pure geometry (`:249-256`): the
+    // anchor is the progress TIP; the fill extends LEFT of it (origin
+    // (1, 0.5)), the black remainder RIGHT (origin (0, 0.5)), both 8 px
+    // tall centred on the anchor's Y.
+    let (tip, fill_w, rest_w, blip_on) = tracker_bar_geometry(spot, BAR_W, progress);
+    let y = tip[1] - BAR_H * 0.5;
+    r.push_ui_sprite([tip[0] - fill_w, y], [fill_w, BAR_H], r.white_uv(), fill);
+    if blip_on {
+        // The 2 px blip rides the tip with origin (1, 0.5) (`:254`).
+        r.push_ui_sprite([tip[0] - 2.0, y], [2.0, BAR_H], r.white_uv(), blip);
+    }
+    r.push_ui_sprite([tip[0], y], [rest_w, BAR_H], r.white_uv(), [0.0, 0.0, 0.0, 1.0]);
+    // The readout at `vector5.X -= num4 * 1.4f + stringSize2.X` (`:150-151`).
+    let x = anchor_x - BAR_W * 1.4 - readout_w;
+    text::hud_item_text(r, lookups, x, anchor_y, 0.75, name_color, &readout);
 }
 
 /// `FontAssets.ItemStack.Value.CreateWrappedText`'s clamp — the port has no
@@ -888,8 +1154,14 @@ mod tests {
         // The UIPanel is the container minus 110.
         assert_eq!(inner[3], p[3] - 110.0);
         let list = list_rect(&p);
-        // Width -25, Height -50, Top 50 inside the panel.
-        assert_eq!((list[0], list[2], list[3]), (p[0], p[2] - 25.0, inner[3] - 50.0));
+        // Width -25, Height -50, Top 50 against the panel's INNER rect —
+        // the 12 px left/right padding insets X and width, the zeroed
+        // PaddingTop keeps Y at the panel's own top (W4-g53).
+        assert_eq!(
+            (list[0], list[2], list[3]),
+            (p[0] + 12.0, p[2] - 24.0 - 25.0, inner[3] - 12.0 - 50.0)
+        );
+        assert_eq!(list[1], p[1] + 50.0);
         // The first row sits at the list's top; the second is a row plus the
         // 5 px ListPadding below it.
         let r0 = row_rect(&list, 0);
@@ -900,17 +1172,78 @@ mod tests {
     }
 
     #[test]
+    fn the_scrollbar_rides_the_lists_right_edge() {
+        // `UIScrollbar`: Width 20, Height -50, Top 50, HAlign 1
+        // (`UIAchievementsMenu.cs:81-86`) against the panel-inner rect.
+        let p = panel_rect(screen(), true);
+        let bar = scrollbar_rect(&p);
+        let list = list_rect(&p);
+        assert_eq!(bar[2], 20.0);
+        assert_eq!(bar[0] + bar[2], p[0] + p[2] - 12.0);
+        assert_eq!((bar[1], bar[3]), (list[1], list[3]));
+        // The list's -25 leaves the 20 px bar a 5 px gap.
+        assert_eq!(bar[0] - (list[0] + list[2]), 5.0);
+    }
+
+    #[test]
+    fn the_content_height_and_scroll_range_are_the_ui_list_walk() {
+        // `UIList.RecalculateChildren` (`UIList.cs:116-128`): N rows carry
+        // N paddings, the single row drops its own, none is zero.
+        assert_eq!(list_content_height(0), 0.0);
+        assert_eq!(list_content_height(1), ROW_H);
+        assert_eq!(list_content_height(137), 137.0 * (ROW_H + 5.0));
+        let p = panel_rect(screen(), true);
+        let list = list_rect(&p);
+        // `SetView`'s clamp bound = content - view (`UIScrollbar.cs:75`).
+        let max = max_scroll(137, &list);
+        assert_eq!(max, 137.0 * (ROW_H + 5.0) - list[3]);
+        // A single short row never scrolls.
+        assert_eq!(max_scroll(1, &list), 0.0);
+        // One wheel notch is 120 px (`UIList.cs:112`, PlayerInput's raw
+        // counter), clamped into the range.
+        assert_eq!(scroll_wheel(500.0, 1, 137, &list), 380.0);
+        assert_eq!(scroll_wheel(50.0, 1, 137, &list), 0.0);
+        assert_eq!(scroll_wheel(max - 10.0, -1, 137, &list), max);
+    }
+
+    #[test]
+    fn the_scrollbar_press_grabs_the_handle_or_jumps_the_track() {
+        let p = panel_rect(screen(), true);
+        let bar = scrollbar_rect(&p);
+        let list = list_rect(&p);
+        let content = list_content_height(137);
+        let handle = super::super::panel::scrollbar_handle_at(bar, list[3], content, 0.0);
+        // On the handle: the grab keeps the pointer offset, no jump.
+        let mid = Vec2::new(handle[0] + 10.0, handle[1] + 4.0);
+        assert_eq!(scrollbar_press(&p, 137, 0.0, mid), Some((0.0, Some(4.0))));
+        // On the track below the handle: the jump centres the handle
+        // (`UIScrollbar.cs:140`), no drag latch.
+        let track = Vec2::new(bar[0] + 10.0, bar[1] + bar[3] - 8.0);
+        let (pos, drag) = scrollbar_press(&p, 137, 0.0, track).unwrap();
+        assert!(drag.is_none());
+        assert!(pos > 0.0 && pos <= max_scroll(137, &list));
+        // Off the bar entirely: not the scrollbar's press.
+        assert_eq!(scrollbar_press(&p, 137, 0.0, Vec2::new(bar[0] - 5.0, bar[1])), None);
+        // A single-row list has no scrollable bar.
+        assert_eq!(scrollbar_press(&p, 1, 0.0, mid), None);
+        // The drag frame follows the pointer with the latched offset.
+        let dragged = scrollbar_drag(&p, 137, 4.0, handle[1] + 4.0 + 120.0);
+        assert!(dragged > 0.0);
+    }
+
+    #[test]
     fn the_back_and_category_panels_sit_in_the_container() {
         let p = panel_rect(screen(), true);
         let back = back_rect(&p);
         // Width -10 at 0.5, Height 50, Top -45 above the container's bottom.
         assert_eq!(back[2], p[2] * 0.5 - 10.0);
         assert_eq!(back[1] + back[3], p[1] + p[3] - 45.0);
-        // The four toggles: 32 px, `Left = j * 36 + 8`, Top 10, in a row.
+        // The four toggles: 32 px, `Left = j * 36 + 8` inside the strip,
+        // which rides the panel's 12 px left padding (W4-g53).
         let cats = category_rects(&p);
         for j in 0..4 {
             assert_eq!(cats[j][2], CAT_SIZE);
-            assert_eq!(cats[j][0], p[0] + j as f32 * 36.0 + 8.0);
+            assert_eq!(cats[j][0], p[0] + 12.0 + j as f32 * 36.0 + 8.0);
             assert_eq!(cats[j][1], p[1] + 10.0);
         }
     }
@@ -1038,7 +1371,9 @@ mod tests {
         let list = list_rect(&p);
         let rows = 137;
         let max = max_scroll(rows, &list);
-        let expected = rows as f32 * (ROW_H + 5.0) - list[3] - 5.0;
+        // `UIList`'s content height carries the trailing padding
+        // (`UIList.cs:125-127`), so the bound is N*(ROW_H+5) - view.
+        let expected = rows as f32 * (ROW_H + 5.0) - list[3];
         assert!((max - expected).abs() < 0.001);
         assert!(max > 0.0);
         // The last row is reachable at the maximum scroll.

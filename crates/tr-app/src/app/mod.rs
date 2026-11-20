@@ -314,11 +314,18 @@ pub(crate) struct App {
     /// menu/world backdrop, opened from `Lang.menu[131]` (`Main.cs:48931`)
     /// or `TR_ACHIEVEMENTS=1`.
     pub(crate) achievements_open: bool,
-    /// The list's scroll, in px (`UIList._scrollPosition`'s stand-in).
+    /// The list's scroll, in px (`UIScrollbar._viewPosition` via
+    /// `UIList.DrawSelf`'s `_innerList.Top`, `UIList.cs:181`).
     pub(crate) achievements_scroll: f32,
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
+    /// The scrollbar's drag latch (`UIScrollbar._isDragging`/`_dragYOffset`,
+    /// `UIScrollbar.cs:126-149`): `Some(offset)` while the handle is held.
+    pub(crate) achievements_scroll_drag: Option<f32>,
+    /// The Back panel's hover-sound latch (`FadedMouseOver` fires sound 12
+    /// once per hover edge, `UIAchievementsMenu.cs:150-155`).
+    pub(crate) achievements_back_sounded: bool,
     /// `InGameNotificationsTracker._notifications`
     /// (`UI/InGameNotificationsTracker.cs:13`) — the achievement-unlock
     /// popups (S1-E-26 wave A). The `OnAchievementCompleted` subscriber
@@ -3750,6 +3757,8 @@ impl App {
                 let mask = crate::env::achievements_categories().unwrap_or(0xF);
                 [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0, mask & 8 != 0]
             },
+            achievements_scroll_drag: None,
+            achievements_back_sounded: false,
             // `InGameNotificationsTracker`'s static list starts empty
             // (`InGameNotificationsTracker.cs:109-112`).
             notifications: ui::notifications::NotificationsTracker::default(),

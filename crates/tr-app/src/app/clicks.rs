@@ -1200,9 +1200,11 @@ impl App {
     }
 
     /// The achievements menu's clicks (`UIAchievementsMenu`'s
-    /// `GoBackClick`/`FilterList`/`FadedMouseOver`): the Back panel closes
-    /// the overlay, a category toggle flips the filter, the wheel scrolls
-    /// the list. Consumes the press on every hit.
+    /// `GoBackClick`/`FilterList` + the attached `UIScrollbar`'s
+    /// `LeftMouseDown`): the scrollbar takes a press on its own rect first
+    /// (`evt.Target == this`, `UIScrollbar.cs:129`), then the Back panel
+    /// closes the overlay, then a category toggle flips the filter (sound
+    /// 12, `FilterList` `:165`). Consumes the press on every hit.
     pub(crate) fn handle_achievements_clicks(&mut self) {
         let left = self.ui_left_press;
         if !left {
@@ -1214,22 +1216,77 @@ impl App {
             // `OnActivate`'s `Main.gameMenu` arm decides the container's Top.
             let game_menu = self.menu.is_some();
             let panel = ui::achievements::panel_rect(screen, game_menu);
+            // `UIScrollbar.LeftMouseDown` — the handle grab or track jump.
+            let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+            if let Some((pos, drag)) = ui::achievements::scrollbar_press(
+                &panel,
+                rows.len(),
+                self.achievements_scroll,
+                self.mouse_pos,
+            ) {
+                self.achievements_scroll = pos;
+                self.achievements_scroll_drag = drag;
+                self.ui_left_press = false;
+                return;
+            }
             // The Back panel closes the state (`GoBackClick` -> `IngameFancyUI.Close()`).
             if ui::achievements::back_hit(&panel, self.mouse_pos) {
                 self.achievements_open = false;
                 self.achievements_categories = [true; 4];
                 self.achievements_scroll = 0.0;
+                self.achievements_scroll_drag = None;
                 self.ui_left_press = false;
                 return;
             }
-            // `FilterList` — a toggle flips and the list rebuilds.
+            // `FilterList` — a toggle flips and the list rebuilds (`:163-175`).
             if let Some(j) = ui::achievements::category_at(&panel, self.mouse_pos) {
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:165`)
                 self.achievements_categories[j] = !self.achievements_categories[j];
-                self.achievements_scroll = 0.0;
+                // `FilterList` does NOT reset the scroll — `Recalculate`'s
+                // `SetView` clamp keeps the position in the new range
+                // (`UIList.cs:104`, `UIScrollbar.cs:75`).
+                let list = ui::achievements::list_rect(&panel);
+                let now_rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+                self.achievements_scroll = self
+                    .achievements_scroll
+                    .clamp(0.0, ui::achievements::max_scroll(now_rows.len(), &list));
                 self.ui_left_press = false;
                 return;
             }
             self.ui_left_press = false;
+        }
+    }
+
+    /// The achievements scrollbar's drag frame (`UIScrollbar.DrawSelf`'s
+    /// `_isDragging` arm, `UIScrollbar.cs:109-112`): while the handle is
+    /// held the view follows the pointer with the latched grab offset.
+    pub(crate) fn achievements_scrollbar_drag(&mut self) {
+        let Some(offset) = self.achievements_scroll_drag else {
+            return;
+        };
+        let (sw, sh) = self.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), self.menu.is_some());
+        let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
+        self.achievements_scroll =
+            ui::achievements::scrollbar_drag(&panel, rows.len(), offset, self.mouse_pos.y);
+    }
+
+    /// The achievements overlay's hover edge (`FadedMouseOver`,
+    /// `UIAchievementsMenu.cs:150-155`): sound 12 fires once when the
+    /// pointer enters the Back panel; the latch clears on mouse-out.
+    pub(crate) fn achievements_hover_tick(&mut self) {
+        if !self.achievements_open {
+            self.achievements_back_sounded = false;
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), self.menu.is_some());
+        let hovered = ui::achievements::back_hit(&panel, self.mouse_pos);
+        if ui::elements::GroupOptionButtonState::hover_sound_tick(
+            hovered,
+            &mut self.achievements_back_sounded,
+        ) {
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:152`)
         }
     }
 
@@ -1242,6 +1299,8 @@ impl App {
     pub(crate) fn open_achievements_and_goto(&mut self, name: &str) {
         self.achievements_open = true;
         self.achievements_categories = [true; 4];
+        self.achievements_scroll_drag = None;
+        self.achievements_back_sounded = false;
         let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
         let idx = rows
             .iter()
@@ -1257,9 +1316,11 @@ impl App {
         self.achievements_scroll = top.clamp(0.0, max);
     }
 
-    /// The achievements list's wheel scroll (`UIList`'s scrollbar, driven by
-    /// the mouse wheel here — `UIScrollbar.SetView(100f, 1000f)` is the
-    /// vanilla control; the port's wheel is the documented stand-in).
+    /// The achievements list's wheel scroll (`UIList.ScrollWheel`,
+    /// `UIList.cs:107-114`): `ViewPosition -= ScrollWheelValue` — one detent
+    /// is 120 raw px (`char_select::WHEEL_STEP`), clamped by `SetView`. The
+    /// `UIInnerList` answers `ContainsPoint` with `true` (`UIList.cs:16-19`),
+    /// so the list rect and the attached scrollbar are the targets.
     pub(crate) fn scroll_achievements(&mut self, delta: f32) {
         if !self.achievements_open {
             return;
@@ -1269,15 +1330,15 @@ impl App {
         let game_menu = self.menu.is_some();
         let panel = ui::achievements::panel_rect(screen, game_menu);
         let list = ui::achievements::list_rect(&panel);
-        let rows = self
-            .achievements
-            .list
-            .iter()
-            .filter(|a| ui::achievements::filter_visible(&self.achievements_categories, a.category))
-            .count();
-        let max = ui::achievements::max_scroll(rows, &list);
+        let bar = ui::achievements::scrollbar_rect(&panel);
+        let m = self.mouse_pos;
+        let over = |r: [f32; 4]| m.x >= r[0] && m.x <= r[0] + r[2] && m.y >= r[1] && m.y <= r[1] + r[3];
+        if !over(list) && !over(bar) {
+            return;
+        }
+        let rows = ui::achievements::visible_rows(&self.achievements, &self.achievements_categories);
         self.achievements_scroll =
-            (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0)).clamp(0.0, max);
+            ui::achievements::scroll_wheel(self.achievements_scroll, delta.round() as i32, rows.len(), &list);
     }
 
     /// `DrawInterface_38_MouseCarriedObject`'s click tail
@@ -2744,6 +2805,8 @@ impl App {
                 self.achievements_open = true;
                 self.achievements_scroll = 0.0;
                 self.achievements_categories = [true; 4];
+                self.achievements_scroll_drag = None;
+                self.achievements_back_sounded = false;
                 // The menu row's `SoundEngine.PlaySound(10)` already fired in
                 // `Menu::click`.
             }
@@ -2864,6 +2927,119 @@ mod tests {
         app.handle_bestiary_clicks();
         assert!(app.emotes.menu_open, "the bestiary's box is not the wheel's");
         assert!(app.ui_left_press, "the press stays unconsumed");
+    }
+
+    /// W4-g53 witness: the achievements scrollbar is a real `UIScrollbar`
+    /// (`UIAchievementsMenu.cs:81-87`) — a press on the handle latches the
+    /// grab offset (`UIScrollbar.cs:134-135`), the drag frame follows the
+    /// pointer (`:109-112`), and a track press jumps without a latch
+    /// (`:137-141`).
+    #[test]
+    fn g53_the_achievements_scrollbar_grabs_drags_and_jumps() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let bar = ui::achievements::scrollbar_rect(&panel);
+        let list = ui::achievements::list_rect(&panel);
+        let content = ui::achievements::list_content_height(137);
+        let handle = ui::panel::scrollbar_handle_at(bar, list[3], content, 0.0);
+        // The handle grab: offset 4 into the handle, no position change.
+        app.mouse_pos = Vec2::new(handle[0] + 10.0, handle[1] + 4.0);
+        app.ui_left_press = true;
+        app.handle_achievements_clicks();
+        assert_eq!(app.achievements_scroll_drag, Some(4.0));
+        assert_eq!(app.achievements_scroll, 0.0);
+        assert!(!app.ui_left_press, "the bar consumed the press");
+        // The drag frame moves the view by the pointer's travel.
+        app.mouse_pos.y += 120.0;
+        app.achievements_scrollbar_drag();
+        assert!(app.achievements_scroll > 0.0);
+        let dragged = app.achievements_scroll;
+        // The track jump: no latch, the handle centres under the pointer.
+        app.achievements_scroll_drag = None;
+        app.achievements_scroll = 0.0;
+        app.mouse_pos = Vec2::new(bar[0] + 10.0, bar[1] + bar[3] - 8.0);
+        app.ui_left_press = true;
+        app.handle_achievements_clicks();
+        assert_eq!(app.achievements_scroll_drag, None);
+        assert!(app.achievements_scroll > dragged.min(1.0));
+        assert!(app.achievements_scroll <= ui::achievements::max_scroll(137, &list));
+    }
+
+    /// W4-g53 witness: `FilterList` (`UIAchievementsMenu.cs:163-175`) plays
+    /// sound 12, flips the toggle and does NOT reset the scroll — the
+    /// `Recalculate`/`SetView` clamp keeps the position inside the new
+    /// range (`UIList.cs:104`, `UIScrollbar.cs:75`).
+    #[test]
+    fn g53_the_filter_toggle_sounds_and_clamps_the_scroll() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let list = ui::achievements::list_rect(&panel);
+        // Park the view deep in the all-categories list (past the shorter
+        // filtered list's range, inside the full one's).
+        app.achievements_scroll = 14000.0;
+        let cat = ui::achievements::category_rects(&panel)[0];
+        app.mouse_pos = Vec2::new(cat[0] + 16.0, cat[1] + 16.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_achievements_clicks();
+        assert!(!app.achievements_categories[0], "the Slayer toggle flipped");
+        assert_eq!(app.audio.played_count(), before + 1, "sound 12 (`:165`)");
+        // 31 Slayer rows + the kept None row survive; the scroll clamps to
+        // THEIR range instead of resetting to zero.
+        let rows = ui::achievements::visible_rows(&app.achievements, &app.achievements_categories);
+        let max = ui::achievements::max_scroll(rows.len(), &list);
+        assert_eq!(app.achievements_scroll, max);
+        assert!(max < 14000.0, "the shorter list shrank the range");
+    }
+
+    /// W4-g53 witness: the wheel is `UIList.ScrollWheel` — 120 raw px per
+    /// detent (`UIList.cs:112`, `PlayerInput.cs:898-899`), only while the
+    /// pointer rides the list or the bar (`UIInnerList.ContainsPoint`,
+    /// `UIList.cs:16-19`).
+    #[test]
+    fn g53_the_wheel_walks_120_px_per_detent_on_the_list() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let list = ui::achievements::list_rect(&panel);
+        app.mouse_pos = Vec2::new(list[0] + 100.0, list[1] + 100.0);
+        app.scroll_achievements(-1.0); // one detent down
+        assert_eq!(app.achievements_scroll, 120.0);
+        app.scroll_achievements(1.0); // and back up
+        assert_eq!(app.achievements_scroll, 0.0);
+        // Off the list AND the bar: the wheel is not the list's.
+        app.mouse_pos = Vec2::new(5.0, 5.0);
+        app.scroll_achievements(-1.0);
+        assert_eq!(app.achievements_scroll, 0.0);
+    }
+
+    /// W4-g53 witness: the Back panel's `FadedMouseOver` sound-12 edge
+    /// (`UIAchievementsMenu.cs:150-155`) fires once per hover entry, the
+    /// latch holds while hovered and re-arms on mouse-out.
+    #[test]
+    fn g53_the_back_hover_sounds_once_per_edge() {
+        let mut app = inv_app();
+        app.achievements_open = true;
+        let (sw, sh) = app.screen_size();
+        let panel = ui::achievements::panel_rect(Vec2::new(sw, sh), false);
+        let back = ui::achievements::back_rect(&panel);
+        app.mouse_pos = Vec2::new(back[0] + 10.0, back[1] + 10.0);
+        let before = app.audio.played_count();
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 1, "the entry edge");
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 1, "the latch holds");
+        // Mouse-out re-arms; re-entry sounds again.
+        app.mouse_pos = Vec2::new(5.0, 5.0);
+        app.achievements_hover_tick();
+        app.mouse_pos = Vec2::new(back[0] + 10.0, back[1] + 10.0);
+        app.achievements_hover_tick();
+        assert_eq!(app.audio.played_count(), before + 2);
     }
 
     #[test]

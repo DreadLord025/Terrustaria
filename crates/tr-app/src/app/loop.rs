@@ -256,6 +256,8 @@ impl ApplicationHandler for App {
                             self.achievements_open = false;
                             self.achievements_categories = [true; 4];
                             self.achievements_scroll = 0.0;
+                            self.achievements_scroll_drag = None;
+                            self.achievements_back_sounded = false;
                             return;
                         }
                         if self.menu.is_some() {
@@ -436,6 +438,12 @@ impl ApplicationHandler for App {
                             // bars drag off this flag (`Main.cs:51533-51576`),
                             // held between the press and release events.
                             m.mouse_down = pressed;
+                            if !pressed {
+                                // `UIScrollbar.LeftMouseUp` — the achievements
+                                // bar's drag latch clears on release in the
+                                // menu arm too (the world arm's twin below).
+                                self.achievements_scroll_drag = None;
+                            }
                             if pressed {
                                 // `UIAchievementsMenu` rides over the legacy menu
                                 // (`Main.MenuUI.SetState`), so its Back and filter
@@ -509,6 +517,10 @@ impl ApplicationHandler for App {
                         if !pressed {
                             #[cfg(feature = "debug")]
                             crate::debug_panel::end_drag(self);
+                            // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
+                            // the achievements bar's drag latch clears on
+                            // release (the front screens' twin rides above).
+                            self.achievements_scroll_drag = None;
                             // S1-P-i54 — `TriggersSet.CopyInto`
                             // (`TriggersSet.cs:844-847`): the left release
                             // clears `Main.blockMouse`, so the next press
@@ -582,6 +594,13 @@ impl ApplicationHandler for App {
                 // while the handle is held the view follows the pointer.
                 if self.front_scroll_drag.is_some() {
                     self.front_scrollbar_drag();
+                }
+                // The achievements overlay's twins: the scrollbar drag and
+                // the Back panel's `FadedMouseOver` sound-12 edge
+                // (`UIAchievementsMenu.cs:150-155`).
+                if self.achievements_open {
+                    self.achievements_scrollbar_drag();
+                    self.achievements_hover_tick();
                 }
                 // Bug 17: the front-end hover edge — `FadedMouseOver`'s
                 // menu tick (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`)
