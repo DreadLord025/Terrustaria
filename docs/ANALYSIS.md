@@ -39244,3 +39244,31 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Projectile gore sites (W4-g16)
+
+Code-only wave port of every `Gore.NewGore*` call site in `Projectile.cs`
+(165 sites, censused 2026-11-21 by direct grep of the decompiled file —
+the junction is never recursed). The NPC-file gore table is W4-d55/e5/f10
+(`npc_hit_effect_a.rs`); the `Main.cs`/`Player.cs` world+player sites are
+W4-g17. This lane owns ONLY the projectile-file sites, landed in 10-site
+commits, source order, one module per wave (`projectile_gore_a.rs`, ...).
+
+Contract (the `npc_hit_effect_a.rs` precedent): each site fn takes the
+slot's `Projectile`, the `GorePool`, the caller's `UnifiedRandom` (the
+`Main.UpdateProjectiles` stream — NOT a new stream) and the `World`; the
+explicit argument draws evaluate before the pool call, the `NewGore`
+kicks (`Gore.cs:1327-1328`) roll inside `GorePool::new_gore`, and the
+post-spawn writes land on the returned slot, sentinel included. The dust
+bodies interleaved with the gore rows are the dust lanes' documented
+skip; a dust GATE roll that precedes a gore gate on the same stream IS
+consumed (enchant-7's `Next(20)`, `:17441`). Screen-gated trails resolve
+the padded-screen hitbox test through `TrailCtx.on_screen` (the caller's
+screen seam); the C# `&&` short-circuit means an off-screen trail draws
+NOTHING. The anniversary 12/955 arm draws BOTH SelectRandom picks
+(`:23975-23978`), the second value wins. The `:23990` inner gate lists
+726 twice and omits 724 — the wiring dispatch must reproduce that quirk.
+
+Wave A (sites 1-10): `projectile_gore_a.rs`, 5 witnesses written not run.
+Remainder: sites 11-165 (waves B+), the UpdateProjectiles slot dispatch
+(the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
