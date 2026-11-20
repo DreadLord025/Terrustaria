@@ -48,6 +48,8 @@
 //! | 162-165 | `:82600-82603` | the 541 Sand Elemental death (4 gores 960/961/963/962, tinted 60-dust burst) |
 //! | 166-168 | `:82650-82652` | the 546 Tumbleweed death (3 gores 964/965/966, tinted 40-dust + 20 type-54 burst) |
 //! | 169-174 | `:82676` | the 437 Cultist Tablet `dmg == 9999` burst (6 gores 728-733, RotatedByRandom velocity) |
+//! | 175-177 | `:82743` | the 513-515 Tomb Crawler death (1 gore each, type-513+822, alpha copy) |
+//! | 178-180 | `:82762` | the 510-512 Dune Splicer death (1 gore each, type-510+819, alpha copy) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -720,6 +722,73 @@ fn cultist_tablet_burst(
     }
 }
 
+/// The 513-515 Tomb Crawler death (`NPC.cs:82739-82744`, sites 175-177):
+/// the 50-dust type-250 burst (SpeedY -2, alpha/color/scale from the NPC),
+/// then ONE gore of type `this.type - 513 + 822` at position with
+/// `Main.gore[num].alpha = this.alpha` post-write. The three segments
+/// (513/514/515) map to gores 822/823/824.
+///
+/// `this.color` stand-in: the worm kinds set NO color in `SetDefaults`
+/// (`NPC.cs:8526` `this.color = default`), so the dust color is
+/// `Color::default()` (all-zero); the port's `Npc` carries `alpha` but no
+/// color field (the wave-A `HitEffectInputs` stand-in convention).
+fn tomb_crawler_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    // `:82739-82742` — the 50-dust type-250 burst (SpeedY -2).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 250, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    // `:82743-82744` — the single gore + the alpha copy.
+    let ty = npc_type - 513 + 822;
+    let idx = gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), ty, 1.0);
+    gore.slot_mut(idx).alpha = alpha;
+}
+
+/// The 510-512 Dune Splicer death (`NPC.cs:82758-82763`, sites 178-180):
+/// the 50-dust type-250 burst (SpeedY -2), then ONE gore of type
+/// `this.type - 510 + 819` with the alpha copy. The three segments
+/// (510/511/512) map to gores 819/820/821. Same shape as the Tomb Crawler,
+/// different base/type offset.
+fn dune_splicer_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    // `:82758-82761` — the 50-dust type-250 burst (SpeedY -2).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 250, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    // `:82762-82763` — the single gore + the alpha copy.
+    let ty = npc_type - 510 + 819;
+    let idx = gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), ty, 1.0);
+    gore.slot_mut(idx).alpha = alpha;
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -816,6 +885,14 @@ pub fn hit_effect_c(
     // on the exact `dmg == 9999.0` double compare (NOT life <= 0).
     if npc_type == 437 && dmg == 9999.0 {
         cultist_tablet_burst(npc, gore, rng, world);
+    }
+    // `:82728-82746` — the 513-515 Tomb Crawler arm (sites 175-177).
+    if (513..=515).contains(&npc_type) && npc.hp <= 0 {
+        tomb_crawler_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82747-82765` — the 510-512 Dune Splicer arm (sites 178-180).
+    if (510..=512).contains(&npc_type) && npc.hp <= 0 {
+        dune_splicer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -1337,6 +1414,46 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the tablet burst mirrors the C# draws");
+    }
+
+    /// `NPC.cs:82743-82744` — the Tomb Crawler death: one gore per segment
+    /// (513/514/515 -> 822/823/824) with the alpha copy, after the 50-dust
+    /// type-250 burst. The color stand-in is default (the worm kinds set no
+    /// SetDefaults color).
+    #[test]
+    fn w4_f10_the_tomb_crawler_death_maps_the_segments() {
+        let w = air();
+        for (ty, gore_ty) in [(513, 822), (514, 823), (515, 824)] {
+            let mut n = boss(100.0, 100.0, 22.0, 22.0);
+            n.alpha = 120;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(73);
+            tomb_crawler_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "segment {ty}");
+            assert_eq!(gore.slot(0).alpha, 120);
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            // The 50-dust type-250 burst ran.
+            let dust_active = dust.slots().iter().filter(|d| d.active).count();
+            assert!(dust_active >= 40, "the burst spawned: {dust_active}");
+        }
+    }
+
+    /// `NPC.cs:82762-82763` — the Dune Splicer death: one gore per segment
+    /// (510/511/512 -> 819/820/821) with the alpha copy.
+    #[test]
+    fn w4_f10_the_dune_splicer_death_maps_the_segments() {
+        let w = air();
+        for (ty, gore_ty) in [(510, 819), (511, 820), (512, 821)] {
+            let mut n = boss(100.0, 100.0, 34.0, 34.0);
+            n.alpha = 0;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(79);
+            dune_splicer_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, -1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "segment {ty}");
+            assert_eq!(gore.slot(0).alpha, 0);
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
