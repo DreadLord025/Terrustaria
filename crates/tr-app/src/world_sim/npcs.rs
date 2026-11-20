@@ -4733,7 +4733,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let kind = app.world.tile(tx, ty).map(|t| t.kind);
         if kind == Some(10) {
             let mut drops = Vec::new();
-            let opened = tr_core::edit::open_door(&mut app.world, tx, ty, dir, &mut drops);
+            let opened = tr_core::edit::open_door(&mut app.world, tx, ty, dir, &mut drops, None);
             if !opened {
                 // `:60062-60066` — the refusal: the idle counter jumps to
                 // num57 (60 for the zombie family), blocking the chase

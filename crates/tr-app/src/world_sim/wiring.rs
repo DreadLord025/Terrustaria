@@ -341,6 +341,19 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
             );
         }
+        // W4-f11 — the door/trapdoor/tall-gate open/close cues
+        // (`HitWireSingle`'s 10/11/386/387/388/389 arms → `WorldGen.OpenDoor`
+        // `:37727` / `CloseDoor` `:31908` / `ShiftTrapdoor` / `ShiftTallGate`):
+        // the case-8/9 pitch draw rides the same `UpdateWorldGen` swap as the
+        // switch clicks (the wiring tick's stage).
+        for (open, px, py) in app.wiring.take_door_sounds() {
+            app.audio.play_door_sound(
+                open,
+                px as f32,
+                py as f32,
+                app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+            );
+        }
     });
     for _ in 0..party_credits {
         let _ = app.notify_progression_net(25);

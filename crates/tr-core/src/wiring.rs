@@ -297,6 +297,15 @@ pub struct Wiring {
     /// [`Self::rand`] — so the app layer drains these and plays them on its
     /// stage's named stream (`take_statue_spawns`' event-queue seam).
     switch_clicks: Vec<(i32, i32)>,
+    /// The door/trapdoor/tall-gate open/close sounds of the W4-f11 arms
+    /// (`Wiring.cs:1423-1488` → `WorldGen.OpenDoor` `:37727` / `CloseDoor`
+    /// `:31908` / `ShiftTrapdoor` `:51470`/`:51512`/`:51563`/`:51594` /
+    /// `ShiftTallGate` `:51762`): `(open, x, y)` in world pixels, queued in
+    /// play order. `open` true = the case-8 cue, false = case-9 (the door
+    /// family's one `Next(-20,21)*0.01` pitch draw, `LegacySoundPlayer.cs:728-
+    /// 749`). The draw rides the CALLER's stream (the wiring tick's
+    /// `UpdateWorldGen` swap), so the app drains these like `switch_clicks`.
+    door_sounds: Vec<(bool, i32, i32)>,
 }
 
 /// A device shot request: one `Projectile.NewProjectile` call from the device
@@ -772,6 +781,15 @@ impl Wiring {
     /// wiring stand-in stream.
     pub fn take_switch_clicks(&mut self) -> Vec<(i32, i32)> {
         std::mem::take(&mut self.switch_clicks)
+    }
+
+    /// Drains the door/trapdoor/tall-gate open/close sounds queued by the
+    /// W4-f11 arms (`(open, x, y)`, world pixels, play order). The caller
+    /// plays each through `Audio::play_door_sound` on ITS stage's stream
+    /// (the `switch_clicks` precedent — the pitch draw is the caller's
+    /// `Main.rand`, never the wiring stand-in).
+    pub fn take_door_sounds(&mut self) -> Vec<(bool, i32, i32)> {
+        std::mem::take(&mut self.door_sounds)
     }
 
     /// Drains the trap emission requests (the case-137 trap family).
@@ -2624,6 +2642,94 @@ impl Wiring {
                     crate::minecart::flip_switch_track(world, i, j);
                 }
             }
+            // The open door (11 → 10, `Wiring.cs:1461-1468`): `CloseDoor
+            // (forced: true)` — the wire skips the EmptyTile occupancy gate.
+            // The case-9 cue queues on success (`WorldGen.cs:31908`).
+            11 => {
+                let mut drops = Vec::new();
+                let mut skips = Vec::new();
+                let no_blocker = |_: i32, _: i32| false;
+                let closed = crate::edit::close_door(
+                    world,
+                    i,
+                    j,
+                    true,
+                    &no_blocker,
+                    &mut drops,
+                    if self.running { Some(&mut skips) } else { None },
+                );
+                self.actuation_drops.extend(drops);
+                self.skip.extend(skips);
+                if closed {
+                    self.door_sounds.push((false, i * 16, j * 16));
+                }
+            }
+            // The closed door (10 → 11, `Wiring.cs:1469-1488`): ONE
+            // `Main.rand.Next(2)` picks the direction (0 → −1, else +1), then
+            // `OpenDoor` tries it and retries the opposite on refusal. The
+            // case-8 cue queues on either success (`WorldGen.cs:37727`). The
+            // draw rides the wiring stream (the `Main.rand` at the
+            // `HitWireSingle` site, the S1-L-6c contract).
+            10 => {
+                let mut num67 = 1i32;
+                if self.rand_next(2) == 0 {
+                    num67 = -1;
+                }
+                let mut drops = Vec::new();
+                let mut skips = Vec::new();
+                let opened = crate::edit::open_door(
+                    world,
+                    i,
+                    j,
+                    num67,
+                    &mut drops,
+                    if self.running { Some(&mut skips) } else { None },
+                ) || crate::edit::open_door(
+                    world,
+                    i,
+                    j,
+                    -num67,
+                    &mut drops,
+                    if self.running { Some(&mut skips) } else { None },
+                );
+                self.actuation_drops.extend(drops);
+                self.skip.extend(skips);
+                if opened {
+                    self.door_sounds.push((true, i * 16, j * 16));
+                }
+            }
+            // The trapdoor pair (386/387, `Wiring.cs:1440-1453`):
+            // `ShiftTrapdoor(playerAbove: true)` first; on refusal the negated
+            // `playerAbove: false` attempt. The `num66` direction feeds the
+            // MP `SendData(19)` only (not ported); the shift itself is the
+            // world change. The case-8/9 cues queue inside the shift.
+            386 | 387 => {
+                self.wire_trapdoor(world, i, j);
+            }
+            // The tall gate pair (388/389, `Wiring.cs:1454-1460`):
+            // `ShiftTallGate(closing: type == 389)` — the open gate (389)
+            // closes, the closed (388) opens. The case-8 cue queues on
+            // success (`WorldGen.cs:51762`).
+            388 | 389 => {
+                let mut drops = Vec::new();
+                let mut skips = Vec::new();
+                let no_blocker = |_: i32, _: i32| false;
+                let shifted = crate::edit::shift_tall_gate(
+                    world,
+                    i,
+                    j,
+                    kind == 389,
+                    false,
+                    &no_blocker,
+                    &mut drops,
+                    if self.running { Some(&mut skips) } else { None },
+                );
+                self.actuation_drops.extend(drops);
+                self.skip.extend(skips);
+                if shifted {
+                    self.door_sounds.push((true, i * 16 + 16, j * 16 + 16));
+                }
+            }
             // The weighted pressure-plate's big frame shift (506, `:2503-
             // 2531`): the 2×3 anchor from `frameY / 18 % 3`, the active+same-
             // kind validation over the sprite, then the frameX ±72.
@@ -2825,6 +2931,45 @@ impl Wiring {
                 self.skip.insert((x, y)); // `Wiring.SkipWire` (`:3060-3063`)
                 world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num5);
             }
+        }
+    }
+
+    /// The trapdoor wire arm (`Wiring.cs:1440-1453`): `ShiftTrapdoor
+    /// (playerAbove: true)` first, the negated attempt on refusal. The C#
+    /// `num66` direction feeds only the MP `SendData(19)` (not ported); the
+    /// shift's own case-8/9 cues (`WorldGen.cs:51470`/`:51512`/`:51563` open,
+    /// `:51594` the final refusal) queue here. The port folds the shift's
+    /// sound sites into one cue per attempt outcome: a successful shift plays
+    /// case 8 at the anchor, the all-refused path plays case 9 at the hit cell.
+    fn wire_trapdoor(&mut self, world: &mut World, i: i32, j: i32) {
+        let no_blocker = |_: i32, _: i32| false;
+        let mut drops = Vec::new();
+        let mut skips = Vec::new();
+        let shifted = crate::edit::shift_trapdoor(
+            world,
+            i,
+            j,
+            true,
+            -1,
+            &no_blocker,
+            &mut drops,
+            if self.running { Some(&mut skips) } else { None },
+        ) || crate::edit::shift_trapdoor(
+            world,
+            i,
+            j,
+            false,
+            -1,
+            &no_blocker,
+            &mut drops,
+            if self.running { Some(&mut skips) } else { None },
+        );
+        self.actuation_drops.extend(drops);
+        self.skip.extend(skips);
+        if shifted {
+            self.door_sounds.push((true, i * 16 + 16, j * 16 + 16));
+        } else {
+            self.door_sounds.push((false, i * 16, j * 16));
         }
     }
 
@@ -6298,6 +6443,169 @@ mod w4_f11_light_pair_tests {
         }
         wiring.hit_wire_single(&mut w, 10, 20);
         assert_eq!(w.tile_frame_x(10, 20), 2, "after the cooldown the flip runs again");
+    }
+}
+
+#[cfg(test)]
+mod w4_f11_door_gate_tests {
+    //! W4-f11 — the HitWireSingle remainder arms, batch 2: the doors 10/11
+    //! (`Wiring.cs:1461-1488`), the trapdoors 386/387 (`:1440-1453` →
+    //! `WorldGen.ShiftTrapdoor` `:51447-51596`) and the tall gates 388/389
+    //! (`:1454-1460` → `ShiftTallGate` `:51723-51775`). Witnesses WRITTEN
+    //! NOT RUN (code-only mode).
+
+    use super::*;
+    use crate::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> World {
+        let mut w = World::new("t".into(), 64, 64);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// A 1×3 closed door (10) at column 10, rows 17..=19, with a stone floor
+    /// at row 20 and ceiling at row 16 (the doorway_world shape).
+    fn closed_door(w: &mut World) {
+        for dy in 0..3i32 {
+            put(w, 10, 17 + dy, 10, 0, (dy * 18) as i16);
+        }
+        for x in 0..64 {
+            put(w, x, 20, 1, 0, 0);
+            put(w, x, 16, 1, 0, 0);
+        }
+    }
+
+    /// The closed door opens on a wire hit (`Wiring.cs:1469-1488`): one
+    /// `Next(2)` direction draw, `OpenDoor` + the opposite retry. The case-8
+    /// cue queues; the six open cells become kind 11.
+    #[test]
+    fn w4_f11_the_closed_door_opens_on_a_wire_hit() {
+        let mut w = world();
+        closed_door(&mut w);
+        let mut wiring = Wiring::new();
+        wiring.seed_rand(7);
+        wiring.hit_wire_single(&mut w, 10, 18);
+        // Either direction opens (the retry covers the blocked side); the
+        // hinge column 10 stays kind 11 and the lean column fills.
+        let open_cells: Vec<_> = (17..20)
+            .flat_map(|y| [(10, y), (11, y), (9, y)])
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 11))
+            .collect();
+        assert_eq!(open_cells.len(), 6, "the 2×3 open door was written");
+        let sounds = wiring.take_door_sounds();
+        assert_eq!(sounds.len(), 1, "one open cue");
+        assert!(sounds[0].0, "the case-8 (open) cue");
+    }
+
+    /// The open door closes on a wire hit (`Wiring.cs:1461-1468`):
+    /// `CloseDoor(forced: true)` skips the occupancy gate. The case-9 cue
+    /// queues; the hinge column returns to kind 10.
+    #[test]
+    fn w4_f11_the_open_door_closes_on_a_wire_hit() {
+        let mut w = world();
+        closed_door(&mut w);
+        let mut wiring = Wiring::new();
+        wiring.seed_rand(7);
+        // Open it first.
+        wiring.hit_wire_single(&mut w, 10, 18);
+        wiring.take_door_sounds();
+        // Now hit an open cell — it closes.
+        let open_cell = (17..20)
+            .flat_map(|y| [(10, y), (11, y), (9, y)])
+            .find(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 11))
+            .expect("an open cell");
+        wiring.hit_wire_single(&mut w, open_cell.0, open_cell.1);
+        assert!(
+            w.tile(10, 17).is_some_and(|t| t.active() && t.kind == 10),
+            "the hinge column closed back to 10"
+        );
+        let sounds = wiring.take_door_sounds();
+        assert_eq!(sounds.len(), 1, "one close cue");
+        assert!(!sounds[0].0, "the case-9 (close) cue");
+    }
+
+    /// The door direction draw is deterministic per seed (the `Next(2)` rides
+    /// the wiring stream, `Wiring.cs:1472`).
+    #[test]
+    fn w4_f11_the_door_direction_draw_is_deterministic() {
+        let run = |seed: u64| {
+            let mut w = world();
+            closed_door(&mut w);
+            let mut wiring = Wiring::new();
+            wiring.seed_rand(seed);
+            wiring.hit_wire_single(&mut w, 10, 18);
+            // The lean column: 11 (right) or 9 (left).
+            let right = w.tile(11, 17).is_some_and(|t| t.active() && t.kind == 11);
+            let left = w.tile(9, 17).is_some_and(|t| t.active() && t.kind == 11);
+            (right, left)
+        };
+        assert_eq!(run(7), run(7), "the same seed opens the same way");
+    }
+
+    /// The tall gate opens/closes on a wire hit (`Wiring.cs:1454-1460`):
+    /// `ShiftTallGate(closing: type == 389)`. The 1×5 column swaps kind.
+    #[test]
+    fn w4_f11_the_tall_gate_swaps_its_column() {
+        let mut w = world();
+        // A closed tall gate (388), 1×5 at column 10, rows 17..=21. The
+        // frameY steps by coordinate_height + padding (18+2, 16+2, ...):
+        // 0, 20, 38, 56, 74 (the registry D_388's [18,16,16,16,18] + 2).
+        let steps = [20, 18, 18, 18, 20];
+        let mut fy = 0i16;
+        for dy in 0..5i32 {
+            put(&mut w, 10, 17 + dy, 388, 0, fy);
+            fy += steps[dy as usize] as i16;
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 17);
+        for dy in 0..5i32 {
+            assert_eq!(
+                w.tile(10, 17 + dy).unwrap().kind,
+                389,
+                "the closed gate opened (388 → 389)"
+            );
+        }
+        assert_eq!(wiring.take_door_sounds().len(), 1, "the open cue");
+        // Hit again — it closes back.
+        wiring.hit_wire_single(&mut w, 10, 17);
+        for dy in 0..5i32 {
+            assert_eq!(w.tile(10, 17 + dy).unwrap().kind, 388, "closed back");
+        }
+    }
+
+    /// The trapdoor opens on a wire hit (`Wiring.cs:1440-1453`): the 2×2
+    /// closed (386) shifts to the 2×1 open (387). `ShiftTrapdoor(playerAbove:
+    /// true)` first.
+    #[test]
+    fn w4_f11_the_trapdoor_shifts_open() {
+        let mut w = world();
+        // A closed trapdoor (386), 2×2 at (10, 18)..(11, 19), top-hinged
+        // (frameX 0/18, frameY 0/18 → style_x 0).
+        for dx in 0..2i32 {
+            for dy in 0..2i32 {
+                put(&mut w, 10 + dx, 18 + dy, 386, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 18);
+        // The open pair (387) lands on one row; the other row cleared.
+        let open_count = (18..20)
+            .flat_map(|y| [(10, y), (11, y)])
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 387))
+            .count();
+        assert_eq!(open_count, 2, "the 2×1 open trapdoor was written");
+        assert_eq!(wiring.take_door_sounds().len(), 1, "the shift cue");
     }
 }
 
