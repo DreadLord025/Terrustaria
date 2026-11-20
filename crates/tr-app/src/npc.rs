@@ -33906,3 +33906,82 @@ mod w4_d25_style27_census_tests {
         assert_eq!(n.wof_spawns.len(), 13, "no re-spawn (the W-1 fix)");
     }
 }
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 28 slice).
+// WRITTEN, NOT RUN (code-only mode). 28 WoF Eye: the style's ONLY member
+// (114, `NPC.cs:10365`) — LANDED + WIRED (S1-D-3 W-1, the faithful
+// `npc_ai_style28::style28_step` behind `ai_028_wof_eye_family`) ->
+// VERIFY-ONLY: the machine is unchanged; RNG-free by construction (the
+// arm's `NPC.cs:26053-26208` block carries no `Next`).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style28_census_tests {
+    use super::*;
+
+    /// The axis claims style 28 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_28_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "28" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 28 claimed once");
+        assert!(src.contains("aiStyle 28 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// Verify-only: the eye mirrors the wall through the LIVE axis arm
+    /// and draws NOTHING — the literal X copy + the direction mirror
+    /// (`NPC.cs:26066-26068`), the life mirror (`:26061-26064`), the
+    /// INT band midpoint with the ±1 snap (`:26069-26083`): band
+    /// 1000..1600 → midpoint 1300; the top eye (ai0 = 1) rides
+    /// (1300 + 1000)/2 − 100/2 = 1100.
+    #[test]
+    fn w4_d25_the_eye_mirrors_the_wall_on_the_28_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.wof_present = true;
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
+        w.wof_x = 1000.0;
+        w.wof_dir = -1;
+        w.wof_draw_top = 1000;
+        w.wof_draw_bottom = 1600;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::WallOfFleshEye, 500.0, 1000.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the top eye
+        let mut rng = UnifiedRandom::new(28);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.x, 1000.0, "the literal position.X copy (:26066)");
+        assert_eq!(n.facing, -1, "the wall direction mirror (:26067)");
+        assert_eq!(n.sprite_dir, -1, "spriteDirection = direction (:26068)");
+        assert_eq!(n.hp, 8000, "the life mirror (:26063)");
+        assert_eq!(n.y, 1100.0, "the INT band midpoint + the snap (:26069-26083)");
+        assert_eq!(n.vy, 0.0, "inside the ±1 band the velocity zeroes");
+        assert_eq!(rng, witness, "the eye tick draws nothing");
+        // The wall's death deactivates the eye (:26055-26059).
+        w.wof_present = false;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "no wall → the eye deactivates");
+        assert_eq!(rng, witness, "still draw-free");
+    }
+}
