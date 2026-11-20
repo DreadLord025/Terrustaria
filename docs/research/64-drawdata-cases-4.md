@@ -1398,6 +1398,84 @@ Audit notes (R15):
   the drawn tile pixels are identical.
 - No other R15 id has a second-switch row.
 
+### R16 — plasma lamp, extractinators, bottle parity chains, plates, big-cage head: 564, 219, 220, 642, 270, 271, 581, 660, 572, 428, 442, 275, 276, 277, 278 (15 ids, indices 225-239)
+
+C# `TileDrawing.cs:5525-5711`. Verbatim (:5535-5563, the mod-6 chain):
+
+```csharp
+		case 270:
+		case 271:
+		case 581:
+		{
+			int num14 = Main.tileFrame[typeCache] + x % 6;
+			if (x % 2 == 0)
+			{
+				num14 += 3;
+			}
+			if (x % 3 == 0)
+			{
+				num14 += 3;
+			}
+			if (x % 4 == 0)
+			{
+				num14 += 3;
+			}
+			while (num14 > 5)
+			{
+				num14 -= 6;
+			}
+			addFrX = num14 * 18;
+			addFrY = 0;
+			if (x % 2 == 0)
+			{
+				tileSpriteEffect = SpriteEffects.FlipHorizontally;
+			}
+			break;
+		}
+```
+
+The big-cage group head verbatim (:5670-5673):
+
+```csharp
+		{
+			tileTop = 2;
+			Main.critterCage = true;
+			int bigAnimalCageFrame = this.GetBigAnimalCageFrame(x, y, tileFrameX, tileFrameY);
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 564 | shares 217/218's label; second switch clears addFrY + glow | :5525, :6105-6113 | `drawdata.rs:803-806` (net fold); glow `cases_a.rs:337-342` | PORTED (rect deviation, R15 note) |
+| 219, 220, 642 | `tileFrame * 54`, top 2 (Extractinator family) | :5529-5534 | :809-812 | PORTED |
+| 270, 271, 581 | mod-6 parity chain, `addFrX = n*18`, addFrY 0, flip | :5535-5563 | :816-833 — all three `+3` gates and the `while > 5` unwind | PORTED |
+| 660 | mod-5 chain (`x % 5`, `while > 4`, `-= 5`) | :5564-5590 | :836-853 | PORTED |
+| 572 | mod-4 chain, NO parity gates (for-loop unwind) | :5591-5604 | :856-864 | PORTED |
+| 428 | `tileTop += 4;` + pressed-plate `addFrX += 18` | :5605-5611 | static :868-870; `cases_b.rs:280-284` (`wiring.plate_is_pressed`) | PORTED (delegated, wired :700) |
+| 442 | 20×20; inner switch `fx/22`: 1→top −4, 2→top −2 + width 24, 3→top −2 | :5612-5628 | :873-885 | PORTED |
+| 275 | big cage: bunny table `*54` | :5676-5686 | `drawdata_furniture.rs:117` (`275 \| 359 \| 599..=605`) | PORTED-UNWIRED |
+| 276 | squirrel table `*54` | :5694-5705 | :120 (`276 \| 413 \| 414 \| 606..=612`) | PORTED-UNWIRED |
+| 277 | mallard `*54` | :5706-5708 | :121 | PORTED-UNWIRED |
+| 278 | duck `*54` | :5709-5711 | :122 | PORTED-UNWIRED |
+
+Audit notes (R16):
+- The three bottle chains differ ONLY in modulus and gates: 270/271/581 use
+  `%6` with the three `+3` parity gates; 660 uses `%5` with the same gates;
+  572 uses `%4` with NO gates (the C# for-loop `for (n = tf + x%4; n > 3;
+  n -= 4)` is the port's `while`). All keep `addFrY = 0` + parity flip. The
+  `while` unwind equals `%` for non-negative values; `tileFrame` and `x % k`
+  are non-negative in range, and the port keeps the loop shape verbatim.
+- 428's `PressurePlateHelper.PressurePlatesPressed.ContainsKey(Point(x,y))`
+  is the wiring state — `cases_b` reads `wiring.plate_is_pressed(x, y)`
+  (test `case_428_pressed_plate_shifts_a_column` pins press/release).
+- Big-cage probe verbatim (:6542-6547): `num / 6 * (num2 / 4) %
+  Main.cageFrames` — `big_animal_cage_frame` (`drawdata_furniture.rs:99-103`)
+  term-for-term. The per-animal arms are faithful in `cage_table` but
+  UNWIRED for the same reason as d64 batches 2-3: `furniture_post_pass` has
+  zero live callers, the static fallback (`drawdata.rs:890-910`) sets top 2
+  only, cages frozen at row 0 (pixel-identical to C# t=0). Wiring belongs to
+  W4-d57 with `AnimateTiles_CritterCages` (`Main.cs:13511`).
+- No R16 id has a second-switch row other than 564 (audited above).
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
