@@ -42,12 +42,16 @@ the second batch never overlaps it — the d52/e2 precedent):
 - **W4-e4 (this branch): the next 40 unclaimed** —
   ParticleOrchestrator sites 41-61 (21) + Mount sites 1-19 (19):
 
+Whole C# methods stay whole (the golden rule ports the entire function);
+TrueExcalibur carries 4 sites, so the orch split lands 11 + 10 and the
+mount split 10 + 9 — 40 total.
+
 | Batch | Sites | Lines | Arms |
 | ----- | ----- | ----- | ---- |
-| 1 (10) | orch 41-50 | 2653-3058 | ShimmerArrow pair, TerraBlade pair, Excalibur pair, ClassyCane, TrueExcalibur head pair + tail head |
-| 2 (10) | orch 51-60 | 3061-3882 | TrueExcalibur tail, TrueNightsEdge pair, PaladinsHammer, PrincessWeapon, StardustPunch, RainbowRodHit, LightningSmall, FormatC, FlameWaders |
-| 3 (10) | orch 61 + mount 1-9 | 3920 + 3113-4103 | WoFGoatMountFlames; drill block/wall sparks, unicorn dash ring + body, wolf ring + gated puff, witch ring + gated puff, basilisk charge pair |
-| 4 (10) | mount 10-19 | 4123-5071 | basilisk charge trail, golf-cart smoke, gem/steam/exhaust/confetti minecart, witch-broom pair, drill-mount trail pair |
+| 1 (11) | orch 41-51 | 2653-3061 | ShimmerArrow pair, TerraBlade pair, Excalibur pair, ClassyCane, TrueExcalibur (4) |
+| 2 (10) | orch 52-61 | 3195-3920 | TrueNightsEdge pair, PaladinsHammer, PrincessWeapon, StardustPunch, RainbowRodHit, LightningSmall, FormatC, FlameWaders, WoFGoatMountFlames |
+| 3 (10) | mount 1-10 | 3113-4123 | drill block/wall sparks, unicorn dash ring + body, wolf ring + gated puff, witch ring + gated puff, basilisk charge pair + trail head |
+| 4 (9) | mount 11-19 | 4626-5071 | golf-cart smoke, gem/steam/exhaust/confetti minecart, witch-broom pair, drill-mount trail pair |
 
 Boundary sites owned whole: orch 2582 is d54's, 2653 is e4's; mount 5071
 is e4's, 5099+ stays unclaimed for the next wave (f6 dust-world-3).
