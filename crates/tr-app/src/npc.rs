@@ -1106,6 +1106,26 @@ pub enum NpcKind {
     /// 18x40, aiStyle 3, dmg 50, def 16, 130 HP,
     /// kb 0.6, value 600. UNWIRED (data-only; the AI lands with its wave).
     Mummy,
+    /// `NPCID.DarkMummy` (79) - W4-d35 data wave (`NPC.cs:9812-9824`):
+    /// 18x40, aiStyle 3, dmg 60, def 18, 180 HP,
+    /// kb 0.5, value 700. UNWIRED (data-only; the AI lands with its wave).
+    DarkMummy,
+    /// `NPCID.LightMummy` (80) - W4-d35 data wave (`NPC.cs:9825-9837`):
+    /// 18x40, aiStyle 3, dmg 55, def 18, 200 HP,
+    /// kb 0.55, value 700. UNWIRED (data-only; the AI lands with its wave).
+    LightMummy,
+    /// `NPCID.Wraith` (82) - W4-d35 data wave (`NPC.cs:9852-9878`):
+    /// 24x44, aiStyle 22, dmg 65, def 16, 160 HP,
+    /// kb 0.7, value 500, noGravity, noTileCollide. UNWIRED (data-only; the AI lands with its wave).
+    Wraith,
+    /// `NPCID.CursedHammer` (83) - W4-d35 data wave (`NPC.cs:9879-9891`):
+    /// 40x40, aiStyle 23, dmg 80, def 18, 200 HP,
+    /// kb 0.4, value 1000. UNWIRED (data-only; the AI lands with its wave).
+    CursedHammer,
+    /// `NPCID.EnchantedSword` (84) - W4-d35 data wave (`NPC.cs:9892-9904`):
+    /// 40x40, aiStyle 23, dmg 80, def 18, 200 HP,
+    /// kb 0.4, value 1000. UNWIRED (data-only; the AI lands with its wave).
+    EnchantedSword,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3153,6 +3173,7 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            NpcKind::Wraith => 100,
                             _ => 0,
                         }
                     }),
@@ -3559,6 +3580,13 @@ impl Npc {
             NpcKind::Pixie => 0.6,
             NpcKind::ArmoredSkeleton => 0.4,
             NpcKind::Mummy => 0.6,
+            // W4-d35 (B): the 79/80/82/83/84 knockBackResist rows
+            // (the no-row kinds keep the head's 1f, NPC.cs:8533).
+            NpcKind::DarkMummy => 0.5,
+            NpcKind::LightMummy => 0.55,
+            NpcKind::Wraith => 0.7,
+            NpcKind::CursedHammer => 0.4,
+            NpcKind::EnchantedSword => 0.4,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -3945,6 +3973,12 @@ impl Npc {
             NpcKind::Pixie => 20,
             NpcKind::ArmoredSkeleton => 28,
             NpcKind::Mummy => 16,
+            // W4-d35 (B): the 79/80/82/83/84 defense rows.
+            NpcKind::DarkMummy => 18,
+            NpcKind::LightMummy => 18,
+            NpcKind::Wraith => 16,
+            NpcKind::CursedHammer => 18,
+            NpcKind::EnchantedSword => 18,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4323,6 +4357,12 @@ impl Npc {
             NpcKind::Pixie => 350.0,
             NpcKind::ArmoredSkeleton => 400.0,
             NpcKind::Mummy => 600.0,
+            // W4-d35 (B): the 79/80/82/83/84 value rows (copper).
+            NpcKind::DarkMummy => 700.0,
+            NpcKind::LightMummy => 700.0,
+            NpcKind::Wraith => 500.0,
+            NpcKind::CursedHammer => 1000.0,
+            NpcKind::EnchantedSword => 1000.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6336,6 +6376,13 @@ impl Npc {
             | NpcKind::Pixie
             | NpcKind::ArmoredSkeleton
             | NpcKind::Mummy => {}
+            // W4-d35 (B): the 79/80/82/83/84 kinds are UNWIRED (data-only);
+            // the AI lands with its wave (the wyvern no-op precedent).
+            NpcKind::DarkMummy
+            | NpcKind::LightMummy
+            | NpcKind::Wraith
+            | NpcKind::CursedHammer
+            | NpcKind::EnchantedSword => {}
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
     }
@@ -9097,6 +9144,13 @@ impl Npc {
             | NpcKind::Pixie
             | NpcKind::ArmoredSkeleton
             | NpcKind::Mummy => {}
+            // W4-d35 (B): the 79/80/82/83/84 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::DarkMummy
+            | NpcKind::LightMummy
+            | NpcKind::Wraith
+            | NpcKind::CursedHammer
+            | NpcKind::EnchantedSword => {}
         }
     }
 
@@ -18663,6 +18717,12 @@ impl Npc {
             NpcKind::Pixie => 431,
             NpcKind::ArmoredSkeleton => 432,
             NpcKind::Mummy => 433,
+            // W4-d35 (B): the port-local band (to_u16's ids).
+            NpcKind::DarkMummy => 434,
+            NpcKind::LightMummy => 435,
+            NpcKind::Wraith => 436,
+            NpcKind::CursedHammer => 437,
+            NpcKind::EnchantedSword => 438,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23732,7 +23792,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 275] = [
+    pub(super) const ALL_KINDS: [NpcKind; 280] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24016,6 +24076,12 @@ mod tests {
         NpcKind::Pixie,
         NpcKind::ArmoredSkeleton,
         NpcKind::Mummy,
+        // W4-d35 (B): the 79/80/82/83/84 data-wave kinds.
+        NpcKind::DarkMummy,
+        NpcKind::LightMummy,
+        NpcKind::Wraith,
+        NpcKind::CursedHammer,
+        NpcKind::EnchantedSword,
         NpcKind::WyvernTail,
     ];
 
@@ -27628,7 +27694,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            275,
+            280,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31276,6 +31342,12 @@ mod s1_d_2_tests {
         (NpcKind::Pixie, 22),
         (NpcKind::ArmoredSkeleton, 3),
         (NpcKind::Mummy, 3),
+        // W4-d35 (B).
+        (NpcKind::DarkMummy, 3),
+        (NpcKind::LightMummy, 3),
+        (NpcKind::Wraith, 22),
+        (NpcKind::CursedHammer, 23),
+        (NpcKind::EnchantedSword, 23),
         (NpcKind::WyvernTail, 6),
     ];
 
@@ -33730,5 +33802,123 @@ mod w4_d35_a_tests {
         assert_eq!(e.credit_id, "Mummy", "Mummy credit");
         assert_eq!(e.name, "Mummy", "Mummy name");
         assert_eq!(NpcKind::Mummy.cs_id(), 78, "Mummy cs_id");
+    }
+}
+
+#[cfg(test)]
+mod w4_d35_b_tests {
+    //! W4-d35 batch B (79/80/82/83/84) - the data-only SetDefaults wave.
+    //! Every row pins verbatim to the C# (`NPC.cs:9812-9824`, `NPC.cs:9825-9837`, `NPC.cs:9852-9878`, `NPC.cs:9879-9891`, `NPC.cs:9892-9904`). WRITTEN, NOT RUN
+    //! (code-only mode); the smallkinds-witness precedent.
+    use super::*;
+
+    #[test]
+    fn w4_d35_b_the_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value, scale, alpha)
+        let rows = [
+            (NpcKind::DarkMummy, 79u16, 3u8, 18.0, 40.0, 60, 18, 180, 0.5f32, 700.0f32, 1.0f32, 0u8),
+            (NpcKind::LightMummy, 80u16, 3u8, 18.0, 40.0, 55, 18, 200, 0.55f32, 700.0f32, 1.0f32, 0u8),
+            (NpcKind::Wraith, 82u16, 22u8, 24.0, 44.0, 65, 16, 160, 0.7f32, 500.0f32, 1.0f32, 100u8),
+            (NpcKind::CursedHammer, 83u16, 23u8, 40.0, 40.0, 80, 18, 200, 0.4f32, 1000.0f32, 1.0f32, 0u8),
+            (NpcKind::EnchantedSword, 84u16, 23u8, 40.0, 40.0, 80, 18, 200, 0.4f32, 1000.0f32, 1.0f32, 0u8),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value, scale, alpha) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            // cs_id: visible kinds ride their own vanilla id; the Hide
+            // kinds fold to the head (the fallback reads the head entry).
+            if crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            }
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, scale, "{kind:?} scale");
+            assert_eq!(shell.alpha, alpha, "{kind:?} alpha");
+        }
+        // sounds
+        assert_eq!(NpcKind::DarkMummy.hit_sound(), Some("NPC_Hit_1"), "DarkMummy hit");
+        assert_eq!(NpcKind::DarkMummy.death_sound(), Some("NPC_Killed_6"), "DarkMummy death");
+        assert_eq!(NpcKind::LightMummy.hit_sound(), Some("NPC_Hit_1"), "LightMummy hit");
+        assert_eq!(NpcKind::LightMummy.death_sound(), Some("NPC_Killed_6"), "LightMummy death");
+        assert_eq!(NpcKind::Wraith.hit_sound(), Some("NPC_Hit_54"), "Wraith hit");
+        assert_eq!(NpcKind::Wraith.death_sound(), Some("NPC_Killed_52"), "Wraith death");
+        assert_eq!(NpcKind::CursedHammer.hit_sound(), Some("NPC_Hit_4"), "CursedHammer hit");
+        assert_eq!(NpcKind::CursedHammer.death_sound(), Some("NPC_Killed_6"), "CursedHammer death");
+        assert_eq!(NpcKind::EnchantedSword.hit_sound(), Some("NPC_Hit_4"), "EnchantedSword hit");
+        assert_eq!(NpcKind::EnchantedSword.death_sound(), Some("NPC_Killed_6"), "EnchantedSword death");
+        // protocol band (port-local 429..; the vanilla ids collide)
+        assert_eq!(NpcKind::DarkMummy.to_u16(), 434, "DarkMummy proto");
+        assert_eq!(NpcKind::from_u16(434), Some(NpcKind::DarkMummy), "DarkMummy decode");
+        assert_eq!(NpcKind::LightMummy.to_u16(), 435, "LightMummy proto");
+        assert_eq!(NpcKind::from_u16(435), Some(NpcKind::LightMummy), "LightMummy decode");
+        assert_eq!(NpcKind::Wraith.to_u16(), 436, "Wraith proto");
+        assert_eq!(NpcKind::from_u16(436), Some(NpcKind::Wraith), "Wraith decode");
+        assert_eq!(NpcKind::CursedHammer.to_u16(), 437, "CursedHammer proto");
+        assert_eq!(NpcKind::from_u16(437), Some(NpcKind::CursedHammer), "CursedHammer decode");
+        assert_eq!(NpcKind::EnchantedSword.to_u16(), 438, "EnchantedSword proto");
+        assert_eq!(NpcKind::from_u16(438), Some(NpcKind::EnchantedSword), "EnchantedSword decode");
+        // flags
+        assert_eq!(NpcKind::DarkMummy.behind_tiles(), false, "DarkMummy behindTiles");
+        assert_eq!(NpcKind::DarkMummy.no_gravity(), false, "DarkMummy noGravity");
+        assert_eq!(NpcKind::LightMummy.behind_tiles(), false, "LightMummy behindTiles");
+        assert_eq!(NpcKind::LightMummy.no_gravity(), false, "LightMummy noGravity");
+        assert_eq!(NpcKind::Wraith.behind_tiles(), false, "Wraith behindTiles");
+        assert_eq!(NpcKind::Wraith.no_gravity(), true, "Wraith noGravity");
+        assert_eq!(NpcKind::CursedHammer.behind_tiles(), false, "CursedHammer behindTiles");
+        assert_eq!(NpcKind::CursedHammer.no_gravity(), false, "CursedHammer noGravity");
+        assert_eq!(NpcKind::EnchantedSword.behind_tiles(), false, "EnchantedSword behindTiles");
+        assert_eq!(NpcKind::EnchantedSword.no_gravity(), false, "EnchantedSword noGravity");
+        // debuff immunities (NPCID.cs DebuffImmunitySets)
+        let b = NpcBuffs::for_kind(NpcKind::DarkMummy);
+        assert!(b.buff_immune.iter().all(|&i| !i), "DarkMummy null entry");
+        let b = NpcBuffs::for_kind(NpcKind::LightMummy);
+        assert!(b.buff_immune.iter().all(|&i| !i), "LightMummy null entry");
+        // Wraith: ImmuneToAllBuffsThatAreNotWhips is unmodelled (&[]).
+        let b = NpcBuffs::for_kind(NpcKind::Wraith);
+        assert!(b.buff_immune.iter().all(|&i| !i), "Wraith unmodelled mask");
+        let b = NpcBuffs::for_kind(NpcKind::CursedHammer);
+        assert!(b.buff_immune[20], "CursedHammer immune 20");
+        assert!(b.buff_immune[24], "CursedHammer immune 24");
+        assert!(b.buff_immune[31], "CursedHammer immune 31");
+        assert!(b.buff_immune[323], "CursedHammer immune 323");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "CursedHammer derived 20");
+        let b = NpcBuffs::for_kind(NpcKind::EnchantedSword);
+        assert!(b.buff_immune[20], "EnchantedSword immune 20");
+        assert!(b.buff_immune[24], "EnchantedSword immune 24");
+        assert!(b.buff_immune[31], "EnchantedSword immune 31");
+        assert!(b.buff_immune[323], "EnchantedSword immune 323");
+        assert!(b.buff_immune[30] && b.buff_immune[375], "EnchantedSword derived 20");
+        // bestiary entries / Hide folds
+        let e = crate::bestiary::entry_for_npc(NpcKind::DarkMummy, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 79, "DarkMummy net");
+        assert_eq!(e.credit_id, "DarkMummy", "DarkMummy credit");
+        assert_eq!(e.name, "Dark Mummy", "DarkMummy name");
+        assert_eq!(NpcKind::DarkMummy.cs_id(), 79, "DarkMummy cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::LightMummy, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 80, "LightMummy net");
+        assert_eq!(e.credit_id, "LightMummy", "LightMummy credit");
+        assert_eq!(e.name, "Light Mummy", "LightMummy name");
+        assert_eq!(NpcKind::LightMummy.cs_id(), 80, "LightMummy cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::Wraith, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 82, "Wraith net");
+        assert_eq!(e.credit_id, "Wraith", "Wraith credit");
+        assert_eq!(e.name, "Wraith", "Wraith name");
+        assert_eq!(NpcKind::Wraith.cs_id(), 82, "Wraith cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::CursedHammer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 83, "CursedHammer net");
+        assert_eq!(e.credit_id, "CursedHammer", "CursedHammer credit");
+        assert_eq!(e.name, "Cursed Hammer", "CursedHammer name");
+        assert_eq!(NpcKind::CursedHammer.cs_id(), 83, "CursedHammer cs_id");
+        let e = crate::bestiary::entry_for_npc(NpcKind::EnchantedSword, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 84, "EnchantedSword net");
+        assert_eq!(e.credit_id, "EnchantedSword", "EnchantedSword credit");
+        assert_eq!(e.name, "Enchanted Sword", "EnchantedSword name");
+        assert_eq!(NpcKind::EnchantedSword.cs_id(), 84, "EnchantedSword cs_id");
     }
 }

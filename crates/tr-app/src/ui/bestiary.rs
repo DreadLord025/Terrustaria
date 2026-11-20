@@ -1600,6 +1600,12 @@ fn portrait_data(
         (NpcKind::Pixie, _) => (sheet_i, 20.0, 20.0, 20.0, white),
         (NpcKind::ArmoredSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Mummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // W4-d35 (B): the 79/80/82/83/84 portraits rest the SetDefaults box.
+        (NpcKind::DarkMummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::LightMummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Wraith, _) => (sheet_i, 44.0, 24.0, 44.0, white),
+        (NpcKind::CursedHammer, _) => (sheet_i, 40.0, 40.0, 40.0, white),
+        (NpcKind::EnchantedSword, _) => (sheet_i, 40.0, 40.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

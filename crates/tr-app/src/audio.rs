@@ -171,6 +171,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // assets ship; the S1-E-21 wave-C bank-gap close).
     ("NPC_Hit_5", 3),
     ("NPC_Killed_7", 4),
+    // W4-d35 (B): the 79/80/82/83/84 hit/death cues (the Sounds/NPC_*.xnb
+    // assets ship; the S1-E-21 wave-C bank-gap close).
+    ("NPC_Hit_54", 3),
+    ("NPC_Killed_52", 4),
     ("NPC_Killed_33", 4),
     ("NPC_Killed_39", 4),
     ("NPC_Killed_45", 4),

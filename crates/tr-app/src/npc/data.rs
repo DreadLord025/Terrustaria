@@ -594,6 +594,15 @@ impl NpcKind {
             NpcKind::Pixie => 431,
             NpcKind::ArmoredSkeleton => 432,
             NpcKind::Mummy => 433,
+            // W4-d35 (B): the 79/80/82/83/84 band - port-local protocol ids
+            // 429.. (the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::DarkMummy => 434,
+            NpcKind::LightMummy => 435,
+            NpcKind::Wraith => 436,
+            NpcKind::CursedHammer => 437,
+            NpcKind::EnchantedSword => 438,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -929,6 +938,11 @@ impl NpcKind {
             431 => NpcKind::Pixie,
             432 => NpcKind::ArmoredSkeleton,
             433 => NpcKind::Mummy,
+            434 => NpcKind::DarkMummy,
+            435 => NpcKind::LightMummy,
+            436 => NpcKind::Wraith,
+            437 => NpcKind::CursedHammer,
+            438 => NpcKind::EnchantedSword,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1810,6 +1824,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d35 (B): the 79/80/82/83/84 HitSound rows.
+            NpcKind::DarkMummy => "NPC_Hit_1",
+            NpcKind::LightMummy => "NPC_Hit_1",
+            NpcKind::Wraith => "NPC_Hit_54",
+            NpcKind::CursedHammer => "NPC_Hit_4",
+            NpcKind::EnchantedSword => "NPC_Hit_4",
             // W4-d35 (A): the 73/74/75/77/78 HitSound rows.
             NpcKind::GoblinScout => "NPC_Hit_1",
             NpcKind::Bird => "NPC_Hit_1",
@@ -2120,6 +2140,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d35 (B): the 79/80/82/83/84 DeathSound rows.
+            NpcKind::DarkMummy => "NPC_Killed_6",
+            NpcKind::LightMummy => "NPC_Killed_6",
+            NpcKind::Wraith => "NPC_Killed_52",
+            NpcKind::CursedHammer => "NPC_Killed_6",
+            NpcKind::EnchantedSword => "NPC_Killed_6",
             // W4-d35 (A): the 73/74/75/77/78 DeathSound rows.
             NpcKind::GoblinScout => "NPC_Killed_1",
             NpcKind::Bird => "NPC_Killed_1",
@@ -2227,6 +2253,8 @@ impl NpcKind {
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             // W4-d35 (A): the 75 noGravity flyers (kb>0).
             NpcKind::Pixie => true,
+            // W4-d35 (B): the 82 noGravity flyers (kb>0).
+            NpcKind::Wraith => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2486,6 +2514,14 @@ impl NpcKind {
             NpcKind::Pixie => 22,
             // aiStyle 24 - W4-d35 (A; NPC.cs :9747).
             NpcKind::Bird => 24,
+            // aiStyle 3 - W4-d35 (B; NPC.cs :9812, :9825).
+            NpcKind::DarkMummy
+            | NpcKind::LightMummy => 3,
+            // aiStyle 22 - W4-d35 (B; NPC.cs :9852).
+            NpcKind::Wraith => 22,
+            // aiStyle 23 - W4-d35 (B; NPC.cs :9879, :9892).
+            NpcKind::CursedHammer
+            | NpcKind::EnchantedSword => 23,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3022,6 +3058,12 @@ impl NpcKind {
             NpcKind::Pixie => (20.0, 20.0),
             NpcKind::ArmoredSkeleton => (18.0, 40.0),
             NpcKind::Mummy => (18.0, 40.0),
+            // W4-d35 (B): the 79/80/82/83/84 SetDefaults boxes.
+            NpcKind::DarkMummy => (18.0, 40.0),
+            NpcKind::LightMummy => (18.0, 40.0),
+            NpcKind::Wraith => (24.0, 44.0),
+            NpcKind::CursedHammer => (40.0, 40.0),
+            NpcKind::EnchantedSword => (40.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3101,6 +3143,12 @@ impl NpcKind {
             NpcKind::Pixie => 75,
             NpcKind::ArmoredSkeleton => 77,
             NpcKind::Mummy => 78,
+            // W4-d35 (B): the 79/80/82/83/84 vanilla NPC.type rows.
+            NpcKind::DarkMummy => 79,
+            NpcKind::LightMummy => 80,
+            NpcKind::Wraith => 82,
+            NpcKind::CursedHammer => 83,
+            NpcKind::EnchantedSword => 84,
             NpcKind::BlazingWheel => 72,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
@@ -3675,6 +3723,12 @@ impl NpcKind {
             NpcKind::Pixie => 150,
             NpcKind::ArmoredSkeleton => 260,
             NpcKind::Mummy => 130,
+            // W4-d35 (B): the 79/80/82/83/84 lifeMax rows.
+            NpcKind::DarkMummy => 180,
+            NpcKind::LightMummy => 200,
+            NpcKind::Wraith => 160,
+            NpcKind::CursedHammer => 200,
+            NpcKind::EnchantedSword => 200,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4045,6 +4099,12 @@ impl NpcKind {
             NpcKind::Pixie => 55,
             NpcKind::ArmoredSkeleton => 40,
             NpcKind::Mummy => 50,
+            // W4-d35 (B): the 79/80/82/83/84 damage rows.
+            NpcKind::DarkMummy => 60,
+            NpcKind::LightMummy => 55,
+            NpcKind::Wraith => 65,
+            NpcKind::CursedHammer => 80,
+            NpcKind::EnchantedSword => 80,
             NpcKind::DungeonSpirit => 70,
         }
     }

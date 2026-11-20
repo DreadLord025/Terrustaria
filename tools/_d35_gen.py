@@ -46,11 +46,25 @@ def enum_doc(k):
             f"    /// kb {kb}, value {k['value']}{fl}{ex}. UNWIRED (data-only; the AI lands with its wave).{fold}\n"
             f"    {k['v']},\n")
 
+def last_landed(table):
+    # The last W4-d35 kind already present in a table (for append-anchors).
+    # Walk KINDS in order; the last one whose variant appears is the tail.
+    src=rd(table)
+    last=None
+    for k in KINDS:
+        if f'NpcKind::{k["v"]}' in src or (table==NPC and f'    {k["v"]},\n' in src):
+            last=k
+    return last
+
 def apply_batch(ks, label):
     hidden=[k for k in ks if k['hide']]
     visible=[k for k in ks if not k['hide']]
-    # 1. enum variants (append AFTER DungeonSpirit, before the closing brace)
-    rep(NPC, "    DungeonSpirit,\n}", "    DungeonSpirit,\n" + "".join(enum_doc(k) for k in ks) + "}")
+    # Append-anchors: insert AFTER the last landed kind (the previous batch's
+    # tail), not before the closing brace (which shifts as batches land).
+    prev_enum=last_landed(NPC)
+    enum_anchor=f"    {prev_enum['v']},\n" if prev_enum else "    DungeonSpirit,\n"
+    # 1. enum variants (append AFTER the last landed variant)
+    rep(NPC, enum_anchor, enum_anchor + "".join(enum_doc(k) for k in ks))
     # 2. to_u16 / from_u16 / render_key (port-local band 429..461)
     ins(DATA, "            NpcKind::WyvernTail => 228,\n",
         f"            // W4-d35 ({label}): the {ids(ks)} band - port-local protocol ids\n"
@@ -135,7 +149,7 @@ def apply_batch(ks, label):
             f"                // W4-d35 ({label}): the {ids(worms)} worm chain shares the\n"
             f"                // head's life pool (NPC.cs:51305-51363). Inert until wiring.\n"
             + "".join(f"                | NpcKind::{k['v']}\n" for k in worms))
-    # 11. debuff
+    # 11. debuff - append after the last landed buffs arm (or DungeonSpirit)
     db_block=""
     for k in ks:
         if k.get('allnonwhip'):
@@ -145,11 +159,17 @@ def apply_batch(ks, label):
             db_block+=f"NpcKind::{k['v']} => &[{', '.join(map(str,k['debuff']))}],\n"
         else:
             db_block+=f"NpcKind::{k['v']} => &[],\n"
-    rep(BUFFS, "        | NpcKind::DungeonSpirit => &[],\n    }\n}",
-        "        | NpcKind::DungeonSpirit => &[],\n"
-        + f"        // W4-d35 ({label}): the {ids(ks)} DebuffImmunitySets rows (NPCID.cs).\n"
-        + "".join("        "+line+"\n" for line in db_block.rstrip("\n").split("\n"))
-        + "    }\n}")
+    prev_buffs=last_landed(BUFFS)
+    if prev_buffs:
+        # the last landed arm line (find its exact text)
+        bsrc=rd(BUFFS)
+        m=re.search(r'^        NpcKind::'+prev_buffs['v']+r' => &[^\n]*\n', bsrc, re.M)
+        buffs_anchor=m.group(0)
+    else:
+        buffs_anchor="        | NpcKind::DungeonSpirit => &[],\n"
+    ins(BUFFS, buffs_anchor,
+        f"        // W4-d35 ({label}): the {ids(ks)} DebuffImmunitySets rows (NPCID.cs).\n"
+        + "".join("        "+line+"\n" for line in db_block.rstrip("\n").split("\n")))
     # 12. update_kind_ai no-op + find_frame no-op
     ins(NPC, "            NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),\n",
         f"            // W4-d35 ({label}): the {ids(ks)} kinds are UNWIRED (data-only);\n"
@@ -220,7 +240,8 @@ def apply_batch(ks, label):
         new="                NpcKind::Probe,\n" + "\n".join(lines) + "\n            ]\n        );"
         rep(NPC, old, new)
     # 16. bestiary ENTRIES - VISIBLE kinds only (the Hide kinds fold onto the
-    #     head's entry, the Wyvern-segment precedent).
+    #     head's entry, the Wyvern-segment precedent). Append after the last
+    #     landed visible entry (or Force Bubble).
     if visible:
         eb=""
         for k in visible:
@@ -232,9 +253,13 @@ def apply_batch(ks, label):
                  "        quick_unlock: false,\n"
                  f"        name: \"{k['name']}\",\n"
                  "    },\n")
-        rep(BEST, "        name: \"Force Bubble\",\n    },\n];",
-            "        name: \"Force Bubble\",\n    },\n"
-            + f"    // W4-d35 ({label}): the {ids(visible)} data-wave entries.\n"+eb+"];")
+        prev_vis=[k for k in KINDS if not k['hide'] and f'kind: NpcKind::{k["v"]},' in rd(BEST)]
+        if prev_vis:
+            best_anchor=f'        name: "{prev_vis[-1]["name"]}",\n    }},\n'
+        else:
+            best_anchor='        name: "Force Bubble",\n    },\n'
+        ins(BEST, best_anchor,
+            f"    // W4-d35 ({label}): the {ids(visible)} data-wave entries.\n"+eb)
     # 16b. bestiary folds (BOTH try_entry_for_npc + entry_for_npc): the Hide
     #      kinds fold onto the head (C# GetExclusions, the Wyvern precedent).
     if hidden:

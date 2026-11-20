@@ -3176,6 +3176,15 @@ pub(crate) fn draw_npcs(
             NpcKind::Pixie => generic_anchor(assets.npc_sheet(75), 4, n, w, h),
             NpcKind::ArmoredSkeleton => humanoid_draw(assets.npc_sheet(77), 15, n, w, h),
             NpcKind::Mummy => humanoid_draw(assets.npc_sheet(78), 16, n, w, h),
+            // W4-d35 (B): the 79/80/82/83/84 draw arms. **Sheet deferral**:
+            // NPC_79/80/82/83/84 are NOT packed (the atlas stands at the 8192
+            // strict-GPU bound - the wyvern precedent); npc_sheet returns
+            // None and the draw skips. The packing rides the atlas-repack wave.
+            NpcKind::DarkMummy => humanoid_draw(assets.npc_sheet(79), 16, n, w, h),
+            NpcKind::LightMummy => humanoid_draw(assets.npc_sheet(80), 16, n, w, h),
+            NpcKind::Wraith => generic_anchor(assets.npc_sheet(82), 4, n, w, h),
+            NpcKind::CursedHammer => generic_anchor(assets.npc_sheet(83), 6, n, w, h),
+            NpcKind::EnchantedSword => generic_anchor(assets.npc_sheet(84), 6, n, w, h),
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3280,6 +3289,9 @@ pub(crate) fn draw_npcs(
                     | NpcKind::WyvernBody2
                     | NpcKind::WyvernBody3
                     | NpcKind::WyvernTail
+                    // W4-d35 (B): the 83/84 chain/spin rotations.
+                    | NpcKind::CursedHammer
+                    | NpcKind::EnchantedSword
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,

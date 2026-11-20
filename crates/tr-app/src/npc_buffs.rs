@@ -489,6 +489,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Bird => &[31],
         NpcKind::Pixie => &[],
         NpcKind::ArmoredSkeleton => &[20],
+        // W4-d35 (B): the 79/80/82/83/84 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::DarkMummy => &[],
+        NpcKind::LightMummy => &[],
+        // 82: ImmuneToAllBuffsThatAreNotWhips - unmodelled mask, &[] (Poltergeist precedent).
+        NpcKind::Wraith => &[],
+        NpcKind::CursedHammer => &[20, 24, 31, 323],
+        NpcKind::EnchantedSword => &[20, 24, 31, 323],
         NpcKind::Mummy => &[],
     }
 }
