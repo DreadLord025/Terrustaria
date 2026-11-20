@@ -4649,6 +4649,17 @@ impl Npc {
         // attribute is stable here).
         #[deny(unreachable_patterns)]
         match self.kind.ai_style() {
+            // `if (this.aiStyle == 3) { this.AI_003_Fighters(); return; }`
+            // (`NPC.cs:19955-19959`). W4-d22: the plain-walker family rides
+            // the shared faithful core (`npc_ai_style3`, the head flip, the
+            // chase/despawn arms, the ladder with the hop flag, the
+            // obstacle scan + the integration). The zombie family keeps
+            // its byte-identical `update_zombie` fold; the shooters, the
+            // martian head-arm kinds (386/389/383/520), the frost siblings
+            // and the pillar machines keep their own fns (the claim gate).
+            3 if crate::npc_ai_style3::claims(self.kind) => {
+                crate::npc_ai_style3::fighter_core_step(self, world, player);
+            }
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
@@ -5854,14 +5865,17 @@ impl Npc {
             | NpcKind::GolemFistRight
             | NpcKind::GolemHeadFree => self.update_golem_rng(world, player, rng),
             NpcKind::Deerclops => self.update_deerclops(world, player, rng),
-            NpcKind::Skeleton => self.update_skeleton(world, player, dt),
-            NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
+            NpcKind::Skeleton => {
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
+            }
+            NpcKind::UndeadMiner => {
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
+            }
             // The goblin army's fighters (aiStyle 3, NPC.cs:15644/15658/
-            // :15714 cases 26/27/111): the walker arm. (S1-D-3b: the
-            // shadowing `update_goblin` arm that kept Thief/Warrior/Peon
-            // off this path is removed so they reach the skeleton walker.)
+            // :15714 cases 26/27/111): W4-d22 — the plain walkers ride the
+            // style axis; the archer keeps its shooter machine.
             NpcKind::GoblinThief | NpcKind::GoblinWarrior | NpcKind::GoblinPeon => {
-                self.update_skeleton(world, player, dt)
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
             }
             // The frost trio: aiStyle 38's own machine (`NPC.cs:28995-29144`,
             // R-25-1) — the hop cycle, the per-type 3/4/3.5 speeds, the
@@ -5869,11 +5883,14 @@ impl Npc {
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 self.update_frost_legion(world, player, dt)
             }
-            // The martians: aiStyle 3 rides the walker (the per-type speeds
-            // fold into the walker params — the Scrambler/RayGunner/zapper
-            // shot arms land with the projectile work).
-            NpcKind::GrayGrunt
-            | NpcKind::MartianEngineer
+            // The martians: W4-d22 — the GrayGrunt (385, the plain num83
+            // walker) rides the style axis; the engineer/zapper/walker keep
+            // their fns (the 386 turret-spawn / 389 zap head arms draw rand
+            // and the 520 is a shooter — the deferred per-type machines).
+            NpcKind::GrayGrunt => {
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
+            }
+            NpcKind::MartianEngineer
             | NpcKind::GigaZapper
             | NpcKind::MartianWalker => self.update_skeleton(world, player, dt),
             // The officer: the same aiStyle-3 walker, plus its own
@@ -5903,8 +5920,13 @@ impl Npc {
                 unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
             }
             // The carrier: aiStyle 3's walker (the params 5/0.25/0.7,
-            // `NPC.cs:58203-58240`).
-            NpcKind::Scutlix => self.update_scutlix(world, player, dt),
+            // `NPC.cs:58203-58240`). W4-d22: the style axis claims it —
+            // the 50-px stop arm (`:58291-58304`) is the 430-436/494/495/
+            // 591 charge family's, NOT 391's; the old update_scutlix stop
+            // was an invented arm (the C# 391 has no stop).
+            NpcKind::Scutlix => {
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
+            }
             // The saucer core: aiStyle 76's machine (`NPC.cs:36071-36520`)
             // — R35's branch owns it; the mounts (392/393/394) ride the
             // aiStyle-75 axis above.
@@ -5997,22 +6019,7 @@ impl Npc {
             // spearman rides the walker.
             NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng),
             NpcKind::SolarSpearman => {
-                // S1-D-3p (walker migration): the shared selection at the
-                // C# position (`NPC.cs:57369`); S1-D-3's 518 carrier row
-                // (`NPC.cs:58226-58231`) rides the same ladder.
-                crate::npc_ai::walker_step_fighter(
-                    self,
-                    world,
-                    player,
-                    crate::npc_ai::WalkerParams {
-                        speed: 5.0,
-                        jump: -6.2,
-                        aggro_x: 0.0,
-                        aggro_y: 0.0,
-                    },
-                    GRAVITY,
-                    MAX_FALL,
-                );
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
             }
             // The stardust/solar tower mobs: the spider pair, the soldier,
             // the drakomire mount + its rider, the sroller, the corite and
@@ -6048,24 +6055,10 @@ impl Npc {
             NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
             NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
             NpcKind::VortexRifleman => self.update_vortex_rifleman(world, player, rng),
-            // `:57681`: the soldier's walk speed is the 4-px cap.
+            // `:57681`: the soldier's walk speed is the 4-px cap. W4-d22:
+            // the style axis claims it (the num83 row rides the ladder).
             NpcKind::VortexSoldier => {
-                // S1-D-3p (walker migration): the shared selection at the
-                // C# position (`NPC.cs:57369`); S1-D-3's 429 num83 row
-                // (`NPC.cs:57681-57684`) rides the same ladder.
-                crate::npc_ai::walker_step_fighter(
-                    self,
-                    world,
-                    player,
-                    crate::npc_ai::WalkerParams {
-                        speed: 4.0,
-                        jump: -6.2,
-                        aggro_x: 0.0,
-                        aggro_y: 0.0,
-                    },
-                    GRAVITY,
-                    MAX_FALL,
-                );
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
             }
             // The Moon Lord family: aiStyles 77/78/79/81/82.
             NpcKind::MoonLordCore => self.update_moon_lord_core(world, player, rng),
@@ -6076,11 +6069,11 @@ impl Npc {
             // The etherian crystal: aiStyle 105's machine.
             NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player),
 
-            // The pirates: aiStyle 3 rides the walker (the per-type speeds
-            // fold into the walker params — the Captain's cannon and the
-            // Deadeye's shots land with the projectile work).
+            // The pirates: W4-d22 — the plain walkers ride the style axis
+            // (the Captain's cannon and the Deadeye's shots keep their
+            // shooter machines).
             NpcKind::PirateDeckhand | NpcKind::PirateCaptainsMate => {
-                self.update_skeleton(world, player, dt)
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
             }
             // The pirate shooters: the aiStyle-3 shooter block (the stop
             // entry's 80-tick timer, the per-kind projectile/speed/damage,
@@ -6161,10 +6154,9 @@ impl Npc {
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => {}
             // ---- the Pumpkin Moon family (`S1-F-13b` Phase 2): the wave
-            // roster rides alive. The 11 aiStyle-3 walkers ride the walker
-            // family on the C#'s per-type speed rows (`AI_003_Fighters`'s
-            // scarecrow arm `NPC.cs:57816-57840` + the 326 cap-2 group
-            // `:57554-57578` — `ai3_walk_speed`'s family arm).
+            // roster rides alive. W4-d22: the 11 aiStyle-3 walkers ride
+            // the style axis (the scarecrow hop arm `NPC.cs:57816-57856`
+            // with the hop flag into the scan, the 326 cap-2 group).
             NpcKind::Scarecrow1
             | NpcKind::Scarecrow2
             | NpcKind::Scarecrow3
@@ -6175,7 +6167,9 @@ impl Npc {
             | NpcKind::Scarecrow8
             | NpcKind::Scarecrow9
             | NpcKind::Scarecrow10
-            | NpcKind::Splinterling => self.update_skeleton(world, player, dt),
+            | NpcKind::Splinterling => {
+                unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
+            }
             // The Headless Horseman (315) and the Hellhound (329): aiStyle 26
             // (`AI_026_Unicorns`, `NPC.cs:62366-62924`, the caller arm
             // `:25631-25634`) — S1-F-13b2 slice A: the named machine in
@@ -11619,46 +11613,12 @@ impl Npc {
     // latch + the ride + the four-draw fire jitter + the idle octant +
     // the Transform(382) fallback), routed through the aiStyle-75 axis.
 
-    /// `AI_003_Fighters`'s 391-carrier arm (`NPC.cs:58203-58240`): the
-    /// walker with the params 5/0.25/0.7 (the per-type fold of the other
-    /// aiStyle-3 families) and the 50-px ground stop (`ai[2] = 1`,
-    /// `:58293-58301`).
-    fn update_scutlix(&mut self, world: &World, player: &Player, _dt: f32) {
-        let (w, h) = self.size();
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        let (pcx, pcy) = player.center();
-        // The 50-px stop: grounded + the player close + CanHit.
-        if self.on_ground
-            && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 50.0
-            && crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0)
-        {
-            self.ai[2] = 1.0;
-        }
-        // S1-D-3p (walker migration): the shared selection at the C#
-        // position (`NPC.cs:57369`); S1-D-3's 391 carrier row
-        // (`NPC.cs:58205-58207`'s 5/0.25/0.7) rides the same ladder.
-        crate::npc_ai::walker_step_fighter(
-            self,
-            world,
-            player,
-            crate::npc_ai::WalkerParams {
-                speed: 5.0,
-                jump: -6.2,
-                aggro_x: 0.0,
-                aggro_y: 0.0,
-            },
-            GRAVITY,
-            MAX_FALL,
-        );
-        // The stop's park (`:58295`'s `velocity.X *= 0.7` when grounded).
-        if self.ai[2] > 0.0 && self.on_ground {
-            self.vx *= 0.7;
-        }
-        // The frames ride `find_frame`'s case 391 (`NPC.cs:71743-71778`),
-        // which the update pass calls right after this machine — the C#'s
-        // aiStyle-3 block writes no `frame.Y` itself (the v1 ran a blind
-        // 6-row strip from here, racing the FindFrame arm).
-    }
+    // `update_scutlix` RETIRED (W4-d22): the 391 carrier rides the shared
+    // `npc_ai_style3::fighter_core_step` on the aiStyle-3 axis now — the
+    // 5/0.25/0.7 ladder row (`NPC.cs:58205-58207`), the chase/despawn arms
+    // and the obstacle scan. The old fn's 50-px ground stop was an
+    // invented arm: the C#'s stop (`:58291-58304`) belongs to the
+    // 430-436/494/495/591 charge family, NOT 391.
 
     // `update_saucer_mount` RETIRED (S1-D-3-wire-saucer): the 392/393/394/
     // 492 arms are the faithful `npc_ai_style75::style75_step` now — the
@@ -29240,15 +29200,15 @@ mod s1_f_13b_tests {
     /// hover_behaviour` pattern): the aiStyle-22 machine is gated to the
     /// Poltergeist kind ALONE — every other kind's dispatch arm must stay
     /// byte-identical to its pre-slice body. The B run replays the pre-slice
-    /// arms verbatim (the walker stand for the 11 aiStyle-3 walkers, the
-    /// caster machine for the five casters the
+    /// arms verbatim (the caster machine for the five casters the
     /// Poltergeist used to share) behind the same
     /// `update_rng` prelude; every tick's kinematics, ai[], frame state and
     /// the RNG stream position must be bit-equal. The 325/327 hover stands
     /// left this pin when slice B landed their named machines
     /// (`npc_ai_pumpkin_boss.rs`'s own stream witnesses cover them now);
     /// the 315/329 walker stands left with slice A (`npc_ai_unicorn.rs`'s
-    /// witnesses cover them).
+    /// witnesses cover them); the 11 aiStyle-3 walkers left with W4-d22
+    /// (`npc_ai_style3.rs`'s core witnesses cover them).
     /// The closing witness runs
     /// one Poltergeist tick both ways and asserts the runs DIVERGE (the
     /// machine's alpha-0 row vs the stand's untouched SetDefaults 100) —
@@ -29267,19 +29227,11 @@ mod s1_f_13b_tests {
             }
         }
         w.pumpkin_moon = true;
-        let mut kinds = vec![
-            NpcKind::Scarecrow1,
-            NpcKind::Scarecrow2,
-            NpcKind::Scarecrow3,
-            NpcKind::Scarecrow4,
-            NpcKind::Scarecrow5,
-            NpcKind::Scarecrow6,
-            NpcKind::Scarecrow7,
-            NpcKind::Scarecrow8,
-            NpcKind::Scarecrow9,
-            NpcKind::Scarecrow10,
-            NpcKind::Splinterling,
-        ];
+        // W4-d22: the 11 aiStyle-3 walkers left this pin when the style
+        // axis claimed them (`npc_ai_style3.rs`'s own witnesses cover the
+        // core now — the scarecrow hop arm + the scan are the deliberate
+        // fidelity delta, not a byte-identical fold).
+        let mut kinds = vec![];
         // The casters: the Poltergeist's OLD stand-in family — their shared
         // `update_caster` arm must not have moved either.
         kinds.extend([
@@ -29312,19 +29264,6 @@ mod s1_f_13b_tests {
                 legacy.anim += 1.0 / 60.0;
                 // The pre-slice kind-match arms, verbatim.
                 match kind {
-                    NpcKind::Scarecrow1
-                    | NpcKind::Scarecrow2
-                    | NpcKind::Scarecrow3
-                    | NpcKind::Scarecrow4
-                    | NpcKind::Scarecrow5
-                    | NpcKind::Scarecrow6
-                    | NpcKind::Scarecrow7
-                    | NpcKind::Scarecrow8
-                    | NpcKind::Scarecrow9
-                    | NpcKind::Scarecrow10
-                    | NpcKind::Splinterling => {
-                        legacy.update_skeleton(&w, &mut player_b, 1.0 / 60.0)
-                    }
                     NpcKind::GoblinSorcerer
                     | NpcKind::Tim
                     | NpcKind::DarkCaster

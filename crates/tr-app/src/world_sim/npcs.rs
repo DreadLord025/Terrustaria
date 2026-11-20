@@ -4728,6 +4728,37 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if !open {
             continue;
         }
+        // `:60049-60056` — the type-26 GoblinPeon SMASHES the door
+        // (`WorldGen.KillTile`, no open): W4-d22 claims the Peon on the
+        // axis, so its bash destroys the tile + drops it instead of the
+        // OpenDoor path. The kill's sound + drop ride the UpdateNPCs
+        // stream (the C# plays them inside the AI tick).
+        if app.npcs[i].kind == NpcKind::GoblinPeon {
+            if let Some(kill) = tr_core::edit::kill_tile(&mut app.world, tx, ty, false) {
+                let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+                let sounds = tr_core::edit::kill_tile_sound(kill.kind, 0, false);
+                for cue in [sounds.primary, sounds.extra, sounds.shatter]
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some((name, volume)) = crate::world_sim::editing::kill_cue(cue) {
+                        app.audio.play_at(name, px, py, volume);
+                    }
+                }
+                if let Some(item) = registry::tile_drop(kill.kind, 0) {
+                    crate::world_sim::items::spawn_item_drop(
+                        &mut app.items,
+                        app.rngs.stream(RngKey::UpdateNpcs),
+                        item,
+                        1,
+                        tx,
+                        ty,
+                    );
+                }
+                app.world_key = None;
+            }
+            continue;
+        }
         // `:60059-60071` — the door (10) open. The port is the host
         // (netMode 0), so the `netMode != 1` gates fold away.
         let kind = app.world.tile(tx, ty).map(|t| t.kind);

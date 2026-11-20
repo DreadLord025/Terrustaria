@@ -39244,3 +39244,45 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## W4-d22 — the aiStyle-3 shared fighter core (code-only)
+
+The `AI_003_Fighters` shared core (`NPC.cs:55856-60298`) lands as
+`npc_ai_style3.rs` and claims the aiStyle-3 axis for the 22 plain-walker
+kinds (the skeleton/undead-miner/goblin-trio/pirate-pair/GrayGrunt/Scutlix/
+VortexSoldier/SolarSpearman/the 10 scarecrows/Splinterling). The phases are
+verbatim: the head directionY level-edge flip (`:55858`), the chase gate
+(`:57336`, the full NotDiscouraged port) with TargetClosest at `:57369`
+and the directionY refresh (`:57370`), the discouraged arm's
+EncourageDespawn(10) + 2-tick wander-flip + zero-direction snap
+(`:57375-57401`), the velocity ladder EVERY tick (the C# runs it outside
+the chase chain — a discouraged fighter still walks its row), the obstacle
+scan tail and the gravity/collision integration.
+
+Deliberate folds (documented):
+- The idle counter (`:57034-57149`) is NOT re-ticked in the core — the
+  world sim's `fighter_idle_counter` pre-pass owns it (S1-E-21e; `old_x`
+  holds the prior-tick stamp there, `update_preamble` overwrites it before
+  the core runs). `fighter_walker_kind` extended to the newly claimed
+  kinds; none sits in the moan type lists, so the emitter stays draw-free.
+- The ambient moans (`:57338-57367`) ride the sim's post-AI emitter on the
+  UpdateNPCs stream — the core draws ZERO rand for the claimed set.
+- The zombie family keeps its byte-identical `update_zombie` fold; the
+  frost siblings 338-352 keep `npc_ai_frost_mob`; the shooters and the
+  martian head-arm kinds (386 turret-spawn / 389 zap / 383 bubble / 520
+  walker-shooter) keep their fns — their head machines draw rand and own
+  ai[1]/ai[2] (the deferred per-type ports, the g4 lane's census).
+- The old `update_scutlix` 50-px ground stop was INVENTED: the C# stop
+  (`:58291-58304`) belongs to the 430-436/494/495/591 charge family, not
+  391. Retired with the axis claim.
+- The obstacle scan generalised (`fighter_obstacle_scan_g`): flag8, the
+  wide-body probe, the step-up reach +8 list, the type-27/31/294-296 bash
+  bonuses, the type-460 always-open, the type-425 sprite flip, the type-67
+  gap-leap exclusion and the charge-hop list all computed from the live
+  type; the zombie entry folds to the old constants (unchanged behaviour).
+- The GoblinPeon (26) door bash SMASHES the door (`WorldGen.KillTile`,
+  `:60049-60056`) — the drain's new kind arm kills + drops instead of
+  OpenDoor.
+
+Verification: code-only — every phase re-read against the cited C# windows;
+the seam signatures checked by read/grep. The witness tests
+(`npc_ai_style3.rs`) are WRITTEN, NOT RUN — no cargo/tests invoked.

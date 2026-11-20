@@ -122,6 +122,121 @@ const DOOR_BASH_TYPES: [u16; 35] = [
     323, 322, 44, 196, 167, 77, 197, 202, 203, 449, 450, 451, 452, 481, 201, 635,
 ];
 
+/// W4-d22 (style-3 axis) — `flag8` (`NPC.cs:57067-57075`): false for the
+/// turn-on-player critters and the long type list, true for every other
+/// fighter. The zombie family folds to true (none of its ids is listed —
+/// the S1-D-3z module note); the scarecrows 305-309, the Scutlix 391, the
+/// Drakomire 415, the Selenian 419 and the Yeti 343 fold to FALSE (their
+/// bash gate `:59990` and the no-obstacle resets `:60140`/`:60280` skip).
+pub(crate) fn fighter_flag8(t: u16) -> bool {
+    if crate::npc_ai3_speeds::TURN_CRITTERS.contains(&t) {
+        return false;
+    }
+    !matches!(
+        t,
+        343 | 47
+            | 67
+            | 109
+            | 110
+            | 111
+            | 120
+            | 163
+            | 164
+            | 239
+            | 168
+            | 199
+            | 206
+            | 214
+            | 215
+            | 216
+            | 217
+            | 218
+            | 219
+            | 220
+            | 226
+            | 243
+            | 251
+            | 257
+            | 258
+            | 290
+            | 291
+            | 292
+            | 293
+            | 305
+            | 306
+            | 307
+            | 308
+            | 309
+            | 348
+            | 349
+            | 350
+            | 351
+            | 379
+            | 591
+            | 380
+            | 381
+            | 382
+            | 383
+            | 386
+            | 391
+            | 466
+            | 464
+            | 166
+            | 469
+            | 468
+            | 471
+            | 470
+            | 480
+            | 481
+            | 482
+            | 411
+            | 424
+            | 409
+            | 425
+            | 427
+            | 426
+            | 428
+            | 580
+            | 508
+            | 415
+            | 419
+            | 520
+            | 528
+            | 529
+            | 530
+            | 532
+            | 582
+            | 624
+            | 631
+    ) && !(430..=436).contains(&t)
+        && !(449..=452).contains(&t)
+        && !(494..=506).contains(&t)
+        && !(524..=527).contains(&t)
+}
+
+/// W4-d22 — the wide-body ahead-probe override list (`NPC.cs:59953`):
+/// these types probe `centre + (width/2 + 16) * direction` instead of the
+/// plain `centre + 15 * direction` (`:59951`).
+fn wide_probe_body(t: u16) -> bool {
+    matches!(
+        t,
+        109 | 163 | 164 | 199 | 236 | 239 | 257 | 258 | 290 | 391 | 425 | 427 | 426 | 580 | 508
+            | 415 | 530 | 532 | 582
+    )
+}
+
+/// W4-d22 — the post-ladder charge-hop type list (`NPC.cs:60205`): the
+/// grounded close-range `vx *= 2` (cap ±3) + `vy = -4` hop. Among the
+/// ported axis walkers only the GrayGrunt 385 is listed (389 GigaZapper
+/// rides its own deferred shot machine); the 586 expert inner arm
+/// (`:60209-60241`) is unported (no expert flag, 586 has no kind).
+fn charge_hop_type(t: u16) -> bool {
+    matches!(
+        t,
+        31 | 294 | 295 | 296 | 47 | 77 | 104 | 168 | 196 | 385 | 389 | 464 | 470
+    ) || (524..=527).contains(&t)
+}
+
 /// `AI_003_Fighters`' obstacle scan (`NPC.cs:59831-60284`) for the zombie
 /// family, one fixed step at the C#'s pre-integration position. Returns
 /// `true` when the ground probe's `flag23` early-return fired (`:59863-
@@ -130,15 +245,43 @@ const DOOR_BASH_TYPES: [u16; 35] = [
 /// the caller still integrates (the C#'s `UpdateCollision` runs after
 /// `AI()` regardless).
 pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
+    // W4-d22: the zombie fold — flag8 true, the hop flag false, num57 60
+    // (the S1-D-3z module docs). The general entry below serves the axis.
+    // The player centre rides the target rect (`npc_target`'s
+    // SetTargetTrackingValues write); no zombie id is in the charge-hop
+    // list, so the window read never fires for this entry.
+    let r = npc.target_rect;
+    let pc = (
+        (r.0 + r.2 / 2) as f32,
+        (r.1 + r.3 / 2) as f32,
+    );
+    fighter_obstacle_scan_g(npc, world, true, false, 60.0, pc)
+}
+
+/// W4-d22 (style-3 axis) — the GENERAL scan: `flag8` from the type gate,
+/// `hop_flag` the ladder's `fx.hop_flag` (the scarecrow 305-309 arm,
+/// `NPC.cs:57847`), `num57` the idle cap (60; the type-120 row's 180),
+/// `player_center` the C#'s `Main.player[target].Center` for the
+/// charge-hop window (`:60214`). Every type fold the S1-D-3z module
+/// documented is now computed from the live type — the zombie family's
+/// results are unchanged (flag8 true for all 17 ids, none in the
+/// wide-probe/step-up-reach/charge-hop lists).
+pub(crate) fn fighter_obstacle_scan_g(
+    npc: &mut Npc,
+    world: &World,
+    flag8: bool,
+    hop_flag: bool,
+    _num57: f32,
+    player_center: (f32, f32),
+) -> bool {
     let (w, h) = npc.size();
+    let t = npc.kind.cs_id();
     // `:57019-57026` — flag6: parked and not just-hit.
     let flag6 = npc.vx == 0.0 && npc.hurt_cd <= 0.0;
-    // `:57067-57075` — flag8: true for every zombie kind (module docs).
-    let flag8 = true;
-    // `:59831-59867` — the flag5 ground probe. `flag` (the hop flag) is
-    // false for the zombie family (module docs), so the gate is vy == 0.
+    // `:59831-59867` — the flag5 ground probe. The gate is
+    // `(velocity.Y == 0) | flag` — the scarecrow hop flag rides along.
     let mut flag5 = false;
-    if npc.vy == 0.0 {
+    if npc.vy == 0.0 || hop_flag {
         // `:59833-59838` — the C#'s `(int)` casts truncate toward zero
         // (positions are non-negative in-world; the cast keeps the shape).
         let num185 = (npc.y + h + 7.0) as i32 / 16;
@@ -181,12 +324,15 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
             return true;
         }
     }
-    // `:59868-59871` — the type-428 flag5 reset: not a zombie kind.
+    // `:59868-59871` — the type-428 flag5 reset (the VortexHeadcrab).
+    if t == 428 {
+        flag5 = false;
+    }
     // `:59872-59948` — the 1-tile step-up assist (the unicorn machine's
     // inline copy shape, `npc_ai_unicorn.rs:328-387`, but the AI_003
     // probe rows). Only while falling or level; the type-580 directionY
-    // gate names no zombie kind.
-    if npc.vy >= 0.0 {
+    // gate (`:59872`) is live for the axis kinds.
+    if npc.vy >= 0.0 && (t != 580 || npc.direction_y != 1) {
         let num192 = if npc.vx < 0.0 {
             -1i32
         } else if npc.vx > 0.0 {
@@ -234,8 +380,8 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
                 && body_clear
             {
                 // `:59915-59945` — the lift: half-brick offsets, the 16.1
-                // reach (the 163/164/236/239/530 +8 list names no zombie
-                // kind), the gfxOffY record and the 1/2 step speed.
+                // reach (+8 for the 163/164/236/239/530 list, `:59928`),
+                // the gfxOffY record and the 1/2 step speed.
                 let mut num195 = num194 as f32 * 16.0;
                 if t0.half_brick() {
                     num195 += 8.0;
@@ -245,7 +391,10 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
                 }
                 if num195 < npc.y + h {
                     let num196 = npc.y + h - num195;
-                    let num197 = 16.1f32;
+                    let mut num197 = 16.1f32;
+                    if matches!(t, 163 | 164 | 236 | 239 | 530) {
+                        num197 += 8.0;
+                    }
                     if num196 <= num197 {
                         npc.gfx_off_y += npc.y + h - num195;
                         npc.y = num195 - h;
@@ -256,10 +405,15 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
         }
     }
     if flag5 {
-        // `:59951-59952` — the ahead probe: centre + 15 * direction, the
-        // body's bottom - 15 row (the wide-body override list `:59953`
-        // names no zombie kind).
-        let num198 = ((npc.x + (w as i32 / 2) as f32 + (15 * npc.facing) as f32) / 16.0) as i32;
+        // `:59951-59956` — the ahead probe: centre + 15 * direction, the
+        // body's bottom - 15 row; the wide-body override list switches to
+        // centre + (width/2 + 16) * direction.
+        let reach = if wide_probe_body(t) {
+            (w as i32 / 2 + 16) as f32
+        } else {
+            15.0
+        };
+        let num198 = ((npc.x + (w as i32 / 2) as f32 + reach * npc.facing as f32) / 16.0) as i32;
         let num199 = ((npc.y + h - 15.0) / 16.0) as i32;
         let ahead = tile_or_blank(world, num198, num199 - 1);
         // `:59990` — the door (10) / tall gate (388) bash gate.
@@ -296,19 +450,26 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
                 let num200 = if ahead.kind == 388 { 2.0 } else { 5.0 };
                 npc.ai[1] += num200;
                 // `:60023-60034` — the +6 unbreakable bonus (flag26, never
-                // fires), the type-27 +1 and the 31/294-296 +6: none is a
-                // zombie kind.
+                // fires), the type-27 GoblinThief +1 and the 31/294-296
+                // mummy +6 (`else if` chain).
                 if flag26 {
+                    npc.ai[1] += 6.0;
+                } else if t == 27 {
+                    npc.ai[1] += 1.0;
+                } else if matches!(t, 31 | 294 | 295 | 296) {
                     npc.ai[1] += 6.0;
                 }
                 // `:60035` — the bash counter resets.
                 npc.ai[2] = 0.0;
-                // `:60036-60045` — at 10 the door opens (the type-460
-                // always-open arm names no zombie kind).
+                // `:60036-60045` — at 10 the door opens; the type-460
+                // always-open arm (`:60042-60045`).
                 let mut flag28 = false;
                 if npc.ai[1] >= 10.0 {
                     flag28 = true;
                     npc.ai[1] = 10.0;
+                }
+                if t == 460 {
+                    flag28 = true;
                 }
                 // `:60046` — the failure thud (`KillTile(fail: true)`)
                 // plays on EVERY bash; the open request rides the drain
@@ -326,13 +487,12 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
             }
         } else {
             // `:60089-60203` — the probe jump ladder.
-            // `:60091-60095` — num201 = spriteDirection (the type-425
-            // flip names no zombie kind).
-            let num201 = npc.sprite_dir;
+            // `:60091-60095` — num201 = spriteDirection; the type-425
+            // VortexRifleman flips it (the flight aim faces backwards).
+            let num201 = if t == 425 { -npc.sprite_dir } else { npc.sprite_dir };
             // `:60096` — only while moving WITH the facing.
             if (npc.vx < 0.0 && num201 == -1) || (npc.vx > 0.0 && num201 == 1) {
-                // `:60098-60110` — the 2/3-tile wall tiers (the zombie
-                // box is 40 tall, >= 32).
+                // `:60098-60110` — the 2/3-tile wall tiers (height >= 32).
                 if h >= 32.0 && solid_tile_no_platforms(world, num198, num199 - 2) {
                     if solid_tile_no_platforms(world, num198, num199 - 3) {
                         npc.vy = -8.0;
@@ -342,8 +502,10 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
                         npc.net_update = true;
                     }
                 } else if solid_tile_no_platforms(world, num198, num199 - 1) {
-                    // `:60111-60128` — the 1-tile wall: -6f (the type-624
-                    // gnome arm names no zombie kind).
+                    // `:60111-60128` — the 1-tile wall: -6f; the type-624
+                    // gnome arm (`:60113-60122`) jumps -8 and turns away
+                    // from a low ceiling — 624 has no port kind, the arm
+                    // stays documented-unreachable.
                     npc.vy = -6.0;
                     npc.net_update = true;
                 } else if npc.y + h - (num199 as f32 * 16.0) > 20.0
@@ -354,11 +516,12 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
                     npc.vy = -5.0;
                     npc.net_update = true;
                 } else if npc.direction_y < 0
+                    && t != 67
                     && !solid_tile_allow_bottom_slope(world, num198, num199 + 1)
                     && !solid_tile_allow_bottom_slope(world, num198 + npc.facing, num199 + 1)
                 {
                     // `:60134-60139` — the gap leap: -8f and vx ×1.5 (the
-                    // type-67 exclusion names no zombie kind).
+                    // type-67 face-monster exclusion, `:60134`).
                     npc.vy = -8.0;
                     npc.vx *= 1.5;
                     npc.net_update = true;
@@ -373,12 +536,33 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
                     npc.vy = -5.0;
                 }
                 // `:60149-60203` — the expert-mode / type-586 hop: skipped
-                // (no expertMode flag, 586 not a zombie kind — module
-                // docs).
+                // (no expertMode flag, 586 has no port kind — the S1-D-3z
+                // module docs; the -7.9 platform hop is inside the gate).
             }
-            // `:60205-60277` — the post-ladder type arms (31/294-296/47/
-            // 77/104/168/196/385/389/464/470/524-527, 120, 287, 460): none
-            // is a zombie kind.
+            // `:60205-60257` — the charge hop: grounded, inside the
+            // 100×50 window, moving with the facing at >= 1: vx ×2 (cap
+            // ±3) + vy -4. The 586 inner arm is expert-only (skipped).
+            if charge_hop_type(t) && npc.vy == 0.0 {
+                let (px, py) = (npc.x + (w as i32 / 2) as f32, npc.y + (h as i32 / 2) as f32);
+                let (tx, ty) = player_center;
+                if (px - tx).abs() < 100.0
+                    && (py - ty).abs() < 50.0
+                    && ((npc.facing > 0 && npc.vx >= 1.0) || (npc.facing < 0 && npc.vx <= -1.0))
+                {
+                    npc.vx *= 2.0;
+                    if npc.vx > 3.0 {
+                        npc.vx = 3.0;
+                    }
+                    if npc.vx < -3.0 {
+                        npc.vx = -3.0;
+                    }
+                    npc.vy = -4.0;
+                    npc.net_update = true;
+                }
+            }
+            // `:60258-60261` — the type-120 rising ×1.1 (no port kind).
+            // `:60262-60272` — the type-287 dash (no port kind).
+            // `:60273-60277` — the type-460 rising boost (no port kind).
         }
     } else if flag8 {
         // `:60280-60284` — no floor under the body: the bash counters
@@ -386,7 +570,7 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
         npc.ai[1] = 0.0;
         npc.ai[2] = 0.0;
     }
-    // `:60285-60297` — the type-120 teleport: not a zombie kind.
+    // `:60285-60297` — the type-120 teleport: no port kind.
     false
 }
 
