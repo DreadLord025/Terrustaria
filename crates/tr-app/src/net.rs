@@ -5225,7 +5225,7 @@ mod tests {
         // The one-byte varint form: hold 15 / grab delay 100 (`:681`/`:683`).
         let small = ItemOwner { hold: 15, grab_delay: 100, ..o };
         let f = S2c::ItemOwner(Box::new(small)).encode();
-        assert_eq!(&f[5..10], &[2, 15, 255, 100]);
+        assert_eq!(&f[5..9], &[2, 15, 255, 100]);
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::ItemOwner(back) => assert_eq!(*back, small),
             other => panic!("expected 22, got {:?}", other.msg_id()),
