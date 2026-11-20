@@ -514,7 +514,8 @@ mod tests {
                 SOLAR_WHIP_SWORD_EXPLOSION, 0, 400.0, 300.0, 0.0, 0.0, 40, 0.0, 0.0, 0.85,
             )
             .unwrap();
-        // An NPC inside the resized box (the 44×44 box centred on 400,300).
+        // An NPC inside the resized box (the 44×44 box centred on the
+        // spawn corner + half the 8×8 row box = (404, 304)).
         let mut n = crate::npc::Npc::new(crate::npc::NpcKind::Zombie, 395.0, 295.0, 1, 0.0);
         n.hp = 100;
         n.max_hp = 100;

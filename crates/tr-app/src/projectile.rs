@@ -18245,9 +18245,14 @@ impl ProjectilePool {
                                     rng,
                                 );
                                 // `:34504`/`:34539` — the Item14 cue (the
-                                // flag58/flag59 families; the 1044's
-                                // ParticleOrchestrator is the skip).
-                                if self.slots[i].kind != DEAD_CELLS_MUSHROOM_BOI_EXPLOSION {
+                                // flag58/flag59 families only; the 1044's
+                                // ParticleOrchestrator and the 608's dead
+                                // AI path play nothing).
+                                if matches!(
+                                    self.slots[i].kind,
+                                    SOLAR_WHIP_SWORD_EXPLOSION | DAYBREAK_EXPLOSION
+                                        | STARDUST_GUARDIAN_EXPLOSION | 978
+                                ) {
                                     let p = &self.slots[i];
                                     self.pending_proj_sounds.push((
                                         2, 14, p.pos.x, p.pos.y, 0.0,
@@ -45386,6 +45391,10 @@ mod w4_d12_dryads_ward_tests {
         assert_eq!(npcs[0].buffs.buff_time[i], 120, "the ≤20 refresh (:41225-41227)");
         // The dryadBane short-circuit: an already-baned enemy skips the
         // CanHit probe (the flag is the buff-186 latch, NPC.cs:92093).
+        // Clear the tick-40 grant first so the 15-tick bane is the live
+        // one (AddBuff keeps the longer time, NPC.cs:89941-89944).
+        npcs[1].buffs.buff_time = [0; 20];
+        npcs[1].buffs.buff_type = [0; 20];
         npcs[1].buffs.add_buff(186, 15);
         p.ai[0] = 49.0; // tick 50
         p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
@@ -45886,10 +45895,12 @@ mod w4_d12_solar_flare_ray_tests {
         // The lerp target is WrapAngle(0 + 1.0) = 1.0; the latch already
         // put rotation at 1.0, so AngleLerp(1.0, 1.0, 0.05) = 1.0.
         assert!((p.rot - 1.0).abs() < 1e-6, ":34442 + the equal-angle lerp");
-        // A second tick with a different ai[1] does NOT re-latch.
+        // A second tick with a different ai[1] does NOT re-latch: the
+        // rotation lerps 5% toward the new target (2.0) instead of
+        // snapping to it — 1.0 + (2.0 − 1.0)·0.05 = 1.05.
         p.ai[1] = 2.0;
         p.ai_solar_flare_ray(owner);
-        assert!((p.rot - 1.0).abs() < 1e-6, "the latch is one-shot (:34440)");
+        assert!((p.rot - 1.05).abs() < 1e-6, "the latch is one-shot (:34440) — the lerp, not a re-pin");
     }
 
     /// The setSolar keep-alive (`:34445-34449`): the flag pins timeLeft 2.
