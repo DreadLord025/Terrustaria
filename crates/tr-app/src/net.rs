@@ -143,6 +143,15 @@ pub mod id {
     /// lifted the parked d90 codec and wired the apply arms.
     pub const TILE_PICKING: u8 = 125;
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
+    /// `127 RemoveRevengeMarker` (`MessageID.cs:268`) — the 126 marker's
+    /// removal twin (`NetMessage.cs:1518-1520`, `MessageBuffer.cs:4049-4057`).
+    /// W4-g51 lifted the parked d99 codec and wired the client arm.
+    pub const REMOVE_REVENGE_MARKER: u8 = 127;
+    /// `128 LandGolfBallInCup` (`MessageID.cs:270`) — a golf ball landed in a
+    /// cup (`NetMessage.cs:1521-1527`, `MessageBuffer.cs:4058-4073`). W4-g51
+    /// lifted the parked d93 codec; the host relay is wired, the client cup
+    /// FX ride the golf system (parked).
+    pub const GOLF_BALL_IN_CUP: u8 = 128;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -1553,6 +1562,32 @@ pub struct TilePicking {
     pub damage: u8,
 }
 
+/// `msg 127 RemoveRevengeMarker`'s body (`NetMessage.cs:1518-1520`): one raw
+/// `(int)` — the marker's `UniqueID`. The dedicated server sends it when a
+/// marker spawns its enemy or expires/goes invalid
+/// (`CoinLossRevengeSystem.cs:451`/`:473`/`:477`, all `Main.dedServ` gates);
+/// the client destroys the marker (`MessageBuffer.cs:4049-4057`). The `126`
+/// marker's twin (wave A). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RemoveRevengeMarker {
+    pub unique_id: i32,
+}
+
+/// `msg 128 LandGolfBallInCup`'s body (`NetMessage.cs:1521-1527`, S1-I-1
+/// W4-d93): `(byte)number` (the owner), `(ushort)number5`/`(ushort)number6`
+/// (the cup's tile coords), `(ushort)number2` (the hit count, the ball's
+/// `ai[1]`) and `(ushort)number3` (the ball's projectile type). The writer's
+/// field order is NOT the argument order — the reader mirrors it
+/// (`MessageBuffer.cs:4060-4064`: owner, x, y, hits, type).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GolfBallInCup {
+    pub owner: u8,
+    pub x: u16,
+    pub y: u16,
+    pub hits: u16,
+    pub ball_type: u16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1667,6 +1702,11 @@ pub enum C2s {
     /// `125 SyncTilePicking` - a client's pickaxe hit on a tile
     /// (`MessageBuffer.cs:4023-4042` overrides the id and relays).
     TilePicking(TilePicking),
+    /// `128 LandGolfBallInCup` — this client's golf ball dropped into a cup
+    /// (`GolfHelper.ContactListener.PutBallInCup`, `GolfHelper.cs:107-110`,
+    /// `netMode == 1` only); the host relays it with `ignoreClient = owner`
+    /// (`MessageBuffer.cs:4058-4074`).
+    GolfBallInCup(GolfBallInCup),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1793,6 +1833,13 @@ pub enum S2c {
     /// `125 SyncTilePicking` — another player's pickaxe hit
     /// (`MessageBuffer.cs:4033-4036` applies it to the local player).
     TilePicking(TilePicking),
+    /// `127 RemoveRevengeMarker` - a coin-loss revenge marker is gone
+    /// (`CoinLossRevengeSystem.cs:451`, `MessageBuffer.cs:4049-4057`).
+    RemoveRevengeMarker(RemoveRevengeMarker),
+    /// `128 LandGolfBallInCup` - a peer's golf ball landed in a cup, relayed
+    /// to everyone but the owner (`MessageBuffer.cs:4067`); the client runs
+    /// the cup text/effects (`:4071`, M4-GOLF-1).
+    GolfBallInCup(GolfBallInCup),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1882,6 +1929,7 @@ impl C2s {
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::TilePicking(_) => id::TILE_PICKING,
+            Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1953,6 +2001,9 @@ impl C2s {
             // `NetMessage.cs:1509-1514`: byte player + short x + short y +
             // byte damage.
             Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
+            // `NetMessage.cs:1521-1527`: byte owner + ushort x + ushort y +
+            // ushort hits + ushort type (the writer's field order).
+            Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2082,6 +2133,14 @@ impl C2s {
                 x: r.i16()?,
                 y: r.i16()?,
                 damage: r.u8()?,
+            }),
+            // `MessageBuffer.cs:4060-4064`: owner, x, y, hits, type.
+            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
+                owner: r.u8()?,
+                x: r.u16()?,
+                y: r.u16()?,
+                hits: r.u16()?,
+                ball_type: r.u16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2244,6 +2303,8 @@ impl S2c {
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::TilePicking(_) => id::TILE_PICKING,
+            Self::RemoveRevengeMarker(_) => id::REMOVE_REVENGE_MARKER,
+            Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
         }
     }
 
@@ -2389,6 +2450,11 @@ impl S2c {
             // `NetMessage.cs:1509-1514`: byte player + short x + short y +
             // byte damage (the relay reuses the writer case).
             Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
+            // `NetMessage.cs:1518-1520`: one raw (int) UniqueID.
+            Self::RemoveRevengeMarker(m) => w.i32(m.unique_id),
+            // `NetMessage.cs:1521-1527`: byte owner + ushort x + ushort y +
+            // ushort hits + ushort type (the relay reuses the writer case).
+            Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2598,6 +2664,18 @@ impl S2c {
                 x: r.i16()?,
                 y: r.i16()?,
                 damage: r.u8()?,
+            }),
+            // `MessageBuffer.cs:4051`: one raw (int) UniqueID.
+            id::REMOVE_REVENGE_MARKER => Self::RemoveRevengeMarker(RemoveRevengeMarker {
+                unique_id: r.i32()?,
+            }),
+            // `MessageBuffer.cs:4060-4064`: owner, x, y, hits, type.
+            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
+                owner: r.u8()?,
+                x: r.u16()?,
+                y: r.u16()?,
+                hits: r.u16()?,
+                ball_type: r.u16()?,
             }),
             _ => return None,
         })
@@ -4675,6 +4753,52 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::TilePicking(d) => assert_eq!(d, p),
             other => panic!("expected 125, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `127 RemoveRevengeMarker` body is one raw (int) UniqueID
+    /// (`NetMessage.cs:1518-1520`); S2c-only.
+    #[test]
+    fn w4_g51_remove_revenge_marker_round_trips() {
+        let f = S2c::RemoveRevengeMarker(RemoveRevengeMarker { unique_id: -7 }).encode();
+        assert_eq!(f[2], 127);
+        assert_eq!(&f[3..], &(-7i32).to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::RemoveRevengeMarker(d) => assert_eq!(d.unique_id, -7),
+            other => panic!("expected 127, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `128 LandGolfBallInCup` body byte-pins the writer's field
+    /// order (`NetMessage.cs:1521-1527`: owner, x, y, hits, type — NOT the
+    /// argument order) and round-trips both directions.
+    #[test]
+    fn w4_g51_golf_ball_in_cup_round_trips() {
+        let g = GolfBallInCup {
+            owner: 2,
+            x: 300,
+            y: 400,
+            hits: 3,
+            ball_type: 706,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&300u16.to_le_bytes());
+        body.extend_from_slice(&400u16.to_le_bytes());
+        body.extend_from_slice(&3u16.to_le_bytes());
+        body.extend_from_slice(&706u16.to_le_bytes());
+        let c = C2s::GolfBallInCup(g).encode();
+        assert_eq!(c[2], 128);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::GolfBallInCup(d) => assert_eq!(d, g),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+        let f = S2c::GolfBallInCup(g).encode();
+        assert_eq!(f[2], 128);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::GolfBallInCup(d) => assert_eq!(d, g),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
         }
     }
 

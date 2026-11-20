@@ -816,6 +816,14 @@ impl App {
                 p.player_id = id as u8; // `:4031`
                 server.broadcast_except(&S2c::TilePicking(p), id);
             }
+            // `case 128` — a client's golf ball landed in a cup. The host
+            // only relays: `SendData(128, -1, num157, …)` with
+            // `ignoreClient = owner` (`MessageBuffer.cs:4065-4068`) — the
+            // owner already ran the cup effects locally before sending
+            // (`GolfHelper.cs:103`). No host-side apply exists.
+            C2s::GolfBallInCup(g) => {
+                server.broadcast_except(&S2c::GolfBallInCup(g), g.owner as u32);
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1886,6 +1894,14 @@ impl App {
                     });
                 }
             }
+            // `case 127`'s client half (`MessageBuffer.cs:4049-4057`):
+            // `NPC.RevengeManager.DestroyMarker(markerUniqueID)` —
+            // `_markers.RemoveAll(x => x.UniqueID == markerUniqueID)`
+            // (`CoinLossRevengeSystem.cs:334-340`). The 126 marker's twin.
+            S2c::RemoveRevengeMarker(m) => {
+                self.revenge_markers
+                    .retain(|x| x.unique_id != m.unique_id as u64);
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1902,6 +1918,11 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
+            // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
+            // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
+            // the relay lands here until then (S1-I-4).
+            S2c::GolfBallInCup(_) => {}
         }
     }
 
@@ -3991,6 +4012,50 @@ mod handshake_tests {
             1000 + crate::revenge::expiration_addon(50000),
             "the ctor's gameTime + bracket expiration"
         );
+    }
+
+    /// W4-g51 `127 RemoveRevengeMarker`: the client's `DestroyMarker` removes
+    /// every marker with the matching UniqueID
+    /// (`MessageBuffer.cs:4049-4057`, `CoinLossRevengeSystem.cs:334-340`).
+    #[test]
+    fn the_remove_revenge_marker_destroys_the_matching_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        // Two markers, ids 9 and 10 (the 126 apply path).
+        for uid in [9i32, 10] {
+            let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+            if let NetRole::Client(client) = &role {
+                client_app.client_event(
+                    client,
+                    net::ClientEvent::Frame(S2c::RevengeMarker(net::RevengeMarker {
+                        unique_id: uid,
+                        x: 0.0,
+                        y: 0.0,
+                        npc_net_id: 1,
+                        npc_hp_percent: 1.0,
+                        npc_type: 1,
+                        npc_ai_style: 1,
+                        coins_value: 1000,
+                        base_value: 0.0,
+                        spawned_from_statue: false,
+                    })),
+                );
+            }
+            client_app.net = role;
+        }
+        assert_eq!(client_app.revenge_markers.len(), 2);
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::RemoveRevengeMarker(
+                    net::RemoveRevengeMarker { unique_id: 9 },
+                )),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.revenge_markers.len(), 1, "id 9 was destroyed");
+        assert_eq!(client_app.revenge_markers[0].unique_id, 10);
     }
 
     #[test]
