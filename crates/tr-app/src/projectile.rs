@@ -14199,7 +14199,7 @@ pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
 /// non-actuated, solid, non-solidTop tile for a strict box overlap (the
 /// halfBrick shrinks the tile's top by 8). The falling star's `ai[1]` latch
 /// reads it (`Projectile.cs:23871`).
-fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+pub(crate) fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
     let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
     let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
@@ -17424,6 +17424,22 @@ impl ProjectilePool {
                             // manualDirectionChange (`:7445`) — the arm
                             // pins facing; the free integrate never
                             // rewrites it (the aiStyle-120 precedent).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 145: the Book Staff twister 704
+                        // (`AI_145_BookStaffStorm`,
+                        // `Projectile.cs:70326-70468`): the 300-tick age +
+                        // the 16-counter fast-forward, the column probe's
+                        // rise/fall, the swirl-dust float census and the
+                        // three gore gates (the G3 NewGore kicks).
+                        145 => {
+                            crate::projectile_ai_dd2::ai_book_staff_storm(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
+                            // HandleMovement after the AI (`:17015`); the
+                            // row keeps tileCollide = false (`:7454`).
                             self.slots[i].kill_step(world);
                         }
                         // aiStyle 147 — the Celebration Mk2 rockets

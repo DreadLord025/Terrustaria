@@ -76,9 +76,9 @@ use tr_core::loot::DropRng;
 
 use crate::bow_launch::rotated_by;
 use crate::projectile::{
-    AXE_FAIRY_PET, DD2_PET_DRAGON, DD2_PET_GATO, DD2_PET_GHOST, MONK_STAFF_T2, MONK_STAFF_T2_GHAST,
-    MONK_STAFF_T3_ALT, MONK_STAFF_T3_ALT_SHOT, Projectile, UPBEAT_STAR, proj_frames,
-    safe_normalize_or, solid_tile,
+    AXE_FAIRY_PET, DD2_APPRENTICE_STORM, DD2_PET_DRAGON, DD2_PET_GATO, DD2_PET_GHOST,
+    MONK_STAFF_T2, MONK_STAFF_T2_GHAST, MONK_STAFF_T3_ALT, MONK_STAFF_T3_ALT_SHOT, Projectile,
+    UPBEAT_STAR, proj_frames, safe_normalize_or, solid_collision, solid_tile,
 };
 
 /// The owner state the 142/144/148 arms read off `Main.player[owner]`
@@ -812,6 +812,129 @@ pub(crate) fn ai_dd2_pet(p: &mut Projectile, o: &Dd2Owner, world: &World, rng: &
     }
 }
 
+/// `AI_145_BookStaffStorm` (`Projectile.cs:70326-70468`) — the Tome of
+/// Infinite Wisdom's twister 704. The 300-tick age (the `localAI[0] >=
+/// 16` fast-forward jumps it to 285), the solid/wet column probe's
+/// ±2/±4 velocity steps (clamped ±16), the < 270 swirl dust (3 explicit
+/// floats + the conditional 4th), the 4-dust base ring (no explicit
+/// draws) and the three gore gates (1-in-5, 1-in-7, 1-in-7 — each taken
+/// branch: `NextVector2Square(0,1)` = 2 doubles, one float,
+/// `SelectRandom` = one `Next(3)`, then the `NewGore` kicks `Next(10,31)`
+/// Y-first + `Next(-20,21)` X, `Gore.cs:1327-1328`).
+///
+/// The tracked twister loop + its volume ramp (`:70329-70343`) fold to
+/// the inert `SlotId.Invalid` latch (the 143 precedent); the
+/// `soundDelay = -1` write stays (the pool's cue cooldown ticks only
+/// while positive — the latch holds, S1-E-21h).
+pub(crate) fn ai_book_staff_storm(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
+    let num = 300.0f32;
+    // `:70329-70343` — the tracked-sound fold: the one-shot soundDelay
+    // latch stays, the slot id re-latches Invalid every tick.
+    if p.sound_delay == 0 {
+        p.sound_delay = -1;
+    }
+    p.local_ai[1] = f32::from_bits(65535); // SlotId.Invalid.ToFloat()
+    // `:70344-70352` — the fast-forward and the 300-tick kill.
+    if p.local_ai[0] >= 16.0 && p.ai[0] < num - 15.0 {
+        p.ai[0] = num - 15.0;
+    }
+    p.ai[0] += 1.0;
+    if p.ai[0] >= num {
+        kill(p);
+    }
+    // `:70353-70357` — the column geometry: Top/Bottom mid-lerp, the
+    // (h·0.2, h) span vector.
+    let top = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y);
+    let bottom = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h);
+    let vector = top.lerp(bottom, 0.5);
+    let mut vector2 = Vec2::new(0.0, bottom.y - top.y);
+    vector2.x = vector2.y * 0.2;
+    // `:70358-70405` — the one-iteration column probe: the 16-wide,
+    // 160-tall box at (Centre.X − 8, position.Y + height − 160).
+    let num2 = 16.0f32;
+    let num3 = 160.0f32;
+    let center_x = p.pos.x + p.w * 0.5;
+    let vector3 = Vec2::new(center_x - num2 / 2.0, p.pos.y + p.h - num3);
+    if solid_collision(world, vector3, num2, num3)
+        || crate::player::wet_collision(world, vector3.x, vector3.y, num2, num3)
+    {
+        // `:70365-70381` — the grounded rise: zero the fall, −2 under
+        // −4, −4 + localAI[0] += 2 past it, clamp −16.
+        if p.vel.y > 0.0 {
+            p.vel.y = 0.0;
+        }
+        if p.vel.y > -4.0 {
+            p.vel.y -= 2.0;
+        } else {
+            p.vel.y -= 4.0;
+            p.local_ai[0] += 2.0;
+        }
+        if p.vel.y < -16.0 {
+            p.vel.y = -16.0;
+        }
+    } else {
+        // `:70384-70404` — the airborne fall: the counter decays to 0,
+        // zero the rise, +2 under 4, +4 past it, clamp 16.
+        p.local_ai[0] -= 1.0;
+        if p.local_ai[0] < 0.0 {
+            p.local_ai[0] = 0.0;
+        }
+        if p.vel.y < 0.0 {
+            p.vel.y = 0.0;
+        }
+        if p.vel.y < 4.0 {
+            p.vel.y += 2.0;
+        } else {
+            p.vel.y += 4.0;
+        }
+        if p.vel.y > 16.0 {
+            p.vel.y = 16.0;
+        }
+    }
+    // `:70406-70432` — the swirl dust (while ai[0] < 270): the amount
+    // float FIRST (`:70412`), then the X-lerp float (`:70413`), then the
+    // conditional X-velocity float (`:70425`, only when vector4.X >
+    // −1.2), then the Y-velocity float (`:70428`). The dust body is the
+    // skip.
+    if p.ai[0] < num - 30.0 {
+        let amount = rng.next_float(); // `:70412`
+        let x_lerp = 0.1 + (1.0 - 0.1) * rng.next_float(); // `:70413`
+        let mut v4x = x_lerp * (2.2 + (0.6 - 2.2) * amount);
+        v4x *= -1.0;
+        if v4x > -1.2 {
+            let _ = rng.next_float(); // `:70425`
+        }
+        let _ = rng.next_float(); // `:70428`
+        let _ = vector2; // the dust position feeds the skip
+        let _ = vector;
+    }
+    // `:70433-70439` — the 4-dust base ring: no explicit draws (the
+    // NewDustDirect internals go with the dust pool).
+    // `:70440-70467` — the three gore gates: 1-in-5, 1-in-7, 1-in-7.
+    for gate in [5i32, 7, 7] {
+        if rng.next_range(0, gate) == 0 {
+            gore_1007_1008(rng);
+        }
+    }
+}
+
+/// One `Gore.NewGoreDirect(TopLeft + NextVector2Square(0,1)*Size,
+/// (vel.x*1.5, −NextFloat()*16), SelectRandom(rand, 1007, 1008, 1008))`
+/// draw row (`Projectile.cs:70444`/`:70454`/`:70463`): the position pair
+/// (2 `NextDouble`, `Utils.cs:1251-1254`), the velocity float, the
+/// `SelectRandom` `Next(3)` (`Utils.cs:2459-2462`), then the `NewGore`
+/// internal kicks — Y first `Next(10,31)`, X `Next(-20,21)`
+/// (`Gore.cs:1327-1328`, the G3 standard). The gore body + the
+/// timeLeft/alpha writes are the pool skip.
+fn gore_1007_1008(rng: &mut dyn DropRng) {
+    let _ = rng.next_double(); // the position X
+    let _ = rng.next_double(); // the position Y
+    let _ = rng.next_float(); // the velocity Y scale
+    let _ = rng.next_range(0, 3); // SelectRandom(1007, 1008, 1008)
+    let _ = rng.next_range(10, 31); // the NewGore Y kick
+    let _ = rng.next_range(-20, 21); // the NewGore X kick
+}
+
 // Witnesses (W4-d15 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1341,5 +1464,104 @@ mod tests {
         // The cooldown counts back up one per tick (`:70173-70176`).
         ai_dd2_pet(&mut p2, &o, &w, &mut rng2);
         assert_eq!(p2.local_ai[1], -299.0);
+    }
+
+    /// The 704 row is verbatim `SetDefaults` (`Projectile.cs:7447-7460`).
+    #[test]
+    fn the_704_row_is_verbatim() {
+        let d = proj_data(DD2_APPRENTICE_STORM).expect("the 704 row");
+        assert_eq!((d.w, d.h, d.ai_style), (60.0, 210.0, 145), ":7449-7451");
+        assert!(d.magic, ":7453");
+        assert!(!d.tile_collide, ":7454");
+        assert_eq!(d.penetrate, -1, ":7455");
+        assert!(d.uses_local_immunity, ":7456");
+        assert_eq!(d.time_left, 600, ":7457");
+        assert_eq!(d.local_hit_cooldown, -1, ":7458");
+        assert!(d.ignore_water, ":7459");
+    }
+
+    /// The airborne fall: +2 under 4, +4 past it, clamp 16; the counter
+    /// decays to 0. The swirl census (min-return floats): amount 0 →
+    /// v4x = −0.1 > −1.2 → the conditional float fires → 4 floats; the
+    /// three gates all take at the census min → 3 gore rows (2 doubles +
+    /// 1 float + Next(3) + the two kicks each).
+    #[test]
+    fn the_storm_fall_and_the_full_draw_census() {
+        let w = world();
+        let mut p = proj(DD2_APPRENTICE_STORM);
+        p.local_ai[0] = 3.0;
+        let mut rng = census();
+        ai_book_staff_storm(&mut p, &w, &mut rng);
+        assert_eq!(p.ai[0], 1.0, ":70348");
+        assert_eq!(p.vel.y, 2.0, ":70393-70396");
+        assert_eq!(p.local_ai[0], 2.0, ":70384-70388");
+        assert_eq!(p.sound_delay, -1, ":70331 — the one-shot latch");
+        assert_eq!(p.local_ai[1].to_bits(), 65535, "the sound fold");
+        assert_eq!(rng.floats, 4 + 3, ":70412-70428 + the 3 gore velocity floats");
+        assert_eq!(rng.doubles, 6, "3 × NextVector2Square(0,1)");
+        assert_eq!(
+            rng.ranges,
+            vec![
+                (0, 5), (0, 3), (10, 31), (-20, 21),
+                (0, 7), (0, 3), (10, 31), (-20, 21),
+                (0, 7), (0, 3), (10, 31), (-20, 21),
+            ],
+            ":70442/:70452/:70461 + SelectRandom + the G3 kicks"
+        );
+        // The velocity ladder: 2 → 4 → 8 → 12 → 16 → 16 (clamped).
+        for want in [4.0, 8.0, 12.0, 16.0, 16.0] {
+            ai_book_staff_storm(&mut p, &w, &mut rng);
+            assert_eq!(p.vel.y, want, ":70393-70404");
+        }
+        assert_eq!(p.local_ai[0], 0.0, "the floor holds");
+    }
+
+    /// The grounded rise: zero the fall, −2 under −4, −4 + counter += 2
+    /// past it, clamp −16. A solid tile under the column box takes the
+    /// branch.
+    #[test]
+    fn the_storm_grounded_rise() {
+        let mut w = world();
+        let mut p = proj(DD2_APPRENTICE_STORM);
+        // The column box: (Centre.X − 8, pos.Y + 210 − 160) 16×160 —
+        // a tile at the box's bottom row blocks it.
+        let bx = ((p.pos.x + 30.0 - 8.0) / 16.0) as i32;
+        let by = ((p.pos.y + 210.0 - 160.0 + 150.0) / 16.0) as i32;
+        put(&mut w, bx, by, 1);
+        p.vel.y = 5.0;
+        let mut rng = census();
+        ai_book_staff_storm(&mut p, &w, &mut rng);
+        assert_eq!(p.vel.y, -2.0, ":70365-70372 — zero then −2");
+        ai_book_staff_storm(&mut p, &w, &mut rng);
+        assert_eq!(p.vel.y, -4.0);
+        ai_book_staff_storm(&mut p, &w, &mut rng);
+        assert_eq!(p.vel.y, -8.0, ":70373-70377 — the −4 arm");
+        assert_eq!(p.local_ai[0], 2.0, "the counter += 2");
+        for _ in 0..2 {
+            ai_book_staff_storm(&mut p, &w, &mut rng);
+        }
+        assert_eq!(p.vel.y, -16.0, ":70378-70381 — the clamp");
+        assert_eq!(p.local_ai[0], 6.0);
+    }
+
+    /// The fast-forward: localAI[0] >= 16 jumps ai[0] to 285, then ++ →
+    /// 286; the swirl window (< 270) is closed, only the gore gates
+    /// draw. The 300-tick kill lands 14 ticks later.
+    #[test]
+    fn the_storm_fast_forward_and_kill() {
+        let w = world();
+        let mut p = proj(DD2_APPRENTICE_STORM);
+        p.local_ai[0] = 16.0;
+        p.ai[0] = 50.0;
+        let mut rng = census();
+        ai_book_staff_storm(&mut p, &w, &mut rng);
+        assert_eq!(p.ai[0], 286.0, ":70344-70348");
+        assert_eq!(rng.floats, 3, "the swirl is closed — the gore floats only");
+        for _ in 0..13 {
+            ai_book_staff_storm(&mut p, &w, &mut rng);
+        }
+        assert!(p.active, "299 stays live");
+        ai_book_staff_storm(&mut p, &w, &mut rng);
+        assert!(!p.active, ":70349-70352 — the 300 kill");
     }
 }

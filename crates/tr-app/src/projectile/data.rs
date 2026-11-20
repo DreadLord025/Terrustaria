@@ -1202,6 +1202,9 @@ pub const DD2_PET_GHOST: u16 = 702;
 /// `ProjectileID.DD2PetGato` (703) — the DD2 gato pet, aiStyle 144
 /// (the same row block).
 pub const DD2_PET_GATO: u16 = 703;
+/// `ProjectileID.DD2ApprenticeStorm` (704) — the Tome of Infinite
+/// Wisdom's twister, aiStyle 145 (`Projectile.cs:7447-7460`).
+pub const DD2_APPRENTICE_STORM: u16 = 704;
 /// `ProjectileID.UpbeatStar` (764) — the Upbeat Star pet, aiStyle 144
 /// (`Projectile.cs:7866-7878`).
 pub const UPBEAT_STAR: u16 = 764;
@@ -4052,6 +4055,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET => (
                 20.0, 20.0, 144, -1, TIME_LEFT_DEFAULT * 5, 0, false, false, false, RESET_STATE
             ),
+            // `Projectile.cs:7447-7460`: the Book Staff twister (704):
+            // 60x210, aiStyle 145, magic (the overlay), tileCollide
+            // false, penetrate -1, local immunity -1, timeLeft 600,
+            // ignoreWater (the overlay).
+            DD2_APPRENTICE_STORM => (
+                60.0, 210.0, 145, -1, 600, 0, false, false, false,
+                (true, -1, false, -1, 0, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4314,7 +4325,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(
                 kind,
                 DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET
-            ),
+            )
+            // W4-d15 — the Book Staff twister (`Projectile.cs:7459`).
+            || kind == DD2_APPRENTICE_STORM,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4416,6 +4429,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+                // W4-d15 — the Book Staff twister (`Projectile.cs:7453`).
+                | DD2_APPRENTICE_STORM
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
