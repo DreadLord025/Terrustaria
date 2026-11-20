@@ -833,6 +833,10 @@ impl App {
             // the subject and relays, `MessageBuffer.cs:3538-3555`) — same
             // wave, same parking.
             C2s::PlayerPortalTeleport(_) => {}
+            // 113 DD2 crystal placement (`MessageBuffer.cs:3841-3854`
+            // WouldFailSpawningHere + SummonCrystal on the sender) — same
+            // wave, same parking.
+            C2s::CrystalInvasionStart(_) => {}
         }
     }
 
@@ -1894,6 +1898,9 @@ impl App {
             // both statics) + 112 SpecialFX (`:3815-3840` TreeGrowFX /
             // FairyEffects) — same wave, same parking.
             S2c::MoonlordCountdown(_) | S2c::SpecialFx(_) => {}
+            // 114 DD2 wipe (`MessageBuffer.cs:3855-3860`
+            // DD2Event.WipeEntities on the client) — same wave, same parking.
+            S2c::CrystalInvasionWipe => {}
         }
     }
 

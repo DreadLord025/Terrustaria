@@ -1737,6 +1737,18 @@ pub struct SpecialFx {
     pub b6: u8,
 }
 
+/// `msg 113 DD2EventSummonCrystal`'s body (`NetMessage.cs:1432-1435`):
+/// `(short)` x, `(short)` y — the crystal's tile coords. The client sends
+/// it when placing the eternia crystal (`DD2Event.SummonCrystal`,
+/// `DD2Event.cs:574-577`); the host checks `WouldFailSpawningHere` and
+/// summons on the sender (`MessageBuffer.cs:3841-3854`, gated on
+/// `!snowMoon && !pumpkinMoon`). Client→server only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrystalInvasionStart {
+    pub x: i16,
+    pub y: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1867,6 +1879,9 @@ pub enum C2s {
     /// `96 TeleportPlayerThroughPortal` - the portal-gun owner teleported
     /// itself (`PortalHelper.cs:190`; the host relays, `:3552-3555`).
     PlayerPortalTeleport(PlayerPortalTeleport),
+    /// `113 DD2EventSummonCrystal` - a client placed the eternia crystal
+    /// (`DD2Event.cs:576`; the host summons, `MessageBuffer.cs:3841-3854`).
+    CrystalInvasionStart(CrystalInvasionStart),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2011,6 +2026,9 @@ pub enum S2c {
     /// `112 SpecialFX` - tree-grow / fairy effects
     /// (`WorldGen.cs:29375`, `NPC.cs:48584`; `MessageBuffer.cs:3815-3840`).
     SpecialFx(SpecialFx),
+    /// `114 DD2EventWipeEntities` - the host wiped the Old One's Army,
+    /// no body (`DD2Event.cs:636`, `MessageBuffer.cs:3855-3860`).
+    CrystalInvasionWipe,
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2105,6 +2123,7 @@ impl C2s {
             Self::RequestTeleport(_) => id::REQUEST_TELEPORT,
             Self::AnglerQuestFinished => id::ANGLER_QUEST_FINISHED,
             Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
+            Self::CrystalInvasionStart(_) => id::CRYSTAL_INVASION_START,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2204,6 +2223,8 @@ impl C2s {
                 .f32(p.y)
                 .f32(p.velocity_x)
                 .f32(p.velocity_y),
+            // `NetMessage.cs:1432-1435`: (short)x + (short)y.
+            Self::CrystalInvasionStart(c) => w.i16(c.x).i16(c.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2344,6 +2365,10 @@ impl C2s {
                 y: r.f32()?,
                 velocity_x: r.f32()?,
                 velocity_y: r.f32()?,
+            }),
+            id::CRYSTAL_INVASION_START => Self::CrystalInvasionStart(CrystalInvasionStart {
+                x: r.i16()?,
+                y: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2541,6 +2566,7 @@ impl S2c {
             Self::PlayerPortalTeleport(_) => id::TELEPORT_PLAYER_PORTAL,
             Self::MoonlordCountdown(_) => id::MOONLORD_COUNTDOWN,
             Self::SpecialFx(_) => id::SPECIAL_FX,
+            Self::CrystalInvasionWipe => id::CRYSTAL_INVASION_WIPE,
         }
     }
 
@@ -2735,6 +2761,8 @@ impl S2c {
                 .u8(f.b4)
                 .i16(f.s5)
                 .u8(f.b6),
+            // No writer arm — bodyless (`DD2Event.cs:636` SendData(114)).
+            Self::CrystalInvasionWipe => w,
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2974,6 +3002,7 @@ impl S2c {
                 s5: r.i16()?,
                 b6: r.u8()?,
             }),
+            id::CRYSTAL_INVASION_WIPE => Self::CrystalInvasionWipe,
             _ => return None,
         })
     }
@@ -5452,5 +5481,38 @@ mod tests {
                 other => panic!("expected 112, got {:?}", other.msg_id()),
             }
         }
+    }
+
+    #[test]
+    fn w4_d99_crystal_invasion_start_round_trips() {
+        // `NetMessage.cs:1432-1435` (case 113), verbatim: (short)number (x)
+        // + (short)number2 (y) — the SummonCrystal tile coords
+        // (`DD2Event.cs:576`). Negative coords pin the sign.
+        let c = CrystalInvasionStart { x: -120, y: 450 };
+        let f = C2s::CrystalInvasionStart(c).encode();
+        assert_eq!(f[2], 113);
+        let mut body = Vec::new();
+        body.extend_from_slice(&(-120i16).to_le_bytes());
+        body.extend_from_slice(&450i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::CrystalInvasionStart(d) => assert_eq!(d, c),
+            other => panic!("expected 113, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_crystal_invasion_wipe_is_bodyless() {
+        // No `case 114` writer arm and the reader consumes nothing
+        // (`MessageBuffer.cs:3855-3860` DD2Event.WipeEntities; the send is
+        // `SendData(114)` with no args, `DD2Event.cs:636`): [len=3][114].
+        let f = S2c::CrystalInvasionWipe.encode();
+        assert_eq!(f, vec![3, 0, 114]);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::CrystalInvasionWipe => {}
+            other => panic!("expected 114, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
     }
 }
