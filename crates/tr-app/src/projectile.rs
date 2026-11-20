@@ -14063,6 +14063,48 @@ impl ProjectilePool {
                         22 => self.slots[i].ai_ice_block(world),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
+                        // S1-P-i14 (V5 gate) — `AI_078`
+                        // (`Projectile.cs:30762-30790`): the Xenopopper
+                        // bubble 444's steer-toward-`ai[0]` flight — the
+                        // alpha fade, the ±π-wrapped 5% rotation blend, the
+                        // ×0.96 drag, the velocity rotation − π/2 and the
+                        // owner-gated 60-tick life clamp. Draw-free. The
+                        // death release (`Kill()` `:73398-73419`) rides the
+                        // pool's death hook (`xenopopper_bubble_kill`).
+                        78 => {
+                            let p = &mut self.slots[i];
+                            if p.alpha > 0 {
+                                p.alpha -= 30;
+                            }
+                            if p.alpha < 0 {
+                                p.alpha = 0;
+                            }
+                            // `v2 = ai[0].ToRotationVector2()`; the angle
+                            // delta `v2.ToRotation() - velocity.ToRotation()`
+                            // is `ai[0] - vel.ToRotation()` (both round-trip
+                            // the same f32), wrapped to ±π (`:30774-30782`).
+                            let mut delta =
+                                (p.ai[0] - p.vel.y.atan2(p.vel.x)) as f64;
+                            if delta > std::f64::consts::PI {
+                                delta -= std::f64::consts::PI * 2.0;
+                            }
+                            if delta < -std::f64::consts::PI {
+                                delta += std::f64::consts::PI * 2.0;
+                            }
+                            // `:30783-30785` — the f64 literal 0.05000000074505806
+                            // (the f32 0.05f promoted), the ×0.96f drag, the
+                            // rotation minus the f32 π/2.
+                            p.vel = crate::bow_launch::rotated_by(
+                                p.vel,
+                                delta * 0.05000000074505806,
+                            ) * 0.96;
+                            p.rot = p.vel.y.atan2(p.vel.x)
+                                - std::f32::consts::FRAC_PI_2;
+                            // `:30786-30789` — the owner-gated life clamp.
+                            if p.owner == local_owner && p.time_left > 60 {
+                                p.time_left = 60;
+                            }
+                        }
                         28 => self.slots[i].ai_frost_bolt(world),
                         50 => self.slots[i].ai_inferno_fork(world),
                         // The aiStyle-27 followup caster family
@@ -16204,6 +16246,11 @@ impl ProjectilePool {
                 // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
                 // S1-D-4): the 639's death spawns its 640 trail.
                 self.moonlord_arrow_kill(i);
+                // S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
+                // (`Projectile.cs:73398-73419`): the 444's death releases
+                // its deferred payload (`localAI[0]` bullet kind,
+                // `localAI[1]` speed) toward the mouse.
+                self.xenopopper_bubble_kill(i, inputs.aim, local_owner);
                 // S1-P-i18 — `Kill()`'s special-bullet arms
                 // (`Projectile.cs:75250-75268` the 89 split, `:75911-75974` the
                 // 283 debuff-spread burst, `:75975-75999` the 284 confetti,
@@ -16658,6 +16705,58 @@ impl ProjectilePool {
             // `:73451` — the ai1 payload rides after the slot-order bump.
             self.slots[new_slot].ai[1] = delay as f32;
         }
+    }
+
+    /// S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
+    /// (`Projectile.cs:73398-73419`): the 444's death releases the deferred
+    /// payload the launch stamped (`localAI[0]` = the resolved bullet kind,
+    /// `localAI[1]` = the fused speed, `Player.cs:47622-47623`) as a NEW
+    /// projectile aimed from the bubble's centre toward the mouse world
+    /// point at `localAI[1]` speed, carrying the bubble's damage/knockback/
+    /// owner. The Item96 cue + the `Next(5,9)` dust-171 burst are the
+    /// documented visual skips (the dust layer's draws go with it). The
+    /// `owner == Main.myPlayer` gate folds to `local_owner`; the release is
+    /// draw-free. `aim` is the pass's mouse-world snapshot (`YoyoInputs.aim`,
+    /// the `Main.MouseWorld` read `:73411`); `None` (no local player) declines
+    /// the release, the C#'s owner gate's shape.
+    fn xenopopper_bubble_kill(
+        &mut self,
+        slot: usize,
+        aim: Option<(f32, f32)>,
+        local_owner: u8,
+    ) {
+        let p = &self.slots[slot];
+        if p.kind != XENOPOPPER_BUBBLE || p.owner != local_owner {
+            return;
+        }
+        let Some((mx, my)) = aim else {
+            return;
+        };
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        // `vector45 = Normalize(MouseWorld - Center) * localAI[1]` (`:73416-73417`).
+        let dir = (Vec2::new(mx, my) - center).normalize_or_zero() * p.local_ai[1];
+        let kind = p.local_ai[0] as u16;
+        let (damage, kb, owner) = (p.damage, p.knock_back, p.owner);
+        // `GetNextSlot` ran while the bubble was STILL active — lift the
+        // corpse flag for the scan so the bullet takes the NEXT free slot
+        // (the moonlord precedent), then restore.
+        self.slots[slot].active = true;
+        // The C# passes the CENTRE; the port's spawn takes the top-left
+        // (the inferno-blast precedent) — recentre by the resolved row's box.
+        let (w, h) = proj_data(kind).map_or((0.0, 0.0), |d| (d.w, d.h));
+        self.spawn_with_data_ai_owned(
+            kind,
+            owner,
+            center.x - w * 0.5,
+            center.y - h * 0.5,
+            dir.x,
+            dir.y,
+            damage,
+            kb,
+            0.0,
+            0.0,
+        );
+        self.slots[slot].active = false;
     }
 
     /// S1-P-i18 — `Kill()`'s special-bullet arms (`Projectile.cs:75250-76039`),

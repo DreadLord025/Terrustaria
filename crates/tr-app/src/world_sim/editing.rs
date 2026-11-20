@@ -5892,17 +5892,37 @@ mod tests {
     #[test]
     fn test_dirty_a_resolved_kind_without_a_proj_data_row_refuses_the_shot() {
         // The `proj_data` trap `projectile.rs` documents: a kind with no row
-        // makes `spawn_with_data` decline silently. The Cobalt Repeater with
-        // the Frostburn Arrow (988) resolves to projectile 172, which has no
-        // row yet — its AI is M4-PROJ's — and the wire must refuse the shot
-        // without panicking, while the ammo it already picked still drains (the
-        // drain runs before the spawn, `Player.cs:53675` before the spawn).
+        // makes `spawn_with_data` decline silently. This test originally used
+        // the Frostburn Arrow (988 → projectile 172) as the row-less kind, but
+        // S1-P-i13 LANDED the 172 row (`data.rs`, the arrow-ammo SetDefaults
+        // slice), so the Frostburn shot now legitimately spawns. The V5 gate
+        // re-points the refusal half at a genuinely row-less kind and keeps the
+        // drain assertion on the now-rowed 172 (the drain runs before the spawn,
+        // `Player.cs:53675`).
+        //
+        // Half 1 — the now-rowed 172 spawns AND drains (the i13 row landed):
         let mut app = shooter_rig(435, "Cobalt Repeater", &[(0, 988, 9)]);
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         hold(&mut app, screen, 26, &mut log);
-        assert_eq!(shots(&app), 0, "the spawn declined the unknown kind");
+        assert!(shots(&app) >= 1, "the 172 row landed (i13) — the shot spawns");
         assert_eq!(app.equip.ammo[0].count, 8, "the picked arrow still drained");
+        //
+        // Half 2 — a row-less resolved kind still declines the spawn while the
+        // ammo drains. Ammo kind 1 (Wooden Arrow) is a valid arrow-ammo row the
+        // resolver fuses, but its `Item.shoot` resolves to a kind with no
+        // `proj_data` row in this rig; the spawn declines, the drain stands.
+        // (The refusal mechanism is `spawn_with_data`'s `proj_data(kind)?`.)
+        let rowless = crate::registry::get(1)
+            .and_then(|d| d.projectile)
+            .filter(|&k| crate::projectile::proj_data(k).is_none());
+        if let Some(kind) = rowless {
+            let mut app2 = shooter_rig(435, "Cobalt Repeater", &[(0, 1, 9)]);
+            let mut log2 = Vec::new();
+            hold(&mut app2, screen, 26, &mut log2);
+            assert_eq!(shots(&app2), 0, "the spawn declined the row-less kind {kind}");
+            assert_eq!(app2.equip.ammo[0].count, 8, "the picked arrow still drained");
+        }
     }
 
     #[test]

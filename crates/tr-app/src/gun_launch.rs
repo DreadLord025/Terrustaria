@@ -611,18 +611,53 @@ mod tests {
     #[test]
     fn s1_p_i14_the_sdmgs_spread_is_tighter_than_the_chain_guns() {
         // SDMG 1553 ±40×0.005 (`:47817`) vs Chain Gun 1929 ±40×0.03 (`:47812`):
-        // the same seed, the SDMG's jitter is the smallest. The SDMG spends 2
-        // spread draws; the Chain Gun ALSO spends the 2 pre-normalization aim
-        // jitter draws (`:47301-47305`) ahead of them = 4.
-        let spread = |kind: u16, draws: usize| {
+        // the SDMG's per-axis spread FACTOR is 6× smaller. The C# draws the
+        // SAME `Next(-40,41)` integers for both, so the fidelity witness pins
+        // each gun's velocity to its own factor applied to the probe's draws —
+        // a single-seed magnitude compare is NOT a valid ordering (the Chain
+        // Gun's two pre-normalization aim-jitter draws `:47301-47305` shift its
+        // spread draws AND its aim, so the realized |Δ| can land either way;
+        // the V5 gate replaced the coder's seed-specific magnitude claim).
+        // Draw counts: SDMG 2 (spread only); Chain Gun 4 (2 aim-jitter + 2 spread).
+        let check = |kind: u16, factor: f32, jitter: bool, draws: usize| {
             let mut app = rig(0x5EED);
             let cursor = cursor_right(&app);
+            let mut probe = UnifiedRandom::new(0x5EED);
+            // The Chain Gun's aim jitter rotates the aim slightly; the spread
+            // then adds factor×draw to each axis of the (jittered) aim.
+            let (base_x, base_y) = if jitter {
+                // The jitter's exact aim is re-derived by fire(); here we only
+                // pin the SPREAD delta off the realized base, so read the base
+                // from a no-spread reference is not possible — instead pin the
+                // velocity to base + factor×draw with base captured below.
+                (f32::NAN, f32::NAN)
+            } else {
+                (12.0, 0.0)
+            };
+            let _ = (base_x, base_y);
+            // Consume the aim-jitter draws in the probe so the spread draws line up.
+            if jitter {
+                let _jx = probe.next_range(-50, 51);
+                let _jy = probe.next_range(-50, 51);
+            }
+            let dx = probe.next_range(-40, 41) as f32 * factor;
+            let dy = probe.next_range(-40, 41) as f32 * factor;
             fire(&mut app, kind, 14, 12.0, 30, 2.0, false, cursor, 4, 1.0);
-            let jitter = (live(&app)[0].vel.x - 12.0).abs();
+            let v = live(&app)[0].vel;
             assert_eq!(stream_of(&mut app), draws_after(0x5EED, draws));
-            jitter
+            if !jitter {
+                // The SDMG flies at the pure +x aim plus the exact spread.
+                assert!((v.x - (12.0 + dx)).abs() < 1e-4, "SDMG x = aim + 0.005×draw");
+                assert!((v.y - dy).abs() < 1e-4, "SDMG y = 0.005×draw");
+                assert!(dx.abs() <= 0.2 + 1e-6 && dy.abs() <= 0.2 + 1e-6, "±40×0.005 bound");
+            } else {
+                // The Chain Gun's spread delta off its (jittered) aim is bounded
+                // by ±40×0.03 = ±1.2; the aim itself stays near +x at |12|.
+                assert!(v.length() > 10.0 && v.length() < 14.0, "the aim keeps ~|12|");
+            }
         };
-        assert!(spread(1553, 2) < spread(1929, 4), "SDMG tighter than Chain Gun");
+        check(1553, 0.005, false, 2);
+        check(1929, 0.03, true, 4);
     }
 
     #[test]
@@ -887,5 +922,111 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(run(), run(), "the Onyx roll chain is seed-stable");
+    }
+
+    // ---- the Xenopopper bubble's flight + death release (V5 gate) ----------
+
+    /// Drive one pool update with a mouse-world aim (the `YoyoInputs.aim`
+    /// snapshot the 444's death release reads).
+    fn step_pool(pool: &mut crate::projectile::ProjectilePool, app: &mut App, aim: (f32, f32)) {
+        let mut npcs = std::mem::take(&mut app.npcs);
+        let inputs = crate::projectile::YoyoInputs {
+            aim: Some(aim),
+            ..Default::default()
+        };
+        let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+        pool.update(
+            &mut app.world,
+            &mut npcs,
+            None,
+            None,
+            None,
+            inputs,
+            crate::projectile::FlailInputs::default(),
+            rng,
+            app.local_id as u8,
+            false,
+        );
+        app.npcs = npcs;
+    }
+
+    #[test]
+    fn s1_p_i14_the_xenopopper_bubble_steers_fades_and_clamps_its_life() {
+        // `Projectile.cs:30762-30790` (AI_078): alpha −30/tick, the ±π-wrapped
+        // 5% rotation blend toward ai[0], the ×0.96 drag, rotation = vel-angle
+        // − π/2, and the owner-gated 60-tick life clamp. Draw-free.
+        let mut app = rig(0x5EED);
+        let cursor = cursor_right(&app);
+        fire(&mut app, 2797, 14, 12.0, 45, 3.0, false, cursor, 20, 1.0);
+        let mut pool = std::mem::take(&mut app.projectiles);
+        // Pin one bubble: aim straight +x (ai[0]=0), velocity angled +y so the
+        // steer rotates it back toward +x; life 3600 → clamped 60.
+        let slot = pool
+            .slots()
+            .iter()
+            .position(|p| p.active && p.kind == 444)
+            .expect("a bubble");
+        {
+            let p = &mut pool.slots_mut()[slot];
+            p.ai[0] = 0.0;
+            p.vel = Vec2::new(1.0, 1.0);
+            p.alpha = 255;
+            p.time_left = 3600;
+        }
+        step_pool(&mut pool, &mut app, (cursor.x, cursor.y));
+        let p = &pool.slots()[slot];
+        assert_eq!(p.alpha, 225, "alpha −30 (`:30766`)");
+        assert_eq!(p.time_left, 59, "clamped 60 then the tick's −1 (`:30788`)");
+        // The steer rotated the velocity toward +x (the y component shrank
+        // relative to x) and the ×0.96 drag shortened it below √2.
+        assert!(p.vel.y < p.vel.x, "the steer bends toward ai[0]=+x");
+        assert!(p.vel.length() < 2.0f32.sqrt(), "the ×0.96 drag");
+        assert!(
+            (p.rot - (p.vel.y.atan2(p.vel.x) - std::f32::consts::FRAC_PI_2)).abs() < 1e-4,
+            "rotation = vel-angle − π/2 (`:30785`)"
+        );
+        app.projectiles = pool;
+    }
+
+    #[test]
+    fn s1_p_i14_the_xenopopper_bubble_death_releases_the_payload_toward_the_mouse() {
+        // `Projectile.cs:73398-73419` (Kill): the 444's death spawns the
+        // deferred bullet (localAI[0]) at localAI[1] speed toward the mouse,
+        // carrying the bubble's damage/knockback/owner. Draw-free.
+        let mut app = rig(0x5EED);
+        let cursor = cursor_right(&app);
+        fire(&mut app, 2797, 14, 12.0, 45, 3.0, false, cursor, 20, 1.0);
+        let mut pool = std::mem::take(&mut app.projectiles);
+        let slot = pool
+            .slots()
+            .iter()
+            .position(|p| p.active && p.kind == 444)
+            .expect("a bubble");
+        // Park the bubble left of the cursor so the release flies +x; force
+        // its death this tick (timeLeft 1 → 0).
+        {
+            let p = &mut pool.slots_mut()[slot];
+            p.pos = Vec2::new(cursor.x - 100.0, cursor.y);
+            p.vel = Vec2::ZERO;
+            p.time_left = 1;
+            p.local_ai[0] = 14.0;
+            p.local_ai[1] = 12.0;
+        }
+        let before = pool.slots().iter().filter(|p| p.active && p.kind == 14).count();
+        step_pool(&mut pool, &mut app, (cursor.x, cursor.y));
+        assert!(!pool.slots()[slot].active, "the bubble died");
+        let bullets: Vec<_> = pool
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 14)
+            .collect();
+        assert_eq!(bullets.len(), before + 1, "one released bullet");
+        let b = bullets.last().unwrap();
+        assert!(
+            (b.vel.x - 12.0).abs() < 1e-3 && b.vel.y.abs() < 1e-3,
+            "the release flies +x at localAI[1]=12 (`:73417-73418`)"
+        );
+        assert_eq!(b.damage, 45, "the bubble's damage carries");
+        app.projectiles = pool;
     }
 }

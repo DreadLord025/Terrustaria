@@ -1199,7 +1199,14 @@ mod tests {
     #[test]
     fn s1_p_i13_the_fairy_queen_fan_index_mirrors_with_the_facing() {
         // num62 = num61 when facing left, 4 - num61 when facing right
-        // (`:47920-47923`). The spawn offset differs with the facing.
+        // (`:47920-47923`). The fan offset `vector28 = aim40.RotatedBy(π/10 ×
+        // (num62 − 2))` (`:47924`) is SYMMETRIC under the combined aim-flip +
+        // index-mirror: left (aim −x, num62=1 → −π/10) and right (aim +x,
+        // num62=3 → +π/10) both land at angle π+π/10, so the spawn offset — and
+        // thus the spawn Y — is IDENTICAL. The V5 gate corrected the coder's
+        // "offsets differ" claim (a hand-derived error): the mirror keeps the
+        // fan symmetric about the player, it does not displace it. The witness
+        // pins the symmetric spawn (equal Y) and the mirrored aim (opposite X).
         let mut left = rig(0x5EED);
         left.player.as_mut().unwrap().facing = -1;
         let (cx, cy) = left.player.as_ref().unwrap().center();
@@ -1210,10 +1217,18 @@ mod tests {
         let (cx2, cy2) = right.player.as_ref().unwrap().center();
         let cursor2 = Vec2::new(cx2 + 80.0, cy2);
         fire(&mut right, 4953, 2, 13.0, 55, 2.0, false, cursor2, 30, 27);
-        // num61 = (30-27)/2 = 1; left num62 = 1, right num62 = 3. The fan
-        // offsets differ, so the spawn Y differs.
-        let ly = live(&left)[0].pos.y;
-        let ry = live(&right)[0].pos.y;
-        assert!((ly - ry).abs() > 1e-3, "the mirrored fan index offsets differ");
+        // num61 = (30-27)/2 = 1; left num62 = 1, right num62 = 3.
+        let ls = live(&left)[0];
+        let rs = live(&right)[0];
+        assert!(
+            (ls.pos.y - rs.pos.y).abs() < 1e-3,
+            "the mirrored fan is symmetric — equal spawn Y"
+        );
+        // The spawn X mirrors about the player centre, and the aim flips.
+        assert!(
+            ((ls.pos.x - cx) + (rs.pos.x - cx2)).abs() < 1e-3,
+            "the spawn X mirrors about the centre"
+        );
+        assert!(ls.vel.x < 0.0 && rs.vel.x > 0.0, "the aim mirrors with the facing");
     }
 }
