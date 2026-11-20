@@ -212,6 +212,7 @@ pub(crate) fn player_input(
             right: false,
             jump: false,
             down: false,
+            up: false,
             hook: false,
             item_in_use,
             held_use_turn,
@@ -241,6 +242,8 @@ pub(crate) fn player_input(
             || held(crate::input_map::Action::Jump, KeyCode::ArrowUp)
             || any(crate::input_map::Action::Up),
         down: held(crate::input_map::Action::Down, KeyCode::ArrowDown),
+        // `Player.controlUp` on `Main.cUp` (`Main.cs:67163`, default `W`).
+        up: any(crate::input_map::Action::Up),
         // `Player.controlHook` on `Main.cHook` (`Main.cs:67172`, default `E`);
         // the port keeps `G` as the extra quick-grapple key.
         hook: any(crate::input_map::Action::Hook) || app.keys.contains(&KeyCode::KeyG),
@@ -581,22 +584,23 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.release_hook = true;
             false
         };
-        // `Player.QuickGrapple` (`Player.cs:6334-6337`): a mount not in the
-        // CanUseHooks set dismounts before the hook fires — the set is
-        // {54, 57-60} (`mount::can_use_hooks`).
-        if hook_edge
-            && !p.dead
-            && p.mount.is_active()
-            && !crate::mount::can_use_hooks(p.mount.kind())
-        {
-            p.try_dismount(&app.world);
-        }
-        if hook_edge && !p.dead {
-            // `QuickGrapple` (`Player.cs:6296-6478`): the fire-time gate first
-            // (`:6399` — the in-flight count against `num6 − num5`), then the
-            // oldest-hook recycle (`:6396`, `num7`), then the two kind cycles
-            // (the Lunar 646→…→649 walk `:6425-6456` and the Dual 73→74 swap
-            // `:6420-6424`), and only then the spawn (`:6458-6477`).
+        // `:6298-6301` — `CCed || tongued || dead` refuses the fire BEFORE any
+        // dismount (`QuickGrapple` returns at the head). The mount dismount
+        // (`:6334-6337`) sits INSIDE this gate — a CCed/tongued/dead player
+        // keeps the mount (the C# never reaches `TryDismount`).
+        if hook_edge && !p.dead && !p.cced() && !p.tongued {
+            // `Player.QuickGrapple` (`Player.cs:6334-6337`): a mount not in the
+            // CanUseHooks set dismounts before the hook fires — the set is
+            // {54, 57-60} (`mount::can_use_hooks`).
+            if p.mount.is_active() && !crate::mount::can_use_hooks(p.mount.kind()) {
+                p.try_dismount(&app.world);
+            }
+            // `QuickGrapple` (`Player.cs:6296-6478`) in the source's order:
+            // the item pick (`:6320`), the fire-time gate (`:6399`), the
+            // blacklist rebuild (`:6407`), the UseSound (`:6408`), the
+            // oldest-hook recycle (`:6416-6419`, `num7` of the ORIGINAL shoot),
+            // THEN the Dual (`:6420-6428`) / Lunar (`:6430-6458`) kind cycles,
+            // and only then the spawn (`:6460-6478`).
             let owner = app.local_id as u8;
             let (flight, attached) = app.projectiles.hook_counts(owner);
             // `Player.QuickGrapple_GetItemToUse` (`Player.cs:6481-6500`): the
@@ -610,35 +614,49 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &app.inventory,
             );
             let mut kind = item_hook.map(|(_, shoot)| shoot).unwrap_or(hook_type as u16);
-            if !crate::grapple::fire_allowed(flight, attached, kind) {
-                return;
+            // `:6342-6398` — the budgets read the ORIGINAL `item.shoot` (`num`),
+            // before the kind cycles rewrite it.
+            let original_shoot = kind;
+            // `:6399-6402` — the in-flight gate (`num4 >= max(1, num6 - num5)`).
+            // The C# `return` exits `QuickGrapple` ONLY — the rest of
+            // `Player.Update` (movement, the mount key, the pull bridge) still
+            // runs. The port wraps the fire tail in the gate's inverse instead
+            // of returning out of the whole player tick.
+            if crate::grapple::fire_allowed(flight, attached, original_shoot) {
+            // `:6407` — rebuild the owner's refused-tile set before the fire.
+            app.projectiles.rebuild_hook_blacklist(&app.world, owner);
+            // S1-E-21f — `QuickGrapple`'s fire sound (`Player.cs:6408`):
+            // `PlaySound(item.UseSound, base.position)` — the hook item's
+            // own use-sound row at the TOP-LEFT, after the fire-time gates
+            // passed (the `:6399` budget return precedes it) and BEFORE the
+            // recycle/spawn. The style façade's `GetRandomPitch` NextFloat
+            // rides the audio-only stream; the case-2 pitch rides
+            // `UpdatePlayers` (the fire runs inside `Player.Update`,
+            // `Main.cs:17754`). No granting item (the `TR_HOOK` pin) means
+            // no `UseSound` — silent, like the C#'s null-item return
+            // (`:6320-6323`). KEPT from wave 2 (S1-E-21f).
+            if let Some((item_kind, _)) = item_hook {
+                if let Some((idx, pitch)) = crate::item::initial_use_sound(item_kind) {
+                    app.audio.play_use_sound(
+                        idx,
+                        p.x,
+                        p.y,
+                        pitch,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
             }
-            // The Dual Hook's colour swap: a blue head already out means red.
-            let blue_out = app.projectiles.slots().iter().any(|pr| {
-                pr.active && pr.owner == owner && pr.kind == crate::projectile::DUAL_HOOK_BLUE
-            });
-            if kind == crate::projectile::DUAL_HOOK_BLUE && blue_out {
-                kind = crate::grapple::dual_next_kind(true);
-            }
-            // The Lunar cycle: the highest-`timeLeft` in-flight kind steps.
-            if kind == crate::projectile::LUNAR_HOOK_SOLAR {
-                let best = app
-                    .projectiles
-                    .slots()
-                    .iter()
-                    .filter(|pr| {
-                        pr.active
-                            && pr.owner == owner
-                            && (crate::projectile::LUNAR_HOOK_SOLAR
-                                ..=crate::projectile::LUNAR_HOOK_STARDUST)
-                                .contains(&pr.kind)
-                    })
-                    .max_by_key(|pr| pr.time_left)
-                    .map(|pr| pr.kind);
-                kind = crate::grapple::next_lunar_kind(best);
-            }
-            // The recycle: the lowest-`timeLeft` hook of this owner dies.
-            if crate::grapple::recycles_oldest(flight, attached, kind) {
+            // `:6413-6415` — the spawn reads `item.shootSpeed`/`damage`/
+            // `knockBack` (the per-item rows; the `TR_HOOK` pin keeps the
+            // Hook's 11.5 / 0 / 7 stand-in until the granting items land).
+            let (shoot_speed, damage, knock_back) = item_hook
+                .and_then(|(item_kind, _)| crate::itemdata::ITEMS.get(item_kind as usize))
+                .map(|d| (d.shoot_speed, d.damage.max(0), d.knock_back))
+                .unwrap_or((11.5, 0, 7.0));
+            // `:6416-6419` — the recycle: the lowest-`timeLeft` hook of this
+            // owner dies once the total reaches `num7` (the ORIGINAL shoot's
+            // budget, read before the kind cycles).
+            if crate::grapple::recycles_oldest(flight, attached, original_shoot) {
                 if let Some(i) = app
                     .projectiles
                     .slots()
@@ -655,44 +673,54 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.projectiles.kill(i);
                 }
             }
-            // `:6458-6477` — the aim at the mouse world position, the velocity
-            // the unit aim times `item.shootSpeed` (the vanilla 16 for the Hook;
-            // the per-item values ride with M3-EQUIP-3, `TR_HOOK` pins the kind).
+            // `:6420-6428` — the Dual Hook's colour swap: a blue head (73)
+            // already out (any state) means the new shot is the red one (74).
+            if original_shoot == crate::projectile::DUAL_HOOK_BLUE {
+                let blue_out = app.projectiles.slots().iter().any(|pr| {
+                    pr.active && pr.owner == owner && pr.kind == crate::projectile::DUAL_HOOK_BLUE
+                });
+                if blue_out {
+                    kind = crate::grapple::dual_next_kind(true);
+                }
+            }
+            // `:6430-6458` — the Lunar cycle (item 3572): the highest-`timeLeft`
+            // in-flight kind steps 646→647→648→649→646. The C# scan keeps the
+            // FIRST slot on a `timeLeft` tie (`num9 < timeLeft`, strict), so the
+            // port folds in slot order rather than `max_by_key` (last-wins).
+            if item_hook.is_some_and(|(item_kind, _)| item_kind == 3572) {
+                let mut best_kind: Option<u16> = None;
+                let mut best_time = -1i32;
+                for pr in app.projectiles.slots() {
+                    if pr.active
+                        && pr.owner == owner
+                        && (crate::projectile::LUNAR_HOOK_SOLAR
+                            ..=crate::projectile::LUNAR_HOOK_STARDUST)
+                            .contains(&pr.kind)
+                        && (best_time == -1 || best_time < pr.time_left)
+                    {
+                        best_kind = Some(pr.kind);
+                        best_time = pr.time_left;
+                    }
+                }
+                kind = crate::grapple::next_lunar_kind(best_kind);
+            }
+            // `:6460-6478` — the aim at the mouse world position, the velocity
+            // the unit aim times `item.shootSpeed`, spawned at the player center.
             let center = Vec2::new(
                 p.x + crate::player::WIDTH * 0.5,
                 p.y + crate::player::HEIGHT * 0.5,
             );
-            // S1-E-21f — `QuickGrapple`'s fire sound (`Player.cs:6408`):
-            // `PlaySound(item.UseSound, base.position)` — the hook item's
-            // own use-sound row at the TOP-LEFT, after the fire-time gates
-            // passed (the `:6399` budget return precedes it) and BEFORE the
-            // spawn (`:6458`). The style façade's `GetRandomPitch` NextFloat
-            // rides the audio-only stream; the case-2 pitch rides
-            // `UpdatePlayers` (the fire runs inside `Player.Update`,
-            // `Main.cs:17754`). No granting item (the `TR_HOOK` pin) means
-            // no `UseSound` — silent, like the C#'s null-item return
-            // (`:6320-6323`).
-            if let Some((item_kind, _)) = item_hook {
-                if let Some((idx, pitch)) = crate::item::initial_use_sound(item_kind) {
-                    app.audio.play_use_sound(
-                        idx,
-                        p.x,
-                        p.y,
-                        pitch,
-                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    );
-                }
-            }
             let _spawned = app.projectiles.spawn_hook(
                 kind,
                 center,
                 mouse_world,
-                16.0,
-                0,
-                0.0,
+                shoot_speed,
+                damage,
+                knock_back,
                 owner,
                 p.facing,
             );
+            } // the `:6399` fire gate — a refused budget skips the fire tail only
         }
         // The quick-mount key: the `controlMount` press edge (the menu's
         // "Mount R" row, `Main.cMount` default "R") fires `QuickMount`
@@ -819,26 +847,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             let can_visually_hold = !mounted_blocks_hold
                 && (hold_style != 4 || (!p.pulley && p.vy == 0.0 && !p.mount.is_active()));
             // The hooks' centroid relative to the body centre
-            // (`Player.cs:36502-36520`): only the body row leans on it.
+            // (`Player.cs:36497-36503`): the C# averages ONLY the registered
+            // attached hooks (`grappling[0..grapCount]`), not every aiStyle-7
+            // slot — an in-flight hook does not lean the body. Only the body
+            // row leans on it.
             let mut dx = 0.0f32;
             let mut dy = 0.0f32;
             if p.grappling_active {
-                let owner = app.local_id as u8;
-                let mut n = 0.0f32;
-                for pr in app.projectiles.slots() {
-                    if !pr.active
-                        || pr.owner != owner
-                        || !crate::projectile::proj_data(pr.kind).is_some_and(|d| d.ai_style == 7)
-                    {
-                        continue;
+                let (reg, count) = app.projectiles.hook_reg();
+                if count > 0 {
+                    for &idx in reg[..count].iter() {
+                        let pr = &app.projectiles.slots()[idx as usize];
+                        dx += pr.pos.x + pr.w * 0.5;
+                        dy += pr.pos.y + pr.h * 0.5;
                     }
-                    dx += pr.pos.x + pr.w * 0.5;
-                    dy += pr.pos.y + pr.h * 0.5;
-                    n += 1.0;
-                }
-                if n > 0.0 {
-                    dx = dx / n - (p.x + crate::player::WIDTH * 0.5);
-                    dy = dy / n - (p.y + p.height * 0.5);
+                    dx = dx / count as f32 - (p.x + crate::player::WIDTH * 0.5);
+                    dy = dy / count as f32 - (p.y + p.height * 0.5);
                 }
             }
             // `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
@@ -1361,10 +1385,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // advances MARATHON_MEDALIST's `Move` float accumulator.
             let _ = app.achievements.notify_custom_float("Move", run_pixels);
         }
-        // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the jump-off
-        // kills every aiStyle-7 slot this player owns. The pool-wide scan is
-        // the source's own `for (i < 1000)` loop; the multi-hook phase moves it
-        // into the pool beside the recycle tables.
+        // `RemoveAllGrapplingHooks` (`Player.cs:33562-33574`): the jump-off
+        // kills every aiStyle-7 slot this player owns, clears the owner's
+        // refused-tile set and drops the registration — the pool helper carries
+        // the source's `ClearGrapplingBlacklist` + `grappling[0] = -1;
+        // grapCount = 0` head (`:33563-33565`) beside the `for (i < 1000)` kill.
         //
         // The C# calls the removal from the jump-off (`:22733`), the sign
         // interaction (`:33379`), the minecart-hook launch (`:33557`) and the
@@ -1373,21 +1398,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if p.release_grappling_hooks {
             p.release_grappling_hooks = false;
             let owner = app.local_id as u8;
-            let hooks: Vec<usize> = app
-                .projectiles
-                .slots()
-                .iter()
-                .enumerate()
-                .filter(|(_, pr)| {
-                    pr.active
-                        && pr.owner == owner
-                        && crate::projectile::proj_data(pr.kind).is_some_and(|d| d.ai_style == 7)
-                })
-                .map(|(i, _)| i)
-                .collect();
-            for i in hooks {
-                app.projectiles.kill(i);
-            }
+            app.projectiles.remove_all_grappling_hooks(owner);
         }
         if app.follow_player {
             // fix/player-motion-blur: the follow target is the RAW fixed-step
