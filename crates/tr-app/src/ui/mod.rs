@@ -38,6 +38,7 @@ pub mod uistate;
 pub mod world_creation;
 pub(crate) mod world_load;
 pub mod world_select;
+pub mod workshop_publish_info;
 
 use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
