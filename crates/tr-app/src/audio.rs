@@ -145,6 +145,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_4", 4),
     ("NPC_Killed_5", 4),
     ("NPC_Killed_6", 4),
+    // W4-d123 — the wave-break skip cue (`DD2Event.cs:1783`'s `NPCDeath7`,
+    // `SoundID.cs:1321` = LegacySoundStyle(4, 7)).
+    ("NPC_Killed_7", 4),
     // The Wyvern's death cue (`NPC.cs:9951`'s `NPCDeath8`, S1-D-3 wyvern)
     // — the `Sounds/NPC_Killed_8.xnb` asset ships with the content.
     ("NPC_Killed_8", 4),
@@ -1348,6 +1351,10 @@ impl Audio {
         // `SoundEngine.cs:88-91` — the Vector2 façade truncates.
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
+            // W4-d123 — the wave-break skip cue (`DD2Event.cs:1783`:
+            // `PlaySound(SoundID.NPCDeath7, x*16+8, y*16+8)` — the style
+            // façade, the GetRandomPitch NextFloat rides the audio stream).
+            7 => "NPC_Killed_7",
             13 => "NPC_Killed_13",
             61 => "NPC_Killed_61",
             _ => return None,
