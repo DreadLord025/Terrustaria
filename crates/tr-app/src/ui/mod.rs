@@ -44,6 +44,7 @@ pub mod search_bar;
 pub mod sliders;
 pub mod select_hit;
 pub mod slot;
+pub mod sortable;
 pub mod text;
 pub mod text_box;
 pub mod text_panels;

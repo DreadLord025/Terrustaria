@@ -154,6 +154,217 @@ impl SearchBar {
     }
 }
 
+/// `UIWrappedSearchBar.ColorTheme` (`UIWrappedSearchBar.cs:14-18`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SearchTheme {
+    #[default]
+    Blue,
+    Red,
+}
+
+/// The box panel's base colour (`UIWrappedSearchBar.cs:117-118`):
+/// `(35, 40, 83)` for both bg and border; the Red theme shifts it through
+/// `Utils.ShiftBlueToCyanTheme` (`:119-123`, `color::shift_blue_to_cyan`).
+pub fn search_box_color(theme: SearchTheme) -> [u8; 4] {
+    let base = [35, 40, 83, 255];
+    match theme {
+        SearchTheme::Blue => base,
+        SearchTheme::Red => super::color::shift_blue_to_cyan(base),
+    }
+}
+
+/// `UIWrappedSearchBar` (`UIWrappedSearchBar.cs:12-247`), research/18b
+/// row 63 (W4-d83): the magnifier-button + box-panel + cancel-button
+/// wrapper around a [`SearchBar`]. The crafting filter's immediate draw is
+/// landed (`crafting.rs:756-838`, the Red theme + geometry); this carries
+/// the wrapper's state machine: the input-focus border swap, the cancel /
+/// right-click / outside-click arms and the virtual-keyboard submit trim.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WrappedSearchBar {
+    /// The inner `_searchBar` (`:24`) — scale 0.8 (`:126`), the ctor's
+    /// `SetContents(null, forced: true)` shows the placeholder (`:85`).
+    pub bar: SearchBar,
+    /// `_theme` (`:36`).
+    pub theme: SearchTheme,
+    /// `_searchString` (`:32`) — the last `OnContentsChanged` payload
+    /// (`:213-220`), the virtual keyboard's seed text (`:173`).
+    pub search_string: String,
+    /// The box panel's live `BorderColor` — the theme colour at rest,
+    /// `Main.OurFavoriteColor` while taking input (`:199-211`).
+    pub border_color: [u8; 4],
+    /// `HideSearchButton` (`:88-93`): the magnifier removed, the box grows
+    /// to `Width (-3, 1)` instead of `(-buttonW-3, 1)` (`:112`).
+    pub search_button_hidden: bool,
+}
+
+impl WrappedSearchBar {
+    /// The ctor (`:76-86`): 24 px tall, full width, padding 0; the empty
+    /// text defaults to `UI.PlayerNameSlot` (`:80`) — the caller passes the
+    /// resolved string. The inner bar's cap stays 50.
+    pub fn new(empty_text: &str, theme: SearchTheme) -> Self {
+        Self {
+            bar: SearchBar::new(empty_text, 0.8),
+            theme,
+            search_string: String::new(),
+            border_color: search_box_color(theme),
+            search_button_hidden: false,
+        }
+    }
+
+    /// The box panel's width style (`:112`, `:91`): `(0 - buttonW - 3, 1)`
+    /// normally, `(-3, 1)` after `HideSearchButton`. Returns the pixel part
+    /// (the percent is 1 either way); `button_w` is the magnifier's
+    /// `Width.Pixels` (22, `UIImageButton.cs:31-32`).
+    pub fn box_width_pixels(&self, button_w: f32) -> f32 {
+        if self.search_button_hidden {
+            -3.0 // `:91`
+        } else {
+            -button_w - 3.0 // `:112`
+        }
+    }
+
+    /// `SetContents` (`:56-59`) + `UpdateSearchContents` (`:213-220`): the
+    /// inner swap, then `_searchString` takes the **raw** payload (before
+    /// the inner trim). Returns the inner's change-event flag.
+    pub fn set_contents(&mut self, contents: &str, forced: bool) -> bool {
+        let changed = self.bar.set_contents(contents, forced);
+        if changed {
+            self.search_string = contents.to_string(); // `:215`
+        }
+        changed
+    }
+
+    /// `OnStartTakingInput`/`OnEndTakingInput` (`:199-211`): the border
+    /// swaps to `Main.OurFavoriteColor` (255, 231, 69) while writing, back
+    /// to the theme colour after. Call after the inner bar's toggle.
+    pub fn sync_focus_border(&mut self) {
+        self.border_color = if self.bar.is_writing_text {
+            [255, 231, 69, 255] // `:201`
+        } else {
+            search_box_color(self.theme) // `:206-210`
+        };
+    }
+
+    /// `searchCancelButton_OnClick` (`:153-164`): with contents, clear
+    /// (forced) and play sound **11**; without, just sound **12**. Returns
+    /// the sound id.
+    pub fn cancel_click(&mut self) -> i32 {
+        if self.bar.has_contents() {
+            self.set_contents("", true); // `SetContents(null, forced)` (`:157`)
+            11
+        } else {
+            12
+        }
+    }
+
+    /// `SearchBox_OnRightClick` (`:230-237`): clear (forced), then start
+    /// taking input if not already. Returns `true` when the toggle fired.
+    pub fn right_click(&mut self) -> bool {
+        self.set_contents("", true);
+        if !self.bar.is_writing_text {
+            self.bar.toggle_taking_text();
+            self.sync_focus_border();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `Click_SearchArea` (`:222-228`): the magnifier/panel click toggles
+    /// input **unless** the event target's parent is the box panel (a
+    /// click on the cancel button or the inner bar — those don't toggle).
+    /// Returns `true` when the toggle fired.
+    pub fn search_area_click(&mut self, target_parent_is_box: bool) -> bool {
+        if !target_parent_is_box {
+            self.bar.toggle_taking_text();
+            self.sync_focus_border();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `Update`'s outside-click close (`:239-246`): while writing, a left
+    /// or right press with **no** child hovered toggles the input off.
+    /// Returns `true` when the toggle fired.
+    pub fn update_outside_click(
+        &mut self,
+        mouse_left: bool,
+        mouse_right: bool,
+        any_child_hovering: bool,
+    ) -> bool {
+        if self.bar.is_writing_text && (mouse_left || mouse_right) && !any_child_hovering {
+            self.bar.toggle_taking_text();
+            self.sync_focus_border();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `SubmitVirtualText` (`:184-188`): the keyboard's text is trimmed
+    /// before the contents swap; `GoBackFromVirtualKeyboard` (`:190-197`)
+    /// then closes the input latch if still open.
+    pub fn submit_virtual_text(&mut self, text: &str) {
+        self.set_contents(text.trim(), false); // `:186`
+        if self.bar.is_writing_text {
+            self.bar.toggle_taking_text(); // `:192-195`
+            self.sync_focus_border();
+        }
+    }
+}
+
+#[cfg(test)]
+mod wrapped_tests {
+    use super::*;
+
+    /// The theme colours + focus border (`UIWrappedSearchBar.cs:117-123`,
+    /// `:199-211`): Blue keeps (35,40,83), Red shifts through the cyan
+    /// helper; writing swaps the border to OurFavoriteColor and back.
+    #[test]
+    fn the_wrapped_bar_swaps_the_focus_border_per_theme() {
+        let mut w = WrappedSearchBar::new("Name:", SearchTheme::Blue);
+        assert_eq!(w.border_color, [35, 40, 83, 255]);
+        assert_eq!(w.bar.text_scale, 0.8);
+        assert_eq!(w.box_width_pixels(22.0), -25.0);
+        w.search_button_hidden = true;
+        assert_eq!(w.box_width_pixels(22.0), -3.0);
+        w.search_area_click(false);
+        assert!(w.bar.is_writing_text);
+        assert_eq!(w.border_color, [255, 231, 69, 255]);
+        assert!(!w.search_area_click(true), "a box-child click never toggles");
+        w.update_outside_click(true, false, false);
+        assert!(!w.bar.is_writing_text);
+        assert_eq!(w.border_color, [35, 40, 83, 255]);
+        let red = WrappedSearchBar::new("", SearchTheme::Red);
+        assert_eq!(
+            red.border_color,
+            super::super::color::shift_blue_to_cyan([35, 40, 83, 255])
+        );
+    }
+
+    /// The cancel/right-click/submit arms (`:153-164`, `:230-237`,
+    /// `:184-197`): cancel sounds 11 with contents / 12 without, the
+    /// right-click clears + opens, the virtual submit trims and closes.
+    #[test]
+    fn the_cancel_and_submit_arms_match_the_sounds_and_trims() {
+        let mut w = WrappedSearchBar::new("Name:", SearchTheme::Blue);
+        assert_eq!(w.cancel_click(), 12, "empty: just the tick");
+        w.set_contents("sword", false);
+        assert_eq!(w.search_string, "sword");
+        assert_eq!(w.cancel_click(), 11);
+        assert!(!w.bar.has_contents());
+        assert_eq!(w.bar.display_text, "Name:");
+        assert!(w.right_click(), "the right-click opens the input");
+        assert!(w.bar.is_writing_text);
+        assert!(!w.right_click(), "already writing: no second toggle");
+        w.submit_virtual_text("  axe  ");
+        assert_eq!(w.bar.actual_contents, "axe", "the trim (`:186`)");
+        assert!(!w.bar.is_writing_text, "the go-back closes the latch");
+        assert_eq!(w.border_color, [35, 40, 83, 255]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

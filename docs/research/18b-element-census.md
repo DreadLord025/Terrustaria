@@ -180,8 +180,14 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 60 | `UIWorkshopPublishWorldListItem` | LANDED (`ui/workshop_rows.rs::WorkshopPublishWorldRow`, plain shared pairs (no grey arms), target-only click, +6 panel origin + second-panel non-English +40 `:53-139`) |
 | 61 | `UIWorldCreationPreview` | LANDED (re-audit: whole class pre-landed `ui/world_creation.rs::preview_layers`/`draw_preview` — UpdateOption mapping, 0/3→Normal bg, DarkGray Expert/Master tint, Master bunny *1.2 XNA wrap, +4 layer offset + border `UIWorldCreationPreview.cs:44-132`; nothing left) |
 | 62 | `UIWorldListItem` | LANDED (draw/click/colours/labels pre-landed S1-H-10 `ui/world_select.rs`; missing halves added: conditional cloud/seed slot num-walk + their hover keys + status-icon label keys + SeedCopied + WorldFileData.GetFullSeedText/GetSerializedSeedsSum `UIWorldListItem.cs:113-162/:271-318/:460-464`, `WorldFileData.cs:123-197`; slots parked until SocialAPI/generator-version data lands) |
-| 63 | `UIWrappedSearchBar` | pending |
-| 64 | `UISortableElement` | pending |
+| 63 | `UIWrappedSearchBar` | LANDED (`ui/search_bar.rs::WrappedSearchBar`, theme box colour (35,40,83)/cyan shift, OurFavoriteColor focus border, HideSearchButton -3 width, cancel 11/12 sounds, right-click/outside-click/search-area gates, virtual submit trim; draw pre-landed `crafting.rs:756-838`) |
+| 64 | `UISortableElement` | LANDED (`ui/sortable.rs::SortableElement`, OrderIndex + ascending CompareTo with the base-arm fallback `UISortableElement.cs:5-22`) |
+
+**d83 complete (2026-11-20):** all 30 rows (35-64) LANDED. Batches 1-11 on
+`task/W4-d83-ui-elements-3`; tests written not run (code-only lane). The
+planned `ui/resources.rs` home (row 47) was taken by the HUD module — the
+pack card lives in `ui/resource_packs.rs` (no re-split). Row 61 re-audited
+as wholly pre-landed (`world_creation.rs`).
 
 ## Conventions (landed style, per research/18 + S1-E-26 wave B)
 
