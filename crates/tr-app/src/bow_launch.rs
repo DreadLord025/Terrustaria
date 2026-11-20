@@ -1154,7 +1154,12 @@ mod tests {
     #[test]
     fn s1_p_i13_the_fairy_queen_fan_index_mirrors_with_the_facing() {
         // num62 = num61 when facing left, 4 - num61 when facing right
-        // (`:47920-47923`). The spawn offset differs with the facing.
+        // (`:47920-47923`). Gate fix: for a HORIZONTAL aim the mirrored fan
+        // index rotates the 40-px offset to ±the same angle about the X axis
+        // — the spawn X mirrors across the player, the spawn Y is IDENTICAL
+        // (RotatedBy of (±40, 0) by ∓π/10: X = ±38.04, Y = +12.36 both).
+        // The old witness asserted a Y difference that the C# never produces
+        // on a horizontal cursor; the X mirror is the fan index's observable.
         let mut left = rig(0x5EED);
         left.player.as_mut().unwrap().facing = -1;
         let (cx, cy) = left.player.as_ref().unwrap().center();
@@ -1166,9 +1171,14 @@ mod tests {
         let cursor2 = Vec2::new(cx2 + 80.0, cy2);
         fire(&mut right, 4953, 2, 13.0, 55, 2.0, cursor2, 30, 27);
         // num61 = (30-27)/2 = 1; left num62 = 1, right num62 = 3. The fan
-        // offsets differ, so the spawn Y differs.
-        let ly = live(&left)[0].pos.y;
-        let ry = live(&right)[0].pos.y;
-        assert!((ly - ry).abs() > 1e-3, "the mirrored fan index offsets differ");
+        // offsets mirror across the player centre on X.
+        let lp = live(&left)[0].pos;
+        let rp = live(&right)[0].pos;
+        assert!(
+            ((lp.x - cx) + (rp.x - cx2)).abs() < 1e-2,
+            "the mirrored fan index offsets mirror on X (left {lp:?}, right {rp:?})"
+        );
+        assert!((lp.x - cx) < 0.0 && (rp.x - cx2) > 0.0, "the offsets sit on the aim side");
+        assert!((lp.y - rp.y).abs() < 1e-3, "a horizontal aim's fan Y is facing-invariant");
     }
 }

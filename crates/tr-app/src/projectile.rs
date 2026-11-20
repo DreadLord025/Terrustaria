@@ -18970,6 +18970,11 @@ impl ProjectilePool {
                 self.slots[slot].pos.y + self.slots[slot].h * 0.5,
             );
             let base_angle = rng.next_float() * std::f32::consts::TAU;
+            // `:78079` — the C#'s `for (float num54 = 0f; num54 < 1f; num54
+            // += 1f/6f)`: the f32 accumulation rounds the sixth step to
+            // exactly 1.0, so the loop runs SIX iterations (the f64
+            // accumulation would drift below 1.0 and run a seventh — the
+            // gate fix; the shard count is the C#'s 6).
             let mut t = 0.0f32;
             while t < 1.0 {
                 let angle = base_angle + t * std::f32::consts::TAU;
@@ -18992,7 +18997,7 @@ impl ProjectilePool {
                     0.0,
                     delta,
                 ));
-                t += 1.0 / 6.0;
+                t += 1.0f32 / 6.0f32;
             }
         } else if matches!(kind, 133..=138 | 338 | 339) {
             // `:78088-78141` — the plain rockets: the 22×22 recentre, the
@@ -23144,18 +23149,25 @@ mod flail_tests {
     #[test]
     fn DW_3_4_the_reel_in_kills_at_num7_or_the_overshoot() {
         // `:44004-44015`: the catch kill and the Dot < 0 overshoot kill.
+        // Gate fix (i07 sign-flip): the fixtures use the box CENTRE, not the
+        // top-left — the catch needs `Distance(mounted) <= num7 = 15`, and
+        // the Dot kill needs the ahead point (`Center + velocity`) to cross
+        // PAST the mount (the C# `DirectionFrom(Target: ahead, Origin:
+        // mounted)` back-vector, `Utils.cs:1960-1963`). The old fixtures
+        // pinned the pre-i07 forward-vector bug's geometry.
         let mut w = world();
-        let (mut pool, slot) = spawn(BALL_O_HURT, 500.0, 500.0);
+        // Catch: top-left (495,495) → centre (506,506), dist 8.49 ≤ 15.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 495.0, 495.0);
         pool.slots[slot].ai[0] = 4.0;
         let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
         tick(&mut w, &mut pool, ins);
         assert!(!pool.slots[slot].active, "the reel-in catch kills");
-        // The overshoot: the head moving away from the player while already
-        // inside the kill distance is killed by the Dot test on the next
-        // tick's velocity.
-        let (mut pool, slot) = spawn(BALL_O_HURT, 520.0, 500.0);
+        // Overshoot: centre (516,500) (dist 16 > 15), velocity −30 toward the
+        // mount carries the ahead point to 492.6 — PAST the mount (500). The
+        // back-vector opposes `to_player` → Dot < 0 → Kill.
+        let (mut pool, slot) = spawn(BALL_O_HURT, 505.0, 489.0);
         pool.slots[slot].ai[0] = 4.0;
-        pool.slots[slot].vel = Vec2::new(30.0, 0.0); // away from the player
+        pool.slots[slot].vel = Vec2::new(-30.0, 0.0);
         let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
         tick(&mut w, &mut pool, ins);
         assert!(!pool.slots[slot].active, "the overshoot kills");
@@ -23476,11 +23488,15 @@ mod flail_tests {
         // (the forward vector), which flipped the test: it killed flails
         // still approaching and spared ones that had overshot.
         let mut w = world();
-        // Case A — overshoot: head 20 px right of the mount, velocity +30
-        // carries the ahead point to +50, PAST the player. C# kills.
-        let (mut pool, slot) = spawn(BALL_O_HURT, 520.0 - 11.0, 500.0 - 11.0);
+        // Case A - overshoot: centre (516,500) (dist 16 > num7 = 15), velocity
+        // −30 toward the mount carries the ahead point to 492.6, PAST the
+        // mount (500). The back-vector opposes `to_player` → C# kills.
+        // (Gate fix: the old fixture moved the head AWAY from the mount, which
+        // the C# back-vector test does NOT kill — the ahead point never
+        // crosses the mount.)
+        let (mut pool, slot) = spawn(BALL_O_HURT, 505.0, 489.0);
         pool.slots[slot].ai[0] = 4.0;
-        pool.slots[slot].vel = Vec2::new(30.0, 0.0);
+        pool.slots[slot].vel = Vec2::new(-30.0, 0.0);
         let ins = inputs(None, false, (500.0, 500.0), (500.0, 500.0));
         tick(&mut w, &mut pool, ins);
         assert!(!pool.slots[slot].active, "the overshot ahead point kills");
@@ -25670,7 +25686,11 @@ mod s1_p_i09_yoyo_tests {
     /// write. The Kraken's recoil kick is 4, not 16 (`:13286-13289`).
     #[test]
     fn s1_p_i09_the_dropped_twins_hit_squashes_and_lifts() {
+        // Gate fix (i09×i11): the per-hit crit block rolls ONE Next(1,101)
+        // for the yoyo's melee flag BEFORE DamageVar (`Projectile.cs:12890`,
+        // S1-P-i11's spawn→hit move). The mirror consumes it first.
         let mut mirror = tr_core::tile_light::FastRandom::new(7);
+        let _crit = mirror.next_range(1, 101); // the melee crit roll (:12890)
         let _var = mirror.next_range(-15, 16); // DamageVar's roll (:12938)
         let lift = mirror.next_range(50, 81) as f32 * 0.1;
         let w = big_world();

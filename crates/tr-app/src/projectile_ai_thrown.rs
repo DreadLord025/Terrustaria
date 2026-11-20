@@ -688,6 +688,9 @@ mod tests {
     fn s1_p_i28_bone_javelin_stick_expires() {
         let w = empty_world();
         let mut p = proj(BONE_JAVELIN);
+        // Gate fix: the `proj()` fixture leaves `active` at the Default
+        // (false); the stick state only runs on a LIVE slot. Arm it.
+        p.active = true;
         p.ai[0] = 1.0;
         p.ai[1] = 0.0; // pinned to NPC 0
         p.vel = Vec2::new(2.0, 0.0);

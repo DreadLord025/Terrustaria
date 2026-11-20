@@ -5393,6 +5393,12 @@ mod tests {
             count: 1,
             prefix: 0,
         };
+        // Gate fix: the Blue Moon is `autoReuse: false` — the throw needs the
+        // press edge (`Player.cs:42733` `controlUseItem && releaseUseItem`).
+        // The rig's fresh state (`mine_released: false`) never arms it; the
+        // whip/staff rigs set the edge explicitly. Same here.
+        app.mine_released = true;
+        app.mine_prev_down = false;
         let (sw, sh) = app.screen_size();
         // Aim right of the player so the throw velocity is +x.
         app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
@@ -5618,7 +5624,11 @@ mod tests {
     #[test]
     fn s1_p_i17_the_bow_conversions_fire_after_the_pick() {
         // The Molten Fury (120) + the Wooden Arrow (40) → the FlameArrow 2.
+        // Gate fix: the Molten Fury is `autoReuse: false` (`Item.cs:120` sets
+        // none) — the shot needs the press edge (`Player.cs:42733`).
         let mut app = shooter_rig(120, "Molten Fury", &[(0, 40, 99)]);
+        app.mine_released = true;
+        app.mine_prev_down = false;
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         hold(&mut app, screen, 30, &mut log);
@@ -5626,8 +5636,10 @@ mod tests {
         assert!(!fired.is_empty(), "the Fury fired");
         assert!(fired.iter().all(|p| p.kind == 2), "the wooden arrow burns");
         // The Molten Fury + the Flaming Arrow (41) → stays 2 (the ammo's
-        // own shoot — the conversion gates on projToShoot == 1).
+        // own shoot - the conversion gates on projToShoot == 1).
         let mut app = shooter_rig(120, "Molten Fury", &[(0, 41, 99)]);
+        app.mine_released = true;
+        app.mine_prev_down = false;
         let mut log = Vec::new();
         hold(&mut app, screen, 30, &mut log);
         let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
@@ -6444,13 +6456,15 @@ mod tests {
         // The `proj_data` trap `projectile.rs` documents: a kind with no row
         // makes `spawn_with_data` decline silently. The original rig (the
         // Cobalt Repeater + the Frostburn Arrow 988 → 172) LEFT this test
-        // with S1-P-i17 — the 172 now rows and the shot fires. The trap
-        // moves to the bullet family: the Clockwork Assault Rifle (434,
-        // useAmmo 97) with the Venom Bullet (1342 → projectile 283, the
-        // dart family, still rowless). The wire must refuse the shot
-        // without panicking, while the ammo it already picked still drains
-        // (the drain runs before the spawn, `Player.cs:53675`).
-        let mut app = shooter_rig(434, "Clockwork Assault Rifle", &[(0, 1342, 9)]);
+        // with S1-P-i17 - the 172 now rows and the shot fires. The i16-era
+        // Venom Bullet 283 trap ALSO left with S1-P-i18 (the 283 now rows).
+        // Gate fix: the trap moves to the Silver Bullet (278 → projectile
+        // 981, `Projectile.cs:981`'s SetDefaults arm exists in C# but the
+        // port has no 981 row yet). The Clockwork Assault Rifle (434,
+        // useAmmo 97) fires it: the wire must refuse the shot without
+        // panicking, while the ammo it already picked still drains (the
+        // drain runs before the spawn, `Player.cs:53675`).
+        let mut app = shooter_rig(434, "Clockwork Assault Rifle", &[(0, 278, 9)]);
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         hold(&mut app, screen, 26, &mut log);
@@ -6671,6 +6685,11 @@ mod tests {
     #[test]
     fn s1_p_i16_the_electrosphere_fires_the_442_bolt_at_the_cursor_tile() {
         let mut app = shooter_rig(2796, "Electrosphere Launcher", &[(0, 771, 9)]);
+        // Gate fix: the Electrosphere Launcher is `autoReuse: false`
+        // (`Item.cs:2796` sets none) — the shot needs the press edge
+        // (`Player.cs:42733`). The rig's fresh state never arms it.
+        app.mine_released = true;
+        app.mine_prev_down = false;
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         hold(&mut app, screen, 14, &mut log);
