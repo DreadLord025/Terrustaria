@@ -307,3 +307,190 @@ fn e12_w1_kind_624_abigails_flower() {
     // 624 AbigailsFlower (:4256-4257): bare CopyFrom(Style1x1).
     check(624, &style1x1(624));
 }
+
+// ---------------------------------------------------------------------------
+// Batch 2 — kinds 630..654 (emission indices 521..547, 27 defs).
+// ---------------------------------------------------------------------------
+
+/// The stinkbug housing blockers 630/631 (`TileObjectData.cs:4446-4487`):
+/// CopyFrom(Style1x1) + bottom SolidTile|SolidWithTop|SolidSide|AlternateTile
+/// (=43), alternate tiles {124,561,574,575,576,577,578}, horizontal, then FOUR
+/// alternates: 1 ceiling (top 169), 2 right (right 57), 3 left (left 57),
+/// 4 wall (AnchorWall). The alternates keep the invalid list + alternate tiles.
+fn stinkbug_blocker(kind: u16) -> Want {
+    let mut w = style1x1(kind);
+    w.bot = a(43, 1);
+    w.alt_tiles = &[124, 561, 574, 575, 576, 577, 578];
+    w.horiz = true;
+    w.nalts = 4;
+    w
+}
+
+#[test]
+fn e12_w2_kind_630_631_stinkbug_blockers() {
+    for kind in [630u16, 631] {
+        check(kind, &stinkbug_blocker(kind));
+        let d = def_for_tile(kind).unwrap();
+        // A1 (:4450-4453 / :4471-4474): bottom empty, top 169, style 1.
+        let a1 = get_tile_data(d, 0, 1).unwrap();
+        assert_eq!((a1.style, a1.anchor_bottom, a1.anchor_top), (1, E, a(169, 1)));
+        // A2 (:4454-4457): bottom empty, right 57, style 2.
+        let a2 = get_tile_data(d, 0, 2).unwrap();
+        assert_eq!((a2.style, a2.anchor_bottom, a2.anchor_right), (2, E, a(57, 1)));
+        // A3 (:4458-4461): bottom empty, left 57, style 3.
+        let a3 = get_tile_data(d, 0, 3).unwrap();
+        assert_eq!((a3.style, a3.anchor_bottom, a3.anchor_left), (3, E, a(57, 1)));
+        // A4 (:4462-4465): bottom empty, AnchorWall, style 4.
+        let a4 = get_tile_data(d, 0, 4).unwrap();
+        assert_eq!((a4.style, a4.anchor_bottom, a4.anchor_wall), (4, E, true));
+        // The alternates inherit the invalid list + alternate tiles (CopyFrom).
+        assert_eq!(a1.anchor_invalid_tiles, INVALID);
+        assert_eq!(a1.anchor_alternate_tiles, &[124, 561, 574, 575, 576, 577, 578]);
+    }
+}
+
+#[test]
+fn e12_w2_kind_632_640_643_644_645_cages() {
+    // 632 ScarletMacaw (:2725), 640 BlueMacaw (:2727), 643 Toucan (:2729),
+    // 644 YellowCockatiel (:2731), 645 GrayCockatiel (:2733): bare Style6x3.
+    for kind in [632u16, 640, 643, 644, 645] {
+        check(kind, &style6x3(kind));
+    }
+}
+
+#[test]
+fn e12_w2_kind_637_ash_plants() {
+    // 637 (:4321-4324): CopyFrom(Style1x1Plant_Height22 :4281-4287 — Style1x1
+    // + horizontal + WaterPlacement NotAllowed + LavaDeath true) then
+    // ApplyNaturalObjectRules (custom=false, global=true :1847-1851) + the
+    // PlantCheck_CanPlaceHook (badReturn 0). WaterDeath stays false.
+    let mut w = style1x1(637);
+    w.horiz = true;
+    w.water = LP::NotAllowed;
+    w.custom = false;
+    w.global = true;
+    check(637, &w);
+    let d = def_for_tile(637).unwrap();
+    assert_eq!(d.hook_check_if_can_place.callback, "WorldGen.PlantCheck_CanPlaceHook");
+    assert_eq!(d.hook_check_if_can_place.bad_return, 0);
+    assert!(!d.hook_check_if_can_place.processed_coordinates);
+}
+
+#[test]
+fn e12_w2_kind_639_642_style2x2_and_3x3() {
+    // 639 ManaCrystal (:3986-3987): bare CopyFrom(Style2x2).
+    check(639, &style2x2(639));
+    // 642 ChlorophyteExtractinator (:4043-4045): CopyFrom(Style3x3 — the SECOND
+    // definition :4021-4030, bottom 11 no Table) + DrawYOffset 2 (draw class).
+    let w = Want {
+        kind: 642, w: 3, h: 3, ox: 1, oy: 2, dir: Dir::None,
+        heights: &[16, 16, 16], cw: 16, pad: 2, fx: 0, fy: 0,
+        horiz: false, wrap: 0, mult: 1, skip: 1, rand: 0,
+        top: E, bot: a(11, 3), left: E, right: E, wall: false,
+        valid: &[], invalid: &[], alt_tiles: &[], walls: &[],
+        water: LP::Allowed, lava: LP::NotAllowed, wdeath: false, ldeath: true,
+        custom: true, global: false, nalts: 0, nsubs: 0,
+    };
+    check(642, &w);
+}
+
+/// The `StyleOnTable1x1` base (`TileObjectData.cs:2325-2334`): 1x1 origin
+/// (0,0), bottom Table (=4) width 1, custom, heights {16}, cw16 pad2,
+/// LavaDeath=true. Horizontal stays base false.
+fn style_on_table(kind: u16) -> Want {
+    Want {
+        kind, w: 1, h: 1, ox: 0, oy: 0, dir: Dir::None,
+        heights: &[16], cw: 16, pad: 2, fx: 0, fy: 0,
+        horiz: false, wrap: 0, mult: 1, skip: 1, rand: 0,
+        top: E, bot: a(4, 1), left: E, right: E, wall: false,
+        valid: &[], invalid: &[], alt_tiles: &[], walls: &[],
+        water: LP::Allowed, lava: LP::NotAllowed, wdeath: false, ldeath: true,
+        custom: true, global: false, nalts: 0, nsubs: 0,
+    }
+}
+
+#[test]
+fn e12_w2_kind_646_shadow_candle() {
+    // 646 (:2370-2373): CopyFrom(StyleOnTable1x1) + heights {20} + DrawYOffset
+    // -4 (draw class). Placement identity: the 20-px row.
+    let mut w = style_on_table(646);
+    w.heights = &[20];
+    check(646, &w);
+}
+
+/// The `Style3x2` base (`TileObjectData.cs:3169-3179`): 3x2 origin (1,1),
+/// bottom 11 width 3, custom, heights 16x2, cw16 pad2, horizontal,
+/// LavaDeath=true.
+fn style3x2(kind: u16) -> Want {
+    Want {
+        kind, w: 3, h: 2, ox: 1, oy: 1, dir: Dir::None,
+        heights: &[16, 16], cw: 16, pad: 2, fx: 0, fy: 0,
+        horiz: true, wrap: 0, mult: 1, skip: 1, rand: 0,
+        top: E, bot: a(11, 3), left: E, right: E, wall: false,
+        valid: &[], invalid: &[], alt_tiles: &[], walls: &[],
+        water: LP::Allowed, lava: LP::NotAllowed, wdeath: false, ldeath: true,
+        custom: true, global: false, nalts: 0, nsubs: 0,
+    }
+}
+
+#[test]
+fn e12_w2_kind_647_648_651_echo_piles() {
+    // 647 LargePilesEcho (:3217-3219): Style3x2 + DrawYOffset 2 (draw class).
+    check(647, &style3x2(647));
+    // 648 LargePiles2Echo (:3220-3223): Style3x2 + StyleWrapLimit 35.
+    let mut w = style3x2(648);
+    w.wrap = 35;
+    check(648, &w);
+    // 651 PlantDetritus3x2Echo (:3227-3229): bare Style3x2 + DrawYOffset 2.
+    check(651, &style3x2(651));
+}
+
+/// The `Style2x1` base (`TileObjectData.cs:2798-2808`): 2x1 origin (0,0),
+/// bottom 11 width 2, custom, heights {16}, cw16 pad2, horizontal,
+/// LavaDeath=true.
+fn style2x1(kind: u16) -> Want {
+    Want {
+        kind, w: 2, h: 1, ox: 0, oy: 0, dir: Dir::None,
+        heights: &[16], cw: 16, pad: 2, fx: 0, fy: 0,
+        horiz: true, wrap: 0, mult: 1, skip: 1, rand: 0,
+        top: E, bot: a(11, 2), left: E, right: E, wall: false,
+        valid: &[], invalid: &[], alt_tiles: &[], walls: &[],
+        water: LP::Allowed, lava: LP::NotAllowed, wdeath: false, ldeath: true,
+        custom: true, global: false, nalts: 0, nsubs: 0,
+    }
+}
+
+#[test]
+fn e12_w2_kind_649_small_piles_echo() {
+    // 649 SmallPiles2x1Echo (:2838-2841): Style2x1 + StyleWrapLimit 53.
+    let mut w = style2x1(649);
+    w.wrap = 53;
+    check(649, &w);
+}
+
+#[test]
+fn e12_w2_kind_650_small_piles_1x1_echo() {
+    // 650 (:4411-4414): Style1x1 + DrawYOffset 2 (draw class) + horizontal.
+    let mut w = style1x1(650);
+    w.horiz = true;
+    check(650, &w);
+}
+
+#[test]
+fn e12_w2_kind_652_653_654_style2x2_variants() {
+    // 652 PlantDetritus2x2Echo (:3537-3540): Style2x2 + horizontal.
+    let mut w = style2x2(652);
+    w.horiz = true;
+    check(652, &w);
+    // 653 PotsEcho (:3541-3547): Style2x2 + bottom 11 (no Table) + horizontal
+    // + StyleWrapLimit 3 (the styleWrapLimit local :3541).
+    let mut w = style2x2(653);
+    w.bot = a(11, 2);
+    w.horiz = true;
+    w.wrap = 3;
+    check(653, &w);
+    // 654 TNTBarrel (:3654-3658): Style2x2 + heights {16,18} + LavaDeath true.
+    let mut w = style2x2(654);
+    w.heights = &[16, 18];
+    check(654, &w);
+}
