@@ -19457,20 +19457,6 @@ impl ProjectilePool {
                 // `TryConsumingTimerCrit` (`:12902`) and the monk-set /
                 // sentry-backpack arms (`:12903-12916`) are unported
                 // accessories — no port state, no draws.
-            // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
-            // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
-            // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
-            // `velocity = (npc.Center - Center) * 0.75`. Runs BEFORE the
-            // strike (the C# arm precedes `StatusNPC`/`StrikeNPC`), so the
-            // Daybroken gate below reads the fresh pin.
-            if self.slots[slot].kind == BONE_JAVELIN && self.slots[slot].ai[0] < 2.0 {
-                let (ncx, ncy) = npcs[idx].center();
-                let p = &mut self.slots[slot];
-                let pcx = p.pos.x + p.w * 0.5;
-                let pcy = p.pos.y + p.h * 0.5;
-                p.ai[0] = 1.0;
-                p.ai[1] = idx as f32;
-                p.vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
             }
             // `:12919-12933`: the tag-damage math runs on the hit's damage —
             // the summon/sentry gate (`WhipTagEffect.CanRunHitEffects`)
@@ -19485,6 +19471,22 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
+            // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
+            // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
+            // `velocity = (npc.Center - Center) * 0.75`. The C# arm sits
+            // AFTER DamageVar (`:12938`) and BEFORE the Hellfire clamp
+            // (`:13252`) / StatusNPC / StrikeNPC, so the Daybroken gate
+            // below reads the fresh pin.
+            if self.slots[slot].kind == BONE_JAVELIN && self.slots[slot].ai[0] < 2.0 {
+                let (ncx, ncy) = npcs[idx].center();
+                let pj = &mut self.slots[slot];
+                let pcx = pj.pos.x + pj.w * 0.5;
+                let pcy = pj.pos.y + pj.h * 0.5;
+                pj.ai[0] = 1.0;
+                pj.ai[1] = idx as f32;
+                pj.vel = Vec2::new((ncx - pcx) * 0.75, (ncy - pcy) * 0.75);
+            }
             // S1-P-i17 — `Damage_PVE_Inner`'s Hellfire clamp
             // (`Projectile.cs:13252-13255`): the 41's contact pins
             // `timeLeft = 1` (the C# site sits between DamageVar `:12938`
