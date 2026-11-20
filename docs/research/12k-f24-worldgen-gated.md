@@ -135,7 +135,7 @@ runtime-side, not the skyblock generator's tail).
 | B3 DitherSnake | (this commit) | landed (code-only; unwired, both pins unchanged) |
 | B4 DitherSnakePass | (this commit) | landed (code-only; unwired, both pins unchanged) |
 | B5 producer chain + style statics | (this commit) | landed (code-only; unwired, both pins unchanged) |
-| B6 pipeline wire (dither snake) | — | pending |
+| B6 pipeline wire (dither snake) | (this commit) | landed (code-only; gated, both classic pins unchanged) |
 | A1 Skyblock statics + gate census | — | pending |
 | A2 SkyblockIsland | — | pending |
 | A3 shared tail helpers | — | pending |

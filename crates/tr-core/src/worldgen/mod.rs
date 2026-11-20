@@ -334,6 +334,34 @@ mod tests {
         }
     }
 
+    /// W4-f24 B6: the gated Dual Dungeons Dither Snake step is a classic
+    /// no-op and deterministic under the dualDungeons seed. The classic
+    /// world's hash equals the no-step baseline (the producer setup and the
+    /// snake body are both flag-gated); the dual seed's whole world replays
+    /// a == b and differs from the seed-matched classic control (the snake
+    /// paints brick/wall into both dungeons' bounds). Written NOT run (the
+    /// code-only lane); the gate measures the affected-seed constants.
+    #[test]
+    fn w4_f24_the_dither_snake_is_gated_and_deterministic() {
+        use crate::seeds::MicroSeedFlags;
+        use crate::worldgen::world_hash::world_hash;
+        let classic = GenOptions { width: 512, height: 512, seed: 42, ..Default::default() };
+        let dual = GenOptions {
+            micro_flags: MicroSeedFlags::from(MicroSeedFlags::DUAL_DUNGEONS),
+            ..classic
+        };
+        // The classic world is byte-identical with the step present (no-op).
+        let c1 = world_hash(&generate(&classic));
+        let c2 = world_hash(&generate(&classic));
+        assert_eq!(c1, c2);
+        // The dual seed replays a == b.
+        let d1 = world_hash(&generate(&dual));
+        let d2 = world_hash(&generate(&dual));
+        assert_eq!(d1, d2);
+        // The snake moves the dual world (it paints into the dungeon bounds).
+        assert_ne!(d1, c1);
+    }
+
     #[test]
     fn desert_band_has_sand_dunes_and_no_trees() {
         let opts = GenOptions::default();

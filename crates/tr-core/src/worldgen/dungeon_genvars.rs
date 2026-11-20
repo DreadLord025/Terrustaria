@@ -216,6 +216,7 @@ pub(crate) struct DualDungeonSetup {
 /// setup, `WorldGen.cs:11520-11525`: dungeon 1 then dungeon 0, each a fresh
 /// colour roll) + the bounds + the style quads. `rng` is the Dunes pass
 /// stream; the two colour rolls run in the C#'s order (dungeon 1 first).
+/// `crimson` is `WorldGen.crimson` (the evil flavour, `opts.crimson`).
 pub(crate) fn setup_dual_dungeons(
     rng: &mut super::Rng,
     flags: SeedFlags,

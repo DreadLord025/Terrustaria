@@ -366,6 +366,14 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// W4-f24 B6: the dual-dungeon producer setup
+    /// (`GenVars.dungeonGenVars`, `DungeonGenVars.cs`) the gated
+    /// `Dual Dungeons Dither Snake` step (`WorldGen.cs:14755`) consumes —
+    /// the per-dungeon bounds/side/location + the style quads. `None` on a
+    /// classic world (the Dunes-pass dual setup `:11520-11525` only runs
+    /// under `MicroSeedFlags::DUAL_DUNGEONS`); the snake step is a no-op
+    /// until it is `Some`.
+    pub(crate) dual_dungeons: Option<super::dungeon_genvars::DualDungeonSetup>,
 }
 
 impl Default for GenVars {
@@ -403,6 +411,8 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            // W4-f24 B6: no dual-dungeon setup on a classic world.
+            dual_dungeons: None,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1272,6 +1282,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `mushroom patches`).
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
+    // W4-f24 B6: the gated Dual Dungeons Dither Snake slot
+    // (`WorldGen.cs:14755`): between Lakes (`:14556`)/Slush (`:14697`) and
+    // Dungeon (`:14757`). A classic world's step is a no-op (the producer
+    // setup is flag-gated); the dualDungeons seed paints both spines here.
+    step!("dither snake", "Dual Dungeons Dither Snake", step_dither_snake),
     step!("dungeon", "Dungeon", step_dungeon),
     // The vanilla Dungeon tail (`WorldGen.cs:14867`): the Constant's
     // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
@@ -1505,10 +1520,31 @@ fn step_dunes(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     pass_config: &ConfigSection,
 ) {
+    // W4-f24 B6: the dual-dungeon setup the C# runs at the head of the
+    // Dunes pass (`WorldGen.cs:11519-11525`): dungeon 0's
+    // SetupDungeonGenVarVariables, then — under dualDungeons — dungeon 1's.
+    // The port rolls both colours + bounds + style quads here (the producer
+    // chain, B5) and publishes them for the gated snake step. A classic
+    // world draws nothing extra (the block is flag-gated).
+    if opts.micro_flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS) {
+        let dungeon_location = gv.spans().dungeon_x;
+        let setup = super::dungeon_genvars::setup_dual_dungeons(
+            &mut streams.pass_rng("Dunes"),
+            opts.flags,
+            opts.micro_flags,
+            opts.crimson,
+            world.width,
+            world.height,
+            gv.layers().world_surface,
+            gv.layers().surface_high,
+            dungeon_location,
+        );
+        gv.dual_dungeons = Some(setup);
+    }
     let count = pass_config
         .get_range("Count")
         .map_or(1, |r| r.get_random(&mut streams.pass_rng("Dunes"), world.width, world.height));
@@ -1981,6 +2017,48 @@ fn step_dungeon(
     let surface_row = gv.map().heights[dungeon_x as usize];
     let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
     dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
+}
+
+/// W4-f24 B6: the gated `Dual Dungeons Dither Snake` pass
+/// (`WorldGen.cs:14753-14756`, `DitherSnakePass.cs:22-31`). Registered only
+/// under `SecretSeed.dualDungeons` (the port's
+/// `MicroSeedFlags::DUAL_DUNGEONS`); the step is a no-op on a classic world
+/// (the producer setup never ran, `gv.dual_dungeons` is `None`). The snake
+/// paints both dungeons' spines into their outer potential bounds; the
+/// `NormalizedDistanceSafeFromDither` static is the world-wide
+/// `1.0 - 0.075 * (maxTilesY / 1200.0)` (`WorldGen.cs:11465`).
+fn step_dither_snake(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if !opts.micro_flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS) {
+        return;
+    }
+    let Some(setup) = gv.dual_dungeons.as_ref() else {
+        return;
+    };
+    let safe_distance = 1.0 - 0.075 * (world.height as f64 / 1200.0);
+    let mut rng = streams.pass_rng("Dual Dungeons Dither Snake");
+    // The two dungeons paint back-to-back, each with its own style quad
+    // (DitherSnakePass.ApplyPass's CurrentDungeon 0 then 1, :25-30).
+    for (d, styles) in setup.dungeons.iter().zip(setup.styles.iter()) {
+        let mut snake = super::dither_snake::calculate_dungeon_dither_snake(
+            &mut rng,
+            world.width,
+            &d.outer,
+            d.dungeon_side,
+            d.dungeon_location,
+            d.style_count,
+            safe_distance,
+        );
+        super::dither_snake::generate_dungeon_dither_snake(
+            world, &mut rng, &mut snake, styles, &d.outer, safe_distance,
+        );
+    }
 }
 
 fn step_ocean_caves(
@@ -3140,7 +3218,10 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-f24 B6: + `dither snake` (vanilla "Dual Dungeons Dither Snake",
+        // `WorldGen.cs:14755`) between `liquids` and `dungeon` — gated, a
+        // classic world's step is a no-op.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3285,6 +3366,9 @@ mod tests {
         assert_eq!(names[pos("ocean sand") + 1], "micro grass"); // + the M5-SEED-2 Grass slot
         assert_eq!(names[pos("micro grass") + 1], "jungle");
         assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)
+        // W4-f24 B6: the gated dither snake sits between liquids and dungeon.
+        assert_eq!(pos("dither snake"), pos("dungeon") - 1);
+        assert_eq!(pos("dither snake"), pos("liquids") + 1);
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
         assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
         // The vanilla chain carries the same relative order.

@@ -330,6 +330,16 @@ mod tests {
     // Jungle/Temple) + Snow/Desert/Hallow + the GetCurrentDungeonStyle
     // wrapper (DungeonGenerationStyles.cs:95-135). The setup draws only
     // under DUAL_DUNGEONS (B6 wires it) — both classic pins stay.
+    // W4-f24 B6: the gated step lands — `pipeline.rs` gains the
+    // `dither snake` row (vanilla "Dual Dungeons Dither Snake",
+    // WorldGen.cs:14755) between liquids and dungeon, the Dunes-pass dual
+    // setup (:11520-11525, flag-gated) publishing GenVars.dual_dungeons, and
+    // step_dither_snake (the NormalizedDistanceSafeFromDither :11465 +
+    // both dungeons' calculate/paint). BOTH CLASSIC PINS STAY: the setup
+    // and the step body are gated behind MicroSeedFlags::DUAL_DUNGEONS, so a
+    // classic world runs the byte-identical ledger (the step is a no-op).
+    // The dual seed's hash moves by design and rides the a == b witness
+    // `w4_f24_the_dither_snake_is_gated_and_deterministic` (written NOT run).
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
