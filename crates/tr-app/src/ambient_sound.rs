@@ -313,13 +313,10 @@ pub fn critter_sound_cue(
 /// arms draw nothing more. `wet` gates the jellyfish arm (`:90099`);
 /// `roll(hi)` stands in for `Main.rand.Next(hi)`.
 ///
-/// This slice ports arms 1-20 (`:90079-90158`: the blood crawlers,
-/// demon/red devil, derpling, flying snake, giant tortoise, jellyfish,
-/// lihzahrds, pigrons, angry nimbus, the antlion family, crawdad, the
-/// deadly sphere/DrManFly pair, dungeon spirit, desert ghouls, giant
-/// shellies); the remaining arms land with the next slice — an unported
-/// type draws NOTHING here (the pre-wiring behaviour for every kind
-/// outside the table).
+/// This slice ports arms 1-30 (`:90079-90198`); the last two arms
+/// (the 498-506 sandpoors and the scutlix) land with the next slice —
+/// an unported type draws NOTHING here (the pre-wiring behaviour for
+/// every kind outside the table).
 pub fn idle_sound_cue(
     npc_type: i32,
     wet: bool,
@@ -423,6 +420,54 @@ pub fn idle_sound_cue(
     // Next(57, 59).
     if npc_type == 496 || npc_type == 497 {
         return (roll(600) == 0).then(|| roll_range(roll, 57, 59));
+    }
+    // `:90159-90162` — the giga zapper (389): Next(800), slot
+    // Next(59, 61).
+    if npc_type == 389 {
+        return (roll(800) == 0).then(|| roll_range(roll, 59, 61));
+    }
+    // `:90163-90166` — the goblin summoner (471): Next(600), slot
+    // Next(61, 63).
+    if npc_type == 471 {
+        return (roll(600) == 0).then(|| roll_range(roll, 61, 63));
+    }
+    // `:90167-90170` — the granite golem (482): Next(600), slot
+    // Next(63, 66).
+    if npc_type == 482 {
+        return (roll(600) == 0).then(|| roll_range(roll, 63, 66));
+    }
+    // `:90171-90174` — the martian drone (388): Next(700), slot
+    // Next(66, 69) (the style74 module's cited obligation).
+    if npc_type == 388 {
+        return (roll(700) == 0).then(|| roll_range(roll, 66, 69));
+    }
+    // `:90175-90178` — the martian walker (520): Next(800), slot
+    // Next(69, 73).
+    if npc_type == 520 {
+        return (roll(800) == 0).then(|| roll_range(roll, 69, 73));
+    }
+    // `:90179-90182` — Mothron (477): Next(600), slot 73.
+    if npc_type == 477 {
+        return (roll(600) == 0).then_some(73);
+    }
+    // `:90183-90186` — the mushi ladybug (258): Next(700), slot
+    // Next(74, 78).
+    if npc_type == 258 {
+        return (roll(700) == 0).then(|| roll_range(roll, 74, 78));
+    }
+    // `:90187-90190` — the parrot (252): Next(700), slot 78.
+    if npc_type == 252 {
+        return (roll(700) == 0).then_some(78);
+    }
+    // `:90191-90194` — the possessed (469): Next(700), slot
+    // Next(79, 81).
+    if npc_type == 469 {
+        return (roll(700) == 0).then(|| roll_range(roll, 79, 81));
+    }
+    // `:90195-90198` — the reaper (253) / wraith (82): Next(700), slot
+    // Next(81, 84).
+    if npc_type == 253 || npc_type == 82 {
+        return (roll(700) == 0).then(|| roll_range(roll, 81, 84));
     }
     None
 }
@@ -763,6 +808,32 @@ fn zombie_asset(slot: usize) -> &'static str {
         56 => "Zombie_56",
         57 => "Zombie_57",
         58 => "Zombie_58",
+        // W4-e9 slice 3 — arms 21-30's slots (`NPC.cs:90159-90198`).
+        59 => "Zombie_59",
+        60 => "Zombie_60",
+        61 => "Zombie_61",
+        62 => "Zombie_62",
+        63 => "Zombie_63",
+        64 => "Zombie_64",
+        65 => "Zombie_65",
+        66 => "Zombie_66",
+        67 => "Zombie_67",
+        68 => "Zombie_68",
+        69 => "Zombie_69",
+        70 => "Zombie_70",
+        71 => "Zombie_71",
+        72 => "Zombie_72",
+        73 => "Zombie_73",
+        74 => "Zombie_74",
+        75 => "Zombie_75",
+        76 => "Zombie_76",
+        77 => "Zombie_77",
+        78 => "Zombie_78",
+        79 => "Zombie_79",
+        80 => "Zombie_80",
+        81 => "Zombie_81",
+        82 => "Zombie_82",
+        83 => "Zombie_83",
         _ => "Zombie_0",
     }
 }
@@ -1251,6 +1322,21 @@ mod tests {
             assert_eq!(idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)), None);
             assert_eq!(rolls.calls, 1, "type {ty}: one failed gate roll");
         }
+        // Slice 3 (`:90159-90198`): Mothron/parrot pinned, the rest range.
+        for (ty, style) in [(477, 73), (252, 78)] {
+            let mut rolls = Rolls::with_zero(0);
+            assert_eq!(idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)), Some(style));
+            assert_eq!(rolls.calls, 1, "type {ty}: pinned slot");
+        }
+        for (ty, lo, hi) in [(389, 59, 61), (471, 61, 63), (482, 63, 66), (388, 66, 69), (520, 69, 73), (258, 74, 78), (469, 79, 81), (253, 81, 84), (82, 81, 84)] {
+            let mut rolls = Rolls::with_zero(0);
+            let style = idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)).unwrap();
+            assert!((lo..hi).contains(&style), "type {ty}: slot {style}");
+            assert_eq!(rolls.calls, 2);
+            let mut rolls = Rolls::new();
+            assert_eq!(idle_sound_cue(ty, false, 0.0, &mut roll(&mut rolls)), None);
+            assert_eq!(rolls.calls, 1, "type {ty}: one failed gate roll");
+        }
         // The jellyfish arm needs `wet` — dry draws NOTHING (`:90099`).
         let mut rolls = Rolls::new();
         assert_eq!(idle_sound_cue(63, false, 0.0, &mut roll(&mut rolls)), None);
@@ -1279,7 +1365,7 @@ mod tests {
             let _ = roll(&mut rolls)((hi - lo) as u32) as i32;
             lo + 1
         };
-        for slot in [24u32, 25, 32, 33, 41, 43, 44, 47, 53, 54, 58] {
+        for slot in [24u32, 25, 32, 33, 41, 43, 44, 47, 53, 54, 58, 59, 73, 78, 83] {
             let voice = critter_legacy_voice(29, slot, &mut signed, &|_| false).unwrap();
             assert_eq!(voice.slot, slot as usize);
             assert_eq!(voice.asset, zombie_asset(slot as usize));

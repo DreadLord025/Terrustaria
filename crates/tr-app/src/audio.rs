@@ -465,6 +465,33 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_56", 29),
     ("Zombie_57", 29),
     ("Zombie_58", 29),
+    // W4-e9 slice 3 — IdleSounds arms 21-30 (`NPC.cs:90159-90198`): the
+    // giga zapper 59/60 through the reaper/wraith 81-83.
+    ("Zombie_59", 29),
+    ("Zombie_60", 29),
+    ("Zombie_61", 29),
+    ("Zombie_62", 29),
+    ("Zombie_63", 29),
+    ("Zombie_64", 29),
+    ("Zombie_65", 29),
+    ("Zombie_66", 29),
+    ("Zombie_67", 29),
+    ("Zombie_68", 29),
+    ("Zombie_69", 29),
+    ("Zombie_70", 29),
+    ("Zombie_71", 29),
+    ("Zombie_72", 29),
+    ("Zombie_73", 29),
+    ("Zombie_74", 29),
+    ("Zombie_75", 29),
+    ("Zombie_76", 29),
+    ("Zombie_77", 29),
+    ("Zombie_78", 29),
+    ("Zombie_79", 29),
+    ("Zombie_80", 29),
+    ("Zombie_81", 29),
+    ("Zombie_82", 29),
+    ("Zombie_83", 29),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
