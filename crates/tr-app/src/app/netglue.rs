@@ -1890,7 +1890,16 @@ impl App {
             // S1-I-1 W4-f21: `25/26/44/67/83` — deprecated, the reader's
             // ignore group (`MessageBuffer.cs:4483-4490`) accepts and drops
             // them; the codec's bare-frame read IS the whole arm.
-            S2c::Unused25 | S2c::Unused26 | S2c::Unknown44 | S2c::Unknown67 | S2c::Unused83 => {}
+            S2c::Unused25
+            | S2c::Unused26
+            | S2c::Unknown44
+            | S2c::Unknown67
+            | S2c::Unused83
+            | S2c::SocialHandshake => {}
+            // S1-I-1 W4-f21: `90`'s client spawn + instanced/reserved tail
+            // (`MessageBuffer.cs:1461-1493`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::SpawnInstancedItem(_) => {}
             // S1-I-1 W4-f21: `39`'s client FindOwner re-run
             // (`MessageBuffer.cs:2237-2243`) and `48`'s liquid apply
             // (`:2428-2435`) land with the apply-wiring lanes (g48-g52) /

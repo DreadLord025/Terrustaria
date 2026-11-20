@@ -266,6 +266,22 @@ pub mod id {
     /// `DefaultAssignNewItemsToPlayer`). Client send: `TEItemFrame.cs:150`.
     /// C2s-only. The 123/133/149 twins share this exact body.
     pub const ITEM_FRAME_TRY_PLACING: u8 = 89;
+    /// `90 SpawnInstancedItem` (`MessageID.cs:194`) — the writer SHARES
+    /// case 21 (`NetMessage.cs:646-669`): the exact `ItemState` body under
+    /// a different id. Host-only send: `WorldItem.MakeInstanced`
+    /// (`WorldItem.cs:321-336`, per-player `SendData(90, i, …)` then
+    /// `TurnToAir`). The reader shares case 21 too
+    /// (`MessageBuffer.cs:1445-1536`); the `b == 90` client tail sets
+    /// `instanced = true` + reserves for `myPlayer` (`:1489-1493`).
+    /// S2c-only. The bit-3 enemyGrabDelay tail is d98's wave-I extension
+    /// of the shared `ItemState` body — it merges with this variant.
+    pub const SPAWN_INSTANCED_ITEM: u8 = 90;
+    /// `93 SocialHandshake` (`MessageID.cs:200`) — no writer arm, no body;
+    /// the reader ignore group (`MessageBuffer.cs:4483-4490`). Unlike its
+    /// group peers it IS accept-gate-whitelisted pre-spawn
+    /// (`MessageBuffer.cs:165`'s `b != 93` escape) — the C# accepts the
+    /// frame early, then drops it.
+    pub const SOCIAL_HANDSHAKE: u8 = 93;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2430,6 +2446,14 @@ pub enum S2c {
     /// `CommonCode.cs:67-92`; client-only reader
     /// `MessageBuffer.cs:3306-3376`). S2c-only.
     ItemTweaker(ItemTweaker),
+    /// `90 SpawnInstancedItem` — a per-player instanced drop
+    /// (`WorldItem.MakeInstanced`, `WorldItem.cs:332`); the body is the
+    /// shared case-21 `ItemState`, the client tail marks it instanced +
+    /// reserved for `myPlayer` (`MessageBuffer.cs:1489-1493`). S2c-only.
+    SpawnInstancedItem(Box<ItemState>),
+    /// `93 SocialHandshake` — no body; the reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`), accept-gate-whitelisted (`:165`).
+    SocialHandshake,
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2968,6 +2992,8 @@ impl S2c {
             Self::QuickStackBlockedChests(_) => id::QUICK_STACK_CHESTS,
             Self::TileEntitySharing(_) => id::TILE_ENTITY_SHARING,
             Self::ItemTweaker(_) => id::ITEM_TWEAKER,
+            Self::SpawnInstancedItem(_) => id::SPAWN_INSTANCED_ITEM,
+            Self::SocialHandshake => id::SOCIAL_HANDSHAKE,
         }
     }
 
@@ -3112,9 +3138,14 @@ impl S2c {
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
             // `25/26/44/67/83` have no writer arm; bare frames mirror the
             // reader's ignore group (`MessageBuffer.cs:4483-4490`).
-            Self::Unused25 | Self::Unused26 | Self::Unknown44 | Self::Unknown67 | Self::Unused83 => {
-                w
-            }
+            Self::Unused25
+            | Self::Unused26
+            | Self::Unknown44
+            | Self::Unknown67
+            | Self::Unused83
+            | Self::SocialHandshake => w,
+            // `NetMessage.cs:646-669` — the shared case-21 body under id 90.
+            Self::SpawnInstancedItem(d) => d.write_to(w),
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -3428,6 +3459,10 @@ impl S2c {
             id::UNKNOWN_44 => Self::Unknown44,
             id::UNKNOWN_67 => Self::Unknown67,
             id::UNUSED_83 => Self::Unused83,
+            id::SOCIAL_HANDSHAKE => Self::SocialHandshake,
+            // `MessageBuffer.cs:1445-1459` — the shared case-21 read; the
+            // instanced/reserved tail (`:1489-1493`) is the apply arm's.
+            id::SPAWN_INSTANCED_ITEM => Self::SpawnInstancedItem(Box::new(ItemState::read_from(r)?)),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
             id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
@@ -6333,6 +6368,60 @@ mod tests {
         assert!(S2c::decode(89, &mut NetReader::new(&body)).is_none());
         // A truncated stack must not decode.
         assert!(C2s::decode(89, &mut NetReader::new(&body[..8])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_spawn_instanced_item_shares_the_case_21_body() {
+        // `NetMessage.cs:646-647`: case 21 and case 90 share the writer —
+        // the same ItemState bytes under a different id byte.
+        let d = ItemState {
+            slot: 401,
+            x: 100.5,
+            y: -20.25,
+            vx: 1.0,
+            vy: -2.0,
+            stack: 3,
+            prefix: 81,
+            kind: 757,
+            shimmered: false,
+            shimmer_time: 0.0,
+        };
+        let f90 = S2c::SpawnInstancedItem(Box::new(d)).encode();
+        let f21 = S2c::ItemState(Box::new(d)).encode();
+        assert_eq!(f90[2], 90);
+        assert_eq!(f21[2], 21);
+        assert_eq!(&f90[3..], &f21[3..]); // identical bodies
+        let mut r = NetReader::new(&f90[3..]);
+        match S2c::decode(f90[2], &mut r).expect("decode") {
+            S2c::SpawnInstancedItem(got) => assert_eq!(*got, d),
+            other => panic!("expected 90, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The shimmer tail rides the shared body too.
+        let sh = ItemState { shimmered: true, shimmer_time: 12.5, ..d };
+        let f = S2c::SpawnInstancedItem(Box::new(sh)).encode();
+        match S2c::decode(90, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SpawnInstancedItem(got) => assert_eq!(*got, sh),
+            other => panic!("expected 90, got {:?}", other.msg_id()),
+        }
+        // S2c-only: no C2s arm (MakeInstanced is host-gated).
+        assert!(C2s::decode(90, &mut NetReader::new(&f90[3..])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_social_handshake_is_a_bare_whitelisted_frame() {
+        // `93` — the reader ignore group's last member
+        // (`MessageBuffer.cs:4483-4490`); unlike 15/25/26/44/67/83 it IS
+        // accept-gate-whitelisted pre-spawn (`:165`'s `b != 93` escape).
+        let f = S2c::SocialHandshake.encode();
+        assert_eq!(f[2], 93);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::SocialHandshake => {}
+            other => panic!("expected 93, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
     }
 
     #[test]
