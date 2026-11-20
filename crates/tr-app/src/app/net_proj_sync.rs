@@ -348,6 +348,35 @@ impl ProjSync {
         ai_style == 16 && !hostile
     }
 
+    /// W4-g52 — one player's skipped flag (`Projectile.cs:386`'s
+    /// `netSyncSkippedForPlayer[i]`). The `27` relay's ignoreClient leg
+    /// (`NetMessage.cs:1784`) never touches the sender's flag, so the
+    /// netglue caller snapshots/restores it around `note_broadcast`.
+    pub(crate) fn skipped_for(&self, slot: usize, player: u8) -> bool {
+        self.slots
+            .get(slot)
+            .and_then(|sn| sn.sync_skipped.get(player as usize).copied())
+            .unwrap_or(false)
+    }
+
+    /// W4-g52 — restore one player's skipped flag (the ignoreClient leg).
+    pub(crate) fn set_skipped_for(&mut self, slot: usize, player: u8, v: bool) {
+        if let Some(sn) = self.slots.get_mut(slot) {
+            if let Some(f) = sn.sync_skipped.get_mut(player as usize) {
+                *f = v;
+            }
+        }
+    }
+
+    /// W4-g52 — the whole skipped-flag row, for the not-connected legs the
+    /// `:1784` continue skips before the flag write (`:1792`/`:1795`).
+    pub(crate) fn skipped_snapshot(&self, slot: usize) -> [bool; 255] {
+        self.slots
+            .get(slot)
+            .map(|sn| sn.sync_skipped)
+            .unwrap_or([false; 255])
+    }
+
     /// The AI immediate sites (`Projectile.cs:23744`/`:23760`/`:23780`,
     /// `:52472`, `:57818`, `:73866`, `:74845`): one `27` at the AI moment.
     /// The site guards differ (the bounce chains and golf gate on

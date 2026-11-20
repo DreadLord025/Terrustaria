@@ -435,16 +435,21 @@ impl App {
                 }
                 self.world_key = None;
                 // The replicated change: the applied tile read back as a
-                // `20 SectionRange` (`SendTileSquare` on the host).
+                // `20 SectionRange` (`SendTileSquare` on the host). W4-g52:
+                // the `case 20` fan-out (`NetMessage.cs:1708-1718`) — only
+                // the slots already holding a corner section receive it.
                 let rec = self.tile_record_at(x, y);
-                server.broadcast(&S2c::SectionRange(Box::new(net::SectionRange {
-                    x: x as i16,
-                    y: y as i16,
-                    w: 1,
-                    h: 1,
-                    change_type: 0,
-                    records: vec![rec],
-                })));
+                server.relay_tile_square(
+                    &S2c::SectionRange(Box::new(net::SectionRange {
+                        x: x as i16,
+                        y: y as i16,
+                        w: 1,
+                        h: 1,
+                        change_type: 0,
+                        records: vec![rec],
+                    })),
+                    None,
+                );
             }
             // `case 82` — a NetModule envelope (`NetManager.Read`'s dispatch,
             // `NetManager.cs:48-64`).
@@ -468,6 +473,23 @@ impl App {
                 }
                 self.npcs[slot].facing = if st.hit_direction > 0 { 1 } else { -1 };
                 let strike_x = self.npcs[slot].x;
+                // W4-g52 — `SendData(28)`'s pre-switch cascade
+                // (`NetMessage.cs:102-107`): a `spawnNeedsSyncing` NPC gets a
+                // priority `23` FIRST — BEFORE the strike applies (the C#
+                // sends it inside `TrySendData(28)` at
+                // `MessageBuffer.cs:1807`, after `StrikeNPC`, but the port
+                // runs the whole send path here; the body must carry the
+                // PRE-strike life, so the cascade fires ahead of the apply —
+                // the flag3 priority `23` reaches every broadcast-open slot
+                // and clears the sync counters, `NetMessage.cs:1722-1730`).
+                let uid = self.npcs[slot].uid;
+                let needs_sync = self
+                    .net_npc_states
+                    .get(&uid)
+                    .is_some_and(|st| st.spawn_needs_syncing);
+                if needs_sync {
+                    self.send_npc_state_broadcast(server, slot);
+                }
                 // `NPC.StrikeNPC` (`NPC.cs:81189-81563`): the strike lands on
                 // the carrier's life pool when the hit NPC is a linked
                 // segment (`NPC.realLife`, `NPC.cs:81374-81378`).
@@ -484,32 +506,32 @@ impl App {
                     false,
                 );
                 let dead = self.npcs[slot].hp <= 0;
-                // The relay carries the validated values to everyone else.
-                server.broadcast_except(&S2c::NpcStrike(st), id);
+                // The `case 28` relay (`NetMessage.cs:1751-1762`): the
+                // validated values to everyone else, section-culled unless
+                // the NPC died (`IsSectionActive`, the check-time grid).
+                let section = (
+                    net::section_x(self.npcs[slot].x as i32 / TILE_PX as i32),
+                    net::section_y(self.npcs[slot].y as i32 / TILE_PX as i32),
+                );
+                server.relay_strike(
+                    &S2c::NpcStrike(st),
+                    id,
+                    net::RelayCtx::Strike { dead, section },
+                    self.game_update_count,
+                );
+                // The full `23` on death (`MessageBuffer.cs:1808-1811`) —
+                // priority (`life <= 0`, `NetMessage.cs:1722`), so it
+                // reaches every broadcast-open slot and clears the sync
+                // counters (`:1725-1730`).
                 if dead {
-                    // The full `23` update on death (`MessageBuffer.cs:1808-1811`).
-                    let kind = self.npcs[slot].kind.to_u16() as i16;
-                    let generation = self
-                        .net_npc_gen
-                        .get(&(slot as u32))
-                        .map(|(_, g)| *g)
-                        .unwrap_or(0);
-                    let npc = &self.npcs[slot];
-                    server.broadcast(&S2c::NpcInfo(Box::new(net::NpcInfo {
-                        slot: st.npc,
-                        generation: generation as u8,
-                        spawn: false,
-                        kind,
-                        x: npc.x,
-                        y: npc.y,
-                        vx: npc.vx,
-                        vy: npc.vy,
-                        dir_right: npc.facing > 0,
-                        dir_y_down: npc.vy > 0.0,
-                        sprite_right: npc.facing > 0,
-                        life_full: false,
-                        hp: npc.hp,
-                    })));
+                    self.send_npc_state_broadcast(server, slot);
+                    // The carrier's `23` when the shared pool died
+                    // (`MessageBuffer.cs:1812-1815`, `NPC.realLife`).
+                    if let Some(carrier) = crate::npc::Npc::carrier_index(&self.npcs, slot) {
+                        if self.npcs[carrier].hp <= 0 {
+                            self.send_npc_state_broadcast(server, carrier);
+                        }
+                    }
                 }
             }
             // `case 70` — a client's bug net caught an NPC
@@ -543,10 +565,64 @@ impl App {
             // `case 27` — a peer's own projectile state. The host applies it
             // into its pool (rendering; the owner-side damage arrives as
             // `28`) and relays it to the others
-            // (`MessageBuffer.cs:1760-1763`).
+            // (`MessageBuffer.cs:1760-1763`). W4-g52: the relay is the
+            // `case 27` fan-out (`NetMessage.cs:1774-1800`) — flag3 or
+            // section-active, ignoreClient = the sender. (The `:1725-1728`
+            // projHostile/spawner read refusal ahead of the apply is the
+            // apply-arm lane's gate — g48-g51/d93.)
             C2s::Projectile(ps) => {
                 self.projectiles.upsert_remote(&ps);
-                server.broadcast_except(&S2c::Projectile(ps.clone()), id);
+                let (_, slot, _) = net::projectile_key_parts(ps.key);
+                if slot < crate::projectile::MAX_PROJECTILES {
+                    let ctx = self.proj_relay_ctx(slot);
+                    // The sender's skipped flag is untouched by the C# loop
+                    // (`:1784`'s ignoreClient continue runs BEFORE the flag
+                    // write); so is every not-broadcast slot's. Snapshot +
+                    // restore them around the motion.
+                    let flag3 = matches!(
+                        ctx,
+                        net::RelayCtx::Projectile {
+                            ignores_sections: true,
+                            ..
+                        }
+                    );
+                    let prev_flags = if flag3 {
+                        None
+                    } else {
+                        let mut snap = self.proj_sync.skipped_snapshot(slot);
+                        for (i, f) in snap.iter_mut().enumerate() {
+                            if i as u32 == id || !server.broadcast_open(i as u32) {
+                                *f = self.proj_sync.skipped_for(slot, i as u8);
+                            }
+                        }
+                        Some(snap)
+                    };
+                    self.proj_sync.note_broadcast(&self.projectiles, slot, |i| {
+                        let section = match ctx {
+                            net::RelayCtx::Projectile { section, .. } => section,
+                            _ => (0, 0),
+                        };
+                        server.is_section_active(
+                            i as u32,
+                            section.0,
+                            section.1,
+                            self.game_update_count,
+                        )
+                    });
+                    if let Some(prev) = prev_flags {
+                        for (i, f) in prev.iter().enumerate() {
+                            if i as u32 == id || !server.broadcast_open(i as u32) {
+                                self.proj_sync.set_skipped_for(slot, i as u8, *f);
+                            }
+                        }
+                    }
+                    server.relay_projectile(
+                        &S2c::Projectile(ps.clone()),
+                        Some(id),
+                        ctx,
+                        self.game_update_count,
+                    );
+                }
             }
             // `case 29` — a peer's projectile is gone; the host drops the slot
             // and relays (`MessageBuffer.cs:1844-1847`).
@@ -852,6 +928,39 @@ impl App {
             }
         }
         server.send(id, &S2c::InitialSpawn);
+    }
+
+    /// W4-g52 — the per-tick `RemoteClient.CheckSection` stamp
+    /// (`Main.cs:64620-64623` → `CheckSection_ForClient`,
+    /// `RemoteClient.cs:152-176`): every active player's fluff box (fluff 1,
+    /// the default) refreshes `TileSectionsCheckTime` with
+    /// `Main.GameUpdateCount` — the clock the `28`/`27` relay arms'
+    /// `IsSectionActive` reads. The stream half (`:177-188`'s `SendSection`
+    /// burst) rides `pending_sections` on the 10 Hz tick (the port's
+    /// standing batch shape); this pass owns ONLY the stamp, so the cull
+    /// window is the faithful 60 ticks. Host-only; the local player's own
+    /// slot has no RemoteClient (the C# stamps client 0 too — it is never
+    /// connected, so the port skips it).
+    fn host_check_sections(&mut self) {
+        if self.net_mode() != 2 {
+            return;
+        }
+        let (w, h) = (self.world.width, self.world.height);
+        let (gx, gy) = (net::sections_x(w), net::sections_y(h));
+        let now = self.game_update_count;
+        let NetRole::Host(server) = &self.net else {
+            return;
+        };
+        for (id, p) in &self.remote_players {
+            server.ensure_sections(*id, w, h);
+            let psx = net::section_x(p.x as i32 / TILE_PX as i32);
+            let psy = net::section_y(p.y as i32 / TILE_PX as i32);
+            for sy in (psy - 1).max(0)..=(psy + 1).min(gy - 1) {
+                for sx in (psx - 1).max(0)..=(psx + 1).min(gx - 1) {
+                    server.mark_section_checked(*id, sx, sy, now);
+                }
+            }
+        }
     }
 
     /// The move-driven section catch-up (the C#'s per-tick
@@ -2136,6 +2245,58 @@ impl App {
         }
     }
 
+    /// W4-g52 — a priority `23` broadcast at an event site (the strike
+    /// cascade `NetMessage.cs:102-107`, the death pushes
+    /// `MessageBuffer.cs:1808-1815`): the body from the live NPC, the
+    /// generation from the cadence bookkeeping, and the priority clear the
+    /// `case 23` fan-out runs (`NetMessage.cs:1722-1730` — boss/netAlways/
+    /// town/dead/spawnNeedsSyncing all clear the per-player counters; the
+    /// event sites here always qualify: spawnNeedsSyncing or life <= 0).
+    fn send_npc_state_broadcast(&mut self, server: &net::Server, slot: usize) {
+        let Some(npc) = self.npcs.get(slot) else {
+            return;
+        };
+        let generation = self
+            .net_npc_gen
+            .get(&(slot as u32))
+            .map(|(_, g)| *g)
+            .unwrap_or(0);
+        let info = Self::npc_info_of(slot, npc, false, generation);
+        let uid = npc.uid;
+        server.broadcast(&S2c::NpcInfo(Box::new(info)));
+        // The `:1725-1730` clear (the decision layer's NpcNetState).
+        if let Some(st) = self.net_npc_states.get_mut(&uid) {
+            st.spawn_needs_syncing = false;
+            st.net_stream = 0;
+            st.net_update = false;
+            st.pending_spam_cooldown = false;
+            st.pending_full_spam_cooldown = false;
+            st.sync = [crate::app::net_npc_sync::PlayerNetSyncState::default(); 256];
+        }
+    }
+
+    /// W4-g52 — the `27` relay context for one pool slot: flag3
+    /// (`NetMessage.cs:1777`) from the verbatim `projPet` table +
+    /// `NetSectionCoordinates` (`Projectile.cs:602` — `(int)position.X >> 4`,
+    /// the arithmetic shift the port's `/ 16` matches for the f32→i32 cast).
+    fn proj_relay_ctx(&self, slot: usize) -> net::RelayCtx {
+        use crate::projectile::{proj_data, proj_pet};
+        let p = &self.projectiles.slots()[slot];
+        let ai_style = proj_data(p.kind).map_or(255, |d| d.ai_style);
+        net::RelayCtx::Projectile {
+            ignores_sections: crate::app::net_proj_sync::sync_ignores_sections(
+                p.kind,
+                proj_pet(p.kind),
+                ai_style,
+                p.net_important,
+            ),
+            section: (
+                net::section_x(p.pos.x as i32 / TILE_PX as i32),
+                net::section_y(p.pos.y as i32 / TILE_PX as i32),
+            ),
+        }
+    }
+
     /// S1-I-4d: the per-NPC `NpcView` the cadence reads (`net_npc_sync::NpcView`).
     /// `boss`/`town_npc` come from the kind; `proximity_sync` is the
     /// `NPCID.Sets.UsesMultiplayerProximitySyncing` set (396/397/398, the
@@ -2188,11 +2349,12 @@ impl App {
             return; // `NPC.cs:90590-90593` — the server gate.
         }
         // Gather the per-client views WITHOUT holding the server borrow across
-        // the mutation below: id, camera, and the set of sections already
-        // streamed (`RemoteClient.IsSectionActive`, `NetMessage.cs:1740`).
+        // the mutation below: id, camera, and the check-time grid
+        // (`RemoteClient.IsSectionActive`, `NetMessage.cs:1740` — W4-g52:
+        // the 60-tick window over `TileSectionsCheckTime`, NOT the streamed
+        // latch the old diff read).
         let (w, h) = (self.world.width, self.world.height);
-        let (gx, gy) = (net::sections_x(w), net::sections_y(h));
-        let mut clients: Vec<(u32, Vec2, Vec<(i32, i32)>)> = Vec::new();
+        let mut clients: Vec<(u32, Vec2, (i32, Vec<u32>))> = Vec::new();
         if let NetRole::Host(server) = &self.net {
             for id in server.slot_ids() {
                 if server.state(id) < net::slot_state::IN_WORLD {
@@ -2203,15 +2365,8 @@ impl App {
                     .get(&id)
                     .map(|p| Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5))
                     .unwrap_or(Vec2::ZERO);
-                let mut sent = Vec::new();
-                for sy in 0..gy {
-                    for sx in 0..gx {
-                        if server.is_section_sent(id, sx, sy) {
-                            sent.push((sx, sy));
-                        }
-                    }
-                }
-                clients.push((id, cam, sent));
+                server.ensure_sections(id, w, h);
+                clients.push((id, cam, server.section_check_times(id)));
             }
         }
         // The stable identity (`NPC.whoAmI`, `NPC.cs:6145`): every NPC takes its
@@ -2265,16 +2420,23 @@ impl App {
                 camera: Vec2::ZERO,
                 section_active: false,
             }; 256];
-            for (id, cam, sent) in &clients {
+            for (id, cam, (cw, times)) in &clients {
                 let i = *id as usize;
                 if i >= 256 {
                     continue;
                 }
+                // `IsSectionActive(NetSectionCoordinates)`: the clamped
+                // grid read + the 60-tick window (`RemoteClient.cs:220-224`).
+                let (sx, sy) = (view.section.0.max(0), view.section.1.max(0));
+                let section_active = *cw > 0
+                    && times
+                        .get((sy * cw + sx) as usize)
+                        .is_some_and(|&t| net::section_active_at(t, self.game_update_count));
                 players[i] = PlayerView {
                     active: true,
                     connected: true,
                     camera: *cam,
-                    section_active: sent.contains(&view.section),
+                    section_active,
                 };
             }
             // The per-uid throttle state; a first sighting arms spawnNeedsSyncing
@@ -2533,16 +2695,71 @@ impl App {
     }
 
     /// S1-I-4d: drain the projectile outbox through the existing `27`/`29`
-    /// wires, in the direction the role dictates.
+    /// wires, in the direction the role dictates. W4-g52: the host's `27`
+    /// broadcast rides the `case 27` fan-out (`NetMessage.cs:1774-1800` —
+    /// flag3 or section-active) and runs the skipped-flag motion at the
+    /// same site; a targeted `SyncTo` clears that player's flag
+    /// (`:1821-1823`). The `29` kill rides the default arm (`:1801-1811`).
     fn drain_proj_outbox(&mut self) {
         use crate::app::net_proj_sync::ProjSend;
         let outbox = std::mem::take(&mut self.net_proj_outbox);
-        match &self.net {
+        // Swap the role out so the flag-motion writes to `self.proj_sync`
+        // do not fight the `self.net` borrow (the poll_net precedent).
+        let role = std::mem::replace(&mut self.net, NetRole::Off);
+        match &role {
             NetRole::Host(server) => {
                 for send in outbox {
                     match send {
-                        ProjSend::Sync(st) => server.broadcast(&S2c::Projectile(Box::new(st))),
+                        ProjSend::Sync(st) => {
+                            let (_, slot, _) = net::projectile_key_parts(st.key);
+                            if slot >= crate::projectile::MAX_PROJECTILES {
+                                continue;
+                            }
+                            let ctx = self.proj_relay_ctx(slot);
+                            // The flag motion (`:1779-1795`): flag3 clears
+                            // every flag; otherwise each broadcast-open
+                            // client's flag = !section_active. The host's
+                            // own sends have no ignoreClient, and the
+                            // not-connected legs never write — snapshot
+                            // the closed slots' flags around the motion.
+                            let flag3 = matches!(
+                                ctx,
+                                net::RelayCtx::Projectile {
+                                    ignores_sections: true,
+                                    ..
+                                }
+                            );
+                            let closed: Vec<(u8, bool)> = if flag3 {
+                                Vec::new()
+                            } else {
+                                (0..255u16)
+                                    .filter(|i| !server.broadcast_open(*i as u32))
+                                    .map(|i| (i as u8, self.proj_sync.skipped_for(slot, i as u8)))
+                                    .collect()
+                            };
+                            let now = self.game_update_count;
+                            self.proj_sync.note_broadcast(&self.projectiles, slot, |i| {
+                                let section = match ctx {
+                                    net::RelayCtx::Projectile { section, .. } => section,
+                                    _ => (0, 0),
+                                };
+                                server.is_section_active(i as u32, section.0, section.1, now)
+                            });
+                            for (i, f) in closed {
+                                self.proj_sync.set_skipped_for(slot, i, f);
+                            }
+                            server.relay_projectile(
+                                &S2c::Projectile(Box::new(st)),
+                                None,
+                                ctx,
+                                now,
+                            );
+                        }
                         ProjSend::SyncTo { state, client } => {
+                            // The targeted arm (`:1821-1823`): the player's
+                            // skipped flag clears, the send always lands.
+                            let (_, slot, _) = net::projectile_key_parts(state.key);
+                            self.proj_sync.set_skipped_for(slot, client, false);
                             server.send(client as u32, &S2c::Projectile(Box::new(state)))
                         }
                         ProjSend::Kill { key, x, y } => {
@@ -2564,6 +2781,7 @@ impl App {
             }
             NetRole::Off => {}
         }
+        self.net = role;
     }
 
     /// The 10 Hz state tick: the player snapshot, the world-item cadence
@@ -2607,6 +2825,7 @@ impl App {
         let mut steps = 0;
         while self.net_sync_cadence_timer >= 1.0 / 60.0 && steps < 8 {
             self.net_sync_cadence_timer -= 1.0 / 60.0;
+            self.host_check_sections();
             self.npc_sync_cadence();
             self.proj_sync_cadence();
             steps += 1;
@@ -3112,7 +3331,11 @@ impl App {
             records,
         };
         match &self.net {
-            NetRole::Host(server) => server.broadcast(&S2c::SectionRange(Box::new(range))),
+            // W4-g52 — the `case 20` fan-out (`NetMessage.cs:1708-1718`):
+            // the square reaches only the slots holding a corner section.
+            NetRole::Host(server) => {
+                server.relay_tile_square(&S2c::SectionRange(Box::new(range)), None)
+            }
             NetRole::Client(client) => client.send(&C2s::Edit { x, y, kind, tile }),
             NetRole::Off => {}
         }
@@ -5204,5 +5427,487 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+}
+
+/// W4-g52 — the host relay/send gating end-to-end: the `28` strike's
+/// section cull + death bypass + carrier push, the `27` flag3/section arms
+/// with the skipped-flag motion, the `20` latch filter and the per-tick
+/// `CheckSection` stamp. The pure-arm predicates ride `net.rs`'s
+/// `w4_g52_*` tests; these pin the netglue wiring around them.
+#[cfg(test)]
+mod w4_g52_relay_tests {
+    use super::*;
+    use crate::app::netglue::handshake_tests::pump;
+
+    /// A joined pair on a 900x600 world (5x4 sections) with the host's
+    /// player live — the section grid is allocated by the join stream.
+    fn wide_pair() -> (App, App) {
+        let mut host_app = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        let mut client_app = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        host_app.world = tr_core::World::new("flow".into(), 900, 600);
+        host_app.world.spawn_x = 100;
+        host_app.world.spawn_y = 100;
+        host_app.world.column_surface = vec![host_app.world.height; 900];
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr, String::new()));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while client_app.net_state != net::client_state::IN_WORLD
+            && !matches!(client_app.net, NetRole::Off)
+            && std::time::Instant::now() < deadline
+        {
+            client_app.poll_net();
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        for _ in 0..8 {
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        host_app.player = Some(player::Player::spawn(&host_app.world));
+        (host_app, client_app)
+    }
+
+    /// The `28` relay: a live NPC's strike is section-culled
+    /// (`NetMessage.cs:1756`), a killing one bypasses the cull, and the
+    /// death push (`MessageBuffer.cs:1808-1811`) reaches every
+    /// broadcast-open slot. The STRIKE itself is observed on a second
+    /// peer that shares the NPC's section (the striker never gets its own
+    /// relay — ignoreClient).
+    #[test]
+    fn w4_g52_strike_relay_culls_by_section_and_death_bypasses() {
+        let (mut host_app, mut client_app) = wide_pair();
+        // A second peer at the spawn (section (0,0), the NPC's section).
+        let addr = match &host_app.net {
+            NetRole::Host(s) => s.addr().to_string(),
+            _ => unreachable!(),
+        };
+        let mut second = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while second.net_state != net::client_state::IN_WORLD
+            && std::time::Instant::now() < deadline
+        {
+            second.poll_net();
+            client_app.poll_net();
+            host_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(second.net_state, net::client_state::IN_WORLD);
+        let peer2 = second.local_id as u32;
+        // Park the FIRST peer far from the NPC's section: (4,3).
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .x = 860.0 * TILE_PX;
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .y = 560.0 * TILE_PX;
+        let mut npc =
+            crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue);
+        npc.x = 100.0;
+        npc.y = 100.0;
+        host_app.npcs.clear();
+        host_app.npcs.push(npc);
+        host_app.net_npc_gen.insert(0, (1, 1));
+        // Stamp passes at the parked positions: (0,0) stays unchecked for
+        // peer 1, active for peer 2.
+        for _ in 0..20 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let generation = second
+            .net_npc_gen
+            .get(&0)
+            .map(|(_, g)| *g as u8)
+            .unwrap_or(1);
+        let hp_before = host_app.npcs[0].hp;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcStrike(net::NpcStrike {
+                npc: 0,
+                generation,
+                damage: 1,
+                knock_back: 0.0,
+                hit_direction: 1,
+                crit: false,
+            }));
+        }
+        for _ in 0..20 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(
+            host_app.npcs[0].hp < hp_before,
+            "the host applied the strike"
+        );
+        // hurt_cd is only set by the `28` arm — the relay's observable.
+        assert!(
+            second.net_npcs.get(&0).is_some_and(|n| n.hurt_cd > 0.0),
+            "the section-active second peer received the relayed strike"
+        );
+        assert!(
+            !client_app.net_npcs.get(&0).is_some_and(|n| n.hurt_cd > 0.0),
+            "the far peer's live strike was section-culled (NetMessage.cs:1756)"
+        );
+        let _ = peer2;
+        // The killing strike: the death bypass relays it everywhere.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcStrike(net::NpcStrike {
+                npc: 0,
+                generation,
+                damage: 30000,
+                knock_back: 0.0,
+                hit_direction: 1,
+                crit: false,
+            }));
+        }
+        for _ in 0..20 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(
+            !client_app.net_npcs.contains_key(&0),
+            "the death `23` despawned the slot on the culled client too"
+        );
+        assert!(
+            !second.net_npcs.contains_key(&0),
+            "the death `23` despawned it on the near client too"
+        );
+    }
+
+    /// The carrier push (`MessageBuffer.cs:1812-1815`): a segment's killing
+    /// strike drains the shared pool, and BOTH the segment's and the
+    /// carrier's `23` go out — the carrier's slot despawns on the client.
+    #[test]
+    fn w4_g52_a_carrier_death_pushes_the_carriers_23() {
+        let (mut host_app, mut client_app) = wide_pair();
+        let mut head = crate::npc::Npc::spawn_worm_head(
+            &host_app.world,
+            100,
+            100,
+            crate::npc::NpcKind::GiantWormHead,
+        );
+        head.worm_id = 7;
+        head.seg_index = 0;
+        head.hp = 5;
+        head.max_hp = 5;
+        let mut body = crate::npc::Npc::spawn_worm_head(
+            &host_app.world,
+            102,
+            100,
+            crate::npc::NpcKind::GiantWormBody,
+        );
+        body.worm_id = 7;
+        body.seg_index = 1;
+        body.hp = 5;
+        body.max_hp = 5;
+        host_app.npcs.clear();
+        host_app.npcs.push(head);
+        host_app.npcs.push(body);
+        host_app.net_npc_gen.insert(0, (10, 1));
+        host_app.net_npc_gen.insert(1, (11, 1));
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(client_app.net_npcs.contains_key(&0), "the head synced");
+        assert!(client_app.net_npcs.contains_key(&1), "the body synced");
+        let generation = client_app
+            .net_npc_gen
+            .get(&1)
+            .map(|(_, g)| *g as u8)
+            .unwrap_or(1);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcStrike(net::NpcStrike {
+                npc: 1,
+                generation,
+                damage: 100,
+                knock_back: 0.0,
+                hit_direction: 1,
+                crit: false,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(host_app.npcs[0].hp <= 0, "the shared pool drained");
+        assert!(
+            !client_app.net_npcs.contains_key(&1),
+            "the struck segment despawned"
+        );
+        assert!(
+            !client_app.net_npcs.contains_key(&0),
+            "the carrier's `23` despawned the head too (MessageBuffer.cs:1812-1815)"
+        );
+    }
+
+    /// The `27` relay: a plain shot is section-culled, a flag3 pet is not;
+    /// the culled client's skipped flag arms and the targeted recheck
+    /// (`Projectile.cs:17246-17256`) lands the state once its section
+    /// activates.
+    #[test]
+    fn w4_g52_projectile_relay_flag3_and_the_skipped_recheck() {
+        let (mut host_app, mut client_app) = wide_pair();
+        // Park the peer in section (4,3); the shot flies in (0,0).
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .x = 860.0 * TILE_PX;
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .y = 560.0 * TILE_PX;
+        pump(&mut host_app, &mut client_app, 10);
+        // A plain arrow (kind 1, aiStyle 1 — no flag3) at (100,100).
+        let slot = host_app
+            .projectiles
+            .spawn_with_data_owned(1, 0, 100.0, 100.0, 0.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .expect("spawn");
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            client_app.projectiles.active_count(),
+            0,
+            "the plain shot's spawn `27` was section-culled"
+        );
+        assert!(
+            host_app.proj_sync.skipped_for(slot, 1),
+            "the culled client's skipped flag armed (NetMessage.cs:1792)"
+        );
+        // The peer walks into section (0,0): the next CheckSection stamp
+        // activates it and the recheck's targeted `27` lands the state.
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .x = 100.0 * TILE_PX;
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .y = 100.0 * TILE_PX;
+        // The recheck helper is event-site parity (its live caller is the
+        // projectile update tail); drive it directly with the C# reads.
+        let mut player_active = [false; 255];
+        player_active[1] = true;
+        let sends = host_app.proj_sync.recheck_sections(
+            &host_app.projectiles,
+            slot,
+            &player_active,
+            |i| {
+                let NetRole::Host(server) = &host_app.net else {
+                    return false;
+                };
+                server.is_section_active(i as u32, 0, 0, host_app.game_update_count)
+            },
+        );
+        assert_eq!(sends.len(), 1, "one targeted recheck `27`");
+        assert!(
+            !host_app.proj_sync.skipped_for(slot, 1),
+            "the targeted send clears the flag (NetMessage.cs:1821-1823)"
+        );
+        host_app.net_proj_outbox.extend(sends);
+        host_app.drain_proj_outbox();
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            client_app.projectiles.active_count() >= 1,
+            "the recheck's targeted `27` landed the state"
+        );
+    }
+
+    /// The flag3 pet (`Main.projPet`, `NetMessage.cs:1777`): the same
+    /// far-section peer receives the pet's `27` immediately.
+    #[test]
+    fn w4_g52_a_pet_projectile_bypasses_the_section_cull() {
+        let (mut host_app, mut client_app) = wide_pair();
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .x = 860.0 * TILE_PX;
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .y = 560.0 * TILE_PX;
+        pump(&mut host_app, &mut client_app, 10);
+        // The Pet Bunny (kind 319 — a `Main.projPet` row, `Main.cs:8736`).
+        // The ported `proj_data` slice has no 319 row, so the slot is
+        // seeded through the wire upsert — the relay ctx reads the pet
+        // table by kind regardless of the SetDefaults slice.
+        let st = net::ProjectileState {
+            key: net::projectile_key(0, 0, 1),
+            x: 100.0,
+            y: 100.0,
+            vx: 0.0,
+            vy: 0.0,
+            kind: 319,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 0,
+            knock_back: 0.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        host_app.projectiles.upsert_remote(&st);
+        let ctx = host_app.proj_relay_ctx(0);
+        assert!(
+            matches!(
+                ctx,
+                net::RelayCtx::Projectile {
+                    ignores_sections: true,
+                    ..
+                }
+            ),
+            "kind 319 is a Main.projPet row — flag3"
+        );
+        if let NetRole::Host(server) = &host_app.net {
+            server.relay_projectile(
+                &S2c::Projectile(Box::new(st)),
+                None,
+                ctx,
+                host_app.game_update_count,
+            );
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            client_app.projectiles.active_count() >= 1,
+            "the pet's `27` reached the far-section client"
+        );
+    }
+
+    /// The `20` relay: a tile edit replicates only to the slots holding a
+    /// corner section (`NetMessage.cs:1712`). The join box latched the
+    /// peer's (0..2, 0..1); section (3,2) was never streamed, so an edit
+    /// there is culled — the peer's world keeps its old tile.
+    #[test]
+    fn w4_g52_a_tile_edit_replicates_only_to_latched_slots() {
+        let (mut host_app, mut client_app) = wide_pair();
+        pump(&mut host_app, &mut client_app, 15);
+        if let NetRole::Host(server) = &host_app.net {
+            assert!(server.is_section_sent(1, 0, 0), "the join box latched");
+            assert!(!server.is_section_sent(1, 3, 2), "never streamed");
+        }
+        // Plant a tile in the un-latched section on BOTH worlds, then edit
+        // it on the host only. The `20` relay must not carry the change.
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(700, 400);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 5,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let _ = crate::world_sim::editing::apply_edit(&mut host_app.world, 700, 400, 0, 5);
+        host_app.request_edit(700, 400, 0, 5);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            host_app.world.tile(700, 400).map_or(0, |t| t.kind),
+            0,
+            "the host applied the removal"
+        );
+        assert_eq!(
+            client_app.world.tile(700, 400).map_or(0, |t| t.kind),
+            5,
+            "the un-latched section's edit was culled (NetMessage.cs:1712)"
+        );
+        // An edit in a latched section DOES replicate.
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(50, 60);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 5,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let _ = crate::world_sim::editing::apply_edit(&mut host_app.world, 50, 60, 0, 5);
+        host_app.request_edit(50, 60, 0, 5);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            client_app.world.tile(50, 60).map_or(0, |t| t.kind),
+            0,
+            "the latched section's edit replicated"
+        );
+    }
+
+    /// The per-tick stamp (`Main.cs:64620-64623` → `RemoteClient.cs:165`):
+    /// the fluff box around the peer refreshes every fixed step, and the
+    /// 60-tick window expires when the peer stops being stamped.
+    #[test]
+    fn w4_g52_check_section_stamps_the_fluff_box_every_step() {
+        let (mut host_app, mut client_app) = wide_pair();
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .x = 410.0 * TILE_PX; // section (2,1)
+        host_app
+            .remote_players
+            .get_mut(&1)
+            .expect("the peer")
+            .y = 160.0 * TILE_PX;
+        host_app.game_update_count = 1000;
+        host_app.host_check_sections();
+        if let NetRole::Host(server) = &host_app.net {
+            // The fluff box: (1..3, 0..2) all stamped at 1000.
+            for sy in 0..=2 {
+                for sx in 1..=3 {
+                    assert!(
+                        server.is_section_active(1, sx, sy, 1060),
+                        "({sx},{sy}) inside the window"
+                    );
+                }
+            }
+            assert!(
+                !server.is_section_active(1, 0, 0, 1060),
+                "outside the fluff box"
+            );
+            assert!(
+                !server.is_section_active(1, 2, 1, 1061),
+                "the 60-tick window expired"
+            );
+        }
+        // A later stamp refreshes the window.
+        host_app.game_update_count = 1050;
+        host_app.host_check_sections();
+        if let NetRole::Host(server) = &host_app.net {
+            assert!(server.is_section_active(1, 2, 1, 1110));
+        }
+        let _ = client_app;
     }
 }

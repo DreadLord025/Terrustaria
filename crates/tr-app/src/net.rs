@@ -3635,6 +3635,18 @@ impl Server {
         self.slots.lock().map(|s| s.len()).unwrap_or(0)
     }
 
+    /// W4-g52 — whether the slot's `NetMessage.buffer[id].broadcast` gate is
+    /// open (`MessageBuffer.cs:928`, State 10). The flag-motion callers
+    /// (`ProjSync::note_broadcast`'s per-client legs, `NetMessage.cs:1784`)
+    /// skip not-connected / not-broadcast slots before writing flags.
+    pub fn broadcast_open(&self, id: u32) -> bool {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&id).map(|c| c.broadcast))
+            .unwrap_or(false)
+    }
+
     pub fn state(&self, id: u32) -> i32 {
         self.slots
             .lock()
@@ -3948,6 +3960,22 @@ impl Server {
         if let Some(t) = c.section_check_time.get_mut(i) {
             *t = now;
         }
+    }
+
+    /// W4-g52 — a snapshot of the slot's check-time grid + its width, for
+    /// the cadence's per-(client, NPC-section) `IsSectionActive` reads
+    /// (`NetMessage.cs:1740`). The decision layer evaluates
+    /// `section_active_at(t, now)` off this same-tick snapshot (the stamps
+    /// run ahead of the cadence in `net_tick`'s fixed-step loop).
+    pub fn section_check_times(&self, id: u32) -> (i32, Vec<u32>) {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| {
+                s.get(&id)
+                    .map(|c| (c.sections_w, c.section_check_time.clone()))
+            })
+            .unwrap_or((0, Vec::new()))
     }
 
     /// Whether the section at `(sx, sy)` was already streamed to this slot.
