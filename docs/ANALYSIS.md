@@ -36055,6 +36055,82 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The animated-tile light chain (W4-d56, 2026-11-20)
+
+`crates/tr-render/src/animated_tiles.rs` ports the per-tile light chain the
+animated-tile draw passes share — the half of `DrawSingleTile` between
+`GetTileDrawData` and the light test that the torch/candle flame quads
+(`tr-core/flame.rs`, TILE-DRAW-2) and the waterfall/lavafall fall-block rows
+(`drawdata.rs` case-326 group + the wired `TileAnimator`, S1-G-1f) already
+render around:
+
+* `DrawAnimatedTile_AdjustForVisionChangers` (`TileDrawing.cs:8481-8552`,
+  duplicated inline in `DrawSingleTile` :897-963; the deferred `DrawGrass`
+  :8348 / `DrawMultiTileVines` :8976 call the same function) — the
+  Dangersense R255/G50/B50, Spelunker R200/G170 and Biome Sight per-channel
+  floors, in that order, plus the three `Dust.NewDust` arms (60/204/267).
+* The predicates: `IsTileDangerous` (`:4435-4447` + `CheckTouchDamage`
+  `:4449-4457` + `CheckHot` `:4459-4467`), `Main.IsTileSpelunkable`
+  (`Main.cs:21783-21798`, the 49-row `tileSpelunker` table `:9420-9467` +
+  `:9651` and the 185/186 frame windows) and `Main.IsTileBiomeSightable`
+  (`Main.cs:21800-21818`, the three `TileID.Sets` biome lists + the remix
+  474/195 exceptions).
+* `DrawTiles_GetLightOverride` (`TileDrawing.cs:6624-6686`) — fullbright
+  white, 541/631 white, platform-19 row-48 white, the fireblossom 83/84
+  pulse arms, the lily 61/703 `245 - mouseTextColor*1.5` repaint and the
+  cracked-brick 481-483 `1 + sin(t/1.5·2π)·0.15` breathe.
+
+Deliberate deviations:
+
+* **UNWIRED, code-only.** The `render/tiles.rs::draw_tiles` seam is contested
+  by the in-flight W4-d57/d58/d59/d60 tile-draw siblings, so the pure
+  decision maths lands in `tr-render` first (the W4-d58 `chest_frames`
+  pattern — no `tr-core` dependency, every world/engine input a parameter).
+  The intended call sites are documented in the module header: the vision
+  floors after `GetTileDrawData` and before the `flag` light test
+  (`:897-963`), `light_override` right after (`:969`). No pixel changes until
+  the wiring step.
+* **The dust rolls ride the caller.** The three `Next(30)/Next(60)/Next(480)`
+  gates are returned as `VisionDust` requests (the d60 particles convention)
+  — the module never touches RNG. The per-arm roll conditions differ and are
+  documented verbatim: danger/biome roll only when
+  `_isActiveAndNotPaused & canDoDust`, but the spelunker arm's bitwise `&`
+  (`(Next(60) == 0) & canDoDust`, `:8516`) rolls whenever active even with
+  dust suppressed — the wiring must reproduce that consumption.
+* **The `TileID.Sets` tables are inlined** from `TileID.cs` (`tr-render`
+  cannot read `tr-core::tiledata`); the census witnesses pin every row
+  against the C# factory lists. The `Boulders`/`TouchDamageHot`/
+  `TouchDamageImmediate`/`CorruptBiomeSight`/`CrimsonBiomeSight`/
+  `HallowBiomeSight` lists match the generated sets' membership.
+* **The lily byte cast wraps, not clamps.** `(byte)(245f - mouseTextColor *
+  1.5f)` (`:6671`) goes negative for `mouseTextColor >= 164`; the C#
+  unchecked cast truncates toward zero to int then wraps (225 → −92.5 → −92
+  → 164). Rust's saturating float→u8 `as` would clamp to 0, so the port
+  casts through i32 (the `xna_scale_color` convention) — pinned by
+  `light_override_lily_wraps_the_negative_byte_cast`.
+* **The breathe truncates per channel.** `Color operator*(Color, float)`
+  (`:6680`) is `(int)(channel * factor)` toward zero with the alpha restored
+  afterwards; the f32 factor rounds to nearest before the product (the
+  1.15 factor is 1.149999976158142 in f32, so 100→115, 200→230, 250→287).
+  The C# evaluates `Math.Sin` in double on the f32-rounded argument then
+  casts; the port uses f32 `sin` (the house convention, `wind.rs`/
+  `flame.rs`) — a ≤1-ulp factor difference can flip a truncation boundary
+  byte on rare inputs, the same class as the other f32-sin ports.
+* `Minecart.IsPressurePlate`'s `tile.active()` gate (`Minecart.cs:553`) is
+  guaranteed by every `IsTileDangerous` call site (active tiles only), so
+  the port's predicate takes only the frameX 20/21 test.
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows; the byte
+arithmetic (the floor maxima order, the fireblossom `(mouse + ch*2)/3`
+blend, the lily wrap, the breathe truncation) hand-derived and pinned by the
+13 witness tests in `animated_tiles.rs` — WRITTEN, NOT RUN (**no
+cargo/rustc/rustfmt/tests/graphify invoked**, the code-only lane rule). The
+frame witnesses pin the chain ORDER (floors → override, `DrawSingleTile`
+:897-969) and the no-buff pass-through for the torch/candle/fall-block
+families (the pre-W4-d56 pixels are unchanged until the wiring lands).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
