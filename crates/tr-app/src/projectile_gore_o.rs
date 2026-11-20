@@ -1,5 +1,5 @@
-//! `Projectile.cs`'s `Gore.NewGore*` spawn sites — wave O: sites 152-165,
-//! the LAST fourteen of `Kill_Bombs_DoUsualKillCode` (`:78292`-`:78493`).
+//! `Projectile.cs`'s `Gore.NewGore*` spawn sites — wave O: sites 152-164,
+//! the LAST thirteen of `Kill_Bombs_DoUsualKillCode` (`:78292`-`:78493`).
 //! This completes the 165-site `Projectile.cs` census.
 //!
 //! The pool + the wave-A contract live in `projectile_gore_a.rs` (W4-g16,
@@ -7,7 +7,7 @@
 //! skip; argument draws precede the pool call, kicks roll inside
 //! `new_gore`, post-writes land on the returned slot (sentinel included).
 //!
-//! ## Scope — sites 152-165 (source order)
+//! ## Scope — sites 152-164 (source order)
 //!
 //! | # | C# site | arm |
 //! | --- | --- | --- |
@@ -16,8 +16,8 @@
 //! | 157-160 | `:78420`-`:78432` | 29/108/470/637/1002/1086/1087 big bomb, 2×4 |
 //! | 161-164 | `:78472`-`:78493` | 588 confetti bomb, 4 independent gates |
 //!
-//! (The big-bomb block is 8 sites across two passes; the confetti block 4
-//! — 14 sites total, the census tail kept intact.)
+//! (The big-bomb block is 4 call sites run twice — 8 spawn events; the
+//! confetti block 4 — 13 call sites total, the census tail kept intact.)
 //!
 //! ## RNG notes specific to this wave
 //!
@@ -105,7 +105,9 @@ pub fn big_bomb_gores(
 /// 78470-78497`): FOUR INDEPENDENT `Next(2)` gates, each taken →
 /// `NewGore(pos, Zero, Next(276,283))`, post `velocity *= 0.4` then the
 /// ±1 sign (+,+ / -, + / +, - / -, -). The type range is the confetti
-/// 276-283, NOT the corner 61-64.
+/// 276-283, NOT the corner 61-64. The caller recentered first (`position =
+/// Center; width = height = 22; Center = position`, `:78452-78454`), so
+/// `p.pos` here IS the pre-resize center.
 pub fn confetti_bomb_gores(
     p: &Projectile,
     gore: &mut GorePool,
