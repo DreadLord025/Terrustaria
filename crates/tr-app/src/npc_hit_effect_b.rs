@@ -8,7 +8,7 @@
 //! strike caller's stream (the `StrikeNPC_Inner` `:81488` swap), every
 //! draw cited per site.
 //!
-//! ## Scope — sites 31-70 (source order)
+//! ## Scope — sites 31-91 (source order)
 //!
 //! | # | C# site | arm |
 //! | --- | --- | --- |
@@ -20,10 +20,10 @@
 //! | 57-63 | `:82134`-`:82140` | the 561/562/563 DD2 javeliner death (7) |
 //! | 64-66 | `:82167`-`:82169` | the 555/556/557 DD2 kobold death (3) |
 //! | 67-76 | `:82193`-`:82202` | the 551 crystal death, `spriteDirection != -1` (10) |
-//! | (77-86) | `:82206`-`:82215` | the 551 `-1` twin (10, wave B commit 4) |
-//! | (87-91) | `:82237`-`:82241` | the 572/573 DD2 flyer death (5, commit 4) |
+//! | 77-86 | `:82206`-`:82215` | the 551 `-1` twin (10) |
+//! | 87-91 | `:82237`-`:82241` | the 572/573 DD2 flyer death (5) |
 //!
-//! Everything after `:82241` (574/575 onward, the 566/567 `Next(2)` gates,
+//! Everything after `:82243` (574/575 onward, the 566/567 `Next(2)` gates,
 //! the 576/577 pair, …) is wave C (`W4-f10-gore-sites-3`).
 //!
 //! ## Documented drops / stand-ins (this wave)
@@ -220,6 +220,94 @@ fn skeleton_667_death(
     }
 }
 
+/// The DD2 death dust preamble shared by the 552-575 families
+/// (`NPC.cs:82090-82093` and twins): 20 dusts of `dust_type` at the
+/// hitbox, `hitDirection`/−1 velocity, default colour/scale. The C#
+/// loop is `(float)num < 20f` — 20 iterations.
+fn dd2_death_dust(
+    npc: &Npc,
+    dust_type: i32,
+    hit_direction: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let p = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, p, w as i32, h as i32, dust_type,
+            hit_direction as f32, -1.0, 0, Color::default(), 1.0,
+        );
+    }
+}
+
+/// The 552/553/554 DD2 goblin death (`NPC.cs:82079-82109`, sites 52-56):
+/// the 20-dust type-5 preamble then 5 gores — base 983 (553→1067,
+/// 554→1071): `base` at position, `base+3`/`base+2` at Y+20,
+/// `base+1`×2 at Y+34, all `base.velocity`/`this.scale`.
+fn dd2_goblin_death(
+    npc: &Npc,
+    npc_type: i32,
+    hit_direction: i32,
+    gore: &mut GorePool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    dd2_death_dust(npc, 5, hit_direction, dust, dust_ctx, rng, world); // :82090-82093
+    // `:82094-82102` — the per-type base.
+    let base = match npc_type {
+        553 => 1067,
+        554 => 1071,
+        _ => 983,
+    };
+    let p = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, p, vel, base, s); // :82103
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 20.0), vel, base + 3, s); // :82104
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 20.0), vel, base + 2, s); // :82105
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 34.0), vel, base + 1, s); // :82106
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 34.0), vel, base + 1, s); // :82107
+}
+
+/// The 561/562/563 DD2 javeliner death (`NPC.cs:82110-82142`, sites
+/// 57-63): the 20-dust type-5 preamble then 7 gores — base 987
+/// (562→1055, 563→1061): `base+3` at position, `base`/`base+4`/
+/// `base+5`/`base+2` at Y+20, `base+1`×2 at Y+34. NOTE the order
+/// differs from the goblin's (the +3 leads).
+fn dd2_javeliner_death(
+    npc: &Npc,
+    npc_type: i32,
+    hit_direction: i32,
+    gore: &mut GorePool,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    dd2_death_dust(npc, 5, hit_direction, dust, dust_ctx, rng, world); // :82121-82124
+    // `:82125-82133` — the per-type base.
+    let base = match npc_type {
+        562 => 1055,
+        563 => 1061,
+        _ => 987,
+    };
+    let p = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, p, vel, base + 3, s); // :82134
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 20.0), vel, base, s); // :82135
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 20.0), vel, base + 4, s); // :82136
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 20.0), vel, base + 5, s); // :82137
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 20.0), vel, base + 2, s); // :82138
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 34.0), vel, base + 1, s); // :82139
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 34.0), vel, base + 1, s); // :82140
+}
+
 /// The wave-B dispatch tail — appended to wave A's `hit_effect` in source
 /// order (`NPC.cs:81942` onward). `npc.hp` is `this.life` at the call.
 /// Commit 1 scope: the 636 tail, 657, 658-660, 667.
@@ -247,6 +335,15 @@ pub(crate) fn hit_effect_b(
     // twin is wave C, its dust loop rides the wiring wave's dust pass.
     if npc_type == 667 && npc.hp <= 0 {
         skeleton_667_death(npc, hit_direction, gore, dust, dust_ctx, rng, world);
+    }
+    // `:82079-82109` — the 552-554 DD2 goblin death (sites 52-56). The
+    // 676 block (`:82058-82078`) is dust-only — the wiring wave's pass.
+    if matches!(npc_type, 552 | 553 | 554) && npc.hp <= 0 {
+        dd2_goblin_death(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world);
+    }
+    // `:82110-82142` — the 561-563 DD2 javeliner death (sites 57-63).
+    if matches!(npc_type, 561 | 562 | 563) && npc.hp <= 0 {
+        dd2_javeliner_death(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world);
     }
 }
 
@@ -441,5 +538,74 @@ mod tests {
             let _gate = twin.next_max(3);
         }
         assert_eq!(rng.peek(), twin.peek(), "the 667 arm mirrors the C# draws");
+    }
+
+    /// `NPC.cs:82090-82107` — the 552-554 goblin death: the 20-dust type-5
+    /// preamble then the 5-gore base row (983/1067/1071), the +3/+2 at
+    /// Y+20 and the +1 twins at Y+34.
+    #[test]
+    fn w4_e5_the_dd2_goblin_death_rows_match_the_csharp() {
+        let w = air();
+        for (ty, base) in [(552, 983), (553, 1067), (554, 1071)] {
+            let n = boss(100.0, 100.0, 30.0, 40.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(29);
+            dd2_goblin_death(&n, ty, -1, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![base, base + 3, base + 2, base + 1, base + 1]);
+            let ys: Vec<f32> = gore.slots()[..5].iter().map(|g| g.position.y).collect();
+            assert_eq!(ys, vec![100.0, 120.0, 120.0, 134.0, 134.0]);
+            // The twin: 20×6 dust rolls then 5×2 kicks.
+            let mut twin = UnifiedRandom::new(29);
+            for _ in 0..20 {
+                let _px = twin.next_max(26);
+                let _py = twin.next_max(36);
+                let _vx = twin.next_range(-20, 21);
+                let _vy = twin.next_range(-20, 21);
+                let _row = twin.next_max(3);
+                let _scale = twin.next_range(-20, 21);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "goblin {ty} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:82121-82140` — the 561-563 javeliner death: the +3 LEADS
+    /// (the goblin order differs), base 987/1055/1061.
+    #[test]
+    fn w4_e5_the_dd2_javeliner_death_leads_with_plus_three() {
+        let w = air();
+        for (ty, base) in [(561, 987), (562, 1055), (563, 1061)] {
+            let n = boss(100.0, 100.0, 30.0, 40.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(31);
+            dd2_javeliner_death(&n, ty, 1, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..7].iter().map(|g| g.gore_type).collect();
+            assert_eq!(
+                types,
+                vec![base + 3, base, base + 4, base + 5, base + 2, base + 1, base + 1]
+            );
+            let ys: Vec<f32> = gore.slots()[..7].iter().map(|g| g.position.y).collect();
+            assert_eq!(ys, vec![100.0, 120.0, 120.0, 120.0, 120.0, 134.0, 134.0]);
+            let mut twin = UnifiedRandom::new(31);
+            for _ in 0..20 {
+                let _px = twin.next_max(26);
+                let _py = twin.next_max(36);
+                let _vx = twin.next_range(-20, 21);
+                let _vy = twin.next_range(-20, 21);
+                let _row = twin.next_max(3);
+                let _scale = twin.next_range(-20, 21);
+            }
+            for _ in 0..7 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "javeliner {ty} mirrors the C# draws");
+        }
     }
 }
