@@ -338,6 +338,28 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
             }
             quick_spawn(rng, out, 3090, 1); // Royal Gel
         }
+        // Eye of Cthulhu (`Player.cs:7241-7254`).
+        3319 => {
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2112, 1); // Eye Mask
+            }
+            if rng.next_max(30) == 0 {
+                quick_spawn(rng, out, 1299, 1); // Binoculars
+            }
+            // `:7250` — the ore stack is THREE Next(21)+10 draws
+            // summed (the argument-evaluation order: left to right).
+            let ore = if env.crimson { 880 } else { 56 };
+            let stack = range(rng, 0, 21) + 10
+                + (range(rng, 0, 21) + 10)
+                + (range(rng, 0, 21) + 10);
+            quick_spawn(rng, out, ore, stack);
+            // `:7251` — the bars: Next(3)+1.
+            let bars = if env.crimson { 2171 } else { 59 };
+            quick_spawn(rng, out, bars, range(rng, 0, 3) + 1);
+            // `:7252` — the Unholy Arrows: Next(31)+20.
+            quick_spawn(rng, out, 47, range(rng, 0, 31) + 20);
+            quick_spawn(rng, out, 3097, 1); // Shield of Cthulhu
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -390,6 +412,13 @@ mod tests {
     fn money_replay(seed: i32, boss: i32, mult: f32) -> (Vec<BagGrant>, UnifiedRandom) {
         let mut r = UnifiedRandom::new(seed);
         let mut out = Vec::new();
+        money_replay_on(&mut r, boss, mult, &mut out);
+        (out, r)
+    }
+
+    /// The money-tail replay continuing on an ALREADY-ADVANCED stream
+    /// (the per-boss full replays: the grant arm drew first).
+    fn money_replay_on(r: &mut UnifiedRandom, boss: i32, mult: f32, out: &mut Vec<BagGrant>) {
         let base = (boss_base_value(boss) * mult) as i32 as f32;
         let mut num10 = base * (1.0 + r.next_range(-20, 21) as f32 * 0.01);
         if r.next_max(5) == 0 {
@@ -429,7 +458,19 @@ mod tests {
                 prefix: 0,
             });
         }
-        (out, r)
+    }
+
+    /// The C# `QuickSpawnItem` replay helper for the per-boss twins.
+    fn spawn_replay(r: &mut UnifiedRandom, want: &mut Vec<BagGrant>, item: i32, stack: i32) {
+        if stack <= 0 {
+            return;
+        }
+        let prefix = crate::prefix::roll_prefix(item as u16, -1, r);
+        want.push(BagGrant {
+            item: item as u16,
+            stack: stack as u32,
+            prefix,
+        });
     }
 
     #[test]
@@ -524,68 +565,89 @@ mod tests {
 
             let mut r = UnifiedRandom::new(seed);
             let mut want: Vec<BagGrant> = Vec::new();
-            let mut spawn = |r: &mut UnifiedRandom, want: &mut Vec<BagGrant>, item: i32, stack: i32| {
-                let prefix = crate::prefix::roll_prefix(item as u16, -1, r);
-                want.push(BagGrant { item: item as u16, stack: stack as u32, prefix });
-            };
             if r.next_max(2) == 0 {
-                spawn(&mut r, &mut want, 2430, 1);
+                spawn_replay(&mut r, &mut want, 2430, 1);
             }
             if r.next_max(7) == 0 {
-                spawn(&mut r, &mut want, 2493, 1);
+                spawn_replay(&mut r, &mut want, 2493, 1);
             }
             let num3 = r.next_range(256, 259);
             let mut num4 = r.next_range(256, 259);
             while num4 == num3 {
                 num4 = r.next_range(256, 259);
             }
-            spawn(&mut r, &mut want, num3, 1);
-            spawn(&mut r, &mut want, num4, 1);
+            spawn_replay(&mut r, &mut want, num3, 1);
+            spawn_replay(&mut r, &mut want, num4, 1);
             if r.next_max(2) == 0 {
-                spawn(&mut r, &mut want, 2610, 1);
+                spawn_replay(&mut r, &mut want, 2610, 1);
             } else {
-                spawn(&mut r, &mut want, 2585, 1);
+                spawn_replay(&mut r, &mut want, 2585, 1);
             }
-            spawn(&mut r, &mut want, 998, 1);
+            spawn_replay(&mut r, &mut want, 998, 1);
             if r.next_max(30) == 0 {
-                spawn(&mut r, &mut want, 1309, 1);
+                spawn_replay(&mut r, &mut want, 1309, 1);
             }
-            spawn(&mut r, &mut want, 3090, 1);
-            // The money tail replay continues on the same stream.
-            let base = 10000.0f32;
-            let mut num10 = base * (1.0 + r.next_range(-20, 21) as f32 * 0.01);
-            if r.next_max(5) == 0 {
-                num10 *= 1.0 + r.next_range(5, 11) as f32 * 0.01;
+            spawn_replay(&mut r, &mut want, 3090, 1);
+            money_replay_on(&mut r, 50, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}: the grants + prefixes");
+            assert_eq!(got_rng, r, "seed {seed}: the stream state");
+        }
+    }
+
+    #[test]
+    fn w4_f35_eoc_bag_zero_script_grants_the_whole_arm() {
+        // Corruption (crimson=false): the ore 56, the bars 59. The
+        // zero script: mask 1/7 hits, binoculars 1/30 hits, the three
+        // ore draws all 10 (stack 30), bars 1, arrows 20, the shield.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3319, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..6], [2112, 1299, 56, 59, 47, 3097], "{its:?}");
+        assert_eq!(out[2].stack, 30, "three Next(21)+10 draws summed");
+        assert_eq!(out[3].stack, 1, "Next(3)+1 minimum");
+        assert_eq!(out[4].stack, 20, "Next(31)+20 minimum");
+        // The ore stack's THREE draws are all Next(21) — the census.
+        let ore_draws: Vec<_> = rng.ranges.iter().filter(|r| **r == (0, 21)).collect();
+        assert_eq!(ore_draws.len(), 3, "the triple-draw ore stack");
+        // Money: EoC 30000f, spread −20 % → 24000 → 2 gold + 40 silver.
+        assert_eq!(its[6..], [73, 72], "the coin split: {its:?}");
+        assert_eq!(out[6].stack, 2);
+        assert_eq!(out[7].stack, 40);
+    }
+
+    #[test]
+    fn w4_f35_eoc_bag_crimson_swaps_the_ore_and_bars() {
+        // `:7250-7251` — the crimson world grants Crimtane Ore 880 +
+        // Crimtane Bars 2171 (the corruption pair is 56/59).
+        let env = BagEnv { crimson: true, ..Default::default() };
+        let mut rng = ScriptRng::new(&[6, 29]); // mask + binoculars miss
+        let mut out = Vec::new();
+        open_boss_bag(3319, &env, &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..4], [880, 2171, 47, 3097], "{its:?}");
+    }
+
+    #[test]
+    fn w4_f35_eoc_bag_replays_the_csharp_draw_order() {
+        for seed in [5i32, 99] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3319, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 2112, 1);
             }
-            if r.next_max(10) == 0 {
-                num10 *= 1.0 + r.next_range(10, 21) as f32 * 0.01;
+            if r.next_max(30) == 0 {
+                spawn_replay(&mut r, &mut want, 1299, 1);
             }
-            if r.next_max(15) == 0 {
-                num10 *= 1.0 + r.next_range(15, 31) as f32 * 0.01;
-            }
-            if r.next_max(20) == 0 {
-                num10 *= 1.0 + r.next_range(20, 41) as f32 * 0.01;
-            }
-            while num10 as i32 > 0 {
-                let (id, count) = if num10 > 1000000.0 {
-                    let n = (num10 / 1000000.0) as i32;
-                    num10 -= (1000000 * n) as f32;
-                    (74u16, n)
-                } else if num10 > 10000.0 {
-                    let n = (num10 / 10000.0) as i32;
-                    num10 -= (10000 * n) as f32;
-                    (73, n)
-                } else if num10 > 100.0 {
-                    let n = (num10 / 100.0) as i32;
-                    num10 -= (100 * n) as f32;
-                    (72, n)
-                } else {
-                    let n = (num10 as i32).max(1);
-                    num10 -= n as f32;
-                    (71, n)
-                };
-                want.push(BagGrant { item: id, stack: count as u32, prefix: 0 });
-            }
+            let stack = r.next_range(0, 21) + 10 + (r.next_range(0, 21) + 10) + (r.next_range(0, 21) + 10);
+            spawn_replay(&mut r, &mut want, 56, stack);
+            spawn_replay(&mut r, &mut want, 59, r.next_range(0, 3) + 1);
+            spawn_replay(&mut r, &mut want, 47, r.next_range(0, 31) + 20);
+            spawn_replay(&mut r, &mut want, 3097, 1);
+            money_replay_on(&mut r, 4, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}: the grants + prefixes");
             assert_eq!(got_rng, r, "seed {seed}: the stream state");
         }
