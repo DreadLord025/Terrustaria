@@ -39244,3 +39244,59 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Draw orchestration (W4-g32 pass 5)
+
+`TileDrawing.Draw` is more than the per-cell loop: a fixed head/tail
+sequence (`TileDrawing.cs:465-533`, `:728-741`) plus the post-pass drain
+`PostDrawTiles` (`:414-442`) that the caller runs after EACH layer
+(`Main.cs:56957-56988`). The port lands the orchestration in
+`render/tile_draw_pass.rs` (`draw_steps`, `post_draw_tiles_passes`,
+`frame_tile_draw_order`), UNWIRED — the `draw_tiles` seam is contested by
+the tile-draw siblings (g28-g31, d56-d60); the wiring rides the family
+merge. Pass-family state at this branch's base: g28 (pass 1, quality-light
+tiers) and g30 (pass 3, classification + registry) are pushed; g29 (pass
+2) and g31 (pass 4) were EMPTY claims (branch tips = base, no commits) —
+the screen-area maths (`GetScreenDrawArea`, `:6549-6586`, pass-2 territory)
+is ported here because the orchestration consumes it; the family merge
+keep-ones whichever copy survives.
+
+* **The screen-area casts truncate toward zero.** `(int)((scaledPos.X -
+  off) / 16f - 1f)` (`:6554`) keeps the `-1f` INSIDE the cast while the
+  `+2`/`+5` sit OUTSIDE the last casts (`:6555-6557`); the four clamps pin
+  the rect 4 tiles inside each world edge with NO first<=last reorder.
+  The port's fused loop used floor/ceil + a different margin
+  (`tiles.rs:335-341`, research/09 row 2); the walk pads the clamped area
+  by `+4` rows / `-2`/`+2` columns (`:504-506`).
+* **The clear split.** `ClearLegacyCachedDraws` (`:6613-6622`, six
+  dictionaries + the 1000-slot legacy point count) runs at the head of
+  EVERY Draw; `ClearCachedTileDraws` (`:6588-6599`) clears the clothing
+  pair on the SOLID arm and chains `ClearSpecialBlockCounts` on the
+  NON-SOLID arm — so the solid pass's points survive into
+  `PostDrawTiles(false)` (the g30 registry note). The port's
+  `LegacyCaches::clear_cached_tile_draws(false)` returns the g30 seam flag.
+* **DrawBlackHelper's EndStrip does not reset** (`DrawBlackHelper.cs:30-
+  37`): a second call re-emits the same quad; `Draw` constructs a fresh
+  helper per call (`:497`). The port keeps the quirk (witnessed).
+* **The layer pick.** `DrawSingleTile` sets OverTiles when `tileTop < 0`,
+  Tiles when `tileTop + tileHeight <= 16`, else BehindTiles (`:877-887`);
+  the solid cell draws its behind-liquid on layer 0 first (`:521-526`).
+  The port's single atlas pass folds the layers away — the constants +
+  pick are ported for the S1-G-13 layer-target family.
+* **The post-pass order is load-bearing**: MultiTileVines, MultiTileGrass,
+  VoidLenses, TeleportationPylons, MasterTrophies, Grass,
+  AnyDirectionalGrass, Trees, Vines, ReverseVines, then the nature flush
+  (`:421-433`); the SOLID arm draws HatRacks BEFORE DisplayDolls
+  (`:438-439`). Each pass drains its `TileCounterType` bucket (the g30
+  discriminants). The render-target capture order is the REVERSE of the
+  screen order (solid first, `Main.cs:57296-57305`) with no post passes.
+* Deviations: `TimeLogger` selections (`:467-468`) are profiling-only —
+  omitted; the null-tile lazy-alloc arm (`:509-514`, `mapTime += 60`) has
+  no dense-array counterpart; `DebugOptions.devLightTilesCheat` /
+  `ShowUnbreakableWall` / `hideTiles`/`hideTiles2` have no port toggles —
+  fed false; the section-framing side effects inside `GetScreenDrawArea`
+  (`:6574-6585`) ride out as flags (the port frames in `tr-core::framing`);
+  the 1000 legacy slots grow instead of throwing (the g30 cap convention);
+  `_martianGlow`'s byte ramp (`:498-499`) is ported but the martian event
+  itself is unported (the caller feeds 0). Code-only mode: 20 witnesses
+  WRITTEN NOT RUN — no cargo/rustc/tests invoked.
