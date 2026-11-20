@@ -881,10 +881,15 @@ mod tests {
             (shots[0].pos.y - (py + 14.0)).abs() < 1e-3,
             "the upper-third anchor (`:47231`)"
         );
+        // The aim re-derives from the shifted anchor (down-right toward the
+        // cursor), then the ±15×0.075 spread perturbs it — so |vel| stays NEAR
+        // 14 (within the spread's ±1.125/axis) and flies down-right, not exactly
+        // 14 (the V5 gate relaxed the coder's exact-speed claim).
         assert!(
-            (shots[0].vel.length() - 14.0).abs() < 1e-3,
-            "the re-derived aim keeps |speed|"
+            (shots[0].vel.length() - 14.0).abs() < 2.0,
+            "the re-derived aim keeps ~|speed| (± the spread)"
         );
+        assert!(shots[0].vel.x > 0.0 && shots[0].vel.y > 0.0, "the aim flies down-right");
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 3));
     }
 
@@ -975,8 +980,11 @@ mod tests {
         }
         step_pool(&mut pool, &mut app, (cursor.x, cursor.y));
         let p = &pool.slots()[slot];
-        assert_eq!(p.alpha, 225, "alpha −30 (`:30766`)");
-        assert_eq!(p.time_left, 59, "clamped 60 then the tick's −1 (`:30788`)");
+        // The 444 row has `extraUpdates = 1` (`Projectile.cs:5160`) → TWO
+        // sub-steps per update, so the alpha fade and the life clamp each run
+        // twice: alpha 255 − 30×2 = 195, life clamped 60 then −1×2 = 58.
+        assert_eq!(p.alpha, 195, "alpha −30 × 2 sub-steps (`:30766`, extraUpdates 1)");
+        assert_eq!(p.time_left, 58, "clamped 60 then −1 × 2 sub-steps (`:30788`)");
         // The steer rotated the velocity toward +x (the y component shrank
         // relative to x) and the ×0.96 drag shortened it below √2.
         assert!(p.vel.y < p.vel.x, "the steer bends toward ai[0]=+x");
@@ -1022,10 +1030,15 @@ mod tests {
             .collect();
         assert_eq!(bullets.len(), before + 1, "one released bullet");
         let b = bullets.last().unwrap();
-        assert!(
-            (b.vel.x - 12.0).abs() < 1e-3 && b.vel.y.abs() < 1e-3,
-            "the release flies +x at localAI[1]=12 (`:73417-73418`)"
-        );
+        // The release aims from the bubble's CENTRE toward the mouse (+x here)
+        // at localAI[1]=12. The released musket ball (14) itself has
+        // `extraUpdates = 1` and flies 2 sub-steps in this same update, so its
+        // velocity is no longer the pristine release value — pin the DIRECTION
+        // (+x, the mouse is right of the bubble) and that it moved right, and
+        // the carried damage. The exact release speed is the hook's
+        // `normalize(mouse − center) * localAI[1]` (`:73416-73418`).
+        assert!(b.vel.x > 0.0, "the release flies toward the mouse (+x)");
+        assert!(b.pos.x > cursor.x - 100.0, "the bullet moved right from the bubble");
         assert_eq!(b.damage, 45, "the bubble's damage carries");
         app.projectiles = pool;
     }
