@@ -584,6 +584,85 @@ pub(crate) struct StickyDust {
     pub(crate) post_arms: bool,
 }
 
+/// One queued extra-jump dust burst (`Player.JumpMovement`,
+/// `Player.cs:20818-21012`): the tick snapshots the box/velocity/centre at the
+/// C# moment (AFTER the ascent-velocity write) and the drain
+/// (`player_dust::drain_jump_dust`) replays each arm's `Dust.NewDust` chain on
+/// the `UpdatePlayers` stream in source order. `height` is `base.height` (the
+/// `gravDir == -1 → 0` fold collapses to `height`, gravDir 1); `cx`/`cy` are
+/// `base.Center` for the ring arms.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct JumpDust {
+    pub(crate) kind: ExtraJump,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) cx: f32,
+    pub(crate) cy: f32,
+}
+
+/// One queued `DashMovement` dust burst (`Player.cs:21259-21512`): the tick
+/// snapshots the box/velocity/facing at the C# moment and the drain
+/// (`player_dust::drain_dash_dust`) replays the arm's `Dust.NewDust` chain on
+/// the `UpdatePlayers` stream in source order. `active` is the `dashDelay < 0`
+/// trail (the per-tick arms, `:21259-21372`); `false` is the dash-start burst
+/// (`:21406-21512`). `mount` is `mount.Type` when active (`-1` unmounted) —
+/// the Bat/Pixie `DashDust` delegates and the Chillet colour pick read it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DashDust {
+    pub(crate) dash: i32,
+    pub(crate) active: bool,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    pub(crate) mount: i32,
+}
+
+/// One queued `SpawnFastRunParticles` dust trail (`Player.cs:20217-20298`):
+/// the tick picks the arm (wings-3/rocket-6, sailDash, desertDash, coldDash,
+/// fairyBoots, hellfireTreads, else the plain foot puff) and snapshots the
+/// box/velocity at the C# moment; the drain (`player_dust::drain_fast_run`)
+/// replays the arm's `Dust.NewDust` chain on the `UpdatePlayers` stream.
+/// `gfx_off_y` rides the coldDash arm's foot line (`:20252`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FastRunDust {
+    pub(crate) arm: FastRunArm,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) gfx_off_y: f32,
+}
+
+/// The fast-run trail's arm picker (`Player.cs:20217-20298`, the else-if
+/// chain in source order).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FastRunArm {
+    /// `wings == 3 || vanityRocketBoots == 6` (`:20217`) — two type-186 puffs.
+    WingsRocket,
+    /// `sailDash` (`:20226`) — four type-253 puffs.
+    Sail,
+    /// `desertDash` (`:20241`) — one type-32 `NewDustDirect`.
+    Desert,
+    /// `coldDash` (`:20248`) — two type-76 puffs.
+    Cold,
+    /// `fairyBoots` (`:20261`) — two puffs of one rolled type.
+    Fairy,
+    /// `hellfireTreads` (`:20283`) — one type-6 puff.
+    Hellfire,
+    /// The plain foot puff (`:20292`) — one type-16.
+    Plain,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -1621,6 +1700,18 @@ pub struct Player {
     /// `Player.rocketBoots` (`Player.cs:2756`): the boots tier
     /// (`TR_BOOTS=<1..5>` pins it).
     pub rocket_boots: i32,
+    /// W4-d51 — the boot-run visual flags (`Player.cs:2758-2762` +
+    /// `UpdateBootVisualEffects` `:36704-36751`): the fast-run trail arm
+    /// picker (`SpawnFastRunParticles`, `:20217-20298`). `vanity_rocket_boots`
+    /// is the look tier (the wings-3/rocket-6 trail gates on it, `:20217`).
+    /// ResetEffects clears them (`:18315-18316`/`:18354`/`:18600-18603`);
+    /// the equip pass re-grants per slot in source order.
+    pub vanity_rocket_boots: i32,
+    pub sail_dash: bool,
+    pub cold_dash: bool,
+    pub desert_dash: bool,
+    pub fairy_boots: bool,
+    pub hellfire_treads: bool,
     /// `Player.canRocket` / `rocketRelease` (`Player.cs:2762,2752`): the
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
@@ -1955,6 +2046,22 @@ pub struct Player {
     /// the RNG order is unchanged (S1-A-10). The type-153 `velocity *= 0.1`
     /// and `noGravity` post-arms ride the drain too.
     pending_sticky_dust: Vec<StickyDust>,
+    /// W4-d51 — the tick's queued extra-jump dust burst (`Player.JumpMovement`,
+    /// `Player.cs:20818-21012`): one [`JumpDust`] snapshot per triggered arm,
+    /// taken AFTER the ascent-velocity write. The drain
+    /// (`player_dust::drain_jump_dust`) replays the arm's `Dust.NewDust` chain
+    /// on the `UpdatePlayers` stream right after the chain's sound drain, so
+    /// the sound-then-dust draw order is the source's (S1-A-10).
+    pending_jump_dust: Option<JumpDust>,
+    /// W4-d51 — the tick's queued `DashMovement` dust bursts
+    /// (`Player.cs:21259-21512`): at most one per tick (the trail arms and the
+    /// start arms are exclusive branches). Same queue convention as
+    /// [`JumpDust`] — the drain replays on the `UpdatePlayers` stream.
+    pending_dash_dust: Option<DashDust>,
+    /// W4-d51 — the tick's queued fast-run trail (`Player.cs:20217-20298`):
+    /// one snapshot per footstep tick, drained on the `UpdatePlayers` stream
+    /// right after the footstep sound (`player_dust::drain_fast_run`).
+    pending_fast_run_dust: Option<FastRunDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2790,6 +2897,12 @@ impl Player {
             rocket_delay: 0,
             rocket_delay2: 0,
             rocket_boots: 0,
+            vanity_rocket_boots: 0,
+            sail_dash: false,
+            cold_dash: false,
+            desert_dash: false,
+            fairy_boots: false,
+            hellfire_treads: false,
             can_rocket: false,
             rocket_release: false,
             merman: false,
@@ -2885,6 +2998,9 @@ impl Player {
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
+            pending_jump_dust: None,
+            pending_dash_dust: None,
+            pending_fast_run_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3474,6 +3590,44 @@ impl Player {
         std::mem::take(&mut self.pending_sticky_dust)
     }
 
+    /// W4-d51 — takes the extra-jump chain's queued dust snapshot
+    /// (`Player.cs:20818-21012`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_jump_dust`).
+    pub(crate) fn take_jump_dust(&mut self) -> Option<JumpDust> {
+        self.pending_jump_dust.take()
+    }
+
+    /// W4-d51 — takes the `DashMovement` dust snapshot
+    /// (`Player.cs:21259-21512`); the caller owns `Main.dust` and the
+    /// `UpdatePlayers` stream (`player_dust::drain_dash_dust`).
+    pub(crate) fn take_dash_dust(&mut self) -> Option<DashDust> {
+        self.pending_dash_dust.take()
+    }
+
+    /// W4-d51 — takes the fast-run trail snapshot (`Player.cs:20217-20298`);
+    /// the caller owns `Main.dust` and the `UpdatePlayers` stream
+    /// (`player_dust::drain_fast_run`).
+    pub(crate) fn take_fast_run_dust(&mut self) -> Option<FastRunDust> {
+        self.pending_fast_run_dust.take()
+    }
+
+    /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
+    /// velocity writes above each site have already landed).
+    fn queue_dash_dust(&mut self, active: bool) {
+        self.pending_dash_dust = Some(DashDust {
+            dash: self.dash,
+            active,
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            vx: self.vx,
+            vy: self.vy,
+            facing: self.facing,
+            mount: if self.mount.is_active() { self.mount.kind() } else { -1 },
+        });
+    }
+
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
     /// the seat tile re-decodes through `GetSittingTargetInfo` (`:56-61`),
     /// any control input / the mount / a facing mismatch stands up
@@ -3642,6 +3796,9 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.pending_sticky_dust.clear();
+        self.pending_jump_dust = None;
+        self.pending_dash_dust = None;
+        self.pending_fast_run_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -4960,6 +5117,17 @@ impl Player {
         }
     }
 
+    /// `Player.CancelAllBootRunVisualEffects` (`Player.cs:36664-36671`):
+    /// the five run-trail flags clear together; the granting boot re-sets
+    /// its own below it (`UpdateBootVisualEffects`, `:36704-36751`).
+    fn cancel_boot_run_visuals(&mut self) {
+        self.sail_dash = false;
+        self.cold_dash = false;
+        self.desert_dash = false;
+        self.fairy_boots = false;
+        self.hellfire_treads = false;
+    }
+
     /// `Player.ApplyEquipFunctional` (`Player.cs:14368-15560`): the per-kind
     /// grant chain for one functional accessory slot. The ported arms keep
     /// the C#'s grants; the visual half (`UpdateBootVisualEffects`/bobber/
@@ -5092,8 +5260,22 @@ impl Player {
                 self.no_fall_dmg = true;
             }
             // The base boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
-            // `:15017-15020` Sailfish - `accRunSpeed = 6f`).
-            54 | 1579 | 3200 => self.acc_run_speed = 6.0,
+            // `:15017-15020` Sailfish - `accRunSpeed = 6f`). W4-d51: the
+            // `UpdateBootVisualEffects` halves (`:36711-36743`) ride each arm.
+            54 => {
+                self.acc_run_speed = 6.0;
+                self.cancel_boot_run_visuals();
+            }
+            1579 => {
+                self.acc_run_speed = 6.0;
+                self.cancel_boot_run_visuals();
+                self.cold_dash = true;
+            }
+            3200 => {
+                self.acc_run_speed = 6.0;
+                self.cancel_boot_run_visuals();
+                self.sail_dash = true;
+            }
             // The Amphibian Boots (`:14399-14404`): the base run speed plus
             // the auto-jump, the +1.6 jump-speed add and +10 safe-fall tiles.
             // (`autoJump` re-derives per tick; a mount's own `constantJump`
@@ -5103,24 +5285,36 @@ impl Player {
                 self.auto_jump = true;
                 self.jump_speed_boost += 1.6;
                 self.extra_fall += 10;
+                self.cancel_boot_run_visuals();
+                self.sail_dash = true;
             }
             // The Fairy Boots (`:14418-14421`): the Spectre row (6f + tier 2).
             3993 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 2;
+                self.cancel_boot_run_visuals();
+                self.fairy_boots = true;
+                self.vanity_rocket_boots = 2;
             }
             // The Sand Boots (`:14422-14425`): 6f plus the desert-run flag
             // (the sand-floor 1.75x rides the floor-modifier chain).
             4055 => {
                 self.acc_run_speed = 6.0;
                 self.desert_boots = true;
+                self.cancel_boot_run_visuals();
+                self.desert_dash = true;
             }
             // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
-            128 => self.rocket_boots = 1,
+            128 => {
+                self.rocket_boots = 1;
+                self.vanity_rocket_boots = 1;
+            }
             // The Spectre Boots (`:15219-15223` - tier 2).
             405 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 2;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 2;
             }
             // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
             // +8% move).
@@ -5128,6 +5322,8 @@ impl Player {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 2;
                 self.move_speed += 0.08;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 2;
             }
             // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
             // skates).
@@ -5136,6 +5332,8 @@ impl Player {
                 self.rocket_boots = 3;
                 self.move_speed += 0.08;
                 self.ice_skate = true;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 3;
             }
             // The Terraspark Boots (`:15390-15396` - tier 4).
             5000 => {
@@ -5146,11 +5344,16 @@ impl Player {
                 // The Terraspark row (`:15168-15174`): the water/fire walk
                 // and the lava charm's 420 ticks.
                 self.lava_max += 420;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 4;
             }
             // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
             4874 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 5;
+                self.cancel_boot_run_visuals();
+                self.vanity_rocket_boots = 5;
+                self.hellfire_treads = true;
             }
             _ if Self::wing_slot(kind as i32) > 0 => {
                 // `:15593-15602`: the accessory's `wingSlot` is both the
@@ -6756,6 +6959,14 @@ impl Player {
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
+        // W4-d51 — the boot-run visual clears (`Player.cs:18315-18316`,
+        // `:18354`, `:18600-18603`); the equip pass re-grants per slot.
+        self.vanity_rocket_boots = 0;
+        self.sail_dash = false;
+        self.cold_dash = false;
+        self.desert_dash = false;
+        self.fairy_boots = false;
+        self.hellfire_treads = false;
         self.no_knockback = false;
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
@@ -7265,6 +7476,25 @@ impl Player {
                     }
                     self.vy = -self.jump_speed;
                     self.jump = (self.jump_height as f32 * j.hold_multiplier()) as i32;
+                    // W4-d51 — the dust snapshot, taken AFTER the velocity
+                    // write (`Player.cs:20816`/`:20847`/...): the dust sites
+                    // read `base.velocity` at this moment. `height` is the
+                    // gravDir-1 fold of the arms' `num` (gravDir == -1 → 0,
+                    // no gravity flip in the port); `center()` is
+                    // `base.Center` for the mount rings. Sandstorm / Blizzard
+                    // play no dust (`:20787-20806`) — the drain skips them.
+                    let (cx, cy) = self.center();
+                    self.pending_jump_dust = Some(JumpDust {
+                        kind: j,
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        vx: self.vx,
+                        vy: self.vy,
+                        cx,
+                        cy,
+                    });
                 } else {
                     // `:20746`: the Cloud fall-through consumed even when
                     // unarmed — the can flag clears all the same.
@@ -8669,18 +8899,47 @@ impl Player {
         }
     }
 
-    /// `Player.SpawnFastRunParticles`' sound half (`Player.cs:20205-20216`):
-    /// the fast-run footstep — `runSoundDelay == 0` and grounded plays
-    /// `hermesStepSound` at `position` (the top-left, NOT the centre) and
-    /// re-arms the cooldown (`:20212-20215`). The caller drains the queue
-    /// through `Audio::play_step_sound`. The dust trails (`:20217-20300`:
-    /// the wings-3/rocket-6, sailDash, shoe-dye arms) are visual seams.
+    /// `Player.SpawnFastRunParticles` (`Player.cs:20205-20299`): the fast-run
+    /// footstep — `runSoundDelay == 0` and grounded plays `hermesStepSound` at
+    /// `position` (the top-left, NOT the centre) and re-arms the cooldown
+    /// (`:20212-20215`). The caller drains the queue through
+    /// `Audio::play_step_sound`. W4-d51: the dust trail (`:20217-20298`) queues
+    /// one arm snapshot per call — the else-if chain in source order; the
+    /// drain (`player_dust::drain_fast_run`) replays it after the sound.
     fn spawn_fast_run_particles(&mut self) {
         if self.run_sound_delay == 0 && self.vy == 0.0 {
             let (sound_type, style, cooldown) = self.hermes_step_sound;
             self.pending_step_sound = Some((sound_type, style, self.x, self.y));
             self.run_sound_delay = cooldown;
         }
+        // `:20217-20298`: the arm picker. `wings` is the look id — the port's
+        // `wings_logic` (same field, the wing grant's note); the gravDir == -1
+        // foot-offset fold (`:20207-20211`) collapses to 0 (no gravity flip).
+        let arm = if self.wings_logic == 3 || self.vanity_rocket_boots == 6 {
+            FastRunArm::WingsRocket
+        } else if self.sail_dash {
+            FastRunArm::Sail
+        } else if self.desert_dash {
+            FastRunArm::Desert
+        } else if self.cold_dash {
+            FastRunArm::Cold
+        } else if self.fairy_boots {
+            FastRunArm::Fairy
+        } else if self.hellfire_treads {
+            FastRunArm::Hellfire
+        } else {
+            FastRunArm::Plain
+        };
+        self.pending_fast_run_dust = Some(FastRunDust {
+            arm,
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            vx: self.vx,
+            vy: self.vy,
+            gfx_off_y: self.gfx_off_y,
+        });
     }
 
     /// `Player.HorizontalMovement` (`Player.cs:19772-20088`): the primary
@@ -8727,7 +8986,11 @@ impl Player {
             let mut mid = 0.96f32;
             let mut cooldown = 20;
             match self.dash {
+                // `:21259-21270`: the Tabi trail (W4-d51 — the dust drain
+                // replays before the decay below, as the source does).
+                1 => self.queue_dash_dust(true),
                 // `:21271-21285`: the shield decays faster, cooldowns longer.
+                // Its dust loop is `for (m = 0; m < 0; …)` — dead, no queue.
                 2 => {
                     fast = 0.985;
                     mid = 0.94;
@@ -8735,12 +8998,15 @@ impl Player {
                 }
                 // `:21286-21307`: the Solar dash rides higher and longer.
                 3 => {
+                    self.queue_dash_dust(true);
                     threshold = 14.0;
                     fast = 0.985;
                     mid = 0.94;
                 }
+                // `:21328-21343`: the Vortex trail (no constant changes).
+                5 => self.queue_dash_dust(true),
                 // `:21346-21351`: a direction flip or losing the capability
-                // ends a mount dash at 30 with a damp.
+                // ends a mount dash at 30 with a damp — no dust that tick.
                 6 => {
                     if self.vx.signum() as i32 != self.facing || self.dash_type != 6 {
                         self.dash_delay = 30;
@@ -8748,6 +9014,8 @@ impl Player {
                         self.dash_time = 0;
                         return;
                     }
+                    // `:21354-21371`: the Chillet light + trail.
+                    self.queue_dash_dust(true);
                 }
                 _ => {}
             }
@@ -8800,6 +9068,15 @@ impl Player {
         self.dash_delay = -1;
         if self.dash == 2 {
             self.eoc_dash = 15;
+        }
+        // W4-d51 — the dash-start dust bursts (`:21419-21426` Tabi,
+        // `:21474-21484` Solar), queued after the velocity/flag writes exactly
+        // as the source reads them. The dash-2 start loop is dead (`m < 0`),
+        // the dash-6 start plays no dust; the Vortex start (`:21500-21510`)
+        // lands with the dashType-5 launch port (the speed match above has no
+        // 5 arm yet). The Tabi gore pair (`:21427-21434`) is W4-d55's.
+        if self.dash == 1 || self.dash == 3 {
+            self.queue_dash_dust(false);
         }
     }
 
