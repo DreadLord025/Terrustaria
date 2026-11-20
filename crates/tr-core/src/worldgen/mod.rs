@@ -48,6 +48,7 @@ mod temple;
 mod terrain;
 mod tile_runner;
 mod wall_variety;
+mod water_chests;
 mod wavy;
 mod world_hash;
 mod finish_seeds;

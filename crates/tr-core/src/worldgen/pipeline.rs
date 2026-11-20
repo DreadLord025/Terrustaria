@@ -56,6 +56,7 @@ use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
 use super::wall_variety;
+use super::water_chests;
 use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
@@ -1441,6 +1442,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `cave houses` sits earlier), before the jungle chests (`:17211`) —
     // W4-d103 pass 24.
     step!("surface chests", "Surface Chests", step_surface_chests),
+    // The vanilla Water Chests slot (`WorldGen.cs:17245`): after Surface
+    // Chests (`:17130`) and the jungle chests (`:17211`), before Spider
+    // Caves (`:17356`) — W4-d103 pass 25. The executed chain's `chests`
+    // step covers the jungle-chest slot earlier (the pre-scaffold order).
+    step!("water chests", "Water Chests", step_water_chests),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2825,6 +2831,49 @@ fn step_surface_chests(
     );
 }
 
+/// The vanilla Water Chests slot (`WorldGen.cs:17245`): the ocean-cave
+/// treasure + the water scatter on a fresh `pass_rng("Water Chests")`
+/// stream. The `Skyblock.denyAllGeneration` gate (`:17247`) rides the
+/// skyblock flag; the extraLiquid arms ride the micro flag.
+fn step_water_chests(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    let flags = buried_chest::ChestSeedFlags {
+        remix: opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        get_good: opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        drunk: opts.flags.contains(crate::seeds::SeedFlags::DRUNK),
+        anniversary: opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        not_the_bees: opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        dont_starve: opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE),
+        no_traps: opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS),
+        error_world: opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::ERROR_WORLD),
+        crimson: opts.crimson,
+        crimson_left: gv.crimson_left,
+    };
+    water_chests::pass_water_chests(
+        world,
+        gv,
+        layers.world_surface,
+        layers.rock_layer,
+        flags,
+        opts.micro_flags
+            .contains(crate::seeds::MicroSeedFlags::EXTRA_LIQUID),
+        &mut streams.pass_rng("Water Chests"),
+        streams.chest_stock.as_deref_mut(),
+    );
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3431,8 +3480,9 @@ mod tests {
         // crystals` (vanilla "Life Crystals", `:16755`) after `wall variety`;
         // + `statues` (vanilla "Statues", `:16853`) after `life crystals`;
         // + `surface chests` (vanilla "Surface Chests", `:17130`) after
-        // `statues`.
-        assert_eq!(names.len(), 72);
+        // `statues`; + `water chests` (vanilla "Water Chests", `:17245`)
+        // after `surface chests`.
+        assert_eq!(names.len(), 73);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3529,6 +3579,7 @@ mod tests {
                 "life crystals",
                 "statues",
                 "surface chests",
+                "water chests",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3624,7 +3675,8 @@ mod tests {
         assert_eq!(names[pos("wall variety") + 1], "life crystals");
         assert_eq!(names[pos("life crystals") + 1], "statues");
         assert_eq!(names[pos("statues") + 1], "surface chests");
-        assert_eq!(names[pos("surface chests") + 1], "trees");
+        assert_eq!(names[pos("surface chests") + 1], "water chests");
+        assert_eq!(names[pos("water chests") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3661,6 +3713,11 @@ mod tests {
         // Chests Placement).
         assert!(cpos("Buried Chests") < cpos("Surface Chests"));
         assert!(cpos("Surface Chests") < cpos("Jungle Chests Placement"));
+        // W4-d103 pass 25: the vanilla Water Chests pairs (`:17211` Jungle
+        // Chests Placement → `:17245` Water Chests → `:17356` Spider
+        // Caves).
+        assert!(cpos("Jungle Chests Placement") < cpos("Water Chests"));
+        assert!(cpos("Water Chests") < cpos("Spider Caves"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 

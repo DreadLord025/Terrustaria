@@ -290,6 +290,15 @@ mod tests {
     // the shuffle alone). The size guard needs > 600 wide — the 512
     // fixture skips before any draw, so this pin is UNCHANGED by the pass
     // itself. a == b stays.
+    // W4-d103 pass 25 (2026-11-20, code-only): the `Water Chests` pass
+    // (`WorldGen.cs:17245-17355`) lands on a fresh `pass_rng("Water
+    // Chests")` stream after `surface chests`. The size guard needs
+    // UnderworldLayer (512−200=312) > 50 and the surface below it — the
+    // 512 fixture PASSES the guard, and the scatter's unbounded water
+    // re-draw spins on a waterless world. The fixture carries ocean water
+    // (the Beaches carve), so the pass runs; whether a style-17 chest
+    // lands is unmeasured (no compiler on this branch). Stale-by-design
+    // if one does; the gate re-pins. a == b stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -370,6 +379,12 @@ mod tests {
     // + the living-tree style-12 arm) moves this pin BY DESIGN. The re-pin
     // is DEFERRED to the merge gate (no compiler on this branch); a == b
     // stays green — the pass draws only its own fresh stream.
+    // W4-d103 pass 25 (code-only): the Water Chests pass (the ocean-cave
+    // treasure anchors + 18 scatter chests on the 4200-wide default, the
+    // style-17 water chests through the AddBuriedChest core) moves this
+    // pin BY DESIGN. The re-pin is DEFERRED to the merge gate (no compiler
+    // on this branch); a == b stays green — the pass draws only its own
+    // fresh stream.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

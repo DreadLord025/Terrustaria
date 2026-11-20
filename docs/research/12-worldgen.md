@@ -348,8 +348,9 @@ Landed: 19 Oasis (90b7eee6), 20 Waterfalls (`liquids.rs::pass_waterfalls`,
 2026-11-20, code-only), 22 Life Crystals (`crystals.rs::pass_life_crystals`,
 2026-11-20, code-only), 23 Statues (`statues.rs::pass_statues`, 2026-11-20,
 code-only), 24 Surface Chests (`buried_chest.rs::pass_surface_chests` +
-the AddBuriedChest core, 2026-11-20, code-only — pin re-pins deferred to
-the merge gate).
+the AddBuriedChest core, 2026-11-20, code-only), 25 Water Chests
+(`water_chests.rs::pass_water_chests`, 2026-11-20, code-only — pin re-pins
+deferred to the merge gate).
 28 Quick Cleanup :17875 · 29 Hellforge :18187 · 30 Spreading Grass :18237 ·
 31 Surface Ore and Stone :18447 · 32 Place Fallen Log :18513 · 33 Traps :18657 ·
 34 Piles :18788 · 35 Spawn Point :19460 · 36 Grass Wall :19589 —
