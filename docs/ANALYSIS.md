@@ -36142,6 +36142,36 @@ select's Journey-first sort (`sort_publish_worlds`, pinned by tests).
 - Back (`HandleBackButtonUsage`, `:106-110`) plays 11 and restores the
   parked hub (`FlowClick::WorkshopListBack`, the row-2 table arm).
 
+### UIWorkshopWorldImport (row 4)
+
+`ui/workshop_publish.rs` + `FrontScreen::WorkshopImportWorlds`. The same
+shared chrome (`UIWorkshopWorldImport.cs:43-105`), title
+`UI.WorkshopImportWorld`. `OnActivate` (`:131-140`) runs
+`UpdateWorkshopWorldList` (`:142-153`), which returns early when
+`SocialAPI.Workshop` is null — **the list is always empty live**; the
+96 px import rows are ported for the record, exercised by tests only.
+
+- The rows are `UIWorkshopImportWorldListItem` (`:30-198`): the 60x58
+  world icon at the inner TOP (no VAlign, unlike the publish twin), the
+  play `UIImageButton` (`VAlign 1, Left 4`, White at 1.0 hovered / 0.4
+  idle) with the hover "Import" label (`PlayMouseOver`, `:86-89`), the
+  Extra_243 workshop badge top-right, the stretched divider, and three
+  3-slice plates (difficulty 100 / size 150 +40 off-English / created
+  the rest) — the import `DrawPanel` (`:144-149`) is the horizontal
+  8/8/8 strip, NOT the publish rows' 10-slice. Plate labels sit at a
+  flat `+3` y (`:177/:189/:196`).
+- Import (`ImportButtonClick_ImportWorldToLocalFiles`, `:96-105`): the
+  IsValid gate + sound 10, then the rename keyboard
+  (`Workshop.EnterNewNameForImportedWorld`, initial the world name,
+  `allowEmpty: true`, 27-char cap) over the parked import screen
+  (`KeyboardTail::WorldImport`). Submit runs `OnFinishedSettingName`
+  (`:107-114`) — null Workshop means no import and **no state change**
+  (the keyboard stays open, like the source); the port surfaces the
+  notice on its `front_hint` channel. Cancel (`GoBackHere`, `:116-121`)
+  plays 11 and restores the import screen.
+- Back (`HandleBackButtonUsage`, `:112-116`) plays 11 and restores the
+  parked hub (`FlowClick::WorkshopListBack`).
+
 ### UIResourcePackInfoMenu (row 6)
 
 `ui/resource_pack_info.rs` + `FrontScreen::ResourcePackInfo`. The payload

@@ -2483,6 +2483,16 @@ impl App {
                 state.worlds = worlds;
                 state.scroll = 0.0;
             }
+            // `UIWorkshopWorldImport.OnActivate` (`:131-140`):
+            // `UpdateWorkshopWorldList` (`:142-153`) returns early without
+            // `SocialAPI.Workshop`, so `UpdateWorldsList` (`:155-166`)
+            // sorts an empty list — the screen is always empty live. The
+            // back target rode in from the hub's opener.
+            FrontScreen::WorkshopImportWorlds(ref mut state) => {
+                state.worlds.clear();
+                ui::workshop_publish::sort_publish_worlds(&mut state.worlds);
+                state.scroll = 0.0;
+            }
         }
         self.park_menu();
         self.front = Some(front);
@@ -2642,6 +2652,15 @@ impl App {
             // closes back into gameplay.
             KeyboardTail::ChestRename => {
                 crate::chest::rename_submit(self, &chest_text);
+            }
+            // `OnFinishedSettingName` (`UIWorkshopImportWorldListItem.cs:
+            // 107-114`): `SocialAPI.Workshop` is null, so the import never
+            // runs and no state change happens — the keyboard stays open,
+            // exactly like the source. The notice is the port's channel.
+            KeyboardTail::WorldImport => {
+                self.front_hint = Some(format!(
+                    "Importing \"{name}\" is not ported yet (no Steam Workshop)"
+                ));
             }
         }
     }

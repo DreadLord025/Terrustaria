@@ -159,7 +159,7 @@ Screens already covered by immediate ports are listed for completeness at the en
 | `UIWorkshopHub` | 13 | none | Steam Workshop hub |
 | `UIWorkshopSelectResourcePackToPublish` | 17 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishPacks`) | PORTED (W4-d84 row 2; the publish tail is a notice — the Steam form is out of range) |
 | `UIWorkshopSelectWorldToPublish` | 16 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopPublishWorlds`) | PORTED (W4-d84 row 3; the publish tail is a notice — the Steam form is out of range) |
-| `UIWorkshopWorldImport` | 18 | none | |
+| `UIWorkshopWorldImport` | 18 | `ui/workshop_publish.rs` (`FrontScreen::WorkshopImportWorlds`) | PORTED (W4-d84 row 4; no Steam — the subscribed list is always empty, the import rows are ported for the record) |
 | `UIResourcePackSelectionMenu` | 17 | `ui/resource_packs.rs` (`FrontScreen::ResourcePackSelection`) | PORTED (W4-d84 row 5; the enabled-only ApplyListChanges save, the two-list scroll routing) |
 | `UIResourcePackInfoMenu` | 15 | `ui/resource_pack_info.rs` (`FrontScreen::ResourcePackInfo`) | PORTED (W4-d84 row 6; the back target parks the exact parent selection screen) |
 | `UIDebugCommandsList` | 15 | none | debug |

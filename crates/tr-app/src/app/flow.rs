@@ -85,6 +85,14 @@ pub(crate) enum FrontScreen {
     /// → `PopulateEntries`, `:125-149`: `Main.LoadWorlds`, drop `!IsValid`,
     /// the favourite/name/file sort).
     WorkshopPublishWorlds(Box<ui::workshop_publish::PublishWorldsState>),
+    /// W4-d84 row 4's `UIWorkshopWorldImport` (`UIWorkshopWorldImport.cs:18`)
+    /// — the subscribed-world import list the hub's Import-Worlds button
+    /// opens (`Click_OpenWorldImportMenu`, `UIWorkshopHub.cs:142-146`). The
+    /// payload is the screen's own state (`_worldList` + the list scroll +
+    /// the `_uiStateToGoBackTo` target); `enter_front` re-lists
+    /// (`OnActivate`, `:131-140` — `UpdateWorkshopWorldList` is always empty
+    /// without Steam, `:142-153`).
+    WorkshopImportWorlds(Box<ui::workshop_publish::ImportWorldsState>),
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -136,6 +144,12 @@ pub(crate) enum KeyboardTail {
     /// `ChestUI.RenameChestCancel` + `Close(quiet: true)` — both tails land
     /// back in gameplay.
     ChestRename,
+    /// W4-d84 row 4's world import (`UIWorkshopImportWorldListItem.cs:
+    /// 102-121`): submit runs `OnFinishedSettingName` — without
+    /// `SocialAPI.Workshop` the import is a no-op and the keyboard stays
+    /// open (the port surfaces the documented notice); cancel runs
+    /// `GoBackHere` (sound 11 + the parked import screen).
+    WorldImport,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -339,6 +353,7 @@ pub(crate) fn next_flow_state(
             let back = match &front {
                 Some(FrontScreen::WorkshopPublishPacks(state)) => state.back.as_deref().cloned(),
                 Some(FrontScreen::WorkshopPublishWorlds(state)) => state.back.as_deref().cloned(),
+                Some(FrontScreen::WorkshopImportWorlds(state)) => state.back.as_deref().cloned(),
                 _ => None,
             };
             match back {
@@ -649,6 +664,17 @@ impl FrontScreenBehaviours for FrontScreen {
                 // `UIWorkshopSelectWorldToPublish.Draw` (`:151-160`):
                 // the chrome + the valid-world publish rows.
                 ui::workshop_publish::draw_publish_worlds(
+                    d.renderer,
+                    d.lookups,
+                    state,
+                    d.screen,
+                    d.mouse,
+                );
+            }
+            FrontScreen::WorkshopImportWorlds(state) => {
+                // `UIWorkshopWorldImport.Draw` (`:168-177`): the chrome +
+                // the subscribed-world import rows (always none — no Steam).
+                ui::workshop_publish::draw_import_worlds(
                     d.renderer,
                     d.lookups,
                     state,
@@ -1414,6 +1440,57 @@ impl FrontScreenBehaviours for FrontScreen {
                     _ => None,
                 }
             }
+            FrontScreen::WorkshopImportWorlds(_) => {
+                // `GoBackClick` (`UIWorkshopWorldImport.cs:107-110`) + the
+                // play button / card double-click
+                // (`ImportButtonClick_ImportWorldToLocalFiles`,
+                // `UIWorkshopImportWorldListItem.cs:96-105`). Without Steam
+                // the list is always empty (`UpdateWorkshopWorldList`,
+                // `:142-153`), so only Back is reachable live.
+                let Some(FrontScreen::WorkshopImportWorlds(state)) = app.front.as_mut() else {
+                    return None;
+                };
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 96.0);
+                let scroll = state.scroll;
+                let lookups = &app.lookups;
+                let action = |rr: [f32; 4], i: usize| {
+                    ui::workshop_publish::import_action_rect(lookups, rr, i)
+                };
+                let click = ui::workshop_publish::click_at(
+                    &l, rows, 96.0, scroll, action, mouse, double_click, true,
+                );
+                match click {
+                    ui::workshop_publish::Click::Back => Some(FlowClick::WorkshopListBack),
+                    ui::workshop_publish::Click::Import(row) => {
+                        // `:98-104`: the IsValid gate + sound 10, then the
+                        // rename keyboard over the parked import screen.
+                        // The submit tail (`OnFinishedSettingName`,
+                        // `:107-114`) needs `SocialAPI.Workshop` — the
+                        // documented no-Steam notice.
+                        let Some(entry) = state.worlds.get(row) else { return None };
+                        if !entry.valid {
+                            return None;
+                        }
+                        let name = entry.name.clone();
+                        let parked = state.clone();
+                        app.audio.play("Menu_Open");
+                        app.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: crate::lang::text("Workshop.EnterNewNameForImportedWorld"),
+                                initial: name,
+                                allow_empty: true,
+                                max_length: 27,
+                                context: ui::keyboard::Context::Text,
+                            },
+                            Some(FrontScreen::WorkshopImportWorlds(Box::new(parked))),
+                            KeyboardTail::WorldImport,
+                        );
+                        None
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -1803,6 +1880,12 @@ impl App {
                 wheel(&l, rows, 82.0, &mut state.scroll);
                 true
             }
+            Some(FrontScreen::WorkshopImportWorlds(state)) => {
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 96.0);
+                wheel(&l, rows, 96.0, &mut state.scroll);
+                true
+            }
             _ => false,
         }
     }
@@ -1863,6 +1946,22 @@ impl App {
                 }
                 false
             }
+            Some(FrontScreen::WorkshopImportWorlds(state)) => {
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 96.0);
+                if !l.attached {
+                    return false;
+                }
+                let content = ui::workshop_publish::content_height(rows, 96.0);
+                if let Some((scroll, drag)) =
+                    bar_press(l.scrollbar, l.list[3], content, state.scroll)
+                {
+                    state.scroll = scroll;
+                    self.front_scroll_drag = drag;
+                    return true;
+                }
+                false
+            }
             _ => false,
         }
     }
@@ -1892,6 +1991,17 @@ impl App {
                     return false;
                 }
                 let content = ui::workshop_publish::content_height(rows, 82.0);
+                state.scroll =
+                    ui::panel::scrollbar_drag_value(l.scrollbar, l.list[3], content, offset, mouse_y);
+                true
+            }
+            Some(FrontScreen::WorkshopImportWorlds(state)) => {
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 96.0);
+                if !l.attached {
+                    return false;
+                }
+                let content = ui::workshop_publish::content_height(rows, 96.0);
                 state.scroll =
                     ui::panel::scrollbar_drag_value(l.scrollbar, l.list[3], content, offset, mouse_y);
                 true
@@ -1944,6 +2054,17 @@ impl App {
                 ui::workshop_publish::hit_element(
                     &l, rows, 82.0, state.scroll,
                     |rr, i| ui::workshop_publish::world_action_rect(&self.lookups, rr, i),
+                    self.mouse_pos,
+                )
+            }
+            FrontScreen::WorkshopImportWorlds(state) => {
+                // The import rows' double-click identity
+                // (`UIWorkshopImportWorldListItem.cs:39/:46`).
+                let rows = state.worlds.len();
+                let l = ui::workshop_publish::list_layout(screen, rows, 96.0);
+                ui::workshop_publish::hit_element(
+                    &l, rows, 96.0, state.scroll,
+                    |rr, i| ui::workshop_publish::import_action_rect(&self.lookups, rr, i),
                     self.mouse_pos,
                 )
             }
@@ -2385,6 +2506,15 @@ pub(crate) mod front_flow_tests {
             next_flow_state(Some(parked), None, None, FlowClick::WorkshopListBack);
         assert_eq!(front, Some(FrontScreen::CharSelect));
         assert!(backup.is_none() && page.is_none());
+        // Row 4's twin (`UIWorkshopWorldImport.cs:112-116`) rides the same
+        // FlowClick and the same parked-target slot.
+        let mut import = ui::workshop_publish::ImportWorldsState::default();
+        import.back = Some(Box::new(FrontScreen::CharSelect));
+        let parked = FrontScreen::WorkshopImportWorlds(Box::new(import));
+        let (front, backup, page) =
+            next_flow_state(Some(parked), None, None, FlowClick::WorkshopListBack);
+        assert_eq!(front, Some(FrontScreen::CharSelect));
+        assert!(backup.is_none() && page.is_none());
     }
 
     #[test]
@@ -2541,6 +2671,10 @@ pub(crate) mod front_flow_tests {
             // W4-d84 row 3: the world-publish screen joins the matrix.
             Some(FrontScreen::WorkshopPublishWorlds(Box::new(
                 ui::workshop_publish::PublishWorldsState::default(),
+            ))),
+            // W4-d84 row 4: the world-import screen joins the matrix.
+            Some(FrontScreen::WorkshopImportWorlds(Box::new(
+                ui::workshop_publish::ImportWorldsState::default(),
             ))),
         ];
         let backs = [

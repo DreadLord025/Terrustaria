@@ -1103,6 +1103,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Workshop/HubPublishResourcepacks",
         "UI/Workshop/HubPublishWorlds",
         "UI/Workshop/Publish",
+        // `TextureAssets.Extra[243]` — the Steam-workshop badge
+        // (`UIWorkshopImportWorldListItem.cs:63/:168`, `UIResourcePack.cs:104`).
+        "Extra_243",
         "UI/TexturePackButtons",
         "UI/DefaultResourcePackIcon",
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
@@ -2234,6 +2237,9 @@ pub struct Lookups {
     /// `UI/Workshop/Publish` (`UIIconTextButton`'s icon,
     /// `UIWorkshopPublishResourcePackListItem.cs:78`).
     pub workshop_publish_icon: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[243]` — the Steam-workshop badge the import rows
+    /// draw top-right (`UIWorkshopImportWorldListItem.cs:63/:168`).
+    pub workshop_icon: Option<tr_render::SheetRect>,
     /// `UI/TexturePackButtons` — the 2x2 toggle/order button frames
     /// (`UIResourcePackSelectionMenu.cs:136-137`, `:187-188`).
     pub texture_pack_buttons: Option<tr_render::SheetRect>,
@@ -2747,6 +2753,7 @@ impl Lookups {
             ]
             .map(|n| atlas.sheet(n).copied()),
             workshop_publish_icon: atlas.sheet("UI/Workshop/Publish").copied(),
+            workshop_icon: atlas.sheet("Extra_243").copied(),
             texture_pack_buttons: atlas.sheet("UI/TexturePackButtons").copied(),
             default_pack_icon: atlas.sheet("UI/DefaultResourcePackIcon").copied(),
             cc_hair_style: atlas.sheet("UI/CharCreation/HairStyle_Hair").copied(),

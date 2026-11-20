@@ -613,6 +613,221 @@ pub(crate) fn draw_publish_worlds(
     draw_list_scrollbar(r, lookups, &l, state.worlds.len(), 82.0, state.scroll);
 }
 
+// --- The world-import screen (row 4) -----------------------------------------
+
+/// `UIWorkshopWorldImport`'s own state — the `_worldList` rows
+/// (`UpdateWorldsList`, `UIWorkshopWorldImport.cs:155-166`: the static
+/// `WorkshopWorldList` sorted favourite/name/file), the list scroll and the
+/// `_uiStateToGoBackTo` target (`:32`). Without Steam
+/// `UpdateWorkshopWorldList` (`:142-153`) returns early, so the list is
+/// always empty live — the rows are ported for the record.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct ImportWorldsState {
+    /// The subscribed worlds in `UpdateWorldsList` order (always empty in
+    /// the port — no Steam).
+    pub worlds: Vec<save_list::WorldEntry>,
+    /// The list's `UIScrollbar.ViewPosition`.
+    pub scroll: f32,
+    /// `_uiStateToGoBackTo` (`:32`) — the hub.
+    pub back: Option<Box<crate::app::flow::FrontScreen>>,
+}
+
+/// One import row's geometry — `UIWorkshopImportWorldListItem`
+/// (`UIWorkshopImportWorldListItem.cs:30-71`, `DrawSelf` `:151-198`). The
+/// card is 96 px, `SetPadding(6)`; the 60x58 world icon sits `Left 4` at
+/// the inner TOP (no VAlign — the publish twin's 0.5 is absent); the play
+/// `UIImageButton` `VAlign 1`, `Left 4`; the plates ride a 3-slice
+/// horizontal `DrawPanel` (`:144-149`) at the sheet's own height.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ImportRow {
+    /// The 96 px card panel (`:68-70`).
+    pub card: [f32; 4],
+    /// The 60x58 world icon at `inner + (4, 0)` (`:37-38`).
+    pub icon: [f32; 4],
+    /// The play button — `VAlign 1`, `Left 4` (`:42-44`), sheet-sized
+    /// (`UIImageButton.cs:31-32`).
+    pub play: [f32; 4],
+    /// The hover label's draw position — `Left 28`, `VAlign 1`, `Top -3`
+    /// (`:50-54`) minus the small-UIText `2*scale` shift (`UIText.cs:138`).
+    pub label_pos: [f32; 2],
+    /// The workshop badge — `(card.right - w - 3, card.y + 2)` (`:168`).
+    pub badge: [f32; 4],
+    /// The divider — `(icon right, inner.Y + 21)`, stretched to the card's
+    /// right edge (`:169`).
+    pub divider: [f32; 4],
+    /// The difficulty plate — 100 wide at the inner-panel sheet height
+    /// (`:170-172`).
+    pub plate1: [f32; 4],
+    /// The size plate — 150 wide (+40 off-English, `:181-185`).
+    pub plate2: [f32; 4],
+    /// The created plate — the rest of the inner width (`:192-193`).
+    pub plate3: [f32; 4],
+}
+
+/// Row `index`'s import geometry. `btn` is the ButtonPlay sheet size
+/// (22x22), `badge` the Extra_243 size, `divider_h`/`plate_h` the sheet
+/// heights (4 / 27 fallbacks).
+pub(crate) fn import_row(
+    row_rect: [f32; 4],
+    index: usize,
+    btn: [f32; 2],
+    badge: [f32; 2],
+    divider_h: f32,
+    plate_h: f32,
+    size_plate_extra: f32,
+) -> ImportRow {
+    let card = [row_rect[0], row_rect[1] + index as f32 * 101.0, row_rect[2], 96.0];
+    let inner = uistate::inner(card, [6.0; 4]);
+    let icon = [inner[0] + 4.0, inner[1], 60.0, 58.0];
+    let play = [inner[0] + 4.0, inner[1] + inner[3] - btn[1], btn[0], btn[1]];
+    // The label element: VAlign 1 of its 16 px MinHeight, Top -3 (`:52-54`);
+    // the small UIText draws 2 px above (`UIText.cs:138`).
+    let label_pos = [inner[0] + 28.0, inner[1] + inner[3] - 16.0 - 3.0 - 2.0];
+    let badge_rect = [
+        card[0] + card[2] - badge[0] - 3.0,
+        card[1] + 2.0,
+        badge[0],
+        badge[1],
+    ];
+    let icon_right = icon[0] + icon[2];
+    let divider = [icon_right, inner[1] + 21.0, card[0] + card[2] - icon_right, divider_h];
+    let plate_y = inner[1] + 29.0;
+    let plate1 = [icon_right + 6.0, plate_y, 100.0, plate_h];
+    let plate2 = [plate1[0] + 105.0, plate_y, 150.0 + size_plate_extra, plate_h];
+    let plate3_x = plate2[0] + plate2[2] + 5.0;
+    let plate3 = [plate3_x, plate_y, inner[0] + inner[2] - plate3_x, plate_h];
+    ImportRow { card, icon, play, label_pos, badge: badge_rect, divider, plate1, plate2, plate3 }
+}
+
+/// The import row's play-button rect for the click table / hit ids — the
+/// headless ButtonPlay size (the sheet, or the 22x22 ctor fallback).
+pub(crate) fn import_action_rect(lookups: &assets::Lookups, row_rect: [f32; 4], i: usize) -> [f32; 4] {
+    let btn = lookups.card_buttons[0]
+        .map_or([22.0, 22.0], |s| [s.width as f32, s.height as f32]);
+    import_row(row_rect, i, btn, [0.0, 0.0], 4.0, 27.0, size_plate_extra()).play
+}
+
+/// `UIWorkshopImportWorldListItem.DrawPanel` (`:144-149`): the
+/// InnerPanelBackground's 3-slice horizontal strip — the left/right 8 px
+/// columns at the sheet's full height, the middle 8 px column stretched to
+/// `width - 16` (NOT the publish rows' 10-slice `DrawSplicedPanel`).
+fn draw_import_plate(r: &mut SpriteRenderer, lookups: &assets::Lookups, rect: [f32; 4]) {
+    let Some(sheet) = lookups.ui_inner_panel else { return };
+    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+    let h = sheet.height as f32;
+    let piece = |dx: f32, dw: f32, sx: f32| {
+        if dw <= 0.0 {
+            return;
+        }
+        let uv = [
+            (sheet.x as f32 + sx) / aw,
+            sheet.y as f32 / ah,
+            (sheet.x as f32 + sx + 8.0) / aw,
+            (sheet.y as f32 + h) / ah,
+        ];
+        r.push_ui_sprite([rect[0] + dx, rect[1]], [dw, h], uv, [1.0; 4]);
+    };
+    piece(0.0, 8.0, 0.0);
+    piece(8.0, rect[2] - 16.0, 8.0);
+    piece(rect[2] - 8.0, 8.0, 16.0);
+}
+
+/// The import plate's centred label — `vector + (plateW/2 - textW/2, 3)`
+/// (`:177/:189/:196`: the y offset is a flat +3, not the publish plates'
+/// height-centred form).
+fn draw_import_plate_text(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    plate: [f32; 4],
+    label: &str,
+    tint: [f32; 4],
+) {
+    let w = text::hud_text_width(r, lookups, label, 1.0);
+    text::border_string(r, lookups, plate[0] + plate[2] * 0.5 - w * 0.5, plate[1] + 3.0, tint, label);
+}
+
+/// `UIWorkshopWorldImport.Draw` (`:168-177` → `base.Draw`): the shared
+/// chrome plus one `UIWorkshopImportWorldListItem` per subscribed world
+/// (always none without Steam — the rows are ported for the record).
+pub(crate) fn draw_import_worlds(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    state: &ImportWorldsState,
+    screen: Vec2,
+    mouse: Vec2,
+) {
+    let l = list_layout(screen, state.worlds.len(), 96.0);
+    draw_chrome(r, lookups, &l, "UI.WorkshopImportWorld", mouse);
+    let btn = lookups.card_buttons[0]
+        .map_or([22.0, 22.0], |s| [s.width as f32, s.height as f32]);
+    let badge = lookups.workshop_icon
+        .map_or([0.0, 0.0], |s| [s.width as f32, s.height as f32]);
+    let divider_h = lookups.ui_divider.map_or(4.0, |s| s.height as f32);
+    let plate_h = lookups.ui_inner_panel.map_or(27.0, |s| s.height as f32);
+    let extra = size_plate_extra();
+    let row_rect = [l.list[0], l.list[1] - state.scroll, l.list[2], l.list[3]];
+    for (i, entry) in state.worlds.iter().enumerate() {
+        let row = import_row(row_rect, i, btn, badge, divider_h, plate_h, extra);
+        if row.card[1] + row.card[3] <= l.list[1] || row.card[1] >= l.list[1] + l.list[3] {
+            continue;
+        }
+        let hover = crate::ui::in_rect(mouse, row.card);
+        // The import twin has no grey arm either (`:74-84`).
+        let (bg, border) = publish_row_colors(hover, true);
+        panel::draw_panel(r, lookups, lookups.ui_panel_bg, row.card, color::tint(bg));
+        panel::draw_panel(r, lookups, lookups.ui_panel_border, row.card, color::tint(border));
+        // The 60x58 world icon at the inner top (no VAlign).
+        if let Some(sheet) = lookups.ui_world_icon {
+            crate::ui::push_whole(r, lookups, &sheet, row.icon, [1.0; 4]);
+        }
+        // The name (`:157-167`): White, or Gray with the load-status prefix
+        // when invalid (unreachable — the list holds subscribed metadata).
+        let (name, tint) = if entry.valid {
+            (entry.name.clone(), [1.0; 4])
+        } else {
+            (format!("(Unknown) {}", entry.name), color::tint([128, 128, 128, 255]))
+        };
+        text::border_string(r, lookups, row.icon[0] + 60.0 + 6.0, row.icon[1] - 2.0, tint, &name);
+        // The workshop badge (`:168`), top-right of the card.
+        if let Some(sheet) = lookups.workshop_icon {
+            crate::ui::push_whole(r, lookups, &sheet, row.badge, [1.0; 4]);
+        }
+        // The divider (`:169`): stretched to the card's right edge.
+        if let Some(sheet) = lookups.ui_divider {
+            crate::ui::push_whole(r, lookups, &sheet, row.divider, [1.0; 4]);
+        }
+        // The play button (`UIImageButton.DrawSelf`, `:48-56`): White at
+        // 1.0 hovered / 0.4 idle (`:13-15`).
+        if let Some(sheet) = lookups.card_buttons[0] {
+            let vis = if hover && crate::ui::in_rect(mouse, row.play) { 1.0 } else { 0.4 };
+            crate::ui::push_whole(r, lookups, &sheet, row.play, [1.0, 1.0, 1.0, vis]);
+            // The hover label (`PlayMouseOver`, `:86-89`): "Import" while
+            // the button is hovered, "" otherwise.
+            if hover && crate::ui::in_rect(mouse, row.play) {
+                let label = crate::lang::text("UI.Import");
+                text::border_string(r, lookups, row.label_pos[0], row.label_pos[1], [1.0; 4], &label);
+            }
+        }
+        // The three plates (`:170-197`): difficulty, size, created.
+        draw_import_plate(r, lookups, row.plate1);
+        let (diff_text, diff_color) = crate::ui::world_select::difficulty_text(entry.difficulty);
+        draw_import_plate_text(r, lookups, row.plate1, &diff_text, color::tint(diff_color));
+        draw_import_plate(r, lookups, row.plate2);
+        let size_text = crate::lang::text_args(
+            "UI.WorldSizeFormat",
+            &[crate::ui::world_select::size_name(entry.size_id)],
+        );
+        draw_import_plate_text(r, lookups, row.plate2, &size_text, [1.0; 4]);
+        draw_import_plate(r, lookups, row.plate3);
+        let created = crate::ui::world_select::creation_time(entry.path.as_deref())
+            .map(crate::ui::world_select::format_created)
+            .unwrap_or_default();
+        let created_text = crate::lang::text_args("UI.WorldCreatedFormat", &[created]);
+        draw_import_plate_text(r, lookups, row.plate3, &created_text, [1.0; 4]);
+    }
+    draw_list_scrollbar(r, lookups, &l, state.worlds.len(), 96.0, state.scroll);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -774,5 +989,53 @@ mod tests {
         let names: Vec<&str> = worlds.iter().map(|w| w.name.as_str()).collect();
         assert_eq!(names, ["Zeta", "Alpha", "Alpha", "Beta"]);
         assert_eq!(worlds[1].path.as_deref().unwrap().to_str().unwrap(), "a1.trwld");
+    }
+
+    /// The import row geometry (`UIWorkshopImportWorldListItem.cs:30-71`,
+    /// `:168-196`): the 96 px card at the 101 pitch, the icon at the inner
+    /// top, the play button bottom-left, the 100/150/rest plates.
+    #[test]
+    fn the_import_row_geometry_follows_the_ctor() {
+        let list = [100.0, 200.0, 626.0, 546.0];
+        let row = import_row(list, 1, [22.0, 22.0], [22.0, 22.0], 4.0, 27.0, 40.0);
+        assert_eq!(row.card, [100.0, 301.0, 626.0, 96.0]); // 101 pitch
+        // inner = (106, 307, 614, 84); the icon rides the inner TOP.
+        assert_eq!(row.icon, [110.0, 307.0, 60.0, 58.0]);
+        // play: VAlign 1 of the inner, Left 4.
+        assert_eq!(row.play, [110.0, 369.0, 22.0, 22.0]);
+        // label: Left 28, VAlign 1 of 16, Top -3, minus the 2 px UIText shift.
+        assert_eq!(row.label_pos, [134.0, 370.0]);
+        // badge: card.right - 22 - 3, card.y + 2.
+        assert_eq!(row.badge, [701.0, 303.0, 22.0, 22.0]);
+        // divider: icon right, inner.Y + 21, to the card's right edge.
+        assert_eq!(row.divider, [170.0, 328.0, 556.0, 4.0]);
+        // plates: y = inner.Y + 29; 100 / 150+40 / the rest.
+        assert_eq!(row.plate1, [176.0, 336.0, 100.0, 27.0]);
+        assert_eq!(row.plate2, [281.0, 336.0, 190.0, 27.0]);
+        // plate3: 281 + 190 + 5 = 476; inner right 720 - 476 = 244.
+        assert_eq!(row.plate3, [476.0, 336.0, 244.0, 27.0]);
+    }
+
+    /// The import click table (`:39/:45/:46`): the play button's single
+    /// click and the body's double-click import; the 96 px rows ride the
+    /// 101 pitch.
+    #[test]
+    fn the_import_click_table_routes_the_play_button() {
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let lookups = assets::Lookups::default();
+        let l = list_layout(Vec2::new(1600.0, 900.0), 2, 96.0);
+        let action = |rr: [f32; 4], i: usize| import_action_rect(&lookups, rr, i);
+        let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
+        let play = import_action_rect(&lookups, l.list, 0);
+        assert_eq!(
+            click_at(&l, 2, 96.0, 0.0, action, centre(play), false, true),
+            Click::Import(0)
+        );
+        let body = Vec2::new(l.list[0] + 300.0, l.list[1] + 10.0);
+        assert_eq!(click_at(&l, 2, 96.0, 0.0, action, body, false, true), Click::None);
+        assert_eq!(click_at(&l, 2, 96.0, 0.0, action, body, true, true), Click::Import(0));
+        // The second row rides at +101.
+        let body2 = Vec2::new(l.list[0] + 300.0, l.list[1] + 111.0);
+        assert_eq!(click_at(&l, 2, 96.0, 0.0, action, body2, true, true), Click::Import(1));
     }
 }
