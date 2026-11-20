@@ -39274,3 +39274,49 @@ sliced-arm wiring rides the family merge step.
   flat); no port toggle exists — the parameter is fed `false`.
 * The tier rebuild is per-`Draw` (twice per frame); the wiring step calls it
   at the head of each layer pass, never caches across frames.
+
+## The Draw main pass (W4-g28 pass 1)
+
+`render::tile_pass` (UNWIRED) ports the `TileDrawing.Draw` orchestration
+head/tail the pass siblings plug into: `GetScreenDrawArea`
+(`TileDrawing.cs:6549-6573`) + the `:504-506` loop margins
+(`firstTileX-2 .. lastTileX+2`, `firstTileY .. lastTileY+4`, ends exclusive),
+the per-`Draw` clears (`ClearLegacyCachedDraws` `:477`/`:6613-6622` on BOTH
+layers; `ClearCachedTileDraws` `:478`/`:6588-6599` clears the special counts
+ONLY before the non-solid pass), the quality-tier rebuild call
+(`tr_render::quality_light`), the layer constants (`:791-794`) and the frozen
+`PostDrawTiles(false)` order (`:421-430`, `POST_DRAW_ORDER`). The
+classification switch itself (`:534-723`) is g30's
+`render::special_points::classify_tile` — this module drives the loop
+through that seam at the family merge, it does not re-port the switch.
+
+* **The frame runs NON-SOLID first.** `DoDraw_WallsTilesNPCs`
+  (`Main.cs:63280` → `DoDraw_Tiles_NonSolid` `:63358`, then `:63295` →
+  `DoDraw_Tiles_Solid` `:63322`; the capture path repeats the order,
+  `:56957-56988`). Each `DrawTiles` is followed by
+  `DrawTileEntities(solidLayer)` → `PostDrawTiles` (`:21758-21761`). The
+  order is load-bearing: the counts clear only before the non-solid pass,
+  so the solid pass's Tree points survive into `PostDrawTiles(false)`, and
+  `PostDrawTiles(true)` (HatRacks → DisplayDolls, `:435-441`) runs LAST.
+* **The section-framing half of `GetScreenDrawArea` is unported**
+  (`:6574-6585`, `SectionTileFrameWithCheck`/`RefreshSections`): the port
+  frames tiles eagerly on edit (`tr_core::framing`), no `sectionManager`
+  exists. The bounds maths (truncation toward zero, +2/+5 far pads, 4-tile
+  border clamps, the offscreen `drawOffSet`) is 1:1.
+* **The C# null-tile arm is unported** (`:509-514`, lazy `new Tile()` +
+  `mapTime += 60`): the port's tile array is dense; an out-of-bounds read
+  skips (g30's driver convention).
+* **`ClearSpecialBlockCounts` skips bucket 5** (`:388-402` clears
+  3,2,6,4,1,10,0,7,8,9 — BiomeGrass is never registered by `Draw` either);
+  the port clears the same ten in the same order.
+* **Draw-side state is not registry state**: `DrawBlackHelper` (`:497`),
+  `_martianGlow` (`:498-499`), the paint-lookup reset (`:500-503`), the
+  `EmitLiquidDrops` battery (`:693`, W4-d60) and the placement preview
+  (`:737-741`, no `objectPreview` in the port) stay with the sprite-side
+  wiring step; `begin_draw_pass` ports only `:477-506`.
+* **Pre-merge duplicate registry**: `tile_pass::SpecialPoints` is the
+  stand-in this module's witnesses run against; at the family merge it
+  reconciles onto g30's shape (its `single_tiles`/`liquid_drop_cells`
+  wiring witnesses) — keep-one, never both. The `torch.rs`
+  `top_edge_can_be_attached_to` visibility lift (`pub(crate)` → `pub`) is
+  identical to g30's; keep-one at the merge.
