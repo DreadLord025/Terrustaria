@@ -645,20 +645,12 @@ impl App {
                         (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
                     );
                     if !crate::env::no_waterfall() {
-                        let half_v = screen * 0.5 / world_zoom;
-                        let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
-                            .clamp(0, world.width - 1);
-                        let vx1 = (((camera.x + half_v.x) / TILE_PX).ceil() as i32 + 1)
-                            .clamp(0, world.width - 1);
-                        let vy0 = (((camera.y - half_v.y) / TILE_PX).floor() as i32 - 1)
-                            .clamp(0, world.height - 1);
-                        let vy1 = (((camera.y + half_v.y) / TILE_PX).ceil() as i32 + 1)
-                            .clamp(0, world.height - 1);
                         // `Main.screenPosition` / `screenWidth` / `screenHeight`
-                        // for the water-style ambience scan
-                        // (`WaterfallManager.cs:710-711`): the unscaled
-                        // world-pixel view, top-left = draw_cam - screen/2
-                        // (the S1-E-19 `Camera.UnscaledPosition` convention).
+                        // for the rain-arm view cull (`WaterfallManager.cs:381`)
+                        // and the water-style ambience scan (`:710-711`): the
+                        // unscaled world-pixel view, top-left = draw_cam -
+                        // screen/2 (the S1-E-19 `Camera.UnscaledPosition`
+                        // convention).
                         let screen_info = tr_core::waterfall::ScreenInfo {
                             position: [draw_cam.x - screen.x * 0.5, draw_cam.y - screen.y * 0.5],
                             width: screen.x,
@@ -672,7 +664,6 @@ impl App {
                             liquid_alpha,
                             params.mouse_text_color,
                             (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
-                            [vx0, vy0, vx1, vy1],
                             screen_info,
                             // `Main.ShouldShowInvisibleBlocksAndWalls`
                             // (`Main.cs:58023`), sampled once per `Draw`

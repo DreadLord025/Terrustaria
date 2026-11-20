@@ -31,7 +31,6 @@ impl WaterfallManager {
         time: f32,
         mouse_text: u8,
         sparkle_rng: &mut FastRandom,
-        view: [i32; 4],
         screen: ScreenInfo,
         show_invisible: bool,
         out: &mut Vec<WaterfallDraw>,
@@ -75,10 +74,12 @@ impl WaterfallManager {
                 if wf.stop_at_step > num22 {
                     wf.stop_at_step = num22;
                 }
+                // `WaterfallManager.cs:381`: the view cull reads the raw
+                // `Main.screenPosition`/`screenWidth`, not the scan rectangle.
                 if wf.stop_at_step == 0
-                    || (num14 + num22) < view[1]
-                    || num13 < view[0] - 20
-                    || num13 > view[2] + 20
+                    || (num14 + num22) as f32 < screen.position[1] / 16.0
+                    || (num13 as f32) < screen.position[0] / 16.0 - 20.0
+                    || (num13 as f32) > (screen.position[0] + screen.width) / 16.0 + 20.0
                 {
                     continue;
                 }
@@ -311,7 +312,7 @@ impl WaterfallManager {
                     num13,
                     show_invisible,
                 );
-                let color5 = stylize_color(
+                let mut color5 = stylize_color(
                     alpha,
                     num12,
                     light_tint(light, style, num13, num14, time),
@@ -387,14 +388,19 @@ impl WaterfallManager {
                 if num15 == 0 && num30 != 0 && num16 == 1 && num17 != num18 {
                     num30 = 0;
                     num17 = num18;
-                    let color = [1.0, 1.0, 1.0, 1.0];
+                    // `color5 = Color.White` (`WaterfallManager.cs:749`): the
+                    // slope-entry foam flashes white AND the reset propagates
+                    // — the cap draw below (`:821-850`) and the next cell's
+                    // `color4 = color5` (`:945`) read the white. Both C#
+                    // branches (`:750-757`) draw the same rect flipped.
+                    color5 = [1.0, 1.0, 1.0, 1.0];
                     let src = [num21, 24, 32, 16 - num41];
                     push(
                         out,
                         num12 as u8,
                         [num13 as f32 * 16.0 - 16.0, num14 as f32 * 16.0 + 16.0],
                         src,
-                        color,
+                        color5,
                         true,
                     );
                 }

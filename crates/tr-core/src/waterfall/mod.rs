@@ -430,11 +430,11 @@ impl WaterfallManager {
     /// pass, exactly like the original. The walk also collects `AddLight`
     /// sources and `TrySparkling` spawns for the caller to drain.
     ///
-    /// `view` is the visible tile rectangle `[x0, y0, x1, y1]` (inclusive) —
-    /// the rain-branch cull (`:381`). `screen` is the C#'s raw
-    /// `Main.screenPosition` / `Main.screenWidth`/`Height` in pixels, used by
-    /// the water-style ambience frame math (`:710-730`); the caller derives
-    /// them from the camera exactly as the view rectangle.
+    /// `screen` is the C#'s raw `Main.screenPosition` /
+    /// `Main.screenWidth`/`Height` in pixels, used by the rain-branch cull
+    /// (`:381`) and the water-style ambience frame math (`:710-730`); the
+    /// caller derives them from the camera exactly as the original's
+    /// unscaled screen.
     ///
     /// `show_invisible` is `Main.ShouldShowInvisibleBlocksAndWalls()` sampled
     /// once per `Draw` (`:1120`) and read by `GetAlpha`'s wall gate (`:1037`).
@@ -456,7 +456,6 @@ impl WaterfallManager {
         liquid_alpha: &[f32; 15],
         mouse_text: u8,
         sparkle_seed: u64,
-        view: [i32; 4],
         screen: ScreenInfo,
         show_invisible: bool,
     ) -> (Vec<DynamicLight>, [f32; 3]) {
@@ -499,7 +498,6 @@ impl WaterfallManager {
                     time,
                     mouse_text,
                     &mut sparkle_rng,
-                    view,
                     screen,
                     show_invisible,
                     &mut quads,
@@ -679,8 +677,7 @@ mod tests {
             a
         };
         let (lights, _) = mgr.draw(
-            &w, &light, &style, 0.0, &alpha, 190, 0, [0, 0, 40, 40],
-            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            &w, &light, &style, 0.0, &alpha, 190, 0, ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
             false,
         );
         let out: Vec<WaterfallDraw> = mgr.take_quads();
@@ -736,10 +733,10 @@ mod tests {
                 height: 640.0,
             };
             let (lights_a, amb_a) = a.draw(
-                &wa, &la, &style, frame as f32 / 60.0, &alpha, 190, seed, [0, 0, 40, 40], screen, false,
+                &wa, &la, &style, frame as f32 / 60.0, &alpha, 190, seed, screen, false,
             );
             let (lights_b, amb_b) = b.draw(
-                &wb, &lb, &style, frame as f32 / 60.0, &alpha, 190, seed, [0, 0, 40, 40], screen, false,
+                &wb, &lb, &style, frame as f32 / 60.0, &alpha, 190, seed, screen, false,
             );
             assert_eq!(lights_a, lights_b);
             assert_eq!(amb_a, amb_b);
@@ -772,8 +769,7 @@ mod tests {
             a
         };
         let (lights, _) = mgr.draw(
-            &w, &light, &style, 0.0, &alpha, 255, 0, [0, 0, 40, 40],
-            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            &w, &light, &style, 0.0, &alpha, 255, 0, ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
             false,
         );
         let out: Vec<WaterfallDraw> = mgr.take_quads();
@@ -788,8 +784,7 @@ mod tests {
         alpha2[0] = 0.5;
         alpha2[2] = 0.5;
         mgr.draw(
-            &w, &light, &style, 0.0, &alpha2, 255, 0, [0, 0, 40, 40],
-            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            &w, &light, &style, 0.0, &alpha2, 255, 0, ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
             false,
         );
         let out2: Vec<WaterfallDraw> = mgr.take_quads();
@@ -850,7 +845,7 @@ mod tests {
         // Screen centred on (168, 488) — the head's column, 320 px down.
         let screen = screen_at(168.0 - 320.0, 488.0 - 320.0);
         let (_, scan) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, [0, 0, 40, 40], screen, false,
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false,
         );
         // X minimum: the head cell (168). Y: the quirk keeps the head's 168.
         assert_eq!(scan[0], 10.0 * 16.0 + 8.0);
@@ -885,8 +880,7 @@ mod tests {
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         let (_, scan) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, [0, 0, 40, 40],
-            screen_at(0.0, 0.0), false,
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
         );
         assert_eq!(scan, [-1.0, -1.0, 0.0]);
     }
@@ -908,11 +902,11 @@ mod tests {
         alpha[2] = 1.0;
         let near = screen_at(168.0 - 320.0, 168.0 - 320.0);
         let (_, scan_single) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, [0, 0, 40, 40], near, false,
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, near, false,
         );
         assert!(scan_single[2] > 0.0);
         let (_, scan_both) = mgr.draw(
-            &w, &light, &style, 0.0, &alpha, 190, 0, [0, 0, 40, 40], near, false,
+            &w, &light, &style, 0.0, &alpha, 190, 0, near, false,
         );
         assert_eq!(scan_both, scan_single);
     }
@@ -945,7 +939,7 @@ mod tests {
         // the verbatim quirk (`num3 = num38`) keeps Y at the head's row.
         let screen = screen_at(168.0 - 320.0, 200.0 - 320.0);
         let (_, scan) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, [0, 0, 40, 40], screen, false,
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false,
         );
         let out = mgr.take_quads();
         // The boxed-in cell emits no row-0 body quad (the row-24 cap of
@@ -967,5 +961,92 @@ mod tests {
         // Both minima freeze at the head (its X distance is 0).
         assert_eq!(scan[0], 10.0 * 16.0 + 8.0);
         assert_eq!(scan[1], 10.0 * 16.0 + 8.0);
+    }
+
+    /// The waterfall-specific slope transitions (`WaterfallManager.cs`):
+    /// the spout head steps left onto column 9, falls two cells, then meets
+    /// a slope-1 top at (9,12). Hand-walked C# replay of the entry cell
+    /// (9,11) — arm 1 (`:590-607`) sets num30/num32/num17 = 1, num31 = -1:
+    /// * the flag2 direction-change cap (`:733-743`): 32x14 at row 24,
+    ///   `(x*16, y*16+14)`, unflipped (num31 != 1);
+    /// * the num30 entry sheet (`:799-819`): 32x16 at row 24, `(x*16,
+    ///   y*16)`, unflipped;
+    /// * the 8-slice slope fan (`:860-873`): 2x8 strips, source X descending
+    ///   30..16, the first two strips pinned to num48 = 4;
+    /// then the run over the flat floor at (10,12) (`:886`, flipped, num11
+    /// = 8) and the exit back to vertical at (11,12)/(11,13) (`:840` row-0
+    /// with the num11 = 8 offset, `:844` row-24 exit sheet at x-16).
+    #[test]
+    fn slope_entry_and_exit_draw_the_transition_sheets() {
+        let mut w = water_spout_world();
+        let mut slope = stone(1);
+        slope.set_slope(1);
+        put(&mut w, 9, 12, slope);
+        put(&mut w, 10, 13, stone(1));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick(); // regular_frame stays 0 → num21 = 0
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
+        );
+        let out = mgr.take_quads();
+        let has = |pos: [f32; 2], src: [i32; 4], flip: bool| {
+            out.iter()
+                .any(|d| d.texture == 0 && d.pos == pos && d.source == src && d.flip == flip)
+        };
+        // The flag2 direction-change cap: 16 - num41 - 2 = 14 tall.
+        assert!(has([144.0, 190.0], [0, 24, 32, 14], false));
+        // The num30 entry sheet.
+        assert!(has([144.0, 176.0], [0, 24, 32, 16], false));
+        // The 8-slice fan: y = 176 + 8 + num48, num48 = 4 for m < 2 (and
+        // m = 2 coincides), then 2m; source X = 16 + (14 - 2m).
+        for m in 0..8i32 {
+            let num48 = if m < 2 { 4 } else { m * 2 };
+            assert!(
+                has(
+                    [144.0 + (m * 2) as f32, 184.0 + num48 as f32],
+                    [30 - m * 2, 0, 2, 8],
+                    true,
+                ),
+                "slice {m}"
+            );
+        }
+        // The horizontal run over the floor: num11 = 8 lift, flipped.
+        assert!(has([160.0, 200.0], [16, 0, 16, 16], true));
+        // The exit to vertical keeps the num11 = 8 offset for one cell.
+        assert!(has([176.0, 200.0], [0, 0, 16, 16], true));
+        // The row-24 exit sheet at x - 16, flipped.
+        assert!(has([160.0, 208.0], [0, 24, 32, 16], true));
+        // Every quad carries GetAlpha's below-surface 0.6 dim on alpha
+        // (world_surface = 10, every visited row >= 10): (int)(255*0.6)=153.
+        assert!(out.iter().all(|d| (d.color[3] - 153.0 / 255.0).abs() < 1e-6));
+    }
+
+    /// `WaterfallManager.cs:381`: the rain arm culls against the raw
+    /// `Main.screenPosition`/`screenWidth` — a fountain (tile 196 → kind 11)
+    /// at column 12 draws when the screen covers it and vanishes when the
+    /// screen sits 40 tiles below (num14 + num22 = 34 < 40) or 100 tiles
+    /// right (12 < 100 - 20).
+    #[test]
+    fn the_rain_arm_culls_against_the_raw_screen() {
+        let mut w = world_with_air();
+        put(&mut w, 12, 8, stone(196));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let rain_quads = |mgr: &mut WaterfallManager, screen: ScreenInfo| -> usize {
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+            mgr.take_quads()
+                .iter()
+                .filter(|d| d.texture == 11 || d.texture == 12)
+                .count()
+        };
+        assert!(rain_quads(&mut mgr, screen_at(0.0, 0.0)) > 0);
+        assert_eq!(rain_quads(&mut mgr, screen_at(0.0, 640.0)), 0);
+        assert_eq!(rain_quads(&mut mgr, screen_at(1600.0, 0.0)), 0);
     }
 }
