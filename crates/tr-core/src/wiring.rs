@@ -1860,10 +1860,12 @@ impl Wiring {
     /// `SquareTileFrame` wake).
     fn xfer_water(&mut self, world: &mut World) {
         for &(inx, iny) in &self.in_pumps {
-            if !world.tile_active(inx, iny) {
-                continue;
-            }
-            if world.tile(inx, iny).is_some_and(|t| t.liquid == 0) {
+            // `:481-485`: the C# reads the in tile's liquid directly — no
+            // `active()` gate. The 142/143 arm registers all four body
+            // corners (`:2053-2089`), so a liquid-bearing corner that is not
+            // active still pushes its liquid (the port used to skip
+            // inactive cells here).
+            if world.tile(inx, iny).is_none_or(|t| t.liquid == 0) {
                 continue;
             }
             let in_type = world
@@ -4479,6 +4481,32 @@ mod teleport_tests {
         assert_eq!(out.liquid, 200, "the transfer landed in the out body");
         assert_eq!(out.liquid_kind(), LiquidKind::Water, "the type adopted");
         assert_eq!(w.tile(10, 10).unwrap().liquid, 0, "the in tile emptied");
+    }
+
+    #[test]
+    fn the_pump_moves_liquid_from_an_inactive_body_corner() {
+        // `Wiring.XferWater` (`Wiring.cs:477-522`): the in-tile loop reads
+        // `Main.tile[num, num2].liquid` directly (`:481`) — there is NO
+        // `active()` gate. The 142 arm registers all four body corners
+        // (`:2053-2089`), so a corner that carries liquid but is not active
+        // still pushes it (the port used to skip inactive cells here). The
+        // hit cell (10,10) is active with no liquid; the top-right body
+        // corner (10,9) holds 150 water and is inactive — it must transfer.
+        let mut w = world();
+        put_pump(&mut w, 10, 10, 142, 0, false);
+        put_pump(&mut w, 20, 10, 143, 0, false);
+        let corner = w.index(10, 9);
+        w.tiles[corner].liquid = 150;
+        w.tiles[corner].flags &= !FLAG_ACTIVE; // a liquid-bearing inactive corner
+        put_device(&mut w, 9, 10, 135, 0, 0);
+        w.wires.set(9, 10, WireColor::Red, true);
+        for x in 10..=20 {
+            w.wires.set(x, 10, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 10, 1, 1);
+        assert_eq!(w.tile(19, 10).unwrap().liquid, 150, "the inactive corner moved its water");
+        assert_eq!(w.tile(10, 9).unwrap().liquid, 0, "the corner emptied");
     }
 
     fn the_pump_registration_caps_at_19() {
