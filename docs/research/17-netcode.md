@@ -106,8 +106,9 @@ ANALYSIS.md:7288-7293).
 148, 154, 162. `GetData` reads **159**; the only three it never dispatches are
 **138, 145, 148** (deprecated, removed ids). Everything else is read somewhere.
 `net.rs` ports **25** ids + 5 internal ones (as researched; S1-E-27/S1-I-5 grew
-that, and S1-I-1 wave A added the join bundle's 11 — see the map's per-row
-notes).
+that, S1-I-1 wave A added the join bundle's 11, and wave B (2026-11-20) the
+world-sync region's 9 — `11/17/19/63/64/125/157/158/159`, bodies + codecs with
+the dispatchers parked for I-4 — see the map's per-row notes).
 
 | id | C# name | Rust | Evidence |
 | --- | --- | --- | --- |
@@ -122,13 +123,13 @@ notes).
 | 8 | SpawnTileData | `id::SPAWN_REQUEST` | `net.rs:64` |
 | 9 | StatusTextSize | `id::STATUS` | `net.rs:65` |
 | 10 | TileSection | `id::TILE_BLOCK` | `net.rs:67` |
-| 11 | TileFrameSection | NOT-FOUND | deprecated (`MessageID.cs:29-30`); no `SendData` arm |
+| 11 | TileFrameSection | `id::TILE_FRAME_SECTION` | S1-I-1 wave B: deprecated (`MessageID.cs:29-30`), 0 `SendData` sites, but `GetData` still reads it (`MessageBuffer.cs:895-900` → `WorldGen.SectionTileFrame`, `WorldGen.cs:80343`) — four `(short)`s (`NetMessage.cs:427-432`), S2c-only body + codec; read arm parked for I-4 |
 | 12 | PlayerSpawn | `id::PLAYER_SPAWN` | `net.rs:76` |
 | 13 | PlayerControls | `id::PLAYER_STATE` | `net.rs:78`; arm `NetMessage.cs:446-513` |
 | 14 | PlayerActive | `id::PLAYER_ACTIVE` | `net.rs:66` |
 | 15 | Unknown15 | NOT-FOUND | deprecated (`MessageID.cs:38-39`) |
 | 16 | PlayerLifeMana | `id::PLAYER_HP` | `net.rs:73` |
-| 17-19 | TileManipulation, SetTime, ToggleDoorState | NOT-FOUND | 17 superseded by 20 (`MessageID.cs:43`); 18's clock rides internal `205` (ANALYSIS.md:7275-7278) |
+| 17-19 | TileManipulation, SetTime, ToggleDoorState | `id::TILE_EDIT` (17) / `id::DOOR_TOGGLE` (19) | S1-I-1 wave B **corrected the census**: 17 is NOT superseded by 20 — both live. 17 has ~30 direct send sites (`Player.cs:39626`, `DelegateMethods.cs:515`, `Liquid.cs:1204`, `Collision.cs:3353`) and the host relays client edits as 17 (`MessageBuffer.cs:1285`, the `SendTileSquare(-1,x,y,5)` fallback only when a placement survives `:1281`); body `(byte)kind + short x/y + (short)value + (byte)style` (`NetMessage.cs:524-530`). 19: `(byte)action + short x/y + (byte)dir` (`:537-542`, reader `MessageBuffer.cs:1299-1334`). Bodies + codecs only; dispatchers parked for I-4 (`INT_EDIT` 201 unchanged). 18 SetTime still NOT-FOUND — the clock rides internal `205` (ANALYSIS.md:7275-7278) |
 | 20 | AreaTileChange | `id::SECTION_RANGE` | `net.rs:72`; arm `:543-644` |
 | 21 | SyncItem | `id::ITEM_DROP` | `net.rs:79`; auto-converts to 151 when air (`NetMessage.cs:89-100`) |
 | 22 | ItemOwner | `id::ITEM_OWNER` | `net.rs:80`; reservation expiry (`:675-685`) |
@@ -143,13 +144,13 @@ notes).
 | 38 | SendPassword | `id::PASSWORD` | `net.rs:75`; the one message the gate lets through at State -1 |
 | 39-48 | ReleaseItemOwnership … OpenSignRequest (46) / OpenSignResponse (47) / LiquidUpdate | `id::PLAYER_MANA` (42) / `id::TEAM_CHANGE` (45) / `id::SIGN_REQUEST` / `id::SIGN_DATA` | `net.rs` — 42 (mana, `NetMessage.cs:961-965`) and 45 (`:970-974`) have bodies + codecs since S1-I-1 wave A (dispatchers parked for I-4); 46/47 ported by S1-E-27 (`MessageBuffer.cs:2366-2405`, writer `NetMessage.cs:979-986`): `Sign.ReadSign`/`TextSign` live in the new `signs.rs`, the record is rewritten on the host and relayed to the other clients when the text changed (`:2398`). 39-45 and 48 remain NOT-FOUND: no `SendData` arm; 42/68 gate-whitelisted; 48 deprecated for NetLiquidModule (`MessageID.cs:108-109`) |
 | 49 | InitialSpawn | `id::INITIAL_SPAWN` | `net.rs` — the C# meaning (the client spawns in, `MessageBuffer.cs:2447-2453`) is now the port's too: `S2c::InitialSpawn` drives `State 6 → 10` + `12 PlayerSpawn` with `SpawningIntoWorld` |
-| 50-81 | PlayerBuffs (50) … CombatTextInt | `id::PLAYER_BUFFS` / `id::ADD_NPC_BUFF` / `id::NPC_BUFFS` / `id::HIT_SWITCH` / `id::CHEST_NAME` / `id::PLAYER_CHEST_INDEX` | `net.rs` — S1-E-27 ported 50 (`MessageBuffer.cs:2454-2480`: the owner's own list is skipped `:2461-2464`, a peer's lands with every time forced to 60 `:2470-2471`), 53/54 (`:2565-2593`: the host applies `AddBuff(quiet: true)` and pushes the full list back), 59 (`:2682-2693`: `Wiring.HitSwitch` then a relay to every other client), 69 (`:3059-3078`: the rename, `Chest.CreateWorldChest` when the slot is absent) and 80 (`:3216-3227`, the `-3..8000` range gate). S1-I-1 wave A added bodies + codecs for 60 (`id::NPC_HOUSE`, `NetMessage.cs:1067-1072`), 72 (`id::TRAVEL_SHOP`, 40 shorts, `:1134-1141`) and 74 (`id::ANGLER_QUEST`, `:1145-1148`) — dispatchers parked for I-4. The rest stay NOT-FOUND: 77 `SendTemporaryAnimation` (:2590); 79 `SendObjectPlacement` (:2573) |
+| 50-81 | PlayerBuffs (50) … CombatTextInt | `id::PLAYER_BUFFS` / `id::ADD_NPC_BUFF` / `id::NPC_BUFFS` / `id::HIT_SWITCH` / `id::CHEST_NAME` / `id::PLAYER_CHEST_INDEX` + S1-I-1 wave B: `id::TILE_PAINT` (63) / `id::WALL_PAINT` (64) | 63/64 share the writer case — `(short)x + (short)y + (byte)paint + (byte)coat` (`NetMessage.cs:1081-1087`, readers `MessageBuffer.cs:2909-2948` paint vs coat + host relay); bodies + codecs only, parked for I-4. `net.rs` — S1-E-27 ported 50 (`MessageBuffer.cs:2454-2480`: the owner's own list is skipped `:2461-2464`, a peer's lands with every time forced to 60 `:2470-2471`), 53/54 (`:2565-2593`: the host applies `AddBuff(quiet: true)` and pushes the full list back), 59 (`:2682-2693`: `Wiring.HitSwitch` then a relay to every other client), 69 (`:3059-3078`: the rename, `Chest.CreateWorldChest` when the slot is absent) and 80 (`:3216-3227`, the `-3..8000` range gate). S1-I-1 wave A added bodies + codecs for 60 (`id::NPC_HOUSE`, `NetMessage.cs:1067-1072`), 72 (`id::TRAVEL_SHOP`, 40 shorts, `:1134-1141`) and 74 (`id::ANGLER_QUEST`, `:1145-1148`) — dispatchers parked for I-4. The rest stay NOT-FOUND: 77 `SendTemporaryAnimation` (:2590); 79 `SendObjectPlacement` (:2573) |
 | 82 | NetModules | `id::NET_MODULE` | `net.rs:68`; the C# arm is `switch (b4)` (`NetMessage.cs:746`) |
 | 83 | Unused83 | NOT-FOUND | deprecated (`MessageID.cs:179-180`) |
 | 84-96 | PlayerStealth … TeleportPlayer | NOT-FOUND | 93 gate-whitelisted, no `SendData` arm |
 | 97-98 | AchievementNPCKilled : AchievementProgressionEvent | `id::NPC_KILLED` / `id::PROGRESSION_EVENT` | S1-I-5: `net.rs` `S2c::NpcKilled` / `S2c::ProgressionEvent`, each one `(short)` (`NetMessage.cs:1347-1352`), read only at `netMode == 1` (`MessageBuffer.cs:3558-3569`). Host→client only — no `C2s`. The kill credit rides `NPC.playerInteraction[256]` (`NPC.cs:6085`) and the progression id is `Main._progressionEvent` (`AchievementsHelper.cs:227-237`) |
 | 99-119 | CombatTextString | NOT-FOUND | `SendPlayerHurt`/`SendPlayerDeath` (`NetMessage.cs:2598,2607`) unported |
-| 120-128 | Emoji … LandGolfBallInCup | `id::REVENGE_MARKER` (126) | 126 has a body + codec since S1-I-1 wave A (`RevengeMarker.WriteSelfTo`, `CoinLossRevengeSystem.cs:275-286`; the join push `SendAllMarkersToPlayer` `:498-507`); the rest NOT-FOUND |
+| 120-128 | Emoji … LandGolfBallInCup | `id::REVENGE_MARKER` (126) / `id::TILE_PICKING` (125) | 125 since S1-I-1 wave B: `(byte)plr + short x/y + (byte)damage` (`NetMessage.cs:1509-1514`, host overrides the id + relays `MessageBuffer.cs:4023-4042`), parked for I-4. 126 has a body + codec since S1-I-1 wave A (`RevengeMarker.WriteSelfTo`, `CoinLossRevengeSystem.cs:275-286`; the join push `SendAllMarkersToPlayer` `:498-507`); the rest NOT-FOUND |
 | 129 | FinishedConnectingToServer | NOT-FOUND | no body either side |
 | 130-137 | FishOutNPC … RequestNPCBuffRemoval | `id::DEAD_PLAYER` (135) | 135 has a body + codec since S1-I-1 wave A (`NetMessage.cs:1569-1571`, the join arm `statLife <= 0` `:2897-2900`); the rest NOT-FOUND |
 | 138 | ClientSyncedInventory | NOT-FOUND | **the one id `GetData` never dispatches** |
@@ -158,9 +159,9 @@ notes).
 | 145 | SyncItemsWithShimmerDeprecated | NOT-FOUND | **not read by `GetData`** |
 | 146-147 | ShimmerActions / SyncLoadout | `id::SYNC_LOADOUT` (147) | 147 has a body + codec since S1-I-1 wave A (`NetMessage.cs:1624-1628`, the visibility ushort `:1882-1893`); gate-whitelisted; 146 NOT-FOUND |
 | 148 | SyncItemCannotBeTakenByEnemiesDeprecated | NOT-FOUND | **not read by `GetData`** |
-| 149-153, 155-158 | DeadCellsDisplayJar … SyncChestSize (155) … ExtraSpawnSection | `id::CHEST_SIZE` | `net.rs` — 155 ported by S1-E-27 (`MessageBuffer.cs:4429-4438`): `Chest.Resize` grows/shrinks the slot list, the client materialising the array slot first (`App::materialise_chest_slot`) because the port ships chests lazily where the C# holds all of `Main.chest[8000]`. 149-153, 156-158 stay NOT-FOUND; 151 is `SyncItemDespawn` |
+| 149-153, 155-158 | DeadCellsDisplayJar … SyncChestSize (155) … ExtraSpawnSection | `id::CHEST_SIZE` (155) / `id::TEAM_CHANGE_UI` (157) / `id::EXTRA_SPAWN_LOADED` (158) | 157/158 since S1-I-1 wave B: 157 shares 45's writer case (`NetMessage.cs:970-971`) — same `TeamChange` body, the reader adds the team-spawn tail (`MessageBuffer.cs:2355-2363` → `CheckSection` + `SendData(158)`), C2s-only (the host relays as 45, sent from `Main.cs:42766`); 158 is `(byte)plr` (`NetMessage.cs:1659-1661`) → `Spawn(TeamSwap)` (`MessageBuffer.cs:4450-4456`), S2c-only. Parked for I-4. `net.rs` — 155 ported by S1-E-27 (`MessageBuffer.cs:4429-4438`): `Chest.Resize` grows/shrinks the slot list, the client materialising the array slot first (`App::materialise_chest_slot`) because the port ships chests lazily where the C# holds all of `Main.chest[8000]`. 149-153, 156-158 stay NOT-FOUND; 151 is `SyncItemDespawn` |
 | 154 | Ping | `id::PING` | `net.rs` — `C2s::Ping`/`S2c::Ping`, the server echoes it back (`MessageBuffer.cs:4419-4428`), timed by `net_ping_tick`/`ping_received` (`Net/Ping.cs:24-48`) |
-| 159 | RequestSection | NOT-FOUND | the port streams sections unrequested on join (`host_stream_sections`) |
+| 159 | RequestSection | `id::SECTION_REQUEST` | S1-I-1 wave B: body + C2s codec — writer two `(short)`s (`NetMessage.cs:1662-1665`), reader two `ReadUInt16` (`MessageBuffer.cs:4460` → `SendSection`), same bytes; sent from `Player.cs:41534` / `WorldItem.cs:375`. The port still streams sections unrequested on join (`host_stream_sections`); the on-request host arm is parked for I-4 |
 | 160-162 | ItemPosition / HostToken / DamageNPCAck | NOT-FOUND | `161` compares against `Netplay.HostToken` (`MessageBuffer.cs:4471-4476`) |
 | 201-205 | *(internal)* | `INT_EDIT/PICKUP/JOINED/LEFT/TIME` | `net.rs:90-94`, deliberately outside 1..162 so the gate rejects them pre-spawn |
 
@@ -260,7 +261,9 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 ## Tests
 
 `grep "#\[test\]"`:
-- `crates/tr-app/src/net.rs` — 8: `writer_reader_round_trip_primitives`,
+- `crates/tr-app/src/net.rs` — 8 core + the per-id families (`s1_i_1_*` 11 wave A,
+  `s1_i_1b_*` 8 wave B — written not run on the code-only wave-B branch):
+  `writer_reader_round_trip_primitives`,
   `long_string_uses_seven_bit_length`, `truncated_body_decodes_to_none`,
   `player_info_round_trip`, `world_info_round_trip`,
   `messages_round_trip_through_the_frame`, `server_messages_round_trip`,
@@ -288,7 +291,7 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 
 | # | Mismatch | Severity | Admitted? |
 | --- | --- | --- | --- |
-| 1 | **Most of the 163 message ids are still unported**, though S1-E-27 (2026-11-16) closed the chest/sign/wiring/buff families — `31/32/33/46/47/50/53/54/59/69/80/155` now have bodies, host arms and client arms — and S1-I-1 wave A (2026-11-18) added the join bundle's `30/42/45/60/72/74/126/135/140/142/147` as bodies + codecs only (dispatcher arms parked; the fan-out is I-4). The 774 C# `SendData` sites still funnel into ~10 Rust send paths, so the team/emote/luck/pylon/invasion messages remain no-ops on the Rust wire. | behavioural | yes — ROADMAP.md:1067-1071 parks the per-system passes |
+| 1 | **Most of the 163 message ids are still unported**, though S1-E-27 (2026-11-16) closed the chest/sign/wiring/buff families — `31/32/33/46/47/50/53/54/59/69/80/155` now have bodies, host arms and client arms — S1-I-1 wave A (2026-11-18) added the join bundle's `30/42/45/60/72/74/126/135/140/142/147` as bodies + codecs only, and wave B (2026-11-20) the world-sync region's `11/17/19/63/64/125/157/158/159` the same way (dispatcher arms parked; the fan-out is I-4). The 774 C# `SendData` sites still funnel into ~10 Rust send paths, so the team/emote/luck/pylon/invasion messages remain no-ops on the Rust wire. | behavioural | yes — ROADMAP.md:1067-1071 parks the per-system passes |
 | 2 | **Internal ids 201-205 sit outside the C# 1..162 range.** `INT_EDIT` replaces `17 TileManipulation`, `INT_PICKUP` replaces the `21`/`151` pickup flow, `INT_JOINED`/`INT_LEFT` replace the `4`/`12`/`14` slot pushes. The port cannot talk to a vanilla client and vice versa. | behavioural (wire-incompatible) | yes — `net.rs:84-89` documents the choice |
 | 3 | **`49 InitialSpawn` now carries the C# meaning** (fixed 2026-11-16, S1-E-28) — `MessageBuffer.cs:2447-2453` moves the *client* to State 10 and calls `Spawn`; the port's `id::INITIAL_SPAWN` does exactly that (`State 6 → 10` + `12 PlayerSpawn` with `spawn_context = 1`, `Player.cs:37578-37581`). | behavioural | **fixed** (S1-E-28) |
 | 4 | **Ping is id 154 in both** (fixed 2026-11-16, S1-E-28) — `Net/Ping.cs:31` sends a bare `154` and the port's RTT rides the same id (`C2s::Ping`/`S2c::Ping`, echo at `MessageBuffer.cs:4419-4428`); NetModule 2 is back to the `NetPingModule` map-ping relay. | behavioural | **fixed** (S1-E-28) |
