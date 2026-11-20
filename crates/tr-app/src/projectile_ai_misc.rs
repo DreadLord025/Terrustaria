@@ -1648,6 +1648,75 @@ pub(crate) fn ai_multisegment_pet(
     p.pos.y = p.pos.y.clamp(160.0, world.height as f32 * 16.0 - 160.0);
 }
 
+/// `AI_175_TitaniumStormShards` (`Projectile.cs:45319-45343`) — the
+/// Titanium Storm Shard (908). The buff-gated kill, the first-tick frame
+/// + rotation roll (`Next(12)` then `NextFloat`), the π/200 spin, the
+/// group-index orbit angle `(index/total + miscCounterNormalized·6)·2π`,
+/// the `24 + total·6` radius, the owner's per-tick move added to the
+/// centre, the 0.3 lerp toward the squashed orbit point and the
+/// `localAI[0] = sin(angle)` draw-layer key.
+///
+/// RNG: exactly two draws on the FIRST tick (`frameCounter == 0`), zero
+/// after. The `drawLayer` write (`:45342`, 3 below / 4 above the owner)
+/// is draw-only — no port field, recorded here.
+///
+/// `has_buff` is the owner's `hasTitaniumStormBuff` (`Player.cs:1180`,
+/// set by buff 306 `:10086-10089`); the dispatch reads the buff slot.
+/// `group_index`/`group_total` are the pool-precomputed
+/// `AI_GetMyGroupIndexAndFillBlackList` pair (`:45334`).
+pub(crate) fn ai_titanium_storm_shard(
+    p: &mut Projectile,
+    player: Option<&crate::player::Player>,
+    has_buff: bool,
+    group_index: i32,
+    group_total: i32,
+    rng: &mut dyn DropRng,
+) {
+    // `:45321-45326` — the owner/buff gate: inactive, dead or buff-less
+    // kills outright (`Kill()`'s active+timeLeft zero).
+    let Some(player) = player else {
+        p.active = false;
+        p.time_left = 0;
+        return;
+    };
+    if player.dead || !has_buff {
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:45327-45332` — the first-tick roll: frameCounter latches 1, the
+    // frame picks one of the 12 rows and the rotation a full-circle angle.
+    if p.frame_counter == 0 {
+        p.frame_counter = 1;
+        p.frame = rng.next_range(0, 12);
+        p.rot = rng.next_float() * (std::f32::consts::PI * 2.0);
+    }
+    // `:45333` — the π/200 spin.
+    p.rot += std::f32::consts::PI / 200.0;
+    // `:45335-45336` — the orbit angle and radius. `miscCounterNormalized`
+    // is `miscCounter / 300f` (`Player.cs:3389`).
+    let misc_norm = player.misc_counter as f32 / 300.0;
+    let f = (group_index as f32 / group_total as f32 + misc_norm * 6.0)
+        * (std::f32::consts::PI * 2.0);
+    let num = 24.0 + group_total as f32 * 6.0;
+    // `:45337-45338` — the owner's per-tick move rides the shard centre.
+    let vector = Vec2::new(player.x - player.old_x, player.y - player.old_y);
+    let mut center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    center += vector;
+    // `:45339-45341` — the orbit point: the unit ray squashed to 5% Y,
+    // scaled by the radius, offset from the owner's centre; the shard
+    // lerps 0.3 toward it (`Lerp(value1: Center, value2: target, 0.3)`).
+    let (px, py) = player.center();
+    let player_center = Vec2::new(px, py);
+    let ray = to_rotation_vector2(f);
+    p.local_ai[0] = ray.y;
+    let target = player_center + ray * Vec2::new(1.0, 0.05) * num;
+    center = center.lerp(target, 0.3);
+    p.pos = Vec2::new(center.x - p.w * 0.5, center.y - p.h * 0.5);
+    // `:45342` — `drawLayer = localAI[0] <= 0 ? 3 : 4` — draw-only, the
+    // port carries no drawLayer field (the localAI[0] key survives).
+}
+
 #[cfg(test)]
 mod w4_d18_174_tests {
     //! W4-d18 — aiStyle 174 (`AI_174_MultisegmentPet`,
@@ -1886,5 +1955,203 @@ mod w4_d18_174_tests {
         assert!(p.active);
         assert_eq!(p.time_left, 1, "the pin 2 minus the lifetime tick");
         assert!(rng.ranges.is_empty() && rng.floats == 0);
+    }
+}
+
+#[cfg(test)]
+mod w4_d18_175_tests {
+    //! W4-d18 — aiStyle 175 (`AI_175_TitaniumStormShards`,
+    //! `Projectile.cs:45319-45343`, the dispatch `:36663-36666`). WRITTEN
+    //! NOT RUN (code-only mode). The row, the buff gate, the first-tick
+    //! roll census, the orbit maths and the dispatch wiring.
+    use super::*;
+    use crate::player::Player;
+    use crate::projectile::{
+        FlailInputs, ProjectilePool, TITANIUM_STORM_SHARD, YoyoInputs, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    fn owner(w: &World) -> Player {
+        let mut pl = Player::spawn(w);
+        pl.x = 1600.0;
+        pl.y = 800.0;
+        pl.old_x = 1600.0;
+        pl.old_y = 800.0;
+        pl
+    }
+
+    fn shard(x: f32, y: f32) -> Projectile {
+        let d = proj_data(TITANIUM_STORM_SHARD).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = TITANIUM_STORM_SHARD;
+        p.owner = 0;
+        p.pos = Vec2::new(x, y);
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:8626-8637`): 14x14, aiStyle 175,
+    /// penetrate 1, timeLeft 3600, tileCollide false, ignoreWater.
+    #[test]
+    fn w4_d18_175_the_row_matches_set_defaults() {
+        let d = proj_data(TITANIUM_STORM_SHARD).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (14.0, 14.0, 175));
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, 3600);
+        assert!(!d.tile_collide && d.ignore_water);
+        assert_eq!(crate::projectile::proj_frames(TITANIUM_STORM_SHARD), 12);
+    }
+
+    /// `:45321-45326` — the absent owner, the dead owner and the missing
+    /// buff each kill outright; ZERO draws on the kill paths.
+    #[test]
+    fn w4_d18_175_the_buff_gate_kills() {
+        let w = world();
+        let mut pl = owner(&w);
+        let mut rng = census();
+        let mut p = shard(1600.0, 800.0);
+        ai_titanium_storm_shard(&mut p, None, true, 0, 1, &mut rng);
+        assert!(!p.active && p.time_left == 0);
+        let mut p2 = shard(1600.0, 800.0);
+        ai_titanium_storm_shard(&mut p2, Some(&pl), false, 0, 1, &mut rng);
+        assert!(!p2.active && p2.time_left == 0, "the missing buff");
+        pl.dead = true;
+        let mut p3 = shard(1600.0, 800.0);
+        ai_titanium_storm_shard(&mut p3, Some(&pl), true, 0, 1, &mut rng);
+        assert!(!p3.active && p3.time_left == 0, "the dead owner");
+        assert!(rng.ranges.is_empty() && rng.floats == 0, "the kills roll nothing");
+    }
+
+    /// `:45327-45333` — the first tick rolls `Next(12)` then `NextFloat`
+    /// (the rotation), latches frameCounter 1 and adds the π/200 spin;
+    /// the second tick rolls NOTHING.
+    #[test]
+    fn w4_d18_175_the_first_tick_roll_census() {
+        let w = world();
+        let pl = owner(&w);
+        let mut rng = census();
+        let mut p = shard(1600.0, 800.0);
+        ai_titanium_storm_shard(&mut p, Some(&pl), true, 0, 1, &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 12)], "the frame roll");
+        assert_eq!(rng.floats, 1, "the rotation roll");
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(p.frame, 0, "CensusRng returns min");
+        // rotation = 0·2π + π/200.
+        assert_eq!(p.rot, std::f32::consts::PI / 200.0);
+        ai_titanium_storm_shard(&mut p, Some(&pl), true, 0, 1, &mut rng);
+        assert_eq!(rng.ranges.len(), 1, "no second frame roll");
+        assert_eq!(rng.floats, 1, "no second rotation roll");
+        assert_eq!(p.rot, std::f32::consts::PI / 200.0 * 2.0, "the spin stacks");
+    }
+
+    /// `:45335-45341` — the orbit maths: at miscCounter 0, index 0 of 1
+    /// the angle is 0 (the +X ray), the radius 30, the target the owner's
+    /// centre + (30, 0); the shard lerps 0.3 toward it and localAI[0]
+    /// keeps the ray's Y (the draw-layer key).
+    #[test]
+    fn w4_d18_175_the_orbit_maths() {
+        let w = world();
+        let pl = owner(&w);
+        let mut rng = census();
+        let (cx, cy) = pl.center();
+        let mut p = shard(cx - 7.0, cy - 7.0);
+        ai_titanium_storm_shard(&mut p, Some(&pl), true, 0, 1, &mut rng);
+        // angle 0 → ray (1, 0); target = centre + (30, 0); lerp 0.3 from
+        // the centre → centre + (9, 0).
+        assert_eq!(p.local_ai[0], 0.0, "the ray Y at angle 0");
+        let want_center = Vec2::new(cx + 9.0, cy);
+        assert!((p.pos.x + 7.0 - want_center.x).abs() < 1e-3);
+        assert!((p.pos.y + 7.0 - want_center.y).abs() < 1e-3);
+        // Index 1 of 2 at miscCounter 0: angle π → ray (−1, ~0); the
+        // radius is 24 + 2·6 = 36, the lerp target centre + (−10.8, ~0).
+        let mut p2 = shard(cx - 7.0, cy - 7.0);
+        ai_titanium_storm_shard(&mut p2, Some(&pl), true, 1, 2, &mut rng);
+        assert!(p2.pos.x + 7.0 < cx, "the π ray points left");
+        // The owner's per-tick move rides the centre FIRST (`:45337-45338`).
+        let mut pl2 = owner(&w);
+        pl2.x += 10.0; // old_x stays → vector (10, 0)
+        let mut p3 = shard(cx - 7.0, cy - 7.0);
+        ai_titanium_storm_shard(&mut p3, Some(&pl2), true, 0, 1, &mut rng);
+        // centre + (10,0) then lerp 0.3 toward (centre + 10 + 30, cy):
+        // the player's centre also moved +10 → target cx + 40.
+        let want = cx + 10.0 + (40.0 - 10.0) * 0.3;
+        assert!((p3.pos.x + 7.0 - want).abs() < 1e-3, "the move-then-lerp order");
+    }
+
+    /// The dispatch wiring: a buffed owner's shard runs the first-tick
+    /// roll through the pool update (the group pair pre-computed).
+    #[test]
+    fn w4_d18_175_the_dispatch_arms_the_shard() {
+        let mut w = world();
+        let mut pl = owner(&w);
+        pl.buffs.add_buff(306, 600);
+        let (cx, cy) = pl.center();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(TITANIUM_STORM_SHARD, cx - 7.0, cy - 7.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.frame_counter, 1, "the first-tick latch ran");
+        assert_eq!(rng.ranges, vec![(0, 12)]);
+        assert_eq!(rng.floats, 1);
+        // The buff-less owner's shard dies on the same seam.
+        let mut pl2 = owner(&w);
+        let slot2 = pool
+            .spawn_with_data(TITANIUM_STORM_SHARD, cx - 7.0, cy - 7.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl2),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        assert!(!pool.slots()[slot2].active, "the missing buff kills");
     }
 }

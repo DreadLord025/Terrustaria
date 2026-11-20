@@ -818,6 +818,12 @@ pub const DESTROYER_PET: u16 = 887;
 /// aiStyle 174 (`Projectile.cs:8531-8542`).
 pub const LUNATIC_CULTIST_PET: u16 = 893;
 
+// ===== W4-d18: the aiStyle-175 titanium storm shard =====
+/// `ProjectileID.TitaniumStormShard` (908, `ProjectileID.cs:2370`) —
+/// the orbiting defensive shard, aiStyle 175 (`Projectile.cs:8626-8637`,
+/// `AI_175_TitaniumStormShards` `:45319-45343`).
+pub const TITANIUM_STORM_SHARD: u16 = 908;
+
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
 /// second hand-maintained list: the id space above the port's highest row is
@@ -3776,6 +3782,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             LUNATIC_CULTIST_PET => (
                 20.0, 20.0, 174, -1, 18000, 0, false, false, false, RESET_STATE,
             ),
+            // ===== W4-d18: the aiStyle-175 titanium storm shard =====
+            // `Projectile.cs:8626-8637` — the Titanium Storm Shard (908):
+            // 14x14, aiStyle 175, `tileCollide = false`, `ignoreWater =
+            // true` (the overlay below), friendly, `penetrate = 1`,
+            // `timeLeft = 3600`, `drawLayer = 3` (draw-only, no port field).
+            TITANIUM_STORM_SHARD => (
+                14.0, 14.0, 175, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE,
+            ),
             // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
             // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile
             // (`friendly = false` rides the pool's `!friendly` proxy),
@@ -4241,6 +4255,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d18: the multisegment pets' `ignoreWater = true`
             // (`Projectile.cs:8482`/`:8504`/`:8539`).
             || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
+            // W4-d18: the titanium storm shard's `ignoreWater = true`
+            // (`Projectile.cs:8629`).
+            || kind == TITANIUM_STORM_SHARD
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
             || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
@@ -4639,6 +4656,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (the worm segments draw from the trail, not the sheet rows).
         EATER_OF_WORLDS_PET | DESTROYER_PET => 3,
         LUNATIC_CULTIST_PET => 4,
+        // W4-d18: the titanium storm shard's 12-frame sheet
+        // (`Main.cs:8690`) — the first-tick `rand.Next(12)` frame roll
+        // (`Projectile.cs:45330`) picks one row.
+        TITANIUM_STORM_SHARD => 12,
         // AI_026 slice C: the slime minion's 12-frame sheet
         // (`Main.cs:8612`) — the fly-out frames 8-11
         // (`Projectile.cs:61209`) and the ground frames 0-7

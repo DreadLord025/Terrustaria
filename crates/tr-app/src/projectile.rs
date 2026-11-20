@@ -15202,6 +15202,29 @@ impl ProjectilePool {
         (index, sep_attack, sep_home)
     }
 
+    /// W4-d18 — `AI_GetMyGroupIndexAndFillBlackList(null, ...)`
+    /// (`Projectile.cs:51895-51911`), the titanium shard's `(index,
+    /// totalIndexesInGroup)` pair: the count of this owner's active
+    /// same-kind slots at lower indices, and the group total. The 759
+    /// perch gate and the 1119 localAI[0] gate of `:51902` never fire for
+    /// the 908 (the only kind this helper serves — the baby bird keeps
+    /// its own [`ProjectilePool::baby_bird_group`]). The blacklist out-arg
+    /// stays null at the call site (`:45334`), so nothing is filled.
+    fn shard_group(&self, me: usize) -> (i32, i32) {
+        let this = &self.slots[me];
+        let mut index = 0i32;
+        let mut total = 0i32;
+        for (i, other) in self.slots.iter().enumerate() {
+            if other.active && other.owner == this.owner && other.kind == this.kind {
+                if me > i {
+                    index += 1;
+                }
+                total += 1;
+            }
+        }
+        (index, total)
+    }
+
     /// Sets the slot's crit flag (the throw path rolls it at spawn time).
     /// The `ProjectileKey` a slot's current occupant would travel under
     /// (`Projectile.cs:10854`'s key mint).
@@ -17368,6 +17391,31 @@ impl ProjectilePool {
                                 &mut self.slots[i],
                                 player.as_deref_mut(),
                                 world,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d18 — `AI()`'s `else if (this.aiStyle == 175)`
+                        // (`Projectile.cs:36663-36666`) ->
+                        // `AI_175_TitaniumStormShards` (`:45319-45343`):
+                        // the Titanium Storm Shard (908), the style's ONLY
+                        // SetDefaults row (`:8626-8637`), so no kind gate.
+                        // The buff-gated kill, the first-tick frame/rotation
+                        // roll and the group-index orbit. The group pair is
+                        // pre-computed from the pool (the baby_bird_group
+                        // shape); the buff read is the owner's slot scan.
+                        175 => {
+                            let (group_index, group_total) = self.shard_group(i);
+                            let has_buff = player
+                                .as_deref()
+                                .is_some_and(|pl| pl.buffs.find_buff_index(306).is_some());
+                            crate::projectile_ai_misc::ai_titanium_storm_shard(
+                                &mut self.slots[i],
+                                player.as_deref(),
+                                has_buff,
+                                group_index,
+                                group_total,
+                                rng,
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
