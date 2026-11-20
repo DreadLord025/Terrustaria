@@ -4010,26 +4010,86 @@ epilogue, `TileDrawing.cs:6033-6049`). `drawdata.rs` is untouched вЂ” waves 
   is 61, not 24. Source rects stay on the 16 px / 18 px sheet grid (2 px
   padding); the candle case's 22 px row stride is the sheet's own grid.
 
-Deviations (all parked data, no pixel change until the glow pass lands):
+Deviations (updated by the TILE-DRAW-2 glow bind, W4-f15 — see
+"TILE-DRAW-2 glow bind" below):
 
-- The glow TEXTURE binding (GlowMask sheet indices) is the renderer's glow
+- ~~The glow TEXTURE binding (GlowMask sheet indices) is the renderer's glow
   pass (TILE-DRAW-2); until it lands the `GlowData` record rides unused
-  (`let _glow` at the dispatch site).
+  (`let _glow` at the dispatch site).~~ **WIRED (W4-f15)** —
+  `render/tile_glow.rs` consumes the record at the C# glow-bind site.
 - Case **637**'s `glowTexture = GetTileDrawTexture(...)` (the per-tile
-  painted sheet) is not routed вЂ” `mask 0` placeholder; its rect + 75% lerp
-  port. Case **184** column 220's `Main.DiscoR/G/B` colour is engine state
-  the port does not route вЂ” parked `[0,0,0,255]`; its rect ports.
+  painted sheet) binds the RAW `Tiles_637` sheet (`mask 0` tile-sheet
+  sentinel; no paint system on glow — deviation stays). Case **184**
+  column 220's `Main.DiscoR/G/B` colour now rides `LightParams.disco`
+  (W4-f15).
 - Case **564**'s unconditional `addFrY = 0` (`:6112`) is already folded into
-  `drawdata.rs`'s 564 arm вЂ” the pass must not (and does not) apply it twice.
-- `Main.mouseTextColor` (656/701/564): the dispatch site passes 255 (the
-  steady full-bright value) until the UI text pulse rides in; the functions
-  take the value so it can be fed later.
+  `drawdata.rs`'s 564 arm — the pass must not (and does not) apply it twice.
+  The glow RECT reads the PRE-clear row (`tileFrame * 36`): C# `:6109`
+  reads `addFrY` before `:6112` zeroes it; `apply_cases_a` takes
+  `tile_frame` and rebuilds that value (W4-f15, d64 R15 finding).
+- `Main.mouseTextColor` (656/701/564): the dispatch site now passes
+  `LightParams.mouse_text_color` (W4-f15).
 - `Main.martianLight` is 0 outside the (unported) Martian Madness event;
   `martian_glow(light)` takes the value (`:498-499`, the truncating byte
   cast) so the event can feed it.
 - The cell colour for the 637/638 lerps converts `LightMap::get`'s f32
-  channels to XNA bytes (`Г—255`, clamp, alpha 255 вЂ” `Lighting.GetColor`
+  channels to XNA bytes (`×255`, clamp, alpha 255 — `Lighting.GetColor`
   has no alpha).
+
+### TILE-DRAW-2 glow bind (2026-11-21, branch `task/W4-f15-glow-bind-tiledraw2` — code-only mode)
+
+Written in **code-only mode** (no cargo/test runs): the wiring, the new
+`render/tile_glow.rs` pass and its witnesses are written but NOT compiled
+or run; verification is pending a build-capable session.
+
+The second `GetTileDrawData` switch's glow record (`GlowData`) is now
+consumed at the C# `DrawSingleTile` glow-bind site
+(`TileDrawing.cs:1343-1403`), AFTER `DrawBasicTile` (whose tail is the
+`DrawSingleTile_Flames` hook, `:1723`) and before the highlight (`:1404`):
+
+- **412** LunarCraftingStation cross-fade (`:1345-1357`): rows
+  `tileFrame[412]/60` and `(row+1)%4` at rect `Y += row*54`, colours
+  `glowColor*(1-t)` / `glowColor*t`, `t = (tileFrame%60)/60f` — the XNA
+  per-byte truncating float scale rides `special_tiles::xna_scale_color`.
+- Every other kind: ONE draw at the plain centred anchor
+  `(tileX*16 - (tileWidth-16)/2, tileY*16 + tileTop)` (`:1360`) — NOT the
+  sprite `vector`: no halfBrickHeight, no draw_dx/dy, no
+  `DoNotAdjustDrawPositionBasedOnTileWidth` exemption (711's glow centres
+  while its sprite hangs left).
+- **Platforms** reuse the sprite `vector` (`:1363`, rebuilt at the call
+  site per `:1008-1013`), and a sloped platform adds the glow side-fill
+  one cell below (`:1367-1400`) — the SAME neighbour gates and X picks as
+  `DrawBasicTile`'s side-fill (shared decision:
+  `special_tiles::platform_side_fill`), keeping the glow rect's Y/size.
+- **711** RainbowBoulder's FIRST-switch glow (`:4931-4939`) is produced by
+  `apply_cases_a` (mask-0 tile-sheet sentinel, framed rect, colour stays
+  the init `Color.Transparent` `:4538`). The transparent tint draws
+  nothing in both engines, but the record flips the `flag` dark-merge
+  gate (`:971`) — the port's `flame_tile` exclusion now includes
+  `glow.is_some()` (d64 R7 residual closed).
+- Sheet binding: the 45 `GlowMask` ids the switch picks are added to
+  `assets.rs GLOW_SHEET_NAMES` (`Images/Glow_{id}`,
+  `AssetInitializer.cs:352-354`); mask 0 binds the tile's own sheet via
+  `Lookups::rect_uv`.
+
+Deviations:
+
+- `SetLayer(Layer_Tiles, 1)` / `SetLayer(Layer_BehindTiles, 1)`
+  (`:1365`/`:1384`/`:1398`) have no port analogue (S1-G-13 layer-target
+  family) — both quads ride the row-major world stream at the C#
+  dispatch point.
+- Alpha-zero glow tints keep alpha 0: `sprite.wgsl` implements XNA's
+  premultiplied AlphaBlend (rgb source factor One), so the additive look
+  needs no flame-style alpha lift.
+- The side-fill neighbours' `invisibleBlock()` reads ride
+  `FillNeighbor::from_tile`'s documented `false` stand-in (the coating
+  bit is not on the port's `Tile`; the sprite pass's own side-fill is
+  still unwired — S1-G-1e).
+- 637's glow sheet is unpainted (raw sheet); `martianLight` stays 0.
+- Sway/sunflower arms: the glow draws at the un-swayed C# anchor — the
+  C# glow bind never sees the grass/sunflower transforms (the special
+  passes draw their own glow with the transform; those passes are the
+  S1-G-1 family's scope).
 
 ### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
 
