@@ -654,7 +654,17 @@ impl App {
                             .clamp(0, world.height - 1);
                         let vy1 = (((camera.y + half_v.y) / TILE_PX).ceil() as i32 + 1)
                             .clamp(0, world.height - 1);
-                        let lights = waterfall.draw(
+                        // `Main.screenPosition` / `screenWidth` / `screenHeight`
+                        // for the water-style ambience scan
+                        // (`WaterfallManager.cs:710-711`): the unscaled
+                        // world-pixel view, top-left = draw_cam - screen/2
+                        // (the S1-E-19 `Camera.UnscaledPosition` convention).
+                        let screen_info = tr_core::waterfall::ScreenInfo {
+                            position: [draw_cam.x - screen.x * 0.5, draw_cam.y - screen.y * 0.5],
+                            width: screen.x,
+                            height: screen.y,
+                        };
+                        let (lights, waterfall_scan) = waterfall.draw(
                             world,
                             light,
                             &style,
@@ -663,19 +673,30 @@ impl App {
                             params.mouse_text_color,
                             (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
                             [vx0, vy0, vx1, vy1],
+                            screen_info,
+                            // `Main.ShouldShowInvisibleBlocksAndWalls`
+                            // (`Main.cs:58023`), sampled once per `Draw`
+                            // (`WaterfallManager.cs:1120`): false until the
+                            // EchoMonolith / 4409-accessory systems land;
+                            // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
+                            crate::env::show_invisible(),
                         );
                         scratch.waterfall_quads = waterfall.take_quads();
-                        // `WaterfallManager.DrawWaterfall`'s accumulators
-                        // (`WaterfallManager.cs:710-733` + the store `:960-965`):
-                        // per nearby fall segment, `1 - dist/(screenWidth*0.75)`
-                        // summed into the waterfall (any kind except the lava and
-                        // the rain/shimmer falls) or the lavafall (kind 1)
-                        // strength; the nearest segment's world position rides
-                        // along for the loop pan.
-                        let mut wfs: [f32; 3] = [0.0, 0.0, 0.0];
+                        // `Main.ambientWaterfallX/Y/Strength`
+                        // (`WaterfallManager.cs:708-730` scan, `:960-962`
+                        // store): the walk's near-screen strength sum and the
+                        // nearest segment's cell-centre world pixels — the
+                        // waterfall loop's volume/pan inputs. The lavafall
+                        // triple (`:963-965`) is the g74 co-lane's; its
+                        // quad-based approximation below stays until that
+                        // branch lands.
+                        self.ambient_waterfall =
+                            (waterfall_scan[2], waterfall_scan[0], waterfall_scan[1]);
+                        // `WaterfallManager.DrawWaterfall`'s lavafall
+                        // accumulator (`WaterfallManager.cs:685-707` + the
+                        // store `:963-965`): approximated from the quads until
+                        // the g74 scan lands.
                         let mut lfs: [f32; 3] = [0.0, 0.0, 0.0];
-                        let cam_c = Vec2::new(camera.x + screen.x * 0.5 - screen.x * 0.5, camera.y);
-                        let _ = cam_c;
                         for q in &scratch.waterfall_quads {
                             let (fx, fy) = (q.pos[0], q.pos[1]);
                             let dx = (fx - camera.x).abs();
@@ -687,21 +708,17 @@ impl App {
                             if strength <= 0.0 {
                                 continue;
                             }
-                            let (lava, slot) = if q.texture == 1 {
-                                (true, &mut lfs)
-                            } else {
-                                (false, &mut wfs)
-                            };
-                            let _ = lava;
-                            slot[0] += strength;
-                            if dx < slot[1].abs() || slot[1] == 0.0 {
-                                slot[1] = dx;
+                            if q.texture != 1 {
+                                continue;
                             }
-                            if dy < slot[2].abs() || slot[2] == 0.0 {
-                                slot[2] = dy;
+                            lfs[0] += strength;
+                            if dx < lfs[1].abs() || lfs[1] == 0.0 {
+                                lfs[1] = dx;
+                            }
+                            if dy < lfs[2].abs() || lfs[2] == 0.0 {
+                                lfs[2] = dy;
                             }
                         }
-                        self.ambient_waterfall = (wfs[0], wfs[1], wfs[2]);
                         self.ambient_lavafall = (lfs[0], lfs[1], lfs[2]);
                         scratch.waterfall_lights = lights;
                         // `LightingEngine.ApplyPerFrameLights`'s swap

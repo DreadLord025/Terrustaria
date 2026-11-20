@@ -58,6 +58,30 @@ pub struct SparkleSpawn {
     pub y: f32,
 }
 
+/// `Main.screenPosition` / `screenWidth` / `screenHeight` in pixels: the inputs
+/// of the water-style ambience distance scan (`WaterfallManager.cs:710-711`)
+/// and the rain-arm view cull (`:381`). The caller derives them from the camera
+/// exactly like the original's unscaled screen.
+#[derive(Clone, Copy, Debug)]
+pub struct ScreenInfo {
+    /// `Main.screenPosition`: the view's top-left corner.
+    pub position: [f32; 2],
+    pub width: f32,
+    pub height: f32,
+}
+
+impl ScreenInfo {
+    /// `Main.screenPosition + (screenWidth/2, screenHeight/2)` — the scan's
+    /// distance origin (`WaterfallManager.cs:710-711`). `Main.screenWidth` is
+    /// an `int`, so the halving truncates before the float add.
+    pub(super) fn centre(&self) -> [f32; 2] {
+        [
+            self.position[0] + (self.width as i32 / 2) as f32,
+            self.position[1] + (self.height as i32 / 2) as f32,
+        ]
+    }
+}
+
 /// `WaterfallManager`.
 pub struct WaterfallManager {
     waterfalls: Vec<Waterfall>,
@@ -405,6 +429,23 @@ impl WaterfallManager {
     /// honey and shimmer falls carry their own type and draw in every active
     /// pass, exactly like the original. The walk also collects `AddLight`
     /// sources and `TrySparkling` spawns for the caller to drain.
+    ///
+    /// `view` is the visible tile rectangle `[x0, y0, x1, y1]` (inclusive) —
+    /// the rain-branch cull (`:381`). `screen` is the C#'s raw
+    /// `Main.screenPosition` / `Main.screenWidth`/`Height` in pixels, used by
+    /// the water-style ambience frame math (`:710-730`); the caller derives
+    /// them from the camera exactly as the view rectangle.
+    ///
+    /// `show_invisible` is `Main.ShouldShowInvisibleBlocksAndWalls()` sampled
+    /// once per `Draw` (`:1120`) and read by `GetAlpha`'s wall gate (`:1037`).
+    /// The `Main.drewLava` gates inside `DrawWaterfall` (`:354`/`:368`/`:531`)
+    /// are dead within `Draw`: `:1125` resets the flag false before the passes
+    /// and nothing sets it between them, so the port omits them.
+    ///
+    /// Returns the `AddLight` rows and the `Main.ambientWaterfallX/Y/Strength`
+    /// triple of the LAST active pass (`WaterfallManager.cs:960-962` — each
+    /// `DrawWaterfall` call overwrites the globals after resetting its locals
+    /// at `:328-332`). The lavafall triple (`:963-965`) is the g74 co-lane's.
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
@@ -416,7 +457,9 @@ impl WaterfallManager {
         mouse_text: u8,
         sparkle_seed: u64,
         view: [i32; 4],
-    ) -> Vec<DynamicLight> {
+        screen: ScreenInfo,
+        show_invisible: bool,
+    ) -> (Vec<DynamicLight>, [f32; 3]) {
         for w in &mut self.waterfalls[..self.current_max] {
             w.stop_at_step = self.waterfall_dist;
         }
@@ -425,6 +468,10 @@ impl WaterfallManager {
         // list's `stop_at_step` bookkeeping, so it cannot borrow `self` twice.
         let mut quads = Vec::new();
         let mut lights = Vec::new();
+        // `Main.ambientWaterfall*` start at the `Main.cs:67229-67231` load
+        // reset; every active pass overwrites the triple (`:960-962`), so the
+        // last active pass wins. No active pass leaves the reset values.
+        let mut ambient = [-1.0f32, -1.0, 0.0];
         // The sparkle draws use `Main.rand`; the port pins the stream to a
         // frame-derived seed so screenshots stay deterministic.
         let mut sparkle_rng = FastRandom::new(sparkle_seed);
@@ -443,7 +490,7 @@ impl WaterfallManager {
             (13, 24),
         ] {
             if liquid_alpha[idx] > 0.0 {
-                self.draw_waterfall(
+                ambient = self.draw_waterfall(
                     fall_style as i32,
                     liquid_alpha[idx],
                     world,
@@ -453,13 +500,15 @@ impl WaterfallManager {
                     mouse_text,
                     &mut sparkle_rng,
                     view,
+                    screen,
+                    show_invisible,
                     &mut quads,
                     &mut lights,
                 );
             }
         }
         self.pending_quads = quads;
-        lights
+        (lights, ambient)
     }
 
     /// The `TrySparkling` spawns accumulated by the last [`Self::draw`].
@@ -629,7 +678,11 @@ mod tests {
             a[0] = 1.0;
             a
         };
-        let lights = mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, [0, 0, 40, 40]);
+        let (lights, _) = mgr.draw(
+            &w, &light, &style, 0.0, &alpha, 190, 0, [0, 0, 40, 40],
+            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            false,
+        );
         let out: Vec<WaterfallDraw> = mgr.take_quads();
         assert!(!out.is_empty());
         assert!(out.iter().any(|d| d.texture == 0));
@@ -677,11 +730,19 @@ mod tests {
                 ^ 0x0123_4567_89AB_CDEF;
             let la = LightMap::new();
             let lb = LightMap::new();
-            let lights_a =
-                a.draw(&wa, &la, &style, frame as f32 / 60.0, &alpha, 190, seed, [0, 0, 40, 40]);
-            let lights_b =
-                b.draw(&wb, &lb, &style, frame as f32 / 60.0, &alpha, 190, seed, [0, 0, 40, 40]);
+            let screen = ScreenInfo {
+                position: [0.0, 0.0],
+                width: 640.0,
+                height: 640.0,
+            };
+            let (lights_a, amb_a) = a.draw(
+                &wa, &la, &style, frame as f32 / 60.0, &alpha, 190, seed, [0, 0, 40, 40], screen, false,
+            );
+            let (lights_b, amb_b) = b.draw(
+                &wb, &lb, &style, frame as f32 / 60.0, &alpha, 190, seed, [0, 0, 40, 40], screen, false,
+            );
             assert_eq!(lights_a, lights_b);
+            assert_eq!(amb_a, amb_b);
             assert_eq!(a.take_quads(), b.take_quads());
             assert_eq!(a.pending_sparkles, b.pending_sparkles);
         }
@@ -710,7 +771,11 @@ mod tests {
             a[0] = 1.0;
             a
         };
-        let lights = mgr.draw(&w, &light, &style, 0.0, &alpha, 255, 0, [0, 0, 40, 40]);
+        let (lights, _) = mgr.draw(
+            &w, &light, &style, 0.0, &alpha, 255, 0, [0, 0, 40, 40],
+            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            false,
+        );
         let out: Vec<WaterfallDraw> = mgr.take_quads();
         assert!(out.iter().any(|d| d.texture == 1));
         // `AddLight(1, ...)`: `(0.55 + (270 - 255) / 900) * 0.4` red-dominant.
@@ -722,7 +787,11 @@ mod tests {
         let mut alpha2 = [0.0f32; 15];
         alpha2[0] = 0.5;
         alpha2[2] = 0.5;
-        mgr.draw(&w, &light, &style, 0.0, &alpha2, 255, 0, [0, 0, 40, 40]);
+        mgr.draw(
+            &w, &light, &style, 0.0, &alpha2, 255, 0, [0, 0, 40, 40],
+            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            false,
+        );
         let out2: Vec<WaterfallDraw> = mgr.take_quads();
         let lava_quads = out2.iter().filter(|d| d.texture == 1).count();
         assert!(lava_quads > 0);
@@ -733,5 +802,170 @@ mod tests {
         let mgr = WaterfallManager::new();
         assert_eq!(mgr.anim_key(), 0);
         assert_eq!(mgr.lights_key(), 0);
+    }
+
+    /// Water-spout fixture: half brick at (10, 10), water on the right — the
+    /// fall walks straight down column 10 from row 10.
+    fn water_spout_world() -> World {
+        let mut w = world_with_air();
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        put_liquid(&mut w, 11, 9, 255);
+        put_liquid(&mut w, 11, 10, 255);
+        w
+    }
+
+    fn active_alpha() -> [f32; 15] {
+        let mut a = [0.0f32; 15];
+        a[0] = 1.0;
+        a
+    }
+
+    fn screen_at(x: f32, y: f32) -> ScreenInfo {
+        ScreenInfo {
+            position: [x, y],
+            width: 640.0,
+            height: 640.0,
+        }
+    }
+
+    /// `WaterfallManager.cs:708-730` + `:960-962`: the water triple is the
+    /// summed near-screen strength of the walked water segments and the
+    /// nearest segment's cell-centre world pixels. The spout head steps AWAY
+    /// from the source liquid (`:625-634`: tile6 holds water, tile4 is air →
+    /// num32 = -1), so the walk visits (10,10) then falls down column 9.
+    /// Also pins the verbatim `:725-728` quirk: the Y sentinel stores the X
+    /// distance (`num3 = num38`); the head's X distance is 0, so the stored Y
+    /// never updates again — it stays the head's Y even with the screen
+    /// centred 320 px below (a true Y minimum would pick row 30).
+    #[test]
+    fn waterfall_scan_sums_strength_and_tracks_the_nearest_cell() {
+        let w = water_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        // Screen centred on (168, 488) — the head's column, 320 px down.
+        let screen = screen_at(168.0 - 320.0, 488.0 - 320.0);
+        let (_, scan) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, [0, 0, 40, 40], screen, false,
+        );
+        // X minimum: the head cell (168). Y: the quirk keeps the head's 168.
+        assert_eq!(scan[0], 10.0 * 16.0 + 8.0);
+        assert_eq!(scan[1], 10.0 * 16.0 + 8.0);
+        // Hand-summed C# replay over the visited cells: the head (10,10)
+        // then (9,10)..(9,59) — the walk breaks when row 60 leaves the world.
+        let mut cells = vec![(10, 10)];
+        cells.extend((10..60).map(|y| (9, y)));
+        let mut expected = 0.0f32;
+        for (cx, cy) in cells {
+            let dx = (cx as f32 * 16.0 + 8.0 - 168.0).abs();
+            let dy = (cy as f32 * 16.0 + 8.0 - 488.0).abs();
+            if dx < 1280.0 && dy < 1280.0 {
+                let s = 1.0 - (dx * dx + dy * dy).sqrt() / (640.0 * 0.75);
+                if s > 0.0 {
+                    expected += s;
+                }
+            }
+        }
+        assert!((scan[2] - expected).abs() < 1e-3, "{} vs {}", scan[2], expected);
+        assert!(scan[2] > 0.0);
+    }
+
+    /// A world without falls runs one active pass over an empty list: the
+    /// locals reset (`WaterfallManager.cs:328-332`) is stored verbatim
+    /// (`:960-962`) — (-1, -1, 0), the `Main.cs:67229-67231` load reset.
+    #[test]
+    fn an_empty_pass_stores_the_load_reset_triple() {
+        let w = world_with_air();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let (_, scan) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, [0, 0, 40, 40],
+            screen_at(0.0, 0.0), false,
+        );
+        assert_eq!(scan, [-1.0, -1.0, 0.0]);
+    }
+
+    /// `WaterfallManager.cs:960-962`: each `DrawWaterfall` pass overwrites the
+    /// triple. With two active water styles both passes re-draw the water fall
+    /// (only the rain arm zeroes stopAtStep, `:524`), so the last pass's scan
+    /// equals the first's segment-for-segment — the store is the last pass's.
+    #[test]
+    fn the_last_active_pass_overwrites_the_waterfall_triple() {
+        let w = water_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let mut alpha = [0.0f32; 15];
+        alpha[0] = 1.0;
+        alpha[2] = 1.0;
+        let near = screen_at(168.0 - 320.0, 168.0 - 320.0);
+        let (_, scan_single) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, [0, 0, 40, 40], near, false,
+        );
+        assert!(scan_single[2] > 0.0);
+        let (_, scan_both) = mgr.draw(
+            &w, &light, &style, 0.0, &alpha, 190, 0, [0, 0, 40, 40], near, false,
+        );
+        assert_eq!(scan_both, scan_single);
+    }
+
+    /// The scan runs per visited CELL, not per quad: a fall boxed in on both
+    /// sides with liquid in the cell takes the `num29++` else (`:640-645`)
+    /// and the case-0 arm skips the body quad (`liquid > 0 && !halfBrick`,
+    /// `:926-930`) — but the scan block (`:708-730`) already ran for it, so
+    /// the cell contributes its full strength 1.0. Also pins the verbatim
+    /// `:725-728` quirk: the Y sentinel stores the X distance (`num3 =
+    /// num38`), so the stored Y stays the FIRST cell's row (10) even though
+    /// the screen centre sits on row 12 — only the X minimum keeps updating.
+    #[test]
+    fn the_scan_visits_cells_the_quad_list_skips() {
+        let mut w = water_spout_world();
+        // The spout steps away from its source liquid (`:625-634`), so the
+        // fall drops down column 9. Box the last cell in: stone sides at
+        // row 12, floor at 13, water pooled in (9, 12).
+        put(&mut w, 8, 12, stone(1));
+        put(&mut w, 10, 12, stone(1));
+        put(&mut w, 9, 13, stone(1));
+        put_liquid(&mut w, 9, 12, 200);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        // Screen centred on the head's column at the boxed-in row (168, 200):
+        // the head's X distance is 0, so BOTH sentinels freeze at the head —
+        // the verbatim quirk (`num3 = num38`) keeps Y at the head's row.
+        let screen = screen_at(168.0 - 320.0, 200.0 - 320.0);
+        let (_, scan) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, [0, 0, 40, 40], screen, false,
+        );
+        let out = mgr.take_quads();
+        // The boxed-in cell emits no row-0 body quad (the row-24 cap of
+        // `:777-798` may still draw); every body quad sits above it.
+        assert!(out.iter().filter(|d| d.source[1] == 0).all(|d| d.pos[1] < 12.0 * 16.0));
+        // Visited cells: the head (10,10), then (9,10), (9,11), (9,12).
+        let cells = [(10, 10), (9, 10), (9, 11), (9, 12)];
+        let mut expected = 0.0f32;
+        for (cx, cy) in cells {
+            let dx = (cx as f32 * 16.0 + 8.0 - 168.0).abs();
+            let dy = (cy as f32 * 16.0 + 8.0 - 200.0).abs();
+            let s = 1.0 - (dx * dx + dy * dy).sqrt() / (640.0 * 0.75);
+            if s > 0.0 {
+                expected += s;
+            }
+        }
+        assert!((scan[2] - expected).abs() < 1e-3, "{} vs {}", scan[2], expected);
+        assert!(scan[2] > 3.5); // includes the body-quad-less cell's ~0.95
+        // Both minima freeze at the head (its X distance is 0).
+        assert_eq!(scan[0], 10.0 * 16.0 + 8.0);
+        assert_eq!(scan[1], 10.0 * 16.0 + 8.0);
     }
 }

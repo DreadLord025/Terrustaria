@@ -3,7 +3,7 @@
 //! (finding, frame counters, cadence) stays readable; the walk is a faithful
 //! port and keeps the original local numbering (`num11`..`num34`).
 
-use super::{WaterfallDraw, WaterfallManager, GFX_QUALITY};
+use super::{ScreenInfo, WaterfallDraw, WaterfallManager, GFX_QUALITY};
 use crate::lighting::{DynamicLight, LightMap, LightStyle};
 use crate::tile::Tile;
 use crate::tile_light::FastRandom;
@@ -17,7 +17,9 @@ fn blocks_water_drawing_behind_self(kind: u16) -> bool {
 }
 
 impl WaterfallManager {
-    /// `WaterfallManager.DrawWaterfall`.
+    /// `WaterfallManager.DrawWaterfall`. Returns the pass's
+    /// `Main.ambientWaterfallX/Y/Strength` store (`WaterfallManager.cs:960-962`);
+    /// the lavafall triple (`:963-965`) is the g74 co-lane's scan.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_waterfall(
         &mut self,
@@ -30,9 +32,19 @@ impl WaterfallManager {
         mouse_text: u8,
         sparkle_rng: &mut FastRandom,
         view: [i32; 4],
+        screen: ScreenInfo,
+        show_invisible: bool,
         out: &mut Vec<WaterfallDraw>,
         lights: &mut Vec<DynamicLight>,
-    ) {
+    ) -> [f32; 3] {
+        // The water-style ambience locals (`WaterfallManager.cs:328-332`): num
+        // strength, num2/num3 nearest distances (99999 sentinels), num4/num5
+        // the nearest segment's cell-centre world pixels (-1 until visited).
+        let mut num = 0.0f32;
+        let mut num2 = 99999.0f32;
+        let mut num3 = 99999.0f32;
+        let mut num4 = -1i32;
+        let mut num5 = -1i32;
         for index in 0..self.current_max {
             let mut wf = self.waterfalls[index];
             let mut num13 = wf.x;
@@ -176,7 +188,11 @@ impl WaterfallManager {
                     });
                 }
                 let tile3 = world.tile(num13, num14).copied().unwrap_or_default();
+                // `tile3.nactive()` (`WaterfallManager.cs:555`): the break
+                // needs active AND not actuated-off; `solid_tile_draw` already
+                // carries the same `nactive` half.
                 if tile3.active()
+                    && !tile3.inactive()
                     && solid_tile_draw(&tile3)
                     && !td::TILE_SOLID_TOP.has(tile3.kind)
                     && !td::SET_PLATFORMS.has(tile3.kind)
@@ -284,7 +300,17 @@ impl WaterfallManager {
                         &mut self.pending_sparkles,
                     );
                 }
-                let alpha = get_alpha(draw_alpha, num22, num12, num14, k, &tile3, world);
+                let alpha = get_alpha(
+                    draw_alpha,
+                    num22,
+                    num12,
+                    num14,
+                    k,
+                    &tile3,
+                    world,
+                    num13,
+                    show_invisible,
+                );
                 let color5 = stylize_color(
                     alpha,
                     num12,
@@ -293,6 +319,40 @@ impl WaterfallManager {
                     self.disco_g,
                     self.disco_b,
                 );
+
+                // `Main.ambientWaterfall*` scan (`WaterfallManager.cs:708-730`):
+                // every non-lava/honey/shimmer/rain kind (26 included — the
+                // exclusion list only names 1/14/25/11/12/22) contributes
+                // `1 - dist/(screenWidth*0.75)` inside the 2x-screen box, and
+                // the nearest cell-centre world pixel rides per axis. The Y
+                // arm keeps the original's verbatim quirk (`:725-728`): it
+                // tests num39 but stores num38 (the X distance) into num3.
+                if num12 != 1
+                    && num12 != 14
+                    && num12 != 25
+                    && num12 != 11
+                    && num12 != 12
+                    && num12 != 22
+                {
+                    let centre = screen.centre();
+                    let num38 = ((num13 * 16 + 8) as f32 - centre[0]).abs();
+                    let num39 = ((num14 * 16 + 8) as f32 - centre[1]).abs();
+                    if num38 < screen.width * 2.0 && num39 < screen.height * 2.0 {
+                        let num40 =
+                            1.0 - (num38 * num38 + num39 * num39).sqrt() / (screen.width * 0.75);
+                        if num40 > 0.0 {
+                            num += num40;
+                        }
+                    }
+                    if num38 < num2 {
+                        num2 = num38;
+                        num4 = num13 * 16 + 8;
+                    }
+                    if num39 < num3 {
+                        num3 = num38;
+                        num5 = num14 * 16 + 8;
+                    }
+                }
 
                 let num41 = tile3.liquid as i32 / 16;
                 if flag2 && num17 != num31 {
@@ -632,6 +692,9 @@ impl WaterfallManager {
                 k += 1;
             }
         }
+        // `WaterfallManager.cs:960-962`: the water-style triple store (the
+        // lavafall triple `:963-965` belongs to the g74 co-lane's scan).
+        [num4 as f32, num5 as f32, num]
     }
 }
 
@@ -728,7 +791,12 @@ fn stylize_color(
     ]
 }
 
-/// `WaterfallManager.GetAlpha`.
+/// `WaterfallManager.GetAlpha` (`WaterfallManager.cs:1030-1044`). The wall gate
+/// (`:1037`) is `wall != 0 && (_shouldShowInvisibleBlocksAndWalls ||
+/// (wall != 318 && !tile.invisibleWall()))`: any wall counts while invisible
+/// sight is on; otherwise wall 318 (the Echo "fake wall") and Echo-coated walls
+/// never dim the fall.
+#[allow(clippy::too_many_arguments)]
 fn get_alpha(
     alpha: f32,
     max_steps: i32,
@@ -737,13 +805,18 @@ fn get_alpha(
     s: i32,
     tile: &Tile,
     world: &World,
+    x: i32,
+    show_invisible: bool,
 ) -> f32 {
     let mut num = match kind {
         1 => 1.0,
         14 => 0.8,
         25 => 0.75,
         _ => {
-            if (tile.wall != 0 && tile.wall != 318) || (y as f64) >= world.world_surface {
+            let wall_dims = tile.wall != 0
+                && (show_invisible
+                    || (tile.wall != 318 && !world.invisible_wall(x, y)));
+            if wall_dims || !((y as f64) < world.world_surface) {
                 0.6 * alpha
             } else {
                 alpha
@@ -823,9 +896,12 @@ fn try_sparkling(
     }
 }
 
-/// `WorldGen.SolidTile`: active, solid, not a solid top, not a half brick or slope.
+/// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`): `nactive()` (active and
+/// not actuated-off, `Tile.cs:240-247`), solid, not a solid top, not a half
+/// brick or slope. An actuated-inactive tile never stops a fall or a spout.
 pub(super) fn solid_tile(t: &Tile) -> bool {
     t.active()
+        && !t.inactive()
         && (t.kind as usize) < td::TILE_COUNT
         && td::TILE_SOLID.has(t.kind)
         && !td::TILE_SOLID_TOP.has(t.kind)
@@ -870,6 +946,53 @@ fn push(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tile::FLAG_INACTIVE;
+
+    /// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`) reads `nactive()`
+    /// (`Tile.cs:240-247`: active AND not actuated-off), so an actuated tile
+    /// never stops a fall or a spout.
+    #[test]
+    fn an_actuated_tile_is_not_solid() {
+        let mut t = Tile::default();
+        t.kind = 1; // stone
+        t.flags |= crate::tile::FLAG_ACTIVE;
+        assert!(solid_tile(&t));
+        t.flags |= FLAG_INACTIVE;
+        assert!(!solid_tile(&t));
+    }
+
+    /// `WaterfallManager.GetAlpha`'s wall gate (`WaterfallManager.cs:1037`):
+    /// `wall != 0 && (showInvisible || (wall != 318 && !invisibleWall()))`,
+    /// OR'd with the below-`worldSurface` dim — both dim to `0.6 * Alpha`.
+    #[test]
+    fn get_alpha_wall_gate_matches_the_csharp() {
+        let mut w = World::new("test".into(), 40, 40);
+        w.world_surface = 20.0;
+        let mut t = Tile::default();
+        // Above the surface, no wall: full alpha.
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        // Below the surface: 0.6 regardless of wall.
+        assert_eq!(get_alpha(1.0, 100, 0, 20, 0, &t, &w, 5, false), 0.6);
+        // A plain wall above the surface dims.
+        t.wall = 4;
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 0.6);
+        // Wall 318 (the fake wall) never dims — unless invisible sight is on.
+        t.wall = 318;
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, true), 0.6);
+        // An Echo-coated wall never dims — unless invisible sight is on.
+        t.wall = 4;
+        w.set_invisible_wall(5, 10, true);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, true), 0.6);
+        // The typed falls bypass the gate entirely.
+        assert_eq!(get_alpha(1.0, 100, 1, 30, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 14, 30, 0, &t, &w, 5, false), 0.8);
+        assert_eq!(get_alpha(1.0, 100, 25, 30, 0, &t, &w, 5, false), 0.75);
+        // The last-10-steps fade multiplies after the gate (`:1039-1042`):
+        // wall-dimmed 0.6 x the k=99 fade 0.1.
+        assert!((get_alpha(1.0, 100, 0, 10, 99, &t, &w, 5, true) - 0.06).abs() < 1e-6);
+    }
 
     /// `TrySparkling` is the only randomness in the waterfall walk: one
     /// 1-in-20000 roll per lit fall per frame, keyed on the frame-derived
