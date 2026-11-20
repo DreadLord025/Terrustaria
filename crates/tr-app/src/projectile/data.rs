@@ -86,6 +86,41 @@ pub const VILE_TIP: u16 = 8;
 /// `ProjectileID.ThrowingKnife` (48) — the thrown aiStyle-2 kind
 /// (`Projectile.cs:1310-1316`).
 pub const THROWING_KNIFE: u16 = 48;
+/// `ProjectileID.Glowstick` (50) — the thrown light, aiStyle 14
+/// (`Projectile.cs:1326-1336`). S1-P-i42.
+pub const GLOWSTICK: u16 = 50;
+/// `ProjectileID.StickyGlowstick` (53) — aiStyle 14, `tileCollide = false`
+/// (`Projectile.cs:1354-1365`); the stick scan lives in the AI arm
+/// (`:24911-24962`). S1-P-i42.
+pub const STICKY_GLOWSTICK: u16 = 53;
+/// `ProjectileID.Flare` (163) — the flare gun's shot, aiStyle 33
+/// (`Projectile.cs:2515-2525`). S1-P-i42.
+pub const FLARE: u16 = 163;
+/// `ProjectileID.BlueFlare` (310) — aiStyle 33 (`Projectile.cs:4022-4032`).
+pub const BLUE_FLARE: u16 = 310;
+/// `ProjectileID.SpelunkerGlowstick` (473) — aiStyle 14, `timeLeft *= 2`
+/// (`Projectile.cs:5485-5495`). S1-P-i42.
+pub const SPELUNKER_GLOWSTICK: u16 = 473;
+/// `ProjectileID.BouncyGlowstick` (515) — aiStyle 14
+/// (`Projectile.cs:5851-5861`); the bounce rides `HandleMovement`'s
+/// 515-517 arm (`:18479-18489`). S1-P-i42.
+pub const BOUNCY_GLOWSTICK: u16 = 515;
+/// `ProjectileID.FairyGlowstick` (870) — aiStyle 14 until the first bounce
+/// flips it to 170 (`Projectile.cs:8343-8353`, `:24832-24835`). S1-P-i42.
+pub const FAIRY_GLOWSTICK: u16 = 870;
+/// `ProjectileID.SpelunkerFlare` (1008) — aiStyle 33
+/// (`Projectile.cs:9580-9590`). S1-P-i42.
+pub const SPELUNKER_FLARE: u16 = 1008;
+/// `ProjectileID.CursedFlare` (1009) — aiStyle 33 (`Projectile.cs:9591-9601`).
+pub const CURSED_FLARE: u16 = 1009;
+/// `ProjectileID.RainbowFlare` (1010) — aiStyle 33 (`Projectile.cs:9602-9612`).
+pub const RAINBOW_FLARE: u16 = 1010;
+/// `ProjectileID.ShimmerFlare` (1011) — aiStyle 33 (`Projectile.cs:9613-9623`).
+pub const SHIMMER_FLARE: u16 = 1011;
+/// `ProjectileID.RainbowGlowstick` (1089) — aiStyle 14, no alpha override
+/// (`Projectile.cs:10153-10162`); the disco light rides `ProjLight`
+/// (`:16434-16439`). S1-P-i42.
+pub const RAINBOW_GLOWSTICK: u16 = 1089;
 /// `ProjectileID.Snowball` (166) — the thrown aiStyle-2 kind with the
 /// 20-tick/`+0.3f` ladder (`Projectile.cs:2549-2557`, `:23566-23596`).
 pub const SNOWBALL: u16 = 166;
@@ -1027,6 +1062,12 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         FLAME_ARROW => 1.0,                    // `:824`
         ENCHANTED_BOOMERANG => 0.4,            // `:872`
         MUSKET_BALL => 0.5,                    // `:957`
+        // S1-P-i42 — the glowstick family's `this.light = 1f`
+        // (`Projectile.cs:1334`/`:1362`/`:5493`/`:5859`/`:8351`/`:10160`).
+        // The flares (163/310/1008-1011) set NO light — their glow is the
+        // dust trail's (`AI_033`'s `Dust.NewDust`, `:27093`), not ProjLight.
+        GLOWSTICK | STICKY_GLOWSTICK | SPELUNKER_GLOWSTICK | BOUNCY_GLOWSTICK
+        | FAIRY_GLOWSTICK | RAINBOW_GLOWSTICK => 1.0,
         BULLET_SNOWMAN => 0.5,                 // `:1985`
         BALL_OF_FIRE => 0.8,                   // `:970`
         MAGIC_MISSILE => 0.8,                  // `:980`
@@ -1108,6 +1149,87 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-P-i42 — the glowstick family (aiStyle 14, the thrown light).
+            // `Projectile.cs:1326-1336` (50) / `:5851-5861` (515) /
+            // `:8343-8353` (870): 6x6, `penetrate = -1`, `alpha = 75`,
+            // `light = 1f`, `timeLeft *= 5` (3600 → 18000). The stock
+            // `tileCollide = true` (`:775`) stands — the bounce lives in
+            // `HandleMovement`'s per-type arms, not the AI.
+            GLOWSTICK | BOUNCY_GLOWSTICK | FAIRY_GLOWSTICK => (
+                6.0,
+                6.0,
+                14,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 75, 1.0),
+            ),
+            // `Projectile.cs:1354-1365` — the sticky glowstick (53): the same
+            // row PLUS `tileCollide = false` (`:1364`) — the stick scan in the
+            // AI arm (`:24911-24962`) replaces the collision bounce.
+            STICKY_GLOWSTICK => (
+                6.0,
+                6.0,
+                14,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 75, 1.0),
+            ),
+            // `Projectile.cs:5485-5495` — the spelunker glowstick (473): 8x8,
+            // `timeLeft *= 2` (3600 → 7200), the same alpha/light.
+            SPELUNKER_GLOWSTICK => (
+                8.0,
+                8.0,
+                14,
+                -1,
+                TIME_LEFT_DEFAULT * 2,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 75, 1.0),
+            ),
+            // `Projectile.cs:10153-10162` — the rainbow glowstick (1089): 6x6,
+            // `timeLeft *= 5`, `light = 1f`, NO alpha override (the stock 0,
+            // `:779`) — the disco colour rides `ProjLight` (`:16434-16439`).
+            RAINBOW_GLOWSTICK => (
+                6.0,
+                6.0,
+                14,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // S1-P-i42 — the flare family (aiStyle 33, the flare gun's shot).
+            // `Projectile.cs:2515-2525` (163) / `:4022-4032` (310) /
+            // `:9580-9623` (1008-1011): 6x6, `friendly = true`,
+            // `penetrate = -1`, `alpha = 255`, `timeLeft = 36000`. The stock
+            // `tileCollide = true` stands; the stick lives in the AI arm +
+            // `HandleMovement`'s aiStyle-33 block (`:18619-18634`).
+            FLARE | BLUE_FLARE | SPELUNKER_FLARE | CURSED_FLARE | RAINBOW_FLARE
+            | SHIMMER_FLARE => (
+                6.0,
+                6.0,
+                33,
+                -1,
+                36000,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:2549-2557` — the snowball (166): 14x14, aiStyle 2.
             SNOWBALL => (14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9002-9011` — the Wand of Sparking's spark (954):
@@ -2880,6 +3002,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The slice-B pets set `netImportant` themselves
             // (`Projectile.cs:5419`/`:9643`/`:9993`).
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // S1-P-i42 — the glowstick/flare family sets `netImportant = true`
+            // (`Projectile.cs:1328`/`:1356`/`:2517`/`:4024`/`:5487`/`:5853`/
+            // `:8345`/`:9582`/`:9593`/`:9604`/`:9615`/`:10155`).
+            || matches!(
+                kind,
+                GLOWSTICK | STICKY_GLOWSTICK | SPELUNKER_GLOWSTICK | BOUNCY_GLOWSTICK
+                    | FAIRY_GLOWSTICK | RAINBOW_GLOWSTICK | FLARE | BLUE_FLARE
+                    | SPELUNKER_FLARE | CURSED_FLARE | RAINBOW_FLARE | SHIMMER_FLARE
+            )
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
@@ -3233,6 +3364,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         FROST_SHARD => 5,
         ORNAMENT_HOSTILE => 2,
         ORNAMENT_SHRAPNEL => 2,
+        // S1-P-i42 — the fairy glowstick's 4-frame sheet (`Main.cs:8667`) —
+        // the aiStyle-170 hover's frame machine (`Projectile.cs:45676-45685`)
+        // wraps at it. The other glowsticks/flares keep the stock 1 (no
+        // `projFrames` override in `Main.cs:8444-8727`).
+        FAIRY_GLOWSTICK => 4,
         _ => 1,
     }
 }

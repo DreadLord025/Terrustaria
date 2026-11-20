@@ -32,11 +32,13 @@
 //!   `Main.rand.Next(28, 42)` inside the chain — neither kind has a
 //!   `proj_data` row, so no slot can carry their light; the arms are not
 //!   ported and the stream is untouched.
-//! * The disco arms 993 (`:16194-16198`), 1089 (`:16434-16439`) and 251
-//!   (`:16630-16641`) are **deferred**: their kinds have no rows, but
-//!   `LightParams::disco` exists, so they are cheap follow-ups. The 79
-//!   Rainbow Rod bullet (`:16505-16510`) IS a ported row — its colour rides
-//!   the same params.
+//! * The disco arms 993 (`:16194-16198`) and 251 (`:16630-16641`) are
+//!   **deferred**: their kinds have no rows. The 79 Rainbow Rod bullet
+//!   (`:16505-16510`) and the 1089 Rainbow Glowstick (`:16434-16439`,
+//!   S1-P-i42) ARE ported rows — their colour rides `LightParams::disco`.
+//! * The glowstick family's six arms (50/515/870/53/473/1089,
+//!   `:16408-16439`) landed with S1-P-i42; the 870 `FloodFillTile` spread
+//!   (`:16648-16655`) is the documented skip (the centre `AddLight` lands).
 //! * The 211 Shadowbeam arm (`:16601-16614`) **writes** `this.light`
 //!   (1.5/1.0 by `localAI[0]`); the kind has no row, and a write inside a
 //!   draw-pass feed would be a state mutation — it lands with its AI.
@@ -181,6 +183,36 @@ pub(crate) fn proj_light(
         b = 1.0;
         r *= 0.6;
         g *= 0.1;
+    } else if kind == crate::projectile::GLOWSTICK {
+        // `:16408-16412` — 50: `num *= 0.7f; num3 *= 0.8f;` (S1-P-i42).
+        r *= 0.7;
+        b *= 0.8;
+    } else if kind == crate::projectile::BOUNCY_GLOWSTICK {
+        // `:16413-16417` — 515: `num2 *= 0.6f; num3 *= 0.85f;`.
+        g *= 0.6;
+        b *= 0.85;
+    } else if kind == crate::projectile::FAIRY_GLOWSTICK {
+        // `:16418-16422` — 870: `num *= 0.9f; num2 = 0.35f;`. The
+        // `FloodFillTile` spread (`:16648-16655`) is the documented skip
+        // (the entity-list `AddLight` at the centre lands, the flood-fill
+        // light-map write has no port — the player_lights 4776 precedent).
+        r *= 0.9;
+        g = 0.35;
+    } else if kind == crate::projectile::STICKY_GLOWSTICK {
+        // `:16423-16427` — 53: `num *= 0.7f; num2 *= 0.8f;`.
+        r *= 0.7;
+        g *= 0.8;
+    } else if kind == crate::projectile::SPELUNKER_GLOWSTICK {
+        // `:16428-16433` — 473: `num *= 1.05f; num2 *= 0.95f; num3 *= 0.55f;`.
+        r *= 1.05;
+        g *= 0.95;
+        b *= 0.55;
+    } else if kind == crate::projectile::RAINBOW_GLOWSTICK {
+        // `:16434-16439` — 1089: absolute `Main.DiscoR/G/B / 255f` (the
+        // amount is ignored past the gate, the 79 precedent).
+        r = p.disco[0] as f32 / 255.0;
+        g = p.disco[1] as f32 / 255.0;
+        b = p.disco[2] as f32 / 255.0;
     } else if kind == DUAL_HOOK_BLUE {
         // `:16458-16463` — 73: `num *= 0.4f; num2 *= 0.6f; num3 *= 1f;`.
         r *= 0.4;
@@ -425,6 +457,59 @@ mod tests {
         // 332 (`:16229-16233`): (l, 0.6l, 0.1l) at 0.5 (`:4256`).
         let c = 0.5f32;
         assert_eq!(at(CHRISTMAS_HOOK, c).unwrap().2, [c, c * 0.6, c * 0.1]);
+    }
+
+    #[test]
+    fn the_glowstick_family_arms_match_the_csharp_colours() {
+        // S1-P-i42 — `Projectile.cs:16408-16439`, the six glowstick arms at
+        // light = 1 (`set_defaults_light`). The expectations are the f32
+        // PRODUCTS (the C# multiplies the f32 amount), not rounded literals.
+        let l = 1.0f32;
+        // 50 (`:16410-16411`): (0.7l, l, 0.8l).
+        assert_eq!(
+            at(crate::projectile::GLOWSTICK, l).unwrap().2,
+            [l * 0.7, l, l * 0.8]
+        );
+        // 515 (`:16415-16416`): (l, 0.6l, 0.85l).
+        assert_eq!(
+            at(crate::projectile::BOUNCY_GLOWSTICK, l).unwrap().2,
+            [l, l * 0.6, l * 0.85]
+        );
+        // 870 (`:16420-16421`): (0.9l, 0.35, l) — g absolute.
+        assert_eq!(
+            at(crate::projectile::FAIRY_GLOWSTICK, l).unwrap().2,
+            [l * 0.9, 0.35, l]
+        );
+        // 53 (`:16425-16426`): (0.7l, 0.8l, l).
+        assert_eq!(
+            at(crate::projectile::STICKY_GLOWSTICK, l).unwrap().2,
+            [l * 0.7, l * 0.8, l]
+        );
+        // 473 (`:16430-16432`): (1.05l, 0.95l, 0.55l).
+        assert_eq!(
+            at(crate::projectile::SPELUNKER_GLOWSTICK, l).unwrap().2,
+            [l * 1.05, l * 0.95, l * 0.55]
+        );
+    }
+
+    #[test]
+    fn the_rainbow_glowstick_rides_the_disco_params() {
+        // `:16434-16439` — 1089: absolute Main.DiscoR/G/B / 255f.
+        let p = LightParams {
+            disco: [255, 128, 0],
+            ..Default::default()
+        };
+        let got = proj_light(
+            crate::projectile::RAINBOW_GLOWSTICK,
+            1.0,
+            Vec2::new(160.0, 176.0),
+            6.0,
+            6.0,
+            false,
+            &p,
+        )
+        .expect("the rainbow glowstick lights");
+        assert_eq!(got.2, [1.0, 128.0 / 255.0, 0.0]);
     }
 
     #[test]

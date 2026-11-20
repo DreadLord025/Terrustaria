@@ -3351,6 +3351,71 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
             return false;
         }
     }
+    // S1-P-i42 — the torch family's own support arm
+    // (`PlaceThing_Tiles_BlockPlacementForAssortedThings`,
+    // `Player.cs:41106-41198`): the TARGET cell's own wall holds the torch
+    // (`:41108-41111`) — the four-neighbour scan below never reads it, so a
+    // wall-only cell (no adjacent block/wall) refused every wall torch.
+    // Without a wall, the support must be `SolidTileNoAttach` below/left/
+    // right (`:41186-41197` — solid, NOT noAttach, flat, not actuated; the
+    // platform exception rides the below arm only) or a tree-trunk triple /
+    // beam on a side. The generic neighbour scan stays for every other kind.
+    if registry::place_tile(app.inventory[app.selected].kind) == Some(4) {
+        if t.wall > 0 {
+            return true;
+        }
+        let below = app.world.tile(tx, ty + 1);
+        let left = app.world.tile(tx - 1, ty);
+        let right = app.world.tile(tx + 1, ty);
+        // `:41147-41169` — the support types read RAW, then fold to −1 when
+        // the cell is not `nactive()` (the target's own halfBrick folds the
+        // below type too, `:41148-41151`). The sloped/half-brick supports
+        // were already flattened by `flatten_torch_supports` in the mutable
+        // route (`Player.cs:41114-41146` → `WorldGen.SlopeTile`), so the type
+        // checks below see flat cells exactly like the C#.
+        let kind_of = |t: Option<&crate::tile::Tile>| -> i32 {
+            t.filter(|n| tr_core::tileobject::nactive(n))
+                .map_or(-1, |n| n.kind as i32)
+        };
+        let mut num3 = kind_of(below);
+        if t.half_brick() {
+            num3 = -1; // `:41148-41151`
+        }
+        let num4 = kind_of(left);
+        let num5 = kind_of(right);
+        let tree = kind_of(app.world.tile(tx - 1, ty - 1));
+        let tree2 = kind_of(app.world.tile(tx + 1, ty - 1));
+        let tree3 = kind_of(app.world.tile(tx - 1, ty + 1));
+        let tree4 = kind_of(app.world.tile(tx + 1, ty + 1));
+        // `:41186-41188` — below: `tileSolid[num3] && (!tileNoAttach[num3]
+        // || Platforms[num3])`.
+        if num3 >= 0
+            && td::TILE_SOLID.has(num3 as u16)
+            && (!tr_core::torch::no_attach_pub(num3 as u16)
+                || td::SET_PLATFORMS.has(num3 as u16))
+        {
+            return true;
+        }
+        // `:41190-41193` — left: solid-non-noAttach / tree triple / beam.
+        if (num4 >= 0 && td::TILE_SOLID.has(num4 as u16) && !tr_core::torch::no_attach_pub(num4 as u16))
+            || (tr_core::torch::is_tree_type_pub(num4)
+                && tr_core::torch::is_tree_type_pub(tree)
+                && tr_core::torch::is_tree_type_pub(tree3))
+            || (num4 >= 0 && td::SET_IS_BEAM.has(num4 as u16))
+        {
+            return true;
+        }
+        // `:41194-41197` — right: the mirror.
+        if (num5 >= 0 && td::TILE_SOLID.has(num5 as u16) && !tr_core::torch::no_attach_pub(num5 as u16))
+            || (tr_core::torch::is_tree_type_pub(num5)
+                && tr_core::torch::is_tree_type_pub(tree2)
+                && tr_core::torch::is_tree_type_pub(tree4))
+            || (num5 >= 0 && td::SET_IS_BEAM.has(num5 as u16))
+        {
+            return true;
+        }
+        return false;
+    }
     [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
         app.world.tile(tx + dx, ty + dy).is_some_and(|n| {
             n.wall != 0
@@ -3451,11 +3516,66 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
         } else if !cut_plants_for_placement(app, tx, ty, kind) {
             return false;
         }
+        // S1-P-i42 — the torch family's support flatten
+        // (`PlaceThing_Tiles_BlockPlacementForAssortedThings`,
+        // `Player.cs:41114-41146`): a sloped/half-brick support below/left/
+        // right is pounded flat (`WorldGen.SlopeTile`) BEFORE the support
+        // type check, so the torch can stand on it. Runs only when no
+        // `SolidTileNoAttach` support already holds (the C#'s outer gate).
+        if kind == 4 {
+            flatten_torch_supports(app, tx, ty);
+        }
     }
     if legacy_precheck_applies(kind, style) && !can_place(app, tx, ty) {
         return false;
     }
     place_tile(app, tx, ty, kind)
+}
+
+/// The torch support flatten of
+/// `PlaceThing_Tiles_BlockPlacementForAssortedThings`
+/// (`Player.cs:41114-41146`): when no `SolidTileNoAttach` support holds the
+/// cell below/left/right, the first sloped/half-brick non-platform support
+/// in the C#'s priority order (below → left → right) is pounded flat
+/// (`WorldGen.SlopeTile`, `:41120`/`:41131`/`:41140`). The Dig sound the
+/// flatten plays (`WorldGen.cs:80782`) rides the `UpdatePlayers` stream
+/// (placement runs under the `Main.cs:17754` swap); the `KillTile(fail,
+/// effectOnly)` dust (`:80780`) is the documented visual skip.
+fn flatten_torch_supports(app: &mut App, tx: i32, ty: i32) {
+    // `:41114` — the outer gate: any flat attachable support already holds.
+    if tr_core::edit::solid_tile_no_attach(&app.world, tx, ty + 1)
+        || tr_core::edit::solid_tile_no_attach(&app.world, tx - 1, ty)
+        || tr_core::edit::solid_tile_no_attach(&app.world, tx + 1, ty)
+    {
+        return;
+    }
+    // The C#'s if/else-if chain (`:41116`/`:41127`/`:41138`): the FIRST
+    // sloped/half-brick support in below → left → right order takes the
+    // branch; it is pounded flat only when not a platform (the platform
+    // check sits INSIDE the below/left arms, `:41118`/`:41129`, and in the
+    // right arm's condition, `:41138`). The outer gate already proved all
+    // three are not-attach, so the repeated `!SolidTileNoAttach` conjuncts
+    // inside are redundant. A platform support consumes its branch without
+    // flattening (no fall-through to the next arm).
+    for (sx, sy) in [(tx, ty + 1), (tx - 1, ty), (tx + 1, ty)] {
+        let Some(s) = app.world.tile(sx, sy).copied() else {
+            continue;
+        };
+        if s.half_brick() || s.slope() != 0 {
+            if !td::SET_PLATFORMS.has(s.kind)
+                && tr_core::edit::slope_tile(&mut app.world, sx, sy)
+            {
+                app.audio.play_place_sound(
+                    (0, 1),
+                    sx as f32 * TILE_PX,
+                    sy as f32 * TILE_PX,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+                app.world_key = None;
+            }
+            return;
+        }
+    }
 }
 
 /// The C# placement route the plant rules ride (`Player.cs:39771-39772`):
@@ -3600,10 +3720,26 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // `Item.placeStyle` + `Player.direction` are what `TileObject.CanPlace`
     // receives in vanilla (`Player.cs:39772`); the dispatcher resolves style
     // alternates and click points from them.
-    let (style, dir) = style_and_facing(
+    let (mut style, dir) = style_and_facing(
         app.inventory[app.selected].kind,
         app.player.as_ref().map(|p| p.facing),
     );
+    // S1-P-i42 — `PlaceThing_Tiles_PlaceIt`'s biome-torch conversion
+    // (`Player.cs:40129-40132`): with the Torch God's favour unlocked
+    // (`UsingBiomeTorches`) and a PLAIN torch (style 0), the placed style
+    // becomes the biome's (`BiomeTorchPlaceStyle`, `:40236-40289`). The
+    // hold-light family already reads the same unlock (`player_lights.rs`);
+    // this is the placement half. The ZoneShimmer / ZoneUndergroundDesert
+    // arms read fields the port's `Zones` does not carry — skipped in place,
+    // the remaining arms (incl. temple + remix) keep their C# order (the
+    // player_lights `biome_torch_hold_style` precedent).
+    if kind == 4 && style == 0 {
+        if let Some(p) = app.player.as_ref() {
+            if p.unlocked_biome_torches {
+                style = biome_torch_place_style(p, &app.world);
+            }
+        }
+    }
     if !place_item_and_consume(
         &mut app.world,
         &mut app.inventory[app.selected],
@@ -3641,6 +3777,62 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     app.request_edit(tx, ty, 1, kind);
     app.world_key = None;
     true
+}
+
+/// `Player.BiomeTorchPlaceStyle` (`Player.cs:40236-40289`): the biome torch
+/// style for a plain torch placed with the Torch God's favour. The arm order
+/// is the C#'s verbatim; `ZoneShimmer` (`:40240`) and `ZoneUndergroundDesert`
+/// (`:40280`) read fields the port's `Zones` does not carry and are skipped
+/// in place (the remaining arms keep their order, the
+/// `player_lights::biome_torch_hold_style` precedent). `ZoneLihzhardTemple`
+/// (`:40248`) rides `Zones.temple`; the remix desert arm (`:40284-40287`)
+/// reads the world's REMIX seed flag. The underworld arm reads
+/// `Main.UnderworldLayer * 16` = `(height - 200) * 16` (`Main.cs:2790`).
+fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
+    let z = p.zones;
+    // `:40244-40247` — the dungeon arm comes before the underworld one.
+    if z.dungeon {
+        return 13;
+    }
+    // `:40248-40251` — the temple (Lihzhard) arm.
+    if z.temple {
+        return 21;
+    }
+    // `:40252-40255` — below the underworld layer.
+    let underworld_px = (world.height - 200) as f32 * TILE_PX;
+    if p.y > underworld_px {
+        return 7;
+    }
+    if z.glowshroom {
+        return 22; // `:40256-40259`
+    }
+    if z.hallow {
+        return 20; // `:40260-40263`
+    }
+    if z.corrupt {
+        return 18; // `:40264-40267`
+    }
+    if z.crimson {
+        return 19; // `:40268-40271`
+    }
+    if z.snow {
+        return 9; // `:40272-40275`
+    }
+    if z.jungle {
+        return 21; // `:40276-40279`
+    }
+    // `:40280-40283` — the surface-desert half (the underground-desert half
+    // reads an unported `Zones` field — skipped).
+    if z.desert && (p.y as f64) < world.world_surface * TILE_PX as f64 {
+        return 16;
+    }
+    // `:40284-40287` — `ZoneDesert && Main.remixWorld`: the remix seed's
+    // inverted world grows its desert below the surface line, so the surface
+    // gate above never fires there (the player_lights hold-style precedent).
+    if z.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        return 16;
+    }
+    0
 }
 
 /// Applies a replicated edit. `kind`: 0 break tile, 1 place tile, 2 break wall,
@@ -4519,6 +4711,88 @@ mod tests {
         );
         assert!(fired[0].vel.x > 0.0, "flies at the cursor");
         assert_eq!(app.equip.ammo[0].count, 6, "the arrow drained");
+    }
+
+    // ---- S1-P-i42: the light-item throw / flare-gun wire -------------------
+
+    #[test]
+    fn the_glowstick_throws_as_a_consumable_ai14_shot() {
+        // `Player.ItemCheck_Shoot`'s generic arm (`Player.cs:49437`): the
+        // glowstick (282, useStyle 1, shoot 50, shootSpeed 6, consumable,
+        // NO useAmmo) throws its own projectile at the aim normalized to 6,
+        // and the stack drains one. The row is aiStyle 14 (`Projectile.cs:
+        // 1326-1336`), so the dispatch routes it to the glowstick arm.
+        let mut app = shooter_rig(282, "Glowstick", &[]);
+        app.inventory[app.selected].count = 5;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        let fired: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 50)
+            .collect();
+        assert!(!fired.is_empty(), "the glowstick spawned");
+        assert!(fired[0].vel.x > 0.0, "flies at the cursor");
+        // The speed is the aim normalized to shootSpeed 6 (no melee scale —
+        // the glowstick is DamageClass.None).
+        assert!(
+            (fired[0].vel.length() - 6.0).abs() < 0.5,
+            "speed ~6, got {}",
+            fired[0].vel.length()
+        );
+        assert_eq!(app.inventory[app.selected].count, 4, "one glowstick consumed");
+    }
+
+    #[test]
+    fn the_flare_gun_fires_the_ammo_flare_and_drains_it() {
+        // `ItemCheck_Shoot` + `PickAmmo` (`Player.cs:47056+`, `:53458+`): the
+        // Flare Gun (930, useAmmo 931, shoot 163) fires the ammo's own
+        // projectile (the Flare 931's shoot 163), the speed = the weapon's
+        // 6 + the ammo's 6 = 12, and the flare stack drains one.
+        let mut app = shooter_rig(930, "Flare Gun", &[(0, 931, 7)]);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        let fired: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 163)
+            .collect();
+        assert!(!fired.is_empty(), "the flare spawned");
+        assert!(fired[0].vel.x > 0.0, "flies at the cursor");
+        // The fused speed 12 (weapon 6 + ammo 6, `Player.cs:53542`).
+        assert!(
+            (fired[0].vel.length() - 12.0).abs() < 1.0,
+            "speed ~12, got {}",
+            fired[0].vel.length()
+        );
+        assert_eq!(app.equip.ammo[0].count, 6, "the flare drained");
+    }
+
+    #[test]
+    fn the_flare_gun_without_ammo_plays_a_dry_swing() {
+        // `canShoot = false` (`Player.cs:53462-53466`): no flare ammo — the
+        // use plays out but nothing spawns.
+        let mut app = shooter_rig(930, "Flare Gun", &[]);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        assert!(
+            app.projectiles.slots().iter().all(|p| !p.active),
+            "no flare without ammo"
+        );
     }
 
     // ---- Phase 4 (M3-ITEM-6): the integrated shooter wire -----------------

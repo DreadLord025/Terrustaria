@@ -16,6 +16,15 @@ use crate::world::World;
 /// Places a block/torch into an empty cell, preserving the wall. The caller checks
 /// reach, support and player overlap.
 pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
+    // S1-P-i42 — the torch family rides its own arm (`WorldGen.PlaceTile`
+    // case 4, style 0): the support gate + the liquid gate + `frameY =
+    // 22 * style` + `CheckTorch`, exactly like the item-use path
+    // (`place_item_tile`). The pre-fix legacy write placed a torch with NO
+    // support gate and frameY 0; the dev `TR_PLACE` hook and the liquid-merge
+    // caller now judge a torch the same way vanilla does.
+    if kind == 4 {
+        return place_torch(world, x, y, 0);
+    }
     let Some(t) = world.tile(x, y).copied() else {
         return false;
     };
@@ -33,18 +42,12 @@ pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
         ..Default::default()
     };
     tile.flags |= crate::tile::FLAG_ACTIVE;
-    if kind == 4 {
-        tile.frame_x = 0;
-        tile.frame_y = 0;
-        if world.frame_important.len() > 4 {
-            world.frame_important[4] = true;
-        }
-    }
     world.tiles[i] = tile;
     touch(world, x, y);
     // `WorldGen.TileFrame` runs `CheckTorch` for torch tiles: the frame follows the
     // attachment, and an unsupported torch is removed again (the caller then keeps the
-    // item instead of consuming it).
+    // item instead of consuming it). (The torch family routes above; this stays
+    // for any other `SET_TORCHES` kind the table carries.)
     let kept = !td::SET_TORCHES.has(kind) || crate::torch::check_torch(world, x, y);
     after_edit(world, x, y);
     kept
@@ -103,15 +106,157 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
         }
     }
     // Legacy `WorldGen.PlaceTile` dispatcher (`WorldGen.cs:60177-60230`):
-    // `Main.tileAlch` kinds go to `PlaceAlch`, tile 380 has its own case.
+    // `Main.tileAlch` kinds go to `PlaceAlch`, tile 380 has its own case,
+    // tile 4 (the torch family) its own `else if (num == 4)` arm
+    // (`WorldGen.cs:59798-59842`) — the style ride and the support gate the
+    // single-tile write never carried (S1-P-i42).
     if crate::tileobject::tile_alch(kind) {
         return place_alch(world, x, y, style);
     }
     if kind == 380 {
         return place_planter_box(world, x, y, style);
     }
+    if kind == 4 {
+        return place_torch(world, x, y, style);
+    }
     // Legacy single-tile route (`WorldGen.PlaceTile`).
     place_tile(world, x, y, kind)
+}
+
+/// `WorldGen.PlaceTile`'s torch arm (`WorldGen.cs:59798-59842`) plus the
+/// liquid gate ahead of the write (`:59454-59467`): the torch family writes
+/// `frameY = 22 * style` (`:59839`) — the style column `CheckTorch` preserves
+/// and `TileLightScanner` reads (`tile_light/scanner.rs`'s `fy / 22` arm) —
+/// only when the cell has a wall behind it OR an attachable support below /
+/// left / right (`:59835`). A refused placement writes nothing and keeps the
+/// item (the caller's consumption gate). `style` is the item's `placeStyle`
+/// (0 plain … 23 shimmer, the 24 `ItemID.Sets.Torches` rows).
+///
+/// The liquid gate (`:59454-59467`): a cell with liquid refuses every torch
+/// style EXCEPT 8 (Cursed) / 11 (Ichor) / 17 (Coral) — the three
+/// `ItemID.Sets.WaterTorches` (`ItemID.cs:1372`); those three resolve their
+/// `TileObjectData` sub-tile (`D_4_S8/S11/S17`, all `WaterPlacement.Allowed`),
+/// so the `WaterPlacement != Allowed` refusal never fires for them. The C#
+/// also reads `tile.checkingLiquid()` — the port's tile flags carry no
+/// checking bit (`tile.rs`), so that half folds to false (ANALYSIS).
+pub fn place_torch(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let Some(prev) = world.tile(x, y).copied() else {
+        return false;
+    };
+    // `:59373` — the write needs an empty cell (`Collision.EmptyTile`); the
+    // unbreakable-wall refusal is the port's shared placement gate
+    // (`place_tile`'s head).
+    if prev.active() || prev.wall == WALL_UNBREAKABLE {
+        return false;
+    }
+    // `:59454-59467` — the liquid gate (module doc). `TileID.Sets.Torches[4]`
+    // is true, so the arm always judges a torch cell with liquid.
+    if prev.liquid > 0 {
+        // `:59458` — `num == 4 && style != 8 && style != 11 && style != 17`.
+        if !matches!(style, 8 | 11 | 17) {
+            return false;
+        }
+        // `:59462-59466` — the water-torch sub-tiles' `WaterPlacement` is
+        // `Allowed` (registry `D_4_S8`/`D_4_S11`/`D_4_S17`), so the refusal
+        // never fires; an unregistered style would refuse (`GetTileData`
+        // null skips the check in C# — the styles 8/11/17 are the only ones
+        // past the gate above, and all three are registered).
+        let allowed = crate::tileobject::def_for_tile(4)
+            .and_then(|def| crate::tileobject::get_tile_data(def, style, 0))
+            .is_none_or(|sub| {
+                sub.water_placement == crate::tileobject::LiquidPlacement::Allowed
+            });
+        if !allowed {
+            return false;
+        }
+    }
+    // `:59835` — the support gate: wall behind, OR the left neighbour
+    // (active, slope 0 or even, solid-non-top-non-NotReallySolid / beam /
+    // tree-trunk triple), OR the right neighbour (same, odd slopes), OR the
+    // below neighbour (active, solid, platform-with-top-edge OR
+    // non-solid-top flat). The neighbour reads are RAW `active()` (no
+    // `nactive()` — actuated tiles still hold a torch at placement time;
+    // `CheckTorch`'s later re-frame may drop it, exactly like the C#).
+    // The tree triples read the diagonals RAW too (`tile7.type` /
+    // `tile5.type` — no active gate, `:59835`).
+    let left_ok = world.tile(x - 1, y).is_some_and(|t| {
+        t.active()
+            && (t.slope() == 0 || t.slope() % 2 != 1)
+            && (side_support(t)
+                || (crate::torch::is_tree_type(t.kind as i32)
+                    && crate::torch::is_tree_type(
+                        world.tile(x - 1, y - 1).map_or(0, |d| d.kind as i32),
+                    )
+                    && crate::torch::is_tree_type(
+                        world.tile(x - 1, y + 1).map_or(0, |d| d.kind as i32),
+                    )))
+    });
+    let right_ok = world.tile(x + 1, y).is_some_and(|t| {
+        t.active()
+            && (t.slope() == 0 || t.slope() % 2 != 0)
+            && (side_support(t)
+                || (crate::torch::is_tree_type(t.kind as i32)
+                    && crate::torch::is_tree_type(
+                        world.tile(x + 1, y - 1).map_or(0, |d| d.kind as i32),
+                    )
+                    && crate::torch::is_tree_type(
+                        world.tile(x + 1, y + 1).map_or(0, |d| d.kind as i32),
+                    )))
+    });
+    let below_ok = world.tile(x, y + 1).is_some_and(|t| {
+        t.active()
+            && is_solid_kind(t.kind)
+            && ((crate::tiledata::SET_PLATFORMS.has(t.kind)
+                && crate::torch::top_edge_can_be_attached_to(world, x, y + 1))
+                || ((!crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+                    || (t.kind == 380 && t.slope() == 0))
+                    && !crate::tileobject::not_really_solid(t.kind)
+                    && !t.half_brick()
+                    && t.slope() == 0))
+    });
+    if !(prev.wall > 0 || left_ok || right_ok || below_ok) {
+        return false;
+    }
+    // `:59473-59476` — `tile.Clear(Tile | TilePaint | Slope)` on the empty
+    // cell: the stale frames/paint/slope of a broken occupant are wiped
+    // before the write (the liquid survives — `TileDataType.Tile` excludes
+    // it, the `place_tile` precedent).
+    // `:59837-59839` — the write: active, type 4, `frameY = 22 * style`.
+    // `frameX` is left for `SquareTileFrame` → `CheckTorch` (`:59840`), which
+    // the `after_edit` re-frame below runs (the attachment frame 0/22/44).
+    let i = world.index(x, y);
+    let cell = &mut world.tiles[i];
+    cell.flags |= crate::tile::FLAG_ACTIVE;
+    cell.flags &= !(crate::tile::FLAG_HALF_BRICK | crate::tile::FLAG_FULLBRIGHT);
+    cell.set_slope(0);
+    cell.set_paint(0);
+    cell.kind = 4;
+    cell.frame_x = 0;
+    cell.frame_y = (22 * style) as i16;
+    touch(world, x, y);
+    ensure_frame_important(world, 4);
+    // `:59840`/`:60261` — `SquareTileFrame`: the attachment re-frame. An
+    // unsupported torch (the gate above can pass on a wall the `CheckTorch`
+    // 3x3 scan then judges differently — e.g. the edge-of-world early return)
+    // is removed again and the caller keeps the item.
+    let kept = crate::torch::check_torch(world, x, y);
+    after_edit(world, x, y);
+    kept
+}
+
+/// `WorldGen.PlaceTile` case 4's side-support conjunction (`:59835`):
+/// `(tileSolid && !tileSolidTop && !NotReallySolid) || IsBeam` — the tree
+/// triple is judged inline by [`place_torch`] (it needs the diagonal
+/// neighbours).
+fn side_support(t: &crate::tile::Tile) -> bool {
+    (is_solid_kind(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !crate::tileobject::not_really_solid(t.kind))
+        || crate::tiledata::SET_IS_BEAM.has(t.kind)
+}
+
+fn is_solid_kind(kind: u16) -> bool {
+    crate::tiledata::TILE_SOLID.has(kind)
 }
 
 /// `WorldGen.PlaceAlch` (`WorldGen.cs:45380-45479`): the seed write — plants
@@ -686,5 +831,109 @@ mod tests {
         assert!(place_item_tile(&mut w, 14, 19, 663, 0, 1));
         let moondial = *w.tile(14, 19).unwrap();
         assert!(moondial.active() && moondial.kind == 663);
+    }
+
+    // ---- S1-P-i42: the torch placement arm (WorldGen.cs:59798-59842) -------
+
+    #[test]
+    fn the_torch_style_rides_frame_y_at_22_per_style() {
+        // `:59839` — `frameY = 22 * style`. Every torch style writes its own
+        // row; `CheckTorch` keeps frameY (it only sets frameX).
+        for style in [0i32, 1, 5, 9, 13, 16, 23] {
+            let mut w = object_world();
+            assert!(
+                place_item_tile(&mut w, 10, 19, 4, style, 1),
+                "style {style} places on the floor"
+            );
+            let t = *w.tile(10, 19).unwrap();
+            assert!(t.active() && t.kind == 4, "style {style}");
+            assert_eq!(t.frame_y, (22 * style) as i16, "style {style} frameY");
+        }
+    }
+
+    #[test]
+    fn the_torch_places_on_a_wall_only_cell() {
+        // `:59835` — `tile.wall > 0` holds the torch with no block support.
+        let mut w = object_world();
+        // (10, 10): no floor (the floor is y = 20), no neighbours — wall only.
+        let i = w.index(10, 10);
+        w.tiles[i].wall = 2;
+        assert!(place_item_tile(&mut w, 10, 10, 4, 0, 1));
+        let t = *w.tile(10, 10).unwrap();
+        assert!(t.active() && t.kind == 4);
+        // CheckTorch's wall arm sets frameX 0 (`:86172-86174`).
+        assert_eq!(t.frame_x, 0);
+    }
+
+    #[test]
+    fn the_torch_refuses_a_supportless_empty_cell() {
+        // `:59835` — no wall, no support: the gate refuses, nothing writes.
+        let mut w = object_world();
+        let before: Vec<Tile> = w.tiles.clone();
+        assert!(!place_item_tile(&mut w, 10, 10, 4, 0, 1));
+        assert_eq!(before, w.tiles, "the refused placement writes nothing");
+    }
+
+    #[test]
+    fn the_torch_places_on_a_side_block() {
+        // `:59835` — the left/right solid support (the side arm).
+        let mut w = object_world();
+        set_active(&mut w, 9, 10, 1); // stone left of (10, 10)
+        assert!(place_item_tile(&mut w, 10, 10, 4, 0, 1));
+        let t = *w.tile(10, 10).unwrap();
+        assert!(t.active() && t.kind == 4);
+        // CheckTorch's left arm sets frameX 22 (`:86164-86166`).
+        assert_eq!(t.frame_x, 22);
+    }
+
+    #[test]
+    fn the_plain_torch_refuses_liquid_but_the_water_torches_place() {
+        // `:59454-59467` — a liquid cell refuses every style except 8/11/17
+        // (the WaterTorches, ItemID.cs:1372).
+        for style in [0i32, 1, 5, 9, 13, 16, 23] {
+            let mut w = object_world();
+            set_liquid(&mut w, 10, 19, 200, false);
+            assert!(
+                !place_item_tile(&mut w, 10, 19, 4, style, 1),
+                "style {style} refuses water"
+            );
+            assert!(!w.tile(10, 19).unwrap().active(), "style {style} writes nothing");
+        }
+        for style in [8i32, 11, 17] {
+            let mut w = object_world();
+            set_liquid(&mut w, 10, 19, 200, false);
+            assert!(
+                place_item_tile(&mut w, 10, 19, 4, style, 1),
+                "water torch style {style} places"
+            );
+            let t = *w.tile(10, 19).unwrap();
+            assert!(t.active() && t.kind == 4, "style {style}");
+            assert_eq!(t.frame_y, (22 * style) as i16, "style {style} frameY");
+            assert_eq!(t.liquid, 200, "the liquid survives the write");
+        }
+    }
+
+    #[test]
+    fn the_water_torch_places_in_lava_the_csharp_gate_reads_water_placement_only() {
+        // The 8/11/17 sub-tiles carry `lava_placement: Allowed` (registry
+        // D_4_S8/S11/S17), so the C#'s `WaterPlacement != Allowed` gate
+        // (`:59463`) — which reads WaterPlacement only — lets them into lava
+        // too. The port's gate reads water_placement (Allowed), so lava is
+        // accepted exactly like the C# (the lava_death flag is a separate
+        // post-placement system, unported).
+        let mut w = object_world();
+        set_liquid(&mut w, 10, 19, 200, true);
+        assert!(place_item_tile(&mut w, 10, 19, 4, 8, 1));
+        assert!(w.tile(10, 19).unwrap().active());
+    }
+
+    #[test]
+    fn the_torch_refuses_an_occupied_cell() {
+        // `:59373` — the write needs an empty cell.
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 1);
+        let before: Vec<Tile> = w.tiles.clone();
+        assert!(!place_item_tile(&mut w, 10, 19, 4, 0, 1));
+        assert_eq!(before, w.tiles, "the occupied cell is untouched");
     }
 }
