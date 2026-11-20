@@ -63,7 +63,18 @@ pub const TILE_GLOW_RECORDS: &[(u16, i16)] = &[
     (667, 349),  // :10051 — ShimmerBrick (shimmer glitter)
     (708, 359),  // :10052 — Shimmerfall (shimmer glitter)
     (699, 353),  // :10053 — DeadCellsPotionStation (White :1240-1241)
+    (717, 362),  // :10056 — LavaCloud (LavaLightA colour :1193-1197)
+    (410, 201),  // :10063 — LunarMonolith
+    (509, 265),  // :10064 — VoidMonolith
+    (658, 333),  // :10065 — ShimmerMonolith
+    (720, 368),  // :10066 — CRTMonolith
+    (721, 369),  // :10067 — RetroMonolith
+    (725, 371),  // :10068 — NoirMonolith (Noir-filter arm :1277-1288)
 ];
+// The table is COMPLETE: `Main.tileGlowMask` has exactly these 37
+// assignments (`Main.cs:10024-10068`, the :10054-10062 gap carries
+// tileLighted/tileSolid writes only — no glow rows).
+
 
 /// `Main.tileGlowMask[type]` (`Main.cs:10024-10068`): the glow-mask sheet
 /// index, or −1 (the `:8437` reset stock) for every unlisted type. Tile
@@ -97,5 +108,24 @@ mod tests {
         assert_eq!(tile_glow_mask(537), 262); // :10033
         assert_eq!(tile_glow_mask(692), 341); // :10043
         assert_eq!(tile_glow_mask(627), 313); // :10041
+        assert_eq!(tile_glow_mask(129), -2); // :10048 — the sentinel
+        assert_eq!(tile_glow_mask(429), 214); // :10045
+        assert_eq!(tile_glow_mask(445), 214); // :10047 — the shared mask
+        assert_eq!(tile_glow_mask(725), 371); // :10068 — the last row
+    }
+
+    #[test]
+    fn w4_g35_the_table_is_the_complete_census() {
+        // 37 assignments, Main.cs:10024-10068 — one row each, source order.
+        assert_eq!(TILE_GLOW_RECORDS.len(), 37);
+        let mut sorted: Vec<u16> = TILE_GLOW_RECORDS.iter().map(|&(t, _)| t).collect();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 37, "no duplicate tile ids");
+        // The mask ids stay inside GlowMaskID.Count = 384 (GlowMaskID.cs:781)
+        // except the deliberate -2 sentinel.
+        for &(_, m) in TILE_GLOW_RECORDS {
+            assert!(m == -2 || (0..384).contains(&m), "mask {m} out of range");
+        }
     }
 }
