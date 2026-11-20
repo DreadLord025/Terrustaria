@@ -73,7 +73,7 @@ every sibling's *stated* range except the Grass Wall orphan it adopts.
 ## Status
 
 - [x] Range claim documented (this doc)
-- [ ] R1 Grass Wall
+- [x] R1 Grass Wall — `surface.rs::grass_wall` + `spread_wall`/`count_dirt_tiles`/`spread_dirt_grass`, `pipeline.rs::step_grass_wall` (between `living trees` and `trees`), `pass_rng("Grass Wall")`; witnesses written NOT run; hash pins expected unchanged (wall-0 grass tops), re-pin deferred
 - [ ] R2 Settle Liquids Again
 - [ ] R3 Tile Cleanup
 - [ ] R4 Stalac

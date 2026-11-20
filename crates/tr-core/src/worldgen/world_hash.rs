@@ -238,6 +238,18 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-d106 R1 (2026-11-20, code-only): the `Grass Wall` pass
+    // (`WorldGen.cs:19589-19684` + `Spread.Wall2` `:3416-3524` +
+    // `countDirtTiles` `:9637-9681`) lands between `living trees` and
+    // `trees` on a fresh `pass_rng("Grass Wall")` stream. The pin is
+    // EXPECTED UNCHANGED: the compact terrain's grass tops carry wall 0
+    // (walls start at `top + 3`, `terrain.rs:343`) and no earlier executed
+    // pass writes wall 63, so neither the seed-cell test (`:19604`) nor
+    // the flower speckle (`:19658`) fires — the pass draws its `Next(4)`
+    // lattice on its own isolated stream and writes nothing. If a
+    // grass-with-wall cell does exist on some seed, the pin moves BY
+    // DESIGN; the re-pin is DEFERRED to the merge gate (no compiler on
+    // this branch). The a == b determinism asserts stay in place.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +293,11 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-d106 R1 (code-only): the Grass Wall pass (see SEED42_512 above) —
+    // expected UNCHANGED for the same wall-0-grass-top reason on the
+    // 4200-wide default world; any grass-with-wall seed cell would move it
+    // BY DESIGN. Re-pin DEFERRED to the merge gate; a == b stays green
+    // (the pass draws only its own fresh stream).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

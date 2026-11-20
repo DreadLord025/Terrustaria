@@ -66,6 +66,10 @@ pub use grass::{
 };
 pub(crate) use grass::convert_wall_by_case;
 use grass::{grow_moss_arm, SPREAD_UNDERGROUND};
+// W4-d106 R1: the Grass Wall pass's `SpreadGrass` write kills an invalid
+// tree above the converted cell (`WorldGen.cs:75222` → `:54802-54902`) —
+// the same helper the growth-tick slice uses (S1-K-3 seam).
+pub(crate) use trees::kill_invalid_tree_above;
 
 // S1-K-3: the decorations family lives in `growth/decorations.rs`; the public
 // seams stay on `growth` (verbatim move, behaviour frozen).

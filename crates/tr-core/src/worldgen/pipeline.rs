@@ -1369,6 +1369,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Grass Wall slot (`WorldGen.cs:19589`): after Spawn Point
+    // (`:19460`, unported — the port's spawn rides the world tail) and
+    // before Guide (`:19685`, d105's lane) / Planting Trees (`:19940`) —
+    // W4-d106 R1. The port slots it between the living trees and the trees
+    // steps (the nearest executed neighbours); the pass draws only its own
+    // `pass_rng("Grass Wall")` stream, so the insertion shifts no other
+    // step's ledger.
+    step!("grass wall", "Grass Wall", step_grass_wall),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2606,6 +2614,22 @@ fn step_trees(
     surface::plant_trees(world, &mut streams.rng, &map.heights, world_surface);
 }
 
+/// The vanilla Grass Wall slot (`WorldGen.cs:19589-19684`) — W4-d106 R1:
+/// the surface dirt-wall → grass-wall spread, the flower speckle and the
+/// dirt-to-grass fringe, on the pass's own stream. The skyblock gate lives
+/// in the pass body (`:19591`).
+fn step_grass_wall(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    surface::grass_wall(world, world_surface, &mut streams.pass_rng("Grass Wall"), opts);
+}
+
 fn step_surface_flora(
     world: &mut World,
     gv: &mut GenVars,
@@ -3140,7 +3164,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-d106 R1: + `grass wall` (vanilla "Grass Wall",
+        // `WorldGen.cs:19589`) between `living trees` and `trees`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3231,6 +3257,7 @@ mod tests {
                 "shell piles",
                 "slopes",
                 "living trees",
+                "grass wall",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3437,6 +3464,30 @@ mod tests {
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
+    }
+
+    /// W4-d106 R1: `grass wall` sits between the port's `living trees` and
+    /// `trees` steps — the vanilla chain's relative order Spawn Point
+    /// (`WorldGen.cs:19460`, unported) → Grass Wall (`:19589`) → Guide
+    /// (`:19685`, d105) → Planting Trees (`:19940`) puts the pass ahead of
+    /// the trees and behind the Living Trees slot (`:15476`).
+    #[test]
+    fn w4_d106_r1_the_grass_wall_step_sits_before_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("grass wall"), pos("living trees") + 1);
+        assert_eq!(pos("grass wall") + 1, pos("trees"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Living Trees") < cpos("Grass Wall"));
+        assert!(cpos("Spawn Point") < cpos("Grass Wall"));
+        assert!(cpos("Grass Wall") < cpos("Guide"));
+        assert!(cpos("Grass Wall") < cpos("Planting Trees"));
     }
 
     #[test]
