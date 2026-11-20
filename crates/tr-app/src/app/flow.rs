@@ -2165,6 +2165,7 @@ pub(crate) mod front_flow_tests {
             filter_driver: crate::app::filters::FilterDriver::new(),
             atlas: None,
             combat_texts: Vec::new(),
+            popup_texts: crate::popup_text::Pool::default(),
             static_sheets: None,
             fonts_cache: None,
             font_atlas: None,
@@ -2404,6 +2405,8 @@ pub(crate) mod front_flow_tests {
             mouse_text_color_dir: 1,
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
+            master_color: 1.0, // `Main.cs:66833-66834`
+            master_color_dir: 1,
             disco: [255, 0, 0],
             disco_style: 0,
             light_rng_seed: 1,
@@ -3883,6 +3886,88 @@ pub(crate) mod front_flow_tests {
         app.update_reforge_menu();
         assert!(!app.in_reforge_menu);
         assert_eq!(app.reforge_slot.count, 0);
+    }
+
+    // -- W4-g57: the reforge reveal wiring (PopupText spawn/update/draw) --
+
+    /// `Main.cs:41906`: the roll spawns the new-prefix popup at the player's
+    /// centre — VISUAL only, the global stream still pays exactly the roll +
+    /// tail draws (the spawn itself draws nothing, `PopupText.cs:194-412`).
+    #[test]
+    fn w4_g57_the_reforge_reveal_spawns_without_extra_draws() {
+        let mut app = reforge_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let mut expect = tr_core::UnifiedRandom::new(0);
+        let (expected, top) = crate::prefix::reforge_roll(app.reforge_slot.kind, &mut expect);
+        let mut expect_audio = crate::audio::Audio::new(None);
+        crate::prefix::reforge_presentation_tail(top, &mut expect, &mut expect_audio);
+        app.reforge_click();
+        assert_eq!(app.reforge_slot.prefix, expected);
+        assert_eq!(
+            *app.rngs.global(),
+            expect,
+            "the popup spawn added NO draws to the i45 tail"
+        );
+        let t = app
+            .popup_texts
+            .texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the reveal popup spawned");
+        let name = crate::lang::prefixed_item_name(1, expected);
+        assert_eq!(t.name, name);
+        assert_eq!(t.display_text, name, "stack 1 carries no suffix");
+        assert!(t.no_stack);
+        assert_eq!(t.velocity, [0.0, -7.0]);
+        assert_eq!(t.life_time, 60);
+        // Centred on the player: the measured text's half subtracted
+        // (`PopupText.cs:321-322`). The fixture has no font sheet, so the
+        // bitmap estimate (8 px/char, 8 px line) stands in.
+        let w = name.chars().count() as f32 * 8.0;
+        assert_eq!(t.position, [cx - w * 0.5, cy - 4.0]);
+        assert_eq!(
+            t.context,
+            if top {
+                crate::popup_text::Context::ItemReforgeBest
+            } else {
+                crate::popup_text::Context::ItemReforge
+            }
+        );
+    }
+
+    /// The `Main.showItemText` gate (`PopupText.cs:196-199`): with the
+    /// pickup-text setting off the reveal never spawns — but the roll, the
+    /// charge and the tail's draws still run.
+    #[test]
+    fn w4_g57_the_pickup_text_setting_gates_the_reveal() {
+        let mut app = reforge_app();
+        app.settings.pickup_text = false;
+        app.reforge_click();
+        assert_ne!(app.reforge_slot.prefix, 0, "the roll still ran");
+        assert!(
+            !app.popup_texts.texts.iter().any(|t| t.active),
+            "showItemText off: no popup"
+        );
+    }
+
+    /// `Main.cs:18078`: `PopupText.UpdateItemText` ticks the pool on the
+    /// world step — one frame after the click the popup has risen (vy ×0.86)
+    /// and its scale ramped +0.1 toward the target.
+    #[test]
+    fn w4_g57_the_world_step_ticks_the_reveal() {
+        let mut app = reforge_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.reforge_click();
+        let y0 = app.popup_texts.texts[0].position[1];
+        app.frame();
+        let t = &app.popup_texts.texts[0];
+        assert!(t.active);
+        assert_eq!(t.frames_since_spawn, 1, "one update tick");
+        assert!(t.position[1] < y0, "the popup rose");
+        assert!((t.velocity[1] - (-7.0 * 0.86)).abs() < 1e-4);
+        assert!(t.scale > 0.0, "the scale ramp started");
+        assert_eq!(app.popup_texts.num_active, 1, "numActive refreshed");
     }
 
     #[test]

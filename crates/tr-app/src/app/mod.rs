@@ -170,6 +170,10 @@ pub(crate) struct App {
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
+    /// `PopupText.popupText[20]` (`PopupText.cs:11-12`): the item-name
+    /// popups — the reforge reveal (`Main.cs:41906`) is the only spawn
+    /// site the port has (W4-g57).
+    pub(crate) popup_texts: crate::popup_text::Pool,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
@@ -836,6 +840,12 @@ pub(crate) struct App {
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
+    /// `Main.masterColor` / `Main.masterColorDir` (`Main.cs:1235-1237`,
+    /// the ±0.05 cycle `:18225-18235`, reset 1/+1 at `:66833-66834`): the
+    /// master-rarity pulse the reforge popup recolours by
+    /// (`PopupText.cs:667-670`, W4-g57).
+    pub(crate) master_color: f32,
+    pub(crate) master_color_dir: i8,
     /// `Main.DiscoR/G/B` and the `Main.DiscoStyle` cycle (`DoUpdate_AnimateDiscoRGB`).
     pub(crate) disco: [u8; 3],
     pub(crate) disco_style: u8,
@@ -1861,6 +1871,42 @@ impl App {
         self.reforge_slot.prefix = prefix;
         if top_tier {
             self.reforge_cooldown = 60; // `Main.cs:41910`
+        }
+        // `PopupText.NewText(...)` (`Main.cs:41906`, W4-g57): the new-prefix
+        // reveal — the affix name floats up from the player's centre
+        // (`Main.LocalPlayer.Center`), `noStack: true`. VISUAL only: the
+        // spawn draws no `Main.rand` (`PopupText.cs:194-412`), so the i45
+        // tail below keeps its exact draw order. The `showItemText` gate
+        // (`PopupText.cs:196-199`) rides `settings.pickup_text`.
+        if self.settings.pickup_text {
+            let name = crate::lang::prefixed_item_name(kind, prefix);
+            let stack = self.reforge_slot.count.max(1);
+            let display = crate::popup_text::display_text(&name, stack);
+            let text_size = [
+                crate::ui::text::ui_font_width(&self.lookups, &display, 1.0)
+                    .unwrap_or(display.chars().count() as f32 * 8.0),
+                crate::ui::text::ui_font_height(&self.lookups, 1.0).unwrap_or(8.0),
+            ];
+            let (cx, cy) = self
+                .player
+                .as_ref()
+                .map(|p| p.center())
+                .unwrap_or((0.0, 0.0));
+            let rare = crate::prefix::prefixed_stats(kind, prefix)
+                .map(|s| s.rare)
+                .unwrap_or(0);
+            crate::popup_text::spawn_reforge(
+                &mut self.popup_texts,
+                top_tier,
+                &name,
+                stack,
+                [cx, cy],
+                crate::popup_text::popup_rarity_color(rare),
+                rare == -13, // `PrepareEffects` (`PopupText.cs:397-400`)
+                false,       // the port's item table carries no expert flag
+                text_size,
+                self.world.height as f32 * 16.0, // `Main.bottomWorld`
+            );
         }
         // The presentation tail (`Main.cs:41906-41932`): the sound + the
         // top-tier particle draws, in the C#'s order on the same global
@@ -3959,6 +4005,7 @@ impl App {
             shot_at: crate::env::shot_at().unwrap_or(20),
             atlas_stats,
             combat_texts: Vec::new(),
+            popup_texts: crate::popup_text::Pool::default(),
             static_sheets: None,
             fonts_cache: None,
             light: LightMap::new(),
@@ -3975,6 +4022,9 @@ impl App {
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
+            // `Main.masterColor = 1f; Main.masterColorDir = 1` (`Main.cs:66833-66834`).
+            master_color: 1.0,
+            master_color_dir: 1,
             // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
             disco: [255, 0, 0],
             disco_style: 0,
