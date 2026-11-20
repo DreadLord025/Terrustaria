@@ -33810,3 +33810,99 @@ mod w4_d25_style26_census_tests {
         assert_eq!(rng, witness, "the idle tick draws nothing");
     }
 }
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 27 slice).
+// WRITTEN, NOT RUN (code-only mode). 27 Wall of Flesh: the style's ONLY
+// member (113, `NPC.cs:10347`) — LANDED + WIRED (S1-D-3 W-1, the
+// faithful `npc_ai_style27::style27_step` behind `ai_027_wof_family`)
+// -> VERIFY-ONLY: the machine is unchanged; these witnesses re-pin the
+// axis claim + the classic draw census through the LIVE routing.
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style27_census_tests {
+    use super::*;
+
+    /// The axis claims style 27 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_27_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "27" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 27 claimed once");
+        assert!(src.contains("aiStyle 27 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// The kind arm is retired: `update_kind_ai` on the wall panics.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d25_the_wof_kind_arm_is_retired() {
+        let w = World::new("t".into(), 200, 400);
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::WallOfFlesh, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// Verify-only: the classic draw census rides the LIVE axis arm —
+    /// tick 1 draws `Next(1000)` + `Next(200)` (the roar, forced by the
+    /// pre-seeded cadence counter, `NPC.cs:25717-25719`) and emits the
+    /// ONE-TIME init (2 eyes + 11 Hungries, `:26041-26051`); tick 2
+    /// draws ONLY `Next(1000)` (the cadence reset keeps the roar gate
+    /// shut) and re-emits NOTHING. getGood/expert false: no other draws.
+    #[test]
+    fn w4_d25_the_wof_roar_and_one_shot_init_ride_the_27_axis() {
+        let w = World::new("t".into(), 200, 400);
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::WallOfFlesh, 100.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.local_ai[3] = 2000.0; // forces the roar on tick 1
+        let mut rng = UnifiedRandom::new(27);
+        let mut probe = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let d1 = probe.next_max(1000);
+        let d2 = probe.next_max(200);
+        assert!(d1 < 1000); // the mirror consumed both draws
+        assert_eq!(n.local_ai[3], -(d2 as f32), "the roar reset (:25719)");
+        assert_eq!(rng, probe, "tick 1: exactly the two roar draws");
+        assert_eq!(n.local_ai[0], 2.0, "the one-time init latch (:26042)");
+        assert_eq!(n.wof_spawns.len(), 13, "2 eyes + 11 Hungries, once");
+        assert_eq!(n.wof_spawns[0].npc_type, 114);
+        assert_eq!(n.wof_spawns[0].ai0, 1.0, "the top eye (:26044)");
+        assert_eq!(n.wof_spawns[1].ai0, -1.0, "the bottom eye (:26045)");
+        for i in 0..11 {
+            assert_eq!(n.wof_spawns[2 + i].npc_type, 115);
+            assert_eq!(
+                n.wof_spawns[2 + i].ai0,
+                i as f32 * 0.1 - 0.05,
+                "the Hungry ai0 ladder (:26048)"
+            );
+        }
+        // Tick 2: the cadence is negative — only the Next(1000) gate
+        // draw fires; the init never re-emits.
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let _d1b = probe.next_max(1000);
+        assert_eq!(rng, probe, "tick 2: exactly the one gate draw");
+        assert_eq!(n.local_ai[3], 1.0 - d2 as f32, "no second roar");
+        assert_eq!(n.wof_spawns.len(), 13, "no re-spawn (the W-1 fix)");
+    }
+}
