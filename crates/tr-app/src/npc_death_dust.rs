@@ -220,7 +220,8 @@ pub(crate) fn death_dust_feed(app: &mut crate::app::App, npc: &Npc) {
 fn lane_covers(ty: u16) -> bool {
     matches!(
         ty,
-        668 | 552..=554 | 561..=563 | 555..=557
+        668 | 552..=554 | 561..=563 | 555..=557 | 551 | 558..=560 | 566 | 567
+            | 576 | 577 | 564 | 565
     )
 }
 
@@ -256,6 +257,43 @@ pub(crate) fn death_dust_draws(fx: &mut DeathFx) {
         // (`:82154-82162`) precedes the loop in C# but draws nothing;
         // 20×5 then three constant gores.
         555..=557 => fx.burst(20, 5, hd, -1.0),
+        // `NPC.cs:82185-82217` — DD2 Betsy: 20×5 at `(hitDirection,-1)`;
+        // the ten-gore fan is spriteDirection-branched (`:82191`/
+        // `:82204`) but BOTH branches are constant-argument — zero
+        // draws outside the dust loop.
+        551 => fx.burst(20, 5, hd, -1.0),
+        // `NPC.cs:82323-82345` — the DD2 Wyvern trio: 20×5; the seven
+        // gores (974/1040/1045 tier rows) are constant-argument.
+        558..=560 => fx.burst(20, 5, hd, -1.0),
+        // `NPC.cs:82356-82387` — the DD2 Skeleton pair: 20×236, then
+        // gore 970 (constant) and SIX `Next(2) == 0`-gated gores
+        // (`:82363-82386`: 972×2, 973×2, 971×2). The gate draws are
+        // ARGUMENT-side conditional spawns — consumed here in order
+        // (the gore bodies stay the gore lane's; it must NOT re-draw
+        // the six gates).
+        566 | 567 => {
+            fx.burst(20, 236, hd, -1.0);
+            for _ in 0..6 {
+                // `:82363`/`:82367`/`:82371`/`:82375`/`:82379`/`:82383`
+                // — each gate draws unconditionally; == 0 spawns the
+                // gore (the gore lane reads the same stream position).
+                fx.rng.next_max(2);
+            }
+        }
+        // `NPC.cs:82398-82424` — the DD2 Ogre pair: 20×273 (a
+        // DangerousDust id — the ChildSafety re-type rolls INSIDE
+        // new_dust when armed), then the spriteDirection-branched fan:
+        // BOTH branches' first gore carries `1005 + ((Next(5) == 0) ?
+        // 1 : 0)` (`:82406`/`:82417`) — ONE Next(5) argument draw
+        // consumed here; the remaining five gores are constant. The
+        // left branch's two `rotation = PI` writes are gore-side.
+        576 | 577 => {
+            fx.burst(20, 273, hd, -1.0);
+            fx.rng.next_max(5);
+        }
+        // `NPC.cs:82435-82453` — the DD2 Dark Mage pair: 20×5; the
+        // eleven gores (1009..1019) are constant-argument.
+        564 | 565 => fx.burst(20, 5, hd, -1.0),
         _ => {}
     }
 }
@@ -388,6 +426,76 @@ mod tests {
             r2.next_float();
         }
         assert_eq!(rng, r2, "120 × (6 internals + 2 circular), nothing else");
+    }
+
+    /// `NPC.cs:82358-82386` — the DD2 Skeleton pair: 20×236 (six
+    /// internals each — 236 hits no tweak arm) then SIX unconditional
+    /// `Next(2)` gore gates consumed in order. The gore bodies are the
+    /// gore lane's; this witness pins the argument-side consumption.
+    #[test]
+    fn w4_g60_the_dd2_skeleton_consumes_the_six_gore_gates() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(31);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 566,
+            pos: Vec2::new(100.0, 100.0),
+            w: 26,
+            h: 44,
+            vel: Vec2::ZERO,
+            hit_dir: -1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for _ in 0..20 {
+            replay_spawn(&mut r, 26, 44);
+        }
+        for _ in 0..6 {
+            r.next_max(2);
+        }
+        assert_eq!(rng, r, "20×6 internals + 6 gore gates");
+        assert_eq!(pool.slot(0).dust_type, 236);
+        assert!(pool.slot(19).active);
+        assert!(!pool.slot(20).active);
+    }
+
+    /// `NPC.cs:82400-82423` — the DD2 Ogre pair: 20×273 then ONE
+    /// `Next(5)` (the 1005/1006 head-gore pick, both facing branches).
+    /// 273 is a DangerousDust id but ChildSafety defaults DISABLED
+    /// (`ChildSafety.cs:33`) — no re-type draws in the default pool.
+    #[test]
+    fn w4_g60_the_dd2_ogre_consumes_the_head_gore_pick() {
+        let w = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(32);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 576,
+            pos: Vec2::new(100.0, 100.0),
+            w: 60,
+            h: 84,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &w,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for _ in 0..20 {
+            replay_spawn(&mut r, 60, 84);
+        }
+        r.next_max(5);
+        assert_eq!(rng, r, "20×6 internals + 1 head-gore pick");
+        assert_eq!(pool.slot(0).dust_type, 273, "no ChildSafety re-type by default");
     }
 
     /// The lane gate: 388/418 stay c12's, uncovered kinds no-op with
