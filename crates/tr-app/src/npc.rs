@@ -4954,6 +4954,12 @@ impl Npc {
             // frost set (the aiStyle-25 chest's other C# kinds 85/629 are
             // unported). The bosses 344/345/346 (aiStyles 57/60/61) are
             // R41's row — NOT claimed here.
+            // W4-d25 verify-only census: the PresentMimic machine is
+            // unchanged (the S1-D-3 W-6 landing already faithful,
+            // `NPC.cs:25538-25630` with the 341 terms). The style's
+            // other TWO members (Mimic 85 / IceMimic 629) are ported
+            // verbatim in `npc_ai_style25.rs`, UNWIRED until their
+            // kinds land — the kind guard keeps this arm scoped.
             25 if self.kind == NpcKind::PresentMimic => {
                 crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
             }
@@ -33885,5 +33891,68 @@ mod w4_d24_style22_census_tests {
         let _want = mirror.next_range(-1, 2) as f32 * 1.5;
         m.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng2);
         assert_eq!(rng2, mirror, "exactly the one flee drift draw");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 25 slice).
+// WRITTEN, NOT RUN (code-only mode). 25 chest family: PresentMimic 341
+// LANDED + WIRED (S1-D-3 W-6, the kind-gated axis arm) -> verify-only;
+// Mimic 85 / IceMimic 629 MISSING -> ported verbatim in
+// npc_ai_style25.rs (UNWIRED, the module's own witnesses).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style25_census_tests {
+    use super::*;
+
+    /// The axis claims style 25 exactly once (the kind-gated
+    /// PresentMimic arm); the kind arm is the unreachable marker.
+    #[test]
+    fn w4_d25_the_axis_claims_style_25_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "25" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 25 claimed once");
+        assert!(src.contains("aiStyle 25's PresentMimic rides the style axis (S1-D-3 W-6)"));
+    }
+
+    /// The 25 claim is LIVE and draw-free: a disguised PresentMimic
+    /// tick through `update_rng` runs the frost module's idle arm —
+    /// the one-time +8 nudge + the forced ai[3] = 1 — and consumes NO
+    /// rand (`NPC.cs:25538-25630` has no `Next`; the walker tail is
+    /// the port's rand-free integration).
+    #[test]
+    fn w4_d25_the_present_mimic_rides_the_25_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 300.0;
+        w.snow_moon = true;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::PresentMimic, 100.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(25);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.x, 100.0 * TILE_PX + 8.0, "the one-time nudge (:25543)");
+        assert_eq!(n.ai[3], 1.0, "the 341 override (:25558-25561)");
+        assert_eq!(n.ai[0], 0.0, "the far untouched present stays disguised");
+        assert_eq!(rng, witness, "the mimic tick draws nothing");
     }
 }
