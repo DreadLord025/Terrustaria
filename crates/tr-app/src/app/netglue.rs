@@ -488,28 +488,15 @@ impl App {
                 server.broadcast_except(&S2c::NpcStrike(st), id);
                 if dead {
                     // The full `23` update on death (`MessageBuffer.cs:1808-1811`).
-                    let kind = self.npcs[slot].kind.to_u16() as i16;
                     let generation = self
                         .net_npc_gen
                         .get(&(slot as u32))
                         .map(|(_, g)| *g)
                         .unwrap_or(0);
                     let npc = &self.npcs[slot];
-                    server.broadcast(&S2c::NpcInfo(Box::new(net::NpcInfo {
-                        slot: st.npc,
-                        generation: generation as u8,
-                        spawn: false,
-                        kind,
-                        x: npc.x,
-                        y: npc.y,
-                        vx: npc.vx,
-                        vy: npc.vy,
-                        dir_right: npc.facing > 0,
-                        dir_y_down: npc.vy > 0.0,
-                        sprite_right: npc.facing > 0,
-                        life_full: false,
-                        hp: npc.hp,
-                    })));
+                    server.broadcast(&S2c::NpcInfo(Box::new(Self::npc_info_of(
+                        slot, npc, false, generation,
+                    ))));
                 }
             }
             // `case 70` — a client's bug net caught an NPC
@@ -549,18 +536,15 @@ impl App {
                 server.broadcast_except(&S2c::Projectile(ps.clone()), id);
             }
             // `case 29` — a peer's projectile is gone; the host drops the slot
-            // and relays (`MessageBuffer.cs:1844-1847`).
-            C2s::ProjectileDead { key } => {
+            // and relays the key + position verbatim (`MessageBuffer.cs:1825-1850`,
+            // the relay `:1847` forwards `position3.X/Y`). A finite position
+            // snaps the slot there before the kill (`:1835-1839`), NaN/Inf
+            // deactivates silently (`:1840-1843`).
+            C2s::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
-                self.projectiles.kill_remote(slot, owner, generation);
-                server.broadcast_except(
-                    &S2c::ProjectileDead {
-                        key,
-                        x: f32::NAN,
-                        y: f32::NAN,
-                    },
-                    id,
-                );
+                self.projectiles
+                    .kill_remote_at(slot, owner, generation, x, y);
+                server.broadcast_except(&S2c::ProjectileDead { key, x, y }, id);
             }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
@@ -1477,9 +1461,10 @@ impl App {
             // `case 29` — the projectile is gone; a finite position means the
             // slot dies there, NaN deactivates it silently
             // (`MessageBuffer.cs:1825-1850`).
-            S2c::ProjectileDead { key, .. } => {
+            S2c::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
-                self.projectiles.kill_remote(slot, owner, generation);
+                self.projectiles
+                    .kill_remote_at(slot, owner, generation, x, y);
             }
             // `case 28` — a peer's strike: the local flash (the C# applies the
             // full `StrikeNPC_Inner` on every client — the port keeps the
@@ -1574,6 +1559,24 @@ impl App {
                 npc.vx = info.vx;
                 npc.vy = info.vy;
                 npc.facing = if info.dir_right { 1 } else { -1 };
+                // `MessageBuffer.cs:1654-1656`: directionY/spriteDirection
+                // ride flags1 b1/b6; the target the ushort (`:1649-1653`).
+                npc.direction_y = if info.dir_y_down { 1 } else { -1 };
+                npc.sprite_dir = if info.sprite_right { 1 } else { -1 };
+                npc.target = info.target as i32;
+                // `MessageBuffer.cs:1672-1675`: the ai[] copy (the port keeps
+                // the pending-damage merge for I-4 — the wire values land).
+                npc.ai = info.ai;
+                // `MessageBuffer.cs:1683-1691`: the statue flag zeroes the
+                // coin value, the shimmer flag sets full transparency.
+                npc.spawned_from_statue = info.spawned_from_statue;
+                if info.spawned_from_statue {
+                    npc.extra_value = 0;
+                }
+                if info.shimmer {
+                    npc.shimmer_transparency = 1.0;
+                }
+                npc.release_owner = info.release_owner;
                 if !info.life_full && info.hp >= 0 {
                     npc.hp = info.hp;
                 }
@@ -2160,11 +2163,20 @@ impl App {
             y: npc.y,
             vx: npc.vx,
             vy: npc.vy,
+            target: npc.target as u16,
             dir_right: npc.facing > 0,
-            dir_y_down: npc.vy > 0.0,
-            sprite_right: npc.facing > 0,
+            dir_y_down: npc.direction_y > 0,
+            sprite_right: npc.sprite_dir > 0,
             life_full: npc.hp >= npc.max_hp,
             hp: npc.hp,
+            life_max: npc.max_hp,
+            ai: npc.ai,
+            spawned_from_statue: npc.spawned_from_statue,
+            // The port has no per-NPC difficulty override / player-count
+            // scaling yet — the C# defaults keep both flag bits clear.
+            difficulty: 1.0,
+            shimmer: npc.shimmer_transparency > 0.0,
+            release_owner: npc.release_owner,
         }
     }
 
@@ -2590,7 +2602,9 @@ impl App {
                         ProjSend::SyncTo { state, .. } => {
                             client.send(&C2s::Projectile(Box::new(state)))
                         }
-                        ProjSend::Kill { key, .. } => client.send(&C2s::ProjectileDead { key }),
+                        ProjSend::Kill { key, x, y } => {
+                            client.send(&C2s::ProjectileDead { key, x, y })
+                        }
                     }
                 }
             }
@@ -3618,6 +3632,18 @@ fn npc_from_net(world: &World, n: &net::NpcInfo) -> Option<crate::npc::Npc> {
         npc.hp = n.hp;
     }
     npc.facing = if n.dir_right { 1 } else { -1 };
+    npc.direction_y = if n.dir_y_down { 1 } else { -1 };
+    npc.sprite_dir = if n.sprite_right { 1 } else { -1 };
+    npc.target = n.target as i32;
+    npc.ai = n.ai;
+    npc.spawned_from_statue = n.spawned_from_statue;
+    if n.spawned_from_statue {
+        npc.extra_value = 0;
+    }
+    if n.shimmer {
+        npc.shimmer_transparency = 1.0;
+    }
+    npc.release_owner = n.release_owner;
     // `hurt_cd` rides `28 NPCStrike` in the C# (`MessageBuffer.cs:1766`);
     // until that message lands the client shows no hit flash on networked
     // NPCs — deviation in `docs/ANALYSIS.md`.
@@ -4855,11 +4881,18 @@ mod npc_kind_wire_tests {
             y: 8.0 * 16.0,
             vx: 0.0,
             vy: 0.0,
+            target: 255,
             dir_right: true,
             dir_y_down: false,
             sprite_right: true,
             life_full: true,
             hp: 100,
+            life_max: 100,
+            ai: [0.0; 4],
+            spawned_from_statue: false,
+            difficulty: 1.0,
+            shimmer: false,
+            release_owner: 255,
         };
         let world = tr_core::World::new("wire".into(), 64, 64);
         npc_from_net(&world, &info)

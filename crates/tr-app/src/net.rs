@@ -163,11 +163,8 @@ pub mod id {
     /// research/17 called it superseded by 20 — wrong, both are sent; the
     /// port's internal `INT_EDIT` stand-in is unchanged by this body.
     pub const TILE_EDIT: u8 = 17;
-    /// `11 TileFrameSection` (`MessageID.cs:29-30`) — marked deprecated and
-    /// never sent (`grep SendData(11` = 0 sites), but `GetData` still reads
-    /// it at `netMode == 1` (`MessageBuffer.cs:895-900` →
-    /// `WorldGen.SectionTileFrame`, `WorldGen.cs:80343`): four `short`s.
-    pub const TILE_FRAME_SECTION: u8 = 11;
+    // `11 TILE_FRAME_SECTION` is the W4-d89 constant below (keep-one dedupe
+    // at the g48 merge — d89/d90 both landed the id).
     pub const DOOR_TOGGLE: u8 = 19; // MessageID.cs:47 / NetMessage.cs:537-542 / MessageBuffer.cs:1299-1334
     pub const TILE_PAINT: u8 = 63; // MessageID.cs:139 / NetMessage.cs:1081-1087 / MessageBuffer.cs:2909-2928
     pub const WALL_PAINT: u8 = 64; // MessageID.cs:141 / NetMessage.cs:1081-1087 / MessageBuffer.cs:2929-2948
@@ -722,26 +719,36 @@ impl PlayerState {
     }
 }
 
-/// `msg 23 NPCInfo`'s body (`NetMessage.cs:686-748`), adapted to the port's
-/// NPC shape: the slot index, the generation counter (bumped on a kind change
-/// so the client re-creates the slot, the C#'s `existing.generation !=
-/// generation` spawn test), the anchored position, the velocity, the two flag
-/// bytes and the width-switched life. The `ai[]`, `difficulty`,
-/// `statsAreScaledForThisManyPlayers`, `releaseOwner` and `SyncAnchor` fields
-/// have no port home (deviation in `docs/ANALYSIS.md`).
+/// `msg 23 NPCInfo`'s body (`NetMessage.cs:686-763`, read at
+/// `MessageBuffer.cs:1563-1704`) — the verbatim C# layout: the slot byte, the
+/// generation byte (bumped on a kind change so the client re-creates the
+/// slot, the C#'s `existing.generation != generation` spawn test), the
+/// SyncAnchor-offset position, the velocity, the `(ushort)target`, the two
+/// flag bytes, the flag-gated `ai[0..4]` floats, the `(short)netID`, then the
+/// optional player-count byte, difficulty float, width-switched life and the
+/// catchable-kind `releaseOwner` byte. `x`/`y` are the RAW position — the
+/// `Size * NPCID.Sets.SyncAnchor[type]` offset (`NPCID.cs:10457`: only kind
+/// 50, the bound town NPC, is non-zero) is applied by the builders
+/// (`netglue::npc_info_of`) and undone by the client, exactly like the C#.
+/// `statsAreScaledForThisManyPlayers` has no port home yet and rides its 1
+/// default (flags2 b0 clear); `difficulty` likewise rides 1.0 (b2 clear).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NpcInfo {
     /// The host's NPC slot index (`whoAmI`).
     pub slot: u8,
     /// Bumped on a kind change / fresh spawn → the client re-creates the slot.
     pub generation: u8,
-    /// `spawnNeedsSyncing` — a full-create for a slot the client already has.
+    /// `spawnNeedsSyncing` (flags2 b3) — a full-create for a slot the client
+    /// already has.
     pub spawn: bool,
     pub kind: i16,
     pub x: f32,
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
+    /// The `(ushort)target` (`NetMessage.cs:693`); the port's `Npc.target`
+    /// sentinel is 255 (`NPC.cs:8539`'s `ClearTarget`).
+    pub target: u16,
     /// flags1 b0: `direction > 0`.
     pub dir_right: bool,
     /// flags1 b1: `directionY > 0`.
@@ -751,39 +758,112 @@ pub struct NpcInfo {
     /// flags1 b7: `life == lifeMax` → the life block is omitted.
     pub life_full: bool,
     pub hp: i32,
+    /// `lifeMax` — the width byte's selector (`NetMessage.cs:737-744`:
+    /// `> 32767` → 4, `> 127` → 2, else 1), NOT the current life. On decode
+    /// it rides the local kind's max (`MessageBuffer.cs:1657-1660`).
+    pub life_max: i32,
+    /// `ai[0..4]` (`NPC.maxAI = 4`, `NPC.cs:95158`): flags1 b2..b5 gate one
+    /// float each, written in index order between flags2 and the netID
+    /// (`NetMessage.cs:704-724`).
+    pub ai: [f32; 4],
+    /// `SpawnedFromStatue` (flags2 b1, `NetMessage.cs:713`): the client zeroes
+    /// the coin value (`MessageBuffer.cs:1683-1687`).
+    pub spawned_from_statue: bool,
+    /// `difficulty` (flags2 b2): written only when `!= 1f`
+    /// (`NetMessage.cs:714`, `:730-733`).
+    pub difficulty: f32,
+    /// flags2 b4: `spawnNeedsSyncing && shimmerTransparency > 0f`
+    /// (`NetMessage.cs:716`); the client sets `shimmerTransparency = 1f`
+    /// (`MessageBuffer.cs:1688-1691`).
+    pub shimmer: bool,
+    /// `releaseOwner` — the trailing byte, present only for
+    /// `Main.npcCatchable[kind]` kinds (`NetMessage.cs:759-762`,
+    /// `MessageBuffer.cs:1696-1699`). 255 = unowned.
+    pub release_owner: u8,
 }
 
 impl NpcInfo {
+    /// `NPCID.Sets.SyncAnchor` (`NPCID.cs:10457`): the only non-zero row is
+    /// vanilla type 50 (King Slime) → `(0.5, 1)`. The offset is
+    /// `Size * anchor` — the port uses the kind's base `size()` (the C#'s
+    /// live `Size` rides King Slime's hp-scaled `size_override`, a render
+    /// detail the wire snapshot does not carry; deviation in ANALYSIS).
+    fn sync_anchor_px(kind: i16) -> (f32, f32) {
+        match crate::npc::NpcKind::from_u16(kind.max(0) as u16) {
+            Some(k) if k.cs_id() == 50 => {
+                let (w, h) = k.size();
+                (w * 0.5, h)
+            }
+            _ => (0.0, 0.0),
+        }
+    }
+
+    /// `Main.npcCatchable[type]` (`Main.cs:9326-9418`) keyed on the VANILLA
+    /// type — the wire `kind` is the port-local protocol id, so map through
+    /// `cs_id` first (`bug_net::npc_catchable` is the verbatim set). The
+    /// `type >= 0 && type < NPCID.Count` bounds gate (`NetMessage.cs:759`)
+    /// rides the `cs_id` sentinel (`u16::MAX` = unmapped).
+    fn catchable(kind: i16) -> bool {
+        crate::npc::NpcKind::from_u16(kind.max(0) as u16).is_some_and(|k| {
+            let cs = k.cs_id();
+            cs < crate::npc::NpcKind::CS_ID_COUNT as u16
+                && crate::bug_net::npc_catchable(cs as i32)
+        })
+    }
+
     fn write_to(&self, w: NetWriter) -> NetWriter {
         let mut flags1 = BitsByte::new();
         flags1.set(0, self.dir_right);
         flags1.set(1, self.dir_y_down);
+        // b2..b5: the ai[] presence bits (`NetMessage.cs:704-707`).
+        for i in 0..4 {
+            flags1.set(i + 2, self.ai[i] != 0.0);
+        }
         flags1.set(6, self.sprite_right);
         flags1.set(7, self.life_full);
         let mut flags2 = BitsByte::new();
+        // b0 `statsAreScaledForThisManyPlayers > 1`: the port keeps the 1
+        // default (no multiplayer stat scaling yet) — the bit stays clear.
+        flags2.set(1, self.spawned_from_statue);
+        flags2.set(2, self.difficulty != 1.0);
         flags2.set(3, self.spawn);
+        flags2.set(4, self.spawn && self.shimmer);
+        let (ax, ay) = Self::sync_anchor_px(self.kind);
         let mut w = w
             .u8(self.slot)
             .u8(self.generation)
-            .f32(self.x)
-            .f32(self.y)
+            .f32(self.x + ax)
+            .f32(self.y + ay)
             .f32(self.vx)
             .f32(self.vy)
-            .u16(0) // `target`: the port has no NPC targeting sync yet
+            .u16(self.target)
             .bitsbyte(flags1)
-            .bitsbyte(flags2)
-            .i16(self.kind);
-        // The width-switched life block (`NetMessage.cs:734-751`), skipped
-        // when the NPC is at full health.
+            .bitsbyte(flags2);
+        // The ai floats, in index order, BEFORE the netID
+        // (`NetMessage.cs:718-725`).
+        for i in 0..4 {
+            if self.ai[i] != 0.0 {
+                w = w.f32(self.ai[i]);
+            }
+        }
+        w = w.i16(self.kind);
+        if self.difficulty != 1.0 {
+            w = w.f32(self.difficulty);
+        }
+        // The width-switched life block (`NetMessage.cs:734-758`): the width
+        // byte is chosen by lifeMax, skipped when the NPC is at full health.
         if !self.life_full {
             let hp = self.hp.max(0);
-            if hp > 0x7FFF {
+            if self.life_max > 32767 {
                 w = w.u8(4).i32(hp);
-            } else if hp > 0x7F {
+            } else if self.life_max > 127 {
                 w = w.u8(2).i16(hp as i16);
             } else {
                 w = w.u8(1).i8(hp as i8);
             }
+        }
+        if Self::catchable(self.kind) {
+            w = w.u8(self.release_owner);
         }
         w
     }
@@ -795,10 +875,22 @@ impl NpcInfo {
         let y = r.f32()?;
         let vx = r.f32()?;
         let vy = r.f32()?;
-        let _target = r.u16()?;
+        let target = r.u16()?;
         let flags1 = r.bitsbyte()?;
         let flags2 = r.bitsbyte()?;
+        let mut ai = [0.0f32; 4];
+        for i in 0..4 {
+            if flags1.get(i + 2) {
+                ai[i] = r.f32()?;
+            }
+        }
         let kind = r.i16()?;
+        // flags2 b0: the player-count byte (`MessageBuffer.cs:1589-1593`) —
+        // consumed; the port's SetDefaults takes no scaling override yet.
+        if flags2.get(0) {
+            let _player_count = r.u8()?;
+        }
+        let difficulty = if flags2.get(2) { r.f32()? } else { 1.0 };
         let hp = if flags1.get(7) {
             -1 // full health: the client keeps its local lifeMax
         } else {
@@ -808,20 +900,34 @@ impl NpcInfo {
                 _ => r.i8()? as i32,
             }
         };
+        let release_owner = if Self::catchable(kind) { r.u8()? } else { 255 };
+        let (ax, ay) = Self::sync_anchor_px(kind);
         Some(Self {
             slot,
             generation,
             spawn: flags2.get(3),
             kind,
-            x,
-            y,
+            x: x - ax,
+            y: y - ay,
             vx,
             vy,
+            target,
             dir_right: flags1.get(0),
             dir_y_down: flags1.get(1),
             sprite_right: flags1.get(6),
             life_full: flags1.get(7),
             hp,
+            // The width byte is re-derived from the local kind on re-encode
+            // (the client's lifeMax, `MessageBuffer.cs:1657-1660`); an
+            // unknown kind keeps the narrow byte-1 arm.
+            life_max: crate::npc::NpcKind::from_u16(kind.max(0) as u16)
+                .map(|k| k.max_hp())
+                .unwrap_or(1),
+            ai,
+            spawned_from_statue: flags2.get(1),
+            difficulty,
+            shimmer: flags2.get(4),
+            release_owner,
         })
     }
 }
@@ -1624,18 +1730,8 @@ pub struct TileEdit {
     pub style: u8,
 }
 
-/// `msg 11 TileFrameSection`'s body (`NetMessage.cs:427-432`): four `short`s
-/// naming the rectangle to re-frame (`MessageBuffer.cs:895-900` →
-/// `WorldGen.SectionTileFrame(startX, startY, endXInclusive, endYInclusive)`,
-/// `WorldGen.cs:80343`). Deprecated, never sent — the body exists so the
-/// reader arm is 1:1.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TileFrameSection {
-    pub start_x: i16,
-    pub start_y: i16,
-    pub end_x: i16,
-    pub end_y: i16,
-}
+// `msg 11 TileFrameSection`'s body is the W4-d89 struct above (keep-one
+// dedupe at the g48 merge — d89/d90 both landed it, byte-identical).
 
 /// `msg 19 ToggleDoorState`'s body (`NetMessage.cs:537-542`): the action
 /// byte, the tile and `number4 == 1f` → a direction byte (1 = right/down).
@@ -1745,9 +1841,14 @@ pub enum C2s {
     /// `27 Projectile` — this client's own projectile state (the owner's
     /// machine simulates and sends, `Projectile.cs:17210-17244`).
     Projectile(Box<ProjectileState>),
-    /// `29` — one of this client's projectiles is gone.
+    /// `29` — one of this client's projectiles is gone
+    /// (`NetMessage.cs:852-855`): the key plus the position — the Kill tail
+    /// sends the ENTRY snapshot (`Projectile.cs:77256`), the owner-lost
+    /// despawn sends NaN/NaN (`Projectile.cs:16697`).
     ProjectileDead {
         key: i32,
+        x: f32,
+        y: f32,
     },
     /// `154 Ping` - this client's RTT probe, no body (`Net/Ping.cs:31`).
     Ping,
@@ -1975,9 +2076,7 @@ pub enum S2c {
     SectionRange(Box<SectionRange>),
     // ---- S1-I-1 wave B: the world-sync region (bodies + codecs; the
     // dispatcher arms are S1-I-4) ----
-    /// `11 TileFrameSection` — deprecated, never sent by the C# (0 sites),
-    /// but read at `netMode == 1` (`MessageBuffer.cs:895-900`).
-    TileFrameSection(TileFrameSection),
+    // `11 TileFrameSection` is the W4-d89 variant above (keep-one dedupe).
     /// `17 TileManipulation` — the host's relay of a client's edit
     /// (`MessageBuffer.cs:1285`).
     TileEdit(TileEdit),
@@ -2189,11 +2288,11 @@ impl C2s {
                 w.i32(*x).i32(*y).i16(*npc_type).u8(*style)
             }
             Self::Projectile(p) => return p.frame(),
-            Self::ProjectileDead { key } => {
+            Self::ProjectileDead { key, x, y } => {
                 return NetWriter::open(id::PROJECTILE_DEAD)
                     .i32(*key)
-                    .f32(f32::NAN)
-                    .f32(f32::NAN)
+                    .f32(*x)
+                    .f32(*y)
                     .finish();
             }
         };
@@ -2379,7 +2478,11 @@ impl C2s {
                 style: r.u8()?,
             },
             id::PROJECTILE => Self::Projectile(Box::new(ProjectileState::read_from(r)?)),
-            id::PROJECTILE_DEAD => Self::ProjectileDead { key: r.i32()? },
+            id::PROJECTILE_DEAD => Self::ProjectileDead {
+                key: r.i32()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            },
             _ => return None,
         })
     }
@@ -2495,7 +2598,6 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
-            Self::TileFrameSection(_) => id::TILE_FRAME_SECTION,
             Self::TileEdit(_) => id::TILE_EDIT,
             Self::DoorToggle(_) => id::DOOR_TOGGLE,
             Self::TilePaint(_) => id::TILE_PAINT,
@@ -2648,8 +2750,7 @@ impl S2c {
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
             // ---- S1-I-1 wave B ----
-            // `NetMessage.cs:427-432`: four shorts.
-            Self::TileFrameSection(f) => w.i16(f.start_x).i16(f.start_y).i16(f.end_x).i16(f.end_y),
+            // (`11 TileFrameSection` encodes at the d89 arm above — keep-one.)
             // `NetMessage.cs:524-530`.
             Self::TileEdit(t) => w.u8(t.kind).i16(t.x).i16(t.y).i16(t.value).u8(t.style),
             // `NetMessage.cs:537-542`.
@@ -2873,13 +2974,7 @@ impl S2c {
                 hide_accessory: r.u16()?,
             }),
             // ---- S1-I-1 wave B ----
-            // `MessageBuffer.cs:898`: four ReadInt16.
-            id::TILE_FRAME_SECTION => Self::TileFrameSection(TileFrameSection {
-                start_x: r.i16()?,
-                start_y: r.i16()?,
-                end_x: r.i16()?,
-                end_y: r.i16()?,
-            }),
+            // (`11 TILE_FRAME_SECTION` decodes at the d89 arm above — keep-one.)
             id::TILE_EDIT => Self::TileEdit(TileEdit {
                 kind: r.u8()?,
                 x: r.i16()?,
@@ -4365,6 +4460,8 @@ mod tests {
             })),
             C2s::ProjectileDead {
                 key: projectile_key(255, 7, 1),
+                x: 12.5,
+                y: -3.0,
             },
             C2s::Ping,
             // `31-33`, `46-47`, `50`, `53`, `59` — the message families of
@@ -4613,27 +4710,43 @@ mod tests {
                 y: 96.0,
                 vx: 0.0,
                 vy: 0.0,
+                target: 255,
                 dir_right: true,
                 dir_y_down: false,
                 sprite_right: true,
                 life_full: false,
                 hp: 40,
+                life_max: 2000,
+                ai: [0.0; 4],
+                spawned_from_statue: false,
+                difficulty: 1.0,
+                shimmer: false,
+                release_owner: 255,
             })),
-            // The life width switch: the > 127 and > 32767 arms.
+            // The life width switch: the > 127 and > 32767 arms. Kind 50 =
+            // TheDestroyer (max_hp 80000): decode re-derives life_max from the
+            // kind, so the width-4 arm survives the re-encode byte-equality.
             S2c::NpcInfo(Box::new(NpcInfo {
                 slot: 4,
                 generation: 1,
                 spawn: true,
-                kind: -1,
+                kind: 50,
                 x: 0.0,
                 y: 0.0,
                 vx: 0.0,
                 vy: 0.0,
+                target: 0,
                 dir_right: false,
                 dir_y_down: true,
                 sprite_right: false,
                 life_full: false,
                 hp: 9000,
+                life_max: 80000,
+                ai: [0.0; 4],
+                spawned_from_statue: false,
+                difficulty: 1.0,
+                shimmer: false,
+                release_owner: 255,
             })),
             S2c::ItemState(Box::new(ItemState {
                 slot: 5,
@@ -4792,6 +4905,294 @@ mod tests {
     // ---- S1-I-1 wave A: per-id round trips for the join bundle ----
     // Each test pins the frame's id byte, the exact C# body bytes
     // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    // ---- S1-I-1 NPC family, first half (d91): 23/24/27/28/29 ----
+
+    #[test]
+    fn s1_i_1_npc_info_verbatim_body() {
+        // `NetMessage.cs:686-763` — slot, generation, position, velocity,
+        // (ushort)target, flags1, flags2, the flag-gated ai floats, the
+        // (short)netID, the width-switched life, the catchable releaseOwner.
+        // Kind 0 = Slime: max_hp 25 → width byte 1; not catchable (vanilla 1).
+        let n = NpcInfo {
+            slot: 3,
+            generation: 2,
+            spawn: false,
+            kind: 0,
+            x: 64.0,
+            y: 96.0,
+            vx: 1.5,
+            vy: -2.0,
+            target: 255,
+            dir_right: true,
+            dir_y_down: false,
+            sprite_right: true,
+            life_full: false,
+            hp: 20,
+            life_max: 25,
+            ai: [0.0, 2.0, 0.0, -1.0],
+            spawned_from_statue: false,
+            difficulty: 1.0,
+            shimmer: false,
+            release_owner: 255,
+        };
+        let f = S2c::NpcInfo(Box::new(n)).encode();
+        assert_eq!(f[2], 23);
+        let mut expect: Vec<u8> = vec![3, 2];
+        expect.extend_from_slice(&64.0f32.to_le_bytes());
+        expect.extend_from_slice(&96.0f32.to_le_bytes());
+        expect.extend_from_slice(&1.5f32.to_le_bytes());
+        expect.extend_from_slice(&(-2.0f32).to_le_bytes());
+        expect.extend_from_slice(&255u16.to_le_bytes());
+        // flags1: b0 dir + b3 ai[1] + b5 ai[3] + b6 sprite = 0x69.
+        expect.push(0x69);
+        expect.push(0x00); // flags2: all clear
+        expect.extend_from_slice(&2.0f32.to_le_bytes());
+        expect.extend_from_slice(&(-1.0f32).to_le_bytes());
+        expect.extend_from_slice(&0i16.to_le_bytes());
+        expect.push(1); // lifeMax 25 ≤ 127 → sbyte width
+        expect.push(20);
+        assert_eq!(&f[3..], &expect[..]);
+        let back = S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode");
+        assert_eq!(back.encode(), f);
+        // Full health omits the life block entirely (`:734`).
+        let full = NpcInfo { life_full: true, hp: 25, ..n };
+        let ff = S2c::NpcInfo(Box::new(full)).encode();
+        assert_eq!(ff.len(), f.len() - 2);
+        assert_eq!(ff[3 + 20], 0xE9); // flags1 b7 set (body: 2+16+2 header)
+    }
+
+    #[test]
+    fn s1_i_1_npc_info_width_switch_and_optional_fields() {
+        // The width byte keys on lifeMax, NOT life (`NetMessage.cs:737-744`):
+        // a 250-max Guide (protocol 5) at hp 200 rides width 2 + a short.
+        let guide = NpcInfo {
+            slot: 0,
+            generation: 1,
+            spawn: true,
+            kind: 5,
+            x: 0.0,
+            y: 0.0,
+            vx: 0.0,
+            vy: 0.0,
+            target: 0,
+            dir_right: false,
+            dir_y_down: false,
+            sprite_right: false,
+            life_full: false,
+            hp: 200,
+            life_max: 250,
+            ai: [0.0; 4],
+            spawned_from_statue: true,
+            difficulty: 2.0,
+            shimmer: true,
+            release_owner: 255,
+        };
+        let f = S2c::NpcInfo(Box::new(guide)).encode();
+        // flags2: b1 statue + b2 difficulty + b3 spawn + b4 shimmer = 0x1E.
+        assert_eq!(f[3 + 21], 0x1E);
+        let tail = &f[3 + 22..]; // after flags2: no ai, then netID
+        assert_eq!(&tail[..2], &5i16.to_le_bytes());
+        assert_eq!(&tail[2..6], &2.0f32.to_le_bytes()); // difficulty
+        assert_eq!(tail[6], 2); // lifeMax 250 > 127 → short width
+        assert_eq!(&tail[7..9], &200i16.to_le_bytes());
+        assert_eq!(tail.len(), 9); // Guide is not catchable
+        // > 32767 → width 4 + int (`NetMessage.cs:751-753`).
+        let big = NpcInfo { kind: -1, hp: 40000, life_max: 40000, ..guide };
+        let bf = S2c::NpcInfo(Box::new(big)).encode();
+        let bt = &bf[3 + 22..];
+        assert_eq!(bt[6], 4);
+        assert_eq!(&bt[7..11], &40000i32.to_le_bytes());
+        // The catchable trailing byte: protocol 22 = Goldfish, vanilla 55
+        // (`Main.npcCatchable[55]`, `Main.cs:9331`).
+        let fish = NpcInfo { kind: 22, hp: 3, life_max: 5, release_owner: 4, ..guide };
+        let ff = S2c::NpcInfo(Box::new(fish)).encode();
+        assert_eq!(*ff.last().unwrap(), 4);
+        let back = S2c::decode(ff[2], &mut NetReader::new(&ff[3..])).expect("decode");
+        assert_eq!(back.encode(), ff);
+        // The player-count byte (flags2 b0) is consumed on decode
+        // (`MessageBuffer.cs:1589-1593`) even though the port never sends it.
+        let mut body = f[3..].to_vec();
+        body[21] |= 0x01; // set flags2 b0
+        body.insert(24, 3); // the byte rides after the netID, before difficulty
+        let mut r = NetReader::new(&body);
+        let d = NpcInfo::read_from(&mut r).expect("decode with player count");
+        assert_eq!(d.kind, 5);
+        assert_eq!(d.difficulty, 2.0);
+        assert_eq!(d.hp, 200);
+    }
+
+    #[test]
+    fn s1_i_1_npc_info_sync_anchor_king_slime() {
+        // `NPCID.cs:10457`: SyncAnchor[50] = (0.5, 1) — King Slime (protocol
+        // 4, cs_id 50) is the ONLY anchored kind. The wire position is
+        // `position + Size * anchor`; the reader undoes it.
+        let (w, h) = crate::npc::NpcKind::KingSlime.size();
+        let n = NpcInfo {
+            slot: 1,
+            generation: 1,
+            spawn: false,
+            kind: 4,
+            x: 100.0,
+            y: 200.0,
+            vx: 0.0,
+            vy: 0.0,
+            target: 255,
+            dir_right: true,
+            dir_y_down: false,
+            sprite_right: true,
+            life_full: true,
+            hp: 2000,
+            life_max: 2000,
+            ai: [0.0; 4],
+            spawned_from_statue: false,
+            difficulty: 1.0,
+            shimmer: false,
+            release_owner: 255,
+        };
+        let f = S2c::NpcInfo(Box::new(n)).encode();
+        let mut r = NetReader::new(&f[3..]);
+        assert_eq!(r.u8(), Some(1));
+        assert_eq!(r.u8(), Some(1));
+        assert_eq!(r.f32(), Some(100.0 + w * 0.5));
+        assert_eq!(r.f32(), Some(200.0 + h));
+        let back = S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode");
+        match back {
+            S2c::NpcInfo(d) => {
+                assert_eq!(d.x, 100.0);
+                assert_eq!(d.y, 200.0);
+            }
+            other => panic!("expected 23, got {:?}", other.msg_id()),
+        }
+        assert_eq!(back.encode(), f);
+    }
+
+    #[test]
+    fn s1_i_1_projectile_verbatim_body() {
+        // `NetMessage.cs:776-841` — key, position, velocity, (short)type,
+        // flags1, the optional flags2 (ai[2]), then the flag-gated fields in
+        // C# order: ai0, ai1, banner, damage, knockBack, originalDamage, ai2.
+        let key = projectile_key(2, 5, 3);
+        let p = ProjectileState {
+            key,
+            x: 10.0,
+            y: 20.0,
+            vx: 1.0,
+            vy: -1.0,
+            kind: 7,
+            ai0: Some(0.5),
+            ai1: None,
+            banner_id: 42,
+            damage: 15,
+            knock_back: 2.5,
+            original_damage: 20,
+            ai2: Some(-3.0),
+        };
+        let f = S2c::Projectile(Box::new(p)).encode();
+        assert_eq!(f[2], 27);
+        let mut expect: Vec<u8> = Vec::new();
+        expect.extend_from_slice(&key.to_le_bytes());
+        for v in [10.0f32, 20.0, 1.0, -1.0] {
+            expect.extend_from_slice(&v.to_le_bytes());
+        }
+        expect.extend_from_slice(&7i16.to_le_bytes());
+        // flags1: b0 ai0 + b2 ai2-present + b3 banner + b4 damage + b5 kb
+        // + b6 originalDamage = 0x7D; flags2 = 0x01 (ai[2]).
+        expect.push(0x7D);
+        expect.push(0x01);
+        expect.extend_from_slice(&0.5f32.to_le_bytes());
+        expect.extend_from_slice(&42u16.to_le_bytes());
+        expect.extend_from_slice(&15i16.to_le_bytes());
+        expect.extend_from_slice(&2.5f32.to_le_bytes());
+        expect.extend_from_slice(&20i16.to_le_bytes());
+        expect.extend_from_slice(&(-3.0f32).to_le_bytes());
+        assert_eq!(&f[3..], &expect[..]);
+        assert_eq!(S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap().encode(), f);
+        let c = C2s::Projectile(Box::new(p)).encode();
+        assert_eq!(c, f, "27's body is identical in both directions");
+        // The all-zero minimal body: no flags2, no conditional fields.
+        let bare = ProjectileState {
+            ai0: None,
+            ai1: None,
+            ai2: None,
+            banner_id: 0,
+            damage: 0,
+            knock_back: 0.0,
+            original_damage: 0,
+            ..p
+        };
+        let bf = S2c::Projectile(Box::new(bare)).encode();
+        assert_eq!(bf.len(), 3 + 4 + 16 + 2 + 1);
+        assert_eq!(bf[3 + 22], 0);
+    }
+
+    #[test]
+    fn s1_i_1_npc_strike_verbatim_body() {
+        // `NetMessage.cs:844-850` — (byte)slot, generation, (short)damage,
+        // knockback float, (byte)(hitDirection + 1), (byte)crit.
+        let st = NpcStrike {
+            npc: 9,
+            generation: 4,
+            damage: 37,
+            knock_back: 3.5,
+            hit_direction: -1,
+            crit: true,
+        };
+        let f = S2c::NpcStrike(st).encode();
+        assert_eq!(f[2], 28);
+        let mut expect: Vec<u8> = vec![9, 4];
+        expect.extend_from_slice(&37i16.to_le_bytes());
+        expect.extend_from_slice(&3.5f32.to_le_bytes());
+        expect.push(0); // -1 + 1 = 0
+        expect.push(1);
+        assert_eq!(&f[3..], &expect[..]);
+        assert_eq!(S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap().encode(), f);
+        let c = C2s::NpcStrike(st).encode();
+        assert_eq!(c, f);
+        // The -1 direction sentinel wraps through the byte (`:849`): the
+        // reader's `(byte) - 1` recovers it (`MessageBuffer.cs:1776`).
+        let back = NpcStrike::read_from(&mut NetReader::new(&f[3..])).unwrap();
+        assert_eq!(back.hit_direction, -1);
+        // The instant-kill send rides damage -1 (`NPC.cs:25947`).
+        let kill = NpcStrike { damage: -1, crit: false, ..st };
+        let kf = C2s::NpcStrike(kill).encode();
+        assert_eq!(&kf[5..7], &(-1i16).to_le_bytes());
+        assert_eq!(NpcStrike::read_from(&mut NetReader::new(&kf[3..])).unwrap().damage, -1);
+    }
+
+    #[test]
+    fn s1_i_1_projectile_dead_verbatim_body() {
+        // `NetMessage.cs:852-855` — (int)key + Vector2(number2, number3).
+        // The Kill tail sends the entry position (`Projectile.cs:77256`);
+        // the owner-lost despawn sends NaN/NaN (`Projectile.cs:16697`).
+        let key = projectile_key(1, 4, 3);
+        let f = S2c::ProjectileDead { key, x: 8.0, y: 9.0 }.encode();
+        assert_eq!(f[2], 29);
+        let mut expect: Vec<u8> = Vec::new();
+        expect.extend_from_slice(&key.to_le_bytes());
+        expect.extend_from_slice(&8.0f32.to_le_bytes());
+        expect.extend_from_slice(&9.0f32.to_le_bytes());
+        assert_eq!(&f[3..], &expect[..]);
+        assert_eq!(S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap().encode(), f);
+        // The client→host body carries the same position (the entry snapshot).
+        let c = C2s::ProjectileDead { key, x: 8.0, y: 9.0 }.encode();
+        assert_eq!(c, f);
+        let back = C2s::decode(c[2], &mut NetReader::new(&c[3..])).unwrap();
+        match back {
+            C2s::ProjectileDead { key: k, x, y } => {
+                assert_eq!(k, key);
+                assert_eq!(x, 8.0);
+                assert_eq!(y, 9.0);
+            }
+            other => panic!("expected 29, got {:?}", other.msg_id()),
+        }
+        // NaN rides verbatim (the bit pattern, not a canonicalised NaN).
+        let nan = C2s::ProjectileDead { key, x: f32::NAN, y: f32::NAN }.encode();
+        let mut r = NetReader::new(&nan[3..]);
+        assert_eq!(r.i32(), Some(key));
+        assert!(r.f32().unwrap().is_nan());
+        assert!(r.f32().unwrap().is_nan());
+    }
 
     #[test]
     fn s1_i_1_toggle_pvp_round_trips() {
