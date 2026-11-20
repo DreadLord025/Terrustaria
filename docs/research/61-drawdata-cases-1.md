@@ -153,3 +153,81 @@ the port gates both on the raw `frame_x`/`frame_y` arguments (`drawdata.rs:1362`
 the rewritten frame is only non-zero if the raw one is (the arm never rewrites it),
 so the two gates coincide. Wired: `tiles.rs:683-691` calls the corrections for every
 drawn cell.
+
+### Batch 3 — marble column / lily pad / candy canes / crystals / trees / gem-tree variants: 561, 518, 330, 331, 332, 333, 129, 5, 583, 584 (10 ids)
+
+C# `TileDrawing.cs:4599-4662` (64-line window), verbatim key bodies:
+
+```csharp
+		case 561:
+			tileTop -= 2;
+			tileHeight = 20;
+			addFrY = tileFrameY / 18 * 4;
+			break;
+		case 518:
+		{
+			int num19 = tileCache.liquid / 16 - 3;
+			if (WorldGen.SolidTile(x, y - 1) && num19 > 8)
+			{
+				num19 = 8;
+			}
+			if (tileCache.liquid == 0)
+			{
+				Tile tileSafely = Framing.GetTileSafely(x, y + 1);
+				if (tileSafely.nactive())
+				{
+					switch (tileSafely.blockType())
+					{
+					case 1:
+						num19 = -16 + Math.Max(8, tileSafely.liquid / 16);
+						break;
+					case 2:
+					case 3:
+						num19 -= 4;
+						break;
+					}
+				}
+			}
+			tileTop -= num19;
+			break;
+		}
+		case 330:
+		case 331:
+		case 332:
+		case 333:
+			tileTop += 2;
+			break;
+		case 129:
+			addFrY = 0;
+			if (tileFrameX >= 324)
+			{
+				int num40 = (tileFrameX - 324) / 18;
+				addFrX = ((num40 + Main.tileFrame[typeCache]) % 6 - num40) * 18;
+			}
+			break;
+		case 5:
+			tileWidth = 20;
+			tileHeight = 20;
+			tileFrameX += (short)(176 * (TileDrawing.GetTreeBiome(x, y, tileFrameX, tileFrameY) + 1));
+			break;
+```
+
+| Id | C# body (verbatim key lines) | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 561 | `tileTop -= 2; tileHeight = 20; addFrY = tileFrameY / 18 * 4;` | :4599-4603 | `drawdata.rs:192-196` | PORTED |
+| 518 | liquid float `num19` + solid-above clamp 8 + dry-pad half-brick/slope pick, `tileTop -= num19` | :4604-4630 | static stub comment `drawdata.rs:197-198` + full body `cases_a.rs:158-177` (`lily_pad_top_delta`, incl. `solid_tile` `:129-139` ≈ `WorldGen.cs:70111-70132` and `block_type` `:144-151` ≈ `Tile.cs:202-214`), folded at `cases_a.rs:639-643` | PORTED |
+| 330 | `tileTop += 2` group | :4631-4636 | `drawdata.rs:200-202` (`330..=333`, `+=` preserved) | PORTED |
+| 331 | shares the group | :4632 | :200-202 | PORTED |
+| 332 | shares the group | :4633 | :200-202 | PORTED |
+| 333 | shares the group | :4634 | :200-202 | PORTED |
+| 129 | `addFrY = 0;` then `fx >= 324`: `((num40 + Main.tileFrame) % 6 - num40) * 18` | :4637-4644 | `drawdata.rs:206-212` (same mod-6 walk, absolute assign) | PORTED |
+| 5 | 20x20 + `tileFrameX += 176 * (GetTreeBiome + 1)` | :4645-4649 | static `drawdata.rs:219-222` + biome shift `apply_world_corrections` `drawdata.rs:1304-1307` (`tree_frame_x_offset`); app also routes via `tree::trunk_sheet_offset_at` (`tiles.rs:742-756`) | PORTED |
+| 583 | 20x20 tree-variant group (583..589/596/616/634) | :4650-4662 | `drawdata.rs:227-230` | PORTED |
+| 584 | shares the group | :4651 | :227-230 | PORTED |
+
+Notes: the `drawdata.rs:225-226` comment "Dead in the app for the same reason" is
+STALE — `tree::is_tree` (`tree.rs:20-21`) covers `5 | 583..=589 | 596 | 616 | 634`
+and `tiles.rs:641` routes every one of them through the tree path with per-variant
+sheets (`tree.rs:321-327`); the metrics arm is live. 129's DrawSingleTile companion
+(`:1088-1107`: alpha 100/255, transparent for `fx >= 324`, ±2 px nudge by frame row)
+is ported at `drawdata.rs:1410-1418` — the `src_alpha` field feeds the flat draw.
