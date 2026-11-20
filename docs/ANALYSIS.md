@@ -39244,3 +39244,25 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile sound wave, part 2 (S1-E-21h d76, 2026-11-20, code-only mode)
+
+**Line-order split of the 437-site `PlaySound` census in `Projectile.cs`**
+(the S1-E-21h census, "The projectile sound wave" above): the sites in
+ascending C# line order are split into three worktrees — **d75**
+(`task/W4-d75-proj-sounds-1`) owns sites 1-120 (lines `:14385`-`:41968`),
+**d76** (this branch, `task/W4-d76-proj-sounds-2`) owns sites 121-240
+(lines **`:41978`-`:70958`**), **d77** (`task/W4-d77-proj-sounds-3`) owns
+sites 241-437 (lines `:70978`-the `Kill()` tail). All three branch from
+`a725acb0`. The already-landed S1-E-21h wave's 24 sites are KEPT
+untouched; where one falls inside the d76 range (`:42234`/`:43366`, the
+slice-A `AI_001` latches `:54155`-`:55358`) it is recorded as landed, not
+re-ported.
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests/graphify invoked (the
+Lead's constraint); every witness test is WRITTEN NOT RUN. Audio seams
+follow the landed S1-E-21h conventions: the `wants_sound` intent
+(`Projectile.wants_sound` -> `pending_proj_sounds` ->
+`Audio::play_proj_sound`), attenuation BEFORE any case draw, the drain on
+the `UpdateProjectiles` stream at the pass tail after the wave-C hit
+drain. RNG draws keep their exact slots on the C# statement order.
