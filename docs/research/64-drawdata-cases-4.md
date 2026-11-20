@@ -1314,6 +1314,90 @@ Audit notes (R14):
   the alpha-0 martian/meteor glows; the port's `[255,255,255,255]` matches.
 - No other R14 id has a second-switch row.
 
+### R15 — bulb, volcanoes, brazier, dye stations, machines, teleporter: 665, 696, 238, 593, 594, 592, 228, 231, 243, 247, 244, 565, 235, 217, 218 (15 ids, indices 210-224)
+
+C# `TileDrawing.cs:5437-5528`. Verbatim (:5445-5490):
+
+```csharp
+		case 593:
+		{
+			if (tileFrameX >= 18)
+			{
+				addFrX = -18;
+			}
+			tileTop = 2;
+			if (Animation.GetTemporaryFrame(x, y, out var frameData2))
+			{
+				addFrY = (short)(18 * frameData2);
+			}
+			else if (tileFrameX < 18)
+			{
+				addFrY = Main.tileFrame[typeCache] * 18;
+			}
+			else
+			{
+				addFrY = 0;
+			}
+			break;
+		}
+		case 594:
+		{
+			if (tileFrameX >= 36)
+			{
+				addFrX = -36;
+			}
+			tileTop = 2;
+			int num20 = tileFrameX % 36;
+			if (Animation.GetTemporaryFrame(y: y - tileFrameY % 36 / 18, x: x - num20 / 18, frameData: out var frameData))
+			{
+				addFrY = (short)(36 * frameData);
+			}
+			else if (tileFrameX < 36)
+			{
+				addFrY = Main.tileFrame[typeCache] * 36;
+			}
+			else
+			{
+				addFrY = 0;
+			}
+			break;
+		}
+		case 592:
+			addFrY = Main.tileFrame[typeCache] * 54;
+			break;
+```
+
+| Id | C# body | C# line | Rust arm | Verdict |
+| --- | --- | --- | --- | --- |
+| 665, 696 | `tileFrame * 36` (crystal group tail, R14) | :5437-5440 | `drawdata.rs:739-741` | PORTED |
+| 238 | top 2 + `tileFrame * 36` (Plantera bulb) | :5441-5444 | :744-747 | PORTED |
+| 593 | −18 column fold + temp-frame probe + 18-stride fallback | :5445-5465 | static :751-757; full body `cases_b.rs:305-317` | PORTED (registry deviation) |
+| 594 | −36 fold + sheet-relative probe + 36-stride fallback | :5466-5487 | static :760-766; full body `cases_b.rs:319-332` | PORTED (registry deviation) |
+| 592 | `tileFrame * 54` (BrazierSuspended) | :5488-5490 | :769-771 | PORTED |
+| 228, 231, 243, 247 | top 2 + `tileFrame * 54` | :5491-5497 | :774-777 | PORTED |
+| 244 | top 2; `tileFrame * 36` iff `fx < 54` else 0 | :5498-5508 | :780-783 | PORTED |
+| 565 | top 2; `tileFrame * 36` iff `fx < 36` else 0 | :5509-5519 | :786-789 | PORTED |
+| 235 | `tileFrame * 18` (Teleporter) | :5520-5522 | :791-793 | PORTED |
+| 217, 218 | `tileFrame * 36`, top 2 | :5523-5528 | :796-799 | PORTED |
+
+Audit notes (R15):
+- 593/594's static arms carry the C# `else`-path fallbacks exactly
+  (`fx < stride → tileFrame * stride`, else 0); the full probe bodies live in
+  `cases_b` with `temporary_frame` = None (the registry deviation, R13's
+  note). 593 probes the RAW cell `(x, y)`; 594 the sheet-relative origin —
+  both shapes ported. The `(short)` casts on the probe hits are the port's
+  `as i16`.
+- **564 cross-reference (index 225, R16):** the C# shares the 217/218 label
+  but the second switch (:6105-6113) unconditionally clears `addFrY = 0`
+  AFTER building the glow rect with the pre-clear value. The port folds the
+  net result into the static arm (`drawdata.rs:803-806`, top 2 + row 0) and
+  the glow pass deliberately does NOT re-apply the clear
+  (`cases_a.rs:49-50/:274-275/:334-342`). Consequence: the port's 564 glow
+  rect uses `fy + 0` where the C# uses `fy + tileFrame*36` — a rect deviation
+  on the (unconsumed) glow record, documented here for the TILE-DRAW-2 lane;
+  the drawn tile pixels are identical.
+- No other R15 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
