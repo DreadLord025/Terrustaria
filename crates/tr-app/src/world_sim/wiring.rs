@@ -176,6 +176,10 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         vel: Vec2::ZERO,
                         age: 0.0,
                         phase: 0.0,
+                        grab_delay_time: 0,
+                        grab_delay_player: 255,
+                        being_grabbed: false,
+                        on_conveyor: false,
                     });
                 }
                 tr_core::wiring::StatueSpawn::Teleport { x, y, roster } => {
@@ -759,6 +763,10 @@ mod tests {
                 vel: Vec2::ZERO,
                 age: 0.0,
                 phase: 0.0,
+                grab_delay_time: 0,
+                grab_delay_player: 255,
+                being_grabbed: false,
+                on_conveyor: false,
             });
         }
         trip_and_tick(&mut app);

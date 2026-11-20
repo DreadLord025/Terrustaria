@@ -7104,8 +7104,10 @@ mod tests {
     #[test]
     fn test_store_1_the_void_lens_routes_pickups_into_bank4() {
         // `Player.cs:39395`'s pickup arm: holding 4131 (the Void Lens)
-        // enables the vault (`IsVoidVaultEnabled`), `GetItem_VoidVault`
-        // fills bank4 first.
+        // enables the vault (`IsVoidVaultEnabled`) — but the vault is
+        // `GetItem`'s LAST resort (`:39395-39398`, S1-P-i47): the inventory
+        // passes run first, and only their overflow fills bank4. The grid
+        // is full of stone here, so the wood has nowhere else to go.
         let mut app = mining_app(object_world(), 14, 260);
         app.inventory[20] = crate::item::ItemSlot {
             kind: 4131,
@@ -7113,6 +7115,11 @@ mod tests {
             count: 1,
             prefix: 0,
         };
+        for (i, s) in app.inventory.iter_mut().enumerate() {
+            if i != 20 {
+                *s = slot(3, registry::max_stack(3));
+            }
+        }
         // The per-tick refresh rides update_player; drive it directly here.
         app.player.as_mut().unwrap().void_vault_enabled = true;
         seed_stream(&mut app, 0);
@@ -7120,7 +7127,7 @@ mod tests {
         crate::world_sim::items::spawn_item_drop(&mut app.items, rng, 9, 5, 14, 260);
         // The spawn pop (`Item.NewItem`'s vy) then the fall. The window covers
         // the `WorldItem.cs:363-364` air gravity of 0.1/tick: the arc back
-        // down to the magnet radius is longer than the old 0.3 tuning assumed.
+        // down to the grab rectangle is longer than the old 0.3 tuning assumed.
         for _ in 0..200 {
             crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
         }
@@ -7132,6 +7139,33 @@ mod tests {
         assert!(
             !app.inventory.iter().any(|sl| sl.kind == 9),
             "the inventory stayed out of it"
+        );
+        // The reverse arm (S1-P-i47): with grid room, the pickup lands in
+        // the INVENTORY and the vault stays untouched — the old port
+        // routed the vault first.
+        let mut app = mining_app(object_world(), 14, 260);
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 4131,
+            name: "Void Lens",
+            count: 1,
+            prefix: 0,
+        };
+        app.player.as_mut().unwrap().void_vault_enabled = true;
+        seed_stream(&mut app, 0);
+        let mut rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_sim::items::spawn_item_drop(&mut app.items, rng, 9, 5, 14, 260);
+        for _ in 0..200 {
+            crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.banks[3].iter().all(|sl| sl.count == 0),
+            "the vault is the last resort — the grid took it"
+        );
+        assert_eq!(
+            app.inventory.iter().filter(|sl| sl.kind == 9).map(|sl| sl.count).sum::<u32>(),
+            5,
+            "the wood landed in the grid"
         );
     }
 
@@ -8998,9 +9032,10 @@ mod item_mechanics {
     }
 
     /// t2 — `Player.GetItem_FillIntoOccupiedSlot`
-    /// (`Player.cs:39493-39518`): a partial fill stops at `maxStack` and the
-    /// remainder stays in the world as the drop (`PickupItem`,
-    /// `Player.cs:35085-35087`: `itemToPickUp.ReplaceWith(item)`).
+    /// (`Player.cs:39493-39518`): a partial fill stops at `maxStack`; the
+    /// leftover rides the empty-slot passes (`:39365-39394`) and only a
+    /// grid with NO room keeps it in the world (`PickupItem`,
+    /// `Player.cs:35103`: `itemToPickUp.ReplaceWith(item)`).
     #[test]
     fn pickup_merges_to_maxstack() {
         // `Item.CommonMaxStack = 9999` (`Item.cs:49966`) is what `SetDefaults`
@@ -9008,7 +9043,25 @@ mod item_mechanics {
         // there.
         const MAX: u32 = 9999;
         assert_eq!(registry::max_stack(3), MAX, "Item.CommonMaxStack");
+        // Case 1: the merge fills slot 0 to the cap, the remainder 7 lands
+        // in the next empty HOTBAR slot (the usable-kind arm `:39365`).
         let mut app = flat_app();
+        app.inventory[0] = slot(3, MAX - 3);
+        let pc = app.player.as_ref().unwrap().center();
+        let mut drop = ItemDrop::new(3, 10, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
+        drop.age = 1.0;
+        app.items.push(drop);
+        crate::world_sim::items::update_items(&mut app, ONE_TICK_SECS);
+        assert_eq!(app.inventory[0].count, MAX, "the slot fills to maxStack");
+        assert_eq!(app.inventory[1].count, 7, "the overflow opens slot 1");
+        assert_eq!(app.inventory[1].kind, 3);
+        assert!(app.items.is_empty(), "the drop was fully consumed");
+        // Case 2: a grid with no room at all — the surplus stays on the
+        // ground (`ReplaceWith`), never an over-full slot.
+        let mut app = flat_app();
+        for s in app.inventory.iter_mut() {
+            *s = slot(2, registry::max_stack(2));
+        }
         app.inventory[0] = slot(3, MAX - 3);
         let pc = app.player.as_ref().unwrap().center();
         let mut drop = ItemDrop::new(3, 10, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
@@ -9021,7 +9074,7 @@ mod item_mechanics {
         assert_eq!(
             app.inventory.iter().filter(|s| s.kind == 3).count(),
             1,
-            "no second stone stack while the first still has room"
+            "no second stone stack while the grid is full"
         );
     }
 
@@ -9057,7 +9110,7 @@ mod item_mechanics {
         let floor_top = 20.0 * TILE_PX;
         // In the air: one step adds exactly `gravity` and applies the friction.
         let mut drop = ItemDrop::new(2, 1, 0, 100.0, 100.0, 2.0, 0.0, 0.0);
-        drop.update(&app.world, None, ONE_TICK_SECS);
+        drop.update(&app.world, ONE_TICK_SECS);
         assert!(
             (drop.vel.y - 0.1).abs() < 1e-6,
             "gravity is 0.1, got {}",
@@ -9070,12 +9123,12 @@ mod item_mechanics {
         );
         // The fall speed caps at 7.
         let mut fast = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 40.0, 0.0);
-        fast.update(&app.world, None, ONE_TICK_SECS);
+        fast.update(&app.world, ONE_TICK_SECS);
         assert!((fast.vel.y - 7.0).abs() < 1e-6, "maxFall is 7, got {}", fast.vel.y);
         // Resting on the floor: the drop lies still, it never bounces.
         let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - 14.0, 0.0, 0.0, 0.0);
         for _ in 0..30 {
-            rest.update(&app.world, None, ONE_TICK_SECS);
+            rest.update(&app.world, ONE_TICK_SECS);
         }
         assert_eq!(rest.vel.y, 0.0, "no restitution off the ground");
         assert_eq!(rest.vel.x, 0.0, "friction settles the slide");

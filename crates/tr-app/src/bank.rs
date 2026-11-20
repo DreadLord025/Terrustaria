@@ -27,10 +27,13 @@ pub(crate) fn bank_for_chest(chest: i32) -> Option<usize> {
     }
 }
 
-/// `Player.CanVoidVaultAccept` (`Player.cs:39425-39433`): the quest items and
-/// the void-lens projectile kind 3822 refuse. The port has no `questItem`
-/// flag yet — the id 3822 arm and a placeholder quest set are the seam.
+/// `Player.CanVoidVaultAccept` (`Player.cs:39425-39436`): the quest items
+/// (`item.questItem`, the generated table carries the flag) and the
+/// void-lens kind 3822 refuse.
 pub(crate) fn can_void_vault_accept(kind: u16) -> bool {
+    if crate::registry::get(kind).is_some_and(|d| d.quest_item) {
+        return false;
+    }
     kind != 3822
 }
 
@@ -847,9 +850,11 @@ mod tests {
         loot_all(&mut container, &mut inventory, &mut coins, &mut ammo, None, &mut audio, &mut rng);
         assert_eq!(inventory[40].count, 9999, "the merge filled to the cap");
         assert_eq!(container[0].count, 0);
-        // The true overflow: a full stack refuses.
+        // The true overflow: every slot occupied — the full wood stack
+        // refuses the merge and no empty slot exists, so the remainder
+        // stays in the chest.
         let mut container = [slot(9, 500)];
-        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| slot(3, 9999));
         inventory[40] = slot(9, 9999);
         let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
         loot_all(&mut container, &mut inventory, &mut coins, &mut ammo, None, &mut audio, &mut rng);

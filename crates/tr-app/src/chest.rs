@@ -1467,42 +1467,44 @@ pub(crate) fn use_void_bag(app: &App) -> bool {
         .any(|s| s.count > 0 && s.kind == 4131)
 }
 
-/// `Player.ItemSpace(item).CanTakeItemToPersonalInventory`
-/// (`Player.cs:39153-39197`) for the shift-out cursor: any grid slot accepts
-/// the item (`CanItemSlotAcceptPickup`, `:39220-39232` — empty, or a
-/// same-kind partial stack), the coin rows for coins (`:39163-39167`'s
-/// `num = 54`), or the ungated same-kind merge scan over the ammo slots
-/// (`:39185-39191`). S1-P-i43: the coin half landed — a coin's `ItemSpace`
-/// scans 0..54 (the grid AND the coin rows), so a free coin row answers
-/// true even with a full grid. The `IsAPickup`/`uniqueStack` sets, the
-/// `ammo > 0` FillAmmo arm (`:39175-39184`) and the Cofveve void scan
-/// (`:39192-39195`) have no port counterparts yet.
+/// `Player.ItemSpace(item).CanTakeItem` (`Player.cs:39153-39197`,
+/// S1-P-i47) for the shift-out cursor: the full predicate — the
+/// `IsAPickup` bypass, the grid scan with the favorited one-per-inventory
+/// guard (`CanItemSlotAcceptPickup`, `:39220-39235`), the `ammo > 0`
+/// FillAmmo arm (`:39175-39184`), the ungated ammo merge scan
+/// (`:39185-39191`) and the Cofveve void scan (`:39192-39195`). The caller
+/// holds no prefix (the cursor probe), so the probe stacks unprefixed.
+/// S1-P-i43's coin half (`:39163-39167`): a coin's `ItemSpace` scans the
+/// coin rows too (pInv 50-53), so a free coin row answers true even with
+/// a full grid.
 pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
     if kind == 0 {
         return false;
     }
-    let max = registry::max_stack(kind);
-    if app
-        .inventory
-        .iter()
-        .any(|s| s.count == 0 || (s.kind == kind && s.count < max))
+    let vault_enabled = app.player.as_ref().is_some_and(|p| p.void_vault_enabled);
+    let vault = app.player.as_ref().map(|p| &p.banks[3]);
+    if crate::item::item_space(
+        &app.inventory,
+        &app.equip.ammo,
+        kind,
+        0,
+        |idx| app.is_favorite(idx),
+        if vault_enabled { vault } else { None },
+    )
+    .can_take
     {
         return true;
     }
     // `:39163-39167` — a coin's scan covers the coin rows too (pInv 50-53).
-    if registry::is_coin(kind)
+    // Boolean-equivalent post-check: `item_space` already admitted the grid
+    // arm; only the coin-row half can still answer true here.
+    let max = registry::max_stack(kind);
+    registry::is_coin(kind)
         && app
             .equip
             .coins
             .iter()
             .any(|s| s.count == 0 || (s.kind == kind && s.count < max))
-    {
-        return true;
-    }
-    app.equip
-        .ammo
-        .iter()
-        .any(|s| s.count > 0 && s.kind == kind && s.count < max)
 }
 
 /// `ChestUI.TryPlacingInChest` (`ChestUI.cs:1209-1289`) — the shift-in

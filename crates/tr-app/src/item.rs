@@ -190,47 +190,430 @@ impl ItemSlot {
     }
 }
 
-/// `Player.PickupItem`: stack into the hotbar first, then an empty hotbar slot,
-/// then the storage rows. The stacking rule is `Item.CanStack`
-/// (`Item.cs:49865-49871`): same kind AND same prefix — a prefixed drop never
-/// merges into an unprefixed stack.
+/// `Player.GetItem`'s grid passes (`Player.cs:39353-39394`, S1-P-i47): the
+/// occupied-stack merge scans FORWARD 0..49 (`GetItem_FillIntoOccupiedSlot`
+/// `:39487` — `type > 0 && stack < maxStack && CanStack`, so a FULL same-kind
+/// stack never answers), then the empty-slot passes: the hotbar forward
+/// 0..9 first for usable kinds (`!isACoin && useStyle != 0`, `:39365-39374`),
+/// then the whole grid REVERSE 49..0 for the non-favorited item
+/// (`:39387-39394`; a world drop / craft result is never favorited, so the
+/// forward favorited arm `:39375-39384` is unreachable here). The stacking
+/// rule is `Item.CanStack` (`Item.cs:49865-49871`): same kind AND same prefix
+/// — a prefixed drop never merges into an unprefixed stack. The ammo
+/// pre-pass and the favorite guard live in [`deposit_pickup`]; this helper
+/// is the grid-only shape the UI transfer callers share.
 pub(crate) fn slot_for_pickup(
     inventory: &mut [ItemSlot; INV],
     kind: u16,
     prefix: u16,
 ) -> Option<usize> {
-    for range in [0..HOTBAR, HOTBAR..INV] {
-        if let Some(i) = range.clone().find(|&i| {
-            inventory[i].count > 0 && inventory[i].kind == kind && inventory[i].prefix == prefix
-        }) {
+    // The occupied merge pass, forward (`Player.cs:39353-39364`).
+    for i in 0..INV {
+        let s = &inventory[i];
+        if s.count > 0
+            && s.count < registry::max_stack(kind)
+            && s.kind == kind
+            && s.prefix == prefix
+        {
             return Some(i);
         }
     }
-    for range in [0..HOTBAR, HOTBAR..INV] {
-        if let Some(i) = range.clone().find(|&i| {
-            inventory[i].count == 0
-                || (inventory[i].kind == kind
-                    && inventory[i].prefix == prefix
-                    && inventory[i].count < registry::max_stack(kind))
-        }) {
+    let init = |inventory: &mut [ItemSlot; INV], i: usize| {
+        inventory[i] = ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count: 0,
+            prefix,
+        };
+        Some(i)
+    };
+    // The usable-kind hotbar arm (`:39365-39374`).
+    if use_style(kind) != 0 {
+        for i in 0..HOTBAR {
             if inventory[i].count == 0 {
-                inventory[i] = ItemSlot {
-                    kind,
-                    name: registry::name(kind),
-                    count: 0,
-                    prefix,
-                };
+                return init(inventory, i);
             }
-            return Some(i);
+        }
+    }
+    // The non-favorited reverse scan (`:39387-39394`).
+    for i in (0..INV).rev() {
+        if inventory[i].count == 0 {
+            return init(inventory, i);
         }
     }
     None
 }
 
+// --- The pickup predicates (S1-P-i47) ----------------------------------------
+
+/// `ItemID.Sets.IsAPickup` (`ItemID.cs:493`): the hearts/stars/nebula/mana
+/// pickups — `Player.ItemSpace` always answers `CanTakeItem` for them
+/// (`Player.cs:39155-39158`). Their consume-on-touch effects are i52's.
+pub(crate) fn is_a_pickup(kind: u16) -> bool {
+    matches!(
+        kind,
+        58 | 184 | 1734 | 1735 | 1867 | 1868 | 3453 | 3454 | 3455 | 4143
+    )
+}
+
+/// `Item.notAmmo` (`Item.cs`'s `SetDefaults` cases): the acorn 27 (`:1709`),
+/// the coins 71-74 (`:2225-2286`), the sand family 169/370/408/1246
+/// (`:3464`/`:5721`/`:6146`/`:15462`) and the ale 353 (`:48384`) carry
+/// `ammo > 0` but refuse the ammo slots. No other kind sets the flag.
+pub(crate) fn not_ammo(kind: u16) -> bool {
+    matches!(kind, 27 | 71..=74 | 169 | 353 | 370 | 408 | 1246)
+}
+
+/// `Item.PaintOrCoating` (`Item.cs:353-362`): `paint > 0 || paintCoating > 0`.
+fn paint_or_coating(kind: u16) -> bool {
+    registry::get(kind).is_some_and(|d| d.paint > 0 || d.paint_coating > 0)
+}
+
+/// `Item.FitsAmmoSlot` (`Item.cs:1369-1376`): the `GetItem` ammo pre-pass
+/// gate (`Player.cs:39345`). A kind with no ammo/bait value (and not the
+/// two special ids 530/849, not painted) fits only when it is the ale 353.
+pub(crate) fn fits_ammo_slot(kind: u16) -> bool {
+    let d = registry::get(kind);
+    let ammo = d.map_or(0, |d| d.ammo);
+    let bait = d.map_or(0, |d| d.bait);
+    if (kind != 0 && ammo <= 0 && bait == 0 && kind != 530 && kind != 849 && !paint_or_coating(kind))
+        || not_ammo(kind)
+    {
+        return kind == 353;
+    }
+    true
+}
+
+/// `Item.CanFillEmptyAmmoSlot` (`Item.cs:1378-1385`): the bait, the painted
+/// items and the nine listed kinds never claim an EMPTY ammo slot; the rest
+/// fit unless `notAmmo`.
+pub(crate) fn can_fill_empty_ammo_slot(kind: u16) -> bool {
+    let bait = registry::get(kind).map_or(0, |d| d.bait);
+    if bait == 0
+        && !paint_or_coating(kind)
+        && !matches!(kind, 353 | 849 | 169 | 75 | 23 | 408 | 370 | 1246)
+    {
+        return !not_ammo(kind);
+    }
+    false
+}
+
+/// `Item.CanBeEquipped` (`Item.cs:1159-1174`): an armour/accessory/hook/
+/// mount/pet kind. `Main.projHook` is the aiStyle-7 set
+/// (`projectile_id::is_hook_projectile`), `Main.vanityPet`/`lightPet` the
+/// buff tables (`buffs.rs`).
+fn can_be_equipped(kind: u16) -> bool {
+    let Some(d) = registry::get(kind) else {
+        return false;
+    };
+    let hook = d
+        .projectile
+        .is_some_and(|p| crate::projectile_id::is_hook_projectile(p as i32));
+    if d.head_slot < 0
+        && d.body_slot < 0
+        && d.leg_slot < 0
+        && !d.accessory
+        && !hook
+        && d.mount_type < 0
+    {
+        if d.buff_type > 0 {
+            if !crate::buffs::is_vanity_pet(d.buff_type) {
+                return crate::buffs::is_light_pet(d.buff_type);
+            }
+            return true;
+        }
+        return false;
+    }
+    true
+}
+
+/// `Item.OnlyNeedOneInInventory` (`Item.cs:1176-1192`) with the
+/// `ItemID.Sets.OnlyNeedOneInInventoryOverride` table (`ItemID.cs:1387-1445`):
+/// the large gems/capture items force true, the buckets/doll/sponge force
+/// false; otherwise a non-consumable is one-per-inventory unless it is a
+/// `useStyle 0` non-equippable material.
+pub(crate) fn only_need_one_in_inventory(kind: u16) -> bool {
+    // The `true` overrides (`ItemID.cs:1389-1432`).
+    if matches!(
+        kind,
+        1522..=1527
+            | 3643
+            | 3103
+            | 3104
+            | 856
+            | 1299
+            | 329
+            | 4346
+            | 5391
+            | 4767
+            | 5453
+            | 5309
+            | 5454
+            | 5323
+            | 5455
+            | 6190
+            | 6195
+    ) {
+        return true;
+    }
+    // The `false` overrides (`ItemID.cs:1433-1444`).
+    if matches!(kind, 205 | 206 | 207 | 1128 | 267 | 849) {
+        return false;
+    }
+    let Some(d) = registry::get(kind) else {
+        return false;
+    };
+    if !d.consumable {
+        if d.use_style == 0 {
+            return can_be_equipped(kind);
+        }
+        return true;
+    }
+    false
+}
+
+/// `Item.CanPassivelyStackInWorld` (`Item.cs:49573-49593`) with the
+/// `CanPassivelyStackInWorldOverride` table (`ItemID.cs:1447-1471`): the
+/// gate on `WorldItem.TryCombiningIntoNearbyItems` (`WorldItem.cs:159`).
+pub(crate) fn can_passively_stack_in_world(kind: u16) -> bool {
+    let Some(d) = registry::get(kind) else {
+        return false;
+    };
+    if d.max_stack == 1 {
+        return false;
+    }
+    // The overrides: coins/fallen star never, medals/buckets/sponge always.
+    if matches!(kind, 71..=74 | 75) {
+        return false;
+    }
+    if matches!(kind, 3817 | 205 | 206 | 207 | 1128 | 530) {
+        return true;
+    }
+    if only_need_one_in_inventory(kind) {
+        return false;
+    }
+    // `createTile < 0 && createWall <= 0` — the port's `Option` walls map
+    // `None` to the C# stock -1 and `Some(0)` to the C# 0 (both `<= 0`).
+    let no_tile = d.tile.is_none();
+    let no_wall = d.wall.map_or(true, |w| w == 0);
+    if no_tile && no_wall && (d.ammo <= 0 || not_ammo(kind)) && !d.consumable && d.dye <= 0 && !paint_or_coating(kind)
+    {
+        return d.material;
+    }
+    true
+}
+
+/// `Player.ItemSpaceStatus` (`Player.cs:245-263`): the pull gate's answer —
+/// whether the item can be taken at all, and whether its destination is the
+/// void vault (the faster `PullItem_ToVoidVault` arm, `:34957-34960`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ItemSpaceStatus {
+    pub can_take: bool,
+    pub to_void_vault: bool,
+}
+
+/// `Player.CanItemSlotAcceptPickup` (`Player.cs:39220-39235`): an empty slot
+/// always accepts; a favorited one-per-inventory slot refuses; otherwise a
+/// partial `Item.CanStack` match accepts. `favorite` reads the vanilla slot
+/// index space (grid 0..50, ammo 54..58 — `App::is_favorite`).
+fn can_item_slot_accept_pickup(
+    slot: &ItemSlot,
+    kind: u16,
+    prefix: u16,
+    favorited: bool,
+) -> bool {
+    if slot.kind == 0 {
+        return true;
+    }
+    if favorited && only_need_one_in_inventory(slot.kind) {
+        return false;
+    }
+    slot.count < registry::max_stack(slot.kind) && slot.kind == kind && slot.prefix == prefix
+}
+
+/// `Player.ItemSpace` (`Player.cs:39153-39197`, S1-P-i47): the pickup pull
+/// gate. `IsAPickup` kinds always fit; the `uniqueStack && HasItem` refusal
+/// (`:39159-39162`) is unreachable in vanilla — `uniqueStack` is only ever
+/// written `false` (`Item.cs:49046`, no `true` site in the decompile); then
+/// the grid scan (coins would scan 0..54 — the coin routing is i50's, the
+/// port's coins live in `App.coins`), the `ammo > 0 && !notAmmo` ammo-slot
+/// arm (`CanGoIntoAmmoOnPickup`, `:39237-39244`), the ungated same-kind ammo
+/// merge scan (`:39185-39191`), and the Cofveve void-vault scan
+/// (`ItemSpaceForCofveve`, `:39199-39218`). `vault` is `Some` only when
+/// `IsVoidVaultEnabled`.
+pub(crate) fn item_space(
+    inventory: &[ItemSlot; INV],
+    ammo: &[ItemSlot; crate::inv::AMMO],
+    kind: u16,
+    prefix: u16,
+    favorite: impl Fn(usize) -> bool,
+    vault: Option<&crate::bank::BankStore>,
+) -> ItemSpaceStatus {
+    if is_a_pickup(kind) {
+        return ItemSpaceStatus { can_take: true, to_void_vault: false };
+    }
+    for i in 0..INV {
+        if can_item_slot_accept_pickup(&inventory[i], kind, prefix, favorite(i)) {
+            return ItemSpaceStatus { can_take: true, to_void_vault: false };
+        }
+    }
+    let d = registry::get(kind);
+    if d.is_some_and(|d| d.ammo > 0) && !not_ammo(kind) {
+        for j in 0..crate::inv::AMMO {
+            // `CanGoIntoAmmoOnPickup`: an empty ammo slot needs
+            // `CanFillEmptyAmmoSlot`; the rest ride the normal accept.
+            let slot = &ammo[j];
+            let ok = if slot.count == 0 {
+                can_fill_empty_ammo_slot(kind)
+            } else {
+                can_item_slot_accept_pickup(slot, kind, prefix, favorite(crate::inv::ammo_slot_index(j)))
+            };
+            if ok {
+                return ItemSpaceStatus { can_take: true, to_void_vault: false };
+            }
+        }
+    }
+    // The ungated merge scan over the ammo rows (`:39185-39191`).
+    for slot in ammo.iter() {
+        if slot.count > 0
+            && slot.count < registry::max_stack(slot.kind)
+            && slot.kind == kind
+            && slot.prefix == prefix
+        {
+            return ItemSpaceStatus { can_take: true, to_void_vault: false };
+        }
+    }
+    // `ItemSpaceForCofveve` (`:39199-39218`).
+    if let Some(vault) = vault {
+        if crate::bank::can_void_vault_accept(kind) {
+            for slot in vault.iter() {
+                if can_item_slot_accept_pickup(slot, kind, prefix, false) {
+                    return ItemSpaceStatus { can_take: true, to_void_vault: true };
+                }
+            }
+        }
+    }
+    ItemSpaceStatus { can_take: false, to_void_vault: false }
+}
+
+/// `Player.GetItem`'s deposit walk for a NON-COIN world pickup
+/// (`Player.cs:39330-39394`, S1-P-i47): the `FitsAmmoSlot` → `FillAmmo`
+/// pre-pass (`:39345-39352`, `:39264-39328` — partial ammo merges forward,
+/// then the first empty ammo slot for `CanFillEmptyAmmoSlot` kinds), the
+/// occupied grid merge forward 0..49 with the favorite guard, the
+/// usable-kind empty hotbar arm, then the empty grid REVERSE scan.
+/// `on_fill(moved)` fires once per accepted slot — the C#'s per-site
+/// `PlaySound(7)` + `NotifyItemPickup` (`:39491`/`:39505`/`:39559`/`:39571`,
+/// `FillAmmo` `:39274`/`:39321`). Returns the remainder the caller keeps in
+/// the world (`PickupItem`'s `ReplaceWith`, `:35103`) or routes to the void
+/// vault — the vault is `GetItem`'s LAST resort (`:39395`), the caller's
+/// step after this walk. The coin arm (`num2 = -4`, `:39340-39343`) is
+/// i50's; `DoCoins` (`:39246-39262`) rides with it.
+pub(crate) fn deposit_pickup(
+    inventory: &mut [ItemSlot; INV],
+    ammo: &mut [ItemSlot; crate::inv::AMMO],
+    kind: u16,
+    prefix: u16,
+    count: u32,
+    favorite: impl Fn(usize) -> bool,
+    on_fill: &mut dyn FnMut(u32),
+) -> u32 {
+    let mut left = count;
+    if left == 0 || kind == 0 {
+        return 0;
+    }
+    let max = registry::max_stack(kind);
+    // `FillAmmo` (`Player.cs:39264-39328`).
+    if fits_ammo_slot(kind) {
+        for j in 0..crate::inv::AMMO {
+            let slot = &mut ammo[j];
+            if slot.count == 0 || slot.count >= max || slot.kind != kind || slot.prefix != prefix {
+                continue; // `:39268`
+            }
+            let moved = left.min(max - slot.count);
+            slot.count += moved;
+            left -= moved;
+            on_fill(moved); // `:39274`/`:39293` — one chime per merge
+            if left == 0 {
+                return 0;
+            }
+        }
+        if can_fill_empty_ammo_slot(kind) {
+            for slot in ammo.iter_mut() {
+                if slot.count == 0 {
+                    *slot = ItemSlot { kind, name: registry::name(kind), count: left, prefix };
+                    on_fill(left); // `:39321`
+                    return 0;
+                }
+            }
+        }
+    }
+    // The occupied grid pass, forward (`:39353-39364` + `:39485-39524` —
+    // `type > 0 && stack < maxStack && CanItemSlotAcceptPickup`).
+    for i in 0..INV {
+        if left == 0 {
+            return 0;
+        }
+        if inventory[i].kind == 0
+            || !can_item_slot_accept_pickup(&inventory[i], kind, prefix, favorite(i))
+        {
+            continue;
+        }
+        let room = max.saturating_sub(inventory[i].count);
+        let moved = left.min(room);
+        inventory[i].count += moved;
+        left -= moved;
+        on_fill(moved);
+    }
+    if left == 0 {
+        return 0;
+    }
+    // The usable-kind empty hotbar arm (`:39365-39374`) —
+    // `GetItem_FillEmptyInventorySlot` gates on `type != 0` (`:39553`).
+    if use_style(kind) != 0 {
+        for i in 0..HOTBAR {
+            if inventory[i].kind == 0 {
+                inventory[i] = ItemSlot { kind, name: registry::name(kind), count: left, prefix };
+                on_fill(left);
+                return 0;
+            }
+        }
+    }
+    // The non-favorited empty grid REVERSE scan (`:39387-39394`) — a world
+    // drop is never favorited, so the forward arm `:39375-39384` is out.
+    for i in (0..INV).rev() {
+        if inventory[i].kind == 0 {
+            inventory[i] = ItemSlot { kind, name: registry::name(kind), count: left, prefix };
+            on_fill(left);
+            return 0;
+        }
+    }
+    left
+}
+
 pub const SIZE: f32 = 14.0;
-/// `Player.defaultItemGrabRange = 42` (`Player.cs:57121`, read by
-/// `GetItemGrabRange`, `Player.cs:35132`) — the px radius the magnet pulls in.
-const MAGNET_RADIUS: f32 = 42.0;
+/// `Player.defaultItemGrabRange = 42` (`Player.cs:57121`), the base of
+/// `GetItemGrabRange` (`Player.cs:35130-35166`) — the px margin the grab
+/// rectangle expands the player's hitbox by (`:34926`).
+pub(crate) const DEFAULT_ITEM_GRAB_RANGE: i32 = 42;
+/// `Item.coinGrabRange = 350` / `manaGrabRange = 300` / `lifeGrabRange = 250`
+/// / `treasureGrabRange = 150` (`Item.cs:49962-49965`).
+pub(crate) const COIN_GRAB_RANGE: i32 = 350;
+pub(crate) const MANA_GRAB_RANGE: i32 = 300;
+pub(crate) const LIFE_GRAB_RANGE: i32 = 250;
+pub(crate) const TREASURE_GRAB_RANGE: i32 = 150;
+/// `Player.itemGrabSpeed = 0.45f` / `itemGrabSpeedMax = 4f`
+/// (`Player.cs:57122-57123`) — `PullItem_Common`'s per-tick acceleration and
+/// velocity cap (`:34983-35029`).
+pub(crate) const ITEM_GRAB_SPEED: f32 = 0.45;
+pub(crate) const ITEM_GRAB_SPEED_MAX: f32 = 4.0;
+/// `WorldItem.DefaultGrabDelay = 100` (`WorldItem.cs:110`) — the tick count
+/// a `GrabDelayForLocalPlayer`/`ForAllPlayers` spawn locks the drop for
+/// (`ApplySpawnOwnership`, `:306-313`), decremented per `UpdateItem`
+/// (`:441-444`). The old port's 0.35 s age gate had no C# counterpart:
+/// tile-break drops spawn `ReserveForLocalPlayer`, which in netMode 0 sets
+/// NO delay (`WorldItem.cs:295-305`).
+pub(crate) const DEFAULT_GRAB_DELAY: i32 = 100;
 /// `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`):
 /// `float gravity = 0.1f; float maxFallSpeed = 7f;` — the wet/shimmer/honey
 /// arms override them (`:380-396`), the air case is this pair.
@@ -240,8 +623,161 @@ const MAX_FALL: f32 = 7.0;
 /// `base.velocity.X *= 0.95f` and the snap to rest below `0.1`.
 const FRICTION_X: f32 = 0.95;
 const FRICTION_EPSILON: f32 = 0.1;
-/// Seconds before a drop can be collected (vanilla `Item.instanced` pickup delay).
-const PICKUP_DELAY: f32 = 0.35;
+
+/// The accessory flags `GetItemGrabRange`/`GrabItems` read
+/// (`Player.cs:35133-35151`/`:34943-34963`). The port's equipment pass has
+/// not landed the Gold Ring / Mana Magnet / Treasure Magnet grants (the
+/// `manaMagnet` family is a recorded unported seam, `player.rs:986`), so
+/// play passes the defaults; the Lifeforce buff's `lifeMagnet`
+/// (`buff_effects.rs:52`) wires here when the accumulator lands on Player.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct GrabFlags {
+    pub gold_ring: bool,
+    pub mana_magnet: bool,
+    pub life_magnet: bool,
+    pub treasure_magnet: bool,
+    /// `difficulty == 3 && FarPlacementRangePower.IsEnabledForPlayer`
+    /// (`Player.cs:35161-35164`) — the port's Journey power flag.
+    pub journey_far_range: bool,
+}
+
+/// `Player.GetItemGrabRange(Item)` (`Player.cs:35130-35166`): the base 42
+/// plus the per-accessory/per-kind margins. The 4143 mana-restore pickup
+/// gets the mana margin unconditionally (`:35141-35144`); the void lens
+/// 3822 +50 (`:35153-35156`); the nebula pickups +100 (`:35157-35160`).
+pub(crate) fn get_item_grab_range(kind: u16, flags: GrabFlags) -> i32 {
+    let mut num = DEFAULT_ITEM_GRAB_RANGE;
+    if flags.gold_ring && registry::is_coin(kind) {
+        num += COIN_GRAB_RANGE;
+    }
+    if flags.mana_magnet && matches!(kind, 184 | 1735 | 1868) {
+        num += MANA_GRAB_RANGE;
+    }
+    if kind == 4143 {
+        num += MANA_GRAB_RANGE;
+    }
+    if flags.life_magnet && matches!(kind, 58 | 1734 | 1867) {
+        num += LIFE_GRAB_RANGE;
+    }
+    if flags.treasure_magnet {
+        num += TREASURE_GRAB_RANGE;
+    }
+    if kind == 3822 {
+        num += 50;
+    }
+    if matches!(kind, 3453 | 3454 | 3455) {
+        num += 100; // `ItemID.Sets.NebulaPickup` (`ItemID.cs:1324`)
+    }
+    if flags.journey_far_range {
+        num += 240;
+    }
+    num
+}
+
+/// `Rectangle.Intersects` (XNA): strict edge overlap on both axes — the
+/// touching edges do NOT intersect. The C# casts the float positions to
+/// int first (`Player.cs:34926`'s `(int)base.position.X`).
+pub(crate) fn rects_intersect(
+    ax: f32,
+    ay: f32,
+    aw: f32,
+    ah: f32,
+    bx: f32,
+    by: f32,
+    bw: f32,
+    bh: f32,
+) -> bool {
+    let (ax, ay, bx, by) = (ax as i32, ay as i32, bx as i32, by as i32);
+    let (aw, ah, bw, bh) = (aw as i32, ah as i32, bw as i32, bh as i32);
+    bx < ax + aw && ax < bx + bw && by < ay + ah && ay < by + bh
+}
+
+/// `GrabItems`' expanded grab rectangle (`Player.cs:34926`):
+/// `new Rectangle((int)position.X - itemGrabRange, (int)position.Y -
+/// itemGrabRange, width + itemGrabRange * 2, height + itemGrabRange * 2)`
+/// against the drop's 14x14 hitbox.
+pub(crate) fn grab_rect_intersects(
+    px: f32,
+    py: f32,
+    pw: f32,
+    ph: f32,
+    range: f32,
+    drop_pos: Vec2,
+) -> bool {
+    rects_intersect(
+        px - range,
+        py - range,
+        pw + range * 2.0,
+        ph + range * 2.0,
+        drop_pos.x,
+        drop_pos.y,
+        SIZE,
+        SIZE,
+    )
+}
+
+/// `Player.PullItem_Common` (`Player.cs:34983-35029`): the axis-wise
+/// acceleration toward the player — `±itemGrabSpeed` per tick while under
+/// the `±itemGrabSpeedMax + playerVx` cap (X only; the Y cap carries no
+/// player term, `:35009`/`:35020`), plus the extra `itemGrabSpeed *
+/// xPullSpeed` brake while the velocity still points AWAY from the player.
+/// `xPullSpeed` is 0.75 for the common arm (`:34971`).
+pub(crate) fn pull_item_common(
+    drop_center: Vec2,
+    vel: &mut Vec2,
+    player_center: Vec2,
+    player_vx: f32,
+    x_pull_speed: f32,
+) {
+    if player_center.x > drop_center.x {
+        if vel.x < ITEM_GRAB_SPEED_MAX + player_vx {
+            vel.x += ITEM_GRAB_SPEED;
+        }
+        if vel.x < 0.0 {
+            vel.x += ITEM_GRAB_SPEED * x_pull_speed;
+        }
+    } else {
+        if vel.x > -ITEM_GRAB_SPEED_MAX + player_vx {
+            vel.x -= ITEM_GRAB_SPEED;
+        }
+        if vel.x > 0.0 {
+            vel.x -= ITEM_GRAB_SPEED * x_pull_speed;
+        }
+    }
+    if player_center.y > drop_center.y {
+        if vel.y < ITEM_GRAB_SPEED_MAX {
+            vel.y += ITEM_GRAB_SPEED;
+        }
+        if vel.y < 0.0 {
+            vel.y += ITEM_GRAB_SPEED * x_pull_speed;
+        }
+    } else {
+        if vel.y > -ITEM_GRAB_SPEED_MAX {
+            vel.y -= ITEM_GRAB_SPEED;
+        }
+        if vel.y > 0.0 {
+            vel.y -= ITEM_GRAB_SPEED * x_pull_speed;
+        }
+    }
+}
+
+/// `Player.PullItem_Pickup` (`Player.cs:35031-35041`): the magnet/void-vault
+/// pull — a `speed`-magnitude vector toward the player's centre, blended
+/// into the velocity with weight `1/acc` (`(v*(acc-1) + pull)/acc`).
+pub(crate) fn pull_item_pickup(
+    drop_center: Vec2,
+    vel: &mut Vec2,
+    player_center: Vec2,
+    speed: f32,
+    acc: i32,
+) {
+    let d = player_center - drop_center;
+    let num3 = speed / (d.x * d.x + d.y * d.y).sqrt();
+    let pull = d * num3;
+    let acc = acc as f32;
+    vel.x = (vel.x * (acc - 1.0) + pull.x) / acc;
+    vel.y = (vel.y * (acc - 1.0) + pull.y) / acc;
+}
 
 #[derive(Clone, Debug)]
 pub struct ItemDrop {
@@ -266,9 +802,30 @@ pub struct ItemDrop {
     /// Top-left of the 14x14 item box, world pixels.
     pub pos: Vec2,
     pub vel: Vec2,
+    /// `WorldItem.timeSinceItemSpawned`'s seconds stand-in (the C# counts
+    /// ticks, `WorldItem.cs:437-440`); no longer gates pickup — the vanilla
+    /// gate is [`Self::grab_delay_time`].
     pub age: f32,
-    /// Bob phase so items on the ground do not pulse in lockstep.
+    /// The spawn scatter's third draw (`Item.NewItem`'s velocity triplet,
+    /// the port's pinned RNG order). Vanilla draws no positional bob
+    /// (`Main.DrawItem` `Main.cs:38602-38788`); the field survives only to
+    /// keep the spawn stream's draw count.
     pub phase: f32,
+    /// `WorldItem.grabDelayTime` (`WorldItem.cs:26`): ticks the drop refuses
+    /// every grabber (255) or one player; decremented per update
+    /// (`:441-444`).
+    pub grab_delay_time: i32,
+    /// `WorldItem.grabDelayPlayer` (`WorldItem.cs:24`): the locked player
+    /// index, 255 = all players (`GrabItems`' gate, `Player.cs:34911`).
+    pub grab_delay_player: u8,
+    /// `WorldItem.beingGrabbed` (`WorldItem.cs:40`): the pull step sets it;
+    /// the next update skips the ground physics and just applies the
+    /// velocity (`UpdateItem`'s else arm, `:425-435` → `ApplyMovement`
+    /// `:1074-1084`), then clears it.
+    pub being_grabbed: bool,
+    /// `WorldItem.onConveyor` (`WorldItem.cs:864`'s stored bool): the belt
+    /// contact suppresses the draw-side velocity spin (`Main.cs:38613`).
+    pub on_conveyor: bool,
 }
 
 impl ItemDrop {
@@ -294,7 +851,21 @@ impl ItemDrop {
             vel: Vec2::new(vx, vy),
             age: 0.0,
             phase,
+            grab_delay_time: 0,
+            grab_delay_player: 255,
+            being_grabbed: false,
+            on_conveyor: false,
         }
+    }
+
+    /// `WorldItem.ApplySpawnOwnership`'s `GrabDelayForLocalPlayer` /
+    /// `GrabDelayForAllPlayers` arms (`WorldItem.cs:306-313`): the 100-tick
+    /// lock. `Player.DropSelectedItem` spawns with the local-player delay
+    /// (the voodoo doll 267 with the all-players one, `Player.cs:5199`,
+    /// `ItemID.cs:430`).
+    pub fn apply_grab_delay(&mut self, player: u8) {
+        self.grab_delay_time = DEFAULT_GRAB_DELAY;
+        self.grab_delay_player = player;
     }
 
     pub fn center(&self) -> Vec2 {
@@ -369,35 +940,106 @@ impl ItemDrop {
             // `:518-536` — the crossing is checked inside the same update, so
             // the value is capped at 0.9 and the transform fires this tick.
             self.shimmer_pending = self.shimmer_time > 0.9;
-        } else if self.shimmer_time > 0.0 && !self.shimmered {
+        } else if self.shimmer_time > 0.0 {
+            // `:538-545` — the decay is NOT gated on `!shimmered`: a
+            // transformed drop's 1.0 ramp dries back to 0 over 100 ticks,
+            // which is what re-opens `GrabItems`' `shimmerTime != 0` gate
+            // (`Player.cs:34911`, S1-P-i47).
             self.shimmer_pending = false;
             self.shimmer_time = (self.shimmer_time - 0.01).max(0.0);
         }
     }
 
-    /// One fixed 60 Hz step of gravity, collision and the pickup magnet.
-    /// Returns true when the drop was collected by `player`.
-    pub fn update(&mut self, world: &World, player_center: Option<Vec2>, dt: f32) -> bool {
-        self.age += dt;
-        self.shimmer_wet = self.box_in_shimmer(world);
-        if let Some(pc) = player_center {
-            let d = pc - self.center();
-            let dist = d.length();
-            if self.age > PICKUP_DELAY && dist < MAGNET_RADIUS {
-                // Pull toward the player; skip the ground physics while collecting.
-                let speed = if dist < 10.0 { 8.0 } else { 4.0 };
-                self.vel = d.normalize_or_zero() * speed;
-                self.pos += self.vel;
-                return dist < 10.0;
+    /// `WorldItem.TryCombiningIntoNearbyItems` (`WorldItem.cs:157-186`,
+    /// S1-P-i47): the drop sucks later same-kind drops within the 30 px
+    /// Manhattan window into itself, up to its own `maxStack`. The C# scans
+    /// `Main.item[whoAmI+1..400]` — the port's list order is the slot order
+    /// (the removals are `swap_remove`, a recorded list-vs-array deviation).
+    /// The merge lerps position AND velocity by `moved/newStack` toward the
+    /// survivor (`:172-174`), and airs the drained source out. The gates:
+    /// `shimmerTime == 0`, `CanPassivelyStackInWorld`, `stack < maxStack`
+    /// (`:159`); per target `CanStack` + equal `shimmered` (`:167`). The
+    /// reservation equality is the net-only term (the host owns every drop
+    /// in the port). RNG-free. Returns the indices the caller must remove
+    /// (descending — the caller `swap_remove`s them highest-first so the
+    /// lower indices stay valid; the port's compaction deviation).
+    pub(crate) fn combine_nearby(drops: &mut [ItemDrop], i: usize) -> Vec<usize> {
+        let mut drained = Vec::new();
+        let max = registry::max_stack(drops[i].kind);
+        if drops[i].shimmer_time != 0.0
+            || !can_passively_stack_in_world(drops[i].kind)
+            || drops[i].count >= max
+        {
+            return drained;
+        }
+        for j in i + 1..drops.len() {
+            // NOTE: the C# re-checks no fullness inside the loop — a
+            // survivor that filled mid-scan keeps "merging" 0 with
+            // `amount = 0`, lerping its position onto each further
+            // same-kind neighbour (`:169-174`, the vanilla quirk kept).
+            let same = drops[j].count > 0
+                && drops[j].kind == drops[i].kind
+                && drops[j].prefix == drops[i].prefix
+                && drops[j].shimmered == drops[i].shimmered
+                && ((drops[i].pos.x - drops[j].pos.x).abs()
+                    + (drops[i].pos.y - drops[j].pos.y).abs())
+                    <= 30.0;
+            if !same {
+                continue;
+            }
+            let moved = drops[j].count.min(max - drops[i].count);
+            drops[j].count -= moved;
+            drops[i].count += moved;
+            // `amount = num2 / this.stack` AFTER the add (`:172`).
+            let amount = moved as f32 / drops[i].count as f32;
+            let (src_pos, src_vel) = (drops[j].pos, drops[j].vel);
+            drops[i].pos = src_pos.lerp(drops[i].pos, amount);
+            drops[i].vel = src_vel.lerp(drops[i].vel, amount);
+            if drops[j].count == 0 {
+                drained.push(j); // `TurnToAir` (`:175-178`)
             }
         }
-        self.update_shimmer(world, dt);
-        if self.shimmered {
-            // `WorldItem.cs:457-508` — the transformed item does not fall.
+        drained
+    }
+
+    /// One fixed 60 Hz step of `WorldItem.UpdateItem`'s physics half
+    /// (`WorldItem.cs:338-453`): the shimmer update, the ground movement and
+    /// the grab-delay decrement. The pickup pull/pick lives in the
+    /// `GrabItems` step (`world_sim/items.rs`, S1-P-i47) — the C# runs it
+    /// from `Player.Update` (`Player.cs:27428`), not from the item update.
+    /// `being_grabbed` skips the ground physics for the tick after a pull
+    /// (`:425-435`): wet flags clear, the velocity applies raw
+    /// (`ApplyMovement`, `:1074-1084`), the flag resets.
+    pub fn update(&mut self, world: &World, dt: f32) {
+        self.age += dt;
+        if self.being_grabbed {
+            // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`).
+            self.shimmer_wet = false;
+            self.being_grabbed = false;
+            self.on_conveyor = false;
             self.pos += self.vel;
-            self.shimmer_time = 1.0;
-            return false;
+        } else {
+            self.shimmer_wet = self.box_in_shimmer(world);
+            self.update_shimmer(world, dt);
+            if self.shimmered {
+                // `WorldItem.cs:457-508` — the transformed item does not
+                // fall; its shimmerTime decays via `update_shimmer`
+                // (`:538-545`), it is not pinned at 1.
+                self.pos += self.vel;
+            } else {
+                self.move_in_world(world);
+            }
         }
+        // `WorldItem.cs:441-444` — the grab delay ticks down every update,
+        // grabbed or not.
+        if self.grab_delay_time > 0 {
+            self.grab_delay_time -= 1;
+        }
+    }
+
+    /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
+    /// (`WorldItem.cs:849-864`) and the tile-collision pass.
+    fn move_in_world(&mut self, world: &World) {
         // `WorldItem.cs:363-364` — the air gravity and the fall cap.
         self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
         // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap, both
@@ -407,12 +1049,11 @@ impl ItemDrop {
             self.vel.x = 0.0;
         }
         // `WorldItem.cs:864`: the belt contacts bend the velocity before the
-        // AABB pass. The C# stores the `bool` in `item.onConveyor`, which only
-        // suppresses the draw-side velocity spin (`Main.cs:38613`) - the port
-        // draws drops upright, so the flag has no consumer and is dropped.
+        // AABB pass. The C# stores the bool in `item.onConveyor`, which
+        // suppresses the draw-side velocity spin (`Main.cs:38613`).
         let mut bp = [self.pos.x, self.pos.y];
         let mut bv = [self.vel.x, self.vel.y];
-        crate::collision::apply_conveyor_belt_movement_to_velocity(
+        self.on_conveyor = crate::collision::apply_conveyor_belt_movement_to_velocity(
             world,
             &mut bp,
             &mut bv,
@@ -446,10 +1087,14 @@ impl ItemDrop {
         } else {
             self.pos.y = ny;
         }
-        false
     }
 
-    /// Draws the drop in world space with a small ground bob. Returns the quad count.
+    /// Draws the drop in world space. Vanilla has NO positional bob —
+    /// `Main.DrawItem` (`Main.cs:38602-38788`) draws at the resting position
+    /// with the velocity spin `rotation = velocity.X * 0.2f` (`:38613`),
+    /// suppressed on a conveyor (`item.onConveyor`) or after a shimmer
+    /// transform (`:38614-38617`). The rotation pivots on the frame centre
+    /// (`vector = frame.Size()/2`, `:38610`). Returns the quad count.
     pub fn draw(
         &self,
         r: &mut tr_render::SpriteRenderer,
@@ -478,19 +1123,36 @@ impl ItemDrop {
         let ty = (self.pos.y / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
-        let bob = (anim_time * 3.0 + self.phase).sin() * 1.5;
-        r.push_sprite(
-            [self.pos.x + 1.0, self.pos.y + 1.0 + bob],
-            [SIZE, SIZE],
-            uv,
-            [c[0], c[1], c[2], 1.0],
-        );
+        // `Main.cs:38613-38617` — the spin, gated by conveyor/shimmered.
+        let rot = if self.on_conveyor || self.shimmered {
+            0.0
+        } else {
+            self.vel.x * 0.2
+        };
+        if rot == 0.0 {
+            r.push_sprite(
+                [self.pos.x + 1.0, self.pos.y + 1.0],
+                [SIZE, SIZE],
+                uv,
+                [c[0], c[1], c[2], 1.0],
+            );
+        } else {
+            r.push_sprite_origin_rot(
+                [self.pos.x + 1.0, self.pos.y + 1.0],
+                [SIZE, SIZE],
+                uv,
+                [c[0], c[1], c[2], 1.0],
+                rot,
+                [SIZE * 0.5, SIZE * 0.5],
+            );
+        }
         1
     }
 }
 
-/// Hash of the item list for the G6 world-range key; includes the animation step so
-/// the ground bob updates.
+/// Hash of the item list for the G6 world-range key; includes the animation
+/// step and the velocity spin's source (`Main.cs:38613`'s `velocity.X *
+/// 0.2`) so a rolling drop redraws.
 pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
     let mut h = items.len() as u32 ^ (anim_step << 24);
     for it in items {
@@ -498,6 +1160,7 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
         h = h.wrapping_mul(31).wrapping_add(it.pos.x.to_bits());
         h = h.wrapping_mul(31).wrapping_add(it.pos.y.to_bits());
         h = h.wrapping_mul(31).wrapping_add(it.count);
+        h = h.wrapping_mul(31).wrapping_add(it.vel.x.to_bits());
     }
     h
 }
@@ -624,6 +1287,9 @@ mod tests {
 
     #[test]
     fn pickup_prefers_stacks_then_empty_slots() {
+        // `Player.GetItem` (S1-P-i47): the occupied merge forward first,
+        // then the usable-kind empty hotbar arm, then the REVERSE empty
+        // grid scan (`Player.cs:39353-39394`).
         let mut inv: [ItemSlot; INV] =
             std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inv[0] = ItemSlot {
@@ -633,6 +1299,8 @@ mod tests {
             prefix: 0,
         };
         assert_eq!(slot_for_pickup(&mut inv, 3, 0), Some(0));
+        // The Copper Ore 12 places a tile (useStyle 1) — the empty hotbar
+        // arm takes slot 1 (`:39365-39374`).
         assert_eq!(slot_for_pickup(&mut inv, 12, 0), Some(1));
         assert_eq!(inv[1].kind, 12);
         assert_eq!(inv[1].name, "Copper Ore");
@@ -645,6 +1313,16 @@ mod tests {
             None,
             "full hotbar must refuse"
         );
+        // A useStyle-0 kind (the Lens 38) skips the hotbar arm and lands on
+        // the LAST empty grid slot (`:39387-39394`'s reverse scan).
+        let mut inv: [ItemSlot; INV] = [EMPTY_SLOT; INV];
+        assert_eq!(slot_for_pickup(&mut inv, 38, 0), Some(INV - 1));
+        // A FULL same-kind stack never answers the merge pass (`:39487`'s
+        // `stack < maxStack`); the drop opens a new slot instead.
+        let mut inv: [ItemSlot; INV] = [EMPTY_SLOT; INV];
+        inv[0] = ItemSlot { kind: 3, name: "Stone Block", count: registry::max_stack(3), prefix: 0 };
+        let i = slot_for_pickup(&mut inv, 3, 0).unwrap();
+        assert_ne!(i, 0, "the full stack refuses the merge");
     }
 
     fn ground() -> World {
@@ -689,7 +1367,7 @@ mod tests {
         let w = ground();
         let mut it = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
         for _ in 0..240 {
-            assert!(!it.update(&w, None, 1.0 / 60.0));
+            it.update(&w, 1.0 / 60.0);
         }
         let feet = it.pos.y + SIZE;
         assert!(
@@ -711,23 +1389,354 @@ mod tests {
         }
         let mut it = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 19.0 * TILE_PX, 6.0, 0.0, 0.0);
         for _ in 0..120 {
-            it.update(&w, None, 1.0 / 60.0);
+            it.update(&w, 1.0 / 60.0);
         }
         assert!(it.pos.x + SIZE <= 14.0 * TILE_PX, "x {}", it.pos.x);
     }
+}
 
+/// S1-P-i47 — the ground-item pickup/stacking witnesses (`Player.GrabItems`
+/// `Player.cs:34905-34976`, `GetItem` `:39330-39399`, `ItemSpace`
+/// `:39153-39197`, `WorldItem.TryCombiningIntoNearbyItems`
+/// `WorldItem.cs:157-186`). Written, not run (the code-only swarm).
+#[cfg(test)]
+mod s1_p_i47_tests {
+    use super::*;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot { kind, name: registry::name(kind), count, prefix: 0 }
+    }
+
+    fn empty_inv() -> [ItemSlot; INV] {
+        [EMPTY_SLOT; INV]
+    }
+
+    /// `GetItemGrabRange` (`Player.cs:35130-35166`): the base 42 plus each
+    /// margin — the accessory flags, the unconditional 4143/3822/nebula
+    /// rows, the Journey far-range +240.
     #[test]
-    fn magnet_collects_a_drop_next_to_the_player() {
-        let w = ground();
-        let player = Vec2::new(16.0 * TILE_PX, 20.0 * TILE_PX - 21.0);
-        let mut it = ItemDrop::new(12, 3, 0, 16.0 * TILE_PX + 8.0, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
-        let mut collected = false;
-        for _ in 0..240 {
-            if it.update(&w, Some(player), 1.0 / 60.0) {
-                collected = true;
-                break;
+    fn the_grab_range_margins_follow_the_csharp_rows() {
+        let f = GrabFlags::default();
+        assert_eq!(get_item_grab_range(3, f), 42, "the base");
+        assert_eq!(get_item_grab_range(4143, f), 42 + 300, "the mana pickup");
+        assert_eq!(get_item_grab_range(3822, f), 42 + 50, "the void lens");
+        assert_eq!(get_item_grab_range(3453, f), 42 + 100, "the nebula row");
+        let gold = GrabFlags { gold_ring: true, ..f };
+        assert_eq!(get_item_grab_range(71, gold), 42 + 350, "the gold ring");
+        assert_eq!(get_item_grab_range(3, gold), 42, "non-coins unaffected");
+        let life = GrabFlags { life_magnet: true, ..f };
+        assert_eq!(get_item_grab_range(58, life), 42 + 250, "the heart");
+        assert_eq!(get_item_grab_range(1734, life), 42 + 250);
+        let mana = GrabFlags { mana_magnet: true, ..f };
+        assert_eq!(get_item_grab_range(184, mana), 42 + 300, "the star");
+        let treasure = GrabFlags { treasure_magnet: true, ..f };
+        assert_eq!(get_item_grab_range(3, treasure), 42 + 150);
+        let journey = GrabFlags { journey_far_range: true, ..f };
+        assert_eq!(get_item_grab_range(3, journey), 42 + 240);
+        // The margins stack (`:35133-35164`'s independent ifs).
+        let all = GrabFlags {
+            gold_ring: true,
+            treasure_magnet: true,
+            journey_far_range: true,
+            ..f
+        };
+        assert_eq!(get_item_grab_range(73, all), 42 + 350 + 150 + 240);
+    }
+
+    /// `PullItem_Common` (`Player.cs:34983-35029`): ±0.45 per tick under the
+    /// ±4 cap (X carries the player's vx, Y does not), plus the 0.75 brake
+    /// while the velocity points away.
+    #[test]
+    fn the_common_pull_accelerates_and_brakes() {
+        // Drop to the LEFT/ABOVE the player, at rest: one tick adds 0.45
+        // on both axes toward the player.
+        let mut vel = Vec2::ZERO;
+        pull_item_common(Vec2::ZERO, &mut vel, Vec2::new(30.0, 30.0), 0.0, 0.75);
+        assert!((vel.x - 0.45).abs() < 1e-6);
+        assert!((vel.y - 0.45).abs() < 1e-6);
+        // Moving AWAY at -1: the base step plus the 0.45*0.75 brake.
+        let mut vel = Vec2::new(-1.0, -1.0);
+        pull_item_common(Vec2::ZERO, &mut vel, Vec2::new(30.0, 30.0), 0.0, 0.75);
+        assert!((vel.x - (-1.0 + 0.45 + 0.3375)).abs() < 1e-6);
+        assert!((vel.y - (-1.0 + 0.45 + 0.3375)).abs() < 1e-6);
+        // At the cap: no further acceleration (X's cap carries the player
+        // velocity term `:34987`, Y's does not `:35009`).
+        let mut vel = Vec2::new(4.0, 4.0);
+        pull_item_common(Vec2::ZERO, &mut vel, Vec2::new(30.0, 30.0), 0.0, 0.75);
+        assert_eq!(vel, Vec2::new(4.0, 4.0));
+        let mut vel = Vec2::new(4.0, 4.0);
+        pull_item_common(Vec2::ZERO, &mut vel, Vec2::new(30.0, 30.0), 2.0, 0.75);
+        assert!((vel.x - 4.45).abs() < 1e-6, "the player's run widens the X cap");
+        assert_eq!(vel.y, 4.0, "Y's cap carries no player term");
+    }
+
+    /// `PullItem_Pickup` (`Player.cs:35031-35041`): the blended
+    /// `(v*(acc-1) + speed*dir)/acc` — the magnet arms' (12, 5) pair.
+    #[test]
+    fn the_magnet_pull_blends_with_weight_one_over_acc() {
+        // 3-4-5 geometry: the pull vector is (12*3/5, 12*4/5) = (7.2, 9.6).
+        let mut vel = Vec2::new(1.0, -1.0);
+        pull_item_pickup(Vec2::ZERO, &mut vel, Vec2::new(3.0, 4.0), 12.0, 5);
+        assert!((vel.x - (1.0 * 4.0 + 7.2) / 5.0).abs() < 1e-5);
+        assert!((vel.y - (-1.0 * 4.0 + 9.6) / 5.0).abs() < 1e-5);
+    }
+
+    /// `ItemSpace` (`Player.cs:39153-39197`): the grid/ammo/vault scans and
+    /// the favorited one-per-inventory guard.
+    #[test]
+    fn item_space_scans_grid_ammo_and_vault() {
+        let no_fav = |_: usize| false;
+        // An empty grid accepts.
+        let s = item_space(&empty_inv(), &[EMPTY_SLOT; 4], 3, 0, no_fav, None);
+        assert!(s.can_take && !s.to_void_vault);
+        // A full grid refuses…
+        let full: [ItemSlot; INV] = std::array::from_fn(|_| slot(2, 9999));
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, None);
+        assert!(!s.can_take);
+        // …but a partial same-kind AMMO stack answers the ungated scan
+        // (`:39185-39191`).
+        let mut ammo = [EMPTY_SLOT; 4];
+        ammo[2] = slot(3, 10);
+        let s = item_space(&full, &ammo, 3, 0, no_fav, None);
+        assert!(s.can_take);
+        // An empty ammo slot takes an arrow (`CanFillEmptyAmmoSlot`,
+        // `Item.cs:1378-1385` — the wooden arrow 40 is not on the refusal
+        // list), but not the gel 23 (`:1380`'s explicit id).
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 40, 0, no_fav, None);
+        assert!(s.can_take, "the arrow claims an empty ammo row");
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 23, 0, no_fav, None);
+        assert!(!s.can_take, "the gel never claims an empty ammo row");
+        // The vault answers with the to-vault flag (`:39192-39195`).
+        let vault: crate::bank::BankStore = [EMPTY_SLOT; 40];
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, Some(&vault));
+        assert!(s.can_take && s.to_void_vault);
+        // `IsAPickup` always fits (`:39155-39158`), even with everything full.
+        let full_vault: crate::bank::BankStore = std::array::from_fn(|_| slot(2, 9999));
+        let s = item_space(&full, &[slot(2, 9999); 4], 58, 0, no_fav, Some(&full_vault));
+        assert!(s.can_take && !s.to_void_vault);
+        // The favorited one-per-inventory guard (`CanItemSlotAcceptPickup`
+        // `:39226-39229`): the large gem 1522 is an override-true kind
+        // (`ItemID.cs:1389`) with a stackable maxStack — a PARTIAL
+        // favorited stack refuses the merge, the same stack unfavorited
+        // accepts it.
+        let mut inv = full;
+        inv[0] = slot(1522, 1);
+        let fav0 = |i: usize| i == 0;
+        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, fav0, None);
+        assert!(!s.can_take, "the favorited gem stack refuses");
+        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, no_fav, None);
+        assert!(s.can_take, "unfavorited it merges");
+        // A consumable favorite still merges (`OnlyNeedOneInInventory`
+        // false for the dirt 2, `Item.cs:1183-1191`).
+        let mut inv2 = full;
+        inv2[0] = slot(2, 10);
+        let s = item_space(&inv2, &[EMPTY_SLOT; 4], 2, 0, fav0, None);
+        assert!(s.can_take, "a consumable favorite still merges");
+    }
+
+    /// `Item.FitsAmmoSlot`/`CanFillEmptyAmmoSlot` (`Item.cs:1369-1385`):
+    /// the notAmmo set and the empty-slot refusal list.
+    #[test]
+    fn the_ammo_predicates_match_the_csharp_sets() {
+        assert!(fits_ammo_slot(40), "the wooden arrow");
+        assert!(!fits_ammo_slot(9), "the wood is no ammo");
+        assert!(fits_ammo_slot(353), "the ale's carve-out (:1373)");
+        assert!(!fits_ammo_slot(27), "the acorn is notAmmo");
+        assert!(!fits_ammo_slot(71), "the coins are notAmmo");
+        assert!(!fits_ammo_slot(169), "the sand is notAmmo");
+        assert!(can_fill_empty_ammo_slot(40));
+        assert!(!can_fill_empty_ammo_slot(23), "the gel refusal (:1380)");
+        assert!(!can_fill_empty_ammo_slot(75), "the fallen star refusal");
+        assert!(!can_fill_empty_ammo_slot(353), "the ale refusal");
+        assert!(!can_fill_empty_ammo_slot(27), "notAmmo refuses");
+    }
+
+    /// `Item.CanPassivelyStackInWorld` (`Item.cs:49573-49593` + the
+    /// `ItemID.cs:1447-1471` overrides).
+    #[test]
+    fn the_passive_stack_predicate_matches_the_overrides() {
+        assert!(can_passively_stack_in_world(9), "the wood stacks");
+        assert!(can_passively_stack_in_world(2), "the dirt stacks");
+        assert!(!can_passively_stack_in_world(71), "the coins never");
+        assert!(!can_passively_stack_in_world(75), "the fallen star never");
+        assert!(can_passively_stack_in_world(205), "the empty bucket override");
+        assert!(can_passively_stack_in_world(3817), "the medal override");
+        // The pickaxe's maxStack is 9999 but it is a useStyle-1
+        // non-consumable → OnlyNeedOneInInventory true → refuses.
+        assert!(!can_passively_stack_in_world(1));
+        assert!(only_need_one_in_inventory(1));
+        assert!(!only_need_one_in_inventory(9), "the consumable wood");
+        assert!(only_need_one_in_inventory(50), "the magic mirror");
+        assert!(only_need_one_in_inventory(1522), "the large gem override");
+        assert!(!only_need_one_in_inventory(267), "the doll override");
+    }
+
+    /// `deposit_pickup` — the `GetItem` walk order (S1-P-i47): ammo pre-pass
+    /// first, occupied forward, usable hotbar, empty REVERSE.
+    #[test]
+    fn the_deposit_walk_follows_the_getitem_order() {
+        // The arrow lands in a PARTIAL ammo stack first (`FillAmmo`
+        // `:39264-39304`); the overflow 16 then rides FillAmmo's OWN empty
+        // pass (`CanFillEmptyAmmoSlot`, `:39305-39326`) into ammo[0] — the
+        // grid never sees it.
+        let mut inv = empty_inv();
+        let mut ammo = [EMPTY_SLOT; 4];
+        ammo[1] = slot(40, 9990);
+        let mut fills = Vec::new();
+        let left = deposit_pickup(&mut inv, &mut ammo, 40, 0, 25, |_| false, &mut |m| fills.push(m));
+        assert_eq!(left, 0);
+        assert_eq!(ammo[1].count, 9999, "the ammo partial took 9");
+        assert_eq!(ammo[0].count, 16, "the overflow claimed the empty ammo row");
+        assert!(inv.iter().all(|s| s.count == 0), "the grid stayed out");
+        assert_eq!(fills, vec![9, 16], "one notify per accepted slot");
+        // With NO empty ammo row left, the overflow falls to the grid —
+        // the arrow's useStyle is 0 (`Item.cs` case 40), so the hotbar arm
+        // skips it and the REVERSE grid scan takes it (`:39387-39394`).
+        let mut inv = empty_inv();
+        let mut ammo = [slot(2, 9999), slot(40, 9990), slot(2, 9999), slot(2, 9999)];
+        let left = deposit_pickup(&mut inv, &mut ammo, 40, 0, 25, |_| false, &mut |_| {});
+        assert_eq!(left, 0);
+        assert_eq!(ammo[1].count, 9999);
+        assert_eq!(inv[0].count, 0, "the useStyle-0 kind skips the hotbar");
+        assert_eq!(inv[INV - 1].kind, 40);
+        assert_eq!(inv[INV - 1].count, 16);
+        // An empty ammo slot takes a whole arrow stack when no partial
+        // exists (`CanFillEmptyAmmoSlot`, `:39305-39326`).
+        let mut inv = empty_inv();
+        let mut ammo = [EMPTY_SLOT; 4];
+        let left = deposit_pickup(&mut inv, &mut ammo, 40, 0, 7, |_| false, &mut |_| {});
+        assert_eq!(left, 0);
+        assert_eq!(ammo[0].count, 7, "the first empty ammo row");
+        assert!(inv.iter().all(|s| s.count == 0));
+        // The gel never claims an ammo row — it rides the grid.
+        let mut inv = empty_inv();
+        let mut ammo = [EMPTY_SLOT; 4];
+        let left = deposit_pickup(&mut inv, &mut ammo, 23, 0, 5, |_| false, &mut |_| {});
+        assert_eq!(left, 0);
+        assert!(ammo.iter().all(|s| s.count == 0));
+        assert_eq!(inv[INV - 1].kind, 23, "the useStyle-0 gel goes REVERSE");
+        // A usable kind (the stone 3, useStyle 1) takes the empty hotbar.
+        let mut inv = empty_inv();
+        let left = deposit_pickup(&mut inv, &mut [EMPTY_SLOT; 4], 3, 0, 5, |_| false, &mut |_| {});
+        assert_eq!(left, 0);
+        assert_eq!(inv[0].kind, 3);
+        // The occupied merge runs FORWARD before any empty slot: a partial
+        // stone in row 30 takes the drop even with the hotbar empty.
+        let mut inv = empty_inv();
+        inv[30] = slot(3, 100);
+        let left = deposit_pickup(&mut inv, &mut [EMPTY_SLOT; 4], 3, 0, 5, |_| false, &mut |_| {});
+        assert_eq!(left, 0);
+        assert_eq!(inv[30].count, 105);
+        assert_eq!(inv[0].count, 0);
+        // A favorited CONSUMABLE stack still merges — the guard only fires
+        // for `OnlyNeedOneInInventory` kinds (`:39226-39229`; the Work
+        // Bench 36 is consumable, `Item.cs:1183`).
+        let mut inv = empty_inv();
+        inv[49] = slot(36, 1);
+        let left = deposit_pickup(&mut inv, &mut [EMPTY_SLOT; 4], 36, 0, 1, |i| i == 49, &mut |_| {});
+        assert_eq!(left, 0);
+        assert_eq!(inv[49].count, 2);
+        // A full grid returns the remainder (the caller's vault/world step).
+        let full: [ItemSlot; INV] = std::array::from_fn(|_| slot(2, 9999));
+        let mut inv = full;
+        let left = deposit_pickup(&mut inv, &mut [slot(2, 9999); 4], 3, 0, 5, |_| false, &mut |_| {});
+        assert_eq!(left, 5, "nothing fit — the remainder returns");
+    }
+
+    /// `TryCombiningIntoNearbyItems` (`WorldItem.cs:157-186`): the 30 px
+    /// Manhattan merge, the cap, the lerp and the drained-source removal.
+    #[test]
+    fn nearby_drops_combine_up_to_the_cap() {
+        let mut drops = vec![
+            ItemDrop::new(9, 9990, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
+            ItemDrop::new(9, 20, 0, 110.0, 105.0, 0.0, 0.0, 0.0),
+            ItemDrop::new(9, 5, 0, 200.0, 100.0, 0.0, 0.0, 0.0), // out of range
+        ];
+        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        assert!(drained.is_empty(), "the source kept 10 — no TurnToAir");
+        assert_eq!(drops[0].count, 9999, "the cap");
+        assert_eq!(drops[1].count, 11, "20 - 9");
+        // The lerp: amount = 9/9999 toward the survivor (`:172-174`).
+        let amount = 9.0f32 / 9999.0;
+        let want_x = 110.0 + (100.0 - 110.0) * amount;
+        assert!((drops[0].pos.x - want_x).abs() < 1e-4);
+        assert_eq!(drops[2].count, 5, "the far drop untouched");
+        // A small survivor drains the source completely.
+        let mut drops = vec![
+            ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
+            ItemDrop::new(9, 3, 0, 110.0, 100.0, 0.0, 0.0, 0.0),
+        ];
+        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        assert_eq!(drained, vec![1]);
+        assert_eq!(drops[0].count, 8);
+        // The Manhattan window: |dx| + |dy| <= 30 (`:167`).
+        let mut drops = vec![
+            ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
+            ItemDrop::new(9, 3, 0, 120.0, 111.0, 0.0, 0.0, 0.0), // 20+11=31
+        ];
+        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        assert!(drained.is_empty());
+        assert_eq!(drops[0].count, 5, "31 > 30 — no merge");
+        // A different prefix never stacks (`Item.CanStack`).
+        let mut drops = vec![
+            ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
+            ItemDrop::new(9, 3, 81, 105.0, 100.0, 0.0, 0.0, 0.0),
+        ];
+        assert!(ItemDrop::combine_nearby(&mut drops, 0).is_empty());
+        assert_eq!(drops[0].count, 5);
+        // The shimmering drop waits (`:159`'s shimmerTime gate).
+        let mut drops = vec![
+            ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
+            ItemDrop::new(9, 3, 0, 105.0, 100.0, 0.0, 0.0, 0.0),
+        ];
+        drops[0].shimmer_time = 0.5;
+        assert!(ItemDrop::combine_nearby(&mut drops, 0).is_empty());
+    }
+
+    /// `WorldItem.UpdateItem`'s grabbed arm (`:425-435` → `ApplyMovement`
+    /// `:1074-1084`): the tick after a pull applies the velocity RAW (no
+    /// gravity, no friction, no collision) and clears the flag; the grab
+    /// delay decrements every tick (`:441-444`).
+    #[test]
+    fn the_grabbed_tick_applies_the_velocity_raw() {
+        let mut w = World::new("grab".into(), 32, 32);
+        for x in 0..32 {
+            for y in 20..32 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
-        assert!(collected, "drop was never collected (pos {:?})", it.pos);
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut d = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        d.being_grabbed = true;
+        d.vel = Vec2::new(3.0, -2.0);
+        d.grab_delay_time = 100;
+        d.update(&w, 1.0 / 60.0);
+        assert_eq!(d.pos, Vec2::new(103.0, 98.0), "the raw velocity");
+        assert_eq!(d.vel, Vec2::new(3.0, -2.0), "no gravity/friction on the grabbed tick");
+        assert!(!d.being_grabbed, "the flag cleared");
+        assert_eq!(d.grab_delay_time, 99, "the delay ticks down");
+        // The next tick is normal physics again (gravity 0.1).
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.y - (-2.0 + 0.1)).abs() < 1e-6);
+        assert_eq!(d.grab_delay_time, 98);
+    }
+
+    /// `Rectangle.Intersects` (XNA): the touching edges do NOT intersect;
+    /// the grab rectangle expands by the range on every side
+    /// (`Player.cs:34926`).
+    #[test]
+    fn the_grab_rectangle_is_the_expanded_hitbox() {
+        // The player at (100, 100) 20x42, range 42: the rect spans
+        // x 58..162, y 58..184. A 14x14 drop at x 44 (44+14 = 58) TOUCHES
+        // the left edge — no intersect; at 45 (45+14 = 59) it overlaps.
+        assert!(!grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(44.0, 100.0)));
+        assert!(grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(45.0, 100.0)));
+        // The direct hitbox: strict overlap.
+        assert!(rects_intersect(100.0, 100.0, 20.0, 42.0, 110.0, 120.0, 14.0, 14.0));
+        assert!(!rects_intersect(100.0, 100.0, 20.0, 42.0, 120.0, 120.0, 14.0, 14.0));
     }
 }

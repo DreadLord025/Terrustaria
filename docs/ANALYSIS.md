@@ -33597,3 +33597,121 @@ witness in `world_sim/player.rs`. The in-flight `potions.rs` from the
 reads) and completed: the ManaV2 gate corrected, the remix hunger row
 added, the sound/delay/heal RNG order fixed on both paths, the food kinds
 excluded, and the Player fields/clocks/scan arms it referenced landed.
+## The ground-item pickup/stacking census (S1-P-i47, task/S1-P-i47-item-pickup-stack, 2026-11-20, code-only mode)
+
+**Census verdicts (C# read first, WRONGs fixed verbatim).**
+
+1. **WRONG - the pickup priority.** The port's `slot_for_pickup` scanned
+   empty slots FORWARD for every kind and answered FULL same-kind stacks
+   in its merge pass. `Player.GetItem` (`Player.cs:39330-39399`) is: the
+   `FitsAmmoSlot` -> `FillAmmo` pre-pass (`:39345-39352`, `:39264-39328`),
+   the occupied merge FORWARD 0..49 gated `type > 0 && stack < maxStack`
+   (`:39487`), the empty HOTBAR arm only for `!isACoin && useStyle != 0`
+   (`:39365-39374`), then the empty grid REVERSE 49..0 (`:39387-39394`).
+   Fixed: `item.rs::deposit_pickup` (the world walk, with the favorite
+   guard + per-slot notify) and `slot_for_pickup` (the grid-only UI shape,
+   same order).
+2. **WRONG - the vault order.** The port routed the void vault FIRST;
+   `GetItem`'s vault arm is the LAST resort (`:39395-39398`). Fixed in
+   `world_sim/items.rs`; the two tests that enshrined the wrong order
+   (`test_store_1_the_void_lens_routes_pickups_into_bank4`,
+   `pickup_sends_only_the_vault_remainder_to_inventory`) were rebuilt on
+   the C# order (full grid -> vault; grid room -> inventory, vault quiet).
+3. **WRONG - the magnet.** The port invented a 0.35 s age gate, a 42 px
+   CIRCLE and a normalized 4/8 speed teleport-pull. Vanilla: no SP age
+   delay (tile drops spawn `ReserveForLocalPlayer`, which sets no delay in
+   netMode 0, `WorldItem.cs:295-305`); the range is the player hitbox
+   EXPANDED by `GetItemGrabRange` (`Player.cs:34926`, base 42
+   `:57121` + the accessory/kind margins `:35130-35166`); a direct hitbox
+   overlap picks up immediately, gated on held-non-air OR swing-done
+   (`:34919`); the rectangle only PULLS - `PullItem_Common(0.75)`'s
+   +/-0.45/tick acceleration under the +/-4 cap (X carries the player's
+   vx, Y does not, `:34983-35029`, `:57122-57123`), the velocity applying
+   raw on the next tick via `beingGrabbed` (`WorldItem.cs:425-435` ->
+   `ApplyMovement` `:1074-1084`). The `ItemSpace`/`CanPullItem` gate
+   (`:34930-34934`) refuses the pull when nothing fits. All ported.
+4. **WRONG - `ItemSpace`.** `chest.rs::inventory_has_room_for` ignored the
+   prefix, `IsAPickup`, the ammo arm, the favorited one-per-inventory
+   guard and the vault. The full predicate now lives in
+   `item.rs::item_space` (`Player.cs:39153-39197`) with
+   `CanItemSlotAcceptPickup` (`:39220-39235`), `CanGoIntoAmmoOnPickup`
+   (`:39237-39244`), `ItemSpaceForCofveve` (`:39199-39218`) and the
+   `Item.cs` predicates `FitsAmmoSlot`/`CanFillEmptyAmmoSlot`
+   (`:1369-1385`), `OnlyNeedOneInInventory`/`CanBeEquipped`
+   (`:1159-1192`), `CanPassivelyStackInWorld` (`:49573-49593`) + the
+   `ItemID.cs:1387-1471` override tables. The `uniqueStack && HasItem`
+   refusal is UNREACHABLE in vanilla - `uniqueStack` has no `true` write
+   site in the decompile (only the `false` reset, `Item.cs:49046`).
+5. **WRONG - the bob.** Vanilla draws no positional bob: `Main.DrawItem`
+   spins the sprite by `velocity.X * 0.2f` (`Main.cs:38613`), suppressed
+   by `onConveyor`/`shimmered` (`:38614-38617`). The port's
+   `sin(t*3+phase)*1.5` bob is retired; `draw` uses
+   `push_sprite_origin_rot` about the frame centre and `render_key`
+   hashes `vel.x`. The spawn's third RNG draw (the old phase) is KEPT so
+   the pinned `Item.NewItem` draw count does not move.
+6. **MISSING - the passive world stack merge.**
+   `WorldItem.TryCombiningIntoNearbyItems` (`WorldItem.cs:157-186`) now
+   ports as `ItemDrop::combine_nearby`: the 30 px Manhattan window, the
+   `CanStack` + equal-`shimmered` gates, the `moved/newStack` lerp of
+   position AND velocity, the drained-source air-out. The C# keeps
+   "merging" 0 with a full survivor mid-scan (the lerp still snaps the
+   survivor toward each further neighbour) - the quirk is kept.
+
+**Deliberate deviations (recorded).**
+
+- The grab pass runs inside the items pass (grab half BEFORE the physics
+  half), not in `update_player`: the C# order is UpdatePlayers
+  (`Main.cs:17754`) then UpdateItems (`:18024`), the port keeps both in
+  one pass with the same relative order. The pickup chime draws ride
+  `UpdatePlayers` (the GrabItems caller), the revenge share/ping draws
+  ride `UpdateItems` - the S1-E-21f stream pins are unchanged.
+- `combine_nearby` runs AFTER the movement half (the C# combines before
+  `MoveInWorld`, `:404` vs `:413`): RNG-free, the lerp targets differ by
+  one tick of motion. The drained sources are removed highest-first via
+  `swap_remove` (the port's compaction deviation, the list-vs-400-array
+  standing note).
+- The revenge coin suck runs at the pickup (the port's `App.coins`
+  wallet), not in `WorldItem.UpdateItem` - the standing coin-wallet
+  deviation; the coin-slot routing/`DoCoins` are i50's.
+- The `IsAPickup` kinds (hearts/stars/nebula/4143) are NOT grabbed: their
+  consume-on-touch arms (`PickupItem` `:35045-35098`) are i52's (hearts/
+  stars) or have no ported buff route (nebula/mana). `item_space` still
+  answers `can_take` for them (the C# predicate), so the seam is one
+  dispatch arm wide.
+- The accessory margins (`goldRing`/`manaMagnet`/`lifeMagnet`/
+  `treasureMagnet`) ride the `GrabFlags` seam with false defaults - the
+  equipment grants are unported families (the `manaMagnet` note at
+  `player.rs:986`); the Journey far-range +240 reads the live
+  `far_placement_range` flag. `preventAllItemPickups` (the Encumbering
+  Stone) has no port flag - `CanAcceptItemIntoInventory` is
+  unconditional.
+- The shimmer decay is now ungated on `!shimmered`
+  (`WorldItem.cs:538-545`): a transformed drop's 1.0 ramp dries to 0 over
+  100 ticks, which re-opens `GrabItems`' `shimmerTime != 0` gate
+  (`Player.cs:34911`). The old port pinned `shimmer_time = 1.0` forever,
+  so a shimmered drop could never be picked up.
+- The client's optimistic pickup + the host's `C2s::Pickup` validation
+  use the same expanded grab rectangle (the old 26/60 px circles had no
+  C# counterpart).
+- The per-slot chime: `deposit_pickup` fires `on_fill` once per accepted
+  slot (the C#'s per-site `PlaySound(7)`); the vault fill plays one chime
+  per pickup event (the merged-fill standing S1-E-21f deviation).
+
+**RNG order.** No draw count or stream moves: the spawn triplet + prefix
+(the pinned `Item.NewItem` order) is untouched; the pickup chimes ride
+`UpdatePlayers`, the revenge share + moneyPing ride `UpdateItems`, the
+flicker arms keep their slot order in the physics half. A collected drop
+contributes no flicker draw (the C# airs it before `:436`); the grab pass
+runs before the physics half so the collected drops never reach the
+light feed - same observable stream as the old collected-arm skip.
+
+**Verification.** Code-only: every C# site re-read in the decompile
+(`Player.cs:34891-35166`, `:39139-39578`, `:55894-55904`, `:57121-57123`;
+`WorldItem.cs:110-186`, `:290-453`, `:772-901`, `:1074-1084`;
+`Item.cs:1159-1192`, `:1369-1385`, `:49573-49593`, `:49649-49771`,
+`:49865-49871`; `ItemID.cs:430`, `:493`, `:1324`, `:1387-1471`;
+`Main.cs:38602-38788`, `:6618-6624`; `GetItemSettings.cs:57`). The
+witnesses (`item.rs::s1_p_i47_tests` - 9 tests; `world_sim/items.rs::
+pickup_tests` - 6 new/rebuilt tests; the rebuilt `editing.rs`
+`pickup_merges_to_maxstack`/`test_store_1_*`) are WRITTEN, NOT RUN -
+**no compiler invoked**.
