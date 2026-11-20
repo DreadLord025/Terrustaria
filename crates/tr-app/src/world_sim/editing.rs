@@ -159,14 +159,21 @@ fn shooter_auto_reuse(kind: u16) -> bool {
     )
 }
 
-/// The shooter's swing length in seconds — `Player.ApplyItemAnimation`
-/// (`Player.cs:4463-4495`) reading `Item.useAnimation` (`Item.cs:49029`) off the
-/// PREFIXED instance, falling back to the raw kind. The four `gunProj` items
-/// take their vanilla value from the id-keyed table.
-fn shooter_swing_secs(kind: u16, prefix: u16) -> f32 {
+/// The shooter's instance `useAnimation` in ticks — `sItem.useAnimation`
+/// (`Item.cs:49029`, prefix-scaled `Item.cs:577`), NOT `itemAnimationMax`:
+/// `ApplyItemAnimation`'s style-5 `num` bump (`Player.cs:4466-4469`) makes the
+/// max one tick longer, but the cycler cooldown (`:53571`) and the Fairy
+/// Queen's save window (`:53635`) read the raw instance value. The four
+/// `gunProj` placeholders take their id-keyed vanilla row.
+fn shooter_use_anim_ticks(kind: u16, prefix: u16) -> i32 {
     gun_proj_row(kind).map_or_else(
-        || crate::item::use_animation_secs_of(kind, prefix),
-        |g| g.use_animation as f32 * ONE_TICK_SECS,
+        || {
+            crate::prefix::prefixed_stats(kind, prefix)
+                .map(|s| s.use_animation)
+                .or_else(|| registry::get(kind).map(|d| d.use_animation as i32))
+                .unwrap_or(0)
+        },
+        |g| g.use_animation,
     )
 }
 
@@ -198,6 +205,131 @@ fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
 /// which would drift with the frame time.
 fn ticks_of(secs: f32) -> i32 {
     (secs * 60.0).round() as i32
+}
+
+/// `SetItemAnimation(int baseFrames, float multiplier)` (`Player.cs:4453-4461`):
+/// `val = (int)((float)baseFrames * multiplier)` — truncation, NOT rounding —
+/// floored at 1 when `baseFrames > 0`. Seconds out of the tick count.
+fn scaled_anim_secs(base_frames: i32, multiplier: f32) -> f32 {
+    let mut val = (base_frames as f32 * multiplier) as i32;
+    if base_frames > 0 {
+        val = val.max(1);
+    }
+    val as f32 * ONE_TICK_SECS
+}
+
+/// `ItemID.Sets.SummonerWeaponThatScalesWithAttackSpeed` (`ItemID.cs:497`):
+/// the whip family whose `ApplyItemAnimation` rides the summoner attack-speed
+/// multiplier (`Player.cs:4474-4477`).
+fn summoner_weapon_scales_with_attack_speed(kind: u16) -> bool {
+    matches!(
+        kind,
+        4672 | 4679
+            | 4680
+            | 4678
+            | 4913
+            | 4912
+            | 4911
+            | 4914
+            | 5074
+            | 5473
+            | 5474
+            | 5475
+            | 5476
+            | 5477
+            | 5478
+            | 5479
+            | 5480
+            | 5688
+    )
+}
+
+/// `Player.ApplyItemAnimation` (`Player.cs:4463-4497`): the swing length off
+/// the PREFIXED instance's `useAnimation`, through the branch chain —
+/// melee (unless `ItemID.Sets.NoMeleeSpeedBonus`, the Ale Throwing Glove
+/// 3821, `ItemID.cs:340`) scales by the inverted `meleeSpeed`; the scaling
+/// whips by `summonerWeaponSpeedBonus * whipUseTimeMultiplier`; `createTile`
+/// items by `tileSpeed`, `createWall` items by `wallSpeed`; everything else
+/// keeps the raw animation plus the `num` bump — `autoReuse && reuseDelay
+/// == 0 && useTime <= useAnimation && shoot > 0 && useStyle == 5` adds ONE
+/// frame (`:4466-4469`) to the non-scaling branches (the melee/summon/tile/
+/// wall branches never add it; the `DebugOptions.ManaV2` slow-magic branch
+/// `:4478-4483` is a debug-only option the port does not carry). The tail
+/// (`:4496`) re-arms `reuseDelay = sItem.reuseDelay` — the caller applies it
+/// through [`arm_reuse_delay`].
+fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
+    let Some(def) = registry::get(held.kind) else {
+        return crate::item::use_animation_secs_of(held.kind, held.prefix);
+    };
+    let fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
+    // The registry rows stock `u8`; the prefixed instance and the C# `int`
+    // fields are `i32` — widen the fallback so the two arms agree.
+    let use_anim = fx.map_or(def.use_animation as i32, |s| s.use_animation);
+    let use_time = fx.map_or(def.use_time as i32, |s| s.use_time);
+    let reuse_delay = fx.map_or(def.reuse_delay, |s| s.reuse_delay);
+    let shoot = def.projectile.map_or(0, |p| p as i32);
+    let num = if def.auto_reuse
+        && reuse_delay == 0
+        && use_time <= use_anim
+        && shoot > 0
+        && def.use_style == 5
+    {
+        1
+    } else {
+        0
+    };
+    let p = app.player.as_ref();
+    if def.melee && held.kind != 3821 {
+        // `:4470-4473`: `SetItemAnimation(useAnimation, meleeSpeed)` — the
+        // INVERTED, held-item-scaled multiplier (`:25912` + `:29021-29039`).
+        let mult = p.map_or(1.0, |p| p.melee_speed(held.kind));
+        scaled_anim_secs(use_anim, mult)
+    } else if def.summon && summoner_weapon_scales_with_attack_speed(held.kind) {
+        // `:4474-4477`: the summoner multiplier already carries the
+        // `whipUseTimeMultiplier` factor (`CapAttackSpeeds` `:29025` +
+        // `Player.cs:4476`).
+        let mult = p.map_or(1.0, |p| p.summoner_weapon_speed_multiplier(held.kind));
+        scaled_anim_secs(use_anim, mult)
+    } else if def.tile.is_some() {
+        // `:4484-4487`: `createTile >= 0` — the tileSpeed branch.
+        let mult = p.map_or(1.0, |p| p.tile_speed_multiplier());
+        scaled_anim_secs(use_anim, mult)
+    } else if def.wall.is_some() {
+        // `:4488-4491`: `createWall >= 0` — the wallSpeed branch.
+        let mult = p.map_or(1.0, |p| p.wall_speed_multiplier());
+        scaled_anim_secs(use_anim, mult)
+    } else {
+        // `:4492-4495`: `SetItemAnimation(useAnimation + num)`.
+        (use_anim + num) as f32 * ONE_TICK_SECS
+    }
+}
+
+/// `ApplyItemAnimation`'s tail (`Player.cs:4496`): `reuseDelay =
+/// sItem.reuseDelay` — the PREFIXED instance value (`Item.cs:579` scales it
+/// with `spd`). The C# never decrements the lock per tick; `ApplyReuseDelay`
+/// (`:52835-52840`) consumes it whole at the next animation-zero head,
+/// converting it into a silent `itemAnimation = itemTime = reuseDelay` hold.
+fn arm_reuse_delay(app: &mut App, held: ItemSlot) {
+    let rd = crate::prefix::prefixed_stats(held.kind, held.prefix)
+        .map(|s| s.reuse_delay)
+        .or_else(|| registry::get(held.kind).map(|d| d.reuse_delay))
+        .unwrap_or(0);
+    app.reuse_delay = rd as f32 * ONE_TICK_SECS;
+}
+
+/// The use-start timer pair — `ItemCheck_StartActualUse` (`Player.cs:51678-51680`):
+/// `attackCD = 0` then `ApplyItemAnimation`. The port's `attack_cd` carries the
+/// swing length as the use-start lock (the C# gate is the animation itself;
+/// `attack_cd` decays in `world_sim/npcs.rs` alongside the other per-tick
+/// timers, so the unit rigs that drive `update_editing` alone see ONE use per
+/// press — the same stand-in the pre-i12 gates used). The reuse lock rides the
+/// same start (`:4496`).
+fn start_use_timers(app: &mut App, held: ItemSlot) {
+    app.swing_max = apply_item_animation_secs(app, held);
+    app.swing = app.swing_max;
+    start_swing_extras(app, held.kind);
+    app.attack_cd = app.swing_max;
+    arm_reuse_delay(app, held);
 }
 
 /// The `Player.ApplyItemAnimation` tail (`Player.cs:4449-4451`): the swing
@@ -286,7 +418,110 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace-top] entered, screen={}x{}", screen.x, screen.y);
     }
+    // `Player.ItemCheck`'s `CCed` gate (`Player.cs:42598-42603` → `:3377-3387`:
+    // frozen || webbed || stoned): the FIRST thing ItemCheck does — the early
+    // return runs BEFORE the auto-reuse logic and every countdown, so a CCed
+    // tick neither decays `itemTime` nor consumes the reuse lock. The CC
+    // itself clears the channel and the animation (`channel = false;
+    // itemAnimation = itemAnimationMax = 0`); the port's `attack_cd` start
+    // lock mirrors the animation, so it clears with it.
+    if app.player.as_ref().is_some_and(|p| p.cced()) {
+        if let Some(p) = app.player.as_mut() {
+            p.channel = false;
+            p.channel_item = 0;
+            p.channel_target = Vec2::ZERO;
+        }
+        app.swing = 0.0;
+        app.swing_max = 0.0;
+        app.attack_cd = 0.0;
+        app.edit_target = None;
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
+    // `Player.ItemCheck`'s countdown order (`Player.cs:42656-42671`,
+    // `:42808-42845`): the negative clamps, the `itemAnimation == 0 →
+    // itemAnimationMax = 0` reset and the `ApplyReuseDelay` conversion run at
+    // the TOP of the tick. The animation decrement (`:42814`) and `itemTime`
+    // decrement (`:42836`) both run BEFORE the use arms (`ItemCheck_OwnerOnlyCode`
+    // at `:42854` reads the post-decrement values), so the port decays both at
+    // the frame head — the start gates and the shot gate below read the same
+    // tick the C# gates see. The start gate (`:42733`) sits between the two
+    // decrements in the C#, but a fresh start arms `itemAnimation`/`itemTime`
+    // to their full values, so the head-decay of the prior (zero) state is a
+    // no-op on the start tick — the alignment is identical.
+    // `ItemCheck_AutoReuseLogic`'s end-of-swing early-out (`Player.cs:52886-
+    // 52899`): an `autoReuse` item at `itemAnimation == 1` with a live stack
+    // zeroes the animation BEFORE the countdown and `ApplyReuseDelay` — the
+    // C# runs `ItemCheck_AutoReuseLogic` (`:42654`) ahead of the `itemAnimation
+    // == 0` reset (`:42664`) and the reuse conversion (`:42668`). For a
+    // `reuseDelay == 0` item the head decay below already folds the `1 -> 0`
+    // tick into the same-frame restart; for `reuseDelay > 0` (the Clockwork's
+    // 14) the early-out additionally lets the conversion run on the tick the
+    // last animation tick would otherwise have consumed, matching the source's
+    // `useAnimation + reuseDelay` cadence. The local-player arm (`:52894`) is
+    // the one the port models; the net-sync `ApplyItemAnimation` re-arm
+    // (`:52888-52891`) and `ShootsOnUseRelease` (`:52895-52898`) have no port.
+    // The animation-only zeroing (not `itemTime`) is deliberate: the source
+    // zeroes just `itemAnimation`, so a running volley's `itemTime` re-arm
+    // survives into the reuse hold exactly like the C#.
+    {
+        let held = app.inventory[app.selected];
+        let auto = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
+            || shooter_auto_reuse(held.kind);
+        if auto && held.count > 0 && ticks_of(app.swing) == 1 {
+            app.swing = 0.0;
+        }
+    }
+    // `Player.itemAnimationMax = 0` when the animation ends (`:42664-42667`).
+    if app.swing <= 0.0 {
+        app.swing_max = 0.0;
+    }
+    // `ApplyReuseDelay` (`Player.cs:42668-42671` → `:52835-52840`): the
+    // animation-zero tick with a pending lock converts it into a silent
+    // `itemAnimation = itemTime = reuseDelay` hold — the lock itself clears.
+    // The hold counts down through the head decays; while it runs the start
+    // gates stay shut (`itemAnimation > 0`), and the shot gate reads
+    // `itemTime > 0` so nothing fires inside the hold. `swing_max` stays 0
+    // through the hold — the C# never re-arms `itemAnimationMax` here
+    // (`:52837` writes only `itemAnimation`), so the volley windows
+    // (`anim_max_ticks`) read the ended swing, exactly like the source.
+    // The port's `attack_cd` start lock extends over the hold too: the C#
+    // start gate reads `itemAnimation == 0`, which is false for every hold
+    // tick — `attack_cd` carries the same shut-out for the rigs that drive
+    // `update_editing` without the per-tick decay pass.
+    if app.swing <= 0.0 && app.reuse_delay > 0.0 {
+        app.swing = app.reuse_delay;
+        app.item_time = app.reuse_delay;
+        app.attack_cd = app.attack_cd.max(app.reuse_delay);
+        app.reuse_delay = 0.0;
+    }
+    // The two per-tick decrements (`:42814` animation, `:42836` itemTime),
+    // floored at 0 — the C# `itemAnimation--` / `itemTime--` inside their
+    // `> 0` guards.
+    // `ItemCheck_ApplyManaRegenDelay` (`Player.cs:42810-42813` → `:50587-50593`):
+    // EVERY animation tick of a mana-paying item re-applies the regen delay
+    // (so mana cannot regen mid-swing), except the spaceGun four. It runs
+    // while `itemAnimation > 0` — which includes the `ApplyReuseDelay` hold
+    // above (the hold sets `itemAnimation = reuseDelay`). The value is
+    // recomputed from the CURRENT mana each tick (`ApplyManaRegenerationDelay`
+    // `:19396-19416`), so it stays pinned until the swing/hold ends. The
+    // start tick's delay is installed by the pay path below (the C# countdown
+    // runs after the mid-tick start; the port's head decay runs before it, so
+    // the pay-time apply covers that one tick — same post-pay mana, same value).
+    if app.swing > 0.0 {
+        let held = app.inventory[app.selected];
+        if registry::get(held.kind).is_some_and(|d| d.mana > 0) {
+            if let Some(p) = app.player.as_mut() {
+                if !crate::armor_sets::space_gun_skips_mana(p.space_gun, held.kind) {
+                    let (max_mana, mana, buff) = (p.mana_max, p.mana, p.mana_regen_buff);
+                    crate::regen::apply_mana_regen_delay(&mut p.regen, max_mana, mana, buff);
+                }
+            }
+        }
+    }
     app.swing = (app.swing - dt).max(0.0);
+    app.item_time = (app.item_time - dt).max(0.0);
     // `Player.itemRotation`'s per-tick update for the aimed styles (useStyle
     // 5 reads the mouse; `ItemCheck`'s shoot block, `Player.cs:47349-47376`).
     if app.swing > 0.0 && app.swing_style == 5 {
@@ -304,23 +539,69 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.swing_aim = d.y.atan2(d.x);
     }
     // `Player.releaseUseItem = !controlUseItem` runs every tick
-    // (`Player.cs:42822`), so the press/release edges stay current even on
+    // (`Player.cs:42829`), so the press/release edges stay current even on
     // frames where the cursor is over the HUD or a panel. The *previous*
     // frame's edges are captured before the overwrite: the use gates below
     // must compare this frame's press against last frame's state (the C#
     // `controlUseItem && releaseUseItem` pair), not against the same frame's.
-    let prev_mine_down = app.mine_prev_down;
-    let prev_mine_released = app.mine_released;
     let prev_place_down = app.place_prev_down;
     let prev_place_released = app.place_released;
     app.place_prev_down = app.place_down;
+    // `releaseUseItem = !controlUseItem` (`Player.cs:42829`) runs at the END
+    // of the tick — AFTER the use-start gate (`:42733`) read the PREVIOUS
+    // frame's latch. So the gate this frame sees is `!controlUseItem` from
+    // LAST frame: the press tick still carries `true` from the idle frame
+    // before it, while a held frame carries `false` until
+    // `ItemCheck_AutoReuseLogic`/`TryAllowingItemReuse` force it back on
+    // below. `mine_prev_down` holds last frame's button, so the latch is
+    // `!mine_prev_down` read BEFORE the overwrite. (The old same-frame
+    // `!mine_down` write made the latch false on the press tick itself,
+    // which shut every non-autoReuse weapon out of its own press.)
+    let prev_mine_down = app.mine_prev_down;
+    // S1-P-i37's press-edge capture: the use-start gate (`:42733`) reads
+    // LAST frame's release latch, not this frame's freshly derived one.
+    let prev_mine_released = app.mine_released;
     app.mine_prev_down = app.mine_down;
+    app.mine_released = !prev_mine_down;
     app.place_released = !app.place_down;
-    app.mine_released = !app.mine_down;
-    // The `itemTime` accumulator (`Player.ApplyItemTime`, `Player.cs:4416`):
-    // the *action* cadence inside a swing — placement fires whenever it hits
-    // zero while the swing animation is still running.
-    app.item_time = (app.item_time - dt).max(0.0);
+    // `ItemCheck_AutoReuseLogic` (`Player.cs:52877-52903`): an `autoReuse`
+    // item held with the button down forces `releaseUseItem = true`
+    // (`:52885`) — the start gate's release half is satisfied every tick, so
+    // the swing restarts the moment the animation ends. The `itemAnimation
+    // == 1 → 0` early-out (`:52886-52899`) is the same end-of-swing the
+    // decay above already produced. `TryAllowingItemReuse` (`:52905-52920`)
+    // extends the forced release to the glove/set/setting arms:
+    // `autoReuseGlove` covers melee (except the Flying Knife 3030) and the
+    // attack-speed-scaling summon weapons; `stressBall || autoReuseAllWeapons`
+    // covers every damage > 0 item that is not mid-channel.
+    {
+        let held = app.inventory[app.selected];
+        let def = registry::get(held.kind);
+        let auto = def.is_some_and(|d| d.auto_reuse) || shooter_auto_reuse(held.kind);
+        if held.count > 0 && app.mine_down && auto {
+            app.mine_released = true;
+        }
+        let (glove, stress) = app
+            .player
+            .as_ref()
+            .map_or((false, false), |p| (p.auto_reuse_glove, p.stress_ball));
+        let glove_arm = glove
+            && def.is_some_and(|d| {
+                (d.melee && held.kind != 3030)
+                    || (d.summon && summoner_weapon_scales_with_attack_speed(held.kind))
+            });
+        let channel_held = app.player.as_ref().is_some_and(|p| p.channel);
+        let all_arm = (stress || app.settings.auto_reuse_all)
+            && def.is_some_and(|d| d.damage > 0 && (!d.channel || !channel_held));
+        // The C# `TryAllowingItemReuse` arms set `releaseUseItem` with NO
+        // button gate (`:52916-52919`); the start gate's own
+        // `controlUseItem` half (`:42733`) is what keeps a released button
+        // from starting a use. The port's gates read `mine_down` alongside
+        // `mine_released`, so the force applies on any frame.
+        if held.count > 0 && (glove_arm || all_arm) {
+            app.mine_released = true;
+        }
+    }
     if let Some((x, y)) = app.dev_break.take() {
         break_tile(app, x, y);
     }
@@ -335,6 +616,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // `Player.cs:24798-24807`: while the map is fullscreen `controlUseItem`/
     // `controlUseTile` are cleared, so no mining, placing or attacking happens
     // behind it; the left button drags the map instead (`update_map_input`).
+    // The timers still tick — the C# `ItemCheck` runs its countdowns before
+    // any input gate (`:42808-42845`), so the tail decrements run on every
+    // early exit too.
     if app.map.as_ref().is_some_and(|m| m.open) {
         app.edit_target = None;
         app.mine_target = None;
@@ -353,14 +637,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
         return;
     }
-    // `Player.ItemCheck`'s `!frozen && !webbed` gate (`Player.cs:3381`): a
-    // frozen or webbed player cannot swing, throw, mine or place.
-    if app.player.as_ref().is_some_and(|p| p.frozen || p.webbed) {
-        app.edit_target = None;
-        app.mine_target = None;
-        app.mine_timer = 0.0;
-        return;
-    }
+    // `Player.ItemCheck`'s `CCed` gate ran at the TOP of the pass (the C#
+    // early return precedes the countdowns, `Player.cs:42598-42603`).
     let m = app.mouse_pos;
     let hud_top = screen.y - 96.0;
     if m.x < 0.0
@@ -376,11 +654,40 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         return;
     }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
-    // `Player.cs:43742-43771`) fire before the world-editing gates — the C#
-    // runs them in the item-use tick, not the cursor path; the eye arm takes
-    // `app` wholesale (before the fn's `player` borrow).
+    // `Player.cs:43751-43900`) and the event items (`ItemCheck_UseEventItems`,
+    // `:43921-44055`) fire MID-SWING: their gate is `ItemTimeIsZero &&
+    // itemAnimation > 0` (`:43753`, `:43923` etc.) — the use START
+    // (`ApplyItemAnimation`) already ran on the press tick, the summon fires
+    // on the first action tick inside the animation and `ApplyItemTime`
+    // re-arms the cadence. The port starts the swing here on the press edge
+    // and fires the summon when `item_time` hits zero inside the running
+    // swing. A REFUSED summon (day gate, living boss) keeps re-checking each
+    // action tick — the C# gate never consumes the tick on a refusal — so the
+    // early return only covers the "not an action tick yet" wait.
     if app.mine_down && !app.inventory_open {
         let held = app.inventory[app.selected];
+        let is_summon = matches!(
+            held.kind,
+            43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
+        );
+        if is_summon && held.count > 0 {
+            if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
+                start_use_timers(app, held);
+                // The summon fires on the START tick itself: the C# gate is
+                // `ItemTimeIsZero && itemAnimation > 0` (`Player.cs:43753`),
+                // and `StartActualUse` leaves `itemTime` at 0 while the
+                // animation is full — so the first action tick IS the press
+                // tick (`ItemAnimationJustStarted`, `:4066`). The head decay
+                // already ran on the prior zero state, so `item_time` stays 0
+                // here and the summon arms below fire this tick.
+                app.item_time = 0.0;
+            }
+            if app.swing <= 0.0 || app.item_time > 0.0 {
+                // Not an action tick yet — the summon waits; the tick is
+                // consumed so no other use arm fires under it.
+                return;
+            }
+        }
         if held.kind == 43 && held.count > 0 && use_suspicious_looking_eye(app) {
             return;
         }
@@ -401,10 +708,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // `:44041-44052`): the Pumpkin Moon Medallion 1844 → `startPumpkinMoon`,
         // the Naughty Present 1958 → `startSnowMoon` — the
         // `!dayTime && !pumpkinMoon && !snowMoon && !DD2Event.Ongoing` gates,
-        // the `ApplyItemTime` swing and `SoundEngine.PlaySound(15, ...)`. The
+        // the `ApplyItemTime` re-arm and `SoundEngine.PlaySound(15, ...)`. The
         // C#'s mid-swing `ItemTimeIsZero && itemAnimation > 0` precondition
-        // rides the port's event-item seam (`mine_down`, the `use_snow_globe`
-        // shape); the `Main.NewText` row is UI — out.
+        // rides the summon gate above; the `Main.NewText` row is UI — out.
         if held.kind == 1844 && held.count > 0 && use_pumpkin_moon_medallion(app) {
             return;
         }
@@ -497,11 +803,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         held.kind, app.mine_down
     );
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
+    // `Player.ItemCheck`'s use-start gate (`Player.cs:42733`): `controlUseItem
+    // && releaseUseItem && itemAnimation == 0` — ONE use per press edge
+    // (S1-P-i37: the old ungated `mine_down` block re-drank every tick while
+    // LMB was held, draining the stack and re-arming buff 21 forever). The
+    // captured previous-frame edges are the `releaseUseItem` stand-in; the
+    // swing timers are the `itemAnimation == 0` half.
+    let use_press_edge = app.mine_down
+        && prev_mine_released
+        && !prev_mine_down
+        && app.attack_cd <= 0.0
+        && app.reuse_delay <= 0.0;
     // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
-    // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
-    // (`ApplyPotionDelay` + `ApplyLifeAndOrMana`) and the magic weapons'
-    // mana pay (`CheckMana`).
-    if app.mine_down && held.count > 0 && !app.inventory_open {
+    // gated by `CanUseItem`'s wellFed check `:14353`) and the drink family
+    // (the healing/mana/buff potions — `potions.rs`, S1-P-i37).
+    if use_press_edge && held.count > 0 && !app.inventory_open {
         let def = registry::get(held.kind);
         if def.is_some_and(|d| d.consumable && matches!(d.buff_type, 26 | 206 | 207)) {
             let Some(def) = def else { unreachable!() };
@@ -523,44 +839,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if app.inventory[app.selected].count == 0 {
                     app.inventory[app.selected].kind = 0;
                 }
-                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-                app.swing = app.swing_max;
-                start_swing_extras(app, held.kind);
-                app.attack_cd = app.swing_max;
+                start_use_timers(app, held);
                 app.mine_target = None;
                 app.mine_timer = 0.0;
                 return;
             }
         }
-        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
-        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
-        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
-        // clamps to max, the count decrements.
-        let def = registry::get(held.kind);
-        if def.is_some_and(|d| d.potion && d.heal_life > 0) {
-            let Some(def) = def else { unreachable!() };
-            let sick = app
-                .player
-                .as_ref()
-                .and_then(|p| p.buffs.find_buff_index(21))
-                .is_some();
-            let heal = def.heal_life;
-            if let Some(p) = app.player.as_mut() {
-                p.hp = (p.hp + heal).min(p.max_hp);
-                // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
-                // rides `Item.potionDelay` = 3600 (60 s).
-                p.buffs.add_buff(21, 3600);
-            }
-            app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
-            if app.inventory[app.selected].count == 0 {
-                app.inventory[app.selected].kind = 0;
-            }
-            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-            app.swing = app.swing_max;
-            start_swing_extras(app, held.kind);
-            app.attack_cd = app.swing_max;
-            app.mine_target = None;
-            app.mine_timer = 0.0;
+        // The drink family (S1-P-i37 — `potions.rs`): the healing potions
+        // (`item.potion`, `Player.cs:42756-42758` + `:42867-42875`), the mana
+        // potions (`healMana`, NOT potion-flagged — `Item.cs:2680-2692`) and
+        // the buff potions (`buffType > 0`, `:42876-42883`). The Potion
+        // Sickness gate (`ItemCheck_CheckCanUse_Inner`, `:52217-52220`), the
+        // per-kind delays (`ApplyPotionDelay` `:51853-51886`), the Mana
+        // Sickness grant (`:51938`) and the stack consume all live there.
+        if crate::potions::use_potion_item(app, held) {
             return;
         }
     }
@@ -569,17 +861,32 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // cost, the throw damage and the crit all read the instance values.
     let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
     let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
-    let held_use_ammo = registry::get(held.kind).map_or(0, |d| d.use_ammo);
+    let held_use_ammo = shooter_use_ammo(held.kind);
     // `Player.channel` (`Player.cs:52958-52968`): while the button is held
     // on a `channel` item the aim target rides the player for the aiStyle-9
     // spells (`AI_009_MagicMissiles`'s owner block, `Projectile.cs:43239-
     // 43249`); the release or a switch clears it (`TryCancelChannel`
     // `:52975-52981`).
     {
+        // `StartChanneling(sItem)` (`Player.cs:52958-52968`) runs at the use
+        // START (`ItemCheck_StartActualUse`, `:51677`); the port's channel
+        // items all start through the weapon block below, so the aim latch
+        // arms while the button holds the channel item — the release or a
+        // switch clears it (`TryCancelChannel` `:52975-52981`, `:42804-42807`'s
+        // `!controlUseItem → channel = false`).
+        // S1-P-i54 — `ItemCheck` (`Player.cs:42800-42807`): a buffered
+        // selection change forces `flag5 = false`, which both clears
+        // `channel` and blocks the use path — so the hold cannot re-arm
+        // the channel while the switch is pending (the player pass's
+        // interrupt clears it; this gate keeps it cleared until the
+        // switch lands). The seam is MAIN's channel/channel_item/
+        // channel_target trio — i20-seam-agnostic (works pre/post the
+        // channel_shoot refactor).
         let holding = registry::get(held.kind).is_some_and(|d| d.channel)
             && app.mine_down
             && held_weapon
-            && !app.inventory_open;
+            && !app.inventory_open
+            && !app.selection.has_buffered_change();
         if let Some(p) = app.player.as_mut() {
             if holding {
                 let (cx, cy) = p.center();
@@ -602,8 +909,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
-        let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
-            || (prev_mine_released && !prev_mine_down);
+        // The frame-head auto-reuse block already forced `mine_released` for
+        // the autoReuse/glove/setting arms, so the edge read covers both.
+        let throw_ready = app.mine_released;
         // The ammo shooters take the shooter path below — the throw's
         // `Item.projectile` is the ammo's projectile for them, and the shot
         // fires at `ItemTimeIsZero` mid-swing, not on the press.
@@ -617,20 +925,31 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // (`ItemCheck_TryStartUse` sets the timers before
             // `ItemCheck_Shoot`'s `canShoot` gate). The shot itself fires at
             // `ItemTimeIsZero` (the fire block below).
-            app.swing_max = shooter_swing_secs(held.kind, held.prefix);
+            // `ApplyItemAnimation` (`Player.cs:4463-4497`): the gunProj four
+            // keep their id-keyed vanilla animation but still take the
+            // `num` bump (`:4466-4469` + the `:4494` tail — all four are
+            // autoReuse style-5 shooters with `useTime <= useAnimation`,
+            // `shoot > 0` and `reuseDelay == 0`, so each swings ONE tick
+            // longer than its raw `useAnimation`); everything else runs the
+            // branch chain.
+            app.swing_max = gun_proj_row(held.kind).map_or_else(
+                || apply_item_animation_secs(app, held),
+                |g| (g.use_animation + 1) as f32 * ONE_TICK_SECS,
+            );
             app.swing = app.swing_max;
             start_swing_extras(app, held.kind);
+            arm_reuse_delay(app, held);
             // `ItemCheck_StartActualUse` (`Player.cs:51657-51697`) sets the
-            // animation and leaves `itemTime` alone — it is 0 when the press
-            // tick's own decrements run (`:42814`, `:42836`), so the shot gate
-            // fires the FIRST shot of the swing one tick later at
-            // `itemAnimation == itemAnimationMax - 1`, which IS
+            // animation and leaves `itemTime` alone — the C# decrements it
+            // (`:42836`) BEFORE the shoot gate (`ItemCheck_OwnerOnlyCode`
+            // `:42854`), so the FIRST shot of the swing fires one tick after
+            // the start at `itemAnimation == itemAnimationMax - 1`, which IS
             // `ItemAnimationJustStarted` (`:4066`). The port's decay sits at
-            // the top of the frame, BEFORE this start block, so arming ONE
-            // tick (not zero — a zero would fire here and then, at the still
-            // undecayed `swing == max`) puts that first shot on the next frame
-            // with the swing already at `max - 1`: the tick value the volley
-            // windows below are derived from.
+            // the frame HEAD (before this start block), so arming ONE tick
+            // (not zero — a zero would fire here and now, at the still-
+            // undecayed `swing == max`) puts that first shot on the next
+            // frame, whose head decay has already taken the swing to
+            // `max - 1`: the tick value the volley windows below derive from.
             app.item_time = ONE_TICK_SECS;
             app.attack_cd = app.swing_max;
             app.shot_fired = false;
@@ -648,10 +967,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             && app.attack_cd <= 0.0
             && app.reuse_delay <= 0.0
         {
-            app.swing_max = shooter_swing_secs(held.kind, held.prefix);
-            app.swing = app.swing_max;
-            start_swing_extras(app, held.kind);
-            app.attack_cd = app.swing_max;
+            start_use_timers(app, held);
             // `MinionNPCTargetAim` (`Player.cs:56913-56931`): the nearest
             // chaseable NPC to the mouse world point; the same target clears.
             let (sw, sh) = app.screen_size();
@@ -664,11 +980,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
-            // `Player.CheckMana` (`Player.cs:5881-5884`): the magic items pay
+            // `Player.CheckMana` (`Player.cs:52576-52617`): the magic items pay
             // `(int)(item.mana * manaCost)` — the multiplier the armor pieces,
             // the accessories, the casters' sets and Magic Power lower (M3-
-            // EQUIP-9). A failed check blocks the use; the pay resets the mana
-            // regen delay (`apply_mana_regen_delay`).
+            // EQUIP-9). A failed check blocks the use. CheckMana itself does
+            // NOT apply the regen delay — the swing's per-anim-tick
+            // `ItemCheck_ApplyManaRegenDelay` (`:42810-42813`) owns it; the
+            // start tick's install below stands in for that first tick (the
+            // port's head decay runs before the mid-tick use start).
             let base_mana = held_fx.map(|s| s.mana).unwrap_or(0);
             // The mutable player borrow covers the whole throw (the mana
             // pay + the reads the block makes through it).
@@ -701,11 +1020,23 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     return;
                 }
                 p.mana -= mana_cost;
-                crate::regen::apply_mana_regen_delay(&mut p.regen, p.mana_max, p.mana, false);
+                // The start tick's regen-delay install (the head per-tick arm
+                // above covers every later anim tick; this covers the start
+                // tick itself, whose head decay ran before the use start).
+                // `ApplyManaRegenerationDelay` reads `manaRegenBuff`
+                // (`Player.cs:19399`) — the Magic Power buff's 20-tick cap.
+                let (max_mana, mana, buff) = (p.mana_max, p.mana, p.mana_regen_buff);
+                crate::regen::apply_mana_regen_delay(&mut p.regen, max_mana, mana, buff);
             }
             // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
-            // rides the use start.
-            app.reuse_delay = held_fx.map_or(0.0, |s| s.reuse_delay as f32 / 60.0);
+            // rides the use start (the prefixed instance value). The direct
+            // field write keeps the player borrow (`p`) alive for the throw
+            // below — the same value [`arm_reuse_delay`] applies elsewhere.
+            app.reuse_delay = crate::prefix::prefixed_stats(held.kind, held.prefix)
+                .map(|s| s.reuse_delay)
+                .or_else(|| registry::get(held.kind).map(|d| d.reuse_delay))
+                .unwrap_or(0) as f32
+                * ONE_TICK_SECS;
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
             // `shootSpeed` (`:47274-47292`), the spawn at the player center
@@ -737,10 +1068,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // `if (sItem.melee && !ProjectileID.Sets
                     // .NoMeleeSpeedVelocityScaling[projToShoot]) speed /=
                     // this.meleeSpeed` (`:47060-47063`) — no ported kind rides
-                    // the exception set (`ProjectileID.cs:547`), so every melee
-                    // shot divides (×1 at the default 1f bonus).
+                    // the exception set (`ProjectileID.cs:547`: 699/707/
+                    // 877-879/985/973/1082/1083), so every melee shot divides
+                    // by the INVERTED, held-item-scaled multiplier
+                    // (`Player.cs:25912` + `CapAttackSpeeds` `:29021-29039` —
+                    // ×1 at the default 1f speed sum).
                     let fx_spd = if class == registry::DamageClass::Melee {
-                        fx_spd / p.melee_speed()
+                        fx_spd / p.melee_speed(held.kind)
                     } else {
                         fx_spd
                     };
@@ -1051,6 +1385,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                                 held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
                             app.projectiles
                                 .set_whip_params(slot, tag_type, bonus_tag, animation_max);
+                            // `:11128`: `armorPenetration += item.armorPenetration`
+                            // — the summon prefixes' arpen row (85/86/87/91/95)
+                            // rides every fired shot, whip included.
+                            let arpen = held_fx.map_or(0, |s| s.armor_penetration);
+                            app.projectiles.set_armor_penetration(slot, arpen);
                         }
                     }
                     // `Player.cs:48210` — the sentry spawns run the turret
@@ -1068,10 +1407,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         app.inventory[app.selected].count =
                             app.inventory[app.selected].count.saturating_sub(1);
                     }
-                    // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
-                    // swing lasts the item's `useAnimation` ticks; `attack_cd`
-                    // matches so the throw repeats only when the swing is over.
-                    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+                    // `Player.ApplyItemAnimation` (`Player.cs:4463-4497`): the
+                    // swing runs the branch chain (the scaling whips ride the
+                    // summoner multiplier, `:4474-4477`); `attack_cd` matches
+                    // so the throw repeats only when the swing is over.
+                    app.swing_max = apply_item_animation_secs(app, held);
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
@@ -1086,9 +1426,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // projectile block sits ABOVE this point. The pre-BUG-09 code
         // returned here for the non-ammo case, which made every melee weapon
         // unreachable.
-    }
-    if app.reuse_delay > 0.0 {
-        app.reuse_delay = (app.reuse_delay - dt).max(0.0);
     }
 /// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
 /// minable/chopable tile the held tool can work, and the vanilla checks the
@@ -1129,6 +1466,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         && held_use_ammo == 0
         && app.attack_cd <= 0.0
         && app.reuse_delay <= 0.0
+        && app.mine_released
         && !app.inventory_open
         && (held_weapon || !cursor_cell_is_tile_target(app, world_pos))
     {
@@ -1354,69 +1692,107 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     app.audio.play_npc_hit_sound(cue, nx, ny, rng);
                 }
-                // One swing per `useAnimation` (`Player.cs:4449-4451`).
-                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-                app.swing = app.swing_max;
-                start_swing_extras(app, held.kind);
-                app.attack_cd = app.swing_max;
+                // S1-P-i50 — the Lucky Coin family's melee-hit coin proc
+                // (`ApplyNPCOnHitEffects`' tail, `Player.cs:44537-44549`,
+                // called at `:44404` AFTER `StrikeNPC` — so after the
+                // combat text and the hit cue above): `npc.value > 0 &&
+                // hasLuckyCoin && Main.rand.Next(5) == 0` → type 71,
+                // upgraded to 72 on `Next(10) == 0` and to 73 on
+                // `Next(100) == 0` (independent rolls, gold wins), then
+                // `RequestNewItem(stack: Next(1, 11), velocity:
+                // (Next(10, 31) * 0.2 * direction, Next(-20, 1) * 0.2),
+                // center: npc.Center, prefix: 0)`. The proc runs on a
+                // landed hit regardless of the kill (`:44404` precedes the
+                // `DidNPCDie` check `:44415`); the draws ride the
+                // `UpdatePlayers` swap (`Main.cs:17754`). The explicit
+                // velocity skips `Item.NewItem`'s spread draws
+                // (`Item.cs:49738-49740`) and `prefix: 0` draws nothing —
+                // six draws total when the Next(5) gate passes, one when
+                // it refuses.
+                let lucky = app.player.as_ref().is_some_and(|p| p.has_lucky_coin);
+                if landed && lucky && app.npcs[idx].value() > 0.0 {
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if rng.next_max(5) == 0 {
+                        let mut kind = 71u16;
+                        if rng.next_max(10) == 0 {
+                            kind = 72;
+                        }
+                        if rng.next_max(100) == 0 {
+                            kind = 73;
+                        }
+                        let stack = rng.next_range(1, 11) as u32;
+                        let dir = app.player.as_ref().map_or(1, |p| p.facing);
+                        let vx = rng.next_range(10, 31) as f32 * 0.2 * dir as f32;
+                        let vy = rng.next_range(-20, 1) as f32 * 0.2;
+                        let (ncx, ncy) = app.npcs[idx].center();
+                        // `WorldItem.Center = center` (`Item.cs:49736`) —
+                        // the 14x14 box centred on the NPC.
+                        let mut coin = crate::item::ItemDrop::new(
+                            kind,
+                            stack,
+                            0,
+                            ncx - crate::item::SIZE * 0.5,
+                            ncy - crate::item::SIZE * 0.5,
+                            vx,
+                            vy,
+                            0.0,
+                        );
+                        // `NewItemOwnership.ReserveForLocalPlayer` →
+                        // `enemyGrabDelayTime = DefaultGrabDelay = 100`
+                        // (`Item.cs:49757-49760`, `WorldItem.cs:110`): the
+                        // monsters cannot suck it for 100 ticks; the port's
+                        // revenge arm has no enemy-delay field. The player
+                        // grab gate reads `grab_delay_time` (S1-P-i47/i51):
+                        // the enemy-delay is a separate C# clock, so the
+                        // drop stays player-grabbable immediately.
+                        coin.age = 0.0;
+                        app.items.push(coin);
+                    }
+                }
+                // One swing per `ApplyItemAnimation` (`Player.cs:4463-4497`):
+                // the melee branch scales by the inverted meleeSpeed, the
+                // reuse lock rides the start (`:4496`).
+                start_use_timers(app, held);
                 app.mine_target = None;
                 app.mine_timer = 0.0;
                 return;
             }
         }
-        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
-        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
-        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
-        // clamps to max, the count decrements.
-        let def = registry::get(held.kind);
-        if def.is_some_and(|d| d.potion && d.heal_life > 0) {
-            let Some(def) = def else { unreachable!() };
-            let sick = app
-                .player
-                .as_ref()
-                .and_then(|p| p.buffs.find_buff_index(21))
-                .is_some();
-            if !sick {
-                let heal = def.heal_life;
-                if let Some(p) = app.player.as_mut() {
-                    p.hp = (p.hp + heal).min(p.max_hp);
-                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
-                    // rides `Item.potionDelay` = 3600 (60 s).
-                    p.buffs.add_buff(21, 3600);
-                }
-                app.inventory[app.selected].count =
-                    app.inventory[app.selected].count.saturating_sub(1);
-                if app.inventory[app.selected].count == 0 {
-                    app.inventory[app.selected].kind = 0;
-                }
-                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-                app.swing = app.swing_max;
-                start_swing_extras(app, held.kind);
-                app.attack_cd = app.swing_max;
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-                return;
-            }
-        }
+        // The healing-potion duplicate that used to sit here (the gated
+        // `!sick` copy) was SHADOWED by the ungated press-arm above and is
+        // gone with it (S1-P-i37): every melee strike already returns, so
+        // the block was unreachable for NPCs in reach, and the drink family
+        // now rides `potions::use_potion_item` at the use-start seam.
     }
     // `Player.cs:42768-42771` (the use-success arm) + the can-use gate
     // `:52312-52314` -> `Mount.CanMount` (`Mount.cs:6581-6604`): a saddle
     // item equips its mount (a swap while mounted goes through the same
     // `SetMount` guards, `Mount.cs:6196-6213`). Sits after the weapon/potion
     // arms so the sim-context player borrow is already dead (NLL).
-    if app.mine_down && held.count > 0 && !app.inventory_open {
+    if app.mine_down
+        && held.count > 0
+        && !app.inventory_open
+        && app.attack_cd <= 0.0
+        && app.reuse_delay <= 0.0
+        && app.mine_released
+    {
         if let Some(m) = crate::mount::mount_type_of_item(held.kind) {
-            if let Some(p) = app.player.as_mut() {
-                if p.can_mount(&app.world, m) {
-                    p.set_mount(m, p.wet);
-                    let secs = crate::item::use_animation_secs(held.kind);
-                    app.swing_max = secs;
-                    app.swing = secs;
-                    app.attack_cd = secs;
-                    app.mine_target = None;
-                    app.mine_timer = 0.0;
-                    return;
+            // The can-mount check and the mount swap run under their own
+            // player borrows — `start_use_timers` takes the whole app (the
+            // sound seam), so the borrow must end before it.
+            let can = app
+                .player
+                .as_ref()
+                .is_some_and(|p| p.can_mount(&app.world, m));
+            if can {
+                if let Some(p) = app.player.as_mut() {
+                    let wet = p.wet;
+                    p.set_mount(m, wet);
                 }
+                start_use_timers(app, held);
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
             }
         }
     }
@@ -1474,10 +1850,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             app.mine_target = None;
             app.mine_timer = 0.0;
         } else {
-            if app.swing <= 0.0 {
-                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-                app.swing = app.swing_max;
-                start_swing_extras(app, held.kind);
+            // The tool swing restarts through the same start gate as every
+            // other use (`ItemCheck_TryStartUse` `:42733` + the auto-reuse
+            // forced release): animation zero, release ready, no pending
+            // reuse lock. `ApplyItemAnimation`'s melee branch scales the
+            // tool's `useAnimation` by the inverted meleeSpeed (`:4470-4473`
+            // — the pickaxe/axe/hammer rows are `melee = true`).
+            if app.swing <= 0.0 && app.mine_released && app.reuse_delay <= 0.0 {
+                start_use_timers(app, held);
             }
             // `PickTile_DetermineDamage` (`Player.cs:53830-53833`): a
             // `CanKillTile` refusal zeroes the pick damage — the swing
@@ -1510,8 +1890,17 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     // The crack overlay's damage denominator
                     // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
                     app.mine_hardness = hardness;
-                    if app.mine_timer >= hardness {
+                    // `toolTime == 0 && itemAnimation > 0 && controlUseItem`
+                    // (`Player.cs:45626`): the hammer hit lands on an action
+                    // tick inside a running swing; `ApplyItemTime(sItem)`
+                    // (`:45702`) re-arms the cadence after every hit.
+                    if app.mine_timer >= hardness && app.swing > 0.0 && app.item_time <= 0.0 {
                         app.mine_timer = 0.0;
+                        let ut = crate::prefix::prefixed_stats(held.kind, held.prefix)
+                            .map(|s| s.use_time)
+                            .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
+                            .unwrap_or(0);
+                        app.item_time = ut as f32 * ONE_TICK_SECS;
                         // `WorldGen.KillTile`'s case 26 (`:49444-49449`): the
                         // altar dies first (the tile + its `NotifyTileDestroyed`
                         // ride `break_tile`), then `SmashAltar` seeds the
@@ -1567,19 +1956,42 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // The crack overlay's damage denominator
                 // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
                 app.mine_hardness = hardness;
-                if app.mine_timer >= hardness {
+                // `toolTime == 0 && itemAnimation > 0 && controlUseItem`
+                // (`Player.cs:45626`): the pick/axe hit lands on an action
+                // tick inside a running swing. The pick re-arms
+                // `itemTime = (int)(useTime * pickSpeed)` (`:45777-45780`,
+                // the WellFed discount folded into `pick_speed_bonus`); the
+                // axe re-arms the plain `useTime` (`ApplyItemTime`, `:45768`).
+                if app.mine_timer >= hardness && app.swing > 0.0 && app.item_time <= 0.0 {
                     break_tile(app, tx, ty);
                     app.mine_target = None;
                     app.mine_timer = 0.0;
+                    let ut = crate::prefix::prefixed_stats(held.kind, held.prefix)
+                        .map(|s| s.use_time)
+                        .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
+                        .unwrap_or(0);
+                    if axe_tile {
+                        app.item_time = ut as f32 * ONE_TICK_SECS;
+                    } else {
+                        let pick_speed = 1.0
+                            - app
+                                .player
+                                .as_ref()
+                                .map(|p| p.pick_speed_bonus)
+                                .unwrap_or(0.0);
+                        app.item_time =
+                            ((ut as f32 * pick_speed.max(0.3)) as i32) as f32 * ONE_TICK_SECS;
+                    }
                 }
             }
         }
     } else if app.mine_down && !tile.active() && tile.wall != 0 && !app.inventory_open {
-        // No block in the cell: mining it removes the exposed wall.
-        if app.swing <= 0.0 {
-            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-            app.swing = app.swing_max;
-            start_swing_extras(app, held.kind);
+        // No block in the cell: mining it removes the exposed wall. The
+        // swing restart rides the same start gate (`:42733` + the forced
+        // release); `ItemCheck_UseMiningTools_TryHittingWall` (`:45908-45915`)
+        // re-arms `itemTime = useTime / 2` after each wall hit.
+        if app.swing <= 0.0 && app.mine_released && app.reuse_delay <= 0.0 {
+            start_use_timers(app, held);
         }
         if app.mine_target == Some((tx, ty)) {
             app.mine_timer += dt;
@@ -1602,10 +2014,21 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             // The crack overlay's damage denominator
             // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
             app.mine_hardness = hardness;
-            if app.mine_timer >= hardness {
+            // `toolTime == 0 && itemAnimation > 0 && controlUseItem`
+            // (`Player.cs:45639`): the wall hit only lands on an action tick
+            // inside a running swing — the port's `item_time <= 0` gate.
+            if app.mine_timer >= hardness && app.swing > 0.0 && app.item_time <= 0.0 {
                 break_wall(app, tx, ty);
                 app.mine_target = None;
                 app.mine_timer = 0.0;
+                // `ItemCheck_UseMiningTools_TryHittingWall` (`Player.cs:45913`):
+                // `itemTime = sItem.useTime / 2` — integer division, the
+                // PREFIXED instance value.
+                let ut = crate::prefix::prefixed_stats(held.kind, held.prefix)
+                    .map(|s| s.use_time)
+                    .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
+                    .unwrap_or(0);
+                app.item_time = (ut / 2) as f32 * ONE_TICK_SECS;
             }
         }
     } else {
@@ -1614,34 +2037,41 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     }
 
     // `Player.ItemCheck` pacing: the swing animation lasts `useAnimation`
-    // (`Player.cs:4443-4451`); the *action* re-fires whenever `itemTime`
-    // reaches zero while the animation still runs and the button is held
-    // (`Player.cs:39743` `ItemTimeIsZero && itemAnimation > 0 &&
-    // controlUseItem`, `ApplyItemTime = useTime`, `Player.cs:4416-4418`) —
-    // dirt places every 10 ticks inside the 15-tick swing, walls every 7.
-    // An `autoReuse` kind restarts the swing the moment it ends
-    // (`Player.cs:42819-42822`); a non-autoReuse kind waits for a release.
-    let auto_reuse = registry::get(held.kind).is_some_and(|d| d.auto_reuse);
+    // (`Player.cs:4443-4451`, through `ApplyItemAnimation`'s speed branches);
+    // the *action* re-fires whenever `itemTime` reaches zero while the
+    // animation still runs and the button is held (`Player.cs:39743`
+    // `ItemTimeIsZero && itemAnimation > 0 && controlUseItem`,
+    // `ApplyItemTime = useTime`, `Player.cs:4416-4418`) — dirt places every
+    // 10 ticks inside the 15-tick swing, walls every 7. An `autoReuse` kind
+    // restarts the swing the moment it ends (`Player.cs:42819-42822` +
+    // `ItemCheck_AutoReuseLogic`'s forced release, `:52885`); a non-autoReuse
+    // kind waits for a release. The reuse lock (`reuseDelay`, `:4496` +
+    // `ApplyReuseDelay` `:52835`) gates the START: while it counts down no
+    // new use begins; the converted hold keeps `itemTime > 0` so no
+    // mid-swing action fires inside it either.
     let timings = registry::get(held.kind);
-    let swing_secs = crate::item::use_animation_secs(held.kind);
-    let action_secs = timings
-        .map(|d| d.use_time as f32 / 60.0)
-        .filter(|t| *t > 0.0)
+    let swing_secs = apply_item_animation_secs(app, held);
+    // `ApplyItemTime(sItem)` (`Player.cs:4416-4419`): `SetItemTime(useTime)`
+    // reads the PREFIXED instance (`Item.cs:578` scales `useTime` with `spd`).
+    let action_secs = crate::prefix::prefixed_stats(held.kind, held.prefix)
+        .map(|s| s.use_time)
+        .or_else(|| timings.map(|d| d.use_time as i32))
+        .filter(|t| *t > 0)
+        .map(|t| t as f32 * ONE_TICK_SECS)
         .unwrap_or(swing_secs);
-    // `Player.channel` (`Player.cs:52954-52965` sets it; `Player.cs:43576`'s
-    // `if (!this.channel)` guards the animation decrement): while the
-    // button is held the item's animation HOLDS instead of ending — the
-    // channel persists until the release.
-    let channels = timings.is_some_and(|d| d.channel) && app.mine_down && !held_weapon;
-    if channels && app.swing <= 0.0 {
-        // The hold: the animation stays at the last frame.
-        app.swing = 0.2;
-        app.attack_cd = app.attack_cd.max(0.2);
-    }
     let swing_over = app.swing <= 0.0;
-    let reuse_ready = auto_reuse || (prev_place_released && !prev_place_down);
-    let starting = swing_over && reuse_ready;
-    let inside_swing = app.swing > 0.0 && app.item_time <= 0.0;
+    // The forced release the frame-head auto-reuse block installed stands in
+    // for `releaseUseItem` on the USE button; the placement route keeps its
+    // own right-button edge (the port maps `controlUseTile` to placement).
+    let reuse_ready = app.mine_released || (prev_place_released && !prev_place_down);
+    let starting = swing_over && reuse_ready && app.reuse_delay <= 0.0;
+    // The reuse hold (`ApplyReuseDelay`'s conversion, `:52835-52840`) runs
+    // with `itemAnimationMax == 0` — the mid-swing action gate stays shut
+    // inside it (the hold's `itemTime` counts down with the animation, so
+    // `ItemTimeIsZero` only lands on the hold's last tick, where the C#
+    // animation is also 0 and the gate is shut anyway).
+    let in_reuse_hold = app.swing > 0.0 && app.swing_max <= 0.0;
+    let inside_swing = app.swing > 0.0 && app.item_time <= 0.0 && !in_reuse_hold;
     // Tile interactions (`Player.Update` order: LookForTileInteractions
     // (`Player.cs:27430`) runs before ItemCheck (`:31827`)): one action per
     // right-click press — `UpdateReleaseUseTile` (`:29224`) clears
@@ -1660,18 +2090,39 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     {
         return;
     }
+    // The dresser top-row storage open (`Player.cs:32864-32925`, S1-P-i43):
+    // the same right-click priority as the chest route, before the furniture
+    // dispatch (the dresser has no `interact_at` interaction of its own).
+    if app.place_down
+        && !prev_place_down
+        && !app.inventory_open
+        && crate::chest::try_open_dresser_at_cursor(app, world_pos)
+    {
+        return;
+    }
     if app.place_down && !prev_place_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
     }
     // The town-NPC chat arm (`Main.cs:43069-43083`): the region-gated fresh
     // press latches `SetTalkNPC(i)` and fills `Main.npcChatText = GetChat()`;
     // the per-tick close rule (`Player.cs:27494-27503`) rides inside the call.
-    if crate::world_sim::npcs::talk_to_npc(app, prev_place_down).is_some() {
+    // `Player.mouseInterface` (`Main.cs:41799-41813`): the open shop grid's
+    // rect suppresses the world use — a press over the panel neither talks
+    // nor places.
+    let shop_panel_hover = app.inventory_open
+        && app.shop_npc.is_some()
+        && crate::ui::inventory::shop_slot_at(
+            app.mouse_pos,
+            app.lookups.ui_back.map_or(52.0, |b| b.width as f32),
+        )
+        .is_some();
+    if !shop_panel_hover && crate::world_sim::npcs::talk_to_npc(app, prev_place_down).is_some() {
         return;
     }
     if app.place_down
         && !prev_place_down
         && !app.inventory_open
+        && !shop_panel_hover
         && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
     {
         return;
@@ -1709,11 +2160,18 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     // the swing's first shot exactly there, so "this is the swing's first shot"
     // is the port's stand-in for that comparison.
     let just_started = !app.shot_fired;
+    // `ApplyReuseDelay`'s converted hold (`Player.cs:52835-52840`) sets
+    // `itemAnimation = itemTime = reuseDelay` but leaves `itemAnimationMax`
+    // at 0 — so a running animation with a zero max IS the reuse hold, and
+    // the C#'s `ItemTimeIsZero` shot gate (`:43544`) never fires inside it
+    // (the hold's `itemTime` counts down in lockstep with the animation).
+    let in_reuse_hold = remaining_anim_ticks > 0 && anim_max_ticks == 0;
     if held_weapon
         && held_use_ammo > 0
         && item_time_ticks <= 0
         && app.swing_max > 0.0
         && remaining_anim_ticks > 0
+        && !in_reuse_hold
     {
         app.shot_fired = true;
         // `Player.ammoCyclingMode`/`ammoCyclingOffset` — per-tick granted by
@@ -1790,9 +2248,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let dont_consume = gun_proj.is_some();
         if !dont_consume && cycling.is_some() {
             if let Some(p) = app.player.as_mut() {
-                // `ammoCyclingCooldown = sItem.useAnimation + 120` — the INSTANCE
-                // animation ticks, the same count the swing max derives from.
-                p.ammo_cycling.cooldown = anim_max_ticks + 120;
+                // `ammoCyclingCooldown = sItem.useAnimation + 120` (`:53571`)
+                // — the INSTANCE animation ticks, NOT the bumped
+                // `itemAnimationMax` (the style-5 `num` tick, `:4466-4469`).
+                p.ammo_cycling.cooldown = shooter_use_anim_ticks(held.kind, held.prefix) + 120;
                 p.ammo_cycling.offset += 1;
                 if p.ammo_cycling.mode == crate::ammo::AmmoCyclingMode::Random {
                     // `ammoCyclingOffset = Main.rand.Next()` (`:53577`) — one
@@ -1819,11 +2278,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             proj_to_shoot,
             &crate::ammo::VolleyWindows {
                 just_started,
-                // `itemAnimation > sItem.useAnimation - 8` (`:53626`) — the
-                // Fairy Queen's first-eight-ticks window.
-                anim_gt_use_anim_minus_8: remaining_anim_ticks > anim_max_ticks - 8,
-                // `itemAnimation < itemAnimationMax - sItem.useTime` (`:53674`)
-                // — the spray/Clentaminator first-shot window.
+                // `itemAnimation > sItem.useAnimation - 8` (`:53635`) — the
+                // Fairy Queen's first-eight-ticks window reads the INSTANCE
+                // animation (30), not the bumped `itemAnimationMax` (31).
+                anim_gt_use_anim_minus_8: remaining_anim_ticks
+                    > shooter_use_anim_ticks(held.kind, held.prefix) - 8,
+                // `itemAnimation < itemAnimationMax - sItem.useTime` (`:53663`
+                // /`:53667`) — the spray/Clentaminator first-shot window DOES
+                // read the bumped max.
                 anim_lt_anim_max_minus_use_time: remaining_anim_ticks
                     < anim_max_ticks - use_time_ticks,
             },
@@ -1938,6 +2400,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             );
             if let Some(slot) = slot {
                 app.projectiles.set_crit(slot, crit);
+                // `ApplyStatsFromSource` (`Projectile.cs:11128`): the
+                // weapon prefix's `armorPenetration` rides the ammo shot.
+                let arpen = held_fx.map_or(0, |s| s.armor_penetration);
+                app.projectiles.set_armor_penetration(slot, arpen);
             }
             app.audio.play_at("Item_1", pcx, pcy, 1.0);
         }
@@ -1991,10 +2457,37 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 app.item_time = secs;
             } else {
                 if starting {
-                    app.swing_max = swing_secs;
-                    app.swing = app.swing_max;
+                    // The use start: `ApplyItemAnimation` (`Player.cs:4463-4497`)
+                    // — the createTile/createWall branches scale by the
+                    // inverted tileSpeed/wallSpeed — and the reuse lock rides
+                    // the same start (`:4496`).
+                    start_use_timers(app, held);
                 }
-                app.item_time = action_secs;
+                // The placement ACTION cadence is speed-scaled too:
+                // `PlaceThing_Tiles_PlaceIt` re-arms `ApplyItemTime(item,
+                // tileSpeed)` (`Player.cs:40141`) and the wall route
+                // `ApplyItemTime(item, wallSpeed)` (`:39623`) — the
+                // multiplier variant truncates `(int)(useTime * mult)` and
+                // floors at 1 (`:4421-4430`). The wiring tools place no
+                // tile/wall and keep the plain `ApplyItemTime` cadence
+                // (`ItemCheck_UseWiringTools` re-arms via `SetItemTime`).
+                let place_mult = if held_wall {
+                    app.player.as_ref().map_or(1.0, |p| p.wall_speed_multiplier())
+                } else if timings.is_some_and(|d| d.tile.is_some()) {
+                    app.player.as_ref().map_or(1.0, |p| p.tile_speed_multiplier())
+                } else {
+                    1.0
+                };
+                app.item_time = if place_mult == 1.0 {
+                    action_secs
+                } else {
+                    let base = ticks_of(action_secs);
+                    let mut val = (base as f32 * place_mult) as i32;
+                    if base > 0 {
+                        val = val.max(1);
+                    }
+                    val as f32 * ONE_TICK_SECS
+                };
             }
         }
     }
@@ -2067,8 +2560,8 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
 /// `Chest.CanDestroyChest`'s item scan (`Chest.cs:609-623`) against the
 /// app's in-memory chest store: any slot with a positive stack at the
 /// anchor refuses the break. The C#'s `type > 0` half is implied — the
-/// store only holds real stacks. The store stays empty until the
-/// M3-CHEST-UI seam fills it, so the refusal passes today.
+/// store only holds real stacks. (M3-CHEST-UI landed the store; the
+/// refusal is live — S1-P-i43 retired the stale "stays empty" note.)
 fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
     move |x, y| {
         app.world_chests
@@ -2160,6 +2653,33 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
+    // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
+    // `CheckTileBreakability2_ShouldTileSurvive`, `WorldGen.cs:62506`/:62514):
+    // a broken chest 21/467 (2 wide) or dresser 88 (3 wide) loses its store
+    // entry, and the local player browsing it closes SILENTLY (`:640-643` —
+    // `chest = -1`, no sound; the range close's 11 never fires). The anchor
+    // is the object's top-left cell, the same decode `can_kill_tile` uses
+    // (`kill.rs:2640-2641`). S1-P-i43: the port previously relied on
+    // `tick_open`'s dead-tile close (sound 11) — the C# closes here, silent.
+    if let Some(hit) = &hit {
+        let wide: i32 = match hit.kind {
+            21 | 467 => 2,
+            88 => 3,
+            _ => 0,
+        };
+        if wide > 0 {
+            let anchor_x = hit.x - i32::from(hit.frame_x) / 18 % wide;
+            let anchor_y = hit.y - i32::from(hit.frame_y) / 18;
+            if let Some(idx) = crate::chest::find_chest(&app.world_chests, anchor_x, anchor_y) {
+                crate::chest::remove_chest(&mut app.world_chests, idx);
+                if let Some(p) = app.player.as_mut() {
+                    if p.chest == idx as i32 {
+                        p.chest = crate::bank::CHEST_CLOSED; // `:642` — silent
+                    }
+                }
+            }
+        }
+    }
     // `WorldGen.KillTile_PlaySounds(i, j, fail, tileCache)` (`WorldGen.cs:
     // 66427-66575`) for the hit cell, played before the cascade's loot — the
     // C# calls it at the top of `KillTile` (:63558) and the tile is always a
@@ -4100,6 +4620,81 @@ mod tests {
         );
     }
 
+    /// S1-P-i50 — the Lucky Coin melee proc (`ApplyNPCOnHitEffects`' tail,
+    /// `Player.cs:44537-44549`): a landed hit on a `value > 0` NPC with
+    /// `hasLuckyCoin` draws `Next(5)`; on 0 it draws the denomination
+    /// upgrades (`Next(10)`, `Next(100)`), the stack (`Next(1, 11)`) and the
+    /// velocity pair (`Next(10, 31)`, `Next(-20, 1)`), then spawns the coin
+    /// at the NPC's centre. Differential witness: the ring and no-ring rigs
+    /// share every pre-proc draw (crit/DamageVar/probe/combat-text/hit-cue),
+    /// so the ring's stream is the no-ring's advanced by exactly the proc's
+    /// draws — one when the Next(5) gate refuses, six when it passes. Both
+    /// branches are exercised across a seed sweep; the spawn shape is
+    /// pinned whenever the gate fires.
+    #[test]
+    fn s1_p_i50_the_lucky_coin_proc_draws_and_spawns_on_a_landed_hit() {
+        let mut saw_fire = false;
+        let mut saw_refuse = false;
+        for seed in 0..40i32 {
+            // The no-ring baseline: the hit lands, no coin spawns.
+            let mut base = melee_app();
+            seed_stream(&mut base, seed);
+            let hp0 = base.npcs[0].hp;
+            mine_frames(&mut base, 1);
+            assert!(base.npcs[0].hp < hp0, "the baseline hit lands (seed {seed})");
+            assert!(base.items.is_empty(), "no ring, no coin");
+            let base_state = base.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+
+            // The ring rig, same seed: identical pre-proc draws, then the proc.
+            let mut ring = melee_app();
+            ring.player.as_mut().unwrap().has_lucky_coin = true;
+            seed_stream(&mut ring, seed);
+            mine_frames(&mut ring, 1);
+            assert!(ring.npcs[0].hp < hp0, "the ring hit lands too");
+
+            // Replay the two possible proc tails on the baseline state.
+            let mut refused = base_state.clone();
+            let _ = refused.next_max(5);
+            let mut passed = base_state.clone();
+            let gate = passed.next_max(5);
+            let mut kind = 71u16;
+            let mut stack = 0u32;
+            if gate == 0 {
+                if passed.next_max(10) == 0 {
+                    kind = 72;
+                }
+                if passed.next_max(100) == 0 {
+                    kind = 73;
+                }
+                stack = passed.next_range(1, 11) as u32;
+                let _ = passed.next_range(10, 31);
+                let _ = passed.next_range(-20, 1);
+            }
+            let ring_state = ring.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            assert!(
+                ring_state == refused || ring_state == passed,
+                "seed {seed}: the proc draws exactly 1 (refused) or 6 (passed) past the baseline"
+            );
+            if gate == 0 {
+                saw_fire = true;
+                assert_eq!(ring.items.len(), 1, "the proc spawned one coin");
+                let coin = &ring.items[0];
+                assert_eq!(coin.kind, kind, "the denomination rolls");
+                assert_eq!(coin.count, stack, "Next(1, 11) stack");
+                assert_eq!(coin.prefix, 0, "prefix: 0");
+                // Centre on the NPC (`WorldItem.Center = center`).
+                let (ncx, ncy) = ring.npcs[0].center();
+                assert!((coin.center().x - ncx).abs() < 1e-3);
+                assert!((coin.center().y - ncy).abs() < 1e-3);
+            } else {
+                saw_refuse = true;
+                assert!(ring.items.is_empty(), "the refused gate spawns nothing");
+            }
+        }
+        assert!(saw_fire, "some seed fires the Next(5)==0 gate");
+        assert!(saw_refuse, "some seed refuses it");
+    }
+
     /// 40x40 world with a stone floor at y = 20 — the core `edit.rs` fixture
     /// shape, deep enough inside the world for `CanPlace`'s 5-tile edge margin
     /// (`TileObject.cs:215`).
@@ -4427,7 +5022,14 @@ mod tests {
             count: 1,
             prefix: 0,
         };
+        // The rig simulates a button ALREADY held: the previous frame ended
+        // with it down (`mine_prev_down`), so the release latch
+        // (`releaseUseItem = !controlUseItem`, `Player.cs:42829` — the port
+        // reads the previous frame's button) starts false, exactly like a
+        // held button in the vanilla. The autoReuse forced release
+        // (`ItemCheck_AutoReuseLogic`, `:52885`) re-arms it each tick.
         app.mine_down = true;
+        app.mine_prev_down = true;
         app
     }
 
@@ -4604,11 +5206,15 @@ mod tests {
         }
     }
 
-    /// A fresh press: the rig never decays `attack_cd` (that pass lives in
-    /// `world_sim/npcs.rs`, outside `update_editing`), so a test that wants a
-    /// second swing clears the two locks the start block reads and lets the
-    /// held button repeat (`Player.cs:42819-42822`'s autoReuse restart).
+    /// A fresh press: the discrete-use start gate reads `attack_cd` (the
+    /// port's `itemAnimation == 0` stand-in, census U6), so a test that wants
+    /// a second swing clears the start lock, the animation and the reuse lock
+    /// and lets the held button repeat (`Player.cs:42819-42822`'s autoReuse
+    /// restart). The autoReuse forced release re-arms `mine_released` each
+    /// tick, so no button edge is needed for an autoReuse kind.
     fn repress(app: &mut App) {
+        app.swing = 0.0;
+        app.swing_max = 0.0;
         app.attack_cd = 0.0;
         app.reuse_delay = 0.0;
     }
@@ -4650,22 +5256,25 @@ mod tests {
     #[test]
     fn test_DW_4_1_the_fairy_queen_drains_eleven_of_fifteen_shots() {
         // `Player.cs:53635`: `itemAnimation > sItem.useAnimation - 8` — with the
-        // Fairy Queen's anim 30 / useTime 2 the window is the ticks 29/27/25/23
+        // Fairy Queen's anim 30 / useTime 2 the window is the ticks 30/28/26/24
         // (the first eight), so FOUR of the 15 shots save and ELEVEN drain.
+        // The style-5 `num` bump (`ApplyItemAnimation`, `:4466-4469`) makes
+        // `itemAnimationMax` 31, so the volley runs at 30/28/…/2 — the window
+        // itself still reads the INSTANCE `useAnimation` 30 (boundary 22).
         let mut app = shooter_rig(4953, "Fairy Queen Ranged Item", &[(0, 40, 99)]);
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         hold(&mut app, screen, 34, &mut log);
         assert_eq!(
             shot_ticks(&log),
-            (1..=29).rev().step_by(2).collect::<Vec<_>>(),
-            "15 shots at 29/27/…/1 — the vanilla's `itemAnimation` values"
+            (2..=30).rev().step_by(2).collect::<Vec<_>>(),
+            "15 shots at 30/28/…/2 — the vanilla's `itemAnimation` values"
         );
         assert_eq!(app.equip.ammo[0].count, 99 - 11, "eleven ammo drained");
         // The four saved shots sit exactly inside the window, the eleven
         // drained ones outside it — the window's boundary is 30 - 8 = 22.
         let inside: Vec<_> = shot_ticks(&log).into_iter().filter(|&t| t > 22).collect();
-        assert_eq!(inside, vec![29, 27, 25, 23], "the free shots");
+        assert_eq!(inside, vec![30, 28, 26, 24], "the free shots");
         assert_eq!(
             app.projectiles
                 .slots()
@@ -4890,10 +5499,11 @@ mod tests {
         // here is armed to a value that WOULD rotate a normal weapon to the
         // second stack (`5 % 2 == 1`).
         // The Clentaminator's own volley is anim 30 / useTime 5 (`Item.cs:10501-10516`
-        // → `itemdata.rs`): 6 shots at the ticks 29/24/19/14/9/4, of which the
-        // first consumes — `:53667`'s `itemAnimation < itemAnimationMax - useTime`
-        // window is FALSE on the first shot (29 < 25 is false) and true for
-        // every later one — so exactly ONE solution drains per swing. The
+        // → `itemdata.rs`): the style-5 `num` bump makes the max 31, so 6 shots
+        // at the ticks 30/25/20/15/10/5, of which the first consumes —
+        // `:53667`'s `itemAnimation < itemAnimationMax - useTime` window is
+        // FALSE on the first shot (30 < 26 is false) and true for every later
+        // one — so exactly ONE solution drains per swing. The
         // picked stack, not the drain count, is what this case pins: the
         // resolved solution projectile 145 has no `proj_data` row yet (M4-PROJ's
         // AI), so the spray's shots are refused at the spawn and the drain is
@@ -5353,11 +5963,15 @@ mod tests {
 
     #[test]
     fn the_prefixed_minion_tag_damage_reaches_the_slot() {
-        // The minion prefixes 69-72 add `Item.bonusTagDamage`
-        // (`Item.cs:575-598`); `prefix.rs` carries the row, the fire path
-        // copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        // The summon prefixes 85-97 add `Item.bonusTagDamage`
+        // (`TryGetPrefixStatMultipliersForItem`, `Item.cs:900-950` — the
+        // Ruthless 85 / Mythical-adjacent rows carry tagdmg 3/5); the fire
+        // path copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        // The prefix must be a SUMMON-table id: 71 (Angry) is an accessory
+        // damage row with tagdmg 0 — the old fixture's `want` was 0 and the
+        // assertion passed vacuously.
         let mut app = whip_app(4678);
-        app.inventory[app.selected].prefix = 71; // a minion prefix with tag damage
+        app.inventory[app.selected].prefix = 88; // Focused: dmg ×1.1, tagdmg +3
         mine_frames(&mut app, 1);
         app.mine_down = true;
         mine_frames(&mut app, 1);
@@ -5367,7 +5981,8 @@ mod tests {
             .iter()
             .find(|p| p.active)
             .expect("the SwordWhip");
-        let want = crate::prefix::prefixed_stats(4678, 71).unwrap().tag_damage;
+        let want = crate::prefix::prefixed_stats(4678, 88).unwrap().tag_damage;
+        assert_eq!(want, 3, "the Focused row carries +3 (`Item.cs:916-919`)");
         assert_eq!(p.bonus_tag_damage, want);
     }
 
@@ -5480,6 +6095,7 @@ mod tests {
             }],
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         });
         mine_frames(&mut app, 40);
         for x in [10, 11] {
@@ -5503,6 +6119,42 @@ mod tests {
         }
         assert_eq!(app.items.len(), 1);
         assert_eq!(app.items[0].kind, 48, "the chest item");
+    }
+
+    /// S1-P-i43 — `Chest.DestroyChest`'s silent close-on-destroy
+    /// (`Chest.cs:640-643`, called from `CheckTileBreakability2_ShouldTileSurvive`,
+    /// `WorldGen.cs:62506`): breaking the open chest's tile removes the store
+    /// entry and closes the player index WITHOUT sound 11 (the range close's
+    /// menu-close never fires — the C# writes `chest = -1` directly).
+    #[test]
+    fn s1_p_i43_breaking_the_open_chest_closes_it_silently() {
+        let mut w = object_world();
+        assert!(edit::place_item_tile(&mut w, 10, 19, 21, 0, 1));
+        let mut app = mining_app(w, 10, 18);
+        let idx = crate::chest::create_chest(&mut app.world_chests, 10, 18);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.chest = idx as i32;
+            p.chest_x = 10;
+            p.chest_y = 18;
+        }
+        break_tile(&mut app, 10, 18);
+        // The store entry is tombstoned and the open index closed silently.
+        assert_eq!(
+            crate::chest::find_chest(&app.world_chests, 10, 18),
+            None,
+            "DestroyChest removed the entry (:639)"
+        );
+        assert_eq!(
+            app.player.as_ref().unwrap().chest, -1,
+            "the open index closed (:642)"
+        );
+        // The chest cells cascaded away (the break ran).
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(!app.world.tile(x, y).unwrap().active(), "chest cell ({x}, {y}) broke");
+            }
+        }
     }
 
     /// M1.4-TO-6: the locked golden door refuses `break_tile`
@@ -6610,8 +7262,10 @@ mod tests {
     #[test]
     fn test_store_1_the_void_lens_routes_pickups_into_bank4() {
         // `Player.cs:39395`'s pickup arm: holding 4131 (the Void Lens)
-        // enables the vault (`IsVoidVaultEnabled`), `GetItem_VoidVault`
-        // fills bank4 first.
+        // enables the vault (`IsVoidVaultEnabled`) — but the vault is
+        // `GetItem`'s LAST resort (`:39395-39398`, S1-P-i47): the inventory
+        // passes run first, and only their overflow fills bank4. The grid
+        // is full of stone here, so the wood has nowhere else to go.
         let mut app = mining_app(object_world(), 14, 260);
         app.inventory[20] = crate::item::ItemSlot {
             kind: 4131,
@@ -6619,6 +7273,11 @@ mod tests {
             count: 1,
             prefix: 0,
         };
+        for (i, s) in app.inventory.iter_mut().enumerate() {
+            if i != 20 {
+                *s = slot(3, registry::max_stack(3));
+            }
+        }
         // The per-tick refresh rides update_player; drive it directly here.
         app.player.as_mut().unwrap().void_vault_enabled = true;
         seed_stream(&mut app, 0);
@@ -6626,7 +7285,7 @@ mod tests {
         crate::world_sim::items::spawn_item_drop(&mut app.items, rng, 9, 5, 14, 260);
         // The spawn pop (`Item.NewItem`'s vy) then the fall. The window covers
         // the `WorldItem.cs:363-364` air gravity of 0.1/tick: the arc back
-        // down to the magnet radius is longer than the old 0.3 tuning assumed.
+        // down to the grab rectangle is longer than the old 0.3 tuning assumed.
         for _ in 0..200 {
             crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
         }
@@ -6638,6 +7297,33 @@ mod tests {
         assert!(
             !app.inventory.iter().any(|sl| sl.kind == 9),
             "the inventory stayed out of it"
+        );
+        // The reverse arm (S1-P-i47): with grid room, the pickup lands in
+        // the INVENTORY and the vault stays untouched — the old port
+        // routed the vault first.
+        let mut app = mining_app(object_world(), 14, 260);
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 4131,
+            name: "Void Lens",
+            count: 1,
+            prefix: 0,
+        };
+        app.player.as_mut().unwrap().void_vault_enabled = true;
+        seed_stream(&mut app, 0);
+        let mut rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_sim::items::spawn_item_drop(&mut app.items, rng, 9, 5, 14, 260);
+        for _ in 0..200 {
+            crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.banks[3].iter().all(|sl| sl.count == 0),
+            "the vault is the last resort — the grid took it"
+        );
+        assert_eq!(
+            app.inventory.iter().filter(|sl| sl.kind == 9).map(|sl| sl.count).sum::<u32>(),
+            5,
+            "the wood landed in the grid"
         );
     }
 
@@ -7058,6 +7744,159 @@ mod tests {
         );
     }
 
+    // ---- S1-P-i12: the useTime/useAnimation countdown machinery ------------
+
+    /// `SetItemAnimation(baseFrames, multiplier)` (`Player.cs:4453-4461`):
+    /// `(int)(baseFrames * multiplier)` truncates toward zero (NOT banker's
+    /// rounding) and floors at 1 when `baseFrames > 0`. Mirror clone,
+    /// written not run.
+    #[test]
+    fn i12_set_item_animation_truncates_and_floors_at_one() {
+        // 20 × (1/1.12) = 17.857 → 17 (truncation, not 18).
+        assert_eq!(ticks_of(scaled_anim_secs(20, 1.0 / 1.12)), 17);
+        // 15 × 0.8 = 12 exact.
+        assert_eq!(ticks_of(scaled_anim_secs(15, 0.8)), 12);
+        // A sub-1 product floors at 1 (the `baseFrames > 0` guard).
+        assert_eq!(ticks_of(scaled_anim_secs(3, 0.1)), 1);
+        // A zero base stays zero (no floor).
+        assert_eq!(ticks_of(scaled_anim_secs(0, 0.5)), 0);
+    }
+
+    /// `ApplyItemAnimation`'s branch chain (`Player.cs:4463-4497`): the melee
+    /// branch scales by the inverted meleeSpeed (except the Ale Throwing
+    /// Glove 3821, `NoMeleeSpeedBonus`), the createTile/createWall branches
+    /// by the inverted tile/wallSpeed, and the style-5 autoReuse shooters
+    /// take the `num` +1 tick. Mirror clone, written not run.
+    #[test]
+    fn i12_apply_item_animation_routes_the_speed_branches() {
+        let mut app = shooter_app();
+        let slot = |kind: u16| crate::item::ItemSlot { kind, name: "", count: 1, prefix: 0 };
+        // The Iron Pickaxe (1): melee, useAnimation 20. No speed grants →
+        // multiplier 1 → 20 ticks.
+        assert_eq!(ticks_of(apply_item_animation_secs(&app, slot(1))), 20);
+        // With the Feral Claws' +0.12: 20 × (1/1.12) = 17.857 → 17.
+        app.player.as_mut().unwrap().melee_speed_bonus = 0.12;
+        assert_eq!(ticks_of(apply_item_animation_secs(&app, slot(1))), 17);
+        // The Ale Throwing Glove (3821) is `NoMeleeSpeedBonus` (`ItemID.cs:340`)
+        // and the port's row is ranged (`melee: false`), so it never enters the
+        // melee branch — it keeps its raw animation (32) despite the speed grant.
+        let ale = registry::get(3821).map(|d| d.use_animation as i32).unwrap_or(0);
+        if ale > 0 {
+            assert_eq!(ticks_of(apply_item_animation_secs(&app, slot(3821))), ale);
+        }
+        // The Dirt Block (2): createTile, useAnimation 15. The Builder buff's
+        // +0.25 → tileSpeed 1/1.25 = 0.8 → 15 × 0.8 = 12.
+        app.player.as_mut().unwrap().tile_speed_bonus = 0.25;
+        assert_eq!(ticks_of(apply_item_animation_secs(&app, slot(2))), 12);
+        // The Cobalt Repeater (435): a style-5 autoReuse shooter with
+        // useTime == useAnimation 23, reuseDelay 0, shoot > 0 → the `num`
+        // bump makes it 24 (`:4466-4469` + `:4494`).
+        assert_eq!(ticks_of(apply_item_animation_secs(&app, slot(435))), 24);
+        // The gunProj four take the same +1 on their id-keyed animation:
+        // the Vortex Beater (3475) is 20 → 21.
+        let vb = gun_proj_row(3475).unwrap();
+        assert_eq!(vb.use_animation + 1, 21);
+    }
+
+    /// `ApplyReuseDelay` (`Player.cs:42668-42671` → `:52835-52840`): the
+    /// animation-zero tick with a pending lock converts it into a silent
+    /// `itemAnimation = itemTime = reuseDelay` hold — the lock itself clears
+    /// and `itemAnimationMax` stays 0 (the C# writes only `itemAnimation`).
+    /// The port's `attack_cd` start lock extends over the hold. Mirror clone
+    /// of the head block, driven on an idle app so no use arm interferes.
+    /// Written not run.
+    #[test]
+    fn i12_apply_reuse_delay_converts_the_lock_into_a_silent_hold() {
+        let mut app = shooter_app();
+        // An idle hand: no held item, no button — the head countdowns run
+        // but no use arm fires.
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 0,
+            name: "",
+            count: 0,
+            prefix: 0,
+        };
+        app.mine_down = false;
+        app.mine_prev_down = false;
+        app.swing = 0.0;
+        app.swing_max = 0.0;
+        app.item_time = 0.0;
+        app.attack_cd = 0.0;
+        // The pending lock: the Clockwork's 14 (`Item.cs:6475`).
+        app.reuse_delay = 14.0 * ONE_TICK_SECS;
+        let screen = app.screen_size().into();
+        update_editing(&mut app, ONE_TICK_SECS, screen);
+        // The conversion armed BOTH timers at the lock, then the head decay
+        // took one tick off each: 14 - 1 = 13.
+        assert_eq!(ticks_of(app.swing), 13, "the hold runs as the animation");
+        assert_eq!(ticks_of(app.item_time), 13, "itemTime rides the hold");
+        assert_eq!(app.reuse_delay, 0.0, "the lock itself cleared");
+        assert_eq!(app.swing_max, 0.0, "itemAnimationMax stays 0 through the hold");
+        assert!(app.attack_cd > 0.0, "the start lock covers the hold");
+        // The hold counts down to zero without re-arming the lock.
+        for _ in 0..13 {
+            update_editing(&mut app, ONE_TICK_SECS, screen);
+        }
+        assert_eq!(ticks_of(app.swing), 0, "the hold ended");
+        assert_eq!(app.reuse_delay, 0.0, "no second conversion");
+    }
+
+    /// `ItemCheck_ApplyManaRegenDelay` (`Player.cs:42810-42813` →
+    /// `:50587-50593`): EVERY animation tick of a mana-paying item re-applies
+    /// the regen delay from the CURRENT mana, so it stays pinned until the
+    /// swing ends — not applied once at pay. The spaceGun four skip it
+    /// (`:50589`). The head block reads the HELD kind's `mana` and the
+    /// running `swing`, so the witness drives it with a mana item held but
+    /// the button released and a long `attack_cd` (no re-fire arm runs).
+    /// Mirror clone, written not run.
+    #[test]
+    fn i12_the_mana_regen_delay_reapplies_every_animation_tick() {
+        let mut app = staff_app(743, "Ruby Staff"); // mana 9, not spaceGun
+        app.mine_down = false; // no use arm; the running swing just decays
+        app.mine_prev_down = false;
+        // A running swing with the action timer already spent; the long
+        // start lock keeps every re-fire gate shut.
+        app.swing = 20.0 * ONE_TICK_SECS;
+        app.swing_max = 20.0 * ONE_TICK_SECS;
+        app.item_time = 0.0;
+        app.attack_cd = 60.0 * ONE_TICK_SECS;
+        let p = app.player.as_mut().unwrap();
+        p.mana = 10;
+        p.mana_max = 20;
+        p.regen.mana_regen_delay = 0.0;
+        let screen = app.screen_size().into();
+        update_editing(&mut app, ONE_TICK_SECS, screen);
+        // `ApplyManaRegenerationDelay` (`:19398`): (1 - 10/20)*60*4 + 45 = 165,
+        // ×0.7 = 115.5 → 115. The head re-applied it on this anim tick.
+        let delay = app.player.as_ref().unwrap().regen.mana_regen_delay;
+        assert_eq!(delay, 115.0, "the per-tick re-apply pinned the delay");
+        // Drain it by hand, then one more anim tick re-pins it (the swing is
+        // still running) — the once-at-pay port would have left it at 0.
+        app.player.as_mut().unwrap().regen.mana_regen_delay = 0.0;
+        update_editing(&mut app, ONE_TICK_SECS, screen);
+        let delay = app.player.as_ref().unwrap().regen.mana_regen_delay;
+        assert_eq!(delay, 115.0, "the next anim tick re-applied it again");
+        // The spaceGun four skip the delay (`:50589`): with the Meteor set's
+        // flag on, the Space Gun's swing never re-applies.
+        let mut sg = staff_app(127, "Space Gun");
+        sg.mine_down = false;
+        sg.mine_prev_down = false;
+        sg.swing = 10.0 * ONE_TICK_SECS;
+        sg.swing_max = 10.0 * ONE_TICK_SECS;
+        sg.attack_cd = 60.0 * ONE_TICK_SECS;
+        let p = sg.player.as_mut().unwrap();
+        p.space_gun = true;
+        p.mana = 10;
+        p.mana_max = 20;
+        p.regen.mana_regen_delay = 0.0;
+        update_editing(&mut sg, ONE_TICK_SECS, screen);
+        assert_eq!(
+            sg.player.as_ref().unwrap().regen.mana_regen_delay,
+            0.0,
+            "the spaceGun skip leaves the delay alone"
+        );
+    }
+
     // ---- M4-PROJ-6b phase 5: the shoot-path specials -----------------------
 
     /// The shoot path's cursor world point — the same mapping the fire block
@@ -7354,7 +8193,8 @@ fn summon_item_check(app: &App, item: u16) -> bool {
 /// worm pass); the Brain arrives alone (the Creepers' orbit = the
 /// follow-up).
 pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
-    let item = app.inventory[app.selected].kind;
+    let held = app.inventory[app.selected];
+    let item = held.kind;
     if !matches!(item, 70 | 560 | 1133 | 1331 | 544 | 556 | 557) {
         return false;
     }
@@ -7439,10 +8279,15 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         app.inventory[app.selected].kind = 0;
     }
     app.npcs.push(boss);
-    let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs(held.kind);
-    app.swing = app.swing_max;
-    app.attack_cd = app.swing_max;
+    // `ApplyItemTime(sItem)` (`Player.cs:43759` etc.): the summon re-arms the
+    // ACTION cadence only — the swing keeps running. The PREFIXED instance
+    // value (`Item.cs:578`), read off the pre-consume slot.
+    app.item_time = crate::prefix::prefixed_stats(item, held.prefix)
+        .map(|s| s.use_time)
+        .or_else(|| registry::get(item).map(|d| d.use_time as i32))
+        .filter(|t| *t > 0)
+        .map(|t| t as f32 * ONE_TICK_SECS)
+        .unwrap_or(app.swing_max);
     app.mine_target = None;
     app.mine_timer = 0.0;
     true
@@ -7473,10 +8318,9 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
-    let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs(held.kind);
-    app.swing = app.swing_max;
-    app.attack_cd = app.swing_max;
+    // `ApplyItemTime(sItem)` (`Player.cs:43925`): the ACTION cadence re-arms,
+    // the swing keeps running (`ItemTimeIsZero && itemAnimation > 0` gate).
+    app.item_time = crate::item::use_time_secs(361);
     app.mine_target = None;
     app.mine_timer = 0.0;
     true
@@ -7517,10 +8361,8 @@ pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
-    let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs(held.kind);
-    app.swing = app.swing_max;
-    app.attack_cd = app.swing_max;
+    // `ApplyItemTime(sItem)` (`Player.cs:44031`): the action cadence re-arms.
+    app.item_time = crate::item::use_time_secs(3601);
     app.mine_target = None;
     true
 }
@@ -7546,29 +8388,25 @@ pub fn use_snow_globe(app: &mut App) -> bool {
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
-    let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs(held.kind);
-    app.swing = app.swing_max;
-    app.attack_cd = app.swing_max;
+    // `ApplyItemTime(sItem)` (`Player.cs:43942`): the action cadence re-arms.
+    app.item_time = crate::item::use_time_secs(602);
     app.mine_target = None;
     app.mine_timer = 0.0;
     true
 }
 
-/// The shared moon-item swing: `Player.ApplyItemTime`'s re-arm
-/// (`Player.cs:4416-4418`, the swing timers the `use_snow_globe` shape sets)
-/// plus `SoundEngine.PlaySound(15, ...)` — the `SoundID.Roar` (15) both C#
-/// arms play.
-fn apply_moon_item(app: &mut App) {
+/// The shared moon-item use: `Player.ApplyItemTime`'s re-arm
+/// (`Player.cs:43976`/`:44043` — `SetItemTime(useTime)`, `:4416-4418`) plus
+/// `SoundEngine.PlaySound(15, ...)` — the `SoundID.Roar` (15) both C# arms
+/// play. The C# gate is `ItemTimeIsZero && itemAnimation > 0`: the ACTION
+/// re-arms inside the running swing, the animation is untouched.
+fn apply_moon_item(app: &mut App, kind: u16) {
     app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
-    let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs(held.kind);
-    app.swing = app.swing_max;
-    app.attack_cd = app.swing_max;
+    app.item_time = crate::item::use_time_secs(kind);
     app.mine_target = None;
     app.mine_timer = 0.0;
 }
@@ -7585,7 +8423,7 @@ pub(crate) fn use_pumpkin_moon_medallion(app: &mut App) -> bool {
     {
         return false;
     }
-    apply_moon_item(app);
+    apply_moon_item(app, 1844);
     app.world.start_pumpkin_moon();
     true
 }
@@ -7600,7 +8438,7 @@ pub(crate) fn use_naughty_present(app: &mut App) -> bool {
     {
         return false;
     }
-    apply_moon_item(app);
+    apply_moon_item(app, 1958);
     app.world.start_snow_moon();
     true
 }
@@ -7625,10 +8463,9 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
-    let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
-    app.swing = app.swing_max;
-    app.attack_cd = app.swing_max;
+    // `ApplyItemTime(sItem)` (`Player.cs:43774`): the action cadence re-arms
+    // inside the running swing (`ItemTimeIsZero && itemAnimation > 0`).
+    app.item_time = crate::item::use_time_secs(43);
     app.mine_target = None;
     app.mine_timer = 0.0;
     app.npcs.push(eye);
@@ -7965,10 +8802,8 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
-    let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs(held.kind);
-    app.swing = app.swing_max;
-    app.attack_cd = app.swing_max;
+    // `ApplyItemTime(sItem)` (`Player.cs:43959`): the action cadence re-arms.
+    app.item_time = crate::item::use_time_secs(1315);
     app.mine_target = None;
     app.mine_timer = 0.0;
     true
@@ -8066,10 +8901,8 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     );
     crystal.hp = crystal.max_hp;
     app.npcs.push(crystal);
-    let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs(held.kind);
-    app.swing = app.swing_max;
-    app.attack_cd = app.swing_max;
+    // The C# arm (`Player.cs:32438-32445`) is a tile interaction: consume +
+    // `SummonCrystal`, NO `ApplyItemTime` — the swing timers stay untouched.
     true
 }
 
@@ -8203,7 +9036,16 @@ mod moon_item_tests {
             "Main.cs:10979-10996's single-player resets"
         );
         assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
-        assert!(app.swing > 0.0, "ApplyItemTime armed the swing");
+        // `ApplyItemTime` (`Player.cs:43976` → `SetItemTime(useTime)`,
+        // `:4416-4419`) re-arms the ACTION cadence — `itemTime`, not the
+        // animation: the C# gate is `ItemTimeIsZero && itemAnimation > 0`,
+        // the swing itself is untouched. The medallion's useTime is 45
+        // (`Item.cs`'s 1844 row).
+        assert!(
+            (app.item_time - 45.0 / 60.0).abs() < 1e-6,
+            "ApplyItemTime armed the action cadence (itemTime = {})",
+            app.item_time
+        );
     }
 
     /// DW-1.1: the Naughty Present starts the Snow Moon twin — and the
@@ -8348,9 +9190,10 @@ mod item_mechanics {
     }
 
     /// t2 — `Player.GetItem_FillIntoOccupiedSlot`
-    /// (`Player.cs:39493-39518`): a partial fill stops at `maxStack` and the
-    /// remainder stays in the world as the drop (`PickupItem`,
-    /// `Player.cs:35085-35087`: `itemToPickUp.ReplaceWith(item)`).
+    /// (`Player.cs:39493-39518`): a partial fill stops at `maxStack`; the
+    /// leftover rides the empty-slot passes (`:39365-39394`) and only a
+    /// grid with NO room keeps it in the world (`PickupItem`,
+    /// `Player.cs:35103`: `itemToPickUp.ReplaceWith(item)`).
     #[test]
     fn pickup_merges_to_maxstack() {
         // `Item.CommonMaxStack = 9999` (`Item.cs:49966`) is what `SetDefaults`
@@ -8358,7 +9201,25 @@ mod item_mechanics {
         // there.
         const MAX: u32 = 9999;
         assert_eq!(registry::max_stack(3), MAX, "Item.CommonMaxStack");
+        // Case 1: the merge fills slot 0 to the cap, the remainder 7 lands
+        // in the next empty HOTBAR slot (the usable-kind arm `:39365`).
         let mut app = flat_app();
+        app.inventory[0] = slot(3, MAX - 3);
+        let pc = app.player.as_ref().unwrap().center();
+        let mut drop = ItemDrop::new(3, 10, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
+        drop.age = 1.0;
+        app.items.push(drop);
+        crate::world_sim::items::update_items(&mut app, ONE_TICK_SECS);
+        assert_eq!(app.inventory[0].count, MAX, "the slot fills to maxStack");
+        assert_eq!(app.inventory[1].count, 7, "the overflow opens slot 1");
+        assert_eq!(app.inventory[1].kind, 3);
+        assert!(app.items.is_empty(), "the drop was fully consumed");
+        // Case 2: a grid with no room at all — the surplus stays on the
+        // ground (`ReplaceWith`), never an over-full slot.
+        let mut app = flat_app();
+        for s in app.inventory.iter_mut() {
+            *s = slot(2, registry::max_stack(2));
+        }
         app.inventory[0] = slot(3, MAX - 3);
         let pc = app.player.as_ref().unwrap().center();
         let mut drop = ItemDrop::new(3, 10, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
@@ -8371,7 +9232,7 @@ mod item_mechanics {
         assert_eq!(
             app.inventory.iter().filter(|s| s.kind == 3).count(),
             1,
-            "no second stone stack while the first still has room"
+            "no second stone stack while the grid is full"
         );
     }
 
@@ -8407,7 +9268,7 @@ mod item_mechanics {
         let floor_top = 20.0 * TILE_PX;
         // In the air: one step adds exactly `gravity` and applies the friction.
         let mut drop = ItemDrop::new(2, 1, 0, 100.0, 100.0, 2.0, 0.0, 0.0);
-        drop.update(&app.world, None, ONE_TICK_SECS);
+        drop.update(&app.world, ONE_TICK_SECS);
         assert!(
             (drop.vel.y - 0.1).abs() < 1e-6,
             "gravity is 0.1, got {}",
@@ -8420,12 +9281,12 @@ mod item_mechanics {
         );
         // The fall speed caps at 7.
         let mut fast = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 40.0, 0.0);
-        fast.update(&app.world, None, ONE_TICK_SECS);
+        fast.update(&app.world, ONE_TICK_SECS);
         assert!((fast.vel.y - 7.0).abs() < 1e-6, "maxFall is 7, got {}", fast.vel.y);
         // Resting on the floor: the drop lies still, it never bounces.
         let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - 14.0, 0.0, 0.0, 0.0);
         for _ in 0..30 {
-            rest.update(&app.world, None, ONE_TICK_SECS);
+            rest.update(&app.world, ONE_TICK_SECS);
         }
         assert_eq!(rest.vel.y, 0.0, "no restitution off the ground");
         assert_eq!(rest.vel.x, 0.0, "friction settles the slide");
@@ -8434,5 +9295,129 @@ mod item_mechanics {
             "the drop lies flush on the floor, at {}",
             rest.pos.y
         );
+    }
+
+    // ---- S1-P-i37: the drink press-edge regression witnesses ---------------
+    // WRITTEN NOT RUN (code-only swarm). The P1 census bug: the old heal arm
+    // computed `sick` but never read it and ran on every `mine_down` tick —
+    // holding LMB drained the whole stack and re-armed buff 21 forever. The
+    // fix gates the consumable arms on the `Player.cs:42733` press edge
+    // (`controlUseItem && releaseUseItem && itemAnimation == 0`) and routes
+    // the drink through `potions::use_potion_item` (the `:52217` sickness
+    // gate reads `potionDelay`, not the buff slot).
+
+    const DRINK_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    /// A drink rig on the flow app's 8x8 air world: the player parked at the
+    /// world centre, the camera pinned on the cursor cell (in bounds, in
+    /// reach, no tile under it — the melee/mining arms fall through), the
+    /// SILENT listener so the use-sound draws nothing.
+    fn potion_press_app(kind: u16, count: u32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = Player::spawn(&app.world);
+        p.x = 4.0 * TILE_PX;
+        p.y = 4.0 * TILE_PX;
+        p.hp = 50;
+        app.player = Some(p);
+        app.camera = Vec2::new(4.0 * TILE_PX + 8.0, 4.0 * TILE_PX + 8.0);
+        app.mouse_pos = Vec2::new(640.0, 360.0);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.inventory[app.selected] = ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        };
+        // The released state: one idle frame arms the press edge.
+        app.mine_down = false;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        app
+    }
+
+    #[test]
+    fn holding_lmb_drinks_once_not_every_tick() {
+        let mut app = potion_press_app(188, 30);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN); // idle: edge armed
+        app.mine_down = true;
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(app.inventory[app.selected].count, 29, "ONE drink per press");
+        assert_eq!(p.hp, 100);
+        assert!(p.potion_delay > 3500, "the 3600 clock barely decayed");
+        let i = p.buffs.find_buff_index(21).expect("buff 21 granted once");
+        assert!(p.buffs.buff_time[i] > 3500, "no per-tick re-arm");
+    }
+
+    #[test]
+    fn a_second_press_while_sick_drinks_nothing() {
+        let mut app = potion_press_app(188, 5);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN); // the first drink
+        assert_eq!(app.inventory[app.selected].count, 4);
+        // Release + re-press while the sickness clock runs: the `:52217`
+        // gate refuses — no heal, no consume, no buff refresh. The swing
+        // locks are cleared (their decay lives in the npcs pass, outside
+        // `update_editing`) so the press edge REACHES the sickness gate —
+        // the refusal under test is the gate's, not the animation's.
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        let before = app.player.as_ref().unwrap().buffs.buff_time
+            [app.player.as_ref().unwrap().buffs.find_buff_index(21).unwrap()];
+        app.player.as_mut().unwrap().hp = 50;
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert_eq!(app.inventory[app.selected].count, 4, "the stack untouched");
+        assert_eq!(app.player.as_ref().unwrap().hp, 50, "no heal while sick");
+        let after = app.player.as_ref().unwrap().buffs.buff_time
+            [app.player.as_ref().unwrap().buffs.find_buff_index(21).unwrap()];
+        // `update_editing` does not tick the buff clocks (that is the player
+        // pass) — the pin is the absence of a RE-ARM: the timer is unchanged.
+        assert_eq!(after, before, "no buff-21 refresh on the refused press");
+    }
+
+    #[test]
+    fn a_buff_potion_press_grants_its_buff_through_sickness() {
+        // Ironskin 292 (buffType 5, buffTime 28800): NOT potion-flagged, so
+        // the sickness clock does not gate it (`Item.cs:4858-4871`).
+        let mut app = potion_press_app(292, 3);
+        app.player.as_mut().unwrap().potion_delay = 3000;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        let p = app.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(5).expect("Ironskin on the press");
+        assert_eq!(p.buffs.buff_time[i], 28800);
+        assert_eq!(app.inventory[app.selected].count, 2);
+    }
+
+    #[test]
+    fn a_mana_potion_press_restores_and_grants_94() {
+        // The Lesser Mana Potion 110 had NO use path before i37 (the old
+        // arm gated on `potion && heal_life > 0`).
+        let mut app = potion_press_app(110, 3);
+        let p = app.player.as_mut().unwrap();
+        p.mana = 0;
+        p.mana_max = 200;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 50);
+        assert!(p.buffs.find_buff_index(94).is_some(), "ManaSickness 94");
+        assert_eq!(app.inventory[app.selected].count, 2);
     }
 }

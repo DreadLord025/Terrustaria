@@ -3,7 +3,8 @@
 
 //! Static lookup tables for `Terraria/UI/ItemSorting.cs` (1.4.5.8): the
 //! `ItemID.Sets.SortingPriority*` int sets, the fishing/food bool sets, the
-//! food-buff and cart sets, `Main.projHook` and `Main.tileFrameImportant`.
+//! food-buff and cart sets, `Main.projHook` and `Main.tileFrameImportant`,
+//! plus the equip machinery's `DualEquipArmor`/`HasItemSwap` sets (S1-P-i48).
 //! All of them are `SetFactory` products (`ID/SetFactory.cs:92-131`): later
 //! inputs win, so a repeated id keeps its last value. Regenerate with
 //! `python tools/GenSortData/gen.py`; `--check` freezes the file.
@@ -304,6 +305,23 @@ pub const PROJ_HOOK: BoolSet = BoolSet {
     ],
 };
 
+/// `Sets.DualEquipArmor` (`ID/ItemID.cs:336`).
+pub const DUAL_EQUIP_ARMOR: BoolSet = BoolSet {
+    default: false,
+    ids: &[
+        205, 5004, 4955,
+    ],
+};
+
+/// `Sets.HasItemSwap` (`ID/ItemID.cs:1385`).
+pub const HAS_ITEM_SWAP: BoolSet = BoolSet {
+    default: false,
+    ids: &[
+        5325, 4131, 5060, 5059, 5324, 5329, 5330, 4346, 5391, 5323, 5455, 4767, 5453, 5309, 5454, 6190,
+        6195, 5358, 5360, 5361, 5359, 5437, 6168, 6169, 6193, 6194, 2611, 5526,
+    ],
+};
+
 /// `Main.tileFrameImportant` (`Main.cs:7232`).
 pub const TILE_FRAME_IMPORTANT: BoolSet = BoolSet {
     default: false,
@@ -361,6 +379,8 @@ mod tests {
         assert_eq!(IS_FOOD.ids.len(), 86);
         assert_eq!(PROJ_HOOK.ids.len(), 20);
         assert_eq!(TILE_FRAME_IMPORTANT.ids.len(), 398);
+        assert_eq!(DUAL_EQUIP_ARMOR.ids.len(), 3); // ItemID.cs:336
+        assert_eq!(HAS_ITEM_SWAP.ids.len(), 28);   // ItemID.cs:1385
         assert!(SORTING_PRIORITY_MISC_ACORNS.get(5518) == 1);
     }
 }

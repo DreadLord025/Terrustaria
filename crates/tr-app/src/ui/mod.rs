@@ -44,7 +44,7 @@ use tr_render::{SheetRect, SpriteRenderer};
 use crate::assets;
 use crate::inv;
 use crate::settings::Settings;
-use crate::item::{HOTBAR, INV, ItemSlot};
+use crate::item::{HOTBAR, INV, ItemSlot, EMPTY_SLOT};
 use crate::player::Player;
 
 /// The shared rect hit-test: XNA `Rectangle.Contains(Point)` as the UI reads it
@@ -695,13 +695,14 @@ pub fn draw_hud(
     // the accessory column (`Main.cs:41425-41460`).
     hide_visible_accessory: &[bool; 10],
     // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
-    // the per-slot alpha (`Main.buffAlpha`), the right-release edge
-    // (`Main.mouseRightRelease`) and the removal requests — the C# removes
-    // in the draw pass, the port drains them in the tick. `vampireSeed`
-    // gates the sub-10 duration hides (`Main.cs:43298`).
+    // the per-slot alpha (`Main.buffAlpha`), the cancel gate
+    // (`Main.mouseRight && Main.mouseRightRelease`, `:43333`) and the
+    // removal requests — the C# removes in the draw pass, the port drains
+    // them in the tick. `vampireSeed` gates the sub-10 duration hides
+    // (`Main.cs:43298`).
     buff_alpha: &mut [f32; crate::buffs::MAX_BUFFS],
     buff_removals: &mut Vec<usize>,
-    right_release: bool,
+    buff_right_click: bool,
     vampire_seed: bool,
     // `Player.HasNPCBannerBuff`'s table (`Player.cs:44197`): the banner list
     // the Monster Banner's buff tooltip prints (`Main.cs:21360-21388`).
@@ -727,7 +728,7 @@ pub fn draw_hud(
             p,
             buff_alpha,
             mouse_pos,
-            right_release,
+            buff_right_click,
             buff_removals,
             vampire_seed,
         );
@@ -883,52 +884,67 @@ pub fn draw_hud(
         // `Main.DrawGuideCraftText(73, 331 + num50)` (`Main.cs:41694`); the guide
         // slot cannot be opened in the port yet, so the empty label is drawn.
         chrome::draw_guide_text(r, lookups, 73.0, 331.0 + (screen.y - 600.0) / 2.0, None);
-        // The shop row (`Main.DrawShop`): the stock's names and the
-        // happiness-adjusted prices in a text column above the inventory
-        // grid (the vanilla draws the item slots at (406, 258+); the slot
-        // frames land with the slot-work pass).
-        if let Some((stock, mood, discount)) = shop {
-            text::hud_text(r, lookups, 40.0, 34.0, 0.85, [1.0; 4], "Shop");
-            for (i, entry) in stock.iter().enumerate().take(10) {
-                let y = 50.0 + i as f32 * 16.0;
-                let def = &crate::itemdata::ITEMS[entry.item as usize];
-                // The displayed price follows `Main.cs:20457`: buyOnce/
-                // isAShopItem rows show the buying value, the rest the
-                // selling value.
-                let price = crate::shop::display_price_row(entry, discount, mood);
-                text::hud_text(
-                    r,
-                    lookups,
-                    40.0,
-                    y,
-                    0.85,
-                    [1.0; 4],
-                    &format!("{} - {} copper", def.name, price),
-                );
+        // The shop row (`Main.DrawInventory`'s shop block,
+        // `Main.cs:41788-41818`): the 10×4 context-15 slot grid at
+        // (73, invBottom=258), scale 0.755 — the same layout the chest
+        // panel draws at (`ui::chest`). The ported stock resolves to ≤39
+        // rows (`Chest.AddItemToShop`'s window); a cell past the stock's
+        // end draws air. The happiness label/icon at (504, invBottom)
+        // (`:41790-41797`) and the coin breakdown wait for the chrome
+        // pass (ANALYSIS).
+        if let Some((stock, _mood, _discount)) = shop {
+            for i in 0..inventory::SHOP_COLS {
+                for j in 0..inventory::SHOP_ROWS {
+                    let idx = i + j * inventory::SHOP_COLS;
+                    let p = inventory::shop_slot_pos(i, j);
+                    // The row's live instance: the kind default with the
+                    // sold-in prefix/stack (`ShopEntry`); a cell past the
+                    // stock's end draws air.
+                    let item = stock.get(idx).map_or(EMPTY_SLOT, |e| ItemSlot {
+                        kind: e.item,
+                        name: crate::itemdata::ITEMS[e.item as usize].name,
+                        count: e.stack,
+                        prefix: e.prefix,
+                    });
+                    slot::draw_slot(
+                        r,
+                        lookups,
+                        &item,
+                        p.x,
+                        p.y,
+                        15,
+                        idx as i32,
+                        false,
+                        inventory::SHOP_SCALE,
+                        [220.0 / 255.0; 4],
+                    );
+                }
             }
         }
         // The reforge menu (`Main.DrawInventory`'s inline block,
         // `Main.cs:41557-41685`): the (50, 270) input slot, the (120, 310)
-        // button (30x30), the cost label above the button (`Lang.inter[46]`
+        // button centre, the cost label beside the slot (`Lang.inter[46]`
         // + the coin breakdown — the port prints the copper total), the
         // `Lang.inter[20]` "place an item here" hint on the empty slot and
-        // the held item's name; the cooldown greys the label. The port's
-        // text-panel fidelity rides the same coordinates + m_h offset.
+        // the held item's name; the cooldown greys the label. The C# draws
+        // at the literal coordinates — neither rides `Main.mH` (only the
+        // equipment column's `num20` does, `Main.cs:41146`) — so the labels
+        // align with the click hit boxes (`ui::inventory::reforge_*_hit`).
         if let Some((slot, cost, cooldown)) = reforge {
-            text::hud_text(r, lookups, 50.0, 250.0 + m_h, 0.85, [1.0; 4], "Reforge");
+            text::hud_text(r, lookups, 50.0, 250.0, 0.85, [1.0; 4], "Reforge");
             if slot.count > 0 {
                 let def = &crate::itemdata::ITEMS[slot.kind as usize];
                 text::hud_text(
                     r,
                     lookups,
                     76.0,
-                    274.0 + m_h,
+                    274.0,
                     0.85,
                     [1.0; 4],
                     &format!("{} x{}", def.name, slot.count),
                 );
             } else {
-                text::hud_text(r, lookups, 76.0, 274.0 + m_h, 0.85, [0.8; 4], "place an item here");
+                text::hud_text(r, lookups, 76.0, 274.0, 0.85, [0.8; 4], "place an item here");
             }
             let label = if cooldown > 0 {
                 "cooling down".to_string()
@@ -937,13 +953,19 @@ pub fn draw_hud(
             };
             let ready = cooldown == 0;
             let tint: [f32; 4] = if ready { [1.0; 4] } else { [0.55; 4] };
-            text::hud_text(r, lookups, 120.0, 316.0 + m_h, 0.85, tint, &label);
+            text::hud_text(r, lookups, 120.0, 316.0, 0.85, tint, &label);
         }
         // `Main.cs:41831`: `ChestUI.Draw` runs after the shop pass — the chest
         // panel draws together with the inventory (`OpenChest` sets
         // `playerInventory`, `Player.cs:33517`, chest.rs:409). The closed arm
-        // decays the button state (`ChestUI.cs:99-104`).
-        chest::draw(r, lookups, chest_panel, pulse, mouse_pos);
+        // decays the button state (`ChestUI.cs:99-104`). While a shop is
+        // open the shop grid above owns the (73, 258) rect, so the chest
+        // grid stands down (the two share `Main.invBottom`; the vanilla
+        // never shows both — `Player.cs:33087-33090` closes the shop on a
+        // chest open).
+        if shop.is_none() {
+            chest::draw(r, lookups, chest_panel, pulse, mouse_pos);
+        }
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
         // glued to the top while the minimap HUD pushed the panel down.

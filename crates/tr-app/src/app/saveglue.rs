@@ -472,6 +472,7 @@ mod tests {
             slots: vec![slot(9, 6), slot(71, 3)],
             name: "Loot".into(),
             max_items: 20,
+            ..Default::default()
         }];
         // NPCs: a housed Merchant and a homeless Nurse (the re-validation's
         // two arms), both named, one carrying the shimmer payload.

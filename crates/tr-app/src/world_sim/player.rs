@@ -201,6 +201,11 @@ pub(crate) fn player_input(
     hold_right: bool,
     hold_jump: bool,
 ) -> PlayerInput {
+    // The `useTurn` direction lock's inputs (`Player.cs:19837`): the swing
+    // state and the held item's `useTurn` flag, both read fresh each tick.
+    let item_in_use = app.swing > 0.0;
+    let held_use_turn = crate::registry::get(app.inventory[app.selected].kind)
+        .is_some_and(|d| d.use_turn);
     if map_open {
         return PlayerInput {
             left: false,
@@ -208,6 +213,8 @@ pub(crate) fn player_input(
             jump: false,
             down: false,
             hook: false,
+            item_in_use,
+            held_use_turn,
         };
     }
     // `Player.controlLeft`/`controlRight`/`controlJump`/`controlDown` off
@@ -237,6 +244,8 @@ pub(crate) fn player_input(
         // `Player.controlHook` on `Main.cHook` (`Main.cs:67172`, default `E`);
         // the port keeps `G` as the extra quick-grapple key.
         hook: any(crate::input_map::Action::Hook) || app.keys.contains(&KeyCode::KeyG),
+        item_in_use,
+        held_use_turn,
     }
 }
 
@@ -257,6 +266,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     let power_god_mode = app.creative_powers.god_mode();
     let power_far_placement = app.creative_powers.far_placement_range();
     let input = player_input(app, &binds, map_open, hold_right, hold_jump);
+    // `Player.cs:24834-24845`: the `controlQuickMana` press edge fires
+    // `QuickMana` once (the `releaseQuickMana` latch); the port keeps the
+    // edge on the App like `mine_prev_down`. The QuickHeal twin
+    // (`:24822-24833`) is the i54 hotbar worker's seam — not duplicated.
+    // The C# zeroes the movement controls while the map is fullscreen
+    // (`:24772-24808`) but NOT the quick-use controls, so the key stays
+    // live under the open map.
+    let mana_key = app
+        .keys
+        .iter()
+        .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::QuickMana, *k));
+    let mana_edge = mana_key && !app.quick_mana_prev;
+    app.quick_mana_prev = mana_key;
+    if mana_edge {
+        crate::potions::quick_mana(app);
+    }
     let (sw, sh) = app.screen_size();
     let mouse_world = Vec2::new(
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
@@ -291,6 +316,132 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // the C# fires them from inside `Player.Update` but the port's closure
     // holds `app` — they go out once it releases the borrow.
     let mut switch_sends: Vec<(i32, i32)> = Vec::new();
+    // S1-P-i54 — `TriggersSet.CopyInto` (`TriggersSet.cs:844-847`): the
+    // left button up clears `Main.blockMouse` every tick (the port's
+    // `mine_down` is the button state the winit arm keeps current).
+    if !app.mine_down {
+        app.block_mouse = false;
+    }
+    // ---- S1-P-i54: the quick-heal key (`Main.cHeal`, default H) ----
+    // `Player.cs:24822-24833`: the `controlQuickHeal` press edge fires
+    // `QuickHeal` once (the `releaseQuickHeal` latch); the port keeps the
+    // edge on the App like `mount_prev`. The C# order puts QuickHeal
+    // (`:24826`) before QuickMount (`:24890`) and QuickGrapple (`:27486`),
+    // so the drink runs before the main player borrow below. The player
+    // is taken out for the call (the fn reads the banks and writes the
+    // App's audio/combat-text/rng halves).
+    let heal_key = app
+        .keys
+        .iter()
+        .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::QuickHeal, *k));
+    let heal_edge = heal_key && !app.quick_heal_prev;
+    app.quick_heal_prev = heal_key;
+    if heal_edge && !map_open {
+        // The canonical S1-P-i37 drink (`potions::quick_heal`) — it reads
+        // the player through `app.player` (the banks, the gates) and owns
+        // the whole `:5501-5547` chain incl. the cursed gate + the pStone
+        // delay scaling. Keep-one reconciliation (gate V4): the i54 inline
+        // copy is retired.
+        crate::potions::quick_heal(app);
+    }
+    // ---- S1-P-i54: the selection machine (`Player.selectedItemState`) ----
+    // `Player.Update`'s `selectedItemState.Update()` (`Player.cs:25218`)
+    // applies the buffered switch only when idle, then resets the use
+    // timers (`OnSelectionChanged`, `:551-567`). The digit/wheel/click
+    // handlers buffer the request (`Select`, `:486-518`); this is the
+    // apply half. `CanChangeSelectedItemImmediately` (`:428-438`) =
+    // `!UsingOrReusingItem && ItemTimeIsZero`; `UsingOrReusingItem`
+    // (`:4068-4078`) = `itemAnimation > 0 || reuseDelay > 0 || channel ||
+    // pendingItemReuse` (the last has no port field).
+    {
+        // `CanChangeSelectedItemImmediately` reads the channel state as
+        // it stands at `selectedItemState.Update` time — the C# runs
+        // Update (`Player.cs:25218`) BEFORE ItemCheck (`:28285`), so the
+        // interrupt below (ItemCheck's arm) cannot unblock the switch on
+        // the same tick; the switch lands the NEXT tick.
+        let channel = app.player.as_ref().is_some_and(|p| p.channel);
+        let can_change =
+            app.swing <= 0.0 && app.reuse_delay <= 0.0 && !channel && app.item_time <= 0.0;
+        // `ItemCheck` (`Player.cs:42800-42807`): a buffered change forces
+        // `flag5 = false`, and `!flag5` clears `channel` the SAME tick —
+        // the switch itself then lands next tick once `channel` is off.
+        // The interrupt clears MAIN's channel seam (`Player.channel` /
+        // `channel_item` / `channel_target`, `player.rs:1395-1411`, the
+        // aiStyle-9 owner-block hold reads them) — NOT the i20 branch's
+        // future `channel_shoot` field (Lead decision, ANALYSIS
+        // "Hotbar/quick-switch (S1-P-i54)"); clearing the state works
+        // both pre- and post-i20.
+        if app.selection.has_buffered_change() {
+            if let Some(p) = app.player.as_mut() {
+                if p.channel {
+                    p.channel = false;
+                    p.channel_item = 0;
+                    p.channel_target = Vec2::ZERO;
+                }
+            }
+        }
+        // `PickItemSelectionOverride` (`Player.cs:17410-17432`): the
+        // mouse-item arm (`:17412-17416`, slot 58) has no port (the live
+        // slot indexes the 50-grid); the smart-select arm is the override.
+        // `controlTorch` = the LeftShift auto-select key (`Main.cTorch`).
+        let control_torch = app
+            .keys
+            .iter()
+            .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Torch, *k));
+        let override_slot = if can_change {
+            app.player.as_ref().and_then(|p| {
+                let (sw, sh) = app.screen_size();
+                let mouse = (
+                    app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                    app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+                );
+                let ctx = crate::hotbar::SmartSelectCtx {
+                    world: &app.world,
+                    inv: &app.inventory,
+                    coins: &app.equip.coins,
+                    ammo: &app.equip.ammo,
+                    mouse,
+                    player_pos: (p.x, p.y),
+                    player_h: p.height,
+                    wet: p.wet,
+                };
+                crate::hotbar::smart_select_lookup(&ctx, control_torch, app.selected)
+            })
+        } else {
+            None
+        };
+        if let Some((new_sel, continue_auto_reuse)) =
+            app.selection
+                .update(app.selected, can_change, &app.inventory, override_slot)
+        {
+            app.selected = new_sel;
+            // `OnSelectionChanged` (`Player.cs:551-567`):
+            // `itemTime = itemTimeMax = 0` (`:553`). The switch only
+            // applies when idle, so the swing is already 0 — the reset
+            // clears any stale action accumulator the same way.
+            // `lastItemUseAttemptSuccess = true` (`:554`) has no port
+            // field (the net-sync latch, `:6902`).
+            app.item_time = 0.0;
+            if app.mine_down {
+                if continue_auto_reuse {
+                    // `:557-560`: `releaseUseItem = true` — the non-
+                    // autoReuse gate reads the prev-edge pair, so arm both
+                    // halves of the "was released" state for this tick.
+                    app.mine_released = true;
+                    app.mine_prev_down = false;
+                } else if !app.mine_released {
+                    // `:561-565`: `Main.blockMouse = true; controlUseItem
+                    // = false`. The port folds controlUseItem into
+                    // mine_down (no re-press event arrives while held, so
+                    // it stays false until the release — the C# re-arms
+                    // only when blockMouse clears on release,
+                    // `TriggersSet.cs:844-847`).
+                    app.block_mouse = true;
+                    app.mine_down = false;
+                }
+            }
+        }
+    }
     if let Some(p) = app.player.as_mut() {
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
@@ -320,6 +471,37 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // the set bonus + the buff arms, M3-EQUIP-5). Assigning it here used to
         // overwrite the buff and prefix arms the tick had just added, so an
         // Ironskin potion or a Warding accessory changed nothing.
+        // The buff bar's removal requests (`Main.TryRemovingBuff`,
+        // `Main.cs:43348`'s draw-pass mutation — the draw pushed the slots,
+        // the tick applies them): non-debuffs only, the mount's own buff
+        // dismounts through `TryDismount`'s gates, the pet/light hide arms
+        // read `miscEquips[0..2].buffType`, and `SoundEngine.PlaySound(12)`
+        // (`:43382`) is the MenuTick cue. The C# draw runs alive or dead
+        // (`DrawInterface_Resources_Buffs` has no dead gate), so the drain
+        // sits BEFORE the dead branch — it used to live inside it, which
+        // made every living player's cancel requests pile up unapplied.
+        {
+            let misc_buffs = [
+                app.equip
+                    .misc_equips
+                    .first()
+                    .filter(|s| s.count > 0)
+                    .and_then(|s| crate::registry::get(s.kind))
+                    .map_or(0, |d| d.buff_type),
+                app.equip
+                    .misc_equips
+                    .get(1)
+                    .filter(|s| s.count > 0)
+                    .and_then(|s| crate::registry::get(s.kind))
+                    .map_or(0, |d| d.buff_type),
+            ];
+            for slot in std::mem::take(&mut app.buff_removals) {
+                let bt = p.buffs.buff_type[slot];
+                if p.try_removing_buff(&app.world, slot, bt, misc_buffs) {
+                    app.audio.play("Menu_Tick");
+                }
+            }
+        }
         // `Player.Update` -> `UpdateDead` (`Player.cs:16919`): the dead player
         // runs the respawn-timer tick instead of the normal simulation. The
         // boss check reads the live NPC list; the danger-NPC gate has no
@@ -345,17 +527,6 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);
             });
-            // The buff bar's removal requests (`Main.TryRemovingBuff`,
-            // `Main.cs:43348`'s draw-pass mutation — the draw pushed the
-            // slots, the tick applies them): non-debuffs only, the mount's
-            // own buff dismounts, and `SoundEngine.PlaySound(12)` is the
-            // MenuTick cue.
-            for slot in std::mem::take(&mut app.buff_removals) {
-                let bt = p.buffs.buff_type[slot];
-                if p.try_removing_buff(slot, bt) {
-                    app.audio.play("Menu_Tick");
-                }
-            }
             if respawn_now {
                 // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
                 // a broken bed or an invalid room reverts the spawn to the
@@ -535,14 +706,36 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Mount, *k));
         let mount_edge = mount_key && !app.mount_prev;
         app.mount_prev = mount_key;
+        // `Player.controlThrow` off `Main.cThrowItem` (`Main.cs:67168`,
+        // default `T` — the settings row rebinds it; the task's "Q" is a
+        // rebind, not the seed). The fullscreen-map control clear
+        // (`Player.cs:24801`) zeroes it while the map pans.
+        app.control_throw = !map_open
+            && app
+                .keys
+                .iter()
+                .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Throw, *k));
         if mount_edge && !map_open {
             if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
-                // `ItemCheck_TryStartUse`'s animation (the saddle's
-                // `useAnimation` — 20 ticks on every row).
-                let secs = crate::item::use_animation_secs(kind);
-                app.swing_max = app.swing_max.max(secs);
-                app.swing = secs;
-                app.attack_cd = app.attack_cd.max(secs);
+                // S1-P-i54 — `QuickMount` (`Player.cs:6086-6093`) plays the
+                // saddle's `UseSound` at `base.Center` after `SetMount`;
+                // there is NO item animation — `ItemCheck_TryStartUse`
+                // (`:52021-52040`) only gates, and `SetMount`
+                // (`Mount.cs:6196-6305`) never touches itemAnimation/
+                // itemTime. The port's old swing/attack_cd arming was an
+                // invention and is gone. The case-2 pitch draws ride the
+                // `UpdatePlayers` stream (the fire runs inside
+                // `Player.Update`, `Main.cs:17754`), as the grapple's.
+                if let Some((idx, pitch)) = crate::item::initial_use_sound(kind) {
+                    let (cx, cy) = p.center();
+                    app.audio.play_use_sound(
+                        idx,
+                        cx,
+                        cy,
+                        pitch,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
             }
         }
         // The hook runs as an aiStyle-7 projectile in the pool
@@ -605,6 +798,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.misc_dye_slots[i] = app.equip.misc_dyes[i].kind;
         }
         p.swing_aim = app.swing_aim;
+        // The held-kind snapshot the `CanUseStressBall` grant reads
+        // (`Player.cs:14352`'s `inventory[selectedItem]`), filled before the
+        // tick's `update_equips` pass.
+        p.held_item_kind = app.inventory[app.selected].kind;
         // `PlayerFrame()`'s held-item inputs (`Player.cs:36143-36146`): the C#
         // reads `inventory[selectedItem]` straight out of the player, the port
         // hands the summary in before the fixed step.
@@ -1154,11 +1351,54 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
     }
+    // `Player.cs:25214-25217` — `dropItemCheck` runs when `itemAnimation ==
+    // 0 && ItemTimeIsZero && reuseDelay == 0` (the port's swing/item_time/
+    // reuse_delay seconds trio). Per-frame like the hook/mount key edges
+    // above (the borrow-free tail); the throw key + the cursor-stack arms
+    // live in `world_sim/items.rs::drop_item_check`. The right-click arm is
+    // the pre-pass press edge outside every slot (`drop_right_edge`, the
+    // `mouseInterface` stand-in the players phase captures).
+    if app.swing <= 0.0 && app.item_time <= 0.0 && app.reuse_delay <= 0.0 {
+        let right_click_drop = app.drop_right_edge;
+        crate::world_sim::items::drop_item_check(app, right_click_drop);
+    }
+    // `Player.cs:25248-25255` — the releaseThrow latch refresh at the tick
+    // tail: held key → false, released → true. The check above read LAST
+    // tick's value, so the edge fires once.
+    // `Player.cs:43338-43339` — `JustDroppedAnItem` clears when the drop
+    // animation (`SetItemAnimation(10)`) runs out.
+    if let Some(p) = app.player.as_mut() {
+        p.release_throw = !app.control_throw;
+        if app.swing <= 0.0 {
+            p.just_dropped_an_item = false;
+        }
+    }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
     if map_open {
         app.update_map_input();
     }
 }
+
+/// S1-P-i54 — `Player.QuickHeal`'s H-key edge (`Player.cs:5501-5547`): the
+/// drink itself is the S1-P-i37 canonical `potions::quick_heal` (the
+/// keep-one reconciliation, gate V4) — the gate chain (`:5503`), the
+/// chooser (`QuickHeal_GetItemToUse`, `:5549-5566`), the
+/// `ItemCheck_TryStartUse` gate, the early dismount (`:5512-5515`), the
+/// UseSound at `base.position` (`:5516`), the per-kind potion delay with
+/// the live pStone scaling (`ApplyPotionDelay`, `:51853-51886`), the heal
+/// (`ApplyLifeAndOrMana`, `:51888-51952`), the hunger reset, the buff
+/// grant, the stack decrement (`:5535-5542`) and the Bottled Water
+/// achievement all live there. NO item animation: `ItemCheck_TryStartUse`
+/// (`:52021-52040`) only gates, it never sets itemAnimation/itemTime.
+///
+/// RNG order (`UpdatePlayers` stream — the call runs inside
+/// `Player.Update`, `Main.cs:17754`): the UseSound's case-2 pitch draws
+/// FIRST (`:5516` precedes `:5519-5521`), then the Strange Brew (3001)
+/// delay roll `Next(2400, 4201)` (`:51857`), then its heal roll
+/// `Next(healLife, 121)` (`:51895`), then the i-frame `NextFloat`
+/// (`:51898`), then the HealEffect's two position-jitter draws
+/// (`CombatText.cs:88-89`, via `:51931`). Every other potion row draws
+/// only the sound + the HealEffect jitter.
 
 #[cfg(test)]
 mod tests {
@@ -1271,6 +1511,86 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    /// S1-P-i53 — the buff-bar cancel drains for a LIVING player: the drain
+    /// used to sit inside the `p.dead` branch, so an alive player's removal
+    /// requests were never applied (`Main.DrawBuffIcon`'s cancel,
+    /// `Main.cs:43346-43349`, has no dead gate). A queued non-debuff slot
+    /// dels on the tick; a queued debuff refuses and stays.
+    #[test]
+    fn s1_p_i53_the_alive_player_drains_the_buff_cancel_requests() {
+        let mut app = ammo_app();
+        let p = app.player.as_mut().unwrap();
+        assert!(!p.dead);
+        p.buffs.add_buff(5, 3600); // Ironskin — removable
+        p.buffs.add_buff(20, 3600); // Poisoned — a debuff
+        let iron = p.buffs.find_buff_index(5).unwrap();
+        let poison = p.buffs.find_buff_index(20).unwrap();
+        app.buff_removals.push(poison);
+        app.buff_removals.push(iron);
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.buffs.find_buff_index(5), None, "the alive cancel landed");
+        assert!(
+            p.buffs.find_buff_index(20).is_some(),
+            "the debuff refusal (`Main.cs:43373`)"
+        );
+        assert!(app.buff_removals.is_empty(), "the queue drained");
+    }
+
+    /// S1-P-i53 — the drain feeds `miscEquips[0..2].buffType` into the
+    /// `TryRemovingBuff_CheckBuffHideMisc` arms (`Main.cs:43380-43381`,
+    /// `:43390-43404`): cancelling the equipped vanity pet's buff sets
+    /// `hideMisc[0]`. The pet item 603 (Carrot) grants buff 40 (the registry
+    /// row's `buff_type`; `Item.cs`'s case 603).
+    #[test]
+    fn s1_p_i53_the_drain_hides_the_equipped_pet_on_cancel() {
+        let mut app = ammo_app();
+        let pet_buff = crate::registry::get(603).unwrap().buff_type;
+        assert!(pet_buff > 0, "the registry carries the pet's buff");
+        app.equip.misc_equips[0] = ItemSlot {
+            kind: 603,
+            name: crate::registry::name(603),
+            count: 1,
+            prefix: 0,
+        };
+        let p = app.player.as_mut().unwrap();
+        p.buffs.add_buff(pet_buff, 3600);
+        let slot = p.buffs.find_buff_index(pet_buff).unwrap();
+        app.buff_removals.push(slot);
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.hide_misc[0], "the pet visual hid (`:43401`)");
+        assert!(!p.hide_misc[1]);
+        assert_eq!(p.buffs.find_buff_index(pet_buff), None);
+    }
+
+    /// S1-P-i53 — the cancel draws NO RNG: every arm is state-only
+    /// (`TryRemovingBuff`, `DelBuff`, `CheckBuffHideMisc` — none draws), so
+    /// a tick with a queued Ironskin cancel leaves every stage stream at
+    /// the same position as the twin tick with no queue (Ironskin grants
+    /// defense only — no draw-bearing behaviour differs between the twins).
+    #[test]
+    fn s1_p_i53_the_buff_cancel_draws_no_rng() {
+        let mut app = ammo_app();
+        let mut twin = ammo_app();
+        for a in [&mut app, &mut twin] {
+            a.player.as_mut().unwrap().buffs.add_buff(5, 3600);
+        }
+        let slot = app.player.as_ref().unwrap().buffs.find_buff_index(5).unwrap();
+        app.buff_removals.push(slot);
+        tick_ammo(&mut app);
+        update_player(&mut twin, 1.0 / 60.0);
+        assert_eq!(app.player.as_ref().unwrap().buffs.find_buff_index(5), None);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                *twin.rngs.stream(key),
+                "{} — the cancel added no draws",
+                key.name()
+            );
+        }
     }
 
     /// S1-E-34 — the F3 debug god mode rides `debug_god_mode` and the tick
@@ -1977,6 +2297,295 @@ mod tests {
         assert_eq!(app.world.bed_spawn, None);
     }
 
+    // ------------------------------------------------------------------
+    // S1-P-i54 — hotbar/quick-switch witnesses (written, not run — the
+    // code-only swarm has no compiler). Every assert cites the C# line.
+    // ------------------------------------------------------------------
+
+    /// A headless App with a live player — the switch witnesses' rig.
+    fn switch_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        app
+    }
+
+    fn stocked(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: "",
+            count,
+            prefix: 0,
+        }
+    }
+
+    #[test]
+    fn s1_p_i54_a_digit_buffers_and_the_idle_tick_applies_it() {
+        // `Player.cs:25095-25134` (the digit latches num7) + `:25174-25177`
+        // (`Select`) + `:25218` (`Update` applies when idle).
+        let mut app = switch_app();
+        app.inventory[3] = stocked(9, 5);
+        app.world_key(KeyCode::Digit4);
+        assert_eq!(app.selected, 0, "the press only buffers");
+        assert_eq!(app.selection.buffered, 3);
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.selected, 3, "the idle tick applies the buffer");
+        assert_eq!(app.selection.buffered, -1);
+    }
+
+    #[test]
+    fn s1_p_i54_a_mid_swing_switch_defers_until_the_swing_ends() {
+        // `Player.cs:428-438` — `CanChangeSelectedItemImmediately` is false
+        // while `UsingOrReusingItem` (`:4068-4078`: itemAnimation > 0).
+        let mut app = switch_app();
+        app.inventory[1] = stocked(9, 5);
+        app.swing = 0.5; // a live swing
+        app.swing_max = 0.5;
+        app.world_key(KeyCode::Digit2);
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.selected, 0, "the swing blocks the switch");
+        assert_eq!(app.selection.buffered, 1, "the request stays armed");
+        // The swing decays to 0 (the editing pass owns the decay; the
+        // witness clears it directly) — the next tick applies.
+        app.swing = 0.0;
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.selected, 1);
+    }
+
+    #[test]
+    fn s1_p_i54_a_buffered_switch_interrupts_the_channel_the_same_tick() {
+        // `Player.cs:42800-42807` — `HasBufferedChange` forces flag5 false
+        // and `!flag5` clears `channel` the SAME tick; the switch itself
+        // lands the next tick (`CanChangeSelectedItemImmediately` reads
+        // the now-off channel, `:4072`). The interrupt clears MAIN's
+        // channel seam (channel/channel_item/channel_target), not the
+        // i20 branch's future channel_shoot field.
+        let mut app = switch_app();
+        app.inventory[2] = stocked(4, 1); // the Iron Broadsword — non-channel
+        {
+            let p = app.player.as_mut().unwrap();
+            p.channel = true;
+            p.channel_item = 113; // the Magic Missile's kind
+            p.channel_target = Vec2::new(500.0, 400.0);
+        }
+        app.world_key(KeyCode::Digit3);
+        update_player(&mut app, 1.0 / 60.0);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(!p.channel, "the buffered switch dropped the channel");
+            assert_eq!(p.channel_item, 0);
+            assert_eq!(p.channel_target, Vec2::ZERO);
+        }
+        assert_eq!(app.selected, 0, "the switch itself waits one tick");
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.selected, 2, "the switch lands once idle");
+        assert_eq!(app.item_time, 0.0, "OnSelectionChanged :553");
+    }
+
+    #[test]
+    fn s1_p_i54_the_wheel_cycles_the_hotbar_latch_backward() {
+        // `Player.cs:31790` (`ScrollWheelDelta / -120`: wheel-up steps
+        // BACK) + `:31794` (the cycle base is the latched Hotbar, not the
+        // live/overridden slot).
+        let mut app = switch_app();
+        app.selection.hotbar = 7;
+        app.selected = 2; // an overridden live slot
+        app.selection.overridden = 7;
+        // One wheel notch UP (step +1): 7 - 1 = 6, NOT 2 + 1 = 3.
+        let target = crate::hotbar::clamp_hotbar_offset(app.selection.hotbar as i32 - 1);
+        assert!(app.selection.select(app.selected, target, false));
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.selected, 6);
+        assert_eq!(app.selection.hotbar, 6);
+        // The wrap: notch up from 0 lands on 9 (`ClampHotbarOffset`,
+        // `:31895-31906`).
+        app.selection.hotbar = 0;
+        let target = crate::hotbar::clamp_hotbar_offset(-1);
+        assert!(app.selection.select(app.selected, target, false));
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.selected, 9);
+    }
+
+    #[test]
+    fn s1_p_i54_smart_select_overrides_to_the_pickaxe_and_restores() {
+        // `Player.cs:17417-17419` (the override arm) + `:17434-17460` (the
+        // lookup) + `:464-484` (the restore). LeftShift (`cTorch`) held
+        // over a stone tile picks the pickaxe; releasing restores.
+        let mut app = switch_app();
+        app.world = World::new("ss".into(), 40, 40);
+        let i = app.world.index(11, 10);
+        app.world.tiles[i] = Tile {
+            kind: 1, // stone
+            ..Default::default()
+        };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        let mut p = Player::spawn(&app.world);
+        p.x = 160.0;
+        p.y = 160.0;
+        app.player = Some(p);
+        app.inventory[5] = stocked(1, 1); // the Iron Pickaxe
+        // The mouse over tile (11, 10): camera at the player centre, the
+        // deterministic 1280x720 screen, zoom 1.
+        app.camera = Vec2::new(170.0, 181.0);
+        app.mouse_pos = Vec2::new(
+            640.0 + (11.0 * 16.0 + 8.0 - 170.0),
+            360.0 + (10.0 * 16.0 + 8.0 - 181.0),
+        );
+        app.keys.insert(KeyCode::ShiftLeft);
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.selected, 5, "the pickaxe overrides");
+        assert_eq!(app.selection.overridden, 0, "the old slot stored");
+        // Release LeftShift: the restore lands.
+        app.keys.remove(&KeyCode::ShiftLeft);
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.selected, 0, "the restore");
+        assert_eq!(app.selection.overridden, -1);
+    }
+
+    #[test]
+    fn s1_p_i54_quick_heal_drinks_the_best_potion_and_arms_the_sickness() {
+        // `Player.cs:5501-5547`: the H press heals, decrements, arms buff
+        // 21 at 3600 (`Item.potionDelay`, `Item.cs:49968`) and spawns the
+        // green number; NO swing (ItemCheck_TryStartUse only gates).
+        let mut app = switch_app();
+        app.inventory[4] = stocked(188, 3); // the Healing Potion, heal 100
+        {
+            let p = app.player.as_mut().unwrap();
+            p.hp = 50;
+            p.max_hp = 200;
+        }
+        app.keys.insert(KeyCode::KeyH);
+        update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.hp, 150, "the 100 heal landed");
+        let sick = p.buffs.find_buff_index(21).expect("the sickness armed");
+        // The port runs the quick action BEFORE the tick's `UpdateBuffs`
+        // head (the quick-mount convention), so the first decrement lands
+        // the same tick: 3600 - 1. The C# runs UpdateBuffs (`:24535`)
+        // before QuickHeal (`:24826`) — the one-tick offset is recorded
+        // in ANALYSIS "Hotbar/quick-switch (S1-P-i54)".
+        assert_eq!(p.buffs.buff_time[sick], 3599);
+        assert_eq!(app.inventory[4].count, 2, "the stack decremented");
+        assert_eq!(app.swing, 0.0, "no item animation on the quick drink");
+        assert!(
+            app.combat_texts.iter().any(|t| t.active),
+            "the HealEffect number spawned (:51929-51932)"
+        );
+        // The held key does not re-fire (the releaseQuickHeal latch,
+        // `:24822-24833`) — and the sickness gates it anyway (`:5503`).
+        let hp = p.hp;
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.player.as_ref().unwrap().hp, hp);
+        assert_eq!(app.inventory[4].count, 2);
+    }
+
+    #[test]
+    fn s1_p_i54_quick_heal_gates_on_full_life_and_sickness() {
+        // `Player.cs:5503` — the gate chain.
+        let mut app = switch_app();
+        app.inventory[0] = stocked(188, 3);
+        app.keys.insert(KeyCode::KeyH);
+        // Full life: no drink.
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.inventory[0].count, 3, "full life refuses");
+        // Sickness live: no drink even hurt.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.hp = 10;
+            p.buffs.add_buff(21, 100);
+        }
+        app.keys.remove(&KeyCode::KeyH);
+        update_player(&mut app, 1.0 / 60.0); // re-arm the release latch
+        app.keys.insert(KeyCode::KeyH);
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.inventory[0].count, 3, "the sickness refuses");
+        assert_eq!(app.player.as_ref().unwrap().hp, 10);
+    }
+
+    #[test]
+    fn s1_p_i54_quick_heal_mushroom_uses_the_1800_delay() {
+        // `ApplyPotionDelay` (`Player.cs:51875-51880`): the Mushroom (5)
+        // arms `mushroomDelayTime` = 1800 (`Item.cs:49971`), not 3600.
+        let mut app = switch_app();
+        app.inventory[0] = stocked(5, 2);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.hp = 100;
+            p.max_hp = 200;
+        }
+        app.keys.insert(KeyCode::KeyH);
+        update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.hp, 115, "the 15 heal");
+        let sick = p.buffs.find_buff_index(21).unwrap();
+        // 1800 - 1: the same-tick buff decrement (see the 3600 witness).
+        assert_eq!(p.buffs.buff_time[sick], 1799, "the mushroom delay");
+    }
+
+    #[test]
+    fn s1_p_i54_quick_heal_strange_brew_draws_sound_delay_heal_iframe() {
+        // RNG order (`UpdatePlayers`): the UseSound's case-2 draws FIRST
+        // (`Player.cs:5516`), then `Next(2400, 4201)` (`:51857`), then
+        // `Next(healLife, 121)` (`:51895`), then `NextFloat` (`:51898`).
+        // The witness mirrors the draws on a CLONE of the pristine stream.
+        let mut app = switch_app();
+        app.inventory[0] = stocked(3001, 2); // the Strange Brew, healLife 70
+        {
+            let p = app.player.as_mut().unwrap();
+            p.hp = 10;
+            p.max_hp = 200;
+        }
+        let mut expect = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        // Mirror `play_use_sound`'s case-2 rolls for the 3001 row's style.
+        let style = crate::soundid::SOUND_STYLES
+            [crate::item::initial_use_sound(3001).unwrap().0 as usize];
+        let mut roll = |lo: i32, hi: i32| expect.next_range(lo, hi);
+        let _ = crate::sound::item_use_case2(style.style, &mut roll);
+        let expected_delay = expect.next_range(2400, 4201);
+        let expected_heal = expect.next_range(70, 121);
+        let expected_iframe_roll = expect.next_float();
+        // The HealEffect's two position-jitter draws (`CombatText.cs:88-89`)
+        // follow — the witness does not assert them, but they must stay
+        // AFTER the heal rolls (the spawn runs last in `quick_heal`).
+        let _ = &mut expect; // the twin stream stays aligned for a future pin
+        app.keys.insert(KeyCode::KeyH);
+        update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        let sick = p.buffs.find_buff_index(21).unwrap();
+        // -1: the same-tick buff decrement (see the 3600 witness).
+        assert_eq!(p.buffs.buff_time[sick], expected_delay - 1, "the delay roll");
+        assert_eq!(p.hp, 10 + expected_heal, "the heal roll");
+        let expected_immune = if expected_iframe_roll <= 0.1 {
+            240
+        } else if expected_iframe_roll <= 0.3 {
+            120
+        } else if expected_iframe_roll <= 0.6 {
+            60
+        } else {
+            0
+        };
+        if expected_immune > 0 {
+            // -1: the same-tick `update_immunity` decrement (the port's
+            // quick action precedes the tick head — see the 3600 witness).
+            assert_eq!(p.immune_time, expected_immune - 1, "the i-frame ladder");
+        }
+    }
+
+    #[test]
+    fn s1_p_i54_quick_mount_plays_the_use_sound_without_a_swing() {
+        // `Player.cs:6086-6093` — the UseSound at base.Center after
+        // SetMount; `Mount.cs:6196-6305` never animates. The port's old
+        // swing/attack_cd arming was an invention (S1-P-i54 removed it).
+        let mut app = switch_app();
+        app.inventory[0] = stocked(2430, 1); // the Slimy Saddle
+        app.keys.insert(KeyCode::KeyR);
+        let before = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(app.player.as_ref().unwrap().mount.is_active());
+        assert_eq!(app.audio.played_count(), before + 1, "the saddle chime");
+        assert_eq!(app.swing, 0.0, "no swing on the quick mount");
+        assert_eq!(app.attack_cd, 0.0, "no attack cooldown either");
+    }
+
     /// M4-PROJ-8 phase 2 — the summon seam's tick-level behaviour: the recount
     /// (`Player.cs:25565`), the dead-path recount (`:24752-24753`) and the
     /// `UpdateEquips` cap rows (`:13258-13948`/`:15324-15329`).
@@ -2289,5 +2898,77 @@ mod tests {
             tick_ammo(&mut app);
             assert_eq!(app.player.as_ref().unwrap().max_minions, 1);
         }
+    }
+
+    // ---- S1-P-i37: the QuickMana key edge (WRITTEN NOT RUN) ----------------
+
+    /// S1-P-i37 — `Player.cs:24834-24845`: the `controlQuickMana` press edge
+    /// fires `QuickMana` once (the `releaseQuickMana` latch); holding the
+    /// key does not re-drink. The QuickHeal twin (`:24822-24833`) is the
+    /// i54 hotbar worker's seam — not duplicated here.
+    #[test]
+    fn s1_p_i37_the_quick_mana_key_drinks_once_per_press() {
+        let mut app = ammo_app();
+        app.inventory[7] = crate::item::ItemSlot {
+            kind: 110, // the Lesser Mana Potion (healMana 50)
+            name: "Lesser Mana Potion",
+            count: 5,
+            prefix: 0,
+        };
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana = 0;
+            p.mana_max = 200;
+            // S1-P-i49's per-tick rebase (`Player.cs:18389` statManaMax2 =
+            // statManaMax): the PERMANENT cap must carry the fixture's 200
+            // too, or ResetEffects rebases to the spawn default 20 and the
+            // second drink clamps away (gate V4 witness fix).
+            p.mana_max_base = 200;
+        }
+        // The silent listener: the use-sound draws nothing, the HealMana
+        // text's two jitter draws are the only stream spend.
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.keys.insert(KeyCode::KeyJ); // the default cMana bind
+        tick_ammo(&mut app);
+        // The press drank: 50 restored, plus at most a few regen points the
+        // same tick's UpdateManaRegen may add (the rig's bar started empty).
+        let mana_after = app.player.as_ref().unwrap().mana;
+        assert!(
+            (50..=60).contains(&mana_after),
+            "the press drank 50 (+regen), got {mana_after}"
+        );
+        assert_eq!(app.inventory[7].count, 4);
+        assert!(app
+            .player
+            .as_ref()
+            .unwrap()
+            .buffs
+            .find_buff_index(94)
+            .is_some());
+        // Held: the latch dropped, no second drink.
+        for _ in 0..30 {
+            tick_ammo(&mut app);
+        }
+        assert_eq!(app.inventory[7].count, 4, "one drink per press edge");
+        // Release + re-press: the latch re-arms, the second drink lands.
+        app.keys.remove(&KeyCode::KeyJ);
+        tick_ammo(&mut app);
+        let mana_before = app.player.as_ref().unwrap().mana;
+        app.keys.insert(KeyCode::KeyJ);
+        tick_ammo(&mut app);
+        assert_eq!(app.inventory[7].count, 3, "the re-press drank again");
+        let mana_now = app.player.as_ref().unwrap().mana;
+        assert!(
+            mana_now >= mana_before + 50,
+            "the second drink restored 50: {mana_before} -> {mana_now}"
+        );
     }
 }

@@ -684,16 +684,20 @@ fn ingredient_discount(
 pub(crate) const CHEST_RANGE_PX: f32 = 600.0;
 
 /// The world chest tiles the range scan counts (`GetChestsInRangeOf` walks
-/// `Main.chest[]` — the port scans the tile kinds instead): the chest (21)
-/// and the gold chest (341).
-pub(crate) const CHEST_TILES: [u16; 2] = [21, 341];
+/// `Main.chest[]` — the port scans the tile kinds instead): `TileID.Sets.
+/// BasicChest` = {21 `Containers`, 467 `Containers2`} (`TileID.cs:570`,
+/// `:671`/:1563). 341 is `LivingDemonFire` (`TileID.cs:1311`), a fire block,
+/// not a chest — the former `[21, 341]` pair never matched a real chest.
+pub(crate) const CHEST_TILES: [u16; 2] = [21, 467];
 
 /// The tile chests whose center is within [`CHEST_RANGE_PX`] of the player's
 /// feet (`GetChestsInRangeOf(player.position)`, `Recipe.cs:395`), in raster
 /// order (the vanilla iterates `Main.chest[]`'s instance order; the port has
 /// no instance registry — the deviation is recorded in `docs/ANALYSIS.md`).
-/// `Chest.IsLockedOrInUse` (`Chest.cs:178-188`) passes for every chest — the
-/// port has no chest locking (`M3-CHEST-UI`'s) and no other players browsing.
+/// The `!item2.chest.IsLockedOrInUse()` gate (`Recipe.cs:397`) drops locked
+/// chests and the chest another player is browsing — single-player: the
+/// local player's own open chest (`Chest.IsPlayerInChest`, `Chest.cs:178-188`,
+/// the port's `chest::is_locked_or_in_use` with `player.chest`).
 pub(crate) fn chests_in_range(
     world: &World,
     player: &Player,
@@ -726,31 +730,39 @@ pub(crate) fn chests_in_range(
             if dx * dx + dy * dy > CHEST_RANGE_PX * CHEST_RANGE_PX {
                 continue;
             }
-            if chests.iter().any(|c| c.tile == (i, j)) {
-                out.push(
-                    chests
-                        .iter()
-                        .position(|c| c.tile == (i, j))
-                        .expect("found above"),
-                );
+            if let Some(idx) = chests.iter().position(|c| c.tile == (i, j)) {
+                // `Recipe.cs:397`: the locked/in-use chest contributes nothing.
+                if crate::chest::is_locked_or_in_use(chests, world, idx, player.chest) {
+                    continue;
+                }
+                out.push(idx);
             }
         }
     }
     out
 }
 
-/// `Recipe.CollectItems` (`Recipe.cs:418-433`): the plain stack sums. The
+/// `Recipe.CollectItems` (`Recipe.cs:418-433`) over the **58 carry slots**
+/// (`CollectItemsToCraftWithFrom` → `CollectItems(player.inventory, 58)`,
+/// `Recipe.cs:369`): the 50-slot grid plus the four coin and four ammo slots the
+/// C# keeps in the same array (the port splits them into `EquipSlots::coins`/
+/// `ammo`). Coins are real ingredients (the coin-conversion rows 3200-3205) and
+/// ammo is too (the arrow/bullet rows), so the coin/ammo rows must count. The
 /// group folding is per requirement here (`Requirement::matches` semantics) —
-/// the C# folds every group into a fake id first
-/// (`AddFakeCountsForItemGroups`, `Recipe.cs:409-416`); both give the same
-/// per-requirement totals.
+/// the C# folds every group into a fake id first (`AddFakeCountsForItemGroups`,
+/// `Recipe.cs:409-416`); both give the same per-requirement totals.
 pub(crate) fn collect_owned(
     inv: &[ItemSlot; INV],
+    equip: &crate::inv::EquipSlots,
     chests: &[WorldChest],
     in_range: &[usize],
 ) -> HashMap<u16, u32> {
     let mut owned: HashMap<u16, u32> = HashMap::new();
-    for slot in inv.iter() {
+    for slot in inv
+        .iter()
+        .chain(equip.coins.iter())
+        .chain(equip.ammo.iter())
+    {
         if slot.count > 0 {
             *owned.entry(slot.kind).or_insert(0) += slot.count;
         }
@@ -816,6 +828,7 @@ pub(crate) fn craftable(
 /// list is gone; the classic pane shows craftable rows only.
 pub(crate) fn available(
     inv: &[ItemSlot; INV],
+    equip: &crate::inv::EquipSlots,
     chests: &[WorldChest],
     in_range: &[usize],
     adj: &Adjacent,
@@ -825,6 +838,7 @@ pub(crate) fn available(
 ) -> Vec<usize> {
     available_with_gates(
         inv,
+        equip,
         chests,
         in_range,
         adj,
@@ -843,6 +857,7 @@ pub(crate) fn available(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn available_with_gates(
     inv: &[ItemSlot; INV],
+    equip: &crate::inv::EquipSlots,
     chests: &[WorldChest],
     in_range: &[usize],
     adj: &Adjacent,
@@ -856,7 +871,7 @@ pub(crate) fn available_with_gates(
     if let Some(guide) = guide_item {
         return collect_guide_recipes(guide);
     }
-    let owned = collect_owned(inv, chests, in_range);
+    let owned = collect_owned(inv, equip, chests, in_range);
     RECIPES
         .iter()
         .enumerate()
@@ -891,18 +906,35 @@ fn count_kind(inv: &[ItemSlot; INV], kind: u16) -> u32 {
     inv.iter().filter(|s| s.kind == kind).map(|s| s.count).sum()
 }
 
-/// `CraftingRequests.ConsumeItemsFrom` (`CraftingRequests.cs:244-290`): one
-/// pass in slot-index order — partial decrement when `stack > toConsume`,
-/// otherwise the slot is cleared entirely.
-fn consume_kind(inv: &mut [ItemSlot; INV], kind: u16, to_consume: &mut u32) {
+/// `CraftingRequests.ConsumeItemsFrom` (`CraftingRequests.cs:244-290`) over the
+/// **58 carry slots** (`Consume` → `ConsumeItemsFrom(Main.LocalPlayer.inventory,
+/// 58, …)`, `CraftingRequests.cs:227`): the 50-slot grid, then the four coin and
+/// four ammo slots, in that index order (the C# array order 0..57). One flat
+/// pass matching `RequiredItemEntry.Matches` (`Recipe.cs:36-43` — the authored
+/// item, or any member of the accepted group) — partial decrement when
+/// `stack > toConsume`, otherwise the slot is cleared to air in place
+/// (`inventory[i] = new Item()`, `:280`). A group entry drains whichever member
+/// the slots hold FIRST, mixing members by slot position exactly as the C# does
+/// (the former per-member walk emptied all of member[0] before member[1]
+/// regardless of slot order — a different slot walk).
+fn consume_inv(
+    inv: &mut [ItemSlot; INV],
+    equip: &mut crate::inv::EquipSlots,
+    req: &Requirement,
+    to_consume: &mut u32,
+) {
     if *to_consume == 0 {
         return;
     }
-    for slot in inv.iter_mut() {
+    for slot in inv
+        .iter_mut()
+        .chain(equip.coins.iter_mut())
+        .chain(equip.ammo.iter_mut())
+    {
         if *to_consume == 0 {
             break;
         }
-        if slot.kind == kind && slot.count > 0 {
+        if slot.count > 0 && req.matches(slot.kind) {
             if slot.count > *to_consume {
                 slot.count -= *to_consume;
                 *to_consume = 0;
@@ -947,22 +979,24 @@ fn consume_chest(slots: &mut Vec<ItemSlot>, req: &Requirement, to_consume: &mut 
 }
 
 /// All requirements met: the ingredients (groups fold their members) counted
-/// across the inventory and the in-range chests, plus the environment.
+/// across the 58 carry slots and the in-range chests, plus the environment.
 pub(crate) fn can_craft(
     inv: &[ItemSlot; INV],
+    equip: &crate::inv::EquipSlots,
     chests: &[WorldChest],
     in_range: &[usize],
     recipe: &Recipe,
     adj: &Adjacent,
     zones: &Zones,
 ) -> bool {
-    can_craft_with_gates(inv, chests, in_range, recipe, adj, zones, &Gates::default())
+    can_craft_with_gates(inv, equip, chests, in_range, recipe, adj, zones, &Gates::default())
 }
 
 /// [`can_craft`] plus the two world/player gates (`Recipe.CanCraft`,
 /// `Recipe.cs:349-356`).
 pub(crate) fn can_craft_with_gates(
     inv: &[ItemSlot; INV],
+    equip: &crate::inv::EquipSlots,
     chests: &[WorldChest],
     in_range: &[usize],
     recipe: &Recipe,
@@ -973,7 +1007,7 @@ pub(crate) fn can_craft_with_gates(
     if !gates_allow(recipe, gates) {
         return false;
     }
-    let owned = collect_owned(inv, chests, in_range);
+    let owned = collect_owned(inv, equip, chests, in_range);
     craftable(recipe, &owned, adj, zones)
 }
 
@@ -1036,6 +1070,7 @@ pub(crate) fn create_result(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn try_craft_qty(
     inv: &mut [ItemSlot; INV],
+    equip: &mut crate::inv::EquipSlots,
     chests: &mut [WorldChest],
     in_range: &[usize],
     recipe: &Recipe,
@@ -1061,7 +1096,7 @@ pub(crate) fn try_craft_qty(
             }
         }
         match try_craft(
-            inv, chests, in_range, recipe, adj, zones, gates, craft_rng, prefix_rng,
+            inv, equip, chests, in_range, recipe, adj, zones, gates, craft_rng, prefix_rng,
         ) {
             Some(made) => {
                 if made.count == 0 {
@@ -1091,6 +1126,7 @@ fn result_fits_next(previous: &CreatedItem, recipe: &Recipe) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn try_craft(
     inv: &mut [ItemSlot; INV],
+    equip: &mut crate::inv::EquipSlots,
     chests: &mut [WorldChest],
     in_range: &[usize],
     recipe: &Recipe,
@@ -1100,7 +1136,7 @@ pub(crate) fn try_craft(
     craft_rng: &mut UnifiedRandom,
     prefix_rng: &mut impl crate::prefix::PrefixRandom,
 ) -> Option<CreatedItem> {
-    if !can_craft_with_gates(inv, chests, in_range, recipe, adj, zones, gates) {
+    if !can_craft_with_gates(inv, equip, chests, in_range, recipe, adj, zones, gates) {
         return None;
     }
     for req in recipe.required {
@@ -1108,20 +1144,11 @@ pub(crate) fn try_craft(
         // comes off the consumed stack (availability counts full stacks).
         let discount = ingredient_discount(recipe.alchemy, adj.alchemy_table, req.stack, craft_rng);
         let mut to_consume = req.stack - discount;
-        // The inventory pass (`Main.LocalPlayer.inventory`, 58 slots). A
-        // group entry drains whichever member the slots hold first.
-        if req.group != NO_GROUP {
-            if let Some(g) = group(req.group) {
-                for m in g.members {
-                    if to_consume == 0 {
-                        break;
-                    }
-                    consume_kind(inv, *m, &mut to_consume);
-                }
-            }
-        } else {
-            consume_kind(inv, req.item, &mut to_consume);
-        }
+        // The inventory pass (`Main.LocalPlayer.inventory`, 58 slots — grid +
+        // coins + ammo): one flat slot-order pass matching `Matches` — a group
+        // entry drains whichever member the slots hold first, mixing members
+        // by slot position (`ConsumeItemsFrom`, `CraftingRequests.cs:258-290`).
+        consume_inv(inv, equip, req, &mut to_consume);
         // The chest passes (`foreach (Chest chest in Recipe._recipeChests)`).
         for &i in in_range {
             if to_consume == 0 {
@@ -1212,6 +1239,13 @@ mod tests {
             lava: false,
             alchemy_table: false,
         }
+    }
+
+    /// The empty coin/ammo/equipment rows — the craft tests' ingredients all
+    /// live in the 50-slot grid, so the coin/ammo half of the 58 carry slots
+    /// stays air (`EquipSlots::empty`, `inv.rs`).
+    fn empty_equip() -> crate::inv::EquipSlots {
+        crate::inv::EquipSlots::empty()
     }
 
     fn world_with_station(kind: u16, x: i32, y: i32) -> World {
@@ -1424,23 +1458,23 @@ mod tests {
         let adj = dry_adj();
         let wb = recipe_by_create(36);
         let inv = inv_with(&[(9, 10)]);
-        assert!(can_craft(&inv, &[], &[], wb, &adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], wb, &adj, &zones));
         // Not enough wood -> false. Rich Mahogany (619) does NOT substitute -
         // the bench row has no group (`Recipe.cs:4751-4754`).
         let inv = inv_with(&[(9, 9)]);
-        assert!(!can_craft(&inv, &[], &[], wb, &adj, &zones));
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], wb, &adj, &zones));
         let inv = inv_with(&[(619, 10)]);
-        assert!(!can_craft(&inv, &[], &[], wb, &adj, &zones));
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], wb, &adj, &zones));
         // The group substitute lives on the rows that carry RequireGroup -
         // the torch (1 Gel + 1 of any wood, `Recipe.cs:610-615`).
         let torch = recipe_by_create(8);
         let inv = inv_with(&[(23, 1), (9, 1)]);
-        assert!(can_craft(&inv, &[], &[], torch, &adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], torch, &adj, &zones));
         let inv = inv_with(&[(23, 1), (619, 1)]);
-        assert!(can_craft(&inv, &[], &[], torch, &adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], torch, &adj, &zones));
         // 1 gel + a mix of two woods: the group fold reaches 1.
         let inv = inv_with(&[(23, 1)]);
-        assert!(!can_craft(&inv, &[], &[], torch, &adj, &zones));
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], torch, &adj, &zones));
     }
 
     #[test]
@@ -1450,21 +1484,21 @@ mod tests {
         let mut adj = dry_adj();
         let inv = inv_with(&[(31, 1)]);
         let water = recipe_by_create(126);
-        assert!(!can_craft(&inv, &[], &[], water, &adj, &zones), "needWater");
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], water, &adj, &zones), "needWater");
         adj.water = true;
-        assert!(can_craft(&inv, &[], &[], water, &adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], water, &adj, &zones));
         // The honey bottle needs honey, not water.
         let honey = recipe_by_create(1134);
-        assert!(!can_craft(&inv, &[], &[], honey, &adj, &zones));
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], honey, &adj, &zones));
         adj.honey = true;
-        assert!(can_craft(&inv, &[], &[], honey, &adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], honey, &adj, &zones));
         // The lava bomb: lava only.
         let lava_bomb = recipe_by_create(4825);
         let inv = inv_with(&[(4827, 1)]);
         adj.honey = false;
-        assert!(!can_craft(&inv, &[], &[], lava_bomb, &adj, &zones));
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], lava_bomb, &adj, &zones));
         adj.lava = true;
-        assert!(can_craft(&inv, &[], &[], lava_bomb, &adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], lava_bomb, &adj, &zones));
         // The snow cloud: the Sky Mill + the snow zone, both required.
         let snow = recipe_by_create(3756);
         let mut snow_adj = Adjacent {
@@ -1476,17 +1510,17 @@ mod tests {
         };
         let inv = inv_with(&[(751, 1)]);
         assert!(
-            !can_craft(&inv, &[], &[], snow, &snow_adj, &zones),
+            !can_craft(&inv, &empty_equip(), &[], &[], snow, &snow_adj, &zones),
             "no snow zone"
         );
         let zones = Zones {
             snow: true,
             graveyard: false,
         };
-        assert!(can_craft(&inv, &[], &[], snow, &snow_adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], snow, &snow_adj, &zones));
         snow_adj.tiles = vec![18];
         assert!(
-            !can_craft(&inv, &[], &[], snow, &snow_adj, &zones),
+            !can_craft(&inv, &empty_equip(), &[], &[], snow, &snow_adj, &zones),
             "no Sky Mill"
         );
         // The graveyard shelf: the Bone Welder (300) + the graveyard zone.
@@ -1503,12 +1537,12 @@ mod tests {
             snow: false,
             graveyard: false,
         };
-        assert!(!can_craft(&inv, &[], &[], shelf, &gy_adj, &zones));
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], shelf, &gy_adj, &zones));
         let zones = Zones {
             snow: false,
             graveyard: true,
         };
-        assert!(can_craft(&inv, &[], &[], shelf, &gy_adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], shelf, &gy_adj, &zones));
     }
 
     #[test]
@@ -1562,12 +1596,14 @@ mod tests {
                 slots: vec![chest_slot(9, 20)],
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
             WorldChest {
                 tile: (42, 40),
                 slots: Vec::new(),
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
@@ -1593,6 +1629,7 @@ mod tests {
             slots: vec![chest_slot(9, 6), chest_slot(619, 4)],
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 in the inventory + 10 in the chest.
@@ -1601,6 +1638,7 @@ mod tests {
         let zones = Zones::default();
         assert!(can_craft(
             &inv,
+            &empty_equip(),
             &chests,
             &in_range,
             recipe_by_create(36),
@@ -1612,6 +1650,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &in_range,
                 recipe_by_create(36),
@@ -1650,6 +1689,7 @@ mod tests {
             slots: vec![chest_slot(9, 6)],
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 from the inventory drain the chest
@@ -1661,6 +1701,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &in_range,
                 recipe_by_create(36),
@@ -1704,12 +1745,14 @@ mod tests {
                 slots: vec![chest_slot(9, 20)],
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
             WorldChest {
                 tile: (60, 60),
                 slots: Vec::new(),
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
@@ -1730,14 +1773,15 @@ mod tests {
             slots: vec![chest_slot(9, 20)],
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }];
         let inv = inv_with(&[(9, 4)]);
         let adj = dry_adj();
         let zones = Zones::default();
         let wb = recipe_by_create(36);
-        let owned_off = collect_owned(&inv, &chests, &chests_in_range(&w, &p, &chests, false));
+        let owned_off = collect_owned(&inv, &empty_equip(), &chests, &chests_in_range(&w, &p, &chests, false));
         assert!(!craftable(wb, &owned_off, &adj, &zones));
-        let owned_on = collect_owned(&inv, &chests, &chests_in_range(&w, &p, &chests, true));
+        let owned_on = collect_owned(&inv, &empty_equip(), &chests, &chests_in_range(&w, &p, &chests, true));
         assert!(craftable(wb, &owned_on, &adj, &zones));
     }
 
@@ -1754,14 +1798,14 @@ mod tests {
         let zones = Zones::default();
         // 16 wood: the work bench (10) is craftable, the door (6) too.
         let inv = inv_with(&[(9, 16)]);
-        let av = available(&inv, &[], &[], &adj, &zones, None, None);
+        let av = available(&inv, &empty_equip(), &[], &[], &adj, &zones, None, None);
         assert!(av.iter().any(|&i| RECIPES[i].create.0 == 36));
         assert!(av.iter().any(|&i| RECIPES[i].create.0 == 25));
         // The water bottle is not: no water, no bottle.
         assert!(!av.iter().any(|&i| RECIPES[i].create.0 == 126));
         // 9 wood: the bench drops off the list.
         let inv = inv_with(&[(9, 9)]);
-        let av = available(&inv, &[], &[], &adj, &zones, None, None);
+        let av = available(&inv, &empty_equip(), &[], &[], &adj, &zones, None, None);
         assert!(!av.iter().any(|&i| RECIPES[i].create.0 == 36));
     }
 
@@ -1805,6 +1849,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 lhp,
@@ -1846,6 +1891,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 lhp,
@@ -1892,6 +1938,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 wb,
@@ -1968,7 +2015,7 @@ mod tests {
         let adj = dry_adj();
         let inv = inv_with(&[(11, 3)]);
         let bar = recipe_by_create(22);
-        assert!(!can_craft(&inv, &[], &[], bar, &adj, &zones));
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], bar, &adj, &zones));
         let furnace = Adjacent {
             tiles: vec![17],
             water: false,
@@ -1976,11 +2023,12 @@ mod tests {
             lava: false,
             alchemy_table: false,
         };
-        assert!(can_craft(&inv, &[], &[], bar, &furnace, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], bar, &furnace, &zones));
         // Empty inventory: cannot craft anything.
         let inv = [crate::item::EMPTY_SLOT; INV];
         assert!(!can_craft(
             &inv,
+            &empty_equip(),
             &[],
             &[],
             recipe_by_create(36),
@@ -1990,10 +2038,10 @@ mod tests {
         // Two different ingredients at once (torch: gel + wood).
         let mut inv = inv_with(&[(23, 1)]);
         let torch = recipe_by_create(8);
-        assert!(!can_craft(&inv, &[], &[], torch, &adj, &zones));
+        assert!(!can_craft(&inv, &empty_equip(), &[], &[], torch, &adj, &zones));
         slot_for_pickup(&mut inv, 9, 0);
         inv.iter_mut().find(|s| s.kind == 9).unwrap().count = 1;
-        assert!(can_craft(&inv, &[], &[], torch, &adj, &zones));
+        assert!(can_craft(&inv, &empty_equip(), &[], &[], torch, &adj, &zones));
     }
 
     #[test]
@@ -2019,6 +2067,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 wb,
@@ -2050,6 +2099,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 recipe_by_create(36),
@@ -2075,12 +2125,13 @@ mod tests {
             alchemy_table: false,
         };
         assert!(
-            !can_craft(&inv, &[], &[], door, &adj, &zones),
+            !can_craft(&inv, &empty_equip(), &[], &[], door, &adj, &zones),
             "no station adjacent yet"
         );
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 door,
@@ -2102,6 +2153,7 @@ mod tests {
         let mut inv = inv_with(&[(9, 8)]);
         assert!(!can_craft(
             &inv,
+            &empty_equip(),
             &[],
             &[],
             recipe_by_create(48),
@@ -2110,7 +2162,7 @@ mod tests {
         ));
         let mut inv = inv_with(&[(9, 8), (704, 2)]);
         assert!(
-            can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones),
+            can_craft(&inv, &empty_equip(), &[], &[], recipe_by_create(48), &bench, &zones),
             "Lead Bar is IronBar"
         );
     }
@@ -2155,12 +2207,13 @@ mod tests {
         // Chain: one Lead Bar (the IronBar group) makes 15 — the anvil gates it.
         let mut inv = inv_with(&[(704, 1)]);
         assert!(
-            !can_craft(&inv, &[], &[], recipe_by_create(85), &bench, &zones),
+            !can_craft(&inv, &empty_equip(), &[], &[], recipe_by_create(85), &bench, &zones),
             "anvil required"
         );
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 recipe_by_create(85),
@@ -2179,12 +2232,13 @@ mod tests {
         // The sawmill: wood + iron bars + the fresh chain, at the work bench.
         let mut inv = inv_with(&[(9, 10), (704, 2), (85, 1)]);
         assert!(
-            !can_craft(&inv, &[], &[], recipe_by_create(363), &anvil, &zones),
+            !can_craft(&inv, &empty_equip(), &[], &[], recipe_by_create(363), &anvil, &zones),
             "work bench required"
         );
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 recipe_by_create(363),
@@ -2205,6 +2259,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 recipe_by_create(332),
@@ -2224,6 +2279,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 recipe_by_create(171),
@@ -2245,6 +2301,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 recipe_by_create(345),
@@ -2262,12 +2319,13 @@ mod tests {
         );
         let mut inv = inv_with(&[(133, 2)]);
         assert!(
-            !can_craft(&inv, &[], &[], recipe_by_create(356), &bench, &zones),
+            !can_craft(&inv, &empty_equip(), &[], &[], recipe_by_create(356), &bench, &zones),
             "furnace required"
         );
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 recipe_by_create(356),
@@ -2287,6 +2345,7 @@ mod tests {
         assert_eq!(
             try_craft(
                 &mut inv,
+                &mut empty_equip(),
                 &mut chests,
                 &[],
                 recipe_by_create(105),
@@ -2429,6 +2488,7 @@ mod tests {
         assert!(
             !can_craft_with_gates(
                 &inv,
+                &empty_equip(),
                 &[],
                 &[],
                 torch_potion,
@@ -2441,6 +2501,7 @@ mod tests {
         assert!(
             can_craft_with_gates(
                 &inv,
+                &empty_equip(),
                 &[],
                 &[],
                 torch_potion,
@@ -2463,12 +2524,13 @@ mod tests {
             alchemy_table: false,
         };
         assert!(
-            !can_craft_with_gates(&inv, &[], &[], mechdusa, &adj, &zones, &Gates::default()),
+            !can_craft_with_gates(&inv, &empty_equip(), &[], &[], mechdusa, &adj, &zones, &Gates::default()),
             "the Mechdusa seed is off"
         );
         assert!(
             can_craft_with_gates(
                 &inv,
+                &empty_equip(),
                 &[],
                 &[],
                 mechdusa,
@@ -2508,6 +2570,7 @@ mod tests {
         let mut chests: Vec<WorldChest> = Vec::new();
         let made = try_craft_qty(
             &mut inv,
+            &mut empty_equip(),
             &mut chests,
             &[],
             recipe_by_create(1),
@@ -2525,6 +2588,7 @@ mod tests {
         let mut prefix_rng = UnifiedRandom::new(4);
         let made = try_craft_qty(
             &mut inv,
+            &mut empty_equip(),
             &mut chests,
             &[],
             recipe_by_create(8),
@@ -2574,7 +2638,7 @@ mod tests {
         inv[1] = ItemSlot { kind: 68, count: 8, ..crate::item::EMPTY_SLOT };
         let adj = test_adj(&[]);
         let zones = Zones::default();
-        let plain = available(&inv, &[], &[], &test_adj(&[17, 96]), &zones, None, None);
+        let plain = available(&inv, &empty_equip(), &[], &[], &test_adj(&[17, 96]), &zones, None, None);
         let anvil_row = row_with_create(2243);
         let lasagna_row = row_with_create(5092);
         assert!(plain.contains(&anvil_row) && plain.contains(&lasagna_row));
@@ -2582,7 +2646,7 @@ mod tests {
         // (`this.AdjTiles()`, `Player.cs:33282`), the anvil row stays, the
         // 96 row drops.
         let f17 = CraftingFilter::Station { tile: 17 };
-        let av17 = available(&inv, &[], &[], &test_adj(&[17]), &zones, Some(&f17), None);
+        let av17 = available(&inv, &empty_equip(), &[], &[], &test_adj(&[17]), &zones, Some(&f17), None);
         assert!(av17.contains(&anvil_row), "the 17 row survives its own click");
         assert!(!av17.contains(&lasagna_row), "the 96 row drops under the 17 click");
         for &i in &av17 {
@@ -2592,7 +2656,7 @@ mod tests {
         }
         // Clicking the 96 station mirrors it.
         let f96 = CraftingFilter::Station { tile: 96 };
-        let av96 = available(&inv, &[], &[], &test_adj(&[96]), &zones, Some(&f96), None);
+        let av96 = available(&inv, &empty_equip(), &[], &[], &test_adj(&[96]), &zones, Some(&f96), None);
         assert!(av96.contains(&lasagna_row));
         assert!(!av96.contains(&anvil_row));
     }
@@ -2612,7 +2676,7 @@ mod tests {
         adj.water = true;
         let zones = Zones::default();
         let f = CraftingFilter::WaterSource { tile: 172 };
-        let av = available(&inv, &[], &[], &adj, &zones, Some(&f), None);
+        let av = available(&inv, &empty_equip(), &[], &[], &adj, &zones, Some(&f), None);
         assert!(!av.is_empty(), "the water recipes exist");
         for &i in &av {
             assert!(RECIPES[i].need_water, "row {i} is a needWater row");
@@ -2620,7 +2684,7 @@ mod tests {
         // Without the water adjacency the same rows fail the environment
         // gate (`PlayerMeetsEnvironmentConditions`, `Recipe.cs:247`).
         let adj_off = test_adj(&[]);
-        let av_dry = available(&inv, &[], &[], &adj_off, &zones, Some(&f), None);
+        let av_dry = available(&inv, &empty_equip(), &[], &[], &adj_off, &zones, Some(&f), None);
         assert!(av_dry.is_empty(), "no water adjacency - no water recipes");
     }
 
@@ -2633,7 +2697,7 @@ mod tests {
         let inv = [crate::item::EMPTY_SLOT; INV];
         let adj = test_adj(&[]);
         let zones = Zones::default();
-        let guided = available(&inv, &[], &[], &adj, &zones, None, Some(170));
+        let guided = available(&inv, &empty_equip(), &[], &[], &adj, &zones, None, Some(170));
         let anvil_row = row_with_create(2243);
         assert!(guided.contains(&anvil_row), "the 170 row names the guide item");
         assert!(guided
@@ -2642,7 +2706,7 @@ mod tests {
             "every row names the guide item");
         // The C#'s `Main.InGuideCraftMenu && guideItem.IsAir` arm
         // (`NewCraftingUI.cs:256-258`) yields an empty list.
-        let air = available(&inv, &[], &[], &adj, &zones, None, Some(0));
+        let air = available(&inv, &empty_equip(), &[], &[], &adj, &zones, None, Some(0));
         assert!(air.is_empty());
     }
 
@@ -2675,5 +2739,182 @@ mod tests {
             ..crate::item::EMPTY_SLOT
         };
         inv
+    }
+
+    // --- S1-P-i46: the craft USE machinery census fixes -------------------
+    // (recipe availability / ingredient consume / the nearby-chest scan).
+    // Each witness pins one verbatim C# behaviour the census found wrong.
+
+    /// WRONG A — the nearby-chest scan's tile kinds are `TileID.Sets.
+    /// BasicChest` = {21 Containers, 467 Containers2} (`TileID.cs:570`,
+    /// `:671`/:1563). 341 is `LivingDemonFire` (`TileID.cs:1311`), a fire
+    /// block, not a chest — the former `[21, 341]` pair never matched a real
+    /// chest. `GetChestsInRangeOf` walks `Main.chest[]` (`NearbyChests.cs:18-28`),
+    /// whose world-chest tiles are exactly the BasicChest pair.
+    #[test]
+    fn the_nearby_scan_matches_the_basic_chest_tile_kinds() {
+        assert_eq!(CHEST_TILES, [21, 467], "TileID.Sets.BasicChest (TileID.cs:570)");
+        let mut w = World::new("t".into(), 120, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 40.0 * 16.0;
+        p.y = 40.0 * 16.0;
+        // A Containers2 (467) chest tile in reach, and a LivingDemonFire (341)
+        // tile beside it — the fire is NOT a chest and must not answer.
+        for (x, kind) in [(45i32, 467u16), (46, 341)] {
+            let i = w.index(x, 45);
+            w.tiles[i].kind = kind;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let chests = vec![
+            WorldChest {
+                tile: (45, 45),
+                slots: vec![chest_slot(9, 20)],
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            },
+            WorldChest {
+                tile: (46, 45),
+                slots: vec![chest_slot(9, 20)],
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            },
+        ];
+        let found = chests_in_range(&w, &p, &chests, true);
+        assert_eq!(found.len(), 1, "only the 467 chest answers, not the 341 fire");
+        assert_eq!(chests[found[0]].tile, (45, 45));
+    }
+
+    /// WRONG B — the ingredient drain is one flat slot-order pass matching
+    /// `RequiredItemEntry.Matches` (`ConsumeItemsFrom`,
+    /// `CraftingRequests.cs:258-290`), NOT a per-member walk. When member[1]
+    /// (RichMahogany 619) sits in an EARLIER slot than member[0] (Wood 9), the
+    /// C# drains the earlier slot first; the former per-member walk drained all
+    /// of member[0] (Wood) before touching member[1], emptying the wrong slots.
+    #[test]
+    fn the_group_drain_walks_slots_in_index_order_not_members() {
+        // The torch (8): 1 Gel + 1 of any wood (`Recipe.cs:610-615`, the Wood
+        // group). Stock: slot1 RichMahogany x5 (member[1]) FIRST, slot2 Wood x5
+        // (member[0]) SECOND. Craft two torches -> need 2 wood.
+        let mut inv = [crate::item::EMPTY_SLOT; INV];
+        inv[0] = chest_slot(23, 2); // Gel
+        inv[1] = chest_slot(619, 5); // RichMahogany (member[1]) FIRST
+        inv[2] = chest_slot(9, 5); // Wood (member[0]) SECOND
+        let mut equip = empty_equip();
+        let mut chests: Vec<WorldChest> = Vec::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut prefix_rng = UnifiedRandom::new(2);
+        let made = try_craft_qty(
+            &mut inv,
+            &mut equip,
+            &mut chests,
+            &[],
+            recipe_by_create(8),
+            &dry_adj(),
+            &Zones::default(),
+            &Gates::default(),
+            &mut rng,
+            &mut prefix_rng,
+            2,
+        );
+        assert_eq!(made.len(), 2);
+        // Slot-order: slot1 RichMahogany drains 2 (leaves 3), slot2 Wood untouched.
+        assert_eq!(count_kind(&inv, 619), 3, "the FIRST slot (RichMahogany) drained");
+        assert_eq!(count_kind(&inv, 9), 5, "the later Wood slot untouched");
+        // The per-member walk would have drained Wood (member[0]) first,
+        // leaving RichMahogany x5 + Wood x3 — the opposite.
+    }
+
+    /// WRONG C — the nearby scan drops the locked / in-use chest
+    /// (`Recipe.cs:397` `!item2.chest.IsLockedOrInUse()`). A locked chest
+    /// (the golden-key frame band, `Chest.IsLocked` `Chest.cs:307`) contributes
+    /// nothing even when in range.
+    #[test]
+    fn the_nearby_scan_drops_a_locked_chest() {
+        let mut w = World::new("t".into(), 120, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 40.0 * 16.0;
+        p.y = 40.0 * 16.0;
+        // Two chest tiles in reach: (45,45) unlocked, (47,45) locked (the
+        // frameX 72..106 golden-lock band, `Chest.cs:307`).
+        for x in [45i32, 47] {
+            let i = w.index(x, 45);
+            w.tiles[i].kind = 21;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let li = w.index(47, 45);
+        w.tiles[li].frame_x = 72; // locked
+        let chests = vec![
+            WorldChest {
+                tile: (45, 45),
+                slots: vec![chest_slot(9, 20)],
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            },
+            WorldChest {
+                tile: (47, 45),
+                slots: vec![chest_slot(9, 20)],
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            },
+        ];
+        let found = chests_in_range(&w, &p, &chests, true);
+        assert_eq!(found.len(), 1, "the locked chest is excluded");
+        assert_eq!(chests[found[0]].tile, (45, 45));
+    }
+
+    /// WRONG D — the ingredient collection/consumption spans the **58 carry
+    /// slots** (`CollectItems(player.inventory, 58)`, `Recipe.cs:369`;
+    /// `ConsumeItemsFrom(Main.LocalPlayer.inventory, 58, …)`,
+    /// `CraftingRequests.cs:227`): the 50-slot grid PLUS the four coin and four
+    /// ammo slots. The coin-conversion rows (`Recipe.cs:15121-15147`, e.g.
+    /// 100 CopperCoin -> 1 SilverCoin) need coins that live in the dedicated
+    /// coin slots, which the former 50-slot-only craft never saw.
+    #[test]
+    fn the_coin_conversion_crafts_from_the_coin_slots() {
+        // 100 CopperCoin (71) -> 1 SilverCoin (72), by hand (`Recipe.cs:15126-15129`).
+        let silver = recipe_by_create(72);
+        assert_eq!(silver.required[0].item, 71);
+        assert_eq!(silver.required[0].stack, 100);
+        assert!(silver.stations.is_empty(), "by hand");
+        // The grid is empty; 100 copper sits in the FIRST coin slot.
+        let inv = [crate::item::EMPTY_SLOT; INV];
+        let mut equip = empty_equip();
+        equip.coins[0] = chest_slot(71, 100);
+        let adj = dry_adj();
+        let zones = Zones::default();
+        assert!(
+            can_craft(&inv, &equip, &[], &[], silver, &adj, &zones),
+            "the coin slot counts toward the recipe"
+        );
+        // And the craft drains the coin slot.
+        let mut inv = inv;
+        let mut chests: Vec<WorldChest> = Vec::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut prefix_rng = UnifiedRandom::new(2);
+        let made = try_craft(
+            &mut inv,
+            &mut equip,
+            &mut chests,
+            &[],
+            silver,
+            &adj,
+            &zones,
+            &Gates::default(),
+            &mut rng,
+            &mut prefix_rng,
+        );
+        assert_eq!(made, Some(CreatedItem { kind: 72, count: 1, prefix: 0 }));
+        assert_eq!(equip.coins[0].count, 0, "the copper drained from the coin slot");
+        // With the copper ONLY in the grid the craft still works (the grid is
+        // part of the 58); with it nowhere the recipe is unavailable.
+        let equip2 = empty_equip();
+        let inv2 = inv_with(&[(71, 100)]);
+        assert!(can_craft(&inv2, &equip2, &[], &[], silver, &adj, &zones));
+        let inv3 = [crate::item::EMPTY_SLOT; INV];
+        assert!(!can_craft(&inv3, &equip2, &[], &[], silver, &adj, &zones));
     }
 }

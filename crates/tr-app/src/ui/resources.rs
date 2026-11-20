@@ -532,7 +532,8 @@ pub(crate) fn draw_buff_hover(
 /// `DrawInterface_Resources_Buffs` (`:43203-43250`). The icons tint by the
 /// per-slot alpha (`Main.buffAlpha` — the port's `buff_alpha`), the hover
 /// raises it 0.1 and the rest decays 0.05 clamped to [0.4, 1]; the
-/// right-click-release pushes the slot onto `removals` (the C# removes in
+/// right-click (`Main.mouseRight && Main.mouseRightRelease`, `:43333`)
+/// pushes the slot onto `removals` (the C# removes in
 /// the draw — the port drains the request in the tick). The icon text is the
 /// `BuffID.Sets.BuffTextHandlers` counter when the buff has one
 /// (`:43317-43320`), else the duration when over 2 ticks (`:43321-43324`).
@@ -546,7 +547,10 @@ pub fn draw_buffs(
     player: &Player,
     buff_alpha: &mut [f32; crate::buffs::MAX_BUFFS],
     mouse: Vec2,
-    right_release: bool,
+    // `Main.mouseRight && Main.mouseRightRelease` (`Main.cs:43333`) — the
+    // cancel needs BOTH the held state and the release latch; the port used
+    // to pass the bare edge, which fired on release-while-held frames too.
+    right_click: bool,
     removals: &mut Vec<usize>,
     vampire_seed: bool,
 ) -> Option<usize> {
@@ -582,12 +586,13 @@ pub fn draw_buffs(
         if let Some(text) = text {
             crate::ui::text::hud_text(r, lookups, x, y + h, 0.85, [1.0; 4], &text);
         }
-        // The hover + the right-click removal (`:43328-43349`). The C#'s
+        // The hover + the right-click removal (`:43329-43349`). The C#'s
         // `!PlayerInput.IgnoreMouseInterface` gate has no port counterpart.
         if mouse.x < x + w && mouse.y < y + h && mouse.x > x && mouse.y > y {
             hovered = Some(i);
             buff_alpha[i] += 0.1;
-            if right_release {
+            // `:43333` — `Main.mouseRight && Main.mouseRightRelease`.
+            if right_click {
                 removals.push(i);
             }
         } else {
