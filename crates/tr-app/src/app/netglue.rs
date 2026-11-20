@@ -611,11 +611,15 @@ impl App {
                     return; // `num254 > -1` (`:1877`)
                 };
                 // `Chest.UsingChest(num254) == -1` (`:1877`): nobody else is
-                // browsing it. The port's other players are the remote slots.
+                // browsing it. The C# scans ALL active players (`Chest.cs:
+                // 502-508`) — the host's own local player (slot 0) included;
+                // the port checks the remote slots AND the host's open chest
+                // (S1-I-1 wave I — the local-player half was missing).
                 if self
                     .remote_players
                     .values()
                     .any(|p| p.chest == Some(chest_idx as i16))
+                    || self.player.as_ref().is_some_and(|p| p.chest == chest_idx as i32)
                 {
                     return;
                 }
@@ -678,6 +682,12 @@ impl App {
                 crate::chest::set_chest_slot(&mut self.world_chests, idx as usize, slot, value);
                 server.broadcast_except(&S2c::ChestItem(ci), id); // `:1915`
             }
+            // S1-I-1 wave I: `case 34`'s bodies + codecs exist (`net.rs`);
+            // the host's `PlaceChest`/`KillTile` pass + the `34` relays
+            // (`MessageBuffer.cs:1995-2122`) ride the tile-edit send-path
+            // pass (S1-I-4) — the port's chest place/break already runs
+            // through `world_sim/editing.rs`'s local edit chain.
+            C2s::ChestUpdates(_) => {}
             // `case 33` — the open chest / its rename (`MessageBuffer.cs:1920-1982`).
             C2s::PlayerChest(pc) => {
                 if pc.name_len != 0 {
@@ -1844,6 +1854,41 @@ impl App {
                     }
                 }
             }
+            // `case 81` — a peer's heal number (S1-I-1 wave I,
+            // `MessageBuffer.cs:3227-3233`): the floats truncate to the
+            // Rectangle's ints (width/height 0), the RGB bytes gain alpha
+            // 255 (`Color(byte,byte,byte)`, `Utils.cs:1387-1390`), and
+            // `CombatText.NewText` spawns with the default
+            // dramatic/dot = false. The draws ride `Main.rand` — the bare
+            // global stream, like the message-time cue replays (S1-E-21i).
+            S2c::CombatTextInt(t) => {
+                let text = t.amount.to_string();
+                let size = match self.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                let location = crate::combat_text::Rect {
+                    x: t.x as i32 as f32,
+                    y: t.y as i32 as f32,
+                    width: 0.0,
+                    height: 0.0,
+                };
+                crate::combat_text::spawn_amount(
+                    &mut self.combat_texts,
+                    location,
+                    [t.color.0, t.color.1, t.color.2, 255],
+                    t.amount,
+                    false,
+                    false,
+                    size,
+                    1.0, // the port keeps gravDir = 1 (`player.rs:4693`)
+                    self.rngs.global(),
+                );
+            }
+            // S1-I-1 wave I: `34`'s client apply (`MessageBuffer.cs:
+            // 2124-2157`'s PlaceChestDirect/DestroyChestDirect pass) rides
+            // the tile-edit send-path pass (S1-I-4).
+            S2c::ChestUpdates(_) => {}
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -4960,6 +5005,97 @@ mod message_family_tests {
         // `80` told the other players the asker's chest index; here the
         // host's own record (`:1886`).
         assert_eq!(host_app.remote_players.get(&1).map(|p| p.chest), Some(Some(0)));
+    }
+
+    /// S1-I-1 wave I — `Chest.UsingChest` scans ALL active players
+    /// (`Chest.cs:502-508`), the host's own local player included: while the
+    /// host browses chest 0, a client's `31` open request is refused
+    /// (`MessageBuffer.cs:1877`) — no `155`/`33` burst, the client's
+    /// `Player.chest` stays closed.
+    #[test]
+    fn a_chest_open_request_is_refused_while_the_host_browses_it() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        let mut chest = crate::chest::WorldChest {
+            tile: (3, 5),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        };
+        chest.slots.resize(crate::chest::DEFAULT_MAX_ITEMS as usize, crate::item::EMPTY_SLOT);
+        host_app.world_chests.push(chest);
+        // The HOST (slot 0) has the chest open — the pre-wave-I check only
+        // scanned the remote slots and let this request through.
+        host_app.player.as_mut().unwrap().chest = 0;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ChestOpenRequest(net::ChestOpenRequest { x: 3, y: 5 }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(
+            client_app.player.as_ref().unwrap().chest,
+            crate::bank::CHEST_CLOSED,
+            "the UsingChest refusal — the host's own open chest counts"
+        );
+        assert!(client_app.world_chests.is_empty(), "no 155/32 burst arrived");
+        assert_eq!(
+            host_app.remote_players.get(&1).and_then(|p| p.chest),
+            None,
+            "no 80 relay either"
+        );
+        // The host closes it; the same request now succeeds.
+        host_app.player.as_mut().unwrap().chest = crate::bank::CHEST_CLOSED;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ChestOpenRequest(net::ChestOpenRequest { x: 3, y: 5 }));
+        }
+        let mut opened = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = client_app.player.as_ref().is_some_and(|p| p.chest == 0);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the freed chest opens on the retry");
+    }
+
+    /// S1-I-1 wave I — `case 81` (`MessageBuffer.cs:3227-3233`): the host's
+    /// `CombatTextInt` spawns a heal number in the client's pool at the
+    /// truncated wire coords with the HealLife colour.
+    #[test]
+    fn a_combat_text_int_spawns_the_clients_heal_number() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::CombatTextInt(net::CombatTextInt {
+                x: 1234.5,
+                y: -678.25,
+                color: net::Rgb(100, 255, 100),
+                amount: 42,
+            }));
+        }
+        let mut spawned = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            spawned = client_app.combat_texts.iter().any(|t| t.active);
+            if spawned {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(spawned, "the 81 arm spawned a combat text");
+        let t = client_app.combat_texts.iter().find(|t| t.active).unwrap();
+        assert_eq!(t.text, "42");
+        assert_eq!(t.color, [100, 255, 100, 255], "RGB + alpha 255");
+        // The zero-size Rectangle centres the text on the truncated point
+        // (`CombatText.cs:86-87` with width/height 0), ±0 jitter draws.
+        let size_x = t.position[0] - (1234.0 - 0.0);
+        assert!(size_x.abs() <= 20.0, "anchored at the truncated x: {}", t.position[0]);
+        assert!(!t.crit && !t.dot, "the NewText defaults");
     }
 
     /// S1-P-i43 — the `editedChestName` chain (`ChestUI.cs:855-859` →

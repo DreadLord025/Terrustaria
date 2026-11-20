@@ -1341,6 +1341,37 @@ pub struct ChestItem {
     pub kind: i16,
 }
 
+/// `msg 34 ChestUpdates`'s body (`NetMessage.cs:913-927`, S1-I-1 wave I):
+/// the action byte (0/2/4 place chest/dresser/piggy-bank, 1/3/5 destroy —
+/// the client send sites `Player.cs:53785-53796`), the tile, the style, and
+/// the resulting chest index. The writer's last short is `number5` on the
+/// server and a literal `0` on the client (`:918-927`); the host reader
+/// zeroes it before its place/destroy pass (`MessageBuffer.cs:1991-1994`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChestUpdates {
+    /// The C#'s `b4` action byte.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+    pub style: i16,
+    /// `PlaceChest`'s return (`-1` = refused) or `Chest.FindChest`'s index
+    /// on the destroy relays; the client's own send writes 0.
+    pub chest: i16,
+}
+
+/// `msg 81 CombatTextInt`'s body (`NetMessage.cs:1179-1186`, S1-I-1 wave I):
+/// two floats, `WriteRGB`'s three bytes and the `(int)` amount. The client
+/// truncates the floats and spawns `CombatText.NewText` at
+/// `Rectangle(x, y, 0, 0)` (`MessageBuffer.cs:3227-3233`); the one C# send
+/// site is `NPC.HealEffect`'s broadcast (`NPC.cs:77440-77443`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CombatTextInt {
+    pub x: f32,
+    pub y: f32,
+    pub color: Rgb,
+    pub amount: i32,
+}
+
 /// `msg 33 SyncPlayerChest`'s body (`NetMessage.cs:879-911`): the chest index,
 /// its tile position and the optional name (`name_len` = 1..=20 with the text
 /// following, 0 = none, 255 = a too-long name the C# refuses,
@@ -1643,6 +1674,10 @@ pub enum C2s {
     /// (`Player.cs:31520`, the `1023` violin cases; `NetMessage.cs:1878`'s
     /// chest drops).
     ChestItem(ChestItem),
+    /// `34 ChestUpdates` - this client mined/placed a container
+    /// (`Player.cs:53785-53796`'s destroy asks, `Chest.cs:577-583`'s place
+    /// asks; S1-I-1 wave I).
+    ChestUpdates(ChestUpdates),
     /// `46 OpenSignRequest` - a client asks for a sign's text
     /// (`Player.cs:32720`).
     SignRequest(SignRequest),
@@ -1740,6 +1775,13 @@ pub enum S2c {
     /// `32 SyncChestItem` - one chest slot, relayed to the other clients
     /// (`MessageBuffer.cs:1913-1916`).
     ChestItem(ChestItem),
+    /// `34 ChestUpdates` - the host's place/destroy result, relayed
+    /// (`MessageBuffer.cs:2006-2112`'s `TrySendData(34, …)` arms;
+    /// S1-I-1 wave I).
+    ChestUpdates(ChestUpdates),
+    /// `81 CombatTextInt` - a peer's heal number (`NPC.HealEffect`'s
+    /// broadcast, `NPC.cs:77442`; S1-I-1 wave I).
+    CombatTextInt(CombatTextInt),
     /// `33 SyncPlayerChest` - the chest a player opened
     /// (`MessageBuffer.cs:1880`, `:1980`; `Player.cs:32885`).
     PlayerChest(PlayerChest),
@@ -1874,6 +1916,7 @@ impl C2s {
             Self::Ping => id::PING,
             Self::ChestOpenRequest(_) => id::CHEST_OPEN_REQUEST,
             Self::ChestItem(_) => id::CHEST_ITEM,
+            Self::ChestUpdates(_) => id::CHEST_UPDATES,
             Self::SignRequest(_) => id::SIGN_REQUEST,
             Self::SignData(_) => id::SIGN_DATA,
             Self::HitSwitch(_) => id::HIT_SWITCH,
@@ -1915,6 +1958,9 @@ impl C2s {
                 .i16(c.stack)
                 .u8(c.prefix)
                 .i16(c.kind),
+            // `NetMessage.cs:913-927` — the client branch writes the literal
+            // `0` short (`:926`); the host's `number5` relay rides S2c.
+            Self::ChestUpdates(c) => w.u8(c.action).i16(c.x).i16(c.y).i16(c.style).i16(0),
             Self::SignRequest(s) => w.i16(s.x).i16(s.y),
             Self::SignData(s) => w
                 .i16(s.sign)
@@ -2026,6 +2072,18 @@ impl C2s {
                 stack: r.i16()?,
                 prefix: r.u8()?,
                 kind: r.i16()?,
+            }),
+            // `MessageBuffer.cs:1986-1994` — the host reads the fifth short
+            // then zeroes it; the client's send wrote 0 anyway.
+            id::CHEST_UPDATES => Self::ChestUpdates(ChestUpdates {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                style: r.i16()?,
+                chest: {
+                    let _ = r.i16()?;
+                    0
+                },
             }),
             id::SIGN_REQUEST => Self::SignRequest(SignRequest {
                 x: r.i16()?,
@@ -2216,6 +2274,8 @@ impl S2c {
             Self::Time { .. } => id::INT_TIME,
             Self::Edit { .. } => id::INT_EDIT,
             Self::ChestItem(_) => id::CHEST_ITEM,
+            Self::ChestUpdates(_) => id::CHEST_UPDATES,
+            Self::CombatTextInt(_) => id::COMBAT_TEXT_INT,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::SignData(_) => id::SIGN_DATA,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
@@ -2309,6 +2369,15 @@ impl S2c {
                 .i16(c.stack)
                 .u8(c.prefix)
                 .i16(c.kind),
+            // `NetMessage.cs:913-923` — the server branch writes `number5`.
+            Self::ChestUpdates(c) => w
+                .u8(c.action)
+                .i16(c.x)
+                .i16(c.y)
+                .i16(c.style)
+                .i16(c.chest),
+            // `NetMessage.cs:1179-1186` — two floats, RGB, (int)amount.
+            Self::CombatTextInt(t) => w.f32(t.x).f32(t.y).rgb(t.color).i32(t.amount),
             Self::PlayerChest(c) => {
                 // `NetMessage.cs:903-910`: the length byte, then the C#
                 // `BinaryWriter.Write(string)` (a 7-bit length + bytes) when
@@ -2476,6 +2545,22 @@ impl S2c {
                 stack: r.i16()?,
                 prefix: r.u8()?,
                 kind: r.i16()?,
+            }),
+            // `MessageBuffer.cs:1986-1990` — the client keeps the fifth
+            // short (the host's `num35` result index).
+            id::CHEST_UPDATES => Self::ChestUpdates(ChestUpdates {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                style: r.i16()?,
+                chest: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3227-3233` — float pair, RGB, int amount.
+            id::COMBAT_TEXT_INT => Self::CombatTextInt(CombatTextInt {
+                x: r.f32()?,
+                y: r.f32()?,
+                color: r.rgb()?,
+                amount: r.i32()?,
             }),
             id::PLAYER_CHEST => Self::PlayerChest(read_player_chest(r)?),
             id::SIGN_DATA => Self::SignData(read_sign_data(r)?),
@@ -4041,6 +4126,15 @@ mod tests {
                 prefix: 2,
                 kind: 42,
             }),
+            // S1-I-1 wave I: the client's 34 destroy ask (chest 0 on the
+            // wire — the writer's else branch, `NetMessage.cs:926`).
+            C2s::ChestUpdates(ChestUpdates {
+                action: 1,
+                x: 100,
+                y: 200,
+                style: 0,
+                chest: 0,
+            }),
             C2s::PlayerChest(PlayerChest {
                 chest: 3,
                 x: 100,
@@ -4383,6 +4477,20 @@ mod tests {
                 x: 30,
                 y: 40,
                 name: "renamed".into(),
+            }),
+            // S1-I-1 wave I: the 34/81 bodies.
+            S2c::ChestUpdates(ChestUpdates {
+                action: 4,
+                x: 100,
+                y: 200,
+                style: 2,
+                chest: -1,
+            }),
+            S2c::CombatTextInt(CombatTextInt {
+                x: 64.5,
+                y: -8.25,
+                color: Rgb(100, 255, 100),
+                amount: 20,
             }),
         ];
         for msg in &msgs {
@@ -4802,5 +4910,87 @@ mod tests {
             S2c::ItemState(back) => assert_eq!(*back, none),
             other => panic!("expected 21, got {:?}", other.msg_id()),
         }
+    }
+
+    /// `34 ChestUpdates` (`NetMessage.cs:913-927`): byte action + three
+    /// shorts + the fifth short — the host writes `number5`, the client a
+    /// literal 0 (`:926`); the host reader zeroes it
+    /// (`MessageBuffer.cs:1991-1994`), the client keeps it (`:1990`).
+    #[test]
+    fn s1_i_1_chest_updates_round_trips() {
+        let u = ChestUpdates {
+            action: 0,
+            x: 120,
+            y: 340,
+            style: 4,
+            chest: 17,
+        };
+        let f = S2c::ChestUpdates(u).encode();
+        assert_eq!(f[2], 34);
+        let mut body = vec![0];
+        for v in [120i16, 340, 4, 17] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ChestUpdates(d) => assert_eq!(d, u),
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+        // The client's destroy ask (`Player.cs:53787`): action 1, style and
+        // index default to 0 — the writer's else branch (`:924-927`).
+        let c = C2s::ChestUpdates(ChestUpdates {
+            action: 1,
+            x: 120,
+            y: 340,
+            style: 0,
+            chest: 17, // ignored on the wire: the client writes 0
+        })
+        .encode();
+        assert_eq!(c[2], 34);
+        assert_eq!(&c[c.len() - 2..], &0i16.to_le_bytes());
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ChestUpdates(d) => {
+                assert_eq!(d.action, 1);
+                assert_eq!((d.x, d.y, d.style, d.chest), (120, 340, 0, 0));
+            }
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+        // The refusal relay: chest = -1 (`MessageBuffer.cs:2006`).
+        let refused = ChestUpdates { chest: -1, ..u };
+        let f = S2c::ChestUpdates(refused).encode();
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ChestUpdates(d) => assert_eq!(d.chest, -1),
+            other => panic!("expected 34, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `81 CombatTextInt` (`NetMessage.cs:1179-1186`): float x, float y,
+    /// `WriteRGB`'s R/G/B bytes (`Utils.cs:1369-1374`), `(int)` amount.
+    /// Host→client only — no `C2s` arm (`MessageBuffer.cs:3227-3233` reads
+    /// it at `netMode == 1` only).
+    #[test]
+    fn s1_i_1_combat_text_int_round_trips() {
+        let t = CombatTextInt {
+            x: 1234.5,
+            y: -678.25,
+            color: Rgb(100, 255, 100), // CombatText.HealLife
+            amount: 42,
+        };
+        let f = S2c::CombatTextInt(t).encode();
+        assert_eq!(f[2], 81);
+        let mut body = Vec::new();
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-678.25f32).to_le_bytes());
+        body.extend_from_slice(&[100, 255, 100]);
+        body.extend_from_slice(&42i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CombatTextInt(d) => assert_eq!(d, t),
+            other => panic!("expected 81, got {:?}", other.msg_id()),
+        }
+        // The reader truncates the floats to the Rectangle's ints
+        // (`MessageBuffer.cs:3230-3231`'s `(int)ReadSingle()`).
+        assert_eq!(t.x as i32, 1234);
+        assert_eq!(t.y as i32, -678);
     }
 }
