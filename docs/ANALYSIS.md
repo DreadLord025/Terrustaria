@@ -39312,8 +39312,9 @@ Frame counts (`Main.cs:67100-67102`, counted entry-by-entry and pinned
 against the port's `render/entities.rs::NPC_FRAME_COUNT`): 166=13, 168=12,
 169=4, 170/171=14, 172=3, 173=2, 175=3, 176=2, 178=23, 179=5, 180=14.
 
-11 witnesses WRITTEN NOT RUN (no compiler invoked — code-only mode): the
-count-table pin, the Swamp Thing's idle/walk/air bands, the penguin's four
+13 witnesses WRITTEN NOT RUN (no compiler invoked — code-only mode): the
+count-table pin, the Swamp Thing's idle band, the Swamp Thing's walk/air
+bands, the penguin's four
 colour banks (idle/walk/tail/air each), the Ice Elemental's flip-free flap,
 the pigron trio's 14-row cycle + unconditional flip, the Rune Wizard's
 three poses + the direction-0 hold, the Crimera's case-6 cadence, the
