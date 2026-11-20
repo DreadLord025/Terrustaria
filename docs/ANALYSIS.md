@@ -26162,6 +26162,31 @@ scan wiring rides the waves' merge step. The C# double-`DelBuff` quirk (the
 downgrade delete, `:10350-10351`→`:10369`) is preserved verbatim; a `j < 0`
 guard stands in for the C# `IndexOutOfRangeException` that path would throw.
 
+**Landed** (code-only, tests written not run):
+`crates/tr-app/src/buff_effects_boosters.rs` —
+`apply_booster_effect_arm(e, s, slots, ctx, j) -> BoosterArmResult`
+(`NotHandled` / `NextSlot(i32)` — the C# `j` after the arm plus the loop's
+`j++`, so a `DelBuff(j); j--` rescan returns `j` and the double-delete quirk
+can return `j - 1`; the caller clamps to `>= 0`). The persistent counters
+(`beetleOrbs` shared by both beetle families, `solarShields`, the three
+nebula levels, the ice-barrier frame pair) live in `BoosterState` — the C#
+`ResetEffects` does not clear them, neither does the port. The Might arm's
+stat adds run BEFORE the offense gate (`:10431-10432` precede `:10433`), so
+the stats land on the delete tick too. The nebula mana tier writes only
+`nebulaLevelMana` (its regen consumer reads the level elsewhere). The
+`if (0f == 0f)` at `:10336` is decompilation noise — the multiply always
+runs.
+
+Tests: `buff_effects_boosters::tests::s1_e_7g_*` (20), one or more per id:
+396 ×2 (ratio decay, zero-duration write-back), 192, 321, 95-97 ×4 (pin +
+flag, upgrade sweep, downgrade rescan, defense-off delete) + the
+double-delete quirk ×2 (previous-slot hit, negative-index guard), 98-100 ×2
+(no pin + stats, offense-off stats-then-delete), 170-172 (pin/gate +
+set-absent), 173-175 ×2 (step-down at time 2, tier-3 regen 18), 176-178
+(level only), 179-181 (0.15 × level on four classes), 62 ×2 (half-life
+flag + 3-tick × 12-frame wrap, above-half delete), pass-through (94/49/2/144
+left to their owners).
+
 ## S1-C-12 wave C - the defense/immunity accessory family (2026-11-18)
 
 `crates/tr-app/src/accessory_defense.rs` carries the DEFENSE/IMMUNITY
