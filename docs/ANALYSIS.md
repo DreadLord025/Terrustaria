@@ -39306,3 +39306,33 @@ do not cover: batch 1 the food/range-if/pitch family, batch 2 the
 null/trackable/deprecated/override family. The landed seams
 (`initial_use_sound`, `play_use_sound`, `ITEM_CORRECTIONS`) are KEPT
 untouched.
+
+**Witness record (20 sites, 2 tests, WRITTEN NOT RUN).**
+`w4_g25_batch1_the_food_and_range_if_sound_rows` (10): Ale 353 gulp
+Item3+style9 (`:48380`/`:48545`/`:48553`), Marshmallow 967 + Cooked 969
+non-gulp Item2 with the post-helper useStyle-9 re-style (`:48302-48304`/
+`:48233-48235` — the style write leaves `UseSound`), Rock Candy 5645 gulp
+Item3 overridden to Item2 (`:48371-48372`), Eggnog 1912 the `IsFood`
+dispatch → `SetFoodDefaults`' `DefaultToHealingPotion` Item3 (`:48689`/
+`:48387`/`:48572`, NOT the `SetDefaults2` case `:20741`), Golden Delight
+4022 non-gulp Item2+style2 (`:48045`), hair dye 1977 the range-if
+1977-1986 Item3+style9 (`:21235`/`:21253-21254`, the 1970-1976 gemspark
+group stays silent), Fleshcatcher 2421 range-if Item1 (`:23074`/`:23081`),
+Rockfish 2320 if-block Item1 (`:23099`/`:23112`), Flaming Mace 5012 the
+shared 5011/5012 case Item1+style5 (`:40333`/`:40336`/`:40351`, the
+`:40346` arm swaps shoot only).
+`w4_g25_batch2_the_null_trackable_deprecated_and_override_rows` (10):
+Medusa Head 3269 null+style4 (`:30324`/`:30314`), Zenith 4956 null
+(`:40004`), Portal Gun 3384 null+style5 (`:30958`/`:30951`), Leaf Blower
+1178 the named id-2 style `(2,34).WithVolume(0.13)` NOT trackable
+(`:14469`, `SoundID.cs:1726`), Palworld Chillet 5665 the `PalSummon`
+trackable id42 `pal_summon` `WithVolume(0.15)` (`:44514`,
+`SoundID.cs:1712`), Glacier Fang 6153 the named `(2,210)` (`:47431`,
+`SoundID.cs:1594`), Vortex Axe 2772 + First Fractal 4722 the
+`Deprecated`→`TurnToAir` zeroing to name "None"/style0/no-sound despite
+the case Item1 writes (`:26478`/`:38793`, `ItemID.cs:1316`,
+`Item.cs:48922-48925`), Whoopie Cushion 215 the voice-accessory null
+overridden to Item16+style10 (`:4049`/`:47788`/`:4057`/`:4056`), Arc Surge
+6173 the staff Item43 overridden to Item15 (`:47556`/`:48021`/`:47560`).
+One batch-1 fix round: Flaming Mace 5012's useStyle is 5 (`:40336`), not
+1 — re-read the window, the witness pinned the wrong style byte.
