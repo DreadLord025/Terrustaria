@@ -261,6 +261,24 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     });
     app.projectiles.set_spear_owner(spear_owner);
 
+    // W4-d15 — the DD2 slice's owner snapshot (`AI_142_MonkStaffT2And3`'s
+    // `Main.player[owner]` reads, `Projectile.cs:69819-69844`). The anchor
+    // is `RotatedRelativePoint(MountedCenter)` (`:69820`); the animation
+    // integers derive from the swing timers (the spear convention). The
+    // pet arms' reads extend this snapshot with their styles.
+    let dd2_owner = app.player.as_ref().map(|p| {
+        let (mcx, mcy) = p.mounted_center();
+        crate::projectile_ai_dd2::Dd2Owner {
+            anchor: p.rotated_relative_point(Vec2::new(mcx, mcy), 0),
+            direction: p.facing,
+            dead: p.dead,
+            frozen: p.frozen,
+            item_animation: (app.swing * 60.0).round() as i32,
+            item_animation_max: (app.swing_max * 60.0).round() as i32,
+        }
+    });
+    app.projectiles.set_dd2_owner(dd2_owner);
+
     // S1-P-i35 — the bobber arm's per-tick player/world snapshot (`AI_061` +
     // `FishingCheck`'s `Main.player[owner]` reads, `Projectile.cs:53658+`).
     // Built from the live player/world/scene state before the pass (the
@@ -419,6 +437,20 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         let secs = frames as f32 / 60.0;
         app.swing = secs;
         app.item_time = secs;
+    }
+    // W4-d15 — the 142 arm's player writes (`Projectile.cs:69822`'s
+    // `player.heldProj = whoAmI` + `:69966`'s `player.reuseDelay = 2`),
+    // drained in slot order (the `take_spear_hold` precedent). The port's
+    // reuse timer runs in seconds.
+    for (held_proj, reuse_delay) in app.projectiles.take_dd2_writes() {
+        if let Some(p) = app.player.as_mut() {
+            if let Some(slot) = held_proj {
+                p.held_proj = slot;
+            }
+        }
+        if let Some(ticks) = reuse_delay {
+            app.reuse_delay = ticks as f32 / 60.0;
+        }
     }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the

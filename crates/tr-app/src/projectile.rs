@@ -14507,6 +14507,17 @@ pub struct ProjectilePool {
     /// write-back precedent). `None` = no hold fired.
     pending_spear_hold: Option<i32>,
 
+    /// W4-d15 — the DD2 slice's owner snapshot (`AI_142`/`AI_144`/`AI_148`'s
+    /// `Main.player[owner]` reads). The world-sim pass sets it per fixed
+    /// step through [`ProjectilePool::set_dd2_owner`] (the `set_spear_owner`
+    /// pattern). `None` = no player link: the 142 arm holds the slot (the
+    /// orphan guard).
+    dd2_owner: Option<crate::projectile_ai_dd2::Dd2Owner>,
+    /// W4-d15 — the 142 arm's player writes (`player.heldProj` `:69822`,
+    /// `player.reuseDelay = 2` `:69966`): drained by the world-sim pass
+    /// after the step (the `take_spear_hold` precedent).
+    pending_dd2_writes: Vec<(Option<i32>, Option<i32>)>,
+
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
     /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
     /// feeds it through [`ProjectilePool::set_bobber_inputs`] before the pass
@@ -14916,6 +14927,8 @@ impl ProjectilePool {
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
             pending_spear_hold: None,
+            dd2_owner: None,
+            pending_dd2_writes: Vec::new(),
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
@@ -15155,6 +15168,22 @@ impl ProjectilePool {
     /// lance held this tick.
     pub fn take_spear_hold(&mut self) -> Option<i32> {
         self.pending_spear_hold.take()
+    }
+
+    /// W4-d15 — the DD2 slice's owner snapshot (`AI_142`'s
+    /// `Main.player[owner]` reads, `Projectile.cs:69819-69844`). The
+    /// world-sim pass builds it per fixed step from the live player + the
+    /// swing timers (the `set_spear_owner` pattern). `None` clears the
+    /// link (the arm's orphan guard).
+    pub fn set_dd2_owner(&mut self, owner: Option<crate::projectile_ai_dd2::Dd2Owner>) {
+        self.dd2_owner = owner;
+    }
+
+    /// W4-d15 — drain the 142 arm's player writes: `(heldProj, reuseDelay)`
+    /// per fired arm, in slot order (`Projectile.cs:69822`/`:69966`). The
+    /// world-sim pass applies them after the step.
+    pub fn take_dd2_writes(&mut self) -> Vec<(Option<i32>, Option<i32>)> {
+        std::mem::take(&mut self.pending_dd2_writes)
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -17316,6 +17345,48 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return
                             // (:17015/:17027); the row keeps tileCollide =
                             // false (`:7391`) — the free integrate.
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 142: the Monk Staff T2 (699) /
+                        // T3-alt (708) swing (`AI_142_MonkStaffT2And3`,
+                        // `Projectile.cs:69817-69968`): the owner anchor,
+                        // the swing arc, the 708's animation-2/6/10 709
+                        // volley and the draw census. The owner snapshot
+                        // rides the pool's `set_dd2_owner` seam; a `None`
+                        // link holds the slot (the orphan guard, the
+                        // aiStyle-19 precedent).
+                        142 => {
+                            if let Some(o) = self.dd2_owner {
+                                let tick = crate::projectile_ai_dd2::ai_monk_staff_t2_and_3(
+                                    &mut self.slots[i],
+                                    i,
+                                    &o,
+                                    local_owner,
+                                    rng,
+                                );
+                                self.pending_dd2_writes
+                                    .push((tick.held_proj, tick.reuse_delay));
+                                let owner_id = self.slots[i].owner;
+                                for s in tick.shots {
+                                    // `NewProjectile` centres the box
+                                    // (`:10876-10877`).
+                                    let _ = self.spawn_with_data_ai_owned(
+                                        s.kind,
+                                        owner_id,
+                                        s.x - proj_data(s.kind).map_or(0.0, |d| d.w) * 0.5,
+                                        s.y - proj_data(s.kind).map_or(0.0, |d| d.h) * 0.5,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        0.0,
+                                        0.0,
+                                    );
+                                }
+                            }
+                            // HandleMovement after the AI (`:17015`); the
+                            // rows keep tileCollide = false (`:7413`/
+                            // `:7502`) — the free integrate.
                             self.slots[i].kill_step(world);
                         }
                         // aiStyle 147 — the Celebration Mk2 rockets

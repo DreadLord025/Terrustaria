@@ -74,7 +74,268 @@ use glam::Vec2;
 use tr_core::World;
 use tr_core::loot::DropRng;
 
-use crate::projectile::Projectile;
+use crate::bow_launch::rotated_by;
+use crate::projectile::{
+    MONK_STAFF_T2, MONK_STAFF_T3_ALT, MONK_STAFF_T3_ALT_SHOT, Projectile, safe_normalize_or,
+};
+
+/// The owner state the 142/144/148 arms read off `Main.player[owner]`
+/// each tick, snapshotted by the world-sim pass (the `SpearOwner`
+/// pattern — the slot loop cannot borrow the App). The C# reads the live
+/// `Player` fields; the port snapshots them once per fixed step.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Dd2Owner {
+    /// `player.RotatedRelativePoint(player.MountedCenter)` (`:69820`) —
+    /// the T2/T3 swing anchor.
+    pub anchor: Vec2,
+    /// `player.direction` (`:69821`).
+    pub direction: i32,
+    /// `player.dead` (`:69824`).
+    pub dead: bool,
+    /// `player.frozen` (`:69829`) — the frozen owner holds the swing pose.
+    pub frozen: bool,
+    /// `player.itemAnimation` (`:69844`/`:69907`) — the C# INTEGER
+    /// countdown; the pass derives it from `app.swing` (the spear
+    /// convention).
+    pub item_animation: i32,
+    /// `player.itemAnimationMax` (`:69844`).
+    pub item_animation_max: i32,
+}
+
+/// One queued sub-shot spawn — `(x, y)` are the C# `NewProjectile`
+/// CENTER arguments (the dispatch recentres on the row's half-box, the
+/// `SpearSubShot` convention).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Dd2Shot {
+    pub kind: u16,
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub damage: i32,
+    pub knock_back: f32,
+}
+
+/// What the 142/148 arms hand back to the dispatch (the `FlailTick`
+/// write-back precedent): the queued sub-shot spawns and the player-side
+/// writes.
+#[derive(Default)]
+pub(crate) struct Dd2Tick {
+    /// `NewProjectile(..., 709, this.damage, 0f, this.owner)` (`:69924`)
+    /// and the 148's FallingStar 12 (`:53126`).
+    pub shots: Vec<Dd2Shot>,
+    /// `player.reuseDelay = 2` (`:69966`) — the pass converts to seconds.
+    pub reuse_delay: Option<i32>,
+    /// `player.heldProj = base.whoAmI` (`:69822`) — the slot index.
+    pub held_proj: Option<i32>,
+}
+
+/// `Vector2.AngleTo` (`Utils.cs:1924-1927`) — `atan2(dy, dx)`.
+fn angle_to(origin: Vec2, target: Vec2) -> f32 {
+    (target.y - origin.y).atan2(target.x - origin.x)
+}
+
+/// `Vector2.DirectionTo` (`Utils.cs:1955-1958`) — `Vector2.Normalize`
+/// with NO safe fallback: a zero delta yields NaN in both engines (the
+/// `1/sqrt(0)` infinity times the zero components).
+fn direction_to(origin: Vec2, target: Vec2) -> Vec2 {
+    let d = target - origin;
+    let len = (d.x * d.x + d.y * d.y).sqrt();
+    if len > 0.0 { d / len } else { Vec2::splat(f32::NAN) }
+}
+
+/// `AI_142_MonkStaffT2And3` (`Projectile.cs:69817-69968`) — the Monk
+/// Staff T2 (699) / T3-alt (708) swing. The head block pins the facing,
+/// the owner's `heldProj` and the Centre on the rotated mount anchor
+/// (`:69820-69823`); a dead owner kills (`:69824-69828`); a frozen owner
+/// holds the pose (the type arms sit under `!player.frozen`, `:69829`).
+///
+/// RNG: the 699's two trail dusts roll ONE `NextFloat` each (the scale,
+/// `:69865`), then the `Next(3)` gate (`:69871`) and the taken branch's
+/// TWO floats (scale `:69876` + fadeIn `:69877`). The 708's sub-shot arm
+/// (`:69907-69925`) draws `NextVector2Square(-0.2, 0.2)` = 2 `NextDouble`
+/// (`Utils.cs:1251-1254`) THEN `Next(4)` (`:69923`) — the switch
+/// overwrite (`:69911-69922`) keeps the draws spent; the two dust gates
+/// (`k = 0, 2`, `:69926`) roll `Next(6)` each and the taken branch one
+/// `NextFloat` (`:69948`) + one `Next(3)` (`:69954`). The dust bodies
+/// themselves are the pool skip; `Lighting.AddLight` (`:69885`) is the
+/// light skip.
+pub(crate) fn ai_monk_staff_t2_and_3(
+    p: &mut Projectile,
+    who_am_i: usize,
+    o: &Dd2Owner,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) -> Dd2Tick {
+    let mut tick = Dd2Tick::default();
+    // `:69819-69823` — the anchor, the facing, the heldProj claim and the
+    // Centre pin (all ahead of the dead gate).
+    let vector = o.anchor;
+    p.direction = o.direction;
+    tick.held_proj = Some(who_am_i as i32);
+    p.pos = vector - Vec2::new(p.w * 0.5, p.h * 0.5);
+    // `:69824-69828` — the dead owner kills and returns.
+    if o.dead {
+        kill(p);
+        return tick;
+    }
+    // `:69829-69962` — the frozen owner holds the swing pose.
+    if !o.frozen {
+        if p.kind == MONK_STAFF_T2 {
+            swing_t2(p, o, vector, rng);
+        } else if p.kind == MONK_STAFF_T3_ALT {
+            swing_t3_alt(p, o, vector, local_owner, rng, &mut tick);
+        }
+    }
+    // `:69963-69967` — the local owner's animation end kills and arms the
+    // 2-tick reuse delay (the `player.whoAmI == Main.myPlayer` gate folds
+    // to the slot-owner comparison — the pool simulates local slots).
+    if p.owner == local_owner && o.item_animation <= 2 {
+        kill(p);
+        tick.reuse_delay = Some(2);
+    }
+    tick
+}
+
+/// The 699 arm (`Projectile.cs:69831-69882`): the alpha fade, the
+/// `localAI[0]` countdown, the swing arc position/rotation and the two
+/// dust trails' draw census.
+fn swing_t2(p: &mut Projectile, o: &Dd2Owner, vector: Vec2, rng: &mut dyn DropRng) {
+    // `:69833-69843` — the facing pin, the −127 alpha fade (floor 0) and
+    // the localAI[0] countdown.
+    p.sprite_direction = o.direction;
+    p.direction = o.direction;
+    p.alpha -= 127;
+    if p.alpha < 0 {
+        p.alpha = 0;
+    }
+    if p.local_ai[0] > 0.0 {
+        p.local_ai[0] -= 1.0;
+    }
+    // `:69844-69850` — the swing arc: the animation fraction, the
+    // velocity's rotation/length, the π + num·2π spin scaled by
+    // (length, ai[0]), the position kick and the +40 aim point.
+    let num = 1.0 - o.item_animation as f32 / o.item_animation_max as f32;
+    let num2 = p.vel.y.atan2(p.vel.x);
+    let num3 = p.vel.length();
+    let num4 = 22.0f32;
+    let spin_angle = (std::f32::consts::PI + num * (std::f32::consts::PI * 2.0)) as f64;
+    let sp = rotated_by(Vec2::new(1.0, 0.0), spin_angle) * Vec2::new(num3, p.ai[0]);
+    let sp_rot = rotated_by(sp, num2 as f64);
+    p.pos += sp_rot + rotated_by(Vec2::new(num3 + num4, 0.0), num2 as f64);
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let target = vector + sp_rot + rotated_by(Vec2::new(num3 + num4 + 40.0, 0.0), num2 as f64);
+    // `:69851-69855` — the aim rotation + the π/4 facing offset, the
+    // spriteDirection −1 π flip.
+    p.rot = angle_to(vector, target) + std::f32::consts::FRAC_PI_4 * o.direction as f32;
+    if p.sprite_direction == -1 {
+        p.rot += std::f32::consts::PI;
+    }
+    // `:69856-69858` — the dead `DirectionTo(Center)` discard stays dead;
+    // vector3 (the aim direction) and vector4 (the safe velocity
+    // direction) feed dust only.
+    let _vector3 = direction_to(vector, target);
+    let _vector4 = safe_normalize_or(p.vel, Vec2::Y);
+    // `:69859-69868` — the two trail dusts: ONE NextFloat each (the
+    // scale `:69865`); the position/velocity writes are the dust skip.
+    let num5 = 2.0f32;
+    let mut i = 0.0f32;
+    while i < num5 {
+        let _ = rng.next_float(); // `:69865`
+        i += 1.0;
+    }
+    // `:69869-69881` — the one-shot 1-in-3 sparkle: the gate draw, then
+    // TWO floats on the taken branch (scale `:69876` + fadeIn `:69877`).
+    if rng.next_range(0, 3) == 0 {
+        let _ = rng.next_float(); // `:69876`
+        let _ = rng.next_float(); // `:69877`
+    }
+    let _ = center;
+}
+
+/// The 708 arm (`Projectile.cs:69883-69961`): the same swing arc with the
+/// SafeNormalize(UnitX) rotation, the animation-2/6/10 sub-shot volley
+/// (709) and the two dust gates.
+fn swing_t3_alt(
+    p: &mut Projectile,
+    o: &Dd2Owner,
+    vector: Vec2,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+    tick: &mut Dd2Tick,
+) {
+    // `:69885` — Lighting.AddLight: the light skip.
+    // `:69886-69891` — the facing pin and the −127 alpha fade.
+    p.sprite_direction = o.direction;
+    p.direction = o.direction;
+    p.alpha -= 127;
+    if p.alpha < 0 {
+        p.alpha = 0;
+    }
+    // `:69892-69898` — the swing arc (the 699 shape, num6..num9).
+    let num6 = 1.0 - o.item_animation as f32 / o.item_animation_max as f32;
+    let num7 = p.vel.y.atan2(p.vel.x);
+    let num8 = p.vel.length();
+    let num9 = 22.0f32;
+    let spin_angle = (std::f32::consts::PI + num6 * (std::f32::consts::PI * 2.0)) as f64;
+    let sp2 = rotated_by(Vec2::new(1.0, 0.0), spin_angle) * Vec2::new(num8, p.ai[0]);
+    let sp2_rot = rotated_by(sp2, num7 as f64);
+    p.pos += sp2_rot + rotated_by(Vec2::new(num8 + num9, 0.0), num7 as f64);
+    let vector5 = vector + sp2_rot + rotated_by(Vec2::new(num8 + num9 + 40.0, 0.0), num7 as f64);
+    // `:69899-69903` — the SafeNormalize(UnitX) aim rotation.
+    p.rot = safe_normalize_or(vector5 - vector, Vec2::X).to_angle()
+        + std::f32::consts::FRAC_PI_4 * o.direction as f32;
+    if p.sprite_direction == -1 {
+        p.rot += std::f32::consts::PI;
+    }
+    // `:69904-69905` — the two dead SafeNormalize discards stay dead.
+    // `:69906` — the safe velocity direction.
+    let vector6 = safe_normalize_or(p.vel, Vec2::Y);
+    // `:69907-69925` — the animation-2/6/10 volley (local owner only).
+    if (o.item_animation == 2 || o.item_animation == 6 || o.item_animation == 10)
+        && p.owner == local_owner
+    {
+        // `:69909-69910` — the jitter draw pair + the ×12 (the switch
+        // below overwrites the value; the draws stay spent).
+        let jx = (0.4 * rng.next_double() as f32) - 0.2;
+        let jy = (0.4 * rng.next_double() as f32) - 0.2;
+        let mut vector7 = (vector6 + Vec2::new(jx, jy)) * 12.0;
+        // `:69911-69922` — the per-animation heading overwrite.
+        match o.item_animation {
+            2 => vector7 = rotated_by(vector6, 0.3839724659919739),
+            6 => vector7 = rotated_by(vector6, -0.3839724659919739),
+            10 => vector7 = rotated_by(vector6, 0.0),
+            _ => {}
+        }
+        // `:69923-69924` — the speed roll and the 709 spawn at Centre.
+        vector7 *= 10.0 + rng.next_range(0, 4) as f32;
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        tick.shots.push(Dd2Shot {
+            kind: MONK_STAFF_T3_ALT_SHOT,
+            x: center.x,
+            y: center.y,
+            vx: vector7.x,
+            vy: vector7.y,
+            damage: p.damage,
+            knock_back: 0.0,
+        });
+    }
+    // `:69926-69960` — the dust gates: k = 0, 2 (the `k += 2` loop); the
+    // k = 1/3 switch arms are unreachable (the C#'s own dead branches).
+    // Per gate: Next(6); the taken branch one NextFloat (`:69948`) +
+    // one Next(3) (`:69954`).
+    for k in [0i32, 2] {
+        let (num10, mut num11) = if k == 2 { (0.5f32, 1.25f32) } else { (1.0, 1.0) };
+        if rng.next_range(0, 6) != 0 {
+            num11 *= 1.2;
+            let _ = rng.next_float(); // `:69948` — the velocity scale
+            let _ = num10 * num11; // the dust velocity write (the skip)
+            if rng.next_range(0, 3) == 0 {
+                // `:69956-69957` — the noGravity/fadeIn flip: no draws.
+            }
+        }
+    }
+}
 
 /// The sibling-module deactivation (`Projectile::kill` is private — the
 /// `projectile_ai_spear` precedent).
@@ -204,10 +465,12 @@ mod tests {
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// A draw-counting `Main.rand` stand-in (the `projectile_ai_misc`
-    /// CensusRng shape): `next_range` returns `min`, `next_float` 0.
+    /// CensusRng shape): `next_range` returns `min`, `next_float` 0,
+    /// `next_double` 0 (counted separately — the NextVector2Square pair).
     struct CensusRng {
         ranges: Vec<(i32, i32)>,
         floats: usize,
+        doubles: usize,
     }
     impl DropRng for CensusRng {
         fn next_range(&mut self, min: i32, max: i32) -> i32 {
@@ -218,9 +481,13 @@ mod tests {
             self.floats += 1;
             0.0
         }
+        fn next_double(&mut self) -> f64 {
+            self.doubles += 1;
+            0.0
+        }
     }
     fn census() -> CensusRng {
-        CensusRng { ranges: Vec::new(), floats: 0 }
+        CensusRng { ranges: Vec::new(), floats: 0, doubles: 0 }
     }
 
     fn world() -> World {
@@ -310,5 +577,159 @@ mod tests {
         ai_monk_staff_t1_explosion(&mut p, &w, &mut rng);
         assert!(!p.active, "tick 21 kills");
         assert_eq!(p.time_left, 0);
+    }
+
+    fn owner(anim: i32, anim_max: i32) -> Dd2Owner {
+        Dd2Owner {
+            anchor: Vec2::new(1600.0, 800.0),
+            direction: 1,
+            dead: false,
+            frozen: false,
+            item_animation: anim,
+            item_animation_max: anim_max,
+        }
+    }
+
+    /// The 699/708/709 rows are verbatim `SetDefaults`
+    /// (`Projectile.cs:7402-7418`/`:7491-7507`/`:7508-7520`).
+    #[test]
+    fn the_monk_staff_rows_are_verbatim() {
+        let d = proj_data(MONK_STAFF_T2).expect("the 699 row");
+        assert_eq!((d.w, d.h, d.ai_style), (24.0, 24.0, 142), ":7404-7406");
+        assert_eq!(d.penetrate, -1, ":7409");
+        assert_eq!(d.alpha, 255, ":7410");
+        assert!(!d.tile_collide && d.ignore_water, ":7413-7414");
+        assert!(d.uses_id_static_immunity && !d.uses_local_immunity, ":7415");
+        assert_eq!(d.id_static_hit_cooldown, 10, ":7416");
+        assert!(d.melee, ":7408");
+        let d = proj_data(MONK_STAFF_T3_ALT).expect("the 708 row");
+        assert_eq!((d.w, d.h, d.ai_style), (24.0, 24.0, 142), ":7493-7495");
+        assert!(d.uses_local_immunity && !d.uses_id_static_immunity, ":7504");
+        assert_eq!(d.local_hit_cooldown, 6, ":7505");
+        let d = proj_data(MONK_STAFF_T3_ALT_SHOT).expect("the 709 row");
+        assert_eq!((d.w, d.h, d.ai_style), (12.0, 12.0, 1), ":7510-7512");
+        assert_eq!(d.alpha, 255, ":7515");
+        assert_eq!(d.extra_updates, 1, ":7517");
+        assert_eq!(d.scale, 0.6, ":7519");
+        assert!(d.melee, ":7514");
+        assert!(d.ignore_water, ":7516");
+    }
+
+    /// The head block: the Centre pins on the anchor, the facing rides
+    /// the owner, heldProj claims the slot; a dead owner kills ahead of
+    /// the type arms (`:69819-69828`).
+    #[test]
+    fn the_head_block_pins_the_centre_and_the_dead_owner_kills() {
+        let o = owner(20, 20);
+        let mut p = proj(MONK_STAFF_T2);
+        p.vel = Vec2::new(12.0, 0.0);
+        let mut rng = census();
+        let tick = ai_monk_staff_t2_and_3(&mut p, 7, &o, 0, &mut rng);
+        assert_eq!(tick.held_proj, Some(7), ":69822");
+        let c = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        // The swing arc moves the position AFTER the pin; with ai[0] = 0
+        // and anim == max (num = 0) the spin is π·(1,0)·(len,0) rotated
+        // by 0 → (−12, 0), plus (len+22, 0) → (+34, 0): net +22 X.
+        assert!((c.x - (o.anchor.x + 22.0)).abs() < 1e-3, "the arc kick");
+        assert!((c.y - o.anchor.y).abs() < 1e-3);
+        assert_eq!(p.direction, 1, ":69821");
+        let mut dead_o = o;
+        dead_o.dead = true;
+        let mut p2 = proj(MONK_STAFF_T2);
+        let mut rng2 = census();
+        let tick2 = ai_monk_staff_t2_and_3(&mut p2, 3, &dead_o, 0, &mut rng2);
+        assert!(!p2.active, ":69826");
+        assert_eq!(tick2.held_proj, Some(3), "the claim precedes the kill");
+        assert_eq!(rng2.floats, 0, "the dead arm draws nothing");
+    }
+
+    /// The 699 census: 2 trail floats + the Next(3) gate; the min-return
+    /// census takes the gate → 2 more floats (scale + fadeIn). The
+    /// animation end (<= 2, local owner) kills and arms reuseDelay 2.
+    #[test]
+    fn the_699_draw_census_and_the_animation_end_kill() {
+        let o = owner(20, 20);
+        let mut p = proj(MONK_STAFF_T2);
+        p.alpha = 255;
+        p.local_ai[0] = 5.0;
+        p.vel = Vec2::new(12.0, 0.0);
+        let mut rng = census();
+        let tick = ai_monk_staff_t2_and_3(&mut p, 0, &o, 0, &mut rng);
+        assert_eq!(rng.floats, 4, ":69865 ×2 + :69876-69877");
+        assert_eq!(rng.ranges, vec![(0, 3)], ":69871");
+        assert_eq!(p.alpha, 128, ":69835-69839");
+        assert_eq!(p.local_ai[0], 4.0, ":69840-69843");
+        assert!(p.active);
+        assert!(tick.reuse_delay.is_none());
+        // The animation-end tick.
+        let end_o = owner(2, 20);
+        let tick = ai_monk_staff_t2_and_3(&mut p, 0, &end_o, 0, &mut rng);
+        assert!(!p.active, ":69965");
+        assert_eq!(tick.reuse_delay, Some(2), ":69966");
+    }
+
+    /// The frozen owner holds the pose: no type-arm writes, no draws,
+    /// but the head block + the animation-end kill still run.
+    #[test]
+    fn the_frozen_owner_holds_the_swing_pose() {
+        let mut o = owner(20, 20);
+        o.frozen = true;
+        let mut p = proj(MONK_STAFF_T2);
+        p.alpha = 255;
+        let mut rng = census();
+        ai_monk_staff_t2_and_3(&mut p, 0, &o, 0, &mut rng);
+        assert_eq!(p.alpha, 255, "the fade is inside !frozen");
+        assert_eq!(rng.floats, 0);
+        assert!(rng.ranges.is_empty());
+    }
+
+    /// The 708 volley at animation 2: NextVector2Square = 2 doubles,
+    /// Next(4) speed, the 709 spawn at Centre with the rotated heading
+    /// (×10 at the census's min return), then the two Next(6) dust gates
+    /// (min ≠ 0 → both taken: 1 float + 1 Next(3) each).
+    #[test]
+    fn the_708_volley_draw_order_and_spawn() {
+        let o = owner(2, 20);
+        let mut p = proj(MONK_STAFF_T3_ALT);
+        p.damage = 42;
+        p.vel = Vec2::new(12.0, 0.0);
+        let mut rng = census();
+        let tick = ai_monk_staff_t2_and_3(&mut p, 0, &o, 0, &mut rng);
+        assert_eq!(rng.doubles, 2, ":69909 — NextVector2Square(-0.2, 0.2)");
+        assert_eq!(
+            rng.ranges,
+            vec![(0, 4), (0, 6), (0, 3), (0, 6), (0, 3)],
+            ":69923 then the k=0/2 gates :69944/:69954"
+        );
+        assert_eq!(rng.floats, 2, ":69948 ×2");
+        assert_eq!(tick.shots.len(), 1, ":69924");
+        let s = tick.shots[0];
+        assert_eq!(s.kind, MONK_STAFF_T3_ALT_SHOT);
+        assert_eq!(s.damage, 42);
+        assert_eq!(s.knock_back, 0.0);
+        // vector6 = (1, 0) rotated by +0.3839724659919739, ×10.
+        let a = 0.3839724659919739f64;
+        assert!((s.vx - 10.0 * a.cos() as f32).abs() < 1e-3);
+        assert!((s.vy - 10.0 * a.sin() as f32).abs() < 1e-3);
+        // The animation-end kill fires on the same tick (anim 2 <= 2).
+        assert!(!p.active);
+        assert_eq!(tick.reuse_delay, Some(2));
+    }
+
+    /// A foreign-owned 708 skips the volley (the `owner == Main.myPlayer`
+    /// gate, `:69907`) but keeps the dust gates; no reuseDelay write.
+    #[test]
+    fn the_foreign_owner_skips_the_volley_and_the_reuse_write() {
+        let o = owner(2, 20);
+        let mut p = proj(MONK_STAFF_T3_ALT);
+        p.owner = 3;
+        p.vel = Vec2::new(12.0, 0.0);
+        let mut rng = census();
+        let tick = ai_monk_staff_t2_and_3(&mut p, 0, &o, 0, &mut rng);
+        assert!(tick.shots.is_empty(), ":69907");
+        assert_eq!(rng.doubles, 0);
+        assert_eq!(rng.ranges, vec![(0, 6), (0, 3), (0, 6), (0, 3)]);
+        assert!(p.active, ":69963 — the local-owner gate");
+        assert!(tick.reuse_delay.is_none());
     }
 }

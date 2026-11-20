@@ -1180,6 +1180,19 @@ pub const GOLF_CLUB_HELPER: u16 = 722;
 /// `ProjectileID.MonkStaffT1Explosion` (698) — the Sleepy Octopod's ground
 /// blast, aiStyle 141 (`Projectile.cs:7385-7401`).
 pub const MONK_STAFF_T1_EXPLOSION: u16 = 698;
+/// `ProjectileID.MonkStaffT2` (699) — the Monk Staff T2's swing ghost,
+/// aiStyle 142 (`Projectile.cs:7402-7418`).
+pub const MONK_STAFF_T2: u16 = 699;
+/// `ProjectileID.MonkStaffT2Ghast` (700) — the ghast the T2's first hit
+/// summons (`SummonMonkGhast` `:15155-15184`), aiStyle 143
+/// (`Projectile.cs:7419-7432`).
+pub const MONK_STAFF_T2_GHAST: u16 = 700;
+/// `ProjectileID.MonkStaffT3_Alt` (708) — the T3-alt swing ghost,
+/// aiStyle 142 (`Projectile.cs:7491-7507`).
+pub const MONK_STAFF_T3_ALT: u16 = 708;
+/// `ProjectileID.MonkStaffT3_AltShot` (709) — the T3-alt's volley shot,
+/// aiStyle 1 (`Projectile.cs:7508-7520`).
+pub const MONK_STAFF_T3_ALT_SHOT: u16 = 709;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -3983,6 +3996,30 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 75.0, 200.0, 141, -1, 5, 0, false, false, false,
                 (true, -1, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:7402-7418`: the T2 swing ghost (699): 24x24,
+            // aiStyle 142, penetrate -1, alpha 255, tileCollide false,
+            // ignoreWater (the overlay), melee (the overlay), idStatic
+            // immunity 10. drawLayer 7 / usesOwnerLight / ownerHitCheck
+            // are draw/hit-check seams — no port fields.
+            MONK_STAFF_T2 => (
+                24.0, 24.0, 142, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, true, 10, 255, 1.0),
+            ),
+            // `Projectile.cs:7491-7507`: the T3-alt swing ghost (708) —
+            // the 699 box with LOCAL immunity 6 instead of idStatic 10.
+            MONK_STAFF_T3_ALT => (
+                24.0, 24.0, 142, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 6, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7508-7520`: the T3-alt volley shot (709):
+            // 12x12, aiStyle 1 (the generic flight arm), stock penetrate
+            // 1 / tileCollide true / 3600 life, alpha 255, ignoreWater
+            // (the overlay), extraUpdates 1, scale 0.6, melee (the
+            // overlay).
+            MONK_STAFF_T3_ALT_SHOT => (
+                12.0, 12.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false,
+                (false, -2, false, -1, 255, 0.6),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4227,8 +4264,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER
             // W4-d15 — the DD2 slice's `ignoreWater = true` rows: the 698
-            // (`Projectile.cs:7392`).
-            || kind == MONK_STAFF_T1_EXPLOSION,
+            // (`Projectile.cs:7392`), the 699 (`:7414`), the 708 (`:7503`)
+            // and the 709 (`:7516`).
+            || matches!(
+                kind,
+                MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
+            ),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4263,8 +4304,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
-                    // W4-d15 — the Sleepy Octopod's blast (`:7398`).
-                    | MONK_STAFF_T1_EXPLOSION
+                    // W4-d15 — the Sleepy Octopod's blast (`:7398`), the
+                    // Monk Staff swings (`:7408`/`:7497`) and the volley
+                    // shot (`:7514`).
+                    | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T3_ALT
+                    | MONK_STAFF_T3_ALT_SHOT
             ),
         ranged: matches!(
             kind,
@@ -4578,6 +4622,8 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         659 => 4,
         837 => 3,
         1130 => 6,
+        // W4-d15 — the T3-alt volley shot's 3-frame sheet (`Main.cs:8554`).
+        MONK_STAFF_T3_ALT_SHOT => 3,
         // The Flamelash's 6-frame sheet (`Main.cs:8454`). Its AI's
         // `frameCounter++`/`frame` writes (`Projectile.cs:43216-43222`) are a
         // Phase-6 documented skip, so `frame` stays 0 and the slice reads the
