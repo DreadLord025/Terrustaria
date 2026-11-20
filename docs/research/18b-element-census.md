@@ -142,6 +142,47 @@ ports — the lane keeps them (no re-split) and ports only their *missing halves
 | 33 | `UIHeader` | LANDED (S1-E-17 draw + `ui/chrome_elements.rs::HeaderText` setter) |
 | 34 | `UIHorizontalSeparator` | LANDED (ctor pick + hit override `ui/chrome_elements.rs`; draw pre-landed) |
 
+## d83 progress (`task/W4-d83-ui-elements-3`, base = d82 tip `53912fa0`)
+
+d81's batch 1 (`0b815a62`) landed shared small classes into `ui/elements.rs`
+(GroupOptionButtonState, PowerStrip, traits, UICyclingImage cycler,
+UICreativePowerButton marker) ahead of its row band; d83 keeps the census rows
+as the claim record and ports the *remaining halves* without re-splitting.
+Where d81/d82 already landed a class's state, the row cites both homes.
+
+| row | class | status |
+| --- | --- | --- |
+| 35 | `UIIconTextButton` | pending |
+| 36 | `UIImage` | LANDED (`ui/images.rs::ImageElement`/`ImageDraw`, draw geometry `UIImage.cs:70-99` + SetImage resize) |
+| 37 | `UIImageFramed` | LANDED (`ui/images.rs::FramedImage`, ctor/SetFrame/grid slice `:16-43` via `Utils.cs:1344/1328`) |
+| 38 | `UIImageWithBorder` | LANDED (`ui/images.rs::BorderedImage`, SetBorder resize + border draw `:26-67`) |
+| 39 | `UIItemIcon` | pending |
+| 40 | `UIKeybindingCycleListItem` | pending |
+| 41 | `UIKeybindingListItem` | pending |
+| 42 | `UIKeybindingSimpleListItem` | pending |
+| 43 | `UIKeybindingSliderItem` | pending |
+| 44 | `UIKeybindingToggleListItem` | pending |
+| 45 | `UIParticleLayer` | pending |
+| 46 | `UIProgressBar` | pending |
+| 47 | `UIResourcePack` | pending |
+| 48 | `UIResourcePackInfoButton` | pending |
+| 49 | `UISearchBar` | pending |
+| 50 | `UISelectableTextPanel` | pending |
+| 51 | `UISlicedImage` | pending |
+| 52 | `UISliderBase` | pending |
+| 53 | `UIText` | pending |
+| 54 | `UITextBox` | pending |
+| 55 | `UIToggleImage` | pending |
+| 56 | `UIVerticalSeparator` | pending |
+| 57 | `UIVerticalSlider` | pending |
+| 58 | `UIWorkshopImportWorldListItem` | pending |
+| 59 | `UIWorkshopPublishResourcePackListItem` | pending |
+| 60 | `UIWorkshopPublishWorldListItem` | pending |
+| 61 | `UIWorldCreationPreview` | pending |
+| 62 | `UIWorldListItem` | pending |
+| 63 | `UIWrappedSearchBar` | pending |
+| 64 | `UISortableElement` | pending |
+
 ## Conventions (landed style, per research/18 + S1-E-26 wave B)
 
 Code-only lane: ports are **pure helpers + tests-as-code** (written, not run —
