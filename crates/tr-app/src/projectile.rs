@@ -12404,6 +12404,30 @@ impl ProjectilePool {
         self.refresh_hook_blacklist(world, owner);
     }
 
+    /// `Player.RemoveAllGrapplingHooks` (`Player.cs:33562-33574`): kill every
+    /// aiStyle-7 slot this owner holds, clear the owner's refused-tile set
+    /// (`ClearGrapplingBlacklist`, `:33563` → `:6200-6203`) and drop the
+    /// registration. The C# resets `grappling[0] = -1; grapCount = 0` (`:33564-
+    /// 33565`); the port rebuilds `hook_reg` from the live set on the next
+    /// projectile pass, so clearing it here keeps the pull from reading a dead
+    /// slot in the same tick.
+    pub fn remove_all_grappling_hooks(&mut self, owner: u8) {
+        self.hook_blacklist.remove(&owner);
+        let hooks: Vec<usize> = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                p.active && p.owner == owner && proj_data(p.kind).is_some_and(|d| d.ai_style == 7)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        for i in hooks {
+            self.kill(i);
+        }
+        self.clear_hook_reg();
+    }
+
     /// The wind vector the AI arms' tail applies
     /// (`Projectile.cs:16777-16781`, the port's `Main.windSpeedCurrent`).
     pub fn set_wind(&mut self, wind_speed: f32) {
@@ -13870,25 +13894,9 @@ impl ProjectilePool {
                                 self.register_hook(i);
                                 if latched {
                                     let owner = self.slots[i].owner;
-                                    // `:52772` — the latch rebuilds the
-                                    // owner's refused-tile set.
-                                    self.refresh_hook_blacklist(world, owner);
-                                    // `:52773-52774` — the Queen Slime's hook
-                                    // (935) drags its owner to the hook.
-                                    if self.slots[i].kind == 935 {
-                                        if let Some(p) = player.as_deref_mut() {
-                                            let center = self.slots[i].center();
-                                            let target = crate::grapple::queen_slime_hook_teleport(
-                                                world,
-                                                Vec2::new(p.x, p.y),
-                                                Vec2::new(crate::player::WIDTH as f32, p.height),
-                                                Vec2::new(center.0, center.1),
-                                            );
-                                            // `Player.Teleport(vector, 10)` — the
-                                            // style-10 instant move.
-                                            p.teleport(target.x, target.y);
-                                        }
-                                    }
+                                    // `:52711-52754` — the attach-cap recycle
+                                    // runs FIRST (the C# kills the oldest before
+                                    // the blacklist rebuild / teleport below).
                                     let cap =
                                         crate::grapple::hook_spec_id(self.slots[i].kind).max_attached;
                                     let mut count = 0usize;
@@ -13909,6 +13917,25 @@ impl ProjectilePool {
                                     }
                                     if count > cap && worst != usize::MAX {
                                         self.kill(worst);
+                                    }
+                                    // `:52771` — the latch rebuilds the
+                                    // owner's refused-tile set (AFTER the recycle).
+                                    self.refresh_hook_blacklist(world, owner);
+                                    // `:52772-52775` — the Queen Slime's hook
+                                    // (935) drags its owner to the hook.
+                                    if self.slots[i].kind == 935 {
+                                        if let Some(p) = player.as_deref_mut() {
+                                            let center = self.slots[i].center();
+                                            let target = crate::grapple::queen_slime_hook_teleport(
+                                                world,
+                                                Vec2::new(p.x, p.y),
+                                                Vec2::new(crate::player::WIDTH as f32, p.height),
+                                                Vec2::new(center.0, center.1),
+                                            );
+                                            // `Player.Teleport(vector, 10)` — the
+                                            // style-10 instant move.
+                                            p.teleport(target.x, target.y);
+                                        }
                                     }
                                 }
                             }
@@ -18108,6 +18135,41 @@ mod tests {
         let d = proj_data(crate::projectile::HOOK).unwrap();
         assert_eq!(p.pos, center - Vec2::new(d.w * 0.5, d.h * 0.5), "top-left = center - half-box");
         assert_eq!(p.center(), (center.x, center.y), "the center is the spawn point");
+    }
+
+    /// W3-i39 retry — `Player.RemoveAllGrapplingHooks` (`Player.cs:33562-33574`):
+    /// the kill sweep also clears the owner's refused-tile set
+    /// (`ClearGrapplingBlacklist`, `:33563`) and drops the registration
+    /// (`grappling[0] = -1; grapCount = 0`, `:33564-33565`). Another owner's
+    /// hooks and blacklist survive. WRITTEN NOT RUN.
+    #[test]
+    fn i39_remove_all_clears_the_blacklist_and_registration() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        // Owner 3's attached hook over the dirt row (y=30), plus owner 5's.
+        for (slot, owner) in [(0usize, 3u8), (1, 5)] {
+            pool.slots[slot] = Projectile {
+                active: true,
+                kind: crate::projectile::HOOK,
+                owner,
+                ai: [2.0, 0.0, 0.0, 0.0],
+                w: 18.0,
+                h: 18.0,
+                pos: Vec2::new(10.0 * 16.0 + 8.0 - 9.0, 29.0 * 16.0 + 8.0 - 9.0),
+                ..Default::default()
+            };
+            pool.refresh_hook_blacklist(&w, owner);
+            pool.register_hook(slot);
+        }
+        assert!(pool.hook_blacklist.contains_key(&3));
+        assert!(pool.hook_blacklist.contains_key(&5));
+        assert_eq!(pool.hook_reg().1, 2);
+        pool.remove_all_grappling_hooks(3);
+        assert!(!pool.slots()[0].active, "owner 3's hook is killed");
+        assert!(pool.slots()[1].active, "owner 5's hook survives");
+        assert!(!pool.hook_blacklist.contains_key(&3), "owner 3's blacklist cleared");
+        assert!(pool.hook_blacklist.contains_key(&5), "owner 5's blacklist survives");
+        assert_eq!(pool.hook_reg().1, 0, "the registration drops");
     }
 
     /// M4-PROJ-6b: `AI_040_LeafBlower` (`Projectile.cs:38003-38082`) — the

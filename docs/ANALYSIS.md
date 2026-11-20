@@ -14204,9 +14204,57 @@ cap — the draw count per tick is unchanged for a live hook.
 
 Deferred (out of grapple-core scope): the 446/646-649 `AddLight`/`PlotTileLine`
 (`:52604-52645`, render seam), the chain rendering, the net messages, the
-`oldStyleParkour` jump-height halving (`:22724`), the wings-4/30 frame overrides
-(`:22633-22640`), and the `noItems`/`cursed`/mount-`DismountOnItemUse` QuickGrapple
-gates (`:6326-6341`, those player flags are unported).
+`oldStyleParkour` jump-height halving (`:22724`), and the
+`noItems`/`cursed`/mount-`DismountOnItemUse` QuickGrapple gates (`:6326-6341`,
+those player flags are unported).
+
+#### W3-i39 retry — the second-pass census fixes (code-only, tests written NOT run)
+
+A retry worker re-read the landed `48e3bc73` diff line-by-line against the C# and
+fixed the remaining deviations (the wings-4/30 overrides moved OUT of deferred —
+they landed):
+
+- **The fire-gate `return` no longer aborts the player tick.** The port's
+  `if !fire_allowed { return; }` sat inside `update_player`, so a refused budget
+  skipped the rest of `Player.Update` (movement, the mount key, the pull bridge).
+  The C# `return` (`Player.cs:6401`) exits `QuickGrapple` ONLY. The fire tail is
+  now wrapped in the gate's positive form.
+- **The mount dismount sits INSIDE the `CCed‖tongued‖dead` gate.** The port
+  dismounted before the gate; the C# returns at `:6298-6301` before reaching
+  `TryDismount` (`:6334-6337`), so a CCed/tongued/dead player keeps the mount.
+- **`GoingDownWithGrapple` now forces platform fall-through.** The flag was
+  computed but never consumed. `Player.cs:28085-28092` ORs it into `flag31`,
+  which sets `fallThrough`/`ignorePlats` both true for `DryCollision`/
+  `TileCollision`; `move_vanilla` now feeds it (and the pulley) into the
+  collision args, and `SlopingCollision`'s `stairFall` arms on
+  `ignorePlats‖controlDown‖grappling[0]>=0` (`:23679`).
+- **`RemoveAllGrapplingHooks` clears the blacklist + registration.** The C#
+  (`:33562-33574`) calls `ClearGrapplingBlacklist` (`:33563`) and resets
+  `grappling[0] = -1; grapCount = 0` (`:33564-33565`) before the kill sweep. The
+  pool's `remove_all_grappling_hooks` carries all three; the world-sim removal
+  request calls it.
+- **The Webbed (149) buff detaches the hooks.** `Player.cs:11880` calls
+  `RemoveAllGrapplingHooks` in the webbed arm; the port raises the same
+  `release_grappling_hooks` request.
+- **`GrappleMovement` runs `StopVanityActions`** (`:22619` → `:33458-33463`):
+  `sit_up` + `stop_sleeping` (the port carries sitting/sleeping; petting is
+  unported). The wings-4/30 frame overrides (`:22633-22640`) also landed.
+- **The latch recycle runs BEFORE the blacklist rebuild + Queen Slime teleport.**
+  The C# order is recycle (`:52711-52754`) → `UpdateBlacklistedTilesForGrappling`
+  (`:52771`) → teleport (`:52772-52775`); the port had the rebuild/teleport first.
+- **The PlayerFrame centroid averages only the REGISTERED attached hooks**
+  (`grappling[0..grapCount]`, `Player.cs:36497-36503`), not every aiStyle-7 slot —
+  an in-flight hook does not lean the body.
+- **The latch scan bounds use `ToTileCoordinates` faithfully** (`Utils.cs:1809`:
+  `(int)vec >> 4`, no pre-clamp) with the upper clamped to `maxTiles` (not
+  `maxTiles-1`), so the last in-bounds column is scanned; the attached
+  re-validation uses the same `tile_coord`.
+
+RNG order unchanged by the retry: the crack `Next(16)` and the latch dig cue ride
+`UpdateProjectiles`; the `QuickGrapple` `UseSound` rides `UpdatePlayers` (kept).
+6 new `i39_*` witnesses (the fire-gate fall-through is behavioural, witnessed via
+the platform drop; the removal/blacklist/registration, webbed detach, vanity stop,
+scan edge column and `tile_coord` shift).
 
 ## Thorn bushes + the wall-brick conversion tables (M5-SPREAD-2c)
 

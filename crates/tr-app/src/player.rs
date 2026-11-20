@@ -4938,7 +4938,14 @@ impl Player {
                     self.move_speed += 0.4;
                     self.pick_speed_bonus += 0.15;
                 }
-                149 => self.webbed = true, // `BuffID.Webbed`
+                // `BuffID.Webbed` (`Player.cs:11865-11881`): the webbed arm also
+                // calls `RemoveAllGrapplingHooks` (`:11880`) — the web snaps the
+                // hook. The port raises the same removal request the jump-off
+                // uses (`release_grappling_hooks`), drained by the world-sim.
+                149 => {
+                    self.webbed = true;
+                    self.release_grappling_hooks = true;
+                }
                 // `:11843-11846` — buff 205 (Ballista Panic): the Ballista's
                 // reload caps (`Projectile.cs:68563-68570`).
                 205 => self.ballista_panic = true,
@@ -7832,7 +7839,11 @@ impl Player {
         if hooks.is_empty() {
             return;
         }
-        // `:22619` — `StopVanityActions` (no vanity system in the port).
+        // `:22619` — `StopVanityActions` (`Player.cs:33458-33463`): stop the
+        // petting animal (unported), sit up and stop sleeping. The port carries
+        // sitting/sleeping, so both run; petting has no field.
+        self.sit_up();
+        self.stop_sleeping();
         // `:22620-22623` — a mount not in the `MountID.Sets.CanUseHooks` set
         // ({54, 57-60}) dismounts while the hooks are out.
         if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
@@ -7852,6 +7863,15 @@ impl Player {
         // `:22629-22632` — the wing frame zeroes when nearly still / floating /
         // grounded (visual; the port keeps the field current).
         if (flag2 | flag) || self.vy == 0.0 {
+            self.wing_frame = 0;
+        }
+        // `:22633-22640` — the wings-4/30 frame overrides. The port folds
+        // `wings` (the look) and `wingsLogic` (the gameplay) into one field
+        // (`wings_logic`, the accessory's `wingSlot`, `Player.cs:15599`).
+        if self.wings_logic == 4 {
+            self.wing_frame = 3;
+        }
+        if self.wings_logic == 30 {
             self.wing_frame = 0;
         }
         // `:22641` — `RefreshMovementAbilities` (`:22858-22867`): the flight
@@ -8690,13 +8710,18 @@ impl Player {
         // rides `height − 10` while on tracks — the cart sprite owns the bottom
         // 10 px (pitfall §10.9).
         let col_h = if self.on_track { body_h - 10.0 } else { body_h };
-        // `Player.cs:28088-28092`: the cart always falls through platforms
-        // (`fallThrough` and `flag31` both true).
-        let (fall_through, fall2) = if self.cart_mounted {
-            (true, true)
-        } else {
-            (false, false)
-        };
+        // `Player.cs:28085-28092`: `fallThrough = controlDown`, then
+        // `flag31 |= gravDir == -1 | cart-mount | GoingDownWithGrapple | pulley`
+        // and that arm sets BOTH true. The cart always falls through platforms;
+        // a downward grapple pull (`GoingDownWithGrapple`, `:22655-22658`) and
+        // the pulley do too. The port keeps `gravDir = 1`; the down key feeds
+        // `fallThrough` only (`flag31` stays false unless a force is on).
+        let (fall_through, fall2) =
+            if self.cart_mounted || self.going_down_with_grapple || self.pulley {
+                (true, true)
+            } else {
+                (down, false)
+            };
         let tc = collision::tile_collision(world, pos, vel, WIDTH, col_h, fall_through, fall2);
         if tc.up {
             self.jump = 0;
@@ -8719,7 +8744,10 @@ impl Player {
         } else {
             vel[1] * ms
         };
-        if down {
+        // `Player.SlopingCollision` (`Player.cs:23677-23683`): `stairFall` arms
+        // on `ignorePlats || controlDown || grappling[0] >= 0 || gravDir == -1`;
+        // the port keeps `gravDir = 1`, `ignorePlats` is `fall2` above.
+        if fall2 || down || self.grappling_active {
             self.stair_fall = true;
         }
         // `Player.SlopingCollision(fallThrough, flag31)` (`Player.cs:28210`):
@@ -8730,7 +8758,7 @@ impl Player {
             vel,
             WIDTH,
             body_h,
-            self.cart_mounted || self.stair_fall,
+            self.stair_fall,
         );
         self.stair_fall = sc.stair_fall;
         if sc.stair && (sc.pos[1] - pos[1]).abs() > 8.0 + vel[0].abs() {
@@ -11235,6 +11263,85 @@ mod tests {
         );
         assert!(p.vy < 0.0, "UP held grants the jump impulse: vy={}", p.vy);
         assert!(p.release_grappling_hooks, "the jump-off detaches");
+    }
+
+    /// W3-i39 retry — `Player.cs:11880`: the Webbed (149) buff arm calls
+    /// `RemoveAllGrapplingHooks` — the web snaps the hook. The port raises the
+    /// same `release_grappling_hooks` request the jump-off uses. WRITTEN NOT RUN.
+    #[test]
+    fn i39_webbed_detaches_the_hooks() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(!p.release_grappling_hooks, "no removal before the web");
+        p.buffs.add_buff(149, 60);
+        p.update(&w, PlayerInput::default());
+        assert!(p.webbed, "the webbed flag is set");
+        assert!(p.release_grappling_hooks, "the web raises the hook removal");
+    }
+
+    /// W3-i39 retry — `Player.cs:22619` (`StopVanityActions`, `:33458-33463`):
+    /// `GrappleMovement` sits the player up and stops the sleep. WRITTEN NOT RUN.
+    #[test]
+    fn i39_grapple_stops_the_vanity_actions() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.sitting = true;
+        p.sleeping = true;
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            &[(crate::projectile::HOOK, center, 0.0)],
+            false, false, false, None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        assert!(!p.sitting, "the grapple sits the player up");
+        assert!(!p.sleeping, "the grapple wakes the player");
+    }
+
+    /// W3-i39 retry — `Player.cs:28085-28092` + `DryCollision` (`:23500`): a
+    /// downward grapple pull (`GoingDownWithGrapple`) forces platform
+    /// fall-through. A player resting on a platform (tile 19, solid-top) with a
+    /// hook below drops through it; without the down pull the platform holds.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn i39_a_down_pull_falls_through_a_platform() {
+        let mut w = World::new("t".into(), 64, 128);
+        // A platform row at y=60 across the width (tile 19 is solid-top).
+        for x in 0..64 {
+            let i = w.index(x, 60);
+            w.tiles[i] = Tile { kind: 19, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.spawn_x = 10;
+        w.spawn_y = 40;
+        let mut p = Player::spawn(&w);
+        // Settle onto the platform (no grapple): the solid-top holds the player.
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let rest_y = p.y;
+        assert!(p.on_ground, "the platform holds the player at rest");
+        // A hook far below: the pull points down → GoingDownWithGrapple.
+        let below = Vec2::new(p.x + WIDTH * 0.5, p.y + 400.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, below, 0.0)];
+        for _ in 0..30 {
+            p.update_with_grapple(
+                &w,
+                PlayerInput::default(),
+                grapple,
+                false, false, false, None,
+                &mut tr_core::UnifiedRandom::default(),
+            );
+        }
+        assert!(p.going_down_with_grapple, "the pull points down");
+        assert!(p.y > rest_y + 16.0, "the down pull drops through the platform: {} vs {rest_y}", p.y);
     }
 
     /// `Player.cs:19963,19993`: the overspeed continuation is gated on

@@ -307,6 +307,14 @@ pub(crate) fn quick_grapple_item_kind(
     inventory.iter().find_map(pick)
 }
 
+/// `Vector2.ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)vec >> 4` — the
+/// int truncation then the arithmetic shift, NO clamp. The callers apply the
+/// C#'s own bounds (the crack gate `> 0 && < maxTiles`, the latch scan's
+/// `[0, maxTiles]` clamp).
+pub(crate) fn tile_coord(px: f32) -> i32 {
+    (px as i32) >> 4
+}
+
 /// `(point / 16)` clamped into the world — the C# `ToTileCoordinates` under
 /// the scan's `[0, maxTiles*]` clamp.
 pub(crate) fn tile_of(px: f32, tiles: i32) -> i32 {
@@ -621,14 +629,17 @@ pub(crate) fn ai_hook(
             // at `Center - (5,5)` over the x-major tile range, first match
             // wins.
             let a = center - Vec2::new(5.0, 5.0);
-            // `:52665-52686` — `point = tile(Center-21)`, `point2 =
-            // tile(Center+37)`; the loops are `i < num8` / `j < num10`
-            // (EXCLUSIVE upper), clamped to `[0, maxTiles]`. `World::tile`
-            // rejects anything past the edge.
-            let x0 = tile_of(a.x - 16.0, world.width).max(0);
-            let x1 = tile_of(a.x + 42.0, world.width).min(world.width);
-            let y0 = tile_of(a.y - 16.0, world.height).max(0);
-            let y1 = tile_of(a.y + 42.0, world.height).min(world.height);
+            // `:52665-52686` — `point = (Center-21).ToTileCoordinates()` and
+            // `point2 = (Center+37).ToTileCoordinates()` (`Utils.cs:1809`:
+            // `(int)vec >> 4`, NO clamp), then `num7/num9` clamp UP to 0 and
+            // `num8/num10` clamp DOWN to `maxTiles` (NOT maxTiles-1). The loops
+            // are `i < num8` / `j < num10` (EXCLUSIVE upper). `World::tile`
+            // rejects anything past the edge, so the last in-bounds column
+            // (maxTiles-1) is still scanned.
+            let x0 = tile_coord(a.x - 16.0).max(0);
+            let x1 = tile_coord(a.x + 42.0).min(world.width);
+            let y0 = tile_coord(a.y - 16.0).max(0);
+            let y1 = tile_coord(a.y + 42.0).min(world.height);
             for i in x0..x1 {
                 for j in y0..y1 {
                     let tile = Vec2::new(i as f32 * 16.0, j as f32 * 16.0);
@@ -684,8 +695,8 @@ pub(crate) fn ai_hook(
             // `:52844-52864` — attached: the latch re-validation reads
             // `CanTileBeLatchedOnTo` ONLY (no blacklist, `:52852`). The tile's
             // absence or unsolidifying sends it back to Retract.
-            let tx = (slot.center().0 / 16.0) as i32;
-            let ty = (slot.center().1 / 16.0) as i32;
+            let tx = tile_coord(slot.center().0);
+            let ty = tile_coord(slot.center().1);
             if !can_latch(slot.kind, world, tx, ty, &[]) {
                 slot.ai[0] = 1.0;
             } else {
@@ -1652,5 +1663,41 @@ mod i39_census_tests {
         let (id, _style, x, y, _pitch) = h.wants_sound.expect("the dig cue");
         assert_eq!(id, 0, "the int overload PlaySound(0)");
         assert_eq!((x, y), (40.0 * 16.0, 62.0 * 16.0), "at the tile origin");
+    }
+
+    /// W3-i39 retry — `Utils.cs:1809`: `ToTileCoordinates` is `(int)vec >> 4`
+    /// (int truncation then arithmetic shift, NO clamp). The scan bounds clamp
+    /// the UPPER to `maxTiles` (not `maxTiles-1`), so the last in-bounds column
+    /// is still scanned. A hook near the right edge latches the edge column.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn i39_the_scan_reaches_the_last_in_bounds_column() {
+        // The ground() world is 200 wide; put a solid tile in the last column
+        // (x=199) at row 62 and aim the hook so its scan box overlaps it.
+        let mut w = ground();
+        put(&mut w, 199, 62, 1);
+        // The hook center at x=199*16+8=3192: the scan's upper anchor is
+        // Center+37=3229 → tile 201 → clamped to maxTiles=200 (exclusive), so
+        // column 199 IS scanned. The old `tile_of` pre-clamped to 199, making
+        // the exclusive loop stop at 198 and miss the edge tile.
+        let mut h = hook(HOOK, 199.0 * 16.0 + 8.0, 62.0 * 16.0 + 8.0);
+        let pc = Vec2::new(199.0 * 16.0 + 8.0, 62.0 * 16.0 + 8.0 - 100.0);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
+        assert!(t.attached.is_some(), "the edge column latches");
+        assert_eq!(h.ai[0], 2.0);
+    }
+
+    /// W3-i39 retry — `tile_coord` matches `ToTileCoordinates` (`Utils.cs:1809`):
+    /// `(int)vec >> 4`. For a negative coordinate the int truncates toward zero
+    /// then the arithmetic shift floors — e.g. -1 → 0 >> 4 = -1 (not 0).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn i39_tile_coord_is_the_csharp_shift() {
+        assert_eq!(tile_coord(0.0), 0);
+        assert_eq!(tile_coord(15.9), 0);
+        assert_eq!(tile_coord(16.0), 1);
+        assert_eq!(tile_coord(-1.0), -1, "(int)-1 >> 4 = -1");
+        assert_eq!(tile_coord(-16.0), -1);
+        assert_eq!(tile_coord(-17.0), -2);
     }
 }
