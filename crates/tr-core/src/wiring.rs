@@ -6502,6 +6502,31 @@ mod s1_l6_tests {
     }
 
     #[test]
+    fn the_b_zero_rule_reads_the_neighbour_so_a_pipe_refires() {
+        // Research-23 D1 (`Wiring.cs:900-902`): `byte b = 3; if (tile.type ==
+        // 424 || tile.type == 445) b = 0;` — `tile` is the NEIGHBOUR. Two
+        // straight pipes (424, frameX 0) in series at (10, 20)/(11, 20) feed
+        // the candle (12, 20); a return loop (12,19)/(11,19)/(10,19) re-enters
+        // the second pipe from above. With the neighbour read the pipe carries
+        // count 3 when entered from a non-pipe cell, so the loop's vertical
+        // re-entry is absorbed (and the straight pipe's direction filter
+        // blocks it anyway) — the candle flips ONCE. Under the old current-cell
+        // read the pipe itself got b=0 and re-fired spuriously (candle twice).
+        let mut w = world();
+        put(&mut w, 10, 20, 424, 0, 0);
+        put(&mut w, 11, 20, 424, 0, 0);
+        put(&mut w, 12, 20, 33, 0, 0);
+        for (x, y) in [
+            (9, 20), (10, 20), (11, 20), (12, 20), (12, 19), (11, 19), (10, 19),
+        ] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert_eq!(w.tile_frame_x(12, 20), 18, "the candle flipped exactly once");
+    }
+
+    #[test]
     fn the_wire_bulb_steps_by_the_wire_colour() {
         // `Wiring.cs:1583-1613`: red steps ±18; the direction flips when the
         // colour's bit is already set.
