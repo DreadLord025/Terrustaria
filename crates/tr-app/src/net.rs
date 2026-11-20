@@ -172,6 +172,20 @@ pub mod id {
     /// writer arm, no body; the same reader ignore group
     /// (`MessageBuffer.cs:4483-4490`). d96's census row confirms it dead.
     pub const UNKNOWN_44: u8 = 44;
+    /// `39 ReleaseItemOwnership` (`MessageID.cs:89`) — live: writer
+    /// `NetMessage.cs:948-951`, reader
+    /// `MessageBuffer.cs:2232-2255`; the client releases its reservation
+    /// (`WorldItem.cs:256`), the host re-assigns and may answer with `22`
+    /// (`WorldItem.cs:264` sends it to one client).
+    pub const RELEASE_ITEM_OWNERSHIP: u8 = 39;
+    /// `48 LiquidUpdate` (`MessageID.cs:108-109`, `[Old("Deprecated. Use
+    /// NetLiquidModule instead.")]`) — the per-tile liquid send still
+    /// exists: writer `NetMessage.cs:987-995`, reader
+    /// `MessageBuffer.cs:2407-2446` (host `SquareTileFrame` + a `48` re-push
+    /// when the liquid drained to 0, `:2441`); `NetMessage.sendWater`
+    /// (`:2778-2797`) is the send site. The port's liquid lane uses module
+    /// 82; this is the verbatim legacy body.
+    pub const LIQUID_UPDATE: u8 = 48;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1563,6 +1577,34 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+// ---- S1-I-1 W4-f21: the net-id tail census bodies ----
+
+/// `msg 39 ReleaseItemOwnership`'s body (`NetMessage.cs:948-951`): the item
+/// slot `(short)` then `number2 != 0f` as a bool (`forceAssignToServer`).
+/// The reader (`MessageBuffer.cs:2232-2255`) releases the reservation when
+/// it belongs to the reader's player and calls `FindOwner`; the host may
+/// answer with a `22 ItemOwner` re-announcement (`:2251`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReleaseItemOwnership {
+    pub slot: i16,
+    pub force_assign_to_server: bool,
+}
+
+/// `msg 48 LiquidUpdate`'s body (`NetMessage.cs:987-995`): the tile as two
+/// `(short)`s, `tile.liquid` byte and `tile.liquidType()` byte. The reader
+/// (`MessageBuffer.cs:2407-2446`) applies both, runs the host spam check
+/// (`:2413-2427`, the ±10-tile window around the sender's centre) and
+/// re-frames; a drained tile (`b2 == 0`) is re-pushed as `48` (`:2441`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LiquidUpdate {
+    pub x: i16,
+    pub y: i16,
+    pub liquid: u8,
+    /// `Tile.liquidType()` (`Tile.cs:235`): 0 water, 1 lava, 2 honey,
+    /// 3 shimmer.
+    pub liquid_type: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1674,6 +1716,15 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `39 ReleaseItemOwnership` — a client releases its item reservation
+    /// (`WorldItem.FindOwner`'s `netMode == 1` arm, `WorldItem.cs:256`;
+    /// reader `MessageBuffer.cs:2232-2255`).
+    ReleaseItemOwnership(ReleaseItemOwnership),
+    /// `48 LiquidUpdate` — a client's single-tile liquid change
+    /// (`NetMessage.sendWater`'s `netMode == 1` arm, `NetMessage.cs:2782`;
+    /// reader `MessageBuffer.cs:2407-2446`). Deprecated in favour of module
+    /// 82's liquid stream, but the arm is live.
+    LiquidUpdate(LiquidUpdate),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1841,6 +1892,15 @@ pub enum S2c {
     /// `44 Unknown44` — deprecated (`MessageID.cs:99-100`), no body; the same
     /// reader ignore group (`MessageBuffer.cs:4483-4490`).
     Unknown44,
+    /// `39 ReleaseItemOwnership` — the host's release notice to one client
+    /// (`WorldItem.cs:264`'s `SendData(39, num, …)`; the reader's
+    /// `netMode == 1` arm re-runs `FindOwner(forceAssignToServer: true)`,
+    /// `MessageBuffer.cs:2237-2243`).
+    ReleaseItemOwnership(ReleaseItemOwnership),
+    /// `48 LiquidUpdate` — one tile's liquid, host fan-out
+    /// (`NetMessage.sendWater`'s per-section loop, `NetMessage.cs:2785-2796`;
+    /// the drained-tile re-push `MessageBuffer.cs:2441`).
+    LiquidUpdate(LiquidUpdate),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -1895,6 +1955,8 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
+            Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1963,6 +2025,10 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:948-951`: (short)slot + (number2 != 0f) bool.
+            Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
+            // `NetMessage.cs:987-995`: two (short)s + liquid + liquidType().
+            Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2084,6 +2150,18 @@ impl C2s {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:2234-2236`: ReadInt16 + ReadBoolean.
+            id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
+                slot: r.i16()?,
+                force_assign_to_server: r.bool()?,
+            }),
+            // `MessageBuffer.cs:2409-2412`: two ReadInt16 + two ReadByte.
+            id::LIQUID_UPDATE => Self::LiquidUpdate(LiquidUpdate {
+                x: r.i16()?,
+                y: r.i16()?,
+                liquid: r.u8()?,
+                liquid_type: r.u8()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2248,6 +2326,8 @@ impl S2c {
             Self::Unused25 => id::UNUSED_25,
             Self::Unused26 => id::UNUSED_26,
             Self::Unknown44 => id::UNKNOWN_44,
+            Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
+            Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
         }
     }
 
@@ -2393,6 +2473,9 @@ impl S2c {
             // `25/26/44` have no writer arm; bare frames mirror the reader's
             // ignore group (`MessageBuffer.cs:4483-4490`).
             Self::Unused25 | Self::Unused26 | Self::Unknown44 => w,
+            // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
+            Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
+            Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2600,6 +2683,18 @@ impl S2c {
             id::UNUSED_25 => Self::Unused25,
             id::UNUSED_26 => Self::Unused26,
             id::UNKNOWN_44 => Self::Unknown44,
+            // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
+            // reader reads the same shapes on both sides.
+            id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
+                slot: r.i16()?,
+                force_assign_to_server: r.bool()?,
+            }),
+            id::LIQUID_UPDATE => Self::LiquidUpdate(LiquidUpdate {
+                x: r.i16()?,
+                y: r.i16()?,
+                liquid: r.u8()?,
+                liquid_type: r.u8()?,
+            }),
             _ => return None,
         })
     }
@@ -4792,6 +4887,89 @@ mod tests {
             other => panic!("expected 25, got {:?}", other.msg_id()),
         }
         assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_f21_release_item_ownership_round_trips_both_directions() {
+        // `NetMessage.cs:948-951`: (short)number + (number2 != 0f) bool.
+        // `WorldItem.cs:256` sends force=true/false from the client;
+        // `:264`'s host notice carries the default false.
+        for force in [false, true] {
+            let b = ReleaseItemOwnership {
+                slot: 399,
+                force_assign_to_server: force,
+            };
+            let mut body = 399i16.to_le_bytes().to_vec();
+            body.push(u8::from(force));
+            let f = C2s::ReleaseItemOwnership(b).encode();
+            assert_eq!(f[2], 39);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::ReleaseItemOwnership(d) => assert_eq!(d, b),
+                other => panic!("expected 39, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+            let f = S2c::ReleaseItemOwnership(b).encode();
+            assert_eq!(f[2], 39);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(39, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::ReleaseItemOwnership(d) => assert_eq!(d, b),
+                other => panic!("expected 39, got {:?}", other.msg_id()),
+            }
+        }
+        // Negative slots ride the (short) verbatim; a truncated bool fails.
+        let f = C2s::ReleaseItemOwnership(ReleaseItemOwnership {
+            slot: -1,
+            force_assign_to_server: true,
+        })
+        .encode();
+        assert_eq!(&f[3..], &[0xFF, 0xFF, 1]);
+        assert!(C2s::decode(39, &mut NetReader::new(&[1, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_liquid_update_round_trips_both_directions() {
+        // `NetMessage.cs:987-995`: (short)x + (short)y + tile.liquid byte +
+        // tile.liquidType() byte (`Tile.cs:235-238`: (bTileHeader & 0x60)
+        // >> 5 — 0 water / 1 lava / 2 honey / 3 shimmer).
+        let b = LiquidUpdate {
+            x: -12,
+            y: 340,
+            liquid: 255,
+            liquid_type: 3, // shimmer
+        };
+        let mut body = (-12i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&340i16.to_le_bytes());
+        body.push(255);
+        body.push(3);
+        let f = C2s::LiquidUpdate(b).encode();
+        assert_eq!(f[2], 48);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::LiquidUpdate(d) => assert_eq!(d, b),
+            other => panic!("expected 48, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::LiquidUpdate(b).encode();
+        assert_eq!(f[2], 48);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(48, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::LiquidUpdate(d) => assert_eq!(d, b),
+            other => panic!("expected 48, got {:?}", other.msg_id()),
+        }
+        // The drained-tile shape (`MessageBuffer.cs:2439-2442` re-pushes it).
+        let drained = LiquidUpdate {
+            x: 5,
+            y: 6,
+            liquid: 0,
+            liquid_type: 0,
+        };
+        let f = S2c::LiquidUpdate(drained).encode();
+        assert_eq!(&f[3..], &[5, 0, 6, 0, 0, 0]);
+        // A truncated liquidType byte must not decode.
+        assert!(S2c::decode(48, &mut NetReader::new(&body[..5])).is_none());
     }
 
     #[test]

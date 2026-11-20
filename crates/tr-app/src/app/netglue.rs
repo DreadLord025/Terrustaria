@@ -816,6 +816,11 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // S1-I-1 W4-f21: `39`'s host release/re-assign + the `22` answer
+            // (`MessageBuffer.cs:2244-2253`) and `48`'s liquid apply + spam
+            // check + drained re-push (`:2407-2446`) land with the
+            // apply-wiring lanes (g48-g52) / S1-I-4 — bodies + codecs only.
+            C2s::ReleaseItemOwnership(_) | C2s::LiquidUpdate(_) => {}
         }
     }
 
@@ -1862,6 +1867,11 @@ impl App {
             // group (`MessageBuffer.cs:4483-4490`) accepts and drops them;
             // the codec's bare-frame read IS the whole arm.
             S2c::Unused25 | S2c::Unused26 | S2c::Unknown44 => {}
+            // S1-I-1 W4-f21: `39`'s client FindOwner re-run
+            // (`MessageBuffer.cs:2237-2243`) and `48`'s liquid apply
+            // (`:2428-2435`) land with the apply-wiring lanes (g48-g52) /
+            // S1-I-4 — bodies + codecs only.
+            S2c::ReleaseItemOwnership(_) | S2c::LiquidUpdate(_) => {}
         }
     }
 
