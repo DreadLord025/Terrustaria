@@ -3031,7 +3031,19 @@ impl App {
         if sections.from_wld {
             // The file's roster wins; the Guide spawn is skipped (below).
         } else if sections.native.npcs.is_empty() {
-            if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
+            if let Some(mut guide) = Npc::spawn_guide(&world, world.spawn_x) {
+                // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt`
+                // (`NPC.cs:80769`/`:80839-80856`): the starter Guide names
+                // himself at spawn — two `genRand` draws through the legacy
+                // profile (`npc_names.rs`). The C# `Main.rand` is the
+                // worldgen stream here; the legacy profile rolls variation
+                // 0 and never draws it, so the seed stand-in is inert.
+                let mut main_rand = tr_core::unified_random::UnifiedRandom::new(world.seed as i32);
+                crate::npc_names::give_town_unique_data(
+                    &mut guide,
+                    &mut main_rand,
+                    &mut world.frame_rng,
+                );
                 npcs.push(guide);
             }
         } else {

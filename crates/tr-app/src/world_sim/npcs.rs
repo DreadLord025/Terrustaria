@@ -548,6 +548,17 @@ pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
     n.max_hp = NpcKind::GoblinTinkerer.max_hp();
     n.hp = n.max_hp;
     world.saved_goblin = true;
+    name_the_freed_town_npc(n, world);
+}
+
+/// `NPC.Transform`'s tail (`NPC.cs:81137`): every rescue re-runs
+/// `GiveTownUniqueDataToNPCsThatNeedIt` for the NEW type — the freed NPC
+/// names himself. All six rescue targets are legacy profiles (variation 0,
+/// `Profiles.cs:83-91`), so the `Main.rand` stand-in is never drawn; the
+/// name draws ride `WorldGen.genRand` (`World::frame_rng`).
+fn name_the_freed_town_npc(n: &mut Npc, world: &mut tr_core::World) {
+    let mut main_rand = tr_core::unified_random::UnifiedRandom::new(world.seed as i32);
+    crate::npc_names::give_town_unique_data(n, &mut main_rand, &mut world.frame_rng);
 }
 
 /// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
@@ -563,6 +574,7 @@ pub(crate) fn rescue_bound_wizard(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_wizard = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The bound Mechanic's rescue (`AI_000_TransformBoundNPC`'s 123 → 124 arm,
@@ -574,6 +586,7 @@ pub(crate) fn rescue_bound_mechanic(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_mech = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The webbed Stylist's rescue (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
@@ -590,6 +603,7 @@ pub(crate) fn rescue_sleeping_golfer(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_golfer = true;
+    name_the_freed_town_npc(n, world);
 }
 
 pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
@@ -598,6 +612,7 @@ pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_stylist = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
@@ -610,6 +625,7 @@ pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_angler = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// `Main.NPCChatText_DoAnglerQuest` (`Main.cs:40227-40263`) — the quest's
@@ -4928,6 +4944,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     } else if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
                         // `WorldGen.cs:5564-5565`: the arrival writes its room.
                         n.home = Some((hx, hy));
+                        // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt`
+                        // (`NPC.cs:80769`): the arrival names himself — the
+                        // name draws ride `WorldGen.genRand` (the port's
+                        // `frame_rng` stand-in), the pet variation roll rides
+                        // the `SpawnNPC` SwapRandom wrapper's stream.
+                        crate::npc_names::give_town_unique_data(
+                            &mut n,
+                            app.rngs.stream(RngKey::SpawnNpc),
+                            &mut app.world.frame_rng,
+                        );
+                        // `WorldGen.cs:5575`: the arrival announcement —
+                        // `Announcement.HasArrived` ("{0} has arrived!") with
+                        // `GetFullNetName` in `ChatColors.NPCTravel`
+                        // (`ChatColors.cs:25`, 50/125/255), BEFORE the
+                        // progression event (`:5576`).
+                        let announcement = crate::lang::text_args(
+                            "Announcement.HasArrived",
+                            &[crate::npc_names::full_name(&n)],
+                        );
+                        app.chat
+                            .new_text(announcement, crate::chat::COLOR_NPC_TRAVEL);
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
                         // (progression 8) — the Truffle's IT_CAN_TALK (18,
@@ -7260,6 +7297,81 @@ mod tests {
         assert!(
             app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader),
             "the dye material opens the gate"
+        );
+    }
+
+    /// W4-f38 — the move-in notification (`WorldGen.cs:5575`): the arrival
+    /// names himself (`NPC.cs:80769` → `GiveTownUniqueDataToNPCsThatNeedIt`)
+    /// and broadcasts `Announcement.HasArrived` with `GetFullNetName` in
+    /// `ChatColors.NPCTravel` BEFORE the NO_HOBO event (`:5576`). The
+    /// relocation arm (`:5453-5462`) fires NO_HOBO with NO announcement.
+    #[test]
+    fn the_town_arrival_announces_the_full_name_in_npc_travel() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 105, 12, 9);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // The dye-material gate (the test above): the Dye Trader arrives.
+        let slot = &mut app.inventory[0];
+        slot.kind = 1109;
+        slot.name = "Yellow Dye";
+        slot.count = 1;
+        app.town_arrival.check_for_spawns = 7199;
+        app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let trader = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DyeTrader)
+            .expect("the Dye Trader arrives");
+        assert!(!trader.given_name.is_empty(), "the arrival names himself");
+        let expected = crate::lang::text_args(
+            "Announcement.HasArrived",
+            &[crate::npc_names::full_name(trader)],
+        );
+        assert!(expected.ends_with(" the Dye Trader has arrived!"));
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text == expected && m.color == crate::chat::COLOR_NPC_TRAVEL),
+            "the Announcement.HasArrived broadcast (`WorldGen.cs:5575`)"
+        );
+        // The relocation arm: a homeless Dye Trader takes the next room
+        // with NO second announcement (`:5453-5462` has no broadcast).
+        app.npcs.retain(|n| n.kind != NpcKind::DyeTrader);
+        let mut homeless = Npc::new(NpcKind::DyeTrader, 32.0, 100.0, 1, 0.0);
+        homeless.hp = homeless.max_hp;
+        homeless.home = None;
+        homeless.look_for_home_timeout = 0;
+        app.npcs.push(homeless);
+        app.chat.messages.clear();
+        app.town_arrival.check_for_spawns = 7199;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::DyeTrader && n.home.is_some()),
+            "the homeless trader relocates"
+        );
+        assert!(
+            !app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("has arrived")),
+            "the relocation arm is silent (`WorldGen.cs:5453-5462`)"
         );
     }
 

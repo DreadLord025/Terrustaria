@@ -696,14 +696,20 @@ pub(crate) fn spawn_travel_npc(
     );
     m.hp = m.max_hp;
     m.home = Some((best_x, best_y));
+    // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt` (`NPC.cs:80769`):
+    // the merchant names himself from `TravelingMerchantNames` — a legacy
+    // profile (`TownNPCProfiles.cs:133-136`), variation 0, so the name draws
+    // ride `WorldGen.genRand` (`World::frame_rng`) and `rng` (the UpdateTime
+    // stream standing in for the SpawnNPC wrapper) is never drawn.
+    crate::npc_names::give_town_unique_data(&mut m, rng, &mut world.frame_rng);
     npcs.push(m);
-    // `:5406`: the `Announcement.HasArrived` broadcast (the literal stands in
-    // for the localization key).
-    crate::chat::broadcast_death_text(
-        chat,
-        "The Travelling Merchant has arrived!",
-        crate::chat::COLOR_COMMAND,
+    // `:5406`: `Announcement.HasArrived` ("{0} has arrived!") with
+    // `GetFullNetName` in `ChatColors.NPCTravel` (`ChatColors.cs:25`).
+    let announcement = crate::lang::text_args(
+        "Announcement.HasArrived",
+        &[crate::npc_names::full_name(npcs.last().unwrap())],
     );
+    crate::chat::broadcast_death_text(chat, &announcement, crate::chat::COLOR_NPC_TRAVEL);
 }
 
 /// `WorldGen.UnspawnTravelNPC` (`WorldGen.cs:5000-5034`): the merchant leaves
@@ -741,13 +747,15 @@ pub(crate) fn unspawn_travel_npc(
     if player_near {
         return;
     }
-    npcs.remove(idx);
-    // `:5029`'s `Lang.misc[35]` "has left" broadcast.
-    crate::chat::broadcast_death_text(
-        chat,
-        "The Travelling Merchant has left!",
-        crate::chat::COLOR_COMMAND,
+    // `:5029`: `Lang.misc[35]` ("{0} has departed!", `Lang.cs:487-489` →
+    // `LegacyMisc.35`) with `GetFullNetName`, in `ChatColors.NPCTravel` —
+    // the broadcast runs BEFORE the deactivation (`:5030-5031`).
+    let announcement = crate::lang::text_args(
+        &crate::lang::misc(35),
+        &[crate::npc_names::full_name(&npcs[idx])],
     );
+    npcs.remove(idx);
+    crate::chat::broadcast_death_text(chat, &announcement, crate::chat::COLOR_NPC_TRAVEL);
 }
 
 
@@ -874,6 +882,10 @@ mod tests {
     /// call is a no-op and the all-day gate holds.
     #[test]
     fn the_travelling_merchant_spawns_with_his_stock() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = flow_app(None, vec![], vec![]);
         let mut first = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 64.0, 64.0, 1, 0.0);
         first.home = Some((4, 4));
@@ -901,12 +913,25 @@ mod tests {
         for (i, id) in stock.iter().enumerate() {
             assert!(!stock[i + 1..].contains(id), "no duplicate {id}");
         }
-        // The arrival announcement.
+        // The arrival announcement — `Announcement.HasArrived` with the
+        // merchant's FULL name ("X the Travelling Merchant", `Game.NPCTitle`)
+        // in `ChatColors.NPCTravel` (`WorldGen.cs:5406`).
+        let merchant = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == crate::npc::NpcKind::TravellingMerchant)
+            .unwrap();
+        assert!(!merchant.given_name.is_empty(), "the arrival names himself");
+        let expected = crate::lang::text_args(
+            "Announcement.HasArrived",
+            &[crate::npc_names::full_name(merchant)],
+        );
+        assert!(expected.ends_with(" the Traveling Merchant has arrived!"));
         assert!(
             app.chat
                 .messages
                 .iter()
-                .any(|m| m.text.contains("Travelling Merchant has arrived")),
+                .any(|m| m.text == expected && m.color == crate::chat::COLOR_NPC_TRAVEL),
             "the Announcement.HasArrived broadcast"
         );
         // A second call is the vanilla's 368-alive early return.
@@ -927,6 +952,10 @@ mod tests {
     /// and drops him once they walk away.
     #[test]
     fn the_travelling_merchant_leaves_at_night_when_clear() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = flow_app(None, vec![], vec![]);
         let mut m = crate::npc::Npc::new(
             crate::npc::NpcKind::TravellingMerchant,
@@ -936,6 +965,7 @@ mod tests {
             0.0,
         );
         m.home = Some((4, 4));
+        m.given_name = "Wilbur".into();
         app.npcs.push(m);
         // A player standing on the merchant: the safe-range rect (62 x 39
         // tiles around his centre tile) keeps him.
@@ -949,11 +979,14 @@ mod tests {
         }
         super::unspawn_travel_npc(&mut app.npcs, app.player.as_ref(), &mut app.chat);
         assert!(app.npcs.is_empty(), "the merchant left");
+        // `Lang.misc[35]` = "{0} has departed!" (`LegacyMisc.35`) with the
+        // full name, in `ChatColors.NPCTravel` (`WorldGen.cs:5029`).
         assert!(
             app.chat
                 .messages
                 .iter()
-                .any(|m| m.text.contains("Travelling Merchant has left")),
+                .any(|m| m.text == "Wilbur the Traveling Merchant has departed!"
+                    && m.color == crate::chat::COLOR_NPC_TRAVEL),
             "the Lang.misc[35] broadcast"
         );
         // The whole per-tick arm: the night + the far player drops him
