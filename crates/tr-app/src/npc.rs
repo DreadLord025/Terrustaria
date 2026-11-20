@@ -24681,6 +24681,23 @@ mod tests {
             1,
         );
         assert!(night_odd.contains(&1981), "odd phase by night");
+        // `:2785-2788` — the graveyard mirror 5577 is the case's LAST row
+        // (after the always 5104), gated on ZoneGraveyard alone.
+        assert!(!stock.contains(&5577), "no mirror off the graveyard");
+        let grave = crate::shop::resolve_stock(
+            18,
+            &crate::shop::ShopFlags {
+                zone_graveyard: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert_eq!(
+            grave.last(),
+            Some(&5577),
+            "the mirror rides the graveyard tail: {:?}",
+            grave
+        );
     }
 
     #[test]

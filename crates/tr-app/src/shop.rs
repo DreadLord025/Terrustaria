@@ -620,8 +620,9 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         // The Stylist's shop (index 18, `Chest.cs:2698-2790`): the
         // hair-dye family — the two always-on rows, the life/mana/money
         // gates, the moon-phase parity, the hardmode + Party Girl +
-        // mech/martian rows; the multiplayer team dye (1982) and the
-        // graveyard mirror (5577) sit constants-off.
+        // mech/martian rows, the always 5104 tail and the graveyard
+        // mirror 5577 (`:2785-2788`); only the multiplayer team dye
+        // (1982, `:2752`'s `team != 0 && netMode == 1`) sits constants-off.
         18 => vec![
             row(1990, StockWhen::Always),
             row(1979, StockWhen::Always),
@@ -636,6 +637,8 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(2863, StockWhen::DownedMartians),
             row(3259, StockWhen::DownedMartians),
             row(5104, StockWhen::Always),
+            // `:2785-2788` — `ZoneGraveyard` adds the mirror AFTER 5104.
+            row(5577, StockWhen::ZoneGraveyard),
         ],
         // The Wizard's shop (index 7, `Chest.cs:2004-2032`): the nine
         // magic rows always, the hardmode blood-moon deck (5461) and the
