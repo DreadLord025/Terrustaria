@@ -36,6 +36,7 @@
 //! slots per bucket (`:68`, `:194`) grow here instead of throwing
 //! `IndexOutOfRangeException`; the cap drops the excess (unreachable in a
 //! vanilla draw area).
+#![allow(dead_code)] // UNWIRED — see the module doc; the wiring is the pass-family merge step.
 
 use crate::render::vines;
 use std::collections::HashSet;
