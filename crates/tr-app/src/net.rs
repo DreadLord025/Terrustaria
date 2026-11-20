@@ -1609,6 +1609,54 @@ pub struct SpawnBossEvent {
     pub event: i16,
 }
 
+/// `msg 65 TeleportEntity`'s body (`NetMessage.cs:1088-1109`): a BitsByte
+/// (bit 0/1 = the kind's low two bits, bit 2 = "take the position from the
+/// player", bit 3 = the extraInfo int follows), `(short)` entity slot, the
+/// destination floats, `(byte)` teleport style, then the optional
+/// `(int)` extraInfo (the portal color for style 4). Kinds: 0 player
+/// teleport (`Player.cs:45513` rod-of-discord etc.), 1 NPC teleport
+/// (`NPC.cs:81056`, host, style != 4), 2 player-to-player (`Player.cs:42363`),
+/// 3 the client's ack decrementing `unacknowledgedTeleports`
+/// (`MessageBuffer.cs:2991-2994`, `:3029-3032`). The host forces the entity
+/// to the sender (`:2953-2956`), overrides the position from the live player
+/// when bit 2 is set (`:2979-2982`) and counts unacknowledged teleports on
+/// send (`NetMessage.cs:1104-1107`) — all S1-I-4. Both directions. Note the
+/// C# writes bit 3 only when `number7 != 0`: senders pass `None` for 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TeleportEntity {
+    pub entity: i16,
+    pub x: f32,
+    pub y: f32,
+    pub style: u8,
+    /// 0 player, 1 NPC, 2 player-to-player, 3 ack.
+    pub kind: u8,
+    pub get_pos_from_player: bool,
+    pub extra_info: Option<i32>,
+}
+
+impl TeleportEntity {
+    fn flags(&self) -> BitsByte {
+        let mut b = BitsByte::new();
+        b.set(0, self.kind & 1 == 1);
+        b.set(1, self.kind & 2 == 2);
+        b.set(2, self.get_pos_from_player);
+        b.set(3, self.extra_info.is_some());
+        b
+    }
+}
+
+/// `msg 73 RequestTeleport`'s body (`NetMessage.cs:1142-1144`): one byte —
+/// the teleport item kind: 0 teleportation potion, 1 magic conch
+/// (`Player.cs:43029`), 2 demon conch (`:43062`), 3 shellphone home
+/// (`:43103`), 4 no-space fallback (`:6069`). The host runs the matching
+/// `Player` method on the sender (`MessageBuffer.cs:3127-3146`), which
+/// answers with a `65`. Client→server only — every send site is a
+/// `netMode == 1` arm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RequestTeleport {
+    pub kind: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1726,6 +1774,12 @@ pub enum C2s {
     /// `61 SpawnBossInvader` - a client used a boss/event summon item
     /// (`MessageBuffer.cs:2740-2878`'s selector ladder).
     SpawnBossEvent(SpawnBossEvent),
+    /// `65 TeleportEntity` - a client teleported (kind 0/2) or acks the
+    /// host's teleport (kind 3, `MessageBuffer.cs:2949-3035`).
+    TeleportEntity(TeleportEntity),
+    /// `73 RequestTeleport` - a client used a conch/potion/shellphone
+    /// (`MessageBuffer.cs:3127-3146` runs it on the sender).
+    RequestTeleport(RequestTeleport),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1852,6 +1906,9 @@ pub enum S2c {
     /// `51 MiscDataSync` - the host's kind-2 rod-sound echo
     /// (`MessageBuffer.cs:2498`).
     MiscDataSync(MiscDataSync),
+    /// `65 TeleportEntity` - the host's player/NPC teleport broadcast
+    /// (`MessageBuffer.cs:2989`/`:3008`, `NPC.cs:81056`).
+    TeleportEntity(TeleportEntity),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1942,6 +1999,8 @@ impl C2s {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
             Self::SpawnBossEvent(_) => id::SPAWN_BOSS_EVENT,
+            Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
+            Self::RequestTeleport(_) => id::REQUEST_TELEPORT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2014,6 +2073,22 @@ impl C2s {
             Self::MiscDataSync(m) => w.u8(m.subject).u8(m.kind),
             // `NetMessage.cs:1073-1076`: (short)player + (short)event.
             Self::SpawnBossEvent(e) => w.i16(e.player).i16(e.event),
+            // `NetMessage.cs:1088-1103`: BitsByte + (short)entity + the
+            // destination floats + (byte)style + the gated (int)extraInfo.
+            Self::TeleportEntity(t) => {
+                let w = w
+                    .bitsbyte(t.flags())
+                    .i16(t.entity)
+                    .f32(t.x)
+                    .f32(t.y)
+                    .u8(t.style);
+                match t.extra_info {
+                    Some(v) => w.i32(v),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1142-1144`: (byte)kind.
+            Self::RequestTeleport(q) => w.u8(q.kind),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2144,6 +2219,8 @@ impl C2s {
                 player: r.i16()?,
                 event: r.i16()?,
             }),
+            id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
+            id::REQUEST_TELEPORT => Self::RequestTeleport(RequestTeleport { kind: r.u8()? }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2253,6 +2330,35 @@ fn read_player_chest(r: &mut NetReader) -> Option<PlayerChest> {
     })
 }
 
+/// `65 TeleportEntity` (`MessageBuffer.cs:2949-2978`): the BitsByte first,
+/// `(short)` entity, the destination Vector2, `(byte)` style, then the
+/// `(int)` extraInfo only when bit 3 is set; kind is reassembled from bits
+/// 0/1 (`num82++` / `num82 += 2`).
+fn read_teleport_entity(r: &mut NetReader) -> Option<TeleportEntity> {
+    let flags = r.bitsbyte()?;
+    let entity = r.i16()?;
+    let x = r.f32()?;
+    let y = r.f32()?;
+    let style = r.u8()?;
+    let mut kind = 0u8;
+    if flags.get(0) {
+        kind += 1;
+    }
+    if flags.get(1) {
+        kind += 2;
+    }
+    let extra_info = if flags.get(3) { Some(r.i32()?) } else { None };
+    Some(TeleportEntity {
+        entity,
+        x,
+        y,
+        style,
+        kind,
+        get_pos_from_player: flags.get(2),
+        extra_info,
+    })
+}
+
 impl S2c {
     pub fn msg_id(&self) -> u8 {
         match self {
@@ -2305,6 +2411,7 @@ impl S2c {
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
         }
     }
 
@@ -2450,6 +2557,20 @@ impl S2c {
             // `NetMessage.cs:1010-1013`: (byte)subject + (byte)kind — the
             // host's kind-2 echo (`MessageBuffer.cs:2498`).
             Self::MiscDataSync(m) => w.u8(m.subject).u8(m.kind),
+            // `NetMessage.cs:1088-1103`: BitsByte + (short)entity + the
+            // destination floats + (byte)style + the gated (int)extraInfo.
+            Self::TeleportEntity(t) => {
+                let w = w
+                    .bitsbyte(t.flags())
+                    .i16(t.entity)
+                    .f32(t.x)
+                    .f32(t.y)
+                    .u8(t.style);
+                match t.extra_info {
+                    Some(v) => w.i32(v),
+                    None => w,
+                }
+            }
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2656,6 +2777,7 @@ impl S2c {
                 subject: r.u8()?,
                 kind: r.u8()?,
             }),
+            id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
             _ => return None,
         })
     }
@@ -4863,6 +4985,96 @@ mod tests {
             match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
                 C2s::SpawnBossEvent(d) => assert_eq!(d, e),
                 other => panic!("expected 61, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d99_teleport_entity_round_trips() {
+        // `NetMessage.cs:1088-1103` (case 65), verbatim: BitsByte27 (bit0/1
+        // = kind low bits, bit2 = getPosFromPlayer, bit3 = extraInfo gate),
+        // (short)entity, float x, float y, (byte)style, gated (int)extra.
+        // Kind 0 with extraInfo 0 writes NO tail (`number7 != 0` gate) —
+        // the rod-of-discord send (`Player.cs:45513`, style 1).
+        let rod = TeleportEntity {
+            entity: 3,
+            x: 3200.5,
+            y: -64.25,
+            style: 1,
+            kind: 0,
+            get_pos_from_player: false,
+            extra_info: None,
+        };
+        let f = C2s::TeleportEntity(rod).encode();
+        assert_eq!(f[2], 65);
+        let mut body = vec![0u8]; // flags: kind 0, no bit2, no bit3
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&3200.5f32.to_le_bytes());
+        body.extend_from_slice(&(-64.25f32).to_le_bytes());
+        body.push(1);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::TeleportEntity(d) => assert_eq!(d, rod),
+            other => panic!("expected 65, got {:?}", other.msg_id()),
+        }
+        // Kind 2 (player-to-player, `Player.cs:42363`) → bit1 only; the
+        // host broadcast (`MessageBuffer.cs:3008`) with a portal color.
+        let p2p = TeleportEntity {
+            entity: 1,
+            x: 100.0,
+            y: 200.0,
+            style: 4,
+            kind: 2,
+            get_pos_from_player: true,
+            extra_info: Some(5),
+        };
+        let s = S2c::TeleportEntity(p2p).encode();
+        assert_eq!(s[2], 65);
+        let mut body = vec![0b1110u8]; // bit1 kind, bit2 getpos, bit3 extra
+        body.extend_from_slice(&1i16.to_le_bytes());
+        body.extend_from_slice(&100.0f32.to_le_bytes());
+        body.extend_from_slice(&200.0f32.to_le_bytes());
+        body.push(4);
+        body.extend_from_slice(&5i32.to_le_bytes());
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::TeleportEntity(d) => assert_eq!(d, p2p),
+            other => panic!("expected 65, got {:?}", other.msg_id()),
+        }
+        // Kind 1 (NPC teleport, `NPC.cs:81056`) → bit0; kind 3 (the client
+        // ack, `MessageBuffer.cs:2993`) → bits 0+1.
+        for (kind, flags) in [(1u8, 0b0001u8), (3, 0b0011)] {
+            let t = TeleportEntity {
+                entity: 7,
+                x: 0.0,
+                y: 0.0,
+                style: 2,
+                kind,
+                get_pos_from_player: false,
+                extra_info: None,
+            };
+            let f = C2s::TeleportEntity(t).encode();
+            assert_eq!(f[3], flags);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::TeleportEntity(d) => assert_eq!(d, t),
+                other => panic!("expected 65, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    #[test]
+    fn w4_d99_request_teleport_round_trips() {
+        // `NetMessage.cs:1142-1144` (case 73), verbatim: one (byte)kind —
+        // the reader's ladder 0..4 (`MessageBuffer.cs:3128-3145`:
+        // potion/magic conch/demon conch/shellphone/no-space).
+        for kind in 0u8..=4 {
+            let q = RequestTeleport { kind };
+            let f = C2s::RequestTeleport(q).encode();
+            assert_eq!(f[2], 73);
+            assert_eq!(&f[3..], &[kind]);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::RequestTeleport(d) => assert_eq!(d, q),
+                other => panic!("expected 73, got {:?}", other.msg_id()),
             }
         }
     }

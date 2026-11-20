@@ -821,6 +821,10 @@ impl App {
             // (`:2740-2878`'s selector ladder) — bodies + codecs in `net.rs`;
             // the apply/relay arms land with the send-path pass (S1-I-4).
             C2s::MiscDataSync(_) | C2s::SpawnBossEvent(_) => {}
+            // 65 TeleportEntity (`MessageBuffer.cs:2949-3035` kind ladder +
+            // ack decrement) + 73 RequestTeleport (`:3127-3146` conch/
+            // potion/shellphone dispatch) — same wave, same parking.
+            C2s::TeleportEntity(_) | C2s::RequestTeleport(_) => {}
         }
     }
 
@@ -1867,6 +1871,10 @@ impl App {
             // (`MessageBuffer.cs:2500-2503` SoundID.Item1) — same wave, same
             // parking.
             S2c::MiscDataSync(_) => {}
+            // 65's host teleport broadcast (`MessageBuffer.cs:2985-3028`
+            // Teleport + netOffset zero + the nearest-peer chat) — same
+            // wave, same parking.
+            S2c::TeleportEntity(_) => {}
         }
     }
 
