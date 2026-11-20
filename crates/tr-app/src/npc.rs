@@ -24277,6 +24277,160 @@ mod tests {
         assert!(o.wants_force_bubble, "the re-spawn request fires at 0");
     }
 
+    /// W4-c7 — the firefly family's `SetDefaults` rows pin against the C#
+    /// (`NPC.cs:13517-13530` / `:13559-13572` / `:17265-17279` /
+    /// `:17579-17593`), through the port's tables — the small-kinds pin's
+    /// shape. The four are aiStyle 64 with damage/defense/value 0, lifeMax
+    /// 5, noGravity, the class-default kb 1f (no row written), NPCHit1/
+    /// NPCDeath1 cues, the 10x10 box (the Lightning Bug's 12x12) and the
+    /// vanilla ids kept in the protocol space. WRITTEN, NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_c7_the_firefly_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, w, h)
+        let rows = [
+            (NpcKind::Firefly, 355u16, 10.0, 10.0),
+            (NpcKind::LightningBug, 358, 12.0, 12.0),
+            (NpcKind::Lavafly, 654, 10.0, 10.0),
+            (NpcKind::Shimmerfly, 677, 10.0, 10.0),
+        ];
+        for (kind, ty, w, h) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), 64, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert_eq!(shell.defense(), 0, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, 5, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), 1.0, "{kind:?} kb (class default)");
+            assert_eq!(shell.value(), 0.0, "{kind:?} value (no row)");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} HitSound");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} DeathSound");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} keeps its vanilla protocol id");
+            assert_eq!(NpcKind::from_u16(ty), Some(kind), "{kind:?} round-trip");
+        }
+        // `Main.npcFrameCount[355/358/654/677]` = 4 (the FindFrame strips:
+        // the 7-tick flap + the two dark-pose rows; the 677's pixel-wrap
+        // quirk still reads a 4-row sheet, NPC_677 88x110 → num 27).
+        for (kind, _, _, _) in rows {
+            assert_eq!(
+                crate::render::entities::npc_rows(crate::render::entities::texture_net_id(kind)),
+                4,
+                "{kind:?} frame rows"
+            );
+        }
+    }
+
+    /// W4-c7 — the axis claims aiStyle 64: a bare `update_rng` tick runs
+    /// the faithful solo wrapper (never `update_kind_ai`'s `unreachable!`
+    /// stand-ins), the scale latch rides the caller's stream in C# order,
+    /// the glow request queues on `wants_ai_light` at the truncated tile
+    /// coords and drains byte-exact into the shared `EntityLights` pair,
+    /// and `ai_064_integrate` splits the movement: the 677's raw
+    /// `position += velocity` + stamps (`NPC.cs:90496-90498`) vs the other
+    /// three's no-gravity flyer collision (`:90490-90503`), both behind
+    /// the dead-band X snap (`:90473-90476`). WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_c7_the_style64_axis_runs_solo_feeds_the_glow_and_splits_the_integration() {
+        // The module witnesses' air world (400x300, day, worldSurface 75):
+        // the fly at y 1000 sits ABOVE surface + 10 (62.5 <= 85), so the
+        // idle else draws only the pause — no glow-length draw.
+        let mut w = World::new("t".into(), 400, 300);
+        let mut player = surface_player(&w); // (1600, 1856) — near in X
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = rng.clone();
+        // A full solo tick on a fresh Firefly at (1600, 1000): the rearm
+        // timer is 0 → the NEAR quad, then the idle else rolls the pause
+        // — the five cited draws, in order.
+        let mut n = Npc::new(NpcKind::Firefly, 1600.0, 1000.0, 1, 0.0);
+        let latch = mirror.next_range(75, 111) as f32 * 0.01; // :34028
+        let timer = mirror.next_range(60, 180); // :34033
+        let _ = mirror.next_range(5, 151); // the near quad :34059-34061
+        let _ = mirror.next_range(-100, 101);
+        let _ = mirror.next_range(-100, 101);
+        let pause = mirror.next_range(30, 180); // the idle :34180 (day: no glow draw)
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, mirror, "the axis claimed 64 — the solo stream matches");
+        assert_eq!(n.ai[3], latch, "the scale latch");
+        assert_eq!(n.scale, latch, ":34069");
+        assert_eq!(n.local_ai[0], timer as f32, "the rearm timer");
+        assert_eq!(n.local_ai[1], pause as f32, "the idle pause");
+        assert_eq!(n.local_ai[3], 1.0, "the near latch :34058");
+        assert!(n.wants_ai_light.is_empty(), "the glow timer is 0 — no light yet");
+        // Force a glow tick: localAI[2] = 10 lights while > 3 (:34158),
+        // the colour rides the CURRENT scale, the coords TRUNCATE
+        // (:34156-34157). Centre (1605, 1005) → tile (100, 62) — the
+        // first tick's blend moved the fly by < 0.02 px, inside the tile.
+        n.local_ai[2] = 10.0;
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.local_ai[2], 9.0, ":34173 decrements every glow tick");
+        let (lx, ly, rgb) = *n.wants_ai_light.last().expect("the glow queued");
+        assert_eq!((lx, ly), (100, 62), "the truncated tile coords");
+        assert_eq!(rgb, [0.109500006 * latch, 0.15 * latch, 0.0615 * latch]);
+        // The drain: the queued request lands byte-exact in the shared
+        // pair and reads one frame late (LightingEngine.cs:210-233).
+        let mut lights = crate::entity_lights::EntityLights::default();
+        lights.add(lx, ly, rgb);
+        lights.end_frame();
+        assert_eq!(lights.visible().len(), 1);
+        assert_eq!((lights.visible()[0].x, lights.visible()[0].y), (100, 62));
+        assert_eq!(lights.visible()[0].rgb, rgb);
+        // The integration split, on hand-set velocities (the dead-band
+        // snap first, :90473-90476 — the double f64 compare).
+        let mut fly = Npc::new(NpcKind::Firefly, 1600.0, 1000.0, 1, 0.0);
+        fly.vx = 2.0;
+        fly.vy = 1.0;
+        fly.ai_064_integrate(&w);
+        assert_eq!((fly.x, fly.y), (1602.0, 1001.0), "the flyer moved both axes");
+        assert!(!fly.collide_x && !fly.collide_y, "free air");
+        // A wall directly right (tile x 101 → pixel 1616, rows 62/63 for
+        // the 10-px box at y 1000): the blocked X latches collideX for
+        // the NEXT tick's bounce arm, vx zeroes.
+        for ty in 62..64 {
+            let t = w.tile_mut(101, ty).unwrap();
+            *t = Tile {
+                kind: 1, // stone — in TILE_SOLID
+                flags: FLAG_ACTIVE,
+                ..Tile::default()
+            };
+        }
+        let mut blocked = Npc::new(NpcKind::Firefly, 1600.0, 1000.0, 1, 0.0);
+        blocked.vx = 20.0;
+        blocked.ai_064_integrate(&w);
+        assert!(blocked.collide_x, "the flyer collision latches the bounce flag");
+        assert_eq!(blocked.vx, 0.0);
+        assert_eq!(blocked.x, 1600.0, "the blocked axis did not move");
+        // The 677: noTileCollide (:17592) — the SAME wall does not stop
+        // it; the raw integration stamps oldPosition/oldDirection first.
+        let mut shim = Npc::new(NpcKind::Shimmerfly, 1600.0, 1000.0, -1, 0.0);
+        shim.vx = 20.0;
+        shim.vy = -1.0;
+        shim.ai_064_integrate(&w);
+        assert_eq!((shim.x, shim.y), (1620.0, 999.0), "raw position += velocity");
+        assert_eq!((shim.old_x, shim.old_y), (1600.0, 1000.0), ":90496-90497");
+        assert_eq!(shim.old_direction, -1, ":90498");
+        assert!(!shim.collide_x && !shim.collide_y, "no tile collision");
+        // The dead-band X snap zeroes a sub-0.005 velocity for BOTH shapes.
+        let mut tiny = Npc::new(NpcKind::Shimmerfly, 1600.0, 1000.0, 1, 0.0);
+        tiny.vx = 0.004;
+        tiny.ai_064_integrate(&w);
+        assert_eq!(tiny.vx, 0.0, ":90473-90476");
+        assert_eq!(tiny.x, 1600.0, "the snapped velocity moved nothing");
+        // The other three keep integrating through the flyer collision:
+        // a full tick per kind never reaches the unreachable! kind arms.
+        let mut player2 = surface_player(&w);
+        for kind in [NpcKind::Firefly, NpcKind::LightningBug, NpcKind::Lavafly, NpcKind::Shimmerfly] {
+            let mut k = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            for _ in 0..60 {
+                k.update(&w, &mut player2, 1.0 / 60.0);
+                assert!(k.frame < 4, "{kind:?} row {} of 4", k.frame);
+            }
+        }
+    }
+
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
     /// 0 pair and the blood-moon-night row.
     #[test]
