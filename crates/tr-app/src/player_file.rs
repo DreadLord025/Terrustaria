@@ -158,6 +158,17 @@ pub struct PlayerFile {
     /// `Player.voidVaultInfo` (`Player.cs:1590`, a `BitsByte`; bit 0 is
     /// `IsVoidVaultEnabled`, `:3900-3910`). Read at >= 199 (`:55501-55504`).
     pub void_vault_info: u8,
+    /// `Player.bank` (the piggy bank's 40 slots, `Chest.cs:142-144` maxItems),
+    /// each `(type, stack, prefix)` — read at >= 58 (`Deserialize:55449-55456`;
+    /// the < 58 arm reads 20, `:55464-55471`). `netDefaults` airs an
+    /// out-of-range id AFTER the whole record, stack/prefix ride
+    /// (`Item.cs:49930-49933`'s shape via `:55453-55455`); the legacy -1..-48
+    /// ids ride verbatim like the equip tails.
+    pub bank: [(i32, i32, u8); 40],
+    /// `Player.bank2` (the safe), the same shape (`:55457-55462` / `:55472-55477`).
+    pub bank2: [(i32, i32, u8); 40],
+    /// `Player.bank3` (the defender's forge), read at >= 182 (`:55479-55487`).
+    pub bank3: [(i32, i32, u8); 40],
     /// `Player.bank4` (the Void Bag's 40 slots, `Player.cs:1591`), each
     /// `(type, stack, prefix, favorited)` — read at >= 198 with the favourited
     /// bool gated >= 255 (`:55488-55500`).
@@ -416,6 +427,26 @@ fn read_item_triple(r: &mut Reader, what: &'static str) -> Result<(), PlayerFile
     Ok(())
 }
 
+/// The same triple, captured as `(type, stack, prefix)` — the bank slots
+/// (`Deserialize:55449-55487`'s `netDefaults(id); stack; Prefix(byte)` read
+/// order). For an out-of-range id `netDefaults`→`SetDefaults` airs the item
+/// (`Item.cs:48670-48688`: type 0, stack 0, prefix 0); the read then overwrites
+/// `stack` with the file's value and `Prefix` no-ops on air (`CanHavePrefixes`
+/// false, `:515-518`) so the prefix stays 0 — id+prefix air, stack rides. The
+/// legacy -1..-48 ids ride verbatim (the card model carries no item-defaults
+/// tables); anything outside those bands airs like `SetDefaults` does (the
+/// ph2 equip policy). There is no `TurnToAir` in the bank read path.
+fn read_bank_item(r: &mut Reader, what: &'static str) -> Result<(i32, i32, u8), PlayerFileError> {
+    let id = r.i32().ok_or(PlayerFileError::Truncated(what))?;
+    let stack = r.i32().ok_or(PlayerFileError::Truncated(what))?;
+    let prefix = r.u8().ok_or(PlayerFileError::Truncated(what))?;
+    if (0..ITEM_ID_COUNT).contains(&id) || (-48..0).contains(&id) {
+        Ok((id, stack, prefix))
+    } else {
+        Ok((0, stack, 0))
+    }
+}
+
 /// The full `Player.Deserialize` walk (`Player.cs:55134-55764`) for a file at
 /// `version` in `[135, 326]`. Every field the port does not model is consumed
 /// and dropped so the cursor stays aligned through the tail. Gates below 135
@@ -583,13 +614,18 @@ fn read_player_fields(
             if dye_ok { dye_prefix } else { 0 },
         );
     }
-    // bank + bank2: 40 slots x (id, stack, prefix) each (`:55449-55462`, gate 58).
-    for _ in 0..80 {
-        read_item_triple(r, "bank")?;
+    // bank + bank2: 40 slots x (id, stack, prefix) each (`:55449-55462`,
+    // gate 58; the < 58 arm reads 20 — outside the accepted [135, 326]
+    // range, cited). W4-f44 ph3: the slots ride verbatim.
+    for slot in tail.bank.iter_mut() {
+        *slot = read_bank_item(r, "bank")?;
+    }
+    for slot in tail.bank2.iter_mut() {
+        *slot = read_bank_item(r, "bank2")?;
     }
     if version >= 182 {
-        for _ in 0..40 {
-            read_item_triple(r, "bank3")?; // `:55479-55487`
+        for slot in tail.bank3.iter_mut() {
+            *slot = read_bank_item(r, "bank3")?; // `:55479-55487`
         }
     }
     // `Player.bank4` — the Void Bag's 40 slots (`:55488-55500`); the C#
@@ -890,6 +926,9 @@ struct PlayerTail {
     current_loadout: i32,
     loadouts: [LoadoutData; 3],
     void_vault_info: u8,
+    bank: [(i32, i32, u8); 40],
+    bank2: [(i32, i32, u8); 40],
+    bank3: [(i32, i32, u8); 40],
     bank4: [(i32, i32, u8, bool); 40],
     research: Vec<(String, i32)>,
     armor: [(i32, u8, bool); 20],
@@ -913,6 +952,9 @@ impl Default for PlayerTail {
             current_loadout: 0,
             loadouts: Default::default(),
             void_vault_info: 0,
+            bank: [(0, 0, 0); 40],
+            bank2: [(0, 0, 0); 40],
+            bank3: [(0, 0, 0); 40],
             bank4: [(0, 0, 0, false); 40],
             research: Vec::new(),
             armor: [(0, 0, false); 20],
@@ -978,6 +1020,9 @@ fn finish_player_file(
         current_loadout: tail.current_loadout,
         loadouts: tail.loadouts,
         void_vault_info: tail.void_vault_info,
+        bank: tail.bank,
+        bank2: tail.bank2,
+        bank3: tail.bank3,
         bank4: tail.bank4,
         research: tail.research,
         armor: tail.armor,
@@ -1106,6 +1151,9 @@ fn read_legacy_port_subset(
         current_loadout: 0,
         loadouts: Default::default(),
         void_vault_info: 0,
+        bank: [(0, 0, 0); 40],
+        bank2: [(0, 0, 0); 40],
+        bank3: [(0, 0, 0); 40],
         bank4: [(0, 0, 0, false); 40],
         research: Vec::new(),
         // W4-f44 ph2: the subset carries armour/dye + the hide BitsBytes;
@@ -1164,6 +1212,12 @@ pub struct PlayerFileWrite {
     pub loadouts: [LoadoutData; 3],
     /// `Player.voidVaultInfo` (`:54863`) — bit 0 the vault-enabled flag.
     pub void_vault_info: u8,
+    /// `Player.bank`'s 40 slots (`:54838-54843`) — the piggy bank.
+    pub bank: [(i32, i32, u8); 40],
+    /// `Player.bank2`'s 40 slots (`:54844-54849`) — the safe.
+    pub bank2: [(i32, i32, u8); 40],
+    /// `Player.bank3`'s 40 slots (`:54850-54855`) — the defender's forge.
+    pub bank3: [(i32, i32, u8); 40],
     /// `Player.bank4`'s 40 slots (`:54856-54862`).
     pub bank4: [(i32, i32, u8, bool); 40],
     /// The Journey research pairs (`:54911` -> `ItemsSacrificedUnlocksTracker
@@ -1219,6 +1273,9 @@ impl Default for PlayerFileWrite {
             current_loadout: 0,
             loadouts: Default::default(),
             void_vault_info: 0,
+            bank: [(0, 0, 0); 40],
+            bank2: [(0, 0, 0); 40],
+            bank3: [(0, 0, 0); 40],
             bank4: [(0, 0, 0, false); 40],
             research: Vec::new(),
             armor: [(0, 0, false); 20],
@@ -1350,12 +1407,13 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     }
     // bank / bank2 / bank3: 40 x (type, stack, prefix) each
     // (`:54838-54855`); `Chest.CreateBank`'s maxItems = 40 (`Chest.cs:142-144`,
-    // `:191`), filled with empty `Item`s (ctor `:56056-56058`).
-    for _ in 0..3 {
-        for _ in 0..40 {
-            w.i32(0);
-            w.i32(0);
-            w.u8(0);
+    // `:191`), filled with empty `Item`s (ctor `:56056-56058`). W4-f44 ph3:
+    // the caller's slots ride verbatim (a fresh player's are all-air).
+    for bank in [&file.bank, &file.bank2, &file.bank3] {
+        for (id, stack, prefix) in bank.iter() {
+            w.i32(*id);
+            w.i32(*stack);
+            w.u8(*prefix);
         }
     }
     // bank4 (the void bag): 40 x (type, stack, prefix, favorited)
@@ -1679,6 +1737,50 @@ mod tests {
         // A fresh write keeps the golden zeros (`:54754-54757`).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: the piggy bank / safe / forge slots round-trip, the write
+    /// span is byte-faithful at the `:54838-54855` offsets, and an over-count
+    /// id airs id+prefix while the stack rides (no desync).
+    #[test]
+    fn the_banks_round_trip_and_stay_byte_faithful() {
+        let mut bank = [(0i32, 0i32, 0u8); 40];
+        bank[0] = (757, 1, 81); // a prefixed sword
+        bank[39] = (2, 999, 0); // dirt at the last slot
+        let mut bank2 = [(0i32, 0i32, 0u8); 40];
+        bank2[7] = (-15, 3, 0); // a legacy id rides verbatim
+        let mut bank3 = [(0i32, 0i32, 0u8); 40];
+        bank3[12] = (3507, 1, 57);
+        let written = PlayerFileWrite { bank, bank2, bank3, ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The bank span: 24 prologue + 8 name + 1 difficulty + 8 playtime +
+        // 4 hair + 1 hairDye + 1 team + 2 hide + 1 hideMisc + 1 skin +
+        // 16 stats + 12 bools + 12 deaths/tax + 21 colors + 120 armor +
+        // 60 dye + 580 inventory + 50 misc = 1322; 3 x 40 x 9 = 1080 bytes.
+        let mut r = Reader::new(&plain);
+        r.skip(1322).unwrap();
+        for (id, stack, prefix) in bank.iter().chain(bank2.iter()).chain(bank3.iter()) {
+            assert_eq!(r.i32().unwrap(), *id);
+            assert_eq!(r.i32().unwrap(), *stack);
+            assert_eq!(r.u8().unwrap(), *prefix);
+        }
+        // bank4 (all-air here) follows immediately.
+        assert_eq!(r.take(10).unwrap(), &[0; 10]);
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.bank, bank);
+        assert_eq!(file.bank2, bank2);
+        assert_eq!(file.bank3, bank3);
+        // An over-count id airs id+prefix, the stack rides (`SetDefaults`
+        // `Item.cs:48670-48688` then `Prefix` no-ops on air `:515-518`); the
+        // later slots stay aligned.
+        let mut over = [(0i32, 0i32, 0u8); 40];
+        over[0] = (ITEM_ID_COUNT + 5, 42, 9);
+        over[1] = (8, 99, 0);
+        let written = PlayerFileWrite { bank: over, ..sample() };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.bank[0], (0, 42, 0));
+        assert_eq!(file.bank[1], (8, 99, 0));
+        assert_eq!(file.bank3, [(0, 0, 0); 40]);
     }
 
     /// The 322+ armour/dye favourited bytes are version-gated on read: a
