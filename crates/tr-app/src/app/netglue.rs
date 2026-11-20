@@ -1593,6 +1593,9 @@ impl App {
                 }
                 drop.shimmered = d.shimmered;
                 drop.shimmer_time = d.shimmer_time;
+                // `:1487` — the client writes the enemy-grab lock too
+                // (bit 3's tail byte, S1-I-1 wave I).
+                drop.enemy_grab_delay_time = d.enemy_grab_delay as i32;
                 drop.age = 60.0;
                 self.net_items.insert(d.slot as i16, drop);
                 self.net_items_dirty = true;
@@ -2865,8 +2868,11 @@ impl App {
         (sx, sy)
     }
 
-    /// Builds the `21 ItemDrop` body for one live drop (`NetMessage.cs:646-669`
-    /// minus the ownership/enemy-delay bits the port does not carry yet).
+    /// Builds the `21 ItemDrop` body for one live drop
+    /// (`NetMessage.cs:646-669`); the ownership bits 0/1 ride the C#'s
+    /// `number2` ownership argument only on the spawn send (unported —
+    /// the port's diff cadence sends 0). Bit 3 carries the enemy-grab lock
+    /// clamped to a byte (`:667`, S1-I-1 wave I).
     fn item_state_of(slot: i16, it: &item::ItemDrop) -> net::ItemState {
         net::ItemState {
             slot,
@@ -2879,6 +2885,7 @@ impl App {
             kind: it.kind as i16,
             shimmered: it.shimmered,
             shimmer_time: it.shimmer_time,
+            enemy_grab_delay: it.enemy_grab_delay_time.clamp(0, 255) as u8,
         }
     }
 

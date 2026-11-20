@@ -101,6 +101,15 @@ pub mod id {
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
+    /// `34 ChestUpdates` (S1-I-1 wave I): the chest/dresser/piggy-bank
+    /// place/destroy relay (`NetMessage.cs:913-927`,
+    /// `MessageBuffer.cs:1984-2158`; the client send sites
+    /// `Player.cs:53787-53795`).
+    pub const CHEST_UPDATES: u8 = 34;
+    /// `81 CombatTextInt` (S1-I-1 wave I): a peer's damage number —
+    /// `(float)x, (float)y, RGB, (int)amount` (`NetMessage.cs:1179-1186`,
+    /// `MessageBuffer.cs:3227-3233`, host→client only).
+    pub const COMBAT_TEXT_INT: u8 = 81;
     pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
     pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
     /// `70 CatchNPC` (S1-P-i36): one `(short)` npc slot — the client's bug
@@ -776,7 +785,8 @@ impl NpcInfo {
 
 /// `msg 21 ItemDrop`'s body (`NetMessage.cs:646-669`): the slot, the
 /// position/velocity, the stack, the prefix, the flag byte and the type, plus
-/// the conditional shimmer fields. C#'s `noBroadcast`/`instanced` split and
+/// the conditional shimmer fields and the bit-3 enemy-grab tail byte
+/// (S1-I-1 wave I). C#'s `noBroadcast`/`instanced` split and
 /// the slot-400 spawn request are the M6-NET-5 follow-ups (deviation in
 /// `docs/ANALYSIS.md`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -791,12 +801,18 @@ pub struct ItemState {
     pub kind: i16,
     pub shimmered: bool,
     pub shimmer_time: f32,
+    /// `WorldItem.enemyGrabDelayTime` (`WorldItem.cs:28`) — the monster-grab
+    /// lock (`:405`); bit 3 carries it clamped to a byte
+    /// (`NetMessage.cs:652`/`:665-668`, S1-I-1 wave I).
+    pub enemy_grab_delay: u8,
 }
 
 impl ItemState {
     fn write_to(&self, w: NetWriter) -> NetWriter {
+        // `NetMessage.cs:646-669`: bit 2 shimmer, bit 3 enemyGrabDelayTime.
         let mut flags = BitsByte::new();
         flags.set(2, self.shimmered || self.shimmer_time > 0.0);
+        flags.set(3, self.enemy_grab_delay > 0);
         let w = w
             .i16(self.slot)
             .f32(self.x)
@@ -807,8 +823,15 @@ impl ItemState {
             .u8(self.prefix)
             .bitsbyte(flags)
             .i16(self.kind);
-        if self.shimmered || self.shimmer_time > 0.0 {
+        let w = if self.shimmered || self.shimmer_time > 0.0 {
             w.bool(self.shimmered).f32(self.shimmer_time)
+        } else {
+            w
+        };
+        // `:665-668` — `(byte)MathHelper.Clamp(enemyGrabDelayTime, 0f, 255f)`;
+        // the field is already the clamped byte on this struct.
+        if self.enemy_grab_delay > 0 {
+            w.u8(self.enemy_grab_delay)
         } else {
             w
         }
@@ -829,6 +852,8 @@ impl ItemState {
         } else {
             (false, 0.0)
         };
+        // `MessageBuffer.cs:1455`/`:1459` — bit 3's conditional tail byte.
+        let enemy_grab_delay = if flags.get(3) { r.u8()? } else { 0 };
         Some(Self {
             slot,
             x,
@@ -840,6 +865,7 @@ impl ItemState {
             kind,
             shimmered,
             shimmer_time,
+            enemy_grab_delay,
         })
     }
 }
@@ -4283,6 +4309,7 @@ mod tests {
                 kind: 42,
                 shimmered: true,
                 shimmer_time: 30.0,
+                enemy_grab_delay: 0,
             })),
             S2c::ItemState(Box::new(ItemState {
                 slot: 6,
@@ -4295,6 +4322,7 @@ mod tests {
                 kind: 1,
                 shimmered: false,
                 shimmer_time: 0.0,
+                enemy_grab_delay: 0,
             })),
             S2c::ItemDead { slot: 9 },
             S2c::NetModule {
@@ -4708,6 +4736,71 @@ mod tests {
         assert_eq!(packed, hide);
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
+        }
+    }
+
+    // ---- S1-I-1 wave I: the item/chest-family region (21/22/30-34/80/81) ----
+
+    /// `21 SyncItem` bit 3 — `enemyGrabDelayTime > 0` sets bit 3 and appends
+    /// the clamped byte AFTER the shimmer tail (`NetMessage.cs:652`/
+    /// `:660-668`); the reader consumes it (`MessageBuffer.cs:1455`/`:1459`).
+    #[test]
+    fn s1_i_1_item_state_enemy_grab_bit_round_trips() {
+        let d = ItemState {
+            slot: 12,
+            x: 100.0,
+            y: 200.0,
+            vx: 1.5,
+            vy: -0.5,
+            stack: 3,
+            prefix: 81,
+            kind: 757,
+            shimmered: false,
+            shimmer_time: 0.0,
+            enemy_grab_delay: 100,
+        };
+        let f = S2c::ItemState(Box::new(d)).encode();
+        assert_eq!(f[2], 21);
+        let mut body = Vec::new();
+        body.extend_from_slice(&12i16.to_le_bytes());
+        for v in [100.0f32, 200.0, 1.5, -0.5] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.push(81);
+        body.push(1 << 3); // bit 3 only — no shimmer tail
+        body.extend_from_slice(&757i16.to_le_bytes());
+        body.push(100); // the clamped enemy-grab byte, LAST
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemState(back) => assert_eq!(*back, d),
+            other => panic!("expected 21, got {:?}", other.msg_id()),
+        }
+        // Both bits set: the shimmer pair comes first, the enemy byte last
+        // (`:660-668`'s order).
+        let both = ItemState {
+            shimmered: true,
+            shimmer_time: 0.9,
+            enemy_grab_delay: 255,
+            ..d
+        };
+        let f = S2c::ItemState(Box::new(both)).encode();
+        assert_eq!(f[3 + 2 + 16 + 2 + 1], (1 << 2) | (1 << 3));
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemState(back) => assert_eq!(*back, both),
+            other => panic!("expected 21, got {:?}", other.msg_id()),
+        }
+        // Zero delay writes NO tail byte and clears bit 3 (`:652`'s `> 0`).
+        let none = ItemState {
+            enemy_grab_delay: 0,
+            ..d
+        };
+        let f = S2c::ItemState(Box::new(none)).encode();
+        assert_eq!(f[3 + 2 + 16 + 2 + 1], 0);
+        assert_eq!(f.len(), 3 + 2 + 16 + 2 + 1 + 1 + 2);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemState(back) => assert_eq!(*back, none),
+            other => panic!("expected 21, got {:?}", other.msg_id()),
         }
     }
 }
