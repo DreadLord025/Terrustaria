@@ -609,6 +609,13 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 }
             }
         }
+        // Lunatic Cultist (`Player.cs:7571-7577`).
+        3331 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 3372, 1); // Ancient Cultist Mask
+            }
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1614,6 +1621,41 @@ mod tests {
                 assert_eq!(got, want, "remix {remix} seed {seed}");
                 assert_eq!(got_rng, r, "remix {remix} seed {seed} stream");
             }
+        }
+    }
+
+    #[test]
+    fn w4_f35_cultist_bag_grants_only_the_dev_set_and_the_mask() {
+        // The whole arm: the dev-armor roll + the mask 1/7 — nothing
+        // else (the Cultist bag has no expert-exclusive item).
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3331, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..6], [666, 667, 668, 665, 3287, 3372], "{its:?}");
+        assert!(its[6..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+        // Both miss: only coins.
+        let mut rng = ScriptRng::new(&[1, 6]);
+        let mut out = Vec::new();
+        open_boss_bag(3331, &BagEnv::default(), &mut rng, &mut out);
+        assert!(items(&out).iter().all(|i| (71..=74).contains(i)), "{out:?}");
+    }
+
+    #[test]
+    fn w4_f35_cultist_bag_replays_the_csharp_draw_order() {
+        for seed in [53i32, 439439] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3331, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            dev_armor_replay(&mut r, &mut want, false);
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 3372, 1);
+            }
+            money_replay_on(&mut r, 439, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
         }
     }
 
