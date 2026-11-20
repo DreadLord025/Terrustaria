@@ -138,7 +138,7 @@ impl OwnerView {
             control_right: p.control_right,
             control_up: p.control_jump, // the port's merged jump binding carries controlUp (W/ArrowUp feed control_jump — player.rs:2260-2264, the sleeping/sitting exit-mask precedent)
             control_down: p.control_down,
-            mount_flying: p.mount.is_active() && p.mount.can_fly(p.wings_logic),
+            mount_flying: p.mount.is_active() && p.mount.can_fly(),
         }
     }
 }

@@ -1521,6 +1521,53 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         "[flow-dbg] reached: kind={} mine_down={}",
         held.kind, app.mine_down
     );
+    // `Player.Update`'s early-dismount head (`Player.cs:24992-24995`) +
+    // `ItemCheck_ManageRightClickFeatures` (`:31695-31702`): using an item
+    // dismounts the mounts that say so — the held item being the very same
+    // mount is exempt. The gate is `TryingToUseItem` (`:24319-24338`): the
+    // use button held, a usable held item, and NOT (`itemAnimation == 0 &&
+    // !Main.mouseLeftRelease`) — `Main.mouseLeftRelease` mirrors the CURRENT
+    // button state (`app.mine_released = !mine_down`, the tick head), so on
+    // the press tick the gate is closed and the dismount fires from the
+    // next tick while the animation runs. `TryingToUseItem`'s can-use half
+    // reads `ignoreCursed: true`, so the transformation mounts' `noItems`
+    // lock never blocks the dismount itself — it runs BEFORE the use-start
+    // refusal below, exactly like the C# order.
+    let use_edge = prev_mine_released && !prev_mine_down;
+    let trying_to_use_item = app.mine_down
+        && !app.inventory_open
+        && held.count > 0
+        && crate::item::use_style(held.kind) != 0
+        && (app.swing > 0.0 || app.mine_released);
+    if trying_to_use_item {
+        if let Some(p) = app.player.as_mut() {
+            if p.mount.is_active()
+                && p.mount.dismount_on_item_use()
+                && crate::mount::mount_type_of_item(held.kind) != Some(p.mount.kind())
+            {
+                // `:31697` — `TryEarlyDismount` (the gated path).
+                p.try_early_dismount(&app.world);
+                // `:31698-31701` — a mount that survived the dismount attempt
+                // (CCed / no space) cancels the item use this tick.
+                if p.mount.is_active() {
+                    app.mine_target = None;
+                    app.mine_timer = 0.0;
+                    return;
+                }
+            }
+        }
+    }
+    // `Player.ItemCheck_CheckCanUse_Inner`'s noItems gate (`Player.cs:52140-
+    // 52148`) inside `ItemCheck_TryStartUse` (`:52023`): a Cursed (23) or
+    // transformation-mount item lock refuses EVERY use start — weapons,
+    // potions, saddles and mining alike — unless a dismounts-on-item-use
+    // mount can dismount (`can_use_item_past_no_items`). The early-dismount
+    // head above already freed the ones that could; what remains refuses.
+    if app.player.as_ref().is_some_and(|p| !p.can_use_item_past_no_items(&app.world, false)) {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
     // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
     // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
@@ -2614,36 +2661,47 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             }
         }
     }
-    // `Player.cs:42768-42771` (the use-success arm) + the can-use gate
-    // `:52312-52314` -> `Mount.CanMount` (`Mount.cs:6581-6604`): a saddle
-    // item equips its mount (a swap while mounted goes through the same
-    // `SetMount` guards, `Mount.cs:6196-6213`). Sits after the weapon/potion
-    // arms so the sim-context player borrow is already dead (NLL).
-    if app.mine_down && held.count > 0 && !app.inventory_open {
+    // `Player.cs:42733` (the use-start gate: `controlUseItem &&
+    // releaseUseItem && itemAnimation == 0 && useStyle != 0`) + `:42768-42771`
+    // (the mount arm: `whoAmI == myPlayer && gravDir == 1 && mountType != -1`
+    // AND `flag2` = `ItemCheck_TryStartUse`) + the can-use gate `:52312-52314`
+    // -> `Mount.CanMount` (`Mount.cs:6581-6604`). A saddle item equips its
+    // mount; a swap while mounted goes through the same `SetMount` guards
+    // (`Mount.cs:6196-6213`). The port keeps `gravDir = 1` (no flip). Sits
+    // after the weapon/potion arms so the sim-context player borrow is dead.
+    if app.mine_down
+        && use_edge
+        && app.swing <= 0.0
+        && held.count > 0
+        && !app.inventory_open
+        && crate::item::use_style(held.kind) != 0
+    {
         if let Some(m) = crate::mount::mount_type_of_item(held.kind) {
-            if let Some(p) = app.player.as_mut() {
-                if p.can_mount(&app.world, m) {
-                    p.set_mount(m, p.wet);
-                    let secs = crate::item::use_animation_secs(held.kind);
-                    app.swing_max = secs;
-                    app.swing = secs;
-                    app.attack_cd = secs;
-                    app.mine_target = None;
-                    app.mine_timer = 0.0;
-                    return;
-                }
-            }
-        }
-    }
-    // `Player.cs:31695-31698` (`ItemCheck_ManageRightClickFeatures`) and
-    // `:24992-24994`: using an item dismounts the mounts that say so — the
-    // held item being the very same mount is exempt (`:31697`).
-    if app.mine_down && !app.inventory_open {
-        if let Some(p) = app.player.as_mut() {
-            if p.mount.is_active() && p.mount.dismount_on_item_use() {
-                let same = crate::mount::mount_type_of_item(held.kind) == Some(p.mount.kind());
-                if !same {
-                    p.try_dismount(&app.world);
+            // `ItemCheck_TryStartUse` (`:52021-52040`) for a saddle reduces to
+            // `ItemCheck_CheckCanUse_Inner`'s noItems gate (`:52140-52148`,
+            // ignoreCursed = false) + the `CanMount` probe (`:52312`); the
+            // mana/dirt-rod/bobber halves have no saddle rows.
+            let can_use = app
+                .player
+                .as_ref()
+                .is_some_and(|p| p.can_use_item_past_no_items(&app.world, false));
+            if can_use {
+                if let Some(p) = app.player.as_mut() {
+                    if p.can_mount(&app.world, m) {
+                        p.set_mount(m, p.wet);
+                        // `ItemCheck_StartActualUse` (`:51657-51697`):
+                        // `ApplyItemAnimation` (the saddle's `useAnimation`,
+                        // no melee-speed scaling — `noMelee = true`) + the
+                        // `UseSound` at `base.Center` (`start_swing_extras`).
+                        let secs = crate::item::use_animation_secs_of(held.kind, held.prefix);
+                        app.swing_max = secs;
+                        app.swing = secs;
+                        start_swing_extras(app, held.kind);
+                        app.attack_cd = secs;
+                        app.mine_target = None;
+                        app.mine_timer = 0.0;
+                        return;
+                    }
                 }
             }
         }
@@ -4722,6 +4780,61 @@ fn pile_loot(frame_x: i32, gen_rand: &mut tr_core::tile_light::FastRandom) -> Ve
     drops
 }
 
+/// `Player.Spawn_ForceClearArea` (`Player.cs:37914-37935`): the invalid spawn
+/// area's 3×3 strip above the floor — non-top solids die through
+/// `WorldGen.KillTile` (sounds + cascade drops, `noItem = false`), and every
+/// liquid cell zeroes its liquid (the lava flag with it, `:37928`) then runs
+/// `SquareTileFrame`. The drain runs this AFTER the teleport landed
+/// (`Shellphone_Spawn` queued it before the position write; the C# clears
+/// first — same tick, no probe reads the area in between).
+pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) {
+    for i in floor_x - 1..floor_x + 2 {
+        for j in floor_y - 3..floor_y {
+            // `WorldGen.InWorld(i, j)` — the default fluff 0 (`:9688`).
+            if i < 0 || j < 0 || i >= app.world.width || j >= app.world.height {
+                continue;
+            }
+            // `:37922-37925` — `nactive() && tileSolid && !tileSolidTop`.
+            let kill = app.world.tile(i, j).is_some_and(|t| {
+                t.active()
+                    && !t.inactive()
+                    && td::TILE_SOLID.has(t.kind)
+                    && !td::TILE_SOLID_TOP.has(t.kind)
+            });
+            if kill {
+                break_tile(app, i, j);
+            }
+            // `:37926-37931` — the liquid wipe; `lava(false)` clears ONLY the
+            // lava bit (the honey/shimmer flags stay, like the C#).
+            if app.world.tile(i, j).is_some_and(|t| t.liquid > 0) {
+                if let Some(t) = app.world.tile_mut(i, j) {
+                    t.liquid = 0;
+                    t.flags &= !tr_core::tile::FLAG_LIQUID_LAVA;
+                }
+                for drop in tr_core::edit::square_tile_frame_default(&mut app.world, i, j) {
+                    let id = drop
+                        .item
+                        .map(|item| item as u16)
+                        .or_else(|| registry::tile_drop(drop.tile_kind, 0));
+                    if let Some(id) = id {
+                        spawn_item_drop(
+                            &mut app.items,
+                            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                            id,
+                            1,
+                            drop.x,
+                            drop.y,
+                        );
+                    }
+                }
+                app.request_edit(i, j, 0, 0);
+                app.liquids.wake_around(&app.world, i, j, 3);
+                app.world_key = None;
+            }
+        }
+    }
+}
+
 pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
     let Some(t) = app.world.tile(tx, ty) else {
         return false;
@@ -4747,10 +4860,14 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
         .is_some_and(|k| td::TILE_SOLID.has(k));
     if held_solid {
         let (x0, y0) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+        // Gate merge (i32 ⨉ i41): the player box reads the LIVE
+        // `p.width`/`p.height` (the i41 mount PlayerSize threading — a Rat
+        // rider's 14×14 body no longer blocks a 20×42 ghost box), and the
+        // NPC overlap arm (i32, `Collision.cs:1366-1379`) stays.
         if let Some(p) = &app.player {
-            if x0 < p.x + crate::player::WIDTH
+            if x0 < p.x + p.width
                 && x0 + TILE_PX > p.x
-                && y0 < p.y + crate::player::HEIGHT
+                && y0 < p.y + p.height
                 && y0 + TILE_PX > p.y
             {
                 return false;
@@ -6007,6 +6124,139 @@ mod tests {
     use crate::app::flow::front_flow_tests::flow_app;
 
     const MINE_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    #[test]
+    fn s1_p_i41_the_saddle_use_equips_the_mount_on_the_press_edge() {
+        // `Player.ItemCheck`'s mount arm (`Player.cs:42768-42771`) behind
+        // the use-start gate (`:42733`): the press edge equips the saddle's
+        // mount + plays the use animation. The Blessed Apple (3260) → 10.
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        for x in 0..64 {
+            let i = app.world.index(x, 300);
+            app.world.tiles[i] = Tile { kind: 1, ..Default::default() };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // Park the player on the ground row 300.
+        let p = app.player.as_mut().unwrap();
+        p.y = 300.0 * TILE_PX - p.height;
+        p.vy = 0.0;
+        // The reach gate runs before the use arms — point the camera (and
+        // the screen-centre cursor) at the player's body.
+        app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
+        app.inventory[app.selected] = ItemSlot {
+            kind: 3260,
+            name: "Blessed Apple",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        app.mine_released = true; // the button was up last frame
+        app.mine_prev_down = false;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.mount.is_active() && p.mount.kind() == 10, "the saddle equips");
+        assert!(p.buffs.find_buff_index(162).is_some(), "the mount buff");
+        assert!(app.swing > 0.0, "the use animation runs");
+        // A held press (no fresh edge) does not re-equip.
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        assert!(app.player.as_ref().unwrap().mount.is_active());
+    }
+
+    #[test]
+    fn s1_p_i41_using_an_item_dismounts_the_pixie_and_cursed_refuses() {
+        // `TryEarlyDismount` (`Mount.cs:6626-6632`) from the use head
+        // (`Player.cs:24992`/`:31695-31702`): a dismounts-on-item-use mount
+        // drops when a DIFFERENT item is used; a surviving mount cancels
+        // the use. The Cursed (23) lock refuses the use outright
+        // (`ItemCheck_CheckCanUse_Inner` `:52140-52148`, no mount exemption).
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        for x in 0..64 {
+            let i = app.world.index(x, 300);
+            app.world.tiles[i] = Tile { kind: 1, ..Default::default() };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let p = app.player.as_mut().unwrap();
+        p.y = 300.0 * TILE_PX - p.height;
+        p.vy = 0.0;
+        app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
+        assert!(p.set_mount(61, false)); // the Pixie, dismountsOnItemUse
+        p.no_items = true; // the per-tick lock (Mount.cs:5144)
+        // Hold the Iron Pickaxe (a non-mount item) mid-animation.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1,
+            name: "Iron Pickaxe",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        app.swing = 0.2; // itemAnimation > 0 — the TryingToUseItem gate passes
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.mount.is_active(), "the use dismounted the Pixie");
+        // `Mount.cs:6152` restores noItems only for 55/56 — the Pixie's lock
+        // survives the dismount until the next tick's ResetEffects clear.
+        assert!(p.no_items, "61 keeps the lock until ResetEffects");
+        // Now Cursed: a fresh mount + the debuff refuse every use start.
+        let p = app.player.as_mut().unwrap();
+        assert!(p.set_mount(10, false)); // the Unicorn does NOT dismount on use
+        p.no_items = true;
+        p.cursed = true;
+        app.swing = 0.0;
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.mount.is_active(), "the Cursed lock keeps the mount");
+        assert!(app.swing <= 0.0, "the use never started");
+        assert!(app.mine_target.is_none());
+    }
+
+    #[test]
+    fn s1_p_i41_spawn_force_clear_kills_solids_and_zeroes_liquid() {
+        // `Player.Spawn_ForceClearArea` (`Player.cs:37914-37935`): the 3×3
+        // strip above the floor — non-top solids die (their item drops
+        // through the kill cascade), platforms (solidTop) stay, and every
+        // liquid cell zeroes its liquid + lava flag.
+        let mut w = World::new("clear".into(), 64, 128);
+        for x in 0..64 {
+            let i = w.index(x, 60);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // The floor cell (30, 60); the strip is x 29..=31, y 57..=59.
+        let dirt = w.index(29, 59);
+        w.tiles[dirt] = Tile { kind: 1, ..Default::default() }; // stone
+        w.tiles[dirt].flags |= FLAG_ACTIVE;
+        let plat = w.index(30, 58);
+        w.tiles[plat] = Tile { kind: 19, ..Default::default() }; // platform
+        w.tiles[plat].flags |= FLAG_ACTIVE;
+        let lava = w.index(31, 57);
+        w.tiles[lava].liquid = 255;
+        w.tiles[lava].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
+        spawn_force_clear_area(&mut app, 30, 60);
+        assert!(!app.world.tile(29, 59).unwrap().active(), "the stone died");
+        assert!(app.world.tile(30, 58).unwrap().active(), "the platform stays");
+        assert_eq!(app.world.tile(31, 57).unwrap().liquid, 0, "liquid zeroed");
+        assert_eq!(
+            app.world.tile(31, 57).unwrap().liquid_kind(),
+            tr_core::tile::LiquidKind::Water,
+            "the lava flag cleared"
+        );
+        assert!(
+            app.items.iter().any(|d| d.kind == 3),
+            "the killed stone dropped its Stone Block item (noItem = false)"
+        );
+        // The floor row itself is NOT in the strip (`floorY - 3 .. floorY`).
+        assert!(app.world.tile(30, 60).unwrap().active(), "the floor survives");
+    }
 
     /// A headless mining rig: `world` staged by the caller, the player parked
     /// three tiles right of the target, the camera pinned so the screen-centre

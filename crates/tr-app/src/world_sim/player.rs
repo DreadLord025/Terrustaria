@@ -350,6 +350,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // the C# fires them from inside `Player.Update` but the port's closure
     // holds `app` — they go out once it releases the borrow.
     let mut switch_sends: Vec<(i32, i32)> = Vec::new();
+    // `Player.Shellphone_Spawn`'s invalid-area force-clear request
+    // (`Player.cs:56169-56172`): collected in the tick, run after the player
+    // borrow releases `app` (the kills + drop rolls need `&mut App`).
+    let mut force_clear: Option<(i32, i32)> = None;
     if let Some(p) = app.player.as_mut() {
         // `Player.cs:18802-18804`: `ResetEffects` clears the Actuation Rod's
         // lock ONLY while `releaseUseItem` rides. `releaseUseItem` is
@@ -421,7 +425,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // MenuTick cue.
             for slot in std::mem::take(&mut app.buff_removals) {
                 let bt = p.buffs.buff_type[slot];
-                if p.try_removing_buff(slot, bt) {
+                if p.try_removing_buff(&app.world, slot, bt) {
                     app.audio.play("Menu_Tick");
                 }
             }
@@ -557,8 +561,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // the unit aim times `item.shootSpeed` (the vanilla 16 for the Hook;
             // the per-item values ride with M3-EQUIP-3, `TR_HOOK` pins the kind).
             let center = Vec2::new(
-                p.x + crate::player::WIDTH * 0.5,
-                p.y + crate::player::HEIGHT * 0.5,
+                p.x + p.width * 0.5,
+                p.y + p.height * 0.5,
             );
             // S1-E-21f — `QuickGrapple`'s fire sound (`Player.cs:6408`):
             // `PlaySound(item.UseSound, base.position)` — the hook item's
@@ -605,13 +609,36 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         let mount_edge = mount_key && !app.mount_prev;
         app.mount_prev = mount_key;
         if mount_edge && !map_open {
-            if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
+            // `Player.TryingToUseItem` (`Player.cs:24319-24338`): the port's
+            // summary — the use button held with a usable held item (the
+            // `mouseInterface`/release/can-use halves fold into the editing
+            // gate; the QuickMount dismounts-on-item-use refusal reads it).
+            let held = app.inventory[app.selected];
+            let trying_to_use_item = app.mine_down
+                && !app.inventory_open
+                && held.count > 0
+                && crate::item::use_style(held.kind) != 0;
+            if let Some(kind) =
+                p.quick_mount(&app.world, &app.inventory, &app.equip.misc_equips, trying_to_use_item)
+            {
                 // `ItemCheck_TryStartUse`'s animation (the saddle's
                 // `useAnimation` — 20 ticks on every row).
                 let secs = crate::item::use_animation_secs(kind);
                 app.swing_max = app.swing_max.max(secs);
                 app.swing = secs;
                 app.attack_cd = app.attack_cd.max(secs);
+                // `:6089-6092` — `item.UseSound` at `base.Center` (the
+                // quick-mount path does not run `start_swing_extras`).
+                if let Some((style_index, pitch_offset)) = crate::item::initial_use_sound(kind) {
+                    let (cx, cy) = p.center();
+                    app.audio.play_use_sound(
+                        style_index,
+                        cx,
+                        cy,
+                        pitch_offset,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
             }
         }
         // The hook runs as an aiStyle-7 projectile in the pool
@@ -709,7 +736,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     n += 1.0;
                 }
                 if n > 0.0 {
-                    dx = dx / n - (p.x + crate::player::WIDTH * 0.5);
+                    dx = dx / n - (p.x + p.width * 0.5);
                     dy = dy / n - (p.y + p.height * 0.5);
                 }
             }
@@ -802,8 +829,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.y,
                 p.old_x,
                 p.old_y,
-                crate::player::WIDTH as i32,
-                crate::player::HEIGHT as i32,
+                p.width as i32,
+                p.height as i32,
                 5, // the player's objType (`Collision.SwitchTiles`)
             );
             if let Some((item, x, y)) = switch.dropped {
@@ -841,8 +868,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.y,
                 plate_last.0,
                 plate_last.1,
-                crate::player::WIDTH as f32,
-                crate::player::HEIGHT as f32,
+                p.width,
+                p.height,
             );
             // S1-E-21i — the weighted plates' clicks: `PressurePlateHelper.
             // Update` runs under its own `UpdatePressurePlates` swap
@@ -931,7 +958,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &mut app.world,
                 p,
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                crate::player::WIDTH as i32,
+                p.width as i32,
                 // `Player.GetHurtTile` (`Player.cs:28956`): the cart's body
                 // sits 16 px higher, so the scan's box is that much shorter.
                 if p.cart_mounted {
@@ -1049,7 +1076,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 let location = crate::combat_text::Rect {
                     x: p.x,
                     y: p.y,
-                    width: crate::player::WIDTH,
+                    width: p.width,
                     height: p.height,
                 };
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
@@ -1169,6 +1196,30 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // S1-P-i41 — the Chillemt mounts' equip cue (`Mount.cs:6285`):
+            // the case-42 trackable façade, the NextFloat on the audio-only
+            // stream (the `play_chillet_sound` contract).
+            if let Some((sx, sy)) = p.take_chillet_sound() {
+                app.audio.play_chillet_sound(sx, sy);
+            }
+            // S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`):
+            // case 0's Dig variation + pitch draws ride the `UpdatePlayers`
+            // stream (the player tick runs under the `Main.cs:17754` swap).
+            if let Some((sx, sy)) = p.take_no_space_sound() {
+                app.audio.play_no_space_sound(
+                    sx,
+                    sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // S1-P-i41 — the third-fail no-space teleport (`Player.cs:6061-
+            // 6066`): the forced dismount ran inside `quick_mount`, the spot
+            // scan + teleport need `&World` (the `pending_dismount` convention).
+            if p.take_no_space_teleport() {
+                p.player_no_space_teleport(&app.world);
+                // `Shellphone_Spawn`'s fallback may queue the force-clear.
+                force_clear = p.take_force_clear();
+            }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
             // maxima — `statLifeMax2`/`statManaMax2`/`breathMax` are the
@@ -1231,6 +1282,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // after the tick closure and the player borrow released `app`.
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
+    }
+    // `Spawn_ForceClearArea` (`Player.cs:37914-37935`): the same-tick
+    // deferral is observation-identical — nothing probes the spawn area
+    // between the teleport and this drain.
+    if let Some((fx, fy)) = force_clear {
+        super::editing::spawn_force_clear_area(app, fx, fy);
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
     if map_open {
