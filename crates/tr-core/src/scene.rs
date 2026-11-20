@@ -841,6 +841,12 @@ const SANDSTONE_WALLS: [u16; 8] = [187, 220, 222, 221, 275, 308, 310, 309];
 /// `WallID.Sets.Conversion.HardenedSand` (`WallID.cs:43`).
 const HARDENED_SAND_WALLS: [u16; 8] = [216, 217, 219, 218, 304, 305, 307, 306];
 
+// W4-d129 census witnesses (written-not-run, code-only lane): the
+// `AggregateTileCounts` arms + the `EnoughTilesFor*` threshold statics.
+#[cfg(test)]
+#[path = "scene_w4_d129_aggregate.rs"]
+mod scene_w4_d129_aggregate;
+
 #[cfg(test)]
 mod s1_l_1_zone_tests {
     use super::*;
