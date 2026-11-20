@@ -11968,14 +11968,21 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
   `on_ground`, `leg_frame`, `body_frame`, `hp`, `max_hp` after the C# fields
   (two-client compatibility only). The control BitsBytes ride as flags with
   no port-side replay: each peer's input is local.
-- **`23 NPCInfo` is the C# body minus the fields the port lacks**: `ai[]`
-  (the Rust NPC keeps `anim`/`frame` instead), `difficulty`,
-  `statsAreScaledForThisManyPlayers`, `releaseOwner`, `target` (u16 0) and
-  the per-type `SyncAnchor` (position is sent raw). The `generation` byte
-  bumps on a kind change so the client re-creates the slot вЂ” the C#'s
-  `existing.generation != generation` spawn test. `hurt_cd` stays 0 on
-  clients (`28 NPCStrike` is not ported), so a networked NPC shows no hit
-  flash yet.
+- **`23 NPCInfo` now rides the verbatim C# body** (S1-I-1 d91, 2026-11-20):
+  slot byte, generation byte, `position + Size * SyncAnchor` (the only
+  non-zero anchor row is vanilla 50 King Slime `(0.5, 1)`, `NPCID.cs:10457`;
+  the port uses the kind's base `size()`, not the hp-scaled live `Size`),
+  velocity, `(ushort)target`, the two flag bytes, the flag-gated `ai[0..4]`
+  floats BEFORE the `(short)netID`, the optional difficulty float, the
+  lifeMax-keyed width-switched life and the catchable-kind `releaseOwner`
+  byte (`NetMessage.cs:686-763`, `MessageBuffer.cs:1563-1704`). The wire
+  `kind` stays the port-local protocol id, so the catchable/anchor predicates
+  map through `cs_id`. Two fields keep their defaults: the player-count
+  scaling byte (flags2 b0 — consumed on decode, never written) and
+  `difficulty` (1.0 until the world-mode state is persisted). The
+  `generation` byte bumps on a kind change so the client re-creates the slot
+  — the C#'s `existing.generation != generation` spawn test. `hurt_cd` stays
+  0 on clients until the `28 NPCStrike` apply arm lands (S1-I-4).
 - **The cadence is the port's tick, not the C#'s per-NPC `netSpam` gate.**
   The host streams every live NPC at 10 Hz (the `netSpam` 30/5-tick per-NPC
   gate and the section culling are the M6-NET-3 follow-ups); the player

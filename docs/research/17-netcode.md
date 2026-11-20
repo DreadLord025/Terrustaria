@@ -132,8 +132,8 @@ notes).
 | 20 | AreaTileChange | `id::SECTION_RANGE` | `net.rs:72`; arm `:543-644` |
 | 21 | SyncItem | `id::ITEM_DROP` | `net.rs:79`; auto-converts to 151 when air (`NetMessage.cs:89-100`) |
 | 22 | ItemOwner | `id::ITEM_OWNER` | `net.rs:80`; reservation expiry (`:675-685`) |
-| 23 | SyncNPC | `id::NPC_INFO` | `net.rs:82`; arm `:686-748` |
-| 24 | UnusedMeleeStrike | NOT-FOUND | dead (`MessageID.cs:57`) |
+| 23 | SyncNPC | `id::NPC_INFO` | `net.rs:105`; arm `NetMessage.cs:686-763` — verbatim body since S1-I-1 d91 (ai[4] flag-gated floats before the netID, `(ushort)target`, lifeMax-keyed life width, statue/difficulty/shimmer flags2, the catchable `releaseOwner` tail, King Slime's SyncAnchor offset); reader `MessageBuffer.cs:1563-1704` |
+| 24 | UnusedMeleeStrike | NOT-FOUND (dead) | writer arm exists (`NetMessage.cs:765-768`: `(short)number` + `(byte)number2`) but NO `SendData(24)` call site anywhere; the reader asserts false (`MessageBuffer.cs:1706-1708`, `Invariant.Assert(condition: false, "UnusedMeleeStrike")`) — deliberately unported (S1-I-1 d91 census) |
 | 25-26 | Unused25 / Unused26 | NOT-FOUND | deprecated; 25 for NetTextModule (`MessageID.cs:59-60`) |
 | 27 | SyncProjectile | `id::PROJECTILE` | `net.rs:70`; arm `:780-841` |
 | 28 | DamageNPC | `id::NPC_STRIKE` | `net.rs:69`; cascades a 23 when `spawnNeedsSyncing` (`:102-107`) |
