@@ -572,16 +572,19 @@ pub fn find_frame_extra2(kind: FindFrameExtra2Kind, s: &mut FrameState, i: &Fram
                 s.row = 1;
             }
         }
-        // `case 148` in the penguin group (`NPC.cs:76392-76456`,
-        // shared with 149/168/470): the `localAI[0]` 2/3/4 colour bank
+        // `case 148 : case 149` in the penguin group
+        // (`NPC.cs:76392-76456`, shared with 168/470): the
+        // `localAI[0]` 2/3/4 colour bank
         // offsets EVERY row write +3/+6/+9 (`num40`, `:76397-76410`).
         // The grounded flip writes only on direction ±1; the idle
         // snaps to the bank's row 0 and zeroes the counter; the walk
         // rides the |vx| accumulator's <6/<12/<15 bands over rows
         // 0/1/2 (the >= 15 tail zeroes the counter and HOLDS row 2 —
         // the walker-band row-hold quirk); both air arms write row 2
-        // + bank and zero the counter.
-        FindFrameExtra2Kind::Penguin => {
+        // + bank and zero the counter. The two penguins share ONE
+        // machine (the C# groups the cases; the 168 CorruptPenguin
+        // rides d47's slice, the 470 ViciousPenguin a later wave).
+        FindFrameExtra2Kind::Penguin | FindFrameExtra2Kind::PenguinBlack => {
             // `:76397-76410` — num40, the colour bank.
             let bank: u32 = if i.local_ai0 == 2.0 {
                 3
@@ -626,8 +629,7 @@ pub fn find_frame_extra2(kind: FindFrameExtra2Kind, s: &mut FrameState, i: &Fram
                 s.row = 2 + bank;
             }
         }
-        // The remaining three kinds land in the next commit.
-        _ => {}
+        // All 15 kinds are armed — no fall-through remains.
     }
 }
 
@@ -826,7 +828,7 @@ mod tests {
             rows.push(s.row);
         }
         assert_eq!(s.local_ai0, 1.0);
-        assert_eq!(&rows[..8], &[2, 2, 2, 2, 2, 2, 2, 3], "the step lands 7 ticks after the init tick");
+        assert_eq!(&rows[..8], &[2, 2, 2, 2, 2, 2, 3, 3], "the step lands 7 ticks after the init tick");
         assert!(rows.iter().all(|&r| r < 4));
         // vx == 0 leaves the flip alone but still writes the 0 tilt.
         let mut t = FrameState { sprite_dir: -1, local_ai0: 1.0, ..Default::default() };
@@ -862,11 +864,12 @@ mod tests {
         assert_eq!(idle, vec![0, 0, 0]);
         let air = rows_over(FindFrameExtra2Kind::SantaClaus, input(0.0, 1.0), 3);
         assert_eq!(air, vec![1, 1, 1]);
-        // The first walk tick lifts row 0 straight into the band.
+        // The first walk tick lifts row 0 into the band, THEN steps
+        // (the C# order :69572-69580 — the lift precedes the >6 step).
         let mut s = FrameState::default();
         find_frame_extra2(FindFrameExtra2Kind::SantaClaus, &mut s, &input(3.0, 0.0));
-        assert_eq!(s.row, 2);
-        assert_eq!(s.counter, 0.0, "|3|*2+1 = 7 > 6 steps on tick 1");
+        assert_eq!(s.row, 3, "|3|*2+1 = 7 > 6 lifts to 2 then steps to 3 on tick 1");
+        assert_eq!(s.counter, 0.0);
     }
 
     /// `NPC.cs:76392-76456`: the Penguin's four colour banks offset
@@ -890,6 +893,70 @@ mod tests {
                 let mut a = FrameState { counter: 7.0, ..Default::default() };
                 find_frame_extra2(FindFrameExtra2Kind::Penguin, &mut a, &air);
                 assert_eq!((a.row, a.counter), (2 + bank, 0.0), "both air arms write row 2 + bank");
+            }
+        }
+    }
+
+    /// The two penguins share ONE machine — a mixed 40-tick run must
+    /// be byte-identical (the keep-one witness, the d48 snail-delegate
+    /// precedent).
+    #[test]
+    fn w4_e14_the_two_penguins_are_one_machine() {
+        for bank_val in [0.0f32, 2.0, 3.0, 4.0] {
+            let mut a = FrameState::default();
+            let mut b = FrameState::default();
+            for tick in 0..40 {
+                let i = FrameInput {
+                    local_ai0: bank_val,
+                    vx: if tick % 7 < 4 { 1.5 } else { 0.0 },
+                    vy: if tick % 11 == 0 { -1.0 } else if tick % 13 == 0 { 1.0 } else { 0.0 },
+                    direction: if tick % 5 == 0 { -1 } else { 1 },
+                    ..Default::default()
+                };
+                find_frame_extra2(FindFrameExtra2Kind::Penguin, &mut a, &i);
+                find_frame_extra2(FindFrameExtra2Kind::PenguinBlack, &mut b, &i);
+                assert_eq!(a, b, "tick {tick} bank {bank_val}");
+            }
+        }
+    }
+
+    /// The strip sweep: every arm over a mixed input grid, 40 ticks
+    /// each — the row never leaves its own sheet (the d47 sweep
+    /// precedent). The Slimer's localAI[0] latch is seeded 1 so the
+    /// sweep exercises the steady state, not the init pin.
+    #[test]
+    fn w4_e14_every_arm_stays_inside_its_sheet() {
+        for kind in ALL {
+            for vx in [-2.0f32, -0.5, 0.0, 0.5, 2.0] {
+                for vy in [-1.0f32, 0.0, 1.0] {
+                    for dir in [-1i32, 0, 1] {
+                        for wet in [false, true] {
+                            for ai1 in [0.0f32, 1.0] {
+                                let i = FrameInput {
+                                    vx,
+                                    vy,
+                                    direction: dir,
+                                    ai: [0.0, ai1, 0.0, 0.0],
+                                    local_ai0: 0.0,
+                                    wet,
+                                };
+                                let mut s = FrameState {
+                                    local_ai0: if kind == FindFrameExtra2Kind::Slimer { 1.0 } else { 0.0 },
+                                    ..Default::default()
+                                };
+                                for _ in 0..40 {
+                                    find_frame_extra2(kind, &mut s, &i);
+                                    assert!(
+                                        s.row < kind.frame_count(),
+                                        "{kind:?} row {} left its {}-row sheet (vx {vx}, vy {vy}, dir {dir}, wet {wet}, ai1 {ai1})",
+                                        s.row,
+                                        kind.frame_count()
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
