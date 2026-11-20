@@ -142,6 +142,65 @@ pub(crate) fn grant_ammo_mastery(
     crate::armor_sets::grant_set_ammo_flags(p, armor);
 }
 
+/// The mechanical-accessory half of `Player.UpdateEquips` (S1-P-i34) — the
+/// wire-visibility goggles and the auto-actuator. The flags clear in
+/// `ResetEffects` (`Player.cs:18524`/`:18534`, run inside `Player::update`)
+/// and re-derive here from this tick's equipment, in the C#'s scan order.
+///
+/// `RefreshMechanicalAccsFromItemType` (`Player.cs:12799-12820`) is called
+/// from three places: the 58-slot inventory scan (`UpdateEquips`,
+/// `:12900-12914`), `GrantArmorBenefits` over the ten functional armor slots
+/// (`:12919-12930` → `:13103-13107`), and `ApplyEquipFunctional` over the
+/// accessory slots (`:12946-12951`). The port folds the inventory + armor
+/// scopes into one pass (the flags are idempotent ORs, so order is immaterial);
+/// the held-item arm (`ApplyEquipFunctional`'s `currentItem.type == 3624`,
+/// `:15295-15298`) runs on the selected slot.
+///
+/// Scope: the Mechanical Lens (3619) and Wire Kite (3611) grant
+/// `InfoAccMechShowWires` (`:12801-12804`); the Actuation Accessory (3624)
+/// grants `autoActuator` (`:12817-12820`). The Wire Kite's ruler-line/grid
+/// halves (`:12805-12812`) and the auto-paint family are out of this wiring
+/// wave. The `autoActuator` placement consumer
+/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a recorded
+/// follow-up — the flag is granted and read by the visibility gate, but the
+/// auto-place-on-build pass is not ported (ANALYSIS "The wiring tools").
+pub(crate) fn grant_mechanical_accs(
+    p: &mut Player,
+    inventory: &[ItemSlot],
+    armor: &[ItemSlot; ARMOR],
+    held_kind: u16,
+) {
+    // The inventory scan (`UpdateEquips`, `Player.cs:12900-12914`): the port's
+    // 50-slot grid plus the coin/ammo rows the C# keeps in the same 58-slot
+    // array. The caller hands the grid; the coin/ammo rows carry no mech
+    // accessory, so the grid scan is the whole reachable set.
+    for slot in inventory {
+        refresh_mechanical_acc_from_item_type(p, slot.kind);
+    }
+    // `GrantArmorBenefits` over the ten functional armor slots
+    // (`GetEffectiveArmor(0..10)`, `Player.cs:12919-12930`): 3 armor + 7
+    // accessories. The vanity half (slots 10..20) grants nothing here.
+    for slot in &armor[..10] {
+        refresh_mechanical_acc_from_item_type(p, slot.kind);
+    }
+    // The held-item arm (`ApplyEquipFunctional`, `Player.cs:15295-15298`):
+    // the Actuation Accessory in hand also grants `autoActuator`.
+    refresh_mechanical_acc_from_item_type(p, held_kind);
+}
+
+/// `Player.RefreshMechanicalAccsFromItemType` (`Player.cs:12799-12820`),
+/// the wiring-relevant arms only.
+fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
+    // `:12801-12804` — the Mechanical Lens / Wire Kite show the wires.
+    if kind == 3619 || kind == 3611 {
+        p.info_acc_mech_show_wires = true;
+    }
+    // `:12817-12820` — the Actuation Accessory auto-places actuators.
+    if kind == 3624 {
+        p.auto_actuator = true;
+    }
+}
+
 /// The summon-cap half of `Player.UpdateEquips` (M4-PROJ-8 phase 2): the
 /// armor rows (`GrantArmorBenefits` over `GetEffectiveArmor(0..10)`,
 /// `Player.cs:13258-13948`) and the held items (`ApplyEquipFunctional` over
@@ -250,6 +309,44 @@ pub(crate) fn player_input(
         item_in_use,
         held_use_turn,
     }
+}
+
+/// S1-P-i55 — `Main.LocalGolfState.Update()` (`Main.cs:17219`,
+/// `GolfState.cs:111-133`): once per fixed world tick, ahead of the player
+/// body (the C# call precedes `UpdatePlayers`). The held item's type/shoot
+/// gate the settle-wait (`IsAGolfingItem` + the 3611 whistle); the live
+/// ball is the pool slot the state's stored snapshot names, re-validated
+/// by `GetLastHitBall`'s four guards (`GolfState.cs:102-109`). The parts
+/// signature keeps the stepper closures' `&mut Player` borrow disjoint.
+fn update_golf_state(
+    golf_state: &mut tr_core::golf_state::GolfState,
+    inventory: &[crate::item::ItemSlot],
+    selected: usize,
+    projectiles: &crate::projectile::ProjectilePool,
+    local_id: i32,
+) {
+    let held = inventory
+        .get(selected)
+        .filter(|s| s.count > 0)
+        .map(|s| s.kind)
+        .unwrap_or(0);
+    let held_shoot = crate::registry::projectile(held).unwrap_or(0) as i32;
+    let live_ball = golf_state.last_hit_golf_ball().and_then(|stored| {
+        projectiles.slots().get(stored.who_am_i).map(|q| {
+            let (cx, cy) = q.center();
+            tr_core::golf_state::GolfBall {
+                who_am_i: stored.who_am_i,
+                kind: q.kind as i32,
+                owner: q.owner as i32,
+                active: q.active,
+                position: q.pos,
+                center: Vec2::new(cx, cy),
+                ai1: q.ai[1],
+                local_ai1: q.local_ai[1],
+            }
+        })
+    });
+    golf_state.update(held as i32, held_shoot, local_id, live_ball.as_ref());
 }
 
 pub(crate) fn update_player(app: &mut App, dt: f32) {
@@ -445,7 +542,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         }
     }
+
+    // `Player.Shellphone_Spawn`'s invalid-area force-clear request
+    // (`Player.cs:56169-56172`): collected in the tick, run after the player
+    // borrow releases `app` (the kills + drop rolls need `&mut App`).
+    let mut force_clear: Option<(i32, i32)> = None;
     if let Some(p) = app.player.as_mut() {
+        // `Player.cs:18802-18804`: `ResetEffects` clears the Actuation Rod's
+        // lock ONLY while `releaseUseItem` rides. `releaseUseItem` is
+        // `!controlUseItem` latched at the tail of the previous ItemCheck
+        // (`:42829`); the port's `mine_released` holds that state (refreshed
+        // every tick by `update_editing`). A held button keeps the lock across
+        // ticks — one actuation per hold, not per tick (the v1 cleared it
+        // unconditionally, which let a held rod re-flip every tick).
+        if app.mine_released {
+            p.actuation_rod_lock = false;
+        }
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
         // tile-range toggle (`:18815-18828`).
@@ -525,6 +637,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
+                // S1-P-i55 — the golf state update runs on the dead branch
+                // too (`Main.cs:17219` is unconditional).
+                update_golf_state(
+                    &mut app.golf_state,
+                    &app.inventory,
+                    app.selected,
+                    &app.projectiles,
+                    app.local_id as i32,
+                );
                 respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
                     || respawn_now;
                 p.reset_projectile_caches();
@@ -707,8 +828,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `:6460-6478` — the aim at the mouse world position, the velocity
             // the unit aim times `item.shootSpeed`, spawned at the player center.
             let center = Vec2::new(
-                p.x + crate::player::WIDTH * 0.5,
-                p.y + crate::player::HEIGHT * 0.5,
+                p.x + p.width * 0.5,
+                p.y + p.height * 0.5,
             );
             let _spawned = app.projectiles.spawn_hook(
                 kind,
@@ -744,7 +865,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 .iter()
                 .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Throw, *k));
         if mount_edge && !map_open {
-            if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
+            // `Player.TryingToUseItem` (`Player.cs:24319-24338`): the port's
+            // summary — the use button held with a usable held item (the
+            // `mouseInterface`/release/can-use halves fold into the editing
+            // gate; the QuickMount dismounts-on-item-use refusal reads it).
+            let held = app.inventory[app.selected];
+            let trying_to_use_item = app.mine_down
+                && !app.inventory_open
+                && held.count > 0
+                && crate::item::use_style(held.kind) != 0;
+            if let Some(kind) =
+                p.quick_mount(&app.world, &app.inventory, &app.equip.misc_equips, trying_to_use_item)
+            {
                 // S1-P-i54 — `QuickMount` (`Player.cs:6086-6093`) plays the
                 // saddle's `UseSound` at `base.Center` after `SetMount`;
                 // there is NO item animation — `ItemCheck_TryStartUse`
@@ -861,7 +993,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                         dx += pr.pos.x + pr.w * 0.5;
                         dy += pr.pos.y + pr.h * 0.5;
                     }
-                    dx = dx / count as f32 - (p.x + crate::player::WIDTH * 0.5);
+                    dx = dx / count as f32 - (p.x + p.width * 0.5);
                     dy = dy / count as f32 - (p.y + p.height * 0.5);
                 }
             }
@@ -913,6 +1045,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
         let mut run_pixels = 0.0f32;
         app.player_step.tick(dt, |_| {
+            // S1-P-i55 — `Main.LocalGolfState.Update()` (`Main.cs:17219`)
+            // runs once per world update BEFORE `UpdatePlayers` — the
+            // dead-player branch included (the C# call is unconditional).
+            update_golf_state(
+                &mut app.golf_state,
+                &app.inventory,
+                app.selected,
+                &app.projectiles,
+                app.local_id as i32,
+            );
             // `player.itemAnimation > 0` for the sleeping state — the same
             // gate the swing render uses (`self.swing > 0.0` with a held
             // item, `frame.rs:483`). The danger gate rides the M2-DEATH-2
@@ -957,8 +1099,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.y,
                 p.old_x,
                 p.old_y,
-                crate::player::WIDTH as i32,
-                crate::player::HEIGHT as i32,
+                p.width as i32,
+                p.height as i32,
                 5, // the player's objType (`Collision.SwitchTiles`)
             );
             if let Some((item, x, y)) = switch.dropped {
@@ -996,8 +1138,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.y,
                 plate_last.0,
                 plate_last.1,
-                crate::player::WIDTH as f32,
-                crate::player::HEIGHT as f32,
+                p.width,
+                p.height,
             );
             // S1-E-21i — the weighted plates' clicks: `PressurePlateHelper.
             // Update` runs under its own `UpdatePressurePlates` swap
@@ -1038,6 +1180,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // tick's equipment and buffs, then the cycler's cooldown decrements
             // — both inside the fixed step, BEFORE the shoot path reads them.
             grant_ammo_mastery(p, &app.equip.armor, &app.equip.misc_equips);
+            // The mechanical-accessory half of `UpdateEquips` (S1-P-i34): the
+            // wire-visibility goggles + the auto-actuator flag, re-derived from
+            // this tick's inventory/armor/held item (`Player.cs:12799-12820`).
+            grant_mechanical_accs(
+                p,
+                &app.inventory,
+                &app.equip.armor,
+                app.inventory[app.selected].kind,
+            );
             // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
             grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
@@ -1077,7 +1228,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &mut app.world,
                 p,
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                crate::player::WIDTH as i32,
+                p.width as i32,
                 // `Player.GetHurtTile` (`Player.cs:28956`): the cart's body
                 // sits 16 px higher, so the scan's box is that much shorter.
                 if p.cart_mounted {
@@ -1195,7 +1346,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 let location = crate::combat_text::Rect {
                     x: p.x,
                     y: p.y,
-                    width: crate::player::WIDTH,
+                    width: p.width,
                     height: p.height,
                 };
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
@@ -1315,6 +1466,30 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // S1-P-i41 — the Chillemt mounts' equip cue (`Mount.cs:6285`):
+            // the case-42 trackable façade, the NextFloat on the audio-only
+            // stream (the `play_chillet_sound` contract).
+            if let Some((sx, sy)) = p.take_chillet_sound() {
+                app.audio.play_chillet_sound(sx, sy);
+            }
+            // S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`):
+            // case 0's Dig variation + pitch draws ride the `UpdatePlayers`
+            // stream (the player tick runs under the `Main.cs:17754` swap).
+            if let Some((sx, sy)) = p.take_no_space_sound() {
+                app.audio.play_no_space_sound(
+                    sx,
+                    sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // S1-P-i41 — the third-fail no-space teleport (`Player.cs:6061-
+            // 6066`): the forced dismount ran inside `quick_mount`, the spot
+            // scan + teleport need `&World` (the `pending_dismount` convention).
+            if p.take_no_space_teleport() {
+                p.player_no_space_teleport(&app.world);
+                // `Shellphone_Spawn`'s fallback may queue the force-clear.
+                force_clear = p.take_force_clear();
+            }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
             // maxima — `statLifeMax2`/`statManaMax2`/`breathMax` are the
@@ -1421,6 +1596,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
     }
+    // `Spawn_ForceClearArea` (`Player.cs:37914-37935`): the same-tick
+    // deferral is observation-identical — nothing probes the spawn area
+    // between the teleport and this drain.
+    if let Some((fx, fy)) = force_clear {
+        super::editing::spawn_force_clear_area(app, fx, fy);
+    }
+
     // `Player.cs:25214-25217` — `dropItemCheck` runs when `itemAnimation ==
     // 0 && ItemTimeIsZero && reuseDelay == 0` (the port's swing/item_time/
     // reuse_delay seconds trio). Per-frame like the hook/mount key edges
@@ -1851,6 +2033,50 @@ mod tests {
             let p = app.player.as_ref().unwrap();
             assert!(p.magic_quiver && p.has_molten_quiver, "6181 Phoenix Quiver");
         }
+    }
+
+    /// S1-P-i34 — the mechanical-accessory grant seam
+    /// (`RefreshMechanicalAccsFromItemType`, `Player.cs:12799-12820`): the
+    /// Mechanical Lens (3619) / Wire Kite (3611) grant `InfoAccMechShowWires`,
+    /// the Actuation Accessory (3624) grants `autoActuator`; the per-tick
+    /// `ResetEffects` clear (`:18524`/`:18534`) wipes them once unequipped.
+    #[test]
+    fn the_mechanical_accessories_grant_the_wire_flags_and_clear_per_tick() {
+        let mut app = ammo_app();
+        // The lens in an accessory slot grants the wire-visibility flag.
+        app.equip.armor[3] = slot(3619);
+        tick_ammo(&mut app);
+        assert!(
+            app.player.as_ref().unwrap().info_acc_mech_show_wires,
+            "3619 Mechanical Lens shows the wires"
+        );
+        // Unequip: the clear wipes it.
+        app.equip.armor[3] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        assert!(
+            !app.player.as_ref().unwrap().info_acc_mech_show_wires,
+            "the seam clears per tick"
+        );
+        // The Wire Kite (3611) grants the same flag.
+        app.equip.armor[4] = slot(3611);
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().info_acc_mech_show_wires, "3611 Wire Kite");
+        app.equip.armor[4] = EMPTY_SLOT;
+        // The Actuation Accessory (3624) in an accessory slot grants autoActuator.
+        app.equip.armor[5] = slot(3624);
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().auto_actuator, "3624 equipped");
+        app.equip.armor[5] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().auto_actuator, "cleared");
+        // The held-item arm (`ApplyEquipFunctional`, `:15295-15298`): 3624 in
+        // hand also grants autoActuator.
+        app.inventory[app.selected] = slot(3624);
+        tick_ammo(&mut app);
+        assert!(
+            app.player.as_ref().unwrap().auto_actuator,
+            "3624 held grants autoActuator"
+        );
     }
 
     /// DW-3.3 (the buff half) — the three buff-granted flags (16 Archery,

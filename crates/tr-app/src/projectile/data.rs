@@ -135,6 +135,41 @@ pub const BONE_JAVELIN: u16 = 598;
 /// spear, the `AI_001` 507/508/662/680/685 gravity group (`Projectile.cs:5770-5778`,
 /// `:57471-57478`).
 pub const JAVELIN: u16 = 507;
+/// `ProjectileID.Glowstick` (50) — the thrown light, aiStyle 14
+/// (`Projectile.cs:1326-1336`). S1-P-i42.
+pub const GLOWSTICK: u16 = 50;
+/// `ProjectileID.StickyGlowstick` (53) — aiStyle 14, `tileCollide = false`
+/// (`Projectile.cs:1354-1365`); the stick scan lives in the AI arm
+/// (`:24911-24962`). S1-P-i42.
+pub const STICKY_GLOWSTICK: u16 = 53;
+/// `ProjectileID.Flare` (163) — the flare gun's shot, aiStyle 33
+/// (`Projectile.cs:2515-2525`). S1-P-i42.
+pub const FLARE: u16 = 163;
+/// `ProjectileID.BlueFlare` (310) — aiStyle 33 (`Projectile.cs:4022-4032`).
+pub const BLUE_FLARE: u16 = 310;
+/// `ProjectileID.SpelunkerGlowstick` (473) — aiStyle 14, `timeLeft *= 2`
+/// (`Projectile.cs:5485-5495`). S1-P-i42.
+pub const SPELUNKER_GLOWSTICK: u16 = 473;
+/// `ProjectileID.BouncyGlowstick` (515) — aiStyle 14
+/// (`Projectile.cs:5851-5861`); the bounce rides `HandleMovement`'s
+/// 515-517 arm (`:18479-18489`). S1-P-i42.
+pub const BOUNCY_GLOWSTICK: u16 = 515;
+/// `ProjectileID.FairyGlowstick` (870) — aiStyle 14 until the first bounce
+/// flips it to 170 (`Projectile.cs:8343-8353`, `:24832-24835`). S1-P-i42.
+pub const FAIRY_GLOWSTICK: u16 = 870;
+/// `ProjectileID.SpelunkerFlare` (1008) — aiStyle 33
+/// (`Projectile.cs:9580-9590`). S1-P-i42.
+pub const SPELUNKER_FLARE: u16 = 1008;
+/// `ProjectileID.CursedFlare` (1009) — aiStyle 33 (`Projectile.cs:9591-9601`).
+pub const CURSED_FLARE: u16 = 1009;
+/// `ProjectileID.RainbowFlare` (1010) — aiStyle 33 (`Projectile.cs:9602-9612`).
+pub const RAINBOW_FLARE: u16 = 1010;
+/// `ProjectileID.ShimmerFlare` (1011) — aiStyle 33 (`Projectile.cs:9613-9623`).
+pub const SHIMMER_FLARE: u16 = 1011;
+/// `ProjectileID.RainbowGlowstick` (1089) — aiStyle 14, no alpha override
+/// (`Projectile.cs:10153-10162`); the disco light rides `ProjLight`
+/// (`:16434-16439`). S1-P-i42.
+pub const RAINBOW_GLOWSTICK: u16 = 1089;
 /// `ProjectileID.Snowball` (166) — the thrown aiStyle-2 kind with the
 /// 20-tick/`+0.3f` ladder (`Projectile.cs:2549-2557`, `:23566-23596`).
 pub const SNOWBALL: u16 = 166;
@@ -867,6 +902,50 @@ pub const INFERNO_BLAST: u16 = 296;
 pub const VENOM_FANG: u16 = 355;
 /// `ProjectileID.FrostBoltStaff` (359) — the Frost Staff's bolt.
 pub const FROST_BOLT: u16 = 359;
+/// The fishing bobbers (S1-P-i35): the plain pole family 360-366
+/// (`ProjectileID.BobberWooden`..`BobberSittingDuck`), the Fleshcatcher /
+/// Hotline 381/382, the Blood rod 760 and the Scarab 775
+/// (`Projectile.cs:4508-4516`), plus the glow-bobber accessory overrides
+/// 986-993 (`:9422-9435`). All aiStyle 61, 14x14, penetrate -1,
+/// netImportant, `bobber = true`.
+pub const BOBBER_WOODEN: u16 = 360;
+pub const BOBBER_REINFORCED: u16 = 361;
+pub const BOBBER_FIBERGLASS: u16 = 362;
+pub const BOBBER_FISHEROF_SOULS: u16 = 363;
+pub const BOBBER_GOLDEN: u16 = 364;
+pub const BOBBER_MECHANICS: u16 = 365;
+pub const BOBBER_SITTING_DUCK: u16 = 366;
+pub const BOBBER_FLESHCATCHER: u16 = 381;
+pub const BOBBER_HOTLINE: u16 = 382;
+pub const BOBBER_BLOOD: u16 = 760;
+pub const BOBBER_SCARAB: u16 = 775;
+/// The glow-bobber overrides (`Player.UpdateFishingBobber`,
+/// `Player.cs:36673-36702`: items 5139-5146 map to 986-993).
+pub const BOBBER_GLOW_START: u16 = 986;
+pub const BOBBER_GLOW_END: u16 = 993;
+/// Every kind the aiStyle-61 dispatch claims (the `Projectile.bobber` flag's
+/// SetDefaults writers — `Projectile.cs:4515`/`:9429`).
+pub const BOBBER_KINDS: [u16; 19] = [
+    BOBBER_WOODEN,
+    BOBBER_REINFORCED,
+    BOBBER_FIBERGLASS,
+    BOBBER_FISHEROF_SOULS,
+    BOBBER_GOLDEN,
+    BOBBER_MECHANICS,
+    BOBBER_SITTING_DUCK,
+    BOBBER_FLESHCATCHER,
+    BOBBER_HOTLINE,
+    BOBBER_BLOOD,
+    BOBBER_SCARAB,
+    986,
+    987,
+    988,
+    989,
+    990,
+    991,
+    992,
+    993,
+];
 /// `ProjectileID.AmberBolt` (597) — the Amber Staff's gem bolt.
 pub const GEM_BOLT_AMBER: u16 = 597;
 /// The seven gem-bolt kinds the C# spells out as
@@ -963,6 +1042,63 @@ pub const NEBULA_BLAZE_2: u16 = 635;
 /// `ProjectileID.HorsemanPumpkin` (1001) — the Headless Horseman's
 /// 480-tick lob (`NPC.cs:62417`; `Projectile.cs:9511-9522`, aiStyle 194).
 pub const HORSEMAN_PUMPKIN: u16 = 1001;
+/// The drill projectiles (S1-P-i29) — `DefaultToDrillOrChainsaw`
+/// (`Projectile.cs:10732-10742`): aiStyle 20, `penetrate = -1`,
+/// `tileCollide = false`, `melee = true`, `ownerHitCheck = true`. The
+/// per-kind boxes/scales ride the `SetDefaults` type arms (`:1407-1434`,
+/// `:1946-1952`, `:3011-3092`, `:4990-5036`). The aiStyle-20 machine
+/// (`Projectile.cs:25481-25584`) holds the owner's item animation via
+/// `SetDummyItemTime(2)` and kills itself on the channel release.
+pub const DRILL_COBALT: u16 = 59;
+pub const DRILL_MYTHRIL: u16 = 60;
+pub const DRILL_ADAMANTITE: u16 = 62;
+pub const DRILL_PALLADIUM: u16 = 213;
+pub const DRILL_ORICHALCUM: u16 = 216;
+pub const DRILL_TITANIUM: u16 = 219;
+pub const DRILL_CHLOROPHYTE: u16 = 223;
+pub const DRILL_VORTEX: u16 = 428;
+pub const DRILL_NEBULA: u16 = 430;
+pub const DRILL_SOLAR: u16 = 432;
+pub const DRILL_STARDUST: u16 = 609;
+pub const DRAX: u16 = 107;
+/// The chainsaw projectiles (S1-P-i30) — the SAME
+/// `DefaultToDrillOrChainsaw` family as the drills (`Projectile.cs:
+/// 10732-10742`): aiStyle 20, `penetrate = -1`, `tileCollide = false`,
+/// `melee = true`, `ownerHitCheck = true`. The per-kind boxes/scales ride
+/// the `SetDefaults` type arms (`:1394-1427`, `:3018-3024`, `:3038-3044`,
+/// `:3059-3065`, `:3093-3099`, `:3351-3357`, `:4530-4535`, `:4983-5036`,
+/// `:5787-5794`). The aiStyle-20 machine (`Projectile.cs:25481-25584`)
+/// holds the owner's item animation and kills itself on the channel
+/// release — the chainsaw's chop cadence is the item's `useTime` through
+/// the `toolTime` channel countdown (`Player.cs:43582-43586`).
+pub const CHAINSAW_COBALT: u16 = 57;
+pub const CHAINSAW_MYTHRIL: u16 = 58;
+pub const CHAINSAW_ADAMANTITE: u16 = 61;
+pub const CHAINSAW_PALLADIUM: u16 = 214;
+pub const CHAINSAW_ORICHALCUM: u16 = 217;
+pub const CHAINSAW_TITANIUM: u16 = 220;
+pub const CHAINSAW_CHLOROPHYTE: u16 = 224;
+pub const CHAINSAW_SAWTOOTH_SHARK: u16 = 369;
+pub const CHAINSAW_VORTEX: u16 = 427;
+pub const CHAINSAW_NEBULA: u16 = 429;
+pub const CHAINSAW_SOLAR: u16 = 431;
+pub const CHAINSAW_BUTCHERS: u16 = 509;
+pub const CHAINSAW_STARDUST: u16 = 610;
+/// `ProjectileID.LaserDrill` (445) — the Laser Drill's beam, aiStyle 75
+/// (`Projectile.cs:5162-5172`, `AI_075` `:66244-66358`), NOT a
+/// `DefaultToDrillOrChainsaw` row. The port holds its channel the same way
+/// (the aiStyle-75 beam's full laser AI is a follow-up).
+pub const LASER_DRILL: u16 = 445;
+/// `ProjectileID.DirtGolfBall` (721) + the 14 dyed twins 739-752
+/// (`ProjectileID.cs:428`'s `IsAGolfBall` set) — aiStyle 149, 7x7,
+/// friendly, penetrate -1, tileCollide false, netImportant
+/// (`Projectile.cs:7626-7635`). S1-P-i55.
+pub const GOLF_BALL: u16 = 721;
+/// `ProjectileID.GolfClubHelper` (722) — aiStyle 150, 2x2, tileCollide
+/// false, ignoreWater, penetrate -1, hide (`Projectile.cs:7636-7645`).
+/// S1-P-i55.
+pub const GOLF_CLUB_HELPER: u16 = 722;
+
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -1300,6 +1436,12 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         ICHOR_ARROW => 1.0,                    // `:3645` (S1-P-i17)
         ENCHANTED_BOOMERANG => 0.4,            // `:872`
         MUSKET_BALL => 0.5,                    // `:957`
+        // S1-P-i42 — the glowstick family's `this.light = 1f`
+        // (`Projectile.cs:1334`/`:1362`/`:5493`/`:5859`/`:8351`/`:10160`).
+        // The flares (163/310/1008-1011) set NO light — their glow is the
+        // dust trail's (`AI_033`'s `Dust.NewDust`, `:27093`), not ProjLight.
+        GLOWSTICK | STICKY_GLOWSTICK | SPELUNKER_GLOWSTICK | BOUNCY_GLOWSTICK
+        | FAIRY_GLOWSTICK | RAINBOW_GLOWSTICK => 1.0,
         BULLET_SNOWMAN => 0.5,                 // `:1985`
         BALL_OF_FIRE => 0.8,                   // `:970`
         MAGIC_MISSILE => 0.8,                  // `:980`
@@ -1347,6 +1489,9 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         NANO_BULLET => 0.5,                    // `:3734`
         EXPLODING_BULLET => 0.5,               // `:3747`
         GOLDEN_BULLET => 0.5,                  // `:3765`
+        // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
+        // `light = 1f` (the 986 plain override keeps the stock 0).
+        987..=993 => 1.0,
         _ => 0.0,
     }
 }
@@ -1394,8 +1539,99 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-P-i42 — the glowstick family (aiStyle 14, the thrown light).
+            // `Projectile.cs:1326-1336` (50) / `:5851-5861` (515) /
+            // `:8343-8353` (870): 6x6, `penetrate = -1`, `alpha = 75`,
+            // `light = 1f`, `timeLeft *= 5` (3600 → 18000). The stock
+            // `tileCollide = true` (`:775`) stands — the bounce lives in
+            // `HandleMovement`'s per-type arms, not the AI.
+            GLOWSTICK | BOUNCY_GLOWSTICK | FAIRY_GLOWSTICK => (
+                6.0,
+                6.0,
+                14,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 75, 1.0),
+            ),
+            // `Projectile.cs:1354-1365` — the sticky glowstick (53): the same
+            // row PLUS `tileCollide = false` (`:1364`) — the stick scan in the
+            // AI arm (`:24911-24962`) replaces the collision bounce.
+            STICKY_GLOWSTICK => (
+                6.0,
+                6.0,
+                14,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 75, 1.0),
+            ),
+            // `Projectile.cs:5485-5495` — the spelunker glowstick (473): 8x8,
+            // `timeLeft *= 2` (3600 → 7200), the same alpha/light.
+            SPELUNKER_GLOWSTICK => (
+                8.0,
+                8.0,
+                14,
+                -1,
+                TIME_LEFT_DEFAULT * 2,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 75, 1.0),
+            ),
+            // `Projectile.cs:10153-10162` — the rainbow glowstick (1089): 6x6,
+            // `timeLeft *= 5`, `light = 1f`, NO alpha override (the stock 0,
+            // `:779`) — the disco colour rides `ProjLight` (`:16434-16439`).
+            RAINBOW_GLOWSTICK => (
+                6.0,
+                6.0,
+                14,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // S1-P-i42 — the flare family (aiStyle 33, the flare gun's shot).
+            // `Projectile.cs:2515-2525` (163) / `:4022-4032` (310) /
+            // `:9580-9623` (1008-1011): 6x6, `friendly = true`,
+            // `penetrate = -1`, `alpha = 255`, `timeLeft = 36000`. The stock
+            // `tileCollide = true` stands; the stick lives in the AI arm +
+            // `HandleMovement`'s aiStyle-33 block (`:18619-18634`).
+            FLARE | BLUE_FLARE | SPELUNKER_FLARE | CURSED_FLARE | RAINBOW_FLARE
+            | SHIMMER_FLARE => (
+                6.0,
+                6.0,
+                33,
+                -1,
+                36000,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:2549-2557` — the snowball (166): 14x14, aiStyle 2.
             SNOWBALL => (14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-P-i35 — the fishing bobbers (`Projectile.cs:4508-4516`,
+            // `:9422-9435`): 14x14, aiStyle 61, `penetrate = -1`,
+            // `netImportant = true`, `bobber = true`; the stock 3600 life
+            // (`AI_061` refreshes `timeLeft = 60` every tick, `:53662`).
+            // The glow overrides 987-993 add `light = 1f` (`:9433`) via
+            // `set_defaults_light`; their glowMask 318+(type-987) is a draw
+            // seam (no port field).
+            k if BOBBER_KINDS.contains(&k) => {
+                (14.0, 14.0, 61, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // `Projectile.cs:9002-9011` — the Wand of Sparking's spark (954):
             // 10x10, aiStyle 2, `penetrate = 2`, the spawn `alpha = 255`.
             SPARK => (
@@ -3430,6 +3666,62 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             SWORDFISH_BONE_1 => (14.0, 16.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
             SWORDFISH_BONE_2 => (12.0, 14.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
             SWORDFISH_BONE_3 => (6.0, 12.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            // S1-P-i29 — the drill family (`DefaultToDrillOrChainsaw`,
+            // `Projectile.cs:10732-10742`): aiStyle 20, `penetrate = -1`,
+            // `tileCollide = false`, the stock life (the AI pins
+            // `timeLeft = 60` every tick, `:25483`). The per-kind boxes and
+            // scales ride the `SetDefaults` type arms; the state group's
+            // scale slot carries them.
+            DRILL_COBALT => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.9)),
+            DRILL_MYTHRIL => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.9)),
+            DRILL_ADAMANTITE => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.9)),
+            DRILL_PALLADIUM => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.92)),
+            DRILL_ORICHALCUM => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.93)),
+            DRILL_TITANIUM => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.95)),
+            DRILL_CHLOROPHYTE => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.0)),
+            DRILL_VORTEX => (26.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            DRILL_NEBULA => (30.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            DRILL_SOLAR => (30.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            DRILL_STARDUST => (30.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            DRAX => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // S1-P-i30 — the chainsaw family (the same
+            // `DefaultToDrillOrChainsaw` group; the boxes/scales are the
+            // per-type `SetDefaults` arms cited on the constants). The
+            // Butcher's Chainsaw 509 carries `usesIDStaticNPCImmunity =
+            // true` + `idStaticNPCHitCooldown = 10` (`Projectile.cs:
+            // 5792-5793`).
+            CHAINSAW_COBALT => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_MYTHRIL => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.08)),
+            CHAINSAW_ADAMANTITE => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.16)),
+            CHAINSAW_PALLADIUM => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_ORICHALCUM => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.12)),
+            CHAINSAW_TITANIUM => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.2)),
+            CHAINSAW_CHLOROPHYTE => (18.0, 18.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            CHAINSAW_SAWTOOTH_SHARK => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_VORTEX => (22.0, 56.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_NEBULA => (18.0, 56.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_SOLAR => (28.0, 64.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CHAINSAW_BUTCHERS => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 0, 1.2)),
+            CHAINSAW_STARDUST => (28.0, 64.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // The Laser Drill's beam (445): aiStyle 75, 10x10,
+            // `penetrate = -1`, `tileCollide = false` (`Projectile.cs:5162-
+            // 5172`). The port holds its channel like the drills; the full
+            // aiStyle-75 laser AI is a follow-up.
+            LASER_DRILL => (10.0, 10.0, 75, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:7626-7635` — the golf ball (721) and the 14
+            // dyed twins (739-752): 7x7, aiStyle 149, friendly, penetrate
+            // -1, tileCollide false, netImportant (the overlay below);
+            // the stock 3600 life (the AI floors it at 10 and the strike
+            // re-arms it to 18000). S1-P-i55.
+            GOLF_BALL | 739..=752 => {
+                (7.0, 7.0, 149, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
+            // `Projectile.cs:7636-7645` — the club helper (722): 2x2,
+            // aiStyle 150, tileCollide false, ignoreWater (the overlay),
+            // penetrate -1, hide (draw-only, no port field). S1-P-i55.
+            GOLF_CLUB_HELPER => {
+                (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -3548,9 +3840,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion_slots,
         net_important: minion
             || sentry
+            // S1-P-i35 — the bobber family sets `netImportant` itself
+            // (`Projectile.cs:4514`/`:9428`).
+            || BOBBER_KINDS.contains(&kind)
             // The slice-B pets set `netImportant` themselves
             // (`Projectile.cs:5419`/`:9643`/`:9993`).
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // S1-P-i42 — the glowstick/flare family sets `netImportant = true`
+            // (`Projectile.cs:1328`/`:1356`/`:2517`/`:4024`/`:5487`/`:5853`/
+            // `:8345`/`:9582`/`:9593`/`:9604`/`:9615`/`:10155`).
+            || matches!(
+                kind,
+                GLOWSTICK | STICKY_GLOWSTICK | SPELUNKER_GLOWSTICK | BOUNCY_GLOWSTICK
+                    | FAIRY_GLOWSTICK | RAINBOW_GLOWSTICK | FLARE | BLUE_FLARE
+                    | SPELUNKER_FLARE | CURSED_FLARE | RAINBOW_FLARE | SHIMMER_FLARE
+            )
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
@@ -3563,7 +3867,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 BABY_SKELETRON_HEAD | BABY_HORNET | TIKI_SPIRIT | WISP | ZEPHYR_FISH
                     | SHARK_PUP | LIL_HARPY | GLITTERY_BUTTERFLY | QUEEN_BEE_PET
                     | DUKE_FISHRON_PET | MOON_LORD_PET | DD2_BETSY_PET | PUFFERFISH
-            ),
+            )
+            // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
+            // dyed twins) set `netImportant = true` themselves.
+            || matches!(kind, GOLF_BALL | 739..=752),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -3620,7 +3927,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(kind, XENOPOPPER_BUBBLE | ONYX_BLACK_BOLT)
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
-            || kind == HIGH_VELOCITY_BULLET,
+            || kind == HIGH_VELOCITY_BULLET
+            // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
+            // `ignoreWater = true`.
+            || kind == GOLF_CLUB_HELPER,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4019,6 +4329,15 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         CHLOROPHYTE_SPORE_CLOUD => 5,
         THUNDER_SPEAR_BOLT => 4,
         NORTH_POLE_FLAKE => 3,
+        // S1-P-i30 — the Butcher's Chainsaw (509): the 2-frame sheet
+        // (`Main.cs:8481`), the aiStyle-20 machine's `frameCounter >= 2`
+        // wrap (`Projectile.cs:25497-25509`).
+        CHAINSAW_BUTCHERS => 2,
+        // S1-P-i42 — the fairy glowstick's 4-frame sheet (`Main.cs:8667`) —
+        // the aiStyle-170 hover's frame machine (`Projectile.cs:45676-45685`)
+        // wraps at it. The other glowsticks/flares keep the stock 1 (no
+        // `projFrames` override in `Main.cs:8444-8727`).
+        FAIRY_GLOWSTICK => 4,
         _ => 1,
     }
 }

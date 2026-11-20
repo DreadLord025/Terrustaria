@@ -21,6 +21,7 @@ mod buff_effects;
 mod buff_effects_misc;
 mod buffs;
 mod buff_effects_accessory;
+mod bug_net;
 mod chat;
 mod chest;
 mod collision;
@@ -194,6 +195,17 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
+// aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
+// (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in
+// projectile/data.rs; the dispatch arms (14-gate + 33) are wired in
+// projectile.rs::update. Code-only mode — witness tests written not run.
+mod projectile_ai_light_items;
+// S1-P-i55 golf: the two golf projectile AIs (721/739-752 aiStyle 149,
+// 722 aiStyle 150) + the club strike / tee placement / cup scoring,
+// reusing tr-core's golf.rs + golf_state.rs (code-only round — the
+// witness tests are WRITTEN NOT RUN).
+mod projectile_ai_golf;
 // S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
 // 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
 mod projectile_ai_darts;
@@ -213,11 +225,19 @@ mod projectile_ai_thrown;
 // remainder; the dispatch claim + the R7 request drain are the wiring
 // follow-up (module doc + docs/ANALYSIS.md "S1-D-4 empress proj").
 mod projectile_ai_empress;
+// S1-P-i35: the fishing bobber's AI_061 flight/bite machine + the FishingCheck
+// orchestration (the pure roll engine is tr_core::fishing).
+mod projectile_bobber;
 // S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
 mod rain;
+// S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
+// path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
+// :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
+// helpers (:37718-37991). Wired into update_editing (the boss-spawner seam).
+mod recall_teleport;
 mod regen;
 mod research;
 mod sand;

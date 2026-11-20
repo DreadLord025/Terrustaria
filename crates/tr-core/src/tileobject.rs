@@ -583,7 +583,8 @@ pub fn calculate_placement_style(
 // ---------------------------------------------------------------- helpers --
 
 /// `Tile.nactive` (`Tile.cs:240-246`): active and not `inActive` (framed off).
-pub(crate) fn nactive(tile: &Tile) -> bool {
+/// `pub`: the torch placement pre-check reads it (`Player.cs:41158-41169`).
+pub fn nactive(tile: &Tile) -> bool {
     tile.active() && tile.flags & crate::tile::FLAG_INACTIVE == 0
 }
 
@@ -644,10 +645,63 @@ fn liquid_place(def: &TileObjectDef, tile: &Tile) -> bool {
     }
 }
 
+/// `Main.tileWaterDeath` (`Main.cs` `tileWaterDeath` assignments, 10 ids:
+/// `:8061-8067` the 215/4/51/697/93/98/552 block, `:8309` the 405, `:9504` the
+/// 646, `:9508` the 372). A literal extraction like `torch.rs::NO_ATTACH` —
+/// `tools/GenTileData` emits `TileID.Sets` only, not the `Main.`-prefixed
+/// death tables. Read by the global `LiquidPlace` fallback
+/// (`TileObjectData.cs:5060-5067`).
+const TILE_WATER_DEATH: &[u16] = &[215, 4, 51, 697, 93, 98, 552, 405, 646, 372];
+
+/// `TileObjectData.CheckLiquidPlacement` (`TileObjectData.cs:5039-5042`):
+/// `GetTileData(type, style)?.LiquidPlace(checkTile) ?? LiquidPlace(type,
+/// checkTile)`. A registered def answers through its own `LiquidPlace`
+/// ([`liquid_place`]); an unregistered kind falls back to the global
+/// `LiquidPlace` (`:5044-5071`) — lava refuses a `tileLavaDeath` kind, any
+/// other liquid refuses a `tileWaterDeath` kind, an empty cell always passes.
+/// Read by `Player.PlaceThing_Tiles_IsBlockedByLava` (`Player.cs:41498`).
+pub fn check_liquid_placement(kind: u16, style: i32, tile: &Tile) -> bool {
+    // `GetTileData(type, style)` returns null on a negative style
+    // (`TileObjectData.cs:5129` throws → the `?.` yields null), so the global
+    // fallback answers; guard before `get_tile_data`'s debug_assert.
+    if style >= 0 {
+        if let Some(def) = def_for_tile(kind) {
+            if let Some(td) = get_tile_data(def, style, 0) {
+                return liquid_place(td, tile);
+            }
+        }
+    }
+    // :5050-5069 — the global fallback.
+    if tile.liquid > 0 {
+        match tile.liquid_kind() {
+            crate::tile::LiquidKind::Lava => !crate::tiledata::TILE_LAVA_DEATH.has(kind),
+            _ => !TILE_WATER_DEATH.contains(&kind),
+        }
+    } else {
+        true
+    }
+}
+
 /// Membership in [`TILE_CUT`] — read by the placement cut rule
 /// (`Player.cs:41303`) and the door sweep (`WorldGen.cs:37704-37717`).
 pub fn tile_cut(kind: u16) -> bool {
     TILE_CUT.contains(&kind)
+}
+
+/// `Player.PlaceThing_IsReplaceableBlock` (`Player.cs:39753-39760`): a
+/// `tileCut` target is replaceable EXCEPT the two named exemptions (484,
+/// 711); the drip-tile band 373-375 plus 461/709 is always replaceable;
+/// everything else answers `TileID.Sets.BreakableWhenPlacing`. Read by the
+/// lava gate's OR chain (`Player.cs:39743`).
+pub fn is_replaceable_block(kind: u16) -> bool {
+    if (tile_cut(kind) && kind != 484 && kind != 711)
+        || (373..=375).contains(&kind)
+        || kind == 461
+        || kind == 709
+    {
+        return true;
+    }
+    breakable_when_placing(kind)
 }
 
 /// Membership in [`BREAKABLE_WHEN_PLACING`] (`Player.cs:41303`).
@@ -696,8 +750,9 @@ pub(crate) fn not_really_solid(kind: u16) -> bool {
 /// body): the cell may be cut during placement when the tile below is not
 /// a pot/planter-box/seed-provider seat (78/380/579), the wall behind is
 /// not the unsafe dungeon wall 350, and a pumpkin (254) is ripe
-/// (`frameX >= 144` — the grown frame).
-pub(crate) fn can_cut_tile(world: &World, x: i32, y: i32) -> bool {
+/// (`frameX >= 144` — the grown frame). The `AttackMelee` context (the
+/// bug net's swing cut, `Player.cs:44661`) reads the same body.
+pub fn can_cut_tile(world: &World, x: i32, y: i32) -> bool {
     let (Some(here), Some(below)) = (world.tile(x, y), world.tile(x, y + 1)) else {
         return false;
     };

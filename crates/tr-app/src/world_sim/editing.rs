@@ -454,6 +454,979 @@ fn limit_point_to_player_reachable_area(
     mid + off * scale
 }
 
+/// `Player.IsInTileInteractionRange` (`Player.cs:32025-32029`) →
+/// `TileReachCheckSettings.GetTileRegion` (`TileReachCheckSettings.cs:45-54`)
+/// → `Collision.InTileBounds` (`Collision.cs:3776-3783`): the rectangle
+/// reach, NOT a circle. `LX = (int)(position.X / 16) - x`,
+/// `HX = ceil((position.X + width) / 16) - 1 + x` (and the Y pair), where
+/// `x`/`y` are `tileRangeX/Y + TB` clamped by `TileReachLimit = 20`
+/// (`TileReachCheckSettings.cs:20-34`, `:81-85`). The port's player hitbox
+/// is `WIDTH`×`height` at `(p.x, p.y)` (`player.rs`).
+fn tile_in_reach_rect(p: &Player, tx: i32, ty: i32, range_x: i32, range_y: i32, tb: i32) -> bool {
+    let x = (range_x + tb).min(20);
+    let y = (range_y + tb).min(20);
+    let lx = (p.x / TILE_PX) as i32 - x;
+    let hx = ((p.x + crate::player::WIDTH) / TILE_PX).ceil() as i32 - 1 + x;
+    let ly = (p.y / TILE_PX) as i32 - y;
+    let hy = ((p.y + p.height) / TILE_PX).ceil() as i32 - 1 + y;
+    tx >= lx && tx <= hx && ty >= ly && ty <= hy
+}
+
+/// The per-tick `Player.tileRangeX/Y` for the mining reach — the journey
+/// doubling (`Player.cs:18815-18828`) + the Extendo Grip / Architect's
+/// Gizmo Pack / Grand Design `+3/+2` (`equippedAnyTileRangeAcc`,
+/// `Player.cs:13040-13044`, granters `:15267-15294`) + the held Toolbox
+/// `+1/+1` (`Player.cs:14954-14958`). The `TileReachLimit` clamp rides
+/// [`tile_in_reach_rect`]; the artisan bread's `TB = 4` is the placement
+/// path's (`Player.cs:35671`), not the mining reach's.
+fn mining_tile_range(app: &App) -> (i32, i32) {
+    let Some(p) = app.player.as_ref() else {
+        return (5, 3);
+    };
+    let mut x = p.tile_range_x() as i32;
+    let mut y = p.tile_range_y() as i32;
+    let range_acc = p.equipped[..10].contains(&2215)
+        || p.equipped[..10].contains(&3061)
+        || p.equipped[..10].contains(&5126);
+    if range_acc {
+        x += 3;
+        y += 2;
+    }
+    if app.inventory[app.selected].kind == 1923 && app.inventory[app.selected].count > 0 {
+        x += 1;
+        y += 1;
+    }
+    (x, y)
+}
+
+/// The `GetPickaxeDamage` world inputs (`Player.cs:53902-54045`) from the
+/// port's `World` + seed flags. `Main.getGoodWorld` = the For-the-Worthy
+/// seed (`worldgen_job.rs:143`); `Main.infectedSeed` is always false in
+/// 1.4.5.8 (`Main.cs:52266`/`:66541`).
+fn pick_world(app: &App) -> tr_core::tool::PickWorld {
+    let seeds = app.world.seeds;
+    tr_core::tool::PickWorld {
+        world_surface: app.world.world_surface,
+        underworld_layer: app.world.height - 200,
+        max_tiles_x: app.world.width,
+        get_good: seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        infected_seed: false,
+        not_the_bees: seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
+        no_traps: seeds.contains(tr_core::seeds::SeedFlags::NO_TRAPS),
+        tenth_anniversary: seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+    }
+}
+
+/// `Player.PickTile` (`Player.cs:53757-53826`) + `PickTile_DetermineDamage`
+/// (`:53828-53844`) + `GetPickaxeDamage` (`:53902-54045`): one pick hit on
+/// the cell. The damage accumulates in the `HitTile` book; at `>= 100` the
+/// tile breaks (`WorldGen.KillTile` → the port's `break_tile`), otherwise
+/// the fail tick plays (`KillTile(fail: true)` — the port's per-tick
+/// sound/dust is the recorded deviation, the damage still accumulates).
+/// Returns whether the tile broke.
+///
+/// The `DoesPickTargetTransformOnKill` arm (`:53840-53843`, `:54047-54054`)
+/// zeroes the damage when the hit would reach 100 on a transforming tile
+/// (the grass/moss family); the `KillTile(fail: true)` conversion
+/// (`WorldGen.cs:63715-63735`) then strips the grass to its soil. The port
+/// applies the conversion here (the tile kind write + the framing refresh)
+/// and clears the hit slot, so the next hit mines the bare soil.
+fn pick_tile_hit(app: &mut App, tx: i32, ty: i32, pick_power: i32) -> bool {
+    let Some(tile) = app.world.tile(tx, ty).copied() else {
+        return false;
+    };
+    if !tile.active() {
+        return false;
+    }
+    // `:53760-53763` — the mystic snake rope refuses the pick outright.
+    if tile.kind == 504 {
+        return false;
+    }
+    let w = pick_world(app);
+    // `PickTile_DetermineDamage` (`:53830-53831`): the buffer index, then
+    // the damage. The mannequin/weapon-rack redirects move the buffer slot
+    // (`hitTile.UpdatePosition`, `:53990`/`:54004`/`:54010`); the port
+    // re-derives the redirect target after the damage call.
+    let buffer_index = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+    let mut damage = tr_core::tool::pickaxe_damage(
+        tx,
+        ty,
+        pick_power,
+        tile.kind,
+        i32::from(tile.frame_x),
+        i32::from(tile.frame_y),
+        &w,
+        |x, y| app.world.tile(x, y).copied(),
+    );
+    // The redirect the damage model applied — move the buffer slot to the
+    // cell the C# `UpdatePosition` landed on (the mannequin left cell, the
+    // weapon-rack anchor). Only the plain redirects are tracked; the
+    // racked-weapon refusal already zeroed the damage.
+    let (redir_x, redir_y) = pick_redirect_target(&app.world, tx, ty, tile);
+    if (redir_x, redir_y) != (tx, ty) {
+        app.hit_tile.update_position(buffer_index, redir_x, redir_y);
+    }
+    // `:53832-53835` — a `CanKillTile` refusal zeroes the damage.
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        damage = 0;
+    }
+    // `:53836-53839` — getGoodWorld doubles the damage.
+    if w.get_good {
+        damage *= 2;
+    }
+    // `:53840-53843` — the transforming-tile preview: if the hit would
+    // reach 100 on a grass/moss tile, the damage zeroes (the conversion
+    // fires instead of the break).
+    let transforms = does_pick_target_transform(&app.world, tx, ty, tile.kind);
+    // `:53840-53843` — the transforming-tile preview. The C# zeroes `damage`
+    // when the hit WOULD reach 100, then `PickTile`'s `AddDamage(0)` returns
+    // the standing total (<100) and falls to the `KillTile(fail: true)` arm —
+    // which is where the grass/moss conversion actually lands
+    // (`WorldGen.cs:63715-63735`). The port converts on the preview crossing
+    // directly (the break-path total never reaches 100 once the preview zeroes
+    // the damage), keeping the same observable: the cell turns to its soil on
+    // the hit that would have broken it, no item drop.
+    let would_break = if transforms {
+        let preview = app.hit_tile.add_damage(buffer_index, damage, false);
+        if preview >= 100 {
+            damage = 0;
+        }
+        preview >= 100
+    } else {
+        false
+    };
+    let total = app.hit_tile.add_damage(buffer_index, damage, true);
+    if total >= 100 || would_break {
+        if transforms {
+            // The conversion (`WorldGen.KillTile(fail: true)`'s grass/moss
+            // arms, `WorldGen.cs:63715-63735`): the tile becomes its soil,
+            // the hit slot clears, the framing refreshes. No item drop.
+            convert_grass_tile(app, tx, ty, tile.kind);
+            app.hit_tile
+                .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+                    app.world.tile(x, y).is_some_and(|t| t.active())
+                }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+            return false;
+        }
+        // `:53773` — `ClearMiningCacheAt` clears the hit + replacement
+        // books at the cell (the port has no replacement book yet).
+        app.hit_tile
+            .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        break_tile(app, tx, ty);
+        // `:53822-53825` — the tail prune runs AFTER both branches (the
+        // break tick prunes twice: ClearMiningCacheAt's own prune + this).
+        if damage != 0 {
+            app.hit_tile.prune(|x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        }
+        return true;
+    }
+    // `:53815` — the fail tick (`KillTile(fail: true)`): the port's
+    // per-tick sound/dust is the recorded deviation; the damage stays in
+    // the book. `:53822-53825` — a non-zero damage prunes the book.
+    if damage != 0 {
+        app.hit_tile.prune(|x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    }
+    false
+}
+
+/// The mannequin/weapon-rack redirect target `GetPickaxeDamage`'s
+/// `UpdatePosition` calls land on (`Player.cs:53984-54043`) — the cell the
+/// hit buffer should track. Plain tiles keep their own cell.
+fn pick_redirect_target(world: &tr_core::World, tx: i32, ty: i32, tile: tr_core::tile::Tile) -> (i32, i32) {
+    let fx = i32::from(tile.frame_x);
+    let fy = i32::from(tile.frame_y);
+    if tile.kind == 128 || tile.kind == 269 {
+        if fx == 18 || fx == 54 {
+            return (tx - 1, ty);
+        }
+        return (tx, ty);
+    }
+    if tile.kind == 334 {
+        let mut x = tx;
+        let mut y = ty;
+        let mut cur_fx = fx;
+        let mut cur_fy = fy;
+        if cur_fy == 0 {
+            y += 1;
+            if let Some(t) = world.tile(x, y) {
+                cur_fx = i32::from(t.frame_x);
+                cur_fy = i32::from(t.frame_y);
+            }
+        }
+        if cur_fy == 36 {
+            y -= 1;
+            if let Some(t) = world.tile(x, y) {
+                cur_fx = i32::from(t.frame_x);
+                cur_fy = i32::from(t.frame_y);
+            }
+        }
+        let _ = cur_fy;
+        if cur_fx < 5000 {
+            x -= cur_fx / 18 % 3;
+        }
+        return (x, y);
+    }
+    (tx, ty)
+}
+
+/// `DoesPickTargetTransformOnKill`'s tile set (`Player.cs:54049`): the
+/// grass/moss family that converts to its soil instead of breaking.
+fn does_pick_target_transform(world: &tr_core::World, _x: i32, _y: i32, kind: u16) -> bool {
+    let _ = world;
+    matches!(kind, 2 | 477 | 492 | 23 | 60 | 70 | 109 | 199 | 662 | 661 | 633)
+        || tr_core::tiledata::TILE_MOSS.has(kind)
+        || tr_core::tiledata::SET_TILE_MOSS_BRICK.has(kind)
+}
+
+/// The `KillTile(fail: true)` grass/moss conversion
+/// (`WorldGen.cs:63715-63735`): the grass kinds become dirt 0, the jungle
+/// grass family becomes mud 59, the ash grass 633 becomes ash 57, the moss
+/// becomes stone 1 and the moss brick becomes gray brick 38. The framing
+/// refresh (`SquareTileFrame`) rides the port's `square_tile_frame_default`.
+fn convert_grass_tile(app: &mut App, tx: i32, ty: i32, kind: u16) {
+    let new_kind = if matches!(kind, 2 | 23 | 109 | 199 | 477 | 492) {
+        0
+    } else if kind == 633 {
+        57
+    } else if matches!(kind, 60 | 661 | 662 | 70) {
+        59
+    } else if tr_core::tiledata::TILE_MOSS.has(kind) {
+        1
+    } else if tr_core::tiledata::SET_TILE_MOSS_BRICK.has(kind) {
+        38
+    } else {
+        return;
+    };
+    if let Some(t) = app.world.tile_mut(tx, ty) {
+        t.kind = new_kind;
+    }
+    let _ = edit::square_tile_frame_default(&mut app.world, tx, ty);
+    app.queue_map_ring(tx, ty);
+    app.world_key = None;
+}
+
+/// `Player.ItemCheck_StartActualUse`'s channel start for the drills AND
+/// chainsaws (`Player.cs:51677` → `StartChanneling(sItem)` `:52958-52968`):
+/// a `channel` item with `pick > 0` (the drill family) or `axe > 0` (the
+/// chainsaw family — S1-P-i30, `ItemID.Sets.IsChainsaw`, `ItemID.cs:495`)
+/// spawns its aiStyle-20 projectile once on the press edge and latches
+/// `Player.channel` (`DefaultToDrillOrChainsaw`, `Projectile.cs:10732-10742`
+/// — ONE machine for both families). The projectile's aiStyle-20 machine
+/// (`Projectile.cs:25481-25584`) holds the item animation via
+/// `SetDummyItemTime(2)` (`:25563`) and kills itself on the channel release
+/// (`:25549`). The port spawns the projectile here; the hold + release ride
+/// `update_editing`'s channel block.
+///
+/// Returns whether a drill/chainsaw projectile is live for the local player
+/// (the hold gate). The spawn is idempotent — a live tool of the held kind
+/// is not re-spawned (the C# `ItemCheck_Shoot` fires once per use start, and
+/// the channel holds the animation so no new use starts while held).
+fn drill_channel_start(app: &mut App, held: ItemSlot, world_pos: Vec2) -> bool {
+    let Some(def) = registry::get(held.kind) else {
+        return false;
+    };
+    if !def.channel || (def.pick == 0 && def.axe == 0) {
+        return false;
+    }
+    let Some(proj) = def.projectile else {
+        return false;
+    };
+    // A live drill/chainsaw of this kind already holds the channel.
+    let live = app.projectiles.slots().iter().any(|p| {
+        p.active && p.kind == proj && p.owner == app.local_id as u8
+    });
+    if live {
+        return true;
+    }
+    // The spawn mirrors the generic `Item.shoot` firing (`ItemCheck_Shoot`,
+    // `Player.cs:47056+`): the aim normalized to `shootSpeed` (the melee
+    // `speed /= meleeSpeed`, `:47061-47063`), the player-centre origin, the
+    // class-multiplied damage and the item knockback. The drill projectile
+    // is a held tool — its damage rides the same `weaponDamage` chain.
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let (pcx, pcy) = p.center();
+    let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
+    if dir == Vec2::ZERO {
+        return false;
+    }
+    let class = def.class;
+    let (fx_dmg, fx_spd, fx_kb) = crate::prefix::prefixed_stats(held.kind, held.prefix)
+        .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
+            (s.damage, s.shoot_speed, s.knock_back)
+        });
+    let speed = if class == registry::DamageClass::Melee {
+        fx_spd / p.melee_speed(held.kind)
+    } else {
+        fx_spd
+    };
+    let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
+    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+    let slot = app.projectiles.spawn_with_data_ai(
+        proj,
+        spawn.x,
+        spawn.y,
+        dir.x * speed,
+        dir.y * speed,
+        raw as i32,
+        fx_kb,
+        0.0,
+        0.0,
+    );
+    // M3 sync: no throw-time crit roll - the drill's damage rides the
+    // per-hit crit block in damage_pve (Projectile.cs:12883-12917,
+    // S1-P-i11); the generic ItemCheck_Shoot tail (Player.cs:49437) carries
+    // no roll. The spawn spends no UpdatePlayers draw.
+    let _ = slot;
+    // `StartChanneling` (`Player.cs:52958-52968`) latches the channel.
+    if let Some(p) = app.player.as_mut() {
+        p.channel = true;
+        p.channel_item = held.kind;
+        p.channel_target = world_pos;
+    }
+    // The swing start (`ApplyItemAnimation`, `Player.cs:4463-4497`) — the
+    // drill's `useAnimation`; `toolTime = 1` (`:51660-51663`). The channel
+    // hold (`drill_holding` below) keeps the swing alive at the dummy 2
+    // ticks while the projectile lives; the `toolTime` countdown wraps to
+    // `useTime - 1` so the first pick hit lands `useTime` ticks after the
+    // press (`Player.cs:43582-43586`).
+    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+    app.swing = app.swing_max;
+    start_swing_extras(app, held.kind);
+    app.tool_time = ONE_TICK_SECS;
+    true
+}
+
+/// Whether a drill/chainsaw projectile is live for the local player — the
+/// channel hold gate (`Projectile.cs:25563`'s `SetDummyItemTime(2)` keeps
+/// the item animation alive while the tool lives; the chainsaws share the
+/// aiStyle-20 machine, S1-P-i30).
+fn drill_live(app: &App, held: ItemSlot) -> bool {
+    let Some(def) = registry::get(held.kind) else {
+        return false;
+    };
+    if !def.channel || (def.pick == 0 && def.axe == 0) {
+        return false;
+    }
+    let Some(proj) = def.projectile else {
+        return false;
+    };
+    app.projectiles
+        .slots()
+        .iter()
+        .any(|p| p.active && p.kind == proj && p.owner == app.local_id as u8)
+}
+
+/// `Player.ItemCheck_UseMiningTools` (`Player.cs:45584-45644`) +
+/// `ItemCheck_UseMiningTools_ActuallyUseMiningTool` (`:45646-45782`): the
+/// pickaxe/drill mining tick. Fires at `toolTime == 0 && itemAnimation > 0
+/// && controlUseItem` (`:45608`/`:45626`) with the target in the item's
+/// reach (`IsTargetTileInItemRange`, `:45599`/`:46313-46316`). The pick
+/// arm (`:45772-45780`) runs `PickTile(x, y, sItem.pick)` and re-arms
+/// `itemTime = (int)(useTime * pickSpeed)`.
+///
+/// The axe tiles (`Main.tileAxe`) and hammer tiles (`Main.tileHammer`)
+/// route to their own arms (`:45656-45771`) — a pick never damages them;
+/// those ports are the i30/i31 tasks. The demon-altar hammer arm below
+/// keeps its pre-i29 time-based pacing (the i31 task ports the hammer
+/// hit-buffer model).
+fn mining_tick(app: &mut App, tx: i32, ty: i32, held: ItemSlot) {
+    // The wall-pass gate (`Player.cs:45650` `canHitWalls = true`): every
+    // early return leaves it true — the wall pass (`:45639-45643`) runs
+    // even when the tile arm did nothing (the exposed-wall case).
+    app.mining_can_hit_walls = true;
+    let Some(def) = registry::get(held.kind) else {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    };
+    let tool_pick = i32::from(def.pick);
+    let tool_axe = i32::from(def.axe);
+    let tool_hammer = i32::from(def.hammer);
+    // `:45595-45598` — a non-tool never mines.
+    if tool_pick <= 0 && tool_axe <= 0 && tool_hammer <= 0 {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
+    let Some(tile) = app.world.tile(tx, ty).copied() else {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    };
+    // `:45599-45603` — the reach gate (`IsTargetTileInItemRange` with the
+    // item's `tileBoost`); `noBuilding` forces it false (the port has no
+    // noBuilding state — the frozen/webbed gate above already refuses).
+    let (range_x, range_y) = mining_tile_range(app);
+    let in_reach = app
+        .player
+        .as_ref()
+        .is_some_and(|p| tile_in_reach_rect(p, tx, ty, range_x, range_y, def.tile_boost));
+    if !in_reach {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
+    // The swing start — the C# `ItemCheck_TryStartUse` →
+    // `ItemCheck_StartActualUse` (`Player.cs:42733`/`:51657`) arms the
+    // animation on the press edge (`ApplyItemAnimation`, `:4463-4497`); the
+    // port starts the swing when none runs. The autoReuse restart rides the
+    // generic swing block below (`Player.cs:42819-42822`); a non-autoReuse
+    // pick waits for a release. `toolTime = 1` (`:51660-51663`) arms at the
+    // start so the first pick hit lands one tick later. The drill's swing is
+    // started by `drill_channel_start` and held by the channel block, so it
+    // never reaches this start with `swing <= 0`.
+    if app.swing <= 0.0 {
+        app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+        app.swing = app.swing_max;
+        start_swing_extras(app, held.kind);
+        app.tool_time = ONE_TICK_SECS;
+    }
+    // `:45608`/`:45626` — the action gate: `toolTime == 0 && itemAnimation
+    // > 0 && controlUseItem`. The port's `tool_time` is seconds; the tick
+    // quantisation reads it as whole ticks (the `ticks_of` convention).
+    let tool_ready = ticks_of(app.tool_time) <= 0;
+    let anim_running = app.swing > 0.0;
+    if !tool_ready || !anim_running || !app.mine_down {
+        // The dig target tracks the cursor even when the action is not
+        // ready (the crack overlay reads it); the timer is the book's
+        // damage, refreshed below.
+        app.mine_target = Some((tx, ty));
+        sync_mine_crack_state(app, tx, ty);
+        return;
+    }
+    // `:45652-45654` — an inactive cell mines nothing (the wall arm below
+    // handles the exposed wall).
+    if !tile.active() {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
+    let axe_tile = tr_core::tool::is_axe_tile(tile.kind);
+    let hammer_tile = tr_core::tool::is_hammer_tile(tile.kind);
+    // `:45656` — the tool/tile match: a pick mines the non-axe/non-hammer
+    // tiles, an axe chops the axe tiles, a hammer smashes the hammer tiles.
+    let pick_match = tool_pick > 0 && !axe_tile && !hammer_tile;
+    let axe_match = tool_axe > 0 && axe_tile;
+    let hammer_match = tool_hammer > 0 && hammer_tile;
+    app.mine_target = Some((tx, ty));
+    if !pick_match && !axe_match && !hammer_match {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        // No tool arm ran — the pound + wall passes still run (the C#
+        // `ActuallyUseMiningTool` falls through to `:45781`). The
+        // `tileHammer` refusal (`:45665-45667`) fires even WITHOUT a
+        // matching hammer (a pick over an altar refuses the wall pass).
+        let tile_hit_id = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+        let mut can_hit_walls = !hammer_tile;
+        // `:45777-45780` — the shared `sItem.pick > 0` tail runs on the
+        // no-match fall-through too (a hamaxe over a plain poundable tile
+        // re-arms the pickSpeed cadence before the pound).
+        if tool_pick > 0 {
+            let pick_speed = app.player.as_ref().map_or(1.0, |p| p.pick_speed());
+            let use_time = held_use_time_ticks(held);
+            app.item_time = ((use_time as f32 * pick_speed) as i32).max(0) as f32 * ONE_TICK_SECS;
+        }
+        try_pounding_tile_tick(app, tx, ty, tile_hit_id, &mut can_hit_walls, held);
+        app.mining_can_hit_walls = can_hit_walls;
+        return;
+    }
+    // `:45660` — the shared tile-book slot, taken BEFORE the arm split
+    // (`hitTile.HitObject(x, y, 1)`); the pound arm (`:45781`) reuses it.
+    let tile_hit_id = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+    // `:45656-45659` + `:45667` — the wall-pass gate: a matching tool on its
+    // tile (or ANY tileHammer tile) refuses the wall pass this tick; the
+    // pound arm can flip it back (`:45986`).
+    let mut can_hit_walls = !(pick_match || axe_match || hammer_tile);
+    if hammer_match {
+        // The hammer arm (`Player.cs:45665-45704`, S1-P-i31): the damage
+        // accumulates in the shared `HitTile` book, `sItem.hammer` per hit.
+        hammer_tile_hit(app, tx, ty, tile.kind, tool_hammer, tile_hit_id, held);
+        if app.world.tile(tx, ty).is_some_and(|t| t.active()) {
+            sync_mine_crack_state(app, tx, ty);
+        } else {
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+        }
+    } else if pick_match {
+        // The pick arm (`:45772-45780`): `PickTile(x, y, sItem.pick)`, then
+        // `itemTime = (int)(useTime * pickSpeed)`.
+        let broke = pick_tile_hit(app, tx, ty, tool_pick);
+        let pick_speed = app.player.as_ref().map_or(1.0, |p| p.pick_speed());
+        let use_time = held_use_time_ticks(held);
+        app.item_time = ((use_time as f32 * pick_speed) as i32).max(0) as f32 * ONE_TICK_SECS;
+        if broke {
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+        } else {
+            sync_mine_crack_state(app, tx, ty);
+        }
+    } else if axe_match {
+        // The axe arm (`Player.cs:45706-45771`, S1-P-i30).
+        let broke = axe_tile_hit(app, tx, ty, tile.kind, tool_axe, held);
+        if broke {
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+        } else {
+            sync_mine_crack_state(app, tx, ty);
+        }
+    }
+    // `:45777-45780` — the shared `sItem.pick > 0` tail: the dual-power
+    // hamaxes/draxes take the pickSpeed re-arm even on the hammer/axe arms
+    // (the per-arm re-arms above are the pure-tool copies).
+    if tool_pick > 0 && !pick_match {
+        let pick_speed = app.player.as_ref().map_or(1.0, |p| p.pick_speed());
+        let use_time = held_use_time_ticks(held);
+        app.item_time = ((use_time as f32 * pick_speed) as i32).max(0) as f32 * ONE_TICK_SECS;
+    }
+    // `:45781` — the pound arm runs on EVERY mining tick (the release latch
+    // gates it), after the tool arms.
+    try_pounding_tile_tick(app, tx, ty, tile_hit_id, &mut can_hit_walls, held);
+    // The wall pass (`:45639-45643`) — the caller in `update_editing` reads
+    // the returned gate; the pound may have cleared it (`:45986`).
+    app.mining_can_hit_walls = can_hit_walls;
+}
+
+/// The hammer arm's one hit — `ItemCheck_UseMiningTools_ActuallyUseMiningTool`
+/// (`Player.cs:45665-45704`, S1-P-i31). `num2 += sItem.hammer` (`:45670`);
+/// a `CanKillTile` refusal zeroes it (`:45671-45674`); the demon altar 26
+/// additionally needs a ≥ 80 hammer in hardmode — otherwise the damage
+/// zeroes AND the smasher takes `Hurt(ByOther(4), statLife / 2, -direction)`
+/// (`:45675-45679`). At `>= 100` the cell breaks (`KillTile` — the altar's
+/// case-26 arm runs `SmashAltar` + BEGONE_EVIL through `break_tile`'s
+/// cascade, the M5-HARDFORCE-ores seam); otherwise the fail tick
+/// (`KillTile(fail: true)` — the per-tick sound/dust is the recorded i29
+/// deviation, the damage stays in the book). `ApplyItemTime(sItem)`
+/// (`:45702`) re-arms `itemTime = useTime` (NO pickSpeed scale — the shared
+/// `sItem.pick > 0` tail in `mining_tick` handles the dual-power tools).
+fn hammer_tile_hit(
+    app: &mut App,
+    tx: i32,
+    ty: i32,
+    kind: u16,
+    hammer_power: i32,
+    tile_hit_id: usize,
+    held: ItemSlot,
+) {
+    let mut damage = hammer_power;
+    // `:45671-45674`.
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        damage = 0;
+    }
+    // `:45675-45679` — the altar refusal + self-hurt. The C# `Hurt` runs on
+    // EVERY refused hit (the damage zeroed, the swing still plays). The
+    // `-base.direction` hitDirection maps to a knockback origin on the
+    // player's FACING side (`hurt_inner`'s `from_x` convention: the pop
+    // pushes AWAY from `from_x`, so `-direction` → origin at
+    // `centre + direction * 16`). The hurt's dodge rolls ride the
+    // `UpdatePlayers` stream (the ItemCheck swap, `Main.cs:17754`).
+    if kind == 26 && (hammer_power < 80 || !app.world.hard_mode) {
+        damage = 0;
+        let (half_hp, facing) = app
+            .player
+            .as_ref()
+            .map(|p| (p.hp / 2, p.facing))
+            .unwrap_or((0, 1));
+        if half_hp > 0 {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            if let Some(p) = app.player.as_mut() {
+                let from_x = p.x + crate::player::WIDTH * 0.5 + facing as f32 * TILE_PX;
+                // The C# `Hurt(ByOther(4), statLife / 2, -direction)` takes
+                // the default `cooldownCounter = -1` (General) — the
+                // retaliate lane (`ImmunityCooldownID.Sets.Retaliate`
+                // membership, the `hurt` wrapper's true).
+                let _ = p.hurt(half_hp, from_x, rng, true);
+            }
+        }
+    }
+    // `:45681` — the accumulation; `>= 100` breaks.
+    let total = app.hit_tile.add_damage(tile_hit_id, damage, true);
+    if total >= 100 {
+        // `:45683` — `ClearMiningCacheAt(x, y, 1)` (its own Prune runs
+        // here, `HitTile.cs:149-157`).
+        app.hit_tile
+            .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        // `:45684` — `WorldGen.KillTile(x, y)`. The altar's case-26 arm
+        // (`WorldGen.cs:49444-49449`) smashes AFTER the tile dies: the ore
+        // seeding + BEGONE_EVIL ride the M5-HARDFORCE-ores seam here (the
+        // kill cascade's `check_orb` handles the orb 31 / heart 695/696
+        // drops and the EoW/BoC summons).
+        let was_altar = kind == 26;
+        break_tile(app, tx, ty);
+        if was_altar && !app.world.tile(tx, ty).is_some_and(|t| t.active()) {
+            let altars = app.world.altars_smashed;
+            let ore = {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                tr_core::ores::smash_altar(&mut app.world, &mut app.ore_tiers, altars, rng)
+            };
+            app.world.altars_smashed = altars + 1;
+            let _ = app.notify_progression_net(6);
+            let _ = ore;
+            app.world_key = None;
+        }
+    }
+    // `:45698-45701` — a non-zero damage prunes the book AFTER both
+    // branches (the break tick prunes TWICE: the ClearMiningCacheAt prune
+    // above + this tail — the C# order, kept).
+    if damage != 0 {
+        app.hit_tile.prune(|x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    }
+    // `:45702` — `ApplyItemTime(sItem)`: `itemTime = useTime` (the
+    // dual-power pick tail in `mining_tick` overrides for the hamaxes).
+    let use_time = held_use_time_ticks(held);
+    app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+}
+
+/// The pound arm's tick wrapper — `ItemCheck_UseMiningTools_TryPoundingTile`
+/// (`Player.cs:45969-46311`, S1-P-i31). The `poundRelease` latch gates it;
+/// the world-state cycle lives in [`tr_core::edit::try_pound_tile`]. The
+/// `hitTile.AddDamage(tileHitId, damageAmount)` (`:45993`) runs BEFORE the
+/// cycle: a locked door's zero damage keeps the latch and plays the fail
+/// tick's Dig 0 (`:45995-45997`); a fresh pound's 100 always clears the
+/// threshold. `ApplyItemTime(sItem)` (`:45987`) fires on every accepted
+/// pound (the dual-power pick tail already ran in `mining_tick` — the C#
+/// order is the same: `:45777-45780` then `:45987`).
+fn try_pounding_tile_tick(
+    app: &mut App,
+    tx: i32,
+    ty: i32,
+    tile_hit_id: usize,
+    can_hit_walls: &mut bool,
+    held: ItemSlot,
+) {
+    // `:45971-45974`.
+    if !app.pound_release {
+        return;
+    }
+    let hammer_power = registry::get(held.kind).map_or(0, |d| i32::from(d.hammer));
+    let tile = app.world.tile(tx, ty).copied();
+    // `:45975-45985` — the hammer / active / poundable gates clear the latch.
+    if hammer_power <= 0
+        || !tile.is_some_and(|t| t.active() && edit::is_tile_poundable(t.kind))
+    {
+        app.pound_release = false;
+        return;
+    }
+    // `:45986-45987` — the wall pass is refused for this tick; the item
+    // time re-arms (`ApplyItemTime(sItem)` — plain `useTime`, NO pickSpeed
+    // scale; the C# pound runs AFTER the `:45777-45780` pick tail, so it
+    // overrides the dual-power re-arm too).
+    *can_hit_walls = false;
+    let use_time = held_use_time_ticks(held);
+    app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+    // `:45988-45998` — the damage add; the locked-door zero keeps the latch.
+    let damage = edit::pound_damage(&app.world, tx, ty);
+    let total = app.hit_tile.add_damage(tile_hit_id, damage, true);
+    if total < 100 {
+        // The fail tick: `KillTile(fail, effectOnly)` dust (skipped) + the
+        // Dig 0 cue (`SoundEngine.PlaySound(0, x*16, y*16)`, `:45996`). The
+        // case-0 variation + pitch draws ride the `UpdatePlayers` stream
+        // (the ItemCheck swap), only when audible (`play_place_sound`).
+        app.audio.play_place_sound(
+            (0, 1),
+            tx as f32 * TILE_PX,
+            ty as f32 * TILE_PX,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+        return;
+    }
+    // `:45999` — `ClearMiningCacheAt(x, y, 1)`.
+    app.hit_tile
+        .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    // The cycle (`:46004-46309`). The chest closure captures the DISJOINT
+    // `world_chests` field (not `app`) so it coexists with the `&mut
+    // app.world` borrow — the `chest_holds_items(app)` helper borrows all
+    // of `app` and would conflict.
+    let chests = &app.world_chests;
+    let holds = |x: i32, y: i32| {
+        chests
+            .iter()
+            .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
+    };
+    let outcome = edit::try_pound_tile(&mut app.world, tx, ty, holds);
+    match outcome {
+        edit::PoundOutcome::Pounded { lift } => {
+            // The SlopeTile/PoundTile Dig 0 cue (`WorldGen.cs:80782`/
+            // `:80822`) — one play per landed write, INSIDE the gate (a
+            // refused write plays nothing: the GateRefused arm below).
+            // The platform's last step is a DIRECT `slope(0)` write +
+            // `PoundTile` (`Player.cs:46047-46048`) — ONE cue, not two.
+            app.audio.play_place_sound(
+                (0, 1),
+                tx as f32 * TILE_PX,
+                ty as f32 * TILE_PX,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            if lift {
+                // The flatten player-push (`WorldGen.cs:80787-80795` /
+                // `:80826-80834`): every living player whose box intersects
+                // the cell rides to its top, the drop booked in `gfxOffY`.
+                // The port has one player.
+                let rect_x = tx as f32 * TILE_PX;
+                let rect_y = ty as f32 * TILE_PX;
+                if let Some(p) = app.player.as_mut() {
+                    if !p.dead
+                        && p.x + crate::player::WIDTH > rect_x
+                        && p.x < rect_x + TILE_PX
+                        && p.y + p.height > rect_y
+                        && p.y < rect_y + TILE_PX
+                    {
+                        p.gfx_off_y += p.y + p.height - rect_y;
+                        p.y = rect_y - p.height;
+                    }
+                }
+            }
+            app.queue_map_ring(tx, ty);
+            app.world_key = None;
+            // `:46310` — the latch clears on the cycle arms.
+            app.pound_release = false;
+        }
+        edit::PoundOutcome::GateRefused => {
+            // Every SlopeTile/PoundTile call refused at the CanPoundTile
+            // gate (`WorldGen.cs:80770`/`:80807`): NO cue, no lift — but
+            // the latch still clears (`Player.cs:46310`) and the caches
+            // wake (the platform's ungated direct `slope(0)` write may
+            // have landed, `:46047`).
+            app.queue_map_ring(tx, ty);
+            app.world_key = None;
+            app.pound_release = false;
+        }
+        edit::PoundOutcome::Framed | edit::PoundOutcome::Consumed => {
+            // The frame arms carry no sound (`SendTileSquare` only); the
+            // Consumed seams (470/314) change nothing in the port. The
+            // frame writes replicate through `SendTileSquare` in the C# —
+            // no port net kind yet (ANALYSIS); the local caches still wake.
+            app.queue_map_ring(tx, ty);
+            app.world_key = None;
+            app.pound_release = false;
+        }
+        // The locked-door / refused arms keep the latch (`:45997` returns
+        // before the `:46310` clear). The slope/half-brick net replication
+        // (SendData 17 subtypes 7/14/23) has no port kind yet — the pound
+        // does NOT `request_edit` (a kind-0 break would mis-replicate);
+        // recorded deviation, ANALYSIS.
+        edit::PoundOutcome::LockedDoor | edit::PoundOutcome::Refused => {}
+    }
+}
+
+/// The wall pass — `ItemCheck_UseMiningTools_TryFindingWallToHammer` +
+/// `ItemCheck_UseMiningTools_TryHittingWall` + `PickWall`
+/// (`Player.cs:45832-45967`, S1-P-i31). Runs when the mining tick left
+/// `canHitWalls` true (`:45639`): the finder picks the wall cell (the
+/// cursor's own, or the mouse-quadrant 2×2 scan), the hit gate
+/// (`:45910`) checks the tile/wall/poundRelease composition, and
+/// `PickWall(x, y, (int)(hammer * 1.5f))` accumulates in the WALL book
+/// (`hitTile.HitObject(x, y, 2)`). `itemTime = useTime / 2` (`:45913`).
+fn wall_hammer_tick(app: &mut App, tx: i32, ty: i32, held: ItemSlot, mouse: (f32, f32)) {
+    let hammer_power = registry::get(held.kind).map_or(0, |d| i32::from(d.hammer));
+    if hammer_power <= 0 {
+        return;
+    }
+    let (wx, wy) = edit::try_finding_wall_to_hammer(&app.world, tx, ty, mouse);
+    // `:45910` — the hit gate.
+    let Some(cell) = app.world.tile(wx, wy).copied() else {
+        return;
+    };
+    if cell.wall == 0 {
+        return;
+    }
+    let tile_blocks = cell.active()
+        && wx == tx
+        && wy == ty
+        && (tr_core::tool::is_hammer_tile(cell.kind) || app.pound_release);
+    if tile_blocks {
+        return;
+    }
+    if !edit::can_player_smash_wall(&app.world, wx, wy) {
+        return;
+    }
+    // `:45912` — `PickWall(wX, wY, (int)((float)sItem.hammer * 1.5f))`.
+    let damage = (hammer_power as f32 * 1.5) as i32;
+    let wall_id = app.hit_tile.hit_object(wx, wy, tr_core::hit_tile::WALL);
+    let total = app.hit_tile.add_damage(wall_id, damage, true);
+    if total >= 100 {
+        // `:45947` — `hitTile.Clear(tileId)` clears the WALL slot.
+        app.hit_tile.clear(wall_id);
+        // `:45948` — `ClearMiningCacheAt(x, y, 2)`. The C# ignores the type
+        // argument and always prunes the TILE book (`Player.cs:53848-53849`
+        // passes 1): a TILE slot at the cell, if any, clears + prunes.
+        app.hit_tile
+            .try_clearing_and_pruning(wx, wy, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        // `:45949` — `WorldGen.KillWall(x, y)`.
+        break_wall(app, wx, wy);
+    }
+    // `:45963-45966` — a non-zero damage prunes AFTER both branches (the
+    // fail tick's KillWall(fail) dust is the recorded deviation).
+    if damage != 0 {
+        app.hit_tile.prune(|x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    }
+    // `:45913` — `itemTime = useTime / 2`.
+    let use_time = held_use_time_ticks(held);
+    app.item_time = (use_time / 2).max(0) as f32 * ONE_TICK_SECS;
+}
+
+/// The axe arm's one chop — `ItemCheck_UseMiningTools_ActuallyUseMiningTool`
+/// (`Player.cs:45706-45771`, S1-P-i30). The damage line (`:45708-45712`)
+/// lives in [`tr_core::tool::axe_damage`] (the f32 1.2 scale, the cactus
+/// triple, the getGoodWorld 1.3); the `Main.tileNoFail` 100 head
+/// (`:45661-45664`) never fires for an axe tile (no `tileAxe` id is
+/// `tileNoFail`, `Main.cs:7189-7203` vs `:7208-7223`), so the base is 0.
+/// The accumulation rides the SAME `hitTile` book the pick arm uses
+/// (`:45660` `HitObject(x, y, 1)` runs before the arm split); at `>= 100`
+/// the cell breaks (`:45725-45755`), otherwise the fail tick
+/// (`KillTile(fail: true)`, `:45758` — the port's per-tick sound/dust is
+/// the recorded i29 deviation, the damage stays in the book). Returns
+/// whether the tile broke.
+fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held: ItemSlot) -> bool {
+    // `:45660` — the buffer slot for the cell (the shared book).
+    let buffer_index = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+    // `:45708-45712` — the damage ladder. `Main.getGoodWorld` = the
+    // For-the-Worthy seed (the `pick_world` mapping).
+    let get_good = app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let mut damage = tr_core::tool::axe_damage(kind, axe_power, 0, get_good);
+    // `:45717-45720` — a `CanKillTile` refusal zeroes the chop damage.
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        damage = 0;
+    }
+    // `:45721-45724` — the Don't Starve cactus chop hurts the chopper on
+    // EVERY damaging hit (not only the break): `Main.DamageVar(6f, 0f -
+    // this.luck)`, hitDirection 0 (no knockback), not quiet, no crit, the
+    // TileContactDamage cooldown. The port's single hurt lane folds the
+    // cooldown counters onto `hurt_cd` (the M4-HAZARD-1 admission,
+    // `touch_damage.rs`'s precedent) and `hitDirection 0` maps to the
+    // player's own centre (no directional kick). The damage draw rides the
+    // `UpdatePlayers` stream (the ItemCheck swap, `Main.cs:17754`), before
+    // the kill's own drop draws — the C# order.
+    if app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::DONT_STARVE)
+        && damage > 0
+        && kind == 80
+    {
+        let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let dmg = tr_core::damage::damage_var(rng, 6.0, -luck);
+        if let Some(p) = app.player.as_mut() {
+            let (cx, _) = p.center();
+            let _ = p.hurt(dmg, cx, rng, true);
+        }
+    }
+    // `:45725` — the accumulation; `>= 100` breaks.
+    let total = app.hit_tile.add_damage(buffer_index, damage, true);
+    if total >= 100 {
+        // `:45727-45742` — Lucy the Axe's (5095) chopped-tree chat bubble
+        // (`LucyAxeMessage`) has no port chat-bubble system: the recorded
+        // deviation, the chop itself is unchanged (ANALYSIS, S1-P-i30).
+        // `:45743` — `ClearMiningCacheAt(x, y, 1)` clears the hit slot
+        // (`Player.cs:53846-53850`; the port has no replacement book).
+        app.hit_tile
+            .try_clearing_and_pruning(tx, ty, tr_core::hit_tile::TILE, |x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        // `:45744` — `IsBottomOfTreeTrunkNoRoots(x, y)` read BEFORE the kill
+        // (the Acorn Axe's replant gate).
+        let replant_base =
+            held.kind == 5295 && is_bottom_of_tree_trunk_no_roots(&app.world, tx, ty);
+        // `:45745` — `WorldGen.KillTile(x, y)`: the whole-tree fall rides
+        // the kill cascade (`tr_core::edit::kill_tile` → `CheckTree` /
+        // `CheckPalmTree` / `CheckCactus` / the case-72 support check).
+        break_tile(app, tx, ty);
+        // `:45750-45753` — the Staff of Regrowth's twin, the Acorn Axe
+        // (5295), replants an acorn sapling into the felled base cell.
+        if replant_base {
+            try_replanting_tree(app, tx, ty);
+        }
+        // `:45764-45767` — the tail prune runs AFTER both branches (the
+        // break tick prunes twice: ClearMiningCacheAt's own prune + this).
+        if damage != 0 {
+            app.hit_tile.prune(|x, y| {
+                app.world.tile(x, y).is_some_and(|t| t.active())
+            }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+        }
+        // `:45768` — `ApplyItemTime(sItem)`: `itemTime = useTime` verbatim
+        // (`Player.cs:4416-4419` — NO `pickSpeed` scale; the pick arm's
+        // `:45777-45780` re-arm is gated on `sItem.pick > 0`, which a pure
+        // axe never reaches; the Drax 579 carries both powers and takes
+        // that re-arm below, exactly like the C#).
+        rearm_axe_item_time(app, held);
+        return true;
+    }
+    // `:45758` — the fail tick (`KillTile(fail: true)`): the per-tick
+    // sound/dust is the recorded deviation; the damage stays in the book.
+    // `:45764-45767` — a non-zero damage prunes the book.
+    if damage != 0 {
+        app.hit_tile.prune(|x, y| {
+            app.world.tile(x, y).is_some_and(|t| t.active())
+        }, |x, y| app.world.tile(x, y).map_or(0, |t| t.wall));
+    }
+    // `:45768` — the cadence re-arm on the fail tick too.
+    rearm_axe_item_time(app, held);
+    false
+}
+
+/// The axe arm's `ApplyItemTime(sItem)` (`Player.cs:45768` → `:4416-4419`):
+/// `itemTime = useTime` (prefix-aware — `Item.Prefix` scales the INSTANCE's
+/// `useTime`), then the shared `sItem.pick > 0` tail (`:45777-45780`)
+/// overrides it with `(int)(useTime * pickSpeed)` for the dual-power
+/// Drax/hamaxes.
+fn rearm_axe_item_time(app: &mut App, held: ItemSlot) {
+    let use_time = held_use_time_ticks(held);
+    let def = registry::get(held.kind);
+    if def.is_some_and(|d| d.pick > 0) {
+        let pick_speed = app.player.as_ref().map_or(1.0, |p| p.pick_speed());
+        app.item_time = ((use_time as f32 * pick_speed) as i32).max(0) as f32 * ONE_TICK_SECS;
+    } else {
+        app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+    }
+}
+
+/// The held item's `useTime` in ticks, prefix-aware (`Item.Prefix` scales
+/// `useTime`, `prefix.rs:400`). The mining `itemTime` re-arm reads it
+/// (`Player.cs:45779`).
+fn held_use_time_ticks(held: ItemSlot) -> i32 {
+    if held.prefix != 0 {
+        if let Some(s) = crate::prefix::prefixed_stats(held.kind, held.prefix) {
+            return s.use_time;
+        }
+    }
+    registry::get(held.kind).map_or(0, |d| i32::from(d.use_time))
+}
+
+/// Refresh the crack overlay's `mine_timer`/`mine_hardness` from the
+/// `HitTile` book's damage at the cell — the port's projection of the C#
+/// `HitTile` damage onto the 0..100 crack ladder (`render/tile_cracks.rs`,
+/// `Main.cs:61533-61626`). The book is the source of truth now; the timer
+/// is the damage fraction and the hardness is 1.0 (the full break).
+fn sync_mine_crack_state(app: &mut App, tx: i32, ty: i32) {
+    let damage = app
+        .hit_tile
+        .try_finding(tx, ty, tr_core::hit_tile::TILE)
+        .map_or(0, |id| app.hit_tile.data[id].damage);
+    app.mine_hardness = 1.0;
+    app.mine_timer = (damage.clamp(0, 100) as f32) / 100.0;
+}
+
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
@@ -641,6 +1614,26 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // `mine_released`, so the force applies on any frame.
         if held.count > 0 && (glove_arm || all_arm) {
             app.mine_released = true;
+
+        }
+    }
+    // S1-P-i29 — the per-tick `toolTime` block (`Player.cs:43576-43587`):
+    // while NOT channeling, `toolTime = itemTime` (the mirror); while
+    // channeling (a drill), `toolTime--` wraps to `useTime - 1`. Runs every
+    // tick the item-use tick runs (the C# block is unconditional in
+    // `ItemCheck_OwnerOnlyCode`); the early-return gates below stand in for
+    // the C#'s `controlUseItem`/`mouseInterface` clears that skip the use.
+    {
+        let held = app.inventory[app.selected];
+        let channeling = app.player.as_ref().is_some_and(|p| p.channel);
+        if !channeling {
+            app.tool_time = app.item_time;
+        } else {
+            app.tool_time -= dt;
+            if app.tool_time < 0.0 {
+                let use_time = held_use_time_ticks(held);
+                app.tool_time = (use_time - 1).max(0) as f32 * ONE_TICK_SECS;
+            }
         }
     }
     if let Some((x, y)) = app.dev_break.take() {
@@ -700,6 +1693,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.edit_target = None;
         app.mine_target = None;
         app.mine_timer = 0.0;
+        return;
+    }
+    // S1-P-i38 — the recall / magic-mirror / ice-mirror / potion-of-return
+    // `ItemCheck` arms (`Player.cs:42976-42999` / `:43107-43140` /
+    // `:43141-43172`, `ItemCheck_OwnerOnlyCode`): like the boss spawners they
+    // run in the item-use tick, not the cursor/reach path — the mirror fires
+    // mid-swing at `itemTime == useTime/2` regardless of where the cursor
+    // points. The machine sits with the boss-spawner block (after the
+    // map/HUD/frozen gates, before the reach gate). The press edge is the true
+    // previous-frame pair (the port overwrote `mine_prev_down` to the current
+    // frame at the top). A started use consumes the tick like the boss arms;
+    // a live swing's per-tick arm runs without consuming.
+    if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
@@ -800,6 +1806,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
     }
     let world_pos = app.camera + (m - screen * 0.5) / app.zoom;
+    // S1-P-i36 — the bug net's catch arm (`Player.ItemCheck`'s
+    // `Player.cs:43648-43661`): the swung-item rectangle is PLAYER-relative,
+    // so the catch runs ahead of the cursor-reach gate (the C# `ItemCheck`
+    // never reach-gates the melee hitbox block). The nets never mine
+    // (`pick/axe/hammer` 0) and their `damage` −1 keeps them out of
+    // `MeleeHitNPCs` (`:43662`), so the arm consumes the whole use.
+    if crate::bug_net::update_bug_net(app) {
+        app.edit_target = None;
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
+    // S1-P-i36 — the makeNPC release arm (`Player.cs:43614-43625`): the
+    // swing starts regardless of reach; only the release itself is
+    // reach-gated inside (`ItemCheck_ReleaseCritter`, `:44064`). LMB on a
+    // captured-critter item releases it (the RMB cage/anchor placement
+    // keeps the generic place path below).
+    if crate::bug_net::update_critter_release(app, world_pos) {
+        app.edit_target = None;
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
     let tx = (world_pos.x / TILE_PX).floor() as i32;
     let ty = (world_pos.y / TILE_PX).floor() as i32;
     if !app.world.in_bounds(tx, ty) {
@@ -851,6 +1880,52 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         "[flow-dbg] reached: kind={} mine_down={}",
         held.kind, app.mine_down
     );
+    // `Player.Update`'s early-dismount head (`Player.cs:24992-24995`) +
+    // `ItemCheck_ManageRightClickFeatures` (`:31695-31702`): using an item
+    // dismounts the mounts that say so — the held item being the very same
+    // mount is exempt. The gate is `TryingToUseItem` (`:24319-24338`): the
+    // use button held, a usable held item, and NOT (`itemAnimation == 0 &&
+    // !Main.mouseLeftRelease`) — `Main.mouseLeftRelease` mirrors the CURRENT
+    // button state (`app.mine_released = !mine_down`, the tick head), so on
+    // the press tick the gate is closed and the dismount fires from the
+    // next tick while the animation runs. `TryingToUseItem`'s can-use half
+    // reads `ignoreCursed: true`, so the transformation mounts' `noItems`
+    // lock never blocks the dismount itself — it runs BEFORE the use-start
+    // refusal below, exactly like the C# order.
+    let trying_to_use_item = app.mine_down
+        && !app.inventory_open
+        && held.count > 0
+        && crate::item::use_style(held.kind) != 0
+        && (app.swing > 0.0 || app.mine_released);
+    if trying_to_use_item {
+        if let Some(p) = app.player.as_mut() {
+            if p.mount.is_active()
+                && p.mount.dismount_on_item_use()
+                && crate::mount::mount_type_of_item(held.kind) != Some(p.mount.kind())
+            {
+                // `:31697` — `TryEarlyDismount` (the gated path).
+                p.try_early_dismount(&app.world);
+                // `:31698-31701` — a mount that survived the dismount attempt
+                // (CCed / no space) cancels the item use this tick.
+                if p.mount.is_active() {
+                    app.mine_target = None;
+                    app.mine_timer = 0.0;
+                    return;
+                }
+            }
+        }
+    }
+    // `Player.ItemCheck_CheckCanUse_Inner`'s noItems gate (`Player.cs:52140-
+    // 52148`) inside `ItemCheck_TryStartUse` (`:52023`): a Cursed (23) or
+    // transformation-mount item lock refuses EVERY use start — weapons,
+    // potions, saddles and mining alike — unless a dismounts-on-item-use
+    // mount can dismount (`can_use_item_past_no_items`). The early-dismount
+    // head above already freed the ones that could; what remains refuses.
+    if app.player.as_ref().is_some_and(|p| !p.can_use_item_past_no_items(&app.world, false)) {
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
     // `Player.ItemCheck`'s use-start gate (`Player.cs:42733`): `controlUseItem
     // && releaseUseItem && itemAnimation == 0` — ONE use per press edge
@@ -954,6 +2029,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
     }
+    // S1-P-i35 — the fishing rod's use chain (`Player.ItemCheck_TryStartUse`
+    // → `ItemCheck_PullFishingBobbers` `Player.cs:52368-52399`, then
+    // `ItemCheck_Shoot`'s bobber spawn `:47181-47184`/`:49437`). A live
+    // bobber makes the use a REEL (the pull), never a cast; the cast fires
+    // only when no bobber is out. The pulley gate (`:52055-52058`) blocks
+    // the whole use while roped.
+    let held_pole = registry::get(held.kind).map_or(0, |d| d.fishing_pole);
+    if held_pole > 0 && app.mine_down && !app.inventory_open {
+        let pulley = app.player.as_ref().is_some_and(|p| p.pulley);
+        if !pulley && fishing_use(app, held, world_pos, prev_mine_released && !prev_mine_down) {
+            return;
+        }
+    }
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
@@ -1036,7 +2124,23 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 p.minion_npc_target_aim(&app.npcs, mouse_world);
             }
         }
-        if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
+        // S1-P-i29/i30 — the drills and chainsaws (a `channel` item with
+        // `pick > 0` or `axe > 0`) are mining tools, not throws: their
+        // projectile spawns once via the channel start
+        // (`drill_channel_start`, `ItemCheck_StartActualUse` →
+        // `StartChanneling`, `Player.cs:51677`/`:52958`) and the aiStyle-20
+        // machine holds it. The generic throw would re-spawn the tool every
+        // swing — gate it out here (the C# `ItemCheck_Shoot` fires once per
+        // use start, and the channel holds the animation so no new use
+        // starts while held).
+        let drill_tool =
+            registry::get(held.kind).is_some_and(|d| d.channel && (d.pick > 0 || d.axe > 0));
+        if app.attack_cd <= 0.0
+            && app.reuse_delay <= 0.0
+            && throw_ready
+            && held_use_ammo == 0
+            && !drill_tool
+        {
             // `ItemCheck_CheckCanUse_Inner`'s boomerang stack limits
             // (`Player.cs:52162-52186`, S1-P-i08): the single-flight list
             // (`:52162` — 6/19/33/52/113/320/333/383/491/867/1052/902/866/
@@ -1312,6 +2416,99 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         // `projectile_hit_crit`); the boomerang's melee flag
                         // rides `proj_data` like every other shot.
                         let _ = slot;
+
+                    } else if tr_core::golf_state::is_a_golf_ball(proj as i32) {
+                        // S1-P-i55 — `ItemCheck_Shoot`'s golf-ball arm
+                        // (`Player.cs:47516-47537`): within 100 px of the
+                        // player the use tees the ball on a nearby tee
+                        // (`TryPlacingAGolfBallNearANearbyTee(MouseWorld)`);
+                        // failing that, a far or blocked aim spawns at the
+                        // hand point with the aim velocity, a near clear aim
+                        // spawns AT the mouse with zero velocity. The arm
+                        // `return`s in the C# — the port skips the generic
+                        // spawn but keeps the shared swing tail below.
+                        let (pcx, pcy) = p.center();
+                        let to_mouse = world_pos - Vec2::new(pcx, pcy);
+                        let mut placed = false;
+                        if to_mouse.length() < 100.0 {
+                            // The disjoint-parts resolver — `p` holds the
+                            // player borrow for the whole shoot block.
+                            placed = crate::projectile_ai_golf::try_place_golf_ball_near_tee_parts(
+                                &mut app.projectiles,
+                                &app.world,
+                                world_pos,
+                                world_pos,
+                                Vec2::new(p.x, p.y),
+                                Vec2::new(crate::player::WIDTH, p.height),
+                                p.tile_range_x(),
+                                p.tile_range_y(),
+                                app.selected,
+                                &app.inventory,
+                                &p.equipped,
+                                app.local_id as u8,
+                            );
+                        }
+                        if !placed {
+                            let damage = raw as i32;
+                            let slot = if to_mouse.length() > 100.0
+                                || !crate::projectile::can_hit(
+                                    &app.world, pcx, pcy, 1.0, 1.0,
+                                    world_pos.x, world_pos.y, 1.0, 1.0,
+                                )
+                            {
+                                // `:47529` — the hand-point spawn with the
+                                // aim velocity (the C# takes the centre,
+                                // the port's seam takes the top-left).
+                                let row = crate::projectile::proj_data(proj);
+                                let (hw, hh) =
+                                    row.map_or((3.5, 3.5), |d| (d.w * 0.5, d.h * 0.5));
+                                app.projectiles.spawn_with_data_ai_owned(
+                                    proj,
+                                    app.local_id as u8,
+                                    spawn.x - hw,
+                                    spawn.y - hh,
+                                    shot.x,
+                                    shot.y,
+                                    damage,
+                                    fx_kb,
+                                    0.0,
+                                    0.0,
+                                )
+                            } else {
+                                // `:47533` — the mouse-point spawn, zero
+                                // velocity.
+                                let row = crate::projectile::proj_data(proj);
+                                let (hw, hh) =
+                                    row.map_or((3.5, 3.5), |d| (d.w * 0.5, d.h * 0.5));
+                                app.projectiles.spawn_with_data_ai_owned(
+                                    proj,
+                                    app.local_id as u8,
+                                    world_pos.x - hw,
+                                    world_pos.y - hh,
+                                    0.0,
+                                    0.0,
+                                    damage,
+                                    fx_kb,
+                                    0.0,
+                                    0.0,
+                                )
+                            };
+                            if let Some(slot) = slot {
+                                // M3 sync: no throw-time crit stamp - the
+                                // golf ball crits per-hit in damage_pve
+                                // (Projectile.cs:12883-12917, S1-P-i11).
+                                // `NewProjectile`'s >10-ball cull
+                                // (`Projectile.cs:10932-10955`): the use
+                                // spawns are the local owner's, so the
+                                // `Owner == Main.myPlayer` gate holds.
+                                crate::projectile_ai_golf::cull_extra_golf_balls(
+                                    &mut app.projectiles,
+                                    app.local_id as u8,
+                                    proj,
+                                    damage,
+                                );
+                            }
+                        }
                     } else if GEM_STAFF_BOLTS.contains(&proj) {
                         // `Player.cs:49262-49375` - the gem-staff shoot.
                         // `PackGemStaffFeatures` (`:49470-49489`): the bits
@@ -1697,6 +2894,159 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // returned here for the non-ammo case, which made every melee weapon
         // unreachable.
     }
+/// S1-P-i35 — the fishing rod's use chain (`Player.ItemCheck_TryStartUse` →
+/// `ItemCheck_PullFishingBobbers` `Player.cs:52368-52399` → `ItemCheck_Shoot`
+/// `:47056+`). Returns `true` when the use is consumed (a reel OR a cast), so
+/// the caller skips the generic weapon/mining arms. The press edge gates the
+/// cast (the pole is not `autoReuse`, `Item.cs`'s row); a live bobber makes
+/// every press a reel.
+fn fishing_use(app: &mut App, held: ItemSlot, world_pos: Vec2, press_edge: bool) -> bool {
+    let owner = app.local_id as u8;
+    // `ConsumeBait`'s bait scan (`Player.cs:52452-52470`): the ammo slots
+    // 54-57 first, then the grid 0-49, matching `localAI[2]` — but the pull
+    // needs the bait BEFORE it knows which bobber bites, so resolve the best
+    // bait the same way `Fishing_GetBait` does (`:42254-42280`).
+    let bait = {
+        let Some(p) = app.player.as_ref() else { return false };
+        let cond = p.fishing_conditions(
+            &app.inventory,
+            &app.equip.coins,
+            &app.equip.ammo,
+            app.selected,
+            &app.world,
+            app.rain.is_raining(),
+            app.rain.cloud_bg(),
+        );
+        if cond.2 > 0 { Some((cond.3, cond.2)) } else { None }
+    };
+    let (acc_tackle_box, acc_fishing_line) = app
+        .player
+        .as_ref()
+        .map(|p| (p.acc_tackle_box, p.acc_fishing_line))
+        .unwrap_or((false, false));
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let (no_bobber, bait_use) = app.projectiles.pull_fishing_bobbers(
+        owner,
+        bait,
+        acc_tackle_box,
+        acc_fishing_line,
+        |kind| registry::get(kind).map_or(0, |d| d.rare),
+        rng,
+    );
+    // The bait drain + the ladybug luck (`ConsumeBait` `:52513-52524`).
+    if let Some(use_bait) = bait_use {
+        if use_bait.consumed {
+            // Find the slot the scan would pick (ammo first, then grid).
+            let mut drained = false;
+            for sl in app.equip.ammo.iter_mut() {
+                if sl.count > 0 && sl.kind == use_bait.bait_type {
+                    sl.count -= 1;
+                    if sl.count == 0 {
+                        sl.kind = 0;
+                    }
+                    drained = true;
+                    break;
+                }
+            }
+            if !drained {
+                for sl in app.inventory.iter_mut() {
+                    if sl.count > 0 && sl.kind == use_bait.bait_type {
+                        sl.count -= 1;
+                        if sl.count == 0 {
+                            sl.kind = 0;
+                        }
+                        break;
+                    }
+                }
+            }
+            // `:52515-52518` — the ladybug baits 4361/4362 run LadyBugKilled.
+            if use_bait.bait_type == 4361 || use_bait.bait_type == 4362 {
+                let center = app.player.as_ref().map(|p| p.center());
+                if let (Some(p), Some(pos)) = (app.player.as_mut(), center) {
+                    let add = p.on_lady_bug_killed(pos, use_bait.bait_type == 4362);
+                    app.rain.add_lady_bug_rain_boost(add);
+                }
+            }
+        }
+    }
+    // The pull's NPC spawns (`PullBobber` `:52403-52437`): the Duke Fishron
+    // (370) at the player, the blood-moon enemy at the bobber. The unported
+    // enemy kinds (586/587/618/620/621/682) skip the spawn but the 682 still
+    // raises `unlockedSlimeRedSpawn` (`:52429-52432`).
+    for owner_id in app.projectiles.drain_duke_spawns() {
+        if owner_id == owner {
+            let center = app.player.as_ref().map(|p| p.center());
+            if let Some((cx, cy)) = center {
+                let (w, h) = NpcKind::DukeFishron.size();
+                let mut n = Npc::new(NpcKind::DukeFishron, cx - w * 0.5, cy - h, 1, 0.0);
+                n.hp = n.max_hp;
+                app.npcs.push(n);
+            }
+        }
+    }
+    for (npc_type, x, y) in app.projectiles.drain_fishing_enemies() {
+        if npc_type == 682 {
+            app.world.unlocked_slime_red_spawn = true;
+        }
+        // The blood-moon fish enemies have no NpcKind rows (module doc) —
+        // the roll ran verbatim, the spawn is the documented skip.
+        let _ = (x, y);
+    }
+    if !no_bobber {
+        // A live bobber: the use is a reel, consumed (no cast).
+        return true;
+    }
+    // No bobber out: the cast fires on the press edge (`ItemCheck_Shoot`).
+    if !press_edge || app.attack_cd > 0.0 || app.reuse_delay > 0.0 {
+        // The use still consumes (the pole swings) but no cast this tick.
+        return true;
+    }
+    // The player reads are snapshotted before the pool/rng borrows (the
+    // disjoint-field capture the shoot path uses).
+    let Some((override_bobber, pcx, pcy, facing, class_crit)) = app.player.as_ref().map(|p| {
+        let class = registry::get(held.kind).map_or(registry::DamageClass::None, |d| d.class);
+        (p.override_fishing_bobber, p.mounted_center().0, p.mounted_center().1, p.facing, p.class_crit(class))
+    }) else { return true };
+    // `ItemCheck_Shoot`'s bobber override (`Player.cs:47181-47184`): the
+    // glow-bobber accessory replaces the pole's own shoot.
+    let mut proj = registry::projectile(held.kind).unwrap_or(0);
+    if override_bobber > -1 {
+        proj = override_bobber as u16;
+    }
+    if proj == 0 {
+        return true;
+    }
+    let def = registry::get(held.kind);
+    let fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
+    let speed = fx.map_or(def.map_or(0.0, |d| d.shoot_speed), |s| s.shoot_speed);
+    let damage = fx.map_or(def.map_or(0, |d| d.damage), |s| s.damage);
+    let kb = fx.map_or(def.map_or(0.0, |d| d.knock_back), |s| s.knock_back);
+    // The spawn point + aim (`:47196`/`:47277-47307`): the mounted centre,
+    // the aim normalized to shootSpeed (the degenerate aim → facing).
+    let spawn = Vec2::new(pcx, pcy);
+    let dir = world_pos - spawn;
+    let vel = if dir == Vec2::ZERO || dir.is_nan() {
+        Vec2::new(facing as f32 * speed, 0.0)
+    } else {
+        dir.normalize() * speed
+    };
+    // M3 sync: no throw-time crit roll - the per-hit model is canonical
+    // (Projectile.cs:12883-12917, S1-P-i11; the generic ItemCheck_Shoot tail
+    // Player.cs:49437 carries no roll). The bobber's damage is -1 so the PVE
+    // walk refuses anyway; the cast spends no UpdatePlayers draw.
+    let _ = class_crit;
+    let slot = app.projectiles.spawn_with_data_ai_owned(
+        proj, owner, spawn.x, spawn.y, vel.x, vel.y, damage, kb, 0.0, 0.0,
+    );
+    let _ = slot;
+    // The swing (`ApplyItemAnimation` `:4449-4451`).
+    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+    app.swing = app.swing_max;
+    start_swing_extras(app, held.kind);
+    app.attack_cd = app.swing_max;
+    true
+}
+
 /// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
 /// minable/chopable tile the held tool can work, and the vanilla checks the
 /// tile against the tool before the NPC boxes — `ItemCheck_UseMiningTools`
@@ -1718,6 +3068,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     }
     if tr_core::tool::is_axe_tile(tile.kind) {
         return registry::get(held.kind).map(|d| d.axe).unwrap_or(0) > 0;
+    }
+    // S1-P-i31 — the hammer tiles (`Main.tileHammer`) answer to the hammer
+    // power (`Player.cs:45656`), never the pick.
+    if tr_core::tool::is_hammer_tile(tile.kind) {
+        return registry::get(held.kind).map(|d| d.hammer).unwrap_or(0) > 0;
     }
     let pick = registry::get(held.kind).map(|d| d.pick).unwrap_or(0);
     let below_surface = (ty as f64) > app.world.world_surface;
@@ -1814,7 +3169,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     // `:52312-52314` -> `Mount.CanMount` (`Mount.cs:6581-6604`): a saddle
     // item equips its mount (a swap while mounted goes through the same
     // `SetMount` guards, `Mount.cs:6196-6213`). Sits after the weapon/potion
-    // arms so the sim-context player borrow is already dead (NLL).
+    // arms so the sim-context player borrow is already dead (NLL). The start
+    // gate is i12's landed form (`:42733` + the auto-reuse forced release);
+    // `ItemCheck_CheckCanUse_Inner`'s noItems gate (`:52140-52148`,
+    // ignoreCursed = false, S1-P-i41) rides the same probe.
     if app.mine_down
         && held.count > 0
         && !app.inventory_open
@@ -1824,12 +3182,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     {
         if let Some(m) = crate::mount::mount_type_of_item(held.kind) {
             // The can-mount check and the mount swap run under their own
-            // player borrows — `start_use_timers` takes the whole app (the
+            // player borrows - `start_use_timers` takes the whole app (the
             // sound seam), so the borrow must end before it.
-            let can = app
-                .player
-                .as_ref()
-                .is_some_and(|p| p.can_mount(&app.world, m));
+            let can = app.player.as_ref().is_some_and(|p| {
+                p.can_use_item_past_no_items(&app.world, false) && p.can_mount(&app.world, m)
+            });
             if can {
                 if let Some(p) = app.player.as_mut() {
                     let wet = p.wet;
@@ -1842,240 +3199,102 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             }
         }
     }
-    // `Player.cs:31695-31698` (`ItemCheck_ManageRightClickFeatures`) and
-    // `:24992-24994`: using an item dismounts the mounts that say so — the
-    // held item being the very same mount is exempt (`:31697`).
-    if app.mine_down && !app.inventory_open {
-        if let Some(p) = app.player.as_mut() {
-            if p.mount.is_active() && p.mount.dismount_on_item_use() {
-                let same = crate::mount::mount_type_of_item(held.kind) == Some(p.mount.kind());
-                if !same {
-                    p.try_dismount(&app.world);
-                }
-            }
-        }
-    }
-    let Some(tile) = app.world.tile(tx, ty).copied() else {
-        app.edit_target = None;
-        return;
-    };
     let held_wall = held.count > 0 && registry::place_wall(held.kind).is_some();
 
+    // S1-P-i29 — the pickaxe/drill mining interaction, ported from
+    // `Player.ItemCheck_UseMiningTools` (`Player.cs:45584-45644`) →
+    // `ItemCheck_UseMiningTools_ActuallyUseMiningTool` (`:45646-45782`) →
+    // `PickTile` (`:53757-53826`) → `GetPickaxeDamage` (`:53902-54045`).
+    // The per-tick `toolTime` block (`:43576-43587`) mirrors `itemTime`
+    // while not channeling, or counts down on a channel drill; the pick hit
+    // fires at `toolTime == 0 && itemAnimation > 0 && controlUseItem`
+    // (`:45608`/`:45626`) and re-arms `itemTime = (int)(useTime * pickSpeed)`
+    // (`:45779`). The damage accumulates in the `HitTile` book
+    // (`tr_core::hit_tile`, `HitTile.cs`) until 100 breaks the tile.
+    //
     // No `frame_important` gate on this branch — vanilla's LMB mining chain
     // has none: `tileFrameImportant` is read only by the placement/replacement
-    // paths (`Player.cs:40019`, `:40608`), never by the pick tick
-    // `ItemCheck_UseMiningTools_ActuallyUseMiningTool` → `PickTile`
-    // (`Player.cs:45656`, `:53757`). The former cactus carve-out is gone with
-    // it: cactus 80 is `tileAxe` in C# (`Main.cs:7210`), so vanilla LMB-pick
-    // does not break it — and since the tool tiers landed on main
-    // (`tr_core::tool`, merged 2026-11-04) the axe gate covers kind 80 the
-    // same way, closing the TO-5-era pick-breakability deviation.
-    if app.mine_down && tile.active() && !app.inventory_open {
-        // The tool tiers (`GetPickaxeDamage`'s gates via `tr_core::tool`):
-        // the axe tiles chop with an axe, everything else mines with a pick
-        // whose power clears the tile's tier; the tier also paces the dig
-        // (the baseline timings assume the copper pick's 35).
-        let tool_pick = registry::get(held.kind).map(|d| d.pick).unwrap_or(0);
-        let tool_axe = registry::get(held.kind).map(|d| d.axe).unwrap_or(0);
-        // `Main.tileHammer[26]` (`Player.cs:45665`): the demon altar takes the
-        // hammer arm — a pick or axe alone can never damage it (`:45656`,
-        // `:45668`, `:45672`).
-        let tool_hammer = registry::get(held.kind).map(|d| d.hammer).unwrap_or(0);
-        let altar = tile.kind == 26;
-        let axe_tile = tr_core::tool::is_axe_tile(tile.kind);
-        let below_surface = (ty as f64) > app.world.world_surface;
-        let can_mine = if altar {
-            tool_hammer > 0
-        } else if axe_tile {
-            tool_axe > 0
+    // paths (`Player.cs:40019`, `:40608`), never by the pick tick. Cactus 80
+    // is `tileAxe` (`Main.cs:7210`), so a pick does not break it — the axe
+    // gate covers it (the i30 axe task owns the chop pacing).
+    let held_def = registry::get(held.kind);
+    let is_mining_tool =
+        held_def.is_some_and(|d| d.pick > 0 || d.axe > 0 || d.hammer > 0);
+    // The drill channel start (`ItemCheck_StartActualUse` → `StartChanneling`,
+    // `Player.cs:51677`/`:52958-52968`): a channel drill spawns its drill
+    // projectile on the press edge and latches the channel. The projectile's
+    // aiStyle-20 machine holds the animation (`SetDummyItemTime(2)`,
+    // `Projectile.cs:25563`) and kills itself on the release (`:25549`).
+    if app.mine_down && !app.inventory_open && is_mining_tool {
+        let _ = drill_channel_start(app, held, world_pos);
+    }
+    // The drill channel hold: while the drill projectile lives, the item
+    // animation HOLDS at the dummy 2 ticks (`Projectile.cs:25563`'s
+    // `SetDummyItemTime(2)` — `itemAnimation = itemTime = 2`,
+    // `itemAnimationMax = 3`, `Player.cs:4432-4441`). The port keeps the
+    // swing alive at the same 2-tick value so the `toolTime == 0 &&
+    // itemAnimation > 0` mining gate keeps firing every `useTime` ticks.
+    let drill_holding = drill_live(app, held) && app.mine_down && !app.inventory_open;
+    if drill_holding {
+        app.swing = 2.0 * ONE_TICK_SECS;
+        app.swing_max = 3.0 * ONE_TICK_SECS;
+    }
+    if !app.inventory_open && is_mining_tool {
+        // S1-P-i31 — the hammer interaction (`ItemCheck_UseMiningTools`,
+        // `Player.cs:45584-45644`). The C# order: the `poundRelease` clear
+        // (`:45608-45615`, BEFORE the reach return), the mining action
+        // (`:45626-45634`), the release latch (`:45635-45638`), the wall
+        // pass (`:45639-45643`). The action-ready gate mirrors `:45608`:
+        // `toolTime == 0 && itemAnimation > 0 && controlUseItem`.
+        let action_ready =
+            ticks_of(app.tool_time) <= 0 && app.swing > 0.0 && app.mine_down;
+        // `:45608-45615` — a non-target cursor tile clears the pound latch
+        // (runs even out of reach — the C# clear precedes the `!flag`
+        // return at `:45616`).
+        if action_ready {
+            let target_ok = app
+                .world
+                .tile(tx, ty)
+                .is_some_and(|t| t.active() && edit::is_a_hammer_target(t.kind));
+            if !target_ok {
+                app.pound_release = false;
+            }
+        }
+        let (range_x, range_y) = mining_tile_range(app);
+        let in_reach = app.player.as_ref().is_some_and(|p| {
+            tile_in_reach_rect(p, tx, ty, range_x, range_y, held_def.map_or(0, |d| d.tile_boost))
+        });
+        if app.mine_down && in_reach {
+            // The tile arm (`:45626-45634`) — `mining_tick` handles the
+            // inactive-cell early return (`:45652-45654`) itself and leaves
+            // `mining_can_hit_walls` true for the wall pass.
+            mining_tick(app, tx, ty, held);
         } else {
-            tool_pick > 0
-                && tr_core::tool::pick_can_mine(tile.kind, tool_pick as i32, below_surface)
-        };
-        if !can_mine {
             app.mine_target = None;
             app.mine_timer = 0.0;
-        } else {
-            // The tool swing restarts through the same start gate as every
-            // other use (`ItemCheck_TryStartUse` `:42733` + the auto-reuse
-            // forced release): animation zero, release ready, no pending
-            // reuse lock. `ApplyItemAnimation`'s melee branch scales the
-            // tool's `useAnimation` by the inverted meleeSpeed (`:4470-4473`
-            // — the pickaxe/axe/hammer rows are `melee = true`).
-            if app.swing <= 0.0 && app.mine_released && app.reuse_delay <= 0.0 {
-                start_use_timers(app, held);
-            }
-            // `PickTile_DetermineDamage` (`Player.cs:53830-53833`): a
-            // `CanKillTile` refusal zeroes the pick damage — the swing
-            // plays, the accumulator never reaches 100. (The C# fail tick's
-            // `KillTile(fail: true)` sound/dust has no per-tick path in the
-            // port.) `break_tile` re-checks for the other break sources.
-            let refused = !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app));
-            if refused {
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-            } else if altar {
-                // The hammer arm (`Player.cs:45665-45704`): the hammer damage
-                // builds (`hitTile.AddDamage(x, y, sItem.hammer) >= 100` to
-                // break); a sub-80 hammer or a pre-hardmode world zeroes it
-                // (`:45675-45679`) — the self-`Hurt`/`Main.bloodMoon` half of
-                // that refusal is a follow-up, the smash simply does not happen.
-                // The swing cadence mirrors the wall hammer (the baseline
-                // assumes the copper hammer's 35).
-                if tool_hammer < 80 || !app.world.hard_mode {
-                    app.mine_target = None;
-                    app.mine_timer = 0.0;
-                } else {
-                    if app.mine_target == Some((tx, ty)) {
-                        app.mine_timer += dt;
-                    } else {
-                        app.mine_target = Some((tx, ty));
-                        app.mine_timer = 0.0;
-                    }
-                    let hardness = 0.35 * 35.0 / tool_hammer.max(1) as f32;
-                    // The crack overlay's damage denominator
-                    // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
-                    app.mine_hardness = hardness;
-                    // `toolTime == 0 && itemAnimation > 0 && controlUseItem`
-                    // (`Player.cs:45626`): the hammer hit lands on an action
-                    // tick inside a running swing; `ApplyItemTime(sItem)`
-                    // (`:45702`) re-arms the cadence after every hit.
-                    if app.mine_timer >= hardness && app.swing > 0.0 && app.item_time <= 0.0 {
-                        app.mine_timer = 0.0;
-                        let ut = crate::prefix::prefixed_stats(held.kind, held.prefix)
-                            .map(|s| s.use_time)
-                            .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
-                            .unwrap_or(0);
-                        app.item_time = ut as f32 * ONE_TICK_SECS;
-                        // `WorldGen.KillTile`'s case 26 (`:49444-49449`): the
-                        // altar dies first (the tile + its `NotifyTileDestroyed`
-                        // ride `break_tile`), then `SmashAltar` seeds the
-                        // hardmode ore (`:48927+`, the `altarCount` order is the
-                        // port's saved ore-tier state) and fires BEGONE_EVIL
-                        // (`:49107-49108`).
-                        break_tile(app, tx, ty);
-                        let altars = app.world.altars_smashed;
-                        // The smash's draws ride the `UpdatePlayers` stream
-                        // (the C# hammer hit runs in `Player.ItemCheck` under
-                        // the `UpdatePlayers` swap, `Main.cs:17754`; the old
-                        // `growth_rng` copy + reseed ritual is gone).
-                        let ore = {
-                            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                            tr_core::ores::smash_altar(
-                                &mut app.world,
-                                &mut app.ore_tiers,
-                                altars,
-                                rng,
-                            )
-                        };
-                        app.world.altars_smashed = altars + 1;
-                        let _ = app.notify_progression_net(6);
-                        let _ = ore;
-                        app.world_key = None;
-                    }
-                }
-            } else if app.mine_target == Some((tx, ty)) {
-                app.mine_timer += dt;
-            } else {
-                app.mine_target = Some((tx, ty));
-                app.mine_timer = 0.0;
-            }
-            if !altar {
-                let base = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
-                    0.55
-                } else {
-                    0.25
-                };
-                // `Player.pickSpeed`'s WellFed discount (`:11945`) — the lower
-                // the faster; the port folds it into the dig time.
-                let fed_speed = 1.0
-                    - app
-                        .player
-                        .as_ref()
-                        .map(|p| p.pick_speed_bonus)
-                        .unwrap_or(0.0);
-                let hardness = if axe_tile {
-                    base * 7.0 / tool_axe.max(1) as f32
-                } else {
-                    base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
-                };
-                // The crack overlay's damage denominator
-                // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
-                app.mine_hardness = hardness;
-                // `toolTime == 0 && itemAnimation > 0 && controlUseItem`
-                // (`Player.cs:45626`): the pick/axe hit lands on an action
-                // tick inside a running swing. The pick re-arms
-                // `itemTime = (int)(useTime * pickSpeed)` (`:45777-45780`,
-                // the WellFed discount folded into `pick_speed_bonus`); the
-                // axe re-arms the plain `useTime` (`ApplyItemTime`, `:45768`).
-                if app.mine_timer >= hardness && app.swing > 0.0 && app.item_time <= 0.0 {
-                    break_tile(app, tx, ty);
-                    app.mine_target = None;
-                    app.mine_timer = 0.0;
-                    let ut = crate::prefix::prefixed_stats(held.kind, held.prefix)
-                        .map(|s| s.use_time)
-                        .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
-                        .unwrap_or(0);
-                    if axe_tile {
-                        app.item_time = ut as f32 * ONE_TICK_SECS;
-                    } else {
-                        let pick_speed = 1.0
-                            - app
-                                .player
-                                .as_ref()
-                                .map(|p| p.pick_speed_bonus)
-                                .unwrap_or(0.0);
-                        app.item_time =
-                            ((ut as f32 * pick_speed.max(0.3)) as i32) as f32 * ONE_TICK_SECS;
-                    }
-                }
-            }
+            app.mining_can_hit_walls = true;
         }
-    } else if app.mine_down && !tile.active() && tile.wall != 0 && !app.inventory_open {
-        // No block in the cell: mining it removes the exposed wall. The
-        // swing restart rides the same start gate (`:42733` + the forced
-        // release); `ItemCheck_UseMiningTools_TryHittingWall` (`:45908-45915`)
-        // re-arms `itemTime = useTime / 2` after each wall hit.
-        if app.swing <= 0.0 && app.mine_released && app.reuse_delay <= 0.0 {
-            start_use_timers(app, held);
+        // `:45635-45638` — `releaseUseItem` sets the pound latch (the
+        // release tick and every tick after, until a pound consumes it).
+        if in_reach && app.mine_released {
+            app.pound_release = true;
         }
-        if app.mine_target == Some((tx, ty)) {
-            app.mine_timer += dt;
-        } else {
-            app.mine_target = Some((tx, ty));
-            app.mine_timer = 0.0;
-        }
-        // The walls need a hammer (`Main.tileHammer`'s rule — the port
-        // gates on the held hammer power alone) and the hammer paces the
-        // dig (the baseline assumes the copper hammer's 35). The demon altar
-        // is an *active* tile, so its hammer arm lives in the branch above
-        // (`Player.cs:45665`), never here.
-        let tool_hammer = registry::get(held.kind).map(|d| d.hammer).unwrap_or(0);
-        if tool_hammer <= 0 {
-            app.mine_target = None;
-            app.mine_timer = 0.0;
-        } else {
-            let hardness =
-                (if tile.wall == 1 { 0.7 } else { 0.35 }) * 35.0 / tool_hammer.max(1) as f32;
-            // The crack overlay's damage denominator
-            // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
-            app.mine_hardness = hardness;
-            // `toolTime == 0 && itemAnimation > 0 && controlUseItem`
-            // (`Player.cs:45639`): the wall hit only lands on an action tick
-            // inside a running swing — the port's `item_time <= 0` gate.
-            if app.mine_timer >= hardness && app.swing > 0.0 && app.item_time <= 0.0 {
-                break_wall(app, tx, ty);
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-                // `ItemCheck_UseMiningTools_TryHittingWall` (`Player.cs:45913`):
-                // `itemTime = sItem.useTime / 2` — integer division, the
-                // PREFIXED instance value.
-                let ut = crate::prefix::prefixed_stats(held.kind, held.prefix)
-                    .map(|s| s.use_time)
-                    .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
-                    .unwrap_or(0);
-                app.item_time = (ut / 2) as f32 * ONE_TICK_SECS;
-            }
+        // `:45639-45643` — the wall pass: the finder + the hit gate +
+        // `PickWall`. The gate reads the SAME `toolTime == 0` the action
+        // used (the C# `toolTime` does not change inside UseMiningTools —
+        // `ApplyItemTime` writes `itemTime` only).
+        //
+        // Gate merge (i31 ⨉ i33): i33's timer-based wall cadence (written
+        // against pre-i29 main) is SUPERSEDED by the i31 `wall_hammer_tick`
+        // — the faithful `HitTile` WALL-book port of the same `PickWall`
+        // (`Player.cs:45942-45967`: integer `(int)(hammer * 1.5f)` damage,
+        // break at >= 100, `itemTime = useTime / 2` at `:45913`), with the
+        // finder (`:45832-45906`) and the full `:45910` gate composition
+        // (incl. `CanPlayerSmashWall` on the FULL `Main.wallHouse` table,
+        // i33's `edit::wall_house`). The i33 enclosed-unsafe refusal and
+        // the drop-conversion table ride `wall_hammer_tick` → `break_wall`.
+        if in_reach && action_ready && app.mining_can_hit_walls {
+            wall_hammer_tick(app, tx, ty, held, (world_pos.x, world_pos.y));
         }
     } else {
         app.mine_target = None;
@@ -2697,12 +3916,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let used = if extracted_secs.is_some() {
             true
         } else if held_wall {
-            if can_place_wall(app, tx, ty) {
-                place_wall_item(app, tx, ty, registry::place_wall(held.kind).unwrap_or(1));
-                true
-            } else {
-                false
-            }
+            // `PlaceThing_Walls` (`Player.cs:39600-39634`): the replacement
+            // arm, the plain place and the fill-empty-space tail — the route
+            // owns the success re-read and the stack consumption.
+            place_wall_route(app, tx, ty)
         } else if !held_weapon {
             // `Player.ItemCheck_UseWiringTools` (`Player.cs:43572`): the
             // wrench family, the cutter and the actuator answer before the
@@ -2777,7 +3994,13 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
         ty as f32 * TILE_PX,
         rng,
     );
-    if let Some(id) = registry::by_wall(wall) {
+    // `KillWall_DropItems` (`WorldGen.cs:60443-60450`) drops the
+    // `KillWall_GetItemDrops` conversion, not a reverse `createWall` lookup:
+    // the unsafe dungeon walls drop their SAFE item (7→135, 94→1378, …),
+    // stone 1 drops StoneBlock 26, glass 21 drops 392, and the natural
+    // unsafe walls (dirt 2, mud 15, …) drop NOTHING (S1-P-i33).
+    let id = edit::kill_wall_drop(wall);
+    if id > 0 {
         // The wall break runs in `Player.ItemCheck` — the `UpdatePlayers`
         // stream.
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
@@ -2787,42 +4010,185 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
     app.world_key = None;
 }
 
+/// `Player.PlaceThing_Walls`' placement gate (`Player.cs:39602-39610`), minus
+/// the reach/timing halves the caller owns: the cell must not already carry
+/// the held wall (`wall == createWall` refuses, `:39607` — a DIFFERENT wall
+/// passes on to the replacement route), and one of the four neighbours must
+/// be active OR walled (`!active && wall <= 0` on all four refuses). The
+/// cell's OWN tile never supports a wall — the C# reads only the neighbours.
+/// A wall may sit behind an active tile.
 pub(crate) fn can_place_wall(app: &App, tx: i32, ty: i32) -> bool {
     let Some(t) = app.world.tile(tx, ty) else {
         return false;
     };
-    if t.wall != 0
-        || app.inventory[app.selected].count == 0
-        || registry::is_weapon(app.inventory[app.selected].kind)
-    {
+    let held = app.inventory[app.selected];
+    let Some(create_wall) = registry::place_wall(held.kind) else {
+        return false;
+    };
+    if held.count == 0 || registry::is_weapon(held.kind) {
         return false;
     }
-    // A neighbouring wall or block (including one in the cell itself) supports it.
-    if t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
-        return true;
+    // `:39607` — the same-wall refusal.
+    if t.wall == create_wall {
+        return false;
     }
-    [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
+    // `:39607` — the four-neighbour support: active() OR wall > 0. The port's
+    // out-of-world read answers the C#'s boundary-tile reads as inactive and
+    // wall-less (`PlaceWall`'s own 2-cell guard refuses those cells anyway).
+    [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dy)| {
         app.world
             .tile(tx + dx, ty + dy)
-            .is_some_and(|n| n.wall != 0)
+            .is_some_and(|n| n.active() || n.wall != 0)
     })
 }
 
-pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
-    if edit::place_wall(&mut app.world, tx, ty, wall) {
-        app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
-        // `WorldGen.PlaceWall` plays the plain 0 (`WorldGen.cs:75141`) — the
-        // case-0 variation + pitch ride the `UpdatePlayers` stream
-        // (`Player.ItemCheck` under the `Main.cs:17754` swap).
-        app.audio.play_place_sound(
-            (0, 1),
-            tx as f32 * TILE_PX,
-            ty as f32 * TILE_PX,
-            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-        );
-        app.request_edit(tx, ty, 3, wall);
-        app.world_key = None;
+/// `Player.PlaceThing_Walls` (`Player.cs:39600-39634`) — the wall placement
+/// route: the replacement arm first when tile replacement is enabled
+/// (`TileReplacementEnabled`, `:39612-39615` → `PlaceThing_TryReplacingWalls`),
+/// then the plain `WorldGen.PlaceWall` (`:39620`) with the success re-read
+/// (`wall == createWall`, `:39621`), then `PlaceThing_Walls_FillEmptySpace`
+/// (`:39628`). Returns whether either arm consumed the action tick.
+pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
+    let held = app.inventory[app.selected];
+    let Some(create_wall) = registry::place_wall(held.kind) else {
+        return false;
+    };
+    if !can_place_wall(app, tx, ty) {
+        return false;
     }
+    // `PlaceThing_TryReplacingWalls` (`Player.cs:39816-39829`): the
+    // `PlaceThing_ValidWallForReplacement` gate (`:39831-39839`: wall > 0 and
+    // not 350) + `NearFriendlyWall` + `WorldGen.ReplaceWall`. The port's
+    // replacement toggle (`builderAccStatus[10]`) defaults ON like vanilla's
+    // and has no UI yet (ANALYSIS, S1-P-i33).
+    let cell_wall = app.world.tile(tx, ty).map_or(0, |t| t.wall);
+    if cell_wall > 0
+        && cell_wall != edit::WALL_UNBREAKABLE
+        && edit::near_friendly_wall(&app.world, tx, ty)
+    {
+        if let Some(old) = edit::replace_wall(&mut app.world, tx, ty, create_wall) {
+            // `ReplaceWall` plays the OLD wall's `KillWall_PlaySounds` cue
+            // (`WorldGen.cs:62550`) and drops its `KillWall_GetItemDrops`
+            // item (`:62551`) — both on the `UpdatePlayers` stream, sound
+            // before drop, the `KillWall` order. The new wall's placement
+            // does NOT play the Dig 0 (that is `PlaceWall`'s own, `:75141`).
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            app.audio.play_wall_break_sound(
+                edit::kill_wall_sound(old),
+                tx as f32 * TILE_PX,
+                ty as f32 * TILE_PX,
+                rng,
+            );
+            let id = edit::kill_wall_drop(old);
+            if id > 0 {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                spawn_item_drop(&mut app.items, rng, id, 1, tx, ty);
+            }
+            // The C# sends `17` action 22 (`Player.cs:39822`); the port's
+            // edit record carries the post-edit wall either way.
+            app.request_edit(tx, ty, 3, create_wall);
+            app.world_key = None;
+            // The replacement consumes the held item like a placement
+            // (`item.consumable`, the `Player.cs:43280` tick).
+            app.inventory[app.selected].count =
+                app.inventory[app.selected].count.saturating_sub(1);
+            if app.inventory[app.selected].count == 0 {
+                app.inventory[app.selected].kind = 0;
+            }
+            return true;
+        }
+        // A refused replacement (350 handled above; progression walls) falls
+        // through to the plain place, which the occupied cell refuses —
+        // `PlaceThing_TryReplacingWalls` returns `canUse` unchanged on
+        // failure (`Player.cs:39828`).
+    }
+    if edit::place_wall(&mut app.world, tx, ty, create_wall) {
+        place_wall_item(app, tx, ty, create_wall);
+        // `PlaceThing_Walls_FillEmptySpace` (`Player.cs:39636-39715`).
+        fill_empty_wall_space(app, tx, ty, create_wall);
+        return true;
+    }
+    false
+}
+
+/// `Player.PlaceThing_Walls_FillEmptySpace` (`Player.cs:39636-39715`): after a
+/// successful wall placement with `stack > 1`, each of the four neighbours
+/// (left, right, up, down — the `i == 0..3` order) that is empty and has ALL
+/// FOUR of its own neighbours carrying `createWall` (`num3 != 4` skips) gets
+/// the wall too, consuming one item per fill. The centre cell the caller just
+/// placed is part of each neighbour's count, which is why the fill only ever
+/// closes single-cell holes.
+fn fill_empty_wall_space(app: &mut App, tx: i32, ty: i32, create_wall: u16) {
+    // `:39638` — the last item never fills.
+    if app.inventory[app.selected].count <= 1 {
+        return;
+    }
+    for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+        let (num, num2) = (tx + dx, ty + dy);
+        // `:39663` — only empty cells.
+        if app.world.tile(num, num2).is_none_or(|t| t.wall != 0) {
+            continue;
+        }
+        // `:39667-39692` — all four neighbours must carry the SAME wall.
+        let mut num3 = 0;
+        for (jx, jy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+            if app
+                .world
+                .tile(num + jx, num2 + jy)
+                .is_some_and(|t| t.wall == create_wall)
+            {
+                num3 += 1;
+            }
+        }
+        if num3 != 4 {
+            continue;
+        }
+        // `:39697-39704` — PlaceWall + the success re-read, then the stack
+        // decrement (`SetDefaults(0)` at zero).
+        if edit::place_wall(&mut app.world, num, num2, create_wall) {
+            app.inventory[app.selected].count =
+                app.inventory[app.selected].count.saturating_sub(1);
+            if app.inventory[app.selected].count == 0 {
+                app.inventory[app.selected].kind = 0;
+            }
+            // `WorldGen.PlaceWall`'s Dig 0 (`WorldGen.cs:75141`) per fill,
+            // on the `UpdatePlayers` stream — same as the main placement.
+            app.audio.play_place_sound(
+                (0, 1),
+                num as f32 * TILE_PX,
+                num2 as f32 * TILE_PX,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            app.request_edit(num, num2, 3, create_wall);
+            app.world_key = None;
+            if app.inventory[app.selected].count == 0 {
+                return;
+            }
+        }
+    }
+}
+
+/// `Player.PlaceThing_Walls`' post-placement tail (`Player.cs:39621-39633`):
+/// the item decrement + the Dig 0 + the edit record. The core
+/// `edit::place_wall` has already landed by the time this runs (the caller
+/// re-reads `wall == createWall`, `:39621`); the fill-empty-space arm
+/// (`:39628`) is the route's own tail, not this one's.
+pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    // `WorldGen.PlaceWall` plays the plain 0 (`WorldGen.cs:75141`) — the
+    // case-0 variation + pitch ride the `UpdatePlayers` stream
+    // (`Player.ItemCheck` under the `Main.cs:17754` swap).
+    app.audio.play_place_sound(
+        (0, 1),
+        tx as f32 * TILE_PX,
+        ty as f32 * TILE_PX,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
+    app.request_edit(tx, ty, 3, wall);
+    app.world_key = None;
 }
 
 /// `Chest.CanDestroyChest`'s item scan (`Chest.cs:609-623`) against the
@@ -3027,6 +4393,21 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             cell.frame_x = frame_x;
         }
     }
+    // `TileFrameImportant`'s `case 72` canopy re-roll (`WorldGen.cs:
+    // 85855-85873`): the mushroom-tree top cell takes `genRand.Next(3)` →
+    // frame (18, 0/18/36). Same seam as the palm roll above.
+    for (mx, my) in &kill.mushroom_frame_rolls {
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(
+            app.rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .next() as u64,
+        );
+        let frame_y = (gen_stream.next(3) * 18) as i16;
+        if let Some(cell) = app.world.tile_mut(*mx, *my) {
+            cell.frame_x = 18;
+            cell.frame_y = frame_y;
+        }
+    }
     // The Coin Portal projectile of the pot loot (:57176-57182); the port
     // has no 518 family yet — `spawn_with_data` declines it and the break
     // still returns like the C# (recorded deviation, phase 5).
@@ -3043,6 +4424,22 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     }
     app.request_edit(tx, ty, 0, 0);
     app.liquids.wake_around(&app.world, tx, ty, 3);
+    // `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`, case 428 of
+    // `KillTile_GetItemDrops`): a pressed weighted plate that is broken fires
+    // its switch once so the device releases. The pick break runs in
+    // `Player.ItemCheck` under the `UpdatePlayers` swap (`Main.cs:17754`), so
+    // the click's pitch draw rides that stream (the `HitSwitch` precedent,
+    // `doors.rs`). An unpressed plate is a no-op.
+    if hit.as_ref().is_some_and(|h| h.kind == 428) {
+        app.wiring.destroy_plate(&mut app.world, tx, ty);
+        for (px, py) in app.wiring.take_switch_clicks() {
+            app.audio.play_switch_click(
+                px as f32,
+                py as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+    }
     // `WorldGen.TileFrame`'s falling check (`WorldGen.cs:81380`): the tile
     // above the break loses its support and the falling kind spawns the
     // sandfall projectile (`SpawnFallingBlockProjectile`, `:86039-86090`).
@@ -3163,6 +4560,7 @@ fn drop_ctx(app: &App) -> DropCtx {
 
 /// The hit cell's drop-relevant state, captured before the kill clears the
 /// tile (the C# `tileCache` of `KillTile_GetItemDrops`, `WorldGen.cs:63964`).
+#[derive(Clone, Copy)]
 struct HitCell {
     x: i32,
     y: i32,
@@ -3247,6 +4645,29 @@ fn break_drop_events(
                 ) {
                     events.push((id, count, *x, *y));
                 }
+            }
+            edit::TreeDropEvent::Gem {
+                x,
+                y,
+                frame_x,
+                frame_y,
+                gem,
+                seed,
+            } => {
+                for (id, count) in
+                    gem_tree_drops(*gem, *seed, *frame_x, *frame_y, main_rng)
+                {
+                    events.push((id, count, *x, *y));
+                }
+            }
+            edit::TreeDropEvent::Mushroom { x, y } => {
+                for (id, count) in mushroom_tree_drops(main_rng) {
+                    events.push((id, count, *x, *y));
+                }
+            }
+            edit::TreeDropEvent::Cactus { x, y } => {
+                // `case 80: dropItem = 276;` (`WorldGen.cs:64717-64719`).
+                events.push((276, 1, *x, *y));
             }
         }
     }
@@ -3379,6 +4800,53 @@ fn trunk_tree_drops(
     drops
 }
 
+/// `KillTile_GetItemDrops`'s gem-tree cases (`WorldGen.cs:65699-65746`)
+/// through `SetGemTreeDrops` (`:66094-66108`), all `Main.rand`: the
+/// `Next(10) == 0` gem-or-stone roll, then the canopy marker's
+/// (`frameX >= 22 && frameY >= 198`) `Next(2) == 0` gemcorn roll, then — in
+/// the case body AFTER `SetGemTreeDrops` returns — the stone's
+/// `Next(1, 3)` stack. The seed roll runs even when the gem roll landed
+/// stone (it sits after the gem/stone choice, before the stack roll).
+fn gem_tree_drops(
+    gem: u16,
+    seed: u16,
+    frame_x: i16,
+    frame_y: i16,
+    main_rng: &mut UnifiedRandom,
+) -> Vec<(u16, u32)> {
+    let drop_item = if main_rng.next_max(10) == 0 { gem } else { 3 };
+    let mut secondary_item = 0u16;
+    if frame_x >= 22 && frame_y >= 198 && main_rng.next_max(2) == 0 {
+        secondary_item = seed;
+    }
+    let mut stack = 1u32;
+    if drop_item == 3 {
+        stack = main_rng.next_range(1, 3) as u32;
+    }
+    let mut drops = Vec::new();
+    if drop_item != 0 {
+        drops.push((drop_item, stack));
+    }
+    if secondary_item != 0 {
+        drops.push((secondary_item, 1));
+    }
+    drops
+}
+
+/// `KillTile_GetItemDrops`'s `case 71: case 72:` (`WorldGen.cs:65642-65652`),
+/// `Main.rand` only: `Next(40) == 0` → the Mushroom Grass Seeds 194, else
+/// `Next(2) == 0` → the Glowing Mushroom 183, else nothing. The second roll
+/// runs whenever the first misses (the C# `else if`).
+fn mushroom_tree_drops(main_rng: &mut UnifiedRandom) -> Vec<(u16, u32)> {
+    if main_rng.next_max(40) == 0 {
+        vec![(194, 1)]
+    } else if main_rng.next_max(2) == 0 {
+        vec![(183, 1)]
+    } else {
+        Vec::new()
+    }
+}
+
 /// `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`): only the
 /// sword-in-stone styles (origin `frameX` 918..=970) drop anything —
 /// `Main.rand.Next(30) == 0` mints the Terragrim 4144, otherwise the
@@ -3413,6 +4881,14 @@ fn cell_drops(
     let rolls: Vec<(u16, i32)> = match hit.kind {
         78 => vec![(222, 1)],
         380 => vec![((3215 + i32::from(hit.frame_y) / 18) as u16, 1)],
+        // S1-P-i30: the tree/cactus kinds drop through their per-cell kill
+        // records (`TreeDropEvent`, resolved in `break_drop_events`) — the
+        // hit cell included — so the generic per-cell arm must not double
+        // them. The trunk/palm kinds already resolve to `None` through
+        // `registry::tile_drop`; the gem trees 583-589, the mushroom tree 72
+        // and the cactus 80 (whose `tile_drop` row feeds the touch/plate
+        // lanes) are suppressed here (the records carry their drops).
+        5 | 72 | 80 | 323 | 583..=589 | 596 | 616 | 634 => Vec::new(),
         83 | 84 => herb_drops(
             hit.kind,
             i32::from(hit.frame_x) / 18,
@@ -4117,6 +5593,61 @@ fn pile_loot(frame_x: i32, gen_rand: &mut tr_core::tile_light::FastRandom) -> Ve
     drops
 }
 
+/// `Player.Spawn_ForceClearArea` (`Player.cs:37914-37935`): the invalid spawn
+/// area's 3×3 strip above the floor — non-top solids die through
+/// `WorldGen.KillTile` (sounds + cascade drops, `noItem = false`), and every
+/// liquid cell zeroes its liquid (the lava flag with it, `:37928`) then runs
+/// `SquareTileFrame`. The drain runs this AFTER the teleport landed
+/// (`Shellphone_Spawn` queued it before the position write; the C# clears
+/// first — same tick, no probe reads the area in between).
+pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) {
+    for i in floor_x - 1..floor_x + 2 {
+        for j in floor_y - 3..floor_y {
+            // `WorldGen.InWorld(i, j)` — the default fluff 0 (`:9688`).
+            if i < 0 || j < 0 || i >= app.world.width || j >= app.world.height {
+                continue;
+            }
+            // `:37922-37925` — `nactive() && tileSolid && !tileSolidTop`.
+            let kill = app.world.tile(i, j).is_some_and(|t| {
+                t.active()
+                    && !t.inactive()
+                    && td::TILE_SOLID.has(t.kind)
+                    && !td::TILE_SOLID_TOP.has(t.kind)
+            });
+            if kill {
+                break_tile(app, i, j);
+            }
+            // `:37926-37931` — the liquid wipe; `lava(false)` clears ONLY the
+            // lava bit (the honey/shimmer flags stay, like the C#).
+            if app.world.tile(i, j).is_some_and(|t| t.liquid > 0) {
+                if let Some(t) = app.world.tile_mut(i, j) {
+                    t.liquid = 0;
+                    t.flags &= !tr_core::tile::FLAG_LIQUID_LAVA;
+                }
+                for drop in tr_core::edit::square_tile_frame_default(&mut app.world, i, j) {
+                    let id = drop
+                        .item
+                        .map(|item| item as u16)
+                        .or_else(|| registry::tile_drop(drop.tile_kind, 0));
+                    if let Some(id) = id {
+                        spawn_item_drop(
+                            &mut app.items,
+                            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                            id,
+                            1,
+                            drop.x,
+                            drop.y,
+                        );
+                    }
+                }
+                app.request_edit(i, j, 0, 0);
+                app.liquids.wake_around(&app.world, i, j, 3);
+                app.world_key = None;
+            }
+        }
+    }
+}
+
 pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
     let Some(t) = app.world.tile(tx, ty) else {
         return false;
@@ -4129,22 +5660,144 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
     {
         return false;
     }
-    if let Some(p) = &app.player {
+    // `Collision.EmptyTile` (`Collision.cs:1359-1381`) — consulted by
+    // `WorldGen.PlaceTile` only for SOLID placements (`WorldGen.cs:59373`:
+    // `forced || EmptyTile(i, j) || !tileSolid[num] || …`); a non-solid tile
+    // bypasses the overlap entirely (a torch stands inside the player). The
+    // cell refuses when any live player OR NPC hitbox intersects it. The
+    // player arm keeps the port's 20x42 box; the NPC arm reads each NPC's own
+    // `size()` box (`NPC.base.width/height`, the `SetDefaults_ForNetId` scale).
+    // The C# `!dead && !ghost` player filters fold to the port's live-player
+    // check (no hardcore ghosts / PVP deaths — `player.rs::ghost_like`).
+    let held_solid = registry::place_tile(app.inventory[app.selected].kind)
+        .is_some_and(|k| td::TILE_SOLID.has(k));
+    if held_solid {
         let (x0, y0) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
-        if x0 < p.x + crate::player::WIDTH
-            && x0 + TILE_PX > p.x
-            && y0 < p.y + crate::player::HEIGHT
-            && y0 + TILE_PX > p.y
-        {
-            return false;
+        // Gate merge (i32 ⨉ i41): the player box reads the LIVE
+        // `p.width`/`p.height` (the i41 mount PlayerSize threading — a Rat
+        // rider's 14×14 body no longer blocks a 20×42 ghost box), and the
+        // NPC overlap arm (i32, `Collision.cs:1366-1379`) stays.
+        if let Some(p) = &app.player {
+            if x0 < p.x + p.width
+                && x0 + TILE_PX > p.x
+                && y0 < p.y + p.height
+                && y0 + TILE_PX > p.y
+            {
+                return false;
+            }
+        }
+        for n in &app.npcs {
+            let (nw, nh) = n.size();
+            if x0 < n.x + nw && x0 + TILE_PX > n.x && y0 < n.y + nh && y0 + TILE_PX > n.y {
+                return false;
+            }
         }
     }
-    [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
-        app.world.tile(tx + dx, ty + dy).is_some_and(|n| {
-            n.wall != 0
-                || (n.active() && (n.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(n.kind))
-        })
-    })
+    // S1-P-i42 — the torch family's own support arm
+    // (`PlaceThing_Tiles_BlockPlacementForAssortedThings`,
+    // `Player.cs:41106-41198`): the TARGET cell's own wall holds the torch
+    // (`:41108-41111`) — the four-neighbour scan below never reads it, so a
+    // wall-only cell (no adjacent block/wall) refused every wall torch.
+    // Without a wall, the support must be `SolidTileNoAttach` below/left/
+    // right (`:41186-41197` — solid, NOT noAttach, flat, not actuated; the
+    // platform exception rides the below arm only) or a tree-trunk triple /
+    // beam on a side. The generic neighbour scan stays for every other kind.
+    // (Gate merge i32 ⨉ i42: the torch arm returns early — the i32 default
+    // adjacency arm + platform fallback below apply to the non-torch kinds.)
+    if registry::place_tile(app.inventory[app.selected].kind) == Some(4) {
+        if t.wall > 0 {
+            return true;
+        }
+        let below = app.world.tile(tx, ty + 1);
+        let left = app.world.tile(tx - 1, ty);
+        let right = app.world.tile(tx + 1, ty);
+        // `:41147-41169` — the support types read RAW, then fold to −1 when
+        // the cell is not `nactive()` (the target's own halfBrick folds the
+        // below type too, `:41148-41151`). The sloped/half-brick supports
+        // were already flattened by `flatten_torch_supports` in the mutable
+        // route (`Player.cs:41114-41146` → `WorldGen.SlopeTile`), so the type
+        // checks below see flat cells exactly like the C#.
+        let kind_of = |t: Option<&tr_core::tile::Tile>| -> i32 {
+            t.filter(|n| tr_core::tileobject::nactive(n))
+                .map_or(-1, |n| n.kind as i32)
+        };
+        let mut num3 = kind_of(below);
+        if t.half_brick() {
+            num3 = -1; // `:41148-41151`
+        }
+        let num4 = kind_of(left);
+        let num5 = kind_of(right);
+        let tree = kind_of(app.world.tile(tx - 1, ty - 1));
+        let tree2 = kind_of(app.world.tile(tx + 1, ty - 1));
+        let tree3 = kind_of(app.world.tile(tx - 1, ty + 1));
+        let tree4 = kind_of(app.world.tile(tx + 1, ty + 1));
+        // `:41186-41188` — below: `tileSolid[num3] && (!tileNoAttach[num3]
+        // || Platforms[num3])`.
+        if num3 >= 0
+            && td::TILE_SOLID.has(num3 as u16)
+            && (!tr_core::torch::no_attach_pub(num3 as u16)
+                || td::SET_PLATFORMS.has(num3 as u16))
+        {
+            return true;
+        }
+        // `:41190-41193` — left: solid-non-noAttach / tree triple / beam.
+        if (num4 >= 0 && td::TILE_SOLID.has(num4 as u16) && !tr_core::torch::no_attach_pub(num4 as u16))
+            || (tr_core::torch::is_tree_type_pub(num4)
+                && tr_core::torch::is_tree_type_pub(tree)
+                && tr_core::torch::is_tree_type_pub(tree3))
+            || (num4 >= 0 && td::SET_IS_BEAM.has(num4 as u16))
+        {
+            return true;
+        }
+        // `:41194-41197` — right: the mirror.
+        if (num5 >= 0 && td::TILE_SOLID.has(num5 as u16) && !tr_core::torch::no_attach_pub(num5 as u16))
+            || (tr_core::torch::is_tree_type_pub(num5)
+                && tr_core::torch::is_tree_type_pub(tree2)
+                && tr_core::torch::is_tree_type_pub(tree4))
+            || (num5 >= 0 && td::SET_IS_BEAM.has(num5 as u16))
+        {
+            return true;
+        }
+        return false;
+    }
+    // The default adjacency arm of `BlockPlacementForAssortedThings`
+    // (`Player.cs:41247-41261`): a cardinal neighbour supports the placement
+    // when it is active and (`tileSolid` OR `TileID.Sets.IsBeam` OR `tileRope`
+    // OR the minecart track 314), or it carries any wall; failing all four
+    // neighbours, the target cell's OWN wall > 0 still accepts (:41257-41260).
+    let neighbour_supports = |n: &tr_core::tile::Tile| {
+        n.wall != 0
+            || (n.active()
+                && (td::TILE_SOLID.has(n.kind)
+                    || td::SET_IS_BEAM.has(n.kind)
+                    || td::TILE_ROPE.has(n.kind)
+                    || n.kind == 314))
+    };
+    if [(0, -1), (0, 1), (-1, 0), (1, 0)]
+        .iter()
+        .any(|&(dx, dy)| app.world.tile(tx + dx, ty + dy).is_some_and(neighbour_supports))
+    {
+        return true;
+    }
+    if t.wall > 0 {
+        return true;
+    }
+    // The platform fallback (`Player.cs:41332-41345`): when the default arm
+    // refused a platform-placing item, ANY active tile in the 3x3 around the
+    // target accepts (the diagonals included — the platform hangs off a
+    // corner). The C# scans `k = x-1..=x+1, l = y-1..=y+1`; the target itself
+    // is inactive (checked above), so it contributes nothing.
+    let held_kind = registry::place_tile(app.inventory[app.selected].kind);
+    if held_kind.is_some_and(|k| td::SET_PLATFORMS.has(k)) {
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if app.world.tile(tx + dx, ty + dy).is_some_and(|n| n.active()) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The item gate shared by both placement routes (the head of `can_place` and
@@ -4153,6 +5806,20 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
 /// unit-testable without the app harness.
 fn item_gate_blocks(kind: u16, count: u32) -> bool {
     count == 0 || registry::is_weapon(kind) || kind == 80
+}
+
+/// `Player.PlaceThing_Tiles_IsBlockedByLava` (`Player.cs:41489-41504`): a
+/// target holding lava refuses a solid `createTile` outright (`tileSolid`),
+/// else it refuses when `TileObjectData.CheckLiquidPlacement` says no
+/// (`:41498`). A dry target never blocks. Free of `App` for unit witnesses.
+fn is_blocked_by_lava(create_tile: u16, place_style: i32, target: &tr_core::tile::Tile) -> bool {
+    if target.liquid > 0 && target.liquid_kind() == tr_core::tile::LiquidKind::Lava {
+        if td::TILE_SOLID.has(create_tile) {
+            return true;
+        }
+        return !tr_core::tileobject::check_liquid_placement(create_tile, place_style, target);
+    }
+    false
 }
 
 /// The routing decision of `use_tile_item`: the legacy neighbour/overlap
@@ -4221,6 +5888,25 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     // `Item.placeStyle` — the `CustomPlace(type, placeStyle)` gate reads it
     // (`Player.cs:39771`); the style-resolved sub-tile flag decides the route.
     let style = registry::place_style(held.kind);
+    // `PlaceThing_Tiles`' lava gate (`Player.cs:39743`): an inactive target in
+    // lava refuses a solid tile outright, and a non-solid tile whose
+    // `TileObjectData.CheckLiquidPlacement` refuses (`IsBlockedByLava`,
+    // `:41489-41504`) — unless the target is a replaceable block or the item
+    // is one of the grass/moss overrides (:39743's OR chain). The gate reads
+    // the target BEFORE the assorted cut rule, exactly as the C# evaluates it
+    // ahead of `TryPlacing`; a lava cell never carries a cuttable plant, so
+    // the ordering is observation-equivalent.
+    if let Some(target) = app.world.tile(tx, ty).copied() {
+        let grass_override = matches!(kind, 199 | 23 | 662 | 661 | 2 | 109 | 60 | 70 | 633)
+            || td::TILE_MOSS.has(kind);
+        if !target.active()
+            && !grass_override
+            && !tr_core::tileobject::is_replaceable_block(target.kind)
+            && is_blocked_by_lava(kind, style, &target)
+        {
+            return false;
+        }
+    }
     // The plant rules of `PlaceThing_Tiles_BlockPlacementForAssortedThings`
     // (`Player.cs:41036-41360`) run on the non-`TileObject` placement route
     // before the can-place chain — seeds (82) are forced onto that route by
@@ -4239,11 +5925,75 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
         } else if !cut_plants_for_placement(app, tx, ty, kind) {
             return false;
         }
+        // S1-P-i42 — the torch family's support flatten
+        // (`PlaceThing_Tiles_BlockPlacementForAssortedThings`,
+        // `Player.cs:41114-41146`): a sloped/half-brick support below/left/
+        // right is pounded flat (`WorldGen.SlopeTile`) BEFORE the support
+        // type check, so the torch can stand on it. Runs only when no
+        // `SolidTileNoAttach` support already holds (the C#'s outer gate).
+        if kind == 4 {
+            flatten_torch_supports(app, tx, ty);
+        }
     }
     if legacy_precheck_applies(kind, style) && !can_place(app, tx, ty) {
         return false;
     }
     place_tile(app, tx, ty, kind)
+}
+
+/// The torch support flatten of
+/// `PlaceThing_Tiles_BlockPlacementForAssortedThings`
+/// (`Player.cs:41114-41146`): when no `SolidTileNoAttach` support holds the
+/// cell below/left/right, the first sloped/half-brick non-platform support
+/// in the C#'s priority order (below → left → right) is pounded flat
+/// (`WorldGen.SlopeTile`, `:41120`/`:41131`/`:41140`). The Dig sound the
+/// flatten plays (`WorldGen.cs:80782`) rides the `UpdatePlayers` stream
+/// (placement runs under the `Main.cs:17754` swap); the `KillTile(fail,
+/// effectOnly)` dust (`:80780`) is the documented visual skip.
+fn flatten_torch_supports(app: &mut App, tx: i32, ty: i32) {
+    // `:41114` — the outer gate: any flat attachable support already holds.
+    if tr_core::edit::solid_tile_no_attach(&app.world, tx, ty + 1)
+        || tr_core::edit::solid_tile_no_attach(&app.world, tx - 1, ty)
+        || tr_core::edit::solid_tile_no_attach(&app.world, tx + 1, ty)
+    {
+        return;
+    }
+    // The C#'s if/else-if chain (`:41116`/`:41127`/`:41138`): the FIRST
+    // sloped/half-brick support in below → left → right order takes the
+    // branch; it is pounded flat only when not a platform (the platform
+    // check sits INSIDE the below/left arms, `:41118`/`:41129`, and in the
+    // right arm's condition, `:41138`). The outer gate already proved all
+    // three are not-attach, so the repeated `!SolidTileNoAttach` conjuncts
+    // inside are redundant. A platform support consumes its branch without
+    // flattening (no fall-through to the next arm).
+    for (sx, sy) in [(tx, ty + 1), (tx - 1, ty), (tx + 1, ty)] {
+        let Some(s) = app.world.tile(sx, sy).copied() else {
+            continue;
+        };
+        if s.half_brick() || s.slope() != 0 {
+            // The chest closure captures the DISJOINT `world_chests` field
+            // (the try_pounding_tile_tick precedent) — `chest_holds_items`
+            // borrows all of `app` and would conflict with `&mut app.world`.
+            let chests = &app.world_chests;
+            let holds = |x: i32, y: i32| {
+                chests
+                    .iter()
+                    .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
+            };
+            if !td::SET_PLATFORMS.has(s.kind)
+                && tr_core::edit::slope_tile(&mut app.world, sx, sy, 0, false, holds)
+            {
+                app.audio.play_place_sound(
+                    (0, 1),
+                    sx as f32 * TILE_PX,
+                    sy as f32 * TILE_PX,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+                app.world_key = None;
+            }
+            return;
+        }
+    }
 }
 
 /// The C# placement route the plant rules ride (`Player.cs:39771-39772`):
@@ -4379,6 +6129,66 @@ fn try_replanting_herbs(app: &mut App, tx: i32, ty: i32, herb_style: i32) {
     }
 }
 
+/// `Player.IsBottomOfTreeTrunkNoRoots` (`Player.cs:45784-45802`): the cell is
+/// an active trunk (`TileID.Sets.IsATreeTrunk` or the palm 323) and NOT a
+/// root-row cell (frameY 132-176 with frameX 22/44 — the palm exempt). The
+/// Acorn Axe's replant gate reads it before the kill.
+fn is_bottom_of_tree_trunk_no_roots(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() {
+        return false;
+    }
+    if !td::SET_IS_A_TREE_TRUNK.has(t.kind) && t.kind != 323 {
+        return false;
+    }
+    if t.kind != 323
+        && (132..=176).contains(&t.frame_y)
+        && (t.frame_x == 22 || t.frame_x == 44)
+    {
+        return false;
+    }
+    true
+}
+
+/// `Player.TryReplantingTree` (`Player.cs:45804-45822`): the Acorn Axe's
+/// felled-base replant — `TileObject.CanPlace(tileTargetX, tileTargetY, 20,
+/// 0, direction)` then `TileObject.Place` + `SquareTileFrame`. No item is
+/// consumed (the axe is a tool, not the acorn); the placement rolls ride the
+/// world's placement stream (the `place_item_tile` seam, S1-F-7b).
+fn try_replanting_tree(app: &mut App, tx: i32, ty: i32) {
+    let Some(def) = tr_core::tileobject::def_for_tile(20) else {
+        return;
+    };
+    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+    let mut rand = std::mem::take(&mut app.world.place_rng);
+    let instance = tr_core::tileobject::can_place(
+        &app.world,
+        tx,
+        ty,
+        def,
+        0,
+        dir,
+        None,
+        &mut rand,
+        app.world.tile_object_random_cache,
+    );
+    app.world.place_rng = rand;
+    let Some(instance) = instance else {
+        return;
+    };
+    let placed = tr_core::tileobject::place(&mut app.world, &instance);
+    // `WorldGen.SquareTileFrame(tileTargetX, tileTargetY)` (:45813) runs
+    // unconditionally after the Place attempt (the C# calls it before the
+    // `if (flag)` net/placement-hook tail).
+    tr_core::framing::reframe_area(&mut app.world, tx, ty, 2, true);
+    if placed {
+        app.request_edit(tx, ty, 1, 20);
+        app.world_key = None;
+    }
+}
+
 /// `WorldGen.PlaceTile`'s placement-sound switch (`WorldGen.cs:60263-60282`)
 /// is `tr_core::edit::place_tile_sound` (the `SoundCue` pair); the play
 /// itself — the case-0 `Next(3)` variation + pitch jitter included — rides
@@ -4388,10 +6198,26 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // `Item.placeStyle` + `Player.direction` are what `TileObject.CanPlace`
     // receives in vanilla (`Player.cs:39772`); the dispatcher resolves style
     // alternates and click points from them.
-    let (style, dir) = style_and_facing(
+    let (mut style, dir) = style_and_facing(
         app.inventory[app.selected].kind,
         app.player.as_ref().map(|p| p.facing),
     );
+    // S1-P-i42 — `PlaceThing_Tiles_PlaceIt`'s biome-torch conversion
+    // (`Player.cs:40129-40132`): with the Torch God's favour unlocked
+    // (`UsingBiomeTorches`) and a PLAIN torch (style 0), the placed style
+    // becomes the biome's (`BiomeTorchPlaceStyle`, `:40236-40289`). The
+    // hold-light family already reads the same unlock (`player_lights.rs`);
+    // this is the placement half. The ZoneShimmer / ZoneUndergroundDesert
+    // arms read fields the port's `Zones` does not carry — skipped in place,
+    // the remaining arms (incl. temple + remix) keep their C# order (the
+    // player_lights `biome_torch_hold_style` precedent).
+    if kind == 4 && style == 0 {
+        if let Some(p) = app.player.as_ref() {
+            if p.unlocked_biome_torches {
+                style = biome_torch_place_style(p, &app.world);
+            }
+        }
+    }
     if !place_item_and_consume(
         &mut app.world,
         &mut app.inventory[app.selected],
@@ -4429,6 +6255,62 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     app.request_edit(tx, ty, 1, kind);
     app.world_key = None;
     true
+}
+
+/// `Player.BiomeTorchPlaceStyle` (`Player.cs:40236-40289`): the biome torch
+/// style for a plain torch placed with the Torch God's favour. The arm order
+/// is the C#'s verbatim; `ZoneShimmer` (`:40240`) and `ZoneUndergroundDesert`
+/// (`:40280`) read fields the port's `Zones` does not carry and are skipped
+/// in place (the remaining arms keep their order, the
+/// `player_lights::biome_torch_hold_style` precedent). `ZoneLihzhardTemple`
+/// (`:40248`) rides `Zones.temple`; the remix desert arm (`:40284-40287`)
+/// reads the world's REMIX seed flag. The underworld arm reads
+/// `Main.UnderworldLayer * 16` = `(height - 200) * 16` (`Main.cs:2790`).
+fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
+    let z = p.zones;
+    // `:40244-40247` — the dungeon arm comes before the underworld one.
+    if z.dungeon {
+        return 13;
+    }
+    // `:40248-40251` — the temple (Lihzhard) arm.
+    if z.temple {
+        return 21;
+    }
+    // `:40252-40255` — below the underworld layer.
+    let underworld_px = (world.height - 200) as f32 * TILE_PX;
+    if p.y > underworld_px {
+        return 7;
+    }
+    if z.glowshroom {
+        return 22; // `:40256-40259`
+    }
+    if z.hallow {
+        return 20; // `:40260-40263`
+    }
+    if z.corrupt {
+        return 18; // `:40264-40267`
+    }
+    if z.crimson {
+        return 19; // `:40268-40271`
+    }
+    if z.snow {
+        return 9; // `:40272-40275`
+    }
+    if z.jungle {
+        return 21; // `:40276-40279`
+    }
+    // `:40280-40283` — the surface-desert half (the underground-desert half
+    // reads an unported `Zones` field — skipped).
+    if z.desert && (p.y as f64) < world.world_surface * TILE_PX as f64 {
+        return 16;
+    }
+    // `:40284-40287` — `ZoneDesert && Main.remixWorld`: the remix seed's
+    // inverted world grows its desert below the surface line, so the surface
+    // gate above never fires there (the player_lights hold-style precedent).
+    if z.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        return 16;
+    }
+    0
 }
 
 /// Applies a replicated edit. `kind`: 0 break tile, 1 place tile, 2 break wall,
@@ -5055,6 +6937,84 @@ mod tests {
             }
         }
         assert_eq!(jungle_acorns, 0, "the jungle tree never drops acorns");
+    }
+
+    /// S1-P-i30: the gem-tree drop order (`SetGemTreeDrops`,
+    /// `WorldGen.cs:66094-66108` + the case bodies `:65699-65746`): the
+    /// `Next(10)` gem-or-stone roll, the canopy marker's `Next(2)` gemcorn
+    /// roll, then the stone's `Next(1, 3)` stack — all `Main.rand`, in that
+    /// order. A non-marker stone cell spends exactly TWO draws (the gem roll
+    /// and the stack roll); the seed roll never runs off the marker.
+    #[test]
+    fn s1_p_i30_the_gem_drop_rolls_in_the_csharp_order() {
+        // Scan for a seed whose first Next(10) is NOT the gem (9 in 10 do).
+        let mut stone_seed = 0i32;
+        while tr_core::UnifiedRandom::new(stone_seed).next_max(10) == 0 {
+            stone_seed += 1;
+        }
+        // The real resolver on that stream: stone 3, then the stack draw.
+        let mut rng = tr_core::UnifiedRandom::new(stone_seed);
+        let drops = gem_tree_drops(180, 4851, 0, 0, &mut rng);
+        assert_eq!(drops.len(), 1, "a plain gem cell drops only the stone");
+        assert_eq!(drops[0].0, 3, "the non-gem roll drops Stone");
+        assert!((1..=2).contains(&drops[0].1), "the stone stack is Next(1,3)");
+        // The stream spent exactly the gem roll + the stack roll (no seed
+        // roll off the marker): a fresh clone advanced by those two draws
+        // matches the resolver's stream state.
+        let mut mirror = tr_core::UnifiedRandom::new(stone_seed);
+        let _ = mirror.next_max(10);
+        let _ = mirror.next_range(1, 3);
+        assert_eq!(rng, mirror, "two draws, in the C# order");
+        // The canopy marker spends the seed roll BETWEEN the gem and stack
+        // rolls (`:66104` sits inside `SetGemTreeDrops`, before the case
+        // body's stack roll).
+        let mut rng = tr_core::UnifiedRandom::new(stone_seed);
+        let drops = gem_tree_drops(180, 4851, 22, 198, &mut rng);
+        let mut mirror = tr_core::UnifiedRandom::new(stone_seed);
+        let gem_roll = mirror.next_max(10);
+        let seed_roll = mirror.next_max(2);
+        let stack = if gem_roll != 0 { mirror.next_range(1, 3) } else { 1 };
+        assert_eq!(rng, mirror, "the marker spends gem, seed, then stack");
+        assert_eq!(drops[0].0, if gem_roll == 0 { 180 } else { 3 });
+        assert_eq!(drops[0].1, stack as u32);
+        if seed_roll == 0 {
+            assert!(drops.iter().any(|(id, _)| *id == 4851), "the gemcorn");
+        } else {
+            assert!(!drops.iter().any(|(id, _)| *id == 4851));
+        }
+    }
+
+    /// S1-P-i30: the mushroom-tree drop (`case 71/72`,
+    /// `WorldGen.cs:65642-65652`): `Next(40) == 0` → the seeds 194, else
+    /// `Next(2) == 0` → the mushroom 183, else nothing. The second roll runs
+    /// only when the first misses (the `else if`).
+    #[test]
+    fn s1_p_i30_the_mushroom_drop_is_the_two_stage_roll() {
+        // Scan seeds for each outcome and mirror the draw count.
+        let mut saw_seeds = false;
+        let mut saw_shroom = false;
+        let mut saw_none = false;
+        for seed in 0..200i32 {
+            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let drops = mushroom_tree_drops(&mut rng);
+            let mut mirror = tr_core::UnifiedRandom::new(seed);
+            let r40 = mirror.next_max(40);
+            if r40 == 0 {
+                assert_eq!(drops, vec![(194, 1)], "the 1-in-40 seeds");
+                saw_seeds = true;
+            } else {
+                let r2 = mirror.next_max(2);
+                if r2 == 0 {
+                    assert_eq!(drops, vec![(183, 1)], "the 1-in-2 mushroom");
+                    saw_shroom = true;
+                } else {
+                    assert!(drops.is_empty(), "nothing");
+                    saw_none = true;
+                }
+            }
+            assert_eq!(rng, mirror, "the draw count matches the C# else-if");
+        }
+        assert!(saw_seeds && saw_shroom && saw_none, "all three arms reachable");
     }
 
     /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
@@ -6030,6 +7990,139 @@ mod tests {
 
     pub(super) const MINE_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
 
+    #[test]
+    fn s1_p_i41_the_saddle_use_equips_the_mount_on_the_press_edge() {
+        // `Player.ItemCheck`'s mount arm (`Player.cs:42768-42771`) behind
+        // the use-start gate (`:42733`): the press edge equips the saddle's
+        // mount + plays the use animation. The Blessed Apple (3260) → 10.
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        for x in 0..64 {
+            let i = app.world.index(x, 300);
+            app.world.tiles[i] = Tile { kind: 1, ..Default::default() };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // Park the player on the ground row 300.
+        let p = app.player.as_mut().unwrap();
+        p.y = 300.0 * TILE_PX - p.height;
+        p.vy = 0.0;
+        // The reach gate runs before the use arms — point the camera (and
+        // the screen-centre cursor) at the player's body.
+        app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
+        app.inventory[app.selected] = ItemSlot {
+            kind: 3260,
+            name: "Blessed Apple",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        app.mine_released = true; // the button was up last frame
+        app.mine_prev_down = false;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.mount.is_active() && p.mount.kind() == 10, "the saddle equips");
+        assert!(p.buffs.find_buff_index(162).is_some(), "the mount buff");
+        assert!(app.swing > 0.0, "the use animation runs");
+        // A held press (no fresh edge) does not re-equip.
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        assert!(app.player.as_ref().unwrap().mount.is_active());
+    }
+
+    #[test]
+    fn s1_p_i41_using_an_item_dismounts_the_pixie_and_cursed_refuses() {
+        // `TryEarlyDismount` (`Mount.cs:6626-6632`) from the use head
+        // (`Player.cs:24992`/`:31695-31702`): a dismounts-on-item-use mount
+        // drops when a DIFFERENT item is used; a surviving mount cancels
+        // the use. The Cursed (23) lock refuses the use outright
+        // (`ItemCheck_CheckCanUse_Inner` `:52140-52148`, no mount exemption).
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        for x in 0..64 {
+            let i = app.world.index(x, 300);
+            app.world.tiles[i] = Tile { kind: 1, ..Default::default() };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let p = app.player.as_mut().unwrap();
+        p.y = 300.0 * TILE_PX - p.height;
+        p.vy = 0.0;
+        app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
+        assert!(p.set_mount(61, false)); // the Pixie, dismountsOnItemUse
+        p.no_items = true; // the per-tick lock (Mount.cs:5144)
+        // Hold the Iron Pickaxe (a non-mount item) mid-animation.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1,
+            name: "Iron Pickaxe",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        app.swing = 0.2; // itemAnimation > 0 — the TryingToUseItem gate passes
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(!p.mount.is_active(), "the use dismounted the Pixie");
+        // `Mount.cs:6152` restores noItems only for 55/56 — the Pixie's lock
+        // survives the dismount until the next tick's ResetEffects clear.
+        assert!(p.no_items, "61 keeps the lock until ResetEffects");
+        // Now Cursed: a fresh mount + the debuff refuse every use start.
+        let p = app.player.as_mut().unwrap();
+        assert!(p.set_mount(10, false)); // the Unicorn does NOT dismount on use
+        p.no_items = true;
+        p.cursed = true;
+        app.swing = 0.0;
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.mount.is_active(), "the Cursed lock keeps the mount");
+        assert!(app.swing <= 0.0, "the use never started");
+        assert!(app.mine_target.is_none());
+    }
+
+    #[test]
+    fn s1_p_i41_spawn_force_clear_kills_solids_and_zeroes_liquid() {
+        // `Player.Spawn_ForceClearArea` (`Player.cs:37914-37935`): the 3×3
+        // strip above the floor — non-top solids die (their item drops
+        // through the kill cascade), platforms (solidTop) stay, and every
+        // liquid cell zeroes its liquid + lava flag.
+        let mut w = World::new("clear".into(), 64, 128);
+        for x in 0..64 {
+            let i = w.index(x, 60);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // The floor cell (30, 60); the strip is x 29..=31, y 57..=59.
+        let dirt = w.index(29, 59);
+        w.tiles[dirt] = Tile { kind: 1, ..Default::default() }; // stone
+        w.tiles[dirt].flags |= FLAG_ACTIVE;
+        let plat = w.index(30, 58);
+        w.tiles[plat] = Tile { kind: 19, ..Default::default() }; // platform
+        w.tiles[plat].flags |= FLAG_ACTIVE;
+        let lava = w.index(31, 57);
+        w.tiles[lava].liquid = 255;
+        w.tiles[lava].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
+        spawn_force_clear_area(&mut app, 30, 60);
+        assert!(!app.world.tile(29, 59).unwrap().active(), "the stone died");
+        assert!(app.world.tile(30, 58).unwrap().active(), "the platform stays");
+        assert_eq!(app.world.tile(31, 57).unwrap().liquid, 0, "liquid zeroed");
+        assert_eq!(
+            app.world.tile(31, 57).unwrap().liquid_kind(),
+            tr_core::tile::LiquidKind::Water,
+            "the lava flag cleared"
+        );
+        assert!(
+            app.items.iter().any(|d| d.kind == 3),
+            "the killed stone dropped its Stone Block item (noItem = false)"
+        );
+        // The floor row itself is NOT in the strip (`floorY - 3 .. floorY`).
+        assert!(app.world.tile(30, 60).unwrap().active(), "the floor survives");
+    }
+
     /// A headless mining rig: `world` staged by the caller, the player parked
     /// three tiles right of the target, the camera pinned so the screen-centre
     /// cursor points at `(tx, ty)` — everything the mining branch of
@@ -6222,6 +8315,96 @@ mod tests {
         );
         assert!(fired[0].vel.x > 0.0, "flies at the cursor");
         assert_eq!(app.equip.ammo[0].count, 6, "the arrow drained");
+    }
+
+    // ---- S1-P-i42: the light-item throw / flare-gun wire -------------------
+
+    #[test]
+    fn the_glowstick_throws_as_a_consumable_ai14_shot() {
+        // `Player.ItemCheck_Shoot`'s generic arm (`Player.cs:49437`): the
+        // glowstick (282, useStyle 1, shoot 50, shootSpeed 6, consumable,
+        // NO useAmmo) throws its own projectile at the aim normalized to 6,
+        // and the stack drains one. The row is aiStyle 14 (`Projectile.cs:
+        // 1326-1336`), so the dispatch routes it to the glowstick arm.
+        let mut app = shooter_rig(282, "Glowstick", &[]);
+        app.inventory[app.selected].count = 5;
+        // Gate V3: the glowstick is NOT autoReuse — the throw fires on the
+        // press edge (`Player.cs:42733` controlUseItem && releaseUseItem).
+        // Arm the released state so the first held frame reads as a press.
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        let fired: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 50)
+            .collect();
+        assert!(!fired.is_empty(), "the glowstick spawned");
+        assert!(fired[0].vel.x > 0.0, "flies at the cursor");
+        // The speed is the aim normalized to shootSpeed 6 (no melee scale —
+        // the glowstick is DamageClass.None).
+        assert!(
+            (fired[0].vel.length() - 6.0).abs() < 0.5,
+            "speed ~6, got {}",
+            fired[0].vel.length()
+        );
+        assert_eq!(app.inventory[app.selected].count, 4, "one glowstick consumed");
+    }
+
+    #[test]
+    fn the_flare_gun_fires_the_ammo_flare_and_drains_it() {
+        // `ItemCheck_Shoot` + `PickAmmo` (`Player.cs:47056+`, `:53458+`): the
+        // Flare Gun (930, useAmmo 931, shoot 163) fires the ammo's own
+        // projectile (the Flare 931's shoot 163), the speed = the weapon's
+        // 6 + the ammo's 6 = 12, and the flare stack drains one.
+        let mut app = shooter_rig(930, "Flare Gun", &[(0, 931, 7)]);
+        // Gate V3: the Flare Gun is NOT autoReuse — arm the press edge.
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        let fired: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 163)
+            .collect();
+        assert!(!fired.is_empty(), "the flare spawned");
+        assert!(fired[0].vel.x > 0.0, "flies at the cursor");
+        // The fused speed 12 (weapon 6 + ammo 6, `Player.cs:53542`).
+        assert!(
+            (fired[0].vel.length() - 12.0).abs() < 1.0,
+            "speed ~12, got {}",
+            fired[0].vel.length()
+        );
+        assert_eq!(app.equip.ammo[0].count, 6, "the flare drained");
+    }
+
+    #[test]
+    fn the_flare_gun_without_ammo_plays_a_dry_swing() {
+        // `canShoot = false` (`Player.cs:53462-53466`): no flare ammo — the
+        // use plays out but nothing spawns.
+        let mut app = shooter_rig(930, "Flare Gun", &[]);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        assert!(
+            app.projectiles.slots().iter().all(|p| !p.active),
+            "no flare without ammo"
+        );
     }
 
     // ---- Phase 4 (M3-ITEM-6): the integrated shooter wire -----------------
@@ -7562,6 +9745,346 @@ mod tests {
         );
     }
 
+    // ---- S1-P-i29: the pickaxe/drill mining interaction --------------------
+    //
+    // The C# chain: `ItemCheck_UseMiningTools` (`Player.cs:45584`) →
+    // `ItemCheck_UseMiningTools_ActuallyUseMiningTool` (`:45646`) → `PickTile`
+    // (`:53757`) → `GetPickaxeDamage` (`:53902`). The damage accumulates in
+    // the `HitTile` book (`HitTile.cs`) until 100 breaks the tile; the cadence
+    // is `toolTime`/`itemTime` (`:43576-43587`, `:45779`). These witnesses pin
+    // the accumulation, the cadence, the reach rectangle, the grass
+    // conversion and the drill channel. WRITTEN, NOT RUN (code-only mode).
+
+    /// A single-tile mining world: the target cell at (tx, ty), the player
+    /// three tiles to its right (the `mining_app` shape), the Iron Pickaxe
+    /// held. The world is 64 wide so the dungeon x-band / ore draws have room.
+    fn pick_world_at(kind: u16, tx: i32, ty: i32) -> App {
+        let mut w = World::new("pick".into(), 64, 800);
+        let i = w.index(tx, ty);
+        w.tiles[i] = Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        mining_app(w, tx, ty)
+    }
+
+    /// The `HitTile` damage at a cell (0 when no slot tracks it).
+    fn hit_damage(app: &App, tx: i32, ty: i32) -> i32 {
+        app.hit_tile
+            .try_finding(tx, ty, tr_core::hit_tile::TILE)
+            .map_or(0, |id| app.hit_tile.data[id].damage)
+    }
+
+    /// S1-P-i29 — the pick damage accumulates in the `HitTile` book and the
+    /// tile breaks at 100 (`Player.PickTile` `Player.cs:53769`). The Iron
+    /// Pickaxe (pick 40) on stone (kind 1, plain power): 40 + 40 + 40 = 120,
+    /// so the third hit breaks it. The first two hits leave the tile standing
+    /// with the damage in the book.
+    #[test]
+    fn s1_p_i29_pick_damage_accumulates_to_a_break() {
+        let mut app = pick_world_at(1, 30, 260);
+        // The cadence: useTime 13 ticks between hits (`Player.cs:45779`,
+        // pickSpeed 1). The first hit lands a tick or two after the press
+        // (the `toolTime` arm), the next 13 ticks later. 40 frames covers
+        // three hits comfortably.
+        mine_frames(&mut app, 2);
+        // After the first hit the tile stands and the book carries 40.
+        assert!(app.world.tile(30, 260).unwrap().active(), "stone stands after hit 1");
+        assert_eq!(hit_damage(&app, 30, 260), 40, "the first hit's 40");
+        mine_frames(&mut app, 13);
+        assert!(app.world.tile(30, 260).unwrap().active(), "stone stands after hit 2");
+        assert_eq!(hit_damage(&app, 30, 260), 80, "two hits accumulate to 80");
+        mine_frames(&mut app, 13);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the third hit breaks stone");
+        // The break clears the hit slot (`ClearMiningCacheAt`, `:53773`).
+        assert_eq!(hit_damage(&app, 30, 260), 0, "the break clears the book");
+        // The stone item dropped (`break_tile`'s per-cell drop).
+        assert!(app.items.iter().any(|it| it.kind == 3), "the stone item dropped");
+    }
+
+    /// S1-P-i29 — the mining cadence is `itemTime = (int)(useTime * pickSpeed)`
+    /// (`Player.cs:45779`), NOT the old time-per-tile hardness. A faster
+    /// pickSpeed (the Mining buff 104, `:10136`, −0.25) shortens the interval;
+    /// the damage per hit is unchanged (the pick power, not the speed).
+    #[test]
+    fn s1_p_i29_the_mining_cadence_reads_use_time_and_pick_speed() {
+        // The Iron Pickaxe: useTime 13, pick 40 on stone (plain power). With
+        // pickSpeed 1 the hits are 13 ticks apart (first hit tick 2, then 15);
+        // with the Mining buff (pickSpeed 0.75) they are (int)(13*0.75) = 9
+        // ticks apart (first hit tick 2, then 11). Gate V3: measure the damage
+        // in a window BEFORE the third hit breaks the stone (the break clears
+        // the book, so a post-break read would show 0, not the cadence).
+        let mut plain = pick_world_at(1, 30, 260);
+        mine_frames(&mut plain, 14); // hits at tick 2 only (next at 15)
+        let plain_dmg = hit_damage(&plain, 30, 260);
+        let mut fast = pick_world_at(1, 30, 260);
+        // The Mining buff's −0.25 pickSpeed fold (the C# UpdateBuffs arm
+        // `:10134-10137`, the port's positive-bonus convention), set directly
+        // so the player stays parked on the target.
+        fast.player.as_mut().unwrap().pick_speed_bonus += 0.25;
+        mine_frames(&mut fast, 14); // hits at tick 2 AND 11 (next at 20)
+        let fast_dmg = hit_damage(&fast, 30, 260);
+        // The faster pickSpeed lands MORE hits in the same window (each hit
+        // is the same 40 damage). The plain cadence lands fewer.
+        assert!(
+            fast_dmg > plain_dmg,
+            "the Mining buff's faster cadence lands more damage: fast {fast_dmg} vs plain {plain_dmg}"
+        );
+        // Both are multiples of the pick's 40 (the damage per hit is the
+        // power, not the speed), and the stone still stands (no break yet).
+        assert_eq!(plain_dmg % 40, 0, "plain damage is a multiple of 40");
+        assert_eq!(fast_dmg % 40, 0, "fast damage is a multiple of 40");
+        assert!(plain.world.tile(30, 260).unwrap().active(), "plain stone stands");
+        assert!(fast.world.tile(30, 260).unwrap().active(), "fast stone stands");
+    }
+
+    /// S1-P-i29 — the reach is the C# rectangle (`TileReachCheckSettings.
+    /// GetTileRegion`, `TileReachCheckSettings.cs:45-54`), not a circle: the
+    /// X reach is `tileRangeX + tileBoost` (clamped 20), the Y reach
+    /// `tileRangeY + tileBoost`. A target straight up beyond the Y reach is
+    /// refused even though a circle of the X radius would reach it.
+    #[test]
+    fn s1_p_i29_the_reach_is_a_rectangle_not_a_circle() {
+        // The player at (33, 260); the target 5 tiles ABOVE at (33, 255).
+        // The base Y reach is 3 (+ the pick's tileBoost 0), so 5 up is out;
+        // the X reach is 5, so a circle of radius 5 would reach it.
+        let mut w = World::new("reach".into(), 64, 800);
+        let i = w.index(33, 255);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 33, 255);
+        // mining_app puts the player at (tx+3, ty) = (36, 255); move it to
+        // (33, 260) so the target is 5 above and 0 across.
+        app.player.as_mut().unwrap().x = 33.0 * TILE_PX;
+        app.player.as_mut().unwrap().y = 260.0 * TILE_PX;
+        app.camera = Vec2::new(33.0 * TILE_PX + 8.0, 255.0 * TILE_PX + 8.0);
+        mine_frames(&mut app, 40);
+        assert!(
+            app.world.tile(33, 255).unwrap().active(),
+            "5 tiles up is beyond the Y reach 3 — the rectangle refuses"
+        );
+        // The same target 5 tiles to the SIDE is within the X reach 5.
+        let mut w2 = World::new("reach2".into(), 64, 800);
+        let i2 = w2.index(38, 260);
+        w2.tiles[i2] = Tile { kind: 1, ..Default::default() };
+        w2.tiles[i2].flags |= FLAG_ACTIVE;
+        w2.compute_column_surface();
+        let mut app2 = mining_app(w2, 38, 260);
+        app2.player.as_mut().unwrap().x = 33.0 * TILE_PX;
+        app2.player.as_mut().unwrap().y = 260.0 * TILE_PX;
+        app2.camera = Vec2::new(38.0 * TILE_PX + 8.0, 260.0 * TILE_PX + 8.0);
+        mine_frames(&mut app2, 40);
+        assert!(
+            !app2.world.tile(38, 260).unwrap().active(),
+            "5 tiles across is within the X reach 5 — the rectangle reaches"
+        );
+    }
+
+    /// S1-P-i29 — the `tileBoost` widens the reach (`IsTargetTileInItemRange`,
+    /// `Player.cs:46313-46316`). The Chlorophyte Pickaxe (1230, tileBoost 1)
+    /// reaches one tile farther than the Iron Pickaxe (tileBoost 0).
+    #[test]
+    fn s1_p_i29_the_tile_boost_widens_the_reach() {
+        // Gate V3: `tile_in_reach_rect` is the C# `GetTileRegion` rectangle
+        // (`TileReachCheckSettings.cs:45-54`): HX = ceil((X+width)/16)−1+reach.
+        // The player at x=33 tiles (width 20px) spans columns 33..34, so the
+        // Iron Pickaxe's X reach 5 reaches column 39 (34+5); tileBoost 1
+        // widens it to 40. Probe column 40: refused at tileBoost 0, reached
+        // at tileBoost 1 (`IsTargetTileInItemRange`, `Player.cs:46313-46316`).
+        let mut w = World::new("boost".into(), 64, 800);
+        let i = w.index(40, 260);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 40, 260);
+        app.player.as_mut().unwrap().x = 33.0 * TILE_PX;
+        app.player.as_mut().unwrap().y = 260.0 * TILE_PX;
+        app.camera = Vec2::new(40.0 * TILE_PX + 8.0, 260.0 * TILE_PX + 8.0);
+        let (rx, ry) = mining_tile_range(&app);
+        let iron_tb = registry::get(1).map_or(0, |d| d.tile_boost);
+        assert!(
+            !app.player.as_ref().is_some_and(|p| tile_in_reach_rect(p, 40, 260, rx, ry, iron_tb)),
+            "tileBoost 0 refuses the cell past its X reach"
+        );
+        let chlo_tb = registry::get(1230).map_or(0, |d| d.tile_boost);
+        assert_eq!(chlo_tb, iron_tb + 1, "the Chlorophyte Pickaxe adds one tile of boost");
+        assert!(
+            app.player.as_ref().is_some_and(|p| tile_in_reach_rect(p, 40, 260, rx, ry, chlo_tb)),
+            "tileBoost 1 reaches the widened cell"
+        );
+    }
+
+    /// S1-P-i29 — the grass conversion (`DoesPickTargetTransformOnKill`,
+    /// `Player.cs:54047-54054` + `KillTile(fail: true)` `WorldGen.cs:63715-
+    /// 63718`): a grass tile (kind 2) at 100 damage converts to dirt (kind 0)
+    /// instead of breaking — no item drop, the tile stays active as dirt.
+    #[test]
+    fn s1_p_i29_grass_converts_to_dirt_instead_of_breaking() {
+        let mut app = pick_world_at(2, 30, 260);
+        // Dirt/grass takes the double pick-power add (`:53972`): the Iron
+        // Pickaxe's 40 → 80 per hit. Two hits reach 160 >= 100 → the
+        // conversion fires on the second.
+        mine_frames(&mut app, 30);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(t.active(), "the grass converts, it does not break");
+        assert_eq!(t.kind, 0, "grass 2 → dirt 0");
+        // No dirt item dropped (the conversion is not a break).
+        assert!(app.items.is_empty(), "the conversion drops nothing");
+    }
+
+    /// S1-P-i29 — the drill channel: a drill (the Cobalt Drill 385, channel
+    /// true, pick 110, useTime 7) spawns its drill projectile on the press
+    /// and mines continuously while held; the release kills the projectile.
+    #[test]
+    fn s1_p_i29_the_drill_channels_and_mines_continuously() {
+        let mut app = pick_world_at(1, 30, 260);
+        app.inventory[app.selected].kind = 385; // the Cobalt Drill
+        // The press: the drill projectile spawns (kind 59, the Cobalt Drill's
+        // shoot) and the channel latches.
+        mine_frames(&mut app, 1);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 59),
+            "the drill projectile spawned"
+        );
+        assert!(app.player.as_ref().unwrap().channel, "the channel latched");
+        // The drill mines continuously: the Cobalt Drill's pick 110 on stone
+        // (plain power) breaks it in one hit (110 >= 100). The channel holds
+        // the animation so the hit lands within the useTime cadence.
+        mine_frames(&mut app, 20);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the drill broke the stone");
+        // The release: the channel clears; the projectile's own Kill rides
+        // the aiStyle-20 machine on the next POOL tick (the i30 chainsaw
+        // precedent — `update_editing` alone never ticks the pool).
+        app.mine_down = false;
+        mine_frames(&mut app, 2);
+        assert!(!app.player.as_ref().unwrap().channel, "the release clears the channel");
+        crate::world_sim::projectiles::update_projectiles(&mut app, ONE_TICK_SECS);
+        assert!(
+            !app.projectiles.slots().iter().any(|p| p.active && p.kind == 59),
+            "the release kills the drill projectile"
+        );
+    }
+
+    /// S1-P-i29 — the `pickSpeed` floor (`Player.cs:25972-25975`): the buff
+    /// discounts cannot push pickSpeed below 0.3. The Mining buff (−0.25)
+    /// plus the Ancient Chisel (−0.25) plus WellFed (−0.15) sums to −0.65,
+    /// but pickSpeed clamps at 0.3.
+    #[test]
+    fn s1_p_i29_the_pick_speed_floor_is_0_3() {
+        let mut app = pick_world_at(1, 30, 260);
+        // Gate V3: the buff→stat fold runs in `update_player` (the C#
+        // `UpdateBuffs`), not in `add_buff` — drive one player tick so the
+        // Mining/WellFed bonuses land before the accessor reads them.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.buffs.add_buff(104, 3600); // Mining −0.25
+            p.buffs.add_buff(26, 3600); // WellFed −0.05 (the tier 26 row)
+        }
+        crate::world_sim::player::update_player(&mut app, ONE_TICK_SECS);
+        let p = app.player.as_mut().unwrap();
+        p.pick_speed_bonus += 0.5; // the chisel-style extra
+        // The raw 1 − bonus would be below 0.3; the accessor clamps.
+        assert!(p.pick_speed() >= 0.3, "pickSpeed clamps at 0.3");
+        assert!((p.pick_speed() - 0.3).abs() < 1e-6, "the floor is exactly 0.3");
+    }
+
+    /// S1-P-i29 — a pick cannot mine the axe tiles (`Main.tileAxe`,
+    /// `Player.cs:45656`): cactus 80 stands under the Iron Pickaxe. The axe
+    /// arm (the i30 task) owns the chop.
+    #[test]
+    fn s1_p_i29_a_pick_refuses_the_axe_tiles() {
+        let mut app = pick_world_at(80, 30, 260);
+        mine_frames(&mut app, 60);
+        assert!(app.world.tile(30, 260).unwrap().active(), "a pick never chops cactus");
+        assert_eq!(hit_damage(&app, 30, 260), 0, "no pick damage on the axe tile");
+    }
+
+    /// S1-P-i29 — the instant-break rows (`Main.tileNoFail`, `Player.cs:53905-
+    /// 53908`): a torch (kind 4) breaks on the first pick hit regardless of
+    /// the pick power.
+    #[test]
+    fn s1_p_i29_the_no_fail_tiles_break_on_the_first_hit() {
+        let mut app = pick_world_at(4, 30, 260);
+        mine_frames(&mut app, 3);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the torch breaks on hit 1");
+        assert!(app.items.iter().any(|it| it.kind == 8), "the torch item dropped");
+    }
+
+    /// S1-P-i36 — the bug net's catch arm end-to-end: the swung-item
+    /// rectangle intersects the goldfish's box, `CatchNPC` converts it to
+    /// the Goldfish item 261 (`NPC.cs:9472`) at the player's centre, and
+    /// the NPC leaves the pool. The catch runs even with the cursor FAR
+    /// outside the tile reach (the arm is player-relative,
+    /// `Player.cs:43654`).
+    #[test]
+    fn s1_p_i36_the_bug_net_catches_a_goldfish_into_item_261() {
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        // The net replaces the pickaxe; the cursor parks far away (the
+        // mining_app camera points 3 tiles left of the player — inside
+        // reach, so move the mouse to the screen corner instead: the
+        // catch arm must not care).
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 1991,
+            name: "Bug Net",
+            count: 1,
+            prefix: 0,
+        };
+        app.mouse_pos = Vec2::new(1270.0, 10.0);
+        let p = app.player.as_ref().unwrap();
+        let (px, py) = (p.x, p.y);
+        // The goldfish's 20×18 box (`NPC.cs:9463-9464`) centred on the
+        // player's swing arc, just right of the player.
+        let fish = Npc::new(NpcKind::Goldfish, px + 14.0, py + 4.0, 1, 0.0);
+        app.npcs.push(fish);
+        assert!(app.items.is_empty());
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        // The swing started (25 ticks, `Item.cs:21305-21315`) and the
+        // catch fired on the first animation tick.
+        assert!(app.swing > 0.0, "the net swings");
+        assert!(app.npcs.is_empty(), "the goldfish is caught");
+        assert_eq!(app.items.len(), 1, "one converted item");
+        assert_eq!(app.items[0].kind, 261, "the Goldfish item (NPC.cs:9472)");
+        assert_eq!(app.items[0].count, 1);
+        // The net is not consumed and never mines.
+        assert_eq!(app.inventory[app.selected].count, 1);
+        assert!(app.mine_target.is_none());
+    }
+
+    /// S1-P-i36 — the makeNPC release arm end-to-end: LMB with the
+    /// Goldfish item 261 releases NPC 55 at the cursor point, drains the
+    /// stack, and the released critter carries `releaseOwner` (never
+    /// friendly — `NPC.cs:90538-90541`).
+    #[test]
+    fn s1_p_i36_the_goldfish_item_releases_a_owned_critter() {
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 261,
+            name: "Goldfish",
+            count: 2,
+            prefix: 0,
+        };
+        assert!(app.npcs.is_empty());
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.npcs.len(), 1, "the critter releases");
+        // The first `UpdateNPC` runs the catchable-immunity pass
+        // (`NPC.cs:90538-90541`): releaseOwner != 255 zeroes the window.
+        crate::bug_net::tick_catchable_immunity(&mut app.npcs[0]);
+        let n = &app.npcs[0];
+        assert_eq!(n.kind, NpcKind::Goldfish);
+        assert_eq!(n.release_owner, app.local_id as u8, "NPC.cs:80162");
+        assert_eq!(n.catchable_immunity, 0, "the released window is zeroed");
+        assert!(!n.friendly, "NPC.cs:90543-90551");
+        // `NewNPC`'s timeLeft = (int)(750 * 1.25) (`NPC.cs:80772`).
+        assert_eq!(n.despawn_timer, 937);
+        // The stack drained once (`Player.cs:43317-43320`).
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The release point: the cursor world point, truncated
+        // (`Player.cs:44066-44071`); Bottom = (X, Y) (`NPC.cs:80770`).
+        let (w, h) = n.size();
+        assert_eq!(n.x + w * 0.5, (app.camera.x) as i32 as f32);
+        assert_eq!(n.y + h, (app.camera.y) as i32 as f32);
+    }
+
     /// S1-E-18: the demon altar takes the hammer arm of
     /// `ItemCheck_UseMiningTools_ActuallyUseMiningTool` (`Player.cs:45665-45704`).
     /// A ≥ 80-power hammer in hardmode builds to a kill, running `SmashAltar`
@@ -7661,6 +10184,302 @@ mod tests {
         );
     }
 
+    // ---- S1-P-i31: the hammer interaction --------------------------------
+    //
+    // The C# chain: `ItemCheck_UseMiningTools` (`Player.cs:45584`) → the
+    // hammer arm (`:45665-45704`), `TryPoundingTile` (`:45969-46311`),
+    // `TryFindingWallToHammer`/`TryHittingWall`/`PickWall`
+    // (`:45832-45967`). The pound latch (`poundRelease`, `:1502`) sets on
+    // the release (`:45635-45638`) and is consumed by the next press's
+    // mining tick. WRITTEN, NOT RUN (code-only mode).
+
+    /// A hammer-held rig over one tile: the Copper Hammer (3505, hammer 35,
+    /// useTime 23, autoReuse) unless overridden.
+    fn hammer_world_at(kind: u16, tx: i32, ty: i32) -> App {
+        let mut app = pick_world_at(kind, tx, ty);
+        app.inventory[app.selected].kind = 3505; // the Copper Hammer
+        app
+    }
+
+    /// One release-press cycle: release TWO frames (the i12 end-of-tick
+    /// latch, `Player.cs:42829` — after a held swing the FIRST release frame
+    /// still writes false from `prev_mine_down = true`), press `press`
+    /// frames (the first action tick lands ONE pound), then release and run
+    /// `hold` frames to drain the swing. (M3 sync: the Copper Hammer is
+    /// `autoReuse` (`Item.cs:31417` → `SetDefaults1(7)` `:1396`), so the
+    /// landed i12 `AutoReuseLogic` forces `releaseUseItem` every HELD tick
+    /// (`:52885`) and a held hammer keeps pounding at the useTime cadence —
+    /// the drain phase must be RELEASED to land exactly one pound per
+    /// cycle, the vanilla quick-click shape.)
+    fn pound_cycle(app: &mut App, hold: usize, press: usize) {
+        // Drain the previous swing RELEASED first (>= 2 frames for the
+        // latch), then the fresh press lands one pound on its first
+        // action tick.
+        app.mine_down = false;
+        mine_frames(app, hold.max(2));
+        app.mine_down = true;
+        mine_frames(app, press);
+    }
+
+    /// S1-P-i31 — the pound latch gates `TryPoundingTile` (`:45971`).
+    /// (M3 sync re-derivation: the Copper Hammer is `autoReuse`
+    /// (`Item.cs:31417` → `SetDefaults1(7)` `:1396`), so the landed i12
+    /// `AutoReuseLogic` forces `releaseUseItem` every held tick (`:52885`)
+    /// and the `:45635-45638` arm re-arms `poundRelease` continuously — a
+    /// HELD hammer pounds at the useTime cadence (vanilla autoswing). A
+    /// quick release+press lands exactly ONE pound per press.)
+    #[test]
+    fn s1_p_i31_the_pound_needs_a_release_then_a_press() {
+        let mut app = hammer_world_at(1, 30, 260);
+        // The release arms the latch (two frames — the i12 end-of-tick
+        // latch convention, `Player.cs:42829`).
+        app.mine_down = false;
+        mine_frames(&mut app, 2);
+        assert!(app.pound_release, "releaseUseItem sets poundRelease");
+        // The press: the first ready tick pounds (the half brick).
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(t.half_brick(), "the press pounds the flat stone to a half brick");
+        // Released drain: no second pound (the mining action is gated on
+        // `controlUseItem`, `:45608`/`:45626`).
+        app.mine_down = false;
+        mine_frames(&mut app, 60);
+        assert!(app.world.tile(30, 260).unwrap().half_brick(), "one pound per press");
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 0);
+        // The next press lands the second pound (half → slope 1).
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(!t.half_brick() && t.slope() == 1, "the second press cycles to slope 1");
+        // The HELD autoReuse hammer keeps pounding (`:52885` forces the
+        // release latch every tick → `:45635` re-arms it): 120 held frames
+        // advance the cycle past slope 1.
+        mine_frames(&mut app, 120);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(t.slope() > 1 || t.half_brick(), "the held autoReuse hammer cycles on");
+    }
+
+    /// S1-P-i31 — the full cycle over repeated presses: flat → half →
+    /// slope 1 → 2 → 3 → 4 → flat (`Player.cs:46239-46301` +
+    /// `WorldGen.PoundTile`/`SlopeTile`). Each cycle is one release+press.
+    #[test]
+    fn s1_p_i31_the_stone_cycles_half_then_four_slopes() {
+        let mut app = hammer_world_at(1, 30, 260);
+        let steps: [(bool, u8); 7] = [
+            (true, 0),
+            (false, 1),
+            (false, 2),
+            (false, 3),
+            (false, 4),
+            (false, 0),
+            (true, 0),
+        ];
+        for (half, slope) in steps {
+            // Release (two frames — the i12 end-of-tick latch, :42829) +
+            // a 3-frame press lands ONE pound; the drain is RELEASED so
+            // the autoReuse hold does not cycle on (M3 sync).
+            app.mine_down = false;
+            mine_frames(&mut app, 2);
+            app.mine_down = true;
+            mine_frames(&mut app, 3);
+            let t = app.world.tile(30, 260).unwrap();
+            assert_eq!(t.half_brick(), half, "half at slope {slope}");
+            assert_eq!(t.slope(), slope);
+            // Let the swing finish so the next press re-arms cleanly.
+            app.mine_down = false;
+            mine_frames(&mut app, 40);
+        }
+    }
+
+    /// S1-P-i31 — the platform cycle (`Player.cs:46008-46054`): the
+    /// isolated platform slopes 1 → 2, then the CanPoundTile arm writes
+    /// slope 0 + the half brick, then the half brick clears.
+    #[test]
+    fn s1_p_i31_the_platform_slopes_then_half_bricks() {
+        let mut app = hammer_world_at(19, 30, 260);
+        app.mine_down = false;
+        mine_frames(&mut app, 2);
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 1);
+        pound_cycle(&mut app, 40, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 2);
+        pound_cycle(&mut app, 40, 3);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(t.half_brick() && t.slope() == 0, "the platform's third pound half-bricks");
+        pound_cycle(&mut app, 40, 3);
+        assert!(!app.world.tile(30, 260).unwrap().half_brick(), "the fourth clears it");
+    }
+
+    /// S1-P-i31 — the hammer arm on the shadow orb 31 (`Main.tileHammer`,
+    /// `Player.cs:45665-45704`): the Copper Hammer's 35 accumulates
+    /// 35 + 35 + 35 = 105 ≥ 100 → the orb breaks on the third hit; a pick
+    /// never damages it (`:45656`).
+    #[test]
+    fn s1_p_i31_the_hammer_breaks_the_orb_the_pick_never_does() {
+        let mut app = hammer_world_at(31, 30, 260);
+        mine_frames(&mut app, 2);
+        assert!(app.world.tile(30, 260).unwrap().active(), "the orb stands after hit 1");
+        assert_eq!(hit_damage(&app, 30, 260), 35);
+        mine_frames(&mut app, 23);
+        assert_eq!(hit_damage(&app, 30, 260), 70, "two hits accumulate");
+        mine_frames(&mut app, 23);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the third hit breaks the orb");
+        // The pick refuses the hammer tile.
+        let mut pick = pick_world_at(31, 30, 260);
+        mine_frames(&mut pick, 60);
+        assert!(pick.world.tile(30, 260).unwrap().active(), "a pick never breaks the orb");
+        assert_eq!(hit_damage(&pick, 30, 260), 0);
+    }
+
+    /// S1-P-i31 — the altar refusal hurts the smasher (`Player.cs:45675-
+    /// 45679`): a pre-hardmode Pwnhammer hit zeroes the damage AND lands
+    /// `Hurt(statLife / 2)` — the player's hp drops by half (no defence in
+    /// the fixture), the altar stands.
+    #[test]
+    fn s1_p_i31_the_refused_altar_hit_halves_the_smashers_life() {
+        let mut w = World::new("t".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile { kind: 26, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 367; // the Pwnhammer
+        let hp0 = app.player.as_ref().unwrap().hp;
+        mine_frames(&mut app, 3);
+        assert!(app.world.tile(30, 260).unwrap().active(), "pre-hardmode refuses");
+        let hp1 = app.player.as_ref().unwrap().hp;
+        assert!(hp1 < hp0, "the refused hit hurts: {hp0} -> {hp1}");
+        // The hurt is statLife / 2 through the defence-free lane (the
+        // fixture player wears nothing): hp0 - hp0/2, floored at the
+        // endurance/1 minimum the hurt pipeline applies.
+        assert_eq!(hp1, hp0 - hp0 / 2, "the hurt is exactly half the life");
+        assert_eq!(app.world.altars_smashed, 0);
+    }
+
+    /// S1-P-i31 — the wall pass (`Player.cs:45832-45967`): the hammer on an
+    /// exposed HOUSE wall accumulates `(int)(35 * 1.5) = 52` per hit in the
+    /// WALL book; two hits (104 ≥ 100) break it and drop the wall item.
+    /// The cadence is `useTime / 2` (`:45913`).
+    #[test]
+    fn s1_p_i31_the_hammer_breaks_an_exposed_house_wall() {
+        let mut w = World::new("wall".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i].wall = 24; // a house wall (Main.wallHouse)
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505; // the Copper Hammer
+        mine_frames(&mut app, 2);
+        assert_eq!(app.world.tile(30, 260).unwrap().wall, 24, "the wall stands after hit 1");
+        let wall_dmg = app
+            .hit_tile
+            .try_finding(30, 260, tr_core::hit_tile::WALL)
+            .map_or(0, |id| app.hit_tile.data[id].damage);
+        assert_eq!(wall_dmg, 52, "the first wall hit's (int)(35 * 1.5)");
+        // useTime 23 / 2 = 11 ticks between wall hits.
+        mine_frames(&mut app, 12);
+        assert_eq!(app.world.tile(30, 260).unwrap().wall, 0, "the second hit breaks the wall");
+        assert!(
+            app.items.iter().any(|it| it.kind == registry::by_wall(24).unwrap()),
+            "the wall item dropped"
+        );
+    }
+
+    /// S1-P-i31 — `CanPlayerSmashWall` (`Player.cs:45917-45940`): an
+    /// INTERIOR unsafe wall (every 3×3 neighbour the same unsafe wall)
+    /// refuses the hammer; the same wall at the patch edge breaks.
+    #[test]
+    fn s1_p_i31_the_interior_unsafe_wall_refuses_the_hammer() {
+        let mut w = World::new("wall".into(), 64, 800);
+        for x in 28..33 {
+            for y in 258..263 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 2; // the unsafe dirt wall
+            }
+        }
+        w.compute_column_surface();
+        // The interior cell (30, 260): every neighbour is wall 2.
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505;
+        mine_frames(&mut app, 60);
+        assert_eq!(app.world.tile(30, 260).unwrap().wall, 2, "the interior unsafe wall stands");
+        // The edge cell (28, 260): its left neighbour is wall 0.
+        let mut w2 = World::new("wall".into(), 64, 800);
+        for x in 28..33 {
+            for y in 258..263 {
+                let i = w2.index(x, y);
+                w2.tiles[i].wall = 2;
+            }
+        }
+        w2.compute_column_surface();
+        let mut app2 = mining_app(w2, 28, 260);
+        app2.inventory[app2.selected].kind = 3505;
+        mine_frames(&mut app2, 60);
+        assert_eq!(app2.world.tile(28, 260).unwrap().wall, 0, "the edge unsafe wall breaks");
+    }
+
+    /// S1-P-i31 — the locked golden door refuses the pound and KEEPS the
+    /// latch (`Player.cs:45989-45998`): the stone under a locked door never
+    /// half-bricks, and the latch survives for the next tick.
+    #[test]
+    fn s1_p_i31_the_locked_door_refuses_the_pound() {
+        let mut w = World::new("t".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // The locked door above (the golden frames, WorldGen.cs:69191-69197).
+        let j = w.index(30, 259);
+        w.tiles[j] = Tile { kind: 10, frame_x: 0, frame_y: 594, ..Default::default() };
+        w.tiles[j].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505;
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        app.mine_down = true;
+        mine_frames(&mut app, 10);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(!t.half_brick() && t.slope() == 0, "the locked door refuses the pound");
+        assert!(app.pound_release, "the refused pound keeps the latch");
+    }
+
+    /// S1-P-i31 — the flatten player-push (`WorldGen.cs:80787-80795`): a
+    /// player standing INSIDE the pounded cell rides to its top when the
+    /// half brick clears (the un-half pound), the drop booked in gfxOffY.
+    #[test]
+    fn s1_p_i31_the_flatten_lifts_the_player_out_of_the_cell() {
+        let mut app = hammer_world_at(1, 30, 260);
+        // Park the player inside the target cell (the rig's player sits 3
+        // tiles right; move it onto the cell, feet 8 px into it).
+        let p = app.player.as_mut().unwrap();
+        p.x = 30.0 * TILE_PX + 2.0;
+        p.y = 260.0 * TILE_PX + 8.0 - p.height;
+        // First cycle: flat → half (no lift — the half brick SETS). Two
+        // release frames (the i12 end-of-tick latch, :42829).
+        app.mine_down = false;
+        mine_frames(&mut app, 2);
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        assert!(app.world.tile(30, 260).unwrap().half_brick());
+        let y_after_half = app.player.as_ref().unwrap().y;
+        // Second cycle: half → slope 1 (the cycle arm, no flatten lift).
+        pound_cycle(&mut app, 40, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 1);
+        assert_eq!(app.player.as_ref().unwrap().y, y_after_half, "the slope arm does not lift");
+        // Run the cycle to slope 4, then the flatten pound (slope 4 → 0)
+        // lifts the player to the cell top.
+        pound_cycle(&mut app, 40, 3); // 2
+        pound_cycle(&mut app, 40, 3); // 3
+        pound_cycle(&mut app, 40, 3); // 4
+        let gfx0 = app.player.as_ref().unwrap().gfx_off_y;
+        pound_cycle(&mut app, 40, 3); // 0 — the flatten
+        assert_eq!(app.world.tile(30, 260).unwrap().slope(), 0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.y, 260.0 * TILE_PX - p.height, "the player rides to the cell top");
+        assert!(p.gfx_off_y > gfx0, "the drop books into gfxOffY");
+    }
+
     /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
     /// the tag row, the whip never self-crits, and the swing lasts the item's
     /// `useAnimation`.
@@ -7758,6 +10577,285 @@ mod tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// S1-P-i30: a tree column at x = 30 over a ground row at y = 261, the
+    /// base cell (30, 260) the mining cursor targets. The canopy marker sits
+    /// on top; every other cell is a plain trunk frame.
+    fn axe_tree_world(kind: u16, ground: u16, height: i32) -> World {
+        let mut w = World::new("t".into(), 64, 800);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.frame_important[kind as usize] = true;
+        for x in 0..64 {
+            set_tile(&mut w, x, 261, ground);
+        }
+        for dy in 0..height {
+            let i = w.index(30, 260 - dy);
+            let (fx, fy) = if dy == height - 1 { (22, 198) } else { (0, 0) };
+            w.tiles[i] = Tile {
+                kind,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-P-i30: the axe arm chops the gem tree (583) — the `Main.tileAxe`
+    /// family was missing 583-589, so the pick gate refused them. With the
+    /// Iron Axe (axe 9 → 10 damage/hit, useTime 19) ten hits reach 100 and
+    /// the whole trunk collapses; every cell drops through the gem record
+    /// (`WorldGen.cs:65713-65719`). The 200-frame window covers the
+    /// ~173-frame break.
+    #[test]
+    fn s1_p_i30_the_axe_chops_the_gem_tree() {
+        // Stone ground (the gem ground test, `:30304-30315`).
+        let mut app = mining_app(axe_tree_world(583, 1, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        // A pick alone never chops an axe tile (`Player.cs:45656`).
+        let mut pick = mining_app(axe_tree_world(583, 1, 4), 30, 260);
+        pick.inventory[pick.selected].kind = 1; // the Iron Pickaxe
+        mine_frames(&mut pick, 60);
+        assert!(
+            pick.world.tile(30, 260).unwrap().active(),
+            "the pick cannot chop the gem tree"
+        );
+        mine_frames(&mut app, 200);
+        for dy in 0..4 {
+            assert!(
+                !app.world.tile(30, 260 - dy).unwrap().active(),
+                "the gem cell at dy {dy} survived the axe"
+            );
+        }
+        // One gem/stone drop per cell (4); the canopy marker MAY add a
+        // gemcorn (4851) on its `Next(2)` roll, so the count is 4 or 5.
+        assert!(
+            app.items.len() == 4 || app.items.len() == 5,
+            "one gem-record drop per cell (+ the canopy gemcorn), got {}",
+            app.items.len()
+        );
+        // Every drop is the gem (180), the stone (3) or the gemcorn (4851) —
+        // never the wood 9.
+        for item in app.items.iter() {
+            assert!(
+                item.kind == 180 || item.kind == 3 || item.kind == 4851,
+                "the gem cell drops gem/stone/gemcorn, got {}",
+                item.kind
+            );
+        }
+    }
+
+    /// S1-P-i30: the axe arm chops the cactus (80) and the whole plant
+    /// collapses, one Cactus 276 per segment (`WorldGen.CheckCactus`,
+    /// `:54116-54158`; the drop `case 80`, `:64717-64719`). The cactus takes
+    /// the TRIPLE axe damage (`Player.cs:45708`: `(int)(axe*3 * 1.2f)` = 32
+    /// for the Iron Axe), so four hits reach 128 — the 19-tick cadence puts
+    /// the break at frame ~60.
+    #[test]
+    fn s1_p_i30_the_axe_chops_the_cactus_whole() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        for x in 0..64 {
+            set_tile(&mut w, x, 261, 53); // the sand
+        }
+        for dy in 0..4 {
+            set_tile(&mut w, 30, 260 - dy, 80);
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe
+        mine_frames(&mut app, 60);
+        for dy in 0..4 {
+            assert!(
+                !app.world.tile(30, 260 - dy).unwrap().active(),
+                "the cactus segment at dy {dy} survived"
+            );
+        }
+        assert_eq!(app.items.len(), 4, "one cactus drop per segment");
+        assert!(app.items.iter().all(|i| i.kind == 276), "the Cactus item");
+    }
+
+    /// S1-P-i30: the Don't Starve cactus chop hurts the chopper
+    /// (`Player.cs:45721-45724`): `DamageVar(6, -luck)` on the chop tick,
+    /// only when the world carries the seed. A classic world chops free.
+    #[test]
+    fn s1_p_i30_the_dont_starve_cactus_chop_hurts() {
+        let cactus_world = || {
+            let mut w = World::new("t".into(), 64, 800);
+            w.frame_important = vec![false; td::TILE_COUNT];
+            for x in 0..64 {
+                set_tile(&mut w, x, 261, 53);
+            }
+            set_tile(&mut w, 30, 260, 80);
+            w.compute_column_surface();
+            w.compute_chunks();
+            w
+        };
+        // The classic world: no hurt. The cactus takes the triple axe
+        // damage (32/hit), four hits reach 128 — the break lands ~frame 59;
+        // the 80-frame window covers it.
+        let mut classic = mining_app(cactus_world(), 30, 260);
+        classic.inventory[classic.selected].kind = 10;
+        let hp_classic = classic.player.as_ref().unwrap().hp;
+        mine_frames(&mut classic, 80);
+        assert!(
+            !classic.world.tile(30, 260).unwrap().active(),
+            "the cactus fell"
+        );
+        assert_eq!(
+            classic.player.as_ref().unwrap().hp,
+            hp_classic,
+            "the classic chop is free"
+        );
+        // The Don't Starve world: the chop hurts.
+        let mut ds = mining_app(cactus_world(), 30, 260);
+        ds.inventory[ds.selected].kind = 10;
+        ds.world.seeds.insert(tr_core::seeds::SeedFlags::DONT_STARVE);
+        let hp_ds = ds.player.as_ref().unwrap().hp;
+        mine_frames(&mut ds, 80);
+        assert!(!ds.world.tile(30, 260).unwrap().active(), "the cactus fell");
+        assert!(
+            ds.player.as_ref().unwrap().hp < hp_ds,
+            "the Don't Starve chop hurts the chopper"
+        );
+    }
+
+    /// S1-P-i30: the Acorn Axe (5295) replants a sapling into the felled base
+    /// cell (`Player.cs:45744-45753` → `TryReplantingTree` `:45804-45822`);
+    /// a plain axe leaves the cell empty.
+    #[test]
+    fn s1_p_i30_the_acorn_axe_replants_the_felled_base() {
+        // A forest tree over dirt (the sapling's anchor tiles, D_20). The
+        // Acorn Axe (axe 25 → 30 damage/hit, useTime 12) breaks the base on
+        // the 4th hit (~frame 39); the 200-frame window covers it.
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 5295; // the Acorn Axe
+        mine_frames(&mut app, 200);
+        // The trunk above the sapling fell: the sapling (tile 20, 1x2 with
+        // origin (0,1)) occupies the base cell (30,260) AND the cell above
+        // it (30,259), so the first free trunk cell is (30,258).
+        assert!(
+            !app.world.tile(30, 258).unwrap().active(),
+            "the trunk above the sapling fell"
+        );
+        // The base cell now holds the replanted sapling (tile 20, 1x2 with
+        // origin (0,1) — the anchor row is the cursor cell).
+        let base = app.world.tile(30, 260).unwrap();
+        assert!(base.active() && base.kind == 20, "the sapling replanted");
+        assert!(
+            app.world.tile(30, 259).unwrap().active()
+                && app.world.tile(30, 259).unwrap().kind == 20,
+            "the sapling's top cell"
+        );
+        // The plain Iron Axe fells the same tree but replants nothing. The
+        // Iron Axe (axe 9 → 10 damage/hit, useTime 19) needs ten hits to
+        // reach 100 — the 200-frame window covers the ~173-frame break.
+        let mut plain = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        plain.inventory[plain.selected].kind = 10;
+        mine_frames(&mut plain, 200);
+        assert!(
+            !plain.world.tile(30, 259).unwrap().active(),
+            "the trunk fell"
+        );
+        assert!(
+            !plain.world.tile(30, 260).unwrap().active(),
+            "the plain axe leaves the base empty"
+        );
+    }
+
+    /// S1-P-i30: the axe hit-buffer model (`Player.cs:45706-45771`): the
+    /// chop damage accumulates in the shared `HitTile` book and the tile
+    /// breaks at 100 — NOT the old time-per-tile hardness. The Iron Axe
+    /// (axe 9) deals `(int)(9f * 1.2f) = 10` per hit (`:45708`), so the
+    /// forest trunk (kind 5) stands at 9 hits (90) and falls on the 10th.
+    /// The cadence is `ApplyItemTime(useTime)` = 19 ticks (`:45768`), so
+    /// the hits land at frames 2, 21, 40, … — frame 173 is the 10th.
+    #[test]
+    fn s1_p_i30_the_axe_damage_accumulates_in_the_hit_book() {
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        // After the first hit the trunk stands and the book carries 10.
+        mine_frames(&mut app, 2);
+        assert!(app.world.tile(30, 260).unwrap().active(), "the trunk stands after hit 1");
+        assert_eq!(hit_damage(&app, 30, 260), 10, "the first chop's 10");
+        // Nine hits accumulate to 90 — still standing. Hits 2..9 land at
+        // frames 21, 40, …, 154 (the 19-tick cadence); frame 154 is hit 9.
+        mine_frames(&mut app, 152); // frames 3..154
+        assert!(app.world.tile(30, 260).unwrap().active(), "the trunk stands at 90");
+        assert_eq!(hit_damage(&app, 30, 260), 90, "nine chops accumulate to 90");
+        // The 10th hit (frame 173) reaches 100 and fells the whole tree.
+        mine_frames(&mut app, 30);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the 10th chop fells the base");
+        assert_eq!(hit_damage(&app, 30, 260), 0, "the break clears the book");
+        // The wood dropped (the forest family's Wood 9).
+        assert!(app.items.iter().any(|it| it.kind == 9), "the wood dropped");
+    }
+
+    /// S1-P-i30: the chainsaw channel — the Cobalt Chainsaw (383, channel
+    /// true, axe 14, useTime 7 after the `IsChainsaw` epilogue) spawns its
+    /// aiStyle-20 projectile (57) on the press and chops continuously while
+    /// held; the release clears the channel and the projectile's machine
+    /// kills itself (`Projectile.cs:25549`). The chop damage is
+    /// `(int)(14f * 1.2f) = 16` per hit (`Player.cs:45708`), so the forest
+    /// trunk falls on the 7th hit (112 ≥ 100) — the 7-tick channel cadence
+    /// (`Player.cs:43582-43586`) lands it far faster than the Iron Axe.
+    #[test]
+    fn s1_p_i30_the_chainsaw_channels_and_chops_continuously() {
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 383; // the Cobalt Chainsaw
+        // The press: the chainsaw projectile spawns (kind 57) and the
+        // channel latches.
+        mine_frames(&mut app, 1);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 57),
+            "the chainsaw projectile spawned"
+        );
+        assert!(app.player.as_ref().unwrap().channel, "the channel latched");
+        // The chainsaw chops continuously: 16 damage/hit, 7-tick cadence →
+        // the 7th hit (112) fells the trunk well inside 60 frames.
+        mine_frames(&mut app, 60);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the chainsaw felled the trunk");
+        assert!(app.items.iter().any(|it| it.kind == 9), "the wood dropped");
+        // The release: the channel clears (the projectile's own Kill rides
+        // the aiStyle-20 machine on the next pool tick — asserted below
+        // through `update_projectiles`).
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        assert!(!app.player.as_ref().unwrap().channel, "the release clears the channel");
+        crate::world_sim::projectiles::update_projectiles(&mut app, ONE_TICK_SECS);
+        assert!(
+            !app.projectiles.slots().iter().any(|p| p.active && p.kind == 57),
+            "the release kills the chainsaw projectile"
+        );
+    }
+
+    /// S1-P-i30: the lunar chainsaws ride the `ITEM_CORRECTIONS` seam (the
+    /// GenItemData placeholder band left them zero rows): the Vortex
+    /// Chainsaw (2773) carries axe 27, channel true, useTime 4 (the
+    /// `IsChainsaw` epilogue's `(int)(7 * 0.6)`, `Item.cs:48899-48912`) and
+    /// shoot 427 — so it chops `(int)(27f * 1.2f) = 32` per hit and fells
+    /// the forest trunk on the 4th hit (128 ≥ 100).
+    #[test]
+    fn s1_p_i30_the_lunar_chainsaw_row_chops() {
+        let def = registry::get(2773).expect("the corrected Vortex Chainsaw row");
+        assert_eq!(def.axe, 27, "the corrected axe power");
+        assert!(def.channel, "the chainsaw channels");
+        assert_eq!(def.use_time, 4, "the IsChainsaw epilogue's useTime");
+        assert_eq!(def.projectile, Some(427), "the Vortex Chainsaw's shoot");
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 2773;
+        mine_frames(&mut app, 1);
+        assert!(
+            app.projectiles.slots().iter().any(|p| p.active && p.kind == 427),
+            "the Vortex Chainsaw projectile spawned"
+        );
+        mine_frames(&mut app, 40);
+        assert!(!app.world.tile(30, 260).unwrap().active(), "the lunar chainsaw felled the trunk");
     }
 
     /// DW-1.1: with `frame_important` set — the exact condition the removed
@@ -7947,7 +11045,10 @@ mod tests {
     /// merged tool tiers restore vanilla's axe rule — kind 80 is `tileAxe`
     /// (`Main.cs:7210`), so the rig holds the Iron Axe: the cactus breaks,
     /// drops per cell and runs no object cascade (`check_object`'s
-    /// `_ => None`).
+    /// `_ => None`). S1-P-i30: the chop now rides the `HitTile` book — the
+    /// cactus takes the TRIPLE axe damage (`Player.cs:45708`:
+    /// `(int)(9*3 * 1.2f) = 32`), so four hits reach 128; the 19-tick
+    /// cadence puts the break at frame ~59 (the 80-frame window covers it).
     #[test]
     fn test_DW_1_2_cactus_80_still_breaks_with_the_per_cell_drop() {
         let mut w = object_world();
@@ -7955,7 +11056,7 @@ mod tests {
         set_tile(&mut w, 10, 19, 80);
         let mut app = mining_app(w, 10, 19);
         app.inventory[app.selected].kind = 10; // the Iron Axe (axe 9)
-        mine_frames(&mut app, 40);
+        mine_frames(&mut app, 80);
         assert!(!app.world.tile(10, 19).unwrap().active(), "cactus broke");
         assert!(
             app.world.tile(10, 20).unwrap().active(),
@@ -9916,6 +13017,182 @@ mod tests {
             "no spawn-time draw (crit is per-hit)"
         );
     }
+
+    // ---- S1-P-i32: the tile-validity / adjacency census fixes --------------
+    //
+    // Witnesses for the three WRONGs the census found in the legacy
+    // placement pre-check (`can_place`) and the missing lava gate. Written,
+    // not run (code-only mode). Each pins the C# line it restores.
+
+    /// `Player.cs:41253` — the default adjacency arm accepts a neighbour that
+    /// is `tileSolid` OR `IsBeam` OR `tileRope` OR the minecart track 314.
+    /// The pre-fix port only read `tileSolid`, so a block could not be placed
+    /// against a rope / beam / track. Each support kind now accepts; a
+    /// non-solid, non-support neighbour (a torch 4) still refuses.
+    #[test]
+    fn s1_p_i32_adjacency_accepts_beam_rope_and_track_neighbours() {
+        // A rig with NO floor under the target and NO walls: the only support
+        // is the single neighbour we stage, so the verdict isolates the
+        // adjacency predicate. Target (10, 10); the neighbour sits at (11,10).
+        for (kind, label) in [
+            (124u16, "beam (IsBeam)"),
+            (213, "rope (tileRope)"),
+            (314, "minecart track"),
+            (1, "solid stone (the control)"),
+        ] {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = World::new("adj".into(), 40, 40);
+            app.world.frame_important = vec![false; td::TILE_COUNT];
+            app.player = None; // no overlap gate
+            app.inventory[app.selected] = slot(2, 5); // dirt places tile 0 (solid)
+            set_tile(&mut app.world, 11, 10, kind);
+            assert!(can_place(&app, 10, 10), "{label} must support the block");
+        }
+        // A torch (4) is none of solid/beam/rope/track: it refuses.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("adj".into(), 40, 40);
+        app.world.frame_important = vec![false; td::TILE_COUNT];
+        app.player = None;
+        app.inventory[app.selected] = slot(2, 5);
+        set_tile(&mut app.world, 11, 10, 4);
+        assert!(!can_place(&app, 10, 10), "a torch is no adjacency support");
+    }
+
+    /// `Player.cs:41257-41260` — when all four cardinal neighbours fail, the
+    /// target cell's OWN wall > 0 still accepts the placement. The pre-fix
+    /// port never read the target's wall.
+    #[test]
+    fn s1_p_i32_the_targets_own_wall_supports_placement() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("wall".into(), 40, 40);
+        app.world.frame_important = vec![false; td::TILE_COUNT];
+        app.player = None;
+        app.inventory[app.selected] = slot(2, 5);
+        // No neighbours at all; only the target's own background wall.
+        let i = app.world.index(10, 10);
+        app.world.tiles[i].wall = 2;
+        assert!(can_place(&app, 10, 10), "the cell's own wall accepts");
+        // Without the wall and without neighbours: refused.
+        app.world.tiles[i].wall = 0;
+        assert!(!can_place(&app, 10, 10), "no support at all refuses");
+    }
+
+    /// `Collision.EmptyTile` (`Collision.cs:1373-1379`) — an NPC hitbox over
+    /// the cell refuses a SOLID placement. The pre-fix port only checked the
+    /// player. The blue slime's 24x18 box (`npc/data.rs:2500`, scale 1.0)
+    /// covers the target cell.
+    #[test]
+    fn s1_p_i32_an_npc_over_the_cell_refuses_a_solid_block() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = None;
+        app.inventory[app.selected] = slot(2, 5); // solid dirt
+        // Floor below supports the target (10, 19); the slime sits on it.
+        let npc = Npc::new(NpcKind::Slime, 10.0 * TILE_PX, 19.0 * TILE_PX, 1, 0.0);
+        app.npcs.push(npc);
+        assert!(!can_place(&app, 10, 19), "the slime's box refuses the block");
+        // Move the slime clear: the same cell now places.
+        app.npcs[0].x = 30.0 * TILE_PX;
+        assert!(can_place(&app, 10, 19), "a clear cell accepts");
+    }
+
+    /// `WorldGen.cs:59373` — `EmptyTile` is consulted only for SOLID
+    /// placements (`forced || EmptyTile || !tileSolid[num] || …`); a
+    /// non-solid tile bypasses the overlap. A torch (tile 4, non-solid)
+    /// placed into the player's own cell is NOT refused by the overlap gate
+    /// (the pre-fix port refused every kind over the player).
+    #[test]
+    fn s1_p_i32_a_non_solid_tile_bypasses_the_player_overlap() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        // Park the player so its 20x42 box covers the target (10, 19).
+        let mut p = Player::spawn(&app.world);
+        p.x = 10.0 * TILE_PX;
+        p.y = 18.0 * TILE_PX;
+        app.player = Some(p);
+        // Torch item 8 places tile 4 (non-solid): the overlap gate stands down.
+        app.inventory[app.selected] = slot(8, 5);
+        assert!(can_place(&app, 10, 19), "a torch is not blocked by the player box");
+        // The same cell with a SOLID block item IS refused.
+        app.inventory[app.selected] = slot(2, 5);
+        assert!(!can_place(&app, 10, 19), "a solid block is blocked by the player box");
+    }
+
+    /// `Player.cs:41489-41504` (`IsBlockedByLava`) + `:39743` — a solid tile
+    /// refuses an inactive lava cell outright; a non-solid tile answers
+    /// `CheckLiquidPlacement`. The pre-fix port had no lava gate at all.
+    #[test]
+    fn s1_p_i32_lava_refuses_solid_blocks_and_water_death_torches() {
+        // The pure predicate: a solid createTile in lava always blocks.
+        let mut lava = tr_core::tile::Tile::default();
+        lava.liquid = 200;
+        lava.set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        assert!(is_blocked_by_lava(0, 0, &lava), "dirt (solid) in lava blocks");
+        assert!(is_blocked_by_lava(1, 0, &lava), "stone (solid) in lava blocks");
+        // A dry cell never blocks.
+        let dry = tr_core::tile::Tile::default();
+        assert!(!is_blocked_by_lava(0, 0, &dry), "a dry cell never blocks");
+        // Torch (4) is non-solid and `tileWaterDeath`/`lavaDeath`: the global
+        // LiquidPlace fallback refuses it in lava (style 0, no sub-tile).
+        assert!(is_blocked_by_lava(4, 0, &lava), "a plain torch refuses lava");
+        // The full item route: a dirt stack over a lava cell refuses and keeps
+        // the item; the cell stays empty.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = None;
+        app.inventory[app.selected] = slot(2, 5);
+        let i = app.world.index(10, 19);
+        app.world.tiles[i].liquid = 200;
+        app.world.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        assert!(!use_tile_item(&mut app, 10, 19), "lava refuses the dirt");
+        assert_eq!(app.inventory[app.selected].count, 5, "the item is kept");
+        assert!(!app.world.tile(10, 19).unwrap().active(), "nothing written");
+    }
+
+    /// `Player.cs:39753-39760` (`PlaceThing_IsReplaceableBlock`) — the
+    /// replaceable-block predicate the lava gate's OR chain reads: a tileCut
+    /// target is replaceable except 484/711, the drip band 373-375 + 461/709
+    /// always, else `BreakableWhenPlacing`.
+    #[test]
+    fn s1_p_i32_replaceable_block_matches_the_csharp_predicate() {
+        use tr_core::tileobject::is_replaceable_block;
+        assert!(is_replaceable_block(3), "grass is tileCut");
+        assert!(is_replaceable_block(82), "a herb is tileCut");
+        assert!(!is_replaceable_block(484), "484 is the named tileCut exemption");
+        assert!(!is_replaceable_block(711), "711 is the named tileCut exemption");
+        for k in [373u16, 374, 375, 461, 709] {
+            assert!(is_replaceable_block(k), "drip {k} is always replaceable");
+        }
+        assert!(is_replaceable_block(186), "a large pile is BreakableWhenPlacing");
+        assert!(!is_replaceable_block(1), "stone is not replaceable");
+    }
+
+    /// `Player.cs:41332-41345` — the platform fallback: when the default
+    /// adjacency arm refuses, ANY active tile in the 3x3 (diagonals included)
+    /// accepts a platform-placing item. A torch neighbour (4) is no default
+    /// support, but its diagonal presence still carries the platform. The
+    /// pre-fix port had no fallback, so the platform refused.
+    #[test]
+    fn s1_p_i32_platform_fallback_accepts_any_3x3_active_tile() {
+        // Wood Platform item 94 places tile 19 (a SET_PLATFORMS member).
+        assert_eq!(registry::place_tile(94), Some(19));
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("plat".into(), 40, 40);
+        app.world.frame_important = vec![false; td::TILE_COUNT];
+        app.player = None;
+        app.inventory[app.selected] = slot(94, 5);
+        // A torch at the DIAGONAL (11, 11): no cardinal support, no wall.
+        set_tile(&mut app.world, 11, 11, 4);
+        assert!(can_place(&app, 10, 10), "the diagonal torch carries the platform");
+        // The same diagonal with a BLOCK item (dirt, no fallback) refuses.
+        app.inventory[app.selected] = slot(2, 5);
+        assert!(!can_place(&app, 10, 10), "a block gets no platform fallback");
+        // Clear the torch: even the platform now refuses (no 3x3 support).
+        let i = app.world.index(11, 11);
+        app.world.tiles[i] = tr_core::tile::Tile::default();
+        app.inventory[app.selected] = slot(94, 5);
+        assert!(!can_place(&app, 10, 10), "no support at all refuses the platform");
+    }
 }
 
 /// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
@@ -11653,5 +14930,289 @@ mod s1_p_i08_throw_tests {
         assert_eq!(p.mana, 50);
         assert!(p.buffs.find_buff_index(94).is_some(), "ManaSickness 94");
         assert_eq!(app.inventory[app.selected].count, 2);
+    }
+}
+
+/// S1-P-i33 — the wall placement/removal census fixes: the adjacency gate,
+/// the unsafe→safe replacement, the fill-empty-space tail, the hammer smash
+/// gate + damage cadence, and the drop conversions. Code-only mode: the
+/// witnesses are WRITTEN NOT RUN (no compiler invoked on the branch).
+#[cfg(test)]
+mod wall_placement_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    const SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    /// A wall-edit rig: the player parked three tiles right of `(tx, ty)`,
+    /// the camera pinned so the screen-centre cursor points at the target,
+    /// and the audio listener at the camera so the placement/break cues are
+    /// audible (their RNG draws ride the `UpdatePlayers` stream).
+    fn wall_app(world: World, tx: i32, ty: i32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = world;
+        let mut player = Player::spawn(&app.world);
+        player.x = (tx + 3) as f32 * TILE_PX;
+        player.y = ty as f32 * TILE_PX;
+        app.player = Some(player);
+        app.camera = Vec2::new(tx as f32 * TILE_PX + 8.0, ty as f32 * TILE_PX + 8.0);
+        app.mouse_pos = Vec2::new(640.0, 360.0);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app
+    }
+
+    fn empty_world() -> World {
+        World::new("walls".into(), 40, 40)
+    }
+
+    fn set_wall(w: &mut World, x: i32, y: i32, wall: u16) {
+        let i = w.index(x, y);
+        w.tiles[i].wall = wall;
+    }
+
+    fn hold_wall(app: &mut App, kind: u16, count: u32) {
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        };
+    }
+
+    /// `PlaceThing_Walls`' adjacency gate (`Player.cs:39607`): a neighbour
+    /// that is ACTIVE (even wall-less) supports the placement; the cell's own
+    /// tile never does. The old port required a neighbouring WALL or the
+    /// cell's own solid tile — both wrong.
+    #[test]
+    fn s1_p_i33_an_active_wallless_neighbour_supports_the_wall() {
+        let mut w = empty_world();
+        // A stone block to the LEFT of the target, no wall anywhere.
+        let i = w.index(9, 10);
+        w.tiles[i] = Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5); // Wood Wall (createWall 4)
+        assert!(can_place_wall(&app, 10, 10), "the active neighbour supports");
+        // The cell's OWN tile does not support: a lone block with no
+        // neighbours refuses.
+        let mut w2 = empty_world();
+        let j = w2.index(10, 10);
+        w2.tiles[j] = Tile { kind: 1, ..Default::default() };
+        w2.tiles[j].flags |= FLAG_ACTIVE;
+        let mut app2 = wall_app(w2, 10, 10);
+        hold_wall(&mut app2, 93, 5);
+        assert!(!can_place_wall(&app2, 10, 10), "the own tile never supports");
+    }
+
+    /// The same-wall refusal (`Player.cs:39607`): a cell already carrying the
+    /// held wall refuses; a DIFFERENT wall passes on to the replacement route.
+    #[test]
+    fn s1_p_i33_same_wall_refuses_but_a_different_wall_passes() {
+        let mut w = empty_world();
+        set_wall(&mut w, 9, 10, 4); // a wood-wall neighbour for support
+        set_wall(&mut w, 10, 10, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5); // Wood Wall → 4
+        assert!(!can_place_wall(&app, 10, 10), "same wall refuses");
+        // A different existing wall passes the gate (the replacement arm).
+        set_wall(&mut app.world, 10, 10, 2); // unsafe dirt
+        assert!(can_place_wall(&app, 10, 10), "a different wall passes");
+    }
+
+    /// `PlaceThing_TryReplacingWalls` (`Player.cs:39816-39829`) +
+    /// `WorldGen.ReplaceWall` (`WorldGen.cs:62530-62556`): placing a safe wall
+    /// onto an unsafe wall converts it, drops the OLD wall's item, and plays
+    /// the OLD wall's break cue — not the placement Dig.
+    #[test]
+    fn s1_p_i33_unsafe_wall_converts_to_safe_and_drops_the_old_item() {
+        let mut w = empty_world();
+        set_wall(&mut w, 9, 10, 4); // support neighbour
+        set_wall(&mut w, 10, 10, 2); // unsafe dirt wall
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5); // Wood Wall → 4
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "converted to wood");
+        // The unsafe dirt wall (2) drops NOTHING (`kill_wall_drop(2) == 0`).
+        assert!(app.items.is_empty(), "unsafe dirt drops no item");
+        assert_eq!(app.inventory[app.selected].count, 4, "one item consumed");
+    }
+
+    /// The replacement drops the OLD wall's converted item: a dungeon unsafe
+    /// wall (7) replaced by its safe item's wall drops the safe item 135.
+    #[test]
+    fn s1_p_i33_replacing_a_dungeon_wall_drops_the_safe_item() {
+        let mut w = empty_world();
+        set_wall(&mut w, 9, 10, 4);
+        set_wall(&mut w, 10, 10, 7); // blue dungeon unsafe
+        w.downed_skeletron = true; // the progression gate opens
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 135, 5); // Blue Brick Wall → 17
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 17);
+        assert!(
+            app.items.iter().any(|d| d.kind == 135),
+            "the old dungeon wall drops its safe item 135"
+        );
+    }
+
+    /// `PlaceThing_Walls_FillEmptySpace` (`Player.cs:39636-39715`): the fill
+    /// only closes a neighbour hole whose four sides ALL carry the same wall.
+    /// A plus-shape around the target leaves every plus cell with an open
+    /// outer side, so only the main placement lands (one item).
+    #[test]
+    fn s1_p_i33_fill_empty_space_needs_a_full_enclosure() {
+        let mut w = empty_world();
+        // A plus of wood walls around the hole (10,10).
+        for (x, y) in [(9, 10), (11, 10), (10, 9), (10, 11)] {
+            set_wall(&mut w, x, y, 4);
+        }
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5);
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        // The hole (10,10) is filled by the main placement.
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4);
+        // Each plus cell still has an open outer side (e.g. (9,10)'s left
+        // (8,10) is empty), so the fill closes nothing more.
+        assert_eq!(app.inventory[app.selected].count, 4, "only the hole filled");
+    }
+
+    /// The fill-empty-space tail fires when the placed cell completes a
+    /// neighbour's four-wall enclosure: a 2x2 block missing one corner, the
+    /// placement fills the corner AND the fill closes the remaining hole.
+    #[test]
+    fn s1_p_i33_fill_empty_space_consumes_a_second_item() {
+        let mut w = empty_world();
+        // Enclose (11,10) on three sides; (10,10) is the fourth (the target).
+        set_wall(&mut w, 12, 10, 4);
+        set_wall(&mut w, 11, 9, 4);
+        set_wall(&mut w, 11, 11, 4);
+        // Gate V3 fixture: the target (10,10) needs a supporting neighbour
+        // (`PlaceThing_Walls`' four-neighbour gate, `Player.cs:39607`) — a
+        // wall below it that is NOT one of (11,10)'s four sides, so the fill
+        // still sees exactly the three-wall enclosure + the new (10,10).
+        set_wall(&mut w, 10, 11, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5);
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        // Main placement fills (10,10); the fill then sees (11,10) enclosed
+        // on all four sides (10,10 / 12,10 / 11,9 / 11,11) and fills it too.
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4);
+        assert_eq!(app.world.tile(11, 10).unwrap().wall, 4, "the fill closed the hole");
+        assert_eq!(app.inventory[app.selected].count, 3, "two items consumed");
+    }
+
+    /// The last item never fills (`Player.cs:39638`): with `stack == 1` the
+    /// main placement lands but the fill-empty-space tail returns early.
+    #[test]
+    fn s1_p_i33_the_last_item_never_fills() {
+        let mut w = empty_world();
+        set_wall(&mut w, 12, 10, 4);
+        set_wall(&mut w, 11, 9, 4);
+        set_wall(&mut w, 11, 11, 4);
+        // Gate V3 fixture: the target's supporting neighbour (see the
+        // second-item test) — below the target, off (11,10)'s four sides.
+        set_wall(&mut w, 10, 11, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 1); // the last item
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4);
+        assert_eq!(app.world.tile(11, 10).unwrap().wall, 0, "no fill on the last item");
+        assert_eq!(app.inventory[app.selected].count, 0);
+    }
+
+    /// `Player.CanPlayerSmashWall` (`Player.cs:45917-45940`) gates the hammer:
+    /// a fully enclosed unsafe wall refuses the break; opening a neighbour
+    /// lets it through. The unbreakable 350 always refuses.
+    #[test]
+    fn s1_p_i33_the_hammer_refuses_an_enclosed_unsafe_wall() {
+        let mut w = empty_world();
+        // Gate V3 fixture: a 5x5 of unsafe dirt wall (the i31 finder's
+        // banker's-quadrant 2x2 scan walks to the patch EDGE on a 3x3 and
+        // smashes that edge cell instead — `TryFindingWallToHammer`,
+        // `Player.cs:45862-45905`). On a 5x5 the cursor (10,10) is interior:
+        // every scanned cell's 3x3 stays inside the patch, so the finder
+        // keeps the cursor and `CanPlayerSmashWall` refuses the enclosed cell.
+        for x in 8..=12 {
+            for y in 8..=12 {
+                set_wall(&mut w, x, y, 2);
+            }
+        }
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 3505, 1); // Copper Hammer (hammer 35)
+        app.mine_down = true;
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        }
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 2, "enclosed unsafe refuses");
+        // Open a neighbour of the cursor → the hammer breaks it.
+        set_wall(&mut app.world, 9, 9, 0);
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        }
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 0, "the open edge lets it break");
+    }
+
+    /// The hammer's wall cadence is the `PickWall` damage model
+    /// (`Player.cs:45912`/`:45945`): `ceil(100 / (hammer * 1.5))` hits at
+    /// `useTime / 2` ticks — uniform for every wall (no wall-1 special case).
+    #[test]
+    fn s1_p_i33_the_hammer_cadence_is_the_damage_model() {
+        // Copper Hammer: hammer 35 → 52 per hit → 2 hits; useTime 23 → 11
+        // ticks between hits. Gate V3: the i31 chain arms `toolTime = 1` on
+        // the press (`ItemCheck_StartActualUse`, `Player.cs:51660-51663`), so
+        // the FIRST wall hit lands on tick 2 (not tick 11) and the second one
+        // `useTime / 2 = 11` ticks later, on tick 13. A house wall (wood 4)
+        // breaks on the second hit (104 >= 100).
+        let mut w = empty_world();
+        set_wall(&mut w, 10, 10, 4);
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 3505, 1);
+        app.mine_down = true;
+        // 12 ticks: the first hit (52) landed, the second (tick 13) has not.
+        for _ in 0..12 {
+            update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        }
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "12 ticks is short");
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 0, "the 13th tick breaks");
+    }
+
+    /// `break_wall`'s drop is the `KillWall_GetItemDrops` conversion, not a
+    /// reverse `createWall` lookup: stone wall 1 drops StoneBlock 26, glass 21
+    /// drops 392, and the natural unsafe dirt wall 2 drops nothing.
+    #[test]
+    fn s1_p_i33_the_break_drop_is_the_conversion_table() {
+        for (wall, expect) in [(1u16, Some(26u16)), (21, Some(392)), (2, None)] {
+            let mut w = empty_world();
+            set_wall(&mut w, 10, 10, wall);
+            let mut app = wall_app(w, 10, 10);
+            break_wall(&mut app, 10, 10);
+            match expect {
+                Some(id) => assert!(
+                    app.items.iter().any(|d| d.kind == id),
+                    "wall {wall} drops {id}"
+                ),
+                None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
+            }
+        }
     }
 }

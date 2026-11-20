@@ -728,13 +728,6 @@ pub struct Projectile {
     /// (`:11139`) — all unported state; the field rides for completeness
     /// and stays 0 on every ported shot.
     pub bonus_crit_chance: i32,
-    /// S1-P-i16 — `base.wet` (`Entity.cs`, the liquid-contact flag the
-    /// `Update` head sets): the dry/wet/honey rocket families' `timeLeft = 1`
-    /// kill arm (`AI_016_Bombs` `Projectile.cs:46906-46911`) reads it. The
-    /// pool's tile-model stand-in computes it from the centre cell's liquid
-    /// at the AI head — the full `Collision.WetCollision` box probe is the
-    /// documented liquid-layer follow-up (ANALYSIS "Rocket & dart ammo").
-    pub wet: bool,
     /// S1-P-i16 — one slot's queued child-spawn requests for the pool's
     /// post-AI drain: `(kind, x, y, vx, vy, damage, knock_back, ai0, ai1,
     /// time_left_delta)`. The dart split machines (the Ichor Dart's fan
@@ -746,6 +739,32 @@ pub struct Projectile {
     /// them after the sub-steps. `time_left_delta` is subtracted from the
     /// spawned row's `timeLeft` (the cluster ring's `-= Next(30)`, `:78084`).
     pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32)>,
+    // S1-P-i35 — the fishing bobber's liquid flags (`Projectile.cs:376-382`,
+    // reset false `:756-760`). The generic `Update` wet block
+    // (`:16790-17007`) writes them AFTER the AI; the port's bobber arm
+    // probes them at the tick head (the one-tick-lag deviation, ANALYSIS
+    // "Fishing rod (S1-P-i35)"). Only the aiStyle-61 arm reads them today.
+    /// `Projectile.wet` — any liquid overlaps the inset probe (S1-P-i35
+    /// supersedes the i16 centre-cell stand-in; the i16 bomb kill arm
+    /// `AI_016_Bombs` `Projectile.cs:46906-46911` reads it).
+    pub wet: bool,
+    /// `Projectile.lavaWet` — the FULL box overlaps lava (`LavaCollision`).
+    pub lava_wet: bool,
+    /// `Projectile.honeyWet` — the wet probe hit honey.
+    pub honey_wet: bool,
+    /// `Projectile.shimmerWet` — the wet probe hit shimmer.
+    pub shimmer_wet: bool,
+    /// S1-P-i35 — the bobber's `DoASplash` intent (`Projectile.cs:53893-
+    /// 53905`): `(style, x, y)` the pool drains into the audio's splash play
+    /// on the `UpdateProjectiles` stream (the `wants_sound` pattern).
+    pub(crate) wants_splash: Option<(i32, f32, f32)>,
+    /// S1-P-i35 — the pull's enemy spawn (`Player.cs:52415-52437`):
+    /// `(npc_type, x, y)` the world sim resolves into the NPC vec (the
+    /// `wants_mark_spawn` pattern). The Blood Nautilus 618 drops 64 px lower.
+    pub wants_fishing_enemy: Option<(i32, f32, f32)>,
+    /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
+    /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
+    pub wants_duke_spawn: bool,
 }
 
 impl Default for Projectile {
@@ -823,8 +842,14 @@ impl Default for Projectile {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
-            wet: false,
             wants_dart_spawns: Vec::new(),
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            wants_splash: None,
+            wants_fishing_enemy: None,
+            wants_duke_spawn: false,
         }
     }
 }
@@ -4713,6 +4738,67 @@ impl Projectile {
         // are skipped there — their position is AI-set).
         self.pos += self.vel;
         spawn
+    }
+
+    /// S1-P-i29 — the drill projectile's aiStyle-20 machine
+    /// (`Projectile.cs:25481-25584`, `DefaultToDrillOrChainsaw`
+    /// `:10732-10742`): the held drill tracks the owner's hand, aims at the
+    /// mouse while the channel holds, and kills itself on the release
+    /// (`:25549`). The `SetDummyItemTime(2)` (`:25563`) holds the owner's
+    /// item animation — the port's `update_editing` channel block keeps the
+    /// swing alive while this projectile lives (the player-side write has
+    /// no pool seam, the same fold as the flail/yoyo arms). The per-tick
+    /// `velocity.X *= 1 + Next(-3,4)*0.01` jitter (`:25575`) and the 1-in-6
+    /// dust (`:25576-25583`) are render-only deviations (the port draws no
+    /// drill dust; the jitter is a visual wobble) — recorded in ANALYSIS.
+    /// The `timeLeft = 60` pin (`:25483`) keeps the slot alive while held.
+    fn ai_drill(
+        &mut self,
+        owner: Option<(f32, f32)>,
+        aim: Option<(f32, f32)>,
+        player: Option<&crate::player::Player>,
+    ) {
+        // `:25483` — the life pin.
+        self.time_left = 60;
+        let Some(p) = player else {
+            // No owner resolved — the slot cannot track; kill it (the C#
+            // reads `Main.player[owner]` unconditionally).
+            self.active = false;
+            self.time_left = 0;
+            return;
+        };
+        // `:25524-25550` — the local-owner channel gate: while the channel
+        // holds, aim at the mouse; otherwise `Kill()`.
+        if self.owner == 0 {
+            if p.channel {
+                // `:25528-25545` — the aim: the mouse direction from the
+                // hand (`RotatedRelativePoint(MountedCenter)` — the port's
+                // owner centre), normalized to `shootSpeed * scale`.
+                let hand = owner.unwrap_or_else(|| p.center());
+                let item = crate::registry::item(p.channel_item);
+                let shoot_speed = item.map_or(0.0, |it| it.shoot_speed);
+                if let Some(aim) = aim {
+                    let dir = Vec2::new(aim.0 - hand.0, aim.1 - hand.1);
+                    let len = dir.length();
+                    if len > 0.0 {
+                        let v = dir / len * (shoot_speed * self.scale);
+                        self.vel = v;
+                    }
+                }
+            } else {
+                // `:25549` — `this.Kill()`.
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+        }
+        // `:25552-25561` — the facing follows the velocity (the port's
+        // player-facing write has no pool seam; the draw reads the slot).
+        // `:25563-25565` — the position pins to the hand centre.
+        let hand = owner.unwrap_or_else(|| p.center());
+        self.pos = Vec2::new(hand.0 - self.w * 0.5, hand.1 - self.h * 0.5);
+        // `:25566` — the rotation follows the velocity (+π/2).
+        self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_2;
     }
 
     /// `AI()`'s aiStyle-84 block's Last Prism laser arm
@@ -12827,6 +12913,16 @@ fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
     Vec2::new(angle.cos(), angle.sin()) * len
 }
 
+/// S1-P-i35 — `ItemCheck_CheckFishingBobber_ConsumeBait`'s result
+/// (`Player.cs:52449-52526`): the bait the pull found and whether its stack
+/// decrements. The caller drains the matching inventory slot and runs the
+/// ladybug luck (`:52515-52518`) on a consumed 4361/4362.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BaitUse {
+    pub bait_type: u16,
+    pub consumed: bool,
+}
+
 /// The 1000-slot pool with the shared immunity state.
 #[derive(Debug)]
 pub struct ProjectilePool {
@@ -12894,6 +12990,32 @@ pub struct ProjectilePool {
     /// the step and re-arms `app.swing`/`app.item_time` (the `FlailTick.facing`
     /// write-back precedent). `None` = no hold fired.
     pending_spear_hold: Option<i32>,
+
+    /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
+    /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
+    /// feeds it through [`ProjectilePool::set_bobber_inputs`] before the pass
+    /// (the `set_disco` precedent); `None` = no player link.
+    bobber_inputs: Option<crate::projectile_bobber::BobberInputs>,
+    /// S1-P-i35 — the bobber `DoASplash` intents (`Projectile.cs:53893-53905`):
+    /// `(style, x, y)` drained by the world sim into the audio's splash play
+    /// on the `UpdateProjectiles` stream.
+    pending_splashes: Vec<(i32, f32, f32)>,
+    /// S1-P-i35 — the bobber death hook's catch hand-offs
+    /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
+    /// stack)` the world sim resolves into the inventory/drop.
+    pending_catches: Vec<(u8, u16, i32)>,
+    /// S1-P-i55 — the golf family's per-tick context
+    /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
+    /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
+    /// sets it before `update` (the pool cannot borrow the App); `None`
+    /// keeps the golf arms inert (the pool-only tests). The arm's effects
+    /// ride back in [`Self::golf_effects`] for the pass to resolve — the
+    /// `wants_mark_spawn` intent pattern.
+    golf_ctx: Option<crate::projectile_ai_golf::GolfContext>,
+    /// The golf arms' queued effects this tick, drained by the world-sim
+    /// pass (the tee placement, the strikes, the cup scoring, the pad
+    /// probes, the player-side writes).
+    golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
 }
 
 impl Default for ProjectilePool {
@@ -13212,6 +13334,11 @@ impl ProjectilePool {
             pending_proj_sounds: Vec::new(),
             spear_owner: None,
             pending_spear_hold: None,
+            bobber_inputs: None,
+            pending_splashes: Vec::new(),
+            pending_catches: Vec::new(),
+            golf_ctx: None,
+            golf_effects: Vec::new(),
         }
     }
 
@@ -13285,6 +13412,151 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
+    /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
+    /// builds it from the live player/world/scene state before the pass.
+    pub fn set_bobber_inputs(&mut self, inputs: Option<crate::projectile_bobber::BobberInputs>) {
+        self.bobber_inputs = inputs;
+    }
+
+    /// S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
+    /// the world sim plays each on the `UpdateProjectiles` stream.
+    pub fn drain_splashes(&mut self) -> Vec<(i32, f32, f32)> {
+        std::mem::take(&mut self.pending_splashes)
+    }
+
+    /// S1-P-i35 — the bobber death hook's catch drain
+    /// (`Projectile.cs:71986-71994`): `(owner, item, stack)` the world sim
+    /// hands to the owner's inventory (the `QuickSpawnItem` overflow drop).
+    pub fn drain_catches(&mut self) -> Vec<(u8, u16, i32)> {
+        std::mem::take(&mut self.pending_catches)
+    }
+
+    /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
+    /// kill every active bobber this owner controls (the sleep teardown,
+    /// `PlayerSleepingHelper.cs:174`). The C# `Kill()`'s bobber arm
+    /// (`Projectile.cs:71986-71994`) still gives a reeled catch, so the port
+    /// rolls the stack on `final_level` and queues it for the world sim.
+    pub fn remove_all_fishing_bobbers(
+        &mut self,
+        owner: u8,
+        final_level: i32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        for i in 0..self.slots.len() {
+            let p = &self.slots[i];
+            if p.active && p.owner == owner && crate::projectile_bobber::handles(p.kind) {
+                if let Some((item, stack)) =
+                    crate::projectile_bobber::kill_hook(&mut self.slots[i], final_level, rng)
+                {
+                    self.pending_catches.push((owner, item, stack));
+                }
+                self.kill(i);
+            }
+        }
+    }
+
+    /// S1-P-i35 — `Player.ItemCheck_PullFishingBobbers` (`Player.cs:52368-
+    /// 52399`): the use-start pull. Returns `false` when a live bobber exists
+    /// (the use is a reel, NOT a cast — `ItemCheck_TryStartUse`'s gate
+    /// `:52034-52037`). For each cast-state bobber (`ai[0] == 0`) it sets
+    /// `ai[0] = 1`, clamps a wet bobber's `velocity.Y` to -10, and — when a
+    /// bite is running (`ai[1] < 0 && localAI[1] != 0`) — runs the bait
+    /// consumption + the pull decision. `bait` is the resolved bait slot
+    /// `(type, power)` the caller found (`ConsumeBait`'s scan); `None` = no
+    /// bait (the consume fails, the pull skips). The consumed bait's stack
+    /// decrement and the ladybug luck ride the caller (the pool cannot reach
+    /// the inventory); the returned `BaitUse` names what to drain.
+    pub fn pull_fishing_bobbers(
+        &mut self,
+        owner: u8,
+        bait: Option<(u16, i32)>,
+        acc_tackle_box: bool,
+        acc_fishing_line: bool,
+        caught_rare: impl Fn(u16) -> i32,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> (bool, Option<BaitUse>) {
+        let mut any = false;
+        let mut bait_use = None;
+        for i in 0..self.slots.len() {
+            let p = &self.slots[i];
+            if !p.active || p.owner != owner || !crate::projectile_bobber::handles(p.kind) {
+                continue;
+            }
+            any = true;
+            if p.ai[0] != 0.0 {
+                continue;
+            }
+            // `:52385-52391` — the reel start.
+            let p = &mut self.slots[i];
+            p.ai[0] = 1.0;
+            if p.wet && p.vel.y > -10.0 {
+                p.vel.y = -10.0;
+            }
+            p.net_update = true;
+            // `:52392-52395` — the bite pull (ConsumeBait then PullBobber).
+            if p.ai[1] < 0.0 && p.local_ai[1] != 0.0 {
+                let Some((bait_type, bait_power)) = bait else { continue };
+                let local_ai1 = p.local_ai[1];
+                let rare = if local_ai1 > 0.0 { caught_rare(local_ai1 as u16) } else { 0 };
+                let consumed = tr_core::fishing::bait_consumed(
+                    bait_type, bait_power, acc_tackle_box, local_ai1, rare, rng,
+                );
+                // `ConsumeBait` returns true once a bait slot was found (the
+                // stack decrements only on `consumed`); the pull runs either
+                // way (`:52392`'s gate is the find, not the consume).
+                bait_use = Some(BaitUse { bait_type, consumed });
+                let outcome = tr_core::fishing::pull_bobber_decision(
+                    bait_type as i32, local_ai1, acc_fishing_line, rng,
+                );
+                match outcome {
+                    tr_core::fishing::PullOutcome::SpawnDuke => {
+                        p.wants_duke_spawn = true;
+                        p.ai[0] = 2.0;
+                    }
+                    tr_core::fishing::PullOutcome::SpawnEnemy { npc, y_offset } => {
+                        let (cx, cy) = p.center();
+                        p.wants_fishing_enemy = Some((npc, cx, cy + y_offset as f32));
+                        p.ai[0] = 2.0;
+                    }
+                    tr_core::fishing::PullOutcome::LineSnap => {
+                        p.ai[0] = 2.0;
+                    }
+                    tr_core::fishing::PullOutcome::ReelIn => {
+                        p.ai[1] = p.local_ai[1];
+                    }
+                }
+                p.net_update = true;
+            }
+        }
+        (!any, bait_use)
+    }
+
+    /// S1-P-i35 — the pull's enemy spawn drain (`Player.cs:52415-52437`):
+    /// `(npc_type, x, y)` the world sim resolves into the NPC vec.
+    pub fn drain_fishing_enemies(&mut self) -> Vec<(i32, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_fishing_enemy.take() {
+                out.push(req);
+            }
+        }
+        out
+    }
+
+    /// S1-P-i35 — the pull's Duke Fishron spawn drain (`Player.cs:52403-
+    /// 52414`): the owner ids that requested `SpawnOnPlayer(plr, 370)`.
+    pub fn drain_duke_spawns(&mut self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if p.wants_duke_spawn {
+                p.wants_duke_spawn = false;
+                out.push(p.owner);
+            }
+        }
+        out
     }
 
     /// S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
@@ -13552,8 +13824,11 @@ impl ProjectilePool {
         &self.slots
     }
 
-    #[cfg(test)]
-    pub(crate) fn slots_mut(&mut self) -> &mut [Projectile] {
+    /// The mutable slot array — the golf family's pool-side resolvers
+    /// (the tee placement's owned-ball cull, the >10-ball spawn cull, the
+    /// strike writes) run here where the C# reads `Main.projectile` whole
+    /// (`Player.cs:49725-49731`, `Projectile.cs:10939-10954`).
+    pub fn slots_mut(&mut self) -> &mut [Projectile] {
         &mut self.slots
     }
 
@@ -14222,6 +14497,29 @@ impl ProjectilePool {
     /// first — the wave-C drain convention.
     pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
+    }
+
+    /// S1-P-i55 — the golf family's per-tick context setter: the world-sim
+    /// pass builds it from the App (the `GolfState` borrow cannot ride the
+    /// pool), the dispatch reads it inside the 149/150 arms. The arms
+    /// mutate it in place (the strikes' `RecordSwing`, the cup's scoring);
+    /// [`Self::take_golf_context`] hands the resolved state back.
+    pub fn set_golf_context(&mut self, ctx: crate::projectile_ai_golf::GolfContext) {
+        self.golf_ctx = Some(ctx);
+    }
+
+    /// The resolved golf context after `update` — the pass writes the
+    /// `GolfState` clone back to `App.golf_state` and the `golfer_score`
+    /// to the player (the C# mutates the live state mid-walk; the port's
+    /// clone is authoritative for the tick).
+    pub fn take_golf_context(&mut self) -> Option<crate::projectile_ai_golf::GolfContext> {
+        self.golf_ctx.take()
+    }
+
+    /// The golf arms' queued effects, drained by the world-sim pass after
+    /// `update` (the `drain_mark_spawns` shape).
+    pub fn drain_golf_effects(&mut self) -> Vec<crate::projectile_ai_golf::GolfEffect> {
+        std::mem::take(&mut self.golf_effects)
     }
 
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
@@ -15040,6 +15338,22 @@ impl ProjectilePool {
                         // centres the box (`:10876-10877`), so the spawn
                         // site subtracts the 6×6 shrapnel's half-box.
                         14 => {
+                            // S1-P-i42 — the glowstick family (50/53/473/515/
+                            // 870/1089) rides its own arm: the thrown-light
+                            // flight + the per-type bounce (the generic
+                            // `ai_spear` below is the dart/spear stand-in,
+                            // wrong for the glowsticks). Kind-disjoint from
+                            // the frostmoon pair, so the gate order never
+                            // double-applies.
+                            if crate::projectile_ai_light_items::GLOWSTICK_KINDS
+                                .contains(&self.slots[i].kind)
+                            {
+                                crate::projectile_ai_light_items::glowstick_step(
+                                    &mut self.slots[i],
+                                    world,
+                                    rng,
+                                );
+                            } else {
                             match self.slots[i].kind {
                                 ORNAMENT_HOSTILE => {
                                     let mut bursts = Vec::new();
@@ -15086,6 +15400,19 @@ impl ProjectilePool {
                                 _ => {}
                             }
                             self.slots[i].ai_spear(world)
+                            }
+                        }
+                        // S1-P-i42 — the flare family (163/310/1008-1011),
+                        // aiStyle 33 (`AI()`'s `else if (this.aiStyle == 33)`,
+                        // `Projectile.cs:27049-27135`): the alpha fade, the
+                        // flight/stick machine, the rotation; the stick rides
+                        // HandleMovement's aiStyle-33 block (`:18619-18634`).
+                        33 => {
+                            crate::projectile_ai_light_items::flare_step(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
                         }
                         // S1-P-i06 — the spear family (`AI()`'s
                         // `else if (this.aiStyle == 19)`,
@@ -15264,6 +15591,14 @@ impl ProjectilePool {
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
                         22 => self.slots[i].ai_ice_block(world),
+                        // S1-P-i29/i30 — the drill AND chainsaw families'
+                        // aiStyle 20 (`Projectile.cs:25481-25584`,
+                        // `DefaultToDrillOrChainsaw` `:10732-10742`): the
+                        // held tool tracks the owner's hand and aims at the
+                        // mouse while the channel holds; the release kills
+                        // it. The position is AI-set (the hand pin), so no
+                        // `kill_step` runs.
+                        20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
                         // S1-P-i14 (V5 gate) — `AI_078`
@@ -15538,25 +15873,37 @@ impl ProjectilePool {
                         // back out (the 118 shape) with `ai0 = m` and `ai1 =
                         // this.key`'s raw bits (`:66622-66626`).
                         75 => {
-                            let spawn =
-                                self.slots[i]
-                                    .ai_last_prism(owner, player.as_deref_mut());
-                            if let Some(s) = spawn {
-                                let owner_id = self.slots[i].owner;
-                                let key = self.key_of(i) as u32;
-                                for m in 0..6u32 {
-                                    self.spawn_with_data_ai_owned(
-                                        LAST_PRISM_LASER,
-                                        owner_id,
-                                        s.x,
-                                        s.y,
-                                        s.vx,
-                                        s.vy,
-                                        s.damage,
-                                        s.knock_back,
-                                        m as f32,
-                                        f32::from_bits(key),
-                                    );
+                            // S1-P-i29 — the Laser Drill's beam (445) shares
+                            // aiStyle 75 with the Last Prism holder (633) but
+                            // runs `AI_075`'s 445 arm (`Projectile.cs:66244-
+                            // 66358`), not the prism's. The port holds its
+                            // channel like the drills (the full laser AI —
+                            // the tile-target snap, the reach clamp, the
+                            // beam light — is a follow-up); the release kills
+                            // it (`:66280-66283`).
+                            if self.slots[i].kind == LASER_DRILL {
+                                self.slots[i].ai_drill(owner, inputs.aim, player.as_deref());
+                            } else {
+                                let spawn =
+                                    self.slots[i]
+                                        .ai_last_prism(owner, player.as_deref_mut());
+                                if let Some(s) = spawn {
+                                    let owner_id = self.slots[i].owner;
+                                    let key = self.key_of(i) as u32;
+                                    for m in 0..6u32 {
+                                        self.spawn_with_data_ai_owned(
+                                            LAST_PRISM_LASER,
+                                            owner_id,
+                                            s.x,
+                                            s.y,
+                                            s.vx,
+                                            s.vy,
+                                            s.damage,
+                                            s.knock_back,
+                                            m as f32,
+                                            f32::from_bits(key),
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -17355,6 +17702,185 @@ impl ProjectilePool {
                                 rng,
                             );
                         }
+                        // S1-P-i35 — `AI()`'s `else if (this.aiStyle == 61)`
+                        // (`Projectile.cs:29310-29313` → `AI_061_FishingBobber`
+                        // `:53658-53861`): the fishing bobbers (360-366/381/
+                        // 382/760/775/986-993). The flight/bite machine lives
+                        // in `projectile_bobber.rs`; the player/world reads
+                        // ride the per-tick `bobber_inputs` snapshot. The arm
+                        // computes the wet/dry velocity; the `kill_step` below
+                        // integrates it (the `HandleMovement` default arm,
+                        // `:19851` — tileCollide true in cast, false in reel).
+                        61 => {
+                            let inputs = self.bobber_inputs.unwrap_or_default();
+                            let alive = crate::projectile_bobber::bobber_step(
+                                &mut self.slots[i],
+                                world,
+                                owner,
+                                &inputs,
+                                rng,
+                            );
+                            if alive {
+                                // `HandleMovement`'s default integrate
+                                // (`Projectile.cs:19851`): the bobber's
+                                // tileCollide is true in the cast state, false
+                                // in the reel state — the kill-on-tile probe.
+                                self.slots[i].kill_step(world);
+                                if let Some(req) = self.slots[i].wants_splash.take() {
+                                    self.pending_splashes.push(req);
+                                }
+                            }
+                        }
+                        // S1-P-i55 — the golf ball (aiStyle 149,
+                        // `Projectile.cs:20331-20374`): the tee sentinel,
+                        // the ball-engine step, the state latch + spin,
+                        // the pad probe and the cup capture. The arm's
+                        // effects (the cup scoring, the pad probe) ride
+                        // out through `golf_effects`; the bounce dust's
+                        // draws ride `rng` inline (the C#'s order).
+                        149 => {
+                            if let Some(ctx) = self.golf_ctx.as_mut() {
+                                let mats = crate::projectile_ai_golf::default_materials();
+                                let tick = crate::projectile_ai_golf::ai_golf_ball(
+                                    &mut self.slots[i],
+                                    world,
+                                    &mats,
+                                    local_owner,
+                                    rng,
+                                );
+                                if let Some((pos, old_pos, w, h)) = tick.wants_pad_probe {
+                                    self.golf_effects.push(
+                                        crate::projectile_ai_golf::GolfEffect::PadProbe {
+                                            pos,
+                                            old_pos,
+                                            w,
+                                            h,
+                                        },
+                                    );
+                                }
+                                if let Some((_tx, _ty, impact, normal)) = tick.in_cup {
+                                    // `PutBallInCup`'s hitLocation
+                                    // (`GolfHelper.cs:88`):
+                                    // `(ImpactPoint - Normal*0.5)
+                                    // .ToTileCoordinates()`.
+                                    let hit = impact - normal * 0.5;
+                                    let hx = (hit.x as i32) >> 4;
+                                    let hy = (hit.y as i32) >> 4;
+                                    // The scoring runs HERE on the still-
+                                    // live ball (the arm's capture only
+                                    // flipped its replay-local flag — the
+                                    // C#'s `PutBallInCup` scores BEFORE
+                                    // the `:112` kill, so `RecordBallInfo`'s
+                                    // `GetLastHitBall` re-validation sees
+                                    // `active = true`).
+                                    let (text, cue, wire) =
+                                        crate::projectile_ai_golf::put_ball_in_cup(
+                                            &mut self.slots[i],
+                                            i,
+                                            (hx, hy),
+                                            &mut ctx.golf_state,
+                                            &mut ctx.golfer_score,
+                                            &ctx.player_name,
+                                            local_owner,
+                                            rng,
+                                        );
+                                    if let Some(hit_location) = wire {
+                                        self.golf_effects.push(
+                                            crate::projectile_ai_golf::GolfEffect::CupScored {
+                                                hit_location,
+                                                chat: text,
+                                                cue,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        // S1-P-i55 — the club helper (aiStyle 150,
+                        // `Projectile.cs:52417-52548`): the nearby-ball
+                        // scan + tee request, the release strike (the
+                        // per-ball draws ride `rng` inline), the
+                        // follow-through and the charge hold. The
+                        // strikes' projectile writes + RecordSwing run
+                        // here (the pool owns both the slots and the
+                        // context's state).
+                        150 => {
+                            if let Some(ctx) = self.golf_ctx.as_mut() {
+                                // The C# reads `Main.player[owner]` — the
+                                // context's snapshot is the local player;
+                                // a foreign-owned helper reads an inactive
+                                // player (the orphan kill, `:52420`).
+                                let player = if self.slots[i].owner == local_owner {
+                                    ctx.player
+                                } else {
+                                    crate::projectile_ai_golf::GolfClubPlayer {
+                                        active: false,
+                                        ..ctx.player
+                                    }
+                                };
+                                // The C# reads the live `Main.projectile`
+                                // array while mutating the helper slot; the
+                                // port clones the scan view (the helper's
+                                // own entry is never read by either scan —
+                                // 722 is not a golf ball — so the clone is
+                                // byte-identical for every read the arm
+                                // makes).
+                                let scan_slots = self.slots.clone();
+                                let tick = crate::projectile_ai_golf::ai_golf_club_helper(
+                                    &mut self.slots[i],
+                                    &scan_slots,
+                                    player,
+                                    ctx.mouse_world,
+                                    ctx.mouse_right,
+                                    ctx.mouse_right_release,
+                                    local_owner,
+                                    rng,
+                                );
+                                if tick.wants_tee_place {
+                                    self.golf_effects.push(
+                                        crate::projectile_ai_golf::GolfEffect::TeePlace {
+                                            place_position: player.center,
+                                        },
+                                    );
+                                }
+                                // The strikes: `HitGolfBall`'s projectile
+                                // writes + RecordSwing per entry, in the
+                                // C#'s scan order.
+                                let mats = crate::projectile_ai_golf::default_materials();
+                                for (j, v, rough) in tick.strikes {
+                                    crate::projectile_ai_golf::strike_golf_ball(
+                                        &mut self.slots[j],
+                                        j,
+                                        v,
+                                        rough,
+                                        world,
+                                        &mats,
+                                        &mut ctx.golf_state,
+                                    );
+                                    // `NetMessage.SendData(27, ..., j)`
+                                    // (`Projectile.cs:52472`) — the struck
+                                    // ball's sync rides its netUpdate flag.
+                                    self.slots[j].net_update = true;
+                                }
+                                // The strike arm's cue list (Item1 +
+                                // N×Item126) — the pool's sound queue.
+                                for req in tick.sounds {
+                                    self.pending_proj_sounds.push(req);
+                                }
+                                self.golf_effects.push(
+                                    crate::projectile_ai_golf::GolfEffect::PlayerWrites {
+                                        facing: tick.facing,
+                                        held_proj: if tick.writes_held_proj {
+                                            Some(i as i32)
+                                        } else {
+                                            None
+                                        },
+                                        dummy_item_time: tick.dummy_item_time,
+                                        cancel_use: tick.cancel_use,
+                                    },
+                                );
+                            }
+                        }
                         _ => {}
                     }
                     }
@@ -17365,6 +17891,28 @@ impl ProjectilePool {
                     // (the S1-E-21c batch convention, ANALYSIS).
                     if let Some(req) = self.slots[i].wants_sound.take() {
                         self.pending_proj_sounds.push(req);
+                    }
+                    // S1-P-i55 — `base.oldPosition = base.position`
+                    // (`Projectile.cs:17013`) latches between the AI and
+                    // `HandleMovement` for the golf kinds: the ball's pad
+                    // probe (`:20367`) reads LAST tick's latch, and the
+                    // helper's facing test (`:52522`) reads this tick's
+                    // pre-move position. The golf balls' `UpdatePosition`
+                    // is a no-op (`:20435`'s IsAGolfBall skip) and the
+                    // helper zeroes its velocity in the arm, so no
+                    // movement integrates after the latch.
+                    if data.ai_style == 149 || data.ai_style == 150 {
+                        self.slots[i].old_position = self.slots[i].pos;
+                    }
+                    // `AutomaticallyChangesDirection` (`:17281-17288`)
+                    // excludes aiStyle 150 but NOT 149: the ball's
+                    // direction follows `velocity.X`'s sign every
+                    // sub-step (`:17016-17026`, after HandleMovement —
+                    // the golf skip is inside UpdatePosition, so this
+                    // write still runs).
+                    if data.ai_style == 149 {
+                        self.slots[i].direction =
+                            if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                     }
                     // The wind tail (`:16777-16781`) runs after the AI
                     // sub-steps, for the wind-eligible new arms only (the
@@ -17579,6 +18127,22 @@ impl ProjectilePool {
                 // bursts spawn through the pool (the arm cannot see the slot
                 // array); the water conversion writes tiles directly.
                 self.thrown_consumable_death(i, world, player.as_deref(), rng);
+
+                // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
+                // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides
+                // home to the owner (`GiveItemToPlayer`), the stack rolled on
+                // the owner's fishing level. The local-owner gate is the C#'s
+                // `Main.myPlayer == this.owner`.
+                if crate::projectile_bobber::handles(self.slots[i].kind)
+                    && self.slots[i].owner == local_owner
+                {
+                    let level = self.bobber_inputs.map(|b| b.final_level).unwrap_or(0);
+                    if let Some((item, stack)) =
+                        crate::projectile_bobber::kill_hook(&mut self.slots[i], level, rng)
+                    {
+                        self.pending_catches.push((self.slots[i].owner, item, stack));
+                    }
+                }
             }
             // S1-P-i16 — the dart split / cluster ring spawn requests the
             // AI arms parked mid-iteration (the `wants_mark_spawn`
@@ -19995,6 +20559,27 @@ impl ProjectilePool {
                 // `ApplyWhipDebuffs`).
                 if is_whip {
                     self.whip_debuffs(slot, &mut npcs[idx], rng);
+                }
+                // S1-P-i42 — `StatusNPC`'s flare arms (`Projectile.cs:11678-
+                // 11696`): the 163/310/1008/1010/1011 OnFire roll (Next(3):
+                // 600 ticks on 0, else 300) and the 1009 Cursed Flare's
+                // unconditional CursedInferno (39, 600). The 1011 Shimmer
+                // Flare is in the OnFire list (`:11678`) — the Shimmer buff
+                // arm is the documented skip (no shimmer-debuff layer).
+                let fk = self.slots[slot].kind;
+                if matches!(fk, FLARE | BLUE_FLARE | SPELUNKER_FLARE | RAINBOW_FLARE | SHIMMER_FLARE)
+                {
+                    // `:11680-11687` — the Next(3) is the FIRST operand.
+                    if rng.next_range(0, 3) == 0 {
+                        npcs[idx].buffs.add_buff(24, 600);
+                    } else {
+                        npcs[idx].buffs.add_buff(24, 300);
+                    }
+                }
+                if fk == CURSED_FLARE {
+                    // `:11693-11696` — CursedInferno, no roll.
+                    npcs[idx].buffs.add_buff(39, 600);
+
                 }
                 // S1-P-i28 — `StatusNPC`'s thrown-consumable debuffs
                 // (`Projectile.cs:13580`): the poisoned knife's 1/2 Poisoned,
@@ -27130,8 +27715,14 @@ mod phasmal_projectile_tests {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
-            wet: false,
             wants_dart_spawns: Vec::new(),
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            wants_splash: None,
+            wants_fishing_enemy: None,
+            wants_duke_spawn: false,
         }
     }
 
@@ -27532,8 +28123,14 @@ mod ritual_projectile_tests {
             magic: false,
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
-            wet: false,
             wants_dart_spawns: Vec::new(),
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            wants_splash: None,
+            wants_fishing_enemy: None,
+            wants_duke_spawn: false,
         }
     }
 
@@ -28272,17 +28869,21 @@ mod magic_data_tests {
         // M4-PROJ-6b Phase 1 moved the boundary: the followup kinds
         // (114/115/116/132/156/157/173, 206, 293/297, 356, 409, 617/618,
         // 632/633, 634/635) now carry rows, so the rowless set is the plan's
-        // documented OUT list — the 75/84 gun riders (439/445/460/595/600/
+        // documented OUT list — the 75/84 gun riders (439/460/595/600/
         // 611/735/927; 615/630/705/714 already ride the ammo-resolution row)
         // and the hostile lasers (461/537), plus the flame jet 187 and
         // 502. The 642 left the list with S1-D-4b-3 (the turret beam's
-        // row). The unported-kind spawn must still reach the caller as
-        // `None`, never an inert slot.
+        // row); the 445 left it with S1-P-i29 (the Laser Drill's channel
+        // beam carries the aiStyle-75 row — the full AI_075 laser is the
+        // follow-up, the row is the spawn/hold seam). The unported-kind
+        // spawn must still reach the caller as `None`, never an inert slot.
         for kind in [
-            439u16, 445, 460, 595, 600, 611, 735, 927, 461, 537, 187, 502,
+            439u16, 460, 595, 600, 611, 735, 927, 461, 537, 187, 502,
         ] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
+        // S1-P-i29: the Laser Drill's beam carries its row now.
+        assert_eq!(proj_data(445).unwrap().ai_style, 75);
         // The Golem's fireball 258 already rides a pre-existing row, the
         // hostile style-8 rider of the same kind, and keeps it.
         // The Leaf Blower's petal carries its own row now

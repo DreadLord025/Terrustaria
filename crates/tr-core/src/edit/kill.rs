@@ -107,6 +107,35 @@ pub enum TreeDropEvent {
         /// crimson/hallow/ebon sand).
         item: u16,
     },
+    /// A gem-tree cell (583-589) — `KillTile_GetItemDrops`'s gem cases
+    /// (`WorldGen.cs:65699-65746`) through `SetGemTreeDrops` (`:66094-66108`).
+    /// All rolls are `Main.rand` (no `genRand`): the gem-or-stone `Next(10)`,
+    /// the canopy marker's seed `Next(2)`, then the stone stack `Next(1, 3)`
+    /// — in that order (the stack roll sits in the case body AFTER
+    /// `SetGemTreeDrops` returns).
+    Gem {
+        x: i32,
+        y: i32,
+        /// The killed cell's frames — the canopy marker test
+        /// (`frameX >= 22 && frameY >= 198`, `:66104`).
+        frame_x: i16,
+        frame_y: i16,
+        /// The gem the 1-in-10 roll mints (`SetGemTreeDrops`'s `gemType`).
+        gem: u16,
+        /// The gemcorn seed the canopy marker's 1-in-2 roll mints
+        /// (`seedType`).
+        seed: u16,
+    },
+    /// A mushroom-tree cell (72) — `KillTile_GetItemDrops`'s `case 71:
+    /// case 72:` (`WorldGen.cs:65642-65652`). `Main.rand` only: `Next(40) == 0`
+    /// mints the Mushroom Grass Seeds 194, else `Next(2) == 0` mints the
+    /// Glowing Mushroom 183, else nothing.
+    Mushroom { x: i32, y: i32 },
+    /// A cactus cell (80) — `KillTile_GetItemDrops`'s `case 80`
+    /// (`WorldGen.cs:64717-64719`): a flat Cactus 276, no RNG. Recorded per
+    /// cell so the `CheckCactus` cascade drops every collapsing segment (the
+    /// hit cell's `cell_drops` is suppressed for 80 to avoid a double spawn).
+    Cactus { x: i32, y: i32 },
 }
 
 /// The result of `kill_tile`: the kind of the hit cell plus every object
@@ -127,6 +156,10 @@ pub struct TileKill {
     /// (`WorldGen.CheckPalmTree`, `WorldGen.cs:54385-54388`) — the roll needs
     /// the `genRand` stream, so the app resolves it and writes the frame.
     pub palm_frame_rolls: Vec<(i32, i32)>,
+    /// The mushroom-tree top cells whose canopy frame the C# re-rolls
+    /// (`TileFrameImportant`'s `case 72`, `WorldGen.cs:85855-85873`:
+    /// `genRand.Next(3)` picks frame (18, 0/18/36)) — the app resolves it.
+    pub mushroom_frame_rolls: Vec<(i32, i32)>,
 }
 
 // The ring walk's re-entrancy cap (`square_tile_frame` → the check → the
@@ -307,6 +340,37 @@ fn tree_drop_record(world: &World, x: i32, y: i32) -> Option<TreeDropEvent> {
                 item,
             })
         }
+        // The gem trees — `case 589/584/583/586/585/587/588`
+        // (`WorldGen.cs:65699-65746`): `SetGemTreeDrops(gemType, seedType, …)`
+        // (`:66094-66108`). The gem/seed pair per kind is the C# call site's.
+        583..=589 => {
+            let (gem, seed) = match kind {
+                583 => (180, 4851), // Topaz
+                584 => (181, 4852), // Amethyst
+                585 => (177, 4853), // Sapphire
+                586 => (179, 4854), // Emerald
+                587 => (178, 4855), // Ruby
+                588 => (182, 4856), // Diamond
+                _ => (999, 4857),   // 589 Amber
+            };
+            Some(TreeDropEvent::Gem {
+                x,
+                y,
+                frame_x: cell.frame_x,
+                frame_y: cell.frame_y,
+                gem,
+                seed,
+            })
+        }
+        // The mushroom tree — `case 71: case 72:` (`:65642-65652`). Only 72
+        // reaches the axe arm (`Main.tileAxe[72]`, `Main.cs:7209`); the
+        // mushroom plants 71 die through their own support check and share
+        // the drop arm.
+        72 => Some(TreeDropEvent::Mushroom { x, y }),
+        // The cactus — `case 80` (`:64717-64719`): the flat Cactus 276.
+        // Recorded per cell (like the trunk kinds) so the `CheckCactus`
+        // cascade's kills drop too; the app's `cell_drops` suppresses 80.
+        80 => Some(TreeDropEvent::Cactus { x, y }),
         _ => None,
     }
 }
@@ -344,7 +408,13 @@ fn square_tile_frame(
             .get(cell.kind as usize)
             .copied()
             .unwrap_or(false);
-        if !cell.active() || (crate::tileobject::def_for_tile(cell.kind).is_none() && !important) {
+        if !cell.active()
+            || (crate::tileobject::def_for_tile(cell.kind).is_none()
+                && !important
+                // The cactus rides `TileFrame`'s non-solid arm, not the
+                // frame-important dispatch (`WorldGen.cs:81361-81374`).
+                && cell.kind != 80)
+        {
             continue;
         }
         // `TileFrameImportant`'s tree arms (`WorldGen.cs:85876-85911`):
@@ -360,6 +430,20 @@ fn square_tile_frame(
                 }
                 _ => check_tree(world, cx, cy, variant, no_item, destroy_object, kill),
             }
+            continue;
+        }
+        // `TileFrameImportant`'s `case 72` (`WorldGen.cs:85837-85874`): the
+        // mushroom tree's support check + the top-cell canopy re-roll.
+        if cell.kind == 72 {
+            check_mushroom_tree(world, cx, cy, no_item, destroy_object, kill);
+            continue;
+        }
+        // `TileFrame`'s non-solid arm (`WorldGen.cs:81361-81374`): the cactus
+        // 80 is NOT frame-important, but its `CheckCactus` runs before the
+        // cosmetic framing — a cactus that lost its sand dies (and the kill
+        // ring reaches its neighbours, so the whole plant collapses).
+        if cell.kind == 80 {
+            check_cactus(world, cx, cy, no_item, destroy_object, kill);
             continue;
         }
         // `Check*` re-entrancy guard (`WorldGen.destroyObject`, read at
@@ -484,6 +568,7 @@ fn kill_plan_cells(
             kill.pile_events.extend(inner.pile_events);
             kill.tree_events.extend(inner.tree_events);
             kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
+            kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
         }
     }
 }
@@ -885,7 +970,118 @@ fn kill_tree_cell(
         kill.pile_events.extend(inner.pile_events);
         kill.tree_events.extend(inner.tree_events);
         kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
+        kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
     }
+}
+
+/// `TileFrameImportant`'s `case 72` (`WorldGen.cs:85837-85874`): the mushroom
+/// tree's cell dies when the cell below is neither another 72 nor the
+/// mushroom grass 70; the top cell (the one whose above is not a 72, with
+/// `frameX == 0`) re-rolls its canopy frame — `genRand.Next(3)` picks
+/// (18, 0), (18, 18) or (18, 36). The roll needs the `genRand` stream, so the
+/// core records the request and the app resolves it (the palm precedent).
+fn check_mushroom_tree(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    no_item: bool,
+    destroy_object: &mut bool,
+    kill: &mut TileKill,
+) {
+    let Some(cell) = world.tile(x, y) else {
+        return;
+    };
+    if !cell.active() || cell.kind != 72 {
+        return;
+    }
+    let kind = i32::from(cell.kind);
+    let fx = i32::from(cell.frame_x);
+    let below = type_at(world, x, y + 1);
+    let above = type_at(world, x, y - 1);
+    // `:85851-85854`: `num9 != type && num9 != 70` → `KillTile(i, j)`.
+    if below != kind && below != 70 {
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        return;
+    }
+    // `:85855-85873`: the top cell's canopy re-roll.
+    if above != kind && fx == 0 {
+        kill.mushroom_frame_rolls.push((x, y));
+    }
+}
+
+/// `WorldGen.CheckCactus` (`WorldGen.cs:54116-54158`): walk DOWN the cactus
+/// column (leaning one column toward a side arm whose own base continues
+/// down), then the ground test — the base cell must be a full (nactive, no
+/// halfBrick, slopeless) sand tile (53/112/116/234), else the STARTING cell
+/// dies. A side-arm cell (`i != num2`) dies when nothing cactus continues
+/// below/left/right; the trunk-base cell dies when the cell below is neither
+/// cactus nor sand. Returns `true` when the cell was killed (the C#'s
+/// `TileFrame` early-return, `:81369-81372`).
+fn check_cactus(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    no_item: bool,
+    destroy_object: &mut bool,
+    kill: &mut TileKill,
+) -> bool {
+    let is_cactus = |w: &World, x: i32, y: i32| {
+        w.tile(x, y).is_some_and(|t| t.active() && t.kind == 80)
+    };
+    let mut num = j; // y walker
+    let mut num2 = i; // x walker
+    // `:54120-54138`: down while the cell is an active cactus; at the first
+    // non-cactus cell, lean toward a side arm whose column continues down.
+    while is_cactus(world, num2, num) {
+        num += 1;
+        if world.tile(num2, num).is_none() {
+            return false;
+        }
+        if !is_cactus(world, num2, num) {
+            if is_cactus(world, num2 - 1, num) && is_cactus(world, num2 - 1, num - 1) && num2 >= i
+            {
+                num2 -= 1;
+            }
+            if is_cactus(world, num2 + 1, num) && is_cactus(world, num2 + 1, num - 1) && num2 <= i
+            {
+                num2 += 1;
+            }
+        }
+    }
+    // `:54139-54143`: the base's ground test.
+    let base_ok = world.tile(num2, num).is_some_and(|t| {
+        t.active()
+            && !t.inactive()
+            && !t.half_brick()
+            && t.slope() == 0
+            && matches!(t.kind, 53 | 112 | 116 | 234)
+    });
+    if !base_ok {
+        kill_tree_cell(world, i, j, no_item, destroy_object, kill);
+        return true;
+    }
+    if i != num2 {
+        // `:54144-54151`: the side-arm cell — dies when no cactus neighbour
+        // continues it (below, left, right).
+        if !is_cactus(world, i, j + 1)
+            && !is_cactus(world, i - 1, j)
+            && !is_cactus(world, i + 1, j)
+        {
+            kill_tree_cell(world, i, j, no_item, destroy_object, kill);
+            return true;
+        }
+    } else {
+        // `:54152-54156`: the trunk base — the cell below must be cactus or
+        // sand.
+        let below_ok = world.tile(i, j + 1).is_some_and(|t| {
+            t.active() && matches!(t.kind, 80 | 53 | 112 | 116 | 234)
+        });
+        if !below_ok {
+            kill_tree_cell(world, i, j, no_item, destroy_object, kill);
+            return true;
+        }
+    }
+    false
 }
 
 /// `WorldGen.CheckOrb` (`WorldGen.cs:54169-54344`) — the 2x2 object arm shared
@@ -2707,7 +2903,7 @@ mod tests {
                 TreeDropEvent::Trunk { tree_type, .. } => {
                     assert_eq!(*tree_type, crate::tree::TreeType::Forest);
                 }
-                TreeDropEvent::Palm { .. } => panic!("not a palm"),
+                _ => panic!("not a trunk"),
             }
         }
     }
@@ -2724,7 +2920,7 @@ mod tests {
                 TreeDropEvent::Trunk { tree_type, .. } => {
                     assert_eq!(*tree_type, crate::tree::TreeType::Jungle);
                 }
-                TreeDropEvent::Palm { .. } => panic!("not a palm"),
+                _ => panic!("not a trunk"),
             }
         }
     }
@@ -2742,7 +2938,7 @@ mod tests {
                 TreeDropEvent::Trunk {
                     frame_x, frame_y, ..
                 } => *frame_x >= 22 && *frame_y >= 198,
-                TreeDropEvent::Palm { .. } => false,
+                _ => false,
             })
             .count();
         assert_eq!(markers, 1, "only the canopy cell carries the acorn roll");
@@ -2779,6 +2975,175 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, TreeDropEvent::Palm { item: 2504, .. }))
         );
+    }
+
+    /// S1-P-i30: a variant tree (gem/vanity/ash) over its ground — the trunk
+    /// column of `kind` cells with the canopy marker on top.
+    fn variant_tree_world(kind: u16, ground: u16, height: i32) -> World {
+        let mut w = ground_world();
+        w.frame_important[kind as usize] = true;
+        for x in 8..14 {
+            let i = w.index(x, 20);
+            w.tiles[i].kind = ground;
+        }
+        for dy in 0..height {
+            let i = w.index(10, 19 - dy);
+            let (fx, fy) = if dy == height - 1 { (22, 198) } else { (0, 0) };
+            w.tiles[i] = Tile {
+                kind,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    /// S1-P-i30: the gem tree (583 Topaz) collapses whole over stone and every
+    /// cell records a `Gem` drop with the kind's gem/seed pair
+    /// (`KillTile_GetItemDrops` `case 583`, `WorldGen.cs:65713-65719`:
+    /// `SetGemTreeDrops(180, 4851, …)`). The ground test is
+    /// `GemTreeGroundTest` (`:30304-30315`, stone/moss).
+    #[test]
+    fn S1_P_i30_the_gem_tree_collapses_and_records_the_gem_pair() {
+        // Stone 1 is in `SET_CONVERSION_STONE` — the gem ground.
+        let mut w = variant_tree_world(583, 1, 5);
+        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        for dy in 0..5 {
+            assert!(
+                !w.tile(10, 19 - dy).unwrap().active(),
+                "the gem cell at dy {dy} survived"
+            );
+        }
+        assert_eq!(kill.tree_events.len(), 5, "one gem drop per cell");
+        for event in &kill.tree_events {
+            match event {
+                TreeDropEvent::Gem { gem, seed, .. } => {
+                    assert_eq!(*gem, 180, "Topaz");
+                    assert_eq!(*seed, 4851, "the Topaz gemcorn");
+                }
+                _ => panic!("not a gem record"),
+            }
+        }
+        // The Amber tree (589) carries its own pair (999, 4857).
+        let mut w = variant_tree_world(589, 1, 3);
+        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        assert!(kill.tree_events.iter().all(|e| matches!(
+            e,
+            TreeDropEvent::Gem { gem: 999, seed: 4857, .. }
+        )));
+    }
+
+    /// S1-P-i30: the mushroom tree (72) collapses whole over the mushroom
+    /// grass 70 and every cell records a `Mushroom` drop
+    /// (`TileFrameImportant` `case 72`, `WorldGen.cs:85851-85854`; the drop
+    /// arm `case 71/72`, `:65642-65652`).
+    #[test]
+    fn S1_P_i30_the_mushroom_tree_collapses_over_the_mushroom_grass() {
+        let mut w = variant_tree_world(72, 70, 4);
+        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        for dy in 0..4 {
+            assert!(
+                !w.tile(10, 19 - dy).unwrap().active(),
+                "the mushroom cell at dy {dy} survived"
+            );
+        }
+        assert_eq!(kill.tree_events.len(), 4);
+        assert!(kill
+            .tree_events
+            .iter()
+            .all(|e| matches!(e, TreeDropEvent::Mushroom { .. })));
+    }
+
+    /// S1-P-i30: a surviving mushroom-tree top cell (frameX 0, nothing above)
+    /// re-rolls its canopy frame when a neighbour is framed
+    /// (`WorldGen.cs:85855-85873`) — the core records the request, the app
+    /// resolves `genRand.Next(3)`.
+    #[test]
+    fn S1_P_i30_the_mushroom_top_records_a_canopy_roll() {
+        let mut w = ground_world();
+        w.frame_important[72] = true;
+        // The mushroom grass support at (10,20) (the floor row), the top
+        // cell above it.
+        let i = w.index(10, 20);
+        w.tiles[i].kind = 70;
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 72,
+            frame_x: 0,
+            frame_y: 0,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        w.compute_column_surface();
+        // Break the stone beside the support: the 3x3 frame reaches the top
+        // cell, which survives (its below is the 70) and records the roll.
+        let kill = kill_tile(&mut w, 11, 20, false).expect("the stone dies");
+        assert!(w.tile(10, 19).unwrap().active(), "the top cell survives");
+        assert!(
+            kill.mushroom_frame_rolls.contains(&(10, 19)),
+            "the top cell records the canopy re-roll"
+        );
+    }
+
+    /// S1-P-i30: the cactus (80) collapses whole when its sand dies and every
+    /// segment records a flat Cactus 276 drop (`WorldGen.CheckCactus`,
+    /// `:54116-54158`; the drop `case 80`, `:64717-64719`).
+    #[test]
+    fn S1_P_i30_the_cactus_collapses_whole_and_drops_per_cell() {
+        let mut w = ground_world();
+        // The cactus column at x = 10 over the sand at y = 20.
+        for dy in 0..4 {
+            let i = w.index(10, 19 - dy);
+            w.tiles[i] = Tile {
+                kind: 80,
+                frame_x: 0,
+                frame_y: 0,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        let i = w.index(10, 20);
+        w.tiles[i].kind = 53; // the sand
+        w.compute_column_surface();
+        let kill = kill_tile(&mut w, 10, 20, false).expect("the sand dies");
+        for dy in 0..4 {
+            assert!(
+                !w.tile(10, 19 - dy).unwrap().active(),
+                "the cactus segment at dy {dy} survived"
+            );
+        }
+        assert_eq!(kill.tree_events.len(), 4, "one cactus drop per segment");
+        assert!(kill
+            .tree_events
+            .iter()
+            .all(|e| matches!(e, TreeDropEvent::Cactus { .. })));
+    }
+
+    /// S1-P-i30: a cactus on a non-sand ground dies (`CheckCactus`'s base test,
+    /// `WorldGen.cs:54139-54143` — the ground must be 53/112/116/234, full and
+    /// slopeless).
+    #[test]
+    fn S1_P_i30_the_cactus_dies_on_a_non_sand_ground() {
+        let mut w = ground_world();
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 80,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        // The ground below is stone (the `ground_world` floor at y = 20),
+        // not sand.
+        w.compute_column_surface();
+        // Frame the cactus through a neighbour break: it loses the ground test.
+        let kill = kill_tile(&mut w, 11, 20, false).expect("the stone dies");
+        assert!(!w.tile(10, 19).unwrap().active(), "the cactus dies");
+        assert!(kill
+            .tree_events
+            .iter()
+            .any(|e| matches!(e, TreeDropEvent::Cactus { .. })));
     }
 
     /// M1.4-TO-6: the container family above refuses the cell below

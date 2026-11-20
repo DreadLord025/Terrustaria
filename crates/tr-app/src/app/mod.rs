@@ -696,6 +696,12 @@ pub(crate) struct App {
     /// denominator the tile-crack overlay maps onto the C# `HitTile`
     /// 0..100 damage (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
     pub(crate) mine_hardness: f32,
+    /// S1-P-i33 — the wall-hammer hit counter (`Player.PickWall`'s `hitTile`
+    /// damage book, `Player.cs:45944-45945`): the number of `useTime / 2`-tick
+    /// hits landed on the current wall target. The break fires at
+    /// `ceil(100 / (hammer * 1.5))` hits — an integer count, so the cadence is
+    /// exact (the float `mine_timer` still feeds the crack overlay).
+    pub(crate) mine_wall_hits: i32,
     /// `HitTile.lastCrack` (`HitTile.cs:80`, static, default 0): the last
     /// rolled crack style the no-repeat reroll compares against.
     pub(crate) mine_crack_style: i32,
@@ -986,10 +992,41 @@ pub(crate) struct App {
     /// `Player.itemTime` in seconds: the action accumulator inside a swing
     /// (`Player.cs:4416-4418`); placement re-fires whenever it hits zero.
     pub(crate) item_time: f32,
+    /// `Player.toolTime` in seconds (`Player.cs:3022`): the mining-action
+    /// cadence. `ItemCheck_StartActualUse` arms 1 tick for the tools
+    /// (`Player.cs:51660-51663`); the per-tick block mirrors `itemTime`
+    /// while not channeling, or counts down to `useTime - 1` on a channel
+    /// drill (`Player.cs:43576-43587`). The pick hit fires at
+    /// `toolTime == 0 && itemAnimation > 0 && controlUseItem`
+    /// (`Player.cs:45608`/`:45626`).
+    pub(crate) tool_time: f32,
+    /// `Player.hitTile` (`Player.cs`, the `HitTile` field; `HitTile.cs:9`) —
+    /// the mining damage book: per-cell accumulated damage, 100 breaks the
+    /// tile (`Player.PickTile` `Player.cs:53769`), 60-tick TTL decay.
+    pub(crate) hit_tile: tr_core::hit_tile::HitTile,
+    /// `Player.poundRelease` (`Player.cs:1502`): the hammer's pound latch.
+    /// Set on the use-button release (`Player.cs:45635-45638`), consumed by
+    /// `ItemCheck_UseMiningTools_TryPoundingTile` (`:45969-46311`) on the
+    /// next press; cleared when the cursor tile is not a hammer target
+    /// (`:45608-45615`) or the pound refuses (`:45976-45985`).
+    pub(crate) pound_release: bool,
+    /// `ItemCheck_UseMiningTools_ActuallyUseMiningTool`'s `out canHitWalls`
+    /// (`Player.cs:45650`) — the mining tick's wall-pass gate, read by the
+    /// `:45639-45643` wall pass in `update_editing`. True unless a matching
+    /// tool hit its tile (`:45656-45659`), the tile is `tileHammer`
+    /// (`:45667`) or the pound arm ran (`:45986`).
+    pub(crate) mining_can_hit_walls: bool,
     /// Coin purse value in copper coins.
     pub(crate) coins: u64,
     /// The 1000-slot projectile pool (`Main.projectile`, `projectile.rs`).
     pub(crate) projectiles: ProjectilePool,
+    /// `Main.LocalGolfState` (`Main.cs:1807`, `GolfState.cs:6-173`): the
+    /// per-client golf scoring state — the hit records, the score timer and
+    /// the last-hit-ball tracking. `Update()` rides the player stepper's
+    /// head (`Main.cs:17219` runs before `UpdatePlayers`); the cup scoring
+    /// and the strike's `RecordSwing` run pool-side
+    /// (`projectile_ai_golf.rs`, S1-P-i55).
+    pub(crate) golf_state: tr_core::golf_state::GolfState,
     /// The falling tombstone projectiles (`Player.DropTombstone`).
     pub(crate) tomb_falls: Vec<crate::death::TombFall>,
     /// `Player.lostCoins`/`lostCoinString` + the last death text — the
@@ -3864,6 +3901,7 @@ impl App {
             mine_target: None,
             mine_timer: 0.0,
             mine_hardness: 0.0,
+            mine_wall_hits: 0,
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
@@ -4001,8 +4039,14 @@ impl App {
             mine_prev_down: false,
             mine_released: false,
             item_time: 0.0,
+            tool_time: 0.0,
+            hit_tile: tr_core::hit_tile::HitTile::new(),
+            pound_release: false,
+            mining_can_hit_walls: true,
             coins,
             projectiles: ProjectilePool::new(),
+            // `Main.LocalGolfState = new GolfState()` (`Main.cs:6483`).
+            golf_state: tr_core::golf_state::GolfState::new(),
             tomb_falls: Vec::new(),
             lost_coins: 0,
             lost_coin_string: String::new(),

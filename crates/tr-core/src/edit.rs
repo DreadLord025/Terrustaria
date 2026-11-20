@@ -8,9 +8,22 @@ use crate::tile::Tile;
 use crate::world::World;
 
 mod place;
-pub use place::{place_alch, place_item_tile, place_tile};
+pub use place::{place_alch, place_item_tile, place_tile, place_torch};
 mod wall;
-pub use wall::{break_wall, kill_wall_sound, place_wall};
+// S1-P-i33 — the wall-edit table (drop conversions, the FULL Main.wallHouse,
+// the smash gate, the unsafe→safe replacement). `can_player_smash_wall` lives
+// HERE (one copy — the i31 duplicate was folded into this one at the gate;
+// the i33 copy reads the full 279-wall Main.wallHouse, the C# table the
+// Player.cs:45924 gate actually reads, not the housing room-check subset).
+pub use wall::{
+    break_wall, can_player_smash_wall, kill_wall_drop, kill_wall_sound, near_friendly_wall,
+    place_wall, replace_wall, wall_house, WALL_COUNT,
+};
+mod hammer;
+pub use hammer::{
+    can_pound_tile, forbids_sloping, is_a_hammer_target, is_tile_poundable, pound_damage,
+    pound_tile, slope_tile, try_finding_wall_to_hammer, try_pound_tile, PoundOutcome,
+};
 mod kill;
 pub use kill::{
     actuation_square_frame, can_kill_tile, kill_tile, kill_tile_sound, pot_break_sound,
@@ -991,10 +1004,34 @@ fn touch(world: &mut World, x: i32, y: i32) {
     world.mark_chunk(x, y);
 }
 
+/// `WorldGen.SolidTileNoAttach(i, j)` (`WorldGen.cs:70511-70528`): active,
+/// solid, NOT `tileNoAttach`, flat (`slope == 0`, not half brick), not
+/// actuated. Out-of-world reads TRUE (`:70515-70517`, the null arm). The
+/// torch placement support gate reads it (`Player.cs:41114-41197`,
+/// `WorldGen.cs:59835`'s below arm uses the platform variant instead).
+pub fn solid_tile_no_attach(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_none_or(|t| {
+        t.active()
+            && crate::tiledata::TILE_SOLID.has(t.kind)
+            && !crate::torch::no_attach_pub(t.kind)
+            && t.slope() == 0
+            && !t.half_brick()
+            && !t.inactive()
+    })
+}
+
 fn after_edit(world: &mut World, x: i32, y: i32) {
     world.recompute_column_surface(x);
     framing::reframe_area(world, x, y, 2, true);
 }
+
+// Gate merge (i31 ⨉ i42): the i42 torch-flatten copies of
+// `WorldGen.SlopeTile`/`CanPoundTile` are folded into the i31
+// `edit::hammer` canonical family (`slope_tile(world, x, y, 0, false,
+// chest_gate)` — the full `:80768-80803` form incl. the `SquareTileFrame`
+// cascade; the i42 copy's bare `reframe_area` was the placement-route
+// slice). The torch flatten's caller (`flatten_torch_supports`) passes the
+// real chest gate and keeps its app-side Dig cue.
 
 #[cfg(test)]
 mod tests {

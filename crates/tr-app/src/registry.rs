@@ -20,6 +20,89 @@ pub enum DamageClass {
 pub use crate::itemdata::ItemDef;
 use crate::itemdata::ITEMS;
 
+/// The four lunar chainsaws' correction rows (S1-P-i30): the GenItemData
+/// placeholder band left 2773/2778/2783/3463 as zero rows (`axe: 0` — they
+/// could never chop). The C# rows are `SetDefaults3`'s `case 2773`
+/// (`Item.cs:26486-26506`, the Vortex Chainsaw) plus the `SetDefaults3(2773)`
+/// clones (`case 2778` `:26570-26575`, `case 2783` `:26597-26602`) and
+/// `SetDefaults4`'s `case 3463` (`:31060-31065`), each overriding only
+/// `shoot`/`glowMask`; then the `SetDefaults` epilogue's
+/// `IsDrill || IsChainsaw` block (`Item.cs:48899-48912`,
+/// `ItemID.Sets.IsChainsaw`, `ItemID.cs:495`): `useTime = (int)(7 * 0.6)
+/// = 4`, `useAnimation = (int)(25 * 0.6) = 15`, `tileBoost--` → `4 - 1 = 3`.
+/// `value = sellPrice(0, 6)` = 30000 (`sellPrice` = `(copper + silver*100
+/// + gold*10000 + platinum*1000000) * 5`). `UseSound = SoundID.Item23` —
+/// SOUND_STYLES index 148 (the generated Cobalt Chainsaw 383 row's
+/// mapping).
+const fn lunar_chainsaw(id: u16, name: &'static str, projectile: u16) -> ItemDef {
+    ItemDef {
+        id,
+        name,
+        max_stack: 9999,
+        tile: None,
+        place_style: 0,
+        wall: None,
+        projectile: Some(projectile),
+        damage: 80,
+        rare: 10,
+        use_time: 4,
+        use_animation: 15,
+        use_style: 5,
+        hold_style: 0,
+        auto_reuse: false,
+        head_slot: -1,
+        body_slot: -1,
+        leg_slot: -1,
+        defense: 0,
+        life_regen: 0,
+        class: DamageClass::Melee,
+        crit: 0,
+        value: 30000,
+        knock_back: 4.0,
+        mana: 0,
+        use_ammo: 0,
+        ammo: 0,
+        channel: true,
+        reuse_delay: 0,
+        consumable: false,
+        use_turn: false,
+        buff_type: 0,
+        buff_time: 0,
+        shoot_speed: 28.0,
+        width: 56,
+        height: 22,
+        material: false,
+        potion: false,
+        heal_life: 0,
+        heal_mana: 0,
+        scale: 1.0,
+        stack: 1,
+        bait: 0,
+        tile_boost: 3,
+        pick: 0,
+        axe: 27,
+        hammer: 0,
+        accessory: false,
+        melee: true,
+        ranged: false,
+        magic: false,
+        summon: false,
+        thrown: false,
+        vanity: false,
+        mech: false,
+        quest_item: false,
+        make_npc: 0,
+        fishing_pole: 0,
+        hair_dye: -1,
+        dye: 0,
+        mount_type: -1,
+        paint: 0,
+        paint_coating: 0,
+        use_sound: Some(148),
+        use_sound_pitch: 0.0,
+    }
+}
+
 pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 
 /// The hand-written corrections of the GenItemData placeholder band
@@ -30,8 +113,14 @@ pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 /// case (`Item.cs:47550-47555`) transcribed over the `ResetStats` stock -
 /// the item the gem-staff shoot's AllGems gate reads (`Player.cs:49262`,
 /// `PackGemStaffFeatures`'s `HeldItem.type == 6171`), so the branch is
-/// live in the game rather than a test shape.
-static ITEM_CORRECTIONS: [ItemDef; 1] = [
+/// live in the game rather than a test shape. S1-P-i30 adds the four lunar
+/// chainsaws (2773/2778/2783/3463 — the generator left them zero rows, so
+/// they could never chop; [`lunar_chainsaw`] transcribes the C# rows).
+static ITEM_CORRECTIONS: [ItemDef; 5] = [
+    lunar_chainsaw(2773, "Vortex Chainsaw", 427),
+    lunar_chainsaw(2778, "Nebula Chainsaw", 429),
+    lunar_chainsaw(2783, "Solar Flare Chainsaw", 431),
+    lunar_chainsaw(3463, "Stardust Chainsaw", 610),
     ItemDef {
         id: 6171,
             name: "Bejeweled Staff",
@@ -117,14 +206,13 @@ pub fn get(id: u16) -> Option<&'static ItemDef> {
 }
 
 /// `Item.makeNPC` (`Item.cs`'s per-item field) — the item's critter/bait
-/// NPC id, the shimmer release arm's input (`WorldItem.GetShimmered`'s
-/// makeNPC arm, `WorldItem.cs:1747-1772`). The generated item data does not
-/// carry the field yet (a `tools/GenItemData` follow-up), so every kind maps to
-/// 0 (no release) until it lands — the release arm's mechanism, the
-/// `ShimmerTransformToNPC` override and the ≤50-attempt budget are ported and
-/// unit-tested without it.
-pub fn make_npc(_id: u16) -> u16 {
-    0
+/// NPC id: the bug-net release arm's input (`Player.cs:43614-43625`,
+/// S1-P-i36) and the shimmer release arm's (`WorldItem.GetShimmered`'s
+/// makeNPC arm, `WorldItem.cs:1747-1772`). The generated item data carries
+/// the column (`itemdata.rs`'s `make_npc`, e.g. 2019 → 46, 1994 → 356,
+/// 4068 → 583); negative values clamp to 0 like the C# `makeNPC > 0` gates.
+pub fn make_npc(id: u16) -> u16 {
+    item(id).map_or(0, |d| d.make_npc.max(0) as u16)
 }
 
 pub fn name(id: u16) -> &'static str {
@@ -161,6 +249,32 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         78 => Some(222),
         // `case 380: dropItem = 3215 + tileCache.frameY / 18;` (:65211-65213).
         380 => Some((3215 + i32::from(frame_y) / 18) as u16),
+        // `case 135` (`WorldGen.cs:65569-65599`): the standard pressure plate
+        // drops the item of its frame row (`frameY / 18`): 0 red 529, 1 green
+        // 541, 2 gray 542, 3 brown 543, 4 blue 852, 5 yellow 853, 6 Lihzahrd
+        // 1151. Row 7 (the orange plate 4261 places it) has no C# drop arm —
+        // the vanilla leaves `dropItem = 0`, so the port drops nothing too.
+        135 => match i32::from(frame_y) / 18 {
+            0 => Some(529),
+            1 => Some(541),
+            2 => Some(542),
+            3 => Some(543),
+            4 => Some(852),
+            5 => Some(853),
+            6 => Some(1151),
+            _ => None,
+        },
+        // `case 428` (`WorldGen.cs:65311-65328`): the weighted pressure plate
+        // drops by frame row: 0 orange 3630, 1 cyan 3632, 2 purple 3631,
+        // 3 pink 3626. The `PressurePlateHelper.DestroyPlate` side effect
+        // (:65327) is app-side — `break_tile` releases the pressed plate.
+        428 => match i32::from(frame_y) / 18 {
+            0 => Some(3630),
+            1 => Some(3632),
+            2 => Some(3631),
+            3 => Some(3626),
+            _ => None,
+        },
         // The sunflower's per-cell case is in the empty group (:65759+); 63 is
         // what the cascade's `CheckSunflower` record spawns
         // (`Item.NewItem(…, 63)`, `WorldGen.cs:53787-53791`).
@@ -178,6 +292,12 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         // `WorldGen.cs:66189-66261`), which the kill cascade emits per cell;
         // the generic `by_tile` fallback finds no placing item for them.
         5 | 323 | 596 | 616 | 634 => None,
+        // The gem trees (583-589) and the mushroom tree (72) drop through
+        // their own per-cell RNG records (`KillTile_GetItemDrops`'s gem
+        // cases `WorldGen.cs:65699-65746` and `case 71/72` `:65642-65652`,
+        // resolved app-side as `TreeDropEvent::Gem`/`Mushroom`) — never the
+        // `by_tile` fallback (S1-P-i30).
+        72 | 583..=589 => None,
         // The demon/crimson altar (`KillTile_GetItemDrops`'s empty case 26
         // group, `WorldGen.cs:65758` → `:66090`): the altar is destroyed, not
         // dropped — the `by_tile` fallback would leak the Journey-mode item
@@ -299,6 +419,32 @@ pub fn migrate_kind(old: u16) -> u16 {
 mod tests {
     #![allow(non_snake_case)] // DW-IDs are part of the test names (traceability)
     use super::*;
+
+    /// S1-P-i34 — the pressure plates drop the item of their frame row
+    /// (`KillTile_GetItemDrops`, `WorldGen.cs:65569-65599` for 135,
+    /// `:65311-65328` for 428). The v1 `by_tile` fallback returned the first
+    /// placing item regardless of style.
+    #[test]
+    fn the_pressure_plates_drop_by_frame_row() {
+        // Tile 135: rows 0..6 → 529/541/542/543/852/853/1151; row 7 (the orange
+        // plate 4261 places it) has no C# drop arm.
+        for (row, item) in [
+            (0i16, 529u16),
+            (1, 541),
+            (2, 542),
+            (3, 543),
+            (4, 852),
+            (5, 853),
+            (6, 1151),
+        ] {
+            assert_eq!(tile_drop(135, row * 18), Some(item), "135 row {row}");
+        }
+        assert_eq!(tile_drop(135, 7 * 18), None, "135 row 7 drops nothing");
+        // Tile 428: rows 0..3 → 3630/3632/3631/3626.
+        for (row, item) in [(0i16, 3630u16), (1, 3632), (2, 3631), (3, 3626)] {
+            assert_eq!(tile_drop(428, row * 18), Some(item), "428 row {row}");
+        }
+    }
 
     #[test]
     fn use_timings_match_item_setdefaults() {
@@ -542,18 +688,19 @@ mod tests {
 
     #[test]
     fn test_DW_2_3_the_placeholder_band_neighbours_stay_untouched() {
-        // The correction is one seam over three ids: every other row of the
-        // 3263-3989 placeholder band still reads the generated row verbatim.
-        // The M6-SAVE-1 merge regenerated `itemdata.rs`, so the placeholder
-        // band reads its generated rows: the three staves answer their
-        // `Item.cs` values from the generated table (their own tests pin the
-        // values), and only 6171 rides the correction.
+        // The correction is one seam over the corrected ids: every other row
+        // of the 3263-3989 placeholder band still reads the generated row
+        // verbatim. The M6-SAVE-1 merge regenerated `itemdata.rs`, so the
+        // placeholder band reads its generated rows: the three staves answer
+        // their `Item.cs` values from the generated table (their own tests
+        // pin the values); 6171 and the four lunar chainsaws (S1-P-i30) ride
+        // the corrections.
         for id in [3376u16, 3378, 3778, 3780, 3786, 3788] {
             let got = item(id).unwrap();
             assert!(std::ptr::eq(got, &ITEMS[id as usize]), "id {id} must not be shadowed");
         }
-        // The full-table sweep: only 6171 rides the corrections, and the
-        // corrected row is not the generated one.
+        // The full-table sweep: exactly the ITEM_CORRECTIONS ids ride the
+        // corrections, and a corrected row is not the generated one.
         for id in 0..ITEMS.len() as u16 {
             let got = item(id).unwrap();
             match ITEM_CORRECTIONS.iter().find(|d| d.id == id) {

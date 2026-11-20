@@ -512,6 +512,34 @@ impl App {
                     })));
                 }
             }
+            // `case 70` — a client's bug net caught an NPC
+            // (`MessageBuffer.cs:3102-3110`): the `(short)` slot bounds
+            // check, then `NPC.CatchNPC(slot, whoAmI)` — the host is the
+            // converter (the item spawns at the CATCHER's centre). The
+            // despawn `23` rides the cadence's uid gone-diff.
+            C2s::CatchNpc { npc } => {
+                let slot = npc as usize;
+                if npc >= 0 && slot < self.npcs.len() {
+                    if crate::bug_net::catch_npc(self, slot, id as u8) {
+                        self.npcs.remove(slot);
+                    }
+                }
+            }
+            // `case 71` — a client released a captured critter
+            // (`MessageBuffer.cs:3112-3117`): `NPC.ReleaseNPC(x, y, type,
+            // style, whoAmI)` — the remote `who` must pass the
+            // `npcCatchable` whitelist (`NPC.cs:80113`). The spawn `23`
+            // rides the cadence.
+            C2s::ReleaseNpc { x, y, npc_type, style } => {
+                crate::bug_net::release_npc(
+                    self,
+                    x,
+                    y,
+                    npc_type as i32,
+                    style as i32,
+                    id as u8,
+                );
+            }
             // `case 27` — a peer's own projectile state. The host applies it
             // into its pool (rendering; the owner-side damage arrives as
             // `28`) and relays it to the others
@@ -2974,6 +3002,44 @@ impl App {
                 body,
             });
         }
+    }
+
+    /// A client-side catch on a networked NPC: the `70` body addressed by
+    /// the host's slot (`NPC.CatchNPC`'s `netMode == 1` send,
+    /// `NPC.cs:79901-79905`). The local npcs Vec is the slot-keyed store
+    /// rebuilt in slot order, so the index maps through `net_npc_slots`
+    /// (the `send_npc_strike` convention). The C# also deactivates the
+    /// slot LOCALLY (`:79903`) — the store entry leaves with it so a
+    /// rebuild cannot resurrect the caught NPC before the host's
+    /// despawn `23` lands.
+    pub(crate) fn send_catch_npc(&mut self, idx: usize) {
+        let Some(slot) = self.net_npc_slots.get(idx).copied() else {
+            return;
+        };
+        let NetRole::Client(client) = &self.net else {
+            return;
+        };
+        client.send(&C2s::CatchNpc {
+            npc: slot.min(i16::MAX as u32) as i16,
+        });
+        self.net_npcs.remove(&slot);
+        self.net_npc_gen.remove(&slot);
+        self.net_npcs_dirty = true;
+    }
+
+    /// A client-side critter release: the `71` body (`NPC.ReleaseNPC`'s
+    /// `netMode == 1` send, `NPC.cs:80109-80112`,
+    /// `NetMessage.cs:1128-1133`).
+    pub(crate) fn send_release_npc(&self, x: i32, y: i32, npc_type: i32, style: i32) {
+        let NetRole::Client(client) = &self.net else {
+            return;
+        };
+        client.send(&C2s::ReleaseNpc {
+            x,
+            y,
+            npc_type: npc_type.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+            style: style.clamp(0, u8::MAX as i32) as u8,
+        });
     }
 
     /// A client-side strike on a networked NPC: the `28` body addressed by the
