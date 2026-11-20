@@ -5278,4 +5278,79 @@ mod tests {
             other => panic!("expected 32, got {:?}", other.msg_id()),
         }
     }
+
+    /// `33 SyncPlayerChest` (`NetMessage.cs:879-911`,
+    /// `MessageBuffer.cs:1920-1937`): three shorts + the length byte; a
+    /// `1..=20` name rides `BinaryWriter.Write(string)` (7-bit length +
+    /// UTF-8), `0` writes no text, `255` the refusal. The reader zeroes any
+    /// other length (`num24 = 0`, `:1934`) and re-derives the accepted
+    /// length from the read text.
+    #[test]
+    fn s1_i_1_player_chest_round_trips() {
+        let c = PlayerChest { chest: 3, x: 100, y: 200, name_len: 5, name: "chest".into() };
+        let mut body = Vec::new();
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&100i16.to_le_bytes());
+        body.extend_from_slice(&200i16.to_le_bytes());
+        body.push(5);
+        body.push(5); // the string's own 7-bit length byte
+        body.extend_from_slice(b"chest");
+        let f = C2s::PlayerChest(c.clone()).encode();
+        assert_eq!(f[2], 33);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerChest(d) => assert_eq!(d, c),
+            other => panic!("expected 33, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerChest(c.clone()).encode();
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerChest(d) => assert_eq!(d, c),
+            other => panic!("expected 33, got {:?}", other.msg_id()),
+        }
+        // `0`/`255` write NO text after the length byte (`:906-910`).
+        for len in [0u8, 255] {
+            let bare = PlayerChest { name_len: len, name: String::new(), ..c.clone() };
+            let f = C2s::PlayerChest(bare.clone()).encode();
+            assert_eq!(f.len(), 3 + 7);
+            assert_eq!(f[9], len);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::PlayerChest(d) => assert_eq!(d, bare),
+                other => panic!("expected 33, got {:?}", other.msg_id()),
+            }
+        }
+        // A stray length (e.g. 21) reads as "no name", `num24 = 0`
+        // (`MessageBuffer.cs:1932-1935`); 255 keeps its refusal value.
+        let mut stray = Vec::new();
+        stray.extend_from_slice(&3i16.to_le_bytes());
+        stray.extend_from_slice(&100i16.to_le_bytes());
+        stray.extend_from_slice(&200i16.to_le_bytes());
+        stray.push(21);
+        match C2s::decode(33, &mut NetReader::new(&stray)).expect("decode") {
+            C2s::PlayerChest(d) => {
+                assert_eq!(d.name_len, 0);
+                assert_eq!(d.name, "");
+            }
+            other => panic!("expected 33, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `80 SyncPlayerChestIndex` (`NetMessage.cs:1175-1178`): byte player
+    /// id + short chest index; the client's `-3..8000` range gate lives in
+    /// the apply arm (`MessageBuffer.cs:3221`, netglue). Host→client only.
+    #[test]
+    fn s1_i_1_player_chest_index_round_trips() {
+        for chest in [-3i16, -1, 0, 7999] {
+            let ci = PlayerChestIndex { player_id: 3, chest };
+            let f = S2c::PlayerChestIndex(ci).encode();
+            assert_eq!(f[2], 80);
+            let mut body = vec![3u8];
+            body.extend_from_slice(&chest.to_le_bytes());
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::PlayerChestIndex(d) => assert_eq!(d, ci),
+                other => panic!("expected 80, got {:?}", other.msg_id()),
+            }
+        }
+    }
 }
