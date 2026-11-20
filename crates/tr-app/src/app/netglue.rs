@@ -3217,6 +3217,9 @@ fn npc_seed(
         | crate::npc::NpcKind::AngryBonesBig
         | crate::npc::NpcKind::AngryBonesBigMuscle
         | crate::npc::NpcKind::AngryBonesBigHelmet
+        // W4-d38 b4 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::Squirrel
+        | crate::npc::NpcKind::Mouse
         | crate::npc::NpcKind::BloodZombie => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
@@ -3505,6 +3508,10 @@ fn npc_seed(
         // W4-d38 b2 — the flyers ride the hover ctor.
         | crate::npc::NpcKind::DiabolistWhite
         | crate::npc::NpcKind::GiantCursedSkull
+        // W4-d38 b4 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::BirdBlue
+        | crate::npc::NpcKind::BirdRed
+        | crate::npc::NpcKind::Raven
         | crate::npc::NpcKind::Drippler => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?

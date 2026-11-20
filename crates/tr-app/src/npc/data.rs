@@ -570,6 +570,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b4 — vanilla ids kept (free protocol slots).
+            NpcKind::BirdBlue => 297,
+            NpcKind::BirdRed => 298,
+            NpcKind::Squirrel => 299,
+            NpcKind::Mouse => 300,
+            NpcKind::Raven => 301,
             // W4-d38 b3 — vanilla ids kept (free protocol slots).
             NpcKind::TacticalSkeleton => 292,
             NpcKind::SkeletonCommando => 293,
@@ -925,6 +931,12 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // W4-d38 b4 — decode at the vanilla ids.
+            297 => NpcKind::BirdBlue,
+            298 => NpcKind::BirdRed,
+            299 => NpcKind::Squirrel,
+            300 => NpcKind::Mouse,
+            301 => NpcKind::Raven,
             // W4-d38 b3 — decode at the vanilla ids.
             292 => NpcKind::TacticalSkeleton,
             293 => NpcKind::SkeletonCommando,
@@ -1824,6 +1836,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d38 b4 — SetDefaults HitSound rows.
+            NpcKind::BirdBlue => "NPC_Hit_1",
+            NpcKind::BirdRed => "NPC_Hit_1",
+            NpcKind::Squirrel => "NPC_Hit_1",
+            NpcKind::Mouse => "NPC_Hit_1",
+            NpcKind::Raven => "NPC_Hit_1",
             // W4-d38 b3 — SetDefaults HitSound rows.
             NpcKind::TacticalSkeleton => "NPC_Hit_2",
             NpcKind::SkeletonCommando => "NPC_Hit_2",
@@ -2146,6 +2164,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d38 b4 — SetDefaults DeathSound rows.
+            NpcKind::BirdBlue => "NPC_Killed_1",
+            NpcKind::BirdRed => "NPC_Killed_1",
+            NpcKind::Squirrel => "NPC_Killed_1",
+            NpcKind::Mouse => "NPC_Killed_4",
+            NpcKind::Raven => "NPC_Killed_1",
             // W4-d38 b3 — SetDefaults DeathSound rows.
             NpcKind::TacticalSkeleton => "NPC_Killed_2",
             NpcKind::SkeletonCommando => "NPC_Killed_2",
@@ -2525,6 +2549,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d38 b4 — SetDefaults aiStyle rows.
+            NpcKind::BirdBlue => 24,
+            NpcKind::BirdRed => 24,
+            NpcKind::Squirrel => 7,
+            NpcKind::Mouse => 7,
+            NpcKind::Raven => 17,
             // W4-d38 b3 — SetDefaults aiStyle rows.
             NpcKind::TacticalSkeleton => 3,
             NpcKind::SkeletonCommando => 3,
@@ -3083,6 +3113,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d38 b4 — SetDefaults width/height rows.
+            NpcKind::BirdBlue => (14.0, 14.0),
+            NpcKind::BirdRed => (14.0, 14.0),
+            NpcKind::Squirrel => (18.0, 20.0),
+            NpcKind::Mouse => (14.0, 12.0),
+            NpcKind::Raven => (36.0, 26.0),
             // W4-d38 b3 — SetDefaults width/height rows.
             NpcKind::TacticalSkeleton => (18.0, 40.0),
             NpcKind::SkeletonCommando => (18.0, 40.0),
@@ -3748,6 +3784,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d38 b4 — SetDefaults lifeMax rows.
+            NpcKind::BirdBlue => 5,
+            NpcKind::BirdRed => 5,
+            NpcKind::Squirrel => 5,
+            NpcKind::Mouse => 5,
+            NpcKind::Raven => 35,
             // W4-d38 b3 — SetDefaults lifeMax rows.
             NpcKind::TacticalSkeleton => 400,
             NpcKind::SkeletonCommando => 400,
@@ -4130,6 +4172,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d38 b4 — SetDefaults damage rows.
+            NpcKind::BirdBlue => 0,
+            NpcKind::BirdRed => 0,
+            NpcKind::Squirrel => 0,
+            NpcKind::Mouse => 0,
+            NpcKind::Raven => 12,
             // W4-d38 b3 — SetDefaults damage rows.
             NpcKind::TacticalSkeleton => 60,
             NpcKind::SkeletonCommando => 60,

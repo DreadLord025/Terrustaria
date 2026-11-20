@@ -1595,6 +1595,15 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d38 b4 — the 14x14 SetDefaults box.
+        (NpcKind::BirdBlue
+        | NpcKind::BirdRed, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        // W4-d38 b4 — the 18x20 SetDefaults box.
+        (NpcKind::Squirrel, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        // W4-d38 b4 — the 14x12 SetDefaults box.
+        (NpcKind::Mouse, _) => (sheet_i, 12.0, 14.0, 12.0, white),
+        // W4-d38 b4 — the 36x26 SetDefaults box.
+        (NpcKind::Raven, _) => (sheet_i, 26.0, 36.0, 26.0, white),
         // W4-d38 b3 — the 18x40 SetDefaults box.
         (NpcKind::TacticalSkeleton
         | NpcKind::SkeletonCommando

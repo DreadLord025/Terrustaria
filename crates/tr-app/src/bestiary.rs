@@ -2163,6 +2163,56 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d38 b4 — BestiaryEntry.Critter(297)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BirdBlue",
+        net_id: 297,
+        kind: NpcKind::BirdBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Jay",
+    },
+    // W4-d38 b4 — BestiaryEntry.Critter(298)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BirdRed",
+        net_id: 298,
+        kind: NpcKind::BirdRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Cardinal",
+    },
+    // W4-d38 b4 — BestiaryEntry.Critter(299)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Squirrel",
+        net_id: 299,
+        kind: NpcKind::Squirrel,
+        variant: None,
+        quick_unlock: false,
+        name: "Squirrel",
+    },
+    // W4-d38 b4 — BestiaryEntry.Critter(300)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Mouse",
+        net_id: 300,
+        kind: NpcKind::Mouse,
+        variant: None,
+        quick_unlock: false,
+        name: "Mouse",
+    },
+    // W4-d38 b4 — BestiaryEntry.Enemy(301)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Raven",
+        net_id: 301,
+        kind: NpcKind::Raven,
+        variant: None,
+        quick_unlock: false,
+        name: "Raven",
+    },
     // W4-d38 b3 — BestiaryEntry.Enemy(292)
     // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
     BestiaryEntryDef {

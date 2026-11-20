@@ -1275,6 +1275,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-d38 b4 — the kinds' own sheets.
+        "NPC_297",
+        "NPC_298",
+        "NPC_299",
+        "NPC_300",
+        "NPC_301",
         // W4-d38 b3 — the kinds' own sheets.
         "NPC_292",
         "NPC_293",

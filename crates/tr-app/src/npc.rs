@@ -1017,6 +1017,17 @@ pub enum NpcKind {
     /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The
     /// aiStyle-22 machine's 490 branches ride `npc_ai_drippler.rs`.
     Drippler,
+    // W4-d38 b4 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.BirdBlue` (297) — `NPC.cs` SetDefaults: 14x14, aiStyle 24, dmg 0, def 0, 5 HP, kb 0.8, value 0; catchItem 2016.
+    BirdBlue,
+    /// `NPCID.BirdRed` (298) — `NPC.cs` SetDefaults: 14x14, aiStyle 24, dmg 0, def 0, 5 HP, kb 0.8, value 0; catchItem 2017.
+    BirdRed,
+    /// `NPCID.Squirrel` (299) — `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2018.
+    Squirrel,
+    /// `NPCID.Mouse` (300) — `NPC.cs` SetDefaults: 14x12, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2003.
+    Mouse,
+    /// `NPCID.Raven` (301) — `NPC.cs` SetDefaults: 36x26, aiStyle 17, dmg 12, def 2, 35 HP, kb 0.85, value 50.
+    Raven,
     // W4-d38 b3 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
     /// `NPCID.TacticalSkeleton` (292) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
     TacticalSkeleton,
@@ -3562,6 +3573,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d38 b4 — SetDefaults knockBackResist rows.
+            NpcKind::BirdBlue => 0.8,
+            NpcKind::BirdRed => 0.8,
+            NpcKind::Squirrel => 1.0,
+            NpcKind::Mouse => 1.0,
+            NpcKind::Raven => 0.85,
             // W4-d38 b3 — SetDefaults knockBackResist rows.
             NpcKind::TacticalSkeleton => 0.4,
             NpcKind::SkeletonCommando => 0.4,
@@ -3960,6 +3977,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d38 b4 — SetDefaults defense rows.
+            NpcKind::BirdBlue => 0,
+            NpcKind::BirdRed => 0,
+            NpcKind::Squirrel => 0,
+            NpcKind::Mouse => 0,
+            NpcKind::Raven => 2,
             // W4-d38 b3 — SetDefaults defense rows.
             NpcKind::TacticalSkeleton => 28,
             NpcKind::SkeletonCommando => 28,
@@ -4350,6 +4373,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d38 b4 — SetDefaults value rows (copper).
+            NpcKind::BirdBlue => 0.0,
+            NpcKind::BirdRed => 0.0,
+            NpcKind::Squirrel => 0.0,
+            NpcKind::Mouse => 0.0,
+            NpcKind::Raven => 50.0,
             // W4-d38 b3 — SetDefaults value rows (copper).
             NpcKind::TacticalSkeleton => 1000.0,
             NpcKind::SkeletonCommando => 1000.0,
@@ -6374,6 +6403,16 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d38 b4 — aiStyle 24, NPC.cs:25313-25537.
+            NpcKind::BirdBlue => self.update_bird(world, player, rng),
+            // W4-d38 b4 — aiStyle 24.
+            NpcKind::BirdRed => self.update_bird(world, player, rng),
+            // W4-d38 b4 — aiStyle 7, AI_007_TownEntities NPC.cs:52965+.
+            NpcKind::Squirrel => self.update_critter(world, player, rng),
+            // W4-d38 b4 — aiStyle 7.
+            NpcKind::Mouse => self.update_critter(world, player, rng),
+            // W4-d38 b4 — aiStyle 17, NPC.cs:24022-24151.
+            NpcKind::Raven => self.update_raven(world, player),
             // W4-d38 b3 — aiStyle 3 shooter.
             NpcKind::TacticalSkeleton => self.update_dungeon_shooter(world, player, rng),
             // W4-d38 b3 — aiStyle 3 shooter.
@@ -9087,6 +9126,87 @@ impl Npc {
             // pinned forever (the style70/71 modules' FRAME_ROW consts).
             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                 self.frame = 1;
+            }
+            // W4-d38 b4 — case 297/298 (NPC.cs:73629-73653): the flip + vx*0.1 tilt,
+            // the perched row 4, the 4-tick flap over count-1 rows.
+            NpcKind::BirdBlue => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 4; self.frame_counter = 0.0;
+                } else {
+                    let num124 = self.rows() - 1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 { self.frame += 1; self.frame_counter = 0.0; }
+                    if self.frame >= num124 { self.frame = 0; }
+                }
+            }
+            // W4-d38 b4 — case 297/298 (NPC.cs:73629-73653): the flip + vx*0.1 tilt,
+            // the perched row 4, the 4-tick flap over count-1 rows.
+            NpcKind::BirdRed => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 4; self.frame_counter = 0.0;
+                } else {
+                    let num124 = self.rows() - 1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 { self.frame += 1; self.frame_counter = 0.0; }
+                    if self.frame >= num124 { self.frame = 0; }
+                }
+            }
+            // W4-d38 b4 — case 299 (NPC.cs:76458-76512): the grounded flip, the
+            // |vx|*0.5+1 walk over count-1 rows, the air rows 2/4.
+            NpcKind::Squirrel => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = 0; self.frame_counter = 0.0; }
+                    else {
+                        self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() - 1 { self.frame = 1; }
+                    }
+                } else if self.vy < 0.0 { self.frame_counter = 0.0; self.frame = 2; }
+                else { self.frame_counter = 0.0; self.frame = 4; }
+            }
+            // W4-d38 b4 — case 300 (NPC.cs:76513-76565): the grounded flip, the
+            // idle 2-row blink (>8), the |vx|*0.5+1 walk rows 2.., air same.
+            NpcKind::Mouse => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame > 1 { self.frame = 0; }
+                    } else {
+                        self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 2; }
+                    }
+                } else {
+                    self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                    if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                    if self.frame >= self.rows() { self.frame = 2; }
+                }
+            }
+            // W4-d38 b4 — case 301 (NPC.cs:73559-73606): the grounded -direction flip,
+            // the air vx-sign flip, the vx*0.1 tilt, the >4 flap rows 1..4.
+            NpcKind::Raven => {
+                if self.vy == 0.0 { self.sprite_dir = -self.facing; }
+                else {
+                    if self.vx > 0.5 { self.sprite_dir = -1; }
+                    if self.vx < -0.5 { self.sprite_dir = 1; }
+                }
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0; self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 { self.frame_counter = 0.0; self.frame += 1; }
+                    if self.frame > 4 || self.frame == 0 { self.frame = 1; }
+                }
             }
             // W4-d38 b3 — case 291/292 (NPC.cs:76139-76178): the grounded flip, the
             // ai[2]>0 aim row (ai[2]-1), the |vx|*3.3 walk rows 7.., air row 6.
@@ -11920,6 +12040,226 @@ impl Npc {
         // Water Sphere (those are the 694 book's); the Item8 play is the
         // book's too. The bolt already rode `wants_hostile_shot` in-module.
         let _ = out;
+    }
+
+    /// W4-d38 — the birds (297 Blue Jay / 298 Cardinal) through the faithful
+    /// `npc_ai_style24::ai_style_24` (`NPC.cs:25313-25537`). The module is
+    /// velocity-only (the perch/startle/descend/flight state machine, the
+    /// ground probe, the wet tail); this wrapper feeds the single session
+    /// player + the carried collide flags and runs the tile-collision
+    /// integration the C#'s `UpdateNPC` tail applies (the birds have
+    /// noTileCollide false; noGravity rides the module's per-state write).
+    /// The poop gate's `RollOnlyBadLuckExtreme(50)` draws only for a
+    /// negative-luck player (the port's session luck is 0 → no draw); the
+    /// 1080 BirdDroppings shot drains into `wants_hostile_shot`.
+    fn update_bird(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        let p = crate::npc_ai_style24::Style24Player {
+            candidate: cand,
+            luck: 0.0,
+            is_cenx: false,
+        };
+        let ctx = crate::npc_ai_style24::Style24Ctx {
+            players: &[p],
+            neighbors: &[],
+            net_mode: 0,
+            cloud_alpha: 0.0,
+            day_time: world.day_time,
+            release_owner: self.release_owner as i32,
+            ticker: 0,
+        };
+        let out = crate::npc_ai_style24::ai_style_24(self, self.kind.cs_id() as i32, world, &ctx, rng);
+        // The poop shot (the 1080 BirdDroppings, zero velocity/damage).
+        if let Some((x, y)) = out.poop_shot {
+            self.wants_hostile_shot.push((1080, x, y, 0.0, 0.0, 0));
+        }
+        // The module's last noGravity write (perched false, flight true).
+        // The port's gravity pass reads `kind.no_gravity()` (false for the
+        // birds) — the perched gravity is the C#'s own; the flight's
+        // noGravity is the module's velocity-only hover (the integration
+        // below applies no gravity when the module set it).
+        let (w, h) = self.size();
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+            self.collide_x = true;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            self.collide_y = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+            self.collide_y = true;
+        }
+    }
+
+    /// W4-d38 — the catchable critters (299 Squirrel / 300 Mouse / 303
+    /// BunnySlimed / 337 BunnyXmas) through `npc_ai_critter::critter_ai`
+    /// (the `AI_007_TownEntities` wander/hop subset, `NPC.cs:52965-55563`).
+    /// The idle/walk durations draw on the caller stream (module docs).
+    fn update_critter(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        crate::npc_ai_critter::critter_ai(self, world, player, rng);
+    }
+
+    /// W4-d38 — the Raven (301) through the aiStyle-17 arm
+    /// (`NPC.cs:24022-24151`): the perched startle (the player within the
+    /// ±100 box or any damage → the -6 hop), the flight's collideX/Y
+    /// bounces (×-0.5, the ±2/±1 floors), the ±3 X/Y caps with the 0.1
+    /// accel + the 0.05 near-zero brake, the hover anchor (the player's
+    /// top -100 when >50 px aside), the wet tail. noGravity rides the
+    /// per-tick write (perched false, flight true). RNG-free by
+    /// construction (the arm draws no Main.rand).
+    fn update_raven(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (cx, _cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:24024-24047` — the perch: noGravity off, the startle gate.
+        if self.ai[0] == 0.0 {
+            // The facing follows the player (TargetClosest, `:24028`).
+            self.facing = if pcx >= cx { 1 } else { -1 };
+            self.sprite_dir = self.facing;
+            // `:24031-24044` — moving, rising, falling fast, the player
+            // close, or any damage → the flight startle.
+            let close = (pcx - cx).abs() < 100.0 + w * 0.5
+                && (pcy - self.y).abs() < 100.0 + h * 0.5;
+            if self.vx != 0.0 || self.vy < 0.0 || (self.vy as f64) > 0.3
+                || close || self.hp < self.max_hp
+            {
+                self.ai[0] = 1.0;
+                if !(self.vx != 0.0 || self.vy < 0.0 || (self.vy as f64) > 0.3) {
+                    self.vy -= 6.0;
+                }
+                self.net_update = true;
+            }
+        } else if !player.dead {
+            // `:24048-24137` — the flight. The collide bounces.
+            if self.collide_x {
+                self.vx = self.old_vx * -0.5;
+                if self.facing == -1 && self.vx > 0.0 && self.vx < 2.0 {
+                    self.vx = 2.0;
+                }
+                if self.facing == 1 && self.vx < 0.0 && self.vx > -2.0 {
+                    self.vx = -2.0;
+                }
+            }
+            if self.collide_y {
+                self.vy = self.old_vy * -0.5;
+                if self.vy > 0.0 && self.vy < 1.0 {
+                    self.vy = 1.0;
+                }
+                if self.vy < 0.0 && self.vy > -1.0 {
+                    self.vy = -1.0;
+                }
+            }
+            // TargetClosest (`:24074`).
+            self.facing = if pcx >= cx { 1 } else { -1 };
+            self.sprite_dir = self.facing;
+            // `:24075-24106` — the X approach (±3 cap, 0.1 accel, the
+            // 0.1 double-add past the far cap, the 0.05 near-zero brake).
+            if self.facing == -1 && self.vx > -3.0 {
+                self.vx -= 0.1;
+                if self.vx > 3.0 {
+                    self.vx -= 0.1;
+                } else if self.vx > 0.0 {
+                    self.vx -= 0.05;
+                }
+                if self.vx < -3.0 {
+                    self.vx = -3.0;
+                }
+            } else if self.facing == 1 && self.vx < 3.0 {
+                self.vx += 0.1;
+                if self.vx < -3.0 {
+                    self.vx += 0.1;
+                } else if self.vx < 0.0 {
+                    self.vx += 0.05;
+                }
+                if self.vx > 3.0 {
+                    self.vx = 3.0;
+                }
+            }
+            // `:24107-24136` — the hover anchor: the player's top -100
+            // when >50 px aside, else the player's top - height/2.
+            let dx = (cx - pcx).abs();
+            let mut anchor_y = player.y - h * 0.5;
+            if dx > 50.0 {
+                anchor_y -= 100.0;
+            }
+            if self.y < anchor_y {
+                self.vy += 0.05;
+                if self.vy < 0.0 {
+                    self.vy += 0.01;
+                }
+            } else {
+                self.vy -= 0.05;
+                if self.vy > 0.0 {
+                    self.vy -= 0.01;
+                }
+            }
+            if self.vy < -3.0 {
+                self.vy = -3.0;
+            }
+            if self.vy > 3.0 {
+                self.vy = 3.0;
+            }
+        }
+        // `:24138-24150` — the wet tail.
+        if self.wet {
+            if self.vy > 0.0 {
+                self.vy *= 0.95;
+            }
+            self.vy -= 0.5;
+            if self.vy < -4.0 {
+                self.vy = -4.0;
+            }
+        }
+        // The integration: noGravity in flight (the module's per-tick write),
+        // gravity on the perch. The tile collision (the raven has no
+        // noTileCollide).
+        if self.ai[0] == 0.0 {
+            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        }
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+            self.collide_x = true;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            self.collide_y = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+            self.collide_y = true;
+        }
     }
 
     // `update_scutlix_rider` RETIRED (S1-D-3-wire-saucer): the 390 arm is
@@ -18899,6 +19239,12 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b4 — vanilla types (G6 key injective).
+            NpcKind::BirdBlue => 297,
+            NpcKind::BirdRed => 298,
+            NpcKind::Squirrel => 299,
+            NpcKind::Mouse => 300,
+            NpcKind::Raven => 301,
             // W4-d38 b3 — vanilla types (G6 key injective).
             NpcKind::TacticalSkeleton => 292,
             NpcKind::SkeletonCommando => 293,
@@ -23995,7 +24341,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 285] = [
+    pub(super) const ALL_KINDS: [NpcKind; 290] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24245,6 +24591,12 @@ mod tests {
         // S1-D-3z — the blood-moon pair.
         NpcKind::BloodZombie,
         NpcKind::Drippler,
+        // W4-d38 b4.
+        NpcKind::BirdBlue,
+        NpcKind::BirdRed,
+        NpcKind::Squirrel,
+        NpcKind::Mouse,
+        NpcKind::Raven,
         // W4-d38 b3.
         NpcKind::TacticalSkeleton,
         NpcKind::SkeletonCommando,
@@ -27903,7 +28255,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            285,
+            290,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31531,6 +31883,12 @@ mod s1_d_2_tests {
         // S1-D-3z — the blood-moon pair (`NPC.cs:14609`/`:14623`).
         (NpcKind::BloodZombie, 3),
         (NpcKind::Drippler, 22),
+        // W4-d38 b4.
+        (NpcKind::BirdBlue, 24),
+        (NpcKind::BirdRed, 24),
+        (NpcKind::Squirrel, 7),
+        (NpcKind::Mouse, 7),
+        (NpcKind::Raven, 17),
         // W4-d38 b3.
         (NpcKind::TacticalSkeleton, 3),
         (NpcKind::SkeletonCommando, 3),
@@ -34153,5 +34511,84 @@ mod s1_f_13d_tests {
         t.vy = 2.0;
         t.find_frame();
         assert_eq!(t.frame, 6, "the Tactical's air row 6");
+    }
+
+    // ---- W4-d38 b4 — BirdBlue 297, BirdRed 298, Squirrel 299, Mouse 300,
+    // Raven 301. Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:9747-9771` the birds,
+    /// `:12864-12901` the Squirrel/Mouse/Raven). The birds share the 74 arm
+    /// (14x14, aiStyle 24, kb 0.8, npcSlots 0.4, catchItem 2016/2017); the
+    /// Squirrel/Mouse the critter arm (aiStyle 7, 5 HP, catchItem 2018/2003).
+    #[test]
+    fn w4_d38_b4_the_setdefaults_rows() {
+        let table = [
+            (NpcKind::BirdBlue, 297u16, 14.0, 14.0, 24u8, 5, 0, 0, 0.0, 0.8, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::BirdRed, 298, 14.0, 14.0, 24, 5, 0, 0, 0.0, 0.8, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::Squirrel, 299, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::Mouse, 300, 14.0, 12.0, 7, 5, 0, 0, 0.0, 1.0, "NPC_Hit_1", "NPC_Killed_4"),
+            (NpcKind::Raven, 301, 36.0, 26.0, 17, 35, 12, 2, 50.0, 0.85, "NPC_Hit_1", "NPC_Killed_1"),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, hit, death) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
+            // All five carry {31} only (Confused; `NPCID.cs:7843-7906`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31] && !b.buff_immune[20], "{kind:?} immunity");
+        }
+        // The catchable critters spawn friendly (the bug_net catchable arm).
+        assert!(crate::bug_net::npc_catchable(297));
+        assert!(crate::bug_net::npc_catchable(299));
+        assert!(crate::bug_net::npc_catchable(300));
+        assert!(!crate::bug_net::npc_catchable(301), "the Raven is not catchable");
+    }
+
+    /// The birds' FindFrame (`NPC.cs:73629-73653`): the perched row 4, the
+    /// 4-tick flap over count-1 rows, the vx*0.1 tilt. The Raven's
+    /// (`:73559-73606`): the grounded -direction flip, the air row band.
+    #[test]
+    fn w4_d38_b4_the_bird_and_raven_frames() {
+        let mut b = bare(NpcKind::BirdBlue);
+        b.vx = 0.0;
+        b.vy = 0.0;
+        b.find_frame();
+        assert_eq!(b.frame, 4, "the perched row 4");
+        b.vx = 2.0;
+        b.frame_counter = 0.0;
+        for _ in 0..4 {
+            b.find_frame();
+        }
+        assert_eq!(b.frame, 0, "the flap wraps over count-1 = 4 rows");
+        let mut r = bare(NpcKind::Raven);
+        r.vx = 0.0;
+        r.vy = 0.0;
+        r.facing = 1;
+        r.find_frame();
+        assert_eq!(r.sprite_dir, -1, "the grounded -direction flip");
+        assert_eq!(r.frame, 0, "the perched row 0");
+    }
+
+    /// The Squirrel/Mouse FindFrame air rows (`NPC.cs:76502-76511` the
+    /// Squirrel rise 2 / fall 4; `:76551-76564` the Mouse walks in the air).
+    #[test]
+    fn w4_d38_b4_the_critter_air_frames() {
+        let mut s = bare(NpcKind::Squirrel);
+        s.vy = -2.0;
+        s.find_frame();
+        assert_eq!(s.frame, 2, "the Squirrel rise row 2");
+        s.vy = 2.0;
+        s.find_frame();
+        assert_eq!(s.frame, 4, "the Squirrel fall row 4");
     }
 }

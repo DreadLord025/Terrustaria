@@ -484,6 +484,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d38 b4 — SpecificallyImmuneTo {31}.
+        NpcKind::BirdBlue
+        | NpcKind::BirdRed
+        | NpcKind::Squirrel
+        | NpcKind::Mouse
+        | NpcKind::Raven => &[31],
         // W4-d38 b3 — SpecificallyImmuneTo {20}.
         NpcKind::TacticalSkeleton
         | NpcKind::SkeletonCommando
