@@ -114,6 +114,16 @@ const PLAYER_VARIANT_COUNT: i32 = 12;
 pub struct PlayerFile {
     pub name: String,
     pub difficulty: u8,
+    /// `PlayerFileData.GetPlayTime().Ticks` (`Serialize:54754` writes the
+    /// TimeSpan ticks; `Deserialize:55150-55157` reads them at >= 138 into
+    /// `data.SetPlayTime`, else `TimeSpan.Zero`). W4-f44 ph3 carries them.
+    pub play_time_ticks: i64,
+    /// `Player.hairDye` (`Serialize:54756` / `Deserialize:55163-55166`,
+    /// gate 82) — the hair-dye item slot id, 0 = none.
+    pub hair_dye: u8,
+    /// `Player.team` (`Serialize:54757` writes `(byte)team` /
+    /// `Deserialize:55167-55170`, gate 283) — 0 = no team.
+    pub team: u8,
     pub skin_variant: u8,
     pub hair: i32,
     pub life: i32,
@@ -426,16 +436,22 @@ fn read_player_fields(
     if version > 326 {
         return Err(PlayerFileError::LaterVersion(version));
     }
+    // The per-player tail the walk captures as it goes — created up-front so
+    // the header fields land on it too; defaults for the sections a shallower
+    // port-only depth (or an older release gate) never reaches.
+    let mut tail = PlayerTail::default();
     let name = r.cs_string().ok_or(PlayerFileError::Truncated("name"))?;
     let difficulty = r.u8().ok_or(PlayerFileError::Truncated("difficulty"))?; // gate 17
-    let _play_time = r.u64().ok_or(PlayerFileError::Truncated("playtime"))?; // gate 138
+    // playTime ticks (`:55150-55157`, gate 138) — W4-f44 ph3 rides them.
+    tail.play_time_ticks = r.u64().ok_or(PlayerFileError::Truncated("playtime"))? as i64;
     let mut hair = r.i32().ok_or(PlayerFileError::Truncated("hair"))?;
     if hair >= 228 {
         hair = 0; // `:55159-55162`
     }
-    let _hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?; // gate 82
+    // hairDye (`:55163-55166`, gate 82).
+    tail.hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?;
     if version >= 283 {
-        let _team = r.u8().ok_or(PlayerFileError::Truncated("team"))?; // `:55167-55170`
+        tail.team = r.u8().ok_or(PlayerFileError::Truncated("team"))?; // `:55167-55170`
     }
     // hideVisibleAccessory: two BitsBytes (`:55171-55183`, gate 124) —
     // W4-f44 ph2 captures the ten bits (`Serialize:54758-54769`'s order).
@@ -600,18 +616,14 @@ fn read_player_fields(
         void_vault_info = r.u8().ok_or(PlayerFileError::Truncated("voidVault"))?;
         // `:55501-55504`
     }
-    // The per-player tail the walk captures as it goes (defaults for the
-    // sections a shallower port-only depth never reaches).
-    let mut tail = PlayerTail {
-        void_vault_info,
-        bank4,
-        armor,
-        dye,
-        misc,
-        hide_visible_accessory,
-        hide_misc,
-        ..PlayerTail::default()
-    };
+    // Fold the fields captured after the tail's creation point into it.
+    tail.void_vault_info = void_vault_info;
+    tail.bank4 = bank4;
+    tail.armor = armor;
+    tail.dye = dye;
+    tail.misc = misc;
+    tail.hide_visible_accessory = hide_visible_accessory;
+    tail.hide_misc = hide_misc;
     if depth <= 1 {
         // The port-only retry for increment-1 files (see `read_player_bytes`).
         return Ok(finish_player_file(
@@ -872,6 +884,9 @@ fn read_player_fields(
 /// the hide flags and the creative powers. Defaults for the sections a
 /// shallower port-only depth (or an older release gate) never reaches.
 struct PlayerTail {
+    play_time_ticks: i64,
+    hair_dye: u8,
+    team: u8,
     current_loadout: i32,
     loadouts: [LoadoutData; 3],
     void_vault_info: u8,
@@ -892,6 +907,9 @@ impl Default for PlayerTail {
     /// (`core::array::array_impl_default!{32, ...}`).
     fn default() -> Self {
         PlayerTail {
+            play_time_ticks: 0,
+            hair_dye: 0,
+            team: 0,
             current_loadout: 0,
             loadouts: Default::default(),
             void_vault_info: 0,
@@ -937,6 +955,9 @@ fn finish_player_file(
     PlayerFile {
         name,
         difficulty,
+        play_time_ticks: tail.play_time_ticks,
+        hair_dye: tail.hair_dye,
+        team: tail.team,
         skin_variant,
         hair,
         life,
@@ -981,12 +1002,13 @@ fn read_legacy_port_subset(
 ) -> Result<PlayerFile, PlayerFileError> {
     let name = r.cs_string().ok_or(PlayerFileError::Truncated("name"))?;
     let difficulty = r.u8().ok_or(PlayerFileError::Truncated("difficulty"))?;
-    let _play_time = r.u64().ok_or(PlayerFileError::Truncated("playtime"))?;
+    // W4-f44 ph3: the subset's playtime/hairDye ride (it has no team byte).
+    let play_time_ticks = r.u64().ok_or(PlayerFileError::Truncated("playtime"))? as i64;
     let mut hair = r.i32().ok_or(PlayerFileError::Truncated("hair"))?;
     if hair >= 228 {
         hair = 0;
     }
-    let _hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?;
+    let hair_dye = r.u8().ok_or(PlayerFileError::Truncated("hairDye"))?;
     // The old writer emitted the two hide BitsBytes but no hideMisc.
     // W4-f44 ph2: the ten hide bits ride (same order as the full walk).
     let hide1 = r.u8().ok_or(PlayerFileError::Truncated("hide1"))?;
@@ -1059,6 +1081,9 @@ fn read_legacy_port_subset(
     Ok(PlayerFile {
         name,
         difficulty,
+        play_time_ticks,
+        hair_dye,
+        team: 0, // the subset shape has no team byte
         skin_variant,
         hair,
         life,
@@ -1101,6 +1126,13 @@ fn read_legacy_port_subset(
 pub struct PlayerFileWrite {
     pub name: String,
     pub difficulty: u8,
+    /// `PlayerFileData.GetPlayTime().Ticks` (`:54754`) — the play time the
+    /// caller carries (0 = a fresh character, `TimeSpan.Zero`).
+    pub play_time_ticks: i64,
+    /// `Player.hairDye` (`:54756`), default 0 = no dye.
+    pub hair_dye: u8,
+    /// `(byte)Player.team` (`:54757`), default 0 = no team.
+    pub team: u8,
     pub skin_variant: u8,
     pub hair: i32,
     pub life: i32,
@@ -1165,6 +1197,9 @@ impl Default for PlayerFileWrite {
         PlayerFileWrite {
             name: String::new(),
             difficulty: 0,
+            play_time_ticks: 0,
+            hair_dye: 0,
+            team: 0,
             skin_variant: 0,
             hair: 0,
             life: 100,
@@ -1230,10 +1265,10 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // --- Player.Serialize (`Player.cs:54752-54893`) ------------------------
     w.cs_string(&file.name); // `:54752`
     w.u8(file.difficulty); // `:54753`
-    w.u64(0); // `:54754` playTime.Ticks — the port tracks no play time (Zero)
+    w.u64(file.play_time_ticks as u64); // `:54754` playTime.Ticks (fresh Zero)
     w.i32(file.hair); // `:54755`
-    w.u8(0); // `:54756` hairDye (default 0)
-    w.u8(0); // `:54757` (byte)team (`Player.cs:1430`, default 0 = none)
+    w.u8(file.hair_dye); // `:54756` hairDye (default 0)
+    w.u8(file.team); // `:54757` (byte)team (`Player.cs:1430`, default 0 = none)
 
     // `:54758-54763` hideVisibleAccessory[0..8] BitsByte — the caller's bits
     // (W4-f44 ph2); a fresh player's are all false.
@@ -1615,6 +1650,35 @@ mod tests {
         // The empty slots read false — their favourited byte is consumed with
         // the rest of the triple (`:55363`).
         assert_eq!(file.inventory[30], (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: playTime ticks / hairDye / team round-trip and sit at the
+    /// `Serialize:54754-54757` offsets (right after difficulty, before hair).
+    #[test]
+    fn the_header_fields_round_trip() {
+        let written = PlayerFileWrite {
+            play_time_ticks: 123_456_789_012,
+            hair_dye: 7,
+            team: 3,
+            ..sample()
+        };
+        let plain = serialize_plaintext(&written);
+        // The byte offsets: 24 prologue + name(1 len + 6 chars) + difficulty.
+        let mut r = Reader::new(&plain);
+        r.skip(24).unwrap();
+        assert_eq!(r.cs_string().unwrap(), "Belsin");
+        assert_eq!(r.u8().unwrap(), 0); // difficulty `:54753`
+        assert_eq!(r.u64().unwrap(), 123_456_789_012); // playTime `:54754`
+        assert_eq!(r.i32().unwrap(), 0); // hair `:54755`
+        assert_eq!(r.u8().unwrap(), 7); // hairDye `:54756`
+        assert_eq!(r.u8().unwrap(), 3); // team `:54757`
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.play_time_ticks, 123_456_789_012);
+        assert_eq!(file.hair_dye, 7);
+        assert_eq!(file.team, 3);
+        // A fresh write keeps the golden zeros (`:54754-54757`).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
     }
 
     /// The 322+ armour/dye favourited bytes are version-gated on read: a
