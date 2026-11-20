@@ -24101,13 +24101,22 @@ mod bomb_tests {
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(776, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 90, 4.0);
         pool.slots_mut()[0].time_left = 3;
+        // Gate fix: the parent's slot is RECYCLED by the first shard (the
+        // pool's lowest-free-index spawn), so `slots[0]` after the update is
+        // a live 779, not the dead parent. Snapshot the parent's generation
+        // and assert the parent died by its absence (no live 776 remains).
+        let parent_gen = pool.slots()[0].generation;
         let mut w = world();
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         pool.update(
             &mut w, &mut [], None, None, None,
             YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
         );
-        assert!(!pool.slots[0].active, "the cluster rocket exploded");
+        assert!(
+            !pool.slots().iter().any(|p| p.active && p.kind == 776),
+            "the cluster rocket exploded"
+        );
+        let _ = parent_gen;
         let shards: Vec<_> = pool
             .slots()
             .iter()
