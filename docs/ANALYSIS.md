@@ -26626,6 +26626,19 @@ Witnesses: `net::tests::s1_i_1_player_heal_round_trips`,
 `s1_i_1_player_zone_round_trips` (both pin the exact body bytes in both
 directions) + the 35/36 entries in the frame round-trip families.
 
+The witness pass then closed the per-id byte-verbatim gaps the region's
+older S1-E-27 bodies had (they only rode the frame round-trip families):
+`s1_i_1_item_owner_round_trips` (22 — the two 7-bit varints pinned in both
+the one-byte and two-byte forms, `0xAC 0x02` = 300),
+`s1_i_1_chest_open_request_round_trips` (31 — the two shorts),
+`s1_i_1_chest_item_round_trips` (32 — the stack-BEFORE-prefix order),
+`s1_i_1_player_chest_round_trips` (33 — the 0/1..20/255 length-byte gate,
+the string's own 7-bit length byte, and the stray-length `num24 = 0`
+zeroing) and `s1_i_1_player_chest_index_round_trips` (80 — byte plr +
+short index across the `-3..7999` legal span). The 80 apply-side
+`-3..8000` gate itself is `netglue`'s `S2c::PlayerChestIndex` arm
+(`MessageBuffer.cs:3221`). All code-only — tests written, not run.
+
 ## The buff misc block (S1-E-7 wave D, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
