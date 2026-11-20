@@ -39244,3 +39244,80 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The special-seed worldgen branches (W4-d107)
+
+Task `task/W4-d107-worldgen-special-seeds` (2026-11-20, code-only mode - no
+compiler invoked, witnesses WRITTEN NOT RUN). Scope: the secret-seed pass
+pruning around `WorldGen.DisablePassesForSpecialSeeds`
+(`WorldGen.cs:22493-22509`) and the seed-specific branches the ported
+cave/ore passes had deferred (the M5-ORES-1 / worldgen-caves follow-up lists).
+
+### The pruning name fix (pipeline.rs)
+
+The S1-K-1 landing's `DUAL_DUNGEON_DISABLED_PASSES` table pruned `"Ice"`.
+The C# compares `GenPassNameID.IceBiome`, whose value is
+`"Generate Ice Biome"` (`ID/GenPassNameID.cs:239`); `"Ice"` is
+`GenPassNameID.FragileIceOverIceBiomeWater` (`:280`) - a DIFFERENT pass the
+C# leaves enabled under dualDungeons. The table entry is repointed to
+`"Generate Ice Biome"` (no executed step yet - pruned vacuously like Larva
+and Shimmer, so a future ice-biome step cannot silently un-prune itself) and
+the port's `fragile ice` step now runs under the seed, per the C#. The
+s1_k_1 witnesses are updated (the name pin + a fragile-ice-stays-enabled
+assert). Behaviour change is dualDungeons-only; classic worlds untouched.
+
+### The ore-pass branches (caves.rs::ores_and_shinies)
+
+- The drunk per-blob tier re-rolls (`WorldGen.cs:13401-13573` normal,
+  `:13194-13366` remix): one `Next(2)` BEFORE each of the eleven ore
+  bands' four placement draws picks normal (`== 0`) or alternate tier
+  (`DRUNK_TIER_PAIRS`, band order copper x3 / iron x3 / silver x2 / gold /
+  sky silver / sky gold). The C# mutates `GenVars.X` - NOT
+  `SavedOreTiers.X` (set once by the Reset flips `:11274-11297`, saved at
+  `WorldFile.cs:1388-1391`) - so `world.ore_tiers` keeps the Reset roll.
+- The drunk evil split (`:13577-13587`, remix `:13370-13380`): two extra
+  half-density loops (`area * 2.25E-05 / 2.0` truncated), crimtane 204
+  FIRST then demonite 22, `[rockLayer, maxTilesY)`, strength 3-6 / steps
+  4-8, NO tier re-roll (literal kinds). They run BEFORE the closing evil
+  band, which still runs in full - a drunk world has three evil loops.
+- The sky-band gate (`:13543` normal / `:13336` remix): bands 10-11 run
+  only under `!SecretSeed.noSurface.Enabled &&
+  !SecretSeed.surfaceIsInSpace.Enabled`; a gated world skips their draws
+  whole (not just the placement).
+- The remix branch (`:13189-13396`): `remix_band_table` - the same band
+  order/densities/strength tables with three deltas: the silver deep band
+  (`:13317`) and gold deep band (`:13333`) run
+  `[worldSurface, rockLayer)` instead of `[rockLayerLow, maxTilesY)`, and
+  the closing evil band densifies to `4.25E-05` on the same shallow window
+  (`:13384`/`:13391`).
+
+### The SurfaceCaves gates (caves.rs::surface_caves)
+
+- `:12164`: the whole pass returns under `SecretSeed.noSurface` before
+  any draw (the `Skyblock.denyAllGeneration` half stays with the unported
+  skyblock generator).
+- `:12170-12175`: the remix seed triples groups 1-3's counts
+  (`num *= 3; num2 *= 3; num3 *= 3`); group 4's `num7` (`:12232`) and
+  group 5's Caverer count are NOT tripled. Group 5 stays deferred (digTunnel).
+
+### RNG-order contract (S1-A-10)
+
+Streams: the ore pass draws `streams.rng` (the shared contract stream),
+SurfaceCaves its own `pass_rng("Surface Caves")`. Draw order: unchanged for
+a classic world - every new draw sits behind a seed-flag gate, and the
+pruning fix needs the dualDungeons micro-seed. A drunk world adds one
+`Next(2)` per ore blob (before x/y/strength/steps) plus the two half-band
+loops' quads+runner ledgers before the closing evil band; a remix world
+changes only band windows/densities (same draw shapes) plus tripled
+SurfaceCaves groups; noSurface/surfaceIsInSpace REMOVE the sky bands' draws.
+Both classic hash pins (`SEED42_512`/`DEFAULT_WORLD`) therefore stay;
+the affected seeds' hashes move by design and ride a==b witnesses
+(`w4_d107_*` in caves.rs, `w4_d107_the_affected_seeds_are_deterministic`
+in worldgen/mod.rs - six affected seeds, full-world hash a==b + differs from
+the seed-matched classic control; measured values eprintln'd for the gate's
+optional per-seed constant pins).
+
+Deferred (unchanged): the skyblock generator, group 5 Caverer, the
+`ore_blob` gem/hellstone shape tails (no seed arms in the C# bands), the
+dualDungeons world content itself (the second dungeon), and the genRand
+interleave (A1-gated, S1-K-1's open half).
