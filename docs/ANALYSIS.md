@@ -26593,6 +26593,39 @@ Witnesses: `net::tests::s1_i_1_item_state_enemy_grab_bit_round_trips`,
 `netglue::message_family_tests::a_chest_open_request_is_refused_while_the_host_browses_it`
 and `a_combat_text_int_spawns_the_clients_heal_number`.
 
+### The wave-I verify round (2026-11-20, code-only)
+
+The whole region was re-verified byte-for-byte against the C# writer AND
+reader arms: 21 (`NetMessage.cs:646-669` vs `MessageBuffer.cs:1445-1487`
+— the bit-3 tail byte rides AFTER the shimmer pair, the reader consumes
+it at `:1459`), 22 (`:675-685` vs `:1552-1562`, the two 7-bit varints),
+30/31/32/33/80 (`:856-911`/`:1175-1178` vs `:1851-1982`/`:3216-3227` —
+the 33 length-byte gate `0/1..20/255` and the 80 `-3..8000` gate), 34
+(`:913-927` vs `:1984-1994` — the C2s encode writes the literal 0 and
+the host decode zeroes the fifth short, S2c keeps `number5`), 81
+(`:1179-1186` vs `:3227-3233` — `WriteRGB` = R,G,B, `Utils.cs:1369-1374`;
+the send site `NPC.HealEffect` `NPC.cs:77440-77443`). All faithful.
+
+One census WRONG corrected: research/17's old row claimed **35 PlayerHeal
+and 36 SyncPlayerZone NOT-FOUND** — both have writer arms
+(`NetMessage.cs:929-932`/`:933-944`) AND reader arms
+(`MessageBuffer.cs:2160-2177`/`:2178-2202`). Ported as bodies + codecs
+(the wave-A pattern, dispatchers parked for S1-I-4):
+
+- **35 PlayerHeal**: `(byte)plr + (short)amount`. The host overrides the
+  id to the sender (`:2163-2166`), calls `Player.HealEffect` unless it is
+  the local player without `ServerSideCharacter` (`:2168-2171`), relays
+  (`:2174`). The client send site is `Player.cs:4527`.
+- **36 SyncPlayerZone**: `(byte)plr + zone1..zone5 + (byte)townNPCs` —
+  the five `BitsByte` words ride their implicit byte conversion
+  (`BitsByte.cs:101`). The host overrides the id, latches the OLD
+  `zone5[0]` before the reads and spawns faelings on the rising edge
+  (`MessageBuffer.cs:2186`/`:2195-2198`), relays (`:2199`).
+
+Witnesses: `net::tests::s1_i_1_player_heal_round_trips`,
+`s1_i_1_player_zone_round_trips` (both pin the exact body bytes in both
+directions) + the 35/36 entries in the frame round-trip families.
+
 ## The buff misc block (S1-E-7 wave D, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`

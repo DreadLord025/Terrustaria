@@ -110,6 +110,17 @@ pub mod id {
     /// `(float)x, (float)y, RGB, (int)amount` (`NetMessage.cs:1179-1186`,
     /// `MessageBuffer.cs:3227-3233`, host→client only).
     pub const COMBAT_TEXT_INT: u8 = 81;
+    /// `35 PlayerHeal` (S1-I-1 wave I census remainder): `(byte)plr +
+    /// (short)amount` (`MessageID.cs:81`, `NetMessage.cs:929-932`,
+    /// `MessageBuffer.cs:2160-2177` — the host overrides the id to the
+    /// sender and relays).
+    pub const PLAYER_HEAL: u8 = 35;
+    /// `36 SyncPlayerZone` (S1-I-1 wave I census remainder): `(byte)plr +
+    /// zone1..zone5 + (byte)townNPCs`, seven bytes after the id
+    /// (`MessageID.cs:83`, `NetMessage.cs:933-944`,
+    /// `MessageBuffer.cs:2178-2202` — the host relays and spawns the
+    /// faelings on the zone5[0] rising edge).
+    pub const PLAYER_ZONE: u8 = 36;
     pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
     pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
     /// `70 CatchNPC` (S1-P-i36): one `(short)` npc slot — the client's bug
@@ -1442,6 +1453,34 @@ pub struct HitSwitch {
     pub y: i16,
 }
 
+/// `msg 35 PlayerHeal`'s body (`NetMessage.cs:929-932`, S1-I-1 wave I
+/// census remainder): the player id then the heal amount as a `short`.
+/// The host overrides the id to the sender (`MessageBuffer.cs:2163-2166`),
+/// calls `Player.HealEffect` unless it is the local player without
+/// ServerSideCharacter (`:2168-2171`) and relays (`:2174`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerHeal {
+    pub player_id: u8,
+    pub amount: i16,
+}
+
+/// `msg 36 SyncPlayerZone`'s body (`NetMessage.cs:933-944`, S1-I-1 wave I
+/// census remainder): the player id, the five `BitsByte` zone words
+/// (`zone1..zone5`, written as their implicit bytes) and `(byte)townNPCs`.
+/// The host overrides the id to the sender, latches `zone5[0]`'s rising
+/// edge into `NPC.Spawner.SpawnFaelings` and relays
+/// (`MessageBuffer.cs:2178-2202`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerZone {
+    pub player_id: u8,
+    pub zone1: u8,
+    pub zone2: u8,
+    pub zone3: u8,
+    pub zone4: u8,
+    pub zone5: u8,
+    pub town_npcs: u8,
+}
+
 /// `msg 80 SyncPlayerChestIndex`'s body (`NetMessage.cs:1175-1178`): which
 /// chest a player has open (`-3..8000`, `MessageBuffer.cs:3216-3227`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1698,6 +1737,12 @@ pub enum C2s {
     /// `30 TogglePVP` - a client flipped its PvP flag
     /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
     TogglePvp(TogglePvp),
+    /// `35 PlayerHeal` - a client healed (`Player.cs:4527`;
+    /// `MessageBuffer.cs:2160-2177` relays it; S1-I-1 wave I census).
+    PlayerHeal(PlayerHeal),
+    /// `36 SyncPlayerZone` - a client's biome zone words
+    /// (`MessageBuffer.cs:2178-2202` relays them; S1-I-1 wave I census).
+    PlayerZone(PlayerZone),
     /// `42 Unknown42` - a client's mana sync (`Player.cs`'s mana sends;
     /// `MessageBuffer.cs:2290-2306`).
     PlayerMana(PlayerMana),
@@ -1807,6 +1852,12 @@ pub enum S2c {
     /// `30 TogglePVP` - a peer's PvP flag, relayed by the host
     /// (`MessageBuffer.cs:1862`).
     TogglePvp(TogglePvp),
+    /// `35 PlayerHeal` - a peer's heal, relayed by the host
+    /// (`MessageBuffer.cs:2174`; S1-I-1 wave I census).
+    PlayerHeal(PlayerHeal),
+    /// `36 SyncPlayerZone` - a peer's biome zone words, relayed by the
+    /// host (`MessageBuffer.cs:2199`; S1-I-1 wave I census).
+    PlayerZone(PlayerZone),
     /// `42 Unknown42` - a peer's mana (`NetMessage.cs:961-965`; the join
     /// bundle's `SyncOnePlayer` push, `:2904`).
     PlayerMana(PlayerMana),
@@ -1924,6 +1975,8 @@ impl C2s {
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
+            Self::PlayerHeal(_) => id::PLAYER_HEAL,
+            Self::PlayerZone(_) => id::PLAYER_ZONE,
             Self::PlayerMana(_) => id::PLAYER_MANA,
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
@@ -1990,6 +2043,18 @@ impl C2s {
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
+            // `NetMessage.cs:929-932` — byte id, short amount.
+            Self::PlayerHeal(h) => w.u8(h.player_id).i16(h.amount),
+            // `NetMessage.cs:933-944` — byte id, the five zone bytes
+            // (`BitsByte`'s implicit conversion) then `(byte)townNPCs`.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .u8(z.zone1)
+                .u8(z.zone2)
+                .u8(z.zone3)
+                .u8(z.zone4)
+                .u8(z.zone5)
+                .u8(z.town_npcs),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
             Self::ProjectileTrackers(t) => w
@@ -2107,6 +2172,22 @@ impl C2s {
             id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
+            }),
+            // `MessageBuffer.cs:2162-2167` — byte id, short amount.
+            id::PLAYER_HEAL => Self::PlayerHeal(PlayerHeal {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192` — byte id, five zone bytes,
+            // `(byte)townNPCs`.
+            id::PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.u8()?,
+                zone2: r.u8()?,
+                zone3: r.u8()?,
+                zone4: r.u8()?,
+                zone5: r.u8()?,
+                town_npcs: r.u8()?,
             }),
             id::PLAYER_MANA => Self::PlayerMana(PlayerMana {
                 player_id: r.u8()?,
@@ -2285,6 +2366,8 @@ impl S2c {
             Self::ChestSize(_) => id::CHEST_SIZE,
             Self::ChestName(_) => id::CHEST_NAME,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
+            Self::PlayerHeal(_) => id::PLAYER_HEAL,
+            Self::PlayerZone(_) => id::PLAYER_ZONE,
             Self::PlayerMana(_) => id::PLAYER_MANA,
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::NpcHouse(_) => id::NPC_HOUSE,
@@ -2415,6 +2498,18 @@ impl S2c {
             Self::ChestSize(c) => w.i16(c.chest).i16(c.size),
             Self::ChestName(c) => w.i16(c.chest).i16(c.x).i16(c.y).str(&c.name),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
+            // `NetMessage.cs:929-932` — byte id, short amount.
+            Self::PlayerHeal(h) => w.u8(h.player_id).i16(h.amount),
+            // `NetMessage.cs:933-944` — byte id, the five zone bytes
+            // (`BitsByte`'s implicit conversion) then `(byte)townNPCs`.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .u8(z.zone1)
+                .u8(z.zone2)
+                .u8(z.zone3)
+                .u8(z.zone4)
+                .u8(z.zone5)
+                .u8(z.town_npcs),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
             Self::NpcHouse(h) => w.i16(h.npc).i16(h.home_x).i16(h.home_y).u8(h.status),
@@ -2601,6 +2696,22 @@ impl S2c {
             id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
+            }),
+            // `MessageBuffer.cs:2162-2167` — byte id, short amount.
+            id::PLAYER_HEAL => Self::PlayerHeal(PlayerHeal {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192` — byte id, five zone bytes,
+            // `(byte)townNPCs`.
+            id::PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.u8()?,
+                zone2: r.u8()?,
+                zone3: r.u8()?,
+                zone4: r.u8()?,
+                zone5: r.u8()?,
+                town_npcs: r.u8()?,
             }),
             id::PLAYER_MANA => Self::PlayerMana(PlayerMana {
                 player_id: r.u8()?,
@@ -4135,6 +4246,20 @@ mod tests {
                 style: 0,
                 chest: 0,
             }),
+            // S1-I-1 wave I census remainder: the 35/36 bodies.
+            C2s::PlayerHeal(PlayerHeal {
+                player_id: 2,
+                amount: 20,
+            }),
+            C2s::PlayerZone(PlayerZone {
+                player_id: 2,
+                zone1: 1,
+                zone2: 2,
+                zone3: 4,
+                zone4: 8,
+                zone5: 16,
+                town_npcs: 3,
+            }),
             C2s::PlayerChest(PlayerChest {
                 chest: 3,
                 x: 100,
@@ -4491,6 +4616,20 @@ mod tests {
                 y: -8.25,
                 color: Rgb(100, 255, 100),
                 amount: 20,
+            }),
+            // S1-I-1 wave I census remainder: the 35/36 host relays.
+            S2c::PlayerHeal(PlayerHeal {
+                player_id: 1,
+                amount: -5,
+            }),
+            S2c::PlayerZone(PlayerZone {
+                player_id: 1,
+                zone1: 255,
+                zone2: 0,
+                zone3: 128,
+                zone4: 1,
+                zone5: 0,
+                town_npcs: 255,
             }),
         ];
         for msg in &msgs {
@@ -4992,5 +5131,67 @@ mod tests {
         // (`MessageBuffer.cs:3230-3231`'s `(int)ReadSingle()`).
         assert_eq!(t.x as i32, 1234);
         assert_eq!(t.y as i32, -678);
+    }
+
+    /// `35 PlayerHeal` (`NetMessage.cs:929-932`): byte player id + short
+    /// amount; the host overrides the id to the sender and relays
+    /// (`MessageBuffer.cs:2163-2166`/`:2174`).
+    #[test]
+    fn s1_i_1_player_heal_round_trips() {
+        let h = PlayerHeal {
+            player_id: 3,
+            amount: 20,
+        };
+        let f = C2s::PlayerHeal(h).encode();
+        assert_eq!(f[2], 35);
+        let mut body = vec![3u8];
+        body.extend_from_slice(&20i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerHeal(d) => assert_eq!(d, h),
+            other => panic!("expected 35, got {:?}", other.msg_id()),
+        }
+        // The host relay keeps the same layout (`:2174`'s TrySendData).
+        let f = S2c::PlayerHeal(h).encode();
+        assert_eq!(f[2], 35);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerHeal(d) => assert_eq!(d, h),
+            other => panic!("expected 35, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `36 SyncPlayerZone` (`NetMessage.cs:933-944`): byte player id, the
+    /// five `BitsByte` zone words as their implicit bytes, `(byte)townNPCs`
+    /// — the host relays and latches zone5[0]'s rising edge into
+    /// `SpawnFaelings` (`MessageBuffer.cs:2186`/`:2195-2199`).
+    #[test]
+    fn s1_i_1_player_zone_round_trips() {
+        let z = PlayerZone {
+            player_id: 1,
+            zone1: 0b1010_0101,
+            zone2: 0x00,
+            zone3: 0xFF,
+            zone4: 0b0000_0001,
+            zone5: 0b1000_0000,
+            town_npcs: 7,
+        };
+        let f = C2s::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+        assert_eq!(&f[3..], &[1, 0xA5, 0x00, 0xFF, 0x01, 0x80, 7]);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+        assert_eq!(&f[3..], &[1, 0xA5, 0x00, 0xFF, 0x01, 0x80, 7]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        // The zone5[0] edge bit the host's SpawnFaelings gate reads.
+        assert_eq!(z.zone5 & 1, 0);
+        assert_eq!(PlayerZone { zone5: 1, ..z }.zone5 & 1, 1);
     }
 }

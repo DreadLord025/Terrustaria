@@ -826,6 +826,12 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // S1-I-1 wave I census remainder: `35 PlayerHeal` / `36
+            // SyncPlayerZone` have bodies + codecs (`net.rs`); the host
+            // apply/relay arms (`MessageBuffer.cs:2160-2177`'s HealEffect +
+            // relay, `:2178-2202`'s zone words + SpawnFaelings edge + relay)
+            // land with the send-path pass (S1-I-4).
+            C2s::PlayerHeal(_) | C2s::PlayerZone(_) => {}
         }
     }
 
@@ -1906,6 +1912,10 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // S1-I-1 wave I census remainder: the `35`/`36` client read
+            // sites (`MessageBuffer.cs:2168-2171`'s HealEffect,
+            // `:2185-2192`'s zone words) ride the send-path pass (S1-I-4).
+            S2c::PlayerHeal(_) | S2c::PlayerZone(_) => {}
         }
     }
 
