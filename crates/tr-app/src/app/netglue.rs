@@ -308,7 +308,7 @@ impl App {
             // (`:409-412`), stores it in that client's copy of the
             // inventory and relays it to the other clients (`:454-457`,
             // `PlayerItemSlotID.CanRelay`).
-            C2s::Inventory { slot, item } => {
+            C2s::Inventory { slot, item, .. } => {
                 let peer = id as u8;
                 server.set_slot_inventory(id, slot as u8, item);
                 if player_item_slot::can_relay(slot) {
@@ -389,7 +389,9 @@ impl App {
             C2s::PlayerHp { hp, max_hp, .. } => {
                 if let Some(p) = self.remote_players.get_mut(&id) {
                     p.hp = hp as i32;
-                    p.max_hp = (max_hp as i32).max(20);
+                    // The statLifeMax >= 20 floor is the decode's now
+                    // (`MessageBuffer.cs:1107-1110`, `net.rs`'s 16 arm).
+                    p.max_hp = max_hp as i32;
                 }
             }
             // `case 13` — the per-tick player state. The server forces the
@@ -885,6 +887,17 @@ impl App {
             // tool set, `world_sim/editing/wiring.rs:27-29`), so the arm is
             // parked for S1-I-4.
             C2s::MassWireOperation(_) => {}
+
+            // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
+            // `net.rs`; the host apply/relay arms (`MessageBuffer.cs:2160-2177`,
+            // `:2178-2201`, `:2256-2270`, `:2271-2289`, `:2307-2324`) land with
+            // the send-path pass (S1-I-4) — 36's faeling edge (`:2195-2198`)
+            // rides there too.
+            C2s::PlayerHeal(_)
+            | C2s::TalkNpc(_)
+            | C2s::PlayerZone(_)
+            | C2s::ItemAnim(_)
+            | C2s::ManaEffect(_) => {}
         }
     }
 
@@ -1358,6 +1371,7 @@ impl App {
                         let (sx, sy) = (self.world.spawn_x as i16, self.world.spawn_y as i16);
                         self.net_state = net::client_state::IN_WORLD;
                         client.send(&C2s::PlayerSpawn(net::PlayerSpawn {
+                            player_id: self.local_id as u8,
                             x: sx,
                             y: sy,
                             respawn_timer: 0,
@@ -1414,7 +1428,9 @@ impl App {
             } => {
                 if let Some(p) = self.remote_players.get_mut(&(player_id as u32)) {
                     p.hp = hp as i32;
-                    p.max_hp = (max_hp as i32).max(20);
+                    // The statLifeMax >= 20 floor is the decode's now
+                    // (`MessageBuffer.cs:1107-1110`, `net.rs`'s 16 arm).
+                    p.max_hp = max_hp as i32;
                 }
             }
             S2c::PlayerActive { player_id, active } => {
@@ -1970,7 +1986,7 @@ impl App {
             | S2c::TilePaint(_)
             | S2c::WallPaint(_)
             | S2c::TilePicking(_)
-            | S2c::ExtraSpawnLoaded { .. } => {}
+            | S2c::ExtraSpawnLoaded { .. }
             // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
             // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
             // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
@@ -1981,6 +1997,18 @@ impl App {
             // and clear `wireOperationsCooldown`. Parked with the 109 host
             // arm (the mass operation is unported) for S1-I-4.
             S2c::MassWireOperationPay(_) => {}
+
+            // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
+            // `net.rs`; the client read sites (`MessageBuffer.cs:901-951`,
+            // `:2160-2177`, `:2178-2201`, `:2256-2270`, `:2271-2289`,
+            // `:2307-2324`) land with the send-path pass (S1-I-4) — nothing
+            // sends them yet.
+            S2c::PlayerSpawn(_)
+            | S2c::PlayerHeal(_)
+            | S2c::TalkNpc(_)
+            | S2c::PlayerZone(_)
+            | S2c::ItemAnim(_)
+            | S2c::ManaEffect(_) => {}
         }
     }
 
@@ -2008,6 +2036,7 @@ impl App {
         // The 59 grid slots, in `PlayerItemSlotID.Inventory0..58` order.
         for (i, slot) in self.inventory.iter().enumerate() {
             client.send(&C2s::Inventory {
+                player_id: me,
                 slot: i as i16,
                 item: self.net_item(slot, self.favorite_slots.contains(&i)),
             });
@@ -2017,6 +2046,7 @@ impl App {
         if let Some(p) = self.player.as_ref() {
             for i in 0..p.equipped.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::ARMOR_0 + i as i16,
                     item: net::NetItem {
                         kind: p.equipped[i] as i16,
@@ -2028,6 +2058,7 @@ impl App {
             }
             for i in 0..p.dye_slots.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::DYE_0 + i as i16,
                     item: net::NetItem {
                         kind: p.dye_slots[i] as i16,
@@ -2039,6 +2070,7 @@ impl App {
             }
             for i in 0..p.misc_dye_slots.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::MISC_DYE_0 + i as i16,
                     item: net::NetItem {
                         kind: p.misc_dye_slots[i] as i16,
@@ -2051,6 +2083,7 @@ impl App {
             for (b, vault) in p.banks.iter().enumerate() {
                 for (i, slot) in vault.iter().enumerate() {
                     client.send(&C2s::Inventory {
+                        player_id: me,
                         slot: player_item_slot::bank_1_0(b) + i as i16,
                         item: self.net_item(slot, false),
                     });
@@ -2060,12 +2093,14 @@ impl App {
         // The misc equips (`PlayerItemSlotID.Misc0..`) ride `App.equip`.
         for (i, slot) in self.equip.misc_equips.iter().enumerate() {
             client.send(&C2s::Inventory {
+                player_id: me,
                 slot: player_item_slot::MISC_0 + i as i16,
                 item: self.net_item(slot, false),
             });
         }
         // The trash slot (`PlayerItemSlotID.TrashItem`).
         client.send(&C2s::Inventory {
+            player_id: me,
             slot: player_item_slot::TRASH,
             item: self.net_item(&self.equip.trash, false),
         });
@@ -3036,6 +3071,12 @@ impl App {
             y: p.y,
             vx: p.vx,
             vy: p.vy,
+            // No mount/potion/camera sim: the gate bits stay clear so the
+            // C# bodies (`NetMessage.cs:496-508`) stay off the wire.
+            mount_type: 0,
+            potion_use: (0.0, 0.0),
+            potion_home: (0.0, 0.0),
+            camera_target: (0.0, 0.0),
             on_ground: p.on_ground,
             leg_frame: p.leg_frame,
             body_frame: p.body_frame,

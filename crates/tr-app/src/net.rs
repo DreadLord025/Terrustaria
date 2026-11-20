@@ -233,6 +233,34 @@ pub mod id {
     /// is its own (`MessageBuffer.cs:3789-3807`).
     pub const MASS_WIRE_OPERATION_PAY: u8 = 110;
 
+    // ---- W4-d96 (S1-I-1 player-family first half): the low-region ids ----
+    // The census + the d96/d97/c27 lane split live in
+    // `docs/research/17-netcode.md` ("W4 player-family census"). Bodies +
+    // codecs only; the dispatcher apply/relay arms stay parked (S1-I-4).
+    /// `35 PlayerHeal` (`MessageID.cs:81`) — the heal combat-text relay
+    /// (`NetMessage.cs:929-932`, `MessageBuffer.cs:2160-2177`; the send site
+    /// is `Player.HealEffect`, `Player.cs:4522-4529`).
+    pub const PLAYER_HEAL: u8 = 35;
+    /// `40 SyncTalkNPC` (`MessageID.cs:91`) — which NPC a player talks to
+    /// (`NetMessage.cs:952-955`, `MessageBuffer.cs:2256-2270`;
+    /// `Player.SetTalkNPC`, `Player.cs:4375`).
+    pub const TALK_NPC: u8 = 40;
+    /// `36 SyncPlayerZone` (`MessageID.cs:83`) — the five zone BitsBytes plus
+    /// the town-NPC count (`NetMessage.cs:933-944`,
+    /// `MessageBuffer.cs:2178-2201`; the send sites are the zone-change test
+    /// `Main.cs:17634` and the 900-tick heartbeat `:64533`).
+    pub const PLAYER_ZONE: u8 = 36;
+    /// `41 ItemRotationAndAnimation` (`MessageID.cs:93`) — the aimed-item
+    /// rotation + animation counter (`NetMessage.cs:956-960`,
+    /// `MessageBuffer.cs:2271-2289`; sent beside a `13` at the useStyle-5/13
+    /// aim sites, `Player.cs:43693`, `:47374`, `:47380`).
+    pub const ITEM_ANIM: u8 = 41;
+    /// `43 ManaEffect` (`MessageID.cs:97`) — the mana combat-text relay,
+    /// `35 PlayerHeal`'s mana twin (`NetMessage.cs:966-969`,
+    /// `MessageBuffer.cs:2307-2324`; the send site is `Player.ManaEffect`,
+    /// `Player.cs:4531-4538`).
+    pub const MANA_EFFECT: u8 = 43;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -667,11 +695,13 @@ pub struct PlayerNet {
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
 /// BitsByte groups, the selected item, the full-float position and the
-/// conditional velocity/mount/potion/camera bodies. The port has no mounts,
-/// potions or camera-target sync, so those bits ride as flags with no bodies
-/// (deviation in `docs/ANALYSIS.md`); the trailing anim/hp fields are the
-/// port's two-client extension — the C# derives them from each peer's local
-/// simulation, which the port does not run for remote players.
+/// conditional velocity/mount/potion/camera bodies — all verbatim, in the C#
+/// gate order (`:492-508`: velocity b2, mount b7, potion c6, camera d5). The
+/// port stores the mount/potion/camera values but simulates none of them
+/// (the reader's `SetMount`/potion/camera arms are S1-I-4); the trailing
+/// anim/hp fields are the port's two-client extension — the C# derives them
+/// from each peer's local simulation, which the port does not run for remote
+/// players (deviation in `docs/ANALYSIS.md`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PlayerState {
     pub player_id: u8,
@@ -688,6 +718,17 @@ pub struct PlayerState {
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
+    /// `(ushort)mount.Type`, gated by flags_b bit 7 (`NetMessage.cs:496-499`;
+    /// the reader `SetMount`/`Dismount`, `MessageBuffer.cs:1021-1028`).
+    pub mount_type: u16,
+    /// `PotionOfReturnOriginalUsePosition`, gated by flags_c bit 6
+    /// (`NetMessage.cs:500-504`; reader `MessageBuffer.cs:1029-1038`).
+    pub potion_use: (f32, f32),
+    /// `PotionOfReturnHomePosition`, the second Vector2 of the same gate.
+    pub potion_home: (f32, f32),
+    /// `netCameraTarget`, gated by flags_d bit 5 (`NetMessage.cs:505-508`;
+    /// reader `MessageBuffer.cs:1051`).
+    pub camera_target: (f32, f32),
     // ---- port extension: the render fields the C# derives locally ----
     pub on_ground: bool,
     pub leg_frame: u32,
@@ -707,9 +748,26 @@ impl PlayerState {
             .u8(self.selected_item)
             .f32(self.x)
             .f32(self.y);
-        // `velocity != Vector2.Zero` gate (`NetMessage.cs:491-495`).
+        // `velocity != Vector2.Zero` gate (`NetMessage.cs:492-495`).
         if self.flags_b.get(2) {
             w = w.f32(self.vx).f32(self.vy);
+        }
+        // `mount.Active` gate (`NetMessage.cs:496-499`): (ushort)mount.Type.
+        if self.flags_b.get(7) {
+            w = w.u16(self.mount_type);
+        }
+        // `PotionOfReturnOriginalUsePosition.HasValue` gate
+        // (`NetMessage.cs:500-504`): TWO Vector2s, use then home.
+        if self.flags_c.get(6) {
+            w = w
+                .f32(self.potion_use.0)
+                .f32(self.potion_use.1)
+                .f32(self.potion_home.0)
+                .f32(self.potion_home.1);
+        }
+        // `netCameraTarget.HasValue` gate (`NetMessage.cs:505-508`).
+        if self.flags_d.get(5) {
+            w = w.f32(self.camera_target.0).f32(self.camera_target.1);
         }
         // The port's render extension (two-client only; see the struct doc).
         w.bool(self.on_ground)
@@ -728,7 +786,24 @@ impl PlayerState {
         let selected_item = r.u8()?;
         let x = r.f32()?;
         let y = r.f32()?;
+        // `MessageBuffer.cs:993-997`: the velocity stays Zero without bit 2.
         let (vx, vy) = if flags_b.get(2) {
+            (r.f32()?, r.f32()?)
+        } else {
+            (0.0, 0.0)
+        };
+        // `MessageBuffer.cs:1021-1028`: SetMount(type) or Dismount — the port
+        // stores the type only (no mount sim yet), 0 = dismounted.
+        let mount_type = if flags_b.get(7) { r.u16()? } else { 0 };
+        // `MessageBuffer.cs:1029-1038`: the two Vector2s or both null.
+        let (potion_use, potion_home) = if flags_c.get(6) {
+            ((r.f32()?, r.f32()?), (r.f32()?, r.f32()?))
+        } else {
+            ((0.0, 0.0), (0.0, 0.0))
+        };
+        // `MessageBuffer.cs:1051`: netCameraTarget or null — read AFTER the
+        // sleeping/autoreuse/... flag copies but at this wire position.
+        let camera_target = if flags_d.get(5) {
             (r.f32()?, r.f32()?)
         } else {
             (0.0, 0.0)
@@ -749,6 +824,10 @@ impl PlayerState {
             y,
             vx,
             vy,
+            mount_type,
+            potion_use,
+            potion_home,
+            camera_target,
             on_ground,
             leg_frame,
             body_frame,
@@ -1122,8 +1201,9 @@ pub struct PlayerInfo {
     pub under_shirt_color: Rgb,
     pub pants_color: Rgb,
     pub shoe_color: Rgb,
-    /// bit 0-2: difficulty (1/2/3), bit 2 of group 1 is extraAccessory
-    /// (`NetMessage.cs:184-186`).
+    /// Group 1: difficulty 1 → bit 0, 2 → bit 1, 3 → bit **3**; bit 2 is
+    /// `extraAccessory` (`NetMessage.cs:166-179`; the reader re-derives the
+    /// same mapping, `MessageBuffer.cs:323-341`).
     pub flags1: BitsByte,
     pub flags2: BitsByte,
     pub flags3: BitsByte,
@@ -1132,7 +1212,9 @@ pub struct PlayerInfo {
 impl PlayerInfo {
     /// The defaults the port sends: the name is the only field with a home
     /// today (`App.player_name`); every appearance field rides the wire as
-    /// vanilla-zero until the character milestone lands.
+    /// vanilla-zero until the character milestone lands. Note the read side
+    /// clamps `voiceVariant` into 1..4 (`MessageBuffer.cs:300`), so a decoded
+    /// `with_name` carries `voice_variant = 1`, not the written 0.
     pub fn with_name(player_id: u8, name: &str) -> Self {
         Self {
             player_id,
@@ -1201,12 +1283,23 @@ impl PlayerInfo {
         let flags3 = r.bitsbyte()?;
         Some(Self {
             player_id,
-            skin_variant,
-            voice_variant,
-            voice_pitch_offset,
-            // `hair >= 228` normalises to 0 (`MessageBuffer.cs:319`).
+            // `MathHelper.Clamp(skinVariant, 0, PlayerVariantID.Count - 1)`
+            // (`MessageBuffer.cs:298`; `PlayerVariantID.Count = 12`,
+            // `ID/PlayerVariantID.cs:55`).
+            skin_variant: skin_variant.min(11),
+            // `Utils.Clamp(voiceVariant, 1, 4)` (`MessageBuffer.cs:300`).
+            voice_variant: voice_variant.clamp(1, 4),
+            // NaN → 0, then `Utils.Clamp(voicePitchOffset, -1, 1)`
+            // (`MessageBuffer.cs:302-306`).
+            voice_pitch_offset: if voice_pitch_offset.is_nan() {
+                0.0
+            } else {
+                voice_pitch_offset.clamp(-1.0, 1.0)
+            },
+            // `hair >= 228` normalises to 0 (`MessageBuffer.cs:308-311`).
             hair: if hair >= 228 { 0 } else { hair },
-            name,
+            // `ReadString().Trim().Trim()` (`MessageBuffer.cs:312`).
+            name: name.trim().to_string(),
             hair_dye,
             hide_visible_accessory,
             hide_misc,
@@ -1474,10 +1567,14 @@ pub struct SpawnRequest {
     pub team: u8,
 }
 
-/// `msg 12 PlayerSpawn`'s body (`MessageBuffer.cs:908-920`): where the player
-/// spawned, the respawn timer, the death counters and the team.
+/// `msg 12 PlayerSpawn`'s body (`NetMessage.cs:433-445`; the read side is
+/// `MessageBuffer.cs:901-951`): the player id first, then where the player
+/// spawned, the respawn timer, the death counters, the team and the spawn
+/// context. The server forces the id to the sender (`MessageBuffer.cs:903-907`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlayerSpawn {
+    /// `Player.whoAmI`; server-forced on read (`MessageBuffer.cs:903-907`).
+    pub player_id: u8,
     pub x: i16,
     pub y: i16,
     pub respawn_timer: i32,
@@ -1855,6 +1952,74 @@ pub struct TilePicking {
     pub damage: u8,
 }
 
+// ---- W4-d96 (S1-I-1 player-family first half): the low-region bodies ----
+// Bodies + codecs only; the dispatcher apply/relay arms stay parked (S1-I-4).
+
+/// `msg 35 PlayerHeal`'s body (`NetMessage.cs:929-932`): the player id then
+/// the heal amount as a `short`. The server forces the id to the sender
+/// (`MessageBuffer.cs:2162-2166`); the read side raises `HealEffect` for a
+/// peer (`:2168-2171`) and relays (`:2172-2175`). The send site is
+/// `Player.HealEffect` (`Player.cs:4522-4529`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerHeal {
+    pub player_id: u8,
+    pub amount: i16,
+}
+
+/// `msg 40 SyncTalkNPC`'s body (`NetMessage.cs:952-955`): the player id then
+/// `Player.talkNPC` as a `short` (`-1` = not talking). The server forces the
+/// id to the sender (`MessageBuffer.cs:2258-2262`), applies `SetTalkNPC`
+/// (`Player.cs:4375`) and relays (`:2265-2268`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TalkNpc {
+    pub player_id: u8,
+    pub npc: i16,
+}
+
+/// `msg 36 SyncPlayerZone`'s body (`NetMessage.cs:933-944`): the player id,
+/// the five `zone1..5` BitsBytes (`Player.cs:1364-1372`) then
+/// `(byte)townNPCs` (`Player.cs:1412` is an `int`; the writer truncates).
+/// The server forces the id to the sender (`MessageBuffer.cs:2180-2184`),
+/// stores the six bytes (`:2187-2192`) and relays (`:2199`); the
+/// `zone5[0]` false→true edge spawns faelings host-side (`:2195-2198`,
+/// `NPC.Spawner.SpawnFaelings` — the apply arm is S1-I-4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PlayerZone {
+    pub player_id: u8,
+    pub zone1: BitsByte,
+    pub zone2: BitsByte,
+    pub zone3: BitsByte,
+    pub zone4: BitsByte,
+    pub zone5: BitsByte,
+    /// `(byte)player.townNPCs` — the count of town NPCs near the player.
+    pub town_npcs: u8,
+}
+
+/// `msg 41 ItemRotationAndAnimation`'s body (`NetMessage.cs:956-960`): the
+/// player id, the `itemRotation` float (`Player.cs:1498`) then
+/// `(short)itemAnimation` (`Player.cs:3014` is an `int`; the writer
+/// truncates). The server forces the id to the sender
+/// (`MessageBuffer.cs:2273-2277`), stores both fields, re-derives `channel`
+/// from the selected item (`:2281-2283`) and relays (`:2284-2287`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ItemAnim {
+    pub player_id: u8,
+    pub rotation: f32,
+    pub animation: i16,
+}
+
+/// `msg 43 ManaEffect`'s body (`NetMessage.cs:966-969`): the player id then
+/// the mana amount as a `short` — `35 PlayerHeal`'s mana twin. The server
+/// forces the id to the sender (`MessageBuffer.cs:2309-2313`); the read side
+/// raises `ManaEffect` for a peer (`:2315-2318`, no `ServerSideCharacter`
+/// escape here — unlike 35's `:2168`) and relays (`:2319-2322`). The send
+/// site is `Player.ManaEffect` (`Player.cs:4531-4538`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ManaEffect {
+    pub player_id: u8,
+    pub amount: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1869,8 +2034,11 @@ pub enum C2s {
     Password(String),
     /// `4 PlayerInfo` — this client's identity.
     PlayerInfo(PlayerInfo),
-    /// `5 PlayerInventory` — one inventory slot.
+    /// `5 PlayerInventory` — one inventory slot. The wire carries the
+    /// sender's id first (`NetMessage.cs:201`); the server forces it to the
+    /// sender on read (`MessageBuffer.cs:409-412`).
     Inventory {
+        player_id: u8,
         slot: i16,
         item: NetItem,
     },
@@ -2020,6 +2188,24 @@ pub enum C2s {
         section_x: u16,
         section_y: u16,
     },
+
+    /// `35 PlayerHeal` - a client's heal effect (`Player.HealEffect`'s
+    /// broadcast, `Player.cs:4522-4529`; `MessageBuffer.cs:2160-2177`).
+    PlayerHeal(PlayerHeal),
+    /// `40 SyncTalkNPC` - a client started/stopped talking to an NPC
+    /// (`Player.SetTalkNPC`, `Player.cs:4375`; `MessageBuffer.cs:2256-2270`).
+    TalkNpc(TalkNpc),
+    /// `36 SyncPlayerZone` - a client's zone flags changed
+    /// (`Main.cs:17634`'s change test, the 900-tick heartbeat `:64533`;
+    /// `MessageBuffer.cs:2178-2201`).
+    PlayerZone(PlayerZone),
+    /// `41 ItemRotationAndAnimation` - a client's aimed-item rotation
+    /// (`Player.cs:43693`/`:47374`/`:47380` beside a `13`;
+    /// `MessageBuffer.cs:2271-2289`).
+    ItemAnim(ItemAnim),
+    /// `43 ManaEffect` - a client's mana effect (`Player.ManaEffect`'s
+    /// broadcast, `Player.cs:4531-4538`; `MessageBuffer.cs:2307-2324`).
+    ManaEffect(ManaEffect),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2068,6 +2254,9 @@ pub enum S2c {
         player_id: u8,
         active: bool,
     },
+    /// `12 PlayerSpawn` — a peer spawned in (`NetMessage.cs:433-445`; the
+    /// host relays it once the slot is in-world, `MessageBuffer.cs:936`/`:948`).
+    PlayerSpawn(PlayerSpawn),
     /// `16 PlayerHP` — another peer's health.
     PlayerHp {
         player_id: u8,
@@ -2152,6 +2341,21 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `35 PlayerHeal` - a peer's heal effect, relayed by the host
+    /// (`MessageBuffer.cs:2172-2175`).
+    PlayerHeal(PlayerHeal),
+    /// `40 SyncTalkNPC` - a peer's talk NPC, relayed by the host
+    /// (`MessageBuffer.cs:2265-2268`).
+    TalkNpc(TalkNpc),
+    /// `36 SyncPlayerZone` - a peer's zone flags, relayed by the host
+    /// (`MessageBuffer.cs:2199`).
+    PlayerZone(PlayerZone),
+    /// `41 ItemRotationAndAnimation` - a peer's aimed-item rotation,
+    /// relayed by the host (`MessageBuffer.cs:2284-2287`).
+    ItemAnim(ItemAnim),
+    /// `43 ManaEffect` - a peer's mana effect, relayed by the host
+    /// (`MessageBuffer.cs:2319-2322`).
+    ManaEffect(ManaEffect),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2282,6 +2486,12 @@ impl C2s {
             Self::TilePicking(_) => id::TILE_PICKING,
             Self::TeamChangeUi(_) => id::TEAM_CHANGE_UI,
             Self::SectionRequest { .. } => id::SECTION_REQUEST,
+
+            Self::PlayerHeal(_) => id::PLAYER_HEAL,
+            Self::TalkNpc(_) => id::TALK_NPC,
+            Self::PlayerZone(_) => id::PLAYER_ZONE,
+            Self::ItemAnim(_) => id::ITEM_ANIM,
+            Self::ManaEffect(_) => id::MANA_EFFECT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2293,7 +2503,13 @@ impl C2s {
             Self::Connect(v) => w.str(v),
             Self::Password(v) => w.str(v),
             Self::PlayerInfo(pi) => pi.write_to(w),
-            Self::Inventory { slot, item } => w
+            // `NetMessage.cs:199-222`: (byte)number leads the slot body.
+            Self::Inventory {
+                player_id,
+                slot,
+                item,
+            } => w
+                .u8(*player_id)
                 .i16(*slot)
                 .i16(item.stack)
                 .u8(item.prefix)
@@ -2373,8 +2589,28 @@ impl C2s {
                 section_x,
                 section_y,
             } => w.u16(*section_x).u16(*section_y),
+
+            // `NetMessage.cs:929-932`: (byte)number + (short)number2.
+            Self::PlayerHeal(h) => w.u8(h.player_id).i16(h.amount),
+            // `NetMessage.cs:952-955`: (byte)number + (short)talkNPC.
+            Self::TalkNpc(t) => w.u8(t.player_id).i16(t.npc),
+            // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .bitsbyte(z.zone1)
+                .bitsbyte(z.zone2)
+                .bitsbyte(z.zone3)
+                .bitsbyte(z.zone4)
+                .bitsbyte(z.zone5)
+                .u8(z.town_npcs),
+            // `NetMessage.cs:956-960`: (byte)number + itemRotation + (short)itemAnimation.
+            Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
+            // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+            Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
+            // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
             Self::PlayerSpawn(s) => w
+                .u8(s.player_id)
                 .i16(s.x)
                 .i16(s.y)
                 .i32(s.respawn_timer)
@@ -2432,16 +2668,19 @@ impl C2s {
             id::PASSWORD => Self::Password(r.str()?),
             id::PLAYER_INFO => Self::PlayerInfo(PlayerInfo::read_from(r)?),
             id::PLAYER_INVENTORY => {
+                // `MessageBuffer.cs:401-406`: the id byte leads the body.
+                let player_id = r.u8()?;
                 let slot = r.i16()?;
                 let stack = r.i16()?;
                 let prefix = r.u8()?;
                 let kind = r.i16()?;
                 let flags = r.bitsbyte()?;
                 Self::Inventory {
+                    player_id,
                     slot,
                     item: NetItem {
                         kind,
-                        // The C# clamps the stack to ≥ 0 (`MessageBuffer.cs:400`).
+                        // The C# clamps the stack to ≥ 0 (`NetMessage.cs:210-213`).
                         stack: stack.max(0),
                         prefix,
                         favorited: flags.get(0),
@@ -2558,12 +2797,46 @@ impl C2s {
                 section_x: r.u16()?,
                 section_y: r.u16()?,
             },
+
+            // `MessageBuffer.cs:2162-2167`: (byte)id + (short)amount.
+            id::PLAYER_HEAL => Self::PlayerHeal(PlayerHeal {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2258-2263`: (byte)id + (short)talkNPC.
+            id::TALK_NPC => Self::TalkNpc(TalkNpc {
+                player_id: r.u8()?,
+                npc: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192`: (byte)id + zone1..5 + townNPCs.
+            id::PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.bitsbyte()?,
+                zone2: r.bitsbyte()?,
+                zone3: r.bitsbyte()?,
+                zone4: r.bitsbyte()?,
+                zone5: r.bitsbyte()?,
+                town_npcs: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2273-2282`: (byte)id + float + (short).
+            id::ITEM_ANIM => Self::ItemAnim(ItemAnim {
+                player_id: r.u8()?,
+                rotation: r.f32()?,
+                animation: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2309-2314`: (byte)id + (short)amount.
+            id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
                 team: r.u8()?,
             }),
+            // `MessageBuffer.cs:903-919`: the id byte leads the body.
             id::PLAYER_SPAWN => Self::PlayerSpawn(PlayerSpawn {
+                player_id: r.u8()?,
                 x: r.i16()?,
                 y: r.i16()?,
                 respawn_timer: r.i32()?,
@@ -2572,14 +2845,20 @@ impl C2s {
                 team: r.u8()?,
                 spawn_context: r.u8()?,
             }),
+            // `MessageBuffer.cs:1063-1081`: the active byte is tested `== 1`
+            // (`:1070`), anything else deactivates.
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
-                active: r.u8()? != 0,
+                active: r.u8()? == 1,
             },
+            // `MessageBuffer.cs:1097-1111`: (byte)id + (short)statLife +
+            // (short)statLifeMax; the read side floors statLifeMax at 20
+            // (`:1107-1110`) and derives `dead = statLife <= 0` (`:1111`,
+            // the apply arm's job — S1-I-4).
             id::PLAYER_HP => Self::PlayerHp {
                 player_id: r.u8()?,
                 hp: r.i16()?,
-                max_hp: r.i16()?,
+                max_hp: r.i16()?.max(20),
             },
             id::PLAYER_STATE => Self::PlayerState(PlayerState::read_from(r)?),
             id::INT_EDIT => Self::Edit {
@@ -2716,6 +2995,7 @@ impl S2c {
             Self::NpcKilled { .. } => id::NPC_KILLED,
             Self::ProgressionEvent { .. } => id::PROGRESSION_EVENT,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
+            Self::PlayerSpawn(_) => id::PLAYER_SPAWN,
             Self::PlayerHp { .. } => id::PLAYER_HP,
             Self::NpcInfo(_) => id::NPC_INFO,
             Self::ItemState(_) => id::ITEM_DROP,
@@ -2754,6 +3034,12 @@ impl S2c {
             Self::WallPaint(_) => id::WALL_PAINT,
             Self::TilePicking(_) => id::TILE_PICKING,
             Self::ExtraSpawnLoaded { .. } => id::EXTRA_SPAWN_LOADED,
+
+            Self::PlayerHeal(_) => id::PLAYER_HEAL,
+            Self::TalkNpc(_) => id::TALK_NPC,
+            Self::PlayerZone(_) => id::PLAYER_ZONE,
+            Self::ItemAnim(_) => id::ITEM_ANIM,
+            Self::ManaEffect(_) => id::MANA_EFFECT,
         }
     }
 
@@ -2810,6 +3096,16 @@ impl S2c {
             Self::NpcKilled { npc } => w.i16(*npc),
             Self::ProgressionEvent { event_id } => w.i16(*event_id),
             Self::PlayerActive { player_id, active } => w.u8(*player_id).u8(u8::from(*active)),
+            // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
+            Self::PlayerSpawn(s) => w
+                .u8(s.player_id)
+                .i16(s.x)
+                .i16(s.y)
+                .i32(s.respawn_timer)
+                .i16(s.deaths_pve)
+                .i16(s.deaths_pvp)
+                .u8(s.team)
+                .u8(s.spawn_context),
             Self::PlayerHp {
                 player_id,
                 hp,
@@ -2918,6 +3214,24 @@ impl S2c {
             Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
             // `NetMessage.cs:1659-1661`: one byte.
             Self::ExtraSpawnLoaded { player_id } => w.u8(*player_id),
+
+            // `NetMessage.cs:929-932`: (byte)number + (short)number2.
+            Self::PlayerHeal(h) => w.u8(h.player_id).i16(h.amount),
+            // `NetMessage.cs:952-955`: (byte)number + (short)talkNPC.
+            Self::TalkNpc(t) => w.u8(t.player_id).i16(t.npc),
+            // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .bitsbyte(z.zone1)
+                .bitsbyte(z.zone2)
+                .bitsbyte(z.zone3)
+                .bitsbyte(z.zone4)
+                .bitsbyte(z.zone5)
+                .u8(z.town_npcs),
+            // `NetMessage.cs:956-960`: (byte)number + itemRotation + (short)itemAnimation.
+            Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
+            // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+            Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2990,14 +3304,31 @@ impl S2c {
             id::PROGRESSION_EVENT => Self::ProgressionEvent {
                 event_id: r.i16()?,
             },
+            // `MessageBuffer.cs:1063-1081`: the active byte is tested `== 1`
+            // (`:1070`), anything else deactivates.
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
-                active: r.u8()? != 0,
+                active: r.u8()? == 1,
             },
+            // `MessageBuffer.cs:903-919`: the id byte leads the body.
+            id::PLAYER_SPAWN => Self::PlayerSpawn(PlayerSpawn {
+                player_id: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                respawn_timer: r.i32()?,
+                deaths_pve: r.i16()?,
+                deaths_pvp: r.i16()?,
+                team: r.u8()?,
+                spawn_context: r.u8()?,
+            }),
+            // `MessageBuffer.cs:1097-1111`: (byte)id + (short)statLife +
+            // (short)statLifeMax; the read side floors statLifeMax at 20
+            // (`:1107-1110`) and derives `dead = statLife <= 0` (`:1111`,
+            // the apply arm's job — S1-I-4).
             id::PLAYER_HP => Self::PlayerHp {
                 player_id: r.u8()?,
                 hp: r.i16()?,
-                max_hp: r.i16()?,
+                max_hp: r.i16()?.max(20),
             },
             id::INT_JOINED => Self::Joined {
                 id: r.u32()?,
@@ -3180,6 +3511,38 @@ impl S2c {
                 item_type: r.i16()?,
                 count: r.i16()?,
                 player: r.u8()?,
+            }),
+
+            // `MessageBuffer.cs:2162-2167`: (byte)id + (short)amount.
+            id::PLAYER_HEAL => Self::PlayerHeal(PlayerHeal {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2258-2263`: (byte)id + (short)talkNPC.
+            id::TALK_NPC => Self::TalkNpc(TalkNpc {
+                player_id: r.u8()?,
+                npc: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192`: (byte)id + zone1..5 + townNPCs.
+            id::PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.bitsbyte()?,
+                zone2: r.bitsbyte()?,
+                zone3: r.bitsbyte()?,
+                zone4: r.bitsbyte()?,
+                zone5: r.bitsbyte()?,
+                town_npcs: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2273-2282`: (byte)id + float + (short).
+            id::ITEM_ANIM => Self::ItemAnim(ItemAnim {
+                player_id: r.u8()?,
+                rotation: r.f32()?,
+                animation: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2309-2314`: (byte)id + (short)amount.
+            id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
+                player_id: r.u8()?,
+                amount: r.i16()?,
             }),
             _ => return None,
         })
@@ -4509,6 +4872,36 @@ mod tests {
         assert_eq!(back, pi);
     }
 
+    /// The `case 4` read-side clamps (`MessageBuffer.cs:297-312`), verbatim:
+    /// skinVariant → 0..11, voiceVariant → 1..4, NaN pitch → 0 then ±1,
+    /// hair ≥ 228 → 0, name trimmed.
+    #[test]
+    fn w4_d96_player_info_read_clamps() {
+        let mut pi = PlayerInfo::with_name(3, "  Rusty  ");
+        pi.skin_variant = 200;
+        pi.voice_variant = 9;
+        pi.voice_pitch_offset = 2.5;
+        pi.hair = 250;
+        let body = pi.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
+        let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
+        assert_eq!(back.skin_variant, 11); // PlayerVariantID.Count - 1
+        assert_eq!(back.voice_variant, 4);
+        assert_eq!(back.voice_pitch_offset, 1.0);
+        assert_eq!(back.hair, 0);
+        assert_eq!(back.name, "Rusty");
+        // voiceVariant 0 clamps UP to 1 (`Utils.Clamp(voiceVariant, 1, 4)`).
+        let zero = PlayerInfo::with_name(3, "Ann");
+        let body = zero.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
+        let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
+        assert_eq!(back.voice_variant, 1);
+        // A NaN pitch normalises to 0 before the clamp (`:302-305`).
+        let mut nan = PlayerInfo::with_name(3, "Ann");
+        nan.voice_pitch_offset = f32::NAN;
+        let body = nan.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
+        let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
+        assert_eq!(back.voice_pitch_offset, 0.0);
+    }
+
     #[test]
     fn world_info_round_trip() {
         let wi = WorldInfo {
@@ -4565,6 +4958,7 @@ mod tests {
             C2s::Password("secret".into()),
             C2s::PlayerInfo(PlayerInfo::with_name(5, "Ann")),
             C2s::Inventory {
+                player_id: 5,
                 slot: 12,
                 item: NetItem {
                     kind: 42,
@@ -4580,6 +4974,7 @@ mod tests {
                 team: 2,
             }),
             C2s::PlayerSpawn(PlayerSpawn {
+                player_id: 5,
                 x: 1,
                 y: 2,
                 respawn_timer: 0,
@@ -4817,10 +5212,11 @@ mod tests {
                 player_id: 1,
                 active: true,
             },
+            // max_hp >= 20: the read side floors it (`MessageBuffer.cs:1107-1110`).
             S2c::PlayerHp {
                 player_id: 1,
                 hp: 5,
-                max_hp: 6,
+                max_hp: 100,
             },
             S2c::Joined {
                 id: 1,
@@ -4866,10 +5262,37 @@ mod tests {
                 y: 34.0,
                 vx: 0.5,
                 vy: -1.0,
+                mount_type: 0,
+                potion_use: (0.0, 0.0),
+                potion_home: (0.0, 0.0),
+                camera_target: (0.0, 0.0),
                 on_ground: true,
                 leg_frame: 2,
                 body_frame: 7,
                 hp: 80,
+                max_hp: 100,
+            })),
+            // All three conditional tails gated on (`NetMessage.cs:496-508`):
+            // mount u16, potion use+home Vector2s, camera Vector2.
+            S2c::PlayerState(Box::new(PlayerState {
+                player_id: 2,
+                flags_a: BitsByte::new(),
+                flags_b: BitsByte(0b1000_0100),
+                flags_c: BitsByte(0b0100_0000),
+                flags_d: BitsByte(0b0010_0000),
+                selected_item: 0,
+                x: 0.0,
+                y: 0.0,
+                vx: 2.0,
+                vy: 3.0,
+                mount_type: 8,
+                potion_use: (100.0, 200.0),
+                potion_home: (300.0, 400.0),
+                camera_target: (500.0, 600.0),
+                on_ground: false,
+                leg_frame: 0,
+                body_frame: 0,
+                hp: 100,
                 max_hp: 100,
             })),
             S2c::NpcInfo(Box::new(NpcInfo {
@@ -5036,6 +5459,7 @@ mod tests {
         // the context byte (`Player.cs:37578-37581`), so the join answer must
         // carry 1, not `ReviveFromDeath`'s 0.
         let spawn = C2s::PlayerSpawn(PlayerSpawn {
+            player_id: 0,
             x: 1,
             y: 2,
             respawn_timer: 0,
@@ -6247,5 +6671,457 @@ mod tests {
         }
         // The C# has no client→server 110 send site.
         assert!(C2s::decode(110, &mut NetReader::new(&body)).is_none());
+    }
+
+    // ---- W4-d96 (S1-I-1 player-family first half): per-id round trips ----
+    // Each test pins the frame's id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    /// `5 SyncEquipment` (`NetMessage.cs:199-222`): the id byte leads —
+    /// `(byte)number, (short)slot, (short)stack, (byte)prefix, (short)type,
+    /// BitsByte{favorited, blocked}`. The stack clamp (`:210-213`) and the
+    /// `== 1` active test of 14 are pinned here too.
+    #[test]
+    fn w4_d96_inventory_leads_with_the_id_byte() {
+        let item = NetItem {
+            kind: 757,
+            stack: 1,
+            prefix: 81,
+            favorited: true,
+        };
+        let mut body = vec![4];
+        body.extend_from_slice(&12i16.to_le_bytes());
+        body.extend_from_slice(&1i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&757i16.to_le_bytes());
+        body.push(1); // bit 0 favorited; bit 1 (blocked) clear
+        let c = C2s::Inventory {
+            player_id: 4,
+            slot: 12,
+            item,
+        }
+        .encode();
+        assert_eq!(c[2], 5);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::Inventory {
+                player_id,
+                slot,
+                item: d,
+            } => {
+                assert_eq!(player_id, 4);
+                assert_eq!(slot, 12);
+                assert_eq!(d, item);
+            }
+            other => panic!("expected 5, got {:?}", other.msg_id()),
+        }
+        // The S2c relay carries the same leading id (`NetMessage.cs:201`).
+        let f = S2c::Inventory {
+            player_id: 4,
+            slot: 12,
+            item,
+        }
+        .encode();
+        assert_eq!(f[2], 5);
+        assert_eq!(&f[3..], &body);
+        // A negative stack clamps to 0 on read (`NetMessage.cs:210-213`).
+        let mut neg = vec![4];
+        neg.extend_from_slice(&12i16.to_le_bytes());
+        neg.extend_from_slice(&(-5i16).to_le_bytes());
+        neg.push(0);
+        neg.extend_from_slice(&757i16.to_le_bytes());
+        neg.push(0);
+        match C2s::decode(5, &mut NetReader::new(&neg)).expect("decode") {
+            C2s::Inventory { item: d, .. } => assert_eq!(d.stack, 0),
+            other => panic!("expected 5, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `14 PlayerActive` (`NetMessage.cs:515-518`): `(byte)number +
+    /// (byte)number2`; the read side tests the byte `== 1`
+    /// (`MessageBuffer.cs:1070`), so 2 deactivates.
+    #[test]
+    fn w4_d96_player_active_tests_the_byte_equals_one() {
+        let f = S2c::PlayerActive {
+            player_id: 3,
+            active: true,
+        }
+        .encode();
+        assert_eq!(f[2], 14);
+        assert_eq!(&f[3..], &[3, 1]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerActive { player_id, active } => {
+                assert_eq!(player_id, 3);
+                assert!(active);
+            }
+            other => panic!("expected 14, got {:?}", other.msg_id()),
+        }
+        // `num233 == 1` only (`MessageBuffer.cs:1070`): 2 is NOT active.
+        match S2c::decode(14, &mut NetReader::new(&[3, 2])).expect("decode") {
+            S2c::PlayerActive { active, .. } => assert!(!active),
+            other => panic!("expected 14, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerActive {
+            player_id: 3,
+            active: false,
+        }
+        .encode();
+        assert_eq!(c[2], 14);
+        assert_eq!(&c[3..], &[3, 0]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerActive { player_id, active } => {
+                assert_eq!(player_id, 3);
+                assert!(!active);
+            }
+            other => panic!("expected 14, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `12 PlayerSpawn` (`NetMessage.cs:433-445`): the id byte leads —
+    /// `(byte)number, (short)SpawnX, (short)SpawnY, (int)respawnTimer,
+    /// (short)deathsPVE, (short)deathsPVP, (byte)team, (byte)context`.
+    #[test]
+    fn w4_d96_player_spawn_leads_with_the_id_byte() {
+        let s = PlayerSpawn {
+            player_id: 6,
+            x: 4200,
+            y: 1100,
+            respawn_timer: 300,
+            deaths_pve: 3,
+            deaths_pvp: 1,
+            team: 2,
+            spawn_context: 1,
+        };
+        let mut body = vec![6];
+        body.extend_from_slice(&4200i16.to_le_bytes());
+        body.extend_from_slice(&1100i16.to_le_bytes());
+        body.extend_from_slice(&300i32.to_le_bytes());
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&1i16.to_le_bytes());
+        body.push(2);
+        body.push(1);
+        let c = C2s::PlayerSpawn(s).encode();
+        assert_eq!(c[2], 12);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerSpawn(d) => assert_eq!(d, s),
+            other => panic!("expected 12, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerSpawn(s).encode();
+        assert_eq!(f[2], 12);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerSpawn(d) => assert_eq!(d, s),
+            other => panic!("expected 12, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `35 PlayerHeal` (`NetMessage.cs:929-932`): `(byte)number +
+    /// (short)number2`, both directions (`MessageBuffer.cs:2160-2177`).
+    #[test]
+    fn w4_d96_player_heal_round_trips() {
+        let h = PlayerHeal {
+            player_id: 3,
+            amount: 42,
+        };
+        let mut body = vec![3];
+        body.extend_from_slice(&42i16.to_le_bytes());
+        let f = S2c::PlayerHeal(h).encode();
+        assert_eq!(f[2], 35);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerHeal(d) => assert_eq!(d, h),
+            other => panic!("expected 35, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerHeal(h).encode();
+        assert_eq!(c[2], 35);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerHeal(d) => assert_eq!(d, h),
+            other => panic!("expected 35, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `40 SyncTalkNPC` (`NetMessage.cs:952-955`): `(byte)number +
+    /// (short)talkNPC`; `-1` = not talking (`MessageBuffer.cs:2256-2270`).
+    #[test]
+    fn w4_d96_talk_npc_round_trips() {
+        let t = TalkNpc {
+            player_id: 2,
+            npc: 17,
+        };
+        let mut body = vec![2];
+        body.extend_from_slice(&17i16.to_le_bytes());
+        let f = S2c::TalkNpc(t).encode();
+        assert_eq!(f[2], 40);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TalkNpc(d) => assert_eq!(d, t),
+            other => panic!("expected 40, got {:?}", other.msg_id()),
+        }
+        let c = C2s::TalkNpc(t).encode();
+        assert_eq!(c[2], 40);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TalkNpc(d) => assert_eq!(d, t),
+            other => panic!("expected 40, got {:?}", other.msg_id()),
+        }
+        // The close-conversation value (`Player.SetTalkNPC(-1)`).
+        let off = TalkNpc {
+            player_id: 2,
+            npc: -1,
+        };
+        let mut body = vec![2];
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        let c = C2s::TalkNpc(off).encode();
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TalkNpc(d) => assert_eq!(d, off),
+            other => panic!("expected 40, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `36 SyncPlayerZone` (`NetMessage.cs:933-944`): `(byte)number +
+    /// zone1..5 (BitsByte each) + (byte)townNPCs` — seven bytes, both
+    /// directions (`MessageBuffer.cs:2178-2201`). `zone5[0]` is the faeling
+    /// edge bit (`:2186`/`:2195-2198`).
+    #[test]
+    fn w4_d96_player_zone_round_trips() {
+        let z = PlayerZone {
+            player_id: 4,
+            zone1: BitsByte(0b0000_0010), // jungle
+            zone2: BitsByte(0b0001_0000),
+            zone3: BitsByte(0b1000_0001),
+            zone4: BitsByte(0b0010_0100),
+            zone5: BitsByte(0b0000_0001), // the faeling edge bit
+            town_npcs: 3,
+        };
+        let body = [4, 0x02, 0x10, 0x81, 0x24, 0x01, 3];
+        let c = C2s::PlayerZone(z).encode();
+        assert_eq!(c[2], 36);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        // All-zero zones (`Player.cs:1364-1372`'s defaults) stay seven bytes.
+        let empty = PlayerZone {
+            player_id: 0,
+            ..Default::default()
+        };
+        let c = C2s::PlayerZone(empty).encode();
+        assert_eq!(&c[3..], &[0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    /// `41 ItemRotationAndAnimation` (`NetMessage.cs:956-960`):
+    /// `(byte)number + itemRotation (float) + (short)itemAnimation` —
+    /// seven bytes, both directions (`MessageBuffer.cs:2271-2289`).
+    #[test]
+    fn w4_d96_item_anim_round_trips() {
+        let a = ItemAnim {
+            player_id: 2,
+            rotation: -0.75,
+            animation: 18,
+        };
+        let mut body = vec![2];
+        body.extend_from_slice(&(-0.75f32).to_le_bytes());
+        body.extend_from_slice(&18i16.to_le_bytes());
+        let c = C2s::ItemAnim(a).encode();
+        assert_eq!(c[2], 41);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
+        }
+        let f = S2c::ItemAnim(a).encode();
+        assert_eq!(f[2], 41);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `43 ManaEffect` (`NetMessage.cs:966-969`): `(byte)number +
+    /// (short)number2`, both directions (`MessageBuffer.cs:2307-2324`) —
+    /// `35 PlayerHeal`'s mana twin, byte-for-byte the same shape.
+    #[test]
+    fn w4_d96_mana_effect_round_trips() {
+        let m = ManaEffect {
+            player_id: 5,
+            amount: 60,
+        };
+        let mut body = vec![5];
+        body.extend_from_slice(&60i16.to_le_bytes());
+        let c = C2s::ManaEffect(m).encode();
+        assert_eq!(c[2], 43);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        }
+        let f = S2c::ManaEffect(m).encode();
+        assert_eq!(f[2], 43);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `16 PlayerLifeMana` (`NetMessage.cs:519-523`): the writer sends
+    /// `(byte)number + (short)statLife + (short)statLifeMax` RAW; the read
+    /// side floors `statLifeMax` at 20 (`MessageBuffer.cs:1107-1110`) and
+    /// leaves `statLife` untouched (`dead = statLife <= 0` is the apply
+    /// arm's derivation, `:1111`).
+    #[test]
+    fn w4_d96_player_hp_read_floors_the_max() {
+        let raw = C2s::PlayerHp {
+            player_id: 2,
+            hp: -5,
+            max_hp: 6,
+        };
+        let mut body = vec![2];
+        body.extend_from_slice(&(-5i16).to_le_bytes());
+        body.extend_from_slice(&6i16.to_le_bytes());
+        let c = raw.encode();
+        assert_eq!(c[2], 16);
+        assert_eq!(&c[3..], &body, "the writer does not clamp");
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerHp {
+                player_id,
+                hp,
+                max_hp,
+            } => {
+                assert_eq!(player_id, 2);
+                assert_eq!(hp, -5, "statLife rides raw; dead is derived on apply");
+                assert_eq!(max_hp, 20, "statLifeMax < 20 floors to 20 (:1107-1110)");
+            }
+            other => panic!("expected 16, got {:?}", other.msg_id()),
+        }
+        // The S2c relay arm clamps identically.
+        let f = S2c::PlayerHp {
+            player_id: 2,
+            hp: 90,
+            max_hp: 19,
+        }
+        .encode();
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerHp { max_hp, hp, .. } => {
+                assert_eq!(max_hp, 20);
+                assert_eq!(hp, 90);
+            }
+            other => panic!("expected 16, got {:?}", other.msg_id()),
+        }
+        // A legal max rides untouched.
+        let ok = C2s::PlayerHp {
+            player_id: 0,
+            hp: 400,
+            max_hp: 500,
+        };
+        let c = ok.encode();
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerHp {
+                player_id,
+                hp,
+                max_hp,
+            } => assert_eq!((player_id, hp, max_hp), (0, 400, 500)),
+            other => panic!("expected 16, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `13 PlayerControls`' conditional tails (`NetMessage.cs:492-508`):
+    /// velocity (b2) then `(ushort)mount.Type` (b7) then the potion use+home
+    /// Vector2 pair (c6) then the camera Vector2 (d5) — in that gate order,
+    /// ahead of the port's render extension. The reader consumes them at
+    /// the same positions (`MessageBuffer.cs:993-997`, `:1021-1038`, `:1051`).
+    #[test]
+    fn w4_d96_player_state_conditional_tails_verbatim() {
+        let ps = PlayerState {
+            player_id: 3,
+            flags_a: BitsByte(0b0100_0000),
+            flags_b: BitsByte(0b1000_0100), // velocity + mount
+            flags_c: BitsByte(0b0100_0000), // potion return
+            flags_d: BitsByte(0b0010_0000), // camera target
+            selected_item: 2,
+            x: 64.0,
+            y: 96.0,
+            vx: 1.5,
+            vy: -2.5,
+            mount_type: 12,
+            potion_use: (10.0, 20.0),
+            potion_home: (30.0, 40.0),
+            camera_target: (50.0, 60.0),
+            on_ground: true,
+            leg_frame: 4,
+            body_frame: 9,
+            hp: 80,
+            max_hp: 100,
+        };
+        let mut body = vec![3, 0x40, 0x84, 0x40, 0x20, 2];
+        for v in [64.0f32, 96.0, 1.5, -2.5] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&12u16.to_le_bytes()); // mount (b7)
+        for v in [10.0f32, 20.0, 30.0, 40.0] {
+            body.extend_from_slice(&v.to_le_bytes()); // potion pair (c6)
+        }
+        for v in [50.0f32, 60.0] {
+            body.extend_from_slice(&v.to_le_bytes()); // camera (d5)
+        }
+        // The port's render extension rides AFTER the C# tails.
+        body.push(1); // on_ground
+        body.extend_from_slice(&4u32.to_le_bytes());
+        body.extend_from_slice(&9u32.to_le_bytes());
+        body.extend_from_slice(&80i32.to_le_bytes());
+        body.extend_from_slice(&100i32.to_le_bytes());
+        let c = C2s::PlayerState(ps).encode();
+        assert_eq!(c[2], 13);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerState(d) => assert_eq!(d, ps),
+            other => panic!("expected 13, got {:?}", other.msg_id()),
+        }
+        // All gates clear: the C# body is 15 bytes (id + 4 flags + selected +
+        // position), the extension follows immediately.
+        let bare = PlayerState {
+            player_id: 1,
+            x: 5.0,
+            y: 6.0,
+            ..Default::default()
+        };
+        let c = C2s::PlayerState(bare).encode();
+        let mut body = vec![1, 0, 0, 0, 0, 0];
+        body.extend_from_slice(&5.0f32.to_le_bytes());
+        body.extend_from_slice(&6.0f32.to_le_bytes());
+        assert_eq!(&c[3..3 + body.len()], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerState(d) => assert_eq!(d, bare),
+            other => panic!("expected 13, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `4 SyncPlayer`'s difficulty bits (`NetMessage.cs:166-179`): 1 → bit 0,
+    /// 2 → bit 1, 3 → bit **3**; bit 2 is `extraAccessory`. The reader maps
+    /// them back the same way (`MessageBuffer.cs:323-341`).
+    #[test]
+    fn w4_d96_player_info_difficulty_bit_three() {
+        let mut pi = PlayerInfo::with_name(1, "Jour");
+        pi.flags1 = BitsByte(0b0000_1100); // difficulty 3 (bit 3) + extraAccessory (bit 2)
+        let body = pi.write_to(NetWriter::open(id::PLAYER_INFO)).finish();
+        // flags1 is the third-from-last byte (flags2, flags3 follow).
+        let f1 = body[body.len() - 3];
+        assert_eq!(f1, 0b0000_1100);
+        let back = PlayerInfo::read_from(&mut NetReader::new(&body[3..])).expect("decode");
+        assert!(back.flags1.get(3), "difficulty 3 rides bit 3, not bit 2");
+        assert!(back.flags1.get(2), "bit 2 is extraAccessory");
+        assert!(!back.flags1.get(0) && !back.flags1.get(1));
     }
 }
