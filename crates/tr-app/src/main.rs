@@ -162,6 +162,7 @@ mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
 mod npc_findframe_extra3;
+mod npc_findframe_extra5;
 mod persist;
 mod grapple;
 mod gore_seam;
