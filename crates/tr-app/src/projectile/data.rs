@@ -713,6 +713,30 @@ pub const NEBULA_BLAZE_2: u16 = 635;
 /// `ProjectileID.HorsemanPumpkin` (1001) — the Headless Horseman's
 /// 480-tick lob (`NPC.cs:62417`; `Projectile.cs:9511-9522`, aiStyle 194).
 pub const HORSEMAN_PUMPKIN: u16 = 1001;
+/// The drill projectiles (S1-P-i29) — `DefaultToDrillOrChainsaw`
+/// (`Projectile.cs:10732-10742`): aiStyle 20, `penetrate = -1`,
+/// `tileCollide = false`, `melee = true`, `ownerHitCheck = true`. The
+/// per-kind boxes/scales ride the `SetDefaults` type arms (`:1407-1434`,
+/// `:1946-1952`, `:3011-3092`, `:4990-5036`). The aiStyle-20 machine
+/// (`Projectile.cs:25481-25584`) holds the owner's item animation via
+/// `SetDummyItemTime(2)` and kills itself on the channel release.
+pub const DRILL_COBALT: u16 = 59;
+pub const DRILL_MYTHRIL: u16 = 60;
+pub const DRILL_ADAMANTITE: u16 = 62;
+pub const DRILL_PALLADIUM: u16 = 213;
+pub const DRILL_ORICHALCUM: u16 = 216;
+pub const DRILL_TITANIUM: u16 = 219;
+pub const DRILL_CHLOROPHYTE: u16 = 223;
+pub const DRILL_VORTEX: u16 = 428;
+pub const DRILL_NEBULA: u16 = 430;
+pub const DRILL_SOLAR: u16 = 432;
+pub const DRILL_STARDUST: u16 = 609;
+pub const DRAX: u16 = 107;
+/// `ProjectileID.LaserDrill` (445) — the Laser Drill's beam, aiStyle 75
+/// (`Projectile.cs:5162-5172`, `AI_075` `:66244-66358`), NOT a
+/// `DefaultToDrillOrChainsaw` row. The port holds its channel the same way
+/// (the aiStyle-75 beam's full laser AI is a follow-up).
+pub const LASER_DRILL: u16 = 445;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -2759,6 +2783,29 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
             // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
             ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // S1-P-i29 — the drill family (`DefaultToDrillOrChainsaw`,
+            // `Projectile.cs:10732-10742`): aiStyle 20, `penetrate = -1`,
+            // `tileCollide = false`, the stock life (the AI pins
+            // `timeLeft = 60` every tick, `:25483`). The per-kind boxes and
+            // scales ride the `SetDefaults` type arms; the state group's
+            // scale slot carries them.
+            DRILL_COBALT => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.9)),
+            DRILL_MYTHRIL => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.9)),
+            DRILL_ADAMANTITE => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.9)),
+            DRILL_PALLADIUM => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.92)),
+            DRILL_ORICHALCUM => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.93)),
+            DRILL_TITANIUM => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.95)),
+            DRILL_CHLOROPHYTE => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.0)),
+            DRILL_VORTEX => (26.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            DRILL_NEBULA => (30.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            DRILL_SOLAR => (30.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            DRILL_STARDUST => (30.0, 54.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            DRAX => (22.0, 22.0, 20, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // The Laser Drill's beam (445): aiStyle 75, 10x10,
+            // `penetrate = -1`, `tileCollide = false` (`Projectile.cs:5162-
+            // 5172`). The port holds its channel like the drills; the full
+            // aiStyle-75 laser AI is a follow-up.
+            LASER_DRILL => (10.0, 10.0, 75, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {

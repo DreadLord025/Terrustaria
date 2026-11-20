@@ -4489,6 +4489,67 @@ impl Projectile {
         spawn
     }
 
+    /// S1-P-i29 — the drill projectile's aiStyle-20 machine
+    /// (`Projectile.cs:25481-25584`, `DefaultToDrillOrChainsaw`
+    /// `:10732-10742`): the held drill tracks the owner's hand, aims at the
+    /// mouse while the channel holds, and kills itself on the release
+    /// (`:25549`). The `SetDummyItemTime(2)` (`:25563`) holds the owner's
+    /// item animation — the port's `update_editing` channel block keeps the
+    /// swing alive while this projectile lives (the player-side write has
+    /// no pool seam, the same fold as the flail/yoyo arms). The per-tick
+    /// `velocity.X *= 1 + Next(-3,4)*0.01` jitter (`:25575`) and the 1-in-6
+    /// dust (`:25576-25583`) are render-only deviations (the port draws no
+    /// drill dust; the jitter is a visual wobble) — recorded in ANALYSIS.
+    /// The `timeLeft = 60` pin (`:25483`) keeps the slot alive while held.
+    fn ai_drill(
+        &mut self,
+        owner: Option<(f32, f32)>,
+        aim: Option<(f32, f32)>,
+        player: Option<&crate::player::Player>,
+    ) {
+        // `:25483` — the life pin.
+        self.time_left = 60;
+        let Some(p) = player else {
+            // No owner resolved — the slot cannot track; kill it (the C#
+            // reads `Main.player[owner]` unconditionally).
+            self.active = false;
+            self.time_left = 0;
+            return;
+        };
+        // `:25524-25550` — the local-owner channel gate: while the channel
+        // holds, aim at the mouse; otherwise `Kill()`.
+        if self.owner == 0 {
+            if p.channel {
+                // `:25528-25545` — the aim: the mouse direction from the
+                // hand (`RotatedRelativePoint(MountedCenter)` — the port's
+                // owner centre), normalized to `shootSpeed * scale`.
+                let hand = owner.unwrap_or_else(|| p.center());
+                let item = crate::registry::item(p.channel_item);
+                let shoot_speed = item.map_or(0.0, |it| it.shoot_speed);
+                if let Some(aim) = aim {
+                    let dir = Vec2::new(aim.0 - hand.0, aim.1 - hand.1);
+                    let len = dir.length();
+                    if len > 0.0 {
+                        let v = dir / len * (shoot_speed * self.scale);
+                        self.vel = v;
+                    }
+                }
+            } else {
+                // `:25549` — `this.Kill()`.
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+        }
+        // `:25552-25561` — the facing follows the velocity (the port's
+        // player-facing write has no pool seam; the draw reads the slot).
+        // `:25563-25565` — the position pins to the hand centre.
+        let hand = owner.unwrap_or_else(|| p.center());
+        self.pos = Vec2::new(hand.0 - self.w * 0.5, hand.1 - self.h * 0.5);
+        // `:25566` — the rotation follows the velocity (+π/2).
+        self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_2;
+    }
+
     /// `AI()`'s aiStyle-84 block's Last Prism laser arm
     /// (`Projectile.cs:31424-31509` + the shared tail `:31542-31550` and the
     /// LaserScan smoothing `:31552-31632`) — the hexagon orbit around the
@@ -13999,6 +14060,12 @@ impl ProjectilePool {
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
                         22 => self.slots[i].ai_ice_block(world),
+                        // S1-P-i29 — the drill family's aiStyle 20
+                        // (`Projectile.cs:25481-25584`): the held drill tracks
+                        // the owner's hand and aims at the mouse while the
+                        // channel holds; the release kills it. The position
+                        // is AI-set (the hand pin), so no `kill_step` runs.
+                        20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
                         28 => self.slots[i].ai_frost_bolt(world),
@@ -14183,25 +14250,37 @@ impl ProjectilePool {
                         // back out (the 118 shape) with `ai0 = m` and `ai1 =
                         // this.key`'s raw bits (`:66622-66626`).
                         75 => {
-                            let spawn =
-                                self.slots[i]
-                                    .ai_last_prism(owner, player.as_deref_mut());
-                            if let Some(s) = spawn {
-                                let owner_id = self.slots[i].owner;
-                                let key = self.key_of(i) as u32;
-                                for m in 0..6u32 {
-                                    self.spawn_with_data_ai_owned(
-                                        LAST_PRISM_LASER,
-                                        owner_id,
-                                        s.x,
-                                        s.y,
-                                        s.vx,
-                                        s.vy,
-                                        s.damage,
-                                        s.knock_back,
-                                        m as f32,
-                                        f32::from_bits(key),
-                                    );
+                            // S1-P-i29 — the Laser Drill's beam (445) shares
+                            // aiStyle 75 with the Last Prism holder (633) but
+                            // runs `AI_075`'s 445 arm (`Projectile.cs:66244-
+                            // 66358`), not the prism's. The port holds its
+                            // channel like the drills (the full laser AI —
+                            // the tile-target snap, the reach clamp, the
+                            // beam light — is a follow-up); the release kills
+                            // it (`:66280-66283`).
+                            if self.slots[i].kind == LASER_DRILL {
+                                self.slots[i].ai_drill(owner, inputs.aim, player.as_deref());
+                            } else {
+                                let spawn =
+                                    self.slots[i]
+                                        .ai_last_prism(owner, player.as_deref_mut());
+                                if let Some(s) = spawn {
+                                    let owner_id = self.slots[i].owner;
+                                    let key = self.key_of(i) as u32;
+                                    for m in 0..6u32 {
+                                        self.spawn_with_data_ai_owned(
+                                            LAST_PRISM_LASER,
+                                            owner_id,
+                                            s.x,
+                                            s.y,
+                                            s.vx,
+                                            s.vy,
+                                            s.damage,
+                                            s.knock_back,
+                                            m as f32,
+                                            f32::from_bits(key),
+                                        );
+                                    }
                                 }
                             }
                         }

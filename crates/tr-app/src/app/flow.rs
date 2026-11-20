@@ -2337,6 +2337,8 @@ pub(crate) mod front_flow_tests {
             mine_prev_down: false,
             mine_released: false,
             item_time: 0.0,
+            tool_time: 0.0,
+            hit_tile: tr_core::hit_tile::HitTile::new(),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
