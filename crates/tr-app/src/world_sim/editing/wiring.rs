@@ -120,14 +120,14 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
             // first (`KillActuator`, :46857), then the yellow wire, the green,
             // the blue and the red. Each successful kill is its own arm.
             if edit::kill_actuator(&mut app.world, tx, ty) {
-                // `WorldGen.KillActuator`'s drop (`Item.NewItem(..., 849)`,
-                // `WorldGen.cs:58030`) — the cutter runs in `Player.ItemCheck`
-                // (`Player.cs:46857`), so the drop rides `UpdatePlayers`. The
-                // five dust 50 (`:58032-58035`) are the visual seam (no dust
-                // engine on this path — ANALYSIS "The wiring tools").
+                // `WorldGen.KillActuator`'s Dig-0 (`:58026`) plays BEFORE
+                // the drop (`:58030`) - the cue's two draws precede the
+                // drop's on the stream. The five dust 50 (`:58032-58035`)
+                // are the visual seam (no dust engine on this path —
+                // ANALYSIS "The wiring tools").
+                wire_cut_feedback(app, tx, ty);
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 spawn_item_drop(&mut app.items, rng, ACTUATOR_ITEM, 1, tx, ty);
-                wire_cut_feedback(app, tx, ty);
                 return true;
             }
             use tr_core::wiring::WireColor;
@@ -138,13 +138,13 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                 WireColor::Red,
             ] {
                 if edit::kill_wire(&mut app.world, tx, ty, color) {
-                    // `WorldGen.KillWire`'s drop (`Item.NewItem(..., 530)`,
-                    // `WorldGen.cs:58130`) — the cutter's tile interaction runs
-                    // in `Player.ItemCheck` (`Player.cs:46862-46880`), so the
-                    // drop rides the `UpdatePlayers` stream.
+                    // `WorldGen.KillWire`'s Dig-0 (`:58126`) precedes the
+                    // drop (`:58130`) - the cue's draws come first on the
+                    // `UpdatePlayers` stream (the cutter's tile interaction
+                    // runs in `Player.ItemCheck`, `Player.cs:46862-46880`).
+                    wire_cut_feedback(app, tx, ty);
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
-                    wire_cut_feedback(app, tx, ty);
                     return true;
                 }
             }
@@ -224,12 +224,19 @@ fn wire_placed_feedback(app: &mut App, tx: i32, ty: i32) {
     );
 }
 
-/// The cutter's feedback (`WorldGen.KillActuator` `:58026` / `KillWire`
-/// `:58126`/`:58156`/`:58186`/`:58216`): the same Dig-0 site family, still
-/// the pinned `Dig_1` stand-in (the pitched upgrade is the next wave step).
+/// The cutter's feedback (W4-c14): `WorldGen.KillActuator` (`:58026`) and
+/// `KillWire` / `KillWire2` / `KillWire3` / `KillWire4` (`:58126`/`:58156`/
+/// `:58186`/`:58216`) play the same Dig-0 site family BEFORE the drop -
+/// the case-0 variation + pitch draws ride the `UpdatePlayers` stream
+/// (the cutter runs in `Player.ItemCheck`, `Player.cs:46855-46881`), only
+/// when audible. The v1 pinned `Dig_1` stand-in is gone.
 fn wire_cut_feedback(app: &mut App, tx: i32, ty: i32) {
-    app.audio
-        .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+    app.audio.play_place_sound(
+        (0, 1),
+        tx as f32 * TILE_PX,
+        ty as f32 * TILE_PX,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
 }
 
 #[cfg(test)]
@@ -463,8 +470,7 @@ mod tests {
     /// (`WorldGen.cs:58115`) draws the case-0 `Next(3)` variation + the
     /// `Next(-10, 11)` pitch (`LegacySoundPlayer.cs:442-450`) on the
     /// `UpdatePlayers` stream, only when audible; a muted listener draws
-    /// NOTHING (the gate precedes the switch). The cutter's feedback stays
-    /// the pinned `Dig_1` (draw-free) until its own upgrade.
+    /// NOTHING (the gate precedes the switch).
     #[test]
     fn w4_c14_the_wire_placement_dig_draws_ride_the_player_stream() {
         let mut app = flow_app(None, vec![], vec![]);
@@ -502,6 +508,52 @@ mod tests {
             app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
             peek,
             "the muted play is draw-free"
+        );
+    }
+
+    /// W4-c14 - the cutter's Dig-0 (`WorldGen.KillWire` `:58126`): the
+    /// cue's two case-0 draws precede the drop's own draws on the
+    /// `UpdatePlayers` stream (the C# plays before `Item.NewItem`), and a
+    /// refused cut (no wire on the cell) draws nothing.
+    #[test]
+    fn w4_c14_the_cutter_dig_draws_precede_the_drop() {
+        use tr_core::wiring::WireColor;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.world.wires.set(10, 19, WireColor::Red, true);
+        app.inventory[app.selected] = slot(510, 1);
+        // The witness: the cue's two draws, then the drop's own spend
+        // (captured by replaying the same call on a twin app).
+        let mut twin = flow_app(None, vec![], vec![]);
+        twin.world = object_world();
+        twin.world.wires.set(10, 19, WireColor::Red, true);
+        twin.inventory[twin.selected] = slot(510, 1);
+        {
+            let rng = twin.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            let _ = rng.next_range(0, 3);
+            let _ = rng.next_range(-10, 11);
+            super::super::super::items::spawn_item_drop(
+                &mut twin.items,
+                rng,
+                WIRE_ITEM,
+                1,
+                10,
+                19,
+            );
+        }
+        assert!(use_wiring_tool(&mut app, 10, 19));
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            twin.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            "the cue's draws precede the drop's"
+        );
+        // A refused cut draws nothing.
+        let peek = app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek();
+        assert!(!use_wiring_tool(&mut app, 10, 19), "the wire is gone");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            peek,
+            "the refusal is draw-free"
         );
     }
 
