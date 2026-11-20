@@ -2719,7 +2719,10 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
 /// `DD2Event.DropMedals` (`DD2Event.cs:802-813`) — one `Item.NewItem(...,
 /// 3817, numberOfMedals, noBroadcast: true)` stack per live Eternia Crystal
 /// (548), in `Main.npc` order, at the crystal's rect centre (the obsolete
-/// rect overload's `X + Width/2, Y + Height/2`, `Item.cs:49651`). The rolls
+/// rect overload's `(int)X + Width/2, (int)Y + Height/2`, `Item.cs:49651` —
+/// the position TRUNCATES before the half-box add, W4-f36; the same
+/// convention the coin drops pin, `death.rs`'s `(int)position + Width/2`).
+/// The rolls
 /// ride the caller's stream through the `spawn_item_drop_px` seam (the
 /// module's zero-RNG-decisions contract — the decision draws nothing, the
 /// spawn's velocity/phase triplet + prefix ride `Item.NewItem`'s
@@ -2734,13 +2737,24 @@ fn dd2_drop_medals(app: &mut App, medals: i32) {
     // `hp` in the same tick — the `wants_event_stop` term keeps that crystal
     // in the scan (the death retain has not run yet). A wave-complete drop
     // never sees one: the stop resolve removes it the same tick.
+    // W4-f36: the rect overload's centre TRUNCATES the position first —
+    // `new Vector2(X + Width / 2, Y + Height / 2)` on the `(int)` args
+    // (`Item.cs:49651`); the port's float `center()` (`x + w/2`) would
+    // carry the sub-pixel drift into the drop point.
     let spots: Vec<Vec2> = app
         .npcs
         .iter()
         .filter(|n| {
             n.kind == NpcKind::DD2EterniaCrystal && (n.hp > 0 || n.wants_event_stop)
         })
-        .map(|n| Vec2::new(n.center().0, n.center().1))
+        .map(|n| {
+            let (w, h) = n.size();
+            // `X + Width / 2` — the int division, not a float halve.
+            Vec2::new(
+                n.x as i32 as f32 + (w as i32 / 2) as f32,
+                n.y as i32 as f32 + (h as i32 / 2) as f32,
+            )
+        })
         .collect();
     for pos in spots {
         // The kill path's stage: `checkDead` runs under the NPC pass's
@@ -12735,6 +12749,178 @@ mod dd2_victory_tests {
             1,
             "the latch refuses a second summon"
         );
+    }
+
+    // --- W4-f36: the medal DROP side (`DropMedals`, DD2Event.cs:802-813) ---
+
+    #[test]
+    fn the_medal_drop_sits_at_the_truncated_rect_centre() {
+        // `:809` calls the OBSOLETE RECT overload: `(int)nPC.position.X +
+        // (int)nPC.Size.X / 2` (`Item.cs:49651`) — the position truncates
+        // BEFORE the half-box add (the crystal's 40x40 box, half 20). The
+        // seam's +1 px X offset rides `spawn_item_drop_px` (the module's
+        // pinned box-left convention, d124's starter-drop witness).
+        let mut app = base_app();
+        crystal(&mut app);
+        let ci = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .unwrap();
+        app.npcs[ci].x += 0.75;
+        app.npcs[ci].y += 0.9;
+        dd2_drop_medals(&mut app, 3);
+        let drops: Vec<&ItemDrop> = app
+            .items
+            .iter()
+            .filter(|d| d.kind == tr_core::dd2::MEDAL_ITEM)
+            .collect();
+        assert_eq!(drops.len(), 1);
+        let cx = (150.0 * TILE_PX + 0.75) as i32 as f32 + 20.0;
+        let cy = (112.0 * TILE_PX + 0.9) as i32 as f32 + 20.0;
+        assert_eq!(drops[0].pos.x, cx + 1.0, "trunc X + 40/2 (+1 seam px)");
+        assert_eq!(drops[0].pos.y, cy, "trunc Y + 40/2");
+        assert_eq!(drops[0].count, 3, "the whole stack, one item");
+        assert_eq!(drops[0].prefix, 0, "3817 is not prefixable — no roll");
+    }
+
+    #[test]
+    fn one_medal_stack_per_live_crystal_in_npc_order() {
+        // `:804-812`: the `Main.maxNPCs` walk pays EVERY active 548 (no
+        // first-match break, unlike `DropStarterCrystals`). A dead crystal
+        // (hp 0, no stop request) and a portal pay nothing.
+        let mut app = base_app();
+        crystal(&mut app);
+        let mut second = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            170.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        second.hp = second.max_hp;
+        app.npcs.push(second);
+        let mut dead = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            180.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        dead.hp = 0;
+        app.npcs.push(dead);
+        portal(&mut app);
+        dd2_drop_medals(&mut app, 15);
+        let drops: Vec<&ItemDrop> = app
+            .items
+            .iter()
+            .filter(|d| d.kind == tr_core::dd2::MEDAL_ITEM)
+            .collect();
+        assert_eq!(drops.len(), 2, "one stack per LIVE 548");
+        assert!(drops.iter().all(|d| d.count == 15));
+        assert_eq!(drops[0].pos.x, 150.0 * TILE_PX + 20.0 + 1.0, "npc order");
+        assert_eq!(drops[1].pos.x, 170.0 * TILE_PX + 20.0 + 1.0);
+    }
+
+    #[test]
+    fn the_medal_spawn_census_is_the_newitem_triplet_per_stack() {
+        // RNG census (`Item.cs:49654-49772`): 3817 is not in
+        // `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`), so each
+        // `Item.NewItem` draws the velocity pair (`:49749-49750`) — the
+        // port's pinned triplet + phase rides `spawn_item_drop_px` — and
+        // `Prefix(0)` draws nothing (`Item.cs:511-514`'s early return;
+        // 3817 has no rollable table either). 3 draws × stack count, all
+        // on the caller's `UpdateNpcs` stream; the scan itself is RNG-free.
+        let mut app = base_app();
+        crystal(&mut app);
+        let mut second = Npc::new(
+            NpcKind::DD2EterniaCrystal,
+            170.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        second.hp = second.max_hp;
+        app.npcs.push(second);
+        *app.rngs.stream(RngKey::UpdateNpcs) = UnifiedRandom::new(0x3817);
+        let mut expect = UnifiedRandom::new(0x3817);
+        // The `stack <= 0` refusal (`Item.cs:49660-49663`) — no drop, no
+        // draws (the port's `medals <= 0` guard).
+        dd2_drop_medals(&mut app, 0);
+        assert!(medal_stacks(&app).is_empty());
+        dd2_drop_medals(&mut app, 60);
+        for _ in 0..(2 * 3) {
+            expect.next_float();
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            expect,
+            "2 stacks x 3 draws; the scan + the zero guard draw nothing"
+        );
+    }
+
+    #[test]
+    fn a_win_with_no_live_crystal_drops_no_medals() {
+        // `DropMedals`'s walk finds no active 548 — the win still latches
+        // the tier flag and broadcasts (`WinInvasionInternal` :316-341),
+        // but no medal item spawns and the stream stays pristine.
+        let mut app = base_app();
+        *app.rngs.stream(RngKey::UpdateNpcs) = UnifiedRandom::new(0x5EED);
+        let expect = UnifiedRandom::new(0x5EED);
+        dd2_win_invasion(&mut app);
+        assert!(medal_stacks(&app).is_empty(), "no 548 — no drop");
+        assert!(app.world.dd2_downed_t1, "the latch is not crystal-gated");
+        assert_eq!(win_broadcasts(&app), 1, "InvasionWin still fires");
+        assert_eq!(*app.rngs.stream(RngKey::UpdateNpcs), expect);
+    }
+
+    #[test]
+    fn the_wave_complete_rows_pay_for_every_tier_at_the_driver() {
+        // `CheckProgress` (`:405-449`) through `dd2_report_kill`: the rows
+        // read on the NEW wave — t1 4/5→1/1 (`:407-414`), t2 5/6/7→1/3/6
+        // (`:418-429`), t3 4/5/6/7→1/3/11/25 (`:433-448`). One goblin kill
+        // (worth 1) at required-1 completes the wave; the stack lands at
+        // the live crystal, prefix 0.
+        for (tier, wave, medals) in [
+            (1, 3, 1u32),
+            (1, 4, 1),
+            (2, 4, 1),
+            (2, 5, 3),
+            (2, 6, 6),
+            (3, 3, 1),
+            (3, 4, 3),
+            (3, 5, 11),
+            (3, 6, 25),
+        ] {
+            let mut app = base_app();
+            crystal(&mut app);
+            if tier >= 2 {
+                app.world.hard_mode = true;
+                app.world.downed_mech_boss1 = true;
+            }
+            if tier == 3 {
+                app.world.downed_golem = true;
+            }
+            // The tier's budget for the SOURCE wave (60/80/100/120/140/180
+            // — `:977-1009`/`:1162-1197`/`:1468-1500`; no cap waves here).
+            let required = [0, 60, 80, 100, 120, 140, 180][wave as usize];
+            app.world.dd2_wave = wave;
+            app.world.dd2_wave_kills = (required - 1) as f32;
+            let goblin = match tier {
+                2 => NpcKind::DD2GoblinT2,
+                3 => NpcKind::DD2GoblinT3,
+                _ => NpcKind::DD2GoblinT1,
+            };
+            report_invasion_kill(&mut app, goblin);
+            assert_eq!(app.world.dd2_wave, wave + 1, "t{tier} w{wave} advances");
+            assert!(!app.world.dd2_won, "t{tier} w{wave}: not the sentinel");
+            assert_eq!(
+                medal_stacks(&app),
+                vec![medals],
+                "t{tier} new wave {} pays {medals}",
+                wave + 1
+            );
+        }
     }
 }
 
