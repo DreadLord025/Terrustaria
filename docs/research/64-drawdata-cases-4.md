@@ -1507,6 +1507,23 @@ Audit notes (R17):
   only, `furniture_post_pass` uncalled, frozen row 0 = C# t=0 pixels.
 - No R17 id has a second-switch row.
 
+### R18 — big-cage tail: 558, 559, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611 (15 ids, indices 255-269)
+
+C# `TileDrawing.cs:5678-5745` — inner arms quoted verbatim in R16's window.
+
+| Id | C# inner arm | C# line | Rust arm (`cage_table`) | Verdict |
+| --- | --- | --- | --- | --- |
+| 558 | `case 558:` `case 559:` → `addFrY = Main.seahorseCageFrame[bigAnimalCageFrame] * 54;` | :5742-5745 | `558 \| 559 => (Seahorse, 0, 54, BIG)` :131 | PORTED-UNWIRED |
+| 559 | shares the seahorse arm | :5743 | :131 | PORTED-UNWIRED |
+| 599-605 | share the bunny arm (`case 599:` … `case 605:` labels :5678-5684) | :5678-5686 | `275 \| 359 \| 599..=605` :117 | PORTED-UNWIRED |
+| 606-611 | share the squirrel arm (`case 606:` … `case 611:` labels :5697-5702) | :5697-5705 | `276 \| 413 \| 414 \| 606..=612` :120 | PORTED-UNWIRED |
+
+Audit notes (R18):
+- The 599-605 bunny variants (the seven bunny colours) and 606-612 squirrel
+  variants are contiguous label runs in C#; the port's `..=` ranges are
+  label-exact (612 itself is index 270, R19).
+- UNWIRED rationale as R16/R17. No R18 id has a second-switch row.
+
 ### Batch 2 — small-animal cage tail: 298, 299, 310, 339, 361-364, 391-394, 532, 533, 538, 544, 555, 556, 582, 619, 629 (21 ids)
 
 C# group `TileDrawing.cs:5756-5831` (labels 285/286 at :5756-5757 fall in d63's quarter;
