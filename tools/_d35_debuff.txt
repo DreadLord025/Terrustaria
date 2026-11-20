@@ -1,0 +1,92 @@
+== id 73 debuff hits at [6531]
+6531: 				{ 73, null },
+6532: 				{
+6533: 					74,
+6534: 					new NPCDebuffImmunityData
+6535: 					{
+6536: 						SpecificallyImmuneTo = new int[1] { 31 }
+6537: 					}
+== id 74 debuff hits at []
+== id 75 debuff hits at [6539]
+6539: 				{ 75, null },
+6540: 				{
+6541: 					76,
+6542: 					new NPCDebuffImmunityData
+6543: 					{
+6544: 						SpecificallyImmuneTo = new int[1] { 31 }
+6545: 					}
+== id 77 debuff hits at []
+== id 78 debuff hits at [6554]
+6554: 				{ 78, null },
+6555: 				{ 79, null },
+6556: 				{ 80, null },
+6557: 				{
+6558: 					81,
+6559: 					new NPCDebuffImmunityData
+6560: 					{
+6561: 						SpecificallyImmuneTo = new int[1] { 20 }
+6562: 					}
+== id 79 debuff hits at [6555]
+6555: 				{ 79, null },
+6556: 				{ 80, null },
+6557: 				{
+6558: 					81,
+6559: 					new NPCDebuffImmunityData
+6560: 					{
+6561: 						SpecificallyImmuneTo = new int[1] { 20 }
+6562: 					}
+== id 80 debuff hits at [6556]
+6556: 				{ 80, null },
+6557: 				{
+6558: 					81,
+6559: 					new NPCDebuffImmunityData
+6560: 					{
+6561: 						SpecificallyImmuneTo = new int[1] { 20 }
+6562: 					}
+== id 82 debuff hits at []
+== id 83 debuff hits at []
+== id 84 debuff hits at []
+== id 85 debuff hits at []
+== id 86 debuff hits at [6599]
+6599: 				{ 86, null },
+6600: 				{
+6601: 					87,
+6602: 					new NPCDebuffImmunityData
+6603: 					{
+6604: 						SpecificallyImmuneTo = new int[1] { 31 }
+6605: 					}
+== id 93 debuff hits at [6642]
+6642: 				{ 93, null },
+6643: 				{
+6644: 					94,
+6645: 					new NPCDebuffImmunityData
+6646: 					{
+6647: 						SpecificallyImmuneTo = new int[1] { 31 }
+6648: 					}
+== id 94 debuff hits at []
+== id 95 debuff hits at []
+== id 96 debuff hits at []
+== id 97 debuff hits at []
+== id 98 debuff hits at []
+== id 99 debuff hits at []
+== id 100 debuff hits at []
+== id 101 debuff hits at []
+== id 102 debuff hits at []
+== id 103 debuff hits at []
+== id 104 debuff hits at [6713]
+6713: 				{ 104, null },
+6714: 				{
+6715: 					105,
+6716: 					new NPCDebuffImmunityData
+6717: 					{
+6718: 						SpecificallyImmuneTo = new int[1] { 31 }
+6719: 					}
+== id 109 debuff hits at []
+== id 110 debuff hits at []
+== id 112 debuff hits at []
+== id 116 debuff hits at []
+== id 120 debuff hits at []
+== id 121 debuff hits at []
+== id 122 debuff hits at []
+== id 137 debuff hits at []
+== id 140 debuff hits at []

@@ -1,0 +1,173 @@
+{
+"73": {
+"line": 9732,
+"cond": "this.type == 73",
+"issues": []
+},
+"74": {
+"line": 9747,
+"cond": "this.type == 74 || this.type == 297 || this.type == 298",
+"issues": []
+},
+"75": {
+"line": 9772,
+"cond": "this.type == 75",
+"issues": []
+},
+"77": {
+"line": 9786,
+"cond": "this.type == 77",
+"issues": []
+},
+"78": {
+"line": 9799,
+"cond": "this.type == 78",
+"issues": []
+},
+"79": {
+"line": 9812,
+"cond": "this.type == 79",
+"issues": []
+},
+"80": {
+"line": 9825,
+"cond": "this.type == 80",
+"issues": []
+},
+"82": {
+"line": 9852,
+"cond": "this.type == 82",
+"issues": []
+},
+"83": {
+"line": 9879,
+"cond": "this.type == 83",
+"issues": []
+},
+"84": {
+"line": 9892,
+"cond": "this.type == 84",
+"issues": []
+},
+"85": {
+"line": 9905,
+"cond": "this.type == 85",
+"issues": []
+},
+"86": {
+"line": 9926,
+"cond": "this.type == 86",
+"issues": []
+},
+"93": {
+"line": 10047,
+"cond": "this.type == 93",
+"issues": [
+"noGravity: C# False vs model True"
+]
+},
+"94": {
+"line": 10061,
+"cond": "this.type == 94",
+"issues": []
+},
+"95": {
+"line": 10076,
+"cond": "this.type == 95",
+"issues": []
+},
+"96": {
+"line": 10094,
+"cond": "this.type == 96",
+"issues": []
+},
+"97": {
+"line": 10113,
+"cond": "this.type == 97",
+"issues": []
+},
+"98": {
+"line": 10132,
+"cond": "this.type == 98",
+"issues": []
+},
+"99": {
+"line": 10150,
+"cond": "this.type == 99",
+"issues": []
+},
+"100": {
+"line": 10168,
+"cond": "this.type == 100",
+"issues": []
+},
+"101": {
+"line": 10186,
+"cond": "this.type == 101",
+"issues": []
+},
+"102": {
+"line": 10202,
+"cond": "this.type == 102",
+"issues": []
+},
+"103": {
+"line": 10216,
+"cond": "this.type == 103",
+"issues": []
+},
+"104": {
+"line": 10230,
+"cond": "this.type == 104",
+"issues": []
+},
+"109": {
+"line": 10299,
+"cond": "this.type == 109",
+"issues": []
+},
+"110": {
+"line": 10313,
+"cond": "this.type == 110",
+"issues": []
+},
+"112": {
+"line": 10326,
+"cond": "this.type == 112",
+"issues": []
+},
+"116": {
+"line": 10393,
+"cond": "this.type == 116",
+"issues": []
+},
+"120": {
+"line": 10453,
+"cond": "this.type == 120",
+"issues": []
+},
+"121": {
+"line": 10466,
+"cond": "this.type == 121",
+"issues": [
+"noGravity: C# False vs model True"
+]
+},
+"122": {
+"line": 10479,
+"cond": "this.type == 122",
+"issues": []
+},
+"137": {
+"line": 10735,
+"cond": "this.type == 137",
+"issues": [
+"noGravity: C# False vs model True"
+]
+},
+"140": {
+"line": 10763,
+"cond": "this.type == 140",
+"issues": []
+}
+}

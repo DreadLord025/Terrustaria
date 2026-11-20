@@ -1,0 +1,581 @@
+===== id 73 : arms at [9732] =====
+9732: 		else if (this.type == 73)
+9733: 		{
+9734: 			this.scale = 0.95f;
+9735: 			base.width = 18;
+9736: 			base.height = 40;
+9737: 			this.aiStyle = 3;
+9738: 			this.damage = 20;
+9739: 			this.defense = 6;
+9740: 			this.lifeMax = 80;
+9741: 			this.HitSound = SoundID.NPCHit1;
+9742: 			this.DeathSound = SoundID.NPCDeath1;
+9743: 			this.knockBackResist = 0.7f;
+9744: 			this.value = 200f;
+9745: 			this.rarity = 1;
+9746: 		}
+
+===== id 74 : arms at [9747, 9758] =====
+9747: 		else if (this.type == 74 || this.type == 297 || this.type == 298)
+9748: 		{
+9749: 			base.width = 14;
+9750: 			base.height = 14;
+9751: 			this.aiStyle = 24;
+9752: 			this.damage = 0;
+9753: 			this.defense = 0;
+9754: 			this.lifeMax = 5;
+9755: 			this.HitSound = SoundID.NPCHit1;
+9756: 			this.knockBackResist = 0.8f;
+9757: 			this.DeathSound = SoundID.NPCDeath1;
+9758: 			if (this.type == 74)
+9759: 			{
+9760: 				this.catchItem = 2015;
+9761: 			}
+9762: 			if (this.type == 297)
+9763: 			{
+9764: 				this.catchItem = 2016;
+9765: 			}
+9766: 			if (this.type == 298)
+9767: 			{
+9768: 				this.catchItem = 2017;
+9769: 			}
+9770: 			this.npcSlots = 0.4f;
+9771: 		}
+
+9758: 			if (this.type == 74)
+9759: 			{
+9760: 				this.catchItem = 2015;
+9761: 			}
+
+===== id 75 : arms at [9772] =====
+9772: 		else if (this.type == 75)
+9773: 		{
+9774: 			this.noGravity = true;
+9775: 			base.width = 20;
+9776: 			base.height = 20;
+9777: 			this.aiStyle = 22;
+9778: 			this.damage = 55;
+9779: 			this.defense = 20;
+9780: 			this.lifeMax = 150;
+9781: 			this.HitSound = SoundID.NPCHit5;
+9782: 			this.knockBackResist = 0.6f;
+9783: 			this.DeathSound = SoundID.NPCDeath7;
+9784: 			this.value = 350f;
+9785: 		}
+
+===== id 76 : arms at [] =====
+===== id 77 : arms at [9786] =====
+9786: 		else if (this.type == 77)
+9787: 		{
+9788: 			base.width = 18;
+9789: 			base.height = 40;
+9790: 			this.aiStyle = 3;
+9791: 			this.damage = 40;
+9792: 			this.defense = 28;
+9793: 			this.lifeMax = 260;
+9794: 			this.HitSound = SoundID.NPCHit2;
+9795: 			this.DeathSound = SoundID.NPCDeath2;
+9796: 			this.knockBackResist = 0.4f;
+9797: 			this.value = 400f;
+9798: 		}
+
+===== id 78 : arms at [9799] =====
+9799: 		else if (this.type == 78)
+9800: 		{
+9801: 			base.width = 18;
+9802: 			base.height = 40;
+9803: 			this.aiStyle = 3;
+9804: 			this.damage = 50;
+9805: 			this.defense = 16;
+9806: 			this.lifeMax = 130;
+9807: 			this.HitSound = SoundID.NPCHit1;
+9808: 			this.DeathSound = SoundID.NPCDeath6;
+9809: 			this.knockBackResist = 0.6f;
+9810: 			this.value = 600f;
+9811: 		}
+
+===== id 79 : arms at [9812] =====
+9812: 		else if (this.type == 79)
+9813: 		{
+9814: 			base.width = 18;
+9815: 			base.height = 40;
+9816: 			this.aiStyle = 3;
+9817: 			this.damage = 60;
+9818: 			this.defense = 18;
+9819: 			this.lifeMax = 180;
+9820: 			this.HitSound = SoundID.NPCHit1;
+9821: 			this.DeathSound = SoundID.NPCDeath6;
+9822: 			this.knockBackResist = 0.5f;
+9823: 			this.value = 700f;
+9824: 		}
+
+===== id 80 : arms at [9825] =====
+9825: 		else if (this.type == 80)
+9826: 		{
+9827: 			base.width = 18;
+9828: 			base.height = 40;
+9829: 			this.aiStyle = 3;
+9830: 			this.damage = 55;
+9831: 			this.defense = 18;
+9832: 			this.lifeMax = 200;
+9833: 			this.HitSound = SoundID.NPCHit1;
+9834: 			this.DeathSound = SoundID.NPCDeath6;
+9835: 			this.knockBackResist = 0.55f;
+9836: 			this.value = 700f;
+9837: 		}
+
+===== id 82 : arms at [9852] =====
+9852: 		else if (this.type == 82)
+9853: 		{
+9854: 			this.noGravity = true;
+9855: 			this.noTileCollide = true;
+9856: 			base.width = 24;
+9857: 			base.height = 44;
+9858: 			this.aiStyle = 22;
+9859: 			this.damage = 65;
+9860: 			this.defense = 16;
+9861: 			this.lifeMax = 160;
+9862: 			this.HitSound = SoundID.NPCHit54;
+9863: 			this.DeathSound = SoundID.NPCDeath52;
+9864: 			this.alpha = 100;
+9865: 			this.value = 500f;
+9866: 			this.knockBackResist = 0.7f;
+9867: 			if (Main.remixWorld)
+9868: 			{
+9869: 				if (!this.IsABestiaryIconDummy)
+9870: 				{
+9871: 					this.scale *= 1.2f;
+9872: 				}
+9873: 				this.damage = (int)((float)this.damage * this.scale);
+9874: 				this.defense = (int)((float)this.defense * this.scale);
+9875: 				this.lifeMax = (int)((float)this.lifeMax * this.scale);
+9876: 				this.value = (int)(this.value * this.scale);
+9877: 			}
+9878: 		}
+
+===== id 83 : arms at [9879] =====
+9879: 		else if (this.type == 83)
+9880: 		{
+9881: 			base.width = 40;
+9882: 			base.height = 40;
+9883: 			this.aiStyle = 23;
+9884: 			this.damage = 80;
+9885: 			this.defense = 18;
+9886: 			this.lifeMax = 200;
+9887: 			this.HitSound = SoundID.NPCHit4;
+9888: 			this.DeathSound = SoundID.NPCDeath6;
+9889: 			this.value = 1000f;
+9890: 			this.knockBackResist = 0.4f;
+9891: 		}
+
+===== id 84 : arms at [9892] =====
+9892: 		else if (this.type == 84)
+9893: 		{
+9894: 			base.width = 40;
+9895: 			base.height = 40;
+9896: 			this.aiStyle = 23;
+9897: 			this.damage = 80;
+9898: 			this.defense = 18;
+9899: 			this.lifeMax = 200;
+9900: 			this.HitSound = SoundID.NPCHit4;
+9901: 			this.DeathSound = SoundID.NPCDeath6;
+9902: 			this.value = 1000f;
+9903: 			this.knockBackResist = 0.4f;
+9904: 		}
+
+===== id 85 : arms at [9905] =====
+9905: 		else if (this.type == 85)
+9906: 		{
+9907: 			base.width = 24;
+9908: 			base.height = 24;
+9909: 			this.aiStyle = 25;
+9910: 			this.damage = 80;
+9911: 			this.defense = 30;
+9912: 			this.lifeMax = 500;
+9913: 			this.HitSound = SoundID.NPCHit4;
+9914: 			this.DeathSound = SoundID.NPCDeath6;
+9915: 			this.value = 100000f;
+9916: 			this.knockBackResist = 0.3f;
+9917: 			this.rarity = 4;
+9918: 			if (!Main.hardMode)
+9919: 			{
+9920: 				this.damage = 30;
+9921: 				this.defense = 12;
+9922: 				this.lifeMax = 300;
+9923: 				this.value = Item.buyPrice(0, 2);
+9924: 			}
+9925: 		}
+
+===== id 86 : arms at [9926] =====
+9926: 		else if (this.type == 86)
+9927: 		{
+9928: 			base.width = 46;
+9929: 			base.height = 42;
+9930: 			this.aiStyle = 26;
+9931: 			this.damage = 65;
+9932: 			this.defense = 30;
+9933: 			this.lifeMax = 400;
+9934: 			this.HitSound = SoundID.NPCHit12;
+9935: 			this.DeathSound = SoundID.NPCDeath18;
+9936: 			this.knockBackResist = 0.3f;
+9937: 			this.value = 1000f;
+9938: 		}
+
+===== id 93 : arms at [10047] =====
+10047: 		else if (this.type == 93)
+10048: 		{
+10049: 			this.npcSlots = 0.5f;
+10050: 			base.width = 26;
+10051: 			base.height = 20;
+10052: 			this.aiStyle = 14;
+10053: 			this.damage = 45;
+10054: 			this.defense = 16;
+10055: 			this.lifeMax = 100;
+10056: 			this.HitSound = SoundID.NPCHit1;
+10057: 			this.knockBackResist = 0.75f;
+10058: 			this.DeathSound = SoundID.NPCDeath4;
+10059: 			this.value = 400f;
+10060: 		}
+
+===== id 94 : arms at [10061] =====
+10061: 		else if (this.type == 94)
+10062: 		{
+10063: 			this.npcSlots = 1f;
+10064: 			base.width = 44;
+10065: 			base.height = 44;
+10066: 			this.aiStyle = 5;
+10067: 			this.damage = 60;
+10068: 			this.defense = 32;
+10069: 			this.lifeMax = 230;
+10070: 			this.HitSound = SoundID.NPCHit1;
+10071: 			this.DeathSound = SoundID.NPCDeath1;
+10072: 			this.noGravity = true;
+10073: 			this.knockBackResist = 0.55f;
+10074: 			this.value = 500f;
+10075: 		}
+
+===== id 95 : arms at [10076] =====
+10076: 		else if (this.type == 95)
+10077: 		{
+10078: 			base.width = 22;
+10079: 			base.height = 22;
+10080: 			this.aiStyle = 6;
+10081: 			this.netAlways = true;
+10082: 			this.damage = 45;
+10083: 			this.defense = 10;
+10084: 			this.lifeMax = 200;
+10085: 			this.HitSound = SoundID.NPCHit1;
+10086: 			this.DeathSound = SoundID.NPCDeath1;
+10087: 			this.noGravity = true;
+10088: 			this.noTileCollide = true;
+10089: 			this.knockBackResist = 0f;
+10090: 			this.behindTiles = true;
+10091: 			this.scale = 0.9f;
+10092: 			this.value = 300f;
+10093: 		}
+
+===== id 96 : arms at [10094] =====
+10094: 		else if (this.type == 96)
+10095: 		{
+10096: 			base.width = 22;
+10097: 			base.height = 22;
+10098: 			this.aiStyle = 6;
+10099: 			this.netAlways = true;
+10100: 			this.damage = 28;
+10101: 			this.defense = 20;
+10102: 			this.lifeMax = 200;
+10103: 			this.HitSound = SoundID.NPCHit1;
+10104: 			this.DeathSound = SoundID.NPCDeath1;
+10105: 			this.noGravity = true;
+10106: 			this.noTileCollide = true;
+10107: 			this.knockBackResist = 0f;
+10108: 			this.behindTiles = true;
+10109: 			this.scale = 0.9f;
+10110: 			this.value = 300f;
+10111: 			this.dontCountMe = true;
+10112: 		}
+
+===== id 97 : arms at [10113] =====
+10113: 		else if (this.type == 97)
+10114: 		{
+10115: 			base.width = 22;
+10116: 			base.height = 22;
+10117: 			this.aiStyle = 6;
+10118: 			this.netAlways = true;
+10119: 			this.damage = 26;
+10120: 			this.defense = 30;
+10121: 			this.lifeMax = 200;
+10122: 			this.HitSound = SoundID.NPCHit1;
+10123: 			this.DeathSound = SoundID.NPCDeath1;
+10124: 			this.noGravity = true;
+10125: 			this.noTileCollide = true;
+10126: 			this.knockBackResist = 0f;
+10127: 			this.behindTiles = true;
+10128: 			this.scale = 0.9f;
+10129: 			this.value = 300f;
+10130: 			this.dontCountMe = true;
+10131: 		}
+
+===== id 98 : arms at [10132] =====
+10132: 		else if (this.type == 98)
+10133: 		{
+10134: 			this.npcSlots = 3.5f;
+10135: 			base.width = 22;
+10136: 			base.height = 22;
+10137: 			this.aiStyle = 6;
+10138: 			this.netAlways = true;
+10139: 			this.damage = 70;
+10140: 			this.defense = 36;
+10141: 			this.lifeMax = 500;
+10142: 			this.HitSound = SoundID.NPCHit1;
+10143: 			this.DeathSound = SoundID.NPCDeath1;
+10144: 			this.noGravity = true;
+10145: 			this.noTileCollide = true;
+10146: 			this.knockBackResist = 0f;
+10147: 			this.behindTiles = true;
+10148: 			this.value = 700f;
+10149: 		}
+
+===== id 99 : arms at [10150] =====
+10150: 		else if (this.type == 99)
+10151: 		{
+10152: 			base.width = 22;
+10153: 			base.height = 22;
+10154: 			this.aiStyle = 6;
+10155: 			this.netAlways = true;
+10156: 			this.damage = 55;
+10157: 			this.defense = 40;
+10158: 			this.lifeMax = 500;
+10159: 			this.HitSound = SoundID.NPCHit1;
+10160: 			this.DeathSound = SoundID.NPCDeath1;
+10161: 			this.noGravity = true;
+10162: 			this.noTileCollide = true;
+10163: 			this.knockBackResist = 0f;
+10164: 			this.behindTiles = true;
+10165: 			this.value = 700f;
+10166: 			this.dontCountMe = true;
+10167: 		}
+
+===== id 100 : arms at [10168] =====
+10168: 		else if (this.type == 100)
+10169: 		{
+10170: 			base.width = 22;
+10171: 			base.height = 22;
+10172: 			this.aiStyle = 6;
+10173: 			this.netAlways = true;
+10174: 			this.damage = 40;
+10175: 			this.defense = 44;
+10176: 			this.lifeMax = 500;
+10177: 			this.HitSound = SoundID.NPCHit1;
+10178: 			this.DeathSound = SoundID.NPCDeath1;
+10179: 			this.noGravity = true;
+10180: 			this.noTileCollide = true;
+10181: 			this.knockBackResist = 0f;
+10182: 			this.behindTiles = true;
+10183: 			this.value = 700f;
+10184: 			this.dontCountMe = true;
+10185: 		}
+
+===== id 101 : arms at [10186] =====
+10186: 		else if (this.type == 101)
+10187: 		{
+10188: 			this.noGravity = true;
+10189: 			this.noTileCollide = true;
+10190: 			this.behindTiles = true;
+10191: 			base.width = 30;
+10192: 			base.height = 30;
+10193: 			this.aiStyle = 13;
+10194: 			this.damage = 70;
+10195: 			this.defense = 30;
+10196: 			this.lifeMax = 320;
+10197: 			this.HitSound = SoundID.NPCHit1;
+10198: 			this.knockBackResist = 0.2f;
+10199: 			this.DeathSound = SoundID.NPCDeath1;
+10200: 			this.value = 600f;
+10201: 		}
+
+===== id 102 : arms at [10202] =====
+10202: 		else if (this.type == 102)
+10203: 		{
+10204: 			this.npcSlots = 0.5f;
+10205: 			this.noGravity = true;
+10206: 			base.width = 18;
+10207: 			base.height = 20;
+10208: 			this.aiStyle = 16;
+10209: 			this.damage = 80;
+10210: 			this.defense = 22;
+10211: 			this.lifeMax = 90;
+10212: 			this.HitSound = SoundID.NPCHit1;
+10213: 			this.DeathSound = SoundID.NPCDeath1;
+10214: 			this.value = 500f;
+10215: 		}
+
+===== id 103 : arms at [10216] =====
+10216: 		else if (this.type == 103)
+10217: 		{
+10218: 			this.noGravity = true;
+10219: 			base.width = 26;
+10220: 			base.height = 26;
+10221: 			this.aiStyle = 18;
+10222: 			this.damage = 80;
+10223: 			this.defense = 30;
+10224: 			this.lifeMax = 120;
+10225: 			this.HitSound = SoundID.NPCHit25;
+10226: 			this.DeathSound = SoundID.NPCDeath28;
+10227: 			this.value = 800f;
+10228: 			this.alpha = 20;
+10229: 		}
+
+===== id 104 : arms at [10230] =====
+10230: 		else if (this.type == 104)
+10231: 		{
+10232: 			base.width = 18;
+10233: 			base.height = 40;
+10234: 			this.aiStyle = 3;
+10235: 			this.damage = 70;
+10236: 			this.defense = 38;
+10237: 			this.lifeMax = 350;
+10238: 			this.HitSound = SoundID.NPCHit6;
+10239: 			this.DeathSound = SoundID.NPCDeath1;
+10240: 			this.knockBackResist = 0.4f;
+10241: 			this.value = 1000f;
+10242: 		}
+
+===== id 109 : arms at [10299] =====
+10299: 		else if (this.type == 109)
+10300: 		{
+10301: 			base.width = 34;
+10302: 			base.height = 78;
+10303: 			this.aiStyle = 3;
+10304: 			this.damage = 60;
+10305: 			this.defense = 25;
+10306: 			this.lifeMax = 800;
+10307: 			this.HitSound = SoundID.NPCHit1;
+10308: 			this.DeathSound = SoundID.NPCDeath2;
+10309: 			this.knockBackResist = 0.2f;
+10310: 			this.value = 10000f;
+10311: 			this.rarity = 1;
+10312: 		}
+
+===== id 110 : arms at [10313] =====
+10313: 		else if (this.type == 110)
+10314: 		{
+10315: 			base.width = 18;
+10316: 			base.height = 40;
+10317: 			this.aiStyle = 3;
+10318: 			this.damage = 45;
+10319: 			this.defense = 14;
+10320: 			this.lifeMax = 210;
+10321: 			this.HitSound = SoundID.NPCHit2;
+10322: 			this.DeathSound = SoundID.NPCDeath2;
+10323: 			this.knockBackResist = 0.55f;
+10324: 			this.value = 400f;
+10325: 		}
+
+===== id 112 : arms at [10326] =====
+10326: 		else if (this.type == 112)
+10327: 		{
+10328: 			base.width = 16;
+10329: 			base.height = 16;
+10330: 			this.aiStyle = 9;
+10331: 			this.damage = 65;
+10332: 			this.defense = 0;
+10333: 			this.lifeMax = 1;
+10334: 			this.HitSound = null;
+10335: 			this.DeathSound = SoundID.NPCDeath9;
+10336: 			this.noGravity = true;
+10337: 			this.noTileCollide = true;
+10338: 			this.knockBackResist = 0f;
+10339: 			this.scale = 0.9f;
+10340: 			this.alpha = 80;
+10341: 		}
+
+===== id 116 : arms at [10393] =====
+10393: 		else if (this.type == 116)
+10394: 		{
+10395: 			base.width = 30;
+10396: 			base.height = 32;
+10397: 			this.aiStyle = 2;
+10398: 			this.damage = 30;
+10399: 			this.defense = 6;
+10400: 			this.lifeMax = 80;
+10401: 			this.HitSound = SoundID.NPCHit9;
+10402: 			this.knockBackResist = 0.8f;
+10403: 			this.DeathSound = SoundID.NPCDeath12;
+10404: 		}
+
+===== id 120 : arms at [10453] =====
+10453: 		else if (this.type == 120)
+10454: 		{
+10455: 			base.width = 18;
+10456: 			base.height = 40;
+10457: 			this.aiStyle = 3;
+10458: 			this.damage = 40;
+10459: 			this.defense = 30;
+10460: 			this.lifeMax = 370;
+10461: 			this.HitSound = SoundID.NPCHit1;
+10462: 			this.DeathSound = SoundID.NPCDeath6;
+10463: 			this.knockBackResist = 0.4f;
+10464: 			this.value = 600f;
+10465: 		}
+
+===== id 121 : arms at [10466] =====
+10466: 		else if (this.type == 121)
+10467: 		{
+10468: 			base.width = 40;
+10469: 			base.height = 30;
+10470: 			this.aiStyle = 14;
+10471: 			this.damage = 45;
+10472: 			this.defense = 20;
+10473: 			this.lifeMax = 60;
+10474: 			this.HitSound = SoundID.NPCHit1;
+10475: 			this.alpha = 55;
+10476: 			this.knockBackResist = 0.8f;
+10477: 			this.scale = 1.1f;
+10478: 		}
+
+===== id 122 : arms at [10479] =====
+10479: 		else if (this.type == 122)
+10480: 		{
+10481: 			this.noGravity = true;
+10482: 			base.width = 20;
+10483: 			base.height = 20;
+10484: 			this.aiStyle = 22;
+10485: 			this.damage = 60;
+10486: 			this.defense = 22;
+10487: 			this.lifeMax = 220;
+10488: 			this.HitSound = SoundID.NPCHit1;
+10489: 			this.knockBackResist = 0.8f;
+10490: 			this.DeathSound = SoundID.NPCDeath1;
+10491: 			this.value = 600f;
+10492: 		}
+
+===== id 137 : arms at [10735] =====
+10735: 		else if (this.type == 137)
+10736: 		{
+10737: 			base.width = 26;
+10738: 			base.height = 20;
+10739: 			this.aiStyle = 14;
+10740: 			this.damage = 75;
+10741: 			this.defense = 30;
+10742: 			this.lifeMax = 200;
+10743: 			this.HitSound = SoundID.NPCHit1;
+10744: 			this.knockBackResist = 0.75f;
+10745: 			this.DeathSound = SoundID.NPCDeath6;
+10746: 			this.value = 500f;
+10747: 		}
+
+===== id 140 : arms at [10763] =====
+10763: 		else if (this.type == 140)
+10764: 		{
+10765: 			base.width = 18;
+10766: 			base.height = 40;
+10767: 			this.aiStyle = 3;
+10768: 			this.damage = 55;
+10769: 			this.defense = 28;
+10770: 			this.lifeMax = 260;
+10771: 			this.HitSound = SoundID.NPCHit4;
+10772: 			this.DeathSound = SoundID.NPCDeath6;
+10773: 			this.knockBackResist = 0.4f;
+10774: 			this.value = 400f;
+10775: 		}
