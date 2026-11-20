@@ -147,6 +147,50 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- S1-I-1 wave B (W4-d92): the NPC family's SECOND half ----
+    // Census: the NPC-family ids whose body centres on `Main.npc` / the NPC
+    // statics / the NPC shop / the NPC smoke, minus c27's entity-state tier
+    // (18/36/41/43/51/55/62/84), wave A's 60/72/74 and the already-ported
+    // 23/28/53/54/70/71/97/98: 40/56/65/100/101/103/104 (d91, the first half)
+    // + 106/130/131/136/137/153/162 (this batch). Bodies + codecs only; the
+    // apply/relay arms and the send fan-out are S1-I-4.
+    /// `130 FishOutNPC` (`MessageID.cs:274`) — a client fished an NPC out:
+    /// `(ushort)` tile x, `(ushort)` tile y, `(short)` type
+    /// (`NetMessage.cs:1528-1532`); the host spawns it
+    /// (`MessageBuffer.cs:4086-4121`, the 682 town-slime unlock at
+    /// `:4095-4103`); sent at `Player.cs:52423-52426` (`netMode == 1`).
+    pub const FISH_OUT_NPC: u8 = 130;
+    /// `131 TamperWithNPC` (`MessageID.cs:276`) — `(ushort)` npc slot,
+    /// `(byte)` kind; kind 1 adds `(int)` immune time + `(short)` fromWho
+    /// (`NetMessage.cs:1533-1541`); the client applies `GetImmuneTime`
+    /// (`MessageBuffer.cs:4122-4133`); sent at `WorldGen.cs:48373-48376`
+    /// (the 485 statue-break 582 spawns).
+    pub const TAMPER_WITH_NPC: u8 = 131;
+    /// `136 SyncCavernMonsterType` (`MessageID.cs:286`) — the 2×3
+    /// `NPC.cavernMonsterType` grid as six `(ushort)`s, row-major
+    /// (`NetMessage.cs:1572-1582`, `NPC.cs:6585`/`:95268`); the client
+    /// stores it (`MessageBuffer.cs:4204-4218`); the join push is
+    /// `MessageBuffer.cs:870`.
+    pub const CAVERN_MONSTER_TYPES: u8 = 136;
+    /// `137 RequestNPCBuffRemoval` (`MessageID.cs:288`) — `(short)` npc +
+    /// `(ushort)` buff type (`NetMessage.cs:1583-1586`); the host runs
+    /// `RequestBuffRemoval` behind the slot range gate
+    /// (`MessageBuffer.cs:4219-4229`); sent at `NPC.cs:89995-89998`
+    /// (`netMode == 1`, the `CanBeRemovedByNetMessage` gate `:89987`).
+    pub const NPC_BUFF_REMOVAL_REQUEST: u8 = 137;
+    /// `153 NPCDebuffDamage` (`MessageID.cs:320`) — `(byte)` npc slot +
+    /// `(short)` damage (`NetMessage.cs:1646-1649`); both sides apply
+    /// `GetHurtByDebuff` and the host relays (`MessageBuffer.cs:4408-4418`,
+    /// `NPC.cs:91864-91888`); the only send sites are host-side
+    /// (`NPC.cs:91853-91860`, the electric-eel 60-tick/50-damage pulse).
+    pub const NPC_DEBUFF_DAMAGE: u8 = 153;
+    /// `162 DamageNPCAck` (`MessageID.cs:338`) — NO body: `SendData` has no
+    /// case 162, the frame is the bare id; the host fires it at the HEAD of
+    /// the `28` strike arm (`MessageBuffer.cs:1768-1771`) and the client
+    /// pops `NPC.pendingDamages[0]` (`MessageBuffer.cs:1819-1824`,
+    /// `NPC.AckDamage`, `NPC.cs:90703-90713`).
+    pub const NPC_STRIKE_ACK: u8 = 162;
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1537,6 +1581,71 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+// ---- S1-I-1 wave B (W4-d92): the NPC family's second half ----
+
+/// `msg 130 FishOutNPC`'s body (`NetMessage.cs:1528-1532`): `(ushort)` tile
+/// x, `(ushort)` tile y, `(short)` npc type. The host multiplies both
+/// coordinates by 16 and `NPC.NewNPC`s the type (`MessageBuffer.cs:4104-4110`);
+/// type 682 (Red Slime) also flips `NPC.unlockedSlimeRedSpawn` once and
+/// re-pushes `7 WorldData` (`:4095-4103`). The wire carries TILE coordinates
+/// — the sender already divided by 16 (`Player.cs:52425`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FishOutNpc {
+    pub tile_x: u16,
+    pub tile_y: u16,
+    pub npc_type: i16,
+}
+
+/// `msg 131 TamperWithNPC`'s body (`NetMessage.cs:1533-1541`): `(ushort)` npc
+/// slot, `(byte)` kind; kind 1 appends `(int)` immune time + `(short)`
+/// fromWho. The client's kind-1 arm calls `GetImmuneTime(time, fromWho)`
+/// (`MessageBuffer.cs:4128-4131`); a slot ≥ `Main.maxNPCs` tames a throwaway
+/// `new NPC()` instead (`:4127`). The only send site is the 485 statue-break
+/// 582 spawn's `GetImmuneTime(-1, 20)` (`WorldGen.cs:48373-48376`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TamperWithNpc {
+    pub npc: u16,
+    pub kind: u8,
+    /// Present only when `kind == 1` (the `(int)` time + `(short)` fromWho).
+    pub immune: Option<(i32, i16)>,
+}
+
+/// `msg 136 SyncCavernMonsterType`'s body (`NetMessage.cs:1572-1582`): the
+/// 2×3 `NPC.cavernMonsterType` grid (`NPC.cs:6585`, allocated `new int[2, 3]`
+/// at `:95268`) written row-major as six `(ushort)`s — outer loop `i < 2`,
+/// inner `j < 3`. The client stores them verbatim (`MessageBuffer.cs:4210-4216`);
+/// the join push is `MessageBuffer.cs:870`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CavernMonsterTypes {
+    /// `[i][j]`, row-major — the C#'s `int[2, 3]` narrowed to the wire's
+    /// `ushort` (the values are npc types, `NPC.cs:18123-18129`).
+    pub types: [[u16; 3]; 2],
+}
+
+/// `msg 137 RequestNPCBuffRemoval`'s body (`NetMessage.cs:1583-1586`):
+/// `(short)` npc slot + `(ushort)` buff type. The host gates the slot to
+/// `0..Main.maxNPCs` then runs `RequestBuffRemoval` (`MessageBuffer.cs:4222-4227`);
+/// the client sends it from `NPC.RequestBuffRemoval` behind the
+/// `BuffID.Sets.CanBeRemovedByNetMessage` gate (`NPC.cs:89987-89998`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcBuffRemovalRequest {
+    pub npc: i16,
+    pub buff_type: u16,
+}
+
+/// `msg 153 NPCDebuffDamage`'s body (`NetMessage.cs:1646-1649`): `(byte)` npc
+/// slot + `(short)` damage. BOTH sides apply `GetHurtByDebuff` and the host
+/// relays to the others (`MessageBuffer.cs:4410-4416`); the damage lands on
+/// `realLife` when set, the immortal gate skips the subtraction, and a
+/// life ≤ 0 is floored to 1 + a 9999 `StrikeNPCNoInteraction`
+/// (`NPC.cs:91864-91888`). Host-sent only (the electric-eel pulse,
+/// `NPC.cs:91853-91860`), so it is `S2c`-only like `97`/`98`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcDebuffDamage {
+    pub npc: u8,
+    pub damage: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1648,6 +1757,12 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `130 FishOutNPC` - a client fished an NPC out at the tile point
+    /// (`Player.cs:52423-52426`; the host spawns, `MessageBuffer.cs:4086-4121`).
+    FishOutNpc(FishOutNpc),
+    /// `137 RequestNPCBuffRemoval` - a client asks the host to drop an NPC
+    /// buff (`NPC.cs:89995-89998`; `MessageBuffer.cs:4219-4229`).
+    NpcBuffRemovalRequest(NpcBuffRemovalRequest),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1771,6 +1886,20 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `131 TamperWithNPC` - the host tames an NPC's immunity (the 485
+    /// statue-break 582 spawns, `WorldGen.cs:48373-48376`;
+    /// `MessageBuffer.cs:4122-4133`).
+    TamperWithNpc(TamperWithNpc),
+    /// `136 SyncCavernMonsterType` - the cavern spawn grid, the join push
+    /// (`MessageBuffer.cs:870`, read `:4204-4218`).
+    CavernMonsterTypes(CavernMonsterTypes),
+    /// `153 NPCDebuffDamage` - an NPC's debuff tick damage, host-sent and
+    /// relayed (`NPC.cs:91853-91860`, `MessageBuffer.cs:4408-4418`).
+    NpcDebuffDamage(NpcDebuffDamage),
+    /// `162 DamageNPCAck` - the host's ack of a `28` strike, no body
+    /// (`MessageBuffer.cs:1768-1771` sends, `:1819-1824` pops
+    /// `NPC.pendingDamages[0]`).
+    NpcStrikeAck,
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1859,6 +1988,8 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::FishOutNpc(_) => id::FISH_OUT_NPC,
+            Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1927,6 +2058,10 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1528-1532`: (ushort)x, (ushort)y, (short)type.
+            Self::FishOutNpc(f) => w.u16(f.tile_x).u16(f.tile_y).i16(f.npc_type),
+            // `NetMessage.cs:1583-1586`: (short)npc, (ushort)buff type.
+            Self::NpcBuffRemovalRequest(q) => w.i16(q.npc).u16(q.buff_type),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2048,6 +2183,17 @@ impl C2s {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4092-4094`: (ushort)x, (ushort)y, (short)type.
+            id::FISH_OUT_NPC => Self::FishOutNpc(FishOutNpc {
+                tile_x: r.u16()?,
+                tile_y: r.u16()?,
+                npc_type: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4222-4223`: (short)npc, (ushort)buff type.
+            id::NPC_BUFF_REMOVAL_REQUEST => Self::NpcBuffRemovalRequest(NpcBuffRemovalRequest {
+                npc: r.i16()?,
+                buff_type: r.u16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2209,6 +2355,10 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::TamperWithNpc(_) => id::TAMPER_WITH_NPC,
+            Self::CavernMonsterTypes(_) => id::CAVERN_MONSTER_TYPES,
+            Self::NpcDebuffDamage(_) => id::NPC_DEBUFF_DAMAGE,
+            Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
         }
     }
 
@@ -2351,6 +2501,29 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1533-1541`: (ushort)npc, (byte)kind; kind 1
+            // appends (int)time + (short)fromWho.
+            Self::TamperWithNpc(t) => {
+                let w = w.u16(t.npc).u8(t.kind);
+                match t.immune {
+                    Some((time, from_who)) => w.i32(time).i16(from_who),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1572-1582`: the 2×3 grid, row-major (ushort)s.
+            Self::CavernMonsterTypes(c) => {
+                let mut w = w;
+                for row in &c.types {
+                    for ty in row {
+                        w = w.u16(*ty);
+                    }
+                }
+                w
+            }
+            // `NetMessage.cs:1646-1649`: (byte)npc, (short)damage.
+            Self::NpcDebuffDamage(d) => w.u8(d.npc).i16(d.damage),
+            // `SendData` has no case 162 — the bare id is the whole frame.
+            Self::NpcStrikeAck => w,
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2537,6 +2710,35 @@ impl S2c {
                 kind: r.u8()?,
                 value: r.i32()?,
             }),
+            // `MessageBuffer.cs:4125-4131`: (ushort)npc, (byte)kind; the
+            // kind-1 arm reads (int)time + (short)fromWho.
+            id::TAMPER_WITH_NPC => {
+                let npc = r.u16()?;
+                let kind = r.u8()?;
+                let immune = if kind == 1 {
+                    Some((r.i32()?, r.i16()?))
+                } else {
+                    None
+                };
+                Self::TamperWithNpc(TamperWithNpc { npc, kind, immune })
+            }
+            // `MessageBuffer.cs:4210-4216`: exactly six (ushort)s, row-major.
+            id::CAVERN_MONSTER_TYPES => {
+                let mut types = [[0u16; 3]; 2];
+                for row in &mut types {
+                    for ty in row {
+                        *ty = r.u16()?;
+                    }
+                }
+                Self::CavernMonsterTypes(CavernMonsterTypes { types })
+            }
+            // `MessageBuffer.cs:4410-4411`: (byte)npc, (short)damage.
+            id::NPC_DEBUFF_DAMAGE => Self::NpcDebuffDamage(NpcDebuffDamage {
+                npc: r.u8()?,
+                damage: r.i16()?,
+            }),
+            // `MessageBuffer.cs:1819-1824`: no body.
+            id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
             id::PROJECTILE_TRACKERS => Self::ProjectileTrackers(ProjectileTrackers {
                 player_id: r.u8()?,
                 piggy_bank: TrackedProjectileRef {
@@ -4709,5 +4911,155 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    // ---- S1-I-1 wave B (W4-d92): the NPC family's second half ----
+
+    #[test]
+    fn s1_i_1b_fish_out_npc_round_trips() {
+        // `NetMessage.cs:1528-1532`: (ushort)x, (ushort)y, (short)type —
+        // TILE coordinates (the sender divides by 16, `Player.cs:52425`).
+        let f = FishOutNpc {
+            tile_x: 260,
+            tile_y: 340,
+            npc_type: 682, // the Red Slime unlock type (`MessageBuffer.cs:4095`)
+        };
+        let c = C2s::FishOutNpc(f).encode();
+        assert_eq!(c[2], 130);
+        let mut body = Vec::new();
+        body.extend_from_slice(&260u16.to_le_bytes());
+        body.extend_from_slice(&340u16.to_le_bytes());
+        body.extend_from_slice(&682i16.to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::FishOutNpc(d) => assert_eq!(d, f),
+            other => panic!("expected 130, got {:?}", other.msg_id()),
+        }
+        // Host-only read arm (`MessageBuffer.cs:4088` netMode == 2 gate):
+        // the S2c side has no 130 body.
+        assert!(S2c::decode(130, &mut NetReader::new(&body)).is_none());
+        // Truncated (5 of 6 bytes) must not decode.
+        assert!(C2s::decode(130, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_tamper_with_npc_round_trips() {
+        // `NetMessage.cs:1533-1541`: (ushort)npc, (byte)kind; kind 1 appends
+        // (int)time + (short)fromWho. The one send site is the 485
+        // statue-break 582 spawn's GetImmuneTime(-1, 20)
+        // (`WorldGen.cs:48373-48376`).
+        let t = TamperWithNpc {
+            npc: 15,
+            kind: 1,
+            immune: Some((-1, 20)),
+        };
+        let f = S2c::TamperWithNpc(t).encode();
+        assert_eq!(f[2], 131);
+        let mut body = Vec::new();
+        body.extend_from_slice(&15u16.to_le_bytes());
+        body.push(1);
+        body.extend_from_slice(&(-1i32).to_le_bytes());
+        body.extend_from_slice(&20i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TamperWithNpc(d) => assert_eq!(d, t),
+            other => panic!("expected 131, got {:?}", other.msg_id()),
+        }
+        // A non-1 kind writes NO tail (`NetMessage.cs:1536` gate).
+        let bare = TamperWithNpc {
+            npc: 3,
+            kind: 0,
+            immune: None,
+        };
+        let g = S2c::TamperWithNpc(bare).encode();
+        assert_eq!(g[2], 131);
+        assert_eq!(&g[3..], &[3, 0, 0]);
+        match S2c::decode(g[2], &mut NetReader::new(&g[3..])).expect("decode") {
+            S2c::TamperWithNpc(d) => assert_eq!(d, bare),
+            other => panic!("expected 131, got {:?}", other.msg_id()),
+        }
+        // A kind-1 body truncated before the fromWho must not decode.
+        assert!(S2c::decode(131, &mut NetReader::new(&body[..7])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_cavern_monster_types_round_trips() {
+        // `NetMessage.cs:1572-1582`: the 2×3 grid row-major, six (ushort)s
+        // (`NPC.cavernMonsterType`, `NPC.cs:6585`/`:95268`); the reader
+        // loops i<2 then j<3 (`MessageBuffer.cs:4210-4216`).
+        let c = CavernMonsterTypes {
+            types: [[494, 496, 498], [495, 497, 506]],
+        };
+        let f = S2c::CavernMonsterTypes(c).encode();
+        assert_eq!(f[2], 136);
+        assert_eq!(f.len(), 3 + 12);
+        let mut body = Vec::new();
+        for ty in [494u16, 496, 498, 495, 497, 506] {
+            body.extend_from_slice(&ty.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CavernMonsterTypes(d) => assert_eq!(d, c),
+            other => panic!("expected 136, got {:?}", other.msg_id()),
+        }
+        // Five of the six shorts must not decode.
+        assert!(S2c::decode(136, &mut NetReader::new(&body[..10])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_npc_buff_removal_request_round_trips() {
+        // `NetMessage.cs:1583-1586`: (short)npc + (ushort)buff type; the
+        // host gates the slot to 0..maxNPCs (`MessageBuffer.cs:4224`).
+        let q = NpcBuffRemovalRequest {
+            npc: 42,
+            buff_type: 24, // Poisoned — a CanBeRemovedByNetMessage buff
+        };
+        let c = C2s::NpcBuffRemovalRequest(q).encode();
+        assert_eq!(c[2], 137);
+        let mut body = Vec::new();
+        body.extend_from_slice(&42i16.to_le_bytes());
+        body.extend_from_slice(&24u16.to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcBuffRemovalRequest(d) => assert_eq!(d, q),
+            other => panic!("expected 137, got {:?}", other.msg_id()),
+        }
+        // Host-only read arm (`MessageBuffer.cs:4220` netMode == 2 gate).
+        assert!(S2c::decode(137, &mut NetReader::new(&body)).is_none());
+        assert!(C2s::decode(137, &mut NetReader::new(&body[..3])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_npc_debuff_damage_round_trips() {
+        // `NetMessage.cs:1646-1649`: (byte)npc + (short)damage; both sides
+        // apply GetHurtByDebuff, the host relays (`MessageBuffer.cs:4410-4416`).
+        let d = NpcDebuffDamage { npc: 7, damage: 50 };
+        let f = S2c::NpcDebuffDamage(d).encode();
+        assert_eq!(f[2], 153);
+        let mut body = vec![7];
+        body.extend_from_slice(&50i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcDebuffDamage(x) => assert_eq!(x, d),
+            other => panic!("expected 153, got {:?}", other.msg_id()),
+        }
+        // Host-sent only (the electric-eel pulse, `NPC.cs:91853-91860`):
+        // no C2s body, like 97/98.
+        assert!(C2s::decode(153, &mut NetReader::new(&body)).is_none());
+        assert!(S2c::decode(153, &mut NetReader::new(&body[..2])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_npc_strike_ack_is_bodyless() {
+        // `SendData` has no case 162 — the frame is the bare id
+        // (`MessageBuffer.cs:1768-1771` sends it at the head of the 28 arm;
+        // `:1819-1824` the client pops NPC.pendingDamages[0]).
+        let f = S2c::NpcStrikeAck.encode();
+        assert_eq!(f, vec![3, 0, 162]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcStrikeAck => {}
+            other => panic!("expected 162, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(162, &mut NetReader::new(&[])).is_none());
     }
 }

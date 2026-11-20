@@ -816,6 +816,12 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // S1-I-1 wave B (W4-d92): the NPC family's client-sent ids have
+            // bodies + codecs (`net.rs`); the host apply arms
+            // (`MessageBuffer.cs:4086-4121` the fish-out spawn + 682 unlock,
+            // `:4219-4229` the buff-removal request) land with the send-path
+            // pass (S1-I-4).
+            C2s::FishOutNpc(_) | C2s::NpcBuffRemovalRequest(_) => {}
         }
     }
 
@@ -1858,6 +1864,16 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // S1-I-1 wave B (W4-d92): the NPC family's server-sent ids have
+            // bodies + codecs (`net.rs`); the client read sites
+            // (`MessageBuffer.cs:4122-4133` the immunity tame, `:4204-4218`
+            // the cavern grid, `:4408-4418` the debuff damage, `:1819-1824`
+            // the strike ack's pendingDamages pop) land with the send-path
+            // pass (S1-I-4) — nothing sends them yet.
+            S2c::TamperWithNpc(_)
+            | S2c::CavernMonsterTypes(_)
+            | S2c::NpcDebuffDamage(_)
+            | S2c::NpcStrikeAck => {}
         }
     }
 
