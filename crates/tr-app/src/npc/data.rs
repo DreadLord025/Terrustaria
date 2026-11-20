@@ -570,6 +570,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b1 — vanilla ids kept (free protocol slots).
+            NpcKind::RaggedCaster => 281,
+            NpcKind::RaggedCasterOpenCoat => 282,
+            NpcKind::Necromancer => 283,
+            NpcKind::NecromancerArmored => 284,
+            NpcKind::DiabolistRed => 285,
             // The Wyvern family (`S1-D-3` wyvern, `NPCID.cs:10851-10861`):
             // the vanilla ids 87-92 collide with the port-local
             // Scutlix/saucer band (87-92 above). GATE REASSIGN (L-C): the
@@ -907,6 +913,12 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // W4-d38 b1 — decode at the vanilla ids.
+            281 => NpcKind::RaggedCaster,
+            282 => NpcKind::RaggedCasterOpenCoat,
+            283 => NpcKind::Necromancer,
+            284 => NpcKind::NecromancerArmored,
+            285 => NpcKind::DiabolistRed,
             // The Wyvern family (`S1-D-3` wyvern): the gate-reassigned
             // 223-228 band (`to_u16` above; the vanilla 87-92 collide with
             // the Scutlix/saucer ids). `NPCID.cs:10851-10861`.
@@ -1788,6 +1800,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d38 b1 — SetDefaults HitSound rows.
+            NpcKind::RaggedCaster => "NPC_Hit_2",
+            NpcKind::RaggedCasterOpenCoat => "NPC_Hit_2",
+            NpcKind::Necromancer => "NPC_Hit_2",
+            NpcKind::NecromancerArmored => "NPC_Hit_2",
+            NpcKind::DiabolistRed => "NPC_Hit_2",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2110,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d38 b1 — SetDefaults DeathSound rows.
+            NpcKind::RaggedCaster => "NPC_Killed_2",
+            NpcKind::RaggedCasterOpenCoat => "NPC_Killed_2",
+            NpcKind::Necromancer => "NPC_Killed_2",
+            NpcKind::NecromancerArmored => "NPC_Killed_2",
+            NpcKind::DiabolistRed => "NPC_Killed_2",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2451,6 +2475,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d38 b1 — SetDefaults aiStyle rows.
+            NpcKind::RaggedCaster => 8,
+            NpcKind::RaggedCasterOpenCoat => 8,
+            NpcKind::Necromancer => 8,
+            NpcKind::NecromancerArmored => 8,
+            NpcKind::DiabolistRed => 8,
         }
     }
 
@@ -2981,6 +3011,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d38 b1 — SetDefaults width/height rows.
+            NpcKind::RaggedCaster => (18.0, 40.0),
+            NpcKind::RaggedCasterOpenCoat => (18.0, 40.0),
+            NpcKind::Necromancer => (18.0, 40.0),
+            NpcKind::NecromancerArmored => (18.0, 40.0),
+            NpcKind::DiabolistRed => (18.0, 40.0),
         }
     }
 
@@ -3622,6 +3658,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d38 b1 — SetDefaults lifeMax rows.
+            NpcKind::RaggedCaster => 400,
+            NpcKind::RaggedCasterOpenCoat => 450,
+            NpcKind::Necromancer => 300,
+            NpcKind::NecromancerArmored => 450,
+            NpcKind::DiabolistRed => 200,
         }
     }
 
@@ -3986,6 +4028,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d38 b1 — SetDefaults damage rows.
+            NpcKind::RaggedCaster => 40,
+            NpcKind::RaggedCasterOpenCoat => 35,
+            NpcKind::Necromancer => 50,
+            NpcKind::NecromancerArmored => 35,
+            NpcKind::DiabolistRed => 50,
         }
     }
 }

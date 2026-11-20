@@ -1275,6 +1275,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-d38 b1 — the kinds' own sheets.
+        "NPC_281",
+        "NPC_282",
+        "NPC_283",
+        "NPC_284",
+        "NPC_285",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the

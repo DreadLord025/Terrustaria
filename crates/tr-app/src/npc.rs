@@ -1017,6 +1017,17 @@ pub enum NpcKind {
     /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The
     /// aiStyle-22 machine's 490 branches ride `npc_ai_drippler.rs`.
     Drippler,
+    // W4-d38 b1 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.RaggedCaster` (281) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 40, def 20, 400 HP, kb 0.6, value 1500.
+    RaggedCaster,
+    /// `NPCID.RaggedCasterOpenCoat` (282) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 35, def 28, 450 HP, kb 0.5, value 1500.
+    RaggedCasterOpenCoat,
+    /// `NPCID.Necromancer` (283) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 50, def 18, 300 HP, kb 0.55, value 1500.
+    Necromancer,
+    /// `NPCID.NecromancerArmored` (284) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 35, def 24, 450 HP, kb 0.5, value 1500.
+    NecromancerArmored,
+    /// `NPCID.DiabolistRed` (285) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 50, def 12, 200 HP, kb 0.7, value 1500.
+    DiabolistRed,
     /// `NPCID.ZombieElf` (338) — the Frost Moon wave's walker (`aiStyle 3`):
     /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5
     /// (`NPC.cs:13281-13296`).
@@ -3529,6 +3540,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d38 b1 — SetDefaults knockBackResist rows.
+            NpcKind::RaggedCaster => 0.6,
+            NpcKind::RaggedCasterOpenCoat => 0.5,
+            NpcKind::Necromancer => 0.55,
+            NpcKind::NecromancerArmored => 0.5,
+            NpcKind::DiabolistRed => 0.7,
             _ => 0.4,
         }
     }
@@ -3909,6 +3926,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d38 b1 — SetDefaults defense rows.
+            NpcKind::RaggedCaster => 20,
+            NpcKind::RaggedCasterOpenCoat => 28,
+            NpcKind::Necromancer => 18,
+            NpcKind::NecromancerArmored => 24,
+            NpcKind::DiabolistRed => 12,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4304,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d38 b1 — SetDefaults value rows (copper).
+            NpcKind::RaggedCaster => 1500.0,
+            NpcKind::RaggedCasterOpenCoat => 1500.0,
+            NpcKind::Necromancer => 1500.0,
+            NpcKind::NecromancerArmored => 1500.0,
+            NpcKind::DiabolistRed => 1500.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6287,6 +6316,16 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d38 b1 — aiStyle 8 caster, NPC.cs:20817-21376.
+            NpcKind::RaggedCaster => self.update_caster(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster.
+            NpcKind::RaggedCasterOpenCoat => self.update_caster(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster.
+            NpcKind::Necromancer => self.update_caster(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster.
+            NpcKind::NecromancerArmored => self.update_caster(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster.
+            NpcKind::DiabolistRed => self.update_caster(world, player, rng),
         }
     }
 
@@ -8970,6 +9009,61 @@ impl Npc {
             // pinned forever (the style70/71 modules' FRAME_ROW consts).
             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                 self.frame = 1;
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::RaggedCaster => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::RaggedCasterOpenCoat => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::Necromancer => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::NecromancerArmored => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::DiabolistRed => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
             }
             // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
             // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
@@ -18591,6 +18685,12 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b1 — vanilla types (G6 key injective).
+            NpcKind::RaggedCaster => 281,
+            NpcKind::RaggedCasterOpenCoat => 282,
+            NpcKind::Necromancer => 283,
+            NpcKind::NecromancerArmored => 284,
+            NpcKind::DiabolistRed => 285,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -23669,7 +23769,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23919,6 +24019,12 @@ mod tests {
         // S1-D-3z — the blood-moon pair.
         NpcKind::BloodZombie,
         NpcKind::Drippler,
+        // W4-d38 b1.
+        NpcKind::RaggedCaster,
+        NpcKind::RaggedCasterOpenCoat,
+        NpcKind::Necromancer,
+        NpcKind::NecromancerArmored,
+        NpcKind::DiabolistRed,
         NpcKind::ZombieElf,
         NpcKind::ZombieElfBeard,
         NpcKind::ZombieElfGirl,
@@ -27559,7 +27665,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
+            275,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -31187,6 +31293,12 @@ mod s1_d_2_tests {
         // S1-D-3z — the blood-moon pair (`NPC.cs:14609`/`:14623`).
         (NpcKind::BloodZombie, 3),
         (NpcKind::Drippler, 22),
+        // W4-d38 b1.
+        (NpcKind::RaggedCaster, 8),
+        (NpcKind::RaggedCasterOpenCoat, 8),
+        (NpcKind::Necromancer, 8),
+        (NpcKind::NecromancerArmored, 8),
+        (NpcKind::DiabolistRed, 8),
         (NpcKind::ZombieElf, 3),
         (NpcKind::ZombieElfBeard, 3),
         (NpcKind::ZombieElfGirl, 3),
@@ -33544,5 +33656,98 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+
+    // ---- W4-d38 b1 — the hardmode dungeon casters (281-285). Tests-as-code,
+    // WRITTEN NOT RUN (code-only mode). Every constant pins to its C# literal
+    // (`NPC.cs:12640-12709` SetDefaults, `:21011-21227` the caster arms). ----
+
+    /// The five casters' `SetDefaults` rows (`NPC.cs:12640-12709`): size,
+    /// aiStyle, lifeMax, damage, defense, value, knockBackResist, sounds and
+    /// the {20, 31} debuff immunity (`NPCID.cs:7731-7766`).
+    #[test]
+    fn w4_d38_b1_the_dungeon_caster_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::RaggedCaster, 281u16, 18.0, 40.0, 8u8, 400, 40, 20, 1500.0, 0.6),
+            (NpcKind::RaggedCasterOpenCoat, 282, 18.0, 40.0, 8, 450, 35, 28, 1500.0, 0.5),
+            (NpcKind::Necromancer, 283, 18.0, 40.0, 8, 300, 50, 18, 1500.0, 0.55),
+            (NpcKind::NecromancerArmored, 284, 18.0, 40.0, 8, 450, 35, 24, 1500.0, 0.5),
+            (NpcKind::DiabolistRed, 285, 18.0, 40.0, 8, 200, 50, 12, 1500.0, 0.7),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), vanilla as i32, "{kind:?} net id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
+            // The {20, 31} immunity (Poisoned + Confused).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} immune to 20");
+            assert!(b.buff_immune[31], "{kind:?} immune to 31");
+        }
+    }
+
+    /// The casters ride the case-281..286 FindFrame arm (`NPC.cs:77023-77054`):
+    /// row 0 standing, row 1 while the windup (ai[1] > 0) runs, row 2 airborne.
+    #[test]
+    fn w4_d38_b1_the_casters_find_frame_three_rows() {
+        for kind in [
+            NpcKind::RaggedCaster,
+            NpcKind::RaggedCasterOpenCoat,
+            NpcKind::Necromancer,
+            NpcKind::NecromancerArmored,
+            NpcKind::DiabolistRed,
+        ] {
+            let mut n = bare(kind);
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.ai[1] = 0.0;
+            n.find_frame();
+            assert_eq!(n.frame, 0, "{kind:?} standing row 0");
+            n.ai[1] = 10.0;
+            n.find_frame();
+            assert_eq!(n.frame, 1, "{kind:?} windup row 1");
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 2, "{kind:?} airborne row 2");
+        }
+    }
+
+    /// The necromancer's shoot tick (`NPC.cs:21193-21223`): the ±30 jitter
+    /// draws TWO Next(-30,31) (X then Y) on the caller stream and leads the
+    /// player's velocity ×10; the shot is the 290 bolt at 30 damage, speed 6.
+    #[test]
+    fn w4_d38_b1_the_necromancer_shoot_draws_two_jitters() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut n = bare(NpcKind::Necromancer);
+        n.x = player.x - 200.0;
+        n.y = player.y;
+        // Arm the windup so the next step lands on the shoot tick (ai[1]==25).
+        n.ai[0] = 100.0;
+        n.ai[1] = 26.0;
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let mut witness = tr_core::UnifiedRandom::new(7);
+        let _ = witness.next_range(-30, 31);
+        let _ = witness.next_range(-30, 31);
+        n.update_caster(&w, &player, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "the two jitter draws");
+        assert_eq!(n.wants_hostile_shot.len(), 1, "one 290 bolt");
+        let (kind, _, _, _, _, dmg) = n.wants_hostile_shot[0];
+        assert_eq!(kind, 290, "the necromancer bolt");
+        assert_eq!(dmg, 30, "classic damage");
     }
 }

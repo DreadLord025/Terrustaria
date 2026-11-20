@@ -77,7 +77,19 @@ const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
 /// The C#'s type-32 / 281-286 / 693 group (`NPC.cs:18960`) — the teleport
 /// spot must sit in front of a dungeon wall unless Skeletron is alive.
 fn dungeon_wall_gated(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::DarkCaster)
+    matches!(
+        kind,
+        NpcKind::DarkCaster
+            // W4-d38 — the hardmode dungeon casters join the type-32/281-286/
+            // 693 group (`NPC.cs:18960`): the teleport spot must sit in front
+            // of a dungeon wall unless Skeletron is alive.
+            | NpcKind::RaggedCaster
+            | NpcKind::RaggedCasterOpenCoat
+            | NpcKind::Necromancer
+            | NpcKind::NecromancerArmored
+            | NpcKind::DiabolistRed
+            | NpcKind::DiabolistWhite
+    )
 }
 
 /// `Collision.SolidTiles(startX, endX, startY, endY)`
@@ -329,13 +341,50 @@ pub fn ai_style_8_step(
     if npc.kind == NpcKind::GoblinSorcerer {
         flag5 = true;
     }
-    // `:21011-21050` — the 283/284, 172, 533, 281/282 trigger arms. Only
-    // the Djinn's is ported; the dungeon casters / Rune Wizard are deferred.
-    if npc.kind == NpcKind::DesertDjinn {
+    // `:21011-21050` — the 283/284, 172, 533, 281/282 trigger arms, in the
+    // C#'s if-else order. W4-d38 ports the dungeon-caster arms (281-286);
+    // the Rune Wizard (172) stays deferred (no kind).
+    if npc.kind == NpcKind::Necromancer || npc.kind == NpcKind::NecromancerArmored {
+        // `:21011-21022` — the five 50-spaced triggers wind the 30-tick
+        // windup; the 450 counter jumps to 700 (the teleport feeds 650).
+        if flag5
+            && (npc.ai[0] == 100.0
+                || npc.ai[0] == 150.0
+                || npc.ai[0] == 200.0
+                || npc.ai[0] == 250.0
+                || npc.ai[0] == 300.0)
+        {
+            npc.ai[1] = 30.0;
+            npc.net_update = true;
+        }
+        if npc.ai[0] >= 450.0 {
+            npc.ai[0] = 700.0;
+        }
+    } else if npc.kind == NpcKind::DesertDjinn {
         // `:21031-21038` — the single 180 trigger winds the 181-tick volley.
         if flag5 && npc.ai[0] == 180.0 {
             npc.ai[1] = 181.0;
             npc.net_update = true;
+        }
+    } else if npc.kind == NpcKind::RaggedCaster || npc.kind == NpcKind::RaggedCasterOpenCoat {
+        // `:21039-21050` — the nine triggers (three triplets) wind the
+        // 30-tick windup; the 540 counter jumps to 700.
+        if flag5
+            && (npc.ai[0] == 100.0
+                || npc.ai[0] == 120.0
+                || npc.ai[0] == 140.0
+                || npc.ai[0] == 200.0
+                || npc.ai[0] == 220.0
+                || npc.ai[0] == 240.0
+                || npc.ai[0] == 300.0
+                || npc.ai[0] == 320.0
+                || npc.ai[0] == 340.0)
+        {
+            npc.ai[1] = 30.0;
+            npc.net_update = true;
+        }
+        if npc.ai[0] >= 540.0 {
+            npc.ai[0] = 700.0;
         }
     } else {
         // `:21051-21074` — the else group. `:21053-21060`'s getGoodWorld
@@ -366,7 +415,13 @@ pub fn ai_style_8_step(
             npc.net_update = true;
         }
     }
-    // `:21075-21078` — the 285/286 early wrap: deferred kinds.
+    // `:21075-21078` — the 285/286 early wrap (W4-d38): past 400 the
+    // counter jumps to 650 (the diabolist teleports sooner).
+    if (npc.kind == NpcKind::DiabolistRed || npc.kind == NpcKind::DiabolistWhite)
+        && npc.ai[0] > 400.0
+    {
+        npc.ai[0] = 650.0;
+    }
     // `:21079-21082` — the Djinn's 360 wrap feeds the 650 block below.
     if npc.kind == NpcKind::DesertDjinn && npc.ai[0] >= 360.0 {
         npc.ai[0] = 650.0;
@@ -432,9 +487,76 @@ pub fn ai_style_8_step(
                 });
             }
         } else if npc.ai[1] == num89 {
-            // `:21175-21277` — the standard shoot tick. The 281-286
-            // projectile arm (`:21177-21227`) and the 693/172 arms are
+            // `:21175-21277` — the standard shoot tick. W4-d38 ports the
+            // 281-286 projectile arm (`:21177-21227`); the 693/172 arms stay
             // deferred with their kinds.
+            if matches!(
+                npc.kind,
+                NpcKind::RaggedCaster
+                    | NpcKind::RaggedCasterOpenCoat
+                    | NpcKind::Necromancer
+                    | NpcKind::NecromancerArmored
+                    | NpcKind::DiabolistRed
+                    | NpcKind::DiabolistWhite
+            ) {
+                // `:21177-21227` — the hardmode dungeon skeleton shot. NO
+                // Item8 puff (the C#'s 281-286 branch sits before the
+                // `type != 172` play). The spawn is the body's top-centre
+                // (`position.X + width*0.5, position.Y`, `:21190`).
+                let (w, _) = npc.size();
+                let sx = npc.x + w * 0.5;
+                let sy = npc.y;
+                let (pcx, pcy) = player.center();
+                let mut ax = pcx - sx;
+                let mut ay = pcy - sy;
+                // `:21181-21189` — the speed: 6 default, 8 the diabolists,
+                // 4 the ragged casters.
+                let speed = match npc.kind {
+                    NpcKind::DiabolistRed | NpcKind::DiabolistWhite => 8.0,
+                    NpcKind::RaggedCaster | NpcKind::RaggedCasterOpenCoat => 4.0,
+                    _ => 6.0,
+                };
+                // `:21193-21199` — the necromancers jitter ±30 and lead the
+                // player's velocity ×10 (two Next(-30,31) draws, X then Y).
+                if npc.kind == NpcKind::Necromancer || npc.kind == NpcKind::NecromancerArmored {
+                    ax += rng.next_range(-30, 31) as f32;
+                    ay += rng.next_range(-30, 31) as f32;
+                    ax -= player.vx * 10.0;
+                    ay -= player.vy * 10.0;
+                }
+                let inv = speed / (ax * ax + ay * ay).sqrt();
+                ax *= inv;
+                ay *= inv;
+                // `:21203-21214` — the projectile + damage: 290/30 default,
+                // 291/40 the diabolists, 293/40 the ragged casters. The
+                // classic difficulty keeps the normal damage (`:21215`,
+                // GetAttackDamage_ForProjectiles at Classic = normal).
+                let (proj, dmg) = match npc.kind {
+                    NpcKind::DiabolistRed | NpcKind::DiabolistWhite => (291u16, 40),
+                    NpcKind::RaggedCaster | NpcKind::RaggedCasterOpenCoat => (293u16, 40),
+                    _ => (290u16, 30),
+                };
+                // `:21217-21224` — the diabolist's 291 carries the player's
+                // centre in ai0/ai1 (the homing target); the others fire
+                // plain. Both ride the HardmodeDungeonSkeletonShot modifier.
+                if proj == 291 {
+                    npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: proj,
+                        x: sx,
+                        y: sy,
+                        vx: ax,
+                        vy: ay,
+                        damage: dmg,
+                        ai0: pcx,
+                        ai1: pcy,
+                        scale: None,
+                    });
+                } else {
+                    npc.wants_hostile_shot.push((proj, sx, sy, ax, ay, dmg));
+                }
+                // `:21225` — localAI[0] = 0.
+                npc.local_ai[0] = 0.0;
+            } else {
             // S1-E-21g — `NPC.cs:21230-21233`: the cast's Item8 puff
             // (`this.type != 172` — the Rune Wizard is silent; no ported
             // kind is 172, every caster here plays).
@@ -470,6 +592,7 @@ pub fn ai_style_8_step(
                     });
                 }
                 _ => {}
+            }
             }
         }
     }

@@ -2163,6 +2163,56 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d38 b1 — BestiaryEntry.Enemy(281)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "RaggedCaster",
+        net_id: 281,
+        kind: NpcKind::RaggedCaster,
+        variant: None,
+        quick_unlock: false,
+        name: "Ragged Caster",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(282)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "RaggedCasterOpenCoat",
+        net_id: 282,
+        kind: NpcKind::RaggedCasterOpenCoat,
+        variant: None,
+        quick_unlock: false,
+        name: "Ragged Caster",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(283)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Necromancer",
+        net_id: 283,
+        kind: NpcKind::Necromancer,
+        variant: None,
+        quick_unlock: false,
+        name: "Necromancer",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(284)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "NecromancerArmored",
+        net_id: 284,
+        kind: NpcKind::NecromancerArmored,
+        variant: None,
+        quick_unlock: false,
+        name: "Necromancer",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(285)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "DiabolistRed",
+        net_id: 285,
+        kind: NpcKind::DiabolistRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Diabolist",
+    },
     BestiaryEntryDef {
         credit_id: "ForceBubble",
         net_id: 384,

@@ -3486,6 +3486,12 @@ fn npc_seed(
         | crate::npc::NpcKind::Poltergeist
         // S1-D-3z — the Drippler (490, noGravity aiStyle 22) rides the
         // hover ctor like the Poltergeist.
+        // W4-d38 b1 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::RaggedCaster
+        | crate::npc::NpcKind::RaggedCasterOpenCoat
+        | crate::npc::NpcKind::Necromancer
+        | crate::npc::NpcKind::NecromancerArmored
+        | crate::npc::NpcKind::DiabolistRed
         | crate::npc::NpcKind::Drippler => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
