@@ -1901,6 +1901,10 @@ impl App {
             // 114 DD2 wipe (`MessageBuffer.cs:3855-3860`
             // DD2Event.WipeEntities on the client) — same wave, same parking.
             S2c::CrystalInvasionWipe => {}
+            // 116 DD2 wave countdown (`MessageBuffer.cs:3861-3866`) + 127
+            // revenge-marker removal (`:4049-4057` DestroyMarker) — same
+            // wave, same parking.
+            S2c::CrystalInvasionWait(_) | S2c::RemoveRevengeMarker(_) => {}
         }
     }
 

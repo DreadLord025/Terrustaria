@@ -1749,6 +1749,27 @@ pub struct CrystalInvasionStart {
     pub y: i16,
 }
 
+/// `msg 116 DD2EventTimeLeftUntilWaveStart`'s body (`NetMessage.cs:1436-1438`):
+/// one raw `(int)` — `DD2Event._timeLeftUntilSpawningBegins`
+/// (`DD2Event.SetEnemySpawningOnHold`, `DD2Event.cs:947-950`, host-only
+/// send). The client stores `TimeLeftBetweenWaves`
+/// (`MessageBuffer.cs:3861-3866`). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrystalInvasionWait {
+    pub time_left: i32,
+}
+
+/// `msg 127 RemoveRevengeMarker`'s body (`NetMessage.cs:1518-1520`): one raw
+/// `(int)` — the marker's `UniqueID`. The dedicated server sends it when a
+/// marker spawns its enemy or expires/goes invalid
+/// (`CoinLossRevengeSystem.cs:451`/`:473`/`:477`, all `Main.dedServ` gates);
+/// the client destroys the marker (`MessageBuffer.cs:4049-4057`). The `126`
+/// marker's twin (wave A). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RemoveRevengeMarker {
+    pub unique_id: i32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2029,6 +2050,12 @@ pub enum S2c {
     /// `114 DD2EventWipeEntities` - the host wiped the Old One's Army,
     /// no body (`DD2Event.cs:636`, `MessageBuffer.cs:3855-3860`).
     CrystalInvasionWipe,
+    /// `116 DD2EventTimeLeftUntilWaveStart` - the between-waves countdown
+    /// (`DD2Event.cs:949`, `MessageBuffer.cs:3861-3866`).
+    CrystalInvasionWait(CrystalInvasionWait),
+    /// `127 RemoveRevengeMarker` - a coin-loss revenge marker is gone
+    /// (`CoinLossRevengeSystem.cs:451`, `MessageBuffer.cs:4049-4057`).
+    RemoveRevengeMarker(RemoveRevengeMarker),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2567,6 +2594,8 @@ impl S2c {
             Self::MoonlordCountdown(_) => id::MOONLORD_COUNTDOWN,
             Self::SpecialFx(_) => id::SPECIAL_FX,
             Self::CrystalInvasionWipe => id::CRYSTAL_INVASION_WIPE,
+            Self::CrystalInvasionWait(_) => id::CRYSTAL_INVASION_WAIT,
+            Self::RemoveRevengeMarker(_) => id::REMOVE_REVENGE_MARKER,
         }
     }
 
@@ -2763,6 +2792,10 @@ impl S2c {
                 .u8(f.b6),
             // No writer arm — bodyless (`DD2Event.cs:636` SendData(114)).
             Self::CrystalInvasionWipe => w,
+            // `NetMessage.cs:1436-1438`: the raw (int) countdown.
+            Self::CrystalInvasionWait(t) => w.i32(t.time_left),
+            // `NetMessage.cs:1518-1520`: the raw (int) marker UniqueID.
+            Self::RemoveRevengeMarker(m) => w.i32(m.unique_id),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3003,6 +3036,12 @@ impl S2c {
                 b6: r.u8()?,
             }),
             id::CRYSTAL_INVASION_WIPE => Self::CrystalInvasionWipe,
+            id::CRYSTAL_INVASION_WAIT => Self::CrystalInvasionWait(CrystalInvasionWait {
+                time_left: r.i32()?,
+            }),
+            id::REMOVE_REVENGE_MARKER => Self::RemoveRevengeMarker(RemoveRevengeMarker {
+                unique_id: r.i32()?,
+            }),
             _ => return None,
         })
     }
@@ -5514,5 +5553,37 @@ mod tests {
             other => panic!("expected 114, got {:?}", other.msg_id()),
         }
         assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_d99_crystal_invasion_wait_round_trips() {
+        // `NetMessage.cs:1436-1438` (case 116), verbatim: the raw
+        // (int)number — `_timeLeftUntilSpawningBegins`
+        // (`DD2Event.cs:949`); the client stores TimeLeftBetweenWaves
+        // (`MessageBuffer.cs:3864`).
+        let t = CrystalInvasionWait { time_left: 1800 };
+        let f = S2c::CrystalInvasionWait(t).encode();
+        assert_eq!(f[2], 116);
+        assert_eq!(&f[3..], &1800i32.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CrystalInvasionWait(d) => assert_eq!(d, t),
+            other => panic!("expected 116, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_d99_remove_revenge_marker_round_trips() {
+        // `NetMessage.cs:1518-1520` (case 127), verbatim: the raw
+        // (int)number — the marker UniqueID (`CoinLossRevengeSystem.cs:451`);
+        // the client destroys it (`MessageBuffer.cs:4051-4054`). Matches
+        // the 126 marker body's leading unique_id field.
+        let m = RemoveRevengeMarker { unique_id: 42 };
+        let f = S2c::RemoveRevengeMarker(m).encode();
+        assert_eq!(f[2], 127);
+        assert_eq!(&f[3..], &42i32.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::RemoveRevengeMarker(d) => assert_eq!(d, m),
+            other => panic!("expected 127, got {:?}", other.msg_id()),
+        }
     }
 }
