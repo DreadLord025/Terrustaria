@@ -19215,6 +19215,39 @@ mod tests {
         }
     }
 
+    /// W4-c13 — the full-switch bank coverage: EVERY voice arm the
+    /// switch can return resolves through `Audio::play_npc_voice_hit`
+    /// to a registered cue (the 14 trackables + the Bell's legacy
+    /// `Item_35`, `SoundID.cs:1745-1761`) — no arm may silently drop
+    /// on a bank gap (the `s1_e_21c_every_kind_hit_and_death_cue_resolves`
+    /// precedent). The chicken arm's roll may refine to the rare cue —
+    /// both variants are covered whatever the seed rolls.
+    #[test]
+    fn w4_c13_every_voice_arm_resolves_through_the_play() {
+        let mut audio = crate::audio::Audio::new(None);
+        for ai1 in [
+            5507.0, 5502.0, 5485.0, 5484.0, 5506.0, 5503.0, 5534.0,
+            5499.0, 5500.0, 5505.0, 5501.0, 5504.0, 5508.0, 5509.0,
+        ] {
+            let mut slime = Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+            slime.hp = slime.max_hp;
+            slime.ai[1] = ai1;
+            let mut rng = UnifiedRandom::new(7);
+            let cue = slime.strike_hit_cue(&mut rng).expect("a voice arm");
+            let NpcHitCue::Voice(style) = cue else {
+                panic!("ai1 {ai1} must resolve to a voice arm, got {cue:?}");
+            };
+            let played = audio.play_npc_voice_hit(style, 0.0, 0.0, &mut rng);
+            assert!(played.is_some(), "ai1 {ai1} arm {style} resolves in the bank");
+        }
+        // The Bell arm is the legacy style-35 asset, not a trackable.
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(
+            audio.play_npc_voice_hit("BellHurt", 0.0, 0.0, &mut rng),
+            Some("Item_35")
+        );
+    }
+
     /// W4-c13 — the chicken arm's roll contract (`NPC.cs:81500-81509`):
     /// exactly ONE `Main.rand.Next(5)` on the strike's stream — 0 →
     /// ChickenHurtRare, else ChickenHurt — and NO draw for any other

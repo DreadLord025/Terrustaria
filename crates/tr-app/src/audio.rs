@@ -463,8 +463,8 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // `SoundID.*Hurt` trackables (`SoundID.cs:1746-1761`, one variation
     // each, variance 0.4). The Bell arm is NOT here — `BellHurt` is the
     // legacy id-2 style 35 (`SoundID.cs:1745`), `Item_35` in SFX_CUES.
-    // Commit 1 landed the first five switch arms; commit 2 adds the next
-    // five (the 5-sites-per-commit cadence).
+    // Commit 1 landed the first five switch arms; commit 2 the next five;
+    // commit 3 completes the switch (the 5-sites-per-commit cadence).
     "player_hit_balloon",
     "player_hit_cat",
     "player_hit_chicken",
@@ -475,6 +475,10 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     "player_hit_frog",
     "player_hit_goat",
     "player_hit_goblin",
+    "player_hit_retro",
+    "player_hit_turkey",
+    "player_hit_undead",
+    "player_hit_vampire",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
