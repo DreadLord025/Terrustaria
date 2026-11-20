@@ -1366,9 +1366,9 @@ mod tests {
         //    provisions Item1 (`:23112`), useStyle 1 (`:23105`).
         assert_eq!(row(2320), (Some("Item1"), 1, 0.0));
         // 10. Flaming Mace 5012 — the shared 5011/5012 case (`:40333-40334`)
-        //     provisions Item1 (`:40351`); the `if (type == 5012)` arm
-        //     (`:40346`) only swaps the shoot, not the sound.
-        assert_eq!(row(5012), (Some("Item1"), 1, 0.0));
+        //     provisions Item1 (`:40351`), useStyle 5 (`:40336`); the
+        //     `if (type == 5012)` arm (`:40346`) only swaps the shoot.
+        assert_eq!(row(5012), (Some("Item1"), 5, 0.0));
         // The provisions draw NOTHING: `initial_use_sound` is a pure table
         // read (no RNG parameter), and the pitch column is 0 everywhere in
         // this batch (the only nonzero pitch is 1513, wave A's pin).
