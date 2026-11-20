@@ -868,6 +868,20 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/ChestCraft_3",
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
+        // The Journey menu (W4-c24): the powers-menu toggle button + hover
+        // border (`CreativeUI.cs:77-78`), the power-strip icons
+        // (`CreativePowersHelper.GetIconImage:103`) and the research window's
+        // slot plate / piston strip / cog trio (`UICreativeInfiniteItemsDisplay
+        // .cs:219-230`, `:320-322`).
+        "UI/Creative/Journey_Toggle",
+        "UI/Creative/Journey_Toggle_MouseOver",
+        "UI/Creative/Infinite_Powers",
+        "UI/Creative/Infinite_Tabs_B",
+        "UI/Creative/Research_Slots",
+        "UI/Creative/Research_FramedPistons",
+        "UI/Creative/Research_GearA",
+        "UI/Creative/Research_GearB",
+        "UI/Creative/Research_GearC",
         "Text_Back",
         // S1-E-10b: the town-chatter bubble (`TextureAssets.Chat`,
         // `Main.DrawNPCChatBubble` `Main.cs:43158`) and the dialogue
@@ -2078,6 +2092,28 @@ pub struct Lookups {
     pub ui_infinite_icons: Option<tr_render::SheetRect>,
     /// `UI/Creative/Infinite_Tabs_B_2`: the filter-strip button frames.
     pub ui_infinite_tabs_b2: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Journey_Toggle`: the powers-menu toggle button
+    /// (`CreativeUI.cs:77`).
+    pub ui_journey_toggle: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Journey_Toggle_MouseOver`: its hover border
+    /// (`CreativeUI.cs:78`).
+    pub ui_journey_toggle_hover: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Infinite_Powers`: the 21x1 power-icon strip
+    /// (`CreativePowersHelper.cs:90-104`).
+    pub ui_infinite_powers: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Infinite_Tabs_B`: the BLUE filter-strip frames
+    /// (`UICreativeItemsInfiniteFilteringOptions.cs:46` — the duplication
+    /// window keeps the default Blue theme, unlike crafting's Cyan).
+    pub ui_infinite_tabs_b: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_Slots`: the research window's slot plate
+    /// (`UICreativeInfiniteItemsDisplay.cs:221`).
+    pub ui_research_slots: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_FramedPistons`: the 1x9 piston frame strip
+    /// (`UICreativeInfiniteItemsDisplay.cs:229-230`).
+    pub ui_research_pistons: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_GearA/B/C`: the research cogs, big → small
+    /// (`UICreativeInfiniteItemsDisplay.cs:320-322`).
+    pub ui_research_gears: [Option<tr_render::SheetRect>; 3],
     /// `UI/Bestiary/Button_Search_2`: the search-bar icon button
     /// (`UIWrappedSearchBar.cs:100`).
     pub ui_search_icon: Option<tr_render::SheetRect>,
@@ -2440,6 +2476,17 @@ impl Lookups {
             }),
             ui_infinite_icons: atlas.sheet("UI/Creative/Infinite_Icons").copied(),
             ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
+            ui_journey_toggle: atlas.sheet("UI/Creative/Journey_Toggle").copied(),
+            ui_journey_toggle_hover: atlas.sheet("UI/Creative/Journey_Toggle_MouseOver").copied(),
+            ui_infinite_powers: atlas.sheet("UI/Creative/Infinite_Powers").copied(),
+            ui_infinite_tabs_b: atlas.sheet("UI/Creative/Infinite_Tabs_B").copied(),
+            ui_research_slots: atlas.sheet("UI/Creative/Research_Slots").copied(),
+            ui_research_pistons: atlas.sheet("UI/Creative/Research_FramedPistons").copied(),
+            ui_research_gears: [
+                atlas.sheet("UI/Creative/Research_GearA").copied(),
+                atlas.sheet("UI/Creative/Research_GearB").copied(),
+                atlas.sheet("UI/Creative/Research_GearC").copied(),
+            ],
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
             ui_emote_button: atlas.sheet("UI/Emotes").copied(),
             ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),

@@ -52,6 +52,25 @@ impl ResearchTracker {
         }
     }
 
+    /// `ItemsSacrificedUnlocksTracker.TryGetSacrificeNumbers`
+    /// (`ItemsSacrificedUnlocksTracker.cs:75-86`): `(have, needed)` when the
+    /// catalog carries the item, `None` for the capless kinds (the UI prints
+    /// "X" for them, `UICreativeInfiniteItemsDisplay.cs:426-429`).
+    pub fn sacrifice_numbers(&self, item_id: u16) -> Option<(u32, u32)> {
+        let cap = sacrifice_cap(item_id)?;
+        Some((self.sacrificed(item_id), cap))
+    }
+
+    /// `ForEachItemWithResearchProgress` (`ItemsSacrificedUnlocksTracker.cs:47-55`):
+    /// every item whose sacrificed count is positive — the duplication grid's
+    /// roster (`UICreativeInfiniteItemsDisplay.UpdateContents:536-549`).
+    pub fn items_with_progress(&self) -> impl Iterator<Item = u16> + '_ {
+        self.counts
+            .iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(id, _)| *id)
+    }
+
     pub fn reset(&mut self) {
         self.counts.clear();
     }
