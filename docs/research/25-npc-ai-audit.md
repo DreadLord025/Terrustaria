@@ -145,7 +145,7 @@ stands in for the family), **MISSING** (no Rust kind / no machine).
 | 57 | the Mourning Wood / Everscream | -- | MISSING | behavioural |
 | 58 | the Pumpking | -- | MISSING | behavioural |
 | 59 | the Pumpking blades | -- | MISSING | behavioural |
-| 60 | the Ice Queen | -- | MISSING | behavioural |
+| 60 | the Ice Queen (`NPC.cs:33374-33680`, the only kind 345 `:13373`) | `npc_ai_frost_boss.rs::ice_queen_ai` + the style-axis claim `60` (`npc.rs::update_rng_dust`, `ice_queen_step` wrapper); W4-d29 re-verified verbatim 2026-11-20 | PORTED | behavioural |
 | 61 | the Santa NK1 | -- | MISSING | behavioural |
 | 62 | the Elf Copter | -- | MISSING | behavioural |
 | 63 | the Flocko | -- | MISSING | behavioural |
