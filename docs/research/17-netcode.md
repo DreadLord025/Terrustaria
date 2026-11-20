@@ -239,9 +239,10 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
   echoes state back as `13`/`16`/`14` — the client renders its own player from its
   own simulation, never from the echo.
 - Remote players and NPCs are *interpolated*, not simulated: the port's implementation
-  is `net_interp_tick` (`netglue.rs:1620-1657`) — per-frame decay of an `off_x/off_y`
-  error offset for peers and `npc.net_offset` for NPCs, with `SMOOTHING_RANGE = 300`
-  and a hard snap above it (`a_teleport_farther_than_the_range_snaps_the_offset`).
+  is `net_interp_tick` (`netglue.rs`) — a 60 Hz accumulator (`net_interp_timer`) stepping
+  `net_offset_decay_tick`, the verbatim `Player.UpdateNetOffset` / `NPC.UpdateNetOffset`
+  bodies, with `SMOOTHING_RANGE = 300` and a hard snap above it on the player receipt
+  (`a_teleport_farther_than_the_range_snaps_the_offset`).
   **Correction (S1-I-3, 2026-11-14): this is NOT a port-invented mechanism.** The
   C# has the same offsets: `Player.netOffset` (`Player.cs:1622`) accrues on every
   incoming `13 PlayerControls` (`MessageBuffer.cs:1000-1004`) and decays in
@@ -296,7 +297,7 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 | 6 | **`7 WorldInfo` carries defaults** for 11 bg styles, ice/jungle backs, tree/cave backups, 13 tree-top bytes, 14 flag groups, ore tiers, dungeon point, spawn list, `lobbyId` (ANALYSIS.md:7267-7274). `lobbyId = 0` without a social API. | behavioural | yes |
 | 7 | **`NetworkText` is literal-mode only** (mode byte 0 + string, `NetworkText.cs:65-70`); keyed/format text and the substitution list are not ported, so kick/status text is English-literal, not localized (ANALYSIS.md:7256-7260). | behavioural | yes |
 | 8 | **`5 WorldChunk`/whole-world blob replaces `10 TileSection` streaming.** ANALYSIS.md:7250-7255 admits M6-NET-3 was to replace the producer; `client_install_world` (`netglue.rs:1231`) consumes slices announced by `9 Status` and closed by `49`. | behavioural | yes |
-| 9 | **Client-side smoothing is ported, not invented** (corrected 2026-11-14, S1-I-3). The C#'s `Player.netOffset` (`Player.cs:1622`) accrues on every incoming `13 PlayerControls` (`MessageBuffer.cs:1000-1004`) and decays in `Player.UpdateNetOffset` (`:28721-28750`: `max(2, 10% of the lag)` per tick, the collision-boosted step, the under-2 px clear); the NPC twin is `NPC.UpdateNetOffset` (`NPC.cs:90280-90310`: the `2 + 2*(len/range)` step, the hard snap above the range, the town NPC's drop at its home). S1-I-3 landed the two arms the port had missed — the peers' under-2 px clear and the collision-boosted step — and the NPC's town-home clear. | pixel / behavioural | **fixed** (S1-I-3 — the port matches the C#'s rules; the dt scaling (one 60 Hz tick per `dt * 60`) stays a port convenience) |
+| 9 | **Client-side smoothing is ported, not invented** (corrected 2026-11-14, S1-I-3; made verbatim 2026-11-20, W4-d100). The C#'s `Player.netOffset` (`Player.cs:1622`) accrues on every incoming `13 PlayerControls` (`MessageBuffer.cs:1003-1009`: the gate is the OLD position, the lag is `oldPos - wirePos`) and decays in `Player.UpdateNetOffset` (`:28721-28750`: `max(2, 10% of the lag)` per tick via `Utils.MoveTowards`, the collision-boosted step, the under-2 px clear); the NPC twin is `NPC.UpdateNetOffset` (`NPC.cs:90289-90311`: the clamp to the range, the `2 + 2*(len/range)` step, the under-STEP clear, the town NPC's drop at its home). S1-I-3 landed the two arms the port had missed — the peers' under-2 px clear and the collision-boosted step — and the NPC's town-home clear. W4-d100 fixed the remaining inventions: the inverted player accrual sign (`wirePos - oldPos` drew the peer PAST the target), the wire-position accrual gate, the NPC receipt's out-of-range offset reset (the C# skips the accrual via the `DistanceSquared` gate, `MessageBuffer.cs:1636`, and clamps in `UpdateNetOffset`), the per-render-frame `dt * 60` decay scaling (now one tick per 60 Hz via `net_interp_timer`, the `Player.cs:28172` cadence) and the sub-0.5 px residue clears. | pixel / behavioural | **fixed** (W4-d100 — verbatim `MessageBuffer.cs:1003-1009`/`:1636-1646` + `Player.cs:28721-28750` + `NPC.cs:90289-90311`) |
 | 10 | **NPC stale timeout (200 ms) is port-only** — vanilla despawns only on an explicit server `23` with `active = false`. | behavioural | no |
 | 11 | **The port's `12 PlayerSpawn` arm is gate-whitelisted** (`GATE_WHITELIST` contains 12) whereas C# allows `b > 12` for the 9 whitelisted ids only; harmless, but the gate no longer matches `MessageBuffer.cs:165` literally. | cosmetic | no |
 | 12 | **Idle sweep is tick-count → wall-clock**: `TimeOutTimer > 7200` ticks (`Main.cs:64610-64618`) became a 120 s `IDLE_TIMEOUT` (`net.rs:41`). 7200 ticks at 60 Hz = 120 s, so the intent matches, but a frame-paced sweep is not tick-exact. | determinism | yes — ANALYSIS.md:7294-7297 "port-tuned" |
@@ -326,8 +327,10 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
   census (ItemSlot 22 + ChestUI 14 + Wiring 24 sites). Depends on: id mapping (S task 1).
 - **M — `18 SetTime` 1:1 clock sync** (drop the internal `205`). Depends on: the world
   flags being carried in `7 WorldInfo`.
-- **M — Remote-player smoothing parity**: document or port the C#/ReLogic interpolation
-  so `net_interp_tick`'s constants are not arbitrary. Depends on: nothing (research).
+- **M — Remote-player smoothing parity**: DONE 2026-11-20 (W4-d100) — the accrual sign/gate,
+  the NPC receipt gate, the 60 Hz decay cadence and the residue clears are now verbatim
+  (`MessageBuffer.cs:1003-1009`/`:1636-1646`, `Player.cs:28721-28750`, `NPC.cs:90289-90311`);
+  see D9 above.
 - **L — The per-system passes** ROADMAP.md:1067-1071 parks: peer inventories, creative
   powers' per-player split, pylon/bestiary module bodies, the exact clock path.
   Depends on: the join bundle and the chest round trip.

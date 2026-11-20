@@ -2282,6 +2282,7 @@ pub(crate) mod front_flow_tests {
             net_proj_outbox: Vec::new(),
             net_proj_prev: std::collections::HashMap::new(),
             net_sync_cadence_timer: 0.0,
+            net_interp_timer: 0.0,
             net_npc_gen: std::collections::HashMap::new(),
             net_items: std::collections::HashMap::new(),
             net_items_dirty: false,

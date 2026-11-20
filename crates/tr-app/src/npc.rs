@@ -1273,8 +1273,8 @@ pub struct Npc {
     /// `NPC.netOffset` (`NPC.cs:6157`) — the client-side smoothing
     /// accumulator for networked NPCs: on each `23 NPCInfo` the client adds
     /// the visual lag here and snaps `x/y` to the wire value, then decays it
-    /// toward zero (`netglue::decay_net_offsets`, the C#'s
-    /// `MessageBuffer.cs:1636-1646` + `NPC.cs:90287-90311`). Zero on the host
+    /// toward zero (`netglue::net_offset_decay_tick`, the C#'s
+    /// `MessageBuffer.cs:1636-1646` + `NPC.cs:90289-90311`). Zero on the host
     /// and in single-player, so nothing single-player-rendered moves.
     pub net_offset: Vec2,
     /// Accumulated daylight burn time — RETIRED by S1-D-3z (the zombie

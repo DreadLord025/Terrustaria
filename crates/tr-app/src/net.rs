@@ -562,7 +562,7 @@ pub struct PlayerNet {
     pub leg_frame: u32,
     pub body_frame: u32,
     /// `Player.netOffset` — the visual lag toward zero; drawn at
-    /// `x + off_x` (see `netglue::decay_net_offsets`).
+    /// `x + off_x` (see `netglue::net_offset_decay_tick`).
     pub off_x: f32,
     pub off_y: f32,
     /// `Main.player[id].inventory` - the peer's slot state, fed by the

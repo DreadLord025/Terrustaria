@@ -11950,16 +11950,31 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
   (`PlayerNet::inventory`).
 - **The remote offsets are the C#'s `netOffset`.** `Player.netOffset`
   (`Player.cs:1622`) accrues on every incoming `13 PlayerControls`
-  (`MessageBuffer.cs:1000-1004`) and decays in `Player.UpdateNetOffset`
-  (`:28721-28750` вЂ” `max(2, 10% of the lag)` per tick, the
-  collision-boosted step `:28737-28747`, the under-2 px clear `:28730-28734`);
-  the NPC twin is `NPC.UpdateNetOffset` (`NPC.cs:90280-90310` вЂ” the
-  `2 + 2*(len/range)` step, the hard snap above the range and the town NPC's
-  drop at its home `:90306-90310`). S1-I-3 landed the two arms the port had
-  missed (the peers' under-2 px clear + the collision boost, the NPC's
-  town-home clear) and corrected the audit note that had called the whole
-  mechanism port-invented (research/17's D9). The dt scaling (one 60 Hz tick
-  per `dt * 60`) stays a port convenience.
+  (`MessageBuffer.cs:1003-1009` — the gate is the OLD position, the lag is
+  `oldPos - wirePos`) and decays in `Player.UpdateNetOffset`
+  (`:28721-28750` — `max(2, 10% of the lag)` per tick, the
+  collision-boosted step `:28736-28747`, the under-2 px clear `:28730-28734`,
+  `Utils.MoveTowards` `Utils.cs:1772-1780`);
+  the NPC twin is `NPC.UpdateNetOffset` (`NPC.cs:90289-90311` — the
+  clamp to the range, the `2 + 2*(len/range)` step, the under-STEP clear and
+  the town NPC's drop at its home `:90308-90311`). S1-I-3 landed the two arms
+  the port had missed (the peers' under-2 px clear + the collision boost, the
+  NPC's town-home clear) and corrected the audit note that had called the whole
+  mechanism port-invented (research/17's D9). **W4-d100 (2026-11-20) made the
+  arms verbatim**: the player accrual sign was inverted (`wirePos - oldPos`
+  drew the peer PAST the target — now `oldPos - wirePos`, so the draw
+  `position + netOffset` stays at the old spot and slides forward), the
+  accrual gate read the wire position instead of the old one, the NPC
+  receipt zeroed the offset past the range where the C# only skips the
+  accrual (`MessageBuffer.cs:1636`'s `DistanceSquared` gate) and clamps in
+  `UpdateNetOffset`, the decay ran per render frame scaled by `dt * 60`
+  instead of once per 60 Hz tick (now the `net_interp_timer` accumulator,
+  `Player.cs:28172`'s per-`Player.Update` cadence), and the invented
+  sub-0.5 px residue clears are gone (`MoveTowards` lands exactly on zero;
+  the NPC clear is `Length() < step`, `NPC.cs:90304`). Witnesses:
+  `player_state_syncs_across_the_wire` (the draw stays at the old spot),
+  `the_decay_is_one_sixtieth_tick_per_call_not_dt_scaled`,
+  `the_first_wire_position_from_zero_accrues_no_lag`.
 
 - **`13 PlayerState` carries the port's render extension.** The C# derives
   each peer's animation frames and on-ground state from its local simulation
