@@ -334,6 +334,44 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
             return true;
         }
+        edit::TileInteraction::PartyMonolithToggle => {
+            // `Player.cs:32278-32284`: `PlaySound(28, myX * 16, myY * 16, 0)`
+            // — the mech cue, the same case-28 path the switch clicks ride
+            // (`LegacySoundPlayer.cs:997-1007`'s one `Next(-10, 11) * 0.01`
+            // pitch draw behind the playing guard). The tile use runs in
+            // `Player.ItemCheck` — the `UpdatePlayers` stream
+            // (`Main.cs:17754`).
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            app.audio
+                .play_switch_click(tx as f32 * TILE_PX, ty as f32 * TILE_PX, rng);
+            // `BirthdayParty.ToggleManualParty` (`BirthdayParty.cs:202-217`):
+            // `ManualParty = !ManualParty` (SP — the `netMode == 1` send arm
+            // is unported); the up-state edge fires `CheckForAchievement` —
+            // THROW_A_PARTY (25) credits only when the party came up (the
+            // wiring drain's identical body, `world_sim/wiring.rs`).
+            let was_up = crate::world_events::party_is_up(&app.world_events);
+            app.world_events.manual_party = !app.world_events.manual_party;
+            if !was_up && crate::world_events::party_is_up(&app.world_events) {
+                let _ = app.notify_progression_net(25);
+            }
+            app.world_key = None;
+            return true;
+        }
+        edit::TileInteraction::CakeSlice => {
+            // `Player.cs:32600-32605`: `this.AddBuff(192, 7200)` — SugarRush
+            // for 2 minutes; `PlaySound(SoundID.Item2, base.position)` — the
+            // case-2 style play at the PLAYER's position (the façade
+            // truncates, `SoundEngine.cs:88-91`), the one
+            // `Next(-6, 7) * 0.01` pitch draw on the tile-use stream.
+            if let Some(p) = app.player.as_mut() {
+                p.buffs.add_buff(192, 7200);
+                let (cx, cy) = p.center();
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                app.audio.play_npc_item_cue(2, cx, cy, rng);
+            }
+            app.world_key = None;
+            return true;
+        }
         edit::TileInteraction::CandleToggled => {
             app.world_key = None;
             return true;
@@ -432,6 +470,11 @@ fn interaction_events(
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
         edit::TileInteraction::BedSleep { .. } => (None, Vec::new()),
         edit::TileInteraction::ClockRead { .. } => (None, Vec::new()),
+        // The party monolith and the cake slice are consumed in
+        // `interact_tile` ahead of this mapping (the mech cue / the buff +
+        // Item2 ride the player and the world events) — no drops.
+        edit::TileInteraction::PartyMonolithToggle => (None, Vec::new()),
+        edit::TileInteraction::CakeSlice => (None, Vec::new()),
         // The bank open is consumed in `interact_tile` ahead of this
         // mapping (the SoundID 10/11/12 keys are absent from the cue set).
         edit::TileInteraction::BankOpen { .. } => (None, Vec::new()),
@@ -1003,6 +1046,72 @@ mod tests {
             -3,
             "the switch opens the safe"
         );
+    }
+
+    /// W4-f41 — the party monolith's right-click (`Player.cs:32278-32284`):
+    /// the click is consumed, the mech cue plays (`PlaySound(28)`), and
+    /// `BirthdayParty.ToggleManualParty` flips the manual party — the
+    /// up-edge credits THROW_A_PARTY (25), the down-edge credits nothing
+    /// (`BirthdayParty.cs:202-217` + `:167-173`, the wiring drain's body).
+    #[test]
+    fn w4_f41_the_party_monolith_click_toggles_the_party() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        let i = app.world.index(10, 19);
+        app.world.tiles[i].kind = 455;
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        let cues0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
+        assert!(app.world_events.manual_party, "the toggle raised the party");
+        assert!(
+            app.audio.played_count() > cues0,
+            "the mech cue played (:32281)"
+        );
+        // The up-edge credit (the wiring lane's progression probe shape).
+        assert!(
+            app.achievements
+                .list
+                .iter()
+                .flat_map(|a| a.conditions.iter())
+                .any(|c| c.name == "PROGRESSION_EVENT_25" && c.completed),
+            "a party coming up credits THROW_A_PARTY"
+        );
+        // The mirror: a party already up, the re-click takes it down and
+        // the achievement stays as it was (no second credit row needed —
+        // the down edge runs no `CheckForAchievement` credit).
+        assert!(interact_tile(&mut app, 10, 19));
+        assert!(!app.world_events.manual_party, "the toggle lowered it");
+        // A genuine party up: the manual toggle still flips the manual
+        // flag, but `PartyIsUp` never falls, so no state edge fires.
+        app.world_events.genuine_party = true;
+        assert!(interact_tile(&mut app, 10, 19));
+        assert!(app.world_events.manual_party);
+        assert!(crate::world_events::party_is_up(&app.world_events));
+    }
+
+    /// W4-f41 — the cake's right-click (`Player.cs:32600-32605`): the click
+    /// is consumed, SugarRush (192) lands for 7200 ticks and the Item2 cue
+    /// plays at the player; the cake tile stays placed (the interaction
+    /// kills nothing — the buff refreshes on every click).
+    #[test]
+    fn w4_f41_the_cake_click_grants_sugar_rush() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        let i = app.world.index(12, 19);
+        app.world.tiles[i].kind = 621;
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        app.player = Some(Player::spawn(&app.world));
+        let cues0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 12, 19), "the click is consumed");
+        let p = app.player.as_ref().unwrap();
+        let bi = p.buffs.find_buff_index(192).expect("SugarRush lands");
+        assert_eq!(p.buffs.buff_time[bi], 7200, "the 2-minute duration");
+        assert!(app.audio.played_count() > cues0, "the Item2 cue played");
+        assert!(app.world.tile(12, 19).unwrap().active(), "the cake stays");
+        // The re-click refreshes the buff (AddBuff's time-additive cap
+        // body owns the exact stacking; the arm re-runs either way).
+        assert!(interact_tile(&mut app, 12, 19));
+        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(192).is_some());
     }
 
     #[test]

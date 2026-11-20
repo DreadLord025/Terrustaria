@@ -4582,6 +4582,12 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 edit::TileInteraction::HitSwitch { x, y } => {
                     log::info!("TR_TOGGLE {},{} -> switch {x},{y}", op.x, op.y)
                 }
+                edit::TileInteraction::PartyMonolithToggle => {
+                    log::info!("TR_TOGGLE {},{} -> party monolith (no events at load)", op.x, op.y)
+                }
+                edit::TileInteraction::CakeSlice => {
+                    log::info!("TR_TOGGLE {},{} -> cake slice (no player at load)", op.x, op.y)
+                }
             }
         }
     }
