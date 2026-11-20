@@ -39281,3 +39281,42 @@ distrust-verbatim re-read of the WHOLE arm (`NPC.cs:33374-33680`) against
   covers the five C# TargetClosest sites (single session player, no
   rand); noTileCollide integration `:90495-90498`. No new code needed.
 No compiler invoked; no tests run (code-only mode).
+
+## The aiStyle-61 re-verification (W4-d29, 2026-11-20, code-only mode)
+The research/25 row for aiStyle 61 ("MISSING") was stale (2026-11-12,
+pre-S1-F-13c). Census: whole-tree `aiStyle = 61` grep → exactly ONE NPC
+row, SantaNK1 346 (`NPC.cs:13390`; the other hits `Projectile.cs:4512/
+:9426` are the projectile style space). The S1-D-3 census
+(`## The aiStyle-61 census`, 2026-11-19) already audited the machine;
+this round re-read the WHOLE arm (`NPC.cs:33681-33921`) against
+`npc_ai_frost_boss_b.rs::santa_nk1_ai` on the merged tree and confirms
+**faithful**, with the 2026-11-19 census's three merger gaps now CLOSED:
+* The UNWIRED finding is resolved: the style axis claims
+  `61 if SantaNK1 => frost_boss_b_step` (`npc.rs`, the kind arm
+  `unreachable!`-guarded); the wrapper runs `target_closest` at the
+  `:33688` night site + the `:33725` idle→volley flip pre-pass (draw-free,
+  order exact), copies `direction`/`local_ai`/`time_left` in/out, maps
+  EncourageDespawn(10) onto `despawn_timer` and drains the shots
+  (180/350/351/352 all zero-ai → the plain lane).
+* Projectile rows 350/351/352 are ported (`projectile_frost_shots.rs`,
+  the S1-F-13c wiring; `the_boss_shot_rows_resolve` pins 345-352).
+* The machine itself: the f64 hp bands (2/3/4/5), flag64
+  (`active && !dead && dist <= 2000`), the kept InWorld/SolidTile light
+  probe (the no-rand AddLight drop documented), the day arm
+  (EncourageDespawn(10), speed 8, the 0→0.1 nudge), the 300-tick idle →
+  240-tick volley (hp-tiered else-if cadence 16/14/11/8, origin-Y
+  Next(15,36) FIRST inside the ctor, ±40 aim jitters, 15f, ×0.015), the
+  three UNCONDITIONAL per-tick rolls Next(600/1200/2700) with the
+  ×0.5/×0.75/×0.9 f64 truncations, the same-tick window increments
+  (Missile %12 flag64-gated, Present %9 ungated), the shared
+  `floater_movement` tail (the f64 ±0.1/−0.2/0.1 snaps kept).
+* RNG census per tick: [volley: Next(15,36) + Next(-40,41)×2 +
+  Next(-20,21)×2 when flag64 && cadence] → Next(d1) [+Next(1,100) on 0]
+  → Next(d2) [+Missile: Next(-50,51)×2 + Next(-20,21)×2 when the window
+  fires] → Next(d3) [+Present: Next(-100,101) + Next(-20,21)×2 when %9].
+  The module's 8 santa_* probe witnesses + the axis-level
+  `s1_f_13c_wire_tests` pin the order.
+* Residual (pre-existing, shared): `Player::solid_collision` misses
+  `!inActive()` (`Collision.cs:2715`) — the floater probe reads an
+  actuated-off tile as solid; recorded in the 57/61 censuses, helper-scope.
+No compiler invoked; no tests run (code-only mode).
