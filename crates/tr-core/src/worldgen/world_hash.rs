@@ -259,6 +259,11 @@ mod tests {
     // water scatter place on their own stream, moving this pin BY DESIGN;
     // deferred. (The 512-world's ocean-cave treasure count may be 0, but the
     // scatter still runs.) a == b untouched.
+    // W4-g37 B4 (code-only): the Cave Walls pass
+    // (`WorldGen.cs:17711-17839`, `passes_b.rs::pass_cave_walls`) lands after
+    // the temple family — the enclosed-space + jungle wall fills repaint the
+    // cave walls on their own stream, moving this pin BY DESIGN; deferred.
+    // a == b untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -311,6 +316,8 @@ mod tests {
     // default world — this pin moves BY DESIGN; deferred to the gate.
     // W4-g37 B3 (code-only): the Water Chests pass (see SEED42_512 above) —
     // the treasure + scatter chests move this pin BY DESIGN; deferred.
+    // W4-g37 B4 (code-only): the Cave Walls pass (see SEED42_512 above) — the
+    // wall fills move this pin BY DESIGN; deferred.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

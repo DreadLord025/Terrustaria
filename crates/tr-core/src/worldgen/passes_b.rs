@@ -1336,3 +1336,293 @@ fn liquid_water(world: &World, x: i32, y: i32) -> bool {
         t.liquid >= 250 && t.liquid_kind() == crate::tile::LiquidKind::Water
     })
 }
+
+// --- B4: Cave Walls ----------------------------------------------------------
+
+/// The port's pre-laid baseline walls (`terrain.rs:344-350` writes dirt 2 /
+/// stone 1 / sandstone 187 under every solid row; the C# leaves them 0 until
+/// this pass). The `spider_gem_moss.rs::BASELINE_WALLS` adaptation: a
+/// `wall != 0` test reads these as the C#'s 0, so only a wall the port actually
+/// painted (jungle/mud/hive/gem/moss/cave) counts.
+const BASELINE_WALLS: [u16; 4] = [1, 2, 187, 216];
+
+/// `WorldGen.countTiles`'s scratch counters (`WorldGen.cs:9546-9557`).
+#[derive(Default, Clone, Copy)]
+struct CaveCounts {
+    tiles: i32,
+    shroom: i32,
+    lava: i32,
+    ice: i32,
+    sand: i32,
+    rock: i32,
+}
+
+/// `WorldGen.countTiles(x, y, jungle, lavaOk)` + `nextCount`
+/// (`WorldGen.cs:9546-9635`) over an explicit stack (the C# recursion depth is
+/// the pocket size; the fill carries no RNG, so the traversal order is free).
+/// The `max` is `WorldGen.maxTileCount` (1500 for this pass). The wall-244 /
+/// shimmer / border bail set `tiles = max`; the non-jungle wall-0 / lava gates
+/// bail; the jungle mode skips them. Counts the 70/1/147-161/53-396-397 tiles.
+fn count_tiles(world: &World, x: i32, y: i32, jungle: bool, lava_ok: bool, max: i32) -> CaveCounts {
+    let mut c = CaveCounts::default();
+    let mut seen: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
+    let mut stack = vec![(x, y)];
+    while let Some((x, y)) = stack.pop() {
+        if c.tiles >= max {
+            return c;
+        }
+        // `:9565-9568`: the border bail.
+        if x <= 1 || x >= world.width - 1 || y <= 1 || y >= world.height - 1 {
+            c.tiles = max;
+            return c;
+        }
+        if !seen.insert((x, y)) {
+            continue;
+        }
+        let Some(t) = world.tile(x, y) else {
+            continue;
+        };
+        // `:9575-9584`: the living-wood wall + shimmer bails.
+        if t.wall == 244 {
+            c.tiles = max;
+            return c;
+        }
+        if t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer {
+            c.tiles = max;
+            return c;
+        }
+        let lava_here = t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava;
+        // `:9585-9605`: the non-jungle wall/lava gates. The `wall != 0` test
+        // reads the port's pre-laid baseline walls as the C#'s 0 (the
+        // spider_gem_moss.rs adaptation — the C# runs this pass before any
+        // wall exists under the solid rows).
+        if !jungle {
+            if !BASELINE_WALLS.contains(&t.wall) {
+                c.tiles = max;
+                return c;
+            }
+            if lava_here {
+                c.lava += 1;
+                if !lava_ok {
+                    c.tiles = max;
+                    return c;
+                }
+            }
+        }
+        // `:9606-9624`: the tile counters.
+        if t.active() {
+            match t.kind {
+                70 => c.shroom += 1,
+                1 => c.rock += 1,
+                147 | 161 => c.ice += 1,
+                53 | 396 | 397 => c.sand += 1,
+                _ => {}
+            }
+        }
+        // `:9625-9633`: the open-region expansion.
+        if !crate::edit::solid_tile(world, x, y) {
+            c.tiles += 1;
+            stack.push((x - 1, y));
+            stack.push((x + 1, y));
+            stack.push((x, y - 1));
+            stack.push((x, y + 1));
+        }
+    }
+    c
+}
+
+/// `Spread.Wall(x, y, wallType)` (`WorldGen.cs:3356-3414`): the wave BFS that
+/// paints the wall over the open region; a solid-or-walled cell only takes the
+/// wall when it is active and unwalled, then stops the spread.
+fn spread_wall(world: &mut World, x: i32, y: i32, wall: u16) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let mut seen: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
+    let mut next: Vec<(i32, i32)> = vec![(x, y)];
+    while !next.is_empty() {
+        let cur = std::mem::take(&mut next);
+        for item in cur {
+            if !in_world(world, item.0, item.1, 1) {
+                continue;
+            }
+            seen.insert(item);
+            let solid = crate::edit::solid_tile(world, item.0, item.1);
+            let t = world.tile(item.0, item.1).copied().unwrap_or_default();
+            // The `tile.wall != 0` / `== 0` tests read the baseline walls as
+            // the C#'s 0 (the spider_gem_moss.rs:630-637 adaptation).
+            let real_wall = !BASELINE_WALLS.contains(&t.wall);
+            if solid || real_wall {
+                if t.active() && !real_wall {
+                    if let Some(tt) = world.tile_mut(item.0, item.1) {
+                        tt.wall = wall;
+                    }
+                }
+                continue;
+            }
+            if let Some(tt) = world.tile_mut(item.0, item.1) {
+                tt.wall = wall;
+            }
+            for n in [(item.0 - 1, item.1), (item.0 + 1, item.1), (item.0, item.1 - 1), (item.0, item.1 + 1)] {
+                if !seen.contains(&n) {
+                    next.push(n);
+                }
+            }
+        }
+    }
+}
+
+/// `Spread.Wall2(x, y, wallType)` (`WorldGen.cs:3416-3524`): the budgeted
+/// (`maxWallOut2` = 5000, `:86922`) wave BFS. The `CannotBeReplacedByWallSpread`
+/// walls {4,40,3,83,87,244,34} (`WallID.cs:98`) and the same-wall cells stop;
+/// the `WallSpreadStopsAtAir` walls {63,62} (`:99`) refuse air cells and spread
+/// to the 8-neighbourhood + the ±2 horizontal; a solid active cell takes the
+/// wall without spreading.
+fn spread_wall2(world: &mut World, x: i32, y: i32, wall: u16) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    const MAX_WALL_OUT: i32 = 5000;
+    let stops_at_air = wall == 63 || wall == 62;
+    let mut num2 = 0;
+    let mut seen: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
+    let mut next: Vec<(i32, i32)> = vec![(x, y)];
+    while !next.is_empty() {
+        let cur = std::mem::take(&mut next);
+        for item in cur {
+            if !in_world(world, item.0, item.1, 1) {
+                continue;
+            }
+            seen.insert(item);
+            let t = world.tile(item.0, item.1).copied().unwrap_or_default();
+            // `:3445-3448`: the same-wall / cannot-be-replaced bail.
+            let cannot_replace = matches!(t.wall, 4 | 40 | 3 | 83 | 87 | 244 | 34);
+            if t.wall == wall || cannot_replace {
+                continue;
+            }
+            if !crate::edit::solid_tile(world, item.0, item.1) {
+                // `:3451-3456`: the stops-at-air refusal.
+                if stops_at_air && t.wall == 0 {
+                    continue;
+                }
+                num2 += 1;
+                if num2 >= MAX_WALL_OUT {
+                    continue;
+                }
+                if let Some(tt) = world.tile_mut(item.0, item.1) {
+                    tt.wall = wall;
+                }
+                let mut nbrs = vec![
+                    (item.0 - 1, item.1), (item.0 + 1, item.1),
+                    (item.0, item.1 - 1), (item.0, item.1 + 1),
+                ];
+                if stops_at_air {
+                    nbrs.extend([
+                        (item.0 - 1, item.1 - 1), (item.0 + 1, item.1 - 1),
+                        (item.0 - 1, item.1 + 1), (item.0 + 1, item.1 + 1),
+                        (item.0 - 2, item.1), (item.0 + 2, item.1),
+                    ]);
+                }
+                for n in nbrs {
+                    if !seen.contains(&n) {
+                        next.push(n);
+                    }
+                }
+            } else if t.active() {
+                // `:3518-3521`: the solid active cell takes the wall.
+                if let Some(tt) = world.tile_mut(item.0, item.1) {
+                    tt.wall = wall;
+                }
+            }
+        }
+    }
+}
+
+/// The `Cave Walls` pass (`WorldGen.cs:17711-17839`,
+/// `GenPassNameID.CaveWallsInEnclosedSpaces`): the 4 %-width enclosed-space
+/// wall fills (the shroom/ice/lava/stone wall pick), then the 2 %-width jungle
+/// wall-64 → 15 fills. The remix second loop (`:17787-17809`) is a special
+/// seed — deferred. The `tileSolid[162/226/232]` toggles (`:17713-17715`) are
+/// unmodelled (the static `td::TILE_SOLID`, module-header deviation).
+pub(crate) fn pass_cave_walls(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    lava_line: i32,
+    rng: &mut Rng,
+) {
+    let max_tile_count = 1500;
+    // `:17720-17786`: the enclosed-space fills.
+    let count = (world.width as f64 * 0.04) as i32;
+    let y_lo = ((world_surface + rock_layer) / 2.0) as i32;
+    let y_hi = world.height - 220;
+    if y_hi > y_lo && world.width > 400 {
+        for _i in 0..count {
+            let mut num = 0;
+            let mut x = rng.range(200, world.width - 200);
+            let mut y = rng.range(y_lo, y_hi);
+            let mut c = count_tiles(world, x, y, false, true, max_tile_count);
+            while (c.tiles >= max_tile_count || c.tiles < 10) && num < 500 {
+                num += 1;
+                x = rng.range(200, world.width - 200);
+                y = rng.range(y_lo, y_hi);
+                c = count_tiles(world, x, y, false, true, max_tile_count);
+            }
+            if num < 500 {
+                // `:17744-17783`: the wall pick.
+                let mut num3 = rng.range(0, 2);
+                let wall: u16;
+                if (c.shroom as f64) > (c.rock as f64) * 0.75 {
+                    wall = 80;
+                } else if c.ice > 0 {
+                    wall = if num3 == 0 { 40 } else { 71 };
+                } else if c.lava > 0 {
+                    wall = 79;
+                } else {
+                    num3 = rng.range(0, 4);
+                    wall = match num3 {
+                        0 => 59,
+                        1 => 61,
+                        2 => 170,
+                        _ => 171,
+                    };
+                }
+                spread_wall(world, x, y, wall);
+            }
+        }
+    }
+    // `:17811-17837`: the jungle wall-64 → 15 fills.
+    let count2 = (world.width as f64 * 0.02) as i32;
+    let jy_lo = world_surface as i32;
+    let jy_hi = lava_line;
+    if jy_hi > jy_lo && world.width > 400 {
+        for _k in 0..count2 {
+            let mut num7 = 0;
+            let mut num8 = rng.range(200, world.width - 200);
+            let mut num9 = rng.range(jy_lo, jy_hi);
+            // `:17818-17822`: the first count only when wall == 64.
+            let mut num10 = if world.tile(num8, num9).map(|t| t.wall).unwrap_or(0) == 64 {
+                count_tiles(world, num8, num9, true, false, max_tile_count).tiles
+            } else {
+                0
+            };
+            while (num10 >= max_tile_count || num10 < 10) && num7 < 1000 {
+                num7 += 1;
+                num8 = rng.range(200, world.width - 200);
+                num9 = rng.range(jy_lo, jy_hi);
+                let w = world.tile(num8, num9).map(|t| t.wall).unwrap_or(0);
+                // `:17828-17831`: the wallHouse / 244 gate keeps num10 stale.
+                if !crate::edit::wall_house(w) && w != 244 {
+                    num10 = if w == 64 {
+                        count_tiles(world, num8, num9, true, false, max_tile_count).tiles
+                    } else {
+                        0
+                    };
+                }
+            }
+            if num7 < 1000 {
+                spread_wall2(world, num8, num9, 15);
+            }
+        }
+    }
+}

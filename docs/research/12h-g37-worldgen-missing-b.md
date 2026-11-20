@@ -205,6 +205,38 @@ Traps, Final Cleanup.
 - **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
 - **Verification**: code-only — witnesses written, not run.
 
+## B4 Cave Walls — landing notes (this commit)
+
+- **Pass body** `WorldGen.cs:17711-17839`
+  (`GenPassNameID.CaveWallsInEnclosedSpaces`) → `passes_b.rs::pass_cave_walls`.
+  The `tileSolid[162/226/232]` toggles (`:17713-17715`) are unmodelled (static
+  `td::TILE_SOLID`). The 4 %-width enclosed-space loop (`:17720-17786`): the
+  `((worldSurface+rockLayer)/2) .. maxTilesY-220` band, the 500-budget
+  `countTiles(jungle:false, lavaOk:true)` search (`10 <= tiles < 1500`), the
+  wall pick — `shroomCount > rockCount*0.75` → 80, `iceCount > 0` → 40/71,
+  `lavaCount > 0` → 79, else the 4-way 59/61/170/171 — then `Spread.Wall`. The
+  remix second loop (`:17787-17809`) is deferred. The 2 %-width jungle loop
+  (`:17811-17837`): the `worldSurface .. lavaLine` band, the wall-64-gated
+  `countTiles(jungle:true)`, the `wallHouse`/244 stale-count gate
+  (`:17828-17831`), the 1000 budget, `Spread.Wall2(…, 15)`.
+- **Helpers**: `count_tiles` = `countTiles`+`nextCount` (`:9546-9635`, the
+  explicit-stack walk, both jungle modes, the 70/1/147-161/53-396-397
+  counters); `spread_wall` = `Spread.Wall` (`:3356-3414`); `spread_wall2` =
+  `Spread.Wall2` (`:3416-3524`, the 5000 `maxWallOut2` budget, the
+  `CannotBeReplacedByWallSpread` {4,40,3,83,87,244,34} + `WallSpreadStopsAtAir`
+  {63,62} sets, `WallID.cs:98-99`).
+- **BASELINE_WALLS adaptation**: the port pre-lays dirt/stone/sandstone walls
+  under the solid rows (`terrain.rs:344-350`); the C# leaves them 0 until this
+  pass. The `wall != 0` tests in `count_tiles`/`spread_wall` read
+  `BASELINE_WALLS` {1,2,187,216} as the C#'s 0 (the `spider_gem_moss.rs`
+  precedent, cited inline).
+- **Pipeline**: `step!("cave walls", …)` after `temple part 2`, before
+  `statues`; count 69→70; witness
+  `w4_g37_the_cave_walls_step_follows_the_temple`; progress `Gen(63)`
+  (`:17718`).
+- **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
+- **Verification**: code-only — witnesses written, not run.
+
 ## Landing ledger
 
 | pass | commit | status |
@@ -213,8 +245,8 @@ Traps, Final Cleanup.
 | census re-probe + claim confirmation (this doc) | 30f605c7 | confirmed — all nine UNLANDED on every pushed branch |
 | B1 Statues | a0bf6174 | ported — witnesses written not run |
 | B2 Surface Chests | 1cf9f0f1 | ported — witnesses written not run |
-| B3 Water Chests | (this commit) | ported — witnesses written not run |
-| B4 Cave Walls | — | pending |
+| B3 Water Chests | 4c58c56c | ported — witnesses written not run |
+| B4 Cave Walls | (this commit) | ported — witnesses written not run |
 | B5 Floating Island Houses | — | pending |
 | B6 Quick Cleanup | — | pending |
 | B7 Hellforge | — | pending |

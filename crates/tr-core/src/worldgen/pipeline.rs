@@ -1316,6 +1316,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("hell forts", "", step_hell_forts),
     step!("lihzahrd temple", "Jungle Temple", step_temple),
     step!("temple part 2", "Temple", step_temple_part2),
+    // The vanilla Cave Walls slot (`WorldGen.cs:17711`): after Temple
+    // (`:17701`), before Jungle Trees (`:17840`) — W4-g37 B4. The port groups
+    // it right after the temple family, before `statues`; the isolated stream
+    // makes the grouping RNG-neutral. Own `pass_rng("Cave Walls")` stream.
+    step!("cave walls", "Cave Walls", step_cave_walls),
     // The vanilla Statues slot (`WorldGen.cs:16853`): immediately before
     // Buried Chests (`:16971`) — W4-g37 B1. Own `pass_rng("Statues")` stream.
     step!("statues", "Statues", step_statues),
@@ -2408,6 +2413,24 @@ fn step_water_chests(
     );
 }
 
+/// The vanilla Cave Walls slot (`WorldGen.cs:17711-17839`) — W4-g37 B4: the
+/// enclosed-space wall fills + the jungle wall-64 → 15 fills. Own
+/// `pass_rng("Cave Walls")` stream.
+fn step_cave_walls(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    let rock_layer = gv.layers().rock_layer;
+    let lava_line = gv.lava_line;
+    let mut rng = streams.pass_rng("Cave Walls");
+    passes_b::pass_cave_walls(world, world_surface, rock_layer, lava_line, &mut rng);
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -3244,8 +3267,9 @@ mod tests {
         // W4-g37 B1: + `statues` (vanilla "Statues", `WorldGen.cs:16853`)
         // before `cave houses`. B2: + `surface chests` (vanilla "Surface
         // Chests", `:17130`) after `cave houses`. B3: + `water chests`
-        // (vanilla "Water Chests", `:17245`) after `surface chests`.
-        assert_eq!(names.len(), 69);
+        // (vanilla "Water Chests", `:17245`) after `surface chests`. B4: +
+        // `cave walls` (vanilla "Cave Walls", `:17711`) after `temple part 2`.
+        assert_eq!(names.len(), 70);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3319,6 +3343,9 @@ mod tests {
                 "hell forts",
                 "lihzahrd temple",
                 "temple part 2",
+                // W4-g37 B4: the vanilla Cave Walls slot
+                // (`WorldGen.cs:17711`) follows Temple (`:17701`).
+                "cave walls",
                 // W4-g37 B1: the vanilla Statues slot (`WorldGen.cs:16853`)
                 // precedes Buried Chests (`:16971`).
                 "statues",
@@ -3609,6 +3636,25 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Jungle Chests Placement") < cpos("Water Chests"));
         assert!(cpos("Water Chests") < cpos("Spider Caves"));
+    }
+
+    /// W4-g37 B4: `cave walls` sits after the temple family — after
+    /// `temple part 2`, before `statues` (the vanilla Cave Walls anchor
+    /// `WorldGen.cs:17711` follows Temple `:17701`).
+    #[test]
+    fn w4_g37_the_cave_walls_step_follows_the_temple() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("cave walls"), pos("temple part 2") + 1);
+        assert!(pos("cave walls") < pos("statues"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Temple") < cpos("Cave Walls"));
+        assert!(cpos("Cave Walls") < cpos("Jungle Trees"));
     }
 
     #[test]
