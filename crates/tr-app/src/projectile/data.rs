@@ -2638,9 +2638,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 24x24, aiStyle 121, penetrate -1, `timeLeft *= 5`, tileCollide
             // false, ignoreWater, alpha 255, the LOCAL pair (7); the 626/627
             // BODY segments carry 0.5 slots, the 625 head / 628 tail 0 (the
-            // slot block excludes them, `:16709`). The chain AI is excluded.
-            625 | 628 => (24.0, 24.0, 121, -1, 18000, 0, false, false, false, (true, 7, false, -1, 255, 1.0)),
-            626 | 627 => (24.0, 24.0, 121, -1, 18000, 0, false, false, false, (true, 7, false, -1, 255, 1.0)),
+            // slot block excludes them, `:16709`). The chain AI is the 121
+            // arm (`dragon_step`, `AI_121_StardustDragon` `:42824-43080`).
+            STARDUST_DRAGON_HEAD | STARDUST_DRAGON_TAIL => (24.0, 24.0, 121, -1, 18000, 0, false, false, false, (true, 7, false, -1, 255, 1.0)),
+            STARDUST_DRAGON_BODY_1 | STARDUST_DRAGON_BODY_2 => (24.0, 24.0, 121, -1, 18000, 0, false, false, false, (true, 7, false, -1, 255, 1.0)),
             // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
             // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
             // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
@@ -3078,8 +3079,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // block excludes them, `:16709`).
         191 | 192 | 193 | 194 | 317 | 390 | 391 | 392 | 755 | 831 | 864 | 946 | 951
         | 970 | 1022 | 1093 | 1094 | 1112 | 1113 | 1118 | 1119 => (true, false, 1.0),
-        625 | 628 => (true, false, 0.0),
-        626 | 627 => (true, false, 0.5),
+        STARDUST_DRAGON_HEAD | STARDUST_DRAGON_TAIL => (true, false, 0.0),
+        STARDUST_DRAGON_BODY_1 | STARDUST_DRAGON_BODY_2 => (true, false, 0.5),
         FROST_HYDRA | QUEEN_SPIDER | MOONLORD_TURRET | RAINBOW_CRYSTAL | FLAME_BURST_TOWER_1
         | FLAME_BURST_TOWER_2 | FLAME_BURST_TOWER_3 | BALLISTRA_TOWER_1 | BALLISTRA_TOWER_2
         | BALLISTRA_TOWER_3 | LIGHTNING_AURA_1 | LIGHTNING_AURA_2 | LIGHTNING_AURA_3
@@ -3232,7 +3233,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
-            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL),
+            || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
+            // S1-P-i20: the Aqua Scepter (22, `Projectile.cs:1049`) and the
+            // Magic Missile (16, `:983`) set `ignoreWater = true`; the
+            // Flamelash (34) does NOT (`:1162-1173` has no such line).
+            || matches!(kind, AQUA_SCEPTER | MAGIC_MISSILE),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -3292,6 +3297,18 @@ pub const CTHULUNADO: u16 = 386;
 pub const UFO_MINION: u16 = 423;
 pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
+/// `ProjectileID.StardustDragon1` (625) — the chain HEAD (`ProjectileID.cs:1804`):
+/// the aiStyle-121 steering half (`Projectile.cs:42862-42992`), a 0-slot summon.
+pub const STARDUST_DRAGON_HEAD: u16 = 625;
+/// `ProjectileID.StardustDragon2` (626) — the first BODY segment
+/// (`ProjectileID.cs:1806`): 0.5 slots, the key-linked follow half.
+pub const STARDUST_DRAGON_BODY_1: u16 = 626;
+/// `ProjectileID.StardustDragon3` (627) — the second BODY segment
+/// (`ProjectileID.cs:1808`): 0.5 slots, the key-linked follow half.
+pub const STARDUST_DRAGON_BODY_2: u16 = 627;
+/// `ProjectileID.StardustDragon4` (628) — the chain TAIL (`ProjectileID.cs:1810`):
+/// 0 slots; its contact with the HEAD kills both (`Projectile.cs:43022-43027`).
+pub const STARDUST_DRAGON_TAIL: u16 = 628;
 pub const BABY_BIRD: u16 = 759;
 pub const SLIME_MINION: u16 = 266;
 /// `ProjectileID.SkeletronPet` (885) — AI_026 slice B (S1-D-4b-11): the

@@ -2027,6 +2027,181 @@ impl Projectile {
         }
     }
 
+    /// `AI()`'s aiStyle-54 block (`Projectile.cs:28564-28772`) — the Raven
+    /// Staff's minion (317): the keep-alive pin against the summon flag, the
+    /// same-type separation (0.05, manhattan-`width`), the owner-distance
+    /// leash, the whip-target-then-scan search (Manhattan reach, `CanHit`),
+    /// the return-to-owner hover (the −60 px lift, the 70 px approach blend,
+    /// the 2000 px far snap) and the attack dive (the `ai[1]` 17-tick cooldown,
+    /// the 16/10 speed blend). The frame machine is the 4-frame idle / 4-7
+    /// attack cycle. No `Main.rand` draw in this arm (the C# block has none).
+    /// The separation rides in pre-computed (the C# loop reads the siblings).
+    fn ai_raven(
+        &mut self,
+        world: &World,
+        sep: Vec2,
+        mut owner: Option<&mut crate::player::Player>,
+        npcs: &[Npc],
+    ) {
+        // `:28566-28576` — the keep-alive pin: death clears the flag, the live
+        // flag pins `timeLeft = 2`.
+        let dead = owner.as_ref().is_some_and(|p| p.dead);
+        let held = owner.as_ref().is_some_and(|p| p.raven);
+        if dead {
+            if let Some(p) = owner.as_deref_mut() {
+                p.raven = false;
+            }
+        } else if held {
+            self.time_left = 2;
+        }
+        // `:28577-28603` — the same-type separation, from the caller.
+        self.vel += sep;
+        // `:28604-28620` — the target point / reach / leash defaults.
+        let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        let mut aim = self.pos;
+        let mut reach = 900.0f32;
+        let mut flag_target = false;
+        let mut leash = 500.0f32;
+        if self.ai[1] != 0.0 || self.friendly {
+            leash = 1400.0;
+        }
+        let (ocx, ocy) = owner.as_ref().map_or((center.x, center.y), |p| p.center());
+        let owner_center = Vec2::new(ocx, ocy);
+        if (center.x - owner_center.x).abs() + (center.y - owner_center.y).abs() > leash {
+            self.ai[0] = 1.0;
+        }
+        // `:28621-28657` — the target search (only in the follow state).
+        if self.ai[0] == 0.0 {
+            self.tile_collide = true;
+            let whip = owner.as_ref().map_or(-1, |p| p.minion_attack_target_npc);
+            if whip >= 0 {
+                if let Some(n) = npcs.get(whip as usize) {
+                    if chaseable(n) {
+                        let (nw, nh) = n.size();
+                        let target = Vec2::new(n.x + nw * 0.5, n.y + nh * 0.5);
+                        let d = (center.x - target.x).abs() + (center.y - target.y).abs();
+                        if d < reach
+                            && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                        {
+                            reach = d;
+                            aim = target;
+                            flag_target = true;
+                        }
+                    }
+                }
+            }
+            if !flag_target {
+                for n in npcs.iter() {
+                    if !chaseable(n) {
+                        continue;
+                    }
+                    let (nw, nh) = n.size();
+                    let target = Vec2::new(n.x + nw * 0.5, n.y + nh * 0.5);
+                    let d = (center.x - target.x).abs() + (center.y - target.y).abs();
+                    if d < reach
+                        && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                    {
+                        reach = d;
+                        aim = target;
+                        flag_target = true;
+                    }
+                }
+            }
+        } else {
+            self.tile_collide = false;
+        }
+        // `:28658-28721` — the return-to-owner hover (no target).
+        if !flag_target {
+            self.friendly = true;
+            let mut speed = 8.0f32;
+            if self.ai[0] == 1.0 {
+                speed = 12.0;
+            }
+            let mut to_owner = owner_center - center;
+            to_owner.y -= 60.0;
+            let mut dist = to_owner.length();
+            if dist < 100.0 && self.ai[0] == 1.0 && !box_solid(world, self.pos, self.w, self.h) {
+                self.ai[0] = 0.0;
+            }
+            if dist > 2000.0 {
+                self.pos.x = owner_center.x - self.w * 0.5;
+                self.pos.y = owner_center.y - self.w * 0.5;
+            }
+            // `:28680-28687` — the 317's far-speed ladder.
+            if dist > 100.0 {
+                speed = 12.0;
+                if self.ai[0] == 1.0 {
+                    speed = 15.0;
+                }
+            }
+            if dist > 70.0 {
+                let k = speed / dist;
+                to_owner *= k;
+                self.vel.x = (self.vel.x * 20.0 + to_owner.x) / 21.0;
+                self.vel.y = (self.vel.y * 20.0 + to_owner.y) / 21.0;
+            } else {
+                if self.vel.x == 0.0 && self.vel.y == 0.0 {
+                    self.vel = Vec2::new(-0.15, -0.05);
+                }
+                self.vel *= 1.01;
+            }
+            self.friendly = false;
+            self.rot = self.vel.x * 0.05;
+            self.frame_counter += 1;
+            if self.frame_counter >= 4 {
+                self.frame_counter = 0;
+                self.frame += 1;
+            }
+            if self.frame > 3 {
+                self.frame = 0;
+            }
+            if self.vel.x.abs() > 0.2 {
+                self.sprite_direction = -self.direction;
+            }
+            return;
+        }
+        // `:28722-28772` — the attack dive.
+        if self.ai[1] == -1.0 {
+            self.ai[1] = 17.0;
+        }
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        if self.ai[1] == 0.0 {
+            self.friendly = true;
+            let mut speed = 16.0f32;
+            let mut to_target = aim - center;
+            let mut dist = to_target.length();
+            if dist < 100.0 {
+                speed = 10.0;
+            }
+            let k = speed / dist;
+            to_target *= k;
+            self.vel.x = (self.vel.x * 14.0 + to_target.x) / 15.0;
+            self.vel.y = (self.vel.y * 14.0 + to_target.y) / 15.0;
+        } else {
+            self.friendly = false;
+            if self.vel.x.abs() + self.vel.y.abs() < 10.0 {
+                self.vel *= 1.05;
+            }
+        }
+        self.rot = self.vel.x * 0.05;
+        self.frame_counter += 1;
+        if self.frame_counter >= 4 {
+            self.frame_counter = 0;
+            self.frame += 1;
+        }
+        if self.frame < 4 {
+            self.frame = 4;
+        }
+        if self.frame > 7 {
+            self.frame = 4;
+        }
+        if self.vel.x.abs() > 0.2 {
+            self.sprite_direction = -self.direction;
+        }
+    }
+
     /// `AI_053_HandleSentryNPCTargeting` (`Projectile.cs:40194-40254`) — the
     /// shared sentry target search: the owner's whip target first (when it is
     /// chaseable, inside the `maxDistance` manhattan reach and behind line of
@@ -15798,6 +15973,32 @@ impl ProjectilePool {
                             let v = self.slots[i].vel;
                     self.slots[i].pos += v;
                         }
+                        // S1-P-i25/i56 — `AI()`'s `else if (this.aiStyle == 121)`
+                        // (`Projectile.cs:34892-34895`) ->
+                        // `AI_121_StardustDragon` (`:42824-43080`): the
+                        // Stardust Dragon chain (625/626/627/628), the
+                        // style's ONLY rows (`:6729-6753`). A pool-side
+                        // step — the segment half reads and writes its
+                        // parent slot through the key lookup. The rows keep
+                        // `tileCollide = false` (`:6747`) and aiStyle 121
+                        // is not in `UpdatePosition`'s skip list (`:20435`),
+                        // so the free integrate runs every sub-step (the
+                        // segments pin `velocity = Zero`; the head's
+                        // steering velocity moves it). The i25 deferral
+                        // note is superseded — the chain AI landed at the
+                        // gate so the i56 coverage pin stays EMPTY.
+                        121 => {
+                            self.dragon_step(
+                                i,
+                                world,
+                                &npcs[..],
+                                player.as_deref_mut(),
+                                rng,
+                                local_owner,
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
@@ -17735,6 +17936,21 @@ impl ProjectilePool {
                                 }
                             }
                         }
+                        // S1-P-i25/i56 — `AI()`'s `else if (this.aiStyle == 54)`
+                        // (`Projectile.cs:28564-28772`): the Raven Staff's minion
+                        // (317). The same-type separation reads the sibling slots,
+                        // so the pool pre-computes it (the `minion_separation`
+                        // helper, 0.05 / manhattan-width — the Raven is not the
+                        // Tempest, so the base pair applies). The movement is
+                        // `UpdatePosition`'s `position += velocity` (aiStyle 54 is
+                        // not in the skip list; the 317 slope-correction fall case
+                        // stays unported — ANALYSIS). No `Main.rand` draw.
+                        54 => {
+                            let (sep, _queue) = self.slots[i].minion_separation(&self.slots, i);
+                            self.slots[i].ai_raven(world, sep, player.as_deref_mut(), npcs);
+                            let vel = self.slots[i].vel;
+                            self.slots[i].pos += vel;
+                        }
                         // S1-D-5: the duplicate `99 => { ai_yoyo ... }` arm
                         // that sat here was unreachable behind the live one
                         // above (byte-identical pair, verified by line-range
@@ -18868,6 +19084,326 @@ impl ProjectilePool {
             damage,
             knock_back,
         );
+    }
+
+    /// `AI_121_StardustDragon` (`Projectile.cs:42824-43080`, the dispatch
+    /// `:34892-34895`) — the Stardust Dragon chain (625 head / 626+627 body /
+    /// 628 tail). A POOL-side step (the `vilethorn_step` shape): the segment
+    /// half reads AND writes its parent slot (the scale counter and the
+    /// backlink), resolves the parent through the `ProjectileKey` bit pattern
+    /// in `ai[0]`, and runs the orphan relink scan over the whole pool — none
+    /// of which a slot arm can see.
+    ///
+    /// RNG: ONE gate draw per chain slot per sub-step — `Main.rand.Next(30)`
+    /// (`:42850`) gates the materialize dust; the dust body and its NewDust
+    /// internals are SKIPPED (no dust layer) but the GATE draw stays on the
+    /// pass's `UpdateProjectiles` stream (the aqua-scepter precedent). The
+    /// alpha-fade dust loops (`:42981-42986`/`:43049-43054`) are pure NewDust
+    /// internals — no gate, no draw.
+    ///
+    /// Skips (ANALYSIS): the dust bodies, the `% 120` netUpdate cadence reads
+    /// `Main.timeForVisualEffects` (a draw-frame clock the pool does not
+    /// carry) — the port's `update_count` is the stand-in (net bookkeeping
+    /// only, no gameplay state). The `whoAmI` backlink writes are the pool
+    /// SLOT INDEX (the port's `ProjectileKey` packs the slot index exactly,
+    /// `net.rs:3123-3125` ≡ `ProjectileKey.cs:18/27-31`, so the C#'s
+    /// `projectileKey.Index` relink match is byte-identical).
+    fn dragon_step(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        mut player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+    ) {
+        // `:42827-42830` — the 120-tick net cadence (the update_count
+        // stand-in, see the doc block).
+        if self.update_count % 120 == 0 {
+            self.slots[i].net_update = true;
+        }
+        // `:42831-42835` — the owner-inactive kill (`active = false` only;
+        // the port's death convention zeroes `time_left` too, `kill()` —
+        // the ai_stardust_guardian precedent).
+        let Some(pl) = player.as_deref_mut() else {
+            self.slots[i].kill();
+            return;
+        };
+        let kind = self.slots[i].kind;
+        // `:42836-42837` — `flag` is the head gate, `flag2` the chain set
+        // (`ProjectileID.Sets.StardustDragon`, `ProjectileID.cs:540` — the
+        // style's ONLY rows, so flag2 is always true here).
+        let head = kind == STARDUST_DRAGON_HEAD;
+        let chain = matches!(
+            kind,
+            STARDUST_DRAGON_HEAD
+                | STARDUST_DRAGON_BODY_1
+                | STARDUST_DRAGON_BODY_2
+                | STARDUST_DRAGON_TAIL
+        );
+        let mut num = 10.0f32;
+        if chain {
+            // `:42841-42848` — death clears the summon flag; the live flag
+            // pins `timeLeft = 2`. `num = 30` is the chain's box base.
+            if pl.dead {
+                pl.stardust_dragon = false;
+            }
+            if pl.stardust_dragon {
+                self.slots[i].time_left = 2;
+            }
+            num = 30.0;
+            // `:42850-42860` — the materialize dust gate: the Next(30) draw
+            // stays, the dust body (and its InWorld/SolidTile noLight probe)
+            // is the documented skip.
+            let _ = rng.next_range(0, 30);
+        }
+        let (pcx, pcy) = pl.center();
+        let player_center = Vec2::new(pcx, pcy);
+        let whip_target = pl.minion_attack_target_npc;
+        if head {
+            // `:42864-42872` — the 2000-px leash teleport onto the owner.
+            let mut c = Vec2::from(self.slots[i].center());
+            if c.distance(player_center) > 2000.0 {
+                self.slots[i].set_center(player_center);
+                self.slots[i].net_update = true;
+                c = player_center;
+            }
+            // `:42873-42899` — the target pick: the owner's whip target
+            // first (chaseable, within 2×700 of the HEAD), else the LAST
+            // chaseable NPC within 1000 of the owner AND 700 of the head
+            // (the C# loop keeps assigning — no break, `:42890-42897`).
+            let mut num5: i32 = -1;
+            if whip_target >= 0 {
+                if let Some(n) = npcs.get(whip_target as usize) {
+                    if chaseable(n) && c.distance(npc_center(n)) < 700.0 * 2.0 {
+                        num5 = whip_target;
+                    }
+                }
+            }
+            if num5 < 0 {
+                for (idx, n) in npcs.iter().enumerate() {
+                    let nc = npc_center(n);
+                    if chaseable(n)
+                        && player_center.distance(nc) < 1000.0
+                        && c.distance(nc) < 700.0
+                    {
+                        num5 = idx as i32;
+                    }
+                }
+            }
+            let p = &mut self.slots[i];
+            if num5 != -1 {
+                // `:42901-42928` — the chase steering: the 0.4/0.6/0.8
+                // distance ladder, the size-gated accel and the backwards-
+                // dot damp, then the 30-speed clamp.
+                let n = &npcs[num5 as usize];
+                let vector = npc_center(n) - c;
+                let mut num6 = 0.4f32;
+                if vector.length() < 600.0 {
+                    num6 = 0.6;
+                }
+                if vector.length() < 300.0 {
+                    num6 = 0.8;
+                }
+                let (nw, nh) = n.size();
+                if vector.length() > Vec2::new(nw, nh).length() * 0.75 {
+                    p.vel += vector.normalize_or_zero() * num6 * 1.5;
+                    if p.vel.dot(vector) < 0.25 {
+                        p.vel *= 0.8;
+                    }
+                }
+                if p.vel.length() > 30.0 {
+                    p.vel = p.vel.normalize_or_zero() * 30.0;
+                }
+            } else {
+                // `:42930-42965` — the hover: the 0.2/0.12/0.06 ladder, the
+                // 20/10-px axis gates (the float `Math.Sign` — `csign`), the
+                // near-owner 0.96 damp, the −0.1 lift and the 15 clamp.
+                let mut num8 = 0.2f32;
+                let vector2 = player_center - c;
+                if vector2.length() < 200.0 {
+                    num8 = 0.12;
+                }
+                if vector2.length() < 140.0 {
+                    num8 = 0.06;
+                }
+                if vector2.length() > 100.0 {
+                    if (player_center.x - c.x).abs() > 20.0 {
+                        p.vel.x += num8 * csign(player_center.x - c.x);
+                    }
+                    if (player_center.y - c.y).abs() > 10.0 {
+                        p.vel.y += num8 * csign(player_center.y - c.y);
+                    }
+                } else if p.vel.length() > 2.0 {
+                    p.vel *= 0.96;
+                }
+                if p.vel.y.abs() < 1.0 {
+                    p.vel.y -= 0.1;
+                }
+                if p.vel.length() > 15.0 {
+                    p.vel = p.vel.normalize_or_zero() * 15.0;
+                }
+            }
+            // `:42967-42973` — the heading rotation and the facing flip
+            // (the flip arms the netUpdate).
+            p.rot = p.vel.to_angle() + std::f32::consts::FRAC_PI_2;
+            let old_dir = p.direction;
+            p.sprite_direction = if p.vel.x > 0.0 { 1 } else { -1 };
+            p.direction = p.sprite_direction;
+            if old_dir != p.direction {
+                p.net_update = true;
+            }
+            // `:42974-42978` — the scale growth: `localAI[0]` (written by
+            // the segments) clamped 0..50 feeds `1 + n·0.01`; the box resize
+            // keeps the CENTRE (the C#'s position=Center / Center=position
+            // pair) with the `(int)` truncation.
+            let num11 = p.local_ai[0].clamp(0.0, 50.0);
+            let old_center = Vec2::from(p.center());
+            p.scale = 1.0 + num11 * 0.01;
+            let side = (num * p.scale) as i32 as f32;
+            p.w = side;
+            p.h = side;
+            p.set_center(old_center);
+            // `:42979-42992` — the materialize fade (the 2× dust loop is
+            // the documented skip — no gate draw).
+            if p.alpha > 0 {
+                p.alpha -= 42;
+                if p.alpha < 0 {
+                    p.alpha = 0;
+                }
+            }
+        } else {
+            // `:43002-43006` — the one-shot net flag the relink arms.
+            if self.slots[i].ai[1] == 1.0 {
+                self.slots[i].ai[1] = 0.0;
+                self.slots[i].net_update = true;
+            }
+            // `:43007-43028` — the parent resolve: the key's raw bits in
+            // `ai[0]`, the active+owner+generation lookup gated to the
+            // 625/626/627 set (a 628 parent fails the C#'s type check).
+            let key = self.slots[i].ai[0];
+            let parent = self.dragon_parent(key);
+            let Some(ps) = parent else {
+                // `:43029-43045` — the orphan relink: remote owners never
+                // scan; the local owner walks the pool for a chain slot
+                // whose backlink names the key's INDEX (the C# loop keeps
+                // assigning — the LAST match wins), re-keys onto it and
+                // stamps the backlink. Both C# `return`s skip the position
+                // clamp tail.
+                if self.slots[i].owner != local_owner {
+                    return;
+                }
+                let key_index = crate::net::projectile_key_parts(key.to_bits() as i32).1;
+                let owner = self.slots[i].owner;
+                for k in 0..self.slots.len() {
+                    let (active, k_owner, k_kind, backlink) = {
+                        let o = &self.slots[k];
+                        (o.active, o.owner, o.kind, o.local_ai[1])
+                    };
+                    if active
+                        && k_owner == owner
+                        && matches!(
+                            k_kind,
+                            STARDUST_DRAGON_HEAD
+                                | STARDUST_DRAGON_BODY_1
+                                | STARDUST_DRAGON_BODY_2
+                                | STARDUST_DRAGON_TAIL
+                        )
+                        && backlink == key_index as f32
+                    {
+                        let new_key = self.key_of(k);
+                        self.slots[i].ai[0] = f32::from_bits(new_key as u32);
+                        self.slots[k].local_ai[1] = i as f32;
+                        self.slots[i].net_update = true;
+                    }
+                }
+                return;
+            };
+            let (parent_center, parent_rot, parent_scale, parent_kind) = {
+                let par = &self.slots[ps];
+                (
+                    Vec2::from(par.center()),
+                    par.rot,
+                    par.scale,
+                    par.kind,
+                )
+            };
+            // `:43017-43021` — the parent writes: the scale counter is the
+            // CHILD's counter + 1 (the chain grows tail-ward), the backlink
+            // names this slot on every non-head parent.
+            let num15 = parent_scale.clamp(0.0, 50.0);
+            self.slots[ps].local_ai[0] = self.slots[i].local_ai[0] + 1.0;
+            if parent_kind != STARDUST_DRAGON_HEAD {
+                self.slots[ps].local_ai[1] = i as f32;
+            }
+            // `:43022-43027` — the tail-on-head contact: BOTH die (the
+            // local owner only), and the C# `return` skips the clamp tail.
+            if self.slots[i].owner == local_owner
+                && kind == STARDUST_DRAGON_TAIL
+                && parent_kind == STARDUST_DRAGON_HEAD
+            {
+                self.kill(ps);
+                self.kill(i);
+                return;
+            }
+            let p = &mut self.slots[i];
+            // `:43047-43060` — the fade: the dust loop is gated on alpha>0
+            // (the documented skip) but the −42 decay is UNCONDITIONAL.
+            p.alpha -= 42;
+            if p.alpha < 0 {
+                p.alpha = 0;
+            }
+            // `:43061-43076` — the follow: zero velocity, the 0.1-wrap
+            // rotation blend of the gap vector, the parent's clamped scale
+            // on the resized box (centre kept), then the 16·scale stand-off
+            // along the gap and the gap-sign facing.
+            p.vel = Vec2::ZERO;
+            let mut vector4 = parent_center - Vec2::from(p.center());
+            if parent_rot != p.rot {
+                vector4 = rotate(vector4, wrap_angle(parent_rot - p.rot) * 0.1);
+            }
+            p.rot = vector4.to_angle() + std::f32::consts::FRAC_PI_2;
+            let old_center = Vec2::from(p.center());
+            p.scale = num15;
+            let side = (num * p.scale) as i32 as f32;
+            p.w = side;
+            p.h = side;
+            p.set_center(old_center);
+            if vector4 != Vec2::ZERO {
+                p.set_center(parent_center - vector4.normalize_or_zero() * 16.0 * num15);
+            }
+            p.sprite_direction = if vector4.x > 0.0 { 1 } else { -1 };
+        }
+        // `:43078-43079` — the position clamp (both branches' normal exit;
+        // the C# early returns above skip it).
+        let p = &mut self.slots[i];
+        p.pos.x = p.pos.x.clamp(160.0, world.width as f32 * 16.0 - 160.0);
+        p.pos.y = p.pos.y.clamp(160.0, world.height as f32 * 16.0 - 160.0);
+    }
+
+    /// `((ProjectileKey)this.ai[0]).TryGetActive(ProjectileID.Sets
+    /// .StardustDragon, out proj)` + the 625/626/627 type gate
+    /// (`Projectile.cs:43007-43008`, `ProjectileKey.cs:96-108`): the key's
+    /// raw bit pattern resolves through the active+owner+generation check
+    /// (the `key_parent` shape) — a recycled slot fails the generation
+    /// match and the caller's orphan relink runs. Returns the SLOT INDEX
+    /// (the step mutates the parent).
+    fn dragon_parent(&self, key: f32) -> Option<usize> {
+        let (owner, slot, generation) = crate::net::projectile_key_parts(key.to_bits() as i32);
+        let p = self.slots.get(slot)?;
+        if p.active
+            && p.owner == owner
+            && p.generation == generation
+            && matches!(
+                p.kind,
+                STARDUST_DRAGON_HEAD | STARDUST_DRAGON_BODY_1 | STARDUST_DRAGON_BODY_2
+            )
+            && crate::net::projectile_key(p.owner, slot, p.generation) == key.to_bits() as i32
+        {
+            Some(slot)
+        } else {
+            None
+        }
     }
 
     /// `Kill()`'s type-295 arm (`Projectile.cs:74341-74350`): the Inferno
@@ -20157,9 +20693,24 @@ mod tests {
         // with S1-D-4 W-10 (the Horseman's pumpkin arm landed);
         // 31/147/181/193 left with the unarmed-styles slice
         // (projectile_ai_misc); 120 left with S1-P-i56 (the
-        // ai_stardust_guardian arm — the list is EMPTY, every rowed style
-        // is armed or kind-gated).
-        const UNARMED_ROWED: [u8; 0] = [];
+        // ai_stardust_guardian arm). S1-P-i56's claim "the list is EMPTY"
+        // held on ITS base — but i25's 19 new minion rows (merged at the
+        // gate) re-armed the census: 156 (the Sanguine bat 755 + the Empress
+        // Blade 946, `AI_156_BatOfLight` `:51516-51911`), 164 (the Storm
+        // Tiger gem 831 + Abigail's counter 970, `AI_164_StormTigerGem`
+        // `:46593-46699`), 169 (the Smolstar 864, `AI_169_Smolstars`
+        // `:45718-45853`) and 206 (the Forbidden Minion 1119,
+        // `AI_206_ForbiddenMinion` `:37501-37641`) are i25's DOCUMENTED
+        // dispatch no-op deferrals (i25 ANALYSIS "the AI machines stay the
+        // documented dispatch no-ops (aiStyle 26/54/156/164/169/206)" — 26
+        // and 54 were armed at the gate, the four below stay census rows
+        // until the minion-AI follow-up lands). The gate decision: keep the
+        // rows + the census entries (the pin's original design), NOT a
+        // 700-line four-machine port inside the fix round. The Stardust
+        // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
+        // deferral collided with the same pin and the machine is one
+        // self-contained family.
+        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -20174,14 +20725,10 @@ mod tests {
             })
             .filter_map(|k| proj_data(k).map(|d| d.ai_style))
             .collect();
-        for style in &rowed {
-            assert!(
-                counts.contains_key(style)
-                    || UNARMED_ROWED.contains(style)
-                    || frost_gated.contains(style),
-                "aiStyle {style} has a data row but no dispatch arm and no census entry"
-            );
-        }
+        let missing: Vec<u8> = rowed.iter().copied()
+            .filter(|s| !counts.contains_key(s) && !UNARMED_ROWED.contains(s) && !frost_gated.contains(s))
+            .collect();
+        assert!(missing.is_empty(), "unarmed rowed styles: {:?}", missing);
     }
 
     /// S1-D-4c — the 185 row pin: `SetDefaults` (`Projectile.cs:2717-2727`)
@@ -26104,14 +26651,15 @@ mod magic_data_tests {
         // M4-PROJ-6b Phase 1 moved the boundary: the followup kinds
         // (114/115/116/132/156/157/173, 206, 293/297, 356, 409, 617/618,
         // 632/633, 634/635) now carry rows, so the rowless set is the plan's
-        // documented OUT list — the 75/84 gun riders (439/445/460/595/600/
+        // documented OUT list — the 75/84 gun riders (439/445/595/600/
         // 611/735/927; 615/630/705/714 already ride the ammo-resolution row)
-        // and the hostile lasers (461/537), plus the flame jet 187 and
-        // 502. The 642 left the list with S1-D-4b-3 (the turret beam's
-        // row). The unported-kind spawn must still reach the caller as
-        // `None`, never an inert slot.
+        // and the hostile laser 537, plus the flame jet 187 and 502. The 642
+        // left the list with S1-D-4b-3 (the turret beam's row). S1-P-i22
+        // added the Charged Blaster Cannon 460 + Laser 461 rows, so they
+        // left the list too. The unported-kind spawn must still reach the
+        // caller as `None`, never an inert slot.
         for kind in [
-            439u16, 445, 460, 595, 600, 611, 735, 927, 461, 537, 187, 502,
+            439u16, 445, 595, 600, 611, 735, 927, 537, 187, 502,
         ] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
@@ -30115,7 +30663,11 @@ mod magic_ai_tests {
         let p = &pool.slots()[slot];
         assert_eq!(p.alpha, 55, "255 - 4*50 (4 sub-steps)");
         assert_eq!(p.sprite_direction, 1, "the +X flight faces right");
-        assert!((p.rot - 0.3).abs() < 1e-4, "rotation = velocity.X * 0.1 ({})", p.rot);
+        // The rotation is `velocity.X * 0.1` set BEFORE the steering each
+        // sub-step (`:27355` precedes `:27438`): across the 4 sub-steps the
+        // velocity climbs 3.0→3.1→3.2→3.3 (the +0.1 accel toward the 100-step
+        // ahead aim), so the LAST sub-step's rotation reads 3.3 * 0.1 = 0.33.
+        assert!((p.rot - 0.33).abs() < 1e-4, "rotation = velocity.X * 0.1 after the fade ({})", p.rot);
         // The next update: alpha 55 → 5 → 0 (the third sub-step hits 0 and
         // drops extraUpdates), so the fade completes and the sub-steps stop.
         step(&mut pool, &mut w);
@@ -30609,7 +31161,11 @@ mod magic_ai_tests {
             step_player(&mut pool, &mut w, &mut player);
         }
         assert_eq!(player.mana, 108, "the second interval pays 6 again");
-        // The failed check at the scaled cost: 5 mana cannot pay 6.
+        // Under the shipped ManaV2 (`DebugOptions.cs:85`) `CheckMana` NEVER
+        // refuses (`Player.cs:52610-52614`): 5 mana cannot pay the scaled 6,
+        // so the bar drains to 0, the slow cast arms, and the holder LIVES.
+        // The pre-V2 "failed check kills the holder" expectation no longer
+        // ships (S1-P-i19).
         let (mut w, mut pool, mut player, holder) = prism_rig();
         player.mana_cost = 0.5;
         player.mana = 5;
@@ -30619,10 +31175,11 @@ mod magic_ai_tests {
         assert!(pool.slots()[holder].active, "no interval tick yet");
         step_player(&mut pool, &mut w, &mut player);
         assert!(
-            !pool.slots()[holder].active,
-            "5 < (int)(12 × 0.5) — the scaled CheckMana fails, the holder dies"
+            pool.slots()[holder].active,
+            "ManaV2: the empty-bar interval pay keeps the holder alive"
         );
-        assert_eq!(player.mana, 5, "a failed check pays nothing");
+        assert_eq!(player.mana, 0, "the bar drains to 0 (the V2 arm)");
+        assert!(player.slow_magic_use, "DoRunOutOfManaEffect armed the slow cast");
     }
 }
 #[cfg(test)]
@@ -37514,22 +38071,27 @@ mod s1_p_i22_magic_guns_tomes_tests {
 
     /// The Electrosphere Missile kills when it reaches the tile target
     /// (`:54742-54746`: Distance(Center, (ai0,ai1)·16+8) <= 16) and its death
-    /// spawns the sphere 443 (`:73550`). The missile fades in over the first
-    /// 4 sub-steps (`:54729-54741`), so the witness places the target ~7
-    /// sub-steps out (the arrival lands after the fade).
+    /// spawns the sphere 443 (`:73550`). The row's `extraUpdates` is 0 (the C#
+    /// `:5126-5136` sets none), so ONE sub-step per update: the AI checks the
+    /// arrival BEFORE the move (`kill_step` integrates after the arm), so the
+    /// centre reads 176 + (n−1)·8 on update n — the arrival (dist ≤ 16 to
+    /// 232) lands on update 6 (centre 216), not 5 (centre 208, dist 24).
     #[test]
     fn s1_p_i22_the_electrosphere_missile_arrival_spawns_the_sphere() {
         let mut pool = ProjectilePool::new();
         // The target tile (14, 10) → world (232, 168). The missile spawns at
-        // x=169 (centre 176) flying +8/sub-step: the centre reaches 232 on
-        // sub-step 7 (176 + 7·8 = 232), after the 4-sub-step fade-in.
+        // x=169 (centre 176) flying +8/update: the centre reads 216 on update
+        // 6 (176 + 5·8 = 216 — five moves precede the sixth check), distance
+        // 16 → the arrival kill.
         let slot = pool
             .spawn_with_data_ai_owned(
                 ELECTROSPHERE_MISSILE, 0, 169.0, 161.0, 8.0, 0.0, 40, 2.0, 14.0, 10.0,
             )
             .expect("the 442 row spawns");
         let mut w = world();
-        step(&mut pool, &mut w);
+        for _ in 0..6 {
+            step(&mut pool, &mut w);
+        }
         assert!(!pool.slots()[slot].active, "the arrival kill");
         let sphere = pool
             .slots()
@@ -37694,7 +38256,13 @@ mod channel_machinery_tests {
         tick(&mut pool, &mut w, &mut p);
         assert!(pool.slots()[slot].active);
         assert!(p.channel, "the live tracked shot keeps the channel");
-        // The lifetime kill: the death hook runs the cancel.
+        // The lifetime kill: the death hook runs the cancel. The held missile's
+        // survival floor (`Projectile.cs:43336`, `timeLeft < 60 -> 60` while an
+        // aim is present) would lift `time_left = 1` back to 60, so the fixture
+        // releases the aim (`ai[0] = ai[1] = -1`) to let the lifetime tail kill;
+        // the channel stays OPEN so the death-cancel hook is what drops it.
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        pool.slots_mut()[slot].ai[1] = -1.0;
         pool.slots_mut()[slot].time_left = 1;
         tick(&mut pool, &mut w, &mut p);
         assert!(!pool.slots()[slot].active, "the lifetime tail kills");
@@ -37725,7 +38293,10 @@ mod channel_machinery_tests {
         let _ = pool.drain_channel_tracks();
         assert_eq!(p.channel_index_expected, tracked as u16);
         assert_ne!(tracked, other);
-        // Kill the untracked twin.
+        // Kill the untracked twin (release its aim so the survival floor
+        // `Projectile.cs:43336` does not lift `time_left` back to 60).
+        pool.slots_mut()[other].ai[0] = -1.0;
+        pool.slots_mut()[other].ai[1] = -1.0;
         pool.slots_mut()[other].time_left = 1;
         tick(&mut pool, &mut w, &mut p);
         assert!(!pool.slots()[other].active, "the twin died");
@@ -37757,10 +38328,14 @@ mod channel_machinery_tests {
             p.channel_index_expected, second as u16,
             "the last spawn of the expected type wins"
         );
+        pool.slots_mut()[first].ai[0] = -1.0;
+        pool.slots_mut()[first].ai[1] = -1.0;
         pool.slots_mut()[first].time_left = 1;
         tick(&mut pool, &mut w, &mut p);
         assert!(!pool.slots()[first].active);
         assert!(p.channel, "the superseded shot's death does not cancel");
+        pool.slots_mut()[second].ai[0] = -1.0;
+        pool.slots_mut()[second].ai[1] = -1.0;
         pool.slots_mut()[second].time_left = 1;
         tick(&mut pool, &mut w, &mut p);
         assert!(!pool.slots()[second].active);
@@ -37782,6 +38357,8 @@ mod channel_machinery_tests {
                 MAGIC_MISSILE, 1, 300.0, 300.0, 0.0, 0.0, 30, 7.5, 500.0, 400.0,
             )
             .unwrap();
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        pool.slots_mut()[slot].ai[1] = -1.0;
         pool.slots_mut()[slot].time_left = 1;
         let mut rng = tr_core::tile_light::FastRandom::new(7);
         let mut npcs: Vec<Npc> = Vec::new();
@@ -37906,7 +38483,11 @@ mod channel_machinery_tests {
             .unwrap();
         assert_eq!(slot, 0);
         assert_eq!(p.channel_index_expected, 0, "the struct default");
-        // NO apply_channel_tracks — the raw 0 default is the match.
+        // NO apply_channel_tracks — the raw 0 default is the match. Release the
+        // aim so the survival floor (`Projectile.cs:43336`) does not lift
+        // `time_left` back to 60.
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        pool.slots_mut()[slot].ai[1] = -1.0;
         pool.slots_mut()[slot].time_left = 1;
         tick(&mut pool, &mut w, &mut p);
         assert!(!pool.slots()[slot].active);
@@ -38524,5 +39105,336 @@ mod s1_p_i56_guardian_tests {
         assert_eq!(p.frame_counter, 3);
         assert!(rng.draws.is_empty(), "the arm draws NO Next: {:?}", rng.draws);
         assert_eq!(rng.floats, 0, "the arm draws NO NextFloat");
+    }
+}
+
+#[cfg(test)]
+mod s1_p_i25_dragon_tests {
+    //! S1-P-i25/i56 — the Stardust Dragon chain arm (`AI_121_StardustDragon`,
+    //! `Projectile.cs:42824-43080`, the dispatch `:34892-34895`). The i25
+    //! branch deferred the chain AI; the gate ported it so the i56 coverage
+    //! pin (`UNARMED_ROWED`) stays EMPTY. The witnesses mirror the C# on the
+    //! port's seams: the row slice, the owner-inactive kill, the head's
+    //! hover/chase steering, the segment's key-linked follow + the parent
+    //! writes, the tail-on-head double kill, the orphan relink scan, the
+    //! scale-growth truncation, and the ONE-gate-draw RNG census.
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at a fixed spot: centre (410, 321) — x 400 + WIDTH/2,
+    /// y 300 + height/2 (42). The summon flag live (the timeLeft pin).
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.stardust_dragon = true;
+        p.max_minions = 3;
+        p
+    }
+
+    /// The scripted stream (the guardian `CensusRng` shape): records every
+    /// draw; `next_range` returns max−1 so the dust GATE never fires (the
+    /// body is skipped either way — the draw itself is the census).
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    /// One full pool tick with the local player driving (the channel
+    /// `tick` shape) and the scripted stream.
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, rng: &mut CensusRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        let center = p.center();
+        pool.update(
+            w,
+            &mut npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// A chaseable NPC by CENTRE — the Zombie's 18x40 box (the guardian
+    /// fixture shape).
+    fn npc_centered(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (w, h) = n.size();
+        n.x = cx - w * 0.5;
+        n.y = cy - h * 0.5;
+        n
+    }
+
+    /// The row slice pins (`Projectile.cs:6729-6753`): the 24x24 box, the
+    /// style, the *=5 life, the LOCAL pair (7), alpha 255, and the slot
+    /// split — head/tail 0, bodies 0.5 (`:6735-6738`).
+    #[test]
+    fn s1_p_i25_the_dragon_rows_match_set_defaults() {
+        for kind in [
+            STARDUST_DRAGON_HEAD,
+            STARDUST_DRAGON_BODY_1,
+            STARDUST_DRAGON_BODY_2,
+            STARDUST_DRAGON_TAIL,
+        ] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (24.0, 24.0), ":6739-6740");
+            assert_eq!(d.ai_style, 121, ":6741");
+            assert_eq!(d.penetrate, -1, ":6742");
+            assert_eq!(d.time_left, 18000, ":6743 — the *= 5 off 3600 (:787)");
+            assert!(d.minion, ":6744");
+            assert!(d.ignore_water, ":6746");
+            assert!(!d.tile_collide, ":6747");
+            assert_eq!(d.alpha, 255, ":6748");
+            assert!(d.uses_local_immunity, ":6751");
+            assert_eq!(d.local_hit_cooldown, 7, ":6752");
+            let slots = match kind {
+                STARDUST_DRAGON_BODY_1 | STARDUST_DRAGON_BODY_2 => 0.5,
+                _ => 0.0,
+            };
+            assert_eq!(d.minion_slots, slots, ":6735-6738 — the body half-slots");
+        }
+    }
+
+    /// The owner-inactive kill (`:42831-42835`): no player → dead slot,
+    /// and the kill runs AHEAD of the chain block (no gate draw).
+    #[test]
+    fn s1_p_i25_the_inactive_owner_kills_the_dragon() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(STARDUST_DRAGON_HEAD, 0, 400.0, 300.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        assert!(!pool.slots()[slot].active, ":42833");
+        assert_eq!(pool.slots()[slot].time_left, 0, "the port's kill() convention");
+        assert!(rng.draws.is_empty(), "the kill precedes the gate draw");
+    }
+
+    /// The head's hover steering (`:42930-42965`): 300 px right of the
+    /// owner, no NPC — the 0.2 ladder rung, the X gate fires (300 > 20),
+    /// the Y gate rests (0 ≤ 10), the −0.1 lift, no clamp. The pin drops
+    /// timeLeft to 2 (the tail decrements to 1), the fade runs 255 → 213,
+    /// the box grows to the chain base 30 keeping the centre, and the ONE
+    /// gate draw lands (`:42850`).
+    #[test]
+    fn s1_p_i25_the_head_hovers_toward_the_owner() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Centre (710, 321): 300 px right of the owner's (410, 321).
+        let slot = pool
+            .spawn_with_data_ai_owned(STARDUST_DRAGON_HEAD, 0, 698.0, 309.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let d = &pool.slots()[slot];
+        assert!(d.active);
+        assert_eq!(d.vel, Vec2::new(-0.2, -0.1), "the 0.2 X accel toward the owner + the −0.1 lift");
+        assert_eq!(d.scale, 1.0, "localAI[0] = 0 → 1 + 0·0.01 (:42976)");
+        assert_eq!((d.w, d.h), (30.0, 30.0), "(int)(30·1) — the chain base (:42977)");
+        assert_eq!(d.alpha, 213, "255 − 42 (:42987)");
+        assert_eq!(d.time_left, 1, "the pin 2 minus the tail decrement (:42847)");
+        assert_eq!(d.sprite_direction, -1, "vel.x < 0 (:42969)");
+        // The centre kept through the resize, then the free integrate.
+        let cx = d.pos.x + d.w * 0.5;
+        let cy = d.pos.y + d.h * 0.5;
+        assert!((cx - 709.8).abs() < 0.01, "centre 710 − 0.2: {cx}");
+        assert!((cy - 320.9).abs() < 0.01, "centre 321 − 0.1: {cy}");
+        assert_eq!(rng.draws, vec![(0, 30)], "ONE Next(30) gate (:42850)");
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// The head's chase steering (`:42901-42928`): an NPC 100 px ahead —
+    /// the <300 ladder rung 0.8, the size gate passes, the 0.8·1.5 accel,
+    /// the forward dot skips the damp, no clamp. The scan keeps the LAST
+    /// eligible NPC (`:42890-42897` — no break).
+    #[test]
+    fn s1_p_i25_the_head_chases_the_scanned_target() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Head centre (710, 321); the NPC centre (810, 321) — 100 px ahead,
+        // 400 px from the owner (< 1000) and 100 from the head (< 700).
+        let slot = pool
+            .spawn_with_data_ai_owned(STARDUST_DRAGON_HEAD, 0, 698.0, 309.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs = vec![npc_centered(810.0, 321.0)];
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        let center = p.center();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            Some(center),
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let d = &pool.slots()[slot];
+        assert_eq!(d.vel, Vec2::new(1.2, 0.0), "0.8·1.5 along +X (:42918)");
+        assert!((d.rot - std::f32::consts::FRAC_PI_2).abs() < 1e-5, "atan2(0,1.2)+π/2 (:42967)");
+    }
+
+    /// The segment follow (`:43007-43076`): the key-linked body reads its
+    /// head parent, writes the parent's scale counter (child+1), keeps the
+    /// centre through the resize, stands off 16·scale along the ROTATION-
+    /// BLENDED gap, and fades unconditionally. The head keeps its backlink
+    /// (the 625 exemption, `:43018-43021`).
+    #[test]
+    fn s1_p_i25_the_body_follows_its_key_linked_head() {
+        let w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Head centre (412, 312), rotation 0.5; body centre (512, 312).
+        let head = pool
+            .spawn_with_data_ai_owned(STARDUST_DRAGON_HEAD, 0, 400.0, 300.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[head].rot = 0.5;
+        let key = pool.key_of(head);
+        let body = pool
+            .spawn_with_data_ai_owned(
+                STARDUST_DRAGON_BODY_1, 0, 500.0, 300.0, 0.0, 0.0, 40, 0.0,
+                f32::from_bits(key as u32), 0.0,
+            )
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        pool.dragon_step(body, &w, &[], Some(&mut p), &mut rng, 0);
+        // The parent writes: the counter is the CHILD's + 1; the head's
+        // backlink stays untouched (the 625 exemption).
+        assert_eq!(pool.slots()[head].local_ai[0], 1.0, ":43017");
+        assert_eq!(pool.slots()[head].local_ai[1], 0.0, ":43018-43021 — no head backlink");
+        let d = &pool.slots()[body];
+        assert_eq!(d.alpha, 213, "the UNCONDITIONAL −42 (:43056)");
+        assert_eq!(d.vel, Vec2::ZERO, ":43061");
+        assert_eq!(d.scale, 1.0, "the parent's clamped scale (:43014/:43069)");
+        assert_eq!((d.w, d.h), (30.0, 30.0), "(int)(30·1) (:43070)");
+        // The gap (−100, 0) rotated by wrap(0.5−0)·0.1 = 0.05:
+        // (−99.875, −4.9979); the stand-off is 16·1 along its heading.
+        let cx = d.pos.x + d.w * 0.5;
+        let cy = d.pos.y + d.h * 0.5;
+        assert!((cx - 427.98).abs() < 0.02, "412 + 16·cos(0.05): {cx}");
+        assert!((cy - 312.80).abs() < 0.02, "312 + 16·sin(0.05): {cy}");
+        assert_eq!(d.sprite_direction, -1, "the gap points −X (:43076)");
+        assert_eq!(rng.draws, vec![(0, 30)], "ONE gate draw per chain slot");
+    }
+
+    /// The tail-on-head contact (`:43022-43027`): the local owner's 628
+    /// resolving a 625 parent kills BOTH and returns (the parent writes
+    /// still ran — the counter precedes the kill).
+    #[test]
+    fn s1_p_i25_the_tail_on_head_contact_kills_both() {
+        let w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let head = pool
+            .spawn_with_data_ai_owned(STARDUST_DRAGON_HEAD, 0, 400.0, 300.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let key = pool.key_of(head);
+        let tail = pool
+            .spawn_with_data_ai_owned(
+                STARDUST_DRAGON_TAIL, 0, 500.0, 300.0, 0.0, 0.0, 40, 0.0,
+                f32::from_bits(key as u32), 0.0,
+            )
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        pool.dragon_step(tail, &w, &[], Some(&mut p), &mut rng, 0);
+        assert!(!pool.slots()[head].active, ":43024 — proj.Kill()");
+        assert!(!pool.slots()[tail].active, ":43025 — this.Kill()");
+        assert_eq!(pool.slots()[head].local_ai[0], 1.0, "the write precedes the kill");
+    }
+
+    /// The orphan relink (`:43029-43045`): a stale key (slot 5, never
+    /// spawned) fails the lookup; the scan finds the head whose backlink
+    /// names the key's INDEX (5), re-keys onto it and stamps the backlink
+    /// with the segment's slot. The early return skips the fade + clamp.
+    #[test]
+    fn s1_p_i25_the_orphan_segment_relinks_through_the_backlink_scan() {
+        let w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let head = pool
+            .spawn_with_data_ai_owned(STARDUST_DRAGON_HEAD, 0, 400.0, 300.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[head].local_ai[1] = 5.0;
+        // The stale key names slot 5 (generation 0 — never spawned).
+        let stale = crate::net::projectile_key(0, 5, 0);
+        let body = pool
+            .spawn_with_data_ai_owned(
+                STARDUST_DRAGON_BODY_1, 0, 500.0, 300.0, 0.0, 0.0, 40, 0.0,
+                f32::from_bits(stale as u32), 0.0,
+            )
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        pool.dragon_step(body, &w, &[], Some(&mut p), &mut rng, 0);
+        let new_key = pool.key_of(head);
+        assert_eq!(
+            pool.slots()[body].ai[0].to_bits(),
+            new_key as u32,
+            ":43040 — re-keyed onto the head"
+        );
+        assert_eq!(pool.slots()[head].local_ai[1], body as f32, ":43041 — the backlink");
+        assert!(pool.slots()[body].net_update, ":43042");
+        assert_eq!(pool.slots()[body].alpha, 255, "the return skips the fade");
+        assert_eq!(pool.slots()[body].pos, Vec2::new(500.0, 300.0), "the return skips the clamp");
+    }
+
+    /// The scale growth (`:42974-42978`): the counter (written by the
+    /// segments) clamps 0..50 and feeds 1 + n·0.01; the box truncates —
+    /// counter 10 → scale 1.1 → (int)(30·1.1) = 33, centre kept.
+    #[test]
+    fn s1_p_i25_the_head_scale_grows_with_the_chain_counter() {
+        let w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let head = pool
+            .spawn_with_data_ai_owned(STARDUST_DRAGON_HEAD, 0, 400.0, 300.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[head].local_ai[0] = 10.0;
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        pool.dragon_step(head, &w, &[], Some(&mut p), &mut rng, 0);
+        let d = &pool.slots()[head];
+        assert_eq!(d.scale, 1.1, "1 + 10·0.01 (:42976)");
+        assert_eq!((d.w, d.h), (33.0, 33.0), "(int)(30·1.1) = 33 (:42977)");
+        let cx = d.pos.x + d.w * 0.5;
+        let cy = d.pos.y + d.h * 0.5;
+        assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
+        assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
     }
 }

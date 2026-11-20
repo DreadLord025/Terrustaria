@@ -5029,7 +5029,11 @@ impl Player {
                 self.magic_crit += piece.magic_crit;
                 self.move_speed += piece.move_speed;
                 self.melee_speed_bonus += piece.melee_speed;
-                self.whip_range_multiplier += piece.whip_range;
+                // Gate-merge: the piece `whipRangeMultiplier` halves (Tiki Mask
+                // 1159 +0.1, Stardust 3382/3383 +0.15, `Player.cs:13854`/`:13879`)
+                // ride `grant_summon_caps` beside the minion-cap rows (the i27
+                // seam) — NOT here. i24's `armor_stats.whip_range` fold was the
+                // duplicate; the set half stays in the `set_stats` block below.
                 self.whip_use_time_multiplier *= piece.whip_use_time_mult;
             }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
@@ -5218,12 +5222,12 @@ impl Player {
             self.mana_cost += set.mana_cost;
             // S1-P-i27 — the Tiki set's `whipRangeMultiplier += 0.2f`
             // (`ArmorSetBonuses.cs:15`); the whip sweep now reads the field.
+            // Gate-merge: ONE application (i24 and i27 both added the line).
             self.whip_range_multiplier += set.whip_range;
             self.endurance += set.endurance;
             self.thorns += set.thorns;
             self.cactus_thorns |= set.cactus_thorns;
             self.turtle_thorns |= set.turtle_thorns;
-            self.whip_range_multiplier += set.whip_range;
             self.whip_use_time_multiplier *= set.whip_use_time_mult;
             if set.dash_type != 0 {
                 self.dash_type = set.dash_type;

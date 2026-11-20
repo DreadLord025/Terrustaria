@@ -425,18 +425,22 @@ mod tests {
     #[test]
     fn the_mana_spend_resets_the_regen_delay() {
         // `ApplyManaRegenerationDelay` (`Player.cs:19396-19416`) under the
-        // shipped ManaV2: a bar with mana left pins the delay at 4; only
-        // the EMPTY bar keeps the long curve (the emptier bar waits longer).
+        // shipped ManaV2 (`DebugOptions.cs:85`): the V2 cap pins EVERY delay
+        // above 4 down to 4 (`:19403-19410`), then mana > 0 pins 4 again
+        // (`:19411-19414`). The long curve (199 at an empty bar) is capped to
+        // 4 — the pre-V2 "emptier bar waits longer" ladder no longer ships.
         let mut st = RegenState::default();
         apply_mana_regen_delay(&mut st, 100, 100, false);
         let full = st.mana_regen_delay;
         apply_mana_regen_delay(&mut st, 100, 0, false);
         let empty = st.mana_regen_delay;
-        assert!(empty > full, "full {full} vs empty {empty}");
+        assert_eq!(full, 4.0, "the full bar pins 4");
+        assert_eq!(empty, 4.0, "the V2 cap pins the empty bar's 199 down to 4");
         // The regen-buff cap (20, `:19399-19402`) runs before the V2 cap —
-        // the empty bar's 199 lands at 20.
+        // both leave 4.
         apply_mana_regen_delay(&mut st, 100, 0, true);
         assert!(st.mana_regen_delay <= 20.0);
+        assert_eq!(st.mana_regen_delay, 4.0);
     }
 
     use super::*;
@@ -605,8 +609,8 @@ mod tests {
         assert_eq!(st.mana_regen_delay, 4.0);
         apply_mana_regen_delay(&mut st, 200, 100, false); // half
         assert_eq!(st.mana_regen_delay, 4.0); // (120+45)×0.7 = 115 → cap 4
-        apply_mana_regen_delay(&mut st, 200, 0, false); // empty keeps the curve
-        assert_eq!(st.mana_regen_delay, 199.0); // (240+45)×0.7 = 199.5 → 199
+        apply_mana_regen_delay(&mut st, 200, 0, false); // empty: the V2 cap pins 4
+        assert_eq!(st.mana_regen_delay, 4.0); // (240+45)×0.7 = 199 → V2 cap 4
                                                 // Standing still counts the delay down twice per tick.
         let mut in_ = inputs(400, 200);
         in_.standing_still = true;
@@ -703,15 +707,17 @@ mod tests {
 
     #[test]
     fn s1_p_i19_the_mana_v2_delay_caps_at_four_and_pins_while_mana_remains() {
-        // `ApplyManaRegenerationDelay` (`Player.cs:19403-19415`): cap 4,
-        // then mana > 0 pins 4; only the empty bar keeps the long curve.
+        // `ApplyManaRegenerationDelay` (`Player.cs:19403-19415`): the V2 cap
+        // pins EVERY delay above 4 down to 4, then mana > 0 pins 4 again.
+        // The empty bar's long curve (199) is capped to 4 — it does NOT
+        // survive the V2 cap (the pre-V2 ladder no longer ships).
         let mut st = RegenState::default();
         apply_mana_regen_delay(&mut st, 200, 1, false);
         assert_eq!(st.mana_regen_delay, 4.0);
         apply_mana_regen_delay(&mut st, 200, 0, false);
-        assert_eq!(st.mana_regen_delay, 199.0); // (1×240+45)×0.7 = 199.5 → 199
+        assert_eq!(st.mana_regen_delay, 4.0); // (1×240+45)×0.7 = 199 → V2 cap 4
         // The regen buff's 20 cap (`:19399-19402`) runs BEFORE the V2 cap —
-        // both leave 4 for a non-empty bar.
+        // both leave 4.
         apply_mana_regen_delay(&mut st, 200, 1, true);
         assert_eq!(st.mana_regen_delay, 4.0);
     }

@@ -34047,3 +34047,62 @@ different anchors); every seam checked by read/grep (`set_center`,
 `kill()`, `proj_frames`, the `Player` fields, the dispatch's arm-indent
 contract the coverage pin parses). The 18 witness tests in
 `s1_p_i56_guardian_tests` are WRITTEN, NOT RUN — **no compiler invoked**.
+
+
+## The wave-3 V2 gate decisions (S1-P-i19…i27/i56, 2026-11-20)
+
+The V2 verify gate merged the ten magic+summon branches onto
+`gate/v2-verify` and resolved the i25×i56 census collision plus the
+fixture cluster. The decisions that outlive the gate:
+
+**The Stardust Dragon chain AI landed (`dragon_step`, the 121 arm).**
+i25 rowed 625-628 (aiStyle 121) with the chain AI deferred; i56 emptied
+`UNARMED_ROWED` on a base without those rows — the coverage pin
+(`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) went red at the
+merge. The gate ported `AI_121_StardustDragon` (`Projectile.cs:42824-
+43080`) as a pool-side step (the segment half reads AND writes its
+parent slot through the `ProjectileKey` bit pattern in `ai[0]` — the
+port's key packs the slot index exactly, `net.rs:3123-3125` ≡
+`ProjectileKey.cs:18/27-31`, so the C#'s `projectileKey.Index` orphan
+relink match is byte-identical). ONE gate draw per chain slot per
+sub-step (`Main.rand.Next(30)`, `:42850`) stays on the
+`UpdateProjectiles` stream; the dust bodies are the documented skip.
+The `% 120` netUpdate cadence reads `Main.timeForVisualEffects` (a
+draw-frame clock the pool does not carry) — the port's `update_count`
+is the stand-in (net bookkeeping only, no gameplay state). The
+`whoAmI` backlink writes are the pool SLOT INDEX. The 3531 staff's
+chain-SPAWN choreography (`Player.cs:48498-48554`) stays deferred —
+the use-path follow-up; the rows book slots and fly.
+
+**The coverage pin keeps four honest census entries.** i25's other new
+rows — 755/946 (aiStyle 156, `AI_156_BatOfLight` `:51516-51911`),
+831/970 (164, `AI_164_StormTigerGem` `:46593-46699`), 864 (169,
+`AI_169_Smolstars` `:45718-45853`), 1119 (206, `AI_206_ForbiddenMinion`
+`:37501-37641`) — are i25's DOCUMENTED dispatch no-op deferrals (i25
+ANALYSIS: "the AI machines stay the documented dispatch no-ops
+(aiStyle 26/54/156/164/169/206)"; 26 and 54 were armed at the gate).
+`UNARMED_ROWED = [156, 164, 169, 206]` — the pin's original census
+design, NOT a four-machine port inside the fix round. The minion-AI
+follow-up empties the list again.
+
+**The weapon-use reach gate is a pre-existing deviation (unchanged by
+the gate).** `update_editing`'s hoisted circular reach gate
+(`editing.rs:750-779`, the `IsInTileInteractionRange` stand-in) returns
+for ANY held item out of reach — but the C# gates MINING/PLACEMENT only
+(`Player.cs:17635-17660`, `:23164`); the weapon use-start
+(`Player.cs:42733`) has NO tile-reach gate, and the placeable-sentry
+arm (`:48189-48212`) → `PickSentryLandingSpot` (`:49525-49543`) reads
+the RAW mouse point. Identical on main — the gate did not introduce it
+and did not fix it (the blast radius is the whole use path). The i25
+sentry fixtures moved their cursor inside the reach (−160 → −48, row
+294) instead; the canonical module fix (skip the gate's `return` for
+`held_weapon`) is the recorded follow-up.
+
+**The small-world reach clamp is C#-true.** On a 64-wide world
+`LimitPointToPlayerReachableArea` (`Player.cs:45447-45473`) degenerates:
+the play area's max (1024−640−1920 = −1536) sits BELOW its min (640)
+and `Utils.Clamp` tests MAX FIRST (`Utils.cs:223-235`) → the rect
+centre lands at x = −576 and the shared scale shrinks BOTH axes — the
+clamped cursor is (384, ≈4761.27), not the raw (488, 4760). The i25
+centring witnesses now route their expected cursor through the same
+helper (computed, not hardcoded); the module is untouched.

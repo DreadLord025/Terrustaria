@@ -1360,7 +1360,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         let scaled = if base_ticks > 0 { scaled.max(1) } else { scaled };
                         scaled as f32 * ONE_TICK_SECS
                     } else {
-                        base_swing * slow
+                        // `SetItemAnimation(baseFrames, multiplier)` (`:4453-4461`):
+                        // `(int)(baseFrames * multiplier)` floored at 1 — the slow
+                        // cast's x2.5 truncates to int ticks (17 * 2.5 = 42), it is
+                        // NOT a float-scaled swing (S1-P-i19).
+                        let base_ticks = ticks_of(base_swing);
+                        let scaled = (base_ticks as f32 * slow) as i32;
+                        let scaled = if base_ticks > 0 { scaled.max(1) } else { scaled };
+                        scaled as f32 * ONE_TICK_SECS
                     };
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
@@ -1531,7 +1538,13 @@ fn fire_non_ammo_shot(
     // the knockback takes `GetWeaponKnockback`'s `minionKB` bonus
     // (`:47151`/`:53348-53351`). The `ai0/ai1` seeds ride
     // `SpawnMinionOnCursor`'s item switch (`:49582-49598`).
+    // Gate-merge (i25 round 2): the Clay Pot (6161) has NO
+    // `SpawnMinionOnCursor` arm in the C# — it rides the generic tail
+    // (`:49437`) with the SCALED damage + the `originalDamage` override
+    // (`:49442-49444`), so it is excluded here even though its shoot
+    // (1118) is a minion row.
     if def.summon
+        && held.kind != 6161
         && crate::projectile::proj_data(proj).is_some_and(|d| d.minion)
     {
         // `SpawnMinionOnCursor`'s cursor point + reach clamp
@@ -1569,10 +1582,13 @@ fn fire_non_ammo_shot(
         };
         if held.kind == 3531 {
             // The Stardust Dragon Staff's chain spawn
-            // (`:48498-48554`) needs the aiStyle-121 dragon chain
-            // (excluded — the 625-628 rows book slots but the
-            // chain AI is a follow-up). No spawn this wave; the
-            // buff grant + free-up above already ran.
+            // (`:48498-48554`) stays deferred — the head/segment
+            // spawn choreography (the growing chain, the tail
+            // relink) is the use-path follow-up. The chain AI
+            // itself landed at the gate (`dragon_step`, the 121
+            // arm — the i56 coverage pin demanded it); the 625-628
+            // rows book slots and fly. The buff grant + free-up
+            // above already ran.
         } else if held.kind == 1157 {
             // `:48436-48440` — the Pygmy Staff: one
             // `Main.rand.Next(191, 195)` kind pick, ai1 = 60
@@ -8318,7 +8334,12 @@ mod tests {
     }
 
     /// An app with a staff held and the cursor 80 px right of the centre
-    /// (the +x aim, inside the reach).
+    /// (the +x aim, inside the reach). The button is freshly pressed: the
+    /// prior frame's `releaseUseItem` is armed (`mine_released = true`, the
+    /// C# `controlUseItem && releaseUseItem` use-start gate, `Player.cs:42733`)
+    /// so the non-`autoReuse` staves (Vilethorn/Demon Scythe/Magic Missile/
+    /// Flamelash/Nimbus) fire on this press — without it the press edge is
+    /// missing and the use-start refuses.
     fn staff_app(item: u16, name: &'static str) -> App {
         let mut app = shooter_app();
         app.inventory[app.selected] = crate::item::ItemSlot {
@@ -8329,6 +8350,8 @@ mod tests {
         };
         let (sw, sh) = app.screen_size();
         app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        app.mine_released = true;
+        app.mine_prev_down = false;
         app
     }
 
@@ -8706,15 +8729,16 @@ mod tests {
         assert!(p.slow_magic_use, "DoRunOutOfManaEffect armed the slow cast");
         // The slow cast stretches the swing ×2.5 (`ApplyItemAnimation`
         // `:4478-4483`): the Space Gun's 17-tick animation becomes 42
-        // ((int)(17 × 2.5) = 42).
+        // ((int)(17 × 2.5) = 42, `SetItemAnimation`'s int truncation).
         assert!(
             (app.swing_max - 42.0 / 60.0).abs() < 1e-4,
             "the 2.5× slow-cast animation, got {}",
             app.swing_max
         );
         // The regen delay re-armed from the empty bar: the long curve
-        // (1×240+45)×0.7 = 199.5 → 199 (`:19398`, mana 0 keeps it).
-        assert_eq!(p.regen.mana_regen_delay, 199.0);
+        // (1×240+45)×0.7 = 199 is capped to 4 by the shipped ManaV2 cap
+        // (`Player.cs:19403-19410`) — the empty bar does NOT keep 199.
+        assert_eq!(p.regen.mana_regen_delay, 4.0);
     }
 
     #[test]
@@ -9000,10 +9024,15 @@ mod tests {
         // The first needle: zero spread → the base aim, ai0 in 0..9.
         assert!((needles[0].vel - dir * 12.0).length() < 1e-3, "the first needle keeps the base aim");
         assert!(needles[0].ai[0] < 10.0, "the first needle's ai0 = Next(0, 10)");
-        // The spawn lead: the first needle sits `1.75 * count` px ahead.
+        // The spawn lead: the first needle sits `1.75 * count` px ahead along
+        // the SCALED aim (`num4`/`num5` = aim * shootSpeed, `Player.cs:47659`),
+        // NOT the unit direction — the lead is `shot * 1.75 * count`.
         let spawn = Vec2::new(cx, cy) + dir * 10.0;
         let lead = needles[0].pos - spawn;
-        assert!((lead - dir * (1.75 * needles.len() as f32)).length() < 1e-2, "the lead along the aim");
+        assert!(
+            (lead - dir * 12.0 * (1.75 * needles.len() as f32)).length() < 1e-2,
+            "the lead along the scaled aim"
+        );
     }
 
     /// `Player.cs:47647-47662` — the Razorpine's draw chain: the crit, the
@@ -10843,25 +10872,57 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
 #[cfg(test)]
 mod use_loop_tests {
     use crate::app::flow::front_flow_tests::flow_app;
+    use crate::world_sim::editing::limit_point_to_player_reachable_area;
     use glam::Vec2;
 
     fn app_with_staff(kind: u16) -> crate::app::App {
+        // A real staged world (the 8×8 `flow_app` default is too small — the
+        // reach gate and the `LimitPointToPlayerReachableArea` clamp misbehave
+        // on it): 64 wide, a solid floor at row 300, the player + camera near
+        // column 30. The cursor sits at the screen centre the tests pass
+        // (800×600 → mouse 400,300), so the use-path cursor == the camera and
+        // the reach clamp is the identity (the cursor is beside the player).
+        let mut w = tr_core::World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
         let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
         // Single-player: the local player's id is 0 (the recount's owner).
         app.local_id = 0;
-        app.player = Some(crate::player::Player::spawn(&app.world));
-        // The cursor at the screen centre — the reach gate
-        // (`Player.cs`'s 6-tile arm) needs the aim tile near the player.
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 33.0 * 16.0;
+        player.y = 297.0 * 16.0;
+        player.max_minions = 5;
+        player.max_turrets = 5;
+        app.player = Some(player);
+        app.camera = Vec2::new(30.0 * 16.0 + 8.0, 297.0 * 16.0 + 8.0);
+        // The cursor at the (800×600) screen centre the tests pass.
         app.mouse_pos = Vec2::new(400.0, 300.0);
-        let mut p = app.player.as_mut().unwrap();
-        p.max_minions = 5;
-        p.max_turrets = 5;
         app.inventory[app.selected] = crate::item::ItemSlot {
             kind,
             name: crate::registry::name(kind),
             count: 1,
             prefix: 0,
         };
+        // Mute the listener so the use-start sound draws nothing on
+        // `UpdatePlayers` (the RNG witnesses isolate the crit/kind-pick draws;
+        // `play_sound` returns None before the pitch draw at volume 0).
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 0.0,
+            ambient_volume: 0.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
         app
     }
 
@@ -11048,16 +11109,25 @@ mod use_loop_tests {
     /// S1-P-i25 round 2 — the cursor minion spawn subtracts the half-box:
     /// `NewProjectile` takes the CENTRE (`Projectile.cs:10876-10877`), the
     /// port's seam the top-left, so the Hornet's 24x26 box centres on the
-    /// cursor (the reach clamp is the identity here — the cursor sits at the
-    /// player centre).
+    /// CLAMPED cursor. The fixture's 64-wide world is narrower than the
+    /// reachable rect's 640-px insets, so `LimitPointToPlayerReachableArea`
+    /// (`Player.cs:45447-45473`) pulls the rect's max BELOW its min and the
+    /// max-first `Utils.Clamp` returns the max: rx = 1024−640−1920 = −1536,
+    /// mid.x = −1536+960 = −576, and the off.x = 488−(−576) = 1064 > 960
+    /// half-width scales to 960/1064 — the clamped cursor X is 384 (col 24),
+    /// Y stays 4760 (the tall world's clamp is the identity). The module is
+    /// C#-true on the small world; the witness applies the same clamp.
     #[test]
     fn i25_the_minion_cursor_spawn_is_centred_on_the_cursor() {
         let mut app = app_with_staff(2364); // Hornet Staff — shoot 373 (24x26)
         app.mine_down = true;
         app.mine_prev_down = false;
         crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
-        let (sw, sh) = app.screen_size();
-        let cursor = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+        // The cursor uses the SAME screen the use path was given (800×600).
+        let (sw, sh) = (800.0f32, 600.0f32);
+        let raw = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+        let (pcx, pcy) = app.player.as_ref().unwrap().center();
+        let cursor = limit_point_to_player_reachable_area(Vec2::new(pcx, pcy), raw, &app.world);
         let slot = app
             .projectiles
             .slots()
@@ -11069,16 +11139,20 @@ mod use_loop_tests {
         assert_eq!(p.pos.y, cursor.y - 13.0, "centre Y minus height/2");
     }
 
-    /// S1-P-i25 round 2 — the Optic twins centre on the cursor too (each 40x20,
-    /// `Projectile.cs`'s RETANIMINI/SPAZMAMINI slice).
+    /// S1-P-i25 round 2 — the Optic twins centre on the CLAMPED cursor too
+    /// (each 40x20, `Projectile.cs`'s RETANIMINI/SPAZMAMINI slice); the same
+    /// small-world reach clamp as the Hornet witness above.
     #[test]
     fn i25_the_optic_twins_centre_on_the_cursor() {
         let mut app = app_with_staff(2535); // Optic Staff — shoot 387
         app.mine_down = true;
         app.mine_prev_down = false;
         crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
-        let (sw, sh) = app.screen_size();
-        let cursor = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+        // The cursor uses the SAME screen the use path was given (800×600).
+        let (sw, sh) = (800.0f32, 600.0f32);
+        let raw = app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom;
+        let (pcx, pcy) = app.player.as_ref().unwrap().center();
+        let cursor = limit_point_to_player_reachable_area(Vec2::new(pcx, pcy), raw, &app.world);
         for s in app.projectiles.slots().iter().filter(|s| s.active && s.minion) {
             assert_eq!(s.pos.x, cursor.x - 20.0, "the twin's centre X minus 20");
             assert_eq!(s.pos.y, cursor.y - 10.0, "the twin's centre Y minus 10");
@@ -11204,10 +11278,15 @@ mod use_loop_tests {
         (app, cursor)
     }
 
-    /// One fresh press of the held sentry staff.
+    /// One fresh press of the held sentry staff. The press edge arms the
+    /// prior-frame release (`mine_released = true`, `mine_prev_down = false`)
+    /// — the sentry staves are NOT autoReuse, so the fire gate reads
+    /// `controlUseItem && releaseUseItem` (`Player.cs:42733`); the
+    /// `sentry_use_tests` fixture's latch, transplanted.
     fn sentry_fire(app: &mut crate::app::App) {
         app.mine_down = true;
         app.mine_prev_down = false;
+        app.mine_released = true;
         let (sw, sh) = app.screen_size();
         crate::world_sim::editing::update_editing(app, 1.0 / 60.0, Vec2::new(sw, sh));
     }
@@ -11219,7 +11298,7 @@ mod use_loop_tests {
     /// `originalDamage` (`:48208-48209`), and centres its 80x74 box.
     #[test]
     fn i25_the_frost_hydra_lands_above_the_floor_with_the_ai0_seed() {
-        let (mut app, cursor) = sentry_app(1572, 300, -160.0); // cursor row 287, floor 300
+        let (mut app, cursor) = sentry_app(1572, 300, -48.0); // cursor row 294 (inside the 6-tile reach), floor 300
         app.player.as_mut().unwrap().minion_damage = 2.0;
         sentry_fire(&mut app);
         let slot = app
@@ -11244,7 +11323,7 @@ mod use_loop_tests {
     /// (`:48200-48201`) and lands above the floor like the Hydra.
     #[test]
     fn i25_the_houndius_seeds_ai0_90() {
-        let (mut app, _cursor) = sentry_app(5119, 300, -160.0);
+        let (mut app, _cursor) = sentry_app(5119, 300, -48.0);
         sentry_fire(&mut app);
         let p = app
             .projectiles
@@ -11262,7 +11341,7 @@ mod use_loop_tests {
     /// floor below, `ai0 = 0`, `vy = 15`.
     #[test]
     fn i25_the_rainbow_crystal_skips_the_scan_to_the_cursor_row() {
-        let (mut app, cursor) = sentry_app(3571, 300, -160.0); // cursor row 287
+        let (mut app, cursor) = sentry_app(3571, 300, -48.0); // cursor row 294 (inside the reach)
         sentry_fire(&mut app);
         let p = app
             .projectiles
@@ -11284,7 +11363,7 @@ mod use_loop_tests {
     /// cursor's exact world Y with `vy = 0` (`:48203-48206`), `ai0 = 0`.
     #[test]
     fn i25_the_barnacle_lands_at_the_cursor_row_with_zero_velocity() {
-        let (mut app, cursor) = sentry_app(5463, 300, -160.0);
+        let (mut app, cursor) = sentry_app(5463, 300, -48.0);
         sentry_fire(&mut app);
         let p = app
             .projectiles
@@ -11303,7 +11382,7 @@ mod use_loop_tests {
     /// sentry dies. Two fresh Hydras at the cap of 1 leave only the newest.
     #[test]
     fn i25_the_sentry_spawn_runs_the_turret_cap_sweep() {
-        let (mut app, _cursor) = sentry_app(1572, 300, -160.0);
+        let (mut app, _cursor) = sentry_app(1572, 300, -48.0);
         app.player.as_mut().unwrap().max_turrets = 1;
         // An older Hydra with a lower timeLeft — the sweep's victim.
         let old = app
@@ -11498,41 +11577,44 @@ mod sentry_use_tests {
     }
 
     /// The RNG witness: the sentry use draws NO crit on the `UpdatePlayers`
-    /// stream — the C# `ItemCheck_Shoot` sentry arms make no crit draw
-    /// (`Projectile.Damage`'s crit block `Projectile.cs:12890-12901` gates on
-    /// the melee/ranged/magic flags no sentry row sets). The use-start sound's
-    /// pitch draw is shared by every staff, so the witness isolates the crit
-    /// by mirroring the stream: one `next_range(1, 101)` (the `crit_roll`
-    /// shape, `damage.rs:186-188`) on a clone of the SENTRY's post-use stream
-    /// must land on the CONTROL's, proving the ONLY difference is the single
-    /// crit draw the non-sentry summon rolls and the sentry skips.
+    /// stream — the C# `ItemCheck_Shoot` makes NO spawn-time crit draw for ANY
+    /// summon (`Projectile.Damage`'s crit block `Projectile.cs:12890-12901`
+    /// gates on the melee/ranged/magic flags no summon row sets; S1-P-i25
+    /// removed the port's throw-time roll for the whole `def.summon` family).
+    /// The listener is muted so the use-start sound draws nothing either: BOTH
+    /// the minion (Slime Staff) and the sentry (Frost Hydra) leave the stream
+    /// at its fresh state — the census is 1:1 (zero draws), not a one-draw
+    /// delta. The witness pins both streams to the untouched seed.
     #[test]
     fn the_sentry_use_draws_no_crit_on_the_updateplayers_stream() {
-        use tr_core::loot::DropRng;
-        // The control: the Slime Staff (a non-sentry summon) rolls one crit.
+        // The control: the Slime Staff (a non-sentry summon) — no crit draw.
         let mut control = sentry_app(1309);
+        *control.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(0x5E17);
         fire(&mut control);
         let control_after = control
             .rngs
             .stream(crate::app::RngKey::UpdatePlayers)
             .clone();
-        // The sentry: the Frost Hydra staff rolls zero crits.
+        // The sentry: the Frost Hydra staff — no crit draw.
         let mut sentry = sentry_app(1572);
+        *sentry.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(0x5E17);
         fire(&mut sentry);
         let sentry_after = sentry
             .rngs
             .stream(crate::app::RngKey::UpdatePlayers)
             .clone();
-        // The two streams differ (the control rolled the crit, the sentry did
-        // not) — the use-start sound draws the same on both.
-        assert_ne!(control_after, sentry_after, "the crit draw separates them");
-        // Advancing the sentry's stream by exactly one crit-shaped draw lands
-        // on the control's stream: the sentry skipped precisely that draw.
-        let mut mirrored = sentry_after.clone();
-        let _ = mirrored.next_range(1, 101);
+        // Both summons skip the crit draw (and the muted sound draws nothing):
+        // the two streams are identical AND both equal the untouched seed.
+        assert_eq!(control_after, sentry_after, "both summons skip the crit draw");
         assert_eq!(
-            mirrored, control_after,
-            "the only delta is the one crit draw the sentry skips"
+            sentry_after,
+            tr_core::UnifiedRandom::new(0x5E17),
+            "the sentry use draws nothing on UpdatePlayers (census 1:1)"
+        );
+        assert_eq!(
+            control_after,
+            tr_core::UnifiedRandom::new(0x5E17),
+            "the minion use draws nothing on UpdatePlayers either"
         );
     }
 

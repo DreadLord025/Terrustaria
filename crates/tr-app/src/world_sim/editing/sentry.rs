@@ -434,13 +434,17 @@ mod tests {
     /// `FindSentryRestingSpot` (`:53015-53059`): the Flameburst T1 (663)
     /// shifts X by the facing and lands `pushYUp = 41 - 14 = 27`; the T2/T3
     /// add 2/3; the traps reset to 20 + 2 - 14 = 8. `worldY = floorRow*16`.
+    /// The cursor first rides `LimitPointToPlayerReachableArea`: on this
+    /// 64-wide world the 1920-px view box clamps off the far edge (the C#
+    /// `Utils.Clamp` max-first), pulling the cursor from col 30 to col 24
+    /// (`point.X = 384`) — the spot keys off the CLAMPED column.
     #[test]
     fn the_resting_spot_offsets_match_the_csharp_switch() {
         let w = floor_world();
         let cursor = Vec2::new(480.0, 4000.0);
         let center = Vec2::new(480.0, 4000.0);
         let (wx, wy, push) = find_sentry_resting_spot(&w, 663, cursor, center, 1);
-        assert_eq!(wx, 30 * 16 + 8 + 1, "col centre + facing");
+        assert_eq!(wx, 24 * 16 + 8 + 1, "clamped col centre + facing");
         assert_eq!(wy, 300 * 16, "the first solid row");
         assert_eq!(push, 27, "41 - 14");
         let (_, _, p2) = find_sentry_resting_spot(&w, 665, cursor, center, 1);
@@ -448,11 +452,11 @@ mod tests {
         let (_, _, p3) = find_sentry_resting_spot(&w, 667, cursor, center, 1);
         assert_eq!(p3, 30, "667: +3");
         let (tx, _, tp) = find_sentry_resting_spot(&w, 691, cursor, center, -1);
-        assert_eq!(tx, 30 * 16 + 8 - 1, "the trap shifts X by the facing");
+        assert_eq!(tx, 24 * 16 + 8 - 1, "the trap shifts X by the facing");
         assert_eq!(tp, 8, "691: 20 + 2 - 14");
         // The Ballista (677) shifts X but keeps the base push.
         let (bx, _, bp) = find_sentry_resting_spot(&w, 677, cursor, center, 1);
-        assert_eq!(bx, 30 * 16 + 8 + 1);
+        assert_eq!(bx, 24 * 16 + 8 + 1);
         assert_eq!(bp, 27);
     }
 
