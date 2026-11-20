@@ -6,6 +6,10 @@
 //! light map and the per-frame caches.
 
 pub(crate) mod bg;
+// W4-g72 lane 3: the cavern background STYLE machine (pick + sheet tables +
+// cross-fade), UNWIRED — the sheet variety overflows the 8192 atlas bound and
+// the style rolls would shift the worldgen tail stream (module docs).
+pub(crate) mod bg_styles;
 pub(crate) mod debug;
 pub(crate) mod entities;
 pub(crate) mod foliage;
