@@ -52,6 +52,26 @@ use tr_core::World;
 
 use crate::projectile::Projectile;
 
+/// `Color.Lerp(a, b, t)` (XNA): the per-channel byte lerp
+/// `(byte)(a + (b - a) * t)` — the 384/386 CornflowerBlue→White blend.
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+    Color::new(l(a.r, b.r), l(a.g, b.g), l(a.b, b.b), l(a.a, b.a))
+}
+
+/// `Vector2.Normalize` with the zero guard the walking arms rely on (the C#
+/// `vector53.Normalize()` on a zero vector leaves it zero in XNA's
+/// `Normalize` — the port's `normalize_or_zero` matches).
+fn safe_normalize(v: Vec2) -> Vec2 {
+    v.normalize_or_zero()
+}
+
+/// `Utils.ToRotationVector2(angle)` (`Utils.cs:1665-1668`): `(cos, sin)` in
+/// double of the widened float, cast back to f32.
+fn rotation_vector(angle: f32) -> Vec2 {
+    Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
+}
+
 /// The dying slot's snapshot the death arms read (`base.position`,
 /// `base.width/height`, `base.velocity`, `base.scale`, `base.ai`). Taken at the
 /// death hook BEFORE any other hook mutates the corpse (the C# `Kill()` reads
@@ -72,6 +92,10 @@ pub(crate) struct DeathSnapshot {
     pub old_vel: Vec2,
     /// `base.ai[1]` — the 346/335/589 colour/type picks read it.
     pub ai1: f32,
+    /// `base.rotation` — the 598/971 walking-position arms read it.
+    pub rot: f32,
+    /// `base.direction` — the 384/386 speed argument reads it.
+    pub direction: i32,
 }
 
 impl DeathSnapshot {
@@ -87,6 +111,8 @@ impl DeathSnapshot {
             scale: p.scale,
             old_vel: p.vel,
             ai1: p.ai[1],
+            rot: p.rot,
+            direction: p.direction,
         }
     }
 }
@@ -356,6 +382,104 @@ fn death_bursts(
                 d.velocity -= s.old_vel / 3.0;
             }
         }
+        // `:73952-73962` — the 384/386: 20 dust-212, speed = direction×2, alpha
+        // 100 scale 1.4, color = Lerp(CornflowerBlue, White, 0.3), noGravity.
+        384 | 386 => {
+            let color = lerp_color(Color::new(100, 149, 237, 255), Color::WHITE, 0.3);
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 212, s.direction as f32 * 2.0, 0.0, 100, Color::default(), 1.4);
+                let d = dust.slot_mut(idx);
+                d.color = color;
+                d.no_gravity = true;
+            }
+        }
+        // `:73963-73979` — the 507/508: 20 dust-81 walking from pos+norm(oldVel)
+        // ×16 back by ×8 each; position = (dustPos+Center)/2, velocity +=
+        // oldVel×0.4 then ×0.5, noGravity. No explicit draw.
+        507 | 508 => {
+            let dir = safe_normalize(s.old_vel);
+            let mut walk = s.pos + dir * 16.0;
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, walk, s.w, s.h, 81, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.position = (d.position + center) / 2.0;
+                d.velocity += s.old_vel * 0.4;
+                d.velocity *= 0.5;
+                d.no_gravity = true;
+                walk -= dir * 8.0;
+            }
+        }
+        // `:73980-73995` — the 598: the 507 walk shape but the direction is
+        // (rotation−π/2).ToRotationVector2(), velocity += dir×2.
+        598 => {
+            let dir = rotation_vector(s.rot - std::f32::consts::FRAC_PI_2);
+            let mut walk = s.pos + dir * 16.0;
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, walk, s.w, s.h, 81, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.position = (d.position + center) / 2.0;
+                d.velocity += dir * 2.0;
+                d.velocity *= 0.5;
+                d.no_gravity = true;
+                walk -= dir * 8.0;
+            }
+        }
+        // `:73996-74011` — the 971: 6 dust-4 walking from pos+dir×8 back by ×4,
+        // color (10,10,10,150), position = (dustPos+Center)/2, velocity += dir
+        // then ×0.5, noGravity. dir = (rotation−π/2).ToRotationVector2().
+        971 => {
+            let dir = rotation_vector(s.rot - std::f32::consts::FRAC_PI_2);
+            let mut walk = s.pos + dir * 8.0;
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..6 {
+                let idx = dust.new_dust(rng, ctx, world, walk, s.w, s.h, 4, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.color = Color::new(10, 10, 10, 150);
+                d.position = (d.position + center) / 2.0;
+                d.velocity += dir;
+                d.velocity *= 0.5;
+                d.no_gravity = true;
+                walk -= dir * 4.0;
+            }
+        }
+        // `:74012-74019` — the 1/81/98/980/1073: 10 dust-7 (no post write).
+        1 | 81 | 98 | 980 | 1073 => plain_burst(s, dust, rng, ctx, world, 10, 7, 0.0, 0.0, 0, Color::default(), 1.0, None, false),
+        // `:74020-74028` — the 336/345: 6 dust-196, noGravity + scale = proj.scale.
+        336 | 345 => {
+            for _ in 0..6 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 196, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale = s.scale;
+            }
+        }
+        // `:74148-74158` — the 344: 8 dust-197 alpha 50, noGravity + vel×0.75
+        // (both axes) −= vel×0.025. No explicit draw.
+        344 => {
+            for _ in 0..8 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 197, 0.0, 0.0, 50, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 0.75;
+                d.velocity -= s.vel * 0.025;
+            }
+        }
+        // `:74171-74181` — the 349: 3 dust-76, noGravity + noLight + scale 0.7.
+        349 => {
+            for _ in 0..3 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 76, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+                d.scale = 0.7;
+            }
+        }
+        // `:74303-74310` — the 184/195: 5 dust-7 (no post write).
+        184 | 195 => plain_burst(s, dust, rng, ctx, world, 5, 7, 0.0, 0.0, 0, Color::default(), 1.0, None, false),
+        // `:74326-74333` — the 275/276: 5 dust-7 (no post write).
+        275 | 276 => plain_burst(s, dust, rng, ctx, world, 5, 7, 0.0, 0.0, 0, Color::default(), 1.0, None, false),
         _ => {}
     }
 }
@@ -588,6 +712,8 @@ mod tests {
             scale: 1.0,
             old_vel: Vec2::new(4.0, -2.0),
             ai1: 0.0,
+            rot: 0.0,
+            direction: 1,
         }
     }
 
@@ -939,5 +1065,56 @@ mod tests {
         // position = (Center + position)/2 = (105+100)/2, (105+100)/2.
         let mid = Vec2::new(102.5, 102.5);
         assert!(active.iter().all(|d| d.dust_type == 40 && d.no_gravity && d.scale == 1.25 && d.position == mid));
+    }
+
+    /// The 507/508/598/971 walking-position bursts spawn the C# count, all
+    /// noGravity, with the midpoint position write. The 384/386 carry the
+    /// CornflowerBlue→White lerp colour.
+    #[test]
+    fn w4_g65_the_walking_position_bursts() {
+        let w = world();
+        for (kind, count, dust_type) in [(507u16, 20, 81), (508, 20, 81), (598, 20, 81), (971, 6, 4)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity), "kind {kind} type/noGravity");
+        }
+        // 384: 20 dust-212, the lerp colour, noGravity.
+        let mut dust = DustPool::new();
+        drain(&[snap(384)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        let expect = lerp_color(Color::new(100, 149, 237, 255), Color::WHITE, 0.3);
+        assert!(active.iter().all(|d| d.dust_type == 212 && d.no_gravity && d.color == expect));
+    }
+
+    /// The 336/345 scale=proj.scale burst, the 344 vel×0.75−=vel×0.025 burst,
+    /// the 349 noLight/scale 0.7 burst, and the 1/184/275 plain dust-7 bursts.
+    #[test]
+    fn w4_g65_the_336_344_349_and_plain7_bursts() {
+        let w = world();
+        let mut s = snap(336);
+        s.scale = 1.5;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 6);
+        assert!(active.iter().all(|d| d.dust_type == 196 && d.no_gravity && d.scale == 1.5));
+        let mut dust = DustPool::new();
+        drain(&[snap(344)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 8);
+        let mut dust = DustPool::new();
+        drain(&[snap(349)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 3);
+        assert!(active.iter().all(|d| d.dust_type == 76 && d.no_gravity && d.no_light && d.scale == 0.7));
+        for (kind, count) in [(1u16, 10), (81, 10), (184, 5), (195, 5), (275, 5), (276, 5)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == 7));
+        }
     }
 }

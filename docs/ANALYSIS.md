@@ -39361,3 +39361,18 @@ dust-254), 520 (10× dust-252 scale 0.75, noGravity −= oldVel/3). The
 SelectRandom pick rides BEFORE the spawn; the crystal-spark gate + branch
 range draws ride AFTER. Witnesses: the SelectRandom choice-set membership, the
 crystal-spark type++ branch, the 811/819/572 bursts — WRITTEN NOT RUN.
+
+### Batch 6 (10 kinds, the walking-position + plain `:73952-74333` bursts)
+
+384/386 (20× dust-212 speed direction×2 alpha 100 scale 1.4,
+Lerp(CornflowerBlue,White,0.3) colour, noGravity), 507/508 (20× dust-81 walking
+from pos+norm(oldVel)×16 back ×8, position=(dustPos+Center)/2, vel += oldVel×0.4
+then ×0.5, noGravity), 598 (the walk, dir=(rot−π/2), vel += dir×2), 971 (6×
+dust-4 walking ×8/×4, colour (10,10,10,150), vel += dir then ×0.5), 1/81/98/
+980/1073 (10× dust-7), 336/345 (6× dust-196 noGravity scale=proj.scale), 344
+(8× dust-197 alpha 50 noGravity vel×0.75 −= vel×0.025), 349 (3× dust-76
+noGravity/noLight/scale 0.7), 184/195 (5× dust-7), 275/276 (5× dust-7). All
+dust-only, no explicit draw. The `DeathSnapshot` gains `rot`/`direction`; the
+module gains `lerp_color`/`safe_normalize`/`rotation_vector` helpers. Witnesses:
+the walking-position counts/noGravity, the 384 lerp colour, the 336/344/349 +
+plain-7 bursts — WRITTEN NOT RUN.
