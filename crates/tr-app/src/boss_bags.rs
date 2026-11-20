@@ -550,6 +550,35 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 _ => quick_spawn(rng, out, 5477, 1), // Flower Whip
             }
         }
+        // Golem (`Player.cs:7486-7527`).
+        3329 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            quick_spawn(rng, out, 3337, 1); // Shiny Stone (expert-exclusive)
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2110, 1); // Golem Mask
+            }
+            if rng.next_max(6) == 0 {
+                quick_spawn(rng, out, 6158, 1); // Mobius Strip
+            }
+            if rng.next_max(3) == 0 {
+                quick_spawn(rng, out, 1294, 1); // Picksaw
+            }
+            // `:7501-7525` — the weapon pick: Next(7); option 0 carries
+            // the Stynger 1258 + the Stynger Bolts 1261 Next(60, 181).
+            match rng.next_max(7) {
+                0 => {
+                    quick_spawn(rng, out, 1258, 1); // Stynger
+                    quick_spawn(rng, out, 1261, range(rng, 60, 181));
+                }
+                1 => quick_spawn(rng, out, 1122, 1), // Possessed Hatchet
+                2 => quick_spawn(rng, out, 899, 1),  // Sun Stone
+                3 => quick_spawn(rng, out, 1248, 1), // Eye of the Golem
+                4 => quick_spawn(rng, out, 1295, 1), // Heat Ray
+                5 => quick_spawn(rng, out, 1296, 1), // Staff of Earth
+                _ => quick_spawn(rng, out, 1297, 1), // Golem Fist
+            }
+            // `:7526` — the Beetle Husks Next(18, 24).
+            quick_spawn(rng, out, 2218, range(rng, 18, 24));        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1401,6 +1430,78 @@ mod tests {
                 _ => spawn_replay(&mut r, &mut want, 5477, 1),
             }
             money_replay_on(&mut r, 262, 1.0, &mut want);
+            assert_eq!(got, want, "seed {seed}");
+            assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_golem_bag_zero_script_grants_the_whole_arm() {
+        // The dev set leads, then the Shiny Stone (always, BEFORE the
+        // mask), the mask 1/7, the Mobius Strip 1/6, the Picksaw 1/3,
+        // the weapon pick 0 → Stynger + Bolts 60, the Husks 18 — coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3329, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..11],
+            [666, 667, 668, 665, 3287, 3337, 2110, 6158, 1294, 1258, 1261],
+            "{its:?}"
+        );
+        assert_eq!(out[10].stack, 60, "Bolts Next(60,181) minimum");
+        assert_eq!(its[11], 2218, "the husks close the arm");
+        assert_eq!(out[11].stack, 18, "Husks Next(18,24) minimum");
+        assert!(its[12..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_golem_bag_weapon_picks_one_through_six() {
+        for (pick, weapon) in [
+            (1i32, 1122u16), (2, 899), (3, 1248), (4, 1295), (5, 1296), (6, 1297),
+        ] {
+            // dev miss, mask miss, strip miss, picksaw miss, pick k.
+            let mut rng = ScriptRng::new(&[1, 6, 5, 2, pick]);
+            let mut out = Vec::new();
+            open_boss_bag(3329, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[..3], [3337, weapon, 2218], "pick {pick}: {its:?}");
+        }
+    }
+
+    #[test]
+    fn w4_f35_golem_bag_replays_the_csharp_draw_order() {
+        for seed in [43i32, 245245] {
+            let mut got_rng = UnifiedRandom::new(seed);
+            let mut got = Vec::new();
+            open_boss_bag(3329, &BagEnv::default(), &mut got_rng, &mut got);
+            let mut r = UnifiedRandom::new(seed);
+            let mut want: Vec<BagGrant> = Vec::new();
+            dev_armor_replay(&mut r, &mut want, false);
+            spawn_replay(&mut r, &mut want, 3337, 1);
+            if r.next_max(7) == 0 {
+                spawn_replay(&mut r, &mut want, 2110, 1);
+            }
+            if r.next_max(6) == 0 {
+                spawn_replay(&mut r, &mut want, 6158, 1);
+            }
+            if r.next_max(3) == 0 {
+                spawn_replay(&mut r, &mut want, 1294, 1);
+            }
+            match r.next_max(7) {
+                0 => {
+                    spawn_replay(&mut r, &mut want, 1258, 1);
+                    spawn_replay(&mut r, &mut want, 1261, r.next_range(60, 181));
+                }
+                1 => spawn_replay(&mut r, &mut want, 1122, 1),
+                2 => spawn_replay(&mut r, &mut want, 899, 1),
+                3 => spawn_replay(&mut r, &mut want, 1248, 1),
+                4 => spawn_replay(&mut r, &mut want, 1295, 1),
+                5 => spawn_replay(&mut r, &mut want, 1296, 1),
+                _ => spawn_replay(&mut r, &mut want, 1297, 1),
+            }
+            spawn_replay(&mut r, &mut want, 2218, r.next_range(18, 24));
+            money_replay_on(&mut r, 245, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
         }
