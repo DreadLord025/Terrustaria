@@ -39244,3 +39244,65 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Item.cs sound sites lane (W4-g25, 2026-11-21, code-only mode) — CLAIM + CENSUS CLOSE
+
+**Census verdict: `Item.cs` has ZERO `PlaySound(` call sites.** The lane
+seed ("use/pickup sounds per item") maps to the item's *sound data
+provisions*, not play calls: `Select-String 'PlaySound\('` over
+`decompiled/Terraria/Item.cs` answers 0; the 736 `Sound`-token lines are
+the `UseSound`/`useSoundPitch` field declarations (`:199`/`:201`), **702
+`this.UseSound = …` writes** (691 `SoundID.X` + 11 `null`), **2
+`useSoundPitch` writes** (`:18499` −0.5f the Paladin's Hammer 1513,
+`:48946` 0f the `ResetStats` stock), and the `DefaultToFood` gulp
+arguments (85 calls, 27 `useGulpSound: true`). The play call itself is
+`Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`,
+`PlaySound(sItem.UseSound, base.Center, sItem.useSoundPitch)`) — a
+Player.cs site, landed by **S1-E-21 wave A** (`item.rs::initial_use_sound`
++ `audio.rs::play_use_sound` + the generated `itemdata.rs`/`soundid.rs`).
+The pickup cue is `Player.GetItem`'s `PlaySound(7)` (`Player.cs:39491`
+et al., landed as `audio.rs::play_pickup_sound`) — also NOT an Item.cs
+site. So this lane closes as a **census-close + witness audit** (the
+W4-g20 precedent), not a re-port.
+
+**Independent audit (this lane, 2026-11-21): ZERO drift.** A line-order
+simulation of every `SetDefaults1-5`/`SetFoodDefaults` case body — direct
+writes, `DefaultTo*` helper provisions (helpers with no `UseSound` write
+are TRANSPARENT: `SetShopValues`/`SetWeaponValues`/`DefaultToPlaceableTile`
+etc. keep the prior value), the four range-if blocks (`:21253` hair dyes
+1977-1986, `:23081` rods 2421-2422, `:23112` Rockfish 2320, `:40351`
+Flaming Mace 5012), the post-helper overrides (`:4057` Whoopie Cushion
+Item16 over the voice-accessory null, `:43427` Axe Fairy Item25 over the
+vanity-pet Item2, `:47560` Arc Surge Item15 over the staff Item43,
+`:48372` Rock Candy Item2 over the gulp Item3), the food gulp split
+(`DefaultToFood` `:48543-48558`: gulp → Item3 + useStyle 9, else Item2 +
+useStyle 2; the marshmallows 967/969 re-style to 9 AFTER the non-gulp
+helper, `:48235`/`:48304`), the `IsFood` dispatch (`Item.cs:48689` —
+Eggnog 1912 rides `SetFoodDefaults`' `DefaultToHealingPotion` Item3
+`:48387`/`:48572`, NOT the `SetDefaults2` case `:20741`), and the
+`Deprecated` → `TurnToAir` epilogue (`:48922-48925`, `ItemID.cs:1316` —
+2772/2773/2775/4722/6143's case writes are zeroed to air) — compared
+against all 6 196 generated rows: **858 ids carry sound events, every
+effective value matches the table**. The 978 `Some` rows = the direct
+SoundID writes minus deprecated/overridden, plus helper provisions plus
+food. The generator round-trip is green: `python tools/GenItemData/gen.py
+--check` → `check ok (6196 rows, 5977098 bytes)`;
+`python tools/GenItemData/test_gen.py` → `ALL GEN TESTS PASSED` (both RUN
+— the python generator checks are not the banned cargo/rustc/tests; the
+Rust witnesses below are WRITTEN NOT RUN).
+
+**RNG slot: none claimed.** The `SetDefaults` pass is pure data
+provisioning — it draws from NO stream (Item.cs's 14 `Main.rand` sites
+are the prefix roll `:528`/`:1139` and the `NewItem` velocity jitter
+`:49744-49745`, never sound). The play side keeps wave A's slots
+unchanged: the case-2 volume/pitch draws ride the caller's
+`UpdatePlayers` stream AFTER the attenuation gate, the `GetRandomPitch`
+NextFloat rides the audio-only `sound_style_random` (`audio.rs:1064`).
+No new stream, no re-pin.
+
+**Witness batches (10 sites each, WRITTEN NOT RUN)** land in
+`item.rs::tests` as `w4_g25_*`, pinning the provisions wave A's own tests
+do not cover: batch 1 the food/range-if/pitch family, batch 2 the
+null/trackable/deprecated/override family. The landed seams
+(`initial_use_sound`, `play_use_sound`, `ITEM_CORRECTIONS`) are KEPT
+untouched.
