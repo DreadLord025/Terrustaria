@@ -2327,25 +2327,25 @@ mod liquid_delwater {
         // `Liquid.cs:1577-1579`: the retirement swap copies x/y/kill only —
         // the slot's `delay` field is left untouched, so the moved entry
         // INHERITS the retired cell's throttle counter (the C# never copies
-        // `Main.liquid[numLiquid].delay`). The front cell is a sub-2 lava
-        // film (DelWater's `:1478` branch dries it, no keep-alive) with
-        // delay 4; the tail is a full lava cell with delay 0 that the sweep
-        // also catches. After the swap the tail sits in the front slot
-        // carrying delay 4, not its own 0.
-        let mut w = floor_world(15, 120, 8);
+        // `Main.liquid[numLiquid].delay`). Slot 0 is a sub-2 lava film (the
+        // `:1478` branch dries it, no keep-alive) with delay 4 and kill 8;
+        // slot 1 is a draining water column (open below → keep-alive) with
+        // delay 0 and kill 0. The reverse sweep retires slot 0 and swaps the
+        // surviving slot 1 into it — carrying slot 0's delay 4, not its own 0.
+        let mut w = floor_world(15, 120, 30);
         put_as(&mut w, 6, 7, 1, 1);
-        put_as(&mut w, 8, 7, 255, 1);
+        put_as(&mut w, 8, 4, 100, 0);
         let mut sys = LiquidSystem::new(&w);
         sys.add_water(&w, 6, 7);
-        sys.add_water(&w, 8, 7);
+        sys.add_water(&w, 8, 4);
         sys.active[0].delay = 4;
         sys.active[0].kill = KILL_PASSES;
         sys.active[1].delay = 0;
-        sys.active[1].kill = KILL_PASSES;
+        sys.active[1].kill = 0;
         sys.end_pass(&mut w);
-        assert_eq!(sys.active_len(), 1, "the film retired, the full cell moved");
-        assert_eq!(sys.active[0].x, 8, "the tail's coordinates");
-        assert_eq!(sys.active[0].delay, 4, "the tail inherited the slot's delay");
+        assert_eq!(sys.active_len(), 1, "the film retired, the column survived");
+        assert_eq!(sys.active[0].x, 8, "the survivor's coordinates");
+        assert_eq!(sys.active[0].delay, 4, "the survivor inherited the slot's delay");
         assert_eq!(w.tiles[w.index(6, 7)].liquid, 0, "the film dried (`:1481`)");
     }
 
@@ -2389,6 +2389,7 @@ mod liquid_delwater {
         put_tile(&mut w, 7, 7, 2);
         put_tile(&mut w, 9, 7, 2);
         put_tile(&mut w, 8, 6, 109);
+        put_tile(&mut w, 8, 8, 60); // mud in the ring -> 59
         let mut sys = LiquidSystem::new(&w);
         sys.add_water(&w, 8, 7);
         sys.active[0].kill = KILL_PASSES;
@@ -2396,7 +2397,7 @@ mod liquid_delwater {
         assert_eq!(w.tiles[w.index(7, 7)].kind, 0, "grass -> dirt");
         assert_eq!(w.tiles[w.index(9, 7)].kind, 0, "grass -> dirt");
         assert_eq!(w.tiles[w.index(8, 6)].kind, 0, "jungle grass -> dirt");
-        assert_eq!(w.tiles[w.index(8, 8)].kind, 59, "the floor mud-grass -> 59");
+        assert_eq!(w.tiles[w.index(8, 8)].kind, 59, "the ring mud -> 59");
     }
 
     #[test]
@@ -2416,9 +2417,12 @@ mod liquid_delwater {
     #[test]
     fn the_lily_pad_tail_sinks_a_dry_pad_into_the_cell_below() {
         // `Liquid.cs:1584-1597`: a retired 518 cell with an empty below and
-        // no liquid above runs CheckLilyPad — the dry pad sinks one row.
+        // no liquid above runs CheckLilyPad — the dry pad sinks one row. The
+        // ground walk must find a grass family (dirt-grass 2 here → frame row
+        // 0); the empty cell below the pad takes it.
         let mut w = floor_world(17, 120, 8);
         put_tile(&mut w, 8, 6, 518);
+        put_tile(&mut w, 8, 8, 2); // dirt-grass ground for the frame walk
         let mut sys = LiquidSystem::new(&w);
         // The pad holds no liquid; add_water refuses it, so seed the entry
         // directly (the C# reaches DelWater through a kill sweep on a cell
@@ -2435,34 +2439,41 @@ mod liquid_delwater {
     fn the_buffer_promotion_clears_checking_and_resets_delay() {
         // `Liquid.cs:1125-1130` + `LiquidBuffer.cs:11-20`: a buffered cell is
         // marked checkingLiquid; the cycle-end promotion clears it, AddWater
-        // re-queues with delay 0, DelBuffer swap-removes the slot.
-        let mut w = floor_world(15, 120, 8);
-        put_as(&mut w, 6, 7, 1, 0);
-        put_as(&mut w, 8, 7, 100, 0);
+        // re-queues with delay 0, DelBuffer swap-removes the slot. The
+        // promotion count is the live active count (`num8 = numLiquid`), so a
+        // survivor must remain after the sweep for the buffer to drain.
+        let mut w = floor_world(15, 120, 30);
+        put_as(&mut w, 5, 4, 100, 0); // survivor: open below, keep-alive
+        put_as(&mut w, 6, 7, 1, 0); // film: retires in the sweep
+        put_as(&mut w, 8, 7, 100, 0); // overflow: buffered
         let mut sys = LiquidSystem::new(&w);
-        sys.cur_max_liquid = 2;
+        sys.cur_max_liquid = 3; // active cap = 2
+        sys.add_water(&w, 5, 4);
         sys.add_water(&w, 6, 7);
         sys.add_water(&w, 8, 7);
-        assert_eq!(sys.buffered_len(), 1, "the second cell overflowed");
+        assert_eq!(sys.active_len(), 2, "two cells fit the active cap");
+        assert_eq!(sys.buffered_len(), 1, "the third cell overflowed");
         assert!(sys.is_checking(8, 7), "the buffered cell is checking");
-        sys.active[0].kill = KILL_PASSES;
+        sys.active[1].kill = KILL_PASSES; // the film retires
         sys.end_pass(&mut w);
         assert_eq!(sys.buffered_len(), 0, "the buffer drained");
-        assert_eq!(sys.active_len(), 1, "the promoted cell took the slot");
-        assert_eq!(sys.active[0].x, 8, "the promoted cell's coordinates");
-        assert_eq!(sys.active[0].delay, 0, "AddWater re-queued with delay 0");
+        assert_eq!(sys.active_len(), 2, "survivor + promoted cell");
         assert!(sys.is_checking(8, 7), "the promoted cell is checking again");
+        let promoted = sys.active.iter().find(|e| e.x == 8).expect("promoted");
+        assert_eq!(promoted.delay, 0, "AddWater re-queued with delay 0");
     }
 
     #[test]
     fn the_stuck_window_force_clears_after_10000_cycles() {
         // `Liquid.cs:1131-1149`: an active count pinned within ±50 of
-        // stuckAmount for 10 000 cycle-ends force-clears the list. A full
-        // cell on the solid floor retires through DelWater (no keep-alive).
-        let mut w = floor_world(15, 120, 8);
-        put_as(&mut w, 7, 7, 255, 0);
+        // stuckAmount for 10 000 cycle-ends force-clears the list. The cell
+        // is a draining water column (open below) with kill 0, so the normal
+        // sweep leaves it; only the force-clear (stuck up, keep-alive
+        // disabled) drains it.
+        let mut w = floor_world(15, 120, 30);
+        put_as(&mut w, 7, 4, 100, 0);
         let mut sys = LiquidSystem::new(&w);
-        sys.add_water(&w, 7, 7);
+        sys.add_water(&w, 7, 4);
         sys.stuck_amount = 1;
         sys.stuck_count = 9_999;
         sys.end_pass(&mut w);
