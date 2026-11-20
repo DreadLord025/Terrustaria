@@ -39292,5 +39292,12 @@ contract: 1225 draws `Next(6)` (`Gore.cs:1382`), the SpecialAI==3 types
 draw two `NextFloat` + `Next(8)` + `Next(8)` (`Gore.cs:1391-1402`); the
 witnesses replay them after the kicks. The wave-B drill witness was
 corrected for the 1007/1008 SpecialAI four.
-Remainder: sites 41-165 (waves E+), the UpdateProjectiles slot dispatch
+Wave E (sites 41-51): `projectile_gore_e.rs`, 5 witnesses written not run.
+The 1085 mirror's four consecutive lines are ONE keep-one group (11 sites
+in the wave — a C# statement block is never split across waves). The
+ogre-stomp tile gore is the SAME row as the ground explosion (keep-one
+onto `ground_explosion_tile_gore`). `Utils.RandomVector2` draws TWO
+`NextDouble` (`Utils.cs:2431-2434`); the Betsy type roll evaluates AFTER
+the position argument (C# left-to-right).
+Remainder: sites 52-165 (waves F+), the UpdateProjectiles slot dispatch
 (the wiring wave), and the `Kill_Bombs_DoUsualKillCode` family.
