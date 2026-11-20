@@ -409,7 +409,6 @@ mod tests {
     use crate::npc::NpcKind;
     use crate::player::Player;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
-    use tr_core::TILE_PX;
 
     /// An open-air world with ONE active anchor tile at (100, 100).
     fn anchor_world() -> World {

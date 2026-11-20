@@ -33865,7 +33865,9 @@ mod w4_d23_style12_census_tests {
     /// velocity stays zero. The state-0 attack timer ticks +1
     /// (`:22381`), the spriteDirection pins -(int)ai[0] (`:22302`),
     /// localAI[3] copies the head's ai[3] RAW (`:22315`), and the dock
-    /// aim rotation is atan2(0, 0) + 1.57 (`:22496-22500`). Draw-free.
+    /// aim rotation reads the hand's CENTRE (`:22496`): num201 =
+    /// headY + 230 - centreY = -26 at the dock -> atan2(-26, 0) + 1.57.
+    /// Draw-free.
     #[test]
     fn w4_d23_the_docked_hand_rides_the_12_axis_draw_free() {
         let mut w = World::new("t".into(), 300, 300);
@@ -33896,7 +33898,7 @@ mod w4_d23_style12_census_tests {
         assert_eq!(hand.ai[2], 0.0, "still docked");
         assert_eq!(hand.vx, 0.0, "the strict dock compares hold");
         assert_eq!(hand.vy, 0.0);
-        assert!((hand.rotation - 1.57).abs() < 1e-4, "atan2(0,0)+1.57 (:22500)");
+        assert!((hand.rotation - ((-26f32).atan2(0f32) + 1.57)).abs() < 1e-4, "the centre-read dock aim (:22496-22500)");
         assert_eq!(rng, UnifiedRandom::new(13), "the dock tick draws nothing");
     }
 
@@ -34051,9 +34053,11 @@ mod w4_d23_style14_census_tests {
     }
 
     /// The reset-roll census (`NPC.cs:23453-23456`): on a non-shot tick
-    /// past ai[0] 300 with the firing-distance flag holding, the arm
-    /// draws ONE `Next(300)`; the `&&` short-circuit means a
-    /// below-threshold tick draws NOTHING. Both pins ride the axis.
+    /// with the firing-distance flag holding, the arm draws ONE
+    /// `Next(300)` — the `&&` short-circuits on flag24 ONLY, so the roll
+    /// fires even below the 300 threshold (the module header's census);
+    /// a far player fails flag24 and the draw is skipped. Both pins
+    /// ride the axis.
     #[test]
     fn w4_d23_the_demon_reset_roll_census() {
         let w = World::new("t".into(), 200, 120);
@@ -34077,13 +34081,33 @@ mod w4_d23_style14_census_tests {
         } else {
             assert_eq!(vd.ai[0], 300.0, "a non-zero roll keeps the counter");
         }
-        // Below the threshold the short-circuit skips the draw.
+        // Below the threshold the roll STILL fires while flag24 holds
+        // (the C# evaluates the whole right operand — the short-circuit
+        // is on flag24, not on the ai[0] compare).
         let mut vd2 = Npc::new(NpcKind::VoodooDemon, 1000.0, 1000.0, 1, 0.0);
         vd2.hp = vd2.max_hp;
-        vd2.ai[0] = 99.0; // -> 100, < 300: no draw
+        vd2.ai[0] = 99.0; // -> 100, < 300: the roll draws, never resets
         let mut rng2 = UnifiedRandom::new(8);
+        let mut mirror2 = UnifiedRandom::new(8);
+        let _ = mirror2.next_max(300);
         vd2.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng2);
         assert_eq!(vd2.ai[0], 100.0);
-        assert_eq!(rng2, UnifiedRandom::new(8), "the short-circuit draws nothing");
+        assert_eq!(rng2, mirror2, "the sub-threshold tick still draws the roll");
+        // flag24 false WITHOUT the 2000px despawn gate (`:21949`'s
+        // class): the player sits ~1100 px right — outside the deflated
+        // 1820-wide firing rect (right edge ~2070) but inside the
+        // despawn window, and clear of the contact box. The
+        // short-circuit skips the draw.
+        let mut far = Player::spawn(&w);
+        far.x = 2100.0;
+        far.y = 1000.0;
+        far.dead = false;
+        let mut vd3 = Npc::new(NpcKind::VoodooDemon, 1000.0, 1000.0, 1, 0.0);
+        vd3.hp = vd3.max_hp;
+        vd3.ai[0] = 299.0;
+        let mut rng3 = UnifiedRandom::new(9);
+        vd3.update_rng(&w, &mut far, 1.0 / 60.0, &mut rng3);
+        assert_eq!(vd3.ai[0], 300.0, "no reset without the roll");
+        assert_eq!(rng3, UnifiedRandom::new(9), "flag24 false draws nothing");
     }
 }
