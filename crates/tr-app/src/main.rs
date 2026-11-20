@@ -40,6 +40,7 @@ mod item_lights;
 mod npc_lights;
 mod player_lights;
 mod proj_lights;
+mod tile_lights;
 mod eoc_fight;
 mod input_map;
 mod inv;
