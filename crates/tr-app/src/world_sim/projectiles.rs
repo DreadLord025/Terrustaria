@@ -135,8 +135,20 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (`Main.ReverseGravitySupport(Main.MouseScreen) + Main.screenPosition`,
     // `Projectile.cs:67928` — the same mouse-world math editing.rs:26 uses),
     // the held-button channel state (`Player.channel`, the release arm
-    // `:67920-67925`) and the owner's death (`:67824`).
+    // `:67920-67925`), the owner's death (`:67824`), `CCed` (the same
+    // release arm — S1-P-i09) and `meleeSpeed` (the lifetime divisor
+    // `:67750` + the range/top-speed division `:67886-67887`).
     let (sw, sh) = app.screen_size();
+    // The `controlUseItem` zeroing gates (`Player.cs:42804-42807`'s
+    // `channel = false` on the cleared input): the inventory
+    // (`Main.cs:17659-17663`'s `player.mouseInterface`/inventory arm), the
+    // fullscreen map (`Player.cs:24798-24807`) and the minimap hover
+    // (`MinimapFrame.cs:164`) all clear the use input, so the channel
+    // drops behind them exactly like `update_editing`'s own gates
+    // (S1-P-i09 — the old snapshot ignored them).
+    let use_input_live = !app.inventory_open
+        && !app.map.as_ref().is_some_and(|m| m.open)
+        && app.minimap_hover.is_none();
     let inputs = YoyoInputs {
         aim: app.player.as_ref().map(|_| {
             (
@@ -144,11 +156,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
             )
         }),
-        channel: app.player.is_some() && app.mine_down && {
+        channel: app.player.is_some() && app.mine_down && use_input_live && {
             let held = app.inventory[app.selected];
             held.count > 0 && registry::get(held.kind).is_some_and(|d| d.channel)
         },
         player_dead: app.player.as_ref().is_some_and(|p| p.dead),
+        player_cced: app.player.as_ref().is_some_and(|p| p.cced()),
+        melee_speed: app
+            .player
+            .as_ref()
+            .map_or(1.0, |p| p.melee_speed(app.inventory[app.selected].kind)),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)
@@ -169,9 +186,23 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         |p| {
             let (cx, cy) = p.center();
             let (mx, my) = p.mounted_center();
+            // `Main.LocalPlayer.inventory[selectedItem].shoot` (`:43850`) —
+            // the dual-flail flag5's selected-item gate.
+            let held = app.inventory[app.selected];
+            let selected_shoot = if held.count > 0 {
+                registry::projectile(held.kind)
+            } else {
+                None
+            };
             FlailInputs {
                 aim: inputs.aim,
                 channel: inputs.channel,
+                // `Player.controlUseItem` — the raw use button (the port's
+                // `mine_down`), NOT the channel state: the flight/retract/
+                // spin re-grab arms read the button even when `channel` is
+                // false (`Projectile.cs:43905/43942/43959/44035`).
+                control_use_item: app.mine_down,
+                map_fullscreen: app.map.as_ref().is_some_and(|m| m.open),
                 player_dead: false,
                 player_cced: p.cced(),
                 mounted_center: Some((mx, my)),
@@ -185,6 +216,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 // [inventory[selectedItem].type]`.
                 melee_speed: p.melee_speed(app.inventory[app.selected].kind),
                 local_owner: app.local_id as u8,
+                selected_shoot,
             }
         },
     );
@@ -199,6 +231,32 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+    // S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
+    // `Main.player[owner]` reads, `Projectile.cs:45859-45868`). The C# reads
+    // the live `itemAnimation`/`itemAnimationMax` integers; the port's swing
+    // timers run in seconds, so the counts derive from `app.swing` /
+    // `app.swing_max` (the `ticks_of` convention, `world_sim/editing.rs`).
+    // The anchor is `RotatedRelativePoint(MountedCenter)` (`:45860`).
+    let spear_owner = app.player.as_ref().map(|p| {
+        let (mcx, mcy) = p.mounted_center();
+        let anchor = p.rotated_relative_point(Vec2::new(mcx, mcy), 0);
+        crate::projectile_ai_spear::SpearOwner {
+            anchor,
+            direction: p.facing,
+            item_animation: (app.swing * 60.0).round() as i32,
+            item_animation_max: (app.swing_max * 60.0).round() as i32,
+            channel: p.channel,
+            // i12's held-kind form (`Player.cs:25912` reads
+            // `BonusMeleeSpeedMultiplier[selectedItem.type]`).
+            melee_speed: p.melee_speed(app.inventory[app.selected].kind),
+            wet: p.wet,
+            player_vel: Vec2::new(p.vx, p.vy),
+            player_pos: Vec2::new(p.x, p.y),
+            player_w: crate::player::WIDTH,
+            player_h: p.height,
+        }
+    });
+    app.projectiles.set_spear_owner(spear_owner);
     // `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll reads
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
@@ -218,6 +276,18 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // S1-P-i06 — the lances' channel-hold write-back (`SetDummyItemTime(third)`,
+    // `Projectile.cs:45941` → `Player.cs:4432-4441`: `itemAnimation = itemTime =
+    // frames`, `itemTimeMax = frames + 1`). The arm queued the tick count; the
+    // port re-arms the swing/item timers so the hold persists while the button
+    // is down (the `FlailTick.facing` write-back precedent). `app.swing_max`
+    // stays the item's animation length (the C# `SetDummyItemTime` does not
+    // touch `itemAnimationMax`).
+    if let Some(frames) = app.projectiles.take_spear_hold() {
+        let secs = frames as f32 / 60.0;
+        app.swing = secs;
+        app.item_time = secs;
+    }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-
@@ -256,12 +326,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
     for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
+        // S1-P-i08 + W3-i39 — the aiStyle-3 wall thud (`Projectile.cs:19571`)
+        // and `AI_007`'s latch dig cue (`Projectile.cs:52757`:
+        // `PlaySound(0, i*16, j*16)`) are the int-id Dig play: case 0's
+        // `Next(3)` variation + `Next(-10, 11)*0.01` pitch ride the same
+        // stream, attenuation gate first (the `play_place_sound` façade's
+        // id-0 arm, `LegacySoundPlayer.cs:440-452`, S1-E-21 wave B); the
+        // id-2 styles keep the wave-A façade.
         if id == 0 {
-            // `AI_007`'s latch dig cue (`Projectile.cs:52757`:
-            // `PlaySound(0, i*16, j*16)`) — the case-0 int overload: the
-            // `Next(3)` variation pick + the `Next(-10,11)*0.01` pitch ride
-            // the SAME `UpdateProjectiles` stream, attenuation gate first
-            // (the `play_place_sound` case-0 path, S1-E-21 wave B).
             app.audio.play_place_sound((0, 0), x, y, rng);
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
@@ -643,5 +715,92 @@ mod dw4_tests {
         assert_eq!(a.1, b.1, "the stream replayed identically");
         assert_eq!(a.0, b.0, "the pool state is byte-equal");
         assert!(!a.0.is_empty(), "at least one yoyo live across the pair");
+    }
+}
+
+/// S1-P-i09 — the yoyo snapshot's `controlUseItem` gates (written, NOT run
+/// — code-only mode). `Player.ItemCheck` clears the channel whenever the
+/// use input is cleared (`Player.cs:42804-42807`): the inventory, the
+/// fullscreen map (`Player.cs:24798-24807`) and the minimap hover
+/// (`MinimapFrame.cs:164`) all drop it, so the aiStyle-99 release arm
+/// (`Projectile.cs:67920-67925`) fires behind them. The old snapshot read
+/// only `mine_down` + the held item and kept the yoyo flying with the
+/// inventory open.
+#[cfg(test)]
+mod s1_p_i09_yoyo_snapshot_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::WOOD_YOYO;
+
+    /// One Wood Yoyo out with the Wood Yoyo item (3278) held and the use
+    /// button down — the channel-hold fixture. The spawn sits inside the
+    /// 8×8-tile fixture world (the out-of-world guard). The camera centres
+    /// on the player and the mouse sits 100 px right of the screen centre,
+    /// so the aim world point lands INSIDE the string range on the player's
+    /// right (a clamped aim left of world x = 0 would read negative — the
+    /// C#'s own edge quirk, `ai[0]` is a world coordinate).
+    fn yoyo_channel_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        app.camera = Vec2::new(cx, cy);
+        app.zoom = 1.0;
+        app.mouse_pos = Vec2::new(640.0 + 100.0, 360.0);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 3278,
+            name: "Wood Yoyo",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        app.projectiles.spawn_with_data_ai_owned(
+            WOOD_YOYO, 0, 32.0, 32.0, 2.0, 0.0, 10, 4.0, 0.0, 0.0,
+        );
+        app
+    }
+
+    #[test]
+    fn s1_p_i09_the_held_channel_keeps_the_yoyo_flying() {
+        let mut app = yoyo_channel_app();
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(app.projectiles.slots()[0].ai[0] >= 0.0, "the hold keeps the flight");
+    }
+
+    #[test]
+    fn s1_p_i09_the_open_inventory_releases_the_yoyo() {
+        let mut app = yoyo_channel_app();
+        app.inventory_open = true;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the inventory clears the use input");
+        assert_eq!(app.projectiles.slots()[0].ai[1], 0.0);
+    }
+
+    #[test]
+    fn s1_p_i09_the_fullscreen_map_releases_the_yoyo() {
+        let mut app = yoyo_channel_app();
+        let mut map = crate::map::WorldMap::new(&app.world);
+        map.open = true;
+        app.map = Some(map);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the fullscreen map clears the use input");
+    }
+
+    #[test]
+    fn s1_p_i09_the_minimap_hover_releases_the_yoyo() {
+        let mut app = yoyo_channel_app();
+        app.minimap_hover = Some(crate::ui::minimap::MinimapButton::ZoomIn);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the minimap hover clears the use input");
+    }
+
+    /// `Projectile.cs:67920` — the snapshot carries the owner's `CCed`
+    /// (`Player.cced()` — frozen / webbed / stoned): a frozen owner
+    /// releases the string even with the button held.
+    #[test]
+    fn s1_p_i09_the_frozen_owner_releases_the_yoyo() {
+        let mut app = yoyo_channel_app();
+        app.player.as_mut().unwrap().frozen = true;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
     }
 }

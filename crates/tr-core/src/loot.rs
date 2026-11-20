@@ -14,6 +14,15 @@
 pub trait DropRng {
     fn next_range(&mut self, min: i32, max: i32) -> i32;
     fn next_float(&mut self) -> f32;
+    /// `UnifiedRandom.NextDouble()` (`UnifiedRandom.cs:143-146`) — one
+    /// `Sample()` draw, the SAME stream step `next_float` takes (which is
+    /// `NextDouble() as f32`, `Utils.cs:1198-1201`); the f64 precision
+    /// survives for the double-angle `RotatedBy` rolls. The default
+    /// mirrors that cast-back shape; the concrete impls override with the
+    /// real `sample()`.
+    fn next_double(&mut self) -> f64 {
+        self.next_float() as f64
+    }
 }
 
 impl DropRng for crate::tile_light::FastRandom {
@@ -22,6 +31,9 @@ impl DropRng for crate::tile_light::FastRandom {
     }
     fn next_float(&mut self) -> f32 {
         crate::tile_light::FastRandom::next_float(self)
+    }
+    fn next_double(&mut self) -> f64 {
+        crate::tile_light::FastRandom::next_double(self)
     }
 }
 
@@ -36,6 +48,9 @@ impl DropRng for crate::UnifiedRandom {
     }
     fn next_float(&mut self) -> f32 {
         crate::UnifiedRandom::next_float(self)
+    }
+    fn next_double(&mut self) -> f64 {
+        crate::UnifiedRandom::next_double(self)
     }
 }
 

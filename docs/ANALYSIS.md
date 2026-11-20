@@ -7624,44 +7624,128 @@ style 14) and the spear traps' 186 keeps the legacy ride.
 
 ## Boomerangs (M4-PROJ-3, the boomerang half)
 
-`AI_003_Boomerang` (`Projectile.cs:38866-39545`) is a two-state machine on
-`ai[0]`/`ai[1]`; the ported kinds 6 (Enchanted), 52 (Wooden) and 113
-(Ice) all ride the generic arms вЂ” the per-type parameter table only
-starts at the special boomerangs (the Light Disc 106's 45-tick window is
-the one verbatim override kept).
+`AI_003_Boomerang` (`Projectile.cs:38866-39640`) is a two-state machine on
+`ai[0]`/`ai[1]`; the ported kinds 6 (Enchanted), 52 (Wooden), 113 (Ice) and
+106 (Light Disc, S1-P-i08) ride the generic arms — the per-type parameter
+table only starts at the special boomerangs (the Light Disc 106's 45-tick
+window and 16/1.2 return seek are the verbatim overrides kept).
 
-- **The OUT state** (`ai[0] == 0`, `:39024-39331`): `ai[1]++` per tick;
-  at `ai[1] >= 30f` the return state sets (`ai[0] = 1f, ai[1] = 0f`).
-  The straight flight keeps `tileCollide`; **the outbound tile hit does
-  not kill** вЂ” it reverses the velocity and switches to the return
-  (`:14594-14602` in `Kill()`'s collision path, mirrored at
-  `:13068-13080` for the NPC hits).
-- **The RETURN state** (`ai[0] == 1`, `:39468-39545`): `tileCollide =
-  false` вЂ” the boomerang flies home through terrain. The seek builds the
-  owner-center vector, kills past 3000 px (`:39500-39505`), scales it to
-  the speed 9 (`num26`; the per-type overrides 12-20 are the special
-  kinds) and steers per-axis at the accel 0.4 (`num27`) with the В±2Г—
-  boost when crossing the target velocity (`:39515-39537`). The
-  `meleeSpeed` remap (`:39487-39497`, Г—1-10) is Г—1 at the port's default
-  melee speed (M3-EQUIP brings the stat). The owner's 20Г—42 box catching
-  the boomerang kills it (`:39538-39544`).
-- **The generic `Item.shoot` firing**: the throw path was the M4-PROJ-1
-  shuriken hardcode; it is now `Player.ItemCheck_Shoot` (`:47056+`) вЂ”
-  the aim vector normalized to the item's `shootSpeed`
-  (`:47274-47292`; the melee `speed /= meleeSpeed` is Г—1), the spawn at
-  the player center + 10 px toward the cursor, `weaponDamage` (the item
-  damage Г— the class multiplier), the item's knockback, the crit roll
+- **The OUT state** (`ai[0] == 0`, `:39024-39341`): `ai[1]++` per tick;
+  at `ai[1] >= 30f` the return state sets (`ai[0] = 1f, ai[1] = 0f`); the
+  106 flips at `>= 45f` (`:39035-39040`). There is **no outbound decel**
+  for these kinds — the gravity/friction arms (`:39041-39129`) belong to
+  the unported phaseblades/320/383. The straight flight keeps `tileCollide`.
+- **The tile/bounds bounce** lives in `HandleMovement`'s aiStyle-3 arm
+  (`:19512-19571`), NOT `Kill()`'s PVP path (`:14594-14602` is the
+  player-hit reverse, a different site): the generic kinds reverse BOTH
+  axes from `lastVelocity` and set `ai[0] = 1` unconditionally
+  (`:19563-19568`); the 33/106/866 trio reverses per changed axis and does
+  NOT arm the return (`:19550-19560`) — the Light Disc keeps bouncing
+  outbound until its 45-tick timer. The world-edge flag (`:17900-17903`)
+  feeds the same response (the out-of-world guard skips aiStyle 3,
+  `:16684`). Both play the Dig thud (`PlaySound(0, …)` `:19571`).
+  `UpdatePosition` (`:20445`) integrates the POST-bounce velocity on the
+  bounce tick. The **NPC-hit reverse** (`:13068-13080`) runs pre-strike in
+  `damage_pve`: the outbound hit reverses both axes, the returning hit only
+  re-arms `ai[0] = 1` (the `ai[0] == 0` gate guards the reverse alone).
+- **The RETURN state** (`ai[0] == 1`, `:39365-39555`): `tileCollide =
+  false` — the boomerang flies home through terrain. The seek builds the
+  owner-center vector, kills past 3000 px (`:39499-39502`), scales it to
+  the speed 9 (`num26`; the 106 at 16) and steers per-axis at the accel 0.4
+  (`num27`; the 106 at 1.2) with the ±2× boost when crossing the target
+  velocity (`:39518-39549`). The `meleeSpeed` remap (`:39462-39475`) scales
+  BOTH by `Remap(1.5, 0, 1, 1, 1/meleeSpeed, clamped: false)` clamped to
+  [1, 10] — ×1 at the default melee speed. The owner-box catch
+  (`:39551-39554`) reads the PRE-movement `(int)`-truncated rects with
+  XNA's strict `Intersects`, gated on `Main.myPlayer == owner`.
+- **The rotation tail** (`:39556-39638`): the 106 spins 0.3, every other
+  non-phaseblade 0.4, both × `direction`. The direction tracks
+  `velocity.X`'s sign after each sub-step's movement while outbound and
+  freezes on the return (`AutomaticallyChangesDirection` `:17281-17288`
+  excludes aiStyle 3 at `ai[0] == 1`, the flip `:17016-17026`).
+- **The generic `Item.shoot` firing**: the throw path is
+  `Player.ItemCheck_Shoot` (`:47056+`) — the aim vector normalized to the
+  item's `shootSpeed` (`:47274-47307`; the melee `speed /= meleeSpeed`),
+  the spawn at `RotatedRelativePoint(MountedCenter)` (`:47196`),
+  `weaponDamage` (the item damage × the class multiplier), the item's
+  knockback through `GetWeaponKnockback` (`:53346-53369`), the crit roll
   from the item's damage class and the `consumable` decrement (the
   boomerangs stay in the inventory; the shuriken is consumed).
-- The pool's `update` carries `owner: Option<(f32, f32)>` вЂ” the seek
+- The pool's `update` carries `owner: Option<(f32, f32)>` — the seek
   input (`Main.player[owner]` reads); `None` keeps the boomerangs
   outbound until the timer flips them.
 
-Deviations: the flails (aiStyle 15, `AI_015_Flails` `:43724-44600` вЂ” the
+Deviations: the flails (aiStyle 15, `AI_015_Flails` `:43724-44600` — the
 877-line per-type parameter table + the chain state machine + the
 channel coupling) are the explicit follow-up (M4-PROJ-3b); the boomerang
-sounds/dust are render-side; the homing variants (182/866) and the
-phaseblade subset are out of the ported kinds.
+dust is render-side (its `Main.rand` rolls skip with the layer — the
+volcano/yoyo precedent); the homing variants (182/866) and the
+phaseblade subset are out of the ported kinds. The tile-collision probe
+is the port's `collides_rect` stand-in for `Collision.TileCollision`
+(the recorded M4-PROJ-3 deviation); the world-edge flag rides the
+matching probe axis (the C# flag is axis-less). The single `wants_sound`
+intent slot keeps the whoosh when it and the wall thud land on one
+sub-step.
+
+## The useStyle-1 boomerang variant (S1-P-i08)
+
+The census (`task/S1-P-i08-boomerang`, code-only mode — tests WRITTEN NOT
+RUN) re-read `AI_003_Boomerang` and the `Player.ItemCheck` throw path
+against the port and fixed the WRONGs + ported the missing pieces:
+
+- **WRONG — the bounce cite/site.** The old arm cited `:14594-14602`
+  (`Kill()`'s PVP player-hit reverse) for the tile bounce and froze the
+  position on the bounce tick. The tile bounce is `HandleMovement`'s
+  aiStyle-3 arm (`:19512-19571`); the generic kinds reverse both axes from
+  `lastVelocity` and arm the return unconditionally, the 33/106/866 trio
+  reverses per changed axis and keeps the outbound state, and
+  `UpdatePosition` integrates the post-bounce velocity. Fixed.
+- **WRONG — the catch rects.** The old catch tested the POST-movement
+  float box. The C# tests the PRE-movement `(int)` rects with strict
+  `Intersects` (`:39551-39554`), gated on `Main.myPlayer == owner`. Fixed.
+- **WRONG — the meleeSpeed remap.** The old arm hardcoded ×1. The C#
+  scales the return speed AND accel by the clamped `Remap` (`:39462-
+  39475`). Ported (the flail inputs already carry `melee_speed`).
+- **MISSING — the rotation tail + direction latch.** The old arm never
+  spun or flipped. Ported (`:39556-39638`, `:17016-17026`, `:17281-17288`).
+- **MISSING — the NPC-hit reverse.** Ported pre-strike in `damage_pve`
+  (`:13068-13080`), with the 301/866/902 + phaseblade exclusions.
+- **MISSING — the wall thud.** The Dig cue (`PlaySound(0, …)` `:19571`)
+  rides the `wants_sound` intent; the drain routes id-0 through
+  `play_place_sound`'s case-0 arm (the `Next(3)` variation + pitch on the
+  `UpdateProjectiles` stream).
+- **MISSING — the Light Disc 106.** The row (`:1936-1945`, 32×32), the
+  45-tick window, the 16/1.2 return seek, the per-axis wall bounce and the
+  0.3 spin. The item 561 already carried `useStyle 1`/`shoot 106`.
+- **MISSING — the stack limits.** `ItemCheck_CheckCanUse_Inner`
+  (`:52162-52186`): one in flight for 6/52/113, six for the 106. The gate
+  runs at the use start, ahead of the mana pay.
+- **MISSING — the throw's boomerang-visible pieces.** The `ChangeDir` aim
+  flip (`:47202-47224`), the zero-aim facing fallback (`:47291-47296` —
+  the old `dir != ZERO` gate skipped the throw entirely), the exact-center
+  spawn (`NewProjectile` centers the box, `:10876-10877`; the generic
+  arm's `+ dir * 10` is the port's own M4-PROJ-3 deviation, dropped for the
+  variant) and `GetWeaponKnockback`'s melee kbGlove ×2 / kbBuff ×1.5
+  (`:53352-53359`).
+
+RNG: the machine draws **nothing** — every `Main.rand` roll in `AI_003`'s
+ported kinds rides the skipped dust arms (`:38892-38984`); the throw's only
+gameplay draw is the throw-time crit roll (`Next(1, 101)`, the shared
+`UpdatePlayers` stream). The wall thud's case-0 rolls ride the drain's
+`UpdateProjectiles` stream. Witnesses: `s1_p_i08_boomerang_tests` (pool) +
+`s1_p_i08_throw_tests` (editing), written not run.
+
+The Light Disc 106's `LightDisc_Bounce` dust (`:13072-13075` NPC-hit,
+`:19514-19518` wall-hit → `:20317-20329`) draws 12 explicit `Main.rand`
+floats per bounce in the C# (4 iterations × [`NextFloatDirection` +
+`NextFloat` + `NextFloat`], `:20322-20323`). The port skips it under the
+volcano/yoyo "skipped cosmetic takes its rolls" precedent (the
+`the_machine_draws_no_rng` witness pins 0 draws) — a recorded deviation,
+NOT strict stream parity on a disc bounce. The generic kinds 6/52/113 draw
+nothing on any path (their dust arms are the only rolls, skipped) — that
+part is unambiguous. If strict C# stream parity on a disc bounce is wanted
+later, consume the 12 `next_float` draws at both bounce sites and update
+the witness.
 
 ## Bombs (M4-PROJ-9)
 
@@ -7705,6 +7789,125 @@ hardmode `CanExplodeTile` gates stay closed until M5-HARDFORCE; the wall
 breaks discard the wall item (the C# `KillWall` drops nothing in the
 explosion path either); the water-bomb transforms (784-807) and the
 special bombs (910/911, 102, 773) are out of the ported kinds.
+
+## Rocket & dart ammo (S1-P-i16)
+
+The rocket launchers (`useAmmo == AmmoID.Rocket` 771) and the dart guns
+(`useAmmo == AmmoID.Dart` 283) resolve their ammo through `PickAmmo`'s
+pair table / `Item.shoot` arms (`Player.cs:53458-53568`, already ported
+in `ammo.rs` — the 60-cell table is FAITHFUL, the 1946/3930 formula arms
+are DEAD because the table covers them). The task's "ManageShoot" does
+not exist in the decompile — the real method is `Player.ItemCheck_Shoot`
+(`:47056-49468`), and there is NO per-`useAmmo` velocity arm: the
+launcher/dart velocity is the generic aim × (weapon shootSpeed + ammo
+shootSpeed) (`:47277-47307`). What was missing / wrong is the projectile
+side and the per-weapon spawn arms.
+
+**The WRONGs fixed** (the pre-port `ai_bomb` treated every aiStyle-16 kind
+as a thrown bomb):
+- The flight damage zeroed for rockets — the C# keep-damage list
+  (`:47175`) names 133-144 / 338-341 / 776-801 / 803-810 / 862 / 863, so
+  a rocket KEEPS its fused damage in flight. `ai_rocket` now owns the
+  launcher kinds ahead of the thrown-bomb arc.
+- The thrown-bomb gravity arc applied to rockets — each family has its
+  own tail (`ai_rocket`, `:47311-47537`): the straight rockets ×1.1 below
+  15 (`:47364`), the grenades' `ai[0] > 15` gravity + 0.95 slide
+  (`:47496`), the mines' +0.2 gravity × 0.97 drag with the ±0.1 snaps
+  (`:47483`), the Snowman homing (acquire at `ai[0] > 30`, Manhattan < 600,
+  `CanHit`, the 1/12 lerp at speed 16, `:47197-47309`). The liquid Snowman
+  kinds 805/806/807 HOME (`:47197` lists them) — they are not in the
+  straight/arc/mine lists.
+- `explode_bomb` refused the rocket kinds, so a rocket never exploded —
+  the detonation hook now routes `is_launcher_rocket` to `explode_rocket`
+  (`PrepareBombToBlow` resize/kb + the `damage_pve_boxed` walk + the
+  `rocket_kill_census` draws + `Kill_ExplodeTiles`' radius ladder).
+
+**The rows added** (`projectile/data.rs`): the cluster shrapnel 779/783
+and 862/863 (14×14 ai16, the `NewProjectileSetup` 60-tick seed
+`:11053-11064`), the darts 267/477/478/479/480, the Electrosphere bolt
+442 + sphere 443 (the 300-tick seed `:11065-11068`, `ignoreWater`
+`:5147`), the fireworks rockets 167-170 (aiStyle 34, timeLeft 45, the
+idStatic-1 pair). The 477 carries penetrate 5 / extraUpdates 1, the 478
+penetrate 3 / timeLeft 300.
+
+**The dart AI** (`projectile_ai_darts.rs`, `AI_001`'s dart arm
+`:57292-57364`): the localAI[0] fade latch (alpha → 0 after 3), the
+`ai[0] >= 20` gravity pin (+0.075, NOT the 477), the Ichor split machine
+(the penetrate flip, the `Next(5,30)` threshold every tick, the
+`Next(2,4)` + `Next(4)` count, the per-shard `Next(-100,101)` pair + the
+2× parent-direction blend at 0.9× damage, the `ai[1] = -1000` latch —
+the `IchorDartUpdatePenetrate` modifier `NewProjectileModifiers.cs:15-28`
+folds to the same penetrate restore the per-tick arm runs), the Cursed
+flame drops (`Next(5,20)`, −20 timeLeft, the 480 spawn at 0.8×/0.5×).
+The 477's rotation blend (`:57684-57694`), its tile bounce
+(`HandleMovement` `:18644-18697`: the penetrate spend, the −1 reflection,
+the ×0.85 damage, the post-bounce retarget scan) and its on-hit retarget
+(`:13534-13567`, the victim excluded). The 442 bolt's fade / arrival /
+120-tick hover (`:54726-54771`; 442 is on the `flag3 = false` skip list
+`:55996`, so its `ai[0]` keeps the target tile X). The 443 sphere's
+aiStyle-77 pulse (`:30671-30761`), the 167-170 aiStyle-34 flight
+(`:27136-27188`) and their Kill arms (the 442 sphere spawn + pull-in
+`:73528-73552`, the 478 death flame `:75578-75584`, the fireworks burst
+census `:76464-76674`). The 480 rides the generic `ai_spear` tail with
+its AI_014 dust census (`:25227-25245`).
+
+**The on-hit debuffs** (`StatusNPC`, in `damage_pve`'s landed block):
+267 → Poisoned 20 (`Next(3)` → 3600 else 1800, `:11635-11644`), 478/480 →
+Cursed Flames 39 (`60 × Next(3,7)`, `:11482`), 479 → Ichor 69
+(`60 × Next(7,15)`, `:11486`). The aiStyle-16 NPC-hit fuse
+(`Damage_PVE_Inner` `:13120-13134`): `timeLeft → 3` + the direction to
+the victim's side.
+
+**The wire arms** (`world_sim/editing.rs`'s shooter fire block):
+- 3007 Dart Pistol muzzle `−4·dir X / −2 Y` (`:47272-47276`); 986/281
+  Blowgun/Blowpipe `+6·dir X / −6 Y` (`:47267-47271`) — on top of the
+  port's documented centre + 10·dir spawn stand-in.
+- 2796 Electrosphere FORCES proj 442 post-PickAmmo (`:47169-47172`, the
+  Rocket additive arm's result discarded) + seeds `ai[0]/ai[1]` = the
+  cursor tile (`:49388-49392`).
+- 3546 Fireworks Launcher: TWO rockets per use, each a jittered aim
+  (`Next(-40,41) × 0.05` per axis), the spawn 6 px perpendicular
+  (`RotatedBy(−π/2 · direction)`), the kind `167 + Next(4)`, `ai[1] = 1`
+  (`:49019-49031`).
+- 3930 Celebration Mk2: the fixed 714 (gunProj reset) + `ai0 = 5 ×
+  Next(0,20)` (`:48991-48994`); its 1/2 not-consume roll is already in
+  `ammo.rs`.
+- 760 Proximity Mine Launcher: `DestroyOldestProximityMinesOverMinesCap(20)`
+  (`:49450-49453` → `:46976-47017`) — the lowest-timeLeft mine of the
+  twelve kinds dies (the port latches `detonated`, the pool's next update
+  resolves the blast).
+
+**RNG streams**: the shooting rolls (crit, the 3930 ai0, the 3546 jitter)
+ride `RngKey::UpdatePlayers`; the projectile AI / census / debuff rolls
+ride the pass's `UpdateProjectiles` stream. Every explicit `Main.rand`
+draw stays in the C#'s order; the `Dust.NewDust*` internal rolls go with
+the dust pool (the `celeb2_explosion` convention). One gore = the
+`Next(61,64)` type + the `NewGore` kicks `Next(10,31)` / `Next(-20,21)`
+(`Gore.cs:1327-1328`).
+
+**Deviations / follow-ups**:
+- `base.wet` is the dispatch's centre-cell liquid stand-in (the full
+  `Collision.WetCollision` box probe is the liquid-layer follow-up).
+- `SelfHurtPlayers` stays the documented M2-DEATH deviation; the helpers
+  `rocket_fixed_self_damage` (fixed 60, `ProjectileID.cs:342-422`) and
+  `rockets_skip_self_damage` (`:341`) are ported for the follow-up.
+- The liquid families' `SpreadWater/Lava/Honey/Dry` flood fills
+  (`:77773`/`:77812`/`:77851`/`:77890`) draw nothing — the census is
+  complete without them; the fills are the liquid-layer follow-up.
+- The movement is the kill-on-tile stand-in EXCEPT the 477 bounce and the
+  rocket aiStyle-16 bounce arm (both ported per-axis).
+- `PrepareBombToBlow`'s Mini Nuke arm (`:46825`) reads `type == 808 ||
+  type == 808` in the decompile (808 twice, 809 absent) — legal C#, kept
+  1:1 (the RockGolemHead precedent): the 809 keeps its 14×14 box even
+  though the Kill census `:77893` and the tile-break list `:77309` name it.
+- The cluster shrapnel 779/783/862/863 DO have a `PrepareBombToBlow` arm
+  (48×48 / kb 8, `:46815-46819`) — the earlier "no arm" reading was wrong.
+- The 167-170 `appliesImmunityTimeOnSingleHits` flag has no port field;
+  the plain PVE walk applies the idStatic stamp regardless of penetrate
+  (the flag's effect for these pen-1 rows), noted at the row.
+
+CODE-ONLY MODE: the witness tests are WRITTEN NOT RUN (no compiler invoked
+on this branch); every expected value is hand-derived from the cited C#.
 
 ## Logic sensors & training dummy (M7-TE-2)
 
@@ -11504,20 +11707,34 @@ The envelope and the ported bodies are 1:1; the deviations:
   stretch in `Main.DrawProjDirect`, `Main.cs:28039`, the
   `stringColor`/29 rainbow variants) is the M4-PROJ-4c render row.
 - **The pose block's `direction` write is ported; the rest is stubbed.**
-  `:67838-67847` writes `this.direction = В±1` from the В±2 px X
-  comparison вЂ” the rotation (`:68096`) and the dropped twin's nudge
-  (`:68057-68066`) consume it, so it lands. `heldProj`,
-  `SetDummyItemTime(2)` and `player.ChangeDir` are cosmetic player-pose
-  state: stubbed until M3-ITEM-2d's dummy-time gadget.
-- **`meleeSpeed = 1.0` stays in the formulas.** The range/top-speed
-  division (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) and the
-  lifetime divisor (`:67750`) are neutral exactly at the default; the
-  terms stay so M3-EQUIP-3 only has to supply the accessories' values
-  (yoyoString: range x1.25 + 30, lifetime x1.5; magicString: the -2
-  dropped twin). The `CCed` release arm (`:67920`) is stubbed false (no
-  CC system ported). The Terrarian beam block's `ai[0] != 3f` gate
-  (`:67776`) is verbatim from the source вЂ” only an aim exactly at
-  x = 3 is excluded.
+  `:67838-67847` writes `this.direction = +/-1` from the +/-2 px X
+  comparison - the rotation (`:68096`) and the dropped twin's nudge
+  (`:68057-68066`) consume it, so it lands. **S1-P-i09 (2026-11-20)**:
+  the block's `!flag2 && !flag` gate is now carried (the double yoyo's
+  slot and the counterweight kinds skip the pose, exactly `:67829`),
+  and the `player.ChangeDir` facing rides the `YoyoTick.facing` seam
+  (the flail precedent) - the old port wrote the pose for EVERY yoyo
+  incl. the double, and never touched the player's facing. `heldProj`
+  and `SetDummyItemTime(2)` stay stubbed until M3-ITEM-2d's dummy-time
+  gadget; the `itemTime == 1 && num7 > 0` channel-clear (`:67831-
+  67835`) is dead code in the decompile (`num7 = 0` seeded, never
+  written).
+- **`meleeSpeed` is LIVE (S1-P-i09).** The range/top-speed division
+  (`(1 + meleeSpeed * 3f) / 4f`, `:67886-67887`) and the lifetime
+  divisor (`/ 60f / ((1 + meleeSpeed) / 2f)`, `:67750`) read the
+  snapshot's `melee_speed` (the ported `Player.melee_speed()` -
+  armor/accessory bonuses already feed it). The old port divided by 60
+  only and never divided range/speed, so every melee-speed bonus was a
+  no-op for yoyos. The `ai[0] <= -2f` no-timeout guard (`:67756-67759`)
+  is ported too - the dropped twin and the ghost never expire by age.
+  The yoyoString terms (range x1.25 + 30 `:67882-67885`, lifetime x1.5
+  `:67752-67755`) and magicString's -2 dropped twin (`:68023-68031`)
+  stay with M3-EQUIP-3's unported grants. The `CCed` release arm
+  (`:67920`) is LIVE - `Player.cced()` is ported (frozen/webbed/stoned),
+  the snapshot carries it and `ItemCheck` itself clears the channel on
+  a CC (`Player.cs:42598-42602`). The Terrarian beam block's
+  `ai[0] != 3f` gate (`:67776`) is verbatim from the source - only an
+  aim exactly at x = 3 is excluded.
 - **The rolls ride the app's item stream.** The jitter
   (`rand.Next(10, 31)`, `:67748`), the beam's three rolls (`:67786-67793`)
   and the dropped twin's `penetrate = rand.Next(3, 7)` (`:68041`) draw
@@ -11525,15 +11742,51 @@ The envelope and the ported bodies are 1:1; the deviations:
   `LootRng(&mut app.item_rng)` seam the throw's crit roll already uses,
   the port's `Main.rand` analogue (the C# `FastRandom` vs `rand01`
   difference follows the house's existing deviation record).
-- **The beam scan's `CanHit` is a segment walk.** The C#
-  `Collision.CanHit` is a box-vs-box LOS (`Collision.cs:381+`); the
-  port walks the two centers' segment against the solid non-platform
-  tiles. The Terrarian's beams can therefore target through partial
-  cover where the vanilla boxes would not.
+- **The beam scan's `CanHit` is the shared box walk (S1-P-i09).** The
+  C# `Collision.CanHit` is a box-vs-box LOS (`Collision.cs:381-479`);
+  the scan now rides the ported `can_hit` walk (the Book of Skulls'
+  targeting helper) with both boxes. The old port used the
+  `yoyo_can_hit` centre-segment approximation (it survives for the
+  aiStyle-15 petal scan, whose own row keeps the recorded deviation).
+  The retarget normalizes the EUCLIDEAN offset (`:67809`) - the
+  manhattan sum is the scan's gate only (`:67803-67804`); the old port
+  divided the direction by the manhattan sum, shrinking every diagonal
+  beam.
 - **The counterweights are the other family.** 556-561/1079 ride
-  `AI_099_1_Counterweights` (`:67380`, they fire musket balls) and stay
-  with M3-EQUIP-3's accessory grants; the yoyo arm's `flag2` guard
-  (`:67819-67823`) never sees them.
+  `AI_099_1_Counterweights` (`:67380-67731`) and stay with M3-EQUIP-3's
+  accessory grants (`Player.counterWeight`/`yoyoGlove` are unported -
+  `Player.cs:14714-14766`'s Yoyo Bag / Magic Yoyo Bag / Strung
+  Counterweight / counterweight rows, `:18434-18439`'s resets); the
+  yoyo arm's `flag2` guard (`:67819-67823`) is now carried verbatim
+  (S1-P-i09) but never sees them - no `proj_data` row exists for the
+  seven kinds. The on-hit `Player.Counterweight` call
+  (`Projectile.cs:13272` + the 604 beam's `:12826`,
+  `Player.cs:12356-12415` - the glove's second yoyo / the counterweight
+  spawn scan) folds out with the same unported grants (ANALYSIS "Yoyo
+  on-hit effects").
+- **The aiStyle-99 hit arm is ported (S1-P-i09).** `Damage_PVE_Inner`'s
+  `:13256-13300` block: the dropped twin squashes its velocity to
+  len/5 and takes the `Next(50, 81) * 0.1` lift clamped at -16
+  (`:13258-13267` - the draw lands AFTER the hit's DamageVar roll on
+  the same stream); the flying yoyo faces the hit side against the
+  owner's centre (`:13273-13280`), recoils `velocity * -0.5 + away *
+  16` (the Kraken's 4, `:13281-13291`), ages its lifetime clock 20
+  ticks, plus 40 more and a `(int)(dmg * 0.75)` cut when the owner has
+  no line of sight (`Collision.CanHit`, `:13294-13298`). The doubling
+  peeks now carry the `flag8 = !targetNPC.immortal` gate (`:12815`,
+  `:13389`/`:13393`). The recoil is why the M4-PROJ-4b on-hit fixtures
+  re-pin the yoyo on the NPC each tick (the vanilla's held channel
+  seeks it straight back). The lifetime sweep keys `aiStyle == 99`
+  (`:67766`), not a kind list - the dispatch now reads
+  `proj_data(...).ai_style`.
+- **The channel snapshot carries the `controlUseItem` gates
+  (S1-P-i09).** `Player.ItemCheck` clears the channel whenever the use
+  input is cleared (`Player.cs:42804-42807`): the inventory, the
+  fullscreen map (`Player.cs:24798-24807`) and the minimap hover
+  (`MinimapFrame.cs:164`) all drop it - the snapshot mirrors the same
+  three gates `update_editing` applies, so the yoyo returns behind
+  them (the old snapshot read only `mine_down` + the held item). The
+  snapshot also carries `CCed` and `meleeSpeed` now.
 - **GenItemData's break-in-if fix (the 693-row regen).**
   `Item.cs:30037-30041`'s guard вЂ” `default: if (type < 3315 || type >
   3317) { break; } goto case 3262;` вЂ” was executed wrong: the
@@ -13862,8 +14115,9 @@ Deviations recorded here:
 2. **The whip never self-crits.** `DefaultToWhip` sets no melee/ranged/magic
    flag, so `Projectile.Damage`'s crit block (`:12892-12899`) never fires for a
    whip вЂ” the vanilla whip crits only through a tag's `CritChance` (4679: 10,
-   5478: 5, 5479: 15, 4914: 10, 5480: 10). The generic throw path rolls crit at
-   spawn for every other shot; the whip branch passes `crit = false` so a
+   5478: 5, 5479: 15, 4914: 10, 5480: 10). Since S1-P-i11 every shot's crit
+   rolls PER-HIT on the `UpdateProjectiles` stream (`:12883-12917`), not at
+   spawn; the whip's unset class flags mean its roll consumes no draws, so a
    proc-less tag cannot force the variance.
 3. **The local-immunity decay.** C#'s `DecrementLocalImmuneTimeCounters` decays
    only **positive** counters (`:17274-17277`), so the whip's
@@ -13896,6 +14150,172 @@ Deviations recorded here:
    `CanRunHitEffects` admits nothing in-game until M4-PROJ-8; the
    `is_summon_shot` slot flag carries the gate and the tests set it directly,
    so the math is proven end-to-end (`a_tagged_summon_shot_takes_the_damage_bonus`).
+
+## The player→NPC strike mechanics (S1-P-i11, code-only mode)
+
+The census of `NPC.StrikeNPC_Inner` (`NPC.cs:81235-81563`),
+`Player.ProcessHitAgainstNPC` (`Player.cs:44262-44421`) and
+`Projectile.Damage_PVE_Inner` (`Projectile.cs:12598-14199`) against the port.
+Code-only: no compiler invoked, tests written NOT run.
+
+**Verdicts.**
+
+- `Main.DamageVar` (`damage.rs::damage_var`, `Main.cs:66118-66134`) — CORRECT,
+  unchanged: the ±15% `Next(-15,16)` band, the luck rerolls (positive keeps the
+  higher, negative the lower), the banker's round.
+- `strike_npc_damage` (`NPC.cs:81239`) — CORRECT, unchanged: the crit ×2 lands
+  AFTER the defense term, floored at 1.
+- The melee crit (`editing.rs`, `ProcessHitAgainstNPC` `Player.cs:44296-44301`)
+  — CORRECT, unchanged: `class_crit + item_crit` on the `UpdatePlayers` stream.
+  The C# folds the held item's crit into all three class crits per tick
+  (`Player.cs:25515-25517`), so `GetWeaponCrit` (`:53371`) returns the folded
+  value; the port's `class_crit(class) + item_crit` is the same sum.
+
+**Knockback (`damage.rs::knock_back_npc`, `NPC.cs:81387-81475`).** The old port
+ran the Y-pop unconditionally and had no weak-hit branch. The fix ports the
+full block: the `onFire2` ×1.1 BEFORE the soft caps (`:81390-81393`, buff 39 via
+`NpcBuffs::find_buff_index`), the crit ×1.4 after the caps (`:81414`), the
+`num4 = damage * 10 > lifeMax` gate (expert ×15, `:81418-81422`). STRONG hit:
+the X push-away AND the Y-pop (`-num3 * 0.75`, no-gravity `* 0.5`) both INSIDE
+the gate (`:81423-81462`). WEAK hit (else): the velocity is SET outright —
+`Y = -num3 * 0.75 * knockBackResist` (no-gravity `* 0.5 * resist`),
+`X = num3 * hitDirection * resist` — the resist multiplies a SECOND time
+(`:81463-81474`, verbatim). The type-185 ×1.5 (`:81449-81452`) is skipped: no
+ported `NpcKind` is SnowFlinx (`NPCID.cs:11047`).
+
+**`knock_back_resist` (`npc.rs`).** The dead/duplicate arms purged: Deerclops
+50000.0 (copied the buyPrice copper, `:17463`) → 0 (`:17459`); WoF Eye 80000.0
+(copied the `value`, `:10376`) → 0 (`:10374`); the Hungry was lumped with the
+leeches at 0 → 1.1 (`:10391`); the EoC's dead 1.0 duplicate purged (the live
+0.0 arm wins, `:8713`); the identical-value unreachable duplicates (the
+pillar-worm block ×5, the nebula trio ×3, VortexTower, the Prime twins,
+ForceBubble) removed. The catch-all `_ => 0.4` stays (a recorded deviation —
+the C# class default is 1f, `:8533`; the unlisted kinds keep the port's 0.4).
+Round-2 census fixes (verbatim SetDefaults rows): the DD2 bombers 555/556/557
+were lumped at 0.1 → 0.2/0.2/0.15 (`:16166`/`:16183`/`:16200`); the javelineers
+561/562/563 0.2 → 0.1/0.1/0.05 (`:16115`/`:16132`/`:16149`); DD2SkeletonT3 567
+0.3 → 0.2 (`:16370`); the Scutlix Rider 390 had no row (fell to 0.4) → 1.0 (the
+class default, `:13966-13978` sets none + `:8533`); the StardustCellBig 405 row
+added at 0.3 (`:15032`); the DD2LanePortal 549 row added at 0.0 (`:16044`).
+
+**`no_gravity` (`NpcKind::no_gravity`, `npc/data.rs`).** The strike-time flag
+the Y-pop's 0.5-vs-0.75 selector reads. The port models the two AI-head writes
+that reach a knockback-relevant kind: `AI_002_FloatingEye` sets it for every
+eye (`NPC.cs:52280`), the aiStyle-14 bat block for the bats + Voodoo Demon
+(`:22851`); plus the SetDefaults flyers (the aiStyle-5 family, the Creeper,
+Probe, Martian Drone, Drippler, Poltergeist, Dungeon Spirit, Piranha, Shark,
+Hungry). The Pumpkin/Frost tables carry their own rows. The grounded walkers
+keep false. The three strike paths (`hurt`/`hurt_from_projectile`/
+`strike_pooled`) thread it + `expert` (the player's `BuffSlots.expert_mode`,
+the world-mode stand-in) + `on_fire2`.
+Round-2 census completion — the 16 missing knockback-relevant flyers
+(`knockBackResist > 0` + a steady `noGravity = true`): Goldfish 55 (`:9462`),
+Brain of Cthulhu 266 (`:12450`), Plantera's Hook/Tentacle 263/264
+(`:12399`/`:12420`), StardustCellBig/Small 405/406 (`:15033`/`:15047`),
+StardustJellyfishBig 407 (`:15097`), SolarCorite 418 (`:15378`), NebulaFloater
+420 (`:15169`), BrainSuckler 421 (`:15141`), DD2WyvernT1/T2/T3 558/559/560
+(`:16217`/`:16235`/`:16253`), DD2KoboldFlyerT2/T3 574/575
+(`:16491`/`:16509`), AngryNimbus 250 (the aiStyle-49 head, `:31589`). The table
+is STATIC per kind while the C# flag is live per tick — a recorded deviation:
+only the steady SetDefaults/AI-head writes are modelled. The CONDITIONAL
+writes are deliberately NOT modelled: the aiStyle-107 DD2 charge's
+phase-gated flips (`NPC.cs:63016`/`:63797`/`:63956`) and the Goblin Summoner's
+ghost-phase flag (`:56497`, which also zeroes `knockBackResist` while ghosted)
+— the port has no charge/ghost phase state to read. The moon bosses'
+every-tick AI-head writes are likewise unmodelled: MourningWood 325 /
+Everscream 344 (the aiStyle-57 head, `:32764-32765`) and SantaNK1 346 (the
+aiStyle-61 head, `:33684-33685`) — all three write `knockBackResist = 0`
+(`:13125`/`:13365`/`:13396`), so the knockback gate refuses them and the
+Y-pop selector never reads their flag; the Pumpkin/Frost tables stay
+SetDefaults-verbatim (the DW-1.1 census tests pin them).
+
+**Crit moved spawn→hit (the RNG-order fix).** The C# rolls crit PER-HIT inside
+`Damage_PVE_Inner` (`Projectile.cs:12829` `bool crit = false`, `:12883-12917`):
+each set class flag rolls an independent `Next(1,101) <= classCrit +
+bonusCritChance` on the `UpdateProjectiles` stream, BEFORE the tag math and
+`DamageVar` (`:12938`). The port rolled at SPAWN on `UpdatePlayers`
+(`editing.rs` throw + shooter) — a documented deviation now FIXED.
+`tr_core::damage::projectile_hit_crit` ports the block; the spawn-time rolls
+and `set_crit` calls are removed. The class flags (`melee`/`ranged`/`magic`,
+`Projectile.cs:751-753` reset false) + `appliesImmunityTimeOnSingleHits`
+(`:717`) + `bonusCritChance` (`:803`) join `ProjData`/`Projectile`, populated
+from the SetDefaults census (the yoyo/flail/spear/drill/shortsword families are
+melee via their `DefaultTo*` helpers; the whip sets NONE, `:10704-10718`; the
+bombs 28/29/37/519 set none). Round-2 completed the RANGED census — the
+player-fired rows the first pass missed (the per-hit ranged crit silently
+never fired for them): the Sandgun balls 42/65/68/354
+(`:1254`/`:1456`/`:1484`/`:4447`), the Flamethrower's Flames 85 (`:1669`), the
+special arrows 117/469/485/495/819 (`:2066`/`:5443`/`:5611`/`:5688`/`:8003`),
+the launcher rockets 133-144 (`:2229-2336`), 338-341 (`:4315`) and the
+776-801/803-810 group (`:7946`, 779/783 row-less), the gunProj rockets
+615/630/705/714 (`:6629`/`:6776`/`:7581`), the Celebration rockets 715-718
+(`:7592`/`:7604`) and the Empress shot 932 (`:8844`); the hostile snowmen's
+109/110 (`:1976`/`:1989`) carry the flag verbatim (owner 255 keeps it moot).
+The Clentaminator spray 145 (`:2338-2349`) and the acorn 1088
+(`:10145-10152`) set NO class flag — verified, left false. The Vilethorn pair
+7/8 shares ONE C# arm (`:874-885`, `magic = true` at `:884`) — the port's
+`VILE_TIP` magic flag is CORRECT (a resume-worker gap report misread the arm
+boundary). The 1130 force-false (`:12934`) is applied after
+the tag math. `TryConsumingTimerCrit` (`:12902`), the monk-set Next(4)/Next(6)
+(`:12903-12916`) and the sentry-backpack Next(10) (`:12930`) are unported
+accessories — no port state, no draws. The `ownedBySomeone` gate (`:12557` →
+`:578-588`, `!npcProj && !trap`) folds to `owner < 255 && !trap` (no `npcProj`
+field). The four spawn-crit draw-count tests re-pinned: the cycler 1/2→0/1, the
+leaf blower 3→2, the nebula blaze 4→3, the last prism 1→0.
+
+**Immunity (`projectile.rs::damage_pve`/`damage_pve_boxed`,
+`Projectile.cs:13967-14119`).** The C# if/else order restored: id-static FIRST
+(`:13967`), then the per-type arms, then local (`:14111`), then the stock
+window (`:14116`). The id-static gate reads the CURRENT `penetrate` (not
+`maxPenetrate`) with the `appliesImmunityTimeOnSingleHits` override (`:13969`);
+the old plain-walk `cooldown > 0` gate skipped the −1 block-forever sentinel —
+now `GameUpdateCount + (uint)cooldown` wraps −1 to u32::MAX (`:13972`, the 644
+shard burst's stock pair). The per-type arms added for the ported kinds:
+632 (Last Prism laser) → `immune[owner] = GetSlowMagicUseTime(5)` = 5
+(`:13992-13995`; the `slowMagicUse` state is unported —
+`Player.cs:47019-47026` returns the original time when the flag is false —
+so the window is the constant 5; both walks, in the C# if/else position
+between id-static and the 634 arm), 634/635/659 → `immune[owner] = 5`
+(`:14016-14023`), 16 → 8 (`:14032`), 409 → 6
+(`:14036`). The stock window gate also reads the current penetrate + override
+(`:14116`). The single-hit bypass (`maxPenetrate == 1 && !usesLocal &&
+!usesIDStatic`, `:12615`) is unchanged (CORRECT). The 644 block-forever
+witness's fixture was corrected to mirror the burst window: `friendly = true`
+(`:34345`/`:72160`) and `penetrate = maxPenetrate = −1`
+(`:34351-34352`/`:72167-72168`) BEFORE `Damage()` — the old fixture left
+`penetrate = 1`, so the id-static gate refused the stamp and the assert
+could never pass.
+
+**Deviations / skips.** The melee `hurt_cd = 0.18` stand-in stays (the C# uses
+per-owner `immune[]` + `meleeNPCHitCooldown[npc]` + `attackCD`,
+`Player.cs:44231-44239` — recorded at ANALYSIS:7099-7104). The held-item crit
+is NOT folded into the class crits in the port: the C# folds it per tick
+(`Player.cs:25515-25517`), so the per-hit roll reads the folded value, while
+the port's per-hit block (`projectile.rs`, `pl.melee_crit`/`ranged_crit`/
+`magic_crit`) reads the UNFOLDED class crits — the melee strike compensates
+with `class_crit + item_crit`, but a projectile's per-hit crit misses the
+held item's bonus. The proper fix needs held-item plumbing into `damage_pve`
+(the port's `Player` carries no inventory) — out of this task's surgical
+scope, recorded for the inventory-port task. The boxed walk has
+no player reference, so its per-hit crit reads class crits 0 (the death-burst
+callers pass no player); the roll still consumes its draws in the C# order.
+The `crit` slot field stays as a retained seam: the plain `spawn`'s crit
+argument and `set_crit` still write it, but no production caller passes a
+non-false flag today and the damage walks no longer read it — only the whip
+"never self-crits" witness reads it (the field-doc records this).
+The type-185 knockback ×1.5, the monk/sentry/timer crit accessories, and the
+unported per-type immunity arms (434/598/636/614/514/595/735/927/443/1110/
+424-426/246/249/582/902/451/864/866/611/612) wait for their kinds/state.
+The expert/master knockback-resist scaling is unmodelled: the C# multiplies
+`knockBackResist` by `GameDifficultyData.KnockbackToEnemiesMultiplier` at
+spawn (`NPC.cs:18179` → `:7031-7034`), and the multiplayer
+`ScaleStats_ByPlayerCount` (`:18560`) re-scales it for the Brain/Creeper
+pair (`:18573-18584`, ×0.8 per 0.34 balance step, floored to 0 below 0.1) —
+the port's `knock_back_resist` reads the normal-mode SetDefaults value (the
+`expert` flag threads only the `num4` gate's ×15). The `bonusCritChance`
+writers beyond the monk staff (`:11131` the revolver bonus, `:11139` the
+item-source copy) are unported state — the field stays 0.
+
 ## The lunar chain (M4-EVENT-15)
 
 The apocalypse is a state chain, not a machine: the cultist's death в†’
@@ -14363,11 +14783,20 @@ fade lifecycle of 1130/1135: the 0.92 velocity decay, the
 owner-local `Kill`.
 
 Deviations: the counterweight on-hit spawn path (`Player.Counterweight`,
-`Player.cs:12356-12415` вЂ” the yoyo-glove/counterweight scan) is a separate
-accessory arm and stays deferred; `AI_210`'s one-shot sound and frame cycle
-are the render row's (the port's cue table has no `Item20`); the spawned
-shots' own aiStyle-189 (1125) and aiStyle-24 (1134) families are their own
-tasks вЂ” the shots exist with their data, their children-AIs do not run.
+`Player.cs:12356-12415` - the yoyo-glove/counterweight scan) folds out
+with the unported `yoyoGlove`/`counterWeight` grants (S1-P-i09 re-read:
+the gate `!yoyoGlove && counterWeight <= 0` returns early, so the call
+is a no-op until M3-EQUIP-3 lands the accessory rows); the aiStyle-99
+hit arm AROUND that call (the recoil / facing / clock age / no-LOS cut
+/ the dropped twin's squash+lift, `Projectile.cs:13256-13300`) IS
+ported now (S1-P-i09, "The yoyo family" above); `AI_210`'s one-shot
+sound and frame cycle are the render row's (the port's cue table has
+no `Item20`); the spawned shots' own aiStyle-189 (1125) and aiStyle-24
+(1134) families are their own tasks - the shots exist with their data,
+their children-AIs do not run. The Hive-Five's bee arm
+(`Projectile.cs:13699-13706`, the 1/3 `Next(3)` gate + `beeType`/
+`beeDamage`/`beeKB`) stays deferred with the bee family's rows
+(181/566 have no `proj_data` row).
 ## The Old One's Army's lane spawn (M4-EVENT-18)
 
 The etherian portal (549) is the gate every lane's monster climbs out of,
@@ -14917,6 +15346,113 @@ rows, the hold orbit, the release/flight/retract/wall-bounce/reel-in
 transitions with the per-state factors, the kill gates, the morph, the
 Flairon bubbles, the Drippler's extra ball, the damage gates and a full
 holdв†’throwв†’bounceв†’reel lifecycle.
+## The spear family (S1-P-i06)
+
+The held-spear thrust (useStyle 5, aiStyle **19**) ports as
+`crates/tr-app/src/projectile_ai_spear.rs`, driven by the dispatch arm
+`AI()`'s `else if (this.aiStyle == 19)` (`Projectile.cs:25477-25480`) →
+`AI_019_Spears` (`:45857-46073`). The 21 kinds (46/47/49/64/66/97/105/130/
+153/212/215/218/222/342/367/368/730/877/878/879/1103) all ride
+`DefaultToSpear` (`:10720-10730`: aiStyle 19, friendly, `penetrate = -1`,
+`tileCollide = false`, drawLayer 7, `usesOwnerLight`, `ownerHitCheck`,
+melee); their `SetDefaults` rows + the 8 sub-shot rows land in
+`projectile/data.rs` (cited per field). The legacy `AI_019_Spears_Old`
+(`:46222+`, the ai[0] accumulator form) has **no caller** in the 1.4.5.8
+decompile — it is dead and is NOT ported; the live arm is the offset-curve
+form.
+
+The Player side spawns the spear through the GENERIC `ItemCheck_Shoot` tail
+(`Player.cs:49437`, `ai0/ai1/ai2 = 0`): the aim normalized to `shootSpeed`
+(`:47277-47307`), the spawn at `RotatedRelativePoint(MountedCenter)`
+(`:47196`). There is **no spear-specific ai payload** — the extension is
+driven by the OWNER's `itemAnimation` countdown, read each tick by the AI.
+The `useStyle == 5` block (`:47349-47375`) only sets `itemRotation` (the
+port's `item_rotation_for_aim`, already wired). The melee
+`speed /= meleeSpeed` (`:47061-47064`) applies to every spear EXCEPT the
+jousting lances 877-879, which ride
+`ProjectileID.Sets.NoMeleeSpeedVelocityScaling` (`ProjectileID.cs:547`);
+the shoot path's exception list now carries them (the prior comment claimed
+no ported kind rode the set — corrected).
+
+The arm: re-centre the box on the owner anchor (`:45864`), add
+`velocity * spear_offset` (`:45880`), the per-kind sub-shot switch
+(`:45881-45938`), the rotation `atan2(vy,vx) + π/2 + π/4`, minus π/2 when
+`spriteDirection == -1` (`:45943-45947`), then `ai[0]++` and the kill at
+`ai[0] >= itemAnimationMax` (`:46063-46072`) — the lances (877-879) hold
+while `player.channel` (`flag3 &= !channel`). The offset curve
+(`AI_019_Spears_GetSpearOffsetRelativeToPlayer` `:46075-46184`):
+`num3 = max/3` (integer), `num4 = min(anim, num3)`, `num5 = anim - num4`,
+the per-kind `(num6 base, num7 extend, num8 retract)` triple feeds
+`num6 + num7·((max−num3)−num5) − num8·(num3−num4)`. The extension hitbox
+(`:46186-46220`) exists only in the extension phase (`anim >= max/3`) and
+only for 46/105/153: reach `10 + reachScale·(1/meleeSpeed)·t`, side
+`10 + widthScale·t`, `t = Remap(anim, max, max/3, 0, 1)`, centred at
+`Center + aimUnit·reach`.
+
+Movement: aiStyle 19 is NOT in `UpdatePosition`'s skip list (`:20435`), so
+the generic `HandleMovement` → `position += velocity` (`:20445`) runs AFTER
+the AI (`:17015`) — the dispatch runs `kill_step` (the `tileCollide = false`
+free-move branch) after the arm. The AI's own `velocity * offset` and the
+post-AI `velocity` step are both kept, in order.
+
+Hit side: the `ownerHitCheck` gate (`Damage_PVE_Inner` `:12637`:
+`!noTileCollide && ownerHitCheck && !CanHitWithMeleeWeapon` → return) is
+keyed on `SPEAR_KINDS` (the only ported ownerHitCheck family); the sight
+lines (`CanHitWithMeleeWeapon` `:12400-12411`) read the owner snapshot. The
+`Colliding` aiStyle-19 arm (`:15815-15843`) steps a box-sized rect from the
+projectile centre toward the extension-box centre (step = max(side, 12)),
+then tests the box itself; it only returns on a HIT — a miss falls through
+to the base-rect test (`:15888`), so the port ORs the two.
+
+The owner snapshot (`SpearOwner`) rides the pool's `set_spear_owner` seam
+(the `set_disco`/`set_wind` setter pattern — no `update` signature churn);
+`world_sim/projectiles.rs` builds it per fixed step from the live player +
+the swing timers (`itemAnimation = round(app.swing·60)`, the `ticks_of`
+convention). The lances' channel-hold (`SetDummyItemTime(max/3)`,
+`:45941` → `Player.cs:4432-4441`) drains via `take_spear_hold` and re-arms
+`app.swing`/`app.item_time` (the `FlailTick.facing` write-back precedent).
+
+The sub-shots ride their OWN aiStyles, ported here so the spawns are not
+inert: the Mushroom Spear's spore **131** (aiStyle 30 default arm
+`:26775-26784`: velocity×0.8, rot+=0.2, alpha+=4, kill at 255); the
+Chlorophyte Partisan's cloud **228** + the Thunder Spear's bolt **732**
+(aiStyle 44 `:27893-27948`: the fade + the frame machine, `projFrames`
+5/4); the North Pole's snowflake **343** (aiStyle 57 `:28867-28905`: the
+30-tick gravity, the alpha-50 fade, the `Next(7)`-seeded cadence spawning
+**344** with `ai1 = Next(3)`); the 344 falling flake (aiStyle 1, the
+`AI_001` type hook `:57062-57114`: the tile-kill probe, the localAI[1]
+fade/gravity/sibling-push machine, `frame = (int)ai[1]`, the 60-px
+same-kind separation scan — precomputed pool-side, the `minion_separation`
+pattern; the 344 has its OWN gravity-chain arm so the generic `ai[0] >= 15`
+gravity does NOT apply, and the `:57748` rotation exclusion means no
+default rotation); the Obsidian Swordfish's bones **1107-1109** (aiStyle
+14, the generic `ai_spear` tail — no type branch in `AI_014`).
+
+RNG (the `UpdateProjectiles` stream, `Main.cs:17775-17777`): the
+behaviour-feeding draws stay in C# order — the swordfish bone burst
+(`Next(1,4)` count, then per bone `NextFloat`×3 velocity jitter + `Next(3)`
+kind + `Next(30,150)` timeLeft, `:45926-45934`) and the snowflake cadence
+(`Next(7)` seed + the trailing `Next(3)` frame, `:28890`/`:28902`). The
+dust/light BODIES are skipped (no draw layer) and their explicit gate rolls
+go with them (the `projectile_ai_frostmoon` zero-RNG convention — no
+observable state depends on a skipped dust): the Trident's `wet && Next(2)`
+bubble (`:45884`), the 732/46/105/153/342/1103/877-879 trailing dust gates.
+The spore/cloud/bolt spawns are RNG-free cadences.
+
+Deliberate skips (none simulated): dust, `Lighting.AddLight`, sound,
+`netUpdate`, `player.heldProj` / `MatchItemTimeToItemAnimation` (no port
+consumer — the flail precedent), `drawLayer`/`usesOwnerLight` (no draw
+consumer), the `noTileCollide` term of the ownerHitCheck gate (no NPC
+field; the ghost kinds are not spear targets here). The 344's
+`Main.projFrames[344] = 3` (`Main.cs:8568`), the 228's 5 (`:8605`) and the
+732's 4 (`:8629`) join `proj_frames`.
+
+CODE-ONLY MODE: the 9 witness tests in `projectile_ai_spear.rs` are WRITTEN
+NOT RUN (no compiler invoked on this branch); verified by re-reading the
+cited C# blocks and hand arithmetic (the offset curve at the extension
+peak/retract floor, the extension-box phase/kind gates, the kill-at-max +
+lance hold, the bone-burst draw order, the spore cadence, the sibling push).
+
 ## The full `PlayerFrame` chain (M2-DRAW-3, 2026-11-11)
 
 `Player::update_frames` now ports `PlayerFrame()` (`Player.cs:35755-36647`) arm for arm
@@ -17879,6 +18415,16 @@ thirds' X sign, the shoot style's item rotation, the hold styles' anchors
 and the eat style's stretch table) вЂ” all mutation-checked (RED on the
 pre-fix code).
 
+**S1-P-i04 update (2026-11-19):** the useStyle-1 arm now routes through
+`melee_swing.rs` - the per-item nudges deviation above is CLOSED for the
+swing (the Bladed Glove claw, the fishing-hammer/Keybrand nudges and the
+Breaker Blade's `UsesBetterMeleeItemLocation` offset are ported), the thirds
+compare the RAW tick counters in double like the C# (`(double)itemAnimation
+< (double)itemAnimationMax * 0.333`), and the draw carries `sItem.type`
+(`PlayerCompositeState.item_type`). The `mountOffset`/`gravDir` deviation
+stands for the DRAW only (the module carries both for the sim-side hitbox).
+See "The broadsword melee swing (S1-P-i04)" below.
+
 
 ## The throw and rapier item placement (S1-G-18, 2026-11-14)
 
@@ -17913,6 +18459,153 @@ Tests: `s1_g_18_the_throw_style_rides_its_wind_up_and_arc`,
 `s1_g_18_the_umbrella_rotation_is_the_vector_rotation` вЂ” all
 mutation-checked (RED on the pre-fix code; the left-facing cases pin the
 mirrored `atan2`, which is where the `hypot` slip showed).
+
+## The shortsword stab (S1-P-i05, 2026-11-20)
+
+The useStyle-3 (Thrust) audit — the stab arm's `itemLocation` maths, the
+melee hitbox during the stab and the direction lock, C#-verified against
+`Player.cs`. **Scope note:** in 1.4.5.8 the ONLY useStyle-3 items are the
+Umbrella (946, `Item.cs:12320-12332`) and the Tragic Umbrella (4707,
+`:38683-38695`); the Iron Shortsword (6) is useStyle **13** (the rapier)
+since the 1.4 rework (`Item.cs:1455-1471`: `useStyle = 13`, `shoot = 940`,
+`noMelee = true`) — its lunge is a projectile, not this arm. The task's
+"shortsword stab" is therefore the Thrust style itself.
+
+**The census verdicts:**
+
+* **WRONG — the render's thrust placement**
+  (`render/player_layers.rs::use_item_placement`'s style-3 arm vs
+  `Player.cs:51031-51063`): (a) the wind-up gate was `remaining > 2/3`
+  instead of the C#'s `0.666` literal (`:51033` — the double compare
+  `(double)itemAnimation > (double)itemAnimationMax * 0.666`); (b) the
+  `num14` extension dropped the `GetAdjustedItemScale(sItem)` factor
+  (`:51043`); (c) the clamps were a `clamp(-8, 8)` BOUND instead of the
+  C#'s one-sided SNAPS (`:51044-51051`: `num14 > -4 && dir == -1` → -8,
+  `num14 < 4 && dir == 1` → 8 — a value between -4 and 4 snaps OUT to ±8,
+  it is not bounded IN); (d) the 946/4707 `itemLocation.X -= 6 * direction`
+  nudge (`:51054-51057`) was missing. Fixed by delegating to the shared
+  verbatim port `player.rs::thrust_item_placement`.
+* **MISSING — the stab hitbox** (`ItemCheck_GetMeleeHitbox`'s style-3 arm,
+  `Player.cs:45164-45189`): the port had no sim-side `itemLocation` and no
+  melee-hitbox port at all — the umbrella pair could not damage anything
+  (the cursor melee arm's `held_weapon` gate is `projectile.is_some()`,
+  the shooter definition; the umbrellas have no projectile). Ported
+  verbatim as `player.rs::thrust_melee_hitbox`: the wind-up `dontAttack`
+  (`:45168-45172`), the int-truncated `(int)itemLocation` anchor + the
+  `GetAdjustedItemScale`-sized frame (`:45102-45130`), the direction /
+  gravDir corner flips (`:45131-45138`), the stab shape (the left 1.4-shift
+  reads the PRE-growth Width, `Width *= 1.4`, `Y += Height * 0.6` reads the
+  PRE-shrink Height, `Height *= 0.6`, `:45173-45179`) and the umbrella
+  `+14 Height / -10 Width / +10 X when left` pair (`:45180-45188`). The
+  5094-5097 pre-shrink switch (`:45107-45125`) never meets a style-3 item
+  (those four are useStyle 1) — omitted with the cite.
+* **MISSING — the per-tick stab sweep** (`ItemCheck`'s melee block,
+  `Player.cs:43644-43686`): the C# runs `ItemCheck_GetMeleeHitbox` +
+  `ItemCheck_MeleeHitNPCs` EVERY tick while `itemAnimation > 0` — the stab
+  rect moves with the extension, so the hit lands when the rect first
+  intersects, not on the press. Ported as
+  `world_sim/editing.rs::thrust_stab_tick`: the press edge starts the use
+  (`ItemCheck_StartActualUse` `:51657-51698` — `attackCD = 0`,
+  `ResetMeleeHitCooldowns`, `ApplyItemAnimation`), then every animation
+  tick the rect scans the NPC pool in slot order through
+  `resolve_melee_strike` — the cursor arm's strike resolution extracted
+  VERBATIM (the class multiplier → crit roll → `DamageVar` → the
+  Flymeal/cane arms → the penetration sum → `StrikeNPC` → the
+  combat-text/net/sound tails; the `UpdatePlayers` draw order is
+  byte-identical to the pre-extract inline code). The one-hit-per-swing
+  lock is `Player.meleeNPCHitCooldown` (`:3180`), ported as a uid-keyed map
+  (the C# indexes stable NPC slots; the port's pool compacts — the
+  established `Npc.uid` identity): cleared at the use's start (`:44216`),
+  decremented once per non-`dontAttack` damage tick (`:43664`, the
+  `:43651` gate skips the wind-up ticks), re-armed to the CURRENT
+  `itemAnimation` on a landed hit (`:44414`), gated `<= 0` in the scan
+  (`:44246`); `ApplyAttackCooldown` (`:44428-44431`) sets
+  `attackCD = max(1, (int)(itemAnimationMax * 0.33))` after each landed
+  hit. The sweep runs BEFORE the cursor HUD guard (the C#'s melee block is
+  cursor-independent; only the use-START reads `controlUseItem`), so an
+  in-flight stab completes with the pointer over the hotbar.
+* **WRONG — the direction lock** (`Player.HorizontalMovement`
+  `Player.cs:19834-19846`): the port's run-key turn had no `flag3` gate —
+  the C# turns only when `(itemAnimation == 0 || useTurn) &&
+  mount.AllowDirectionChange && !sandStorm` (`:19837`). A mid-stab player
+  turned freely; now the facing locks for the whole animation (the
+  umbrellas are `useTurn: false`). `FrameInputs.use_turn` carries the held
+  row, `MountState::allow_direction_change` ports `Mount.cs:630-639` (the
+  Scutlix 9's `abilityCooldown < row/2` gate; every other mount true), and
+  `!sand_storm` joins (the dash owns its 4-tick turn cadence,
+  `:36301-36304`).
+* **CORRECT — the body rows** (`PlayerFrame` `Player.cs:36377-36387`):
+  BOTH branches set row 3 (the vanilla quirk — the `:36385` else is dead);
+  the port already did this. The citation was wrong (`:36363-36372`, the
+  DrinkLong arm) — re-cited.
+* **CORRECT — the composite arms**: the style-3 arm sets NO composite
+  arms (`Player.cs:51031-51063` has no `SetCompositeArm*` call — the
+  per-frame reset at `:43376-43377` leaves them disabled, the body-row
+  cells carry the pose); the port's `apply_item_composite_arms` has no
+  style-3 arm either. No change.
+
+**Deviations (deliberate):**
+
+* `GetAdjustedItemScale` (`Player.cs:42566-42582`) folds to the prefixed
+  `Item.scale` — the `meleeScaleGlove` ×1.1 arm has no port granter (the
+  Titan Glove's scale half is the documented S1-C-12 skip). The prefix
+  rides the held tuple into the draw and the `hand_key` (the G6 rule: a
+  reforge changes the held item's pixels).
+* The held frame is the atlas icon quad — the established
+  `Item.GetDrawHitbox` stand-in the renderer already uses (the umbrellas'
+  44×44 stock frame matches their icon).
+* The `CanHit` wall check (`:44287`) and the `nPC.immune[whoAmI] == 0`
+  gate (`:44246`) ride the port's established `strike_melee` `hurt_cd`
+  stand-in (the cursor melee arm's convention).
+* The cursor arm keeps its full-swing `attack_cd` overwrite after
+  `resolve_melee_strike` (the established start-arm stand-in); the stab
+  sweep keeps the C#'s `ApplyAttackCooldown` value. The extraction added
+  the `:44414`/`:44419` tail to the shared helper — for the cursor arm the
+  cooldown insert is inert (its next press re-starts the swing) and the
+  `attack_cd` write is overwritten by the caller's start arm, so the
+  cursor path's behaviour and RNG draws are unchanged.
+* `mountOffset` (`HeightOffsetHitboxCenter`) stands at 0 and `gravDir` at
+  1 — the port's established folds (no mount height offsets, no gravity
+  flip).
+
+**RNG:** zero new draws. The sweep's landed hits ride the SAME
+`UpdatePlayers` resolution the cursor arm uses (crit → `DamageVar` → the
+probe/combat-text/hit-sound tails, in that order); the use-start's
+`UseSound` rides `start_swing_extras` like every other swing. The
+non-landed ticks draw nothing (the C#'s `ItemCheck_GetMeleeHitbox` +
+scan are pure).
+
+**Witnesses (WRITTEN NOT RUN — code-only mode):**
+`player.rs::s1_p_i05_thrust_tests` (4: the 0.666 boundary incl. the
+0.6661/0.6665 pair that discriminates the 2/3 gate, the extension / snap /
+scale / nudge / mountOffset maths both facings, the hitbox rect table incl.
+the scaled + umbrella + plain shapes, the facing lock's four arms),
+`mount.rs::s1_p_i05_the_scutlix_cooldown_gates_the_direction_change` (the
+Scutlix cooldown gate + the non-Scutlix always-true), `render/player_layers.rs::
+s1_p_i05_the_render_thrust_rides_the_shared_port` (the delegation + the
+state-carried scale/type), `world_sim/editing.rs` (4: the press starts the
+stab and the 8 wind-up ticks never hit, one hit per swing with the
+cooldown counting 14 → 1 across the animation + the second press re-arms,
+the sim's `frame_inputs.use_turn` lock, and the clone-mirror RNG purity —
+the wind-up + miss ticks draw nothing on the `UpdatePlayers` stream).
+
+**Retry round (W3-i05b, 2026-11-20, all test-side, module behaviour
+untouched):** three witness defects reconciled to the f32/C# reality —
+(a) the gate discriminator at `remaining = 0.6661` asserted the item
+REVEALED (`assert_ne!`), but 0.6661 lies between the C# literal 0.666
+and 2/3, so the correct gate HIDES it (wind-up) — the old assertion
+pinned the pre-fix 2/3 behaviour and contradicted the adjacent 0.6665
+case; flipped to `assert_eq!` (f32-verified: 0.6661 > 0.666, < 2/3);
+(b) the snap-boundary case claimed `num14 == 4` keeps the raw value at
+`remaining = 14/52.8`, but that ratio rounds DOWN in f32 and `num14`
+lands 3.9999990 (< 4 → the C# float snaps too); replaced with the
+no-snap arm at remaining 0.3 (`num14 = 5.84`, loc.X 116.16); (c) the
+non-Scutlix always-true arm used mount 40 (the Horse), which the port
+does not ship — `set_mount(40)` is a no-op and the case tested the
+inactive mount; repointed to the Drill (8, a ported row, `Mount.cs:
+1273-1341`). Added the clone-mirror RNG-purity witness above (the 4th
+sim witness). The landed module code (`24a2331d`) audited CORRECT
+against the census — no module change.
 
 ## The draw phase order (S1-B-7, 2026-11-14)
 
@@ -25307,6 +26000,158 @@ ai_arrow` / `3 => ai_boomerang` (origin/main :11332-11333, after the
 :11053/:11060 first arms). The first arm wins, so the slice-B gate is
 effective; the duplicates are dead code for a future cleanup task.
 
+## The special arrows (S1-P-i17, task/S1-P-i17-special-arrows, 2026-11-20, code-only mode)
+
+Branch `task/S1-P-i17-special-arrows` (worktree TR-i17). CODE-ONLY: no
+cargo/rustc/rustfmt/tests invoked — the witness tests in
+`crates/tr-app/src/special_arrows.rs::tests` (16) and the three
+`s1_p_i17_*` shoot-wire tests in `world_sim/editing.rs` are WRITTEN NOT
+RUN; each expected value is hand-derived from the cited C# lines. Run
+`cargo test -p tr-app special_arrows` and
+`cargo test -p tr-app s1_p_i17` when a compiler pass is allowed.
+
+**Census verdicts (the arrow special effects on shoot/hit):**
+
+- **MISSING → ported (rows):** the 12 special-arrow kinds had NO
+  `proj_data` rows — 4 Unholy (`Projectile.cs:837-848`, pen 5), 5
+  Jester's (`:849-863`, pen −1, alpha 100, ignoreWater, extraUpdates 1,
+  **timeLeft 120**), 41 Hellfire (`:1237-1247`, pen −1, stock 3600),
+  91 Holy (`:1743-1752`), 103 Cursed (`:1904-1914`), 120 Frost
+  (`:2093-2104`, extraUpdates 1), 172 Frostburn (`:2579-2590`), 225
+  Chlorophyte (`:3100-3110`, extraUpdates 1), 278 Ichor (`:3638-3649`,
+  extraUpdates 1), 282 Venom (`:3688-3698`, extraUpdates 1), 474
+  merchant Bone (`:5474-5484`, pen 2), 1006 Shimmer (`:9570-9579`) —
+  plus the 92 falling star (`:1753-1764`, aiStyle 5, 24×24, alpha 50,
+  scale 0.8, tileCollide false) the Holy Arrow spawns. The lights ride
+  `set_defaults_light` (4: 0.35, 5: 0.4, 41: 0.3, 103/172/278: 1.0).
+- **WRONG → fixed (rows):** the 819 Blood Arrow carried `timeLeft =
+  1200` — the C# arm (`:7993-8002`) writes NO override, the stock 3600
+  stands; its `alpha = 255` (`:7999`) was dropped. The 469 Bee Arrow's
+  `alpha = 255` (`:5437`) was dropped — its AI_001 fade (`:55197-55208`)
+  reads it. Both fixed; the two row pins in `projectile.rs` updated.
+- **MISSING → ported (AI):** the per-type `AI_001` arms — the Jester's/
+  Bee's resting counters (`flag3 = false`, `:55949`/`:56002`), the Holy
+  Arrow's soft 20-tick/+0.07 gravity (it shares the 81 arm,
+  `:56888-56895`), the Frostburn 17/+0.085 (`:57233-57240`), the Bone
+  35/+0.06 (`:57241-57248` — the 474 is NOT named there, it takes the
+  generic 15/+0.1), the Frost 30/+0.05 (`:57249-57259`), the
+  Shadowflame 30/+0.04 (`:57479-57489`), the Shimmer's INVERTED gravity
+  (`flag4`, `:56034-56036` + `:57571-57574`) with the −16 clamp
+  (`:57760`), the Bee's fade + spriteDirection tail (`:57671-57683`),
+  the Bee's water kill (`:54012-54015` — the tile-liquid probe keeps
+  the `!honeyWet && !shimmerWet` exclusions via the port's liquid
+  flags), the Chlorophyte bounce (`HandleMovement` `:18539-18561`:
+  ai[1] counter, ×0.66 first-bounce damage, 4-bounce kill, the
+  reversal + `FindTargetWithLineOfSight` retarget with the
+  `Lerp(h*0.1, h*0.5, GetLerpValue(0, 300, dist))` lead). The falling
+  star's aiStyle-5 slice (`:23858-23864` floor, `:23928-23945` alpha
+  pulse, `:23952` spin, `:24053` light).
+- **MISSING → ported (hit):** `StatusNPC`'s arrow arms — the
+  FlameArrow's 1/3 OnFire 24/180 (`:11552-11555`), the Frostburn's 1/3
+  Frostburn 44/180 (`:11556-11562`), the Cursed group's CursedInferno
+  39/420 (`:11665-11668`), the Ichor group's Ichor 69/600
+  (`:11669-11672`), the Venom group's Venom 70/600 + PotentAcid
+  395/120 (`:11673-11677`), the Shadowflame's roll 153/`Next(120,300)`
+  (`:11458-11461`). The Hellfire's on-contact `timeLeft = 1` clamp
+  (`:13252-13255`). Wired into `damage_pve` at the C#'s sites: the
+  clamp after DamageVar, `status_npc` BEFORE the strike (`:13580`
+  precedes `:13649` — a refused strike still applies the debuff).
+- **MISSING → ported (death):** the Holy Arrow's star spawn
+  (`Kill()` `:75212-75248`: `Next(-400,400)`/`Next(600,900)`, the
+  22-speed aim at the centre, damage/3, ai0 = 1, ai1 = death Y; the
+  star's OWN `ai[0] > 0` re-spawn at full damage chains exactly two
+  deep), the Hellfire's 64×64 blast (`:76308-76341`: the centred
+  resize, pen −1, the box `Damage()` walk — the gem-bolt AoE seam),
+  the Bee Arrow's 6-slot swarm (`:76407-76429`: the odd `Next(3)`
+  gates, the `position − normalize(oldVelocity)*8*i` trail, the
+  `Next(-35,36)*0.01 + oldVelocity/6` velocities, `beeType`/
+  `beeDamage(damage/3)`/`beeKB(0f)`, `penetrate = 2`). The pool's
+  death hook (`special_arrow_kill`) resolves them; `old_velocity`
+  captures `base.oldVelocity` at each sub-step start (`:16766`).
+- **MISSING → ported (shoot):** the post-PickAmmo bow conversions
+  (`Player.cs:47157-47168`): the Molten Fury 120 burns wooden arrows
+  (1 → 2, gated), the Marrow 682 → 117 and the Ice Bow 725 → 120
+  (unconditional). Placed AFTER the not-consume rolls (the C# rolls
+  key on the PRE-conversion projectile). The Daedalus Stormbow's
+  arrow-type volley (`:47424-47465`): 3 arrows, the 91/4/5/41 branch
+  rolls `Next(3)` to DROP one, every other kind to ADD one; the
+  6-draw per-arrow rain (spread/blend/jitters/scale/shift). The Blood
+  Rain Bow's volley (`:47466-47499`): `Next(1,3)` + the 1/3 bonus,
+  the 7-draw per-arrow rain.
+- **Already faithful (untouched):** the PickAmmo per-weapon overrides
+  (`ammo.rs`: Hellwing 3019 → 485, Shadowflame Bow 3052 → 495, Fairy
+  Queen 4953 → 932, Blood Rain 4381 → 819, Skeleton Bow 4058's
+  474 → 117, Bees' Knees 2888 → 469, Molten Quiver 1 → 2), the plain
+  1/2 arrows' generic flight (their C# arm IS the generic tail), the
+  81/82 hostile twins (slice A), the 639/640 Moonlord pair
+  (`projectile_ai_moonlord`), the 485 Hellwing bat (its own
+  `:57708-57735` homing tail is a separate follow-up — the row exists,
+  the generic flight serves it today, unchanged).
+
+**RNG order (the task's core risk):**
+
+- The FLIGHT module takes no rng — every `Main.rand` in the ported
+  AI blocks feeds dust/gore only (cited per kind in the module
+  header), skipped with the layer (the ai001_a/b/c convention). The
+  `UpdateProjectiles` stream is untouched BY CONSTRUCTION for flight.
+- The HIT draws ride `damage_pve`'s stream in the C#'s statement
+  order: Shadowflame `Next(120,300)` → FlameArrow `Next(3)` →
+  Frostburn `Next(3)`; the Cursed/Ichor/Venom arms are draw-free (the
+  else-if chain's earlier tests are kind comparisons). One draw per
+  landed contact, before the strike.
+- The DEATH draws ride the pool's death-hook stream: the star's
+  `Next(-400,400)` then `Next(600,900)`; the bee swarm's per-slot odd
+  gate `Next(3)` (only i = 1/3/5), then per spawned bee
+  `Next(-35,36)` ×2 → `beeType`'s `Next(2)` (only when strongBees) →
+  `beeDamage`'s `Next(1,4)`/`Next(2)` — the C#'s named-argument
+  evaluation order (`:76423`). The Hellfire blast draws nothing (its
+  gore/dust census is skipped with the layer).
+- The SHOOT draws ride `UpdatePlayers` (the ItemCheck swap): the
+  Stormbow's count roll FIRST (the arrow-type branch), then 6 draws
+  per arrow in the C#'s line order; the Blood Rain's `Next(1,3)` +
+  `Next(3)` then 7 per arrow. The volley reuses the shot's ONE
+  throw-time crit roll (the port's crit-at-throw convention — the C#
+  rolls crit per hit; no extra draws).
+
+**Deliberate deviations (recorded):**
+
+- The Chlorophyte bounce's blocked-axis detection is the port's
+  per-axis destination probe (the `kill_step` stand-in for the swept
+  `TileCollision`). The bounce tick integrates the POST-bounce
+  reversed/retargeted velocity: the C# `UpdatePosition(wetVelocity)`
+  (`:19858` → `:20433-20446`) reads `wetVelocity` only on its
+  `base.wet` arm (`:20439-20441`); an arrow in open air is dry, so the
+  dry arm (`:20443-20445`) steps `base.velocity` — the reversed /
+  retargeted value — immediately. (Retry fix: the first pass wrongly
+  integrated the pre-collision velocity forward, mis-reading
+  `wetVelocity` as the dry-path integrand.)
+- The bee water kill probes the tile liquid flags instantaneously;
+  the C#'s `honeyWet`/`shimmerWet` are per-tick sticky — a bee leaving
+  honey into water kills a tick earlier than the C#'s flag decay.
+- The star's `soundDelay` arm (`:23881-23885`, `20 + Next(40)`) and
+  the dust/gore gates are skipped with the sound/dust layers (the
+  pool-wide convention); the `noDropItem = true` writes
+  (`Player.cs:47462`/`:47497`) have no port field (the projectile
+  item-drop layer is unported).
+- The accessory StatusNPC chains (`accPoisonBarb` `:11180`,
+  `catalystBand` `:11188`, `meleeEnchant` `:11192`, the
+  `frostBurn`/`magmaStone` set bonuses `:11518-11536`) are unported
+  player flags — the melee-only ones never fire for an arrow by
+  construction; the arrow-relevant `accPoisonBarb`/`frostBurn` are
+  follow-ups with the accessory layer.
+- The 469's `Shimmer()` velocity kick (`:22372-22378`) and the
+  arrow-family shimmer float (`:22380-22383`) are unported (the
+  projectile shimmer layer is a separate system).
+- The 819 Blood Arrow's own `AI_001` arm (`:56388-56422`: the
+  first-tick 8-dust burst, the per-tick `alpha -= 20` fade, the
+  5-dust trail + the 1/2 red-dust gate, the red `AddLight`) keeps the
+  generic flight — its effects are the dust/alpha/light layers and the
+  SHOOT-side Blood Rain volley (ported); the fade is cosmetic (the
+  row's alpha 255 now seeds it correctly for the follow-up).
+- The Phantasm's `phantasmTime` extra-arrow spawns (`:13870-13878`)
+  and the `accHoneyedBarb` swarm (`:13879-13902`) are unported player
+  flags — follow-ups.
+
 ## aiStyle-1 per-type arms, slice C (S1-D-5, 2026-11-19, code-only mode)
 
 Branch `task/S1-D-5-aistyle1-types-c` (worktree TR-D5a3). CODE-ONLY: no
@@ -30817,10 +31662,12 @@ decompiled sources):
   same-tick behaviour identical.
 
 Deliberate deferrals (no port fields/seams yet):
-- the `frostBurn` on-hit consumers (`Player.cs:6548-6551` StatusToNPC,
-  `Projectile.cs:11518-11521`/`:11851-11854`/`:17323` - no melee
-  StatusToNPC / projectile enchant seam exists; `magmaStone` equally
-  unported);
+- the `frostBurn` on-hit consumers — the MELEE half
+  (`Player.cs:6548-6551` StatusToNPC) landed with S1-P-i10
+  (`melee_on_hit.rs`, ANALYSIS "The melee on-hit debuffs"); the
+  projectile halves (`Projectile.cs:11518-11521`/`:11851-11854`/
+  `:17323`) stay deferred; `magmaStone`'s melee consumer + grant arms
+  also landed with S1-P-i10 (its projectile halves stay deferred);
 - the `lavaRose` halves (`Player.cs:27703-27707`) and the remix-world
   lava variants (`:27689-27693`, `:27696-27699`);
 - the empressBrooch/Magiluminescence movement arms (`:26500-26510`);
@@ -33567,24 +34414,315 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
 
-## The bow launch (S1-P-i13)
 
+## The broadsword melee swing (S1-P-i04, 2026-11-19)
+
+Code-only round (no compiler invoked; witnesses WRITTEN NOT RUN). The
+census of the useStyle-1 melee interaction found three verdicts:
+
+* **WRONG - the melee hitbox.** The live arm
+  (`world_sim/editing.rs:1120-1365`) hits the CURSOR POINT within four
+  tiles of the player centre. The C# never reads the cursor for the melee
+  hit: `ItemCheck_GetMeleeHitbox` (`Player.cs:45099-45190`) grows an
+  integer `itemRectangle` off the swing's `itemLocation` per animation
+  third, and `ItemCheck_MeleeHitNPCs` (`:44241-44253`) intersects it
+  against every NPC box under the `immune[whoAmI] == 0 &&
+  CanHitNPCWithMeleeHit(i) && attackCD <= 0` gate (`:44246`). The ported
+  module (`melee_swing.rs`) carries the whole rect math verbatim: the DST
+  frame shrinks (5094/5095 -10, 5096 -12, 5097 -8, `:45107-45125`), the
+  `GetAdjustedItemScale` multiply (`:45128-45130`, `:42566-42582` - the
+  1.1 meleeScaleGlove term rides a caller flag, the glove has no port
+  owner), the facing/gravity flips (`:45131-45138`), the END third's
+  `w*1.4`/`h*1.1` growth + the left-facing `(int)(w*1.4-w)` pull + the
+  `(int)(h*0.5*gravDir)` drop (`:45141-45149`), and the START third's
+  `w*=2` + the right-facing `(int)(w*1.2)` pull + the
+  `(int)((h*1.4-h)*gravDir)` lift (`:45151-45159`). Every `(int)` is the
+  C#'s double-product truncation in statement order (the Y shifts read
+  the PRE-growth height). `dontAttack` is a useStyle-3 (spear) concept
+  only (`:45168-45171`) - useStyle 1 always attacks.
+* **WRONG - the swing direction gate.** `Player.cs:19837`:
+  `(itemAnimation == 0 || inventory[selectedItem].useTurn) &&
+  mount.AllowDirectionChange && !sandStorm`. The port's
+  `horizontal_movement` flipped the facing on every run-key press
+  mid-swing. Fixed: the gate now reads `FrameInputs.use_turn` (the
+  registry row) + `MountState::allow_direction_change` (only the Scutlix
+  9 gates on `abilityCooldown < max/2`, `Mount.cs:630-640`) +
+  `!sand_storm`. A broadsword (`useTurn = false`) locks the facing for
+  the swing; a pickaxe (`useTurn = true`) keeps turning. The
+  `ChangeDir` mirror itself (`:42111-42115` - the composite rotations
+  and `itemRotation` negate, `itemLocation.X` mirrors around
+  `MountedCenter.X`) needs no port write: the port recomputes the
+  composite arms and the draw anchors from the facing every frame, so
+  the flip's effect is identical by construction.
+* **MISSING - the per-NPC melee cooldowns.** `meleeNPCHitCooldown[200]`
+  (`Player.cs:44212-44239`): `ResetMeleeHitCooldowns` at every
+  `ItemCheck_StartActualUse` (`:51679`), `UpdateMeleeHitCooldowns`'
+  unconditional per-slot decrement once per melee-block entry
+  (`:43664`), `SetMeleeHitCooldown(npcIndex, itemAnimation)` at the hit
+  (`:44414` - the NPC is immune for the REST of the swing), and
+  `ApplyAttackCooldown`'s `Max(1, (int)(itemAnimationMax * 0.33))`
+  (`:44428-44431`). Ported as `MeleeHitCooldowns`. The port's existing
+  `attack_cd = swing_max` pacing (the whole animation) is a DIFFERENT
+  consumer (the use pacing) and stays untouched this round.
+
+The arc half (`ItemCheck_ApplyUseStyle`'s useStyle-1 arms,
+`Player.cs:50686-50864`) was ported by S1-G-17 for the draw; this round
+re-ports it in `melee_swing.rs::swing_item_placement` with the pieces
+S1-G-17 left out and the draw now routes through it:
+
+* the RAW `itemAnimation`/`itemAnimationMax` counters compared in DOUBLE
+  (`(double)itemAnimation < (double)itemAnimationMax * 0.333`,
+  `:50715/:50746`) - the draw's old f32 `remaining < 0.333` compare
+  drifted on the boundary ticks (max 20: anim 6.66 is the END third,
+  anim 13.32 the middle);
+* the Bladed Glove claw arm (`Item.claw[1827]`, the single writer
+  `Main.cs:6793-6795`; the three hand positions `:50695-50709`);
+* the per-item width/height nudges (the fishing hammers 2330/2320/2341
+  +8/+4/+4 width and +4/+4 height, the Keybrand 671 +12/+6/+8 width and
+  +10/+8 height, `:50734-50741` etc.);
+* the `UsesBetterMeleeItemLocation` offset (`ItemID.cs:348` - the
+  Breaker Blade 426 alone; `itemLocation += zero * Directions`,
+  `:50854-50857`, `Directions = (direction, gravDir)`, `:3849`);
+* the gravDir mirror (`:50860-50864`) and `mountOffset` - carried by the
+  module for the sim-side hitbox; the DRAW keeps mountOffset 0 / gravDir
+  1 (the port has neither state).
+
+Also ported: `GetPointOnSwungItemPath` (`:44742-44752` - the Fiery
+Greatsword's blade probe, `:44282-44285`) with
+`Utils.LineRectangleDistance` (`Utils.cs:827-838`) +
+`Vector2.Between`/`ClosestPointOnLine` (`:1718-1725`/`:1860-1875`). The
+`RotatedRelativePoint` fold (`:4225-4251`) is the identity + `gfxOffY` at
+rest (no fullRotation outside sleep, no sit offset in the sim) - the
+caller passes `gfx_off_y`.
+
+The Lead's i01 census (`docs/research/60-item-use-census.md`, branch
+`task/S1-P-i01-item-use-census`) U13 adds the swing-LENGTH half:
+`ApplyItemAnimation`'s melee arm (`Player.cs:4463-4497`) swings
+`useAnimation * meleeSpeed` ticks where `meleeSpeed` is the accumulated
+1+bonus folded per item (`:25912`,
+`ItemID.Sets.BonusMeleeSpeedMultiplier` - the Bladed Glove 0.5, the Fetid
+Baghnakhs 0.25, the Psycho Knife 0.33, the Beam Sword 0.75,
+`ItemID.cs:1350`), capped at 3 and INVERTED
+(`TurnAttackSpeedToUseTimeMultiplier`, `:29028-29039`), the product
+`(int)` truncated and floored at 1 (`SetItemAnimation`, `:4453-4461`);
+the Terragrim (3821) is `NoMeleeSpeedBonus` (`ItemID.cs:340`) and skips
+the arm. Ported as `melee_animation_frames` +
+`attack_speed_to_use_time_multiplier` + the two set predicates. The
+wiring (the `item::use_animation_secs_of` call sites read the raw
+prefixed ticks today) rides the same follow-up as the hitbox - it changes
+the swing timer the render and the use pacing both read.
+
+**UNWIRED** (the `npc_ai_town.rs` precedent): the module lands pure; the
+live cursor-point arm in `editing.rs` is NOT replaced this round. The
+wiring needs its own verified round because it changes the hit
+selection (the per-NPC loop + the `CanHit` line-of-sight walk), the
+`attack_cd` semantics and the crit/DamageVar draw sites' tick cadence.
+The `HeldItemOffset` symbol the task brief named does not exist in the
+1.4.5.8 decompile (grep-verified) - the C# concept is the
+`itemLocation`/`heldItemFrame` pair above.
+
+**RNG argument:** the module draws NOTHING. The C# hit path's draws -
+the crit `Main.rand.Next(1, 101)` (`Player.cs:44298`) then
+`Main.DamageVar(dmg, luck)` (`:44342`, `Main.cs:66118-66134`) - stay with
+the caller in C# order (the port's `editing.rs:1232-1233` already runs
+crit-then-DamageVar on the `UpdatePlayers` stream). The witness
+`the_hit_path_draws_ride_the_caller_stream_in_csharp_order` replays both
+lanes on CLONES of one seeded `UnifiedRandom` (the port helpers vs the
+raw `Next` calls + banker's round) and asserts equal end states, then
+runs a full 20-tick swing's placement/hitbox/cooldown math between the
+two draws on a third clone and asserts the stream is untouched. No
+draw is added, removed or reordered anywhere.
+
+Tests (WRITTEN NOT RUN): `melee_swing.rs` 23 witnesses (the double
+third boundaries at max 20/35/8, the 3.5-rad sweep, the generic thirds,
+the width/height cascade steps, the per-item nudges, the Breaker Blade
+nudge incl. the facing/gravDir mirrors, the claw arm, the gravity
+mirror, the mount offset, the hitbox base/DST-shrink/END/START/middle
+rects, the full-swing composition, the strict intersects, the
+cooldowns, the attack cooldown floor, the adjusted scale, the
+melee-speed animation length (the cap/invert/floor + the four per-item
+folds), the swung path, the line-rect distance, the RNG clone replay);
+`player.rs::s1_player_composite_tests` 3 direction-gate witnesses;
+`mount.rs` 1 Scutlix gate witness; `render/player_layers.rs` 2 draw
+witnesses (the raw-counter boundaries, the per-item specials).
+### S1-P-i07 — the flail physics census (2026-11-20)
+A line-by-line census of `AI_015_Flails` + `AI_015_HandleMovementCollision`
++ the `Player.ItemCheck_Shoot` launch arm against the M4-PROJ-3b port found
+and fixed the following WRONGs (all C#-cited, tests written not run —
+code-only swarm):
+1. **Reel-in overshoot kill sign-flipped** (`:44011`). The C# dot is
+   `vector4 · Utils.DirectionFrom(Target: Center+velocity, Origin:
+   mountedCenter)`, and `Utils.DirectionFrom(Origin, Target)` =
+   `Normalize(Origin - Target)` (`Utils.cs:1960-1963`) — the BACK vector.
+   The port computed `ahead - mounted` (forward), killing approaching
+   flails and sparing overshot ones. Fixed to `mounted - (head + vel)`.
+2. **Flight/retract ×2 damage missing** (`:14462-14465`). States 1 and 2
+   deal double; the port applied no multiplier. Added.
+3. **Dual ×0.8 discount leaked out of the held state** (`:14450-14460`).
+   The sibling scan sits inside the `ai[0]==0` arm; the port applied it in
+   every state. Moved inside.
+4. **`ResetLocalNPCHitImmunity` zeroed the wrong field** (`:43883` →
+   `:43719-43722`). The C# clears `localNPCImmunity` (the per-slot NPC
+   immunity array); the port zeroed `localAI[1]` (the orbit counter). Now
+   rides `FlailTick.reset_immunity` → the pool clears the array; the orbit
+   counter survives the release.
+5. **Re-grab arms read `channel` instead of `controlUseItem`**
+   (`:43905/43942/43959/44035`). `FlailInputs` gains `control_use_item`
+   (the raw `mine_down`); `channel` stays for the state-0 release gate only.
+6. **State-3/6 bail `break`s fell through** (`:43964`, `:44040`). The C#
+   `break`s skip the orbit physics / gravity / `ChangeDir` on the bail
+   tick; the port ran them. Restructured to if/else.
+7. **State-3 `tileCollide` latch not re-armed per tick** (`:43967`). The
+   C# sets `tileCollide = ai[1]==1` every tick before the flag4 compare;
+   the port only wrote on the compare. Fixed.
+8. **`mapFullscreen` kill missing** (`:43732-43736`). `FlailInputs` gains
+   `map_fullscreen` (`app.map.open`); the local owner's flails die.
+9. **Wet drag missing** (`HandleMovement` `:17612-17655`, `UpdatePosition`
+   `:20439-20446`). Water ×0.5 / honey ×0.25 / shimmer ×0.375 position
+   advance. Ported via `flail_wet_factor` (mid-tile idiom); the C# scales
+   the velocity before the probe and restores a blocked component — the
+   port probes full then scales the surviving displacement (the family's
+   documented liquid approximation).
+10. **Shimmer gravity skip missing** (`:44042`). State 6 adds +0.8 Y only
+    when `!shimmerWet`; ported via `flail_shimmer_wet`.
+11. **Flower Pow scan used a partial gate** (`:44121`). Now
+    `Npc::can_be_chased_by` (`NPC.cs:90030-90041`: chaseable && lifeMax>5
+    && !dontTakeDamage && !friendly && !immortal) instead of hp>0 &&
+    !dontTakeDamage.
+12. **`player.itemRotation` never written** (`:44162-44167`). Rides
+    `FlailTick.item_rotation` (DirectionFrom + the left-of-mount π +
+    WrapAngle); the dispatch applies it. `spriteDirection` now mirrors
+    `direction` (`:44145`, `:44074`).
+13. **`flag5` ignored the selected-item gate** (`:43850`). The dual-flail
+    sibling flag only arms when `inventory[selectedItem].shoot != type`;
+    `FlailInputs` gains `selected_shoot`.
+14. **Dual-flail sibling launch missing** (`Player.cs:49413-49425`).
+    Throwing Blue Moon/Sunfury with the other in the inventory now spawns
+    it at the mirrored velocity, its own GetWeaponDamage/GetWeaponKnockback
+    (`Player::weapon_knockback` added, `Player.cs:53346-53369`), `ai[2]=1`,
+    before the primary spawn.
+15. **Flairon bubble jitter used f32 `next_float`** (`:44093`). The C#
+    `NextDouble()` is f64; `DropRng` gains `next_double` (one Sample draw,
+    same stream) and the jitter multiplies in f64 before the f32 cast.
+16. **`netUpdate` writes missing** on the state transitions / bounce
+    (`:43882/43909/43922/43946/43963/43973/44024/44039`, `:43691/43701/
+    43711`). Added (the pool's `clear_net_update_flags` owns the reset).
+Remaining deviations (unchanged, decor/render follow-ups): the dust /
+impact-explosion / HitTiles / sound arms, `player.heldProj` /
+`SetDummyItemTime`, `ownerHitCheck` / `drawLayer`, the `noItems` gate, the
+chain render, and the Flairon head 404 (aiStyle 69, a separate family that
+spawns the 1058 flail — out of the aiStyle-15 scope). The `setVortex`
+knockback arm (`Player.cs:53364`) has no port field. RNG order is
+unchanged: the Flairon cadence `Next(3,6)` → `Next(45,65)` → `NextDouble`
+draws stay in sequence on the pool's `UpdateProjectiles` stream; the
+`next_double` addition consumes the same single Sample the old
+`next_float` did.
+## The melee on-hit debuffs (S1-P-i10)
+
+**Scope.** The DIRECT melee swing's debuff infliction —
+`Player.StatusToNPC` (`Player.cs:6502-6617`), the single call site
+`ProcessHitAgainstNPC` `:44391`. Ported verbatim as
+`crates/tr-app/src/melee_on_hit.rs::status_to_npc_flags`, wired in
+`world_sim/editing.rs`'s melee arm between the `DamageVar` roll and the
+armour-pen add — exactly the C# position (crit `:44298` → DamageVar
+`:44342` → Flymeal town multiplier `:44344-44353` → **StatusToNPC
+`:44391`** → nano-flask ×1.05 `:44396-44399` → armour pen `:44400` →
+`StrikeNPC` `:44403`).
+
+**Census verdicts (C# → port, all were MISSING before this task):**
+- `NPC.StrikeNPC`/`StrikeNPC_Inner` (`NPC.cs:81189-81563`) apply **no**
+  weapon debuffs — the only `AddBuff` in the strike/death region is the
+  Daybreak death-spread 189 (`:81730-81751`, a projectile-inflicted
+  debuff's death effect, the projectile lane). No port change needed
+  there; the census claim "StrikeNPC debuff application" resolves to
+  "none exists in the C#".
+- Weapon imbues (`meleeEnchant` 1-8, `:6504-6535`): Venom 70
+  `60*Next(5,10)` + PotentAcid 395 fixed 60 (enchant 1); CursedInferno 39
+  `60*Next(3,7)` (2); OnFire 24 `60*Next(3,7)` (3); Ichor 69
+  `60*Next(10,20)` (5); Confused 31 `60*Next(1,4)` (6); Poisoned 20
+  `60*Next(5,10)` (8); Midas 72 fixed 120 (4, no roll). Enchant 7
+  (Party) has NO debuff arm — its confetti 289 spawns in
+  `ApplyNPCOnHitEffects` `:44465-44468` (projectile lane, out of scope).
+  The if-chain order is the SOURCE order 1,2,3,5,6,8,4 (not numeric).
+- Catalyst Band (`catalystBand`, `:6536-6539`): AcceleratePoisons 398
+  fixed 300, no roll.
+- Per-weapon inflictions (`:6540-6547`, `:6567-6616`): 2330 Purple
+  Clubberfish Confused 31 gate `Next(2)==0` then `60*Next(1,4)`; 3352
+  Stylist scissors Bleeding 30 `60*Next(4,7)`; 3211 Bladetongue Ichor 69
+  `60*Next(5,10)`; 5129 Flymeal Stinky 120 fixed 300; the switch — 121
+  Fiery Greatsword OnFire 24/180 gate 1/2; 3823 Brand of the Inferno
+  OnFire3 323/300 gate 1/4; 5382 Waffle's Iron OnFire3 323/300 gate 1/3;
+  122 Molten Pickaxe OnFire 24/180 gate 1/10; 190 Blade of Grass
+  Poisoned 20/420 gate 1/4; 217 Molten Hamaxe OnFire 24/180 gate 1/5;
+  1123 Bee Keeper Confused 31 fixed 120 no roll.
+- Frost armor set (`frostBurn`, `:6548-6551`): Frostburn2 324
+  `60*Next(5,15)` — the flag existed (S1-C-12 wave D) with no consumer;
+  the melee consumer now reads it (the wave-D deferral note's melee
+  half is closed).
+- Magma Stone family (`magmaStone`, `:6552-6566`): OnFire3 323 ALWAYS —
+  `Next(4)==0` → 360 (one draw), else `Next(2)==0` → 240 (two draws),
+  else 120 (two draws). Flag + grant arms were absent; now
+  `Player.magma_stone` with the three granters: 1322 Magma Stone
+  (`:15336-15339`), 1343 Fire Gauntlet (`:15306-15314`, the
+  `accessory_combat.rs` arm), 6178 Pyroclast (`:14580-14583`).
+- Nano-flask damage boost (`GetNanoFlaskDamageBoost`, `:44423-44426`,
+  applied `:44396-44399`): `(int)(num2 * 1.05f)` between StatusToNPC and
+  the armour-pen add — ported at the same site.
+
+**RNG contract.** All draws ride the hitting lane's `Main.rand` — the
+port's `UpdatePlayers` stream (`Main.cs:17754` swap), the same stream
+the crit/DamageVar rolls already use. Draw ORDER inside StatusToNPC is
+the C# block order: imbue → catalyst (no draw) → 2330 gate [+duration] →
+3352 duration → frost duration → magma ladder (1-2 draws) → 3211
+duration → 5129 (no draw) → the weapon switch gate LAST. The duration
+argument evaluates BEFORE `NPC.AddBuff`'s `buffImmune` guard
+(`NPC.cs:89928-89931`) — an immune NPC still consumes the draw
+(witnessed: the Poison flask on the immune-20 slime draws and diverges
+the stream while storing nothing).
+
+**Deviations / deferrals (deliberate):**
+- `StatusToPlayerPvP` (`Player.cs:6619-6713`) is NOT ported — the port's
+  melee path has no PvP lane. Its rolls DIFFER (frost `Next(1,8)`, magma
+  `Next(7)`/`Next(3)` with 360/120/60, no catalyst/2330/3352 arms); the
+  NPC-lane constants above are the ones ported.
+- The projectile/whip enchant consumers (`Projectile.cs:11192-11224`,
+  `:11755-11782`, `:17362-17470`) and the `ApplyNPCOnHitEffects`
+  projectile spawns (`:44441-44550` — Bee Keeper bees, Bladetongue
+  ichor stream 524, confetti 289, Volcano eruption) are OTHER workers'
+  lanes; only the direct-swing debuffs land here.
+- 6178's `accPyroclast` half (`:14582`, the snapping-stone strike
+  `:44338-44341`) and 6185's `accPoisonBarb`/`pStone` halves
+  (`:14616-14617`) stay unported families — only the on-hit flag halves
+  land.
+- The C# evaluates the per-weapon switch for ANY item type — including
+  tools swung as melee; the port matches on `held.kind` at the same
+  site, so the Molten Pickaxe/Hamaxe rows fire on their mining-tool
+  swings too (the port's melee arm already runs for tools, BUG-09).
+- The struck NPC's `netOffset` reposition (`ItemCheck_MeleeHitNPCs`
+  `:44248-44250`) has no port model — unchanged, predates this task.
+
+**Verification.** Code-only mode — **no compiler invoked**. 13 witness
+tests in `melee_on_hit.rs` (per-arm draws/times, the full-block draw
+order, the immunity-consumes-draw contract, the AddBuff longer-time
+early-out), 5 integration witnesses in `world_sim/editing.rs` (Bee
+Keeper Confused, magma burn + stream divergence, Venom flask pair,
+Poison-flask immune draw, Flymeal Stinky on the Guide), 1 grant/clear
+witness in `player.rs` (1322/6178/1343/6185 + ResetEffects) and the
+extended Fire Gauntlet pin in `accessory_combat.rs` — WRITTEN, NOT RUN.
+## The bow launch (S1-P-i13)
 **Mode.** Code-only: no `cargo`/`rustc`/`rustfmt`/test runs, no dotnet, no
 graphify — file reads/writes + git only. The C# arms were re-read whole and
 compared line-by-line against the landed Rust; the 24 witness tests are
 WRITTEN, NOT RUN. **No compiler invoked.**
-
 **Assignment.** The bow use (`useAmmo=true`, `ammoType Arrow`) — the
 `Player.ItemCheck_Shoot` bow launch arms vs the port. Scope: the bow LAUNCH
 only. The arrow flight (aiStyle 1, `AI_001`) already landed with the
 projectile-AI tasks; the ammo consumption is the i15 task's.
-
 **Census (the WRONGs and the MISSING).** The pre-i13 shooter wire
 (`world_sim/editing.rs`) fired every arrow/stake shooter through one generic
 spawn: `center + dir*10`, the aim normalized to the fused speed, no per-bow
 arm. Against `Player.cs:47056-49468` that was WRONG on three counts and
 MISSING the whole special-arm family:
-
 * **WRONG — the spawn anchor.** The C# spawns at
   `pointPosition = RotatedRelativePoint(MountedCenter)` (`:47196`), not the
   body centre + 10 px. For a stationary unmounted player the two coincide
@@ -33619,7 +34757,6 @@ MISSING the whole special-arm family:
   `:3100-3110`, `:3638-3698`, `:4160-4171`, `:4474-4486`, `:5474-5484`,
   `:7521-7535`, `:9570-9579`), with the `ignoreWater` (5/710) and `light`
   (4/5/41/103/172/278) overlays.
-
 **The port.** `crates/tr-app/src/bow_launch.rs` — `fire` applies the
 post-pick overrides, builds the launch frame (the anchor, the facing flip,
 the aim normalized to `speed` with the zero/NaN direction fallback
@@ -33629,10 +34766,12 @@ four and the non-arrow shooters keep the generic spawn (their launch arms
 are their own tasks). `Projectile.no_drop_item` + `set_no_drop_item` carry
 the multi-shot stamp (`Player.cs:47806`/`:48305`/`:47497`/`:47955`), which
 the kill path's ammo-recovery drop reads (`Projectile.cs:77367`).
-
-**RNG order.** The port rolls the crit at THROW time (the established
-`world_sim` convention, a documented deviation from the C#'s hit-time
-`Projectile.Damage` roll); that one draw precedes the launch arm's draws.
+**RNG order.** No crit rolls at THROW time — the gate reconciliation with
+S1-P-i11 moved the projectile crit to the per-hit roll
+(`Projectile.cs:12883-12917`, `damage_pve`'s `projectile_hit_crit` on the
+`UpdateProjectiles` stream), matching the C# (`ItemCheck_Shoot` never rolls
+a ranged crit at spawn). The throw's `UpdatePlayers` stream spends no crit
+draw; the launch arm's count roll is the first draw.
 Within each arm the `Main.rand` draws are consumed in the C#'s exact order:
 the Stormbow's count `Next(3)` then six per shot (`Next(201)`,
 `Next(-100,101)`, `Next(-40,41)` vx, `Next(-40,41)` vy, `Next(75,150)`,
@@ -33643,7 +34782,6 @@ spread shot; the Hellwing's FOUR `NextDouble` (the π/8 ai-spin pair then the
 π/16 velocity pair, `Utils.cs:1697-1700`). The Tsunami/Betsy/Fairy Queen
 draw NOTHING. The draw-count witness tests pin each against a replayed
 stream.
-
 **Documented folds.** `gravDir = 1` (no gravity flip) — the `:47285-47288`
 reverse-gravity aim arm folds to a plain add. `ChangeDir`'s pulley
 reposition (`Player.cs:42097-42110`) and its `itemRotation`/composite-arm
@@ -33653,7 +34791,6 @@ composite arms are re-set by `ApplyUseStyle`, so only the persistent
 `base.direction = dir` (`:42111`) lands. `MountedCenter == center` and
 `ApplyItemPositionOffsetFromMount` is a no-op without an active mount
 (`Player.cs:51387-51390`).
-
 **Out of scope (recorded, not changed).** `GetWeaponKnockback`
 (`Player.cs:53346-53369`: the summon `minionKB`, the `kbGlove`/`kbBuff`,
 the Shroomite/Vortex stealth scales) is not called by the shooter wire — a
@@ -33664,7 +34801,6 @@ S1-D-5 slices; the new rows ride the generic `ai_arrow` arm until those
 land. The 4058 Skeleton Bow is `ItemID.Sets.Deprecated` (`ItemID.cs:1316`),
 so its id-0 registry row is correct and the `resolve_projectile` 4058 arm
 (`Player.cs:53511-53514`) is dead-but-faithful — no correction.
-
 **Retry correction (the `gunProj` BOWS' launch geometry).** The first pass
 left the two `gunProj` BOWS — the Phantasm 3540 (→ 630) and the DD2 Phoenix
 Bow 3854 (→ 705) — on the wire's pre-i13 generic spawn (`center + dir*10`,
@@ -33694,7 +34830,6 @@ already exists, `projectile/data.rs`). Witness
 `s1_p_i13_the_gun_prog_bows_fire_from_the_rotated_anchor_with_the_facing_flip`
 pins the anchor, the facing flip, the fixed bolt and the raw shootSpeed for
 both. WRITTEN, NOT RUN.
-
 **Verification.** Code-only: every bow arm re-read whole against
 `Player.cs:47424-47957`/`:48278-48308`/`:48748-48760`/`:49437`, the shared
 geometry against `:47151-47307`, the helpers against `Utils.cs`; the seam
@@ -33854,7 +34989,6 @@ shared geometry against `:47196-47307`, the Revolver block against
 `set_crit`/`set_local_ai0`/`set_local_ai1`, `Player.cced()`). The 18 witness
 tests are WRITTEN, NOT RUN — **no compiler invoked**.
 ## S1-P-i18 special bullets (2026-11-20, code-only)
-
 The eleven special-bullet projectile kinds (36 MeteorShot, 89
 CrystalBullet, 104 CursedBullet, 207 ChlorophyteBullet, 242
 BulletHighVelocity, 279 IchorBullet, 283 VenomBullet, 284 PartyBullet,
@@ -33862,7 +34996,6 @@ BulletHighVelocity, 279 IchorBullet, 283 VenomBullet, 284 PartyBullet,
 CrystalShard spawn. Census + port: `docs/research/63-special-bullets-census.md`,
 branch `task/S1-P-i18-special-bullets`. **Code-only mode — no compiler
 invoked; the 13 `s1_p_i18_*` witnesses are WRITTEN NOT RUN.**
-
 **The structural finding.** At the base (`aa147ce0`) NONE of the eleven
 kinds had a `proj_data` row, so `spawn_with_data_ai_owned`'s
 `proj_data(kind)?` (`projectile.rs:13102`) returned `None` and the shoot
@@ -33872,7 +35005,6 @@ there was no behaviour to diverge. Only 14 (musket ball) and 638
 (Luminite, S1-D-4's `projectile_ai_moonlord`, FAITHFUL) had rows. The fix
 is additive: the twelve `SetDefaults` rows + the per-type `AI_001` arms +
 the on-hit debuffs + the death hooks.
-
 **The split of labour (Lead coordination, `LEAD-I15-COORD.md`).** The Lead
 staged the data rows + constants + `ProjLight` colour arms + the pool-side
 death hooks (`special_bullet_kill` / `venom_burst_spread` /
@@ -33881,7 +35013,6 @@ death hooks (`special_bullet_kill` / `venom_burst_spread` /
 ported `projectile_special_bullets.rs` (the per-type AI arms + the on-hit
 / spread debuff arms). The two halves are kind-disjoint and compile
 together.
-
 **The Nanite ×1.25 is i15's, NOT this task's.** The i03 census A1
 double-scale (resolver `ammo.rs:680-685` + wire `editing.rs:1892-1897`)
 was fixed by i15 (`task/S1-P-i15-ammo-consumption`, `6df7e170`): the
@@ -33891,7 +35022,6 @@ lives on i15's branch, not in this base. Per the Lead's coord note this
 task does NOT re-fix the scaling — re-fixing it here would conflict at
 merge. The 285 row + effects land here; the single fused scale lands with
 i15.
-
 **The per-type arms (`projectile_special_bullets.rs`).** `step` mirrors
 `AI_001`'s block order: the 242 speed fade (`:55660-55671`, the double
 sqrt cast back to float, the `(byte)(speed * 0.9)` truncation), the
@@ -33913,7 +35043,6 @@ the `StatusNPC` arms (`:11537-11551` + `:11665-11677`), called from
 `StrikeNPC` `:13649`); the 283 spread's debuff-only re-hit
 (`venom_burst_debuffs`) is the `type == 283 && !active` early arm
 (`:12810-12814`).
-
 **RNG (S1-A-10).** The AI arms take NO rng parameter — every `Main.rand`
 in these kinds' `AI_001` blocks feeds dust alone (the ai001_a/b/c
 dust-skip convention), so the flight is RNG-free by construction. The
@@ -33923,7 +35052,6 @@ hit (`:11543`, 180 on a zero else 60) at the StatusNPC position; the 89
 split's 8 ranges (per shard `Next(40,70)` then `Next(-20,21)` for X, then
 the same pair for Y, `:75264-75265`, argument evaluation order) ride
 inline in `special_bullet_kill` (they place AND velocity the shard).
-
 **The death-burst dust/gore convention (the Lead's choice).** The 283's
 three 10-dust-171 loops (`:75913-75939`), the 284 confetti's 10 dust + 5
 gore (`:75977-75998`, purely visual — no state, no spawn, no damage), the
@@ -33934,7 +35062,6 @@ layer), NOT the `projectile_ai_misc` draw-census convention that keeps
 explicit visual draws. The 286 burst's DAMAGE half draws only the
 per-NPC `DamageVar` the boxed walk already spends. The choice is recorded
 here so a later dust-layer wiring knows these sites owe their draws.
-
 **Deliberate stand-ins.** (1) `appliesImmunityTimeOnSingleHits` (the
 286's `:3754`) has no `ProjData` field — the pool's idStatic gate reads a
 kind check (`max_penetrate != 1 || kind == EXPLODING_BULLET`) in both
@@ -33957,7 +35084,6 @@ sound/dust block (`:25938-25952`) is kind-gated to 1134, so the 90 skips
 it correctly. (8) The `Kill()` sound cues are skipped with the pool's
 death-hook sound convention (`moonlord_arrow_kill`); the 36 bounce's
 `SoundID.Item10` rides `wants_sound`.
-
 **Verification.** Code-only: every arm was re-read against the cited C#
 blocks (the SetDefaults rows, the flag3 list membership, the homing
 acquire/hold/steer, the bounce penetrate gates, the StatusNPC durations,
@@ -33968,6 +35094,206 @@ pool's call sites, the `npc_center`/`find_target_with_line_of_sight`
 visibility bumps, the `SPECIAL_BULLET_KINDS` re-export through
 `pub use data::*`, the `has_buff`/`buff_time_of` helpers. The 13 witness
 tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## The thrown consumables (S1-P-i28, task/S1-P-i28-thrown-consumables, 2026-11-20, code-only mode)
+
+The twelve thrown consumable weapons — Shuriken (42), Throwing Knife (279),
+Poisoned Knife (287), Bone Javelin (3378), Molotov Cocktail (2590), Grenade
+(168), Sticky Grenade (2586), Bouncy Grenade (3116), Beenade (1130), Holy
+Water (422), Unholy Water (423), Blood Water (3477) — censused against
+`Player.ItemCheck_Shoot` (`Player.cs:47056-49468`), the `ItemCheck` consumable
+arm (`:43280-43326`), and the projectile `SetDefaults`/`AI`/`Kill`/`StatusNPC`
+arms. The Javelin (3094) rides the same throwing arm and the same 507
+projectile family as the Bone Javelin, so it is covered too.
+
+### The census verdicts
+
+**Item rows — OK (all twelve).** `itemdata.rs`'s generated rows match
+`Item.cs` field-for-field (the `useStyle`/`shoot`/`shootSpeed`/`useTime`/
+`useAnimation`/`consumable`/`ranged`/`crit`/`knockBack`/`autoReuse` values).
+The three water bottles carry NO `ranged` flag (`Item.cs:6285-6318`,
+`:31200-31216`); the other nine are `ranged`. The Poisoned Knife (287) and the
+Bone Javelin (3378) are `autoReuse`; the rest are not. No row changed.
+
+**The throwing arm — three WRONGs fixed (`world_sim/editing.rs`):**
+1. The consumable decrement was unconditional (`count.saturating_sub(1)`).
+   The C# (`Player.cs:43283-43300`) runs four not-consume rolls for a `ranged`
+   consumable, each flag-gated and each consuming its draw even when an
+   earlier roll already saved the stack (the `if`s are independent):
+   `huntressAmmoCost90 → Next(10)==0`, `chloroAmmoCost80 → Next(5)==0`,
+   `ammoCost80 → Next(5)==0`, `ammoCost75 → Next(4)==0`. The port now runs the
+   chain on the `UpdatePlayers` stream in that order. `CanConsumeConsumableItem`
+   is const-true (`:5496-5499`) and none of the twelve is in
+   `ItemID.Sets.ForceConsumption` (`ItemID.cs:413-427`), so those gates pass.
+   The water bottles skip the chain (no `ranged` flag) and always consume.
+2. The javelin spawn-Y override was missing (`Player.cs:47225-47228`): the
+   Javelin (3094) / Bone Javelin (3378) throw from `position.Y + height/3`
+   (the integer division truncates 42/3 = 14), not the centre. Added.
+3. The stack-empty cadence latch was missing (`Player.cs:43321-43324`):
+   `if (item.stack <= 0) itemTime = itemAnimation`. The last throw now locks
+   `item_time` to the remaining swing so the empty slot cannot re-fire.
+
+**Projectile rows — MISSING, landed (`projectile/data.rs`).** Only the
+Shuriken (3) and Throwing Knife (48) had rows. Added: Poisoned Knife (54,
+aiStyle 2), the three waters (69/70/621, aiStyle 2), the three grenades
+(30/397/517, aiStyle 16, `timeLeft 180`, the sticky's `tileCollide=false`),
+the Molotov (399, aiStyle 68, alpha 255), the three greek fires (400/401/402,
+aiStyle 14, penetrate 3, timeLeft 360), the Beenade (183, aiStyle 14,
+timeLeft 180), the bees (181/566, aiStyle 36, extraUpdates 3, alpha 255,
+idStatic-10), the Bone Javelin (598, aiStyle 113, alpha 255). Each cited to
+its `SetDefaults` block.
+
+**Flight AI — the knives/waters/beenade already ride the ported arms** once
+their rows land (`ai_style2`'s per-kind ladder covers 54 via the default
+20-tick arm and 69/70/621 via the 10-tick arm `:23557-23565`; `ai_spear`
+covers the beenade 183 and the greek fires 400-402 via the default arm
+`:25143-25159`). The MISSING arms landed in `projectile_ai_thrown.rs`:
+- **aiStyle 68 (Molotov 399)** `:30166-30239`: the 0.25·direction spin, the
+  3-tick alpha fade-in, the 15-tick gravity (+0.2, clamp 16, X·0.99), the
+  `timeLeft<=3` resize-to-80 prime, the wet prime (folds dry — no liquid-wet
+  flag on the slot). The `HandleMovement`-68 collision (`:19780-19786`) stops
+  the bottle and primes it (`velocity=0`, alpha 255, timeLeft 3) instead of
+  killing it.
+- **aiStyle 113 (Bone Javelin 598)** `AI_113_TargetSticker` `:40562-40899`:
+  the 25/tick alpha fade, the flying arc (45-tick then X·0.98/Y+0.35), the
+  stick state (`ai[0]==1`) pinning the javelin to its NPC for 900 ticks
+  (60·15), the kill on expiry / dead target. The stick pin itself
+  (`:13210-13217`), the Daybroken debuff and the 6-javelin cap ride the
+  pool's on-hit seam.
+- **aiStyle 36 (bees 181/566)** `:27292-27471`: the alpha fade-in + the
+  `extraUpdates` collapse, the 3-frame flutter, the 30-tick then 800-Manhattan
+  homing scan, the per-axis accel steering (the giant bee 6.8/0.14 vs the bee
+  6/0.1).
+- **aiStyle 1 (Javelin 507)** `AI_001`'s `:57471-57478` gravity arm (the
+  507/508/662/680/685 group): the 60-tick then X·0.98/Y+0.3 fall, the default
+  rotation, the +16 clamp. Kind-disjoint from the ai001 A/B/C slices.
+
+**Grenade `ai_bomb` — three WRONGs fixed (`projectile.rs`):**
+1. The gravity gate was `ai[0] > 5` for all bombs; the grenades wait
+   `ai[0] > 10` (`:47507`'s first clause). Fixed.
+2. The flight damage was zeroed for all bombs; the grenades are on the
+   keep-damage list (`:47175`) and hit NPCs directly. Fixed.
+3. `explode_bomb` set damage 100 and dug a full crater; the grenades keep
+   their damage (`PrepareBombToBlow` `:46799-46803` has no `damage=` line)
+   and break ONLY cracked-brick tiles in the radius-4 circle
+   (`Kill_ExplodeTiles` `:77271-77295` → `ExplodeCrackedTiles` `:78758-78778`),
+   no walls. Fixed.
+
+**On-hit debuffs — MISSING, landed (`StatusNPC`):** the Poisoned Knife's 1/2
+Poisoned 600 (`:11628-11634`), the Molotov + greek fires' OnFire `60·Next(3,7)`
+(`:11506-11509`), the Bone Javelin's Daybroken 900 gated on the stick pin
+(`:11335-11338`). The `KillOldestJavelin` 6-cap (`:15074-15101`) kills the
+oldest stuck javelin on a NPC when a 6th lands.
+
+**Death hooks — MISSING, landed (`Kill()`):** the water bottles' splash
+conversion (`:77629-77645` → `WorldGen.Convert(centerTile, type, 4)`, the
+Manhattan<6 diamond; hallow/corruption/crimson), the Beenade's bee burst
+(`:76431-76463`, `Next(15,25)` bees with the `beeType`/`beeDamage`/`beeKB`
+chain), the Molotov's six greek fires (`:73921-73951`).
+
+### RNG order (the `UpdatePlayers` / `UpdateProjectiles` streams)
+
+- The throwing arm's not-consume chain rides `UpdatePlayers`
+  (`Player.ItemCheck` under the `Main.cs:17754` swap), in the C# order:
+  huntress `Next(10)`, chloro `Next(5)`, ammoCost80 `Next(5)`, ammoCost75
+  `Next(4)` — each flag-gated, no short-circuit. The crit roll precedes it
+  (the throw's existing roll). The water bottles draw nothing (no `ranged`).
+- The flight arms (68/113/36/507) draw ZERO `Main.rand` — their only rand
+  riders are dust/sound, skipped whole with their draws (the `ai_style2` /
+  frostmoon precedent).
+- The on-hit debuffs ride `UpdateProjectiles` in C# order: the poisoned
+  knife's `Next(2)`, the molotov/fire's `Next(3,7)`. The Daybroken is
+  unconditional.
+- The beenade death burst: 4 gore rows (`Next(61,64)` type + the `NewGore`
+  kicks `Next(10,31)` Y-then-`Next(-20,21)` X, the G3 draw-census), then
+  `Next(15,25)` count, then per bee the velocity `Next(-35,36)` X-then-Y, the
+  `beeType` coin flip, `beeDamage`, `beeKB` (the `hurt_modifiers` order).
+- The molotov death burst: per fire the X offset `Next(20,50)` +
+  `Next(-20,21)`, the Y offset `Next(30,50)` + `Next(-20,5)`, then the
+  fire-type `Next(3)` — six fires.
+
+### Documented deviations / skips
+
+- Dust, gore bodies, `Lighting.AddLight`, sound bodies (the cues ride
+  `wants_sound` where the pool drains them), `netUpdate`/`NetMessage.SendData`,
+  the stuck javelin's 30-tick `HitEffect` pulse — no such layers in the pool.
+- The bee group-static immunity identity (both 181 and 566 use
+  `UseGroupStaticImmunity(181)`, `Projectile.cs:2684`/`:6183`) folds to the
+  port's kind-keyed `id_static` map — the two bee kinds do not share one
+  immunity clock in the port (the map is `(kind, npc)`-keyed).
+- The molotov's wet prime (`:30235-30238`) and the bee's wet-kill head
+  (`:27294-27297`) fold dry — the slot carries no liquid-wet flag (the
+  pool-wide convention).
+- The water splash uses `convert_cell_flavor` (the per-cell map, the
+  `convert_cleanse` precedent) with its documented `reframe_area` superset;
+  the genRand surface/depth wall rolls are the shared spread deviation.
+- The bone javelin's stick reads its pinned NPC off the pool's `npcs` slice
+  by index (the port's stable-index convention); the C# indexes
+  `Main.npc[ai[1]]` (stable NPC slots).
+
+### Verification
+
+CODE-ONLY MODE: no cargo/rustc/rustfmt invoked. The 14 witness tests in
+`projectile_ai_thrown.rs` and the 4 throwing-arm tests in
+`world_sim/editing.rs` are WRITTEN, NOT RUN; every expected value is
+hand-derived from the cited C# lines. Every seam call site was checked
+against the actual signatures by read/grep (`proj_data`'s 10-tuple + state
+group, `spawn_with_data_ai_owned`'s 11-arg shape, `Npc::new`'s 5-arg
+`pub(crate)` form, `convert_cell_flavor`'s flavor enum, `can_hit`'s 9-arg
+shape, the `#[deny(unreachable_patterns)]` dispatch — no duplicate style/kind
+arms).
+
+### Retry verification round (W3-i28b, 2026-11-20, code-only)
+
+An independent re-census of the twelve thrown consumables against
+`Player.ItemCheck_Shoot` (`Player.cs:47056-49468`), the `ItemCheck` consumable
+arm (`:43280-43326`) and the projectile `SetDefaults`/`AI`/`Kill`/`StatusNPC`
+arms CONFIRMED the landed work above (the item rows faithful, the three
+throwing-arm fixes, the 13 rows, the flight arms, the grenade fixes, the
+on-hit/death hooks). It found and fixed SIX defects the first pass left:
+
+1. **Compile error — the throwing-arm witnesses could not resolve their rig.**
+   The new `item_mechanics` tests called `mining_app`/`MINE_SCREEN`, which are
+   private to the sibling `tests` mod (not visible through `use super::*`).
+   Both helpers are now `pub(super)` and imported explicitly
+   (`use super::tests::{MINE_SCREEN, mining_app}`).
+2. **Test failure — the non-autoReuse throws never fired.** `thrown_app` left
+   `mine_prev_down=false`/`mine_released=false` (a held button), so the
+   press-edge gate (`Player.cs:42733` `controlUseItem && releaseUseItem`)
+   refused the first frame for the shuriken/waters/grenades. The rig now arms
+   `mine_prev_down=false`, `mine_released=true` (the vanilla's released start).
+3. **Missing row — the Javelin (507) never spawned.** The first pass added the
+   507 flight arm (`covers_ai001`) but NO `proj_data(507)` row, so
+   `spawn_with_data_ai` no-opped and the Javelin item's (3094) shot vanished.
+   The row landed (`Projectile.cs:5770-5778`: 16×16, aiStyle 1, penetrate 3,
+   stock life/tileCollide) + a row witness.
+4. **Wrong witness — the beenade draw order assumed a coin flip that
+   short-circuits.** `beeType()` is `strongBees && Next(2)==0`
+   (`Player.cs:12419`); with `strongBees` OFF it draws NOTHING, so each plain
+   bee is vx+vy+beeDamage = 3 draws, not 4. The witness now scripts 3 draws per
+   plain bee (and a new strong-bee witness pins the 4-draw flip path).
+5. **Wrong witness — the bone-javelin arc off-by-one.** `ai[1]++` runs before
+   the `>= 45` gravity test (`Projectile.cs:40612`/`:40618`), so the 45th tick
+   already falls; the witness asserted gravity only on tick 46. Corrected to
+   44 straight ticks then the 45th falling.
+6. **Missing flight behaviour — the greek fires + the style-14 tail clamp.**
+   The fires (400-402) ride the generic `ai_spear`, but the C# aiStyle-14 arm
+   carries a per-kind overlay (`Projectile.cs:25271-25302`: a wet kill, the
+   `0.15 < vy < 0.25 → vx *= 0.8` friction, and the rotation REPLACED by
+   `(0 - vx) * 0.05`) plus the arm's tail clamp (`:25303-25306`, `vy > 16 → 16`,
+   which the beenade's fall needs). Both landed in `ai_spear` (the overlay
+   gated to 400-402, the clamp for every style-14 kind; the wet probe folds to
+   the port's `is_wet` box-overlap convention). The bee homing scan also now
+   allows wet Duke Fishron (`npc.type == 370`, `Projectile.cs:27377`) instead
+   of refusing every wet NPC.
+
+The bone-javelin `Colliding` target-rect shrink (`Projectile.cs:15669`) and the
+beenade's tile-kill-vs-bounce movement are part of the port's pre-existing
+documented stand-ins (the `damage_hitbox` S1-C-8 overlay family and the
+test-pinned `ai_spear` tile scan respectively) — left consistent with the
+port's state, not changed here. The javelin spawn-Y witness was tightened to
+the exact top-left (`spawn_with_data_ai` takes the point as `pos`, not a
+centre). All fixes are code-only; the witnesses remain WRITTEN, NOT RUN.
+
 ## The item-use timing machinery (S1-P-i12, task/S1-P-i12-autoswing-usetime, 2026-11-20, code-only mode)
 
 The useTime/useAnimation/autoReuse fidelity slice from the i01 census

@@ -44,10 +44,10 @@
 //! `update_with_grapple` runs (the call site, `world_sim/player.rs:796`),
 //! so a grant here would be wiped the same tick.
 //!
-//! Deliberately deferred (cited, ANALYSIS): the `frostBurn` on-hit
-//! consumers (`Player.cs:6548-6551` StatusToNPC, `Projectile.cs:11518-
-//! 11521`/`:11851-11854`/`:17323` — no melee StatusToNPC / projectile
-//! enchant seam exists yet, `magmaStone` is equally unported), the
+//! Deliberately deferred (cited, ANALYSIS): the `frostBurn` PROJECTILE
+//! on-hit consumers (`Projectile.cs:11518-11521`/`:11851-11854`/`:17323`
+//! — the melee StatusToNPC half landed with S1-P-i10,
+//! `melee_on_hit.rs`; `magmaStone`'s melee half likewise), the
 //! `lavaRose` halves of the Ash Wood row (`Player.cs:27675`,
 //! `:27703-27707` — no `lavaRose` field), the remix-world lava variants
 //! (`:27689-27693`, `:27696-27699`), the crimson heal-chunk dust

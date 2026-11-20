@@ -26,14 +26,18 @@
 //!
 //! ## RNG order
 //!
-//! The port rolls the crit at THROW time (the established `world_sim`
-//! convention, ahead of the launch arms' spread draws — the documented
-//! crit-at-throw deviation). Within each arm the `Main.rand` draws are consumed
-//! in the C#'s exact order. Every draw rides the `UpdatePlayers` stream
-//! (`Player.ItemCheck` under the `Main.cs:17754` swap). The Revolver 2269's
-//! per-tick `Next(3)` charge/decay draw (`Player.cs:42677-42703`) is a SEPARATE
-//! fixed-step draw in `world_sim/player.rs` — it precedes the throw on the same
-//! stream and its bonus rides the throw-time crit roll.
+//! No crit rolls at THROW time (M1 re-sync, S1-P-i11): the C# rolls the
+//! projectile crit PER HIT in `Damage_PVE_Inner` (`Projectile.cs:12883-12917`)
+//! on the `UpdateProjectiles` stream — the generic `ItemCheck_Shoot` tail
+//! (`Player.cs:49437`) carries no crit roll. Within each arm the `Main.rand`
+//! draws are consumed in the C#'s exact order. Every draw rides the
+//! `UpdatePlayers` stream (`Player.ItemCheck` under the `Main.cs:17754` swap).
+//! The Revolver 2269's per-tick `Next(3)` charge/decay draw
+//! (`Player.cs:42677-42703`) is a SEPARATE fixed-step draw in
+//! `world_sim/player.rs` — it precedes the throw on the same stream and its
+//! bonus is STAMPED onto the bullet at spawn (`ApplyStatsFromSource`,
+//! `Projectile.cs:11129-11132`: `bonusCritChance += revolverCritChanceBonus`),
+//! read by the per-hit roll (`:12886-12894`).
 //!
 //! ## useSound per gun
 //!
@@ -106,13 +110,16 @@ impl Shot {
 }
 
 /// The gun launch entry — `Player.ItemCheck_Shoot`'s bullet half. The wire calls
-/// it for `useAmmo == 97` shooters AFTER the stat fuse and the crit roll. It
-/// builds the shared launch frame (inherited from i13, flipping the facing),
-/// dispatches the per-gun arm in the C#'s code order and spawns the bullets.
+/// it for `useAmmo == 97` shooters AFTER the stat fuse; no crit roll at throw
+/// time (S1-P-i11 per-hit, `Projectile.cs:12883-12917`). It builds the shared
+/// launch frame (inherited from i13, flipping the facing), dispatches the
+/// per-gun arm in the C#'s code order and spawns the bullets.
 ///
 /// `remaining_anim_ticks` is the integer `itemAnimation` the Clockwork's spread
 /// window reads (`Player.cs:48419-48432`). `scale` is the prefixed `sItem.scale`
-/// the Xenopopper muzzle reads (`:47605`).
+/// the Xenopopper muzzle reads (`:47605`). `armor_pen` + `bonus_crit` are the
+/// `ApplyStatsFromSource` spawn stamps (`Projectile.cs:11128-11132`) — the
+/// prefix's armorPenetration and the Revolver's charge bonus.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fire(
     app: &mut App,
@@ -121,7 +128,8 @@ pub(crate) fn fire(
     speed: f32,
     damage: i32,
     knock_back: f32,
-    crit: bool,
+    armor_pen: i32,
+    bonus_crit: i32,
     world_pos: Vec2,
     remaining_anim_ticks: i32,
     scale: f32,
@@ -236,8 +244,10 @@ pub(crate) fn fire(
     };
 
     // Spawn the bullets. The owner is the local player (`NewProjectile`'s
-    // `Owner: i`); the crit stamp is the port's throw-time roll (the Revolver's
-    // charge bonus is already folded into it by the wire).
+    // `Owner: i`). No crit stamp (S1-P-i11): the crit rolls per-hit in
+    // `damage_pve`; the Revolver's charge bonus + the prefix's armor
+    // penetration are the `ApplyStatsFromSource` stamps
+    // (`Projectile.cs:11128-11132`).
     let owner = app.local_id as u8;
     for shot in shots {
         let dmg = shot.damage.unwrap_or(damage);
@@ -254,7 +264,8 @@ pub(crate) fn fire(
             shot.ai1,
         );
         if let Some(slot) = slot {
-            app.projectiles.set_crit(slot, crit);
+            app.projectiles.set_armor_penetration(slot, armor_pen);
+            app.projectiles.set_bonus_crit_chance(slot, bonus_crit);
             if let Some(v) = shot.local_ai0 {
                 app.projectiles.set_local_ai0(slot, v);
             }
@@ -559,7 +570,7 @@ mod tests {
         let (cx, cy) = app.player.as_ref().unwrap().center();
         let cursor = Vec2::new(cx - 80.0, cy);
         app.player.as_mut().unwrap().facing = 1;
-        fire(&mut app, 96, 14, 13.0, 38, 5.25, false, cursor, 31, 1.0);
+        fire(&mut app, 96, 14, 13.0, 38, 5.25, 0, 0, cursor, 31, 1.0);
         let shots = live(&app);
         assert_eq!(shots.len(), 1, "one musket ball");
         assert_eq!(shots[0].kind, 14);
@@ -574,7 +585,7 @@ mod tests {
             (shots[0].vel.length() - 13.0).abs() < 1e-3,
             "the aim normalized to the fused speed"
         );
-        // The generic tail spends NO launch draw (the crit is the wire's).
+        // The generic tail spends NO launch draw (the crit is per-hit, i11).
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 0));
     }
 
@@ -586,7 +597,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let before = app.audio.played_count();
-        fire(&mut app, 98, 14, 11.0, 13, 0.0, false, cursor, 7, 1.0);
+        fire(&mut app, 98, 14, 11.0, 13, 0.0, 0, 0, cursor, 7, 1.0);
         assert_eq!(app.audio.played_count(), before, "no launch cue");
     }
 
@@ -600,7 +611,7 @@ mod tests {
         let mut probe = UnifiedRandom::new(0x5EED);
         let vx = 11.0 + probe.next_range(-40, 41) as f32 * 0.01;
         let vy = 0.0 + probe.next_range(-40, 41) as f32 * 0.01;
-        fire(&mut app, 98, 14, 11.0, 13, 0.0, false, cursor, 7, 1.0);
+        fire(&mut app, 98, 14, 11.0, 13, 0.0, 0, 0, cursor, 7, 1.0);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert!((shots[0].vel.x - vx).abs() < 1e-5);
@@ -642,7 +653,7 @@ mod tests {
             }
             let dx = probe.next_range(-40, 41) as f32 * factor;
             let dy = probe.next_range(-40, 41) as f32 * factor;
-            fire(&mut app, kind, 14, 12.0, 30, 2.0, false, cursor, 4, 1.0);
+            fire(&mut app, kind, 14, 12.0, 30, 2.0, 0, 0, cursor, 4, 1.0);
             let v = live(&app)[0].vel;
             assert_eq!(stream_of(&mut app), draws_after(0x5EED, draws));
             if !jitter {
@@ -675,7 +686,7 @@ mod tests {
         let _vy = probe.next_range(-40, 41);
         let hit = probe.next_max(3) == 0;
         let n = if hit { 7 } else { 5 };
-        fire(&mut app, 2270, 14, 8.0, 21, 1.5, false, cursor, 6, 1.0);
+        fire(&mut app, 2270, 14, 8.0, 21, 1.5, 0, 0, cursor, 6, 1.0);
         assert_eq!(live(&app).len(), 1);
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, n));
     }
@@ -690,7 +701,7 @@ mod tests {
         let aim_deviation = |kind: u16| {
             let mut app = rig(0x5EED);
             let cursor = cursor_right(&app);
-            fire(&mut app, kind, 14, 12.0, 30, 2.0, false, cursor, 4, 1.0);
+            fire(&mut app, kind, 14, 12.0, 30, 2.0, 0, 0, cursor, 4, 1.0);
             let v = live(&app)[0].vel;
             // The pure aim is +x; the deviation is the |y| component the jitter
             // introduces (the spread also adds y, so compare the two guns).
@@ -713,7 +724,7 @@ mod tests {
         let cursor = cursor_right(&app);
         let mut probe = UnifiedRandom::new(0x5EED);
         let count = probe.next_range(4, 6);
-        fire(&mut app, 534, 14, 7.0, 15, 4.0, false, cursor, 44, 1.0);
+        fire(&mut app, 534, 14, 7.0, 15, 4.0, 0, 0, cursor, 44, 1.0);
         assert_eq!(live(&app).len(), count as usize);
         assert_eq!(
             stream_of(&mut app),
@@ -728,7 +739,7 @@ mod tests {
         let cursor = cursor_right(&app);
         let mut probe = UnifiedRandom::new(0x5EED);
         let count = probe.next_range(3, 5);
-        fire(&mut app, 964, 14, 5.35, 12, 5.0, false, cursor, 39, 1.0);
+        fire(&mut app, 964, 14, 5.35, 12, 5.0, 0, 0, cursor, 39, 1.0);
         assert_eq!(live(&app).len(), count as usize);
         assert_eq!(
             stream_of(&mut app),
@@ -741,7 +752,7 @@ mod tests {
         // `Player.cs:48355-48363`: SIX shots, ±40×0.05, no count draw.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 679, 14, 6.0, 34, 6.0, false, cursor, 33, 1.0);
+        fire(&mut app, 679, 14, 6.0, 34, 6.0, 0, 0, cursor, 33, 1.0);
         assert_eq!(live(&app).len(), 6);
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 12));
     }
@@ -753,7 +764,7 @@ mod tests {
         // = 4; the straight shot spends none. Total 28.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 4703, 14, 7.0, 14, 6.5, false, cursor, 54, 1.0);
+        fire(&mut app, 4703, 14, 7.0, 14, 6.5, 0, 0, cursor, 54, 1.0);
         assert_eq!(live(&app).len(), 8);
         assert_eq!(stream_of(&mut app), draws_after(0x5EED, 28));
     }
@@ -768,7 +779,7 @@ mod tests {
         let run = |anim: i32| {
             let mut app = rig(0x5EED);
             let cursor = cursor_right(&app);
-            fire(&mut app, 434, 14, 7.75, 30, 4.0, false, cursor, anim, 1.0);
+            fire(&mut app, 434, 14, 7.75, 30, 4.0, 0, 0, cursor, anim, 1.0);
             let s = live(&app)[0];
             (s.vel, stream_of(&mut app))
         };
@@ -797,7 +808,7 @@ mod tests {
         if probe.next_max(4) == 0 {
             count += 1;
         }
-        fire(&mut app, 2797, 14, 12.0, 45, 3.0, false, cursor, 20, 1.0);
+        fire(&mut app, 2797, 14, 12.0, 45, 3.0, 0, 0, cursor, 20, 1.0);
         let shots = live(&app);
         assert_eq!(shots.len(), count as usize);
         for s in &shots {
@@ -821,7 +832,7 @@ mod tests {
         // bolt 661 at speed×1.3 with damage×2 (no draw). Total 8 draws.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 3788, 14, 7.0, 24, 6.0, false, cursor, 47, 1.0);
+        fire(&mut app, 3788, 14, 7.0, 24, 6.0, 0, 0, cursor, 47, 1.0);
         let shots = live(&app);
         assert_eq!(shots.len(), 5, "4 bullets + 1 bolt");
         let bullets: Vec<_> = shots.iter().filter(|s| s.kind == 14).collect();
@@ -846,7 +857,7 @@ mod tests {
         let cursor = cursor_right(&app);
         let mut probe = UnifiedRandom::new(0x5EED);
         let ai0 = (5 * probe.next_range(0, 20)) as f32;
-        fire(&mut app, 3475, 615, 20.0, 50, 2.0, false, cursor, 19, 1.0);
+        fire(&mut app, 3475, 615, 20.0, 50, 2.0, 0, 0, cursor, 19, 1.0);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 615, "the fixed gun projectile");
@@ -868,7 +879,7 @@ mod tests {
         let _vy = probe.next_range(-15, 16);
         let frame = probe.next_max(24);
         // Pass a non-968 proj to prove the override.
-        fire(&mut app, 5117, 14, 14.0, 30, 3.0, false, cursor, 14, 1.0);
+        fire(&mut app, 5117, 14, 14.0, 30, 3.0, 0, 0, cursor, 14, 1.0);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 968, "the post-pick override");
@@ -901,7 +912,7 @@ mod tests {
         for kind in [1254u16, 1255, 1265] {
             let mut app = rig(0x5EED);
             let cursor = cursor_right(&app);
-            fire(&mut app, kind, 14, 16.0, 50, 5.0, false, cursor, 35, 1.0);
+            fire(&mut app, kind, 14, 16.0, 50, 5.0, 0, 0, cursor, 35, 1.0);
             let shots = live(&app);
             assert_eq!(shots.len(), 1, "{kind}: one shot");
             assert_eq!(shots[0].kind, 242, "{kind}: the HighVelocityBullet");
@@ -909,7 +920,7 @@ mod tests {
         // A non-converting gun keeps the plain bullet.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 96, 14, 9.0, 31, 5.25, false, cursor, 31, 1.0);
+        fire(&mut app, 96, 14, 9.0, 31, 5.25, 0, 0, cursor, 31, 1.0);
         assert_eq!(live(&app)[0].kind, 14, "the Musket keeps 14");
     }
 
@@ -920,7 +931,7 @@ mod tests {
         let run = || {
             let mut app = rig(0xB0A);
             let cursor = cursor_right(&app);
-            fire(&mut app, 3788, 14, 7.0, 24, 6.0, false, cursor, 47, 1.0);
+            fire(&mut app, 3788, 14, 7.0, 24, 6.0, 0, 0, cursor, 47, 1.0);
             live(&app)
                 .iter()
                 .map(|s| (s.kind, s.pos, s.vel, s.damage))
@@ -962,7 +973,7 @@ mod tests {
         // − π/2, and the owner-gated 60-tick life clamp. Draw-free.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 2797, 14, 12.0, 45, 3.0, false, cursor, 20, 1.0);
+        fire(&mut app, 2797, 14, 12.0, 45, 3.0, 0, 0, cursor, 20, 1.0);
         let mut pool = std::mem::take(&mut app.projectiles);
         // Pin one bubble: aim straight +x (ai[0]=0), velocity angled +y so the
         // steer rotates it back toward +x; life 3600 → clamped 60.
@@ -1003,7 +1014,7 @@ mod tests {
         // carrying the bubble's damage/knockback/owner. Draw-free.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 2797, 14, 12.0, 45, 3.0, false, cursor, 20, 1.0);
+        fire(&mut app, 2797, 14, 12.0, 45, 3.0, 0, 0, cursor, 20, 1.0);
         let mut pool = std::mem::take(&mut app.projectiles);
         let slot = pool
             .slots()

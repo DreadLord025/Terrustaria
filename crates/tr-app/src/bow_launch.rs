@@ -31,9 +31,11 @@
 //!
 //! ## RNG order
 //!
-//! The port rolls the crit at THROW time (the established `world_sim`
-//! convention, a documented deviation from the C#'s hit-time
-//! `Projectile.Damage` roll); that one draw precedes the launch arm's draws.
+//! No crit rolls at THROW time: the C# rolls the projectile crit per-hit in
+//! `Damage_PVE_Inner` (`Projectile.cs:12883-12917`) on the
+//! `UpdateProjectiles` stream (S1-P-i11's spawn→hit move — the throw's
+//! `UpdatePlayers` stream spends no crit draw; the launch arm's count roll
+//! is the first draw).
 //! Within each arm the `Main.rand` draws are consumed in the C#'s exact
 //! order — the spread/count rolls, the per-shot spawn jitter, the
 //! `RotatedByRandom` pairs (`Utils.cs:1697-1700`, TWO `NextDouble` each).
@@ -287,8 +289,10 @@ pub(crate) fn launch_frame(
 }
 
 /// The bow launch entry — `Player.ItemCheck_Shoot`'s bow half. The wire
-/// calls it for arrow/stake shooters AFTER the stat fuse and the crit roll;
-/// it applies the post-pick overrides, builds the launch frame (flipping the
+/// calls it for arrow/stake shooters AFTER the stat fuse; no crit rolls at
+/// throw time (the C# rolls it per-hit in `Damage_PVE_Inner`,
+/// `Projectile.cs:12883-12917` — S1-P-i11's spawn→hit move, M1 re-sync).
+/// It applies the post-pick overrides, builds the launch frame (flipping the
 /// facing), dispatches the per-bow arm and spawns the arrows. The two arrow
 /// `gunProj` BOWS (the Phantasm 3540, the DD2 Phoenix Bow 3854) reach here
 /// with their fixed bolt id (`proj = g.projectile`, the M3-ITEM-6 reset):
@@ -307,7 +311,6 @@ pub(crate) fn fire(
     speed: f32,
     mut damage: i32,
     knock_back: f32,
-    crit: bool,
     world_pos: Vec2,
     anim_max_ticks: i32,
     remaining_anim_ticks: i32,
@@ -379,7 +382,9 @@ pub(crate) fn fire(
     };
 
     // Spawn the arrows. The owner is the local player (`NewProjectile`'s
-    // `Owner: i`); the crit stamp is the port's throw-time roll.
+    // `Owner: i`). No crit stamp: the crit rolls per-hit in `damage_pve`
+    // (`Projectile.cs:12883-12917`, S1-P-i11 — the ranged flag rides
+    // `proj_data`); the C# `NewProjectile` carries no crit.
     let owner = app.local_id as u8;
     for shot in shots {
         let slot = app.projectiles.spawn_with_data_owned(
@@ -395,7 +400,6 @@ pub(crate) fn fire(
             shot.ai1,
         );
         if let Some(slot) = slot {
-            app.projectiles.set_crit(slot, crit);
             if shot.no_drop {
                 app.projectiles.set_no_drop_item(slot, true);
             }
@@ -861,7 +865,7 @@ mod tests {
         // arrow's resolved 1.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 39, 1, 9.1, 9, 2.0, false, cursor, 30, 29);
+        fire(&mut app, 39, 1, 9.1, 9, 2.0, cursor, 30, 29);
         let shots = live(&app);
         assert_eq!(shots.len(), 1, "one arrow");
         assert_eq!(shots[0].kind, 1, "the wooden arrow");
@@ -880,7 +884,7 @@ mod tests {
         // The Marrow 682's override → 117, then the generic tail.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 682, 1, 14.0, 48, 4.7, false, cursor, 19, 18);
+        fire(&mut app, 682, 1, 14.0, 48, 4.7, cursor, 19, 18);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 117, "the Bone Arrow override (`:47163`)");
@@ -890,7 +894,7 @@ mod tests {
     fn s1_p_i13_the_ice_bow_fires_the_frost_arrow() {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 725, 1, 13.0, 46, 4.5, false, cursor, 14, 13);
+        fire(&mut app, 725, 1, 13.0, 46, 4.5, cursor, 14, 13);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 120, "the FrostArrow override (`:47167`)");
@@ -900,7 +904,7 @@ mod tests {
     fn s1_p_i13_the_pulse_bow_fires_the_pulse_bolt() {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 2223, 1, 10.75, 85, 3.0, false, cursor, 20, 19);
+        fire(&mut app, 2223, 1, 10.75, 85, 3.0, cursor, 20, 19);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 357, "the PulseBolt override (`:47175`)");
@@ -911,7 +915,7 @@ mod tests {
         // The without-quiver path: proj 1 → 2 (`:47157-47160`).
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 120, 1, 11.0, 36, 2.0, false, cursor, 22, 21);
+        fire(&mut app, 120, 1, 11.0, 36, 2.0, cursor, 22, 21);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 2, "the FireArrow (`:47159`)");
@@ -925,7 +929,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let (cx, cy) = app.player.as_ref().unwrap().center();
         let cursor = Vec2::new(cx - 80.0, cy);
-        fire(&mut app, 39, 1, 9.1, 9, 2.0, false, cursor, 30, 29);
+        fire(&mut app, 39, 1, 9.1, 9, 2.0, cursor, 30, 29);
         assert_eq!(app.player.as_ref().unwrap().facing, -1, "faces left");
         let shots = live(&app);
         assert!(shots[0].vel.x < 0.0, "the arrow flies left");
@@ -940,7 +944,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let seed_stream = stream_of(&mut app);
-        fire(&mut app, 2624, 1, 13.0, 58, 2.0, false, cursor, 24, 23);
+        fire(&mut app, 2624, 1, 13.0, 58, 2.0, cursor, 24, 23);
         let shots = live(&app);
         assert_eq!(shots.len(), 5, "the Tsunami's five arrows");
         for s in &shots {
@@ -967,7 +971,7 @@ mod tests {
         // adds one ±0.04 pair, shot 2 two pairs. Every arrow noDropItem.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 1229, 1, 14.5, 39, 2.75, false, cursor, 19, 18);
+        fire(&mut app, 1229, 1, 14.5, 39, 2.75, cursor, 19, 18);
         let shots = live(&app);
         assert!(shots.len() == 2 || shots.len() == 3, "2 or 3 arrows");
         for s in &shots {
@@ -993,14 +997,15 @@ mod tests {
     fn s1_p_i13_the_chlorophyte_count_roll_spends_one_draw() {
         // The count roll is ONE Next(3); the per-shot spread draws follow. For
         // a 2-shot volley (Next(3)!=0): 1 count draw + 2 spread draws (shot 1's
-        // pair) = 3. For 3-shot: 1 + 2 + 2 = 5. The crit is rolled by the wire
-        // BEFORE fire, so fire's own draws start at the count roll.
+        // pair) = 3. For 3-shot: 1 + 2 + 2 = 5. No crit draw at throw time
+        // (S1-P-i11: the crit is per-hit), so fire's own draws start at the
+        // count roll.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         // Replay the count roll to know the shot count.
         let mut probe = UnifiedRandom::new(0x5EED);
         let count = if probe.next_max(3) == 0 { 3 } else { 2 };
-        fire(&mut app, 1229, 1, 14.5, 39, 2.75, false, cursor, 19, 18);
+        fire(&mut app, 1229, 1, 14.5, 39, 2.75, cursor, 19, 18);
         // Shot k spends 2 draws per true condition among {k>0, k>1, k>2} =
         // 2*min(k,3); the count is 2 or 3, so the spread total is
         // 2*(0+1+…+(count-1)) = count*(count-1).
@@ -1021,7 +1026,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let seed_stream = stream_of(&mut app);
-        fire(&mut app, 3859, 1, 14.0, 43, 4.5, false, cursor, 30, 29);
+        fire(&mut app, 3859, 1, 14.0, 43, 4.5, cursor, 30, 29);
         let shots = live(&app);
         assert_eq!(shots.len(), 6, "the six-iteration fan loop");
         for s in &shots {
@@ -1044,7 +1049,8 @@ mod tests {
         // RotatedByRandom(π/16) for the velocity (2 NextDouble) = 4 draws.
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
-        fire(&mut app, 3019, 485, 9.0, 27, 5.5, false, cursor, 13, 12);
+        fire(&mut app, 3019, 485, 9.0, 27, 5.5, cursor, 13, 12);
+        let after = stream_of(&mut app);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 485);
@@ -1053,7 +1059,7 @@ mod tests {
         let spin_differs = (shots[0].ai[0] - shots[0].vel.x).abs() > 1e-4
             || (shots[0].ai[1] - shots[0].vel.y).abs() > 1e-4;
         assert_eq!(
-            stream_of(&mut app),
+            after,
             draws_after(0x5EED, 4),
             "the ai-spin pair then the velocity pair (`:47575-47576`)"
         );
@@ -1069,7 +1075,7 @@ mod tests {
         let run = || {
             let mut app = rig(0xB0A);
             let cursor = cursor_right(&app);
-            fire(&mut app, 3019, 485, 9.0, 27, 5.5, false, cursor, 13, 12);
+            fire(&mut app, 3019, 485, 9.0, 27, 5.5, cursor, 13, 12);
             let s = live(&app)[0];
             (s.vel, s.ai[0], s.ai[1])
         };
@@ -1085,7 +1091,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let (mcx, mcy) = app.player.as_ref().unwrap().mounted_center();
-        fire(&mut app, 3029, 1, 15.5, 43, 2.25, false, cursor, 19, 18);
+        fire(&mut app, 3029, 1, 15.5, 43, 2.25, cursor, 19, 18);
         let shots = live(&app);
         assert!(shots.len() >= 2 && shots.len() <= 4, "2-4 rain arrows");
         for s in &shots {
@@ -1112,7 +1118,7 @@ mod tests {
         // The wooden arrow (proj 1) is NOT in {91,4,5,41}, so the else branch:
         // count = 3 + (Next(3)==0 ? 1 : 0).
         let count = if probe.next_max(3) == 0 { 4 } else { 3 };
-        fire(&mut app, 3029, 1, 15.5, 43, 2.25, false, cursor, 19, 18);
+        fire(&mut app, 3029, 1, 15.5, 43, 2.25, cursor, 19, 18);
         assert_eq!(live(&app).len(), count as usize);
         assert_eq!(
             stream_of(&mut app),
@@ -1128,7 +1134,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         let (_, mcy) = app.player.as_ref().unwrap().mounted_center();
-        fire(&mut app, 4381, 819, 12.0, 19, 3.0, false, cursor, 19, 18);
+        fire(&mut app, 4381, 819, 12.0, 19, 3.0, cursor, 19, 18);
         let shots = live(&app);
         assert!(shots.len() >= 1 && shots.len() <= 3, "1-3 blood arrows");
         for s in &shots {
@@ -1150,7 +1156,7 @@ mod tests {
         if probe.next_max(3) == 0 {
             count += 1;
         }
-        fire(&mut app, 4381, 819, 12.0, 19, 3.0, false, cursor, 19, 18);
+        fire(&mut app, 4381, 819, 12.0, 19, 3.0, cursor, 19, 18);
         assert_eq!(live(&app).len(), count as usize);
         assert_eq!(
             stream_of(&mut app),
@@ -1168,7 +1174,7 @@ mod tests {
         let mut app = rig(0x5EED);
         let cursor = cursor_right(&app);
         // anim 30, remaining 29 → num61 = 0.
-        fire(&mut app, 4953, 2, 13.0, 55, 2.0, false, cursor, 30, 29);
+        fire(&mut app, 4953, 2, 13.0, 55, 2.0, cursor, 30, 29);
         let shots = live(&app);
         assert_eq!(shots.len(), 1, "one shot per fire tick");
         assert_eq!(shots[0].kind, 2, "the resolved flaming arrow (num61 != 2)");
@@ -1182,7 +1188,7 @@ mod tests {
         let mut app = rig(0x5EED);
         app.player.as_mut().unwrap().misc_counter = 150; // miscNorm = 0.5
         let cursor = cursor_right(&app);
-        fire(&mut app, 4953, 2, 13.0, 55, 2.0, false, cursor, 30, 25);
+        fire(&mut app, 4953, 2, 13.0, 55, 2.0, cursor, 30, 25);
         let shots = live(&app);
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, 932, "the prism (`:47946`)");
@@ -1199,35 +1205,42 @@ mod tests {
     #[test]
     fn s1_p_i13_the_fairy_queen_fan_index_mirrors_with_the_facing() {
         // num62 = num61 when facing left, 4 - num61 when facing right
-        // (`:47920-47923`). The fan offset `vector28 = aim40.RotatedBy(π/10 ×
-        // (num62 − 2))` (`:47924`) is SYMMETRIC under the combined aim-flip +
-        // index-mirror: left (aim −x, num62=1 → −π/10) and right (aim +x,
-        // num62=3 → +π/10) both land at angle π+π/10, so the spawn offset — and
-        // thus the spawn Y — is IDENTICAL. The V5 gate corrected the coder's
-        // "offsets differ" claim (a hand-derived error): the mirror keeps the
-        // fan symmetric about the player, it does not displace it. The witness
-        // pins the symmetric spawn (equal Y) and the mirrored aim (opposite X).
+        // (`:47920-47923`). Gate fix (V1+V5 agree): the fan offset
+        // `vector28 = aim40.RotatedBy(π/10 × (num62 − 2))` (`:47924`) is
+        // SYMMETRIC under the combined aim-flip + index-mirror: left (aim −x,
+        // num62=1 → −π/10) and right (aim +x, num62=3 → +π/10) both land at
+        // angle π+π/10 — for a HORIZONTAL aim the mirrored fan rotates the
+        // 40-px offset to ±the same angle about the X axis, so the spawn X
+        // mirrors across the player and the spawn Y is IDENTICAL
+        // (RotatedBy of (±40, 0) by ∓π/10: X = ±38.04, Y = +12.36 both;
+        // Utils.cs:1675-1684). The old witness asserted a Y difference the
+        // C# never produces on a horizontal cursor; the X mirror + the aim
+        // flip are the fan index's observables.
         let mut left = rig(0x5EED);
         left.player.as_mut().unwrap().facing = -1;
         let (cx, cy) = left.player.as_ref().unwrap().center();
         let cursor = Vec2::new(cx - 80.0, cy);
-        fire(&mut left, 4953, 2, 13.0, 55, 2.0, false, cursor, 30, 27);
+        fire(&mut left, 4953, 2, 13.0, 55, 2.0, cursor, 30, 27);
         let mut right = rig(0x5EED);
         right.player.as_mut().unwrap().facing = 1;
         let (cx2, cy2) = right.player.as_ref().unwrap().center();
         let cursor2 = Vec2::new(cx2 + 80.0, cy2);
-        fire(&mut right, 4953, 2, 13.0, 55, 2.0, false, cursor2, 30, 27);
+        fire(&mut right, 4953, 2, 13.0, 55, 2.0, cursor2, 30, 27);
         // num61 = (30-27)/2 = 1; left num62 = 1, right num62 = 3.
         let ls = live(&left)[0];
         let rs = live(&right)[0];
         assert!(
             (ls.pos.y - rs.pos.y).abs() < 1e-3,
-            "the mirrored fan is symmetric — equal spawn Y"
+            "the mirrored fan is symmetric — equal spawn Y (a horizontal aim's fan Y is facing-invariant)"
         );
         // The spawn X mirrors about the player centre, and the aim flips.
         assert!(
             ((ls.pos.x - cx) + (rs.pos.x - cx2)).abs() < 1e-3,
             "the spawn X mirrors about the centre"
+        );
+        assert!(
+            (ls.pos.x - cx) < 0.0 && (rs.pos.x - cx2) > 0.0,
+            "the offsets sit on the aim side"
         );
         assert!(ls.vel.x < 0.0 && rs.vel.x > 0.0, "the aim mirrors with the facing");
     }

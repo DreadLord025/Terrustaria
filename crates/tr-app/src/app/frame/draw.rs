@@ -960,17 +960,20 @@ impl App {
                         npc_key,
                         items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15),
                         hand_key: {
-                            let held = inventory
-                                .get(*selected)
-                                .filter(|s| s.count > 0)
-                                .map_or(0, |s| s.kind as u32);
+                            let slot = inventory.get(*selected).filter(|s| s.count > 0);
+                            let held = slot.map_or(0, |s| s.kind as u32);
                             let phase = if *swing > 0.0 {
                                 (((1.0 - *swing / self.swing_max.max(f32::EPSILON)) * 40.0) as u32)
                                     .min(40)
                             } else {
                                 0
                             };
-                            held | (phase << 16)
+                            // S1-P-i05: the prefix rides the key — the
+                            // thrust's `GetAdjustedItemScale` reads the
+                            // PREFIXED scale (`Player.cs:42566`), so a
+                            // reforge changes the held item's pixels.
+                            let prefix = slot.map_or(0, |s| s.prefix as u32);
+                            held | (phase << 16) | (prefix << 24)
                         },
                         light_generation: light.generation(),
                         // S1-H-15: `shade` multiplies every tile tint by the style's
@@ -1130,8 +1133,14 @@ impl App {
                                         .map(|slot| {
                                             // The builders consume the remaining
                                             // use fraction (`itemAnimation /
-                                            // itemAnimationMax`).
-                                            (slot.kind, *swing / self.swing_max.max(f32::EPSILON))
+                                            // itemAnimationMax`); the prefix
+                                            // rides along for the thrust's
+                                            // `GetAdjustedItemScale` (S1-P-i05).
+                                            (
+                                                slot.kind,
+                                                *swing / self.swing_max.max(f32::EPSILON),
+                                                slot.prefix,
+                                            )
                                         })
                                 }
                                 _ => None,

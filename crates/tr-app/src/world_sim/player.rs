@@ -874,6 +874,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 crate::player::item_rotation_for_aim(app.swing_aim, p.facing, p.full_rotation);
             p.frame_inputs = crate::player::FrameInputs {
                 use_style,
+                // S1-P-i05: the direction lock's exemption row
+                // (`Player.cs:19837`).
+                use_turn: crate::registry::get(kind).is_some_and(|d| d.use_turn),
                 // `flag6` (`Player.cs:36146`): the hidden/raise-lamp/hold-orb
                 // styles keep the locomotion rows.
                 use_style_blocks_frames: !matches!(use_style, 10 | 14 | 15),

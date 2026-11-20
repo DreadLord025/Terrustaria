@@ -177,9 +177,19 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) swing_max_ticks: f32,
     /// `Item.useAnimation` in ticks — the useStyle 8's wind-up gate.
     pub(crate) use_animation: i32,
+    /// `sItem.type` — the useStyle-1 arm's per-item specials: the Bladed
+    /// Glove claw (1827), the fishing-hammer/Keybrand nudges, the Breaker
+    /// Blade's `UsesBetterMeleeItemLocation` offset (`Player.cs:50693-
+    /// 50857`, S1-P-i04); the useStyle-3 arm's 946/4707 umbrella nudge
+    /// (`:51054-51057`, S1-P-i05). 0 = empty hand.
+    pub(crate) item_type: i32,
     /// The held item's atlas quad and frame size, `None` = empty hand.
     pub(crate) item_uv: Option<[f32; 4]>,
     pub(crate) item_size: [f32; 2],
+    /// `GetAdjustedItemScale(sItem)` (`Player.cs:42566-42574`) — the
+    /// prefixed `Item.scale` (the `meleeScaleGlove` arm has no port
+    /// granter). The useStyle-3 extension reads it (`:51043`).
+    pub(crate) item_scale: f32,
     /// The light tint at the player tile (`style.shade(...)` output).
     pub(crate) light: [f32; 3],
     /// The live mount's draw inputs, `None` = unmounted.
@@ -1003,96 +1013,45 @@ fn item_rotation(remaining: f32, direction: f32) -> f32 {
     (remaining - 0.5) * -direction * 3.5 - direction * 0.3
 }
 
-/// `Player.ItemCheck` useStyle-1 `itemLocation` thirds
-/// (`Player.cs:50709-50846`): the anchor the held item pivots around, per
-/// animation third, offset from `position + (width/2, y)`. The `num` tables
-/// are the C# cascades over the held item's frame size. The
-/// `UsesBetterMeleeItemLocation` nudge (`Player.cs:50844`) is not applied —
-/// no ported item belongs to that set.
+/// The useStyle-1 swing thirds' `itemLocation` — the shared
+/// `melee_swing` port of `ItemCheck_ApplyUseStyle`'s generic arm
+/// (`Player.cs:50712-50864`, S1-P-i04): the width/height `num` cascades, the
+/// per-item nudges (the fishing hammers 2330/2320/2341, the Keybrand 671),
+/// the `UsesBetterMeleeItemLocation` offset (the Breaker Blade 426,
+/// `ItemID.cs:348`) and the Bladed Glove claw arm (1827,
+/// `Main.cs:6793-6795`). The draw feeds the RAW tick counters
+/// (`swing_anim_ticks`/`swing_max_ticks`) so the third boundaries compare
+/// in double exactly like the C# (`(double)itemAnimation <
+/// (double)itemAnimationMax * 0.333`, `:50715/:50746`) — the old f32
+/// `remaining < 0.333` compare drifted on the boundary ticks.
+/// `mountOffset` is 0 and `gravDir` 1 in the draw (no mount Y offset, no
+/// gravity flip — the module carries both for the sim-side hitbox).
+#[allow(clippy::too_many_arguments)]
 fn item_location(
-    remaining: f32,
+    anim: i32,
+    max: i32,
     direction: f32,
     pos_x: f32,
     pos_y: f32,
     frame_w: f32,
     frame_h: f32,
+    item_type: i32,
 ) -> [f32; 2] {
-    let half = frame_w * 0.5;
-    // `itemAnimation` counts DOWN, so the C# chain's first branch —
-    // `itemAnimation < itemAnimationMax * 0.333` (`Player.cs:50709-50734`) —
-    // is the swing END: X `10 / >32:14 / >=52:24 / >=64:28 / >=92:38` added,
-    // Y `position.Y + 24`. The last branch (`>= 0.666`, `:50776-50843`)
-    // *subtracts* the X offset near the swing start.
-    let (num_x, loc_y) = if remaining < 0.333 {
-        let mut num = if frame_w > 32.0 { 14.0 } else { 10.0 };
-        if frame_w >= 52.0 {
-            num = 24.0;
-        }
-        if frame_w >= 64.0 {
-            num = 28.0;
-        }
-        if frame_w >= 92.0 {
-            num = 38.0;
-        }
-        (num, 24.0)
-    } else if remaining < 0.666 {
-        // Middle third (`:50736-50775`): X `10 / >32:18 / >=52:24 / >=64:28 /
-        // >=92:38`, Y `10 / >32:8 / >52:12 / >64:14`.
-        let mut num = if frame_w > 32.0 { 18.0 } else { 10.0 };
-        if frame_w >= 52.0 {
-            num = 24.0;
-        }
-        if frame_w >= 64.0 {
-            num = 28.0;
-        }
-        if frame_w >= 92.0 {
-            num = 38.0;
-        }
-        let num_y = if frame_h > 64.0 {
-            14.0
-        } else if frame_h > 52.0 {
-            12.0
-        } else if frame_h > 32.0 {
-            8.0
-        } else {
-            10.0
-        };
-        (num, num_y)
-    } else {
-        // Swing start (`:50776-50843`): X `6 / >32:14 / >=48:18 / >=52:24 /
-        // >=64:28 / >=92:38` and it *subtracts* `direction`, Y `10 / >52:12 /
-        // >64:14`.
-        let mut num = if frame_w > 32.0 { 14.0 } else { 6.0 };
-        if frame_w >= 48.0 {
-            num = 18.0;
-        }
-        if frame_w >= 52.0 {
-            num = 24.0;
-        }
-        if frame_w >= 64.0 {
-            num = 28.0;
-        }
-        if frame_w >= 92.0 {
-            num = 38.0;
-        }
-        let num_y = if frame_h > 64.0 {
-            14.0
-        } else if frame_h > 52.0 {
-            12.0
-        } else {
-            10.0
-        };
-        (num, num_y)
-    };
-    // The C#'s X sign per third: the swing end (`:50742`) and the middle
-    // third (`:50773`) ADD `(frame.W*0.5 - num) * direction` to
-    // `position.X + width*0.5`; only the swing start (`:50829`) SUBTRACTS it.
-    let x = if remaining < 0.666 {
-        pos_x + (half - num_x) * direction
-    } else {
-        pos_x - (half - num_x) * direction
-    };
-    [x, pos_y + loc_y]
+    let dir = if direction < 0.0 { -1 } else { 1 };
+    let (loc, _) = crate::melee_swing::swing_item_placement(
+        item_type,
+        anim,
+        max,
+        dir,
+        1.0,
+        [pos_x, pos_y],
+        crate::player::WIDTH,
+        crate::player::HEIGHT,
+        frame_w,
+        frame_h,
+        0.0,
+    );
+    loc
 }
 
 /// `Player.GetFrontHandPosition` (`Player.cs:50617-50647`): the composite
@@ -1210,25 +1169,26 @@ fn use_item_placement(s: &PlayerCompositeState, dir: f32, w: f32, h: f32) -> ([f
             ],
             0.0,
         ),
-        // `:51031-51061` (Thrust): the item is pushed forward, then pulled
-        // back to the hand.
-        3 => {
-            if remaining > 2.0 / 3.0 {
-                ([-1000.0, -1000.0], -1.3 * dir)
-            } else {
-                let num14 = (remaining * w * dir * 1.2 - 10.0 * dir).clamp(
-                    if dir < 0.0 { -8.0 } else { f32::MIN },
-                    if dir > 0.0 { 8.0 } else { f32::MAX },
-                );
-                (
-                    [
-                        pos_x + 10.0 + (w * 0.5 - 4.0) * dir - num14,
-                        pos_y + 24.0,
-                    ],
-                    0.8 * dir,
-                )
-            }
-        }
+        // `:51031-51063` (Thrust, S1-P-i05): the item extends forward
+        // through the stab — the verbatim shared port
+        // (`player.rs::thrust_item_placement`): the 0.666 wind-up gate,
+        // the `GetAdjustedItemScale` factor, the snap-to-±8 clamps and
+        // the 946/4707 umbrella nudge. The draw's frame size IS
+        // `Item.GetDrawHitbox`'s stand-in (the atlas icon quad).
+        // `mountOffset` = `HeightOffsetHitboxCenter` stands at 0 (the
+        // port has no mount height offsets); the item kind rides
+        // `item_type` on the state.
+        3 => crate::player::thrust_item_placement(
+            pos_x,
+            pos_y,
+            20.0,
+            dir,
+            remaining,
+            w,
+            s.item_scale,
+            0.0,
+            s.item_type,
+        ),
         // `:51065-51090` (HoldUp): the item is held up beside the shoulder
         // (`width*0.5 - 9 - itemRotation*14*dir - 4`).
         4 => (
@@ -1368,10 +1328,23 @@ fn use_item_placement(s: &PlayerCompositeState, dir: f32, w: f32, h: f32) -> ([f
             let (loc, _) = hold_item_placement(s, dir, w, h);
             (loc, s.item_rotation)
         }
-        // The default arc — useStyle 1 (`:50686-50935`): the third-walk +
-        // the `(anim/max - 0.5) * -dir * 3.5 - dir * 0.3` rotation.
+        // The default arc — useStyle 1 (`:50686-50864`): the third-walk +
+        // the `(anim/max - 0.5) * -dir * 3.5 - dir * 0.3` rotation, through
+        // the shared `melee_swing` module (S1-P-i04 — the raw tick counters,
+        // the per-item nudges, the claw arm).
         _ => (
-            item_location(remaining, dir, pos_x + 10.0, pos_y, w, h),
+            item_location(
+                s.swing_anim_ticks.round() as i32,
+                (s.swing_max_ticks.round() as i32).max(1),
+                dir,
+                // `base.position` — the module adds `width * 0.5` itself
+                // (`Player.cs:50742`).
+                pos_x,
+                pos_y,
+                w,
+                h,
+                s.item_type,
+            ),
             item_rotation(remaining, dir),
         ),
     }
@@ -1613,9 +1586,14 @@ mod tests {
         // subtract in the middle third too — the item jumped to the other
         // side of the body mid-swing.
         let w = 40.0;
-        let end = item_location(0.2, 1.0, 100.0, 200.0, w, 16.0);
-        let middle = item_location(0.5, 1.0, 100.0, 200.0, w, 16.0);
-        let start = item_location(0.8, 1.0, 100.0, 200.0, w, 16.0);
+        // The raw tick counters (max 20): anim 4 = the END third (4 < 6.66),
+        // 10 = the middle, 16 = the start (16 >= 13.32) — the same fractions
+        // the old normalised compare used, now on the C#'s double thresholds.
+        // `pos_x` is `base.position.X` (90): the module adds `width*0.5` =
+        // 10 itself, so the old test's 100 base is preserved.
+        let end = item_location(4, 20, 1.0, 90.0, 200.0, w, 16.0, 0);
+        let middle = item_location(10, 20, 1.0, 90.0, 200.0, w, 16.0, 0);
+        let start = item_location(16, 20, 1.0, 90.0, 200.0, w, 16.0, 0);
         // The end third: `num = 14` (W > 32) -> `100 + (20 - 14)`.
         assert!((end[0] - 106.0).abs() < 1e-6, "{:?}", end);
         // The middle third: `num = 18` -> `100 + (20 - 18)`.
@@ -1627,6 +1605,50 @@ mod tests {
         assert!((end[1] - 224.0).abs() < 1e-6, "{:?}", end);
         assert!((middle[1] - 210.0).abs() < 1e-6, "{:?}", middle);
         assert!((start[1] - 210.0).abs() < 1e-6, "{:?}", start);
+    }
+
+    /// S1-P-i04 — the third boundaries compare the RAW counters in double
+    /// (`Player.cs:50715/:50746`), not the f32 fraction: max 20 → the end
+    /// third holds through anim 6 (6 < 6.66), the middle through 13
+    /// (13 < 13.32). The old `remaining < 0.333` f32 compare put anim 6.66
+    /// on the wrong side of the boundary.
+    #[test]
+    fn s1_p_i04_the_third_boundaries_ride_the_raw_counters() {
+        // 40x16 frame, base X 90 (+10 half-width = 100): end num 14 → 106,
+        // middle num 18 → 102, start num 14 → 94.
+        let at = |anim: i32| item_location(anim, 20, 1.0, 90.0, 200.0, 40.0, 16.0, 0)[0];
+        assert!((at(6) - 106.0).abs() < 1e-6, "anim 6 is still the END third");
+        assert!((at(7) - 102.0).abs() < 1e-6, "anim 7 is the middle");
+        assert!((at(13) - 102.0).abs() < 1e-6, "anim 13 is still the middle");
+        assert!((at(14) - 94.0).abs() < 1e-6, "anim 14 is the start");
+    }
+
+    /// S1-P-i04 — the per-item specials the S1-G-17 port left out: the
+    /// Keybrand's nudges (`Player.cs:50738-50741` etc.), the Breaker Blade's
+    /// `UsesBetterMeleeItemLocation` offset (`:50854-50857`, `ItemID.cs:348`)
+    /// and the Bladed Glove's claw arm (`:50693-50711`, `Main.cs:6793-6795`).
+    #[test]
+    fn s1_p_i04_the_per_item_swing_specials_reach_the_draw() {
+        // The Keybrand (671), 40x40 frame, max 20: the END third's num
+        // 14 + 12 = 26 → X = 100 + (20 - 26) = 94 (the generic arm gave 106).
+        let loc = item_location(4, 20, 1.0, 90.0, 200.0, 40.0, 40.0, 671);
+        assert!((loc[0] - 94.0).abs() < 1e-6, "{loc:?}");
+        // The Breaker Blade (426), 60x70 frame, max 35: END num 24 (>=52) →
+        // X = 100 + (30 - 24) = 106, Y = 224; the zero (-4, 1) nudge →
+        // (102, 225).
+        let loc = item_location(7, 35, 1.0, 90.0, 200.0, 60.0, 70.0, 426);
+        assert!((loc[0] - 102.0).abs() < 1e-6, "{loc:?}");
+        assert!((loc[1] - 225.0).abs() < 1e-6, "{loc:?}");
+        // The Bladed Glove (1827), 24x28 frame, max 8: the claw END arm
+        // (`:50697-50698`) X = 100 + (12 - 10) = 102, Y = 200 + 26 = 226.
+        let loc = item_location(2, 8, 1.0, 90.0, 200.0, 24.0, 28.0, 1827);
+        assert!((loc[0] - 102.0).abs() < 1e-6, "{loc:?}");
+        assert!((loc[1] - 226.0).abs() < 1e-6, "{loc:?}");
+        // The claw START arm (`:50707-50708`): X = 100 - (12 - 6) = 94,
+        // Y = 220.
+        let loc = item_location(7, 8, 1.0, 90.0, 200.0, 24.0, 28.0, 1827);
+        assert!((loc[0] - 94.0).abs() < 1e-6, "{loc:?}");
+        assert!((loc[1] - 220.0).abs() < 1e-6, "{loc:?}");
     }
 
     #[test]
@@ -1694,6 +1716,42 @@ mod tests {
         };
         let (loc, _) = use_item_placement(&s, 1.0, 16.0, 16.0);
         assert!((loc[0] - 124.0).abs() < 1e-6, "{:?}", loc);
+    }
+
+    /// S1-P-i05 — the render's useStyle-3 arm delegates to the shared
+    /// verbatim port (`player.rs::thrust_item_placement`,
+    /// `Player.cs:51031-51063`): the 0.666 wind-up gate, the scaled
+    /// extension, the snap clamps and the umbrella nudge all ride the
+    /// state's `item_type`/`item_scale`. WRITTEN NOT RUN.
+    #[test]
+    fn s1_p_i05_the_render_thrust_rides_the_shared_port() {
+        let mut s = state();
+        s.use_style = 3;
+        s.item_type = 946;
+        s.item_scale = 1.0;
+        // The wind-up: offscreen + the cocked rotation.
+        s.swing = 0.9;
+        let (loc, rot) = use_item_placement(&s, 1.0, 44.0, 44.0);
+        assert_eq!(loc, [-1000.0, -1000.0]);
+        assert!((rot - -1.3).abs() < 1e-6);
+        // Mid-stab: the shared port's value — pos (110, 210) (the state
+        // origin (100, 200) + 10), width 20: loc.X = 110 + 10 + 18 -
+        // 16.4 - 6 = 115.6, loc.Y = 234.
+        s.swing = 0.5;
+        let (loc, rot) = use_item_placement(&s, 1.0, 44.0, 44.0);
+        assert!((loc[0] - 115.6).abs() < 1e-4, "{:?}", loc);
+        assert!((loc[1] - 234.0).abs() < 1e-6, "{:?}", loc);
+        assert!((rot - 0.8).abs() < 1e-6);
+        // The scale rides the state (a prefixed umbrella): num14 =
+        // 0.5*44*1.1*1.2 - 10 = 19.04 -> loc.X = 138 - 19.04 - 6 = 112.96.
+        s.item_scale = 1.1;
+        let (loc, _) = use_item_placement(&s, 1.0, 44.0, 44.0);
+        assert!((loc[0] - 112.96).abs() < 1e-3, "{:?}", loc);
+        // Facing left mirrors through the shared port.
+        s.item_scale = 1.0;
+        let (loc, rot) = use_item_placement(&s, -1.0, 44.0, 44.0);
+        assert!((loc[0] - (120.0 - 18.0 + 16.4 + 6.0)).abs() < 1e-4, "{:?}", loc);
+        assert!((rot - -0.8).abs() < 1e-6);
     }
 
     #[test]
@@ -2103,8 +2161,10 @@ mod tests {
             swing_anim_ticks: 0.0,
             swing_max_ticks: 1.0,
             use_animation: 0,
+            item_type: 0,
             item_uv: None,
             item_size: [16.0, 16.0],
+            item_scale: 1.0,
             light: [1.0, 1.0, 1.0],
             head_armor: -1,
             body_armor: -1,
@@ -2330,6 +2390,8 @@ mod tests {
         // (`PlayerDrawLayers.cs:3161`).
         let mut s = state();
         s.swing = 1.0; // itemAnimation == itemAnimationMax: the swing start
+        s.swing_anim_ticks = 20.0;
+        s.swing_max_ticks = 20.0;
         s.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
         let rotation = -2.05f32;
         let (sin, cos) = rotation.sin_cos();
@@ -2352,6 +2414,9 @@ mod tests {
         // `MountedCenter + (num22 + PI/2).ToRotationVector2() * -2`.
         let mut s8 = s;
         s8.use_style = 8;
+        // The wind-up gate compares the raw counters (`:51199`): anim at
+        // useAnimation.
+        s8.use_animation = 20;
         let item_rot8 = 10.0f32.atan2(10.0) + std::f32::consts::FRAC_PI_4;
         let num22 = item_rot8 - std::f32::consts::FRAC_PI_4
             + std::f32::consts::PI
@@ -2497,6 +2562,8 @@ mod tests {
         // Unknown useStyle falls through to the default origin without panic.
         let mut sx = state();
         sx.swing = 1.0;
+        sx.swing_anim_ticks = 20.0;
+        sx.swing_max_ticks = 20.0;
         sx.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
         sx.use_style = 255;
         assert_eq!(held_item_layers(&sx).len(), 1);
@@ -2928,8 +2995,10 @@ mod player_draw_tests {
             swing_anim_ticks: 0.0,
             swing_max_ticks: 1.0,
             use_animation: 0,
+            item_type: 0,
             item_uv: None,
             item_size: [0.0, 0.0],
+            item_scale: 1.0,
             light: [1.0, 1.0, 1.0],
             mount: None,
             head_armor: -1,

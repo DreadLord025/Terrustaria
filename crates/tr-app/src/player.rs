@@ -317,6 +317,137 @@ pub fn item_rotation_for_aim(aim: f32, facing: i32, full_rotation: f32) -> f32 {
     aim + mirrored - full_rotation
 }
 
+/// `Player.GetAdjustedItemScale` (`Player.cs:42566-42574`): `item.scale`,
+/// times 1.1 while `meleeScaleGlove` and the item is melee
+/// (`ApplyMeleeScale`, `:42576-42582`). The port carries no
+/// `meleeScaleGlove` granter (the Titan Glove's scale half is a documented
+/// skip, ANALYSIS "The combat accessory dedupe/wiring"), so the glove arm
+/// folds to the plain prefixed scale. S1-P-i05: the thrust extension
+/// (`:51043`) and the stab hitbox (`:45128-45130`) both read it.
+pub fn adjusted_item_scale(scale: f32) -> f32 {
+    scale
+}
+
+/// `ItemCheck_ApplyUseStyle`'s useStyle-3 (Thrust) arm
+/// (`Player.cs:51031-51063`): the held item's `itemLocation` +
+/// `itemRotation`. `remaining` is `itemAnimation / itemAnimationMax`
+/// (1 at the use's start, 0 at its end), `frame_w` the held item frame's
+/// width (`Item.GetDrawHitbox`'s Width), `scale` the
+/// [`adjusted_item_scale`] value, `mount_offset` the C#'s `mountOffset`
+/// (the port's `HeightOffsetHitboxCenter` stands at 0). `gravDir` is
+/// always 1 in the port, so the `:51059-51063` flip folds away.
+///
+/// The wind-up third (`itemAnimation > itemAnimationMax * 0.666`,
+/// `:51033`) hides the item offscreen (`-1000, -1000`) with the cocked
+/// rotation `-1.3 * direction`. The stab arm (`:51041-51057`) extends
+/// the item forward as the animation runs out: `num14` shrinks with the
+/// falling `itemAnimation`, so `itemLocation.X -= num14` starts the
+/// item at the hand and pushes it FORWARD through the stab. The C#'s
+/// snap clamps (`:51044-51051`) pin `num14` to -8 (facing left) / 8
+/// (facing right) once it crosses -4 / 4 — a SNAP, not a bound — which
+/// holds the full extension through the animation's last quarter. The
+/// two umbrellas (946 / 4707 — the only useStyle-3 items in 1.4.5.8,
+/// `Item.cs:12320-12332` / `:38683-38695`) take the extra
+/// `itemLocation.X -= 6 * direction` nudge (`:51054-51057`).
+pub fn thrust_item_placement(
+    pos_x: f32,
+    pos_y: f32,
+    width: f32,
+    dir: f32,
+    remaining: f32,
+    frame_w: f32,
+    scale: f32,
+    mount_offset: f32,
+    item_type: i32,
+) -> ([f32; 2], f32) {
+    // `:51033`: `(double)itemAnimation > (double)itemAnimationMax * 0.666`
+    // — the ratio compare against the C#'s 0.666 literal, NOT 2/3.
+    if remaining > 0.666 {
+        // `:51035-51037`.
+        return ([-1000.0, -1000.0], -1.3 * dir);
+    }
+    // `:51041-51042`.
+    let mut loc_x = pos_x + width * 0.5 + (frame_w * 0.5 - 4.0) * dir;
+    let loc_y = pos_y + 24.0 + mount_offset;
+    // `:51043`: the extension term — the C# multiplies left to right:
+    // `ratio * frame.W * direction * GetAdjustedItemScale(sItem) * 1.2`
+    // then subtracts `10 * direction`.
+    let mut num14 = remaining * frame_w * dir * adjusted_item_scale(scale) * 1.2
+        - 10.0 * dir;
+    // `:51044-51051`: the snap clamps (one-sided per facing).
+    if num14 > -4.0 && dir == -1.0 {
+        num14 = -8.0;
+    }
+    if num14 < 4.0 && dir == 1.0 {
+        num14 = 8.0;
+    }
+    // `:51052-51053`.
+    loc_x -= num14;
+    let rotation = 0.8 * dir;
+    // `:51054-51057`: the umbrella pair's nudge.
+    if item_type == 946 || item_type == 4707 {
+        loc_x -= 6.0 * dir;
+    }
+    ([loc_x, loc_y], rotation)
+}
+
+/// `ItemCheck_GetMeleeHitbox`'s useStyle-3 (Thrust) arm
+/// (`Player.cs:45099-45189`): the stab's damage rectangle out of the
+/// CURRENT `itemLocation` (the [`thrust_item_placement`] output).
+/// `None` = the C#'s `dontAttack` — the wind-up third
+/// (`itemAnimation > itemAnimationMax * 0.666`, `:45168-45172`) never
+/// attacks. The rect is the held frame sized by the adjusted scale
+/// (`:45105-45130`; the port's `frame` is the atlas icon quad, the
+/// `GetDrawHitbox` stand-in), anchored on `(int)itemLocation` with the
+/// direction/gravity corner flips (`:45131-45138`, `gravDir = 1`), then
+/// the stab shape (`:45173-45179`): facing left shifts X back by the
+/// 1.4-growth, Width ×1.4, Y down `Height * 0.6`, Height ×0.6. The two
+/// umbrellas grow +14 Height / shrink 10 Width, facing left shifting X
+/// +10 (`:45180-45188`). The 5094-5097 pre-shrink switch (`:45107-45125`)
+/// never meets a useStyle-3 item — those four are useStyle 1 — so it is
+/// omitted here.
+pub fn thrust_melee_hitbox(
+    item_location: [f32; 2],
+    frame_w: f32,
+    frame_h: f32,
+    scale: f32,
+    dir: i32,
+    remaining: f32,
+    item_type: i32,
+) -> Option<(i32, i32, i32, i32)> {
+    // `:45168-45172`: `dontAttack` during the wind-up.
+    if remaining > 0.666 {
+        return None;
+    }
+    // `:45102/:45126-45130`: the int-truncated anchor + scaled size.
+    let mut x = item_location[0] as i32;
+    let mut y = item_location[1] as i32;
+    let mut w = (frame_w * adjusted_item_scale(scale)) as i32;
+    let mut h = (frame_h * adjusted_item_scale(scale)) as i32;
+    // `:45131-45138`: the corner flips (`gravDir == 1`).
+    if dir == -1 {
+        x -= w;
+    }
+    y -= h;
+    // `:45173-45179`: the stab shape. The C# grows Width AFTER the
+    // left-shift read, and the Y shift reads the PRE-shrink Height.
+    if dir == -1 {
+        x -= (w as f64 * 1.4 - w as f64) as i32;
+    }
+    w = (w as f64 * 1.4) as i32;
+    y += (h as f64 * 0.6) as i32;
+    h = (h as f64 * 0.6) as i32;
+    // `:45180-45188`: the umbrella pair.
+    if item_type == 946 || item_type == 4707 {
+        h += 14;
+        w -= 10;
+        if dir == -1 {
+            x += 10;
+        }
+    }
+    Some((x, y, w, h))
+}
+
 /// `Player.CompositeArmStretchAmount` (`Player.cs:211-216`): how far the
 /// composite arm stretches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -369,6 +500,9 @@ impl CompositeArmState {
 pub struct FrameInputs {
     /// `inventory[selectedItem].useStyle` — drives the item-use body chain.
     pub use_style: u8,
+    /// `inventory[selectedItem].useTurn` (S1-P-i05) — the run-key direction
+    /// lock's exemption (`Player.cs:19837`: `itemAnimation == 0 || useTurn`).
+    pub use_turn: bool,
     /// `flag6` (`:36146`): `useStyle != 10 && != 14 && != 15`. Those three
     /// styles (the fishing rod family and the like) skip the item-use rows.
     pub use_style_blocks_frames: bool,
@@ -951,10 +1085,23 @@ pub struct Player {
     /// (`Item.legSlot`). The Moon Lord carve-out (`140`) and the sitting
     /// carve-out (`217`) read it; `0` = the default legs sheet.
     pub legs_armor: i32,
-    /// The held-item half of `PlayerFrame()` — the C# reads
+    /// The held-item half of `PlayerFrame()` - the C# reads
     /// `inventory[selectedItem]` directly, the port feeds the summary in from
     /// the app before the tick (`world_sim/player.rs`).
     pub frame_inputs: FrameInputs,
+    /// `Player.meleeNPCHitCooldown` (`Player.cs:3180`,
+    /// `int[Main.maxNPCs]`): the per-NPC melee re-hit lock in ticks.
+    /// `ResetMeleeHitCooldowns` (`:44212-44218`) clears it at the use's
+    /// start (`ItemCheck_StartActualUse` `:51679`),
+    /// `UpdateMeleeHitCooldowns` (`:44220-44229`) decrements every entry
+    /// once per damage tick (`:43664`), a landed hit re-arms it to the
+    /// CURRENT `itemAnimation` (`ProcessHitAgainstNPC` `:44414`), and
+    /// `CanHitNPCWithMeleeHit` (`:44231-44234`) gates the scan
+    /// (`ItemCheck_MeleeHitNPCs` `:44246`). The C# indexes stable NPC
+    /// slots; the port's pool compacts, so the map keys on the stable
+    /// `Npc.uid` (`NPC.whoAmI`, the established carrier-link identity).
+    /// S1-P-i05: the stab sweep's one-hit-per-swing lock.
+    pub melee_npc_hit_cooldown: std::collections::HashMap<u32, i32>,
     /// `Player.wet` — the head/body in WATER (`Player.cs:27728`).
     pub wet: bool,
     /// `Player.lavaWet` — in LAVA.
@@ -1458,6 +1605,11 @@ pub struct Player {
     /// rail-slope tilt from `Minecart.TrackRotation` (`Player.cs:28114-28115`).
     pub full_rotation: f32,
     pub full_rotation_origin: (f32, f32),
+    /// `Player.itemRotation` (`Player.cs:1836`): the held item's draw
+    /// rotation. The shooting styles derive it from the aim each frame
+    /// (`:47371-47378`, `FrameInputs.item_rotation`); the flail chain writes
+    /// it per tick (`Projectile.cs:44162-44167`, S1-P-i07's `FlailTick`).
+    pub item_rotation: f32,
     /// `Player.fallStart2` (`Player.cs:2884`): the fall origin the rail-landing
     /// gate reads (`Minecart.cs:809-813`), captured pre-movement when
     /// `velocity.Y <= 0` (`Player.cs:25295-25297`).
@@ -1649,9 +1801,22 @@ pub struct Player {
     /// clears it (`:18325`).
     pub ash_wood_bonus: bool,
     /// `Player.frostBurn` (`ArmorSetBonuses.cs:271`): the Frost set's
-    /// on-hit Frostburn flag — the melee/projectile consumers are unported
-    /// (ANALYSIS "S1-C-12 wave D"). `ResetEffects` clears it (`:18686`).
+    /// on-hit Frostburn flag — the melee consumer is
+    /// `melee_on_hit.rs::status_to_npc` (S1-P-i10, `Player.cs:6548-6551`);
+    /// the projectile consumers stay unported (ANALYSIS "S1-C-12 wave D").
+    /// `ResetEffects` clears it (`:18686`).
     pub frost_burn: bool,
+    /// `Player.magmaStone` (`Player.cs:18610`'s clear): the Magma Stone
+    /// 1322 (`:15336-15339`), the Fire Gauntlet 1343 (`:15313`) and the
+    /// Pyroclast 6178 (`:14580-14583`) arm it; the melee on-hit consumer
+    /// is `melee_on_hit.rs::status_to_npc` (`:6552-6566`, S1-P-i10).
+    /// `ResetEffects` clears it every tick (`:18610`).
+    pub magma_stone: bool,
+    /// `Player.catalystBand` (`Player.cs:18608`'s clear): the Catalyst
+    /// Band 6185 (`:14615-14619`) arms it; the melee on-hit consumer is
+    /// `melee_on_hit.rs::status_to_npc` (`:6536-6539`, S1-P-i10 —
+    /// AcceleratePoisons 398). `ResetEffects` clears it (`:18608`).
+    pub catalyst_band: bool,
     /// `Player.vampireBurningInSunlight` (`Player.cs:28709`): the vampire
     /// seed's sun-scorch flag — the gate on the Molten set's
     /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter
@@ -2160,6 +2325,7 @@ impl Player {
             carpet_frame: -1,
             legs_armor: 0,
             frame_inputs: FrameInputs::default(),
+            melee_npc_hit_cooldown: std::collections::HashMap::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -2352,6 +2518,7 @@ impl Player {
             cart_ramp_time: 0,
             full_rotation: 0.0,
             full_rotation_origin: (0.0, 0.0),
+            item_rotation: 0.0,
             fall_start2: (sy / TILE_PX) as i32,
             pending_switch_trip: None,
             pending_hurt_sound: None,
@@ -2400,6 +2567,8 @@ impl Player {
             crimson_regen: false,
             ash_wood_bonus: false,
             frost_burn: false,
+            magma_stone: false,
+            catalyst_band: false,
             vampire_burning_in_sunlight: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
@@ -4008,6 +4177,29 @@ impl Player {
         1.0 / (1.0 + self.wall_speed_bonus).min(3.0)
     }
 
+    /// `Player.GetWeaponKnockback` (`Player.cs:53346-53369`): the summon
+    /// `minionKB` add, the melee `kbGlove` ×2, the `kbBuff` ×1.5, and the
+    /// ranged stealth scalings (shroomite / Vortex). The port has no
+    /// `setVortex` field (the Vortex stealth set is unported), so that arm
+    /// stays a note; the shroomite arm reads the ported `shroomite_stealth`.
+    pub fn weapon_knockback(&self, class: registry::DamageClass, base_kb: f32) -> f32 {
+        let mut kb = base_kb;
+        if class == registry::DamageClass::Summon {
+            kb += self.minion_kb;
+        }
+        if class == registry::DamageClass::Melee && self.kb_glove {
+            kb *= 2.0;
+        }
+        if self.kb_buff {
+            kb *= 1.5;
+        }
+        if class == registry::DamageClass::Ranged && self.shroomite_stealth {
+            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
+        }
+        // `sItem.ranged && this.setVortex` (`:53364-53367`) — no port field.
+        kb
+    }
+
     /// `Player.MountedCenter` (`Player.cs:3335-3343`):
     /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
     /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount
@@ -4538,9 +4730,23 @@ impl Player {
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
-            // Catalyst Band 6185 (`:14615-14620`): `pStone` + `catalystBand`
-            // (the latter unported) — the Stone family's third member.
-            6185 => self.p_stone = true,
+            // S1-P-i10 + i37 keep-both (M1 re-sync): the Catalyst Band grants
+            // BOTH flags — `Player.cs:14615-14619`: `accPoisonBarb`, `pStone`,
+            // `catalystBand`. Magma Stone 1322 (`:15336-15339`): the bare flag;
+            // the OnFire3 infliction is `melee_on_hit.rs` (`:6552-6566`).
+            1322 => self.magma_stone = true,
+            // Pyroclast 6178 (`:14580-14583`): magmaStone + accPyroclast
+            // (the snapping-stone strike `:44338-44341` is an unported
+            // projectile family — only the flag half lands here).
+            6178 => self.magma_stone = true,
+            // Catalyst Band 6185 (`:14615-14619`): catalystBand + pStone +
+            // accPoisonBarb (the AcceleratePoisons infliction is
+            // `melee_on_hit.rs`, `:6536-6539`; the Stone family's third
+            // member rides i37's potion-delay rescale).
+            6185 => {
+                self.catalyst_band = true;
+                self.p_stone = true;
+            }
             // Hive Pack 3333 (`:15344-15347`): `strongBees`.
             3333 => self.strong_bees = true,
             // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
@@ -4967,6 +5173,12 @@ impl Player {
         self.space_gun = false;
         self.shadow_armor = false;
         self.frost_burn = false;
+        // S1-P-i10 — `ResetEffects`' on-hit accessory flag clears
+        // (`Player.cs:18608` catalystBand, `:18610` magmaStone): the
+        // `apply_equip_functional` arms (1322/1343/6178/6185) re-grant
+        // them per tick from the worn slots.
+        self.magma_stone = false;
+        self.catalyst_band = false;
         self.crimson_regen = false;
         self.vampire_burning_in_sunlight = false;
         self.gills = false;
@@ -7090,8 +7302,8 @@ impl Player {
                 let num20 = (inv * 6.0).min(1.0);
                 self.body_frame = if num20 >= 0.5 { 3 } else { 2 };
             }
-            // `:36363-36372` — Thrust: BOTH branches row 3 (the vanilla
-            // quirk — `:36368`'s else is dead).
+            // `:36377-36387` — Thrust: BOTH branches row 3 (the vanilla
+            // quirk — `:36385`'s else is dead; S1-P-i05 re-cite).
             3 => self.body_frame = 3,
             // `:36373-36375` — HoldUp: row 2.
             4 => self.body_frame = 2,
@@ -8622,6 +8834,10 @@ impl Player {
         // `Sign(0) = 0` locks a stationary cart), read AFTER the boost above.
         // So a NON-useTurn weapon locks the facing for the whole swing
         // (`useTurn` is what lets a pickaxe/hammer turn mid-swing).
+        // M1 keep-one (i04/i05 × i12): the i12 PlayerInput channel
+        // (`item_in_use`/`held_use_turn`, filled by world_sim from app.swing
+        // + the registry row) is the live source — the gate's own i04/i05
+        // frame_inputs form reads the identical predicate.
         let dir_keys = self.control_right as i32 - self.control_left as i32;
         if dir_keys != 0 {
             let mut allow = (!input.item_in_use || input.held_use_turn)
@@ -9796,6 +10012,48 @@ mod tests {
         p.equipped[3] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.acc_sentry_backpack, "the flag clears");
+    }
+
+    /// S1-P-i10 — the melee on-hit accessory flags
+    /// (`ApplyEquipFunctional`, `Player.cs:15336-15339` Magma Stone 1322,
+    /// `:14580-14583` Pyroclast 6178, `:15306-15314` Fire Gauntlet 1343,
+    /// `:14615-14619` Catalyst Band 6185). `ResetEffects` clears both
+    /// flags every tick (`:18608`/`:18610`), so taking the accessory off
+    /// drops them.
+    #[test]
+    fn s1_p_i10_the_on_hit_accessories_grant_and_clear_their_flags() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.magma_stone && !p.catalyst_band, "nothing worn");
+        // The Magma Stone (1322): the bare flag.
+        p.equipped[3] = 1322;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magma_stone, "1322 grants magmaStone (:15338)");
+        assert!(!p.catalyst_band);
+        // The Pyroclast (6178): the same flag (its accPyroclast half is
+        // an unported projectile family).
+        p.equipped[3] = 6178;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magma_stone, "6178 grants magmaStone (:14581)");
+        // The Fire Gauntlet (1343): the flag through the combat-family
+        // grant path (`accessory_combat.rs::fire_gauntlet`).
+        p.equipped[3] = 1343;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magma_stone, "1343 grants magmaStone (:15313)");
+        // Taking it off clears the flag (ResetEffects `:18610`).
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.magma_stone, "the flag clears");
+        // The Catalyst Band (6185): catalystBand (its accPoisonBarb /
+        // pStone halves are unported families).
+        p.equipped[3] = 6185;
+        p.update(&w, PlayerInput::default());
+        assert!(p.catalyst_band, "6185 grants catalystBand (:14618)");
+        assert!(!p.magma_stone);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.catalyst_band, "the flag clears (:18608)");
     }
 
     /// S1-D-4b-2 — the DD2 sentry armor sets' flags (`ArmorSetBonuses.Benefits`,
@@ -17331,6 +17589,7 @@ mod s1_player_composite_tests {
     fn inputs(style: u8, remaining: f32, anim: f32, max: f32) -> FrameInputs {
         FrameInputs {
             use_style: style,
+            use_turn: false,
             use_style_blocks_frames: true,
             item_type: 0,
             hold_style: 0,
@@ -17451,6 +17710,88 @@ mod s1_player_composite_tests {
         // The sleep pose's `fullRotation` rides the subtraction.
         let asleep = item_rotation_for_aim(0.75, 1, std::f32::consts::FRAC_PI_2);
         assert!((asleep - (0.75 - std::f32::consts::FRAC_PI_2)).abs() < 1e-6);
+    }
+
+    /// S1-P-i04 — the swing direction gate (`Player.cs:19837`):
+    /// `(itemAnimation == 0 || inventory[selectedItem].useTurn) &&
+    /// mount.AllowDirectionChange && !sandStorm`. The port's
+    /// `horizontal_movement` flipped the facing on every run-key press
+    /// mid-swing; a broadsword (`useTurn = false`) locks it.
+    #[test]
+    fn s1_p_i04_a_broadsword_swing_locks_the_facing() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.facing = 1;
+        // Mid-swing with the Iron Broadsword (useTurn false): the left key
+        // accelerates but does NOT turn the player. (M1 re-sync: the i12
+        // PlayerInput channel carries the swing state — the gate's
+        // frame_inputs form moved onto it, same predicate.)
+        let input = PlayerInput {
+            left: true,
+            item_in_use: true,
+            held_use_turn: false,
+            ..Default::default()
+        };
+        p.update(&w, input);
+        assert_eq!(p.facing, 1, "the swing locks the facing");
+        assert!(p.vx < 0.0, "the run key still accelerates");
+        // The swing ending (`itemAnimation == 0`) unlocks the turn.
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(p.facing, -1, "the turn lands once the swing ends");
+    }
+
+    /// S1-P-i04 — a `useTurn` item (the pickaxe) keeps turning mid-swing
+    /// (`Player.cs:19837`'s second term).
+    #[test]
+    fn s1_p_i04_a_use_turn_item_keeps_turning_mid_swing() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.facing = 1;
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                item_in_use: true,
+                held_use_turn: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(p.facing, -1, "useTurn keeps the direction live");
+    }
+
+    /// S1-P-i04 — the sandstorm locks the direction even at rest
+    /// (`Player.cs:19837`'s `!this.sandStorm` term). Probed at the movement
+    /// seam directly: the frame pass's sandstorm 4-tick flip
+    /// (`Player.cs:36298-36311`) is a separate consumer of the same flag.
+    #[test]
+    fn s1_p_i04_the_sandstorm_locks_the_direction() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.facing = 1;
+        p.control_left = true;
+        p.control_right = false;
+        p.sand_storm = true;
+        p.horizontal_movement(PlayerInput::default());
+        assert_eq!(p.facing, 1, "the sandstorm keeps the facing");
+        // The flag down, the same press turns.
+        p.sand_storm = false;
+        p.horizontal_movement(PlayerInput::default());
+        assert_eq!(p.facing, -1);
     }
 
     #[test]
@@ -17857,5 +18198,163 @@ mod s1_player_composite_tests {
             q.update(&w, held);
             assert!(q.take_flap_sound().is_none(), "wings 22 never flap-play");
         }
+    }
+}
+
+/// S1-P-i05 — the useStyle-3 (Thrust) witnesses: the stab arm's
+/// `itemLocation` maths (`Player.cs:51031-51063`), the
+/// `ItemCheck_GetMeleeHitbox` rect (`:45164-45189`) and the run-key
+/// direction lock (`:19837`). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod s1_p_i05_thrust_tests {
+    use super::*;
+
+    /// The wind-up third hides the item offscreen with the cocked
+    /// rotation (`Player.cs:51033-51038`) — the gate is the C#'s 0.666
+    /// literal, NOT 2/3: remaining 0.6665 is still wind-up, 0.666 is not.
+    #[test]
+    fn s1_p_i05_the_windup_hides_the_item_at_the_csharp_0666_gate() {
+        // remaining > 0.666: offscreen, rotation -1.3 * dir.
+        let (loc, rot) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.9, 44.0, 1.0, 0.0, 946);
+        assert_eq!(loc, [-1000.0, -1000.0]);
+        assert!((rot - -1.3).abs() < 1e-6);
+        let (loc, rot) = thrust_item_placement(100.0, 200.0, 20.0, -1.0, 0.7, 44.0, 1.0, 0.0, 946);
+        assert_eq!(loc, [-1000.0, -1000.0]);
+        assert!((rot - 1.3).abs() < 1e-6, "facing left mirrors the cock");
+        // The boundary: 0.6665 > 0.666 (wind-up), 0.666 == 0.666 (stab).
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.6665, 44.0, 1.0, 0.0, 946);
+        assert_eq!(loc, [-1000.0, -1000.0], "0.6665 is still the wind-up");
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.666, 44.0, 1.0, 0.0, 946);
+        assert_ne!(loc, [-1000.0, -1000.0], "0.666 is the stab arm");
+        // The discriminator: 0.6661 sits between the C# literal 0.666 and
+        // 2/3 (0.6667). The correct 0.666 gate treats it as wind-up
+        // (HIDDEN); a 2/3 gate would wrongly REVEAL it (stab). So the
+        // correct port hides 0.6661 — assert_eq, the opposite of the
+        // pre-fix 2/3 behaviour. (0.6665 above pins the same band.)
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.6661, 44.0, 1.0, 0.0, 946);
+        assert_eq!(loc, [-1000.0, -1000.0], "0.6661 > 0.666: the C# gate hides it, a 2/3 gate would not");
+    }
+
+    /// The extension maths (`Player.cs:51041-51053`), facing right:
+    /// `loc.X = pos.X + width/2 + (frame.W/2 - 4)*dir - num14` with
+    /// `num14 = remaining * frame.W * dir * scale * 1.2 - 10*dir` — the
+    /// item pushes FORWARD as `itemAnimation` falls. The umbrella 946's
+    /// 44x44 frame (`Item.cs:12321`), scale 1: at remaining 0.5,
+    /// num14 = 0.5*44*1.2 - 10 = 16.4 (> 4, no snap), loc.X = 100 + 10 +
+    /// 18 - 16.4 = 111.6; the umbrella nudge -6 (`:51056`) lands 105.6.
+    /// Y = pos.Y + 24 (`:51042`).
+    #[test]
+    fn s1_p_i05_the_stab_extends_then_retracts_verbatim() {
+        // Mid-stab (remaining 0.5): num14 = 16.4, no snap.
+        let (loc, rot) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.5, 44.0, 1.0, 0.0, 946);
+        assert!((loc[0] - 105.6).abs() < 1e-4, "the mid-stab tip: {}", loc[0]);
+        assert!((loc[1] - 224.0).abs() < 1e-6);
+        assert!((rot - 0.8).abs() < 1e-6, "the stab rotation 0.8*dir");
+        // The extension tail (remaining 0.1): num14 = 0.1*44*1.2 - 10 =
+        // -4.72 (< 4, facing right) SNAPS to 8 (`:51048-51051`) — the
+        // full extension holds: loc.X = 128 - 8 - 6 = 114.
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.1, 44.0, 1.0, 0.0, 946);
+        assert!((loc[0] - 114.0).abs() < 1e-4, "the snap-to-8 extension: {}", loc[0]);
+        // The no-snap arm near the boundary: at remaining 0.3, num14 =
+        // 0.3*44*1.2 - 10 = 5.84 (>= 4, no snap, `:51048`'s `< 4f`);
+        // loc.X = 128 - 5.84 - 6 = 116.16. (The exact-4 boundary itself is
+        // not f32-pinnable: remaining = 14/52.8 rounds DOWN in f32 and
+        // num14 lands 3.9999990 — the C# float would snap it too, so no
+        // witness may claim "num14 == 4 keeps the raw value".)
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.3, 44.0, 1.0, 0.0, 946);
+        assert!((loc[0] - 116.16).abs() < 1e-3, "num14 >= 4 keeps the raw value");
+        // Facing left mirrors: num14 = 0.5*44*(-1)*1.2 - 10*(-1) = -16.4
+        // (> -4? no: -16.4 < -4, no snap); loc.X = 100 + 10 - 18 + 16.4 + 6 = 114.4.
+        let (loc, rot) = thrust_item_placement(100.0, 200.0, 20.0, -1.0, 0.5, 44.0, 1.0, 0.0, 946);
+        assert!((loc[0] - 114.4).abs() < 1e-4, "the mirrored tip: {}", loc[0]);
+        assert!((rot - -0.8).abs() < 1e-6);
+        // Facing left's snap: num14 > -4 snaps to -8 (`:51044-51047`).
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, -1.0, 0.1, 44.0, 1.0, 0.0, 946);
+        assert!((loc[0] - (92.0 + 8.0 + 6.0)).abs() < 1e-4, "the left snap-to--8");
+        // The scale factor (`:51043` GetAdjustedItemScale): scale 1.1
+        // stretches the extension — num14 = 0.5*44*1.1*1.2 - 10 = 19.04.
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.5, 44.0, 1.1, 0.0, 946);
+        assert!((loc[0] - (128.0 - 19.04 - 6.0)).abs() < 1e-3, "the scaled extension");
+        // The mountOffset rides Y (`:51042`).
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.5, 44.0, 1.0, 5.0, 946);
+        assert!((loc[1] - 229.0).abs() < 1e-6);
+        // A non-umbrella style-3 item takes no nudge (`:51054` gates on
+        // 946/4707) — the hypothetical row keeps loc.X = 111.6.
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.5, 44.0, 1.0, 0.0, 1);
+        assert!((loc[0] - 111.6).abs() < 1e-4, "no nudge off the umbrella pair");
+        // The Tragic Umbrella 4707 shares the nudge.
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.5, 44.0, 1.0, 0.0, 4707);
+        assert!((loc[0] - 105.6).abs() < 1e-4);
+    }
+
+    /// `ItemCheck_GetMeleeHitbox`'s style-3 rect (`Player.cs:45164-45189`)
+    /// — the wind-up `dontAttack`, the corner flips, the 1.4/0.6 shape
+    /// and the umbrella +14/-10 pair, on the 44x44 frame at scale 1.
+    #[test]
+    fn s1_p_i05_the_stab_hitbox_matches_the_csharp_rect() {
+        // The wind-up never attacks (`:45168-45172`).
+        assert!(thrust_melee_hitbox([100.0, 200.0], 44.0, 44.0, 1.0, 1, 0.9, 946).is_none());
+        assert!(thrust_melee_hitbox([100.0, 200.0], 44.0, 44.0, 1.0, 1, 0.6665, 946).is_none());
+        // Facing right, remaining 0.5: the placement lands (105.6, 224)
+        // (the witness above); the rect anchors (105, 224), 44x44;
+        // gravDir 1: Y -= 44 -> 180; the stab shape: W = 61 (44*1.4 =
+        // 61.6 truncated), Y += 26 (44*0.6 = 26.4), H = 26; the umbrella
+        // pair: H += 14 -> 40, W -= 10 -> 51.
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.5, 44.0, 1.0, 0.0, 946);
+        let r = thrust_melee_hitbox(loc, 44.0, 44.0, 1.0, 1, 0.5, 946).expect("the stab attacks");
+        assert_eq!(r, (105, 180 + 26, 51, 40), "the right-facing umbrella rect");
+        // Facing left: the placement lands 114.4; X -= W (44) -> 70;
+        // the left 1.4-shift: X -= (61.6 - 44) as int = 17 -> 53; the
+        // umbrella's +10 -> 63. Y/H identical.
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, -1.0, 0.5, 44.0, 1.0, 0.0, 946);
+        let r = thrust_melee_hitbox(loc, 44.0, 44.0, 1.0, -1, 0.5, 946).expect("the stab attacks");
+        assert_eq!(r, (53 + 10, 206, 51, 40), "the left-facing umbrella rect");
+        // A non-umbrella style-3 rect keeps the plain 1.4/0.6 shape
+        // (`:45180` gates on 946/4707): W 61, H 26, no +14/-10.
+        let (loc, _) = thrust_item_placement(100.0, 200.0, 20.0, 1.0, 0.5, 44.0, 1.0, 0.0, 1);
+        let r = thrust_melee_hitbox(loc, 44.0, 44.0, 1.0, 1, 0.5, 1).expect("the stab attacks");
+        assert_eq!(r, (111, 206, 61, 26), "the plain stab shape");
+        // The scale sizes the rect BEFORE the shape (`:45128-45130`):
+        // scale 1.1 -> 48x48 (44*1.1 = 48.4 truncated); W = 67 (48*1.4 =
+        // 67.2), Y += 28 (48*0.6 = 28.8), H = 28; umbrella H 42, W 57.
+        let r = thrust_melee_hitbox([100.0, 200.0], 44.0, 44.0, 1.1, 1, 0.5, 946).expect("attacks");
+        assert_eq!(r, (100, 200 - 48 + 28, 57, 42), "the scaled rect");
+    }
+
+    /// The direction lock (`Player.cs:19837`): a non-useTurn swing locks
+    /// the facing against the run keys; useTurn items and the idle state
+    /// turn freely; the sandstorm owns its cadence.
+    #[test]
+    fn s1_p_i05_the_swing_locks_the_facing_unless_useturn() {
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        p.facing = 1;
+        // Mid-swing with the umbrella (useTurn false): the left key does
+        // NOT turn the player. (M1 re-sync: the i12 PlayerInput channel.)
+        p.control_left = true;
+        p.control_right = false;
+        p.horizontal_movement(PlayerInput {
+            item_in_use: true,
+            held_use_turn: false,
+            ..Default::default()
+        });
+        assert_eq!(p.facing, 1, "the stab locks the facing");
+        // useTurn (the pickaxe's row) turns mid-swing.
+        p.horizontal_movement(PlayerInput {
+            item_in_use: true,
+            held_use_turn: true,
+            ..Default::default()
+        });
+        assert_eq!(p.facing, -1, "useTurn exempts the lock");
+        // Idle (itemAnimation == 0) turns freely.
+        p.facing = 1;
+        p.horizontal_movement(PlayerInput::default());
+        assert_eq!(p.facing, -1, "the idle turn is unlocked");
+        // The sandstorm dash owns the turn cadence (`:19837` !sandStorm).
+        p.facing = 1;
+        p.sand_storm = true;
+        p.horizontal_movement(PlayerInput::default());
+        assert_eq!(p.facing, 1, "the sandstorm gates the run-key turn");
     }
 }

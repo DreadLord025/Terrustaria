@@ -86,6 +86,55 @@ pub const VILE_TIP: u16 = 8;
 /// `ProjectileID.ThrowingKnife` (48) — the thrown aiStyle-2 kind
 /// (`Projectile.cs:1310-1316`).
 pub const THROWING_KNIFE: u16 = 48;
+/// `ProjectileID.PoisonedKnife` (54) — the thrown aiStyle-2 kind with the
+/// 1/2 Poisoned-on-hit roll (`Projectile.cs:1366-1374`, `:11628-11634`).
+pub const POISONED_KNIFE: u16 = 54;
+/// `ProjectileID.HolyWater` (69) — the thrown aiStyle-2 bottle, the hallow
+/// splash on death (`Projectile.cs:1488-1495`, `:77629-77645`).
+pub const HOLY_WATER: u16 = 69;
+/// `ProjectileID.UnholyWater` (70) — the corruption twin of the holy water
+/// (`Projectile.cs:1496-1503`).
+pub const UNHOLY_WATER: u16 = 70;
+/// `ProjectileID.BloodWater` (621) — the crimson twin of the holy water
+/// (`Projectile.cs:1504-1511`).
+pub const BLOOD_WATER: u16 = 621;
+/// `ProjectileID.Grenade` (30) — the thrown aiStyle-16 bomb
+/// (`Projectile.cs:1122-1130`).
+pub const GRENADE: u16 = 30;
+/// `ProjectileID.StickyGrenade` (397) — the sticky aiStyle-16 bomb,
+/// `tileCollide = false` (`Projectile.cs:4781-4790`).
+pub const STICKY_GRENADE: u16 = 397;
+/// `ProjectileID.BouncyGrenade` (517) — the bouncy aiStyle-16 bomb
+/// (`Projectile.cs:5870-5878`).
+pub const BOUNCY_GRENADE: u16 = 517;
+/// `ProjectileID.MolotovCocktail` (399) — the thrown aiStyle-68 bottle that
+/// bursts into the three greek fires on death (`Projectile.cs:4801-4811`,
+/// `:73921-73951`).
+pub const MOLOTOV_COCKTAIL: u16 = 399;
+/// `ProjectileID.MolotovFire` (400) — the molotov's first ground-fire child,
+/// aiStyle 14 (`Projectile.cs:4812-4835`).
+pub const MOLOTOV_FIRE_1: u16 = 400;
+/// `ProjectileID.MolotovFire2` (401) — the molotov's second fire child.
+pub const MOLOTOV_FIRE_2: u16 = 401;
+/// `ProjectileID.MolotovFire3` (402) — the molotov's third fire child.
+pub const MOLOTOV_FIRE_3: u16 = 402;
+/// `ProjectileID.Beenade` (183) — the thrown aiStyle-14 bee grenade that
+/// bursts into a swarm of bees on death (`Projectile.cs:2697-2706`,
+/// `:76431-76463`).
+pub const BEENADE: u16 = 183;
+/// `ProjectileID.Bee` (181) — the beenade's small bee child, aiStyle 36
+/// (`Projectile.cs:2673-2685`).
+pub const BEE: u16 = 181;
+/// `ProjectileID.GiantBee` (566) — the beenade's strong-bee child, aiStyle 36
+/// (`Projectile.cs:6172-6184`).
+pub const GIANT_BEE: u16 = 566;
+/// `ProjectileID.BoneJavelin` (598) — the thrown aiStyle-113 sticking javelin
+/// (`Projectile.cs:6470-6480`).
+pub const BONE_JAVELIN: u16 = 598;
+/// `ProjectileID.Javelin` (507) — the Javelin item's (3094) thrown aiStyle-1
+/// spear, the `AI_001` 507/508/662/680/685 gravity group (`Projectile.cs:5770-5778`,
+/// `:57471-57478`).
+pub const JAVELIN: u16 = 507;
 /// `ProjectileID.Snowball` (166) — the thrown aiStyle-2 kind with the
 /// 20-tick/`+0.3f` ladder (`Projectile.cs:2549-2557`, `:23566-23596`).
 pub const SNOWBALL: u16 = 166;
@@ -102,6 +151,47 @@ pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// shot (the AI_003 shooter block's `num170 = 82` default,
 /// `NPC.cs:59403`); the hostile twin of the flame arrow 2.
 pub const FLAMING_ARROW_HOSTILE: u16 = 82;
+/// S1-P-i17 — the special-arrow family (`ProjectileID.cs:556-2566`; the
+/// ammo items' `shoot` values, `itemdata.rs`). The per-kind effects live in
+/// `special_arrows.rs` (the AI_001 arms, the StatusNPC debuffs, the Kill()
+/// spawns) and the pool's seams.
+/// `ProjectileID.UnholyArrow` (`ProjectileID.cs:562`).
+pub const UNHOLY_ARROW: u16 = 4;
+/// `ProjectileID.JestersArrow` (`ProjectileID.cs:564`).
+pub const JESTERS_ARROW: u16 = 5;
+/// `ProjectileID.HellfireArrow` (`ProjectileID.cs:636`).
+pub const HELLFIRE_ARROW: u16 = 41;
+/// `ProjectileID.HolyArrow` (`ProjectileID.cs:736`).
+pub const HOLY_ARROW: u16 = 91;
+/// `ProjectileID.FallingStar` (92) — the Holy Arrow's death spawn
+/// (`Projectile.cs:75212-75248`, aiStyle 5).
+pub const FALLING_STAR: u16 = 92;
+/// `ProjectileID.CursedArrow` (`ProjectileID.cs:760`).
+pub const CURSED_ARROW: u16 = 103;
+/// `ProjectileID.BoneArrow` (`ProjectileID.cs:788`) — the Bone Bow's 117
+/// (the merchant's 474 converts through `Player.cs:53511-53514`).
+pub const BONE_ARROW: u16 = 117;
+/// `ProjectileID.FrostArrow` (`ProjectileID.cs:794`) — the Ice Bow's shot.
+pub const FROST_ARROW: u16 = 120;
+/// `ProjectileID.FrostburnArrow` (`ProjectileID.cs:898`).
+pub const FROSTBURN_ARROW: u16 = 172;
+/// `ProjectileID.ChlorophyteArrow` (`ProjectileID.cs:1004`).
+pub const CHLOROPHYTE_ARROW: u16 = 225;
+/// `ProjectileID.IchorArrow` (`ProjectileID.cs:1110`).
+pub const ICHOR_ARROW: u16 = 278;
+/// `ProjectileID.VenomArrow` (`ProjectileID.cs:1118`).
+pub const VENOM_ARROW: u16 = 282;
+/// `ProjectileID.BeeArrow` (`ProjectileID.cs:1492`).
+pub const BEE_ARROW: u16 = 469;
+/// `ProjectileID.BoneArrowFromMerchant` (`ProjectileID.cs:1502`).
+pub const BONE_ARROW_MERCHANT: u16 = 474;
+/// `ProjectileID.ShadowFlameArrow` (`ProjectileID.cs:1544`).
+pub const SHADOWFLAME_ARROW: u16 = 495;
+/// `ProjectileID.BloodArrow` (`ProjectileID.cs:2192`) — the Blood Rain
+/// Bow's rain shot.
+pub const BLOOD_ARROW: u16 = 819;
+/// `ProjectileID.ShimmerArrow` (`ProjectileID.cs:2566`).
+pub const SHIMMER_ARROW: u16 = 1006;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
 /// `ProjectileID.SnowBallHostile` (109) — the Snow Balla's (net 145,
@@ -504,7 +594,78 @@ pub const FLAIL_KINDS: [u16; 10] = [
 /// bubble 405 (`:4857`).
 pub const DRIPPLER_EXTRA_BALL: u16 = 928;
 pub const FLOWER_POW_PETAL: u16 = 248;
-pub const FLAIRON_BUBBLE: u16 = 405;/// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
+pub const FLAIRON_BUBBLE: u16 = 405;
+/// The spear family (aiStyle 19 — `AI_019_Spears` `Projectile.cs:45857-46073`,
+/// S1-P-i06). Every row rides `DefaultToSpear()` (`:10720-10730`: aiStyle 19,
+/// friendly, `penetrate = -1`, `tileCollide = false`, drawLayer 7,
+/// `usesOwnerLight`, `ownerHitCheck`, melee); the per-kind `SetDefaults` rows
+/// set the boxes and scales. The ids are the verbatim `ProjectileID`
+/// (`ProjectileID.cs`). NOTE: the trap spear 186 (`TRAP_SPEAR`) is aiStyle 37,
+/// NOT a member — the held-spear family is the player's useStyle-5 thrusts.
+pub const DARK_LANCE: u16 = 46;
+pub const TRIDENT: u16 = 47;
+pub const SPEAR: u16 = 49;
+pub const MYTHRIL_HALBERD: u16 = 64;
+pub const ADAMANTITE_GLAIVE: u16 = 66;
+pub const COBALT_NAGINATA: u16 = 97;
+pub const GUNGNIR: u16 = 105;
+pub const MUSHROOM_SPEAR: u16 = 130;
+pub const THE_ROTTED_FORK: u16 = 153;
+pub const PALLADIUM_PIKE: u16 = 212;
+pub const ORICHALCUM_HALBERD: u16 = 215;
+pub const TITANIUM_TRIDENT: u16 = 218;
+pub const CHLOROPHYTE_PARTISAN: u16 = 222;
+pub const NORTH_POLE: u16 = 342;
+pub const OBSIDIAN_SWORDFISH: u16 = 367;
+pub const SWORDFISH: u16 = 368;
+pub const THUNDER_SPEAR: u16 = 730;
+pub const JOUSTING_LANCE: u16 = 877;
+pub const SHADOW_JOUSTING_LANCE: u16 = 878;
+pub const HALLOW_JOUSTING_LANCE: u16 = 879;
+pub const SLIME_SPEAR: u16 = 1103;
+/// The whole aiStyle-19 weapon set — the 21 kinds `DefaultToSpear` covers
+/// (`Projectile.cs:1300/1308/1324/1447/1465/1821/1934/2196/2416/3009/3029/
+/// 3050/3084/4323/4522/4528/7692/8435/10287`).
+pub const SPEAR_KINDS: [u16; 21] = [
+    DARK_LANCE,
+    TRIDENT,
+    SPEAR,
+    MYTHRIL_HALBERD,
+    ADAMANTITE_GLAIVE,
+    COBALT_NAGINATA,
+    GUNGNIR,
+    MUSHROOM_SPEAR,
+    THE_ROTTED_FORK,
+    PALLADIUM_PIKE,
+    ORICHALCUM_HALBERD,
+    TITANIUM_TRIDENT,
+    CHLOROPHYTE_PARTISAN,
+    NORTH_POLE,
+    OBSIDIAN_SWORDFISH,
+    SWORDFISH,
+    THUNDER_SPEAR,
+    JOUSTING_LANCE,
+    SHADOW_JOUSTING_LANCE,
+    HALLOW_JOUSTING_LANCE,
+    SLIME_SPEAR,
+];
+/// The spear family's sub-shots (S1-P-i06) — the projectiles `AI_019_Spears`
+/// spawns (`Projectile.cs:45891-45936`). They ride their OWN aiStyles, not 19:
+/// the Mushroom Spear's spore 131 (aiStyle 30, `:2198-2208`), the Chlorophyte
+/// Partisan's spore cloud 228 (aiStyle 44, `:3137-3150`), the Thunder Spear's
+/// bolt 732 (aiStyle 44, `:7705-7715`), the North Pole's snowflake 343
+/// (aiStyle 57, `:4326-4338`) and its falling flake 344 (aiStyle 1,
+/// `:4339-4352`), and the Obsidian Swordfish's bones 1107-1109 (aiStyle 14,
+/// `:10316-10339`).
+pub const MUSHROOM_SPORE: u16 = 131;
+pub const CHLOROPHYTE_SPORE_CLOUD: u16 = 228;
+pub const THUNDER_SPEAR_BOLT: u16 = 732;
+pub const NORTH_POLE_SNOWFLAKE: u16 = 343;
+pub const NORTH_POLE_FLAKE: u16 = 344;
+pub const SWORDFISH_BONE_1: u16 = 1107;
+pub const SWORDFISH_BONE_2: u16 = 1108;
+pub const SWORDFISH_BONE_3: u16 = 1109;
+/// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
 pub const CANNON_BOMB: u16 = 178;
 /// The explosive cannonball (601, `Projectile.cs:6499-6512`) — aiStyle 1 with
 /// `extraUpdates = 30`.
@@ -534,6 +695,13 @@ pub const ENCHANTED_BOOMERANG: u16 = 6;
 pub const WOODEN_BOOMERANG: u16 = 52;
 /// `ProjectileID.FrostBoomerang` — the Ice Boomerang (`Projectile.cs:2012-2022`).
 pub const ICE_BOOMERANG: u16 = 113;
+/// `ProjectileID.LightDisc` (106, `Projectile.cs:1936-1945`) — the Light Disc
+/// (S1-P-i08): the stack-limit boomerang variant, up to 6 in flight
+/// (`Player.cs:52172-52186`), the 45-tick outbound window
+/// (`Projectile.cs:39035-39040`), the 16/1.2 return seek (`:39432-39436`),
+/// the per-axis wall bounce that does NOT arm the return (`:19550-19560`)
+/// and the 0.3 spin (`:39556-39559`).
+pub const LIGHT_DISC: u16 = 106;
 /// The yoyo family (`Projectile.cs:6013-6093` + `:9483-9490` — every row is
 /// 16×16 with `DefaultToYoyo()`, aiStyle 99; the AI is `AI_099_2_Yoyos`
 /// `:67733-68105`). The counterweight projectiles 556-561/1079 share the style
@@ -859,6 +1027,23 @@ pub struct ProjData {
     /// per-type ladder (`:17583-17586`); the aiStyle-67 summon rows set it
     /// (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`/`:8980`).
     pub decides_manual_fall_through: bool,
+    /// `Projectile.melee` (`:434`, reset false `:751`) — the damage-class
+    /// flag `Damage_PVE_Inner`'s per-hit crit block reads (`:12890`). The
+    /// yoyo/flail/spear/drill/shortsword families set it via their
+    /// `DefaultTo*` helpers; the whip does NOT (`DefaultToWhip` `:10704`).
+    pub melee: bool,
+    /// `Projectile.ranged` (`:436`, reset false `:752`) — the crit block's
+    /// ranged arm (`:12894`).
+    pub ranged: bool,
+    /// `Projectile.magic` (`:438`, reset false `:753`) — the crit block's
+    /// magic arm (`:12898`).
+    pub magic: bool,
+    /// `Projectile.appliesImmunityTimeOnSingleHits` (`:717`, reset false) —
+    /// the id-static immunity gate's single-hit override (`:13969`/`:14116`).
+    /// The ported setters: the 1134 crystal shard (`:10643`), the 167-170
+    /// fireworks (`:2568`, S1-P-i16) and the 286 Exploding Bullet (`:3754`,
+    /// S1-P-i18).
+    pub applies_immunity_time_on_single_hits: bool,
 }
 
 /// The `(uses_local_immunity, local_hit_cooldown, uses_id_static_immunity,
@@ -1107,6 +1292,12 @@ fn set_defaults_scale(kind: u16) -> f32 {
 pub(crate) fn set_defaults_light(kind: u16) -> f32 {
     match kind {
         FLAME_ARROW => 1.0,                    // `:824`
+        UNHOLY_ARROW => 0.35,                  // `:844` (S1-P-i17)
+        JESTERS_ARROW => 0.4,                  // `:856` (S1-P-i17)
+        HELLFIRE_ARROW => 0.3,                 // `:1246` (S1-P-i17)
+        CURSED_ARROW => 1.0,                   // `:1911` (S1-P-i17)
+        FROSTBURN_ARROW => 1.0,                // `:2586` (S1-P-i17)
+        ICHOR_ARROW => 1.0,                    // `:3645` (S1-P-i17)
         ENCHANTED_BOOMERANG => 0.4,            // `:872`
         MUSKET_BALL => 0.5,                    // `:957`
         BULLET_SNOWMAN => 0.5,                 // `:1985`
@@ -1126,6 +1317,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         CURSED_FLAME => 0.8,                   // `:1809`
         DESTROYER_LASER => 0.75,               // `:1878`
         ICE_BOOMERANG => 0.4,                  // `:2020`
+        LIGHT_DISC => 0.4,                     // `:1944` (S1-P-i08)
         UNHOLY_TRIDENT => 0.5,                 // `:2029`
         UNHOLY_TRIDENT_HOSTILE => 0.5,         // `:2044`
         SWORD_BEAM => 0.5,                     // `:2054`
@@ -1143,14 +1335,6 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
         ILLUMINANT_HOOK => 0.3,                // `:5631`
         CRYSTAL_SHARD_MELEE => 0.5,            // `:10644`
-        // S1-P-i13 — the bow-launch arrows' `SetDefaults` light: the
-        // UnholyArrow 4 (`Projectile.cs:844`), JestersArrow 5 (`:856`),
-        // HellfireArrow 41 (`:1246`), CursedArrow 103 (`:1911`),
-        // FrostburnArrow 172 (`:2586`) and IchorArrow 278 (`:3645`).
-        4 => 0.35,
-        5 => 0.4,
-        41 => 0.3,
-        103 | 172 | 278 => 1.0,
         // S1-P-i18 — the special bullets' `SetDefaults` light amounts.
         METEOR_SHOT => 0.6,                    // `:1189`
         CRYSTAL_BULLET | CRYSTAL_SHARD => 0.5, // `:1722` / `:1736`
@@ -1226,6 +1410,78 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // S1-P-i28 — the thrown-consumable family's missing rows.
+            // `Projectile.cs:1366-1374` — the poisoned knife (54): 12x12,
+            // aiStyle 2, `penetrate = 2` (the throwing knife's box).
+            POISONED_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:1488-1511` — the three water bottles (69/70/621):
+            // 14x14, aiStyle 2, `penetrate = 1`. The splash conversion rides
+            // the death hook (`:77629-77645`), not the row.
+            HOLY_WATER | UNHOLY_WATER | BLOOD_WATER => {
+                (14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // `Projectile.cs:1122-1130` — the grenade (30): 14x14, aiStyle 16,
+            // `penetrate = -1`; `NewProjectile` pins `timeLeft = 180`
+            // (`:10993-10996`).
+            GRENADE => (14.0, 14.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4781-4790` — the sticky grenade (397): the same
+            // box/style, `tileCollide = false`; `timeLeft = 180`
+            // (`:11029-11032`).
+            STICKY_GRENADE => (14.0, 14.0, 16, -1, 180, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:5870-5878` — the bouncy grenade (517): 14x14,
+            // aiStyle 16, `penetrate = -1`; `timeLeft = 180` (`:10997-11000`).
+            BOUNCY_GRENADE => (14.0, 14.0, 16, -1, 180, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4801-4811` — the molotov cocktail (399): 14x14,
+            // aiStyle 68, `penetrate = 1`, `alpha = 255`.
+            MOLOTOV_COCKTAIL => (
+                14.0,
+                14.0,
+                68,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:4812-4835` — the three greek fires (400/401/402):
+            // aiStyle 14, `penetrate = 3`, `timeLeft = 360`; the three sizes
+            // 14x16 / 12x14 / 6x12.
+            MOLOTOV_FIRE_1 => (14.0, 16.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            MOLOTOV_FIRE_2 => (12.0, 14.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            MOLOTOV_FIRE_3 => (6.0, 12.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2697-2706` — the beenade (183): 14x22, aiStyle 14,
+            // `penetrate = 1`, `timeLeft = 180`.
+            BEENADE => (14.0, 22.0, 14, 1, 180, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2673-2685` — the bee (181): 8x8, aiStyle 36,
+            // `penetrate = 3`, `alpha = 255`, `timeLeft = 600`,
+            // `extraUpdates = 3`, `UseGroupStaticImmunity(181)` (idStatic-10).
+            BEE => (8.0, 8.0, 36, 3, 600, 3, true, false, false, (false, -2, true, 10, 255, 1.0)),
+            // `Projectile.cs:6172-6184` — the giant bee (566): 16x16, aiStyle
+            // 36, `penetrate = 4`, `alpha = 255`, `timeLeft = 660`,
+            // `extraUpdates = 3`, the same group-static immunity (identity 181).
+            GIANT_BEE => (16.0, 16.0, 36, 4, 660, 3, true, false, false, (false, -2, true, 10, 255, 1.0)),
+            // `Projectile.cs:6470-6480` — the bone javelin (598): 16x16,
+            // aiStyle 113, `penetrate = -1`, `alpha = 255`.
+            BONE_JAVELIN => (
+                16.0,
+                16.0,
+                113,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:5770-5778` — the Javelin (507): 16x16, aiStyle 1,
+            // `penetrate = 3`, friendly+ranged; the stock `timeLeft = 3600`
+            // (`:787`) and `tileCollide` (`:775`). The flight is the `AI_001`
+            // 507/508/662/680/685 gravity arm (`:57471-57478`, the 60-tick then
+            // X·0.98/Y+0.3 fall), owned by `projectile_ai_thrown::covers_ai001`.
+            JAVELIN => (16.0, 16.0, 1, 3, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:874-884` — the Vilethorn's base (7) and tip (8):
             // 28x28, aiStyle 4, `penetrate = -1`, `tileCollide = false`,
             // `alpha = 255` and `ignoreWater`.
@@ -1723,6 +1979,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => (
                 22.0,
                 22.0,
+                3,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // `:1936-1945`: the Light Disc (S1-P-i08) — 32×32, aiStyle 3,
+            // `penetrate = -1`, melee; the stock 3600 life / tileCollide.
+            LIGHT_DISC => (
+                32.0,
+                32.0,
                 3,
                 -1,
                 TIME_LEFT_DEFAULT,
@@ -2465,8 +2735,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false, RESET_STATE),
             // The ammo-resolution rows (M3-ITEM-6 Phase 2): `friendly` is the
-            // pool default for every one of them and `ranged` has no consumer,
-            // so neither rides the tuple. The launcher rockets
+            // pool default for every one of them; the class flags ride the
+            // census below the tuple (W3-i11 round 2 gave the player-fired
+            // rows their `ranged` write back). The launcher rockets
             // (`Projectile.cs:2222-2338`) — 14x14, aiStyle 16 (the bomb
             // family), `penetrate = -1`; 133/136/139/142 add the
             // local-immunity pair (the overlay below).
@@ -2477,10 +2748,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             338..=341 => (14.0, 14.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // The 1.4.4 rocket family (`:7939-7952`) — the eight rockets each
             // of the Grenade/Rocket/Proximity launchers resolves to (776-801)
-            // plus the Snowman Cannon's 803-810. 779/783 sit inside the C#
-            // range but no launcher's rocket resolves to them, so the guard
-            // leaves them row-less.
-            776..=801 | 803..=810 if kind != 779 && kind != 783 => (
+            // plus the Snowman Cannon's 803-810. 779/783 are the CLUSTER
+            // shrapnel the cluster rockets' Kill arm spawns
+            // (`:78063-78086`, S1-P-i16) — the same row arm covers them
+            // (the C# range block `:7939` includes both).
+            // The cluster shrapnel 779/783 carry the `NewProjectileSetup`
+            // fuse seed `timeLeft = 60` (`Projectile.cs:11053-11060`) — the
+            // row folds it like the bomb rows fold their 180/300 seeds.
+            779 | 783 => (14.0, 14.0, 16, -1, 60, 0, true, false, false, RESET_STATE),
+            776..=801 | 803..=810 => (
                 14.0,
                 14.0,
                 16,
@@ -2492,6 +2768,42 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // The Snowman Cannon's cluster shrapnel 862/863
+            // (`Projectile.cs:8275-8283`): 14x14, aiStyle 16, penetrate -1,
+            // the `NewProjectileSetup` 60-tick seed (`:11061-11064`).
+            862 | 863 => (14.0, 14.0, 16, -1, 60, 0, true, false, false, RESET_STATE),
+            // S1-P-i16 — the dart guns' ammo projectiles. The Poison Dart
+            // 267 (`Projectile.cs:3529-3537`): 14x14, aiStyle 1, alpha 255,
+            // the stock penetrate 1 / timeLeft 3600.
+            267 => (14.0, 14.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Crystal Dart 477 (`:5518-5528`): 14x14, aiStyle 1,
+            // alpha 255, `penetrate = 5`, `extraUpdates = 1`.
+            477 => (14.0, 14.0, 1, 5, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Cursed Dart 478 (`:5529-5539`): 14x14, aiStyle 1,
+            // alpha 255, `penetrate = 3`, `timeLeft = 300`.
+            478 => (14.0, 14.0, 1, 3, 300, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Ichor Dart 479 (`:5540-5548`): 14x14, aiStyle 1,
+            // alpha 255, the stock penetrate 1 (the split machine rewrites
+            // it per tick, `:57307-57316`).
+            479 => (14.0, 14.0, 1, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Cursed Dart's flame drop 480 (`:5549-5560`): 12x12,
+            // aiStyle 14, `penetrate = 1`, `timeLeft = 180`, alpha 255
+            // (`noEnchantments` has no port field).
+            480 => (12.0, 12.0, 14, 1, 180, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Electrosphere Launcher's bolt 442 (`:5126-5136`): 14x14,
+            // aiStyle 1, alpha 255, `timeLeft = 600`, the stock penetrate 1.
+            442 => (14.0, 14.0, 1, 1, 600, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Electrosphere sphere 443 (`:5137-5149`): 80x80, aiStyle 77,
+            // alpha 255, `penetrate = -1`, `tileCollide = false`,
+            // `ignoreWater` (the overlay below), the `NewProjectileSetup`
+            // 300-tick seed (`:11065-11068`).
+            443 => (80.0, 80.0, 77, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The Fireworks Launcher's rockets 167-170 (`:2558-2569`):
+            // 14x14, aiStyle 34, `timeLeft = 45`, the idStatic-1 pair with
+            // `appliesImmunityTimeOnSingleHits` (the plain PVE walk applies
+            // the idStatic stamp regardless of penetrate — the flag's effect
+            // for these pen-1 rows).
+            167..=170 => (14.0, 14.0, 34, 1, 45, 0, true, false, false, (false, -2, true, 1, 0, 1.0)),
             // The Celebration rockets (`:7584-7605` — both arms identical):
             // 14x14, aiStyle 147, `penetrate = 1`, `extraUpdates = 2` and
             // `timeLeft = 360 * MaxUpdates` = 360 × (`extraUpdates + 1`) = 1080
@@ -2520,27 +2832,103 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // knockBack (8 / 6) is dropped — the spawner's input wins.
             42 => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             65 | 68 | 354 => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+            // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
+            // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
+            // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever
+            // the arm writes none.
+            // `Projectile.cs:837-848` — the Unholy Arrow (4): 10x10, aiStyle
+            // 1, `penetrate = 5`, `light = 0.35f` (the light slice below),
+            // `timeLeft = 1200`.
+            UNHOLY_ARROW => (10.0, 10.0, 1, 5, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:849-863` — the Jester's Arrow (5): `penetrate =
+            // -1` (infinite piercing), `alpha = 100`, `ignoreWater` (the
+            // overlay below), `extraUpdates = 1`, `timeLeft = 120` — the
+            // SHORT life is the arrow's whole gimmick; `light = 0.4f`.
+            JESTERS_ARROW => (
+                10.0, 10.0, 1, -1, 120, 1, true, true, false,
+                (false, -2, false, -1, 100, 1.0),
+            ),
+            // `Projectile.cs:1237-1247` — the Hellfire Arrow (41):
+            // `penetrate = -1`, stock 3600 life, `light = 0.3f`. The
+            // on-hit `timeLeft = 1` clamp (`:13252-13255`) and the Kill()
+            // 64x64 blast (`:76308-76341`) ride `damage_pve` and the pool's
+            // death hook (`special_arrows.rs`).
+            HELLFIRE_ARROW => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:1743-1752` — the Holy Arrow (91): stock
+            // penetrate 1, `timeLeft = 1200`. Its Kill() spawns the falling
+            // star 92 (`:75212-75248`).
+            HOLY_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:1753-1764` — the falling star (92): 24x24,
+            // aiStyle 5, penetrate 1, `alpha = 50`, `scale = 0.8f`,
+            // `tileCollide = false` (the AI_005 arm turns it on below the
+            // `ai[1]` floor), stock 3600 life.
+            FALLING_STAR => (
+                24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 50, 0.8),
+            ),
+            // `Projectile.cs:1904-1914` — the Cursed Arrow (103): stock
+            // penetrate 1, `light = 1f`, `timeLeft = 1200`. The
+            // CursedInferno infliction is `StatusNPC` `:11665-11668`.
+            CURSED_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:2093-2104` — the Frost Arrow (120, the Ice
+            // Bow's shot): `coldDamage` (no port field), `extraUpdates = 1`,
+            // `timeLeft = 1200`.
+            FROST_ARROW => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // `Projectile.cs:2579-2590` — the Frostburn Arrow (172):
+            // `light = 1f`, `coldDamage`, `timeLeft = 1200`. The 1/3
+            // Frostburn roll is `StatusNPC` `:11556-11562`.
+            FROSTBURN_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:3100-3110` — the Chlorophyte Arrow (225):
+            // `extraUpdates = 1`, `timeLeft = 1200`. The bounce/retarget
+            // machine is `HandleMovement` `:18539-18561`.
+            CHLOROPHYTE_ARROW => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // `Projectile.cs:3638-3649` — the Ichor Arrow (278): `light =
+            // 1f`, `extraUpdates = 1`, `timeLeft = 1200`. Ichor 69 for 600
+            // ticks is `StatusNPC` `:11669-11672`.
+            ICHOR_ARROW => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // `Projectile.cs:3688-3698` — the Venom Arrow (282):
+            // `extraUpdates = 1`, `timeLeft = 1200`. Venom 70/600 +
+            // PotentAcid 395/120 is `StatusNPC` `:11673-11677`.
+            VENOM_ARROW => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // `Projectile.cs:5474-5484` — the Bone Arrow From Merchant
+            // (474): `timeLeft = 1200`, `penetrate = 2`.
+            BONE_ARROW_MERCHANT => (10.0, 10.0, 1, 2, 1200, 0, true, true, false, RESET_STATE),
+            // The Bee 181 / Giant Bee 566 rows ride the S1-P-i28 block above
+            // (keep-one — identical values, the idStatic-10 group pair).
+            // `Projectile.cs:9570-9579` — the Shimmer Arrow (1006): stock
+            // penetrate 1, `timeLeft = 1200`; the INVERTED gravity is
+            // `flag4` (`:56034-56036` + `:57571-57574`).
+            SHIMMER_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
             // The arrow overrides — 117 the Bone Arrow (`:2058-2068`,
-            // `extraUpdates = 2`), 469 the Bee Arrow (`:5429-5441`,
-            // `alpha = 255` dropped), 485 the Hellwing (`:5604-5615` — 24x24,
-            // `penetrate = -1`), 495 the Shadowflame (`:5681-5692` —
+            // `extraUpdates = 2`), 469 the Bee Arrow (`:5435-5445`,
+            // S1-P-i17 carries the C# `alpha = 255` — the AI_001 fade
+            // `:55197-55208` reads it), 485 the Hellwing (`:5604-5615` —
+            // 24x24, `penetrate = -1`), 495 the Shadowflame (`:5681-5692` —
             // `penetrate = 3`) and 819 the Blood Rain arrow (`:7993-8002` —
-            // `extraUpdates = 1`, `alpha`/`hide` dropped): 10x10 aiStyle-1
-            // arrows, `timeLeft = 1200` (485's 24x24 box aside).
+            // `extraUpdates = 1`; S1-P-i17 carries the C# `alpha = 255` and
+            // the stock `timeLeft = 3600` — the arm writes NO override, the
+            // old 1200 was a row deviation; `hide` has no port field):
+            // 10x10 aiStyle-1 arrows (485's 24x24 box aside).
             117 => (10.0, 10.0, 1, 1, 1200, 2, true, true, false, RESET_STATE),
-            469 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            469 => (
+                10.0, 10.0, 1, 1, 1200, 0, true, true, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             485 => (24.0, 24.0, 1, -1, 1200, 0, true, true, false, RESET_STATE),
             495 => (10.0, 10.0, 1, 3, 1200, 0, true, true, false, RESET_STATE),
-            819 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
+            // 819 the VenomArrow's fang shot (`Projectile.cs:7993-8002`):
+            // alpha 255, extraUpdates 1, the STOCK timeLeft 3600 (the block
+            // sets none — S1-P-i17's fix over the pre-i13 1200 row).
+            819 => (
+                10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, true, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // S1-P-i13 — the bow-launch arrow family. The post-`PickAmmo`
             // `projToShoot` overrides (`Player.cs:47157-47176`) and the arrow
             // ammo's own `Item.shoot` resolve to these kinds; without a row the
             // data-carrying spawn declines them. Every row is the `SetDefaults`
             // body verbatim (the aiStyle-1 flight is the generic `ai_arrow`
             // arm; the per-kind gravity/rotation hooks are the S1-D-5 slices).
-            // 120 the FrostArrow (`Projectile.cs:2093-2104`): the Ice Bow 725's
-            // override (`Player.cs:47165-47168`), `coldDamage`, extraUpdates 1.
-            120 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
             // 357 the PulseBolt (`Projectile.cs:4474-4486`): the Pulse Bow
             // 2223's override (`Player.cs:47173-47176`), 4x4, penetrate 6,
             // alpha 255, extraUpdates 2, scale 1.2, timeLeft 600. NOT `arrow`
@@ -2556,42 +2944,6 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // extraUpdates 3, alpha 255, scale 0.8. NOT `arrow` (the C# block
             // sets no `this.arrow`); the stock timeLeft 3600.
             323 => (14.0, 14.0, 1, 10, TIME_LEFT_DEFAULT, 3, true, false, false, (false, -2, false, -1, 255, 0.8)),
-            // The arrow-ammo family — the ammo's own `Item.shoot` the generic
-            // bow fires when no override applies. 4 UnholyArrow
-            // (`Projectile.cs:837-848`): penetrate 5, light 0.35.
-            4 => (10.0, 10.0, 1, 5, 1200, 0, true, true, false, RESET_STATE),
-            // 5 JestersArrow (`Projectile.cs:849-863`): penetrate -1, alpha
-            // 100, extraUpdates 1, timeLeft 120, `ignoreWater` (the overlay).
-            5 => (10.0, 10.0, 1, -1, 120, 1, true, true, false, (false, -2, false, -1, 100, 1.0)),
-            // 41 HellfireArrow (`Projectile.cs:1237-1247`): penetrate -1, the
-            // stock timeLeft 3600 (the block sets none), light 0.3.
-            41 => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, true, false, RESET_STATE),
-            // 91 HolyArrow (`Projectile.cs:1743-1752`): the stock penetrate 1,
-            // timeLeft 1200.
-            91 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
-            // 103 CursedArrow (`Projectile.cs:1904-1914`): light 1, timeLeft
-            // 1200, the stock penetrate 1.
-            103 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
-            // 172 FrostburnArrow (`Projectile.cs:2579-2590`): light 1,
-            // `coldDamage`, timeLeft 1200, the stock penetrate 1.
-            172 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
-            // 225 ChlorophyteArrow (`Projectile.cs:3100-3110`): extraUpdates 1,
-            // timeLeft 1200, the stock penetrate 1.
-            225 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
-            // 278 IchorArrow (`Projectile.cs:3638-3649`): light 1, extraUpdates
-            // 1, timeLeft 1200, the stock penetrate 1.
-            278 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
-            // 282 VenomArrow (`Projectile.cs:3688-3698`): extraUpdates 1,
-            // timeLeft 1200, the stock penetrate 1.
-            282 => (10.0, 10.0, 1, 1, 1200, 1, true, true, false, RESET_STATE),
-            // 474 BoneArrowFromMerchant (`Projectile.cs:5474-5484`): penetrate
-            // 2, timeLeft 1200 — the Skeleton Bow 4058 converts it to 117
-            // (`Player.cs:53511-53514`), but the row stands for the raw kind.
-            474 => (10.0, 10.0, 1, 2, 1200, 0, true, true, false, RESET_STATE),
-            // 1006 ShimmerArrow (`Projectile.cs:9570-9579`): timeLeft 1200, the
-            // stock penetrate 1; the `flag4` inversion + the 1/8 dust draw
-            // (`Projectile.cs:56034-56049`) are the S1-D-5 flight slice.
-            1006 => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
             // The spray/ball ammo the not-consume windows resolve — the
             // Flamethrower's Flames (`:1660-1670`: 6x6, aiStyle 193, pen 4,
             // extraUpdates 2, `armorPenetration = 15` dropped; its immunity
@@ -2996,6 +3348,88 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
             // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
             ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
+            // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
+            // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
+            // drawLayer 7). The stock `timeLeft = 3600` (`:787`),
+            // `extraUpdates = 0`, NO local/idStatic immunity slice. The
+            // per-kind boxes/scales/alphas are the `SetDefaults` arms; the
+            // `ownerHitCheck` damage gate is keyed on `SPEAR_KINDS` in
+            // `damage_pve` (the only ported ownerHitCheck family here).
+            // `:1296-1302` — Dark Lance (46): 20x20, scale 1.1.
+            DARK_LANCE => (20.0, 20.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:1303-1309` — Trident (47): 18x18, scale 1.1.
+            TRIDENT => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:1319-1325` — Spear (49): 18x18, scale 1.2.
+            SPEAR => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.2)),
+            // `:1442-1448` — Mythril Halberd (64): 18x18, scale 1.25.
+            MYTHRIL_HALBERD => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.25)),
+            // `:1460-1466` — Adamantite Glaive (66): 18x18, scale 1.27.
+            ADAMANTITE_GLAIVE => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.27)),
+            // `:1816-1822` — Cobalt Naginata (97): 18x18, scale 1.1.
+            COBALT_NAGINATA => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:1929-1935` — Gungnir (105): 18x18, scale 1.3.
+            GUNGNIR => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.3)),
+            // `:2191-2197` — Mushroom Spear (130): 22x22, scale 1.2.
+            MUSHROOM_SPEAR => (22.0, 22.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.2)),
+            // `:2411-2417` — The Rotted Fork (153): 18x18, scale 1.1.
+            THE_ROTTED_FORK => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:3004-3010` — Palladium Pike (212): 18x18, scale 1.12.
+            PALLADIUM_PIKE => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.12)),
+            // `:3024-3030` — Orichalcum Halberd (215): 18x18, scale 1.27.
+            ORICHALCUM_HALBERD => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.27)),
+            // `:3045-3051` — Titanium Trident (218): 18x18, scale 1.28.
+            TITANIUM_TRIDENT => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.28)),
+            // `:3079-3085` — Chlorophyte Partisan (222): 18x18, scale 1.3.
+            CHLOROPHYTE_PARTISAN => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.3)),
+            // `:4318-4325` — North Pole (342): 22x2, scale 1.1, coldDamage
+            // (the cold flag has no port consumer — the debuff layer is out
+            // of scope, ANALYSIS).
+            NORTH_POLE => (22.0, 2.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:4517-4523` — Obsidian Swordfish (367): 18x18, scale 1.1.
+            OBSIDIAN_SWORDFISH => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:4524-4529` — Swordfish (368): 18x18, NO scale line (stock 1f).
+            SWORDFISH => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:7688-7693` — Thunder Spear (730): 18x18, stock scale 1f.
+            THUNDER_SPEAR => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:8430-8437` — the jousting lances (877/878/879): 25x25,
+            // `alpha = 255`, `netImportant` (the MP flag has no single-player
+            // consumer). The channel hold + the speed-dust arms read the
+            // 877-879 range in `ai_spear`.
+            JOUSTING_LANCE | SHADOW_JOUSTING_LANCE | HALLOW_JOUSTING_LANCE => {
+                (25.0, 25.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // `:10282-10289` — Slime Spear (1103): 18x18, scale 1.2, alpha 90.
+            SLIME_SPEAR => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 90, 1.2)),
+            // ---- The spear family's sub-shots (S1-P-i06). They ride their
+            // own aiStyles (the `AI_019_Spears` spawns, `:45891-45936`).
+            // `:2198-2208` — the Mushroom Spear's spore (131): 22x22,
+            // aiStyle 30, `penetrate = 1`, `tileCollide = false`, melee,
+            // `light = 0.5f` (the light has no port consumer here). The
+            // aiStyle-30 default arm fades it (alpha += 4, kill at 255).
+            MUSHROOM_SPORE => (22.0, 22.0, 30, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:3137-3150` — the Chlorophyte Partisan's spore cloud (228):
+            // 30x30, aiStyle 44, `penetrate = -1`, `tileCollide = false`,
+            // melee, scale 1.1, idStatic immunity cooldown 10.
+            CHLOROPHYTE_SPORE_CLOUD => (30.0, 30.0, 44, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 0, 1.1)),
+            // `:7705-7715` — the Thunder Spear's bolt (732): 15x15,
+            // aiStyle 44, `penetrate = 1`, `tileCollide = true`, melee.
+            THUNDER_SPEAR_BOLT => (15.0, 15.0, 44, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:4326-4338` — the North Pole's snowflake (343): 10x10,
+            // aiStyle 57, `penetrate = 3`, `alpha = 255`, melee, scale 1.1,
+            // coldDamage (no port consumer), `timeLeft = 120`.
+            NORTH_POLE_SNOWFLAKE => (10.0, 10.0, 57, 3, 120, 0, true, false, false, (false, -2, false, -1, 255, 1.1)),
+            // `:4339-4352` — the North Pole's falling flake (344): 26x26,
+            // aiStyle 1, `alpha = 255`, melee, scale 0.9, coldDamage,
+            // `tileCollide = false`, `timeLeft = 240`.
+            NORTH_POLE_FLAKE => (26.0, 26.0, 1, 1, 240, 0, false, false, false, (false, -2, false, -1, 255, 0.9)),
+            // `:10316-10339` — the Obsidian Swordfish's bones (1107-1109):
+            // aiStyle 14, `penetrate = 3`, melee, `timeLeft = 360` (the spawn
+            // overrides to Next(30,150)). The boxes: 1107 14x16, 1108 12x14,
+            // 1109 6x12. The generic AI_014 tail flies them (no type branch).
+            SWORDFISH_BONE_1 => (14.0, 16.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            SWORDFISH_BONE_2 => (12.0, 14.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            SWORDFISH_BONE_3 => (6.0, 12.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -3173,10 +3607,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
             || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
-            // S1-P-i13 — the bow-launch arrows that set `ignoreWater` in their
-            // `SetDefaults` bodies: the JestersArrow 5 (`Projectile.cs:859`)
-            // and the DD2BetsyArrow 710 (`:7529`).
+            // S1-P-i13/i17 — the bow-launch arrows that set `ignoreWater` in
+            // their `SetDefaults` bodies: the JestersArrow 5
+            // (`Projectile.cs:859`) and the DD2BetsyArrow 710 (`:7529`).
             || matches!(kind, 5 | 710)
+            // S1-P-i16 — the Electrosphere sphere 443's `ignoreWater = true`
+            // (`Projectile.cs:5147`, the `:5137-5149` row block).
+            || kind == 443
             // S1-P-i14 — the bullet-launch projectiles that set `ignoreWater`:
             // the Xenopopper bubble 444 (`Projectile.cs:5159`) and the Onyx
             // black bolt 661 (`:7118`).
@@ -3192,6 +3629,98 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
                 | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3
         ),
+        // The damage-class flags (`Projectile.cs:751-753` reset false) the
+        // per-hit crit block reads (`:12890-12898`). The census is the
+        // `SetDefaults` `this.melee/ranged/magic = true` writes plus the
+        // `DefaultTo*` helpers: yoyo/flail/spear/drill/shortsword are melee,
+        // the whip sets NONE (`DefaultToWhip` `:10704-10718`). The bombs
+        // (28/29/37/519) and the Crystal Storm item 518's proj set none.
+        melee: YOYO_KINDS.contains(&kind)
+            || FLAIL_KINDS.contains(&kind)
+            || matches!(
+                kind,
+                // The explicit melee rows: the boomerangs (6/52/113,
+                // `:871`/`:1352`/`:2019`), the sword beams (116/132/156/157/173,
+                // `:2052`/`:2214`/`:2439`/`:2452`/`:2596`), the Light's Bane
+                // slash (974, `:9245`), the Terrarian beam (604, `:6079`), the
+                // yoyo on-hit shots (1125/1130/1134/1135,
+                // `:10535`/`:10605`/`:10648`/`:10661`), the flail helpers
+                // (248/405/928, `:3312`/`:4866`/`:8801`).
+                ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG
+                    | SWORD_BEAM | TERRA_BEAM | LIGHT_BEAM | NIGHT_BEAM | ENCHANTED_BEAM
+                    | LIGHTS_BANE | TERRARIAN_BEAM
+                    | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
+                    | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+            ),
+        ranged: matches!(
+            kind,
+            // The arrows/bullets (1/2/14, `:814`/`:825`/`:961`), the thrown
+            // kinds (3/48/166, `:835`/`:1317`/`:2555`), the moon-lord drop
+            // shots (638/639/640, `:6867`/`:6880`/`:6895`), the DD2 kobold
+            // bomb (681, `:7270`).
+            WOODEN_ARROW | FLAME_ARROW | MUSKET_BALL
+                | SHURIKEN | THROWING_KNIFE | SNOWBALL
+                | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL
+                | DD2_BOMB
+            // W3-i11 round 2 — the ranged census completion (the player-fired
+            // rows the first pass missed; the per-hit ranged crit never fired
+            // for them). The Sandgun balls (42/65/68/354,
+            // `:1254`/`:1456`/`:1484`/`:4447`), the Flamethrower's Flames (85,
+            // `:1669`), the special arrows (117/469/485/495/819,
+            // `:2066`/`:5443`/`:5611`/`:5688`/`:8003`), the launcher rockets
+            // (133-144 `:2229-2336`, 338-341 `:4315`, the 776-801/803-810
+            // group `:7946` — 779/783 are row-less, the guard above), the
+            // gunProj rockets (615/630/705/714,
+            // `:6629`/`:6776`/`:7581`), the Celebration rockets (715-718,
+            // `:7592`/`:7604`) and the Empress shot (932, `:8844`).
+                | 42 | 65 | 68 | 354 | 85 | 117 | 469 | 485 | 495 | 819
+                | 133..=144 | 338..=341 | 615 | 630 | 705 | 714 | 715..=718 | 932
+                | 776..=801 | 803..=810
+            // The hostile snowmen's shots (109/110, `:1976`/`:1989`) — the
+            // C# writes ranged on them too; the owner-255 gate keeps the
+            // flags moot, the census stays verbatim.
+                | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+        ),
+        magic: matches!(
+            kind,
+            // The Vilethorn pair (7/8, `:884`), the magic spells
+            // (15/16/20/27/34/45/79/80/88/94/95,
+            // `:972`/`:982`/`:1029`/`:1104`/`:1170`/`:1294`/`:1601`/`:1613`/
+            // `:1713`/`:1788`/`:1800`), the gem bolts (121-126/597,
+            // `:2111`+`ApplyGemStaffStats`), the Unholy Trident pair
+            // (114/115, `:2028`/`:2042`), the frost/flower shots
+            // (253/254/255, `:3366`/`:3374`/`:3384`), the Inferno Fork
+            // (295/296, `:3856`/`:3866`), the Spectre pair (297/356,
+            // `:3877`/`:4470`), the Poison Staff / Frost Staff (355/359,
+            // `:4458`/`:4503`), the Typhoon (409, `:4914`), the Leaf (206,
+            // `:2946`), the Nebula Arcanum pair (617/618,
+            // `:6653`/`:6666`), the Last Prism pair (632/633,
+            // `:6811`/`:6802`), the Nebula Blaze pair (634/635,
+            // `:6825`/`:6836`), the Lunar Flare (645, `:6959`), the Spirit
+            // Flame / Sky Fracture (659/660, `:7089`/`:7104`), the Book of
+            // Skulls (837, `:8131`), the Wand of Sparking spark (954,
+            // `:9008`).
+            VILE_BASE | VILE_TIP
+                | BALL_OF_FIRE | MAGIC_MISSILE | GREEN_LASER | WATER_BOLT | FLAMELASH
+                | DEMON_SCYTHE | RAINBOW_ROD_BULLET | ICE_BLOCK | PURPLE_LASER
+                | CRYSTAL_STORM | CURSED_FLAME_FRIENDLY
+                | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD
+                | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND | GEM_BOLT_AMBER
+                | UNHOLY_TRIDENT | UNHOLY_TRIDENT_HOSTILE
+                | BALL_OF_FROST | MAGNET_SPHERE_BALL | MAGNET_SPHERE_BOLT
+                | INFERNO_FORK_BOLT | INFERNO_BLAST | LOST_SOUL | SPECTRE_WRATH
+                | VENOM_FANG | FROST_BOLT | TYPHOON | LEAF
+                | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
+                | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
+                | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+        ),
+        // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
+        // ported setters are the 1134 crystal shard (`:10643`), the
+        // 167-170 fireworks (`:2568`, S1-P-i16) and the 286 Exploding
+        // Bullet (`:3754`, S1-P-i18) — the id-static gate's single-hit
+        // override (`:13969`/`:14116`) reads this flag.
+        applies_immunity_time_on_single_hits: matches!(kind, CRYSTAL_SHARD_MELEE | EXPLODING_BULLET)
+            || matches!(kind, 167..=170),
     })
 }
 
@@ -3481,6 +4010,103 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         FROST_SHARD => 5,
         ORNAMENT_HOSTILE => 2,
         ORNAMENT_SHRAPNEL => 2,
+        // The spear family's sub-shots (S1-P-i06): the spore cloud's 5-frame
+        // sheet (`Main.cs:8605`) — the aiStyle-44 frame machine
+        // (`Projectile.cs:27941-27948`) wraps at it; the Thunder bolt's
+        // 4-frame sheet (`Main.cs:8629`); the North Pole flake's 3-frame
+        // sheet (`Main.cs:8568`) — the 344 hook's `frame = (int)ai[1]` pin
+        // (`Projectile.cs:57078`).
+        CHLOROPHYTE_SPORE_CLOUD => 5,
+        THUNDER_SPEAR_BOLT => 4,
+        NORTH_POLE_FLAKE => 3,
         _ => 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_damage_class_flags_match_the_set_defaults_census() {
+        // W3-i11 — the per-hit crit block's class flags (`Projectile.cs:751-
+        // 753` reset false, the per-type `this.melee/ranged/magic = true`
+        // writes + the DefaultTo* helpers). The whip sets NONE.
+        let flags = |k: u16| {
+            let d = proj_data(k).expect("a row");
+            (d.melee, d.ranged, d.magic)
+        };
+        // The ranged shots: arrows/bullets, the thrown kinds, the moon-lord
+        // drop shots.
+        assert_eq!(flags(WOODEN_ARROW), (false, true, false));
+        assert_eq!(flags(FLAME_ARROW), (false, true, false));
+        assert_eq!(flags(MUSKET_BALL), (false, true, false));
+        assert_eq!(flags(SHURIKEN), (false, true, false));
+        assert_eq!(flags(THROWING_KNIFE), (false, true, false));
+        assert_eq!(flags(SNOWBALL), (false, true, false));
+        assert_eq!(flags(MOONLORD_BULLET), (false, true, false));
+        // W3-i11 round 2 — the ranged census completion: the sand balls, the
+        // Flames, the special arrows, the rockets and the Empress shot.
+        for k in [42, 65, 68, 354, 85, 117, 469, 485, 495, 819, 615, 630, 705, 714, 932] {
+            assert_eq!(flags(k), (false, true, false), "kind {k}");
+        }
+        for k in (133..=144).chain(338..=341).chain(715..=718) {
+            assert_eq!(flags(k), (false, true, false), "kind {k}");
+        }
+        for k in (776..=801).chain(803..=810) {
+            if k == 779 || k == 783 {
+                continue; // row-less (no launcher resolves to them)
+            }
+            assert_eq!(flags(k), (false, true, false), "kind {k}");
+        }
+        // The hostile snowmen's shots carry the flag verbatim (owner 255
+        // keeps it moot).
+        assert_eq!(flags(SNOW_BALL_HOSTILE), (false, true, false));
+        assert_eq!(flags(BULLET_SNOWMAN), (false, true, false));
+        // The Clentaminator spray (145) and the acorn (1088) set NO class
+        // flag (`:2338-2349`/`:10145-10152`) — the census stays exact.
+        assert_eq!(flags(145), (false, false, false));
+        assert_eq!(flags(1088), (false, false, false));
+        // The magic spells.
+        assert_eq!(flags(CRYSTAL_STORM), (false, false, true));
+        assert_eq!(flags(SPARK), (false, false, true));
+        assert_eq!(flags(GEM_BOLT_AMETHYST), (false, false, true));
+        assert_eq!(flags(GEM_BOLT_AMBER), (false, false, true));
+        assert_eq!(flags(NEBULA_BLAZE_1), (false, false, true));
+        assert_eq!(flags(NEBULA_BLAZE_2), (false, false, true));
+        assert_eq!(flags(SPIRIT_FLAME), (false, false, true));
+        assert_eq!(flags(SKY_FRACTURE), (false, false, true));
+        assert_eq!(flags(LAST_PRISM), (false, false, true));
+        assert_eq!(flags(LEAF), (false, false, true));
+        // The melee families: yoyos (DefaultToYoyo), flails (DefaultToFlail),
+        // the boomerangs, the sword beams, the yoyo on-hit shots.
+        assert_eq!(flags(WOOD_YOYO), (true, false, false));
+        assert_eq!(flags(TERRARIAN_YOYO), (true, false, false));
+        assert_eq!(flags(BALL_O_HURT), (true, false, false));
+        assert_eq!(flags(ENCHANTED_BOOMERANG), (true, false, false));
+        assert_eq!(flags(SWORD_BEAM), (true, false, false));
+        assert_eq!(flags(TERRARIAN_BEAM), (true, false, false));
+        assert_eq!(flags(CRYSTAL_SHARD_MELEE), (true, false, false));
+        assert_eq!(flags(EYE_OF_CTHULHU_DASH), (true, false, false));
+        // The whip sets NO class flag (DefaultToWhip `:10704-10718`).
+        assert_eq!(flags(BLAND_WHIP), (false, false, false));
+        assert_eq!(flags(SWORD_WHIP), (false, false, false));
+        // The bombs set none (`:1106-1121`/`:1198-1206`/`:5889-5897`).
+        assert_eq!(flags(BOMB), (false, false, false));
+        assert_eq!(flags(DYNAMITE), (false, false, false));
+        assert_eq!(flags(STICKY_BOMB), (false, false, false));
+        assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    #[test]
+    fn the_single_hit_immunity_override_is_the_crystal_shard_only() {
+        // W3-i11 — `appliesImmunityTimeOnSingleHits` (`:717` reset false):
+        // the only ported setter is the 1134 crystal shard (`:10643`).
+        assert!(proj_data(CRYSTAL_SHARD_MELEE).unwrap().applies_immunity_time_on_single_hits);
+        // The 644 shard burst keeps the stock false (its idStatic pair rides
+        // the −1 cooldown, not the override).
+        assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
+        assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
+        assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
     }
 }

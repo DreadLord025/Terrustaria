@@ -2177,17 +2177,6 @@ impl MountState {
         self.active
     }
 
-    /// `Mount.AllowDirectionChange` (`Mount.cs:630-640`): true for every
-    /// mount except the Scutlix (type 9), which allows the turn only once
-    /// its ability cooldown is under half the row's maximum.
-    pub(crate) fn allow_direction_change(&self) -> bool {
-        if self.kind == 9 {
-            let max = self.data().map_or(0, |d| d.ability_cooldown);
-            return self.ability_cooldown < max / 2;
-        }
-        true
-    }
-
     /// `Mount.UpdateEffects` (`Mount.cs:4798`): the Super Cart flag rides the
     /// cart set (`MountID.Sets.Cart`) and the player's unlock/enable pair.
     /// The flag then overrides the run/dash/acceleration/jump getters
@@ -2435,6 +2424,20 @@ impl MountState {
             return None;
         }
         mount_data(self.kind)
+    }
+
+    /// `Mount.AllowDirectionChange` (`Mount.cs:630-639`): true for every
+    /// mount except the Scutlix (9), whose ability cooldown must be under
+    /// half the row's (`_abilityCooldown < _data.abilityCooldown / 2`).
+    /// An inactive mount allows the change (`_type == -1` never equals 9).
+    /// S1-P-i05: the run-key direction lock (`Player.cs:19837`) reads it.
+    pub(crate) fn allow_direction_change(&self) -> bool {
+        if self.kind == 9 {
+            return self
+                .data()
+                .is_some_and(|d| self.ability_cooldown < d.ability_cooldown / 2);
+        }
+        true
     }
 
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) — the state transitions; the
@@ -2914,6 +2917,34 @@ pub(crate) struct TestOverrides {
 
 #[cfg(test)]
 mod tests {
+    // Both gate witnesses survive the M1 keep-one (i05's `allow_direction_change`
+    // is the single fn): the i04 boundary probe (direct cooldown writes) and
+    // the i12 recovery-decrement mirror.
+
+    /// S1-P-i04 — `Mount.AllowDirectionChange` (`Mount.cs:630-640`): only
+    /// the Scutlix (9) gates on the ability cooldown's half-max window
+    /// (`abilityCooldown = 20`, `Mount.cs:1343-1421` — the row's
+    /// `ability_cooldown`); every other mount allows the turn.
+    #[test]
+    fn s1_p_i04_only_the_scutlix_gates_the_direction_change() {
+        let mut m = MountState::default();
+        assert!(m.allow_direction_change(), "no mount allows the turn");
+        m.set_mount(10, false); // the Unicorn
+        assert!(m.allow_direction_change(), "the Unicorn allows it");
+        m.set_mount(9, false); // the Scutlix
+        // `SetMount` floors the Scutlix cooldown at 20 (`Mount.cs:6236-
+        // 6243`, the port's `set_mount`): 20 >= 20/2 → LOCKED on equip.
+        assert!(!m.allow_direction_change(), "the equip floor locks it");
+        m.ability_cooldown = 11;
+        assert!(!m.allow_direction_change(), "11 >= 10 stays locked");
+        m.ability_cooldown = 10;
+        assert!(!m.allow_direction_change(), "10 >= 10 locks");
+        m.ability_cooldown = 9;
+        assert!(m.allow_direction_change(), "9 < 10 opens the window");
+        m.ability_cooldown = 0;
+        assert!(m.allow_direction_change());
+    }
+
     /// S1-P-i12 — `Mount.AllowDirectionChange` (`Mount.cs:630-640`): the
     /// Scutlix (type 9) reads `_abilityCooldown < _data.abilityCooldown / 2`
     /// (20/2 = 10, integer division); every other type returns true. The
@@ -3093,6 +3124,31 @@ mod tests {
     }
 
     use super::*;
+
+    /// S1-P-i05 — the Scutlix's `AllowDirectionChange` (`Mount.cs:630-639`):
+    /// the ability cooldown must drop under half the row's 20; every other
+    /// mount (and the inactive state) allows the change. The run-key
+    /// direction lock (`Player.cs:19837`) reads it. WRITTEN NOT RUN.
+    #[test]
+    fn s1_p_i05_the_scutlix_cooldown_gates_the_direction_change() {
+        let mut m = MountState::default();
+        assert!(m.allow_direction_change(), "no mount allows the change");
+        m.set_mount(9, false);
+        m.ability_cooldown = 20;
+        assert!(!m.allow_direction_change(), "the full cooldown locks it");
+        m.ability_cooldown = 10;
+        assert!(!m.allow_direction_change(), "10 == 20/2 is still locked");
+        m.ability_cooldown = 9;
+        assert!(m.allow_direction_change(), "under half unlocks it");
+        // A non-Scutlix mount always allows it (the `_type == 9` gate).
+        // The Drill (8, `Mount.cs:1273-1341`) — a ported row with no
+        // ability-cooldown direction gate; even a pinned cooldown never
+        // locks it.
+        let mut drill = MountState::default();
+        drill.set_mount(8, false);
+        drill.ability_cooldown = 100;
+        assert!(drill.allow_direction_change(), "the drill never locks");
+    }
 
     #[test]
     fn the_twelve_ground_rows_carry_the_exact_c_constants() {

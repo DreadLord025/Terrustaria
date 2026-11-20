@@ -282,9 +282,11 @@ pub(crate) fn draw_tiles(
     waterfall: &mut tr_core::waterfall::WaterfallManager,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
-    // `DrawPlayer_27_HeldItem`'s input: the selected item kind plus the
-    // remaining use fraction (`PlayerDrawLayers.cs:3077`); `None` = empty hand.
-    held: Option<(u16, f32)>,
+    // `DrawPlayer_27_HeldItem`'s input: the selected item kind, the
+    // remaining use fraction (`PlayerDrawLayers.cs:3077`) and the item's
+    // prefix (S1-P-i05 — the prefixed `GetAdjustedItemScale`); `None` =
+    // empty hand.
+    held: Option<(u16, f32, u16)>,
     // `Player.armor[0..3]` item kinds (head/body/legs) — the armor layers.
     armor: ArmorKinds,
     npcs: &[Npc],
