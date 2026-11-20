@@ -161,6 +161,15 @@ pub mod id {
     /// active 602 and relay one `29`. Client→server only — the C# has no
     /// host send site for 95.
     pub const MURDER_PORTAL: u8 = 95;
+    /// `128 LandGolfBallInCup` (`MessageID.cs:270`) — a client's golf ball
+    /// (a projectile) dropped into a cup: `(byte)owner + (ushort)hitX +
+    /// (ushort)hitY + (ushort)numberOfHits + (ushort)ballType`
+    /// (`NetMessage.cs:1521-1527`, sent by `GolfHelper.ContactListener.
+    /// PutBallInCup` at `netMode == 1`, `GolfHelper.cs:107-110`). The host
+    /// relays it to the others (`MessageBuffer.cs:4058-4074`, the
+    /// `ignoreClient = owner` resend); the client runs the cup text/effects
+    /// (`PutBallInCup_TextAndEffects`, the golf FX of M4-GOLF-1).
+    pub const GOLF_BALL_IN_CUP: u8 = 128;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1438,6 +1447,21 @@ pub struct TogglePvp {
     pub hostile: bool,
 }
 
+/// `msg 128 LandGolfBallInCup`'s body (`NetMessage.cs:1521-1527`, S1-I-1
+/// W4-d93): `(byte)number` (the owner), `(ushort)number5`/`(ushort)number6`
+/// (the cup's tile coords), `(ushort)number2` (the hit count, the ball's
+/// `ai[1]`) and `(ushort)number3` (the ball's projectile type). The writer's
+/// field order is NOT the argument order — the reader mirrors it
+/// (`MessageBuffer.cs:4060-4064`: owner, x, y, hits, type).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GolfBallInCup {
+    pub owner: u8,
+    pub x: u16,
+    pub y: u16,
+    pub hits: u16,
+    pub ball_type: u16,
+}
+
 /// `msg 42 Unknown42`'s body (`NetMessage.cs:961-965`): the player id,
 /// `statMana` and `statManaMax`, both `short` (`MessageBuffer.cs:2290-2306`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1638,6 +1662,11 @@ pub enum C2s {
         owner: u16,
         form: u8,
     },
+    /// `128 LandGolfBallInCup` — this client's golf ball dropped into a cup
+    /// (`GolfHelper.ContactListener.PutBallInCup`, `GolfHelper.cs:107-110`,
+    /// `netMode == 1` only); the host relays it with `ignoreClient = owner`
+    /// (`MessageBuffer.cs:4058-4074`).
+    GolfBallInCup(GolfBallInCup),
     /// `154 Ping` - this client's RTT probe, no body (`Net/Ping.cs:31`).
     Ping,
     /// `31 RequestChestOpen` - ask the host for a chest's contents
@@ -1798,6 +1827,10 @@ pub enum S2c {
     /// `142 SyncProjectileTrackers` - a peer's trackers (join push
     /// `NetMessage.cs:2907`, relay `MessageBuffer.cs:4294`).
     ProjectileTrackers(ProjectileTrackers),
+    /// `128 LandGolfBallInCup` - a peer's golf ball landed in a cup, relayed
+    /// to everyone but the owner (`MessageBuffer.cs:4067`); the client runs
+    /// the cup text/effects (`:4071`, M4-GOLF-1).
+    GolfBallInCup(GolfBallInCup),
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
@@ -1876,6 +1909,7 @@ impl C2s {
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
             Self::MurderPortal { .. } => id::MURDER_PORTAL,
+            Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
             Self::Ping => id::PING,
             Self::ChestOpenRequest(_) => id::CHEST_OPEN_REQUEST,
             Self::ChestItem(_) => id::CHEST_ITEM,
@@ -1996,6 +2030,9 @@ impl C2s {
             }
             // `NetMessage.cs:1333-1336` — `(ushort)number + (byte)number2`.
             Self::MurderPortal { owner, form } => w.u16(*owner).u8(*form),
+            // `NetMessage.cs:1521-1527` — owner byte, then the four ushorts
+            // in the WRITER's order (x, y, hits, type — not the arg order).
+            Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
         };
         w.finish()
     }
@@ -2141,6 +2178,14 @@ impl C2s {
                 owner: r.u16()?,
                 form: r.u8()?,
             },
+            // `MessageBuffer.cs:4060-4064` — owner, x, y, hits, type.
+            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
+                owner: r.u8()?,
+                x: r.u16()?,
+                y: r.u16()?,
+                hits: r.u16()?,
+                ball_type: r.u16()?,
+            }),
             _ => return None,
         })
     }
@@ -2253,6 +2298,7 @@ impl S2c {
             Self::DeadPlayer { .. } => id::DEAD_PLAYER,
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
+            Self::GolfBallInCup(_) => id::GOLF_BALL_IN_CUP,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
         }
     }
@@ -2395,6 +2441,9 @@ impl S2c {
                 .i16(t.piggy_bank.kind)
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
+            // `NetMessage.cs:1521-1527` — the relay writes the same case-128
+            // arm (`MessageBuffer.cs:4067` re-sends with number5/6 = x/y).
+            Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
@@ -2597,6 +2646,14 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4060-4064` — owner, x, y, hits, type.
+            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
+                owner: r.u8()?,
+                x: r.u16()?,
+                y: r.u16()?,
+                hits: r.u16()?,
+                ball_type: r.u16()?,
             }),
             _ => return None,
         })
@@ -4929,5 +4986,57 @@ mod tests {
         }
         // No S2c counterpart exists in the C# reader.
         assert!(S2c::decode(95, &mut NetReader::new(&[3, 0, 1])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1d93_golf_ball_in_cup_body_bytes() {
+        // `NetMessage.cs:1521-1527` (case 128): (byte)owner, (ushort)x,
+        // (ushort)y, (ushort)hits, (ushort)type. The writer's field order is
+        // NOT the send's argument order (`GolfHelper.cs:109` passes
+        // owner, hits, type, 0f, x, y → number/2/3/5/6); the reader mirrors
+        // the writer (`MessageBuffer.cs:4060-4064`).
+        let g = GolfBallInCup {
+            owner: 3,
+            x: 1234,
+            y: 567,
+            hits: 7,
+            ball_type: 520,
+        };
+        let mut body = vec![3];
+        body.extend_from_slice(&1234u16.to_le_bytes());
+        body.extend_from_slice(&567u16.to_le_bytes());
+        body.extend_from_slice(&7u16.to_le_bytes());
+        body.extend_from_slice(&520u16.to_le_bytes());
+        let c = C2s::GolfBallInCup(g).encode();
+        assert_eq!(c[2], 128);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::GolfBallInCup(d) => assert_eq!(d, g),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+        // The host's relay (`MessageBuffer.cs:4067`) writes the same arm.
+        let s = S2c::GolfBallInCup(g).encode();
+        assert_eq!(s[2], 128);
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::GolfBallInCup(d) => assert_eq!(d, g),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+        // The swapped-pair trap: the send args are owner, hits, type, 0f,
+        // x, y — a codec that wrote hits/type before x/y fails above; pin
+        // the asymmetry with a second fixture (distinct ushort values).
+        let g2 = GolfBallInCup {
+            owner: 255,
+            x: 0,
+            y: 65535,
+            hits: 65535,
+            ball_type: 1,
+        };
+        let c2 = C2s::GolfBallInCup(g2).encode();
+        assert_eq!(&c2[3..], &[255, 0, 0, 255, 255, 255, 255, 1, 0]);
+        match C2s::decode(c2[2], &mut NetReader::new(&c2[3..])).expect("decode") {
+            C2s::GolfBallInCup(d) => assert_eq!(d, g2),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
     }
 }

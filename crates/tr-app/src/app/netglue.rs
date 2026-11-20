@@ -540,11 +540,20 @@ impl App {
                     id as u8,
                 );
             }
-            // `case 27` — a peer's own projectile state. The host applies it
-            // into its pool (rendering; the owner-side damage arrives as
-            // `28`) and relays it to the others
-            // (`MessageBuffer.cs:1760-1763`).
+            // `case 27` — a peer's own projectile state. The host refuses a
+            // hostile-kind shot or a key whose spawner is not the sender
+            // (`MessageBuffer.cs:1725-1728`: `Main.projHostile[type] ||
+            // key.Spawner != whoAmI` — the break skips BOTH the apply and
+            // the relay), then applies it into its pool (rendering; the
+            // owner-side damage arrives as `28`) and relays it to the
+            // others (`MessageBuffer.cs:1760-1763`).
             C2s::Projectile(ps) => {
+                let (spawner, _, _) = net::projectile_key_parts(ps.key);
+                if crate::projectile::data::proj_hostile(ps.kind.max(0) as u16)
+                    || spawner != id as u8
+                {
+                    return; // `:1727` — the whole arm is skipped
+                }
                 self.projectiles.upsert_remote(&ps);
                 server.broadcast_except(&S2c::Projectile(ps.clone()), id);
             }
@@ -610,6 +619,14 @@ impl App {
                         y: 0.0,
                     });
                 }
+            }
+            // `case 128` — a client's golf ball landed in a cup. The host
+            // only relays: `SendData(128, -1, num157, …)` with
+            // `ignoreClient = owner` (`MessageBuffer.cs:4065-4068`) — the
+            // owner already ran the cup effects locally before sending
+            // (`GolfHelper.cs:103`). No host-side apply exists.
+            C2s::GolfBallInCup(g) => {
+                server.broadcast_except(&S2c::GolfBallInCup(g), g.owner as u32);
             }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
@@ -1922,7 +1939,12 @@ impl App {
             | S2c::DeadPlayer { .. }
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
-            | S2c::SyncLoadout(_) => {}
+            | S2c::SyncLoadout(_)
+            // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
+            // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
+            // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
+            // the relay lands here until then (S1-I-4).
+            | S2c::GolfBallInCup(_) => {}
         }
     }
 
@@ -4781,6 +4803,135 @@ mod handshake_tests {
         assert!(
             !client_app.projectiles.slots()[slot].active,
             "the 29 relay dropped the client's copy (`:3532`)"
+        );
+    }
+
+    /// S1-I-1 W4-d93: the `27` host read gate (`MessageBuffer.cs:1725-1728`)
+    /// refuses a hostile-kind shot or a key whose spawner is not the sender —
+    /// the break skips BOTH the apply and the relay.
+    #[test]
+    fn the_27_host_gate_refuses_hostile_kinds_and_foreign_spawners() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        let base = net::ProjectileState {
+            key: net::projectile_key(me, 7, 1),
+            x: 50.0,
+            y: 50.0,
+            vx: 1.0,
+            vy: 0.0,
+            kind: 1, // WoodenArrow — not in `Main.projHostile`
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 5,
+            knock_back: 1.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        // A hostile kind (31, EyeSpring — `Projectile.cs:1138`) is refused.
+        let hostile = net::ProjectileState { kind: 31, ..base };
+        // A foreign spawner (the host's slot 0) is refused even when friendly.
+        let foreign = net::ProjectileState {
+            key: net::projectile_key(0, 8, 1),
+            ..base
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Projectile(Box::new(hostile)));
+            client.send(&C2s::Projectile(Box::new(foreign)));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.projectiles.slots()[7].active && !host_app.projectiles.slots()[8].active,
+            "the `:1727` break skipped the apply for both refused shots"
+        );
+        assert!(
+            !client_app.projectiles.slots()[7].active && !client_app.projectiles.slots()[8].active,
+            "the break skipped the relay too (`:1760` is after the gate)"
+        );
+        // The own friendly shot lands and relays (`:1729-1763`).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Projectile(Box::new(base)));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            host_app.projectiles.slots()[7].active,
+            "the owner's friendly kind passed the gate"
+        );
+        assert!(
+            client_app.projectiles.slots()[7].active,
+            "the accepted shot relayed back (`:1760-1763`)"
+        );
+    }
+
+    /// S1-I-1 W4-d93: `128 LandGolfBallInCup` — the host only relays, with
+    /// `ignoreClient = owner` (`MessageBuffer.cs:4065-4068`): the owner
+    /// already ran the cup effects locally (`GolfHelper.cs:103`). The client
+    /// apply is parked (M4-GOLF-1), so the witness pins the end-to-end wire:
+    /// an undecodable relay would be a `BadFrame` → disconnect
+    /// (`netglue.rs`'s client reader), so a surviving IN_WORLD peer proves
+    /// the 128 reached it and decoded. Step 2 keys the ignore on the BODY's
+    /// owner (not the sender): the sender itself receives that relay.
+    #[test]
+    fn the_golf_cup_relay_routes_by_the_body_owner() {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr.clone(), String::new()));
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        let me = client_app.local_id;
+        let peer = second.local_id;
+        // Step 1 — the owner's own cup: ignoreClient = owner, so the relay
+        // goes to the second client only; it decodes (parked arm) and lives.
+        let g = net::GolfBallInCup {
+            owner: me as u8,
+            x: 40,
+            y: 12,
+            hits: 3,
+            ball_type: 520,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::GolfBallInCup(g));
+        }
+        // Step 2 — a cup credited to the SECOND player: the ignore now skips
+        // the second, and the FIRST client (the sender, not the owner)
+        // receives the relay — it must decode and survive too.
+        let g2 = net::GolfBallInCup {
+            owner: peer as u8,
+            x: 41,
+            y: 13,
+            hits: 1,
+            ball_type: 521,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::GolfBallInCup(g2));
+        }
+        for _ in 0..40 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(
+            client_app.net_state,
+            net::client_state::IN_WORLD,
+            "the sender received the peer-owner relay and decoded it (step 2)"
+        );
+        assert_eq!(
+            second.net_state,
+            net::client_state::IN_WORLD,
+            "the peer received the owner-skip relay and decoded it (step 1)"
         );
     }
 
