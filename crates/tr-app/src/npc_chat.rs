@@ -1,4 +1,4 @@
-//! `NPC.GetChat` (`NPC.cs:93766-94800`): the town NPCs' chatter — the
+//! `NPC.GetChat` (`NPC.cs:93766-94821`): the town NPCs' chatter — the
 //! dialog the C#'s `NPCInteractions` shows when the player talks to a town
 //! NPC.
 //!
@@ -51,6 +51,9 @@ pub struct ChatContext<'a> {
     pub dd2_downed_t1: bool,
     /// `DD2Event.DownedInvasionT2`.
     pub dd2_downed_t2: bool,
+    /// `DD2Event.DownedInvasionT3` — the Bartender's tier line
+    /// (`Lang.cs:335`).
+    pub dd2_downed_t3: bool,
     /// `DD2Event.Ongoing`.
     pub dd2_ongoing: bool,
     /// `LanternNight.LanternsUp`.
@@ -92,47 +95,48 @@ impl ChatContext<'_> {
 }
 
 /// The seventeen presence flags (`NPC.cs:93788-93864`): which town NPCs
-/// exist. The C# sets them by the NPC **type** — 17/18/19/20/37/38/124/107/54/
-/// 160/178/229/209/208/353/22/441 for `flag`..`flag17`.
+/// exist. The C# sets them by the NPC **type** — 17/18/19/20/37/38/124/
+/// 107/54/160/178/229/209/208/353/22/441 for `flag`..`flag17`.
 ///
-/// The types 178 (the legacy "Steampunker") and 209 (the legacy "Cyborg")
-/// are pre-1.4 ids no NPC carries any more, so `flag11` and `flag13` are
-/// always false.
+/// The port's roster carries no Old Man (37), Truffle (160), Steampunker
+/// (178), Pirate (229) or Cyborg (209) kinds yet, so those flags stay
+/// false until the kinds land — the ladder arms keep their C# shape.
 #[derive(Clone, Copy, Default)]
 struct Flags {
-    /// 17 — the Merchant.
+    /// 17 — the Merchant (`flag`).
     merchant: bool,
-    /// 18 — the Nurse.
+    /// 18 — the Nurse (`flag2`).
     nurse: bool,
-    /// 19 — the Arms Dealer.
+    /// 19 — the Arms Dealer (`flag3`).
     arms_dealer: bool,
-    /// 20 — the Dryad.
+    /// 20 — the Dryad (`flag4`).
     dryad: bool,
-    /// 37 — the Old Man.
+    /// 37 — the Old Man (`flag5`).
     old_man: bool,
-    /// 38 — the Demolitionist.
+    /// 38 — the Demolitionist (`flag6`).
     demolitionist: bool,
-    /// 124 — the Mechanic.
+    /// 124 — the Mechanic (`flag7`).
     mechanic: bool,
-    /// 107 — the Goblin Tinkerer.
+    /// 107 — the Goblin Tinkerer (`flag8`).
     tinkerer: bool,
-    /// 54 — the Clothier.
+    /// 54 — the Clothier (`flag9`).
     clothier: bool,
-    /// 160 — the Party Girl.
-    party_girl: bool,
-    /// 178 — the legacy Steampunker (never present).
+    /// 160 — the Truffle (`flag10`; W4-d120 re-pin — the field was
+    /// misnamed `party_girl`, the scan id was always the C#'s 160).
+    truffle: bool,
+    /// 178 — the Steampunker (`flag11`).
     steampunker: bool,
-    /// 229 — the Zoologist.
-    zoologist: bool,
-    /// 209 — the legacy Cyborg (never present).
+    /// 229 — the Pirate (`flag12`; was misnamed `zoologist`).
+    pirate: bool,
+    /// 209 — the Cyborg (`flag13`).
     cyborg: bool,
-    /// 208 — the Stylist.
+    /// 208 — the Party Girl (`flag14`; was misnamed `stylist`).
+    party_girl: bool,
+    /// 353 — the Stylist (`flag15`; was misnamed `witch_doctor`).
     stylist: bool,
-    /// 353 — the Witch Doctor.
-    witch_doctor: bool,
-    /// 22 — the Guide.
+    /// 22 — the Guide (`flag16`).
     guide: bool,
-    /// 441 — the Tax Collector.
+    /// 441 — the Tax Collector (`flag17`).
     tax_collector: bool,
 }
 
@@ -154,12 +158,12 @@ impl Flags {
                 124 => f.mechanic = true,
                 107 => f.tinkerer = true,
                 54 => f.clothier = true,
-                160 => f.party_girl = true,
+                160 => f.truffle = true,
                 178 => f.steampunker = true,
-                229 => f.zoologist = true,
+                229 => f.pirate = true,
                 209 => f.cyborg = true,
-                208 => f.stylist = true,
-                353 => f.witch_doctor = true,
+                208 => f.party_girl = true,
+                353 => f.stylist = true,
                 22 => f.guide = true,
                 441 => f.tax_collector = true,
                 _ => {}
@@ -169,28 +173,40 @@ impl Flags {
     }
 }
 
-/// `NPC.GetChat` (`NPC.cs:93766-94800`): the NPC's line.
+/// `NPC.GetChat` (`NPC.cs:93766-94820`): the NPC's line. The pending
+/// conditional dialogue (`nextDialogue`, `:93768-93771`) is consumed by
+/// the caller (`talk_to_npc` — the cake gift needs the App); this ladder
+/// is the `nextDialogue == null` body.
 pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
     let flags = Flags::scan(ctx.npcs);
     // `NPC.homeless` — the port's `Npc` keeps the home as `Option`, so
     // "homeless" is "no home assigned" (`NPC.cs:6551-6553`).
     let homeless = npc.home.is_none();
+    let ty = npc.kind.cs_id();
     match npc.kind {
         NpcKind::Merchant => merchant(ctx, &flags),
         NpcKind::Nurse => nurse(ctx, &flags),
         NpcKind::ArmsDealer => arms_dealer(ctx, &flags),
         NpcKind::Dryad => dryad(ctx, &flags),
+        NpcKind::BoundGoblin => crate::lang::dialog(120), // `:94072-94075` (105)
         NpcKind::Demolitionist => demolitionist(ctx, &flags),
         NpcKind::Clothier => clothier(ctx, &flags),
         NpcKind::GoblinTinkerer => goblin_tinkerer(ctx, &flags, homeless),
         NpcKind::BoundWizard => crate::lang::dialog(137),
         NpcKind::Wizard => wizard(ctx, &flags, homeless),
+        NpcKind::BoundMechanic => crate::lang::dialog(156), // `:94215-94218` (123)
         NpcKind::Mechanic => mechanic(ctx, &flags, homeless),
         NpcKind::Guide => guide(ctx, &flags),
         NpcKind::PartyGirl => party_girl(ctx, &flags),
         NpcKind::DyeTrader => dye_trader(ctx, &flags),
         NpcKind::Painter => painter(ctx, &flags),
         NpcKind::WitchDoctor => witch_doctor(ctx, &flags),
+        NpcKind::WebbedStylist => {
+            // `:94610-94613` (354) — `Lang.dialog(Main.rand.Next(315, 319))`.
+            let n = ctx.next_range(315, 319);
+            crate::lang::dialog(n)
+        }
+        NpcKind::Stylist => stylist(ctx, &flags),
         NpcKind::TravellingMerchant => travelling_merchant(ctx, &flags),
         NpcKind::Angler => angler(ctx, &flags),
         NpcKind::SleepingAngler => {
@@ -198,6 +214,15 @@ pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
             crate::lang::dialog(n)
         }
         NpcKind::TaxCollector => tax_collector(ctx, &flags),
+        NpcKind::DD2Bartender => bartender(ctx, ty),
+        NpcKind::SleepingGolfer => {
+            // `:94788-94791` (589) — the first-meeting pair.
+            if ctx.next(2) != 0 {
+                crate::lang::text("GolferSpecialText.FirstMeeting2")
+            } else {
+                crate::lang::text("GolferSpecialText.FirstMeeting1")
+            }
+        }
         NpcKind::Golfer => golfer(ctx),
         NpcKind::Zoologist => zoologist(ctx),
         NpcKind::Princess => princess(ctx),
@@ -205,10 +230,24 @@ pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
     }
 }
 
-/// `NPC.HasSpecialEventText` (`NPC.cs:94860-94887`): the event texts — the
+/// `NPC.HasSpecialEventText` (`NPC.cs:94860-94884`): the event texts — the
 /// graveyard, the party, the rain, the windy day and the storm each roll
-/// 1/3 and pick a random line from `<Category>SpecialText.<Event>`.
-fn special_event_text(ctx: &mut ChatContext, category: &str) -> Option<String> {
+/// 1/3 and pick a random line from `<Category>SpecialText.<Event>` via
+/// `GetSpecialEventTextIfNotEmpty` (`:94886-94895`) — a
+/// `Language.SelectRandom` whose EMPTY answer declines the event.
+///
+/// The draw census (W4-d120): the 1/3 roll only fires while the event is
+/// active (the C# `&&` short-circuit); a passed roll ALWAYS pays the
+/// `Next(count)` category draw — even for an empty category
+/// (`UnifiedRandom.Next(0)` still advances the stream, `:140`). The
+/// party arm rolls `Next(3)` FIRST, then gates on
+/// `NPCID.Sets.HasNoPartyText` (`:94867` — the Tax Collector 441 and the
+/// Skeleton Merchant 453, `NPCID.cs:10461`): a no-party NPC still pays
+/// the roll, but never the category draw.
+fn special_event_text(ctx: &mut ChatContext, category: &str, npc_type: u16) -> Option<String> {
+    let no_party_text = matches!(npc_type, 441 | 453);
+    // The C#'s five sequential `if`s (`:94863-94882`): a returning event
+    // skips every later roll, so the gates evaluate one event at a time.
     let events: [(bool, &str); 5] = [
         (ctx.zone_graveyard, "Graveyard"),
         (ctx.party_is_up, "Party"),
@@ -223,31 +262,51 @@ fn special_event_text(ctx: &mut ChatContext, category: &str) -> Option<String> {
         if ctx.next(3) != 0 {
             continue;
         }
-        let key = format!("{category}SpecialText.{event}");
-        let size = crate::lang::category_size(&key);
-        if size == 0 {
+        // `:94867` — the party's HasNoPartyText gate sits AFTER the roll.
+        if event == "Party" && no_party_text {
             continue;
         }
-        let index = ctx.next(size as i32) as usize;
-        return Some(crate::lang::random_from_category(&key, index));
+        let prefix = format!("{category}SpecialText.{event}");
+        let count = crate::lang::dialog_count(&prefix);
+        let index = ctx.next(count as i32);
+        let text = crate::lang::select_dialog(&prefix, index);
+        if !text.is_empty() {
+            return Some(text);
+        }
     }
     None
 }
 
 /// A random line from a chatter category (`Language.SelectRandom` over
-/// `Lang.CreateDialogFilter(prefix)`).
+/// `Lang.CreateDialogFilter(prefix + ".")`, `Lang.cs:422-425`): the count
+/// draw always fires (even at 0), the pick is the REVERSE index
+/// (`LanguageManager.cs:403-409`).
 fn chatter(ctx: &mut ChatContext, category: &str) -> String {
-    let size = crate::lang::category_size(category);
-    if size == 0 {
-        return String::new();
-    }
-    let index = ctx.next(size as i32) as usize;
-    crate::lang::random_from_category(category, index)
+    let prefix = format!("{category}.");
+    let count = crate::lang::dialog_count(&prefix);
+    let index = ctx.next(count as i32);
+    crate::lang::select_dialog(&prefix, index)
 }
 
-/// 17 — the Merchant (`NPC.cs:93866-93898`).
+/// The mixed `FindAll` arm the Nurse/Tinkerer/Mechanic/Stylist ladders
+/// share (`NPC.cs:93976-93984`): `Next(fixed + array.Length)` — indices
+/// `>= fixed` answer `array[index - fixed]` (the FORWARD FindAll row),
+/// the low indices the caller's fixed lines. The count draw always fires.
+fn mixed_chatter(ctx: &mut ChatContext, category: &str, fixed: i32) -> (i32, Option<String>) {
+    let prefix = format!("{category}.");
+    let count = crate::lang::dialog_count(&prefix);
+    let n = ctx.next(fixed + count as i32);
+    if n >= fixed {
+        let text = crate::lang::dialog_row(&prefix, (n - fixed) as usize);
+        (n, Some(text))
+    } else {
+        (n, None)
+    }
+}
+
+/// 17 — the Merchant (`NPC.cs:93867-93896`).
 fn merchant(ctx: &mut ChatContext, f: &Flags) -> String {
-    if let Some(text) = special_event_text(ctx, "Merchant") {
+    if let Some(text) = special_event_text(ctx, "Merchant", 17) {
         return text;
     }
     if !ctx.downed_boss1 && ctx.next(3) == 0 {
@@ -296,9 +355,9 @@ fn merchant(ctx: &mut ChatContext, f: &Flags) -> String {
     crate::lang::dialog(22 + n)
 }
 
-/// 18 — the Nurse (`NPC.cs:93898-93988`).
+/// 18 — the Nurse (`NPC.cs:93897-93986`).
 fn nurse(ctx: &mut ChatContext, f: &Flags) -> String {
-    if let Some(text) = special_event_text(ctx, "Nurse") {
+    if let Some(text) = special_event_text(ctx, "Nurse", 18) {
         return text;
     }
     if ctx.blood_moon {
@@ -340,18 +399,18 @@ fn nurse(ctx: &mut ChatContext, f: &Flags) -> String {
         let n = ctx.next(7);
         return crate::lang::dialog(41 + n);
     }
-    // `:93974-93985` — the four fixed lines or a random chatter line.
-    let size = crate::lang::category_size("NurseChatter");
-    let n = ctx.next(4 + size as i32);
-    if n >= 4 {
-        return crate::lang::random_from_category("NurseChatter", (n - 4) as usize);
+    // `:93974-93985` — the four fixed lines or a random chatter line
+    // (`FindAll` FORWARD row, `Next(4 + array.Length)`).
+    let (n, row) = mixed_chatter(ctx, "NurseChatter", 4);
+    if let Some(text) = row {
+        return text;
     }
     crate::lang::dialog(48 + n)
 }
 
-/// 19 — the Arms Dealer (`NPC.cs:93989-94037`).
+/// 19 — the Arms Dealer (`NPC.cs:93987-93995`).
 fn arms_dealer(ctx: &mut ChatContext, f: &Flags) -> String {
-    if let Some(text) = special_event_text(ctx, "ArmsDealer") {
+    if let Some(text) = special_event_text(ctx, "ArmsDealer", 19) {
         return text;
     }
     if f.guide && ctx.downed_boss3 && !ctx.hard_mode {
@@ -383,9 +442,9 @@ fn arms_dealer(ctx: &mut ChatContext, f: &Flags) -> String {
     crate::lang::dialog(66 + n)
 }
 
-/// 20 — the Dryad (`NPC.cs:94038-94080`).
+/// 20 — the Dryad (`NPC.cs:93996-94016`).
 fn dryad(ctx: &mut ChatContext, f: &Flags) -> String {
-    let mut result = if let Some(text) = special_event_text(ctx, "Dryad") {
+    let mut result = if let Some(text) = special_event_text(ctx, "Dryad", 20) {
         text
     } else if ctx.dd2_downed_t1 && ctx.next(6) == 0 {
         if ctx.dd2_downed_t2 {
@@ -405,7 +464,7 @@ fn dryad(ctx: &mut ChatContext, f: &Flags) -> String {
         crate::lang::dialog(71)
     } else if f.old_man && ctx.next(6) == 0 {
         crate::lang::dialog(72)
-    } else if f.party_girl && ctx.next(6) == 0 {
+    } else if f.truffle && ctx.next(6) == 0 {
         crate::lang::dialog(238)
     } else if ctx.blood_moon {
         let n = ctx.next(4);
@@ -425,9 +484,9 @@ fn dryad(ctx: &mut ChatContext, f: &Flags) -> String {
     result
 }
 
-/// 38 — the Demolitionist (`NPC.cs:94081-94105`).
+/// 38 — the Demolitionist (`NPC.cs:94038-94059`).
 fn demolitionist(ctx: &mut ChatContext, f: &Flags) -> String {
-    if let Some(text) = special_event_text(ctx, "Demolitionist") {
+    if let Some(text) = special_event_text(ctx, "Demolitionist", 38) {
         return text;
     }
     if !ctx.downed_boss2 && ctx.next(3) == 0 {
@@ -460,15 +519,15 @@ fn demolitionist(ctx: &mut ChatContext, f: &Flags) -> String {
     crate::lang::dialog(105 + n)
 }
 
-/// 54 — the Clothier (`NPC.cs:94106-94122`).
+/// 54 — the Clothier (`NPC.cs:94060-94071`).
 fn clothier(ctx: &mut ChatContext, f: &Flags) -> String {
-    if let Some(text) = special_event_text(ctx, "Clothier") {
+    if let Some(text) = special_event_text(ctx, "Clothier", 54) {
         return text;
     }
     if !f.mechanic && ctx.next(2) == 0 {
         return crate::lang::dialog(110);
     }
-    if f.party_girl && ctx.next(6) == 0 {
+    if f.truffle && ctx.next(6) == 0 {
         return crate::lang::dialog(237);
     }
     if ctx.blood_moon {
@@ -484,25 +543,25 @@ fn clothier(ctx: &mut ChatContext, f: &Flags) -> String {
     crate::lang::dialog(114 + n)
 }
 
-/// 107 — the Goblin Tinkerer (`NPC.cs:94123-94146`).
+/// 107 — the Goblin Tinkerer (`NPC.cs:94076-94121`).
 fn goblin_tinkerer(ctx: &mut ChatContext, f: &Flags, homeless: bool) -> String {
     if homeless {
         let n = ctx.next(5);
         return crate::lang::dialog(121 + n);
     }
-    if let Some(text) = special_event_text(ctx, "GoblinTinkerer") {
+    if let Some(text) = special_event_text(ctx, "GoblinTinkerer", 107) {
         return text;
     }
     if f.mechanic && ctx.next(5) == 0 {
         return crate::lang::dialog(126);
     }
-    if f.witch_doctor && ctx.next(5) == 0 {
+    if f.stylist && ctx.next(5) == 0 {
         return crate::lang::dialog(309);
     }
-    let size = crate::lang::category_size("GoblinTinkererChatter");
-    let n = ctx.next(size as i32 + 5);
-    if n >= 5 {
-        return crate::lang::random_from_category("GoblinTinkererChatter", (n - 5) as usize);
+    // `:94101-94120` — five fixed lines (day/night split) or a chatter row.
+    let (n, row) = mixed_chatter(ctx, "GoblinTinkererChatter", 5);
+    if let Some(text) = row {
+        return text;
     }
     if !ctx.day_time {
         crate::lang::dialog(127 + n)
@@ -511,7 +570,7 @@ fn goblin_tinkerer(ctx: &mut ChatContext, f: &Flags, homeless: bool) -> String {
     }
 }
 
-/// 108 — the Wizard (`NPC.cs:94152-94183`).
+/// 108 — the Wizard (`NPC.cs:94126-94214`).
 fn wizard(ctx: &mut ChatContext, f: &Flags, homeless: bool) -> String {
     if homeless {
         let n = ctx.next(3);
@@ -526,7 +585,7 @@ fn wizard(ctx: &mut ChatContext, f: &Flags, homeless: bool) -> String {
     if let Some(text) = wizard_luck_text(ctx) {
         return text;
     }
-    if let Some(text) = special_event_text(ctx, "Wizard") {
+    if let Some(text) = special_event_text(ctx, "Wizard", 108) {
         return text;
     }
     if ctx.dd2_downed_t1 && ctx.next(6) == 0 {
@@ -584,21 +643,22 @@ fn wizard_luck_text(ctx: &mut ChatContext) -> Option<String> {
     } else {
         "WizardSpecialText.LuckIsGodly"
     };
-    let size = crate::lang::category_size(category);
-    if size == 0 {
-        return None;
-    }
-    let index = ctx.next(size as i32) as usize;
-    Some(crate::lang::random_from_category(category, index))
+    // `:94854` — the filter has NO trailing dot: the rows are
+    // `LuckIsCursed1/2` etc. `Language.SelectRandom(...).Value`: the count
+    // draw fires even for an empty category; an empty pick answers ""
+    // (the C#'s `LocalizedText.Empty.Value`), which the wizard returns.
+    let count = crate::lang::dialog_count(category);
+    let index = ctx.next(count as i32);
+    Some(crate::lang::select_dialog(category, index))
 }
 
-/// 124 — the Mechanic (`NPC.cs:94185-94201`).
+/// 124 — the Mechanic (`NPC.cs:94219-94264`).
 fn mechanic(ctx: &mut ChatContext, f: &Flags, homeless: bool) -> String {
     if homeless {
         let n = ctx.next(4);
         return crate::lang::dialog(157 + n);
     }
-    if let Some(text) = special_event_text(ctx, "Mechanic") {
+    if let Some(text) = special_event_text(ctx, "Mechanic", 124) {
         return text;
     }
     if ctx.blood_moon {
@@ -611,17 +671,17 @@ fn mechanic(ctx: &mut ChatContext, f: &Flags, homeless: bool) -> String {
     if f.arms_dealer && ctx.next(6) == 0 {
         return crate::lang::dialog(166);
     }
-    let size = crate::lang::category_size("MechanicChatter");
-    let n = ctx.next(size as i32 + 3);
-    if n >= 3 {
-        return crate::lang::random_from_category("MechanicChatter", (n - 3) as usize);
+    // `:94253-94263` — three fixed lines or a chatter row.
+    let (n, row) = mixed_chatter(ctx, "MechanicChatter", 3);
+    if let Some(text) = row {
+        return text;
     }
     crate::lang::dialog(167 + n)
 }
 
-/// 22 — the Guide (`NPC.cs:94202-94218`).
+/// 22 — the Guide (`NPC.cs:94265-94278`).
 fn guide(ctx: &mut ChatContext, f: &Flags) -> String {
-    if let Some(text) = special_event_text(ctx, "Guide") {
+    if let Some(text) = special_event_text(ctx, "Guide", 22) {
         return text;
     }
     if ctx.blood_moon {
@@ -653,50 +713,57 @@ fn guide(ctx: &mut ChatContext, f: &Flags) -> String {
     crate::lang::dialog(174 + n)
 }
 
-/// 208 — the Party Girl (`NPC.cs:94219-94232`).
+/// 208 — the Party Girl (`NPC.cs:94410-94456`). W4-d120 re-pin: the old
+/// port carried the TRUFFLE (160, `:94302-94341`) ladder here — the real
+/// 208 arm rolls `Next(7)` UP FRONT (before the event text), then the
+/// DD2/male/Stylist gates, then the seven fixed lines.
 fn party_girl(ctx: &mut ChatContext, f: &Flags) -> String {
-    let num8 = ctx.next(6);
-    if let Some(text) = special_event_text(ctx, "Truffle") {
+    let num11 = ctx.next(7); // `:94412` — the draw precedes every gate
+    if let Some(text) = special_event_text(ctx, "PartyGirl", 208) {
         return text;
     }
-    if f.dryad && ctx.next(6) == 0 {
-        return crate::lang::dialog(232);
+    if ctx.dd2_downed_t1 && ctx.next(5) == 0 {
+        return crate::lang::text("PartyGirlSpecialText.AfterDD2Tier1");
     }
-    if f.clothier && ctx.next(6) == 0 {
-        return crate::lang::dialog(236);
+    if ctx.player_male && ctx.next(5) == 0 {
+        return crate::lang::dialog(268);
     }
-    match num8 {
-        0 => crate::lang::dialog(231),
-        1 => crate::lang::dialog(233),
-        2 => crate::lang::dialog(234),
-        3 => crate::lang::dialog(235),
-        4 => crate::lang::dialog(240),
-        _ => crate::lang::dialog(241),
+    if f.stylist && ctx.next(5) == 0 {
+        return crate::lang::dialog(310);
+    }
+    match num11 {
+        0 => crate::lang::dialog(265),
+        1 => crate::lang::dialog(266),
+        2 => crate::lang::dialog(267),
+        3 => crate::lang::dialog(269),
+        4 => crate::lang::dialog(270),
+        5 => crate::lang::dialog(271),
+        _ => crate::lang::dialog(272),
     }
 }
 
-/// 207 — the Dye Trader (`NPC.cs:94233-94244`).
+/// 207 — the Dye Trader (`NPC.cs:94383-94409`).
 fn dye_trader(ctx: &mut ChatContext, f: &Flags) -> String {
-    let num10 = ctx.next(3);
-    if let Some(text) = special_event_text(ctx, "DyeTrader") {
+    let num10 = ctx.next(3); // `:94385` — the draw precedes the gates
+    if let Some(text) = special_event_text(ctx, "DyeTrader", 207) {
         return text;
     }
-    if f.zoologist && ctx.next(6) == 0 {
+    if f.pirate && ctx.next(6) == 0 {
         return crate::lang::dialog(260);
     }
     crate::lang::dialog(257 + num10)
 }
 
-/// 227 — the Painter (`NPC.cs:94245-94256`).
+/// 227 — the Painter (`NPC.cs:94502-94538`).
 fn painter(ctx: &mut ChatContext, f: &Flags) -> String {
-    let num13 = ctx.next(5);
-    if let Some(text) = special_event_text(ctx, "Painter") {
+    let num13 = ctx.next(5); // `:94504` — the draw precedes the gates
+    if let Some(text) = special_event_text(ctx, "Painter", 227) {
         return text;
     }
     if ctx.hard_mode && ctx.next(7) == 0 {
         return crate::lang::dialog(250);
     }
-    if f.stylist && ctx.next(6) == 0 {
+    if f.party_girl && ctx.next(6) == 0 {
         return crate::lang::dialog(251);
     }
     match num13 {
@@ -708,10 +775,10 @@ fn painter(ctx: &mut ChatContext, f: &Flags) -> String {
     }
 }
 
-/// 228 — the Witch Doctor (`NPC.cs:94257-94268`).
+/// 228 — the Witch Doctor (`NPC.cs:94539-94568`).
 fn witch_doctor(ctx: &mut ChatContext, f: &Flags) -> String {
-    let num14 = ctx.next(4);
-    if let Some(text) = special_event_text(ctx, "WitchDoctor") {
+    let num14 = ctx.next(4); // `:94541` — the draw precedes the gates
+    if let Some(text) = special_event_text(ctx, "WitchDoctor", 228) {
         return text;
     }
     if f.nurse && ctx.next(4) == 0 {
@@ -725,9 +792,80 @@ fn witch_doctor(ctx: &mut ChatContext, f: &Flags) -> String {
     }
 }
 
-/// 368 — the Travelling Merchant (`NPC.cs:94269-94275`).
+/// 353 — the Stylist (`NPC.cs:94614-94749`).
+fn stylist(ctx: &mut ChatContext, f: &Flags) -> String {
+    if let Some(text) = special_event_text(ctx, "Stylist", 353) {
+        return text;
+    }
+    if ctx.blood_moon {
+        let n = ctx.next(3);
+        return crate::lang::dialog(304 + n);
+    }
+    if ctx.day_time && ctx.time < 16200.0 && ctx.next(3) == 0 {
+        return crate::lang::dialog(311);
+    }
+    if ctx.player_male && ctx.next(3) == 0 {
+        let n = ctx.next(2);
+        return if n == 0 {
+            crate::lang::dialog(293)
+        } else {
+            crate::lang::dialog(300)
+        };
+    }
+    if !ctx.player_male && ctx.next(3) == 0 {
+        let n = ctx.next(3);
+        return match n {
+            0 => crate::lang::dialog(291),
+            1 => crate::lang::dialog(292),
+            _ => crate::lang::dialog(312),
+        };
+    }
+    // `:94666` — `(flag14 & flag7 & flag2 & flag3) && Next(5) == 0`: the
+    // flag conjunction sits LEFT of the short-circuit `&&`, so a missing
+    // neighbour skips the draw (only the Tax Collector's `(roll) & flag`
+    // arms draw unconditionally).
+    if f.party_girl && f.mechanic && f.nurse && f.arms_dealer && ctx.next(5) == 0 {
+        return crate::lang::dialog(307);
+    }
+    if f.party_girl && ctx.next(5) == 0 {
+        return crate::lang::dialog(302);
+    }
+    if f.demolitionist && ctx.next(5) == 0 {
+        return crate::lang::dialog(303);
+    }
+    if f.cyborg && ctx.next(5) == 0 {
+        return crate::lang::dialog(308);
+    }
+    // `:94682-94748` — the moon-phase fixed band: phases 0-2 carry five
+    // fixed lines, 3-7 four; then the StylistChatter rows.
+    let fixed = if ctx.moon_phase < 3 { 5 } else { 4 };
+    let (n, row) = mixed_chatter(ctx, "StylistChatter", fixed);
+    if let Some(text) = row {
+        return text;
+    }
+    if ctx.moon_phase < 3 {
+        match n {
+            0 => crate::lang::dialog(287),
+            1 => crate::lang::dialog(288),
+            2 => crate::lang::dialog(289),
+            3 => crate::lang::dialog(290),
+            _ => crate::lang::dialog(294),
+        }
+    } else if ctx.moon_phase < 6 {
+        crate::lang::dialog(295 + n)
+    } else {
+        match n {
+            0 => crate::lang::dialog(299),
+            1 => crate::lang::dialog(301),
+            2 => crate::lang::dialog(313),
+            _ => crate::lang::dialog(314),
+        }
+    }
+}
+
+/// 368 — the Travelling Merchant (`NPC.cs:94750-94753`).
 fn travelling_merchant(ctx: &mut ChatContext, f: &Flags) -> String {
-    if let Some(text) = special_event_text(ctx, "TravellingMerchant") {
+    if let Some(text) = special_event_text(ctx, "TravellingMerchant", 368) {
         return text;
     }
     if f.guide && ctx.next(5) == 0 {
@@ -743,17 +881,22 @@ fn travelling_merchant(ctx: &mut ChatContext, f: &Flags) -> String {
     crate::lang::dialog(321)
 }
 
-/// 369 — the Angler (`NPC.cs:94276-94290`).
+/// 369 — the Angler (`NPC.cs:94758-94761`).
 fn angler(ctx: &mut ChatContext, f: &Flags) -> String {
     if ctx.next(5) == 0 && ctx.angler_quests_finished > 1 {
         return chatter(ctx, "AnglerQuestChatter");
     }
-    if let Some(text) = special_event_text(ctx, "Angler") {
+    if let Some(text) = special_event_text(ctx, "Angler", 369) {
         return text;
     }
     if ctx.blood_moon {
         if ctx.next(3) == 0 {
-            return chatter(ctx, "AnglerSpecialText.BloodMoonFishing");
+            // `:94760` — the filter is "AnglerSpecialText.BloodMoonFishing"
+            // WITHOUT a trailing dot: the rows are `BloodMoonFishing1/2`.
+            let prefix = "AnglerSpecialText.BloodMoonFishing";
+            let count = crate::lang::dialog_count(prefix);
+            let index = ctx.next(count as i32);
+            return crate::lang::select_dialog(prefix, index);
         }
         if ctx.angler_quest_finished {
             let n = ctx.next_range(350, 353);
@@ -772,9 +915,12 @@ fn angler(ctx: &mut ChatContext, f: &Flags) -> String {
     crate::lang::dialog(347)
 }
 
-/// 441 — the Tax Collector (`NPC.cs:94291-94298`).
+/// 441 — the Tax Collector (`NPC.cs:94776-94779`). Each `(roll == 0) &
+/// flag` uses the NON-short-circuit `&` — the `Next(6)` draw fires even
+/// when its flag is false. The ternary chain still evaluates the
+/// conditions one at a time: an early true arm skips the later rolls.
 fn tax_collector(ctx: &mut ChatContext, f: &Flags) -> String {
-    if let Some(text) = special_event_text(ctx, "TaxCollector") {
+    if let Some(text) = special_event_text(ctx, "TaxCollector", 441) {
         return text;
     }
     if ctx.next(6) == 0 && f.dryad {
@@ -793,17 +939,38 @@ fn tax_collector(ctx: &mut ChatContext, f: &Flags) -> String {
     crate::lang::dialog(374)
 }
 
-/// 588 — the Golfer (`NPC.cs:94299-94310`).
+/// 550 — the Tavernkeep (`NPC.cs:94784-94787` → `Lang.BartenderChat`,
+/// `Lang.cs:331-338`): the 1/5 DD2-tier line, else the BartenderChatter.
+fn bartender(ctx: &mut ChatContext, ty: u16) -> String {
+    if let Some(text) = special_event_text(ctx, "Bartender", ty) {
+        return text;
+    }
+    if ctx.next(5) == 0 {
+        let key = if ctx.dd2_downed_t3 {
+            "BartenderSpecialText.AfterDD2Tier3"
+        } else if ctx.dd2_downed_t2 {
+            "BartenderSpecialText.AfterDD2Tier2"
+        } else if !ctx.dd2_downed_t1 {
+            "BartenderSpecialText.BeforeDD2Tier1"
+        } else {
+            "BartenderSpecialText.AfterDD2Tier1"
+        };
+        return crate::lang::text(key);
+    }
+    chatter(ctx, "BartenderChatter")
+}
+
+/// 588 — the Golfer (`NPC.cs:94792-94795`).
 fn golfer(ctx: &mut ChatContext) -> String {
     if ctx.next(3) != 0 {
-        if let Some(text) = special_event_text(ctx, "Golfer") {
+        if let Some(text) = special_event_text(ctx, "Golfer", 588) {
             return text;
         }
     }
     if ctx.next(3) != 0 {
         return chatter(ctx, "GolferChatter");
     }
-    // `:94306-94310` — the score band picks the quest chatter category.
+    // `:94794` — the score band picks the quest chatter category.
     let category = if ctx.golfer_score >= 2000 {
         "GolferQuestsChatterMaster"
     } else if ctx.golfer_score >= 1000 {
@@ -816,7 +983,9 @@ fn golfer(ctx: &mut ChatContext) -> String {
     chatter(ctx, category)
 }
 
-/// 633 — the Zoologist (`NPC.cs:94311-94316`).
+/// 633 — the Zoologist (`NPC.cs:94796-94799`): the lycantrope check is
+/// PURE (`:93753-93764`, no draws) and short-circuits the event text —
+/// `HasSpecialEventText` fires at most ONCE per chat.
 fn zoologist(ctx: &mut ChatContext) -> String {
     // `NPC.ShouldBestiaryGirlBeLycantrope` (`NPC.cs:93753-93764`).
     let lycantrope = if !ctx.blood_moon || ctx.day_time {
@@ -824,18 +993,23 @@ fn zoologist(ctx: &mut ChatContext) -> String {
     } else {
         true
     };
+    if !lycantrope {
+        if let Some(text) = special_event_text(ctx, "BestiaryGirl", 633) {
+            return text;
+        }
+    }
+    // `Lang.BestiaryGirlChat` (`Lang.cs:345-353`) re-checks the (pure)
+    // lycantrope flag to pick the category.
     if lycantrope {
-        return chatter(ctx, "BestiaryGirlLycantropeChatter");
+        chatter(ctx, "BestiaryGirlLycantropeChatter")
+    } else {
+        chatter(ctx, "BestiaryGirlChatter")
     }
-    if special_event_text(ctx, "BestiaryGirl").is_none() {
-        return chatter(ctx, "BestiaryGirlChatter");
-    }
-    special_event_text(ctx, "BestiaryGirl").unwrap_or_default()
 }
 
-/// 663 — the Princess (`NPC.cs:94317-94321`).
+/// 663 — the Princess (`NPC.cs:94800-94803`).
 fn princess(ctx: &mut ChatContext) -> String {
-    match special_event_text(ctx, "Princess") {
+    match special_event_text(ctx, "Princess", 663) {
         Some(text) => text,
         None => chatter(ctx, "PrincessChatter"),
     }
@@ -940,6 +1114,7 @@ mod tests {
             downed_moonlord: false,
             dd2_downed_t1: false,
             dd2_downed_t2: false,
+            dd2_downed_t3: false,
             dd2_ongoing: false,
             lanterns_up: false,
             player_life: 100,

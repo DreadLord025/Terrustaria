@@ -790,6 +790,36 @@ pub fn random_from_category(category: &str, index: usize) -> String {
         .value_with(&|name| m.substitution(name))
 }
 
+/// The matching-row count of `Lang.CreateDialogFilter(prefix)`
+/// (`Lang.cs:422-425`) — the `num` `SelectRandom` counts before its
+/// `Next(num)` (`LanguageManager.cs:394-402`). The prefix carries its
+/// trailing dot like the C# callers ("NurseChatter."); the conditional
+/// rows (`{?Day}`…) only count while their global substitutions hold.
+pub fn dialog_count(prefix: &str) -> usize {
+    manager().lock().unwrap().dialog_category_count(prefix)
+}
+
+/// `Language.SelectRandom(Lang.CreateDialogFilter(prefix))` with the
+/// caller's drawn index — the REVERSE pick (`--num == index`,
+/// `LanguageManager.cs:403-409`): index 0 answers the last matching row.
+/// "" when nothing matches (`LocalizedText.Empty`, `:410`). The caller
+/// must pay the `Next(count)` draw even for count 0 (the C# does,
+/// `UnifiedRandom.cs:140`).
+pub fn select_dialog(prefix: &str, index: i32) -> String {
+    let mut m = manager().lock().unwrap();
+    m.select_random_from_dialog(prefix, index)
+        .value_with(&|name| m.substitution(name))
+}
+
+/// `Language.FindAll(Lang.CreateDialogFilter(prefix))[index].Value` —
+/// the FORWARD row the `NPC.GetChat` mixed arms read (`array[num - k]`,
+/// `NPC.cs:93976-93984`). "" past the end (`LocalizedText.Empty`).
+pub fn dialog_row(prefix: &str, index: usize) -> String {
+    let mut m = manager().lock().unwrap();
+    m.dialog_row(prefix, index)
+        .value_with(&|name| m.substitution(name))
+}
+
 /// `GameCulture.FromLegacyId` — the language-menu rows are 1-based legacy ids
 /// (`Main.cs:48520` passes `selectedMenu` straight through).
 pub fn culture_from_legacy_id(id: i32) -> GameCulture {

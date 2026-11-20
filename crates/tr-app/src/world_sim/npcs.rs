@@ -208,10 +208,43 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    // `NPC.GetChat`'s nextDialogue arm (`NPC.cs:93768-93771`): the Party
+    // Girl's FreeCakeDialogue (`ConditionalDialogue.cs:50-64`) — the only
+    // registered conditional. The 10-tick CheckDialogue refresh
+    // (`NPC.cs:90519-90532`) collapses to the talk: the condition is the
+    // `NPC.freeCake` latch a natural party sets (`BirthdayParty.cs:106`).
+    // The gift rides `QuickSpawnItem` → `GetOrDropItem` (`Player.cs:7186-
+    // 7197`): the inventory slot walk first, the overflow drop at the
+    // player centre (the bobber-catch shape); the text's `Next(1, 4)`
+    // draw fires AFTER the gift (`:60-63`).
+    if app.npcs[i].kind == NpcKind::PartyGirl && app.world_events.free_cake {
+        app.world_events.free_cake = false;
+        // The cake (3750) never stacks past 1 and carries no prefix (the
+        // Item-variant QuickSpawnItem — no `Prefix(-1)` roll).
+        let slot = crate::item::slot_for_pickup(&mut app.inventory, 3750, 0);
+        match slot {
+            Some(s) => app.inventory[s].count += 1,
+            None => {
+                if let Some(p) = app.player.as_ref() {
+                    let (cx, cy) = p.center();
+                    crate::world_sim::items::spawn_item_drop_px(
+                        &mut app.items,
+                        app.rngs.global(),
+                        3750,
+                        1,
+                        Vec2::new(cx, cy),
+                    );
+                }
+            }
+        }
+        let n = app.rngs.global().next_range(1, 4);
+        let text = crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"));
+        app.npc_chat_text = text.clone(); // `:43082`
+        return Some(text);
+    }
     // The context off the live state. The world flags the port does not
-    // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
-    // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
-    // default off — each noted at its field.
+    // carry yet (`Main.remixWorld`, `WorldGen.crimson`) default off —
+    // each noted at its field.
     let day_time = app.world.day_time;
     let time = app.world.time;
     let blood_moon = app.world.blood_moon;
@@ -238,7 +271,16 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     // (S1-E-12c), NOT the per-run wave-boss death latches.
     let dd2_t1 = app.world.dd2_downed_t1;
     let dd2_t2 = app.world.dd2_downed_t2;
+    let dd2_t3 = app.world.dd2_downed_t3;
     let dd2_ongoing = app.world.dd2_event_ongoing;
+    // The event-text gates (`NPC.cs:94860-94884`): the graveyard zone,
+    // `BirthdayParty.PartyIsUp`, the rain (not storm), the happy windy day
+    // and the storm clock — all live App state now.
+    let zone_graveyard = app.scene_metrics.zone_graveyard;
+    let party_is_up = crate::world_events::party_is_up(&app.world_events);
+    let windy_day = app.wind.happy_windy_day;
+    let storming = app.wind.storming;
+    let lanterns_up = crate::world_events::lanterns_up(&app.world_events);
     let rng = app.rngs.global();
     let mut draw = |n: i32| rng.next_max(n);
     let mut ctx = crate::npc_chat::ChatContext {
@@ -253,19 +295,20 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         moon_phase,
         remix_world: false,    // `Main.remixWorld` — no remix flag in the port
         raining,
-        storming: false,       // `Main.cloudAlpha`'s storm — no storm clock yet
-        windy_day: false,      // `Main.IsItAHappyWindyDay` — no wind-day state
-        zone_graveyard: false, // `Player.ZoneGraveyard` — the zone rides the biome pass
-        party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
+        storming,              // `Main.IsItStorming` — the wind storm latch
+        windy_day,             // `Main.IsItAHappyWindyDay` — the wind day latch
+        zone_graveyard,        // `Player.ZoneGraveyard` — the scene metrics
+        party_is_up,           // `BirthdayParty.PartyIsUp` (S1-F-14)
         crimson: false,        // `WorldGen.crimson` — the world-evil flag
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
-        downed_moonlord: false, // `NPC.downedMoonlord` — unported
+        downed_moonlord: app.world.downed_moon_lord, // `NPC.downedMoonlord`
         dd2_downed_t1: dd2_t1,
         dd2_downed_t2: dd2_t2,
+        dd2_downed_t3: dd2_t3,
         dd2_ongoing,
-        lanterns_up: false, // `LanternNight.LanternsUp` — unported
+        lanterns_up, // `LanternNight.LanternsUp` (S1-F-14)
         player_life: life,
         player_life_max: life_max,
         player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max
