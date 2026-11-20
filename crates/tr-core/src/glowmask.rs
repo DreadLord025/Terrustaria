@@ -42,6 +42,16 @@ pub const TILE_GLOW_RECORDS: &[(u16, i16)] = &[
     (689, 338),  // :10031 — KryptonMossBlock
     (536, 261),  // :10032 — XenonMoss
     (537, 262),  // :10033 — XenonMossBrick
+    (690, 339),  // :10034 — XenonMossBlock
+    (539, 263),  // :10035 — ArgonMoss
+    (540, 264),  // :10036 — ArgonMossBrick
+    (688, 337),  // :10037 — ArgonMossBlock
+    (625, 311),  // :10038 — VioletMoss
+    (626, 312),  // :10039 — VioletMossBrick
+    (691, 340),  // :10040 — VioletMossBlock
+    (627, 313),  // :10041 — RainbowMoss (disco colour, TileDrawing.cs:1235)
+    (628, 314),  // :10042 — RainbowMossBrick (disco colour)
+    (692, 341),  // :10043 — RainbowMossBlock (disco colour)
 ];
 
 /// `Main.tileGlowMask[type]` (`Main.cs:10024-10068`): the glow-mask sheet
@@ -74,5 +84,7 @@ mod tests {
     fn w4_g35_the_landed_records_match_the_source() {
         assert_eq!(tile_glow_mask(350), 94); // :10024
         assert_eq!(tile_glow_mask(537), 262); // :10033
+        assert_eq!(tile_glow_mask(692), 341); // :10043
+        assert_eq!(tile_glow_mask(627), 313); // :10041
     }
 }
