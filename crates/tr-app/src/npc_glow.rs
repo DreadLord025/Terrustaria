@@ -1,0 +1,75 @@
+//! W4-g35 — the NPC glow-mask census: every `TextureAssets.GlowMask[...]`
+//! overlay `Main.DrawNPC` draws (`Main.cs:23406-26297`). There is NO
+//! `NPC.glowMask` field and no static table in the C# — each type's draw arm
+//! hard-codes its sheet index(es), gate and colour; this module ports those
+//! RECORDS so the entity glow-draw pass binds exact data (the port's pillar
+//! ghosts `render/entities.rs:3347-3392` already draw; this table pins their
+//! ids and adds the missing census).
+//!
+//! Census notes (verbatim source state, not port gaps):
+//! - The Firefly 355 / LightningBug 358 arms draw the NAMED sheets
+//!   `Firefly`/`Lightningbug` (`:25699`/`:25703`), not GlowMask ids.
+//! - The SolarFlare 516 arm draws `TextureAssets.Npc[type]` copies
+//!   (`:26223-26227`), not a glow sheet.
+//! - The Prime family (125/127/131/139/120) uses `EyeLaser`/`Probe`/
+//!   `Bone_Eyes`/`Bone_Laser` named sheets (`:25577-25642`) — already bound
+//!   in `render/entities.rs` (prime_eyes/bone_laser).
+//! - The Golem 245/246/249 arms draw `Golem[1..3]`/`Extra[106/107]`
+//!   (`:25729-25768`), not GlowMask ids.
+//! - 393 (SaucerTurret) shares the 392-395 arm but draws NO glow (only the
+//!   −8 origin shift, `:24594-24597`); 382 (RayGunner) draws `Extra[1]`
+//!   only (`:25932`) — its glow is not a GlowMask sheet.
+
+/// One NPC glow record: the type, its GlowMask sheet id(s) and the C# draw
+/// site. `masks` holds every sheet the arm draws (the town variants and the
+/// trail alternates included); `dynamic` marks the ids computed at draw time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcGlowRecord {
+    pub npc: u16,
+    pub masks: &'static [u16],
+    /// The `Main.cs` draw line (the first GlowMask draw of the arm).
+    pub line: u32,
+}
+
+/// The census, in `Main.DrawNPC` source order. Colour/gate detail rides the
+/// per-row comments; the draw pass (f15-adjacent entity work) consumes it.
+pub const NPC_GLOW_RECORDS: &[NpcGlowRecord] = &[
+    // :23409 — VortexHornet, (255-alpha) grey a0.
+    NpcGlowRecord { npc: 427, masks: &[152], line: 23409 },
+    // :23412 — VortexHornetQueen, (128-alpha/2) grey a0.
+    NpcGlowRecord { npc: 426, masks: &[153], line: 23412 },
+    // :23425/:23427 — SandElemental, gold-multiplied (127-alpha) grey:
+    // num55 ring copies *(1-num56) + the centre copy.
+    NpcGlowRecord { npc: 541, masks: &[216], line: 23425 },
+    // :23452/:23454 — DD2WitherBeastT2/T3, gate localAI[3] >= 60 (:23442),
+    // colour9 = (127-alpha) grey * color5; ring + centre copies.
+    NpcGlowRecord { npc: 568, masks: &[224], line: 23452 },
+    NpcGlowRecord { npc: 569, masks: &[224], line: 23452 },
+    // :23596 — DD2Betsy, Lerp(npcColor, White, 0.6) A=66 * (0.7+0.3*lerp2);
+    // the lerpValue2=2f overwrite (:23579) makes the factor 1.3 verbatim.
+    NpcGlowRecord { npc: 551, masks: &[226], line: 23596 },
+    // :23941/:23953 — DD2DarkMageT1/T3, gate Opacity > 0 (:23936):
+    // White A/2 *Opacity + 4 ring copies *0.35 *(1-num111).
+    NpcGlowRecord { npc: 564, masks: &[225], line: 23941 },
+    NpcGlowRecord { npc: 565, masks: &[225], line: 23941 },
+    // :24039 — DD2EterniaCrystal, gate alpha < 255 (:24017):
+    // (140,50,255,0)*0.6, 3 pulse copies at scale*0.75.
+    NpcGlowRecord { npc: 548, masks: &[239], line: 24039 },
+    // :24174 — LunarTowerStardust, 4 ghosts (64,64,64,0)*Opacity,
+    // offset 4+|light-0.5|*4 (already drawn: entities.rs glow_stardust).
+    NpcGlowRecord { npc: 493, masks: &[132], line: 24174 },
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn w4_g35_the_landed_npc_records_match_the_source() {
+        let r = |npc| NPC_GLOW_RECORDS.iter().find(|r| r.npc == npc).unwrap();
+        assert_eq!(r(427).masks, &[152]);
+        assert_eq!(r(426).masks, &[153]);
+        assert_eq!(r(493).masks, &[132]);
+        assert_eq!(r(568).masks, r(569).masks); // the shared WitherBeast arm
+    }
+}
