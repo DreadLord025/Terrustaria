@@ -161,7 +161,7 @@ Screens already covered by immediate ports are listed for completeness at the en
 | `UIWorkshopSelectWorldToPublish` | 16 | none | |
 | `UIWorkshopWorldImport` | 18 | none | |
 | `UIResourcePackSelectionMenu` | 17 | none | |
-| `UIResourcePackInfoMenu` | 15 | none | |
+| `UIResourcePackInfoMenu` | 15 | `ui/resource_pack_info.rs` (`FrontScreen::ResourcePackInfo`) | PORTED (W4-d84 row 6; the back target parks the exact parent selection screen) |
 | `UIDebugCommandsList` | 15 | none | debug |
 | `UIDebugLoadoutsList` | 14 | none | debug |
 | `UIDebugLoadoutItem`-family screens | — | none | debug |

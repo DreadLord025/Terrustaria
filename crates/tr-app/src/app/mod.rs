@@ -2428,6 +2428,10 @@ impl App {
             // The generation job is started by `finish_creating_world`
             // before the hop (`WorldGen.CreateNewWorld`, `:6607-6625`).
             FrontScreen::WorldLoad(_) => {}
+            // `UIResourcePackInfoMenu` has no `OnActivate` override — the
+            // ctor's `BuildPage` (`:33-38`) is the whole setup; the pack and
+            // the back target rode in from `Click_Info`.
+            FrontScreen::ResourcePackInfo(_) => {}
         }
         self.park_menu();
         self.front = Some(front);

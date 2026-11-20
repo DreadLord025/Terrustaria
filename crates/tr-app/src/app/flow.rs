@@ -53,6 +53,13 @@ pub(crate) enum FrontScreen {
     /// (`worldGenCallback`'s `menuMode = 6`, `WorldGen.cs:6599-6602` →
     /// `Main.cs:49468-49472`).
     WorldLoad(Box<ui::world_load::WorldLoadState>),
+    /// W4-d84 row 6's `UIResourcePackInfoMenu` (`UIResourcePackInfoMenu.cs:15`)
+    /// — the pack-info screen the selection menu's info button opens
+    /// (`UIResourcePackSelectionMenu.Click_Info`, `:263-270`). The payload is
+    /// the screen's own state (`_pack`/`_resourceMenu`/the scrollbar); Back
+    /// restores the exact parent selection screen (`GoBackClick`, `:170-173`
+    /// — `SetState(_resourceMenu)`, no re-list).
+    ResourcePackInfo(Box<ui::resource_pack_info::PackInfoState>),
 }
 
 /// The App-side payload of `FrontScreen::Keyboard` — the plan's
@@ -158,6 +165,10 @@ pub(crate) enum FlowClick {
     /// The No row (`selectedMenu == 2`) — Escape's `flag5` target on the
     /// confirms (`:49435-49438`, `:49687-49690`, `:49464-49467`).
     ConfirmNo,
+    /// `UIResourcePackInfoMenu.GoBackClick` (`UIResourcePackInfoMenu.cs:170-173`):
+    /// `SetState(_resourceMenu)` — the exact parked selection screen returns
+    /// (the payload's `back`), no `OnActivate` re-list.
+    PackInfoBack,
 }
 
 /// One hop of the `Main.menuMode` alternation as a pure table — the plan's
@@ -226,6 +237,18 @@ pub(crate) fn next_flow_state(
         // Mode 40 No: `menuMode = 888` + `SetState(BackupConfirmationState)`
         // (`:49460-49467`) — the exact parked screen returns.
         FlowClick::ConfirmNo if page == Some(P::ConfirmDiscard) => (backup, None, None),
+        // `UIResourcePackInfoMenu.GoBackClick` (`:170-173`): the payload's
+        // `_resourceMenu` returns verbatim — the selection screen keeps its
+        // unapplied edits (no `OnActivate` re-list on that screen).
+        FlowClick::PackInfoBack => {
+            let back = match &front {
+                Some(FrontScreen::ResourcePackInfo(state)) => {
+                    state.back.as_deref().cloned()
+                }
+                _ => None,
+            };
+            (back, None, None)
+        }
         // Any other combination is a no-op (a click kind its screen never
         // sends); the state passes through unchanged.
         _ => (front, backup, page),
@@ -487,6 +510,17 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.lookups,
                     state,
                     d.screen,
+                );
+            }
+            FrontScreen::ResourcePackInfo(state) => {
+                // `UIResourcePackInfoMenu.Draw` (`:188-192`): the header,
+                // the divider, the wrapped description list and Back.
+                ui::resource_pack_info::draw(
+                    d.renderer,
+                    d.lookups,
+                    state,
+                    d.screen,
+                    d.mouse,
                 );
             }
         }
@@ -1056,6 +1090,17 @@ impl FrontScreenBehaviours for FrontScreen {
             // `Click_*`); the abort rides the Inventory trigger in Update
             // (`:54-58`), the port's key path below.
             FrontScreen::WorldLoad(_) => None,
+            FrontScreen::ResourcePackInfo(_) => {
+                // `GoBackClick` (`UIResourcePackInfoMenu.cs:170-173`) — the
+                // one handler. The Back rect is wrap-independent, so the
+                // detached layout is the click table's geometry.
+                let l = ui::resource_pack_info::layout(screen, 0.0);
+                if ui::resource_pack_info::click_at(&l, mouse) {
+                    Some(FlowClick::PackInfoBack)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -1257,7 +1302,11 @@ impl App {
             // Bug 17: the activation cue — the vanilla clicks play the menu
             // open (10) on activation and the menu close (11) on the Back
             // hops (`UICharacterSelect.cs:110/:118`, `UIWorldListItem.cs:365`).
-            if matches!(
+            // `PackInfoBack` is silent: `UIResourcePackInfoMenu.GoBackClick`
+            // (`:170-173`) plays no sound (only its hover plays 12).
+            if matches!(click, FlowClick::PackInfoBack) {
+                // no cue
+            } else if matches!(
                 click,
                 FlowClick::CharBack
                     | FlowClick::WorldBack
@@ -1563,6 +1612,35 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
+    fn pack_info_back_restores_the_exact_parent_screen() {
+        // `UIResourcePackInfoMenu.GoBackClick` (`:170-173`): `SetState(
+        // _resourceMenu)` — the parked parent returns verbatim, no re-list.
+        // The selection screen lands with row 5; until then the mechanism is
+        // pinned with a char-select back target (any `FrontScreen` rides the
+        // same `back` slot).
+        let parent = FrontScreen::CharSelect;
+        let info = FrontScreen::ResourcePackInfo(Box::new(
+            ui::resource_pack_info::PackInfoState {
+                pack: None,
+                scroll: 0.0,
+                back: Some(Box::new(parent.clone())),
+            },
+        ));
+        let (front, backup, page) =
+            next_flow_state(Some(info), None, None, FlowClick::PackInfoBack);
+        assert_eq!(front, Some(parent), "the exact parent returns");
+        assert!(backup.is_none() && page.is_none());
+        // A missing back target closes the 888 side (the C# `_resourceMenu`
+        // is never null in practice — the ctor always parks one).
+        let orphan = FrontScreen::ResourcePackInfo(Box::new(
+            ui::resource_pack_info::PackInfoState::default(),
+        ));
+        let (front, _, page) =
+            next_flow_state(Some(orphan), None, None, FlowClick::PackInfoBack);
+        assert!(front.is_none() && page.is_none());
+    }
+
+    #[test]
     fn bug17_a_front_click_plays_the_activation_cue() {
         // Bug 17: the front-end clicks play the menu open (10) — the vanilla
         // `UICharacterListItem.cs:198` / `UIWorldListItem.cs:365` cues.
@@ -1666,6 +1744,10 @@ pub(crate) mod front_flow_tests {
             Some(FrontScreen::WorldLoad(Box::new(
                 ui::world_load::WorldLoadState::new(),
             ))),
+            // W4-d84 row 6: the pack-info screen joins the matrix.
+            Some(FrontScreen::ResourcePackInfo(Box::new(
+                ui::resource_pack_info::PackInfoState::default(),
+            ))),
         ];
         let backs = [
             None,
@@ -1700,6 +1782,7 @@ pub(crate) mod front_flow_tests {
             FlowClick::WorldCreate,
             FlowClick::ConfirmYes,
             FlowClick::ConfirmNo,
+            FlowClick::PackInfoBack,
         ];
         for front in &fronts {
             for backup in &backs {

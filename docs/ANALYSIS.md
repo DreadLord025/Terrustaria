@@ -36055,6 +36055,54 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The Workshop/ResourcePack screens (W4-d84)
+
+The six-screen cluster of research/18 rows 1-6 (`UIWorkshopHub`,
+`UIWorkshopSelectResourcePackToPublish`, `UIWorkshopSelectWorldToPublish`,
+`UIWorkshopWorldImport`, `UIResourcePackSelectionMenu`,
+`UIResourcePackInfoMenu`), landed as `FrontScreen` variants over the shared
+`ui/workshop_kit.rs`. Range split: docs/research/W4-UI-SCREENS-RANGES.md.
+
+Deviations (cluster-wide):
+- **No Steam** (`SocialAPI.Workshop == null`): the port's menuMode 11 row 4
+  is `UI.ResourcePacks` (`Main.cs:48949-48957`'s else branch), opening the
+  selection menu directly with a null back target. The Workshop hub and the
+  three workshop list screens are reachable through `TR_UI` presets and the
+  hub's own buttons (the hub's `UI.Workshop` menu row, `Main.cs:48937-48948`,
+  needs Steam). `UIWorkshopWorldImport`'s subscribed-world list is always
+  empty (`UpdateWorkshopWorldList`, `UIWorkshopWorldImport.cs:142-153`,
+  early-returns on the null Workshop).
+- **No zip packs** (`resource_pack.rs`'s module header): directory packs
+  only; `IsCompressed` stays false, so the publish screen's
+  `TryMovingToRejectionMenuIfNeeded` zip rejection
+  (`UIWorkshopPublishResourcePackListItem.cs:133-147`) is unreachable.
+- **The pack icon is the atlas fallback** (`Images/UI/DefaultResourcePackIcon`):
+  `ResourcePack.CreateIcon` (`IO/ResourcePack.cs:103-111`) decodes the pack's
+  own `icon.png`; the port does not decode per-pack images.
+- **The publish tail is a notice**: `WorkshopPublishInfoStateForResourcePack`/
+  `ForWorld` (the Steam publish form) are out of the d84 range; a Publish
+  click sets the port's `front_hint` notice instead (the same convention the
+  world-select rejection uses).
+- **Gamepad snap points** (every screen's `SetupGamepadPoints`) are out of
+  scope (research/18 §J.3).
+- **The word wrap** is the port's greedy `wrap_text_with` (the bestiary
+  twin), not `ChatManager.LayoutSnippets`' snippet walk; plain pack
+  descriptions wrap identically.
+
+### UIResourcePackInfoMenu (row 6)
+
+`ui/resource_pack_info.rs` + `FrontScreen::ResourcePackInfo`. The payload
+carries `_pack`, the description scrollbar's `ViewPosition` and the
+`_resourceMenu` back target (the exact parent selection screen — the C#
+`SetState(_resourceMenu)` restores the live instance, so the selection
+menu's unapplied pack edits survive the info round-trip; the port parks the
+parent `FrontScreen` in the payload, the `KeyboardSession.back` pattern).
+`GoBackClick` (`UIResourcePackInfoMenu.cs:170-173`) plays NO sound — the
+flow's cue arm skips `PackInfoBack` (only the hover `FadedMouseOver` plays
+12). The `Recalculate` scrollbar-attach branch (`:150-168`) is ported as the
+layout's `attached` flag; the description height re-measures after the
+25 px width flip (the C# converges in one `Recalculate` pass).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
