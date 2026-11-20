@@ -254,6 +254,23 @@ pub(crate) struct App {
     /// `ItemSlot.dyeSwapCounter` (`ItemSlot.cs:3549-3564`): the round-robin
     /// slot `DyeSwap` starts its empty scan from and advances past.
     pub(crate) dye_swap_counter: usize,
+    /// The LIVE equip set's loadout-share flags — `Item.favorited` over
+    /// `Player.armor[0..20]` then `Player.dye[0..10]` (bit `i` = armor slot
+    /// `i`, bit `20 + j` = dye slot `j`). In the equip contexts the flag is
+    /// the share toggle (`ItemSlot.canLoadoutShareAt`, `ItemSlot.cs:395-399`),
+    /// not the grid favourite (`App.favorite_slots` owns those). Swaps with
+    /// the stored sets on a loadout change (`EquipmentLoadout.Swap`).
+    pub(crate) equip_share_flags: u32,
+    /// `ItemSlot._lastTimeForVisualEffectsThatLoadoutWasChanged`
+    /// (`ItemSlot.cs:312`, `RecordLoadoutChange` `:2794-2797`): the
+    /// `Main.timeForVisualEffects` stamp of the last loadout swap — the
+    /// equipment-slot white flash decays over 30 frames from it
+    /// (`GetColorByLoadout`, `:2786`). `f32::NEG_INFINITY` = never changed.
+    pub(crate) loadout_change_time: f32,
+    /// `Main.loadoutMouseOver` (`Main.cs:41990`'s `DoStatefulTickSound` ref):
+    /// the hovered loadout button index, -1 = none — the 12 cue fires on a
+    /// change onto a button (`Main.cs:3249-3259`).
+    pub(crate) loadout_mouse_over: i32,
     pub(crate) selected: usize,
     /// `Player.selectedItemState` (`Player.cs:414-568`) — the buffered /
     /// overridden halves of the selection machine (S1-P-i54); the live
@@ -1352,6 +1369,38 @@ impl App {
 
     pub(crate) fn update_player(&mut self, dt: f32) {
         world_sim::player::update_player(self, dt);
+    }
+
+    /// `Player.TrySwitchingLoadout` (`Player.cs:5661-5682`) over the live App
+    /// state: the swap core runs on `Player` + `App.equip`, then the local
+    /// tails fire — `Main.mouseLeftRelease = false` (`:5671`),
+    /// `ItemSlot.RecordLoadoutChange` (`:5672`) and `SoundEngine.PlaySound(12)`
+    /// (`:5673`). `UsingOrReusingItem` (`:4068-4078`) is summarised from the
+    /// port's swing/reuse/channel timers (`App.swing` = itemAnimation > 0,
+    /// `App.reuse_delay` = reuseDelay > 0, `Player.channel`); the
+    /// `pendingItemReuse` half has no port state (ANALYSIS). The
+    /// `clientCloneLoadouts`/`TrySendData(147)`/particle tails are MP/visual.
+    pub(crate) fn try_switching_loadout(&mut self, index: usize) -> bool {
+        let using_or_reusing = self.swing > 0.0
+            || self.reuse_delay > 0.0
+            || self.player.as_ref().is_some_and(|p| p.channel);
+        let Some(p) = self.player.as_mut() else {
+            return false;
+        };
+        let ok = p.try_switching_loadout(
+            index,
+            &mut self.equip.armor,
+            &mut self.equip.dye,
+            &mut self.equip_share_flags,
+            using_or_reusing,
+        );
+        if ok {
+            self.ui_left_press = false; // `Main.mouseLeftRelease = false` (`:5671`)
+            // `RecordLoadoutChange` (`:5672`): stamp the visual clock.
+            self.loadout_change_time = (self.anim_time * 60.0) % 216000.0;
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:5673`)
+        }
+        ok
     }
 
     /// `Main.mouseNPC`'s per-frame lifecycle
@@ -3694,6 +3743,9 @@ impl App {
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             dye_swap_counter: 0,
+            equip_share_flags: 0,
+            loadout_change_time: f32::NEG_INFINITY,
+            loadout_mouse_over: -1,
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
