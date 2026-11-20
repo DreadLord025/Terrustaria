@@ -828,7 +828,7 @@ mod w4_c15_wall_drain_tests {
     use crate::app::RngKey;
     use crate::projectile::BOMB;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
-    use tr_core::{UnifiedRandom, World};
+    use tr_core::World;
 
     /// The bomb + slab fixture: glass walls (21 → Shatter, draw-free) with
     /// one pre-Skeletron dungeon wall (7 → the Dig fail arm) at the centre.

@@ -28446,6 +28446,61 @@ deviation wave C recorded for the projectile strikes).
 - `audio.rs::s1_e_21i_the_switch_click_draws_ride_the_passed_stream` вЂ” one
   `Next(-10, 11)` per click, two clicks two draws headless, muted/out-of-range
   draw-free.
+
+### W4-c15 addendum - the fail-path + explosion wall-walk plays (2026-11-20)
+
+**Code-only mode** (`task/W4-c15-world-sounds-wave`, no compiler invoked -
+tests written, NOT run). Closes the two deferrals above:
+
+- **The `KillWall` fail path is ported.** `tr_core::edit::kill_wall(world, x,
+  y, fail)` is the full `WorldGen.KillWall` entry (`WorldGen.cs:60368-60408`)
+  returning `Option<WallBreak>` - `Broken(u16)` (`:60400-60407`: drop, paint
+  clear, re-frame) or `Failed(u16)` (`:60384-60399`: the incoming `fail` flag
+  ORs with `KillWall_CheckFailure`; the wall AND its paint stay). The bounds/
+  empty/350 refusals answer `None` - no cue. `break_wall` is now the
+  success-only wrapper (its old contract unchanged). The cue table plays on
+  BOTH arms - `KillWall_PlaySounds` (`:60385`) precedes the fail return
+  (`:60395`) and reads only `tileCache.wall`, so a failed dungeon-7 tick digs
+  exactly like a successful one.
+- **The hammer tick** (`world_sim/editing.rs::wall_hammer_tick`): the sub-100
+  arm calls `KillWall(x, y, fail: true)` (`Player.cs:45957`) and plays the
+  cue on `UpdatePlayers` BEFORE the `hitTile.Prune` (`:45963-45966`) - the C#
+  call order. The success arm's `break_wall` plays on both outcomes but
+  drops/replicates only on `Broken`.
+- **The explosion wall-walk** (`projectile.rs`): all three `ExplodeTiles`
+  ports (the `celeb2_death` shared walk, `explode_bomb`, `explode_rocket`)
+  queue `(cue, x, y)` per `KillWall` attempt into
+  `ProjectilePool::pending_wall_break_sounds` - the E21h queue->drain seam.
+  `world_sim/projectiles.rs` drains AFTER the proj cues on the SAME
+  `UpdateProjectiles` stream (`Main.cs:17775`), attenuation gate first. The
+  C# draws mid-walk; the pass-tail batch is the standing wave-C convention.
+  The progression-fail arm queues too (the wall stays, the cue plays); the
+  caller's 350 gate (`Projectile.cs:78743`) queues nothing.
+- **The net replay** (`MessageBuffer.cs:1177`): `apply_edit` kind 2 returns
+  the `WallBreak` outcome; both netglue receivers play the cue on both arms
+  (bare stream). The wire carries no `fail` byte (the port's `17` message
+  deviation), so the caller's sub-100 flag cannot replicate - the progression
+  refusal re-evaluates on the receiver exactly as the C# does.
+- **Still deferred**: the fail arm's 3-dust burst + `SquareWallFrame` re-tick
+  (the dust-layer skip), the explosion path's wall-item drops (the walk
+  discards them - the standing i28 note), the load-rig toggles (log-only).
+
+Witnesses (written, NOT run):
+- `tr-core/edit/wall.rs::w4_c15_kill_wall_reports_the_fail_arm_and_keeps_the_wall`
+  - both fail sources, the `None` refusals, the paint clear, the wrapper.
+- `tr-core/edit/wall.rs::w4_c15_the_fail_arm_plays_the_same_cue_table`.
+- `projectile.rs::w4_c15_the_explosion_wall_walk_queues_the_cue_on_both_arms`
+  - glass Shatter + the dungeon-7 Dig fail cue at tile pixels, the drain
+  empties once, the 350 gate queues nothing.
+- `world_sim/projectiles.rs::w4_c15_the_wall_drain_draws_match_the_queue_census_on_update_projectiles`
+  - the audible stream = the muted baseline + the blast's one case-2 draw +
+  two draws per Dig cue (Shatter draw-free); every other stage stream stays
+  on the baseline.
+- `world_sim/editing.rs::w4_c15_the_sub_100_hammer_tick_plays_the_fail_cue_on_update_players`
+  - one fail tick, exactly two `UpdatePlayers` draws, the book keeps 52, the
+  muted fail tick draw-free.
+- `world_sim/editing.rs::w4_c15_the_progression_refusal_plays_but_never_drops`.
+- `world_sim/editing.rs::w4_c15_apply_edit_reports_the_wall_break_fail_arm`.
 ## Test temp-path isolation (fix/test-temp-path-isolation, 2026-11-18)
 `crates/tr-app/src/npc_findframe_b.rs` ports `NPC.FindFrame`
 (`NPC.cs:66684-77370`) for **25 MID/HIGH-id kinds** the port's `npc.rs`

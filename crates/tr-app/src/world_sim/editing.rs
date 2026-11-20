@@ -18805,7 +18805,10 @@ mod wall_placement_tests {
             witness,
             "the muted fail tick draws nothing"
         );
-        assert_eq!(app.hit_tile.data[slot].damage, 52, "the book still accumulates");
+        // The cleared slot sank to the order tail — the new tick prepared a
+        // fresh buffer slot; the book still accumulates the 52.
+        let slot2 = app.hit_tile.hit_object(10, 10, tr_core::hit_tile::WALL);
+        assert_eq!(app.hit_tile.data[slot2].damage, 52, "the book still accumulates");
         assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "still a fail tick");
     }
 
