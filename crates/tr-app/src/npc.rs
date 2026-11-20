@@ -6591,7 +6591,56 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-g7 wire-2 (e14 extra-2) — the bridge into
+    /// `npc_findframe_extra2`'s pure machines: copy the five
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_a` precedent). `direction` is `facing` (the
+    /// C#'s `Entity.direction`); `ai`/`wet` ride the NPC's own fields
+    /// (the Slimer latch / penguin bank read `local_ai[0]` — fed
+    /// through BOTH `FrameState::local_ai0` and `FrameInput::local_ai0`
+    /// so either read resolves, and copied back once).
+    fn find_frame_wave_extra2(&mut self, kind: crate::npc_findframe_extra2::FindFrameExtra2Kind) {
+        let mut s = crate::npc_findframe_extra2::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+            local_ai0: self.local_ai[0],
+        };
+        let i = crate::npc_findframe_extra2::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            local_ai0: self.local_ai[0],
+            wet: self.wet,
+        };
+        crate::npc_findframe_extra2::find_frame_extra2(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+        self.local_ai[0] = s.local_ai0;
+    }
+
     pub(crate) fn find_frame(&mut self) {
+        // W4-g7 wire-2 (e14 extra-2) — the `cs_id`-keyed hook into the
+        // extra wave's pure machines (`npc_findframe_extra2.rs`), the
+        // 7 ids the g6 d45 low-2 hook does not carry: 121/137/141/142/
+        // 148/149/181 (the 84/93/94/101/102/103/116/120 twins ride
+        // low2 — keep-one, the arms verified verbatim identical). The
+        // e13 extra-1 wave is FULLY deduped onto this hook + the f26
+        // extra-3 hook below (all 15 of its ids are twins — see
+        // docs/ANALYSIS.md "W4-g7 wire-2"). NO current kind's `cs_id`
+        // lands in the set (verified over the hand rows + all 249
+        // bestiary net ids), so this is stream-inert today; the arms
+        // themselves draw no RNG. The d45/e13 hook precedent.
+        if let Some(kind) =
+            crate::npc_findframe_extra2::find_frame_kind_for_cs_id(self.kind.cs_id())
+        {
+            self.find_frame_wave_extra2(kind);
+            return;
+        }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
         // King Slime's shrink/wind-up writes it, `:43224`/`:43342`).
@@ -33544,5 +33593,90 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_g7_wire2_extra2_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g7 wire-2 (e14 extra-2) — the `find_frame` hook into
+    // `npc_findframe_extra2` ---- The pure machines carry their own 15
+    // pinned witnesses in `npc_findframe_extra2.rs`; these pin the
+    // NPC-side seam: the hook is inert for every current kind, and the
+    // bridge copies the five fields both ways (the penguin bank rides
+    // BOTH `FrameState::local_ai0` and `FrameInput::local_ai0`).
+    // WRITTEN NOT RUN (code-only mode — no compiler invoked on this
+    // branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster waves have not added the 7 extra-2 ids; verified
+    /// over the hand `cs_id` rows + all 249 bestiary net ids).
+    #[test]
+    fn w4_g7_the_extra2_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra2::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-2 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The lookup claims exactly the 7 ids the g6 d45 low-2 hook does
+    /// not carry — the keep-one split (84/93/94/101/102/103/116/120
+    /// ride low2; the arms are verbatim twins, verified arm-by-arm).
+    #[test]
+    fn w4_g7_the_extra2_lookup_maps_only_the_seven_unclaimed_ids() {
+        for id in 0u16..=697 {
+            let mapped = crate::npc_findframe_extra2::find_frame_kind_for_cs_id(id);
+            let in_set = matches!(id, 121 | 137 | 141 | 142 | 148 | 149 | 181);
+            assert_eq!(mapped.is_some(), in_set, "cs_id {id}");
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation/local_ai[0]
+    /// both ways and feeds vx/vy/facing/ai/wet through — pinned on the
+    /// Slimer latch (`NPC.cs:74014-74018`), the ToxicSludge air pin
+    /// (`:72979-72983`) and the penguin bank (`:76397-76410`).
+    #[test]
+    fn w4_g7_the_extra2_bridge_copies_the_five_fields_both_ways() {
+        let mut n = bare(NpcKind::Slime);
+        // The Slimer latch: local_ai[0] 0 → 1, row pinned 2, the flip +
+        // tilt ride vx (not facing).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.sprite_dir = -1;
+        n.facing = -1;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.rotation = 0.0;
+        n.local_ai[0] = 0.0;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::Slimer);
+        assert_eq!((n.frame, n.frame_counter), (2, 1.0), "the latch pin");
+        assert_eq!(n.local_ai[0], 1.0, "the latch flag copies back");
+        assert_eq!(n.sprite_dir, 1, "the velocity-sign flip");
+        assert_eq!(n.rotation, 0.2, "the vx * 0.1 tilt");
+        // The ToxicSludge copies facing UNCONDITIONALLY (0 included)
+        // and the air pins row 2 with the counter held.
+        n.frame_counter = 5.0;
+        n.facing = 0;
+        n.vy = -3.0;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::ToxicSludge);
+        assert_eq!(n.frame, 2, "the air row-2 pin");
+        assert_eq!(n.frame_counter, 5.0, "the air counter hold");
+        assert_eq!(n.sprite_dir, 0, "the unconditional direction copy");
+        // The penguin bank reads local_ai[0] = 3 → +6 on every write
+        // (through the FrameInput feed) and copies the flag back.
+        n.local_ai[0] = 3.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.facing = 1;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::Penguin);
+        assert_eq!(n.frame, 6, "the bank-3 idle row");
+        assert_eq!(n.frame_counter, 0.0, "the idle counter zero");
+        assert_eq!(n.local_ai[0], 3.0, "the bank flag copies back unchanged");
     }
 }
