@@ -49,6 +49,7 @@ pub mod text_box;
 pub mod text_panels;
 pub mod tooltip;
 pub mod uistate;
+pub mod workshop_rows;
 pub mod world_creation;
 pub(crate) mod world_load;
 pub mod world_select;

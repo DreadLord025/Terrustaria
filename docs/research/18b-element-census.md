@@ -174,9 +174,9 @@ Where d81/d82 already landed a class's state, the row cites both homes.
 | 54 | `UITextBox` | LANDED (`ui/text_box.rs::TextBox`, 20-unit cap + cursor clamp/Write-insert/Backspace-tail quirk + draw cursor-to-end pin + 21-of-40 ticker + caret offsets `UITextBox.cs:38-109`; keyboard write/caret halves pre-landed `keyboard.rs`; IME caller's seam) |
 | 55 | `UIToggleImage` | LANDED (`ui/images.rs::ToggleImage`, one-sheet on/off offsets + fixed draw size + White/Silver hover tint + LeftClick toggle `UIToggleImage.cs:26-70`; achievements filter draw pre-landed) |
 | 56 | `UIVerticalSeparator` | LANDED (`ui/chrome_elements.rs::VerticalSeparator`, OnePixel stretch ToRectangle + White ctor + never-hit + dead EdgeWidth `UIVerticalSeparator.cs:16-33`) |
-| 57 | `UIVerticalSlider` | pending |
-| 58 | `UIWorkshopImportWorldListItem` | pending |
-| 59 | `UIWorkshopPublishResourcePackListItem` | pending |
+| 57 | `UIVerticalSlider` | LANDED (`ui/sliders.rs::VerticalSlider`, 5/4/4/4 spliced frame + Right/Bottom-edge insets (-9/-8) + bottom-up fill + CenteredRectangle knob + hit Inflate(4,0) + aim/lock machine + two independent sound one-shots + clamped bottom-up GetLerpValue `UIVerticalSlider.cs:39-138`) |
+| 58 | `UIWorkshopImportWorldListItem` | LANDED (`ui/workshop_rows.rs::WorkshopImportWorldRow`, shared rest/hover pairs, Import label latch, valid+target click gate + name trim + invalid Gray status prefix, 100/150(+40)/remainder panel walk + divider /8 scale `:66-198`; SocialAPI/keyboard caller's seams) |
+| 59 | `UIWorkshopPublishResourcePackListItem` | LANDED (`ui/workshop_rows.rs::WorkshopPublishPackRow`, zip grey arms (Lerp hover→120 *1 / Lerp rest→80 *0.7), rejection-vs-publish click routing, (W-22-icon-btn)/2 two-panel split `:95-215`; spliced 10/10/10/10 panels) |
 | 60 | `UIWorkshopPublishWorldListItem` | pending |
 | 61 | `UIWorldCreationPreview` | pending |
 | 62 | `UIWorldListItem` | pending |
