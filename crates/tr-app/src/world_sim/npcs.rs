@@ -3774,9 +3774,9 @@ fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> V
         m.vx = rng.next_range(-15, 16) as f32 * 0.1;
         m.vy = rng.next_range(-30, 1) as f32 * 0.1;
         // `:43407-43408` — the AI seed (`ai[1] = -1` gates the slime-body
-        // item roll, `AI_001` `:60356`). The port's stand-in slime machine
-        // (`update_slime`) reads `hop_timer`, not `ai[0]`, so the jump-delay
-        // seed is carried as data until the A1-4 whole-arm port consumes it.
+        // item roll, `AI_001` `:60356`). W4-b1: the faithful aiStyle-1
+        // machine (`npc_ai_slime::ai_001_slimes`) consumes the `ai[0]`
+        // jump-delay seed live (the `update_slime` stand-in is retired).
         m.ai[0] = -1000.0 * rng.next_max(3) as f32;
         m.ai[1] = -1.0;
         out.push(m);
