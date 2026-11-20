@@ -804,6 +804,84 @@ mod s1_e_21h_sound_stream_tests {
             "the one-cue-per-life latch draws nothing on tick 2"
         );
     }
+
+    /// S1-E-21h f1 — the `Kill()` death cue's stream contract: a shot that
+    /// dies this pass queues its death cue, and the case-2 pitch draw rides
+    /// the `UpdateProjectiles` stream ONLY when audible. The Jester's Arrow
+    /// (5, `:75670` Item10) dies on its first sub-step's `penetrate == 0`
+    /// after a hit; here it is spawned with `time_left = 1` so the lifetime
+    /// block kills it on tick 1 without a target. Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_the_death_cue_draws_ride_update_projectiles_only_when_audible() {
+        use crate::projectile::JESTERS_ARROW;
+        fn dying_star_app() -> App {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.projectiles.spawn_with_data_ai_owned(
+                JESTERS_ARROW,
+                0,
+                32.0,
+                32.0,
+                0.0,
+                0.0,
+                10,
+                4.0,
+                0.0,
+                0.0,
+            );
+            // Force the lifetime kill on tick 1 (the death hook fires).
+            let slot = app
+                .projectiles
+                .slots()
+                .iter()
+                .position(|p| p.active && p.kind == JESTERS_ARROW)
+                .expect("the arrow lives");
+            app.projectiles.slots_mut()[slot].time_left = 1;
+            app
+        }
+        // Muted: the death cue queues but the drain's gate refuses before
+        // the case-2 switch — no gameplay draw.
+        let mut app = dying_star_app();
+        app.audio.set_listener(listener(0.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine under the muted death-cue gate",
+                key.name()
+            );
+        }
+        // Audible: exactly ONE case-2 default pitch draw (`Next(-6, 7)`)
+        // on the `UpdateProjectiles` stream — the death cue's Item10.
+        let mut app = dying_star_app();
+        app.audio.set_listener(listener(1.0));
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let mut witness = UnifiedRandom::new(0);
+        let _ = witness.next_range(-6, 7);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "exactly one case-2 pitch draw for the death cue"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+        // The death fired once: the second tick draws nothing further.
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            witness,
+            "the once-per-death cue draws nothing on tick 2"
+        );
+    }
 }
 
 #[cfg(test)]

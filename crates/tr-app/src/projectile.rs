@@ -19958,6 +19958,13 @@ impl ProjectilePool {
                         self.try_cancel_channel(i, p);
                     }
                 }
+                // S1-E-21h f1 — `Kill()`'s per-kind death cue (the fourth
+                // projectile-sound batch, `:70978`-`:76243`): queued BEFORE
+                // the death arms below so it reads the PRE-resize position
+                // (every C# arm plays ahead of its resize/`Damage()`). The
+                // cue is kind-disjoint from the bomb blasts and d77's
+                // selection; the drain plays it at the pass tail.
+                self.kill_sound_cue(i);
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
@@ -21250,6 +21257,177 @@ impl ProjectilePool {
         // `:15088-15091` — fewer than 6 found: nothing dies.
         if count >= 6 && oldest != usize::MAX {
             self.kill(oldest);
+        }
+    }
+
+    /// S1-E-21h f1 — `Kill()`'s per-kind death cues (`Projectile.cs`'s
+    /// `:70978`-`:76243` tail, the fourth projectile-sound batch): the plain
+    /// `SoundEngine.PlaySound` play each kind's death arm fires at
+    /// `base.position` (the pre-resize top-left — every arm below plays
+    /// BEFORE its resize/`Damage()`), queued as the `(id, style, x, y,
+    /// pitchOffset)` intent the pass-tail drain plays on the
+    /// `UpdateProjectiles` stream (`Main.cs:17775`), attenuation BEFORE the
+    /// case draws. The death hook fires once per death (a dead slot never
+    /// returns to `active`), so no latch flag is needed. The cue pushes
+    /// DIRECTLY into `pending_proj_sounds` (the golf `tick.sounds` seam):
+    /// the death hook runs AFTER the AI dispatch's `wants_sound` forwarding,
+    /// so a slot-parked intent would never be forwarded. The cue list is
+    /// kind-disjoint from the landed S1-E-21h bomb blasts (`:78331`/
+    /// `:78386`, the fifth-batch tail) and from d77's in-flight selection.
+    /// The dust/gore BODIES stay skipped with their layers (the module's RNG
+    /// note); the cue itself is draw-free at the queue site — its case draw
+    /// rides the drain. Kinds whose death arm is unported (no row) are
+    /// absent here, exactly as the census records.
+    fn kill_sound_cue(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        let (x, y) = (p.pos.x, p.pos.y);
+        // The full `(id, style, x, y, pitchOffset)` payload — every arm
+        // plays at `base.position` except the 932's `base.Center`.
+        let cue: Option<(u16, i32, f32, f32, f32)> = match p.kind {
+            // `:71112` — the 932 FairyQueenRangedItemShot's Item10 at
+            // `base.Center` (the ONE Center-positioned cue of the batch).
+            932 => Some((2, 10, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
+            // `:71782` — the DD2 javelin pair's Dig thud.
+            DD2_SPEAR | DD2_SPEAR_T3 => Some((0, 0, x, y, 0.0)),
+            // `:71802` — the Ballista shot's Dig thud.
+            BALLISTA_SHOT => Some((0, 0, x, y, 0.0)),
+            // `:72015` — the Nebula Blaze pair's Item14 (the play precedes
+            // the `:72016` recentre-resize).
+            NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => Some((2, 14, x, y, 0.0)),
+            // `:72716` — the Blood Arrow's Dig thud.
+            BLOOD_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:72851` — the Flairon bubble's Item54.
+            FLAIRON_BUBBLE => Some((2, 54, x, y, 0.0)),
+            // `:73294` — the Crystal Pulse's Item110.
+            CRYSTAL_PULSE => Some((2, 110, x, y, 0.0)),
+            // `:73400` — the Xenopopper bubble's Item96 (the play precedes
+            // the `:73401` `Next(5,9)` dust-count draw).
+            XENOPOPPER_BUBBLE => Some((2, 96, x, y, 0.0)),
+            // `:73530` — the Electrosphere missile's Item94 (the play
+            // precedes the `:73531` `Next(3,7)` dust-count draw).
+            ELECTROSPHERE_MISSILE => Some((2, 94, x, y, 0.0)),
+            // `:73605` — the Saucer missile's Item14 (pre-resize).
+            SAUCER_MISSILE => Some((2, 14, x, y, 0.0)),
+            // `:73016` — the Phantasmal Sphere's NPCDeath style-6 play
+            // (`PlaySound(4, pos, 6)`, the int overload — the `:73017`
+            // recentre-resize follows).
+            PHANTASMAL_SPHERE => Some((4, 6, x, y, 0.0)),
+            // `:73923` — the Molotov's Shatter.
+            MOLOTOV_COCKTAIL => Some((13, 0, x, y, 0.0)),
+            // `:73965` — the Javelin's Dig thud (507 rowed; 508 unrowed).
+            JAVELIN => Some((0, 0, x, y, 0.0)),
+            // `:73982` — the Bone Javelin's Dig thud.
+            BONE_JAVELIN => Some((0, 0, x, y, 0.0)),
+            // `:74014` — the arrow/dart family's Dig thud (1/81/98/980
+            // rowed; 1073 unrowed).
+            WOODEN_ARROW | WOODEN_ARROW_HOSTILE | TRAP_DART | TRAP_VENOM_DART => {
+                Some((0, 0, x, y, 0.0))
+            }
+            // `:74161` — the North Pole snowflake's Item27.
+            NORTH_POLE_SNOWFLAKE => Some((2, 27, x, y, 0.0)),
+            // `:74173` — the Frost Shard's Item27.
+            FROST_SHARD => Some((2, 27, x, y, 0.0)),
+            // `:74184` — the Stake's Dig thud.
+            323 => Some((0, 0, x, y, 0.0)),
+            // `:74238` — the Ornament's Item27.
+            ORNAMENT_HOSTILE => Some((2, 27, x, y, 0.0)),
+            // `:74305` — the SuperDart's Dig thud (184 rowed; 195 unrowed).
+            TRAP_SUPERDART => Some((0, 0, x, y, 0.0)),
+            // `:74328` — the Plantera seed pair's Dig thud.
+            SEED_PLANTERA | POISON_SEED_PLANTERA => Some((0, 0, x, y, 0.0)),
+            // `:74444` — the Drippler extra ball's Dig thud.
+            DRIPPLER_EXTRA_BALL => Some((0, 0, x, y, 0.0)),
+            // `:74545` — the Frost Arrow's Dig thud.
+            FROST_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:74736` — the Bone Arrow's Dig thud (the play precedes the
+            // `:74741` owner-gated 1124 shard spawns).
+            BONE_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:74762` — the Snowball's Item51.
+            SNOWBALL => Some((2, 51, x, y, 0.0)),
+            // `:75214` — the Holy Arrow / Hallow Star's Item10 (the play
+            // precedes the `:75223` owner-gated star re-spawn).
+            HOLY_ARROW | FALLING_STAR => Some((2, 10, x, y, 0.0)),
+            // `:75252` — the Crystal Bullet's Dig thud (the play precedes
+            // the `:75260` owner-gated shard split).
+            CRYSTAL_BULLET => Some((0, 0, x, y, 0.0)),
+            // `:75278` — the Houndius fireball's Item45.
+            HOUNDIUS_SHOOTIUS_FIREBALL => Some((2, 45, x, y, 0.0)),
+            // `:75288` — the Dead Cells barnacle shot's Item167.
+            DEAD_CELLS_BARNACLE_SHOT => Some((2, 167, x, y, 0.0)),
+            // `:75331` — the Frost Bolt staff's Item27 (359 rowed; the
+            // 118/119/128 siblings unrowed).
+            FROST_BOLT => Some((2, 27, x, y, 0.0)),
+            // `:75350` — the Frost Blast's Item27.
+            FROST_BLAST_FRIENDLY => Some((2, 27, x, y, 0.0)),
+            // `:75365` — the Frost Hydra's Item27.
+            FROST_HYDRA => Some((2, 27, x, y, 0.0)),
+            // `:75427` — the gem bolts' Dig thud (the play precedes the
+            // `:75448` AoeExplosion feature gate).
+            k if GEM_BOLTS.contains(&k) => Some((0, 0, x, y, 0.0)),
+            // `:75515` — the Blizzard's Item27.
+            BLIZZARD => Some((2, 27, x, y, 0.0)),
+            // `:75537` — the Ice Block's Item27, gated `ai[0] >= 0f`
+            // (`:75535`).
+            ICE_BLOCK => {
+                if p.ai[0] >= 0.0 {
+                    Some((2, 27, x, y, 0.0))
+                } else {
+                    None
+                }
+            }
+            // `:75572` — the Poison Dart's Dig thud (267 rowed; 51 unrowed).
+            267 => Some((0, 0, x, y, 0.0)),
+            // `:75594` — the Fire/Flaming arrow pair's Dig thud.
+            FLAME_ARROW | FLAMING_ARROW_HOSTILE => Some((0, 0, x, y, 0.0)),
+            // `:75602` — the merchant Bone Arrow's Dig thud.
+            BONE_ARROW_MERCHANT => Some((0, 0, x, y, 0.0)),
+            // `:75610` — the Frostburn Arrow's Dig thud.
+            FROSTBURN_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:75618` — the Cursed Arrow's Dig thud.
+            CURSED_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:75632` — the Ichor Arrow's Dig thud.
+            ICHOR_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:75646` — the thrown-weapon family's Dig thud (3/48/54
+            // rowed; 599/909 unrowed).
+            SHURIKEN | THROWING_KNIFE | POISONED_KNIFE => Some((0, 0, x, y, 0.0)),
+            // `:75662` — the Unholy Arrow's Dig thud.
+            UNHOLY_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:75670` — the Jester's Arrow's Item10.
+            JESTERS_ARROW => Some((2, 10, x, y, 0.0)),
+            // `:75683` — the Starfury / Star Cannon star's Item10 (9/955
+            // rowed; 12/503 unrowed).
+            STARFURY | STAR_CANNON_STAR => Some((2, 10, x, y, 0.0)),
+            // `:75857` — the Dutchman shell's Item14 (pre-resize).
+            DUTCHMAN_SHELL => Some((2, 14, x, y, 0.0)),
+            // `:75901` — the Venom Arrow's Item10.
+            VENOM_ARROW => Some((2, 10, x, y, 0.0)),
+            // `:75913` — the Venom Bullet's Item10 (the play precedes the
+            // `:75940` debuff-spread burst).
+            VENOM_BULLET => Some((2, 10, x, y, 0.0)),
+            // `:76002` — the Exploding Bullet's Item14 (the play precedes
+            // the `:76010` owner-gated AoE burst).
+            EXPLODING_BULLET => Some((2, 14, x, y, 0.0)),
+            // `:76053` — the Shimmer Arrow's Dig thud (the `Vector2`
+            // overload truncates, `SoundEngine.cs:85`).
+            SHIMMER_ARROW => Some((0, 0, x, y, 0.0)),
+            // `:76070` — the Sky Fracture's Item10.
+            SKY_FRACTURE => Some((2, 10, x, y, 0.0)),
+            // `:76122` — the Moonlord Bullet's Item10.
+            MOONLORD_BULLET => Some((2, 10, x, y, 0.0)),
+            // `:76136` — the Ball of Fire's Item10 (15 rowed; 321 unrowed).
+            BALL_OF_FIRE => Some((2, 10, x, y, 0.0)),
+            // `:76148` — the Ball of Frost's Item10.
+            BALL_OF_FROST => Some((2, 10, x, y, 0.0)),
+            // `:76160` — the Cursed Flame pair's Item10.
+            CURSED_FLAME_FRIENDLY | CURSED_FLAME => Some((2, 10, x, y, 0.0)),
+            // `:76180` — the Sand Ball gun's Dig thud (42 rowed; 31 unrowed).
+            42 => Some((0, 0, x, y, 0.0)),
+            // `:76207` — the hostile Snow Ball's Dig thud.
+            SNOW_BALL_HOSTILE => Some((0, 0, x, y, 0.0)),
+            _ => None,
+        };
+        if let Some(req) = cue {
+            self.pending_proj_sounds.push(req);
         }
     }
 
@@ -23750,6 +23928,136 @@ mod s1_e_21h_sound_tests {
             true,
         );
         assert_eq!(pool.slots()[slot].sound_delay, -1, "the latch holds");
+    }
+
+    /// S1-E-21h f1 — the `Kill()` death-cue table (the fourth batch,
+    /// `:70978`-`:76243`): every rowed kind queues its `(id, style)` at the
+    /// PRE-resize `base.position` (the 932 at `base.Center`), once per death.
+    /// The cue pushes straight into `pending_proj_sounds` (the death hook
+    /// runs after the AI dispatch's `wants_sound` forwarding). Written, NOT
+    /// run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_the_kill_death_cues_queue_their_payloads() {
+        let mut pool = ProjectilePool::new();
+        // (kind, id, style) — the id-2 ItemN styles, the id-0 Dig thud and
+        // the id-13 Shatter. The position is the slot's top-left (64, 64)
+        // except the 932's Centre.
+        let cases: [(u16, u16, i32); 41] = [
+            (932, 2, 10),
+            (DD2_SPEAR, 0, 0),
+            (DD2_SPEAR_T3, 0, 0),
+            (BALLISTA_SHOT, 0, 0),
+            (NEBULA_BLAZE_1, 2, 14),
+            (NEBULA_BLAZE_2, 2, 14),
+            (BLOOD_ARROW, 0, 0),
+            (FLAIRON_BUBBLE, 2, 54),
+            (CRYSTAL_PULSE, 2, 110),
+            (XENOPOPPER_BUBBLE, 2, 96),
+            (ELECTROSPHERE_MISSILE, 2, 94),
+            (SAUCER_MISSILE, 2, 14),
+            (PHANTASMAL_SPHERE, 4, 6),
+            (MOLOTOV_COCKTAIL, 13, 0),
+            (JAVELIN, 0, 0),
+            (BONE_JAVELIN, 0, 0),
+            (WOODEN_ARROW, 0, 0),
+            (NORTH_POLE_SNOWFLAKE, 2, 27),
+            (FROST_SHARD, 2, 27),
+            (323, 0, 0),
+            (ORNAMENT_HOSTILE, 2, 27),
+            (TRAP_SUPERDART, 0, 0),
+            (SEED_PLANTERA, 0, 0),
+            (DRIPPLER_EXTRA_BALL, 0, 0),
+            (FROST_ARROW, 0, 0),
+            (BONE_ARROW, 0, 0),
+            (SNOWBALL, 2, 51),
+            (HOLY_ARROW, 2, 10),
+            (CRYSTAL_BULLET, 0, 0),
+            (HOUNDIUS_SHOOTIUS_FIREBALL, 2, 45),
+            (DEAD_CELLS_BARNACLE_SHOT, 2, 167),
+            (FROST_BOLT, 2, 27),
+            (FROST_BLAST_FRIENDLY, 2, 27),
+            (FROST_HYDRA, 2, 27),
+            (GEM_BOLT_AMETHYST, 0, 0),
+            (BLIZZARD, 2, 27),
+            (267, 0, 0),
+            (FLAME_ARROW, 0, 0),
+            (SHURIKEN, 0, 0),
+            (UNHOLY_ARROW, 0, 0),
+            (JESTERS_ARROW, 2, 10),
+        ];
+        for (kind, id, style) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 64.0, 64.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            // The death hook's cue reads the slot's current box.
+            let (w, h) = {
+                let p = &pool.slots()[slot];
+                (p.w, p.h)
+            };
+            pool.kill_sound_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
+            let (qx, qy) = if kind == 932 {
+                (64.0 + w * 0.5, 64.0 + h * 0.5)
+            } else {
+                (64.0, 64.0)
+            };
+            assert_eq!(
+                queued[0],
+                (id, style, qx, qy, 0.0),
+                "kind {kind}'s cue payload"
+            );
+            assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
+            // Clean the slot so the next kind spawns fresh.
+            pool.kill(slot);
+        }
+    }
+
+    /// S1-E-21h f1 — the tail's remaining families (the star / bullet /
+    /// ball-of-fire / thrown rows) and the Ice Block's `ai[0] >= 0f` gate.
+    #[test]
+    fn s1_e_21h_f1_the_tail_cues_and_the_ice_block_gate() {
+        let mut pool = ProjectilePool::new();
+        let cases: [(u16, u16, i32); 16] = [
+            (STARFURY, 2, 10),
+            (STAR_CANNON_STAR, 2, 10),
+            (DUTCHMAN_SHELL, 2, 14),
+            (VENOM_ARROW, 2, 10),
+            (VENOM_BULLET, 2, 10),
+            (EXPLODING_BULLET, 2, 14),
+            (SHIMMER_ARROW, 0, 0),
+            (SKY_FRACTURE, 2, 10),
+            (MOONLORD_BULLET, 2, 10),
+            (BALL_OF_FIRE, 2, 10),
+            (BALL_OF_FROST, 2, 10),
+            (CURSED_FLAME_FRIENDLY, 2, 10),
+            (CURSED_FLAME, 2, 10),
+            (42, 0, 0),
+            (SNOW_BALL_HOSTILE, 0, 0),
+            (FALLING_STAR, 2, 10),
+        ];
+        for (kind, id, style) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} has a row"));
+            pool.kill_sound_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one death cue");
+            assert_eq!(queued[0], (id, style, 80.0, 80.0, 0.0), "kind {kind}");
+            pool.kill(slot);
+        }
+        // The Ice Block (`:75535-75537`): the cue fires only on `ai[0] >= 0`.
+        let slot = pool
+            .spawn_with_data_ai_owned(ICE_BLOCK, 0, 96.0, 96.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the ice block row");
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        pool.kill_sound_cue(slot);
+        assert!(pool.drain_proj_sounds().is_empty(), "the negative latch rides cue-less");
+        pool.slots_mut()[slot].ai[0] = 0.0;
+        pool.kill_sound_cue(slot);
+        let queued = pool.drain_proj_sounds();
+        assert_eq!(queued, vec![(2, 27, 96.0, 96.0, 0.0)], "the zero latch plays");
+        pool.kill(slot);
     }
 }
 

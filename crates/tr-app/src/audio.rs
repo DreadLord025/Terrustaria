@@ -255,6 +255,18 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_17", 2),
     ("Item_33", 2),
     ("Item_74", 2),
+    // S1-E-21h f1 — the fourth projectile-sound batch's bank gaps: the
+    // Houndius Kill's Item45 (`Projectile.cs:75278`), the Flairon bubble's
+    // Item54 (`:72851`), the Crystal Pulse's Item110 (`:73294`), the
+    // Xenopopper's Item96 (`:73400`), the Electrosphere's Item94 (`:73530`),
+    // the snowball's Item51 (`:74762`) and the barnacle's Item167 (`:75288`).
+    ("Item_45", 2),
+    ("Item_51", 2),
+    ("Item_54", 2),
+    ("Item_94", 2),
+    ("Item_96", 2),
+    ("Item_110", 2),
+    ("Item_167", 2),
     ("Item_15", 2),
     ("Item_16", 2),
     ("Item_18", 2),
@@ -1974,6 +1986,20 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        // S1-E-21h f1 — the `Kill()` tail's int-overload families ride the
+        // same queue: id 0 (the Dig thud, `PlaySound(0, pos)` — the int
+        // overload's default Style 1 is unused by case 0), id 13 (the
+        // Shatter, `PlaySound(13, pos)`) and id 4 (the NPCDeath style plays,
+        // `PlaySound(4, pos, style)`). Each delegates to its landed façade —
+        // attenuation BEFORE the case draws, the gameplay draws on the
+        // caller's (`UpdateProjectiles`) stream. The int overload draws NO
+        // `GetRandomPitch` NextFloat (`SoundEngine.cs:102-108`).
+        match id {
+            0 => return self.play_place_sound((0, 0), x, y, rng),
+            13 => return self.play_wall_break_sound((13, 0), x, y, rng),
+            4 => return self.play_npc_death_int(style, x, y, rng),
+            _ => {}
+        }
         if id != 2 {
             return None;
         }
@@ -3794,6 +3820,59 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h f1 — the fourth batch's bank gaps resolve (45/51/54/94/96/
+    /// 110/167) and the int-id families route to their landed façades: the
+    /// id-0 Dig thud (case 0's `Next(3)` variation + `Next(-10,11)` pitch),
+    /// the id-13 Shatter (no draws) and the id-4 NPCDeath style-6 (case 4's
+    /// one `Next(-10,11)` pitch). Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_the_bank_gaps_and_int_id_routes_resolve() {
+        use tr_core::unified_random::UnifiedRandom;
+        for style in [45, 51, 54, 94, 96, 110, 167] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(3);
+            let cue = audio
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, &mut rng)
+                .unwrap_or_else(|| panic!("style {style} resolves"));
+            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        }
+        // id 0 — the Dig thud: case 0 draws the variation pick THEN the
+        // pitch (`LegacySoundPlayer.cs:442`/`:450`), two gameplay draws.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let variation = witness.next_range(0, 3);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_proj_sound((0, 0), 0.0, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some(match variation { 0 => "Dig_0", 1 => "Dig_1", _ => "Dig_2" }));
+        assert_eq!(rng.peek(), witness.peek(), "the Dig thud's two case-0 draws");
+        // id 13 — the Shatter: case 13 draws NOTHING (`:783-792`).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((13, 0), 0.0, 0.0, 0.0, &mut rng), Some("Shatter"));
+        assert_eq!(rng.peek(), peek, "the Shatter is draw-free");
+        // id 4 style 6 — the NPCDeath play: case 4's one pitch draw
+        // (`:693`), no GetRandomPitch (the int overload).
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(audio.play_proj_sound((4, 6), 0.0, 0.0, 0.0, &mut rng), Some("NPC_Killed_6"));
+        assert_eq!(rng.peek(), witness.peek(), "the NPCDeath style-6 pitch draw");
+        // Muted: every int-id route refuses before its case draws.
+        let mut audio = Audio::new(None);
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        for (id, style) in [(0u16, 0i32), (13, 0), (4, 6)] {
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(audio.play_proj_sound((id, style), 0.0, 0.0, 0.0, &mut rng), None);
+            assert_eq!(rng.peek(), peek, "the muted id-{id} play is draw-free");
+        }
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract
