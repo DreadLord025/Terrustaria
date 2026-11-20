@@ -171,14 +171,16 @@ pub fn rejection_key(active_is_creative: bool, world_game_mode: u8) -> Option<&'
 }
 
 /// `AWorldListItem.GetDifficulty` (`AWorldListItem.cs:43-85`): the GameMode
-/// map with the `ForTheWorthy` bump ported for shape — the port stores no FTW
-/// flag, so the `num++` at `:63-66` is always `+0` and `num` 4
-/// (`UI.Legendary`, `:80-83`) stays unreachable. Returns the `UI.*` label and
-/// its colour: GameMode 3 -> `UI.Creative` + `Main.creativeModeColor` (`:47-52`);
-/// else `num` 2 -> `UI.Expert` + `Main.mcColor` (`:72-75`), `num` 3 ->
-/// `UI.Master` + `Main.hcColor` (`:76-79`), the `default`/`num` 1 arm ->
-/// `UI.Normal` "Classic" + `Color.White` (`:69-71`).
-pub fn difficulty_text(game_mode: u8) -> (String, [u8; 4]) {
+/// map with the `ForTheWorthy` bump (`:63-66`) — `ftw` drives the `num++`, so
+/// `num` 4 (`UI.Legendary` + `Main.legendaryModeColor`, `:80-83`) is reachable
+/// (Classic FTW -> Expert, Expert FTW -> Master, Master FTW -> Legendary).
+/// Returns
+/// the `UI.*` label and its colour: GameMode 3 -> `UI.Creative` +
+/// `Main.creativeModeColor` (`:47-52`, checked **before** the FTW bump); else
+/// `num` 2 -> `UI.Expert` + `Main.mcColor` (`:72-75`), `num` 3 -> `UI.Master` +
+/// `Main.hcColor` (`:76-79`), the `default`/`num` 1 arm -> `UI.Normal`
+/// "Classic" + `Color.White` (`:69-71`).
+pub fn difficulty_text_with_ftw(game_mode: u8, ftw: bool) -> (String, [u8; 4]) {
     if game_mode == 3 {
         // `:47-52` — `UI.Creative`, checked before the switch.
         return (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR);
@@ -189,13 +191,195 @@ pub fn difficulty_text(game_mode: u8) -> (String, [u8; 4]) {
         2 => num = 3, // `:59-61`
         _ => {}
     }
-    // `if (this._data.ForTheWorthy) num++;` (`:63-66`) — always +0 in the port
-    // (no FTW field on `save_list::WorldEntry`), so `num == 4` (Legendary)
-    // never fires.
+    if ftw {
+        num += 1; // `if (this._data.ForTheWorthy) num++;` (`:63-66`)
+    }
     match num {
         2 => (crate::lang::text("UI.Expert"), uistate::MC_COLOR), // `:72-75`
         3 => (crate::lang::text("UI.Master"), uistate::HC_COLOR), // `:76-79`
+        4 => (crate::lang::text("UI.Legendary"), uistate::LEGENDARY_MODE_COLOR), // `:80-83`
         _ => (crate::lang::text("UI.Normal"), [255, 255, 255, 255]), // `UI.Normal` (`:69-71`)
+    }
+}
+
+/// The draw-side [`difficulty_text_with_ftw`] with `ftw = false` — the port
+/// stores no FTW flag on `save_list::WorldEntry` (the `.trwld` header the port
+/// reads pre-dates it), so every card today takes the no-bump chain (W4-d81
+/// census row 1; the full helper is ready for the flag's landing).
+pub fn difficulty_text(game_mode: u8) -> (String, [u8; 4]) {
+    difficulty_text_with_ftw(game_mode, false)
+}
+
+// --- AWorldListItem's icon helpers (W4-d81 census row 1) ------------------------
+
+/// The `WorldFileData` flags `AWorldListItem`'s icon walk reads
+/// (`AWorldListItem.cs:87-200`). Pure data so the name builders stay testable
+/// without a save entry; the port's `save_list::WorldEntry` carries none of
+/// these yet (the fixed `IconCrimson` deviation, [`CardLayout::icon`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(dead_code)] // wiring lands with the seed-flag save fields (W4-d81)
+pub struct WorldIconFlags {
+    /// `IsHardMode` (`:192`).
+    pub hardmode: bool,
+    /// `HasCorruption` (`:196`) — false picks "Crimson".
+    pub corruption: bool,
+    /// `ZenithWorld` (`:89`, `:173`).
+    pub zenith: bool,
+    /// `DrunkWorld` (`:93`, `:131`).
+    pub drunk: bool,
+    /// `ForTheWorthy` (`:97`, `:135`).
+    pub ftw: bool,
+    /// `NotTheBees` (`:101`, `:139`).
+    pub bees: bool,
+    /// `Anniversary` (`:105`, `:143`).
+    pub anniversary: bool,
+    /// `DontStarve` (`:109`, `:147`).
+    pub dont_starve: bool,
+    /// `RemixWorld` (`:113`, `:151`).
+    pub remix: bool,
+    /// `NoTrapsWorld` (`:117`, `:155`).
+    pub no_traps: bool,
+    /// `SkyblockWorld` (`:121`, `:159`).
+    pub skyblock: bool,
+}
+
+/// `GetSeedIcon` (`AWorldListItem.cs:187-200`): `"Images/UI/Icon"` +
+/// (`hardmode_variants` && `IsHardMode` ? "Hallow" : "") + (`evil_variants` ?
+/// (`HasCorruption` ? "Corruption" : "Crimson") : "") + `seed`.
+#[allow(dead_code)] // wiring lands with the seed-flag save fields (W4-d81)
+pub fn seed_icon_name(
+    flags: &WorldIconFlags,
+    seed: &str,
+    hardmode_variants: bool,
+    evil_variants: bool,
+) -> String {
+    let mut text = String::from("Images/UI/Icon");
+    if hardmode_variants && flags.hardmode {
+        text.push_str("Hallow"); // `:190-193`
+    }
+    if evil_variants {
+        let evil = if flags.corruption {
+            "Corruption"
+        } else {
+            "Crimson"
+        };
+        text.push_str(evil); // `:194-197`
+    }
+    text.push_str(seed); // `:198`
+    text
+}
+
+/// `GetIcon` (`AWorldListItem.cs:87-126`): the FIRST matching seed flag wins,
+/// in C# if-order — Zenith, Drunk (both no evil variants), FTW, Bees,
+/// Anniversary, DontStarve, Remix, Traps, Skyblock (no hardmode/evil variants),
+/// else the plain `""` seed (all variants).
+#[allow(dead_code)] // wiring lands with the seed-flag save fields (W4-d81)
+pub fn first_icon_name(flags: &WorldIconFlags) -> String {
+    if flags.zenith {
+        return seed_icon_name(flags, "Everything", true, false); // `:89-92`
+    }
+    if flags.drunk {
+        return seed_icon_name(flags, "CorruptionCrimson", true, false); // `:93-96`
+    }
+    if flags.ftw {
+        return seed_icon_name(flags, "FTW", true, true); // `:97-100`
+    }
+    if flags.bees {
+        return seed_icon_name(flags, "NotTheBees", true, true); // `:101-104`
+    }
+    if flags.anniversary {
+        return seed_icon_name(flags, "Anniversary", true, true); // `:105-108`
+    }
+    if flags.dont_starve {
+        return seed_icon_name(flags, "DontStarve", true, true); // `:109-112`
+    }
+    if flags.remix {
+        return seed_icon_name(flags, "Remix", true, true); // `:113-116`
+    }
+    if flags.no_traps {
+        return seed_icon_name(flags, "Traps", true, true); // `:117-120`
+    }
+    if flags.skyblock {
+        return seed_icon_name(flags, "Skyblock", false, false); // `:121-124`
+    }
+    seed_icon_name(flags, "", true, true) // `:125`
+}
+
+/// `GetIcons` (`AWorldListItem.cs:128-169`): the `UICyclingImage` texture list
+/// — every matching seed flag appends (Drunk first; **no Zenith arm**, the
+/// zenith world takes the framed glitch icon instead, `:173-179`), in the
+/// same if-order as [`first_icon_name`]; an empty list falls back to the one
+/// plain-seed icon (`:163-168`).
+#[allow(dead_code)] // wiring lands with the seed-flag save fields (W4-d81)
+pub fn icon_name_list(flags: &WorldIconFlags) -> Vec<String> {
+    let mut list = Vec::new();
+    if flags.drunk {
+        list.push(seed_icon_name(flags, "CorruptionCrimson", true, false)); // `:131-134`
+    }
+    if flags.ftw {
+        list.push(seed_icon_name(flags, "FTW", true, true)); // `:135-138`
+    }
+    if flags.bees {
+        list.push(seed_icon_name(flags, "NotTheBees", true, true)); // `:139-142`
+    }
+    if flags.anniversary {
+        list.push(seed_icon_name(flags, "Anniversary", true, true)); // `:143-146`
+    }
+    if flags.dont_starve {
+        list.push(seed_icon_name(flags, "DontStarve", true, true)); // `:147-150`
+    }
+    if flags.remix {
+        list.push(seed_icon_name(flags, "Remix", true, true)); // `:151-154`
+    }
+    if flags.no_traps {
+        list.push(seed_icon_name(flags, "Traps", true, true)); // `:155-158`
+    }
+    if flags.skyblock {
+        list.push(seed_icon_name(flags, "Skyblock", false, false)); // `:159-162`
+    }
+    if list.is_empty() {
+        list.push(seed_icon_name(flags, "", true, true)); // `:167`
+    }
+    list
+}
+
+/// The zenith glitch animation's state (`AWorldListItem.cs:15-19`) — the
+/// `IconEverythingAnimated` 7x16 sheet's frame walk (`GetIconElement`,
+/// `:173-179`). The three `Main.rand` rolls are **injected** (`roll_next`):
+/// the element runs on `Main.rand` inside the UI update pass, an RNG stream
+/// the port does not model for the front-end (same documented-skip ruling as
+/// d82's sacrifice particles) — the caller supplies the rolls in C# order and
+/// the state machine stays 1:1.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(dead_code)] // wiring lands with the seed-flag save fields (W4-d81)
+pub struct GlitchAnimation {
+    /// `_glitchFrameCounter` (`:15`).
+    pub frame_counter: i32,
+    /// `_glitchFrame` (`:17`).
+    pub frame: i32,
+    /// `_glitchVariation` (`:19`).
+    pub variation: i32,
+}
+
+#[allow(dead_code)] // wiring lands with the seed-flag save fields (W4-d81)
+impl GlitchAnimation {
+    /// `UpdateGlitchAnimation` (`AWorldListItem.cs:21-41`). `roll_next` is
+    /// called in C# order: (1) the tick threshold `Next(min, num + 1)` —
+    /// `(15, 121)` while frame 0, `(3, 4)` otherwise (`:24-31`); only on the
+    /// advance tick (2) `Next(3)` when the new frame is 4/8/12 (`:35`), and
+    /// only when that roll is 0 (3) `Next(7)` re-picks the variation (`:37`).
+    /// Returns the `SetFrame(7, 16, variation, frame, 0, 0)` pick (`:40`).
+    pub fn update(&mut self, mut roll_next: impl FnMut(i32, i32) -> i32) -> (i32, i32) {
+        let (min_value, num) = if self.frame == 0 { (15, 120) } else { (3, 3) }; // `:24-30`
+        self.frame_counter += 1; // `++this._glitchFrameCounter` (`:31`)
+        if self.frame_counter >= roll_next(min_value, num + 1) {
+            self.frame_counter = 0; // `:33`
+            self.frame = (self.frame + 1) % 16; // `:34`
+            if (self.frame == 4 || self.frame == 8 || self.frame == 12) && roll_next(0, 3) == 0 {
+                self.variation = roll_next(0, 7); // `:35-38`
+            }
+        }
+        (self.variation, self.frame) // `SetFrame` (`:40`)
     }
 }
 
@@ -1160,8 +1344,179 @@ mod tests {
         // GameMode 3 returns before the switch (`:47-52`).
         // The `default` arm catches every other GameMode (`:69-71`).
         assert_eq!(difficulty_text(9).0, crate::lang::text("UI.Normal"));
-        // The FTW bump (`:63-66`) is always +0 in the port, so `num == 4`
-        // (Legendary) is unreachable — nothing maps to `UI.Legendary`.
+        // The draw wrapper pins ftw = false (`save_list::WorldEntry` has no
+        // FTW flag yet), so `num == 4` stays unreachable through it.
+    }
+
+    #[test]
+    fn the_ftw_bump_walks_the_full_getdifficulty_chain() {
+        // `AWorldListItem.cs:53-84`: num 1/2/3 by GameMode, then `num++`.
+        assert_eq!(
+            difficulty_text_with_ftw(0, true),
+            (crate::lang::text("UI.Expert"), uistate::MC_COLOR)
+        ); // 1+1 = 2
+        assert_eq!(
+            difficulty_text_with_ftw(1, true),
+            (crate::lang::text("UI.Master"), uistate::HC_COLOR)
+        ); // 2+1 = 3
+        assert_eq!(
+            difficulty_text_with_ftw(2, true),
+            (
+                crate::lang::text("UI.Legendary"),
+                uistate::LEGENDARY_MODE_COLOR
+            )
+        ); // 3+1 = 4 (`:80-83`)
+        // GameMode 3 returns BEFORE the bump (`:47-52`) — FTW creative stays
+        // creative.
+        assert_eq!(
+            difficulty_text_with_ftw(3, true),
+            (crate::lang::text("UI.Creative"), uistate::CREATIVE_MODE_COLOR)
+        );
+        // The no-bump chain is the wrapper's behaviour.
+        assert_eq!(difficulty_text_with_ftw(2, false), difficulty_text(2));
+    }
+
+    #[test]
+    fn seed_icon_names_follow_the_variant_concatenation() {
+        // `GetSeedIcon` (`AWorldListItem.cs:187-200`).
+        let mut f = WorldIconFlags::default();
+        assert_eq!(seed_icon_name(&f, "", true, true), "Images/UI/IconCrimson");
+        f.hardmode = true;
+        assert_eq!(
+            seed_icon_name(&f, "", true, true),
+            "Images/UI/IconHallowCrimson"
+        );
+        f.corruption = true;
+        assert_eq!(
+            seed_icon_name(&f, "FTW", true, true),
+            "Images/UI/IconHallowCorruptionFTW"
+        );
+        // The variant switches (`:190`/`:194`).
+        assert_eq!(
+            seed_icon_name(&f, "Everything", true, false),
+            "Images/UI/IconHallowEverything"
+        );
+        assert_eq!(
+            seed_icon_name(&f, "Skyblock", false, false),
+            "Images/UI/IconSkyblock"
+        );
+    }
+
+    #[test]
+    fn the_first_icon_walks_the_flags_in_csharp_order() {
+        // `GetIcon` (`:87-126`): first match wins; Zenith outranks Drunk.
+        let f = WorldIconFlags {
+            zenith: true,
+            drunk: true,
+            ..Default::default()
+        };
+        assert_eq!(first_icon_name(&f), "Images/UI/IconEverything");
+        // `GetIcons` (`:128-169`): no Zenith arm; Drunk leads the list, the
+        // plain icon never joins a non-empty list.
+        assert_eq!(
+            icon_name_list(&f),
+            vec!["Images/UI/IconCorruptionCrimson".to_string()]
+        );
+        // The multi-flag order (`:131-162`): FTW before Bees before Skyblock.
+        let f = WorldIconFlags {
+            skyblock: true,
+            bees: true,
+            ftw: true,
+            hardmode: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            icon_name_list(&f),
+            vec![
+                "Images/UI/IconHallowCrimsonFTW".to_string(),
+                "Images/UI/IconHallowCrimsonNotTheBees".to_string(),
+                "Images/UI/IconSkyblock".to_string(),
+            ]
+        );
+        // Empty flags: the single plain-seed fallback (`:163-168`, `:125`).
+        let plain = WorldIconFlags::default();
+        assert_eq!(
+            icon_name_list(&plain),
+            vec!["Images/UI/IconCrimson".to_string()]
+        );
+        assert_eq!(first_icon_name(&plain), "Images/UI/IconCrimson");
+    }
+
+    #[test]
+    fn the_glitch_walk_uses_the_frame_zero_threshold_split() {
+        // `UpdateGlitchAnimation` (`AWorldListItem.cs:21-41`). Frame 0 asks
+        // Next(15, 121); a threshold above the counter never advances.
+        let mut g = GlitchAnimation::default();
+        let mut asked = Vec::new();
+        let pick = g.update(|lo, hi| {
+            asked.push((lo, hi));
+            120 // the max of the frame-0 range: no advance at tick 1
+        });
+        assert_eq!(asked, vec![(15, 121)]);
+        assert_eq!(pick, (0, 0));
+        assert_eq!(g.frame_counter, 1);
+        // A threshold of 1 advances on the next tick: frame 0 -> 1, the
+        // 4/8/12 gate does not fire, no extra rolls.
+        let pick = g.update(|_, _| 1);
+        assert_eq!(pick, (0, 1));
+        assert_eq!(g.frame_counter, 0);
+        // Non-zero frames ask Next(3, 4).
+        let mut asked = Vec::new();
+        let pick = g.update(|lo, hi| {
+            asked.push((lo, hi));
+            1
+        });
+        assert_eq!(asked, vec![(3, 4)]);
+        assert_eq!(pick, (0, 2));
+    }
+
+    #[test]
+    fn the_glitch_variation_rerolls_only_on_the_gated_frames() {
+        // `:35-38`: frames 4/8/12 roll Next(3); a 0 re-picks via Next(7).
+        let mut g = GlitchAnimation {
+            frame: 3,
+            ..Default::default()
+        };
+        let mut rolls = Vec::new();
+        let pick = g.update(|lo, hi| {
+            rolls.push((lo, hi));
+            match (lo, hi) {
+                (3, 4) => 1, // advance
+                (0, 3) => 0, // the gate fires
+                (0, 7) => 5, // the new variation
+                _ => unreachable!(),
+            }
+        });
+        assert_eq!(rolls, vec![(3, 4), (0, 3), (0, 7)]);
+        assert_eq!(pick, (5, 4));
+        // Frame 4 -> 5: not a gated frame, only the threshold roll.
+        let mut rolls = Vec::new();
+        let pick = g.update(|lo, hi| {
+            rolls.push((lo, hi));
+            1
+        });
+        assert_eq!(rolls, vec![(3, 4)]);
+        assert_eq!(pick, (5, 5));
+        // The wrap (`:34`): frame 15 -> 0.
+        let mut g = GlitchAnimation {
+            frame: 15,
+            ..Default::default()
+        };
+        assert_eq!(g.update(|_, _| 1), (0, 0));
+        // A non-zero Next(3) keeps the variation (`:35`'s && short-circuit:
+        // Next(7) is NOT rolled).
+        let mut g = GlitchAnimation {
+            frame: 7,
+            variation: 2,
+            ..Default::default()
+        };
+        let mut rolls = Vec::new();
+        let pick = g.update(|lo, hi| {
+            rolls.push((lo, hi));
+            1 // threshold 1 advances; the Next(3) roll of 1 keeps the variation
+        });
+        assert_eq!(rolls, vec![(3, 4), (0, 3)]);
+        assert_eq!(pick, (2, 8));
     }
 
     #[test]
