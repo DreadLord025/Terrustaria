@@ -7,7 +7,7 @@
 //! (`npc_lights.rs`) and every other family (one list pair per engine,
 //! `LightingEngine.cs:36-38`, max-merged one frame late `:208-235`).
 //!
-//! ## The first two slices, sites 41-60, in C# source order
+//! ## The first three slices, sites 41-67, in C# source order
 //!
 //! | # | site | arm | port |
 //! |---|------|-----|------|
@@ -31,6 +31,13 @@
 //! | 58 | `:58416` | DesertGhoulCrimson 526 | [`fighter_tail_light`] |
 //! | 59 | `:58420` | DesertGhoulHallow 527 | [`fighter_tail_light`] |
 //! | 60 | `:60346` | slime 1 lantern content 75 | [`slime_lights`] |
+//! | 61 | `:60760` | ore-slime content tint | cited skip (content init deferred) |
+//! | 62 | `:60896` | slime herb content 314 | cited skip (content init deferred) |
+//! | 63 | `:61057` | RainbowSlime 244 disco | [`slime_lights`] |
+//! | 64 | `:61112` | GoldenSlime 667 | [`slime_lights`] |
+//! | 65 | `:61130` | ShimmerSlime 676 torch 23 | [`slime_lights`] |
+//! | 66 | `:61454` | LavaSlime 59 | [`slime_lights`] |
+//! | 67 | `:62420` | HeadlessHorseman gallop | landed W-10 (`npc_ai_unicorn_b::horseman_light`) — no double-feed |
 //!
 //! ## RNG census — why the feed is draw-side
 //!
@@ -38,19 +45,21 @@
 //! halves are skipped WHOLESALE (the `npc_lights.rs` precedent): the
 //! shimmer-state dust (`:53231`/`:53233`/`:53237`), Medusa's charge dust
 //! (`:56409-56417`, `:56442-56455`), the torch zombies' `Next(30)` dust
-//! (`:56926`/`:56940`/`:56956`/`:56964`) and the slime lantern dust gate
-//! (`:60347`). Skipping an arm wholesale leaves the `Main.rand` stream
-//! untouched, so the fixed-step order stays exact.
+//! (`:56926`/`:56940`/`:56956`/`:56964`) and the slime dust gates
+//! (`:60347`, `:60892`, `:61113`, `:61131`, `:61455`). Skipping an arm
+//! wholesale leaves the `Main.rand` stream untouched, so the fixed-step
+//! order stays exact.
 //!
 //! ## netOffset conventions (verbatim per site)
 //!
 //! The C# adds `netOffset` only inside the arms that say so — Medusa
-//! (`:56386`/`:56421`, `:56426`/`:56457`) and the torch zombies
-//! (`:56916`/`:56946`, `:56950`/`:56970`). The Destroyer (`AI_037` has
-//! ZERO netOffset writes), the Probe's `:50630` (the arm's wraps are
-//! elsewhere), the Hungry II, the town arms (`AI_007` has ZERO), the
-//! fighter tail (`:58402-58421` unwrapped) and the slime lantern read the
-//! RAW position.
+//! (`:56386`/`:56421`, `:56426`/`:56457`), the torch zombies
+//! (`:56916`/`:56946`, `:56950`/`:56970`) and the LavaSlime 59
+//! (`:61453`/`:61457`). The Destroyer (`AI_037` has ZERO netOffset
+//! writes), the Probe's `:50630` (the arm's wraps are elsewhere), the
+//! Hungry II, the town arms (`AI_007` has ZERO), the fighter tail
+//! (`:58402-58421` unwrapped) and the slime arms except 59 read the RAW
+//! position.
 //!
 //! ## Folds and cited skips (ANALYSIS "The NPC lights, second half")
 //!
@@ -79,10 +88,12 @@
 //!   (`NPCID.Sets.AttackType == 2`, `:10473`) and only the Dryad 20 the
 //!   arrival pose (`HaveDryadDoStardewAnimation`, `:19184-19194`) — the
 //!   `None` fold for unrowed types is unreachable, recorded here.
-//! * The slime lantern content 75 (`:60346`) needs `SlimeCanContainItems`'
-//!   init (`npc_ai_slime.rs`'s deferred A1-5 slice — `ai[1]` never holds
-//!   a content id yet). The arm is ported behind its gate (unreachable
-//!   until the init lands, the module's own census).
+//! * The slime content lights 75/ore/314 (`:60346`/`:60760`/`:60896`)
+//!   need `SlimeCanContainItems`' init (`npc_ai_slime.rs`'s deferred
+//!   A1-5 slice — `ai[1]` never holds a content id yet). The 75 arm is
+//!   ported behind its gate (unreachable until the init lands, the
+//!   module's own census); the ore arm additionally needs `NPC.color`
+//!   (no port field) and the herb arm its content gate — both cited.
 
 use tr_core::lighting::LightParams;
 use tr_core::tile_light::hsl_to_rgb;
@@ -500,13 +511,27 @@ pub(crate) fn fighter_tail_light(n: &Npc) -> Option<Light> {
     Some(((top_x / 16.0) as i32, (top_y / 16.0) as i32, rgb))
 }
 
-/// Site 60 — `AI_001_Slimes`' lantern-content light (`NPC.cs:60343-60346`):
-/// type 1 with the lantern content `ai[1] == 75` lights
-/// (0.8, 0.7, 0.1)×0.3 at the quotient-truncated centre. Unreachable
-/// until the content init lands (`npc_ai_slime.rs`'s A1-5 census —
-/// `ai[1]` never holds a content id yet). The `Next(12)` dust
-/// (`:60347`) is the wholesale skip. RAW position.
-pub(crate) fn slime_lights(n: &Npc, _p: &LightParams) -> Vec<Light> {
+/// Sites 60/63/64/65/66 — `AI_001_Slimes`' light arms, in C# order:
+/// * `:60343-60346` — type 1 with the lantern content `ai[1] == 75`:
+///   (0.8, 0.7, 0.1)×0.3 at the quotient-truncated centre. Unreachable
+///   until the content init lands (`npc_ai_slime.rs`'s A1-5 census).
+/// * `:61053-61057` — RainbowSlime 244: `Main.DiscoR/G/B / 255` at the
+///   quotient-truncated centre (the named-argument overload's `i`/`j`
+///   are the float-centre form).
+/// * `:61109-61112` — GoldenSlime 667: the fixed (204, 181, 72) bytes
+///   /255 ×1.1 at the quotient-truncated centre.
+/// * `:61128-61130` — ShimmerSlime 676: `AddLight(Center, 23)` — the
+///   torch-id overload (`Lighting.cs:151-155`) truncates the centre
+///   BEFORE dividing (`(int)position.X / 16`), full shimmer-torch colour.
+/// * `:61451-61454` — LavaSlime 59: (1, 0.3, 0.1) at the
+///   quotient-truncated centre, netOffset ADDED (`:61453`/`:61457` —
+///   the only slime light arm that wraps).
+/// The ore-slime (`:60760`, needs `NPC.color`) and herb (`:60896`)
+/// content arms are the cited skips (module docs). Every dust gate is
+/// the wholesale skip. The `ai[0] == -999` freeze return (`:61046-61052`)
+/// only ever hits the type-1 balloon slimes (`:47908`) whose sole light
+/// arm sits BEFORE it — the 244/667/676/59 arms below are unaffected.
+pub(crate) fn slime_lights(n: &Npc, p: &LightParams) -> Vec<Light> {
     let mut out = Vec::new();
     let t = cs_type(n);
     let (w, h) = n.size();
@@ -519,8 +544,51 @@ pub(crate) fn slime_lights(n: &Npc, _p: &LightParams) -> Vec<Light> {
             [0.8 * num, 0.7 * num, 0.1 * num],
         ));
     }
+    if t == 244 {
+        out.push((
+            tile_x(raw, w, XAnchor::Center),
+            tile_y(raw, h, XAnchor::Center),
+            [
+                p.disco[0] as f32 / 255.0,
+                p.disco[1] as f32 / 255.0,
+                p.disco[2] as f32 / 255.0,
+            ],
+        ));
+    }
+    if t == 667 {
+        // `new Color(204, 181, 72, 255)` — `(float)(int)color.R / 255f * 1.1f`.
+        out.push((
+            tile_x(raw, w, XAnchor::Center),
+            tile_y(raw, h, XAnchor::Center),
+            [
+                204.0 / 255.0 * 1.1,
+                181.0 / 255.0 * 1.1,
+                72.0 / 255.0 * 1.1,
+            ],
+        ));
+    }
+    if t == 676 {
+        out.push((
+            tile_x(raw, w, XAnchor::CenterTruncated),
+            tile_y(raw, h, XAnchor::CenterTruncated),
+            tr_core::tile_light::torch_color(23, p),
+        ));
+    }
+    if t == 59 {
+        let pos = raw + n.net_offset;
+        out.push((
+            tile_x(pos, w, XAnchor::Center),
+            tile_y(pos, h, XAnchor::Center),
+            [1.0, 0.3, 0.1],
+        ));
+    }
     out
 }
+
+/// Site 67 — the HeadlessHorseman's gallop light (`NPC.cs:62420`) is
+/// ALREADY landed: `npc_ai_unicorn_b::horseman_light`, fed by the draw
+/// pass (`app/frame/draw.rs`). NO double-feed here — the site is recorded
+/// for the census only.
 
 /// The raw top-left as a `Vec2` for the shared anchor helpers.
 fn n_pos(n: &Npc) -> glam::Vec2 {
@@ -710,5 +778,38 @@ mod tests {
         let ls = slime_lights(&n, &p);
         assert_eq!(ls.len(), 1);
         assert_eq!(ls[0], (10, 10, [0.8 * 0.3, 0.7 * 0.3, 0.1 * 0.3]));
+    }
+
+    #[test]
+    fn lava_slime_lights_the_offset_centre() {
+        // `:61451-61454` — the only slime arm that wraps netOffset. The
+        // LavaSlime's 24×18 box (`NPC.cs:9518-9519`) at (160, 160):
+        // centre (172, 169) → (10, 10); with offset (16, 0) the centre
+        // (188, 169) → (11, 10). (1, 0.3, 0.1).
+        let mut n = Npc::new(NpcKind::LavaSlime, 160.0, 160.0, 1, 0.0);
+        let p = LightParams::default();
+        let ls = slime_lights(&n, &p);
+        assert_eq!(ls.len(), 1);
+        assert_eq!(ls[0], (10, 10, [1.0, 0.3, 0.1]));
+        n.net_offset = glam::Vec2::new(16.0, 0.0);
+        let moved = slime_lights(&n, &p);
+        assert_eq!(moved[0], (11, 10, [1.0, 0.3, 0.1]));
+    }
+
+    #[test]
+    fn the_disco_gold_shimmer_slime_arms_wait_on_their_kinds() {
+        // 244/667/676 have no port kinds yet — the arms are ported whole
+        // behind their type gates; a blue slime never matches them.
+        let n = Npc::new(NpcKind::Slime, 160.0, 160.0, 1, 0.0);
+        let p = LightParams::default();
+        assert!(slime_lights(&n, &p).is_empty());
+        // The shimmer torch-id overload truncates BEFORE dividing
+        // (`Lighting.cs:151-155`) — pinned through the shared anchor.
+        let pos = glam::Vec2::new(175.9, 175.9);
+        assert_eq!(tile_x(pos, 0.0, XAnchor::CenterTruncated), 10);
+        assert_eq!(tile_x(pos, 0.0, XAnchor::Center), 10);
+        let neg = glam::Vec2::new(-1.0, -1.0);
+        assert_eq!(tile_x(neg, 0.0, XAnchor::CenterTruncated), 0);
+        assert_eq!(tile_x(neg, 0.0, XAnchor::Center), 0);
     }
 }
