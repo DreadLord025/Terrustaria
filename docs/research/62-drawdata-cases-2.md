@@ -71,8 +71,9 @@ gaps in this range are NOT missing static cases:
    needs the paint-coat texture resolve (batch 4).
 4. **All glow records ride unused** — `render/tiles.rs:731` binds `apply_cases_a`'s
    return to `_glow` (TILE-DRAW-2 glow pass); the martian/meteor conduit rows of
-   79/90/18/14/21/467/15/497/172 and 638's lerp are produced but not drawn (same
-   finding as d64 batch 5).
+   79/90/18/14/21/467/15/172 and 638's lerp are produced but not drawn (same
+   finding as d64 batch 5; 497 shares 15's arm but the `typeCache == 15` gate
+   keeps it dark).
 
 `cases_b` owns NONE of the 65 (its dispatch arms are 719/579/453/456/507/508/541/485/
 489/490/493/428/455/349/593/594 — the `_d62_range.py` "+cases_b" tags on 20/16/90/18/
@@ -510,3 +511,74 @@ vine-tip pass is S1-G-1a (out of this slice's scope).
 
 Batch 4 verdict: **14/15 PORTED**, 83's painted-sheet override DEVIATION
 (documented, pre-existing).
+
+### Batch 5 — vine tail and cacti/pumps: #126-130 (5 ids)
+
+Ids: 636, 638, 80, 142, 143.
+
+**636 CorruptVines** — seventh label of the vine group (batch 4 quote,
+`TileDrawing.cs:5000-5013`). Rust `52 | 62 | 115 | 205 | 382 | 528 | 636 | 638`.
+No second-switch case. **PORTED**.
+
+**638 AshVines** — last label of the vine group, PLUS a second-switch glow
+(`TileDrawing.cs:6080-6084`):
+
+```csharp
+		case 638:
+			glowTexture = TextureAssets.GlowMask[327].Value;
+			glowSourceRect = new Rectangle(tileFrameX + addFrX, tileFrameY + addFrY, tileWidth, tileHeight - halfBrickHeight);
+			glowColor = Color.Lerp(Color.White, color, 0.75f);
+			break;
+```
+
+Rust (`cases_a.rs:327`): `638 => out.glow = Some(GlowData { mask: 327, src:
+rect_framed(height - half_brick_height), color: lerp_white_75(color) })` — the
+framed rect, the half-brick height cut and the per-channel byte-truncating
+`Color.Lerp` (`cases_a.rs:300-303`, `(a + (b - a) * 0.75) as u8`) verbatim; the
+cell light rides in as `color` (`tiles.rs:724-732`, XNA bytes alpha 255).
+**PORTED** (record unconsumed, `_glow` TILE-DRAW-2).
+
+**80 / 142 / 143** (`TileDrawing.cs:5014-5018`):
+
+```csharp
+		case 80:
+		case 142:
+		case 143:
+			tileTop = 2;
+			break;
+```
+
+Rust (`drawdata.rs:444-451`): `80 | 142 | 143 => { data.top = 2; }`.
+**PORTED** — Cactus / InletPump / OutletPump. The cactus ground shift is
+`DrawSingleTile`'s `case 80:` ONLY (`TileDrawing.cs:1132-1147`,
+`WorldGen.GetCactusType` → `rectangle.Y += 54/108/162`): ported as
+`cactus_type` + `cactus_source_y_offset` (`drawdata.rs:1275-1277`) applied by
+`apply_world_corrections` (`:1328-1331`) into `src_y_shift`, which the flat
+draw consumes (`tiles.rs:1440-1449`) while the half-brick/slope arms rebuild
+their rects without it — exactly the C# `rectangle`-local semantics
+(`:1007` vs `:1298`). 142/143 (pumps) correctly get NO ground shift.
+**PORTED + WIRED**.
+
+Batch 5 verdict: **5/5 PORTED**.
+
+## Slice summary
+
+| Verdict | Count | Ids |
+| --- | --- | --- |
+| PORTED (static arm faithful, wired) | 65 | all |
+| glow record produced, unconsumed (`_glow`, TILE-DRAW-2) | 10 | 79, 90, 18, 711, 14, 21, 467, 15, 172, 638 (497 shares 15's arm but never glows — the `typeCache == 15` gate) |
+| PORTED-UNWIRED (chest rewrite, d57/d58 seam) | 2 | 21, 467 |
+| DEVIATION (pre-existing, documented) | 1 | 83 (painted-sheet override) |
+
+Code changes in this slice (the only draw-side gap that was d62's to fix):
+* `drawdata_cases_a.rs`: `TILE_SHEET_GLOW` sentinel + the 711 first-switch glow
+  arm + `test_DW_d62_rainbow_boulder_first_switch_glow` (written, NOT run —
+  code-only mode).
+* `drawdata.rs`: the 711 arm comment repointed at the new record (no behaviour
+  change).
+
+Not touched (other slices' seams): the chest rewrite wiring (d57/d58), the glow
+pass binding (TILE-DRAW-2), 83's paint-sheet resolve, the vine-tip pass
+(S1-G-1a). No RNG stream, frame-cache key or fixed-step order changes — the
+711 record is produced at the existing `apply_cases_a` seam and rides unused
+until the glow pass lands, so the current pixel output is unchanged.
