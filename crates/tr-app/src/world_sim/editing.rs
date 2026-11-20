@@ -672,6 +672,38 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
+            // `ItemCheck_CheckCanUse_Inner`'s boomerang stack limits
+            // (`Player.cs:52162-52186`, S1-P-i08): the single-flight list
+            // (`:52162` — 6/19/33/52/113/320/333/383/491/867/1052/902/866/
+            // 301 + the phaseblades; the ported kinds are 6/52/113) refuses
+            // the use while ANY active same-kind projectile of this owner
+            // exists; the Light Disc 106 (`:52172-52186`) counts and refuses
+            // at `>= 6`. The 272 (`>= 10`, `:52187`) and 1000 (`>= 3`,
+            // `:52202`) rows are unported kinds. The gate runs at the use
+            // start, ahead of the mana pay (`ItemCheck_TryStartUse`
+            // `:52023-52026`).
+            if let Some(shoot) = registry::projectile(held.kind) {
+                let limit = match shoot {
+                    crate::projectile::LIGHT_DISC => Some(6usize),
+                    crate::projectile::ENCHANTED_BOOMERANG
+                    | crate::projectile::WOODEN_BOOMERANG
+                    | crate::projectile::ICE_BOOMERANG => Some(1),
+                    _ => None,
+                };
+                if let Some(limit) = limit {
+                    let in_flight = app
+                        .projectiles
+                        .slots()
+                        .iter()
+                        .filter(|p| {
+                            p.active && p.owner == app.local_id as u8 && p.kind == shoot
+                        })
+                        .count();
+                    if in_flight >= limit {
+                        return;
+                    }
+                }
+            }
             // `Player.CheckMana` (`Player.cs:5881-5884`): the magic items pay
             // `(int)(item.mana * manaCost)` — the multiplier the armor pieces,
             // the accessories, the casters' sets and Magic Power lower (M3-
@@ -736,7 +768,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
-                if dir != Vec2::ZERO {
+                // S1-P-i08 — the useStyle-1 aiStyle-3 boomerang variant
+                // (the ported kinds 6/52/113/106): the C# generic
+                // `ItemCheck_Shoot` tail with the boomerang-visible pieces
+                // the port's generic arm had folded away — the `ChangeDir`
+                // aim flip, the zero-aim fallback and the exact-center
+                // spawn. The zero-aim case still fires in the C#
+                // (`:47291-47296`), so it escapes the `dir != ZERO` gate.
+                let boomerang_use = def.use_style == 1
+                    && crate::projectile::proj_data(proj).is_some_and(|d| d.ai_style == 3);
+                if dir != Vec2::ZERO || boomerang_use {
                     let class = def.class;
                     let (fx_dmg, fx_spd, fx_kb) = held_fx
                         .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
@@ -757,10 +798,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     } else {
                         fx_spd
                     };
+                    // `ItemCheck_Shoot`'s facing flip (`Player.cs:47202-47224`,
+                    // S1-P-i08): `num = Dot(UnitX.RotatedBy(fullRotation),
+                    // aim)`; `num > 0` → `ChangeDir(1)` else `ChangeDir(-1)`
+                    // (the zero-aim case takes the −1 arm too — the dot is 0).
+                    // The port has no `fullRotation`/pulley — the dot is the
+                    // aim's X, and `ChangeDir` folds to the facing write
+                    // (`:42091-42116`; the itemRotation/itemLocation mirrors
+                    // have no port consumers).
+                    if boomerang_use {
+                        p.facing = if dir.x > 0.0 { 1 } else { -1 };
+                    }
                     // `if (sItem.type == 2611 || sItem.type == 5526)
                     // pointPosition += vector2` (`:47239-47245`): the 1-px
-                    // spawn shift along the aim (the Flairon's arm).
-                    let spawn = if held.kind == 2611 || held.kind == 5526 {
+                    // spawn shift along the aim (the Flairon's arm). The
+                    // boomerang spawn is the C#'s exact `pointPosition` —
+                    // `RotatedRelativePoint(MountedCenter)` (`:47196`) = the
+                    // player center with no rotation/mount/sleep offsets;
+                    // the `+ dir * 10` the generic port arm carries is its
+                    // own recorded deviation (M4-PROJ-3), NOT the C# — the
+                    // boomerang variant drops it.
+                    let spawn = if boomerang_use {
+                        Vec2::new(pcx, pcy)
+                    } else if held.kind == 2611 || held.kind == 5526 {
                         Vec2::new(pcx, pcy) + dir * 10.0 + dir
                     } else {
                         Vec2::new(pcx, pcy) + dir * 10.0
@@ -796,8 +856,57 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // each `return`ing in the C#; the port folds them into
                     // one if/else chain before the shared swing tail. The
                     // base velocity is the aim normalized to `shootSpeed`.
-                    let shot = Vec2::new(dir.x * shot_speed, dir.y * shot_speed);
-                    if GEM_STAFF_BOLTS.contains(&proj) {
+                    // S1-P-i08 — the zero-aim fallback (`:47291-47296`):
+                    // `num4 = direction, num5 = 0, num6 = speed` then the
+                    // `num4 *= num6` scale — the shot flies at the facing
+                    // × the shootSpeed (the NaN arm is unreachable through
+                    // `normalize_or_zero`).
+                    let shot = if dir == Vec2::ZERO && boomerang_use {
+                        Vec2::new(p.facing as f32 * shot_speed, 0.0)
+                    } else {
+                        Vec2::new(dir.x * shot_speed, dir.y * shot_speed)
+                    };
+                    if boomerang_use {
+                        // S1-P-i08 — the useStyle-1 boomerang throw
+                        // (`Player.cs:49437`'s generic `NewProjectile` tail):
+                        // the exact-center spawn, the aim (or the facing
+                        // fallback) normalized to `shootSpeed / meleeSpeed`,
+                        // `weaponDamage`, `GetWeaponKnockback`'s melee arms
+                        // (`:53352-53359`: kbGlove ×2, kbBuff ×1.5 — the
+                        // summon/ranged/stealth arms never ride a melee
+                        // boomerang), ai0/ai1/ai2 = 0. The crit roll stays
+                        // the shared throw-time roll above (one draw, the
+                        // C# `Projectile.Damage` consumes it on hit).
+                        let mut kb = fx_kb;
+                        if p.kb_glove {
+                            kb *= 2.0;
+                        }
+                        if p.kb_buff {
+                            kb *= 1.5;
+                        }
+                        // `NewProjectile` centers the box on the point
+                        // (`Projectile.cs:10876-10877`: `position = X −
+                        // width/2, Y − height/2`); the port's spawn seam
+                        // takes the top-left, so the half-box subtracts
+                        // here — the disc's CENTER lands on the player
+                        // centre exactly.
+                        let (bw, bh) = crate::projectile::proj_data(proj)
+                            .map_or((0.0, 0.0), |d| (d.w, d.h));
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj,
+                            spawn.x - bw * 0.5,
+                            spawn.y - bh * 0.5,
+                            shot.x,
+                            shot.y,
+                            raw as i32,
+                            kb,
+                            0.0,
+                            0.0,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                        }
+                    } else if GEM_STAFF_BOLTS.contains(&proj) {
                         // `Player.cs:49262-49375` - the gem-staff shoot.
                         // `PackGemStaffFeatures` (`:49470-49489`): the bits
                         // from the bolt kind and the matching body robe
@@ -8938,5 +9047,341 @@ mod item_mechanics {
             "the drop lies flush on the floor, at {}",
             rest.pos.y
         );
+    }
+}
+
+#[cfg(test)]
+mod s1_p_i08_throw_tests {
+    //! S1-P-i08 (`task/S1-P-i08-boomerang`, code-only mode — tests WRITTEN
+    //! NOT RUN): the useStyle-1 boomerang throw arm. The stack limits
+    //! (`Player.cs:52162-52186`: one in flight for 6/52/113, six for the
+    //! Light Disc 106), the exact-center spawn (`RotatedRelativePoint
+    //! (MountedCenter)` `:47196` — the generic arm's `+ dir * 10` is the
+    //! port's own deviation, dropped for the variant), the `ChangeDir` aim
+    //! flip (`:47202-47224`), the zero-aim facing fallback (`:47291-47296`)
+    //! and `GetWeaponKnockback`'s melee arms (`:53352-53359`).
+
+    use super::*;
+    use crate::projectile::{
+        ENCHANTED_BOOMERANG, ICE_BOOMERANG, LIGHT_DISC, WOODEN_BOOMERANG,
+    };
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The shooter layout (`tests::shooter_app`'s shape): a 64×800 world
+    /// with a floor at row 300, the player at tile (33, 260), the camera
+    /// on (488, 4168) and the mine button held.
+    fn rig_world() -> World {
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    /// The boomerang rig: the given boomerang held and the cursor 80 px
+    /// right of the player centre (the +x aim — the camera sits 13 px
+    /// above the centre in this rig, so the cursor's Y rides the centre,
+    /// not the screen middle).
+    fn boomerang_app(item: u16, name: &'static str) -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = rig_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 33.0 * TILE_PX;
+        player.y = 260.0 * TILE_PX;
+        app.player = Some(player);
+        app.camera = Vec2::new(30.0 * TILE_PX + 8.0, 260.0 * TILE_PX + 8.0);
+        app.inventory[app.selected] = ItemSlot {
+            kind: item,
+            name,
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        // The press edge: the non-autoReuse boomerangs fire on it
+        // (`Player.cs:42733`'s `controlUseItem && releaseUseItem`).
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        let (sw, sh) = app.screen_size();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let off = (Vec2::new(cx, cy) - app.camera) * app.zoom;
+        app.mouse_pos = Vec2::new(sw * 0.5 + off.x + 80.0, sh * 0.5 + off.y);
+        app
+    }
+
+    /// One fire tick of the held boomerang (`tests::fire_once`'s shape).
+    fn fire_once(app: &mut App) {
+        let (sw, sh) = app.screen_size();
+        update_editing(app, 1.0 / 60.0, Vec2::new(sw, sh));
+    }
+
+    /// Pins the editing pass's `UpdatePlayers` stream to `seed`
+    /// (`tests::seed_stream`'s shape).
+    fn seed_stream(app: &mut App, seed: i32) {
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+    }
+
+    /// The stream state after `n` draws from `seed` (`tests::draws_after`).
+    fn draws_after(seed: i32, n: usize) -> tr_core::UnifiedRandom {
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        for _ in 0..n {
+            rng.next();
+        }
+        rng
+    }
+
+    /// The editing pass's `UpdatePlayers` stream state.
+    fn stream_of(app: &mut App) -> tr_core::UnifiedRandom {
+        app.rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone()
+    }
+
+    fn active_boomerangs(app: &App) -> Vec<usize> {
+        app.projectiles
+            .slots()
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                p.active
+                    && matches!(
+                        p.kind,
+                        ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG | LIGHT_DISC
+                    )
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    #[test]
+    fn s1_p_i08_the_throw_spawns_at_the_exact_center() {
+        // `Player.cs:47196` + `:49437`: `pointPosition = RotatedRelativePoint
+        // (MountedCenter)` — the player center with no rotation/mount
+        // offsets; `NewProjectile` centers the box on it (`:10876-10877`).
+        // The old generic arm spawned at center + dir * 10.
+        let mut app = boomerang_app(284, "Wooden Boomerang");
+        fire_once(&mut app);
+        let slots = active_boomerangs(&app);
+        assert_eq!(slots.len(), 1, "one wooden boomerang");
+        let p = &app.projectiles.slots()[slots[0]];
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        // The box's CENTER lands on the player centre (`NewProjectile`'s
+        // `position = X − width/2` — the slot's pos is the top-left).
+        assert_eq!(
+            p.pos + Vec2::new(p.w * 0.5, p.h * 0.5),
+            Vec2::new(cx, cy),
+            "the exact-center spawn"
+        );
+        assert_eq!(p.kind, WOODEN_BOOMERANG);
+        assert_eq!(p.vel, Vec2::new(6.5, 0.0), "shootSpeed 6.5 along +x");
+        assert_eq!(p.damage, 10, "weaponDamage at the ×1 class multiplier");
+        assert_eq!(p.knock_back, 5.0, "the item's knockback");
+        assert_eq!(p.ai, [0.0, 0.0, 0.0, 0.0], "the generic ai0/ai1/ai2 = 0");
+        assert_eq!(
+            app.inventory[app.selected].count, 1,
+            "the boomerang is not consumed"
+        );
+    }
+
+    #[test]
+    fn s1_p_i08_the_throw_flips_the_facing_to_the_aim() {
+        // `Player.cs:47213-47224`: `Dot(UnitX, aim) > 0` → ChangeDir(1),
+        // else ChangeDir(-1). The player starts facing right; a left aim
+        // flips to −1, a right aim keeps +1.
+        let mut app = boomerang_app(284, "Wooden Boomerang");
+        let (sw, sh) = app.screen_size();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let off = (Vec2::new(cx, cy) - app.camera) * app.zoom;
+        app.mouse_pos = Vec2::new(sw * 0.5 + off.x - 80.0, sh * 0.5 + off.y);
+        fire_once(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().facing, -1, "the left aim");
+        let slots = active_boomerangs(&app);
+        assert_eq!(slots.len(), 1);
+        assert_eq!(
+            app.projectiles.slots()[slots[0]].vel,
+            Vec2::new(-6.5, 0.0),
+            "the shot flies left"
+        );
+        // The right aim on a fresh app keeps +1.
+        let mut app = boomerang_app(284, "Wooden Boomerang");
+        fire_once(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().facing, 1, "the right aim");
+    }
+
+    #[test]
+    fn s1_p_i08_the_zero_aim_falls_back_to_the_facing() {
+        // `Player.cs:47291-47296`: the zero mouse delta sets `num4 =
+        // direction, num5 = 0, num6 = speed` — the shot still fires, at the
+        // facing × shootSpeed. The old `dir != ZERO` gate skipped the throw
+        // entirely.
+        let mut app = boomerang_app(284, "Wooden Boomerang");
+        let (sw, sh) = app.screen_size();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let off = (Vec2::new(cx, cy) - app.camera) * app.zoom;
+        // The cursor exactly on the player centre: the zero mouse delta
+        // (`normalize_or_zero` folds the exact-zero aim to ZERO).
+        app.mouse_pos = Vec2::new(sw * 0.5 + off.x, sh * 0.5 + off.y);
+        app.player.as_mut().unwrap().facing = -1;
+        fire_once(&mut app);
+        let slots = active_boomerangs(&app);
+        assert_eq!(slots.len(), 1, "the zero aim still throws");
+        assert_eq!(
+            app.projectiles.slots()[slots[0]].vel,
+            Vec2::new(-6.5, 0.0),
+            "the facing fallback"
+        );
+        // The zero aim's ChangeDir takes the −1 arm too (`num > 0` is false
+        // at the zero dot) — the facing stays −1.
+        assert_eq!(app.player.as_ref().unwrap().facing, -1);
+    }
+
+    #[test]
+    fn s1_p_i08_one_boomerang_in_flight_blocks_the_rethrow() {
+        // `Player.cs:52162-52171`: the single-flight list refuses the use
+        // while ANY active same-kind projectile of this owner exists —
+        // across all three ported kinds (6/52/113 each gate on their own).
+        // The rig never decays `attack_cd` (that pass lives outside
+        // `update_editing`), so every attempt re-arms the press edge and
+        // clears the two locks (`tests::repress`'s convention).
+        for (item, name, kind) in [
+            (55u16, "Enchanted Boomerang", ENCHANTED_BOOMERANG),
+            (284, "Wooden Boomerang", WOODEN_BOOMERANG),
+            (670, "Ice Boomerang", ICE_BOOMERANG),
+        ] {
+            let mut app = boomerang_app(item, name);
+            for _ in 0..30 {
+                app.attack_cd = 0.0;
+                app.reuse_delay = 0.0;
+                app.mine_prev_down = false;
+                app.mine_released = true;
+                fire_once(&mut app);
+            }
+            let live = active_boomerangs(&app);
+            assert_eq!(live.len(), 1, "{name}: exactly one in flight");
+            assert_eq!(app.projectiles.slots()[live[0]].kind, kind);
+            // Kill it: the next press edge throws again.
+            app.projectiles.kill(live[0]);
+            app.attack_cd = 0.0;
+            app.reuse_delay = 0.0;
+            app.mine_prev_down = false;
+            app.mine_released = true;
+            fire_once(&mut app);
+            assert_eq!(active_boomerangs(&app).len(), 1, "{name}: rethrown");
+        }
+    }
+
+    #[test]
+    fn s1_p_i08_the_light_disc_stacks_to_six() {
+        // `Player.cs:52172-52186`: the 106 counts its active same-owner
+        // shots and refuses at `>= 6`. The disc is autoReuse — the held
+        // button rethrows at the use cadence (useTime 14).
+        let mut app = boomerang_app(561, "Light Disc");
+        // The rig's `update_editing` never ticks the projectile pool, so
+        // every thrown disc stays active at its spawn point — the cap is a
+        // pure spawn-count gate here. The cursor stays at the rig's +80 px
+        // (inside the reach gate, which returns before the throw block).
+        // The autoReuse cadence: the rig never decays `attack_cd` inside
+        // `update_editing`, so the loop re-arms it every 14 ticks (the
+        // disc's useTime/useAnimation) — the C# held-button cadence.
+        for tick in 0..84 {
+            if tick % 14 == 0 {
+                app.attack_cd = 0.0;
+                app.reuse_delay = 0.0;
+            }
+            fire_once(&mut app);
+        }
+        let live = active_boomerangs(&app);
+        assert_eq!(live.len(), 6, "the six-disc cap");
+        assert!(
+            live.iter()
+                .all(|&i| app.projectiles.slots()[i].kind == LIGHT_DISC),
+            "all six are discs"
+        );
+        // The next cadence attempt refuses while all six live.
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        fire_once(&mut app);
+        assert_eq!(active_boomerangs(&app).len(), 6, "the cap holds");
+        // Free one slot: the next cadence use fills it back to six.
+        app.projectiles.kill(live[0]);
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        fire_once(&mut app);
+        assert_eq!(active_boomerangs(&app).len(), 6, "the freed slot refills");
+    }
+
+    #[test]
+    fn s1_p_i08_the_knockback_glove_and_buff_scale_the_throw() {
+        // `GetWeaponKnockback` (`Player.cs:53352-53359`): the melee kbGlove
+        // doubles, the kbBuff ×1.5 — both multiply the item's knockback.
+        let mut app = boomerang_app(284, "Wooden Boomerang");
+        app.player.as_mut().unwrap().kb_glove = true;
+        fire_once(&mut app);
+        let slots = active_boomerangs(&app);
+        assert_eq!(app.projectiles.slots()[slots[0]].knock_back, 10.0, "5 × 2");
+        let mut app = boomerang_app(284, "Wooden Boomerang");
+        {
+            let p = app.player.as_mut().unwrap();
+            p.kb_glove = true;
+            p.kb_buff = true;
+        }
+        fire_once(&mut app);
+        let slots = active_boomerangs(&app);
+        assert_eq!(
+            app.projectiles.slots()[slots[0]].knock_back, 15.0,
+            "5 × 2 × 1.5"
+        );
+    }
+
+    #[test]
+    fn s1_p_i08_the_throw_draws_exactly_one_crit_roll() {
+        // RNG census: the boomerang throw's only gameplay draw is the
+        // throw-time crit roll (`Main.rand.Next(1, 101)`, the shared
+        // `UpdatePlayers` stream). Two identical seeds give byte-equal
+        // spawns; the stream advances by exactly the crit draw.
+        //
+        // The Item126 use sound's case-2 pitch draws only AFTER the
+        // attenuation gate passed. The listener is pinned FAR from the
+        // player (the use plays at the player centre) so the gate refuses
+        // and the pitch draw never fires — the witness is robust to the
+        // rig's camera default (the retry census's observation 2: headless
+        // does NOT mute the listener, the DISTANCE refuses). The
+        // GetRandomPitch NextFloat rides the audio-only `sound_style_random`,
+        // never this stream.
+        let far_listener = |app: &mut App| {
+            app.audio.set_listener(crate::sound::Listener {
+                camera_center: (100000.0, 100000.0),
+                sound_volume: 1.0,
+                ambient_volume: 1.0,
+                quiet_ambient_sounds: false,
+                game_menu: false,
+                generating_or_loading: false,
+                server: false,
+            });
+        };
+        let run = || {
+            let mut app = boomerang_app(284, "Wooden Boomerang");
+            far_listener(&mut app);
+            seed_stream(&mut app, 0xB00B);
+            fire_once(&mut app);
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .map(|p| (p.kind, p.pos, p.vel, p.ai, p.crit))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(run(), run(), "the throw is seed-stable");
+        let mut app = boomerang_app(284, "Wooden Boomerang");
+        far_listener(&mut app);
+        seed_stream(&mut app, 0xB00B);
+        fire_once(&mut app);
+        let after = stream_of(&mut app);
+        assert_eq!(after, draws_after(0xB00B, 1), "the crit roll alone");
     }
 }
