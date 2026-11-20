@@ -12705,6 +12705,111 @@ new arm were corrected against `Projectile.cs:24501-24635`:
 `s1_p_i20_the_wet_flamelash_refuses_the_use` (water/honey/shimmer each: no shot,
 no mana, no swing), `s1_p_i20_the_lava_wet_flamelash_still_fires` (the `!lavaWet`
 exclusion), `s1_p_i20_the_dry_flamelash_fires_and_channels` (the control).
+## The hardmode staves' use census (S1-P-i21, 2026-11-20, code-only mode)
+
+**Gate-merge reconciliation (V2, 2026-11-20):** i20's generic non-ammo
+`ItemTimeIsZero` volley gate (the C#-true cadence with the coins/shootsEveryUse/
+channel exclusions and the animation-window limits) supersedes i21's
+HARDMODE_MAGIC_STAVES-scoped re-fire block; i21's four dedicated staff arms
+(Razorpine/Blizzard/Nimbus/Bat) live inside i20's shared `fire_non_ammo_shot`
+chain, so both the first shot and every mid-swing re-fire run them. The i21
+volley witnesses ride the generic gate unchanged. HARDMODE_MAGIC_STAVES stays
+as the census record (anchors row).
+
+**Code-only mode**: written without invoking any compiler (no
+cargo/rustc/rustfmt/tests/dotnet/graphify). The witness tests in
+`projectile.rs::magic_ai_tests` and `world_sim/editing.rs::tests` are WRITTEN,
+NOT RUN — each expected value was verified by re-reading the cited C# and hand
+arithmetic. A follow-up build must run `cargo test -p tr-app` before merging.
+
+The census of `Player.ItemCheck_Shoot`'s magic arm for the 12 hardmode staves
+(`Player.cs:47056+`), each against its `Item.shoot` kind and the port:
+
+| Staff (item) | shoot | C# shoot arm | Port verdict |
+| --- | --- | --- | --- |
+| CrystalStorm 518 | 94 | dedicated `:47820-47826` (±0.04 spread) | CORRECT — the generic arm's 518 tweak + `ai_crystal_storm` (24) |
+| CursedFlames 519 | 95 | generic tail `:49437` | CORRECT — generic spawn + `ai_ball_of_fire` (8) |
+| GoldenShower 1336 | 280 | generic tail | **MISSING** — no 280 row → spawn refused; row + aiStyle-12 arm landed |
+| MagnetSphere 1266 | 254 | generic tail | CORRECT — generic spawn + `magnet_sphere_step` (47) |
+| RainbowRod 495 | 79 | generic tail (channel) | CORRECT — generic spawn + `ai_magic_missile` (9) + the channel write |
+| NimbusRod 1244 | 237 | dedicated `:48271-48277` (ai0/ai1 = cursor) | **MISSING** — no 237 row; row + shoot arm + the aiStyle-45 chain landed |
+| ShadowbeamStaff 1444 | 294 | generic tail | **MISSING** — no 294 row; row + reflect/delay/decay landed (the 48 arm existed) |
+| InfernoFork 1445 | 295 | generic tail | CORRECT — generic spawn + `ai_inferno_fork` (50) + the blast kill hook |
+| SpectreStaff 1446 | 297 | generic tail | CORRECT — generic spawn + `ai_spectre_shot` (51) |
+| BatScepter 1801 | 316 | dedicated `:48344-48354` (Next(2,4) flock) | **MISSING** — no 316 row; row + shoot arm + aiStyle-36 arm landed |
+| Razorpine 1930 | 336 | dedicated `:47647-47662` (volley) | **MISSING** — no 336 row; row + shoot arm + the AI_001 needle branch landed |
+| BlizzardStaff 1931 | 337 | dedicated `:47663-47692` (sky icicles) | **MISSING** — no 337 row; row + shoot arm + the AI_001 icicle branch landed |
+
+The six MISSING staves shared one root cause: their projectile kinds had no
+`proj_data` row, so `spawn_with_data_ai` returned `None` and the staff fired
+nothing. The fix lands the eight `SetDefaults` rows (the six kinds plus the
+Nimbus chain's raining cloud 238 and rain drop 239), the four dedicated shoot
+arms, and the projectile AIs the rows dispatch to.
+
+Deliberate deviations (the pool-wide conventions, same as M4-PROJ-6):
+- **Dust/sound skipped with their draws** — the Golden Shower's three-dust
+  trail + `Next(8)` sparkle (`Projectile.cs:24522-24540`), the Blizzard's
+  `Next(2)` dust (`:56949`), the bat's frame dust, the cloud's rain dust. The
+  arms keep the state markers (alpha/scale/frame) so the tick order stays
+  observable; the RNG streams are preserved BY CONSTRUCTION (no draw consumed
+  for a skipped cosmetic).
+- **The wet/shimmer gates fold dry** — the bat's wet kill (`:27294`), the rain
+  drop's shimmer bounce (`:28088`), the NPC `wet` chase gate (`:27377`): the
+  port carries no liquid-wet/shimmer state on the slot or the NPC, so these
+  read their dry default (the M4-PROJ-6 convention).
+- **The Shadowbeam's per-hit ×0.9 decay** (`:13411`) lands in `damage_pve`'s
+  landed block AFTER the strike (the moon-lord 0.96 precedent): the C# switch
+  runs before `StrikeNPC` but the strike reads the local `dmg` computed at
+  `:12938` from the pre-decay store, so this hit keeps full damage and the next
+  hit reads the decayed value — behaviour-identical.
+- **The Nimbus cloud cap** (`:28058-28082`) ages out the oldest of >2 living
+  raining clouds (`ai[1] = 18000`); the `netUpdate` flag is the MP bookkeeping
+  the single-player port drops.
+- **The bat's homing** picks the tightest-Manhattan candidate (the C#'s
+  `num281 < num277` closest-wins loop, `:27382`), not the magnet sphere's
+  first-candidate stand-in — the bat's C# has no RNG pick, so it is faithful.
+
+### The i01 non-ammo volley `ItemTimeIsZero` tick (the retry round)
+
+The census above fixed the SPAWN half (the six row-less kinds). The second
+half — the fire CADENCE — was still WRONG for the non-ammo path: it fired once
+per swing (`attack_cd <= 0`) and never armed `item_time`, while the C# fires
+`ItemCheck_Shoot` at EVERY `itemAnimation > 0 && ItemTimeIsZero` tick
+(`Player.cs:43544`'s `flag4` → `:43568-43570`), `ApplyItemTime` re-arming
+`itemTime = useTime` after each shot (`:47185-47194` → `SetItemTime(useTime)`,
+`:4416-4418`). A `useTime < useAnimation` staff therefore volleys inside ONE
+swing; the ammo shooters already had this seam (`held_use_ammo > 0`,
+`editing.rs`'s `ItemTimeIsZero` block), the non-ammo half was missing.
+
+Of the 12 staves only TWO have `useTime < useAnimation` (the rest pace
+`useTime == useAnimation`, one shot per swing, already correct):
+- **GoldenShower 1336**: `useTime 6 < useAnimation 18` (`Item.cs:16545-16546`)
+  → THREE streams per swing (ticks 1, 7, 13).
+- **BlizzardStaff 1931**: `useTime 5 < useAnimation 10` (`Item.cs:20976-20977`)
+  → TWO icicle pairs per swing (four icicles, ticks 1 and 6).
+
+The fix (`world_sim/editing.rs`): the first-shot block now arms
+`app.item_time = shooter_use_time_secs(...)` after the swing start (the
+`ApplyItemTime` tail), and a new mid-swing re-fire block — gated on
+`HARDMODE_MAGIC_STAVES.contains(&held.kind) && ticks_of(app.swing) > 0 &&
+ticks_of(app.item_time) <= 0` — re-runs the SAME per-staff spawn chain (the
+Razorpine volley, the Blizzard sky icicles, the Nimbus cursor cloud, the Bat
+flock, the generic/Crystal-Storm tail) and re-arms `item_time`. The block pays
+NO mana: the C# pays ONCE per swing at `ItemCheck_TryStartUse`
+(`Player.cs:52026` → `ActuallyPayMana` `:52638`); the mid-swing `flag4` re-fire
+calls `ItemCheck_Shoot` directly with no mana gate, so the whole volley is free
+after the one pay. The crit rolls per shot on the `UpdatePlayers` stream and
+the multi-shot spreads re-roll in the C#'s argument order (the re-fire is the
+same `ItemCheck_Shoot` body, not a cached first shot).
+
+Scope discipline: the re-fire is gated to the 12-staff list, so the melee
+weapons, the gem staves, the Spirit Flame / Sky Fracture / Nebula Blaze and the
+`useTime == useAnimation` staves keep their one-shot-per-swing cadence
+unchanged (their `item_time` re-arm equals `useAnimation`, so the block never
+fires mid-swing). Witnesses `s1_p_i21_the_golden_shower_volleys_three_streams_per_swing`,
+`s1_p_i21_the_blizzard_volleys_two_icicle_pairs_per_swing`,
+`s1_p_i21_the_crystal_storm_stays_one_shard_per_swing`,
+`s1_p_i21_the_razorpine_volley_draw_order_is_per_shot` (WRITTEN NOT RUN).
 
 ## aiStyle-1 per-type arms (S1-D-5 slice A, 2026-11-18, code-only mode)
 

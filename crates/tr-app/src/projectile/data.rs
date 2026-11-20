@@ -620,6 +620,20 @@ pub const BALL_OF_FROST: u16 = 253;
 pub const MAGNET_SPHERE_BALL: u16 = 254;
 /// `ProjectileID.MagnetSphereBolt` (255) — the ball's shot (aiStyle 48).
 pub const MAGNET_SPHERE_BOLT: u16 = 255;
+/// `ProjectileID.RainCloudMoving` (237) — the Nimbus Rod's flying cloud
+/// (aiStyle 45); on death it spawns the raining cloud 238.
+pub const RAIN_CLOUD_MOVING: u16 = 237;
+/// `ProjectileID.RainCloudRaining` (238) — the settled cloud (aiStyle 45);
+/// it rains the friendly drop 239 every 9 ticks and caps the owner at two.
+pub const RAIN_CLOUD_RAINING: u16 = 238;
+/// `ProjectileID.RainFriendly` (239) — the cloud's rain drop (aiStyle 45).
+pub const RAIN_FRIENDLY: u16 = 239;
+/// `ProjectileID.GoldenShowerFriendly` (280) — the Golden Shower's stream
+/// (aiStyle 12).
+pub const GOLDEN_SHOWER: u16 = 280;
+/// `ProjectileID.ShadowBeamFriendly` (294) — the Shadowbeam Staff's beam
+/// (aiStyle 48); it reflects off tiles instead of dying.
+pub const SHADOWBEAM: u16 = 294;
 /// `ProjectileID.InfernoFriendlyBolt` (295) — the Inferno Fork's bolt
 /// (aiStyle 50); it spawns the blast 296 on death.
 pub const INFERNO_FORK_BOLT: u16 = 295;
@@ -645,6 +659,14 @@ pub const GEM_BOLTS: [u16; 7] = [
     GEM_BOLT_DIAMOND,
     GEM_BOLT_AMBER,
 ];
+/// `ProjectileID.Bat` (316) — the Bat Scepter's homing bat (aiStyle 36).
+pub const BAT_FRIENDLY: u16 = 316;
+/// `ProjectileID.PineNeedleFriendly` (336) — the Razorpine's needle
+/// (aiStyle 1); it flies straight for 50 ticks then falls at 0.5/tick.
+pub const PINE_NEEDLE_FRIENDLY: u16 = 336;
+/// `ProjectileID.Blizzard` (337) — the Blizzard Staff's icicle (aiStyle 1);
+/// it falls through tiles until it nears the owner or the surface.
+pub const BLIZZARD: u16 = 337;
 /// `ProjectileID.BlueDungeonDebris` (736, `ProjectileID.cs:2026`) — the
 /// cracked blue dungeon brick's fall shard: aiStyle 10, 10x10
 /// (`Projectile.cs:7748-7755`).
@@ -1966,6 +1988,36 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:3378-3387` — the ball's bolt: 8x8, aiStyle 48,
             // `extraUpdates = 100`, `timeLeft = 100`.
             MAGNET_SPHERE_BOLT => (8.0, 8.0, 48, 1, 100, 100, true, false, false, RESET_STATE),
+            // S1-P-i21 — the hardmode staves' missing rows (the six kinds the
+            // census found row-less: without a `proj_data` row the
+            // data-carrying spawn refuses the shot entirely).
+            // `:3185-3192` — the Nimbus Rod's flying cloud: 28x28, aiStyle 45,
+            // `penetrate = -1`, `netImportant` (the tail's kind list).
+            RAIN_CLOUD_MOVING => (28.0, 28.0, 45, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:3193-3203` — the settled raining cloud: 54x28, aiStyle 45,
+            // `tileCollide = false`, `ignoreWater`, `penetrate = -1`,
+            // `timeLeft = 18000`.
+            RAIN_CLOUD_RAINING => (54.0, 28.0, 45, -1, 18000, 0, false, false, false, RESET_STATE),
+            // `:3204-3217` — the rain drop: 4x40, aiStyle 45, `penetrate = 5`,
+            // `timeLeft = 300`, `scale = 1.1f`, `extraUpdates = 1`, the
+            // id-static immunity with the 10-tick cooldown.
+            RAIN_FRIENDLY => (4.0, 40.0, 45, 5, 300, 1, true, false, false, (false, -2, true, 10, 0, 1.1)),
+            // `:3664-3674` — the Golden Shower's stream: 32x32, aiStyle 12,
+            // alpha 255, `penetrate = 5`, `extraUpdates = 2`, `ignoreWater`.
+            GOLDEN_SHOWER => (32.0, 32.0, 12, 5, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:3838-3848` — the Shadowbeam Staff's beam: 4x4, aiStyle 48,
+            // `extraUpdates = 100`, `timeLeft = 300`, `penetrate = -1`.
+            SHADOWBEAM => (4.0, 4.0, 48, -1, 300, 100, true, false, false, RESET_STATE),
+            // `:4088-4097` — the Bat Scepter's bat: 16x16, aiStyle 36,
+            // alpha 255, `timeLeft = 600` (the stock `penetrate = 1`).
+            BAT_FRIENDLY => (16.0, 16.0, 36, 1, 600, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:4287-4296` — the Razorpine's needle: 4x4, aiStyle 1,
+            // `scale = 0.8f`, `extraUpdates = 1`.
+            PINE_NEEDLE_FRIENDLY => (4.0, 4.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 0, 0.8)),
+            // `:4297-4307` — the Blizzard Staff's icicle: 10x10, aiStyle 1,
+            // `tileCollide = false`, `extraUpdates = 1` (coldDamage — no slot
+            // field yet).
+            BLIZZARD => (10.0, 10.0, 1, 1, TIME_LEFT_DEFAULT, 1, false, false, false, RESET_STATE),
             // `:3849-3858` — the inferno fork's bolt: 12x12, aiStyle 50,
             // alpha 255.
             INFERNO_FORK_BOLT => (12.0, 12.0, 50, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
@@ -2915,6 +2967,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion_slots,
         net_important: minion
             || sentry
+            // S1-P-i21: the Nimbus Rod's two clouds set `netImportant`
+            // (`Projectile.cs:3186`/`:3194`); the rain drop 239 keeps false.
+            || matches!(kind, RAIN_CLOUD_MOVING | RAIN_CLOUD_RAINING)
             // The slice-B pets set `netImportant` themselves
             // (`Projectile.cs:5419`/`:9643`/`:9993`).
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
@@ -2961,6 +3016,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
             // (`Projectile.cs:4672`/`:4694`).
             || matches!(kind, FORCE_BUBBLE | CTHULUNADO)
+            // S1-P-i21: the Nimbus Rod's raining cloud sets `ignoreWater`
+            // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
+            // keep the stock false.
+            || kind == RAIN_CLOUD_RAINING
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -3271,6 +3330,16 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         FROST_SHARD => 5,
         ORNAMENT_HOSTILE => 2,
         ORNAMENT_SHRAPNEL => 2,
+        // S1-P-i21 — the hardmode staves' sheets (`Main.cs:8569`/`:8573`/
+        // `:8602-8603`): the Blizzard's 5 icicle rows (`frame = (int)ai[1]`,
+        // `Projectile.cs:56948`), the bat's 4-frame flap (the aiStyle-36 arm
+        // wraps at 3, `:27362`), the moving cloud's 4-frame drift and the
+        // raining cloud's 6-frame sheet (the aiStyle-45 arm's frame machine,
+        // `:27976-27985`/`:27996-28005`).
+        BLIZZARD => 5,
+        BAT_FRIENDLY => 4,
+        RAIN_CLOUD_MOVING => 4,
+        RAIN_CLOUD_RAINING => 6,
         _ => 1,
     }
 }

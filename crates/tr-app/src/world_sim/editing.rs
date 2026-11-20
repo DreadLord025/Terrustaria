@@ -241,6 +241,24 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
 /// gate): 121-126 plus the amber bolt 597.
 const GEM_STAFF_BOLTS: [u16; 7] = [121, 122, 123, 124, 125, 126, 597];
 
+/// S1-P-i21 — the 12 hardmode magic staves of the `ItemCheck_Shoot` census
+/// (`ItemID.cs`: RainbowRod 495, CrystalStorm 518, CursedFlames 519, NimbusRod
+/// 1244, MagnetSphere 1266, GoldenShower 1336, ShadowbeamStaff 1444,
+/// InfernoFork 1445, SpectreStaff 1446, BatScepter 1801, Razorpine 1930,
+/// BlizzardStaff 1931). Gate-merge note: i20's GENERIC non-ammo
+/// `ItemTimeIsZero` volley gate (the C#-true `:43544-43570` cadence with the
+/// coins/shootsEveryUse/channel exclusions) supersedes the i21 staff-list
+/// gate — the same `fire_non_ammo_shot` chain serves both, and i21's four
+/// dedicated arms live inside it. Of this list only the GoldenShower
+/// (`useTime 6 < useAnimation 18`, `Item.cs:16545-16546`) and the
+/// BlizzardStaff (`5 < 10`, `:20976-20977`) volley mid-swing; the other ten
+/// pace `useTime == useAnimation` (one shot per swing). Kept as the census
+/// record (the anchors row cites it).
+#[allow(dead_code)]
+const HARDMODE_MAGIC_STAVES: [u16; 12] = [
+    495, 518, 519, 1244, 1266, 1336, 1444, 1445, 1446, 1801, 1930, 1931,
+];
+
 use crate::projectile::GemStaffFeatures;
 
 /// `Item.shootsEveryUse` (`Item.cs:3729/4595/5695/9297/9316/10229/15126/20230/
@@ -887,6 +905,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
         }
 
+
         // The vanilla's `ItemCheck_Shoot` runs inside `ItemCheck`, before the
         // mining/placing arms return (`Player.cs:43681` fires the shot from
         // the swing arm itself), so every item falls through to this pass's
@@ -1235,6 +1254,100 @@ fn fire_non_ammo_shot(
             let bee_kb = crate::hurt_modifiers::bee_kb(strong, fx_kb);
             let slot = app.projectiles.spawn_with_data_ai(
                 bee_kind, spawn.x, spawn.y, vx, vy, bee_dmg, bee_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_crit(slot, crit);
+            }
+        }
+    } else if held.kind == 1930 {
+        // S1-P-i21 — `Player.cs:47647-47662` — the Razorpine's volley:
+        // `2 + Next(3)` needles, each spread by `Next(-35, 36)
+        // * 0.025 * index` per axis then renormalized to
+        // `shootSpeed`, spawned `1.75 * (count - index)` px
+        // ahead along the BASE aim, `ai0 = Next(0, 10 *
+        // (index + 1))`. Draw order per needle: spread X,
+        // spread Y, then the ai0 roll (the NewProjectile
+        // argument evaluates after the speed).
+        let count = 2 + loot_rng.next_range(0, 3);
+        for n in 0..count {
+            let spread = 0.025 * n as f32;
+            let mut vx = shot.x + loot_rng.next_range(-35, 36) as f32 * spread;
+            let mut vy = shot.y + loot_rng.next_range(-35, 36) as f32 * spread;
+            let k = fx_spd / (vx * vx + vy * vy).sqrt();
+            vx *= k;
+            vy *= k;
+            let lead = 1.75 * (count - n) as f32;
+            let ai0 = loot_rng.next_range(0, 10 * (n + 1)) as f32;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x + shot.x * lead, spawn.y + shot.y * lead,
+                vx, vy, raw as i32, fx_kb, ai0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_crit(slot, crit);
+            }
+        }
+    } else if held.kind == 1931 {
+        // S1-P-i21 — `Player.cs:47663-47692` — the Blizzard Staff's two
+        // icicles from the sky. Per icicle: a point 600 px above
+        // the mounted centre, offset toward the cursor by
+        // `Next(201) * -direction`, averaged with the centre X
+        // and jittered `Next(-200, 201)`, dropped `100 * index`;
+        // the aim re-derived from that point, its Y flipped
+        // positive and floored at 20, normalized to shootSpeed;
+        // the velocity takes `Next(-40, 41) * 0.02` per axis and
+        // `ai1 = Next(5)` (the icicle row). Draw order: Next(201),
+        // Next(-200, 201), spread X, spread Y, ai1.
+        let (cx, cy) = p.center();
+        for n in 0..2 {
+            let sky_x = p.x + crate::player::WIDTH * 0.5
+                + loot_rng.next_range(0, 201) as f32 * -(p.facing as f32)
+                + (world_pos.x - p.x);
+            let sx = (sky_x + cx) / 2.0 + loot_rng.next_range(-200, 201) as f32;
+            let sy = cy - 600.0 - 100.0 * n as f32;
+            let mut dx = world_pos.x - sx;
+            let mut dy = world_pos.y - sy;
+            if dy < 0.0 {
+                dy = -dy;
+            }
+            if dy < 20.0 {
+                dy = 20.0;
+            }
+            let k = fx_spd / (dx * dx + dy * dy).sqrt();
+            dx *= k;
+            dy *= k;
+            let vx = dx + loot_rng.next_range(-40, 41) as f32 * 0.02;
+            let vy = dy + loot_rng.next_range(-40, 41) as f32 * 0.02;
+            let ai1 = loot_rng.next_range(0, 5) as f32;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, sx, sy, vx, vy, raw as i32, fx_kb, 0.0, ai1,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_crit(slot, crit);
+            }
+        }
+    } else if held.kind == 1244 {
+        // S1-P-i21 — `Player.cs:48271-48277` — the Nimbus Rod's cloud:
+        // the generic shot at the aim normalized to shootSpeed,
+        // then `ai[0..1]` overwritten with the cursor world
+        // point (the cloud flies to it and settles).
+        let slot = app.projectiles.spawn_with_data_ai(
+            proj, spawn.x, spawn.y, shot.x, shot.y, raw as i32, fx_kb,
+            world_pos.x, world_pos.y,
+        );
+        if let Some(slot) = slot {
+            app.projectiles.set_crit(slot, crit);
+        }
+    } else if held.kind == 1801 {
+        // S1-P-i21 — `Player.cs:48344-48354` — the Bat Scepter's bats:
+        // `Next(2, 4)` bats, each at the aim plus
+        // `Next(-35, 36) * 0.05` per axis (no renormalize).
+        // Draw order per bat: spread X, spread Y.
+        let count = loot_rng.next_range(2, 4);
+        for _ in 0..count {
+            let vx = shot.x + loot_rng.next_range(-35, 36) as f32 * 0.05;
+            let vy = shot.y + loot_rng.next_range(-35, 36) as f32 * 0.05;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
             );
             if let Some(slot) = slot {
                 app.projectiles.set_crit(slot, crit);
@@ -7570,6 +7683,258 @@ mod tests {
             stream_of(&mut app),
             draws_after(seed, 3),
             "crit, then the circular pair in the C#'s order"
+        );
+    }
+
+    // ---- S1-P-i21: the hardmode staves' shoot arms (WRITTEN, NOT RUN) -------
+    // Code-only mode: no cargo/rustc/tests invoked. Each expected value was
+    // verified by re-reading the cited C# and hand arithmetic; a follow-up
+    // build must run `cargo test -p tr-app` before merging.
+
+    /// `Player.cs:47647-47662` — the Razorpine fires `2 + Next(3)` needles
+    /// (2-4), each renormalized to shootSpeed 12, spawned ahead along the base
+    /// aim. The first needle (index 0) has zero spread, so its velocity is the
+    /// base aim exactly and its ai0 is `Next(0, 10)` (0-9).
+    #[test]
+    fn s1_p_i21_the_razorpine_fires_a_renormalized_volley() {
+        let mut app = staff_app(1930, "Razorpine");
+        seed_stream(&mut app, 0x51A2);
+        fire_once(&mut app);
+        let needles: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert!((2..=4).contains(&needles.len()), "2-4 needles, got {}", needles.len());
+        let aim = staff_aim(&app);
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+        for n in &needles {
+            assert_eq!(n.kind, 336, "the Razorpine's shoot");
+            assert!((n.vel.length() - 12.0).abs() < 0.05, "renormalized to 12");
+            assert!(n.ai[0] >= 0.0 && n.ai[0] < 40.0, "ai0 = Next(0, 10*(i+1))");
+        }
+        // The first needle: zero spread → the base aim, ai0 in 0..9.
+        assert!((needles[0].vel - dir * 12.0).length() < 1e-3, "the first needle keeps the base aim");
+        assert!(needles[0].ai[0] < 10.0, "the first needle's ai0 = Next(0, 10)");
+        // The spawn lead: the first needle sits `1.75 * count` px ahead.
+        let spawn = Vec2::new(cx, cy) + dir * 10.0;
+        let lead = needles[0].pos - spawn;
+        assert!((lead - dir * (1.75 * needles.len() as f32)).length() < 1e-2, "the lead along the aim");
+    }
+
+    /// `Player.cs:47647-47662` — the Razorpine's draw chain: the crit, the
+    /// count roll `Next(3)`, then per needle the spread X, spread Y and the ai0
+    /// roll — `2 + 3*count` draws total.
+    #[test]
+    fn s1_p_i21_the_razorpine_draw_chain_is_seed_deterministic() {
+        let seed = 0x51A2_0001;
+        // Replay the count to know the draw total.
+        let mut state = tr_core::UnifiedRandom::new(seed);
+        let _crit = state.next_range(1, 101);
+        let count = 2 + state.next_range(0, 3);
+        let mut app = staff_app(1930, "Razorpine");
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, (2 + 3 * count) as usize),
+            "crit + count + 3 draws per needle"
+        );
+    }
+
+    /// `Player.cs:47663-47692` — the Blizzard Staff fires two icicles from the
+    /// sky (600 px above the mounted centre), each with `ai1 = Next(5)` (the
+    /// icicle row 0-4) and a downward velocity (the aim Y is flipped positive).
+    #[test]
+    fn s1_p_i21_the_blizzard_fires_two_sky_icicles() {
+        let mut app = staff_app(1931, "Blizzard Staff");
+        seed_stream(&mut app, 0xB112);
+        fire_once(&mut app);
+        let icicles: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(icicles.len(), 2, "two icicles");
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        for (i, n) in icicles.iter().enumerate() {
+            assert_eq!(n.kind, 337, "the Blizzard's shoot");
+            assert!(n.ai[1] >= 0.0 && n.ai[1] < 5.0, "ai1 = Next(5)");
+            assert!(n.vel.y > 0.0, "the icicle falls");
+            // The spawn Y is 600 + 100*i above the centre.
+            assert!((n.pos.y - (cy - 600.0 - 100.0 * i as f32)).abs() < 1e-2, "the sky height");
+            let _ = cx;
+        }
+    }
+
+    /// `Player.cs:47663-47692` — the Blizzard's draw chain: the crit, then per
+    /// icicle Next(201), Next(-200, 201), spread X, spread Y, ai1 — 11 draws.
+    #[test]
+    fn s1_p_i21_the_blizzard_draw_chain_is_seed_deterministic() {
+        let seed = 0xB112_0002;
+        let mut app = staff_app(1931, "Blizzard Staff");
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(stream_of(&mut app), draws_after(seed, 11), "crit + 5 draws per icicle");
+    }
+
+    /// `Player.cs:48271-48277` — the Nimbus Rod spawns one cloud at the aim
+    /// normalized to shootSpeed 16, with `ai[0..1]` = the cursor world point.
+    /// No RNG beyond the crit (one draw).
+    #[test]
+    fn s1_p_i21_the_nimbus_cloud_carries_the_cursor() {
+        let mut app = staff_app(1244, "Nimbus Rod");
+        seed_stream(&mut app, 0xC10D);
+        fire_once(&mut app);
+        let clouds: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(clouds.len(), 1, "one cloud");
+        let c = clouds[0];
+        assert_eq!(c.kind, 237, "the Nimbus Rod's shoot");
+        let aim = staff_aim(&app);
+        assert!((c.ai[0] - aim.x).abs() < 1e-3 && (c.ai[1] - aim.y).abs() < 1e-3,
+            "ai[0..1] = the cursor world point");
+        assert!((c.vel.length() - 16.0).abs() < 0.05, "shootSpeed 16");
+        assert_eq!(stream_of(&mut app), draws_after(0xC10D, 1), "only the crit draw");
+    }
+
+    /// `Player.cs:48344-48354` — the Bat Scepter fires `Next(2, 4)` bats (2-3),
+    /// each at the aim plus `Next(-35, 36) * 0.05` per axis (no renormalize).
+    #[test]
+    fn s1_p_i21_the_bat_scepter_fires_a_spread_flock() {
+        let mut app = staff_app(1801, "Bat Scepter");
+        seed_stream(&mut app, 0xBA75);
+        fire_once(&mut app);
+        let bats: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert!((2..=3).contains(&bats.len()), "2-3 bats, got {}", bats.len());
+        let aim = staff_aim(&app);
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+        let base = dir * 10.0; // shootSpeed 10
+        for b in &bats {
+            assert_eq!(b.kind, 316, "the Bat Scepter's shoot");
+            // The spread is at most 35 * 0.05 = 1.75 per axis.
+            assert!((b.vel.x - base.x).abs() <= 1.75 + 1e-3, "the X spread");
+            assert!((b.vel.y - base.y).abs() <= 1.75 + 1e-3, "the Y spread");
+        }
+    }
+
+    /// `Player.cs:48344-48354` — the Bat Scepter's draw chain: the crit, the
+    /// count roll `Next(2, 4)`, then per bat the spread X and spread Y —
+    /// `2 + 2*count` draws total.
+    #[test]
+    fn s1_p_i21_the_bat_scepter_draw_chain_is_seed_deterministic() {
+        let seed = 0xBA75_0003;
+        let mut state = tr_core::UnifiedRandom::new(seed);
+        let _crit = state.next_range(1, 101);
+        let count = state.next_range(2, 4);
+        let mut app = staff_app(1801, "Bat Scepter");
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, (2 + 2 * count) as usize),
+            "crit + count + 2 draws per bat"
+        );
+    }
+
+    // ---- S1-P-i21 (the i01 non-ammo volley tick): the ItemTimeIsZero re-fire ----
+    // WRITTEN, NOT RUN (code-only mode). The C# fires `ItemCheck_Shoot` at every
+    // `itemAnimation > 0 && ItemTimeIsZero` tick (`Player.cs:43544` → `:43568`),
+    // `ApplyItemTime` re-arming `itemTime = useTime` after each shot (`:47193`).
+    // A `useTime < useAnimation` staff therefore volleys inside ONE swing; the
+    // pre-fix non-ammo path fired once per swing and never armed `item_time`.
+
+    /// `Item.cs:16545-16546` (useAnimation 18, useTime 6) + `Player.cs:43544`/
+    /// `:47193` — the Golden Shower fires THREE streams per swing (the shot at
+    /// the swing start, then the `ItemTimeIsZero` re-fires 6 and 12 ticks later),
+    /// not one. The mana pays ONCE per swing (`ItemCheck_TryStartUse`,
+    /// `Player.cs:52026`), so the whole volley costs the single 7-mana pay.
+    #[test]
+    fn s1_p_i21_the_golden_shower_volleys_three_streams_per_swing() {
+        let mut app = staff_app(1336, "Golden Shower");
+        app.player.as_mut().unwrap().mana = 100;
+        seed_stream(&mut app, 0x601D);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // 18 ticks = one full swing. The streams spawn at ticks 1, 7, 13.
+        for _ in 0..18 {
+            update_editing(&mut app, ONE_TICK_SECS, screen);
+        }
+        let streams: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 280)
+            .collect();
+        assert_eq!(streams.len(), 3, "three streams per swing (useTime 6 < useAnimation 18)");
+        // The single mana pay: 100 − 7 = 93 (the volley re-fires pay nothing).
+        assert_eq!(app.player.as_ref().unwrap().mana, 93, "one 7-mana pay per swing");
+    }
+
+    /// `Item.cs:20976-20977` (useAnimation 10, useTime 5) + `Player.cs:47663-
+    /// 47692` — the Blizzard Staff fires TWO icicle pairs per swing (four
+    /// icicles): the pair at the swing start and the `ItemTimeIsZero` re-fire 5
+    /// ticks later. Each pair re-derives its sky point and re-rolls `ai1`.
+    #[test]
+    fn s1_p_i21_the_blizzard_volleys_two_icicle_pairs_per_swing() {
+        let mut app = staff_app(1931, "Blizzard Staff");
+        app.player.as_mut().unwrap().mana = 100;
+        seed_stream(&mut app, 0xB112);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // 10 ticks = one full swing. The pairs spawn at ticks 1 and 6.
+        for _ in 0..10 {
+            update_editing(&mut app, ONE_TICK_SECS, screen);
+        }
+        let icicles: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 337)
+            .collect();
+        assert_eq!(icicles.len(), 4, "two pairs per swing (useTime 5 < useAnimation 10)");
+        // The single mana pay: 100 − 9 = 91.
+        assert_eq!(app.player.as_ref().unwrap().mana, 91, "one 9-mana pay per swing");
+    }
+
+    /// `Item.cs:7578-7579` (useAnimation 7 == useTime 7) — the Crystal Storm
+    /// fires ONE shard per swing: the `ItemTimeIsZero` re-arm keeps the cadence
+    /// at `useTime`, so the next shot lands only when the swing restarts. The
+    /// volley fix must not turn the `useTime == useAnimation` staves into
+    /// multi-shot weapons.
+    #[test]
+    fn s1_p_i21_the_crystal_storm_stays_one_shard_per_swing() {
+        let mut app = staff_app(518, "Crystal Storm");
+        app.player.as_mut().unwrap().mana = 100;
+        seed_stream(&mut app, 0xC57);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // 7 ticks = one full swing; only the swing-start shot fires.
+        for _ in 0..7 {
+            update_editing(&mut app, ONE_TICK_SECS, screen);
+        }
+        let shards: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 94)
+            .collect();
+        assert_eq!(shards.len(), 1, "one shard per swing (useTime == useAnimation)");
+    }
+
+    /// `Player.cs:47647-47662` + `:43544`/`:47193` — the Razorpine's volley
+    /// re-fire rolls a FRESH count and spreads on the `UpdatePlayers` stream
+    /// (the C#'s one `ItemCheck_Shoot` chain runs per shot). The draw chain per
+    /// shot is crit + count + 3·count; two shots in one swing spend the sum.
+    /// (Razorpine useTime 8 == useAnimation 8 → one volley per swing; this
+    /// pins the per-shot draw order the re-fire inherits.)
+    #[test]
+    fn s1_p_i21_the_razorpine_volley_draw_order_is_per_shot() {
+        let seed = 0x51A2_0004;
+        let mut state = tr_core::UnifiedRandom::new(seed);
+        let _crit = state.next_range(1, 101);
+        let count = 2 + state.next_range(0, 3);
+        let mut app = staff_app(1930, "Razorpine");
+        app.player.as_mut().unwrap().mana = 100;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, (2 + 3 * count) as usize),
+            "crit + count + 3 draws per needle (the re-fire re-rolls the same chain)"
         );
     }
 
