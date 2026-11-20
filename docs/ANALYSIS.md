@@ -24935,6 +24935,16 @@ plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
 - `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
   (`GameTipsDisplay`), out of scope; the gamepad squiggle (`:122-127`) and
   F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug pieces, unported.
+- **W4-d86 re-verification (research/18c, f22 conflict 5).** The research/18
+  PARTIAL row ("folded into world_select/save_list") was stale: the screen
+  is a first-class `FrontScreen::WorldLoad` state and nothing was folded.
+  Verdict PORTED with the deferrals above. The F5 arm's scope-out is now
+  explicit: `UIWorldGenDebug` (1 702 ln) opens only via
+  `DebugOptions.enableDebugCommands && F5` (`UIWorldLoad.cs:50-52`) or the
+  worldgen debug hook (`WorldGenerator.cs:477`) and is excluded with
+  `Testing/**`; `OnActivate`'s `ChangePoint(3000)` (`:37-44`) joins the
+  squiggle in the Stage-1 gamepad exclusion. The note rides
+  `world_load.rs`'s module header so the code carries the record too.
 - **The `TR_UI=worldload` preset latches a fixed snapshot.** The screenshot
   preset (`settings_ui.rs`) parks a mid-generation progress (42.5% overall /
   60% current, the `LegacyWorldGen.11` "Generating jungle" label) with no
