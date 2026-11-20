@@ -180,3 +180,58 @@ Wiring belongs to the furniture lane (W4-d57); the seam is a `furniture_post_pas
 after `cases_a` with a `frame_of` backed by a ported `AnimateTiles_CritterCages`.
 Tests already pin the rewrite: `drawdata_furniture.rs` :319/:487 (per-kind sweep),
 :559/:563 (post-pass).
+
+### Batch 3 — water-animal + jellyfish cages: 282, 505, 543, 598, 568-570, 288-295, 360, 580, 620, 521-527, 316-318 (29 ids)
+
+C# groups `TileDrawing.cs:5833-5907`. The water probe, verbatim (:6528-6533):
+
+```csharp
+	private int GetWaterAnimalCageFrame(int x, int y, int tileFrameX, int tileFrameY)
+	{
+		int num = x - tileFrameX / 18;
+		int num2 = y - tileFrameY / 18;
+		return num / 2 * (num2 / 3) % Main.cageFrames;
+	}
+```
+
+Port: `water_animal_cage_frame` (`drawdata_furniture.rs:83-87`), term-for-term.
+
+| Id(s) | C# body (verbatim key lines) | C# line | Rust arm (`cage_table`) | Verdict |
+| --- | --- | --- | --- | --- |
+| 282, 505, 543 | `tileTop = 2;` `Main.critterCage = true;` `addFrY = Main.fishBowlFrame[waterAnimalCageFrame5] * 36;` | :5837-5840 | `282 \| 505 \| 543 => (CageAnim::FishBowl, 0, 36, WATER)` :146 | PORTED-UNWIRED |
+| 598 | `addFrY = Main.lavaFishBowlFrame[waterAnimalCageFrame4] * 36;` | :5845-5848 | `598 => (CageAnim::LavaFishBowl, 0, 36, WATER)` :147 | PORTED-UNWIRED |
+| 568, 569, 570 | `addFrY = Main.fairyJarFrame[waterAnimalCageFrame3] * 36;` | :5855-5858 | `568..=570 => (CageAnim::FairyJar, 0, 36, WATER)` :148 | PORTED-UNWIRED |
+| 288-295 | `int num8 = typeCache - 288;` … `addFrY = Main.butterflyCageFrame[num8, waterAnimalCageFrame2] * 36;` | :5873-5881 | `288..=295 => (CageAnim::Butterfly, kind as i32 - 288, 36, WATER)` :150 | PORTED-UNWIRED |
+| 360, 580, 620 | `if (typeCache == 360 \|\| typeCache == 580 \|\| typeCache == 620)` `{ num8 = 8; }` (same butterfly body) | :5877-5880 | `360 \| 580 \| 620 => (CageAnim::Butterfly, 8, 36, WATER)` :151 | PORTED-UNWIRED |
+| 521-527 | `addFrY = Main.dragonflyJarFrame[typeCache - 521, waterAnimalCageFrame] * 36;` | :5892-5895 | `521..=527 => (CageAnim::Dragonfly, kind as i32 - 521, 36, WATER)` :152 | PORTED-UNWIRED |
+| 316-318 | `int smallAnimalCageFrame = this.GetSmallAnimalCageFrame(x, y, tileFrameX, tileFrameY);` `addFrY = Main.jellyfishCageFrame[typeCache - 316, smallAnimalCageFrame] * 36;` | :5902-5905 | `316..=318 => (CageAnim::Jellyfish, kind as i32 - 316, 36, SMALL)` :154 | PORTED-UNWIRED |
+
+The butterfly verbatim (:5873-5882):
+
+```csharp
+			tileTop = 2;
+			Main.critterCage = true;
+			int waterAnimalCageFrame2 = this.GetWaterAnimalCageFrame(x, y, tileFrameX, tileFrameY);
+			int num8 = typeCache - 288;
+			if (typeCache == 360 || typeCache == 580 || typeCache == 620)
+			{
+				num8 = 8;
+			}
+			addFrY = Main.butterflyCageFrame[num8, waterAnimalCageFrame2] * 36;
+```
+
+Note the jellyfish group reads the **SMALL** probe (`/3 * /3`), not the water probe —
+the port carries that (`SMALL` flag, :154). The 360/580/620 → row 8 override is the
+"jarred butterfly variants share the eighth row" quirk, ported as the constant row.
+
+Second-switch glow rows for the same ids (audited here since the first-switch index
+falls in d64): 568/569/570 → `GlowMask[268/269/270]`, `Color.White`, rect
+`(tileFrameX, tileFrameY + addFrY, w, h)` (:6085-6099) — ported in
+`drawdata_cases_a.rs:329-331` (`rect_anim_y` = `fy + add_fr_y`); 580 →
+`GlowMask[289]`, `new Color(225, 110, 110, 0)` (:6100-6104) — ported :333. These glow
+records are produced but **consumed by no pass** (`tiles.rs:731` binds the result to
+`_glow`; TILE-DRAW-2 owns the bind) — a draw-side deviation, not a case gap.
+
+UNWIRED rationale identical to batch 2: static fallback `drawdata.rs:933-943`
+(`282 | 505 | 543 | 598 | 568..=570 | 288..=295 | 360 | 580 | 620 | 521..=527` and
+`316 | 317 | 318`, top 2 only); `furniture_post_pass` uncalled; frozen row 0.
