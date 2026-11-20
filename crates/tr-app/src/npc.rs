@@ -3129,6 +3129,18 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-d23 style-9 census fix: the spheres'
+                            // SetDefaults alpha rows — Burning Sphere 25
+                            // and Chaos Ball 30 (+ its Tim clone 665)
+                            // spawn at `alpha = 100` (`NPC.cs:9106` /
+                            // `:15711` / `:17415`), the Water Sphere 33
+                            // at `alpha = 255` (`:9147`). The ctor never
+                            // carried them (stock 0 — an opaque sphere),
+                            // so the Burning/Water spheres drew solid and
+                            // the Chaos Ball's first tick jumped 0→255
+                            // instead of the C#'s 100→255.
+                            NpcKind::BurningSphere | NpcKind::ChaosBall => 100,
+                            NpcKind::WaterSphere => 255,
                             _ => 0,
                         }
                     }),
@@ -4676,6 +4688,11 @@ impl Npc {
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
+            // W4-d23 verify-only census: the machine is unchanged (the
+            // S1-D-3-s9 landing already faithful — the one-shot launch,
+            // the ftw tables, EncourageDespawn(100), the alpha/spin
+            // writes); the census fix is the ctor's SetDefaults alpha
+            // rows (25/30/665 → 100, 33 → 255), not the arm.
             9 => self.ai_009_sphere_family(world, player, rng),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
@@ -33544,5 +33561,117 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+
+// =====================================================================
+// W4-d23 — the aiStyles 9-14 axis census witnesses (style 9 slice).
+// WRITTEN, NOT RUN (code-only mode). 9 caster spheres LANDED + WIRED
+// (S1-D-3-s9, the axis claim + `npc_ai_style9::sphere_family_step`) ->
+// verify-only on the machine; the census FIX is the ctor's SetDefaults
+// alpha rows (25/30/665 -> 100, 33 -> 255 — `NPC.cs:9106`/`:15711`/
+// `:17415`/`:9147`), which the stock-0 ctor never carried.
+// =====================================================================
+#[cfg(test)]
+mod w4_d23_style9_census_tests {
+    use super::*;
+
+    /// The axis claims style 9 exactly once (the S1-D-3-s9 landing);
+    /// the sphere kind arm is the unreachable marker.
+    #[test]
+    fn w4_d23_the_axis_claims_style_9_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "9" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 9 claimed once");
+        assert!(src.contains("aiStyle 9 rides the style axis (S1-D-3)"));
+    }
+
+    /// The census fix: the ctor carries the spheres' SetDefaults alpha
+    /// rows — Burning Sphere 25 (`NPC.cs:9106`) and Chaos Ball 30 + its
+    /// Tim clone 665 (`:15711`/`:17415`, folded into one kind) spawn at
+    /// 100, the Water Sphere 33 (`:9147`) at 255. Pre-fix the stock 0
+    /// drew every sphere opaque and the Chaos Ball's first tick jumped
+    /// 0 -> 255 instead of the C#'s 100 -> 255.
+    #[test]
+    fn w4_d23_the_sphere_ctor_alpha_rows_match_setdefaults() {
+        let burning = Npc::new(NpcKind::BurningSphere, 0.0, 0.0, 1, 0.0);
+        assert_eq!(burning.alpha, 100, "type 25 (:9106)");
+        let chaos = Npc::new(NpcKind::ChaosBall, 0.0, 0.0, 1, 0.0);
+        assert_eq!(chaos.alpha, 100, "type 30/665 (:15711/:17415)");
+        let water = Npc::new(NpcKind::WaterSphere, 0.0, 0.0, 1, 0.0);
+        assert_eq!(water.alpha, 255, "type 33 (:9147)");
+    }
+
+    /// The 9 claim is LIVE and draw-free: one full `update_rng` tick on
+    /// the Chaos Ball runs the landed machine — the one-shot
+    /// TargetClosest launch at the 6-speed (`NPC.cs:21407-21449`),
+    /// EncourageDespawn(100) (`:21496`), the dust-loop alpha write
+    /// 100 -> 255 (`:21519-21521`, the ctor row now feeds it), the
+    /// 0.4*direction spin (`:21568`) — and consumes NO rand (the dust
+    /// emissions incl. type 33's Next(5) are the documented skip; the
+    /// player is parked clear of the contact box so the contact pass
+    /// adds no damage-variance draws — the W4-d29 arm-63 precedent).
+    #[test]
+    fn w4_d23_the_chaos_ball_rides_the_9_axis_draw_free() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 100.0 * TILE_PX;
+        p.y = 110.0 * TILE_PX;
+        let mut ball = Npc::new(NpcKind::ChaosBall, 80.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        ball.hp = ball.max_hp;
+        assert_eq!(ball.target, 255, "the SetDefaults sentinel");
+        let mut rng = UnifiedRandom::new(9);
+        ball.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(ball.target, 0, "TargetClosest committed the slot (:21409)");
+        let speed = (ball.vx * ball.vx + ball.vy * ball.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.01, "the num120 6 launch, speed {speed}");
+        assert!(ball.vx > 0.0 && ball.vy > 0.0, "aims right/down at the player");
+        assert_eq!(ball.despawn_timer, 100, "EncourageDespawn(100) (:21496)");
+        assert_eq!(ball.alpha, 255, "the ctor 100 -> the dust-loop 255 (:21521)");
+        assert!((ball.rotation - 0.4 * ball.facing as f32).abs() < 1e-6, "the spin (:21568)");
+        assert_eq!(rng, UnifiedRandom::new(9), "the sphere tick draws nothing");
+    }
+
+    /// The other two spheres keep their ctor alpha through the tick
+    /// (the C#'s dust loop writes alpha ONLY for types 30/665) and the
+    /// per-kind launch speeds ride the table: Burning Sphere 5
+    /// (`:21411-21414`), Water Sphere 6 (`:21410`). All draw-free.
+    #[test]
+    fn w4_d23_the_burning_and_water_spheres_keep_their_ctor_alpha() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 100.0 * TILE_PX;
+        p.y = 110.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(33);
+        let mut burning = Npc::new(NpcKind::BurningSphere, 80.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        burning.hp = burning.max_hp;
+        burning.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(burning.alpha, 100, "type 25 keeps its SetDefaults row");
+        let speed = (burning.vx * burning.vx + burning.vy * burning.vy).sqrt();
+        assert!((speed - 5.0).abs() < 0.01, "the Burning Sphere 5 (:21412)");
+        let mut water = Npc::new(NpcKind::WaterSphere, 80.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        water.hp = water.max_hp;
+        water.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(water.alpha, 255, "type 33 keeps its SetDefaults row");
+        let speed = (water.vx * water.vx + water.vy * water.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.01, "the default num120 6 (:21410)");
+        assert_eq!(rng, UnifiedRandom::new(33), "both ticks draw nothing");
     }
 }
