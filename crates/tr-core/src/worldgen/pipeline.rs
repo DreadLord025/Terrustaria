@@ -1322,6 +1322,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("wet jungle", "Wet Jungle", step_wet_jungle),
     step!("pyramids", "Pyramids", step_pyramids),
     step!("pots", "Pots", step_pots),
+    // The vanilla Hellforge slot (`WorldGen.cs:18187`): after Pots (`:17996`),
+    // before Spreading Grass (`:18237`) — W4-g37 B7. Own
+    // `pass_rng("Hellforge")` stream.
+    step!("hellforge", "Hellforge", step_hellforge),
     step!("beehives", "Hives", step_beehives),
     step!("hell forts", "", step_hell_forts),
     step!("lihzahrd temple", "Jungle Temple", step_temple),
@@ -2755,6 +2759,20 @@ fn step_quick_cleanup(
     );
 }
 
+/// The vanilla Hellforge slot (`WorldGen.cs:18187-18236`) — W4-g37 B7: the
+/// hell-fort-wall hellforge placement. Own `pass_rng("Hellforge")` stream.
+fn step_hellforge(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let mut rng = streams.pass_rng("Hellforge");
+    passes_b::pass_hellforge(world, &mut rng);
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3347,8 +3365,9 @@ mod tests {
         // `cave walls` (vanilla "Cave Walls", `:17711`) after `temple part 2`.
         // B5: + `floating island houses` (vanilla "Floating Island Houses",
         // `:17859`) after `floating islands`. B6: + `quick cleanup` (vanilla
-        // "Quick Cleanup", `:17875`) after `floating island houses`.
-        assert_eq!(names.len(), 72);
+        // "Quick Cleanup", `:17875`) after `floating island houses`. B7: +
+        // `hellforge` (vanilla "Hellforge", `:18187`) after `pots`.
+        assert_eq!(names.len(), 73);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3418,6 +3437,9 @@ mod tests {
                 "wet jungle",
                 "pyramids",
                 "pots",
+                // W4-g37 B7: the vanilla Hellforge slot
+                // (`WorldGen.cs:18187`) follows Pots (`:17996`).
+                "hellforge",
                 "beehives",
                 "hell forts",
                 "lihzahrd temple",
@@ -3777,6 +3799,23 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Floating Island Houses") < cpos("Quick Cleanup"));
         assert!(cpos("Quick Cleanup") < cpos("Pots"));
+    }
+
+    /// W4-g37 B7: `hellforge` sits after `pots`, before `beehives` (the
+    /// vanilla Hellforge anchor `WorldGen.cs:18187` follows Pots `:17996`).
+    #[test]
+    fn w4_g37_the_hellforge_step_follows_the_pots() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("hellforge"), pos("pots") + 1);
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Pots") < cpos("Hellforge"));
+        assert!(cpos("Hellforge") < cpos("Spreading Grass"));
     }
 
     #[test]

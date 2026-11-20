@@ -2062,3 +2062,53 @@ pub(crate) fn pass_quick_cleanup(
         }
     }
 }
+
+// --- B7: Hellforge -----------------------------------------------------------
+
+/// The `Hellforge` pass (`WorldGen.cs:18187-18236`): the `maxTilesX/200`
+/// hellforge count, the per-forge rejection search (a hell-fort wall 13/14
+/// site, the fall-to-floor, the `PlaceTile 77`), the 10000 give-up budget.
+/// Returns the number placed.
+pub(crate) fn pass_hellforge(world: &mut World, rng: &mut Rng) -> u32 {
+    let num = world.width / 200;
+    // The sub-vanilla guard: the C# `Next(maxY-250, maxY-30)` band collapses
+    // on a tiny world.
+    if world.height <= 250 || num <= 0 {
+        return 0;
+    }
+    let mut placed = 0u32;
+    for _i in 0..num {
+        let mut flag = false;
+        let mut num2 = 0;
+        while !flag {
+            let num3 = rng.range(1, world.width);
+            let mut j = rng.range(world.height - 250, world.height - 30);
+            // `:18204`: the hell-fort wall gate.
+            let wall = world.tile(num3, j).map(|t| t.wall).unwrap_or(0);
+            if wall == 13 || wall == 14 {
+                // `:18206-18209`: fall to the first active tile (the maxY-20
+                // bound), then step up.
+                while j < world.height - 20 && !world.tile(num3, j).is_some_and(|t| t.active()) {
+                    j += 1;
+                }
+                j -= 1;
+                // `:18210`: PlaceTile(num3, j, 77) — the default mute/forced.
+                place_tile(world, num3, j, 77, false, false, 0, rng);
+                // `:18211-18222`: the success / give-up arm.
+                if world.tile(num3, j).is_some_and(|t| t.kind == 77) {
+                    flag = true;
+                    placed += 1;
+                } else {
+                    num2 += 1;
+                    if num2 >= 10000 {
+                        flag = true;
+                    }
+                }
+            }
+            // `:18225-18232`: the C# catch arm (an OOB read) — the port's
+            // dense array never throws, so a non-wall site simply retries
+            // without incrementing num2 (the C# only increments on the catch).
+        }
+    }
+    placed
+}

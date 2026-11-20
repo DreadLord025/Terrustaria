@@ -292,6 +292,24 @@ Traps, Final Cleanup.
 - **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
 - **Verification**: code-only — witnesses written, not run.
 
+## B7 Hellforge — landing notes (this commit)
+
+- **Pass body** `WorldGen.cs:18187-18236` → `passes_b.rs::pass_hellforge`.
+  The `maxTilesX/200` count; the per-forge search: `Next(1, maxX)` ×
+  `Next(maxY-250, maxY-30)`, the hell-fort wall 13/14 gate (`:18204`), the
+  fall-to-first-active with the `maxY-20` bound + the `j--` step-up
+  (`:18206-18209`), `PlaceTile(num3, j, 77)` (default mute/forced,
+  `:18210`), the success / 10000 give-up arm (`:18211-18222`).
+- **Deviation**: the C# `catch` arm (`:18225-18232`) increments `num2` only on
+  an OOB read; the port's dense array never throws, so a non-wall site retries
+  without incrementing (cited inline). The port's hell forts paint wall 14
+  (`structures.rs::WALL_HELL_BRICK`), so the gate fires.
+- **Pipeline**: `step!("hellforge", …)` after `pots`, before `beehives`;
+  count 72→73; witness `w4_g37_the_hellforge_step_follows_the_pots`; progress
+  `Gen(36)` (`:18191`).
+- **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.
+- **Verification**: code-only — witnesses written, not run.
+
 ## Landing ledger
 
 | pass | commit | status |
@@ -303,7 +321,7 @@ Traps, Final Cleanup.
 | B3 Water Chests | 4c58c56c | ported — witnesses written not run |
 | B4 Cave Walls | ef7c9f76 | ported — witnesses written not run |
 | B5 Floating Island Houses | 3d74564e | ported — witnesses written not run |
-| B6 Quick Cleanup | (this commit) | ported — witnesses written not run |
-| B7 Hellforge | — | pending |
+| B6 Quick Cleanup | b48a702b | ported — witnesses written not run |
+| B7 Hellforge | (this commit) | ported — witnesses written not run |
 | B8 Spreading Grass | — | pending |
 | B9 Surface Ore and Stone | — | pending |
