@@ -356,6 +356,11 @@ pub const DARK_MAGE_MARKER: u16 = 673;
 /// the 673 row's twin (`Projectile.cs:7208-7220`); the AI()'s aiStyle-133
 /// block's 40-tick heal scan is `:36465-36497`.
 pub const DARK_MAGE_HEAL: u16 = 674;
+/// `ProjectileID.DD2ElderWins` (672) — the Old One's Army victory crystal's
+/// destruction marker (`Projectile.cs:7196-7207`: 10x10, aiStyle 132,
+/// alpha 255, tileCollide false, ignoreWater, timeLeft 900, hostile,
+/// penetrate -1); the AI()'s inline 4-state machine is `:36318-36434`.
+pub const DD2_ELDER_WINS: u16 = 672;
 /// `ProjectileID.DD2DarkMageShot` (675) — the Dark Mage's shadowflame
 /// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
 pub const DARK_MAGE_FLAME: u16 = 675;
@@ -2581,6 +2586,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // marker 673 + the heal marker 674 (10x10, aiStyle 133, alpha
             // 255, tileCollide false, timeLeft 900) and the shadowflame
             // 675 (10x10, aiStyle 1, alpha 255, penetrate -1).
+            // `DD2ElderWins` (`Projectile.cs:7196-7207`): the victory
+            // crystal's destruction marker — 10x10, aiStyle 132, alpha 255,
+            // tileCollide false, ignoreWater, timeLeft 900, penetrate -1.
+            // W4-d14.
+            DD2_ELDER_WINS => (
+                10.0,
+                10.0,
+                132,
+                -1,
+                900,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `DD2DarkMageRaise` / `DD2DarkMageHeal` (`Projectile.cs:7208-7219`):
             // 10x10, aiStyle 133, `alpha = 255`, `timeLeft = 900`,
             // `penetrate = -1`, no tile collision, water-ignoring. The 674
@@ -4228,7 +4249,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d14 — `Projectile.cs:7215`: the Dark Mage cast markers
             // (673/674) set `ignoreWater = true` (the 673 row's flag was
             // missing from the overlay; the 674 heal twin shares it).
-            || matches!(kind, DARK_MAGE_MARKER | DARK_MAGE_HEAL),
+            // `:7203`: the 672 victory marker sets it too.
+            || matches!(kind, DARK_MAGE_MARKER | DARK_MAGE_HEAL | DD2_ELDER_WINS),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

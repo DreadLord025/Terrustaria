@@ -3109,6 +3109,31 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
         }
         // `DD2Event.ReportLoss` (`DD2Event.cs:507-515`).
         tr_core::dd2::report_loss(&mut app.world.dd2_lost, &mut app.world.dd2_spawn_hold);
+        // `NPC.cs:40883` — the 672 defeat-scene marker (W4-d14, aiStyle
+        // 132): `NewProjectile(Center - UnitY * 40, Zero, 672, 0, 0f,
+        // Main.myPlayer)` — the C# passes the CENTRE; the spawn takes the
+        // top-left (the breath precedent). The filters/sound/gore drama
+        // rides the arm's documented skips (no scene-filter layer).
+        if let Some(crystal) = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DD2EterniaCrystal && n.ai[1] == 1.0 && n.ai[0] == 0.0)
+        {
+            let (cw, ch) = crystal.size();
+            let (cx, cy) = (crystal.x + cw * 0.5, crystal.y + ch * 0.5 - 40.0);
+            let d = crate::projectile::proj_data(crate::projectile::DD2_ELDER_WINS)
+                .expect("the rowed marker");
+            app.projectiles.spawn_hostile_ai_owned(
+                crate::projectile::DD2_ELDER_WINS,
+                app.local_id as u8,
+                Vec2::new(cx - d.w * 0.5, cy - d.h * 0.5),
+                Vec2::ZERO,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            );
+        }
     }
     // `DD2Event.UpdateTime` (`DD2Event.cs:194-251`): the hold's decay,
     // then — at the exact zero crossing (`:222-236`) — the `!LostThisRun`

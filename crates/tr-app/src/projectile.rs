@@ -10662,6 +10662,96 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s aiStyle-132 block (`Projectile.cs:36318-36434`) — the 672
+    /// DD2ElderWins crystal-destruction marker (W4-d14). The four-state
+    /// machine on `localAI[1]`:
+    /// - 0: the defeat cue at `localAI[0] == 0` (SKIPPED — no tracked-sound
+    ///   layer), the 20-gore burst at 105, the shader ramps (SKIPPED — no
+    ///   scene-filter layer), then the 120-tick advance;
+    /// - 1: the shader hold (skipped), the 300-tick advance. The C#'s
+    ///   `velocity.Y` write sits INSIDE `!Main.dedServ` (`:36367-36371`) —
+    ///   a server-side quirk the port keeps (the sim is the dedServ shape:
+    ///   no velocity write here);
+    /// - 2: `velocity.Y--` every tick, the 60-tick advance;
+    /// - 3: the shader deactivation (skipped) + `Kill()`.
+    /// The `localAI[1] >= 1` dust trail (`:36414-36432`) runs after the
+    /// state arms: `1 + (int)(-velocity.Y)` iterations, each gated on
+    /// `Next(2)`; the taken branch draws the height float, the x-jitter
+    /// float, the sine-phase `Next(3)`, the lerp float and the velocity
+    /// float — five draws, in that order. `localAI[0]++` closes the block.
+    ///
+    /// RNG census (the taken dust branch): `NextFloat` (`:36420`),
+    /// `NextFloat` (`:36421`), `Next(3)` (`:36422`), `NextFloat` (`:36423`),
+    /// `NextFloat` (`:36428`). The gore burst's 20 iterations each draw
+    /// `NextFloat` (the angle jitter `:36330`), `NextFloat` (the radius
+    /// `:36330`) and `SelectRandom`'s `Next(4)` (`:36331`, Utils.cs:2459-
+    /// 2462 — four choices 1027-1030); `Gore.NewGoreDirect`'s internal
+    /// kicks `Next(10,31)`/`Next(-20,21)` follow per gore (Gore.cs:1327-
+    /// 1328). The gore bodies are SKIPPED (no draw layer).
+    fn ai_elder_wins(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        if self.local_ai[1] == 0.0 {
+            // `:36322-36325` — the defeat cue (skipped).
+            // `:36326-36343` — the 20-gore burst at the 105th tick.
+            if self.local_ai[0] == 105.0 {
+                for _ in 0..20 {
+                    let _angle = rng.next_float(); // `:36330` the ±0.05 jitter
+                    let _radius = rng.next_float(); // `:36330` the 0-10 radius
+                    let _type = rng.next_range(0, 4); // `:36331` SelectRandom
+                    let _ = rng.next_range(10, 31); // NewGore's Y kick
+                    let _ = rng.next_range(-20, 21); // NewGore's X kick
+                }
+            }
+            // `:36344-36358` — the shader activation/intensity (skipped).
+            // `:36359-36363` — the 120-tick advance.
+            if self.local_ai[0] == 120.0 {
+                self.local_ai[0] = 0.0;
+                self.local_ai[1] += 1.0;
+            }
+        } else if self.local_ai[1] == 1.0 {
+            // `:36367-36384` — the !dedServ block (the velocity.Y ramp and
+            // the shader hold): skipped whole — the sim keeps the server
+            // shape (no velocity write, no filters).
+            // `:36385-36389` — the 300-tick advance.
+            if self.local_ai[0] == 300.0 {
+                self.local_ai[0] = 0.0;
+                self.local_ai[1] += 1.0;
+            }
+        } else if self.local_ai[1] == 2.0 {
+            // `:36393-36397` — the vortex progress (skipped).
+            // `:36398` — the fall accel.
+            self.vel.y -= 1.0;
+            // `:36399-36403` — the 60-tick advance.
+            if self.local_ai[0] == 60.0 {
+                self.local_ai[0] = 0.0;
+                self.local_ai[1] += 1.0;
+            }
+        } else if self.local_ai[1] == 3.0 {
+            // `:36407-36411` — the shader deactivation (skipped).
+            // `:36412` — `this.Kill()`.
+            self.active = false;
+            self.time_left = 0;
+        }
+        // `:36414-36432` — the dust trail (the state arms above may have
+        // advanced localAI[1] this tick — the C# reads it AFTER them).
+        if self.local_ai[1] >= 1.0 {
+            let iterations = 1 + (0.0 - self.vel.y) as i32;
+            for _ in 0..iterations {
+                if rng.next_range(0, 2) == 0 {
+                    let _height = rng.next_float(); // `:36420`
+                    let _jitter = rng.next_float(); // `:36421`
+                    let _phase = rng.next_range(0, 3); // `:36422`
+                    let _lerp = rng.next_float(); // `:36423`
+                    let _vy = rng.next_float(); // `:36428`
+                }
+            }
+        }
+        // `:36433` — the age counter.
+        self.local_ai[0] += 1.0;
+        // `HandleMovement`: the row keeps `tileCollide = false` — the
+        // position follows the velocity (the state-2 fall integrates).
+        self.kill_step(world);
+    }
+
     /// `AI_187_ShadowHand` (`Projectile.cs:42502-42591`) with its variation
     /// helper (`:42592-42634`) — the Insanity shadow (964 friendly / 965
     /// hostile).
@@ -17583,6 +17673,9 @@ impl ProjectilePool {
                         // The aiStyle-133 Dark Mage raise marker
                         // (`:36435-36453`): the opacity ramp and the kill.
                         133 => self.slots[i].ai_dark_mage_raise(world, npcs),
+                        // The aiStyle-132 crystal-destruction marker
+                        // (`:36318-36434`): the 4-state defeat drama.
+                        132 => self.slots[i].ai_elder_wins(world, rng),
                         // The aiStyle-187 Insanity shadow (`:42502-42591`):
                         // the four variation choreographies and the alpha
                         // ramp.
@@ -44725,5 +44818,125 @@ mod w4_d14_betsy_breath_tests {
         }
         tick(&mut pool, &mut w, &mut npcs, &mut rng);
         assert!(!pool.slots()[slot].active, "ai[0] = 78 kills (:68848)");
+    }
+}
+
+/// W4-d14 — aiStyle 132 (`AI()`'s inline block, `Projectile.cs:36318-36434`):
+/// the 672 crystal-destruction marker's four-state machine. Code-only:
+/// WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_d14_elder_wins_tests {
+    use super::*;
+
+    fn marker() -> Projectile {
+        let d = proj_data(DD2_ELDER_WINS).expect("the 672 row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = DD2_ELDER_WINS;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    struct R {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for R {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The row (`Projectile.cs:7196-7207`).
+    #[test]
+    fn the_672_row_matches_set_defaults() {
+        let d = proj_data(DD2_ELDER_WINS).expect("the row");
+        assert_eq!((d.w, d.h), (10.0, 10.0), ":7198-7199");
+        assert_eq!(d.ai_style, 132, ":7200");
+        assert_eq!(d.alpha, 255, ":7201");
+        assert!(!d.tile_collide, ":7202");
+        assert!(d.ignore_water, ":7203");
+        assert_eq!(d.time_left, 900, ":7204");
+        assert_eq!(d.penetrate, -1, ":7206");
+    }
+
+    /// State 0 → 1 at the 120th tick; the gore burst fires once at 105
+    /// with 20 × (2 floats + Next(4) + the two gore kicks).
+    #[test]
+    fn state_zero_bursts_gores_at_105_and_advances_at_120() {
+        let w = World::new("t".into(), 300, 200);
+        let mut p = marker();
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        for _ in 0..104 {
+            p.ai_elder_wins(&w, &mut rng);
+        }
+        // Ticks 1..104: localAI[0] entered at 0..103 — no burst yet. The
+        // 105th call enters at 104, sees `== 105`? NO — the C# checks the
+        // PRE-increment value: the burst fires on the call that ENTERS at
+        // 105, i.e. the 106th. Here: 104 calls leave the age at 104.
+        assert_eq!(p.local_ai[0], 104.0);
+        assert!(rng.ranges.is_empty(), "no draws before the burst");
+        p.ai_elder_wins(&w, &mut rng); // enters at 104 — still no burst
+        assert!(rng.ranges.is_empty());
+        p.ai_elder_wins(&w, &mut rng); // enters at 105 — the burst
+        assert_eq!(rng.floats, 40, "20 gores × 2 floats");
+        assert_eq!(
+            rng.ranges,
+            (0..20)
+                .flat_map(|_| [(0, 4), (10, 31), (-20, 21)])
+                .collect::<Vec<_>>(),
+            "per gore: SelectRandom's Next(4) then the two kicks"
+        );
+        for _ in 0..14 {
+            p.ai_elder_wins(&w, &mut rng);
+        }
+        // The 120th tick: the advance zeroes the age and bumps the state.
+        assert_eq!(p.local_ai[1], 1.0, ":36359-36363");
+        assert_eq!(p.local_ai[0], 1.0, "the age restarted and ticked once");
+    }
+
+    /// State 1 holds 300 ticks with NO velocity write (the dedServ quirk,
+    /// `:36367-36371`); state 2 falls 1/tick and advances at 60; state 3
+    /// kills. The dust trail draws 1 + (int)(-vy) gates per tick.
+    #[test]
+    fn the_states_advance_and_the_fall_integrates() {
+        let w = World::new("t".into(), 300, 200);
+        let mut p = marker();
+        p.local_ai[1] = 1.0;
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        for _ in 0..300 {
+            p.ai_elder_wins(&w, &mut rng);
+        }
+        assert_eq!(p.local_ai[1], 2.0, "the 300-tick advance (:36385)");
+        assert_eq!(p.vel.y, 0.0, "state 1 writes no velocity (dedServ)");
+        // State 2: 60 ticks of -1/tick. The trail's gate count grows with
+        // the fall: tick k enters with vy = -(k-1), so 1+(k-1) gates.
+        let y0 = p.pos.y;
+        for _ in 0..60 {
+            p.ai_elder_wins(&w, &mut rng);
+        }
+        assert_eq!(p.local_ai[1], 3.0, "the 60-tick advance (:36399)");
+        assert_eq!(p.vel.y, -60.0, ":36398 — one per tick");
+        // kill_step integrates the velocity each tick: sum 1..60 = 1830.
+        assert!((p.pos.y - (y0 + 1830.0)).abs() < 1e-3);
+        // The trail gates: state 1's 300 ticks × 1 + state 2's sum 1..60.
+        assert_eq!(rng.ranges.len(), 300 + 1830, "one Next(2) per iteration");
+        assert!(rng.ranges.iter().all(|&(a, b)| (a, b) == (0, 2)));
+        // The taken branches (CensusRng returns min = 0): 5 floats each.
+        assert_eq!(rng.floats, (300 + 1830) * 5);
+        // State 3 kills on the next tick.
+        p.ai_elder_wins(&w, &mut rng);
+        assert!(!p.active, ":36412");
     }
 }
