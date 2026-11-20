@@ -67,14 +67,30 @@ const DUNGEON_SIDE_RIGHT: i32 = 1;
 /// smallest world is 4200×1200, where the band floor is 600) — every sample
 /// would miss and the C# loop would spin its full ~13M-attempt termination
 /// before falling through to the fallback below, so the port skips straight
-/// to it. The remix branch (`:15852-15876`) is seed-gated (`remixWorldGen`/
-/// `notTheBees`; M5-SEED scope) and never runs on the classic chain.
+/// to it. The valve applies to the remix branch too (W4-d108): a sub-vanilla
+/// remix world takes the remix fallback arm directly.
+///
+/// The remix branch (`:15853-15893`, W4-d108 / M5-SEED) is gated on
+/// `remixWorldGen && !SecretSeed.noSurface.Enabled` (the port's
+/// `MicroSeedFlags::NO_SURFACE` bit): the x draw re-rolls into the surface
+/// band (not-the-bees: the dungeon-opposite `[0.2·W, 0.4·W)` — the C#'s
+/// `dungeonSide < Right` ternary at `:15857` with the port's fixed-Right
+/// side; otherwise `[0.2·W, 0.8·W)` re-rolled out of the middle
+/// `(0.4·W, 0.6·W)`), the y sample walks UP out of any active/walled cell
+/// to the surface line (`:15867-15871`), and acceptance takes jungle grass
+/// 60 OR mud 59 with no living wood 191 / dungeon brick in the 21×21 box
+/// (`:15872-15892`), burying `10 + Next(10)` rows above the found cell.
 pub(crate) fn find_temple_site(
     world: &World,
     dungeon_x: i32,
     rock_layer: f64,
     rng: &mut super::Rng,
 ) -> (i32, i32) {
+    // `:15853`: `remixWorldGen && !SecretSeed.noSurface.Enabled`.
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+        && !world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
     let mut found = false;
     let mut site = (0, 0);
     // The sub-vanilla valve (see the doc comment): `num5 <= 0` means the
@@ -94,20 +110,70 @@ pub(crate) fn find_temple_site(
             if num4 > num5 - 1 {
                 num4 = num5 - 1;
             }
-            // `:15848`: the y draw first, then the x fraction.
-            let num6 = rng.range(num4, num5);
-            // `:15848`: the x formula — `NextDouble()` then the
+            // `:15851`: the y draw first, then the x fraction.
+            let mut num6 = rng.range(num4, num5);
+            // `:15852`: the x formula — `NextDouble()` then the
             // dungeon-opposite reach; the C# `(int)` cast truncates toward
             // zero like `as i32` (the value is positive: the reach is
             // [0.05·maxTilesX, 0.4·maxTilesX] for `dungeonSide == Right`).
-            let num7 = (((rng.next_f64() * num3 + 0.1) * -(DUNGEON_SIDE_RIGHT as f64) + 0.5)
+            let mut num7 = (((rng.next_f64() * num3 + 0.1) * -(DUNGEON_SIDE_RIGHT as f64) + 0.5)
                 * world.width as f64) as i32;
-            // `:15877-15882` (the remix branch is above): accept the first
-            // active jungle-grass tile.
-            if world
+            if remix {
+                // `:15855-15866`: the remix x re-roll. The not-the-bees arm
+                // picks the dungeon-opposite band (the C#'s
+                // `dungeonSide < Right` ternary — fixed-Right here); the
+                // plain remix arm re-rolls out of the middle fifth-band.
+                let w = world.width as f64;
+                if world.seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES) {
+                    num7 = rng.range((w * 0.2) as i32, (w * 0.4) as i32);
+                } else {
+                    num7 = rng.range((w * 0.2) as i32, (w * 0.8) as i32);
+                    while (num7 as f64) > w * 0.4 && (num7 as f64) < w * 0.6 {
+                        num7 = rng.range((w * 0.2) as i32, (w * 0.8) as i32);
+                    }
+                }
+                // `:15867-15871`: walk UP out of any active/walled cell (or
+                // below the surface line), then step one row back down. The
+                // C# indexes raw `Main.tile` here; the port's out-of-world
+                // read is air (the walk terminates at the map edge).
+                while world.tile(num7, num6).is_some_and(|t| {
+                    t.active() || t.wall > 0 || (num6 as f64) > world.world_surface - 5.0
+                }) {
+                    num6 -= 1;
+                }
+                num6 += 1;
+                // `:15872-15892`: accept jungle grass 60 OR mud 59, provided
+                // the ±10 box holds no living wood 191 and no dungeon brick.
+                // A refusal falls through to the widening valve below (the
+                // C# has no `continue` — the attempt counter still advances).
+                if world
+                    .tile(num7, num6)
+                    .is_some_and(|t| t.active() && (t.kind == 60 || t.kind == 59))
+                {
+                    let mut flag2 = false;
+                    for i in (num7 - 10)..=(num7 + 10) {
+                        for j in (num6 - 10)..=(num6 + 10) {
+                            // The C# reads `.type` without the active gate.
+                            let Some(u) = world.tile(i, j) else {
+                                continue;
+                            };
+                            if u.kind == 191 || TEMPLE_SEARCH_DUNGEON_BRICKS.contains(&u.kind) {
+                                flag2 = true;
+                            }
+                        }
+                    }
+                    if !flag2 {
+                        found = true;
+                        // `:15889`: bury `10 + Next(10)` rows above the cell.
+                        site = (num7, num6 - (10 + rng.range(0, 10)));
+                        break;
+                    }
+                }
+            } else if world
                 .tile(num7, num6)
                 .is_some_and(|t| t.active() && t.kind == 60)
             {
+                // `:15894-15899`: accept the first active jungle-grass tile.
                 found = true;
                 site = (num7, num6);
                 break;
@@ -130,14 +196,38 @@ pub(crate) fn find_temple_site(
         }
     }
     if !found {
-        // `:15914-15923`: the fallback — the dungeon-mirrored x
+        // `:15916-15917`: the fallback — the dungeon-mirrored x
         // (`generatingDungeonPositionX` is the dungeon entrance x,
         // `DungeonCrawler.cs:352/:399`; the port's stand-in is
         // `BiomeSpans.dungeon_x`) and 100 rows below the rock layer.
-        site = (world.width - dungeon_x, rock_layer as i32 + 100);
+        let mut x = world.width - dungeon_x;
+        let mut y = rock_layer as i32 + 100;
+        if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+            // `:15920`: BOTH arms of the C#'s notTheBees ternary compute the
+            // same value (a dead copy) — `dungeonSide >= Right` picks
+            // `0.3·maxTilesX`, else `0.7·maxTilesX`. Fixed-Right here.
+            x = if DUNGEON_SIDE_RIGHT >= 1 {
+                (world.width as f64 * 0.3) as i32
+            } else {
+                (world.width as f64 * 0.7) as i32
+            };
+            // `:15921`: the surface-100 row when the surface sits at 150+,
+            // else a `Next(200, (int)rockLayer)` draw.
+            y = if !(world.world_surface < 150.0) {
+                world.world_surface as i32 - 100
+            } else {
+                rng.range(200, rock_layer as i32)
+            };
+        }
+        site = (x, y);
     }
     site
 }
+
+/// The `Main.tileDungeon` set the remix search's 21×21 rejection box reads
+/// (`Main.cs:7992-7997`): the blue/green/pink 41/43/44 and the ancient
+/// 677/678/679 (the same six `finish_seeds::TILE_DUNGEON` carries).
+const TEMPLE_SEARCH_DUNGEON_BRICKS: [u16; 6] = [41, 43, 44, 677, 678, 679];
 
 /// `WorldGen.InWorld(i, j, fluff)` (`WorldGen.cs:9688-9701`): the cell
 /// plus `fluff` tiles of margin must sit inside the world.
@@ -205,17 +295,32 @@ pub(crate) struct Bounds {
 /// The C# shares one `genRand` across the whole world; the port's per-pass
 /// `pass_rng` stream is the recorded deviation — the draws inside follow the
 /// C# statement order 1:1.
+///
+/// The seed multipliers (`:33439-33450`, W4-d108 / M5-SEED): drunk ×3,
+/// else for-the-worthy ×3, else remix ×2 — the if/else-if chain order (a
+/// drunk+FTW world takes the FIRST ×3 once, not ×9). Draw-free: the
+/// multiplier lands between the count draw and the direction draw.
 pub(crate) fn make_temple_rooms(
     rng: &mut super::Rng,
     scale: f64,
     underworld_layer: i32,
     x: i32,
     y: i32,
+    seeds: crate::seeds::SeedFlags,
 ) -> TempleWalk {
-    // `:33440-33452`: the room count, the first direction and the flip
+    // `:33438-33452`: the room count, the first direction and the flip
     // period. `num3` is the current direction; `num4` the per-room copy the
     // stagger flips.
     let mut num2 = rng.range((scale * 10.0) as i32, (scale * 16.0) as i32);
+    // `:33439-33450`: the seed room-count multipliers, in the C#'s
+    // else-if order.
+    if seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        num2 *= 3;
+    } else if seeds.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY) {
+        num2 *= 3;
+    } else if seeds.contains(crate::seeds::SeedFlags::REMIX) {
+        num2 *= 2;
+    }
     let num3 = if rng.range(0, 2) == 0 { -1 } else { 1 };
     let mut num4 = num3;
     let (mut num7, mut num8) = (x, y);
@@ -1414,8 +1519,13 @@ fn square_frame_altar(_world: &mut World, _x: i32, _y: i32) {
 /// floor, the horizontal one sideways, each run alternating the neighbour
 /// column and requiring solid neighbours on both sides.
 fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut super::Rng) {
+    // `:34065-34068` (W4-d108 / M5-SEED): the drunk world's ×1.5 budget.
+    let drunk = world.seeds.contains(crate::seeds::SeedFlags::DRUNK);
     let num2 = rooms.len() as f64;
     let mut num92 = num2 * 1.1 * (1.0 + (rng.range(-25, 26) as f64) * 0.01);
+    if drunk {
+        num92 *= 1.5;
+    }
     let mut num94 = 0;
     while num92 > 0.0 {
         num94 += 1;
@@ -1472,8 +1582,16 @@ fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut s
                             flag6 = true;
                             if flip == 0 {
                                 spike_cell(world, num103, num104 - 1);
+                                // `:34122-34126`: the drunk second row.
+                                if drunk {
+                                    spike_cell(world, num103, num104 - 2);
+                                }
                             } else {
                                 spike_cell(world, num103, num104 + 1);
+                                // `:34132-34136`: the drunk second row.
+                                if drunk {
+                                    spike_cell(world, num103, num104 + 2);
+                                }
                             }
                             flip += 1;
                             if flip > 1 {
@@ -1526,8 +1644,19 @@ fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut s
                             flag6 = true;
                             if flip == 0 {
                                 spike_cell(world, num110 - 1, num111);
+                                // `:34193-34197`: the drunk second column.
+                                if drunk {
+                                    spike_cell(world, num110 - 2, num111);
+                                }
                             } else {
                                 spike_cell(world, num110 + 1, num111);
+                                // `:34203-34207`: the drunk second column —
+                                // the C# writes `num110 - 2` here, NOT
+                                // `num110 + 2` (the copy-paste quirk in the
+                                // source); ported verbatim.
+                                if drunk {
+                                    spike_cell(world, num110 - 2, num111);
+                                }
                             }
                             flip += 1;
                             if flip > 1 {
@@ -1550,9 +1679,10 @@ fn temple_spikes(world: &mut World, rooms: &[TempleRoom], b: Bounds, rng: &mut s
     let _ = b;
 }
 
-/// The spike write — `type = 232` on the floor tile plus the alternating
-/// neighbour (`WorldGen.cs:34108-34119` / `:34191-34204`); the drunk-world
-/// second row is seed scope.
+/// The spike write — `type = 232; active(true)` on the floor tile plus the
+/// alternating neighbour (`WorldGen.cs:34116-34142` / `:34187-34213`); the
+/// drunk-world second row/column lands with the `drunk` gate at the four
+/// call sites (W4-d108 / M5-SEED).
 fn spike_cell(world: &mut World, x: i32, y: i32) {
     if !in_world(world, x, y, 0) {
         return;
@@ -2535,6 +2665,7 @@ pub(crate) fn pass_lihzahrd_temple(
         world.height - 200,
         cx,
         cy,
+        world.seeds,
     );
     make_temple_generate_bricks(world, &walk.rooms);
     carve_room_interiors(world, &walk.rooms, rng);
@@ -2564,6 +2695,7 @@ pub(crate) fn pass_lihzahrd_temple(
 mod tests {
     use super::*;
     use super::super::noise::Rng;
+    use crate::seeds::SeedFlags;
 
     /// An active solid-kind tile patch — the synthetic jungle-grass stand-in.
     fn paint(world: &mut World, x0: i32, x1: i32, y0: i32, y1: i32, kind: u16) {
@@ -2588,7 +2720,7 @@ mod tests {
     #[test]
     fn test_DW_1_1_room_walk_draw_ledger() {
         let mut rng = Rng(0xDEAD_BEEF);
-        let walk = make_temple_rooms(&mut rng, 1.0, 1000, 2000, 300);
+        let walk = make_temple_rooms(&mut rng, 1.0, 1000, 2000, 300, SeedFlags::none());
         let rooms = &walk.rooms;
         assert_eq!(rooms.len(), 15, "the walk's room count");
         assert_eq!(rng.0, 0xcd25_41e9_adf9_5601, "the draw ledger");
@@ -2637,7 +2769,7 @@ mod tests {
     fn test_DW_1_1_underworld_ceiling_collapses_the_walk() {
         // At (2000, 220) with layer 300: 220 + 70 = 290 >= 290 → flag2.
         let mut rng = Rng(0xDEAD_BEEF);
-        let walk = make_temple_rooms(&mut rng, 1.0, 300, 2000, 220);
+        let walk = make_temple_rooms(&mut rng, 1.0, 300, 2000, 220, SeedFlags::none());
         assert_eq!(walk.rooms.len(), 1, "the walk collapses to one room");
         let room = walk.rooms[0].rect;
         assert!((88..=104).contains(&room.w) && (60..=67).contains(&room.h));
@@ -2824,10 +2956,10 @@ mod tests {
     #[test]
     fn test_DW_1_4_last_room_trigger_uses_depth_minus_200() {
         let mut collapsed = Rng(0xDEAD_BEEF);
-        let walk = make_temple_rooms(&mut collapsed, 1.0, 300, 2000, 220);
+        let walk = make_temple_rooms(&mut collapsed, 1.0, 300, 2000, 220, SeedFlags::none());
         assert_eq!(walk.rooms.len(), 1, "220 + 70 >= 300 - 10");
         let mut normal = Rng(0xDEAD_BEEF);
-        let walk = make_temple_rooms(&mut normal, 1.0, 301, 2000, 220);
+        let walk = make_temple_rooms(&mut normal, 1.0, 301, 2000, 220, SeedFlags::none());
         assert!(walk.rooms.len() > 1, "220 + 70 < 301 - 10");
     }
 
