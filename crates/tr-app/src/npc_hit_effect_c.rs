@@ -54,6 +54,8 @@
 //! | 184-188 | `:82816-82820` | the 518/416 Solar Spearman/Drakomire Rider death (5 gores, gated type-6 dust) |
 //! | 189-194 | `:82854-82859` | the 419 Solar Solenian death (6 gores, gated type-6 dust) |
 //! | 195-197 | `:82881` | the 412-414 Solar Crawltipede death (1 gore each, type-412+828) |
+//! | 198-201 | `:82912-82915` | the 415 Solar Flare death (4 gores at Center, vel x0.8/x0.9) |
+//! | 202-207 | `:82949-82954` | the 417 Solar Sroller death: the first six gores (837/838x3/839x2) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -949,6 +951,90 @@ fn solar_crawltipede_death(
     gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), ty, 1.0);
 }
 
+/// The 415 Solar Flare death (`NPC.cs:82903-82915`, sites 198-201): the
+/// 40-iteration burst, each a type-241 dust AND an UNGATED type-6 dust
+/// (noGravity, scale 1.5, fadeIn 1, velocity ×3 — no Next gate here), then
+/// the 4 gores 831/832/833/834 at Center with velocity ×0.8 (831/832) and
+/// ×0.9 (833/834). Scale defaults to 1 (the 3-arg NewGore).
+fn solar_flare_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82903-82911` — 40 iterations: type-241 + ungated type-6.
+    for _ in 0..40 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 241, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 0,
+            Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.scale = 1.5;
+        d.fade_in = 1.0;
+        d.velocity *= 3.0;
+    }
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, c, vel * 0.8, 831, 1.0); // :82912
+    gore.new_gore(rng, world, c, vel * 0.8, 832, 1.0); // :82913
+    gore.new_gore(rng, world, c, vel * 0.9, 833, 1.0); // :82914
+    gore.new_gore(rng, world, c, vel * 0.9, 834, 1.0); // :82915
+}
+
+/// The 417 Solar Sroller death (`NPC.cs:82937-82956`, sites 202-209): the
+/// 30-iteration burst (type-241 dust + `Next(2) == 0`-gated type-6 dust),
+/// then the 8 gores 837/838/838/838/839/839/840/840 at the +0/+20/+38 Y
+/// ladder. This commit ports the first six gores (sites 202-207,
+/// `:82949-82954`); the 840/840 tail lands with the next batch.
+fn solar_sroller_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82937-82948` — 30 iterations: type-241 + the Next(2)-gated type-6.
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 241, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        if rng.next_max(2) == 0 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 1.0;
+            d.velocity *= 3.0;
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 837, s); // :82949
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 838, s); // :82950
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 838, s); // :82951
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 838, s); // :82952
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 839, s); // :82953
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 839, s); // :82954
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1070,6 +1156,15 @@ pub fn hit_effect_c(
     // `:82862-82883` — the 412-414 Solar Crawltipede arm (sites 195-197).
     if (412..=414).contains(&npc_type) && npc.hp <= 0 {
         solar_crawltipede_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82884-82917` — the 415 Solar Flare arm (sites 198-201).
+    if npc_type == 415 && npc.hp <= 0 {
+        solar_flare_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82918-82958` — the 417 Solar Sroller arm (sites 202-207 here; the
+    // 840/840 tail lands with the next batch).
+    if npc_type == 417 && npc.hp <= 0 {
+        solar_sroller_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -1730,6 +1825,50 @@ mod tests {
             let d6 = dust.slots().iter().find(|d| d.active && d.dust_type == 6).unwrap();
             assert_eq!(d6.alpha, 100);
             assert_eq!(d6.color, Color::TRANSPARENT);
+        }
+    }
+
+    /// `NPC.cs:82912-82915` — the Solar Flare death: the 4 gores
+    /// 831/832/833/834 at Center, velocity x0.8 (831/832) and x0.9
+    /// (833/834), after the 40x(type-241 + ungated type-6) burst.
+    #[test]
+    fn w4_f10_the_solar_flare_death_scales_the_velocity() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 40.0);
+        n.vx = 4.0;
+        n.vy = 2.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(103);
+        solar_flare_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![831, 832, 833, 834]);
+        // Center = (120,120).
+        for i in 0..4 {
+            assert_eq!(gore.slot(i).position, Vec2::new(120.0, 120.0));
+        }
+        // The velocity is x0.8 / x0.9 plus the NewGore kicks (the Y kick
+        // lifts, so check the X term: 4*0.8=3.2 +/- the 0.1-step kick).
+        assert!((gore.slot(0).velocity.x - 3.2).abs() <= 2.0);
+        assert!((gore.slot(2).velocity.x - 3.6).abs() <= 2.0);
+    }
+
+    /// `NPC.cs:82949-82954` — the Solar Sroller death's first six gores:
+    /// 837/838/838/838/839/839 at +0/+20 Y, after the 30x(type-241 +
+    /// Next(2)-gated type-6) burst.
+    #[test]
+    fn w4_f10_the_solar_sroller_death_spawns_the_first_six_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 46.0, 46.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(107);
+        solar_sroller_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![837, 838, 838, 838, 839, 839]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        for i in 1..6 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 120.0));
         }
     }
 
