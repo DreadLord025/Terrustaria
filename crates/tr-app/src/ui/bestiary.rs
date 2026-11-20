@@ -261,6 +261,281 @@ pub fn icon_walks(frame_override: Option<i32>, is_portrait: bool, is_hovered: bo
     frame_override.is_none() && (is_portrait || is_hovered) // `:100`
 }
 
+// --- UIBestiaryEntryInfoPage (W4-d81 census row 10) ------------------------------
+//
+// The port's info page draws its rows directly (`draw_info_page`); these port
+// the C# page's list-building state machine for the adoption.
+
+/// The ctor's panel colours (`UIBestiaryEntryInfoPage.cs:33-34`): border
+/// `(89, 116, 213)`, background `(73, 94, 171)` — no opacity multiply (the
+/// power strip's 0.9 pair is a different panel).
+#[allow(dead_code)] // draw_info_page draws the rows without the panel chrome
+pub fn info_page_colors() -> ([u8; 4], [u8; 4]) {
+    ([89, 116, 213, 255], [73, 94, 171, 255])
+}
+
+/// The ctor's list insets (`UIBestiaryEntryInfoPage.cs:40-45`):
+/// `SetPadding(2)` with `PaddingTop/Bottom 4`, `ListPadding 4`. Returns
+/// `(left, top, right, bottom, list_padding)`.
+#[allow(dead_code)] // the immediate draw keeps its own row pitch
+pub const INFO_PAGE_LIST_PADDING: [f32; 5] = [2.0, 4.0, 2.0, 4.0, 4.0];
+
+/// The scrollbar's box (`UIBestiaryEntryInfoPage.cs:47-52`): `Height (-20, 1)`,
+/// `HAlign 1`, `VAlign 0.5`, `Left (-6, 0)` inside the 230 px page — 20 px
+/// shorter than the page, centred vertically, 6 px in from the right edge.
+#[allow(dead_code)] // the info page has no scroll yet (the rows fit)
+pub fn info_page_scrollbar_rect(page: [f32; 4], scrollbar_w: f32) -> [f32; 4] {
+    let h = page[3] - 20.0;
+    [
+        page[0] + page[2] - scrollbar_w - 6.0,
+        page[1] + (page[3] - h) * 0.5,
+        scrollbar_w,
+        h,
+    ]
+}
+
+/// `UpdateScrollbar` (`UIBestiaryEntryInfoPage.cs:59-65`):
+/// `ViewPosition -= scrollWheelValue`.
+#[allow(dead_code)] // the info page has no scroll yet
+pub fn info_page_scroll(view_position: f32, wheel: f32) -> f32 {
+    view_position - wheel
+}
+
+/// `CheckScrollBar` (`UIBestiaryEntryInfoPage.cs:90-109`): the attach/detach
+/// state machine — attached + !canScroll detaches (list width back to
+/// `(0, 1)`), detached + canScroll attaches (list width `(-20, 1)`). Note the
+/// C# forces `canScroll = true` (`:95`), so the detach arm is dead in the
+/// source; the port keeps the machine faithful with the real flag. Returns
+/// `(attached, list_width_px_offset)`.
+#[allow(dead_code)] // the info page has no scroll yet
+pub fn info_page_check_scrollbar(attached: bool, can_scroll: bool) -> (bool, f32) {
+    if attached && !can_scroll {
+        (false, 0.0) // `:96-101`
+    } else if !attached && can_scroll {
+        (true, -20.0) // `:102-107`
+    } else {
+        (attached, if attached { -20.0 } else { 0.0 })
+    }
+}
+
+/// `BestiaryInfoCategory` (`UIBestiaryEntryInfoPage.cs:11-20`) — the group
+/// order `AddInfoToList` sorts by (`orderby x.Key`, `:131-133`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(dead_code)] // the immediate draw pins its own row order
+pub enum BestiaryInfoCategory {
+    Nameplate,
+    Portrait,
+    FlavorText,
+    Stats,
+    ItemsFromCatchingNpc,
+    ItemsFromDrops,
+    Misc,
+}
+
+/// `GetBestiaryInfoCategory` (`UIBestiaryEntryInfoPage.cs:174-201`): the
+/// element-type dispatch, in C# if-order. The port models the element kinds
+/// as this enum's input tags (the info-element trait system is not ported).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // the immediate draw pins its own row order
+pub enum BestiaryInfoElementKind {
+    NpcPortrait,
+    FlavorText,
+    NamePlate,
+    ItemFromCatchingNpc,
+    ItemDrop,
+    NpcStatsReport,
+    NpcKillCounter,
+    Other,
+}
+
+/// The category dispatch (`:174-201`).
+#[allow(dead_code)] // the immediate draw pins its own row order
+pub fn bestiary_info_category(kind: BestiaryInfoElementKind) -> BestiaryInfoCategory {
+    use BestiaryInfoCategory as C;
+    use BestiaryInfoElementKind as K;
+    match kind {
+        K::NpcPortrait => C::Portrait,                     // `:176-179`
+        K::FlavorText => C::FlavorText,                    // `:180-183`
+        K::NamePlate => C::Nameplate,                      // `:184-187`
+        K::ItemFromCatchingNpc => C::ItemsFromCatchingNpc, // `:188-191`
+        K::ItemDrop => C::ItemsFromDrops,                  // `:192-195`
+        K::NpcStatsReport | K::NpcKillCounter => C::Stats, // `:196-199`
+        K::Other => C::Misc,                               // `:200`
+    }
+}
+
+/// `AddInfoToList`'s ordering (`UIBestiaryEntryInfoPage.cs:128-163`): group by
+/// category (ascending), within a group order by `OrderPriority` DESCENDING
+/// (`GetIndividualElementPriority`, `:165-172` — 0 for non-prioritized
+/// elements; `OrderByDescending` is stable, so ties keep entry order). A
+/// separator follows every non-empty group (`:151-160`) except the last
+/// (`_list.Remove(item)`, `:162`). Input: `(kind, priority, produced_a_row)`
+/// per info element in entry order; output: the row indices in draw order
+/// plus the separator positions (as insert-after indices into that order).
+#[allow(dead_code)] // the immediate draw pins its own row order
+pub fn info_page_row_order(
+    elements: &[(BestiaryInfoElementKind, f32, bool)],
+) -> (Vec<usize>, Vec<usize>) {
+    let mut groups: Vec<(BestiaryInfoCategory, Vec<usize>)> = Vec::new();
+    for (i, &(kind, _, produced)) in elements.iter().enumerate() {
+        if !produced {
+            continue; // `ProvideUIElement` returned null (`:144-149`)
+        }
+        let cat = bestiary_info_category(kind);
+        match groups.iter_mut().find(|(c, _)| *c == cat) {
+            Some((_, rows)) => rows.push(i),
+            None => groups.push((cat, vec![i])),
+        }
+    }
+    groups.sort_by_key(|(c, _)| *c); // `orderby x.Key` (`:132`)
+    let mut order = Vec::new();
+    let mut separators = Vec::new();
+    let n_groups = groups.len();
+    for (g, (_, rows)) in groups.into_iter().enumerate() {
+        // Stable descending priority (`:142`).
+        let mut rows = rows;
+        rows.sort_by(|&a, &b| elements[b].1.partial_cmp(&elements[a].1).unwrap());
+        order.extend(rows);
+        if g + 1 < n_groups {
+            separators.push(order.len()); // the separator after this group
+        }
+    }
+    (order, separators)
+}
+
+// --- UIBestiaryFilteringOptionsGrid (W4-d81 census row 11) -----------------------
+
+/// `GetDisplaySettings` (`UIBestiaryFilteringOptionsGrid.cs:159-173`): the
+/// 32x32 buttons on a 34 px pitch (`num = 2`), `perRow` hard-overwritten to
+/// 12 (`:167` — the sqrt walk is dead), `howManyRows = ceil(count / 12)`,
+/// the offsets hard-overwritten to 6 (`:171-172` — the centring walk dead).
+/// Returns `(per_row, rows, offset_left, offset_top)`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_grid_display_settings(count: usize) -> (usize, usize, f32, f32) {
+    let per_row = 12usize; // `:167`
+    let rows = count.div_ceil(per_row); // `:168`
+    (per_row, rows, 6.0, 6.0) // `:171-172`
+}
+
+/// `BuildContainer`'s panel size (`UIBestiaryFilteringOptionsGrid.cs:46-56`):
+/// `Width = perRow * 34 + 10`, `Height = rows * 34 + 10`, `HAlign 1`,
+/// border/background the power-strip pair `(89,116,213)*0.9` /
+/// `(73,94,171)*0.9`. Returns `(width, height)`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_grid_container_size(count: usize) -> [f32; 2] {
+    let (per_row, rows, _, _) = filter_grid_display_settings(count);
+    [per_row as f32 * 34.0 + 10.0, rows as f32 * 34.0 + 10.0]
+}
+
+/// Filter button `i`'s top-left inside the container
+/// (`UIBestiaryFilteringOptionsGrid.cs:90-102`):
+/// `Top = 6 + (i / 12) * 34`, `Left = 6 + (i % 12) * 34`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_button_top_left(i: usize) -> [f32; 2] {
+    let (_, _, left, top) = filter_grid_display_settings(0);
+    [left + (i % 12) as f32 * 34.0, top + (i / 12) as f32 * 34.0]
+}
+
+/// `UpdateButtonSelections` (`UIBestiaryFilteringOptionsGrid.cs:175-190`):
+/// active filters take `(152, 175, 235)` at opacity 1, inactive the
+/// `InventoryDefaultColor` at 0.7; `SetCurrentOption(active ? i : -1)` drives
+/// `IsSelected`. Returns `(color, opacity, current_option)`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_button_selection(active: bool, option: i32) -> ([u8; 4], f32, i32) {
+    if active {
+        ([152, 175, 235, 255], 1.0, option) // `:181-184`
+    } else {
+        (uistate::INVENTORY_DEFAULT_COLOR, 0.7, -1) // `:185-188`
+    }
+}
+
+/// `GetIsFilterAvailableForEntries` (`UIBestiaryFilteringOptionsGrid.cs:192-207`):
+/// `ForcedDisplay` wins when set (`:194-198`); else any entry that fits the
+/// filter AND is known past tier 0 (`:199-205`). The port models the test
+/// list as `(fits, unlock_state_above_zero)` pairs.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_is_available(forced: Option<bool>, tests: &[(bool, bool)]) -> bool {
+    if let Some(f) = forced {
+        return f; // `:194-198`
+    }
+    tests.iter().any(|&(fits, known)| fits && known) // `:199-206`
+}
+
+/// The unavailable button's state (`UIBestiaryFilteringOptionsGrid.cs:118-146`):
+/// option `-2`, `FadeFromBlack = 0.5`, the `Icon_Tags_Shadow` frame
+/// `(16, 5, col 0, row 4)` at `White * 0.2`; the filter is removed from
+/// `ActiveFilters` (`:120`). Returns `(option, fade_from_black, icon_tint)`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn unavailable_filter_button() -> (i32, f32, [u8; 4]) {
+    (-2, 0.5, super::color::mul([255, 255, 255, 255], 0.2))
+}
+
+// --- UIBestiaryInfoItemLine (W4-d81 census row 12) -------------------------------
+//
+// `drop_rate_text` above ports `GetDropInfo`'s rate column; these are the
+// line's remaining halves.
+
+/// The ctor's geometry (`UIBestiaryInfoItemLine.cs:26-31`): `Width (-14, 1)`,
+/// `Height 32`, `Left 5`, `PaddingLeft/Right 10`, `SetPadding(0)` first.
+/// Returns the line rect inside the list's content box.
+#[allow(dead_code)] // the immediate draw keeps its own drop-row pitch
+pub fn info_item_line_rect(content: [f32; 4]) -> [f32; 4] {
+    [content[0] + 5.0, content[1], content[2] - 14.0, 32.0]
+}
+
+/// The locked line's icon (`UIBestiaryInfoItemLine.cs:36-55`): below tier 3
+/// the whole line is the `Icon_Locked` texture at `ImageScale 0.55`, centred
+/// (`HAlign/VAlign 0.5` in a full-size container). Returns the drawn rect for
+/// a texture of `tex_size` centred in `line`.
+#[allow(dead_code)] // the immediate draw keeps its own locked-row treatment
+pub fn info_item_locked_icon_rect(line: [f32; 4], tex_size: [f32; 2]) -> [f32; 4] {
+    let (w, h) = (tex_size[0] * 0.55, tex_size[1] * 0.55);
+    [
+        line[0] + (line[2] - w) * 0.5,
+        line[1] + (line[3] - h) * 0.5,
+        w,
+        h,
+    ]
+}
+
+/// The border colour pair (`UIBestiaryInfoItemLine.cs:34`, `MouseOver`/
+/// `MouseOut` `:158-167`): idle `(89, 116, 213)`, hovered
+/// `Colors.FancyUIFatButtonMouseOver`. The hover also fires sound 12
+/// (`:160` — the shared `elements.rs::hover_sound_tick` latch).
+#[allow(dead_code)] // the immediate draw keeps its own drop-row chrome
+pub fn info_item_line_border(hovered: bool) -> [u8; 4] {
+    if hovered {
+        uistate::FANCY_UI_FAT_BUTTON_MOUSE_OVER // `:161`
+    } else {
+        [89, 116, 213, 255] // `:34`/`:166`
+    }
+}
+
+/// `SetBestiaryNotesOnItemCache` (`UIBestiaryInfoItemLine.cs:137-156`): the
+/// non-null, non-whitespace condition descriptions joined with `"\n"`; a
+/// null condition list leaves the notes untouched (the port returns the
+/// empty string — the item cache has no notes field yet).
+#[allow(dead_code)] // the item tooltip's bestiary notes land with the tooltip work
+pub fn bestiary_notes(conditions: &[Option<&str>]) -> String {
+    let mut list = Vec::new();
+    for c in conditions {
+        if let Some(desc) = c {
+            if !desc.trim().is_empty() {
+                list.push(*desc); // `:148-152`
+            }
+        }
+    }
+    list.join("\n") // `:155`
+}
+
+/// `DrawSelf`'s hover gate (`UIBestiaryInfoItemLine.cs:112-119`): the item
+/// tooltip (`Main.HoverItem`, `:121-126`) shows only while hovered AND the
+/// line is not the locked variant (`_hideMouseOver`, `:38`).
+#[allow(dead_code)] // the drop-row hover tooltip lands with the tooltip work
+pub fn info_item_shows_tooltip(hovered: bool, hide_mouse_over: bool) -> bool {
+    hovered && !hide_mouse_over
+}
+
 /// The completion bar's rect — `FillProgressBottomBar`
 /// (`UIBestiaryTest.cs:158-179`): the `UIColoredSliderSimple` fills the
 /// bottom strip (`Width (0, 1)`, `Height 15`, `VAlign 1`, `:168-171`); the
@@ -2070,6 +2345,125 @@ mod tests {
         assert!(icon_walks(None, true, false));
         assert!(!icon_walks(None, false, false));
         assert!(!icon_walks(Some(2), true, true));
+    }
+
+    #[test]
+    fn the_info_page_scrollbar_box_and_attach_machine() {
+        // `UIBestiaryEntryInfoPage.cs:47-52`: Height -20, VAlign 0.5,
+        // HAlign 1, Left -6 inside the 230 px page.
+        let page = [100.0, 50.0, 230.0, 400.0];
+        assert_eq!(
+            info_page_scrollbar_rect(page, 20.0),
+            [304.0, 60.0, 20.0, 380.0]
+        );
+        // `UpdateScrollbar` (`:59-65`): ViewPosition -= wheel.
+        assert_eq!(info_page_scroll(100.0, 120.0), -20.0);
+        // `CheckScrollBar` (`:90-109`): attach shrinks the list by 20.
+        assert_eq!(info_page_check_scrollbar(false, true), (true, -20.0));
+        assert_eq!(info_page_check_scrollbar(true, false), (false, 0.0));
+        assert_eq!(info_page_check_scrollbar(true, true), (true, -20.0));
+        assert_eq!(info_page_check_scrollbar(false, false), (false, 0.0));
+        // The ctor colours (`:33-34`) carry no opacity multiply.
+        assert_eq!(
+            info_page_colors(),
+            ([89, 116, 213, 255], [73, 94, 171, 255])
+        );
+    }
+
+    #[test]
+    fn the_info_row_order_groups_by_category_then_priority() {
+        // `AddInfoToList` (`:128-163`): categories ascending, priorities
+        // descending within a group, separators between groups only.
+        use BestiaryInfoElementKind as K;
+        let elements = [
+            (K::ItemDrop, 0.0, true),       // 0: ItemsFromDrops
+            (K::NpcPortrait, 0.0, true),    // 1: Portrait
+            (K::NpcStatsReport, 5.0, true), // 2: Stats, high priority
+            (K::NpcKillCounter, 0.0, true), // 3: Stats, low priority
+            (K::FlavorText, 0.0, false),    // 4: produced nothing - skipped
+            (K::NamePlate, 0.0, true),      // 5: Nameplate
+        ];
+        let (order, separators) = info_page_row_order(&elements);
+        // Nameplate(0) < Portrait(1) < Stats(3) < ItemsFromDrops(5).
+        assert_eq!(order, vec![5, 1, 2, 3, 0]);
+        // Separators after the first three groups, none after the last.
+        assert_eq!(separators, vec![1, 2, 4]);
+        // Ties keep entry order (stable OrderByDescending).
+        let elements = [(K::ItemDrop, 1.0, true), (K::ItemDrop, 1.0, true)];
+        assert_eq!(info_page_row_order(&elements).0, vec![0, 1]);
+        // The category dispatch (`:174-201`).
+        assert_eq!(
+            bestiary_info_category(K::NpcKillCounter),
+            BestiaryInfoCategory::Stats
+        );
+        assert_eq!(bestiary_info_category(K::Other), BestiaryInfoCategory::Misc);
+    }
+
+    #[test]
+    fn the_filter_grid_pins_the_hard_overwritten_settings() {
+        // `GetDisplaySettings` (`UIBestiaryFilteringOptionsGrid.cs:159-173`):
+        // perRow 12 (the sqrt walk dead), offsets 6 (the centring dead).
+        assert_eq!(filter_grid_display_settings(25), (12, 3, 6.0, 6.0));
+        assert_eq!(filter_grid_display_settings(0), (12, 0, 6.0, 6.0));
+        // `BuildContainer` (`:46-49`): 12*34+10 = 418 wide, rows*34+10.
+        assert_eq!(filter_grid_container_size(25), [418.0, 112.0]);
+        // Button 13 sits on row 1 (`:90-102`).
+        assert_eq!(filter_button_top_left(0), [6.0, 6.0]);
+        assert_eq!(filter_button_top_left(13), [40.0, 40.0]);
+        // `UpdateButtonSelections` (`:175-190`).
+        assert_eq!(
+            filter_button_selection(true, 4),
+            ([152, 175, 235, 255], 1.0, 4)
+        );
+        assert_eq!(
+            filter_button_selection(false, 4),
+            (uistate::INVENTORY_DEFAULT_COLOR, 0.7, -1)
+        );
+        // `GetIsFilterAvailableForEntries` (`:192-207`).
+        assert!(filter_is_available(Some(true), &[]));
+        assert!(!filter_is_available(Some(false), &[(true, true)]));
+        assert!(filter_is_available(None, &[(false, true), (true, true)]));
+        assert!(!filter_is_available(None, &[(true, false)]));
+        // The unavailable button (`:118-146`): option -2, fade 0.5, the
+        // shadow icon at White * 0.2 = (51, 51, 51, 51).
+        assert_eq!(unavailable_filter_button(), (-2, 0.5, [51, 51, 51, 51]));
+    }
+
+    #[test]
+    fn the_info_item_line_geometry_and_hover_pair() {
+        // The ctor (`UIBestiaryInfoItemLine.cs:26-31`): Width -14, Left 5,
+        // Height 32.
+        let content = [100.0, 50.0, 200.0, 32.0];
+        assert_eq!(info_item_line_rect(content), [105.0, 50.0, 186.0, 32.0]);
+        // The locked icon at 0.55 scale, centred (`:36-55`): a 40x40 texture
+        // draws 22x22 at the line's centre.
+        let line = [105.0, 50.0, 186.0, 32.0];
+        assert_eq!(
+            info_item_locked_icon_rect(line, [40.0, 40.0]),
+            [187.0, 55.0, 22.0, 22.0]
+        );
+        // The border pair (`:34`, `:158-167`).
+        assert_eq!(info_item_line_border(false), [89, 116, 213, 255]);
+        assert_eq!(
+            info_item_line_border(true),
+            uistate::FANCY_UI_FAT_BUTTON_MOUSE_OVER
+        );
+        // The tooltip gate (`:112-119`): locked lines never show it.
+        assert!(info_item_shows_tooltip(true, false));
+        assert!(!info_item_shows_tooltip(true, true));
+        assert!(!info_item_shows_tooltip(false, false));
+    }
+
+    #[test]
+    fn the_bestiary_notes_join_the_non_empty_conditions() {
+        // `SetBestiaryNotesOnItemCache` (`:137-156`): null and whitespace
+        // descriptions drop, the rest join with "\n".
+        assert_eq!(
+            bestiary_notes(&[Some("Expert only"), None, Some("  "), Some("Master only")]),
+            "Expert only\nMaster only"
+        );
+        assert_eq!(bestiary_notes(&[]), "");
+        assert_eq!(bestiary_notes(&[None, Some("")]), "");
     }
 
     #[test]

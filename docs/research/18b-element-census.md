@@ -139,9 +139,9 @@ ports were byte-equivalent state machines and neither had a consumer yet.
 | 7 | `UIBestiaryEntryButton` | LANDED (card draw/hover text pre-landed `ui/bestiary.rs::draw_card`; missing halves: `entry_button_border_layers` `:150-169`/`:93-96`, `pick_background_provider` `:104-129`, `first_display_index` `:131-140`; the always-overlay hover stack stays a documented deviation until adoption; the `MouseOver` sound-12 edge `:152` defers to wiring — the shared `elements.rs::hover_sound_tick` latch is the mechanism) |
 | 8 | `UIBestiaryEntryGrid` | LANDED (metrics/range/clamp/draw pre-landed; missing halves `ui/bestiary.rs`: `offset_library_by_pages` `:103-114`, `grid_cell_rect` fractional placement `:50-66` — the raw-lattice draw stays the documented simplification) |
 | 9 | `UIBestiaryEntryIcon` | LANDED (locked draw/hover text/portrait layout pre-landed; missing halves `ui/bestiary.rs`: `icon_is_hovered` `:38`/`:52` ForceHover gate, `icon_walks` `UnlockableNPCEntryIcon.cs:100-109` walk gate — the frame-0 rest stays the documented no-cache deviation) |
-| 10 | `UIBestiaryEntryInfoPage` | pending |
-| 11 | `UIBestiaryFilteringOptionsGrid` | pending |
-| 12 | `UIBestiaryInfoItemLine` | pending |
+| 10 | `UIBestiaryEntryInfoPage` | LANDED (stat rows/drop lines pre-landed `draw_info_page` + `drop_rate_text`; missing halves `ui/bestiary.rs`: `info_page_colors`/`INFO_PAGE_LIST_PADDING`/`info_page_scrollbar_rect`/`info_page_scroll`/`info_page_check_scrollbar` `:28-109`, `BestiaryInfoCategory` + `bestiary_info_category` + `info_page_row_order` `:11-20`/`:128-201` — the immediate row order stays the documented stand-in) |
+| 11 | `UIBestiaryFilteringOptionsGrid` | LANDED (`ui/bestiary.rs`: `filter_grid_display_settings`/`filter_grid_container_size`/`filter_button_top_left` `:43-60`/`:159-173` with the dead sqrt/centring walks pinned, `filter_button_selection` `:175-190`, `filter_is_available` `:192-207`, `unavailable_filter_button` `:118-146`; the filter UI itself lands with the filters/sort work) |
+| 12 | `UIBestiaryInfoItemLine` | LANDED (`drop_rate_text` pre-landed `GetDropInfo` `:78-110`; missing halves `ui/bestiary.rs`: `info_item_line_rect` `:26-31`, `info_item_locked_icon_rect` `:36-55`, `info_item_line_border` `:34`/`:158-167`, `bestiary_notes` `:137-156`, `info_item_shows_tooltip` `:112-126`; CompareTo = the batch-1 `compare_manual_order`) |
 | 13 | `UIBestiaryInfoLine` | pending |
 | 14 | `UIBestiaryNPCEntryPortrait` | pending |
 | 15 | `UIBestiarySortingOptionsGrid` | pending |
