@@ -34052,3 +34052,178 @@ witnesses are WRITTEN, NOT RUN.**
 checked against the actual Rust signatures by read/grep. The witnesses
 (`s1_p_i41_*` across player.rs / mount.rs / editing.rs / audio.rs) are WRITTEN,
 NOT RUN — **no compiler invoked**.
+## The light-item family (S1-P-i42, 2026-11-20, code-only mode)
+
+Branch `task/S1-P-i42-torch-glowstick` (worktree TR-i42). **CODE-ONLY mode**:
+file reads/writes + git only — no cargo/rustc/rustfmt/tests/dotnet/graphify,
+**no compiler invoked**. Scope: the torch/glowstick/flare LIGHT items — the
+torch placement (wall/tile/underwater variants), the glowstick throw (aiStyle
+14, sticky/bouncy), the flare gun (aiStyle 33), and the held-light source.
+Census first; the WRONGs fixed verbatim with C# cites.
+
+### Census verdicts
+
+**Torch placement — three WRONGs fixed.**
+1. *The style never rode the tile.* The legacy single-tile write
+   (`edit/place.rs::place_tile`) wrote `frameX = frameY = 0` for every torch,
+   dropping `Item.placeStyle`. The C# `WorldGen.PlaceTile` case 4
+   (`WorldGen.cs:59798-59842`) writes `frameY = 22 * style` (`:59839`) — the
+   style column `CheckTorch` preserves and `TileLightScanner` reads
+   (`tile_light/scanner.rs`'s `fy / 22` arm). A Blue Torch (427, style 1)
+   placed as a plain torch and lit white. **Fix**: a dedicated
+   `edit::place_torch` arm (`place_item_tile` dispatches kind 4 to it) writes
+   `frameY = 22 * style`, runs the support gate (`:59835`) and the liquid gate
+   (`:59454-59467`), then `CheckTorch` for the attachment frameX.
+2. *The liquid gate was absent.* The C# refuses a torch in a liquid cell
+   unless the style is 8/11/17 (the `ItemID.Sets.WaterTorches`,
+   `ItemID.cs:1372` — Cursed/Ichor/Coral), and even those check the sub-tile's
+   `WaterPlacement` (`:59462-59466`). The port placed any torch underwater.
+   **Fix**: `place_torch`'s liquid gate — styles 8/11/17 resolve their
+   `D_4_S8/S11/S17` sub-tiles (all `WaterPlacement.Allowed`), every other
+   style refuses. The `tile.checkingLiquid()` half (`:59454`) folds to false
+   (the port's tile flags carry no checking bit).
+3. *The wall-only cell refused.* The app pre-check `can_place`
+   (`world_sim/editing.rs`) scanned only the four neighbours, never the
+   TARGET cell's own wall — so a torch on a wall with no adjacent block/wall
+   was refused. The C# `PlaceThing_Tiles_BlockPlacementForAssortedThings`
+   (`Player.cs:41106-41198`) reads `tile.wall > 0` first (`:41108-41111`),
+   then the `SolidTileNoAttach` below/left/right support (`:41186-41197`) and
+   the tree-trunk/beam side arms. **Fix**: `can_place`'s torch arm reads the
+   target wall + the C# support conjunctions; the sloped-support flatten
+   (`Player.cs:41114-41146` → `WorldGen.SlopeTile`) runs in the mutable route
+   (`flatten_torch_supports`, the new `tr_core::edit::slope_tile` +
+   `solid_tile_no_attach`).
+4. *CheckTorch erased the style column.* `torch.rs::check_torch` wrote
+   `frame_y = 0` on every re-frame; the C# `CheckTorch`
+   (`WorldGen.cs:86095-86180`) writes ONLY `frameX` (`:86160-86175`) — the
+   `22 * style` frameY survives every attachment change. **Fix**: the write
+   removed; the `TopEdgeCanBeAttachedTo` gate also regained its missing
+   `!tile.inActive()` conjunct (`WorldGen.cs:70389`).
+
+**Biome-torch place style — the missing conversion ported.**
+`PlaceThing_Tiles_PlaceIt` (`Player.cs:40129-40132`) converts a plain torch
+(style 0) to the biome style when `UsingBiomeTorches` (the Torch God's favour)
+via `BiomeTorchPlaceStyle` (`:40236-40289`). The hold-light family already read
+the unlock (`player_lights.rs::biome_torch_hold_style`); the placement half was
+absent. **Fix**: `world_sim/editing.rs::biome_torch_place_style` + the
+`place_tile` conversion. The ZoneShimmer / ZoneUndergroundDesert arms read
+unported `Zones` fields — skipped in place; the temple (`Zones.temple`) and
+remix (`SeedFlags::REMIX`) arms ARE ported, the remaining arms keep their
+C# order (the player_lights precedent). The hold-style half also regained its
+dropped `ZoneLihzhardTemple` and remix-desert arms (`player_lights.rs`,
+`Player.cs:40305-40308`/`:40341-40344`).
+
+**Glowstick throw — the rows + AI were absent, now ported.** The six glowstick
+kinds (50/53/473/515/870/1089) had NO `proj_data` rows, so
+`spawn_with_data_ai` declined them — the throw consumed the item but spawned
+nothing. **Fix**: the rows (`projectile/data.rs`, cited per field —
+`Projectile.cs:1326-1336`/`:1354-1365`/`:5485-5495`/`:5851-5861`/`:8343-8353`/
+`:10153-10162`), the `set_defaults_light` 1f slice, the `netImportant` flags,
+and the new `projectile_ai_light_items.rs` (the aiStyle-14 flight + the
+per-type bounce + the sticky stick scan + the fairy aiStyle-170 hover). The
+dispatch's style-14 arm gates the glowstick kinds ahead of the generic
+`ai_spear` (kind-disjoint from the frostmoon pair).
+
+**Flare gun — the rows + AI were absent, now ported.** The six flare kinds
+(163/310/1008-1011) had no rows either. **Fix**: the rows
+(`Projectile.cs:2515-2525`/`:4022-4032`/`:9580-9623` — aiStyle 33, friendly,
+pen −1, alpha 255, timeLeft 36000, NO light), the aiStyle-33 arm (the alpha
+fade, the flight/stick machine, the rotation; the stick rides
+`HandleMovement`'s aiStyle-33 block `:18619-18634`), and the `StatusNPC` OnFire
+roll (`:11678-11696` — the Next(3) 600/300 OnFire + the 1009 CursedInferno)
+wired in `damage_pve`. The flare gun (930, useAmmo 931) fires through the
+generic `PickAmmo` path (the ammo's own shoot 163, the fused speed 12).
+
+**Held-light source — already faithful, verified.** `player_lights.rs`'s
+`held_item_lights` matches `ItemCheck_EmitHeldItemLight`
+(`Player.cs:49810-50194`) verbatim: the torch family's `(Torches && !wet) ||
+WaterTorches` gate (`:49817`), the biome-torch id chain (`:49824-49893`), the
+±12 torch / −16/+6 glowstick offsets, the six glowstick colours
+(`:50070-50150`), the disco rainbow. The rest anchor's glowstick nudges
+(`:50403-50412`) are carried. No change needed — the census confirms it.
+
+**ProjLight — the six glowstick arms added.** `proj_lights.rs` now carries the
+50/515/870/53/473/1089 colour arms (`Projectile.cs:16408-16439`); the 1089
+disco overwrite rides `LightParams::disco` (the 79 precedent). The 870
+`FloodFillTile` spread (`:16648-16655`) is the documented skip (the centre
+`AddLight` lands).
+
+### The bounce chain order (load-bearing)
+
+`HandleMovement`'s blocked-move chain (`Projectile.cs:18398-19853`) checks the
+outer TYPE chain before the aiStyle chain. The 515-517 arm (`:18479-18489`,
+both axes ×−0.9 gated |last|>1) takes the bouncy glowstick BEFORE the
+aiStyle-14 arm. Inside the aiStyle-14 arm (`:19626-19745`): 870 pre-flip
+(`:19663-19669`, the full −lastVelocity + ai[1]=1), 50 (`:19671-19681`, X ×−0.2,
+Y ×−0.2 only when lastY>1.5), `type >= 1089` (`:19682-19702`, the ×0.99 reverse
+with the <1 snaps), and the generic tail (`:19725-19744`, X ×−0.5, Y ×−0.5 only
+when lastY>1) which takes the spelunker (473). Once the fairy flips to aiStyle
+170, the later `type == 870` arm (`:19787-19797`) takes its blocked moves
+(X ×−0.2, Y ×−0.2 when lastY>0). The fairy's flip (`:24832-24835`) is observed
+the tick AFTER the bounce set ai[1]=1; the flip tick still runs the aiStyle-14
+tail (the C# stays inside the entered arm), the hover starts next tick — the
+port models the persistent style in `local_ai[2]` (a spare slot; the C# 870
+never reads localAI[2]).
+
+### RNG order (the load-bearing invariant)
+
+- The glowstick/flare AI arms draw **zero** `Main.rand` (the dust spawns are
+  skipped — the pool has no dust layer, the frostmoon/ai026 precedent).
+- The movement's blocked-move prologue consumes exactly ONE `Next(3)`
+  (`Projectile.cs:17948`, the FIRST operand of the `&&` — the ai026_c
+  precedent): C#'s left-to-right evaluation rolls it on EVERY blocked move
+  even when the trailing gates (`owner == myPlayer && CanCutTiles() &&
+  (friendly || hostile) && damage > 0`) fail — the glowsticks' damage −1
+  skips only the cut BODY (`:17950-17985`), never the roll; the flares
+  (damage 2) pass the gates too. The cut bodies skip with the unported layer.
+  The fairy's post-flip movement folds the same draw. Witness
+  `the_blocked_move_consumes_exactly_one_next_3` pins it.
+- The flare's `StatusNPC` OnFire `Next(3)` (`:11680`) is a HIT-time draw on the
+  `UpdateProjectiles` stream, wired at the whip-debuff site (the C# order:
+  `StatusNPC` runs after the strike, `:13580`).
+- The torch placement draws nothing new (the support flatten's Dig sound rides
+  the existing `UpdatePlayers` placement stream, the `place_tile` precedent).
+- The biome-torch conversion draws nothing (a pure zone read).
+
+### Deliberate deviations (folds, not bugs)
+
+- The flare/glowstick dust trails + the fairy's Item28 sound + the spelunker
+  spot helper (`SpelunkerProjectileHelper`) are skipped (no dust/ore-highlight
+  layer in the pool) — the skips consume no rand.
+- The wet movement half folds dry (the slot carries no liquid-wet flags — the
+  `wet` stick branch's `/2` and the wet `TileCollision` resize are the recorded
+  stand-in gap, the `pirate_movement` precedent).
+- The inner `SlopeCollision` refinement passes are the stand-in gap (the port's
+  `tile_collision` resolves the ground ramps the throw lands on).
+- The `HandleMovement` prologue's `BreaksFromToyBreaker` kill
+  (`Projectile.cs:17906`, `Collision.AnyCollisionWithSpecificTiles` over
+  `TileID.Sets.BreaksToys` {740}) is unported for the NON-sticky glowsticks
+  (50/515/473/870/1089) — the helper has no port; the STICKY glowstick's own
+  740 kill IS ported (the AI stick scan, `:24951-24954`).
+- The 870/4776 `FloodFillTile` light-map spread is unported (the entity-list
+  `AddLight` lands; the flood-fill writes the light map directly).
+- The torch `checkingLiquid()` gate half folds to false (no checking bit).
+- The biome-torch ZoneShimmer/ZoneUndergroundDesert arms fold (unported
+  `Zones` fields); the temple + remix arms are ported.
+- The flare's `StatusPlayer` mirror (`Projectile.cs:11983-11997`) is NOT wired:
+  its only call sites are `Damage_EVP` (hostile shots — the flares are
+  friendly), `SelfHurtPlayers` (bombs/bad-torch only) and `Damage_PVP` uses
+  `StatusPvP` (no flare arm) — a friendly flare never reaches it. The NPC-side
+  `StatusNPC` roll IS wired (the PVE pass).
+- The glowstick/flare draw tints (`GetAlpha`/`GetColor`, `Projectile.cs:79224-
+  79234`/`:79713-79718`) are the render layer's concern, out of the light-item
+  scope; the ProjLight colours (the actual light) are ported.
+- The wind physics for aiStyle 14/33 (`Projectile.cs:22110-22132` includes
+  them) keeps the port's existing no-wind deviation convention (the
+  `uses_wind_physics` 2|8|24|28|29 set stands).
+
+**Verification.** Code-only: every fixed block was re-read line-by-line against
+the cited C# (`WorldGen.cs:59342-59842`/`:70380-70528`/`:80695-80803`/
+`:86095-86180`, `Player.cs:40108-40346`/`:41036-41198`/`:49810-50194`,
+`Projectile.cs:1326-1365`/`:2515-2525`/`:5485-5495`/`:5851-5861`/`:8343-8353`/
+`:9580-9623`/`:10153-10162`/`:11678-11696`/`:16408-16439`/`:18479-18489`/
+`:18619-18634`/`:19663-19702`/`:24830-25307`/`:27049-27135`/`:45662-45716`);
+every seam call site checked against the actual signatures by read/grep. The
+witness tests (place.rs torch arm, projectile_ai_light_items.rs, proj_lights.rs
+glowstick arms, editing.rs flare-gun/glowstick throw) are WRITTEN, NOT RUN —
+**no compiler invoked**.

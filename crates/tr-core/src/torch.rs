@@ -41,12 +41,27 @@ fn no_attach(kind: u16) -> bool {
     NO_ATTACH.contains(&kind)
 }
 
+/// `Main.tileNoAttach` membership for the placement support gates
+/// (`WorldGen.SolidTileNoAttach`, `WorldGen.cs:70519`;
+/// `PlaceThing_Tiles_BlockPlacementForAssortedThings`, `Player.cs:41186`).
+pub fn no_attach_pub(kind: u16) -> bool {
+    no_attach(kind)
+}
+
 fn is_beam(kind: u16) -> bool {
     BEAMS.contains(&kind)
 }
 
-fn is_tree_type(kind: i32) -> bool {
+/// `WorldGen.IsTreeType`. `pub(crate)`: the torch placement support gate
+/// (`WorldGen.cs:59835`) reads the same tree-trunk triple test.
+pub(crate) fn is_tree_type(kind: i32) -> bool {
     kind >= 0 && TREE_TRUNKS.contains(&(kind as u16))
+}
+
+/// [`is_tree_type`] for the app-side placement pre-check
+/// (`Player.cs:41190`/`:41194`).
+pub fn is_tree_type_pub(kind: i32) -> bool {
+    is_tree_type(kind)
 }
 
 /// `WorldGen.PlatformProperTopFrame`. `pub(crate)`: reused by `tileobject.rs`
@@ -59,8 +74,13 @@ pub(crate) fn platform_proper_top_frame(frame_x: i16) -> bool {
     true
 }
 
-/// `WorldGen.TopEdgeCanBeAttachedTo`.
-fn top_edge_can_be_attached_to(world: &World, x: i32, y: i32) -> bool {
+/// `WorldGen.TopEdgeCanBeAttachedTo` (`WorldGen.cs:70380-70398`).
+/// `pub(crate)`: the torch placement support gate (`WorldGen.PlaceTile`
+/// case 4, `WorldGen.cs:59835`) reads the same below-platform test
+/// (`edit/place.rs::place_torch`). The C# carries `!tile.inActive()`
+/// (`:70389`) — S1-P-i42 restored it (the actuated platform has no top
+/// edge; `CheckTorch`'s below-platform arm now refuses it too).
+pub(crate) fn top_edge_can_be_attached_to(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };
@@ -69,6 +89,7 @@ fn top_edge_can_be_attached_to(world: &World, x: i32, y: i32) -> bool {
         && (!t.top_slope()
             || (td::SET_PLATFORMS.has(t.kind) && platform_proper_top_frame(t.frame_x)))
         && !t.half_brick()
+        && !t.inactive()
 }
 
 /// `WorldGen.BottomEdgeCanBeAttachedTo` (`WorldGen.cs:70440-70458`): active,
@@ -177,7 +198,11 @@ pub fn check_torch(world: &mut World, x: i32, y: i32) -> bool {
     let idx = world.index(x, y);
     let t = &mut world.tiles[idx];
     t.frame_x = frame_x;
-    t.frame_y = 0;
+    // S1-P-i42: the C# `CheckTorch` (`WorldGen.cs:86160-86175`) writes ONLY
+    // `frameX` — `frameY` is the STYLE column (`22 * style`, the PlaceTile
+    // torch arm `:59839`) and survives every re-frame. The pre-fix port
+    // zeroed it here, erasing every coloured/biome torch's style on the
+    // first re-frame.
     true
 }
 
@@ -293,5 +318,30 @@ mod tests {
         w.tiles[i].frame_x = 66;
         assert!(check_torch(&mut w, 10, 10));
         assert_eq!(frame_x(&w, 10, 10), 66);
+    }
+
+    #[test]
+    fn check_torch_preserves_the_style_frame_y() {
+        // S1-P-i42 — `WorldGen.CheckTorch` (`WorldGen.cs:86095-86180`) writes
+        // ONLY frameX (`:86160-86175`); the `22 * style` frameY column
+        // (`PlaceTile` case 4, `:59839`) survives every re-frame. The pre-fix
+        // port zeroed frameY here, erasing every coloured/biome torch's style.
+        let mut w = world();
+        put(&mut w, 10, 11, 1);
+        torch(&mut w, 10, 10);
+        let i = w.index(10, 10);
+        w.tiles[i].frame_y = 22 * 5; // a style-5 torch (e.g. the purple torch)
+        assert!(check_torch(&mut w, 10, 10));
+        assert_eq!(w.tile(10, 10).unwrap().frame_y, 22 * 5, "the style column survives");
+        assert_eq!(frame_x(&w, 10, 10), 0, "the attachment frame still lands");
+        // A side attachment changes frameX but keeps frameY too. The below
+        // support is removed first — CheckTorch judges below BEFORE the sides
+        // (`:86160`), so a stone below would keep frameX 0.
+        let below = w.index(10, 11);
+        w.tiles[below] = crate::tile::Tile::default();
+        put(&mut w, 9, 10, 1);
+        assert!(check_torch(&mut w, 10, 10));
+        assert_eq!(frame_x(&w, 10, 10), 22);
+        assert_eq!(w.tile(10, 10).unwrap().frame_y, 22 * 5);
     }
 }

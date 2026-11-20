@@ -95,10 +95,12 @@ const HELD_LIGHT_ALLOWED: bool = true;
 /// (`:3950-3959` — `unlockedBiomeTorches && builderAccStatus[11] == 0`;
 /// the port reads `p.unlocked_biome_torches`, the builder toggle folds
 /// to 0/on, ANALYSIS deviation). The arm order is the C#'s verbatim;
-/// `ZoneShimmer` (`:40297`), `ZoneLihzhardTemple` (`:40305`),
-/// `ZoneUndergroundDesert` and the remix-world desert arm (`:40337-40344`)
-/// read fields the port's `Zones` does not carry and are skipped in place
-/// (the remaining arms keep their order).
+/// `ZoneShimmer` (`:40297`) and `ZoneUndergroundDesert` (`:40337`) read
+/// fields the port's `Zones` does not carry and are skipped in place (the
+/// remaining arms keep their order). `ZoneLihzhardTemple` (`:40305`) rides
+/// `Zones.temple` and the remix-world desert arm (`:40341`) reads the
+/// world's REMIX seed flag (S1-P-i42: both restored — the pre-fix port
+/// dropped them, so a temple/remix torch held the wrong colour).
 fn biome_torch_hold_style(
     kind: u16,
     using_biome_torches: bool,
@@ -110,9 +112,13 @@ fn biome_torch_hold_style(
     if !using_biome_torches || kind != 8 {
         return kind;
     }
-    // `:40301-40304` — the dungeon arm comes BEFORE the underworld one.
+    // `:40301-40304` — the dungeon arm comes BEFORE the temple/underworld.
     if zones.dungeon {
         return 3004;
+    }
+    // `:40305-40308` — `ZoneLihzhardTemple` → the Jungle torch 4388.
+    if zones.temple {
+        return 4388;
     }
     // `:40309` — below `Main.UnderworldLayer * 16` (`Main.cs:2790`:
     // `maxTilesY - 200`).
@@ -138,10 +144,16 @@ fn biome_torch_hold_style(
     if zones.jungle {
         return 4388; // `:40333-40336`
     }
-    // `:40337-40344` — the desert arms need `ZoneUndergroundDesert` /
-    // `Main.remixWorld`, unported; the surface-desert half reads the
-    // zone flag and the world-surface line like the C#.
+    // `:40337-40340` — the surface-desert half reads the zone flag and the
+    // world-surface line like the C#; `ZoneUndergroundDesert` is unported
+    // (the `Zones` struct carries no such flag — documented skip).
     if zones.desert && pos_y < world.world_surface as f32 * TILE_PX {
+        return 4383;
+    }
+    // `:40341-40344` — `ZoneDesert && Main.remixWorld`: the remix seed's
+    // inverted world grows its desert below the surface line, so the
+    // surface gate above never fires there.
+    if zones.desert && world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
         return 4383;
     }
     kind

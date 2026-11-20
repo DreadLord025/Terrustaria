@@ -186,6 +186,12 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
+// aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
+// (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in
+// projectile/data.rs; the dispatch arms (14-gate + 33) are wired in
+// projectile.rs::update. Code-only mode — witness tests written not run.
+mod projectile_ai_light_items;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs

@@ -14160,6 +14160,22 @@ impl ProjectilePool {
                         // centres the box (`:10876-10877`), so the spawn
                         // site subtracts the 6×6 shrapnel's half-box.
                         14 => {
+                            // S1-P-i42 — the glowstick family (50/53/473/515/
+                            // 870/1089) rides its own arm: the thrown-light
+                            // flight + the per-type bounce (the generic
+                            // `ai_spear` below is the dart/spear stand-in,
+                            // wrong for the glowsticks). Kind-disjoint from
+                            // the frostmoon pair, so the gate order never
+                            // double-applies.
+                            if crate::projectile_ai_light_items::GLOWSTICK_KINDS
+                                .contains(&self.slots[i].kind)
+                            {
+                                crate::projectile_ai_light_items::glowstick_step(
+                                    &mut self.slots[i],
+                                    world,
+                                    rng,
+                                );
+                            } else {
                             match self.slots[i].kind {
                                 ORNAMENT_HOSTILE => {
                                     let mut bursts = Vec::new();
@@ -14195,6 +14211,19 @@ impl ProjectilePool {
                                 _ => {}
                             }
                             self.slots[i].ai_spear(world)
+                            }
+                        }
+                        // S1-P-i42 — the flare family (163/310/1008-1011),
+                        // aiStyle 33 (`AI()`'s `else if (this.aiStyle == 33)`,
+                        // `Projectile.cs:27049-27135`): the alpha fade, the
+                        // flight/stick machine, the rotation; the stick rides
+                        // HandleMovement's aiStyle-33 block (`:18619-18634`).
+                        33 => {
+                            crate::projectile_ai_light_items::flare_step(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
                         }
                         16 => self.slots[i].ai_bomb(world),
                         18 => self.slots[i].ai_demon_scythe(world),
@@ -17622,6 +17651,26 @@ impl ProjectilePool {
                 // `ApplyWhipDebuffs`).
                 if is_whip {
                     self.whip_debuffs(slot, &mut npcs[idx], rng);
+                }
+                // S1-P-i42 — `StatusNPC`'s flare arms (`Projectile.cs:11678-
+                // 11696`): the 163/310/1008/1010/1011 OnFire roll (Next(3):
+                // 600 ticks on 0, else 300) and the 1009 Cursed Flare's
+                // unconditional CursedInferno (39, 600). The 1011 Shimmer
+                // Flare is in the OnFire list (`:11678`) — the Shimmer buff
+                // arm is the documented skip (no shimmer-debuff layer).
+                let fk = self.slots[slot].kind;
+                if matches!(fk, FLARE | BLUE_FLARE | SPELUNKER_FLARE | RAINBOW_FLARE | SHIMMER_FLARE)
+                {
+                    // `:11680-11687` — the Next(3) is the FIRST operand.
+                    if rng.next_range(0, 3) == 0 {
+                        npcs[idx].buffs.add_buff(24, 600);
+                    } else {
+                        npcs[idx].buffs.add_buff(24, 300);
+                    }
+                }
+                if fk == CURSED_FLARE {
+                    // `:11693-11696` — CursedInferno, no roll.
+                    npcs[idx].buffs.add_buff(39, 600);
                 }
                 // `:13581-13584`: any tag-carrying item's projectile applies
                 // its tag to the hit NPC (the whip's, in the port today).
