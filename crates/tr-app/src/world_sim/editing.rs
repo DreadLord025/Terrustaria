@@ -10201,45 +10201,63 @@ mod tests {
         app
     }
 
-    /// One press-release-press cycle: hold `hold` frames, release one
-    /// frame (the `releaseUseItem` tick that sets `poundRelease`), press
-    /// again for `press` frames.
+    /// One release-press cycle: release TWO frames (the i12 end-of-tick
+    /// latch, `Player.cs:42829` — after a held swing the FIRST release frame
+    /// still writes false from `prev_mine_down = true`), press `press`
+    /// frames (the first action tick lands ONE pound), then release and run
+    /// `hold` frames to drain the swing. (M3 sync: the Copper Hammer is
+    /// `autoReuse` (`Item.cs:31417` → `SetDefaults1(7)` `:1396`), so the
+    /// landed i12 `AutoReuseLogic` forces `releaseUseItem` every HELD tick
+    /// (`:52885`) and a held hammer keeps pounding at the useTime cadence —
+    /// the drain phase must be RELEASED to land exactly one pound per
+    /// cycle, the vanilla quick-click shape.)
     fn pound_cycle(app: &mut App, hold: usize, press: usize) {
-        app.mine_down = true;
-        mine_frames(app, hold);
+        // Drain the previous swing RELEASED first (>= 2 frames for the
+        // latch), then the fresh press lands one pound on its first
+        // action tick.
         app.mine_down = false;
-        mine_frames(app, 1);
+        mine_frames(app, hold.max(2));
         app.mine_down = true;
         mine_frames(app, press);
     }
 
-    /// S1-P-i31 — the pound latch: a held hammer never pounds (the C#
-    /// `poundRelease` gates `TryPoundingTile`, `:45971`); the release sets
-    /// it (`:45635-45638`) and the next press's first ready tick consumes
-    /// it — the flat stone becomes a half brick exactly once.
+    /// S1-P-i31 — the pound latch gates `TryPoundingTile` (`:45971`).
+    /// (M3 sync re-derivation: the Copper Hammer is `autoReuse`
+    /// (`Item.cs:31417` → `SetDefaults1(7)` `:1396`), so the landed i12
+    /// `AutoReuseLogic` forces `releaseUseItem` every held tick (`:52885`)
+    /// and the `:45635-45638` arm re-arms `poundRelease` continuously — a
+    /// HELD hammer pounds at the useTime cadence (vanilla autoswing). A
+    /// quick release+press lands exactly ONE pound per press.)
     #[test]
     fn s1_p_i31_the_pound_needs_a_release_then_a_press() {
         let mut app = hammer_world_at(1, 30, 260);
-        // A long hold: no pound, the stone stays flat (a hammer does not
-        // mine a plain block — `:45656` pick_match false).
-        mine_frames(&mut app, 60);
-        let t = app.world.tile(30, 260).unwrap();
-        assert!(t.active() && !t.half_brick() && t.slope() == 0, "the hold never pounds");
-        assert!(!app.pound_release, "the latch stays clear while held");
-        // The release sets the latch.
+        // The release arms the latch (two frames — the i12 end-of-tick
+        // latch convention, `Player.cs:42829`).
         app.mine_down = false;
-        mine_frames(&mut app, 1);
+        mine_frames(&mut app, 2);
         assert!(app.pound_release, "releaseUseItem sets poundRelease");
         // The press: the first ready tick pounds (the half brick).
         app.mine_down = true;
         mine_frames(&mut app, 3);
         let t = app.world.tile(30, 260).unwrap();
         assert!(t.half_brick(), "the press pounds the flat stone to a half brick");
-        assert!(!app.pound_release, "the pound consumes the latch");
-        // Holding on: no second pound (the latch is spent).
+        // Released drain: no second pound (the mining action is gated on
+        // `controlUseItem`, `:45608`/`:45626`).
+        app.mine_down = false;
         mine_frames(&mut app, 60);
-        assert!(app.world.tile(30, 260).unwrap().half_brick(), "one pound per cycle");
+        assert!(app.world.tile(30, 260).unwrap().half_brick(), "one pound per press");
         assert_eq!(app.world.tile(30, 260).unwrap().slope(), 0);
+        // The next press lands the second pound (half → slope 1).
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(!t.half_brick() && t.slope() == 1, "the second press cycles to slope 1");
+        // The HELD autoReuse hammer keeps pounding (`:52885` forces the
+        // release latch every tick → `:45635` re-arms it): 120 held frames
+        // advance the cycle past slope 1.
+        mine_frames(&mut app, 120);
+        let t = app.world.tile(30, 260).unwrap();
+        assert!(t.slope() > 1 || t.half_brick(), "the held autoReuse hammer cycles on");
     }
 
     /// S1-P-i31 — the full cycle over repeated presses: flat → half →
@@ -10258,16 +10276,18 @@ mod tests {
             (true, 0),
         ];
         for (half, slope) in steps {
-            // The initial hold is already running (mining_app presses);
-            // release + press lands one pound.
+            // Release (two frames — the i12 end-of-tick latch, :42829) +
+            // a 3-frame press lands ONE pound; the drain is RELEASED so
+            // the autoReuse hold does not cycle on (M3 sync).
             app.mine_down = false;
-            mine_frames(&mut app, 1);
+            mine_frames(&mut app, 2);
             app.mine_down = true;
             mine_frames(&mut app, 3);
             let t = app.world.tile(30, 260).unwrap();
             assert_eq!(t.half_brick(), half, "half at slope {slope}");
             assert_eq!(t.slope(), slope);
             // Let the swing finish so the next press re-arms cleanly.
+            app.mine_down = false;
             mine_frames(&mut app, 40);
         }
     }
@@ -10279,7 +10299,7 @@ mod tests {
     fn s1_p_i31_the_platform_slopes_then_half_bricks() {
         let mut app = hammer_world_at(19, 30, 260);
         app.mine_down = false;
-        mine_frames(&mut app, 1);
+        mine_frames(&mut app, 2);
         app.mine_down = true;
         mine_frames(&mut app, 3);
         assert_eq!(app.world.tile(30, 260).unwrap().slope(), 1);
@@ -10435,9 +10455,10 @@ mod tests {
         let p = app.player.as_mut().unwrap();
         p.x = 30.0 * TILE_PX + 2.0;
         p.y = 260.0 * TILE_PX + 8.0 - p.height;
-        // First cycle: flat → half (no lift — the half brick SETS).
+        // First cycle: flat → half (no lift — the half brick SETS). Two
+        // release frames (the i12 end-of-tick latch, :42829).
         app.mine_down = false;
-        mine_frames(&mut app, 1);
+        mine_frames(&mut app, 2);
         app.mine_down = true;
         mine_frames(&mut app, 3);
         assert!(app.world.tile(30, 260).unwrap().half_brick());
