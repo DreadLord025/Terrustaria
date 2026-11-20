@@ -174,14 +174,14 @@ pub struct SpriteRenderer {
     /// (S1-G-3): alpha-blend (the default), additive, reverse-subtract
     /// "multiply" — the C#'s three `SpriteBatch.Begin` blend batches
     /// (`Main.cs:27457-27494`).
-    pipelines: [wgpu::RenderPipeline; 3],
-    bgl: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
+    pub(crate) pipelines: [wgpu::RenderPipeline; 3],
+    pub(crate) bgl: wgpu::BindGroupLayout,
+    pub(crate) sampler: wgpu::Sampler,
     bind_world: wgpu::BindGroup,
     bind_ui: wgpu::BindGroup,
     /// The BC2 font-array view the retail `Fonts/*.xnb` pages upload into
     /// (`upload_font_atlas`); shared by every sprite bind group.
-    font_view: wgpu::TextureView,
+    pub(crate) font_view: wgpu::TextureView,
     /// Bind group for the world-sized map texture (one texel = one map tile). `None`
     /// until `ensure_map_texture` has run, in which case the `map` range is not drawn.
     bind_map: Option<wgpu::BindGroup>,
@@ -191,7 +191,14 @@ pub struct SpriteRenderer {
     globals_ui: wgpu::Buffer,
     /// The dye pass-parameter table (`set_dye_params`); bound in every sprite
     /// bind group, read by `sprite.wgsl`'s dye dispatch.
-    dye_table: wgpu::Buffer,
+    pub(crate) dye_table: wgpu::Buffer,
+    /// S1-G-13 consumers: an explicit framebuffer size for the world globals.
+    /// `None` = the surface size (the frozen default). The layer-target
+    /// callbacks render into a padded layer texture whose size differs from
+    /// the backbuffer, so they set this for the duration of the layer draw
+    /// (`WorldSceneLayerTarget.UpdateContent`'s screen-size override,
+    /// `WorldSceneLayerTarget.cs:49`). The composite/capture paths read it.
+    pub(crate) screen_override: Option<[f32; 2]>,
     /// Ring of instance buffers so the CPU never rewrites a buffer the GPU may still
     /// be reading (B3). Three buffers stay ahead of `desired_maximum_frame_latency` (≤2).
     instances: Vec<wgpu::Buffer>,
@@ -534,6 +541,7 @@ impl SpriteRenderer {
             globals_world,
             globals_ui,
             dye_table,
+            screen_override: None,
             instances,
             frame_index: 0,
             capacity,
@@ -610,7 +618,7 @@ impl SpriteRenderer {
     /// Builds one sprite bind group: globals uniform + a texture view + the shared
     /// sampler + the dye table. Used for the atlas view (`bg-world`/`bg-ui`) and
     /// the map view.
-    fn mk_bind(
+    pub(crate) fn mk_bind(
         device: &wgpu::Device,
         bgl: &wgpu::BindGroupLayout,
         sampler: &wgpu::Sampler,
@@ -1295,8 +1303,13 @@ impl SpriteRenderer {
         ui_half: bool,
     ) -> RenderStats {
         let mut stats = RenderStats::default();
-        let w = gpu.config.width as f32;
-        let h = gpu.config.height as f32;
+        // S1-G-13 consumers: the layer callbacks override the framebuffer
+        // size (the padded layer texture, `WorldSceneLayerTarget.cs:49`);
+        // `None` keeps the surface size — the frozen default.
+        let (w, h) = match self.screen_override {
+            Some([w, h]) => (w, h),
+            None => (gpu.config.width as f32, gpu.config.height as f32),
+        };
 
         gpu.queue.write_buffer(
             &self.globals_world,
