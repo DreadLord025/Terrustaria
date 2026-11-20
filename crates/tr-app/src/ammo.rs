@@ -10,10 +10,15 @@
 //! `ammoCyclingOffset` instead (`pick`'s `cycling` parameter, Phase 4).
 //!
 //! The drain lives inside `PickAmmo` itself
-//! (`Player.cs:53667-53672`: `if (!flag && item.consumable) item.stack--`) —
-//! `flag` starts as the `dontConsume` argument (`ItemID.Sets.gunProj` — only
-//! 4 special endgame items, `ItemID.cs:1327`) and the not-consume rolls set
-//! it. The port's rolls cover the shooters whose items the registry carries.
+//! (`Player.cs:53675-53682`: `if (!flag && item.consumable) { item.stack--;
+//! if (item.stack <= 0) item.TurnToAir(); }`) — `flag` starts as the
+//! `dontConsume` argument (`ItemID.Sets.gunProj` — only 4 special endgame
+//! items, `ItemID.cs:1327`) and the not-consume rolls set it. The port's rolls
+//! cover the shooters whose items the registry carries. The `item.consumable`
+//! half is load-bearing: the Endless Quiver 3103 / Endless Musket Pouch 3104
+//! are `consumable: false` (`Item.cs:28700-28723` never sets it — the
+//! `ResetStats` stock false, `Item.cs:49007`), so they are picked like any
+//! ammo but NEVER drained ([`drain`], S1-P-i15).
 //!
 //! `PickAmmo` also resolves WHICH projectile the pair fires
 //! (`Player.cs:53458-53568`): the specific-pair table
@@ -32,8 +37,10 @@
 //! are the ammo's own contributions (the vanilla's `Damage`/`KnockBack` start at
 //! the weapon's own values, which the caller keeps). Two consequences the wire
 //! (Phase 4) must carry: the Nanite-bullet arm's `Damage = (int)(Damage * 1.25f)`
-//! scales the FUSED damage, so the weapon's part takes the same factor when the
-//! resolved projectile is 285; and `magicQuiver`'s `KnockBack *= 1.1f` runs
+//! scales the FUSED damage, so it lives at the wire's fuse site ONLY — the
+//! resolver returns the unscaled `num` (S1-P-i15 / i03 census A1: scaling both
+//! halves separately applied the factor twice to the ammo half); and
+//! `magicQuiver`'s `KnockBack *= 1.1f` runs
 //! BEFORE `KnockBack += item.knockBack` (`:53568`), so it scales the weapon's own
 //! knockback only.
 //!
@@ -51,27 +58,27 @@
 //!    `:53595`, `:53643`, …). One pick therefore spends exactly the vanilla draw
 //!    count — the determinism invariant the golden-stream test pins.
 //! 3. The arms are ordered as the C# lists them, INCLUDING the interleaving of
-//!    the item-keyed and the flag-gated families. The ten item-keyed arms are
+//!    the item-keyed and the flag-gated families. The item-keyed roll arms are
 //!    mutually exclusive (one `sItem.type` per shot), so their order among
 //!    themselves is stream-neutral; their order relative to the flag-gated arms
 //!    is NOT (a Minishark + Ammo Box shot rolls ammoBox → ammoPotion → 98), so
 //!    the chain must not be re-sorted into "all item arms first".
 //!
-//! The two arms the source carries and this port cannot reach:
-//! - `sItem.type == 3821` (the Ale Throwing Glove, `:53639-53641`): `useAmmo == 0`
-//!   on the item and `PickAmmo` only runs `if (sItem.useAmmo > 0)`
-//!   (`Player.cs:47069`), so the roll can never fire — DEAD, not ported.
-//! - `Main.remixWorld && sItem.type == 1319` (the Snowball Cannon,
-//!   `:53659-53661`): the celebration-seed flag has no port stand-in, so the
-//!   gate is UNREACHABLE rather than unconditional — PARKED, recorded here, and
-//!   the arm is omitted rather than ported ungated (which would give every world
-//!   a 1/2 save the vanilla reserves for that seed).
+//! The `sItem.type == 3821` arm (the Ale Throwing Glove, `:53639-53641`,
+//! `Main.rand.Next(100) < 69`) IS live: the item's `useAmmo` is 353 (Ale),
+//! `Item.cs:33927`, so `PickAmmo` runs for it — the old "DEAD, useAmmo == 0"
+//! note was wrong (S1-P-i15). The `Main.remixWorld && sItem.type == 1319` arm
+//! (the Snowball Cannon, `:53659-53661`) reads the world's REMIX seed flag —
+//! `World.seeds` carries it (`tr_core::seeds::SeedFlags::REMIX`), the shoot
+//! wire derives the gate and passes it on [`VolleyWindows`] (the same
+//! pre-derived seam as the three window booleans; S1-P-i15 un-parked it).
 //!
-//! The three window booleans arrive pre-derived ([`VolleyWindows`]) because the
-//! C# reads `ItemAnimationJustStarted` / `itemAnimation` / `itemAnimationMax` /
-//! `useTime` (`:4066`) and the port's shoot wire owns the seconds↔ticks
-//! conversion — `ammo.rs` stays tick-semantics-free (the plan's Window
-//! booleans-as-seam decision).
+//! The four window/flag booleans arrive pre-derived ([`VolleyWindows`]) because
+//! the C# reads `ItemAnimationJustStarted` / `itemAnimation` / `itemAnimationMax`
+//! / `useTime` (`:4066`) and `Main.remixWorld`, and the port's shoot wire owns
+//! the seconds↔ticks conversion and the world handle — `ammo.rs` stays
+//! tick-semantics-free and world-free (the plan's Window booleans-as-seam
+//! decision).
 
 use crate::inv::EquipSlots;
 use crate::item::{INV, ItemSlot};
@@ -89,12 +96,12 @@ pub enum AmmoSource {
 const AMMO_COIN: i32 = 71;
 
 /// The slot match `PickAmmo_IterateRange` reads: `item.ammo == sItem.useAmmo
-/// && item.stack > 0` (`Player.cs:53699`) — the predicate both walks share.
+/// && item.stack > 0` (`Player.cs:53715`) — the predicate both walks share.
 fn is_ammo_match(slot: &ItemSlot, use_ammo: i32) -> bool {
     slot.count > 0 && crate::registry::get(slot.kind).is_some_and(|d| d.ammo == use_ammo)
 }
 
-/// `PickAmmo_IterateRange`'s tail (`Player.cs:53713-53726`): walk one slot
+/// `PickAmmo_IterateRange`'s tail (`Player.cs:53711-53725`): walk one slot
 /// range and return the index of its `skip`-th match (`skip == 0` → the
 /// first), together with how many matches the range holds. The count is what
 /// the caller carries into the next range when the skip is not consumed
@@ -142,7 +149,7 @@ fn pick_ordered(
 }
 
 /// `AmmoSlotOrder_Default`'s matching-stack count — `PickAmmo_IterateRange`'s
-/// `num2` (`Player.cs:53693-53698`) over the whole order, which the C# can sum
+/// `num2` (`Player.cs:53691-53700`) over the whole order, which the C# can sum
 /// in one loop because its inventory is one 59-slot array.
 fn count_ordered(
     coins: &[ItemSlot],
@@ -157,7 +164,7 @@ fn count_ordered(
         .count()
 }
 
-/// `PickAmmo_IterateRange`'s cycling pass over ONE range (`Player.cs:53689-53712`):
+/// `PickAmmo_IterateRange`'s cycling pass over ONE range (`Player.cs:53689-53710`):
 /// count the matching stacks (0 → `None`), then take the `offset % count`-th.
 fn pick_cycling(slots: &[ItemSlot], use_ammo: i32, offset: i32) -> Option<usize> {
     let count = slots.iter().filter(|s| is_ammo_match(s, use_ammo)).count();
@@ -166,13 +173,13 @@ fn pick_cycling(slots: &[ItemSlot], use_ammo: i32, offset: i32) -> Option<usize>
     }
     // `this.ammoCyclingOffset % num2` — the offset only ever increments, resets
     // to 0 (`Update_AmmoCycler`, `Player.cs:28419-28426`) or is drawn
-    // non-negative from `Main.rand` (`:53577`), so the Euclidean remainder is
+    // non-negative from `Main.rand` (`:53575`), so the Euclidean remainder is
     // the C#'s `%` for every reachable value.
     nth_match(slots, use_ammo, offset.rem_euclid(count as i32)).0
 }
 
 /// `PickAmmo_IterateRange`'s cycling pass over the WHOLE default order
-/// (`allowAmmoCycling: true`, `Player.cs:53752` — the `FullInventory` and
+/// (`allowAmmoCycling: true`, `Player.cs:53748` — the `FullInventory` and
 /// `Random` modes).
 fn pick_ordered_cycling(
     coins: &[ItemSlot],
@@ -195,7 +202,7 @@ fn pick_ordered_cycling(
 }
 
 /// `Player.PickAmmo_PickAmmoItem` + `PickAmmo_IterateRange`
-/// (`Player.cs:53727-53753`, `:53685-53726`): the slot in the order whose
+/// (`Player.cs:53727-53749`, `:53685-53725`): the slot in the order whose
 /// item's `ammo` field matches the weapon's `useAmmo` and whose stack is
 /// positive. `None` = no ammo — the shot is refused (`canShoot` stays
 /// false, `Player.cs:53462-53466`).
@@ -205,15 +212,15 @@ fn pick_ordered_cycling(
 /// `AmmoCyclingMode::None` mode — is the vanilla default and keeps the
 /// pre-cycling behaviour bit-for-bit: the FIRST matching slot in
 /// `AmmoSlotOrder_Default` wins. A granted mode rotates the pick behind the
-/// offset instead (`num = ammoCyclingOffset % num2`, `:53704`):
+/// offset instead (`num = ammoCyclingOffset % num2`, `:53705`):
 /// `AmmoSlots` counts and indexes the coin/ammo ranges alone — coin ammo
 /// through `AmmoSlotOrder_CoinsOnly`, everything else through
-/// `AmmoSlotOrder_AmmoOnly` (`:53729-53745`) — and falls through to the
+/// `AmmoSlotOrder_AmmoOnly` (`:53729-53746`) — and falls through to the
 /// default order with `allowAmmoCycling: false` when those ranges hold no
-/// match (`:53752`); `FullInventory` and `Random` pass the offset through the
+/// match (`:53748`); `FullInventory` and `Random` pass the offset through the
 /// whole default order.
 ///
-/// The two Clentaminators' forced index 0 (`num = 0` for 779/5134, `:53708-53711`)
+/// The two Clentaminators' forced index 0 (`num = 0` for 779/5134, `:53706-53709`)
 /// is applied by the caller, which knows the shooter; `pick` stays
 /// shooter-agnostic.
 pub fn pick(
@@ -229,7 +236,7 @@ pub fn pick(
     let offset = cycling.map_or(0, |c| c.offset);
     match mode {
         AmmoCyclingMode::AmmoSlots => {
-            // `PickAmmo_PickAmmoItem`'s first pass (`:53729-53745`), the only
+            // `PickAmmo_PickAmmoItem`'s first pass (`:53729-53746`), the only
             // pass of this mode that rides the offset.
             let (ctor, slots): (fn(usize) -> AmmoSource, &[ItemSlot]) = if use_ammo == AMMO_COIN {
                 (AmmoSource::Coin as fn(usize) -> AmmoSource, &equip.coins)
@@ -241,7 +248,7 @@ pub fn pick(
             }
         }
         AmmoCyclingMode::FullInventory | AmmoCyclingMode::Random => {
-            // `:53752` — the default order with `allowAmmoCycling: true`: the
+            // `:53748` — the default order with `allowAmmoCycling: true`: the
             // count is over the WHOLE order, so the offset wraps across the
             // coin, ammo and grid ranges alike.
             if let Some(src) =
@@ -254,8 +261,26 @@ pub fn pick(
         AmmoCyclingMode::None => {}
     }
     // The default order, first match (the AmmoSlots fall-through lands here
-    // with `allowAmmoCycling: false`, `Player.cs:53752`).
+    // with `allowAmmoCycling: false`, `Player.cs:53748`).
     pick_ordered(&equip.coins, &equip.ammo, inventory, use_ammo, 0)
+}
+
+/// `Player.HasAmmo` (`Player.cs:53431-53446`): the use-start's ammo gate —
+/// `ItemCheck_CheckCanUse_Inner` runs it at `:52316-52319`, so an ammo
+/// shooter with NO matching stack anywhere refuses the use outright (no
+/// swing starts; `ItemCheck_TryStartUse` `:52021-52040` returns false before
+/// `ItemCheck_StartActualUse`). The C# scans its one 58-slot `inventory`
+/// (grid 0-49, coins 50-53, ammo 54-57) for `item.ammo == sItem.useAmmo &&
+/// item.stack > 0`; the port's three arrays cover the same slots. Existence
+/// only — the scan order is unobservable. `use_ammo <= 0` keeps the caller's
+/// `canUse` (the C#'s `if (sItem.useAmmo > 0)` guard), modelled as true.
+pub fn has_ammo(inventory: &[ItemSlot; INV], equip: &EquipSlots, use_ammo: i32) -> bool {
+    if use_ammo <= 0 {
+        return true;
+    }
+    [inventory.as_slice(), equip.coins.as_slice(), equip.ammo.as_slice()]
+        .iter()
+        .any(|slots| slots.iter().any(|s| is_ammo_match(s, use_ammo)))
 }
 
 /// The slot read through a [`AmmoSource`].
@@ -271,8 +296,15 @@ pub fn slot<'a>(
     }
 }
 
-/// The drain half (`Player.cs:53667-53672`): `stack--`, `TurnToAir` at 0.
-/// Returns false when the stack was already empty (the caller re-checks).
+/// The drain half (`Player.cs:53675-53682`): `if (!flag && item.consumable)
+/// { item.stack--; if (item.stack <= 0) item.TurnToAir(); }`. The caller
+/// resolves `flag` through [`not_consume`] and only calls this when it is
+/// false; the `item.consumable` gate lives HERE, exactly where the C# keeps
+/// it: a non-consumable ammo kind (the Endless Quiver 3103 / Endless Musket
+/// Pouch 3104, `Item.cs:28700-28723` — neither case sets `consumable`, so the
+/// `ResetStats` stock false stands, `Item.cs:49007`) is picked and fired but
+/// its stack never moves. Returns false when nothing drained — an empty
+/// stack OR a non-consumable kind (the caller re-checks).
 pub fn drain(source: AmmoSource, inventory: &mut [ItemSlot; INV], equip: &mut EquipSlots) -> bool {
     let slot = match source {
         AmmoSource::Coin(i) => &mut equip.coins[i],
@@ -280,6 +312,12 @@ pub fn drain(source: AmmoSource, inventory: &mut [ItemSlot; INV], equip: &mut Eq
         AmmoSource::Grid(i) => &mut inventory[i],
     };
     if slot.count == 0 {
+        return false;
+    }
+    // `item.consumable` (`Player.cs:53675`) — the picked kind's own row. A
+    // kind the registry does not carry cannot have been picked (`pick` reads
+    // `d.ammo`), so the `is_some_and` is the C# field read, not a new gate.
+    if !crate::registry::get(slot.kind).is_some_and(|d| d.consumable) {
         return false;
     }
     slot.count -= 1;
@@ -394,7 +432,7 @@ fn specific_launcher_ammo_match(launcher: u16, ammo: u16) -> Option<u16> {
 ///
 /// The C# arms read `IsArrow[item.ammo]` (the AMMO item's category), and
 /// `PickAmmo_PickAmmoItem` only ever picks an item whose `ammo` field equals
-/// `sItem.useAmmo` (`Player.cs:53699`), so for every pair this chain can see
+/// `sItem.useAmmo` (`Player.cs:53715`), so for every pair this chain can see
 /// `IsArrow[item.ammo]` is exactly `IsArrow[sItem.useAmmo]` — which the frozen
 /// signature carries as `use_ammo`.
 pub fn is_arrow_ammo(use_ammo: i32) -> bool {
@@ -467,9 +505,10 @@ pub struct AmmoFlags {
 }
 
 /// The volley/window states the C#'s not-consume arms read at the shot tick
-/// (`Player.cs:53553` the Clockwork, `:53626` the Fairy Queen, `:53674` the
-/// spray arms), derived by the shoot wire (Phase 4) from its per-frame item
-/// timers in INTEGER tick semantics — the C#'s comparisons are integer ones.
+/// (`Player.cs:53631` the Clockwork, `:53635` the Fairy Queen, `:53663-53670`
+/// the spray arms, `:53659` the remix world), derived by the shoot wire
+/// (Phase 4) from its per-frame item timers in INTEGER tick semantics — the
+/// C#'s comparisons are integer ones.
 ///
 /// They are pure booleans so `ammo.rs` stays free of tick/seconds conversion:
 /// the derivation has exactly one owner. `just_started` is the port's
@@ -480,12 +519,18 @@ pub struct VolleyWindows {
     /// `this.ItemAnimationJustStarted` (`Player.cs:4066`) — the shot is the
     /// swing's first (the press tick). `false` on every later shot of a volley.
     pub just_started: bool,
-    /// `this.itemAnimation > sItem.useAnimation - 8` (`Player.cs:53626`) — the
+    /// `this.itemAnimation > sItem.useAnimation - 8` (`Player.cs:53635`) — the
     /// Fairy Queen's first-eight-ticks window.
     pub anim_gt_use_anim_minus_8: bool,
     /// `this.itemAnimation < this.itemAnimationMax - sItem.useTime`
-    /// (`Player.cs:53674`) — the flamethrower/Clentaminator first-shot window.
+    /// (`Player.cs:53663`, `:53667`) — the flamethrower/Clentaminator
+    /// first-shot window.
     pub anim_lt_anim_max_minus_use_time: bool,
+    /// `Main.remixWorld` (`Player.cs:53659`) — the world's REMIX seed flag
+    /// (`World.seeds`, `tr_core::seeds::SeedFlags::REMIX`), derived by the
+    /// shoot wire. The Snowball Cannon's 1/2 save arm reads it; a plain world
+    /// passes false and the arm spends no draw (the `&&` short-circuit).
+    pub remix_world: bool,
 }
 
 /// `PlayerAmmoCyclingMode` (`GameContent/Items/PlayerAmmoCyclingMode.cs`):
@@ -676,13 +721,12 @@ pub fn resolve_projectile(
         // `:53548-53551`
         num += 1;
     }
-    let mut damage = if num > 0 { num } else { 0 };
-    if proj == 285 {
-        // `:53556-53559` — the Nanite bullets: ×1.25 on the fused damage. This
-        // resolver owns the ammo side only, so the caller's weapon-side damage
-        // takes the same factor (see the module's Phase-4 note).
-        damage = (damage as f32 * 1.25) as i32;
-    }
+    let damage = if num > 0 { num } else { 0 };
+    // `:53556-53559` — the Nanite-bullet `Damage = (int)(Damage * 1.25f)`
+    // scales the FUSED damage (weapon + ammo), which the CALLER holds — so
+    // the scale lives at the wire's fuse site only. Scaling the ammo half
+    // here too would apply it twice (S1-P-i15 / i03 census A1: the old
+    // resolver arm + the wire's fused scale gave ×1.5625 on the ammo half).
     if is_arrow_ammo(use_ammo) && flags.archery && speed < 20.0 {
         // `:53560-53567` — the Archery Potion: ×1.2, capped at 20.
         speed *= 1.2;
@@ -716,7 +760,7 @@ fn all_but_one_in(m: u32, rng: &mut tr_core::UnifiedRandom) -> bool {
 }
 
 /// The not-consume rolls — `Player.PickAmmo`'s whole flag chain
-/// (`Player.cs:53578-53674`). `true` = the shot skips the drain
+/// (`Player.cs:53578-53682`). `true` = the shot skips the drain
 /// (`:53675-53682`). The chain is ported as a flat sequence of one-line arms in
 /// the source's order; the order is load-bearing (see the module doc), so a
 /// re-sort is a behaviour change, not a style change. The arms short-circuit:
@@ -804,9 +848,12 @@ pub fn not_consume(
     if shooter == 4953 && windows.anim_gt_use_anim_minus_8 {
         flag = true;
     }
-    // `:53639` — the Ale Throwing Glove: DEAD, not ported. Its `useAmmo == 0`
-    // means `PickAmmo` never runs for it (`Player.cs:47069`), so the roll cannot
-    // fire.
+    // `:53639-53641` — the Ale Throwing Glove: `Main.rand.Next(100) < 69`,
+    // the 69% save. LIVE: the item's `useAmmo` is 353 (Ale, `Item.cs:33927`),
+    // so `PickAmmo` runs for it (S1-P-i15 fixed the old "DEAD" note).
+    if shooter == 3821 && rng.next_max(100) < 69 {
+        flag = true;
+    }
     // `:53643` — the Huntress's Jerkin / the Crystal Ninja Chestplate: 1/10.
     if flags.huntress_ammo_cost90 && one_in(10, rng) {
         flag = true;
@@ -823,8 +870,13 @@ pub fn not_consume(
     if flags.ammo_cost75 && one_in(4, rng) {
         flag = true;
     }
-    // `:53659` — the Snowball Cannon's remix-world arm: PARKED, not ported (no
-    // celebration-seed stand-in, see the module doc).
+    // `:53659-53661` — the Snowball Cannon's remix-world arm: `Main.remixWorld
+    // && sItem.type == 1319 && Main.rand.Next(2) == 0`, the 1/2 save reserved
+    // for the remix seed. The gate arrives pre-derived on `windows` (S1-P-i15
+    // un-parked it — `World.seeds` carries the flag).
+    if windows.remix_world && shooter == 1319 && one_in(2, rng) {
+        flag = true;
+    }
     // `:53663` — the Flames projectile: the spray's first shot consumes, the
     // rest save (`itemAnimation < itemAnimationMax - useTime`).
     if projectile == 85 && windows.anim_lt_anim_max_minus_use_time {
@@ -906,7 +958,7 @@ mod tests {
         let inv = inv_with(&[(3, 40, 99)]);
         let equip = EquipSlots::empty();
         assert_eq!(super::pick(&inv, &equip, 97, None), None);
-        // An empty stack doesn't match (`item.stack > 0`, `Player.cs:53699`).
+        // An empty stack doesn't match (`item.stack > 0`, `Player.cs:53715`).
         let inv = inv_with(&[(3, 97, 0)]);
         assert_eq!(super::pick(&inv, &equip, 97, None), None);
         // useAmmo <= 0 refuses outright (the melee weapons never pick).
@@ -925,7 +977,7 @@ mod tests {
 
     #[test]
     fn the_cycling_pick_rotates_behind_the_offset() {
-        // `PickAmmo_IterateRange` (`Player.cs:53685-53726`): with cycling on,
+        // `PickAmmo_IterateRange` (`Player.cs:53685-53725`): with cycling on,
         // count the matching stacks, `num = offset % count`, skip that many.
         // Two arrow stacks in the ammo slots: offset 0 takes the first, 1 the
         // second, and the offset wraps modulo the count (no stack is left
@@ -976,7 +1028,7 @@ mod tests {
             Some(AmmoSource::Grid(6))
         );
         // `Random` rides the same order (the offset is the cycler's draw) and
-        // an empty stack never counts (`item.stack > 0`, `:53700`).
+        // an empty stack never counts (`item.stack > 0`, `:53696`).
         let equip = equip_with_ammo(&[(0, 40, 0), (1, 40, 7)]);
         let random = cycling(AmmoCyclingMode::Random, 0);
         assert_eq!(
@@ -992,7 +1044,7 @@ mod tests {
 
     #[test]
     fn the_cycling_pick_falls_through_and_refuses_empty_ranges() {
-        // `PickAmmo_PickAmmoItem` (`Player.cs:53728-53753`): the AmmoSlots pass
+        // `PickAmmo_PickAmmoItem` (`Player.cs:53727-53749`): the AmmoSlots pass
         // sees no match in the ammo slots, so it falls through to the default
         // order with `allowAmmoCycling: false` — the FIRST match wins, no
         // matter the offset.
@@ -1006,7 +1058,7 @@ mod tests {
                 "AmmoSlots' fall-through ignores the offset (offset {offset})"
             );
         }
-        // `num2 == 0` → `null` (`:53702-53705`): no matching stack anywhere and
+        // `num2 == 0` → `null` (`:53701-53704`): no matching stack anywhere and
         // the cycler armed → the shot is refused.
         let empty = inv_with(&[(3, 97, 9)]);
         let full = cycling(AmmoCyclingMode::FullInventory, 0);
@@ -1070,7 +1122,7 @@ mod tests {
 
     #[test]
     fn the_drain_decrements_and_turns_to_air() {
-        // `Player.cs:53667-53672`: `stack--`, `TurnToAir` at 0.
+        // `Player.cs:53675-53682`: `stack--`, `TurnToAir` at 0.
         let mut inv = inv_with(&[(3, 97, 2)]);
         let mut equip = EquipSlots::empty();
         let src = pick(&inv, &equip, 97, None).unwrap();
@@ -1092,6 +1144,36 @@ mod tests {
     }
 
     #[test]
+    fn s1_p_i15_the_drain_skips_the_non_consumable_endless_kinds() {
+        // `Player.cs:53675`: `if (!flag && item.consumable)` — the Endless
+        // Quiver 3103 and the Endless Musket Pouch 3104 never set
+        // `consumable` (`Item.cs:28700-28723`), so the `ResetStats` stock
+        // false (`Item.cs:49007`) stands: they are PICKED like any ammo
+        // (their `ammo` fields are Arrow/Bullet, `:28706`/`:28718`) but the
+        // drain leaves the stack untouched — the vanilla's infinite ammo.
+        for (kind, use_ammo) in [(3103u16, 40i32), (3104, 97)] {
+            let mut inv = inv_with(&[(3, kind, 1)]);
+            let mut equip = EquipSlots::empty();
+            let src = pick(&inv, &equip, use_ammo, None)
+                .unwrap_or_else(|| panic!("kind {kind}: the endless kind is picked"));
+            assert_eq!(src, AmmoSource::Grid(3));
+            assert!(
+                !drain(src, &mut inv, &mut equip),
+                "kind {kind}: `item.consumable` false — nothing drained"
+            );
+            assert_eq!(inv[3].count, 1, "kind {kind}: the stack never moves");
+            assert_eq!(inv[3].kind, kind, "kind {kind}: no TurnToAir either");
+        }
+        // The same slot with a CONSUMABLE kind does drain — the gate is the
+        // item's own field, not the slot or the source.
+        let mut inv = inv_with(&[(3, 40, 1)]);
+        let mut equip = EquipSlots::empty();
+        let src = pick(&inv, &equip, 40, None).unwrap();
+        assert!(drain(src, &mut inv, &mut equip));
+        assert_eq!(inv[3].kind, 0, "the Wooden Arrow drained to air");
+    }
+
+    #[test]
     fn the_not_consume_rolls_are_seed_deterministic() {
         // The shooters' rolls (`Player.cs:53611`, `:53619`…) — the same seed gives
         // the same save pattern.
@@ -1106,7 +1188,7 @@ mod tests {
         assert!((0..50).all(|_| !roll(39, &mut r)), "the wooden bow");
     }
 
-    // ---- the not-consume chain (`Player.cs:53578-53674`) ----
+    // ---- the not-consume chain (`Player.cs:53578-53682`) ----
 
     /// The Phase-3 windows: the plain "not a volley, not the first shot of one"
     /// baseline the chain reads.
@@ -1497,6 +1579,86 @@ mod tests {
     }
 
     #[test]
+    fn s1_p_i15_the_ale_throwing_glove_saves_at_its_69_percent() {
+        // `Player.cs:53639-53641`: `sItem.type == 3821 && Main.rand.Next(100)
+        // < 69` — LIVE (the item's `useAmmo` is 353, `Item.cs:33927`; the old
+        // "DEAD" note was wrong). The arm is a `< 69` compare, NOT the 1/m
+        // family: the draw is one `Next(100)` and the save fires on 0..68.
+        let mut rng = tr_core::UnifiedRandom::new(0xA1E0_0353u64 as i32);
+        let saves = (0..1000).filter(|_| roll(3821, &mut rng)).count();
+        let got = saves as f64 / 1000.0;
+        assert!(
+            (got - 0.69).abs() < 0.05,
+            "the Ale Throwing Glove: saved {saves}/1000 = {got:.3}, want ~0.69"
+        );
+        // Exactly one draw per shot, and the boundary is the raw compare:
+        // the same seed's `next_max(100) < 69` sequence IS the chain's.
+        let mut a = tr_core::UnifiedRandom::new(31);
+        let mut b = tr_core::UnifiedRandom::new(31);
+        for _ in 0..100 {
+            let want = b.next_max(100) < 69;
+            assert_eq!(roll(3821, &mut a), want, "the arm is Next(100) < 69");
+        }
+        assert_eq!(a, b, "one draw per shot");
+        // Kind-gated: another shooter with the same stream saves nothing
+        // through this arm and spends no draw for it.
+        let mut c = tr_core::UnifiedRandom::new(31);
+        let before = c.clone();
+        assert!(!roll(96, &mut c), "the Musket has no 3821 arm");
+        assert_eq!(c, before, "the unmatched arm draws nothing");
+    }
+
+    #[test]
+    fn s1_p_i15_the_snowball_cannons_remix_arm_is_seed_gated() {
+        // `Player.cs:53659-53661`: `Main.remixWorld && sItem.type == 1319 &&
+        // Main.rand.Next(2) == 0` — the 1/2 save exists ONLY on a remix world.
+        // The gate arrives pre-derived (`VolleyWindows::remix_world`).
+        let remix = VolleyWindows {
+            remix_world: true,
+            ..VolleyWindows::default()
+        };
+        let mut rng = tr_core::UnifiedRandom::new(0x5EED_0519u64 as i32);
+        let saves = (0..600)
+            .filter(|_| {
+                not_consume(1319, 949, 166, &remix, &AmmoFlags::default(), false, &mut rng)
+            })
+            .count();
+        let got = saves as f64 / 600.0;
+        assert!(
+            (got - 0.5).abs() < 0.05,
+            "the remix Snowball Cannon: saved {saves}/600 = {got:.3}, want ~0.5"
+        );
+        // A plain world: the arm is stream-invisible — no save, NO draw
+        // (the C#'s `&&` never reaches `Main.rand.Next`).
+        let mut plain = tr_core::UnifiedRandom::new(0x5EED_0519u64 as i32);
+        let before = plain.clone();
+        for _ in 0..100 {
+            assert!(
+                !not_consume(
+                    1319,
+                    949,
+                    166,
+                    &windows(),
+                    &AmmoFlags::default(),
+                    false,
+                    &mut plain
+                ),
+                "no remix → no save"
+            );
+        }
+        assert_eq!(plain, before, "no remix → no draw");
+        // Kind-gated on the remix world too: another shooter neither saves
+        // nor draws through this arm.
+        let mut other = tr_core::UnifiedRandom::new(7);
+        let before = other.clone();
+        assert!(
+            !not_consume(96, 949, 166, &remix, &AmmoFlags::default(), false, &mut other),
+            "the Musket is not the Snowball Cannon"
+        );
+        assert_eq!(other, before);
+    }
+
+    #[test]
     fn test_the_rng_golden_stream_spends_the_vanilla_draw_count() {
         // The determinism invariant, pinned against the stream itself: one pick
         // from a fixed seed spends EXACTLY the vanilla's draw count for that
@@ -1507,7 +1669,7 @@ mod tests {
         //  - each of the four gunProj items spends 1 (its own roll) even when
         //    `dontConsume` seeds the flag true — the C# evaluates the arms
         //    regardless of the argument and only the RESULT is discarded;
-        //  - `Random` cycling spends 1 more (`Player.cs:53577`, Phase 4's pick).
+        //  - `Random` cycling spends 1 more (`Player.cs:53575`, Phase 4's pick).
         let seed = 0xABCD_1234u64;
         let stream_after = |seed: u64, n: usize| {
             let mut rng = tr_core::UnifiedRandom::new(seed as i32);
@@ -1547,6 +1709,24 @@ mod tests {
                 "shooter {shooter}: one draw, saved {saved}"
             );
         }
+        // The Ale Throwing Glove (3821, `:53639`) spends exactly one
+        // `Next(100)` — S1-P-i15's restored arm.
+        let mut ale = tr_core::UnifiedRandom::new(seed as i32);
+        let _ = roll(3821, &mut ale);
+        assert_eq!(ale, stream_after(seed, 1), "the 3821 arm: one Next(100)");
+        // The Snowball Cannon (1319, `:53659`) spends one `Next(2)` on a
+        // remix world and NOTHING on a plain one — the gate precedes the
+        // draw in the C#'s `&&` chain.
+        let remix = VolleyWindows {
+            remix_world: true,
+            ..VolleyWindows::default()
+        };
+        let mut snow = tr_core::UnifiedRandom::new(seed as i32);
+        let _ = not_consume(1319, 949, 166, &remix, &AmmoFlags::default(), false, &mut snow);
+        assert_eq!(snow, stream_after(seed, 1), "the remix 1319 arm: one Next(2)");
+        let mut plain = tr_core::UnifiedRandom::new(seed as i32);
+        let _ = not_consume(1319, 949, 166, &windows(), &AmmoFlags::default(), false, &mut plain);
+        assert_eq!(plain, stream_after(seed, 0), "the plain-world 1319 arm: no draw");
         // Each gunProj item spends exactly one draw with dontConsume true.
         for shooter in [3475u16, 3930, 3540] {
             let mut c = tr_core::UnifiedRandom::new(seed as i32);
@@ -1678,12 +1858,15 @@ mod tests {
 
     #[test]
     fn test_the_volley_windows_default_to_all_false() {
-        // The three booleans are pure data; `Default` is all-false so an
+        // The four booleans are pure data; `Default` is all-false so an
         // unconfigured chain runs with no volley state (the Phase-3 stand-in
         // `editing.rs` passes the today-equivalent values).
         let w = VolleyWindows::default();
         assert!(
-            !w.just_started && !w.anim_gt_use_anim_minus_8 && !w.anim_lt_anim_max_minus_use_time
+            !w.just_started
+                && !w.anim_gt_use_anim_minus_8
+                && !w.anim_lt_anim_max_minus_use_time
+                && !w.remix_world
         );
         // With every window false the two window-keyed arms are inert for a
         // non-window shooter and the 434 arm saves (the "not just started" case
@@ -2153,14 +2336,16 @@ mod tests {
     }
 
     #[test]
-    fn test_DW_1_3_the_nano_bullet_multiplies_the_fused_damage() {
+    fn test_DW_1_3_the_nano_bullet_leaves_the_fused_scale_to_the_wire() {
         let f = AmmoFlags::default();
-        // `projToShoot == 285` (the Nano Bullet's own `shoot`) → ×1.25
-        // (`Player.cs:53556-53559`). The resolver owns the ammo side: the bullet's
-        // own `Item.damage` 10 → `(int)(10 * 1.25)` = 12.
+        // `projToShoot == 285` (the Nano Bullet's own `shoot`) → the C#'s
+        // `Damage = (int)(Damage * 1.25f)` (`Player.cs:53556-53559`) scales
+        // the FUSED damage — the wire's site. The resolver returns the
+        // UNSCALED ammo contribution (S1-P-i15 / i03 census A1: the old
+        // ammo-side scale here doubled the factor at the wire).
         let s = shot(96, 97, 1350, 10, 9.0, &f).expect("the gun picks the bullet");
         assert_eq!(s.projectile, 285);
-        assert_eq!(s.damage, 12, "the ammo-side ×1.25");
+        assert_eq!(s.damage, 10, "the bullet's own `Item.damage`, unscaled");
         assert_eq!(s.speed, 13.6, "9.0 + the bullet's `shootSpeed` 4.6");
         assert_eq!(s.knock_back, 3.6);
         // A plain Musket Ball (own `shoot` 14) takes no multiplier.

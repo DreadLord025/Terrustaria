@@ -9931,7 +9931,9 @@ swing + `item_time` + `shot_fired = false`); the shot fires at
 not-consume roll в†’ the drain в†’ the projectile = the ammo's `Item.shoot`,
 the damage = the weapon's + the ammo's through the class multiplier
 (`:53541-53546`), the speed = the weapon's + the ammo's `shootSpeed`
-(`:53544`). No ammo в†’ a dry swing (the use plays, nothing spawns).
+(`:53544`). No ammo в†’ the use is refused at the start (`HasAmmo`,
+`Player.cs:52316-52319` вЂ” S1-P-i15 fixed the original "dry swing"
+divergence; see "Ammo mastery layer (M3-ITEM-6)" below).
 
 The reach gate's player borrow was restructured: the old single `&app.player`
 borrow spanned the whole `update_editing` body and blocked the shooter's
@@ -9939,14 +9941,14 @@ mutable `App` access вЂ” the reach check became `player_in_reach` via
 `is_some_and` (the borrow ends at the statement) and the food/potion/melee
 arms re-borrow through `app.player`.
 
-Deviations: the specific-pair table (`PickAmmo_TryFindingSpecificMatches`,
-`Player.cs:53448`) waits for its combo items; the ammo-cycling modes are
-M3-STORE-2's; the accessory ammo saves (the magic quiver, the ammo box,
-the ammo potion, the Chlorophyte 80%) wait for their accessories/buffs;
-the volley specials (the Clockwork's 3-shot volley, the Fairy Queen's
-first-8-ticks window) have no port volley state вЂ” every shot is the
-first, so those items consume every shot (documented); the gunProj
-`dontConsume` covers only 4 endgame items (`ItemID.cs:1327`).
+Deviations (historical, M3-ITEM-3): the specific-pair table
+(`PickAmmo_TryFindingSpecificMatches`, `Player.cs:53448`), the ammo-cycling
+modes, the accessory ammo saves and the volley specials all landed with
+M3-ITEM-6 (see "Ammo mastery layer (M3-ITEM-6)" below); the gunProj
+`dontConsume` covers only 4 endgame items (`ItemID.cs:1327`). The S1-P-i15
+re-census (2026-11-19) fixed the three remaining pick/consume defects: the
+`item.consumable` drain gate, the use-start `HasAmmo` refusal and the two
+missing roll arms (3821 live, 1319 remix).
 ## Minecart riding (M2-PHYS-7)
 
 The 1.4.5.8 minecart (tile 314 riding) landed as the crate-root leaf
@@ -11308,17 +11310,42 @@ the ammo-cycling modes. Deliberate deviations and traps:
   save is discarded вЂ” the arms run unconditionally (`:53579-53594`) вЂ” so the
   golden-stream test pins 0 draws for the 434 arm and 1 for each roll-carrying
   shooter.
-- **Dead and parked arms:** the Ale Throwing Glove 3821's 69% roll never fires
-  (`useAmmo = 0` в†’ `PickAmmo` never runs) вЂ” not ported; the Snowball Cannon
-  1319's remix arm is parked (no celebration-seed stand-in in the port); the
-  1946/3930 projectile formulas (`:53475-53482`) are covered by the pair table
-  and not ported.
+- **Dead and parked arms (S1-P-i15 re-census, 2026-11-19):** the Ale Throwing
+  Glove 3821's `Next(100) < 69` roll (`Player.cs:53639-53641`) is LIVE and now
+  ported — the old "`useAmmo = 0` → dead" note was wrong: the item's `useAmmo`
+  is 353 (Ale, `Item.cs:33927`), so `PickAmmo` runs for it. The Snowball Cannon
+  1319's remix arm (`:53659-53661`) is un-parked and ported: `World.seeds`
+  carries `SeedFlags::REMIX`, the shoot wire derives `VolleyWindows::remix_world`
+  and the chain reads it (a plain world spends no draw — the `&&`
+  short-circuit). The 1946/3930 projectile formulas (`:53475-53482`) stay
+  unported: the pair table covers both launchers for all twelve rocket kinds
+  (`AmmoID.cs:78-113`), so those arms are unreachable in 1.4.5.8.
+- **The `item.consumable` drain gate (S1-P-i15):** `PickAmmo`'s drain is
+  `if (!flag && item.consumable)` (`Player.cs:53675`) — the Endless Quiver
+  3103 / Endless Musket Pouch 3104 never set `consumable`
+  (`Item.cs:28700-28723`, stock false `:49007`), so they are picked and fired
+  but never drained. `ammo::drain` now carries the gate; the wire no longer
+  refuses the shot when `drain` returns false (the old refusal made the
+  endless kinds fire nothing).
+- **The use-start `HasAmmo` gate (S1-P-i15):** `ItemCheck_CheckCanUse_Inner`
+  runs `Player.HasAmmo` (`Player.cs:52316-52319`, `:53431-53446`) — with no
+  matching stack anywhere the use is REFUSED before any swing starts. The
+  port's old "dry swing" (the swing played, the shot declined) was a
+  divergence; `ammo::has_ammo` now gates the shooter start block. The
+  mid-swing `canShoot = false` early-return (`:47147`) remains for the
+  last-ammo-drained case.
 - **The fuse multipliers stay 1.0-based in `resolve_projectile`:**
   `GetWeaponDamageMultiplier`'s bow/gun/specialist scalars (`:53386-53416`) need
   the quiver/archery systems (M3-EQUIP-3/M2-BUFF); the magicQuiver knockback
   Г—1.1 scales the weapon's own value only (it precedes `KnockBack +=
-  item.knockBack`, `:53568`) and the NanoBullet 285's Г—1.25 scales the FUSED
-  damage (the wire applies the weapon's part too).
+  item.knockBack`, `:53568`).
+- **The Nanite-bullet Г—1.25 is ONE fused scale (S1-P-i15 / i03 census A1):**
+  `Player.cs:53552-53559` adds `(int)(num * mult)` to `Damage` THEN scales the
+  FUSED value `(int)(Damage * 1.25f)`. The old port scaled the ammo half in
+  `resolve_projectile` AND the fused value at the wire — Г—1.5625 on the ammo
+  half. The resolver now returns the unscaled `num`; the wire's fuse site
+  carries the single `(damage * 1.25) as i32` after the add (the `(int)`
+  truncation the old float `damage *= 1.25` also lacked).
 - **The projectile rows land with the unported AI styles** (147 Celebration,
   75/10/181/193/31 the rest) as stand-ins per the house `projectile.rs` pattern
   вЂ” the rows stop the silent `spawn_with_data` no-op; the AI ports are M4-PROJ's
@@ -11330,6 +11357,20 @@ the ammo-cycling modes. Deliberate deviations and traps:
   the resolution chain and the roll chain share the module); the plan's
   fallback split behind the same `pub` surface is deferred to a refactor-shaped
   follow-up.
+- **Out of the S1-P-i15 pick/consume scope** (recorded by the i03 census,
+  `docs/research/62-ammo-potion-census.md` on `task/S1-P-i03-ammo-potion-census`):
+  A4 — the consumable WEAPON's own-stack consume rolls (`Player.cs:43280-43326`,
+  the throw path, not `PickAmmo`); A5 — `FillAmmo` pickup routing; A6 — the
+  Ammo Cycler +8% ranged damage / Sharp Barb +8 crit stat halves. The launch
+  paths ride i13/i14, the special-ammo behaviours i17. **Census observation
+  (fuse-side, unaddressed):** the ammo-side add evaluates
+  `GetWeaponDamageMultiplier(item)` on the AMMO item (`Player.cs:53554`),
+  whose `useAmmo` is 0 — the Sandgun's sand blocks (`class None`) and the
+  Clentaminator's solutions take the `1f` fall-through (`:53418`), while the
+  wire reuses the WEAPON's dispatch (`editing.rs`, the `mult` read); the two
+  diverge only when `rocketDamage`/`rangedDamage` ≠ 1 (the specialist
+  weapons' own ammo categories). A fuse-task follow-up, not a pick/consume
+  defect.
 ## Smart cursor (M7-SMARTCURSOR-1)
 
 `tr-core/src/smart_cursor.rs` ports `SmartCursorHelper.SmartCursorLookup`
