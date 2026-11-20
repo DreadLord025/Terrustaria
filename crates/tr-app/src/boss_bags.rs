@@ -453,6 +453,31 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 _ => quick_spawn(rng, out, 1313, 1),
             }
         }
+        // Wall of Flesh (`Player.cs:7373-7402`).
+        3324 => {
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 2105, 1); // Flesh Mask
+            }
+            quick_spawn(rng, out, 367, 1); // Pwnhammer
+            // `:7380-7383` — the Demon Heart ONLY without the extra
+            // accessory slot already granted (`!this.extraAccessory`).
+            if !env.extra_accessory {
+                quick_spawn(rng, out, 3335, 1); // Demon Heart (expert-exclusive)
+            }
+            // `:7384-7385` — the emblem: Next(4), 3 → the Summoner
+            // Emblem 2998, else 489 + num8 (Sorcerer/Warrior/Ranger).
+            let num8 = rng.next_max(4);
+            quick_spawn(rng, out, if num8 != 3 { 489 + num8 } else { 2998 }, 1);
+            // `:7386-7400` — the weapon: Next(4) → 514/426/434/4912
+            // (Laser Rifle / Breaker Blade / Clockwork Assault Rifle /
+            // Fire Whip… the 4912 row).
+            match rng.next_max(4) {
+                0 => quick_spawn(rng, out, 514, 1),
+                1 => quick_spawn(rng, out, 426, 1),
+                2 => quick_spawn(rng, out, 434, 1),
+                _ => quick_spawn(rng, out, 4912, 1),
+            }
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -979,6 +1004,84 @@ mod tests {
             money_replay_on(&mut r, 35, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_wof_bag_zero_script_grants_the_whole_arm() {
+        // The zero script: mask hits, the Pwnhammer, the Demon Heart
+        // (no extra accessory), the emblem pick 0 → Sorcerer 489, the
+        // weapon pick 0 → Laser Rifle 514 — then coins.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3324, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..5], [2105, 367, 3335, 489, 514], "{its:?}");
+        assert!(its[5..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_wof_bag_demon heart_skips_with_the_extra_slot() {
+        // `:7380` — extraAccessory=true (the Demon Heart already used)
+        // skips the second heart; the emblem/weapon picks still run.
+        let env = BagEnv { extra_accessory: true, ..Default::default() };
+        let mut rng = ScriptRng::new(&[6, 3, 3]); // mask miss, emblem 3, weapon 3
+        let mut out = Vec::new();
+        open_boss_bag(3324, &env, &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..3], [367, 2998, 4912], "{its:?}");
+        assert!(!its.contains(&3335), "no second Demon Heart");
+    }
+
+    #[test]
+    fn w4_f35_wof_bag_emblem_and_weapon_picks() {
+        // The emblem Next(4): 1 → Warrior 490, 2 → Ranger 491, 3 →
+        // Summoner 2998; the weapon Next(4): 1 → Breaker Blade 426,
+        // 2 → Clockwork Assault Rifle 434.
+        for (e, w, emblem, weapon) in [
+            (1i32, 1i32, 490u16, 426u16),
+            (2, 2, 491, 434),
+        ] {
+            let mut rng = ScriptRng::new(&[6, e, w]);
+            let mut out = Vec::new();
+            open_boss_bag(3324, &BagEnv::default(), &mut rng, &mut out);
+            let its = items(&out);
+            assert_eq!(its[0], 367);
+            assert_eq!(its[1], 3335);
+            assert_eq!(its[2], emblem, "emblem {e}");
+            assert_eq!(its[3], weapon, "weapon {w}");
+        }
+    }
+
+    #[test]
+    fn w4_f35_wof_bag_replays_the_csharp_draw_order_both_accessory_states() {
+        for extra in [false, true] {
+            for seed in [23i32, 113113] {
+                let env = BagEnv { extra_accessory: extra, ..Default::default() };
+                let mut got_rng = UnifiedRandom::new(seed);
+                let mut got = Vec::new();
+                open_boss_bag(3324, &env, &mut got_rng, &mut got);
+                let mut r = UnifiedRandom::new(seed);
+                let mut want: Vec<BagGrant> = Vec::new();
+                if r.next_max(7) == 0 {
+                    spawn_replay(&mut r, &mut want, 2105, 1);
+                }
+                spawn_replay(&mut r, &mut want, 367, 1);
+                if !extra {
+                    spawn_replay(&mut r, &mut want, 3335, 1);
+                }
+                let num8 = r.next_max(4);
+                spawn_replay(&mut r, &mut want, if num8 != 3 { 489 + num8 } else { 2998 }, 1);
+                match r.next_max(4) {
+                    0 => spawn_replay(&mut r, &mut want, 514, 1),
+                    1 => spawn_replay(&mut r, &mut want, 426, 1),
+                    2 => spawn_replay(&mut r, &mut want, 434, 1),
+                    _ => spawn_replay(&mut r, &mut want, 4912, 1),
+                }
+                money_replay_on(&mut r, 113, 1.0, &mut want);
+                assert_eq!(got, want, "extra {extra} seed {seed}");
+                assert_eq!(got_rng, r, "extra {extra} seed {seed} stream");
+            }
         }
     }
 
