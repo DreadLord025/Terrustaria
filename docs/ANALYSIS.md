@@ -39244,3 +39244,101 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The rain collision splash (W4-g67, task/W4-g67-weather-rain-splash, 2026-11-20, code-only mode)
+
+The rain drop sim's kill arm was a stand-in: a single-tile `TILE_SOLID ||
+liquid > 0` probe, a private `Splash` vec (1-2 particles, 0.32 s life, a
+0.0975 velocity blend) and a hand-drawn 330-frame quad. The C#
+(`Rain.cs:96-133`) is one combined branch — `SolidCollision(position, 2, 2)
+|| position.Y > screenPosition.Y + screenHeight + 100f ||
+WetCollision(position, 2, 2)` — and ALL THREE kills roll the
+`Next(100) < gfxQuality * 100` gate and spawn one
+`Dust.NewDust(position - velocity, 2, 2, Dust.dustWater())` with eight
+recipe writes. W4-g67 ports it onto the d50 `DustPool` contract:
+
+* **Kill chain** (`rain.rs::update_drops`) — the real
+  `Player::solid_collision`/`wet_collision` probes (`Collision.cs:2700-2733`
+  / `:1572-1651`, the half-brick cut, the `maxTilesY - 40` clamp, the liquid
+  surface at `(256-liquid)/32*2`), the `||` short-circuit order kept (the
+  wet probe runs only when dry + on-screen), the below-screen bound at
+  `camera.y + screen.y*0.5/zoom + 100` (world px, NO zoom term on the 100 —
+  the old stand-in divided it). The gate rolls for the below-screen kill
+  too; the dust's own off-screen cull (`Dust.cs:97-101`) decides whether
+  that spawn survives, exactly like the C#.
+* **Spawn** (`rain.rs::spawn_splash`) — `DustPool::new_dust` on Rain's own
+  splitmix stream (`SplitmixRand(&mut self.rng)`, the WEATHER-2
+  per-consumer convention), `dustWater()`'s per-water-style id
+  (`calculate_water_style(world, camera)` — the same live read the drop
+  frame type uses), then the eight writes in C# order: `position.X -= 2`,
+  `position.Y += 2`, `alpha = 38`, `velocity *= 0.1`,
+  `velocity += -velocity * 0.025`, `velocity.Y -= 2`, `scale = 0.6`,
+  `noGravity = true`. The refused sentinel takes the writes
+  (`Main.dust[6000]`, the minecart convention). The type-33/98..105 spawn
+  tweak (`Dust.cs:230-235`: alpha 170, vel ×0.5, Y++) runs inside
+  `new_dust` BEFORE the recipe overwrites alpha/velocity — the C# order.
+* **Physics** (`rain.rs::water_splash_arm`, `Dust.cs:1834-1874`) — the
+  `308 | 33 | 52 | 266 | 98..=105 | 123 | 288` FIRST-ladder if-block: the
+  still-X solid probe + spin/nibble, the 4×4 wet probe (+20 alpha, −0.1
+  scale), the +2/−0.005 fade pair, the alpha-255 scale zero, the >4 fall
+  clamp, the no-gravity sign-picked ±0.2 spin / +0.03 grow / ×1.05 X /
+  +0.15 sink. It returns `false` (a standalone FIRST-ladder statement), so
+  the shared loop's `:2335` no-gravity tail (×0.92 damp, fadeIn-gated
+  −0.04) runs alongside — the corrected S1-E-3 chain reading. The arm
+  draws NO RNG. Dispatch: the `minecart::tick` hook's fall-through (the
+  213/268 arms keep their positions); the arm's own type gate carries the
+  full C# member list.
+* **Draw** (`rain.rs::draw_splashes`, `Main.cs:38836-39018`) — the generic
+  `DrawDust` path over the family slots: the light sample at
+  `(position + 4) / 16` as XNA bytes, `dust_table::get_alpha` (the default
+  formula for the whole family), the `(4, 4)`-origin rotated quad at
+  `get_visual_scale` (the gore `plan_quad` emulation), the `get_color`
+  overlay when the spawn colour is packed non-zero (dead for rain —
+  `default(Color)` — kept verbatim), and the `newColor == Color.Black`
+  kill (`(0,0,0,255)`, NOT alpha-0). The call site sits after
+  `minecart::draw` in the fx range (`app/frame/draw.rs`).
+* **Drain** (`world_sim/weather.rs::update_rain`) — `Rain::update` gains
+  the `Option<(&mut DustPool, &SpawnCtx)>` seam; the world pass hands
+  `app.dust` + `app.spawn_ctx()`. `None` (the drop-sim tests) keeps the
+  gate rolling with the spawn dropped — the stream shape is identical
+  either way, so the witnesses pin the census without a pool.
+
+**RNG census.** Per collision kill: 1 gate draw (`range(0,100)`, the
+modulo seam) + the `new_dust` default block's 6 draws (`Next(1)`×2 — the
+min-5 box on the 2×2 args, `Next(-20,21)`×2 velocity, `Next(3)` frame row,
+`Next(-20,21)` scale) on Rain's stream; the pressure bands never roll
+while the first inactive slot sits under `0.5 * maxDustToDraw` (the low
+band resets `dCount`). The gate rolls even when the spawn culls/refuses
+(it sits OUTSIDE `NewDust`); the `gameMenu`/`gamePaused`/`generating`
+guards refuse BEFORE any default draw. The physics arm and the draw draw
+zero. `w4_g67_the_splash_draws_ride_rains_stream_in_kill_order` pins
+5 kills = 35 draws + same-seed byte-equality of every pool slot.
+
+**Deliberate deviations / drops (each cited at its site):**
+
+* The `gameMenu` (+2000 bound) and `remixWorld` kill-only arms
+  (`Rain.cs:103-116`) have no port seam — the drop sim runs in-world only
+  (the frame's weather cluster is pause-gated, the menu never ticks it).
+* The `DrawDust` 4×4 on-screen cull rect (`Main.cs:38847`, the
+  ±1000/±1050 slack box) is not modelled in `draw_splashes`: the spawn
+  cull already dropped off-screen dust and the shared loop kills
+  below-view slots; the widening only matters for dust dragged far
+  off-screen by velocity within one tick.
+* The water-surface ripple wording of the task row maps to the splash
+  dust itself: the C# `QueueRipple` family (`WaterShaderData.cs:445-467`)
+  has NO rain caller — its callers are Gore.cs:967 (drips), the
+  player/NPC/projectile wet walks and FakeFishParticle. Rain's surface
+  effect IS the `dustWater()` splash; the wet-probe arm's +20 alpha /
+  −0.1 scale fade is the surface interaction. The distortion-side rain
+  term (`SceneState.cs:129`'s `maxRaining` intensity) already landed with
+  the filter driver.
+* The old stand-in's 0.32 s life / 1-2 particle count / 0.0975 velocity
+  blend are retired — the C# spawns exactly ONE dust per kill and its
+  life is the alpha/scale fade ladder above.
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
+invoked** (user directive). The 7 `w4_g67_*` witnesses are owed a compile
+window before merge. The collision witnesses use a 128-tall world: the
+`maxTilesY - 40` scan clamp makes the 64-tall test worlds' row-30 floor
+invisible to the real probes (the old single-tile probe never clamped —
+part of why the stand-in existed).
