@@ -3264,6 +3264,57 @@ impl App {
         }
     }
 
+    /// W4-c28: the container `32 SyncChestItem` send — EVENT-driven, one per
+    /// changed world-chest slot (`ItemSlot.cs:1014` left-click / `:1750`
+    /// right-click / `:808` shift-take, `ChestUI.cs`'s bulk transfers,
+    /// `ItemSorting.cs:1677` sort). Client-only (`Main.netMode == 1`); the
+    /// body reads the slot back out of the store (`NetMessage.cs:864-877`:
+    /// `short chest`, `byte slot`, `short stack`, `byte prefix`, `short type`
+    /// — type 0 when the item has no name). The host/SP never send it (the
+    /// host's own chest edits relay through `request_edit`'s `20` and the
+    /// `32` relay arm). Banks are NOT world chests — they ride the `5`
+    /// player-inventory sync, no `32` here.
+    pub(crate) fn send_chest_item(&self, chest: i32, slot: usize) {
+        if chest < 0 {
+            return; // the bank / closed arms never send 32
+        }
+        let NetRole::Client(client) = &self.net else {
+            return;
+        };
+        let Some(it) = crate::chest::chest_slot(&self.world_chests, chest as usize, slot) else {
+            return;
+        };
+        client.send(&C2s::ChestItem(net::ChestItem {
+            chest: chest as i16,
+            slot: slot as u8,
+            stack: it.count.min(i16::MAX as u32) as i16,
+            prefix: it.prefix.min(255) as u8,
+            kind: it.kind as i16,
+        }));
+    }
+
+    /// W4-c28: the bulk-transfer `32` fan-out — every slot whose contents
+    /// changed across a LootAll/DepositAll/QuickStack/Restock/Sort pass
+    /// (`ChestUI.cs:813-819`'s post-pass loop, `ItemSorting.cs:1673-1678`'s
+    /// stamp diff). `before` is the slot snapshot taken before the pass;
+    /// the compare is the C#'s `MemoryStamp` (type/stack/prefix — the net
+    /// state), one `32` per changed slot in slot order.
+    pub(crate) fn send_chest_item_diff(&self, chest: i32, before: &[crate::item::ItemSlot]) {
+        if chest < 0 || !matches!(self.net, NetRole::Client(_)) {
+            return;
+        }
+        let Some(wc) = self.world_chests.get(chest as usize) else {
+            return;
+        };
+        for i in 0..before.len() {
+            let now = wc.slots.get(i).copied().unwrap_or(crate::item::EMPTY_SLOT);
+            let was = before[i];
+            if (now.kind, now.count, now.prefix) != (was.kind, was.count, was.prefix) {
+                self.send_chest_item(chest, i);
+            }
+        }
+    }
+
     /// Builds the `13 PlayerState` body for a stored peer snapshot (the
     /// host-side relay and the join bundle).
     fn player_state_of(&self, p: &net::PlayerNet) -> net::PlayerState {
@@ -5790,5 +5841,95 @@ mod message_family_tests {
             .filter(|s| matches!(s, PlayerSend::Controls))
             .count();
         assert_eq!(controls, 1, "one extension 13 per change, not per step");
+    }
+
+    // --- W4-c28: the container `32` send cadence (event-driven) -------------
+
+    /// A joined pair with matching chest 0 on both sides and a live client
+    /// player browsing it.
+    fn chest_pair() -> (App, App) {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        for app in [&mut host_app, &mut client_app] {
+            let mut chest = crate::chest::WorldChest {
+                tile: (3, 5),
+                max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            };
+            chest.slots.resize(crate::chest::DEFAULT_MAX_ITEMS as usize, crate::item::EMPTY_SLOT);
+            app.world_chests.push(chest);
+        }
+        (host_app, client_app)
+    }
+
+    fn slot(kind: u16, count: u32) -> crate::item::ItemSlot {
+        crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count,
+            prefix: 0,
+        }
+    }
+
+    #[test]
+    fn a_client_chest_edit_reaches_the_host_over_32() {
+        let (mut host_app, mut client_app) = chest_pair();
+        // The client takes an item out of chest slot 0 (the ctx-3 left-click
+        // shape: mutate the store, then the event-driven 32).
+        crate::chest::set_chest_slot(&mut client_app.world_chests, 0, 0, slot(9, 5));
+        client_app.send_chest_item(0, 0);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            crate::chest::chest_slot(&host_app.world_chests, 0, 0),
+            Some(slot(9, 5)),
+            "the host's store took the 32 (MessageBuffer.cs:1897-1918)"
+        );
+    }
+
+    #[test]
+    fn the_chest_item_send_is_client_only_and_world_chest_only() {
+        let (mut host_app, mut client_app) = chest_pair();
+        // The HOST's own chest edit never sends a client 32 (the host relays
+        // through its own arms) — the client's store stays untouched.
+        crate::chest::set_chest_slot(&mut host_app.world_chests, 0, 0, slot(9, 5));
+        host_app.send_chest_item(0, 0);
+        // A negative chest (bank / closed) never sends either.
+        crate::chest::set_chest_slot(&mut client_app.world_chests, 0, 1, slot(8, 3));
+        client_app.send_chest_item(-3, 1);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            crate::chest::chest_slot(&client_app.world_chests, 0, 0),
+            Some(crate::item::EMPTY_SLOT),
+            "the host sent no client 32"
+        );
+        assert_eq!(
+            crate::chest::chest_slot(&host_app.world_chests, 0, 1),
+            Some(crate::item::EMPTY_SLOT),
+            "the bank-index send never fired"
+        );
+    }
+
+    #[test]
+    fn the_bulk_diff_sends_only_the_changed_slots() {
+        let (mut host_app, mut client_app) = chest_pair();
+        // The host's slot 0 holds a DIFFERENT item than the client's: a
+        // spurious 32 for an unchanged slot would overwrite it.
+        crate::chest::set_chest_slot(&mut host_app.world_chests, 0, 0, slot(7, 1));
+        crate::chest::set_chest_slot(&mut client_app.world_chests, 0, 0, slot(9, 5));
+        let before = client_app.world_chests[0].slots.clone();
+        // The bulk pass changes ONLY slot 1.
+        crate::chest::set_chest_slot(&mut client_app.world_chests, 0, 1, slot(8, 3));
+        client_app.send_chest_item_diff(0, &before);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(
+            crate::chest::chest_slot(&host_app.world_chests, 0, 1),
+            Some(slot(8, 3)),
+            "the changed slot's 32 landed"
+        );
+        assert_eq!(
+            crate::chest::chest_slot(&host_app.world_chests, 0, 0),
+            Some(slot(7, 1)),
+            "the unchanged slot sent nothing (the host keeps its own item)"
+        );
     }
 }

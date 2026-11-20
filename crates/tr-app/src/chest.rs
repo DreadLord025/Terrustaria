@@ -1591,6 +1591,10 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
         .get(chest)
         .filter(|c| !is_removed(c))
         .map_or(0, |c| c.max_items);
+    // W4-c28: the pre-pass snapshot for the deposit's `32` diff.
+    let before: Vec<ItemSlot> = (0..max_items)
+        .map(|i| chest_slot(&app.world_chests, chest, i).unwrap_or(EMPTY_SLOT))
+        .collect();
     // The merge pass (`ChestUI.cs:1221-1261`) — stackable kinds only.
     if max > 1 {
         for i in 0..max_items {
@@ -1656,6 +1660,10 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
         // The drained slot's remainder — air when fully moved
         // (`:1244`/:1278's `SetDefaults(0)` write-through).
         from.write(app, item);
+        // W4-c28: the ctx-1/2 shift-deposit's `32` per filled chest slot
+        // (`ChestUI.cs:1247`/`:1258`/`:1283` — the merge + empty-slot passes).
+        // The port diffs the whole pass against the pre-pass snapshot.
+        app.send_chest_item_diff(chest as i32, &before);
     }
     placeable
 }
