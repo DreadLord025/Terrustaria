@@ -384,3 +384,314 @@ pub fn storm_tiger_status_decision(counts: &[i32]) -> CompanionDecision {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A zeroed 1136-wide counts vector (the `PROJ_COUNT` width).
+    fn counts() -> Vec<i32> {
+        vec![0; 1136]
+    }
+
+    fn ctx<'a>(c: &'a [i32]) -> SummonEffectContext<'a> {
+        SummonEffectContext {
+            owned_projectile_counts: c,
+            stat_life: 200,
+            stat_life_max2: 400,
+            num_minions: 0,
+            max_minions: 1,
+            baby_bird_staff: None,
+        }
+    }
+
+    fn slots_with(pairs: &[(i32, i32)]) -> BuffSlots {
+        let mut s = BuffSlots::default();
+        for (i, &(b, t)) in pairs.iter().enumerate() {
+            s.buff_type[i] = b;
+            s.buff_time[i] = t;
+        }
+        s
+    }
+
+    /// Per-id witness, part 1 — the first 15 keep-alive rows: each watched
+    /// kind keeps the buff, arms its flag and refreshes to 18000; count 0
+    /// deletes. (`Player.cs:10486-10744`.)
+    #[test]
+    fn s1_e_7d_summon_rows_1_keep_refresh_delete() {
+        let rows: &[(i32, &[i32], MinionFlag)] = &SUMMON_ARMS[..15];
+        for &(buff, kinds, flag) in rows {
+            for &kind in kinds {
+                let mut c = counts();
+                c[kind as usize] = 1;
+                let mut e = SummonEffects::default();
+                let mut s = slots_with(&[(buff, 100)]);
+                run_summon_buff_chain(&mut s, &mut e, &ctx(&c));
+                assert!(e.has_flag(flag), "buff {buff} kind {kind} arms its flag");
+                assert_eq!(s.buff_type[0], buff, "buff {buff} kept");
+                assert_eq!(s.buff_time[0], 18000, "buff {buff} refresh (:10502)");
+            }
+            let c = counts();
+            let mut e = SummonEffects::default();
+            let mut s = slots_with(&[(buff, 100)]);
+            run_summon_buff_chain(&mut s, &mut e, &ctx(&c));
+            assert!(!e.has_flag(flag), "buff {buff} count-0 sets no flag");
+            assert_eq!(s.buff_type[0], 0, "buff {buff} count-0 DelBuff'd");
+        }
+    }
+
+    /// Per-id witness, part 2 — the remaining 14 rows (`:10745-10976`),
+    /// same shape; 335/263 also request their status updater on keep.
+    #[test]
+    fn s1_e_7d_summon_rows_2_keep_refresh_delete() {
+        let rows: &[(i32, &[i32], MinionFlag)] = &SUMMON_ARMS[15..];
+        for &(buff, kinds, flag) in rows {
+            for &kind in kinds {
+                let mut c = counts();
+                c[kind as usize] = 1;
+                let mut e = SummonEffects::default();
+                let mut s = slots_with(&[(buff, 100)]);
+                run_summon_buff_chain(&mut s, &mut e, &ctx(&c));
+                assert!(e.has_flag(flag), "buff {buff} kind {kind} arms its flag");
+                assert_eq!(s.buff_type[0], buff, "buff {buff} kept");
+                assert_eq!(s.buff_time[0], 18000, "buff {buff} refresh");
+                if buff == 335 {
+                    assert!(e.abigail_status, ":10874");
+                }
+                if buff == 263 {
+                    assert!(e.storm_tiger_status, ":10894");
+                }
+            }
+            let c = counts();
+            let mut e = SummonEffects::default();
+            let mut s = slots_with(&[(buff, 100)]);
+            run_summon_buff_chain(&mut s, &mut e, &ctx(&c));
+            assert!(!e.has_flag(flag), "buff {buff} count-0 sets no flag");
+            assert_eq!(s.buff_type[0], 0, "buff {buff} count-0 DelBuff'd");
+        }
+    }
+
+    /// 62 Ice Barrier (`:10462-10485`): at-or-below half life keeps the
+    /// slot WITHOUT a refresh, adds 0.25 endurance, the flag, the light and
+    /// one frame step; above half DelBuff's. Boundary: exactly half keeps.
+    #[test]
+    fn s1_e_7d_ice_barrier_half_life_gate_and_frame() {
+        let c = counts();
+        let mut e = SummonEffects::default();
+        let mut s = slots_with(&[(62, 100)]);
+        let mut cc = ctx(&c);
+        cc.stat_life = 200; // == 400 * 0.5 — the <= gate keeps
+        run_summon_buff_chain(&mut s, &mut e, &cc);
+        assert!(e.ice_barrier);
+        assert_eq!(e.endurance, 0.25);
+        assert_eq!(e.ice_barrier_light, Some([0.1, 0.2, 0.45]));
+        assert_eq!(e.ice_barrier_frame_steps, 1);
+        assert_eq!(s.buff_time[0], 100, "62 writes NO 18000 refresh");
+        // Above half: deleted, no writes.
+        let mut e2 = SummonEffects::default();
+        let mut s2 = slots_with(&[(62, 100)]);
+        cc.stat_life = 201;
+        run_summon_buff_chain(&mut s2, &mut e2, &cc);
+        assert_eq!(s2.buff_type[0], 0, ":10482 DelBuff");
+        assert!(!e2.ice_barrier);
+        assert_eq!(e2.endurance, 0.0);
+        // Two kept slots stack the endurance + frame steps per slot.
+        let mut e3 = SummonEffects::default();
+        let mut s3 = slots_with(&[(62, 100), (62, 100)]);
+        cc.stat_life = 100;
+        run_summon_buff_chain(&mut s3, &mut e3, &cc);
+        assert_eq!(e3.endurance, 0.5);
+        assert_eq!(e3.ice_barrier_frame_steps, 2);
+    }
+
+    /// The frame machine (`:10469-10478`): counter > 2 wraps to 0 and steps
+    /// the frame; frame >= 12 wraps to 0. 36 steps = one full cycle.
+    #[test]
+    fn s1_e_7d_ice_barrier_frame_cycle() {
+        let (mut counter, mut frame) = (0, 0);
+        for _ in 0..2 {
+            advance_ice_barrier_frame(&mut counter, &mut frame);
+        }
+        assert_eq!((counter, frame), (2, 0), "the >2 gate holds two ticks");
+        advance_ice_barrier_frame(&mut counter, &mut frame);
+        assert_eq!((counter, frame), (0, 1), "the 3rd tick steps");
+        for _ in 0..33 {
+            advance_ice_barrier_frame(&mut counter, &mut frame);
+        }
+        assert_eq!((counter, frame), (0, 0), "36 steps = the 12-frame cycle");
+    }
+
+    /// 216's respawn (`:10697-10728`): count-0 below cap WITH the staff
+    /// records the spawn request (the staff's verbatim row) and keeps;
+    /// at cap or without the staff DelBuff's. The count keep needs no staff.
+    #[test]
+    fn s1_e_7d_baby_bird_respawn_gates() {
+        let c = counts();
+        let staff = BabyBirdStaff { shoot: 759, damage: 12, knock_back: 2.0 };
+        let mut cc = ctx(&c);
+        cc.baby_bird_staff = Some(staff);
+        let mut e = SummonEffects::default();
+        let mut s = slots_with(&[(216, 100)]);
+        run_summon_buff_chain(&mut s, &mut e, &cc);
+        assert_eq!(e.baby_bird_respawn, Some(staff), ":10712 the request");
+        assert!(e.has_flag(MinionFlag::BabyBird));
+        assert_eq!(s.buff_time[0], 18000, "the success path refreshes");
+        // At cap: no request, deleted.
+        cc.num_minions = 1;
+        let mut e2 = SummonEffects::default();
+        let mut s2 = slots_with(&[(216, 100)]);
+        run_summon_buff_chain(&mut s2, &mut e2, &cc);
+        assert_eq!(e2.baby_bird_respawn, None);
+        assert_eq!(s2.buff_type[0], 0, ":10719 DelBuff at cap");
+        // Below cap, no staff: deleted too.
+        cc.num_minions = 0;
+        cc.baby_bird_staff = None;
+        let mut e3 = SummonEffects::default();
+        let mut s3 = slots_with(&[(216, 100)]);
+        run_summon_buff_chain(&mut s3, &mut e3, &cc);
+        assert_eq!(s3.buff_type[0], 0, ":10719 DelBuff without the staff");
+        // The count keep needs neither cap nor staff.
+        let mut c4 = counts();
+        c4[759] = 1;
+        let mut e4 = SummonEffects::default();
+        let mut s4 = slots_with(&[(216, 100)]);
+        run_summon_buff_chain(&mut s4, &mut e4, &ctx(&c4));
+        assert_eq!(e4.baby_bird_respawn, None);
+        assert_eq!(s4.buff_time[0], 18000);
+    }
+
+    /// The `DelBuff(j); j--` rescan (`:10482-10483`): a dead 64 at slot 0
+    /// shifts the live 83 into slot 0, whose arm runs the SAME tick.
+    #[test]
+    fn s1_e_7d_the_chain_rescans_after_delbuff() {
+        let mut c = counts();
+        c[317] = 1; // the raven lives; the slime (266) does not
+        let mut e = SummonEffects::default();
+        let mut s = slots_with(&[(64, 100), (83, 100)]);
+        run_summon_buff_chain(&mut s, &mut e, &ctx(&c));
+        assert!(s.buff_type[0] == 83, "the shifted-in buff took slot 0");
+        assert_eq!(s.buff_time[0], 18000, "its arm ran in the same tick");
+        assert!(e.has_flag(MinionFlag::Raven));
+        assert!(!e.has_flag(MinionFlag::Slime));
+    }
+
+    /// The persistent-flag read (`if (!this.pygmy)`, `:10495`): an earlier
+    /// kept slot's flag keeps a later count-0 slot of the same buff.
+    #[test]
+    fn s1_e_7d_the_accumulated_flag_keeps_a_later_dead_slot() {
+        let mut c = counts();
+        c[266] = 1;
+        let mut e = SummonEffects::default();
+        e.set_flag(MinionFlag::Slime); // a prior tick's keep
+        let mut s = slots_with(&[(64, 100)]);
+        c[266] = 0; // the minion died, but the flag persists this tick
+        run_summon_buff_chain(&mut s, &mut e, &ctx(&c));
+        assert_eq!(s.buff_type[0], 64, "the C# reads the field, not the count");
+        assert_eq!(s.buff_time[0], 18000);
+    }
+
+    /// 335/263's status requests are UNCONDITIONAL (`:10872-10875` /
+    /// `:10892-10895`) — the count-0 delete still requests the updater (the
+    /// orphan-cleanup path; the live port's keep-only call is the recorded
+    /// deviation).
+    #[test]
+    fn s1_e_7d_status_requests_run_even_on_delete() {
+        let c = counts();
+        let mut e = SummonEffects::default();
+        let mut s = slots_with(&[(335, 100), (263, 100)]);
+        run_summon_buff_chain(&mut s, &mut e, &ctx(&c));
+        assert_eq!(s.buff_type[0], 0, "both deleted");
+        assert!(e.abigail_status, ":10874 runs after the DelBuff");
+        assert!(e.storm_tiger_status, ":10894 runs after the DelBuff");
+    }
+
+    /// The StormTiger rank ladder (`:12337-12354`) + the form map
+    /// (`:12297-12303`): the >0/>3/>6 boundaries and the −1 sentinel.
+    #[test]
+    fn s1_e_7d_storm_tiger_rank_and_form() {
+        for (gems, rank, form) in
+            [(0, 0, -1), (1, 1, 833), (3, 1, 833), (4, 2, 834), (6, 2, 834), (7, 3, 835)]
+        {
+            assert_eq!(desired_storm_tiger_rank(gems), rank, "gems {gems}");
+            assert_eq!(storm_tiger_form(rank), form);
+        }
+        assert_eq!(STORM_TIGER_IDS, [833, 834, 835]);
+    }
+
+    /// The Abigail decision (`:12274-12293`): orphan cleanup, spawn-beside,
+    /// idle — the three arms in C# order.
+    #[test]
+    fn s1_e_7d_abigail_status_decision() {
+        let mut c = counts();
+        c[963] = 2; // companions with no flower: kill them
+        assert_eq!(
+            abigail_status_decision(&c),
+            CompanionDecision::Kill { kind: 963, storm_tiger_family: false }
+        );
+        c[970] = 1;
+        c[963] = 0; // flower without companion: spawn
+        assert_eq!(
+            abigail_status_decision(&c),
+            CompanionDecision::Spawn { kind: 963, base_minion: 970, tiger_cooldown: false }
+        );
+        c[963] = 1;
+        assert_eq!(abigail_status_decision(&c), CompanionDecision::Idle);
+    }
+
+    /// The StormTiger decision (`:12295-12335`): rank 0 kills ALL forms
+    /// (the −1 sentinel), a wrong-rank form kills the family, the missing
+    /// desired form spawns with the 60-tick pin, the matched form idles.
+    #[test]
+    fn s1_e_7d_storm_tiger_status_decision() {
+        let mut c = counts();
+        c[833] = 1; // gems 0 → rank 0 → kill everything
+        assert_eq!(
+            storm_tiger_status_decision(&c),
+            CompanionDecision::Kill { kind: -1, storm_tiger_family: true }
+        );
+        c[831] = 4; // rank 2 wants 834; the 833 is wrong-rank
+        assert_eq!(
+            storm_tiger_status_decision(&c),
+            CompanionDecision::Kill { kind: 834, storm_tiger_family: true }
+        );
+        c[833] = 0; // only gems: spawn the rank-2 form
+        assert_eq!(
+            storm_tiger_status_decision(&c),
+            CompanionDecision::Spawn { kind: 834, base_minion: 831, tiger_cooldown: true }
+        );
+        c[834] = 1;
+        assert_eq!(storm_tiger_status_decision(&c), CompanionDecision::Idle);
+    }
+
+    /// The chain leaves foreign ids alone (the block's dispatch boundary:
+    /// 37 Horrified at `:10977` is the accessory wave's, 94 the c17 wave's).
+    #[test]
+    fn s1_e_7d_foreign_ids_pass_through() {
+        let c = counts();
+        let mut e = SummonEffects::default();
+        let mut s = slots_with(&[(37, 100), (94, 100), (46, 100)]);
+        run_summon_buff_chain(&mut s, &mut e, &ctx(&c));
+        assert_eq!(s.buff_type[..3], [37, 94, 46]);
+        assert_eq!(s.buff_time[..3], [100, 100, 100]);
+        assert_eq!(e, SummonEffects::default());
+        assert_eq!(
+            apply_summon_effect_arm(&mut e, 161 + 1, &ctx(&c)),
+            SummonArmOutcome::NotHandled
+        );
+    }
+
+    /// The table's census witness: 29 rows, the verbatim C# order, every id
+    /// once — the block's summon half (`:10486-10961`).
+    #[test]
+    fn s1_e_7d_the_table_is_the_29_row_census() {
+        assert_eq!(SUMMON_ARMS.len(), 29);
+        let ids: Vec<i32> = SUMMON_ARMS.iter().map(|&(b, _, _)| b).collect();
+        assert_eq!(
+            ids,
+            [49, 83, 64, 125, 126, 133, 134, 135, 214, 139, 140, 182, 213, 216,
+             355, 385, 393, 394, 386, 389, 390, 325, 335, 263, 271, 322, 187,
+             188, 161]
+        );
+    }
+}
+
+
