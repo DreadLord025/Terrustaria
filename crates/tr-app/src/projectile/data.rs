@@ -839,6 +839,12 @@ pub const COOL_WHIP_PROJ: u16 = 917;
 /// Weather Pain's twister, aiStyle 177 (`Projectile.cs:9169-9181`).
 pub const WEATHER_PAIN_SHOT: u16 = 969;
 
+// ===== W4-d18: the aiStyle-178 fire explosion =====
+/// `ProjectileID.FireWhipProj` (918, `ProjectileID.cs:2390`) — the
+/// Firecracker's explosion flash, aiStyle 178 (`Projectile.cs:8689-8700`,
+/// `AI_178_FireExplosion` `:45267-45317`).
+pub const FIRE_WHIP_PROJ: u16 = 918;
+
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
 /// second hand-maintained list: the id space above the port's highest row is
@@ -3831,6 +3837,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             WEATHER_PAIN_SHOT => (
                 56.0, 64.0, 177, 15, TIME_LEFT_DEFAULT, 0, true, false, false,
                 (false, -2, true, 25, 0, 1.0),
+            ),
+            // ===== W4-d18: the aiStyle-178 fire explosion =====
+            // `Projectile.cs:8689-8700` — the Fire Whip Proj (918):
+            // 96x96, aiStyle 178, friendly, `tileCollide = false`,
+            // `penetrate = -1`, the local-immunity pair (true, −1),
+            // `alpha = 255`. The stock 3600 life (the AI kills at 10).
+            FIRE_WHIP_PROJ => (
+                96.0, 96.0, 178, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, -1, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
             // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile

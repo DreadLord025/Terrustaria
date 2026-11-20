@@ -2011,6 +2011,75 @@ pub(crate) fn weather_pain_sync_siblings(slots: &mut [Projectile], me: usize) {
     }
 }
 
+/// `AI_178_FireExplosion` (`Projectile.cs:45267-45317`) — the Firecracker's
+/// explosion flash (918). The first tick (`localAI[0] == 0`) plays
+/// `SoundID.Item14` and spawns the four dust rings + the two gores; then
+/// `localAI[0]` counts every tick and the 10-tick cap kills.
+///
+/// RNG census (the first tick ONLY — the dust/gore BODIES are the skip,
+/// the explicit call-site draws stay in the C#'s order):
+/// - the 4× dust-31 ring (`:45272-45276`): each `RotatedByRandom(π)` pair
+///   (two `NextDouble`s) + the radius `NextDouble` → 12 doubles;
+/// - the 30× dust-6 pair (`:45277-45288`): each iteration two dusts, each
+///   a `RotatedByRandom(π)` pair + a `NextDouble` radius → 180 doubles;
+/// - the 10× dust-6 UnitX ring (`:45289-45295`): each a
+///   `RotatedByRandom(π)` pair → 20 doubles (NO radius draw — the reach
+///   is the fixed `width/2`);
+/// - the 10× dust-31 UnitX ring (`:45296-45302`): the same → 20 doubles;
+/// - the 2× gore (`:45303-45310`): each the position `Next(100)` ×2, the
+///   type `Next(61,64)`, the `NewGore` internal kicks `Next(10,31)` +
+///   `Next(-20,21)`, the `RotatedByRandom(π)` pair + the `NextDouble`
+///   radius, then the velocity `Next(-10,11)` ×2 → 14 ranges + 6 doubles.
+/// Total: 14 ranges + 238 doubles on tick 1, ZERO after.
+pub(crate) fn ai_fire_explosion(p: &mut Projectile, rng: &mut dyn DropRng) {
+    if p.local_ai[0] == 0.0 {
+        // `:45271` — the explosion cue (the wants_sound seam).
+        p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
+        // `:45272-45276` — the 4× dust-31 ring: RotatedByRandom pair +
+        // the NextDouble radius each.
+        for _ in 0..4 {
+            let _ = (rng.next_double(), rng.next_double());
+            let _ = rng.next_double();
+        }
+        // `:45277-45288` — the 30× dust-6 pair: two dusts per iteration,
+        // each a RotatedByRandom pair + a NextDouble radius.
+        for _ in 0..30 {
+            for _ in 0..2 {
+                let _ = (rng.next_double(), rng.next_double());
+                let _ = rng.next_double();
+            }
+        }
+        // `:45289-45295` — the 10× dust-6 UnitX ring: the pair only.
+        for _ in 0..10 {
+            let _ = (rng.next_double(), rng.next_double());
+        }
+        // `:45296-45302` — the 10× dust-31 UnitX ring: the pair only.
+        for _ in 0..10 {
+            let _ = (rng.next_double(), rng.next_double());
+        }
+        // `:45303-45310` — the 2× gore: the position pair, the type, the
+        // NewGore kicks, the RotatedByRandom pair + radius, the velocity
+        // kicks (the celeb2_explosion `gore` shape + the radius draws).
+        for _ in 0..2 {
+            let _ = rng.next_range(0, 100);
+            let _ = rng.next_range(0, 100);
+            let _ = rng.next_range(61, 64);
+            let _ = rng.next_range(10, 31); // NewGore's Y kick
+            let _ = rng.next_range(-20, 21); // NewGore's X kick
+            let _ = (rng.next_double(), rng.next_double()); // RotatedByRandom
+            let _ = rng.next_double(); // the radius
+            let _ = rng.next_range(-10, 11); // velocity.X
+            let _ = rng.next_range(-10, 11); // velocity.Y
+        }
+    }
+    // `:45312-45316` — the age counter and the 10-tick kill.
+    p.local_ai[0] += 1.0;
+    if p.local_ai[0] >= 10.0 {
+        p.active = false;
+        p.time_left = 0;
+    }
+}
+
 #[cfg(test)]
 mod w4_d18_174_tests {
     //! W4-d18 — aiStyle 174 (`AI_174_MultisegmentPet`,
@@ -2829,5 +2898,143 @@ mod w4_d18_177_tests {
             false,
         );
         assert_eq!(pool.slots()[slot2].ai[1], 1.0, "the twister counter ran");
+    }
+}
+
+#[cfg(test)]
+mod w4_d18_178_tests {
+    //! W4-d18 — aiStyle 178 (`AI_178_FireExplosion`,
+    //! `Projectile.cs:45267-45317`, the dispatch `:36675-36678`). WRITTEN
+    //! NOT RUN (code-only mode). The row, the first-tick draw census, the
+    //! 10-tick kill and the dispatch wiring.
+    use super::*;
+    use crate::projectile::{
+        FIRE_WHIP_PROJ, FlailInputs, ProjectilePool, YoyoInputs, proj_data,
+    };
+
+    /// A draw-recording rng that counts the DOUBLE draws separately (the
+    /// 178 burst is all `NextDouble` + the gore ranges).
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        doubles: usize,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+        fn next_double(&mut self) -> f64 {
+            self.doubles += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), doubles: 0, floats: 0 }
+    }
+
+    fn flash(x: f32, y: f32) -> Projectile {
+        let d = proj_data(FIRE_WHIP_PROJ).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = FIRE_WHIP_PROJ;
+        p.owner = 0;
+        p.pos = Vec2::new(x, y);
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.alpha = d.alpha;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:8689-8700`): 96x96, aiStyle 178,
+    /// penetrate -1, tileCollide false, alpha 255, local-immunity −1.
+    #[test]
+    fn w4_d18_178_the_row_matches_set_defaults() {
+        let d = proj_data(FIRE_WHIP_PROJ).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (96.0, 96.0, 178));
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.alpha, 255);
+        assert!(!d.tile_collide);
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+    }
+
+    /// `:45269-45311` — the first-tick census: 16 ranges + 238 doubles,
+    /// the Item14 cue, and the counter advances to 1.
+    #[test]
+    fn w4_d18_178_the_first_tick_census() {
+        let mut p = flash(1600.0, 800.0);
+        let mut rng = census();
+        ai_fire_explosion(&mut p, &mut rng);
+        // 4×3 + 30×2×3 + 10×2 + 10×2 + 2×3 = 12+180+20+20+6 = 238 doubles.
+        assert_eq!(rng.doubles, 238, "the double census");
+        // 2 gores × (2 position + 1 type + 2 NewGore kicks + 2 velocity) = 14.
+        assert_eq!(rng.ranges.len(), 14, "the range census");
+        assert_eq!(rng.floats, 0, "no float draws");
+        assert_eq!(p.wants_sound, Some((2, 14, 1600.0, 800.0, 0.0)), "the Item14 cue");
+        assert_eq!(p.local_ai[0], 1.0);
+        assert!(p.active);
+        // The gore range order: position, position, type, Y, X, velX, velY.
+        assert_eq!(
+            rng.ranges,
+            vec![
+                (0, 100), (0, 100), (61, 64), (10, 31), (-20, 21), (-10, 11), (-10, 11),
+                (0, 100), (0, 100), (61, 64), (10, 31), (-20, 21), (-10, 11), (-10, 11),
+            ]
+        );
+    }
+
+    /// `:45312-45316` — the counter climbs every tick, ZERO draws after
+    /// the first, and the 10-tick cap kills.
+    #[test]
+    fn w4_d18_178_the_ten_tick_kill() {
+        let mut p = flash(1600.0, 800.0);
+        let mut rng = census();
+        for _ in 0..9 {
+            ai_fire_explosion(&mut p, &mut rng);
+        }
+        assert_eq!(p.local_ai[0], 9.0);
+        assert!(p.active, "9 is the last live tick");
+        let doubles_after_first = rng.doubles;
+        ai_fire_explosion(&mut p, &mut rng);
+        assert_eq!(p.local_ai[0], 10.0);
+        assert!(!p.active && p.time_left == 0, "the 10 kill");
+        assert_eq!(rng.doubles, doubles_after_first, "no draws after tick 1");
+        assert_eq!(rng.ranges.len(), 14, "no ranges after tick 1");
+    }
+
+    /// The dispatch wiring: a pool update runs the first-tick burst and
+    /// forwards the Item14 cue into the sound queue.
+    #[test]
+    fn w4_d18_178_the_dispatch_arms_the_flash() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(FIRE_WHIP_PROJ, 1600.0, 800.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.local_ai[0], 1.0, "the first tick ran");
+        assert_eq!(rng.doubles, 238);
     }
 }

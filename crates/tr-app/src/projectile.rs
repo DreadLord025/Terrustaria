@@ -17466,6 +17466,21 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d18 — `AI()`'s `else if (this.aiStyle == 178)`
+                        // (`Projectile.cs:36675-36678`) ->
+                        // `AI_178_FireExplosion` (`:45267-45317`): the
+                        // Firecracker explosion flash (918), the style's
+                        // ONLY SetDefaults row (`:8689-8700`), so no kind
+                        // gate. The first-tick burst census + the 10-tick
+                        // kill. The Item14 cue rides the wants_sound seam.
+                        178 => {
+                            crate::projectile_ai_misc::ai_fire_explosion(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
