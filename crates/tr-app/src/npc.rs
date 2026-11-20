@@ -33663,8 +33663,12 @@ mod w4_d29_census_tests {
     fn w4_d29_style63_axis_spins_draw_free_and_integrates() {
         let w = night_world();
         let mut p = crate::player::Player::spawn(&w);
-        p.x = 62.0 * TILE_PX;
-        p.y = 60.0 * TILE_PX;
+        // The player's centre (1110, 981) sits ~104px from the Flocko's
+        // aim point (1007, 993) → the <200px latch fires; the boxes do
+        // NOT overlap (the 54-wide Flocko ends at x=1014 < 1100), so the
+        // `contact` pass adds no damage-variance draws.
+        p.x = 1100.0;
+        p.y = 960.0;
         let mut n = Npc::new(NpcKind::Flocko, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
         n.hp = n.max_hp;
         n.vx = -2.0;
