@@ -422,7 +422,78 @@ pub const FLAIL_KINDS: [u16; 10] = [
 /// bubble 405 (`:4857`).
 pub const DRIPPLER_EXTRA_BALL: u16 = 928;
 pub const FLOWER_POW_PETAL: u16 = 248;
-pub const FLAIRON_BUBBLE: u16 = 405;/// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
+pub const FLAIRON_BUBBLE: u16 = 405;
+/// The spear family (aiStyle 19 — `AI_019_Spears` `Projectile.cs:45857-46073`,
+/// S1-P-i06). Every row rides `DefaultToSpear()` (`:10720-10730`: aiStyle 19,
+/// friendly, `penetrate = -1`, `tileCollide = false`, drawLayer 7,
+/// `usesOwnerLight`, `ownerHitCheck`, melee); the per-kind `SetDefaults` rows
+/// set the boxes and scales. The ids are the verbatim `ProjectileID`
+/// (`ProjectileID.cs`). NOTE: the trap spear 186 (`TRAP_SPEAR`) is aiStyle 37,
+/// NOT a member — the held-spear family is the player's useStyle-5 thrusts.
+pub const DARK_LANCE: u16 = 46;
+pub const TRIDENT: u16 = 47;
+pub const SPEAR: u16 = 49;
+pub const MYTHRIL_HALBERD: u16 = 64;
+pub const ADAMANTITE_GLAIVE: u16 = 66;
+pub const COBALT_NAGINATA: u16 = 97;
+pub const GUNGNIR: u16 = 105;
+pub const MUSHROOM_SPEAR: u16 = 130;
+pub const THE_ROTTED_FORK: u16 = 153;
+pub const PALLADIUM_PIKE: u16 = 212;
+pub const ORICHALCUM_HALBERD: u16 = 215;
+pub const TITANIUM_TRIDENT: u16 = 218;
+pub const CHLOROPHYTE_PARTISAN: u16 = 222;
+pub const NORTH_POLE: u16 = 342;
+pub const OBSIDIAN_SWORDFISH: u16 = 367;
+pub const SWORDFISH: u16 = 368;
+pub const THUNDER_SPEAR: u16 = 730;
+pub const JOUSTING_LANCE: u16 = 877;
+pub const SHADOW_JOUSTING_LANCE: u16 = 878;
+pub const HALLOW_JOUSTING_LANCE: u16 = 879;
+pub const SLIME_SPEAR: u16 = 1103;
+/// The whole aiStyle-19 weapon set — the 21 kinds `DefaultToSpear` covers
+/// (`Projectile.cs:1300/1308/1324/1447/1465/1821/1934/2196/2416/3009/3029/
+/// 3050/3084/4323/4522/4528/7692/8435/10287`).
+pub const SPEAR_KINDS: [u16; 21] = [
+    DARK_LANCE,
+    TRIDENT,
+    SPEAR,
+    MYTHRIL_HALBERD,
+    ADAMANTITE_GLAIVE,
+    COBALT_NAGINATA,
+    GUNGNIR,
+    MUSHROOM_SPEAR,
+    THE_ROTTED_FORK,
+    PALLADIUM_PIKE,
+    ORICHALCUM_HALBERD,
+    TITANIUM_TRIDENT,
+    CHLOROPHYTE_PARTISAN,
+    NORTH_POLE,
+    OBSIDIAN_SWORDFISH,
+    SWORDFISH,
+    THUNDER_SPEAR,
+    JOUSTING_LANCE,
+    SHADOW_JOUSTING_LANCE,
+    HALLOW_JOUSTING_LANCE,
+    SLIME_SPEAR,
+];
+/// The spear family's sub-shots (S1-P-i06) — the projectiles `AI_019_Spears`
+/// spawns (`Projectile.cs:45891-45936`). They ride their OWN aiStyles, not 19:
+/// the Mushroom Spear's spore 131 (aiStyle 30, `:2198-2208`), the Chlorophyte
+/// Partisan's spore cloud 228 (aiStyle 44, `:3137-3150`), the Thunder Spear's
+/// bolt 732 (aiStyle 44, `:7705-7715`), the North Pole's snowflake 343
+/// (aiStyle 57, `:4326-4338`) and its falling flake 344 (aiStyle 1,
+/// `:4339-4352`), and the Obsidian Swordfish's bones 1107-1109 (aiStyle 14,
+/// `:10316-10339`).
+pub const MUSHROOM_SPORE: u16 = 131;
+pub const CHLOROPHYTE_SPORE_CLOUD: u16 = 228;
+pub const THUNDER_SPEAR_BOLT: u16 = 732;
+pub const NORTH_POLE_SNOWFLAKE: u16 = 343;
+pub const NORTH_POLE_FLAKE: u16 = 344;
+pub const SWORDFISH_BONE_1: u16 = 1107;
+pub const SWORDFISH_BONE_2: u16 = 1108;
+pub const SWORDFISH_BONE_3: u16 = 1109;
+/// `ProjectileID.Bomb`-family cannon ammo (178, `Projectile.cs:2641-2649`).
 pub const CANNON_BOMB: u16 = 178;
 /// The explosive cannonball (601, `Projectile.cs:6499-6512`) — aiStyle 1 with
 /// `extraUpdates = 30`.
@@ -2759,6 +2830,88 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4370-4377` — the ornament's shrapnel (347):
             // 6x6, aiStyle 2, hostile, `penetrate = -1`; the stock life.
             ORNAMENT_SHRAPNEL => (6.0, 6.0, 2, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
+            // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
+            // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
+            // drawLayer 7). The stock `timeLeft = 3600` (`:787`),
+            // `extraUpdates = 0`, NO local/idStatic immunity slice. The
+            // per-kind boxes/scales/alphas are the `SetDefaults` arms; the
+            // `ownerHitCheck` damage gate is keyed on `SPEAR_KINDS` in
+            // `damage_pve` (the only ported ownerHitCheck family here).
+            // `:1296-1302` — Dark Lance (46): 20x20, scale 1.1.
+            DARK_LANCE => (20.0, 20.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:1303-1309` — Trident (47): 18x18, scale 1.1.
+            TRIDENT => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:1319-1325` — Spear (49): 18x18, scale 1.2.
+            SPEAR => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.2)),
+            // `:1442-1448` — Mythril Halberd (64): 18x18, scale 1.25.
+            MYTHRIL_HALBERD => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.25)),
+            // `:1460-1466` — Adamantite Glaive (66): 18x18, scale 1.27.
+            ADAMANTITE_GLAIVE => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.27)),
+            // `:1816-1822` — Cobalt Naginata (97): 18x18, scale 1.1.
+            COBALT_NAGINATA => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:1929-1935` — Gungnir (105): 18x18, scale 1.3.
+            GUNGNIR => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.3)),
+            // `:2191-2197` — Mushroom Spear (130): 22x22, scale 1.2.
+            MUSHROOM_SPEAR => (22.0, 22.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.2)),
+            // `:2411-2417` — The Rotted Fork (153): 18x18, scale 1.1.
+            THE_ROTTED_FORK => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:3004-3010` — Palladium Pike (212): 18x18, scale 1.12.
+            PALLADIUM_PIKE => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.12)),
+            // `:3024-3030` — Orichalcum Halberd (215): 18x18, scale 1.27.
+            ORICHALCUM_HALBERD => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.27)),
+            // `:3045-3051` — Titanium Trident (218): 18x18, scale 1.28.
+            TITANIUM_TRIDENT => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.28)),
+            // `:3079-3085` — Chlorophyte Partisan (222): 18x18, scale 1.3.
+            CHLOROPHYTE_PARTISAN => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.3)),
+            // `:4318-4325` — North Pole (342): 22x2, scale 1.1, coldDamage
+            // (the cold flag has no port consumer — the debuff layer is out
+            // of scope, ANALYSIS).
+            NORTH_POLE => (22.0, 2.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:4517-4523` — Obsidian Swordfish (367): 18x18, scale 1.1.
+            OBSIDIAN_SWORDFISH => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 1.1)),
+            // `:4524-4529` — Swordfish (368): 18x18, NO scale line (stock 1f).
+            SWORDFISH => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:7688-7693` — Thunder Spear (730): 18x18, stock scale 1f.
+            THUNDER_SPEAR => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:8430-8437` — the jousting lances (877/878/879): 25x25,
+            // `alpha = 255`, `netImportant` (the MP flag has no single-player
+            // consumer). The channel hold + the speed-dust arms read the
+            // 877-879 range in `ai_spear`.
+            JOUSTING_LANCE | SHADOW_JOUSTING_LANCE | HALLOW_JOUSTING_LANCE => {
+                (25.0, 25.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // `:10282-10289` — Slime Spear (1103): 18x18, scale 1.2, alpha 90.
+            SLIME_SPEAR => (18.0, 18.0, 19, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 90, 1.2)),
+            // ---- The spear family's sub-shots (S1-P-i06). They ride their
+            // own aiStyles (the `AI_019_Spears` spawns, `:45891-45936`).
+            // `:2198-2208` — the Mushroom Spear's spore (131): 22x22,
+            // aiStyle 30, `penetrate = 1`, `tileCollide = false`, melee,
+            // `light = 0.5f` (the light has no port consumer here). The
+            // aiStyle-30 default arm fades it (alpha += 4, kill at 255).
+            MUSHROOM_SPORE => (22.0, 22.0, 30, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:3137-3150` — the Chlorophyte Partisan's spore cloud (228):
+            // 30x30, aiStyle 44, `penetrate = -1`, `tileCollide = false`,
+            // melee, scale 1.1, idStatic immunity cooldown 10.
+            CHLOROPHYTE_SPORE_CLOUD => (30.0, 30.0, 44, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 0, 1.1)),
+            // `:7705-7715` — the Thunder Spear's bolt (732): 15x15,
+            // aiStyle 44, `penetrate = 1`, `tileCollide = true`, melee.
+            THUNDER_SPEAR_BOLT => (15.0, 15.0, 44, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:4326-4338` — the North Pole's snowflake (343): 10x10,
+            // aiStyle 57, `penetrate = 3`, `alpha = 255`, melee, scale 1.1,
+            // coldDamage (no port consumer), `timeLeft = 120`.
+            NORTH_POLE_SNOWFLAKE => (10.0, 10.0, 57, 3, 120, 0, true, false, false, (false, -2, false, -1, 255, 1.1)),
+            // `:4339-4352` — the North Pole's falling flake (344): 26x26,
+            // aiStyle 1, `alpha = 255`, melee, scale 0.9, coldDamage,
+            // `tileCollide = false`, `timeLeft = 240`.
+            NORTH_POLE_FLAKE => (26.0, 26.0, 1, 1, 240, 0, false, false, false, (false, -2, false, -1, 255, 0.9)),
+            // `:10316-10339` — the Obsidian Swordfish's bones (1107-1109):
+            // aiStyle 14, `penetrate = 3`, melee, `timeLeft = 360` (the spawn
+            // overrides to Next(30,150)). The boxes: 1107 14x16, 1108 12x14,
+            // 1109 6x12. The generic AI_014 tail flies them (no type branch).
+            SWORDFISH_BONE_1 => (14.0, 16.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            SWORDFISH_BONE_2 => (12.0, 14.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
+            SWORDFISH_BONE_3 => (6.0, 12.0, 14, 3, 360, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -3233,6 +3386,15 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         FROST_SHARD => 5,
         ORNAMENT_HOSTILE => 2,
         ORNAMENT_SHRAPNEL => 2,
+        // The spear family's sub-shots (S1-P-i06): the spore cloud's 5-frame
+        // sheet (`Main.cs:8605`) — the aiStyle-44 frame machine
+        // (`Projectile.cs:27941-27948`) wraps at it; the Thunder bolt's
+        // 4-frame sheet (`Main.cs:8629`); the North Pole flake's 3-frame
+        // sheet (`Main.cs:8568`) — the 344 hook's `frame = (int)ai[1]` pin
+        // (`Projectile.cs:57078`).
+        CHLOROPHYTE_SPORE_CLOUD => 5,
+        THUNDER_SPEAR_BOLT => 4,
+        NORTH_POLE_FLAKE => 3,
         _ => 1,
     }
 }

@@ -194,6 +194,30 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+    // S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
+    // `Main.player[owner]` reads, `Projectile.cs:45859-45868`). The C# reads
+    // the live `itemAnimation`/`itemAnimationMax` integers; the port's swing
+    // timers run in seconds, so the counts derive from `app.swing` /
+    // `app.swing_max` (the `ticks_of` convention, `world_sim/editing.rs`).
+    // The anchor is `RotatedRelativePoint(MountedCenter)` (`:45860`).
+    let spear_owner = app.player.as_ref().map(|p| {
+        let (mcx, mcy) = p.mounted_center();
+        let anchor = p.rotated_relative_point(Vec2::new(mcx, mcy), 0);
+        crate::projectile_ai_spear::SpearOwner {
+            anchor,
+            direction: p.facing,
+            item_animation: (app.swing * 60.0).round() as i32,
+            item_animation_max: (app.swing_max * 60.0).round() as i32,
+            channel: p.channel,
+            melee_speed: p.melee_speed(),
+            wet: p.wet,
+            player_vel: Vec2::new(p.vx, p.vy),
+            player_pos: Vec2::new(p.x, p.y),
+            player_w: crate::player::WIDTH,
+            player_h: p.height,
+        }
+    });
+    app.projectiles.set_spear_owner(spear_owner);
     // `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll reads
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
@@ -213,6 +237,18 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // S1-P-i06 — the lances' channel-hold write-back (`SetDummyItemTime(third)`,
+    // `Projectile.cs:45941` → `Player.cs:4432-4441`: `itemAnimation = itemTime =
+    // frames`, `itemTimeMax = frames + 1`). The arm queued the tick count; the
+    // port re-arms the swing/item timers so the hold persists while the button
+    // is down (the `FlailTick.facing` write-back precedent). `app.swing_max`
+    // stays the item's animation length (the C# `SetDummyItemTime` does not
+    // touch `itemAnimationMax`).
+    if let Some(frames) = app.projectiles.take_spear_hold() {
+        let secs = frames as f32 / 60.0;
+        app.swing = secs;
+        app.item_time = secs;
+    }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-

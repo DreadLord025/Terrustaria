@@ -736,10 +736,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         });
                     // `if (sItem.melee && !ProjectileID.Sets
                     // .NoMeleeSpeedVelocityScaling[projToShoot]) speed /=
-                    // this.meleeSpeed` (`:47060-47063`) — no ported kind rides
-                    // the exception set (`ProjectileID.cs:547`), so every melee
-                    // shot divides (×1 at the default 1f bonus).
-                    let fx_spd = if class == registry::DamageClass::Melee {
+                    // this.meleeSpeed` (`:47060-47063`). The exception set
+                    // (`ProjectileID.cs:547`: 699/707/877/878/879/985/973/
+                    // 1082/1083) — the jousting lances 877-879 (S1-P-i06) are
+                    // the ported members: their thrust speed does NOT divide
+                    // by meleeSpeed. Every other melee shot divides (×1 at the
+                    // default 1f bonus).
+                    let no_melee_speed_scaling =
+                        matches!(proj, 699 | 707 | 877 | 878 | 879 | 985 | 973 | 1082 | 1083);
+                    let fx_spd = if class == registry::DamageClass::Melee && !no_melee_speed_scaling {
                         fx_spd / p.melee_speed()
                     } else {
                         fx_spd

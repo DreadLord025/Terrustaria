@@ -12087,6 +12087,19 @@ pub struct ProjectilePool {
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
     pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
+    /// `Main.player[owner]` reads, `Projectile.cs:45859-45868`). The world-sim
+    /// pass sets it per fixed step through [`ProjectilePool::set_spear_owner`]
+    /// (the `set_disco`/`set_wind` setter pattern — no `update` signature
+    /// churn). `None` = no player link: the aiStyle-19 arm holds the slot
+    /// (the orphan guard, the yoyo precedent).
+    spear_owner: Option<crate::projectile_ai_spear::SpearOwner>,
+    /// S1-P-i06 — the lances' channel-hold write-back (`SetDummyItemTime`,
+    /// `Projectile.cs:45941`): the `itemAnimation`/`itemTime` value the arm
+    /// asks the owner to re-arm this tick. The world-sim pass drains it after
+    /// the step and re-arms `app.swing`/`app.item_time` (the `FlailTick.facing`
+    /// write-back precedent). `None` = no hold fired.
+    pending_spear_hold: Option<i32>,
 }
 
 impl Default for ProjectilePool {
@@ -12366,6 +12379,8 @@ impl ProjectilePool {
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
+            spear_owner: None,
+            pending_spear_hold: None,
         }
     }
 
@@ -12407,6 +12422,22 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
+    /// `Main.player[owner]` reads). The world-sim pass builds it per fixed
+    /// step from the live player + the swing timers (the `set_disco` setter
+    /// pattern). `None` clears the link (the arm's orphan guard).
+    pub fn set_spear_owner(&mut self, owner: Option<crate::projectile_ai_spear::SpearOwner>) {
+        self.spear_owner = owner;
+    }
+
+    /// S1-P-i06 — drain the lances' channel-hold write-back
+    /// (`SetDummyItemTime(third)`, `Projectile.cs:45941`): the world-sim pass
+    /// re-arms `app.swing`/`app.item_time` to this many ticks. `None` when no
+    /// lance held this tick.
+    pub fn take_spear_hold(&mut self) -> Option<i32> {
+        self.pending_spear_hold.take()
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -13770,6 +13801,32 @@ impl ProjectilePool {
                             kind if crate::projectile_ai_moonlord::covers(kind) => {
                                 crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
                             }
+                            // S1-P-i06 — the North Pole's falling flake (344,
+                            // `AI_001`'s type hook `Projectile.cs:57062-57114`):
+                            // the tile-kill probe, the localAI[1] fade/gravity/
+                            // sibling-push machine, `frame = (int)ai[1]`. The
+                            // sibling separation scans the pool (the
+                            // `minion_separation` borrow pattern). Kind-disjoint
+                            // from A/B/C/frostmoon/moonlord. The 344 has its own
+                            // gravity-chain arm, so the generic flight's
+                            // `ai[0] >= 15` gravity does NOT apply — the arm
+                            // owns the whole body (no `ai_style1_flight` tail).
+                            NORTH_POLE_FLAKE => {
+                                let push = crate::projectile_ai_spear::snowflake_sibling_push(
+                                    &self.slots,
+                                    i,
+                                );
+                                crate::projectile_ai_spear::ai_north_pole_snowflake(
+                                    &mut self.slots[i],
+                                    world,
+                                    push,
+                                );
+                                // `UpdatePosition` (`:20445`) — the 344 is not
+                                // in the skip list; `tileCollide = false` so the
+                                // free move integrates the velocity.
+                                let vel = self.slots[i].vel;
+                                self.slots[i].pos += vel;
+                            }
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => self.slots[i].ai_boomerang(world, owner),
@@ -13932,6 +13989,104 @@ impl ProjectilePool {
                                 _ => {}
                             }
                             self.slots[i].ai_spear(world)
+                        }
+                        // S1-P-i06 — the spear family (`AI()`'s
+                        // `else if (this.aiStyle == 19)`,
+                        // `Projectile.cs:25477-25480` → `AI_019_Spears`
+                        // `:45857-46073`). The owner snapshot rides the
+                        // pool's `set_spear_owner` seam (the `set_disco`
+                        // pattern); a `None` link holds the slot (the orphan
+                        // guard). The sub-shots the arm queues drain into the
+                        // pool here (the `MinionShot` pattern); the movement
+                        // is the shared `kill_step` (the `tileCollide = false`
+                        // free-move branch, `UpdatePosition` `:20445` — the
+                        // C# runs `HandleMovement` after the AI, `:17015`).
+                        19 => {
+                            if let Some(so) = self.spear_owner {
+                                let shots = crate::projectile_ai_spear::ai_spears(
+                                    &mut self.slots[i],
+                                    world,
+                                    &so,
+                                    rng,
+                                );
+                                // The lances' channel hold (`:45939-45942`).
+                                if crate::projectile_ai_spear::lance_channel_hold(
+                                    &self.slots[i],
+                                    &so,
+                                ) {
+                                    self.pending_spear_hold =
+                                        Some(so.item_animation_max / 3);
+                                }
+                                let owner_id = self.slots[i].owner;
+                                for s in shots {
+                                    if let Some(slot) = self.spawn_with_data_ai_owned(
+                                        s.kind,
+                                        owner_id,
+                                        // `NewProjectile` centres the box
+                                        // (`:10876-10877`).
+                                        s.x - proj_data(s.kind).map_or(0.0, |d| d.w) * 0.5,
+                                        s.y - proj_data(s.kind).map_or(0.0, |d| d.h) * 0.5,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        0.0,
+                                        s.ai1,
+                                    ) {
+                                        if let Some(life) = s.time_left {
+                                            self.slots[slot].time_left = life;
+                                        }
+                                    }
+                                }
+                            }
+                            // HandleMovement after the AI (`:17015`/`:20445`).
+                            self.slots[i].kill_step(world);
+                        }
+                        // S1-P-i06 — the spear sub-shots' own styles. The
+                        // Mushroom Spear's spore (131, aiStyle 30 default arm
+                        // `:26775-26784`); the spore cloud 228 / Thunder bolt
+                        // 732 (aiStyle 44 `:27893-27948`); the North Pole
+                        // snowflake 343 (aiStyle 57 `:28867-28905`). Each
+                        // rides the shared `kill_step` after the AI.
+                        30 => {
+                            if self.slots[i].kind == MUSHROOM_SPORE {
+                                crate::projectile_ai_spear::ai_spore(&mut self.slots[i]);
+                            }
+                            self.slots[i].kill_step(world);
+                        }
+                        44 => {
+                            if matches!(self.slots[i].kind, CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT) {
+                                crate::projectile_ai_spear::ai_spear_subshot_44(&mut self.slots[i]);
+                            }
+                            self.slots[i].kill_step(world);
+                        }
+                        57 => {
+                            if self.slots[i].kind == NORTH_POLE_SNOWFLAKE {
+                                let shots = crate::projectile_ai_spear::ai_north_pole_flake(
+                                    &mut self.slots[i],
+                                    rng,
+                                );
+                                let owner_id = self.slots[i].owner;
+                                for s in shots {
+                                    if let Some(slot) = self.spawn_with_data_ai_owned(
+                                        s.kind,
+                                        owner_id,
+                                        s.x - proj_data(s.kind).map_or(0.0, |d| d.w) * 0.5,
+                                        s.y - proj_data(s.kind).map_or(0.0, |d| d.h) * 0.5,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        0.0,
+                                        s.ai1,
+                                    ) {
+                                        if let Some(life) = s.time_left {
+                                            self.slots[slot].time_left = life;
+                                        }
+                                    }
+                                }
+                            }
+                            self.slots[i].kill_step(world);
                         }
                         16 => self.slots[i].ai_bomb(world),
                         18 => self.slots[i].ai_demon_scythe(world),
@@ -16013,7 +16168,7 @@ impl ProjectilePool {
                 // post-loop call made hit-killed shots survive one frame —
                 // S1-A-9). The immunity gates make the repeated calls
                 // idempotent, exactly like the C#'s.
-                self.damage_pve(i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
+                self.damage_pve(i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng, world);
                 // The hostile shots' player contact (`Damage_PVP`'s
                 // single-player stand-in): the box overlap -> `Player.hurt`
                 // (the iframes gate inside), the shot dies on the hit.
@@ -16809,6 +16964,7 @@ impl ProjectilePool {
             None,
             None,
             &mut tr_core::tile_light::FastRandom::new(0),
+            world,
         );
         // `Kill_ExplodeTiles`: the radius circle kills the tiles
         // (`ExplodeTiles` `:78707+` — the distance check per tile), the
@@ -17046,6 +17202,7 @@ impl ProjectilePool {
         owner: Option<(f32, f32)>,
         mut player: Option<&mut crate::player::Player>,
         rng: &mut dyn tr_core::loot::DropRng,
+        world: &World,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
         let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, crit, center) = {
@@ -17162,6 +17319,23 @@ impl ProjectilePool {
             if !single_hit && n.immune[owner_idx] != 0 {
                 continue;
             }
+            // S1-P-i06 — the spear family's `ownerHitCheck` gate
+            // (`Damage_PVE_Inner` `:12637`: `!targetNPC.noTileCollide &&
+            // this.ownerHitCheck && !this.CanHitWithMeleeWeapon(targetNPC)`
+            // → return). `DefaultToSpear` sets `ownerHitCheck` (`:10728`);
+            // the port keys it on `SPEAR_KINDS` (the only ported
+            // ownerHitCheck family). The sight lines read the owner snapshot
+            // (`CanHitWithMeleeWeapon` `:12400-12411`). The NPC's
+            // `noTileCollide` has no port field — the ghost kinds are the
+            // exception, none is a spear target here, so the gate runs
+            // unconditionally for the family (ANALYSIS).
+            if SPEAR_KINDS.contains(&p.kind) {
+                if let Some(so) = self.spear_owner {
+                    if !crate::projectile_ai_spear::owner_can_hit(world, &so, n) {
+                        continue;
+                    }
+                }
+            }
             // The flail family's hit gates — `Colliding` (`:15336-15356`,
             // the state-0 ellipse replaces the box test),
             // `Damage_CanDealDamage` (`:12448`, the hold's first 12 ticks),
@@ -17196,6 +17370,16 @@ impl ProjectilePool {
             } else if skip_box_test {
                 // The flail state-0 ellipse already decided the hit.
                 true
+            } else if SPEAR_KINDS.contains(&p.kind) && self.spear_owner.is_some() {
+                // S1-P-i06 — `Colliding`'s aiStyle-19 arm
+                // (`Projectile.cs:15815-15843`): the extension box stepped
+                // from the centre, then the box itself. The arm only returns
+                // on a HIT; a miss falls through to the base-rect test
+                // (`:15888`), so the two are OR'd.
+                let (nw, nh) = n.size();
+                let target = tr_core::whip::Rect::new(n.x as i32, n.y as i32, nw as i32, nh as i32);
+                crate::projectile_ai_spear::spear_colliding(p, &self.spear_owner.unwrap(), target)
+                    || proj_rect.intersects(target)
             } else if p.kind == MOONLORD_TURRET_LASER {
                 // `Colliding`'s type-642 arm (`Projectile.cs:15942-15954`):
                 // the base-rect overlap above OR the beam line — the
@@ -18562,6 +18746,7 @@ mod tests {
             None,
             None,
             &mut rng,
+            &w,
         );
         assert!(
             npc.hp < before,
@@ -18603,6 +18788,7 @@ mod tests {
             None,
             None,
             &mut rng,
+            &w,
         );
         assert_eq!(
             npc.hp,
