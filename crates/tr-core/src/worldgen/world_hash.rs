@@ -258,6 +258,13 @@ mod tests {
     // Ice Biome producer lands, so this pin is UNCHANGED by this pass
     // alone (the silt/ice kinds it would retype do not occur in the empty
     // rect; the sweep draws nothing).
+    // W4-d102 pass 4 (code-only): the Mountain Caves openings
+    // (`WorldGen.cs:14873-14887` + CaveOpenater `:80085-80166` + Cavinator
+    // `:79984-80083`, `passes2.rs::pass_mountain_caves`) land between
+    // `constant lava layer` and `beaches` — a no-op while
+    // `GenVars.numMCaves == 0` (d101's Mount Caves producer not yet on
+    // this branch), so this pin is UNCHANGED by this pass alone; the
+    // merged tree re-pins once the anchors exist.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -308,6 +315,9 @@ mod tests {
     // the cobweb 51 tiles move this pin BY DESIGN; deferred to the gate.
     // W4-d102 pass 3 (code-only): the Slush sweep (see SEED42_512 above)
     // is a no-op on the empty snow rect — UNCHANGED by this pass alone.
+    // W4-d102 pass 4 (code-only): the Mountain Caves openings (see
+    // SEED42_512 above) are a no-op while numMCaves == 0 — UNCHANGED by
+    // this pass alone.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

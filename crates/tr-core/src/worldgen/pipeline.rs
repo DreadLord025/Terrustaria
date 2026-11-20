@@ -1329,6 +1329,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
     // called from the Dungeon pass when the seed is on — M5-SEED-1.
     step!("constant lava layer", "", step_constant_lava_layer),
+    // The vanilla Mountain Caves slot (`WorldGen.cs:14873`): after Dungeon
+    // (`:14757`) and before Beaches (`:14888`) — W4-d102 pass 4. Own
+    // `pass_rng("Mountain Caves")` stream; a no-op until d101's Mount
+    // Caves producer writes the mCave anchors.
+    step!("mountain caves", "Mountain Caves", step_mountain_caves),
     // The vanilla Beaches + Gravitating Sand slots (`WorldGen.cs:14888`,
     // `:15138`): after Dungeon (`:14757`) and before Create Ocean Caves
     // (`:15167`) — the M5-OCEAN phase-2 insertion.
@@ -1857,6 +1862,27 @@ fn step_slush(
     _pass_config: &ConfigSection,
 ) {
     passes2::pass_slush(world, gv.snow_top, gv.snow_bottom, &gv.snow_min_x, &gv.snow_max_x);
+}
+
+/// The vanilla Mountain Caves slot (`WorldGen.cs:14873-14887`) — W4-d102
+/// pass 4: CaveOpenater + the recursive Cavinator per mCave anchor.
+fn step_mountain_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let rock_layer = gv.layers().rock_layer;
+    passes2::pass_mountain_caves(
+        world,
+        rock_layer,
+        gv.num_m_caves,
+        &gv.m_cave_x,
+        &gv.m_cave_y,
+        &mut streams.pass_rng("Mountain Caves"),
+    );
 }
 
 fn step_evil(
@@ -3264,8 +3290,10 @@ mod tests {
         // W4-d102: + `silt` (vanilla "Silt", `WorldGen.cs:13143`) between
         // `dirt to mud` and `ash blobs`; + `webs` (vanilla "Webs", `:13607`)
         // between `ores and gems` and `evil`; + `slush` (vanilla "Slush",
-        // `:14697`) between `liquids` and `dungeon`.
-        assert_eq!(names.len(), 69);
+        // `:14697`) between `liquids` and `dungeon`; + `mountain caves`
+        // (vanilla "Mountain Caves", `:14873`) between `constant lava
+        // layer` and `beaches`.
+        assert_eq!(names.len(), 70);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3323,6 +3351,7 @@ mod tests {
                 "slush",
                 "dungeon",
                 "constant lava layer",
+                "mountain caves",
                 "beaches",
                 "gravitating sand",
                 "ocean caves",
@@ -3413,7 +3442,9 @@ mod tests {
         assert_eq!(pos("dunes"), pos("plan biome spans") + 1);
         assert_eq!(names[pos("ocean sand") + 1], "micro grass"); // + the M5-SEED-2 Grass slot
         assert_eq!(names[pos("micro grass") + 1], "jungle");
-        assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)
+        // + the seed Constant lava layer (M5-SEED-1) + mountain caves
+        // (W4-d102, the vanilla MountainCaveOpenings slot `:14873`).
+        assert_eq!(pos("beaches"), pos("dungeon") + 3);
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
         assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
         // The vanilla chain carries the same relative order.
@@ -3630,6 +3661,29 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Lakes") < cpos("Slush"));
         assert!(cpos("Slush") < cpos("Dungeon"));
+    }
+
+    /// W4-d102 pass 4: `mountain caves` sits in its vanilla slot — after
+    /// `dungeon` (`WorldGen.cs:14757`, with the port's Constant lava-layer
+    /// tail between) and before `beaches` (`:14888`); the
+    /// MountainCaveOpenings anchor is `:14873`.
+    #[test]
+    fn w4_d102_the_mountain_caves_step_sits_between_dungeon_and_beaches() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mountain caves"), pos("constant lava layer") + 1);
+        assert_eq!(names[pos("mountain caves") + 1], "beaches");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dungeon") < cpos("Mountain Caves"));
+        assert!(cpos("Mountain Caves") < cpos("Beaches"));
+        // The producer/consumer pair: Mount Caves (d101) writes the
+        // anchors this pass reads.
+        assert!(cpos("Mount Caves") < cpos("Mountain Caves"));
     }
 
     #[test]

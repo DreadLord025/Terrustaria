@@ -15,6 +15,7 @@ use super::noise::Rng;
 use super::tile_runner::{tile_runner, TileRunnerOpts};
 use crate::seeds::{MicroSeedFlags, SeedFlags};
 use crate::tile::FLAG_ACTIVE;
+use crate::tiledata::SET_CAN_BE_CLEARED_DURING_GENERATION;
 use crate::world::World;
 
 /// `TileID.SiltBlock` (`TileID.cs`) — the Silt pass's runner kind.
@@ -249,6 +250,173 @@ pub(crate) fn pass_slush(
     }
 }
 
+/// `Main.tileDungeon` (`Main.cs:7992-7997`) — the dungeon bricks the
+/// Cavinator refuses to carve through (`WorldGen.cs:80038`).
+const TILE_DUNGEON: [u16; 6] = [41, 43, 44, 677, 678, 679];
+/// `Main.wallDungeon` (`Main.cs:10598-10606`) — the dungeon walls.
+const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
+
+/// The Mountain Caves pass (`MountainCaveOpenings`,
+/// `WorldGen.cs:14873-14887`): per `GenVars.mCaveX/mCaveY` anchor, a
+/// `CaveOpenater` surface-opening walk then a recursive `Cavinator` with
+/// `Next(40, 50)` recursion budget (the argument draws BEFORE the
+/// Cavinator's own draws). A no-op until d101's Mount Caves producer
+/// writes the anchors (`numMCaves == 0`).
+pub(crate) fn pass_mountain_caves(
+    world: &mut World,
+    rock_layer: f64,
+    num_m_caves: i32,
+    m_cave_x: &[i32; 30],
+    m_cave_y: &[i32; 30],
+    rng: &mut Rng,
+) {
+    for i in 0..num_m_caves {
+        let x = m_cave_x[i as usize];
+        let y = m_cave_y[i as usize];
+        cave_openater(world, rng, x, y);
+        let steps = rng.range(40, 50);
+        cavinator(world, rng, x, y, steps, rock_layer);
+    }
+}
+
+/// `WorldGen.CaveOpenater` (`WorldGen.cs:80085-80166`): the horizontal
+/// opening walk. The direction rolls `Next(2)` then the 9-in-10
+/// world-half override (`Next(10) != 0` → away from the centre... toward
+/// the nearer edge: `i < maxTilesX/2 ? 1 : -1`). The 100-step budget
+/// decrements every iteration; the walk stops when the anchor cell has
+/// no wall or is an active non-clearable tile — but the CURRENT
+/// iteration's disc still carves (the C# has no inner budget break).
+/// The port reads `wall == 0` literally: the mountain cells carry wall 2
+/// in both engines (vanilla's Dirt Wall Backgrounds, the port's baseline
+/// + the same pass), so the sky boundary stops the walk identically.
+fn cave_openater(world: &mut World, rng: &mut Rng, i: i32, j: i32) {
+    let num = rng.range(7, 12) as f64;
+    let mut num3 = 1;
+    if rng.range(0, 2) == 0 {
+        num3 = -1;
+    }
+    if rng.range(0, 10) != 0 {
+        num3 = if i < world.width / 2 { 1 } else { -1 };
+    }
+    let (mut cx, mut cy) = (i as f64, j as f64);
+    let mut budget = 100;
+    let (mut vx, mut vy) = (num3 as f64, 0.0);
+    while budget > 0 {
+        let t = world.tile(cx as i32, cy as i32);
+        let stop = t.is_some_and(|t| {
+            t.wall == 0
+                || (t.active() && !SET_CAN_BE_CLEARED_DURING_GENERATION.has(t.kind))
+        });
+        if stop {
+            budget = 0;
+        }
+        budget -= 1;
+        let mut left = (cx - num * 0.5) as i32;
+        let mut right = (cx + num * 0.5) as i32;
+        let mut top = (cy - num * 0.5) as i32;
+        let mut bottom = (cy + num * 0.5) as i32;
+        left = left.max(0);
+        right = right.min(world.width);
+        top = top.max(0);
+        bottom = bottom.min(world.height);
+        let num2 = num * rng.range(80, 120) as f64 * 0.01;
+        for k in left..right {
+            for l in top..bottom {
+                let dx = (k as f64 - cx).abs();
+                let dy = (l as f64 - cy).abs();
+                let clearable = world
+                    .tile(k, l)
+                    .is_some_and(|t| SET_CAN_BE_CLEARED_DURING_GENERATION.has(t.kind));
+                if (dx * dx + dy * dy).sqrt() < num2 * 0.4 && clearable {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.flags &= !FLAG_ACTIVE;
+                    }
+                }
+            }
+        }
+        cx += vx;
+        cy += vy;
+        vx += rng.range(-10, 11) as f64 * 0.05;
+        vy += rng.range(-10, 11) as f64 * 0.05;
+        vx = vx.clamp(num3 as f64 - 0.5, num3 as f64 + 0.5);
+        vy = vy.clamp(-0.5, 0.0);
+    }
+}
+
+/// `WorldGen.Cavinator` (`WorldGen.cs:79984-80083`): the recursive cave
+/// blob walker. Per segment: `Next(7, 15)` radius, `Next(2)` direction,
+/// `Next(20, 40)` step budget, `Next(10, 20) * 0.01` downward velocity;
+/// per iteration the `Next(80, 120)` radius wobble, the disc carve with
+/// the dungeon veto (a dungeon brick/wall inside the disc zeroes the
+/// budget and breaks BOTH loops mid-disc) and the sand/non-clearable
+/// skip; the velocity drifts `Next(-10, 11) * 0.05` with the direction ±
+/// 0.5 X clamp and the [0, 2] Y clamp. The recursion fires while
+/// `steps > 0` and the walker is above `rockLayer + 50`. The
+/// dualDungeons bounds veto (`:80033`) is not modelled (no dual-dungeon
+/// bounds in the port — the `ocean.rs` precedent).
+fn cavinator(world: &mut World, rng: &mut Rng, i: i32, j: i32, steps: i32, rock_layer: f64) {
+    let num = rng.range(7, 15) as f64;
+    let mut num3 = 1;
+    if rng.range(0, 2) == 0 {
+        num3 = -1;
+    }
+    let (mut cx, mut cy) = (i as f64, j as f64);
+    let mut budget = rng.range(20, 40);
+    let mut vy = rng.range(10, 20) as f64 * 0.01;
+    let mut vx = num3 as f64;
+    while budget > 0 {
+        budget -= 1;
+        let mut left = (cx - num * 0.5) as i32;
+        let mut right = (cx + num * 0.5) as i32;
+        let mut top = (cy - num * 0.5) as i32;
+        let mut bottom = (cy + num * 0.5) as i32;
+        left = left.max(0);
+        right = right.min(world.width);
+        top = top.max(0);
+        bottom = bottom.min(world.height);
+        let num2 = num * rng.range(80, 120) as f64 * 0.01;
+        'disc: for k in left..right {
+            for l in top..bottom {
+                let dx = (k as f64 - cx).abs();
+                let dy = (l as f64 - cy).abs();
+                if (dx * dx + dy * dy).sqrt() < num2 * 0.4 {
+                    let Some(t) = world.tile(k, l) else { continue };
+                    // The dungeon veto (`:80038-80042`).
+                    if (t.active() && TILE_DUNGEON.contains(&t.kind))
+                        || WALL_DUNGEON.contains(&t.wall)
+                    {
+                        budget = 0;
+                        break 'disc;
+                    }
+                    if t.active()
+                        && (!SET_CAN_BE_CLEARED_DURING_GENERATION.has(t.kind) || t.kind == 53)
+                    {
+                        continue;
+                    }
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.flags &= !FLAG_ACTIVE;
+                    }
+                }
+                if budget <= 0 {
+                    break;
+                }
+            }
+            if budget <= 0 {
+                break;
+            }
+        }
+        cx += vx;
+        cy += vy;
+        vx += rng.range(-10, 11) as f64 * 0.05;
+        vy += rng.range(-10, 11) as f64 * 0.05;
+        vx = vx.clamp(num3 as f64 - 0.5, num3 as f64 + 0.5);
+        vy = vy.clamp(0.0, 2.0);
+    }
+    if steps > 0 && (cy as i32) as f64 < rock_layer + 50.0 {
+        cavinator(world, rng, cx as i32, cy as i32, steps - 1, rock_layer);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,5 +567,69 @@ mod tests {
         let before = w.tiles.clone();
         pass_slush(&mut w, 0, 0, &[], &[]);
         assert_eq!(w.tiles, before);
+    }
+
+    #[test]
+    fn mountain_caves_carve_from_the_anchors_and_replay() {
+        let mut a = stone_world(600, 600);
+        let mut b = stone_world(600, 600);
+        // Wall 2 everywhere below the surface — the Dirt Wall Backgrounds
+        // state the CaveOpenater walk needs.
+        for w in [&mut a, &mut b] {
+            for x in 0..w.width {
+                for y in 100..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i].wall = 2;
+                }
+            }
+        }
+        let mut xs = [0i32; 30];
+        let mut ys = [0i32; 30];
+        xs[0] = 300;
+        ys[0] = 150;
+        pass_mountain_caves(&mut a, 120.0, 1, &xs, &ys, &mut Rng(0xCAFE));
+        pass_mountain_caves(&mut b, 120.0, 1, &xs, &ys, &mut Rng(0xCAFE));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        let carved = a
+            .tiles
+            .iter()
+            .filter(|t| !t.active() && t.kind == 1)
+            .count();
+        assert!(carved > 50, "the walkers carve a cave: {carved}");
+    }
+
+    #[test]
+    fn zero_anchors_is_a_no_op() {
+        let mut w = stone_world(600, 600);
+        let before = w.tiles.clone();
+        pass_mountain_caves(&mut w, 120.0, 0, &[0; 30], &[0; 30], &mut Rng(0xCAFE));
+        assert_eq!(w.tiles, before);
+    }
+
+    #[test]
+    fn the_cavinator_stops_at_a_dungeon_wall() {
+        // A dungeon-brick column across the walk's path vetoes the disc
+        // (`:80038-80042`) — nothing beyond it carves.
+        let mut w = stone_world(600, 600);
+        for x in 0..w.width {
+            for y in 100..w.height {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 2;
+            }
+        }
+        for y in 100..w.height {
+            let i = w.index(320, y);
+            w.tiles[i].kind = 41;
+            w.tiles[i].wall = 7;
+        }
+        let mut xs = [0i32; 30];
+        let mut ys = [0i32; 30];
+        xs[0] = 300;
+        ys[0] = 150;
+        pass_mountain_caves(&mut w, 120.0, 1, &xs, &ys, &mut Rng(0xCAFE));
+        // The dungeon column itself never carves.
+        for y in 100..w.height {
+            assert!(w.tile(320, y).unwrap().active(), "dungeon brick carved");
+        }
     }
 }

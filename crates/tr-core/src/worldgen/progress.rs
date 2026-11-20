@@ -97,6 +97,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         // DungeonCrawler.cs:346 — the pass's first progress message
         // (the later UpdateDungeonProgress rows are the faithful-pass work).
         "dungeon" => PassMessage::Key("WorldGeneration.DungeonVariableSetup"),
+        // WorldGen.cs:14877 (W4-d102).
+        "mountain caves" => PassMessage::Gen(21),
         // WorldGen.cs:14899.
         "beaches" => PassMessage::Gen(22),
         // WorldGen.cs:15142.

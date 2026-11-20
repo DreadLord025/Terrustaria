@@ -57,8 +57,8 @@ stay in place untouched.
 | --- | --- | --- |
 | range doc | f8c69c72 | claimed |
 | Silt | c746a7da | landed (code-only; hash re-pin deferred to the gate) |
-| Webs | (this commit) | landed (code-only; GenVars mCave slots added — producer d101; hash re-pin deferred) |
-| Slush | — | pending |
+| Webs | 96e4b92f | landed (code-only; GenVars mCave slots added — producer d101; hash re-pin deferred) |
+| Slush | (this commit) | landed (code-only; GenVars snow slots added — producer d101, empty-rect no-op; pins unchanged by this pass) |
 | Mountain Caves | — | pending |
 | Gems | — | pending |
 | Shimmer | — | pending |
