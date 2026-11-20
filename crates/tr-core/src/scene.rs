@@ -847,6 +847,12 @@ const HARDENED_SAND_WALLS: [u16; 8] = [216, 217, 219, 218, 304, 305, 307, 306];
 #[path = "scene_w4_d129_aggregate.rs"]
 mod scene_w4_d129_aggregate;
 
+// W4-d129 census witnesses: the `CalculateZones` depth bands, the wall-zone
+// id sets and the shimmer/rain/sandstorm gates.
+#[cfg(test)]
+#[path = "scene_w4_d129_zones.rs"]
+mod scene_w4_d129_zones;
+
 #[cfg(test)]
 mod s1_l_1_zone_tests {
     use super::*;
