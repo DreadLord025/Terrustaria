@@ -159,6 +159,16 @@ pub mod id {
     /// (`NetMessage.cs:952-955`, `MessageBuffer.cs:2256-2270`;
     /// `Player.SetTalkNPC`, `Player.cs:4375`).
     pub const TALK_NPC: u8 = 40;
+    /// `36 SyncPlayerZone` (`MessageID.cs:83`) — the five zone BitsBytes plus
+    /// the town-NPC count (`NetMessage.cs:933-944`,
+    /// `MessageBuffer.cs:2178-2201`; the send sites are the zone-change test
+    /// `Main.cs:17634` and the 900-tick heartbeat `:64533`).
+    pub const PLAYER_ZONE: u8 = 36;
+    /// `41 ItemRotationAndAnimation` (`MessageID.cs:93`) — the aimed-item
+    /// rotation + animation counter (`NetMessage.cs:956-960`,
+    /// `MessageBuffer.cs:2271-2289`; sent beside a `13` at the useStyle-5/13
+    /// aim sites, `Player.cs:43693`, `:47374`, `:47380`).
+    pub const ITEM_ANIM: u8 = 41;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1591,6 +1601,38 @@ pub struct TalkNpc {
     pub npc: i16,
 }
 
+/// `msg 36 SyncPlayerZone`'s body (`NetMessage.cs:933-944`): the player id,
+/// the five `zone1..5` BitsBytes (`Player.cs:1364-1372`) then
+/// `(byte)townNPCs` (`Player.cs:1412` is an `int`; the writer truncates).
+/// The server forces the id to the sender (`MessageBuffer.cs:2180-2184`),
+/// stores the six bytes (`:2187-2192`) and relays (`:2199`); the
+/// `zone5[0]` false→true edge spawns faelings host-side (`:2195-2198`,
+/// `NPC.Spawner.SpawnFaelings` — the apply arm is S1-I-4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PlayerZone {
+    pub player_id: u8,
+    pub zone1: BitsByte,
+    pub zone2: BitsByte,
+    pub zone3: BitsByte,
+    pub zone4: BitsByte,
+    pub zone5: BitsByte,
+    /// `(byte)player.townNPCs` — the count of town NPCs near the player.
+    pub town_npcs: u8,
+}
+
+/// `msg 41 ItemRotationAndAnimation`'s body (`NetMessage.cs:956-960`): the
+/// player id, the `itemRotation` float (`Player.cs:1498`) then
+/// `(short)itemAnimation` (`Player.cs:3014` is an `int`; the writer
+/// truncates). The server forces the id to the sender
+/// (`MessageBuffer.cs:2273-2277`), stores both fields, re-derives `channel`
+/// from the selected item (`:2281-2283`) and relays (`:2284-2287`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ItemAnim {
+    pub player_id: u8,
+    pub rotation: f32,
+    pub animation: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1711,6 +1753,14 @@ pub enum C2s {
     /// `40 SyncTalkNPC` - a client started/stopped talking to an NPC
     /// (`Player.SetTalkNPC`, `Player.cs:4375`; `MessageBuffer.cs:2256-2270`).
     TalkNpc(TalkNpc),
+    /// `36 SyncPlayerZone` - a client's zone flags changed
+    /// (`Main.cs:17634`'s change test, the 900-tick heartbeat `:64533`;
+    /// `MessageBuffer.cs:2178-2201`).
+    PlayerZone(PlayerZone),
+    /// `41 ItemRotationAndAnimation` - a client's aimed-item rotation
+    /// (`Player.cs:43693`/`:47374`/`:47380` beside a `13`;
+    /// `MessageBuffer.cs:2271-2289`).
+    ItemAnim(ItemAnim),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1843,6 +1893,12 @@ pub enum S2c {
     /// `40 SyncTalkNPC` - a peer's talk NPC, relayed by the host
     /// (`MessageBuffer.cs:2265-2268`).
     TalkNpc(TalkNpc),
+    /// `36 SyncPlayerZone` - a peer's zone flags, relayed by the host
+    /// (`MessageBuffer.cs:2199`).
+    PlayerZone(PlayerZone),
+    /// `41 ItemRotationAndAnimation` - a peer's aimed-item rotation,
+    /// relayed by the host (`MessageBuffer.cs:2284-2287`).
+    ItemAnim(ItemAnim),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1933,6 +1989,8 @@ impl C2s {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::PlayerHeal(_) => id::PLAYER_HEAL,
             Self::TalkNpc(_) => id::TALK_NPC,
+            Self::PlayerZone(_) => id::PLAYER_ZONE,
+            Self::ItemAnim(_) => id::ITEM_ANIM,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2011,6 +2069,17 @@ impl C2s {
             Self::PlayerHeal(h) => w.u8(h.player_id).i16(h.amount),
             // `NetMessage.cs:952-955`: (byte)number + (short)talkNPC.
             Self::TalkNpc(t) => w.u8(t.player_id).i16(t.npc),
+            // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .bitsbyte(z.zone1)
+                .bitsbyte(z.zone2)
+                .bitsbyte(z.zone3)
+                .bitsbyte(z.zone4)
+                .bitsbyte(z.zone5)
+                .u8(z.town_npcs),
+            // `NetMessage.cs:956-960`: (byte)number + itemRotation + (short)itemAnimation.
+            Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
             Self::PlayerSpawn(s) => w
@@ -2147,6 +2216,22 @@ impl C2s {
             id::TALK_NPC => Self::TalkNpc(TalkNpc {
                 player_id: r.u8()?,
                 npc: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192`: (byte)id + zone1..5 + townNPCs.
+            id::PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.bitsbyte()?,
+                zone2: r.bitsbyte()?,
+                zone3: r.bitsbyte()?,
+                zone4: r.bitsbyte()?,
+                zone5: r.bitsbyte()?,
+                town_npcs: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2273-2282`: (byte)id + float + (short).
+            id::ITEM_ANIM => Self::ItemAnim(ItemAnim {
+                player_id: r.u8()?,
+                rotation: r.f32()?,
+                animation: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2315,6 +2400,8 @@ impl S2c {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::PlayerHeal(_) => id::PLAYER_HEAL,
             Self::TalkNpc(_) => id::TALK_NPC,
+            Self::PlayerZone(_) => id::PLAYER_ZONE,
+            Self::ItemAnim(_) => id::ITEM_ANIM,
         }
     }
 
@@ -2471,6 +2558,17 @@ impl S2c {
             Self::PlayerHeal(h) => w.u8(h.player_id).i16(h.amount),
             // `NetMessage.cs:952-955`: (byte)number + (short)talkNPC.
             Self::TalkNpc(t) => w.u8(t.player_id).i16(t.npc),
+            // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .bitsbyte(z.zone1)
+                .bitsbyte(z.zone2)
+                .bitsbyte(z.zone3)
+                .bitsbyte(z.zone4)
+                .bitsbyte(z.zone5)
+                .u8(z.town_npcs),
+            // `NetMessage.cs:956-960`: (byte)number + itemRotation + (short)itemAnimation.
+            Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2695,6 +2793,22 @@ impl S2c {
             id::TALK_NPC => Self::TalkNpc(TalkNpc {
                 player_id: r.u8()?,
                 npc: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192`: (byte)id + zone1..5 + townNPCs.
+            id::PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.bitsbyte()?,
+                zone2: r.bitsbyte()?,
+                zone3: r.bitsbyte()?,
+                zone4: r.bitsbyte()?,
+                zone5: r.bitsbyte()?,
+                town_npcs: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2273-2282`: (byte)id + float + (short).
+            id::ITEM_ANIM => Self::ItemAnim(ItemAnim {
+                player_id: r.u8()?,
+                rotation: r.f32()?,
+                animation: r.i16()?,
             }),
             _ => return None,
         })
@@ -5092,6 +5206,74 @@ mod tests {
         match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
             C2s::TalkNpc(d) => assert_eq!(d, off),
             other => panic!("expected 40, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `36 SyncPlayerZone` (`NetMessage.cs:933-944`): `(byte)number +
+    /// zone1..5 (BitsByte each) + (byte)townNPCs` — seven bytes, both
+    /// directions (`MessageBuffer.cs:2178-2201`). `zone5[0]` is the faeling
+    /// edge bit (`:2186`/`:2195-2198`).
+    #[test]
+    fn w4_d96_player_zone_round_trips() {
+        let z = PlayerZone {
+            player_id: 4,
+            zone1: BitsByte(0b0000_0010), // jungle
+            zone2: BitsByte(0b0001_0000),
+            zone3: BitsByte(0b1000_0001),
+            zone4: BitsByte(0b0010_0100),
+            zone5: BitsByte(0b0000_0001), // the faeling edge bit
+            town_npcs: 3,
+        };
+        let body = [4, 0x02, 0x10, 0x81, 0x24, 0x01, 3];
+        let c = C2s::PlayerZone(z).encode();
+        assert_eq!(c[2], 36);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        // All-zero zones (`Player.cs:1364-1372`'s defaults) stay seven bytes.
+        let empty = PlayerZone {
+            player_id: 0,
+            ..Default::default()
+        };
+        let c = C2s::PlayerZone(empty).encode();
+        assert_eq!(&c[3..], &[0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    /// `41 ItemRotationAndAnimation` (`NetMessage.cs:956-960`):
+    /// `(byte)number + itemRotation (float) + (short)itemAnimation` —
+    /// seven bytes, both directions (`MessageBuffer.cs:2271-2289`).
+    #[test]
+    fn w4_d96_item_anim_round_trips() {
+        let a = ItemAnim {
+            player_id: 2,
+            rotation: -0.75,
+            animation: 18,
+        };
+        let mut body = vec![2];
+        body.extend_from_slice(&(-0.75f32).to_le_bytes());
+        body.extend_from_slice(&18i16.to_le_bytes());
+        let c = C2s::ItemAnim(a).encode();
+        assert_eq!(c[2], 41);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
+        }
+        let f = S2c::ItemAnim(a).encode();
+        assert_eq!(f[2], 41);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
         }
     }
 }

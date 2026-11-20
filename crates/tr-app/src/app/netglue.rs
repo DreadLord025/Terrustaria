@@ -818,8 +818,9 @@ impl App {
             | C2s::SyncLoadout(_) => {}
             // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
             // `net.rs`; the host apply/relay arms (`MessageBuffer.cs:2160-2177`,
-            // `:2256-2270`) land with the send-path pass (S1-I-4).
-            C2s::PlayerHeal(_) | C2s::TalkNpc(_) => {}
+            // `:2178-2201`, `:2256-2270`, `:2271-2289`) land with the send-path
+            // pass (S1-I-4) — 36's faeling edge (`:2195-2198`) rides there too.
+            C2s::PlayerHeal(_) | C2s::TalkNpc(_) | C2s::PlayerZone(_) | C2s::ItemAnim(_) => {}
         }
     }
 
@@ -1865,9 +1866,13 @@ impl App {
             | S2c::SyncLoadout(_) => {}
             // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
             // `net.rs`; the client read sites (`MessageBuffer.cs:901-951`,
-            // `:2160-2177`, `:2256-2270`) land with the send-path pass
-            // (S1-I-4) — nothing sends them yet.
-            S2c::PlayerSpawn(_) | S2c::PlayerHeal(_) | S2c::TalkNpc(_) => {}
+            // `:2160-2177`, `:2178-2201`, `:2256-2270`, `:2271-2289`) land
+            // with the send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::PlayerSpawn(_)
+            | S2c::PlayerHeal(_)
+            | S2c::TalkNpc(_)
+            | S2c::PlayerZone(_)
+            | S2c::ItemAnim(_) => {}
         }
     }
 
