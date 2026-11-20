@@ -852,6 +852,61 @@ mod tests {
     }
 
     #[test]
+    fn lanterns_up_skips_the_target_walk_but_not_the_drift() {
+        // `Main.cs:58856-58859`: `LanternNight.LanternsUp` is its OWN early-out
+        // inside the creative gate — the drift above it ran, the windCounter
+        // walk below it (and the ±0.8 clamp behind the walk) skips. The port
+        // splits it out of `frozen` (W4-d130): a same-seed twin with the flag
+        // set must keep the counter, target and stream pinned while current
+        // still eases exactly like the twin's.
+        let mut open = Wind::new(0x1A2B);
+        let mut lanterns = Wind::new(0x1A2B);
+        lanterns.lanterns_up = true;
+        let mut creative = Wind::new(0x1A2B);
+        creative.frozen = true;
+        // Pin the counter one tick from firing so the open twin takes the
+        // walk on the very next tick.
+        for w in [&mut open, &mut lanterns, &mut creative] {
+            w.counter = 1;
+            w.speed_target = 0.4;
+            w.speed_current = 0.0;
+        }
+        let target_before = lanterns.speed_target;
+        let extreme_before = lanterns.extreme_counter;
+        for _ in 0..10 {
+            open.update_rain(0.0);
+            lanterns.update_rain(0.0);
+            creative.update_rain(0.0);
+            // The lantern twin behaves EXACTLY like the creative-frozen twin:
+            // the drift ran (both sit after `:58832-58849`), the walk skipped.
+            assert_eq!(
+                lanterns.speed_current.to_bits(),
+                creative.speed_current.to_bits()
+            );
+        }
+        // The open twin entered the walk on its first tick (counter 1 → 0 →
+        // ResetWindCounter re-rolls it into 900..2700); the lantern twin never
+        // did: counter, target and extreme counter pinned, stream untouched
+        // (the target delta can legitimately roll 0, so the counter reset is
+        // the observable).
+        assert!(
+            (900..=2700).contains(&open.counter),
+            "the open twin reset its counter: {}",
+            open.counter
+        );
+        assert_eq!(lanterns.speed_target, target_before);
+        assert_eq!(lanterns.counter, 1, "no decrement under the lanterns");
+        assert_eq!(lanterns.extreme_counter, extreme_before);
+        // And `frozen` (creative/client/menu) still short-circuits the same
+        // drift-then-skip shape: with both flags set nothing more happens.
+        lanterns.frozen = true;
+        let current_before = lanterns.speed_current;
+        lanterns.update_rain(0.0);
+        assert!(lanterns.speed_current != current_before, "the drift ran");
+        assert_eq!(lanterns.counter, 1);
+    }
+
+    #[test]
     fn advance_counter_matches_grass_formula() {
         // (wind speed, expected `num` after the 0.08..1.2 clamped lerp).
         let cases = [

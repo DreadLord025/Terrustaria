@@ -134,6 +134,14 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // 0.35 walk cap applies until some player crosses 120 max life (S1-L-2).
     let any_player_120 = app.player.as_ref().is_some_and(|p| p.max_hp >= 120);
     app.wind.any_player_120_life = any_player_120;
+    // `LanternNight.LanternsUp` (`Main.cs:58856-58859`): the wind walk's own
+    // early-out, written per tick from the event state BEFORE the walk (the
+    // C# reads the live static; the port snapshots it like `any_player_120`).
+    // The lantern walk itself runs later inside this tick (step 4), so the
+    // flag carries the previous tick's event state into the walk — the same
+    // one-tick shape the `UpdateTime`-after-`UpdateWeather` port order gives
+    // every event flag the weather reads.
+    app.wind.lanterns_up = crate::world_events::lanterns_up(&app.world_events);
     // The crossing samples: the Deerclops's midnight (`Main.cs:65121`'s
     // `num4 < 16200 && time >= 16200`) and the night bookend's dusk
     // (`Main.cs:65230`'s `UpdateTime_StartDay` at 32400).
@@ -1278,6 +1286,36 @@ mod tests {
         assert!(
             app.wind.any_player_120_life,
             "statLifeMax >= 120 arms the strong-wind flag"
+        );
+    }
+
+    #[test]
+    fn the_world_tick_writes_lanterns_up_into_wind() {
+        // `Main.cs:58856-58859`: the wind walk's `LanternNight.LanternsUp`
+        // early-out — the tick snapshots the event state into
+        // `Wind.lanterns_up` before the walk (W4-d130). Both lantern sources
+        // (`GenuineLanterns`/`ManualLanterns`, `LanternNight.cs:20-26`) arm it.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.wind.frozen = false;
+        app.wind.counter = 1; // one tick from the walk
+        app.wind.lanterns_up = false;
+        app.world_events.manual_lanterns = true;
+        let counter_before = app.wind.counter;
+        let target_before = app.wind.speed_target;
+        update_world_tick(&mut app, STEP);
+        assert!(app.wind.lanterns_up, "the manual lanterns arm the flag");
+        assert_eq!(
+            app.wind.counter, counter_before,
+            "the walk skipped under the lanterns"
+        );
+        assert_eq!(app.wind.speed_target, target_before);
+        // Clearing the event clears the flag and the walk fires next tick.
+        app.world_events.manual_lanterns = false;
+        update_world_tick(&mut app, STEP);
+        assert!(!app.wind.lanterns_up);
+        assert_ne!(
+            app.wind.counter, counter_before,
+            "the open walk decrements/resets the counter"
         );
     }
 
