@@ -146,6 +146,10 @@ mod npc_ai_style87;
 // the 477 kind + the axis arm wait on the roster wave (the style86
 // precedent; see the module doc).
 mod npc_ai_style88;
+// W4-d32 style 89: UNWIRED Mothron Egg machine (NPC.cs:38352-38393) -
+// the 478 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style89;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
