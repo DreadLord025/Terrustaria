@@ -272,6 +272,10 @@ mod player_gore_a;
 // + team-hair-dye gore (Player.cs:21419-24293); the dash/sandstorm/
 // hair-dye dispatch claims are the wiring wave.
 mod player_gore_b;
+// W4-g17 player wave C (code-only): the dodge bursts — Mystic Sash +
+// Ninja (Player.cs:38057-38165); the dodge dispatch claims are the
+// wiring wave.
+mod player_gore_c;
 // W4-g17 (code-only): the world-side Gore.NewGore sites, wave A — the
 // TreeGrowFX trunk/leaf column + ash shake (WorldGen.cs:29600-29672)
 // and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /

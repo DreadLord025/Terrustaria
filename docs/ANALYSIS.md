@@ -39337,3 +39337,25 @@ argument order is Type → Position.X `Next(width)` → Position.Y
 + the Y decrement + `vel*0.2`. The team-dye shader id resolves from
 item 1984 (`ID/ContentSamples.cs:19`); the gate itself is the
 caller's. 3 witnesses written, NOT run (code-only mode).
+
+## The player gore sites (W4-g17, wave C)
+
+`player_gore_c.rs`: the dodge bursts — `DoMysticSashDodge`
+(`Player.cs:38060-38112`) and `NinjaDodge` (`:38122-38160`). Both end
+in the SAME 5-gore velocity fan at centre-(24,24): offsets (0,0),
+(+1.5,+1.5), (-1.5,+1.5), (+1.5,-1.5), (-1.5,-1.5), each axis its own
+`Next(-50,51)*0.01` roll (the negative arms SUBTRACT the roll), the
+kicks OVERWRITTEN, then ×0.4. The sash fan writes scale 1.5 + alpha
+100 and types `Next(11,14)`; the ninja fan writes scale 1.5, NO alpha,
+types `Next(61,64)`.
+
+The sash dust loop (50 iterations) draws the scale argument
+`Next(10,26)*0.1` BEFORE the type-267 `NewDustDirect` internals, then
+3 `NextFloat`s (fadeIn/scale/colour-lerp) and the `CloneDust` — a
+fresh 0×0 `NewDust` (6 draws; the pool's sentinel early return is the
+C#'s own). The ninja loop (100 type-31 dusts) draws the `Next(-20,21)`
+jitter ×2, `Next(40)` scale, the `Next(2)` gate ALWAYS, and a second
+`Next(40)` when it hits. The immunity grant / buff 321 / SendData(62)
+dodge syncs are the caller's / the net lane's. `Color.Lerp` mirrors
+the `dust_table.rs` per-channel truncating helper. 3 witnesses
+written, NOT run (code-only mode).
