@@ -4,8 +4,8 @@ use super::noise::{Noise, Rng};
 use super::terrain::Layers;
 use super::tile_runner::{tile_runner, TileRunnerOpts};
 use super::{
-    TILE_ASH, TILE_CRIMTANE, TILE_DEMONITE, TILE_DIRT, TILE_GOLD, TILE_HELLSTONE, TILE_IRON,
-    TILE_LEAD, TILE_PLATINUM, TILE_STONE, TILE_TIN, TILE_TUNGSTEN,
+    TILE_ASH, TILE_COPPER, TILE_CRIMTANE, TILE_DEMONITE, TILE_DIRT, TILE_GOLD, TILE_HELLSTONE,
+    TILE_IRON, TILE_LEAD, TILE_PLATINUM, TILE_SILVER, TILE_STONE, TILE_TIN, TILE_TUNGSTEN,
 };
 use crate::ores::SavedOreTiers;
 use crate::tile::FLAG_ACTIVE;
