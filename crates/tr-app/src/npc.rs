@@ -1086,6 +1086,25 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.Firefly` (355, `ID/NPCID.cs:11387`) — the night-surface
+    /// glow critter (`aiStyle 64`): 10x10, dmg 0, def 0, 5 HP, npcSlots
+    /// 0.2, noGravity, catchItem 1992 (`NPC.cs:13517-13530`). WIRED by
+    /// W4-c7: the world-sim pool pass runs `npc_ai_style64::ai_064_step`
+    /// (the threat scan reads the whole pool); the axis' 64 arm owns the
+    /// `UpdateCollision` integration tail.
+    Firefly,
+    /// `NPCID.LightningBug` (358, `ID/NPCID.cs:11393`) — the jungle/hallow
+    /// night glow critter (`aiStyle 64`): 12x12, the same zero-stat row,
+    /// catchItem 2004 (`NPC.cs:13559-13572`).
+    LightningBug,
+    /// `NPCID.Lavafly` (654, `ID/NPCID.cs:11985`) — the underworld glow
+    /// critter (`aiStyle 64`): 10x10, lavaImmune, catchItem 4847
+    /// (`NPC.cs:17265-17279`).
+    Lavafly,
+    /// `NPCID.Shimmerfly` (677, `ID/NPCID.cs:12031`) — the Aether glow
+    /// critter (`aiStyle 64`): 10x10, noTileCollide, catchItem 5350
+    /// (`NPC.cs:17579-17593`); the world-margin + threat-flee member.
+    Shimmerfly,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3529,6 +3548,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-c7 — the firefly family writes NO knockBackResist row
+            // (`NPC.cs:13517-13530`/`:13559-13572`/`:17265-17279`/
+            // `:17579-17593`), so the class default 1f stands (`:8533`) —
+            // the stock `_ => 0.4` below never sees them.
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 1.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3933,9 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-c7 — the firefly family's `defense = 0` rows
+            // (`NPC.cs:13523`/`:13565`/`:17271`/`:17585`).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4308,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-c7 — the firefly family writes no value row (the head's
+            // `value = 0f`, `NPC.cs:8544`).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6287,6 +6317,13 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-c7 — the firefly family (355/358/654/677, aiStyle 64):
+            // the world-sim pool pass runs `ai_064_step` (the 677 threat
+            // scan reads the whole pool), so these arms are unreachable
+            // through `update_rng` (the axis claims style 64 first).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => {
+                unreachable!("aiStyle 64 rides the world-sim pool pass (W4-c7)")
+            }
         }
     }
 
@@ -6658,6 +6695,46 @@ impl Npc {
             // is the same row-0 pin — one arm kept, the dup removed.)
             NpcKind::ForceBubble => {
                 self.frame = 0;
+            }
+            // W4-c7 — `case 355 : case 358 : case 654` (`NPC.cs:72688-
+            // 72708`): the 7-tick flap — row 0 while the counter < 4, row
+            // 1 at 4..6 (reset at 7), PLUS two rows while the glow timer
+            // (`localAI[2]`) is spent (the dark pose). `num` is the
+            // sheet's integer row height (16 for all three: NPC_355
+            // 10x64, NPC_358/654 14x64 over 4 rows — measured via the
+            // LZX harness), so the pixel writes fold to rows.
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                let row = if self.frame_counter < 4.0 {
+                    0
+                } else {
+                    if self.frame_counter >= 7.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    1
+                };
+                if self.local_ai[2] <= 0.0 {
+                    row += 2;
+                }
+                self.frame = row;
+            }
+            // W4-c7 — `case 677` (`NPC.cs:72710-72720`): the double
+            // counter increment, the 6-tick reset and the wrap at 5.
+            // THE VANILLA QUIRK: `frame.Y` is PIXELS but the wrap
+            // compares the literal 5 — with NPC_677 88x110 over
+            // `npcFrameCount[677]` = 4 (`Main.cs:67142`), `num` = 27, so
+            // the first advance (27 >= 5) wraps straight back to 0: the
+            // Shimmerfly shows row 0 forever, verbatim.
+            NpcKind::Shimmerfly => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    // `++this.frame.Y >= 5` on the pixel value (num = 27).
+                    self.frame = 0;
+                }
             }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
@@ -18601,6 +18678,13 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-c7 — the firefly family's vanilla type ids (the same
+            // values `to_u16`/`cs_id` ride; unused by every arm above, so
+            // the G6 key stays injective).
+            NpcKind::Firefly => 355,
+            NpcKind::LightningBug => 358,
+            NpcKind::Lavafly => 654,
+            NpcKind::Shimmerfly => 677,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +23753,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 274] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24032,11 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // The firefly family (W4-c7).
+        NpcKind::Firefly,
+        NpcKind::LightningBug,
+        NpcKind::Lavafly,
+        NpcKind::Shimmerfly,
     ];
 
     #[test]

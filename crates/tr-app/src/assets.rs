@@ -1275,6 +1275,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-c7 — the firefly family's own sheets (`FIREFLY_SHEETS`).
+        "NPC_355",
+        "NPC_358",
+        "NPC_654",
+        "NPC_677",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the

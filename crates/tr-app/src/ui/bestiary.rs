@@ -1583,6 +1583,16 @@ fn portrait_data(
                 .unwrap_or(46.0);
             (sheet_i, h, 22.0, h, white)
         }
+        // W4-c7 — the firefly family's portraits: the sheet's own row
+        // height over `Main.npcFrameCount[type]` (all four 4,
+        // `Main.cs:67082`), the frame width the sheet's own — the
+        // small-kinds rows' shape.
+        (NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, h, h, white)
+        }
         // S1-D-3z — the holiday zombies' portrait rests the same 18x40
         // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
         (NpcKind::ZombieDoctor
