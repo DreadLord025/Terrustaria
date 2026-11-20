@@ -2139,7 +2139,10 @@ mod tests {
             assert_eq!(get_stalagtite_style(fx + 18), Some(style), "frameX {}", fx + 18);
         }
         assert_eq!(get_stalagtite_style(702), None, "the 13th band fails");
-        assert_eq!(get_stalagtite_style(-18), None, "a negative frame fails");
+        // C# integer division truncates toward zero: -18/54 == 0 → style 7
+        // (NOT a fail); only a full negative band reaches the default arm.
+        assert_eq!(get_stalagtite_style(-18), Some(7), "the truncation quirk");
+        assert_eq!(get_stalagtite_style(-54), None, "a negative band fails");
     }
 
     /// `GetDesiredStalagtiteStyle` (`WorldGen.cs:38720-38821`) — the
@@ -2169,11 +2172,13 @@ mod tests {
         w2.tiles[seat].kind = TILE_GRANITE;
         write_stalactite(&mut w2, 110, 100, 432, 72);
         assert_eq!(get_desired_stalagtite_style(&w2, 110, 100), Some((5, 1, 100)));
-        // A small rising sac (frameY 90) over hive: style 12.
+        // A small rising sac (frameY 90) over hive: style 12. The floor must
+        // be ACTIVE (carve_pocket deactivates it) for the solid gate to pass.
         let mut w3 = flat_world(300, 200, 40);
         carve_pocket(&mut w3, 100, 100, 40, 20);
         let floor = w3.index(110, 119);
         w3.tiles[floor].kind = TILE_HIVE;
+        w3.tiles[floor].flags |= FLAG_ACTIVE;
         write_stalactite(&mut w3, 110, 118, 162, 90);
         assert_eq!(get_desired_stalagtite_style(&w3, 110, 118), Some((12, 1, 118)));
         // A tall rising pair over hive fails (the hive arm is small-only).
@@ -2252,8 +2257,10 @@ mod tests {
         let mut w = flat_world(300, 200, 40);
         carve_pocket(&mut w, 100, 100, 40, 20);
         // The floor at 119 is a boulder (138): solid, but invalid for piles.
+        // Re-activate it (carve_pocket deactivates the pocket rows).
         let floor = w.index(110, 119);
         w.tiles[floor].kind = 138;
+        w.tiles[floor].flags |= FLAG_ACTIVE;
         write_stalactite(&mut w, 110, 118, 54, 90);
         assert!(invalid_tile_for_piles_or_speleothems(&w, 110, 119));
         check_stalactite(&mut w, &mut Rng(2), 110, 118);
@@ -2261,6 +2268,8 @@ mod tests {
         // A plain stone floor keeps it.
         let mut w2 = flat_world(300, 200, 40);
         carve_pocket(&mut w2, 100, 100, 40, 20);
+        let floor2 = w2.index(110, 119);
+        w2.tiles[floor2].flags |= FLAG_ACTIVE;
         write_stalactite(&mut w2, 110, 118, 54, 90);
         check_stalactite(&mut w2, &mut Rng(2), 110, 118);
         assert!(w2.tile(110, 118).unwrap().active(), "the stone-seat sac survives");
@@ -2310,11 +2319,13 @@ mod tests {
         place_unchecked_stalactite(&mut w2, 110, 100, true, 2, false);
         assert_eq!(w2.tile(110, 100).unwrap().frame_x, 486 + 36);
         assert_eq!(w2.tile(110, 100).unwrap().frame_y, 72);
-        // Rising hive → the 162 family at frameY 90 (always small).
+        // Rising hive → the 162 family at frameY 90 (always small). The floor
+        // must be active for the rising gate.
         let mut w3 = flat_world(300, 200, 40);
         carve_pocket(&mut w3, 100, 100, 40, 20);
         let floor = w3.index(110, 119);
         w3.tiles[floor].kind = TILE_HIVE;
+        w3.tiles[floor].flags |= FLAG_ACTIVE;
         place_unchecked_stalactite(&mut w3, 110, 118, false, 0, false);
         assert_eq!(w3.tile(110, 118).unwrap().frame_x, 162);
         assert_eq!(w3.tile(110, 118).unwrap().frame_y, 90);
@@ -2326,17 +2337,30 @@ mod tests {
     fn the_small_pile_refuses_a_boulder_seat_and_dry_lava_flags() {
         let mut w = flat_world(300, 200, 40);
         carve_pocket(&mut w, 100, 100, 40, 20);
-        // A boulder under the left seat cell refuses the 2-wide pile.
+        // A boulder under the left seat cell refuses the 2-wide pile. Both
+        // floor cells must be active/solid (carve_pocket deactivates the
+        // pocket rows) so the SEAT passes and the VETO is what refuses.
         let floor = w.index(110, 119);
         w.tiles[floor].kind = 138;
+        w.tiles[floor].flags |= FLAG_ACTIVE;
+        let floor_b = w.index(111, 119);
+        w.tiles[floor_b].flags |= FLAG_ACTIVE;
         assert!(!place_small_pile(&mut w, 110, 118, 34, 1));
         // A plain stone floor places it.
         let mut w2 = flat_world(300, 200, 40);
         carve_pocket(&mut w2, 100, 100, 40, 20);
+        let floor2 = w2.index(110, 119);
+        w2.tiles[floor2].flags |= FLAG_ACTIVE;
+        let floor2b = w2.index(111, 119);
+        w2.tiles[floor2b].flags |= FLAG_ACTIVE;
         assert!(place_small_pile(&mut w2, 110, 118, 34, 1));
         // A lava FLAG with zero liquid does NOT refuse (anyLava needs both).
         let mut w3 = flat_world(300, 200, 40);
         carve_pocket(&mut w3, 100, 100, 40, 20);
+        let f3 = w3.index(110, 119);
+        w3.tiles[f3].flags |= FLAG_ACTIVE;
+        let f3b = w3.index(111, 119);
+        w3.tiles[f3b].flags |= FLAG_ACTIVE;
         let cell = w3.index(110, 118);
         w3.tiles[cell].flags |= crate::tile::FLAG_LIQUID_LAVA;
         w3.tiles[cell].liquid = 0;
@@ -2344,6 +2368,10 @@ mod tests {
         // Real lava on the seat refuses.
         let mut w4 = flat_world(300, 200, 40);
         carve_pocket(&mut w4, 100, 100, 40, 20);
+        let f4 = w4.index(110, 119);
+        w4.tiles[f4].flags |= FLAG_ACTIVE;
+        let f4b = w4.index(111, 119);
+        w4.tiles[f4b].flags |= FLAG_ACTIVE;
         let c4 = w4.index(110, 118);
         w4.tiles[c4].flags |= crate::tile::FLAG_LIQUID_LAVA;
         w4.tiles[c4].liquid = 100;
@@ -2355,13 +2383,14 @@ mod tests {
     fn the_pot_clears_the_half_brick_flag() {
         let mut w = flat_world(300, 200, 40);
         carve_pocket(&mut w, 100, 100, 40, 20);
-        // Pre-set a half-brick flag on an INACTIVE seat cell (the validation
-        // only refuses active seats); the placement clears it.
-        let seat = w.index(110, 118);
+        // The seat sits on the pocket floor (row 120 solid): pre-set a
+        // half-brick flag on an INACTIVE seat cell (the validation only
+        // refuses active seats); the placement clears it.
+        let seat = w.index(110, 119);
         w.tiles[seat].flags |= FLAG_HALF_BRICK;
         assert!(!w.tiles[seat].active(), "the seat is air");
-        assert!(place_pot(&mut w, &mut Rng(4), 110, 118, 19));
-        assert!(!w.tile(110, 118).unwrap().half_brick(), "the half-brick cleared");
+        assert!(place_pot(&mut w, &mut Rng(4), 110, 119, 19));
+        assert!(!w.tile(110, 119).unwrap().half_brick(), "the half-brick cleared");
     }
 
     /// `SpiderWallRemover` (`WorldGen.cs:77279-77344`) — the drifting diamond
