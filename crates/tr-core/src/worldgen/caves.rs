@@ -389,8 +389,13 @@ fn ore_blob(world: &mut World, x: i32, y: i32, kind: u16, size: i32, rng: &mut R
 /// the group's strength/steps/speed table. The draw order is the C#'s:
 /// column roll(s) → strength → steps → speed X, then the runner's own
 /// ledger. Group 5's `Caverer` call (`:12251-12268`) is deferred (it needs
-/// `digTunnel`, `WorldGen.cs:79110+`); the remix `×3` arms are out with the
-/// remix seeds themselves.
+/// `digTunnel`, `WorldGen.cs:79110+`).
+///
+/// W4-d107: the pass-level seed gates land — the whole pass is skipped under
+/// `SecretSeed.noSurface` (`:12164`), and the remix seed triples the first
+/// three group counts (`:12170-12175`: `num *= 3; num2 *= 3; num3 *= 3;` —
+/// group 4's `num7` at `:12232` is NOT tripled). A classic world draws the
+/// identical ledger.
 pub(crate) fn surface_caves(
     world: &mut World,
     rng: &mut Rng,
@@ -398,11 +403,26 @@ pub(crate) fn surface_caves(
     left_beach_end: i32,
     right_beach_start: i32,
 ) {
+    // The pass gate (`:12164`): `!Skyblock.denyAllGeneration &&
+    // !SecretSeed.noSurface.Enabled` — the skyblock half stays with the
+    // skyblock generator (unported); noSurface skips every draw.
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::NO_SURFACE)
+    {
+        return;
+    }
+    // The remix count triple (`:12170-12175`).
+    let triple = if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+        3
+    } else {
+        1
+    };
     let width = world.width;
     let world_surface = layers.world_surface;
     let scan_to = layers.surface_high;
     // Group 1 (`:12176-12192`): the small diggers, `maxTilesX * 0.002`.
-    for _ in 0..((width as f64) * 0.002) as i32 {
+    for _ in 0..(((width as f64) * 0.002) as i32) * triple {
         let x = open_column(rng, width, 0.45, 0.55, left_beach_end, right_beach_start);
         if let Some(j) = first_active(world, x, scan_to) {
             let strength = rng.range(3, 6);
@@ -412,7 +432,7 @@ pub(crate) fn surface_caves(
         }
     }
     // Group 2 (`:12194-12210`): the mid diggers, `maxTilesX * 0.0007`.
-    for _ in 0..((width as f64) * 0.0007) as i32 {
+    for _ in 0..(((width as f64) * 0.0007) as i32) * triple {
         let x = open_column(rng, width, 0.43, 0.57, left_beach_end, right_beach_start);
         if let Some(j) = first_active(world, x, scan_to) {
             let strength = rng.range(10, 15);
@@ -423,7 +443,7 @@ pub(crate) fn surface_caves(
     }
     // Group 3 (`:12212-12230`): the large three-runner digs,
     // `maxTilesX * 0.0003` — the trio's draw order is the call order.
-    for _ in 0..((width as f64) * 0.0003) as i32 {
+    for _ in 0..(((width as f64) * 0.0003) as i32) * triple {
         let x = open_column(rng, width, 0.4, 0.6, left_beach_end, right_beach_start);
         if let Some(j) = first_active(world, x, scan_to) {
             let (s1, t1) = (rng.range(12, 25), rng.range(150, 500));
@@ -849,6 +869,7 @@ mod worldgen_caves {
     /// start places only the rolled tier per band.
     #[test]
     fn w4_d107_the_drunk_world_mixes_tiers_and_splits_the_evil_band() {
+        use crate::seeds::SeedFlags;
         let (w, h) = (420, 240);
         let surface = 60;
         let layers = layers_for(surface, h);
@@ -987,5 +1008,56 @@ mod worldgen_caves {
             oy > surface,
             "the pinned passage at ({ox},{oy}) is not a surface breach"
         );
+    }
+
+    /// W4-d107 — the SurfaceCaves remix triple (`WorldGen.cs:12170-12175`):
+    /// groups 1-3 run `count * 3` runners; group 4 does not. Observable on
+    /// the stream state — a remix world draws strictly more than the classic
+    /// one on the same seed (the extra column rolls + runner ledgers), and
+    /// the world hash moves.
+    #[test]
+    fn w4_d107_the_remix_seed_triples_the_first_three_groups() {
+        use crate::seeds::SeedFlags;
+        let (w, h) = (4200, 400);
+        let surface = 60;
+        let layers = layers_for(surface, h);
+        let run = |flags: SeedFlags| {
+            let mut world = flat_world(w, h, surface);
+            world.seeds = flags;
+            let mut rng = Rng(0xCAFE);
+            surface_caves(&mut world, &mut rng, &layers, 0, w);
+            (world_hash(&world), rng)
+        };
+        let (classic_hash, classic_rng) = run(SeedFlags::none());
+        let (remix_hash, remix_rng) = run(SeedFlags::from(SeedFlags::REMIX));
+        assert_ne!(
+            classic_rng.0, remix_rng.0,
+            "the tripled groups draw more than the classic ledger"
+        );
+        assert_ne!(classic_hash, remix_hash, "the extra digs move the world");
+    }
+
+    /// W4-d107 — the SurfaceCaves noSurface gate (`WorldGen.cs:12164`): the
+    /// whole pass returns before any draw — the stream state is untouched
+    /// and the canvas stays flat.
+    #[test]
+    fn w4_d107_no_surface_skips_the_whole_pass() {
+        use crate::seeds::MicroSeedFlags;
+        let (w, h) = (4200, 400);
+        let surface = 60;
+        let layers = layers_for(surface, h);
+        let mut world = flat_world(w, h, surface);
+        world.micro_seeds = MicroSeedFlags::from_sum(MicroSeedFlags::NO_SURFACE);
+        let mut rng = Rng(0xCAFE);
+        let before = rng.0;
+        surface_caves(&mut world, &mut rng, &layers, 0, w);
+        assert_eq!(rng.0, before, "noSurface draws nothing");
+        // Every column still opens at the flat surface row — no passage.
+        for x in 0..w {
+            assert!(
+                world.tile(x, surface).is_some_and(|t| t.active()),
+                "column {x} was dug despite noSurface"
+            );
+        }
     }
 }
