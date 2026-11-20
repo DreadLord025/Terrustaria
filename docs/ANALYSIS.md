@@ -39336,3 +39336,109 @@ Per-case notes (all verbatim, row-index convention — `num` cancels):
   the humanoid ±1 gate); the airborne tick holds the flip but KEEPS
   striding (no air hold in this group); the 6-tick counter walks the
   FULL 2-row sheet.
+
+## W4-f26 FindFrame extra wave 5 (slice 5, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/npc_findframe_extra5.rs` — the NEXT 15 unclaimed
+missing `NPC.FindFrame` case ids (`NPC.cs:66684-77370`), continuing
+the SAME f26 branch after extra-3 (`49d06149`). The census re-derived
+mechanically from the pushed branches: every C# top-level `case`
+label of the switch on `this.type` (`NPC.cs:66705`, two-tab indent —
+the nested switches' labels excluded) = **602 ids**; the port's
+`npc.rs::find_frame` match arms (270 kinds) mapped through the
+`cs_id` hand rows (`npc/data.rs:2992`) + the bestiary net ids + the
+wave-A/B module rosters cover 248 of them (the folded segment families
+— the Destroyer body 135, the Golem heads 246/249, the Fishron hazards
+371/373 — resolve through their own `find_frame` arms, NOT their
+bestiary folds, the f27 census note re-verified against
+`npc.rs:8426`/`:8268`/`:8570`/`:8971`); the d44-d49 claims subtract 75
+more — **279 remain** (the e13 base, re-confirmed). Minus the
+e13/e14-declared 30 (121..232), f26's 15 (182..219) and f27's 15
+(233..244 + 251..253) — the overlaps dedupe — **234 unclaimed**. This
+wave owns the first 15: **254/255/256/257/258/268/269/270/271/272/273/
+274/275/276/277** (259..267's ids are either no case label or already
+port-covered — 261..267 the Plantera minion family + neighbours).
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 254 | ZombieMushroom | `:76336` (the case-3 zombie walker group) | 3 (`:67109`) |
+| 255 | ZombieMushroomHat | `:76337` (the same group) | 3 (`:67109`) |
+| 256 | FungoFish | `:73920` (the jellyfish group) | 4 (`:67109`) |
+| 257 | AnomuraFungus | `:76179-76224` | 5 (`:67109`) |
+| 258 | MushiLadybug | `:76225-76275` | 6 (`:67109`) |
+| 268 | IchorSticker | `:72886` (the 250/264 strip group) | 4 (`:67110`) |
+| 269 | RustyArmoredBonesAxe | `:75825` (the 269..280 group) | 15 (`:67110`) |
+| 270 | RustyArmoredBonesFlail | `:75826` (the same group) | 15 (`:67111`) |
+| 271 | RustyArmoredBonesSword | `:75827` (the same group) | 15 (`:67111`) |
+| 272 | RustyArmoredBonesSwordNoArmor | `:75828` (the same group) | 15 (`:67111`) |
+| 273 | BlueArmoredBones | `:75829` (the same group) | 15 (`:67111`) |
+| 274 | BlueArmoredBonesMace | `:75830` (the same group) | 15 (`:67111`) |
+| 275 | BlueArmoredBonesNoPants | `:75831` (the same group) | **16** (`:67111` slot 5) |
+| 276 | BlueArmoredBonesSword | `:75832` (the same group) | 15 (`:67111`) |
+| 277 | HellArmoredBones | `:75833` (the same group) | 15 (`:67111`) |
+
+Shape (the f27 `npc_findframe_extra4.rs` precedent): the kinds are
+NOT in `NpcKind` yet (the roster waves own them), so the machines
+land as pure fns over `FrameState`/`FrameInput` with
+`find_frame_kind_extra5` as the vanilla-id wiring seam; the bridge is
+the wiring round (no `npc.rs` hook this wave — the f26/f27 shape,
+zero conflict surface with the in-flight g6/g7 wire hooks). **No
+RNG**: none of the 15 arms draws `Main.rand`; none writes `rotation`
+(the field is not even in `FrameState`); none reads `wet`/`ai`/
+`aiAction` — the `FrameInput` is the minimal vx/vy/direction triple.
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **254/255 the mushroom zombies** (the case-3 walker group
+  `:76324-76391`, shared with 3/52/53/132/161/186-189/200/223/251/
+  319-321/331/332/342/536/590/691 — the wave-A zombie arm and f27's
+  251 Eyezor are the SAME machine, keep-one at the merge): the
+  grounded ±1 flip (0 leaves it), the air OR facing-against-motion
+  turn pins row 2 + zeroes the counter, the idle snaps row 0, the
+  |vx| accumulator walks the <8/<16/<24/<32 bands rows 0/1/2/1 with
+  the >= 32 tail zeroing the counter and HOLDING the row.
+* **256 the Fungo Fish** (the jellyfish group `:73916-73960`, shared
+  with 63/64/103/242 — d44/d45/e14/f27 keep-one): the `ai[1] == 1`
+  pulse gate (`:73921`) lists 63/64/103/242 and NOT 256 — the Fungo
+  Fish ALWAYS rides the idle <6/<12/<18 bands over rows 0/1/2 with
+  the row-3 tail resetting at >= 23. No sprite write.
+* **257 the Anomura Fungus** (`:76179-76224`): the zombie-walker
+  shape on the 5-row sheet — the air pin is row 4 and the walk cycle
+  is FOUR rows (0/1/2/3, the <32 band writes row 3, not the walker's
+  row 1); the >= 32 reset-tick row-HOLD is the same.
+* **258 the Mushi Ladybug** (`:76225-76275`): the air/turn branch
+  does NOT zero the counter — it TICKS it (++ then > 1 steps a row)
+  over the rows 3..5 flight strip with the `> 5 || < 3` clamp lifting
+  ANY out-of-band row to 3 (the first air tick from row 0 steps to 1
+  then clamps to 3); the ground walk is the THREE-band cycle rows
+  0/1/2 with the >= 24 reset-tick row-HOLD.
+* **268 the Ichor Sticker** (the 250/264 strip group `:72884-72897`):
+  counter++ then >= 6 steps a row + zeroes the counter, wrapping at
+  the FULL 4 rows to 0. The port's AngryNimbus (250) /
+  PlanterasTentacle (264) arms (`npc.rs:8354-8364`) are the same
+  machine — keep-one at the merge. Velocity ignored, no sprite write.
+* **269..277 the Armored Bones** (the group `:75825-75882`, the
+  269..280 case list — 278/279/280 ride the next slice): the grounded
+  ±1 flip; the grounded idle snaps row 0 + zeroes the counter — the
+  `type == 140` row-1 branch (`:75849-75853`) is DEAD inside this
+  case list (140 has its own humanoid-group label `:68562`, wave-B's
+  PossessedArmor) and is not carried; the walk lifts any row < 2 to 2
+  FIRST (`:75861-75864` — the first walk tick from idle jumps
+  straight to row 2), then accumulates `|vx| * 2` PLUS 1
+  (`:75865-75866`), the > 6 counter steps a row, wrapping at
+  `Main.npcFrameCount[type]` back to row 2 (`:75872-75875` — rows 0/1
+  are idle/air-only on the walk); the air branch zeroes the counter
+  and pins row 0. The 275 NoPants is the ONE 16-row sheet
+  (`Main.cs:67111` slot 5) — its walk reaches row 15 before the wrap;
+  the 15-row twins wrap at 14.
+
+Witnesses: 10 tests WRITTEN NOT RUN (code-only mode) — the
+frame-count table cross-check, the walker bands + turn pin +
+direction-0 flip gate, the Fungo Fish idle-only cycle, the Anomura
+four-row cycle, the Mushi flight strip + three-band ground walk, the
+Ichor 6-tick strip, the rusty bones stride-from-2 + slow-walk +
+air/idle pins, the blue/hell count-variant wrap witness, the 15-kind
+5x3x3 strip sweep (60 ticks, every row inside its sheet) and the
+exact-slice seam sweep. Frame counts cross-checked entry-by-entry:
+`Main.cs:67082`'s 697-entry initializer vs
+`render/entities.rs::NPC_FRAME_COUNT` — all 15 agree.
