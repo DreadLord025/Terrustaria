@@ -201,6 +201,11 @@ pub(crate) fn player_input(
     hold_right: bool,
     hold_jump: bool,
 ) -> PlayerInput {
+    // The `useTurn` direction lock's inputs (`Player.cs:19837`): the swing
+    // state and the held item's `useTurn` flag, both read fresh each tick.
+    let item_in_use = app.swing > 0.0;
+    let held_use_turn = crate::registry::get(app.inventory[app.selected].kind)
+        .is_some_and(|d| d.use_turn);
     if map_open {
         return PlayerInput {
             left: false,
@@ -208,6 +213,8 @@ pub(crate) fn player_input(
             jump: false,
             down: false,
             hook: false,
+            item_in_use,
+            held_use_turn,
         };
     }
     // `Player.controlLeft`/`controlRight`/`controlJump`/`controlDown` off
@@ -237,6 +244,8 @@ pub(crate) fn player_input(
         // `Player.controlHook` on `Main.cHook` (`Main.cs:67172`, default `E`);
         // the port keeps `G` as the extra quick-grapple key.
         hook: any(crate::input_map::Action::Hook) || app.keys.contains(&KeyCode::KeyG),
+        item_in_use,
+        held_use_turn,
     }
 }
 
@@ -605,6 +614,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.misc_dye_slots[i] = app.equip.misc_dyes[i].kind;
         }
         p.swing_aim = app.swing_aim;
+        // The held-kind snapshot the `CanUseStressBall` grant reads
+        // (`Player.cs:14352`'s `inventory[selectedItem]`), filled before the
+        // tick's `update_equips` pass.
+        p.held_item_kind = app.inventory[app.selected].kind;
         // `PlayerFrame()`'s held-item inputs (`Player.cs:36143-36146`): the C#
         // reads `inventory[selectedItem]` straight out of the player, the port
         // hands the summary in before the fixed step.

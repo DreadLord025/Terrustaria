@@ -49,6 +49,20 @@ pub(crate) fn use_animation_secs_of(kind: u16, prefix: u16) -> f32 {
         .unwrap_or_else(|| use_animation_secs(kind))
 }
 
+/// `Player.ApplyItemTime(sItem)` (`Player.cs:4416-4419` →
+/// `SetItemTime(sItem.useTime)`, `:4406-4413`): the kind's `useTime` in
+/// seconds at the 60 Hz rate — the ACTION cadence re-arm the mid-swing use
+/// arms (the boss spawners / event items, `Player.cs:43759`/`:43925`) read.
+/// A kind with no positive `useTime` falls back to its animation length
+/// (the port's swing-paced stand-in, same as [`use_animation_secs`]).
+pub(crate) fn use_time_secs(kind: u16) -> f32 {
+    registry::get(kind)
+        .map(|d| d.use_time)
+        .filter(|t| *t > 0)
+        .map(|t| t as f32 / 60.0)
+        .unwrap_or_else(|| use_animation_secs(kind))
+}
+
 /// `Item.useStyle` of the kind (`Item.SetDefaults`; the
 /// `ItemUseStyleID.cs` constants — 1 Swing, 2 EatFood, 3 Thrust, 4 HoldUp,
 /// 5 Shoot, 6 DrinkLong, 7 DrinkOld, 8 GolfPlay, 9 DrinkLiquid, 10 Hidden,
