@@ -30,6 +30,9 @@ const CURSOR_FAVORITE: i32 = 3;
 /// `AlternateClickAction.Trash`'s cursor id (`ItemSlot.cs:213`): the
 /// Shift-click quick-trash (`GetAlternateClickAction`'s tail, `:679-682`).
 const CURSOR_TRASH: i32 = 6;
+/// `AlternateClickAction.Sell`'s cursor id (`ItemSlot.cs:218`): the
+/// Shift-click sell while a shop is open (`GetSellOrTrash`, `:198-209`).
+const CURSOR_SELL: i32 = 10;
 
 /// `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`): the physical Shift keys are
 /// `Main.keyState.PressingShift()`'s port (`app.keys` tracks the pressed
@@ -105,6 +108,18 @@ fn is_coin_kind(kind: u16) -> bool {
     (71..=74).contains(&kind)
 }
 
+/// The shop row as the `ItemSlot` the movement/stack gates read — the
+/// stock instance's kind/prefix/stack (`ShopEntry`; the fresh
+/// `SetDefaults` rows carry prefix 0, stack 1).
+fn shop_row_slot(entry: &crate::shop::ShopEntry) -> ItemSlot {
+    ItemSlot {
+        kind: entry.item,
+        name: crate::itemdata::ITEMS[entry.item as usize].name,
+        count: entry.stack,
+        prefix: entry.prefix,
+    }
+}
+
 /// `Item.FitsAmmoSlot` (`Item.cs:1369-1376`) over the flags the port carries:
 /// air, an ammo item (`ammo > 0`) or bait. The C# also takes the paint-and-
 /// coating arm and the three literal exceptions (353/530/849), and honours
@@ -116,30 +131,20 @@ fn fits_ammo_slot(kind: u16) -> bool {
     registry::get(kind).is_some_and(|d| d.ammo > 0 || d.bait > 0)
 }
 
-/// `ItemSlot.CanEquipInArmorSlot` (`ItemSlot.cs:1424-1482`) over the port's
-/// data: the `slot % 10` armour kinds (head `>= 0`, body, leg) for the three
-/// armour rows, the `accessory` flag for the accessory rows. The C#'s
-/// duplicate half (`HasSameItemInSlot` against the live armour set) and the
-/// `ItemID.Sets.DualEquipArmor` bypass (`ItemID.cs:336`) read
-/// `Main.LocalPlayer`'s arrays and are not modelled — the port stays permissive
-/// there (docs/ANALYSIS.md).
-fn can_equip_in_armor_slot(check: &ItemSlot, slot: usize) -> bool {
-    let Some(d) = registry::get(check.kind) else {
-        return false;
-    };
-    match slot % 10 {
-        0 => d.head_slot >= 0,
-        1 => d.body_slot >= 0,
-        2 => d.leg_slot >= 0,
-        _ => d.accessory,
-    }
-}
+/// `ItemSlot.CanEquipInArmorSlot`'s port lives in `app::equip_swap`
+/// (S1-P-i48) — the full gate incl. the `HasSameItemInSlot` duplicate half,
+/// the `DualEquipArmor` bypass (`ItemID.cs:336`) and the accessory collision
+/// set, all reading the live `Player.armor` arrays.
 
 /// `ItemSlot.PickItemMovementAction` (`ItemSlot.cs:1484-1634`) — the action id
 /// the C# assigns to the cursor's `check` item over `slot` of `context`: `-1`
 /// refuses the move, `0` is the generic move, `1` an equip, `2` a dye, `3`/`4`
 /// the shop arms, `5` the Journey duplicate. `target` is the C#'s `inv[slot]`,
-/// read by the ctx 15/29 arms only.
+/// read by the ctx 15/29 arms only. `equip` carries the C#'s
+/// `Main.LocalPlayer` + `Player.armor` for the ctx 8-11
+/// `CanEquipInArmorSlot` gate (S1-P-i48); `None` (the coin/ammo callers, which
+/// never reach those arms) refuses them — there is no live player state to
+/// check against.
 ///
 /// Contexts whose C# arm reads data the port does not carry (`CanHavePrefixes`
 /// for ctx 5, `Main.projHook` for ctx 16, `mountType` for 17/18/39, the
@@ -151,6 +156,7 @@ pub(crate) fn pick_item_movement_action(
     check: &ItemSlot,
     slot: usize,
     target: &ItemSlot,
+    equip: Option<(&crate::player::Player, &[ItemSlot; crate::inv::ARMOR])>,
 ) -> i32 {
     let air = check.kind == 0;
     let def = registry::get(check.kind);
@@ -187,9 +193,15 @@ pub(crate) fn pick_item_movement_action(
                 result = 0;
             }
         }
-        // `:1530-1538`
+        // `:1530-1538` — `CanEquipInArmorSlot` over the live player + armour
+        // set (S1-P-i48: the duplicate/collision halves and the
+        // `DualEquipArmor` bypass are modelled in `equip_swap`).
         8 | 9 | 10 | 11 => {
-            if air || can_equip_in_armor_slot(check, slot) {
+            if air
+                || equip.is_some_and(|(p, armor)| {
+                    crate::app::equip_swap::can_equip_in_armor_slot(check, slot, p, armor)
+                })
+            {
                 result = 1;
             }
         }
@@ -265,7 +277,7 @@ pub(crate) fn context_accepts(context: i32, kind: u16) -> bool {
         count: u32::from(kind != 0),
         prefix: 0,
     };
-    pick_item_movement_action(context, &check, 0, &EMPTY_SLOT) != -1
+    pick_item_movement_action(context, &check, 0, &EMPTY_SLOT, None) != -1
 }
 
 /// `Main.DrawInventory`'s misc-equip context -> `Player.miscEquips` index
@@ -385,6 +397,20 @@ impl App {
             }
             None
         }
+    }
+
+    /// The shop grid's cell under the cursor — `Main.DrawInventory`'s shop
+    /// block (`Main.cs:41798-41818`): 10×4 cells at `(int)(73 + i*56*0.755)`,
+    /// `(int)(invBottom + j*56*0.755)` with `Main.invBottom = 258`
+    /// (`Main.cs:6608`), the hit rect the `InventoryBack` size × 0.755
+    /// (`:41811`, inclusive on all four edges). `None` while no shop draws
+    /// (`npcShop > 0 && playerInventory`, the `:41784-41788` gate).
+    pub(crate) fn shop_slot_at_mouse(&self) -> Option<usize> {
+        if self.shop_npc.is_none() || !self.inventory_open {
+            return None;
+        }
+        let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+        ui::inventory::shop_slot_at(self.mouse_pos, cell)
     }
 
     /// The coin (ctx 1) or ammo (ctx 2) cell under the cursor —
@@ -560,12 +586,25 @@ impl App {
     /// `RightClick` ladder's vanity swap (`:1678-1684`) or the shared paced
     /// pickup split.
     fn equip_slot_click(&mut self, context: i32, idx: usize, left: bool, right_edge: bool) {
+        // `LeftClick`'s busy gate (`ItemSlot.cs:922-926`): while an item
+        // animation or the use cooldown runs, the press does nothing (the
+        // `OverrideLeftClick` half rides the cursor-override arms above).
+        // `App::swing` is `player.itemAnimation > 0`, `App::item_time` the
+        // `player.itemTime` countdown (S1-P-i48).
+        if left && (self.swing > 0.0 || self.item_time > 0.0) {
+            return;
+        }
         let mut held = self.mouse_item;
         let mut target = self.equip_cell(context, idx);
         if left {
             // `:927` — the action table; `:928-931` refuses everything but
-            // action 3 off a press edge.
-            match pick_item_movement_action(context, &held, idx, &target) {
+            // action 3 off a press edge. The ctx 8-11 gate reads the live
+            // player + armour set (`CanEquipInArmorSlot`, S1-P-i48).
+            let equip_ctx = self
+                .player
+                .as_ref()
+                .map(|p| (p, &self.equip.armor));
+            match pick_item_movement_action(context, &held, idx, &target, equip_ctx) {
                 1 => {
                     if equip_left_click(&mut held, &mut target) {
                         self.audio.play("Grab"); // `:1023,1057,1075,1083`
@@ -581,10 +620,28 @@ impl App {
             }
             self.mouse_item = held;
         } else {
+            // `RightClick`'s busy gate (`ItemSlot.cs:1644-1647`):
+            // `player.itemAnimation > 0` returns before every arm.
+            if self.swing > 0.0 {
+                return;
+            }
             // `RightClick` (`:1654-1698`): the swap arms need an air cursor or
             // one that cannot stack with the cell.
             let can_stack = crate::bank::can_stack(&held, &target);
             if held.count == 0 || !can_stack {
+                // `:1668-1675` — the `HasItemSwap` variant cycle
+                // (`ItemID.cs:1385`), on the press edge, for a single item in
+                // a `canItemSwapAt` context (0/3/4/32/8/10, `:451-456`).
+                // S1-P-i48: the equipment contexts 8/10 join the grid's arm.
+                if matches!(context, 8 | 10)
+                    && target.count == 1
+                    && crate::sortdata::HAS_ITEM_SWAP.get(target.kind)
+                {
+                    if right_edge {
+                        self.try_item_swap_click(context, idx);
+                    }
+                    return;
+                }
                 if context == 9 || context == 11 {
                     // `:1678-1684` — `SwapVanityEquip(inv, context, slot,
                     // player)` against the real counterpart `slot - 10`.
@@ -593,6 +650,10 @@ impl App {
                     }
                     return;
                 }
+                // The C#'s `:1685-1697` `SwapEquip` arm covers contexts
+                // 0/3/4/32 ONLY — an equip cell (8/10/12/16-20/33) right-
+                // clicks straight into the pickup block below (unequip is
+                // the SHIFT arm, `GetAlternateClickAction` `:700-715`).
             }
             // `:1700-1713` — the paced one-per-transfer split.
             let can_take = held.count == 0
@@ -617,6 +678,23 @@ impl App {
         self.set_equip_cell(context, idx, target);
     }
 
+    /// `ItemSlot.TryItemSwap` + `AfterItemSwap` (`ItemSlot.cs:1901-2009`)
+    /// applied to an equipment cell (S1-P-i48): the variant cycle, the
+    /// 22/7 cue split, `Main.stackSplit = 30` and the consumed press edge
+    /// (`Main.mouseRightRelease = false`).
+    fn try_item_swap_click(&mut self, context: i32, idx: usize) {
+        let mut item = self.equip_cell(context, idx);
+        let Some(new_kind) = crate::app::equip_swap::try_item_swap(&mut item) else {
+            return;
+        };
+        self.set_equip_cell(context, idx, item);
+        // `:1999-2006` — the fifteen kinds play 22 (Unlock), the rest 7.
+        self.audio
+            .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+        self.stack_split = 30; // `:2007`
+        self.ui_right_press = false; // `:2008`
+    }
+
     /// `ItemSlot.SwapEquip` (`ItemSlot.cs:3283-3363`) applied to a container
     /// cell: the item is reassigned to its equipment slot and the destination's
     /// previous content lands back in `slot`. The favourites clear on both
@@ -628,11 +706,17 @@ impl App {
             return false; // `:3286-3289`
         }
         use crate::app::equip_swap::{SwapTarget, swap_equip_target};
+        // The unlock gates read the live player (S1-P-i48); no player means
+        // no equipment state to swap into.
+        let Some(p) = self.player.as_ref() else {
+            return false;
+        };
         let Some(target) = swap_equip_target(
             item,
             &self.equip.armor,
             &self.equip.dye,
             &mut self.dye_swap_counter,
+            p,
         ) else {
             return false;
         };
@@ -867,6 +951,7 @@ impl App {
         // the grid narrows only what is shown (`NewCraftingUI.cs:596-611`).
         let available = self.craft_filters.shown(craft::available_with_gates(
             &self.inventory,
+            &self.equip,
             &self.world_chests,
             &in_range,
             &adj,
@@ -923,6 +1008,7 @@ impl App {
         // rolled prefix (`CraftingRequests.cs:139`).
         let crafted = craft::try_craft_qty(
             &mut self.inventory,
+            &mut self.equip,
             &mut self.world_chests,
             &in_range,
             recipe,
@@ -1480,23 +1566,40 @@ impl App {
                 }
             }
         }
-        // The reforge menu regions (`Main.cs:41639-41661`): the (50, 270)
-        // input slot and the (120, 310) button (30x30), both + m_h. A hit
-        // consumes the press before the slot grid.
+        // The reforge menu regions (`Main.cs:41639-41641` button, `:41673`
+        // slot): the (50, 270) input slot and the (120, 310) button centre
+        // (strict ±15). Neither rides `Main.mH` — the reforge block uses the
+        // literal coordinates (`Main.cs:41581-41582`); a hit consumes the
+        // press before the slot grid.
         if self.inventory_open && self.in_reforge_menu {
-            let (sw, sh) = self.screen_size();
-            let m_h = (sh as f32 - 600.0) / 2.0;
+            let cell = self
+                .lookups
+                .ui_back
+                .map(|b| b.width as f32)
+                .unwrap_or(52.0);
             let (mx, my) = (self.mouse_pos.x, self.mouse_pos.y);
-            let in_slot = mx >= 50.0 && mx <= 106.0 && my >= 270.0 + m_h && my <= 326.0 + m_h;
-            let in_button = mx >= 120.0 && mx <= 150.0 && my >= 310.0 + m_h && my <= 340.0 + m_h;
-            if left && in_slot {
+            let mouse = Vec2::new(mx, my);
+            if left && ui::inventory::reforge_slot_hit(mouse, cell) {
                 self.reforge_slot_click();
                 return;
             }
-            if left && in_button {
+            if left && ui::inventory::reforge_button_hit(mouse) {
                 self.reforge_click();
                 return;
             }
+        }
+        // The shop grid (`Main.cs:41799-41818`): the cells set
+        // `mouseInterface` and run `ItemSlot.Handle(shop.item, 15, slot)`
+        // for the hovered cell — the press is consumed even when the
+        // stack-split gate transfers nothing this frame (the C#'s
+        // `mouseInterface` suppresses the world use). The block draws
+        // after the reforge inline block and before `ChestUI.Draw`
+        // (`:41831`), so it takes the pointer ahead of the bank/trash/
+        // equipment arms below (its (73, 258) rect overlaps the bank
+        // panel's — the shop wins, exactly like the C#'s draw order).
+        if let Some(slot) = self.shop_slot_at_mouse() {
+            self.shop_slot_click(slot, left, right);
+            return;
         }
         // The transfer buttons (M3-STORE-2, `ChestUI.cs:282-307`'s click
         // dispatch): LootAll/DepositAll/QuickStack/Restock over the open
@@ -1516,6 +1619,14 @@ impl App {
                         };
                         let favs = self.favorite_slots.clone();
                         let fav = move |i: usize| favs.contains(&i);
+                        // S1-P-i43 — the transfer cues ride the bare-`Main.rand`
+                        // stand-in (the click handler runs outside every
+                        // SwapRandom block, the `quick_transfer_from_slot`
+                        // precedent); snapshot it across the `p` borrow.
+                        let mut rng = std::mem::replace(
+                            self.rngs.global(),
+                            tr_core::UnifiedRandom::default(),
+                        );
                         match id {
                             // `ChestUI.LootAll`'s bank arm (:417-473) —
                             // `LootAllFromBank` is the default settings
@@ -1525,7 +1636,10 @@ impl App {
                                 &mut p.banks[bi],
                                 &mut self.inventory,
                                 &mut self.equip.coins,
+                                &mut self.equip.ammo,
                                 None,
+                                &mut self.audio,
+                                &mut rng,
                             ),
                             // `ChestUI.DepositAll` (`:540-659`) — the
                             // MoveCoins pre-pass runs for every container
@@ -1536,11 +1650,15 @@ impl App {
                                     &mut self.inventory,
                                     &mut self.equip.coins,
                                     &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                                 crate::bank::deposit_all(
                                     &mut p.banks[bi],
                                     &mut self.inventory,
                                     &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                             }
                             // `ChestUI.QuickStack`'s bank arm (:670-685) —
@@ -1552,12 +1670,16 @@ impl App {
                                     &mut self.inventory,
                                     &mut self.equip.coins,
                                     &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                                 crate::bank::quick_stack(
                                     &mut p.banks[bi],
                                     &mut self.inventory,
                                     &mut self.equip.coins,
                                     &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                             }
                             _ => {
@@ -1565,9 +1687,13 @@ impl App {
                                     &mut p.banks[bi],
                                     &mut self.inventory,
                                     &mut self.equip.ammo,
+                                    &fav,
+                                    &mut self.audio,
+                                    &mut rng,
                                 );
                             }
                         }
+                        *self.rngs.global() = rng;
                         return;
                     }
                 }
@@ -1703,7 +1829,23 @@ impl App {
         };
         if !self.inventory_open {
             if left {
-                self.selected = slot;
+                // S1-P-i54 — `GUIHotbarDrawInner` (`Main.cs:43616-43623`):
+                // the click latches `changeItem`, which `Player.Update`
+                // feeds to `Select` (`Player.cs:25087-25091`) — buffered,
+                // not immediate. The hover gate (`:43616`) refuses the
+                // locked hotbar (`hbLocked` has no port state — the lock
+                // icon is a recorded no-op, `ui/chrome.rs`), the torch
+                // auto-select hold and an active channel; `Main.blockMouse`
+                // (`:43620`) blocks the held button after a mid-use switch.
+                let control_torch = self.keys.iter().any(|k| {
+                    crate::input_map::is_bound(&self.keybinds, crate::input_map::Action::Torch, *k)
+                });
+                let channel = self.player.as_ref().is_some_and(|p| p.channel);
+                if !control_torch && !channel && !self.block_mouse {
+                    if self.selection.select(self.selected, slot, false) {
+                        self.audio.play("Menu_Tick"); // `Select`, `:506`
+                    }
+                }
             }
             return;
         }
@@ -1731,12 +1873,48 @@ impl App {
             self.audio.play("Grab");
             return;
         }
+        if left && self.cursor_override == CURSOR_SELL {
+            // `OverrideLeftClick`'s cursor-10 arm (`ItemSlot.cs:851-869`):
+            // the Shift-click sell into the open shop.
+            self.sell_slot_click(slot);
+            return;
+        }
         let mut held = self.mouse_item;
         let mut target = self.inventory[slot];
+        // The busy gates (S1-P-i48): `LeftClick` refuses while
+        // `itemAnimation != 0 || itemTime != 0` (`ItemSlot.cs:922-926`),
+        // `RightClick` while `itemAnimation > 0` (`:1644-1647`).
+        if (left && (self.swing > 0.0 || self.item_time > 0.0))
+            || (!left && self.swing > 0.0)
+        {
+            return;
+        }
         // The `:1707` pickup gate: an air cursor, or the same kind/prefix with
         // cursor room. This decides pickup vs the port's press-edge carry.
         let can_stack = crate::bank::can_stack(&held, &target);
         let can_take = held.count == 0 || (can_stack && held.count < registry::max_stack(target.kind));
+        // `RightClick`'s `HasItemSwap` arm (`ItemSlot.cs:1668-1675`,
+        // S1-P-i48): a single variant-swap kind (`ItemID.cs:1385`) cycles
+        // in place on the press edge — BEFORE the `SwapEquip` ladder
+        // (`:1685-1697`), so an Ammo Cycler right-click changes its mode
+        // instead of equipping.
+        if !left
+            && (held.count == 0 || !can_stack)
+            && target.count == 1
+            && crate::sortdata::HAS_ITEM_SWAP.get(target.kind)
+        {
+            if right_edge {
+                if let Some(new_kind) = crate::app::equip_swap::try_item_swap(&mut target) {
+                    self.inventory[slot] = target;
+                    // `AfterItemSwap` (`:1997-2009`).
+                    self.audio
+                        .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+                    self.stack_split = 30; // `:2007`
+                    self.ui_right_press = false; // `:2008`
+                }
+            }
+            return;
+        }
         // `RightClick`'s swap ladder (`ItemSlot.cs:1658,1685-1697`): an air
         // cursor or one that cannot stack with the cell enters the swap block
         // first, and a single wearable / dye jumps to its equipment row on the
@@ -1811,6 +1989,129 @@ impl App {
         }
     }
 
+    /// `ItemSlot.HandleShopSlot` (`ItemSlot.cs:2035-2096`) — one shop-cell
+    /// press (context 15, `Main.cs:41814`'s `ItemSlot.Handle`): the left
+    /// click buys through `PickItemMovementAction`'s action 3
+    /// (`:1566-1574` — an air cursor over a stocked row, or a same-kind
+    /// cursor with room), the right click buys paced
+    /// (`rightClickIsValid`, `:1648-1651`), and a non-air cursor over an
+    /// EMPTY cell sells the whole held stack (action 4, `:1575-1578` →
+    /// `LeftClick`'s case 4, `:1222-1241`). The chat-share cursor stands
+    /// down (`:2037-2040`, unported).
+    fn shop_slot_click(&mut self, slot: usize, left: bool, right: bool) {
+        // The shop chest carries 40 slots (`Chest.DefaultMaxItems`,
+        // `Chest.cs:64`); the port's dense Vec ends at the last stocked
+        // row, so a cell past the end reads as an AIR row (the sell arm
+        // targets exactly those).
+        let entry = self.shop_stock.get(slot).copied().unwrap_or(crate::shop::ShopEntry {
+            item: 0,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: None,
+            buy_once: false,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 0,
+        });
+        if slot >= 40 {
+            return; // past the chest's slot window
+        }
+        let held = self.mouse_item;
+        let action = pick_item_movement_action(15, &held, slot, &shop_row_slot(&entry), None);
+        if left && action == 3 {
+            self.handle_shop_buy(slot);
+        } else if left && action == 4 {
+            // `LeftClick`'s case 4 (`ItemSlot.cs:1222-1241`): SellItem pays
+            // out, AddItemToShop re-stocks the sold units, the cursor turns
+            // to air; a value-0 item still enters the shop (sound 7). The
+            // `stackSplit = 9999` tail (`:1239`) locks the split repeat.
+            let item = self.mouse_item;
+            let paid = self.sell_item(&item);
+            if paid > 0 || crate::itemdata::ITEMS[item.kind as usize].value == 0 {
+                crate::shop::add_item_to_shop(
+                    &mut self.shop_stock,
+                    &mut self.shop_sellback,
+                    &item,
+                );
+                self.mouse_item = EMPTY_SLOT;
+                // `SoundEngine.PlaySound(18)` on the sale, 7 on the giveaway.
+                self.audio.play(if paid > 0 { "Coins" } else { "Grab" });
+            }
+            self.stack_split = 9999; // `:1239`
+        } else if right {
+            // `RightClick`'s ctx-15 arm (`:1648-1651`) — the paced buy.
+            self.handle_shop_buy(slot);
+        }
+    }
+
+    /// `ItemSlot.HandleShopSlot`'s buy loop (`ItemSlot.cs:2042-2095`): the
+    /// `stackSplit <= 1` gate, the cursor stackability gate (`:2043` —
+    /// `Item.CanStack` or an air cursor), then `superFastStack + 1` units
+    /// (× the bulk amount on a Shift-held buyOnce/isAShopItem row,
+    /// `:2047-2051`). Each unit re-prices the row, charges `BuyItem`,
+    /// pushes onto the cursor and refreshes the split cooldown
+    /// (`:2089`); the first successful unit plays 18 on a valued row,
+    /// else 7 (`:2064-2073`).
+    fn handle_shop_buy(&mut self, slot: usize) {
+        if self.stack_split > 1 {
+            return; // `:2043`
+        }
+        let Some(entry) = self.shop_stock.get(slot).copied() else {
+            return;
+        };
+        if entry.item == 0 || entry.stack == 0 {
+            return; // `:2043`'s `inv[slot].type <= 0`
+        }
+        let held = self.mouse_item;
+        // `:2043` — `!Item.CanStack(mouseItem, inv[slot]) && mouseItem.type != 0`.
+        if held.count > 0 && !crate::bank::can_stack(&held, &shop_row_slot(&entry)) {
+            return;
+        }
+        let mut num2 = (self.super_fast_stack + 1) as u32; // `:2047`
+        if crate::shop::can_bulk_buy(&entry, shift_in_use(self)) {
+            num2 *= crate::shop::bulk_buy_amount(&entry); // `:2048-2051`
+        }
+        for i in 0..num2 {
+            // `:2055-2058` — a full cursor skips the unit (the C#
+            // `continue`s; the remaining units re-test the same room).
+            if self.mouse_item.count > 0
+                && self.mouse_item.count >= registry::max_stack(self.mouse_item.kind)
+            {
+                continue;
+            }
+            let value = crate::itemdata::ITEMS[entry.item as usize].value;
+            if !self.buy_shop_item(slot) {
+                continue; // `:2060-2063` — the purse gate / the depleted row
+            }
+            if i == 0 {
+                // `:2064-2073` — sound 18 on a valued row, else 7.
+                self.audio.play(if value > 0 { "Coins" } else { "Grab" });
+            }
+            // `RefreshStackSplitCooldown` (`:1774-1784`, `:2089`).
+            self.stack_split = if self.stack_split == 0 {
+                30
+            } else {
+                self.stack_delay
+            };
+        }
+    }
+
+    /// `ItemSlot.OverrideLeftClick`'s cursor-10 arm (`ItemSlot.cs:851-869`)
+    /// — the Shift-click sell from an inventory slot: `SellItem` pays the
+    /// stack out, `Chest.AddItemToShop` re-stocks it, the slot turns to
+    /// air (sound 18); a value-0 item still enters the shop (sound 7).
+    fn sell_slot_click(&mut self, slot: usize) {
+        let item = self.inventory[slot];
+        if item.count == 0 {
+            return;
+        }
+        let paid = self.sell_item(&item);
+        if paid > 0 || crate::itemdata::ITEMS[item.kind as usize].value == 0 {
+            crate::shop::add_item_to_shop(&mut self.shop_stock, &mut self.shop_sellback, &item);
+            self.inventory[slot] = EMPTY_SLOT;
+            self.audio.play(if paid > 0 { "Coins" } else { "Grab" });
+        }
+    }
+
     /// The chest panel's slot dispatch (M3-CHEST-UI phase 4) — the ctx-3 half
     /// of `ChestUI.DrawSlots`' per-cell `ItemSlot.Handle` calls (`ChestUI.cs:
     /// 382-385`, every drawn frame for the hovered cell), the shift transfer
@@ -1840,6 +2141,29 @@ impl App {
         // The cursor-9 shift-click — `OverrideLeftClick` (`ItemSlot.cs:813-850`)
         // → `ChestUI.TryPlacingInChest(justCheck: false)` (`:846`).
         if left && self.cursor_override == CURSOR_TO_CHEST {
+            // The reforge menu's cursor-9 arm (`ItemSlot.cs:821-836`): the
+            // stack splits one item into the empty reforge slot, a single
+            // item swaps (`Utils.Swap`, sound 7).
+            if self.in_reforge_menu {
+                if let Some(slot) = self.slot_at_mouse() {
+                    let item = self.inventory[slot];
+                    if item.count > 1 {
+                        if self.reforge_slot.count == 0 {
+                            self.reforge_slot = ItemSlot {
+                                count: 1,
+                                ..item
+                            };
+                            self.inventory[slot].count -= 1;
+                            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
+                        }
+                    } else if item.count == 1 {
+                        std::mem::swap(&mut self.inventory[slot], &mut self.reforge_slot);
+                        self.audio.play("Grab");
+                    }
+                }
+                self.ui_left_press = false;
+                return true;
+            }
             // The ctx-1/ctx-2 rows ride the same cursor (`ItemSlot.cs:680-686`
             // covers 0/1/2), so the source resolves before the grid probe.
             if let Some(src) = self.chest_transfer_source() {
@@ -1861,8 +2185,10 @@ impl App {
         // the world-chest panel's (the ctx-3 grid) — bank values keep the
         // STORE-1 panel and its own handler, so the gate is `>= 0` (the C#'s
         // single `ChestUI.Draw` covers all kinds — the recorded STORE-1
-        // panel-fidelity deviation).
-        if self.open_container() >= 0 && !self.crafting_open {
+        // panel-fidelity deviation). While a shop is open the shop grid owns
+        // the (73, 258) rect (`Main.cs:41799-41818`), so the chest dispatch
+        // stands down — the inventory handler's shop arm takes the pointer.
+        if self.open_container() >= 0 && !self.crafting_open && self.shop_npc.is_none() {
             // `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:281-308`) —
             // the C# `DrawButtons` pass runs before `DrawSlots`, so the
             // buttons take the press before the slot grid sees it. IDs 0-3
@@ -1916,6 +2242,12 @@ impl App {
                 self.ui_right_press = false;
                 return true;
             }
+            // The dresser top-row storage open (`Player.cs:32864-32925`,
+            // S1-P-i43): the same open-inventory right-click route.
+            if chest::try_open_dresser_at_cursor(self, world_pos) {
+                self.ui_right_press = false;
+                return true;
+            }
         }
         false
     }
@@ -1964,10 +2296,27 @@ impl App {
         if !shift_in_use(self) {
             return;
         }
+        // `Main.InReforgeMenu`'s ctx-0 arm (`ItemSlot.cs:666-672`): a
+        // prefixable item lights the transfer-to-reforge cursor (9). The
+        // port's reforge click routes through the same cursor id.
+        if self.in_reforge_menu {
+            if let Some(slot) = self.slot_at_mouse() {
+                if slot < crate::item::INV
+                    && self.inventory[slot].count > 0
+                    && !self.is_favorite(slot)
+                    && crate::prefix::can_have_prefixes(self.inventory[slot].kind)
+                {
+                    self.cursor_override = CURSOR_TO_CHEST;
+                }
+            }
+            return;
+        }
         // The ctx-3 arms are the world-chest panel's (`chest >= 0`) — banks
         // keep the STORE-1 panel and no cursor-8/9 shift route (the recorded
         // panel-fidelity deviation; `TryPlacingInChest` refuses banks too).
-        if chest >= 0 && !self.crafting_open {
+        // While a shop is open the shop grid owns the (73, 258) rect, so the
+        // chest-cell probe stands down (the chest panel does not draw).
+        if chest >= 0 && !self.crafting_open && self.shop_npc.is_none() {
             if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
                 if let Some(s) = chest::chest_slot(&self.world_chests, chest as usize, abs) {
                     if s.kind != 0 && s.count > 0 && chest::inventory_has_room_for(self, s.kind) {
@@ -1991,17 +2340,19 @@ impl App {
         // The tail arm — `GetAlternateClickAction`'s else-chain close
         // (`ItemSlot.cs:679-682`): Shift held and no crafting/reforge/chest
         // arm matched, so a hovered inventory slot with an item lights the
-        // quick-trash cursor (`GetSellOrTrash` → `AlternateClickAction.Trash`
-        // while no shop is open, `:198-209`; the port has no sell cursor, so
-        // the shop case stands down — the recorded gap). The head guard
+        // quick-trash cursor — or the SELL cursor while a shop is open
+        // (`GetSellOrTrash`, `:198-209`: `npcShop <= 0` → Trash, the coin
+        // kinds 71-74 → null, everything else → Sell). The head guard
         // (`:631-634`): air or favorited slots answer null.
-        if self.shop_npc.is_none() {
-            if let Some(slot) = self.slot_at_mouse() {
-                if slot < crate::item::INV
-                    && self.inventory[slot].count > 0
-                    && !self.is_favorite(slot)
-                {
+        if let Some(slot) = self.slot_at_mouse() {
+            if slot < crate::item::INV
+                && self.inventory[slot].count > 0
+                && !self.is_favorite(slot)
+            {
+                if self.shop_npc.is_none() {
                     self.cursor_override = CURSOR_TRASH;
+                } else if !is_coin_kind(self.inventory[slot].kind) {
+                    self.cursor_override = CURSOR_SELL;
                 }
             }
         }
@@ -2035,13 +2386,21 @@ impl App {
         } else {
             None
         };
+        // S1-P-i43 — the transfer cues ride the bare-`Main.rand` stand-in
+        // (the click handler runs outside every SwapRandom block, the
+        // `quick_transfer_from_slot` precedent); snapshot it across the
+        // `wc`/`p` borrows.
+        let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
         match id {
             // `ChestUI.LootAll` (`:393-473`).
             0 => crate::bank::loot_all(
                 &mut wc.slots,
                 &mut self.inventory,
                 &mut self.equip.coins,
+                &mut self.equip.ammo,
                 vault,
+                &mut self.audio,
+                &mut rng,
             ),
             // `ChestUI.DepositAll` (`:540-659`) — the MoveCoins pre-pass runs
             // for every container kind (`:543-562`).
@@ -2051,8 +2410,16 @@ impl App {
                     &mut self.inventory,
                     &mut self.equip.coins,
                     &fav,
+                    &mut self.audio,
+                    &mut rng,
                 );
-                crate::bank::deposit_all(&mut wc.slots, &mut self.inventory, &fav);
+                crate::bank::deposit_all(
+                    &mut wc.slots,
+                    &mut self.inventory,
+                    &fav,
+                    &mut self.audio,
+                    &mut rng,
+                );
             }
             // `ChestUI.QuickStack` (`:661-825`) — NO MoveCoins for a world
             // chest (`:670-685`'s arms are the bank kinds only).
@@ -2061,14 +2428,23 @@ impl App {
                 &mut self.inventory,
                 &mut self.equip.coins,
                 &fav,
+                &mut self.audio,
+                &mut rng,
             ),
             // `ChestUI.Restock` (`:871-995`) — the single PlaySound(7) on a
-            // moved item (`:991-994`) stays out with the existing cue stance.
+            // moved item (`:991-994`), S1-P-i43's faithful-cue decision.
             _ => {
-                let _ =
-                    crate::bank::restock(&mut wc.slots, &mut self.inventory, &mut self.equip.ammo);
+                let _ = crate::bank::restock(
+                    &mut wc.slots,
+                    &mut self.inventory,
+                    &mut self.equip.ammo,
+                    &fav,
+                    &mut self.audio,
+                    &mut rng,
+                );
             }
         }
+        *self.rngs.global() = rng;
     }
 
     /// `ChestUI.cs:304-306` → `ItemSorting.SortChest` (`ItemSorting.cs:1629-1653`)
@@ -2109,6 +2485,14 @@ impl App {
             chest::quick_transfer_from_slot(self, abs);
             return;
         }
+        // The busy gates (S1-P-i48): `LeftClick` `:922-926` /
+        // `RightClick` `:1644-1647` — the same swing/itemTime refusals the
+        // grid arm applies.
+        if (left && (self.swing > 0.0 || self.item_time > 0.0))
+            || (!left && self.swing > 0.0)
+        {
+            return;
+        }
         if left {
             let mut held = self.mouse_item;
             // The chest slot IS an `ItemSlot` now (M3-CHEST-INT) — the
@@ -2131,6 +2515,45 @@ impl App {
                 .force_slot_state(abs as i32, 3, target.kind, target.count);
         }
         if right_held {
+            // `RightClick`'s ctx-3 swap block (`ItemSlot.cs:1658-1697`,
+            // S1-P-i48): an air cursor or one that cannot stack with the
+            // cell enters the `HasItemSwap` cycle then the `SwapEquip`
+            // ladder before the paced pickup split.
+            let target = chest::chest_slot(&self.world_chests, chest_idx, abs).unwrap_or(EMPTY_SLOT);
+            let can_stack = crate::bank::can_stack(&self.mouse_item, &target);
+            if self.mouse_item.count == 0 || !can_stack {
+                if target.count == 1 && crate::sortdata::HAS_ITEM_SWAP.get(target.kind) {
+                    // `:1668-1675` — the variant cycle on the press edge.
+                    if self.ui_right_press {
+                        let mut item = target;
+                        if let Some(new_kind) = crate::app::equip_swap::try_item_swap(&mut item) {
+                            chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, item);
+                            self.audio
+                                .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+                            self.stack_split = 30; // `:2007`
+                            self.ui_right_press = false; // `:2008`
+                        }
+                    }
+                    return;
+                }
+                if target.count == 1
+                    && target.kind > 0
+                    && (crate::app::equip_swap::can_be_equipped(&target)
+                        || registry::get(target.kind).is_some_and(|d| d.dye > 0))
+                {
+                    // `:1685-1697` — `SwapEquip` on the press edge. The
+                    // chest-source favourite clear has no port key space
+                    // (the favourites are grid-positional); the
+                    // `SendData(32)` MP tail (`:3359-3362`) is unported.
+                    if self.ui_right_press {
+                        let mut item = target;
+                        if self.swap_equip_click(None, &mut item) {
+                            chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, item);
+                        }
+                    }
+                    return;
+                }
+            }
             self.chest_slot_stack_split(abs);
         }
     }
@@ -2141,8 +2564,11 @@ impl App {
     /// then `mouseItem.stack++` / `slot--` (`:1738-1742`); the emptied slot
     /// turns to air (`:1743-1746`). Returns false when the `:1707` gate
     /// refuses (an air slot, or an alien/full cursor). The `:1728-1735`
-    /// favourite carry is unreachable here — the port's right-click slots
-    /// cannot be favourited.
+    /// favourite carry (a favourited stack of 1 moves its flag onto the
+    /// cursor clone) is unrepresentable in the port's slot-positional
+    /// favourite model — the grid slots CAN be favourited (`toggle_favorite`),
+    /// but the cursor carries no flag; the recorded research/20 §4 deviation
+    /// (favourites follow the slot, not the item).
     fn pickup_one_into_mouse(&mut self, slot: &mut ItemSlot) -> bool {
         if slot.kind == 0 || slot.count == 0 {
             return false;
@@ -2172,9 +2598,10 @@ impl App {
     /// `PickupItemIntoMouse` transfers, sound 12 (`:1710`) and
     /// `RefreshStackSplitCooldown` (`:1774-1784`) after each. Returns the
     /// (possibly drained) slot so the caller can write it back to its
-    /// container. The ctx-0/3 `SwapEquip` arm (`:1685-1697`) and the
-    /// OpenableBag/HasItemSwap arms (`:1660-1675`) have no equip/swap state in
-    /// the port.
+    /// container. The ctx-0/3 `SwapEquip` ladder (`:1685-1697`) and the
+    /// `HasItemSwap` cycle (`:1668-1675`) run in the callers BEFORE this split
+    /// (S1-P-i48); the OpenableBag arm (`:1660-1667`) has no container-opening
+    /// state in the port.
     fn right_click_split(&mut self, mut slot: ItemSlot) -> ItemSlot {
         if self.stack_split > 1 || slot.kind == 0 || slot.count == 0 {
             return slot; // `:1700`
@@ -2600,49 +3027,67 @@ mod tests {
         let acc = slot(15, 1);
         let mat = slot(2, 1);
         let plain = slot(4, 1);
+        // The ctx 8-11 gate reads the live player + armour set (S1-P-i48).
+        let p = crate::player::Player::spawn(&tr_core::world::World::new("t".into(), 64, 800));
+        let armor = [EMPTY_SLOT; crate::inv::ARMOR];
+        let eq = Some((&p, &armor));
 
         // `:1490-1492`, `:1505-1507`, `:1521-1523`, `:1629-1632`: the
         // unconditional accept contexts (action 0).
         for ctx in [0, 3, 6, 30] {
-            assert_eq!(pick_item_movement_action(ctx, &plain, 0, &air), 0);
+            assert_eq!(pick_item_movement_action(ctx, &plain, 0, &air, None), 0);
         }
         // `:1493-1498`, `:1499-1504`: the coin/ammo rows.
-        assert_eq!(pick_item_movement_action(1, &slot(71, 1), 0, &air), 0);
-        assert_eq!(pick_item_movement_action(1, &air, 0, &air), 0);
-        assert_eq!(pick_item_movement_action(1, &plain, 0, &air), -1);
-        assert_eq!(pick_item_movement_action(2, &slot(40, 1), 0, &air), 0);
-        assert_eq!(pick_item_movement_action(2, &plain, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(1, &slot(71, 1), 0, &air, None), 0);
+        assert_eq!(pick_item_movement_action(1, &air, 0, &air, None), 0);
+        assert_eq!(pick_item_movement_action(1, &plain, 0, &air, None), -1);
+        assert_eq!(pick_item_movement_action(2, &slot(40, 1), 0, &air, None), 0);
+        assert_eq!(pick_item_movement_action(2, &plain, 0, &air, None), -1);
         // `:1524-1529`.
-        assert_eq!(pick_item_movement_action(7, &mat, 0, &air), 0);
-        assert_eq!(pick_item_movement_action(7, &plain, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(7, &mat, 0, &air, None), 0);
+        assert_eq!(pick_item_movement_action(7, &plain, 0, &air, None), -1);
         // `:1530-1538`: the armour/vanity/accessory rows by `slot % 10`.
-        assert_eq!(pick_item_movement_action(8, &head, 0, &air), 1);
-        assert_eq!(pick_item_movement_action(8, &body, 0, &air), -1);
-        assert_eq!(pick_item_movement_action(9, &body, 1, &air), 1);
-        assert_eq!(pick_item_movement_action(10, &acc, 3, &air), 1);
-        assert_eq!(pick_item_movement_action(10, &head, 3, &air), -1);
-        assert_eq!(pick_item_movement_action(11, &leg, 2, &air), 1);
+        assert_eq!(pick_item_movement_action(8, &head, 0, &air, eq), 1);
+        assert_eq!(pick_item_movement_action(8, &body, 0, &air, eq), -1);
+        assert_eq!(pick_item_movement_action(9, &body, 1, &air, eq), 1);
+        assert_eq!(pick_item_movement_action(10, &acc, 3, &air, eq), 1);
+        assert_eq!(pick_item_movement_action(10, &head, 3, &air, eq), -1);
+        assert_eq!(pick_item_movement_action(11, &leg, 2, &air, eq), 1);
+        // S1-P-i48 — the duplicate half: the vanity set's helmet blocks the
+        // real row (`CanEquipInArmorSlot` `:1455`), and a second same-kind
+        // accessory in another slot is refused (`:1471-1475`).
+        let mut armor2 = armor;
+        armor2[10] = head;
+        let eq2 = Some((&p, &armor2));
+        assert_eq!(pick_item_movement_action(8, &head, 0, &air, eq2), -1);
+        let mut armor3 = armor;
+        armor3[3] = acc;
+        let eq3 = Some((&p, &armor3));
+        assert_eq!(pick_item_movement_action(10, &acc, 4, &air, eq3), -1);
+        assert_eq!(pick_item_movement_action(10, &acc, 3, &air, eq3), 1);
+        // Air always passes, even with no player state (`:1534`).
+        assert_eq!(pick_item_movement_action(10, &air, 3, &air, None), 1);
         // `:1560-1565`: the dye rows take anything (action 2).
-        assert_eq!(pick_item_movement_action(12, &plain, 0, &air), 2);
-        assert_eq!(pick_item_movement_action(33, &plain, 0, &air), 2);
+        assert_eq!(pick_item_movement_action(12, &plain, 0, &air, None), 2);
+        assert_eq!(pick_item_movement_action(33, &plain, 0, &air, None), 2);
         // `:1539-1544`: display-doll armour, strictly `> 0`.
-        assert_eq!(pick_item_movement_action(23, &head, 0, &air), 1);
-        assert_eq!(pick_item_movement_action(23, &body, 0, &air), -1);
-        assert_eq!(pick_item_movement_action(23, &acc, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(23, &head, 0, &air, None), 1);
+        assert_eq!(pick_item_movement_action(23, &body, 0, &air, None), -1);
+        assert_eq!(pick_item_movement_action(23, &acc, 0, &air, None), -1);
         // `:1551-1559`: display-doll accessory.
-        assert_eq!(pick_item_movement_action(24, &acc, 0, &air), 1);
-        assert_eq!(pick_item_movement_action(24, &head, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(24, &acc, 0, &air, None), 1);
+        assert_eq!(pick_item_movement_action(24, &head, 0, &air, None), -1);
         // `:1545-1550`: the hat rack takes a head item.
-        assert_eq!(pick_item_movement_action(26, &head, 0, &air), 1);
-        assert_eq!(pick_item_movement_action(26, &body, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(26, &head, 0, &air, None), 1);
+        assert_eq!(pick_item_movement_action(26, &body, 0, &air, None), -1);
         // `:1622-1627`: the creative arm (air over a filled slot, action 5).
-        assert_eq!(pick_item_movement_action(29, &air, 0, &plain), 5);
-        assert_eq!(pick_item_movement_action(29, &air, 0, &air), -1);
-        assert_eq!(pick_item_movement_action(29, &plain, 0, &mat), -1);
+        assert_eq!(pick_item_movement_action(29, &air, 0, &plain, None), 5);
+        assert_eq!(pick_item_movement_action(29, &air, 0, &air, None), -1);
+        assert_eq!(pick_item_movement_action(29, &plain, 0, &mat, None), -1);
         // `:1566-1579`: the shop sell (3) / buy (4) ladder.
-        assert_eq!(pick_item_movement_action(15, &air, 0, &plain), 3);
-        assert_eq!(pick_item_movement_action(15, &plain, 0, &air), 4);
-        assert_eq!(pick_item_movement_action(15, &plain, 0, &mat), -1);
+        assert_eq!(pick_item_movement_action(15, &air, 0, &plain, None), 3);
+        assert_eq!(pick_item_movement_action(15, &plain, 0, &air, None), 4);
+        assert_eq!(pick_item_movement_action(15, &plain, 0, &mat, None), -1);
     }
 
     /// A headless app with the inventory open and an open chest (index 0,
@@ -2656,6 +3101,7 @@ mod tests {
             slots,
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         });
         app.player = Some(crate::player::Player::spawn(&app.world));
         let p = app.player.as_mut().unwrap();
@@ -3084,6 +3530,7 @@ mod tests {
             slots: vec![],
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         });
         app.player.as_mut().unwrap().chest = 0;
         app.mouse_pos = tile_click(40, 10);
@@ -3240,8 +3687,8 @@ mod tests {
             "the slot handler never saw the click"
         );
         assert_eq!(
-            app.equip.coins[0].count, 50,
-            "the coins ride the coin rows first"
+            app.equip.coins[3].count, 50,
+            "the coins ride the coin rows first (row 53, the descending empty fill)"
         );
         assert_eq!(
             app.world_chests[0].slots[1].count, 0,
@@ -3294,8 +3741,8 @@ mod tests {
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
         assert_eq!(
-            app.equip.coins[0].count, 50,
-            "the coins still ride the rows"
+            app.equip.coins[3].count, 50,
+            "the coins still ride the rows (row 53, the descending empty fill)"
         );
         assert!(
             app.world_chests[0].slots.iter().all(|s| s.count == 0),
@@ -4046,6 +4493,12 @@ mod tests {
         app.ui_left_press = true;
         app.handle_chest_clicks();
         app.handle_inventory_clicks();
+        // S1-P-i54 — the click buffers the request (`Main.cs:43622`
+        // `changeItem` -> `Player.cs:25087-25091` `Select`); the live slot
+        // changes on the player tick (`selectedItemState.Update`,
+        // `:25218`), not on the click.
+        assert_eq!(app.selection.buffered, 3, "the select buffered");
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
         assert_eq!(app.selected, 3, "the select ran");
         assert!(app.favorite_slots.is_empty(), "context 13 cannot favorite");
     }
@@ -4517,6 +4970,250 @@ mod tests {
         assert_eq!(app.equip.armor[0], slot(237, 1), "the real row");
         assert_eq!(app.equip.armor[10], slot(89, 1), "the vanity row");
     }
+
+    // ------------------------------------------------------------------
+    // S1-P-i48 — the accessory equip interaction fixes.
+    // ------------------------------------------------------------------
+
+    /// `CanEquipInArmorSlot`'s duplicate half (`ItemSlot.cs:1469-1481`)
+    /// through the click: a second Copper Watch refuses every OTHER real
+    /// accessory slot, but its own occupied slot still takes the one-for-one
+    /// swap (`LeftClick` action 1, `:1020-1023`).
+    #[test]
+    fn s1_p_i48_a_duplicate_accessory_refuses_the_other_slots() {
+        let mut app = inv_app();
+        app.equip.armor[3] = slot(15, 1);
+        app.mouse_item = slot(15, 1);
+        // Slot 4 is refused — the collision is at slot 3, not here.
+        app.mouse_pos = equip_mouse(&app, 0, 10, 4);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[4].count, 0, "the duplicate refused");
+        assert_eq!(app.mouse_item, slot(15, 1), "the cursor keeps it");
+        // The collision slot itself accepts the placement
+        // (`CanEquipAccessoryInSlot` `:3535` — `slot == collisionSlot`); a
+        // DIFFERENT prefix makes `IsNotTheSameAs` true (`Item.cs:49847-49854`)
+        // so the one-for-one swap (`:1020-1023`) runs.
+        app.mouse_item = prefixed(15, 1, 65);
+        app.mouse_pos = equip_mouse(&app, 0, 10, 3);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[3], prefixed(15, 1, 65), "the swap ran");
+        assert_eq!(app.mouse_item, slot(15, 1), "the old watch came back");
+    }
+
+    /// The vanity column's duplicate half (`ItemSlot.cs:1477-1480`): a
+    /// vanity placement refuses when the REAL column already wears the same
+    /// kind (`HasSameItemInSlot(check, AccSlots)`). The show+stats pair is
+    /// the RIGHT-click `ArmorSwap` path's business (`:3589` checks the
+    /// opposite column only), not the left-click gate's.
+    #[test]
+    fn s1_p_i48_the_vanity_column_refuses_a_worn_real_accessory() {
+        let mut app = inv_app();
+        app.equip.armor[3] = slot(15, 1);
+        app.mouse_item = slot(15, 1);
+        app.mouse_pos = equip_mouse(&app, 0, 11, 13);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[13].count, 0, "`:1479` HasSameItemInSlot(AccSlots)");
+        assert_eq!(app.mouse_item, slot(15, 1));
+    }
+
+    /// `CanEquipBothAccessories`' two-wings arm (`ItemSlot.cs:3457-3464`)
+    /// through the right-click ladder: with Demon Wings worn, a right-click
+    /// on Angel Wings lands on the WORN wing's slot (the collision target,
+    /// `ArmorSwap` `:3609-3614`) — it swaps the wings, never doubles them.
+    #[test]
+    fn s1_p_i48_the_second_wings_pair_swaps_the_worn_slot() {
+        let mut app = inv_app();
+        app.equip.armor[3] = slot(492, 1);
+        app.inventory[0] = slot(493, 1);
+        app.mouse_pos = INV_SLOT_0;
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[3], slot(493, 1), "the wings swapped");
+        assert_eq!(app.inventory[0], slot(492, 1), "the old wings came back");
+        assert_eq!(app.equip.armor[4].count, 0, "no second pair");
+    }
+
+    /// The left-click gate refuses the second wings pair in another slot
+    /// (`CanEquipAccessoryInSlot` over the wings collision).
+    #[test]
+    fn s1_p_i48_the_left_click_refuses_a_second_wings_pair() {
+        let mut app = inv_app();
+        app.equip.armor[3] = slot(492, 1);
+        app.mouse_item = slot(493, 1);
+        app.mouse_pos = equip_mouse(&app, 0, 10, 4);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[4].count, 0);
+        assert_eq!(app.mouse_item, slot(493, 1));
+    }
+
+    /// `TryItemSwap` through the grid right-click (`ItemSlot.cs:1668-1675`):
+    /// an Ammo Cycler cycles its mode IN PLACE instead of equipping, plays
+    /// the Unlock cue (`AfterItemSwap` `:2001`), arms `stackSplit = 30`
+    /// (`:2007`) and consumes the press edge (`:2008`).
+    #[test]
+    fn s1_p_i48_right_click_cycles_the_ammo_cycler_in_place() {
+        let mut app = inv_app();
+        app.inventory[0] = slot(6168, 1);
+        app.mouse_pos = INV_SLOT_0;
+        let before = app.audio.played_count();
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[0].kind, 6169, "6168 -> 6169 (`:1973-1976`)");
+        assert_eq!(app.equip.armor[3].count, 0, "NOT equipped");
+        assert_eq!(app.stack_split, 30, "`:2007`");
+        assert!(!app.ui_right_press, "`:2008` consumed the edge");
+        assert_eq!(app.audio.played_count(), before + 1, "one cue");
+        // The full cycle returns to the start.
+        for expect in [6193u16, 6194, 6168] {
+            app.ui_right_press = true;
+            app.handle_inventory_clicks();
+            assert_eq!(app.inventory[0].kind, expect);
+        }
+    }
+
+    /// The same cycle on a WORN cycler (ctx 10, `canItemSwapAt[10]`,
+    /// `ItemSlot.cs:455`): the mode changes in the accessory slot.
+    #[test]
+    fn s1_p_i48_right_click_cycles_a_worn_cycler() {
+        let mut app = inv_app();
+        app.equip.armor[3] = slot(6168, 1);
+        app.mouse_pos = equip_mouse(&app, 0, 10, 3);
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[3].kind, 6169);
+        assert_eq!(app.stack_split, 30);
+    }
+
+    /// The busy gates (`ItemSlot.cs:922-926` / `:1644-1647`): while the
+    /// swing runs (`App::swing` = `itemAnimation > 0`) neither button moves
+    /// equipment; the use cooldown (`App::item_time`) blocks the left only.
+    #[test]
+    fn s1_p_i48_the_swing_blocks_the_equip_clicks() {
+        let mut app = inv_app();
+        app.mouse_item = slot(89, 1);
+        app.mouse_pos = equip_mouse(&app, 0, 8, 0);
+        app.swing = 0.2;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[0].count, 0, "the swing refused the left");
+        assert_eq!(app.mouse_item, slot(89, 1));
+        // The right-click pickup is refused too (`:1644-1647`).
+        app.mouse_item = EMPTY_SLOT;
+        app.equip.armor[0] = slot(89, 1);
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[0], slot(89, 1), "the swing refused the right");
+        assert_eq!(app.mouse_item.count, 0);
+        // itemTime alone blocks the LEFT (`:923`'s `itemTime != 0`).
+        app.swing = 0.0;
+        app.item_time = 0.1;
+        app.mouse_item = slot(80, 1);
+        app.mouse_pos = equip_mouse(&app, 0, 8, 1);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[1].count, 0, "itemTime refused the left");
+        // ... but not the right (`:1644` reads itemAnimation only).
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_pos = equip_mouse(&app, 0, 8, 0);
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(89, 1), "the right still picks up");
+    }
+
+    /// The Demon Heart unlock through the ladder (S1-P-i48): with rows 3..=7
+    /// full, a new accessory falls back to row 3 while locked
+    /// (`IsItemSlotUnlockedAndUsable` `:12585-12595`), and lands on row 8
+    /// once `extraAccessory` + expert mode arm — the SAME gate the sim's
+    /// grant loop reads (`Player.cs:12948`).
+    #[test]
+    fn s1_p_i48_the_demon_heart_opens_row_eight_to_the_ladder() {
+        let mut app = inv_app();
+        for i in 3..8 {
+            app.equip.armor[i] = slot(16 + i as u16, 1);
+        }
+        app.inventory[0] = slot(212, 1);
+        app.mouse_pos = INV_SLOT_0;
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[3], slot(212, 1), "locked: the :3618 fallback");
+        assert_eq!(app.inventory[0].kind, 16 + 3, "the old row-3 item came back");
+        // Unlock and retry with a fresh accessory.
+        let p = app.player.as_mut().unwrap();
+        p.extra_accessory = true;
+        p.buffs.expert_mode = true;
+        app.inventory[0] = slot(285, 1);
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[8], slot(285, 1), "row 8 joined the scan");
+        assert_eq!(app.inventory[0].count, 0);
+    }
+
+    /// S1-P-i48 — the ctx-3 chest `RightClick` ladder (`ItemSlot.cs:1685-1697`
+    /// with `canItemSwapAt[3]` `:454`): a single wearable in a chest cell
+    /// right-clicks into its equipment row on the press edge (the `SwapEquip`
+    /// arm, `:3348-3358` -> `ArmorSwap`), NOT onto the cursor.
+    #[test]
+    fn s1_p_i48_the_chest_cell_right_click_equips_a_wearable() {
+        let mut app = chest_app(vec![slot(15, 1)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.equip.armor[3], slot(15, 1), "the ladder equipped it");
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(EMPTY_SLOT));
+        assert_eq!(app.mouse_item.count, 0, "not a pickup");
+        // The `HasItemSwap` cycle comes FIRST (`:1668-1675`): a chest cycler
+        // changes mode in place instead of equipping.
+        let mut app = chest_app(vec![slot(6168, 1)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(6169, 1)),
+            "cycled, not equipped"
+        );
+        assert_eq!(app.equip.armor[3].count, 0);
+        assert_eq!(app.stack_split, 30, "`AfterItemSwap` `:2007`");
+    }
+
+    /// S1-P-i53 — the accessory vanity pair swaps through the ctx-11 arm
+    /// too (`ItemSlot.cs:1678-1684`): a real accessory in `armor[3]` and a
+    /// vanity one in `armor[13]` trade on the vanity cell's right-click —
+    /// `CanEquipAccessoryInSlot` (`:3531-3538`) admits the swap while no
+    /// OTHER slot carries an incompatible accessory.
+    #[test]
+    fn s1_p_i53_right_click_swaps_the_accessory_vanity_pair() {
+        let mut app = inv_app();
+        app.equip.armor[3] = slot(15, 1); // Copper Watch — real accessory
+        app.equip.armor[13] = slot(16, 1); // Aglet — vanity accessory
+        app.mouse_pos = equip_mouse(&app, 0, 11, 13);
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[3], slot(16, 1), "the real row took the aglet");
+        assert_eq!(app.equip.armor[13], slot(15, 1), "the vanity row the watch");
+    }
+
+    /// S1-P-i53 — the ammo row (ctx 2) has NO `SwapEquip` arm: the C#'s
+    /// `:1685-1697` switch covers contexts 0/3/4/32 only (`InventoryAmmo =
+    /// 2`, `ItemSlot.cs:48`), so a single ammo stack right-clicks into the
+    /// paced pickup — no "quick-equip" jump exists in the source.
+    #[test]
+    fn s1_p_i53_the_ammo_row_right_click_only_splits() {
+        let mut app = inv_app();
+        app.equip.ammo[0] = slot(40, 1); // Wooden Arrow
+        app.mouse_pos = AMMO_SLOT_0;
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(40, 1), "one onto the cursor (`:1707`)");
+        assert_eq!(app.equip.ammo[0].count, 0, "the cell drained, nothing equipped");
+        assert_eq!(app.equip_page_selected, 0, "no equip-page jump");
+    }
 }
 
 #[cfg(test)]
@@ -4547,6 +5244,7 @@ mod s1_h_7_tests {
         );
         let available = craft::available(
             &app.inventory,
+            &app.equip,
             &app.world_chests,
             &in_range,
             &adj,
@@ -4701,6 +5399,7 @@ mod s1_h_7_tests {
         );
         app.craft_filters.shown(craft::available(
             &app.inventory,
+            &app.equip,
             &app.world_chests,
             &in_range,
             &adj,
@@ -4798,6 +5497,7 @@ mod s1_h_7_tests {
         );
         let available = craft::available(
             &app.inventory,
+            &app.equip,
             &app.world_chests,
             &in_range,
             &adj,
@@ -5029,5 +5729,258 @@ mod housing_query_tests {
         app.mouse_npc_type = 17; // the slot holds a Guide, not a Merchant
         app.refresh_mouse_npc();
         assert_eq!((app.mouse_npc_index, app.mouse_npc_type), (-1, 0));
+    }
+}
+
+/// S1-P-i44 — the shop CLICK witnesses: the ctx-15 grid dispatch
+/// (`Main.cs:41811-41814` → `ItemSlot.HandleShopSlot`), the cursor-10
+/// Shift-sell (`ItemSlot.cs:851-869` + `GetSellOrTrash` `:198-209`) and
+/// the shop grid's geometry (`Main.cs:41807-41811`). Written, not run.
+#[cfg(test)]
+mod s1_p_i44_shop_click_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// Inside the shop grid's cell (0, 0) — the drawn 52·0.755 px cell at
+    /// (73, 258) (`Main.cs:41807-41808`, `ui::inventory::shop_slot_pos`).
+    const SHOP_SLOT_0: Vec2 = Vec2::new(90.0, 270.0);
+    /// Inside the shop grid's cell (1, 0) — x = (int)(73 + 56·0.755) = 115.
+    const SHOP_SLOT_1: Vec2 = Vec2::new(130.0, 270.0);
+
+    fn shop_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.shop_npc = Some(0);
+        app.shop_stock =
+            crate::shop::resolve_stock_entries(1, &crate::shop::ShopFlags::default(), &[]);
+        app.shop_mood = 1.0;
+        app.coins = 1_000_000;
+        app
+    }
+
+    #[test]
+    fn the_shop_grid_geometry_matches_the_draw() {
+        // `Main.cs:41807-41808`: `(int)(73 + i*56*0.755)`,
+        // `(int)(258 + j*56*0.755)` — the same truncation the chest panel
+        // uses (`ChestUI.cs:379-380`).
+        assert_eq!(ui::inventory::shop_slot_pos(0, 0), Vec2::new(73.0, 258.0));
+        assert_eq!(ui::inventory::shop_slot_pos(1, 0), Vec2::new(115.0, 258.0));
+        assert_eq!(ui::inventory::shop_slot_pos(0, 1), Vec2::new(73.0, 300.0));
+        // The hit test is inclusive on all four edges (`:41811`).
+        assert_eq!(ui::inventory::shop_slot_at(Vec2::new(73.0, 258.0), 52.0), Some(0));
+        assert_eq!(ui::inventory::shop_slot_at(SHOP_SLOT_1, 52.0), Some(1));
+        // The last cell (9, 3): x = (int)(73 + 9·42.28) = 453, y = 384.
+        assert_eq!(ui::inventory::shop_slot_pos(9, 3), Vec2::new(453.0, 384.0));
+        assert_eq!(ui::inventory::shop_slot_at(Vec2::new(460.0, 390.0), 52.0), Some(39));
+        // Off-grid: nothing.
+        assert_eq!(ui::inventory::shop_slot_at(Vec2::new(60.0, 270.0), 52.0), None);
+        assert_eq!(ui::inventory::shop_slot_at(Vec2::new(90.0, 440.0), 52.0), None);
+    }
+
+    #[test]
+    fn the_left_click_buys_one_unit_onto_the_cursor() {
+        // `ItemSlot.HandleShopSlot` (`:2053-2095`): one unit per press at
+        // superFastStack 0; the charge is the row's buying value; the
+        // stack-split cooldown arms (`RefreshStackSplitCooldown`, `:2089`).
+        let mut app = shop_app();
+        app.mouse_pos = SHOP_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (88, 1));
+        assert_eq!(app.coins, 1_000_000 - 40000);
+        assert_eq!(app.stack_split, 30, "the 0 → 30 arm (`:1776-1778`)");
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 1);
+        // The cooldown gates the next press (`:2043`'s stackSplit <= 1).
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 1, "the split gate holds the repeat");
+        // Once the cooldown decays the buy repeats.
+        app.stack_split = 0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 2);
+        assert_eq!(app.coins, 1_000_000 - 80000);
+    }
+
+    #[test]
+    fn the_right_click_buys_paced() {
+        // `RightClick`'s ctx-15 arm (`ItemSlot.cs:1648-1651`): the held
+        // right button buys through the same HandleShopSlot gate.
+        let mut app = shop_app();
+        app.mouse_pos = SHOP_SLOT_0;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (88, 1));
+        assert_eq!(app.coins, 1_000_000 - 40000);
+    }
+
+    #[test]
+    fn the_full_cursor_refuses_the_buy() {
+        // `:2055-2058`: a cursor at its maxStack skips the unit — the
+        // purse and the memo stay untouched.
+        let mut app = shop_app();
+        app.mouse_item = ItemSlot {
+            kind: 88,
+            name: crate::registry::name(88),
+            count: crate::registry::max_stack(88),
+            prefix: 0,
+        };
+        app.mouse_pos = SHOP_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.coins, 1_000_000);
+        assert_eq!(app.shop_sellback.get_amount(88, 0), 0);
+    }
+
+    #[test]
+    fn the_alien_cursor_refuses_the_buy() {
+        // `:2043`: a non-air cursor that cannot stack with the row refuses
+        // (`Item.CanStack`, `Item.cs:49865-49871`).
+        let mut app = shop_app();
+        app.mouse_item = ItemSlot {
+            kind: 9,
+            name: crate::registry::name(9),
+            count: 3,
+            prefix: 0,
+        };
+        app.mouse_pos = SHOP_SLOT_0;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.kind, 9, "the cursor keeps its own stack");
+        assert_eq!(app.coins, 1_000_000);
+    }
+
+    #[test]
+    fn the_held_stack_sells_into_an_empty_shop_cell() {
+        // `PickItemMovementAction` ctx 15 action 4 (`:1575-1578`) →
+        // `LeftClick`'s case 4 (`:1222-1241`): SellItem pays out,
+        // AddItemToShop re-stocks, the cursor turns to air, stackSplit
+        // locks at 9999 (`:1239`).
+        let mut app = shop_app();
+        // Cell 39 is past the Merchant's stock — an air cell.
+        app.mouse_pos = Vec2::new(460.0, 390.0);
+        app.mouse_item = ItemSlot {
+            kind: 8, // Torch, value 50 → 10 per unit
+            name: crate::registry::name(8),
+            count: 5,
+            prefix: 0,
+        };
+        let stock_len = app.shop_stock.len();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.coins, 1_000_000 + 50);
+        assert_eq!(app.mouse_item.count, 0, "the cursor turns to air");
+        assert_eq!(app.stack_split, 9999);
+        assert_eq!(app.shop_stock.len(), stock_len + 1);
+        let e = app.shop_stock[stock_len];
+        assert!(e.buy_once);
+        assert_eq!((e.item, e.stack), (8, 5));
+    }
+
+    #[test]
+    fn the_value_zero_item_still_enters_the_shop() {
+        // `ItemSlot.cs:1232-1238`: a value-0 item pays nothing but still
+        // re-stocks (sound 7). Wood 9 is value 0.
+        let mut app = shop_app();
+        app.mouse_pos = Vec2::new(460.0, 390.0);
+        app.mouse_item = ItemSlot {
+            kind: 9,
+            name: crate::registry::name(9),
+            count: 4,
+            prefix: 0,
+        };
+        let stock_len = app.shop_stock.len();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.coins, 1_000_000, "no payout on a value-0 item");
+        assert_eq!(app.mouse_item.count, 0);
+        assert_eq!(app.shop_stock.len(), stock_len + 1);
+        assert_eq!(app.shop_stock[stock_len].stack, 4);
+    }
+
+    #[test]
+    fn the_shift_click_sells_from_the_inventory_grid() {
+        // `GetSellOrTrash` (`ItemSlot.cs:198-209`): with a shop open the
+        // Shift-hover lights cursor 10; the click runs the cursor-10 arm
+        // (`:851-869`) — the slot turns to air, the purse grows, the shop
+        // re-stocks the sold units.
+        let mut app = shop_app();
+        app.inventory[0] = ItemSlot {
+            kind: 8,
+            name: crate::registry::name(8),
+            count: 6,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::ShiftLeft);
+        // Grid slot 0's centre — (20 + 26·0.85, 20 + 26·0.85) ≈ (42, 42).
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        // The hover evaluation runs in the chest handler's head
+        // (`handle_chest_clicks` → `evaluate_cursor_override`); with no
+        // button held it evaluates and stands down.
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_SELL);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[0].count, 0, "the slot turns to air");
+        assert_eq!(app.coins, 1_000_000 + 60);
+        let last = app.shop_stock.last().unwrap();
+        assert!(last.buy_once);
+        assert_eq!((last.item, last.stack), (8, 6));
+    }
+
+    #[test]
+    fn the_coin_kinds_never_light_the_sell_cursor() {
+        // `GetSellOrTrash` (`:204-207`): types 71-74 answer null — the
+        // coin stacks cannot be sold.
+        let mut app = shop_app();
+        app.inventory[0] = ItemSlot {
+            kind: 71,
+            name: crate::registry::name(71),
+            count: 50,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "no sell cursor on coins");
+        // Without a shop the same hover lights the quick-trash cursor.
+        let mut app = shop_app();
+        app.close_shop();
+        app.inventory[0] = ItemSlot {
+            kind: 8,
+            name: crate::registry::name(8),
+            count: 6,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_TRASH);
+    }
+
+    #[test]
+    fn the_shift_buy_bulks_a_buy_once_row_ten_at_once() {
+        // `HandleShopSlot` (`:2047-2051`): Shift + a buyOnce row buys
+        // `GetBulkBuyAmount` = min(10, stack) units in one press.
+        let mut app = shop_app();
+        // A one-row stock: the buyOnce row sits at cell 0.
+        app.shop_stock = vec![crate::shop::ShopEntry {
+            item: 8,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: None,
+            buy_once: true,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 12,
+        }];
+        app.mouse_pos = SHOP_SLOT_0;
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 10, "ten units in one press");
+        assert_eq!(app.shop_stock[0].stack, 2);
+        // The buy price of a buyOnce torch row: 50/5 = 10 per unit.
+        assert_eq!(app.coins, 1_000_000 - 100);
     }
 }

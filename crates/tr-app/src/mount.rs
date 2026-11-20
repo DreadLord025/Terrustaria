@@ -1981,6 +1981,13 @@ pub(crate) fn can_use_hooks(id: i32) -> bool {
     matches!(id, 54 | 57..=60)
 }
 
+/// `MountID.Sets.DontDismountWhenCCed` (`MountID.cs:47`): the Rat 55, the
+/// Bat 56 and the Pixie 61 — `Mount.CanDismountWithResult` (`Mount.cs:6615`)
+/// refuses the dismount while the rider is `CCed`.
+pub(crate) fn dont_dismount_when_cced(id: i32) -> bool {
+    matches!(id, 55 | 56 | 61)
+}
+
 pub(crate) fn mount_type_of_item(item: u16) -> Option<i32> {
     MOUNT_ITEMS
         .iter()

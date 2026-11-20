@@ -764,6 +764,12 @@ pub struct Player {
     /// `Player.miscDyes[0..5]`'s kinds (`Player.cs:1494`; pet/light/cart/
     /// mount/hook). Filled from `App.equip` per tick.
     pub misc_dye_slots: [u16; 5],
+    /// `Player.hideMisc` (`Player.cs:1710` — a `BitsByte`; only bits 0/1
+    /// have writers, the pet/light-pet hides `:17344`/`:17353` and the
+    /// buff-bar cancel `Main.cs:43401`). The port models the two live bits
+    /// as a bool pair; the pet-grant arms (`:17303`/`:17318`) are unported,
+    /// so no consumer re-shows the visual yet (ANALYSIS).
+    pub hide_misc: [bool; 2],
     /// `UpdateDyes`' `c*` cache (`Player.cs:9587-9757`) — the dye pass each
     /// draw layer applies (the `DrawData.shader` source, 0 = plain). The port
     /// fills the fields with draw consumers: the armor trio reads its dye
@@ -798,6 +804,19 @@ pub struct Player {
     /// `:33524-33525`), the per-tick range close's probe point.
     pub chest_x: i32,
     pub chest_y: i32,
+    /// `Player.editedChestName` (`Player.cs:1442`): the MP client's rename
+    /// flag — `ChestUI.RenameChestSubmit` sets it on a write under netMode 1
+    /// (`ChestUI.cs:855-859`), and the next `33 SyncPlayerChest` send carries
+    /// the name (`Main.TrySyncingMyPlayer`, `Main.cs:17575-17593`; the open
+    /// click's flush `Player.cs:33097-33101` / the dresser's `:32883-32887`
+    /// are the same seam). Cleared on the send (S1-P-i43).
+    pub edited_chest_name: bool,
+    /// The previous tick's `chest` snapshot for `Main.TrySyncingMyPlayer`'s
+    /// close-transition test (`Main.cs:17575` — `player` is the last-synced
+    /// copy; the port keeps just the chest index, the one field the rename
+    /// flush reads). Updated by `chest::tick_open` each player tick
+    /// (S1-P-i43).
+    pub prev_synced_chest: i32,
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
@@ -998,7 +1017,52 @@ pub struct Player {
     /// subtract from it. `CheckMana` pays `(int)(item.mana * manaCost)`
     /// (`:5881-5884`).
     pub mana_cost: f32,
+    /// `Player.statManaMax2` (`Player.cs:1932`): the effective mana cap —
+    /// `ResetEffects` rebases it to the permanent `mana_max_base`
+    /// (`:18389` `statManaMax2 = statManaMax`) and the per-tick grants
+    /// (the Arcane prefix 66's +20 `:13971-13974`, the Magic Power buff's
+    /// +20 `:11890`, the caster sets' `statManaMax2` rows) add on top.
     pub mana_max: i32,
+    /// `Player.potionDelay`/`manaPotionDelay` (`Player.cs:1650-1652`): the
+    /// Potion Sickness / Mana Potion cooldown clocks (S1-P-i37). Decremented
+    /// once per tick (`Player.cs:24718-24724`); the buff-21 mirror re-assigns
+    /// `potion_delay = buffTime[j]` from the debuff scan (`:11719-11722`);
+    /// `ApplyPotionDelay` (`:51853-51886`) arms it at the drink; `UpdateDead`
+    /// zeroes both (`:17018-17019`). `mana_potion_delay` stays 0 on the
+    /// retail path — `DebugOptions.ManaPotionDelay` (`Testing/DebugOptions.cs:28`,
+    /// static ctor `:86`) is false, its only writers (`:51941`, `:10322`)
+    /// are constants-off.
+    pub potion_delay: i32,
+    pub mana_potion_delay: i32,
+    /// `Player.manaSick`/`manaSickReduction` (`Player.cs:974-976`): the Mana
+    /// Sickness (buff 94) magic-damage penalty. `ResetEffects` clears
+    /// `manaSick` (`:18592`); the buff-94 arm (`:10318-10327`) re-arms it
+    /// through `potions::apply_mana_sickness_arm`. NOTE: the magic-damage
+    /// TAIL (`:25900-25911`) is owned by the i19 mana worker — this branch
+    /// only carries the fields + the buff arm (`potions::apply_magic_damage_sickness_tail`
+    /// is the tail's port, wired by i19's `Update` fold).
+    pub mana_sick: bool,
+    pub mana_sick_reduction: f32,
+    /// `Player.manaHeat` (`Player.cs:980`): reset to 1f every tick
+    /// (`:18593`). `ApplyManaPotionManaHeat` (`:51968-52004`) has NO caller
+    /// in the retail source (the only `TryApplyManaHeat` callers are the
+    /// mana-star pickups `:35071`/`:35087`, an unported lane) — drinking a
+    /// mana potion grants NO ManaHeat, so the field stays 1.
+    pub mana_heat: f32,
+    /// `Player.pStone` (`Player.cs:2404`): the Philosopher's Stone family —
+    /// 535 (`:15574-15577`), Charm of Myths 860 (`:15150-15153`), Catalyst
+    /// Band 6185 (`:14615-14620`). `ResetEffects` clears (`:18720`), the
+    /// accessory rows re-arm; a CHANGE rescales the live buff-21 timer
+    /// (`:25640-25643` -> `AdjustRemainingPotionSickness` `:28939-28952`).
+    pub p_stone: bool,
+    /// The previous tick's `pStone` — the `flag9` latch (`Player.cs:25477`)
+    /// the `:25640` change check compares against.
+    p_stone_prev: bool,
+    /// `Player.statManaMax` (`Player.cs:1931`): the PERMANENT mana cap —
+    /// the character file's `manaMax` (`:55226`, clamped to 200) and the
+    /// Mana Crystal's +20 use-grant (`:45276-45281`, unported). The
+    /// per-tick rebase reads it; nothing else writes it in play.
+    pub mana_max_base: i32,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -1025,8 +1089,49 @@ pub struct Player {
     /// pre-defense, crit-doubled) as mana, capped at `statManaMax2`, and calls
     /// `ManaEffect` (`:4531-4538`) — the port queues the HealMana combat text.
     /// The items' +40 `statManaMax2` stat rows ride C-12 (the accessory stat
-    /// chain); 2221's `manaMagnet` half is its own unported family.
+    /// chain); 2221's `manaMagnet` half rides `mana_magnet` below (S1-P-i52).
     pub magic_cuffs: bool,
+    /// `Player.goldRing` (`Player.cs:2642`) — the Gold Ring family's coin
+    /// grab-range/pull flag: 3033 Gold Ring (`:14980-14983`), 3034 Coin Ring
+    /// (`:14984-14989`, + the lucky coin), 3035 Greedy Ring (`:14990-14996`,
+    /// + the lucky coin + `discountEquipped` — the discount half has no port
+    /// consumer yet, the shop-price lane). `ResetEffects` clears it
+    /// (`:18504`); the consumers are `GetItemGrabRange` (`:35133`) and
+    /// `GrabItems`' pull arm (`:34961`).
+    pub gold_ring: bool,
+    /// `Player.hasLuckyCoin` (`Player.cs:2638`) — the Lucky Coin family's
+    /// melee-hit coin proc flag: 855 Lucky Coin (`:14975-14979`), 3034 Coin
+    /// Ring (`:14987`), 3035 Greedy Ring (`:14993`). `ResetEffects` clears it
+    /// (`:18760`). The consumer is `ApplyNPCOnHitEffects`' tail
+    /// (`:44537-44549`): `npc.value > 0 && hasLuckyCoin && Next(5) == 0`
+    /// drops 1-10 coins (the 1/10 silver + 1/100 gold upgrades). The
+    /// `hasLuck_LuckyCoin` luck twin (`:2650`) is always set/cleared with
+    /// this flag, so one bool carries both — the +0.05 equipment-luck add
+    /// is `update_equips`' tail gate (`:13066-13069`).
+    pub has_lucky_coin: bool,
+    /// `Player.manaMagnet` (`Player.cs:932`): the Celestial Magnet 2219
+    /// (`:14940-14943`), the Celestial Emblem 2220 (`:14944-14948`), the
+    /// Celestial Cuffs 2221 (`:14949-14953`) and the Magnet Flower 4000
+    /// (`:14455-14458`) arm it per tick; `ResetEffects` clears it (`:18491`).
+    /// `GetItemGrabRange` adds `Item.manaGrabRange = 300` for the star family
+    /// (`:35137-35140`, `Item.cs:49963`) and `GrabItems` pulls stars at
+    /// speed 12 / acc 5 (`:34943-34946`).
+    pub mana_magnet: bool,
+    /// `Player.lifeMagnet` (`Player.cs:934`): the Heartreach Potion's buff 105
+    /// arms it (`UpdateBuffs` `:10138-10141`); `ResetEffects` clears it
+    /// (`:18492`). `GetItemGrabRange` adds `Item.lifeGrabRange = 250` for the
+    /// heart family (`:35145-35148`, `Item.cs:49964`) and `GrabItems` pulls
+    /// hearts at speed 15 / acc 5 (`:34949-34952`).
+    pub life_magnet: bool,
+    /// `Player.latestManaPotionDamageBonus` / `latestManaPotionDuration`
+    /// (`Player.cs:982-984`): `TryApplyManaHeat` (`:52006-52014`) writes them
+    /// on every mana-star pickup (`PickupItem` `:35071`) — power 0.2, time 2 s
+    /// (120 ticks). The buff-396 effect arm (`:10328-10341`, the `manaHeat`
+    /// decay) and its `magicDamage *= manaHeat` consumer (`:25906`) are the
+    /// UpdateBuffs/damage-recalc census's seam — deferred (ANALYSIS
+    /// "Heart & star pickups (S1-P-i52)").
+    pub latest_mana_potion_damage_bonus: f32,
+    pub latest_mana_potion_duration: f32,
     /// The S1-C-7 wave B retaliate family (`Player.Hurt`, `Player.cs:38401-
     /// 38517`). The C# carries `Item` references (`starCloakItem`,
     /// `honeyCombItem`, the four `starCloakItem_*OverrideItem`s); the port
@@ -1148,6 +1253,18 @@ pub struct Player {
     /// released" latch the quick-grapple edge reads (`controlHook` +
     /// `releaseHook` → `QuickGrapple`).
     pub release_hook: bool,
+    /// `Player.releaseThrow` (`Player.cs:1766`, updated `:25248-25255`):
+    /// the throw-key release latch — `dropItemCheck`'s
+    /// `controlThrow && releaseThrow` edge (`:5147`) reads LAST tick's
+    /// value, so the drop fires on the press tick only. The field default
+    /// is `false` (C# bool), the port starts `true` like `release_hook`
+    /// so a key already held at world entry still edges once.
+    pub release_throw: bool,
+    /// `Player.JustDroppedAnItem` (`Player.cs:2426`): set by
+    /// `DropSelectedItem` (`:5213`), cleared when `itemAnimation` hits 0
+    /// (`:43338-43339`). Gates the held-item light/particle emissions
+    /// (`:42837`/`:42847`).
+    pub just_dropped_an_item: bool,
     /// `Player.grappling[0] != -1` (the per-tick rebuilt grapple state): the
     /// hook is attached and `GrappleMovement` drives the velocity.
     pub grappling_active: bool,
@@ -1408,6 +1525,11 @@ pub struct Player {
     /// `pending_hurt_sound` convention). The C# `CombatText.NewText` rect is
     /// the player's own hitbox at the hurt position.
     pending_mana_effect: Option<i32>,
+    /// `Player.HealEffect` (`Player.cs:4522-4529`): the heart pickup's heal
+    /// text (`PickupItem` `:35062` → `Heal` `:35117`) — the same queue
+    /// convention as `pending_mana_effect`, drained by the items pass (the
+    /// pickup site owns the combat-text pool + the `UpdatePlayers` stream).
+    pending_heal_effect: Option<i32>,
     /// S1-C-7 wave B: the accepted-hurt retaliation request (`Player.Hurt`'s
     /// `ImmunityCooldownID.Sets.Retaliate` block, `Player.cs:38401-38517`).
     /// `hurt_inner` has no NPC list / projectile pool, so it records the
@@ -2056,6 +2178,7 @@ impl Player {
             equipped: [0; 20],
             dye_slots: [0; 10],
             misc_dye_slots: [0; 5],
+            hide_misc: [false; 2],
             c_head: 0,
             c_body: 0,
             c_legs: 0,
@@ -2065,11 +2188,15 @@ impl Player {
             c_mount: 0,
             c_grapple: 0,
             release_hook: true,
+            release_throw: true,
+            just_dropped_an_item: false,
             equipped_prefix: [0; 20],
             banks: std::array::from_fn(|_| std::array::from_fn(|_| crate::item::EMPTY_SLOT)),
             chest: crate::bank::CHEST_CLOSED,
             chest_x: 0,
             chest_y: 0,
+            edited_chest_name: false,
+            prev_synced_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
@@ -2101,6 +2228,14 @@ impl Player {
             mana: 20,
             mana_cost: 1.0,
             mana_max: 20,
+            potion_delay: 0,
+            mana_potion_delay: 0,
+            mana_sick: false,
+            mana_sick_reduction: 0.0,
+            mana_heat: 1.0,
+            p_stone: false,
+            p_stone_prev: false,
+            mana_max_base: 20,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             black_belt: false,
@@ -2109,6 +2244,12 @@ impl Player {
             shadow_dodge: false,
             long_invince: false,
             magic_cuffs: false,
+            gold_ring: false,
+            has_lucky_coin: false,
+            mana_magnet: false,
+            life_magnet: false,
+            latest_mana_potion_damage_bonus: 0.0,
+            latest_mana_potion_duration: 0.0,
             star_cloak: false,
             star_veil_override: false,
             bee_cloak_override: false,
@@ -2220,6 +2361,7 @@ impl Player {
             wing_frame_counter: 0,
             pending_flap_sound: None,
             pending_mana_effect: None,
+            pending_heal_effect: None,
             pending_retaliate: None,
             pending_dismount: false,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
@@ -2656,6 +2798,47 @@ impl Player {
         self.pending_mana_effect.take()
     }
 
+    /// `Player.ManaEffect` (`Player.cs:4531-4538`): queue the HealMana
+    /// combat-text amount (S1-P-i37 — the mana-potion drink's
+    /// `ApplyLifeAndOrMana` `:51950` half; the cuffs' `Hurt` arm writes the
+    /// field directly, `:38299`). The caller owns `Main.combatText`.
+    pub(crate) fn queue_mana_effect(&mut self, amount: i32) {
+        self.pending_mana_effect = Some(amount);
+    }
+
+    /// Takes the queued heal text amount (`Player.HealEffect`,
+    /// `Player.cs:4522-4529`) — the caller owns `Main.combatText`
+    /// (the `take_mana_effect` convention).
+    pub(crate) fn take_heal_effect(&mut self) -> Option<i32> {
+        self.pending_heal_effect.take()
+    }
+
+    /// `Player.Heal(int)` (`Player.cs:35112-35123`): `statLife += amount`,
+    /// the local-player `HealEffect(amount)` text, THEN the `statLifeMax2`
+    /// cap — the text carries the RAW amount even when the cap eats part of
+    /// the heal (the heart at 95/100 heals 5 but prints 20). The NetMessage
+    /// 35 broadcast (`:4525-4528`) is MP-only.
+    pub(crate) fn heal(&mut self, amount: i32) {
+        self.hp += amount;
+        self.pending_heal_effect = Some(amount);
+        if self.hp > self.max_hp {
+            self.hp = self.max_hp;
+        }
+    }
+
+    /// `Player.TryApplyManaHeat(float power, float time)`
+    /// (`Player.cs:52006-52014`): the latest-bonus pair is written first,
+    /// then `AddBuff(396, (int)duration)` when both are non-zero. The
+    /// buff-396 arm's `manaHeat` decay (`:10328-10341`) is the deferred
+    /// UpdateBuffs census seam.
+    pub(crate) fn try_apply_mana_heat(&mut self, power: f32, time: f32) {
+        self.latest_mana_potion_damage_bonus = power;
+        self.latest_mana_potion_duration = time * 60.0;
+        if time != 0.0 && power != 0.0 {
+            self.buffs.add_buff(396, self.latest_mana_potion_duration as i32);
+        }
+    }
+
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
     /// (`Player.cs:38401-38517`) — the hit-moment snapshot (final post-floor
     /// `num2` + pre-knockback position/center/velocity). The caller owns the
@@ -2844,6 +3027,7 @@ impl Player {
         self.pending_sticky_dust.clear();
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
+        self.pending_heal_effect = None;
         self.pending_retaliate = None;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
@@ -2984,12 +3168,21 @@ impl Player {
         self.dead_time += 1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
         self.hp = 0;
+        // `Player.cs:17018-17019`: the dead tick zeroes both sickness clocks
+        // (the buff-21 slot itself survives until expiry — only the counters
+        // reset, exactly like the source).
+        self.potion_delay = 0;
+        self.mana_potion_delay = 0;
         self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
         // budget zeroes while dead — the pool stays until AI_062's dead-owner
         // flag read (M4-PROJ-8 phase 4) despawns the minions.
         self.num_minions = 0;
         self.slots_minions = 0.0;
+        // `Player.cs:17020` — `this.chest = -1`: the dead tick force-closes
+        // the open container SILENTLY (no sound — the range close's 11 never
+        // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
+        self.chest = crate::bank::CHEST_CLOSED;
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
@@ -3011,22 +3204,64 @@ impl Player {
     /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
     /// right-click removal — non-debuffs only, and not Petrified 60 /
     /// Webbed 151; the mount's own buff dismounts instead of removing the
-    /// buff (`Mount.CheckBuff`, `Mount.cs` — `data.buff == b`). The
-    /// `TryRemovingBuff_CheckBuffHideMisc` arms (`:43391-43402`) ride the
-    /// misc-equips pets (unported). Returns whether the arm entered (the
-    /// caller plays `SoundEngine.PlaySound(12)`'s MenuTick cue).
-    pub fn try_removing_buff(&mut self, i: usize, b: i32) -> bool {
+    /// buff (`Mount.CheckBuff`, `Mount.cs:2933-2936` — `data.buff == b`).
+    /// The dismount is `mount.TryDismount` (`:43377` → `Mount.cs:6137-6140`
+    /// → `CanDismountWithResult` `:6611-6624`): a refused dismount (CCed on
+    /// 55/56/61, or no room for the 20×42 shrink) keeps the buff — the C#
+    /// sets `flag = true` regardless of the `TryDismount` result
+    /// (`:43378`), so `DelBuff` never runs on the mount arm. The cart ride
+    /// hosts its own state (`cart_mounted`), so the cart rows route through
+    /// `try_cart_dismount` — the same `TryDismount` gates plus the ride
+    /// flags. `misc_buffs` carries `miscEquips[0..2].buffType` (the App
+    /// owns the arrays) for the `TryRemovingBuff_CheckBuffHideMisc` arms
+    /// (`:43380-43381`). Returns whether the arm entered (the caller plays
+    /// `SoundEngine.PlaySound(12)`'s MenuTick cue, `:43382`).
+    pub fn try_removing_buff(
+        &mut self,
+        world: &World,
+        i: usize,
+        b: i32,
+        misc_buffs: [i32; 2],
+    ) -> bool {
         if !crate::buffs::is_debuff(b) && b != 60 && b != 151 {
+            // `:43375-43379` — the mount arm; `flag` latches on the
+            // CheckBuff match, not on the dismount's success.
+            let mut mount_arm = false;
             if self.mount.is_active() && self.mount.data().map(|d| d.buff) == Some(b) {
-                if let Some(buff) = self.mount.dismount() {
-                    self.clear_buff_type(buff);
+                if self.cart_mounted {
+                    self.try_cart_dismount(world);
+                } else {
+                    self.try_dismount(world);
                 }
-            } else {
-                self.buffs.del_buff(i);
+                mount_arm = true;
+            }
+            // `:43380-43381` — the pet / light-pet hide arms.
+            self.check_buff_hide_misc(0, b, misc_buffs[0]);
+            self.check_buff_hide_misc(1, b, misc_buffs[1]);
+            if !mount_arm {
+                self.buffs.del_buff(i); // `:43385`
             }
             return true;
         }
         false
+    }
+
+    /// `Main.TryRemovingBuff_CheckBuffHideMisc` (`Main.cs:43390-43404`):
+    /// cancelling the equipped pet's / light pet's buff hides the misc
+    /// slot's visual (`hideMisc[slot] = true`) — but only while it is not
+    /// already hidden. The 101/102 light-pet buffs also match the Fairy
+    /// Bell's legacy `buffType == 27` (`:43395-43398`; item 425,
+    /// `Item.cs:6342`).
+    fn check_buff_hide_misc(&mut self, slot: usize, buff_id: i32, misc_buff: i32) {
+        if !self.hide_misc[slot] {
+            let mut matches = misc_buff == buff_id;
+            if !matches && (buff_id == 102 || buff_id == 101) {
+                matches = misc_buff == 27;
+            }
+            if matches {
+                self.hide_misc[slot] = true;
+            }
+        }
     }
 
     /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff
@@ -3339,7 +3574,9 @@ impl Player {
     /// C#) and the per-cooldown array collapsed onto the one `hurt_cd` (the
     /// M4-HAZARD-1 admission). The dodge handlers pass the 120/80 pair
     /// directly; `iframes_for` (the normal-hurt window) is not involved.
-    fn set_immune_time_for_all_types(&mut self, time: i32) {
+    /// `pub(crate)`: the Strange Brew's bonus i-frames (`ApplyLifeAndOrMana`,
+    /// `Player.cs:51912-51915`) call it from `potions.rs` (S1-P-i37).
+    pub(crate) fn set_immune_time_for_all_types(&mut self, time: i32) {
         self.immune = true;
         self.immune_time = time;
         self.hurt_cd = time as f32 / 60.0;
@@ -3630,6 +3867,16 @@ impl Player {
     /// `FarPlacementRangePower` is enabled. The C# gates the doubling on
     /// `Main.IsJourneyMode`; the port has no journey-difficulty flag, so the
     /// power's own toggle is the gate.
+    ///
+    /// S1-P-i43: the per-tick static writes AFTER the journey block ride in
+    /// too — `UpdateEquips`' `equippedAnyTileRangeAcc` +3/+2
+    /// (`Player.cs:13040-13044`, set by the Extendo Grip 2215 `:15267-15270`,
+    /// the Architect's Gizmo Pack 3061 `:15279-15285` and the Ancient
+    /// Manipulator-family 5126 `:15286-15294`) and `ApplyEquipFunctional`'s
+    /// held Toolbox 1923 +1/+1 (`:14954-14958`). The chest range close reads
+    /// this through `craft::tile_reach`'s `TileReachLimit = 20` clamp
+    /// (`TileReachCheckSettings.cs:24-33`), the same seam the crafting scan
+    /// uses (`craft.rs:547-578`).
     pub fn tile_range_x(&self) -> f32 {
         let base = 5.0;
         if self.far_placement_range {
@@ -3648,6 +3895,30 @@ impl Player {
         } else {
             base
         }
+    }
+
+    /// The full per-tick `Player.tileRangeX/Y` pair after the journey block,
+    /// the `equippedAnyTileRangeAcc` accessory grant and the equipped Toolbox
+    /// (`Player.cs:18815-18828` → `:13040-13044` → `:14954-14958`), clamped
+    /// by `TileReachCheckSettings.Simple`'s `TileReachLimit = 20`
+    /// (`TileReachCheckSettings.cs:24-33`, `:81-85`) — the exact reach
+    /// `IsInTileInteractionRange` reads (`Player.cs:32025-32029`). The
+    /// accessory scan is the C#'s `UpdateEquips` loop 3..10 over the
+    /// equipped kinds (`:12946-12952`); the Toolbox 1923's +1/+1 fires from
+    /// the SAME loop (`ApplyEquipFunctional`, `:14954` — an equipped
+    /// accessory, not the held item). Delegates to `craft::tile_reach` —
+    /// one formula, no second copy (S1-P-i43).
+    pub fn tile_interaction_reach(&self) -> (i32, i32) {
+        let range_acc = self.equipped[3..10]
+            .iter()
+            .any(|k| matches!(k, 2215 | 3061 | 5126));
+        let toolbox = self.equipped[3..10].contains(&1923);
+        crate::craft::tile_reach(
+            range_acc,
+            toolbox,
+            self.far_placement_range,
+            false, // the artisan loaf's TB is the AdjTiles scan's, not Simple's
+        )
     }
 
     pub fn center(&self) -> (f32, f32) {
@@ -3876,6 +4147,15 @@ impl Player {
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
             self.apply_equip_functional(m, kind);
         }
+        // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
+        // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
+        // the Lucky Coin family arms (855/3034/3035); two rings still add
+        // 0.05 once. (`Main.myPlayer`-only in the C# — the port's single
+        // player.) The clover/horseshoe/raven-feather siblings
+        // (`:13050-13065`) are unported families.
+        if self.has_lucky_coin {
+            self.luck_state.equipment_based_luck_bonus += 0.05;
+        }
     }
 
     /// `Player.ApplyEquipFunctional` (`Player.cs:14368-15560`): the per-kind
@@ -4060,8 +4340,8 @@ impl Player {
             // The damage/crit accessories OUTSIDE the combat family
             // (`ApplyEquipFunctional`): the Sniper Scope's +10 ranged
             // crit/+10% ranged damage (1858, `Player.cs:14907-14911`),
-            // the Celestial Magnet's +15% magic (2220, `:14944-14948` —
-            // its `manaMagnet` half is an unported family), the minion
+            // the Celestial Emblem's +15% magic + `manaMagnet` (2220,
+            // `:14944-14948`, S1-P-i52), the minion
             // emblems +15%/+10% (1167/1864/1845, `:15315-15330` — their
             // `minionKB += 2f` halves have no live consumer yet, the
             // `maxMinions++` budget rides `grant_summon_caps`) and the
@@ -4076,7 +4356,14 @@ impl Player {
                 self.ranged_crit += 10;
                 self.ranged_damage += 0.1;
             }
-            2220 => self.magic_damage += 0.15,
+            2220 => {
+                self.magic_damage += 0.15;
+                // `:14946`: the Celestial Emblem's `manaMagnet` (S1-P-i52).
+                self.mana_magnet = true;
+            }
+            // The Celestial Magnet 2219 (`Player.cs:14940-14943`): the bare
+            // `manaMagnet` flag (S1-P-i52).
+            2219 => self.mana_magnet = true,
             1167 => self.minion_damage += 0.15,
             // 1864/1845 also carry `maxMinions++` in the C#; the budget
             // half is `grant_summon_caps`' (`world_sim/player.rs`), so only
@@ -4103,6 +4390,11 @@ impl Player {
             // Nature's Gift (`:15110-15113`, −0.06).
             555 => self.mana_cost -= 0.08,
             223 => self.mana_cost -= 0.06,
+            // The Philosopher's Stone family (S1-P-i37): 535
+            // (`:15574-15577`) and the Charm of Myths 860 (`:15150-15153`)
+            // arm `pStone` — the Potion Sickness durations ×0.75
+            // (`Player.cs:25481-25486`).
+            535 | 860 => self.p_stone = true,
             // The Ice Skates (`:15089-15092`).
             950 => self.ice_skate = true,
             // The Aglet / the Anklet of the Wind (`:15114-15121`).
@@ -4159,8 +4451,39 @@ impl Player {
             // `Player.cs:14936-14939`) and the Celestial Cuffs (2221,
             // `:14949-14953`) arm `magicCuffs`. Their +40 `statManaMax2`
             // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
-            // (`:14951`) is a separate unported family.
-            1595 | 2221 => self.magic_cuffs = true,
+            // (`:14951`) arms the star magnet (S1-P-i52).
+            1595 => self.magic_cuffs = true,
+            2221 => {
+                self.magic_cuffs = true;
+                self.mana_magnet = true;
+            }
+            // The Lucky Coin family (`Player.cs:14975-14996`): 855 Lucky
+            // Coin arms `hasLuckyCoin` + `hasLuck_LuckyCoin`; 3033 Gold Ring
+            // arms `goldRing` alone; 3034 Coin Ring arms goldRing + the
+            // lucky coin; 3035 Greedy Ring adds `discountEquipped` (no port
+            // consumer — the shop-price lane). The two lucky flags are
+            // always set/cleared together (`:14977-14978`/`:14987-14988`/
+            // `:14993-14994`, `:18760`/`:18762`), so one bool carries both;
+            // the +0.05 luck add is the UpdateEquips TAIL's single
+            // `hasLuck_LuckyCoin` gate (`:13066-13069`), applied once after
+            // the slot loop — NOT per accessory (two rings still add 0.05).
+            855 => self.has_lucky_coin = true,
+            3033 => self.gold_ring = true,
+            3034 => {
+                self.gold_ring = true;
+                self.has_lucky_coin = true;
+            }
+            3035 => {
+                self.gold_ring = true;
+                self.has_lucky_coin = true;
+            }
+            // The Magnet Flower 4000 (`Player.cs:14455-14458`):
+            // `manaFlower` + `manaMagnet`. The port folds `manaFlower` to
+            // its -0.08 `manaCost` row (the 555 convention, S1-P-i52).
+            4000 => {
+                self.mana_cost -= 0.08;
+                self.mana_magnet = true;
+            }
             // The S1-C-7 wave B retaliate family (`Player.Hurt`
             // `:38401-38517`): the star cloak + its four override kinds, the
             // honeycomb family and the strong-bee flag. The C# carries Item
@@ -4206,6 +4529,9 @@ impl Player {
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
+            // Catalyst Band 6185 (`:14615-14620`): `pStone` + `catalystBand`
+            // (the latter unported) — the Stone family's third member.
+            6185 => self.p_stone = true,
             // Hive Pack 3333 (`:15344-15347`): `strongBees`.
             3333 => self.strong_bees = true,
             // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
@@ -4366,6 +4692,19 @@ impl Player {
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
         // caller passes the registered set, so derive it here.
         self.grappling_active = !grapple.is_empty();
+        // `Player.Update`'s sickness clocks (`Player.cs:24718-24724`): both
+        // cooldowns decrement once per tick BEFORE `UpdateBuffs` (`:25566`)
+        // re-mirrors `potionDelay` from the live buff-21 timer (S1-P-i37).
+        if self.potion_delay > 0 {
+            self.potion_delay -= 1;
+        }
+        if self.mana_potion_delay > 0 {
+            self.mana_potion_delay -= 1;
+        }
+        // The `flag9` pStone latch (`Player.cs:25477`): snapshotted BEFORE
+        // `ResetEffects` (`:25491`) clears it; the post-`UpdateEquips` change
+        // check (`:25640-25643`) rescales the live buff-21 timer.
+        self.p_stone_prev = self.p_stone;
         // The buff-frame head of `Player.Update` (`Player.cs:25555-25616`): the
         // `buffImmune` reset precedes `UpdateBuffs` and every re-grant; the
         // end-of-update purge consumes the table at `:26011-26016`.
@@ -4635,6 +4974,12 @@ impl Player {
         self.ranged_damage = 1.0;
         self.magic_damage = 1.0;
         self.minion_damage = 1.0;
+        // `ResetEffects`' Mana Sickness pair (`Player.cs:18592-18593`):
+        // `manaSick = false` (the buff-94 arm below re-arms per tick);
+        // `manaHeat = 1f` (no use-path writer exists — the star-pickup lane
+        // is unported, `potions.rs`'s tail note).
+        self.mana_sick = false;
+        self.mana_heat = 1.0;
         // `:18338`/`:18396-18399` — the ranged effective-damage components.
         self.ranged_mult_damage = 1.0;
         self.arrow_damage = 1.0;
@@ -4658,6 +5003,11 @@ impl Player {
         // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
         // accessory rows below re-arm it from the live items each tick.
         self.magic_cuffs = false;
+        // `ResetEffects`' `manaMagnet = false` / `lifeMagnet = false`
+        // (`Player.cs:18491-18492`): the magnet accessories and buff 105
+        // re-arm them per tick (S1-P-i52).
+        self.mana_magnet = false;
+        self.life_magnet = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
@@ -4691,6 +5041,16 @@ impl Player {
         self.stat_defense = 0;
         // `:18334`: `manaCost = 1f` — the reductions re-apply below.
         self.mana_cost = 1.0;
+        // `:18720`: `pStone = false` — the Stone family's accessory rows
+        // (535/860/6185) re-arm below (`:15576`/`:15152`/`:14617`).
+        self.p_stone = false;
+        // `ResetEffects`' `statManaMax2 = statManaMax` (`Player.cs:18389`):
+        // the effective cap rebases to the permanent one every tick, then
+        // the per-tick grants re-add — the Arcane prefix 66's +20
+        // (`GrantPrefixBenefits` `:13971-13974`), the Magic Power buff's +20
+        // (`:11890`) and the caster sets' rows. Without the rebase the
+        // grants compound every tick and stick after the item comes off.
+        self.mana_max = self.mana_max_base;
         // `:18497`: `endurance = 0f` — the rows below re-apply.
         self.endurance = 0.0;
         // `:18323-18324`: the penetration reset.
@@ -4973,6 +5333,25 @@ impl Player {
                 31 => self.confused = true,
                 // `:10041-10044` — Silenced (35): mana items refuse.
                 35 => self.silence = true,
+                // `:11719-11722` — Potion Sickness (21): the debuff timer IS
+                // the cooldown — `potionDelay = buffTime[j]` every scan tick
+                // (the drink gates read it, S1-P-i37). The assignment (not a
+                // max) mirrors the source: the last live slot wins.
+                21 => {
+                    if let Some(i) = self.buffs.find_buff_index(21) {
+                        self.potion_delay = self.buffs.buff_time[i];
+                    }
+                }
+                // `:10318-10327` — Mana Sickness (94): the mana-potion magic
+                // penalty (`manaSick = true`, `manaSickReduction = 0.25 *
+                // buffTime / manaSickTime`). The `DebugOptions.ManaPotionDelay`
+                // mirror (`:10320-10323`) is constants-off.
+                94 => {
+                    if let Some(i) = self.buffs.find_buff_index(94) {
+                        let t = self.buffs.buff_time[i];
+                        crate::potions::apply_mana_sickness_arm(self, t);
+                    }
+                }
                 // `:10045-10048` — Dazed (160): the jump-static clamp.
                 160 => self.dazed = true,
                 22 => self.blind = true, // `BuffID.Darkness`
@@ -4982,6 +5361,9 @@ impl Player {
                 // the tick; the buff is granted by the set bonus's
                 // `onHitDodge` scan, which is an armor-set row (out of scope).
                 59 => self.shadow_dodge = true,
+                // `:10138-10141` — Heartreach (105): `lifeMagnet = true`
+                // (S1-P-i52 — the heart grab-range bonus + the 15/5 pull).
+                105 => self.life_magnet = true,
                 // `:10201-10204` — `BuffID.Endurance` (114): +10%.
                 114 => self.endurance += 0.1,
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
@@ -5158,6 +5540,10 @@ impl Player {
         self.update_dye_cache();
         self.jump_boost = false;
         self.no_fall_dmg = false;
+        // `:18504` goldRing, `:18760` hasLuckyCoin — the Gold/Lucky Coin
+        // family's per-tick clears (the equip pass below re-arms them).
+        self.gold_ring = false;
+        self.has_lucky_coin = false;
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
@@ -5205,6 +5591,12 @@ impl Player {
         // matched directly here.
         if (self.equipped[0], self.equipped[1], self.equipped[2]) == (3266, 3267, 3268) {
             self.whip_use_time_multiplier *= 1.0 / 1.15;
+        }
+        // `Player.cs:25640-25643`: a pStone CHANGE across `UpdateEquips`
+        // rescales the live Potion Sickness timer (`AdjustRemainingPotionSickness`,
+        // `:28939-28952`) — ×0.75 equipping the Stone family, ÷0.75 removing it.
+        if self.p_stone_prev != self.p_stone {
+            crate::potions::adjust_remaining_potion_sickness(self);
         }
         // S1-C-12 wave C — the defense/immunity accessory rows kept in
         // their own module (the Obsidian/Paladin-family shields' knockback
@@ -7271,12 +7663,12 @@ impl Player {
         self.frozen || self.webbed || self.buffs.find_buff_index(156).is_some()
     }
 
-    /// `Player.ClearBuff` (`Player.cs:5242-5256`): every slot carrying the
-    /// buff type.
+    /// `Player.ClearBuff` (`Player.cs:5472-5481`): every slot whose
+    /// `buffType == type` dels — NO `buffImmune` or `buffTime >= 1` gate
+    /// (those are `FindBuffIndex`'s, `:5249-5255`; the old port looped
+    /// `find_buff_index`, which skipped immune/expired slots the C# clears).
     fn clear_buff_type(&mut self, bt: i32) {
-        while let Some(i) = self.buffs.find_buff_index(bt) {
-            self.buffs.del_buff(i);
-        }
+        self.buffs.clear_buff(bt);
     }
 
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
@@ -7330,16 +7722,26 @@ impl Player {
     }
 
     /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear,
-    /// the full-rotation reset (`:6161-6162`) and the hitbox restore.
-    /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
-    /// system yet); the `noItems` restore (`:6152-6155`) needs the `noItems` /
-    /// `cursed` pair the port does not carry — constants-off.
+    /// the cart ride reset (`:6156-6160` — `cartFlip`/`lastBoost` on the
+    /// `Mount.Cart` rows), the full-rotation reset (`:6161-6162`) and the
+    /// hitbox restore. `ignore_effect` stands in for the spawn dust
+    /// (`:6167-6170` — no dust system yet); the `noItems` restore
+    /// (`:6152-6155`) needs the `noItems` / `cursed` pair the port does not
+    /// carry — constants-off.
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
+        // `Mount.Cart` (`Mount.cs:530-539`) reads the row BEFORE the reset
+        // clears `_type` — `is_cart` over the live kind.
+        let cart = self.mount.is_active() && crate::mount::is_cart(self.mount.kind());
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
         let _ = ignore_effect;
         self.clear_buff_type(buff);
+        // `:6156-6160` — a cart dismount clears the ride flip and the boost.
+        if cart {
+            self.cart_flip = false;
+            self.last_boost = (0, 0);
+        }
         // `:6161-6162` — the dismount clears the full rotation.
         self.full_rotation = 0.0;
         self.full_rotation_origin = (0.0, 0.0);
@@ -7363,11 +7765,25 @@ impl Player {
         true
     }
 
-    /// `Mount.TryDismount` (`Mount.cs:6127-6140`) with `CanDismountWithResult`
-    /// (`:6611-6624`): the CC gate cannot fire on this table (no row sets
-    /// `DontDismountWhenCCed`) and the shrink probe always fits, so the
-    /// dismount runs; Phase 3's quick-mount counts the failures.
+    /// `Mount.TryDismount` (`Mount.cs:6137-6140` → `TryDismountWithResult`
+    /// `:6127-6135` → `CanDismountWithResult` `:6611-6624`): the CC gate
+    /// (`DontDismountWhenCCed` 55/56/61, `MountID.cs:47`) refuses while the
+    /// rider is frozen/webbed/stoned, and the 20×42 bottom-anchored shrink
+    /// must fit (`FailedNoSpace`); only a `Succeeded` dismounts.
     pub fn try_dismount(&mut self, world: &World) -> bool {
+        if crate::mount::dont_dismount_when_cced(self.mount.kind()) && self.cced() {
+            return false; // `:6615-6618` — FailedCCed
+        }
+        if collision::try_changing_size_from_bottom_center(
+            world,
+            [self.x, self.y],
+            [WIDTH, self.height],
+            [WIDTH, HEIGHT],
+        )
+        .is_none()
+        {
+            return false; // `:6619-6622` — FailedNoSpace
+        }
         self.dismount(world, false)
     }
 
@@ -7464,8 +7880,9 @@ impl Player {
             self.try_dismount(world);
             return None;
         }
-        // `:6074-6077`: the guards (tongued/gravDir/noItems have no port arms).
-        if self.cced() || self.dead {
+        // `:6074-6077`: the guards — CCed, tongued (buff 38, the WoF
+        // tongue), dead; gravDir/noItems have no port arms.
+        if self.cced() || self.tongued || self.dead {
             return None;
         }
         let item = inventory
@@ -10496,6 +10913,26 @@ mod tests {
         assert_eq!(p.respawn_timer, 3600);
     }
 
+    /// S1-P-i43 — `Player.UpdateDead`'s `this.chest = -1` (`Player.cs:17020`):
+    /// the dead tick force-closes the open container silently (no sound 11),
+    /// `chestX/Y` stay. The world chest AND the banks both close.
+    #[test]
+    fn s1_p_i43_the_dead_tick_closes_the_open_container() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.chest = 3;
+        p.chest_x = 20;
+        p.chest_y = 10;
+        p.start_death(&w, false, false);
+        p.update_dead(false, false, false, false);
+        assert_eq!(p.chest, -1, "the world chest closes (:17020)");
+        assert_eq!((p.chest_x, p.chest_y), (20, 10), "the origin stays");
+        // A bank closes too (the C# writes -1 unconditionally).
+        p.chest = -4;
+        p.update_dead(false, false, false, false);
+        assert_eq!(p.chest, -1, "the safe closes too");
+    }
+
     #[test]
     fn respawn_life_is_half_the_pool_floored_at_100() {
         // `Player.cs:37598-37608`: the pool is `max(statLifeMax,
@@ -10589,8 +11026,8 @@ mod tests {
         p.buffs.add_buff(20, 3600); // Poisoned — a debuff
         let poison = p.buffs.find_buff_index(20).unwrap();
         let iron = p.buffs.find_buff_index(5).unwrap();
-        assert!(!p.try_removing_buff(poison, 20), "a debuff refuses");
-        assert!(p.try_removing_buff(iron, 5), "the non-debuff removes");
+        assert!(!p.try_removing_buff(&w, poison, 20, [0, 0]), "a debuff refuses");
+        assert!(p.try_removing_buff(&w, iron, 5, [0, 0]), "the non-debuff removes");
         assert_eq!(p.buffs.find_buff_index(5), None);
     }
 
@@ -10604,8 +11041,140 @@ mod tests {
         let mount_buff = p.mount.data().unwrap().buff;
         p.buffs.add_buff(mount_buff, 3600);
         let slot = p.buffs.find_buff_index(mount_buff).unwrap();
-        assert!(p.try_removing_buff(slot, mount_buff), "the arm entered");
+        assert!(
+            p.try_removing_buff(&w, slot, mount_buff, [0, 0]),
+            "the arm entered"
+        );
         assert!(!p.mount.is_active(), "the mount dismounted");
+    }
+
+    /// S1-P-i53 — `TryRemovingBuff_CheckBuffHideMisc` (`Main.cs:43390-43404`):
+    /// cancelling the equipped pet's buff hides the misc visual; the 101/102
+    /// light buffs also match the Fairy Bell's legacy `buffType 27`
+    /// (`:43395-43398`); an already-hidden slot stays hidden (no flip), an
+    /// unrelated buff never hides.
+    #[test]
+    fn s1_p_i53_the_buff_cancel_hides_the_matching_misc_pet() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(40, 3600); // a vanity pet buff
+        let slot = p.buffs.find_buff_index(40).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 40, [40, 0]));
+        assert!(p.hide_misc[0], "the pet visual hid (`:43401`)");
+        assert!(!p.hide_misc[1], "the light slot untouched");
+        assert_eq!(p.buffs.find_buff_index(40), None, "the pet buff del'd");
+        // The light-pet 101 cancel matches a `buffType == 27` equip.
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(101, 3600);
+        let slot = p.buffs.find_buff_index(101).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 101, [0, 27]));
+        assert!(p.hide_misc[1], "the 27 legacy alias matched (`:43397`)");
+        // A non-matching buff leaves both flags down; the buff still dels.
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(5, 3600);
+        let slot = p.buffs.find_buff_index(5).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 5, [40, 27]));
+        assert_eq!(p.hide_misc, [false, false]);
+    }
+
+    /// S1-P-i53 — the mount arm latches `flag = true` on the CheckBuff match
+    /// even when `TryDismount` refuses (`Main.cs:43377-43378`): a CCed rider
+    /// on the Bat (56, `DontDismountWhenCCed`, `MountID.cs:47`) keeps the
+    /// mount AND the buff — no `DelBuff` (`:43383-43386`).
+    #[test]
+    fn s1_p_i53_a_refused_dismount_keeps_the_mount_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(56, false)); // the Bat — buff 377
+        p.frozen = true; // CCed (`Player.cs:3377-3385`)
+        let slot = p.buffs.find_buff_index(377).unwrap();
+        assert!(
+            p.try_removing_buff(&w, slot, 377, [0, 0]),
+            "the arm entered — the sound plays (`:43382`)"
+        );
+        assert!(p.mount.is_active(), "the CC gate refused the dismount");
+        assert!(
+            p.buffs.find_buff_index(377).is_some(),
+            "flag=true keeps DelBuff out (`:43383`)"
+        );
+        // Un-CCed, the same cancel dismounts and clears.
+        p.frozen = false;
+        let slot = p.buffs.find_buff_index(377).unwrap();
+        assert!(p.try_removing_buff(&w, slot, 377, [0, 0]));
+        assert!(!p.mount.is_active());
+        assert_eq!(p.buffs.find_buff_index(377), None);
+    }
+
+    /// S1-P-i53 — the cart ride's cancel routes through `try_cart_dismount`
+    /// (the ride flags live outside `MountState`): `cart_mounted`, the ride
+    /// flip/boost and `on_track` all reset, and the buff clears
+    /// (`Mount.cs:6150-6162`).
+    #[test]
+    fn s1_p_i53_the_cart_cancel_resets_the_ride_flags() {
+        let w = cart_world();
+        let mut p = Player::spawn(&w);
+        p.mount_cart();
+        p.cart_flip = true;
+        p.last_boost = (2, 3);
+        p.on_track = true;
+        let mount_buff = p.mount.data().unwrap().buff;
+        let slot = p.buffs.find_buff_index(mount_buff).unwrap();
+        assert!(p.try_removing_buff(&w, slot, mount_buff, [0, 0]));
+        assert!(!p.cart_mounted, "the ride state cleared");
+        assert!(!p.mount.is_active());
+        assert!(!p.cart_flip);
+        assert_eq!(p.last_boost, (0, 0));
+        assert!(!p.on_track);
+        assert_eq!(p.buffs.find_buff_index(mount_buff), None);
+    }
+
+    /// S1-P-i53 — `Player.ClearBuff` (`Player.cs:5472-5481`) walks the raw
+    /// `buffType` slots: an IMMUNE type's live slot still clears (the
+    /// `FindBuffIndex` gate `:5249` must not leak into it), and a slot whose
+    /// timer already expired (`buffTime == 0`) clears too.
+    #[test]
+    fn s1_p_i53_clear_buff_type_ignores_the_immune_and_time_gates() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(44, false)); // the pirate ship grants its buff
+        let buff = p.mount.data().unwrap().buff;
+        let slot = p.buffs.find_buff_index(buff).unwrap();
+        // The immunity lands AFTER the grant — `find_buff_index` now blinds.
+        p.buffs.buff_immune[buff as usize] = true;
+        assert_eq!(p.buffs.find_buff_index(buff), None, "the gate blinding");
+        assert!(p.dismount(&w, true));
+        assert_eq!(p.buffs.buff_type[slot], 0, "ClearBuff walked the raw slot");
+        // The expired-timer slot: type set, time 0 — still cleared.
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(44, false));
+        let buff = p.mount.data().unwrap().buff;
+        let slot = p.buffs.find_buff_index(buff).unwrap();
+        p.buffs.buff_time[slot] = 0;
+        assert!(p.dismount(&w, true));
+        assert_eq!(p.buffs.buff_type[slot], 0);
+    }
+
+    /// S1-P-i53 — `Mount.Dismount`'s cart arm (`Mount.cs:6156-6160`): the
+    /// framework dismount clears `cartFlip`/`lastBoost` on the Cart rows —
+    /// the port used to reset them only in the ride-only `cart_dismount`.
+    #[test]
+    fn s1_p_i53_the_framework_dismount_clears_the_cart_ride_state() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mount_cart(); // SetMount(6) — a Cart row
+        p.cart_flip = true;
+        p.last_boost = (7, 9);
+        assert!(p.dismount(&w, true));
+        assert!(!p.cart_flip, "`:6158`");
+        assert_eq!(p.last_boost, (0, 0), "`:6159`");
+        // A non-cart mount leaves the ride fields alone (`:6156` gate).
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(44, false)); // the pirate ship
+        p.cart_flip = true;
+        p.last_boost = (7, 9);
+        assert!(p.dismount(&w, true));
+        assert!(p.cart_flip);
+        assert_eq!(p.last_boost, (7, 9));
     }
 
     #[test]
@@ -11451,6 +12020,81 @@ mod tests {
         assert!(p.has_jump_options.iter().all(|&b| !b));
     }
 
+    // ---- S1-P-i52 — the heart/star magnet grants (written, NOT run) ----
+
+    /// `ApplyEquipFunctional`'s manaMagnet rows (`Player.cs:14940-14953`,
+    /// `:14455-14458`): the Celestial Magnet 2219 (bare flag), the Celestial
+    /// Emblem 2220 (+15% magic AND the flag), the Celestial Cuffs 2221
+    /// (magicCuffs AND the flag), the Magnet Flower 4000 (the 555-style
+    /// −0.08 manaCost fold AND the flag). The Magic Cuffs 1595 arm
+    /// magicCuffs but NOT the magnet (`:14936-14939`). `ResetEffects`
+    /// (`:18491`) clears the flag when the item comes off.
+    #[test]
+    fn s1_p_i52_the_magnet_accessories_arm_mana_magnet() {
+        let p = player_with_accessory(2219);
+        assert!(p.mana_magnet, "the Celestial Magnet");
+        let p = player_with_accessory(2220);
+        assert!(p.mana_magnet, "the Celestial Emblem");
+        assert!((p.magic_damage - 1.15).abs() < 1e-4, "its +15% magic");
+        let p = player_with_accessory(2221);
+        assert!(p.mana_magnet, "the Celestial Cuffs");
+        assert!(p.magic_cuffs, "the cuffs half");
+        let p = player_with_accessory(4000);
+        assert!(p.mana_magnet, "the Magnet Flower");
+        assert!((p.mana_cost - 0.92).abs() < 1e-4, "the manaFlower fold");
+        let p = player_with_accessory(1595);
+        assert!(p.magic_cuffs);
+        assert!(!p.mana_magnet, "the plain Magic Cuffs carry no magnet");
+        let p = player_with_accessory(0);
+        assert!(!p.mana_magnet, "ResetEffects cleared it");
+        assert!(!p.life_magnet);
+    }
+
+    /// `UpdateBuffs`' Heartreach arm (`Player.cs:10138-10141`): buff 105
+    /// arms `lifeMagnet` per tick; the expiry + `ResetEffects` (`:18492`)
+    /// clear it.
+    #[test]
+    fn s1_p_i52_the_heartreach_buff_arms_life_magnet() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(105, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.life_magnet, "buff 105 armed the heart magnet");
+        // The buff gone: the next tick's reset clears the flag.
+        p.buffs.clear_buff(105);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.life_magnet, "the expiry cleared it");
+    }
+
+    /// `Player.Heal` (`Player.cs:35112-35123`): the cap AFTER the queue —
+    /// the text carries the raw amount. `TryApplyManaHeat`
+    /// (`:52006-52014`): the pair writes, the 120-tick buff, and the
+    /// zero-power/zero-time arm that writes the pair but adds NO buff.
+    #[test]
+    fn s1_p_i52_heal_caps_after_the_text_and_mana_heat_gates_the_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.max_hp = 100;
+        p.hp = 95;
+        p.heal(20);
+        assert_eq!(p.hp, 100, "capped");
+        assert_eq!(p.take_heal_effect(), Some(20), "the RAW amount queued");
+        assert_eq!(p.take_heal_effect(), None, "the text is a one-shot");
+        p.try_apply_mana_heat(0.2, 2.0);
+        assert_eq!(p.latest_mana_potion_damage_bonus, 0.2);
+        assert!(
+            (p.latest_mana_potion_duration - 120.0).abs() < 1e-3,
+            "2 s * 60 = 120 ticks: {}",
+            p.latest_mana_potion_duration
+        );
+        assert!(p.buffs.find_buff_index(396).is_some());
+        // The zero arm: the pair still writes, no buff added.
+        let mut p = Player::spawn(&w);
+        p.try_apply_mana_heat(0.0, 0.0);
+        assert_eq!(p.latest_mana_potion_duration, 0.0);
+        assert!(p.buffs.find_buff_index(396).is_none(), "the gate refused");
+    }
+
     #[test]
     fn the_hermes_boots_lift_the_acceleration_gate() {
         // `Player.cs:15005-15008`: `accRunSpeed = 6f` — the base reset (3.0)
@@ -11527,6 +12171,33 @@ mod tests {
         // The Empress Brooch 4989 (`:14771-14775`): +7.5%.
         let p = player_with_accessory(4989);
         assert!((p.move_speed - 1.075).abs() < 1e-4);
+    }
+
+    #[test]
+    fn s1_p_i49_the_arcane_mana_grant_rebases_every_tick() {
+        // `GrantPrefixBenefits`' Arcane (66) adds `statManaMax2 += 20`
+        // (`Player.cs:13971-13974`); `ResetEffects` rebases
+        // `statManaMax2 = statManaMax` (`:18389`) every tick, so the grant
+        // is a steady +20 — not a per-tick compound, and it leaves when
+        // the accessory comes off.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 285; // the Aglet — a functional accessory
+        p.equipped_prefix[3] = 66;
+        for _ in 0..10 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert_eq!(p.mana_max, 40, "20 base + 20 Arcane, steady over 10 ticks");
+        assert_eq!(p.mana_max_base, 20, "the permanent cap is untouched");
+        // Unequip: the next tick's rebase drops the grant.
+        p.equipped[3] = 0;
+        p.equipped_prefix[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 20, "the grant leaves with the accessory");
+        // The Magic Power buff's +20 (`:11890`) stacks on the same rebase.
+        p.buffs.add_buff(29, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 40, "the buff's +20 on the rebased cap");
     }
 
     /// S1-C-12 wave A — the prefix speed rows ride the accessory's rolled
@@ -12054,6 +12725,51 @@ mod tests {
         let from = p.x + 100.0;
         assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
         assert!(p.vx != 0.0);
+    }
+
+    /// S1-P-i50 — the Gold/Lucky Coin family's equip grants
+    /// (`ApplyEquipFunctional`, `Player.cs:14975-14996`): 855 Lucky Coin
+    /// arms `hasLuckyCoin` only; 3033 Gold Ring arms `goldRing` only; 3034
+    /// Coin Ring and 3035 Greedy Ring arm both. The +0.05 equipment-luck
+    /// add is the UpdateEquips TAIL's single `hasLuck_LuckyCoin` gate
+    /// (`:13066-13069`) — once, not per ring.
+    #[test]
+    fn s1_p_i50_the_coin_ring_family_arms_its_flags() {
+        let p = player_with_accessory(855);
+        assert!(p.has_lucky_coin, "Lucky Coin");
+        assert!(!p.gold_ring, "no grab range from the Lucky Coin");
+        let p = player_with_accessory(3033);
+        assert!(p.gold_ring, "Gold Ring");
+        assert!(!p.has_lucky_coin, "no proc from the Gold Ring");
+        for kind in [3034u16, 3035] {
+            let p = player_with_accessory(kind);
+            assert!(p.gold_ring, "{kind} arms goldRing");
+            assert!(p.has_lucky_coin, "{kind} arms the lucky coin");
+        }
+        // The luck add: +0.05 once for any lucky-coin carrier.
+        let p = player_with_accessory(855);
+        assert!((p.luck_state.equipment_based_luck_bonus - 0.05).abs() < 1e-6);
+        // Two rings still add 0.05 ONCE (the tail gate is a bool, not a sum).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3034;
+        p.equipped[4] = 3035;
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(
+            (p.luck_state.equipment_based_luck_bonus - 0.05).abs() < 1e-6,
+            "two rings, one +0.05: {}",
+            p.luck_state.equipment_based_luck_bonus
+        );
+        // The per-tick reset clears both flags when the ring comes off
+        // (`ResetEffects`, `:18504`/`:18760`).
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.gold_ring);
+        assert!(!p.has_lucky_coin);
+        assert_eq!(p.luck_state.equipment_based_luck_bonus, 0.0);
     }
 
     #[test]
@@ -15979,6 +16695,7 @@ mod tests {
 #[cfg(test)]
 mod summon_tests {
     use super::*;
+    use super::tests::ground_world;
     use crate::item::EMPTY_SLOT;
     // S1-P-i12's mirror witnesses reuse the main test module's world fixture
     // (the V5 first-compile fix — the coder referenced it without the import).

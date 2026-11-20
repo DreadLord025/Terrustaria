@@ -89,6 +89,21 @@ pub(crate) struct WorldChest {
     /// default [`DEFAULT_MAX_ITEMS`] everywhere else. `slots.len()` is the max
     /// for a loaded chest; `Resize` semantics stay `Chest.cs:118-130`.
     pub(crate) max_items: usize,
+    /// `Chest.frameCounter` (`Chest.cs:84`): the open/close animation's
+    /// 0..10 counter, advanced once per world step by [`update_chest_frames`]
+    /// (`Chest.UpdateChestFrames`, `Chest.cs:3603-3662`; the call site
+    /// `Main.cs:17810`). `Default` 0 — the C# field's zero init.
+    pub(crate) frame_counter: i32,
+    /// `Chest.frame` (`Chest.cs:86`): the draw frame the chest rewrite reads
+    /// (`TileDrawing.cs:4309-4320`, `render/special_tiles.rs::chest_frame_adjust`)
+    /// — 0 closed, 1 half-open, 2 open.
+    pub(crate) frame: i32,
+    /// `Chest.eatingAnimationTime` (`Chest.cs:88`): the hopper/vacuum eat
+    /// animation's hold (`AskForChestToEatItem`, `Chest.cs:3566-3575`). No
+    /// producer is ported (the `ParticleOrchestrator` ItemTransfer particle,
+    /// `ParticleOrchestrator.cs:2683` — the particles task); the field and
+    /// the counter's floor ride verbatim so the animator is whole.
+    pub(crate) eating_animation_time: i32,
 }
 
 /// The removed-slot marker: `Main.chest[i] == null`'s stand-in inside the
@@ -170,6 +185,7 @@ pub(crate) fn create_chest(chests: &mut Vec<WorldChest>, x: i32, y: i32) -> usiz
         slots: Vec::new(),
         name: String::new(),
         max_items: DEFAULT_MAX_ITEMS as usize,
+        ..Default::default()
     };
     if idx == chests.len() {
         chests.push(fresh);
@@ -190,6 +206,7 @@ pub(crate) fn remove_chest(chests: &mut Vec<WorldChest>, idx: usize) {
                 slots: Vec::new(),
                 name: String::new(),
                 max_items: DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
             };
         }
     }
@@ -241,8 +258,10 @@ pub(crate) fn is_locked(world: &World, x: i32, y: i32) -> bool {
 
 /// `Chest.IsLockedOrInUse` (`Chest.cs:178-188`): true when any player is
 /// browsing the chest (`IsPlayerInChest`, `Chest.cs:267-274`) or the tile is
-/// locked. The bank branch (`bankChest` → false) is unported — the port has
-/// no bank chests until M3-STORE-1, which must restore the early `false`.
+/// locked. The bank early-false (`bankChest` → false, `:180-183`) needs no
+/// port arm: the banks are `Player.banks` slot arrays (M3-STORE-1 landed),
+/// never `WorldChest` entries, so they never reach this fn — the early false
+/// is vacuous (S1-P-i43, the stale M3-STORE-1 note retired).
 /// The 255-player loop collapses to the local player (single player): their
 /// `Player.chest` (`-1` = none) against the index. An absent or removed slot
 /// is neither locked nor in use (the C# instance method can only run on a
@@ -268,6 +287,75 @@ pub(crate) fn is_locked_or_in_use(
 /// slot — the C# player index collapses to this bool.
 pub(crate) fn using_chest(chests: &[WorldChest], idx: usize, open_player_chest: i32) -> bool {
     chests.get(idx).is_some_and(|c| !is_removed(c)) && open_player_chest == idx as i32
+}
+
+/// `Chest.GetCurrentlyOpenChests` (`Chest.cs:283-294`): every active player's
+/// open world-chest index (`chest > -1`), in player order. Single-player
+/// reading: the local player's index when it is a world chest, else empty.
+/// The banks (`-2..-5`) are excluded exactly like the C#'s `> -1` gate.
+pub(crate) fn currently_open_chests(open_player_chest: i32) -> Vec<usize> {
+    if open_player_chest > -1 {
+        vec![open_player_chest as usize]
+    } else {
+        Vec::new()
+    }
+}
+
+/// `Chest.UpdateChestFrames` (`Chest.cs:3603-3662`), the open/close lid
+/// animation the world step runs once per tick (`Main.cs:17810`, after
+/// `UpdateWorld_ServerOrClient` and before the camera walks). Every live
+/// chest's `frameCounter` steps +1 while a player browses it, −1 otherwise
+/// (`:3620-3627`), floored at `eatingAnimationTime` then 0 and capped at 10
+/// (`:3636-3647`); the draw frame is 0 at counter 0, 2 at counter 10, 1
+/// between (`:3648-3659`). The `_chestInUse` set collapses to the local
+/// player's open index (single player); the removed slots are the C# null
+/// continue. The eat-animation sound (`:3628-3631`, `PlaySound(7)` at
+/// `eatingAnimationTime == 9 && frame == 1`) and the timer's decrement
+/// (`:3632-3635`) ride verbatim — no producer sets the timer yet
+/// (`AskForChestToEatItem`'s particle caller is unported), so both are
+/// dormant but exact. Returns the chest indices whose `frame` hit 1 with
+/// the eat timer at 9 this tick so the caller plays the cue (the audio
+/// borrow stays out of the store walk).
+pub(crate) fn update_chest_frames(chests: &mut [WorldChest], open_player_chest: i32) -> Vec<usize> {
+    let mut eat_cues = Vec::new();
+    for (j, chest) in chests.iter_mut().enumerate() {
+        if is_removed(chest) {
+            continue; // `:3618` — the null slot
+        }
+        // `:3620-3627` — in use counts up, idle counts down.
+        if open_player_chest == j as i32 {
+            chest.frame_counter += 1;
+        } else {
+            chest.frame_counter -= 1;
+        }
+        // `:3628-3631` — the eat chime fires BEFORE the timer decrements.
+        if chest.eating_animation_time == 9 && chest.frame == 1 {
+            eat_cues.push(j);
+        }
+        // `:3632-3635` — the eat timer decays.
+        if chest.eating_animation_time > 0 {
+            chest.eating_animation_time -= 1;
+        }
+        // `:3636-3647` — the floor at the eat timer, then 0, then the 10 cap.
+        if chest.frame_counter < chest.eating_animation_time {
+            chest.frame_counter = chest.eating_animation_time;
+        }
+        if chest.frame_counter < 0 {
+            chest.frame_counter = 0;
+        }
+        if chest.frame_counter > 10 {
+            chest.frame_counter = 10;
+        }
+        // `:3648-3659` — the draw frame from the counter.
+        chest.frame = if chest.frame_counter == 0 {
+            0
+        } else if chest.frame_counter == 10 {
+            2
+        } else {
+            1
+        };
+    }
+    eat_cues
 }
 
 // --- `.wld` persistence (M6-SAVE-1 phase 3) ---------------------------------
@@ -298,6 +386,7 @@ pub fn from_wld(records: &[WldChest]) -> Vec<WorldChest> {
             slots: slots_from_wld(&r.slots, r.max_items.max(0) as usize),
             name: r.name.clone(),
             max_items: r.max_items.max(0) as usize,
+            ..Default::default()
         })
         .collect();
     drop_duplicate_positions(&mut chests);
@@ -498,32 +587,57 @@ fn slot_to_wld(slot: ItemSlot) -> WldChestSlot {
 // --- Panel name defaulting (M3-CHEST-UI phase 3) ----------------------------
 //
 // `ChestUI.DrawName`'s tile-style chain (`ChestUI.cs:124-140`). The vanilla
-// strings ride the embedded `LegacyChestType.*` localization JSON, which is
-// not on disk in this repo, so the names derive from the port's generated
-// item table — the item placing `(tile, place_style)` carries the same en-US
-// string (recorded deviation, phase 6 `docs/ANALYSIS.md`). The `.wld` load
-// path takes its names from the file (`LoadChests:2735`) instead.
+// strings ride the `LegacyChestType.*` / `LegacyChestType2.*` /
+// `LegacyDresserType.*` localization rows (`lang::chest_type`/`chest_type2`/
+// `dresser_type`, the shipped `Terraria.Localization.Content.*.Legacy.json`
+// under `decompiled/` — S1-P-i43 retired the "not on disk" claim). The
+// generated item table is the FALLBACK for a manager without loaded
+// resources (the headless default) — the item placing `(tile, place_style)`
+// carries the same en-US string minus the localization's punctuation (the
+// "Dead Man's Chest" apostrophe lives in `ItemName.DeadMansChest`,
+// `en-US.Items.json:4232`, NOT in the `ItemID` identifier split). The `.wld`
+// load path takes its names from the file (`LoadChests:2735`) instead.
 
 /// The chest's default name from the tile at the panel's origin
 /// (`ChestUI.cs:124-140`): tile 21 → `Lang.chestType[frameX / 36]`, tile 467
-/// style 4 → item 3988's name, tile 467 → `Lang.chestType2[frameX / 36]`,
-/// tile 88 → `Lang.dresserType[frameX / 54]`. An empty string when the style
-/// has no name (styles that cannot occur through placement — see
-/// [`chest_type_name`]).
+/// style 4 → `Lang.GetItemNameValue(3988)`, tile 467 →
+/// `Lang.chestType2[frameX / 36]`, tile 88 → `Lang.dresserType[frameX / 54]`.
+/// The live localization rows first (the `{ItemName.*}` copy commands
+/// expand through the manager); [`chest_type_name`] is the resource-less
+/// fallback. An empty string when the style has no name (styles that cannot
+/// occur through placement).
 pub(crate) fn default_chest_name(kind: u16, frame_x: i16) -> String {
     if kind == 21 {
-        return chest_type_name(frame_x as i32 / 36, 21);
+        // `Lang.cs:503-506`: `chestType[52..]` aliases `chestType[0]`.
+        let style = frame_x as i32 / 36;
+        let style = if style >= 52 { 0 } else { style };
+        let key = format!("LegacyChestType.{style}");
+        if crate::lang::exists(&key) {
+            return crate::lang::chest_type(style as usize);
+        }
+        return chest_type_name(style, 21);
     }
     if kind == 467 {
-        // `ChestUI.cs:129-131`: the Dead Man's Chest is style 4.
+        // `ChestUI.cs:129-131`: the Dead Man's Chest is style 4 —
+        // `Lang.GetItemNameValue(3988)` ("Dead Man's Chest", the apostrophe
+        // the generated identifier split drops).
         let style = frame_x as i32 / 36;
         if style == 4 {
-            return crate::registry::name(3988).to_string();
+            return crate::lang::item_name(3988);
+        }
+        let key = format!("LegacyChestType2.{style}");
+        if crate::lang::exists(&key) {
+            return crate::lang::chest_type2(style as usize);
         }
         return chest_type_name(style, 467);
     }
     if kind == 88 {
-        return chest_type_name(frame_x as i32 / 54, 88);
+        let style = frame_x as i32 / 54;
+        let key = format!("LegacyDresserType.{style}");
+        if crate::lang::exists(&key) {
+            return crate::lang::dresser_type(style as usize);
+        }
+        return chest_type_name(style, 88);
     }
     String::new()
 }
@@ -565,17 +679,19 @@ fn chest_type_name(style: i32, kind: u16) -> String {
 // (`:33505-33526`) and the per-tick range close
 // (`HandleBeingInChestRange`, `:31015-31097` + the hitbox table
 // `:31099-31124`), plus `Chest.Lock`/`Chest.Unlock` (`Chest.cs:346-496`).
-// Out: the rigged-chest arm (`:33112`/:33233/:33253-33258 — wiring, no
-// owning task), the net messages (31/33/52/59), `Main.stackSplit = 600`
-// (`:33117`/:33232 — the net quick-stack lock, M3-STORE-2), the void-bag
-// key arm (`:33200-33221`, M3-STORE-1), the bank tiles 29/97/463/491
-// (`:33056`'s non-`BasicChest` half, M3-STORE-1) and the achievements
-// (`HandleSpecialEvent(16)` `:33243-33246`, `NotifyProgressionEvent(19/20)`
-// `Chest.cs:365`/:382/:403/:477 — no `CondKind` arm yet).
+// S1-P-i43 landed the rigged-chest wire trip (`:33233`/:33253-33258),
+// `Main.stackSplit = 600` (`:33117`/:33232), the void-bag key fallback
+// (`:33200-33221`) and the `editedChestName` client flush
+// (`:33097-33101`/:32883-32887). The bank tiles 29/97/463/491 ride
+// editing.rs's `BankOpen` arm (M3-STORE-1). Out: the net `52 LockAndUnlock`
+// key-walk sends (`:33195-33198`/:33216-33219 — no port message), the
+// death-achievement window (`:33257`) and the dresser path's
+// `HandleSpecialEvent(16)` shadow band (the world-chest toggle fires `Peek`;
+// `NotifyProgressionEvent(19/20)` rides `unlock_progression`).
 
 /// `TileID.Sets.BasicChest` (`TileID.cs:570`) — the world-chest tiles the
-/// open/lock paths serve. The bank families (29/97/463/491) stay out until
-/// M3-STORE-1.
+/// open/lock paths serve. The bank families (29/97/463/491) ride the
+/// editing.rs `BankOpen` arm (M3-STORE-1), never this decode.
 fn is_basic_chest(kind: u16) -> bool {
     kind == 21 || kind == 467
 }
@@ -632,9 +748,9 @@ fn locked_key_id(world: &World, x: i32, y: i32) -> u16 {
 /// (`-36`, or `-180` for the Plantera-gated styles 23-27; `-36` for tile 467
 /// style 13, also gated — `Chest.cs:376`/:397). Any missing tile of the 2×2
 /// refuses (`:348-351`); an unsupported style refuses (`default`/`else`).
-/// `plant_boss` is `NPC.downedPlantBoss`'s stand-in — the flag has no world
-/// home yet (the recorded assumption fallback: the call site passes `true`;
-/// flip it to the flag when the boss work lands it). The sound (22,
+/// `plant_boss` is `NPC.downedPlantBoss` — the open path passes
+/// `World.downed_plant_boss` (tr-core/world.rs:207, S1-P-i43 retired the
+/// recorded `true` fallback). The sound (22,
 /// `Chest.cs:409`) and the achievement (`:366`/:383/:404) are the caller's —
 /// see [`unlock_progression`]; the 4-per-tile dust (`:419-422`) stays out
 /// (the tile-edit dust path, no spawn context on this route). Returns
@@ -785,14 +901,17 @@ fn open_chest(app: &mut App, x: i32, y: i32, new_chest: i32) {
 /// (the bank tiles land here from editing.rs's `BankOpen` arm, the world
 /// chests from [`try_open_chest_at_cursor`]): the same index closes (sound
 /// 11), a fresh open plays 10 (the `frameX 36..72` Shadow-chest special
-/// event 16 arm `:33243-33246` is the recorded achievements deviation), a
-/// re-open with another container already open plays 12. Returns the legacy
-/// sound id (the `SoundEngine.PlaySound` argument) so the caller plays it
-/// and the tests pin it.
+/// event 16 arm `:33243-33246` fires I_AM_LOOT's `Peek`), a re-open with
+/// another container already open plays 12. `Main.stackSplit = 600`
+/// (`:33232`) arms the transfer cooldown for EVERY resolved container,
+/// close included (S1-P-i43 — the C# sets it before the three-way branch).
+/// Returns the legacy sound id (the `SoundEngine.PlaySound` argument) so
+/// the caller plays it and the tests pin it.
 pub(crate) fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: i32) -> u32 {
     let Some(current) = app.player.as_ref().map(|p| p.chest) else {
         return 0; // no player — no container state (the front screens park the routes)
     };
+    app.stack_split = 600; // `:33232` — `Main.stackSplit = 600`, before the branch
     if new_chest == current {
         if let Some(p) = app.player.as_mut() {
             p.chest = -1; // `:33236` — `chestX/Y` stay
@@ -865,11 +984,14 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     let Some((ox, oy)) = chest_origin(&app.world, x, y) else {
         return false;
     };
-    // `:33087-33090` — `CloseSign`/`SetTalkNPC(-1)`/the chat-text clears:
-    // the port's dialog + shop close (`Main.SetNPCShopIndex(-1)`'s
-    // equivalent). The `editedChestName` net flush (`:33097-33101`) and the
-    // MP arm (`:33103-33119`) are out.
+    // `:33087-33090` — `CloseSign`/`SetTalkNPC(-1)`/`npcChatCornerItem = 0`/
+    // `npcChatText = ""`: the port's dialog + shop close
+    // (`Main.SetNPCShopIndex(-1)`'s equivalent) plus the talk-NPC latch and
+    // the chat text (S1-P-i43 — the C# clears the chatter before opening;
+    // `CloseSign`'s sign half has no port state, `npcChatCornerItem` neither).
     app.close_shop();
+    app.talk_npc = None; // `:33088` — `SetTalkNPC(-1)`
+    app.npc_chat_text.clear(); // `:33090` — `Main.npcChatText = ""`
     // `:33091-33096` — a chest-tile click while the rename editor is live
     // flushes it: sound 12, `editChest = false`, `npcChatText = ""`. The
     // port's modal keyboard parks the world routes, so production never
@@ -879,6 +1001,9 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         play_menu_sound(app, 12);
         app.front = None;
     }
+    // `:33097-33101` — the pending rename flush (the MP client's `33` send
+    // with the name, S1-P-i43).
+    flush_edited_chest_name(app);
     // `:33142-33228` — the single-player default arm (`num73 == 0` for the
     // `BasicChest` tiles): `flag14` marks a locked-chest click, which blocks
     // the `FindChest` at `:33223-33226`, so the click is consumed without
@@ -899,7 +1024,9 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // (`inv.rs:26-34`); the equipment rows are outside the scan. The
         // loop keeps scanning after a success, but `Chest.Unlock` answers
         // false once the chest is unlocked — exactly one key is consumed.
-        // (`flag15`'s only reader is the void-bag arm `:33200`, which is out.)
+        // `flag15` (`:33174`/`:33182`): whether the inventory scan unlocked
+        // the chest — the void-bag fallback's gate (`:33200`).
+        let mut unlocked_by_inventory = false;
         for (slot, is_trash) in app
             .inventory
             .iter_mut()
@@ -911,19 +1038,21 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             if slot.kind != key || slot.count == 0 {
                 continue;
             }
-            // The Plantera gate passes until the world flag exists (the
-            // recorded fallback — flip to the flag when the boss work lands).
-            // The style is read before the call: `Unlock` shifts the frames,
-            // so afterwards the locked style is gone. `Chest.Unlock` fires the
-            // progression id inside the same arms that answer the shift
-            // (`Chest.cs:366`/:383/:404).
+            // The Plantera gate reads the world flag (`NPC.downedPlantBoss`,
+            // `Chest.cs:376`/:397 — S1-P-i43: the recorded `true` fallback is
+            // retired). The style is read before the call: `Unlock` shifts
+            // the frames, so afterwards the locked style is gone.
+            // `Chest.Unlock` fires the progression id inside the same arms
+            // that answer the shift (`Chest.cs:366`/:383/:404).
             let progression = app
                 .world
                 .tile(ox, oy)
                 .and_then(|t| unlock_progression(t.kind, t.frame_x / 36));
-            if !unlock_chest(&mut app.world, ox, oy, true) {
+            let downed_plant = app.world.downed_plant_boss;
+            if !unlock_chest(&mut app.world, ox, oy, downed_plant) {
                 continue;
             }
+            unlocked_by_inventory = true; // `:33182` — `flag15 = true`
             if let Some(id) = progression {
                 unlocked_progression = Some(id);
             }
@@ -945,7 +1074,42 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 }
             }
         }
-        // `:33200-33221` — the void-bag arm is M3-STORE-1.
+        // `:33200-33221` — the void-bag fallback: no inventory key unlocked
+        // the chest (`!flag15`) and the player carries the Void Bag 4131
+        // (`useVoidBag`, `Player.cs:23171-23181` — the C# scans
+        // `inventory[0..58]`, the port's grid + coin/ammo rows; the trash
+        // slot 58 is outside the scan). The bank4 walk mirrors the
+        // inventory one: the key decrements unless it is the shadow key
+        // (`:33208`), the emptied slot turns to air, no trash mirror.
+        if !unlocked_by_inventory && use_void_bag(app) {
+            let downed_plant = app.world.downed_plant_boss;
+            let Some(p) = app.player.as_mut() else {
+                return true;
+            };
+            for slot in p.banks[3].iter_mut() {
+                if slot.kind != key || slot.count == 0 {
+                    continue;
+                }
+                let progression = app
+                    .world
+                    .tile(ox, oy)
+                    .and_then(|t| unlock_progression(t.kind, t.frame_x / 36));
+                if !unlock_chest(&mut app.world, ox, oy, downed_plant) {
+                    continue;
+                }
+                if let Some(id) = progression {
+                    unlocked_progression = Some(id);
+                }
+                app.audio
+                    .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+                if consumes {
+                    slot.count -= 1; // `:33210-33214`
+                    if slot.count == 0 {
+                        *slot = EMPTY_SLOT;
+                    }
+                }
+            }
+        }
         if let Some(id) = unlocked_progression {
             let _ = app.notify_progression_net(id);
         }
@@ -974,6 +1138,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                         y: oy as i16,
                     },
                 )); // `:33116`
+                app.stack_split = 600; // `:33117` — after the 31 send (S1-P-i43)
             }
             return true;
         }
@@ -981,11 +1146,112 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             Some(i) => i,
             None => create_chest(&mut app.world_chests, ox, oy),
         };
-        // `:33230-33252` — the open toggle. (`Main.stackSplit = 600`
-        // `:33232` and the rigged-chest arm are out.)
+        // `:33230-33252` — the open toggle (`Main.stackSplit = 600` `:33232`
+        // rides inside `toggle_open`, S1-P-i43).
         let sound = toggle_open(app, ox, oy, new_chest as i32);
         play_menu_sound(app, sound);
+        // `:33233`/`:33253-33258` — the rigged Dead Man's Chest
+        // (`WorldGen.IsChestRigged`, `WorldGen.cs:35746-35753`: tile 467,
+        // `frameX / 36 == 4`) trips `Wiring.HitSwitch` at the CLICKED cell
+        // (`myX, myY`, not the origin) and announces `59` — after the
+        // open/close branch, on every resolved container (S1-P-i43). The
+        // `_framesLeftEligibleForDeadmansChestDeathAchievement = 600`
+        // death-achievement window has no port tracker (the achievement
+        // needs the player-death wiring; recorded deviation).
+        if crate::app::netglue::is_rigged(&app.world, ox, oy) {
+            app.wiring.hit_switch(&mut app.world, x, y);
+            // The Mech-28 click the trip queues (`Wiring.cs:339`) rides the
+            // `UpdatePlayers` stream — the tile use runs in
+            // `Player.ItemCheck` (`Main.cs:17754`), the doors.rs precedent.
+            for (px, py) in app.wiring.take_switch_clicks() {
+                app.audio.play_switch_click(
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            app.send_hit_switch(x, y); // `:33256`
+            app.world_key = None;
+        }
     }
+    true
+}
+
+/// The dresser (tile 88) TOP-row storage open (`Player.cs:32864-32925`): the
+/// right-click on a dresser's top row (`frameY == 0`) opens the chest at the
+/// 3×2 anchor (`num50 = myX - frameX / 18 % 3`, `num51 = myY - frameY / 18`,
+/// `:32867-32868`) through the SAME shared open block the world chests use
+/// (`:32908-32923` — `stackSplit = 600`, sounds 10/11/12), but with NO
+/// create-on-miss: `Chest.FindChest` (`:32905`) and the `num52 != -1` gate
+/// (`:32906`) mean a dresser without a store entry consumes the click without
+/// opening (the entry is created at placement, `Chest.AfterPlacement_Hook`).
+/// The bottom row (`frameY != 0`) is the wardrobe/clothes window
+/// (`:32927-32937`) — out of scope (the clothes UI is unported); this helper
+/// returns `false` there so the click falls through. S1-P-i43.
+pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
+    let x = (world_pos.x / TILE_PX).floor() as i32;
+    let y = (world_pos.y / TILE_PX).floor() as i32;
+    let Some(t) = app.world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() || t.kind != 88 {
+        return false;
+    }
+    // `:32869` — only the top row opens storage; the bottom row is the
+    // clothes window (out of scope, the click falls through).
+    if t.frame_y != 0 {
+        return false;
+    }
+    // `:32867-32868` — the 3×2 anchor decode.
+    let ox = x - i32::from(t.frame_x) / 18 % 3;
+    let oy = y - i32::from(t.frame_y) / 18;
+    // `:32871-32876` — the prologue: `CancelClothesWindow(quiet)` (no port
+    // clothes window), the sign/talk/chat clears (the world route's mapping).
+    app.close_shop();
+    app.talk_npc = None; // `:32874` — `SetTalkNPC(-1)`
+    app.npc_chat_text.clear(); // `:32876` — `npcChatText = ""`
+    // `:32877-32882` — the rename-editor flush (the modal keyboard parks the
+    // world routes, the chest path's Gap #6 revive point).
+    if app.chest_editing() {
+        play_menu_sound(app, 12);
+        app.front = None;
+    }
+    // `:32883-32887` — the pending rename flush (the chest path's `:33097`
+    // twin, S1-P-i43).
+    flush_edited_chest_name(app);
+    // `:32888-32899` — in MP the client asks the host with `31` (the chest
+    // path's `:33103-33119` twin); a re-click on the open dresser closes
+    // locally. `stackSplit = 600` arms after the send (`:32897`).
+    if let crate::app::NetRole::Client(client) = &app.net {
+        let (cur, cx, cy) = app
+            .player
+            .as_ref()
+            .map_or((-1, 0, 0), |p| (p.chest, p.chest_x, p.chest_y));
+        if cx == ox && cy == oy && cur != -1 {
+            if let Some(p) = app.player.as_mut() {
+                p.chest = -1; // `:32891`
+            }
+            play_menu_sound(app, 11); // `:32892`
+        } else {
+            client.send(&crate::net::C2s::ChestOpenRequest(
+                crate::net::ChestOpenRequest {
+                    x: ox as i16,
+                    y: oy as i16,
+                },
+            )); // `:32896`
+            app.stack_split = 600; // `:32897`
+        }
+        return true;
+    }
+    // `:32905-32906` — `FindChest` with NO create-on-miss: a dresser without
+    // a store entry consumes the click without opening.
+    let Some(idx) = find_chest(&app.world_chests, ox, oy) else {
+        return true;
+    };
+    // `:32908-32923` — the shared open block (`toggle_open` arms
+    // `stackSplit = 600` and returns the 10/11/12 cue).
+    let sound = toggle_open(app, ox, oy, idx as i32);
+    play_menu_sound(app, sound);
     true
 }
 
@@ -1001,25 +1267,35 @@ pub(crate) fn tick_open(app: &mut App) {
     let Some(p) = app.player.as_ref() else {
         return;
     };
-    if p.chest == -1 {
-        return; // `:31017`
+    if p.chest != -1 {
+        let (chest_x, chest_y) = (p.chest_x, p.chest_y);
+        // Both probes read the world only; the close below mutates the
+        // player after the borrow ends.
+        let in_range = in_interaction_range_to_multi_tile_hitbox(&app.world, p, chest_x, chest_y);
+        let origin_active = app.world.tile(chest_x, chest_y).is_some_and(|t| t.active());
+        // `:31078-31085` — the range close plays sound 11; `:31086-31090` —
+        // a dead tile force-closes too (the `Main.cs:41820-41823`
+        // stale-chest equivalent rides this check).
+        if !in_range || !origin_active {
+            let id = force_close(app);
+            play_menu_sound(app, id); // `:31080`/:31088 — `PlaySound(11)`
+        }
     }
-    let (chest_x, chest_y) = (p.chest_x, p.chest_y);
-    // Both probes read the world only; the close below mutates the player
-    // after the borrow ends.
-    let in_range = in_interaction_range_to_multi_tile_hitbox(&app.world, p, chest_x, chest_y);
-    let origin_active = app.world.tile(chest_x, chest_y).is_some_and(|t| t.active());
-    // `:31078-31085` — the range close plays sound 11.
-    if !in_range {
-        let id = force_close(app);
-        play_menu_sound(app, id);
-        return;
+    // `Main.TrySyncingMyPlayer` (`Main.cs:17575-17593`) runs AFTER
+    // `Player.Update`: a close transition this tick (the range/dead-tile
+    // close above, the click-path close, the dead tick's `UpdateDead`)
+    // carries a pending `editedChestName` on the `33` send — the name reads
+    // the LAST-SYNCED chest (`Main.chest[player.chest]`, `:17581`). The
+    // snapshot updates every tick (S1-P-i43).
+    let (cur, prev) = app
+        .player
+        .as_ref()
+        .map_or((-1, -1), |p| (p.chest, p.prev_synced_chest));
+    if cur != prev && cur < 0 && prev >= 0 {
+        flush_edited_chest_name(app);
     }
-    // `:31086-31090` — a dead tile force-closes (the `Main.cs:41820-41823`
-    // stale-chest equivalent rides this check).
-    if !origin_active {
-        let id = force_close(app);
-        play_menu_sound(app, id); // `:31088` — `SoundEngine.PlaySound(11)`
+    if let Some(p) = app.player.as_mut() {
+        p.prev_synced_chest = p.chest;
     }
 }
 
@@ -1060,8 +1336,10 @@ fn multi_tile_hitbox_px_rect(kind: u16, x: i32, y: i32) -> (i32, i32, i32, i32) 
 /// (`Utils.ClosestPointInRect`, `Utils.cs:1581-1595`), the `(int)`-truncated
 /// tile point (`ToTileCoordinates`) tested against the
 /// `TileReachCheckSettings.Simple` bounds
-/// (`DataStructures/TileReachCheckSettings.cs:45-54/:81-85` — ranges 5/3,
-/// `Player.cs:57113-57114`, under the 20 cap; `Collision.InTileBounds`,
+/// (`DataStructures/TileReachCheckSettings.cs:45-54/:81-85` — the live
+/// `Player.tileRangeX/Y` statics under the 20 cap, not the bare 5/3
+/// defaults: the journey power, the Extendo Grip family and the equipped
+/// Toolbox all widen them, S1-P-i43; `Collision.InTileBounds`,
 /// `Collision.cs:3776`, inclusive).
 fn in_interaction_range_to_multi_tile_hitbox(
     world: &World,
@@ -1098,11 +1376,14 @@ fn in_interaction_range_to_multi_tile_hitbox(
     let tx = (px / 16.0) as i32;
     let ty = (py / 16.0) as i32;
     // `IsInTileInteractionRange` (`Player.cs:32025-32030`) over the Simple
-    // region (`TileReachCheckSettings.cs:45-54`).
-    let lx = (p.x / 16.0) as i32 - 5;
-    let hx = ((p.x + player::WIDTH) / 16.0).ceil() as i32 - 1 + 5;
-    let ly = (p.y / 16.0) as i32 - 3;
-    let hy = ((p.y + p.height) / 16.0).ceil() as i32 - 1 + 3;
+    // region (`TileReachCheckSettings.cs:45-54`) — the live statics through
+    // `tile_interaction_reach` (the journey/accessory/Toolbox grants and the
+    // 20 cap, S1-P-i43), not the frozen 5/3 defaults.
+    let (reach_x, reach_y) = p.tile_interaction_reach();
+    let lx = (p.x / 16.0) as i32 - reach_x;
+    let hx = ((p.x + player::WIDTH) / 16.0).ceil() as i32 - 1 + reach_x;
+    let ly = (p.y / 16.0) as i32 - reach_y;
+    let hy = ((p.y + p.height) / 16.0).ceil() as i32 - 1 + reach_y;
     (lx..=hx).contains(&tx) && (ly..=hy).contains(&ty)
 }
 
@@ -1117,7 +1398,8 @@ fn in_interaction_range_to_multi_tile_hitbox(
 // Out: the bank containers (M3-STORE-1 — `GetCurrentContainer`'s chest < -1
 // arms and the bank-only `IsBlockedFromTransferIntoChest`, `ChestUI.cs:
 // 1291-1302`), the net messages 32/38 (`:1247`/:1258/:1283, `ItemSlot.cs:808`),
-// `DoCoins`' roll-over (`Player.cs:39567-39569` — unported everywhere), the
+// `DoCoins`' roll-over (`Player.cs:39567-39569`) landed with S1-P-i50
+// (`item.rs::do_coins`, wired at the transfer tails), the
 // cursor-override texture draw (see `App.cursor_override`).
 
 /// Reads chest slot `slot` of the store entry `idx` with the implicit-air
@@ -1176,29 +1458,56 @@ pub(crate) fn retain_favorite_on_move_at(context: i32) -> bool {
     matches!(context, 0 | 1 | 2 | 32 | 5)
 }
 
-/// `Player.ItemSpace(item).CanTakeItemToPersonalInventory`
-/// (`Player.cs:39153-39197`) for the shift-out cursor: any grid slot accepts
-/// the item (`CanItemSlotAcceptPickup`, `:39220-39232` — empty, or a
-/// same-kind partial stack), or the ungated same-kind merge scan over the
-/// ammo slots (`:39185-39191`). The `IsAPickup`/`uniqueStack` sets, the
-/// `ammo > 0` FillAmmo arm (`:39175-39184`) and the Cofveve void scan
-/// (`:39192-39195`) have no port counterparts yet.
+/// `Player.useVoidBag` (`Player.cs:23171-23181`): the player carries the
+/// Void Bag 4131 anywhere in `inventory[0..58]` — the grid plus the coin
+/// (50-53) and ammo (54-57) rows; the trash slot 58 is outside the scan
+/// (`for i < 58`). The locked-chest key fallback's gate (`:33200`).
+pub(crate) fn use_void_bag(app: &App) -> bool {
+    app.inventory
+        .iter()
+        .chain(app.equip.coins.iter())
+        .chain(app.equip.ammo.iter())
+        .any(|s| s.count > 0 && s.kind == 4131)
+}
+
+/// `Player.ItemSpace(item).CanTakeItem` (`Player.cs:39153-39197`,
+/// S1-P-i47) for the shift-out cursor: the full predicate — the
+/// `IsAPickup` bypass, the grid scan with the favorited one-per-inventory
+/// guard (`CanItemSlotAcceptPickup`, `:39220-39235`), the `ammo > 0`
+/// FillAmmo arm (`:39175-39184`), the ungated ammo merge scan
+/// (`:39185-39191`) and the Cofveve void scan (`:39192-39195`). The caller
+/// holds no prefix (the cursor probe), so the probe stacks unprefixed.
+/// S1-P-i43's coin half (`:39163-39167`): a coin's `ItemSpace` scans the
+/// coin rows too (pInv 50-53), so a free coin row answers true even with
+/// a full grid.
 pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
     if kind == 0 {
         return false;
     }
-    let max = registry::max_stack(kind);
-    if app
-        .inventory
-        .iter()
-        .any(|s| s.count == 0 || (s.kind == kind && s.count < max))
+    let vault_enabled = app.player.as_ref().is_some_and(|p| p.void_vault_enabled);
+    let vault = app.player.as_ref().map(|p| &p.banks[3]);
+    if crate::item::item_space(
+        &app.inventory,
+        &app.equip.ammo,
+        kind,
+        0,
+        |idx| app.is_favorite(idx),
+        if vault_enabled { vault } else { None },
+    )
+    .can_take
     {
         return true;
     }
-    app.equip
-        .ammo
-        .iter()
-        .any(|s| s.count > 0 && s.kind == kind && s.count < max)
+    // `:39163-39167` — a coin's scan covers the coin rows too (pInv 50-53).
+    // Boolean-equivalent post-check: `item_space` already admitted the grid
+    // arm; only the coin-row half can still answer true here.
+    let max = registry::max_stack(kind);
+    registry::is_coin(kind)
+        && app
+            .equip
+            .coins
+            .iter()
+            .any(|s| s.count == 0 || (s.kind == kind && s.count < max))
 }
 
 /// `ChestUI.TryPlacingInChest` (`ChestUI.cs:1209-1289`) — the shift-in
@@ -1361,9 +1670,12 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
 /// `inv[slot] = player.GetItem(inv[slot], QuickTransferFromSlot)`.
 /// `GetItemSettings.QuickTransferFromSlot` (`GetItemSettings.cs:58`) is
 /// NoText-only. The remainder stays in the chest slot. Out: the
-/// `FitsAmmoSlot`/`FillAmmo` pre-pass (`Player.cs:39345-39352` — no
-/// ammo-accept registry yet), `DoCoins` (`:39567-39569`), the void vault
-/// (`:39395-39398`).
+/// `FitsAmmoSlot`/`FillAmmo` pre-pass (`Player.cs:39345-39352` — the
+/// `item::fits_ammo_slot` registry seam landed with S1-P-i43's `loot_all`;
+/// this cursor-8 single-slot take awaits the same pre-pass as a follow-up)
+/// and the void vault (`:39395-39398`); `DoCoins` (`:39567-39569`) landed
+/// with S1-P-i50 (immediate per-fill calls, the retry fix — not a deferred
+/// sweep).
 pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     /// `GetItem_FillIntoOccupiedSlot`'s merge step (`Player.cs:39485-39524`):
     /// as much of `remainder` as a partial slot accepts — the accept gate is
@@ -1424,52 +1736,64 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     } = app;
     // The occupied-slot pass (`Player.cs:39353-39364`): coins start at the C#
     // coin slots 50-53 (the `num2 = -4` arm, `:39340-39343`), then the grid.
-    // `:39444` — `IsACoin ? 38 : 7` per accepted slot.
+    // `:39444` — `IsACoin ? 38 : 7` per accepted slot. S1-P-i50 retry: coins
+    // walk the carry view in C# index order with `DoCoins` IMMEDIATELY per
+    // fill (`:39503`/`:39519`) — a conversion can merge-and-air a coin row
+    // the later empty pass then refills, so the deferred sweep changed slot
+    // placement.
     if is_coin {
-        for s in equip.coins.iter_mut() {
+        let mut slots = crate::item::carry_slots_mut(inventory, &mut equip.coins, None);
+        let n = slots.len(); // INV + COINS = 54
+        // Occupied pass, C# `i = -4..50`: coin rows 50-53, then grid 0-49.
+        for i in (crate::item::INV..n).chain(0..crate::item::INV) {
+            if remainder == 0 {
+                break;
+            }
+            if merge_into(&mut slots[i], &src, &mut remainder) > 0 {
+                audio.play_pickup_sound(true, &mut pickup_rng); // `:39491`
+                crate::item::do_coins(&mut slots, i); // `:39503`/`:39519`
+            }
+        }
+        // Empty pass, C# `i = 53..0` DESCENDING (`:39387-39394`; the
+        // `!isACoin` gate `:39365` skips the coin hotbar-first empty pass).
+        for i in (0..n).rev() {
+            if remainder == 0 {
+                break;
+            }
+            if fill_empty(&mut slots[i], &src, &mut remainder) {
+                audio.play_pickup_sound(true, &mut pickup_rng); // `:39559`
+                crate::item::do_coins(&mut slots, i); // `:39569`
+                break;
+            }
+        }
+    } else {
+        for s in inventory[..INV].iter_mut() {
             if merge_into(s, &src, &mut remainder) > 0 {
-                audio.play_pickup_sound(true, &mut pickup_rng);
+                audio.play_pickup_sound(false, &mut pickup_rng); // `:39491`
             }
             if remainder == 0 {
                 break;
             }
         }
-    }
-    for s in inventory[..INV].iter_mut() {
-        if merge_into(s, &src, &mut remainder) > 0 {
-            audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39444`
-        }
-        if remainder == 0 {
-            break;
-        }
-    }
-    // The empty-slot passes (`Player.cs:39365-39394`): the hotbar-first arm
-    // for usable kinds (`useStyle != 0`, `:39365-39374`), then the
-    // non-favorited REVERSE scan (`:39387-39394`; chest items cannot be
-    // favorited — [`can_favorite_at`] excludes ctx 3 — so the favorited
-    // forward arm `:39375-39384` is unreachable here). Coins scan the coin
-    // slots descending first (`num = 54`).
-    if remainder > 0 && crate::item::use_style(src.kind) != 0 {
-        for s in inventory[..HOTBAR].iter_mut() {
-            if fill_empty(s, &src, &mut remainder) {
-                audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39559`
-                break;
+        // The empty-slot passes (`Player.cs:39365-39394`): the hotbar-first
+        // arm for usable kinds (`useStyle != 0`, `:39365-39374`), then the
+        // non-favorited REVERSE scan (`:39387-39394`; chest items cannot be
+        // favorited — [`can_favorite_at`] excludes ctx 3 — so the favorited
+        // forward arm `:39375-39384` is unreachable here).
+        if remainder > 0 && crate::item::use_style(src.kind) != 0 {
+            for s in inventory[..HOTBAR].iter_mut() {
+                if fill_empty(s, &src, &mut remainder) {
+                    audio.play_pickup_sound(false, &mut pickup_rng); // `:39559`
+                    break;
+                }
             }
         }
-    }
-    if remainder > 0 && is_coin {
-        for s in equip.coins.iter_mut().rev() {
-            if fill_empty(s, &src, &mut remainder) {
-                audio.play_pickup_sound(true, &mut pickup_rng); // `:39559`
-                break;
-            }
-        }
-    }
-    if remainder > 0 {
-        for s in inventory[..INV].iter_mut().rev() {
-            if fill_empty(s, &src, &mut remainder) {
-                audio.play_pickup_sound(is_coin, &mut pickup_rng); // `:39559`
-                break;
+        if remainder > 0 {
+            for s in inventory[..INV].iter_mut().rev() {
+                if fill_empty(s, &src, &mut remainder) {
+                    audio.play_pickup_sound(false, &mut pickup_rng); // `:39559`
+                    break;
+                }
             }
         }
     }
@@ -1613,7 +1937,8 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
 /// `IngameFancyUI.Close(quiet: true)` (`IngameFancyUI.cs:148-156`): sound 12,
 /// the editor closes, then the chest<0 no-op (:844-848), the
 /// default-name-to-empty rule (:849-852) and the write-if-different
-/// (:853-860 — the `editedChestName` net flag is MP, out). `text` is the live
+/// (:853-860 — the MP client latches `editedChestName`, the
+/// [`flush_edited_chest_name`] seam, S1-P-i43). `text` is the live
 /// keyboard text — `Main.npcChatText`'s per-tick sync
 /// (`UIVirtualKeyboard.cs:1061-1067`); the C# submit closure ignores its
 /// trimmed argument (`:363`), so the untrimmed text is what lands.
@@ -1629,7 +1954,10 @@ pub(crate) fn rename_submit(app: &mut App, text: &str) -> u32 {
         name = String::new(); // `:849-852`
     }
     // `:853-860` — the write-if-different guard, onto the entity's own field
-    // (the retired `App.chest_names` side map's target).
+    // (the retired `App.chest_names` side map's target). The MP client latches
+    // `editedChestName` on the write (`:855-859`) — the next `33` send carries
+    // the name (`flush_edited_chest_name`, S1-P-i43).
+    let mut wrote = false;
     if let Some(entry) = app
         .world_chests
         .get_mut(chest as usize)
@@ -1637,9 +1965,61 @@ pub(crate) fn rename_submit(app: &mut App, text: &str) -> u32 {
     {
         if entry.name != name {
             entry.name = name;
+            wrote = true;
+        }
+    }
+    if wrote && matches!(app.net, crate::app::NetRole::Client(_)) {
+        if let Some(p) = app.player.as_mut() {
+            p.edited_chest_name = true; // `:858` — netMode 1 only
         }
     }
     12
+}
+
+/// The `editedChestName` client flush (`Player.cs:33097-33101`, the dresser
+/// twin `:32883-32887`; `Main.TrySyncingMyPlayer`'s close-transition send
+/// `Main.cs:17575-17593` is the same seam): a pending rename rides the NEXT
+/// `33 SyncPlayerChest` — the CURRENT open index with the stored name
+/// (`NetMessage.SendData(33, ..., NetworkText.FromLiteral(name), chest, 1f)`,
+/// the `number2 == 1f` name arm `NetMessage.cs` case 33: length 1..=20 writes
+/// the text, an empty or too-long name writes the 255 refusal byte). The
+/// flag clears on the send. Client-only (`Main.netMode == 1`); the host and
+/// single player never latch it. S1-P-i43.
+pub(crate) fn flush_edited_chest_name(app: &mut App) {
+    let Some(p) = app.player.as_ref() else {
+        return;
+    };
+    if !p.edited_chest_name {
+        return;
+    }
+    let chest = p.chest;
+    // The name source: the open-click sites read `Main.chest[this.chest]`
+    // (the still-open chest); the close-transition site reads
+    // `Main.chest[player.chest]` — the LAST-SYNCED index (`Main.cs:17581`),
+    // the chest the rename landed on before the close.
+    let name_src = if chest >= 0 { chest } else { p.prev_synced_chest };
+    let name = if name_src >= 0 {
+        chest_name(app, name_src).to_string()
+    } else {
+        String::new() // `Main.cs:17585-17587` — the null-chest arm sends no name
+    };
+    // The writer's coords (`NetMessage.cs` case 33): `number > -1` reads the
+    // chest's tile, else 0/0.
+    let (cx, cy) = if chest > -1 { (p.chest_x, p.chest_y) } else { (0, 0) };
+    let len = name.chars().count();
+    let name_len = if len == 0 || len > 20 { 255 } else { len as u8 };
+    if let crate::app::NetRole::Client(client) = &app.net {
+        client.send(&crate::net::C2s::PlayerChest(crate::net::PlayerChest {
+            chest: chest as i16,
+            x: cx as i16,
+            y: cy as i16,
+            name_len,
+            name,
+        }));
+    }
+    if let Some(p) = app.player.as_mut() {
+        p.edited_chest_name = false; // `:33100`
+    }
 }
 
 /// `ChestUI.RenameChestCancel` (`ChestUI.cs:863-869`): sound 12, the editor
@@ -1833,9 +2213,9 @@ mod tests {
     }
 
     /// DW-1.3 — `Chest.IsLockedOrInUse` (`Chest.cs:178-188`): the in-use
-    /// player wins before the lock decode; the bank arm is unported
-    /// (M3-STORE-1 must restore `bankChest` → false); absent/removed slots
-    /// are neither.
+    /// player wins before the lock decode; the bank early-false is vacuous
+    /// (the banks are `Player.banks`, never store entries — S1-P-i43);
+    /// absent/removed slots are neither.
     #[test]
     fn is_locked_or_in_use_matches_chest_cs() {
         let mut w = world();
@@ -1882,8 +2262,12 @@ mod tests {
     #[test]
     fn default_chest_name_matches_the_chestui_chain() {
         // `ChestUI.cs:124-140` — the tile-style default the panel shows while
-        // the stored name is empty. The strings are the port's generated item
-        // names (the vanilla en-US localization's own values).
+        // the stored name is empty. The live localization rows first
+        // (S1-P-i43 — the shipped Legacy JSON IS on disk), the generated item
+        // names as the resource-less fallback. The lang lock pins the
+        // manager state against the parallel reload tests.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         assert_eq!(default_chest_name(21, 0), "Chest"); // style 0
         assert_eq!(default_chest_name(21, 36), "Gold Chest"); // style 1
         // The locked twins: `Chest.Lock` shifts +36 (`Chest.cs:449-453`).
@@ -1893,18 +2277,25 @@ mod tests {
         assert_eq!(default_chest_name(21, 828), "Locked Jungle Chest");
         // `Lang.cs:503-506`: styles 52+ alias style 0.
         assert_eq!(default_chest_name(21, 1908), "Chest");
-        // Tile 467: style 4 is the Dead Man's Chest (`ChestUI.cs:129-131`).
-        assert_eq!(default_chest_name(467, 144), "Dead Mans Chest");
+        // Tile 467: style 4 is the Dead Man's Chest (`ChestUI.cs:129-131`) —
+        // `Lang.GetItemNameValue(3988)` carries the apostrophe
+        // (`en-US.Items.json:4232` "Dead Man's Chest"); the generated
+        // identifier split ("Dead Mans Chest") is only the fallback.
+        assert_eq!(default_chest_name(467, 144), "Dead Man's Chest");
         assert_eq!(default_chest_name(467, 180), "Solar Chest");
         // Tile 88 dressers read frameX / 54 (`:137-139`).
         assert_eq!(default_chest_name(88, 0), "Dresser");
         assert_eq!(default_chest_name(88, 54), "Ebonwood Dresser");
-        // A style with no placing item and no twin rule renders nothing —
-        // style 13 of tile 467 (frame 13×36) has no chest item. (The regen in
-        // M4-PROJ-4 restored styles 0-12/14's placing items from the C#
-        // `createTile`/`placeStyle` rows, so style 0 now names the Crystal
-        // Chest.)
-        assert_eq!(default_chest_name(467, 468), "");
+        // A style with no placing item still names through the localization
+        // row — style 13 of tile 467 is `LegacyChestType2.13` = "Locked
+        // {$ItemName.DungeonDesertChest}" → "Locked Desert Chest".
+        assert_eq!(default_chest_name(467, 468), "Locked Desert Chest");
+        // The resource-less fallback keeps the generated names (the twin
+        // rule + the apostrophe-less identifier split).
+        assert_eq!(chest_type_name(0, 21), "Chest");
+        assert_eq!(chest_type_name(2, 21), "Locked Gold Chest");
+        assert_eq!(chest_type_name(4, 467), "Dead Mans Chest");
+        assert_eq!(chest_type_name(13, 467), "");
     }
 
     // --- Phase 2: the open/close + locking interaction -----------------------
@@ -1977,6 +2368,7 @@ mod tests {
             slots,
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         });
         let p = app.player.as_mut().unwrap();
         p.chest = 0;
@@ -2432,8 +2824,13 @@ mod tests {
         assert!(try_open_chest_at_cursor(&mut app, click(40, 10)));
         assert!(!progression(&app, 19) && !progression(&app, 20));
 
-        // The Plantera-gated style 23 → progression 20.
+        // The Plantera-gated style 23 → progression 20. `Chest.Unlock`
+        // (`Chest.cs:376`) REFUSES while `!NPC.downedPlantBoss` — the i43
+        // gate fix retired the old `true` fallback, so the fixture arms
+        // the world flag (gate V4 witness fix; the pre-i43 test relied on
+        // the WRONG always-true gate).
         let mut w = world();
+        w.downed_plant_boss = true;
         place_chest(&mut w, 60, 10, 21, 828);
         let mut app = interact_app(w);
         app.inventory[0] = slot(1533, 1);
@@ -2921,11 +3318,15 @@ mod tests {
             ],
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         };
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|_| slot(3, 9999));
         inventory[40] = slot(9, 400); // the wood partial soaks the stack
         let mut coins = [slot(71, 10), EMPTY_SLOT, EMPTY_SLOT, EMPTY_SLOT];
-        crate::bank::loot_all(&mut chest.slots, &mut inventory, &mut coins, None);
+        let mut ammo: [ItemSlot; 4] = std::array::from_fn(|_| EMPTY_SLOT);
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = tr_core::UnifiedRandom::new(0);
+        crate::bank::loot_all(&mut chest.slots, &mut inventory, &mut coins, &mut ammo, None, &mut audio, &mut rng);
         // The wood drained into the partial (the 9999 cap takes all 500).
         assert!(inventory.iter().any(|s| s.kind == 9 && s.count == 900));
         assert_eq!(chest.slots[0], EMPTY_SLOT, "the wood drained");
@@ -2954,6 +3355,7 @@ mod tests {
             slots: Vec::new(),
             name: String::new(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         };
         chest.slots.resize(DEFAULT_MAX_ITEMS as usize, EMPTY_SLOT);
         chest.slots[0] = slot(9, 500);
@@ -2963,22 +3365,24 @@ mod tests {
         inventory[20] = slot(9, 100);
         inventory[21] = slot(3, 10);
         let fav = |_: usize| false;
+        let mut audio = crate::audio::Audio::new(None);
+        let mut rng = tr_core::UnifiedRandom::new(0);
         // `quick_stack` merges only the types the chest already holds
         // (wood — the stone and the hotbar row stay put).
-        crate::bank::quick_stack(&mut chest.slots, &mut inventory, &mut [EMPTY_SLOT; 4], &fav);
+        crate::bank::quick_stack(&mut chest.slots, &mut inventory, &mut [EMPTY_SLOT; 4], &fav, &mut audio, &mut rng);
         assert_eq!(chest.slots[0].count, 600, "quick_stack merged the wood");
         assert_eq!(inventory[20].count, 0);
         assert_eq!(inventory[21].count, 10, "the stone is not a target type");
         // `deposit_all` parks the stone on the first free slot
         // (`ChestUI.cs:579-655`'s walk) and leaves the hotbar alone.
-        crate::bank::deposit_all(&mut chest.slots, &mut inventory, &fav);
+        crate::bank::deposit_all(&mut chest.slots, &mut inventory, &fav, &mut audio, &mut rng);
         assert_eq!(chest.slots[1], slot(3, 10), "deposit_all parked the stone");
         assert_eq!(inventory[21].count, 0);
         assert_eq!(inventory[5].count, 50, "the hotbar is not a deposit source");
         // `restock` fills the hotbar partial from the unprefixed chest stack
         // (the prefix-0 supply gate reads the chest's real prefixes now).
         assert!(
-            crate::bank::restock(&mut chest.slots, &mut inventory, &mut ammo),
+            crate::bank::restock(&mut chest.slots, &mut inventory, &mut ammo, &fav, &mut audio, &mut rng),
             "restock filled the partial"
         );
         assert_eq!(inventory[5].count, 650);
@@ -3493,6 +3897,7 @@ mod tests {
             slots: Vec::new(),
             name: name.into(),
             max_items: DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         }
     }
 
@@ -3640,5 +4045,314 @@ mod tests {
         let _ = witness.next_range(0, 5);
         let _ = witness.next_range(-40, 41);
         assert_eq!(*app.rngs.global(), witness, "the case-38 slot+pitch draws");
+    }
+
+    // --- S1-P-i43: the chest-USE census fixes --------------------------------
+
+    /// S1-P-i43 — `Chest.UpdateChestFrames` (`Chest.cs:3603-3662`): the
+    /// browsed chest's counter climbs to the 10 cap (frame 2), an idle
+    /// chest's decays to 0 (frame 0), the 1..9 band reads frame 1, and a
+    /// removed slot is skipped (`:3618`'s null continue).
+    #[test]
+    fn s1_p_i43_update_chest_frames_climbs_while_open_and_decays_when_closed() {
+        let mut chests = vec![chest_at(10, 18, "A"), chest_at(30, 40, "B")];
+        chests[1].frame_counter = 10;
+        chests[1].frame = 2;
+        // Chest 0 open: 10 ticks reach the cap, frame 2 (`:3652-3654`).
+        for _ in 0..10 {
+            update_chest_frames(&mut chests, 0);
+        }
+        assert_eq!(chests[0].frame_counter, 10);
+        assert_eq!(chests[0].frame, 2, "the fully open lid");
+        // The idle chest 1 decayed to 0 in the same ticks (`:3626`).
+        assert_eq!(chests[1].frame_counter, 0);
+        assert_eq!(chests[1].frame, 0, "the closed lid");
+        // The cap holds (`:3644-3647`): another open tick stays at 10.
+        update_chest_frames(&mut chests, 0);
+        assert_eq!(chests[0].frame_counter, 10);
+        // One close tick: 9 → frame 1 (`:3656-3658`).
+        update_chest_frames(&mut chests, -1);
+        assert_eq!(chests[0].frame_counter, 9);
+        assert_eq!(chests[0].frame, 1, "the half-open band");
+        // The floor at 0 (`:3640-3643`): nine more idle ticks, never below.
+        for _ in 0..20 {
+            update_chest_frames(&mut chests, -1);
+        }
+        assert_eq!(chests[0].frame_counter, 0);
+        assert_eq!(chests[0].frame, 0);
+        // A removed slot never animates (`:3618`).
+        remove_chest(&mut chests, 1);
+        chests[1].frame_counter = 5;
+        update_chest_frames(&mut chests, 1);
+        assert_eq!(chests[1].frame_counter, 5, "the null slot is skipped");
+    }
+
+    /// S1-P-i43 — the eat-animation arm (`Chest.cs:3628-3639`): the chime
+    /// fires at `eatingAnimationTime == 9 && frame == 1` BEFORE the timer
+    /// decrements, and the counter floors at the timer (`:3636-3639`).
+    #[test]
+    fn s1_p_i43_the_eat_timer_floors_the_counter_and_reports_the_chime() {
+        let mut chests = vec![chest_at(10, 18, "E")];
+        chests[0].eating_animation_time = 10;
+        chests[0].frame = 1;
+        // Tick 1: timer 10 → 9, counter floors at 9, frame 1 — no cue yet
+        // (the check reads the PRE-decrement timer, 10).
+        let cues = update_chest_frames(&mut chests, -1);
+        assert!(cues.is_empty(), "timer 10 is not the chime tick");
+        assert_eq!(chests[0].eating_animation_time, 9);
+        assert_eq!(chests[0].frame_counter, 9, "the floor at the timer");
+        assert_eq!(chests[0].frame, 1);
+        // Tick 2: the check reads timer 9 + frame 1 — the cue fires, then
+        // the timer decays to 8 and the counter floors at 8.
+        let cues = update_chest_frames(&mut chests, -1);
+        assert_eq!(cues, vec![0], "the :3628-3631 chime");
+        assert_eq!(chests[0].eating_animation_time, 8);
+        assert_eq!(chests[0].frame_counter, 8);
+    }
+
+    /// S1-P-i43 — `Chest.GetCurrentlyOpenChests` (`Chest.cs:283-294`): the
+    /// `> -1` gate admits world chests only; the banks and -1 answer empty.
+    #[test]
+    fn s1_p_i43_currently_open_chests_excludes_the_banks() {
+        assert_eq!(currently_open_chests(-1), Vec::<usize>::new());
+        for bank in [-2, -3, -4, -5] {
+            assert!(currently_open_chests(bank).is_empty(), "bank {bank}");
+        }
+        assert_eq!(currently_open_chests(0), vec![0]);
+        assert_eq!(currently_open_chests(7), vec![7]);
+    }
+
+    /// S1-P-i43 — `Main.stackSplit = 600` (`Player.cs:33232`): every resolved
+    /// container arms the transfer cooldown — the fresh open, the switch
+    /// AND the same-index close (the C# sets it before the three-way
+    /// branch).
+    #[test]
+    fn s1_p_i43_toggle_open_arms_the_600_split_cooldown_on_every_arm() {
+        let mut app = interact_app(world());
+        app.stack_split = 0;
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 10);
+        assert_eq!(app.stack_split, 600, "the fresh open (:33232)");
+        app.stack_split = 0;
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 11);
+        assert_eq!(app.stack_split, 600, "the close arms it too");
+        app.stack_split = 0;
+        assert_eq!(toggle_open(&mut app, 20, 20, -2), 10);
+        assert_eq!(app.stack_split, 600, "the bank open");
+        app.stack_split = 0;
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 12);
+        assert_eq!(app.stack_split, 600, "the switch");
+    }
+
+    /// S1-P-i43 — the open prologue (`Player.cs:33087-33090`): the chest
+    /// click clears the talk-NPC latch and the chat text (`SetTalkNPC(-1)`,
+    /// `npcChatText = ""`), not just the shop.
+    #[test]
+    fn s1_p_i43_the_open_click_clears_the_talk_npc_and_chat_text() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        app.talk_npc = Some(0);
+        app.npc_chat_text = "Hello, traveller!".into();
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert_eq!(app.talk_npc, None, "`SetTalkNPC(-1)` (:33088)");
+        assert!(app.npc_chat_text.is_empty(), "`npcChatText = \"\"` (:33090)");
+    }
+
+    /// S1-P-i43 — the Plantera gate reads `World.downed_plant_boss`
+    /// (`Chest.cs:376-379`/:397-400): a biome key in the inventory does NOT
+    /// unlock a pre-Plantera biome chest, and is not consumed; post-Plantera
+    /// it unlocks and decrements.
+    #[test]
+    fn s1_p_i43_the_biome_key_unlock_reads_the_world_plantera_flag() {
+        let mut w = world();
+        place_chest(&mut w, 20, 40, 21, 828); // the locked Jungle Chest (style 23)
+        let mut app = interact_app(w);
+        app.inventory[0] = slot(1533, 1); // the Jungle Key
+        app.world.downed_plant_boss = false;
+        assert!(try_open_chest_at_cursor(&mut app, click(20, 40)));
+        assert!(is_locked(&app.world, 20, 40), "pre-Plantera: still locked");
+        assert_eq!(app.inventory[0].count, 1, "the key is not consumed");
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "no open");
+        app.world.downed_plant_boss = true;
+        assert!(try_open_chest_at_cursor(&mut app, click(20, 40)));
+        assert!(!is_locked(&app.world, 20, 40), "post-Plantera: unlocked");
+        assert_eq!(app.inventory[0].count, 0, "the key consumed");
+    }
+
+    /// S1-P-i43 — the void-bag key fallback (`Player.cs:33200-33221`): with
+    /// no inventory key but the Void Bag 4131 carried, the bank4 walk
+    /// unlocks and consumes the key; without the bag the fallback never
+    /// runs (`useVoidBag`, `:23171-23181`).
+    #[test]
+    fn s1_p_i43_the_void_bag_holds_the_fallback_key() {
+        let mut w = world();
+        place_chest(&mut w, 20, 40, 21, 72); // the locked Gold Chest
+        let mut app = interact_app(w);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.banks[3][0] = slot(327, 2); // the golden key in the void vault
+        }
+        // No Void Bag: the fallback refuses (`!flag15 && useVoidBag()`).
+        assert!(try_open_chest_at_cursor(&mut app, click(20, 40)));
+        assert!(is_locked(&app.world, 20, 40), "no bag: still locked");
+        assert_eq!(app.player.as_ref().unwrap().banks[3][0].count, 2);
+        // The bag in the grid arms the fallback: unlock + decrement.
+        app.inventory[5] = slot(4131, 1);
+        assert!(try_open_chest_at_cursor(&mut app, click(20, 40)));
+        assert!(!is_locked(&app.world, 20, 40), "the vault key unlocked it");
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0].count, 1,
+            "the vault key decrements (:33210)"
+        );
+        assert_eq!(app.inventory[5].count, 1, "the bag itself is untouched");
+    }
+
+    /// S1-P-i43 — `useVoidBag`'s scan (`Player.cs:23173`'s `i < 58`): the
+    /// grid and the coin/ammo rows count, the trash slot 58 does not.
+    #[test]
+    fn s1_p_i43_use_void_bag_scans_0_to_57_not_the_trash() {
+        let mut app = interact_app(world());
+        assert!(!use_void_bag(&app));
+        app.equip.trash = slot(4131, 1);
+        assert!(!use_void_bag(&app), "slot 58 is outside the scan");
+        app.equip.ammo[3] = slot(4131, 1);
+        assert!(use_void_bag(&app), "slot 57 is inside");
+    }
+
+    /// S1-P-i43 — the rigged Dead Man's Chest (`Player.cs:33233`/:33253-33258,
+    /// `WorldGen.IsChestRigged` `WorldGen.cs:35746-35753`): opening a 467
+    /// style-4 chest trips `Wiring.HitSwitch` at the CLICKED cell — the
+    /// 467-4 arm's 2×2 wire trip (`Wiring.cs:317-330`) reaches a wired lamp
+    /// beside the chest and swaps it. A plain chest trips nothing.
+    #[test]
+    fn s1_p_i43_the_rigged_chest_trips_the_wiring_on_open() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 467, 144); // style 4 — the Dead Man's Chest
+        // A wire over the chest's 2×2 runs to an unlit wire lamp (421) at
+        // (12, 18): the trip's flood swaps it to 422 (`Wiring.cs:1013-1026`).
+        for x in 10..=12 {
+            w.wires.set(x, 18, tr_core::wiring::WireColor::Red, true);
+        }
+        set_tile(&mut w, 12, 18, 421, 0);
+        let mut app = interact_app(w);
+        // Click the bottom-right cell (11, 19): the trip's corner decode
+        // (`corner_from_frame`) lands on the origin (10, 18) either way.
+        assert!(try_open_chest_at_cursor(&mut app, click(11, 19)));
+        assert_eq!(app.player.as_ref().unwrap().chest, 0, "the chest opened");
+        assert_eq!(
+            app.world.tile(12, 18).unwrap().kind, 422,
+            "the rigged trip lit the wired lamp (:33255)"
+        );
+        // The same click again closes it — and trips again (`flag17` is
+        // read before the branch, `:33233`): the lamp swaps back.
+        assert!(try_open_chest_at_cursor(&mut app, click(11, 19)));
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "the close");
+        assert_eq!(app.world.tile(12, 18).unwrap().kind, 421, "the second trip");
+        // A plain chest never trips: the same wired lamp stays unlit.
+        let mut w2 = world();
+        place_chest(&mut w2, 10, 18, 21, 0);
+        for x in 10..=12 {
+            w2.wires.set(x, 18, tr_core::wiring::WireColor::Red, true);
+        }
+        set_tile(&mut w2, 12, 18, 421, 0);
+        let mut app2 = interact_app(w2);
+        assert!(try_open_chest_at_cursor(&mut app2, click(10, 18)));
+        assert_eq!(app2.world.tile(12, 18).unwrap().kind, 421, "no trip");
+    }
+
+    /// S1-P-i43 — the range close reads the LIVE `Player.tileRangeX/Y`
+    /// statics (`TileReachCheckSettings.GetRanges`,
+    /// `TileReachCheckSettings.cs:20-34`), not the frozen 5/3 defaults: the
+    /// Extendo Grip's +3/+2 (`Player.cs:13040-13044`) keeps a chest open
+    /// that the bare reach would close.
+    #[test]
+    fn s1_p_i43_the_range_close_honours_the_tile_range_accessories() {
+        let mut w = world();
+        place_chest(&mut w, 10, 10, 21, 0);
+        let mut app = interact_app(w);
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 10);
+        // px 30: hx = ceil((30+20)/16) − 1 + reach_x = 3 + reach_x.
+        // The clamp point is tile 10; the bare reach 5 gives hx 8 < 10
+        // (close), the Extendo Grip's 8 gives hx 11 (open).
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 30.0;
+            p.y = 150.0; // center y 171 — inside the rect's [161, 191]
+        }
+        tick_open(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "bare reach closes");
+        // Re-open with the Extendo Grip equipped (accessory slot 3). The
+        // origin tile is still active (the range close never kills it), so
+        // the fresh open plays 10.
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 10);
+        app.player.as_mut().unwrap().equipped[3] = 2215;
+        tick_open(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().chest, 0,
+            "the +3 X reach keeps it open (:13042)"
+        );
+        // The equipped Toolbox's +1/+1 (`:14954-14958`) alone is not enough
+        // here (hx 9 < 10) — the same probe closes with only the Toolbox.
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 11);
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 10);
+        app.player.as_mut().unwrap().equipped[3] = 1923;
+        tick_open(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "the Toolbox alone");
+    }
+
+    /// S1-P-i43 — the coin half of `ItemSpace` (`Player.cs:39163-39167`): a
+    /// coin's shift-out cursor lights when a COIN ROW has room, even with
+    /// the grid full (`num = 54` covers pInv 50-53).
+    #[test]
+    fn s1_p_i43_item_space_counts_the_coin_rows_for_coins() {
+        let mut app = interact_app(world());
+        for s in app.inventory.iter_mut() {
+            *s = slot(3, 9999); // the grid is full of stone
+        }
+        for s in app.equip.coins.iter_mut() {
+            *s = slot(71, 100); // every coin row full of copper
+        }
+        assert!(!inventory_has_room_for(&app, 9), "wood has no room");
+        assert!(!inventory_has_room_for(&app, 71), "no coin room yet");
+        app.equip.coins[0] = slot(71, 50); // a partial copper row
+        assert!(inventory_has_room_for(&app, 71), "the partial coin row");
+        app.equip.coins[0] = slot(71, 100); // full again
+        app.equip.coins[1] = EMPTY_SLOT; // an empty coin row
+        assert!(inventory_has_room_for(&app, 71), "the empty coin row");
+        // A non-coin kind never reads the coin rows.
+        assert!(!inventory_has_room_for(&app, 9));
+    }
+
+    /// S1-P-i43 — the dresser TOP-row storage open (`Player.cs:32864-32925`):
+    /// a right-click on the top row (`frameY == 0`) opens the chest at the 3×2
+    /// anchor through the shared block (sounds 10/11/12), with NO create-on-miss
+    /// (`FindChest` + the `num52 != -1` gate). The bottom row is the clothes
+    /// window (out of scope — the click falls through).
+    #[test]
+    fn s1_p_i43_the_dresser_top_row_opens_its_chest_without_creating() {
+        let mut w = world();
+        // A 3×2 dresser at (10, 18): the top row frameY 0, the bottom 18;
+        // the three columns frameX 0/18/36.
+        for dx in 0..3 {
+            set_chest_tile(&mut w, 10 + dx, 18, 88, (dx * 18) as i16, 0);
+            set_chest_tile(&mut w, 10 + dx, 19, 88, (dx * 18) as i16, 18);
+        }
+        let mut app = interact_app(w);
+        // No store entry: the click is consumed but nothing opens (the
+        // `num52 != -1` gate, :32906 — no create-on-miss).
+        assert!(try_open_dresser_at_cursor(&mut app, click(11, 18)));
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "no entry: no open");
+        assert!(app.world_chests.is_empty(), "no create-on-miss");
+        // A store entry at the anchor: the top-row click opens it (sound 10).
+        let idx = create_chest(&mut app.world_chests, 10, 18);
+        assert!(try_open_dresser_at_cursor(&mut app, click(12, 18)));
+        assert_eq!(app.player.as_ref().unwrap().chest, idx as i32, "the dresser opened");
+        assert_eq!((app.player.as_ref().unwrap().chest_x, app.player.as_ref().unwrap().chest_y), (10, 18));
+        assert!(app.inventory_open, "OpenChest opened the inventory");
+        // The re-click closes (sound 11, the shared block).
+        assert!(try_open_dresser_at_cursor(&mut app, click(10, 18)));
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "the re-click closes");
+        // The BOTTOM row (frameY 18) is the clothes window — falls through.
+        assert!(!try_open_dresser_at_cursor(&mut app, click(11, 19)));
     }
 }

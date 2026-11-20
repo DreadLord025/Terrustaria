@@ -866,12 +866,15 @@ mod tests {
     fn draw_name_text_follows_the_draw_name_chain() {
         // `ChestUI.cs:110-141`: the edit text while `Main.editChest`
         // (:111-114), else the stored name (:115-122), else the tile-style
-        // default (:124-140).
+        // default (:124-140). The lang lock pins the manager for the
+        // localized default (`Dead Man's Chest`, S1-P-i43).
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         assert_eq!(draw_name_text(true, "Editing", "Old", Some((21, 0))), "Editing");
         assert_eq!(draw_name_text(false, "Editing", "Custom", Some((21, 0))), "Custom");
         assert_eq!(draw_name_text(false, "", "", Some((21, 0))), "Chest");
         assert_eq!(draw_name_text(false, "", "", Some((21, 72))), "Locked Gold Chest");
-        assert_eq!(draw_name_text(false, "", "", Some((467, 144))), "Dead Mans Chest");
+        assert_eq!(draw_name_text(false, "", "", Some((467, 144))), "Dead Man's Chest");
         assert_eq!(draw_name_text(false, "", "", None), "");
     }
 

@@ -558,6 +558,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // `!mine_down` write made the latch false on the press tick itself,
     // which shut every non-autoReuse weapon out of its own press.)
     let prev_mine_down = app.mine_prev_down;
+    // S1-P-i37's press-edge capture: the use-start gate (`:42733`) reads
+    // LAST frame's release latch, not this frame's freshly derived one.
+    let prev_mine_released = app.mine_released;
     app.mine_prev_down = app.mine_down;
     app.mine_released = !prev_mine_down;
     app.place_released = !app.place_down;
@@ -800,19 +803,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         held.kind, app.mine_down
     );
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
-    // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
-    // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
-    // (`ApplyPotionDelay` + `ApplyLifeAndOrMana`) and the magic weapons'
-    // mana pay (`CheckMana`). They ride the same start gate as every other
-    // use (`:42733`): animation zero, release ready (the auto-reuse forced
-    // release included), no pending reuse lock.
-    if app.mine_down
-        && held.count > 0
-        && !app.inventory_open
+    // `Player.ItemCheck`'s use-start gate (`Player.cs:42733`): `controlUseItem
+    // && releaseUseItem && itemAnimation == 0` — ONE use per press edge
+    // (S1-P-i37: the old ungated `mine_down` block re-drank every tick while
+    // LMB was held, draining the stack and re-arming buff 21 forever). The
+    // captured previous-frame edges are the `releaseUseItem` stand-in; the
+    // swing timers are the `itemAnimation == 0` half.
+    let use_press_edge = app.mine_down
+        && prev_mine_released
+        && !prev_mine_down
         && app.attack_cd <= 0.0
-        && app.reuse_delay <= 0.0
-        && app.mine_released
-    {
+        && app.reuse_delay <= 0.0;
+    // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
+    // gated by `CanUseItem`'s wellFed check `:14353`) and the drink family
+    // (the healing/mana/buff potions — `potions.rs`, S1-P-i37).
+    if use_press_edge && held.count > 0 && !app.inventory_open {
         let def = registry::get(held.kind);
         if def.is_some_and(|d| d.consumable && matches!(d.buff_type, 26 | 206 | 207)) {
             let Some(def) = def else { unreachable!() };
@@ -840,32 +845,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 return;
             }
         }
-        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
-        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
-        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
-        // clamps to max, the count decrements.
-        let def = registry::get(held.kind);
-        if def.is_some_and(|d| d.potion && d.heal_life > 0) {
-            let Some(def) = def else { unreachable!() };
-            let sick = app
-                .player
-                .as_ref()
-                .and_then(|p| p.buffs.find_buff_index(21))
-                .is_some();
-            let heal = def.heal_life;
-            if let Some(p) = app.player.as_mut() {
-                p.hp = (p.hp + heal).min(p.max_hp);
-                // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
-                // rides `Item.potionDelay` = 3600 (60 s).
-                p.buffs.add_buff(21, 3600);
-            }
-            app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
-            if app.inventory[app.selected].count == 0 {
-                app.inventory[app.selected].kind = 0;
-            }
-            start_use_timers(app, held);
-            app.mine_target = None;
-            app.mine_timer = 0.0;
+        // The drink family (S1-P-i37 — `potions.rs`): the healing potions
+        // (`item.potion`, `Player.cs:42756-42758` + `:42867-42875`), the mana
+        // potions (`healMana`, NOT potion-flagged — `Item.cs:2680-2692`) and
+        // the buff potions (`buffType > 0`, `:42876-42883`). The Potion
+        // Sickness gate (`ItemCheck_CheckCanUse_Inner`, `:52217-52220`), the
+        // per-kind delays (`ApplyPotionDelay` `:51853-51886`), the Mana
+        // Sickness grant (`:51938`) and the stack consume all live there.
+        if crate::potions::use_potion_item(app, held) {
             return;
         }
     }
@@ -887,10 +874,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // arms while the button holds the channel item — the release or a
         // switch clears it (`TryCancelChannel` `:52975-52981`, `:42804-42807`'s
         // `!controlUseItem → channel = false`).
+        // S1-P-i54 — `ItemCheck` (`Player.cs:42800-42807`): a buffered
+        // selection change forces `flag5 = false`, which both clears
+        // `channel` and blocks the use path — so the hold cannot re-arm
+        // the channel while the switch is pending (the player pass's
+        // interrupt clears it; this gate keeps it cleared until the
+        // switch lands). The seam is MAIN's channel/channel_item/
+        // channel_target trio — i20-seam-agnostic (works pre/post the
+        // channel_shoot refactor).
         let holding = registry::get(held.kind).is_some_and(|d| d.channel)
             && app.mine_down
             && held_weapon
-            && !app.inventory_open;
+            && !app.inventory_open
+            && !app.selection.has_buffered_change();
         if let Some(p) = app.player.as_mut() {
             if holding {
                 let (cx, cy) = p.center();
@@ -1397,6 +1393,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                                 held_fx.map_or(def.use_animation as f32, |s| s.use_animation as f32);
                             app.projectiles
                                 .set_whip_params(slot, tag_type, bonus_tag, animation_max);
+                            // `:11128`: `armorPenetration += item.armorPenetration`
+                            // — the summon prefixes' arpen row (85/86/87/91/95)
+                            // rides every fired shot, whip included.
+                            let arpen = held_fx.map_or(0, |s| s.armor_penetration);
+                            app.projectiles.set_armor_penetration(slot, arpen);
                         }
                     }
                     // `Player.cs:48210` — the sentry spawns run the turret
@@ -1699,6 +1700,63 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     app.audio.play_npc_hit_sound(cue, nx, ny, rng);
                 }
+                // S1-P-i50 — the Lucky Coin family's melee-hit coin proc
+                // (`ApplyNPCOnHitEffects`' tail, `Player.cs:44537-44549`,
+                // called at `:44404` AFTER `StrikeNPC` — so after the
+                // combat text and the hit cue above): `npc.value > 0 &&
+                // hasLuckyCoin && Main.rand.Next(5) == 0` → type 71,
+                // upgraded to 72 on `Next(10) == 0` and to 73 on
+                // `Next(100) == 0` (independent rolls, gold wins), then
+                // `RequestNewItem(stack: Next(1, 11), velocity:
+                // (Next(10, 31) * 0.2 * direction, Next(-20, 1) * 0.2),
+                // center: npc.Center, prefix: 0)`. The proc runs on a
+                // landed hit regardless of the kill (`:44404` precedes the
+                // `DidNPCDie` check `:44415`); the draws ride the
+                // `UpdatePlayers` swap (`Main.cs:17754`). The explicit
+                // velocity skips `Item.NewItem`'s spread draws
+                // (`Item.cs:49738-49740`) and `prefix: 0` draws nothing —
+                // six draws total when the Next(5) gate passes, one when
+                // it refuses.
+                let lucky = app.player.as_ref().is_some_and(|p| p.has_lucky_coin);
+                if landed && lucky && app.npcs[idx].value() > 0.0 {
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if rng.next_max(5) == 0 {
+                        let mut kind = 71u16;
+                        if rng.next_max(10) == 0 {
+                            kind = 72;
+                        }
+                        if rng.next_max(100) == 0 {
+                            kind = 73;
+                        }
+                        let stack = rng.next_range(1, 11) as u32;
+                        let dir = app.player.as_ref().map_or(1, |p| p.facing);
+                        let vx = rng.next_range(10, 31) as f32 * 0.2 * dir as f32;
+                        let vy = rng.next_range(-20, 1) as f32 * 0.2;
+                        let (ncx, ncy) = app.npcs[idx].center();
+                        // `WorldItem.Center = center` (`Item.cs:49736`) —
+                        // the 14x14 box centred on the NPC.
+                        let mut coin = crate::item::ItemDrop::new(
+                            kind,
+                            stack,
+                            0,
+                            ncx - crate::item::SIZE * 0.5,
+                            ncy - crate::item::SIZE * 0.5,
+                            vx,
+                            vy,
+                            0.0,
+                        );
+                        // `NewItemOwnership.ReserveForLocalPlayer` →
+                        // `enemyGrabDelayTime = DefaultGrabDelay = 100`
+                        // (`Item.cs:49757-49760`, `WorldItem.cs:110`): the
+                        // monsters cannot suck it for 100 ticks; the port's
+                        // revenge arm has no enemy-delay field. The player
+                        // grab gate reads `grab_delay_time` (S1-P-i47/i51):
+                        // the enemy-delay is a separate C# clock, so the
+                        // drop stays player-grabbable immediately.
+                        coin.age = 0.0;
+                        app.items.push(coin);
+                    }
+                }
                 // One swing per `ApplyItemAnimation` (`Player.cs:4463-4497`):
                 // the melee branch scales by the inverted meleeSpeed, the
                 // reuse lock rides the start (`:4496`).
@@ -1708,37 +1766,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 return;
             }
         }
-        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
-        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
-        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
-        // clamps to max, the count decrements.
-        let def = registry::get(held.kind);
-        if def.is_some_and(|d| d.potion && d.heal_life > 0) {
-            let Some(def) = def else { unreachable!() };
-            let sick = app
-                .player
-                .as_ref()
-                .and_then(|p| p.buffs.find_buff_index(21))
-                .is_some();
-            if !sick {
-                let heal = def.heal_life;
-                if let Some(p) = app.player.as_mut() {
-                    p.hp = (p.hp + heal).min(p.max_hp);
-                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
-                    // rides `Item.potionDelay` = 3600 (60 s).
-                    p.buffs.add_buff(21, 3600);
-                }
-                app.inventory[app.selected].count =
-                    app.inventory[app.selected].count.saturating_sub(1);
-                if app.inventory[app.selected].count == 0 {
-                    app.inventory[app.selected].kind = 0;
-                }
-                start_use_timers(app, held);
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-                return;
-            }
-        }
+        // The healing-potion duplicate that used to sit here (the gated
+        // `!sick` copy) was SHADOWED by the ungated press-arm above and is
+        // gone with it (S1-P-i37): every melee strike already returns, so
+        // the block was unreachable for NPCs in reach, and the drink family
+        // now rides `potions::use_potion_item` at the use-start seam.
     }
     // `Player.cs:42768-42771` (the use-success arm) + the can-use gate
     // `:52312-52314` -> `Mount.CanMount` (`Mount.cs:6581-6604`): a saddle
@@ -2066,18 +2098,39 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     {
         return;
     }
+    // The dresser top-row storage open (`Player.cs:32864-32925`, S1-P-i43):
+    // the same right-click priority as the chest route, before the furniture
+    // dispatch (the dresser has no `interact_at` interaction of its own).
+    if app.place_down
+        && !prev_place_down
+        && !app.inventory_open
+        && crate::chest::try_open_dresser_at_cursor(app, world_pos)
+    {
+        return;
+    }
     if app.place_down && !prev_place_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
     }
     // The town-NPC chat arm (`Main.cs:43069-43083`): the region-gated fresh
     // press latches `SetTalkNPC(i)` and fills `Main.npcChatText = GetChat()`;
     // the per-tick close rule (`Player.cs:27494-27503`) rides inside the call.
-    if crate::world_sim::npcs::talk_to_npc(app, prev_place_down).is_some() {
+    // `Player.mouseInterface` (`Main.cs:41799-41813`): the open shop grid's
+    // rect suppresses the world use — a press over the panel neither talks
+    // nor places.
+    let shop_panel_hover = app.inventory_open
+        && app.shop_npc.is_some()
+        && crate::ui::inventory::shop_slot_at(
+            app.mouse_pos,
+            app.lookups.ui_back.map_or(52.0, |b| b.width as f32),
+        )
+        .is_some();
+    if !shop_panel_hover && crate::world_sim::npcs::talk_to_npc(app, prev_place_down).is_some() {
         return;
     }
     if app.place_down
         && !prev_place_down
         && !app.inventory_open
+        && !shop_panel_hover
         && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
     {
         return;
@@ -2479,6 +2532,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             );
             if let Some(slot) = slot {
                 app.projectiles.set_crit(slot, crit);
+                // `ApplyStatsFromSource` (`Projectile.cs:11128`): the
+                // weapon prefix's `armorPenetration` rides the ammo shot.
+                let arpen = held_fx.map_or(0, |s| s.armor_penetration);
+                app.projectiles.set_armor_penetration(slot, arpen);
             }
             app.audio.play_at("Item_1", pcx, pcy, 1.0);
         }
@@ -2635,8 +2692,8 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
 /// `Chest.CanDestroyChest`'s item scan (`Chest.cs:609-623`) against the
 /// app's in-memory chest store: any slot with a positive stack at the
 /// anchor refuses the break. The C#'s `type > 0` half is implied — the
-/// store only holds real stacks. The store stays empty until the
-/// M3-CHEST-UI seam fills it, so the refusal passes today.
+/// store only holds real stacks. (M3-CHEST-UI landed the store; the
+/// refusal is live — S1-P-i43 retired the stale "stays empty" note.)
 fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
     move |x, y| {
         app.world_chests
@@ -2728,6 +2785,33 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
+    // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
+    // `CheckTileBreakability2_ShouldTileSurvive`, `WorldGen.cs:62506`/:62514):
+    // a broken chest 21/467 (2 wide) or dresser 88 (3 wide) loses its store
+    // entry, and the local player browsing it closes SILENTLY (`:640-643` —
+    // `chest = -1`, no sound; the range close's 11 never fires). The anchor
+    // is the object's top-left cell, the same decode `can_kill_tile` uses
+    // (`kill.rs:2640-2641`). S1-P-i43: the port previously relied on
+    // `tick_open`'s dead-tile close (sound 11) — the C# closes here, silent.
+    if let Some(hit) = &hit {
+        let wide: i32 = match hit.kind {
+            21 | 467 => 2,
+            88 => 3,
+            _ => 0,
+        };
+        if wide > 0 {
+            let anchor_x = hit.x - i32::from(hit.frame_x) / 18 % wide;
+            let anchor_y = hit.y - i32::from(hit.frame_y) / 18;
+            if let Some(idx) = crate::chest::find_chest(&app.world_chests, anchor_x, anchor_y) {
+                crate::chest::remove_chest(&mut app.world_chests, idx);
+                if let Some(p) = app.player.as_mut() {
+                    if p.chest == idx as i32 {
+                        p.chest = crate::bank::CHEST_CLOSED; // `:642` — silent
+                    }
+                }
+            }
+        }
+    }
     // `WorldGen.KillTile_PlaySounds(i, j, fail, tileCache)` (`WorldGen.cs:
     // 66427-66575`) for the hit cell, played before the cascade's loot — the
     // C# calls it at the top of `KillTile` (:63558) and the tile is always a
@@ -4668,6 +4752,81 @@ mod tests {
         );
     }
 
+    /// S1-P-i50 — the Lucky Coin melee proc (`ApplyNPCOnHitEffects`' tail,
+    /// `Player.cs:44537-44549`): a landed hit on a `value > 0` NPC with
+    /// `hasLuckyCoin` draws `Next(5)`; on 0 it draws the denomination
+    /// upgrades (`Next(10)`, `Next(100)`), the stack (`Next(1, 11)`) and the
+    /// velocity pair (`Next(10, 31)`, `Next(-20, 1)`), then spawns the coin
+    /// at the NPC's centre. Differential witness: the ring and no-ring rigs
+    /// share every pre-proc draw (crit/DamageVar/probe/combat-text/hit-cue),
+    /// so the ring's stream is the no-ring's advanced by exactly the proc's
+    /// draws — one when the Next(5) gate refuses, six when it passes. Both
+    /// branches are exercised across a seed sweep; the spawn shape is
+    /// pinned whenever the gate fires.
+    #[test]
+    fn s1_p_i50_the_lucky_coin_proc_draws_and_spawns_on_a_landed_hit() {
+        let mut saw_fire = false;
+        let mut saw_refuse = false;
+        for seed in 0..40i32 {
+            // The no-ring baseline: the hit lands, no coin spawns.
+            let mut base = melee_app();
+            seed_stream(&mut base, seed);
+            let hp0 = base.npcs[0].hp;
+            mine_frames(&mut base, 1);
+            assert!(base.npcs[0].hp < hp0, "the baseline hit lands (seed {seed})");
+            assert!(base.items.is_empty(), "no ring, no coin");
+            let base_state = base.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+
+            // The ring rig, same seed: identical pre-proc draws, then the proc.
+            let mut ring = melee_app();
+            ring.player.as_mut().unwrap().has_lucky_coin = true;
+            seed_stream(&mut ring, seed);
+            mine_frames(&mut ring, 1);
+            assert!(ring.npcs[0].hp < hp0, "the ring hit lands too");
+
+            // Replay the two possible proc tails on the baseline state.
+            let mut refused = base_state.clone();
+            let _ = refused.next_max(5);
+            let mut passed = base_state.clone();
+            let gate = passed.next_max(5);
+            let mut kind = 71u16;
+            let mut stack = 0u32;
+            if gate == 0 {
+                if passed.next_max(10) == 0 {
+                    kind = 72;
+                }
+                if passed.next_max(100) == 0 {
+                    kind = 73;
+                }
+                stack = passed.next_range(1, 11) as u32;
+                let _ = passed.next_range(10, 31);
+                let _ = passed.next_range(-20, 1);
+            }
+            let ring_state = ring.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            assert!(
+                ring_state == refused || ring_state == passed,
+                "seed {seed}: the proc draws exactly 1 (refused) or 6 (passed) past the baseline"
+            );
+            if gate == 0 {
+                saw_fire = true;
+                assert_eq!(ring.items.len(), 1, "the proc spawned one coin");
+                let coin = &ring.items[0];
+                assert_eq!(coin.kind, kind, "the denomination rolls");
+                assert_eq!(coin.count, stack, "Next(1, 11) stack");
+                assert_eq!(coin.prefix, 0, "prefix: 0");
+                // Centre on the NPC (`WorldItem.Center = center`).
+                let (ncx, ncy) = ring.npcs[0].center();
+                assert!((coin.center().x - ncx).abs() < 1e-3);
+                assert!((coin.center().y - ncy).abs() < 1e-3);
+            } else {
+                saw_refuse = true;
+                assert!(ring.items.is_empty(), "the refused gate spawns nothing");
+            }
+        }
+        assert!(saw_fire, "some seed fires the Next(5)==0 gate");
+        assert!(saw_refuse, "some seed refuses it");
+    }
+
     /// 40x40 world with a stone floor at y = 20 — the core `edit.rs` fixture
     /// shape, deep enough inside the world for `CanPlace`'s 5-tile edge margin
     /// (`TileObject.cs:215`).
@@ -6171,11 +6330,15 @@ mod tests {
 
     #[test]
     fn the_prefixed_minion_tag_damage_reaches_the_slot() {
-        // The minion prefixes 69-72 add `Item.bonusTagDamage`
-        // (`Item.cs:575-598`); `prefix.rs` carries the row, the fire path
-        // copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        // The summon prefixes 85-97 add `Item.bonusTagDamage`
+        // (`TryGetPrefixStatMultipliersForItem`, `Item.cs:900-950` — the
+        // Ruthless 85 / Mythical-adjacent rows carry tagdmg 3/5); the fire
+        // path copies it onto the slot (`ApplyStatsFromSource`'s `:11127`).
+        // The prefix must be a SUMMON-table id: 71 (Angry) is an accessory
+        // damage row with tagdmg 0 — the old fixture's `want` was 0 and the
+        // assertion passed vacuously.
         let mut app = whip_app(4678);
-        app.inventory[app.selected].prefix = 71; // a minion prefix with tag damage
+        app.inventory[app.selected].prefix = 88; // Focused: dmg ×1.1, tagdmg +3
         mine_frames(&mut app, 1);
         app.mine_down = true;
         mine_frames(&mut app, 1);
@@ -6185,7 +6348,8 @@ mod tests {
             .iter()
             .find(|p| p.active)
             .expect("the SwordWhip");
-        let want = crate::prefix::prefixed_stats(4678, 71).unwrap().tag_damage;
+        let want = crate::prefix::prefixed_stats(4678, 88).unwrap().tag_damage;
+        assert_eq!(want, 3, "the Focused row carries +3 (`Item.cs:916-919`)");
         assert_eq!(p.bonus_tag_damage, want);
     }
 
@@ -6298,6 +6462,7 @@ mod tests {
             }],
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
         });
         mine_frames(&mut app, 40);
         for x in [10, 11] {
@@ -6321,6 +6486,42 @@ mod tests {
         }
         assert_eq!(app.items.len(), 1);
         assert_eq!(app.items[0].kind, 48, "the chest item");
+    }
+
+    /// S1-P-i43 — `Chest.DestroyChest`'s silent close-on-destroy
+    /// (`Chest.cs:640-643`, called from `CheckTileBreakability2_ShouldTileSurvive`,
+    /// `WorldGen.cs:62506`): breaking the open chest's tile removes the store
+    /// entry and closes the player index WITHOUT sound 11 (the range close's
+    /// menu-close never fires — the C# writes `chest = -1` directly).
+    #[test]
+    fn s1_p_i43_breaking_the_open_chest_closes_it_silently() {
+        let mut w = object_world();
+        assert!(edit::place_item_tile(&mut w, 10, 19, 21, 0, 1));
+        let mut app = mining_app(w, 10, 18);
+        let idx = crate::chest::create_chest(&mut app.world_chests, 10, 18);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.chest = idx as i32;
+            p.chest_x = 10;
+            p.chest_y = 18;
+        }
+        break_tile(&mut app, 10, 18);
+        // The store entry is tombstoned and the open index closed silently.
+        assert_eq!(
+            crate::chest::find_chest(&app.world_chests, 10, 18),
+            None,
+            "DestroyChest removed the entry (:639)"
+        );
+        assert_eq!(
+            app.player.as_ref().unwrap().chest, -1,
+            "the open index closed (:642)"
+        );
+        // The chest cells cascaded away (the break ran).
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(!app.world.tile(x, y).unwrap().active(), "chest cell ({x}, {y}) broke");
+            }
+        }
     }
 
     /// M1.4-TO-6: the locked golden door refuses `break_tile`
@@ -7428,8 +7629,10 @@ mod tests {
     #[test]
     fn test_store_1_the_void_lens_routes_pickups_into_bank4() {
         // `Player.cs:39395`'s pickup arm: holding 4131 (the Void Lens)
-        // enables the vault (`IsVoidVaultEnabled`), `GetItem_VoidVault`
-        // fills bank4 first.
+        // enables the vault (`IsVoidVaultEnabled`) — but the vault is
+        // `GetItem`'s LAST resort (`:39395-39398`, S1-P-i47): the inventory
+        // passes run first, and only their overflow fills bank4. The grid
+        // is full of stone here, so the wood has nowhere else to go.
         let mut app = mining_app(object_world(), 14, 260);
         app.inventory[20] = crate::item::ItemSlot {
             kind: 4131,
@@ -7437,6 +7640,11 @@ mod tests {
             count: 1,
             prefix: 0,
         };
+        for (i, s) in app.inventory.iter_mut().enumerate() {
+            if i != 20 {
+                *s = slot(3, registry::max_stack(3));
+            }
+        }
         // The per-tick refresh rides update_player; drive it directly here.
         app.player.as_mut().unwrap().void_vault_enabled = true;
         seed_stream(&mut app, 0);
@@ -7444,7 +7652,7 @@ mod tests {
         crate::world_sim::items::spawn_item_drop(&mut app.items, rng, 9, 5, 14, 260);
         // The spawn pop (`Item.NewItem`'s vy) then the fall. The window covers
         // the `WorldItem.cs:363-364` air gravity of 0.1/tick: the arc back
-        // down to the magnet radius is longer than the old 0.3 tuning assumed.
+        // down to the grab rectangle is longer than the old 0.3 tuning assumed.
         for _ in 0..200 {
             crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
         }
@@ -7456,6 +7664,33 @@ mod tests {
         assert!(
             !app.inventory.iter().any(|sl| sl.kind == 9),
             "the inventory stayed out of it"
+        );
+        // The reverse arm (S1-P-i47): with grid room, the pickup lands in
+        // the INVENTORY and the vault stays untouched — the old port
+        // routed the vault first.
+        let mut app = mining_app(object_world(), 14, 260);
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 4131,
+            name: "Void Lens",
+            count: 1,
+            prefix: 0,
+        };
+        app.player.as_mut().unwrap().void_vault_enabled = true;
+        seed_stream(&mut app, 0);
+        let mut rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_sim::items::spawn_item_drop(&mut app.items, rng, 9, 5, 14, 260);
+        for _ in 0..200 {
+            crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.banks[3].iter().all(|sl| sl.count == 0),
+            "the vault is the last resort — the grid took it"
+        );
+        assert_eq!(
+            app.inventory.iter().filter(|sl| sl.kind == 9).map(|sl| sl.count).sum::<u32>(),
+            5,
+            "the wood landed in the grid"
         );
     }
 
@@ -9322,9 +9557,10 @@ mod item_mechanics {
     }
 
     /// t2 — `Player.GetItem_FillIntoOccupiedSlot`
-    /// (`Player.cs:39493-39518`): a partial fill stops at `maxStack` and the
-    /// remainder stays in the world as the drop (`PickupItem`,
-    /// `Player.cs:35085-35087`: `itemToPickUp.ReplaceWith(item)`).
+    /// (`Player.cs:39493-39518`): a partial fill stops at `maxStack`; the
+    /// leftover rides the empty-slot passes (`:39365-39394`) and only a
+    /// grid with NO room keeps it in the world (`PickupItem`,
+    /// `Player.cs:35103`: `itemToPickUp.ReplaceWith(item)`).
     #[test]
     fn pickup_merges_to_maxstack() {
         // `Item.CommonMaxStack = 9999` (`Item.cs:49966`) is what `SetDefaults`
@@ -9332,7 +9568,25 @@ mod item_mechanics {
         // there.
         const MAX: u32 = 9999;
         assert_eq!(registry::max_stack(3), MAX, "Item.CommonMaxStack");
+        // Case 1: the merge fills slot 0 to the cap, the remainder 7 lands
+        // in the next empty HOTBAR slot (the usable-kind arm `:39365`).
         let mut app = flat_app();
+        app.inventory[0] = slot(3, MAX - 3);
+        let pc = app.player.as_ref().unwrap().center();
+        let mut drop = ItemDrop::new(3, 10, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
+        drop.age = 1.0;
+        app.items.push(drop);
+        crate::world_sim::items::update_items(&mut app, ONE_TICK_SECS);
+        assert_eq!(app.inventory[0].count, MAX, "the slot fills to maxStack");
+        assert_eq!(app.inventory[1].count, 7, "the overflow opens slot 1");
+        assert_eq!(app.inventory[1].kind, 3);
+        assert!(app.items.is_empty(), "the drop was fully consumed");
+        // Case 2: a grid with no room at all — the surplus stays on the
+        // ground (`ReplaceWith`), never an over-full slot.
+        let mut app = flat_app();
+        for s in app.inventory.iter_mut() {
+            *s = slot(2, registry::max_stack(2));
+        }
         app.inventory[0] = slot(3, MAX - 3);
         let pc = app.player.as_ref().unwrap().center();
         let mut drop = ItemDrop::new(3, 10, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
@@ -9345,7 +9599,7 @@ mod item_mechanics {
         assert_eq!(
             app.inventory.iter().filter(|s| s.kind == 3).count(),
             1,
-            "no second stone stack while the first still has room"
+            "no second stone stack while the grid is full"
         );
     }
 
@@ -9381,7 +9635,7 @@ mod item_mechanics {
         let floor_top = 20.0 * TILE_PX;
         // In the air: one step adds exactly `gravity` and applies the friction.
         let mut drop = ItemDrop::new(2, 1, 0, 100.0, 100.0, 2.0, 0.0, 0.0);
-        drop.update(&app.world, None, ONE_TICK_SECS);
+        drop.update(&app.world, ONE_TICK_SECS);
         assert!(
             (drop.vel.y - 0.1).abs() < 1e-6,
             "gravity is 0.1, got {}",
@@ -9394,12 +9648,12 @@ mod item_mechanics {
         );
         // The fall speed caps at 7.
         let mut fast = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 40.0, 0.0);
-        fast.update(&app.world, None, ONE_TICK_SECS);
+        fast.update(&app.world, ONE_TICK_SECS);
         assert!((fast.vel.y - 7.0).abs() < 1e-6, "maxFall is 7, got {}", fast.vel.y);
         // Resting on the floor: the drop lies still, it never bounces.
         let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - 14.0, 0.0, 0.0, 0.0);
         for _ in 0..30 {
-            rest.update(&app.world, None, ONE_TICK_SECS);
+            rest.update(&app.world, ONE_TICK_SECS);
         }
         assert_eq!(rest.vel.y, 0.0, "no restitution off the ground");
         assert_eq!(rest.vel.x, 0.0, "friction settles the slide");
@@ -9408,5 +9662,129 @@ mod item_mechanics {
             "the drop lies flush on the floor, at {}",
             rest.pos.y
         );
+    }
+
+    // ---- S1-P-i37: the drink press-edge regression witnesses ---------------
+    // WRITTEN NOT RUN (code-only swarm). The P1 census bug: the old heal arm
+    // computed `sick` but never read it and ran on every `mine_down` tick —
+    // holding LMB drained the whole stack and re-armed buff 21 forever. The
+    // fix gates the consumable arms on the `Player.cs:42733` press edge
+    // (`controlUseItem && releaseUseItem && itemAnimation == 0`) and routes
+    // the drink through `potions::use_potion_item` (the `:52217` sickness
+    // gate reads `potionDelay`, not the buff slot).
+
+    const DRINK_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    /// A drink rig on the flow app's 8x8 air world: the player parked at the
+    /// world centre, the camera pinned on the cursor cell (in bounds, in
+    /// reach, no tile under it — the melee/mining arms fall through), the
+    /// SILENT listener so the use-sound draws nothing.
+    fn potion_press_app(kind: u16, count: u32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = Player::spawn(&app.world);
+        p.x = 4.0 * TILE_PX;
+        p.y = 4.0 * TILE_PX;
+        p.hp = 50;
+        app.player = Some(p);
+        app.camera = Vec2::new(4.0 * TILE_PX + 8.0, 4.0 * TILE_PX + 8.0);
+        app.mouse_pos = Vec2::new(640.0, 360.0);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.inventory[app.selected] = ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        };
+        // The released state: one idle frame arms the press edge.
+        app.mine_down = false;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        app
+    }
+
+    #[test]
+    fn holding_lmb_drinks_once_not_every_tick() {
+        let mut app = potion_press_app(188, 30);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN); // idle: edge armed
+        app.mine_down = true;
+        for _ in 0..120 {
+            update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(app.inventory[app.selected].count, 29, "ONE drink per press");
+        assert_eq!(p.hp, 100);
+        assert!(p.potion_delay > 3500, "the 3600 clock barely decayed");
+        let i = p.buffs.find_buff_index(21).expect("buff 21 granted once");
+        assert!(p.buffs.buff_time[i] > 3500, "no per-tick re-arm");
+    }
+
+    #[test]
+    fn a_second_press_while_sick_drinks_nothing() {
+        let mut app = potion_press_app(188, 5);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN); // the first drink
+        assert_eq!(app.inventory[app.selected].count, 4);
+        // Release + re-press while the sickness clock runs: the `:52217`
+        // gate refuses — no heal, no consume, no buff refresh. The swing
+        // locks are cleared (their decay lives in the npcs pass, outside
+        // `update_editing`) so the press edge REACHES the sickness gate —
+        // the refusal under test is the gate's, not the animation's.
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        let before = app.player.as_ref().unwrap().buffs.buff_time
+            [app.player.as_ref().unwrap().buffs.find_buff_index(21).unwrap()];
+        app.player.as_mut().unwrap().hp = 50;
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert_eq!(app.inventory[app.selected].count, 4, "the stack untouched");
+        assert_eq!(app.player.as_ref().unwrap().hp, 50, "no heal while sick");
+        let after = app.player.as_ref().unwrap().buffs.buff_time
+            [app.player.as_ref().unwrap().buffs.find_buff_index(21).unwrap()];
+        // `update_editing` does not tick the buff clocks (that is the player
+        // pass) — the pin is the absence of a RE-ARM: the timer is unchanged.
+        assert_eq!(after, before, "no buff-21 refresh on the refused press");
+    }
+
+    #[test]
+    fn a_buff_potion_press_grants_its_buff_through_sickness() {
+        // Ironskin 292 (buffType 5, buffTime 28800): NOT potion-flagged, so
+        // the sickness clock does not gate it (`Item.cs:4858-4871`).
+        let mut app = potion_press_app(292, 3);
+        app.player.as_mut().unwrap().potion_delay = 3000;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        let p = app.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(5).expect("Ironskin on the press");
+        assert_eq!(p.buffs.buff_time[i], 28800);
+        assert_eq!(app.inventory[app.selected].count, 2);
+    }
+
+    #[test]
+    fn a_mana_potion_press_restores_and_grants_94() {
+        // The Lesser Mana Potion 110 had NO use path before i37 (the old
+        // arm gated on `potion && heal_life > 0`).
+        let mut app = potion_press_app(110, 3);
+        let p = app.player.as_mut().unwrap();
+        p.mana = 0;
+        p.mana_max = 200;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 50);
+        assert!(p.buffs.find_buff_index(94).is_some(), "ManaSickness 94");
+        assert_eq!(app.inventory[app.selected].count, 2);
     }
 }

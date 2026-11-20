@@ -605,6 +605,15 @@ pub struct Projectile {
     /// `ApplyStatsFromSource`'s `bonusTagDamage` (`:11127`) — the item's
     /// (or the parent's) bonus tag damage, the minion prefixes' row.
     pub bonus_tag_damage: i32,
+    /// `Projectile.armorPenetration` (`Projectile.cs:22098`'s field): the
+    /// firing item's prefix penetration (`ApplyStatsFromSource` `:11128`
+    /// copies `item.armorPenetration` — the summon prefixes 85/86/87/91/95
+    /// carry 10/5/8/10/25) plus the parent's on a child spawn (`:11138`).
+    /// `Damage_PVE_Inner`'s `num5` (`:12831`) adds it to the owner's
+    /// `GetArmorPenetration` sum before `checkArmorPenetration` (`:13632`).
+    /// The gem-staff ArPenSpread's +4 (`:22084`) is still unported (the
+    /// `gem_staves_finalize` note).
+    pub armor_penetration: i32,
     /// `AI_103`'s mark spawn (`Projectile.cs:33467-33475`'s
     /// `NPC.NewNPC(..., localAI[0])`) and `AI_108`'s 579 pair
     /// (`:33850-33855`'s `for num815 < 2`): the (kind, x, y, vx, vy)
@@ -740,6 +749,7 @@ impl Default for Projectile {
             is_summon_shot: false,
             tag_effect_type: 0,
             bonus_tag_damage: 0,
+            armor_penetration: 0,
             wants_mark_spawn: Vec::new(),
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
@@ -12604,6 +12614,17 @@ impl ProjectilePool {
         }
     }
 
+    /// `ApplyStatsFromSource`'s armor-penetration copy
+    /// (`Projectile.cs:11128`): the firing item's `armorPenetration` (the
+    /// prefix's `arpen` row, `Item.cs:586`) joins the slot at spawn — the
+    /// `set_crit` convention. `Damage_PVE_Inner`'s `num5` (`:12831`) reads
+    /// it on every hit.
+    pub fn set_armor_penetration(&mut self, slot: usize, value: i32) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.armor_penetration = value;
+        }
+    }
+
     /// The spawn-site `ai[1]` payload setter — the star cloak's falling
     /// stars carry `ai1 = position.Y` (`Player.cs:38478`, S1-C-7 wave B);
     /// the plain `spawn` has no ai arguments (the `set_crit` convention).
@@ -13013,7 +13034,7 @@ impl ProjectilePool {
     /// `EntitySource_Parent` arm, `:11136`) and its own `GetWhipSettings`
     /// override (`30 * MaxUpdates` for the arms, `:48410-48417`).
     fn spawn_whip_arm(&mut self, parent: usize, arm: WhipArmSpawn, owner: Option<(f32, f32)>) {
-        let (kind, damage, kb, tag_type, tag_bonus, animation) = {
+        let (kind, damage, kb, tag_type, tag_bonus, animation, arpen) = {
             let p = &self.slots[parent];
             (
                 p.kind,
@@ -13022,6 +13043,7 @@ impl ProjectilePool {
                 p.tag_effect_type,
                 p.bonus_tag_damage,
                 p.whip_use_animation,
+                p.armor_penetration,
             )
         };
         // `:47710`: from the player center (`player.Center.X, player.Center.Y`).
@@ -13052,6 +13074,9 @@ impl ProjectilePool {
         p.ai[2] = arm.ai2;
         p.tag_effect_type = tag_type;
         p.bonus_tag_damage = tag_bonus;
+        // `ApplyStatsFromSource`'s `EntitySource_Parent` arm (`:11138`):
+        // the child carries the parent's armor penetration too.
+        p.armor_penetration = arpen;
         self.set_whip_settings(slot, animation);
     }
 
@@ -17667,6 +17692,29 @@ impl ProjectilePool {
             }
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
+            // `Damage_PVE_Inner`'s `num5` (`Projectile.cs:12831`): the
+            // owner's `GetArmorPenetration(this.melee)` plus the slot's own
+            // `armorPenetration` (the firing item's prefix `arpen` row,
+            // `ApplyStatsFromSource` `:11128`); `:13630-13633` adds
+            // `checkArmorPenetration(num5, 0f)` to the rolled damage for
+            // every owned non-hostile shot BEFORE the strike. The melee
+            // flag folds to `is_whip` — the whip is the melee projectile
+            // family this seam identifies (the flail/yoyo/boomerang
+            // `melee = true` rows have no slot flag yet; their Sharpened
+            // +12 stays missed, recorded in ANALYSIS). The debuff bonuses
+            // (ichor/broken armor/Betsy's curse) ride the melee hit's
+            // convention (false until the NPC debuff scan lands here).
+            if let Some(pl) = player.as_deref() {
+                let num5 = pl.get_armor_penetration(is_whip) + self.slots[slot].armor_penetration;
+                dmg += tr_core::damage::check_armor_penetration(
+                    num5,
+                    0.0,
+                    n.defense(),
+                    false,
+                    false,
+                    false,
+                );
+            }
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
             // `:13580` — `StatusNPC(victimIndex)` runs BEFORE `StrikeNPC`
             // (`:13649`): the special bullets' per-type debuffs (S1-P-i18).
@@ -19043,6 +19091,119 @@ mod tests {
             before - 1,
             "S1-C-2: projectile→NPC damage must apply DamageVar and defense (Projectile.cs:12938, NPC.cs:81189,81239)"
         );
+    }
+
+    /// S1-P-i49 — the summon prefixes' armor penetration reaches the strike:
+    /// `ApplyStatsFromSource` copies `item.armorPenetration` onto the shot
+    /// (`Projectile.cs:11128`), `Damage_PVE_Inner`'s `num5` adds it to the
+    /// owner's `GetArmorPenetration` (`:12831`) and `checkArmorPenetration`
+    /// lifts the rolled damage before the defense line (`:13632`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_p_i49_the_prefix_armor_penetration_lifts_the_pve_strike() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 500;
+        npc.max_hp = 500;
+        npc.defense_override = Some(200); // the raw 40 floors at 1 without pen
+        let mut player = crate::player::Player::spawn(&w);
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        // The Eager (95) row: arpen 25, no other stat (`Item.cs:942-944`).
+        let arpen = crate::prefix::prefixed_stats(1157, 95).unwrap().armor_penetration;
+        assert_eq!(arpen, 25);
+        pool.set_armor_penetration(slot, arpen);
+        let before = npc.hp;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            Some(&mut player),
+            &mut rng,
+        );
+        // `checkArmorPenetration(25, 0, 200)` = 25/2 = 12 (`NPC.cs:81148`);
+        // the ±15% DamageVar rolls 40 into [34, 46], + 12 − 100 stays under
+        // the floor, so the strike lands exactly 1.
+        let lost = before - npc.hp;
+        assert_eq!(lost, 1, "the pen lifts the pre-defense sum, still floored");
+        // The observable lift: at defense 80 the no-pen strike floors at 1
+        // while the +12 pen pushes (34..46 + 12) − 40 into [6, 18].
+        let mut npc3 = one_npc(&w);
+        npc3.x = 20.0 * TILE_PX;
+        npc3.y = 24.0 * TILE_PX;
+        npc3.hp = 500;
+        npc3.max_hp = 500;
+        npc3.defense_override = Some(80);
+        let slot3 = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.set_armor_penetration(slot3, arpen);
+        let mut rng3 = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            slot3,
+            std::slice::from_mut(&mut npc3),
+            None,
+            None,
+            Some(&mut player),
+            &mut rng3,
+        );
+        let lost3 = 500 - npc3.hp;
+        assert!(
+            (6..=18).contains(&lost3),
+            "the +12 penetration lifts the strike past the floor: lost {lost3}"
+        );
+        // The no-owner lane keeps the pre-existing no-pen behaviour (the
+        // C# gates on `ownedBySomeone`, `:13630`).
+        let mut npc2 = one_npc(&w);
+        npc2.x = 20.0 * TILE_PX;
+        npc2.y = 24.0 * TILE_PX;
+        npc2.hp = 500;
+        npc2.max_hp = 500;
+        npc2.defense_override = Some(200);
+        let slot2 = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.set_armor_penetration(slot2, arpen);
+        let mut rng2 = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            slot2,
+            std::slice::from_mut(&mut npc2),
+            None,
+            None,
+            None,
+            &mut rng2,
+        );
+        assert_eq!(npc2.hp, 499, "the ownerless shot keeps the floor of 1");
     }
 
     /// S1-C-8: `Damage_GetHitbox()` (`Projectile.cs:14959-15023`) — the base
@@ -22978,6 +23139,7 @@ mod phasmal_projectile_tests {
             is_summon_shot: false,
             tag_effect_type: 0,
             bonus_tag_damage: 0,
+            armor_penetration: 0,
             direction: 1,
             whip_settings: None,
             whip_use_animation: 0.0,
@@ -23372,6 +23534,7 @@ mod ritual_projectile_tests {
             is_summon_shot: false,
             tag_effect_type: 0,
             bonus_tag_damage: 0,
+            armor_penetration: 0,
             direction: 1,
             whip_settings: None,
             whip_use_animation: 0.0,
