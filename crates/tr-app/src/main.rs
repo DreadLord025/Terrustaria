@@ -137,6 +137,9 @@ mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
 mod npc_ai_style75;
+// W4-d33 (research/25 rows 99-127): the MISSING aiStyle band's unwired
+// pure machines, one module per style (the npc_ai_style73 precedent).
+mod npc_ai_style99;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
