@@ -39273,3 +39273,111 @@ the overload split (`SoundEngine.cs:93-99` façade draws the
 exact slot on the C# statement order, on the named stream of the
 enclosing C# pass. Sites already ported by earlier waves are recorded
 as landed, not re-ported. Commits land ≤15 sites each.
+
+### Batch 1 census (sites 1-90) — landed `a2ec6acb`
+
+Every one of the 90 direct `PlaySound(` lines in g21's range was mapped
+to its enclosing C# function and then to the Rust port. Three buckets:
+**WIRED** (this batch, 15), **LANDED** (an earlier wave already plays it,
+19), **HOST-NOT-PORTED** (the enclosing function has no Rust port yet, 56
+— 15 + 19 + 56 = 90). Witnesses for the 15 wired sites are WRITTEN NOT
+RUN (code-only mode).
+
+**WIRED this batch (15)** — cue + Rust seam + witness:
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 16 | `:18270` | `DoUpdate_Enter_ToggleChat` | 10 `Menu_Open` | `app/loop.rs::chat_key` (open arm) |
+| 17 | `:18349` | `DoUpdate_HandleChat` text-change | 12 `Menu_Tick` | `chat_key` (append + trim arms) |
+| 18 | `:18370` | `DoUpdate_HandleChat` submit | 11 `Menu_Close` | `chat_key` (Enter tail) |
+| 22 | `:18481` | `DoUpdate_F9_ToggleLighting` | 12 `Menu_Tick` | `app/loop.rs::world_key` F2 arm |
+| 35 | `:40105` | `NPCChatText_DoNurseHeal` head | 12 `Menu_Tick` | `app/mod.rs::nurse_heal` head |
+| 36 | `:40111` | `NPCChatText_DoNurseHeal` pay | `Item4` (case 2) | `nurse_heal` success arm |
+| 37 | `:40230` | `NPCChatText_DoAnglerQuest` head | 12 `Menu_Tick` | `world_sim/npcs.rs::angler_turn_in` head |
+| 38 | `:40243` | `NPCChatText_DoAnglerQuest` hand-in | 24 `Chat` | `angler_turn_in` hand-in arm |
+| 54 | `:41100` | `DrawInventory` map-icon k0 | 10 `Menu_Open` | `app/clicks.rs` map-icon arm |
+| 55 | `:41109` | `DrawInventory` map-icon k1 | 12 `Menu_Tick` | same |
+| 56 | `:41114` | `DrawInventory` map-icon k2 | 12 `Menu_Tick` | same |
+| 57 | `:41119` | `DrawInventory` map-icon k3 | 12 `Menu_Tick` | same |
+| 69 | `:42403` | `DrawEmoteBubblesButton` click | 12 `Menu_Tick` | `app/clicks.rs::handle_bestiary_clicks` |
+| 70 | `:42458` | `DrawBestiaryIcon` click | 12 `Menu_Tick` | same |
+| 78 | `:43083` | `HoverOverNPCs` talk-open | 24 `Chat` | `world_sim/npcs.rs::talk_to_npc` tail |
+
+The chat chain (sites 16-18) was extracted from `window_event`'s
+`KeyboardInput` arm into `App::chat_key(code, text)` — the `world_key`
+headless convention — so the open/edit/submit cues are reachable without a
+live window. The nurse `Item4` (site 36) is the legacy `PlaySound(SoundID)`
+façade: the `GetRandomPitch` NextFloat rides the audio-only
+`sound_style_random`, case 2's ONE `Next(-6,7)` pitch roll rides the
+bare-`Main.rand` stand-in (`global()`, the click runs outside every swap —
+the S1-A-11 §4 convention), snapshotted before/after the `Audio` borrow.
+The lighting cycle (site 22) plays on the port's F2 binding (the help
+overlay's row, `render/debug.rs`; the vanilla Shift+F9 chord is not
+modelled, F9 is the port's save key).
+
+**LANDED earlier (19)** — recorded, not re-ported:
+
+- 1-2 `:3244`/`:3256` `DoStatefulTickSound(ref bool/int)` — the port plays
+  the hover-edge tick inline at each ported caller (Bug 17:
+  `app/loop.rs:576-596` menu/front/emote hover, `app/flow.rs`,
+  `chest.rs`/`ui/chest.rs` chest hover). The helper is not a Rust fn; the
+  unported hover latches (`mapStyleMouseOver :41126`,
+  `equipPageMouseOver :41155`, `allChestStackHover :41865`,
+  `inventorySortMouseOver :41890`, `emoteMouseOver :42407`,
+  `bestiaryMouseOver :42463`, `hotbarLockMouseOver :42515`) are
+  host-not-ported sub-states, not census sites (they call the helper).
+- 12-15 `:13477`/`:13484`/`:13500`/`:13506` `Ambience` waterfall/lavafall
+  (34/35) — collapsed into the persistent liquid-loop volume update
+  (`app/frame.rs:295-344` → `Audio::set_liquid_loop`, the documented
+  `audio.rs:2122-2127` deviation: the loops re-volume in place every ¼ s
+  instead of re-`PlaySound`).
+- 32 `:40026` `NPCChatText_TinkererReforge` — covered by the collapsed
+  shop-open entry (the recorded #9 deviation, `world_sim/npcs.rs:997-1001`
+  auto-opens the reforge menu beside the shop; the `:40466` tick plays).
+- 40 `:40466` `OpenShop` — `world_sim/npcs.rs:997`.
+- 51 `:40688` `CloseNPCChatOrSign` — `app/clicks.rs:1099`.
+- 60 `:41438` accessory hide-tick — `app/clicks.rs:1477`.
+- 61 `:41654` reforge hover-edge — `app/mod.rs:2037`.
+- 65-66 `:41909`/`:41931` `ReforgeItemInReforgeSlot` BestReforge/Item37 —
+  `prefix.rs::reforge_presentation_tail` (`:696-728`).
+- 67 `:42060` housing cell click — `app/clicks.rs:1412`.
+- 68 `:42299` craft focus click — `app/clicks.rs:977`.
+- 74-75 `:42692`/`:42762` PVP/team clicks — `app/clicks.rs:1486`/`:1497`.
+- 76 `:42859` page-tab click — `app/clicks.rs:1526` (cited `:42857`).
+- 79 `:43382` `TryRemovingBuff` — `world_sim/player.rs:629`.
+
+**HOST-NOT-PORTED (56)** — the enclosing function has no Rust port; the
+site stays deferred with its host (no cue is invented):
+
+- 3-11 `TeleportEffect` styles 0/1/3/4/5/7/9/10/13 (`:13239`-`:13449`) —
+  the `Player.Teleport`/`TeleportEffect` system is a recorded follow-up
+  (`recall_teleport.rs:36`/:88); the recall/mirror cluster uses `Spawn`,
+  not `TeleportEffect`.
+- 19/20/21/23 `:18416`/`:18432`/`:18460`/`:18498` F11 hideUI / F7 drawDiag
+  / F8 netDiag / F10 FPS — no port state for these toggles.
+- 24-25 `:37716`/`:37733` `TryInteractingWithVoidLens` — no void-lens
+  open/close interaction (the `void_lens` tracked ref is net-only).
+- 26-27 `:37988`/`:37991` `PlayInteractiveProjectileOpenCloseSound`
+  (proj 525/960) — no interactive-projectile open/close.
+- 28 `:39820` `DrawNPCChatBottomRightItem` — the corner item is deferred
+  (`ui/npc_chat.rs:14-15`).
+- 29/30/31/33/34/39 `:39996` TavernkeepAdvice, `:40005`/`:40016`
+  DyeTraderRarePlant, `:40035` GuideReverseCrafting, `:40047`
+  PartyGirlSwapMusic, `:40268` DryadText — the chat-button interaction
+  handlers are unported (only Nurse/Angler/TaxCollector/shop collapse).
+- 41-50 `:40502`-`:40665` `DrawNPCChatButtons` hover pairs — the legacy
+  chat interaction buttons are deferred (`app/clicks.rs:1073-1074`; the
+  ported Close-button hover is `NPCChatPanel.cs:157-160`, a different site).
+- 52 `:40696` `SubmitSignText` — no sign editor (`app/mod.rs:2279`).
+- 53 `:40828` `DrawNPCHousesInWorld` kickOut — the world housing banners
+  are unported (only the UI housing page).
+- 58/59 `:41249`/`:41275` misc pet/light + super-cart toggles — no misc
+  tick click surface.
+- 62/63/64 `:41849`/`:41855`/`:41887` quick-stack-all / mode-cycle /
+  sort-inventory buttons — unported.
+- 71/72/73 `:42506`/`:42544`/`:42584` hotbar-lock / block-replacement /
+  torch-biome-swap icons — `draw_hotbar_lock` is a documented no-op
+  (`ui/chrome.rs:679`), the other two icons unported.
+- 77 `:43041` elder-slime transform (22) — no elder slime.
+- 80-90 `:43663`-`:43936` the hair/stylist window (`OpenHairWindow` /
+  `CancelHairWindow` / `BuyHairWindow` / `DrawHairWindow`) — unported.
