@@ -502,6 +502,82 @@ pub(crate) fn place_3x2(world: &mut World, x: i32, y: i32, kind: u16, style: i32
     }
 }
 
+/// `WorldGen.PlaceLogicTiles` (`WorldGen.cs:45309-45338`): the logic
+/// sensor/gate placement. The 419 (logic sensor) arm stacks ONLY on an
+/// active 419/420 below (`:45321-45329`): `frameX = 18 * style`,
+/// `frameY = 0`. Every other kind needs an empty cell (`:45331-45337`):
+/// `frameX = 0`, `frameY = 18 * style`. No floor/solid gate at all.
+pub(crate) fn place_logic_tiles(world: &mut World, x: i32, y: i32, kind: i32, style: i32) {
+    if !in_world(world, x, y, 0) || !in_world(world, x, y + 1, 0) {
+        return;
+    }
+    if kind == 419 {
+        let below_ok = world
+            .tile(x, y + 1)
+            .is_some_and(|t| t.active() && (t.kind == 419 || t.kind == 420));
+        if below_ok {
+            let i = world.index(x, y);
+            let t = &mut world.tiles[i];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = kind as u16;
+            t.frame_x = (style * 18) as i16;
+            t.frame_y = 0;
+        }
+    } else if !world.tile(x, y).is_some_and(|t| t.active()) {
+        let i = world.index(x, y);
+        let t = &mut world.tiles[i];
+        t.flags |= FLAG_ACTIVE;
+        t.kind = kind as u16;
+        t.frame_x = 0;
+        t.frame_y = (18 * style) as i16;
+    }
+}
+
+/// `WorldGen.PlaceOnTable1x1` (`WorldGen.cs:45340-45378`): the on-table
+/// 1x1 object. Two floor arms: an active `tileTable` top (`:45351`), or —
+/// for the book (78) only — an active `tileSolid` top with no half brick
+/// and no slope (`:45355`). Both need the cell empty. Frames: the candle
+/// (33) writes `frameY = 22 * style` (`frameX = 0`), every other kind
+/// `frameX = 18 * style`, `frameY = 0`; the book (50) then rolls
+/// `genRand.Next(5) * 18` over `frameX` (`:45373-45376`, AFTER the write).
+pub(crate) fn place_on_table_1x1(
+    world: &mut World,
+    rng: &mut Rng,
+    x: i32,
+    y: i32,
+    kind: i32,
+    style: i32,
+) {
+    if !in_world(world, x, y, 0) || !in_world(world, x, y + 1, 0) {
+        return;
+    }
+    let empty = !world.tile(x, y).is_some_and(|t| t.active());
+    let below = world.tile(x, y + 1);
+    let table_arm =
+        empty && below.is_some_and(|t| t.active() && tile_table(t.kind));
+    let book_arm = kind == 78
+        && empty
+        && below.is_some_and(|t| {
+            t.active() && TILE_SOLID.has(t.kind) && !t.half_brick() && t.slope() == 0
+        });
+    if table_arm || book_arm {
+        let i = world.index(x, y);
+        let t = &mut world.tiles[i];
+        t.flags |= FLAG_ACTIVE;
+        t.kind = kind as u16;
+        if kind == 33 {
+            t.frame_x = 0;
+            t.frame_y = (style * 22) as i16;
+        } else {
+            t.frame_x = (style * 18) as i16;
+            t.frame_y = 0;
+        }
+        if kind == 50 {
+            t.frame_x = (18 * rng.range(0, 5)) as i16;
+        }
+    }
+}
+
 /// The shared wall-painting core (`WorldGen.Place{3x2,3x3,2x3,4x3,6x4}Wall`
 /// — `WorldGen.cs:44725-44756`/`:44254-44292`/`:44568-44599`/
 /// `:44854-44886`/`:44946-44979`): every body cell must be inactive AND
@@ -1306,5 +1382,48 @@ mod tests {
         assert_eq!(w.tile(8, 28).unwrap().frame_x, 108);
         assert_eq!(w.tile(8, 28).unwrap().frame_y, 72);
         assert_eq!(w.tile(13, 31).unwrap().frame_x, 198); // 108 + 90
+    }
+
+    /// `PlaceLogicTiles`: 419 stacks only on 419/420; other kinds need an
+    /// empty cell. `PlaceOnTable1x1`: the table arm, the 78 solid arm,
+    /// the 33 22-px stride and the 50 Next(5) book roll.
+    #[test]
+    fn logic_tiles_and_on_table_arms() {
+        let mut w = World::new("ph".into(), 60, 60);
+        // 419 refuses on stone …
+        let i = w.index(10, 20);
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].kind = 1;
+        place_logic_tiles(&mut w, 10, 19, 419, 1);
+        assert!(!w.tile(10, 19).unwrap().active());
+        // … and stacks on an active 420.
+        w.tiles[i].kind = 420;
+        place_logic_tiles(&mut w, 10, 19, 419, 1);
+        assert!(w.tile(10, 19).unwrap().active());
+        assert_eq!(w.tile(10, 19).unwrap().frame_x, 18);
+        // The general arm: empty cell, frameY = 18*style.
+        place_logic_tiles(&mut w, 12, 19, 423, 2);
+        assert_eq!(w.tile(12, 19).unwrap().frame_y, 36);
+        // On-table: a table (14) top accepts the bottle (33) with the
+        // 22-px stride.
+        let mut w2 = floor_world();
+        let i = w2.index(20, 20);
+        w2.tiles[i].kind = 14;
+        let mut rng = Rng(5);
+        place_on_table_1x1(&mut w2, &mut rng, 20, 19, 33, 2);
+        assert_eq!(w2.tile(20, 19).unwrap().frame_y, 44);
+        // The book (78) accepts plain stone; the book (50) rolls Next(5).
+        place_on_table_1x1(&mut w2, &mut rng, 22, 19, 78, 0);
+        assert!(w2.tile(22, 19).unwrap().active());
+        let mut probe = Rng(5);
+        let roll = probe.range(0, 5);
+        place_on_table_1x1(&mut w2, &mut rng, 24, 19, 50, 0);
+        assert_eq!(w2.tile(24, 19).unwrap().frame_x, (18 * roll) as i16);
+        assert_eq!(rng.0, probe.0);
+        // 78 refuses a half-brick floor.
+        let i = w2.index(26, 20);
+        w2.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
+        place_on_table_1x1(&mut w2, &mut rng, 26, 19, 78, 0);
+        assert!(!w2.tile(26, 19).unwrap().active());
     }
 }

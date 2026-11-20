@@ -80,7 +80,7 @@ the C# call site), so no stream is invented.
 | H9 | `Place3x4` / `Place5x4` | `:51912-51961` / `:51963-52020` | Statues/large furniture | landed f3b8665d |
 | H10 | `Place4x2` / `Place6x3` | `:50514-50584` / `:50465-50512` | beds/benches (Floating Island Houses d103/d104) | (this slice) |
 | H11 | `Place3x2Wall` / `Place3x3Wall` / `Place2x3Wall` / `Place4x3Wall` / `Place6x4Wall` | `:44725-44756` / `:44254-44292` / `:44568-44599` / `:44854-44886` / `:44946-44979` | paintings (Floating Island Houses, temple) | (this slice) |
-| H12 | `PlaceOnTable1x1` / `PlaceLogicTiles` | `:45340-45379` / `:45309-45339` | Guide/house furniture | pending |
+| H12 | `PlaceOnTable1x1` / `PlaceLogicTiles` | `:45340-45378` / `:45309-45338` | Guide/house furniture | (this slice) |
 | H13 | `Place1xX` / `Place2xX` | `:39177-39522` / `:39663-39935` | the temple slices exist (`temple.rs:1880`); general banners/statues | pending |
 | H14 | `PlaceMan` / `PlaceWoman` | `:46302-46347` / `:46348-46393` | Guide (d105) | pending |
 | H15 | `SolidTileNoPlatforms` / `SolidTileAllowPlatformTopFrame` / `SolidTileAllowTopSlope` / `SolidTileAllowLeftSlope` / `SolidTileAllowRightSlope` | `:70191-70219` / `:70220-70319` / `:70320-70339` / `:70340-70359` / `:70360-70459` | placement floors for the pending passes | pending |
