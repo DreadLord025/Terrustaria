@@ -18234,12 +18234,18 @@ impl ProjectilePool {
                             if burst {
                                 // `:34501` — Damage() through the resized
                                 // box, THEN the dust census (`:34502+`).
-                                let dolls = doll_flags(player.as_deref());
-                                let luck = player
-                                    .as_deref()
-                                    .map(|p| p.luck_state.luck)
-                                    .unwrap_or(0.0);
-                                self.damage_pve_boxed(i, npcs, dolls, rng, luck);
+                                // `Damage()`'s PVE walk is owner-gated
+                                // (`:12505`, `owner == Main.myPlayer`) — the
+                                // 644-burst precedent; the dust census runs
+                                // for every owner.
+                                if self.slots[i].owner == local_owner {
+                                    let dolls = doll_flags(player.as_deref());
+                                    let luck = player
+                                        .as_deref()
+                                        .map(|p| p.luck_state.luck)
+                                        .unwrap_or(0.0);
+                                    self.damage_pve_boxed(i, npcs, dolls, rng, luck);
+                                }
                                 crate::projectile_ai_explosions::explosion_tick1_draws(
                                     &self.slots[i],
                                     rng,
