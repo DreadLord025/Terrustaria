@@ -147,6 +147,21 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- S1-I-1 wave D94: the projectile family's support ids (2nd half) ----
+    // The projectile-driven messages outside the 27/29 state sync (d93's
+    // first half): the Moon Leech heal (66), the minion target pair (99/115),
+    // the tower shields (101), the smoke poof (106) and the cannon redirect
+    // (108). Bodies + codecs only; the apply/relay arms are S1-I-4.
+    /// `66 Unknown66` (`MessageID.cs:145`) — the Moon Leech Clot's owner heal
+    /// (`Projectile.cs:28524`, `NetMessage.cs:1110-1113`;
+    /// `MessageBuffer.cs:3036-3055` applies + relays).
+    pub const HEAL_PLAYER: u8 = 66;
+    pub const MINION_REST_TARGET: u8 = 99; // MessageID.cs:212 / NetMessage.cs:1353-1356 / MessageBuffer.cs:3570-3583
+    pub const TOWER_SHIELDS: u8 = 101; // MessageID.cs:216 / NetMessage.cs:1371-1376 / MessageBuffer.cs:3611-3651
+    pub const POOF_OF_SMOKE: u8 = 106; // MessageID.cs:226 / NetMessage.cs:1400-1402 / MessageBuffer.cs:3742-3751
+    pub const WIRED_CANNON_SHOT: u8 = 108; // MessageID.cs:230 / NetMessage.cs:1403-1411 / MessageBuffer.cs:3758-3773
+    pub const MINION_ATTACK_TARGET: u8 = 115; // MessageID.cs:244 / NetMessage.cs:1357-1360 / MessageBuffer.cs:3584-3597
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1537,6 +1552,41 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+// ---- S1-I-1 wave D94: the projectile family's support bodies (2nd half) ----
+
+/// `msg 66 Unknown66`'s body (`NetMessage.cs:1110-1113`): the player id then
+/// the heal amount as a `short`. Sent by the Moon Leech Clot's contact arm
+/// (`Projectile.cs:28513-28524`: `HealEffect` + `statLife` clamp + the send);
+/// the host applies the same clamp and relays (`MessageBuffer.cs:3036-3055`,
+/// the `num71 > 0` gate lives in the apply arm, not the codec).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HealPlayer {
+    pub player_id: u8,
+    pub heal: i16,
+}
+
+/// `msg 99 MinionRestTargetUpdate`'s body (`NetMessage.cs:1353-1356`): the
+/// player id then `Player.MinionRestTargetPoint` as a `Vector2` (two `float`s,
+/// `Player.cs:3006`). Sent when the local point drifts from the last-synced
+/// copy (`Main.cs:17678-17681`); the server overrides the id to the sender
+/// and relays (`MessageBuffer.cs:3570-3583`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MinionRestTarget {
+    pub player_id: u8,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// `msg 115 MinionAttackTargetUpdate`'s body (`NetMessage.cs:1357-1360`): the
+/// player id then `Player.MinionAttackTargetNPC` as a `short`
+/// (`Player.cs:3008`, `-1` = none). Sent on change (`Main.cs:17682-17685`);
+/// the server overrides the id and relays (`MessageBuffer.cs:3584-3597`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MinionAttackTarget {
+    pub player_id: u8,
+    pub npc: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1648,6 +1698,18 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `66 Unknown66` - this client's Moon Leech Clot healed its owner
+    /// (`Projectile.cs:28524`); the host clamps + relays
+    /// (`MessageBuffer.cs:3036-3055`).
+    HealPlayer(HealPlayer),
+    /// `99 MinionRestTargetUpdate` - this client's minion rest point moved
+    /// (`Main.cs:17678-17681`); the host overrides the id + relays
+    /// (`MessageBuffer.cs:3570-3583`).
+    MinionRestTarget(MinionRestTarget),
+    /// `115 MinionAttackTargetUpdate` - this client's minion attack target
+    /// changed (`Main.cs:17682-17685`); the host overrides + relays
+    /// (`MessageBuffer.cs:3584-3597`).
+    MinionAttackTarget(MinionAttackTarget),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1771,6 +1833,15 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `66 Unknown66` - a peer's Moon Leech heal, relayed by the host
+    /// (`MessageBuffer.cs:3051`).
+    HealPlayer(HealPlayer),
+    /// `99 MinionRestTargetUpdate` - a peer's minion rest point, relayed
+    /// (`MessageBuffer.cs:3580`).
+    MinionRestTarget(MinionRestTarget),
+    /// `115 MinionAttackTargetUpdate` - a peer's minion attack target,
+    /// relayed (`MessageBuffer.cs:3594`).
+    MinionAttackTarget(MinionAttackTarget),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1859,6 +1930,9 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::HealPlayer(_) => id::HEAL_PLAYER,
+            Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
+            Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1927,6 +2001,12 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1110-1113`: (byte)number + (short)number2.
+            Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
+            // `NetMessage.cs:1353-1356`: (byte)number + WriteVector2.
+            Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
+            // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
+            Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2048,6 +2128,19 @@ impl C2s {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
+                player_id: r.u8()?,
+                heal: r.i16()?,
+            }),
+            id::MINION_REST_TARGET => Self::MinionRestTarget(MinionRestTarget {
+                player_id: r.u8()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            id::MINION_ATTACK_TARGET => Self::MinionAttackTarget(MinionAttackTarget {
+                player_id: r.u8()?,
+                npc: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2209,6 +2302,9 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::HealPlayer(_) => id::HEAL_PLAYER,
+            Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
+            Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
         }
     }
 
@@ -2351,6 +2447,12 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:1110-1113`: (byte)number + (short)number2.
+            Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
+            // `NetMessage.cs:1353-1356`: (byte)number + WriteVector2.
+            Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
+            // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
+            Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2552,6 +2654,19 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
+                player_id: r.u8()?,
+                heal: r.i16()?,
+            }),
+            id::MINION_REST_TARGET => Self::MinionRestTarget(MinionRestTarget {
+                player_id: r.u8()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            id::MINION_ATTACK_TARGET => Self::MinionAttackTarget(MinionAttackTarget {
+                player_id: r.u8()?,
+                npc: r.i16()?,
             }),
             _ => return None,
         })
@@ -4708,6 +4823,94 @@ mod tests {
         assert_eq!(packed, hide);
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
+        }
+    }
+
+    // ---- S1-I-1 wave D94: the projectile family's support ids (2nd half) ----
+    // Same convention as wave A: pin the frame's id byte, the exact C# body
+    // bytes (`NetMessage.cs`'s writer arms) and both decode round trips.
+
+    #[test]
+    fn s1_i_1_d94_heal_player_round_trips() {
+        // `NetMessage.cs:1110-1113`: (byte)number + (short)number2 — the
+        // Moon Leech Clot's heal (`Projectile.cs:28524`).
+        let h = HealPlayer {
+            player_id: 2,
+            heal: 37,
+        };
+        let f = S2c::HealPlayer(h).encode();
+        assert_eq!(f[2], 66);
+        let mut body = vec![2];
+        body.extend_from_slice(&37i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::HealPlayer(d) => assert_eq!(d, h),
+            other => panic!("expected 66, got {:?}", other.msg_id()),
+        }
+        let c = C2s::HealPlayer(h).encode();
+        assert_eq!(c[2], 66);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::HealPlayer(d) => assert_eq!(d, h),
+            other => panic!("expected 66, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_minion_rest_target_round_trips() {
+        // `NetMessage.cs:1353-1356`: (byte)number + WriteVector2 — the two
+        // floats little-endian (`Player.MinionRestTargetPoint`).
+        let m = MinionRestTarget {
+            player_id: 5,
+            x: 1234.5,
+            y: -678.25,
+        };
+        let f = S2c::MinionRestTarget(m).encode();
+        assert_eq!(f[2], 99);
+        let mut body = vec![5];
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-678.25f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MinionRestTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 99, got {:?}", other.msg_id()),
+        }
+        let c = C2s::MinionRestTarget(m).encode();
+        assert_eq!(c[2], 99);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MinionRestTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 99, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_minion_attack_target_round_trips() {
+        // `NetMessage.cs:1357-1360`: (byte)number + (short)target; -1 is the
+        // no-target default (`Player.cs:3008`).
+        let m = MinionAttackTarget {
+            player_id: 1,
+            npc: -1,
+        };
+        let f = S2c::MinionAttackTarget(m).encode();
+        assert_eq!(f[2], 115);
+        let mut body = vec![1];
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MinionAttackTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 115, got {:?}", other.msg_id()),
+        }
+        let m2 = MinionAttackTarget {
+            player_id: 3,
+            npc: 199,
+        };
+        let c = C2s::MinionAttackTarget(m2).encode();
+        assert_eq!(c[2], 115);
+        let mut body2 = vec![3];
+        body2.extend_from_slice(&199i16.to_le_bytes());
+        assert_eq!(&c[3..], &body2);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MinionAttackTarget(d) => assert_eq!(d, m2),
+            other => panic!("expected 115, got {:?}", other.msg_id()),
         }
     }
 }

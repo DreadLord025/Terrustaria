@@ -816,6 +816,11 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // S1-I-1 wave D94: the projectile family's client-sent support
+            // ids (66 heal relay `:3036-3055`, 99/115 minion targets
+            // `:3570-3597`) have bodies + codecs (`net.rs`); the host
+            // apply/relay arms land with the send-path pass (S1-I-4).
+            C2s::HealPlayer(_) | C2s::MinionRestTarget(_) | C2s::MinionAttackTarget(_) => {}
         }
     }
 
@@ -1858,6 +1863,11 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // S1-I-1 wave D94: the projectile family's server-sent support
+            // ids (66 `:3036-3055`, 99 `:3570-3583`, 115 `:3584-3597`) have
+            // bodies + codecs (`net.rs`); the client read sites land with
+            // the send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::HealPlayer(_) | S2c::MinionRestTarget(_) | S2c::MinionAttackTarget(_) => {}
         }
     }
 
