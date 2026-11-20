@@ -92,7 +92,9 @@ DoT flag arms 70/397/20/21/22/23/24/103/137/67/68/39/323/44/324 are LIVE via
 `derive_dot_inputs`/the wave-A match — excluded.)
 
 **Boundary**: c16 ⊂ `:9914-10048`, c17 = `:10318-10461`, c18 = `:10462-10976`,
-d71 = `:11406-12012`. No shared C# line, no shared id.
+d73 = `:10328-10485` (boosters, `9a0a711a`), d74 = `:10318-10808` (tail,
+`83ad2d34`), d71 = `:11406-12012`. No shared C# line, no shared id (the
+d73/d74 blocks sit below `:10808`; this block starts at `:11406`).
 
 ## RNG census of `:11406-12012`
 
