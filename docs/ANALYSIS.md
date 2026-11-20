@@ -36462,6 +36462,76 @@ d74 (`buff_effects_tail.rs`, request accumulator). The keep-one decision
   cargo/rustc/rustfmt/tests/graphify invoked. The f12/merger step wires
   the module and drops the four duplicate orb copies.
 
+## The buff-frame wiring (W4-f12, 2026-11-21)
+
+The gathered wave modules (c16/c17/c18/d71/d72/d73/d74) were pure effect
+tables — test-only until the merge step. W4-f12 wires them into the live
+`Player.UpdateBuffs` frame loop at the EXACT C# call order, in a new
+disjoint module `crates/tr-app/src/buff_frame_wiring.rs::update_buff_frame`
+(hook: `world_sim/player.rs`, after `update_summon_buff_arms`, before
+`update_accessory_buff_arms`).
+
+- **Keep-one (the g27 contract):** the 18 lunar-orb ids (95-100 / 170-181)
+  route EXCLUSIVELY to the canonical `buff_effects_orbs.rs::apply_orb_arm`
+  (the d73 arm core + c17 zero-seeding, adopted byte-exact in phase 1). The
+  duplicate orb dispatches in c17 (`buff_effects_potions_sets.rs`), d73
+  (`buff_effects_boosters.rs`) and d74 (`buff_effects_tail.rs`) are NOT
+  called — their non-orb ids stay with their modules. The orb counters live
+  in `Player.orb_scan` (`OrbScanState`), zeroed every frame by
+  `reset_effects()` in the `ResetEffects` region (the c17 correction).
+- **One slot-ordered pass, exact C# order:** the pass walks the bar
+  (`buffType > 0 && buffTime > 0`, `:9867-9870`) and dispatches the
+  genuinely-missing ids at their C# `else if` positions: the d73 stragglers
+  192/321 (`:9935-9946`), the wave-B debuff block (`:10049-10317`), Mana
+  Heat 396 (`:10328-10341`), the 18 orb ids (`:10342-10461`), Ice Barrier
+  62 (`:10462-10485`), the wave-E status block (`:11406-12012`) and the
+  wave-D DoT flag arms (`:11707-11783`). The frame head (`:9857-9864`,
+  soulDrain 151 + DontStarve 332) runs BEFORE the chain; the tails
+  (`:12046-12067`, hunger ladder + luck diff + lava fade) run AFTER — the
+  `buff_effects_frame.rs` helpers split around the chain.
+- **Ownership gates (no double grant):** the live passes already own many
+  ids — the inline wave-A match (`player.rs`), `update_summon_buff_arms`
+  (the 29 keep-alives + the 110/150/348 cap rows + the 216 respawn) and
+  `update_accessory_buff_arms` (the pets/imbues `:10977-11405` +
+  `:12013-12044`). The wiring's `INLINE_OWNED`/`SUMMON_OWNED`/
+  `ACCESSORY_OWNED` lists skip those ids; the debuff dispatch excludes
+  110/150/348 (summon-owned) and 165 (the inline match owns its
+  defense/thorns halves, the equip pass its +6 regen); the misc dispatch is
+  restricted to the DoT flag arms (Wet 103 stays with `refresh_wet_state`).
+- **Ice Barrier 62 keep-one:** the inline endurance-only half
+  (`player.rs`) is folded out; the WHOLE arm (flag + 3-tick × 12-frame
+  counter + above-half-life `DelBuff(j); j--` + endurance +0.25, the C#
+  `statLifeMax2` f64 gate) now rides d73's `apply_booster_effect_arm`. The
+  ice frame pair persists across ticks (`Player.ice_barrier_frame*`).
+- **The `pet_flags` clear moved** from the accessory pass to the
+  `ResetEffects` region so it precedes BOTH the wiring's late-pet grants
+  (`:11406-11706`) and the accessory pass's pet grants (clearing it after
+  the wiring would wipe the status pets).
+- **New Player fields:** the orb scan state, `beetle_buff`/`ice_barrier` +
+  the ice frame pair, `frame_state` (`oldLuckPotion`/`lavaOpacity`),
+  `soul_drain`, `inferno_counter` (the `:24595-24598` tick, cap 180), the
+  wired debuff/status/DoT flag halves, `block_range`, `stat_life_max2`,
+  `luck_needs_sync`, `buff_life_regen` (a SEPARATE accumulator from
+  `accessory_life_regen`, folded into `RegenInputs::extra_regen` beside it),
+  and the frame's emote/Hungry-sound request queues (drained by the
+  world_sim seam onto `EmoteSystem.new_bubble` / `audio.play("hungry")`).
+- **Deliberate deviations / gaps:** the set flags
+  (`beetleDefense`/`beetleOffense`/`setSolar`) stay false until the
+  armor-set lane lands (the g27 contract — the arms zero + delete like the
+  C# without the set); `wolf_acc` stays false (the Moon Charm accessory
+  lane unported, so Werewolf 28 always deletes); the Inferno aura damage
+  scan (`:10224-10263`) is deferred (needs the world roster — the flag +
+  light + cadence counter ride); the DoT flag fields are the C# write's
+  faithful record (the regen lane reads them off the buff bar via
+  `holding()`); Tipsy 25's crit/damage/speed/Ale halves stay unported (the
+  inline match owns only the defense half — the misc dispatch excludes 25
+  to avoid a double defense grant).
+- **RNG census:** the wiring pass draws NOTHING — the only draw in the
+  wired blocks is Rabid (148)'s `Main.rand` triple, already owned by the
+  live accessory pass (the wiring skips 148). Stream-neutral.
+- Code-only: 16 `w4_f12_*` witnesses WRITTEN, NOT RUN — no
+  cargo/rustc/rustfmt/tests/graphify invoked.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
