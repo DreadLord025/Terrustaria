@@ -448,6 +448,23 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_42", 29),
     ("Zombie_43", 29),
     ("Zombie_44", 29),
+    // W4-e9 slice 2 — IdleSounds arms 11-20 (`NPC.cs:90119-90158`): the
+    // antlion family's 45/46, crawdad 47, deadly sphere 48/49, DrManFly
+    // 50-52, dungeon spirit 53/54, desert ghouls 55/56, shellies 57/58.
+    ("Zombie_45", 29),
+    ("Zombie_46", 29),
+    ("Zombie_47", 29),
+    ("Zombie_48", 29),
+    ("Zombie_49", 29),
+    ("Zombie_50", 29),
+    ("Zombie_51", 29),
+    ("Zombie_52", 29),
+    ("Zombie_53", 29),
+    ("Zombie_54", 29),
+    ("Zombie_55", 29),
+    ("Zombie_56", 29),
+    ("Zombie_57", 29),
+    ("Zombie_58", 29),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
