@@ -807,6 +807,18 @@ impl App {
                     })); // `:2573`
                 }
             }
+            // `case 36` — a client's zone flags (`MessageBuffer.cs:2178-2202`).
+            // The host forces the subject to the sender (`:2181-2184`), stores
+            // the six bytes (`:2187-2192`) and relays to the others (`:2199`).
+            // The `zone5[0]` false→true edge spawns Faelings host-side
+            // (`:2195-2198`, `NPC.Spawner.SpawnFaelings`, `NPC.cs:5957-5995`) —
+            // kind 677 has no port roster entry yet, so the edge is parked
+            // (W4-c27; the shimmer-spawn lane owns it).
+            C2s::PlayerZone(mut z) => {
+                z.player_id = id as u8; // `:2183`
+                self.remote_players.entry(id).or_default().zone = z;
+                server.broadcast_except(&S2c::PlayerZone(z), id); // `:2199`
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
@@ -1840,6 +1852,24 @@ impl App {
                         }
                     }
                 }
+            }
+            // `case 18` — the host's clock (`MessageBuffer.cs:1290-1298`,
+            // client-only). `Main.time` is the wire `int`; the port's clock is
+            // f64 ticks. `sunModY`/`moonModY` (`Main.cs:1185`/`:1187`) are the
+            // journey-mode sun/moon drag offsets — no port field yet, parked
+            // (W4-c27).
+            S2c::SetTime(t) => {
+                self.world.day_time = t.day_time;
+                self.world.time = t.time as f64;
+            }
+            // `case 36` — a peer's zone flags (`MessageBuffer.cs:2178-2202`,
+            // the `netMode == 1` half keeps the wire id): stored on the peer
+            // record, the render/zone consumers read it from there.
+            S2c::PlayerZone(z) => {
+                self.remote_players
+                    .entry(z.player_id as u32)
+                    .or_default()
+                    .zone = z;
             }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
@@ -5204,5 +5234,58 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+
+    /// W4-c27 `18 SetTime` — the client applies the host's clock verbatim
+    /// (`MessageBuffer.cs:1290-1298`): the `int` time lands as f64 ticks, the
+    /// `== 1` day flag, the mod offsets parked (no port field).
+    #[test]
+    fn w4_c27_set_time_applies_the_hosts_clock() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The host's own 10 Hz clock broadcast rides the same values, so the
+        // assertion holds regardless of which message lands last.
+        host_app.world.day_time = false;
+        host_app.world.time = 16_200.0;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::SetTime(net::SetTime {
+                day_time: false,
+                time: 16_200,
+                sun_mod_y: -60,
+                moon_mod_y: 30,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        assert!(!client_app.world.day_time, "the night flag applied");
+        assert_eq!(client_app.world.time, 16_200.0, "the int clock applied");
+    }
+
+    /// W4-c27 `36 SyncPlayerZone` — the host forces the subject to the sender
+    /// (`MessageBuffer.cs:2181-2184`), stores the six bytes and relays to the
+    /// others (`:2199`); the client keeps the wire id on its peer record.
+    #[test]
+    fn w4_c27_player_zone_relays_with_the_sender_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let z = net::PlayerZone {
+            player_id: 200, // spoofed — the host must override it to 1
+            zone1: 0xA5,
+            zone2: 0x0F,
+            zone3: 0xF0,
+            zone4: 0x33,
+            zone5: 0x01,
+            town_npcs: 4,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerZone(z));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let stored = host_app.remote_players.get(&1).expect("peer stored");
+        assert_eq!(stored.zone.player_id, 1, "the id forced to the sender");
+        assert_eq!(stored.zone.zone1, 0xA5);
+        assert_eq!(stored.zone.zone5, 0x01);
+        assert_eq!(stored.zone.town_npcs, 4);
+        // The relay excludes the sender (`:2199`'s `this.whoAmI`), so the
+        // client never sees its own zone echo — its peer record for itself
+        // stays absent, exactly the C#'s ignore-own shape.
+        assert!(client_app.remote_players.get(&1).is_none());
     }
 }

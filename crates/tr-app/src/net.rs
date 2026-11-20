@@ -147,6 +147,10 @@ pub mod id {
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
 
+    // ---- W4-c27: the entity-state ids (apply/relay arms land with them) ----
+    pub const SET_TIME: u8 = 18; // MessageID.cs:45 / NetMessage.cs:531-536 / MessageBuffer.cs:1290-1298
+    pub const SYNC_PLAYER_ZONE: u8 = 36; // MessageID.cs:83 / NetMessage.cs:933-944 / MessageBuffer.cs:2178-2202
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -575,6 +579,9 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Main.player[id].zone1..5` + `townNPCs`, fed by `36 SyncPlayerZone`
+    /// (`MessageBuffer.cs:2187-2192`). W4-c27.
+    pub zone: PlayerZone,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1537,6 +1544,36 @@ pub struct SyncLoadout {
     pub hide_accessory: u16,
 }
 
+/// `msg 18 SetTime`'s body (`NetMessage.cs:531-536`): the day flag as one
+/// byte, `(int)Main.time`, then the `Main.sunModY`/`moonModY` offsets — both
+/// `short` (`Main.cs:1185`/`:1187`). The reader is client-only
+/// (`MessageBuffer.cs:1290-1298`, `netMode == 1`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SetTime {
+    pub day_time: bool,
+    /// `Main.time` — the wire is an `int`; the port's clock is the f64 ticks.
+    pub time: i32,
+    pub sun_mod_y: i16,
+    pub moon_mod_y: i16,
+}
+
+/// `msg 36 SyncPlayerZone`'s body (`NetMessage.cs:933-944`): the player id
+/// then the five `Player.zone1..zone5` BitsBytes (`Player.cs:1364-1372`) and
+/// `(byte)Player.townNPCs`. The host overrides the id to the sender, applies
+/// the bytes and relays (`MessageBuffer.cs:2178-2202`); bit 0 of `zone5` is
+/// `ZoneShimmer` (`Player.cs:3811-3821`) — its false→true edge spawns the
+/// Faelings on the host (`NPC.cs:5957`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PlayerZone {
+    pub player_id: u8,
+    pub zone1: u8,
+    pub zone2: u8,
+    pub zone3: u8,
+    pub zone4: u8,
+    pub zone5: u8,
+    pub town_npcs: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1648,6 +1685,10 @@ pub enum C2s {
     /// `147 SyncLoadout` - a client switched loadout
     /// (`MessageBuffer.cs:4328-4343` relays it).
     SyncLoadout(SyncLoadout),
+    /// `36 SyncPlayerZone` - a client's zone flags changed (the zone-change
+    /// test `Main.cs:17634`, the 900-tick heartbeat `:64533`;
+    /// `MessageBuffer.cs:2178-2202` forces the id to the sender and relays).
+    PlayerZone(PlayerZone),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1771,6 +1812,12 @@ pub enum S2c {
     /// `147 SyncLoadout` - a peer's loadout (join push
     /// `NetMessage.cs:2908`, relay `MessageBuffer.cs:4340`).
     SyncLoadout(SyncLoadout),
+    /// `18 SetTime` - the host's clock (`NetMessage.cs:531-536`; the client
+    /// applies it at `netMode == 1`, `MessageBuffer.cs:1290-1298`). W4-c27.
+    SetTime(SetTime),
+    /// `36 SyncPlayerZone` - a peer's zone flags, relayed by the host
+    /// (`MessageBuffer.cs:2199`). W4-c27.
+    PlayerZone(PlayerZone),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1859,6 +1906,7 @@ impl C2s {
             Self::TeamChange(_) => id::TEAM_CHANGE,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::PlayerZone(_) => id::SYNC_PLAYER_ZONE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1927,6 +1975,15 @@ impl C2s {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .u8(z.zone1)
+                .u8(z.zone2)
+                .u8(z.zone3)
+                .u8(z.zone4)
+                .u8(z.zone5)
+                .u8(z.town_npcs),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2048,6 +2105,16 @@ impl C2s {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192`: (byte)id + zone1..5 + townNPCs.
+            id::SYNC_PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.u8()?,
+                zone2: r.u8()?,
+                zone3: r.u8()?,
+                zone4: r.u8()?,
+                zone5: r.u8()?,
+                town_npcs: r.u8()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2209,6 +2276,8 @@ impl S2c {
             Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
+            Self::SetTime(_) => id::SET_TIME,
+            Self::PlayerZone(_) => id::SYNC_PLAYER_ZONE,
         }
     }
 
@@ -2351,6 +2420,22 @@ impl S2c {
                 .i32(t.void_lens.key)
                 .i16(t.void_lens.kind),
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
+            // `NetMessage.cs:531-536`: (byte)dayTime + (int)time + sunModY +
+            // moonModY (both `short`, `Main.cs:1185`/`:1187`).
+            Self::SetTime(t) => w
+                .u8(u8::from(t.day_time))
+                .i32(t.time)
+                .i16(t.sun_mod_y)
+                .i16(t.moon_mod_y),
+            // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .u8(z.zone1)
+                .u8(z.zone2)
+                .u8(z.zone3)
+                .u8(z.zone4)
+                .u8(z.zone5)
+                .u8(z.town_npcs),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2552,6 +2637,23 @@ impl S2c {
                 player_id: r.u8()?,
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
+            }),
+            // `MessageBuffer.cs:1290-1298`: byte == 1 day flag + int + 2 shorts.
+            id::SET_TIME => Self::SetTime(SetTime {
+                day_time: r.u8()? == 1,
+                time: r.i32()?,
+                sun_mod_y: r.i16()?,
+                moon_mod_y: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192`: (byte)id + zone1..5 + townNPCs.
+            id::SYNC_PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.u8()?,
+                zone2: r.u8()?,
+                zone3: r.u8()?,
+                zone4: r.u8()?,
+                zone5: r.u8()?,
+                town_npcs: r.u8()?,
             }),
             _ => return None,
         })
@@ -4709,5 +4811,75 @@ mod tests {
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
         }
+    }
+
+    // ---- W4-c27: the entity-state ids — byte-verbatim witnesses ----
+    // Each test pins the frame's id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    #[test]
+    fn w4_c27_set_time_round_trips() {
+        // `NetMessage.cs:531-536`: (byte)dayTime + (int)Main.time +
+        // sunModY/moonModY, both `short` (`Main.cs:1185`/`:1187`).
+        let t = SetTime {
+            day_time: false,
+            time: 32_400,
+            sun_mod_y: -120,
+            moon_mod_y: 45,
+        };
+        let f = S2c::SetTime(t).encode();
+        assert_eq!(f[2], 18);
+        let mut body = vec![0u8];
+        body.extend_from_slice(&32_400i32.to_le_bytes());
+        body.extend_from_slice(&(-120i16).to_le_bytes());
+        body.extend_from_slice(&45i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SetTime(d) => assert_eq!(d, t),
+            other => panic!("expected 18, got {:?}", other.msg_id()),
+        }
+        // `MessageBuffer.cs:1293`: the day flag is `== 1`, not `!= 0` —
+        // a byte 2 reads as night.
+        let mut body2 = vec![2u8];
+        body2.extend_from_slice(&0i32.to_le_bytes());
+        body2.extend_from_slice(&0i16.to_le_bytes());
+        body2.extend_from_slice(&0i16.to_le_bytes());
+        match S2c::decode(18, &mut NetReader::new(&body2)).expect("decode") {
+            S2c::SetTime(d) => assert!(!d.day_time, "byte 2 is not day"),
+            other => panic!("expected 18, got {:?}", other.msg_id()),
+        }
+        // Truncated bodies are malformed.
+        assert!(S2c::decode(18, &mut NetReader::new(&[1, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_player_zone_round_trips() {
+        // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+        // zone5 bit 0 is ZoneShimmer (`Player.cs:3811-3821`).
+        let z = PlayerZone {
+            player_id: 6,
+            zone1: 0b1010_0101,
+            zone2: 0x0F,
+            zone3: 0xF0,
+            zone4: 0x33,
+            zone5: 0b0000_0001,
+            town_npcs: 3,
+        };
+        let body = [6, 0b1010_0101, 0x0F, 0xF0, 0x33, 0x01, 3];
+        let f = S2c::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerZone(z).encode();
+        assert_eq!(c[2], 36);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(36, &mut NetReader::new(&body[..6])).is_none());
     }
 }
