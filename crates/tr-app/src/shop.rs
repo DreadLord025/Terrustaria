@@ -38,6 +38,16 @@ pub struct ShopFlags {
     pub downed_mech_2: bool,
     pub downed_mech_3: bool,
     pub downed_martians: bool,
+    /// `NPC.downedPlantBoss` (`Chest.cs:2122`) — the Truffle's Autohammer.
+    pub downed_plant_boss: bool,
+    /// The secret-seed trio the `!Main.remixWorld || (Main.tenthAnniversaryWorld
+    /// && !Main.getGoodWorld)` gates read (`Chest.cs:2130`/`:2137`/`:2207`,
+    /// set by `WorldGen.cs:11118-11121` from the seed options). The port's
+    /// `World.seeds` bits feed them (`SeedFlags::REMIX`/`TENTH_ANNIVERSARY`/
+    /// `FOR_THE_WORTHY`).
+    pub remix_world: bool,
+    pub anniversary_world: bool,
+    pub get_good_world: bool,
     /// `Main.LocalPlayer.golferScoreAccumulated` (`Chest.cs:3158`): the
     /// Golfer shop's score gates — the port has no golf system yet, so it
     /// reads 0 until one lands (the gated rows stay hidden).
@@ -88,6 +98,10 @@ impl Default for ShopFlags {
             downed_mech_2: false,
             downed_mech_3: false,
             downed_martians: false,
+            downed_plant_boss: false,
+            remix_world: false,
+            anniversary_world: false,
+            get_good_world: false,
             golfer_score: 0,
             bestiary_completion: 0.0,
             unlocked_princess: false,
@@ -124,6 +138,16 @@ impl ShopFlags {
             infected_seed: world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+            downed_plant_boss: world.downed_plant_boss,
+            // `WorldGen.cs:11118-11121`: the three statics ride the seed
+            // options — the port's persisted `World.seeds` bits.
+            remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+            anniversary_world: world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            get_good_world: world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
             ..Self::default()
         }
     }
@@ -233,6 +257,19 @@ pub enum StockWhen {
     /// row (`Chest.cs:3169`/`:3186`/`:3202`/`:3207`/`:3223`/`:3228`/
     /// `:3233`), so each row names its own threshold + operator.
     GolfScore(i32, bool),
+    /// `NPC.downedMechBossAny` ALONE (`Chest.cs:2113` — the Truffle's
+    /// Mushroom Spear/Hammush pair; no hardmode conjunct in the C#).
+    DownedMechAnyBare,
+    /// `NPC.downedPlantBoss` (`Chest.cs:2122`) — the Autohammer 1551.
+    DownedPlantBoss,
+    /// `!Main.remixWorld || (Main.tenthAnniversaryWorld &&
+    /// !Main.getGoodWorld)` (`Chest.cs:2130`/`:2137`/`:2207`) — the
+    /// Dark Blue Solution 783, the Clentaminator 779 and the whole
+    /// solution/moonlord tail block.
+    NotRemixOrAnniversary,
+    /// `Main.hardMode || !Main.getGoodWorld` (`Chest.cs:2170`) — the
+    /// Blend-O-Matic 995.
+    HardModeOrNotGood,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -496,6 +533,25 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             }
             rows
         }
+        // The Truffle's shop (index 10, `Chest.cs:2112-2134`, the registry
+        // `NPCInteractions.Shop(160, 10)`, `NPCInteractions.cs:497` —
+        // `NPCID.Truffle = 160`, `NPCID.cs:10997`): the mech-any pair, the
+        // Mushroom Cap, the Plantera Autohammer, the Strange Glowing
+        // Mushroom, My Son and the remix-gated Dark Blue Solution.
+        10 => vec![
+            // `:2113-2119`: `if (NPC.downedMechBossAny)` — the Mushroom
+            // Spear 756 + the Hammush 787 (NO hardmode conjunct).
+            row(756, StockWhen::DownedMechAnyBare),
+            row(787, StockWhen::DownedMechAnyBare),
+            row(868, StockWhen::Always), // `:2120` the Mushroom Cap
+            // `:2122-2126`: `if (NPC.downedPlantBoss)` — the Autohammer.
+            row(1551, StockWhen::DownedPlantBoss),
+            row(1181, StockWhen::Always), // `:2127` Strange Glowing Mushroom
+            row(5231, StockWhen::Always), // `:2129` My Son
+            // `:2130-2133`: `!Main.remixWorld || (Main.tenthAnniversaryWorld
+            // && !Main.getGoodWorld)` — the Dark Blue Solution 783.
+            row(783, StockWhen::NotRemixOrAnniversary),
+        ],
         // The Dye Trader's shop (index 12, `Chest.cs:case 12`): the two
         // always rows, the halloween rows (constants-off), the day/night
         // moon-phase 0 pair, the blood-moon-night row and the graveyard
@@ -1334,6 +1390,15 @@ pub fn resolve_stock_entries_moon(
                     flags.golfer_score > min
                 }
             }
+            // `Chest.cs:2113`: no hardmode conjunct — the bare flag.
+            StockWhen::DownedMechAnyBare => flags.downed_mech_any,
+            StockWhen::DownedPlantBoss => flags.downed_plant_boss,
+            // `Chest.cs:2130` verbatim.
+            StockWhen::NotRemixOrAnniversary => {
+                !flags.remix_world || (flags.anniversary_world && !flags.get_good_world)
+            }
+            // `Chest.cs:2170` verbatim.
+            StockWhen::HardModeOrNotGood => flags.hard_mode || !flags.get_good_world,
         })
         .collect()
 }
@@ -2220,6 +2285,42 @@ mod town5_tests {
             ..Default::default()
         };
         assert_eq!(resolve_stock(9, &loud, &[]), expect);
+    }
+
+    /// W4-d122 shop 10 — the Truffle (`Chest.cs:2112-2134`,
+    /// `NPCInteractions.Shop(160, 10)`): the verbatim gates — the bare
+    /// `downedMechBossAny` pair (`:2113`, NO hardmode conjunct), the
+    /// `downedPlantBoss` Autohammer (`:2122`) and the remix/anniversary/
+    /// getGoodWorld solution gate (`:2130`). Written, not run (code-only).
+    #[test]
+    fn the_truffle_stock_gates_on_mech_plantera_and_the_remix_trio() {
+        // Classic world: 868/1181/5231/783 — the pair and the hammer stay out.
+        let base = resolve_stock(10, &ShopFlags::default(), &[]);
+        assert_eq!(base, vec![868, 1181, 5231, 783]);
+        // The bare mech flag alone opens the pair (no hardmode needed —
+        // the C# `:2113` reads `NPC.downedMechBossAny` directly).
+        let mech = ShopFlags {
+            downed_mech_any: true,
+            ..Default::default()
+        };
+        assert_eq!(resolve_stock(10, &mech, &[]), vec![756, 787, 868, 1181, 5231, 783]);
+        // Plantera adds the Autohammer in its num slot (after 868).
+        let plant = ShopFlags {
+            downed_plant_boss: true,
+            ..mech
+        };
+        assert_eq!(
+            resolve_stock(10, &plant, &[]),
+            vec![756, 787, 868, 1551, 1181, 5231, 783]
+        );
+        // `:2130`: remix ON kills 783; anniversary+remix (not getGood)
+        // brings it back; getGood on top kills it again.
+        let remix = ShopFlags { remix_world: true, ..plant };
+        assert!(!resolve_stock(10, &remix, &[]).contains(&783));
+        let anni = ShopFlags { anniversary_world: true, ..remix };
+        assert!(resolve_stock(10, &anni, &[]).contains(&783));
+        let good = ShopFlags { get_good_world: true, ..anni };
+        assert!(!resolve_stock(10, &good, &[]).contains(&783));
     }
 }
 

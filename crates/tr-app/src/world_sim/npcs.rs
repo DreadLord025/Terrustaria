@@ -949,6 +949,19 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         downed_mech_2: app.world.downed_mech_boss2,
         downed_mech_3: app.world.downed_mech_boss3,
         downed_martians: app.world.downed_martians,
+        // W4-d122: the Truffle/Steampunker gates (`Chest.cs:2113-2233`).
+        downed_plant_boss: app.world.downed_plant_boss,
+        // `WorldGen.cs:11118-11121` — the seed-option statics ride the
+        // persisted `World.seeds` bits.
+        remix_world: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+        anniversary_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        get_good_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
         // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
         // (`WorldGen.cs:555-562`) — `Chest.SetupShop`'s Dryad and Bestiary
         // Girl vampirism rows (`shop.rs`'s `Vampirism*` gates). The world's
