@@ -264,6 +264,11 @@ mod town_arrival;
 mod tracked_sound;
 mod touch_damage;
 mod ui;
+// W4-g17 (code-only): the world-side Gore.NewGore sites, wave A — the
+// TreeGrowFX trunk/leaf column + ash shake (WorldGen.cs:29600-29672)
+// and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /
+// axe-hit / Check3x3 dispatch claims are the wiring wave.
+mod world_gore_a;
 mod world_sim;
 mod world_stepper;
 

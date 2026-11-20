@@ -39244,3 +39244,37 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The world gore sites (W4-g17, wave A)
+
+`Gore.NewGore*` census for the world/player lane: **Main.cs carries ZERO
+sites** (verified by direct grep — only `Gore.goreTime` `:17075` and the
+TimeLogger rows `:17993`/`:21906`); WorldGen.cs has 36, Player.cs 32.
+The NPC death sites are W4-d55/e5/f10 (`npc_hit_effect_a.rs` wave A
+landed), the projectile sites W4-g16. This lane ports the world/player
+remainder, code-only (module + witnesses; dispatch claims deferred).
+
+Wave A (`world_gore_a.rs`): `WorldGen.TreeGrowFX` (`WorldGen.cs:29600-
+29637`) — the 3-trunk-gore column + the top-row leaf burst (20 grown /
+5 axe-hit), the paint column read from the trunk cell (`Tile.color()`
+is the paint), the `treeGore == 1278` ash delegation;
+`TreeGrowFX_AshShake` (`:29639-29672`) — the two dust shakes (type 31
+upper-half, type 6 lower-70%, the `Next(3)` row gates short-circuit)
+and the `!hitTree` 61+Next(3) leaf gore; `Check3x3` `case 231`
+(`:53230-53257`) — the larva 300/301/302 burst + the nearest-live-player
+Manhattan probe returning the `NPC.SpawnOnPlayer(plr, 222)` claim.
+
+RNG contract: `Utils.RandomVector2` (`Utils.cs:2431-2434`) draws TWO
+`NextDouble`s X-then-Y with the float cast BEFORE the multiply; the
+argument draws ride before the `NewGore`/`NewDust` internals (C#
+left-to-right evaluation); the `NewGore` kicks are Y `Next(10,31)` then
+X `Next(-20,21)` (`Gore.cs:1327-1328`, pool-side). The ash-shake row
+gates: `-height / 2` is C# int division (truncation toward zero), the
+second gate is float (`(float)num >= (float)(-height) * 0.7f`).
+
+Documented drops: the `TreeGrowFXCheck` height/style scan + `GetTreeLeaf`
+table, the axe-hit `:63416` and `MessageBuffer.cs:3828` callers, the
+`Check3x3` validation/KillTile/TileFrame tail (the edit lane's), and the
+Queen Bee spawn itself (returned as the player-index claim) are the
+wiring wave. netMode: single-player (the `== 0` arm runs, `== 2` drops).
+7 witnesses written, NOT run (code-only mode).
