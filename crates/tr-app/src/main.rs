@@ -196,6 +196,11 @@ mod projectile_ai_empress;
 // orchestration (the pure roll engine is tr_core::fishing).
 mod projectile_bobber;
 mod rain;
+// S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
+// path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
+// :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
+// helpers (:37718-37991). Wired into update_editing (the boss-spawner seam).
+mod recall_teleport;
 mod regen;
 mod research;
 mod sand;

@@ -1364,6 +1364,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
         return;
     }
+    // S1-P-i38 — the recall / magic-mirror / ice-mirror / potion-of-return
+    // `ItemCheck` arms (`Player.cs:42976-42999` / `:43107-43140` /
+    // `:43141-43172`, `ItemCheck_OwnerOnlyCode`): like the boss spawners they
+    // run in the item-use tick, not the cursor/reach path — the mirror fires
+    // mid-swing at `itemTime == useTime/2` regardless of where the cursor
+    // points. The machine sits with the boss-spawner block (after the
+    // map/HUD/frozen gates, before the reach gate). The press edge is the true
+    // previous-frame pair (the port overwrote `mine_prev_down` to the current
+    // frame at the top). A started use consumes the tick like the boss arms;
+    // a live swing's per-tick arm runs without consuming.
+    if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
     // `Player.cs:43742-43771`) fire before the world-editing gates — the C#
     // runs them in the item-use tick, not the cursor path; the eye arm takes
