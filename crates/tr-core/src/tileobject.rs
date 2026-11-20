@@ -696,8 +696,9 @@ pub(crate) fn not_really_solid(kind: u16) -> bool {
 /// body): the cell may be cut during placement when the tile below is not
 /// a pot/planter-box/seed-provider seat (78/380/579), the wall behind is
 /// not the unsafe dungeon wall 350, and a pumpkin (254) is ripe
-/// (`frameX >= 144` — the grown frame).
-pub(crate) fn can_cut_tile(world: &World, x: i32, y: i32) -> bool {
+/// (`frameX >= 144` — the grown frame). The `AttackMelee` context (the
+/// bug net's swing cut, `Player.cs:44661`) reads the same body.
+pub fn can_cut_tile(world: &World, x: i32, y: i32) -> bool {
     let (Some(here), Some(below)) = (world.tile(x, y), world.tile(x, y + 1)) else {
         return false;
     };

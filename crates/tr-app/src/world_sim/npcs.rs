@@ -3419,13 +3419,23 @@ fn invasion_spawn_pick(
 /// ported kinds — the shimmer slime 676, the shimmered town NPC 677 and the
 /// rainbow slime 681 wait for the M4-NPC roster).
 pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32) -> bool {
-    let Some(kind) = NpcKind::from_u16(npc_type) else {
+    // S1-P-i36 repair: the C# `NPC.ReleaseNPC` types live in the vanilla
+    // `NPC.type` space (the bestiary NET id) — `NpcKind::from_u16` maps the
+    // port's internal protocol ids and would decode a wrong kind (55 is
+    // BrainOfCthulhu there, not the Goldfish).
+    let Some((kind, slime)) = crate::npc::kind_from_net_id(npc_type as i32) else {
         // The roster gap: the C#'s `ReleaseNPC` still spawns, but the port has
         // no model for the type — the arm's accounting still runs.
         return false;
     };
     let mut npc = Npc::new(kind, x, y, 1, 0.0);
+    npc.slime = slime;
     npc.shimmer_transparency = 1.0;
+    // `WorldItem.GetShimmered` releases through `NPC.ReleaseNPC`
+    // (`WorldItem.cs:1776`), whose every arm writes `releaseOwner = who`
+    // (`NPC.cs:80121+`) — the shimmer-released critter is NOT wild, so
+    // the 90-tick friendly window never arms (S1-P-i36).
+    npc.release_owner = app.local_id as u8;
     app.npcs.push(npc);
     true
 }
@@ -4363,6 +4373,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         if n.sound_delay > 0 {
                             n.sound_delay -= 1;
                         }
+                        // S1-P-i36 — `SubAI_HandleTemporaryCatchableNPC
+                        // PlayerInvulnerability` (`NPC.cs:90424` →
+                        // `:90534-90556`): the wild critter's 90-tick
+                        // friendly window ticks down pre-AI, in slot order.
+                        crate::bug_net::tick_catchable_immunity(n);
                         if crate::ambient_sound::fighter_walker_kind(n.kind) {
                             let (nw, nh) = n.size();
                             let player_intersects = n.x < player.x + crate::player::WIDTH

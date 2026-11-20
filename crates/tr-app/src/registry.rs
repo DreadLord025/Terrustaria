@@ -117,14 +117,13 @@ pub fn get(id: u16) -> Option<&'static ItemDef> {
 }
 
 /// `Item.makeNPC` (`Item.cs`'s per-item field) — the item's critter/bait
-/// NPC id, the shimmer release arm's input (`WorldItem.GetShimmered`'s
-/// makeNPC arm, `WorldItem.cs:1747-1772`). The generated item data does not
-/// carry the field yet (a `tools/GenItemData` follow-up), so every kind maps to
-/// 0 (no release) until it lands — the release arm's mechanism, the
-/// `ShimmerTransformToNPC` override and the ≤50-attempt budget are ported and
-/// unit-tested without it.
-pub fn make_npc(_id: u16) -> u16 {
-    0
+/// NPC id: the bug-net release arm's input (`Player.cs:43614-43625`,
+/// S1-P-i36) and the shimmer release arm's (`WorldItem.GetShimmered`'s
+/// makeNPC arm, `WorldItem.cs:1747-1772`). The generated item data carries
+/// the column (`itemdata.rs`'s `make_npc`, e.g. 2019 → 46, 1994 → 356,
+/// 4068 → 583); negative values clamp to 0 like the C# `makeNPC > 0` gates.
+pub fn make_npc(id: u16) -> u16 {
+    item(id).map_or(0, |d| d.make_npc.max(0) as u16)
 }
 
 pub fn name(id: u16) -> &'static str {

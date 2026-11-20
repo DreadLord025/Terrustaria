@@ -1547,8 +1547,21 @@ pub struct Npc {
     pub immortal: bool,
     /// `NPC.friendly` (`NPC.cs:6563`, the stock `false`) — the town NPCs'
     /// `friendly = true` writes (`NPC.cs:8983+`); the port derives it from the
-    /// existing `is_town_resident` list.
+    /// existing `is_town_resident` list. The catchable critters' 90-tick
+    /// wild window writes it too (`NPC.cs:17851-17855`,
+    /// `bug_net::tick_catchable_immunity`).
     pub friendly: bool,
+    /// `NPC.releaseOwner` (`NPC.cs:6079`, the stock `255` = wild) — the
+    /// player slot that released this critter from an item
+    /// (`NPC.ReleaseNPC`, `NPC.cs:80121+`); the `CanReleaseNPCs` per-player
+    /// census counts it (`NPC.cs:80084`).
+    pub release_owner: u8,
+    /// `NPC.catchableNPCTempImmunityCounter` (`NPC.cs:17853`, armed to 90
+    /// for every `Main.npcCatchable` kind at `SetDefaults`) — the wild
+    /// critter's friendly window; `SubAI_HandleTemporaryCatchableNPCPlayer
+    /// Invulnerability` (`NPC.cs:90534-90556`) decrements it per update and
+    /// zeroes it for released/statue spawns (S1-P-i36).
+    pub catchable_immunity: i32,
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
@@ -3030,7 +3043,21 @@ impl Npc {
             // Sleeping Angler's own arm (`:13798`).
             chaseable: true,
             immortal: false,
-            friendly: kind.is_town_resident() || kind == NpcKind::SleepingAngler,
+            friendly: kind.is_town_resident()
+                || kind == NpcKind::SleepingAngler
+                // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
+                // every `Main.npcCatchable` kind spawns friendly with the
+                // 90-tick window (S1-P-i36).
+                || crate::bug_net::npc_catchable(kind.cs_id() as i32),
+            // `NPC.releaseOwner = 255` (`NPC.cs:8445`'s SetDefaults reset).
+            release_owner: 255,
+            // `catchableNPCTempImmunityCounter = 90` (`NPC.cs:17853`) — the
+            // same catchable arm as `friendly` above.
+            catchable_immunity: if crate::bug_net::npc_catchable(kind.cs_id() as i32) {
+                90
+            } else {
+                0
+            },
             swarm_done: false,
             king_slime_local: [0.0; 4],
             size_override: None,

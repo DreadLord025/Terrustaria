@@ -103,6 +103,14 @@ pub mod id {
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
     pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
     pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
+    /// `70 CatchNPC` (S1-P-i36): one `(short)` npc slot — the client's bug
+    /// net caught it (`NPC.cs:79904`); the host converts
+    /// (`MessageBuffer.cs:3102-3110`, `NetMessage.cs:1125-1127`).
+    pub const CATCH_NPC: u8 = 70;
+    /// `71 ReleaseNPC` (S1-P-i36): `(int)x, (int)y, (short)type, (byte)style`
+    /// — a client released a captured critter (`NPC.cs:80111`); the host
+    /// spawns (`MessageBuffer.cs:3112-3117`, `NetMessage.cs:1128-1133`).
+    pub const RELEASE_NPC: u8 = 71;
     /// `97` — `AchievementsHelper.NotifyNPCKilled`'s per-player fan-out
     /// (`AchievementsHelper.cs:210-216`, `NetMessage.cs:1347-1349`): one
     /// `(short)npcNetId`, read only at `netMode == 1`
@@ -1579,6 +1587,20 @@ pub enum C2s {
     /// `28 NPCStrike` — this client's hit on an NPC (`NPC.StrikeNPC`'s
     /// `fromNet: false` send, `NPC.cs:81218`).
     NpcStrike(NpcStrike),
+    /// `70 CatchNPC` — this client's bug net caught the NPC in the host's
+    /// slot (`NPC.CatchNPC`'s `netMode == 1` arm, `NPC.cs:79901-79905`).
+    CatchNpc {
+        npc: i16,
+    },
+    /// `71 ReleaseNPC` — this client released a captured critter at the
+    /// world point (`NPC.ReleaseNPC`'s `netMode == 1` arm,
+    /// `NPC.cs:80109-80112`).
+    ReleaseNpc {
+        x: i32,
+        y: i32,
+        npc_type: i16,
+        style: u8,
+    },
     /// `27 Projectile` — this client's own projectile state (the owner's
     /// machine simulates and sends, `Projectile.cs:17210-17244`).
     Projectile(Box<ProjectileState>),
@@ -1819,6 +1841,8 @@ impl C2s {
             Self::PlayerState(_) => id::PLAYER_STATE,
             Self::NetModule { .. } => id::NET_MODULE,
             Self::NpcStrike(_) => id::NPC_STRIKE,
+            Self::CatchNpc { .. } => id::CATCH_NPC,
+            Self::ReleaseNpc { .. } => id::RELEASE_NPC,
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
             Self::Ping => id::PING,
@@ -1923,6 +1947,12 @@ impl C2s {
             Self::Pickup { drop } => w.u32(*drop),
             Self::NetModule { module, body } => w.u16(*module).raw(body),
             Self::NpcStrike(st) => st.write_to(w),
+            // `NetMessage.cs:1125-1127` — one `(short)` slot.
+            Self::CatchNpc { npc } => w.i16(*npc),
+            // `NetMessage.cs:1128-1133` — x, y, `(short)` type, `(byte)` style.
+            Self::ReleaseNpc { x, y, npc_type, style } => {
+                w.i32(*x).i32(*y).i16(*npc_type).u8(*style)
+            }
             Self::Projectile(p) => return p.frame(),
             Self::ProjectileDead { key } => {
                 return NetWriter::open(id::PROJECTILE_DEAD)
@@ -2055,6 +2085,15 @@ impl C2s {
                 body: r.rest()?.to_vec(),
             },
             id::NPC_STRIKE => Self::NpcStrike(NpcStrike::read_from(r)?),
+            // `MessageBuffer.cs:3102-3110` — one `(short)` slot.
+            id::CATCH_NPC => Self::CatchNpc { npc: r.i16()? },
+            // `MessageBuffer.cs:3112-3117` — x, y, type, style.
+            id::RELEASE_NPC => Self::ReleaseNpc {
+                x: r.i32()?,
+                y: r.i32()?,
+                npc_type: r.i16()?,
+                style: r.u8()?,
+            },
             id::PROJECTILE => Self::Projectile(Box::new(ProjectileState::read_from(r)?)),
             id::PROJECTILE_DEAD => Self::ProjectileDead { key: r.i32()? },
             _ => return None,
@@ -4010,6 +4049,15 @@ mod tests {
                 buff_type: 24,
                 time: 300,
             }),
+            // `70`/`71` — the bug net's catch/release (S1-P-i36,
+            // `MessageBuffer.cs:3102-3117`).
+            C2s::CatchNpc { npc: 12 },
+            C2s::ReleaseNpc {
+                x: 1600,
+                y: 3200,
+                npc_type: 356,
+                style: 5,
+            },
         ];
         for msg in &msgs {
             let frame = msg.encode();
