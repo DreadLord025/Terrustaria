@@ -33630,3 +33630,143 @@ are WRITTEN, NOT RUN — **no compiler invoked**. The pre-existing mining tests
 (the DW-1.1/DW-1.2/DW-1.5 family, the altar smash, the far-placement reach)
 are preserved by the axe/hammer time-based pacing + the rectangle reach's
 agreement on their fixtures.
+## The bug net (S1-P-i36, task/S1-P-i36-bug-net, 2026-11-20, code-only mode)
+
+**Census verdict.** The bug-net use was ENTIRELY MISSING from the port —
+no `ItemCheck_CatchCritters`/`CatchNPC`/`ReleaseNPC`/`catchItem`
+machinery and no sim-side swung-item rectangle (the melee arm is the
+cursor-point approximation, `editing.rs`'s documented stand-in). The
+three net ITEM rows were already faithful (1991: 25/25 scale 1 rare 0;
+3183: 18/18 scale 1.15 rare 4; 4821: 21/21 scale 0.85 rare 3; all
+useStyle 1, damage −1, autoReuse, useTurn, UseSound Item1 —
+`Item.cs:21305-21315`/`:29541-29553`/`:39480-39492`), and the `itemdata`
+`make_npc` column was populated but `registry::make_npc` was a stub
+returning 0. So this task ports the missing machinery, not wrong
+constants.
+
+**What landed** (`crates/tr-app/src/bug_net.rs` + the wiring):
+
+* The catch radius is NOT a radius: `net_swing_rect` ports
+  `ItemCheck_GetMeleeHitbox` (`Player.cs:45099-45190`) over the
+  useStyle-1 `itemLocation` thirds (`Player.cs:50715-50852`) with the
+  measured frame sizes (the LZX harness `tools/atlas_sim.js`:
+  Item_1991 36×40, Item_3183 44×48, Item_4821 48×50 — `GetDrawHitbox`
+  returns the whole sheet, no `Main.itemAnimations` row exists for the
+  nets). The f32 scale products and the f64 third-multiplier truncations
+  were verified bit-exact (JS `Math.fround`/f64 harness):
+  44f*1.15f = 50.599998 → 50, 48f*1.15f = 55.199997 → 55,
+  48f*0.85f = 40.800003 → 40, 50f*0.85f = 42.5 → 42;
+  `(int)(36*1.2)` = 43 (43.199999…), `(int)(40*1.4)` = 56,
+  `(int)(42*1.4)` = 58 (58.8).
+* `catch_item` ports every `NPC.SetDefaults` `catchItem` row (per-type
+  cites in the module; the 46/303/337/540 bunny family shares 2019
+  `NPC.cs:9336-9346`, the 627 gold overwrite 4482 `:17069`, the
+  butterfly 356 re-derives `1994 + ai[2] − 1` live `:45106`).
+  `npc_catchable` ports `Main.npcCatchable` (`Main.cs:9330-9418`) — the
+  RELEASE whitelist is NOT the catch list: 303/337/540/230/687 carry a
+  catch item but are not release-catchable.
+* `catch_verdict`/`catch_outcome`/`catch_npc` port
+  `ItemCheck_CatchCritters` (`Player.cs:44712-44740`) and `NPC.CatchNPC`
+  (`NPC.cs:79891-79927`) in branch order: the plain net on lava bait
+  (`ItemID.cs:1306`: 4845/4847/4849) takes
+  `Hurt(ByNPC, 1, dir, WrongBugNet)` then buff 24/300 when the hit lands
+  and the player lives; the 583/584/585 family refuses `ai[2] > 1`; the
+  conversion spawns `Item.NewItem(catchItem)` at the catcher's truncated
+  centre; the statue arm poofs with NO item; the client deactivates
+  locally and sends `70`.
+* `release_plan`/`release_position`/`release_npc` port
+  `ItemCheck_ReleaseCritter` (`Player.cs:44057-44074`) +
+  `NPC.ReleaseNPC` (`NPC.cs:80106-80167`): the 614 explosive bunny
+  releases at `(Center.X, Bottom.Y)` with no reach/solid gate; the
+  generic arm needs the reach + a non-solid cursor cell and releases at
+  the truncated mouse point. The switch: 583/584/585 `ai[2]=2` +
+  TargetClosest + `ai[3]=0`; 356 `ai[2]=placeStyle`; 148 `Type + Next(2)`
+  (ONE draw); 614 style>2 statue form + direction overrides.
+  `can_release_npcs` ports the 0.7/0.75 population fraction and the
+  `(int)(200*num/players)` per-player share with both strict `<` gates
+  (`NPC.cs:80070-80104`). `NewNPC`'s Bottom anchor (`NPC.cs:80770` +
+  `Entity.cs:128-131`) and `timeLeft = (int)(750*1.25) = 937` (`:80772`,
+  `:95186`) are kept.
+* The 90-tick wild friendly window: the `Npc` ctor arms
+  `catchable_immunity = 90` + `friendly` for every `npcCatchable` kind
+  (`NPC.cs:17851-17855`); `tick_catchable_immunity` runs pre-AI in slot
+  order (the soundDelay site, `NPC.cs:90424` → `:90534-90556`), zeroing
+  the counter for released/statue spawns and arming `netUpdate` on the
+  friendly flip.
+* Net `70 CatchNPC` / `71 ReleaseNPC` (`MessageBuffer.cs:3102-3117`,
+  `NetMessage.cs:1125-1133`): `C2s` codecs + the host arms (the `70`
+  slot bounds check + `CatchNPC(slot, whoAmI)` with the item at the
+  REMOTE catcher's centre; the `71` remote `who` must pass
+  `npcCatchable`). The accept gate needs no whitelist entry (both ids
+  > 12 require IN_WORLD, `MessageBuffer.cs:165`). The client's local
+  deactivation also drops the `net_npcs` store entry so a rebuild cannot
+  resurrect the caught NPC before the host's despawn `23`.
+* `registry::make_npc` now reads the `itemdata` column (the shimmer
+  release arm goes live with it; `spawn_shimmer_release` writes
+  `releaseOwner` like `WorldItem.cs:1776`'s `NPC.ReleaseNPC`).
+
+**RNG order** (the `UpdatePlayers` swap, `Main.cs:17754`):
+`ItemCheck_GetMeleeHitboxParticles` (1450/3779 only) and
+`ItemCheck_EmitUseVisuals` draw NOTHING for the nets (every type arm
+misses; the frostBurn/magmaStone/meleeEnchant tails gate on
+`sItem.melee`, false). Per caught NPC in slot order: the `Hurt` dodge
+rolls (only with a dodge accessory armed) then the `Item.NewItem` draws
+— `Prefix(0)` draws nothing (critter items are not prefixable,
+`Item.CanHavePrefixes`), the velocity pair `Next(-30,31)*0.1` /
+`Next(-40,-15)*0.1` (`Item.cs:49749-49750`; critter items are not in
+`ItemNoGravity`). The port's `spawn_item_drop_px` keeps its pinned
+velocity/phase-triplet order (the standing recorded deviation). The
+golden/fireproof cut's `KillTile` draws ride `break_tile`'s own pinned
+seam. The release's 148 `Next(2)` draws on the same stream (witness:
+exactly one draw, mirrored replay).
+
+**Deviations (deliberate).**
+
+* The `WrongBugNet` immunity counter collapses onto the port's single
+  damage lane (the M4-HAZARD-1 admission); it is NOT in `Sets.Retaliate`
+  (`ImmunityCooldownID.cs:49`), so the lava lane's
+  `hurt_inner(..., retaliate=false)` precedent applies.
+* The `Utils.PoofOfSmoke` visuals (`Utils.cs:1078-1093`, the `Next(3,7)`
+  gore burst + dust) are skipped with the standing gore/dust gap — the
+  statue-poof and frog arms lose their draws; the `106` smoke broadcast
+  has no port message.
+* The mystic frog 687's `AI_AttemptToFindTeleportSpot` is unported (kind
+  687 has no roster row) — the arm poofs + deactivates, the C# fallback
+  when no spot is found.
+* Roster gap: only Goldfish 55 is a ported catchable `NpcKind` today.
+  The machinery keys on `cs_id`/the bestiary net id, so future critter
+  kinds work without touching this module; a release of an unported
+  type runs the use accounting and spawns nothing (the
+  `spawn_shimmer_release` precedent).
+* The catch item's drop box is the port's universal 14×14 `ItemDrop`
+  centred on the spawn point (the C# `worldItem.Center = center` with
+  the per-texture box, `Item.cs:49736`).
+* The catcher reservation (`Item.DefaultAssignNewItemsToPlayer` →
+  `ReserveForLocalPlayer`, `Item.cs:49753-49765`) has no host-side
+  `22 ItemOwner` sender yet — the converted drop is grabbable by anyone
+  after the port's universal pickup delay.
+* The release reach gate is the port's circular
+  `IsInTileInteractionRange` stand-in (the `update_editing` gate);
+  `tileBoost` is 0 for every critter item. `gravDir` folds to 1f.
+* The RMB cage/anchor placement (`ItemID.Sets.PlaceTileOnAltUse`,
+  `ItemID.cs:412` — every critter item places tile 724 on alt use,
+  `Player.cs:31686`) keeps riding the generic place path; the
+  TECritterAnchor entity is out of scope. LMB releases, RMB places.
+* The `70` host handler's item spawn rides the `UpdatePlayers` stream;
+  the C# `GetData` runs under its own per-message swap — the port keeps
+  the one seam for both paths (the netglue precedent).
+* `CanBeReplacedByOtherNPCs` (the 614 statue form, `NPC.cs:80145`) has
+  no port field — the loot gate rides `spawned_from_statue` (the
+  wiring.rs statue note).
+
+**Verification.** Code-only: every C# block re-read line-by-line
+(`Player.cs:43614-43686`/`:44057-44074`/`:44646-44740`/`:45048-45190`/
+`:50700-50859`, `NPC.cs:79860-79927`/`:80060-80167`/`:80750-80795`/
+`:90534-90556`, all 72 `catchItem` rows grep-diffed,
+`Main.cs:9326-9418` entry-by-entry); the IEEE truncations verified with
+a JS f32/f64 harness; every port seam checked against the actual
+signatures by read/grep (`hurt_inner`'s 8-arg shape, `target_closest`'s
+6-arg shape, `kind_from_net_id`'s `(NpcKind, SlimeVariant)` pair,
+`ItemSlot`'s fields, the netglue gate/outbox/cadence). 20 witness tests
+WRITTEN NOT RUN (18 pure in `bug_net.rs` + 2 app-level in `editing.rs`)
+— **no compiler invoked**.

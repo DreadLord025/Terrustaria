@@ -1434,6 +1434,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
     }
     let world_pos = app.camera + (m - screen * 0.5) / app.zoom;
+    // S1-P-i36 — the bug net's catch arm (`Player.ItemCheck`'s
+    // `Player.cs:43648-43661`): the swung-item rectangle is PLAYER-relative,
+    // so the catch runs ahead of the cursor-reach gate (the C# `ItemCheck`
+    // never reach-gates the melee hitbox block). The nets never mine
+    // (`pick/axe/hammer` 0) and their `damage` −1 keeps them out of
+    // `MeleeHitNPCs` (`:43662`), so the arm consumes the whole use.
+    if crate::bug_net::update_bug_net(app) {
+        app.edit_target = None;
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
+    // S1-P-i36 — the makeNPC release arm (`Player.cs:43614-43625`): the
+    // swing starts regardless of reach; only the release itself is
+    // reach-gated inside (`ItemCheck_ReleaseCritter`, `:44064`). LMB on a
+    // captured-critter item releases it (the RMB cage/anchor placement
+    // keeps the generic place path below).
+    if crate::bug_net::update_critter_release(app, world_pos) {
+        app.edit_target = None;
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
     let tx = (world_pos.x / TILE_PX).floor() as i32;
     let ty = (world_pos.y / TILE_PX).floor() as i32;
     if !app.world.in_bounds(tx, ty) {
@@ -7005,6 +7028,81 @@ mod tests {
         mine_frames(&mut app, 3);
         assert!(!app.world.tile(30, 260).unwrap().active(), "the torch breaks on hit 1");
         assert!(app.items.iter().any(|it| it.kind == 8), "the torch item dropped");
+    }
+
+    /// S1-P-i36 — the bug net's catch arm end-to-end: the swung-item
+    /// rectangle intersects the goldfish's box, `CatchNPC` converts it to
+    /// the Goldfish item 261 (`NPC.cs:9472`) at the player's centre, and
+    /// the NPC leaves the pool. The catch runs even with the cursor FAR
+    /// outside the tile reach (the arm is player-relative,
+    /// `Player.cs:43654`).
+    #[test]
+    fn s1_p_i36_the_bug_net_catches_a_goldfish_into_item_261() {
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        // The net replaces the pickaxe; the cursor parks far away (the
+        // mining_app camera points 3 tiles left of the player — inside
+        // reach, so move the mouse to the screen corner instead: the
+        // catch arm must not care).
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 1991,
+            name: "Bug Net",
+            count: 1,
+            prefix: 0,
+        };
+        app.mouse_pos = Vec2::new(1270.0, 10.0);
+        let p = app.player.as_ref().unwrap();
+        let (px, py) = (p.x, p.y);
+        // The goldfish's 20×18 box (`NPC.cs:9463-9464`) centred on the
+        // player's swing arc, just right of the player.
+        let fish = Npc::new(NpcKind::Goldfish, px + 14.0, py + 4.0, 1, 0.0);
+        app.npcs.push(fish);
+        assert!(app.items.is_empty());
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        // The swing started (25 ticks, `Item.cs:21305-21315`) and the
+        // catch fired on the first animation tick.
+        assert!(app.swing > 0.0, "the net swings");
+        assert!(app.npcs.is_empty(), "the goldfish is caught");
+        assert_eq!(app.items.len(), 1, "one converted item");
+        assert_eq!(app.items[0].kind, 261, "the Goldfish item (NPC.cs:9472)");
+        assert_eq!(app.items[0].count, 1);
+        // The net is not consumed and never mines.
+        assert_eq!(app.inventory[app.selected].count, 1);
+        assert!(app.mine_target.is_none());
+    }
+
+    /// S1-P-i36 — the makeNPC release arm end-to-end: LMB with the
+    /// Goldfish item 261 releases NPC 55 at the cursor point, drains the
+    /// stack, and the released critter carries `releaseOwner` (never
+    /// friendly — `NPC.cs:90538-90541`).
+    #[test]
+    fn s1_p_i36_the_goldfish_item_releases_a_owned_critter() {
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 261,
+            name: "Goldfish",
+            count: 2,
+            prefix: 0,
+        };
+        assert!(app.npcs.is_empty());
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.npcs.len(), 1, "the critter releases");
+        // The first `UpdateNPC` runs the catchable-immunity pass
+        // (`NPC.cs:90538-90541`): releaseOwner != 255 zeroes the window.
+        crate::bug_net::tick_catchable_immunity(&mut app.npcs[0]);
+        let n = &app.npcs[0];
+        assert_eq!(n.kind, NpcKind::Goldfish);
+        assert_eq!(n.release_owner, app.local_id as u8, "NPC.cs:80162");
+        assert_eq!(n.catchable_immunity, 0, "the released window is zeroed");
+        assert!(!n.friendly, "NPC.cs:90543-90551");
+        // `NewNPC`'s timeLeft = (int)(750 * 1.25) (`NPC.cs:80772`).
+        assert_eq!(n.despawn_timer, 937);
+        // The stack drained once (`Player.cs:43317-43320`).
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The release point: the cursor world point, truncated
+        // (`Player.cs:44066-44071`); Bottom = (X, Y) (`NPC.cs:80770`).
+        let (w, h) = n.size();
+        assert_eq!(n.x + w * 0.5, (app.camera.x) as i32 as f32);
+        assert_eq!(n.y + h, (app.camera.y) as i32 as f32);
     }
 
     /// S1-E-18: the demon altar takes the hammer arm of
