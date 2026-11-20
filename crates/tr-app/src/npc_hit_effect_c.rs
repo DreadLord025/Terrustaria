@@ -43,6 +43,7 @@
 //! | 138-141 | `:82470-82473` | the 578 DD2 Lightning Bug death (4 gores 999/998/998/997) |
 //! | 142-145 | `:82496-82499` | the 620 Goblin Shark death (4 gores, base 1183 ladder, 150-dust burst) |
 //! | 146-149 | `:82522-82525` | the 619 Blood Squid death (4 gores, base 1179 ladder, 150-dust fadeIn burst) |
+//! | 150-155 | `:82548-82553` | the 618 Blood Nautilus death: the first six gores (base 1172, 200-dust burst) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -95,6 +96,12 @@ use tr_core::{UnifiedRandom, World};
 fn center(npc: &Npc) -> Vec2 {
     let (w, h) = npc.size();
     Vec2::new(npc.x + w / 2.0, npc.y + h / 2.0)
+}
+
+/// `Entity.Right` (`Entity.cs:104-114`) — `(pos.X + width, pos.Y + height/2f)`.
+fn right_x(npc: &Npc) -> f32 {
+    let (w, _) = npc.size();
+    npc.x + w
 }
 
 /// The death-half dust loop shared by the DD2 rows (`NPC.cs` per-arm
@@ -529,6 +536,47 @@ fn blood_squid_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, num82 + 1, s); // :82525
 }
 
+/// The 618 Blood Nautilus death (`NPC.cs:82541-82559`, sites 150-161): the
+/// 200-dust `NewDustDirect` type-5 burst (velocity ×2.5, scale = 2.5 — the
+/// DEATH scale; the hit half uses 2.0, `:82536`), then 12 gores at base
+/// `num85 = 1172` (`:82547`). The first two type pairs alternate the
+/// `Right.X - 30` anchor with `position`; the rest sit at `position`. This
+/// commit ports the first six gores (sites 150-155, `:82548-82553`); the
+/// +4/+4/+5/+5/+6/+6 tail lands with the next batch.
+fn blood_nautilus_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:82541-82546` — the 200-dust direct burst (death scale 2.5).
+    for _ in 0..200 {
+        let idx = dust.new_dust_direct(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.5;
+        d.scale = 2.5;
+    }
+    // `:82547` — num85 = 1172.
+    let num85 = 1172;
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let rx = right_x(npc) - 30.0;
+    gore.new_gore(rng, world, Vec2::new(rx, npc.y), vel, num85, s); // :82548
+    gore.new_gore(rng, world, pos, vel, num85, s); // :82549
+    gore.new_gore(rng, world, Vec2::new(rx, npc.y), vel, num85 + 1, s); // :82550
+    gore.new_gore(rng, world, pos, vel, num85 + 1, s); // :82551
+    gore.new_gore(rng, world, pos, vel, num85 + 2, s); // :82552
+    gore.new_gore(rng, world, pos, vel, num85 + 3, s); // :82553
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); only the death
@@ -604,6 +652,11 @@ pub fn hit_effect_c(
     // `:82502-82527` — the 619 Blood Squid arm (sites 146-149).
     if npc_type == 619 && npc.hp <= 0 {
         blood_squid_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:82528-82561` — the 618 Blood Nautilus arm (sites 150-155 here; the
+    // +4/+4/+5/+5/+6/+6 tail lands with the next batch).
+    if npc_type == 618 && npc.hp <= 0 {
+        blood_nautilus_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
 }
 
@@ -1012,6 +1065,33 @@ mod tests {
         let live = dust.slots().iter().find(|d| d.active).unwrap();
         assert_eq!(live.fade_in, 1.7);
         assert!(live.scale <= 1.2, "scale stays the roll: {}", live.scale);
+    }
+
+    /// `NPC.cs:82548-82553` — the Blood Nautilus death's first six gores:
+    /// base 1172, the first two type pairs alternate the Right.X-30 anchor
+    /// with position, then +2/+3 at position; after the 200-dust burst
+    /// (death scale 2.5).
+    #[test]
+    fn w4_f10_the_blood_nautilus_death_spawns_the_first_six_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 90.0, 90.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(59);
+        blood_nautilus_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1172, 1172, 1173, 1173, 1174, 1175]);
+        // Right.X = 190; the alternation anchor is (160, 100).
+        assert_eq!(gore.slot(0).position, Vec2::new(160.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(160.0, 100.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(100.0, 100.0));
+        // The 200-dust burst ran; the death post-write is scale 2.5.
+        let dust_active = dust.slots().iter().filter(|d| d.active).count();
+        assert!(dust_active >= 150, "the burst spawned: {dust_active}");
+        let live = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(live.scale, 2.5);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
