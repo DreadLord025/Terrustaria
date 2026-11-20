@@ -18206,8 +18206,10 @@ this lane owns the multiplier/discount arithmetic only.
   `shop.rs::hair_restyle_cost` — style +100000 / color +20000, the Discount
   Card's `(int)((float)x * 0.8f)`, the mood float multiply truncating to int
   FIRST, then the banker's `/10000` round and the whole-gold ×10000 snap.
-  The f32 bits ARE the contract: `100000 × 0.95f` truncates to 94999 (not
-  the decimal 95000) → 9 gold; `× 0.85f` lands the exact 8.5 tie → 8 (even).
+  The f32 bits ARE the contract: `100000 × 0.95f` rounds to the exact
+  95000.0 f32 (the product 94999.9988 sits within half an ulp of it) → the
+  9.5 tie → 10 (even) → 10 gold; `× 0.85f` lands the exact 8.5 tie → 8
+  (even); `120000 × 1.06f` truncates to 127199 (not the decimal 127200).
   The hair-window UI itself stays the M4-TOWN-17 deviation — the helper is
   pinned by its golden vectors until the window lands.
 - **Dead code stays out**: `GetSkeletonMerchantPrices` (`ShopHelper.cs:64-88`)

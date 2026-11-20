@@ -1842,13 +1842,15 @@ mod tests {
         assert_eq!(hair_restyle_cost(false, true, 1.0, false), 20000);
         // Both: 120000 → 12 → 120000.
         assert_eq!(hair_restyle_cost(true, true, 1.0, false), 120000);
-        // The mood truncates BEFORE the round: 120000 × 1.06 = 127200 →
-        // /10000 = 12.72 → 13 → 130000.
+        // The mood truncates BEFORE the round: 120000 × 1.06f =
+        // 127199.992 → int 127199 → /10000 = 12.7199 → 13 → 130000.
         assert_eq!(hair_restyle_cost(true, true, 1.06, false), 130000);
-        // The f32 representation IS the contract: 0.95f32 = 0.949999988…,
-        // so 100000 × 0.95f = 94999.998 → the int truncation lands 94999
-        // → 9.4999 → 9 → 90000 (NOT the decimal-math 95000 → 9.5 → 10).
-        assert_eq!(hair_restyle_cost(true, false, 0.95, false), 90000);
+        // The f32 product ROUNDS before the truncation: 0.95f32 =
+        // 0.949999988…, ×100000 = 94999.9988 — the nearest f32 is 95000.0
+        // (ulp 0.0078125, the exact product sits 0.0012 below it), so the
+        // int truncation lands 95000 → 9.5 → the BANKER'S round → 10
+        // (even) → 100000.
+        assert_eq!(hair_restyle_cost(true, false, 0.95, false), 100000);
         // The tie that separates banker's from away: 100000 × 0.85 =
         // 85000 → 8.5 → 8 (even) → 80000. Away-from-zero would give 9.
         assert_eq!(hair_restyle_cost(true, false, 0.85, false), 80000);
@@ -1857,8 +1859,8 @@ mod tests {
         // The Discount Card: 120000 × 0.8f = 96000 exactly (the product
         // rounds to the exact f32) → mood 1 → 9.6 → 10 → 100000.
         assert_eq!(hair_restyle_cost(true, true, 1.0, true), 100000);
-        // Card + mood: 96000 × 1.06f = 101760.004 → truncate 101760 →
-        // 10.176 → 10 → 100000.
+        // Card + mood: 96000 × 1.06f = 101759.992 → truncate 101759 →
+        // 10.1759 → 10 → 100000.
         assert_eq!(hair_restyle_cost(true, true, 1.06, true), 100000);
         // The f32 truncation arm: 20000 × 0.8f = 16000 exactly.
         assert_eq!(hair_restyle_cost(false, true, 1.0, true), 20000);
