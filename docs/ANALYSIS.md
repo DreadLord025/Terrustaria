@@ -39244,3 +39244,155 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-f27 FindFrame extra wave 4 (2026-11-20, code-only mode)
+
+`crates/tr-app/src/npc_findframe_extra4.rs` — the NEXT 15 unclaimed
+missing `NPC.FindFrame` case ids (`NPC.cs:66684-77370`). The census
+re-derived mechanically from the pushed branches: every C# top-level
+`case` label of the switch on `this.type` (`NPC.cs:66705`, brace-depth
+filtered — the nested switches' labels excluded) = **602 ids**; the
+port's `npc.rs::find_frame` match arms (270 kinds) mapped through the
+`cs_id` hand rows (`npc/data.rs:2992`) + the bestiary net ids + the
+wave-A/B module rosters cover 248 of them (the folded segment families
+— the Destroyer 135, the Golem head 246/249, the Fishron hazards
+371/373 — resolve through their `find_frame` arms, not their bestiary
+folds); the d44-d49 claims subtract 75 more — **279 remain** (the e13
+base, re-confirmed). e13 owns the first 15 (121..202); e14's declared
+next-15 (203/204/205/209/217/218/219/220/221/224/226/229/230/231/232,
+the e13 ANALYSIS header) and f26's batch-2 declaration
+(201/202/203/204/205/209) overlap the same band — the union subtracts
+30, leaving 249 unclaimed. This wave owns the first 15 of those:
+**233/234/235/236/237/238/239/240/241/242/243/244/251/252/253**.
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 233 | HornetLeafy | `:74910` (the 42/231/232 hornet group) | 3 (`:67107`) |
+| 234 | HornetSpikey | `:74911` (the same group) | 3 (`:67107`) |
+| 235 | HornetStingy | `:74912` (the same group) | 3 (`:67107`) |
+| 236 | JungleCreeper | `:73084` (the 164/530 creeper group) | 5 (`:67107`) |
+| 237 | JungleCreeperWall | `:73113` (the 165/531 wall group) | 4 (`:67107`) |
+| 238 | BlackRecluseWall | `:73114` (the same wall group) | 4 (`:67107`) |
+| 239 | BloodCrawler | `:73085` (the creeper group) | 5 (`:67107`) |
+| 240 | BloodCrawlerWall | `:73115` (the wall group) | 4 (`:67108`) |
+| 241 | BloodFeeder | `:74185` (the fish group) | 6 (`:67108`) |
+| 242 | BloodJelly | `:73919` (the jellyfish group) | 7 (`:67108`) |
+| 243 | IceGolem | `:72995-73053` | 15 (`:67108`) |
+| 244 | RainbowSlime | `:72632-72651` | 4 (`:67108`) |
+| 251 | Eyezor | `:76335` (the case-3 zombie walker group) | 3 (`:67109`) |
+| 252 | Parrot | `:73558-73606` (the 301 pair, the 252 branch) | 5 (`:67109`) |
+| 253 | Reaper | `:74833` (the floater group) | 3 (`:67109`) |
+
+Shape (the `npc_findframe_extra3.rs` / f26 precedent): the kinds are
+NOT in `NpcKind` yet (the roster waves own them), so the machines land
+as pure fns over `FrameState`/`FrameInput` with
+`find_frame_kind_extra4` as the vanilla-id wiring seam; the bridge is
+the wiring round (no `npc.rs` hook this wave — the f26 shape, zero
+conflict surface with the in-flight e13/d45 hooks). **No RNG**: none
+of the 15 arms draws `Main.rand` — the floater group's only draw
+(`:74844`) is gated `type == 634`, not 253 — so the wiring cannot move
+a stream.
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **233/234/235 the leafy hornets** (`:74907-74934`): the 8-tick band
+  cycle — counter++ then <2 row 0, <4 row 1, <6 row 2, <8 row 1, else
+  the counter resets and the row HOLDS at 1 (the else writes no
+  frame). No sprite/rotation write; the wing flap ignores velocity.
+* **236/239 the creepers** (`:73083-73111`): the AIR tick zeroes the
+  counter and pins row 4 rising / row 0 falling (row 4 is air-only on
+  the 5-row sheet); the ground tick copies `direction`
+  UNCONDITIONALLY (0 included) and accumulates `|vx| * 1.1` — the
+  WHILE loop steps a row every 6 keeping the remainder (a fast tick
+  steps twice: vx 6 → 6.6/tick, the 10th tick carries 6.0 over),
+  wrapping past row 3 to 0. The SAME machine as d46's 164
+  WallCreeper — keep-one at the merge (the e14 penguin precedent).
+* **237/238/240 the wall crawlers** (`:73112-73145`): the
+  `(|vx| + |vy|) * 0.5` accumulator rides the <6/<12/<18/<24 bands
+  over rows 0/1/2/3; the >= 24 tail zeroes the counter and HOLDS the
+  row. The 531-only `num194 = 0.4` override (`:73119-73122`) is a
+  later wave's. No air split, no sprite write — the walls crawl in
+  every direction. The SAME machine as d46's 165 WallCreeperWall —
+  keep-one at the merge. (d46's 165 is the WALL arm; the walking
+  BlackRecluse 163 is its own `:73227` machine, not this one.)
+* **241 BloodFeeder** (`:74181-74226`): the fish group —
+  `spriteDirection = direction` unconditionally, then wet rows 0..3
+  at 6 ticks a band / dry rows 4/5; BOTH tails zero the counter and
+  HOLD the row (the row-hold quirk, the d44 goldfish / e14 102
+  AnglerFish precedent — the same machine, keep-one at the merge).
+* **242 BloodJelly** (`:73916-73960`): the pulse gate
+  (`(63/64/103/242) && ai[1] == 1`, `:73921` — 242 IS in the list,
+  256 is not) cycles rows 4..6 on the >4 counter with BOTH clamps
+  (the first pulse tick lifts any row into the band) and RETURNS
+  early; else the idle <6/<12/<18 bands over rows 0/1/2 with the
+  row-3 tail resetting at >= 23. The same machine as d44's 63/64 and
+  e14/d45's 103 — keep-one at the merge.
+* **243 IceGolem** (`:72995-73053`): the negative-counter landing
+  ladder — while counter < 0 the ground ticks climb +1 (< -12 pins
+  row 11, < -6 pins row 12, the < 0 tail snaps the counter to 0 and
+  pins row 11 — all three gated on row > 9, so a walk-band row is
+  never lifted); the AIR ticks re-pin the counter to -18 and write
+  row 14 rising / row 13 falling. The grounded walk copies direction
+  unconditionally, accumulates `|vx * 1.1|` stepping every >= 6 over
+  rows 0..9 with the > 9 wrap; the fast-air kick (vy < -2 or vy > 5)
+  re-arms the -18 ladder AFTER the walk step (`:73049-73052` — the
+  order matters: a kicked tick still steps the walk first).
+* **244 RainbowSlime** (`:72632-72651`): the counter feeds on the
+  `num2` motion class (`:66696-66704`) — +1 always, +1 more while
+  moving/airborne (num2 > 0), +1 more on the attack class (num2 == 4,
+  aiAction 1); the >= 8 step walks the FULL 4 rows with the >= count
+  wrap. Idle 8 ticks a step, moving 4, attacking 3 (8/3 rounded up).
+* **251 Eyezor** (`:76324-76391`): the zombie walker group — the
+  grounded flip writes only on direction ±1; the air OR the
+  facing-against-motion turn pins row 2 + zeroes the counter (the
+  3-row sheet's jump row); the idle snaps row 0; the walk
+  accumulates |vx| over the <8/<16/<24/<32 bands rows 0/1/2/1 with
+  the >= 32 tail zeroing the counter and HOLDING the row. The same
+  machine as the wave-A zombie arm (case 3) — keep-one at the merge.
+* **252 Parrot** (`:73558-73606`, the 301 pair): the 252 branch —
+  the |vx| > 0.5 velocity-sign flip (the 301 inverted ground flip +
+  air flip `:73560-73577` is 301's, skipped with cite), the
+  `vx * 0.1` tilt, the still-air idle snaps row 0 + zeroes the
+  counter; else the >4 counter steps a row and the `> 4 || == 0`
+  clamp lifts row 0 to row 1 / wraps row 5 to 1 — the strip cycles
+  rows 1..4, row 0 is idle-only.
+* **253 Reaper** (`:74823-74884`): the floater group — the vx-sign
+  flip (0 leaves it), the `vx * 0.1` tilt, the 6-tick strip over the
+  FULL 3 rows (253 is not in the `num292--` list 49/51/60/634, not
+  the type-48 `num291 = 5` override, not the 210/211
+  double-increment). The same machine as e13's 137/182 and f26's
+  182 — keep-one at the merge.
+
+Deliberate deviations / folds:
+
+* **Out-of-band case siblings skipped with cites**: the hornet
+  group's 42/231/232 (42 is the port's Hornet, 231/232 are e14's
+  declared band), the creeper group's 164 (d46) / 530 (later wave),
+  the wall group's 165 (d46) / 531 (later wave), the fish group's
+  55/57/58 (d44/port) / 102 (e14/d45) / 465/592/607 (later waves),
+  the jellyfish group's 63/64 (d44) / 103 (e14/d45) / 256 (later
+  wave), the zombie group's many wave-A / later-wave ids, the
+  floater group's 48/49/51/60/82/93/137/182/210/211/316/634/662/664.
+  No `IsABestiaryIconDummy` branch exists in any of the 15 arms.
+* **The keep-one twins**: 236/239 ≡ d46's 164, 237/238/240 ≡ d46's
+  165, 241 ≡ the d44 goldfish / e14 102 fish arm, 242 ≡ the d44
+  63/64 / e14 103 jellyfish arm, 251 ≡ the wave-A case-3 zombie arm,
+  253 ≡ the e13/f26 floater arm. The in-flight siblings' branches
+  compile alone; the merger dedupes to one shared arm per group (the
+  d49 scorpion / e14 penguin precedent).
+
+14 witnesses WRITTEN NOT RUN (code-only mode — no cargo/rustc/rustfmt/
+tests invoked): the count-table pin (cross-checked against the port's
+`NPC_FRAME_COUNT`), the hornet 8-tick band cycle + reset-tick
+row-hold, the creeper remainder stepper (the vx-6 double-step) + air
+pins + direction-0 copy, the wall-crawler half-speed bands + tail
+hold, the BloodFeeder wet/dry hold-tails, the BloodJelly pulse/idle
+bands + both clamps, the IceGolem landing ladder + air pins + walk
+wrap + fast-air kick + the row>9 gate, the RainbowSlime num2 feed
+rates, the Eyezor bands + air/turn pins + idle snap, the Parrot
+rows-1..4 cycle + still-air snap + sub-0.5 flip hold, the Reaper
+full-3 flap, the 15-kind strip sweep (5x3x3 vx/vy/direction grid x 3
+wet/ai1/aiAction variants, 40 ticks each, rows stay inside their
+sheets) and the seam's exact-set pin. The strip/band expectation
+tables were re-derived by mechanical replay of the ported machines
+(a Python transcription of the C# order), not by hand alone.
