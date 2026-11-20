@@ -161,6 +161,12 @@ fn hit_time_damage(kind: u16, damage: i32) -> i32 {
         866 => (damage as f64 * 0.8) as i32,
         // `:13446-13451` — the Slime Whip / Cob Whip.
         SLIME_WHIP | COB_WHIP => (damage as f64 * 0.4) as i32,
+        // `:13452-13454` — the Bland Whip (Leather Whip).
+        BLAND_WHIP => (damage as f64 * 0.5) as i32,
+        // `:13455-13463` — the Corrupt/Crimson/Thorn whips.
+        CORRUPT_WHIP | CRIMSON_WHIP | THORN_WHIP => (damage as f64 * 0.6) as i32,
+        // `:13464-13466` — the Meteor Whip.
+        METEOR_WHIP => (damage as f64 * 0.7) as i32,
         _ => damage,
     }
 }
@@ -44447,14 +44453,17 @@ mod w4_a4_hit_time_tests {
 
     /// A zero-variance stream: `DamageVar`'s `Next(-15, 16)` returns 0, so
     /// the hit damage is the store verbatim; the class-crit `Next(1, 101)`
-    /// returns 100 (never crits at the base-0 class stats). Every other
-    /// draw panics, so an unexpected roll cannot hide in the witness.
+    /// returns 100 (never crits at the base-0 class stats); the ThornWhip's
+    /// pre-strike poison `Next(0, 5)` returns 0 (the debuff lands, the
+    /// damage math is untouched). Every other draw panics, so an unexpected
+    /// roll cannot hide in the witness.
     struct NoVarRng;
     impl DropRng for NoVarRng {
         fn next_range(&mut self, min: i32, max: i32) -> i32 {
             match (min, max) {
                 (-15, 16) => 0,
                 (1, 101) => 100,
+                (0, 5) => 0,
                 _ => panic!("unexpected draw ({min}, {max})"),
             }
         }
@@ -44742,6 +44751,32 @@ mod w4_a4_hit_time_tests {
             hit(&mut pool, 0, &mut npc);
             assert_eq!(pool.slots()[0].damage, 16, "kind {kind} hit 2 compounds");
             assert_eq!(10_000 - npc.hp, 140, "kind {kind} hit 2 strikes 40");
+        }
+    }
+
+    /// `:13452-13466` — the Bland Whip ×0.5, the Corrupt/Crimson/Thorn
+    /// trio ×0.6 and the Meteor Whip ×0.7. The ThornWhip's pre-strike 1/5
+    /// poison roll draws `Next(0, 5)` — the witness stream returns 0 for
+    /// it (the debuff lands, the damage math is untouched).
+    #[test]
+    fn w4_a4_the_bland_corrupt_crimson_thorn_meteor_whips_decay() {
+        for (kind, m1, m2) in [
+            (BLAND_WHIP, 50, 25),
+            (CORRUPT_WHIP, 60, 36),
+            (CRIMSON_WHIP, 60, 36),
+            (THORN_WHIP, 60, 36),
+            (METEOR_WHIP, 70, 49),
+        ] {
+            let mut pool = whip_slot(kind, 100);
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m1, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[0] = 0;
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
         }
     }
 }
