@@ -463,9 +463,317 @@ fn draw_blip_bar(
     }
 }
 
+/// `UISliderBase` (`GameContent/UI/Elements/UISliderBase.cs:5-36`),
+/// research/18b row 52 (W4-d83): the shared lock/aim statics every slider
+/// reads. The C# keeps two `static UIElement` pointers; the port keys them
+/// by the caller's slider id (`Option<usize>`, `None` = null). The
+/// `char_creation.rs` HSL bars already mirror the same pair for their three
+/// bars (`CurrentLockedSlider` at `:172`, the `!Main.mouseLeft` release at
+/// `:1183`); this is the element-level form the vertical sliders (row 57)
+/// and any future slider share.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SliderLocks {
+    /// `CurrentLockedSlider` (`UISliderBase.cs:13`).
+    pub locked: Option<usize>,
+    /// `CurrentAimedSlider` (`:15`).
+    pub aimed: Option<usize>,
+}
+
+/// `GetUsageLevel`'s three states (`UISliderBase.cs:7-11`).
+pub const USAGE_NOT_SELECTED: i32 = 0;
+pub const USAGE_SELECTED_AND_LOCKED: i32 = 1;
+pub const USAGE_OTHER_ELEMENT_IS_LOCKED: i32 = 2;
+
+impl SliderLocks {
+    /// `GetUsageLevel` (`:17-29`): this slider locked → 1; another locked →
+    /// 2; none → 0.
+    pub fn usage_level(&self, id: usize) -> i32 {
+        if self.locked == Some(id) {
+            USAGE_SELECTED_AND_LOCKED
+        } else if self.locked.is_some() {
+            USAGE_OTHER_ELEMENT_IS_LOCKED
+        } else {
+            USAGE_NOT_SELECTED
+        }
+    }
+
+    /// `EscapeElements` (`:31-35`): both statics null — the Escape key's
+    /// release (`UIColoredSlider`/`UIVerticalSlider` call it).
+    pub fn escape_elements(&mut self) {
+        self.locked = None;
+        self.aimed = None;
+    }
+}
+
+/// `UIVerticalSlider` (`GameContent/UI/Elements/UIVerticalSlider.cs:9-140`),
+/// research/18b row 57 (W4-d83): the vertical volume-style slider — a
+/// spliced `ColorBar` frame (5/4/4/4 depths) around a `MagicPixel` column
+/// that fills bottom-up, with a white knob line at the fill's top edge.
+/// The lock/aim machine rides [`SliderLocks`] (row 52); the two hover sound
+/// latches (`_soundedUsage`, `_alreadyHovered`) are independent one-shots.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VerticalSlider {
+    /// `FillPercent` (`:11`) — refreshed from the getter every draw (`:47`).
+    pub fill_percent: f32,
+    /// `FilledColor = Main.OurFavoriteColor` (`:13`) — (255, 231, 69).
+    pub filled_color: [u8; 4],
+    /// `EmptyColor = Color.Black` (`:15`).
+    pub empty_color: [u8; 4],
+    /// `_isReallyMouseOvered` (`:23`) — the raw hit, refreshed by the bar
+    /// pass (`:107`); the gamepad action reads it (`:75-78`).
+    pub really_mouse_overed: bool,
+    /// `_soundedUsage` (`:25`) — the keyboard-slide one-shot (`:60-68`).
+    sounded_usage: bool,
+    /// `_alreadyHovered` (`:27`) — the bar-hover one-shot (`:121-132`).
+    already_hovered: bool,
+}
+
+impl Default for VerticalSlider {
+    fn default() -> Self {
+        Self {
+            fill_percent: 0.0,
+            filled_color: OUR_FAVORITE_COLOR,
+            empty_color: [0, 0, 0, 255],
+            really_mouse_overed: false,
+            sounded_usage: false,
+            already_hovered: false,
+        }
+    }
+}
+
+/// The bar's geometry (`UIVerticalSlider.cs:85-106`), all int rects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VerticalBarRects {
+    /// The spliced `ColorBar` frame — the element rect, depths
+    /// left=5 right=4 top=4 bottom=4 (`:86-87`, the `Rectangle(5,4,4,4)`
+    /// reads X/Width/Y/Height).
+    pub frame: [i32; 4],
+    /// The inner column (`:88-92`): X += 5, Width -= 9 (rectangle2.Right),
+    /// Y += 4, Height -= 8 (rectangle2.Bottom) — the Right/Bottom are the
+    /// *edges*, not the widths, so the insets are asymmetric.
+    pub inner: [i32; 4],
+    /// The filled part (`:96-99`): height = `(int)(inner.H * FillPercent)`,
+    /// y pushed down by the empty remainder — the fill grows **upward**.
+    pub filled: [i32; 4],
+    /// The knob line (`:100-104`): `CenteredRectangle((filled.Center.X + 1,
+    /// filled.Top), (filled.W + 16, 4))` (`Utils.cs:947-950` float form),
+    /// then a Black copy inflated (2, 2) under the White one.
+    pub knob: [i32; 4],
+    /// The hit rect (`:105-106`): the inner column inflated (4, 0).
+    pub hit: [i32; 4],
+}
+
+impl VerticalSlider {
+    /// `DrawValueBarDynamicWidth`'s geometry (`:85-106`). `rect` is the
+    /// element's `ToRectangle()` (already truncated).
+    pub fn bar_rects(&self, rect: [i32; 4]) -> VerticalBarRects {
+        let inner = [
+            rect[0] + 5,          // `:89` rectangle2.Left = 5
+            rect[1] + 4,          // `:91` rectangle2.Top = 4
+            rect[2] - 9,          // `:90` rectangle2.Right = 5 + 4
+            rect[3] - 8,          // `:92` rectangle2.Bottom = 4 + 4
+        ];
+        let fill_h = (inner[3] as f32 * self.fill_percent) as i32; // `:97`
+        let filled = [inner[0], inner[1] + inner[3] - fill_h, inner[2], fill_h]; // `:98`
+        // `:100` — `Rectangle.Center` is `X + Width / 2` in **integer**
+        // division (XNA), then +1; CenteredRectangle's float form
+        // (`Utils.cs:947-950`) truncates each part after the halving.
+        let center_x = (filled[0] + filled[2] / 2 + 1) as f32;
+        let knob_w = filled[2] + 16;
+        let knob = [
+            (center_x - knob_w as f32 / 2.0) as i32,
+            (filled[1] as f32 - 4.0 / 2.0) as i32,
+            knob_w,
+            4,
+        ];
+        VerticalBarRects {
+            frame: rect,
+            inner,
+            filled,
+            knob,
+            hit: [inner[0] - 4, inner[1], inner[2] + 8, inner[3]], // `:106` Inflate(4, 0)
+        }
+    }
+
+    /// One `DrawSelf` pass (`:39-79` + `:107-138`). `id` is this slider's
+    /// key in the shared [`SliderLocks`]; `mouse` the screen pointer;
+    /// `mouse_left` = `Main.mouseLeft`, `mouse_left_trigger` =
+    /// `PlayerInput.Triggers.Current.MouseLeft`, `ignore_mouse` =
+    /// `PlayerInput.IgnoreMouseInterface`, `ignores_interaction` = the
+    /// element's `IgnoresMouseInteraction`. Returns
+    /// `(slide_value, hover_sound, usage_sound, gamepad_action)`:
+    /// `slide_value` is the keyboard action's argument (`Some` fires it),
+    /// the two bools are the one-shot `PlaySound(12)` requests, and
+    /// `gamepad_action` fires `_slideGamepadAction` (`:75-78`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_frame(
+        &mut self,
+        id: usize,
+        locks: &mut SliderLocks,
+        rect: [i32; 4],
+        mouse: [f32; 2],
+        mouse_left: bool,
+        mouse_left_trigger: bool,
+        using_gamepad: bool,
+        ignore_mouse: bool,
+        ignores_interaction: bool,
+        fill_value: f32,
+    ) -> (Option<f32>, bool, bool, bool) {
+        locks.aimed = None; // `:41`
+        if !mouse_left || ignore_mouse {
+            locks.locked = None; // `:42-45`
+        }
+        self.fill_percent = fill_value; // `:47`
+        let rects = self.bar_rects(rect);
+        // `:107` — the raw hit: Rectangle.Contains on the truncated point.
+        let mx = mouse[0] as i32;
+        let my = mouse[1] as i32;
+        let h = rects.hit;
+        self.really_mouse_overed =
+            mx >= h[0] && mx < h[0] + h[2] && my >= h[1] && my < h[1] + h[3] && !ignore_mouse;
+        let mut flag = self.really_mouse_overed;
+        if ignores_interaction {
+            flag = false; // `:108-111`
+        }
+        let usage = locks.usage_level(id);
+        if usage == USAGE_OTHER_ELEMENT_IS_LOCKED {
+            flag = false; // `:113-116`
+        }
+        if usage == USAGE_SELECTED_AND_LOCKED {
+            flag = true; // `:117-120`
+        }
+        // The bar-hover one-shot (`:121-132`).
+        let mut hover_sound = false;
+        if flag || usage == USAGE_SELECTED_AND_LOCKED {
+            if !self.already_hovered {
+                hover_sound = true; // `:123-126`
+            }
+            self.already_hovered = true;
+        } else {
+            self.already_hovered = false;
+        }
+        // The value (`:133-137`): GetLerpValue(bottom, top, mouseY, clamped)
+        // — bottom-up, so the top of the column reads 1.
+        let mut slide_value = None;
+        let bar_set = if flag {
+            let from = (rects.inner[1] + rects.inner[3]) as f32; // Bottom
+            let to = rects.inner[1] as f32; // Top
+            let t = ((mouse[1] - from) / (to - from)).clamp(0.0, 1.0);
+            slide_value = Some(t);
+            true
+        } else {
+            false
+        };
+        // `:54-70` — the aim/lock + keyboard action with its own one-shot.
+        let mut usage_sound = false;
+        if locks.locked == Some(id) || bar_set {
+            locks.aimed = Some(id); // `:56`
+            if mouse_left_trigger && !using_gamepad && locks.locked == Some(id) {
+                if !self.sounded_usage {
+                    usage_sound = true; // `:60-63`
+                }
+                self.sounded_usage = true;
+            } else {
+                self.sounded_usage = false; // `:66-69`
+                slide_value = None; // the action only fires in that arm (`:57-59`)
+            }
+        }
+        if locks.aimed.is_some() && locks.locked.is_none() {
+            locks.locked = locks.aimed; // `:71-74`
+        }
+        (
+            slide_value,
+            hover_sound,
+            usage_sound,
+            self.really_mouse_overed, // `:75-78`
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The bar geometry (`UIVerticalSlider.cs:85-106`): a 20×100 rect at
+    /// (100, 50) insets to (105, 54, 11, 92) — the Right/Bottom edge reads
+    /// make it -9/-8, not -8/-8; a 0.5 fill takes the bottom 46 px; the
+    /// knob centres on the fill top +1 with the float truncation.
+    #[test]
+    fn the_vertical_bar_insets_by_edges_and_fills_upward() {
+        let mut s = VerticalSlider::default();
+        assert_eq!(s.filled_color, [255, 231, 69, 255]);
+        s.fill_percent = 0.5;
+        let r = s.bar_rects([100, 50, 20, 100]);
+        assert_eq!(r.inner, [105, 54, 11, 92]);
+        assert_eq!(r.filled, [105, 54 + 46, 11, 46], "the fill sits at the bottom");
+        // Center.X = 105 + 11/2 = 110 (int halves) + 1 = 111; knob w = 27,
+        // x = (int)(111 - 13.5) = 97; y = fillTop - 2 = 98.
+        assert_eq!(r.knob, [97, 98, 27, 4]);
+        assert_eq!(r.hit, [101, 54, 19, 92]);
+        s.fill_percent = 1.0;
+        assert_eq!(s.bar_rects([100, 50, 20, 100]).filled, [105, 54, 11, 92]);
+        s.fill_percent = 0.0;
+        assert_eq!(s.bar_rects([100, 50, 20, 100]).filled[3], 0);
+    }
+
+    /// The lock machine + one-shots (`UIVerticalSlider.cs:39-79`,
+    /// `:107-138`): a fresh in-hit hover sounds once and grabs the lock;
+    /// the locked slider fires the keyboard action (with its own one-shot)
+    /// even outside the hit; the value reads bottom-up clamped.
+    #[test]
+    fn the_vertical_slider_grabs_locks_and_sounds_once() {
+        let mut s = VerticalSlider::default();
+        let mut locks = SliderLocks::default();
+        let rect = [100, 50, 20, 100];
+        // Hover mid-column (y=100), mouse held: hover sound, lock grab, no
+        // keyboard action yet (the lock did not exist at the arm's check).
+        let (v, hover, usage, gp) =
+            s.draw_frame(0, &mut locks, rect, [110.0, 100.0], true, true, false, false, false, 0.25);
+        assert!(hover, "the first hover sounds (`:123-126`)");
+        assert!(!usage);
+        assert!(v.is_none());
+        assert!(gp);
+        assert_eq!(locks.locked, Some(0));
+        assert_eq!(s.fill_percent, 0.25, "the getter refresh (`:47`)");
+        // Second frame, still held: no hover sound; the keyboard action
+        // fires with its own one-shot. Value = (146-100)/(146-54) = 0.5.
+        let (v, hover, usage, _) =
+            s.draw_frame(0, &mut locks, rect, [110.0, 100.0], true, true, false, false, false, 0.25);
+        assert!(!hover);
+        assert!(usage, "the first sliding frame sounds (`:60-63`)");
+        assert_eq!(v, Some(0.5));
+        let (v, _, usage, _) =
+            s.draw_frame(0, &mut locks, rect, [110.0, 100.0], true, true, false, false, false, 0.25);
+        assert!(!usage, "the usage latch holds");
+        assert_eq!(v, Some(0.5));
+        // Locked but pointer far away: flag forced true by usage 1, the
+        // value clamps to the top (1.0 above the column).
+        let (v, _, _, gp) =
+            s.draw_frame(0, &mut locks, rect, [500.0, 0.0], true, true, false, false, false, 0.25);
+        assert_eq!(v, Some(1.0), "clamped GetLerpValue (`:135`)");
+        assert!(!gp, "the raw hit is false out there");
+        // Release: the lock drops, everything re-arms.
+        let (v, _, _, _) =
+            s.draw_frame(0, &mut locks, rect, [500.0, 0.0], false, false, false, false, false, 0.25);
+        assert!(v.is_none());
+        assert_eq!(locks.locked, None);
+    }
+
+    /// `GetUsageLevel`/`EscapeElements` (`UISliderBase.cs:17-35`): own lock
+    /// → 1, other lock → 2, free → 0; escape clears both statics.
+    #[test]
+    fn the_slider_locks_report_the_three_usage_levels() {
+        let mut locks = SliderLocks::default();
+        assert_eq!(locks.usage_level(0), USAGE_NOT_SELECTED);
+        locks.locked = Some(0);
+        locks.aimed = Some(1);
+        assert_eq!(locks.usage_level(0), USAGE_SELECTED_AND_LOCKED);
+        assert_eq!(locks.usage_level(1), USAGE_OTHER_ELEMENT_IS_LOCKED);
+        locks.escape_elements();
+        assert_eq!(locks.locked, None);
+        assert_eq!(locks.aimed, None);
+        assert_eq!(locks.usage_level(0), USAGE_NOT_SELECTED);
+    }
 
     // Expected values derived from `IngameOptions.cs:1537-1580` /
     // `Main.cs:51102-51284` / `Utils.cs:102-105` — never from this code.
