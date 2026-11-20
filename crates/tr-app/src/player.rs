@@ -1013,6 +1013,11 @@ pub struct Player {
     /// subtract from it. `CheckMana` pays `(int)(item.mana * manaCost)`
     /// (`:5881-5884`).
     pub mana_cost: f32,
+    /// `Player.statManaMax2` (`Player.cs:1932`): the effective mana cap —
+    /// `ResetEffects` rebases it to the permanent `mana_max_base`
+    /// (`:18389` `statManaMax2 = statManaMax`) and the per-tick grants
+    /// (the Arcane prefix 66's +20 `:13971-13974`, the Magic Power buff's
+    /// +20 `:11890`, the caster sets' `statManaMax2` rows) add on top.
     pub mana_max: i32,
     /// `Player.potionDelay`/`manaPotionDelay` (`Player.cs:1650-1652`): the
     /// Potion Sickness / Mana Potion cooldown clocks (S1-P-i37). Decremented
@@ -1049,6 +1054,11 @@ pub struct Player {
     /// The previous tick's `pStone` — the `flag9` latch (`Player.cs:25477`)
     /// the `:25640` change check compares against.
     p_stone_prev: bool,
+    /// `Player.statManaMax` (`Player.cs:1931`): the PERMANENT mana cap —
+    /// the character file's `manaMax` (`:55226`, clamped to 200) and the
+    /// Mana Crystal's +20 use-grant (`:45276-45281`, unported). The
+    /// per-tick rebase reads it; nothing else writes it in play.
+    pub mana_max_base: i32,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -2149,6 +2159,7 @@ impl Player {
             mana_heat: 1.0,
             p_stone: false,
             p_stone_prev: false,
+            mana_max_base: 20,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             black_belt: false,
@@ -4819,6 +4830,13 @@ impl Player {
         // `:18720`: `pStone = false` — the Stone family's accessory rows
         // (535/860/6185) re-arm below (`:15576`/`:15152`/`:14617`).
         self.p_stone = false;
+        // `ResetEffects`' `statManaMax2 = statManaMax` (`Player.cs:18389`):
+        // the effective cap rebases to the permanent one every tick, then
+        // the per-tick grants re-add — the Arcane prefix 66's +20
+        // (`GrantPrefixBenefits` `:13971-13974`), the Magic Power buff's +20
+        // (`:11890`) and the caster sets' rows. Without the rebase the
+        // grants compound every tick and stick after the item comes off.
+        self.mana_max = self.mana_max_base;
         // `:18497`: `endurance = 0f` — the rows below re-apply.
         self.endurance = 0.0;
         // `:18323-18324`: the penetration reset.
@@ -11700,6 +11718,33 @@ mod tests {
         // The Empress Brooch 4989 (`:14771-14775`): +7.5%.
         let p = player_with_accessory(4989);
         assert!((p.move_speed - 1.075).abs() < 1e-4);
+    }
+
+    #[test]
+    fn s1_p_i49_the_arcane_mana_grant_rebases_every_tick() {
+        // `GrantPrefixBenefits`' Arcane (66) adds `statManaMax2 += 20`
+        // (`Player.cs:13971-13974`); `ResetEffects` rebases
+        // `statManaMax2 = statManaMax` (`:18389`) every tick, so the grant
+        // is a steady +20 — not a per-tick compound, and it leaves when
+        // the accessory comes off.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 285; // the Aglet — a functional accessory
+        p.equipped_prefix[3] = 66;
+        for _ in 0..10 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert_eq!(p.mana_max, 40, "20 base + 20 Arcane, steady over 10 ticks");
+        assert_eq!(p.mana_max_base, 20, "the permanent cap is untouched");
+        // Unequip: the next tick's rebase drops the grant.
+        p.equipped[3] = 0;
+        p.equipped_prefix[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 20, "the grant leaves with the accessory");
+        // The Magic Power buff's +20 (`:11890`) stacks on the same rebase.
+        p.buffs.add_buff(29, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana_max, 40, "the buff's +20 on the rebased cap");
     }
 
     /// S1-C-12 wave A — the prefix speed rows ride the accessory's rolled
