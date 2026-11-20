@@ -58,11 +58,21 @@ pub struct LiquidSystem {
     cycles: usize,
     /// Set when any level changed during the current [`LiquidSystem::update`].
     dirty: bool,
-    /// `Liquid.quickFall` (`Liquid.cs:34`): the quick-settle mode sets it and
-    /// forces every entry's `delay = 10` in the pass loop (`:1086-1092`), so
-    /// lava/honey flow every tick. The runtime pass keeps it `false`; the
-    /// `QuickWater`/panic family (R-11-7) flips it.
+    /// `Liquid.quickFall` (`Liquid.cs:33`): derived at the head of every
+    /// pass from `quickSettle` (`:1056-1068`); the quick-settle mode forces
+    /// every entry's `delay = 10` in the pass loop (`:1083-1090`), so
+    /// lava/honey flow every tick, and clears the skip flag after each
+    /// update instead of honouring it.
     quick_fall: bool,
+    /// `Liquid.quickSettle` (`Liquid.cs:35`): the bulk-settle mode the
+    /// world-load settle (`WorldFile.cs:738-760`) and the worldgen settle
+    /// loops (`WorldGen.cs:16160`/`:21267`) flip around their
+    /// `UpdateLiquid` drains. Three behaviour arms: the fall's remainder
+    /// clamps to 255 (`Liquid.cs:588-591`), the 254 settle step promotes
+    /// straight to 255 (`:944-948`), and the pass head derives `quickFall`
+    /// from it (`:1056-1063`). The gfx-quality pass reads it for the
+    /// full-window / single-cycle override (`Main.cs:17105-17113`).
+    quick_settle: bool,
     /// `WorldGen.remixWorldGen` — the desert-strip arm's gate
     /// (`Liquid.cs:1447`); the R-12-5 plumbing owns it, `false` at runtime.
     remix_world_gen: bool,
@@ -125,6 +135,19 @@ impl LiquidSystem {
         self.cur_max_liquid = cur_max_liquid.max(1);
     }
 
+    /// `Liquid.quickSettle` (`Liquid.cs:35`) — the bulk-settle mode the
+    /// world-load settle (`WorldFile.cs:738`/`:760`) and the worldgen
+    /// settle loops (`WorldGen.cs:16160`/`:16206`, `:21267`/`:21305`)
+    /// flip around their `UpdateLiquid` drains. `Liquid.ReInit` clears
+    /// it (`Liquid.cs:93`).
+    pub fn quick_settle(&self) -> bool {
+        self.quick_settle
+    }
+
+    pub fn set_quick_settle(&mut self, quick_settle: bool) {
+        self.quick_settle = quick_settle;
+    }
+
     pub fn new(world: &World) -> Self {
         let bits = world.tiles.len().div_ceil(64);
         Self {
@@ -139,6 +162,7 @@ impl LiquidSystem {
             cycles: CYCLES,
             dirty: false,
             quick_fall: false,
+            quick_settle: false,
             generating: false,
             remix_world_gen: false,
             merge_events: Vec::new(),
@@ -257,6 +281,10 @@ impl LiquidSystem {
         // one arm here is the same state).
         self.ignore_solids = true;
         self.bubble_solid = true;
+        // `Liquid.cs:1056-1068` — the pass head derives `quickFall` from
+        // `quickSettle` every call. (The `Setting_UseReducedMaxLiquids`
+        // `numLiquid > 2000` OR-arm lands with the reduced-liquids field.)
+        self.quick_fall = self.quick_settle;
         // `Liquid.cs:1069-1106`: the window is a fixed `curMaxLiquid / cycles`
         // stride and the `numLiquid` clamp re-walks the *whole* list whenever it is
         // shorter than one stride, so a small active list is simulated every call
@@ -431,14 +459,22 @@ impl LiquidSystem {
                 world.mark_chunk(x, y);
                 self.dirty = true;
                 self.add_water(world, x, y + 1);
-                if !keep_one {
-                    self.add_water(world, x - 1, y);
-                    self.add_water(world, x + 1, y);
-                }
                 // `Liquid.cs:586-587` — `tile4.skipLiquid(true)` and
                 // `tile5.skipLiquid(true)`: the same stride skips both.
                 self.set_skip(x, y + 1, true);
                 self.set_skip(x, y, true);
+                // `Liquid.cs:588-596` — quick-settle clamps the source
+                // remainder (> 250) straight to 255 and skips the side
+                // wakes; otherwise the two side cells wake (unless the
+                // 255-keep-one quirk held the source).
+                if self.quick_settle && world.tiles[i].liquid > 250 {
+                    world.tiles[i].liquid = 255;
+                    world.mark_chunk(x, y);
+                    self.dirty = true;
+                } else if !keep_one {
+                    self.add_water(world, x - 1, y);
+                    self.add_water(world, x + 1, y);
+                }
             }
         }
 
@@ -541,6 +577,14 @@ impl LiquidSystem {
         let now = world.tiles[i].liquid;
         if now != start.liquid {
             if now == 254 && start.liquid == 255 {
+                // `Liquid.cs:942-952` — the 255→254 settle step counts a
+                // kill pass; quick-settle promotes straight back to 255
+                // (the pool reads settled a pass earlier).
+                if self.quick_settle {
+                    world.tiles[i].liquid = 255;
+                    world.mark_chunk(x, y);
+                    self.dirty = true;
+                }
                 (kill.saturating_add(1), flow_delay)
             } else {
                 self.add_water(world, x, y - 1);
@@ -1775,5 +1819,127 @@ mod liquid_sim {
             prev = now;
         }
         assert!(prev > 0, "the film survives (decayed to {prev})");
+    }
+}
+
+/// W4-g47 — the quick-settle witnesses: the two `Liquid.Update` arms
+/// (`Liquid.cs:588-591`/`:944-948`) and the pass head's `quickFall`
+/// derivation (`:1056-1068`). Written, NOT run (code-only mode).
+#[cfg(test)]
+mod liquid_quick_settle {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    /// A walled shaft: stone at `x = cx-1`/`cx+1` down to the floor row,
+    /// so only the down arm can run (the `mass_conserved` fixture shape).
+    fn shaft(width: i32, height: i32, floor_y: i32, cx: i32) -> World {
+        let mut w = World::new("liquid_qs".into(), width, height);
+        for y in 0..=floor_y {
+            for x in [cx - 1, cx + 1] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 0..width {
+            let i = w.index(x, floor_y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn quick_settle_clamps_the_fall_remainder_to_255() {
+        // `Liquid.cs:588-591`: after the down transfer the source holds
+        // 253 (> 250) — quick-settle writes 255 back (the vanilla
+        // settle-mode clone quirk); the normal pass keeps 253.
+        let mut w = shaft(5, 40, 30, 2);
+        put_as(&mut w, 2, 10, 255, 0);
+        put_as(&mut w, 2, 11, 253, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_quick_settle(true);
+        sys.add_water(&w, 2, 10);
+        sys.add_water(&w, 2, 11);
+        sys.update(&mut w);
+        assert_eq!(w.tiles[w.index(2, 10)].liquid, 255, ":590 clamps > 250");
+        assert_eq!(w.tiles[w.index(2, 11)].liquid, 255, "the fed cell filled");
+
+        let mut w2 = shaft(5, 40, 30, 2);
+        put_as(&mut w2, 2, 10, 255, 0);
+        put_as(&mut w2, 2, 11, 253, 0);
+        let mut sys2 = LiquidSystem::new(&w2);
+        sys2.add_water(&w2, 2, 10);
+        sys2.add_water(&w2, 2, 11);
+        sys2.update(&mut w2);
+        assert_eq!(w2.tiles[w2.index(2, 10)].liquid, 253, "no clamp at runtime");
+    }
+
+    #[test]
+    fn quick_settle_promotes_the_254_settle_step() {
+        // `Liquid.cs:942-952`: the row arm averages 255 with a 253
+        // neighbour to 254 — the 255→254 settle step. Quick-settle
+        // promotes the cell straight back to 255 (`:946`); the runtime
+        // pass keeps the 254 for the retirement sweep's own promotion.
+        let basin = |w: &mut World| {
+            for x in 0..9 {
+                for y in 8..11 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            let wall = w.index(5, 7);
+            w.tiles[wall] = Tile { kind: 1, ..Default::default() };
+            w.tiles[wall].flags |= FLAG_ACTIVE;
+            w.frame_important = vec![false; td::TILE_COUNT];
+            w.compute_column_surface();
+            w.compute_chunks();
+            put_as(w, 4, 7, 255, 0);
+            put_as(w, 3, 7, 253, 0);
+        };
+        let mut w = World::new("liquid_qs".into(), 9, 11);
+        basin(&mut w);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_quick_settle(true);
+        sys.add_water(&w, 4, 7);
+        sys.update(&mut w);
+        assert_eq!(w.tiles[w.index(4, 7)].liquid, 255, ":946 promotes 254");
+        assert_eq!(w.tiles[w.index(3, 7)].liquid, 254, "the neighbour averaged");
+
+        let mut w2 = World::new("liquid_qs".into(), 9, 11);
+        basin(&mut w2);
+        let mut sys2 = LiquidSystem::new(&w2);
+        sys2.add_water(&w2, 4, 7);
+        sys2.update(&mut w2);
+        assert_eq!(w2.tiles[w2.index(4, 7)].liquid, 254, "runtime keeps the step");
+    }
+
+    #[test]
+    fn the_pass_head_derives_quick_fall_from_quick_settle() {
+        // `Liquid.cs:1056-1068` + `:1083-1090`: quickSettle forces
+        // quickFall, whose loop sets delay = 10 — the lava column falls
+        // on the FIRST visit instead of waiting out the 5-visit gate.
+        let mut w = shaft(5, 40, 30, 2);
+        put_as(&mut w, 2, 0, 255, 1);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_quick_settle(true);
+        sys.add_water(&w, 2, 0);
+        sys.update(&mut w);
+        assert!(sys.quick_fall, ":1063 sets quickFall");
+        assert_eq!(w.tiles[w.index(2, 1)].liquid, 255, "the delay gate is bypassed");
+        sys.set_quick_settle(false);
+        sys.update(&mut w);
+        assert!(!sys.quick_fall, ":1067 clears quickFall");
     }
 }
