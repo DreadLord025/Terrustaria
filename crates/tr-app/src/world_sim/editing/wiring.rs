@@ -127,7 +127,7 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                 // engine on this path — ANALYSIS "The wiring tools").
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 spawn_item_drop(&mut app.items, rng, ACTUATOR_ITEM, 1, tx, ty);
-                wire_placed_feedback(app, tx, ty);
+                wire_cut_feedback(app, tx, ty);
                 return true;
             }
             use tr_core::wiring::WireColor;
@@ -144,7 +144,7 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                     // drop rides the `UpdatePlayers` stream.
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
-                    wire_placed_feedback(app, tx, ty);
+                    wire_cut_feedback(app, tx, ty);
                     return true;
                 }
             }
@@ -204,10 +204,30 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
     }
 }
 
-/// The wiring tools' feedback: the C#'s `SoundEngine.PlaySound(0, i * 16,
-/// j * 16)` (sound id 0 = "Dig_1") at the tile, and the net message 17 the
-/// port has no wire flavour for (the local wire state is the truth).
+/// The wiring tools' placement feedback (W4-c14): the C#'s
+/// `SoundEngine.PlaySound(0, i * 16, j * 16)` inside `WorldGen.PlaceWire`
+/// / `PlaceWire2` / `PlaceWire3` / `PlaceWire4` (`WorldGen.cs:58115`/
+/// `:58145`/`:58175`/`:58205`) and `PlaceActuator` (`:58015`) - the case-0
+/// `Next(3)` Dig variation + `Next(-10, 11) * 0.01` pitch
+/// (`LegacySoundPlayer.cs:442-450`) ride the `UpdatePlayers` stream (the
+/// tools run in `Player.ItemCheck`, `Player.cs:46789-46886`, under the
+/// `Main.cs:17754` swap) and only after the attenuation gate passed. The
+/// v1 port pinned a flat `Dig_1` - the pitched case-0 path replaces it.
+/// The net message 17 has no wire flavour in the port (the local wire
+/// state is the truth).
 fn wire_placed_feedback(app: &mut App, tx: i32, ty: i32) {
+    app.audio.play_place_sound(
+        (0, 1),
+        tx as f32 * TILE_PX,
+        ty as f32 * TILE_PX,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
+}
+
+/// The cutter's feedback (`WorldGen.KillActuator` `:58026` / `KillWire`
+/// `:58126`/`:58156`/`:58186`/`:58216`): the same Dig-0 site family, still
+/// the pinned `Dig_1` stand-in (the pitched upgrade is the next wave step).
+fn wire_cut_feedback(app: &mut App, tx: i32, ty: i32) {
     app.audio
         .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
 }
@@ -437,6 +457,52 @@ mod tests {
         app.world.tiles[j].flags |= FLAG_ACTIVE;
         assert!(use_wiring_tool(&mut app, 11, 19));
         assert_eq!(app.inventory[app.selected].kind, 0, "the slot went to air");
+    }
+
+    /// W4-c14 - the placement feedback's RNG contract: `PlaceWire`'s Dig-0
+    /// (`WorldGen.cs:58115`) draws the case-0 `Next(3)` variation + the
+    /// `Next(-10, 11)` pitch (`LegacySoundPlayer.cs:442-450`) on the
+    /// `UpdatePlayers` stream, only when audible; a muted listener draws
+    /// NOTHING (the gate precedes the switch). The cutter's feedback stays
+    /// the pinned `Dig_1` (draw-free) until its own upgrade.
+    #[test]
+    fn w4_c14_the_wire_placement_dig_draws_ride_the_player_stream() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.inventory[app.selected] = slot(509, 1);
+        app.inventory[10] = slot(WIRE_ITEM, 1);
+        let mut witness = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = witness.next_range(0, 3);
+        let _ = witness.next_range(-10, 11);
+        assert!(use_wiring_tool(&mut app, 10, 19));
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the case-0 two draws"
+        );
+        // Muted: the placement still lands but the feedback draws nothing.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.inventory[app.selected] = slot(509, 1);
+        app.inventory[10] = slot(WIRE_ITEM, 1);
+        let mut l = crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        };
+        l.camera_center = (10.0 * TILE_PX, 19.0 * TILE_PX);
+        app.audio.set_listener(l);
+        let peek = app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek();
+        assert!(use_wiring_tool(&mut app, 10, 19));
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            peek,
+            "the muted play is draw-free"
+        );
     }
 
     /// `Player.CanDoWireStuffHere` (`Player.cs:46920-46943`): the temple wall
