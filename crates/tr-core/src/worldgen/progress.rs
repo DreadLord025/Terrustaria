@@ -88,6 +88,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "ash blobs" => PassMessage::Gen(18),
         // WorldGen.cs:13186.
         "ores and gems" => PassMessage::Gen(16),
+        // WorldGen.cs:13611 (W4-d102).
+        "webs" => PassMessage::Gen(17),
         // WorldGen.cs:13945.
         "evil" => PassMessage::Gen(72),
         // WorldGen.cs:14560.

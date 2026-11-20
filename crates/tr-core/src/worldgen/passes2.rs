@@ -14,6 +14,7 @@
 use super::noise::Rng;
 use super::tile_runner::{tile_runner, TileRunnerOpts};
 use crate::seeds::SeedFlags;
+use crate::tile::FLAG_ACTIVE;
 use crate::world::World;
 
 /// `TileID.SiltBlock` (`TileID.cs`) — the Silt pass's runner kind.
@@ -93,10 +94,110 @@ pub(crate) fn pass_silt(
     }
 }
 
+/// `TileID.Cobweb` = 51 — the Webs pass's runner kind.
+const TILE_COBWEB: i32 = 51;
+
+/// The walls the port's terrain pre-lays under every solid row
+/// (`terrain.rs:343-351`) — the deviation counterpart of the C#'s `wall > 0`
+/// (the `spider_gem_moss.rs::BASELINE_WALLS` precedent): vanilla leaves the
+/// underground wall 0 until `Cave Walls` runs, so its surface-gate
+/// `wall > 0` only counts walls a pass painted; the port reads its baseline
+/// walls as unwalled.
+const BASELINE_WALLS: [u16; 4] = [1, 2, 187, 216];
+
+/// `tile.wall > 0` with the port's baseline-wall adaptation (see
+/// [`BASELINE_WALLS`]).
+fn walled(world: &World, x: i32, y: i32) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.wall > 0 && !BASELINE_WALLS.contains(&t.wall))
+}
+
+/// The Webs pass (`WorldGen.cs:13607-13644`): `(int)(area * 0.0006)`
+/// ceiling-hugging cobweb runners. Each candidate draws x (`Next(20,
+/// maxTilesX - 20)`) then y (`Next(worldSurfaceHigh, maxTilesY - 20)`);
+/// the first `GenVars.numMCaves` iterations take the mountain-cave anchors
+/// instead (the draws still happen — the C# overwrites after drawing).
+/// An inactive candidate above the surface line needs a real wall; the
+/// walker climbs to the first active tile above `worldSurfaceLow`, steps
+/// back down one, rolls the horizontal direction (`Next(2)`), slides along
+/// the ceiling to the first active tile (or the ±10 world margin), steps
+/// back one, and runs `TileRunner(j, num, Next(4, 11), Next(2, 4), 51,
+/// addTile: true, speedX: num2, speedY: -1)` when the landing cell is
+/// below the surface or walled.
+pub(crate) fn pass_webs(
+    world: &mut World,
+    world_surface_high: f64,
+    world_surface_low: f64,
+    world_surface: f64,
+    num_m_caves: i32,
+    m_cave_x: &[i32; 30],
+    m_cave_y: &[i32; 30],
+    rng: &mut Rng,
+) {
+    let opts = TileRunnerOpts {
+        add_tile: true,
+        speed_y: -1.0,
+        over_ride: false,
+        ..TileRunnerOpts::for_world(world)
+    };
+    // `:13612` — the double multiply, truncated.
+    let count = ((world.width * world.height) as f64 * 0.0006) as i32;
+    for i in 0..count {
+        let mut j = rng.range(20, world.width - 20);
+        let mut num = rng.range(world_surface_high as i32, world.height - 20);
+        if i < num_m_caves {
+            j = m_cave_x[i as usize];
+            num = m_cave_y[i as usize];
+        }
+        let inactive = !world.tile(j, num).is_some_and(|t| t.active());
+        // `:13621` — only an INACTIVE candidate enters, and above the
+        // surface line it needs a real wall.
+        if inactive && ((num as f64) > world_surface || walled(world, j, num)) {
+            // The climb (`:13623-13626`): up while inactive, stopping at
+            // the worldSurfaceLow floor; then one step back down.
+            while !world.tile(j, num).is_some_and(|t| t.active())
+                && num > world_surface_low as i32
+            {
+                num -= 1;
+            }
+            num += 1;
+            let mut num2 = 1;
+            if rng.range(0, 2) == 0 {
+                num2 = -1;
+            }
+            // The ceiling slide (`:13633-13636`).
+            while !world.tile(j, num).is_some_and(|t| t.active())
+                && j > 10
+                && j < world.width - 10
+            {
+                j += num2;
+            }
+            j -= num2;
+            if (num as f64) > world_surface || walled(world, j, num) {
+                let strength = rng.range(4, 11);
+                let steps = rng.range(2, 4);
+                let mut opts = opts;
+                opts.speed_x = num2 as f64;
+                tile_runner(
+                    world,
+                    rng,
+                    j,
+                    num,
+                    strength as f64,
+                    steps,
+                    TILE_COBWEB,
+                    world_surface,
+                    &opts,
+                );
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tile::FLAG_ACTIVE;
 
     /// A stone world below row 100, walls 0 — the Silt band's canvas.
     fn stone_world(width: i32, height: i32) -> World {
@@ -147,5 +248,55 @@ mod tests {
         }
         pass_silt(&mut w, 120.0, 100.0, 120.0, &mut Rng(0x5117));
         assert_eq!(silt_count(&w), 0);
+    }
+
+    /// A stone world with an air pocket at rows 120..140 — the webs'
+    /// ceiling canvas.
+    fn cave_world() -> World {
+        let mut w = stone_world(600, 600);
+        for x in 0..w.width {
+            for y in 120..140 {
+                let i = w.index(x, y);
+                w.tiles[i].flags &= !FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    fn web_count(w: &World) -> usize {
+        w.tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 51)
+            .count()
+    }
+
+    #[test]
+    fn webs_hug_the_pocket_ceiling_and_replay() {
+        let mut a = cave_world();
+        let mut b = cave_world();
+        let anchors = [0i32; 30];
+        pass_webs(&mut a, 100.0, 90.0, 100.0, 0, &anchors, &anchors, &mut Rng(0xEB));
+        pass_webs(&mut b, 100.0, 90.0, 100.0, 0, &anchors, &anchors, &mut Rng(0xEB));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        assert!(web_count(&a) > 0, "the pass places cobwebs");
+        // Every cobweb sits inside the pocket band (the ceiling walk never
+        // leaves the carved rows).
+        for y in 0..a.height {
+            for x in 0..a.width {
+                if a.tile(x, y).is_some_and(|t| t.active() && t.kind == 51) {
+                    assert!((120..140).contains(&y), "web outside the pocket");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_solid_world_grows_no_webs() {
+        // Every candidate below worldSurfaceHigh is active — the entry
+        // gate (`:13621`) rejects them all without a direction draw.
+        let mut w = stone_world(600, 600);
+        let anchors = [0i32; 30];
+        pass_webs(&mut w, 100.0, 90.0, 100.0, 0, &anchors, &anchors, &mut Rng(0xEB));
+        assert_eq!(web_count(&w), 0);
     }
 }

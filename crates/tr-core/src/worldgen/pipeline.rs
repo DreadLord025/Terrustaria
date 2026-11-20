@@ -367,6 +367,16 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.numMCaves`/`mCaveX`/`mCaveY` (`GenVars.cs:228-232`, the
+    /// arrays allocated `[30]` at `:457-458`, the counter reset 0 in the
+    /// Mount Caves pass `WorldGen.cs:11788`) — the mountain-cave anchors.
+    /// W4-d102 adds the slots (the Webs pass's first-`numMCaves` override
+    /// `:13616-13620` and the Mountain Caves openings `:14878-14885` read
+    /// them); the producer is d101's Mount Caves pass — until it lands the
+    /// counter stays 0 and both consumers are no-ops on the anchors.
+    pub(crate) num_m_caves: i32,
+    pub(crate) m_cave_x: [i32; 30],
+    pub(crate) m_cave_y: [i32; 30],
 }
 
 impl Default for GenVars {
@@ -427,6 +437,12 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // The mountain-cave anchors: counter 0 (`WorldGen.cs:11788`),
+            // arrays zero-filled (`GenVars.cs:457-458`) until Mount Caves
+            // (d101) writes them.
+            num_m_caves: 0,
+            m_cave_x: [0; 30],
+            m_cave_y: [0; 30],
         }
     }
 }
@@ -1272,6 +1288,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("silt", "Silt", step_silt),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
+    // The vanilla Webs slot (`WorldGen.cs:13607`): after Shinies (`:13182`)
+    // and before Underworld (`:13645`) — W4-d102 pass 2. Own
+    // `pass_rng("Webs")` stream; the first-`numMCaves` anchor override is a
+    // no-op until d101's Mount Caves producer lands.
+    step!("webs", "Webs", step_webs),
     // The vanilla Corruption slot (`WorldGen.cs:13866`): after Shinies
     // (`:13182`) and Underworld (`:13645`), before Lakes (`:14556`) — the
     // M5-BIOME phase-4 move (was between `mud caves to grass` and
@@ -1771,6 +1792,32 @@ fn step_silt(
         world_surface,
         rock_layer,
         &mut streams.pass_rng("Silt"),
+    );
+}
+
+/// The vanilla Webs slot (`WorldGen.cs:13607-13644`) — W4-d102 pass 2: the
+/// ceiling-hugging cobweb runners with the mountain-cave anchor override.
+fn step_webs(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (surface_high, surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_high, l.surface_low, l.world_surface)
+    };
+    passes2::pass_webs(
+        world,
+        surface_high,
+        surface_low,
+        world_surface,
+        gv.num_m_caves,
+        &gv.m_cave_x,
+        &gv.m_cave_y,
+        &mut streams.pass_rng("Webs"),
     );
 }
 
@@ -3171,8 +3218,9 @@ mod tests {
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-d102: + `silt` (vanilla "Silt", `WorldGen.cs:13143`) between
-        // `dirt to mud` and `ash blobs`.
-        assert_eq!(names.len(), 67);
+        // `dirt to mud` and `ash blobs`; + `webs` (vanilla "Webs", `:13607`)
+        // between `ores and gems` and `evil`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3224,6 +3272,7 @@ mod tests {
                 "silt",
                 "ash blobs",
                 "ores and gems",
+                "webs",
                 "evil",
                 "liquids",
                 "dungeon",
@@ -3370,7 +3419,8 @@ mod tests {
     fn test_DW_4_3_evil_step_sits_between_ores_and_liquids() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("evil"), pos("ores and gems") + 1);
+        // + webs (W4-d102, the vanilla Webs slot `WorldGen.cs:13607`).
+        assert_eq!(pos("evil"), pos("ores and gems") + 2);
         assert_eq!(names[pos("evil") + 1], "liquids");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
@@ -3494,6 +3544,27 @@ mod tests {
         assert!(cpos("Dirt To Mud") < cpos("Silt"));
         assert!(cpos("Silt") < cpos("Shinies"));
         assert!(cpos("Silt") < cpos("Underworld"));
+    }
+
+    /// W4-d102 pass 2: `webs` sits in its vanilla slot — after `ores and
+    /// gems` (Shinies `WorldGen.cs:13182`) and before `evil` (Corruption
+    /// `:13866`); the Webs anchor is `:13607`, Underworld `:13645` between.
+    #[test]
+    fn w4_d102_the_webs_step_sits_between_shinies_and_underworld() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("webs"), pos("ores and gems") + 1);
+        assert_eq!(names[pos("webs") + 1], "evil");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Shinies") < cpos("Webs"));
+        assert!(cpos("Webs") < cpos("Underworld"));
+        assert!(cpos("Underworld") < cpos("Corruption"));
     }
 
     #[test]

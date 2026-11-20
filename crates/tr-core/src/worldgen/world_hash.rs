@@ -246,6 +246,11 @@ mod tests {
     // rockLayerHigh..maxTilesY), so this pin moves BY DESIGN. The re-pin is
     // DEFERRED to the merge gate (no compiler on this branch); the a == b
     // determinism assert stays in place.
+    // W4-d102 pass 2 (code-only): the Webs pass
+    // (`WorldGen.cs:13607-13644`, `passes2.rs::pass_webs`) lands between
+    // `ores and gems` and `evil` — the 0.0006·area cobweb runners grow on
+    // every world with cave pockets (the port's carved caves qualify), so
+    // this pin moves BY DESIGN too; deferred to the merge gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -292,6 +297,8 @@ mod tests {
     // W4-d102 pass 1 (code-only): the Silt pass (see SEED42_512 above)
     // retypes stone to silt 123 across the rock layer on every world —
     // this pin moves BY DESIGN too; deferred to the merge gate.
+    // W4-d102 pass 2 (code-only): the Webs pass (see SEED42_512 above) —
+    // the cobweb 51 tiles move this pin BY DESIGN; deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
