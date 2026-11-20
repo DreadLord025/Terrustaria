@@ -332,6 +332,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // W4-d12 — `Main.WindForVisuals` (= `windSpeedCurrent`, `Main.cs:2823`)
+    // as the aiStyle-112 836 seed's steering reads it (`Projectile.cs:34138`/
+    // `:34153`), and `Main.mouseTextColor` as the 590 spore's light wobble
+    // reads it (`:34221`). The `set_disco` setter pattern — the pool reads
+    // the live values, the wind tail's `windPhysics` gate stays separate.
+    let wind = app.wind.speed_current;
+    app.projectiles.set_wind(wind);
+    let mouse_text_color = app.mouse_text_color;
+    app.projectiles.set_mouse_text_color(mouse_text_color);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and

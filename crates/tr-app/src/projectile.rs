@@ -10059,6 +10059,159 @@ impl Projectile {
         false
     }
 
+    /// `AI()`'s aiStyle-112 type-836 arm (`Projectile.cs:34116-34193`) —
+    /// the Dandelion's wind-borne seed. The wind steering: the sprite
+    /// faces `Main.WindForVisuals`' sign, the body faces the tracked
+    /// player, and the mismatch halves the speed caps (2.5/2 → 1.5/1).
+    /// Inside 800 px the seed chases the player's column and rides the
+    /// wind; outside it bobs on the ±num827 band. ZERO `Main.rand` draws —
+    /// the one-shot 3× dust-31 burst (`:34121-34126`) is all `NewDust`
+    /// internals (the dust-layer skip, ANALYSIS).
+    ///
+    /// `wind` is `Main.WindForVisuals` (= `windSpeedCurrent`, the pool's
+    /// `wind_speed`); `player` is `Main.player[ai[1]]` — the dispatch
+    /// resolves it (the local channel for the local owner, else None =
+    /// inactive). The `player10.Top.Y` reads are the box TOP (`pos.y`),
+    /// not the centre.
+    fn ai_dandelion_seed(
+        &mut self,
+        wind: f32,
+        player: Option<&crate::player::Player>,
+    ) {
+        // `:34118-34127` — the one-shot spawn burst: the latch flips, the
+        // three dust-31 spawns are SKIPPED (their rolls are NewDust
+        // internals).
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+        }
+        // `:34128-34135` — the 6-tick frame machine, wrapping at 4
+        // (`Main.projFrames[836] = 4`, `Main.cs:8653`).
+        self.frame_counter += 1;
+        if self.frame_counter >= 6 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 4 {
+                self.frame = 0;
+            }
+        }
+        // `:34136-34140` — the tracking gates: the player alive inside
+        // 800 px; the sprite faces the wind, the body faces the player.
+        let center = Vec2::from(self.center());
+        let (flag54, player_center, player_top) = match player {
+            Some(pl) if !pl.dead => {
+                let (pcx, pcy) = pl.center();
+                let pc = Vec2::new(pcx, pcy);
+                (pc.distance(center) < 800.0, pc, pl.y)
+            }
+            _ => (false, Vec2::ZERO, 0.0),
+        };
+        let num825 = if wind > 0.0 { 1 } else { -1 };
+        self.sprite_direction = num825;
+        self.direction = if player_center.x > center.x { 1 } else { -1 };
+        let flag55 = num825 != self.direction;
+        // `:34141-34147` — the speed caps: the aligned pair 2.5/2, the
+        // mismatched pair 1.5/1.
+        let mut num826 = 2.5f32;
+        let mut num827 = 2.0f32;
+        if flag55 {
+            num826 = 1.5;
+            num827 = 1.0;
+        }
+        if flag54 {
+            // `:34150-34162` — the aligned wind push: 0.05·dir·(0.6+|wind|)
+            // per tick, the ±num826 cap bleeds 0.1 back.
+            if !flag55 {
+                self.vel.x += 0.05 * self.direction as f32 * (0.6 + wind.abs());
+                if self.vel.x > num826 {
+                    self.vel.x -= 0.1;
+                }
+                if self.vel.x < -num826 {
+                    self.vel.x += 0.1;
+                }
+            }
+            // `:34163-34178` — the vertical chase: at/below the player's
+            // top (or mismatched) sink at 0.05 capped num826; above it
+            // rise at 0.1 with the −num827 floor bleeding 0.2 back. The
+            // C# `|` is non-short-circuiting but both sides are pure.
+            if player_top >= center.y || flag55 {
+                self.vel.y += 0.05;
+                if self.vel.y > num826 {
+                    self.vel.y -= 0.1;
+                }
+            } else if player_top < center.y {
+                self.vel.y -= 0.1;
+                if self.vel.y < -num827 {
+                    self.vel.y += 0.2;
+                }
+            }
+        } else {
+            // `:34180-34191` — the far bob: +0.2 gravity with the ±num827
+            // band bleeding 0.2 back at BOTH ends.
+            self.vel.y += 0.2;
+            if self.vel.y < -num827 {
+                self.vel.y += 0.2;
+            }
+            if self.vel.y > num827 {
+                self.vel.y -= 0.2;
+            }
+        }
+        // `:34192` — the tilt rides the horizontal speed.
+        self.rot = self.vel.x * 0.125;
+    }
+
+    /// `AI()`'s aiStyle-112 type-590 arm (`Projectile.cs:34194-34234`) —
+    /// the Truffle worm's spore: the 4-tick frame machine walks the 0-2
+    /// band (the 3-5 band while `ai[2] == 1f`), the alpha fades in at
+    /// −15/tick, and the body bobs on the 180-tick sine (±0.15 px/tick).
+    ///
+    /// RNG census: ONE `Next(28, 42)` draw per fully-faded tick
+    /// (`:34221`, the light colour's wobble) — the draw stays on the
+    /// stream even though the `Lighting.AddLight` it feeds is the
+    /// documented light-layer skip (the `ai_nebula_arm` gate-roll
+    /// precedent). `mouse_text_color` is `Main.mouseTextColor` (the
+    /// pool's `set_mouse_text_color` feed; the 225 stock until wired).
+    fn ai_truffle_spore(&mut self, rng: &mut dyn DropRng, mouse_text_color: u8) {
+        // `:34196-34210` — the frame bands: 0-2 stock, 3-5 while
+        // `ai[2] == 1f` (the Truffle's angry phase).
+        self.frame_counter += 1;
+        if self.frame_counter >= 4 {
+            let mut num829 = 0;
+            let mut num830 = 3;
+            if self.ai[2] == 1.0 {
+                num829 = 3;
+                num830 = 6;
+            }
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= num830 {
+                self.frame = num829;
+            }
+        }
+        // `:34211-34218` — the fade-in.
+        if self.alpha > 0 {
+            self.alpha -= 15;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:34219-34227` — the fully-faded light: the colour wobble draw
+        // stays; the AddLight itself is SKIPPED (no light layer).
+        if self.alpha == 0 {
+            let _num831 = rng.next_range(28, 42) as f32 * 0.005
+                + (270.0 - mouse_text_color as f32) / 500.0;
+        }
+        // `:34228-34233` — the sine bob: velocity (0, sin(2π·ai[0]/180)·
+        // 0.15), the 180-tick phase wrap.
+        self.vel = Vec2::new(
+            0.0,
+            (std::f32::consts::PI * 2.0 * self.ai[0] / 180.0).sin() * 0.15,
+        );
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 180.0 {
+            self.ai[0] = 0.0;
+        }
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -14628,6 +14781,13 @@ pub struct ProjectilePool {
     /// [`ProjectilePool::set_disco`]; the default is `Main.Initialize`'s
     /// `DiscoR = 255` with G/B at 0.
     disco: [u8; 3],
+    /// W4-d12 — `Main.mouseTextColor` (`Main.cs`'s mouse-text pulse, the
+    /// draw pass's `app.mouse_text_color`): the aiStyle-112 590 spore's
+    /// light-colour wobble reads `(270 - mouseTextColor) / 500f`
+    /// (`Projectile.cs:34221`). The app feeds it through
+    /// [`ProjectilePool::set_mouse_text_color`] (the `set_disco` setter
+    /// pattern); the default is the 225 stock (`app/mod.rs:3973`).
+    mouse_text_color: u8,
     /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
     /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
@@ -15067,6 +15227,7 @@ impl ProjectilePool {
             wind_speed: 0.0,
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
+            mouse_text_color: 225,
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
@@ -15150,6 +15311,14 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// W4-d12 — `Main.mouseTextColor` as the aiStyle-112 590 spore's
+    /// light-colour wobble reads it (`Projectile.cs:34221`). The app's
+    /// draw pass owns the pulse (`app/frame/draw.rs:330`); the pool only
+    /// reads it (the `set_disco` setter pattern).
+    pub fn set_mouse_text_color(&mut self, mouse_text_color: u8) {
+        self.mouse_text_color = mouse_text_color;
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -18978,27 +19147,67 @@ impl ProjectilePool {
                             }
                         }
                         112 => {
-                            // `AI()`'s aiStyle-112 type-644 arm
-                            // (`Projectile.cs:34235-34362`, S1-D-4b-3): the
-                            // Rainbow Crystal's shard. The parent probe
-                            // rides `key_parent`; the tick-30 burst's box
-                            // damage runs through the boxed seam.
-                            let parent_center = self
-                                .key_parent(self.slots[i].ai[1], RAINBOW_CRYSTAL)
-                                .map(|p| Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5));
-                            let burst = self.slots[i].ai_rainbow_crystal_shard(world, parent_center, rng);
-                            if burst && self.slots[i].owner == local_owner {
-                                let dolls = doll_flags(player.as_deref());
-                                let luck =
-                                    player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
-                                self.rainbow_crystal_burst(i, npcs, dolls, rng, luck);
-                            }
-                            // `HandleMovement`: `tileCollide = false`
-                            // (`:6948`) — `UpdatePosition` integrates the
-                            // pinned-zero velocity.
-                            if self.slots[i].active {
-                                let vel = self.slots[i].vel;
-                                self.slots[i].pos += vel;
+                            // W4-d12 — the aiStyle-112 family splits by kind
+                            // (`Projectile.cs:34114-34363`): the 836
+                            // Dandelion seed's wind steering, the 590
+                            // Truffle spore's bob, and the 644 Rainbow
+                            // Crystal shard (S1-D-4b-3, unchanged). The C#
+                            // runs the 836/590 blocks as independent `if`s
+                            // then `if (type != 644) return` — the kind
+                            // match reproduces the three-way split.
+                            match self.slots[i].kind {
+                                DANDELION_SEED => {
+                                    // `Main.player[ai[1]]` — the local
+                                    // channel resolves the local owner's
+                                    // seed; a foreign owner reads an
+                                    // inactive player (the golf precedent).
+                                    let tracked = if self.slots[i].owner == local_owner {
+                                        player.as_deref()
+                                    } else {
+                                        None
+                                    };
+                                    self.slots[i].ai_dandelion_seed(self.wind_speed, tracked);
+                                    // `HandleMovement`: the stock
+                                    // `tileCollide = true` (`:775`) — the
+                                    // generic blocked-move probe (the
+                                    // seed dies on the first solid tile).
+                                    self.slots[i].kill_step(world);
+                                }
+                                TRUFFLE_SPORE => {
+                                    let mtc = self.mouse_text_color;
+                                    self.slots[i].ai_truffle_spore(rng, mtc);
+                                    // `HandleMovement`: `tileCollide = false`
+                                    // (`:6394`) — `UpdatePosition` integrates
+                                    // the sine-bob velocity.
+                                    if self.slots[i].active {
+                                        let vel = self.slots[i].vel;
+                                        self.slots[i].pos += vel;
+                                    }
+                                }
+                                _ => {
+                                    // `AI()`'s aiStyle-112 type-644 arm
+                                    // (`Projectile.cs:34235-34362`, S1-D-4b-3): the
+                                    // Rainbow Crystal's shard. The parent probe
+                                    // rides `key_parent`; the tick-30 burst's box
+                                    // damage runs through the boxed seam.
+                                    let parent_center = self
+                                        .key_parent(self.slots[i].ai[1], RAINBOW_CRYSTAL)
+                                        .map(|p| Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5));
+                                    let burst = self.slots[i].ai_rainbow_crystal_shard(world, parent_center, rng);
+                                    if burst && self.slots[i].owner == local_owner {
+                                        let dolls = doll_flags(player.as_deref());
+                                        let luck =
+                                            player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                                        self.rainbow_crystal_burst(i, npcs, dolls, rng, luck);
+                                    }
+                                    // `HandleMovement`: `tileCollide = false`
+                                    // (`:6948`) — `UpdatePosition` integrates the
+                                    // pinned-zero velocity.
+                                    if self.slots[i].active {
+                                        let vel = self.slots[i].vel;
+                                        self.slots[i].pos += vel;
+                                    }
+                                }
                             }
                         }
                         134 => {
@@ -44829,5 +45038,230 @@ mod w4_d12_dryads_ward_tests {
         p.ai_dryads_ward(&w, &mut npcs, None, &mut rng);
         let j = npcs[1].buffs.find_buff_index(186).unwrap();
         assert_eq!(npcs[1].buffs.buff_time[j], 120, "the bane refresh (:41229-41231)");
+    }
+}
+
+/// W4-d12 — the aiStyle-112 family's two missing sub-arms: the 836
+/// Dandelion seed's wind steering (`Projectile.cs:34116-34193`) and the
+/// 590 Truffle spore's bob (`:34194-34234`). WRITTEN NOT RUN (code-only
+/// mode). The 644 shard's arm is unchanged (S1-D-4b-3).
+#[cfg(test)]
+mod w4_d12_style112_seed_spore_tests {
+    use super::*;
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn seed_at(cx: f32, cy: f32) -> Projectile {
+        let d = proj_data(DANDELION_SEED).unwrap();
+        Projectile {
+            active: true,
+            kind: DANDELION_SEED,
+            owner: 0,
+            pos: Vec2::new(cx - d.w * 0.5, cy - d.h * 0.5),
+            w: d.w,
+            h: d.h,
+            time_left: d.time_left,
+            max_penetrate: d.penetrate,
+            penetrate: d.penetrate,
+            friendly: false, // the hostile spawn (spawn_hostile_ai)
+            ..Default::default()
+        }
+    }
+
+    fn spore_at(cx: f32, cy: f32) -> Projectile {
+        let d = proj_data(TRUFFLE_SPORE).unwrap();
+        Projectile {
+            active: true,
+            kind: TRUFFLE_SPORE,
+            owner: 0,
+            pos: Vec2::new(cx - d.w * 0.5, cy - d.h * 0.5),
+            w: d.w,
+            h: d.h,
+            time_left: d.time_left,
+            max_penetrate: d.penetrate,
+            penetrate: d.penetrate,
+            tile_collide: d.tile_collide,
+            ignore_water: d.ignore_water,
+            alpha: d.alpha,
+            ..Default::default()
+        }
+    }
+
+    /// The rows pin (`Projectile.cs:8060-8066` / `:6385-6396`).
+    #[test]
+    fn w4_d12_the_836_and_590_rows_match_set_defaults() {
+        let d = proj_data(DANDELION_SEED).unwrap();
+        assert_eq!((d.w, d.h), (4.0, 4.0), ":8062-8063");
+        assert_eq!(d.ai_style, 112, ":8064");
+        assert_eq!(d.penetrate, 1, "the stock (:774)");
+        assert_eq!(d.time_left, 3600, "the stock (:787)");
+        assert!(d.tile_collide, "the stock (:775)");
+        assert_eq!(d.alpha, 0, "the stock (:779)");
+        assert_eq!(proj_frames(DANDELION_SEED), 4, "Main.cs:8653");
+        let s = proj_data(TRUFFLE_SPORE).unwrap();
+        assert_eq!((s.w, s.h), (14.0, 14.0), ":6387-6388");
+        assert_eq!(s.ai_style, 112, ":6389");
+        assert_eq!(s.penetrate, 1, ":6391");
+        assert_eq!(s.alpha, 255, ":6392");
+        assert_eq!(s.time_left, 900, ":6393");
+        assert!(!s.tile_collide, ":6394");
+        assert!(s.ignore_water, ":6395");
+        assert_eq!(proj_frames(TRUFFLE_SPORE), 1, "no override — Main.cs:8441");
+    }
+
+    /// The seed's one-shot latch + frame machine (`:34118-34135`): the
+    /// latch flips on tick 1, the 6-tick counter wraps the 4-frame sheet.
+    /// ZERO draws (the burst is all NewDust internals).
+    #[test]
+    fn w4_d12_the_seed_latches_and_animates() {
+        let mut p = seed_at(400.0, 300.0);
+        p.ai_dandelion_seed(0.5, None);
+        assert_eq!(p.local_ai[0], 1.0, ":34120");
+        assert_eq!(p.frame_counter, 1, ":34128");
+        for _ in 0..5 {
+            p.ai_dandelion_seed(0.5, None);
+        }
+        assert_eq!(p.frame_counter, 0, "the 6-tick wrap (:34129-34130)");
+        assert_eq!(p.frame, 1, ":34131");
+        for _ in 0..18 {
+            p.ai_dandelion_seed(0.5, None);
+        }
+        assert_eq!(p.frame, 0, "the 4-frame wrap (:34132-34133)");
+    }
+
+    /// The far bob (`:34180-34191`): no player → +0.2 gravity with the
+    /// ±2 band bleeding 0.2 back at both ends; the tilt rides vel.x.
+    #[test]
+    fn w4_d12_the_far_seed_bobs_on_the_band() {
+        let mut p = seed_at(400.0, 300.0);
+        p.vel = Vec2::new(1.0, 1.9);
+        p.ai_dandelion_seed(0.5, None);
+        // 1.9 + 0.2 = 2.1 > 2 → −0.2 → 1.9.
+        assert!((p.vel.y - 1.9).abs() < 1e-5, ":34182-34190");
+        assert_eq!(p.rot, 1.0 * 0.125, ":34192");
+        // The sprite faces the wind's sign; the body faces the (absent)
+        // player's ZERO centre — left of the seed.
+        assert_eq!(p.sprite_direction, 1, "wind > 0 (:34138)");
+        assert_eq!(p.direction, -1, "0 < 400 (:34139)");
+    }
+
+    /// The aligned chase (`:34150-34178`): wind +0.5, player to the RIGHT
+    /// and ABOVE — the X push 0.05·1·(0.6+0.5) = 0.055, the Y rise −0.1.
+    #[test]
+    fn w4_d12_the_aligned_seed_chases_the_player() {
+        let w = world();
+        let mut pl = Player::spawn(&w);
+        pl.x = 500.0; // centre 510 — right of the seed's 400
+        pl.y = 200.0; // top 200 — above the seed's centre 300
+        let mut p = seed_at(400.0, 300.0);
+        p.ai_dandelion_seed(0.5, Some(&pl));
+        assert_eq!(p.direction, 1, "the player is right (:34139)");
+        assert_eq!(p.sprite_direction, 1, "the wind is right (:34138)");
+        assert!((p.vel.x - 0.055).abs() < 1e-5, "0.05·(0.6+0.5) (:34153)");
+        assert!((p.vel.y - (-0.1)).abs() < 1e-5, "the rise (:34173)");
+        // The X cap: at 2.5 the push bleeds 0.1 back.
+        p.vel.x = 2.5;
+        p.ai_dandelion_seed(0.5, Some(&pl));
+        assert!((p.vel.x - (2.5 + 0.055 - 0.1)).abs() < 1e-5, ":34154-34157");
+    }
+
+    /// The mismatched pair (`:34143-34147`): wind −0.5 (sprite −1) vs a
+    /// player to the RIGHT (body +1) — the caps drop to 1.5/1, the X push
+    /// is skipped and the Y sinks at 0.05 regardless of the player's top.
+    #[test]
+    fn w4_d12_the_mismatch_halves_the_caps() {
+        let w = world();
+        let mut pl = Player::spawn(&w);
+        pl.x = 500.0;
+        pl.y = 200.0; // above — but the mismatch forces the sink
+        let mut p = seed_at(400.0, 300.0);
+        p.vel = Vec2::new(0.0, 1.45);
+        p.ai_dandelion_seed(-0.5, Some(&pl));
+        assert_eq!(p.sprite_direction, -1, "wind < 0 (:34138)");
+        assert_eq!(p.direction, 1);
+        assert_eq!(p.vel.x, 0.0, "the mismatch skips the X push (:34150)");
+        // 1.45 + 0.05 = 1.5, NOT > 1.5 — no bleed.
+        assert!((p.vel.y - 1.5).abs() < 1e-5, "the 1.5 cap (:34145/:34166)");
+        p.ai_dandelion_seed(-0.5, Some(&pl));
+        // 1.5 + 0.05 = 1.55 > 1.5 → −0.1 → 1.45.
+        assert!((p.vel.y - 1.45).abs() < 1e-5, ":34167-34169");
+    }
+
+    /// The spore's fade-in + frame bands (`:34196-34218`): alpha −15/tick
+    /// from 255, the 4-tick machine walks 0-2 (3-5 while ai[2] == 1).
+    #[test]
+    fn w4_d12_the_spore_fades_and_animates() {
+        let mut p = spore_at(400.0, 300.0);
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        p.ai_truffle_spore(&mut rng, 225);
+        assert_eq!(p.alpha, 240, ":34213");
+        assert!(rng.draws.is_empty(), "the wobble draw needs alpha 0 (:34219)");
+        // 17 ticks total: 255 − 17·15 = 0.
+        for _ in 0..16 {
+            p.ai_truffle_spore(&mut rng, 225);
+        }
+        assert_eq!(p.alpha, 0);
+        assert_eq!(rng.draws.len(), 1, "the first fully-faded tick draws");
+        assert_eq!(rng.draws[0], (28, 42), ":34221");
+        // The frame machine: 4 ticks per step, wrapping 0-2.
+        assert_eq!(p.frame_counter, 1, "17 % 4 = 1");
+        assert_eq!(p.frame, 1, "17 / 4 = 4 steps: 1, 2, 3→0, 1 (:34206-34208)");
+    }
+
+    /// The spore's frame bands precisely: 12 ticks = 3 steps → frame 3
+    /// wraps to 0; the ai[2] == 1 band walks 3-5.
+    #[test]
+    fn w4_d12_the_spore_frame_bands() {
+        let mut p = spore_at(400.0, 300.0);
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        for _ in 0..12 {
+            p.ai_truffle_spore(&mut rng, 225);
+        }
+        assert_eq!(p.frame, 0, "3 steps: 1, 2, 3→0 (:34206-34208)");
+        assert_eq!(p.frame_counter, 0);
+        p.ai[2] = 1.0;
+        p.frame = 3;
+        for _ in 0..4 {
+            p.ai_truffle_spore(&mut rng, 225);
+        }
+        assert_eq!(p.frame, 4, "the angry band steps 3→4 (:34202-34203)");
+        for _ in 0..8 {
+            p.ai_truffle_spore(&mut rng, 225);
+        }
+        assert_eq!(p.frame, 3, "6 wraps to 3 (:34207-34208)");
+    }
+
+    /// The sine bob (`:34228-34233`): velocity (0, sin(2π·ai[0]/180)·0.15),
+    /// the phase wraps at 180.
+    #[test]
+    fn w4_d12_the_spore_bobs_on_the_sine() {
+        let mut p = spore_at(400.0, 300.0);
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        p.ai[0] = 45.0; // sin(π/2) = 1
+        p.ai_truffle_spore(&mut rng, 225);
+        assert!((p.vel.y - 0.15).abs() < 1e-6, ":34228");
+        assert_eq!(p.vel.x, 0.0);
+        assert_eq!(p.ai[0], 46.0, ":34229");
+        p.ai[0] = 179.0;
+        p.ai_truffle_spore(&mut rng, 225);
+        assert_eq!(p.ai[0], 0.0, "the 180 wrap (:34230-34232)");
     }
 }

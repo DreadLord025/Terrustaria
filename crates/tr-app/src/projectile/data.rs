@@ -1049,6 +1049,12 @@ pub const TYPHOON: u16 = 409;
 /// `ProjectileID.DryadsWardCircle` (586, `ProjectileID.cs:1726`) — the
 /// Dryad's ward ring (aiStyle 111, `AI_111_DryadsWard`). W4-d12.
 pub const DRYADS_WARD_CIRCLE: u16 = 586;
+/// `ProjectileID.TruffleSpore` (590, `ProjectileID.cs:1734`) — the Truffle
+/// worm's spore (aiStyle 112's 590 sub-arm). W4-d12.
+pub const TRUFFLE_SPORE: u16 = 590;
+/// `ProjectileID.DandelionSeed` (836, `ProjectileID.cs:2226`) — the
+/// Dandelion's wind-borne seed (aiStyle 112's 836 sub-arm, hostile). W4-d12.
+pub const DANDELION_SEED: u16 = 836;
 /// `ProjectileID.NebulaArcanum` (617) — the Arcanum's homing bolt (aiStyle
 /// 118, local-immunity 8).
 pub const NEBULA_ARCANUM: u16 = 617;
@@ -3573,6 +3579,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             RAINBOW_CRYSTAL_EXPLOSION => {
                 (14.0, 14.0, 112, 1, 900, 0, false, false, false, (false, -2, true, -1, 255, 1.0))
             }
+            // W4-d12 — `Projectile.cs:6385-6396` TruffleSpore (590): 14x14,
+            // aiStyle 112, friendly, `penetrate = 1`, `alpha = 255`,
+            // `timeLeft = 900`, `tileCollide = false`, `ignoreWater`.
+            TRUFFLE_SPORE => {
+                (14.0, 14.0, 112, 1, 900, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:8060-8066` DandelionSeed (836): 4x4,
+            // aiStyle 112, HOSTILE (the pool's `spawn_hostile_ai` flips
+            // `friendly`); the stock `penetrate = 1` (`:774`), `timeLeft =
+            // 3600` (`:787`), `tileCollide = true` (`:775`), alpha 0.
+            DANDELION_SEED => {
+                (4.0, 4.0, 112, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_3 => (28.0, 60.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
@@ -4177,6 +4196,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == LIGHTS_BANE
             // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
             || kind == RAINBOW_CRYSTAL_EXPLOSION
+            // W4-d12 — `Projectile.cs:6395`: the Truffle spore's
+            // `ignoreWater = true` (the 836 seed keeps the stock false).
+            || kind == TRUFFLE_SPORE
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
             || kind == HORSEMAN_PUMPKIN
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
@@ -4655,6 +4677,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
         // The turret 641 has no `projFrames` row (the stock 1).
         RAINBOW_CRYSTAL => 8,
+        // W4-d12 — the Dandelion seed's 4-frame sheet (`Main.cs:8653`) —
+        // the aiStyle-112 836 arm's 6-tick machine wraps at 4
+        // (`Projectile.cs:34128-34135`). The 590 spore has NO `projFrames`
+        // row (the init 1, `Main.cs:8441`); its arm's frame machine walks
+        // the literal 0-2 / 3-5 bands (`:34196-34210`), not `projFrames`.
+        DANDELION_SEED => 4,
         // S1-D-3 W-9 fishron wiring — the sharknado family's strips
         // (`Main.cs:8512-8514`): the clouds 6 rows, the bolt 3.
         FORCE_BUBBLE | CTHULUNADO => 6,
