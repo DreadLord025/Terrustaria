@@ -2170,6 +2170,17 @@ impl MountState {
         self.active
     }
 
+    /// `Mount.AllowDirectionChange` (`Mount.cs:630-640`): true for every
+    /// mount except the Scutlix (type 9), which allows the turn only once
+    /// its ability cooldown is under half the row's maximum.
+    pub(crate) fn allow_direction_change(&self) -> bool {
+        if self.kind == 9 {
+            let max = self.data().map_or(0, |d| d.ability_cooldown);
+            return self.ability_cooldown < max / 2;
+        }
+        true
+    }
+
     /// `Mount.UpdateEffects` (`Mount.cs:4798`): the Super Cart flag rides the
     /// cart set (`MountID.Sets.Cart`) and the player's unlock/enable pair.
     /// The flag then overrides the run/dash/acceleration/jump getters
@@ -2896,6 +2907,33 @@ pub(crate) struct TestOverrides {
 
 #[cfg(test)]
 mod tests {
+    /// S1-P-i12 — `Mount.AllowDirectionChange` (`Mount.cs:630-640`): the
+    /// Scutlix (type 9) reads `_abilityCooldown < _data.abilityCooldown / 2`
+    /// (20/2 = 10, integer division); every other type returns true. The
+    /// witness drives the cooldown through the real `SetMount` floor
+    /// (`:6236-6243`) and the `AbilityRecovery` per-tick decrement
+    /// (`:2938-2959`). Mirror clone, written not run.
+    #[test]
+    fn i12_allow_direction_change_is_the_scutlix_half_cooldown_gate() {
+        let mut m = super::MountState::default();
+        // No mount / a non-Scutlix type: always true (`:638`).
+        assert!(m.allow_direction_change());
+        assert!(m.set_mount(10, false).is_some());
+        assert!(m.allow_direction_change(), "the Unicorn always allows");
+        // The Scutlix floors its cooldown at 20 on equip (`:6236-6243`):
+        // 20 < 10 is false — the fresh mount locks the turn.
+        assert!(m.set_mount(9, false).is_some());
+        assert!(!m.allow_direction_change(), "the fresh Scutlix locks");
+        // Tick the cooldown down past the half-max boundary: 10 still
+        // locks (`<` is strict), 9 allows.
+        for _ in 0..10 {
+            m.ability_recovery();
+        }
+        assert!(!m.allow_direction_change(), "10 is not < 10");
+        m.ability_recovery();
+        assert!(m.allow_direction_change(), "9 < 10 allows the turn");
+    }
+
     #[test]
     fn the_cart_rows_carry_the_setas_minecart_body() {
         // `Mount.SetAsMinecart` (`Mount.cs:2747-2799`): the shared body plus

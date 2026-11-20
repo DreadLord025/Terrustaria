@@ -33313,3 +33313,156 @@ pool's call sites, the `npc_center`/`find_target_with_line_of_sight`
 visibility bumps, the `SPECIAL_BULLET_KINDS` re-export through
 `pub use data::*`, the `has_buff`/`buff_time_of` helpers. The 13 witness
 tests are WRITTEN, NOT RUN — **no compiler invoked**.
+## The item-use timing machinery (S1-P-i12, task/S1-P-i12-autoswing-usetime, 2026-11-20, code-only mode)
+
+The useTime/useAnimation/autoReuse fidelity slice from the i01 census
+(`docs/research/60-item-use-census.md` on `task/S1-P-i01-item-use-census`):
+`Player.ItemCheck`'s inline countdowns (`Player.cs:42656-42671`,
+`:42808-42845` — there is NO `ItemCheck_ManageUseTime` in 1.4.5.8), the
+`SetItemTime`/`ApplyItemTime`/`SetItemAnimation`/`ApplyItemAnimation` family
+(`:4406-4497`), `ApplyReuseDelay` (`:52835-52840`),
+`ItemCheck_AutoReuseLogic`/`TryAllowingItemReuse` (`:52877-52920`), the
+useTurn direction lock (`:19834-19846`) and the speed grants that feed them.
+Per-weapon arcs stay with i04-i09; the revolver per-tick `Next(3)` draw
+(`:42677-42703`) stays with i14 (the field `revolver_crit_chance_bonus` is
+seeded, the draw is NOT added here — RNG order is untouched); the non-ammo
+volley seam stays with i20/i21 (their branches are not ancestors of this
+base and were not duplicated).
+
+**What landed (all cites re-verified verbatim against the decompilation).**
+
+- `ApplyItemAnimation`'s five multiplier arms (`Player.cs:4463-4497`) are
+  wired through `world_sim/editing.rs::apply_item_animation_secs`: melee ×
+  the INVERTED held-item-scaled `meleeSpeed` (the `NoMeleeSpeedBonus` set is
+  {3821} only, `ItemID.cs:340`), the scaling whips (`ItemID.cs:497`'s 18-id
+  set verbatim) × `summonerWeaponSpeedBonus × whipUseTimeMultiplier`,
+  createTile × `tileSpeed`, createWall × `wallSpeed`, else
+  `useAnimation + num` — the style-5 autoReuse `num = 1` bump
+  (`:4466-4469`) included, also for the four `gunProj` placeholders
+  (3475→21, 3540→13, 3854→19, 3930→7). `SetItemAnimation`'s truncation +
+  floor-1 (`:4453-4461`) is `scaled_anim_secs`. The `DebugOptions.ManaV2`
+  slow-magic branch (`:4478-4483`) is debug-only and stays out.
+- `Player.melee_speed(held_kind)` now returns the value the game logic
+  reads: `:25912`'s `BonusMeleeSpeedMultiplier` scale (`ItemID.cs:1350`:
+  1827→0.5, 3013→0.25, 3106→0.33, 757→0.75) THEN `CapAttackSpeeds`'
+  cap-3-and-invert (`:29021-29039`, 0 stays 0). The summoner half
+  (`summoner_weapon_speed_multiplier(held_kind)`) folds the ALREADY-scaled
+  raw melee speed — `:25912` runs before `CapAttackSpeeds` at `:25976`, so
+  `:29023`'s `num` carries the held-item scale — plus the whip-buff sum,
+  capped/inverted, × `whipUseTimeMultiplier` at the read (`:4476`). The
+  flail leash/scales (`Projectile.cs:43727`, `:43824-43831`) and the melee
+  shoot's `speed /= meleeSpeed` (`:47063`) consume the same value.
+- The speed grants: whip buffs 311/308/314 (`:10110-10121`), Builder 107
+  (`:10158-10163`), the placement accessories' flags (`:15263-15292`:
+  2214/2217/3061/5126) folded at `:13024-13039` (+0.5, the Brick Layer's
+  torch exclusion `:13027`, accessory slots 3..10 only per `:12946`), the
+  Obsidian Outlaw triple's ×(1/1.15) (`ArmorSetBonuses.cs:120-125`, registered
+  `:492`), the six `autoReuseGlove` grants (211 `:15105-15109`, 6182
+  `:14600-14604`, 3992 `:14411-14417`, 897 `:15299-15305`, 1343
+  `:15306-15314`, 936 `:15369-15376`) and the Stress Ball's
+  `CanUseStressBall` gate (`:14342-14366`, standing-still `:3323-3333`).
+  `ResetEffects` clears them per tick (`:18341`/`:18499`/`:18531-18532`/
+  `:18710`/`:18431`).
+- `ApplyReuseDelay` (`:52835-52840`) now converts the pending lock into the
+  silent `itemAnimation = itemTime = reuseDelay` hold at the animation-zero
+  head (`:42668-42671`) — the lock is armed at EVERY use start
+  (`start_use_timers`/`arm_reuse_delay`, `:4496`), never decremented per
+  tick (the C# never does), and `itemAnimationMax` stays 0 through the hold
+  (the `in_reuse_hold = swing > 0 && swing_max == 0` detector gates the
+  mid-swing action/shot seams). The autoReuse `itemAnimation == 1 → 0`
+  early-out (`:52886-52899`, local-player arm) runs ahead of the reset and
+  conversion, exactly like `ItemCheck_AutoReuseLogic` at `:42654`.
+- `TryAllowingItemReuse` (`:52905-52920`): the glove arm (melee ≠ 3030 +
+  scaling summons) and the `stressBall || autoReuseAllWeapons` arm
+  (damage > 0, not mid-channel) force the release latch; the plain
+  autoReuse force (`:52885`) gates on the button like the C#.
+- The `releaseUseItem` press-edge latch: the C# writes
+  `releaseUseItem = !controlUseItem` at the END of the tick (`:42829`), so
+  the start gate (`:42733`) reads the PREVIOUS frame's latch — the port
+  latches `mine_released = !mine_prev_down` before the overwrite (the
+  in-flight same-frame write shut every non-autoReuse item out of its own
+  press tick; fixed).
+- The CCed gate (`:42598-42603`, `CCed = frozen || webbed || stoned`
+  `:3377-3387`) runs FIRST — before the countdowns — clearing channel +
+  animation (+ the port's `attack_cd` mirror).
+- Mana regen delay PER ANIMATION TICK (`:42810-42813` →
+  `ItemCheck_ApplyManaRegenDelay` `:50587-50593`, the spaceGun skip
+  {127, 4347, 4348, 514}): re-applied from the CURRENT mana every tick the
+  animation runs (including the reuse hold), with the `manaRegenBuff`
+  20-tick cap (`:19399`). The start tick's install rides the pay path (the
+  port's head decay precedes the mid-tick start; same post-pay mana, same
+  value). `CheckMana` itself (`:52576-52617`) applies NO delay — the
+  pay-path call is the start-tick stand-in, documented in-comment.
+- The tool action ticks: `toolTime == 0 && itemAnimation > 0 &&
+  controlUseItem` (`:45626`/`:45639`) gates the pick/axe/hammer/wall hits;
+  the pick re-arms `(int)(useTime * pickSpeed)` (`:45777-45780`, the 0.3
+  floor `:25972-25975`), the axe the plain `ApplyItemTime` (`:45768`), the
+  hammer `ApplyItemTime` (`:45702`), the wall `useTime / 2` integer
+  division (`:45913`).
+- The placement ACTION cadence is speed-scaled: `PlaceThing_Tiles_PlaceIt`
+  re-arms `ApplyItemTime(item, tileSpeed)` (`:40141`), the wall route
+  `ApplyItemTime(item, wallSpeed)` (`:39623`) — `(int)(useTime * mult)`
+  floor-1 (`:4421-4430`). The wiring tools keep the plain cadence.
+- The boss spawners/event items fire MID-SWING (`ItemTimeIsZero &&
+  itemAnimation > 0`, `:43753`/`:43923` etc.) with `ApplyItemTime`-only
+  re-arms; the Etherian Crystal is a tile interaction with NO
+  `ApplyItemTime` (`:32438-32445`). The invented channel animation-hold
+  (`swing = 0.2`, no C# counterpart) is deleted — the channel latch alone
+  keeps the aiStyle-9 aim.
+- The useTurn direction lock (`:19834-19846`): `(itemAnimation == 0 ||
+  useTurn) && mount.AllowDirectionChange && !sandStorm`, the cart adds
+  `Sign(vx) == dir`; `Mount.AllowDirectionChange` (`Mount.cs:630-640`) is
+  the Scutlix type-9 `cooldown < max/2` gate. `PlayerInput` carries
+  `item_in_use`/`held_use_turn` (Default-derived, every literal spreads).
+
+**Deliberate stand-ins (documented deviations).**
+
+- The discrete-use START gates read `attack_cd` (the port's
+  `itemAnimation == 0` stand-in, census U6 "FAITHFUL-in-effect"): it decays
+  in `world_sim/npcs.rs` alongside the other per-tick timers, so the unit
+  rigs that drive `update_editing` alone see ONE use per press — the same
+  mechanism the pre-i12 gates used. The C# gate is the animation itself;
+  in production both decay in lockstep (the reuse-hold conversion extends
+  `attack_cd` over the hold, the CCed clear zeroes it). The continuous
+  mining/placement restarts keep the `swing` gate (they re-fire every
+  animation by design).
+- `CanUseStressBall`'s extractinateHover arm reads false (no port seam) and
+  the food arm's `itemAnimation == 0 && releaseUseItem` halves ride the use
+  path's own gates; the standing-still + damage arms are the reachable ones.
+- The `attackCD = max(1, animMax * 0.33)` melee-hit cooldown (`:44428-44431`,
+  census U29) belongs to the melee-arc rewrite (i04/i05) — the port's
+  whole-swing `attack_cd` lock stays until then.
+- The revolver crit-bonus field is seeded but the per-tick `Next(3)` draw
+  (`:42677-42703`) is i14's — adding it here would shift the UpdatePlayers
+  stream ahead of the gun worker's own placement.
+
+**Witness updates (C#-true re-derivations).** The style-5 `num` bump makes
+`itemAnimationMax` one tick longer than the raw `useAnimation`, but TWO C#
+consumers read the RAW instance value: the cycler cooldown
+(`ammoCyclingCooldown = sItem.useAnimation + 120`, `:53571` — the Cobalt
+Repeater arms 143, not 144) and the Fairy Queen save window
+(`itemAnimation > sItem.useAnimation - 8`, `:53635` — boundary 22, shots at
+30/28/…/2, saved {30,28,26,24}, still 4 saved / 11 drained). The OTHER
+window (`itemAnimation < itemAnimationMax - useTime`, `:53663`/`:53667`)
+reads the bumped max — the Clentaminator's first shot at 30 is still
+outside `31 - 5 = 26`. `shooter_use_anim_ticks` is the raw-instance seam;
+the DW-4.1/DW-4.3 witnesses were re-derived accordingly. The gunProj four
+take the same +1 (the DW-4.2 one-shot-per-swing witnesses are unchanged —
+`useTime == useAnimation` still fires once).
+
+**RNG.** The timing machinery is draw-free: no new `Main.rand` consumer,
+no stream reorder. The per-tick mana-regen re-apply is pure arithmetic.
+The revolver draw stays i14's; the i20b/i21b volley branches (not
+ancestors of this base) were not duplicated.
+
+**Verification.** Code-only: every C# window was re-read verbatim
+(Player.cs/Item.cs/ItemID.cs/Mount.cs/ArmorSetBonuses.cs/Projectile.cs),
+the compile surface was checked by inspection (the `u8`→`i32` registry
+widening at every `map_or`/`or_else` site, `PlayerInput`'s Default +
+spread literals, the `melee_speed(held_kind)`/`summoner_weapon_speed_multiplier(held_kind)`
+call sites, the removed `shooter_swing_secs`/`prev_mine_*` locals, the
+`shooter_use_ammo` gate now live for the gunProj four). The witness tests
+(player.rs ×8, mount.rs ×1, editing.rs ×4 + the re-derived DW rows) are
+WRITTEN, NOT RUN — **no compiler invoked**. Three resume workers
+(i12b/i12c/i12d) independently verified the same windows; their stand-down
+reports' findings are folded into the fixes above.
