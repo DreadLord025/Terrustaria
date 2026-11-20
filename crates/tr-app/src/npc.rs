@@ -1176,6 +1176,12 @@ pub enum NpcSoundCue {
     /// `PlaySound(SoundID.NPCDeath13, pos)` — the leech head's
     /// tunnel-entry burst (`NPC.cs:50968`, the style façade); case 4.
     NpcDeath13,
+    /// `PlaySound(SoundID.NPCDeath58, position)` — the pillar shield-state
+    /// flip (`NPC.cs:39089`, W4-c2); the style façade, case 4.
+    NpcDeath58,
+    /// `PlaySound(SoundID.NPCDeath3, position)` — the pillar shield-hit
+    /// flash's first tick (`NPC.cs:39093`, W4-c2); the style façade, case 4.
+    NpcDeath3,
     /// `PlaySound(SoundID.EOWDiggin, pos)` — the EoW head's dig rumble
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
@@ -1864,6 +1870,14 @@ pub struct Npc {
     /// `NPC.cs:51061`'s `SpawnStardustMark_StardustWorm`): the sim
     /// resolves the 405/402/407 pick (the 540 hop unmodelled).
     pub wants_stardust_mark: bool,
+    /// W4-c2 — the Solar pillar's goop spawn request (`NPC.cs:39376-39381`'s
+    /// `NewNPC(..., 519)` + the launch velocity + netUpdate). The aiStyle-94
+    /// axis arm stages it; the sim's drain logs it as the documented skip:
+    /// SolarGoop 519 has NO ported kind yet (the module doc's census —
+    /// aiStyle 99, `NPC.cs:15409-15423`), so the spawn body lands with the
+    /// kind wave. The request's five draws already rode the UpdateNPCs
+    /// stream inside the machine.
+    pub wants_solar_goop: Option<crate::npc_ai_pillar::SolarGoopSpawn>,
     pub wants_obstruct: bool,
     pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
@@ -3149,6 +3163,7 @@ impl Npc {
             wants_lane_portals: None,
             wants_lane_right: false,
             wants_stardust_mark: false,
+            wants_solar_goop: None,
             wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
@@ -4930,6 +4945,13 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
+            // `else if (this.aiStyle == 94)` (`NPC.cs:38968-39383`) — the
+            // four Lunar Pillars (517/422/507/493). W4-c2 wiring: the
+            // faithful `npc_ai_pillar::pillar_ai_step` (B-6a) claims the
+            // axis; the invented `update_ancient_cultist` stand-in (the
+            // ai[2]-as-timer self-kill, the every-tick 579 spam, the
+            // discarded rng) is retired.
+            94 => self.ai_094_pillar_family(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5975,11 +5997,15 @@ impl Npc {
                 self.update_dd2_kobold_walker(world, player, dt)
             }
             NpcKind::DD2OgreT2 | NpcKind::DD2OgreT3 => self.update_ogre(world, player, rng),
-            // The Lunar Pillars: aiStyle 94 (NPC.cs:38968-39400).
+            // The Lunar Pillars: aiStyle 94 rides the style axis
+            // (`ai_094_pillar_family`, W4-c2) — this arm is unreachable
+            // through `update_rng` (the axis claims style 94 first).
             NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
-            | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            | NpcKind::SolarTower => {
+                unreachable!("aiStyle 94 rides the style axis (W4-c2 pillar wiring)")
+            }
             // S1-D-3b: AncientCultist (CultistBoss 439) is aiStyle 84
             // (NPC.cs:14216, AI_084_LunaticCultist :64414), not the pillar
             // aiStyle 94 row (422/507/517/493).
@@ -15565,14 +15591,50 @@ impl Npc {
         }
     }
 
-    fn update_ancient_cultist(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        // The timer: the 180-tick dissolve (`:39060-39066`'s `ai[1]`).
-        self.ai[2] += 1.0;
-        // S1-E-21g — `NPC.cs:39057-39059`: the dissolve's 60-tick cry
-        // (`ai[1] % 60 == 1` — the port's dissolve counter is `ai[2]`,
-        // the recorded stand-in): `PlaySound(4, Center, 22)`, the int
-        // killed overload at styles 1/61/121 of the 180-tick ride.
-        if self.ai[2] % 60.0 == 1.0 {
+    /// W4-c2 — the aiStyle-94 family arm: the four Lunar Pillars
+    /// (`NPC.AI()`'s `else if (this.aiStyle == 94)` block,
+    /// `NPC.cs:38968-39383`). The faithful machine lives in
+    /// `npc_ai_pillar.rs` (B-6a, `pillar_ai_step`); this seam fills the
+    /// classic single-player `PillarCtx` (the `EverLastingTicker` rides 0
+    /// — the `update_zombie` stand-in precedent) and drains the effects:
+    /// the shield-flip/hit façade cues + the dissolve's int-overload cry
+    /// queue on `wants_sound` (the sim drains them after the machine's
+    /// draws, the S1-E-21g convention), the SolarGoop-519 request stages
+    /// on `wants_solar_goop` (the kind is unported — the sim's drain logs
+    /// the documented skip), and the dissolve-finished death rides the
+    /// sim's death sweep (hp already 0; `HitEffect(0, 1337)`'s dust is
+    /// the module's documented body skip). The retired stand-in's
+    /// defects (ai[2]-as-timer self-kill, no shield read, every-tick 579
+    /// spam, discarded rng) are gone — the 493/422 attack bodies stay
+    /// DEFERRED per the module census (their draws arrive with them).
+    fn ai_094_pillar_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let mut fx = crate::npc_ai_pillar::PillarEffects::default();
+        crate::npc_ai_pillar::pillar_ai_step(
+            self,
+            world,
+            player,
+            rng,
+            &crate::npc_ai_pillar::PillarCtx::classic(0),
+            &mut fx,
+        );
+        // The C#'s plays sit inside the arm, before `UpdateCollision`:
+        // position reads are the PRE-integration ones (`NPC.cs:39089`/
+        // `:39093` pass `base.position`; `:39059` passes `base.Center`).
+        if fx.shield_break_sound {
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::NpcDeath58,
+                x: self.x,
+                y: self.y,
+            });
+        }
+        if fx.shield_hit_sound {
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::NpcDeath3,
+                x: self.x,
+                y: self.y,
+            });
+        }
+        if fx.dissolve_drone_sound {
             let (ccx, ccy) = self.center();
             self.wants_sound.push(NpcSoundRequest {
                 cue: NpcSoundCue::NpcDeath(22),
@@ -15580,56 +15642,16 @@ impl Npc {
                 y: ccy,
             });
         }
-        if self.ai[2] >= 180.0 {
-            self.hp = 0;
-            return;
+        if let Some(goop) = fx.solar_goop {
+            self.wants_solar_goop = Some(goop);
         }
-        let (w, h) = self.size();
-        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
-        let (pcx, pcy) = player.center();
-        // The hover: the sine bob + the 300-tick cycle.
-        self.vy = (std::f32::consts::PI * 2.0 * self.ai[0] / 300.0).sin() * 0.5;
-        self.ai[0] += 1.0;
-        if self.ai[0] >= 300.0 {
-            self.ai[0] = 0.0;
-        }
-        // The regen: +200 per 60 ticks while the player stays 2000+ px
-        // (`localAI[0]` — the port's `caster_counter`).
-        if (pcx - cx).hypot(pcy - cy) > 2000.0 {
-            self.caster_counter += 1;
-            if self.caster_counter >= 60 {
-                self.caster_counter = 0;
-                self.hp = (self.hp + 200).min(self.max_hp);
-            }
-        } else {
-            self.caster_counter = 0;
-        }
-        // The ritual arm (`:39273-39292`): the player within 3240 px with
-        // no line of sight — the 578/579 projectiles at the player's tile.
-        if player.hp > 0
-            && (pcx - cx).hypot(pcy - cy) < 3240.0
-            && !crate::projectile::can_hit_line(world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0)
-        {
-            self.ai[1] = 0.0;
-            let ritual = 579u16;
-            self.wants_hostile_shot
-                .push((ritual, pcx, pcy, 0.0, 0.0, 0));
-            let _ = ritual;
-        }
-        // The 1080-px arm (`:39293-39336`): the 420+360 rearm + the
-        // 20-tile window's pick.
-        if player.hp > 0
-            && (pcx - cx).hypot(pcy - cy) < 1080.0
-            && pcy - cy < 400.0
-            && self.caster_counter == 0
-        {
-            self.caster_counter = 420;
-            let ritual = 579u16;
-            self.wants_hostile_shot
-                .push((ritual, pcx, pcy, 0.0, 0.0, 0));
-            let _ = ritual;
-        }
-        let _ = rng;
+        // `fx.dissolve_finished`: the module already wrote hp = 0 — the
+        // death sweep's intercept passes through (ai[2] == 1) and the
+        // tower death arms run (`NPC.cs:39061-39066` → `:79321-79345`).
+        // `noGravity`/`noTileCollide` (`SetDefaults`, `NPC.cs:15261-15262`
+        // and the shared rows): `UpdateNPC` integrates raw after `AI()`
+        // (`NPC.cs:90494-90498`).
+        self.integrate_no_tile_collide();
     }
 
     fn update_wither_beast(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {

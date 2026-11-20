@@ -32343,7 +32343,9 @@ live `npc.rs` stub + every other file except the one `mod` line in
 `main.rs` and the docs are byte-identical.
 ## The pillar machine re-port (B-6a, S1-D-3-pillar)
 
-**Status: code-only module, UNWIRED.** `crates/tr-app/src/npc_ai_pillar.rs`
+**Status: code-only module, landed UNWIRED — WIRED by W4-c2 (2026-11-20,
+see "The pillar AI wiring (W4-c2)" below).**
+`crates/tr-app/src/npc_ai_pillar.rs`
 (branch `task/S1-D-3-pillar-report`, base `c7fe175d`). No compiler invoked;
 the 14 witness tests are WRITTEN, NOT RUN. The live stand-in
 (`npc.rs:12553-12606`, dispatched at `:3936-3940`) is byte-identical on this
@@ -32443,6 +32445,64 @@ downed_tower_solar}`, `Npc::{ai,local_ai,alpha,net_update,dont_take_damage,
 size}`, `NpcKind` Debug derive); the C# blocks re-read line-by-line. The
 14 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
 Docs-only round вЂ” **no compiler invoked**.
+
+
+## The pillar AI wiring (W4-c2, 2026-11-20, code-only mode)
+
+The B-6a module goes live: the aiStyle-94 axis arm
+(`npc.rs::ai_094_pillar_family`) claims the four Lunar Pillars
+(517/422/507/493 — `npc/data.rs`'s style-94 rows), the invented
+`update_ancient_cultist` stand-in is RETIRED (its kind arm is the
+unreachable-arm marker, the S1-D-4c census convention), and the sim's
+death sweep runs `check_dead_pillar_intercept` (`NPC.cs:78080-78086`)
+BEFORE the `hp > 0` retain — the crystal-intercept shape.
+
+Live behaviour deltas (all restorations of the C#):
+
+* **No unprovoked self-kill.** ai[2] is the dissolve FLAG again; the
+  180-tick timer is ai[1] INSIDE the `ai[2] == 1` arm. A tower killed by
+  damage enters the dissolve (life restored, `dontTakeDamage`, the fade
+  past ai[1] 120, death at 180) — the death arms/downed flags run only on
+  the SECOND death.
+* **The shield gate + flash cycle ride the machine** at the C# position
+  (`:39069-39115`). The B-6b `apply_tower_shield_gates` death-path pass
+  STAYS as the same-tick backstop for towers spawned by the cultist's
+  death (idempotent with the machine's write).
+* **The every-tick 579 ritual spam is gone.** The 422 attack bodies stay
+  DEFERRED per the module census (`:39275-39345`); their rearm/window
+  draws arrive with them. The 493 mark tree (`:43821-43907`) likewise.
+* **The draw delta:** an idle tower tick now spends exactly FOUR ambient
+  `Next(5)` gate draws (`:39198/:39207`-shaped rows per type) on the
+  UpdateNPCs stream — the stand-in discarded `rng` (zero draws). The
+  dissolve tick spends six rolls early / three past ai[1] 150; the solar
+  spawn tick nine (module census, mirrored-state witnesses).
+* **Sounds:** the shield-flip NPCDeath58 (`:39089`) and first-flash
+  NPCDeath3 (`:39093`) join `NpcSoundCue` as style façades (case 4, one
+  gameplay pitch draw + the audio-only NextFloat); the dissolve's
+  60-tick `PlaySound(4, Center, 22)` keeps the int overload (the
+  S1-E-21g queue, drained after the machine's draws). The
+  `NPC_Killed_58` bank row closes the gap (the .xnb ships).
+* **The SolarGoop-519 request** stages on `wants_solar_goop`; the sim
+  drain discards it — the kind is UNPORTED (aiStyle 99, `NPC.cs:
+  15409-15423`), the spawn body is the documented kind-wave skip. The
+  arm's five draws (RandomVector2 pair, RotatedByRandom pair, speed
+  float) ride the machine regardless.
+
+Test re-pins: the stand-in's `the_cultist_bobs_and_regen_when_far` /
+`the_cultist_dissolves_after_the_180_tick_ritual` witnesses pinned the
+WRONG machine — replaced by the inert-regen witness (the vanilla
+counter never accumulates past 1; the +200 heal needs an externally
+seeded 59) and the lives-until-checkDead witness. The dead-tower sim
+fixtures now seed `ai[2] = 1` (the post-dissolve death) so the death
+arms still see them. New witnesses: the death-sweep intercept
+(first kill survives, ai[1] climbs) + the four-ambient-gate draw delta.
+
+Boundaries honoured: the B-6b shield loop (`spawn_tower_damage_bolts`,
+`tower_shield_absorb`, `update_tower_shields`), the DD2 machines and the
+nebula zone-spawn gap are untouched — no duplication. The R72 seams
+(`bolt_host_pillar`/`bolt_shield_spend`) stay in the module for the 629
+contact wave. **Code-only: no compiler/tests invoked; the witnesses are
+WRITTEN, NOT RUN.**
 
 
 ## The Plantera minion wiring (S1-D-3-wire-plantera-minions, census §5 W-8, 2026-11-19, code-only mode)
