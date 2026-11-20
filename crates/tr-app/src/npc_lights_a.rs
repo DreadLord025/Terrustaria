@@ -394,6 +394,119 @@ pub(crate) fn santa_nk1_light(
 // never double-feeds it. Sites 21/22 (`:34166` Lavafly 654 / `:34170`
 // the else) ride the same seam.
 
+// Sites 21/22 — `:34166` (Lavafly 654) / `:34170` (the else firefly):
+// DEDUP-TWIN — the same `npc_ai_style64.rs` glow tail
+// (`Ai64Effects::light`), one feed at its wiring.
+
+// ---------------------------------------------------------------------
+// Site 23 — `:34258`, the aiStyle-66 head light (484
+// EnchantedNightcrawler, `NPCID.cs:11641`). TWIN: no NpcKind yet, and
+// the light's factor draws `Main.rand.Next(90, 111)` — the draw belongs
+// to the future aiStyle-66 machine on the `UpdateNPCs` stream (the
+// `item_lights.rs` rand-head precedent); this twin takes the ROLLED
+// factor so the wiring feeds the exact value without re-drawing.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:34255-34259`: `num983 = (float)Main.rand.Next(90, 111) *
+/// 0.01f * ((Main.essScale + 0.5f) / 2f)`; `AddLight((int)((x +
+/// (float)(width/2)) / 16f), (int)((y + (float)(height/2)) / 16f),
+/// 0.3f*num983, 0.1f*num983, 0.25f*num983)` — INTEGER halves, quotient
+/// truncation. `rolled` is the `Next(90, 111)` result (90..=110);
+/// `ess_scale` is `Main.essScale` at the draw.
+pub(crate) fn nightcrawler_light(
+    rolled: i32,
+    ess_scale: f32,
+    pos: Vec2,
+    w: f32,
+    h: f32,
+) -> (i32, i32, [f32; 3]) {
+    let num983 = rolled as f32 * 0.01 * ((ess_scale + 0.5) / 2.0);
+    (
+        ((pos.x + int_half(w)) / 16.0) as i32,
+        ((pos.y + int_half(h)) / 16.0) as i32,
+        [0.3 * num983, 0.1 * num983, 0.25 * num983],
+    )
+}
+
+// Sites 24/25 — `:34387` (GlowingSnail 360, 0.1/0.2/0.7) / `:34391`
+// (MagmaSnail 655, 0.6/0.3/0.1): DEDUP-TWIN — `npc_ai_style67.rs`
+// already ports both verbatim behind `SnailEvents::light` (the
+// cast-before-divide centre tiles, `:34385-34392`); the module is
+// UNWIRED (no snail NpcKind) and its wiring feeds the light ONCE.
+
+// Site 26 — `:35092` (ForceBubble 384, the attached-bubble light
+// 0.1/0.5/0.7 at the truncated centre): DEDUP — already fed by the
+// draw feed's small-kinds inline arm (`app/frame/draw.rs`, the
+// S1-D-3-wire-smallkinds wave).
+
+// Sites 27/28 — `:35167`/`:35175` (the Tesla Turret 387's fade/solid
+// lights): DEDUP-TWIN — `npc_ai_style73.rs` ports both behind
+// `Style73Outcome::light` (the `ai[1]/60` fade factor at the truncated
+// centre 10 px up, then the constant solid light). The machine is
+// UNWIRED (the turret's `update_kind_ai` arm is `{}`); its wiring feeds
+// the outcome ONCE — the fade factor rides the machine's own `ai[1]`
+// cadence, which a draw-side twin cannot reproduce without re-stepping.
+
+// ---------------------------------------------------------------------
+// Site 29 — `:35462`, the aiStyle-74 state-3 implosion light (388
+// MartianDrone / 418 SolarCorite). FED: both kinds' stand-in machines
+// (`update_martian_drone` / `update_solar_corite`) hold `ai[0] == 3`
+// for the 3-tick fuse. The C# re-centres the position and swells the
+// box to 192×192 (`:35455-35458`) BEFORE the light — but the re-centre
+// keeps `Center` invariant (position = oldCenter - 96, +96 back), so
+// the light's tile is the same with the port's kind-fixed size. The
+// C# light fires on the death tick too (`:35492-35498` kills AFTER the
+// AddLight); the port's feed skips `hp <= 0` — the documented
+// dead-skip convention shared by every NPC feed (ANALYSIS).
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:35462`: `AddLight((int)Center.X / 16, (int)Center.Y / 16,
+/// 0.2f, 0.7f, 1.1f)` — cast-before-divide
+/// ([`XAnchor::CenterTruncated`]).
+pub(crate) fn implosion_light(pos: Vec2, w: f32, h: f32) -> (i32, i32, [f32; 3]) {
+    (
+        tile_x(pos, w, XAnchor::CenterTruncated),
+        tile_y(pos, h, XAnchor::CenterTruncated),
+        [0.2, 0.7, 1.1],
+    )
+}
+
+// ---------------------------------------------------------------------
+// Site 30 — `:36623`, the aiStyle-80 tail light (399 MartianProbe, the
+// style's only member). FED: the wired `update_martian_probe` stand-in.
+// The C#'s state-0 arm returns at `:36575` when `FindClosestPlayer`
+// finds no live player — the light is skipped on those ticks; states
+// 1/2 always reach the tail. `rgb = Color.SkyBlue.ToVector3()`, or
+// `Color.Red.ToVector3()` in state 2, then `rgb *= 0.65f` (`:36617-
+// 36622`); `AddLight(base.Center, rgb)` truncates the quotient.
+// ---------------------------------------------------------------------
+
+/// `NPC.cs:36617-36623`. `Color.SkyBlue` = (135, 206, 235) (XNA's
+/// named colour); `ToVector3` divides each byte by 255f; the ×0.65 is
+/// per-component f32. `player_dead` folds the `:36572-36576` gate
+/// (the port is single-player: an absent player reads as dead).
+pub(crate) fn martian_probe_light(
+    ai0: f32,
+    player_dead: bool,
+    pos: Vec2,
+    w: f32,
+    h: f32,
+) -> Option<(i32, i32, [f32; 3])> {
+    if ai0 == 0.0 && player_dead {
+        return None;
+    }
+    let base = if ai0 == 2.0 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [135.0 / 255.0, 206.0 / 255.0, 235.0 / 255.0]
+    };
+    Some((
+        tile_x(pos, w, XAnchor::Center),
+        tile_y(pos, h, XAnchor::Center),
+        [base[0] * 0.65, base[1] * 0.65, base[2] * 0.65],
+    ))
+}
+
 // ---------------------------------------------------------------------
 // The dispatcher: the FED sites, keyed on the roster kind. The TWIN
 // sites' kinds are absent (or their machines unwired), so they return
@@ -430,10 +543,16 @@ pub(crate) fn npc_light_a(n: &Npc, world: &World, player_dead: bool) -> Option<(
         NpcKind::Pumpking => Some(pumpking_light(pos, w, h)),
         // Site 19 — `:33709`, the aiStyle-61 centre light (tile probe).
         NpcKind::SantaNK1 => santa_nk1_light(pos, w, h, world),
-        _ => {
-            let _ = player_dead;
-            None
+        // Site 29 — `:35462`, the aiStyle-74 state-3 implosion light.
+        // The C#'s 192-box re-centre keeps Center invariant (module
+        // docs), so the kind-fixed size reads the same tile.
+        NpcKind::MartianDrone | NpcKind::SolarCorite if n.ai[0] == 3.0 => {
+            Some(implosion_light(pos, w, h))
         }
+        // Site 30 — `:36623`, the aiStyle-80 tail light (the state-0
+        // dead-player gate folds the `:36575` return).
+        NpcKind::MartianProbe => martian_probe_light(n.ai[0], player_dead, pos, w, h),
+        _ => None,
     }
 }
 
@@ -619,5 +738,49 @@ mod tests {
         assert_eq!(lit, (13, 15, [0.3, 0.26, 0.05]));
         // Centre x = -1 → probe tx = -1 >> 4 = -1: out of world, dark.
         assert!(santa_nk1_light(Vec2::new(-57.0, 176.0), 112.0, 140.0, &w).is_none());
+    }
+
+    /// Site 23 — `:34257-34258`: rolled 100 → 1.0, essScale 1.0 →
+    /// (1.5/2) = 0.75 → num983 = 0.75; colour 0.75·(0.3, 0.1, 0.25).
+    /// A 20x20 box at (160, 176) centres (170, 186) → tile (10, 11).
+    #[test]
+    fn w4_c20_s23_nightcrawler_flicker_factor() {
+        let (x, y, rgb) = nightcrawler_light(100, 1.0, Vec2::new(160.0, 176.0), 20.0, 20.0);
+        assert_eq!((x, y), (10, 11));
+        assert_eq!(rgb, [0.3 * 0.75, 0.1 * 0.75, 0.25 * 0.75]);
+        // The roll range's low end: 90 → 0.9; essScale 0 → 0.25.
+        let (_, _, rgb2) = nightcrawler_light(90, 0.0, Vec2::ZERO, 20.0, 20.0);
+        let n = 0.9 * 0.25;
+        assert_eq!(rgb2, [0.3 * n, 0.1 * n, 0.25 * n]);
+    }
+
+    /// Site 29 — `:35462`: cast-before-divide at the centre. A 40x30
+    /// drone (`NPC.cs:13937-13938`) at (160, 176) centres (180, 191):
+    /// 180/16 = 11, 191/16 = 11.
+    #[test]
+    fn w4_c20_s29_implosion_center_light() {
+        let (x, y, rgb) = implosion_light(Vec2::new(160.0, 176.0), 40.0, 30.0);
+        assert_eq!((x, y), (11, 11));
+        assert_eq!(rgb, [0.2, 0.7, 1.1]);
+    }
+
+    /// Site 30 — `:36617-36623`: SkyBlue·0.65 in states 0/1, Red·0.65
+    /// in state 2; the state-0 dead-player gate returns None.
+    #[test]
+    fn w4_c20_s30_probe_skyblue_and_escape_red() {
+        let w = 42.0;
+        let h = 72.0;
+        let pos = Vec2::new(160.0, 176.0);
+        let idle = martian_probe_light(0.0, false, pos, w, h).unwrap();
+        assert_eq!(
+            idle.2,
+            [135.0 / 255.0 * 0.65, 206.0 / 255.0 * 0.65, 235.0 / 255.0 * 0.65]
+        );
+        let esc = martian_probe_light(2.0, true, pos, w, h).unwrap();
+        assert_eq!(esc.2, [0.65, 0.0, 0.0]);
+        // The state-0 dead-player return (`:36575`); state 1 lights
+        // regardless (the gate lives in the state-0 arm only).
+        assert!(martian_probe_light(0.0, true, pos, w, h).is_none());
+        assert!(martian_probe_light(1.0, true, pos, w, h).is_some());
     }
 }
