@@ -616,6 +616,36 @@ pub fn open_boss_bag<R: PrefixRandom + ?Sized>(
                 quick_spawn(rng, out, 3372, 1); // Ancient Cultist Mask
             }
         }
+        // Moon Lord (`Player.cs:7715-7742` — the C#'s SECOND switch).
+        3332 => {
+            try_getting_dev_armor(rng, out, env.tenth_anniversary);
+            if rng.next_max(7) == 0 {
+                quick_spawn(rng, out, 3373, 1); // Moon Lord Mask
+            }
+            if rng.next_max(10) == 0 {
+                quick_spawn(rng, out, 4469, 1); // Meowmere Minecart
+            }
+            // `:7726-7729` — the Portal Gun ONLY without one already.
+            if !env.has_portal_gun {
+                quick_spawn(rng, out, 3384, 1); // Portal Gun
+            }
+            // `:7730-7733` — the Luminite Next(90, 111), then the three
+            // always-grants.
+            quick_spawn(rng, out, 3460, range(rng, 90, 111));
+            quick_spawn(rng, out, 1131, 1); // Gravity Globe
+            quick_spawn(rng, out, 3577, 1); // Suspicious Looking Tentacle
+            quick_spawn(rng, out, 4954, 1); // Long Rainbow Trail Wings
+            // `:7734-7740` — TWO distinct weapons from the ten-option
+            // list: Next(count) picks, RemoveAt shrinks the list.
+            let mut list: Vec<i32> =
+                vec![3063, 3389, 3065, 1553, 3930, 3541, 3570, 3571, 3569, 5480];
+            for _ in 0..2 {
+                let index = rng.next_max(list.len() as i32) as usize;
+                let item = list[index];
+                quick_spawn(rng, out, item, 1);
+                list.remove(index);
+            }
+        }
         _ => {}
     }
     // The money tail (`:7744-7882`) runs for EVERY bag id in the map —
@@ -1656,6 +1686,95 @@ mod tests {
             money_replay_on(&mut r, 439, 1.0, &mut want);
             assert_eq!(got, want, "seed {seed}");
             assert_eq!(got_rng, r, "seed {seed} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_moon_lord_bag_zero_script_grants_the_whole_arm() {
+        // The dev set leads, then the mask 1/7, the minecart 1/10, the
+        // Portal Gun (none owned), Luminite 90, the three always-grants,
+        // then the bundle: pick 0 → 3063, RemoveAt, pick 0 → 3389.
+        let mut rng = ScriptRng::new(&[]);
+        let mut out = Vec::new();
+        open_boss_bag(3332, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(
+            its[..13],
+            [666, 667, 668, 665, 3287, 3373, 4469, 3384, 3460, 1131, 3577, 4954, 3063],
+            "{its:?}"
+        );
+        assert_eq!(out[8].stack, 90, "Luminite Next(90,111) minimum");
+        assert_eq!(its[13], 3389, "the second bundle pick after RemoveAt");
+        assert!(its[14..].iter().all(|i| (71..=74).contains(i)), "coins: {its:?}");
+    }
+
+    #[test]
+    fn w4_f35_moon_lord_bag_portal_gun_skips_when_owned() {
+        // `:7726` — HasItem(3384) skips the second Portal Gun; the
+        // bundle still drops two distinct weapons.
+        let env = BagEnv { has_portal_gun: true, ..Default::default() };
+        let mut rng = ScriptRng::new(&[1, 6, 9]); // dev/mask/minecart miss
+        let mut out = Vec::new();
+        open_boss_bag(3332, &env, &mut rng, &mut out);
+        let its = items(&out);
+        assert_eq!(its[..5], [3460, 1131, 3577, 4954, 3063], "{its:?}");
+        assert!(!its.contains(&3384), "no second Portal Gun");
+        assert_eq!(its[5], 3389);
+    }
+
+    #[test]
+    fn w4_f35_moon_lord_bag_bundle_picks_two_distinct_weapons() {
+        // The RemoveAt shrink: pick 3 then pick 3 → the 4th option
+        // (1553) then the (new) 4th (3930) — never a repeat.
+        let mut rng = ScriptRng::new(&[1, 6, 9, 3, 3]);
+        let mut out = Vec::new();
+        open_boss_bag(3332, &BagEnv::default(), &mut rng, &mut out);
+        let its = items(&out);
+        // dev miss, mask miss, minecart miss, Portal Gun, Luminite,
+        // three always-grants, then the two picks.
+        assert_eq!(its[0], 3384);
+        assert_eq!(its[4], 4954);
+        assert_eq!(its[5], 1553, "pick 3 of the ten");
+        assert_eq!(its[6], 3930, "pick 3 of the remaining nine");
+        assert_ne!(its[5], its[6]);
+    }
+
+    #[test]
+    fn w4_f35_moon_lord_bag_replays_the_csharp_draw_order_both_portal_states() {
+        for owned in [false, true] {
+            for seed in [59i32, 398398] {
+                let env = BagEnv { has_portal_gun: owned, ..Default::default() };
+                let mut got_rng = UnifiedRandom::new(seed);
+                let mut got = Vec::new();
+                open_boss_bag(3332, &env, &mut got_rng, &mut got);
+                let mut r = UnifiedRandom::new(seed);
+                let mut want: Vec<BagGrant> = Vec::new();
+                dev_armor_replay(&mut r, &mut want, false);
+                if r.next_max(7) == 0 {
+                    spawn_replay(&mut r, &mut want, 3373, 1);
+                }
+                if r.next_max(10) == 0 {
+                    spawn_replay(&mut r, &mut want, 4469, 1);
+                }
+                if !owned {
+                    spawn_replay(&mut r, &mut want, 3384, 1);
+                }
+                spawn_replay(&mut r, &mut want, 3460, r.next_range(90, 111));
+                spawn_replay(&mut r, &mut want, 1131, 1);
+                spawn_replay(&mut r, &mut want, 3577, 1);
+                spawn_replay(&mut r, &mut want, 4954, 1);
+                let mut list: Vec<i32> =
+                    vec![3063, 3389, 3065, 1553, 3930, 3541, 3570, 3571, 3569, 5480];
+                for _ in 0..2 {
+                    let index = r.next_max(list.len() as i32) as usize;
+                    let item = list[index];
+                    spawn_replay(&mut r, &mut want, item, 1);
+                    list.remove(index);
+                }
+                money_replay_on(&mut r, 398, 1.0, &mut want);
+                assert_eq!(got, want, "owned {owned} seed {seed}");
+                assert_eq!(got_rng, r, "owned {owned} seed {seed} stream");
+            }
         }
     }
 
