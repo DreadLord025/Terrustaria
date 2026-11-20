@@ -85,6 +85,15 @@ pub enum FindFrameExtra1Kind {
     Nymph,
     /// `NPCID.Lihzahrd` = 198 — the humanoid fighter group.
     Lihzahrd,
+    /// `NPCID.LihzahrdCrawler` = 199 — `case 199` (the crawl/climb
+    /// two-clock).
+    LihzahrdCrawler,
+    /// `NPCID.HeadacheSkeleton` = 201 — the humanoid fighter group
+    /// (the `:69647` air pin-0 pair).
+    HeadacheSkeleton,
+    /// `NPCID.MisassembledSkeleton` = 202 — the fighter group (the
+    /// air pin-0 pair).
+    MisassembledSkeleton,
 }
 
 impl FindFrameExtra1Kind {
@@ -103,6 +112,9 @@ impl FindFrameExtra1Kind {
             Self::LostGirl => 195,
             Self::Nymph => 196,
             Self::Lihzahrd => 198,
+            Self::LihzahrdCrawler => 199,
+            Self::HeadacheSkeleton => 201,
+            Self::MisassembledSkeleton => 202,
         }
     }
 
@@ -127,10 +139,14 @@ impl FindFrameExtra1Kind {
             Self::FloatyGross => 5,
             Self::SnowFlinx => 12,
             // Main.cs:67103 (entries 190-199): 195 = 7, 196 = 14,
-            // 198 = 16.
+            // 198 = 16, 199 = 8.
             Self::LostGirl => 7,
             Self::Nymph => 14,
             Self::Lihzahrd => 16,
+            Self::LihzahrdCrawler => 8,
+            // Main.cs:67104 (entries 200-209): 201 = 15, 202 = 15.
+            Self::HeadacheSkeleton => 15,
+            Self::MisassembledSkeleton => 15,
         }
     }
 }
@@ -154,6 +170,9 @@ pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameExtra1Kind> {
         195 => FindFrameExtra1Kind::LostGirl,
         196 => FindFrameExtra1Kind::Nymph,
         198 => FindFrameExtra1Kind::Lihzahrd,
+        199 => FindFrameExtra1Kind::LihzahrdCrawler,
+        201 => FindFrameExtra1Kind::HeadacheSkeleton,
+        202 => FindFrameExtra1Kind::MisassembledSkeleton,
         _ => return None,
     })
 }
@@ -399,6 +418,51 @@ pub fn find_frame_extra1(kind: FindFrameExtra1Kind, s: &mut FrameState, i: &Fram
                 s.row = 5;
             }
         }
+        // `case 199` (`NPC.cs:75030-75068`): the LihzahrdCrawler's
+        // two-clock. The grounded flip writes only on direction ±1
+        // (`:75031-75041` — the air keeps the old facing). Rows 0..2
+        // climb on the +1 counter stepping every > 6 (`:75042-75050`);
+        // at row >= 3 the AIR breaks without a write (`:75053-75056` —
+        // the row AND counter hold), the ground accumulates `|vx|`
+        // stepping every > 12 over rows 3..7, wrapping past 7 back to
+        // 3 (`:75057-75066`).
+        FindFrameExtra1Kind::LihzahrdCrawler => {
+            if i.vy == 0.0 {
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+            }
+            if s.row < 3 {
+                s.counter += 1.0;
+                if s.counter > 6.0 {
+                    s.counter = 0.0;
+                    s.row += 1;
+                }
+            } else {
+                if i.vy != 0.0 {
+                    return;
+                }
+                s.counter += i.vx.abs();
+                if s.counter > 12.0 {
+                    s.counter = 0.0;
+                    s.row += 1;
+                    if s.row > 7 {
+                        s.row = 3;
+                    }
+                }
+            }
+        }
+        // The humanoid-group case list (`NPC.cs:68579-68580` carries
+        // 201/202) → the shared fighter walk. Neither is town-like, so
+        // `num57` = 0 and the walk wraps at the full 15; BOTH are in
+        // the airborne pin list (`:69647`), so the air snaps to row 0
+        // (the 201/202 pair, the wave-B AngryBones precedent).
+        FindFrameExtra1Kind::HeadacheSkeleton | FindFrameExtra1Kind::MisassembledSkeleton => {
+            humanoid_frame_extra1(s, i, kind.frame_count(), 0, true);
+        }
     }
 }
 
@@ -490,6 +554,9 @@ mod tests {
             (FindFrameExtra1Kind::LostGirl, 195, 7),
             (FindFrameExtra1Kind::Nymph, 196, 14),
             (FindFrameExtra1Kind::Lihzahrd, 198, 16),
+            (FindFrameExtra1Kind::LihzahrdCrawler, 199, 8),
+            (FindFrameExtra1Kind::HeadacheSkeleton, 201, 15),
+            (FindFrameExtra1Kind::MisassembledSkeleton, 202, 15),
         ];
         for (kind, vanilla, count) in table {
             assert_eq!(kind.vanilla_type(), vanilla, "{kind:?} id");
@@ -511,7 +578,20 @@ mod tests {
             let mapped = find_frame_kind_for_cs_id(id);
             let in_set = matches!(
                 id,
-                121 | 137 | 141 | 142 | 148 | 149 | 181 | 182 | 185 | 195 | 196 | 198
+                121 | 137
+                    | 141
+                    | 142
+                    | 148
+                    | 149
+                    | 181
+                    | 182
+                    | 185
+                    | 195
+                    | 196
+                    | 198
+                    | 199
+                    | 201
+                    | 202
             );
             assert_eq!(mapped.is_some(), in_set, "cs_id {id}");
         }
@@ -719,6 +799,60 @@ mod tests {
             assert_eq!(s.counter, 9.0, "the ladder never touches the counter");
             assert_eq!(s.sprite_dir, -1, "no sprite write");
             assert_eq!(s.rotation, 0.5, "no rotation write");
+        }
+    }
+
+    /// The LihzahrdCrawler (`NPC.cs:75030-75068`): the rows 0..2 climb
+    /// on the 7-tick +1 clock (step at > 6), the rows 3..7 crawl on the
+    /// |vx| > 12 clock wrapping past 7 to 3; the air at row >= 3 holds
+    /// BOTH row and counter; the flip is ground-only.
+    #[test]
+    fn the_lihzahrd_crawler_climbs_then_crawls_and_holds_in_the_air() {
+        // The climb: row 0 holds 7 ticks (counter 1..6, step at 7 →
+        // row 1), rows 1/2 the same; row 3 lands on tick 21.
+        let rows = rows_over(FindFrameExtra1Kind::LihzahrdCrawler, input(0.0, 0.0), 21);
+        assert_eq!(rows[6], 1, "the first climb step at counter 7");
+        assert_eq!(rows[13], 2);
+        assert_eq!(rows[20], 3);
+        // The crawl at vx 4: +4 a tick, step at > 12 (tick 4 of the
+        // band), rows 3..7 then wrap to 3.
+        let mut s = FrameState { row: 3, counter: 0.0, ..Default::default() };
+        let i = input(4.0, 0.0);
+        let mut crawl = Vec::new();
+        for _ in 0..20 {
+            find_frame_extra1(FindFrameExtra1Kind::LihzahrdCrawler, &mut s, &i);
+            crawl.push(s.row);
+        }
+        assert_eq!(
+            crawl,
+            vec![3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 3]
+        );
+        // The air at row >= 3 holds row AND counter.
+        let mut t = FrameState { row: 5, counter: 8.0, sprite_dir: 1, ..Default::default() };
+        find_frame_extra1(FindFrameExtra1Kind::LihzahrdCrawler, &mut t, &input(-4.0, -2.0));
+        assert_eq!((t.row, t.counter, t.sprite_dir), (5, 8.0, 1), "the air hold");
+        // The air at row < 3 still climbs (the C# checks the row first).
+        let mut u = FrameState { row: 1, counter: 6.0, ..Default::default() };
+        find_frame_extra1(FindFrameExtra1Kind::LihzahrdCrawler, &mut u, &input(0.0, -2.0));
+        assert_eq!((u.row, u.counter), (2, 0.0), "the climb runs in the air too");
+    }
+
+    /// The 201/202 skeleton pair (`NPC.cs:68579-68580` → `:69647`):
+    /// the fighter walk wraps at the full 15, the air snaps to row 0
+    /// (both are in the pin list).
+    #[test]
+    fn the_skeleton_pair_wraps_at_fifteen_and_pins_air_row_zero() {
+        for kind in [
+            FindFrameExtra1Kind::HeadacheSkeleton,
+            FindFrameExtra1Kind::MisassembledSkeleton,
+        ] {
+            let rows = rows_over(kind, input(1.0, 0.0), 3 * 13 + 1);
+            assert_eq!(rows[0], 2, "{kind:?} floor");
+            assert_eq!(rows[3 * 12], 14, "{kind:?} last row");
+            assert_eq!(rows[3 * 13], 2, "{kind:?} the wrap at 15");
+            let mut s = FrameState { row: 9, counter: 4.0, ..Default::default() };
+            find_frame_extra1(kind, &mut s, &input(1.0, 2.0));
+            assert_eq!((s.row, s.counter), (0, 0.0), "{kind:?} the air pin-0");
         }
     }
 }

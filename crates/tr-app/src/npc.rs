@@ -6591,7 +6591,47 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-e13 extra-1 — the bridge into `npc_findframe_extra1`'s pure
+    /// machines: copy the five `FindFrame` fields out, run one tick,
+    /// copy them back (the `find_frame_wave_a` precedent). `direction`
+    /// is `facing` (the C#'s `Entity.direction`); `ai` rides the NPC's
+    /// own field (the LostGirl ladder reads `ai[0]`), `local_ai0` the
+    /// Slimer latch / penguin colour bank.
+    fn find_frame_wave_extra1(&mut self, kind: crate::npc_findframe_extra1::FindFrameExtra1Kind) {
+        let mut s = crate::npc_findframe_extra1::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+            local_ai0: self.local_ai[0],
+        };
+        let i = crate::npc_findframe_extra1::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+        };
+        crate::npc_findframe_extra1::find_frame_extra1(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+        self.local_ai[0] = s.local_ai0;
+    }
+
     pub(crate) fn find_frame(&mut self) {
+        // W4-e13 extra-1 — the `cs_id`-keyed hook into the extra wave's
+        // pure machines (`npc_findframe_extra1.rs`, the first 15
+        // remaining ids after the d44-d49 claims: 121/137/141/142/148/
+        // 149/181/182/185/195/196/198/199/201/202). NO current kind's
+        // `cs_id` lands in the set (the roster waves add them), so this
+        // is stream-inert today; the arms themselves draw no RNG.
+        if let Some(kind) =
+            crate::npc_findframe_extra1::find_frame_kind_for_cs_id(self.kind.cs_id())
+        {
+            self.find_frame_wave_extra1(kind);
+            return;
+        }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
         // King Slime's shrink/wind-up writes it, `:43224`/`:43342`).
@@ -31087,6 +31127,68 @@ mod s1_d_2_tests {
     use tr_core::world::World;
     // S1-D-3z — the holiday-zombie / audit witnesses build their own walls.
     use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    // ---- W4-e13 extra-1 — the `find_frame` hook into
+    // `npc_findframe_extra1` ---- The pure machines carry their own 13
+    // pinned witnesses in `npc_findframe_extra1.rs`; these pin the
+    // NPC-side seam: the hook is inert for every current kind, and the
+    // bridge copies the five fields both ways. WRITTEN NOT RUN
+    // (code-only mode — no compiler invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster waves have not added the 15 extra-1 kinds; verified
+    /// over the hand `cs_id` rows + the bestiary net ids).
+    #[test]
+    fn w4_e13_the_extra1_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra1::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-1 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation/local_ai[0]
+    /// both ways and feeds vx/vy/facing/ai through — pinned on the
+    /// Slimer latch (`NPC.cs:74014-74018`), the LostGirl ladder
+    /// (`:73146-73171`) and the penguin bank (`:76397-76410`).
+    #[test]
+    fn w4_e13_the_extra1_bridge_copies_the_five_fields_both_ways() {
+        let mut n = bare(NpcKind::Slime);
+        // The Slimer latch: local_ai[0] 0 → 1, row pinned 2, the flip +
+        // tilt ride vx (not facing).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.sprite_dir = -1;
+        n.facing = -1;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.rotation = 0.0;
+        n.local_ai[0] = 0.0;
+        n.find_frame_wave_extra1(crate::npc_findframe_extra1::FindFrameExtra1Kind::Slimer);
+        assert_eq!((n.frame, n.frame_counter), (2, 1.0), "the latch pin");
+        assert_eq!(n.local_ai[0], 1.0, "the latch flag copies back");
+        assert_eq!(n.sprite_dir, 1, "the velocity-sign flip");
+        assert_eq!(n.rotation, 0.2, "the vx * 0.1 tilt");
+        // The LostGirl ladder reads ai[0] and never touches the rest.
+        n.ai[0] = 12.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.find_frame_wave_extra1(crate::npc_findframe_extra1::FindFrameExtra1Kind::LostGirl);
+        assert_eq!(n.frame, 4, "ai[0] 12 → row 4");
+        assert_eq!(n.frame_counter, 1.0, "the ladder holds the counter");
+        assert_eq!(n.sprite_dir, -1, "no sprite write");
+        assert_eq!(n.rotation, 0.5, "no rotation write");
+        // The penguin bank reads local_ai[0] = 3 → +6 on every write.
+        n.local_ai[0] = 3.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra1(crate::npc_findframe_extra1::FindFrameExtra1Kind::Penguin);
+        assert_eq!(n.frame, 6, "the bank-3 idle row");
+        assert_eq!(n.local_ai[0], 3.0, "the bank flag copies back unchanged");
+    }
 
     /// Every ported kind's vanilla `NPCID` -> its `SetDefaults` aiStyle,
     /// extracted mechanically from the 1.4.5.8 decompile (the compound
