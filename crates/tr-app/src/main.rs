@@ -260,6 +260,7 @@ mod sound;
 mod soundid;
 mod test_world_helpers;
 mod orch_dust;
+mod orch_dust_boulder;
 mod orch_dust_lightning;
 mod town;
 mod town_arrival;
